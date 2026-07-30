@@ -12,6 +12,19 @@ import math
 class DaoWenEngine:
     """道纹计算引擎"""
     
+    # X上限规则（代价类型 → 最大值函数）
+    X_LIMITS = {
+        "消耗": lambda state: float('inf'),     # 无上限，受法力限制
+        "冷却": lambda state: 7,                 # 0≤X≤7
+        "流血": lambda state: state.get("current_hp", 999),    # 0≤X≤当前生命
+        "衰老": lambda state: state.get("blood_limit", 999),   # 0≤X≤当前血限
+        "枯竭": lambda state: state.get("mana_limit", 999),    # 0≤X≤当前法限
+        "萎缩": lambda state: state.get("speed_limit", 999),   # 0≤X≤当前速限
+        "疲惫": lambda state: state.get("current_speed", 999), # 0≤X≤当前速度
+        "失忆": lambda state: state.get("daowen_count", 999),  # 0≤X≤当前道纹数量
+        "异变": lambda state: 50,                # 0≤X≤50
+    }
+    
     # ========== 核心道纹效果表 ==========
     # 每个道纹返回标准化的计算结果字典
     
@@ -754,6 +767,7 @@ class DaoWenEngine:
         """
         统一道纹计算入口
         AI必须通过此接口调用，禁止自行计算
+        自动检查X上限
         """
         if not cls._registry:
             cls.register_all()
@@ -761,9 +775,9 @@ class DaoWenEngine:
         if dao_wen_name not in cls._registry:
             raise ValueError(f"未知道纹: {dao_wen_name}。可用道纹: {list(cls._registry.keys())}")
         
+        # 获取该道纹的代价类型，检查X上限
+        # 先调用一次获取cost_type
         func = cls._registry[dao_wen_name]
-        
-        # 检查函数签名，传入对应参数
         import inspect
         sig = inspect.signature(func)
         params = {}
@@ -773,7 +787,20 @@ class DaoWenEngine:
             elif param_name == 'x':
                 params['x'] = x
         
-        return func(**params)
+        result = func(**params)
+        
+        # 检查X上限
+        cost_type = result.get("cost_type", "消耗")
+        if cost_type in cls.X_LIMITS:
+            state = kwargs.get("_state", {})
+            x_max = cls.X_LIMITS[cost_type](state)
+            if x > x_max:
+                raise ValueError(
+                    f"X={x}超过上限{cost_type}≤{x_max}。"
+                    f"道纹: {dao_wen_name}, 代价类型: {cost_type}"
+                )
+        
+        return result
     
     @classmethod
     def list_all(cls) -> list[str]:
