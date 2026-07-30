@@ -19,7 +19,98 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 from engine.api import GameEngine
 from engine.validator import RuleValidator, RuleViolation
 from engine.rule_sync import RuleSync
-from engine.ai_player import AIPlayer, PlaceholderBackend, AIWithRetry
+from engine.ai_player import AIPlayer, PlaceholderBackend, AIWithRetry, create_ai_backend
+
+
+# ========== 免费AI快速测试 ==========
+
+def free_ai_test():
+    """免费AI快速测试 - 自动检测可用的免费AI后端"""
+    print("=" * 60)
+    print("免费AI后端测试")
+    print("=" * 60)
+    
+    backends = []
+    
+    # 检测可用的后端
+    print("\n检测可用的免费AI后端...")
+    
+    if os.environ.get("GEMINI_API_KEY"):
+        try:
+            b = create_ai_backend("gemini")
+            backends.append(("Gemini (Google免费)", b))
+            print("  ✓ Gemini - 已配置")
+        except Exception as e:
+            print(f"  ✗ Gemini - {e}")
+    else:
+        print("  ○ Gemini - 未设置 GEMINI_API_KEY")
+        print("    免费获取: https://aistudio.google.com/apikey")
+    
+    if os.environ.get("GROQ_API_KEY"):
+        try:
+            b = create_ai_backend("groq")
+            backends.append(("Groq (免费超快)", b))
+            print("  ✓ Groq - 已配置")
+        except Exception as e:
+            print(f"  ✗ Groq - {e}")
+    else:
+        print("  ○ Groq - 未设置 GROQ_API_KEY")
+        print("    免费获取: https://console.groq.com/keys")
+    
+    if os.environ.get("OPENROUTER_API_KEY"):
+        try:
+            b = create_ai_backend("openrouter")
+            backends.append(("OpenRouter (免费模型)", b))
+            print("  ✓ OpenRouter - 已配置")
+        except Exception as e:
+            print(f"  ✗ OpenRouter - {e}")
+    else:
+        print("  ○ OpenRouter - 未设置 OPENROUTER_API_KEY")
+        print("    免费获取: https://openrouter.ai/keys")
+    
+    if os.environ.get("DEEPSEEK_API_KEY"):
+        try:
+            b = create_ai_backend("deepseek")
+            backends.append(("DeepSeek (注册送额度)", b))
+            print("  ✓ DeepSeek - 已配置")
+        except Exception as e:
+            print(f"  ✗ DeepSeek - {e}")
+    else:
+        print("  ○ DeepSeek - 未设置 DEEPSEEK_API_KEY")
+        print("    免费获取: https://platform.deepseek.com/api_keys")
+    
+    # 总有占位符可用
+    backends.append(("占位符 (测试用)", PlaceholderBackend()))
+    print("  ✓ 占位符 - 始终可用")
+    
+    if not backends:
+        print("\n没有可用的AI后端。")
+        return
+    
+    # 用第一个可用的后端测试
+    print(f"\n使用 {backends[0][0]} 进行测试...")
+    
+    engine = GameEngine(db_path="data/ai_test_rulings.db")
+    ai = AIPlayer(engine, backend=backends[0][1])
+    
+    print("\n[AI自动开局]")
+    for i in range(5):
+        result = ai.play_turn(f"第{i+1}步")
+        print(f"  决策: {result['action']}")
+        if result.get('reasoning'):
+            print(f"  原因: {result['reasoning'][:80]}")
+        print(f"  结果: {'成功' if result.get('result', {}).get('success') else '失败'}")
+        
+        if result.get("interrupt"):
+            print(f"  ⚠ 中断: {result['interrupt']['interrupt_type']}")
+            break
+    
+    stats = ai.get_stats()
+    print(f"\n[统计] 决策{stats['total_decisions']}次, 违规{stats['violations_found']}次, 合规率{stats['compliance_rate']}")
+    
+    print("\n" + "=" * 60)
+    print("测试完成。")
+    print("=" * 60)
 
 
 def print_state(engine: GameEngine):
@@ -478,8 +569,40 @@ if __name__ == "__main__":
             sync_demo()
         elif mode == "--full":
             full_demo()
+        elif mode == "--free-ai":
+            free_ai_test()
+        elif mode == "--help":
+            print("""
+用法: python main.py [模式]
+
+模式:
+  (无参数)     交互式命令行
+  --api        API演示
+  --validate   规则校验演示
+  --sync       规则同步演示
+  --full       完整流程演示
+  --free-ai    免费AI后端测试
+  --help       显示帮助
+
+免费AI设置（任选一个，全部免费，无需信用卡）:
+
+  1. Google Gemini（推荐，最稳定）:
+     export GEMINI_API_KEY="你的key"
+     免费获取: https://aistudio.google.com/apikey
+
+  2. Groq（最快）:
+     export GROQ_API_KEY="你的key"
+     免费获取: https://console.groq.com/keys
+
+  3. OpenRouter（模型最多）:
+     export OPENROUTER_API_KEY="你的key"
+     免费获取: https://openrouter.ai/keys
+
+  4. DeepSeek（中文最强）:
+     export DEEPSEEK_API_KEY="你的key"
+     免费获取: https://platform.deepseek.com/api_keys
+""")
         else:
-            print(f"未知模式: {mode}")
-            print("可用: --api, --validate, --sync, --full")
+            print(f"未知模式: {mode}。使用 --help 查看帮助。")
     else:
         interactive_mode()
