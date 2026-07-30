@@ -786,26 +786,44 @@ class GameEngine:
         """执行道纹效果"""
         result = {"daowen": name, "effects": []}
         
+        # 怪物×3规则
+        multiplier = self.combat.is_monster_triple(name, caster)
+        if multiplier > 1:
+            result["monster_triple"] = True
+            result["multiplier"] = multiplier
+        
         # 伤害类
         if "target_damage" in calc:
-            dmg = target.take_damage(calc["target_damage"])
+            actual_damage = calc["target_damage"] * multiplier
+            dmg = target.take_damage(actual_damage)
+            if multiplier > 1:
+                dmg["base_damage"] = calc["target_damage"]
+                dmg["multiplied_damage"] = actual_damage
             result["effects"].append({"type": "damage", "target": target.name, **dmg})
         
         # AOE伤害
         if "aoe_damage" in calc:
+            actual_aoe = calc["aoe_damage"] * multiplier
             for enemy in self.state.get_all_enemy_side():
-                dmg = enemy.take_damage(calc["aoe_damage"])
+                dmg = enemy.take_damage(actual_aoe)
+                if multiplier > 1:
+                    dmg["multiplied"] = True
                 result["effects"].append({"type": "aoe_damage", "target": enemy.name, **dmg})
         
         # 回复类
         if "target_heal" in calc:
-            heal = target.heal(calc["target_heal"])
+            actual_heal = calc["target_heal"] * multiplier
+            heal = target.heal(actual_heal)
+            if multiplier > 1:
+                heal["multiplied"] = True
             result["effects"].append({"type": "heal", "target": target.name, **heal})
         
         # 格挡类
         if "target_shield" in calc:
-            target.gain_shield(calc["target_shield"])
-            result["effects"].append({"type": "shield", "target": target.name, "amount": calc["target_shield"]})
+            actual_shield = calc["target_shield"] * multiplier
+            target.gain_shield(actual_shield)
+            result["effects"].append({"type": "shield", "target": target.name, "amount": actual_shield,
+                                       "base": calc["target_shield"], "multiplier": multiplier})
         
         # 血限减少
         if "blood_limit_reduction" in calc:

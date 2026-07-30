@@ -16,12 +16,49 @@ from .dm_rulings import Interrupt
 class CombatEngine:
     """战斗计算引擎"""
     
+    # 副本专属道纹（不×3）
+    REGION_EXCLUSIVE_DAOWEN = {
+        "扭曲都市": {"变形","定型","畸变","僵化","超频","坏死","爆裂","退化"},
+        "罪孽都市": {"洗劫","逼债","抵扣","清算","赎金","假钞","赌命","消灾"},
+        "龙心谷":   {"加害","龙鳞","逆鳞","活血","裂变","嫁祸","背负","伤痕"},
+    }
+    
+    # 怪物原始道纹+转化道纹（这些也不×3，因为是怪物自己的）
+    MONSTER_OWN_DAOWEN = {
+        "狂暴","强化","活力","减速","必中","自愈","飞行",
+        "愤怒","自残","无神","借力","弱化","自食","兴奋","无力",
+        "迟滞","急速","加速","眩晕","洞察","蒙蔽","滋养","衰败",
+        "寄生","滑翔","坠落",
+    }
+    
     def __init__(self, state: GameState, dice: DiceEngine):
         self.state = state
         self.dice = dice
         self.combat_log: list[dict] = []  # 完整战斗日志
     
     # ========== 伤害计算 ==========
+    
+    def is_monster_triple(self, dao_wen_name: str, entity: Entity) -> int:
+        """
+        怪物非专属道纹效果×3规则
+        规则：怪物使用非专属道纹效果×3，副本专属道纹按原效果结算
+        返回：效果倍率（1或3）
+        """
+        if entity.entity_type != "怪物":
+            return 1
+        
+        # 怪物自己的道纹（原始+转化）不×3
+        if dao_wen_name in self.MONSTER_OWN_DAOWEN:
+            return 1
+        
+        # 副本专属道纹不×3
+        region = self.state.current_region
+        if region in self.REGION_EXCLUSIVE_DAOWEN:
+            if dao_wen_name in self.REGION_EXCLUSIVE_DAOWEN[region]:
+                return 1
+        
+        # 其他道纹（核心道纹等）×3
+        return 3
     
     def calculate_attack_damage(
         self, 
@@ -270,8 +307,16 @@ class CombatEngine:
                 })
                 entity.clear_shield()
             
-            # 法力清空（敌回终）
-            # 注：轮回者法力在回始补满，怪物不使用法力
+        # 法力清空（敌回终）
+        # 规则：[法限]用于发动道纹与法术，法力[敌回终]清空
+        if self.state.player and self.state.player.is_alive:
+            if self.state.player.current_mana > 0:
+                effects.append({
+                    "type": "mana_clear",
+                    "entity": self.state.player.name,
+                    "cleared": self.state.player.current_mana
+                })
+                self.state.player.current_mana = 0
         
         # 持续效果递减
         for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
