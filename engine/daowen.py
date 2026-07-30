@@ -697,6 +697,136 @@ class DaoWenEngine:
             "summary": f"消耗{3*x}法力，造成伤害时夺取{target.name}等量碎片，持续{x}回合"
         }
     
+    # ---- 罪孽都市专属道纹 ----
+    
+    @staticmethod
+    def calculate_bizhai(x: int, target: Entity) -> dict:
+        """逼债X：消耗X。回始使目标失去X点碎片，否则失去2X点血限，持续∞"""
+        return {
+            "dao_wen": "逼债", "x": x, "cost_type": "消耗", "cost": x,
+            "shard_drain": x, "blood_limit_penalty": 2 * x, "duration": -1,
+            "summary": f"消耗{x}法力，回始使{target.name}失去{x}碎片或{2*x}血限，永久"
+        }
+    
+    @staticmethod
+    def calculate_dikou(x: int, target: Entity) -> dict:
+        """抵扣X：消耗10X。封印目标拥有的一件遗物，持续X"""
+        return {
+            "dao_wen": "抵扣", "x": x, "cost_type": "消耗", "cost": 10 * x,
+            "relic_seal": 1, "duration": x,
+            "summary": f"消耗{10*x}法力，封印{target.name}一件遗物，持续{x}回合"
+        }
+    
+    @staticmethod
+    def calculate_qingsuan(x: int, target: Entity, caster_shards: int = 0) -> dict:
+        """清算X：消耗5X。回始使目标失去你碎片点格挡，持续X"""
+        return {
+            "dao_wen": "清算", "x": x, "cost_type": "消耗", "cost": 5 * x,
+            "shield_drain": caster_shards, "duration": x,
+            "summary": f"消耗{5*x}法力，回始使{target.name}失去{caster_shards}格挡，持续{x}回合"
+        }
+    
+    @staticmethod
+    def calculate_shujin(x: int, target: Entity) -> dict:
+        """赎金X：消耗10X。夺取目标10X碎片；若无碎片则失去X点速度"""
+        return {
+            "dao_wen": "赎金", "x": x, "cost_type": "消耗", "cost": 10 * x,
+            "shard_steal": 10 * x, "speed_penalty": x,
+            "summary": f"消耗{10*x}法力，夺取{target.name} {10*x}碎片或{x}速度"
+        }
+    
+    @staticmethod
+    def calculate_jiachao(x: int) -> dict:
+        """假钞X：消耗X。获得10X假碎片"""
+        return {
+            "dao_wen": "假钞", "x": x, "cost_type": "消耗", "cost": x,
+            "fake_shards": 10 * x,
+            "summary": f"消耗{x}法力，获得{10*x}假碎片"
+        }
+    
+    @staticmethod
+    def calculate_duming(x: int) -> dict:
+        """赌命X：消耗X假碎片。回始按存活角色投随机数，对应目标失去30%血限当前生命"""
+        return {
+            "dao_wen": "赌命", "x": x, "cost_type": "消耗", "cost": x,
+            "hp_percent_loss": 30, "duration": x,
+            "summary": f"消耗{x}假碎片，回始随机目标失去30%血限生命，持续{x}回合"
+        }
+    
+    @staticmethod
+    def calculate_xiaozai(x: int) -> dict:
+        """消灾X：消耗50X假碎片或5X碎片。重置随机数X次"""
+        return {
+            "dao_wen": "消灾", "x": x, "cost_type": "消耗", "cost_shards": 5 * x,
+            "rerolls": x,
+            "summary": f"消耗{5*x}碎片，重置随机数{x}次"
+        }
+    
+    # ---- 龙心谷专属道纹 ----
+    
+    @staticmethod
+    def calculate_longlin(x: int, target: Entity) -> dict:
+        """龙鳞X：消耗5X。使目标每次受到伤害-X，最低为0，持续∞"""
+        return {
+            "dao_wen": "龙鳞", "x": x, "cost_type": "消耗", "cost": 5 * x,
+            "damage_reduction": x, "duration": -1,
+            "summary": f"消耗{5*x}法力，{target.name}每次受伤-{x}(最低0)，永久"
+        }
+    
+    @staticmethod
+    def calculate_nilin(x: int, target: Entity) -> dict:
+        """逆鳞X：代价：流血X。目标每失去1生命获得1层逆鳞，下次伤害+全部层数，持续X"""
+        return {
+            "dao_wen": "逆鳞", "x": x, "cost_type": "流血", "cost_hp": x,
+            "stack_per_hp": 1, "duration": x,
+            "summary": f"流血{x}，{target.name}每掉1HP积1层逆鳞，下次伤害+全部层数"
+        }
+    
+    @staticmethod
+    def calculate_huoxue(x: int, target: Entity) -> dict:
+        """活血X：消耗2X。目标每累计失去2生命，回终获得回复1，持续X"""
+        return {
+            "dao_wen": "活血", "x": x, "cost_type": "消耗", "cost": 2 * x,
+            "heal_per_2hp": 1, "duration": x,
+            "summary": f"消耗{2*x}法力，{target.name}每失去2HP回终回复1，持续{x}回合"
+        }
+    
+    @staticmethod
+    def calculate_liebian(x: int, target: Entity) -> dict:
+        """裂变X：消耗3X。使目标受到伤害改为分X次结算，持续∞"""
+        return {
+            "dao_wen": "裂变", "x": x, "cost_type": "消耗", "cost": 3 * x,
+            "split_count": x, "duration": -1,
+            "summary": f"消耗{3*x}法力，{target.name}受伤分{x}次结算，永久"
+        }
+    
+    @staticmethod
+    def calculate_jiahuo(x: int, target: Entity) -> dict:
+        """嫁祸X：消耗15X。自身下X次受到伤害由目标承担"""
+        return {
+            "dao_wen": "嫁祸", "x": x, "cost_type": "消耗", "cost": 15 * x,
+            "redirect_count": x,
+            "summary": f"消耗{15*x}法力，自身下{x}次受伤由{target.name}承担"
+        }
+    
+    @staticmethod
+    def calculate_beifu(x: int, target: Entity) -> dict:
+        """背负X：消耗5X。选择目标，其下X次受到伤害由自身承担"""
+        return {
+            "dao_wen": "背负", "x": x, "cost_type": "消耗", "cost": 5 * x,
+            "absorb_count": x,
+            "summary": f"消耗{5*x}法力，{target.name}下{x}次受伤由自身承担"
+        }
+    
+    @staticmethod
+    def calculate_shanghen(x: int, target: Entity) -> dict:
+        """伤痕X：消耗5X。使目标每次失去生命后血限-X，持续∞"""
+        return {
+            "dao_wen": "伤痕", "x": x, "cost_type": "消耗", "cost": 5 * x,
+            "blood_limit_loss": x, "duration": -1,
+            "summary": f"消耗{5*x}法力，{target.name}每次掉血后血限-{x}，永久"
+        }
+    
     # ... 其他道纹可按需添加
     
     # ========== 统一调度入口 ==========
@@ -760,6 +890,21 @@ class DaoWenEngine:
             "退化": cls.calculate_tuihua,
             # 罪孽都市
             "洗劫": cls.calculate_xijie,
+            "逼债": cls.calculate_bizhai,
+            "抵扣": cls.calculate_dikou,
+            "清算": cls.calculate_qingsuan,
+            "赎金": cls.calculate_shujin,
+            "假钞": cls.calculate_jiachao,
+            "赌命": cls.calculate_duming,
+            "消灾": cls.calculate_xiaozai,
+            # 龙心谷
+            "龙鳞": cls.calculate_longlin,
+            "逆鳞": cls.calculate_nilin,
+            "活血": cls.calculate_huoxue,
+            "裂变": cls.calculate_liebian,
+            "嫁祸": cls.calculate_jiahuo,
+            "背负": cls.calculate_beifu,
+            "伤痕": cls.calculate_shanghen,
         }
     
     @classmethod
