@@ -1020,7 +1020,8 @@ class ResonanceEngine:
         source_daowen: str, 
         resonance_type: str,
         caster_has_daowen: bool,
-        target_has_daowen: bool
+        target_has_daowen: bool,
+        resonance_stock: dict = None
     ) -> dict:
         """
         应用残韵变化
@@ -1029,6 +1030,7 @@ class ResonanceEngine:
         2. 残韵作用于轮回者拥有的道纹时，该轮回者拥有的对应道纹永久变为变化后的道纹
         3. 通过残韵获得的道纹，X值按施法者自由控X规则自定义
         """
+        # 检查路径是否存在
         target = cls.find_transformation(source_daowen, resonance_type)
         if target is None:
             return {
@@ -1036,12 +1038,21 @@ class ResonanceEngine:
                 "error": f"道纹'{source_daowen}'不存在'{resonance_type}'路径"
             }
         
+        # 检查玩家是否拥有该类型残韵
+        if resonance_stock is not None:
+            available = resonance_stock.get(resonance_type, 0)
+            if available <= 0:
+                return {
+                    "success": False,
+                    "error": f"没有可用的{resonance_type}残韵（当前：{resonance_stock}）"
+                }
+        
         return {
             "success": True,
             "source": source_daowen,
             "resonance_type": resonance_type,
             "target": target,
-            "permanent_change": caster_has_daowen,  # 轮回者拥有的道纹永久变化
+            "permanent_change": caster_has_daowen,
             "caster_gets_daowen": not caster_has_daowen and target_has_daowen,
             "summary": f"【{resonance_type}】{source_daowen} → {target}"
         }

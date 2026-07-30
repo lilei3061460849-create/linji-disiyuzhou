@@ -735,6 +735,9 @@ class GameEngine:
     def _action_use_daowen(self, params: dict) -> dict:
         """发动道纹"""
         player = self.state.player
+        if not player:
+            return {"success": False, "error": "没有玩家"}
+        
         name = params.get("daowen_name", "")
         x = params.get("x", 1)
         target_name = params.get("target", "")
@@ -751,7 +754,7 @@ class GameEngine:
             return {"success": False, "error": "X必须≥1"}
         
         # 查找目标
-        target = None
+        target = player  # 默认目标是自己
         if target_name:
             all_entities = self.state.get_all_player_side() + self.state.get_all_enemy_side()
             for e in all_entities:
@@ -765,7 +768,7 @@ class GameEngine:
         except Exception as e:
             return {"success": False, "error": f"道纹计算失败: {str(e)}"}
         
-        # 检查法力是否足够
+        # 检查法力是否足够（代价道纹不消耗法力）
         cost = calc.get("cost", calc.get("cost_mutation", 0))
         if calc.get("cost_type") == "消耗" and cost > 0:
             if not player.spend_mana(cost):
@@ -906,17 +909,22 @@ class GameEngine:
         source = params.get("source_daowen", "")
         rtype = params.get("resonance_type", "")
         
+        # 检查玩家是否拥有该类型残韵
         if rtype not in self.state.resonance or self.state.resonance[rtype] <= 0:
-            return {"success": False, "error": f"没有可用的{rtype}残韵"}
+            return {"success": False, "error": f"没有可用的{rtype}残韵（当前：{self.state.resonance}）"}
         
         # 检查源道纹是否存在于当前持有者身上
         player = self.state.player
+        if not player:
+            return {"success": False, "error": "没有玩家"}
+        
         caster_has = source in player.dao_wen
         
         result = ResonanceEngine.apply_resonance(
             source, rtype, 
             caster_has_daowen=caster_has,
-            target_has_daowen=True
+            target_has_daowen=True,
+            resonance_stock=self.state.resonance  # 传入残韵库存用于校验
         )
         
         if not result["success"]:
@@ -924,6 +932,21 @@ class GameEngine:
         
         # 消耗残韵
         self.state.resonance[rtype] -= 1
+        
+        # 如果是轮回者拥有的道纹，永久变化
+        if caster_has and result.get("permanent_change"):
+            target_name = result["target"]
+            old_dw = player.dao_wen[source]
+            # 创建新道纹实例
+            new_dw = DaoWen(
+                name=target_name,
+                formula=f"{target_name}X",
+                cost_type=old_dw.dao_wen.cost_type,
+                cost_formula=old_dw.dao_wen.cost_formula,
+                effect_formula=old_dw.dao_wen.effect_formula
+            )
+            player.dao_wen[target_name] = DaoWenInstance(dao_wen=new_dw)
+            del player.dao_wen[source]
         
         return {
             "success": True,
