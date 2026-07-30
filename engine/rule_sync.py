@@ -191,24 +191,56 @@ class RuleSync:
             content = f.read()
         
         events = []
+        seen = set()
         
-        # 匹配事件名（带引号的名称）
-        pattern = r'["""]([^"""]+)["""]'
-        for match in re.finditer(pattern, content):
-            name = match.group(1)
-            # 获取后续描述
-            start = match.end()
-            # 找到下一个事件或段落结束
-            next_section = re.search(r'\n["""]|\n【', content[start:start+500])
-            end = start + (next_section.start() if next_section else min(500, len(content) - start))
-            desc = content[start:end].strip()
-            
-            events.append({
-                "name": name,
-                "description_preview": desc[:200],
-                "source": filepath,
-                "position": match.start()
-            })
+        # 格式1："事件名"：描述（引号+冒号）
+        # 格式2："事件名"\n（引号+换行，描述在下一行）
+        # 格式3：事件名：描述（无引号，2-10个汉字+冒号）
+        patterns = [
+            r'["\u201c]([^"\u201d]{2,20})["\u201d]\s*[：：]',  # 带引号+冒号
+            r'["\u201c]([^"\u201d]{2,20})["\u201d]\s*\n',     # 带引号+换行
+            r'^([\u4e00-\u9fff·]{2,12})[：：](?!.*[：：].*[/×])',  # 无引号
+        ]
+        
+        for pattern in patterns:
+            for match in re.finditer(pattern, content, re.MULTILINE):
+                name = match.group(1).strip()
+                # 排除非事件的名称
+                skip_words = {"基础", "核心", "规则", "效果", "代价", "消耗", "持续", "目标",
+                             "发现", "拒绝", "忘忧", "可分配法力", "攻击力", "攻击次数",
+                             "且", "或", "共计", "转化道纹", "碎片", "获得50格挡", "造成30伤害",
+                             "击杀怪物获得碎片", "遗物", "体外心脏", "羔羊之泪", "红头绳", 
+                             "猩红尖牙", "黑金名片", "罪业金库", "教父左轮", "共心环", 
+                             "负岳碑", "真龙之心", "绝息淤泥", "皮衣", "活性土壤",
+                             "格挡", "声明", "自由规则", "随机数规则", "整数规则", "自由控X规则",
+                             "积木规则", "循环规则", "中断规则", "法术阶级规则", "属性与状态规则",
+                             "局外修行", "轮回者", "微光者", "怪物", "获取机制", "先手顺序",
+                             "出怪", "战斗背景", "敌方面板", "我方面板", "死者之书前言",
+                             "所需道纹", "触发条件", "生效流程", "唯一", "战斗无缝继续",
+                             "逃跑方行阻截", "追击方破局拦截", "已有进化特性库", "脱囊", "腐蚀",
+                             "死斗先手与流程", "区域背景", "环形闭环主轨", "道纹定义",
+                             "扭曲都市专属行动", "闭环节点代数定义", "罪孽都市专属行动",
+                             "罪孽都市专属机制", "龙心谷专属行动", "龙族特性",
+                             "未见场景裁定落库法则", "核心因果与联系",
+                             "遗物·猩红果实", "遗物·苍白之花", "遗物",}
+                if name in skip_words or name in seen:
+                    continue
+                if len(name) < 2:
+                    continue
+                
+                # 获取后续描述
+                start = match.end()
+                next_section = re.search(r'\n["\u201c\u300c]|\n【|\n[\u4e00-\u9fff]{2,10}[：:]', content[start:start+500])
+                end = start + (next_section.start() if next_section else min(300, len(content) - start))
+                desc = content[start:end].strip()
+                
+                seen.add(name)
+                events.append({
+                    "name": name,
+                    "description_preview": desc[:200],
+                    "source": filepath,
+                    "position": match.start()
+                })
         
         return events
     
