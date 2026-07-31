@@ -59,14 +59,16 @@ class DaoWenInstance:
 
 @dataclass
 class Spell:
-    """法术定义"""
+    """法术定义（法术库法术与自创法术通用）"""
     name: str
     required_daowen: list[str]   # 所需道纹列表
     trigger_condition: str       # 触发条件
     effect_flow: str             # 生效流程
     rank: int = 1                # 阶级 = 所需道纹种数
     custom_conditions: list[str] = field(default_factory=list)
-    
+    # 自创法术的完整spec（积木步骤/循环/触发/所需道纹）；None=法术库法术（spec查SPELL_LIBRARY）
+    spec: dict = None
+
     def to_dict(self) -> dict:
         return {
             "name": self.name,
@@ -74,8 +76,12 @@ class Spell:
             "trigger_condition": self.trigger_condition,
             "effect_flow": self.effect_flow,
             "rank": self.rank,
-            "custom_conditions": self.custom_conditions
+            "custom_conditions": self.custom_conditions,
+            "spec": self.spec,
         }
+
+    def is_custom(self) -> bool:
+        return self.spec is not None
 
 
 @dataclass

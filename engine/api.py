@@ -151,7 +151,10 @@ class GameEngine:
                 {"id": "领悟", "cost_energy": 1, "available": True, "description": "选择获得1种残韵"},
                 {"id": "休整", "cost_energy": 1, "available": True, "description": "产生8/24(10碎片)/48(25碎片)恢复量，可自由分配给自己或队友"},
                 {"id": "修行", "cost_energy": 1, "available": True, "description": "获得1/2(15)/3(35)/4(65)/5(100)/6(150)点属性点"},
-                {"id": "学习", "cost_energy": 1, "available": True, "description": "学会1/2(10)/3(25)种法术，或习得1/2(10)种转化道纹（须为已持有道纹的相邻变化）"},
+                {"id": "学习", "cost_energy": 1, "available": True, "description": "学会1/2(10)/3(25)种法术，或自创一种法术（完全由已拥有道纹按三大法则组装），或习得1/2(10)种转化道纹（须为已持有道纹的相邻变化）"},
+                {"id": "revise_custom_spell", "cost_energy": 0,
+                 "available": bool(self.state.player and any(s.spec for s in self.state.player.spells)),
+                 "description": "修订自创法术（[战终]窗口；须通过创建同款校验，以当前持有道纹为准）"},
                 {"id": "共鸣", "cost_energy": 2, "available": bool(self.state.relics_pool),
                  "description": "精力再次-1，发现/自选(15碎片)一件遗物"},
                 {"id": "探索", "cost_energy": 1, "available": False,
@@ -344,6 +347,7 @@ class GameEngine:
                 "battle_start": self._action_battle_start,
                 "battle_end": self._action_battle_end,
                 "random_number": self._action_submit_random,
+                "revise_custom_spell": self._action_revise_custom_spell,
             }.get(action_type)
 
             if handler is None:
@@ -960,12 +964,7 @@ class GameEngine:
         tier = params.get("tier", 1)
 
         if learn_type == "create_spell":
-            self.state.energy += 1
-            return {
-                "success": False,
-                "unavailable": True,
-                "error": "自创法术涉及残韵式创造，按规则须抛出中断由DM裁定，暂未实装自动流程",
-            }
+            return self._create_custom_spell(params, use_energy_refund=True)
 
         tier_cost = {1: 0, 2: 10, 3: 25}
         if tier not in tier_cost:
@@ -1045,7 +1044,7 @@ class GameEngine:
 
         else:
             self.state.energy += 1
-            return {"success": False, "error": "learn_type 仅支持 spell / transform_daowen"}
+            return {"success": False, "error": "learn_type 仅支持 spell / transform_daowen / create_spell"}
 
         return {
             "success": True,
@@ -1056,6 +1055,171 @@ class GameEngine:
                 "shard_cost": cost,
                 "shards_remaining": self.state.shards,
             },
+        }
+
+    # ==================== 自创法术 ====================
+
+    def _spell_spec(self, spell_name: str) -> dict:
+        """查法术spec：自创法术优先（存于Spell.spec），其次法术库"""
+        player = self.state.player
+        if player:
+            for s in player.spells:
+                if s.name == spell_name and s.spec:
+                    return s.spec
+        return SPELL_LIBRARY.get(spell_name)
+
+    @staticmethod
+    def _validate_custom_spell_blueprint(blueprint: dict, player) -> tuple[list, dict]:
+        """
+        校验自创法术图纸（创建与修订共用）：
+        - 完全由校验时已拥有的道纹按三大法则组装（README学习条目+法术通则）
+        - 触发时点合法；步骤条件/目标/参数在引擎可机械判定白名单内（否则如实拒绝，不假装）
+        返回 (errors, normalized_spec)
+        """
+        from .gamedata import IMPLEMENTED_DAOWEN
+
+        errors = []
+        name = blueprint.get("name", "")
+        trigger = blueprint.get("trigger", "")
+        steps = blueprint.get("steps") or []
+        loop = bool(blueprint.get("loop", False))
+
+        if not name or len(name) > 20:
+            errors.append("法术名必填且≤20字")
+        if trigger not in VALID_SPELL_TRIGGERS:
+            errors.append(f"触发时点[{trigger}]非法，合法：{sorted(VALID_SPELL_TRIGGERS)}")
+        if not isinstance(steps, list) or not steps:
+            errors.append("积木步骤不能为空（法术不得凭空创造效果，必须由已拥有道纹组成）")
+
+        norm_steps = []
+        for i, st in enumerate(steps or []):
+            dw = st.get("daowen", "")
+            if player is None or dw not in player.dao_wen:
+                errors.append(f"步骤{i+1}【{dw}】：必须完全由已拥有道纹组成（当前持有：{list(player.dao_wen.keys()) if player else []}）")
+                continue
+            if dw not in IMPLEMENTED_DAOWEN:
+                errors.append(f"步骤{i+1}【{dw}】引擎未实装，无法保证按原版公式结算，拒绝组装")
+                continue
+            x_param = st.get("x_param", "x")
+            if not isinstance(x_param, str) or not x_param:
+                errors.append(f"步骤{i+1}：x_param无效（发动时按此键取X值，如 'x' / 'y' / '3x'）")
+                continue
+            target = st.get("target", "enemy")
+            if target not in ("self", "enemy", "target"):
+                errors.append(f"步骤{i+1}【{dw}】：target仅支持 self/enemy/target")
+                continue
+            cond = st.get("condition")
+            if cond is not None and cond not in ("target_flying", "previous_step_no_damage"):
+                errors.append(f"步骤{i+1}【{dw}】：条件[{cond}]引擎无法机械判定，拒绝组装"
+                              f"（可判定：target_flying / previous_step_no_damage）")
+                continue
+            norm_steps.append({"daowen": dw, "x_param": x_param, "target": target,
+                               **({"condition": cond} if cond else {})})
+
+        if errors:
+            return errors, None
+
+        required = []
+        for st in norm_steps:
+            if st["daowen"] not in required:
+                required.append(st["daowen"])
+        spec = {
+            "name": name,
+            "required_daowen": required,
+            "trigger": trigger,
+            "costs_action": False,   # 与法术库一致：反应型法术在触发时点插队，不耗出手（如有争议待DM裁定）
+            "steps": norm_steps,
+            "loop": loop,
+            "custom": True,
+        }
+        return [], spec
+
+    def _create_custom_spell(self, params: dict, use_energy_refund: bool = False) -> dict:
+        """自创一种法术（学习行动的真免费项，真实生效）"""
+        player = self.state.player
+
+        def fail(msg):
+            if use_energy_refund:
+                self.state.energy += 1
+            return {"success": False, "error": msg}
+
+        if player is None:
+            return fail("没有玩家")
+
+        blueprint = {
+            "name": params.get("name") or (params.get("names") or [""])[0],
+            "trigger": params.get("trigger", ""),
+            "steps": params.get("steps"),
+            "loop": params.get("loop", False),
+        }
+        name = blueprint["name"]
+
+        if name in SPELL_LIBRARY:
+            return fail(f"[{name}]与法术库法术重名（全宇宙唯一），请直接学习或另起名字")
+        if any(s.name == name for s in player.spells):
+            return fail(f"法术[{name}]已存在；如需调整请在战终后调用 revise_custom_spell 修订")
+
+        errors, spec = self._validate_custom_spell_blueprint(blueprint, player)
+        if errors:
+            return fail("自创图纸不合规：" + "；".join(errors))
+
+        player.spells.append(Spell(
+            name=name,
+            required_daowen=list(spec["required_daowen"]),
+            trigger_condition=spec["trigger"],
+            effect_flow="→".join(s["daowen"] for s in spec["steps"]) + ("（循环）" if spec["loop"] else ""),
+            rank=len(spec["required_daowen"]),
+            spec=spec,
+        ))
+        return {
+            "success": True,
+            "action": f"自创法术【{name}】",
+            "result": {
+                "spec": spec,
+                "note": "完全由创建时已拥有道纹按积木/循环/中断三大法则组装；[战终]可修订（revise_custom_spell）",
+                "spells": [s.name for s in player.spells],
+            },
+        }
+
+    def _action_revise_custom_spell(self, params: dict) -> dict:
+        """
+        修订自创法术（README：[战终]可以进行修订）
+        实现窗口：战终结算后的局外阶段（phase=pre_battle）。
+        不消耗精力（规则未写成本，待DM裁定确认）；修订须通过创建同款校验（以修订时持有道纹为准）。
+        """
+        if self.state.phase != "pre_battle":
+            return {"success": False,
+                    "error": f"修订窗口为[战终]后的局外阶段，当前阶段({self.state.phase})不能修订"}
+        player = self.state.player
+        if player is None:
+            return {"success": False, "error": "没有玩家"}
+        name = params.get("name", "")
+        spell = next((s for s in player.spells if s.name == name), None)
+        if spell is None:
+            return {"success": False, "error": f"未持有法术[{name}]"}
+        if not spell.spec:
+            return {"success": False, "error": f"法术[{name}]是法术库法术，不可修订（仅自创法术可修订）"}
+
+        blueprint = {
+            "name": name,
+            "trigger": params.get("trigger", spell.spec["trigger"]),
+            "steps": params.get("steps", spell.spec["steps"]),
+            "loop": params.get("loop", spell.spec.get("loop", False)),
+        }
+        errors, spec = self._validate_custom_spell_blueprint(blueprint, player)
+        if errors:
+            return {"success": False, "error": "修订图纸不合规（修订以当前持有道纹为准）：" + "；".join(errors)}
+
+        before = spell.spec
+        spell.spec = spec
+        spell.required_daowen = list(spec["required_daowen"])
+        spell.trigger_condition = spec["trigger"]
+        spell.effect_flow = "→".join(s["daowen"] for s in spec["steps"]) + ("（循环）" if spec["loop"] else "")
+        spell.rank = len(spec["required_daowen"])
+        return {
+            "success": True,
+            "action": f"修订自创法术【{name}】",
+            "result": {"before": before, "after": spec},
         }
 
     def _pre_battle_gongming(self, params: dict) -> dict:
@@ -1716,11 +1880,20 @@ class GameEngine:
             return {"success": False, "error": "轮回者不可用"}
 
         spell_name = params.get("spell_name", "")
-        spec = SPELL_LIBRARY.get(spell_name)
+        spec = self._spell_spec(spell_name)
         if spec is None:
-            return {"success": False, "error": f"法术[{spell_name}]不存在。可学：{sorted(SPELL_LIBRARY.keys())}"}
+            owned = [s.name for s in player.spells]
+            return {"success": False,
+                    "error": f"法术[{spell_name}]不存在。已学会：{owned}；法术库：{sorted(SPELL_LIBRARY.keys())}"}
         if not any(s.name == spell_name for s in player.spells):
             return {"success": False, "error": f"未学会法术[{spell_name}]（须局外学习后方可开启）"}
+
+        # 施法时点重新校验：所需道纹必须仍全部持有，否则法术失效
+        # （道纹可能被失忆/曲解替换等移除——规则：法术必须完全由已有道纹组成）
+        missing = [d for d in spec["required_daowen"] if d not in player.dao_wen]
+        if missing:
+            return {"success": False,
+                    "error": f"法术[{spell_name}]失效：所需道纹{missing}已丢失（法术必须完全由已有道纹组成）"}
 
         declared_trigger = params.get("trigger_timing", spec["trigger"])
         if declared_trigger != spec["trigger"]:

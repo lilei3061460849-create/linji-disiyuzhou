@@ -97,7 +97,8 @@ precedent = engine.check_precedent("急中生智", {"target": "千手蜈蚣"})
 | `spend_attribute_points` | ✅ | 属性点分配（1点=1速限 或 1点=2法限） |
 | `battle_start` | ✅ | 战始：真实出怪（场数-2公式）+随机数抽怪 |
 | `use_daowen` | ✅ | 发动道纹（白名单内58种机制真实生效） |
-| `use_spell` | ✅ | 发动法术（9种，积木/循环/中断法则） |
+| `use_spell` | ✅ | 发动法术（法术库9种＋自创法术，积木/循环/中断法则；施法时重新校验所需道纹，丢失即失效） |
+| `revise_custom_spell` | ✅ | 修订自创法术（[战终]窗口，局外阶段可用；须通过创建同款图纸校验） |
 | `use_resonance` | ✅ | 残韵变化（闭环路径校验，永久/临时两种规则） |
 | `attack` | ✅ | 普通攻击（目标可闪避） |
 | `dodge_decision` | ✅ | 闪避决策（消耗1速） |
@@ -114,6 +115,6 @@ precedent = engine.check_precedent("急中生智", {"target": "千手蜈蚣"})
 ```bash
 python main.py              # 交互式命令行
 python main.py --api        # API演示
-python tests/test_engine.py # 12项真实结算测试
+python tests/test_engine.py # 13项真实结算测试
 python simulate.py --runs 200  # 真实压力测试（可复现数据见 AI_EXPERIENCE.md）
 ```

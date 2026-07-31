@@ -14,14 +14,16 @@
     python3 simulate.py --no-track      # 关闭最远局追踪（节省时间）
 
 追踪说明：
-    跑完批量后，找出"走得最远"的一局（胜场最多→到达场次最深→存活回合最多），
-    以同种子原样重跑并全程记录：每次局外行动、每回合敌我双方出手、战终结算，
-    输出到 data/furthest_run.json 并打印人类可读战报。
-    策略与随机源均为确定性实现，追踪局与批量局结果完全一致（可复现）。
+    跑完批量后，找出"走得最远"的一局（胜场最多→冠冕/死斗→到达场次最深→存活回合最多），
+    以同种子原样重跑并全程记录：每次局外行动、每回合敌我双方每次出手、战终结算，
+    输出 data/battle.md（标题 battle，格式遵循 README「推演」模板）与 data/battle.json。
+    策略与随机源均为确定性实现，追踪局与批量局结果完全一致（可复现，附一致性自检）。
 
 诚实声明：
 - 怪物AI与本模拟器中的轮回者策略均为确定性启发式，非最优解；
-- 事件系统/遗物(除5件)/员工/副本专属行动未实装，不参与模拟；
+- 事件系统/多数遗物/员工/副本专属行动未实装，不参与模拟；
+- "受到伤害前"类反应法术由模拟器在回合开始（敌方出手前）主动开启，
+  "失去生命后"类反应法术在检测到生命下降后立即开启——两者均为策略层近似时机；
 - 随机数规则：本模拟器以种子化随机源扮演"提供数字的玩家/DM"角色。
 """
 import argparse
@@ -40,208 +42,286 @@ from engine.gamedata import MONSTER_POOLS, monster_spawn_count, REGION_BATTLE_CO
 
 
 # ============================================================
-# 战报渲染（仅用于追踪输出，不影响任何结算）
+# 战报渲染（README「推演」模板：战始配置→第N回合→战终；不影响结算）
 # ============================================================
 
-def snap_player(engine: GameEngine) -> str:
+def pool_entry(engine: GameEngine, monster_name: str) -> Optional[dict]:
+    """按实体名（可能带重复编号）查怪物池面板"""
+    base = monster_name.rstrip("0123456789")
+    for m in MONSTER_POOLS[engine.state.current_region]:
+        if m["name"] == base:
+            return m
+    return None
+
+
+def player_panel(engine: GameEngine) -> str:
     p = engine.state.player
-    return (f"HP{p.current_hp}/{p.blood_limit} 法{p.current_mana}/{p.mana_limit} "
-            f"速{p.current_speed}/{p.speed_limit} 格挡{p.shield} 碎片{engine.state.shards}")
+    return (f"模拟者 生命{p.current_hp}/{p.blood_limit} 法力{p.current_mana}/{p.mana_limit}"
+            f" 速度{p.current_speed}/{p.speed_limit} 格挡{p.shield}")
 
 
-def snap_enemies(engine: GameEngine) -> str:
-    return "、".join(f"{m.name}(HP{m.current_hp})" for m in engine.state.enemies) or "（无）"
+def enemy_panel(engine: GameEngine, alive_only: bool = True) -> str:
+    ms = [m for m in engine.state.enemies if m.is_alive] if alive_only else engine.state.enemies
+    if not ms:
+        return "敌方：全体命零"
+    return "、".join(f"{m.name} 生命{m.current_hp}/{m.blood_limit}" for m in ms)
 
 
-def _hit_line(hit: dict) -> str:
-    """渲染一次命中判定（resolve_attack / take_damage 的返回，两套键名都兼容）"""
-    t = hit.get("target", "?")
+def battle_config_lines(engine: GameEngine) -> list[str]:
+    """战始配置：我方面板+敌方面板（README推演格式）"""
+    p = engine.state.player
+    budget = engine._player_action_budget()
+    dw = "、".join(p.dao_wen.keys()) or "无"
+    spells = "、".join(s.name for s in p.spells) or "无"
+    resonance = "、".join(f"{k}×{v}" for k, v in engine.state.resonance.items() if v) or "无"
+    relics = "、".join(r.name for r in engine.state.relics) or "无"
+    lines = ["战始配置", ""]
+    lines.append(
+        f"模拟者 生命{p.current_hp}/{p.blood_limit} 法力{p.current_mana}/{p.mana_limit}（回始补满）"
+        f" 速度{p.current_speed}/{p.speed_limit}（每回合出手{budget}，闪避每次耗1速，战终复原）"
+        f" 道纹：{dw} 法术：{spells} 残韵：{resonance} 遗物：{relics}")
+    for m in engine.state.enemies:
+        entry = pool_entry(engine, m.name)
+        dwtxt = "、".join(f"{k}{v}" for k, v in entry["daowen"].items()) if entry else "、".join(m.dao_wen)
+        carry = f" 携带碎片{m.shards}" if m.shards else ""
+        lines.append(f"{m.name} 生命{m.current_hp}/{m.blood_limit} 攻击{m.attack_count}×{m.attack_power}"
+                     f" 道纹：{dwtxt}{carry} —— 白板：道纹须在其出手轮发动后生效")
+    lines.append(f"战斗背景：{engine.state.battle_background}")
+    lines.append("先手：对怪物战斗无先后手判定规则，按 回始→我方出手轮→敌方出手轮→回终 推进")
+    return lines
+
+
+def _hit_phrase(hit: dict, defender_hint: str = "") -> str:
+    """一次命中的响应短语：闪避（速度a→b）/ 硬吃（生命a→b，格挡抵n）"""
+    t = hit.get("target", defender_hint or "?")
     if hit.get("dodge_attempted") and hit.get("dodge_success"):
-        return f"{t}闪避成功(余速{hit.get('speed_after_dodge', '?')})"
+        return f"{t}闪避（速度{hit.get('speed_after_dodge', '?') + 1 if isinstance(hit.get('speed_after_dodge'), int) else '?'}→{hit.get('speed_after_dodge', '?')}）"
     if hit.get("blocked_by"):
         return f"{t}被[{hit['blocked_by']}]挡下"
-    if hit.get("dodge_attempted"):
-        reason = hit.get("dodge_fail_reason", "")
-        dod = f"闪避失败({reason})，" if reason else "闪避失败，"
-    else:
-        dod = ""
     dmg = hit.get("damage_dealt", hit.get("actual_damage", 0))
     absorbed = hit.get("shield_absorbed", 0)
-    s = f"{t}{dod}受{dmg}伤害"
+    hp_b = hit.get("hp_before")
+    hp_a = hit.get("target_hp_after", hit.get("hp_after"))
+    # take_damage语义：actual_damage即生命净损失（格挡已另计），可精确反推命中前生命
+    if hp_b is None and isinstance(hp_a, int) and isinstance(dmg, int):
+        hp_b = hp_a + dmg
+    dod_txt = "（闪避失败）" if hit.get("dodge_attempted") else ""
+    s = f"{t}{dod_txt}硬吃"
     if absorbed:
-        s += f"(格挡抵{absorbed})"
-    hp_after = hit.get("target_hp_after", hit.get("hp_after"))
-    if hp_after is not None:
-        s += f"→HP{hp_after}"
+        s += f"（格挡抵{absorbed}）"
+    s += f"受{dmg}伤害"
+    if hp_b is not None and hp_a is not None:
+        s += f" 生命{hp_b}→{hp_a}"
+    elif hp_a is not None:
+        s += f" 生命→{hp_a}"
     if hit.get("target_died", hit.get("died")):
-        s += "[命零]"
+        s += "【命零】"
     return s
 
 
-def describe_effect(e: dict) -> str:
-    """渲染 execution.effects 中的一条效果"""
-    t = e.get("type")
-    if t == "damage":
-        return _hit_line(e)
-    if t == "multi_hit_damage":
-        s = f"{e.get('target')}受{e.get('hits')}次×1点连续伤害"
-        if e.get("target_hp_after") is not None:
-            s += f"→HP{e['target_hp_after']}"
-        if e.get("target_died"):
-            s += "[命零]"
-        return s
-    if t == "aoe_damage":
-        return _hit_line(e)
-    if t == "heal":
-        return f"{e.get('target')}回复{e.get('actual_heal')}(HP{e.get('hp_after')})"
-    if t == "shield":
-        return f"{e.get('target')}格挡+{e.get('amount')}"
-    if t == "status_added":
-        dur = e.get("duration")
-        dtxt = "∞" if dur in (-1, None) else f"{dur}回合"
-        return f"{e.get('target')}获得[{e.get('status')}{e.get('value')}]({dtxt})"
-    if t == "speed_boost":
-        return f"{e.get('target')}速度+{e.get('amount')}"
-    if t == "speed_halved":
-        return f"{e.get('target')}速度减半→{e.get('speed_after')}"
-    if t == "mana_gain":
-        return f"{e.get('source')}法力+{e.get('amount')}"
-    if t == "blood_limit_reduction":
-        return f"{e.get('target')}血限-{e.get('amount')}"
-    if t == "blood_limit_increase":
-        return f"{e.get('target')}血限+{e.get('increase')}"
-    if t == "fake_shards":
-        return f"假碎片+{e.get('amount')}"
-    if t == "shard_steal":
-        return f"夺取碎片{e.get('amount')}"
-    if t == "gain_flying":
-        return f"{e.get('target')}升空"
-    if t == "ground_all":
-        return f"落地:{e.get('grounded')}"
-    if t == "seal":
-        return f"封印移出:{e.get('sealed')}"
-    if t == "self_attacks":
-        return "自残:" + "|".join(_hit_line(h) for h in e.get("hits", []))
-    if t == "shield_clear":
-        return f"{e.get('entity')}格挡清空(-{e.get('cleared')})"
-    if t == "mana_clear":
-        return f"{e.get('entity')}法力清空(-{e.get('cleared')})"
-    if t == "衰败伤害":
-        s = f"{e.get('entity')}受{e.get('damage')}衰败伤害→HP{e.get('hp_after')}"
-        return s + ("[命零]" if e.get("died") else "")
-    if t == "清算格挡流失":
-        return f"{e.get('entity')}清算流失格挡{e.get('shield_lost')}"
-    if t == "逼债碎片":
-        return f"逼债：-{e.get('amount')}碎片(余{e.get('shards_after')})"
-    if t == "逼债血限":
-        return f"逼债：血限-{e.get('amount')}(余{e.get('blood_limit_after')})"
-    if t == "活血回复":
-        return f"{e.get('entity')}活血回复{e.get('heal')}"
-    if t == "self_heal":
-        return f"{e.get('entity')}自愈回复{e.get('actual')}"
-    if t == "deform_blood_loss":
-        s = f"{e.get('entity')}畸变血限-{e.get('blood_loss')}(余{e.get('blood_limit_after')})"
-        return s + ("[命零]" if e.get("died") else "")
-    if t == "洞察法力":
-        return f"洞察：{e.get('entity')}法力+{e.get('amount')}"
-    if t == "status_expired":
-        return f"{e.get('entity')}状态到期:{e.get('expired_effects', e.get('status'))}"
-    # 兜底：不丢失任何信息地扁平化
-    kv = "，".join(f"{k}={v}" for k, v in e.items()
-                  if k != "type" and not isinstance(v, (dict, list)))
-    return f"{t}({kv})" if kv else str(t)
-
-
-def summarize_result(result: dict) -> str:
-    """从 use_daowen / use_spell 的成功返回中提取一行效果摘要"""
-    if not result or not result.get("success"):
-        return f"失败:{(result or {}).get('error', '?')}"
+def _cost_phrase(result: dict, caster_is_monster: bool) -> str:
+    """消耗/代价短语，例如：耗14法力 / 流血16 生命64→48 / 面板道纹不耗法力；代价：异变15"""
     parts = []
     calc = result.get("calculation") or {}
     if calc.get("cost_type") == "消耗" and calc.get("cost"):
-        parts.append(f"耗法{calc['cost']}")
-    for c in result.get("cost_applied") or []:
-        amt = c.get("amount", c.get("note", c.get("cooldown_battles", "")))
-        parts.append(f"代价[{c.get('type')}{amt}]")
-    if result.get("dodge") and result["dodge"].get("success"):
-        parts.append("被闪避，完全失效")
+        parts.append(f"耗{calc['cost']}法力")
+    applied = result.get("cost_applied") or []
+    if applied:
+        seg = []
+        for c in applied:
+            t = c.get("type")
+            if t == "流血":
+                seg.append(f"流血{c.get('amount')}")
+            elif t == "衰老":
+                seg.append(f"衰老{c.get('amount')}")
+            elif t == "枯竭":
+                seg.append(f"枯竭{c.get('amount')}")
+            elif t == "萎缩":
+                seg.append(f"萎缩{c.get('amount')}")
+            elif t == "疲惫":
+                seg.append(f"疲惫{c.get('amount')}")
+            elif t == "异变":
+                seg.append(f"异变{c.get('amount')}")
+            elif t == "冷却":
+                seg.append(f"冷却{c.get('cooldown_battles')}场")
+            elif t == "唯一":
+                seg.append("本次轮回唯一")
+            else:
+                seg.append(str(t))
+        parts.append("代价：" + "、".join(seg))
+    if not parts and caster_is_monster:
+        parts.append("面板道纹不耗法力")
+    return "；".join(parts)
+
+
+def _effects_phrase(result: dict, engine: GameEngine) -> str:
+    """效果短语：伤害/治疗/格挡/状态，命中用样本风格（硬吃/闪避+数值变化）"""
+    parts = []
     ex = result.get("execution") or {}
     if ex.get("monster_triple"):
         parts.append("非专属×3")
     for e in ex.get("effects", []):
-        parts.append(describe_effect(e))
-    # 法术的逐步骤结算（use_spell 返回 steps_executed）
+        t = e.get("type")
+        if t in ("damage", "aoe_damage"):
+            parts.append(_hit_phrase(e))
+        elif t == "multi_hit_damage":
+            s = f"{e.get('target')}受{e.get('hits')}次×1点连续伤害"
+            hp_b, hp_a = e.get("hp_before"), e.get("target_hp_after", e.get("hp_after"))
+            if hp_a is not None:
+                s += (f" 生命{hp_b}→{hp_a}" if hp_b is not None else f" 生命→{hp_a}")
+            parts.append(s + ("【命零】" if e.get("target_died", e.get("died")) else ""))
+        elif t == "heal":
+            parts.append(f"{e.get('target')}回复{e.get('actual_heal')}（生命{e.get('hp_before')}→{e.get('hp_after')}）")
+        elif t == "shield":
+            tgt = next((x for x in [engine.state.player] + engine.state.enemies + engine.state.friends
+                        if x and x.name == e.get("target")), None)
+            parts.append(f"{e.get('target')}获得格挡{e.get('amount')}（格挡→{tgt.shield if tgt else '?' }）")
+        elif t == "status_added":
+            dur = e.get("duration")
+            dtxt = "持续∞" if dur in (-1, None) else f"持续{dur}回合"
+            parts.append(f"{e.get('target')}获得[{e.get('status')}{e.get('value')}]（{dtxt}）")
+        elif t == "speed_boost":
+            parts.append(f"{e.get('target')}速度+{e.get('amount')}")
+        elif t == "speed_halved":
+            parts.append(f"{e.get('target')}速度减半→{e.get('speed_after')}")
+        elif t == "mana_gain":
+            parts.append(f"{e.get('source')}法力+{e.get('amount')}")
+        elif t == "blood_limit_increase":
+            parts.append(f"{e.get('target')}血限+{e.get('increase')}")
+        elif t == "blood_limit_reduction":
+            parts.append(f"{e.get('target')}血限-{e.get('amount')}")
+        elif t == "fake_shards":
+            parts.append(f"假碎片+{e.get('amount')}")
+        elif t == "shard_steal":
+            parts.append(f"夺取碎片{e.get('amount')}")
+        elif t == "gain_flying":
+            parts.append(f"{e.get('target')}升空")
+        elif t == "ground_all":
+            parts.append(f"落地:{e.get('grounded')}")
+        elif t == "seal":
+            parts.append(f"封印移出:{e.get('sealed')}（无碎片收益）")
+        elif t == "self_attacks":
+            parts.append("自残:" + "|".join(_hit_phrase(h) for h in e.get("hits", [])))
+        else:
+            kv = "，".join(f"{k}={v}" for k, v in e.items()
+                          if k != "type" and not isinstance(v, (dict, list)))
+            parts.append(f"{t}({kv})" if kv else str(t))
+    return " ‖ ".join(parts)
+
+
+def player_daowen_line(result: dict, engine: GameEngine, no: int) -> str:
+    """我方一次出手：出手N：道纹X（耗法/代价 效果摘要）→ 目标响应"""
+    calc = result.get("calculation") or {}
+    title = f"{calc.get('dao_wen', '?')}{calc.get('x', '?')}"
+    if result.get("dodge") and result["dodge"].get("success"):
+        return (f"模拟者出手{no}：{title}（{_cost_phrase(result, False)}）"
+                f"→ 目标闪避，判定与结算完全失效，未发生消耗")
+    eff = _effects_phrase(result, engine)
+    return f"模拟者出手{no}：{title}（{_cost_phrase(result, False)}）→ {eff or '（无可见效果）'}"
+
+
+def player_spell_line(spell_name: str, result: dict, engine: GameEngine) -> str:
+    """反应型法术（插队、不耗出手号）"""
+    if not result.get("success"):
+        return f"法术【{spell_name}】：发动失败:{result.get('error')}"
+    segs = []
     for step in result.get("steps_executed", []) or []:
         if step.get("skipped"):
-            parts.append(f"步骤[{step.get('step')}]跳过:{step['skipped']}")
+            segs.append(f"{step.get('step')}(跳过:{step['skipped']})")
             continue
-        sub = []
+        sub = ""
         for c in step.get("cost_applied") or []:
             amt = c.get("amount", c.get("note", c.get("cooldown_battles", "")))
-            sub.append(f"代价[{c.get('type')}{amt}]")
+            sub += f"代价[{c.get('type')}{amt}] "
+        effs = []
         for e in step.get("execution") or []:
-            sub.append(describe_effect(e))
-        parts.append(f"步骤[{step.get('step')}X={step.get('x', '?')}]：" + ("；".join(sub) or "无效果"))
+            effs.append(_effects_phrase({"execution": {"effects": [e]}}, engine))
+        segs.append(f"{step.get('step')}{step.get('x', '?')}（{sub}{'；'.join(e for e in effs if e)}）")
+    line = f"法术【{spell_name}】（{result.get('trigger_timing')}，插队不耗出手）：" + " → ".join(segs)
     if result.get("interrupted"):
-        parts.append(f"中断:{result.get('interrupt_reason')}")
-    if result.get("player_mana_after") is not None:
-        parts.append(f"余法{result['player_mana_after']}")
-    return "；".join(parts) if parts else "（无可见效果）"
+        line += f"（中断：{result.get('interrupt_reason') or result.get('interrupt')}）"
+    mana = result.get("player_mana_after")
+    if mana is not None:
+        line += f"（余法{mana}）"
+    return line
 
 
-def render_pre_battle(params: dict, result: dict) -> str:
-    sub = params.get("sub_action", "?")
+def monster_act_lines(monster_name: str, result: dict, engine: GameEngine) -> list[str]:
+    """怪物一次出手轮转写：每个act一条出手行"""
     if not result.get("success"):
-        return f"{sub} 失败:{result.get('error', '?')}"
-    r = result.get("result") or {}
-    if sub == "休整":
-        alloc = "、".join(f"{a['target']}{a['hp']}" for a in r.get("allocated", []))
-        cost = f"，-{r['shard_cost']}碎片" if r.get("shard_cost") else ""
-        return f"休整(档{params.get('tier', 1)})：恢复{r.get('heal_pool')}→{alloc}{cost}"
-    if sub == "修行":
-        return (f"修行(档{params.get('tier', 1)})：+{r.get('points_gained')}属性点"
-                + (f"，-{r['shard_cost']}碎片" if r.get("shard_cost") else ""))
-    if sub == "学习":
-        return f"学习：{(result.get('action') or '')} {r}"
-    if sub == "领悟":
-        return f"领悟：残韵[{r.get('gained_resonance')}]×{r.get('total')}"
-    if sub == "忘忧":
-        return f"忘忧(档{params.get('tier', 1)})：失忆{r.get('forgot_daowen')}→+{r.get('shards_gained')}碎片(余{r.get('shards_total')})"
-    if sub == "共鸣":
-        return f"共鸣:{result.get('action', '')}"
-    return f"{sub}:{r}"
-
-
-def render_monster_turn(monster_name: str, result: dict) -> list[str]:
-    lines = []
-    if not result.get("success"):
-        return [f"  ✗ {monster_name}出手失败:{result.get('error')}"]
+        return [f"{monster_name}出手：提交被引擎拒绝:{result.get('error')}"]
     if result.get("skipped"):
-        return [f"  · {monster_name}：{result['skipped']}"]
-    used = result.get("acts_used", "?")
-    allowed = result.get("acts_allowed", "?")
-    entries = []
+        return [f"{monster_name}出手：{result['skipped']}"]
+    lines = []
+    no = 0
     for entry in result.get("turn_log", []):
+        no += 1
         if entry.get("error"):
-            entries.append(f"错误:{entry['error']}")
+            lines.append(f"{monster_name}出手{no}：错误:{entry['error']}")
         elif entry.get("type") == "attack_round":
             hits = entry.get("hits", [])
-            entries.append(f"攻击→{entry.get('target')}：" +
-                           (" | ".join(_hit_line(h) for h in hits) if hits else "未命中"))
+            if hits:
+                body = " ｜ ".join(_hit_phrase(h) for h in hits)
+            else:
+                body = "未命中"
+            atk_desc = ""
+            m = next((x for x in engine.state.enemies if x.name == monster_name), None)
+            if m:
+                n_hits = len(hits)
+                atk_desc = f"（{n_hits}×{m.attack_power}）"
+            lines.append(f"{monster_name}出手{no}：攻击{atk_desc} → {body}")
         elif entry.get("type") == "use_daowen":
-            # 核心结算自带 action 描述："XX发动道纹【名X=n】"，calculation 里也有 dao_wen/x
-            act_txt = entry.get("action")
-            if not act_txt:
-                calc = entry.get("calculation") or {}
-                act_txt = f"发动道纹【{calc.get('dao_wen', entry.get('daowen', '?'))}X={calc.get('x', '?')}】"
-            entries.append(f"{act_txt}：" + summarize_result(entry))
+            act_txt = entry.get("action") or ""
+            title = act_txt.replace(f"{monster_name}发动道纹【", "").rstrip("】") or "道纹"
+            eff = _effects_phrase(entry, engine)
+            cost = _cost_phrase(entry, True)
+            tail = f"（{cost}）→ {eff}" if eff else f"（{cost}）"
+            lines.append(f"{monster_name}出手{no}：{title}{tail}")
         else:
-            entries.append(str(entry))
-    lines.append(f"  ◀ {monster_name}出手{used}/{allowed}：" + " ‖ ".join(entries))
-    php = result.get("player_hp")
-    if php is not None:
-        lines[-1] += f"（轮回者HP余{php}）"
+            lines.append(f"{monster_name}出手{no}：{entry}")
     return lines
+
+
+def round_hook_line(timing: str, effects: list, engine: GameEngine) -> str:
+    """回始/回终效果行；无效果时如实写'无'"""
+    parts = []
+    for e in effects or []:
+        t = e.get("type") if isinstance(e, dict) else None
+        if t == "mana_refill":
+            parts.append(f"{e.get('entity', '模拟者')}法力补满（{e.get('from')}→{e.get('to')}）")
+        elif t == "shield_clear":
+            parts.append(f"{e.get('entity')}格挡清空（-{e.get('cleared')}）")
+        elif t == "mana_clear":
+            parts.append(f"{e.get('entity')}法力清空（-{e.get('cleared')}）")
+        elif t == "衰败伤害":
+            s = f"{e.get('entity')}受{e.get('damage')}衰败伤害（生命→{e.get('hp_after')}）"
+            parts.append(s + ("【命零】" if e.get("died") else ""))
+        elif t == "清算格挡流失":
+            parts.append(f"{e.get('entity')}清算流失格挡{e.get('shield_lost')}")
+        elif t == "逼债碎片":
+            parts.append(f"逼债：-{e.get('amount')}碎片（余{e.get('shards_after')}）")
+        elif t == "逼债血限":
+            parts.append(f"逼债：血限-{e.get('amount')}（余{e.get('blood_limit_after')}）")
+        elif t == "活血回复":
+            parts.append(f"{e.get('entity')}活血回复{e.get('heal')}")
+        elif t == "self_heal":
+            parts.append(f"{e.get('entity')}自愈回复{e.get('actual')}")
+        elif t == "deform_blood_loss":
+            s = f"{e.get('entity')}畸变血限-{e.get('blood_loss')}（余{e.get('blood_limit_after')}）"
+            parts.append(s + ("【命零】" if e.get("died") else ""))
+        elif t == "洞察法力":
+            parts.append(f"洞察：{e.get('entity')}法力+{e.get('amount')}")
+        elif t == "status_expired":
+            parts.append(f"{e.get('entity')}持续到期：{e.get('expired_effects', e.get('status'))}")
+        elif t == "extra_attack_ready":
+            continue  # 狂暴标记属内部状态，不影响叙事
+        elif isinstance(e, dict):
+            kv = "，".join(f"{k}={v}" for k, v in e.items()
+                          if k != "type" and not isinstance(v, (dict, list)))
+            parts.append(f"{t}({kv})" if kv else str(t))
+        else:
+            parts.append(str(e))
+    return f"{timing}：" + ("；".join(parts) if parts else "无")
 
 
 # ============================================================
@@ -297,6 +377,32 @@ class Policy:
                 {"sub_action": "休整", "tier": 3},
             ]
             return plans.get(battle_no, default)
+        if self.name == "custom":
+            # 自创法术策略：用同一条积木管线组装库外法术
+            plans = {
+                1: [
+                    {"sub_action": "学习", "learn_type": "transform_daowen", "names": ["再生"], "tier": 1},
+                    {"sub_action": "学习", "learn_type": "transform_daowen", "names": ["庇护"], "tier": 1},
+                    {"sub_action": "学习", "learn_type": "create_spell",
+                     "name": "后发先至", "trigger": "受到伤害前",
+                     "steps": [{"daowen": "庇护", "x_param": "x", "target": "self"},
+                               {"daowen": "杀伐", "x_param": "y", "target": "enemy"}]},
+                ],
+                2: [
+                    {"sub_action": "学习", "learn_type": "transform_daowen", "names": ["固执"], "tier": 1},
+                    {"sub_action": "学习", "learn_type": "transform_daowen", "names": ["血债"], "tier": 1},
+                    {"sub_action": "学习", "learn_type": "create_spell",
+                     "name": "血色狂潮", "trigger": "失去生命后", "loop": True,
+                     "steps": [{"daowen": "再生", "x_param": "x", "target": "self"},
+                               {"daowen": "血债", "x_param": "y", "target": "enemy"}]},
+                ],
+            }
+            default = [
+                {"sub_action": "修行", "tier": 1},
+                {"sub_action": "修行", "tier": 1},
+                {"sub_action": "休整", "tier": 3},
+            ]
+            return plans.get(battle_no, default)
         raise ValueError(self.name)
 
     # ---- 战斗：轮回者回合 ----
@@ -328,12 +434,41 @@ class Policy:
                 "daowen_name": use[0], "x": use[1], "target": target.name,
             })
             if trace is not None:
-                trace.append(f"  ▶ 【{use[0]}X={use[1]}】→{target.name}：" + summarize_result(r))
+                if r.get("success"):
+                    trace.append(player_daowen_line(r, engine, engine.state.actions_used))
+                else:
+                    trace.append(f"模拟者出手{engine.state.actions_used + 1}：【{use[0]}】发动失败:{r.get('error')}")
             if not r.get("success"):
                 break
             enemies = engine.state.get_all_enemy_side()
         if trace is not None and engine.state.actions_used == 0 and player.is_alive:
-            trace.append("  ▶ （无可用道纹或法力，跳过行动）")
+            trace.append("模拟者出手：0法力或无可用道纹，无法出手")
+
+    # ---- 反应型法术（策略层近似触发时点）----
+    @staticmethod
+    def cast_reaction_spells(engine: GameEngine, timing: str, trace: Optional[list] = None) -> bool:
+        """按法术触发时点开启反应法术（自创法术与法术库法术一视同仁，同一条积木管线）"""
+        player = engine.state.player
+        if not player or not player.is_alive:
+            return False
+        for s in list(player.spells):
+            spec = engine._spell_spec(s.name)
+            if not spec or spec.get("trigger") != timing:
+                continue
+            if player.current_mana < 2:
+                continue
+            enemies = engine.state.get_all_enemy_side()
+            mana = player.current_mana
+            r = engine.execute_action("use_spell", {
+                "spell_name": s.name,
+                "trigger_timing": timing,
+                "target": enemies[0].name if enemies else player.name,
+                "x": max(1, mana // 2), "y": 1, "z": 1,
+            })
+            if trace is not None:
+                trace.append(player_spell_line(s.name, r, engine))
+            return r.get("success", False)
+        return False
 
     def dodge_decisions(self, engine: GameEngine, monster, hit_total: int) -> list[bool]:
         """作为防御方为每次命中给出闪避决策"""
@@ -379,10 +514,9 @@ class Policy:
         acts = []
         for dw in buffs[:buff_budget]:
             panel_x = 1
-            for m in MONSTER_POOLS[engine.state.current_region]:
-                if m["name"].startswith(monster.name.rstrip("0123456789")):
-                    panel_x = m["daowen"].get(dw, 1)
-                    break
+            entry = pool_entry(engine, monster.name)
+            if entry:
+                panel_x = entry["daowen"].get(dw, 1)
             acts.append({"type": "use_daowen", "daowen": dw, "x": max(1, panel_x),
                          "target": monster.name})
         # 其余手数全部输出（含狂暴额外1次攻击）
@@ -425,7 +559,7 @@ def run_campaign(policy_name: str, region: str, seed: int, verbose: bool = False
                  trace: Optional[list] = None) -> dict:
     """完整跑完一局轮回（7场常规战斗，胜则封存冠冕）。
 
-    trace 不为 None 时，向其中逐条追加战报行（不影响结算，同种子结果仍然一致）。
+    trace 不为 None 时，向其中逐条追加战报行（README推演格式；不影响结算，同种子结果一致）。
     """
     rng = random.Random(seed)
     db_dir = f"data/sim/{seed}_{policy_name}_{region}"
@@ -463,11 +597,12 @@ def run_campaign(policy_name: str, region: str, seed: int, verbose: bool = False
     log["relics"] = [r.name for r in engine.state.relics]
 
     p0 = engine.state.player
-    T(f"═══ 轮回开始 ═══  策略[{policy_name}] 副本[{region}] 种子{seed}")
-    T(f"开局：血限{p0.blood_limit} 速限{p0.speed_limit} 法限{p0.mana_limit}"
-      f"（10/8/7分配） 初始道纹【杀伐】 残韵[反转] 碎片{engine.state.shards}")
+    T(f"轮回开始：生命60/60 速度8/8 法力14/14（25属性点按10/8/7分配）"
+      f" 初始道纹：杀伐 残韵：反转×1 碎片20 副本：{region} 策略：{policy_name}")
     if last.get("candidates"):
         T(f"发现遗物：候选{last['candidates']} → 选择【{chosen_relic}】")
+
+    last_hp = p0.current_hp  # “失去生命后”反应法术的策略层检测基线
 
     for battle_no in range(1, REGION_BATTLE_COUNT + 1):
         log["furthest_battle"] = battle_no
@@ -476,16 +611,22 @@ def run_campaign(policy_name: str, region: str, seed: int, verbose: bool = False
                   f" 法限{engine.state.player.mana_limit} 速限{engine.state.player.speed_limit}"
                   f" 碎片{engine.state.shards} 道纹{list(engine.state.player.dao_wen.keys())}")
         T("")
-        T(f"━━ 第{battle_no}场 ━━  战前：{snap_player(engine)} 道纹{list(engine.state.player.dao_wen.keys())}")
+        title = f"第{battle_no}场战斗"
+        if battle_no == 8:
+            title += "  最终死斗"
+        T(f"━━ {title} ━━━━━━━━━━━━━━━━━━━━")
 
         # ---- 局外 ----
-        T(f"【局外】精力{engine.state.energy}：")
+        pre_lines = []
         for act in policy.pre_battle_plan(engine, battle_no):
             if engine.state.energy <= 0:
                 break
             r = engine.execute_action("pre_battle_action", act)
             handle_pending(engine, rng, verbose)
-            T(f"  · {render_pre_battle(act, r)}")
+            if r.get("success"):
+                pre_lines.append(_condense_pre_battle(act, r, engine))
+            else:
+                pre_lines.append(f"{act.get('sub_action', '?')}失败:{r.get('error', '?')}")
             if act.get("sub_action") == "修行" and r.get("success"):
                 pts = engine.state.attribute_points
                 if pts > 0:
@@ -495,8 +636,9 @@ def run_campaign(policy_name: str, region: str, seed: int, verbose: bool = False
                     else:
                         r2 = engine.execute_action("spend_attribute_points", {"to": "法限", "points": pts})
                     rr = r2.get("result", {})
-                    T(f"    分配属性点：{pts}点→{rr.get('to')}"
-                      f"（速限{rr.get('speed_limit')} 法限{rr.get('mana_limit')} 出手{rr.get('action_count')}）")
+                    pre_lines.append(
+                        f"→属性点分配：{pts}点→{rr.get('to')}"
+                        f"（速限{rr.get('speed_limit')} 法限{rr.get('mana_limit')} 每回合出手{rr.get('action_count')}）")
         # 未花完的精力用免费休整兜底（休整档位失败自动降档）
         while engine.state.energy > 0:
             spent = False
@@ -504,51 +646,44 @@ def run_campaign(policy_name: str, region: str, seed: int, verbose: bool = False
                 r = engine.execute_action("pre_battle_action", {"sub_action": "休整", "tier": tier})
                 if r.get("success"):
                     spent = True
-                    T(f"  · {render_pre_battle({'sub_action': '休整', 'tier': tier}, r)}")
+                    pre_lines.append(_condense_pre_battle({"sub_action": "休整", "tier": tier}, r, engine))
                     break
             if not spent:  # 碎片连t1都付不起时只能领悟残韵烧精力
                 r = engine.execute_action("pre_battle_action", {"sub_action": "领悟", "resonance_type": "反转"})
-                T(f"  · {render_pre_battle({'sub_action': '领悟'}, r)}")
-                if not r.get("success"):
+                if r.get("success"):
+                    pre_lines.append(_condense_pre_battle({"sub_action": "领悟"}, r, engine))
+                else:
                     break
+        if trace is not None:
+            T("局外（精力3→0）：")
+            for ln in pre_lines:
+                T(f"  {ln}")
+            T("")
 
         # ---- 战始 ----
         engine.execute_action("battle_start", {"battle_background": "模拟背景"})
         handle_pending(engine, rng, verbose)
-        if trace is not None:
-            spawn = engine._last_result or {}
-            if spawn.get("enemies"):
-                T("【战始】出怪：")
-                for m in spawn["enemies"]:
-                    dwtxt = "、".join(f"{k}{v}" for k, v in (m.get("daowen") or {}).items())
-                    carry = f"，携带碎片{m['carry_shards']}" if m.get("carry_shards") else ""
-                    T(f"    {m['name']} 面板{m['panel']} 道纹[{dwtxt}]{carry}")
+        if trace is not None and engine.state.phase == "in_combat":
+            trace.extend(battle_config_lines(engine))
+            T("")
         if engine.state.phase != "in_combat":
             log["death_battle"] = battle_no
-            T("  ☠ 战始结算后未能进入战斗，轮回终止")
+            T("战始结算异常，未能进入战斗（如实记录）")
             break
 
         # ---- 回合循环 ----
         max_rounds = 60
         finished = False
         for round_i in range(1, max_rounds + 1):
-            engine.execute_action("round_start", {})
+            rs = engine.execute_action("round_start", {})
             log["rounds_survived"] += 1
-            T(f"[回合{engine.state.current_round}] 我方：{snap_player(engine)} | 敌方：{snap_enemies(engine)}")
+            T(f"第{engine.state.current_round}回合")
+            if trace is not None:
+                hook = round_hook_line("回始", ((rs.get("result") or {}).get("effects")), engine)
+                T(f"{hook} ｜ {player_panel(engine)} ｜ {enemy_panel(engine)}")
 
-            # 反应型防御：学会后发制人后，怪物出手前插队开启
-            player = engine.state.player
-            if any(s.name == "借力打力" for s in player.spells) and player.current_mana >= 4:
-                enemies = engine.state.get_all_enemy_side()
-                if enemies:
-                    r = engine.execute_action("use_spell", {
-                        "spell_name": "借力打力",
-                        "trigger_timing": "受到伤害前",
-                        "target": enemies[0].name,
-                        "x": max(1, player.current_mana // 2),
-                        "y": 1,
-                    })
-                    T(f"  ▶ 法术【借力打力】：" + summarize_result(r))
+            # 反应型法术："受到伤害前"在敌方出手前抢先开启（策略层近似）
+            policy_casted = Policy.cast_reaction_spells(engine, "受到伤害前", trace)
 
             policy.player_acts(engine, trace)
 
@@ -558,19 +693,26 @@ def run_campaign(policy_name: str, region: str, seed: int, verbose: bool = False
                 acts = policy.monster_acts(engine, monster)
                 r = engine.execute_action("monster_turn", {"monster": monster.name, "acts": acts})
                 if trace is not None:
-                    trace.extend(render_monster_turn(monster.name, r))
+                    trace.extend(monster_act_lines(monster.name, r, engine))
+                # "失去生命后"反应：生命每出现新的下降，立即开启（策略层近似）
+                p = engine.state.player
+                if p.is_alive and p.current_hp < last_hp:
+                    hp_mark = p.current_hp
+                    Policy.cast_reaction_spells(engine, "失去生命后", trace)
+                    last_hp = engine.state.player.current_hp if engine.state.player.is_alive else hp_mark
+                elif p.is_alive and p.current_hp > last_hp:
+                    last_hp = p.current_hp
 
             r = engine.execute_action("round_end", {})
             ended = handle_pending(engine, rng, verbose)
             if trace is not None:
-                hooks = ((r.get("result") or {}).get("effects")) or []
-                hook_lines = [describe_effect(e) if isinstance(e, dict) and e.get("type") else str(e)
-                              for e in hooks]
+                p = engine.state.player
                 diff = r.get("monster_difficulties") or []
-                tail = ("；".join(hook_lines) + (" " if hook_lines else "")
-                        + (f"怪物困境:{[d.get('monster') for d in diff]}" if diff else "")).strip()
-                if tail:
-                    T(f"  （回终）{tail}")
+                diff_txt = f"；怪物困境检查触发：{[d.get('monster') for d in diff]}" if diff else ""
+                T(round_hook_line("回终", ((r.get("result") or {}).get("effects")), engine)
+                  + f" ｜ {player_panel(engine)} ｜ {enemy_panel(engine)}{diff_txt}")
+                if p and p.current_hp > last_hp:
+                    last_hp = p.current_hp
             if ended.get("ended") == "death":
                 log["death_battle"] = battle_no
                 finished = True
@@ -581,13 +723,20 @@ def run_campaign(policy_name: str, region: str, seed: int, verbose: bool = False
                 finished = True
                 if trace is not None:
                     body = rb.get("result") or {}
-                    det = "、".join(f"{d['monster']}+{d['total']}"
-                                    for d in body.get("reward_detail", []))
-                    T(f"【战终】击倒全部敌人：碎片奖励+{body.get('shard_reward', 0)}"
-                      f"（{det}）→总碎片{body.get('total_shards')}，精力恢复3")
+                    det_parts = []
+                    for d in body.get("reward_detail", []):
+                        seg = f"{d['monster']}（战始血限2%={d['base_2pct_spawn_blood']}＋道纹×5={d['daowen_bonus']}"
+                        if d.get("moneybag_bonus"):
+                            seg += f"＋钱袋2%={d['moneybag_bonus']}"
+                        seg += f"）→+{d['total']}"
+                        det_parts.append(seg)
+                    T("")
+                    T(f"战终：敌方全体命零 → 死亡结算：{'；'.join(det_parts) or '无'}"
+                      f" → 碎片+{body.get('shard_reward', 0)}（总{body.get('total_shards')}）"
+                      f" → 增益减益清除/代价保留/精力恢复3")
                     crown = body.get("crown")
                     if crown:
-                        T(f"  👑 最终的冠冕：{crown}")
+                        T(f"👑 最终的冠冕触发：{crown}")
                 break
 
         if not finished or log["death_battle"]:
@@ -595,23 +744,61 @@ def run_campaign(policy_name: str, region: str, seed: int, verbose: bool = False
                 log["death_battle"] = battle_no
             if trace is not None:
                 p = engine.state.player
-                T(f"  ☠ 第{battle_no}场战败：轮回者[命零]（最终HP{p.current_hp}/{p.blood_limit}）")
-                T(f"  ☠ 死之传承中断触发 → DM裁定 → 轮回结束。本场战绩：胜{log['battles_won']}场")
+                T("")
+                T(f"模拟者命零（生命{p.current_hp}/{p.blood_limit}）无回复手段 死亡")
+                T("☠ 死之传承中断触发 → DM裁定 → 轮回结束（本轮回胜"
+                  f"{log['battles_won']}场，死于第{battle_no}场第{engine.state.current_round}回合）")
             break
 
         if engine.state.phase == "game_over":
             log["crown_sealed"] = True
-            T("  👑 冠冕已封存，轮回完整结束")
+            T("👑 冠冕已封存：轮回者及其状态完整封存，等待下一名完成者（本模拟器止步于此）")
             break
         if engine.state.phase == "dead_duel":
             log["duel"] = "triggered"
-            T("  ⚔ 触发最终死斗（存在封存候选）")
+            T("⚔ 存在封存候选 → 第8场战斗 最终死斗触发（死斗按先手规则推演，交由DM接管，本模拟器不结算）")
             break
 
     if engine.state.phase == "game_over" and engine.state.player.is_alive:
         log["crown_sealed"] = True
 
     return log
+
+
+def _condense_pre_battle(act: dict, result: dict, engine: GameEngine) -> str:
+    """局外行动一行摘要"""
+    sub = act.get("sub_action", "?")
+    r = result.get("result") or {}
+    if sub == "休整":
+        alloc = "、".join(f"{a['target']} 生命{a['hp']}" for a in r.get("allocated", []))
+        cost = f"，-{r['shard_cost']}碎片" if r.get("shard_cost") else ""
+        return f"休整(档{act.get('tier', 1)})：恢复{r.get('heal_pool')}→{alloc}{cost}"
+    if sub == "修行":
+        return (f"修行(档{act.get('tier', 1)})：+{r.get('points_gained')}属性点"
+                + (f"，-{r['shard_cost']}碎片" if r.get("shard_cost") else ""))
+    if sub == "学习":
+        lt = r.get("learn_type") or ("create_spell" if "spec" in r else None)
+        if lt == "create_spell":
+            spec = r.get("spec") or {}
+            flow = "→".join(f"{s['daowen']}({s['x_param']}→{s['target']})" for s in spec.get("steps", []))
+            loop = "，循环法则" if spec.get("loop") else ""
+            return (f"自创法术【{spec.get('name')}】（触发:{spec.get('trigger')}；积木:{flow}{loop}）"
+                    f" -0碎片")
+        if lt == "spell":
+            cost = f"，-{r.get('shard_cost', 0)}碎片" if r.get("shard_cost") else ""
+            return f"学习法术：{r.get('learned')}{cost}"
+        if lt == "transform_daowen":
+            got = "、".join(x["name"] for x in r.get("learned", []) if isinstance(x, dict)) or str(r.get("learned"))
+            cost = f"，-{r.get('shard_cost', 0)}碎片" if r.get("shard_cost") else ""
+            return f"习得转化道纹：{got}{cost}"
+        return f"学习：{r}"
+    if sub == "领悟":
+        return f"领悟：残韵[{r.get('gained_resonance')}]×{r.get('total')}"
+    if sub == "忘忧":
+        return f"忘忧(档{act.get('tier', 1)})：失忆{r.get('forgot_daowen')}→+{r.get('shards_gained')}碎片（余{r.get('shards_total')}）"
+    if sub == "共鸣":
+        return f"共鸣：{result.get('action', '')}"
+    return f"{sub}：{r}"
 
 
 def pick_furthest(all_logs: list[dict]) -> Optional[dict]:
@@ -635,7 +822,7 @@ def main():
     args = ap.parse_args()
 
     regions = ["扭曲都市", "罪孽都市", "龙心谷"]
-    policies = ["naive_dps", "balanced", "combo"]
+    policies = ["naive_dps", "balanced", "combo", "custom"]
 
     all_logs = []
     print("=" * 70)
@@ -694,16 +881,43 @@ def main():
         trace.append("")
         trace.append(f"═══ 轨迹一致性自检：{consistency} ═══")
 
-        jout = "data/furthest_run.json"
+        jout = "data/battle.json"
         with open(jout, "w", encoding="utf-8") as f:
             json.dump({"campaign": traced_log, "consistent_with_batch": same,
                        "transcript": trace}, f, ensure_ascii=False, indent=1)
-        mout = "data/furthest_run.md"
+        # ---- 附录：自创法术策略走得最远的一局（证明自创管线真实参与模拟）----
+        custom_logs = [l for l in all_logs if l["policy"] == "custom"]
+        appendix = []
+        if custom_logs:
+            cbest = pick_furthest(custom_logs)
+            appendix.append(f"附：自创法术策略[custom]走得最远的一局 "
+                            f"（[{cbest['region']}] 种子{cbest['seed']} 胜{cbest['battles_won']}场"
+                            f" 到达第{cbest['furthest_battle']}场）")
+            appendix.append("")
+            ctrace = []
+            clog = run_campaign("custom", cbest["region"], cbest["seed"], trace=ctrace)
+            csame = all(clog[k] == cbest[k] for k in
+                        ("battles_won", "furthest_battle", "death_battle", "crown_sealed", "duel"))
+            appendix.extend(ctrace)
+            appendix.append("")
+            appendix.append(f"═══ 附录轨迹一致性自检：{'一致' if csame else '不一致！'} ═══")
+
+        mout = "data/battle.md"
         with open(mout, "w", encoding="utf-8") as f:
-            f.write(f"# 走得最远的一次轮回（可复现：python3 simulate.py --runs {args.runs} --seed {args.seed}）\n\n")
+            f.write("# battle\n\n")
+            f.write(f"走得最远的一次轮回（可复现：`python3 simulate.py --runs {args.runs}"
+                    f" --seed {args.seed}`）\n\n")
             f.write(f"策略[{best['policy']}] 副本[{best['region']}] 种子{best['seed']}\n\n```\n")
             f.write("\n".join(trace))
             f.write("\n```\n")
+            if appendix:
+                f.write("\n---\n\n```\n")
+                f.write("\n".join(appendix))
+                f.write("\n```\n")
+        with open(jout, "w", encoding="utf-8") as f:
+            json.dump({"campaign": traced_log, "consistent_with_batch": same,
+                       "transcript": trace, "custom_policy_appendix": appendix},
+                      f, ensure_ascii=False, indent=1)
         print("\n".join(trace))
         print(f"\n战报已写入 {mout} / {jout}")
 

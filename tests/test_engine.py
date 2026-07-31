@@ -7,7 +7,7 @@ import shutil
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
-from engine.models import Entity, StatusEffect
+from engine.models import Entity, StatusEffect, Spell
 from engine.daowen import DaoWenEngine, ResonanceEngine
 from engine.dice import DiceEngine
 from engine.gamedata import MONSTER_POOLS, RELIC_POOL, SPELL_LIBRARY, monster_spawn_count
@@ -468,6 +468,93 @@ def test_wangyou_relic():
     print("  ✓ 忘忧1：失忆[杀伐]，可失忆至空；超额档位被正确拒绝")
 
 
+def test_custom_spell():
+    """自创法术：完全由已拥有道纹按三大法则组装（创建/校验/施放/失效/修订）"""
+    print("\n=== 测试：自创法术 ===")
+    engine = fresh_engine("custom")
+    setup_player(engine)
+    player = engine.state.player
+    # 学再生/庇护
+    for dw in ("再生", "庇护"):
+        engine.state.energy = 3
+        assert engine.execute_action("pre_battle_action", {
+            "sub_action": "学习", "learn_type": "transform_daowen",
+            "names": [dw], "tier": 1})["success"]
+
+    # 创建：后发先至（受到伤害前→庇护x自身→杀伐y敌人），1精力、0碎片
+    engine.state.energy = 3
+    r = engine.execute_action("pre_battle_action", {
+        "sub_action": "学习", "learn_type": "create_spell",
+        "name": "后发先至", "trigger": "受到伤害前",
+        "steps": [{"daowen": "庇护", "x_param": "x", "target": "self"},
+                  {"daowen": "杀伐", "x_param": "y", "target": "enemy"}]})
+    assert r["success"], r
+    assert engine.state.energy == 2
+    spec = r["result"]["spec"]
+    assert spec["custom"] and spec["required_daowen"] == ["庇护", "杀伐"]
+    print("  ✓ 自创法术【后发先至】创建成功，spec公开回显")
+
+    # 图纸不合规必须拒绝：未拥有道纹 / 非法触发 / 未实装道纹 / 库法术重名
+    engine.state.energy = 3
+    bad = engine.execute_action("pre_battle_action", {
+        "sub_action": "学习", "learn_type": "create_spell",
+        "name": "假大空", "trigger": "失去生命后",
+        "steps": [{"daowen": "血债", "x_param": "x", "target": "enemy"}]})
+    assert not bad["success"] and engine.state.energy == 3, "未拥有道纹的图纸必须拒绝且不吞精力"
+    bad2 = engine.execute_action("pre_battle_action", {
+        "sub_action": "学习", "learn_type": "create_spell",
+        "name": "坏触发", "trigger": "每回合开始时",
+        "steps": [{"daowen": "再生", "x_param": "x", "target": "self"}]})
+    assert not bad2["success"]
+    bad3 = engine.execute_action("pre_battle_action", {
+        "sub_action": "学习", "learn_type": "create_spell",
+        "name": "借力打力", "trigger": "受到伤害前",
+        "steps": [{"daowen": "庇护", "x_param": "x", "target": "self"}]})
+    assert not bad3["success"] and "重名" in bad3["error"]
+    print("  ✓ 未拥有道纹/非法触发/库重名 三类图纸均被拒绝且退回精力")
+
+    # 真实施放（与法术库同一条积木结算管线）
+    drain_energy(engine)
+    start_battle(engine)
+    engine.execute_action("round_start", {})
+    mon = engine.state.enemies[0]
+    r = engine.execute_action("use_spell", {
+        "spell_name": "后发先至", "trigger_timing": "受到伤害前",
+        "target": mon.name, "x": 5, "y": 3})
+    assert r["success"], r
+    steps = r["steps_executed"]
+    assert steps[0]["execution"][0]["amount"] == 20   # 庇护5→20格挡
+    assert steps[1]["execution"][0]["actual_damage"] == 6  # 杀伐3→6伤害
+    print("  ✓ 自创法术真实结算：庇护5→20格挡，杀伐3→6伤害")
+
+    # 道纹丢失→法术失效（规则：法术必须完全由已有道纹组成）
+    del player.dao_wen["庇护"]
+    r = engine.execute_action("use_spell", {
+        "spell_name": "后发先至", "trigger_timing": "受到伤害前",
+        "target": mon.name, "x": 5, "y": 3})
+    assert not r["success"] and "失效" in r["error"]
+    # 库法术同样适用
+    player.spells.append(Spell(
+        name="后发制人", required_daowen=["庇护"], trigger_condition="受到伤害前",
+        effect_flow="庇护", rank=1))
+    r = engine.execute_action("use_spell", {"spell_name": "后发制人", "target": mon.name, "x": 3})
+    assert not r["success"] and "失效" in r["error"]
+    print("  ✓ 所需道纹丢失后，自创法术与法术库法术均如实战时失效")
+
+    # 战终后修订（以修订时持有道纹为准）
+    engine.state.phase = "pre_battle"
+    r = engine.execute_action("revise_custom_spell", {
+        "name": "后发先至",
+        "steps": [{"daowen": "再生", "x_param": "x", "target": "self"},
+                  {"daowen": "杀伐", "x_param": "y", "target": "enemy"}]})
+    assert r["success"], r
+    r = engine.execute_action("revise_custom_spell", {
+        "name": "后发先至",
+        "steps": [{"daowen": "固执", "x_param": "x", "target": "self"}]})
+    assert not r["success"], "修订同样受'已拥有道纹'校验"
+    print("  ✓ [战终]修订窗口真实生效，且受同等图纸校验")
+
+
 def run_all_tests():
     print("=" * 60)
     print("第四宇宙游戏引擎 - 测试套件（全部真实结算）")
@@ -488,6 +575,7 @@ def run_all_tests():
         test_dice,
         test_relic_pool_and_rules,
         test_wangyou_relic,
+        test_custom_spell,
     ]
 
     passed = failed = 0
