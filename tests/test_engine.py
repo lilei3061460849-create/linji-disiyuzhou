@@ -819,6 +819,110 @@ def test_events_system():
     print("  ✓ 绝息淤泥：战斗中任意时刻使用→本次战终立刻逃脱，耐久归零销毁")
 
 
+def test_five_relics():
+    """五件遗物真实实装：回锋刀/折速法印/鲜血契约/守夜灯/卖身契（结算全走公开接口）"""
+    print("\n=== 测试：五件遗物实装 ===")
+    from engine.models import Entity as _Entity, DaoWenInstance
+
+    # 遗物池13件全部 implemented
+    assert all(r.get("implemented") for r in RELIC_POOL), "遗物池13件必须全部 implemented"
+    print("  ✓ 遗物池13/13全部标记 implemented")
+
+    engine = fresh_engine("relic5")
+    setup_player(engine)  # 血限60/速限8/法限14
+    for nm in ("回锋刀", "折速法印", "鲜血契约", "守夜灯", "卖身契"):
+        relic = next(r for r in engine.state.relics_pool if r.name == nm)
+        assert "implemented" in relic.tags, f"{nm}必须带 implemented 标记"
+        engine.state.relics_pool.remove(relic)
+        engine.state.relics.append(relic)
+    # 朋友夹具（构造面板；其参战/承伤均经真实接口结算）
+    friend = _Entity(name="乞丐", entity_type="朋友", blood_limit=50, current_hp=50,
+                     attack_count=2, attack_power=3)
+    engine.state.friends.append(friend)
+    drain_energy(engine)
+    p = engine.state.player
+
+    # ---- 前置校验：超上限如实拒绝，且不带病开战 ----
+    r = engine.execute_action("battle_start", {"battle_background": "测试", "zhesu_x": 9})
+    assert not r["success"] and "疲惫不能透支" in r["error"]
+    assert engine.state.phase == "pre_battle", "拒绝后不得推进阶段"
+    r = engine.execute_action("battle_start", {"battle_background": "测试", "xianxue_x": 13})
+    assert not r["success"] and "超出上限" in r["error"]   # 上限=60//5=12
+    r = engine.execute_action("battle_start", {"battle_background": "测试", "maishenqi_friend": "不存在的人"})
+    assert not r["success"] and "不存在或已死亡" in r["error"]
+    print("  ✓ 战始声明校验：疲惫透支/流血超限/指定无对象，全部拒绝且不推进")
+
+    # ---- 合规声明：折速3+鲜血10+卖身契指定乞丐 ----
+    r = engine.execute_action("battle_start", {
+        "battle_background": "测试背景", "zhesu_x": 3, "xianxue_x": 10,
+        "maishenqi_friend": "乞丐"})
+    assert r["success"], f"战始失败: {r}"
+    for i in range(r["spawn_count"]):
+        engine.execute_action("random_number", {
+            "pool_name": f"spawn_battle_{engine.state.current_battle}", "number": 5})  # 眼树 1×26/96
+    assert engine.state.phase == "in_combat"
+    mon = engine.state.enemies[0]
+    assert mon.name == "眼树"
+    assert p.current_speed == 5 and p.current_mana == 14 + 18 + 10 and p.current_hp == 50, \
+        f"折速疲惫3→+18法力；鲜血10→-10血+10法: 速{p.current_speed} 法{p.current_mana} 血{p.current_hp}"
+    assert mon.current_hp == 96 - 9, f"回锋刀：战始疲惫3→反击9点（顺延怪物首位）: {mon.current_hp}"
+    print("  ✓ 折速法印：疲惫3→法力+18；鲜血契约：流血10→首回合法力+10；回锋刀：战始疲惫反击9")
+
+    # ---- 第1回合[回始]：补满不削平(42>14保留) + 回锋刀[回始]3×(8-5)=9 ----
+    r = engine.execute_action("round_start", {})
+    assert p.current_mana == 42, f"补满为补足不削平（战始增益应保留）: {p.current_mana}"
+    assert mon.current_hp == 87 - 9, f"回锋刀[回始]3×3=9: {mon.current_hp}"
+    print("  ✓ [回始]补满为补足不削平：战始增益法力42保留；回锋刀[回始]追加9")
+
+    # ---- 守夜灯[敌回始] + 回锋刀闪避反击 ----
+    r = engine.execute_action("monster_turn", {"monster": "眼树", "acts": [
+        {"type": "attack_round", "target": "测试者", "dodges": [True]}]})
+    assert r["success"]
+    assert any("守夜灯" in n for n in r["relic_notes"]), f"敌回始应授予法力: {r['relic_notes']}"
+    assert p.current_mana == 42 + 7, f"守夜灯+法限50%=7: {p.current_mana}"
+    assert p.current_speed == 4, "闪避耗1速"
+    assert mon.current_hp == 78 - 3, f"回锋刀闪避反击3: {mon.current_hp}"
+    hit = r["turn_log"][0]["hits"][0]
+    assert "relic_回锋刀" in hit
+    print("  ✓ 守夜灯[敌回始]+7法力；闪避失速→回锋刀反击3（来源=攻击者眼树）")
+
+    # ---- 卖身契：慈悲3的流血代价由乞丐承担 ----
+    p.dao_wen["慈悲"] = DaoWenInstance(dao_wen=engine._build_daowen_def("慈悲"))
+    hp_before, fhp_before = p.current_hp, friend.current_hp
+    r = engine.execute_action("use_daowen", {
+        "daowen_name": "慈悲", "x": 3, "target": p.name})
+    assert r["success"], f"慈悲失败: {r}"
+    assert friend.current_hp == fhp_before - 3, f"流血3应由乞丐承担: {friend.current_hp}"
+    assert p.current_hp == hp_before + 3, f"自身不流血且被慈悲回复3: {p.current_hp}"
+    assert any(c.get("paid_by", "").endswith("乞丐")
+               for c in r.get("cost_applied", [])), f"结算必须标明卖身契转承: {r.get('cost_applied')}"
+    print("  ✓ 卖身契：慈悲3流血代价由乞丐承担（50→47），自身回复3，血誓戒逻辑不误触")
+
+    # ---- [敌回终]全部法力清空（README 213行，守夜灯授予法力一并清空）----
+    engine.execute_action("round_end", {})
+    assert p.current_mana == 0, f"敌回终应清空全部法力: {p.current_mana}"
+    print("  ✓ [敌回终]全部法力清空（守夜灯授予的7点随全局规则一并清空）")
+
+    # ---- 第2回合[回始]：法力补足至法限 + 回锋刀[回始]：3×(速限8-当前4)=12 ----
+    r = engine.execute_action("round_start", {})
+    assert p.current_mana == 14, f"回始应补足至法限14: {p.current_mana}"
+    assert mon.current_hp == 75 - 12, f"回锋刀回始12点: {mon.current_hp}"
+    assert any("回锋刀" in n and "3×4" in n for n in r["result"].get("relic_notes", [])), r["result"].get("relic_notes")
+    print("  ✓ 回锋刀[回始]：对怪物造成3×(8-4)=12点伤害")
+
+    # ---- 卖身契[命零]后失效：转到自身支付 ----
+    friend.current_hp = 1
+    r = engine.execute_action("use_daowen", {"daowen_name": "慈悲", "x": 2, "target": p.name})
+    assert r["success"] and not friend.is_alive, "乞丐承担流血2后命零"
+    hp_before = p.current_hp
+    r = engine.execute_action("use_daowen", {"daowen_name": "慈悲", "x": 1, "target": p.name})
+    assert r["success"]
+    assert p.current_hp == hp_before, "指定对象命零后代价回落自身（流血1再被慈悲回复1，净不变）"
+    assert any("卖身契" in str(c) and "失效" in str(c) for c in r.get("cost_applied", [])), \
+        f"必须如实记录卖身契失效: {r.get('cost_applied')}"
+    print("  ✓ 卖身契：指定对象[命零]→效果失效如实记录，代价回落自身")
+
+
 def run_all_tests():
     print("=" * 60)
     print("第四宇宙游戏引擎 - 测试套件（全部真实结算）")
@@ -843,6 +947,7 @@ def run_all_tests():
         test_shell_daowen_bizhong_manqian,
         test_resonance_hijack,
         test_events_system,
+        test_five_relics,
     ]
 
     passed = failed = 0

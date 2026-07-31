@@ -475,13 +475,31 @@ class GameEngine:
         applied = []
         cost_type = calc.get("cost_type", "消耗")
 
+        # 卖身契：[战始]指定的[朋友]/[员工]代替承担本场轮回者支付的【代价】，其[命零]后失效
+        proxy = None
+        if caster is self.state.player:
+            pname = self.state.relic_flags.get("卖身契_friend")
+            if pname:
+                proxy = next((f for f in self.state.friends + self.state.employees
+                              if f.name == pname and f.is_alive), None)
+                if proxy is None:
+                    self.state.relic_flags.pop("卖身契_friend", None)
+                    applied.append({"type": "卖身契", "note": "指定对象已[命零]，效果失效，代价仍由自身承担"})
+        if proxy is not None and cost_type in ("疲惫", "枯竭", "萎缩", "冷却", "唯一", "失忆"):
+            applied.append({"type": "卖身契",
+                            "note": f"{proxy.name}的面板无该代价维度（{cost_type}），无法转承，仍由自身支付（如实记录，待DM裁定）"})
+            proxy = None
+
         if cost_type == "流血" and "cost_hp" in calc:
-            before = caster.current_hp
-            res = caster.take_damage(calc["cost_hp"], "代价")
+            payer = proxy or caster
+            before = payer.current_hp
+            res = payer.take_damage(calc["cost_hp"], "代价")
             applied.append({"type": "流血", "amount": calc["cost_hp"],
-                            "hp": f"{before}→{res['hp_after']}"})
+                            "hp": f"{before}→{res['hp_after']}",
+                            **({"paid_by": f"卖身契→{payer.name}"} if proxy else {})})
             # 血誓戒：回始首次主动支付流血代价时获得等量格挡；支付后生命≤30%改为获得等量生命
-            if caster is self.state.player and self._has_relic("血誓戒") \
+            # （卖身契转承时轮回者并未"支付"，不触发）
+            if proxy is None and caster is self.state.player and self._has_relic("血誓戒") \
                     and not self.state.relic_flags.get("血誓戒_本回合已触发"):
                 self.state.relic_flags["血誓戒_本回合已触发"] = True
                 if caster.current_hp <= math.ceil(caster.blood_limit * 0.3):
@@ -492,10 +510,12 @@ class GameEngine:
                     applied.append({"type": "血誓戒", "effect": f"获得{calc['cost_hp']}点格挡"})
 
         elif cost_type == "衰老" and "cost_blood_limit" in calc:
-            caster.blood_limit -= calc["cost_blood_limit"]
-            caster.current_hp = min(caster.current_hp, caster.blood_limit)
+            payer = proxy or caster
+            payer.blood_limit -= calc["cost_blood_limit"]
+            payer.current_hp = min(payer.current_hp, payer.blood_limit)
             applied.append({"type": "衰老", "amount": calc["cost_blood_limit"],
-                            "new_blood_limit": caster.blood_limit})
+                            "new_blood_limit": payer.blood_limit,
+                            **({"paid_by": f"卖身契→{payer.name}"} if proxy else {})})
 
         elif cost_type == "枯竭" and "cost_mana_limit" in calc:
             caster.mana_limit -= calc["cost_mana_limit"]
@@ -510,15 +530,24 @@ class GameEngine:
                             "new_speed_limit": caster.speed_limit})
 
         elif cost_type == "疲惫" and "cost_speed" in calc:
+            _spd_before = caster.current_speed
             caster.current_speed = max(0, caster.current_speed - calc["cost_speed"])
             applied.append({"type": "疲惫", "amount": calc["cost_speed"],
                             "new_speed": caster.current_speed})
+            if caster is self.state.player:
+                note = self._huifengdao_on_speed_loss(_spd_before - caster.current_speed, source=None)
+                if note:
+                    applied.append({"type": "回锋刀", "note": note})
 
         elif cost_type == "异变" and "cost_mutation" in calc:
-            caster.mutation += calc["cost_mutation"]
+            payer = proxy or caster
+            payer.mutation += calc["cost_mutation"]
             applied.append({"type": "异变", "amount": calc["cost_mutation"],
-                            "mutation_total": caster.mutation,
-                            "warning": "异变达到50层时变为怪物" if caster.mutation >= 50 else ""})
+                            "mutation_total": payer.mutation,
+                            **({"paid_by": f"卖身契→{payer.name}",
+                                "warning": "朋友异变达到50层的处置原文未明，待DM裁定" if payer.mutation >= 50 else ""}
+                               if proxy else
+                               {"warning": "异变达到50层时变为怪物" if payer.mutation >= 50 else ""})})
 
         elif cost_type == "冷却" and dw_instance is not None:
             # 冷却X：使用后该道纹记为 X(0)/Y；战终完成场数+1，达到Y才能再次使用
@@ -1992,6 +2021,33 @@ class GameEngine:
         if self.state.energy > 0:
             return {"success": False, "error": f"精力未耗尽({self.state.energy})，不能进入战斗"}
 
+        # ---- 遗物[战始]可选项的前置校验（不合规如实拒绝，不带病开战）----
+        p0 = self.state.player
+        zhesu_x = int(params.get("zhesu_x", 0) or 0)
+        xianxue_x = int(params.get("xianxue_x", 0) or 0)
+        maishenqi_friend = params.get("maishenqi_friend", "")
+        if zhesu_x:
+            if not self._has_relic("折速法印"):
+                return {"success": False, "error": "未持有遗物【折速法印】，[战始]声明疲惫X被拒绝"}
+            if zhesu_x < 0 or zhesu_x > (p0.current_speed if p0 else 0):
+                return {"success": False,
+                        "error": f"折速法印疲惫X={zhesu_x}超过当前速度({p0.current_speed if p0 else 0})：疲惫不能透支"}
+        if xianxue_x:
+            if not self._has_relic("鲜血契约"):
+                return {"success": False, "error": "未持有遗物【鲜血契约】，[战始]声明流血X被拒绝"}
+            cap0 = (p0.blood_limit // 5) if p0 else 0   # X≤自身20%[血限]
+            if xianxue_x < 1 or xianxue_x > cap0:
+                return {"success": False,
+                        "error": f"鲜血契约流血X={xianxue_x}超出上限（X≤20%[血限]={cap0}）"}
+        if maishenqi_friend:
+            if not self._has_relic("卖身契"):
+                return {"success": False, "error": "未持有遗物【卖身契】，[战始]指定被拒绝"}
+            f0 = next((f for f in self.state.friends + self.state.employees
+                       if f.name == maishenqi_friend and f.is_alive), None)
+            if f0 is None:
+                return {"success": False,
+                        "error": f"卖身契指定的[朋友]/[员工]【{maishenqi_friend}】不存在或已死亡"}
+
         self.state.phase = "battle_start"
         self.state.current_battle += 1
         self.state.current_round = 0
@@ -2007,6 +2063,8 @@ class GameEngine:
             "pale_flower": bool(params.get("use_pale_flower")),
             "fuyue_friend": params.get("fuyue_friend", ""),
             "maishenqi_friend": params.get("maishenqi_friend", ""),
+            "zhesu_x": zhesu_x,
+            "xianxue_x": xianxue_x,
         }
 
         battle_no = self.state.current_battle
@@ -2048,6 +2106,40 @@ class GameEngine:
                 f"请玩家逐只给出 1~{len(pool)} 的数字（random_number）"
             ),
         }
+
+    def _huifengdao_on_speed_loss(self, points: int, source: Optional["Entity"] = None) -> Optional[str]:
+        """
+        回锋刀：每失去1点速度后，对[目标]造成3点伤害。
+        [目标]口径：优先令其失去速度的攻击者（闪避时的攻击方/施加减速者），
+        无明确来源（自付疲惫等）时按存活怪物列表首位顺延（假设，待DM裁定）。
+        """
+        if points <= 0:
+            return None
+        p = self.state.player
+        if not p or not self._has_relic("回锋刀"):
+            return None
+        if self.state.phase != "in_combat":
+            return None
+        assumption = ""
+        target = None
+        if source is not None and source.is_alive and source in self.state.enemies:
+            target = source
+        else:
+            target = next((m for m in self.state.enemies if m.is_alive), None)
+            if target is not None:
+                assumption = "；[目标]无明确攻击者，按存活怪物首位顺延（假设待DM裁定）"
+        if target is None:
+            return None
+        dmg = 3 * points
+        res = target.take_damage(dmg, "回锋刀")
+        sink: dict = {}
+        self._sync_monster_death_hooks(sink)
+        extra = ("；" + "；".join(sink["relic_notes"])) if sink.get("relic_notes") else ""
+        died = "→[命零]" if res.get("died") else ""
+        absorbed = (f"（格挡吸收{res['shield_absorbed']}，净伤{res['actual_damage']}）"
+                    if res.get("shield_absorbed") else "")
+        return (f"【回锋刀】失去{points}点速度→对{target.name}造成{dmg}点伤害{absorbed}"
+                f"（{res['hp_before']}→{res['hp_after']}{died}）{assumption}{extra}")
 
     def _finish_spawn(self, meta: dict) -> dict:
         """抽怪完成后，实体化怪物并结算战始"""
@@ -2196,12 +2288,42 @@ class GameEngine:
                     self.state.relic_flags["负岳索_hp"] = f.current_hp
                     mod_notes.append(f"【负岳索】[战始]指定【{fname}】：其首次受到伤害时，自身[回复]等量生命（按回合净损失结算，待DM裁定粒度）")
             if choices.get("maishenqi_friend") and self._has_relic("卖身契"):
-                # 卖身契未实装——[战始]声明被拒绝，不假装修改代价承担
-                mod_notes.append("【卖身契】未实装：本场代价仍由自身承担（如实记录）")
+                fname = choices["maishenqi_friend"]
+                f = next((f for f in self.state.friends + self.state.employees
+                          if f.name == fname and f.is_alive), None)
+                if f is not None:
+                    self.state.relic_flags["卖身契_friend"] = fname
+                    mod_notes.append(
+                        f"【卖身契】[战始]指定【{fname}】：本场轮回者支付的【代价】改由其承担"
+                        f"（流血/衰老/异变可转承；速度/法力类与失忆/冷却/唯一其面板无法承载，仍由自身支付"
+                        f"——口径待DM裁定）；其[命零]后本效果失效")
+            # 折速法印：[战始]可以疲惫X，获得6X点法力
+            zhesu_x = int(choices.get("zhesu_x", 0) or 0)
+            if zhesu_x and self._has_relic("折速法印"):
+                p.current_speed = max(0, p.current_speed - zhesu_x)
+                p.current_mana += 6 * zhesu_x
+                mod_notes.append(f"【折速法印】[战始]疲惫{zhesu_x}（当前速度→{p.current_speed}）"
+                                 f"→获得{6 * zhesu_x}点法力（溢出可超[法限]，同缄默面具口径）")
+            # 鲜血契约：[战始]可以流血X，使首回合法力+X（X≤自身20%[血限]，已在battle_start前置校验）
+            xianxue_x = int(choices.get("xianxue_x", 0) or 0)
+            if xianxue_x and self._has_relic("鲜血契约"):
+                before = p.current_hp
+                p.take_damage(xianxue_x, "代价")
+                p.current_mana += xianxue_x
+                mod_notes.append(f"【鲜血契约】[战始]流血{xianxue_x}（生命{before}→{p.current_hp}）"
+                                 f"→首回合法力+{xianxue_x}")
 
-        # 钱袋接种（战终用到）：记录每场战始
+        # 钱袋接种（战终用到）：记录每场战始；战始结算清单入单场记账（供战报如实引用）
+        self.state.relic_flags["_battle_start_notes"] = mod_notes
         self.state.enemies = monsters
         self.state.phase = "in_combat"
+        # 回锋刀：战始阶段的疲惫（苍白之花/折速法印）同样计入"失去速度"，反击怪物首位
+        if self.state.player and self._has_relic("回锋刀"):
+            war_start_tired = (5 if self.state.relic_flags.get("苍白之花_used") else 0) \
+                + int(choices.get("zhesu_x", 0) or 0 if self._has_relic("折速法印") else 0)
+            note = self._huifengdao_on_speed_loss(war_start_tired, source=None)
+            if note:
+                mod_notes.append(note)
 
         # 罪孽都市专属：怪物自带碎片可被夺取，未夺取则死亡/结束时消散
         return {
@@ -2392,6 +2514,10 @@ class GameEngine:
                     target.current_speed -= 1
                     dodge_resolved = {"dodge_attempted": True, "success": True,
                                       "speed_after": target.current_speed}
+                    if target is self.state.player:
+                        note = self._huifengdao_on_speed_loss(1, source=caster)
+                        if note:
+                            dodge_resolved["relic_回锋刀"] = note
                 else:
                     dodge_resolved = {"dodge_attempted": True, "success": False, "reason": "速度不足"}
 
@@ -2499,10 +2625,15 @@ class GameEngine:
             return result
 
         if name == "减速":
+            _spd_before = target.current_speed
             target.current_speed = max(0, math.ceil(target.current_speed / 2))
             add_status(target, "减速", calc["duration"], calc["x"] * multiplier)
             result["effects"].append({"type": "speed_halved", "target": target.name,
                                       "speed_after": target.current_speed})
+            if target is self.state.player and _spd_before > target.current_speed:
+                note = self._huifengdao_on_speed_loss(_spd_before - target.current_speed, source=caster)
+                if note:
+                    result["effects"].append({"type": "relic_回锋刀", "note": note})
             return result
 
         if name == "自残":
@@ -2579,8 +2710,13 @@ class GameEngine:
             else:
                 # 目标没有碎片，改为失去X点当前速度
                 x = calc["x"]
+                _spd_before = target.current_speed
                 target.current_speed = max(0, target.current_speed - x)
                 result["effects"].append({"type": "speed_penalty", "target": target.name, "amount": x})
+                if target is self.state.player and _spd_before > target.current_speed:
+                    note = self._huifengdao_on_speed_loss(_spd_before - target.current_speed, source=caster)
+                    if note:
+                        result["effects"].append({"type": "relic_回锋刀", "note": note})
             return result
 
         if name == "假钞":
@@ -3170,6 +3306,11 @@ class GameEngine:
                 self.state.relic_flags["避风铃_已触发15"] = True
                 target.gain_shield(15)
                 result["relic_避风铃"] = "+3格挡，速度归零再+15格挡"
+        # 回锋刀：闪避失去1速度→反击3点伤害
+        if result.get("dodge_success") and target is self.state.player:
+            note = self._huifengdao_on_speed_loss(1, source=attacker)
+            if note:
+                result["relic_回锋刀"] = note
 
         return {
             "success": True,
@@ -3195,13 +3336,28 @@ class GameEngine:
         if not monster:
             return {"success": False, "error": f"怪物不存在或已死亡: {monster_name}"}
 
+        # 守夜灯：[敌回始]获得等同于[法限]50%的法力，每回合一次，该法力[敌回终]清空
+        shouye_note = None
+        player = self.state.player
+        if player and player.is_alive and self._has_relic("守夜灯") \
+                and self.state.relic_flags.get("守夜灯_round") != self.state.current_round:
+            self.state.relic_flags["守夜灯_round"] = self.state.current_round
+            grant = player.mana_limit // 2
+            self.state.relic_flags["守夜灯_granted"] = grant
+            if grant > 0:
+                player.current_mana += grant
+                shouye_note = (f"【守夜灯】[敌回始]获得{grant}点法力（法力→{player.current_mana}；"
+                               f"随全部法力[敌回终]清空，README 213行）")
+
         # 行动禁止判定：束缚（无法行动）/ 眩晕（无法出手，受到伤害后解除）
         if monster.has_status("束缚"):
             return {"success": True, "action": f"{monster.name}的出手轮",
-                    "skipped": "束缚：无法行动", "turn_log": []}
+                    "skipped": "束缚：无法行动", "turn_log": [],
+                    "relic_notes": ([shouye_note] if shouye_note else [])}
         if monster.has_status("眩晕"):
             return {"success": True, "action": f"{monster.name}的出手轮",
-                    "skipped": "眩晕：无法出手", "turn_log": []}
+                    "skipped": "眩晕：无法出手", "turn_log": [],
+                    "relic_notes": ([shouye_note] if shouye_note else [])}
 
         acts = params.get("acts", [])
         base_allowed = CombatEngine.monster_act_count(self.state.current_round)
@@ -3215,7 +3371,8 @@ class GameEngine:
             if allowed <= threshold:
                 return {"success": True, "action": f"{monster.name}的出手轮",
                         "skipped": f"缓慢：出手次数{allowed}≤{threshold}，本回合无法出手",
-                        "turn_log": []}
+                        "turn_log": [],
+                        "relic_notes": ([shouye_note] if shouye_note else [])}
 
         has_kuangbao = monster.has_status("狂暴")
         max_acts = allowed + (1 if has_kuangbao else 0)
@@ -3223,7 +3380,8 @@ class GameEngine:
         if not acts:
             if max_acts <= 0:
                 return {"success": True, "action": f"{monster.name}的出手轮",
-                        "skipped": "无出手次数", "turn_log": []}
+                        "skipped": "无出手次数", "turn_log": [],
+                        "relic_notes": ([shouye_note] if shouye_note else [])}
             return {"success": False, "error": "未提供行动（禁止在数值未耗尽时坐以待毙）"}
         if len(acts) > max_acts:
             return {
@@ -3273,6 +3431,11 @@ class GameEngine:
                             self.state.relic_flags["避风铃_已触发15"] = True
                             target.gain_shield(15)
                             hit_result["relic_避风铃"] = "+3格挡，速度归零再+15格挡"
+                    # 回锋刀：轮回者闪避失去1速度→反击3点伤害
+                    if hit_result.get("dodge_success") and target is self.state.player:
+                        note = self._huifengdao_on_speed_loss(1, source=monster)
+                        if note:
+                            hit_result["relic_回锋刀"] = note
                     hits.append(hit_result)
                 turn_log.append({
                     "type": "attack_round",
@@ -3308,6 +3471,7 @@ class GameEngine:
             "acts_allowed": max_acts,
             "turn_log": turn_log,
             "player_hp": self.state.player.current_hp if self.state.player else None,
+            "relic_notes": ([shouye_note] if shouye_note else []),
         }
 
     def _action_friend_turn(self, params: dict) -> dict:
@@ -3450,6 +3614,24 @@ class GameEngine:
                     self.state.relic_flags.pop("负岳索_hp", None)
                 else:
                     self.state.relic_flags["负岳索_hp"] = f.current_hp
+        # 回锋刀[回始]：对[目标]造成3×（你的[速限]-你的当前速度）的伤害
+        if player and player.is_alive and self._has_relic("回锋刀") \
+                and self.state.phase == "in_combat":
+            gap = player.speed_limit - player.current_speed
+            if gap > 0:
+                target = next((m for m in self.state.enemies if m.is_alive), None)
+                if target is not None:
+                    dmg = 3 * gap
+                    res = target.take_damage(dmg, "回锋刀")
+                    sink: dict = {}
+                    self._sync_monster_death_hooks(sink)
+                    died = "→[命零]" if res.get("died") else ""
+                    absorbed = (f"（格挡吸收{res['shield_absorbed']}，净伤{res['actual_damage']}）"
+                                if res.get("shield_absorbed") else "")
+                    extra_notes.append(
+                        f"【回锋刀】[回始]对{target.name}造成3×{gap}={dmg}点伤害{absorbed}"
+                        f"（{res['hp_before']}→{res['hp_after']}{died}；[目标]按存活怪物首位顺延，假设待DM裁定）"
+                        + ("；" + "；".join(sink["relic_notes"]) if sink.get("relic_notes") else ""))
         result = self.combat.round_start()
         # 储能电池（[回始]自动）：本回合额外获得12点法力
         batt = next((c for c in self.state.consumables if c.name == "储能电池" and c.current_uses > 0), None)
@@ -3486,6 +3668,8 @@ class GameEngine:
     def _action_round_end(self, params: dict) -> dict:
         """回终"""
         result = self.combat.round_end()
+        # 守夜灯授予法力随全体法力在[敌回终]清空——由 combat.round_end 的
+        # 全局法力清空（README 213行）统一结算，不再单列
 
         # 抵扣封印的遗物计时推进
         sealed = self.state.relic_flags.get("抵扣_封印", {})
@@ -3520,6 +3704,16 @@ class GameEngine:
 
     def _settle_battle_end(self, escaped: bool = False, retreat_detail: dict = None) -> dict:
         """战终结算的公共实现"""
+        battle_end_notes = []
+        # 战终兜底：战斗可能在敌方阶段内结束（未走[回终]全局清空），
+        # 残留法力按"法力[敌回终]清空"（README 213行）与局内增益清除规则清零，不跨场滚存
+        p0 = self.state.player
+        self.state.relic_flags.pop("守夜灯_round", None)
+        self.state.relic_flags.pop("守夜灯_granted", None)
+        if p0 and p0.current_mana > 0:
+            battle_end_notes.append(f"战终：残留法力{p0.current_mana}点按[敌回终]清空规则清零")
+            p0.current_mana = 0
+
         # 碎片奖励：怪物[战始][血限]×2%＋死亡时拥有的道纹数×5（仅[命零]击杀有奖励）
         shard_reward = 0
         reward_detail = []
@@ -3542,7 +3736,7 @@ class GameEngine:
 
         # ---- 事件修饰的战终结算 ----
         mods = self.state.relic_flags.get("_next_battle_mods_active", {})
-        battle_mod_notes = []
+        battle_mod_notes = list(battle_end_notes)
         if not escaped:
             if mods.get("bounty_double") and shard_reward > 0:
                 shard_reward *= 2

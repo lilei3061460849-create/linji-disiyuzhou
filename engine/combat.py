@@ -461,16 +461,26 @@ class CombatEngine:
                 + self.state.friends + self.state.employees + self.state.temp_friends + self.state.enemies:
             e.hp_lost_this_round = 0
         
-        # 轮回者法力补满
+        # 轮回者法力补满（README 213行"[回始]自动补满等量法力"：补=补足，
+        # 不削平超过[法限]的战始增益法力（缄默面具/折速法印/鲜血契约等）——
+        # 超额法力最迟于[敌回终]随全部法力清空，不会跨轮滚存）
         if self.state.player and self.state.player.is_alive:
             old_mana = self.state.player.current_mana
-            self.state.player.current_mana = self.state.player.mana_limit
-            effects.append({
-                "type": "mana_refill",
-                "entity": self.state.player.name,
-                "from": old_mana,
-                "to": self.state.player.mana_limit
-            })
+            if old_mana < self.state.player.mana_limit:
+                self.state.player.current_mana = self.state.player.mana_limit
+                effects.append({
+                    "type": "mana_refill",
+                    "entity": self.state.player.name,
+                    "from": old_mana,
+                    "to": self.state.player.mana_limit
+                })
+            else:
+                effects.append({
+                    "type": "mana_refill_kept_overflow",
+                    "entity": self.state.player.name,
+                    "at": old_mana,
+                    "note": f"当前法力{old_mana}≥[法限]{self.state.player.mana_limit}：补满为补足不削减，超额部分[敌回终]随全部法力清空"
+                })
             # 洞察：上轮闪避后本回合法力+10
             insight = self.state.relic_flags.pop("洞察_下回合法力", 0)
             self.state.player.current_mana += insight

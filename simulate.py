@@ -88,7 +88,12 @@ def battle_config_lines(engine: GameEngine) -> list[str]:
         carry = f" 携带碎片{m.shards}" if m.shards else ""
         lines.append(f"{m.name} 生命{m.current_hp}/{m.blood_limit} 攻击{m.attack_count}×{m.attack_power}"
                      f" 道纹：{dwtxt}{carry} —— 白板：道纹须在其出手轮发动后生效")
-    lines.append(f"战斗背景：{engine.state.battle_background}")
+    lines.append(f"战斗背景：{engine.state.battle_background}（仅为急中生智的场景素材，无数值加成）")
+    start_notes = engine.state.relic_flags.get("_battle_start_notes") or []
+    if start_notes:
+        lines.append("战始效果结算：")
+        for n in start_notes:
+            lines.append(f"  {n}")
     lines.append("先手：对怪物战斗无先后手判定规则，按 回始→我方出手轮→敌方出手轮→回终 推进")
     return lines
 
@@ -97,7 +102,12 @@ def _hit_phrase(hit: dict, defender_hint: str = "") -> str:
     """一次命中的响应短语：闪避（速度a→b）/ 硬吃（生命a→b，格挡抵n）"""
     t = hit.get("target", defender_hint or "?")
     if hit.get("dodge_attempted") and hit.get("dodge_success"):
-        return f"{t}闪避（速度{hit.get('speed_after_dodge', '?') + 1 if isinstance(hit.get('speed_after_dodge'), int) else '?'}→{hit.get('speed_after_dodge', '?')}）"
+        s = f"{t}闪避（速度{hit.get('speed_after_dodge', '?') + 1 if isinstance(hit.get('speed_after_dodge'), int) else '?'}→{hit.get('speed_after_dodge', '?')}）"
+        if hit.get("relic_回锋刀"):
+            s += f"；{hit['relic_回锋刀']}"
+        if hit.get("relic_避风铃"):
+            s += f"；避风铃{hit['relic_避风铃']}"
+        return s
     if hit.get("blocked_by"):
         return f"{t}被[{hit['blocked_by']}]挡下"
     dmg = hit.get("damage_dealt", hit.get("actual_damage", 0))
@@ -118,6 +128,10 @@ def _hit_phrase(hit: dict, defender_hint: str = "") -> str:
         s += f" 生命→{hp_a}"
     if hit.get("target_died", hit.get("died")):
         s += "【命零】"
+    if hit.get("relic_回锋刀"):
+        s += f"；{hit['relic_回锋刀']}"
+    if hit.get("relic_避风铃"):
+        s += f"；避风铃{hit['relic_避风铃']}"
     return s
 
 
@@ -253,8 +267,13 @@ def monster_act_lines(monster_name: str, result: dict, engine: GameEngine) -> li
     if not result.get("success"):
         return [f"{monster_name}出手：提交被引擎拒绝:{result.get('error')}"]
     if result.get("skipped"):
-        return [f"{monster_name}出手：{result['skipped']}"]
+        out = [f"{monster_name}出手：{result['skipped']}"]
+        for n in result.get("relic_notes") or []:
+            out.insert(0, f"  {n}")
+        return out
     lines = []
+    for n in result.get("relic_notes") or []:
+        lines.append(f"  {n}")
     no = 0
     for entry in result.get("turn_log", []):
         no += 1
@@ -293,6 +312,8 @@ def round_hook_line(timing: str, effects: list, engine: GameEngine) -> str:
         t = e.get("type") if isinstance(e, dict) else None
         if t == "mana_refill":
             parts.append(f"{e.get('entity', '模拟者')}法力补满（{e.get('from')}→{e.get('to')}）")
+        elif t == "mana_refill_kept_overflow":
+            parts.append(f"{e.get('entity', '模拟者')}法力{e.get('at')}≥法限：补满不削平（战始增益保留，[敌回终]随全部法力清空）")
         elif t == "shield_clear":
             parts.append(f"{e.get('entity')}格挡清空（-{e.get('cleared')}）")
         elif t == "mana_clear":
@@ -1250,16 +1271,29 @@ def run_campaign(policy_name: str, region: str, seed: int, verbose: bool = False
 
         # ---- 战始 ----
         p = engine.state.player
-        start_params = {"battle_background": "模拟背景"}
+        # 战斗背景仅为急中生智提供场景素材，无数值加成（DM已澄清），按副本轮换名称
+        bg = {"扭曲都市": "雨夜长巷", "罪孽都市": "霓虹天台", "龙心谷": "断桥熔炉"}[region]
+        start_params = {"battle_background": bg}
+        relic_names = {r.name for r in engine.state.relics}
         # 事件遗物的战始可选项（真实声明，引擎结算）
-        if any(r.name == "猩红果实" for r in engine.state.relics) and p.current_hp > 25:
+        if "猩红果实" in relic_names and p.current_hp > 25:
             start_params["use_scarlet_fruit"] = True
-        if any(r.name == "苍白之花" for r in engine.state.relics) and p.current_speed > 5:
+        if "苍白之花" in relic_names and p.current_speed > 5:
             start_params["use_pale_flower"] = True
-        if any(r.name == "负岳索" for r in engine.state.relics):
+        if "负岳索" in relic_names:
             f0 = next((f for f in engine.state.friends if f.is_alive), None)
             if f0 is not None:
                 start_params["fuyue_friend"] = f0.name
+        # 遗物池战始可选项（真实声明，引擎结算）
+        if "折速法印" in relic_names and p.current_speed >= 3:
+            # 法力饥渴度：持有消耗类道纹/法术时牺牲至多3点速度换6X法力
+            start_params["zhesu_x"] = min(3, p.current_speed - 2)
+        if "鲜血契约" in relic_names and p.current_hp > 30:
+            start_params["xianxue_x"] = min(p.blood_limit // 5, p.current_hp - 25)
+        if "卖身契" in relic_names:
+            f0 = next((f for f in engine.state.friends if f.is_alive), None)
+            if f0 is not None:
+                start_params["maishenqi_friend"] = f0.name
         engine.execute_action("battle_start", start_params)
         handle_pending(engine, rng, verbose)
         if trace is not None and engine.state.phase == "in_combat":
@@ -1280,6 +1314,8 @@ def run_campaign(policy_name: str, region: str, seed: int, verbose: bool = False
             T(f"第{engine.state.current_round}回合")
             if trace is not None:
                 hook = round_hook_line("回始", ((rs.get("result") or {}).get("effects")), engine)
+                for _n in ((rs.get("result") or {}).get("relic_notes") or []):
+                    T(f"  {_n}")
                 T(f"{hook} ｜ {player_panel(engine)} ｜ {enemy_panel(engine)}")
 
             # 买路财：预判本回合必死且付得起才撤退（不白跑、不揣着钱送死）
@@ -1327,6 +1363,8 @@ def run_campaign(policy_name: str, region: str, seed: int, verbose: bool = False
                 p = engine.state.player
                 diff = r.get("monster_difficulties") or []
                 diff_txt = f"；怪物困境检查触发：{[d.get('monster') for d in diff]}" if diff else ""
+                for _n in ((r.get("result") or {}).get("relic_notes") or []):
+                    T(f"  {_n}")
                 T(round_hook_line("回终", ((r.get("result") or {}).get("effects")), engine)
                   + f" ｜ {player_panel(engine)} ｜ {enemy_panel(engine)}{diff_txt}")
                 if p and p.current_hp > last_hp:
@@ -1480,9 +1518,17 @@ def main():
 
     # ---- 走得最远的一局：同种子原样重跑并全程追踪 ----
     if not args.no_track and all_logs:
-        best = pick_furthest(all_logs)
+        # 主篇选材：策略型（非naive）走得最远的一局——naive_dps 是不使用
+        # 探索/残韵/消耗品/事件的对照组，拿它当主篇等于交白卷；
+        # naive 全局最远局降级为附录对照（同时如实保留原始排序信息）。
+        non_naive = [l for l in all_logs if l["policy"] != "naive_dps"]
+        best = pick_furthest(non_naive) if non_naive else pick_furthest(all_logs)
+        overall_best = pick_furthest(all_logs)
+        if overall_best is not best:
+            print(f"（全局步数最远为对照组naive_dps[{overall_best['policy']}/{overall_best['region']}]"
+                  f" 胜{overall_best['battles_won']}场——已按选材规则降级为附录对照）")
         print("\n" + "=" * 70)
-        print(f"走得最远的一局：[{best['policy']}/{best['region']}] 种子{best['seed']}"
+        print(f"走得最远的一局（策略型，主篇）：[{best['policy']}/{best['region']}] 种子{best['seed']}"
               f" 胜{best['battles_won']}场 到达第{best['furthest_battle']}场"
               f" 存活{best.get('rounds_survived', 0)}回合"
               + (" 冠冕封存" if best.get("crown_sealed") else "")
@@ -1499,32 +1545,31 @@ def main():
         trace.append("")
         trace.append(f"═══ 轨迹一致性自检：{consistency} ═══")
 
-        jout = "data/battle.json"
-        with open(jout, "w", encoding="utf-8") as f:
-            json.dump({"campaign": traced_log, "consistent_with_batch": same,
-                       "transcript": trace}, f, ensure_ascii=False, indent=1)
-        # ---- 附录：自创法术策略走得最远的一局（证明自创管线真实参与模拟）----
-        custom_logs = [l for l in all_logs if l["policy"] == "custom"]
+        # ---- 附录：对照组naive_dps走得最远的一局（什么都不用的基准线）----
+        naive_logs = [l for l in all_logs if l["policy"] == "naive_dps"]
         appendix = []
-        if custom_logs:
-            cbest = pick_furthest(custom_logs)
-            appendix.append(f"附：自创法术策略[custom]走得最远的一局 "
-                            f"（[{cbest['region']}] 种子{cbest['seed']} 胜{cbest['battles_won']}场"
-                            f" 到达第{cbest['furthest_battle']}场）")
+        ainfo = None
+        if naive_logs:
+            abest = pick_furthest(naive_logs)
+            ainfo = abest
+            appendix.append(f"附：对照组[naive_dps]走得最远的一局（不使用探索/残韵/消耗品等新机制的基准线） "
+                            f"（[{abest['region']}] 种子{abest['seed']} 胜{abest['battles_won']}场"
+                            f" 到达第{abest['furthest_battle']}场）")
             appendix.append("")
-            ctrace = []
-            clog = run_campaign("custom", cbest["region"], cbest["seed"], trace=ctrace)
-            csame = all(clog[k] == cbest[k] for k in
+            atrace = []
+            alog = run_campaign("naive_dps", abest["region"], abest["seed"], trace=atrace)
+            asame = all(alog[k] == abest[k] for k in
                         ("battles_won", "furthest_battle", "death_battle", "crown_sealed", "duel"))
-            appendix.extend(ctrace)
+            appendix.extend(atrace)
             appendix.append("")
-            appendix.append(f"═══ 附录轨迹一致性自检：{'一致' if csame else '不一致！'} ═══")
+            appendix.append(f"═══ 附录轨迹一致性自检：{'一致' if asame else '不一致！'} ═══")
 
+        jout = "data/battle.json"
         mout = "data/battle.md"
         with open(mout, "w", encoding="utf-8") as f:
             f.write("# battle\n\n")
-            f.write(f"走得最远的一次轮回（可复现：`python3 simulate.py --runs {args.runs}"
-                    f" --seed {args.seed}`）\n\n")
+            f.write(f"策略型走得最远的一次轮回（不使用探索/残韵/消耗品/事件的naive_dps对照组另见文末附录；"
+                    f"可复现：`python3 simulate.py --runs {args.runs} --seed {args.seed}`）\n\n")
             f.write(f"策略[{best['policy']}] 副本[{best['region']}] 种子{best['seed']}\n\n```\n")
             f.write("\n".join(trace))
             f.write("\n```\n")
@@ -1533,8 +1578,10 @@ def main():
                 f.write("\n".join(appendix))
                 f.write("\n```\n")
         with open(jout, "w", encoding="utf-8") as f:
-            json.dump({"campaign": traced_log, "consistent_with_batch": same,
-                       "transcript": trace, "custom_policy_appendix": appendix},
+            json.dump({"selection": "主篇=策略型（非naive_dps）最远局；附录=naive_dps对照组最远局",
+                       "campaign": traced_log, "consistent_with_batch": same,
+                       "transcript": trace, "naive_control_appendix": appendix,
+                       "naive_control_campaign": ainfo},
                       f, ensure_ascii=False, indent=1)
         print("\n".join(trace))
         print(f"\n战报已写入 {mout} / {jout}")
