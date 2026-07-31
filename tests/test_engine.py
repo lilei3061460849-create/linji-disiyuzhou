@@ -420,6 +420,54 @@ def test_relic_pool_and_rules():
     print(f"  ✓ 已实装{len(implemented)}件：{implemented}，其余如实标记未实装")
 
 
+def test_wangyou_relic():
+    """遗物【忘忧香】：局外行动『忘忧』真实生效"""
+    print("\n=== 测试：忘忧香 ===")
+    from engine.models import Relic
+    engine = fresh_engine("wangyou")
+    setup_player(engine)
+    player = engine.state.player
+
+    # 未持有忘忧香时：行动被拒绝
+    engine.state.energy = 3
+    r = engine.execute_action("pre_battle_action", {"sub_action": "忘忧", "tier": 1,
+                                                    "forget_names": ["杀伐"]})
+    assert not r["success"] and "忘忧香" in r["error"], "未持有遗物时必须拒绝"
+    assert engine.state.energy == 3, "拒绝时不得吞掉精力"
+    print("  ✓ 未持有忘忧香时拒绝且不吞精力")
+
+    # 持有后：忘忧2 = 失忆2种道纹 → +55碎片
+    relic = next(r for r in engine.state.relics_pool if r.name == "忘忧香")
+    assert "implemented" in relic.tags, "忘忧香已实装，必须带 implemented 标记"
+    engine.state.relics_pool.remove(relic)
+    engine.state.relics.append(relic)
+    for dw in ("再生", "庇护"):  # 真实学习两种转化道纹
+        engine.state.energy = 3
+        assert engine.execute_action("pre_battle_action", {
+            "sub_action": "学习", "learn_type": "transform_daowen",
+            "names": [dw], "tier": 1})["success"]
+    engine.state.energy = 3
+    shards_before = engine.state.shards
+    r = engine.execute_action("pre_battle_action", {
+        "sub_action": "忘忧", "tier": 2, "forget_names": ["再生", "庇护"]})
+    assert r["success"], r
+    assert engine.state.shards == shards_before + 55, "忘忧2必须真实+55碎片"
+    assert "再生" not in player.dao_wen and "庇护" not in player.dao_wen, "失忆必须真实移除道纹"
+    assert engine.state.energy == 2, "忘忧消耗1点精力（与其他局外行动一致，待DM裁定确认）"
+    print(f"  ✓ 忘忧2：失忆[再生,庇护]，碎片 {shards_before}→{engine.state.shards}，精力3→2")
+
+    # 档位校验：忘忧3但只持有2种道纹 → 必须拒绝
+    engine.state.energy = 3
+    r = engine.execute_action("pre_battle_action", {
+        "sub_action": "忘忧", "tier": 3, "forget_names": ["杀伐"]})
+    assert not r["success"], "道纹不足档位时必须拒绝"
+    r = engine.execute_action("pre_battle_action", {
+        "sub_action": "忘忧", "tier": 1, "forget_names": ["杀伐"]})
+    assert r["success"], r
+    assert not player.dao_wen, "忘忧可以失忆到空"
+    print("  ✓ 忘忧1：失忆[杀伐]，可失忆至空；超额档位被正确拒绝")
+
+
 def run_all_tests():
     print("=" * 60)
     print("第四宇宙游戏引擎 - 测试套件（全部真实结算）")
@@ -439,6 +487,7 @@ def run_all_tests():
         test_death_and_crown,
         test_dice,
         test_relic_pool_and_rules,
+        test_wangyou_relic,
     ]
 
     passed = failed = 0

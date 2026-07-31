@@ -156,6 +156,9 @@ class GameEngine:
                  "description": "精力再次-1，发现/自选(15碎片)一件遗物"},
                 {"id": "探索", "cost_energy": 1, "available": False,
                  "unavailable_reason": "事件系统未实装：事件池、事件选择与结算尚未实现，不能假装探索成功"},
+                {"id": "忘忧", "cost_energy": 1, "available": self._has_relic("忘忧香"),
+                 "unavailable_reason": None if self._has_relic("忘忧香") else "需持有遗物【忘忧香】",
+                 "description": "遗物【忘忧香】自有行动：失忆1/2/3，获得30/55/80碎片（forget_names指定失去的道纹）"},
                 {"id": "spend_attribute_points", "cost_energy": 0,
                  "available": self.state.attribute_points > 0,
                  "description": "消耗属性点：1点=1速限 或 1点=2法限（血限无法通过修行提升）"},
@@ -754,6 +757,7 @@ class GameEngine:
             "修行": self._pre_battle_xiuxing,
             "学习": self._pre_battle_xuexi,
             "共鸣": self._pre_battle_gongming,
+            "忘忧": self._pre_battle_wangyou,
         }
 
         if action not in result_map:
@@ -828,6 +832,56 @@ class GameEngine:
                 "unused": heal - total_alloc,
                 "shards_remaining": self.state.shards,
             },
+        }
+
+    def _pre_battle_wangyou(self, params: dict) -> dict:
+        """
+        忘忧（遗物【忘忧香】自有局外行动，真实生效）：
+        README原文：局外行动你可以选择"忘忧"（失忆1/2/3，获得30/55/80［碎片］）
+        - tier=1/2/3 → 失忆1/2/3 → 获得30/55/80碎片
+        - 失忆X：永久失去X种道纹，由 forget_names 指定（与道纹失忆代价同规则）
+        - 精力消耗：与其他局外行动一致消耗1点（规则未单列，待DM裁定确认）
+        """
+        if not self._has_relic("忘忧香"):
+            self.state.energy += 1
+            return {"success": False, "error": "未持有遗物【忘忧香】，不能执行【忘忧】"}
+
+        player = self.state.player
+        if player is None:
+            self.state.energy += 1
+            return {"success": False, "error": "没有玩家"}
+
+        tier = params.get("tier", 1)
+        shard_map = {1: 30, 2: 55, 3: 80}
+        if tier not in shard_map:
+            self.state.energy += 1
+            return {"success": False, "error": "忘忧档位无效（1/2/3 = 失忆1/2/3 → 30/55/80碎片）"}
+
+        forget_names = params.get("forget_names") or []
+        if len(forget_names) != tier or len(set(forget_names)) != tier:
+            self.state.energy += 1
+            return {"success": False,
+                    "error": f"失忆{tier}需通过 forget_names 指定失去的{tier}种不同道纹"}
+        for fn in forget_names:
+            if fn not in player.dao_wen:
+                self.state.energy += 1
+                return {"success": False, "error": f"未持有道纹【{fn}】，无法失忆"}
+
+        for fn in forget_names:
+            del player.dao_wen[fn]
+        gained = shard_map[tier]
+        self.state.shards += gained
+
+        return {
+            "success": True,
+            "action": f"忘忧（失忆{tier}→{gained}碎片）",
+            "result": {
+                "forgot_daowen": forget_names,
+                "shards_gained": gained,
+                "shards_total": self.state.shards,
+                "daowen_remaining": list(player.dao_wen.keys()),
+            },
+            "energy_remaining": self.state.energy,
         }
 
     def _pre_battle_xiuxing(self, params: dict) -> dict:

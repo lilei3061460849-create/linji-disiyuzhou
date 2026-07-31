@@ -93,7 +93,7 @@ precedent = engine.check_precedent("急中生智", {"target": "千手蜈蚣"})
 | `setup_choose_resonance` | ✅ | 选择初始残韵 |
 | `setup_choose_region` | ✅ | 选择副本 |
 | `discover_relic_setup` | ✅ | 遗物发现（抽3候选，自选1件） |
-| `pre_battle_action` | ✅ | 局外行动：领悟/休整/修行/学习/共鸣均真实生效；**探索/维修/雇佣/炼心如实返回 unavailable** |
+| `pre_battle_action` | ✅ | 局外行动：领悟/休整/修行/学习/共鸣/忘忧(遗物忘忧香)均真实生效；**探索/维修/雇佣/炼心如实返回 unavailable** |
 | `spend_attribute_points` | ✅ | 属性点分配（1点=1速限 或 1点=2法限） |
 | `battle_start` | ✅ | 战始：真实出怪（场数-2公式）+随机数抽怪 |
 | `use_daowen` | ✅ | 发动道纹（白名单内58种机制真实生效） |
@@ -114,6 +114,6 @@ precedent = engine.check_precedent("急中生智", {"target": "千手蜈蚣"})
 ```bash
 python main.py              # 交互式命令行
 python main.py --api        # API演示
-python tests/test_engine.py # 11项真实结算测试
+python tests/test_engine.py # 12项真实结算测试
 python simulate.py --runs 200  # 真实压力测试（可复现数据见 AI_EXPERIENCE.md）
 ```

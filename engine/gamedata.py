@@ -104,7 +104,7 @@ RELIC_POOL = [
      "effect": "[战始]，可以指定一名[朋友]或[员工]；本场你支付的【代价】改由其承担，其[命零]后本效果失效"},
     {"name": "无所求",   "implemented": False,
      "effect": "每当你在事件中选择“拒绝”类选项，永久获得1点属性点"},
-    {"name": "忘忧香",   "implemented": False,
+    {"name": "忘忧香",   "implemented": True,
      "effect": "局外行动你可以选择“忘忧”（失忆1/2/3，获得30/55/80［碎片］）"},
 ]
 
