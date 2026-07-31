@@ -18,4 +18,6 @@ build/
 # OS
 .DS_Store
 Thumbs.db
-data/
+data/*
+!data/battle.md
+!data/battle.json
