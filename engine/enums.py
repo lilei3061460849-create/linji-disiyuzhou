@@ -1,0 +1,83 @@
+"""枚举定义"""
+from enum import Enum, auto
+
+
+class GamePhase(Enum):
+    """游戏阶段"""
+    SETUP = "setup"                    # 开局分配
+    PRE_BATTLE = "pre_battle"          # 局外阶段
+    BATTLE_START = "battle_start"      # 战始
+    IN_COMBAT = "in_combat"            # 战斗回合中
+    BATTLE_END = "battle_end"          # 战终
+    DEAD_DUEL = "dead_duel"            # 最终死斗
+    GAME_OVER = "game_over"
+
+
+class ActionPhase(Enum):
+    """回合内结算阶段"""
+    BEFORE_DAMAGE_TAKEN = "受到伤害前"
+    DAMAGE_MITIGATION = "抵消伤害时"
+    DODGE = "闪避攻击"
+    AFTER_DAMAGE_TAKEN = "受到伤害后"
+    BEFORE_LIFE_LOST = "失去生命前"
+    AFTER_LIFE_LOST = "失去生命后"
+
+
+class TriggerTiming(Enum):
+    """触发时点"""
+    BATTLE_START = "战始"
+    BATTLE_END = "战终"
+    ROUND_START = "回始"
+    ROUND_END = "回终"
+    ENEMY_ROUND_START = "敌回始"
+    ENEMY_ROUND_END = "敌回终"
+    ON_TARGET = "目标选定"
+    BEFORE_DAMAGE = "受到伤害前"
+    AFTER_DAMAGE = "受到伤害后"
+    AFTER_LIFE_LOST = "失去生命后"
+    BEFORE_LIFE_LOST = "失去生命前"
+    ALWAYS = "常驻"
+
+
+class CostType(Enum):
+    """代价类型"""
+    MANA = "消耗"           # 法力消耗
+    BLEED = "流血"          # 失去X点生命
+    AGING = "衰老"          # 失去X点血限
+    EXHAUST = "枯竭"        # 失去X点法限
+    SHRINK = "萎缩"         # 失去X点速限
+    FATIGUE = "疲惫"        # 失去X点当前速度
+    AMNESIA = "失忆"        # 永久失去X种道纹
+    MUTATION = "异变"       # 获得X层异变(怪物)
+    COOLDOWN = "冷却"       # 冷却X场
+    UNIQUE = "唯一"         # 本次轮回只能用一次
+
+
+class InterruptType(Enum):
+    """中断类型 - 需要DM裁定"""
+    WIT_OF_DESPERATION = "急中生智"
+    EVOLUTION = "进化"
+    ESCAPE_AND_PURSUIT = "逃跑与追击"
+    STAFF_MUTINY = "员工叛变"
+    DEATH_INHERITANCE = "死之传承"
+    UNSEEN_SCENE = "未见场景"
+    CUSTOM = "自定义"
+
+
+class DamageType(Enum):
+    """伤害类型"""
+    NORMAL = "普通"
+    IGNORE_SHIELD = "无视格挡"
+    IGNORE_DODGE = "无视闪避"
+    MUST_HIT = "必中"
+    REFLECT = "反射"
+    COST = "代价"  # 代价绝对无法被格挡吸收
+
+
+class EntityType(Enum):
+    """实体类型"""
+    REINCARNATOR = "轮回者"
+    MONSTER = "怪物"
+    FRIEND = "朋友"
+    EMPLOYEE = "员工"
+    TEMP_FRIEND = "临时朋友"
