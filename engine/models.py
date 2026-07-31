@@ -40,11 +40,21 @@ class DaoWenInstance:
     """道纹实例 - 角色持有的道纹"""
     dao_wen: DaoWen
     x_value: int = 0            # 当前X值（自由控X规则）
-    cooldown_remaining: int = 0 # 冷却剩余
+    cooldown_remaining: int = 0 # 冷却剩余（以战斗场数计，战终-1，归零可用）
     is_frozen: bool = False     # 是否被封印
+    unique_used: bool = False   # 【唯一】代价：本次轮回中已使用过
     
     def can_use(self) -> bool:
-        return not self.is_frozen and self.cooldown_remaining <= 0
+        return not self.is_frozen and self.cooldown_remaining <= 0 and not self.unique_used
+    
+    def reason_unusable(self) -> str:
+        if self.is_frozen:
+            return "被封印"
+        if self.cooldown_remaining > 0:
+            return f"冷却剩余{self.cooldown_remaining}场"
+        if self.unique_used:
+            return "唯一代价已使用"
+        return ""
 
 
 @dataclass
@@ -122,6 +132,7 @@ class StatusEffect:
     remaining_rounds: int        # 剩余回合（-1=∞）
     value: int = 0               # 效果数值
     source: str = ""             # 来源
+    meta: dict = field(default_factory=dict)  # 附加数据（如承伤目标名）
     
     @property
     def is_permanent(self) -> bool:
@@ -202,6 +213,15 @@ class Entity:
     status_effects: list[StatusEffect] = field(default_factory=list)
     is_flying: bool = False      # 飞行状态
     
+    # 怪物/资源专属
+    mutation: int = 0            # 异变层数（达到50层时失去意志，变为怪物）
+    shards: int = 0              # 角色自带碎片（罪孽都市怪物战始自带碎片）
+    spawn_blood_limit: int = 0   # 战始血限（碎片奖励按战始血限结算）
+    
+    # 战斗记账（回始重置）
+    dodge_streak: int = 0        # 本场战斗累计闪避次数（急速判定用）
+    hp_lost_this_round: int = 0  # 本回合累计失去生命（活血判定用）
+    
     # 存活
     is_alive: bool = True
     
@@ -250,6 +270,8 @@ class Entity:
         self.current_hp = max(0, self.current_hp - remaining)
         detail["actual_damage"] = remaining
         detail["hp_after"] = self.current_hp
+        if remaining > 0:
+            self.hp_lost_this_round += remaining
         
         if self.current_hp <= 0:
             detail["died"] = True
@@ -258,8 +280,10 @@ class Entity:
         return detail
     
     def heal(self, amount: int) -> dict:
-        """回复生命"""
+        """回复生命（坏死：无法获得[回复]）"""
         before = self.current_hp
+        if self.has_status("坏死"):
+            amount = 0
         self.current_hp = min(self.blood_limit, self.current_hp + amount)
         actual = self.current_hp - before
         return {
@@ -302,13 +326,13 @@ class Entity:
     def get_status_value(self, name: str) -> int:
         return sum(s.value for s in self.status_effects if s.name == name and not s.is_expired)
     
-    def tick_status_effects(self) -> list[str]:
-        """回合递减，返回已过期的效果名"""
+    def tick_status_effects(self) -> list:
+        """回合递减，返回已过期的状态对象（含meta，供变形等效果回滚）"""
         expired = []
         remaining = []
         for s in self.status_effects:
             if not s.tick():
-                expired.append(s.name)
+                expired.append(s)
             else:
                 remaining.append(s)
         self.status_effects = remaining
@@ -371,6 +395,7 @@ class GameState:
     
     # 资源
     shards: int = 20            # 碎片
+    fake_shards: int = 0        # 假碎片（战斗中失去碎片时优先失去假碎片，战终清空）
     
     # 遗物与消耗品
     relics: list[Relic] = field(default_factory=list)
@@ -404,6 +429,16 @@ class GameState:
     attribute_points: int = 0
     allocated_blood: int = 0     # 已分配血限（从属性点）
     
+    # 战斗回合记账
+    actions_used: int = 0        # 本回合已用出手次数（回始重置为0）
+    battle_background: str = ""  # 本场战斗背景（战始选定）
+    
+    # 遗物效果记账（血誓戒每回合首次流血触发等）
+    relic_flags: dict = field(default_factory=dict)
+    
+    # 员工工资等运行参数
+    employee_wage_bonus: int = 0
+    
     # 法器/遗物记录
     relic_of_choice: Optional[str] = None  # 当前选择的遗物
     
@@ -417,6 +452,7 @@ class GameState:
             "current_region": self.current_region,
             "energy": self.energy,
             "shards": self.shards,
+            "fake_shards": self.fake_shards,
             "mutation_count": self.mutation_count,
             "blacklist_level": self.blacklist_level,
             "is_blacklisted": self.is_blacklisted,
@@ -435,6 +471,22 @@ class GameState:
             "sealed_candidate": self.sealed_candidate,
         }
     
+    def lose_shards(self, amount: int, in_battle: bool = True) -> dict:
+        """失去碎片：战斗中优先失去假碎片，允许返回明细"""
+        amount = max(0, amount)
+        fake_used = 0
+        if in_battle and self.fake_shards > 0:
+            fake_used = min(self.fake_shards, amount)
+            self.fake_shards -= fake_used
+        real_used = amount - fake_used
+        self.shards -= real_used
+        return {"total": amount, "fake_used": fake_used, "real_used": real_used,
+                "shards_after": self.shards, "fake_after": self.fake_shards}
+
+    def gain_shards(self, amount: int) -> int:
+        self.shards += amount
+        return self.shards
+
     def get_all_player_side(self) -> list[Entity]:
         """获取己方所有实体"""
         entities = []

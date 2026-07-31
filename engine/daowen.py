@@ -763,9 +763,19 @@ class DaoWenEngine:
         }
     
     # ---- 龙心谷专属道纹 ----
-    
+
+    @staticmethod
+    def calculate_jiahai(x: int, target: Entity) -> dict:
+        """加害X：消耗3X。使[目标]每次受到伤害+X，持续∞"""
+        return {
+            "dao_wen": "加害", "x": x, "cost_type": "消耗", "cost": 3 * x,
+            "damage_amp_per_hit": x, "duration": -1,
+            "summary": f"消耗{3*x}法力，{target.name}每次受到伤害+{x}，永久"
+        }
+
     @staticmethod
     def calculate_longlin(x: int, target: Entity) -> dict:
+        """龙鳞X：消耗5X。使[目标]每次受到伤害-X，最低为0，持续∞"""
         """龙鳞X：消耗5X。使目标每次受到伤害-X，最低为0，持续∞"""
         return {
             "dao_wen": "龙鳞", "x": x, "cost_type": "消耗", "cost": 5 * x,
@@ -898,6 +908,7 @@ class DaoWenEngine:
             "赌命": cls.calculate_duming,
             "消灾": cls.calculate_xiaozai,
             # 龙心谷
+            "加害": cls.calculate_jiahai,
             "龙鳞": cls.calculate_longlin,
             "逆鳞": cls.calculate_nilin,
             "活血": cls.calculate_huoxue,

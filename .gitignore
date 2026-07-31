@@ -8,10 +8,6 @@ dist/
 build/
 
 # Data (databases and saves)
-data/*.db
-data/saves/
-data/test_*
-data/demo_*
 
 # IDE
 .vscode/
@@ -22,3 +18,4 @@ data/demo_*
 # OS
 .DS_Store
 Thumbs.db
+data/
