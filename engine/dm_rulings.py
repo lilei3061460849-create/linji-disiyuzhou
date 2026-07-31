@@ -125,7 +125,7 @@ class DMRulingsDB:
         """)
         conn.execute("""
             CREATE VIRTUAL TABLE IF NOT EXISTS rulings_fts 
-            USING fts5(ruling_text, context_json, content=rules, content_rowid=id)
+            USING fts5(ruling_text, context_json, content='', content_rowid=id)
         """)
         conn.commit()
         conn.close()
