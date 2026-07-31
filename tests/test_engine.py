@@ -555,6 +555,61 @@ def test_custom_spell():
     print("  ✓ [战终]修订窗口真实生效，且受同等图纸校验")
 
 
+def test_shell_daowen_bizhong_manqian():
+    """空壳修复：必中（层数真实消耗+闪避失效）与缓慢（阈值判定+无法出手）"""
+    print("\n=== 测试：必中/缓慢（原空壳道纹）===")
+    from engine.models import DaoWenInstance
+    engine = fresh_engine("shellfix")
+    setup_player(engine)
+    drain_energy(engine)
+    start_battle(engine, numbers=[1])
+    mon = engine.state.enemies[0]
+    # 面板补录必中（怪物面板道纹为数据层，测试构造）
+    mon.dao_wen["必中"] = DaoWenInstance(dao_wen={"name": "必中"})
+    engine.state.current_round = 4   # 怪物本轮预算=ceil(4/3)=2
+    engine.execute_action("round_start", {})
+
+    # 怪物发动必中3 + 攻击两轮（玩家全部声明闪避）
+    r = engine.execute_action("monster_turn", {"monster": mon.name, "acts": [
+        {"type": "use_daowen", "daowen": "必中", "x": 3, "target": mon.name},
+        {"type": "attack_round", "target": "测试者", "dodges": [True, True]},
+    ]})
+    assert r["success"], r
+    logs = r["turn_log"]
+    hits = logs[1]["hits"]
+    assert all(not h["dodge_success"] for h in hits), "必中攻击不得被闪避"
+    assert all(h["damage_dealt"] == mon.attack_power for h in hits), "必中攻击必须真实命中"
+    expect = max(0, 3 - len(hits))  # 每次攻击消耗1层
+    assert mon.get_status_value("必中") == expect, \
+        f"3层-{len(hits)}次攻击={expect}层，实际{mon.get_status_value('必中')}"
+    print(f"  ✓ 必中真实生效：3层挂上→{len(hits)}次攻击各耗1层→闪避失效且全中（修复前：花钱不挂状态）")
+
+    # 缓慢：怪物对玩家（玩家速限8→预算3；怪物非专属×3→阈值3）3≤3生效→玩家无法出手
+    mon.dao_wen["缓慢"] = DaoWenInstance(dao_wen={"name": "缓慢"})
+    r = engine.execute_action("monster_turn", {"monster": mon.name, "acts": [
+        {"type": "use_daowen", "daowen": "缓慢", "x": 1, "target": "测试者"},
+    ]})
+    apply = [ef for ef in r["turn_log"][0].get("execution", {}).get("effects", [])
+             if ef.get("type") == "slow_apply"]
+    assert apply and engine.state.player.has_status("缓慢"), f"预算3≤阈值3必须生效: {r}"
+    r2 = engine.execute_action("use_daowen", {"daowen_name": "杀伐", "x": 1, "target": mon.name})
+    assert not r2["success"] and "缓慢" in r2["error"], "缓慢期道纹出手必须被拒绝"
+    r3 = engine.execute_action("attack", {"target": mon.name})
+    assert not r3["success"] and "缓慢" in r3["error"], "缓慢期普攻必须被拒绝"
+    print("  ✓ 缓慢真实生效：阈值判定（预算3≤3）→ 道纹/普攻双路径锁死（修复前：resolve直接崩溃）")
+
+    # 缓慢不生效情形：玩家施放阈值1打预算为3的怪物（移到下轮避免已有状态干扰）
+    engine.state.player.status_effects.clear()
+    engine.state.current_round = 7  # 怪物预算=3
+    engine.state.player.dao_wen["缓慢"] = DaoWenInstance(dao_wen=engine._build_daowen_def("缓慢"))
+    engine.state.player.current_mana = 50
+    engine.state.actions_used = 0
+    r4 = engine.execute_action("use_daowen", {"daowen_name": "缓慢", "x": 1, "target": mon.name})
+    assert r4["success"] and not mon.has_status("缓慢"), "阈值1<预算3必须不生效，不挂状态"
+    assert r4["execution"]["effects"][0]["type"] == "slow_failed"
+    print("  ✓ 缓慢未达标（1<3）：如实 slow_failed，不挂状态找借口")
+
+
 def run_all_tests():
     print("=" * 60)
     print("第四宇宙游戏引擎 - 测试套件（全部真实结算）")
@@ -576,6 +631,7 @@ def run_all_tests():
         test_relic_pool_and_rules,
         test_wangyou_relic,
         test_custom_spell,
+        test_shell_daowen_bizhong_manqian,
     ]
 
     passed = failed = 0

@@ -28,6 +28,7 @@
 """
 import argparse
 import json
+import math
 import os
 import random
 import shutil
@@ -325,6 +326,102 @@ def round_hook_line(timing: str, effects: list, engine: GameEngine) -> str:
 
 
 # ============================================================
+# 理性工具（策略层公共服务：任何行动都必须有实际收益，禁止演傻）
+# ============================================================
+
+def shard_reserve(engine: GameEngine) -> int:
+    """碎片留存量：持买路财时必留撤退基金，否则留小额应急"""
+    return 90 if any(r.name == "买路财" for r in engine.state.relics) else 25
+
+
+def pick_rest_tier(engine: GameEngine) -> Optional[int]:
+    """休整决策：满血/近满血不执行（返回None）；否则选能覆盖缺口的最小可负担档"""
+    p = engine.state.player
+    missing = p.blood_limit - p.current_hp
+    if missing <= 0:
+        return None
+    tier_map = {1: (8, 0), 2: (24, 10), 3: (48, 25)}
+    for tier in (1, 2, 3):
+        heal, cost = tier_map[tier]
+        if engine.state.shards - shard_reserve(engine) >= cost and heal >= min(missing, 8):
+            return tier
+    return 1 if missing >= 8 else None  # t1免费，缺口≥8才值得花精力
+
+
+def pick_train_tier(engine: GameEngine) -> int:
+    """修行决策：在留存线以上选最大可负担档（碎片捂到死不如换成数值）"""
+    tier_map = {1: 0, 2: 15, 3: 35, 4: 65, 5: 100, 6: 150}
+    budget = engine.state.shards - shard_reserve(engine)
+    best = 1
+    for tier, cost in tier_map.items():
+        if budget >= cost:
+            best = tier
+    return best
+
+
+def expected_incoming_damage(engine: GameEngine) -> int:
+    """保守评估本回合敌方火力：闪避预算内优先闪高攻，剩余命中+必中全额计入"""
+    p = engine.state.player
+    dodgeable = []       # 可闪避命中的单次伤害列表
+    unavoidable = 0      # 必中伤害
+    for m in engine.state.enemies:
+        if not m.is_alive or m.has_status("束缚") or m.has_status("眩晕"):
+            continue
+        n = 1 if m.has_status("迟滞") else m.attack_count
+        if m.has_status("必中"):
+            unavoidable += n * m.attack_power
+        else:
+            dodgeable.extend([m.attack_power] * n)
+    dodgeable.sort(reverse=True)
+    budget = p.current_speed if p else 0
+    return unavoidable + sum(dodgeable[budget:])
+
+
+def try_retreat(engine: GameEngine, trace: Optional[list] = None) -> bool:
+    """买路财撤退决策：预测本回合必死且付得起撤退费时才跑（不白跑、不送死）"""
+    p = engine.state.player
+    if not any(r.name == "买路财" for r in engine.state.relics):
+        return False
+    if engine.state.phase != "in_combat" or not p.is_alive:
+        return False
+    alive = [m for m in engine.state.enemies if m.is_alive]
+    if not alive:
+        return False
+
+    incoming = expected_incoming_damage(engine)
+    if incoming < p.current_hp + p.shield:
+        return False  # 扛得住，不浪费碎片
+
+    cost = sum(math.ceil(m.blood_limit * 0.2) for m in alive)
+    shards_part = min(engine.state.shards, cost)
+    remainder = cost - shards_part
+    hp_pay = 0
+    blood_pay = 0
+    if remainder > 0:
+        hp_pay = min(remainder * 2, p.current_hp - 1)      # 2生命=1碎片，留1滴血
+        left = remainder - math.ceil(hp_pay / 2)
+        if left > 0:
+            # 血限1:1补足，且扣后血限必须≥扣后生命且≥1（禁止为了跑先跑死自己）
+            blood_pay = left
+            if p.blood_limit - blood_pay < max(1, p.current_hp - hp_pay):
+                if trace is not None:
+                    trace.append(f"（必死局想买路财撤退，但付不起：需{cost}碎片等价，"
+                                 f"碎片{engine.state.shards}/生命{p.current_hp}/血限{p.blood_limit}不足，"
+                                 f"只能死战——如实记录这个绝望决策）")
+                return False
+    r = engine.execute_action("retreat", {"hp_pay": hp_pay, "blood_limit_pay": blood_pay})
+    if trace is not None:
+        det = (r.get("result") or {}).get("retreat") or {}
+        trace.append(f"⚠ 预判本回合承伤{incoming}≥生命{p.current_hp}+格挡{p.shield}，买路财撤退："
+                     f"费{det.get('cost_shards_equivalent', cost)}碎片等价"
+                     f"（碎片{det.get('shards_paid', shards_part)}"
+                     f"{f'＋生命{hp_pay}' if hp_pay else ''}{f'＋血限{blood_pay}' if blood_pay else ''}）"
+                     f"→ 本场无碎片收益，命保住进下一场")
+    return r.get("success", False)
+
+
+
+# ============================================================
 # 策略层（扮演 AI 玩家与怪物，只调用公开行动接口）
 # ============================================================
 
@@ -423,15 +520,15 @@ class Policy:
             threat = sum(m.attack_count * m.attack_power for m in enemies)
             need_shield = threat > player.current_hp + player.shield * 2 and "庇护" in player.dao_wen
             if need_shield and player.shield < threat // 2:
-                use = ("庇护", max(1, mana - 2))
+                use = ("庇护", max(1, mana - 2), player.name)   # 增益打自己，不打敌人
             elif "杀伐" in player.dao_wen:
-                use = ("杀伐", mana)
+                use = ("杀伐", mana, target.name)
             elif "再生" in player.dao_wen and player.current_hp < player.blood_limit * 0.5:
-                use = ("再生", max(1, mana // 2))
+                use = ("再生", max(1, mana // 2), player.name)
             if use is None:
                 break
             r = engine.execute_action("use_daowen", {
-                "daowen_name": use[0], "x": use[1], "target": target.name,
+                "daowen_name": use[0], "x": use[1], "target": use[2],
             })
             if trace is not None:
                 if r.get("success"):
@@ -587,12 +684,16 @@ def run_campaign(policy_name: str, region: str, seed: int, verbose: bool = False
     last = engine._last_result or {}
     chosen_relic = None
     if last.get("candidates"):
-        engine.execute_action("discover_relic_setup", {"chosen": last["candidates"][0]})
+        # 发现3选1：优先已实装遗物（拿摆设没有意义）
+        from engine.gamedata import RELIC_POOL
+        impl = {r["name"] for r in RELIC_POOL if r.get("implemented")}
+        pick = next((c for c in last["candidates"] if c in impl), last["candidates"][0])
+        engine.execute_action("discover_relic_setup", {"chosen": pick})
         chosen_relic = engine._last_result.get("result", {}).get("relic")
 
     log = {"policy": policy_name, "region": region, "seed": seed,
            "battles_won": 0, "furthest_battle": 0, "death_battle": None,
-           "rounds_survived": 0,
+           "rounds_survived": 0, "escapes": 0,
            "crown_sealed": False, "duel": None, "relics": []}
     log["relics"] = [r.name for r in engine.state.relics]
 
@@ -616,18 +717,27 @@ def run_campaign(policy_name: str, region: str, seed: int, verbose: bool = False
             title += "  最终死斗"
         T(f"━━ {title} ━━━━━━━━━━━━━━━━━━━━")
 
-        # ---- 局外 ----
+        # ---- 局外：计划逐一合理化（满血不休整、碎片在留存线以上就买数值），剩余精力兜底 ----
         pre_lines = []
         for act in policy.pre_battle_plan(engine, battle_no):
             if engine.state.energy <= 0:
                 break
-            r = engine.execute_action("pre_battle_action", act)
+            sane = dict(act)
+            if sane.get("sub_action") == "休整":
+                tier = pick_rest_tier(engine)
+                if tier is None:
+                    pre_lines.append("休整跳过：血量已满/无缺口，不白烧精力")
+                    continue
+                sane["tier"] = tier
+            elif sane.get("sub_action") == "修行":
+                sane["tier"] = max(sane.get("tier", 1), pick_train_tier(engine))
+            r = engine.execute_action("pre_battle_action", sane)
             handle_pending(engine, rng, verbose)
             if r.get("success"):
-                pre_lines.append(_condense_pre_battle(act, r, engine))
+                pre_lines.append(_condense_pre_battle(sane, r, engine))
             else:
-                pre_lines.append(f"{act.get('sub_action', '?')}失败:{r.get('error', '?')}")
-            if act.get("sub_action") == "修行" and r.get("success"):
+                pre_lines.append(f"{sane.get('sub_action', '?')}失败:{r.get('error', '?')}")
+            if sane.get("sub_action") == "修行" and r.get("success"):
                 pts = engine.state.attribute_points
                 if pts > 0:
                     # 交替加速度与法力
@@ -639,21 +749,33 @@ def run_campaign(policy_name: str, region: str, seed: int, verbose: bool = False
                     pre_lines.append(
                         f"→属性点分配：{pts}点→{rr.get('to')}"
                         f"（速限{rr.get('speed_limit')} 法限{rr.get('mana_limit')} 每回合出手{rr.get('action_count')}）")
-        # 未花完的精力用免费休整兜底（休整档位失败自动降档）
+        # 兜底：精力不能空转——该回血回血，该买数值买数值，最后才领悟烧掉
         while engine.state.energy > 0:
-            spent = False
-            for tier in (3, 2, 1):
+            tier = pick_rest_tier(engine)
+            if tier is not None:
                 r = engine.execute_action("pre_battle_action", {"sub_action": "休整", "tier": tier})
-                if r.get("success"):
-                    spent = True
-                    pre_lines.append(_condense_pre_battle({"sub_action": "休整", "tier": tier}, r, engine))
-                    break
-            if not spent:  # 碎片连t1都付不起时只能领悟残韵烧精力
-                r = engine.execute_action("pre_battle_action", {"sub_action": "领悟", "resonance_type": "反转"})
-                if r.get("success"):
-                    pre_lines.append(_condense_pre_battle({"sub_action": "领悟"}, r, engine))
-                else:
-                    break
+                pre_lines.append(_condense_pre_battle({"sub_action": "休整", "tier": tier}, r, engine))
+                continue
+            tier = pick_train_tier(engine)
+            r = engine.execute_action("pre_battle_action", {"sub_action": "修行", "tier": tier})
+            if r.get("success"):
+                pre_lines.append(_condense_pre_battle({"sub_action": "修行", "tier": tier}, r, engine))
+                pts = engine.state.attribute_points
+                if pts > 0:
+                    if engine.state.player.speed_limit <= engine.state.player.mana_limit:
+                        r2 = engine.execute_action("spend_attribute_points", {"to": "速限", "points": pts})
+                    else:
+                        r2 = engine.execute_action("spend_attribute_points", {"to": "法限", "points": pts})
+                    rr = r2.get("result", {})
+                    pre_lines.append(
+                        f"→属性点分配：{pts}点→{rr.get('to')}"
+                        f"（速限{rr.get('speed_limit')} 法限{rr.get('mana_limit')} 每回合出手{rr.get('action_count')}）")
+                continue
+            r = engine.execute_action("pre_battle_action", {"sub_action": "领悟", "resonance_type": "反转"})
+            if r.get("success"):
+                pre_lines.append(_condense_pre_battle({"sub_action": "领悟"}, r, engine))
+            else:
+                break
         if trace is not None:
             T("局外（精力3→0）：")
             for ln in pre_lines:
@@ -674,6 +796,7 @@ def run_campaign(policy_name: str, region: str, seed: int, verbose: bool = False
         # ---- 回合循环 ----
         max_rounds = 60
         finished = False
+        escaped = False
         for round_i in range(1, max_rounds + 1):
             rs = engine.execute_action("round_start", {})
             log["rounds_survived"] += 1
@@ -682,8 +805,18 @@ def run_campaign(policy_name: str, region: str, seed: int, verbose: bool = False
                 hook = round_hook_line("回始", ((rs.get("result") or {}).get("effects")), engine)
                 T(f"{hook} ｜ {player_panel(engine)} ｜ {enemy_panel(engine)}")
 
-            # 反应型法术："受到伤害前"在敌方出手前抢先开启（策略层近似）
-            policy_casted = Policy.cast_reaction_spells(engine, "受到伤害前", trace)
+            # 买路财：预判本回合必死且付得起才撤退（不白跑、不揣着钱送死）
+            if try_retreat(engine, trace):
+                finished = True
+                escaped = True
+                log["escapes"] += 1
+                break
+
+            # 反应型法术："受到伤害前"类仅在威胁实质化时开启（不对挠痒威胁空烧法力）
+            p_now = engine.state.player
+            threat = expected_incoming_damage(engine)
+            if threat > p_now.current_hp + p_now.shield * 2:
+                Policy.cast_reaction_spells(engine, "受到伤害前", trace)
 
             policy.player_acts(engine, trace)
 

@@ -1449,6 +1449,10 @@ class GameEngine:
                     "success": False,
                     "error": f"出手次数已用完（{self.state.actions_used}/{budget}），请结束行动进入敌方回合",
                 }
+            # 缓慢X：本回合若出手次数≤X则无法出手（对轮回者侧同样执行）
+            if caster.has_status("缓慢") and budget <= caster.get_status_value("缓慢"):
+                return {"success": False,
+                        "error": f"缓慢：本回合出手{budget}≤{caster.get_status_value('缓慢')}，无法出手"}
 
         # 查找目标
         target = caster
@@ -1500,6 +1504,12 @@ class GameEngine:
             name, x,
             target=target, caster=caster,
             _state=self._caster_state_dict(caster),
+            **({} if name != "缓慢" else {"target_action_count": (
+                max(0, self.combat.monster_act_count(self.state.current_round)
+                    + target.get_status_value("活力") - target.get_status_value("无力"))
+                if target in self.state.enemies
+                else self._player_action_budget() if target is self.state.player
+                else max(1, math.ceil((target.attack_count or 1) / 3)))}),
         )
 
         # 法力消耗（怪物发动面板道纹不支付法力，只消耗出手；愤怒：目标法力消耗减半）
@@ -1683,14 +1693,27 @@ class GameEngine:
             return result
 
         if name == "缓慢":
-            # 缓慢X：本回合若目标单轮出手次数≤X，则其无法出手
-            if calc.get("effective"):
-                add_status(target, "缓慢", 1, calc["x"])
+            # 缓慢X：本回合若目标单轮出手次数≤X则无法出手（怪物非专属×3作用于阈值）
+            threshold = calc["x"] * multiplier
+            acts = calc.get("target_action_count", 0)
+            if acts <= threshold:
+                add_status(target, "缓慢", 1, threshold)
                 result["effects"].append({"type": "slow_apply", "target": target.name,
-                                          "note": "本回合无法出手"})
+                                          "note": f"本回合无法出手（{acts}≤{threshold}）"})
             else:
                 result["effects"].append({"type": "slow_failed",
-                                          "note": calc.get("summary", "未生效")})
+                                          "note": f"未生效（目标出手{acts}＞阈值{threshold}）"})
+            return result
+
+        if name == "必中":
+            # 必中X：自身下X次攻击附带必中（持续至层数耗尽，攻击时逐层消耗）
+            charges = calc["guaranteed_hits"] * multiplier
+            add_status(caster, "必中", 0, charges)
+            result["effects"].append({
+                "type": "status_added", "target": caster.name, "status": "必中",
+                "duration": -1, "value": charges,
+                "note": f"下{charges}次攻击附带必中（层尽即止，不回终自动消失）",
+            })
             return result
 
         if name == "蒙蔽":
@@ -2147,6 +2170,9 @@ class GameEngine:
         budget = self._player_action_budget()
         if self.state.actions_used >= budget:
             return {"success": False, "error": f"出手次数已用完（{self.state.actions_used}/{budget}）"}
+        if player.has_status("缓慢") and budget <= player.get_status_value("缓慢"):
+            return {"success": False,
+                    "error": f"缓慢：本回合出手{budget}≤{player.get_status_value('缓慢')}，无法出手"}
 
         target_name = params.get("target", "")
         target = self._find_entity(target_name)

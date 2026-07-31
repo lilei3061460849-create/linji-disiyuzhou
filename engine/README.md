@@ -115,6 +115,6 @@ precedent = engine.check_precedent("急中生智", {"target": "千手蜈蚣"})
 ```bash
 python main.py              # 交互式命令行
 python main.py --api        # API演示
-python tests/test_engine.py # 13项真实结算测试
+python tests/test_engine.py # 14项真实结算测试
 python simulate.py --runs 200  # 真实压力测试（可复现数据见 AI_EXPERIENCE.md）
 ```
