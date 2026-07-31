@@ -923,6 +923,58 @@ def test_five_relics():
     print("  ✓ 卖身契：指定对象[命零]→效果失效如实记录，代价回落自身")
 
 
+def test_friend_mutation_defect():
+    """DM裁定：朋友异变≥50一律异变为怪物，立即倒戈加入敌方（两条路径）"""
+    print("\n=== 测试：朋友异变50怪化倒戈（DM裁定） ===")
+    from engine.models import Entity as _Entity, DaoWenInstance
+
+    def mk_kuangbao_friend(engine, name, mutation):
+        f = _Entity(name=name, entity_type="朋友", blood_limit=50, current_hp=50,
+                    attack_count=2, attack_power=3, mutation=mutation)
+        f.dao_wen["狂暴"] = DaoWenInstance(dao_wen=engine._build_daowen_def("狂暴"))
+        engine.state.friends.append(f)
+        return f
+
+    # ---- 路径1：朋友自己发动狂暴，异变45+5=50 → 当场倒戈 ----
+    engine = fresh_engine("defect1")
+    setup_player(engine)
+    f = mk_kuangbao_friend(engine, "乞丐", 45)
+    drain_energy(engine)
+    start_battle(engine, numbers=[5])   # 眼树
+    r = engine.execute_action("friend_turn", {"friend": "乞丐", "acts": [
+        {"type": "use_daowen", "daowen": "狂暴", "x": 1, "target": "乞丐"}]})
+    assert r["success"], f"朋友出手失败: {r}"
+    assert f.mutation == 50 and f.entity_type == "怪物"
+    assert f not in engine.state.friends and f in engine.state.enemies, "必须立即倒戈加入敌方"
+    assert any("异变怪化" in str(e) for e in r.get("turn_log", [])), f"必须如实记录怪化: {r['turn_log']}"
+    print("  ✓ 朋友狂暴自付异变45→50：立即异变为怪物倒戈，面板/道纹原样带入敌方")
+
+    # ---- 路径2：卖身契转承异变，47+5=52 → 倒戈且卖身契失效 ----
+    engine = fresh_engine("defect2")
+    setup_player(engine)
+    relic = next(r for r in engine.state.relics_pool if r.name == "卖身契")
+    engine.state.relics_pool.remove(relic)
+    engine.state.relics.append(relic)
+    f2 = mk_kuangbao_friend(engine, "赴火者", 47)
+    p = engine.state.player
+    p.dao_wen["狂暴"] = DaoWenInstance(dao_wen=engine._build_daowen_def("狂暴"))
+    drain_energy(engine)
+    r = engine.execute_action("battle_start", {
+        "battle_background": "测试背景", "maishenqi_friend": "赴火者"})
+    assert r["success"], r
+    for i in range(r["spawn_count"]):
+        engine.execute_action("random_number", {
+            "pool_name": f"spawn_battle_{engine.state.current_battle}", "number": 5})
+    assert engine.state.phase == "in_combat"
+    r = engine.execute_action("use_daowen", {"daowen_name": "狂暴", "x": 1, "target": p.name})
+    assert r["success"], f"狂暴失败: {r}"
+    assert f2.mutation == 52 and f2.entity_type == "怪物" and f2 in engine.state.enemies
+    assert p.mutation == 0, "转承生效：轮回者自身不累计异变"
+    assert engine.state.relic_flags.get("卖身契_friend") is None, "对象怪化后卖身契必须失效"
+    assert any("异变怪化" in str(c) for c in r.get("cost_applied", [])), r.get("cost_applied")
+    print("  ✓ 卖身契转承异变47→52：朋友怪化倒戈，卖身契如实失效，轮回者异变0")
+
+
 def run_all_tests():
     print("=" * 60)
     print("第四宇宙游戏引擎 - 测试套件（全部真实结算）")
@@ -948,6 +1000,7 @@ def run_all_tests():
         test_resonance_hijack,
         test_events_system,
         test_five_relics,
+        test_friend_mutation_defect,
     ]
 
     passed = failed = 0

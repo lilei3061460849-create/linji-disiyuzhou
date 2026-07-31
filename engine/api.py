@@ -545,9 +545,13 @@ class GameEngine:
             applied.append({"type": "异变", "amount": calc["cost_mutation"],
                             "mutation_total": payer.mutation,
                             **({"paid_by": f"卖身契→{payer.name}",
-                                "warning": "朋友异变达到50层的处置原文未明，待DM裁定" if payer.mutation >= 50 else ""}
+                                "warning": "异变达到50层时变为怪物" if payer.mutation >= 50 else ""}
                                if proxy else
                                {"warning": "异变达到50层时变为怪物" if payer.mutation >= 50 else ""})})
+            # DM裁定（2026-07-31）：朋友/员工/临时朋友异变≥50一律异变为怪物——立即倒戈加入敌方
+            if payer is not self.state.player and payer.entity_type != "怪物" \
+                    and payer.is_alive and payer.mutation >= 50:
+                applied.append(self._convert_friend_to_monster(payer))
 
         elif cost_type == "冷却" and dw_instance is not None:
             # 冷却X：使用后该道纹记为 X(0)/Y；战终完成场数+1，达到Y才能再次使用
@@ -2106,6 +2110,36 @@ class GameEngine:
                 f"请玩家逐只给出 1~{len(pool)} 的数字（random_number）"
             ),
         }
+
+    def _convert_friend_to_monster(self, friend: Entity) -> dict:
+        """
+        朋友异变≥50 → 一律异变为怪物（DM裁定2026-07-31，与轮回者异变50对等）：
+        立即脱离我方阵营、倒戈加入敌方（沿用其面板与道纹，白板规则同怪物：
+        其面板道纹自倒戈后的出手轮起主动发动方可生效）；
+        卖身契/负岳索指向该对象的，效果失效如实记录。
+        """
+        for lst in (self.state.friends, self.state.employees, self.state.temp_friends):
+            if friend in lst:
+                lst.remove(friend)
+                break
+        orig_name = friend.name
+        extra = ""
+        for key in ("卖身契_friend", "负岳索_friend"):
+            if self.state.relic_flags.get(key) == orig_name:
+                self.state.relic_flags.pop(key, None)
+                extra += f"；{key.split('_')[0]}指向对象已怪化，效果失效"
+        friend.entity_type = "怪物"
+        friend.spawn_blood_limit = friend.blood_limit   # [战终]奖励按怪物口径：战始血限2%+道纹数×5
+        # 与场上怪物重名时编号，保证实体名唯一
+        if any(m.name == orig_name for m in self.state.enemies):
+            n = 2
+            while any(m.name == f"{orig_name}{n}" for m in self.state.enemies):
+                n += 1
+            friend.name = f"{orig_name}{n}"
+        self.state.enemies.append(friend)
+        return {"type": "异变怪化",
+                "note": (f"{orig_name}异变达到{friend.mutation}层，立刻异变为怪物倒戈加入敌方"
+                         f"（DM裁定：朋友一律异变为怪物）；本场[战终]如其未[命零]则就此为敌，不再回归{extra}")}
 
     def _huifengdao_on_speed_loss(self, points: int, source: Optional["Entity"] = None) -> Optional[str]:
         """
