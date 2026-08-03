@@ -330,6 +330,8 @@ class GameEngine:
                 result = self._action_declare_escape(params)
             elif action_type == "declare_evolution":
                 result = self._action_declare_evolution(params)
+            elif action_type == "monster_phase":
+                result = self._action_monster_phase(params)
             elif action_type == "round_start":
                 result = self._action_round_start(params)
             elif action_type == "round_end":
@@ -1095,6 +1097,18 @@ class GameEngine:
 
     # ==================== 回合管理 ====================
     
+    def _action_monster_phase(self, params: dict) -> dict:
+        """怪物回合：引擎自主运行所有怪物的道纹出手+攻击出手"""
+        dodge_policy = params.get("dodge_policy", "auto")
+        results = self.combat.run_monster_phase(dodge_policy)
+        # 怪物出手后若玩家死亡
+        player_dead = (self.state.player is None) or (not self.state.player.is_alive)
+        return {
+            "success": True, "action": "怪物回合",
+            "result": {"attacks": len(results), "player_dead": player_dead,
+                       "player_hp": self.state.player.current_hp if self.state.player else 0},
+        }
+
     def _action_round_start(self, params: dict) -> dict:
         """回始"""
         result = self.combat.round_start()
