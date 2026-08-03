@@ -701,6 +701,27 @@ class CombatEngine:
     def settle_taming(self) -> list[dict]:
         return self.settle_victory_paths()
 
+    def init_monster_shards(self, monster: Entity) -> int:
+        """
+        罪孽都市怪物[战始]自带碎片=其全部专属道纹数值之和×2
+        其他副本怪物碎片默认0。返回初始化后的碎片数。
+        """
+        if self.state.current_region != "罪孽都市":
+            return monster.shards
+        exclusive = self.REGION_EXCLUSIVE_DAOWEN.get("罪孽都市", set())
+        total = 0
+        for name, inst in monster.dao_wen.items():
+            if name in exclusive:
+                total += getattr(inst, "x_value", 0) or 0
+        monster.shards = total * 2
+        return monster.shards
+
+    def drain_monster_shards(self, monster: Entity, amount: int) -> int:
+        """夺取/逼债使怪物失去碎片（可降至负值即负债），返回夺得的碎片数（≥0部分）"""
+        gained = max(0, monster.shards)  # 仅正值部分可被夺得
+        monster.shards -= amount
+        return min(gained, amount)
+
     # ========== 急中生智 ==========
     
     def initiate_wit(self, declarer: Entity, target: Entity) -> Interrupt:
