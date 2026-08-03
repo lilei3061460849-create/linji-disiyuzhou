@@ -715,6 +715,37 @@ def test_huoxue():
     print("  ✓ 活血测试通过")
 
 
+def test_events_system():
+    """测试事件系统：解析/触发/结算"""
+    print("\n=== 测试：事件系统 ===")
+    engine = GameEngine(db_path="data/test_rulings.db")
+    engine.execute_action("setup_attributes", {"name":"测试","blood_points":10,"speed_points":8,"mana_points":7})
+    engine.execute_action("setup_choose_daowen", {"daowen":"杀伐"})
+    engine.execute_action("setup_choose_region", {"region":"扭曲都市"})
+    # 解析数量
+    assert len(engine.event_pool.events) >= 25, f"应解析>=25事件，实{len(engine.event_pool.events)}"
+    print(f"  ✓ 解析到{len(engine.event_pool.events)}个事件")
+
+    # 探索触发（补精力）
+    engine.state.energy = 3
+    r = engine.execute_action("pre_battle_action", {"sub_action":"探索"})
+    assert r["success"], f"探索失败: {r}"
+    ev_name = r["result"]["event"]
+    assert r["result"]["options"], "事件应有选项"
+    print(f"  ✓ 探索触发【{ev_name}】，{len(r['result']['options'])}个选项")
+
+    # 直接结算祭坛选项1：衰老8+1速限
+    bl_before = engine.state.player.blood_limit
+    sp_before = engine.state.player.speed_limit
+    r2 = engine.execute_action("resolve_event", {"event":"祭坛","option_id":1})
+    assert r2["success"], f"结算失败: {r2}"
+    assert engine.state.player.blood_limit == bl_before - 8, f"衰老8应血限-8，实{engine.state.player.blood_limit}"
+    assert engine.state.player.speed_limit == sp_before + 1, f"应+1速限"
+    assert "祭坛" in engine.event_pool.triggered, "事件应标记已触发"
+    print(f"  ✓ 祭坛选项1：衰老8(血限{bl_before}→{engine.state.player.blood_limit})+1速限，已标记触发")
+    print("  ✓ 事件系统测试通过")
+
+
 def run_all_tests():
     """运行所有测试"""
     print("=" * 60)
@@ -741,6 +772,7 @@ def run_all_tests():
         test_spells_trigger,
         test_flying_and_split,
         test_huoxue,
+        test_events_system,
     ]
     
     passed = 0

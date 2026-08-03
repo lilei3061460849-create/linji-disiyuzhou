@@ -21,6 +21,7 @@ from .enums import GamePhase, InterruptType, EntityType
 from .dice import DiceEngine, EventPool, RandomRequest
 from .daowen import DaoWenEngine, ResonanceEngine
 from .combat import CombatEngine
+from .events import EventPool, parse_events
 from .dm_rulings import DMRulingsDB, DMRuling, Interrupt
 
 
@@ -46,6 +47,9 @@ class GameEngine:
         # 中断队列（等待DM裁定）
         self._pending_interrupts: list[Interrupt] = []
         
+        # 事件系统
+        _readme = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "README.md")
+        self.event_pool = EventPool(parse_events(_readme) if os.path.exists(_readme) else {})
         # 行动历史（可追溯）
         self._action_history: list[dict] = []
         
@@ -335,6 +339,8 @@ class GameEngine:
                 result = self._action_battle_start(params)
             elif action_type == "battle_end":
                 result = self._action_battle_end(params)
+            elif action_type == "resolve_event":
+                result = self._action_resolve_event(params)
             elif action_type == "random_number":
                 result = self._action_submit_random(params)
             else:
@@ -695,25 +701,19 @@ class GameEngine:
                                                                       "pool_remaining": len(self.state.relics_pool)}}
     
     def _pre_battle_tansuo(self, params: dict) -> dict:
-        """探索：发现事件"""
-        tier = params.get("tier", 1)  # 1=1个, 2=2个(30碎片)
-        
-        cost = 0
-        if tier == 2:
-            cost = 30
-        
-        if self.state.shards < cost:
+        """探索：从当前事件池(通用+本副本专属)随机抽取一个事件"""
+        import random as _r
+        region = self.state.current_region
+        name = self.event_pool.trigger(region, _r)
+        if name is None:
             self.state.energy += 1
-            return {"success": False, "error": f"碎片不足，需要{cost}"}
-        
-        self.state.shards -= cost
-        
+            return {"success": False, "error": "当前事件池已空（所有事件均已触发）"}
+        ev = self.event_pool.events[name]
         return {
-            "success": True,
-            "action": "探索",
-            "random_required": True,
-            "pool_range": "需要先构建事件池",
-            "instruction": "需要随机数来选择事件"
+            "success": True, "action": "探索",
+            "result": {"event": name, "region": ev["region"], "desc": ev["desc"],
+                       "options": [{"id": o["id"], "text": o["text"]} for o in ev["options"]]},
+            "instruction": f"遭遇【{name}】，请选择选项后调用 resolve_event"
         }
     
     def _pre_battle_weixiu(self, params: dict) -> dict:
@@ -1058,6 +1058,29 @@ class GameEngine:
                        "note": "反应型法术在触发时点(受伤害前/失血后/目标发动道纹前)由引擎自动结算"},
         }
     
+    # ==================== 事件结算 ====================
+
+    def _action_resolve_event(self, params: dict) -> dict:
+        """结算事件选项：自动应用常见代价/收益，特殊效果交DM"""
+        from .events import resolve_option_effect
+        name = params.get("event", "")
+        option_id = params.get("option_id")
+        ev = self.event_pool.events.get(name)
+        if not ev:
+            return {"success": False, "error": f"未知事件: {name}"}
+        opt = next((o for o in ev["options"] if o["id"] == option_id), None)
+        if opt is None:
+            return {"success": False, "error": f"事件{name}无选项{option_id}"}
+        res = resolve_option_effect(opt["text"], self)
+        self.event_pool.resolve(name)
+        return {
+            "success": True, "action": f"事件【{name}】选项{option_id}",
+            "result": {"option": opt["text"], "applied": res["applied"], "instructions": res["instructions"],
+                       "shards": self.state.shards,
+                       "player_hp": self.state.player.current_hp if self.state.player else None},
+            "note": "已自动结算可解析的代价/收益；instructions中的特殊效果需DM裁定"
+        }
+
     # ==================== 回合管理 ====================
     
     def _action_round_start(self, params: dict) -> dict:
