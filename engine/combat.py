@@ -162,13 +162,25 @@ class CombatEngine:
         
         # 检查贯穿（无视格挡）
         ignore_shield = attacker.has_status("贯穿")
-        
+        # 法术：受到伤害前（玩家为目标时触发反应型法术，可能反杀攻击者或加盾）
+        if self.state.player is not None and target is self.state.player and damage > 0:
+            slogs = self.trigger_spells("受到伤害前", {"attacker": attacker, "target": target, "incoming": damage})
+            if slogs:
+                result["spell_logs"] = slogs
+            if not attacker.is_alive:
+                damage = 0  # 攻击者被法术反杀
         damage_result = target.take_damage(damage, "普通" if not ignore_shield else "无视格挡")
         result["damage_dealt"] = damage_result["actual_damage"]
         result["shield_absorbed"] = damage_result["shield_absorbed"]
         result["hp_lost"] = damage_result["actual_damage"]
         result["target_died"] = damage_result["died"]
         result["target_hp_after"] = damage_result["hp_after"]
+        # 法术：失去生命后（玩家实损>0时触发）
+        if (self.state.player is not None and target is self.state.player
+                and damage_result["actual_damage"] > 0 and target.is_alive):
+            slogs2 = self.trigger_spells("失去生命后", {"attacker": attacker, "target": target})
+            if slogs2:
+                result.setdefault("spell_logs", []).extend(slogs2)
         
         # 结算后效果
         # 兴奋：每次出手后速度+1
@@ -792,6 +804,214 @@ class CombatEngine:
     
     # ========== 辅助方法 ==========
     
+    def apply_daowen_effect(self, name: str, calc: dict, caster: Entity, target: Entity) -> dict:
+        """应用道纹效果（统一效果键处理；供api与法术共用）"""
+        result = {"daowen": name, "effects": []}
+        multiplier = self.is_monster_triple(name, caster)
+        if multiplier > 1:
+            result["monster_triple"] = True
+            result["multiplier"] = multiplier
+        x = calc.get("x", 0)
+
+        # 蒙蔽(施法者伤害类道纹归零) / 坏死(目标禁疗)
+        mengbi_blocked = caster.has_status("蒙蔽") and ("target_damage" in calc or "aoe_damage" in calc)
+        if mengbi_blocked:
+            for s in caster.status_effects:
+                if s.name == "蒙蔽" and s.value > 0:
+                    s.value -= 1
+                    if s.value <= 0: caster.status_effects.remove(s)
+                    break
+            result["mengbi_blocked"] = True
+        huaisi_block = target.has_status("坏死") and "target_heal" in calc
+
+        # ---- 伤害类 ----
+        if "target_damage" in calc:
+            dmg = target.take_damage(0 if mengbi_blocked else calc["target_damage"] * multiplier)
+            result["effects"].append({"type": "damage", "target": target.name, **dmg})
+        if "total_damage" in calc and "target_damage" not in calc:  # 血债等多段
+            dmg = target.take_damage(0 if mengbi_blocked else calc["total_damage"] * multiplier)
+            result["effects"].append({"type": "damage", "target": target.name, **dmg})
+        if "aoe_damage" in calc:
+            a = 0 if mengbi_blocked else calc["aoe_damage"] * multiplier
+            for enemy in self.state.get_all_enemy_side():
+                result["effects"].append({"type": "aoe_damage", "target": enemy.name, **enemy.take_damage(a)})
+        if "hp_percent_loss" in calc:  # 赌命：当前生命百分比
+            d = math.ceil(target.current_hp * calc["hp_percent_loss"] / 100)
+            result["effects"].append({"type": "pct_damage", "target": target.name, **target.take_damage(d)})
+
+        # ---- 回复类 ----
+        if "target_heal" in calc and not huaisi_block:
+            result["effects"].append({"type": "heal", "target": target.name, **target.heal(calc["target_heal"] * multiplier)})
+        if "heal_percent" in calc and not (target.has_status("坏死")):
+            h = math.ceil(target.blood_limit * calc["heal_percent"] / 100)
+            result["effects"].append({"type": "heal_pct", "target": target.name, **target.heal(h)})
+
+        # ---- 格挡/血限 ----
+        if "target_shield" in calc:
+            s = calc["target_shield"] * multiplier; target.gain_shield(s)
+            result["effects"].append({"type": "shield", "target": target.name, "amount": s})
+        if "shield_drain" in calc:  # 清算：目标失格挡
+            lost = min(target.shield, calc["shield_drain"]); target.shield -= lost
+            result["effects"].append({"type": "shield_drain", "target": target.name, "lost": lost})
+        if "blood_limit_reduction" in calc:
+            target.blood_limit -= calc["blood_limit_reduction"]; target.current_hp = min(target.current_hp, target.blood_limit)
+            if target.current_hp <= 0: target.is_alive = False
+            result["effects"].append({"type": "blood_limit_reduction", "target": target.name, "new_blood_limit": target.blood_limit})
+        if "blood_limit_increase" in calc:
+            target.blood_limit += calc["blood_limit_increase"]
+            result["effects"].append({"type": "blood_limit_increase", "target": target.name, "increase": calc["blood_limit_increase"]})
+        if "blood_limit_penalty" in calc and target.shards < (calc.get("shard_drain", 0) or 0):
+            # 逼债：碎片不足则失血限
+            target.blood_limit -= calc["blood_limit_penalty"]; target.current_hp = min(target.current_hp, target.blood_limit)
+            result["effects"].append({"type": "bizhai_blood", "target": target.name, "lost": calc["blood_limit_penalty"]})
+
+        # ---- 攻击面板修改 ----
+        if "attack_boost" in calc:
+            target.attack_power += calc["attack_boost"]
+            result["effects"].append({"type": "attack_boost", "target": target.name, "attack_power": target.attack_power})
+        if "attack_reduction" in calc:
+            target.attack_power = max(0, target.attack_power - calc["attack_reduction"])
+            result["effects"].append({"type": "attack_reduction", "target": target.name, "attack_power": target.attack_power})
+        if "attack_fixed" in calc:
+            target.attack_power = calc["attack_fixed"]
+            result["effects"].append({"type": "attack_fixed", "target": target.name, "attack_power": target.attack_power})
+        if "attack_count_fixed" in calc:
+            target.attack_count = calc["attack_count_fixed"]
+            result["effects"].append({"type": "attack_count_fixed", "target": target.name, "attack_count": target.attack_count})
+        if name == "变形":  # 自身攻击力与攻击次数互换
+            caster.attack_power, caster.attack_count = caster.attack_count, caster.attack_power
+            result["effects"].append({"type": "swap", "target": caster.name, "attack_power": caster.attack_power, "attack_count": caster.attack_count})
+
+        # ---- 速度修改 ----
+        if "speed_boost" in calc:
+            target.current_speed += calc["speed_boost"]
+            result["effects"].append({"type": "speed_boost", "target": target.name, "speed": target.current_speed})
+        if "speed_halved" in calc:
+            target.current_speed = target.current_speed // 2
+            result["effects"].append({"type": "speed_halved", "target": target.name, "speed": target.current_speed})
+        if "speed_penalty" in calc:
+            target.current_speed = max(0, target.current_speed - calc["speed_penalty"])
+            result["effects"].append({"type": "speed_penalty", "target": target.name, "speed": target.current_speed})
+
+        # ---- 碎片系（罪孽）----
+        if "shard_drain" in calc:  # 逼债：目标失碎片（可负债）
+            target.shards -= calc["shard_drain"]
+            result["effects"].append({"type": "shard_drain", "target": target.name, "shards": target.shards})
+        if "shard_steal" in calc:  # 赎金/洗劫：夺碎片
+            steal = calc["shard_steal"]; gained = max(0, min(target.shards, steal))
+            target.shards -= steal
+            if caster is self.state.player: self.state.shards += gained
+            result["effects"].append({"type": "shard_steal", "target": target.name, "gained": gained})
+        if "fake_shards" in calc:
+            self.state.shards += calc["fake_shards"]
+            result["effects"].append({"type": "fake_shards", "gained": calc["fake_shards"]})
+        if "cost_shards" in calc:
+            self.state.shards -= calc["cost_shards"]
+            result["effects"].append({"type": "cost_shards", "spent": calc["cost_shards"]})
+
+        # ---- 代价 ----
+        if "cost_hp" in calc:
+            result["effects"].append({"type": "bleed_cost", "source": caster.name, **caster.take_damage(calc["cost_hp"], "代价")})
+        if "cost_blood_limit" in calc:
+            caster.blood_limit -= calc["cost_blood_limit"]; caster.current_hp = min(caster.current_hp, caster.blood_limit)
+            result["effects"].append({"type": "aging_cost", "source": caster.name, "new_blood_limit": caster.blood_limit})
+        if "cost_speed" in calc:
+            caster.current_speed -= calc["cost_speed"]
+            result["effects"].append({"type": "fatigue_cost", "source": caster.name, "new_speed": caster.current_speed})
+        if "mana_gain" in calc:
+            caster.current_mana += calc["mana_gain"]
+            result["effects"].append({"type": "mana_gain", "source": caster.name, "mana_gained": calc["mana_gain"]})
+
+        # ---- 特殊 ----
+        if "self_attack_count" in calc:  # 自残：目标自打X次
+            for _ in range(calc["self_attack_count"]):
+                result["effects"].append({"type": "self_attack", "target": target.name, **target.take_damage(target.attack_power)})
+        if "targets_removed" in calc:  # 封印：移出X怪
+            removed = 0
+            for e in list(self.state.enemies):
+                if e.is_alive and removed < calc["targets_removed"]:
+                    e.is_alive = False; e.is_subdued = True; removed += 1
+            result["effects"].append({"type": "seal", "removed": removed})
+
+        # ---- 持续/触发状态（status_added）----
+        if "duration" in calc and calc.get("duration") is not None:
+            duration = calc["duration"] if calc["duration"] != 0 else -1
+            effect_target = target if target else caster
+            # 自身作用型道纹(变形/超频/自食等)作用于施法者
+            self_targeted = name in ("超频", "自食", "飞行", "滑翔", "狂暴", "自愈", "必中", "变形")
+            et = caster if self_targeted else effect_target
+            et.add_status(StatusEffect(name=name, remaining_rounds=duration, value=x, source=caster.name))
+            result["effects"].append({"type": "status_added", "target": et.name, "status": name, "duration": duration, "value": x})
+        return result
+
+
+
+    # 法术流程注册表：法术名 → {触发时点, [(道纹, 目标角色, x模式)]}
+    # 目标角色: attacker(伤害来源)/self/target；x模式: kill(够杀)/heal(够奶)/shield(够挡)/auto(默认3)
+    SPELL_FLOWS = {
+        "先发制人": {"trigger": "受到伤害前", "steps": [("杀伐", "attacker", "kill")]},
+        "临界泄压": {"trigger": "受到伤害前", "steps": [("锐利", "attacker", "auto")]},
+        "后发制人": {"trigger": "受到伤害前", "steps": [("庇护", "self", "shield")]},
+        "生生不息": {"trigger": "失去生命后", "steps": [("再生", "self", "heal")]},
+        "以牙还牙": {"trigger": "失去生命后", "steps": [("再生", "self", "heal"), ("杀伐", "attacker", "kill")]},
+        "借力打力": {"trigger": "受到伤害前", "steps": [("庇护", "self", "shield"), ("杀伐", "attacker", "kill")]},
+        "不死不休": {"trigger": "失去生命后", "steps": [("血债", "attacker", "auto")]},
+        "千刀万剐": {"trigger": "失去生命后", "steps": [("再生", "self", "heal"), ("血债", "attacker", "auto")]},
+        "咎由自取": {"trigger": "目标发动道纹前", "steps": [("坠落", "target", "auto"), ("杀伐", "target", "kill"), ("血债", "target", "auto")]},
+    }
+
+    def _spell_x(self, xmode, player, tgt, ctx):
+        mana = player.current_mana
+        if xmode == "kill":
+            return min(mana, max(1, math.ceil(tgt.current_hp / 2))) if (tgt and tgt.is_alive) else 0
+        if xmode == "heal":
+            return min(mana, max(1, math.ceil((player.blood_limit - player.current_hp) / 3)))
+        if xmode == "shield":
+            return min(mana, max(1, math.ceil(ctx.get("incoming", 0) / 4)))
+        return 3
+
+    def trigger_spells(self, trigger: str, ctx: dict = None) -> list:
+        """触发玩家持有的反应型法术（受伤害前/失血后/目标发动道纹前）"""
+        ctx = ctx or {}
+        player = self.state.player
+        logs = []
+        if not player or not player.is_alive:
+            return logs
+        for spell in list(player.spells):
+            flow = self.SPELL_FLOWS.get(spell.name)
+            if not flow or flow["trigger"] != trigger:
+                continue
+            # 所需道纹须持有且可用
+            if not all(d in player.dao_wen and player.dao_wen[d].can_use() for d in spell.required_daowen):
+                continue
+            step_logs = []
+            for dw, role, xmode in flow["steps"]:
+                tgt = {"attacker": ctx.get("attacker"), "self": player,
+                       "target": ctx.get("target") or ctx.get("attacker")}.get(role, player)
+                if role != "self" and (tgt is None or not tgt.is_alive):
+                    continue
+                if tgt is None:
+                    tgt = player
+                x = self._spell_x(xmode, player, tgt, ctx)
+                if x < 1:
+                    continue
+                try:
+                    calc = DaoWenEngine.resolve(dw, x, target=tgt, caster=player)
+                except Exception:
+                    continue
+                # 消耗型道纹需扣法力（代价型由apply处理）
+                if calc.get("cost_type") == "消耗":
+                    cost = calc.get("cost", 0)
+                    if cost > 0 and not player.spend_mana(cost):
+                        continue
+                self.apply_daowen_effect(dw, calc, player, tgt)
+                step_logs.append(f"{spell.name}:{dw}{x}→{tgt.name}")
+                if role != "self" and tgt is not player and not tgt.is_alive:
+                    break  # 目标已倒，后续步骤跳过
+            if step_logs:
+                logs.extend(step_logs)
+        return logs
+
     def process_relics(self, trigger: str, ctx: dict = None) -> list:
         """遗物效果触发框架。trigger: battle_start/round_start/on_dodge/on_speed_zero/on_monster_death"""
         ctx = ctx or {}

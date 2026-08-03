@@ -624,6 +624,45 @@ def test_monster_phase_engine():
     print("  ✓ 怪物回合引擎化测试通过")
 
 
+def test_spells_trigger():
+    """测试反应型法术自动触发（后发制人/生生不息）"""
+    print("\n=== 测试：法术触发 ===")
+    from engine.models import GameState, DaoWen, DaoWenInstance, Spell
+    from engine.combat import CombatEngine
+    from engine.dice import DiceEngine
+
+    def mkplayer(spells=[], dw=["庇护","再生","杀伐"]):
+        p = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60,
+                   mana_limit=14, current_mana=14, speed_limit=8, current_speed=8)
+        for n in dw:
+            p.dao_wen[n] = DaoWenInstance(dao_wen=DaoWen(name=n,formula="",cost_type="消耗",cost_formula="X",effect_formula=""))
+        for sn, req in spells:
+            p.spells.append(Spell(name=sn, required_daowen=req, trigger_condition="", effect_flow=""))
+        return p
+
+    # 后发制人：受伤害前→庇护，应挡掉伤害
+    st = GameState(); st.player = mkplayer([("后发制人",["庇护"])])
+    m = Entity(name="打手", entity_type="怪物", blood_limit=120, current_hp=120, attack_count=1, attack_power=20)
+    st.enemies.append(m)
+    combat = CombatEngine(st, DiceEngine())
+    r = combat.resolve_attack(m, st.player)  # 不闪避，让法术挡
+    assert st.player.current_hp == 60, f"后发制人应挡掉20伤，实HP{st.player.current_hp}"
+    assert "spell_logs" in r and r["spell_logs"], "应触发后发制人"
+    print(f"  ✓ 后发制人：受伤害前发动庇护，挡掉20伤(HP仍{st.player.current_hp})")
+
+    # 生生不息：失血后→再生
+    st2 = GameState(); st2.player = mkplayer([("生生不息",["再生"])])
+    m2 = Entity(name="打手", entity_type="怪物", blood_limit=120, current_hp=120, attack_count=1, attack_power=10)
+    st2.enemies.append(m2)
+    combat2 = CombatEngine(st2, DiceEngine())
+    # 玩家速度设0避免闪避，确保实损触发失血后
+    st2.player.current_speed = 0
+    r2 = combat2.resolve_attack(m2, st2.player)
+    assert st2.player.current_hp == 60, f"生生不息应奶回满，实HP{st2.player.current_hp}"
+    print(f"  ✓ 生生不息：失血后发动再生，奶回满(HP{st2.player.current_hp})")
+    print("  ✓ 法术触发测试通过")
+
+
 def run_all_tests():
     """运行所有测试"""
     print("=" * 60)
@@ -647,6 +686,7 @@ def run_all_tests():
         test_out_of_combat_actions,
         test_relic_effects,
         test_monster_phase_engine,
+        test_spells_trigger,
     ]
     
     passed = 0
