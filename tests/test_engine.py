@@ -595,6 +595,35 @@ def test_relic_effects():
     print("  ✓ 遗物效果测试通过")
 
 
+def test_monster_phase_engine():
+    """测试引擎自主运行怪物回合（道纹激活+攻击出手）"""
+    print("\n=== 测试：怪物回合引擎化 ===")
+    from engine.models import GameState, DaoWen, DaoWenInstance
+    from engine.combat import CombatEngine
+    from engine.dice import DiceEngine
+    st = GameState(); st.current_region = "罪孽都市"
+    st.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60, speed_limit=8, current_speed=8)
+    m = Entity(name="打手", entity_type="怪物", blood_limit=120, current_hp=120, attack_count=4, attack_power=6)
+    for n,x in [("强化",3),("狂暴",3)]:
+        m.dao_wen[n] = DaoWenInstance(dao_wen=DaoWen(name=n,formula="",cost_type="",cost_formula="",effect_formula=""), x_value=x)
+    st.enemies.append(m)
+    combat = CombatEngine(st, DiceEngine()); combat.reset_monster_activation()
+
+    # 第1回合（白板）：不激活道纹，攻击力仍6
+    combat.round_start()  # current_round→1
+    r1 = combat.run_monster_phase()
+    assert m.attack_power == 6, f"白板回合攻击力应6，实{m.attack_power}"
+    assert len(r1) > 0, "怪物应有出手"
+    print(f"  ✓ 第1回合(白板)：攻击力6，怪物出手{len(r1)}次，贾凡HP{st.player.current_hp} 速{st.player.current_speed}")
+
+    # 第2回合：激活强化3 → 攻击力6→9
+    combat.round_start()  # current_round→2
+    r2 = combat.run_monster_phase()
+    assert m.attack_power == 9, f"激活强化后攻击力应9，实{m.attack_power}"
+    print(f"  ✓ 第2回合：激活【强化3】，攻击力6→9，怪物自主攻击")
+    print("  ✓ 怪物回合引擎化测试通过")
+
+
 def run_all_tests():
     """运行所有测试"""
     print("=" * 60)
@@ -617,6 +646,7 @@ def run_all_tests():
         test_daowen_effects_wired,
         test_out_of_combat_actions,
         test_relic_effects,
+        test_monster_phase_engine,
     ]
     
     passed = 0

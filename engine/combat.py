@@ -833,6 +833,84 @@ class CombatEngine:
                 self.state.shards += gain; logs.append(f"钱袋：+{gain}碎片")
         return logs
 
+    # ========== 怪物回合（引擎自主驱动） ==========
+    # 怪物已激活的道纹（按战斗重置）
+    _monster_activated: dict = {}
+
+    # 成长/控场道纹激活优先级
+    MONSTER_ACTIVATE_PRIORITY = ["活力", "强化", "狂暴", "必中", "蒙蔽", "坏死", "减速", "僵化", "自愈", "庇护", "飞行"]
+
+    def reset_monster_activation(self):
+        """战始重置怪物激活状态"""
+        self._monster_activated = {}
+
+    def _monster_activate(self, m: Entity, activated: set):
+        """怪物道纹出手：激活一个未激活的成长/控场道纹，返回道纹名或None"""
+        for g in self.MONSTER_ACTIVATE_PRIORITY:
+            if g in m.dao_wen and g not in activated:
+                activated.add(g)
+                if g == "强化":
+                    m.attack_power += m.dao_wen[g].x_value
+                return g
+        return None
+
+    def _monster_attack_actions(self, m: Entity, activated: set) -> int:
+        """怪物攻击出手数 = 1 + 活力X(若激活) + 狂暴1(若激活)"""
+        n = 1
+        if "活力" in activated:
+            n += m.dao_wen["活力"].x_value
+        if "狂暴" in activated:
+            n += 1
+        return n
+
+    def _apply_control_to_player(self, name: str, m: Entity, player: Entity):
+        """怪物激活控场道纹后对轮回者施加效果"""
+        x = m.dao_wen[name].x_value
+        if name == "蒙蔽":
+            player.add_status(StatusEffect("蒙蔽", -1, x))
+        elif name == "坏死":
+            player.add_status(StatusEffect("坏死", -1, 0))
+        elif name == "减速":
+            player.current_speed = max(0, player.current_speed // 2)
+        elif name == "僵化":
+            player.attack_power = 1
+
+    def run_monster_phase(self, dodge_policy: str = "auto") -> list:
+        """
+        运行所有存活怪物的回合：道纹出手(激活成长/控场道纹) + 攻击出手(一轮攻击×攻击出手数)。
+        玩家闪避按policy：auto=单次伤害>当前格挡且有速度则闪避。
+        第1回合(白板)不激活道纹。返回每只怪的出手结果。
+        """
+        player = self.state.player
+        results = []
+        if not player or not player.is_alive:
+            return results
+        whiteboard = self.state.current_round <= 1
+        for m in self.state.get_all_enemy_side():
+            if not self.can_act(m):
+                results.append({"monster": m.name, "skipped": "眩晕/束缚"})
+                continue
+            act = self._monster_activated.setdefault(id(m), set())
+            # 道纹出手（白板第1回合不激活）
+            if not whiteboard:
+                an = self._monster_activate(m, act)
+                if an in ("蒙蔽", "坏死", "减速", "僵化"):
+                    self._apply_control_to_player(an, m, player)
+                    results.append({"monster": m.name, "daowen_activated": an})
+            # 攻击出手
+            n = self._monster_attack_actions(m, act)
+            must = m.has_status("必中") or "必中" in act
+            for _ in range(n):
+                if not player.is_alive:
+                    break
+                for _h in range(m.attack_count):
+                    if not player.is_alive or not m.is_alive:
+                        break
+                    dodge = (dodge_policy == "auto" and not must
+                             and player.current_speed > 0 and m.attack_power > player.shield)
+                    results.append(self.resolve_attack(m, player, is_must_hit=must, dodge=dodge))
+        return results
+
     def can_act(self, entity: Entity) -> bool:
         """是否可出手（眩晕/束缚下不可）"""
         return entity.is_alive and not entity.has_status("眩晕") and not entity.has_status("束缚")

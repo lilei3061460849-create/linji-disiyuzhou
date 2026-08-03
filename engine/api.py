@@ -1230,6 +1230,7 @@ class GameEngine:
         self.state.phase = "battle_start"
         self.state.current_battle += 1
         self.state.current_round = 0
+        self.combat.reset_monster_activation()
         relic_logs = self.combat.process_relics("battle_start")
         return {
             "success": True, "action": "战始",
