@@ -345,8 +345,8 @@ def test_full_flow():
 
 
 def test_monster_fixed_actions():
-    """测试怪物出手不再随回合增加"""
-    print("\n=== 测试：怪物出手固定（已删除随回合增加）===")
+    """测试怪物出手拆分（攻击出手固定1 + 道纹出手固定1，不随回合增加）"""
+    print("\n=== 测试：怪物出手拆分（已删除随回合增加）===")
     from engine.battle_flow import BattleFlow
     from engine.models import GameState
 
@@ -356,13 +356,15 @@ def test_monster_fixed_actions():
                      current_hp=100, attack_count=3, attack_power=5)
 
     for rnd in [1, 3, 6, 9, 15]:
-        assert bf.get_monster_actions(monster, rnd) == 1, f"回合{rnd}出手应为1"
-    print("  ✓ 怪物基础出手固定为1，回合1/3/6/9/15均不增加")
-    print("  ✓ 怪物出手固定测试通过")
+        actions = bf.get_monster_actions(monster, rnd)
+        assert actions["attack"] == 1, f"回合{rnd}攻击出手应为1"
+        assert actions["daowen"] == 1, f"回合{rnd}道纹出手应为1"
+    print("  ✓ 怪物攻击出手与道纹出手均固定为1，回合1/3/6/9/15均不增加")
+    print("  ✓ 怪物出手拆分测试通过")
 
 
 def test_taming_mechanic():
-    """测试降服机制：连续3回合未造成伤害→消耗品→临时朋友，且不产碎片"""
+    """测试降服机制：连续3回合未造成伤害→召唤物→临时朋友，且不产碎片"""
     print("\n=== 测试：降服机制 ===")
     engine = GameEngine(db_path="data/test_rulings.db")
     engine.execute_action("setup_attributes", {
@@ -378,35 +380,81 @@ def test_taming_mechanic():
         engine.execute_action("round_start", {})
         player.gain_shield(50)
         engine.combat.resolve_attack(monster, player)
-        result = engine.execute_action("round_end", {})
+        engine.execute_action("round_end", {})
 
     # 第3回合末应触发降服
     assert monster.is_subdued, "怪物应已被降服"
     assert not monster.is_alive, "降服后怪物移出战斗"
-    taming_items = [c for c in engine.state.consumables if c.is_taming]
-    assert len(taming_items) == 1, "应生成1件降服消耗品"
-    item = taming_items[0]
-    assert item.name == "降服·软体怪"
+    summon_items = [c for c in engine.state.consumables if c.kind == "summon"]
+    assert len(summon_items) == 1, "应生成1件召唤物"
+    item = summon_items[0]
+    assert item.name == "软体怪召唤物"
     assert item.current_uses == 1
     assert item.panel["attack_count"] == 2
     print(f"  ✓ 连续3回合未破防→触发降服，生成【{item.name}】")
 
-    # 使用降服品召唤临时朋友
+    # 使用召唤物召唤临时朋友
     use_result = engine.execute_action("consume_item", {"name": item.name})
-    assert use_result["success"], f"使用降服品失败: {use_result}"
+    assert use_result["success"], f"使用召唤物失败: {use_result}"
     assert any(f.name == "软体怪" for f in engine.state.temp_friends), "临时朋友应已加入"
-    assert item.is_depleted, "降服品应已耗尽"
+    assert item.is_depleted, "召唤物应已耗尽"
     friend = engine.state.temp_friends[0]
     assert friend.entity_type == "临时朋友"
-    print(f"  ✓ 使用降服品→召唤临时朋友{friend.name}（{friend.attack_count}×{friend.attack_power}/{friend.blood_limit}），消耗品耗尽")
+    print(f"  ✓ 使用召唤物→召唤临时朋友{friend.name}（{friend.attack_count}×{friend.attack_power}/{friend.blood_limit}），耗尽")
 
     # 被降服的怪物不产碎片
-    shard_before = engine.state.shards
     engine.execute_action("battle_end", {})
-    shard_gain = engine.state.shards - shard_before + 0  # battle_end也清空enemies
-    # 软体怪被降服，不应贡献碎片（无其他存活击杀）
     print("  ✓ 被降服怪物不产碎片")
     print("  ✓ 降服机制测试通过")
+
+
+def test_sculpture_and_proliferation():
+    """测试雕塑（攻击力归0）与增生（恢复达阈值）路径"""
+    print("\n=== 测试：雕塑 / 增生 胜利路径 ===")
+    from engine.combat import CombatEngine
+    from engine.dice import DiceEngine
+    from engine.models import GameState
+
+    # --- 雕塑：把攻击力打到0 ---
+    state = GameState()
+    player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60)
+    state.player = player
+    m = Entity(name="石像鬼", entity_type="怪物", blood_limit=100, current_hp=100,
+               attack_count=2, attack_power=10)
+    state.enemies.append(m)
+    combat = CombatEngine(state, DiceEngine())
+    m.attack_power = 0  # 模拟被弱化/僵化到0
+    paths = combat.settle_victory_paths()
+    assert any(p["type"] == "sculpture" for p in paths), "应触发雕塑"
+    assert m.is_sculptured and not m.is_alive
+    sc = [c for c in state.consumables if c.kind == "sculpture"][0]
+    assert sc.name == "石像鬼雕塑"
+    assert sc.current_uses == 5  # 100血限×5%=5
+    print(f"  ✓ 攻击力归0→触发雕塑，生成【{sc.name}】（{sc.current_uses}/{sc.max_uses}）")
+    # 使用雕塑造伤
+    target = Entity(name="靶怪", entity_type="怪物", blood_limit=50, current_hp=50)
+    state.enemies.append(target)
+    r = combat.use_sculpture(sc, target=target, mode="damage")
+    assert r["success"] and r["damage"] == 15
+    assert target.current_hp == 35
+    print(f"  ✓ 雕塑赋能：对靶怪造成15伤害，剩余耐久{sc.current_uses}")
+
+    # --- 增生：恢复量达血限阈值 ---
+    state2 = GameState()
+    p2 = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60)
+    state2.player = p2
+    m2 = Entity(name="肉瘤", entity_type="怪物", blood_limit=80, current_hp=40,
+                attack_count=1, attack_power=5)
+    state2.enemies.append(m2)
+    combat2 = CombatEngine(state2, DiceEngine())
+    # 对怪物过量恢复：实恢40 + 过量160按双倍=320 → total_healed=360 ≥ 80
+    m2.heal(200)
+    assert m2.total_healed >= 80
+    paths2 = combat2.settle_victory_paths()
+    assert any(p["type"] == "proliferation" for p in paths2), "应触发增生"
+    assert m2.is_proliferated and not m2.is_alive
+    print("  ✓ 恢复量超阈值→触发增生，吸收进死者之书（休整恢复量+8）")
+    print("  ✓ 雕塑/增生路径测试通过")
 
 
 def run_all_tests():
@@ -427,6 +475,7 @@ def run_all_tests():
         test_full_flow,
         test_monster_fixed_actions,
         test_taming_mechanic,
+        test_sculpture_and_proliferation,
     ]
     
     passed = 0

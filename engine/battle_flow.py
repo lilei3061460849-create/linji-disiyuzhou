@@ -52,20 +52,20 @@ class BattleFlow:
         
         return effects
     
-    def get_monster_actions(self, monster: Entity, round_num: int = 0) -> int:
+    def get_monster_actions(self, monster: Entity, round_num: int = 0) -> dict:
         """
-        计算怪物出手次数
-        规则（已移除随回合增加）：基础固定1次出手/回合
-        活力X：出手次数+X；狂暴：回始发动一轮额外攻击（+1）
+        计算怪物出手（攻击出手与道纹出手分离，互不抢夺，均固定不随回合增加）
+        返回 {"attack": 攻击出手数, "daowen": 道纹出手数}
+        攻击出手基础1（活力+X、狂暴+1）；道纹出手固定1
         """
-        base = 1
+        attack = 1
         # 活力X：出手次数+X
         if "活力" in monster.dao_wen:
-            base += self._daowen_value(monster, "活力", default=3)
+            attack += self._daowen_value(monster, "活力", default=3)
         # 狂暴：一轮额外攻击
         if "狂暴" in monster.dao_wen:
-            base += 1
-        return max(1, base)
+            attack += 1
+        return {"attack": max(1, attack), "daowen": 1}
 
     @staticmethod
     def _daowen_value(monster: Entity, name: str, default: int = 0) -> int:
@@ -200,26 +200,33 @@ class BattleFlow:
             if not m.is_alive:
                 continue
 
-            monster_actions_count = self.get_monster_actions(m, round_num)
+            actions = self.get_monster_actions(m, round_num)
             m_result = {
                 "monster": m.name,
-                "actions": monster_actions_count,
-                "attacks": []
+                "actions": actions,
+                "attacks": [],
+                "daowen_uses": []
             }
 
             hp_before_monster = player.current_hp
-            for i in range(monster_actions_count):
+            # 攻击出手：每点攻击出手发动一轮攻击（attack_count次）
+            for i in range(actions["attack"]):
                 if not player.current_hp > 0:
                     break
-
-                # 每次出手 = attack_count次攻击
                 for hit in range(m.attack_count):
                     if not player.current_hp > 0:
                         break
-
                     should_dodge = m.attack_power > 15 and player.current_speed >= 1
                     attack_result = self.monster_attack(m, player, i * m.attack_count + hit + 1, dodge=should_dodge)
                     m_result["attacks"].append(attack_result)
+
+            # 道纹出手：独立于攻击出手，怪物可发动一个道纹（具体效果由AI/DM结算）
+            if actions["daowen"] > 0 and m.dao_wen:
+                dw_name = next(iter(m.dao_wen))
+                m_result["daowen_uses"].append({
+                    "daowen": dw_name,
+                    "note": "道纹出手（攻击出手之外独立发动，效果由AI/DM按道纹公式结算）"
+                })
 
             # 降服追踪：记录该怪物本回合对轮回者造成的实际生命损失
             self.combat.record_monster_damage(m, hp_before_monster - player.current_hp)

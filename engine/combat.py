@@ -468,58 +468,81 @@ class CombatEngine:
             state_snapshot=self.state.to_dict()
         )
     
-    # ========== 降服系统 ==========
-    
-    TAMING_REQUIRED_TURNS = 3  # 连续3回合未能对轮回者造成伤害触发降服
-    
+    # ========== 多路径胜利系统 ==========
+    # 所有阈值数值均为占位初值，需经测试调整（见 AI_EXPERIENCE.md）
+
+    TAMING_REQUIRED_TURNS = 3     # 降服：连续N回合未造成伤害
+    PROLIFERATION_THRESHOLD = 1.0  # 增生：累计受到恢复量达到血限的N倍（占位）
+    DEBT_THRESHOLD = 10           # 还债：怪物负债（碎片为负）达到N触发（占位）
+    SCULPTURE_DAMAGE = 15         # 雕塑：每点耐久可造成的伤害
+    SCULPTURE_SHIELD = 20         # 雕塑：每点耐久可获得的格挡
+
     def record_monster_damage(self, monster: Entity, damage_to_player: int) -> None:
-        """
-        记录怪物本回合对轮回者造成的伤害（用于降服计数）
-        damage_to_player：该怪物本回合使轮回者实际损失的生命数
-        """
+        """记录怪物本回合对轮回者造成的伤害（用于降服计数）"""
         if not monster.is_alive or monster.is_subdued:
             return
         self._round_monster_damage[monster.name] = (
             self._round_monster_damage.get(monster.name, 0) + max(0, damage_to_player)
         )
-    
-    def settle_taming(self) -> list[dict]:
+
+    def settle_victory_paths(self) -> list[dict]:
         """
-        回终降服结算
-        规则：怪物连续3回合未能对轮回者造成伤害，触发降服
-        触发后记录其当前面板并变为消耗品，使用后作为临时朋友作战
-        被降服的怪物不视为击杀，不提供碎片收益
-        返回本场触发的降服列表
+        回终多路径胜利结算（依次检查：降服 / 雕塑 / 增生 / 还债）
+        所有路径都不视为击杀，不提供碎片收益
         """
-        tamed = []
+        results = []
         for monster in list(self.state.enemies):
-            if not monster.is_alive or monster.is_subdued:
+            if not monster.is_alive or monster.is_subdued or monster.is_sculptured \
+                    or monster.is_proliferated or monster.is_debt_bound:
                 continue
+
+            # 1. 降服：连续N回合未造成伤害
             damage = self._round_monster_damage.get(monster.name, 0)
             if damage > 0:
                 monster.no_damage_streak = 0
             else:
                 monster.no_damage_streak += 1
             if monster.no_damage_streak >= self.TAMING_REQUIRED_TURNS:
-                result = self._subdue_monster(monster)
-                tamed.append(result)
+                results.append(self._subdue_monster(monster))
+                continue
+
+            # 2. 雕塑：攻击次数或攻击力之一归0
+            if monster.attack_count <= 0 or monster.attack_power <= 0:
+                results.append(self._sculpture_monster(monster))
+                continue
+
+            # 3. 增生：累计受到恢复量达阈值
+            threshold = math.ceil(monster.blood_limit * self.PROLIFERATION_THRESHOLD)
+            if monster.blood_limit > 0 and monster.total_healed >= threshold:
+                results.append(self._proliferate_monster(monster))
+                continue
+
+            # 4. 还债：负债达阈值（怪物shards为负）
+            if monster.shards <= -self.DEBT_THRESHOLD:
+                results.append(self._debt_bind_monster(monster))
+                continue
+
         # 清空本回合伤害记录
         self._round_monster_damage = {}
-        return tamed
-    
+        return results
+
+    def _remove_from_combat(self, monster: Entity):
+        """将怪物移出战斗（不视为击杀）"""
+        monster.is_alive = False
+
     def _subdue_monster(self, monster: Entity) -> dict:
-        """执行降服：记录面板、移出战斗、生成消耗品"""
+        """降服：记录面板、移出战斗、生成召唤物消耗品"""
         panel = self._snapshot_monster_panel(monster)
         monster.is_subdued = True
-        monster.is_alive = False  # 移出战斗，但不视为击杀
+        self._remove_from_combat(monster)
         consumable = Consumable(
-            name=f"降服·{monster.name}",
+            name=f"{monster.name}召唤物",
             effect=(f"使用后召唤{monster.name}（{panel['attack_count']}×"
-                    f"{panel['attack_power']}/{panel['blood_limit']}）作为临时朋友作战"),
+                    f"{panel['attack_power']}/{panel['blood_limit']}）作为临时朋友作战，战终离去"),
             current_uses=1,
             max_uses=1,
+            kind="summon",
             panel=panel,
-            is_taming=True,
         )
         self.state.consumables.append(consumable)
         return {
@@ -530,9 +553,65 @@ class CombatEngine:
             "note": (f"{monster.name}连续{self.TAMING_REQUIRED_TURNS}回合未能对轮回者造成伤害，"
                      f"已被降服，化为消耗品【{consumable.name}】"),
         }
-    
+
+    def _sculpture_monster(self, monster: Entity) -> dict:
+        """雕塑：攻击次数或攻击力归0→化为雕塑消耗品（耐久=血限5%）"""
+        durability = max(1, math.ceil(monster.blood_limit * 0.05))
+        reason = "攻击次数归0" if monster.attack_count <= 0 else "攻击力归0"
+        monster.is_sculptured = True
+        self._remove_from_combat(monster)
+        consumable = Consumable(
+            name=f"{monster.name}雕塑",
+            effect=(f"每消耗1点耐久，对1个目标造成{self.SCULPTURE_DAMAGE}点伤害，"
+                    f"或使自身获得{self.SCULPTURE_SHIELD}点格挡"),
+            current_uses=durability,
+            max_uses=durability,
+            kind="sculpture",
+        )
+        self.state.consumables.append(consumable)
+        return {
+            "type": "sculpture",
+            "monster": monster.name,
+            "reason": reason,
+            "consumable": consumable.name,
+            "durability": durability,
+            "note": (f"{monster.name}{reason}，化为雕塑【{consumable.name}】（{durability}/{durability}）"),
+        }
+
+    def _proliferate_monster(self, monster: Entity) -> dict:
+        """增生：累计受到恢复量达阈值→吸收进死者之书，强化休整"""
+        monster.is_proliferated = True
+        self._remove_from_combat(monster)
+        absorbed = monster.total_healed
+        # 死者之书强化：每只增生怪物使局外【休整】额外产生8点恢复量（占位，可调）
+        boost = 8
+        self.state.death_book_wisdom.append(f"增生·{monster.name}：休整恢复量+{boost}")
+        return {
+            "type": "proliferation",
+            "monster": monster.name,
+            "absorbed_heal": absorbed,
+            "rest_boost": boost,
+            "note": (f"{monster.name}累计承受{absorbed}点恢复被增生吸收进《死者之书》，"
+                     f"局外【休整】恢复量+{boost}"),
+        }
+
+    def _debt_bind_monster(self, monster: Entity) -> dict:
+        """还债：负债达阈值→视为员工；负债还清后离开"""
+        monster.is_debt_bound = True
+        # 转为员工（保留当前面板），其待还负债记录于 shards（负值）
+        monster.entity_type = "员工"
+        self.state.employees.append(monster)
+        self.state.enemies.remove(monster)
+        return {
+            "type": "debt_bind",
+            "monster": monster.name,
+            "debt": -monster.shards,
+            "note": (f"{monster.name}负债达{-monster.shards}，触发还债，视为[员工]参战；"
+                     f"还清负债（支付{-monster.shards}碎片）后该员工离队"),
+        }
+
     def _snapshot_monster_panel(self, monster: Entity) -> dict:
-        """记录怪物当前面板快照（用于降服消耗品）"""
+        """记录怪物当前面板快照（用于降服召唤物）"""
         return {
             "name": monster.name,
             "entity_type": monster.entity_type,
@@ -546,14 +625,11 @@ class CombatEngine:
                 for k, v in monster.dao_wen.items()
             },
         }
-    
+
     def summon_tamed_friend(self, consumable: Consumable) -> dict:
-        """
-        使用降服消耗品：召唤临时朋友
-        规则：消耗品（耐久1），使用后召唤记录面板的怪物作为临时朋友，战终离去
-        """
-        if not consumable.is_taming or not consumable.panel:
-            return {"success": False, "error": "非降服消耗品或无面板记录"}
+        """使用降服召唤物：召唤临时朋友（战终离去）"""
+        if consumable.kind != "summon" or not consumable.panel:
+            return {"success": False, "error": "非召唤物或无面板记录"}
         if consumable.is_depleted:
             return {"success": False, "error": "消耗品已耗尽"}
         panel = consumable.panel
@@ -575,7 +651,7 @@ class CombatEngine:
                 x_value=info.get("x_value", 0),
             )
         self.state.temp_friends.append(friend)
-        consumable.use()  # 消耗耐久
+        consumable.use()
         return {
             "success": True,
             "type": "summon_tamed_friend",
@@ -584,7 +660,47 @@ class CombatEngine:
             "consumable_remaining": consumable.current_uses,
             "note": f"{friend.name}作为临时朋友加入战斗，战终离去",
         }
-    
+
+    def use_sculpture(self, consumable: Consumable, target: Entity = None,
+                      mode: str = "damage") -> dict:
+        """
+        使用雕塑：消耗1点耐久，造成15伤害或获得20格挡
+        mode: "damage"(对target造伤) / "shield"(自身格挡)
+        """
+        if consumable.kind != "sculpture":
+            return {"success": False, "error": "非雕塑消耗品"}
+        if consumable.is_depleted:
+            return {"success": False, "error": "雕塑已耗尽"}
+        consumable.use()
+        if mode == "shield":
+            player = self.state.player
+            player.gain_shield(self.SCULPTURE_SHIELD)
+            return {
+                "success": True,
+                "type": "sculpture_shield",
+                "shield": self.SCULPTURE_SHIELD,
+                "remaining": consumable.current_uses,
+                "note": f"雕塑赋能：获得{self.SCULPTURE_SHIELD}点格挡",
+            }
+        else:
+            if target is None:
+                return {"success": False, "error": "伤害模式需指定目标"}
+            dmg = target.take_damage(self.SCULPTURE_DAMAGE)
+            return {
+                "success": True,
+                "type": "sculpture_damage",
+                "target": target.name,
+                "damage": self.SCULPTURE_DAMAGE,
+                "target_hp_after": dmg["hp_after"],
+                "target_died": dmg["died"],
+                "remaining": consumable.current_uses,
+                "note": f"雕塑赋能：对{target.name}造成{self.SCULPTURE_DAMAGE}点伤害",
+            }
+
+    # 兼容旧接口名
+    def settle_taming(self) -> list[dict]:
+        return self.settle_victory_paths()
+
     # ========== 急中生智 ==========
     
     def initiate_wit(self, declarer: Entity, target: Entity) -> Interrupt:

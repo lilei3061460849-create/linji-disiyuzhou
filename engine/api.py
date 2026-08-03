@@ -1063,7 +1063,7 @@ class GameEngine:
         }
 
     def _action_consume_item(self, params: dict) -> dict:
-        """使用消耗品（含降服品召唤临时朋友，遵守现有消耗品规则，使用不消耗出手）"""
+        """使用消耗品（召唤物/雕塑/普通，遵守现有消耗品规则，使用不消耗出手）"""
         item_name = params.get("name", "")
         item = None
         for c in self.state.consumables:
@@ -1073,13 +1073,31 @@ class GameEngine:
         if item is None:
             return {"success": False, "error": f"找不到可用消耗品: {item_name}"}
 
-        # 降服品：召唤记录面板的怪物作为临时朋友
-        if item.is_taming:
+        # 召唤物：召唤记录面板的怪物作为临时朋友
+        if item.kind == "summon":
             summon = self.combat.summon_tamed_friend(item)
             return {
                 "success": summon.get("success", True),
-                "action": f"使用降服品【{item_name}】",
+                "action": f"使用召唤物【{item_name}】",
                 "result": summon,
+                "state": self.combat._get_combat_state(),
+            }
+
+        # 雕塑：消耗1耐久造成15伤害或获得20格挡
+        if item.kind == "sculpture":
+            mode = params.get("mode", "damage")  # damage / shield
+            target_name = params.get("target", "")
+            target = None
+            if mode == "damage":
+                for e in self.state.get_all_enemy_side():
+                    if e.name == target_name:
+                        target = e
+                        break
+            result = self.combat.use_sculpture(item, target=target, mode=mode)
+            return {
+                "success": result.get("success", True),
+                "action": f"使用雕塑【{item_name}】({mode})",
+                "result": result,
                 "state": self.combat._get_combat_state(),
             }
 
@@ -1129,8 +1147,10 @@ class GameEngine:
         """回终"""
         result = self.combat.round_end()
 
-        # 提取降服结果（已由 combat.round_end 结算）
-        taming = [e for e in result.get("effects", []) if isinstance(e, dict) and e.get("type") == "taming"]
+        # 提取多路径胜利结果（已由 combat.round_end 结算）
+        alt_paths = [e for e in result.get("effects", [])
+                     if isinstance(e, dict) and e.get("type") in
+                     ("taming", "sculpture", "proliferation", "debt_bind")]
 
         # 检查怪物困境
         difficulties = []
@@ -1144,9 +1164,9 @@ class GameEngine:
             "success": True,
             "action": "回终",
             "result": result,
-            "taming": taming,
+            "victory_paths": alt_paths,
             "monster_difficulties": difficulties,
-            "note": "如果怪物陷入困境，AI应选择进化或逃跑；降服消耗品可在后续回合使用以召唤临时朋友"
+            "note": "多路径胜利（降服/雕塑/增生/还债）已结算；消耗品可在后续回合使用"
         }
     
     def _action_battle_start(self, params: dict) -> dict:
@@ -1164,12 +1184,16 @@ class GameEngine:
     
     def _action_battle_end(self, params: dict) -> dict:
         """战终"""
-        # 碎片奖励计算（被降服的怪物不视为击杀，不产碎片）
+        # 碎片奖励计算（被降服/雕塑/增生/还债移出的怪物不视为击杀，不产碎片）
         shard_reward = 0
-        subdued = []
+        removed = []
         for monster in self.state.enemies:
-            if monster.is_subdued:
-                subdued.append(monster.name)
+            if (monster.is_subdued or monster.is_sculptured
+                    or monster.is_proliferated or monster.is_debt_bound):
+                removed.append({"name": monster.name,
+                                "way": ("降服" if monster.is_subdued else
+                                        "雕塑" if monster.is_sculptured else
+                                        "增生" if monster.is_proliferated else "还债")})
                 continue
             if not monster.is_alive:
                 reward = math.ceil(monster.blood_limit * 0.02) + len(monster.dao_wen) * 5
@@ -1202,7 +1226,7 @@ class GameEngine:
                 "total_shards": self.state.shards,
                 "energy_restored": 3,
                 "cleared_temp_friends": True,
-                "subdued_monsters": subdued,
+                "removed_via_alt_path": removed,
             }
         }
     

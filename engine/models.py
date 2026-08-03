@@ -86,31 +86,31 @@ class Consumable:
     effect: str
     current_uses: int = 1
     max_uses: int = 1
-    # 降服品专用：记录被降服怪物的当前面板，使用后作为临时朋友作战
+    # kind: normal(普通) / summon(降服召唤物，记录面板，使用召唤临时朋友) / sculpture(雕塑，1耐久=15伤害或20格挡)
+    kind: str = "normal"
+    # summon 专用：记录被降服怪物的当前面板
     panel: Optional[dict] = None
-    is_taming: bool = False
-    
+
     @property
     def is_depleted(self) -> bool:
         return self.current_uses <= 0
-    
+
     def use(self) -> int:
         if self.is_depleted:
             return 0
         self.current_uses -= 1
         return self.current_uses
-    
+
     def merge(self, other: 'Consumable') -> bool:
-        """合并相同消耗品"""
+        """合并相同消耗品（召唤物/雕塑等绑定特定怪物的不可合并）"""
         if self.name != other.name or self.effect != other.effect:
             return False
-        # 降服品记录的是特定怪物面板，不可与普通消耗品合并
-        if self.is_taming or other.is_taming:
+        if self.kind != "normal" or other.kind != "normal":
             return False
         self.current_uses += other.current_uses
         self.max_uses += other.max_uses
         return True
-    
+
     def to_dict(self) -> dict:
         return {
             "name": self.name,
@@ -118,7 +118,7 @@ class Consumable:
             "current_uses": self.current_uses,
             "max_uses": self.max_uses,
             "is_depleted": self.is_depleted,
-            "is_taming": self.is_taming,
+            "kind": self.kind,
             "panel": self.panel,
         }
 
@@ -214,6 +214,13 @@ class Entity:
     no_damage_streak: int = 0
     is_subdued: bool = False     # 是否已被降服（移出战斗）
 
+    # 多路径胜利追踪
+    shards: int = 0              # 怪物自带碎片（罪孽都市）/ 负值表示负债（还债）
+    total_healed: int = 0        # 累计受到的恢复量（增生；超出血限部分按双倍计）
+    is_sculptured: bool = False  # 已化为雕塑（攻击次数或攻击力归0）
+    is_proliferated: bool = False  # 已被增生吸收进死者之书
+    is_debt_bound: bool = False  # 已因还债成为员工
+
     # 存活
     is_alive: bool = True
     
@@ -274,12 +281,15 @@ class Entity:
         before = self.current_hp
         self.current_hp = min(self.blood_limit, self.current_hp + amount)
         actual = self.current_hp - before
+        overheal = amount - actual
+        # 增生追踪：超出血限的恢复按双倍计入累计恢复量
+        self.total_healed += actual + overheal * 2
         return {
             "heal_amount": amount,
             "actual_heal": actual,
             "hp_before": before,
             "hp_after": self.current_hp,
-            "overheal": amount - actual
+            "overheal": overheal
         }
     
     def gain_shield(self, amount: int) -> int:
@@ -351,6 +361,8 @@ class Entity:
             "is_alive": self.is_alive,
             "no_damage_streak": self.no_damage_streak,
             "is_subdued": self.is_subdued,
+            "shards": self.shards,
+            "total_healed": self.total_healed,
             "hp_ratio": round(self.hp_ratio, 2),
             "dao_wen": {k: v.dao_wen.name for k, v in self.dao_wen.items()},
             "spells": [s.name for s in self.spells],
