@@ -1226,15 +1226,15 @@ class GameEngine:
         }
     
     def _action_battle_start(self, params: dict) -> dict:
-        """战始"""
+        """战始（结算战始遗物）"""
         self.state.phase = "battle_start"
         self.state.current_battle += 1
         self.state.current_round = 0
-        
+        relic_logs = self.combat.process_relics("battle_start")
         return {
-            "success": True,
-            "action": "战始",
+            "success": True, "action": "战始",
             "battle_number": self.state.current_battle,
+            "relic_logs": relic_logs,
             "instruction": "请抽取怪物并结算战始效果"
         }
     

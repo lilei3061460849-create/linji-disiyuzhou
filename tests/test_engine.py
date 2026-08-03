@@ -550,6 +550,51 @@ def test_out_of_combat_actions():
     print("  ✓ 局外行动落地测试通过")
 
 
+def test_relic_effects():
+    """测试遗物效果触发（避风铃/钱袋/回锋刀）"""
+    print("\n=== 测试：遗物效果 ===")
+    from engine.models import Relic, GameState
+    from engine.combat import CombatEngine
+    from engine.dice import DiceEngine
+
+    # 避风铃：闪避+3挡
+    st = GameState(); st.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60, speed_limit=8, current_speed=8)
+    st.relics = [Relic(name="避风铃", effect="")]
+    m = Entity(name="打手", entity_type="怪物", blood_limit=120, current_hp=120, attack_count=1, attack_power=10)
+    st.enemies.append(m)
+    combat = CombatEngine(st, DiceEngine())
+    r = combat.resolve_attack(m, st.player, dodge=True)
+    assert r["dodge_success"] and st.player.shield == 3, f"避风铃应+3挡，实{st.player.shield}"
+    print("  ✓ 避风铃：闪避后+3格挡")
+
+    # 回锋刀：回始对敌造伤(3×失速)
+    st2 = GameState(); st2.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60, speed_limit=8, current_speed=5)
+    st2.relics = [Relic(name="回锋刀", effect="")]
+    m2 = Entity(name="靶", entity_type="怪物", blood_limit=120, current_hp=120, attack_count=1, attack_power=1)
+    st2.enemies.append(m2)
+    combat2 = CombatEngine(st2, DiceEngine())
+    combat2.round_start()  # 触发回始遗物
+    assert m2.current_hp < 120, f"回锋刀应造伤，实HP{m2.current_hp}"
+    print(f"  ✓ 回锋刀：回始造伤(失速3→9伤)，靶HP120→{m2.current_hp}")
+
+    # 钱袋：命零+碎片
+    import math
+    engine = GameEngine(db_path="data/test_rulings.db")
+    engine.execute_action("setup_attributes", {"name":"测试","blood_points":10,"speed_points":8,"mana_points":7})
+    engine.execute_action("setup_choose_daowen", {"daowen":"杀伐"})
+    engine.execute_action("setup_choose_region", {"region":"罪孽都市"})
+    engine.state.relics = [Relic(name="钱袋", effect="")]
+    mm = Entity(name="怪", entity_type="怪物", blood_limit=100, current_hp=0, attack_count=1, attack_power=1)
+    mm.is_alive = False
+    engine.state.enemies.append(mm)
+    sb = engine.state.shards
+    engine.execute_action("battle_end", {})
+    # 基础碎片(100*2%+0) + 钱袋(100*2%=2)
+    assert engine.state.shards > sb, "钱袋应额外加碎片"
+    print(f"  ✓ 钱袋：怪命零额外+碎片，碎片{sb}→{engine.state.shards}")
+    print("  ✓ 遗物效果测试通过")
+
+
 def run_all_tests():
     """运行所有测试"""
     print("=" * 60)
@@ -571,6 +616,7 @@ def run_all_tests():
         test_sculpture_and_proliferation,
         test_daowen_effects_wired,
         test_out_of_combat_actions,
+        test_relic_effects,
     ]
     
     passed = 0

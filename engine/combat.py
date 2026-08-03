@@ -124,6 +124,11 @@ class CombatEngine:
                 target.current_speed -= 1
                 result["dodge_success"] = True
                 result["speed_after_dodge"] = target.current_speed
+                # 遗物：闪避触发（目标为轮回者时）
+                if target is self.state.player:
+                    result["relic_logs"] = self.process_relics("on_dodge")
+                    if target.current_speed == 0:
+                        result["relic_logs"] += self.process_relics("on_speed_zero")
                 # 闪避成功，本局速度-1（战终复原）
                 return result
             else:
@@ -238,6 +243,9 @@ class CombatEngine:
         
         # 降服追踪：本回合各怪物伤害记录归零
         self._round_monster_damage = {}
+        # 遗物：回始触发
+        relic_logs = self.process_relics("round_start")
+        effects.extend({"type": "relic", "log": l} for l in relic_logs)
         
         # 轮回者法力补满
         if self.state.player and self.state.player.is_alive:
@@ -784,6 +792,47 @@ class CombatEngine:
     
     # ========== 辅助方法 ==========
     
+    def process_relics(self, trigger: str, ctx: dict = None) -> list:
+        """遗物效果触发框架。trigger: battle_start/round_start/on_dodge/on_speed_zero/on_monster_death"""
+        ctx = ctx or {}
+        player = self.state.player
+        logs = []
+        if not player:
+            return logs
+        relics = {r.name for r in self.state.relics}
+
+        if trigger == "on_dodge" and "避风铃" in relics:
+            player.gain_shield(3); logs.append("避风铃：闪避+3格挡")
+        if trigger == "on_speed_zero" and "避风铃" in relics and player.current_speed == 0:
+            player.gain_shield(15); logs.append("避风铃：速度归零+15格挡")
+        if trigger == "round_start":
+            if "回锋刀" in relics:
+                d = 3 * max(0, player.speed_limit - player.current_speed)
+                if d > 0:
+                    enemies = self.state.get_all_enemy_side()
+                    if enemies:
+                        enemies[0].take_damage(d); logs.append(f"回锋刀：对{enemies[0].name}造{d}伤")
+            if "守夜灯" in relics:  # 敌回始+法限50%法力
+                g = player.mana_limit // 2
+                if g > 0:
+                    player.current_mana += g; logs.append(f"守夜灯：+{g}法力")
+        if trigger == "battle_start":
+            if "折速法印" in relics:
+                x = min(5, max(1, player.speed_limit // 2))
+                player.current_speed = max(0, player.current_speed - x); player.current_mana += 6 * x
+                logs.append(f"折速法印：疲惫{x}，+{6*x}法力")
+            if "鲜血契约" in relics:
+                x = min(player.blood_limit // 5, 12)
+                if x > 0:
+                    player.take_damage(x, "代价"); player.current_mana += x
+                    logs.append(f"鲜血契约：流血{x}，+{x}法力")
+        if trigger == "on_monster_death" and "钱袋" in relics:
+            m = ctx.get("monster")
+            if m:
+                gain = max(1, math.ceil(m.blood_limit * 0.02))
+                self.state.shards += gain; logs.append(f"钱袋：+{gain}碎片")
+        return logs
+
     def can_act(self, entity: Entity) -> bool:
         """是否可出手（眩晕/束缚下不可）"""
         return entity.is_alive and not entity.has_status("眩晕") and not entity.has_status("束缚")
