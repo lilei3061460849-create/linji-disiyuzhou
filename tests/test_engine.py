@@ -304,10 +304,11 @@ def test_full_flow():
     assert result["success"]
     print(f"  ✓ 领悟：获得曲解残韵")
     
-    result = engine.execute_action("pre_battle_action", {"sub_action": "修行", "tier": 1})
-    assert result["success"]
-    assert engine.state.attribute_points == 1
-    print(f"  ✓ 修行：获得1属性点")
+    speed_before = engine.state.player.speed_limit
+    result = engine.execute_action("pre_battle_action", {"sub_action": "修行", "tier": 1, "to": "speed"})
+    assert result["success"], f"修行失败: {result}"
+    assert engine.state.player.speed_limit == speed_before + 1, "修行应+1速限"
+    print(f"  ✓ 修行：速限{speed_before}→{engine.state.player.speed_limit}")
     
     result = engine.execute_action("pre_battle_action", {"sub_action": "休整", "tier": 1})
     assert result["success"]
@@ -511,6 +512,44 @@ def test_daowen_effects_wired():
     print("  ✓ 道纹效果落地测试通过")
 
 
+def test_out_of_combat_actions():
+    """测试局外行动真实生效（休整回血/学习加道纹法术/共鸣给遗物）"""
+    print("\n=== 测试：局外行动落地 ===")
+    engine = GameEngine(db_path="data/test_rulings.db")
+    engine.execute_action("setup_attributes", {"name":"测试","blood_points":10,"speed_points":8,"mana_points":7})
+    engine.execute_action("setup_choose_daowen", {"daowen":"杀伐"})
+    engine.execute_action("setup_choose_region", {"region":"罪孽都市"})
+    player = engine.state.player
+
+    # 休整：先扣血再休整，验证回血
+    player.current_hp = 30
+    r = engine.execute_action("pre_battle_action", {"sub_action":"休整","tier":2})
+    assert r["success"], f"休整失败: {r}"
+    assert player.current_hp == 54, f"休整2档应回24→54，实{player.current_hp}"
+    print(f"  ✓ 休整2档：HP30→{player.current_hp}")
+
+    # 学习道纹·庇护
+    r = engine.execute_action("pre_battle_action", {"sub_action":"学习","sub":"daowen","name":"庇护"})
+    assert r["success"], f"学习失败: {r}"
+    assert "庇护" in player.dao_wen, "庇护应已加入玩家道纹"
+    print(f"  ✓ 学习道纹：玩家道纹={list(player.dao_wen.keys())}")
+
+    # 学习法术·先发制人
+    r = engine.execute_action("pre_battle_action", {"sub_action":"学习","sub":"spell","name":"先发制人","tier":2})
+    assert r["success"], f"学习法术失败: {r}"
+    assert any(sp.name=="先发制人" for sp in player.spells), "先发制人应已学会"
+    print(f"  ✓ 学习法术：先发制人(所需杀伐)已掌握")
+
+    # 共鸣：获得遗物（补满精力以便测试）
+    engine.state.energy = 3
+    n_before = len(engine.state.relics)
+    r = engine.execute_action("pre_battle_action", {"sub_action":"共鸣","sub":"discover"})
+    assert r["success"], f"共鸣失败: {r}"
+    assert len(engine.state.relics) == n_before + 1, "应新获1件遗物"
+    print(f"  ✓ 共鸣：获遗物【{r['result']['gained_relic']}】，持有{len(engine.state.relics)}件")
+    print("  ✓ 局外行动落地测试通过")
+
+
 def run_all_tests():
     """运行所有测试"""
     print("=" * 60)
@@ -531,6 +570,7 @@ def run_all_tests():
         test_taming_mechanic,
         test_sculpture_and_proliferation,
         test_daowen_effects_wired,
+        test_out_of_combat_actions,
     ]
     
     passed = 0

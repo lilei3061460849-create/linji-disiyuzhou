@@ -460,20 +460,25 @@ class GameEngine:
         }
     
     def _action_setup_choose_region(self, params: dict) -> dict:
-        """选择副本"""
+        """选择副本（同时初始化遗物池、开局发现一件遗物）"""
         region = params.get("region", "")
         valid = ["罪孽都市", "扭曲都市", "龙心谷"]
-        
         if region not in valid:
             return {"success": False, "error": f"只能从{valid}中选择"}
-        
         self.state.current_region = region
         self.state.phase = "pre_battle"
-        
+        self._init_relic_pool()
+        # 开局发现一件遗物
+        import random as _r
+        if self.state.relics_pool:
+            r = self.state.relics_pool.pop(_r.randrange(len(self.state.relics_pool)))
+            self.state.relics.append(r)
+            starter = r.name
+        else:
+            starter = None
         return {
-            "success": True,
-            "action": "选择副本",
-            "result": {"region": region},
+            "success": True, "action": "选择副本",
+            "result": {"region": region, "starter_relic": starter},
             "next_actions": ["pre_battle_action"],
             "note": "开局完成，进入局外阶段。每个副本3点精力，耗尽后进入战斗。"
         }
@@ -546,118 +551,148 @@ class GameEngine:
         }
     
     def _pre_battle_xiuzheng(self, params: dict) -> dict:
-        """休整：产生恢复量"""
-        tier = params.get("tier", 1)  # 1=8, 2=24(10碎片), 3=48(25碎片)
-        
-        if tier == 1:
-            heal = 8
-            cost = 0
-        elif tier == 2:
-            heal = 24
-            cost = 10
-        elif tier == 3:
-            heal = 48
-            cost = 25
-        else:
+        """休整：产生恢复量并实际回复目标（默认自己，可指定朋友/员工）"""
+        tier = params.get("tier", 1)
+        heal_map = {1: (8, 0), 2: (24, 10), 3: (48, 25)}
+        if tier not in heal_map:
             self.state.energy += 1
             return {"success": False, "error": "休整档位无效"}
-        
+        heal, cost = heal_map[tier]
         if self.state.shards < cost:
             self.state.energy += 1
             return {"success": False, "error": f"碎片不足，需要{cost}，当前{self.state.shards}"}
-        
         self.state.shards -= cost
-        
+        # 选择目标
+        target = self.state.player
+        tname = params.get("target", "")
+        for e in self.state.friends + self.state.employees:
+            if e.name == tname:
+                target = e; break
+        h = target.heal(heal) if target else {"actual_heal":0}
         return {
-            "success": True,
-            "action": "休整",
-            "result": {
-                "heal_amount": heal,
-                "shard_cost": cost,
-                "instruction": f"获得{heal}点恢复量，可自由分配给自己或队友",
-                "shards_remaining": self.state.shards
-            },
-            "note": "请告知引擎恢复量如何分配（通过后续的 heal_to_entity 行动）"
+            "success": True, "action": "休整",
+            "result": {"heal_amount": heal, "shard_cost": cost, "target": target.name if target else None,
+                       "actual_heal": h.get("actual_heal", 0), "hp_after": target.current_hp if target else 0,
+                       "shards_remaining": self.state.shards},
         }
     
     def _pre_battle_xiuxing(self, params: dict) -> dict:
-        """修行：获得属性点"""
-        tier = params.get("tier", 1)  # 1=1点, 2=2点(15碎片), ...
-        
+        """修行：获得属性点并立即分配（to=speed/mana；血限只能开局获得）"""
+        tier = params.get("tier", 1)
         tier_map = {1: (1, 0), 2: (2, 15), 3: (3, 35), 4: (4, 65), 5: (5, 100), 6: (6, 150)}
-        
         if tier not in tier_map:
             self.state.energy += 1
             return {"success": False, "error": "修行档位无效"}
-        
         points, cost = tier_map[tier]
-        
         if self.state.shards < cost:
             self.state.energy += 1
             return {"success": False, "error": f"碎片不足，需要{cost}"}
-        
         self.state.shards -= cost
-        self.state.attribute_points += points
-        
+        player = self.state.player
+        alloc = params.get("to", "speed")  # speed / mana
+        gained = {"speed": 0, "mana": 0}
+        for _ in range(points):
+            if alloc == "mana":
+                player.mana_limit += 2; gained["mana"] += 2
+            else:
+                player.speed_limit += 1; gained["speed"] += 1
+        player.current_speed = player.speed_limit
+        player.current_mana = player.mana_limit
         return {
-            "success": True,
-            "action": "修行",
-            "result": {
-                "points_gained": points,
-                "shard_cost": cost,
-                "total_attribute_points": self.state.attribute_points,
-                "note": "属性点可用于：1速限=2法限（血限只能在开局获得）"
-            }
+            "success": True, "action": "修行",
+            "result": {"points_gained": points, "shard_cost": cost, "allocated": alloc, "gained": gained,
+                       "speed_limit": player.speed_limit, "mana_limit": player.mana_limit,
+                       "action_count": player.action_count},
         }
     
+    # 可学法术注册表（名 → 所需道纹）
+    SPELL_REGISTRY = {
+        "先发制人": ["杀伐"], "临界泄压": ["锐利"], "生生不息": ["再生"],
+        "后发制人": ["庇护"], "以牙还牙": ["杀伐", "再生"], "借力打力": ["杀伐", "庇护"],
+        "不死不休": ["血债"], "千刀万剐": ["血债", "再生"], "咎由自取": ["坠落", "杀伐", "血债"],
+    }
+    # 遗物池定义（12件，效果应用在第3阶段）
+    RELIC_DEFS = [
+        ("血誓戒", "[回始]首次主动支付流血代价时，获得等同于本次流血的格挡；若支付后生命≤30%，改为获得等量生命"),
+        ("买路财", "战斗中可失去等同于怪物20%[血限]的[碎片]安全撤退"),
+        ("同魂笔", "对[目标]发动残韵时，可另选一[目标]使其一种道纹受同种残韵影响"),
+        ("回锋刀", "每失去1点速度后对[目标]造成3伤害；[回始]对[目标]造成3×([速限]-当前速度)伤害"),
+        ("折速法印", "[战始]可疲惫X获得6X法力"),
+        ("三相残韵盘", "[战始]消耗一种残韵；[战终]获得另两种残韵各1"),
+        ("鲜血契约", "[战始]可流血X使首回合法力+X(X≤20%[血限])"),
+        ("避风铃", "每次闪避后获得3格挡；当前速度归零时获得15格挡"),
+        ("守夜灯", "[敌回始]获得[法限]50%法力，[敌回终]清空，每回合一次"),
+        ("钱袋", "每当敌方[目标][命零]，额外获得其[战始][血限]2%的[碎片]"),
+        ("卖身契", "[战始]指定一名[朋友]/[员工]；本场你支付的代价改由其承担"),
+        ("无所求", "每当在事件中选拒绝类选项，永久获得1属性点"),
+    ]
+
+    def _init_relic_pool(self):
+        if not self.state.relics_pool:
+            self.state.relics_pool = [Relic(name=n, effect=e) for n, e in self.RELIC_DEFS]
+
     def _pre_battle_xuexi(self, params: dict) -> dict:
-        """学习"""
-        sub = params.get("sub", "spell")  # spell / daowen / create_spell
+        """学习：实际添加道纹或法术到玩家"""
+        sub = params.get("sub", "daowen")  # daowen / spell
         tier = params.get("tier", 1)
-        
-        cost = 0
-        if tier == 2:
-            cost = 10
-        elif tier == 3:
-            cost = 25
-        
+        cost = {1: 0, 2: 10, 3: 25}.get(tier, 0)
         if self.state.shards < cost:
             self.state.energy += 1
             return {"success": False, "error": f"碎片不足，需要{cost}"}
-        
-        self.state.shards -= cost
-        
-        return {
-            "success": True,
-            "action": "学习",
-            "result": {
-                "sub_type": sub,
-                "shard_cost": cost,
-                "instruction": "请告知引擎学习的具体内容（法术名/道纹名）"
-            }
-        }
+        name = params.get("name", "")
+        player = self.state.player
+        if not player:
+            self.state.energy += 1
+            return {"success": False, "error": "没有玩家"}
+        if sub in ("daowen", "转化道纹"):
+            if name not in DaoWenEngine.list_all():
+                self.state.energy += 1
+                return {"success": False, "error": f"未知道纹: {name}"}
+            if name not in player.dao_wen:
+                player.dao_wen[name] = DaoWenInstance(
+                    DaoWen(name=name, formula="", cost_type="消耗", cost_formula="X", effect_formula=""))
+            self.state.shards -= cost
+            return {"success": True, "action": "学习",
+                    "result": {"learned": "daowen", "name": name, "shard_cost": cost,
+                               "player_daowen": list(player.dao_wen.keys())}}
+        elif sub == "spell":
+            if name not in self.SPELL_REGISTRY:
+                self.state.energy += 1
+                return {"success": False, "error": f"未知法术: {name}"}
+            req = self.SPELL_REGISTRY[name]
+            player.spells.append(Spell(name=name, required_daowen=req, trigger_condition="", effect_flow=""))
+            self.state.shards -= cost
+            return {"success": True, "action": "学习",
+                    "result": {"learned": "spell", "name": name, "required_daowen": req, "shard_cost": cost}}
     
     def _pre_battle_gongming(self, params: dict) -> dict:
-        """共鸣：发现遗物"""
-        sub = params.get("sub", "discover")  # discover / choose
-        
-        if sub == "discover":
-            # 需要随机数
-            pool_size = len(self.state.relics_pool) if self.state.relics_pool else 12
-            if pool_size == 0:
+        """共鸣：发现/自选遗物并实际加入"""
+        import random as _r
+        self._init_relic_pool()
+        sub = params.get("sub", "discover")
+        if not self.state.relics_pool:
+            self.state.energy += 1
+            return {"success": False, "error": "遗物池为空"}
+        if sub == "choose":
+            # 自选(额外消耗1精力+15碎片)
+            name = params.get("name", "")
+            idx = next((i for i,r in enumerate(self.state.relics_pool) if r.name == name), -1)
+            if idx < 0:
                 self.state.energy += 1
-                return {"success": False, "error": "遗物池为空"}
-            
-            self.state.energy -= 1  # 额外消耗1精力
-            return {
-                "success": True,
-                "action": "共鸣（发现）",
-                "random_required": True,
-                "pool_range": f"1~{pool_size}",
-                "instruction": f"请玩家在 1~{pool_size} 中选择一个数字"
-            }
-        
-        return {"success": True, "action": "共鸣", "result": {"sub": sub}}
+                return {"success": False, "error": f"遗物池无此遗物: {name}"}
+            if self.state.shards < 15:
+                self.state.energy += 1
+                return {"success": False, "error": "碎片不足15"}
+            self.state.shards -= 15
+            self.state.energy -= 1
+            relic = self.state.relics_pool.pop(idx)
+            self.state.relics.append(relic)
+            return {"success": True, "action": "共鸣(自选)", "result": {"gained_relic": relic.name, "effect": relic.effect}}
+        # discover：从池中随机抽一件（随机数流程简化为直接抽取）
+        relic = self.state.relics_pool.pop(_r.randrange(len(self.state.relics_pool)))
+        self.state.relics.append(relic)
+        return {"success": True, "action": "共鸣(发现)", "result": {"gained_relic": relic.name, "effect": relic.effect,
+                                                                      "pool_remaining": len(self.state.relics_pool)}}
     
     def _pre_battle_tansuo(self, params: dict) -> dict:
         """探索：发现事件"""
