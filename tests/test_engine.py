@@ -746,6 +746,35 @@ def test_events_system():
     print("  ✓ 事件系统测试通过")
 
 
+def test_rebellion_and_legacy():
+    """测试员工叛变检查 + 死之传承"""
+    print("\n=== 测试：员工叛变/死之传承 ===")
+    from engine.models import GameState
+    from engine.combat import CombatEngine
+    from engine.dice import DiceEngine
+    # 员工叛变：员工攻击总值≥玩家HP+朋友攻击 → 叛变
+    st = GameState(); st.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=10)
+    emp = Entity(name="追求者", entity_type="员工", blood_limit=96, current_hp=96, attack_count=8, attack_power=2)
+    st.employees.append(emp)  # 攻击总值16 ≥ 玩家HP10
+    combat = CombatEngine(st, DiceEngine())
+    r = combat.check_employee_rebellion()
+    assert r["rebellion"] is True, f"应叛变(16≥10): {r}"
+    print(f"  ✓ 员工叛变：追求者攻击总值16 ≥ 阈值10，触发叛变")
+
+    # 不叛变：玩家HP高
+    st.player.current_hp = 50
+    r2 = combat.check_employee_rebellion()
+    assert r2["rebellion"] is False, f"HP50时不应叛变(16<50): {r2}"
+    print(f"  ✓ 员工叛变：玩家HP50 > 员工攻击16，不叛变")
+
+    # 死之传承
+    st.player.is_alive = False; st.player.current_hp = 0
+    r3 = combat.trigger_death_legacy("速度用完前砸不烂怪死的就会是你")
+    assert r3["triggered"] and len(st.death_book_wisdom) == 1
+    print(f"  ✓ 死之传承：命零留遗言'{r3['wisdom'][:12]}...'")
+    print("  ✓ 员工叛变/死之传承测试通过")
+
+
 def run_all_tests():
     """运行所有测试"""
     print("=" * 60)
@@ -773,6 +802,7 @@ def run_all_tests():
         test_flying_and_split,
         test_huoxue,
         test_events_system,
+        test_rebellion_and_legacy,
     ]
     
     passed = 0

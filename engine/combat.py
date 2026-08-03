@@ -1044,6 +1044,34 @@ class CombatEngine:
                 logs.extend(step_logs)
         return logs
 
+    # ========== 大流程：员工叛变 / 死之传承 ==========
+
+    def check_employee_rebellion(self) -> dict:
+        """
+        员工叛变（[战终]检查）：所有[员工]攻击次数×攻击力相加，
+        若 ≥ 轮回者当前生命 + 所有[朋友]攻击总值，则所有员工叛变夺取《死者之书》。
+        """
+        emps = [e for e in self.state.employees if e.is_alive]
+        if not emps:
+            return {"rebellion": False, "reason": "无员工"}
+        emp_atk = sum(e.attack_count * e.attack_power for e in emps)
+        friend_atk = sum(f.attack_count * f.attack_power for f in self.state.friends if f.is_alive)
+        player_hp = self.state.player.current_hp if (self.state.player and self.state.player.is_alive) else 0
+        threshold = player_hp + friend_atk
+        if emp_atk >= threshold:
+            return {"rebellion": True, "rebels": [e.name for e in emps],
+                    "employee_attack_total": emp_atk, "threshold": threshold,
+                    "options": ["镇压（与所有叛变员工开战）", "让利（本场每名员工工资+5碎片）", "急中生智（谈判）"]}
+        return {"rebellion": False, "employee_attack_total": emp_atk, "threshold": threshold}
+
+    def trigger_death_legacy(self, wisdom: str) -> dict:
+        """
+        死之传承（轮回者[命零]时触发）：在《死者之书》新增一条遗言（≤20字）。
+        """
+        wisdom = wisdom[:self.state.death_book_capacity] if wisdom else ""
+        self.state.death_book_wisdom.append(wisdom)
+        return {"triggered": True, "wisdom": wisdom, "total_wisdom": len(self.state.death_book_wisdom)}
+
     def process_relics(self, trigger: str, ctx: dict = None) -> list:
         """遗物效果触发框架。trigger: battle_start/round_start/on_dodge/on_speed_zero/on_monster_death"""
         ctx = ctx or {}

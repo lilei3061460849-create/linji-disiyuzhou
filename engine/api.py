@@ -1172,6 +1172,8 @@ class GameEngine:
                 "energy_restored": 3,
                 "cleared_temp_friends": True,
                 "removed_via_alt_path": removed,
+                "employee_rebellion": self.combat.check_employee_rebellion(),
+                "player_dead": (not self.state.player.is_alive) if self.state.player else False,
             }
         }
     
