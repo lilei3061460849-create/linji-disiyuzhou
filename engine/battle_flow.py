@@ -29,17 +29,19 @@ class BattleFlow:
             if dw_inst is None:
                 continue
             
-            # 自愈：回始回复10%血限
+            x = max(1, getattr(dw_inst, "x_value", 0) or 1)
+            
+            # 自愈X：[回始]获得自身[血限]10X%的[回复]
             if dw_name == "自愈":
-                heal = int(monster.blood_limit * 0.1)
+                heal = math.ceil(monster.blood_limit * 10 * x / 100)
                 old_hp = monster.current_hp
                 monster.current_hp = min(monster.blood_limit, monster.current_hp + heal)
                 if monster.current_hp > old_hp:
                     effects.append(f"{monster.name}自愈: +{monster.current_hp - old_hp}HP")
             
-            # 庇护：回始获得格挡（怪物×3）
+            # 庇护X：获得4X点格挡
             if dw_name == "庇护":
-                shield = 4 * 3  # 庇护4×3=12
+                shield = 4 * x
                 monster.shield += shield
                 effects.append(f"{monster.name}庇护: +{shield}格挡")
             

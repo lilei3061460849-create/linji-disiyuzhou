@@ -29,7 +29,13 @@ engine/
 ├── models.py            # 数据模型（Entity, Spell, Relic等）
 ├── dice.py              # 随机数引擎（池系统，AI不自行生成随机数）
 ├── daowen.py            # 道纹系统（所有道纹效果的数学计算）
+├── spells.py            # 法术库与法术执行器（积木/循环/中断/阶级规则）
+├── content.py           # 内容库（遗物池、怪物池、通用事件池、消耗品）
 ├── combat.py            # 战斗计算引擎（伤害、回合、闪避等）
+├── battle_flow.py       # 完整战斗流程（怪物出手、回合管理）
+├── validator.py         # 规则校验器（违规检测与落库）
+├── rule_sync.py         # 正文规则热同步
+├── ai_player.py         # AI后端接入层
 ├── dm_rulings.py        # DM裁定数据库（SQLite + 全文搜索）
 └── api.py               # GameEngine主类 — AI的唯一交互入口
 ```
@@ -85,23 +91,23 @@ result = engine.execute_action("random_number", {"pool_name": "event_pool", "num
 
 | 行动类型 | 说明 |
 |---------|------|
-| `setup_attributes` | 分配初始25属性点 |
+| `setup_attributes` | 分配初始25属性点（参数：blood_points/speed_points/mana_points，总和须为25） |
 | `setup_choose_daowen` | 选择初始道纹（杀伐/锐利） |
 | `setup_choose_resonance` | 选择初始残韵 |
 | `setup_choose_region` | 选择副本 |
 | `pre_battle_action` | 局外行动（领悟/休整/修行/学习/共鸣/探索） |
-| `use_daowen` | 发动道纹 |
-| `use_spell` | 发动法术 |
+| `use_daowen` | 发动道纹（自动结算冷却/唯一/异变等代价） |
+| `use_spell` | 发动法术（参数：spell_name + variables，如 `{"X":2,"Y":3}`） |
 | `use_resonance` | 使用残韵 |
 | `attack` | 普通攻击 |
 | `dodge_decision` | 闪避决策 |
-| `consume_item` | 使用消耗品 |
+| `consume_item` | 使用消耗品（不消耗出手；参数：item_name） |
 | `declare_wit` | 声明急中生智 |
 | `declare_escape` | 声明逃跑 |
 | `declare_evolution` | 怪物进化 |
 | `round_start` | 回始结算 |
 | `round_end` | 回终结算 |
-| `battle_start` | 战始 |
+| `battle_start` | 战始（自动计算出怪数量并开启抽怪随机池） |
 | `battle_end` | 战终 |
 | `random_number` | 提交随机数 |
 

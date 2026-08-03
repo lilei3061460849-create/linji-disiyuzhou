@@ -202,8 +202,17 @@ class Entity:
     status_effects: list[StatusEffect] = field(default_factory=list)
     is_flying: bool = False      # 飞行状态
     
+    # 代价累积
+    mutation_stacks: int = 0     # 异变层数（达50层失去意志变为怪物）
+    used_unique: set = field(default_factory=set)  # 已使用的【唯一】道纹
+    
     # 存活
     is_alive: bool = True
+    
+    @property
+    def is_mutated(self) -> bool:
+        """异变达到50层时，该角色失去意志，变为怪物"""
+        return self.mutation_stacks >= 50
     
     @property
     def action_count(self) -> int:

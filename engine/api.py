@@ -22,6 +22,15 @@ from .dice import DiceEngine, EventPool, RandomRequest
 from .daowen import DaoWenEngine, ResonanceEngine
 from .combat import CombatEngine
 from .dm_rulings import DMRulingsDB, DMRuling, Interrupt
+from .spells import (
+    SPELL_LIBRARY, SpellDef, get_spell, list_spells,
+    validate_building_blocks, create_custom_spell, MAX_SPELL_LOOPS,
+)
+from .content import (
+    build_relic_pool, get_relic, MONSTER_POOLS, get_monster_pool,
+    monster_count_for_battle, GENERAL_EVENTS, get_event, list_general_events,
+    make_consumable, MonsterDef,
+)
 
 
 class GameEngine:
@@ -38,6 +47,9 @@ class GameEngine:
         self.rulings_db = DMRulingsDB(db_path)
         self.save_dir = save_dir
         os.makedirs(save_dir, exist_ok=True)
+        
+        # 初始化遗物池（12件通用遗物，事件遗物不加入）
+        self.state.relics_pool = build_relic_pool()
         
         # 规则校验器（延迟导入避免循环）
         self._validator = None
@@ -611,74 +623,231 @@ class GameEngine:
         }
     
     def _pre_battle_xuexi(self, params: dict) -> dict:
-        """学习"""
+        """
+        学习：选择学会一种/两种(10)/三种(25)法术
+             / 自创一种法术
+             / 习得一种/两种(10)转化道纹
+        """
+        player = self.state.player
+        if not player:
+            self.state.energy += 1
+            return {"success": False, "error": "没有玩家"}
+
         sub = params.get("sub", "spell")  # spell / daowen / create_spell
         tier = params.get("tier", 1)
-        
-        cost = 0
-        if tier == 2:
-            cost = 10
-        elif tier == 3:
-            cost = 25
-        
+
+        # 档位费用：法术 1/2(10)/3(25) 种；转化道纹 1/2(10) 种
+        if sub == "daowen":
+            tier_map = {1: (1, 0), 2: (2, 10)}
+        elif sub == "create_spell":
+            tier_map = {1: (1, 0)}
+        else:
+            tier_map = {1: (1, 0), 2: (2, 10), 3: (3, 25)}
+
+        if tier not in tier_map:
+            self.state.energy += 1
+            return {"success": False, "error": f"学习档位无效: {tier}"}
+
+        count, cost = tier_map[tier]
+
         if self.state.shards < cost:
             self.state.energy += 1
-            return {"success": False, "error": f"碎片不足，需要{cost}"}
-        
+            return {"success": False, "error": f"碎片不足，需要{cost}，当前{self.state.shards}"}
+
+        # ---- 自创法术 ----
+        if sub == "create_spell":
+            created = create_custom_spell(
+                name=params.get("name", ""),
+                steps=params.get("steps", []),
+                trigger_condition=params.get("trigger_condition", ""),
+                owned_daowen=set(player.dao_wen.keys()),
+                custom_conditions=params.get("custom_conditions"),
+            )
+            if not created["success"]:
+                self.state.energy += 1
+                return created
+
+            definition: SpellDef = created["spell"]
+            SPELL_LIBRARY[definition.name] = definition
+            player.spells.append(definition.to_spell())
+            self.state.shards -= cost
+            return {
+                "success": True,
+                "action": "学习（自创法术）",
+                "result": {
+                    "created_spell": definition.to_dict(),
+                    "rank": created["rank"],
+                    "shard_cost": cost,
+                },
+                "note": "自创法术[战终]可以进行修订",
+            }
+
+        # ---- 习得转化道纹 ----
+        if sub == "daowen":
+            names = params.get("daowen_names") or ([params["daowen_name"]] if params.get("daowen_name") else [])
+            if len(names) != count:
+                self.state.energy += 1
+                return {"success": False, "error": f"该档位须指定{count}种转化道纹，当前{len(names)}种"}
+
+            transform_set = set(ResonanceEngine.MONSTER_TRANSFORM_DAOWEN)
+            learned = []
+            for n in names:
+                if n not in transform_set:
+                    self.state.energy += 1
+                    return {
+                        "success": False,
+                        "error": f"【{n}】不是怪物转化道纹，局外【学习】只能习得转化道纹",
+                    }
+                if n in player.dao_wen:
+                    self.state.energy += 1
+                    return {"success": False, "error": f"已持有道纹【{n}】（道纹唯一，不重复存在）"}
+                dw = DaoWenEngine.get_definition(n)
+                player.dao_wen[n] = DaoWenInstance(dao_wen=dw)
+                learned.append(n)
+
+            self.state.shards -= cost
+            return {
+                "success": True,
+                "action": "学习（转化道纹）",
+                "result": {"learned_daowen": learned, "shard_cost": cost},
+            }
+
+        # ---- 学会已有法术 ----
+        names = params.get("spell_names") or ([params["spell_name"]] if params.get("spell_name") else [])
+        if len(names) != count:
+            self.state.energy += 1
+            return {
+                "success": False,
+                "error": f"该档位须指定{count}种法术，当前{len(names)}种",
+                "available_spells": list_spells(),
+            }
+
+        known = {s.name for s in player.spells}
+        to_learn = []
+        for n in names:
+            definition = get_spell(n)
+            if not definition:
+                self.state.energy += 1
+                return {"success": False, "error": f"法术库中不存在【{n}】", "available_spells": list_spells()}
+            if n in known:
+                self.state.energy += 1
+                return {"success": False, "error": f"已掌握法术【{n}】"}
+            to_learn.append(definition)
+
         self.state.shards -= cost
-        
+        learned = []
+        for definition in to_learn:
+            player.spells.append(definition.to_spell())
+            block = validate_building_blocks(definition, set(player.dao_wen.keys()))
+            learned.append({
+                "name": definition.name,
+                "rank": definition.rank,
+                "required_daowen": definition.required_daowen,
+                "trigger_condition": definition.trigger_condition,
+                "castable_now": block["valid"],
+                "missing_daowen": block.get("missing_daowen", []),
+            })
+
         return {
             "success": True,
-            "action": "学习",
-            "result": {
-                "sub_type": sub,
-                "shard_cost": cost,
-                "instruction": "请告知引擎学习的具体内容（法术名/道纹名）"
-            }
+            "action": "学习（法术）",
+            "result": {"learned_spells": learned, "shard_cost": cost},
+            "note": "法术已开启；缺少所需道纹时无法发动（积木规则）",
         }
     
     def _pre_battle_gongming(self, params: dict) -> dict:
         """共鸣：发现遗物"""
         sub = params.get("sub", "discover")  # discover / choose
         
-        if sub == "discover":
-            # 需要随机数
-            pool_size = len(self.state.relics_pool) if self.state.relics_pool else 12
-            if pool_size == 0:
+        # 共鸣：精力再次-1（共计2点），发现/自选（15碎片）一件遗物
+        if self.state.energy < 1:
+            self.state.energy += 1
+            return {"success": False, "error": "共鸣需要2点精力（本次行动1点+额外1点），精力不足"}
+        
+        owned = {r.name for r in self.state.relics}
+        available = [r for r in self.state.relics_pool if r.name not in owned]
+        if not available:
+            self.state.energy += 1
+            return {"success": False, "error": "遗物池已空"}
+        
+        if sub == "choose":
+            if self.state.shards < 15:
                 self.state.energy += 1
-                return {"success": False, "error": "遗物池为空"}
-            
-            self.state.energy -= 1  # 额外消耗1精力
+                return {"success": False, "error": f"自选遗物需15碎片，当前{self.state.shards}"}
+            name = params.get("relic_name", "")
+            relic = next((r for r in available if r.name == name), None)
+            if not relic:
+                self.state.energy += 1
+                return {
+                    "success": False,
+                    "error": f"遗物池中没有【{name}】",
+                    "available": [r.name for r in available],
+                }
+            self.state.energy -= 1
+            self.state.shards -= 15
+            self.state.relics.append(relic)
+            self.state.relics_pool = [r for r in self.state.relics_pool if r.name != relic.name]
             return {
                 "success": True,
-                "action": "共鸣（发现）",
-                "random_required": True,
-                "pool_range": f"1~{pool_size}",
-                "instruction": f"请玩家在 1~{pool_size} 中选择一个数字"
+                "action": "共鸣（自选）",
+                "result": {
+                    "gained_relic": {"name": relic.name, "effect": relic.effect},
+                    "shard_cost": 15,
+                    "energy_remaining": self.state.energy,
+                },
             }
         
-        return {"success": True, "action": "共鸣", "result": {"sub": sub}}
+        # 发现：从随机抽取的3个未持有选项中选择1个
+        self.state.energy -= 1
+        n = min(3, len(available))
+        self.dice.create_pool("relic_discover", available)
+        return {
+            "success": True,
+            "action": "共鸣（发现）",
+            "random_required": True,
+            "pool_name": "relic_discover",
+            "pool_range": f"1~{len(available)}",
+            "energy_remaining": self.state.energy,
+            "instruction": f"请玩家在 1~{len(available)} 中选择一个数字（发现机制）",
+            "pool_options": [r.name for r in available],
+        }
     
     def _pre_battle_tansuo(self, params: dict) -> dict:
         """探索：发现事件"""
         tier = params.get("tier", 1)  # 1=1个, 2=2个(30碎片)
         
-        cost = 0
-        if tier == 2:
-            cost = 30
+        tier_map = {1: (1, 0), 2: (2, 30)}
+        if tier not in tier_map:
+            self.state.energy += 1
+            return {"success": False, "error": f"探索档位无效: {tier}"}
+        count, cost = tier_map[tier]
         
         if self.state.shards < cost:
             self.state.energy += 1
-            return {"success": False, "error": f"碎片不足，需要{cost}"}
+            return {"success": False, "error": f"碎片不足，需要{cost}，当前{self.state.shards}"}
+        
+        # 事件池：所有未遇到的通用事件（通用在前，专属在后）
+        available = [e for e in GENERAL_EVENTS if not self.event_pool.is_encountered(e["name"])]
+        if not available:
+            self.state.energy += 1
+            return {"success": False, "error": "事件池已空（所有事件均已遇到）"}
         
         self.state.shards -= cost
+        self.dice.create_pool("event_discover", available)
         
         return {
             "success": True,
             "action": "探索",
             "random_required": True,
-            "pool_range": "需要先构建事件池",
-            "instruction": "需要随机数来选择事件"
+            "pool_name": "event_discover",
+            "pool_range": f"1~{len(available)}",
+            "discover_count": count,
+            "shard_cost": cost,
+            "instruction": (
+                f"请玩家在 1~{len(available)} 中给出数字"
+                + (f"（本档位可发现{count}个事件，需分别提交）" if count > 1 else "")
+            ),
+            "pool_options": [e["name"] for e in available],
         }
     
     def _pre_battle_weixiu(self, params: dict) -> dict:
@@ -748,7 +917,16 @@ class GameEngine:
         dw_instance = player.dao_wen[name]
         
         if not dw_instance.can_use():
-            return {"success": False, "error": f"道纹{name}不可用（冷却/封印）"}
+            if dw_instance.cooldown_remaining > 0:
+                return {
+                    "success": False,
+                    "error": f"道纹【{name}】冷却中，剩余{dw_instance.cooldown_remaining}场",
+                }
+            return {"success": False, "error": f"道纹【{name}】被封印，不可用"}
+        
+        # 唯一：使用后本次轮回中无法再次使用
+        if name in player.used_unique:
+            return {"success": False, "error": f"道纹【{name}】代价为【唯一】，本次轮回已使用过"}
         
         if x < 1:
             return {"success": False, "error": "X必须≥1"}
@@ -777,11 +955,23 @@ class GameEngine:
         # 执行效果
         execution = self._execute_daowen_effect(name, calc, player, target)
         
+        # 冷却X：使用后记为【X(0)/Y】，[战终]后已完成战斗场数+1，达到Y时才能再次使用
+        cost_applied = {}
+        if calc.get("cost_type") == "冷却":
+            dw_instance.cooldown_remaining = calc.get("cost", x)
+            cost_applied["cooldown"] = dw_instance.cooldown_remaining
+        
+        # 唯一：使用后本次轮回中无法再次使用
+        if calc.get("cost_type") == "唯一":
+            player.used_unique.add(name)
+            cost_applied["unique_locked"] = True
+        
         return {
             "success": True,
             "action": f"发动道纹【{name}X={x}】",
             "calculation": calc,
             "execution": execution,
+            "cost_applied": cost_applied,
             "state": self.combat._get_combat_state()
         }
     
@@ -789,44 +979,51 @@ class GameEngine:
         """执行道纹效果"""
         result = {"daowen": name, "effects": []}
         
-        # 怪物×3规则
-        multiplier = self.combat.is_monster_triple(name, caster)
-        if multiplier > 1:
-            result["monster_triple"] = True
-            result["multiplier"] = multiplier
-        
         # 伤害类
         if "target_damage" in calc:
-            actual_damage = calc["target_damage"] * multiplier
-            dmg = target.take_damage(actual_damage)
-            if multiplier > 1:
-                dmg["base_damage"] = calc["target_damage"]
-                dmg["multiplied_damage"] = actual_damage
+            dmg = target.take_damage(calc["target_damage"])
             result["effects"].append({"type": "damage", "target": target.name, **dmg})
+        
+        # 多段伤害（血债X：对[目标]造成2X次1点伤害）
+        # 每一段独立结算，逐段扣减格挡
+        if "hits" in calc and "damage_per_hit" in calc:
+            hits = calc["hits"]
+            per_hit = calc["damage_per_hit"]
+            total_actual = 0
+            total_absorbed = 0
+            for i in range(hits):
+                if not target.is_alive:
+                    break
+                d = target.take_damage(per_hit)
+                total_actual += d["actual_damage"]
+                total_absorbed += d["shield_absorbed"]
+            result["effects"].append({
+                "type": "multi_hit_damage",
+                "target": target.name,
+                "hits": hits,
+                "damage_per_hit": per_hit,
+                "actual_damage": total_actual,
+                "shield_absorbed": total_absorbed,
+                "hp_after": target.current_hp,
+                "died": not target.is_alive,
+            })
         
         # AOE伤害
         if "aoe_damage" in calc:
-            actual_aoe = calc["aoe_damage"] * multiplier
             for enemy in self.state.get_all_enemy_side():
-                dmg = enemy.take_damage(actual_aoe)
-                if multiplier > 1:
-                    dmg["multiplied"] = True
+                dmg = enemy.take_damage(calc["aoe_damage"])
                 result["effects"].append({"type": "aoe_damage", "target": enemy.name, **dmg})
         
         # 回复类
         if "target_heal" in calc:
-            actual_heal = calc["target_heal"] * multiplier
-            heal = target.heal(actual_heal)
-            if multiplier > 1:
-                heal["multiplied"] = True
+            heal = target.heal(calc["target_heal"])
             result["effects"].append({"type": "heal", "target": target.name, **heal})
         
         # 格挡类
         if "target_shield" in calc:
-            actual_shield = calc["target_shield"] * multiplier
-            target.gain_shield(actual_shield)
-            result["effects"].append({"type": "shield", "target": target.name, "amount": actual_shield,
-                                       "base": calc["target_shield"], "multiplier": multiplier})
+            target.gain_shield(calc["target_shield"])
+            result["effects"].append({"type": "shield", "target": target.name,
+                                       "amount": calc["target_shield"]})
         
         # 血限减少
         if "blood_limit_reduction" in calc:
@@ -865,14 +1062,61 @@ class GameEngine:
                 "new_blood_limit": caster.blood_limit
             })
         
-        # 疲惫代价
+        # 疲惫代价（失去X点当前速度）
         if "cost_speed" in calc:
-            caster.current_speed -= calc["cost_speed"]
+            caster.current_speed = max(0, caster.current_speed - calc["cost_speed"])
             result["effects"].append({
                 "type": "fatigue_cost",
                 "source": caster.name,
                 "speed_lost": calc["cost_speed"],
                 "new_speed": caster.current_speed
+            })
+        
+        # 枯竭代价（失去X点法限）
+        if "cost_mana_limit" in calc:
+            caster.mana_limit = max(0, caster.mana_limit - calc["cost_mana_limit"])
+            caster.current_mana = min(caster.current_mana, caster.mana_limit)
+            result["effects"].append({
+                "type": "exhaust_cost",
+                "source": caster.name,
+                "mana_limit_lost": calc["cost_mana_limit"],
+                "new_mana_limit": caster.mana_limit
+            })
+        
+        # 萎缩代价（失去X点速限）
+        if "cost_speed_limit" in calc:
+            caster.speed_limit = max(0, caster.speed_limit - calc["cost_speed_limit"])
+            caster.current_speed = min(caster.current_speed, caster.speed_limit)
+            result["effects"].append({
+                "type": "shrink_cost",
+                "source": caster.name,
+                "speed_limit_lost": calc["cost_speed_limit"],
+                "new_speed_limit": caster.speed_limit,
+                "new_action_count": caster.action_count
+            })
+        
+        # 异变代价（获得X层异变，达50层失去意志变为怪物）
+        if "cost_mutation" in calc:
+            caster.mutation_stacks += calc["cost_mutation"]
+            entry = {
+                "type": "mutation_cost",
+                "source": caster.name,
+                "mutation_gained": calc["cost_mutation"],
+                "total_stacks": caster.mutation_stacks,
+            }
+            if caster.is_mutated:
+                entry["became_monster"] = True
+                entry["note"] = "异变达到50层，该角色失去意志，变为怪物"
+                caster.entity_type = EntityType.MONSTER.value
+            result["effects"].append(entry)
+        
+        # 碎片代价
+        if "cost_shards" in calc:
+            self.state.shards = max(0, self.state.shards - calc["cost_shards"])
+            result["effects"].append({
+                "type": "shard_cost",
+                "shards_spent": calc["cost_shards"],
+                "shards_remaining": self.state.shards
             })
         
         # 法力获得
@@ -904,6 +1148,212 @@ class GameEngine:
         
         return result
     
+    def _action_use_spell(self, params: dict) -> dict:
+        """
+        发动法术
+
+        规则：
+        - 积木规则：每一步严格按对应道纹的原版公式结算
+        - 中断规则：法力耗尽或中间流程失效则流程中断
+        - 循环规则：终点结算可重新触发自身启动条件（法力充足时自动循环）
+        - 自由控X：每个变量由施法者在合法范围内自由指定
+        """
+        player = self.state.player
+        if not player:
+            return {"success": False, "error": "没有玩家"}
+
+        spell_name = params.get("spell_name", "")
+        variables = params.get("variables", {}) or {}
+        target_name = params.get("target", "")
+
+        # 单变量法术允许直接传 x
+        if "x" in params and "X" not in variables:
+            variables["X"] = params["x"]
+
+        # 必须已通过局外【学习】掌握
+        owned = next((s for s in player.spells if s.name == spell_name), None)
+        if not owned:
+            return {
+                "success": False,
+                "error": f"未掌握法术【{spell_name}】，法术须通过局外【学习】行动掌握",
+                "known_spells": [s.name for s in player.spells],
+            }
+
+        definition = get_spell(spell_name)
+        if not definition:
+            return {"success": False, "error": f"法术库中不存在【{spell_name}】"}
+
+        # 积木规则校验
+        check = validate_building_blocks(definition, set(player.dao_wen.keys()))
+        if not check["valid"]:
+            return {"success": False, "error": check["error"]}
+
+        # 变量校验
+        for var in definition.variables():
+            if var not in variables:
+                return {
+                    "success": False,
+                    "error": f"缺少变量 {var}",
+                    "required_variables": definition.variables(),
+                }
+            if int(variables[var]) < 1:
+                return {"success": False, "error": f"变量 {var} 必须≥1（自由控X规则）"}
+
+        # 目标
+        target = player
+        if target_name:
+            all_entities = self.state.get_all_player_side() + self.state.get_all_enemy_side()
+            target = next((e for e in all_entities if e.name == target_name), player)
+
+        flow_log: list[dict] = []
+        interrupted_reason = None
+        damage_dealt_total = 0
+        loops_run = 0
+
+        while True:
+            loops_run += 1
+            damage_this_pass = 0
+
+            # 「不死不休」流程起点：失去X点生命
+            if definition.self_life_loss_var:
+                loss = int(variables[definition.self_life_loss_var])
+                if player.current_hp <= loss:
+                    interrupted_reason = "生命不足以支付流程起点的生命损失，流程中断"
+                    break
+                res = player.take_damage(loss, "代价")
+                flow_log.append({
+                    "step": "流程起点：失去生命",
+                    "amount": loss,
+                    "hp_after": res["hp_after"],
+                })
+
+            for idx, step in enumerate(definition.steps, 1):
+                # 条件门
+                if step.condition == "target_flying" and not target.has_status("飞行"):
+                    flow_log.append({"step": idx, "daowen": step.daowen, "skipped": "目标未处于飞行"})
+                    continue
+                if step.condition == "no_damage_dealt" and damage_this_pass > 0:
+                    flow_log.append({"step": idx, "daowen": step.daowen, "skipped": "本次流程已造成伤害"})
+                    continue
+
+                x = int(variables[step.var]) * step.coefficient
+
+                # 该步的目标：治疗/防护类指向自己，其余指向敌方目标
+                step_target = player if step.daowen in ("再生", "庇护", "慈悲", "增殖") else target
+
+                try:
+                    calc = DaoWenEngine.resolve(step.daowen, x, target=step_target, caster=player)
+                except Exception as e:
+                    interrupted_reason = f"第{idx}步【{step.daowen}】计算失败：{e}"
+                    break
+
+                # 中断规则：法力不足则流程中断
+                cost = calc.get("cost", 0)
+                if calc.get("cost_type") == "消耗" and cost > 0:
+                    if player.current_mana < cost:
+                        interrupted_reason = (
+                            f"第{idx}步【{step.daowen}{x}】需要{cost}法力，"
+                            f"当前{player.current_mana}，流程中断"
+                        )
+                        break
+                    player.spend_mana(cost)
+
+                # 中断规则：流血代价不足以支付则流程中断
+                if calc.get("cost_hp", 0) > 0 and player.current_hp <= calc["cost_hp"]:
+                    interrupted_reason = (
+                        f"第{idx}步【{step.daowen}{x}】需流血{calc['cost_hp']}，"
+                        f"当前生命{player.current_hp}，流程中断"
+                    )
+                    break
+
+                execution = self._execute_daowen_effect(step.daowen, calc, player, step_target)
+
+                for eff in execution["effects"]:
+                    if eff.get("type") in ("damage", "aoe_damage", "multi_hit_damage"):
+                        damage_this_pass += eff.get("actual_damage", 0)
+
+                flow_log.append({
+                    "step": idx,
+                    "daowen": f"{step.daowen}{x}",
+                    "var": step.var,
+                    "calculation": calc,
+                    "execution": execution,
+                })
+
+                if not player.is_alive:
+                    interrupted_reason = "施法者[命零]，流程中断"
+                    break
+
+            damage_dealt_total += damage_this_pass
+
+            if interrupted_reason:
+                break
+            if not definition.loops:
+                break
+            if loops_run >= MAX_SPELL_LOOPS:
+                interrupted_reason = f"达到循环安全上限（{MAX_SPELL_LOOPS}次）"
+                break
+
+        return {
+            "success": True,
+            "action": f"发动法术【{spell_name}】",
+            "spell": definition.to_dict(),
+            "variables": variables,
+            "loops_run": loops_run,
+            "total_damage_dealt": damage_dealt_total,
+            "flow": flow_log,
+            "interrupted": interrupted_reason,
+            "state": self.combat._get_combat_state(),
+        }
+
+    def _action_consume_item(self, params: dict) -> dict:
+        """
+        使用消耗品
+
+        规则：消耗品（X/Y）可使用X次，每次使用后X-1，X归零后消耗。
+             使用时不消耗出手。
+        """
+        item_name = params.get("item_name") or params.get("item", "")
+        target_name = params.get("target", "")
+
+        item = next(
+            (c for c in self.state.consumables if c.name == item_name and not c.is_depleted),
+            None
+        )
+        if not item:
+            return {
+                "success": False,
+                "error": f"没有可用的消耗品【{item_name}】",
+                "available": [
+                    {"name": c.name, "uses": f"{c.current_uses}/{c.max_uses}"}
+                    for c in self.state.consumables if not c.is_depleted
+                ],
+            }
+
+        target = self.state.player
+        if target_name:
+            all_entities = self.state.get_all_player_side() + self.state.get_all_enemy_side()
+            target = next((e for e in all_entities if e.name == target_name), self.state.player)
+
+        remaining = item.use()
+        depleted = item.is_depleted
+        if depleted:
+            self.state.consumables.remove(item)
+
+        return {
+            "success": True,
+            "action": f"使用消耗品【{item_name}】",
+            "result": {
+                "item": item_name,
+                "effect": item.effect,
+                "target": target.name if target else None,
+                "uses_remaining": remaining,
+                "depleted": depleted,
+                "costs_action": False,
+            },
+            "note": "使用消耗品不消耗出手。效果为文本描述，具体结算请按其效果调用对应行动。",
+        }
+
     def _action_use_resonance(self, params: dict) -> dict:
         """使用残韵"""
         source = params.get("source_daowen", "")
@@ -1090,17 +1540,81 @@ class GameEngine:
         }
     
     def _action_battle_start(self, params: dict) -> dict:
-        """战始"""
+        """
+        战始
+
+        流程：抽取出怪（数量=战斗场数，一阶副本-2，最低1，允许重复抽选同一怪物种族）
+             →选择一种战斗背景→得知怪物面板及道纹
+        """
         self.state.phase = "battle_start"
         self.state.current_battle += 1
         self.state.current_round = 0
-        
+        self.state.enemies.clear()
+
+        region = self.state.current_region
+        pool = get_monster_pool(region)
+        need = monster_count_for_battle(self.state.current_battle, region_tier=1)
+
+        # 已由调用方指定怪物名单（例如先前已完成随机抽取）
+        picked = params.get("monsters")
+        if picked:
+            missing = [n for n in picked if not any(m.name == n for m in pool)]
+            if missing:
+                return {
+                    "success": False,
+                    "error": f"怪物不在【{region}】怪物池中: {missing}",
+                    "pool": [m.name for m in pool],
+                }
+            self._spawn_monsters([next(m for m in pool if m.name == n) for n in picked])
+            return {
+                "success": True,
+                "action": "战始",
+                "battle_number": self.state.current_battle,
+                "monster_count": len(picked),
+                "enemies": [e.to_dict() for e in self.state.enemies],
+                "instruction": "请选择一种战斗背景，随后进入第1回合。注意：怪物白板开局，道纹须其主动发动后方可生效。",
+            }
+
+        if not pool:
+            return {
+                "success": True,
+                "action": "战始",
+                "battle_number": self.state.current_battle,
+                "monster_count": need,
+                "warning": f"副本【{region}】暂无怪物池数据，请手动提供 monsters 参数",
+            }
+
+        # 需要随机数抽怪：一次抽一只，允许重复
+        self.dice.create_pool("monster_draw", [m.name for m in pool])
         return {
             "success": True,
             "action": "战始",
             "battle_number": self.state.current_battle,
-            "instruction": "请抽取怪物并结算战始效果"
+            "monster_count": need,
+            "random_required": True,
+            "pool_name": "monster_draw",
+            "pool_range": f"1~{len(pool)}",
+            "instruction": (
+                f"本场需抽取{need}只怪物（允许重复）。"
+                f"请玩家在 1~{len(pool)} 中依次给出{need}个数字，"
+                f"通过 random_number 行动逐个提交。"
+            ),
+            "pool_options": [m.panel() for m in pool],
         }
+
+    def _spawn_monsters(self, defs: list) -> None:
+        """将怪物定义实例化到战场（重名自动加序号后缀）"""
+        counts: dict[str, int] = {}
+        for d in defs:
+            counts[d.name] = counts.get(d.name, 0) + 1
+        seen: dict[str, int] = {}
+        for d in defs:
+            if counts[d.name] > 1:
+                seen[d.name] = seen.get(d.name, 0) + 1
+                suffix = f"·{seen[d.name]}"
+            else:
+                suffix = ""
+            self.state.enemies.append(d.to_entity(suffix))
     
     def _action_battle_end(self, params: dict) -> dict:
         """战终"""
@@ -1114,10 +1628,21 @@ class GameEngine:
         self.state.shards += shard_reward
         
         # 清除局内增益
+        cooldowns_ticked = []
         if self.state.player:
             self.state.player.clear_shield()
             # 恢复速度到速限（闪避消耗的速度战终复原）
             self.state.player.current_speed = self.state.player.speed_limit
+            
+            # 冷却递减：[战终]后已完成战斗场数+1
+            for dw_name, dw_inst in self.state.player.dao_wen.items():
+                if dw_inst.cooldown_remaining > 0:
+                    dw_inst.cooldown_remaining -= 1
+                    cooldowns_ticked.append({
+                        "daowen": dw_name,
+                        "remaining": dw_inst.cooldown_remaining,
+                        "ready": dw_inst.cooldown_remaining == 0,
+                    })
         
         # 临时朋友消失
         self.state.temp_friends.clear()
@@ -1138,6 +1663,7 @@ class GameEngine:
                 "total_shards": self.state.shards,
                 "energy_restored": 3,
                 "cleared_temp_friends": True,
+                "cooldowns_ticked": cooldowns_ticked,
             }
         }
     
@@ -1203,15 +1729,81 @@ class GameEngine:
         pool_name = params.get("pool_name", "")
         number = params.get("number", 0)
         
+        # 出怪抽取：允许重复抽选同一怪物种族，池不缩小
+        if pool_name == "monster_draw":
+            return self._submit_monster_draw(number)
+        
         try:
             result = self.dice.resolve_pool(pool_name, number)
-            return {
-                "success": True,
-                "action": "随机数提交",
-                "result": result
-            }
         except Exception as e:
             return {"success": False, "error": str(e)}
+        
+        out = {"success": True, "action": "随机数提交", "result": result}
+        
+        # 共鸣发现遗物：从遗物池中取出
+        if pool_name == "relic_discover":
+            relic = result["selected"]
+            if isinstance(relic, Relic):
+                self.state.relics.append(relic)
+                self.state.relics_pool = [r for r in self.state.relics_pool if r.name != relic.name]
+                out["result"] = {
+                    "gained_relic": {"name": relic.name, "effect": relic.effect},
+                    "relics_owned": [r.name for r in self.state.relics],
+                }
+        
+        # 探索发现事件
+        elif pool_name == "event_discover":
+            ev = result["selected"]
+            name = ev["name"] if isinstance(ev, dict) else str(ev)
+            self.event_pool.mark_encountered(name)
+            out["result"] = {"event": ev, "instruction": "请选择一个事件选项"}
+        
+        return out
+
+    def _submit_monster_draw(self, number: int) -> dict:
+        """逐个提交出怪随机数，抽满后自动实例化到战场"""
+        region = self.state.current_region
+        pool = get_monster_pool(region)
+        need = monster_count_for_battle(self.state.current_battle, region_tier=1)
+        
+        if not 1 <= number <= len(pool):
+            return {"success": False, "error": f"数字 {number} 超出范围 1~{len(pool)}"}
+        
+        picked = getattr(self, "_monster_draw_buffer", [])
+        picked.append(pool[number - 1])
+        self._monster_draw_buffer = picked
+        
+        self.dice.resolve_pool("monster_draw", number, keep=True)
+        
+        if len(picked) < need:
+            return {
+                "success": True,
+                "action": "出怪抽取",
+                "result": {
+                    "drawn": [m.name for m in picked],
+                    "remaining_draws": need - len(picked),
+                    "instruction": f"还需抽取{need - len(picked)}只，请继续在 1~{len(pool)} 中给出数字",
+                },
+            }
+        
+        self._spawn_monsters(picked)
+        self._monster_draw_buffer = []
+        self.dice.clear_pool("monster_draw")
+        
+        return {
+            "success": True,
+            "action": "出怪完成",
+            "result": {
+                "monster_count": len(self.state.enemies),
+                "enemies": [e.to_dict() for e in self.state.enemies],
+                "panels": [
+                    f"{e.name}（{e.attack_count}×{e.attack_power}/{e.blood_limit}，"
+                    f"{'，'.join(f'{k}{v.x_value}' for k, v in e.dao_wen.items())}）"
+                    for e in self.state.enemies
+                ],
+            },
+            "instruction": "请选择一种战斗背景。注意：怪物白板开局，道纹须其主动发动后方可生效。",
+        }
     
     def request_random(self, pool_name: str, options: list[Any]) -> dict:
         """

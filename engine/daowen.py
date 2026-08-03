@@ -954,6 +954,39 @@ class DaoWenEngine:
             cls.register_all()
         return list(cls._registry.keys())
 
+    @classmethod
+    def get_definition(cls, dao_wen_name: str) -> DaoWen:
+        """
+        构造某个道纹的 DaoWen 定义对象（用于挂载到角色身上）。
+        以 X=1 试算一次，从结果中读取其代价类型。
+        """
+        if not cls._registry:
+            cls.register_all()
+        if dao_wen_name not in cls._registry:
+            raise ValueError(f"未知道纹: {dao_wen_name}")
+
+        cost_type = "消耗"
+        try:
+            probe = Entity(name="__probe__", entity_type="轮回者",
+                           blood_limit=999, current_hp=999,
+                           mana_limit=999, current_mana=999,
+                           speed_limit=99, current_speed=99)
+            sample = cls.resolve(dao_wen_name, 1, target=probe, caster=probe,
+                                 target_action_count=1)
+            cost_type = sample.get("cost_type", "消耗")
+        except Exception:
+            pass
+
+        return DaoWen(
+            name=dao_wen_name,
+            formula=f"{dao_wen_name}X",
+            cost_type=cost_type,
+            cost_formula="X",
+            effect_formula=f"{dao_wen_name}X",
+            is_monster_original=dao_wen_name in ResonanceEngine.MONSTER_ORIGINAL_DAOWEN,
+            is_monster_transform=dao_wen_name in ResonanceEngine.MONSTER_TRANSFORM_DAOWEN,
+        )
+
 
 # 残韵系统
 class ResonanceEngine:
@@ -963,7 +996,21 @@ class ResonanceEngine:
     反转（极性对冲）：逆转因果极性
     曲解（概念腐化）：扭曲代数逻辑
     """
-    
+
+    # 原始怪物道纹（各组起点）
+    # 规则：人类（轮回者与微光者）无法承受并获得原始怪物道纹
+    MONSTER_ORIGINAL_DAOWEN = {
+        "狂暴", "强化", "活力", "减速", "必中", "自愈", "飞行",
+    }
+
+    # 怪物转化道纹（原始怪物道纹经残韵变化后的分支）
+    # 规则：人类可以正常承受并获得怪物转化道纹
+    MONSTER_TRANSFORM_DAOWEN = {
+        "愤怒", "自残", "无神", "借力", "弱化", "自食", "兴奋", "无力",
+        "迟滞", "急速", "加速", "眩晕", "洞察", "蒙蔽", "滋养", "衰败",
+        "寄生", "滑翔", "坠落",
+    }
+
     # 闭环结构定义
     CLOSED_LOOPS = {
         "杀伐闭环": [
