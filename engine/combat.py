@@ -37,6 +37,9 @@ class CombatEngine:
         self.combat_log: list[dict] = []  # 完整战斗日志
         # 降服追踪：本回合各怪物对轮回者造成的伤害（回始归零）
         self._round_monster_damage: dict[str, int] = {}
+        # 卖身契代价替身 / 三相残韵盘本场消耗的残韵
+        self.cost_proxy = None
+        self._sanxiang_consumed = ""
     
     # ========== 伤害计算 ==========
     
@@ -941,15 +944,19 @@ class CombatEngine:
             self.state.shards -= calc["cost_shards"]
             result["effects"].append({"type": "cost_shards", "spent": calc["cost_shards"]})
 
-        # ---- 代价 ----
+        # ---- 代价（卖身契：玩家代价转由cost_proxy承担）----
+        cost_target = caster
+        if (caster is self.state.player and self.cost_proxy is not None and self.cost_proxy.is_alive):
+            cost_target = self.cost_proxy
         if "cost_hp" in calc:
-            result["effects"].append({"type": "bleed_cost", "source": caster.name, **caster.take_damage(calc["cost_hp"], "代价")})
+            result["effects"].append({"type": "bleed_cost", "source": cost_target.name, **cost_target.take_damage(calc["cost_hp"], "代价")})
+            if cost_target.current_hp <= 0: self.cost_proxy = None
         if "cost_blood_limit" in calc:
-            caster.blood_limit -= calc["cost_blood_limit"]; caster.current_hp = min(caster.current_hp, caster.blood_limit)
-            result["effects"].append({"type": "aging_cost", "source": caster.name, "new_blood_limit": caster.blood_limit})
+            cost_target.blood_limit -= calc["cost_blood_limit"]; cost_target.current_hp = min(cost_target.current_hp, cost_target.blood_limit)
+            result["effects"].append({"type": "aging_cost", "source": cost_target.name, "new_blood_limit": cost_target.blood_limit})
         if "cost_speed" in calc:
-            caster.current_speed -= calc["cost_speed"]
-            result["effects"].append({"type": "fatigue_cost", "source": caster.name, "new_speed": caster.current_speed})
+            cost_target.current_speed -= calc["cost_speed"]
+            result["effects"].append({"type": "fatigue_cost", "source": cost_target.name, "new_speed": cost_target.current_speed})
         if "mana_gain" in calc:
             caster.current_mana += calc["mana_gain"]
             result["effects"].append({"type": "mana_gain", "source": caster.name, "mana_gained": calc["mana_gain"]})
@@ -1106,6 +1113,24 @@ class CombatEngine:
                 if x > 0:
                     player.take_damage(x, "代价"); player.current_mana += x
                     logs.append(f"鲜血契约：流血{x}，+{x}法力")
+            # 三相残韵盘：消耗一种残韵，战终获另两种
+            if "三相残韵盘" in relics:
+                held = [t for t, c in self.state.resonance.items() if c > 0]
+                if held:
+                    consume = max(held, key=lambda t: self.state.resonance[t])
+                    self.state.resonance[consume] -= 1; self._sanxiang_consumed = consume
+                    logs.append(f"三相残韵盘：消耗{consume}残韵")
+            # 卖身契：指定第一名朋友/员工为代价替身
+            if "卖身契" in relics:
+                proxies = [e for e in (self.state.friends + self.state.employees) if e.is_alive]
+                if proxies:
+                    self.cost_proxy = proxies[0]
+                    logs.append(f"卖身契：本场代价由{self.cost_proxy.name}承担")
+        if trigger == "battle_end" and "三相残韵盘" in relics and self._sanxiang_consumed:
+            others = [t for t in ("转换", "反转", "曲解") if t != self._sanxiang_consumed]
+            for t in others:
+                self.state.resonance[t] = self.state.resonance.get(t, 0) + 1
+            logs.append(f"三相残韵盘：战终获得{'、'.join(others)}残韵各1")
         if trigger == "on_monster_death" and "钱袋" in relics:
             m = ctx.get("monster")
             if m:
@@ -1121,8 +1146,10 @@ class CombatEngine:
     MONSTER_ACTIVATE_PRIORITY = ["活力", "强化", "狂暴", "必中", "蒙蔽", "坏死", "减速", "僵化", "自愈", "庇护", "飞行"]
 
     def reset_monster_activation(self):
-        """战始重置怪物激活状态"""
+        """战始重置怪物激活状态与战斗遗物状态"""
         self._monster_activated = {}
+        self.cost_proxy = None
+        self._sanxiang_consumed = ""
 
     def _monster_activate(self, m: Entity, activated: set):
         """怪物道纹出手：激活一个未激活的成长/控场道纹，返回道纹名或None"""
@@ -1190,6 +1217,16 @@ class CombatEngine:
                              and player.current_speed > 0 and m.attack_power > player.shield)
                     results.append(self.resolve_attack(m, player, is_must_hit=must, dodge=dodge))
         return results
+
+    def buyaicai_escape_cost(self, monster: Entity) -> dict:
+        """买路财：失去等同于怪物20%[血限]的[碎片]可安全撤退；碎片不足可用2生命=1碎片补"""
+        if not monster:
+            return {"can_escape": False, "reason": "无目标"}
+        cost = math.ceil(monster.blood_limit * 0.2)
+        short = max(0, cost - self.state.shards)
+        life_cost = short * 2  # 1碎片=2生命
+        return {"can_escape": True, "shard_cost": cost, "shortfall_shards": short,
+                "extra_life_cost": life_cost}
 
     def can_act(self, entity: Entity) -> bool:
         """是否可出手（眩晕/束缚下不可）"""

@@ -870,10 +870,18 @@ class GameEngine:
             player.dao_wen[target_name] = DaoWenInstance(dao_wen=new_dw)
             del player.dao_wen[source]
         
+        second = params.get("second_target", "")
+        second_log = None
+        if second and any(r.name == "同魂笔" for r in self.state.relics):
+            r2 = ResonanceEngine.apply_resonance(source, rtype, caster_has_daowen=(source in player.dao_wen),
+                                                  target_has_daowen=True)
+            if r2.get("success"):
+                second_log = f"同魂笔：{source} → {second}亦受{rtype}影响（变化为{r2['target']}）"
         return {
             "success": True,
             "action": f"残韵【{rtype}】{source} → {result['target']}",
             "result": result,
+            "second_target_log": second_log,
             "resonance_remaining": self.state.resonance
         }
     
@@ -1071,6 +1079,11 @@ class GameEngine:
         if opt is None:
             return {"success": False, "error": f"事件{name}无选项{option_id}"}
         res = resolve_option_effect(opt["text"], self)
+        reject_kw = ("拒绝", "无事发生", "观棋", "无视", "离开", "目送", "绕桥", "让炉", "避开", "捂住", "转身")
+        if any(k in opt["text"] for k in reject_kw) and any(r.name == "无所求" for r in self.state.relics):
+            self.state.player.speed_limit += 1
+            self.state.player.current_speed = self.state.player.speed_limit
+            res["applied"].append("无所求：+1速限")
         self.event_pool.resolve(name)
         return {
             "success": True, "action": f"事件【{name}】选项{option_id}",
@@ -1129,6 +1142,7 @@ class GameEngine:
     
     def _action_battle_end(self, params: dict) -> dict:
         """战终"""
+        relic_end = self.combat.process_relics("battle_end")
         # 碎片奖励计算（被降服/雕塑/增生/还债移出的怪物不视为击杀，不产碎片）
         shard_reward = 0
         removed = []
@@ -1172,6 +1186,7 @@ class GameEngine:
                 "energy_restored": 3,
                 "cleared_temp_friends": True,
                 "removed_via_alt_path": removed,
+                "relic_end_logs": relic_end,
                 "employee_rebellion": self.combat.check_employee_rebellion(),
                 "player_dead": (not self.state.player.is_alive) if self.state.player else False,
             }

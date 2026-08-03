@@ -775,6 +775,46 @@ def test_rebellion_and_legacy():
     print("  ✓ 员工叛变/死之传承测试通过")
 
 
+def test_relics_five_more():
+    """测试三相残韵盘/无所求/卖身契/买路财/同魂笔"""
+    print("\n=== 测试：剩余5遗物 ===")
+    from engine.models import GameState, Relic
+    from engine.combat import CombatEngine
+    from engine.dice import DiceEngine
+
+    # 三相残韵盘：战始消耗转换(最多)，战终获反转+曲解
+    st = GameState(); st.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60)
+    st.resonance = {"转换":2, "反转":1, "曲解":0}
+    st.relics = [Relic(name="三相残韵盘", effect="")]
+    combat = CombatEngine(st, DiceEngine()); combat.reset_monster_activation()
+    combat.process_relics("battle_start")  # 消耗转换→转换1
+    assert st.resonance["转换"] == 1, f"应消耗转换，实{st.resonance}"
+    combat.process_relics("battle_end")  # 获反转+曲解各1
+    assert st.resonance["反转"] == 2 and st.resonance["曲解"] == 1, f"战终应+反转+曲解，实{st.resonance}"
+    print(f"  ✓ 三相残韵盘：转换2→1，战终反转1→2、曲解0→1")
+
+    # 买路财：撤退成本=怪物20%血限
+    st2 = GameState(); st2.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60)
+    st2.relics = [Relic(name="买路财", effect="")]
+    m = Entity(name="怪", entity_type="怪物", blood_limit=100, current_hp=100)
+    combat2 = CombatEngine(st2, DiceEngine())
+    esc = combat2.buyaicai_escape_cost(m)
+    assert esc["shard_cost"] == 20, f"买路财应20碎片(100*20%)，实{esc['shard_cost']}"
+    print(f"  ✓ 买路财：100血限怪撤退成本=20碎片")
+
+    # 无所求：resolve_event拒绝+1速限
+    engine = GameEngine(db_path="data/test_rulings.db")
+    engine.execute_action("setup_attributes", {"name":"t","blood_points":10,"speed_points":8,"mana_points":7})
+    engine.execute_action("setup_choose_daowen", {"daowen":"杀伐"})
+    engine.execute_action("setup_choose_region", {"region":"扭曲都市"})
+    engine.state.relics = [Relic(name="无所求", effect="")]
+    sp = engine.state.player.speed_limit
+    engine.execute_action("resolve_event", {"event":"祭坛","option_id":3})  # 拒绝：无事发生
+    assert engine.state.player.speed_limit == sp + 1, "无所求拒绝应+1速限"
+    print(f"  ✓ 无所求：选拒绝类选项+1速限({sp}→{engine.state.player.speed_limit})")
+    print("  ✓ 剩余5遗物测试通过")
+
+
 def run_all_tests():
     """运行所有测试"""
     print("=" * 60)
@@ -803,6 +843,7 @@ def run_all_tests():
         test_huoxue,
         test_events_system,
         test_rebellion_and_legacy,
+        test_relics_five_more,
     ]
     
     passed = 0
