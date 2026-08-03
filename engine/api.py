@@ -788,16 +788,29 @@ class GameEngine:
     def _execute_daowen_effect(self, name: str, calc: dict, caster: Entity, target: Entity) -> dict:
         """执行道纹效果"""
         result = {"daowen": name, "effects": []}
-        
+
         # 怪物×3规则
         multiplier = self.combat.is_monster_triple(name, caster)
         if multiplier > 1:
             result["monster_triple"] = True
             result["multiplier"] = multiplier
-        
+
+        # 控场：蒙蔽使施法者本次伤害类道纹伤害为0（层数-1）；坏死使本次回复类道纹失效
+        mengbi_blocked = False
+        if caster.has_status("蒙蔽") and ("target_damage" in calc or "aoe_damage" in calc):
+            mengbi_blocked = True
+            for s in caster.status_effects:
+                if s.name == "蒙蔽" and s.value > 0:
+                    s.value -= 1
+                    if s.value <= 0:
+                        caster.status_effects.remove(s)
+                    break
+            result["mengbi_blocked"] = True
+        huaisi_block = target.has_status("坏死") and "target_heal" in calc
+
         # 伤害类
         if "target_damage" in calc:
-            actual_damage = calc["target_damage"] * multiplier
+            actual_damage = 0 if mengbi_blocked else calc["target_damage"] * multiplier
             dmg = target.take_damage(actual_damage)
             if multiplier > 1:
                 dmg["base_damage"] = calc["target_damage"]
@@ -806,15 +819,15 @@ class GameEngine:
         
         # AOE伤害
         if "aoe_damage" in calc:
-            actual_aoe = calc["aoe_damage"] * multiplier
+            actual_aoe = 0 if mengbi_blocked else calc["aoe_damage"] * multiplier
             for enemy in self.state.get_all_enemy_side():
                 dmg = enemy.take_damage(actual_aoe)
                 if multiplier > 1:
                     dmg["multiplied"] = True
                 result["effects"].append({"type": "aoe_damage", "target": enemy.name, **dmg})
         
-        # 回复类
-        if "target_heal" in calc:
+        # 回复类（坏死状态下无法回复）
+        if "target_heal" in calc and not huaisi_block:
             actual_heal = calc["target_heal"] * multiplier
             heal = target.heal(actual_heal)
             if multiplier > 1:

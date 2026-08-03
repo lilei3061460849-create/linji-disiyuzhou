@@ -47,9 +47,16 @@ def learn(p, n):
         dao_wen=DaoWen(name=n,formula="",cost_type="消耗",cost_formula="X",effect_formula=""))
 
 def cast_chongji(player, monsters, x):
-    """冲击X：消耗X法力，对所有存活怪造成X伤害"""
+    """冲击X：消耗X法力，对所有存活怪造成X伤害（蒙蔽下无效）"""
     if player.current_mana < x: return 0
     player.current_mana -= x
+    if player.has_status("蒙蔽"):
+        for st in player.status_effects:
+            if st.name == "蒙蔽" and st.value > 0:
+                st.value -= 1
+                if st.value <= 0: player.status_effects.remove(st)
+                break
+        return 0
     tot = 0
     for m in monsters:
         if m.is_alive and not (m.is_subdued or m.is_sculptured or m.is_proliferated or m.is_debt_bound):
@@ -128,9 +135,10 @@ def run_multi_battle(player, monster_defs, rng):
     combat.TAMING_REQUIRED_TURNS = bs.TUNING["TAMING_TURNS"]
     for m in monsters:
         combat.init_monster_shards(m)
-    # 战始：速度复原
+    # 战始：速度复原、清除控场状态
     player.current_speed = player.speed_limit
     player.is_alive = True
+    player.status_effects = []
     activated = {id(m): set() for m in monsters}
     paths_used = []
     max_rounds = 30
@@ -144,7 +152,9 @@ def run_multi_battle(player, monster_defs, rng):
         player.shield = 0
         for m in monsters:
             if m.is_alive: bs.monster_round_start(m, activated[id(m)])
-            if rnd > 1 and m.is_alive: bs.monster_activate(m, activated[id(m)], rng)
+            if rnd > 1 and m.is_alive:
+                act = bs.monster_activate(m, activated[id(m)], rng)
+                if act: bs.apply_control_to_player(act, m, player)
         # 玩家出手
         player_turn_multi(player, monsters, combat, rng)
         if not alive_monsters(monsters):

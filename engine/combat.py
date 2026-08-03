@@ -722,6 +722,16 @@ class CombatEngine:
         monster.shards -= amount
         return min(gained, amount)
 
+    # 一阶副本集合
+    TIER1_REGIONS = {"罪孽都市", "扭曲都市", "龙心谷"}
+
+    @classmethod
+    def monster_spawn_count(cls, battle_number: int, region: str) -> int:
+        """出怪数量=战斗场数；一阶副本直接-3，最低1（实测定值，原-2通关率仅6%）"""
+        if region in cls.TIER1_REGIONS:
+            return max(1, battle_number - 3)
+        return max(1, battle_number)
+
     # ========== 急中生智 ==========
     
     def initiate_wit(self, declarer: Entity, target: Entity) -> Interrupt:

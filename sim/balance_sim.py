@@ -11,7 +11,7 @@
 import sys, os, re, math, random
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from engine.models import Entity, GameState, DaoWen, DaoWenInstance
+from engine.models import Entity, GameState, DaoWen, DaoWenInstance, StatusEffect
 from engine.combat import CombatEngine
 from engine.dice import DiceEngine
 
@@ -92,6 +92,13 @@ def make_player(extra_dw=None):
 def cast_shaifa(player, monster, x):
     if player.current_mana < x: return 0
     player.current_mana -= x
+    if player.has_status("蒙蔽"):  # 蒙蔽：本次伤害无效，层数-1
+        for s in player.status_effects:
+            if s.name == "蒙蔽" and s.value > 0:
+                s.value -= 1
+                if s.value <= 0: player.status_effects.remove(s)
+                break
+        return 0
     dmg = 2 * x
     monster.current_hp = max(0, monster.current_hp - dmg)
     return dmg
@@ -143,17 +150,31 @@ def monster_round_start(m, activated):
 
 def monster_activate(m, activated, rng):
     """
-    怪物道纹出手：激活一个尚未激活的成长型道纹（白板第1回合后开始激活）
-    成长道纹效果：活力X攻击出手+X；强化X攻击力+X；狂暴每回合+1攻击出手；
-    必中攻击不可闪避；自愈/庇护回始生效（标记激活）
+    怪物道纹出手：激活一个尚未激活的道纹（白板第1回合后开始激活），返回激活名或None
+    成长型：活力X攻击出手+X；强化X攻击力+X；狂暴+1攻击出手；必中不可闪避；自愈/庇护回始生效
+    控场型（对轮回者）：蒙蔽X下X次伤害无效；坏死禁疗；减速速度减半；僵化攻击力固定1
     """
-    growth_priority = ["活力", "强化", "狂暴", "必中", "自愈", "庇护", "飞行", "减速"]
-    for g in growth_priority:
+    priority = ["活力", "强化", "狂暴", "必中", "蒙蔽", "坏死", "减速", "僵化", "自愈", "庇护", "飞行"]
+    for g in priority:
         if g in m.dao_wen and g not in activated:
             activated.add(g)
             if g == "强化":
                 m.attack_power += m.dao_wen[g].x_value
-            return
+            return g
+    return None
+
+
+def apply_control_to_player(name, m, player):
+    """怪物激活控场道纹后，对轮回者施加效果"""
+    x = m.dao_wen[name].x_value if name in m.dao_wen else 1
+    if name == "蒙蔽":
+        player.add_status(StatusEffect("蒙蔽", remaining_rounds=-1, value=x))
+    elif name == "坏死":
+        player.add_status(StatusEffect("坏死", remaining_rounds=-1, value=0))
+    elif name == "减速":
+        player.current_speed = max(0, player.current_speed // 2)
+    elif name == "僵化":
+        player.attack_power = 1  # 轮回者以杀伐为主，影响小
 
 
 def get_monster_attack_actions(m, activated):
@@ -218,7 +239,8 @@ def run_battle(md, policy, rng, player_dw=None):
         monster_round_start(monster, activated)
         # 怪物道纹出手（第1回合白板不激活）
         if rnd > 1:
-            monster_activate(monster, activated, rng)
+            act = monster_activate(monster, activated, rng)
+            if act: apply_control_to_player(act, monster, player)
 
         # 玩家出手（3次），按策略
         actions = 3
