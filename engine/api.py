@@ -1061,6 +1061,62 @@ class GameEngine:
             "interrupt": interrupt.to_dict(),
             "instruction": "需要DM裁定进化特性"
         }
+
+    def _action_consume_item(self, params: dict) -> dict:
+        """使用消耗品（含降服品召唤临时朋友，遵守现有消耗品规则，使用不消耗出手）"""
+        item_name = params.get("name", "")
+        item = None
+        for c in self.state.consumables:
+            if c.name == item_name and not c.is_depleted:
+                item = c
+                break
+        if item is None:
+            return {"success": False, "error": f"找不到可用消耗品: {item_name}"}
+
+        # 降服品：召唤记录面板的怪物作为临时朋友
+        if item.is_taming:
+            summon = self.combat.summon_tamed_friend(item)
+            return {
+                "success": summon.get("success", True),
+                "action": f"使用降服品【{item_name}】",
+                "result": summon,
+                "state": self.combat._get_combat_state(),
+            }
+
+        # 普通消耗品：扣减耐久，效果按其描述由DM/AI结算
+        remaining = item.use()
+        return {
+            "success": True,
+            "action": f"使用消耗品【{item_name}】",
+            "result": {
+                "effect": item.effect,
+                "uses_remaining": remaining,
+                "is_depleted": item.is_depleted,
+                "note": "消耗品效果按其描述结算，使用不消耗出手",
+            },
+            "state": self.combat._get_combat_state(),
+        }
+
+    def _action_use_spell(self, params: dict) -> dict:
+        """发动法术（法术由已掌握道纹按积木/循环/中断法则组合，此处触发声明并交DM裁定流程细节）"""
+        player = self.state.player
+        if not player:
+            return {"success": False, "error": "没有玩家"}
+        spell_name = params.get("spell_name", "")
+        spell = next((s for s in player.spells if s.name == spell_name), None)
+        if spell is None:
+            return {"success": False, "error": f"未掌握法术: {spell_name}"}
+        return {
+            "success": True,
+            "action": f"发动法术【{spell_name}】",
+            "result": {
+                "required_daowen": spell.required_daowen,
+                "trigger_condition": spell.trigger_condition,
+                "effect_flow": spell.effect_flow,
+                "rank": spell.rank,
+                "note": "法术按积木/循环/中断法则由所含道纹逐段结算，数值对撞由引擎或DM校验",
+            },
+        }
     
     # ==================== 回合管理 ====================
     
@@ -1072,7 +1128,10 @@ class GameEngine:
     def _action_round_end(self, params: dict) -> dict:
         """回终"""
         result = self.combat.round_end()
-        
+
+        # 提取降服结果（已由 combat.round_end 结算）
+        taming = [e for e in result.get("effects", []) if isinstance(e, dict) and e.get("type") == "taming"]
+
         # 检查怪物困境
         difficulties = []
         for monster in self.state.enemies:
@@ -1080,13 +1139,14 @@ class GameEngine:
                 diff = self.combat.check_monster_difficulty(monster)
                 if diff:
                     difficulties.append(diff)
-        
+
         return {
             "success": True,
             "action": "回终",
             "result": result,
+            "taming": taming,
             "monster_difficulties": difficulties,
-            "note": "如果怪物陷入困境，AI应选择进化或逃跑"
+            "note": "如果怪物陷入困境，AI应选择进化或逃跑；降服消耗品可在后续回合使用以召唤临时朋友"
         }
     
     def _action_battle_start(self, params: dict) -> dict:
@@ -1104,9 +1164,13 @@ class GameEngine:
     
     def _action_battle_end(self, params: dict) -> dict:
         """战终"""
-        # 碎片奖励计算
+        # 碎片奖励计算（被降服的怪物不视为击杀，不产碎片）
         shard_reward = 0
+        subdued = []
         for monster in self.state.enemies:
+            if monster.is_subdued:
+                subdued.append(monster.name)
+                continue
             if not monster.is_alive:
                 reward = math.ceil(monster.blood_limit * 0.02) + len(monster.dao_wen) * 5
                 shard_reward += reward
@@ -1138,6 +1202,7 @@ class GameEngine:
                 "total_shards": self.state.shards,
                 "energy_restored": 3,
                 "cleared_temp_friends": True,
+                "subdued_monsters": subdued,
             }
         }
     

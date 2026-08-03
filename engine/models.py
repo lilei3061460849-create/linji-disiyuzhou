@@ -86,6 +86,9 @@ class Consumable:
     effect: str
     current_uses: int = 1
     max_uses: int = 1
+    # 降服品专用：记录被降服怪物的当前面板，使用后作为临时朋友作战
+    panel: Optional[dict] = None
+    is_taming: bool = False
     
     @property
     def is_depleted(self) -> bool:
@@ -101,6 +104,9 @@ class Consumable:
         """合并相同消耗品"""
         if self.name != other.name or self.effect != other.effect:
             return False
+        # 降服品记录的是特定怪物面板，不可与普通消耗品合并
+        if self.is_taming or other.is_taming:
+            return False
         self.current_uses += other.current_uses
         self.max_uses += other.max_uses
         return True
@@ -111,7 +117,9 @@ class Consumable:
             "effect": self.effect,
             "current_uses": self.current_uses,
             "max_uses": self.max_uses,
-            "is_depleted": self.is_depleted
+            "is_depleted": self.is_depleted,
+            "is_taming": self.is_taming,
+            "panel": self.panel,
         }
 
 
@@ -201,7 +209,11 @@ class Entity:
     shield: int = 0              # 格挡
     status_effects: list[StatusEffect] = field(default_factory=list)
     is_flying: bool = False      # 飞行状态
-    
+
+    # 降服追踪：连续未能对轮回者造成伤害的回合数
+    no_damage_streak: int = 0
+    is_subdued: bool = False     # 是否已被降服（移出战斗）
+
     # 存活
     is_alive: bool = True
     
@@ -337,6 +349,8 @@ class Entity:
             "shield": self.shield,
             "is_flying": self.is_flying,
             "is_alive": self.is_alive,
+            "no_damage_streak": self.no_damage_streak,
+            "is_subdued": self.is_subdued,
             "hp_ratio": round(self.hp_ratio, 2),
             "dao_wen": {k: v.dao_wen.name for k, v in self.dao_wen.items()},
             "spells": [s.name for s in self.spells],

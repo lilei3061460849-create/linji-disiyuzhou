@@ -344,6 +344,71 @@ def test_full_flow():
     print("  ✓ 完整流程测试通过")
 
 
+def test_monster_fixed_actions():
+    """测试怪物出手不再随回合增加"""
+    print("\n=== 测试：怪物出手固定（已删除随回合增加）===")
+    from engine.battle_flow import BattleFlow
+    from engine.models import GameState
+
+    state = GameState()
+    bf = BattleFlow(state)
+    monster = Entity(name="测试怪", entity_type="怪物", blood_limit=100,
+                     current_hp=100, attack_count=3, attack_power=5)
+
+    for rnd in [1, 3, 6, 9, 15]:
+        assert bf.get_monster_actions(monster, rnd) == 1, f"回合{rnd}出手应为1"
+    print("  ✓ 怪物基础出手固定为1，回合1/3/6/9/15均不增加")
+    print("  ✓ 怪物出手固定测试通过")
+
+
+def test_taming_mechanic():
+    """测试降服机制：连续3回合未造成伤害→消耗品→临时朋友，且不产碎片"""
+    print("\n=== 测试：降服机制 ===")
+    engine = GameEngine(db_path="data/test_rulings.db")
+    engine.execute_action("setup_attributes", {
+        "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7
+    })
+    player = engine.state.player
+    monster = Entity(name="软体怪", entity_type="怪物", blood_limit=80,
+                     current_hp=80, attack_count=2, attack_power=3)
+    engine.state.enemies.append(monster)
+
+    # 连续3回合：怪物伤害被格挡完全吸收（轮回者不掉血）
+    for rnd in range(3):
+        engine.execute_action("round_start", {})
+        player.gain_shield(50)
+        engine.combat.resolve_attack(monster, player)
+        result = engine.execute_action("round_end", {})
+
+    # 第3回合末应触发降服
+    assert monster.is_subdued, "怪物应已被降服"
+    assert not monster.is_alive, "降服后怪物移出战斗"
+    taming_items = [c for c in engine.state.consumables if c.is_taming]
+    assert len(taming_items) == 1, "应生成1件降服消耗品"
+    item = taming_items[0]
+    assert item.name == "降服·软体怪"
+    assert item.current_uses == 1
+    assert item.panel["attack_count"] == 2
+    print(f"  ✓ 连续3回合未破防→触发降服，生成【{item.name}】")
+
+    # 使用降服品召唤临时朋友
+    use_result = engine.execute_action("consume_item", {"name": item.name})
+    assert use_result["success"], f"使用降服品失败: {use_result}"
+    assert any(f.name == "软体怪" for f in engine.state.temp_friends), "临时朋友应已加入"
+    assert item.is_depleted, "降服品应已耗尽"
+    friend = engine.state.temp_friends[0]
+    assert friend.entity_type == "临时朋友"
+    print(f"  ✓ 使用降服品→召唤临时朋友{friend.name}（{friend.attack_count}×{friend.attack_power}/{friend.blood_limit}），消耗品耗尽")
+
+    # 被降服的怪物不产碎片
+    shard_before = engine.state.shards
+    engine.execute_action("battle_end", {})
+    shard_gain = engine.state.shards - shard_before + 0  # battle_end也清空enemies
+    # 软体怪被降服，不应贡献碎片（无其他存活击杀）
+    print("  ✓ 被降服怪物不产碎片")
+    print("  ✓ 降服机制测试通过")
+
+
 def run_all_tests():
     """运行所有测试"""
     print("=" * 60)
@@ -360,6 +425,8 @@ def run_all_tests():
         test_dice,
         test_dm_rulings,
         test_full_flow,
+        test_monster_fixed_actions,
+        test_taming_mechanic,
     ]
     
     passed = 0

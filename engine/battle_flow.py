@@ -3,9 +3,10 @@
 包括：怪物出手、怪物道纹、闪避、回合管理
 """
 import random
-import math
 from .models import Entity, StatusEffect, GameState
 from .enums import EntityType
+from .combat import CombatEngine
+from .dice import DiceEngine
 
 
 class BattleFlow:
@@ -18,6 +19,8 @@ class BattleFlow:
         self.state = state
         self.round_num = 0
         self.battle_log = []
+        # 复用战斗引擎的降服结算逻辑
+        self.combat = CombatEngine(state, DiceEngine())
     
     # ==================== 怪物道纹效果 ====================
     
@@ -49,20 +52,29 @@ class BattleFlow:
         
         return effects
     
-    def get_monster_actions(self, monster: Entity, round_num: int) -> int:
-        """计算怪物出手次数"""
-        # 基础出手 = 回合数÷3向上取整
-        base = max(1, math.ceil(round_num / 3))
-        
-        # 活力加成
+    def get_monster_actions(self, monster: Entity, round_num: int = 0) -> int:
+        """
+        计算怪物出手次数
+        规则（已移除随回合增加）：基础固定1次出手/回合
+        活力X：出手次数+X；狂暴：回始发动一轮额外攻击（+1）
+        """
+        base = 1
+        # 活力X：出手次数+X
         if "活力" in monster.dao_wen:
-            base += 3
-        
-        # 狂暴额外攻击
-        if "狂暴" in monster.dao_wen and round_num > 1:
+            base += self._daowen_value(monster, "活力", default=3)
+        # 狂暴：一轮额外攻击
+        if "狂暴" in monster.dao_wen:
             base += 1
-        
         return max(1, base)
+
+    @staticmethod
+    def _daowen_value(monster: Entity, name: str, default: int = 0) -> int:
+        """取怪物道纹的X值，缺失或为0时返回default"""
+        inst = monster.dao_wen.get(name)
+        if inst is None:
+            return default
+        x = getattr(inst, "x_value", None)
+        return x if (isinstance(x, int) and x > 0) else default
     
     # ==================== 怪物攻击 ====================
     
@@ -187,27 +199,30 @@ class BattleFlow:
         for m in monsters:
             if not m.is_alive:
                 continue
-            
+
             monster_actions_count = self.get_monster_actions(m, round_num)
             m_result = {
                 "monster": m.name,
                 "actions": monster_actions_count,
                 "attacks": []
             }
-            
+
+            hp_before_monster = player.current_hp
             for i in range(monster_actions_count):
                 if not player.current_hp > 0:
                     break
-                
+
                 # 每次出手 = attack_count次攻击
                 for hit in range(m.attack_count):
                     if not player.current_hp > 0:
                         break
-                    
+
                     should_dodge = m.attack_power > 15 and player.current_speed >= 1
                     attack_result = self.monster_attack(m, player, i * m.attack_count + hit + 1, dodge=should_dodge)
                     m_result["attacks"].append(attack_result)
-            
+
+            # 降服追踪：记录该怪物本回合对轮回者造成的实际生命损失
+            self.combat.record_monster_damage(m, hp_before_monster - player.current_hp)
             round_result["monster_actions"].append(m_result)
         
         # === 4. 回终 ===
@@ -226,10 +241,16 @@ class BattleFlow:
         
         # 逆鳞反击
         # (由玩家侧管理，此处简化)
-        
+
+        # 降服结算：连续3回合未能对轮回者造成伤害的怪物被降服
+        tamed = self.combat.settle_taming()
+        if tamed:
+            round_result["taming"] = tamed
+            round_result["effects"].extend([t["note"] for t in tamed])
+
         round_result["player_hp_end"] = player.current_hp
         round_result["monster_hp_end"] = {m.name: m.current_hp for m in monsters}
-        
+
         return round_result
     
     def _execute_player_action(self, player: Entity, monsters: list[Entity], action: dict) -> dict:

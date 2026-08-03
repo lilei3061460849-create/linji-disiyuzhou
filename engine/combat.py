@@ -6,7 +6,7 @@
 from __future__ import annotations
 import math
 from typing import Optional, Any
-from .models import Entity, StatusEffect, GameState, DaoWenInstance, DaoWen, Spell
+from .models import Entity, StatusEffect, GameState, DaoWenInstance, DaoWen, Spell, Consumable
 from .daowen import DaoWenEngine, ResonanceEngine
 from .dice import DiceEngine
 from .enums import InterruptType, DamageType
@@ -35,6 +35,8 @@ class CombatEngine:
         self.state = state
         self.dice = dice
         self.combat_log: list[dict] = []  # 完整战斗日志
+        # 降服追踪：本回合各怪物对轮回者造成的伤害（回始归零）
+        self._round_monster_damage: dict[str, int] = {}
     
     # ========== 伤害计算 ==========
     
@@ -161,7 +163,12 @@ class CombatEngine:
             speed_gain = attacker.get_status_value("兴奋")
             attacker.current_speed += speed_gain
             result["speed_boost_from_excitement"] = speed_gain
-        
+
+        # 降服追踪：怪物对轮回者造成的伤害计入本回合累计
+        if (attacker.entity_type in ("怪物",) and
+                self.state.player is not None and target is self.state.player):
+            self.record_monster_damage(attacker, result.get("hp_lost", 0))
+
         return result
     
     def calculate_round_attack(
@@ -220,6 +227,9 @@ class CombatEngine:
         3. 返回需要决策的信息
         """
         effects = []
+        
+        # 降服追踪：本回合各怪物伤害记录归零
+        self._round_monster_damage = {}
         
         # 轮回者法力补满
         if self.state.player and self.state.player.is_alive:
@@ -327,7 +337,12 @@ class CombatEngine:
                     "entity": entity.name,
                     "expired_effects": expired
                 })
-        
+
+        # 降服结算：连续3回合未能对轮回者造成伤害的怪物被降服
+        tamed = self.settle_taming()
+        if tamed:
+            effects.extend(tamed)
+
         return {
             "round": self.state.current_round,
             "phase": "回终",
@@ -452,6 +467,123 @@ class CombatEngine:
             ),
             state_snapshot=self.state.to_dict()
         )
+    
+    # ========== 降服系统 ==========
+    
+    TAMING_REQUIRED_TURNS = 3  # 连续3回合未能对轮回者造成伤害触发降服
+    
+    def record_monster_damage(self, monster: Entity, damage_to_player: int) -> None:
+        """
+        记录怪物本回合对轮回者造成的伤害（用于降服计数）
+        damage_to_player：该怪物本回合使轮回者实际损失的生命数
+        """
+        if not monster.is_alive or monster.is_subdued:
+            return
+        self._round_monster_damage[monster.name] = (
+            self._round_monster_damage.get(monster.name, 0) + max(0, damage_to_player)
+        )
+    
+    def settle_taming(self) -> list[dict]:
+        """
+        回终降服结算
+        规则：怪物连续3回合未能对轮回者造成伤害，触发降服
+        触发后记录其当前面板并变为消耗品，使用后作为临时朋友作战
+        被降服的怪物不视为击杀，不提供碎片收益
+        返回本场触发的降服列表
+        """
+        tamed = []
+        for monster in list(self.state.enemies):
+            if not monster.is_alive or monster.is_subdued:
+                continue
+            damage = self._round_monster_damage.get(monster.name, 0)
+            if damage > 0:
+                monster.no_damage_streak = 0
+            else:
+                monster.no_damage_streak += 1
+            if monster.no_damage_streak >= self.TAMING_REQUIRED_TURNS:
+                result = self._subdue_monster(monster)
+                tamed.append(result)
+        # 清空本回合伤害记录
+        self._round_monster_damage = {}
+        return tamed
+    
+    def _subdue_monster(self, monster: Entity) -> dict:
+        """执行降服：记录面板、移出战斗、生成消耗品"""
+        panel = self._snapshot_monster_panel(monster)
+        monster.is_subdued = True
+        monster.is_alive = False  # 移出战斗，但不视为击杀
+        consumable = Consumable(
+            name=f"降服·{monster.name}",
+            effect=(f"使用后召唤{monster.name}（{panel['attack_count']}×"
+                    f"{panel['attack_power']}/{panel['blood_limit']}）作为临时朋友作战"),
+            current_uses=1,
+            max_uses=1,
+            panel=panel,
+            is_taming=True,
+        )
+        self.state.consumables.append(consumable)
+        return {
+            "type": "taming",
+            "monster": monster.name,
+            "panel": panel,
+            "consumable": consumable.name,
+            "note": (f"{monster.name}连续{self.TAMING_REQUIRED_TURNS}回合未能对轮回者造成伤害，"
+                     f"已被降服，化为消耗品【{consumable.name}】"),
+        }
+    
+    def _snapshot_monster_panel(self, monster: Entity) -> dict:
+        """记录怪物当前面板快照（用于降服消耗品）"""
+        return {
+            "name": monster.name,
+            "entity_type": monster.entity_type,
+            "attack_count": monster.attack_count,
+            "attack_power": monster.attack_power,
+            "blood_limit": monster.blood_limit,
+            "current_hp": monster.current_hp,
+            "is_flying": monster.is_flying,
+            "dao_wen": {
+                k: {"name": v.dao_wen.name, "x_value": v.x_value}
+                for k, v in monster.dao_wen.items()
+            },
+        }
+    
+    def summon_tamed_friend(self, consumable: Consumable) -> dict:
+        """
+        使用降服消耗品：召唤临时朋友
+        规则：消耗品（耐久1），使用后召唤记录面板的怪物作为临时朋友，战终离去
+        """
+        if not consumable.is_taming or not consumable.panel:
+            return {"success": False, "error": "非降服消耗品或无面板记录"}
+        if consumable.is_depleted:
+            return {"success": False, "error": "消耗品已耗尽"}
+        panel = consumable.panel
+        friend = Entity(
+            name=panel["name"],
+            entity_type="临时朋友",
+            blood_limit=panel["blood_limit"],
+            current_hp=panel["current_hp"],
+            attack_count=panel["attack_count"],
+            attack_power=panel["attack_power"],
+            is_flying=panel.get("is_flying", False),
+        )
+        for k, info in panel.get("dao_wen", {}).items():
+            friend.dao_wen[k] = DaoWenInstance(
+                dao_wen=DaoWen(
+                    name=info["name"], formula="", cost_type="",
+                    cost_formula="", effect_formula=""
+                ),
+                x_value=info.get("x_value", 0),
+            )
+        self.state.temp_friends.append(friend)
+        consumable.use()  # 消耗耐久
+        return {
+            "success": True,
+            "type": "summon_tamed_friend",
+            "friend": friend.name,
+            "panel": panel,
+            "consumable_remaining": consumable.current_uses,
+            "note": f"{friend.name}作为临时朋友加入战斗，战终离去",
+        }
     
     # ========== 急中生智 ==========
     
