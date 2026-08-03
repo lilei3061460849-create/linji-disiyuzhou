@@ -167,6 +167,11 @@ def resolve_option_effect(text: str, engine) -> dict:
     if '销毁' in text and '遗物' in text:
         if engine.state.relics:
             r = engine.state.relics.pop(); applied.append(f"销毁遗物·{r.name}")
+    # 获得N点[速限]/[法限]（属性点直接分配）
+    for m in re.finditer(r'获得(\d+)点\s*\[?速限\]?', text):
+        x = int(m.group(1)); player.speed_limit += x; player.current_speed = player.speed_limit; applied.append(f"获得{x}速限")
+    for m in re.finditer(r'获得(\d+)点\s*\[?法限\]?', text):
+        x = int(m.group(1)); player.mana_limit += 2 * x; player.current_mana = player.mana_limit; applied.append(f"获得{x}法限")
     # 属性点
     if '属性点' in text and ('获得' in text or '+' in text):
         player.speed_limit += 1; player.current_speed = player.speed_limit; applied.append("获得1速限(属性点)")

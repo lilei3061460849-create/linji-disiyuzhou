@@ -34,7 +34,6 @@ class GameEngine:
     def __init__(self, db_path: str = "data/dm_rulings.db", save_dir: str = "data/saves"):
         self.state = GameState()
         self.dice = DiceEngine()
-        self.event_pool = EventPool()
         self.combat = CombatEngine(self.state, self.dice)
         self.rulings_db = DMRulingsDB(db_path)
         self.save_dir = save_dir
