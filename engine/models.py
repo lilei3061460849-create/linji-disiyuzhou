@@ -213,6 +213,7 @@ class Entity:
     # 降服追踪：连续未能对轮回者造成伤害的回合数
     no_damage_streak: int = 0
     is_subdued: bool = False     # 是否已被降服（移出战斗）
+    hp_lost_this_round: int = 0   # 本回合累计失去的生命（活血用，回始归零）
 
     # 多路径胜利追踪
     shards: int = 0              # 怪物自带碎片（罪孽都市）/ 负值表示负债（还债）
@@ -272,6 +273,7 @@ class Entity:
         self.current_hp = max(0, self.current_hp - remaining)
         detail["actual_damage"] = remaining
         detail["hp_after"] = self.current_hp
+        self.hp_lost_this_round += remaining  # 活血追踪
         
         if self.current_hp <= 0:
             detail["died"] = True

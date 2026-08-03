@@ -693,6 +693,28 @@ def test_flying_and_split():
     print("  ✓ 飞行/裂变测试通过")
 
 
+def test_huoxue():
+    """测试活血：本回合失血÷2回终回复"""
+    print("\n=== 测试：活血 ===")
+    from engine.models import GameState, StatusEffect
+    from engine.combat import CombatEngine
+    from engine.dice import DiceEngine
+    st = GameState(); st.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60, speed_limit=8, current_speed=8)
+    st.player.add_status(StatusEffect(name="活血", remaining_rounds=3, value=1))
+    m = Entity(name="打手", entity_type="怪物", blood_limit=120, current_hp=120, attack_count=1, attack_power=5)
+    st.enemies.append(m)
+    combat = CombatEngine(st, DiceEngine()); combat.reset_monster_activation()
+    combat.round_start()
+    # 玩家挨5点(不闪避)
+    st.player.current_speed = 0
+    combat.resolve_attack(m, st.player)  # 玩家HP60→55, hp_lost_this_round=5
+    assert st.player.current_hp == 55 and st.player.hp_lost_this_round == 5
+    combat.round_end()  # 活血回终回复5//2=2 → HP57
+    assert st.player.current_hp == 57, f"活血应回2→57，实{st.player.current_hp}"
+    print(f"  ✓ 活血：本回合失血5，回终回复2，HP55→{st.player.current_hp}")
+    print("  ✓ 活血测试通过")
+
+
 def run_all_tests():
     """运行所有测试"""
     print("=" * 60)
@@ -718,6 +740,7 @@ def run_all_tests():
         test_monster_phase_engine,
         test_spells_trigger,
         test_flying_and_split,
+        test_huoxue,
     ]
     
     passed = 0

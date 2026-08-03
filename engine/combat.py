@@ -275,6 +275,9 @@ class CombatEngine:
         
         # 降服追踪：本回合各怪物伤害记录归零
         self._round_monster_damage = {}
+        # 活血追踪归零
+        for e in self.state.get_all_player_side() + self.state.get_all_enemy_side():
+            e.hp_lost_this_round = 0
         # 遗物：回始触发
         relic_logs = self.process_relics("round_start")
         effects.extend({"type": "relic", "log": l} for l in relic_logs)
@@ -385,6 +388,15 @@ class CombatEngine:
                     "entity": entity.name,
                     "expired_effects": expired
                 })
+
+        # 活血：有活血状态的实体，回终按本回合累计失血÷2回复
+        for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
+            if entity.has_status("活血") and entity.hp_lost_this_round >= 2:
+                heal_n = entity.hp_lost_this_round // 2
+                h = entity.heal(heal_n)
+                effects.append({"type": "huoxue_heal", "entity": entity.name,
+                                "heal": heal_n, "actual": h["actual_heal"]})
+            entity.hp_lost_this_round = 0
 
         # 降服结算：连续3回合未能对轮回者造成伤害的怪物被降服
         tamed = self.settle_taming()
