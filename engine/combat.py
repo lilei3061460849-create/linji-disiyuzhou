@@ -112,7 +112,12 @@ class CombatEngine:
             "hp_lost": 0,
             "target_died": False,
         }
-        
+        # 飞行：非飞行者无法选中飞行目标
+        if not self.is_targetable(attacker, target):
+            result["cant_target"] = True
+            result["note"] = "飞行目标无法被非飞行者选中"
+            return result
+
         # 必中（含必中状态）
         must_hit = is_must_hit or attacker.has_status("必中")
         # 闪避判定
@@ -169,12 +174,27 @@ class CombatEngine:
                 result["spell_logs"] = slogs
             if not attacker.is_alive:
                 damage = 0  # 攻击者被法术反杀
-        damage_result = target.take_damage(damage, "普通" if not ignore_shield else "无视格挡")
+        # 裂变：受到伤害分X次结算（每次=原伤害÷X向下取整）
+        if target.has_status("裂变") and damage > 0:
+            xv = target.get_status_value("裂变") or 1
+            if xv > 1:
+                per = damage // xv
+                ta = ts = 0; died = False
+                for _ in range(xv):
+                    dr = target.take_damage(per, "普通" if not ignore_shield else "无视格挡")
+                    ta += dr["actual_damage"]; ts += dr["shield_absorbed"]; died = died or dr["died"]
+                damage_result = {"actual_damage": ta, "shield_absorbed": ts, "hp_after": target.current_hp, "died": died, "split": xv}
+            else:
+                damage_result = target.take_damage(damage, "普通" if not ignore_shield else "无视格挡")
+        else:
+            damage_result = target.take_damage(damage, "普通" if not ignore_shield else "无视格挡")
         result["damage_dealt"] = damage_result["actual_damage"]
         result["shield_absorbed"] = damage_result["shield_absorbed"]
         result["hp_lost"] = damage_result["actual_damage"]
         result["target_died"] = damage_result["died"]
         result["target_hp_after"] = damage_result["hp_after"]
+        if "split" in damage_result:
+            result["split"] = damage_result["split"]
         # 法术：失去生命后（玩家实损>0时触发）
         if (self.state.player is not None and target is self.state.player
                 and damage_result["actual_damage"] > 0 and target.is_alive):

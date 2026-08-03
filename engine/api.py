@@ -796,6 +796,9 @@ class GameEngine:
                 if e.name == target_name:
                     target = e
                     break
+            # 飞行：非飞行者无法选中飞行目标
+            if target is not player and not self.combat.is_targetable(player, target):
+                return {"success": False, "error": f"{target.name}处于飞行，无法被选中"}
         
         # 调用道纹引擎计算
         try:

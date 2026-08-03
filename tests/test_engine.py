@@ -663,6 +663,36 @@ def test_spells_trigger():
     print("  ✓ 法术触发测试通过")
 
 
+def test_flying_and_split():
+    """测试飞行免选中 + 裂变分次结算"""
+    print("\n=== 测试：飞行/裂变 ===")
+    from engine.models import GameState, StatusEffect
+    from engine.combat import CombatEngine
+    from engine.dice import DiceEngine
+    # 飞行：玩家飞行，地面怪无法选中
+    st = GameState(); st.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60, speed_limit=8, current_speed=8)
+    st.player.is_flying = True
+    m = Entity(name="地面怪", entity_type="怪物", blood_limit=50, current_hp=50, attack_count=1, attack_power=10)
+    st.enemies.append(m)
+    combat = CombatEngine(st, DiceEngine())
+    r = combat.resolve_attack(m, st.player)
+    assert r.get("cant_target") is True, "地面怪应无法选中飞行玩家"
+    assert st.player.current_hp == 60, "飞行玩家不应受伤"
+    print("  ✓ 飞行：地面怪无法选中飞行玩家(HP不变)")
+
+    # 裂变：怪受100伤分4次(每次25)
+    st2 = GameState(); st2.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60, speed_limit=8, current_speed=8, attack_count=1, attack_power=100)
+    m2 = Entity(name="靶", entity_type="怪物", blood_limit=200, current_hp=200, attack_count=1, attack_power=1)
+    m2.add_status(StatusEffect(name="裂变", remaining_rounds=3, value=4))
+    st2.enemies.append(m2); st2.player.is_flying = False; m2.is_flying = False
+    combat2 = CombatEngine(st2, DiceEngine())
+    r2 = combat2.resolve_attack(st2.player, m2)
+    assert r2.get("split") == 4, "裂变应分4次"
+    assert m2.current_hp == 100, f"裂变4次×25后应100，实{m2.current_hp}"
+    print(f"  ✓ 裂变：100伤分4次×25结算，靶HP200→{m2.current_hp}")
+    print("  ✓ 飞行/裂变测试通过")
+
+
 def run_all_tests():
     """运行所有测试"""
     print("=" * 60)
@@ -687,6 +717,7 @@ def run_all_tests():
         test_relic_effects,
         test_monster_phase_engine,
         test_spells_trigger,
+        test_flying_and_split,
     ]
     
     passed = 0
