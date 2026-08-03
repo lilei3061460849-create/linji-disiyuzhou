@@ -101,6 +101,7 @@ def cast_shaifa(player, monster, x):
         return 0
     dmg = 2 * x
     monster.current_hp = max(0, monster.current_hp - dmg)
+    if monster.current_hp <= 0: monster.is_alive = False
     return dmg
 
 def cast_bihu(player, x):
