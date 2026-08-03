@@ -226,8 +226,11 @@ class Entity:
     
     @property
     def action_count(self) -> int:
-        """出手次数 = 速限 / 3，向上取整"""
-        return math.ceil(self.speed_limit / 3) if self.speed_limit > 0 else 0
+        """出手次数 = 速限/3向上取整；活力+X、无力-X"""
+        base = math.ceil(self.speed_limit / 3) if self.speed_limit > 0 else 0
+        base += self.get_status_value("活力")
+        base -= self.get_status_value("无力")
+        return max(0, base)
     
     @property
     def is_full_hp(self) -> bool:

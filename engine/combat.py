@@ -113,9 +113,11 @@ class CombatEngine:
             "target_died": False,
         }
         
+        # 必中（含必中状态）
+        must_hit = is_must_hit or attacker.has_status("必中")
         # 闪避判定
         if dodge:
-            if is_must_hit:
+            if must_hit:
                 result["dodge_success"] = False
                 result["dodge_fail_reason"] = "必中攻击无法闪避"
             elif target.current_speed >= 1:
@@ -130,7 +132,13 @@ class CombatEngine:
         
         # 伤害结算
         damage = attacker.attack_power
-        
+        # 加害：攻击者造成的伤害+X
+        if attacker.has_status("加害"):
+            damage += attacker.get_status_value("加害")
+        # 龙鳞：目标每次受到伤害-X（最低0）
+        if target.has_status("龙鳞"):
+            damage = max(0, damage - target.get_status_value("龙鳞"))
+
         # 检查蒙蔽状态
         if attacker.has_status("蒙蔽"):
             stacks = attacker.get_status_value("蒙蔽")
@@ -776,6 +784,16 @@ class CombatEngine:
     
     # ========== 辅助方法 ==========
     
+    def can_act(self, entity: Entity) -> bool:
+        """是否可出手（眩晕/束缚下不可）"""
+        return entity.is_alive and not entity.has_status("眩晕") and not entity.has_status("束缚")
+
+    def is_targetable(self, attacker: Entity, target: Entity) -> bool:
+        """目标是否可被选中（飞行状态下，非飞行攻击者无法选中）"""
+        if getattr(target, "is_flying", False) or target.has_status("飞行"):
+            return getattr(attacker, "is_flying", False) or attacker.has_status("飞行")
+        return True
+
     def _get_combat_state(self) -> dict:
         """获取当前战斗状态摘要"""
         return {
