@@ -34,33 +34,35 @@ REGION_EXCLUSIVE = {
 
 # 各副本怪物池的行范围（用于归属判定）——按面板出现顺序解析即可
 def parse_monsters():
+    """按'XXX怪物池'标题精确切分，每池12只、正确打region标签（排除事件怪）"""
     with open(os.path.join(ROOT, "README.md"), encoding="utf-8") as f:
-        content = f.read()
-    # 先确定每个副本的怪物池段落，归属region
-    region_map = {}
-    for region, anchor in [("扭曲都市","扭曲都市怪物池"),("罪孽都市","罪孽都市怪物池"),("龙心谷","龙心谷怪物池")]:
-        idx = content.find(anchor)
-        region_map[region] = idx
-    pattern = re.compile(r'([\u4e00-\u9fff\w·]+)[（(](\d+)[×x](\d+)/(\d+)(?:[，,]([^)）\n]*))?[）)]')
+        lines = f.read().split("\n")
+    pat = re.compile(r'^([\u4e00-\u9fff\w·]+)[（(](\d+)[×x](\d+)/(\d+)(?:[，,]([^)）\n]*))?[）)]')
     monsters = []
-    seen = set()
-    for m in pattern.finditer(content):
-        name = m.group(1).strip()
-        if name in seen:
+    for region in ["扭曲都市", "罪孽都市", "龙心谷"]:
+        header = region + "怪物池"
+        hidx = next((i for i,l in enumerate(lines) if l.startswith(header)), None)
+        if hidx is None:
             continue
-        # 判定region：找该位置之前的最近副本池锚点
-        pos = m.start()
-        region = "扭曲都市"
-        best = -1
-        for r, idx in region_map.items():
-            if idx >= 0 and idx < pos and idx > best:
-                best, region = idx, r
-        ac, ap, hp = int(m.group(2)), int(m.group(3)), int(m.group(4))
-        dw_str = m.group(5) or ""
-        dw = {n: int(v) for n, v in re.findall(r'([\u4e00-\u9fff]{2})(\d+)', dw_str)}
-        monsters.append({"name": name, "ac": ac, "ap": ap, "hp": hp, "dw": dw, "region": region})
-        seen.add(name)
+        cnt = 0
+        for j in range(hidx+1, len(lines)):
+            m = pat.match(lines[j].strip())
+            if m and cnt < 12:
+                name = m.group(1).strip()
+                ac, ap, hp = int(m.group(2)), int(m.group(3)), int(m.group(4))
+                dw_str = m.group(5) or ""
+                dw = {n: int(v) for n, v in re.findall(r'([\u4e00-\u9fff]{2})(\d+)', dw_str)}
+                monsters.append({"name": name, "ac": ac, "ap": ap, "hp": hp, "dw": dw, "region": region})
+                cnt += 1
+            elif cnt > 0 and not m:
+                break
+            if cnt >= 12:
+                break
     return monsters
+
+
+def pool_by_region(monsters, region):
+    return [m for m in monsters if m["region"] == region]
 
 
 def make_monster(md):

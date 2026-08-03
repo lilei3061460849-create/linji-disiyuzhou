@@ -12,7 +12,7 @@ from engine.models import Entity, GameState, DaoWen, DaoWenInstance, StatusEffec
 from engine.combat import CombatEngine
 from engine.dice import DiceEngine
 
-POOL = bs.parse_monsters()
+POOL = [m for m in bs.parse_monsters() if m["region"] == "罪孽都市"]
 REGION = "罪孽都市"
 
 def make_player():
@@ -144,21 +144,30 @@ def run_one(seed):
         if n == 1:
             for dw in ["庇护","再生","冲击"]:
                 learn(p,dw); prep.append(f"学习{dw}")
+        tiers = [(6,150,"六阶"),(5,100,"五阶"),(4,65,"四阶"),(3,35,"三阶"),(2,15,"二阶"),(1,0,"一阶")]
         e = 3
         while e > 0:
-            if p.current_hp < p.blood_limit:
-                if shards >= 25 and p.current_hp <= p.blood_limit-48:
-                    p.current_hp = min(p.blood_limit, p.current_hp+48); shards-=25; prep.append(f"休整(25碎)+48"); e-=1
-                elif shards >= 10 and p.current_hp <= p.blood_limit-24:
-                    p.current_hp = min(p.blood_limit, p.current_hp+24); shards-=10; prep.append(f"休整(10碎)+24"); e-=1
-                else:
-                    p.current_hp = min(p.blood_limit, p.current_hp+8); prep.append("休整+8"); e-=1
+            if p.current_hp < p.blood_limit*0.35 and shards >= 25:
+                p.current_hp = min(p.blood_limit, p.current_hp+48); shards-=25; prep.append("休整(25碎)+48"); e-=1
+            elif p.current_hp < p.blood_limit*0.2:
+                p.current_hp = min(p.blood_limit, p.current_hp+8); prep.append("休整+8"); e-=1
             else:
                 if n == 3 and "避风铃" not in relics and shards >= 15:
                     relics.append("避风铃"); shards-=15; prep.append("共鸣·自选避风铃(15碎)"); e-=1
                 else:
-                    if n % 2 == 0: p.speed_limit += 1; p.current_speed = p.speed_limit; prep.append(f"修行+1速限(出手{max(1,math.ceil(p.speed_limit/3))})")
-                    else: p.mana_limit += 2; prep.append(f"修行+2法限")
+                    # 激进修行：买能负担的最高档
+                    bought = False
+                    for pts,cost,name in tiers:
+                        if shards >= cost:
+                            shards -= cost
+                            spd_before = max(1,math.ceil(p.speed_limit/3))
+                            for _ in range(pts):
+                                if max(1,math.ceil(p.speed_limit/3)) < 5: p.speed_limit += 1
+                                else: p.mana_limit += 2
+                            p.current_speed = p.speed_limit
+                            prep.append(f"修行({name},{cost}碎)+{pts}点→速{p.speed_limit}/法{p.mana_limit}")
+                            bought = True; break
+                    if not bought: prep.append("修行一阶+1点"); p.speed_limit+=1; p.current_speed=p.speed_limit
                     e-=1
         p.current_mana = p.mana_limit
         log.append(f"  [局外] {'，'.join(prep)}")

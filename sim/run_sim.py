@@ -65,31 +65,32 @@ def cast_chongji(player, monsters, x):
     return tot
 
 
+# 修行档：(属性点, 碎片消耗)，按性价比降序
+XIUXING_TIERS = [(6,150),(5,100),(4,65),(3,35),(2,15),(1,0)]
+
 def pre_battle_prep(player, shards, energy=3, battle_n=1):
-    """局外：早期学核心道纹；之后休整(用碎片买大档)回血 + 修行成长。返回剩余碎片"""
+    """局外：激进花碎片修行（碎片不转化为面板就是废物）；仅低血才休整"""
     if battle_n == 1:
         for dw in ["庇护", "再生", "冲击"]:
             if not has_dw(player, dw) and energy > 0:
                 learn(player, dw); energy -= 1
     while energy > 0:
-        if player.current_hp < player.blood_limit:
-            if player.current_hp <= player.blood_limit - PARAMS["rest_tier3"] and shards >= PARAMS["rest_tier3_cost"]:
-                player.current_hp += PARAMS["rest_tier3"]; shards -= PARAMS["rest_tier3_cost"]; energy -= 1
-            elif player.current_hp <= player.blood_limit - PARAMS["rest_tier2"] and shards >= PARAMS["rest_tier2_cost"]:
-                player.current_hp += PARAMS["rest_tier2"]; shards -= PARAMS["rest_tier2_cost"]; energy -= 1
-            else:
-                player.current_hp = min(player.blood_limit, player.current_hp + PARAMS["rest_tier1"]); energy -= 1
+        if player.current_hp < player.blood_limit * 0.35 and shards >= 25:
+            player.current_hp = min(player.blood_limit, player.current_hp + 48); shards -= 25; energy -= 1
+        elif player.current_hp < player.blood_limit * 0.2:
+            player.current_hp = min(player.blood_limit, player.current_hp + 8); energy -= 1
         else:
-            g = PARAMS["grow"]
-            if g == "speed":
-                player.speed_limit += 1; player.current_speed = player.speed_limit
-            elif g == "mana":
-                player.mana_limit += 2
-            else:
-                if battle_n % 2 == 0:
-                    player.speed_limit += 1; player.current_speed = player.speed_limit
-                else:
-                    player.mana_limit += 2
+            # 买能负担的最高修行档，多点数/精力；出手<5偏速限，否则法限
+            for pts, cost in XIUXING_TIERS:
+                if shards >= cost:
+                    shards -= cost
+                    for _ in range(pts):
+                        if max(1, math.ceil(player.speed_limit/3)) < 5:
+                            player.speed_limit += 1
+                        else:
+                            player.mana_limit += 2
+                    player.current_speed = player.speed_limit
+                    break
             energy -= 1
     player.current_mana = player.mana_limit
     return shards
@@ -184,12 +185,13 @@ def battle_monster_count(n):
     return min(c, cap)
 
 
-def run_full_run(rng, pool):
+def run_full_run(rng, pool, region):
+    rpool = [m for m in pool if m["region"] == region]
     player = make_run_player()
     shards = 20
     for n in range(1, 8):
         count = battle_monster_count(n)
-        defs = [rng.choice(pool) for _ in range(count)]
+        defs = [rng.choice(rpool) for _ in range(count)]
         shards = pre_battle_prep(player, shards, energy=3, battle_n=n)
         res = run_multi_battle(player, defs, rng)
         if not res["win"]:
@@ -201,11 +203,11 @@ def run_full_run(rng, pool):
     return {"cleared": True, "reached": 8, "paths": [], "final_hp": player.current_hp}
 
 
-def measure(runs, pool, seed=2026):
+def measure(runs, pool, region, seed=2026):
     rng = random.Random(seed)
     cleared = 0; reached_dist = {}; path_total = {}
     for _ in range(runs):
-        r = run_full_run(rng, pool)
+        r = run_full_run(rng, pool, region)
         if r["cleared"]: cleared += 1
         reached_dist[r["reached"]] = reached_dist.get(r["reached"], 0) + 1
         for p in r["paths"]: path_total[p] = path_total.get(p,0)+1
@@ -215,6 +217,22 @@ def measure(runs, pool, seed=2026):
 def main():
     pool = bs.parse_monsters()
     args = sys.argv[1:]
+    if args and args[0] == "all":
+        runs = int(args[1]) if len(args) > 1 else 300
+        print(f"各副本7场通关率（激进修行策略，每次{runs}局）\n")
+        total_cleared = 0
+        for region in ["扭曲都市", "罪孽都市", "龙心谷"]:
+            cleared = 0; reached = {}
+            rng = random.Random(2026)
+            for _ in range(runs):
+                r = run_full_run(rng, pool, region)
+                if r["cleared"]: cleared += 1
+                reached[r["reached"]] = reached.get(r["reached"],0)+1
+            rate = cleared/runs*100; total_cleared += cleared
+            dist = " ".join(f"{('通关' if k==8 else '第'+str(k)+'败')}:{reached.get(k,0)*100//runs}%" for k in range(1,9) if reached.get(k))
+            print(f"  {region}: 通关率 {rate:.1f}%  | {dist}")
+        print(f"\n  三副本平均通关率: {total_cleared/(runs*3)*100:.1f}%")
+        return
     if args and args[0] == "sweep":
         # 扫参找30%：出怪offset × 修行方向
         runs = int(args[1]) if len(args) > 1 else 200
@@ -222,14 +240,15 @@ def main():
         for off in [2, 3]:
             for grow in ["mix", "speed", "mana"]:
                 PARAMS["battle_offset"] = off; PARAMS["grow"] = grow
-                rate, dist, _ = measure(runs, pool)
+                rate, dist, _ = measure(runs, pool, "罪孽都市")
                 # 主死场
                 dead = {k:v for k,v in dist.items() if k!=8}
                 top = max(dead, key=dead.get) if dead else "-"
                 print(f"{off:>6}{grow:>6} {rate:>6.1f}%  第{top}场" if top!="-" else f"{off:>6}{grow:>6} {rate:>6.1f}%")
         return
     runs = int(args[0]) if args else 300
-    rate, reached_dist, path_total = measure(runs, pool)
+    region = args[1] if len(args) > 1 else "罪孽都市"
+    rate, reached_dist, path_total = measure(runs, pool, region)
     print(f"7场全通关率模拟  怪物池{len(pool)}只  跑{runs}次  offset={PARAMS['battle_offset']} grow={PARAMS['grow']}\n")
     print(f"=== 通关率（7场全清）: {rate:.1f}% ===\n")
     print("最远到达场分布:")
