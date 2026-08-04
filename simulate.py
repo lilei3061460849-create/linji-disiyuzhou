@@ -1244,6 +1244,13 @@ def run_campaign(policy_name: str, region: str, seed: int, verbose: bool = False
 
         # 兜底：精力不能空转——该回血回血，该买数值买数值，最后才领悟烧掉
         while engine.state.energy > 0:
+            # 事件优先：有待选项未结算时引擎拒绝一切局外行动，先结算（防死循环）
+            if engine.state.pending_event:
+                resolve_events(engine, rng, None, False)
+                if engine.state.pending_event:
+                    T("局外兜底中止：事件选择仍悬置（如实记录，不空转精力）")
+                    break
+                continue
             tier = pick_rest_tier(engine)
             if tier is not None:
                 r = engine.execute_action("pre_battle_action", {"sub_action": "休整", "tier": tier})
