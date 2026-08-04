@@ -138,6 +138,11 @@ class StatusEffect:
     remaining_rounds: int        # 剩余回合（-1=∞）
     value: int = 0               # 效果数值
     source: str = ""             # 来源
+    # 持续X新语义（README「基础定义」）：效果持续X个目标自己的回合，
+    # 在目标回合结束时X-1。记录挂载时点，回终递减时据此跳过
+    # 「挂载后尚未经过承载者自己回合结束」的首次递减。
+    applied_round: int = 0       # 挂载时回合（0=不追踪，沿用旧口径）
+    applied_phase: str = ""      # 挂载时阶段（"player"/"monster"）
     meta: dict = field(default_factory=dict)  # 附加数据（如承伤目标名）
     
     @property
@@ -332,11 +337,16 @@ class Entity:
     def get_status_value(self, name: str) -> int:
         return sum(s.value for s in self.status_effects if s.name == name and not s.is_expired)
     
-    def tick_status_effects(self) -> list:
-        """回合递减，返回已过期的状态对象（含meta，供变形等效果回滚）"""
+    def tick_status_effects(self, skip_ids: set = None) -> list:
+        """回合递减，返回已过期的状态对象（含meta，供变形等效果回滚）。
+        skip_ids 中的效果本轮不递减（持续X=目标自己的回合：挂载后尚未经过
+        承载者自己回合结束的效果，跳过本次回终递减）。"""
         expired = []
         remaining = []
         for s in self.status_effects:
+            if skip_ids is not None and id(s) in skip_ids:
+                remaining.append(s)
+                continue
             if not s.tick():
                 expired.append(s)
             else:
@@ -344,8 +354,13 @@ class Entity:
         self.status_effects = remaining
         return expired
     
-    def add_status(self, effect: StatusEffect):
-        """添加状态效果，同名合并"""
+    def add_status(self, effect: StatusEffect, round_now: int = 0, phase: str = ""):
+        """添加状态效果，同名合并。round_now/phase 记录挂载时点
+        （持续X按目标自己的回合递减用）"""
+        if round_now:
+            effect.applied_round = round_now
+        if phase:
+            effect.applied_phase = phase
         for existing in self.status_effects:
             if existing.merge_with(effect):
                 return
@@ -447,6 +462,10 @@ class GameState:
     #   "new_daowen": str, "x": int, "same_resonance_extra": dict|None}]
     pending_resonance: list[dict] = field(default_factory=list)
     
+    # 当前行动阶段（"player"=轮回者方回合 / "monster"=怪物回合）
+    # 用于「持续X=目标自己的回合」递减口径
+    active_phase: str = "player"
+
     # 属性点
     attribute_points: int = 0
     allocated_blood: int = 0     # 已分配血限（从属性点）
@@ -473,6 +492,7 @@ class GameState:
             "current_battle": self.current_battle,
             "current_region": self.current_region,
             "energy": self.energy,
+            "active_phase": self.active_phase,
             "shards": self.shards,
             "fake_shards": self.fake_shards,
             "mutation_count": self.mutation_count,
@@ -518,6 +538,17 @@ class GameState:
     def gain_shards(self, amount: int) -> int:
         self.shards += amount
         return self.shards
+
+    def capture_overheal(self, overheal: int) -> Optional[str]:
+        """龙血瓶：自身或队友获得的回复量超出[血限]时，超出的回复量提升等量耐久"""
+        if overheal <= 0:
+            return None
+        vial = next((c for c in self.consumables if c.name == "龙血瓶"), None)
+        if vial is None:
+            return None
+        vial.current_uses += overheal
+        vial.max_uses += overheal
+        return f"【龙血瓶】过热回复{overheal}转为耐久（现{vial.current_uses}/{vial.max_uses}）"
 
     def get_all_player_side(self) -> list[Entity]:
         """获取己方所有实体"""

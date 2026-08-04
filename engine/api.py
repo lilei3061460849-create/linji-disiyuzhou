@@ -286,7 +286,7 @@ class GameEngine:
         if self.state.enemies:
             actions.append({
                 "type": "monster_turn",
-                "description": "执行一只怪物的完整回合（出手次数=回合数÷3向上取整）",
+                "description": "执行一只怪物的完整回合（每回合固定1次攻击出手+1次道纹出手）",
                 "monsters": [m.name for m in self.state.enemies if m.is_alive],
             })
 
@@ -366,6 +366,7 @@ class GameEngine:
                 "battle_end": self._action_battle_end,
                 "random_number": self._action_submit_random,
                 "revise_custom_spell": self._action_revise_custom_spell,
+                "withdraw_dragon_blood_vial": self._action_withdraw_dragon_blood_vial,
             }.get(action_type)
 
             if handler is None:
@@ -1469,7 +1470,8 @@ class GameEngine:
                 if ent is None:
                     return {"success": False, "error": f"恢复量只能分配给自己或队友，未找到[{ename}]"}
                 heal = ent.heal(amount)
-                notes.append(f"{ename}获得回复{heal['actual_heal']}")
+                vial_note = self.state.capture_overheal(heal.get("overheal", 0))
+                notes.append(f"{ename}获得回复{heal['actual_heal']}" + (f"；{vial_note}" if vial_note else ""))
             self.state.relic_flags["赤泉囊_debuff"] = 2
             notes.append("副作用登记：自身下两场战斗[战始]失去4点生命")
 
@@ -1524,6 +1526,18 @@ class GameEngine:
             self.state.relic_flags["干扰仪_回合"] = self.state.current_round
             notes.append(f"全场所有敌方[目标]本回合（第{self.state.current_round}回合）无法发动自身道纹")
 
+        elif name == "高爆手雷":
+            if target is None or not target.is_alive:
+                return {"success": False, "error": "高爆手雷需要一个存活[目标] target"}
+            before = target.current_hp
+            res = target.take_damage(15, "普通")
+            target.add_status(StatusEffect(name="高爆手雷", remaining_rounds=1, value=1, source="高爆手雷"),
+                              round_now=self.state.current_round, phase=self.state.active_phase)
+            notes.append(f"对【{target.name}】造成15点伤害（生命{before}→{res['hp_after']}），"
+                         "并使其本回合攻击次数-1")
+            if res.get("died"):
+                notes.append(f"【{target.name}】[命零]")
+
         else:
             return {"success": False, "unavailable": True,
                     "error": f"消耗品【{name}】的效果钩子未实装，程序拒绝假装生效"}
@@ -1542,6 +1556,35 @@ class GameEngine:
         return {"success": True, "action": f"使用消耗品【{name}】", "notes": notes,
                 "budget": {"used": self.state.actions_used, "total": self._player_action_budget()}
                 if usage == "battle" else None}
+
+    def _action_withdraw_dragon_blood_vial(self, params: dict) -> dict:
+        """龙血瓶：局外【休整】或战中可随时自由提取储存的回复量分配给自身或队友。
+        储存量=过热回复累积的耐久；提取消耗等量耐久。使用时不消耗出手。"""
+        vial = next((c for c in self.state.consumables if c.name == "龙血瓶"), None)
+        if vial is None:
+            return {"success": False, "error": "未持有龙血瓶"}
+        stored = vial.current_uses - 10   # 基础耐久10，超出部分为储存的回复量
+        alloc = params.get("alloc") or {}
+        total = sum(alloc.values())
+        if total <= 0:
+            return {"success": False, "error": f"请提供 alloc={{实体名: 回复量}}（当前储存{max(0, stored)}）"}
+        if total > stored:
+            return {"success": False, "error": f"储存回复量不足：储存{stored}，请求{total}"}
+        team = ([self.state.player] if self.state.player else []) + self.state.friends \
+            + self.state.employees + self.state.temp_friends
+        notes = []
+        for ename, amount in alloc.items():
+            ent = next((e for e in team if e and e.name == ename), None)
+            if ent is None:
+                return {"success": False, "error": f"未找到[{ename}]（只能分配给自己或队友）"}
+            heal = ent.heal(amount)
+            # 提取消耗耐久换取回复；该回复不重复回灌龙血瓶（否则提取即回存，死循环）
+            notes.append(f"{ename}获得回复{heal['actual_heal']}"
+                         + (f"（过量{heal.get('overheal', 0)}）" if heal.get("overheal") else ""))
+        vial.current_uses -= total
+        return {"success": True, "action": "龙血瓶提取", "withdrawn": total,
+                "stored_remaining": max(0, vial.current_uses - 10),
+                "durability": f"{vial.current_uses}/{vial.max_uses}", "notes": notes}
 
     def _pre_battle_xiuzheng(self, params: dict) -> dict:
         """休整：产生恢复量，可自由分配给自己或队友（分配真实生效）"""
@@ -1579,6 +1622,9 @@ class GameEngine:
                 self.state.shards += cost
                 return {"success": False, "error": f"恢复量只能分配给自己或队友，未找到[{name}]"}
             res = target.heal(amount)
+            vial_note = self.state.capture_overheal(res.get("overheal", 0))
+            if vial_note:
+                res["dragon_vial"] = vial_note
             applied.append({"target": name, "heal": amount, "actual": res["actual_heal"],
                             "hp": f"{res['hp_before']}→{res['hp_after']}"})
 
@@ -2376,7 +2422,7 @@ class GameEngine:
                 for m in monsters
             ],
             "battle_start_effects": mod_notes,
-            "wormhole": "怪物出手次数=当前回合数÷3向上取整；[战始]效果现已结算",
+            "wormhole": "怪物每回合固定发动一次攻击和发动一种道纹；[战始]效果现已结算",
         }
 
     # ==================== 战斗：道纹 ====================
@@ -2531,7 +2577,9 @@ class GameEngine:
             target = caster
 
         # 敌对单体判定 → 目标可闪避（飞行规则：非飞行角色无法选飞行者为目标）
-        targeted = name not in CombatEngine.UNTARGETED_DAOWEN and target is not caster
+        # 现行正文：凡是带有[目标]的道纹，目标在被选定时均可消耗1点当前速度闪避
+        # （AOE道纹的每个被选中目标各自闪避，见 aoe_dodges）
+        targeted = target is not caster
         target_is_enemy_of_caster = (target in self.state.enemies) if is_player_side else (target not in self.state.enemies)
 
         if CombatEngine.is_flying(target) and not CombatEngine.is_flying(caster) \
@@ -2539,11 +2587,21 @@ class GameEngine:
             return {"success": False, "error": f"{target.name}处于飞行状态，无法被非飞行角色选为目标"}
 
         dodge_resolved = None
+        bizhong_selection = False
         if targeted and target_is_enemy_of_caster:
             must_hit = caster.has_status("必中")
+            # 必中新语义：自身下X次选择[目标]时，其无法闪避——每次选定敌对目标耗1层
+            if must_hit:
+                bizhong_selection = True
+                for st in caster.status_effects:
+                    if st.name == "必中" and st.value > 0:
+                        st.value -= 1
+                        if st.value <= 0:
+                            caster.status_effects.remove(st)
+                        break
             if target_dodge:
                 if must_hit:
-                    dodge_resolved = {"dodge_attempted": True, "success": False, "reason": "必中判定无法闪避"}
+                    dodge_resolved = {"dodge_attempted": True, "success": False, "reason": "必中：本次选择目标无法闪避"}
                 elif target.current_speed >= 1:
                     target.current_speed -= 1
                     dodge_resolved = {"dodge_attempted": True, "success": True,
@@ -2573,8 +2631,8 @@ class GameEngine:
             target=target, caster=caster,
             _state=self._caster_state_dict(caster),
             **({} if name != "缓慢" else {"target_action_count": (
-                max(0, self.combat.monster_act_count(self.state.current_round)
-                    + target.get_status_value("活力") - target.get_status_value("无力"))
+                max(0, self.combat.monster_attack_acts(target) - target.get_status_value("无力"))
+                + self.combat.monster_daowen_acts(target)
                 if target in self.state.enemies
                 else self._player_action_budget() if target is self.state.player
                 else max(1, math.ceil((target.attack_count or 1) / 3)))}),
@@ -2628,7 +2686,7 @@ class GameEngine:
         }
 
     def _execute_daowen_effect(self, name: str, calc: dict, caster: Entity, target: Entity, extra: dict = None) -> dict:
-        """执行道纹效果（怪物非专属道纹效果×3；特殊机制道纹在此真实分发）"""
+        """执行道纹效果（特殊机制道纹在此真实分发）"""
         result = {"daowen": name, "effects": []}
         extra = extra or {}
 
@@ -2639,21 +2697,16 @@ class GameEngine:
                 value=value,
                 source=caster.name,
                 meta=meta or {},
-            ))
+            ), round_now=self.state.current_round, phase=self.state.active_phase)
             result["effects"].append({
                 "type": "status_added", "target": entity.name, "status": status_name,
                 "duration": duration, "value": value,
             })
 
-        multiplier = self.combat.is_monster_triple(name, caster)
-        if multiplier > 1:
-            result["monster_triple"] = True
-            result["multiplier"] = multiplier
-
         # ============ 特殊机制道纹（完全接管，不走通用分支）============
 
         if name == "超频":
-            boost = calc["speed_boost"] * multiplier
+            boost = calc["speed_boost"]
             caster.current_speed += boost
             result["effects"].append({"type": "speed_boost", "target": caster.name, "amount": boost})
             return result
@@ -2661,7 +2714,7 @@ class GameEngine:
         if name == "减速":
             _spd_before = target.current_speed
             target.current_speed = max(0, math.ceil(target.current_speed / 2))
-            add_status(target, "减速", calc["duration"], calc["x"] * multiplier)
+            add_status(target, "减速", calc["duration"], calc["x"])
             result["effects"].append({"type": "speed_halved", "target": target.name,
                                       "speed_after": target.current_speed})
             if target is self.state.player and _spd_before > target.current_speed:
@@ -2683,14 +2736,16 @@ class GameEngine:
         if name == "自食":
             reduced = min(calc["attack_reduction"], caster.attack_power)
             caster.attack_power -= reduced
-            heal = caster.heal(calc["heal"] * multiplier)
+            heal = caster.heal(calc["heal"])
             result["effects"].append({"type": "attack_to_heal", "target": caster.name,
                                       "attack_reduced": reduced, **heal})
             return result
 
         if name == "变形":
-            if target.has_status("定型"):
-                result["effects"].append({"type": "blocked", "note": "目标被定型，无法变形"})
+            # 定型X（现行正文）：攻击次数与攻击力无法增加。互换若会使二者之一增加则被拦截
+            if target.has_status("定型") and target.attack_count != target.attack_power:
+                result["effects"].append({"type": "blocked",
+                                          "note": "目标被定型：攻击次数与攻击力无法增加，变形互换被拦截"})
                 return result
             orig_count, orig_power = target.attack_count, target.attack_power
             target.attack_count, target.attack_power = orig_power, orig_count
@@ -2725,7 +2780,7 @@ class GameEngine:
             return result
 
         if name == "赎金":
-            amount = calc["shard_steal"] * multiplier
+            amount = calc["shard_steal"]
             stolen = 0
             if target is self.state.player:
                 available = self.state.shards + self.state.fake_shards
@@ -2754,7 +2809,7 @@ class GameEngine:
             return result
 
         if name == "假钞":
-            gained = calc["fake_shards"] * multiplier
+            gained = calc["fake_shards"]
             self.state.fake_shards += gained
             result["effects"].append({"type": "fake_shards", "amount": gained,
                                       "fake_shards_now": self.state.fake_shards})
@@ -2778,8 +2833,8 @@ class GameEngine:
             return result
 
         if name == "缓慢":
-            # 缓慢X：本回合若目标单轮出手次数≤X则无法出手（怪物非专属×3作用于阈值）
-            threshold = calc["x"] * multiplier
+            # 缓慢X：本回合若目标单轮出手次数≤X则无法出手
+            threshold = calc["x"]
             acts = calc.get("target_action_count", 0)
             if acts <= threshold:
                 add_status(target, "缓慢", 1, threshold)
@@ -2792,7 +2847,7 @@ class GameEngine:
 
         if name == "必中":
             # 必中X：自身下X次攻击附带必中（持续至层数耗尽，攻击时逐层消耗）
-            charges = calc["guaranteed_hits"] * multiplier
+            charges = calc["guaranteed_hits"]
             add_status(caster, "必中", 0, charges)
             result["effects"].append({
                 "type": "status_added", "target": caster.name, "status": "必中",
@@ -2802,7 +2857,7 @@ class GameEngine:
             return result
 
         if name == "蒙蔽":
-            add_status(target, "蒙蔽", -1, calc["invalid_damage_hits"] * multiplier)
+            add_status(target, "蒙蔽", -1, calc["invalid_damage_hits"])
             return result
 
         if name == "抵扣":
@@ -2846,7 +2901,7 @@ class GameEngine:
 
         # 多次独立伤害（血债X：2X次1点伤害；每次独立判定闪避/龙鳞/反伤/承伤）
         if "hits" in calc and "damage_per_hit" in calc:
-            hits = calc["hits"] * multiplier
+            hits = calc["hits"]
             per = calc["damage_per_hit"]
             hit_log = []
             for i in range(hits):
@@ -2868,7 +2923,7 @@ class GameEngine:
         # 伤害类（含借 力/加害/龙鳞/裂变/贯穿/承伤链/受伤钩子）
         if "target_damage" in calc:
             modifier_result = {"attack_based": False}
-            dmg_value = calc["target_damage"] * multiplier
+            dmg_value = calc["target_damage"]
             dmg_value = self.combat.apply_outgoing_damage_modifiers(caster, target, dmg_value, modifier_result)
             if target.has_status("裂变"):
                 x_split = max(1, target.get_status_value("裂变"))
@@ -2877,15 +2932,27 @@ class GameEngine:
                 modifier_result["liebian_split"] = {"times": x_split, "per_hit": per}
             bearer = self.combat.find_damage_bearer(target, modifier_result)
             ignore_shield = caster.has_status("贯穿")
+            merged = {**modifier_result}
+            # 爆裂X（现行正文）：受到伤害前，攻击者失去等量生命；攻击者命零则本次伤害取消
+            if target.has_status("爆裂") and caster.is_alive and dmg_value > 0:
+                caster.take_damage(dmg_value, "代价")
+                merged["baolie_preempt"] = dmg_value
+                if not caster.is_alive:
+                    merged["baolie_cancelled_attack"] = True
+                    result["effects"].append({"type": "damage", "target": target.name, **merged})
+                    return result
             dmg = bearer.take_damage(dmg_value, "普通" if not ignore_shield else "无视格挡")
-            merged = {**modifier_result, **dmg}
+            merged.update(dmg)
             if dmg["actual_damage"] > 0:
                 self.combat.on_damage_taken(caster, bearer, dmg["actual_damage"], merged)
             result["effects"].append({"type": "damage", "target": target.name, **merged})
 
-        # AOE伤害（冲击：作用于施法者的敌方阵营全体，不可闪避）
+        # AOE伤害（冲击/坠落：作用于施法者的敌方阵营全体）
+        # 现行正文：凡带[目标]道纹均可闪避——AOE 的每个被选中目标可各自消耗1速闪避
+        # （调用方通过 aoe_dodges={目标名: true/false} 声明）
         if "aoe_damage" in calc:
-            actual_aoe = calc["aoe_damage"] * multiplier
+            actual_aoe = calc["aoe_damage"]
+            aoe_dodges = extra.get("aoe_dodges") or {}
             player_side = [e for e in ([self.state.player] + self.state.friends
                                        + self.state.employees + self.state.temp_friends) if e]
             if caster in player_side:
@@ -2893,31 +2960,61 @@ class GameEngine:
             else:
                 targets = [e for e in player_side if e.is_alive]
             for enemy in targets:
+                # 逐目标闪避判定
+                if aoe_dodges.get(enemy.name):
+                    if enemy.current_speed >= 1:
+                        enemy.current_speed -= 1
+                        dodge_entry = {"type": "aoe_dodge", "target": enemy.name, "success": True,
+                                       "speed_after": enemy.current_speed,
+                                       "dodge_hooks": self.combat.on_successful_dodge(enemy)}
+                        if enemy is self.state.player:
+                            note = self._huifengdao_on_speed_loss(1, source=caster)
+                            if note:
+                                dodge_entry["relic_回锋刀"] = note
+                        result["effects"].append(dodge_entry)
+                        continue
+                    else:
+                        result["effects"].append({"type": "aoe_dodge", "target": enemy.name,
+                                                  "success": False, "reason": "速度不足"})
                 modifier_result = {"attack_based": False}
                 dmg_value = self.combat.apply_outgoing_damage_modifiers(caster, enemy, actual_aoe, modifier_result)
                 bearer = self.combat.find_damage_bearer(enemy, modifier_result)
+                merged = {**modifier_result}
+                # 爆裂X：受到伤害前，攻击者失去等量生命
+                if enemy.has_status("爆裂") and caster.is_alive and dmg_value > 0:
+                    caster.take_damage(dmg_value, "代价")
+                    merged["baolie_preempt"] = dmg_value
+                    if not caster.is_alive:
+                        merged["baolie_cancelled_attack"] = True
+                        result["effects"].append({"type": "aoe_damage", "target": enemy.name, **merged})
+                        return result
                 dmg = bearer.take_damage(dmg_value)
-                merged = {**modifier_result, **dmg}
+                merged.update(dmg)
                 if dmg["actual_damage"] > 0:
                     self.combat.on_damage_taken(caster, bearer, dmg["actual_damage"], merged)
                 result["effects"].append({"type": "aoe_damage", "target": enemy.name, **merged})
 
-        # 回复类
+        # 回复类（龙血瓶：超出[血限]的回复量转为耐久）
         if "target_heal" in calc:
-            actual_heal = calc["target_heal"] * multiplier
+            actual_heal = calc["target_heal"]
             heal = target.heal(actual_heal)
+            vial_note = self.state.capture_overheal(heal.get("overheal", 0))
+            if vial_note:
+                heal["dragon_vial"] = vial_note
             result["effects"].append({"type": "heal", "target": target.name, **heal})
 
         if "heal" in calc and "target_heal" not in calc:
-            heal = target.heal(calc["heal"] * multiplier)
+            heal = target.heal(calc["heal"])
+            vial_note = self.state.capture_overheal(heal.get("overheal", 0))
+            if vial_note:
+                heal["dragon_vial"] = vial_note
             result["effects"].append({"type": "heal", "target": target.name, **heal})
 
         # 格挡类
         if "target_shield" in calc:
-            actual_shield = calc["target_shield"] * multiplier
+            actual_shield = calc["target_shield"]
             target.gain_shield(actual_shield)
-            result["effects"].append({"type": "shield", "target": target.name, "amount": actual_shield,
-                                      "base": calc["target_shield"], "multiplier": multiplier})
+            result["effects"].append({"type": "shield", "target": target.name, "amount": actual_shield})
 
         # 血限减少（副作用：当前生命同步削减）
         if "blood_limit_reduction" in calc:
@@ -2957,13 +3054,20 @@ class GameEngine:
             result["effects"].append({"type": "mana_gain", "source": caster.name,
                                       "mana_gained": calc["mana_gain"]})
 
-        # 状态效果添加（持续X / 持续∞，含怪物×3数值）
+        # 强化X：使[目标]攻击力+X（定型：攻击力无法增加 → 拦截）
+        if name == "强化":
+            if target.has_status("定型"):
+                result["effects"].append({"type": "blocked",
+                                          "note": "目标被定型：攻击力无法增加，强化被拦截"})
+                return result
+            add_status(target, "强化", calc.get("duration", -1), calc.get("x", 0))
+            return result
+
+        # 状态效果添加（持续X / 持续∞）
         if "duration" in calc and calc.get("duration") is not None:
             duration = calc["duration"] if calc["duration"] != 0 else -1
             effect_target = target if target else caster
             value = calc.get("x", 0)
-            if multiplier > 1:
-                value = value * multiplier
             add_status(effect_target, name, duration, value)
             # 飞行道纹生效时同步实体飞行标记
             if name == "飞行":
@@ -3359,7 +3463,8 @@ class GameEngine:
         一只怪物的完整出手轮（AI扮演怪物做出最优决策，引擎只结算）
         params:
           monster: 怪物名
-          acts: 行动列表，数量=当前回合数÷3向上取整：
+          acts: 行动列表。出手结构=每回合固定1次攻击出手+1次道纹出手（互不抢夺，
+          不随回合增加；活力攻击出手+X，狂暴回始额外+1攻击出手，无力-X）：
             - {"type": "attack_round", "target": "<目标名>", "dodges": [true/false, ...]}
               一轮攻击：连续攻击次数次，每次独立闪避判定
             - {"type": "use_daowen", "daowen": "<名>", "x": N, "target": "<名>", "target_dodge": true/false}
@@ -3393,42 +3498,44 @@ class GameEngine:
                     "skipped": "眩晕：无法出手", "turn_log": [],
                     "relic_notes": ([shouye_note] if shouye_note else [])}
 
+        # 怪物出手结构（README现行正文）：每回合固定发动一次攻击和发动一种道纹，
+        # 互不抢夺，不随回合增加。【活力X】攻击出手+X；【狂暴X】回始额外+1攻击出手；
+        # 【无力X】出手次数-X（作用于攻击出手）。
+        self.state.active_phase = "monster"
+
         acts = params.get("acts", [])
-        base_allowed = CombatEngine.monster_act_count(self.state.current_round)
-        huoli = monster.get_status_value("活力")
         wuli = monster.get_status_value("无力")
-        allowed = max(0, base_allowed + huoli - wuli)
+        attack_acts = max(0, self.combat.monster_attack_acts(monster) - wuli)
+        daowen_acts = self.combat.monster_daowen_acts(monster)
+        total_acts = attack_acts + daowen_acts
 
         # 缓慢X：本回合若目标单轮出手次数≤X，则其无法出手
         if monster.has_status("缓慢"):
             threshold = monster.get_status_value("缓慢")
-            if allowed <= threshold:
+            if total_acts <= threshold:
+                self.state.active_phase = "player"
                 return {"success": True, "action": f"{monster.name}的出手轮",
-                        "skipped": f"缓慢：出手次数{allowed}≤{threshold}，本回合无法出手",
+                        "skipped": f"缓慢：出手次数{total_acts}≤{threshold}，本回合无法出手",
                         "turn_log": [],
                         "relic_notes": ([shouye_note] if shouye_note else [])}
 
-        has_kuangbao = monster.has_status("狂暴")
-        max_acts = allowed + (1 if has_kuangbao else 0)
-
         if not acts:
-            if max_acts <= 0:
+            if total_acts <= 0:
+                self.state.active_phase = "player"
                 return {"success": True, "action": f"{monster.name}的出手轮",
                         "skipped": "无出手次数", "turn_log": [],
                         "relic_notes": ([shouye_note] if shouye_note else [])}
             return {"success": False, "error": "未提供行动（禁止在数值未耗尽时坐以待毙）"}
-        if len(acts) > max_acts:
-            return {
-                "success": False,
-                "error": f"行动数超限：本回合最多{allowed}次出手"
-                         + ("+1次狂暴额外攻击" if has_kuangbao else "")
-                         + f"，提供了{len(acts)}个",
-            }
-        if has_kuangbao and len(acts) > allowed:
-            # 狂暴提供的额外行为仅限一轮攻击
-            extras = acts[allowed:]
-            if any(a.get("type") != "attack_round" for a in extras):
-                return {"success": False, "error": "狂暴的额外出手只能是【一轮攻击】"}
+
+        n_attack = sum(1 for a in acts if a.get("type") == "attack_round")
+        n_daowen = sum(1 for a in acts if a.get("type") == "use_daowen")
+        if n_attack > attack_acts:
+            return {"success": False,
+                    "error": f"攻击出手超限：本回合攻击出手最多{attack_acts}次（固定1+活力+狂暴-无力），提供了{n_attack}次"}
+        if n_daowen > daowen_acts:
+            return {"success": False,
+                    "error": f"道纹出手超限：每回合固定发动一种道纹（最多{daowen_acts}次），提供了{n_daowen}次"}
+        max_acts = total_acts
 
         turn_log = []
         for act in acts:
@@ -3445,6 +3552,8 @@ class GameEngine:
                     continue
                 # 迟滞：攻击次数固定为1
                 hit_total = 1 if monster.has_status("迟滞") else monster.attack_count
+                # 高爆手雷（消耗品）：使其本回合攻击次数-1
+                hit_total = max(0, hit_total - monster.get_status_value("高爆手雷"))
                 dodges = act.get("dodges", [])
                 is_must_hit = monster.has_status("必中")
                 hits = []
@@ -3497,12 +3606,14 @@ class GameEngine:
             if self.state.player and not self.state.player.is_alive:
                 break
 
+        self.state.active_phase = "player"
         return {
             "success": True,
             "action": f"{monster.name}的出手轮",
             "round": self.state.current_round,
             "acts_used": len(acts),
             "acts_allowed": max_acts,
+            "acts_structure": {"attack_acts": attack_acts, "daowen_acts": daowen_acts},
             "turn_log": turn_log,
             "player_hp": self.state.player.current_hp if self.state.player else None,
             "relic_notes": ([shouye_note] if shouye_note else []),
@@ -3516,6 +3627,7 @@ class GameEngine:
         acts: [{"type": "attack_round", "target": "<怪名>"},
                {"type": "use_daowen", "daowen": "<名>", "x": N, "target": "<名>"}]
         """
+        self.state.active_phase = "player"
         fname = params.get("friend", "")
         friend = next((f for f in self.state.friends + self.state.employees + self.state.temp_friends
                        if f.name == fname and f.is_alive), None)
@@ -3622,6 +3734,7 @@ class GameEngine:
 
     def _action_round_start(self, params: dict) -> dict:
         """回始"""
+        self.state.active_phase = "player"
         extra_notes = []
         player = self.state.player
         # 皮衣（事件遗物）：上回合失去生命时，本回合获得等量格挡（回合净损失口径，粒度待DM裁定）

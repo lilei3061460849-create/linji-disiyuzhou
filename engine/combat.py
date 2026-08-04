@@ -17,16 +17,8 @@ from .gamedata import REGION_EXCLUSIVE_DAOWEN
 class CombatEngine:
     """战斗计算引擎"""
     
-    # 副本专属道纹（不×3）——以 gamedata 为准
+    # 副本专属道纹归属表（校验怪物池道纹合法性用）——以 gamedata 为准
     REGION_EXCLUSIVE_DAOWEN = REGION_EXCLUSIVE_DAOWEN
-    
-    # 怪物原始道纹+转化道纹（这些也不×3，因为是怪物自己的）
-    MONSTER_OWN_DAOWEN = {
-        "狂暴","强化","活力","减速","必中","自愈","飞行",
-        "愤怒","自残","无神","借力","弱化","自食","兴奋","无力",
-        "迟滞","急速","加速","眩晕","洞察","蒙蔽","滋养","衰败",
-        "寄生","滑翔","坠落",
-    }
     
     # AOE/非单体判定的道纹（其余作用于敌方单体的道纹均带[目标]，可被闪避）
     UNTARGETED_DAOWEN = {"冲击", "坠落"}
@@ -38,27 +30,6 @@ class CombatEngine:
     
     # ========== 伤害计算 ==========
     
-    def is_monster_triple(self, dao_wen_name: str, entity: Entity) -> int:
-        """
-        怪物非专属道纹效果×3规则
-        规则：怪物使用非专属道纹效果×3，副本专属道纹按原效果结算
-        返回：效果倍率（1或3）
-        """
-        if entity.entity_type != "怪物":
-            return 1
-        
-        # 怪物自己的道纹（原始+转化）不×3
-        if dao_wen_name in self.MONSTER_OWN_DAOWEN:
-            return 1
-        
-        # 副本专属道纹不×3
-        region = self.state.current_region
-        if region in self.REGION_EXCLUSIVE_DAOWEN:
-            if dao_wen_name in self.REGION_EXCLUSIVE_DAOWEN[region]:
-                return 1
-        
-        # 其他道纹（核心道纹等）×3
-        return 3
     
     def calculate_attack_damage(
         self, 
@@ -158,11 +129,11 @@ class CombatEngine:
         """
         目标实际失去生命后的钩子：
         - 逆鳞（目标侧）：每失去1点生命获得1层逆鳞
-        - 爆裂（目标侧）：攻击者失去等量生命
         - 伤痕（目标侧）：每次失去生命后[血限]-X
         - 寄生（目标侧）：受到伤害的20X%转化为施加者[回复]
         - 洗劫（攻击方）：造成伤害时夺取等量碎片
-        - 眩晕（目标侧）：受到伤害后解除
+        - 眩晕（目标侧）：[目标]失去生命后立刻苏醒
+        （爆裂已改为「受到伤害前」前置反射，见 resolve_attack/道纹伤害分支）
         """
         if hp_lost <= 0:
             return
@@ -174,11 +145,6 @@ class CombatEngine:
                 if s.name == "逆鳞":
                     s.value = stacks + hp_lost
             result["nilin_stacks"] = stacks + hp_lost
-
-        # 爆裂：攻击者失去等量生命（反射为代价，不可格挡）
-        if target.has_status("爆裂") and attacker is not None and attacker.is_alive:
-            attacker.take_damage(hp_lost, "代价")
-            result["baolie_reflect"] = hp_lost
 
         # 伤痕：每次失去生命后[血限]-X
         if target.has_status("伤痕"):
@@ -224,7 +190,8 @@ class CombatEngine:
                 attacker.shards += stolen
             result["xijie_stolen"] = stolen
 
-        # 眩晕：受到伤害后解除
+        # 眩晕：[目标]失去生命后立刻苏醒（本钩子已按实际失去生命 hp_lost>0 门控，
+        # 格挡全额吸收时不失去生命、不苏醒）
         if target.has_status("眩晕"):
             target.status_effects = [s for s in target.status_effects if s.name != "眩晕"]
             result["xuanyun_broken"] = True
@@ -298,11 +265,17 @@ class CombatEngine:
             target = attacker
             result["wushen_retarget"] = True
 
+        # 必中新语义（README现行正文）：自身下X次选择[目标]时，其无法闪避。
+        # 每次选定敌对目标即消耗1层（自残等自选不消耗）。
+        if attacker.has_status("必中") and target is not attacker:
+            is_must_hit = True
+            result["bizhong_selection"] = True
+
         # 闪避判定
         if dodge:
             if is_must_hit:
                 result["dodge_success"] = False
-                result["dodge_fail_reason"] = "必中攻击无法闪避"
+                result["dodge_fail_reason"] = "必中：本次选择目标无法闪避"
             elif target.current_speed >= 1:
                 target.current_speed -= 1
                 result["dodge_success"] = True
@@ -314,8 +287,8 @@ class CombatEngine:
                 result["dodge_success"] = False
                 result["dodge_fail_reason"] = "速度不足"
 
-        # 必中X：消耗层数，下X次攻击附带必中
-        if is_must_hit:
+        # 必中层数消耗：按「选择[目标]」计次（本次选定敌对目标即耗1层）
+        if result.get("bizhong_selection"):
             for s in attacker.status_effects:
                 if s.name == "必中" and s.value > 0:
                     s.value -= 1
@@ -355,7 +328,17 @@ class CombatEngine:
         
         # 承伤链（嫁祸/背负）：命中后才结算承担
         bearer = self.find_damage_bearer(target, result)
-        
+
+        # 爆裂X（README现行正文）：受到伤害前，攻击者失去等量生命。
+        # 反射以代价口径结算（不可格挡）；攻击者若因此命零，本次攻击取消。
+        if target.has_status("爆裂") and attacker is not None and attacker.is_alive and damage > 0:
+            attacker.take_damage(damage, "代价")
+            result["baolie_preempt"] = damage
+            if not attacker.is_alive:
+                result["baolie_cancelled_attack"] = True
+                result["target_hp_after"] = bearer.current_hp
+                return result
+
         damage_result = bearer.take_damage(damage, "普通" if not ignore_shield else "无视格挡")
         if bearer is not target:
             damage_result["bearer"] = bearer.name
@@ -378,7 +361,7 @@ class CombatEngine:
         result["target_died"] = damage_result["died"]
         result["target_hp_after"] = damage_result["hp_after"]
 
-        # 受伤后钩子（逆鳞/爆裂/伤痕/寄生/洗劫/眩晕解除）
+        # 失去生命后钩子（逆鳞/伤痕/寄生/洗劫/眩晕苏醒）
         if damage_result["actual_damage"] > 0:
             self.on_damage_taken(attacker, target, damage_result["actual_damage"], result)
 
@@ -440,10 +423,28 @@ class CombatEngine:
     
     # ========== 回合管理 ==========
     
+    # ---------- 怪物出手结构（README「属性与状态规则」现行正文）----------
+    # 怪物每回合固定发动一次攻击和发动一种道纹（互不抢夺，不随回合增加）。
+    # 【活力X】使攻击出手+X；【狂暴X】回始额外+1攻击出手。
+
     @staticmethod
-    def monster_act_count(round_num: int) -> int:
-        """怪物出手次数 = 当前回合数÷3，向上取整（第1~3回合均为1次）"""
-        return max(1, math.ceil(round_num / 3))
+    def monster_attack_acts(monster: Entity) -> int:
+        """怪物每回合攻击出手数 = 1 + 活力X + (狂暴1)"""
+        base = 1
+        base += monster.get_status_value("活力")
+        if monster.has_status("狂暴"):
+            base += 1
+        return base
+
+    @staticmethod
+    def monster_daowen_acts(monster: Entity) -> int:
+        """怪物每回合道纹出手数 = 1"""
+        return 1
+
+    @classmethod
+    def monster_total_acts(cls, monster: Entity) -> int:
+        """怪物每回合出手总数（缓慢X的「单轮出手次数」口径）"""
+        return cls.monster_attack_acts(monster) + cls.monster_daowen_acts(monster)
     
     def round_start(self) -> dict:
         """
@@ -495,12 +496,16 @@ class CombatEngine:
                 heal_pct = 10 * x
                 heal_amount = math.ceil(entity.blood_limit * heal_pct / 100)
                 heal_result = entity.heal(heal_amount)
-                effects.append({
+                entry = {
                     "type": "self_heal",
                     "entity": entity.name,
                     "heal": heal_amount,
                     "actual": heal_result["actual_heal"]
-                })
+                }
+                vial_note = self.state.capture_overheal(heal_result.get("overheal", 0))
+                if vial_note:
+                    entry["dragon_vial"] = vial_note
+                effects.append(entry)
             
             # 狂暴：回始发动一轮额外攻击（标记）
             if entity.has_status("狂暴"):
@@ -585,11 +590,15 @@ class CombatEngine:
                 heal_amount = entity.hp_lost_this_round // 2
                 if heal_amount > 0:
                     res = entity.heal(heal_amount)
-                    effects.append({
+                    entry = {
                         "type": "活血回复",
                         "entity": entity.name,
                         "heal": res["actual_heal"],
-                    })
+                    }
+                    vial_note = self.state.capture_overheal(res.get("overheal", 0))
+                    if vial_note:
+                        entry["dragon_vial"] = vial_note
+                    effects.append(entry)
             
             # 格挡清空
             if entity.shield > 0:
@@ -612,8 +621,19 @@ class CombatEngine:
                 self.state.player.current_mana = 0
         
         # 持续效果递减（变形到期回滚：攻击力与攻击次数换回原值）
+        # 持续X新语义：效果持续X个目标自己的回合，在目标回合结束时X-1。
+        # 怪物阶段挂到轮回者方的效果，本轮回终时尚未经过承载者自己的回合结束，
+        # 跳过首次递减（其首个完整回合从下一轮算起）。
+        player_side_names = {e.name for e in self.state.get_all_player_side()}
         for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
-            expired = entity.tick_status_effects()
+            skip_ids = set()
+            if entity.name in player_side_names:
+                for st in entity.status_effects:
+                    if st.applied_round == self.state.current_round and st.applied_phase == "monster":
+                        skip_ids.add(id(st))
+                        st.applied_round = 0   # 仅跳过一次，之后正常递减
+                        st.applied_phase = ""
+            expired = entity.tick_status_effects(skip_ids=skip_ids or None)
             for s in expired:
                 if s.name == "变形" and "orig_attack_count" in s.meta:
                     entity.attack_count = s.meta["orig_attack_count"]

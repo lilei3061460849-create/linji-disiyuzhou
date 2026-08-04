@@ -286,7 +286,7 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_bizhong(x: int) -> dict:
-        """必中X：代价：异变5X。自身下X次攻击附带必中"""
+        """必中X：代价：异变5X。自身下X次选择[目标]时，其无法闪避"""
         return {
             "dao_wen": "必中",
             "x": x,
@@ -468,7 +468,7 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_xuanyun(x: int, target: Entity) -> dict:
-        """眩晕X：消耗20X。使[目标]无法出手，受到伤害后解除，持续X"""
+        """眩晕X：消耗20X。使[目标]无法出手，持续X，[目标]失去生命后立刻苏醒"""
         return {
             "dao_wen": "眩晕",
             "x": x,
@@ -591,7 +591,7 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_dingxing(x: int, target: Entity) -> dict:
-        """定型X：消耗3X。使[目标]攻击次数与攻击力无法被改变，持续X"""
+        """定型X：消耗3X。使[目标]攻击次数与攻击力无法增加，持续X"""
         return {
             "dao_wen": "定型",
             "x": x,
@@ -658,7 +658,7 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_baolie(x: int) -> dict:
-        """爆裂X：消耗3X。受到伤害后，攻击者失去等量生命，持续X"""
+        """爆裂X：消耗3X。受到伤害前，攻击者失去等量生命，持续X"""
         return {
             "dao_wen": "爆裂",
             "x": x,

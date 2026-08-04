@@ -96,6 +96,7 @@ precedent = engine.check_precedent("急中生智", {"target": "千手蜈蚣"})
 | `pre_battle_action` | ✅ | 局外行动：领悟/休整/修行/学习/共鸣/探索/忘忧(遗物忘忧香)/维修真实生效；**雇佣/炼心如实返回 unavailable** |
 | `choose_event_option` | ✅ | 事件选择：29事件（通用10+扭曲7+罪孽7+龙心谷5）全部选项真实结算；创造性选项如实 needs_dm 拒绝；拒绝类触发【无所求】 |
 | `use_consumable` | ✅ | 使用消耗品（12种，耐久真实扣减归零销毁；战斗中 battle 型耗1出手，假设待DM裁定） |
+| `withdraw_dragon_blood_vial` | ✅ | 龙血瓶提取储存回复量（不耗出手） |
 | `spend_attribute_points` | ✅ | 属性点分配（1点=1速限 或 1点=2法限） |
 | `battle_start` | ✅ | 战始：真实出怪（场数-2公式）+随机数抽怪+事件修饰/债务/事件遗物战始钩子 |
 | `use_daowen` | ✅ | 发动道纹（白名单内58种机制真实生效） |
@@ -104,7 +105,7 @@ precedent = engine.check_precedent("急中生智", {"target": "千手蜈蚣"})
 | `use_resonance` | ✅ | 残韵：6组变化网络（43条边忠实转录）；战内实时插队——声明不扣，命中才扣（未生效不消耗），新公式按原版结算（怪物无法力则流程中断），规则2永久获得；同魂笔双目标 |
 | `attack` | ✅ | 普通攻击（目标可闪避） |
 | `dodge_decision` | ✅ | 闪避决策（消耗1速） |
-| `monster_turn` | ✅ | 怪物出手轮（出手数=回合÷3向上取整，面板道纹主动发动） |
+| `monster_turn` | ✅ | 怪物出手轮（每回合固定1攻击出手+1道纹出手；活力/狂暴/无力修正；面板道纹主动发动） |
 | `friend_turn` | ✅ | [朋友]/[员工]出手轮（出手次数=攻击次数/3向上取整，假设待DM裁定） |
 | `retreat` | ✅ | 买路财撤退（20%血限等价碎片）；绝息淤泥：战终立刻逃脱 |
 | `declare_wit` / `declare_escape` / `declare_evolution` | ✅ | 急中生智/逃跑/进化（中断→DM） |
