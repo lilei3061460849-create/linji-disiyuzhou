@@ -44,10 +44,12 @@ class DiceEngine:
             "instruction": f"请在 1~{count} 中选择一个数字（必须由玩家提供，AI禁止自行选择）"
         }
     
-    def resolve_pool(self, pool_name: str, player_number: int) -> dict:
+    def resolve_pool(self, pool_name: str, player_number: int, keep: bool = False) -> dict:
         """
         用玩家提供的数字解析池
         返回选定结果
+
+        keep=True 时选中项保留在池中（用于允许重复抽选的场景，例如出怪）
         """
         if pool_name not in self._pools:
             raise ValueError(f"池 '{pool_name}' 不存在")
@@ -72,8 +74,9 @@ class DiceEngine:
         }
         self._history.append(record)
         
-        # 从池中移除已选（可选，取决于场景）
-        pool.pop(selected_index)
+        # 从池中移除已选（允许重复抽选时保留）
+        if not keep:
+            pool.pop(selected_index)
         
         return {
             "pool_name": pool_name,
