@@ -976,6 +976,224 @@ def test_friend_mutation_defect():
     print("  ✓ 卖身契转承异变47→52：朋友怪化倒戈，卖身契如实失效，轮回者异变0")
 
 
+
+
+def test_rule_sync_2026_08_04():
+    """2026-08-04 按现行正文同步的7项规则 + 高爆手雷/龙血瓶"""
+    print("\n=== 测试：2026-08-04 正文规则同步 ===")
+    from engine.models import DaoWenInstance
+
+    # ---- 1) 怪物出手结构：每回合固定1攻击出手+1道纹出手 ----
+    engine = fresh_engine("rulesync_budget")
+    setup_player(engine)
+    drain_energy(engine)
+    start_battle(engine, numbers=[1])
+    mon = engine.state.enemies[0]
+    engine.execute_action("round_start", {})
+    # 超限：2次道纹出手被拒
+    r = engine.execute_action("monster_turn", {"monster": mon.name, "acts": [
+        {"type": "use_daowen", "daowen": list(mon.dao_wen.keys())[0], "x": 1, "target": mon.name},
+        {"type": "use_daowen", "daowen": list(mon.dao_wen.keys())[0], "x": 1, "target": mon.name},
+    ]})
+    assert not r["success"] and "道纹出手超限" in r["error"], r
+    # 超限：2次攻击出手被拒
+    r = engine.execute_action("monster_turn", {"monster": mon.name, "acts": [
+        {"type": "attack_round", "target": "测试者", "dodges": [False] * mon.attack_count},
+        {"type": "attack_round", "target": "测试者", "dodges": [False] * mon.attack_count},
+    ]})
+    assert not r["success"] and "攻击出手超限" in r["error"], r
+    # 合法：1攻击+1道纹
+    dw0 = list(mon.dao_wen.keys())[0]
+    r = engine.execute_action("monster_turn", {"monster": mon.name, "acts": [
+        {"type": "use_daowen", "daowen": dw0, "x": 1, "target": mon.name},
+        {"type": "attack_round", "target": "测试者", "dodges": [False] * mon.attack_count},
+    ]})
+    assert r["success"], r
+    assert r["acts_structure"] == {"attack_acts": 1, "daowen_acts": 1}, r["acts_structure"]
+    # 狂暴：攻击出手+1
+    mon.add_status(StatusEffect(name="狂暴", remaining_rounds=2, value=1))
+    r = engine.execute_action("monster_turn", {"monster": mon.name, "acts": [
+        {"type": "attack_round", "target": "测试者", "dodges": [False] * mon.attack_count},
+        {"type": "attack_round", "target": "测试者", "dodges": [False] * mon.attack_count},
+    ]})
+    assert r["success"] and r["acts_structure"]["attack_acts"] == 2, r
+    print("  ✓ 怪物出手结构=每回合固定1攻击+1道纹（狂暴+1攻击出手，超限拒绝）")
+
+    # ---- 2) 必中新语义：选择[目标]时无法闪避，道纹选择也耗层 ----
+    engine = fresh_engine("rulesync_bizhong")
+    setup_player(engine)
+    drain_energy(engine)
+    start_battle(engine, numbers=[1])
+    mon = engine.state.enemies[0]
+    engine.execute_action("round_start", {})
+    mon.add_status(StatusEffect(name="必中", remaining_rounds=-1, value=1))
+    # 玩家闪避声明被必中否决，且耗掉1层
+    r = engine.execute_action("monster_turn", {"monster": mon.name, "acts": [
+        {"type": "attack_round", "target": "测试者", "dodges": [True] * mon.attack_count},
+    ]})
+    hits = r["turn_log"][0]["hits"]
+    assert all(not h["dodge_success"] for h in hits), "必中选择目标不得被闪避"
+    assert not mon.has_status("必中"), "1层必中应被1次目标选择耗尽"
+    print("  ✓ 必中：选择[目标]时无法闪避且按选择次数耗层")
+
+    # ---- 3) 爆裂：受到伤害前，攻击者失去等量生命 ----
+    engine = fresh_engine("rulesync_baolie")
+    setup_player(engine)
+    drain_energy(engine)
+    start_battle(engine, numbers=[1])
+    mon = engine.state.enemies[0]
+    engine.execute_action("round_start", {})
+    mon.add_status(StatusEffect(name="爆裂", remaining_rounds=2, value=1))
+    hp_before = engine.state.player.current_hp
+    mon_hp_before = mon.current_hp
+    r = engine.execute_action("use_daowen", {"daowen_name": "杀伐", "x": 3, "target": mon.name})
+    assert r["success"], r
+    effs = r["execution"]["effects"]
+    preempt = [e for e in effs if e.get("baolie_preempt")]
+    assert preempt, f"爆裂应前置反射: {effs}"
+    # 玩家（攻击者）先失去6点生命（代价，不被格挡），怪物再受到6伤害
+    assert engine.state.player.current_hp == hp_before - 6, engine.state.player.current_hp
+    assert mon.current_hp == mon_hp_before - 6, mon.current_hp
+    print("  ✓ 爆裂：受到伤害前攻击者失去等量生命（先反噬后结算）")
+
+    # ---- 4) 眩晕：失去生命后苏醒（格挡全吸收时不苏醒）----
+    engine = fresh_engine("rulesync_xuanyun")
+    setup_player(engine)
+    drain_energy(engine)
+    start_battle(engine, numbers=[1])
+    mon = engine.state.enemies[0]
+    engine.execute_action("round_start", {})
+    mon.add_status(StatusEffect(name="眩晕", remaining_rounds=3, value=1))
+    mon.gain_shield(999)
+    r = engine.execute_action("use_daowen", {"daowen_name": "杀伐", "x": 1, "target": mon.name})
+    assert r["success"]
+    assert mon.has_status("眩晕"), "格挡全额吸收：未失去生命，不得苏醒"
+    mon.shield = 0
+    r = engine.execute_action("use_daowen", {"daowen_name": "杀伐", "x": 1, "target": mon.name})
+    assert r["success"]
+    assert not mon.has_status("眩晕"), "失去生命后必须立刻苏醒"
+    print("  ✓ 眩晕：失去生命后立刻苏醒（格挡全吸收不苏醒）")
+
+    # ---- 5) 定型：攻击次数与攻击力无法增加 ----
+    engine = fresh_engine("rulesync_dingxing")
+    setup_player(engine)
+    drain_energy(engine)
+    start_battle(engine, numbers=[1])
+    mon = engine.state.enemies[0]
+    engine.execute_action("round_start", {})
+    mon.add_status(StatusEffect(name="定型", remaining_rounds=3, value=1))
+    mon.dao_wen["强化"] = DaoWenInstance(dao_wen={"name": "强化"})
+    r = engine.execute_action("monster_turn", {"monster": mon.name, "acts": [
+        {"type": "use_daowen", "daowen": "强化", "x": 2, "target": mon.name},
+    ]})
+    assert r["success"]
+    blocked = [e for act in r["turn_log"] for e in act.get("execution", {}).get("effects", [])
+               if e.get("type") == "blocked"]
+    assert blocked and "定型" in blocked[0]["note"], r["turn_log"]
+    assert not mon.has_status("强化"), "定型下强化不得生效"
+    print("  ✓ 定型：强化（攻击力增加）被拦截")
+
+    # ---- 6) 冲击AOE：每个[目标]可各自耗1速闪避 ----
+    # 怪物不持有速度，无法闪避（如实"速度不足"）；轮回者方目标可耗1速闪避
+    engine = fresh_engine("rulesync_aoe_dodge")
+    setup_player(engine, daowen="杀伐")
+    drain_energy(engine)
+    start_battle(engine, numbers=[1])
+    mon = engine.state.enemies[0]
+    engine.execute_action("round_start", {})
+    engine.state.player.dao_wen["冲击"] = DaoWenInstance(dao_wen=engine._build_daowen_def("冲击"))
+    engine.state.player.current_mana = 20
+    r = engine.execute_action("use_daowen", {"daowen_name": "冲击", "x": 2,
+                                             "aoe_dodges": {mon.name: True}})
+    assert r["success"], r
+    dodge_effs = [e for e in r["execution"]["effects"] if e.get("type") == "aoe_dodge"]
+    assert dodge_effs and not dodge_effs[0]["success"] and dodge_effs[0]["reason"] == "速度不足", \
+        f"怪物无速度，闪避应如实失败: {dodge_effs}"
+    # 怪物施放冲击 → 轮回者耗1速闪避成功
+    mon.dao_wen["冲击"] = DaoWenInstance(dao_wen={"name": "冲击"})
+    spd_before = engine.state.player.current_speed
+    r = engine.execute_action("monster_turn", {"monster": mon.name, "acts": [
+        {"type": "use_daowen", "daowen": "冲击", "x": 1,
+         "aoe_dodges": {"测试者": True}},
+    ]})
+    assert r["success"], r
+    effs = r["turn_log"][0]["execution"]["effects"]
+    dodge_effs = [e for e in effs if e.get("type") == "aoe_dodge"]
+    assert dodge_effs and dodge_effs[0]["success"], effs
+    assert engine.state.player.current_speed == spd_before - 1, "AOE闪避消耗1点速度"
+    assert not [e for e in effs if e.get("type") == "aoe_damage"], "闪避成功则该目标完全免伤"
+    print("  ✓ 凡带[目标]道纹均可闪避：冲击AOE逐目标闪避（怪物无速度如实失败）")
+
+    # ---- 7) 持续X=目标自己的回合：怪物阶段挂到玩家的效果跳过当轮回终递减 ----
+    engine = fresh_engine("rulesync_duration")
+    setup_player(engine)
+    drain_energy(engine)
+    start_battle(engine, numbers=[1])
+    mon = engine.state.enemies[0]
+    engine.execute_action("round_start", {})
+    # 怪物对玩家施放减速（持续2）——走怪物回合（monster阶段）
+    mon.dao_wen["减速"] = DaoWenInstance(dao_wen={"name": "减速"})
+    r = engine.execute_action("monster_turn", {"monster": mon.name, "acts": [
+        {"type": "use_daowen", "daowen": "减速", "x": 2, "target": "测试者"},
+    ]})
+    assert r["success"], r
+    p = engine.state.player
+    assert p.has_status("减速")
+    rounds0 = max(s.remaining_rounds for s in p.status_effects if s.name == "减速")
+    engine.execute_action("round_end", {})
+    rounds1 = max((s.remaining_rounds for s in p.status_effects if s.name == "减速"), default=None)
+    assert rounds1 == rounds0, f"怪物阶段挂载的效果，本轮回终不得递减（{rounds0}→{rounds1}）"
+    # 下一完整回合后正常递减
+    engine.execute_action("round_start", {})
+    engine.execute_action("round_end", {})
+    rounds2 = max((s.remaining_rounds for s in p.status_effects if s.name == "减速"), default=None)
+    assert rounds2 == rounds0 - 1, f"经过目标自己的回合后应递减（{rounds0}→{rounds2}）"
+    print("  ✓ 持续X：按目标自己的回合递减（怪物阶段挂载跳过当轮回终）")
+
+    # ---- 8) 高爆手雷：15伤害+本回合攻击次数-1 ----
+    engine = fresh_engine("rulesync_grenade")
+    setup_player(engine)
+    drain_energy(engine)
+    start_battle(engine, numbers=[1])
+    mon = engine.state.enemies[0]
+    engine.execute_action("round_start", {})
+    from engine.models import Consumable
+    engine.state.consumables.append(Consumable(name="高爆手雷", effect="", current_uses=2, max_uses=2))
+    mon_hp = mon.current_hp
+    r = engine.execute_action("use_consumable", {"name": "高爆手雷", "target": mon.name})
+    assert r["success"], r
+    assert mon.current_hp == mon_hp - 15, mon.current_hp
+    assert mon.get_status_value("高爆手雷") == 1
+    # 攻击出手时攻击次数-1生效
+    hit_total = max(0, (1 if mon.has_status("迟滞") else mon.attack_count) - mon.get_status_value("高爆手雷"))
+    r = engine.execute_action("monster_turn", {"monster": mon.name, "acts": [
+        {"type": "attack_round", "target": "测试者", "dodges": [False] * max(1, hit_total)},
+    ]})
+    assert r["success"], r
+    assert len(r["turn_log"][0]["hits"]) == hit_total, "高爆手雷使本回合攻击次数-1"
+    print("  ✓ 高爆手雷：15伤害+本回合攻击次数-1（真实结算）")
+
+    # ---- 9) 龙血瓶：过热转耐久 + 自由提取 ----
+    engine = fresh_engine("rulesync_vial")
+    setup_player(engine)
+    drain_energy(engine)
+    from engine.models import Consumable
+    engine.state.consumables.append(Consumable(name="龙血瓶", effect="", current_uses=10, max_uses=10))
+    p = engine.state.player
+    p.current_hp = p.blood_limit - 2
+    engine.state.player.dao_wen["再生"] = DaoWenInstance(dao_wen=engine._build_daowen_def("再生"))
+    engine.state.player.current_mana = 10
+    r = engine.execute_action("use_daowen", {"daowen_name": "再生", "x": 3, "target": p.name})
+    assert r["success"], r
+    vial = engine.state.consumables[0]
+    assert vial.current_uses == 10 + 7, f"过热9-2=7点应转耐久: {vial.current_uses}"
+    r = engine.execute_action("withdraw_dragon_blood_vial", {"alloc": {p.name: 5}})
+    assert r["success"], r
+    vial = engine.state.consumables[0]
+    assert vial.current_uses == 12 and r["stored_remaining"] == 2, (vial.current_uses, r)
+    print("  ✓ 龙血瓶：过热回复转耐久，可随时提取分配")
+
+
 def run_all_tests():
     print("=" * 60)
     print("第四宇宙游戏引擎 - 测试套件（全部真实结算）")
@@ -1002,6 +1220,7 @@ def run_all_tests():
         test_events_system,
         test_five_relics,
         test_friend_mutation_defect,
+        test_rule_sync_2026_08_04,
     ]
 
     passed = failed = 0

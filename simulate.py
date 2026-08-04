@@ -618,42 +618,50 @@ class Policy:
 
     # ---- 战斗：怪物回合 ----
     def monster_acts(self, engine: GameEngine, monster) -> list[dict]:
-        """扮演怪物做最优决策：在出手次数预算内先上关键面板道纹，其余全部输出。
+        """扮演怪物做最优决策。
 
-        预算必须与引擎结算口径一致（出手=当前回合÷3向上取整，±活力/无力），
-        否则整轮行动会被引擎合法拒绝。
+        出手结构（README现行正文）：每回合固定发动一次攻击和发动一种道纹，
+        互不抢夺，不随回合增加；活力攻击出手+X、狂暴+1、无力-X。
+        策略：1次道纹出手上当前最需要的面板道纹，其余攻击出手全部输出。
         """
-        base = CombatEngine.monster_act_count(engine.state.current_round)
-        allowed = max(0, base + monster.get_status_value("活力") - monster.get_status_value("无力"))
-        has_kuangbao = monster.has_status("狂暴")
-        if allowed <= 0 and not has_kuangbao:
+        attack_acts = max(0, CombatEngine.monster_attack_acts(monster)
+                          - monster.get_status_value("无力"))
+        daowen_acts = CombatEngine.monster_daowen_acts(monster)
+        if attack_acts <= 0 and daowen_acts <= 0:
             return []  # 引擎将如实跳过（无出手次数）
 
         defender = engine.state.player
         hit_total = 1 if monster.has_status("迟滞") else monster.attack_count
-        attack = {
-            "type": "attack_round",
-            "target": defender.name if defender else "",
-            "dodges": self.dodge_decisions(engine, monster, hit_total),
-        }
+        hit_total = max(0, hit_total - monster.get_status_value("高爆手雷"))
 
-        # 一次性增益道纹占用手数：预算内优先上 buff，最后留至少1次输出
-        buffs = []
-        for dw in ["飞行", "活力", "必中", "自愈", "庇护", "强化"]:
-            if dw in monster.dao_wen and not monster.has_status(dw):
-                buffs.append(dw)
-        buff_budget = max(0, allowed - 1) if not has_kuangbao else allowed  # 狂暴时输出可靠狂暴补
         acts = []
-        for dw in buffs[:buff_budget]:
-            panel_x = 1
+        # 道纹出手：按优先级选一种面板道纹（未挂上的增益优先，其次输出/控制）
+        if daowen_acts > 0:
+            chosen = None
             entry = pool_entry(engine, monster.name)
-            if entry:
-                panel_x = entry["daowen"].get(dw, 1)
-            acts.append({"type": "use_daowen", "daowen": dw, "x": max(1, panel_x),
-                         "target": monster.name})
-        # 其余手数全部输出（含狂暴额外1次攻击）
-        while len(acts) < allowed + (1 if has_kuangbao else 0):
-            acts.append(dict(attack, dodges=self.dodge_decisions(engine, monster, hit_total)))
+            for dw in ["飞行", "自愈", "庇护", "必中", "强化", "活力", "狂暴",
+                       "畸变", "僵化", "坏死", "减速", "衰败", "寄生", "爆裂",
+                       "变形", "加害", "龙鳞", "逆鳞", "洗劫", "逼债", "清算", "赎金"]:
+                if dw in monster.dao_wen:
+                    is_buff = dw in ("飞行", "自愈", "庇护", "必中", "强化", "活力", "狂暴", "龙鳞")
+                    if is_buff and monster.has_status(dw):
+                        continue
+                    chosen = dw
+                    break
+            if chosen is not None:
+                panel_x = entry["daowen"].get(chosen, 1) if entry else 1
+                # 增益打自己，伤害/控制/掠夺打玩家
+                self_target = chosen in ("飞行", "自愈", "庇护", "必中", "强化", "活力", "狂暴", "变形", "爆裂", "龙鳞")
+                acts.append({"type": "use_daowen", "daowen": chosen, "x": max(1, panel_x),
+                             "target": monster.name if self_target else (defender.name if defender else ""),
+                             "target_dodge": False})
+        # 攻击出手：全部一轮攻击
+        for _ in range(attack_acts):
+            acts.append({
+                "type": "attack_round",
+                "target": defender.name if defender else "",
+                "dodges": self.dodge_decisions(engine, monster, hit_total),
+            })
         return acts
 
 
