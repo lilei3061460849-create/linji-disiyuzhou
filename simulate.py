@@ -174,8 +174,6 @@ def _effects_phrase(result: dict, engine: GameEngine) -> str:
     """效果短语：伤害/治疗/格挡/状态，命中用样本风格（硬吃/闪避+数值变化）"""
     parts = []
     ex = result.get("execution") or {}
-    if ex.get("monster_triple"):
-        parts.append("非专属×3")
     for e in ex.get("effects", []):
         t = e.get("type")
         if t in ("damage", "aoe_damage"):

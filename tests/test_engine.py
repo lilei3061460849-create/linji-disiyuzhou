@@ -593,10 +593,11 @@ def test_shell_daowen_bizhong_manqian():
         f"3层-{len(hits)}次攻击={expect}层，实际{mon.get_status_value('必中')}"
     print(f"  ✓ 必中真实生效：3层挂上→{len(hits)}次攻击各耗1层→闪避失效且全中（修复前：花钱不挂状态）")
 
-    # 缓慢：怪物对玩家（玩家速限8→预算3；怪物非专属×3→阈值3）3≤3生效→玩家无法出手
+    # 缓慢：怪物对玩家（玩家速限8→预算3；阈值X=3）3≤3生效→玩家无法出手
+    # 注：怪物×3为废案已移除，阈值直接取面板X值
     mon.dao_wen["缓慢"] = DaoWenInstance(dao_wen={"name": "缓慢"})
     r = engine.execute_action("monster_turn", {"monster": mon.name, "acts": [
-        {"type": "use_daowen", "daowen": "缓慢", "x": 1, "target": "测试者"},
+        {"type": "use_daowen", "daowen": "缓慢", "x": 3, "target": "测试者"},
     ]})
     apply = [ef for ef in r["turn_log"][0].get("execution", {}).get("effects", [])
              if ef.get("type") == "slow_apply"]

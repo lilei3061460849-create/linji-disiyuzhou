@@ -17,16 +17,8 @@ from .gamedata import REGION_EXCLUSIVE_DAOWEN
 class CombatEngine:
     """战斗计算引擎"""
     
-    # 副本专属道纹（不×3）——以 gamedata 为准
+    # 副本专属道纹归属表（校验怪物池道纹合法性用）——以 gamedata 为准
     REGION_EXCLUSIVE_DAOWEN = REGION_EXCLUSIVE_DAOWEN
-    
-    # 怪物原始道纹+转化道纹（这些也不×3，因为是怪物自己的）
-    MONSTER_OWN_DAOWEN = {
-        "狂暴","强化","活力","减速","必中","自愈","飞行",
-        "愤怒","自残","无神","借力","弱化","自食","兴奋","无力",
-        "迟滞","急速","加速","眩晕","洞察","蒙蔽","滋养","衰败",
-        "寄生","滑翔","坠落",
-    }
     
     # AOE/非单体判定的道纹（其余作用于敌方单体的道纹均带[目标]，可被闪避）
     UNTARGETED_DAOWEN = {"冲击", "坠落"}
@@ -38,27 +30,6 @@ class CombatEngine:
     
     # ========== 伤害计算 ==========
     
-    def is_monster_triple(self, dao_wen_name: str, entity: Entity) -> int:
-        """
-        怪物非专属道纹效果×3规则
-        规则：怪物使用非专属道纹效果×3，副本专属道纹按原效果结算
-        返回：效果倍率（1或3）
-        """
-        if entity.entity_type != "怪物":
-            return 1
-        
-        # 怪物自己的道纹（原始+转化）不×3
-        if dao_wen_name in self.MONSTER_OWN_DAOWEN:
-            return 1
-        
-        # 副本专属道纹不×3
-        region = self.state.current_region
-        if region in self.REGION_EXCLUSIVE_DAOWEN:
-            if dao_wen_name in self.REGION_EXCLUSIVE_DAOWEN[region]:
-                return 1
-        
-        # 其他道纹（核心道纹等）×3
-        return 3
     
     def calculate_attack_damage(
         self, 

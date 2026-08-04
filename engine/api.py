@@ -2628,7 +2628,7 @@ class GameEngine:
         }
 
     def _execute_daowen_effect(self, name: str, calc: dict, caster: Entity, target: Entity, extra: dict = None) -> dict:
-        """执行道纹效果（怪物非专属道纹效果×3；特殊机制道纹在此真实分发）"""
+        """执行道纹效果（特殊机制道纹在此真实分发）"""
         result = {"daowen": name, "effects": []}
         extra = extra or {}
 
@@ -2645,15 +2645,10 @@ class GameEngine:
                 "duration": duration, "value": value,
             })
 
-        multiplier = self.combat.is_monster_triple(name, caster)
-        if multiplier > 1:
-            result["monster_triple"] = True
-            result["multiplier"] = multiplier
-
         # ============ 特殊机制道纹（完全接管，不走通用分支）============
 
         if name == "超频":
-            boost = calc["speed_boost"] * multiplier
+            boost = calc["speed_boost"]
             caster.current_speed += boost
             result["effects"].append({"type": "speed_boost", "target": caster.name, "amount": boost})
             return result
@@ -2661,7 +2656,7 @@ class GameEngine:
         if name == "减速":
             _spd_before = target.current_speed
             target.current_speed = max(0, math.ceil(target.current_speed / 2))
-            add_status(target, "减速", calc["duration"], calc["x"] * multiplier)
+            add_status(target, "减速", calc["duration"], calc["x"])
             result["effects"].append({"type": "speed_halved", "target": target.name,
                                       "speed_after": target.current_speed})
             if target is self.state.player and _spd_before > target.current_speed:
@@ -2683,7 +2678,7 @@ class GameEngine:
         if name == "自食":
             reduced = min(calc["attack_reduction"], caster.attack_power)
             caster.attack_power -= reduced
-            heal = caster.heal(calc["heal"] * multiplier)
+            heal = caster.heal(calc["heal"])
             result["effects"].append({"type": "attack_to_heal", "target": caster.name,
                                       "attack_reduced": reduced, **heal})
             return result
@@ -2725,7 +2720,7 @@ class GameEngine:
             return result
 
         if name == "赎金":
-            amount = calc["shard_steal"] * multiplier
+            amount = calc["shard_steal"]
             stolen = 0
             if target is self.state.player:
                 available = self.state.shards + self.state.fake_shards
@@ -2754,7 +2749,7 @@ class GameEngine:
             return result
 
         if name == "假钞":
-            gained = calc["fake_shards"] * multiplier
+            gained = calc["fake_shards"]
             self.state.fake_shards += gained
             result["effects"].append({"type": "fake_shards", "amount": gained,
                                       "fake_shards_now": self.state.fake_shards})
@@ -2778,8 +2773,8 @@ class GameEngine:
             return result
 
         if name == "缓慢":
-            # 缓慢X：本回合若目标单轮出手次数≤X则无法出手（怪物非专属×3作用于阈值）
-            threshold = calc["x"] * multiplier
+            # 缓慢X：本回合若目标单轮出手次数≤X则无法出手
+            threshold = calc["x"]
             acts = calc.get("target_action_count", 0)
             if acts <= threshold:
                 add_status(target, "缓慢", 1, threshold)
@@ -2792,7 +2787,7 @@ class GameEngine:
 
         if name == "必中":
             # 必中X：自身下X次攻击附带必中（持续至层数耗尽，攻击时逐层消耗）
-            charges = calc["guaranteed_hits"] * multiplier
+            charges = calc["guaranteed_hits"]
             add_status(caster, "必中", 0, charges)
             result["effects"].append({
                 "type": "status_added", "target": caster.name, "status": "必中",
@@ -2802,7 +2797,7 @@ class GameEngine:
             return result
 
         if name == "蒙蔽":
-            add_status(target, "蒙蔽", -1, calc["invalid_damage_hits"] * multiplier)
+            add_status(target, "蒙蔽", -1, calc["invalid_damage_hits"])
             return result
 
         if name == "抵扣":
@@ -2846,7 +2841,7 @@ class GameEngine:
 
         # 多次独立伤害（血债X：2X次1点伤害；每次独立判定闪避/龙鳞/反伤/承伤）
         if "hits" in calc and "damage_per_hit" in calc:
-            hits = calc["hits"] * multiplier
+            hits = calc["hits"]
             per = calc["damage_per_hit"]
             hit_log = []
             for i in range(hits):
@@ -2868,7 +2863,7 @@ class GameEngine:
         # 伤害类（含借 力/加害/龙鳞/裂变/贯穿/承伤链/受伤钩子）
         if "target_damage" in calc:
             modifier_result = {"attack_based": False}
-            dmg_value = calc["target_damage"] * multiplier
+            dmg_value = calc["target_damage"]
             dmg_value = self.combat.apply_outgoing_damage_modifiers(caster, target, dmg_value, modifier_result)
             if target.has_status("裂变"):
                 x_split = max(1, target.get_status_value("裂变"))
@@ -2885,7 +2880,7 @@ class GameEngine:
 
         # AOE伤害（冲击：作用于施法者的敌方阵营全体，不可闪避）
         if "aoe_damage" in calc:
-            actual_aoe = calc["aoe_damage"] * multiplier
+            actual_aoe = calc["aoe_damage"]
             player_side = [e for e in ([self.state.player] + self.state.friends
                                        + self.state.employees + self.state.temp_friends) if e]
             if caster in player_side:
@@ -2904,20 +2899,19 @@ class GameEngine:
 
         # 回复类
         if "target_heal" in calc:
-            actual_heal = calc["target_heal"] * multiplier
+            actual_heal = calc["target_heal"]
             heal = target.heal(actual_heal)
             result["effects"].append({"type": "heal", "target": target.name, **heal})
 
         if "heal" in calc and "target_heal" not in calc:
-            heal = target.heal(calc["heal"] * multiplier)
+            heal = target.heal(calc["heal"])
             result["effects"].append({"type": "heal", "target": target.name, **heal})
 
         # 格挡类
         if "target_shield" in calc:
-            actual_shield = calc["target_shield"] * multiplier
+            actual_shield = calc["target_shield"]
             target.gain_shield(actual_shield)
-            result["effects"].append({"type": "shield", "target": target.name, "amount": actual_shield,
-                                      "base": calc["target_shield"], "multiplier": multiplier})
+            result["effects"].append({"type": "shield", "target": target.name, "amount": actual_shield})
 
         # 血限减少（副作用：当前生命同步削减）
         if "blood_limit_reduction" in calc:
@@ -2957,13 +2951,11 @@ class GameEngine:
             result["effects"].append({"type": "mana_gain", "source": caster.name,
                                       "mana_gained": calc["mana_gain"]})
 
-        # 状态效果添加（持续X / 持续∞，含怪物×3数值）
+        # 状态效果添加（持续X / 持续∞）
         if "duration" in calc and calc.get("duration") is not None:
             duration = calc["duration"] if calc["duration"] != 0 else -1
             effect_target = target if target else caster
             value = calc.get("x", 0)
-            if multiplier > 1:
-                value = value * multiplier
             add_status(effect_target, name, duration, value)
             # 飞行道纹生效时同步实体飞行标记
             if name == "飞行":
