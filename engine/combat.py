@@ -31,12 +31,17 @@ class CombatEngine:
         "寄生","滑翔","坠落",
     }
     
+    # 原始怪物道纹（道纹归属规则：各组起点）——【原初X】可借用范围
+    ORIGINAL_MONSTER_DAOWEN = ("狂暴", "强化", "活力", "减速", "必中", "自愈", "飞行")
+    # 持续型原始怪物道纹：效果持续期间每个[回始]重新支付异变5X（已裁定）。
+    # 必中为次数型（下X次），不参与回合计费——引擎简化模型不追踪其余数，此为映射口径，已如实标注。
+    SUSTAIN_MONSTER_DAOWEN = ("狂暴", "强化", "活力", "减速", "自愈", "飞行")
+    YUANCHU_COST_RATE = 5  # 原初X代价：异变5X（已裁定）
+    
     def __init__(self, state: GameState, dice: DiceEngine):
         self.state = state
         self.dice = dice
         self.combat_log: list[dict] = []  # 完整战斗日志
-        # 降服追踪：本回合各怪物对轮回者造成的伤害（回始归零）
-        self._round_monster_damage: dict[str, int] = {}
         # 卖身契代价替身 / 三相残韵盘本场消耗的残韵
         self.cost_proxy = None
         self._sanxiang_consumed = ""
@@ -347,11 +352,6 @@ class CombatEngine:
             attacker.current_speed += speed_gain
             result["speed_boost_from_excitement"] = speed_gain
 
-        # 降服追踪：怪物对轮回者造成的伤害计入本回合累计
-        if (attacker.entity_type in ("怪物",) and
-                self.state.player is not None and target is self.state.player):
-            self.record_monster_damage(attacker, result.get("hp_lost", 0))
-
         return result
     
     def calculate_round_attack(
@@ -411,8 +411,6 @@ class CombatEngine:
         """
         effects = []
         
-        # 降服追踪：本回合各怪物伤害记录归零
-        self._round_monster_damage = {}
         # 活血追踪归零 + 出手预算归零（回始重置本回合已用出手次数）+ 血誓戒每回合限一次归零 + 血族血脉判定归零
         for e in self.state.get_all_player_side() + self.state.get_all_enemy_side():
             e.hp_lost_this_round = 0
@@ -562,10 +560,10 @@ class CombatEngine:
                                 "heal": heal_n, "actual": h["actual_heal"]})
             entity.hp_lost_this_round = 0
 
-        # 降服结算：连续3回合未能对轮回者造成伤害的怪物被降服
-        tamed = self.settle_taming()
-        if tamed:
-            effects.extend(tamed)
+        # 多路径胜利结算（雕塑/增生/还债）
+        settled = self.settle_victory_paths()
+        if settled:
+            effects.extend(settled)
 
         return {
             "round": self.state.current_round,
@@ -617,7 +615,9 @@ class CombatEngine:
         if monster.has_status("坏死"):
             difficulty_signals.append("无法获得回复")
         
-        if len(difficulty_signals) >= 2:
+        # 困境探针（裁定⑦ 2026-08-10）：≥1个劣势信号即判定困境
+        # （原口径≥2，导致进化在模拟策略下结构性不可达：4574场埋点15314次检查，信号分布{0:14267,1:1047,≥2:0}）
+        if len(difficulty_signals) >= 1:
             return {
                 "monster": monster.name,
                 "hp_ratio": round(hp_ratio, 2),
@@ -660,123 +660,125 @@ class CombatEngine:
             state_snapshot=self.state.to_dict()
         )
     
-    # ========== 进化 ==========
+    # ========== 进化（原初X，引擎直接结算，无需DM中断） ==========
     
-    def initiate_evolution(self, monster: Entity, difficulty: dict) -> Interrupt:
+    def execute_evolution(self, monster: Entity, daowen_name: str, x: int) -> dict:
         """
-        怪物进化
-        规则非常严格，必须由DM裁定
+        特殊事件【进化】：怪物发动【原初X】（README·特殊事件）。
+        原初X：代价：异变5X。选择一种自身未持有的原始怪物道纹，[战终]前视为持有该道纹
+        （其数值固定为本次X），借用的道纹发动时照常支付其自身代价。
+        前置（怪物特性#3）：须处于困境；逃跑与进化二选一，每场战斗限一次。
         """
-        return Interrupt(
-            interrupt_type=InterruptType.EVOLUTION,
-            context={
-                "monster": monster.name,
-                "monster_type": monster.entity_type,
-                "hp_ratio": round(monster.hp_ratio, 2),
-                "current_daowen": list(monster.dao_wen.keys()),
-                "difficulty_signals": difficulty.get("signals", []),
-                "current_round": self.state.current_round,
-            },
-            description=(
-                f"{monster.name}陷入困境，选择进化！\n\n"
-                f"进化规则（必须严格遵守）：\n"
-                f"1. 只能根据当前战场困境与自身物种解剖学/生物特征量身打造自定义特性\n"
-                f"2. 严禁敷衍堆叠纯数值（禁止'获得50格挡'、'造成30伤害'等）\n"
-                f"3. 必须保证活过下一回合\n"
-                f"4. 命名不超过4个字\n"
-                f"5. 必须改变规则与机制维度\n"
-                f"6. 只能利用已有道纹、速度、法力、生命等资源作为代价，形成新规则且有明确负面效果\n"
-                f"7. 进化特性不受残韵干扰\n\n"
-                f"请DM设计进化特性。"
-            ),
-            state_snapshot=self.state.to_dict()
+        if not monster.is_alive:
+            return {"success": False, "error": f"{monster.name}已命零"}
+        if id(monster) in self._monster_evolved:
+            return {"success": False, "error": f"{monster.name}本场已选择过逃跑/进化（每场战斗限一次）"}
+        difficulty = self.check_monster_difficulty(monster)
+        if not difficulty:
+            return {"success": False, "error": f"{monster.name}未陷入困境，不能进化"}
+        if daowen_name not in self.ORIGINAL_MONSTER_DAOWEN:
+            return {"success": False,
+                    "error": f"【{daowen_name}】不是原始怪物道纹，原初X只能借用：{'、'.join(self.ORIGINAL_MONSTER_DAOWEN)}"}
+        if daowen_name in monster.dao_wen:
+            return {"success": False, "error": f"{monster.name}已持有【{daowen_name}】，原初X只能借用自身未持有的原始怪物道纹"}
+        if not isinstance(x, int) or isinstance(x, bool) or x < 1:
+            return {"success": False, "error": "X必须为≥1的整数"}
+        
+        # 支付代价：异变5X（代价从做出选择开始生效，优先于效果结算）
+        cost = self.YUANCHU_COST_RATE * x
+        pay = monster.add_mutation(cost)
+        self._monster_evolved.add(id(monster))
+        log = [f"{monster.name}发动【原初{x}】：异变+{cost}（当前{pay['mutation_total']}层）"]
+        
+        if pay["collapsed"]:
+            log.append(f"异变达到{pay['mutation_total']}层，触发【崩解】：{monster.name}直接命零，进化效果中断")
+            return {"success": True, "action": "进化·原初X", "collapsed": True,
+                    "log": log, "mutation": pay,
+                    "state": self._get_combat_state()}
+        
+        # 借用：战终前视为持有（enemies于[战终]清空，借用自动到期）
+        borrowed = DaoWen(
+            name=daowen_name,
+            formula=f"{daowen_name}X",
+            cost_type="代价",
+            cost_formula="异变5X",
+            effect_formula="",
+            is_monster_original=True,
+            tags=["原初借用"],
         )
+        monster.dao_wen[daowen_name] = DaoWenInstance(dao_wen=borrowed, x_value=x)
+        log.append(f"{monster.name}[战终]前视为持有【{daowen_name}{x}】，发动时照常支付其自身代价")
+        return {"success": True, "action": "进化·原初X", "collapsed": False,
+                "borrowed": {"name": daowen_name, "x": x},
+                "difficulty_signals": difficulty.get("signals", []),
+                "log": log, "mutation": pay,
+                "state": self._get_combat_state()}
+    
+    def get_plight_evolution_options(self) -> list[dict]:
+        """
+        供AI决策（事实源计算）：当前存活、处于困境、且本场未选择过逃跑/进化的怪物，
+        及其【原初X】可用参数。怪物特性#3：陷入困境时强制逃跑/进化二选一，每场限一次；
+        AI扮演怪物方，自行决定是否调用 declare_evolution 及参数。
+        """
+        options = []
+        for m in self.state.enemies:
+            if not m.is_alive or id(m) in self._monster_evolved:
+                continue
+            difficulty = self.check_monster_difficulty(m)
+            if not difficulty:
+                continue
+            # 异变预算：门票异变5X后若达到阈值则触发【崩解】直接命零、借用中断。
+            # max_x_by_mutation = 不崩解的最大X；超出属于合法但纯亏的自杀式选择，不禁止。
+            max_x = max(0, (Entity.MUTATION_COLLAPSE_THRESHOLD - 1 - m.mutation_count) // self.YUANCHU_COST_RATE)
+            options.append({
+                "monster": m.name,
+                "difficulty_signals": difficulty.get("signals", []),
+                "mutation_layers": m.mutation_count,
+                "max_x_by_mutation": max_x,
+                "borrowable_daowen": [d for d in self.ORIGINAL_MONSTER_DAOWEN if d not in m.dao_wen],
+            })
+        return options
     
     # ========== 多路径胜利系统 ==========
     # 所有阈值数值均为占位初值，需经测试调整（见 AI_EXPERIENCE.md）
 
-    TAMING_REQUIRED_TURNS = 3     # 降服：连续N回合未造成伤害
     PROLIFERATION_THRESHOLD = 1.0  # 增生：累计受到恢复量达到血限的N倍（占位）
     DEBT_THRESHOLD = 10           # 还债：怪物负债（碎片为负）达到N触发（占位）
     SCULPTURE_DAMAGE = 15         # 雕塑：每点耐久可造成的伤害
     SCULPTURE_SHIELD = 20         # 雕塑：每点耐久可获得的格挡
 
-    def record_monster_damage(self, monster: Entity, damage_to_player: int) -> None:
-        """记录怪物本回合对轮回者造成的伤害（用于降服计数）"""
-        if not monster.is_alive or monster.is_subdued:
-            return
-        self._round_monster_damage[monster.name] = (
-            self._round_monster_damage.get(monster.name, 0) + max(0, damage_to_player)
-        )
-
     def settle_victory_paths(self) -> list[dict]:
         """
-        回终多路径胜利结算（依次检查：降服 / 雕塑 / 增生 / 还债）
+        回终多路径胜利结算（依次检查：雕塑 / 增生 / 还债）
         所有路径都不视为击杀，不提供碎片收益
         """
         results = []
         for monster in list(self.state.enemies):
-            if not monster.is_alive or monster.is_subdued or monster.is_sculptured \
+            if not monster.is_alive or monster.is_sculptured \
                     or monster.is_proliferated or monster.is_debt_bound:
                 continue
 
-            # 1. 降服：连续N回合未造成伤害
-            damage = self._round_monster_damage.get(monster.name, 0)
-            if damage > 0:
-                monster.no_damage_streak = 0
-            else:
-                monster.no_damage_streak += 1
-            if monster.no_damage_streak >= self.TAMING_REQUIRED_TURNS:
-                results.append(self._subdue_monster(monster))
-                continue
-
-            # 2. 雕塑：攻击次数或攻击力之一归0
+            # 1. 雕塑：攻击次数或攻击力之一归0
             if monster.attack_count <= 0 or monster.attack_power <= 0:
                 results.append(self._sculpture_monster(monster))
                 continue
 
-            # 3. 增生：累计受到恢复量达阈值
+            # 2. 增生：累计受到恢复量达阈值
             threshold = math.ceil(monster.blood_limit * self.PROLIFERATION_THRESHOLD)
             if monster.blood_limit > 0 and monster.total_healed >= threshold:
                 results.append(self._proliferate_monster(monster))
                 continue
 
-            # 4. 还债：负债达阈值（怪物shards为负）
+            # 3. 还债：负债达阈值（怪物shards为负）
             if monster.shards <= -self.DEBT_THRESHOLD:
                 results.append(self._debt_bind_monster(monster))
                 continue
 
-        # 清空本回合伤害记录
-        self._round_monster_damage = {}
         return results
 
     def _remove_from_combat(self, monster: Entity):
         """将怪物移出战斗（不视为击杀）"""
         monster.is_alive = False
-
-    def _subdue_monster(self, monster: Entity) -> dict:
-        """降服：记录面板、移出战斗、生成召唤物消耗品"""
-        panel = self._snapshot_monster_panel(monster)
-        monster.is_subdued = True
-        self._remove_from_combat(monster)
-        consumable = Consumable(
-            name=f"{monster.name}召唤物",
-            effect=(f"使用后召唤{monster.name}（{panel['attack_count']}×"
-                    f"{panel['attack_power']}/{panel['blood_limit']}）作为临时朋友作战，战终离去"),
-            current_uses=1,
-            max_uses=1,
-            kind="summon",
-            panel=panel,
-        )
-        self.state.consumables.append(consumable)
-        return {
-            "type": "taming",
-            "monster": monster.name,
-            "panel": panel,
-            "consumable": consumable.name,
-            "note": (f"{monster.name}连续{self.TAMING_REQUIRED_TURNS}回合未能对轮回者造成伤害，"
-                     f"已被降服，化为消耗品【{consumable.name}】"),
-        }
 
     def _sculpture_monster(self, monster: Entity) -> dict:
         """雕塑：攻击次数或攻击力归0→化为雕塑消耗品（耐久=血限5%）"""
@@ -835,57 +837,6 @@ class CombatEngine:
                      f"还清负债（支付{-monster.shards}碎片）后该员工离队"),
         }
 
-    def _snapshot_monster_panel(self, monster: Entity) -> dict:
-        """记录怪物当前面板快照（用于降服召唤物）"""
-        return {
-            "name": monster.name,
-            "entity_type": monster.entity_type,
-            "attack_count": monster.attack_count,
-            "attack_power": monster.attack_power,
-            "blood_limit": monster.blood_limit,
-            "current_hp": monster.current_hp,
-            "is_flying": monster.is_flying,
-            "dao_wen": {
-                k: {"name": v.dao_wen.name, "x_value": v.x_value}
-                for k, v in monster.dao_wen.items()
-            },
-        }
-
-    def summon_tamed_friend(self, consumable: Consumable) -> dict:
-        """使用降服召唤物：召唤临时朋友（战终离去）"""
-        if consumable.kind != "summon" or not consumable.panel:
-            return {"success": False, "error": "非召唤物或无面板记录"}
-        if consumable.is_depleted:
-            return {"success": False, "error": "消耗品已耗尽"}
-        panel = consumable.panel
-        friend = Entity(
-            name=panel["name"],
-            entity_type="临时朋友",
-            blood_limit=panel["blood_limit"],
-            current_hp=panel["current_hp"],
-            attack_count=panel["attack_count"],
-            attack_power=panel["attack_power"],
-            is_flying=panel.get("is_flying", False),
-        )
-        for k, info in panel.get("dao_wen", {}).items():
-            friend.dao_wen[k] = DaoWenInstance(
-                dao_wen=DaoWen(
-                    name=info["name"], formula="", cost_type="",
-                    cost_formula="", effect_formula=""
-                ),
-                x_value=info.get("x_value", 0),
-            )
-        self.state.temp_friends.append(friend)
-        consumable.use()
-        return {
-            "success": True,
-            "type": "summon_tamed_friend",
-            "friend": friend.name,
-            "panel": panel,
-            "consumable_remaining": consumable.current_uses,
-            "note": f"{friend.name}作为临时朋友加入战斗，战终离去",
-        }
-
     def use_sculpture(self, consumable: Consumable, target: Entity = None,
                       mode: str = "damage") -> dict:
         """
@@ -922,7 +873,7 @@ class CombatEngine:
                 "note": f"雕塑赋能：对{target.name}造成{self.SCULPTURE_DAMAGE}点伤害",
             }
 
-    # 兼容旧接口名
+    # 兼容旧接口名（降服已删，改为指代多路径胜利结算）
     def settle_taming(self) -> list[dict]:
         return self.settle_victory_paths()
 
@@ -1192,7 +1143,7 @@ class CombatEngine:
             removed = 0
             for e in list(self.state.enemies):
                 if e.is_alive and removed < calc["targets_removed"]:
-                    e.is_alive = False; e.is_subdued = True; removed += 1
+                    e.is_alive = False; e.removed_without_kill = True; removed += 1
             result["effects"].append({"type": "seal", "removed": removed})
 
         # ---- 持续/触发状态（status_added）----
@@ -1359,22 +1310,46 @@ class CombatEngine:
         return logs
 
     # ========== 怪物回合（引擎自主驱动） ==========
-    # 怪物已激活的道纹（按战斗重置）
-    _monster_activated: dict = {}
-
     # 成长/控场道纹激活优先级
     MONSTER_ACTIVATE_PRIORITY = ["活力", "强化", "狂暴", "必中", "蒙蔽", "坏死", "减速", "僵化", "自愈", "庇护", "飞行"]
+
+    # 怪物已激活的道纹 / 已进化的怪物（均按战斗重置）
+    _monster_activated: dict = {}
+    _monster_evolved: set = set()  # 进化（原初X）：本场已进化的怪物 id 集合
 
     def reset_monster_activation(self):
         """战始重置怪物激活状态与战斗遗物状态"""
         self._monster_activated = {}
+        self._monster_evolved = set()  # 进化（原初X）：每场战斗限一次
         self.cost_proxy = None
         self._sanxiang_consumed = ""
 
+    def _monster_sustain_billing(self, m: Entity, activated: set) -> Optional[str]:
+        """
+        持续型原始道纹的回合计费（已裁定：改计费粒度）：
+        已激活的持续型原始怪物道纹，效果持续期间每个[回始]重新支付异变5X；
+        达阈值触发【崩解】直接命零，回合计费中断。返回崩解时正在计费的道纹名或None。
+        调用时点：怪物回合内的道纹出手激活之前（即计费按上个回合已激活的集合结算，不重复收本场激活当回合）。
+        """
+        for g in list(activated):
+            if g in self.SUSTAIN_MONSTER_DAOWEN and g in m.dao_wen:
+                pay = m.add_mutation(self.YUANCHU_COST_RATE * m.dao_wen[g].x_value)
+                if pay["collapsed"]:
+                    return g
+        return None
+
     def _monster_activate(self, m: Entity, activated: set):
-        """怪物道纹出手：激活一个未激活的成长/控场道纹，返回道纹名或None"""
+        """
+        怪物道纹出手：激活一个未激活的成长/控场道纹，返回道纹名或None。
+        原始怪物道纹以【异变】为代价（道纹归属规则#1）：激活时支付异变5X（X=面板数值）；
+        异变达阈值触发【崩解】直接命零，返回 "崩解:道纹名"，本次激活效果中断。
+        """
         for g in self.MONSTER_ACTIVATE_PRIORITY:
             if g in m.dao_wen and g not in activated:
+                if g in self.ORIGINAL_MONSTER_DAOWEN:
+                    pay = m.add_mutation(self.YUANCHU_COST_RATE * m.dao_wen[g].x_value)
+                    if pay["collapsed"]:
+                        return "崩解:" + g
                 activated.add(g)
                 if g == "强化":
                     m.attack_power += m.dao_wen[g].x_value
@@ -1425,9 +1400,20 @@ class CombatEngine:
                 if not m.is_alive:
                     continue
             act = self._monster_activated.setdefault(id(m), set())
+            # 持续型原始道纹回合计费（道纹出手激活之前）
+            if not whiteboard:
+                cg = self._monster_sustain_billing(m, act)
+                if cg is not None:
+                    results.append({"monster": m.name, "collapsed": cg,
+                                    "note": f"持续型道纹【{cg}】回合计费后异变达{m.mutation_count}层，触发【崩解】直接命零"})
+                    continue
             # 道纹出手（白板第1回合不激活）
             if not whiteboard:
                 an = self._monster_activate(m, act)
+                if an and an.startswith("崩解:"):
+                    results.append({"monster": m.name, "collapsed": an[3:],
+                                    "note": f"支付异变后达{m.mutation_count}层，触发【崩解】直接命零，激活效果中断"})
+                    continue
                 if an in ("蒙蔽", "坏死", "减速", "僵化"):
                     self._apply_control_to_player(an, m, player)
                     results.append({"monster": m.name, "daowen_activated": an})

@@ -65,7 +65,7 @@ def test_drawn_monster_panel_matches_readme_exactly():
     """正常路径：抽到的怪物面板(攻击次数/攻击力/血限)与道纹X值必须与README定义完全一致"""
     pools = parse_monster_pool(README_PATH)
     known = next(m for m in pools["龙心谷"] if m["name"] == "熔岩蜥")
-    assert (known["attack_count"], known["attack_power"], known["blood_limit"]) == (3, 10, 114)
+    assert (known["attack_count"], known["attack_power"], known["blood_limit"]) == (3, 6, 234)
     assert known["dao_wen"] == {"加害": 2, "狂暴": 3, "冲击": 3}
 
 

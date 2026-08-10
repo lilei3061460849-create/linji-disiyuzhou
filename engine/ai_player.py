@@ -179,6 +179,8 @@ SYSTEM_PROMPT = """你是第四宇宙游戏的AI玩家。你的任务是根据�
 - pre_battle_action: 局外行动（params: sub_action + tier等）
 - use_daowen: 发动道纹（params: daowen_name, x, target）
 - attack: 普通攻击（params: target_selections）
+- declare_evolution: 怪物进化·发动原初X（params: monster, daowen, x；仅当可用行动中出现evolution项且available=true时可对其中列出的困境怪物使用，x不得超过max_x_by_mutation，否则触发崩解自杀）
+- monster_phase: 怪物回合
 - round_start: 回始
 - round_end: 回终
 - battle_start: 战始
