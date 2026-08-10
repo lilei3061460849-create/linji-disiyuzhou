@@ -40,35 +40,23 @@ class DaoWenInstance:
     """道纹实例 - 角色持有的道纹"""
     dao_wen: DaoWen
     x_value: int = 0            # 当前X值（自由控X规则）
-    cooldown_remaining: int = 0 # 冷却剩余（以战斗场数计，战终-1，归零可用）
+    cooldown_remaining: int = 0 # 冷却剩余
     is_frozen: bool = False     # 是否被封印
-    unique_used: bool = False   # 【唯一】代价：本次轮回中已使用过
     
     def can_use(self) -> bool:
-        return not self.is_frozen and self.cooldown_remaining <= 0 and not self.unique_used
-    
-    def reason_unusable(self) -> str:
-        if self.is_frozen:
-            return "被封印"
-        if self.cooldown_remaining > 0:
-            return f"冷却剩余{self.cooldown_remaining}场"
-        if self.unique_used:
-            return "唯一代价已使用"
-        return ""
+        return not self.is_frozen and self.cooldown_remaining <= 0
 
 
 @dataclass
 class Spell:
-    """法术定义（法术库法术与自创法术通用）"""
+    """法术定义"""
     name: str
     required_daowen: list[str]   # 所需道纹列表
     trigger_condition: str       # 触发条件
     effect_flow: str             # 生效流程
     rank: int = 1                # 阶级 = 所需道纹种数
     custom_conditions: list[str] = field(default_factory=list)
-    # 自创法术的完整spec（积木步骤/循环/触发/所需道纹）；None=法术库法术（spec查SPELL_LIBRARY）
-    spec: dict = None
-
+    
     def to_dict(self) -> dict:
         return {
             "name": self.name,
@@ -76,12 +64,8 @@ class Spell:
             "trigger_condition": self.trigger_condition,
             "effect_flow": self.effect_flow,
             "rank": self.rank,
-            "custom_conditions": self.custom_conditions,
-            "spec": self.spec,
+            "custom_conditions": self.custom_conditions
         }
-
-    def is_custom(self) -> bool:
-        return self.spec is not None
 
 
 @dataclass
@@ -102,32 +86,43 @@ class Consumable:
     effect: str
     current_uses: int = 1
     max_uses: int = 1
-    
+    # kind: normal(普通) / summon(降服召唤物，记录面板，使用召唤临时朋友) / sculpture(雕塑，1耐久=15伤害或20格挡)
+    #       / dragon_heart(龙心谷"炼心"产出，耐久=可抵消的同类型代价点数)
+    kind: str = "normal"
+    # summon 专用：记录被降服怪物的当前面板
+    panel: Optional[dict] = None
+    # dragon_heart 专用：可抵消的代价类型（流血/衰老/疲惫）
+    dragon_heart_type: str = ""
+
     @property
     def is_depleted(self) -> bool:
         return self.current_uses <= 0
-    
+
     def use(self) -> int:
         if self.is_depleted:
             return 0
         self.current_uses -= 1
         return self.current_uses
-    
+
     def merge(self, other: 'Consumable') -> bool:
-        """合并相同消耗品"""
+        """合并相同消耗品（召唤物/雕塑等绑定特定怪物的不可合并）"""
         if self.name != other.name or self.effect != other.effect:
+            return False
+        if self.kind != "normal" or other.kind != "normal":
             return False
         self.current_uses += other.current_uses
         self.max_uses += other.max_uses
         return True
-    
+
     def to_dict(self) -> dict:
         return {
             "name": self.name,
             "effect": self.effect,
             "current_uses": self.current_uses,
             "max_uses": self.max_uses,
-            "is_depleted": self.is_depleted
+            "is_depleted": self.is_depleted,
+            "kind": self.kind,
+            "panel": self.panel,
         }
 
 
@@ -138,12 +133,6 @@ class StatusEffect:
     remaining_rounds: int        # 剩余回合（-1=∞）
     value: int = 0               # 效果数值
     source: str = ""             # 来源
-    # 持续X新语义（README「基础定义」）：效果持续X个目标自己的回合，
-    # 在目标回合结束时X-1。记录挂载时点，回终递减时据此跳过
-    # 「挂载后尚未经过承载者自己回合结束」的首次递减。
-    applied_round: int = 0       # 挂载时回合（0=不追踪，沿用旧口径）
-    applied_phase: str = ""      # 挂载时阶段（"player"/"monster"）
-    meta: dict = field(default_factory=dict)  # 附加数据（如承伤目标名）
     
     @property
     def is_permanent(self) -> bool:
@@ -223,23 +212,65 @@ class Entity:
     shield: int = 0              # 格挡
     status_effects: list[StatusEffect] = field(default_factory=list)
     is_flying: bool = False      # 飞行状态
-    
-    # 怪物/资源专属
-    mutation: int = 0            # 异变层数（达到50层时失去意志，变为怪物）
-    shards: int = 0              # 角色自带碎片（罪孽都市怪物战始自带碎片）
-    spawn_blood_limit: int = 0   # 战始血限（碎片奖励按战始血限结算）
-    
-    # 战斗记账（回始重置）
-    dodge_streak: int = 0        # 本场战斗累计闪避次数（急速判定用）
-    hp_lost_this_round: int = 0  # 本回合累计失去生命（活血判定用）
-    
+
+    # 降服追踪：连续未能对轮回者造成伤害的回合数
+    no_damage_streak: int = 0
+    is_subdued: bool = False     # 是否已被降服（移出战斗）
+    hp_lost_this_round: int = 0   # 本回合累计失去的生命（活血用，回始归零）
+    actions_used_this_round: int = 0  # 本回合已消耗的出手次数（回始归零，用于出手预算校验）
+
+    # 多路径胜利追踪
+    shards: int = 0              # 怪物自带碎片（罪孽都市）/ 负值表示负债（还债）
+    total_healed: int = 0        # 累计受到的恢复量（增生；超出血限部分按双倍计）
+    is_sculptured: bool = False  # 已化为雕塑（攻击次数或攻击力归0）
+    is_proliferated: bool = False  # 已被增生吸收进死者之书
+    is_debt_bound: bool = False  # 已因还债成为员工
+
     # 存活
     is_alive: bool = True
+
+    # 出战支援（罪孽都市专属机制1，全局对所有[员工]生效）：
+    # [员工]默认待命不占场；is_deployed=True 才计入战场与工资结算。
+    # 玩家/怪物/[朋友]/[临时朋友]与"还债"转化来的[员工]默认直接为True，保持既有行为不变。
+    is_deployed: bool = True
+    deployed_at_round: int = 0  # 派遣时 state.current_round 的原始值（用于结算"实际出场回合数"）
+
+    # 撤退（任意[朋友]/[员工]即将受到足以使当前命零的伤害时自动触发）：
+    # 保留当前生命，不再计入本场战斗(get_all_player_side排除)，无法再次加入本场战斗；
+    # 但未死亡，[战终]后随存活[朋友]/[员工]一同留存，下一场重置为False可正常参战。
+    has_retreated: bool = False
+
+    # 血誓戒：本回合是否已经触发过"首次主动支付流血代价"奖励（回始归零）
+    blood_oath_used_this_round: bool = False
+    # 钱袋：[战始]时的血限快照，用于按"[战始][血限]×2%"结算额外碎片（增殖等战斗中改变血限不影响此值）
+    battle_start_blood_limit: int = 0
+
+    # 寒冰法力（初拥之夜特性）：本回合内，持有该特性者对我方发动道纹累计消耗的法力（含对自己发动）
+    # 回始归零；每满10点使当前回合出手次数-1（以叠加"无力"状态实现）
+    mana_inflicted_this_round: int = 0
+
+    # 血族血脉（初拥之夜特性）：本回合是否已造成过伤害（[回终]判定：造成过则回复等量，否则流血20）
+    damage_dealt_this_round: int = 0
+    # 赤族诅咒标记：entity_type=="赤族"的实体[回终]固定流血20；is_chizu_of记录其主人名字(仅用于血食校验)
+    is_chizu_of: str = ""
+
+    def __post_init__(self):
+        if self.battle_start_blood_limit == 0:
+            self.battle_start_blood_limit = self.blood_limit
+
     
     @property
     def action_count(self) -> int:
-        """出手次数 = 速限 / 3，向上取整"""
-        return math.ceil(self.speed_limit / 3) if self.speed_limit > 0 else 0
+        """出手次数：轮回者=速限/3向上取整；[朋友]/[员工](微光者，面板无速限)=攻击次数/3向上取整；
+        怪物走独立的"固定1次攻击+1次道纹"规则(见battle_flow.get_monster_actions)，不使用本属性。
+        活力+X、无力-X 对两种口径均生效。"""
+        if self.entity_type in ("朋友", "员工"):
+            base = math.ceil(self.attack_count / 3) if self.attack_count > 0 else 0
+        else:
+            base = math.ceil(self.speed_limit / 3) if self.speed_limit > 0 else 0
+        base += self.get_status_value("活力")
+        base -= self.get_status_value("无力")
+        return max(0, base)
     
     @property
     def is_full_hp(self) -> bool:
@@ -281,8 +312,7 @@ class Entity:
         self.current_hp = max(0, self.current_hp - remaining)
         detail["actual_damage"] = remaining
         detail["hp_after"] = self.current_hp
-        if remaining > 0:
-            self.hp_lost_this_round += remaining
+        self.hp_lost_this_round += remaining  # 活血追踪
         
         if self.current_hp <= 0:
             detail["died"] = True
@@ -291,18 +321,19 @@ class Entity:
         return detail
     
     def heal(self, amount: int) -> dict:
-        """回复生命（坏死：无法获得[回复]）"""
+        """回复生命"""
         before = self.current_hp
-        if self.has_status("坏死"):
-            amount = 0
         self.current_hp = min(self.blood_limit, self.current_hp + amount)
         actual = self.current_hp - before
+        overheal = amount - actual
+        # 增生追踪：超出血限的恢复按双倍计入累计恢复量
+        self.total_healed += actual + overheal * 2
         return {
             "heal_amount": amount,
             "actual_heal": actual,
             "hp_before": before,
             "hp_after": self.current_hp,
-            "overheal": amount - actual
+            "overheal": overheal
         }
     
     def gain_shield(self, amount: int) -> int:
@@ -337,30 +368,20 @@ class Entity:
     def get_status_value(self, name: str) -> int:
         return sum(s.value for s in self.status_effects if s.name == name and not s.is_expired)
     
-    def tick_status_effects(self, skip_ids: set = None) -> list:
-        """回合递减，返回已过期的状态对象（含meta，供变形等效果回滚）。
-        skip_ids 中的效果本轮不递减（持续X=目标自己的回合：挂载后尚未经过
-        承载者自己回合结束的效果，跳过本次回终递减）。"""
+    def tick_status_effects(self) -> list[str]:
+        """回合递减，返回已过期的效果名"""
         expired = []
         remaining = []
         for s in self.status_effects:
-            if skip_ids is not None and id(s) in skip_ids:
-                remaining.append(s)
-                continue
             if not s.tick():
-                expired.append(s)
+                expired.append(s.name)
             else:
                 remaining.append(s)
         self.status_effects = remaining
         return expired
     
-    def add_status(self, effect: StatusEffect, round_now: int = 0, phase: str = ""):
-        """添加状态效果，同名合并。round_now/phase 记录挂载时点
-        （持续X按目标自己的回合递减用）"""
-        if round_now:
-            effect.applied_round = round_now
-        if phase:
-            effect.applied_phase = phase
+    def add_status(self, effect: StatusEffect):
+        """添加状态效果，同名合并"""
         for existing in self.status_effects:
             if existing.merge_with(effect):
                 return
@@ -382,6 +403,14 @@ class Entity:
             "shield": self.shield,
             "is_flying": self.is_flying,
             "is_alive": self.is_alive,
+            "is_deployed": self.is_deployed,
+            "has_retreated": self.has_retreated,
+            "battle_start_blood_limit": self.battle_start_blood_limit,
+            "deployed_at_round": self.deployed_at_round,
+            "no_damage_streak": self.no_damage_streak,
+            "is_subdued": self.is_subdued,
+            "shards": self.shards,
+            "total_healed": self.total_healed,
             "hp_ratio": round(self.hp_ratio, 2),
             "dao_wen": {k: v.dao_wen.name for k, v in self.dao_wen.items()},
             "spells": [s.name for s in self.spells],
@@ -416,7 +445,6 @@ class GameState:
     
     # 资源
     shards: int = 20            # 碎片
-    fake_shards: int = 0        # 假碎片（战斗中失去碎片时优先失去假碎片，战终清空）
     
     # 遗物与消耗品
     relics: list[Relic] = field(default_factory=list)
@@ -440,45 +468,71 @@ class GameState:
     sealed_candidate: Optional[dict] = None
     
     # 员工相关
-    blacklist_level: int = 0     # 黑名单计数（每累计3名员工离队加入黑名单）
+    blacklist_level: int = 0     # 黑名单计数（每累计3名员工因拒付工资/解雇/死亡离队+1，≥3触发is_blacklisted）
     is_blacklisted: bool = False
 
+    # 战终工资结算（出战支援）：{员工名: 应付工资}，非空时 battle_end 阻塞，需先逐个 pay_employee_wage 决策
+    pending_wage_decisions: dict[str, int] = field(default_factory=dict)
+
+    # 雇佣后"发现并选择一种转化道纹"：{员工名: [3个候选道纹名]}，未选择前该员工暂不持有转化道纹
+    pending_daowen_choices: dict[str, list[str]] = field(default_factory=dict)
+
+    # 事件登记的"下一场战斗额外出现的怪物"（如龙心谷"追求者·拿走口粮"），[战始]出怪时读取并额外加入
+    forced_monsters_next_battle: list[dict] = field(default_factory=list)
+
+    # 员工叛变：待处理标记（[战终]检查命中后置真，三个处理分支任一生效后清空）
+    rebellion_active: bool = False
+    # 员工叛变·镇压子战斗：进行中标记（employees已搬入enemies，需resolve_rebellion_battle结算）
+    rebellion_in_progress: bool = False
+    # 员工叛变·让利：每场工资在原公式基础上的固定加成（本次轮回持续生效）
+    wage_bonus: int = 0
+
+    # 最终的冠冕/第8场死斗：进行中标记 + 当前该谁出手("player_side"/"opponent_side")
+    in_final_duel: bool = False
+    duel_turn: str = ""
+
+    # 龙心谷"炼心"：待生效标记；下一次玩家实际支付数值型代价后转化为对应类型的【××龙心】消耗品
+    pending_lianxin: bool = False
+    # 炼心在战斗中发动时不消耗出手，改为"下次局外行动多消耗1点精力"，此处累计待结算的额外精力消耗
+    pending_energy_penalty: int = 0
+
+    # 熔谷终音"真龙之心"：龙性资源池 + 已解锁的龙族特性名单
+    dragon_nature: int = 0
+    dragon_traits: list[str] = field(default_factory=list)
+    # 震岳龙躯剩余持续回合数（0=未激活）；断尾求生已消耗的特性记录见dragon_traits变化
+    dragon_body_shield_rounds: int = 0
+    # 断尾求生：预先声明"若本次伤害会使自身命零，移除该龙族特性来抵消伤害"；为空=未声明保护
+    dragon_tail_sacrifice_declared: str = ""
+
+    # 终音法器（三选一/四选一后获得的具名法器，跨副本共享同一个列表）
+    artifacts_owned: list[str] = field(default_factory=list)
+    # 红头绳解锁的局外行动"献祭"
+    has_sacrifice_action: bool = False
+    # 罪业金库/教父左轮等法器自身状态
+    godfather_revolver_uses: int = 0
+    # 死斗胜利后待选择的终音法器所属副本（非空=等待choose_terminal_artifact）
+    pending_terminal_region: str = ""
+    # 共心环：本场战斗选定的可共享龙心类型（空=未选定/未持有共心环）
+    shared_dragon_heart_type: str = ""
+    # 负岳碑(终音法器)：预先声明"下一次这些[朋友]/[员工]即将撤退时，改为流血20取消撤退"的名单
+    fuyuebei_declared: list[str] = field(default_factory=list)
+
+    # 初拥之夜：待选择标记 + 已选过的1~8号特性(每项限一次，9号不计入) + 已获得的赤族
+    pending_first_embrace: bool = False
+    # 仅当初拥之夜是由死斗胜利(领取猩红尖牙)触发时为True：完成本次选择(非"封存血脉")后应紧接着完整封存
+    seal_pending_after_embrace: bool = False
+    first_embrace_traits: list[str] = field(default_factory=list)
+    chizu_names: list[str] = field(default_factory=list)
+    # 真理眼冷却：剩余需要经过的战斗场数(战终-1，0=可用)
+    truth_eye_cooldown: int = 0
+
+    
     # 异变计数
     mutation_count: int = 0
-
-    # ---- 事件系统状态 ----
-    # 《死者之书》遗言（含正误标记）：回音长廊/回忆当铺/死之传承共用
-    last_words: list[dict] = field(default_factory=list)  # [{"text": str, "wrong": bool}]
-    letter_to_next: str = ""          # 生锈邮筒：寄给下一场轮回的信（≤40字）
-    no_more_memory: bool = False      # 回忆当铺·典当：本次轮回无法再获得前世记忆
-    debt_battle_start_cost: int = 0   # 高利贷钱庄：每场[战始]失去的碎片数
-    next_battle_mods: dict = field(default_factory=dict)  # 事件给下一场战斗的修饰
-    pending_event: Optional[dict] = None   # 探索发现后等待选择的事件
-    implant_flags: dict = field(default_factory=dict)  # 手术植入：{朋友名: 剩余场次(3场后变怪物)}
-    shielded_friends: dict = field(default_factory=dict)  # 防弹插板：{朋友名: True}
-    event_relic_meta: dict = field(default_factory=dict)  # 事件遗物的元数据（如缄默面具X）
-    # 战内残韵插队声明（残韵未生效不消耗：仅在目标真实发动被命中时才消耗）
-    # [{"target_actor": str, "source_daowen": str, "resonance_type": str,
-    #   "new_daowen": str, "x": int, "same_resonance_extra": dict|None}]
-    pending_resonance: list[dict] = field(default_factory=list)
     
-    # 当前行动阶段（"player"=轮回者方回合 / "monster"=怪物回合）
-    # 用于「持续X=目标自己的回合」递减口径
-    active_phase: str = "player"
-
     # 属性点
     attribute_points: int = 0
     allocated_blood: int = 0     # 已分配血限（从属性点）
-    
-    # 战斗回合记账
-    actions_used: int = 0        # 本回合已用出手次数（回始重置为0）
-    battle_background: str = ""  # 本场战斗背景（战始选定）
-    
-    # 遗物效果记账（血誓戒每回合首次流血触发等）
-    relic_flags: dict = field(default_factory=dict)
-    
-    # 员工工资等运行参数
-    employee_wage_bonus: int = 0
     
     # 法器/遗物记录
     relic_of_choice: Optional[str] = None  # 当前选择的遗物
@@ -492,12 +546,18 @@ class GameState:
             "current_battle": self.current_battle,
             "current_region": self.current_region,
             "energy": self.energy,
-            "active_phase": self.active_phase,
             "shards": self.shards,
-            "fake_shards": self.fake_shards,
             "mutation_count": self.mutation_count,
             "blacklist_level": self.blacklist_level,
             "is_blacklisted": self.is_blacklisted,
+            "pending_wage_decisions": self.pending_wage_decisions,
+            "pending_daowen_choices": self.pending_daowen_choices,
+            "forced_monsters_next_battle": self.forced_monsters_next_battle,
+            "rebellion_active": self.rebellion_active,
+            "rebellion_in_progress": self.rebellion_in_progress,
+            "wage_bonus": self.wage_bonus,
+            "in_final_duel": self.in_final_duel,
+            "duel_turn": self.duel_turn,
             "attribute_points": self.attribute_points,
             "player": self.player.to_dict() if self.player else None,
             "friends": [f.to_dict() for f in self.friends],
@@ -511,53 +571,16 @@ class GameState:
             "artifacts": self.artifacts,
             "death_book_wisdom": self.death_book_wisdom,
             "sealed_candidate": self.sealed_candidate,
-            "last_words": self.last_words,
-            "letter_to_next": self.letter_to_next,
-            "no_more_memory": self.no_more_memory,
-            "debt_battle_start_cost": self.debt_battle_start_cost,
-            "next_battle_mods": self.next_battle_mods,
-            "pending_event": self.pending_event,
-            "implant_flags": self.implant_flags,
-            "shielded_friends": self.shielded_friends,
-            "event_relic_meta": self.event_relic_meta,
-            "pending_resonance": self.pending_resonance,
         }
     
-    def lose_shards(self, amount: int, in_battle: bool = True) -> dict:
-        """失去碎片：战斗中优先失去假碎片，允许返回明细"""
-        amount = max(0, amount)
-        fake_used = 0
-        if in_battle and self.fake_shards > 0:
-            fake_used = min(self.fake_shards, amount)
-            self.fake_shards -= fake_used
-        real_used = amount - fake_used
-        self.shards -= real_used
-        return {"total": amount, "fake_used": fake_used, "real_used": real_used,
-                "shards_after": self.shards, "fake_after": self.fake_shards}
-
-    def gain_shards(self, amount: int) -> int:
-        self.shards += amount
-        return self.shards
-
-    def capture_overheal(self, overheal: int) -> Optional[str]:
-        """龙血瓶：自身或队友获得的回复量超出[血限]时，超出的回复量提升等量耐久"""
-        if overheal <= 0:
-            return None
-        vial = next((c for c in self.consumables if c.name == "龙血瓶"), None)
-        if vial is None:
-            return None
-        vial.current_uses += overheal
-        vial.max_uses += overheal
-        return f"【龙血瓶】过热回复{overheal}转为耐久（现{vial.current_uses}/{vial.max_uses}）"
-
     def get_all_player_side(self) -> list[Entity]:
-        """获取己方所有实体"""
+        """获取己方所有实体（[员工]需 is_deployed=True 才计入战场；已【撤退】者不再计入本场战斗）"""
         entities = []
         if self.player and self.player.is_alive:
             entities.append(self.player)
-        entities.extend(f for f in self.friends if f.is_alive)
-        entities.extend(e for e in self.employees if e.is_alive)
-        entities.extend(t for t in self.temp_friends if t.is_alive)
+        entities.extend(f for f in self.friends if f.is_alive and not f.has_retreated)
+        entities.extend(e for e in self.employees if e.is_alive and e.is_deployed and not e.has_retreated)
+        entities.extend(t for t in self.temp_friends if t.is_alive and not t.has_retreated)
         return entities
     
     def get_all_enemy_side(self) -> list[Entity]:

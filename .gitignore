@@ -8,6 +8,12 @@ dist/
 build/
 
 # Data (databases and saves)
+data/*.db
+data/saves/
+data/sealed_candidate.json
+data/test_*
+data/dbg*
+data/demo_*
 
 # IDE
 .vscode/
@@ -18,6 +24,3 @@ build/
 # OS
 .DS_Store
 Thumbs.db
-data/*
-!data/battle.md
-!data/battle.json

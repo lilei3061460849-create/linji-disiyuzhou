@@ -1,25 +1,27 @@
 """
 随机数引擎
-核心规则：需要随机时，先统计当前池中符合条件的选项总数，
-向玩家给出对应范围（如1～15），由玩家给出该范围内的数字，
-按当前池中的顺序结算对应选项。
+核心规则（2026-08-09 起）：需要随机时，先统计当前池中符合条件的选项总数，
+由引擎自身在该范围内生成随机数并直接结算对应选项，过程记录种子与序号以便追溯复现。
+玩家与DM不再需要手动提供数字。
 
-本引擎不生成随机数，而是：
-1. 计算范围
-2. 接收AI/玩家提供的数字
-3. 映射到具体结果
+历史遗留的手动流程（create_pool 计算范围 → 外部提供数字 → resolve_pool 结算）
+仍然保留，供需要人工指定结果的调试/回归测试/DM强制裁定场景使用，
+但游戏内实际玩法（探索、共鸣、开局遗物等）一律改为调用 auto_roll。
 """
 import hashlib
+import random
 import time
 from typing import Any, Optional
 
 
 class DiceEngine:
-    """随机数引擎 - 严格遵循规则的随机池系统"""
+    """随机数引擎 - 池系统；auto_roll 为默认自动结算入口，create_pool/resolve_pool 为手动入口"""
     
-    def __init__(self):
+    def __init__(self, seed: Optional[int] = None):
         self._pools: dict[str, list] = {}  # 命名池
         self._history: list[dict] = []     # 历史记录（可追溯）
+        self._rng = random.Random(seed)    # 引擎自身的随机源；传入seed可复现
+        self._seed = seed
     
     def create_pool(self, pool_name: str, options: list[Any]) -> dict:
         """
@@ -44,12 +46,10 @@ class DiceEngine:
             "instruction": f"请在 1~{count} 中选择一个数字（必须由玩家提供，AI禁止自行选择）"
         }
     
-    def resolve_pool(self, pool_name: str, player_number: int, keep: bool = False) -> dict:
+    def resolve_pool(self, pool_name: str, player_number: int) -> dict:
         """
         用玩家提供的数字解析池
         返回选定结果
-
-        keep=True 时选中项保留在池中（用于允许重复抽选的场景，例如出怪）
         """
         if pool_name not in self._pools:
             raise ValueError(f"池 '{pool_name}' 不存在")
@@ -74,9 +74,8 @@ class DiceEngine:
         }
         self._history.append(record)
         
-        # 从池中移除已选（允许重复抽选时保留）
-        if not keep:
-            pool.pop(selected_index)
+        # 从池中移除已选（可选，取决于场景）
+        pool.pop(selected_index)
         
         return {
             "pool_name": pool_name,
@@ -86,6 +85,30 @@ class DiceEngine:
             "record": record
         }
     
+    def randrange(self, n: int) -> int:
+        """委托给引擎自身的随机源，返回 [0, n) 之间的随机整数（供需要rng对象的调用方使用）"""
+        return self._rng.randrange(n)
+
+    def auto_roll(self, pool_name: str, options: list[Any], context: str = "") -> dict:
+        """
+        自动结算入口（默认规则）：统计范围→引擎自身生成随机数→直接结算，全程记录种子与序号。
+        返回结构与 resolve_pool 一致，额外附带 auto=True、context、rolled_number、seed。
+        """
+        if not options:
+            raise ValueError(f"池 '{pool_name}' 不能为空")
+        pool_info = self.create_pool(pool_name, options)
+        count = pool_info["count"]
+        number = self._rng.randrange(count) + 1  # 复用 resolve_pool 的 1-based 约定
+        result = self.resolve_pool(pool_name, number)
+        result["auto"] = True
+        result["context"] = context
+        result["seed"] = self._seed
+        if self._history:
+            self._history[-1]["auto"] = True
+            self._history[-1]["context"] = context
+            self._history[-1]["seed"] = self._seed
+        return result
+
     def get_pool_status(self, pool_name: str) -> Optional[dict]:
         """获取池状态"""
         if pool_name not in self._pools:
