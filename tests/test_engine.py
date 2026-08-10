@@ -466,6 +466,8 @@ def test_daowen_effects_wired():
     engine.execute_action("setup_attributes", {"name":"测试","blood_points":10,"speed_points":8,"mana_points":7})
     engine.execute_action("setup_choose_daowen", {"daowen":"杀伐"})
     player = engine.state.player
+    # 本测试连续发动6次道纹只为验证效果落地，与出手预算校验无关，给予充裕出手预算
+    player.speed_limit = 99
     # 给玩家多个道纹用于测试
     from engine.models import DaoWen, DaoWenInstance
     for n in ["弱化","强化","变形","赎金","眩晕","飞行"]:

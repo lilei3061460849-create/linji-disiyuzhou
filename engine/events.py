@@ -106,16 +106,44 @@ class EventPool:
             self.current = None
 
 
-def resolve_option_effect(text: str, engine) -> dict:
+def resolve_option_effect(text: str, engine, event_name: str = "") -> dict:
     """
     结算事件选项效果（关键字解释器）。
     自动扣除常见代价（流血/失去碎片/衰老/枯竭/失去精力）与应用常见收益（获碎片/血限/残韵/遗物/法术）。
     无法解析的特殊效果返回 instruction 交DM。
+    event_name不为空时，优先匹配需要精确具名结算的专属事件分支(如龙心谷"追求者")，
+    这类事件的收益包含固定面板与固定道纹数值，无法用通用正则安全推断，需按事件名单独处理。
     """
-    from .models import Relic, DaoWen, DaoWenInstance, Spell
+    from .models import Relic, DaoWen, DaoWenInstance, Spell, Entity
     player = engine.state.player
     applied = []
     instructions = []
+
+    # ---- 专属具名事件：龙心谷"追求者"（面板与道纹数值均为文档写死的固定值，不走通用正则） ----
+    if event_name == "追求者":
+        if text.startswith("雇佣"):
+            engine.state.shards -= 10
+            applied.append("失去10碎片")
+            emp = Entity(name="追求者", entity_type="员工", blood_limit=96, current_hp=96,
+                         attack_count=8, attack_power=2, is_deployed=False)
+            for dw_name, x in (("逆鳞", 2), ("活血", 3), ("固执", 3)):
+                emp.dao_wen[dw_name] = DaoWenInstance(
+                    DaoWen(name=dw_name, formula="", cost_type="消耗", cost_formula="X", effect_formula=""),
+                    x_value=x)
+            engine.state.employees.append(emp)
+            applied.append("获得追求者(8×2/96，逆鳞2，活血3，固执3)作为员工，默认待命，需deploy_employee派遣")
+            return {"applied": applied, "instructions": instructions}
+        elif text.startswith("拿走口粮"):
+            engine.state.shards += 50
+            applied.append("获得50碎片")
+            engine.state.forced_monsters_next_battle.append({
+                "name": "追求者", "attack_count": 8, "attack_power": 2, "blood_limit": 96,
+                "dao_wen": {"逆鳞": 2, "活血": 3, "固执": 3},
+            })
+            applied.append("已登记：下一场战斗追求者将作为怪物额外出现"
+                            "(记录于 state.forced_monsters_next_battle，出怪流程本身另行接入时读取)")
+            return {"applied": applied, "instructions": instructions}
+        # 选项3"离开"落入下方通用的"无事发生"分支，无需特殊处理
 
     def hurt(hp):
         if player:
@@ -150,12 +178,14 @@ def resolve_option_effect(text: str, engine) -> dict:
         if rtype in text and ('残韵' in text or '获得' in text):
             engine.state.resonance[rtype] = engine.state.resonance.get(rtype, 0) + 1
             applied.append(f"获得{rtype}残韵")
-    # 随机/获得遗物
+    # 随机/获得遗物（引擎自动生成随机数并结算，见 DiceEngine.auto_roll）
     if ('遗物' in text) and ('获得' in text or '随机' in text):
         engine._init_relic_pool()
         if engine.state.relics_pool:
-            import random as _r
-            r = engine.state.relics_pool.pop(_r.randrange(len(engine.state.relics_pool)))
+            names = [r.name for r in engine.state.relics_pool]
+            roll = engine.dice.auto_roll("event_relic_pool", names, context="事件获得遗物")
+            idx = roll["record"]["selected_index"]
+            r = engine.state.relics_pool.pop(idx)
             engine.state.relics.append(r); applied.append(f"获得遗物·{r.name}")
         else:
             instructions.append("遗物池空，无法获得遗物")
