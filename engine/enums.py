@@ -56,7 +56,6 @@ class CostType(Enum):
 class InterruptType(Enum):
     """中断类型 - 需要DM裁定"""
     WIT_OF_DESPERATION = "急中生智"
-    EVOLUTION = "进化"
     ESCAPE_AND_PURSUIT = "逃跑与追击"
     STAFF_MUTINY = "员工叛变"
     DEATH_INHERITANCE = "死之传承"

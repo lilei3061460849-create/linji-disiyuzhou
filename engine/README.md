@@ -16,7 +16,7 @@ AI（决策者）──→ GameEngine API ──→ 计算/随机数
 ## 核心原则
 
 1. **AI是决策者，程序是事实源** — 所有数值计算、随机数必须通过引擎
-2. **中断机制** — 程序无法判定时（急中生智/进化/逃跑等），抛出Interrupt等待DM
+2. **中断机制** — 程序无法判定时（急中生智/逃跑等），抛出Interrupt等待DM
 3. **先例数据库** — DM裁定存入SQLite，下次类似场景自动匹配
 4. **自由控X** — 道纹的X值由AI在合法范围内自由指定
 
@@ -98,7 +98,7 @@ result = engine.execute_action("random_number", {"pool_name": "event_pool", "num
 | `consume_item` | 使用消耗品 |
 | `declare_wit` | 声明急中生智 |
 | `declare_escape` | 声明逃跑 |
-| `declare_evolution` | 怪物进化 |
+| `declare_evolution` | 怪物进化：发动【原初X】借用原始怪物道纹（引擎直接结算） |
 | `round_start` | 回始结算 |
 | `round_end` | 回终结算 |
 | `battle_start` | 战始 |

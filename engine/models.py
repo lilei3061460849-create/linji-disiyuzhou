@@ -86,10 +86,8 @@ class Consumable:
     effect: str
     current_uses: int = 1
     max_uses: int = 1
-    # kind: normal(普通) / summon(降服召唤物，记录面板，使用召唤临时朋友) / sculpture(雕塑，1耐久=15伤害或20格挡)
+    # kind: normal(普通) / sculpture(雕塑，1耐久=15伤害或20格挡)
     kind: str = "normal"
-    # summon 专用：记录被降服怪物的当前面板
-    panel: Optional[dict] = None
 
     @property
     def is_depleted(self) -> bool:
@@ -102,7 +100,7 @@ class Consumable:
         return self.current_uses
 
     def merge(self, other: 'Consumable') -> bool:
-        """合并相同消耗品（召唤物/雕塑等绑定特定怪物的不可合并）"""
+        """合并相同消耗品（雕塑等绑定特定怪物的不可合并）"""
         if self.name != other.name or self.effect != other.effect:
             return False
         if self.kind != "normal" or other.kind != "normal":
@@ -210,9 +208,8 @@ class Entity:
     status_effects: list[StatusEffect] = field(default_factory=list)
     is_flying: bool = False      # 飞行状态
 
-    # 降服追踪：连续未能对轮回者造成伤害的回合数
-    no_damage_streak: int = 0
-    is_subdued: bool = False     # 是否已被降服（移出战斗）
+    # 非击杀移出战斗标记（封印等；不产碎片）
+    removed_without_kill: bool = False
     hp_lost_this_round: int = 0   # 本回合累计失去的生命（活血用，回始归零）
 
     # 多路径胜利追踪
@@ -221,6 +218,9 @@ class Entity:
     is_sculptured: bool = False  # 已化为雕塑（攻击次数或攻击力归0）
     is_proliferated: bool = False  # 已被增生吸收进死者之书
     is_debt_bound: bool = False  # 已因还债成为员工
+
+    # 异变计数（特殊事件【崩解】：达到阈值直接命零）
+    mutation_count: int = 0
 
     # 存活
     is_alive: bool = True
@@ -280,6 +280,26 @@ class Entity:
             self.is_alive = False
         
         return detail
+    
+    MUTATION_COLLAPSE_THRESHOLD = 50  # 特殊事件【崩解】阈值：异变达到50层直接命零（阈值定稿；计费粒度=持续型每回始5X后存在真实牙齿）
+
+    def add_mutation(self, layers: int) -> dict:
+        """
+        累加异变层数。
+        特殊事件【崩解】：任一角色异变达到阈值（当前50层）时直接[命零]死亡；
+        正在结算的效果是否中断由调用方判定（与中断规则同精神：代价先付）。
+        """
+        if layers > 0:
+            self.mutation_count += layers
+        collapsed = self.mutation_count >= self.MUTATION_COLLAPSE_THRESHOLD
+        if collapsed and self.is_alive:
+            self.current_hp = 0
+            self.is_alive = False
+        return {
+            "mutation_added": layers,
+            "mutation_total": self.mutation_count,
+            "collapsed": collapsed,
+        }
     
     def heal(self, amount: int) -> dict:
         """回复生命"""
@@ -364,8 +384,7 @@ class Entity:
             "shield": self.shield,
             "is_flying": self.is_flying,
             "is_alive": self.is_alive,
-            "no_damage_streak": self.no_damage_streak,
-            "is_subdued": self.is_subdued,
+            "removed_without_kill": self.removed_without_kill,
             "shards": self.shards,
             "total_healed": self.total_healed,
             "hp_ratio": round(self.hp_ratio, 2),
@@ -428,9 +447,6 @@ class GameState:
     blacklist_level: int = 0     # 黑名单计数（每累计3名员工离队加入黑名单）
     is_blacklisted: bool = False
     
-    # 异变计数
-    mutation_count: int = 0
-    
     # 属性点
     attribute_points: int = 0
     allocated_blood: int = 0     # 已分配血限（从属性点）
@@ -448,7 +464,6 @@ class GameState:
             "current_region": self.current_region,
             "energy": self.energy,
             "shards": self.shards,
-            "mutation_count": self.mutation_count,
             "blacklist_level": self.blacklist_level,
             "is_blacklisted": self.is_blacklisted,
             "attribute_points": self.attribute_points,

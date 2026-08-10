@@ -23,7 +23,6 @@ TUNING = {
     "DEBT_THRESHOLD": 10,      # 还债：负债 ≤ -N
     "SCULPTURE_DAMAGE": 15,
     "SCULPTURE_SHIELD": 20,
-    "TAMING_TURNS": 3,
 }
 
 REGION_EXCLUSIVE = {
@@ -73,6 +72,11 @@ def make_monster(md):
         m.dao_wen[n] = DaoWenInstance(
             dao_wen=DaoWen(name=n, formula="", cost_type="", cost_formula="", effect_formula=""),
             x_value=x)
+    # 副本专属道纹运行态（裁定⑨）
+    m.fake_shards = 0; m.shards = 0
+    m._jiahuo_left = 0; m._jiahuo_target = None
+    m._beifu_left = 0; m._beifu_target = None
+    m._nilin = 0; m._xiaozai_left = 0
     return m
 
 
@@ -91,7 +95,7 @@ def make_player(extra_dw=None):
 
 
 # ===== 道纹效果（模拟版，忠实公式） =====
-def cast_shaifa(player, monster, x):
+def cast_shaifa(player, monster, x, monsters=None):
     if player.current_mana < x: return 0
     player.current_mana -= x
     if player.has_status("蒙蔽"):  # 蒙蔽：本次伤害无效，层数-1
@@ -101,19 +105,20 @@ def cast_shaifa(player, monster, x):
                 if s.value <= 0: player.status_effects.remove(s)
                 break
         return 0
-    dmg = 2 * x
-    monster.current_hp = max(0, monster.current_hp - dmg)
-    if monster.current_hp <= 0: monster.is_alive = False
-    return dmg
+    dmg = 2 * eff_x(player, x)  # 退化：本次数值-X
+    return hit_monster(player, monster, dmg, monsters or [monster])
 
 def cast_bihu(player, x):
+    x = eff_x(player, x)
     if player.current_mana < x: return 0
     player.current_mana -= x
     player.shield += 4 * x
     return 4 * x
 
 def cast_zaisheng(player, target, x):
+    x = eff_x(player, x)
     if player.current_mana < x: return 0
+    if USE_EXCLUSIVE and player.has_status("坏死"): return 0  # 坏死禁疗生效（裁定⑨补漏，此前只挂状态未拦截）
     player.current_mana -= x
     before = target.current_hp
     target.current_hp = min(target.blood_limit, target.current_hp + 3*x)
@@ -121,6 +126,7 @@ def cast_zaisheng(player, target, x):
     return target.current_hp - before
 
 def cast_ziyang(player, monster, x):  # 滋养X：治疗血限10X%
+    x = eff_x(player, x)
     if player.current_mana < 5*x: return 0
     player.current_mana -= 5*x
     heal = math.ceil(monster.blood_limit * 10 * x / 100)
@@ -128,20 +134,37 @@ def cast_ziyang(player, monster, x):  # 滋养X：治疗血限10X%
     return heal
 
 def cast_ruohua(player, monster, x):  # 弱化X：攻击力-X（消耗3X）
+    x = eff_x(player, x)
     if player.current_mana < 3*x: return 0
     player.current_mana -= 3*x
     monster.attack_power = max(0, monster.attack_power - x)
     return x
 
-def cast_shujin(player, monster, x):  # 赎金X：夺10X碎片（消耗10X）
+def cast_shujin(player, monster, x):  # 赎金X：夺10X碎片（消耗10X）；失去碎片优先假碎片
+    x = eff_x(player, x)
     if player.current_mana < 10*x: return 0
     player.current_mana -= 10*x
-    monster.shards -= 10*x
-    return 10*x
+    amt = 10 * x
+    fake = min(getattr(monster, "fake_shards", 0), amt)
+    monster.fake_shards = getattr(monster, "fake_shards", 0) - fake
+    monster.shards -= (amt - fake)
+    return amt
 
 
 def monster_round_start(m, activated):
-    """怪物回始被动：自愈/庇护（须已激活才生效，白板第1回合无）"""
+    """
+    怪物回始被动：自愈/庇护（须已激活才生效，白板第1回合无）。
+    【计费粒度裁定】持续型原始道纹效果持续期间，每个[回始]重新支付异变5X；
+    达阈值触发【崩解】直接命零，本次回始被动中断。
+    """
+    for g in list(activated):
+        if g == "活力" and HUOLI_MODE in ("charges", "burst"):
+            continue  # 次数型候选：激活一次计费，无回合续费
+        if g in CombatEngine.SUSTAIN_MONSTER_DAOWEN and g in m.dao_wen:
+            pay = m.add_mutation(CombatEngine.YUANCHU_COST_RATE * m.dao_wen[g].x_value)
+            if pay["collapsed"]:
+                SIM_STATS["collapses"] += 1
+                return
     if "自愈" in activated:
         x = m.dao_wen["自愈"].x_value
         heal = math.ceil(m.blood_limit * 10 * x / 100)
@@ -156,14 +179,56 @@ def monster_activate(m, activated, rng):
     怪物道纹出手：激活一个尚未激活的道纹（白板第1回合后开始激活），返回激活名或None
     成长型：活力X攻击出手+X；强化X攻击力+X；狂暴+1攻击出手；必中不可闪避；自愈/庇护回始生效
     控场型（对轮回者）：蒙蔽X下X次伤害无效；坏死禁疗；减速速度减半；僵化攻击力固定1
+    【异变计费接线，裁定②】原始怪物道纹以【异变】为代价：激活支付异变5×面板X；
+    达阈值触发【崩解】直接命零，返回"崩解:道纹名"，本次激活效果中断。
     """
     priority = ["活力", "强化", "狂暴", "必中", "蒙蔽", "坏死", "减速", "僵化", "自愈", "庇护", "飞行"]
     for g in priority:
         if g in m.dao_wen and g not in activated:
+            if g in CombatEngine.ORIGINAL_MONSTER_DAOWEN:
+                pay = m.add_mutation(CombatEngine.YUANCHU_COST_RATE * m.dao_wen[g].x_value)
+                if pay["collapsed"]:
+                    SIM_STATS["collapses"] += 1
+                    return "崩解:" + g
             activated.add(g)
             if g == "强化":
                 m.attack_power += m.dao_wen[g].x_value
             return g
+    if USE_EXCLUSIVE:  # 副本专属层（裁定⑨）：通用层之后，代价未满足的跳过
+        for g in EXCLUSIVE_PRIORITY:
+            if g in m.dao_wen and g not in activated and monster_can_pay_exclusive(m, g):
+                activated.add(g)
+                return g
+    return None
+
+
+# 模拟统计（裁定②接线）：供跑批报告进化/崩解发生频次
+SIM_STATS = {"evolutions": 0, "collapses": 0}
+
+# 困境进化默认策略的借用优先级（在原始道纹范围内按模拟器激活优先级排序）
+EVO_PRIORITY = [d for d in ["活力", "强化", "狂暴", "必中", "蒙蔽", "坏死", "减速", "僵化", "自愈", "庇护", "飞行"]
+                if d in CombatEngine.ORIGINAL_MONSTER_DAOWEN]
+
+
+def sim_maybe_evolve(m, combat):
+    """
+    怪物困境默认进化策略（裁定②接线）：借优先级最高的未持有原始道纹，
+    X=不崩解安全上限；上限<1则放弃（门票必崩解且借用中断，纯亏）。
+    困境判定与参数校验全部走引擎 execute_evolution（事实源），此处只负责选择。
+    返回执行结果dict或None。
+    """
+    if not m.is_alive:
+        return None
+    target = next((d for d in EVO_PRIORITY if d not in m.dao_wen), None)
+    if target is None:
+        return None
+    max_x = (Entity.MUTATION_COLLAPSE_THRESHOLD - 1 - m.mutation_count) // CombatEngine.YUANCHU_COST_RATE
+    if max_x < 1:
+        return None
+    r = combat.execute_evolution(m, target, max_x)
+    if r.get("success"):
+        SIM_STATS["evolutions"] += 1
+        return r
     return None
 
 
@@ -180,23 +245,301 @@ def apply_control_to_player(name, m, player):
         player.attack_power = 1  # 轮回者以杀伐为主，影响小
 
 
+# =========================================================================
+# 副本专属道纹实装（裁定⑨ 2026-08-10：全部24种专属道纹建模后重测平衡）
+# 语义事实源：README道纹定义 + engine/combat.py 已实现口径（赌命=当前生命30%等）。
+# USE_EXCLUSIVE=False 回到未建模基线（A/B对照用）。
+# 已知本模拟器结构性空转（照激活、记计数、无数值影响）：超频（怪速度未入战斗数学）、
+# 定型（模拟玩家战斗中不涨攻击/次数）、抵扣（模拟玩家无遗物）。
+# =========================================================================
+USE_EXCLUSIVE = True
+JIAHUO_POLICY = "player_first"   # 嫁祸目标策略：player_first(无道德底线)/ally_first(保怪)
+
+# 激活顺序（接在通用优先级之后；每回合至多激活1个，激活=出手）
+EXCLUSIVE_PRIORITY = ["变形", "逆鳞", "假钞", "赌命", "加害", "洗劫", "逼债", "赎金",
+                      "清算", "龙鳞", "爆裂", "裂变", "伤痕", "退化", "畸变", "活血",
+                      "嫁祸", "背负", "超频", "定型", "抵扣", "消灾"]
+REDIRECT_ATTRS = ("_jiahuo_left", "_jiahuo_target", "_beifu_left", "_beifu_target", "_nilin")
+
+
+def eff_x(player, x):
+    """【退化X】：玩家发动道纹时该次数值-X，最低0（持续∞）"""
+    if not USE_EXCLUSIVE or not player.has_status("退化"):
+        return x
+    return max(0, x - player.get_status_value("退化"))
+
+
+def _alive_monsters(monsters):
+    return [m for m in monsters if m.is_alive and not (
+        getattr(m, "is_sculptured", False)
+        or getattr(m, "is_proliferated", False) or getattr(m, "is_debt_bound", False))]
+
+
+def hit_monster(player, m, dmg, monsters, _redirected=False):
+    """
+    玩家→怪物伤害统一漏斗：嫁祸/背负转嫁 → 裂变分次 → 龙鳞减伤 → 爆裂反射 → 逆鳞/活血记账。
+    返回实际落到m(或承担者)身上的总伤害。
+    """
+    if dmg <= 0 or not m.is_alive:
+        return 0
+    if USE_EXCLUSIVE and not _redirected:
+        # 嫁祸X：该怪物下X次受到的伤害由所选[目标]承担
+        if getattr(m, "_jiahuo_left", 0) > 0:
+            m._jiahuo_left -= 1
+            t = m._jiahuo_target if (m._jiahuo_target and m._jiahuo_target.is_alive) else player
+            return hit_monster(player, t, dmg, monsters, _redirected=True) if t is not player \
+                else _raw_hit_player(t, dmg)
+        # 背负X：其他怪物声明替m承担其下X次伤害
+        for b in _alive_monsters(monsters):
+            if b is not m and getattr(b, "_beifu_left", 0) > 0 and getattr(b, "_beifu_target", None) is m:
+                b._beifu_left -= 1
+                return hit_monster(player, b, dmg, monsters, _redirected=True)
+    # 裂变X：分X次结算，每次=原伤害÷X向下取整
+    parts = [dmg]
+    if USE_EXCLUSIVE and m.has_status("裂变"):
+        xv = max(1, m.get_status_value("裂变"))
+        parts = [dmg // xv] * xv
+    total = 0
+    for d in parts:
+        if USE_EXCLUSIVE and m.has_status("龙鳞"):  # 每次受到伤害-X，最低0
+            d = max(0, d - m.get_status_value("龙鳞"))
+        total += d
+    # 爆裂X：受到伤害前，攻击者失去等量生命（按本次结算总量反射一次）
+    if USE_EXCLUSIVE and m.has_status("爆裂") and total > 0:
+        _raw_hit_player(player, total)
+    m.current_hp = max(0, m.current_hp - total)
+    m.hp_lost_this_round += total
+    if USE_EXCLUSIVE and m.has_status("逆鳞"):
+        m._nilin = getattr(m, "_nilin", 0) + total  # 每失去1点生命获得1层逆鳞
+    if m.current_hp <= 0:
+        m.is_alive = False
+    return total
+
+
+def _raw_hit_player(player, dmg):
+    """不经护盾/闪避的直接生命损失（爆裂反射、嫁祸转嫁给玩家、赌命等）"""
+    player.current_hp = max(0, player.current_hp - dmg)
+    player.hp_lost_this_round += dmg
+    if player.current_hp <= 0:
+        player.is_alive = False
+    return dmg
+
+
+def _hurt_player_track(player, lost):
+    """玩家失去生命后的通用钩子：伤痕X（每次失去生命后[血限]-X）"""
+    if USE_EXCLUSIVE and lost > 0 and player.has_status("伤痕"):
+        x = player.get_status_value("伤痕")
+        player.blood_limit = max(0, player.blood_limit - x)
+        player.current_hp = min(player.current_hp, player.blood_limit)
+        if player.blood_limit <= 0:
+            player.is_alive = False
+
+
+def exclusive_round_start(player, monsters, activated_map, rng):
+    """回始：逼债（失血限分支）/清算（失格挡）/赌命（随机数+消灾重投）"""
+    if not USE_EXCLUSIVE:
+        return
+    for m in _alive_monsters(monsters):
+        act = activated_map.get(id(m), set())
+        x_of = lambda g: m.dao_wen[g].x_value if g in m.dao_wen else 1
+        if "逼债" in act:
+            x = x_of("逼债")
+            if player.shards >= x:
+                player.shards -= x
+            else:  # 否则失去2X血限
+                player.blood_limit -= 2 * x
+                player.current_hp = min(player.current_hp, player.blood_limit)
+                if player.current_hp <= 0:
+                    player.is_alive = False
+        if m.has_status("清算"):
+            drain = max(0, getattr(m, "shards", 0))
+            player.shield = max(0, player.shield - drain)
+        if m.has_status("赌命"):
+            x = x_of("赌命")
+            side = [player] + _alive_monsters(monsters)  # 从轮回者方开始发放数字
+            n = len(side)
+            roll = rng.randint(1, n)
+            # 消灾X：随机数选中怪物侧时，任一持有剩余消灾次数的怪物可支付重投
+            # （优先50X假碎片，其次5X碎片；简化：每次回始最多重投1次，总额=激活时X）
+            if roll > 1:
+                holder = next((b for b in _alive_monsters(monsters)
+                               if getattr(b, "_xiaozai_left", 0) > 0), None)
+                if holder is not None:
+                    cx = holder.dao_wen["消灾"].x_value if "消灾" in holder.dao_wen else 1
+                    if getattr(holder, "fake_shards", 0) >= 50 * cx:
+                        holder.fake_shards -= 50 * cx; holder._xiaozai_left -= 1; roll = rng.randint(1, n)
+                    elif getattr(holder, "shards", 0) >= 5 * cx:
+                        holder.shards -= 5 * cx; holder._xiaozai_left -= 1; roll = rng.randint(1, n)
+            tgt = side[roll - 1]
+            d = math.ceil(tgt.current_hp * 30 / 100)  # 赌命：引擎口径=当前生命30%
+            if tgt is player:
+                _raw_hit_player(player, d)
+            else:
+                tgt.current_hp = max(0, tgt.current_hp - d)
+                if tgt.current_hp <= 0:
+                    tgt.is_alive = False
+
+
+def exclusive_round_end(player, monsters):
+    """回终：畸变（失血限=攻×次）/活血（回失血半数）/持续型状态递减/逆鳞过期清层"""
+    if not USE_EXCLUSIVE:
+        return
+    if player.has_status("畸变"):
+        x = player.get_status_value("畸变")
+        loss = player.attack_power * player.attack_count  # 畸变X：失去(攻击力×攻击次数)血限
+        player.blood_limit -= loss
+        player.current_hp = min(player.current_hp, player.blood_limit)
+        if player.current_hp <= 0:
+            player.is_alive = False
+    for ent in [player] + list(monsters):
+        for st in list(ent.status_effects):
+            if st.remaining_rounds > 0:
+                st.remaining_rounds -= 1
+                if st.remaining_rounds <= 0:
+                    if st.name == "逆鳞":
+                        ent._nilin = 0
+                    if st.name == "变形":  # 变形到期还原互换
+                        ent.attack_power, ent.attack_count = ent.attack_count, ent.attack_power
+                    ent.status_effects.remove(st)
+        if isinstance(ent, Entity) and ent.entity_type == "怪物" and ent.has_status("活血") and ent.is_alive:
+            x = ent.get_status_value("活血")
+            heal = ent.hp_lost_this_round // 2
+            if heal > 0:
+                ent.heal(heal)
+
+
+def apply_exclusive(act, m, player, monsters, rng):
+    """怪物激活副本专属道纹的效果施加（对照README定义；空转型照激活记计数）"""
+    x = m.dao_wen[act].x_value
+    if act == "变形":      # 自身攻击力与攻击次数互换，持续X
+        m.attack_power, m.attack_count = m.attack_count, m.attack_power
+        m.add_status(StatusEffect("变形", remaining_rounds=x, value=x))
+    elif act == "逆鳞":    # 代价流血X（自流失血也叠层）；持续X内每次失血+1层，下次伤害+全部层
+        m.current_hp = max(0, m.current_hp - x); m.hp_lost_this_round += x
+        m._nilin = getattr(m, "_nilin", 0) + x
+        if m.current_hp <= 0: m.is_alive = False; return
+        m.add_status(StatusEffect("逆鳞", remaining_rounds=x, value=x))
+    elif act == "假钞":    # 获得10X假碎片
+        m.fake_shards = getattr(m, "fake_shards", 0) + 10 * x
+    elif act == "赌命":    # 代价X假碎片（激活时付）；持续X，回始随机数
+        m.fake_shards -= x  # 激活准入时校验过余额
+        m.add_status(StatusEffect("赌命", remaining_rounds=x, value=x))
+        m._xiaozai_left = 0
+    elif act == "消灾":
+        m._xiaozai_left = x  # 本激活可重投X次
+    elif act == "加害":    # 引擎口径（攻击者侧）：造成的伤害+X，持续∞
+        m.add_status(StatusEffect("加害", remaining_rounds=-1, value=x))
+    elif act == "洗劫":    # 造成伤害时夺取等量碎片，持续X
+        m.add_status(StatusEffect("洗劫", remaining_rounds=x, value=x))
+    elif act == "逼债":    # 回始目标失X碎片，否则失2X血限，持续∞（记账在怪物侧激活集）
+        pass
+    elif act == "赎金":    # 夺10X碎片；目标没有碎片则失X点当前速度（一次性）
+        if player.shards > 0:
+            steal = min(player.shards, 10 * x); player.shards -= steal
+        else:
+            player.current_speed = max(0, player.current_speed - x)
+    elif act == "清算":    # 回始目标失[你碎片]点格挡，持续X
+        m.add_status(StatusEffect("清算", remaining_rounds=x, value=x))
+    elif act == "龙鳞":
+        m.add_status(StatusEffect("龙鳞", remaining_rounds=-1, value=x))
+    elif act == "爆裂":
+        m.add_status(StatusEffect("爆裂", remaining_rounds=x, value=x))
+    elif act == "裂变":
+        m.add_status(StatusEffect("裂变", remaining_rounds=-1, value=x))
+    elif act == "伤痕":
+        player.add_status(StatusEffect("伤痕", remaining_rounds=-1, value=x))
+    elif act == "退化":
+        player.add_status(StatusEffect("退化", remaining_rounds=-1, value=x))
+    elif act == "畸变":
+        player.add_status(StatusEffect("畸变", remaining_rounds=x, value=x))
+    elif act == "活血":
+        m.add_status(StatusEffect("活血", remaining_rounds=x, value=x))
+    elif act == "嫁祸":
+        if JIAHUO_POLICY == "ally_first":
+            others = [b for b in _alive_monsters(monsters) if b is not m]
+            m._jiahuo_target = rng.choice(others) if others else player
+        else:  # player_first：无道德底线，直接转嫁轮回者
+            m._jiahuo_target = player
+        m._jiahuo_left = x
+    elif act == "背负":
+        others = [b for b in _alive_monsters(monsters) if b is not m]
+        if not others:
+            return False  # 无同伴可守护：本道纹当前无合法目标，视为不出手此道纹
+        m._beifu_target = min(others, key=lambda b: b.current_hp)  # 守护最濒危同伴
+        m._beifu_left = x
+    elif act in ("超频", "定型", "抵扣"):
+        m.add_status(StatusEffect(act, remaining_rounds=-1, value=x))  # 结构性空转（见模块注释）
+    return True
+
+
+def monster_can_pay_exclusive(m, g):
+    """专属道纹激活的代价准入：赌命需X假碎片余额；背负需有同伴"""
+    x = m.dao_wen[g].x_value
+    if g == "赌命" and getattr(m, "fake_shards", 0) < x:
+        return False
+    return True
+
+
+
+# ===== 活力削弱候选（裁定⑫方案池；HUOLI_MODE 全局开关，默认现行口径） =====
+# current = 现状(出手+X,持续∞,持续计费) | charges = 次数型:共X回合各+1出手,激活计费一次
+# half    = 出手+X但额外出手伤害减半 | flat = 出手+1持续X回合(持续计费) | burst = 仅激活当回合出手+X
+HUOLI_MODE = "current"
+
+def huoli_note_activation(m, act):
+    """激活时按模式记录活力运行态"""
+    if act == "活力":
+        m._huoli_charges = m.dao_wen["活力"].x_value
+
 def get_monster_attack_actions(m, activated):
-    """怪物攻击出手数 = 1 + 活力X(若激活) + 狂暴1(若激活)"""
+    """怪物攻击出手数，按 HUOLI_MODE 解释活力：
+    current=1+活力X+狂暴1；charges=有剩余充能则1+1；flat=持续期内1+1；burst=由激活方处理回合数"""
     n = 1
     if "活力" in activated:
-        n += m.dao_wen["活力"].x_value
+        if HUOLI_MODE == "current":
+            n += m.dao_wen["活力"].x_value
+        elif HUOLI_MODE in ("charges", "flat"):
+            if getattr(m, "_huoli_charges", 0) > 0:
+                n += 1
+        elif HUOLI_MODE == "burst":
+            if getattr(m, "_huoli_charges", -1) > 0:  # 由激活处设置为当回合1次标记
+                n += m.dao_wen["活力"].x_value
+        elif HUOLI_MODE == "half":
+            n += m.dao_wen["活力"].x_value
     if "狂暴" in activated:
         n += 1
     return n
 
 
-def monster_attack_round(m, player, combat, rng, must_hit):
-    """怪物1轮攻击出手（attack_count次），玩家逐次决定闪避。返回对玩家造成的生命损失。"""
+def huoli_tick(m, activated):
+    """回始末段：消耗活力的回合充能（charges/flat每回合-1；burst激活回合后清零）"""
+    if HUOLI_MODE in ("charges", "flat") and "活力" in activated and getattr(m, "_huoli_charges", 0) > 0:
+        m._huoli_charges -= 1
+    elif HUOLI_MODE == "burst" and getattr(m, "_huoli_charges", 0) > 0:
+        m._huoli_charges = 0
+
+
+def monster_attack_round(m, player, combat, rng, must_hit, dmg_scale=1.0):
+    """怪物1轮攻击出手（attack_count次），玩家逐次决定闪避。返回对玩家造成的生命损失。
+    dmg_scale：活力half模式下额外出手的伤害倍率（0.5=减半向下取整）"""
+    # 探照灯等施加的怪物侧蒙蔽：本次攻击出手无效，层数-1
+    if m.has_status("蒙蔽"):
+        for s in list(m.status_effects):
+            if s.name == "蒙蔽" and s.value > 0:
+                s.value -= 1
+                if s.value <= 0: m.status_effects.remove(s)
+                break
+        return 0
     hp_before = player.current_hp
-    for _ in range(m.attack_count):
+    nilin_applied = False
+    for _ in range(max(0, m.attack_count - getattr(m, "_nade_minus", 0))):  # 高爆手雷：攻击次数-1
         if not player.is_alive or not m.is_alive:
             break
-        dmg = m.attack_power
+        dmg = int(m.attack_power * dmg_scale) if dmg_scale < 1.0 else m.attack_power
+        if USE_EXCLUSIVE and m.has_status("加害"):
+            dmg += m.get_status_value("加害")  # 加害X：造成伤害+X
+        if USE_EXCLUSIVE and getattr(m, "_nilin", 0) and not nilin_applied:
+            dmg += m._nilin; m._nilin = 0; nilin_applied = True  # 逆鳞：下次伤害+全部层后清空
         will_break = dmg > player.shield
         if will_break and player.current_speed > 0 and not must_hit:
             player.current_speed -= 1  # 闪避成功
@@ -205,11 +548,15 @@ def monster_attack_round(m, player, combat, rng, must_hit):
             continue
         absorbed = min(player.shield, dmg)
         player.shield -= absorbed
-        player.current_hp = max(0, player.current_hp - (dmg - absorbed))
+        got = dmg - absorbed
+        player.current_hp = max(0, player.current_hp - got)
+        player.hp_lost_this_round += got
+        if USE_EXCLUSIVE and got > 0 and m.has_status("洗劫"):  # 洗劫X：夺等量碎片
+            player.shards = max(0, player.shards - got)
         if player.current_hp <= 0:
             player.is_alive = False
     lost = hp_before - player.current_hp
-    combat.record_monster_damage(m, lost)
+    _hurt_player_track(player, lost)  # 伤痕X：失血后血限-X
     return lost
 
 
@@ -226,10 +573,12 @@ def run_battle(md, policy, rng, player_dw=None):
     combat.DEBT_THRESHOLD = TUNING["DEBT_THRESHOLD"]
     combat.SCULPTURE_DAMAGE = TUNING["SCULPTURE_DAMAGE"]
     combat.SCULPTURE_SHIELD = TUNING["SCULPTURE_SHIELD"]
-    combat.TAMING_REQUIRED_TURNS = TUNING["TAMING_TURNS"]
     combat.init_monster_shards(monster)
+    combat.reset_monster_activation()  # 进化记录按战斗重置（裁定②接线）
 
     max_rounds = 25
+    player.shards = 60  # 单场假设：携带60碎片入场（裁定⑨，供罪孽经济道纹咬合）
+    monsters_list = [monster]
     activated = set()  # 怪物已激活的道纹（白板第1回合为空）
     for rnd in range(1, max_rounds+1):
         if not player.is_alive:
@@ -239,11 +588,25 @@ def run_battle(md, policy, rng, player_dw=None):
         # 回始
         player.current_mana = player.mana_limit
         player.shield = 0
+        player.hp_lost_this_round = 0
+        monster.hp_lost_this_round = 0
         monster_round_start(monster, activated)
-        # 怪物道纹出手（第1回合白板不激活）
-        if rnd > 1:
+        # 怪物道纹出手（第1回合白板不激活；持续计费可能已使其崩解）
+        if rnd > 1 and monster.is_alive:
             act = monster_activate(monster, activated, rng)
-            if act: apply_control_to_player(act, monster, player)
+            if act and not act.startswith("崩解:"):  # 崩解：激活效果中断
+                apply_control_to_player(act, monster, player)
+                if USE_EXCLUSIVE and act in EXCLUSIVE_PRIORITY:
+                    apply_exclusive(act, monster, player, monsters_list, rng)
+                if act == "活力":
+                    if HUOLI_MODE == "burst": monster._huoli_charges = 1
+                    huoli_note_activation(monster, act) if HUOLI_MODE in ("charges","flat") else None
+            sim_maybe_evolve(monster, combat)  # 困境进化默认策略（裁定②接线）
+        if not monster.is_alive:  # 崩解命零（异变计费）
+            break
+        exclusive_round_start(player, monsters_list, {id(monster): activated}, rng)  # 专属道纹回始
+        if not player.is_alive:
+            return {"win": False, "path": "death", "rounds": rnd}
 
         # 玩家出手（3次），按策略
         actions = 3
@@ -251,24 +614,31 @@ def run_battle(md, policy, rng, player_dw=None):
 
         if not monster.is_alive:
             break
-        # 怪物攻击出手
+        # 怪物攻击出手（活力half：前(总-X)次全伤，后X次半伤）
         must_hit = "必中" in activated
-        for _ in range(get_monster_attack_actions(monster, activated)):
+        n_act = get_monster_attack_actions(monster, activated)
+        x_h = monster.dao_wen["活力"].x_value if "活力" in activated and "活力" in monster.dao_wen else 0
+        half_base = n_act - x_h if HUOLI_MODE == "half" else n_act
+        for i in range(n_act):
             if not player.is_alive:
                 break
-            monster_attack_round(monster, player, combat, rng, must_hit)
+            monster_attack_round(monster, player, combat, rng, must_hit, 1.0 if i < half_base else 0.5)
+        huoli_tick(monster, activated)
         if not player.is_alive:
             return {"win": False, "path": "death", "rounds": rnd}
 
-        # 回终：格挡/法力清空，结算胜利路径
+        # 回终：格挡/法力清空，专属道纹回终结算，结算胜利路径
         player.shield = 0
         player.current_mana = 0
         monster.shield = 0
+        exclusive_round_end(player, monsters_list)
+        if not player.is_alive:
+            return {"win": False, "path": "death", "rounds": rnd}
+        if not monster.is_alive:
+            return {"win": True, "path": "kill", "rounds": rnd}
         paths = combat.settle_victory_paths()
         if paths:
             return {"win": True, "path": paths[0]["type"], "rounds": rnd}
-        if not monster.is_alive:
-            return {"win": True, "path": "kill", "rounds": rnd}
     # 超时判定
     if not monster.is_alive:
         return {"win": True, "path": "kill", "rounds": max_rounds}
@@ -299,20 +669,6 @@ def strategy_kill(state, p, m, combat, actions, rng):
     while actions > 0 and m.is_alive and p.current_mana > 0:
         x = min(p.current_mana, 7)
         cast_shaifa(p, m, x)
-        actions -= 1
-
-
-def strategy_tame(state, p, m, combat, actions, rng):
-    # 每回合庇护挡满怪物伤害→3回合0伤降服；剩余杀伐
-    monster_dmg = m.attack_count * m.attack_power
-    if monster_dmg > 0:
-        need_x = math.ceil(monster_dmg / 4)
-        if p.current_mana >= need_x:
-            cast_bihu(p, need_x)
-            actions -= 1
-        # 否则靠闪避（在monster_attack_round里自动）
-    while actions > 0 and m.is_alive and p.current_mana > 0:
-        cast_shaifa(p, m, min(p.current_mana, 7))
         actions -= 1
 
 
@@ -369,7 +725,6 @@ def strategy_debt(state, p, m, combat, actions, rng):
 
 STRATEGIES = {
     "kill": (strategy_kill, None),
-    "tame": (strategy_tame, None),
     "sculpt": (strategy_sculpt, ["弱化"]),
     "proliferate": (strategy_proliferate, ["滋养"]),
     "debt": (strategy_debt, ["赎金"]),

@@ -9,6 +9,7 @@
 from __future__ import annotations
 import json
 import os
+import re
 import time
 import uuid
 from typing import Optional, Any
@@ -23,6 +24,19 @@ from .daowen import DaoWenEngine, ResonanceEngine
 from .combat import CombatEngine
 from .events import EventPool, parse_events
 from .dm_rulings import DMRulingsDB, DMRuling, Interrupt
+
+
+# 扭曲都市废墟设施工具库（README正文8件：名→(耐久, 效果文本逐字)）
+TWISTED_TOOL_LIBRARY = {
+    "反怪物电击枪": (3, "对一个[目标]造成25点伤害；若[目标]处于【飞行】，额外造成15点伤害并施加【坠落1】"),
+    "备用血泵": (3, "使自身获得20点［回复］；若自身当前生命≤30%，额外获得30点格挡。"),
+    "强光探照灯": (2, "使一个[目标]陷入【蒙蔽2】"),
+    "高压水枪": (2, "清除全场所有敌方[目标]身上的所有“持续X”效果"),
+    "储能电池": (3, "[回始]本回合额外获得12点法力。"),
+    "急救箱": (2, "使自身获得[回复25]，并清除自身身上一种“持续X”的负面减益。"),
+    "干扰仪": (2, "使全场所有敌方[目标]本回合无法发动自身道纹"),
+    "高爆手雷": (2, "对一个[目标]造成15点伤害，并使其本回合攻击次数-1"),
+}
 
 
 class GameEngine:
@@ -241,6 +255,16 @@ class GameEngine:
             "type": "escape",
             "description": "尝试逃跑（触发逃跑与追击事件）",
             "available": True
+        })
+        
+        # 进化（怪物方决策）：仅困境怪物可发动，逃跑/进化二选一，每场限一次
+        plight_options = self.combat.get_plight_evolution_options()
+        actions.append({
+            "type": "evolution",
+            "action_id": "declare_evolution",
+            "available": len(plight_options) > 0,
+            "description": "【进化】发动原初X（代价：异变5X）：借用一种未持有的原始怪物道纹至战终，参数一次性给出 monster/daowen/x",
+            "plight_monsters": plight_options,
         })
         
         # 普通攻击
@@ -973,29 +997,23 @@ class GameEngine:
         }
     
     def _action_declare_evolution(self, params: dict) -> dict:
-        """怪物进化"""
+        """怪物进化：发动【原初X】借用原始怪物道纹（引擎直接结算，无需DM中断）"""
         monster_name = params.get("monster", "")
         monster = next((e for e in self.state.enemies if e.name == monster_name), None)
         
         if not monster:
             return {"success": False, "error": f"找不到怪物: {monster_name}"}
         
-        difficulty = self.combat.check_monster_difficulty(monster)
-        if not difficulty:
-            return {"success": False, "error": f"{monster_name}未陷入困境，不能进化"}
+        daowen_name = params.get("daowen", "")
+        try:
+            x = int(params.get("x", 1))
+        except (TypeError, ValueError):
+            return {"success": False, "error": "X必须为整数"}
         
-        interrupt = self.combat.initiate_evolution(monster, difficulty)
-        self._pending_interrupts.append(interrupt)
-        
-        return {
-            "success": True,
-            "action": f"{monster_name}进化",
-            "interrupt": interrupt.to_dict(),
-            "instruction": "需要DM裁定进化特性"
-        }
+        return self.combat.execute_evolution(monster, daowen_name, x)
 
     def _action_consume_item(self, params: dict) -> dict:
-        """使用消耗品（召唤物/雕塑/普通，遵守现有消耗品规则，使用不消耗出手）"""
+        """使用消耗品（雕塑/普通，遵守现有消耗品规则，使用不消耗出手）"""
         item_name = params.get("name", "")
         item = None
         for c in self.state.consumables:
@@ -1004,16 +1022,6 @@ class GameEngine:
                 break
         if item is None:
             return {"success": False, "error": f"找不到可用消耗品: {item_name}"}
-
-        # 召唤物：召唤记录面板的怪物作为临时朋友
-        if item.kind == "summon":
-            summon = self.combat.summon_tamed_friend(item)
-            return {
-                "success": summon.get("success", True),
-                "action": f"使用召唤物【{item_name}】",
-                "result": summon,
-                "state": self.combat._get_combat_state(),
-            }
 
         # 雕塑：消耗1耐久造成15伤害或获得20格挡
         if item.kind == "sculpture":
@@ -1033,8 +1041,24 @@ class GameEngine:
                 "state": self.combat._get_combat_state(),
             }
 
-        # 普通消耗品：扣减耐久，效果按其描述由DM/AI结算
+        # 普通消耗品：扣减耐久；异变类效果走统一入口 add_mutation
+        # （裁定⑧= A4全量：任何角色的任何异变来源同一入口，达50层即【崩解】命零；
+        #  其余效果维持既有约定——按描述由DM/AI结算，使用不消耗出手）
         remaining = item.use()
+        mutation_info = None
+        mut_match = re.search(r"获得异变(\d+)", item.effect or "")
+        if mut_match and self.state.player:
+            layers = int(mut_match.group(1))
+            mut = self.state.player.add_mutation(layers)
+            mutation_info = {
+                "mutation_added": mut["mutation_added"],
+                "mutation_total": mut["mutation_total"],
+                "collapsed": mut["collapsed"],
+            }
+            if mut["collapsed"]:
+                mutation_info["note"] = (
+                    f"异变达{mut['mutation_total']}层触发【崩解】，"
+                    f"{self.state.player.name}直接命零，尸体变为怪物")
         return {
             "success": True,
             "action": f"使用消耗品【{item_name}】",
@@ -1042,6 +1066,7 @@ class GameEngine:
                 "effect": item.effect,
                 "uses_remaining": remaining,
                 "is_depleted": item.is_depleted,
+                "mutation": mutation_info,
                 "note": "消耗品效果按其描述结算，使用不消耗出手",
             },
             "state": self.combat._get_combat_state(),
@@ -1087,11 +1112,30 @@ class GameEngine:
             self.state.player.current_speed = self.state.player.speed_limit
             res["applied"].append("无所求：+1速限")
         self.event_pool.resolve(name)
+        # 裁定⑬：扭曲都市完成事件后附赠【发现】——从随机抽取的未持有工具库选项中选定1件
+        bonus = None
+        if self.state.current_region == "扭曲都市":
+            owned = {c.name for c in self.state.consumables}
+            pool = [n for n in TWISTED_TOOL_LIBRARY if n not in owned]
+            if pool:
+                import random as _r2
+                candidates = _r2.sample(pool, min(3, len(pool)))
+                want = params.get("bonus_pick")
+                chosen = want if want in candidates else candidates[0]
+                dur, txt = TWISTED_TOOL_LIBRARY[chosen]
+                self.state.consumables.append(Consumable(
+                    name=chosen, effect=txt, current_uses=dur, max_uses=dur))
+                bonus = {"候选": candidates, "获得": chosen, "耐久": dur,
+                         "来源": f"事件【{name}】完成后附赠【发现】",
+                         "fallback": want is not None and want not in candidates}
+        result_payload = {"option": opt["text"], "applied": res["applied"], "instructions": res["instructions"],
+                          "shards": self.state.shards,
+                          "player_hp": self.state.player.current_hp if self.state.player else None}
+        if bonus:
+            result_payload["附赠发现"] = bonus
         return {
             "success": True, "action": f"事件【{name}】选项{option_id}",
-            "result": {"option": opt["text"], "applied": res["applied"], "instructions": res["instructions"],
-                       "shards": self.state.shards,
-                       "player_hp": self.state.player.current_hp if self.state.player else None},
+            "result": result_payload,
             "note": "已自动结算可解析的代价/收益；instructions中的特殊效果需DM裁定"
         }
 
@@ -1121,7 +1165,7 @@ class GameEngine:
         # 提取多路径胜利结果（已由 combat.round_end 结算）
         alt_paths = [e for e in result.get("effects", [])
                      if isinstance(e, dict) and e.get("type") in
-                     ("taming", "sculpture", "proliferation", "debt_bind")]
+                     ("sculpture", "proliferation", "debt_bind")]
 
         # 检查怪物困境
         difficulties = []
@@ -1137,7 +1181,7 @@ class GameEngine:
             "result": result,
             "victory_paths": alt_paths,
             "monster_difficulties": difficulties,
-            "note": "多路径胜利（降服/雕塑/增生/还债）已结算；消耗品可在后续回合使用"
+            "note": "多路径胜利（雕塑/增生/还债）已结算；消耗品可在后续回合使用"
         }
     
     def _action_battle_start(self, params: dict) -> dict:
@@ -1157,15 +1201,15 @@ class GameEngine:
     def _action_battle_end(self, params: dict) -> dict:
         """战终"""
         relic_end = self.combat.process_relics("battle_end")
-        # 碎片奖励计算（被降服/雕塑/增生/还债移出的怪物不视为击杀，不产碎片）
+        # 碎片奖励计算（被雕塑/增生/还债/封印移出的怪物不视为击杀，不产碎片）
         shard_reward = 0
         removed = []
         for monster in self.state.enemies:
-            if (monster.is_subdued or monster.is_sculptured
+            if (monster.is_sculptured or monster.removed_without_kill
                     or monster.is_proliferated or monster.is_debt_bound):
                 removed.append({"name": monster.name,
-                                "way": ("降服" if monster.is_subdued else
-                                        "雕塑" if monster.is_sculptured else
+                                "way": ("雕塑" if monster.is_sculptured else
+                                        "封印" if monster.removed_without_kill else
                                         "增生" if monster.is_proliferated else "还债")})
                 continue
             if not monster.is_alive:

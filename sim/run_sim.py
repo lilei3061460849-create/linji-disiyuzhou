@@ -18,7 +18,7 @@ from engine.combat import CombatEngine
 from engine.dice import DiceEngine
 
 # 覆盖阈值（与combat.py一致）
-bs.TUNING.update({"PROLIF_THRESHOLD":1.0,"DEBT_THRESHOLD":10,"TAMING_TURNS":3})
+bs.TUNING.update({"PROLIF_THRESHOLD":1.0,"DEBT_THRESHOLD":10})
 
 # ===== 可调设计参数（扫参用） =====
 PARAMS = {
@@ -28,6 +28,7 @@ PARAMS = {
     "rest_tier1": 8,
     "grow": "mix",           # 修行方向: speed/mana/mix
     "cap": 99,             # 每场怪物数上限
+    "use_tools": True,       # 扭曲都市：前2场局外各花1精力探索→附赠工具库（裁定⑬）
 }
 
 
@@ -38,7 +39,79 @@ def make_run_player():
                attack_count=1, attack_power=1)
     p.dao_wen["杀伐"] = bs.DaoWenInstance(
         dao_wen=DaoWen(name="杀伐",formula="",cost_type="消耗",cost_formula="X",effect_formula=""))
+    p.tools = []  # 工具库消耗品 [{name, uses}]（裁定⑬：扭曲都市探索附赠）
     return p
+
+from engine.api import TWISTED_TOOL_LIBRARY
+
+def tools_grant(player, rng):
+    """扭曲都市：完成事件附赠【发现】，从未持有工具库随机获得1件（发现3选1简化为随机）"""
+    unowned = [n for n in TWISTED_TOOL_LIBRARY if all(t["name"] != n for t in player.tools)]
+    if unowned:
+        name = rng.choice(unowned)
+        player.tools.append({"name": name, "uses": TWISTED_TOOL_LIBRARY[name][0]})
+        return name
+    return None
+
+def _focus(monsters):
+    alive = alive_monsters(monsters)
+    return min(alive, key=lambda m: m.current_hp) if alive else None
+
+def _use(player, name):
+    for t in player.tools:
+        if t["name"] == name and t["uses"] > 0:
+            t["uses"] -= 1
+            return True
+    return False
+
+def _has(player, name):
+    return any(t["name"] == name and t["uses"] > 0 for t in player.tools)
+
+def tools_phase(player, monsters, activated, rnd):
+    """回始道具阶段（裁定⑬；使用不消耗出手）。每个种类每回合至多1次。"""
+    alive = alive_monsters(monsters)
+    if not alive:
+        return
+    focus = _focus(monsters)
+    # 干扰仪：≥2敌时封本场激活（本回合）
+    if len(alive) >= 2 and _has(player, "干扰仪"):
+        _use(player, "干扰仪")
+        for m in alive: m._jammed = True
+    # 储能电池：回始+12法力
+    if rnd <= 3 and _has(player, "储能电池"):
+        _use(player, "储能电池"); player.current_mana += 12
+    # 探照灯：集火目标蒙蔽2（怪物侧=下2次攻击出手无效）
+    if focus is not None and _has(player, "强光探照灯"):
+        _use(player, "强光探照灯")
+        focus.add_status(bs.StatusEffect("蒙蔽", remaining_rounds=-1, value=2))
+    # 高压水枪：敌方任何"持续X"效果≥1时清全场敌方持续效果
+    if any(st.remaining_rounds > 0 for m in alive for st in m.status_effects) and _has(player, "高压水枪"):
+        _use(player, "高压水枪")
+        for m in alive:
+            m.status_effects = [s for s in m.status_effects if s.remaining_rounds <= 0]
+    # 备用血泵：生命≤50%时回复20；≤30%额外30格挡
+    if player.current_hp <= player.blood_limit * 0.5 and _has(player, "备用血泵"):
+        _use(player, "备用血泵")
+        player.current_hp = min(player.blood_limit, player.current_hp + 20)
+        if player.current_hp <= player.blood_limit * 0.3: player.shield += 30
+    # 急救箱：生命≤35%时回复25并清一种负面持续
+    if player.current_hp <= player.blood_limit * 0.35 and _has(player, "急救箱"):
+        _use(player, "急救箱")
+        player.current_hp = min(player.blood_limit, player.current_hp + 25)
+        neg = [s for s in player.status_effects if s.remaining_rounds > 0 or s.name in ("坏死","退化","伤痕","畸变","蒙蔽")]
+        if neg: player.status_effects.remove(neg[0])
+    # 高爆手雷：集火目标15伤害+本回合攻击次数-1
+    if focus is not None and _has(player, "高爆手雷"):
+        _use(player, "高爆手雷")
+        bs.hit_monster(player, focus, 15, monsters)
+        focus._nade_minus = getattr(focus, "_nade_minus", 0) + 1
+    # 反怪物电击枪：集火25伤害（飞行+15）
+    focus = _focus(monsters)
+    if focus is not None and _has(player, "反怪物电击枪"):
+        _use(player, "反怪物电击枪")
+        flying = focus.is_flying or "飞行" in activated.get(id(focus), set())
+        bs.hit_monster(player, focus, 25 + (15 if flying else 0), monsters)
+
 
 
 def has_dw(p, n): return n in p.dao_wen
@@ -47,7 +120,7 @@ def learn(p, n):
         dao_wen=DaoWen(name=n,formula="",cost_type="消耗",cost_formula="X",effect_formula=""))
 
 def cast_chongji(player, monsters, x):
-    """冲击X：消耗X法力，对所有存活怪造成X伤害（蒙蔽下无效）"""
+    """冲击X：消耗X法力，对所有存活怪造成X伤害（蒙蔽下无效；退化减数值；走专属漏斗）"""
     if player.current_mana < x: return 0
     player.current_mana -= x
     if player.has_status("蒙蔽"):
@@ -59,17 +132,20 @@ def cast_chongji(player, monsters, x):
         return 0
     tot = 0
     for m in monsters:
-        if m.is_alive and not (m.is_subdued or m.is_sculptured or m.is_proliferated or m.is_debt_bound):
-            m.current_hp = max(0, m.current_hp - x); tot += x
-            if m.current_hp <= 0: m.is_alive = False
+        if m.is_alive and not (m.is_sculptured or m.is_proliferated or m.is_debt_bound):
+            tot += bs.hit_monster(player, m, bs.eff_x(player, x), monsters)
     return tot
 
 
 # 修行档：(属性点, 碎片消耗)，按性价比降序
 XIUXING_TIERS = [(6,150),(5,100),(4,65),(3,35),(2,15),(1,0)]
 
-def pre_battle_prep(player, shards, energy=3, battle_n=1):
-    """局外：激进花碎片修行（碎片不转化为面板就是废物）；仅低血才休整"""
+def pre_battle_prep(player, shards, energy=3, battle_n=1, region=None, rng=None):
+    """局外：激进花碎片修行（碎片不转化为面板就是废物）；仅低血才休整。
+    扭曲都市且use_tools：前2场各花1精力探索（完成事件附赠工具库1件）。"""
+    if PARAMS.get("use_tools") and region == "扭曲都市" and battle_n <= 2 and energy > 0 and rng is not None:
+        got = tools_grant(player, rng)
+        if got: energy -= 1
     if battle_n == 1:
         for dw in ["庇护", "再生", "冲击"]:
             if not has_dw(player, dw) and energy > 0:
@@ -97,7 +173,7 @@ def pre_battle_prep(player, shards, energy=3, battle_n=1):
 
 
 def alive_monsters(monsters):
-    return [m for m in monsters if m.is_alive and not (m.is_subdued or m.is_sculptured
+    return [m for m in monsters if m.is_alive and not (m.is_sculptured
             or m.is_proliferated or m.is_debt_bound)]
 
 
@@ -121,7 +197,7 @@ def player_turn_multi(player, monsters, combat, rng):
         else:
             target = min(alive_monsters(monsters), key=lambda m: m.current_hp)
             x = min(mana, max(1, math.ceil(target.current_hp/2)))
-            bs.cast_shaifa(player, target, x); mana = player.current_mana; actions -= 1
+            bs.cast_shaifa(player, target, x, monsters); mana = player.current_mana; actions -= 1
 
 
 def run_multi_battle(player, monster_defs, rng):
@@ -133,9 +209,9 @@ def run_multi_battle(player, monster_defs, rng):
     combat = CombatEngine(state, DiceEngine())
     combat.PROLIFERATION_THRESHOLD = bs.TUNING["PROLIF_THRESHOLD"]
     combat.DEBT_THRESHOLD = bs.TUNING["DEBT_THRESHOLD"]
-    combat.TAMING_REQUIRED_TURNS = bs.TUNING["TAMING_TURNS"]
     for m in monsters:
         combat.init_monster_shards(m)
+    combat.reset_monster_activation()  # 进化记录按战斗重置（裁定②接线）
     # 战始：速度复原、清除控场状态
     player.current_speed = player.speed_limit
     player.is_alive = True
@@ -151,11 +227,29 @@ def run_multi_battle(player, monster_defs, rng):
         # 回始
         player.current_mana = player.mana_limit
         player.shield = 0
+        player.hp_lost_this_round = 0
+        for m in monsters:
+            m.hp_lost_this_round = 0
+            m._jammed = False
+            m._nade_minus = 0
+        if getattr(player, "tools", None):
+            tools_phase(player, monsters, activated, rnd)  # 回始道具阶段（裁定⑬）
         for m in monsters:
             if m.is_alive: bs.monster_round_start(m, activated[id(m)])
-            if rnd > 1 and m.is_alive:
+            if rnd > 1 and m.is_alive and not getattr(m, "_jammed", False):  # 干扰仪：本回合无法发动道纹
                 act = bs.monster_activate(m, activated[id(m)], rng)
-                if act: bs.apply_control_to_player(act, m, player)
+                if act and not act.startswith("崩解:"):  # 崩解：激活效果中断
+                    bs.apply_control_to_player(act, m, player)
+                    if bs.USE_EXCLUSIVE and act in bs.EXCLUSIVE_PRIORITY:
+                        bs.apply_exclusive(act, m, player, monsters, rng)
+                if act == "活力":
+                    if bs.HUOLI_MODE == "burst": m._huoli_charges = 1
+                    if bs.HUOLI_MODE in ("charges", "flat"): bs.huoli_note_activation(m, act)
+                if bs.sim_maybe_evolve(m, combat):  # 困境进化默认策略（裁定②接线）
+                    paths_used.append("进化")
+        bs.exclusive_round_start(player, monsters, activated, rng)  # 专属道纹回始（裁定⑨）
+        if not player.is_alive:
+            return {"win": False, "paths": paths_used}
         # 玩家出手
         player_turn_multi(player, monsters, combat, rng)
         if not alive_monsters(monsters):
@@ -164,14 +258,21 @@ def run_multi_battle(player, monster_defs, rng):
         for m in monsters:
             if not m.is_alive or not player.is_alive: continue
             must_hit = "必中" in activated[id(m)]
-            for _ in range(bs.get_monster_attack_actions(m, activated[id(m)])):
+            n_act = bs.get_monster_attack_actions(m, activated[id(m)])
+            x_h = m.dao_wen["活力"].x_value if "活力" in activated[id(m)] and "活力" in m.dao_wen else 0
+            half_base = n_act - x_h if bs.HUOLI_MODE == "half" else n_act
+            for i in range(n_act):
                 if not player.is_alive: break
-                bs.monster_attack_round(m, player, combat, rng, must_hit)
+                bs.monster_attack_round(m, player, combat, rng, must_hit, 1.0 if i < half_base else 0.5)
+            bs.huoli_tick(m, activated[id(m)])
         if not player.is_alive:
             return {"win": False, "paths": paths_used}
         # 回终
         player.shield = 0; player.current_mana = 0
         for m in monsters: m.shield = 0
+        bs.exclusive_round_end(player, monsters)  # 专属道纹回终（裁定⑨）
+        if not player.is_alive:
+            return {"win": False, "paths": paths_used}
         settled = combat.settle_victory_paths()
         for s in settled: paths_used.append(s["type"])
         if not alive_monsters(monsters):
@@ -188,18 +289,18 @@ def battle_monster_count(n):
 def run_full_run(rng, pool, region):
     rpool = [m for m in pool if m["region"] == region]
     player = make_run_player()
-    shards = 20
+    player.shards = 20  # 碎片挂在玩家实体上：局内被洗劫/逼债/赎金夺取会真实扣减（裁定⑨）
     for n in range(1, 8):
         count = battle_monster_count(n)
         defs = [rng.choice(rpool) for _ in range(count)]
-        shards = pre_battle_prep(player, shards, energy=3, battle_n=n)
+        player.shards = pre_battle_prep(player, player.shards, energy=3, battle_n=n, region=region, rng=rng)
         res = run_multi_battle(player, defs, rng)
         if not res["win"]:
             return {"cleared": False, "reached": n, "paths": res["paths"], "final_hp": player.current_hp}
         # 战终碎片奖励（仅击杀，非杀伐移出）
         for md in defs:
             # 简化：每只击杀怪给 战始血限2%+道纹数5
-            shards += math.ceil(md["hp"]*0.02) + len(md["dw"])*5
+            player.shards += math.ceil(md["hp"]*0.02) + len(md["dw"])*5
     return {"cleared": True, "reached": 8, "paths": [], "final_hp": player.current_hp}
 
 
@@ -219,6 +320,7 @@ def main():
     args = sys.argv[1:]
     if args and args[0] == "all":
         runs = int(args[1]) if len(args) > 1 else 300
+        bs.SIM_STATS["evolutions"] = 0; bs.SIM_STATS["collapses"] = 0
         print(f"各副本7场通关率（激进修行策略，每次{runs}局）\n")
         total_cleared = 0
         for region in ["扭曲都市", "罪孽都市", "龙心谷"]:
@@ -232,6 +334,7 @@ def main():
             dist = " ".join(f"{('通关' if k==8 else '第'+str(k)+'败')}:{reached.get(k,0)*100//runs}%" for k in range(1,9) if reached.get(k))
             print(f"  {region}: 通关率 {rate:.1f}%  | {dist}")
         print(f"\n  三副本平均通关率: {total_cleared/(runs*3)*100:.1f}%")
+        print(f"  [裁定②接线] 进化触发 {bs.SIM_STATS['evolutions']} 次 | 崩解自毁 {bs.SIM_STATS['collapses']} 次（共{runs*3}局）")
         return
     if args and args[0] == "sweep":
         # 扫参找30%：出怪offset × 修行方向

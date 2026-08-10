@@ -19,7 +19,7 @@ class BattleFlow:
         self.state = state
         self.round_num = 0
         self.battle_log = []
-        # 复用战斗引擎的降服结算逻辑
+        # 复用战斗引擎的多路径胜利结算逻辑
         self.combat = CombatEngine(state, DiceEngine())
     
     # ==================== 怪物道纹效果 ====================
@@ -208,7 +208,6 @@ class BattleFlow:
                 "daowen_uses": []
             }
 
-            hp_before_monster = player.current_hp
             # 攻击出手：每点攻击出手发动一轮攻击（attack_count次）
             for i in range(actions["attack"]):
                 if not player.current_hp > 0:
@@ -228,8 +227,6 @@ class BattleFlow:
                     "note": "道纹出手（攻击出手之外独立发动，效果由AI/DM按道纹公式结算）"
                 })
 
-            # 降服追踪：记录该怪物本回合对轮回者造成的实际生命损失
-            self.combat.record_monster_damage(m, hp_before_monster - player.current_hp)
             round_result["monster_actions"].append(m_result)
         
         # === 4. 回终 ===
@@ -249,11 +246,11 @@ class BattleFlow:
         # 逆鳞反击
         # (由玩家侧管理，此处简化)
 
-        # 降服结算：连续3回合未能对轮回者造成伤害的怪物被降服
-        tamed = self.combat.settle_taming()
-        if tamed:
-            round_result["taming"] = tamed
-            round_result["effects"].extend([t["note"] for t in tamed])
+        # 多路径胜利结算（雕塑/增生/还债）
+        settled = self.combat.settle_victory_paths()
+        if settled:
+            round_result["victory_paths"] = settled
+            round_result["effects"].extend([t["note"] for t in settled])
 
         round_result["player_hp_end"] = player.current_hp
         round_result["monster_hp_end"] = {m.name: m.current_hp for m in monsters}

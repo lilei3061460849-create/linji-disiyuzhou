@@ -40,13 +40,13 @@ def cast_chongji(player, monsters, x):
         return 0
     tot = 0
     for m in monsters:
-        if m.is_alive and not (m.is_subdued or m.is_sculptured or m.is_proliferated or m.is_debt_bound):
+        if m.is_alive and not (m.is_sculptured or m.is_proliferated or m.is_debt_bound):
             m.current_hp = max(0, m.current_hp - x); tot += x
             if m.current_hp <= 0: m.is_alive = False
     return tot
 
 def alive_ms(ms):
-    return [m for m in ms if m.is_alive and not (m.is_subdued or m.is_sculptured or m.is_proliferated or m.is_debt_bound)]
+    return [m for m in ms if m.is_alive and not (m.is_sculptured or m.is_proliferated or m.is_debt_bound)]
 
 # ===== 带遗物的战斗（逐回合记录到log） =====
 def battle(player, defs, log, relics, rng):
@@ -100,7 +100,6 @@ def battle(player, defs, log, relics, rng):
             must = "必中" in activated[id(m)]
             for _ in range(n):
                 if not player.is_alive: break
-                hp0 = player.current_hp
                 # 手写一轮攻击以便记录避风铃
                 for _ in range(m.attack_count):
                     if not player.is_alive: break
@@ -113,7 +112,6 @@ def battle(player, defs, log, relics, rng):
                     ab = min(player.shield, dmg); player.shield -= ab
                     player.current_hp = max(0, player.current_hp - (dmg-ab))
                     if player.current_hp <= 0: player.is_alive = False
-                combat.record_monster_damage(m, hp0 - player.current_hp)
             log.append(f"    {m.name}攻击×{n}→贾凡HP{player.current_hp} 速{player.current_speed}")
         if "避风铃" in relics and player.current_speed == 0:
             player.shield += 15; log.append(f"    [避风铃]速度归零→+15挡")
@@ -179,7 +177,7 @@ def run_one(seed):
         # 战终：碎片（击杀怪）+ 钱袋
         reward = 0; killn = 0
         for d in defs:
-            killn += 1  # 简化：本场怪均视为击杀计碎片（降服不产但占少数）
+            killn += 1  # 简化：本场怪均视为击杀计碎片（雕塑等移出路径不产）
             reward += math.ceil(d["hp"]*0.02) + len(d["dw"])*5
         bag = sum(math.ceil(d["hp"]*0.02) for d in defs) if "钱袋" in relics else 0
         shards += reward + bag
