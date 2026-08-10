@@ -87,7 +87,10 @@ class Consumable:
     current_uses: int = 1
     max_uses: int = 1
     # kind: normal(普通) / sculpture(雕塑，1耐久=15伤害或20格挡)
+    #       / dragon_heart(龙心谷"炼心"产出，耐久=可抵消的同类型代价点数)
     kind: str = "normal"
+    # dragon_heart 专用：可抵消的代价类型（流血/衰老/疲惫）
+    dragon_heart_type: str = ""
 
     @property
     def is_depleted(self) -> bool:
@@ -211,6 +214,7 @@ class Entity:
     # 非击杀移出战斗标记（封印等；不产碎片）
     removed_without_kill: bool = False
     hp_lost_this_round: int = 0   # 本回合累计失去的生命（活血用，回始归零）
+    actions_used_this_round: int = 0  # 本回合已消耗的出手次数（回始归零，用于出手预算校验）
 
     # 多路径胜利追踪
     shards: int = 0              # 怪物自带碎片（罪孽都市）/ 负值表示负债（还债）
@@ -224,11 +228,46 @@ class Entity:
 
     # 存活
     is_alive: bool = True
+
+    # 出战支援（罪孽都市专属机制1，全局对所有[员工]生效）：
+    # [员工]默认待命不占场；is_deployed=True 才计入战场与工资结算。
+    # 玩家/怪物/[朋友]/[临时朋友]与"还债"转化来的[员工]默认直接为True，保持既有行为不变。
+    is_deployed: bool = True
+    deployed_at_round: int = 0  # 派遣时 state.current_round 的原始值（用于结算"实际出场回合数"）
+
+    # 撤退（任意[朋友]/[员工]即将受到足以使当前命零的伤害时自动触发）：
+    # 保留当前生命，不再计入本场战斗(get_all_player_side排除)，无法再次加入本场战斗；
+    # 但未死亡，[战终]后随存活[朋友]/[员工]一同留存，下一场重置为False可正常参战。
+    has_retreated: bool = False
+
+    # 血誓戒：本回合是否已经触发过"首次主动支付流血代价"奖励（回始归零）
+    blood_oath_used_this_round: bool = False
+    # 钱袋：[战始]时的血限快照，用于按"[战始][血限]×2%"结算额外碎片（增殖等战斗中改变血限不影响此值）
+    battle_start_blood_limit: int = 0
+
+    # 寒冰法力（初拥之夜特性）：本回合内，持有该特性者对我方发动道纹累计消耗的法力（含对自己发动）
+    # 回始归零；每满10点使当前回合出手次数-1（以叠加"无力"状态实现）
+    mana_inflicted_this_round: int = 0
+
+    # 血族血脉（初拥之夜特性）：本回合是否已造成过伤害（[回终]判定：造成过则回复等量，否则流血20）
+    damage_dealt_this_round: int = 0
+    # 赤族诅咒标记：entity_type=="赤族"的实体[回终]固定流血20；is_chizu_of记录其主人名字(仅用于血食校验)
+    is_chizu_of: str = ""
+
+    def __post_init__(self):
+        if self.battle_start_blood_limit == 0:
+            self.battle_start_blood_limit = self.blood_limit
+
     
     @property
     def action_count(self) -> int:
-        """出手次数 = 速限/3向上取整；活力+X、无力-X"""
-        base = math.ceil(self.speed_limit / 3) if self.speed_limit > 0 else 0
+        """出手次数：轮回者=速限/3向上取整；[朋友]/[员工](微光者，面板无速限)=攻击次数/3向上取整；
+        怪物走独立的"固定1次攻击+1次道纹"规则(见battle_flow.get_monster_actions)，不使用本属性。
+        活力+X、无力-X 对两种口径均生效。"""
+        if self.entity_type in ("朋友", "员工"):
+            base = math.ceil(self.attack_count / 3) if self.attack_count > 0 else 0
+        else:
+            base = math.ceil(self.speed_limit / 3) if self.speed_limit > 0 else 0
         base += self.get_status_value("活力")
         base -= self.get_status_value("无力")
         return max(0, base)
@@ -385,6 +424,10 @@ class Entity:
             "is_flying": self.is_flying,
             "is_alive": self.is_alive,
             "removed_without_kill": self.removed_without_kill,
+            "is_deployed": self.is_deployed,
+            "has_retreated": self.has_retreated,
+            "battle_start_blood_limit": self.battle_start_blood_limit,
+            "deployed_at_round": self.deployed_at_round,
             "shards": self.shards,
             "total_healed": self.total_healed,
             "hp_ratio": round(self.hp_ratio, 2),
@@ -444,8 +487,64 @@ class GameState:
     sealed_candidate: Optional[dict] = None
     
     # 员工相关
-    blacklist_level: int = 0     # 黑名单计数（每累计3名员工离队加入黑名单）
+    blacklist_level: int = 0     # 黑名单计数（每累计3名员工因拒付工资/解雇/死亡离队+1，≥3触发is_blacklisted）
     is_blacklisted: bool = False
+
+    # 战终工资结算（出战支援）：{员工名: 应付工资}，非空时 battle_end 阻塞，需先逐个 pay_employee_wage 决策
+    pending_wage_decisions: dict[str, int] = field(default_factory=dict)
+
+    # 雇佣后"发现并选择一种转化道纹"：{员工名: [3个候选道纹名]}，未选择前该员工暂不持有转化道纹
+    pending_daowen_choices: dict[str, list[str]] = field(default_factory=dict)
+
+    # 事件登记的"下一场战斗额外出现的怪物"（如龙心谷"追求者·拿走口粮"），[战始]出怪时读取并额外加入
+    forced_monsters_next_battle: list[dict] = field(default_factory=list)
+
+    # 员工叛变：待处理标记（[战终]检查命中后置真，三个处理分支任一生效后清空）
+    rebellion_active: bool = False
+    # 员工叛变·镇压子战斗：进行中标记（employees已搬入enemies，需resolve_rebellion_battle结算）
+    rebellion_in_progress: bool = False
+    # 员工叛变·让利：每场工资在原公式基础上的固定加成（本次轮回持续生效）
+    wage_bonus: int = 0
+
+    # 最终的冠冕/第8场死斗：进行中标记 + 当前该谁出手("player_side"/"opponent_side")
+    in_final_duel: bool = False
+    duel_turn: str = ""
+
+    # 龙心谷"炼心"：待生效标记；下一次玩家实际支付数值型代价后转化为对应类型的【××龙心】消耗品
+    pending_lianxin: bool = False
+    # 炼心在战斗中发动时不消耗出手，改为"下次局外行动多消耗1点精力"，此处累计待结算的额外精力消耗
+    pending_energy_penalty: int = 0
+
+    # 熔谷终音"真龙之心"：龙性资源池 + 已解锁的龙族特性名单
+    dragon_nature: int = 0
+    dragon_traits: list[str] = field(default_factory=list)
+    # 震岳龙躯剩余持续回合数（0=未激活）；断尾求生已消耗的特性记录见dragon_traits变化
+    dragon_body_shield_rounds: int = 0
+    # 断尾求生：预先声明"若本次伤害会使自身命零，移除该龙族特性来抵消伤害"；为空=未声明保护
+    dragon_tail_sacrifice_declared: str = ""
+
+    # 终音法器（三选一/四选一后获得的具名法器，跨副本共享同一个列表）
+    artifacts_owned: list[str] = field(default_factory=list)
+    # 红头绳解锁的局外行动"献祭"
+    has_sacrifice_action: bool = False
+    # 罪业金库/教父左轮等法器自身状态
+    godfather_revolver_uses: int = 0
+    # 死斗胜利后待选择的终音法器所属副本（非空=等待choose_terminal_artifact）
+    pending_terminal_region: str = ""
+    # 共心环：本场战斗选定的可共享龙心类型（空=未选定/未持有共心环）
+    shared_dragon_heart_type: str = ""
+    # 负岳碑(终音法器)：预先声明"下一次这些[朋友]/[员工]即将撤退时，改为流血20取消撤退"的名单
+    fuyuebei_declared: list[str] = field(default_factory=list)
+
+    # 初拥之夜：待选择标记 + 已选过的1~8号特性(每项限一次，9号不计入) + 已获得的赤族
+    pending_first_embrace: bool = False
+    # 仅当初拥之夜是由死斗胜利(领取猩红尖牙)触发时为True：完成本次选择(非"封存血脉")后应紧接着完整封存
+    seal_pending_after_embrace: bool = False
+    first_embrace_traits: list[str] = field(default_factory=list)
+    chizu_names: list[str] = field(default_factory=list)
+    # 真理眼冷却：剩余需要经过的战斗场数(战终-1，0=可用)
+    truth_eye_cooldown: int = 0
+
     
     # 属性点
     attribute_points: int = 0
@@ -466,6 +565,14 @@ class GameState:
             "shards": self.shards,
             "blacklist_level": self.blacklist_level,
             "is_blacklisted": self.is_blacklisted,
+            "pending_wage_decisions": self.pending_wage_decisions,
+            "pending_daowen_choices": self.pending_daowen_choices,
+            "forced_monsters_next_battle": self.forced_monsters_next_battle,
+            "rebellion_active": self.rebellion_active,
+            "rebellion_in_progress": self.rebellion_in_progress,
+            "wage_bonus": self.wage_bonus,
+            "in_final_duel": self.in_final_duel,
+            "duel_turn": self.duel_turn,
             "attribute_points": self.attribute_points,
             "player": self.player.to_dict() if self.player else None,
             "friends": [f.to_dict() for f in self.friends],
@@ -482,13 +589,13 @@ class GameState:
         }
     
     def get_all_player_side(self) -> list[Entity]:
-        """获取己方所有实体"""
+        """获取己方所有实体（[员工]需 is_deployed=True 才计入战场；已【撤退】者不再计入本场战斗）"""
         entities = []
         if self.player and self.player.is_alive:
             entities.append(self.player)
-        entities.extend(f for f in self.friends if f.is_alive)
-        entities.extend(e for e in self.employees if e.is_alive)
-        entities.extend(t for t in self.temp_friends if t.is_alive)
+        entities.extend(f for f in self.friends if f.is_alive and not f.has_retreated)
+        entities.extend(e for e in self.employees if e.is_alive and e.is_deployed and not e.has_retreated)
+        entities.extend(t for t in self.temp_friends if t.is_alive and not t.has_retreated)
         return entities
     
     def get_all_enemy_side(self) -> list[Entity]:

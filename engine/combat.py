@@ -97,17 +97,126 @@ class CombatEngine:
         
         return result
     
+    def _apply_hostile_damage(self, target: Entity, amount: int, damage_type: str = "普通") -> dict:
+        """
+        对target造成外部/敌对伤害的统一入口（供攻击与道纹伤害调用；自身【代价】不走此入口）。
+        撤退（任意[朋友]/[员工]即将受到足以使当前命零的伤害时触发）：
+        判定须扣除格挡后的实际伤害是否≥当前生命（格挡足够抵消则不触发撤退，也不触发死亡）；
+        触发后本次伤害清零、目标保留当前生命与格挡、标记has_retreated退出本场战斗。
+        负岳碑(终音法器)：若玩家已通过 declare_fuyuebei_toll(name) 预先声明保护该目标，
+        且玩家当前生命>20，则改为玩家流血20，抵消本次伤害并取消本次撤退(目标不掉血也不撤退)。
+        """
+        if damage_type != "代价" and target.entity_type in ("朋友", "员工") and not target.has_retreated and target.is_alive:
+            remaining_after_shield = max(0, amount - target.shield) if amount > 0 else 0
+            if remaining_after_shield >= target.current_hp and target.current_hp > 0:
+                player = self.state.player
+                if (target.name in self.state.fuyuebei_declared and "负岳碑" in self.state.artifacts_owned
+                        and player is not None and player.current_hp > 20):
+                    self.state.fuyuebei_declared.remove(target.name)
+                    self._pay_bleed_cost(player, 20)
+                    return {
+                        "raw_damage": amount, "shield_absorbed": 0, "actual_damage": 0,
+                        "hp_before": target.current_hp, "hp_after": target.current_hp,
+                        "blood_limit_before": target.blood_limit, "died": False,
+                        "damage_type": damage_type, "retreated": False, "fuyuebei_toll_paid": 20,
+                    }
+                target.has_retreated = True
+                return {
+                    "raw_damage": amount, "shield_absorbed": 0, "actual_damage": 0,
+                    "hp_before": target.current_hp, "hp_after": target.current_hp,
+                    "blood_limit_before": target.blood_limit, "died": False,
+                    "damage_type": damage_type, "retreated": True,
+                }
+        # 断尾求生（真龙之心特性）：玩家即将命零时，若已预声明愿意牺牲的龙族特性，移除该特性抵消本次伤害
+        if (damage_type != "代价" and target is self.state.player and target.is_alive
+                and "断尾求生" in self.state.dragon_traits and self.state.dragon_tail_sacrifice_declared):
+            remaining_after_shield = max(0, amount - target.shield) if amount > 0 else 0
+            if remaining_after_shield >= target.current_hp and target.current_hp > 0:
+                sacrificed = self.state.dragon_tail_sacrifice_declared
+                if sacrificed in self.state.dragon_traits:
+                    self.state.dragon_traits.remove(sacrificed)
+                self.state.dragon_tail_sacrifice_declared = ""
+                return {
+                    "raw_damage": amount, "shield_absorbed": 0, "actual_damage": 0,
+                    "hp_before": target.current_hp, "hp_after": target.current_hp,
+                    "blood_limit_before": target.blood_limit, "died": False,
+                    "damage_type": damage_type, "tail_sacrificed": sacrificed,
+                }
+        return target.take_damage(amount, damage_type)
+
+    def _pay_bleed_cost(self, payer: Entity, amount: int, dragon_heart_use: int = 0) -> dict:
+        """
+        支付"流血X"代价的统一入口（供道纹代价与鲜血契约等遗物自身的流血代价共用）。
+        血誓戒：[回始]玩家首次主动支付流血代价时，获得等同于本次流血的格挡；
+        若支付后生命≤30%[血限]，改为获得等量生命。仅玩家本人支付时生效(卖身契转嫁给他人不算)。
+        dragon_heart_use：本次希望消耗"流血龙心"抵消的点数(龙心谷"炼心"产出)，抵消后剩余部分才真正支付。
+        """
+        actual, offset = self._offset_with_dragon_heart(payer, "流血", amount, dragon_heart_use)
+        detail = payer.take_damage(actual, "代价")
+        detail["dragon_heart_offset"] = offset
+        if (payer is self.state.player and actual > 0 and not payer.blood_oath_used_this_round
+                and any(r.name == "血誓戒" for r in self.state.relics)):
+            payer.blood_oath_used_this_round = True
+            if payer.blood_limit > 0 and payer.current_hp / payer.blood_limit <= 0.3:
+                heal_detail = payer.heal(actual)
+                detail["blood_oath"] = {"type": "life", "amount": heal_detail["actual_heal"]}
+            else:
+                payer.gain_shield(actual)
+                detail["blood_oath"] = {"type": "shield", "amount": actual}
+        self._bank_lianxin(payer, "流血", actual)
+        return detail
+
+    def _offset_with_dragon_heart(self, payer: Entity, cost_type: str, amount: int, dragon_heart_use: int) -> tuple:
+        """
+        用一枚匹配类型的【××龙心】抵消本次代价：最多抵消 min(请求量, 龙心当前耐久, 原始代价)。
+        返回 (抵消后实际需支付的数值, 实际消耗的龙心点数)。
+        """
+        if dragon_heart_use <= 0 or amount <= 0:
+            return amount, 0
+        heart_name = f"{cost_type}龙心"
+        heart = next((c for c in self.state.consumables
+                      if c.kind == "dragon_heart" and c.dragon_heart_type == cost_type
+                      and c.name == heart_name and not c.is_depleted), None)
+        if heart is None:
+            return amount, 0
+        offset = min(dragon_heart_use, heart.current_uses, amount)
+        if offset <= 0:
+            return amount, 0
+        heart.current_uses -= offset
+        return amount - offset, offset
+
+    def _bank_lianxin(self, payer: Entity, cost_type: str, actual_paid: int):
+        """
+        炼心待生效时，玩家下一次实际支付(抵消后仍>0)的数值型代价，转化为等值的【××龙心】消耗品。
+        同名消耗品自动合并耐久与耐久上限（沿用既有消耗品合并规则）。
+        """
+        if not (payer is self.state.player and self.state.pending_lianxin and actual_paid > 0):
+            return
+        self.state.pending_lianxin = False
+        heart_name = f"{cost_type}龙心"
+        existing = next((c for c in self.state.consumables if c.name == heart_name and c.kind == "dragon_heart"), None)
+        if existing:
+            existing.current_uses += actual_paid
+            existing.max_uses += actual_paid
+        else:
+            self.state.consumables.append(Consumable(
+                name=heart_name, effect=f"消耗Y点耐久可抵消Y点{cost_type}代价",
+                current_uses=actual_paid, max_uses=actual_paid,
+                kind="dragon_heart", dragon_heart_type=cost_type))
+
     def resolve_attack(
         self,
         attacker: Entity,
         target: Entity,
         hit_index: int = 0,
         is_must_hit: bool = False,
-        dodge: bool = False
+        dodge: bool = False,
+        blood_shadow: bool = False,
     ) -> dict:
         """
         解析一次攻击
         dodge: 目标是否选择闪避（由AI决策）
+        blood_shadow: 目标是否选择用【血影】特性(流血10取消本次判定)代替常规闪避
         """
         result = {
             "attacker": attacker.name,
@@ -128,6 +237,15 @@ class CombatEngine:
 
         # 必中（含必中状态）
         must_hit = is_must_hit or attacker.has_status("必中")
+
+        # 血影（初拥之夜特性，仅玩家自身持有）：非必中判定下，可流血10取消本次判定，是常规闪避外的另一选项
+        if (blood_shadow and not must_hit and target is self.state.player
+                and "血影" in self.state.first_embrace_traits and target.current_hp > 10):
+            self._pay_bleed_cost(target, 10)
+            result["blood_shadow_success"] = True
+            result["note"] = "血影：流血10，本次判定被取消"
+            return result
+
         # 闪避判定
         if dodge:
             if must_hit:
@@ -156,6 +274,9 @@ class CombatEngine:
         # 龙鳞：目标每次受到伤害-X（最低0）
         if target.has_status("龙鳞"):
             damage = max(0, damage - target.get_status_value("龙鳞"))
+        # 龙族血脉（真龙之心特性）：对非怪物造成伤害翻倍（对怪物的秒杀效果在伤害结算后处理）
+        if attacker is self.state.player and "龙族血脉" in self.state.dragon_traits and target.entity_type != "怪物":
+            damage *= 2
 
         # 检查蒙蔽状态
         if attacker.has_status("蒙蔽"):
@@ -175,6 +296,9 @@ class CombatEngine:
         
         # 检查贯穿（无视格挡）
         ignore_shield = attacker.has_status("贯穿")
+        # 震岳龙躯（真龙之心特性）：激活期间，自身受到超出15点的伤害无效
+        if target is self.state.player and self.state.dragon_body_shield_rounds > 0:
+            damage = min(damage, 15)
         # 法术：受到伤害前（玩家为目标时触发反应型法术，可能反杀攻击者或加盾）
         if self.state.player is not None and target is self.state.player and damage > 0:
             slogs = self.trigger_spells("受到伤害前", {"attacker": attacker, "target": target, "incoming": damage})
@@ -189,18 +313,29 @@ class CombatEngine:
                 per = damage // xv
                 ta = ts = 0; died = False
                 for _ in range(xv):
-                    dr = target.take_damage(per, "普通" if not ignore_shield else "无视格挡")
+                    dr = self._apply_hostile_damage(target, per, "普通" if not ignore_shield else "无视格挡")
                     ta += dr["actual_damage"]; ts += dr["shield_absorbed"]; died = died or dr["died"]
                 damage_result = {"actual_damage": ta, "shield_absorbed": ts, "hp_after": target.current_hp, "died": died, "split": xv}
             else:
-                damage_result = target.take_damage(damage, "普通" if not ignore_shield else "无视格挡")
+                damage_result = self._apply_hostile_damage(target, damage, "普通" if not ignore_shield else "无视格挡")
         else:
-            damage_result = target.take_damage(damage, "普通" if not ignore_shield else "无视格挡")
+            damage_result = self._apply_hostile_damage(target, damage, "普通" if not ignore_shield else "无视格挡")
+        # 龙族血脉（真龙之心特性）：对怪物造成伤害后，直接使其命零
+        if (attacker is self.state.player and "龙族血脉" in self.state.dragon_traits
+                and target.entity_type == "怪物" and damage_result["actual_damage"] > 0 and target.is_alive):
+            target.current_hp = 0
+            target.is_alive = False
+            damage_result = dict(damage_result)
+            damage_result["died"] = True
+            damage_result["hp_after"] = 0
+            damage_result["dragon_bloodline_kill"] = True
         result["damage_dealt"] = damage_result["actual_damage"]
         result["shield_absorbed"] = damage_result["shield_absorbed"]
         result["hp_lost"] = damage_result["actual_damage"]
         result["target_died"] = damage_result["died"]
         result["target_hp_after"] = damage_result["hp_after"]
+        if damage_result["actual_damage"] > 0:
+            attacker.damage_dealt_this_round += damage_result["actual_damage"]
         if "split" in damage_result:
             result["split"] = damage_result["split"]
         # 法术：失去生命后（玩家实损>0时触发）
@@ -276,9 +411,13 @@ class CombatEngine:
         """
         effects = []
         
-        # 活血追踪归零
+        # 活血追踪归零 + 出手预算归零（回始重置本回合已用出手次数）+ 血誓戒每回合限一次归零 + 血族血脉判定归零
         for e in self.state.get_all_player_side() + self.state.get_all_enemy_side():
             e.hp_lost_this_round = 0
+            e.actions_used_this_round = 0
+            e.blood_oath_used_this_round = False
+            e.mana_inflicted_this_round = 0
+            e.damage_dealt_this_round = 0
         # 遗物：回始触发
         relic_logs = self.process_relics("round_start")
         effects.extend({"type": "relic", "log": l} for l in relic_logs)
@@ -359,7 +498,24 @@ class CombatEngine:
                     "hp_after": result["hp_after"],
                     "died": result["died"]
                 })
-            
+
+            # 血族血脉（初拥之夜特性）：[回终]本回合若造成过伤害则回复等量，否则流血20
+            if "血族血脉" in self.state.first_embrace_traits and entity is self.state.player:
+                if entity.damage_dealt_this_round > 0:
+                    heal_detail = entity.heal(entity.damage_dealt_this_round)
+                    effects.append({"type": "blood_lineage_heal", "entity": entity.name,
+                                     "amount": heal_detail["actual_heal"]})
+                else:
+                    bleed_detail = self._pay_bleed_cost(entity, 20)
+                    effects.append({"type": "blood_lineage_bleed", "entity": entity.name,
+                                     "amount": bleed_detail["actual_damage"]})
+
+            # 赤族诅咒：[回终]固定流血20
+            if entity.entity_type == "赤族" and entity.is_alive:
+                bleed_detail = entity.take_damage(20, "代价")
+                effects.append({"type": "chizu_curse_bleed", "entity": entity.name,
+                                 "amount": bleed_detail["actual_damage"], "died": bleed_detail["died"]})
+
             # 格挡清空
             if entity.shield > 0:
                 effects.append({
@@ -389,6 +545,11 @@ class CombatEngine:
                     "entity": entity.name,
                     "expired_effects": expired
                 })
+
+        # 震岳龙躯（真龙之心特性）：持续X回合递减，归零后护体效果失效
+        if self.state.dragon_body_shield_rounds > 0:
+            self.state.dragon_body_shield_rounds -= 1
+            effects.append({"type": "dragon_body_tick", "remaining": self.state.dragon_body_shield_rounds})
 
         # 活血：有活血状态的实体，回终按本回合累计失血÷2回复
         for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
@@ -661,10 +822,11 @@ class CombatEngine:
         }
 
     def _debt_bind_monster(self, monster: Entity) -> dict:
-        """还债：负债达阈值→视为员工；负债还清后离开"""
+        """还债：负债达阈值→视为员工；负债还清后离开（走独立的负债经济轨道，不受出战支援/工资/黑名单约束）"""
         monster.is_debt_bound = True
         # 转为员工（保留当前面板），其待还负债记录于 shards（负值）
         monster.entity_type = "员工"
+        monster.is_deployed = True  # "视为其参战"：立即出战，不需要玩家消耗出手派遣
         self.state.employees.append(monster)
         self.state.enemies.remove(monster)
         return {
@@ -788,10 +950,34 @@ class CombatEngine:
             state_snapshot=self.state.to_dict()
         )
     
+    def initiate_negotiation(self, proposal: str) -> Interrupt:
+        """
+        员工叛变·急中生智谈判声明：给出合理的谈判方案破解叛乱，需要DM裁定方案是否成立。
+        """
+        return Interrupt(
+            interrupt_type=InterruptType.STAFF_MUTINY,
+            context={
+                "employees": [e.name for e in self.state.employees],
+                "employee_attack_total": sum(e.attack_count * e.attack_power for e in self.state.employees),
+                "player_hp": self.state.player.current_hp if self.state.player else 0,
+                "shards": self.state.shards,
+                "proposal": proposal,
+            },
+            description=(
+                f"轮回者尝试以谈判方案破解员工叛变：\n\n{proposal}\n\n"
+                f"请DM裁定该方案是否合理、能否平息叛乱。"
+            ),
+            options=[
+                {"id": "negotiation_success", "label": "谈判成功", "description": "叛乱平息，方案对应的代价/效果按DM裁定生效"},
+                {"id": "negotiation_fail", "label": "谈判失败", "description": "叛乱未平息，需改用镇压或让利处理"},
+            ],
+            state_snapshot=self.state.to_dict()
+        )
+
     # ========== 辅助方法 ==========
     
-    def apply_daowen_effect(self, name: str, calc: dict, caster: Entity, target: Entity) -> dict:
-        """应用道纹效果（统一效果键处理；供api与法术共用）"""
+    def apply_daowen_effect(self, name: str, calc: dict, caster: Entity, target: Entity, dragon_heart_use: int = 0) -> dict:
+        """应用道纹效果（统一效果键处理；供api与法术共用）。dragon_heart_use仅对caster自身的数值型代价生效。"""
         result = {"daowen": name, "effects": []}
         multiplier = self.is_monster_triple(name, caster)
         if multiplier > 1:
@@ -812,18 +998,28 @@ class CombatEngine:
 
         # ---- 伤害类 ----
         if "target_damage" in calc:
-            dmg = target.take_damage(0 if mengbi_blocked else calc["target_damage"] * multiplier)
+            dmg = self._apply_hostile_damage(target, 0 if mengbi_blocked else calc["target_damage"] * multiplier)
             result["effects"].append({"type": "damage", "target": target.name, **dmg})
+            if dmg.get("actual_damage", 0) > 0:
+                caster.damage_dealt_this_round += dmg["actual_damage"]
         if "total_damage" in calc and "target_damage" not in calc:  # 血债等多段
-            dmg = target.take_damage(0 if mengbi_blocked else calc["total_damage"] * multiplier)
+            dmg = self._apply_hostile_damage(target, 0 if mengbi_blocked else calc["total_damage"] * multiplier)
             result["effects"].append({"type": "damage", "target": target.name, **dmg})
+            if dmg.get("actual_damage", 0) > 0:
+                caster.damage_dealt_this_round += dmg["actual_damage"]
         if "aoe_damage" in calc:
             a = 0 if mengbi_blocked else calc["aoe_damage"] * multiplier
             for enemy in self.state.get_all_enemy_side():
-                result["effects"].append({"type": "aoe_damage", "target": enemy.name, **enemy.take_damage(a)})
+                dmg = enemy.take_damage(a)
+                result["effects"].append({"type": "aoe_damage", "target": enemy.name, **dmg})
+                if dmg.get("actual_damage", 0) > 0:
+                    caster.damage_dealt_this_round += dmg["actual_damage"]
         if "hp_percent_loss" in calc:  # 赌命：当前生命百分比
             d = math.ceil(target.current_hp * calc["hp_percent_loss"] / 100)
-            result["effects"].append({"type": "pct_damage", "target": target.name, **target.take_damage(d)})
+            dmg = self._apply_hostile_damage(target, d)
+            result["effects"].append({"type": "pct_damage", "target": target.name, **dmg})
+            if dmg.get("actual_damage", 0) > 0:
+                caster.damage_dealt_this_round += dmg["actual_damage"]
 
         # ---- 回复类 ----
         if "target_heal" in calc and not huaisi_block:
@@ -844,8 +1040,13 @@ class CombatEngine:
             if target.current_hp <= 0: target.is_alive = False
             result["effects"].append({"type": "blood_limit_reduction", "target": target.name, "new_blood_limit": target.blood_limit})
         if "blood_limit_increase" in calc:
-            target.blood_limit += calc["blood_limit_increase"]
-            result["effects"].append({"type": "blood_limit_increase", "target": target.name, "increase": calc["blood_limit_increase"]})
+            # 不朽之躯（初拥之夜特性）：血限无法增加，对该实体的增殖等血限增长一律归零
+            if target is self.state.player and "不朽之躯" in self.state.first_embrace_traits:
+                result["effects"].append({"type": "blood_limit_increase", "target": target.name,
+                                           "increase": 0, "blocked_by": "不朽之躯"})
+            else:
+                target.blood_limit += calc["blood_limit_increase"]
+                result["effects"].append({"type": "blood_limit_increase", "target": target.name, "increase": calc["blood_limit_increase"]})
         if "blood_limit_penalty" in calc and target.shards < (calc.get("shard_drain", 0) or 0):
             # 逼债：碎片不足则失血限
             target.blood_limit -= calc["blood_limit_penalty"]; target.current_hp = min(target.current_hp, target.blood_limit)
@@ -899,15 +1100,37 @@ class CombatEngine:
         cost_target = caster
         if (caster is self.state.player and self.cost_proxy is not None and self.cost_proxy.is_alive):
             cost_target = self.cost_proxy
+        # 共心环(终音法器)：本场选定类型后，[朋友]/[员工]也可使用该共享龙心抵消同类型代价；
+        # 未持有共心环、或类型与选定的不同时，仍只有玩家自身可以使用自己的龙心。
+        dh_use = dragon_heart_use
+        if cost_target is not self.state.player:
+            heart_type = "衰老" if "cost_blood_limit" in calc else ("疲惫" if "cost_speed" in calc else "流血")
+            shared_ok = ("共心环" in self.state.artifacts_owned
+                         and self.state.shared_dragon_heart_type == heart_type)
+            if not shared_ok:
+                dh_use = 0
         if "cost_hp" in calc:
-            result["effects"].append({"type": "bleed_cost", "source": cost_target.name, **cost_target.take_damage(calc["cost_hp"], "代价")})
+            result["effects"].append({"type": "bleed_cost", "source": cost_target.name,
+                                       **self._pay_bleed_cost(cost_target, calc["cost_hp"], dh_use)})
             if cost_target.current_hp <= 0: self.cost_proxy = None
         if "cost_blood_limit" in calc:
-            cost_target.blood_limit -= calc["cost_blood_limit"]; cost_target.current_hp = min(cost_target.current_hp, cost_target.blood_limit)
-            result["effects"].append({"type": "aging_cost", "source": cost_target.name, "new_blood_limit": cost_target.blood_limit})
+            # 不朽之躯（初拥之夜特性）：免疫衰老，对该实体的衰老代价直接归零
+            if cost_target is self.state.player and "不朽之躯" in self.state.first_embrace_traits:
+                result["effects"].append({"type": "aging_cost", "source": cost_target.name,
+                                           "new_blood_limit": cost_target.blood_limit,
+                                           "dragon_heart_offset": 0, "immune": True})
+            else:
+                actual, offset = self._offset_with_dragon_heart(cost_target, "衰老", calc["cost_blood_limit"], dh_use)
+                cost_target.blood_limit -= actual; cost_target.current_hp = min(cost_target.current_hp, cost_target.blood_limit)
+                self._bank_lianxin(cost_target, "衰老", actual)
+                result["effects"].append({"type": "aging_cost", "source": cost_target.name,
+                                           "new_blood_limit": cost_target.blood_limit, "dragon_heart_offset": offset})
         if "cost_speed" in calc:
-            cost_target.current_speed -= calc["cost_speed"]
-            result["effects"].append({"type": "fatigue_cost", "source": cost_target.name, "new_speed": cost_target.current_speed})
+            actual, offset = self._offset_with_dragon_heart(cost_target, "疲惫", calc["cost_speed"], dh_use)
+            cost_target.current_speed -= actual
+            self._bank_lianxin(cost_target, "疲惫", actual)
+            result["effects"].append({"type": "fatigue_cost", "source": cost_target.name,
+                                       "new_speed": cost_target.current_speed, "dragon_heart_offset": offset})
         if "mana_gain" in calc:
             caster.current_mana += calc["mana_gain"]
             result["effects"].append({"type": "mana_gain", "source": caster.name, "mana_gained": calc["mana_gain"]})
@@ -915,7 +1138,7 @@ class CombatEngine:
         # ---- 特殊 ----
         if "self_attack_count" in calc:  # 自残：目标自打X次
             for _ in range(calc["self_attack_count"]):
-                result["effects"].append({"type": "self_attack", "target": target.name, **target.take_damage(target.attack_power)})
+                result["effects"].append({"type": "self_attack", "target": target.name, **self._apply_hostile_damage(target, target.attack_power)})
         if "targets_removed" in calc:  # 封印：移出X怪
             removed = 0
             for e in list(self.state.enemies):
@@ -1031,7 +1254,7 @@ class CombatEngine:
         return {"triggered": True, "wisdom": wisdom, "total_wisdom": len(self.state.death_book_wisdom)}
 
     def process_relics(self, trigger: str, ctx: dict = None) -> list:
-        """遗物效果触发框架。trigger: battle_start/round_start/on_dodge/on_speed_zero/on_monster_death"""
+        """遗物效果触发框架。trigger: battle_start/round_start/on_dodge/on_speed_zero"""
         ctx = ctx or {}
         player = self.state.player
         logs = []
@@ -1062,7 +1285,7 @@ class CombatEngine:
             if "鲜血契约" in relics:
                 x = min(player.blood_limit // 5, 12)
                 if x > 0:
-                    player.take_damage(x, "代价"); player.current_mana += x
+                    self._pay_bleed_cost(player, x); player.current_mana += x
                     logs.append(f"鲜血契约：流血{x}，+{x}法力")
             # 三相残韵盘：消耗一种残韵，战终获另两种
             if "三相残韵盘" in relics:
@@ -1082,11 +1305,8 @@ class CombatEngine:
             for t in others:
                 self.state.resonance[t] = self.state.resonance.get(t, 0) + 1
             logs.append(f"三相残韵盘：战终获得{'、'.join(others)}残韵各1")
-        if trigger == "on_monster_death" and "钱袋" in relics:
-            m = ctx.get("monster")
-            if m:
-                gain = max(1, math.ceil(m.blood_limit * 0.02))
-                self.state.shards += gain; logs.append(f"钱袋：+{gain}碎片")
+        # 钱袋：改在 api.py 的 _action_battle_end 里随标准击杀奖励一并结算(用battle_start_blood_limit快照)，
+        # 不再用"on_monster_death"这个从未被调用过的触发点(此前是死代码)。
         return logs
 
     # ========== 怪物回合（引擎自主驱动） ==========
@@ -1172,6 +1392,13 @@ class CombatEngine:
             if not self.can_act(m):
                 results.append({"monster": m.name, "skipped": "眩晕/束缚"})
                 continue
+            # 龙息（真龙之心特性）：所有敌方[目标]行动前，受到10×当前回合数的必中伤害
+            if "龙息" in self.state.dragon_traits and m.is_alive:
+                breath_damage = 10 * max(1, self.state.current_round)
+                dmg = m.take_damage(breath_damage)
+                results.append({"monster": m.name, "dragon_breath": breath_damage, **dmg})
+                if not m.is_alive:
+                    continue
             act = self._monster_activated.setdefault(id(m), set())
             # 持续型原始道纹回合计费（道纹出手激活之前）
             if not whiteboard:
