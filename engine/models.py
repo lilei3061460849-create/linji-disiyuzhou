@@ -562,9 +562,6 @@ class GameState:
     attribute_points: int = 0
     allocated_blood: int = 0     # 已分配血限（从属性点）
     
-    # 法器/遗物记录
-    relic_of_choice: Optional[str] = None  # 当前选择的遗物
-    
     # ---- 遗物视图：血族/龙族项目一律以遗物形式存放，遗物是唯一事实源 ----
     # 这样它们自动继承遗物的全部通用规则（可被销毁、交换、封印、计入"一件当前遗物"）。
 
