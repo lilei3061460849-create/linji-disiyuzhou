@@ -1,11 +1,11 @@
 """
-pytest 风格测试 - 里程碑：真龙之心（龙心谷终音法器，龙性资源 + 8种龙族禀赋）
+pytest 风格测试 - 里程碑：真龙之心（龙心谷终音法器，龙性资源 + 8种龙族遗物）
 
 原文：
-"每消耗12X龙性，获得X种不同龙族禀赋（6X衰老=2X枯竭=X萎缩=12X龙性）"。
-8种禀赋：龙族血脉/龙威/龙族利爪/龙息/震岳龙躯/吞骸龙胃/断尾求生/烬翼。
+"每消耗12X龙性，获得X种不同龙族遗物（6X衰老=2X枯竭=X萎缩=12X龙性）"。
+8件龙族遗物：龙族血脉/龙威/龙族利爪/龙息/震岳龙躯/吞骸龙胃/断尾求生/烬翼。
 
-覆盖范围：pay_for_dragon_nature/unlock_dragon_trait 的门槛与汇率校验 + 8种禀赋各自的机制效果。
+覆盖范围：pay_for_dragon_nature/unlock_dragon_trait 的门槛与汇率校验 + 8件龙族遗物各自的机制效果。
 运行方式：
     python -m pytest tests/test_dragon_traits.py -v
 """
@@ -87,7 +87,7 @@ def test_pay_for_dragon_nature_error_invalid_type_or_x():
 
 
 def test_unlock_dragon_trait_requires_12_nature_and_rejects_duplicates():
-    """边界+错误输入：解锁1种禀赋消耗12龙性；龙性不足/未知禀赋/重复解锁均应拒绝"""
+    """边界+错误输入：解锁1种遗物消耗12龙性；龙性不足/未知遗物/重复解锁均应拒绝"""
     engine = _new_engine(dbsuffix="unlock")
     _with_heart(engine, nature=11)
     r_low = engine.execute_action("unlock_dragon_trait", {"trait": "龙威"})
@@ -297,7 +297,7 @@ def test_dragon_stomach_error_target_still_alive():
 # ========================================================================
 
 def test_tail_sacrifice_removes_declared_trait_to_negate_lethal_damage():
-    """正常路径：预声明后，即将命零的伤害改为移除该禀赋抵消"""
+    """正常路径：预声明后，即将命零的伤害改为移除该遗物抵消"""
     engine = _new_engine(dbsuffix="tail")
     player = engine.state.player
     _with_heart(engine)
@@ -315,7 +315,7 @@ def test_tail_sacrifice_removes_declared_trait_to_negate_lethal_damage():
 
 
 def test_tail_sacrifice_error_declare_self_or_unowned_trait():
-    """错误输入：不能声明牺牲自身(断尾求生)，也不能声明未持有的其他禀赋"""
+    """错误输入：不能声明牺牲自身(断尾求生)，也不能声明未持有的其他遗物"""
     engine = _new_engine(dbsuffix="tail_err")
     _with_heart(engine)
     engine.execute_action("unlock_dragon_trait", {"trait": "断尾求生"})

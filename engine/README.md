@@ -109,7 +109,7 @@ engine = GameEngine(rng_seed=12345)
 已实现，详见 AI_EXPERIENCE.md。要点：死斗胜利后按`current_region`从`GameEngine.TERMINAL_ARTIFACTS`
 对应列表中选1件（`choose_terminal_artifact`），选到"猩红尖牙"会先强制触发初拥之夜
 （`GameEngine.FIRST_EMBRACE_OPTIONS`9选1，`choose_first_embrace`）完成后才真正封存；
-"真龙之心"解锁后进入独立的龙性资源/8禀赋系统（`GameEngine.DRAGON_NATURE_RATE`/`DRAGON_TRAITS`）。
+"真龙之心"解锁后进入独立的龙性资源/8遗物系统（`GameEngine.DRAGON_NATURE_RATE`/`DRAGON_TRAITS`）。
 
 ## 行动类型一览
 
@@ -141,10 +141,10 @@ engine = GameEngine(rng_seed=12345)
 | `select_shared_dragon_heart` | 共心环(龙心谷终音)：选定本场共享的龙心类型 |
 | `declare_fuyuebei_toll` | 负岳碑(龙心谷终音)：预声明保护某[朋友]/[员工]下次撤退 |
 | `pay_for_dragon_nature` | 真龙之心：支付衰老/枯竭/萎缩换龙性(cost_type,x) |
-| `unlock_dragon_trait` | 真龙之心：花12龙性解锁1种龙族禀赋(trait) |
+| `unlock_dragon_trait` | 真龙之心：花12龙性解锁1种龙族遗物(trait) |
 | `activate_dragon_body` | 震岳龙躯：花6X龙性，激活X回合的15点伤害上限护体 |
 | `devour_monster` | 吞骸龙胃：吞噬已命零的怪物，回复12+可选龙心+6耐久 |
-| `declare_tail_sacrifice` | 断尾求生：预声明命零时愿意移除的其他龙族禀赋 |
+| `declare_tail_sacrifice` | 断尾求生：预声明命零时愿意移除的其他龙族遗物 |
 | `use_dragon_wings` | 烬翼：花3X龙性获得飞行X |
 | `use_blood_wings` | 初拥之夜·鲜血之翼：流血5X获得飞行X |
 | `enslave_as_chizu` | 初拥之夜·血族尖牙：衰老20，将生命低于自身的目标转化为赤族 |

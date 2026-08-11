@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
 from engine import battle_report as BR
+from engine.ai_tactics import TacticalAI
 
 BACKGROUNDS = ["帮派巷战", "废墟据点", "黑市火并", "熔岩隘口"]
 
@@ -35,6 +36,15 @@ def run(region: str = "龙心谷", seed: int = 7, battles: int = 3) -> list[str]
     engine.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     r = engine.execute_action("setup_choose_region", {"region": region})
     starter = r["result"]["starter_relic"]
+    ai = TacticalAI(engine)
+
+    # 局外：学习道纹与法术，让 AI 有牌可打（否则只能发初始道纹）
+    for dw in ("庇护", "再生", "冲击"):
+        engine.execute_action("pre_battle_action",
+                              {"sub_action": "学习", "sub": "daowen", "name": dw})
+    for sp in ("后发制人", "生生不息"):
+        engine.execute_action("pre_battle_action",
+                              {"sub_action": "学习", "sub": "spell", "name": sp})
 
     out = [f"# 战报（{region}，种子{seed}）· 按 README《六、战斗推演格式》",
            "",
@@ -67,21 +77,9 @@ def run(region: str = "龙心谷", seed: int = 7, battles: int = 3) -> list[str]
             out.extend(BR.format_round_start(rnd, rs.get("result", {}),
                                              engine.state.player, engine.state.enemies))
 
-            # 我方出手：焦点杀伐，X 由当前法力决定（自由控X规则）
+            # 我方出手：由 TacticalAI 按优先级决策（保命/残韵/控场/收割/AOE/续航）
             idx = 1
-            acts = max(1, math.ceil(engine.state.player.speed_limit / 3))
-            for _ in range(acts):
-                alive = [e for e in engine.state.enemies if e.is_alive]
-                if not alive or engine.state.player.current_mana <= 0:
-                    break
-                tgt = min(alive, key=lambda e: e.current_hp)
-                x = min(engine.state.player.current_mana, max(1, math.ceil(tgt.current_hp / 2)))
-                res = engine.execute_action("use_daowen",
-                                            {"daowen_name": "杀伐", "x": x, "target": tgt.name})
-                if not res.get("success"):
-                    out.append(f"出手{idx}（{engine.state.player.name}）：发动失败——{res.get('error')}")
-                    idx += 1
-                    break
+            for res in ai.take_turn():
                 out.extend(BR.format_player_action(idx, engine.state.player.name, res))
                 idx += 1
 

@@ -127,14 +127,14 @@ class CombatEngine:
                     "blood_limit_before": target.blood_limit, "died": False,
                     "damage_type": damage_type, "retreated": True,
                 }
-        # 断尾求生（真龙之心禀赋）：玩家即将命零时，若已预声明愿意牺牲的龙族禀赋，移除该禀赋抵消本次伤害
+        # 断尾求生（真龙之心遗物）：玩家即将命零时，若已预声明愿意牺牲的龙族遗物，移除该遗物抵消本次伤害
         if (damage_type != "代价" and target is self.state.player and target.is_alive
                 and "断尾求生" in self.state.dragon_traits and self.state.dragon_tail_sacrifice_declared):
             remaining_after_shield = max(0, amount - target.shield) if amount > 0 else 0
             if remaining_after_shield >= target.current_hp and target.current_hp > 0:
                 sacrificed = self.state.dragon_tail_sacrifice_declared
                 if sacrificed in self.state.dragon_traits:
-                    self.state.dragon_traits.remove(sacrificed)
+                    self.state.remove_relic(sacrificed)
                 self.state.dragon_tail_sacrifice_declared = ""
                 return {
                     "raw_damage": amount, "shield_absorbed": 0, "actual_damage": 0,
@@ -216,7 +216,7 @@ class CombatEngine:
         """
         解析一次攻击
         dodge: 目标是否选择闪避（由AI决策）
-        blood_shadow: 目标是否选择用【血影】禀赋(流血10取消本次判定)代替常规闪避
+        blood_shadow: 目标是否选择用【血影】遗物(流血10取消本次判定)代替常规闪避
         """
         result = {
             "attacker": attacker.name,
@@ -238,7 +238,7 @@ class CombatEngine:
         # 必中（含必中状态）
         must_hit = is_must_hit or attacker.has_status("必中")
 
-        # 血影（初拥之夜血脉，仅玩家自身持有）：非必中判定下，可流血10取消本次判定，是常规闪避外的另一选项
+        # 血影（初拥之夜遗物，仅玩家自身持有）：非必中判定下，可流血10取消本次判定，是常规闪避外的另一选项
         if (blood_shadow and not must_hit and target is self.state.player
                 and "血影" in self.state.first_embrace_traits and target.current_hp > 10):
             self._pay_bleed_cost(target, 10)
@@ -274,7 +274,7 @@ class CombatEngine:
         # 龙鳞：目标每次受到伤害-X（最低0）
         if target.has_status("龙鳞"):
             damage = max(0, damage - target.get_status_value("龙鳞"))
-        # 龙族血脉（真龙之心禀赋）：对非怪物造成伤害翻倍（对怪物的秒杀效果在伤害结算后处理）
+        # 龙族血脉（真龙之心遗物）：对非怪物造成伤害翻倍（对怪物的秒杀效果在伤害结算后处理）
         if attacker is self.state.player and "龙族血脉" in self.state.dragon_traits and target.entity_type != "怪物":
             damage *= 2
 
@@ -296,7 +296,7 @@ class CombatEngine:
         
         # 检查贯穿（无视格挡）
         ignore_shield = attacker.has_status("贯穿")
-        # 震岳龙躯（真龙之心禀赋）：激活期间，自身受到超出15点的伤害无效
+        # 震岳龙躯（真龙之心遗物）：激活期间，自身受到超出15点的伤害无效
         if target is self.state.player and self.state.dragon_body_shield_rounds > 0:
             damage = min(damage, 15)
         # 法术：受到伤害前（玩家为目标时触发反应型法术，可能反杀攻击者或加盾）
@@ -320,7 +320,7 @@ class CombatEngine:
                 damage_result = self._apply_hostile_damage(target, damage, "普通" if not ignore_shield else "无视格挡")
         else:
             damage_result = self._apply_hostile_damage(target, damage, "普通" if not ignore_shield else "无视格挡")
-        # 龙族血脉（真龙之心禀赋）：对怪物造成伤害后，直接使其命零
+        # 龙族血脉（真龙之心遗物）：对怪物造成伤害后，直接使其命零
         if (attacker is self.state.player and "龙族血脉" in self.state.dragon_traits
                 and target.entity_type == "怪物" and damage_result["actual_damage"] > 0 and target.is_alive):
             target.current_hp = 0
@@ -499,7 +499,7 @@ class CombatEngine:
                     "died": result["died"]
                 })
 
-            # 血族血脉（初拥之夜血脉）：[回终]本回合若造成过伤害则回复等量，否则流血20
+            # 血族血脉（初拥之夜遗物）：[回终]本回合若造成过伤害则回复等量，否则流血20
             if "血族血脉" in self.state.first_embrace_traits and entity is self.state.player:
                 if entity.damage_dealt_this_round > 0:
                     heal_detail = entity.heal(entity.damage_dealt_this_round)
@@ -546,7 +546,7 @@ class CombatEngine:
                     "expired_effects": expired
                 })
 
-        # 震岳龙躯（真龙之心禀赋）：持续X回合递减，归零后护体效果失效
+        # 震岳龙躯（真龙之心遗物）：持续X回合递减，归零后护体效果失效
         if self.state.dragon_body_shield_rounds > 0:
             self.state.dragon_body_shield_rounds -= 1
             effects.append({"type": "dragon_body_tick", "remaining": self.state.dragon_body_shield_rounds})
@@ -918,7 +918,7 @@ class CombatEngine:
         2. 公式：知识+环境元素+道纹=干扰目标
         3. 严禁进行纯数值买卖
         4. 只允许利用现实存在的概念
-        5. 严禁以任何形式中断、解除、削弱或篡改已生效的道纹、法术与禀赋
+        5. 严禁以任何形式中断、解除、削弱或篡改已生效的道纹、法术与遗物
         6. 必须写明期望达成的明确效果
         """
         return Interrupt(
@@ -1040,7 +1040,7 @@ class CombatEngine:
             if target.current_hp <= 0: target.is_alive = False
             result["effects"].append({"type": "blood_limit_reduction", "target": target.name, "new_blood_limit": target.blood_limit})
         if "blood_limit_increase" in calc:
-            # 不朽之躯（初拥之夜血脉）：血限无法增加，对该实体的增殖等血限增长一律归零
+            # 不朽之躯（初拥之夜遗物）：血限无法增加，对该实体的增殖等血限增长一律归零
             if target is self.state.player and "不朽之躯" in self.state.first_embrace_traits:
                 result["effects"].append({"type": "blood_limit_increase", "target": target.name,
                                            "increase": 0, "blocked_by": "不朽之躯"})
@@ -1114,7 +1114,7 @@ class CombatEngine:
                                        **self._pay_bleed_cost(cost_target, calc["cost_hp"], dh_use)})
             if cost_target.current_hp <= 0: self.cost_proxy = None
         if "cost_blood_limit" in calc:
-            # 不朽之躯（初拥之夜血脉）：免疫衰老，对该实体的衰老代价直接归零
+            # 不朽之躯（初拥之夜遗物）：免疫衰老，对该实体的衰老代价直接归零
             if cost_target is self.state.player and "不朽之躯" in self.state.first_embrace_traits:
                 result["effects"].append({"type": "aging_cost", "source": cost_target.name,
                                            "new_blood_limit": cost_target.blood_limit,
@@ -1392,7 +1392,7 @@ class CombatEngine:
             if not self.can_act(m):
                 results.append({"monster": m.name, "skipped": "眩晕/束缚"})
                 continue
-            # 龙息（真龙之心禀赋）：所有敌方[目标]行动前，受到10×当前回合数的必中伤害
+            # 龙息（真龙之心遗物）：所有敌方[目标]行动前，受到10×当前回合数的必中伤害
             if "龙息" in self.state.dragon_traits and m.is_alive:
                 breath_damage = 10 * max(1, self.state.current_round)
                 dmg = m.take_damage(breath_damage)
