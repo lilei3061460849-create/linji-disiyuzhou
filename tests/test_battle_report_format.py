@@ -64,7 +64,9 @@ def test_enemy_panel_matches_spec_shape(tmp_path):
 
 
 def test_monster_hits_listed_one_per_line(tmp_path):
-    """正常路径：怪物每一击单独成行，禁止合并结算"""
+    """正常路径：怪物每一击单独成行，禁止合并结算。
+    一轮攻击(attack_count 次)同属一个攻击出手，共用出手号并标注第N/M击，
+    但每击仍独立成行（每次攻击独立判定闪避，README:204）。"""
     e = _new_engine(tmp_path)
     e.execute_action("battle_start")
     e.execute_action("round_start", {})
@@ -73,8 +75,46 @@ def test_monster_hits_listed_one_per_line(tmp_path):
     assert details, "monster_phase 必须上抛逐次出手明细"
     lines = BR.format_monster_hits(1, details)
     assert len(lines) == len(details), "出手行数必须等于实际出手次数"
-    for i, ln in enumerate(lines, 1):
-        assert ln.startswith(f"出手{i}（"), ln
+
+    seen = []
+    for ln, d in zip(lines, details):
+        m = re.match(r"^[　]*出手(\d+)（.+?）(?:·第(\d+)/(\d+)击)?：", ln)
+        assert m, ln
+        seen.append((int(m.group(1)), m.group(2), m.group(3)))
+        total = d.get("hit_total") or 1
+        if total > 1:
+            assert m.group(3) == str(total), f"多击应标注总击数：{ln}"
+            assert m.group(2) == str(d.get("hit_index")), f"击序号应与引擎一致：{ln}"
+
+    # 出手号必须从 1 开始且单调不减；同一出手内的多击共用同一个号
+    nums = [n for n, _, _ in seen]
+    assert nums[0] == 1
+    assert all(b - a in (0, 1) for a, b in zip(nums, nums[1:])), nums
+    for (n, hi, tot), d in zip(seen, details):
+        if tot and int(tot) > 1 and hi != "1":
+            assert n == nums[nums.index(n)], "同一出手的后续击必须复用出手号"
+
+
+def test_multi_hit_round_shares_one_action_number():
+    """边界：3 次攻击的一轮攻击只占 1 个出手号，且逐击列出"""
+    details = [
+        {"attacker": "看门犬", "target": "贾凡", "damage_dealt": 5, "hp_lost": 5,
+         "hit_index": i, "hit_total": 3, "new_action": (i == 1)}
+        for i in (1, 2, 3)
+    ]
+    lines = BR.format_monster_hits(4, details)
+    assert len(lines) == 3
+    assert all("出手4（看门犬）" in ln for ln in lines), lines
+    assert "·第1/3击" in lines[0] and "·第3/3击" in lines[2]
+
+
+def test_single_hit_has_no_hit_marker():
+    """边界：单次攻击(attack_count=1)不加"第N/M击"标注"""
+    details = [{"attacker": "狙击手", "target": "贾凡", "damage_dealt": 13, "hp_lost": 13,
+                "hit_index": 1, "hit_total": 1, "new_action": True}]
+    lines = BR.format_monster_hits(2, details)
+    assert lines[0].startswith("出手2（狙击手）："), lines[0]
+    assert "·第" not in lines[0], "单击不应出现第N/M击标注"
 
 
 def test_round_end_reports_shield_clear_and_duration(tmp_path):
@@ -173,10 +213,10 @@ def test_generated_report_is_spec_compliant(tmp_path):
     assert not re.search(r"怪物出手\d+次", text), "出现被禁止的概括式结算"
 
     # 每一次出手都必须单独成行并带行动者
-    hits = [l for l in lines if l.startswith("出手")]
+    hits = [l.lstrip("　") for l in lines if l.lstrip("　").startswith("出手")]
     assert hits, "没有任何出手行"
     for h in hits:
-        assert re.match(r"^出手\d+（.+?）：", h), h
+        assert re.match(r"^出手\d+（.+?）(?:·第\d+/\d+击)?：", h), h
 
 
 def test_report_is_reproducible_with_same_seed():

@@ -1482,7 +1482,13 @@ class CombatEngine:
                         break
                     dodge = (dodge_policy == "auto" and not must
                              and player.current_speed > 0 and m.attack_power > player.shield)
-                    results.append(self.resolve_attack(m, player, is_must_hit=must, dodge=dodge))
+                    _r = self.resolve_attack(m, player, is_must_hit=must, dodge=dodge)
+                    # 标记"一轮攻击内的第几击"：一次攻击出手包含 attack_count 次攻击，
+                    # 每次独立判定闪避(README:204)，但它们同属一个出手，不应各占一个出手号。
+                    _r["hit_index"] = _h + 1
+                    _r["hit_total"] = m.attack_count
+                    _r["new_action"] = (_h == 0)
+                    results.append(_r)
         return results
 
     def buyaicai_escape_cost(self, monster: Entity) -> dict:

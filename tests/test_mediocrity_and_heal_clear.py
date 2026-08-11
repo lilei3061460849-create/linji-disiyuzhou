@@ -157,15 +157,50 @@ def test_battle_end_keeps_cost_status():
     assert "庇护" not in names, "非代价的局内增益应被清除"
 
 
-def test_battle_end_does_not_revert_restored_hp():
-    """边界：[战终]清除的是回复类效果，已恢复到身上的生命不回撤"""
+def test_battle_end_reverts_in_battle_healing():
+    """正常路径：战斗中[回复]的生命在[战终]吐出（跨场恢复只能靠局外【休整】）"""
     e = _engine()
     p = e.state.player
     p.blood_limit = 60
     p.current_hp = 30
     p.battle_start_hp = 30
+    p.healed_this_battle = 0
     p.heal(20)
-    assert p.current_hp == 50
+    assert p.current_hp == 50, "战斗中回复应即时生效"
 
     e._action_battle_end({})
-    assert p.current_hp == 50, f"已恢复的生命不应被回撤，实际={p.current_hp}"
+    assert p.current_hp == 30, f"[战终]应吐出本场回复的生命，实际={p.current_hp}"
+    assert p.healed_this_battle == 0
+
+
+def test_battle_end_keeps_damage_taken():
+    """边界：吐出回复时，战斗中受到的伤害如实保留，不被一并还原"""
+    e = _engine()
+    p = e.state.player
+    p.blood_limit = 60
+    p.current_hp = 40
+    p.battle_start_hp = 40
+    p.healed_this_battle = 0
+
+    p.take_damage(25, "普通")   # 40 -> 15
+    p.heal(20)                   # 15 -> 35
+    assert p.current_hp == 35
+
+    e._action_battle_end({})
+    assert p.current_hp == 15, f"伤害应保留、只吐回复，实际={p.current_hp}"
+
+
+def test_battle_end_heal_revert_never_kills():
+    """错误输入/边界：吐出回复不得把轮回者压到[命零]，保底 1 点"""
+    e = _engine()
+    p = e.state.player
+    p.blood_limit = 60
+    p.current_hp = 5
+    p.battle_start_hp = 60
+    p.healed_this_battle = 0
+    p.heal(3)                    # 5 -> 8，本场回复 3
+    p.healed_this_battle = 50    # 人为放大，模拟大量回复后被打残
+
+    e._action_battle_end({})
+    assert p.current_hp == 1, f"吐出回复应保底 1 点，实际={p.current_hp}"
+    assert p.is_alive, "[战终]吐出回复不应直接致死"

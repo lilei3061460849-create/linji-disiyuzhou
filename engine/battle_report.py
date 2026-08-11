@@ -253,11 +253,20 @@ def format_monster_hits(start_idx: int, details: list) -> list[str]:
             continue
         atk = d.get("attacker", "?")
         tgt = d.get("target", "?")
+        # 一轮攻击(attack_count 次)同属一个攻击出手：共用出手号，逐击缩进书写。
+        # 每次攻击仍独立判定闪避(README:204)，故每击单独成行，不合并结算。
+        total = d.get("hit_total") or 1
+        hi = d.get("hit_index") or 1
+        multi = total > 1
+        if multi and not d.get("new_action", True):
+            idx -= 1   # 同一出手的后续击，不占新的出手号
+        head = f"出手{idx}（{atk}）" + (f"·第{hi}/{total}击" if multi else "")
+        pad = "　　" if multi and hi > 1 else ""
         if d.get("cant_target"):
-            lines.append(f"出手{idx}（{atk}）：选定{tgt}失败——{d.get('note')}")
+            lines.append(f"{pad}{head}：选定{tgt}失败——{d.get('note')}")
         elif d.get("dodge_success"):
             lines.append(
-                f"出手{idx}（{atk}）：攻击{tgt}→{tgt}声明消耗1点速度闪避，成功"
+                f"{pad}{head}：攻击{tgt}→{tgt}声明消耗1点速度闪避，成功"
                 f"（速度→{d.get('speed_after_dodge')}），判定与结算完全失效"
             )
         else:
@@ -265,7 +274,7 @@ def format_monster_hits(start_idx: int, details: list) -> list[str]:
             absorbed = d.get("shield_absorbed") or 0
             shield_txt = f"，格挡吸收{absorbed}" if absorbed else ""
             lines.append(
-                f"出手{idx}（{atk}）：攻击{tgt}→{tgt}{dodge_txt}"
+                f"{pad}{head}：攻击{tgt}→{tgt}{dodge_txt}"
                 f"→伤害{d.get('damage_dealt')}{shield_txt}"
                 f"，失去生命{d.get('hp_lost')}"
                 f"{'（[命零]）' if d.get('target_died') else ''}"
