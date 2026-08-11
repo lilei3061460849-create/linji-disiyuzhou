@@ -33,7 +33,7 @@ bl = _load()
 def test_play_returns_wellformed_result():
     """正常路径：跑一局应返回通关场数与胜负"""
     r = bl.play("杀伐", ["庇护", "再生"], "龙心谷", seed=1)
-    assert set(r) == {"cleared", "won"}
+    assert {"cleared", "won", "invalid"} <= set(r)
     assert 0 <= r["cleared"] <= 7
     assert isinstance(r["won"], bool)
 
@@ -142,16 +142,17 @@ def test_play_accepts_none_seed():
 
 def test_fixed_seed_is_reproducible():
     """边界：固定种子必须完全可复现（否则无法排查问题）"""
-    a = bl.play("杀伐", ["庇护", "再生"], "龙心谷", 42)
-    b = bl.play("杀伐", ["庇护", "再生"], "龙心谷", 42)
-    assert a == b, "同一固定种子两次结果不一致"
+    import random as _r
+    a = bl.play("杀伐", ["庇护", "再生"], "龙心谷", 42, rng=_r.Random(9))
+    b = bl.play("杀伐", ["庇护", "再生"], "龙心谷", 42, rng=_r.Random(9))
+    assert a == b, "同一固定种子+同一决策rng，两次结果必须一致"
 
 
 def test_fitness_fixed_mode_is_deterministic():
     """边界：非随机模式下同参数 fitness 必须一致"""
-    f1 = bl.fitness("杀伐", ["庇护", "再生"], 3, gen=1)
-    f2 = bl.fitness("杀伐", ["庇护", "再生"], 3, gen=1)
-    assert f1 == f2
+    f1, v1, _ = bl.fitness("杀伐", ["庇护", "再生"], 3, gen=1)
+    f2, v2, _ = bl.fitness("杀伐", ["庇护", "再生"], 3, gen=1)
+    assert (f1, v1) == (f2, v2)
 
 
 def test_random_seed_mode_varies_samples():
@@ -179,9 +180,9 @@ def test_random_mode_uses_random_regions():
     picked = []
     orig = bl.play
 
-    def spy(starter, learn, region, seed=None, battles=7):
+    def spy(starter, learn, region, seed=None, battles=7, rng=None, telemetry=None):
         picked.append(region)
-        return {"cleared": 0, "won": False}
+        return {"cleared": 0, "won": False, "invalid": False}
 
     bl.play = spy
     try:
@@ -190,3 +191,78 @@ def test_random_mode_uses_random_regions():
         bl.play = orig
     assert set(picked).issubset(set(bl.REGIONS))
     assert len(set(picked)) > 1, "随机模式下副本没有变化"
+
+
+# ---------- 局外行动遥测与无效数据剔除 ----------
+
+def test_choose_pre_battle_respects_region_exclusive():
+    """错误输入检出：副本专属行动不得在其他副本被选中"""
+    import random as _r
+    from engine.api import GameEngine
+    e = GameEngine(db_path="/tmp/tele.db", rng_seed=1)
+    e.execute_action("setup_attributes",
+                     {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+    e.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
+    e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
+    e.execute_action("setup_choose_region", {"region": "龙心谷"})
+    picked = {bl.choose_pre_battle(e, [], 1, _r.Random(i), bl.DEFAULT_POLICY)[0]
+              for i in range(200)}
+    assert "维修" not in picked, "扭曲都市专属的【维修】不该在龙心谷被选中"
+    assert "雇佣" not in picked, "罪孽都市专属的【雇佣】不该在龙心谷被选中"
+
+
+def test_region_exclusive_enforced_by_engine():
+    """正常路径：引擎必须拒绝跨副本使用专属行动"""
+    from engine.api import GameEngine
+    e = GameEngine(db_path="/tmp/tele2.db", rng_seed=1)
+    e.execute_action("setup_attributes",
+                     {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+    e.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
+    e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
+    e.execute_action("setup_choose_region", {"region": "龙心谷"})
+    r = e.execute_action("pre_battle_action", {"sub_action": "维修", "tier": 1})
+    assert not r["success"]
+    assert "扭曲都市" in r["error"]
+    # 被拒绝时精力必须退还，否则会白白损失一次行动
+    assert e.state.energy == 3
+
+
+def test_telemetry_records_action_choices():
+    """正常路径：遥测必须记录每次局外行动的尝试与成功"""
+    tele = {}
+    bl.play("杀伐", ["庇护"], "龙心谷", seed=5, telemetry=tele)
+    assert tele.get("attempted"), "未记录任何行动选择"
+    assert sum(tele["attempted"].values()) > 0
+    for act in tele.get("succeeded", {}):
+        assert act in tele["attempted"], "成功数不应超出尝试范围"
+
+
+def test_invalid_runs_excluded_from_fitness(monkeypatch):
+    """
+    错误输入：出现引擎异常的对局必须被判为无效并剔除，不得污染分数。
+    """
+    def fake_play(starter, learn, region, seed=None, battles=7, rng=None, telemetry=None):
+        return {"cleared": 0, "won": False, "invalid": True, "reason": "boom"}
+
+    monkeypatch.setattr(bl, "play", fake_play)
+    tele = {}
+    score, valid, invalid = bl.fitness("杀伐", ["庇护"], 4, gen=1, telemetry=tele)
+    assert valid == 0 and invalid == 4
+    assert score == 0.0
+    assert tele["invalid_reasons"], "无效原因必须被记录以便定位bug"
+
+
+def test_valid_and_invalid_are_separated(monkeypatch):
+    """边界：有效局与无效局混合时，分数只由有效局决定"""
+    calls = {"n": 0}
+
+    def mixed(starter, learn, region, seed=None, battles=7, rng=None, telemetry=None):
+        calls["n"] += 1
+        if calls["n"] % 2:
+            return {"cleared": 7, "won": True, "invalid": False}
+        return {"cleared": 0, "won": False, "invalid": True, "reason": "bug"}
+
+    monkeypatch.setattr(bl, "play", mixed)
+    score, valid, invalid = bl.fitness("杀伐", ["庇护"], 4, gen=1)
+    assert valid == 2 and invalid == 2
+    assert score == 10.0, "有效局全胜时分数应为满分，不应被无效局拉低"

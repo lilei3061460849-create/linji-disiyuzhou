@@ -33,7 +33,7 @@ def _setup(db_suffix: str):
     engine = GameEngine(db_path=f"data/test_retreat_{db_suffix}.db", rng_seed=1)
     engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
     engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
-    engine.execute_action("setup_choose_region", {"region": "龙心谷"})
+    engine.execute_action("setup_choose_region", {"region": "罪孽都市"})  # 雇佣为罪孽都市专属
     engine.execute_action("battle_start", {})
     return engine
 

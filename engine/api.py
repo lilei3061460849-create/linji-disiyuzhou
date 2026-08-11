@@ -635,6 +635,16 @@ class GameEngine:
             "献祭": self._pre_battle_sacrifice,
         }
         
+        # 副本专属行动门禁（README：维修=扭曲都市、雇佣=罪孽都市、炼心=龙心谷专属）。
+        # 缺少该校验会让任意副本都能用他人专属行动，统计与平衡数据将失真。
+        REGION_EXCLUSIVE = {"维修": "扭曲都市", "雇佣": "罪孽都市", "炼心": "龙心谷"}
+        need_region = REGION_EXCLUSIVE.get(action)
+        if need_region and self.state.current_region != need_region:
+            self.state.energy += 1
+            return {"success": False,
+                    "error": f"【{action}】是{need_region}专属行动，当前副本为"
+                             f"{self.state.current_region or '未选择'}"}
+
         if action in result_map:
             return result_map[action](params)
         else:
