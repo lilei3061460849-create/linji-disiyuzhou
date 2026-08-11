@@ -158,8 +158,6 @@ def monster_round_start(m, activated):
     达阈值触发【崩解】直接命零，本次回始被动中断。
     """
     for g in list(activated):
-        if g == "活力" and HUOLI_MODE in ("charges", "burst"):
-            continue  # 次数型候选：激活一次计费，无回合续费
         if g in CombatEngine.SUSTAIN_MONSTER_DAOWEN and g in m.dao_wen:
             pay = m.add_mutation(CombatEngine.YUANCHU_COST_RATE * m.dao_wen[g].x_value)
             if pay["collapsed"]:
@@ -481,47 +479,24 @@ def monster_can_pay_exclusive(m, g):
 
 
 
-# ===== 活力削弱候选（裁定⑫方案池；HUOLI_MODE 全局开关，默认现行口径） =====
-# current = 现状(出手+X,持续∞,持续计费) | charges = 次数型:共X回合各+1出手,激活计费一次
-# half    = 出手+X但额外出手伤害减半 | flat = 出手+1持续X回合(持续计费) | burst = 仅激活当回合出手+X
-HUOLI_MODE = "current"
-
-def huoli_note_activation(m, act):
-    """激活时按模式记录活力运行态"""
-    if act == "活力":
-        m._huoli_charges = m.dao_wen["活力"].x_value
+# ===== 活力（现行口径；裁定⑫其余候选已归档删除 2026-08-11） =====
+# 现行：活力X → 攻击出手+X，持续∞，每回始异变5X持续计费（见 monster_round_start 通用 SUSTAIN 计费）
+# 已归档候选（AI_EXPERIENCE 追记4）：charges / flat / burst / half — 已从本文件彻底删除，仅保留 current。
+# 归档原因：扫描 300局/副本 现行面板，活力任何形态对 60HP/8闪速度玩家均为断崖致命（甲乙丁 0~2%，丙 99% 因自崩解），
+# 无单点方案可击中 30% 目标，需组合方案或覆盖率杠杆另议。
 
 def get_monster_attack_actions(m, activated):
-    """怪物攻击出手数，按 HUOLI_MODE 解释活力：
-    current=1+活力X+狂暴1；charges=有剩余充能则1+1；flat=持续期内1+1；burst=由激活方处理回合数"""
+    """怪物攻击出手数（现行口径）：1 + 活力X + 狂暴1"""
     n = 1
     if "活力" in activated:
-        if HUOLI_MODE == "current":
-            n += m.dao_wen["活力"].x_value
-        elif HUOLI_MODE in ("charges", "flat"):
-            if getattr(m, "_huoli_charges", 0) > 0:
-                n += 1
-        elif HUOLI_MODE == "burst":
-            if getattr(m, "_huoli_charges", -1) > 0:  # 由激活处设置为当回合1次标记
-                n += m.dao_wen["活力"].x_value
-        elif HUOLI_MODE == "half":
-            n += m.dao_wen["活力"].x_value
+        n += m.dao_wen["活力"].x_value
     if "狂暴" in activated:
         n += 1
     return n
 
 
-def huoli_tick(m, activated):
-    """回始末段：消耗活力的回合充能（charges/flat每回合-1；burst激活回合后清零）"""
-    if HUOLI_MODE in ("charges", "flat") and "活力" in activated and getattr(m, "_huoli_charges", 0) > 0:
-        m._huoli_charges -= 1
-    elif HUOLI_MODE == "burst" and getattr(m, "_huoli_charges", 0) > 0:
-        m._huoli_charges = 0
-
-
-def monster_attack_round(m, player, combat, rng, must_hit, dmg_scale=1.0):
-    """怪物1轮攻击出手（attack_count次），玩家逐次决定闪避。返回对玩家造成的生命损失。
-    dmg_scale：活力half模式下额外出手的伤害倍率（0.5=减半向下取整）"""
+def monster_attack_round(m, player, combat, rng, must_hit):
+    """怪物1轮攻击出手（attack_count次），玩家逐次决定闪避。返回对玩家造成的生命损失。"""
     # 探照灯等施加的怪物侧蒙蔽：本次攻击出手无效，层数-1
     if m.has_status("蒙蔽"):
         for s in list(m.status_effects):
@@ -535,7 +510,7 @@ def monster_attack_round(m, player, combat, rng, must_hit, dmg_scale=1.0):
     for _ in range(max(0, m.attack_count - getattr(m, "_nade_minus", 0))):  # 高爆手雷：攻击次数-1
         if not player.is_alive or not m.is_alive:
             break
-        dmg = int(m.attack_power * dmg_scale) if dmg_scale < 1.0 else m.attack_power
+        dmg = m.attack_power
         if USE_EXCLUSIVE and m.has_status("加害"):
             dmg += m.get_status_value("加害")  # 加害X：造成伤害+X
         if USE_EXCLUSIVE and getattr(m, "_nilin", 0) and not nilin_applied:
@@ -598,9 +573,6 @@ def run_battle(md, policy, rng, player_dw=None):
                 apply_control_to_player(act, monster, player)
                 if USE_EXCLUSIVE and act in EXCLUSIVE_PRIORITY:
                     apply_exclusive(act, monster, player, monsters_list, rng)
-                if act == "活力":
-                    if HUOLI_MODE == "burst": monster._huoli_charges = 1
-                    huoli_note_activation(monster, act) if HUOLI_MODE in ("charges","flat") else None
             sim_maybe_evolve(monster, combat)  # 困境进化默认策略（裁定②接线）
         if not monster.is_alive:  # 崩解命零（异变计费）
             break
@@ -614,16 +586,13 @@ def run_battle(md, policy, rng, player_dw=None):
 
         if not monster.is_alive:
             break
-        # 怪物攻击出手（活力half：前(总-X)次全伤，后X次半伤）
+        # 怪物攻击出手
         must_hit = "必中" in activated
         n_act = get_monster_attack_actions(monster, activated)
-        x_h = monster.dao_wen["活力"].x_value if "活力" in activated and "活力" in monster.dao_wen else 0
-        half_base = n_act - x_h if HUOLI_MODE == "half" else n_act
         for i in range(n_act):
             if not player.is_alive:
                 break
-            monster_attack_round(monster, player, combat, rng, must_hit, 1.0 if i < half_base else 0.5)
-        huoli_tick(monster, activated)
+            monster_attack_round(monster, player, combat, rng, must_hit)
         if not player.is_alive:
             return {"win": False, "path": "death", "rounds": rnd}
 
