@@ -34,7 +34,7 @@ def _new_engine(db_suffix: str, speed_points: int = 8) -> GameEngine:
     engine.execute_action("setup_attributes",
                            {"blood_points": blood_points, "speed_points": speed_points, "mana_points": mana_points})
     engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
-    engine.execute_action("setup_choose_region", {"region": "龙心谷"})
+    engine.execute_action("setup_choose_region", {"region": "罪孽都市"})  # 雇佣为罪孽都市专属
     engine.execute_action("battle_start", {})
     # battle_start会自动出怪，这里替换为受控的单一测试怪物，保证断言确定性
     engine.state.enemies.clear()

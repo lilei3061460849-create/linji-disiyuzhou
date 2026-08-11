@@ -17,6 +17,8 @@ DM裁定记录：出怪数量公式采用 AI_EXPERIENCE.md 记录版"battle_numb
     python -m pytest tests/test_monster_draw.py -v
 """
 import os
+os.makedirs("/tmp/linji_tests", exist_ok=True)
+import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -112,7 +114,7 @@ def test_draw_count_floors_at_one_for_high_battle_number_underflow():
 
 def test_unknown_region_draws_nothing_but_does_not_crash():
     """边界：current_region不在三个已知副本池中时，不应抛异常，只是不出怪"""
-    engine = GameEngine(db_path="data/test_draw_unknown.db", rng_seed=1)
+    engine = GameEngine(db_path="/tmp/linji_tests/test_draw_unknown.db", rng_seed=1)
     engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
     engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
     engine.state.current_region = "尚未实现的副本"

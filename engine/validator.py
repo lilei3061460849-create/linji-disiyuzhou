@@ -3,7 +3,7 @@
 核心职责：
 1. 每次行动后自动检查是否符合规则
 2. 发现违规时记录详细上下文，等待DM裁定
-3. DM可以选择：修复（回退违规操作）或转正（记录为特例/特性）
+3. DM可以选择：修复（回退违规操作）或转正（记录为特例/惯例）
 """
 from __future__ import annotations
 import sqlite3
@@ -555,7 +555,7 @@ class RuleValidator:
         return row is not None
     
     def add_exception(self, rule_name: str, key: str, description: str, data: dict = None) -> int:
-        """DM注册一个特例（转正为特性）"""
+        """DM注册一个特例（转正为惯例）"""
         conn = sqlite3.connect(self.db_path)
         try:
             cursor = conn.execute(
@@ -602,7 +602,7 @@ class RuleValidator:
     def resolve_violation(self, violation_id: int, decision: str, note: str = "") -> dict:
         """
         DM处理违规
-        decision: "fix"（修复） / "legitimize"（转正为特性） / "ignore"（忽略）
+        decision: "fix"（修复） / "legitimize"（转正为惯例） / "ignore"（忽略）
         """
         conn =sqlite3.connect(self.db_path)
         conn.execute(

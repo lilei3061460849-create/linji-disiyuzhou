@@ -245,12 +245,21 @@ class Entity:
     # 钱袋：[战始]时的血限快照，用于按"[战始][血限]×2%"结算额外碎片（增殖等战斗中改变血限不影响此值）
     battle_start_blood_limit: int = 0
 
-    # 寒冰法力（初拥之夜特性）：本回合内，持有该特性者对我方发动道纹累计消耗的法力（含对自己发动）
+    # 寒冰法力（初拥之夜遗物）：本回合内，持有该遗物者对我方发动道纹累计消耗的法力（含对自己发动）
     # 回始归零；每满10点使当前回合出手次数-1（以叠加"无力"状态实现）
     mana_inflicted_this_round: int = 0
 
-    # 血族血脉（初拥之夜特性）：本回合是否已造成过伤害（[回终]判定：造成过则回复等量，否则流血20）
+    # 血族血脉（初拥之夜遗物）：本回合是否已造成过伤害（[回终]判定：造成过则回复等量，否则流血20）
     damage_dealt_this_round: int = 0
+    # 特殊事件【凡庸】（README 第500行）：连续五回合未出手 / 五回合未能使敌对
+    # 角色生命减少时触发。两个条件是"或"关系，故分别计数。
+    no_action_rounds: int = 0   # 连续未出手回合数
+    no_damage_rounds: int = 0   # 连续未使敌方生命减少的回合数
+    # 本场战斗内累计获得的[回复]量。README第304行：[战终]清除局内增益(包括回复)，
+    # 故战终须把这部分回血扣除（不低于进场时的生命）。
+    healed_this_battle: int = 0
+    # 本场[战始]时的当前生命，作为回复清除后的生命下限
+    battle_start_hp: int = 0
     # 赤族诅咒标记：entity_type=="赤族"的实体[回终]固定流血20；is_chizu_of记录其主人名字(仅用于血食校验)
     is_chizu_of: str = ""
 
@@ -301,8 +310,8 @@ class Entity:
         
         remaining = amount
         
-        # 格挡抵消（代价类型的伤害不被格挡抵消）
-        if self.shield > 0 and damage_type != "代价":
+        # 格挡抵消（代价类型的伤害不被格挡抵消；"无视格挡"为【贯穿】等效果，同样跳过格挡）
+        if self.shield > 0 and damage_type not in ("代价", "无视格挡"):
             absorbed = min(self.shield, remaining)
             self.shield -= absorbed
             remaining -= absorbed
@@ -348,6 +357,7 @@ class Entity:
         overheal = amount - actual
         # 增生追踪：超出血限的恢复按双倍计入累计恢复量
         self.total_healed += actual + overheal * 2
+        self.healed_this_battle += actual
         return {
             "heal_amount": amount,
             "actual_heal": actual,
@@ -515,12 +525,13 @@ class GameState:
     # 炼心在战斗中发动时不消耗出手，改为"下次局外行动多消耗1点精力"，此处累计待结算的额外精力消耗
     pending_energy_penalty: int = 0
 
-    # 熔谷终音"真龙之心"：龙性资源池 + 已解锁的龙族特性名单
+    # 熔谷终音"真龙之心"：龙性资源池。
+    # 已解锁的龙族项目本身以【遗物】形式存放在 self.relics（tags含"龙族"），
+    # 不再维护独立名单——dragon_traits 是对 relics 的只读视图，见下方 property。
     dragon_nature: int = 0
-    dragon_traits: list[str] = field(default_factory=list)
-    # 震岳龙躯剩余持续回合数（0=未激活）；断尾求生已消耗的特性记录见dragon_traits变化
+    # 震岳龙躯剩余持续回合数（0=未激活）；断尾求生已消耗的遗物记录见dragon_traits变化
     dragon_body_shield_rounds: int = 0
-    # 断尾求生：预先声明"若本次伤害会使自身命零，移除该龙族特性来抵消伤害"；为空=未声明保护
+    # 断尾求生：预先声明"若本次伤害会使自身命零，移除该龙族遗物来抵消伤害"；为空=未声明保护
     dragon_tail_sacrifice_declared: str = ""
 
     # 终音法器（三选一/四选一后获得的具名法器，跨副本共享同一个列表）
@@ -536,11 +547,12 @@ class GameState:
     # 负岳碑(终音法器)：预先声明"下一次这些[朋友]/[员工]即将撤退时，改为流血20取消撤退"的名单
     fuyuebei_declared: list[str] = field(default_factory=list)
 
-    # 初拥之夜：待选择标记 + 已选过的1~8号特性(每项限一次，9号不计入) + 已获得的赤族
+    # 初拥之夜：待选择标记 + 已选过的1~8号遗物(每项限一次，9号不计入) + 已获得的赤族
     pending_first_embrace: bool = False
     # 仅当初拥之夜是由死斗胜利(领取猩红尖牙)触发时为True：完成本次选择(非"封存血脉")后应紧接着完整封存
     seal_pending_after_embrace: bool = False
-    first_embrace_traits: list[str] = field(default_factory=list)
+    # 初拥之夜所得同样以【遗物】形式存放在 self.relics（tags含"血族"）；
+    # first_embrace_traits 是对 relics 的只读视图，见下方 property。
     chizu_names: list[str] = field(default_factory=list)
     # 真理眼冷却：剩余需要经过的战斗场数(战终-1，0=可用)
     truth_eye_cooldown: int = 0
@@ -553,6 +565,36 @@ class GameState:
     # 法器/遗物记录
     relic_of_choice: Optional[str] = None  # 当前选择的遗物
     
+    # ---- 遗物视图：血族/龙族项目一律以遗物形式存放，遗物是唯一事实源 ----
+    # 这样它们自动继承遗物的全部通用规则（可被销毁、交换、封印、计入"一件当前遗物"）。
+
+    def _relic_names_by_tag(self, tag: str) -> list[str]:
+        return [r.name for r in self.relics if tag in r.tags]
+
+    @property
+    def dragon_traits(self) -> list[str]:
+        """龙族遗物名单（对 relics 的只读视图）。"""
+        return self._relic_names_by_tag("龙族")
+
+    @property
+    def first_embrace_traits(self) -> list[str]:
+        """血族遗物名单（对 relics 的只读视图）。"""
+        return self._relic_names_by_tag("血族")
+
+    def grant_relic(self, name: str, effect: str, tag: str = "") -> Relic:
+        """授予一件遗物；tag 用于标记 血族/龙族 等来源。"""
+        r = Relic(name=name, effect=effect, tags=[tag] if tag else [])
+        self.relics.append(r)
+        return r
+
+    def remove_relic(self, name: str) -> bool:
+        """销毁/移除一件遗物（断尾求生、熔掉遗物等）。"""
+        for i, r in enumerate(self.relics):
+            if r.name == name:
+                del self.relics[i]
+                return True
+        return False
+
     def to_dict(self) -> dict:
         """导出完整状态（供AI读取）"""
         return {

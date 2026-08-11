@@ -99,7 +99,7 @@ def test_heal_30_percent_blood_limit_on_choice():
 
 
 def test_option9_seal_blood_lineage_retains_trigger_right():
-    """正常路径：9号封存血脉不获得特性，也不清空pending_first_embrace（保留再次触发权）"""
+    """正常路径：9号封存血脉不获得血脉，也不清空pending_first_embrace（保留再次触发权）"""
     engine = _new_engine(dbsuffix="opt9")
     r = _grant(engine, 9)
     assert r["success"] is True
@@ -240,7 +240,7 @@ def test_option8_blood_feast_kills_chizu_and_heals_equal_amount():
 
 
 def test_option8_error_without_trait_or_invalid_chizu():
-    """错误输入：没有血食特性时拒绝；指定的赤族不存在时拒绝"""
+    """错误输入：没有血食血脉时拒绝；指定的赤族不存在时拒绝"""
     engine = _new_engine(dbsuffix="feast_err")
     r = engine.execute_action("blood_feast", {"chizu": "不存在"})
     assert r["success"] is False

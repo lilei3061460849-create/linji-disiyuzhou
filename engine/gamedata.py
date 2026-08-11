@@ -248,3 +248,14 @@ def monster_spawn_count(battle_number: int, region: str) -> int:
     if tier == 1:
         count = battle_number - 2
     return max(1, count)
+
+
+# 原始怪物道纹（README 第247行）：人类无法承受并获得，只能经【原初X】临时借用
+ORIGINAL_MONSTER_DAOWEN = {"狂暴", "强化", "活力", "减速", "必中", "自愈", "飞行"}
+
+# 怪物转化道纹（README 第248行）：须以自身已持有的道纹为起点经残韵变化获得，
+# 不可通过局外【学习】直接习得（其起点均为原始怪物道纹，人类无法持有）
+MONSTER_TRANSFORM_DAOWEN = {
+    "愤怒", "自残", "无神", "借力", "弱化", "自食", "兴奋", "无力", "迟滞",
+    "急速", "加速", "眩晕", "洞察", "蒙蔽", "滋养", "衰败", "寄生", "滑翔", "坠落",
+}

@@ -23,6 +23,8 @@ from .dice import DiceEngine, EventPool, RandomRequest
 from .daowen import DaoWenEngine, ResonanceEngine
 from .combat import CombatEngine
 from .events import EventPool, parse_events
+from .gamedata import (REGION_EXCLUSIVE_DAOWEN, ORIGINAL_MONSTER_DAOWEN,
+                       MONSTER_TRANSFORM_DAOWEN)
 from .dm_rulings import DMRulingsDB, DMRuling, Interrupt
 
 
@@ -635,6 +637,16 @@ class GameEngine:
             "献祭": self._pre_battle_sacrifice,
         }
         
+        # 副本专属行动门禁（README：维修=扭曲都市、雇佣=罪孽都市、炼心=龙心谷专属）。
+        # 缺少该校验会让任意副本都能用他人专属行动，统计与平衡数据将失真。
+        REGION_EXCLUSIVE = {"维修": "扭曲都市", "雇佣": "罪孽都市", "炼心": "龙心谷"}
+        need_region = REGION_EXCLUSIVE.get(action)
+        if need_region and self.state.current_region != need_region:
+            self.state.energy += 1
+            return {"success": False,
+                    "error": f"【{action}】是{need_region}专属行动，当前副本为"
+                             f"{self.state.current_region or '未选择'}"}
+
         if action in result_map:
             return result_map[action](params)
         else:
@@ -738,7 +750,7 @@ class GameEngine:
         "龙心谷": [
             ("共心环", "[战始]，选择自身拥有的一枚【××龙心】；本场战斗中，自身、[朋友]与[员工]均可消耗该龙心耐久，抵消同类型代价"),
             ("负岳碑", "当任意[朋友]或[员工]即将触发【撤退】时，可以流血20，抵消本次伤害并取消本次【撤退】"),
-            ("真龙之心", "每消耗12X龙性，获得X种不同龙族特性（6X衰老=2X枯竭=X萎缩=12X龙性）"),
+            ("真龙之心", "每消耗12X龙性，获得X种不同龙族遗物（6X衰老=2X枯竭=X萎缩=12X龙性）"),
         ],
     }
 
@@ -793,6 +805,42 @@ class GameEngine:
             if name not in DaoWenEngine.list_all():
                 self.state.energy += 1
                 return {"success": False, "error": f"未知道纹: {name}"}
+            # 副本专属道纹门禁（README§三-4 + 用户裁定）：
+            # 专属道纹不可直接学习，只能先通过残韵从**当前副本**的怪物身上转化获得；
+            # 已持有该副本任一专属道纹后，才可学习该副本的其他专属道纹。
+            # 其他副本的专属道纹一律不可获得。
+            owner = None
+            for _rg, _pool in REGION_EXCLUSIVE_DAOWEN.items():
+                if name in _pool:
+                    owner = _rg
+                    break
+            if owner is not None:
+                if owner != self.state.current_region:
+                    self.state.energy += 1
+                    return {"success": False,
+                            "error": f"【{name}】是{owner}的专属道纹，当前副本为"
+                                     f"{self.state.current_region or '未选择'}，无法习得"}
+                own_pool = REGION_EXCLUSIVE_DAOWEN[owner]
+                if not (own_pool & set(player.dao_wen)):
+                    self.state.energy += 1
+                    return {"success": False,
+                            "error": f"【{name}】是{owner}专属道纹：须先通过残韵从本副本怪物身上"
+                                     f"转化获得一种专属道纹后，才能学习其他专属道纹"}
+            # 怪物转化道纹门禁（README 第211/247-252行）：
+            # 转化道纹须"以自身已持有的一种道纹为起点"经残韵变化获得；
+            # 而其起点全部是原始怪物道纹（狂暴/强化/活力/减速/必中/自愈/飞行），
+            # 人类无法承受并获得原始怪物道纹，故轮回者不可能凭空学会转化道纹。
+            # 例：蒙蔽源自"必中--反转-->蒙蔽"，没有必中就学不到蒙蔽。
+            if name in MONSTER_TRANSFORM_DAOWEN:
+                if name not in player.dao_wen:
+                    self.state.energy += 1
+                    return {"success": False,
+                            "error": f"【{name}】是怪物转化道纹，须以自身已持有的道纹为起点"
+                                     f"经残韵变化获得，无法通过局外【学习】直接习得"}
+            if name in ORIGINAL_MONSTER_DAOWEN:
+                self.state.energy += 1
+                return {"success": False,
+                        "error": f"【{name}】是原始怪物道纹，人类无法承受并获得"}
             if name not in player.dao_wen:
                 player.dao_wen[name] = DaoWenInstance(
                     DaoWen(name=name, formula="", cost_type="消耗", cost_formula="X", effect_formula=""))
@@ -1145,7 +1193,7 @@ class GameEngine:
         return None
 
     def _apply_dragon_claw_growth(self, entity: "Entity") -> None:
-        """龙族利爪（真龙之心特性）：自身每完成一次行动后，攻击次数+1，攻击力+2。
+        """龙族利爪（真龙之心遗物）：自身每完成一次行动后，攻击次数+1，攻击力+2。
         必须在该次行动本身已经用到(旧的)攻击次数之后才调用——尤其是【攻击】，
         它的一轮攻击命中次数=攻击次数，若在calculate_round_attack读取攻击次数之前就先增长，
         会导致本次攻击莫名要求多一个目标选择，这是过去出现过的真实bug。"""
@@ -1326,7 +1374,7 @@ class GameEngine:
         if not is_command and calc.get("cost_type") == "消耗" and cost > 0:
             if not actor.spend_mana(cost):
                 return {"success": False, "error": f"法力不足，需要{cost}，当前{actor.current_mana}"}
-            # 寒冰法力（初拥之夜特性）：持有者每消耗法力发动道纹，无论目标是谁(含自己)都累计"施加法力"，
+            # 寒冰法力（初拥之夜遗物）：持有者每消耗法力发动道纹，无论目标是谁(含自己)都累计"施加法力"，
             # 每满10点使该目标本回合出手次数-1(以叠加"无力"状态实现)
             if "寒冰法力" in self.state.first_embrace_traits and actor is self.state.player:
                 before_tier = target.mana_inflicted_this_round // 10
@@ -1752,10 +1800,14 @@ class GameEngine:
         results = self.combat.run_monster_phase(dodge_policy)
         # 怪物出手后若玩家死亡
         player_dead = (self.state.player is None) or (not self.state.player.is_alive)
+        # README《六、战斗推演格式》要求"按出手次数依次列出"，禁止概括或合并结算。
+        # run_monster_phase 已逐次产出每一击的明细，此处必须原样上抛，
+        # 否则调用方只能拿到一个汇总计数，无法书写合规战报。
         return {
             "success": True, "action": "怪物回合",
             "result": {"attacks": len(results), "player_dead": player_dead,
-                       "player_hp": self.state.player.current_hp if self.state.player else 0},
+                       "player_hp": self.state.player.current_hp if self.state.player else 0,
+                       "details": results},
         }
 
     def _action_round_start(self, params: dict) -> dict:
@@ -1796,6 +1848,10 @@ class GameEngine:
         from .monsters import compute_draw_count, make_monster_entity
         self.state.phase = "battle_start"
         self.state.current_battle += 1
+        # 记录[战始]生命，作为[战终]清除"回复"类增益后的生命下限
+        if self.state.player:
+            self.state.player.battle_start_hp = self.state.player.current_hp
+            self.state.player.healed_this_battle = 0
         self.state.current_round = 0
         self.combat.reset_monster_activation()
         self.state.shared_dragon_heart_type = ""  # 共心环：每场需重新选定
@@ -1904,7 +1960,7 @@ class GameEngine:
         """完整封存：玩家+队友(朋友/员工)+遗物+残韵+碎片+死者之书等级+属性点+终音法器/初拥之夜/真龙之心记录。
         已知限制：作为死斗对手载入时，目前只有player/friends/employees的战斗面板会真正参与战斗结算；
         artifacts/first_embrace_traits/dragon_traits等"元状态"只做记录延续，不会让对手在死斗中
-        实际触发这些特性的被动效果(这些trait判定目前统一挂在GameEngine.state上，只对"当前操作的这一方"
+        实际触发这些遗物的被动效果(这些trait判定目前统一挂在GameEngine.state上，只对"当前操作的这一方"
         生效，尚未做成可同时对双方独立生效的形式)。"""
         s = self.state
         return {
@@ -2097,7 +2153,8 @@ class GameEngine:
             return {"success": False, "error": "没有玩家"}
 
         if choice != 9:
-            self.state.first_embrace_traits.append(name)
+            # 以【遗物】形式授予：遗物是唯一事实源，自动继承遗物通用规则
+            self.state.grant_relic(name, effect, tag="血族")
             self.state.pending_first_embrace = False
             if name == "不朽之躯":
                 player.blood_limit = math.ceil(player.blood_limit / 2)
@@ -2122,7 +2179,7 @@ class GameEngine:
     def _action_use_blood_wings(self, params: dict) -> dict:
         """鲜血之翼：代价流血5X，发动【飞行X】回合"""
         if "鲜血之翼" not in self.state.first_embrace_traits:
-            return {"success": False, "error": "没有鲜血之翼特性"}
+            return {"success": False, "error": "没有鲜血之翼"}
         player = self.state.player
         x = params.get("x", 0)
         if not player or not isinstance(x, int) or x < 1:
@@ -2135,7 +2192,7 @@ class GameEngine:
     def _action_enslave_as_chizu(self, params: dict) -> dict:
         """血族尖牙：代价衰老20，使生命低于自身的一个[目标]转化为听命于你的赤族"""
         if "血族尖牙" not in self.state.first_embrace_traits:
-            return {"success": False, "error": "没有血族尖牙特性"}
+            return {"success": False, "error": "没有血族尖牙"}
         player = self.state.player
         target_name = params.get("target", "")
         target = next((e for e in self.state.enemies if e.name == target_name and e.is_alive), None)
@@ -2157,7 +2214,7 @@ class GameEngine:
     def _action_use_truth_eye(self, params: dict) -> dict:
         """真理眼：代价冷却2(按战斗场数计)，使一个[目标]必须言明真理，否则无法开口；真伪由DM裁定"""
         if "真理眼" not in self.state.first_embrace_traits:
-            return {"success": False, "error": "没有真理眼特性"}
+            return {"success": False, "error": "没有真理眼"}
         if self.state.truth_eye_cooldown > 0:
             return {"success": False, "error": f"真理眼冷却中，还需{self.state.truth_eye_cooldown}场战斗"}
         target_name = params.get("target", "")
@@ -2181,7 +2238,7 @@ class GameEngine:
     def _action_blood_feast(self, params: dict) -> dict:
         """血食：可使一名听命于你的赤族[命零]，自身获得等同于该赤族当前生命的[回复]"""
         if "血食" not in self.state.first_embrace_traits:
-            return {"success": False, "error": "没有血食特性"}
+            return {"success": False, "error": "没有血食"}
         player = self.state.player
         name = params.get("chizu", "")
         chizu = next((e for e in self.state.friends if e.name == name and e.entity_type == "赤族" and e.is_alive), None)
@@ -2280,12 +2337,23 @@ class GameEngine:
         return {"success": True, "action": "负岳碑·预声明保护",
                 "result": {"protected": name, "declared": list(self.state.fuyuebei_declared)}}
 
-    # ==================== 真龙之心：龙性资源与8种龙族特性 ====================
+    # ==================== 真龙之心：龙性资源与8种龙族遗物 ====================
 
     DRAGON_NATURE_RATE = {"衰老": 2, "枯竭": 6, "萎缩": 12}  # 1点该类型代价 = N点龙性
     DRAGON_TRAITS = ["龙族血脉", "龙威", "龙族利爪", "龙息", "震岳龙躯", "吞骸龙胃", "断尾求生", "烬翼"]
+    # 龙族项目以【遗物】形式授予，此表提供其效果文本（与 README/物品索引.md 一致）
+    DRAGON_TRAIT_EFFECTS = {
+        "龙族血脉": "对怪物造成伤害后，直接使其［命零］；对非怪物造成伤害翻倍",
+        "龙威": "所有敌方必须优先选择自身为[目标]",
+        "龙族利爪": "初始获得3点攻击次数与1点攻击力；自身每完成一次行动后，攻击次数+1，攻击力+2",
+        "龙息": "所有敌方[目标]行动前，受到10×当前回合数的必中伤害",
+        "震岳龙躯": "消耗6X点龙性，自身受到超出15点的所有伤害无效。持续X",
+        "吞骸龙胃": "任意怪物［命零］后，可将其吞噬：自身获得[回复12]，并选择一枚【××龙心】，使其当前耐久+6",
+        "断尾求生": "自身即将［命零］时，可销毁一件本场获得的其他龙族遗物，抵消本次使自身［命零］的伤害",
+        "烬翼": "［回始］，可消耗3X点龙性，获得【飞行X】",
+    }
     # 龙威("所有敌方必须优先选择自身为目标")：run_monster_phase目前本就总是让怪物攻击玩家本人
-    # (从未实现"怪物选中朋友/员工"的目标分配逻辑)，故该特性在当前引擎下恒定已满足、无需额外代码。
+    # (从未实现"怪物选中朋友/员工"的目标分配逻辑)，故该遗物在当前引擎下恒定已满足、无需额外代码。
 
     def _action_pay_for_dragon_nature(self, params: dict) -> dict:
         """真龙之心：支付衰老/枯竭/萎缩代价换取龙性（6X衰老=2X枯竭=X萎缩=12X龙性）"""
@@ -2314,7 +2382,7 @@ class GameEngine:
                            "dragon_nature": self.state.dragon_nature}}
 
     def _action_unlock_dragon_trait(self, params: dict) -> dict:
-        """真龙之心：每消耗12龙性，获得1种未持有的龙族特性"""
+        """真龙之心：每消耗12龙性，获得1件未持有的龙族遗物"""
         if "真龙之心" not in self.state.artifacts_owned:
             return {"success": False, "error": "没有真龙之心"}
         trait = params.get("trait", "")
@@ -2325,18 +2393,18 @@ class GameEngine:
         if self.state.dragon_nature < 12:
             return {"success": False, "error": f"龙性不足，需要12，当前{self.state.dragon_nature}"}
         self.state.dragon_nature -= 12
-        self.state.dragon_traits.append(trait)
+        self.state.grant_relic(trait, self.DRAGON_TRAIT_EFFECTS.get(trait, ""), tag="龙族")
         if trait == "龙族利爪":
             self.state.player.attack_count = 3
             self.state.player.attack_power = 1
-        return {"success": True, "action": "真龙之心·解锁特性",
+        return {"success": True, "action": "真龙之心·获得龙族遗物",
                 "result": {"trait": trait, "dragon_nature_remaining": self.state.dragon_nature,
                            "dragon_traits": list(self.state.dragon_traits)}}
 
     def _action_activate_dragon_body(self, params: dict) -> dict:
         """震岳龙躯：消耗6X点龙性，自身受到超出15点的所有伤害无效，持续X回合"""
         if "震岳龙躯" not in self.state.dragon_traits:
-            return {"success": False, "error": "没有震岳龙躯特性"}
+            return {"success": False, "error": "没有震岳龙躯"}
         x = params.get("x", 0)
         if not isinstance(x, int) or x < 1:
             return {"success": False, "error": "x必须是正整数"}
@@ -2351,7 +2419,7 @@ class GameEngine:
     def _action_devour_monster(self, params: dict) -> dict:
         """吞骸龙胃：任意怪物[命零]后可将其吞噬，自身获得回复12，并选择一枚龙心使其耐久+6"""
         if "吞骸龙胃" not in self.state.dragon_traits:
-            return {"success": False, "error": "没有吞骸龙胃特性"}
+            return {"success": False, "error": "没有吞骸龙胃"}
         monster_name = params.get("monster", "")
         monster = next((e for e in self.state.enemies if e.name == monster_name), None)
         if monster is None or monster.is_alive:
@@ -2368,13 +2436,13 @@ class GameEngine:
                            "dragon_heart_boosted": heart_name if heart is not None else None}}
 
     def _action_declare_tail_sacrifice(self, params: dict) -> dict:
-        """断尾求生：预先声明本次即将命零时，愿意移除哪一种本场获得的其他龙族特性来抵消伤害"""
+        """断尾求生：预先声明本次即将命零时，愿意移除哪一种本场获得的其他龙族遗物来抵消伤害"""
         if "断尾求生" not in self.state.dragon_traits:
-            return {"success": False, "error": "没有断尾求生特性"}
+            return {"success": False, "error": "没有断尾求生"}
         trait = params.get("trait", "")
         others = [t for t in self.state.dragon_traits if t != "断尾求生"]
         if trait not in others:
-            return {"success": False, "error": f"trait必须是本场已获得的其他龙族特性之一: {others}"}
+            return {"success": False, "error": f"trait必须是本场已获得的其他龙族遗物之一: {others}"}
         self.state.dragon_tail_sacrifice_declared = trait
         return {"success": True, "action": "断尾求生·预声明",
                 "result": {"declared_sacrifice": trait}}
@@ -2382,7 +2450,7 @@ class GameEngine:
     def _action_use_dragon_wings(self, params: dict) -> dict:
         """烬翼：[回始]可消耗3X点龙性，获得飞行X"""
         if "烬翼" not in self.state.dragon_traits:
-            return {"success": False, "error": "没有烬翼特性"}
+            return {"success": False, "error": "没有烬翼"}
         x = params.get("x", 0)
         if not isinstance(x, int) or x < 1:
             return {"success": False, "error": "x必须是正整数"}
@@ -2437,6 +2505,17 @@ class GameEngine:
         # 清除局内增益
         if self.state.player:
             self.state.player.clear_shield()
+            _p = self.state.player
+            # README 第304行：[战终]清除局内增益（包括回复、格挡、持续∞等）。
+            # [回复]在此按"局内增益"处理：战斗中恢复的生命在[战终]一并吐出，
+            # 战斗中受到的伤害如实保留。局内[回复]因此只是"撑过本场"的手段，
+            # 跨场恢复生命只能靠局外行动【休整】(README 第266行)。
+            if _p.healed_this_battle > 0:
+                _p.current_hp = max(1, _p.current_hp - _p.healed_this_battle)
+            _p.healed_this_battle = 0
+            # 清除局内持续效果（含持续∞的增益/减益），[代价]类不清除
+            _COST_STATUS = {"流血", "衰老", "异变", "崩解"}
+            _p.status_effects = [s for s in _p.status_effects if s.name in _COST_STATUS]
             # 恢复速度到速限（闪避消耗的速度战终复原）
             self.state.player.current_speed = self.state.player.speed_limit
             # 体外心脏：临时翻倍的血限[战终]还原为基准值，当前生命同步封顶
@@ -2448,6 +2527,14 @@ class GameEngine:
         # 真理眼冷却：每场[战终]-1
         if self.state.truth_eye_cooldown > 0:
             self.state.truth_eye_cooldown -= 1
+
+        # 道纹【冷却X】：README「[战终]后已完成战斗场数+1，达到Y时才能再次使用」。
+        # 对所有持有道纹的角色统一递减，归零即恢复可用。
+        for _ent in ([self.state.player] if self.state.player else []) \
+                + self.state.friends + self.state.employees:
+            for _inst in _ent.dao_wen.values():
+                if _inst.cooldown_remaining > 0:
+                    _inst.cooldown_remaining -= 1
         
         # 临时朋友消失
         self.state.temp_friends.clear()

@@ -127,14 +127,14 @@ class CombatEngine:
                     "blood_limit_before": target.blood_limit, "died": False,
                     "damage_type": damage_type, "retreated": True,
                 }
-        # 断尾求生（真龙之心特性）：玩家即将命零时，若已预声明愿意牺牲的龙族特性，移除该特性抵消本次伤害
+        # 断尾求生（真龙之心遗物）：玩家即将命零时，若已预声明愿意牺牲的龙族遗物，移除该遗物抵消本次伤害
         if (damage_type != "代价" and target is self.state.player and target.is_alive
                 and "断尾求生" in self.state.dragon_traits and self.state.dragon_tail_sacrifice_declared):
             remaining_after_shield = max(0, amount - target.shield) if amount > 0 else 0
             if remaining_after_shield >= target.current_hp and target.current_hp > 0:
                 sacrificed = self.state.dragon_tail_sacrifice_declared
                 if sacrificed in self.state.dragon_traits:
-                    self.state.dragon_traits.remove(sacrificed)
+                    self.state.remove_relic(sacrificed)
                 self.state.dragon_tail_sacrifice_declared = ""
                 return {
                     "raw_damage": amount, "shield_absorbed": 0, "actual_damage": 0,
@@ -216,7 +216,7 @@ class CombatEngine:
         """
         解析一次攻击
         dodge: 目标是否选择闪避（由AI决策）
-        blood_shadow: 目标是否选择用【血影】特性(流血10取消本次判定)代替常规闪避
+        blood_shadow: 目标是否选择用【血影】遗物(流血10取消本次判定)代替常规闪避
         """
         result = {
             "attacker": attacker.name,
@@ -238,7 +238,7 @@ class CombatEngine:
         # 必中（含必中状态）
         must_hit = is_must_hit or attacker.has_status("必中")
 
-        # 血影（初拥之夜特性，仅玩家自身持有）：非必中判定下，可流血10取消本次判定，是常规闪避外的另一选项
+        # 血影（初拥之夜遗物，仅玩家自身持有）：非必中判定下，可流血10取消本次判定，是常规闪避外的另一选项
         if (blood_shadow and not must_hit and target is self.state.player
                 and "血影" in self.state.first_embrace_traits and target.current_hp > 10):
             self._pay_bleed_cost(target, 10)
@@ -274,7 +274,7 @@ class CombatEngine:
         # 龙鳞：目标每次受到伤害-X（最低0）
         if target.has_status("龙鳞"):
             damage = max(0, damage - target.get_status_value("龙鳞"))
-        # 龙族血脉（真龙之心特性）：对非怪物造成伤害翻倍（对怪物的秒杀效果在伤害结算后处理）
+        # 龙族血脉（真龙之心遗物）：对非怪物造成伤害翻倍（对怪物的秒杀效果在伤害结算后处理）
         if attacker is self.state.player and "龙族血脉" in self.state.dragon_traits and target.entity_type != "怪物":
             damage *= 2
 
@@ -296,7 +296,7 @@ class CombatEngine:
         
         # 检查贯穿（无视格挡）
         ignore_shield = attacker.has_status("贯穿")
-        # 震岳龙躯（真龙之心特性）：激活期间，自身受到超出15点的伤害无效
+        # 震岳龙躯（真龙之心遗物）：激活期间，自身受到超出15点的伤害无效
         if target is self.state.player and self.state.dragon_body_shield_rounds > 0:
             damage = min(damage, 15)
         # 法术：受到伤害前（玩家为目标时触发反应型法术，可能反杀攻击者或加盾）
@@ -320,7 +320,7 @@ class CombatEngine:
                 damage_result = self._apply_hostile_damage(target, damage, "普通" if not ignore_shield else "无视格挡")
         else:
             damage_result = self._apply_hostile_damage(target, damage, "普通" if not ignore_shield else "无视格挡")
-        # 龙族血脉（真龙之心特性）：对怪物造成伤害后，直接使其命零
+        # 龙族血脉（真龙之心遗物）：对怪物造成伤害后，直接使其命零
         if (attacker is self.state.player and "龙族血脉" in self.state.dragon_traits
                 and target.entity_type == "怪物" and damage_result["actual_damage"] > 0 and target.is_alive):
             target.current_hp = 0
@@ -499,7 +499,36 @@ class CombatEngine:
                     "died": result["died"]
                 })
 
-            # 血族血脉（初拥之夜特性）：[回终]本回合若造成过伤害则回复等量，否则流血20
+            # 特殊事件【凡庸】（README 第500行）：任一角色连续五回合未出手／
+            # 五回合未能使敌对角色生命减少时触发；轮回者直接死亡，怪物命零死亡，
+            # 轮回者获得消耗品【残骸】(1/1)。此前从未实装，导致长期僵持局面不会终结。
+            if entity.is_alive:
+                # 两个条件互相独立，任一连续满 5 回合即触发（README 用"/"表示或）
+                if entity.actions_used_this_round <= 0:
+                    entity.no_action_rounds += 1
+                else:
+                    entity.no_action_rounds = 0
+                if entity.damage_dealt_this_round <= 0:
+                    entity.no_damage_rounds += 1
+                else:
+                    entity.no_damage_rounds = 0
+                if entity.no_action_rounds >= 5 or entity.no_damage_rounds >= 5:
+                    _why = ("连续五回合未出手" if entity.no_action_rounds >= 5
+                            else "连续五回合未能使敌对角色生命减少")
+                    entity.current_hp = 0
+                    entity.is_alive = False
+                    entity.no_action_rounds = 0
+                    entity.no_damage_rounds = 0
+                    effects.append({"type": "mediocrity", "entity": entity.name,
+                                    "note": f"{_why}，触发【凡庸】：凭空全身炸裂，[命零]"})
+                    if entity.entity_type == "怪物":
+                        self.state.consumables.append(
+                            Consumable(name="残骸", effect="局内使用恢复20生命并获得异变10",
+                                       current_uses=1, max_uses=1))
+                        effects.append({"type": "mediocrity_loot", "entity": entity.name,
+                                        "note": "轮回者获得消耗品【残骸】(1/1)"})
+
+            # 血族血脉（初拥之夜遗物）：[回终]本回合若造成过伤害则回复等量，否则流血20
             if "血族血脉" in self.state.first_embrace_traits and entity is self.state.player:
                 if entity.damage_dealt_this_round > 0:
                     heal_detail = entity.heal(entity.damage_dealt_this_round)
@@ -546,7 +575,7 @@ class CombatEngine:
                     "expired_effects": expired
                 })
 
-        # 震岳龙躯（真龙之心特性）：持续X回合递减，归零后护体效果失效
+        # 震岳龙躯（真龙之心遗物）：持续X回合递减，归零后护体效果失效
         if self.state.dragon_body_shield_rounds > 0:
             self.state.dragon_body_shield_rounds -= 1
             effects.append({"type": "dragon_body_tick", "remaining": self.state.dragon_body_shield_rounds})
@@ -665,9 +694,14 @@ class CombatEngine:
     def execute_evolution(self, monster: Entity, daowen_name: str, x: int) -> dict:
         """
         特殊事件【进化】：怪物发动【原初X】（README·特殊事件）。
-        原初X：代价：异变5X。选择一种自身未持有的原始怪物道纹，[战终]前视为持有该道纹
-        （其数值固定为本次X），借用的道纹发动时照常支付其自身代价。
-        前置（怪物特性#3）：须处于困境；逃跑与进化二选一，每场战斗限一次。
+        原初X：代价：异变5X。选择一种**当前轮回者已持有**、且自身未持有的道纹，
+        [战终]前视为持有该道纹（其数值固定为本次X），借用的道纹发动时照常支付其自身代价。
+
+        设计意图：借用对象改为"轮回者的道纹"而非固定的7种原始怪物道纹，
+        使玩家的构筑本身成为风险来源——越依赖某条公式化路线，被复制时反噬越重，
+        从而抑制"无脑最优解"。同时保持怪物与轮回者的身份区隔
+        （怪物仍不持有法力/速度/残韵/局外阶段，只是临时借用道纹）。
+        前置（怪物准则#3）：须处于困境；逃跑与进化二选一，每场战斗限一次。
         """
         if not monster.is_alive:
             return {"success": False, "error": f"{monster.name}已命零"}
@@ -676,9 +710,12 @@ class CombatEngine:
         difficulty = self.check_monster_difficulty(monster)
         if not difficulty:
             return {"success": False, "error": f"{monster.name}未陷入困境，不能进化"}
-        if daowen_name not in self.ORIGINAL_MONSTER_DAOWEN:
+        player = self.state.player
+        player_daowen = list(player.dao_wen.keys()) if player else []
+        if daowen_name not in player_daowen:
             return {"success": False,
-                    "error": f"【{daowen_name}】不是原始怪物道纹，原初X只能借用：{'、'.join(self.ORIGINAL_MONSTER_DAOWEN)}"}
+                    "error": f"【{daowen_name}】不在轮回者当前持有的道纹中，"
+                             f"原初X只能借用：{'、'.join(player_daowen) if player_daowen else '（轮回者无道纹）'}"}
         if daowen_name in monster.dao_wen:
             return {"success": False, "error": f"{monster.name}已持有【{daowen_name}】，原初X只能借用自身未持有的原始怪物道纹"}
         if not isinstance(x, int) or isinstance(x, bool) or x < 1:
@@ -717,7 +754,7 @@ class CombatEngine:
     def get_plight_evolution_options(self) -> list[dict]:
         """
         供AI决策（事实源计算）：当前存活、处于困境、且本场未选择过逃跑/进化的怪物，
-        及其【原初X】可用参数。怪物特性#3：陷入困境时强制逃跑/进化二选一，每场限一次；
+        及其【原初X】可用参数。怪物准则#3：陷入困境时强制逃跑/进化二选一，每场限一次；
         AI扮演怪物方，自行决定是否调用 declare_evolution 及参数。
         """
         options = []
@@ -735,7 +772,9 @@ class CombatEngine:
                 "difficulty_signals": difficulty.get("signals", []),
                 "mutation_layers": m.mutation_count,
                 "max_x_by_mutation": max_x,
-                "borrowable_daowen": [d for d in self.ORIGINAL_MONSTER_DAOWEN if d not in m.dao_wen],
+                # 借用池 = 轮回者当前持有、且该怪物尚未持有的道纹
+                "borrowable_daowen": [d for d in (self.state.player.dao_wen if self.state.player else {})
+                                      if d not in m.dao_wen],
             })
         return options
     
@@ -918,7 +957,7 @@ class CombatEngine:
         2. 公式：知识+环境元素+道纹=干扰目标
         3. 严禁进行纯数值买卖
         4. 只允许利用现实存在的概念
-        5. 严禁以任何形式中断、解除、削弱或篡改已生效的道纹、法术与特性
+        5. 严禁以任何形式中断、解除、削弱或篡改已生效的道纹、法术与遗物
         6. 必须写明期望达成的明确效果
         """
         return Interrupt(
@@ -985,6 +1024,16 @@ class CombatEngine:
             result["multiplier"] = multiplier
         x = calc.get("x", 0)
 
+        # 【冷却X】代价：README「冷却X：使用后该道纹记为【X(0)/Y】，[战终]后已完成
+        # 战斗场数+1，达到Y时才能再次使用」。此前从未写入 cooldown_remaining，
+        # 导致 固执/束缚/畸变/迟滞 可在同一场里无限重复发动（束缚因此支配全局）。
+        if calc.get("cost_type") == "冷却":
+            inst = caster.dao_wen.get(name)
+            if inst is not None:
+                inst.cooldown_remaining = max(inst.cooldown_remaining,
+                                              int(calc.get("cost", 0)))
+                result["cooldown_set"] = inst.cooldown_remaining
+
         # 蒙蔽(施法者伤害类道纹归零) / 坏死(目标禁疗)
         mengbi_blocked = caster.has_status("蒙蔽") and ("target_damage" in calc or "aoe_damage" in calc)
         if mengbi_blocked:
@@ -1036,11 +1085,25 @@ class CombatEngine:
             lost = min(target.shield, calc["shield_drain"]); target.shield -= lost
             result["effects"].append({"type": "shield_drain", "target": target.name, "lost": lost})
         if "blood_limit_reduction" in calc:
-            target.blood_limit -= calc["blood_limit_reduction"]; target.current_hp = min(target.current_hp, target.blood_limit)
+            _hp_before = target.current_hp
+            target.blood_limit -= calc["blood_limit_reduction"]
+            # README 第460行"[血限]及当前生命同时 -4X"：两者是各自独立的扣减。
+            # 此前实现只做 current_hp=min(current_hp, blood_limit)（血限压顶），
+            # 对残血目标等于毫无效果——锐利打 10/200 的怪一点血都掉不了。
+            if "hp_reduction" in calc:
+                target.current_hp -= calc["hp_reduction"]
+            target.current_hp = max(0, min(target.current_hp, target.blood_limit))
             if target.current_hp <= 0: target.is_alive = False
-            result["effects"].append({"type": "blood_limit_reduction", "target": target.name, "new_blood_limit": target.blood_limit})
+            # 血限压迫导致的当前生命减少，同样属于"使敌对角色生命减少"，
+            # 必须计入本回合伤害统计，否则纯锐利流派会被【凡庸】判定为无所作为而自爆。
+            _hp_cut = _hp_before - target.current_hp
+            if _hp_cut > 0 and target is not caster:
+                caster.damage_dealt_this_round += _hp_cut
+            result["effects"].append({"type": "blood_limit_reduction", "target": target.name,
+                                      "new_blood_limit": target.blood_limit,
+                                      "hp_reduced": _hp_cut})
         if "blood_limit_increase" in calc:
-            # 不朽之躯（初拥之夜特性）：血限无法增加，对该实体的增殖等血限增长一律归零
+            # 不朽之躯（初拥之夜遗物）：血限无法增加，对该实体的增殖等血限增长一律归零
             if target is self.state.player and "不朽之躯" in self.state.first_embrace_traits:
                 result["effects"].append({"type": "blood_limit_increase", "target": target.name,
                                            "increase": 0, "blocked_by": "不朽之躯"})
@@ -1114,7 +1177,7 @@ class CombatEngine:
                                        **self._pay_bleed_cost(cost_target, calc["cost_hp"], dh_use)})
             if cost_target.current_hp <= 0: self.cost_proxy = None
         if "cost_blood_limit" in calc:
-            # 不朽之躯（初拥之夜特性）：免疫衰老，对该实体的衰老代价直接归零
+            # 不朽之躯（初拥之夜遗物）：免疫衰老，对该实体的衰老代价直接归零
             if cost_target is self.state.player and "不朽之躯" in self.state.first_embrace_traits:
                 result["effects"].append({"type": "aging_cost", "source": cost_target.name,
                                            "new_blood_limit": cost_target.blood_limit,
@@ -1392,7 +1455,7 @@ class CombatEngine:
             if not self.can_act(m):
                 results.append({"monster": m.name, "skipped": "眩晕/束缚"})
                 continue
-            # 龙息（真龙之心特性）：所有敌方[目标]行动前，受到10×当前回合数的必中伤害
+            # 龙息（真龙之心遗物）：所有敌方[目标]行动前，受到10×当前回合数的必中伤害
             if "龙息" in self.state.dragon_traits and m.is_alive:
                 breath_damage = 10 * max(1, self.state.current_round)
                 dmg = m.take_damage(breath_damage)
@@ -1414,6 +1477,9 @@ class CombatEngine:
                     results.append({"monster": m.name, "collapsed": an[3:],
                                     "note": f"支付异变后达{m.mutation_count}层，触发【崩解】直接命零，激活效果中断"})
                     continue
+                if an:
+                    # 道纹出手计入本回合出手数（供【凡庸】判定）
+                    m.actions_used_this_round += 1
                 if an in ("蒙蔽", "坏死", "减速", "僵化"):
                     self._apply_control_to_player(an, m, player)
                     results.append({"monster": m.name, "daowen_activated": an})
@@ -1423,12 +1489,20 @@ class CombatEngine:
             for _ in range(n):
                 if not player.is_alive:
                     break
+                # 每个攻击出手计入本回合出手数（供【凡庸】判定）
+                m.actions_used_this_round += 1
                 for _h in range(m.attack_count):
                     if not player.is_alive or not m.is_alive:
                         break
                     dodge = (dodge_policy == "auto" and not must
                              and player.current_speed > 0 and m.attack_power > player.shield)
-                    results.append(self.resolve_attack(m, player, is_must_hit=must, dodge=dodge))
+                    _r = self.resolve_attack(m, player, is_must_hit=must, dodge=dodge)
+                    # 标记"一轮攻击内的第几击"：一次攻击出手包含 attack_count 次攻击，
+                    # 每次独立判定闪避(README:204)，但它们同属一个出手，不应各占一个出手号。
+                    _r["hit_index"] = _h + 1
+                    _r["hit_total"] = m.attack_count
+                    _r["new_action"] = (_h == 0)
+                    results.append(_r)
         return results
 
     def buyaicai_escape_cost(self, monster: Entity) -> dict:

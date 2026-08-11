@@ -22,6 +22,8 @@ pytest 风格测试 - 里程碑7：最终的冠冕 / 第8场最终死斗
     python -m pytest tests/test_final_duel.py -v
 """
 import os
+os.makedirs("/tmp/linji_tests", exist_ok=True)
+import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -240,7 +242,7 @@ def test_name_collision_between_challenger_and_opponent_is_resolved():
 
 def test_resolve_final_duel_rejected_without_active_duel():
     """错误输入：没有进行中的死斗时调用resolve_final_duel必须报错"""
-    engine = GameEngine(db_path="data/test_duel_noactive.db", rng_seed=1,
+    engine = GameEngine(db_path="/tmp/linji_tests/test_duel_noactive.db", rng_seed=1,
                          sealed_candidate_path="data/test_duel_noactive.json")
     engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
     r = engine.execute_action("resolve_final_duel", {"outcome": "victory"})
