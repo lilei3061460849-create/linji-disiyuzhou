@@ -1,20 +1,23 @@
 """
 怪物池解析与出怪(战始抽怪)系统
-从README.md的"XXX怪物池"标题下解析每副本12只怪物的固定面板，供[战始]随机抽取。
+从全副本索引指向的独立副本文档中解析每副本12只怪物的固定面板，供[战始]随机抽取。
 """
 from __future__ import annotations
 import re
+from pathlib import Path
 from typing import Optional
 
+from .dungeons import load_dungeon_documents
 
-def parse_monster_pool(readme_path: str) -> dict:
-    """按"XXX怪物池"标题精确切分，每池12只，正确打region标签（排除事件怪）。
+
+def parse_monster_pool(index_path: str | Path) -> dict:
+    """从索引登记的副本文档解析怪物池。
     返回 {region: [{"name","attack_count","attack_power","blood_limit","dao_wen"}, ...]}"""
-    with open(readme_path, encoding="utf-8") as f:
-        lines = f.read().split("\n")
+    documents = load_dungeon_documents(index_path)
     pat = re.compile(r'^([\u4e00-\u9fff\w·]+)[（(](\d+)[×x](\d+)/(\d+)(?:[，,]([^)）\n]*))?[）)]')
     pools: dict[str, list[dict]] = {}
-    for region in ["扭曲都市", "罪孽都市", "龙心谷"]:
+    for region, document in documents.items():
+        lines = document.split("\n")
         header = region + "怪物池"
         hidx = next((i for i, l in enumerate(lines) if l.startswith(header)), None)
         if hidx is None:

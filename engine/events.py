@@ -7,7 +7,10 @@ from __future__ import annotations
 import os
 import re
 import math
+from pathlib import Path
 from typing import Optional
+
+from .dungeons import load_dungeon_documents
 
 
 # 各池事件名（与README一致）
@@ -19,11 +22,16 @@ EVENT_NAMES = {
 }
 
 
-def parse_events(readme_path: str) -> dict:
-    """从README解析事件 → {name: {region, desc, options:[{id,label,text}]}}"""
-    with open(readme_path, encoding="utf-8") as f:
-        content = f.read()
+def parse_events(index_path: str | Path) -> dict:
+    """从全副本索引及副本文档解析事件。通用事件仍位于 README。"""
+    index = Path(index_path)
+    root = index.parent
+    content = (root / "README.md").read_text(encoding="utf-8")
+    documents = load_dungeon_documents(index)
     lines = content.split("\n")
+    # 每个专属副本独立文档追加到解析输入；事件名白名单阻止标题被误判。
+    for document in documents.values():
+        lines.extend(["", *document.split("\n")])
     # 建立 name→region 反查
     name_region = {}
     for region, names in EVENT_NAMES.items():

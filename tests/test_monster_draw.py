@@ -29,7 +29,7 @@ from engine.api import GameEngine
 from engine.monsters import compute_draw_count, parse_monster_pool
 
 
-README_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "README.md")
+DUNGEON_INDEX_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "副本索引.md")
 
 
 def _new_engine(db_suffix: str, region: str) -> GameEngine:
@@ -64,8 +64,8 @@ def test_battle_start_actually_populates_enemies_from_correct_region_pool():
 
 
 def test_drawn_monster_panel_matches_readme_exactly():
-    """正常路径：抽到的怪物面板(攻击次数/攻击力/血限)与道纹X值必须与README定义完全一致"""
-    pools = parse_monster_pool(README_PATH)
+    """正常路径：抽到的怪物面板(攻击次数/攻击力/血限)与道纹X值必须与独立副本文档定义完全一致"""
+    pools = parse_monster_pool(DUNGEON_INDEX_PATH)
     known = next(m for m in pools["龙心谷"] if m["name"] == "熔岩蜥")
     assert (known["attack_count"], known["attack_power"], known["blood_limit"]) == (3, 6, 234)
     assert known["dao_wen"] == {"加害": 2, "狂暴": 3, "冲击": 3}
@@ -130,7 +130,7 @@ def test_unknown_region_draws_nothing_but_does_not_crash():
 
 def test_parse_monster_pool_never_mixes_regions():
     """非法配置校验：三个副本池互不相混，且每池严格12只"""
-    pools = parse_monster_pool(README_PATH)
+    pools = parse_monster_pool(DUNGEON_INDEX_PATH)
     for region in ("扭曲都市", "罪孽都市", "龙心谷"):
         assert len(pools[region]) == 12, f"{region}应有12只怪物，实际{len(pools[region])}"
     all_names = [m["name"] for region in pools.values() for m in region]

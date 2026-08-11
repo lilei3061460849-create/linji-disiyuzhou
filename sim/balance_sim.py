@@ -33,31 +33,14 @@ REGION_EXCLUSIVE = {
 
 # 各副本怪物池的行范围（用于归属判定）——按面板出现顺序解析即可
 def parse_monsters():
-    """按'XXX怪物池'标题精确切分，每池12只、正确打region标签（排除事件怪）"""
-    with open(os.path.join(ROOT, "README.md"), encoding="utf-8") as f:
-        lines = f.read().split("\n")
-    pat = re.compile(r'^([\u4e00-\u9fff\w·]+)[（(](\d+)[×x](\d+)/(\d+)(?:[，,]([^)）\n]*))?[）)]')
-    monsters = []
-    for region in ["扭曲都市", "罪孽都市", "龙心谷"]:
-        header = region + "怪物池"
-        hidx = next((i for i,l in enumerate(lines) if l.startswith(header)), None)
-        if hidx is None:
-            continue
-        cnt = 0
-        for j in range(hidx+1, len(lines)):
-            m = pat.match(lines[j].strip())
-            if m and cnt < 12:
-                name = m.group(1).strip()
-                ac, ap, hp = int(m.group(2)), int(m.group(3)), int(m.group(4))
-                dw_str = m.group(5) or ""
-                dw = {n: int(v) for n, v in re.findall(r'([\u4e00-\u9fff]{2})(\d+)', dw_str)}
-                monsters.append({"name": name, "ac": ac, "ap": ap, "hp": hp, "dw": dw, "region": region})
-                cnt += 1
-            elif cnt > 0 and not m:
-                break
-            if cnt >= 12:
-                break
-    return monsters
+    """从全副本索引加载怪物池，而不是直接解析 README。"""
+    from engine.monsters import parse_monster_pool
+    pools = parse_monster_pool(os.path.join(ROOT, "副本索引.md"))
+    return [
+        {"name": monster["name"], "ac": monster["attack_count"], "ap": monster["attack_power"],
+         "hp": monster["blood_limit"], "dw": monster["dao_wen"], "region": region}
+        for region, monsters in pools.items() for monster in monsters
+    ]
 
 
 def pool_by_region(monsters, region):

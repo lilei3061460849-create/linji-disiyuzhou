@@ -28,7 +28,7 @@ engine/
 ├── enums.py             # 枚举定义（阶段、触发时点、代价类型等）
 ├── models.py            # 数据模型（Entity, Spell, Relic等）
 ├── dice.py              # 随机数引擎（池系统，auto_roll默认由引擎自身生成随机数并结算，可传seed复现）
-├── monsters.py          # 怪物池解析(从README解析36怪物面板)与出怪(战始抽怪)公式
+├── monsters.py          # 怪物池解析(从副本索引加载36怪物面板)与出怪(战始抽怪)公式
 ├── daowen.py            # 道纹系统（所有道纹效果的数学计算）
 ├── combat.py            # 战斗计算引擎（伤害、回合、闪避等）
 ├── dm_rulings.py        # DM裁定数据库（SQLite + 全文搜索）
