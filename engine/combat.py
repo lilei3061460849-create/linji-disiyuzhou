@@ -1410,7 +1410,10 @@ class CombatEngine:
         怪物道纹出手：激活一个未激活的成长/控场道纹，返回道纹名或None。
         原始怪物道纹以【异变】为代价（道纹归属规则#1）：激活时支付异变5X（X=面板数值）；
         异变达阈值触发【崩解】直接命零，返回 "崩解:道纹名"，本次激活效果中断。
+        干扰仪：若怪物本回合被【干扰】，则本回合无法发动自身道纹。
         """
+        if m.has_status("干扰"):
+            return None
         for g in self.MONSTER_ACTIVATE_PRIORITY:
             if g in m.dao_wen and g not in activated:
                 if g in self.ORIGINAL_MONSTER_DAOWEN:
@@ -1424,13 +1427,16 @@ class CombatEngine:
         return None
 
     def _monster_attack_actions(self, m: Entity, activated: set) -> int:
-        """怪物攻击出手数 = 1 + 活力X(若激活) + 狂暴1(若激活)"""
+        """怪物攻击出手数 = 1 + 活力X(若激活) + 狂暴1(若激活)；手雷减攻则-1"""
         n = 1
         if "活力" in activated:
             n += m.dao_wen["活力"].x_value
         if "狂暴" in activated:
             n += 1
-        return n
+        # 高爆手雷：本回合攻击次数-1（每枚手雷叠加）
+        if m.has_status("手雷减攻"):
+            n -= m.get_status_value("手雷减攻")
+        return max(1, n)
 
     def _apply_control_to_player(self, name: str, m: Entity, player: Entity):
         """怪物激活控场道纹后对轮回者施加效果"""

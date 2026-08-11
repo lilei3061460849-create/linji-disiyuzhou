@@ -1666,7 +1666,7 @@ class GameEngine:
         return self.combat.execute_evolution(monster, daowen_name, x)
 
     def _action_consume_item(self, params: dict) -> dict:
-        """使用消耗品（雕塑/普通，遵守现有消耗品规则，使用不消耗出手）"""
+        """使用消耗品（雕塑/普通/扭曲工具库8件，遵守现有消耗品规则，使用不消耗出手）"""
         item_name = params.get("name", "")
         item = None
         for c in self.state.consumables:
@@ -1675,6 +1675,10 @@ class GameEngine:
                 break
         if item is None:
             return {"success": False, "error": f"找不到可用消耗品: {item_name}"}
+
+        # 扭曲工具库 8 件：引擎侧真实结算（F3）
+        if item.name in TWISTED_TOOL_LIBRARY:
+            return self._consume_twisted_tool(item, params)
 
         # 雕塑：消耗1耐久造成15伤害或获得20格挡
         if item.kind == "sculpture":
@@ -1724,6 +1728,96 @@ class GameEngine:
             },
             "state": self.combat._get_combat_state(),
         }
+
+    def _consume_twisted_tool(self, item: Consumable, params: dict) -> dict:
+        """扭曲工具库 8 件的引擎侧真实结算（F3）"""
+        name = item.name
+        player = self.state.player
+        if not player:
+            return {"success": False, "error": "没有玩家"}
+        # 统一扣耐久（与普通消耗品一致）
+        remaining = item.use()
+        result: dict[str, Any] = {"tool": name, "uses_remaining": remaining, "is_depleted": item.is_depleted}
+        # 1. 反怪物电击枪：对目标 25 伤害，飞行目标 +15 并施坠落
+        if name == "反怪物电击枪":
+            target_name = params.get("target", "")
+            target = next((e for e in self.state.get_all_enemy_side() if e.name == target_name), None)
+            if target is None:
+                # 回滚耐久（未找到目标不消耗）
+                item.current_uses += 1
+                return {"success": False, "error": f"找不到敌方目标: {target_name}"}
+            flying = target.is_flying or target.has_status("飞行") or "飞行" in target.dao_wen
+            dmg = 25 + (15 if flying else 0)
+            detail = target.take_damage(dmg)
+            if flying:
+                target.add_status(StatusEffect(name="坠落", value=1, remaining_rounds=1, source="反怪物电击枪"))
+            result.update({"target": target.name, "damage": dmg, "flying_bonus": 15 if flying else 0, "hp_after": target.current_hp, "detail": detail})
+        # 2. 备用血泵：回复20，≤30% 额外30格挡
+        elif name == "备用血泵":
+            before = player.current_hp
+            player.current_hp = min(player.blood_limit, player.current_hp + 20)
+            healed = player.current_hp - before
+            shield_gained = 0
+            if player.current_hp <= player.blood_limit * 0.3:
+                player.shield += 30
+                shield_gained = 30
+            result.update({"healed": healed, "hp_after": player.current_hp, "shield_gained": shield_gained})
+        # 3. 强光探照灯：目标蒙蔽2
+        elif name == "强光探照灯":
+            target_name = params.get("target", "")
+            target = next((e for e in self.state.get_all_enemy_side() if e.name == target_name), None)
+            if target is None:
+                item.current_uses += 1
+                return {"success": False, "error": f"找不到敌方目标: {target_name}"}
+            target.add_status(StatusEffect(name="蒙蔽", value=2, remaining_rounds=-1, source="强光探照灯"))
+            result.update({"target": target.name, "蒙蔽": 2})
+        # 4. 高压水枪：清除全场敌方所有持续X效果
+        elif name == "高压水枪":
+            cleared = []
+            for m in self.state.get_all_enemy_side():
+                before = len(m.status_effects)
+                m.status_effects = [s for s in m.status_effects if s.remaining_rounds <= 0]
+                if len(m.status_effects) != before:
+                    cleared.append(m.name)
+            result.update({"cleared_enemies": cleared})
+        # 5. 储能电池：[回始]本回合额外+12 法力（此处立即结算）
+        elif name == "储能电池":
+            player.current_mana += 12
+            result.update({"mana_gained": 12, "mana_after": player.current_mana})
+        # 6. 急救箱：回复25 并清一种负面持续
+        elif name == "急救箱":
+            before = player.current_hp
+            player.current_hp = min(player.blood_limit, player.current_hp + 25)
+            healed = player.current_hp - before
+            # 负面定义：持续X（remaining>0）或特定名
+            neg = [s for s in player.status_effects if s.remaining_rounds > 0 or s.name in ("坏死", "退化", "伤痕", "畸变", "蒙蔽")]
+            removed = None
+            if neg:
+                s = neg[0]
+                player.status_effects.remove(s)
+                removed = s.name
+            result.update({"healed": healed, "removed_status": removed})
+        # 7. 干扰仪：全场敌方本回合无法发动道纹（加干扰1状态）
+        elif name == "干扰仪":
+            jammed = []
+            for m in self.state.get_all_enemy_side():
+                m.add_status(StatusEffect(name="干扰", value=1, remaining_rounds=1, source="干扰仪"))
+                jammed.append(m.name)
+            result.update({"jammed": jammed})
+        # 8. 高爆手雷：目标15伤害 + 本回合攻击次数-1
+        elif name == "高爆手雷":
+            target_name = params.get("target", "")
+            target = next((e for e in self.state.get_all_enemy_side() if e.name == target_name), None)
+            if target is None:
+                item.current_uses += 1
+                return {"success": False, "error": f"找不到敌方目标: {target_name}"}
+            detail = target.take_damage(15)
+            # 攻击次数-1：用状态标记，本回合内 _monster_attack_actions 会读取
+            target.add_status(StatusEffect(name="手雷减攻", value=1, remaining_rounds=1, source="高爆手雷"))
+            result.update({"target": target.name, "damage": 15, "detail": detail, "nade_minus": 1})
+        else:
+            result.update({"note": "未知工具"})
+        return {"success": True, "action": f"使用工具【{name}】", "result": result, "state": self.combat._get_combat_state()}
 
     def _action_use_spell(self, params: dict) -> dict:
         """查看/装配法术（反应型法术学会后在触发时点由引擎自动结算，无需手动发动）"""
