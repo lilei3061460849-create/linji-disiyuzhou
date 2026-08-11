@@ -129,3 +129,64 @@ def test_save_load_roundtrip(tmp_path, monkeypatch):
     assert k2["generation"] == 3
     assert k2["best"]["score"] == 9.5
     assert k2["trials"]["束缚"]["n"] == 1
+
+
+# ---------- 随机种子模式 ----------
+
+def test_play_accepts_none_seed():
+    """正常路径：seed=None 时引擎使用真随机源，仍应返回合法结果"""
+    r = bl.play("杀伐", ["庇护"], "龙心谷", None)
+    assert 0 <= r["cleared"] <= 7
+    assert isinstance(r["won"], bool)
+
+
+def test_fixed_seed_is_reproducible():
+    """边界：固定种子必须完全可复现（否则无法排查问题）"""
+    a = bl.play("杀伐", ["庇护", "再生"], "龙心谷", 42)
+    b = bl.play("杀伐", ["庇护", "再生"], "龙心谷", 42)
+    assert a == b, "同一固定种子两次结果不一致"
+
+
+def test_fitness_fixed_mode_is_deterministic():
+    """边界：非随机模式下同参数 fitness 必须一致"""
+    f1 = bl.fitness("杀伐", ["庇护", "再生"], 3, gen=1)
+    f2 = bl.fitness("杀伐", ["庇护", "再生"], 3, gen=1)
+    assert f1 == f2
+
+
+def test_random_seed_mode_varies_samples():
+    """
+    正常路径：随机模式下不同 rng 应产生不同的评估样本。
+    （比较 fitness 数值可能偶然相等，故直接校验取样过程会用到 rng）
+    """
+    import random as _r
+    calls = []
+
+    class SpyRandom(_r.Random):
+        def randrange(self, *a, **k):
+            v = super().randrange(*a, **k)
+            calls.append(v)
+            return v
+
+    bl.fitness("杀伐", ["庇护"], 3, gen=1, random_seeds=True, rng=SpyRandom(5))
+    assert len(calls) == 3, "随机模式应为每局取一个新种子"
+    assert len(set(calls)) > 1, "取到的种子全部相同，未真正随机"
+
+
+def test_random_mode_uses_random_regions():
+    """边界：随机模式应在三个副本间取样，而非固定轮换"""
+    import random as _r
+    picked = []
+    orig = bl.play
+
+    def spy(starter, learn, region, seed=None, battles=7):
+        picked.append(region)
+        return {"cleared": 0, "won": False}
+
+    bl.play = spy
+    try:
+        bl.fitness("杀伐", ["庇护"], 30, gen=1, random_seeds=True, rng=_r.Random(3))
+    finally:
+        bl.play = orig
+    assert set(picked).issubset(set(bl.REGIONS))
+    assert len(set(picked)) > 1, "随机模式下副本没有变化"

@@ -50,7 +50,8 @@ BUILD_SIZE = 5          # 每套 build 学习的道纹数量
 # 一局轮回
 # --------------------------------------------------------------------------
 
-def play(starter: str, learn: list, region: str, seed: int, battles: int = 7) -> dict:
+def play(starter: str, learn: list, region: str, seed=None, battles: int = 7) -> dict:
+    """跑一局轮回。seed=None 时引擎使用真随机源（每局出怪/事件都不同）。"""
     e = GameEngine(db_path="/tmp/learner.db", rng_seed=seed)
     e.execute_action("setup_attributes",
                      {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
@@ -104,12 +105,24 @@ def play(starter: str, learn: list, region: str, seed: int, battles: int = 7) ->
     return {"cleared": cleared, "won": True}
 
 
-def fitness(starter: str, learn: list, runs: int, gen: int) -> float:
-    """适应度 = 平均通关场数 + 3×胜率（0~10）。跨代换种子，避免过拟合。"""
+def fitness(starter: str, learn: list, runs: int, gen: int,
+            random_seeds: bool = False, rng: random.Random = None) -> float:
+    """
+    适应度 = 平均通关场数 + 3×胜率（0~10）。
+
+    random_seeds=False（默认）：种子由代数推导，同一代可复现，便于排查。
+    random_seeds=True：每局用真随机种子与随机副本，样本不重复，
+      能避免"只在某几局上表现好"的过拟合，代价是结果不可逐局复现。
+    """
+    rng = rng or random
     total = 0.0
     for i in range(runs):
-        seed = gen * 1000 + i * 7 + 1
-        region = REGIONS[i % len(REGIONS)]
+        if random_seeds:
+            seed = rng.randrange(1, 2 ** 31 - 1)
+            region = rng.choice(REGIONS)
+        else:
+            seed = gen * 1000 + i * 7 + 1
+            region = REGIONS[i % len(REGIONS)]
         r = play(starter, learn, region, seed)
         total += r["cleared"] + (3.0 if r["won"] else 0.0)
     return total / runs
@@ -184,6 +197,7 @@ def update(k: dict, starter: str, learn: list, score: float) -> None:
         k["best"] = {"starter": starter, "learn": list(learn), "score": score}
     k["history"].append({"gen": k["generation"], "starter": starter,
                          "learn": list(learn), "score": round(score, 3)})
+    k["total_games"] = k.get("total_games", 0) + k.get("_last_runs", 0)
 
 
 def synergies(k: dict, min_n: int = 2) -> list:
@@ -203,7 +217,8 @@ def synergies(k: dict, min_n: int = 2) -> list:
 
 
 def report(k: dict) -> None:
-    print(f"已学习代数：{k['generation']}｜累计试验：{len(k['history'])} 套")
+    print(f"已学习代数：{k['generation']}｜累计试验：{len(k['history'])} 套"
+          f"｜累计对局：{k.get('total_games', 0)} 局")
     if k.get("best"):
         b = k["best"]
         print(f"\n★ 目前最优：初始【{b['starter']}】+ {b['learn']}   适应度 {b['score']:.2f}/10")
@@ -237,7 +252,10 @@ def main():
     ap.add_argument("--runs", type=int, default=6, help="每套build评估局数")
     ap.add_argument("--report", action="store_true")
     ap.add_argument("--reset", action="store_true")
-    ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--seed", type=int, default=0,
+                    help="控制'提出哪套build'的采样随机性；0=每次运行都不同")
+    ap.add_argument("--random-seeds", action="store_true",
+                    help="每局用真随机种子与随机副本（推荐，避免过拟合到固定局面）")
     a = ap.parse_args()
 
     if a.reset and os.path.exists(KNOWLEDGE):
@@ -253,7 +271,9 @@ def main():
     for g in range(a.generations):
         k["generation"] += 1
         starter, learn = propose(k, rng)
-        score = fitness(starter, learn, a.runs, k["generation"])
+        k["_last_runs"] = a.runs
+        score = fitness(starter, learn, a.runs, k["generation"],
+                        random_seeds=a.random_seeds, rng=rng)
         update(k, starter, learn, score)
         star = " ★新最优" if k["best"]["score"] == score else ""
         print(f"第{k['generation']:>3}代  【{starter}】{'+'.join(learn):<28} → {score:5.2f}{star}")
