@@ -229,9 +229,20 @@ class TacticalAI:
         return None
 
     def try_control(self) -> Optional[dict]:
-        """5. 控场：对威胁最大的敌人上控制。"""
+        """
+        5. 控场：对威胁最大的敌人上控制。
+
+        血线越低越该控：没有格挡/回复手段的流派（如纯debuff流派），
+        控制是唯一的保命方式，此时应放宽触发阈值。
+        """
         enemies = self.alive_enemies()
-        if not enemies or self.incoming_damage() < self.player.current_hp * 0.25:
+        if not enemies:
+            return None
+        p = self.player
+        desperate = (not self.owned("shield") and not self.owned("heal")
+                     and p.current_hp <= p.blood_limit * 0.5)
+        threshold = 0.05 if desperate else 0.25
+        if self.incoming_damage() < p.current_hp * threshold:
             return None
         top = max(enemies, key=lambda e: e.attack_count * e.attack_power)
         # 同一目标本回合已被控制过就不再重复施加（控制不叠加，重复施加纯属浪费）
@@ -263,10 +274,14 @@ class TacticalAI:
         if not enemies:
             return None
         tank = max(enemies, key=lambda e: e.current_hp)
+        # 只有当这一击的债务能换来足够长的收益期时才值得占用出手：
+        # 战斗预计还会持续多回合，且 X 至少为2（X=1 的削弱幅度通常不值一次出手）。
         for name in self.owned("debuff"):
             if self.used.get(f"debuff:{name}:{tank.name}"):
                 continue
-            x = max(1, min(self._x_for(name, self.mana_budget()), 3))
+            x = min(self._x_for(name, self.mana_budget()), 3)
+            if x < 2:
+                continue
             r = self._cast(name, x, tank.name)
             if r:
                 self.used[f"debuff:{name}:{tank.name}"] = 1
