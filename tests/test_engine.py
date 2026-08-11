@@ -787,6 +787,11 @@ def test_evolution_yuanchu():
         engine.execute_action("setup_attributes", {
             "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7
         })
+        # 裁定：原初X 借用池 = 轮回者当前持有的道纹，故须先给轮回者道纹
+        for _n in ("自愈", "强化", "杀伐"):
+            engine.state.player.dao_wen[_n] = DaoWenInstance(
+                dao_wen=DaoWen(name=_n, formula="", cost_type="消耗",
+                               cost_formula="X", effect_formula=""), x_value=1)
         engine.combat.reset_monster_activation()
         return engine
 
@@ -838,14 +843,21 @@ def test_evolution_yuanchu():
     assert "自愈" not in m30.dao_wen, "崩解时进化效果中断，借用不生效"
     print(f"  ✓ 异变{T-10}+10={T}层：触发【崩解】直接命零，借用【自愈】中断未生效")
 
-    # ---- 5. 非法输入：借用转化道纹 → 拒绝 ----
+    # ---- 5. 非法输入：借用轮回者未持有的道纹 → 拒绝 ----
     engine2 = mk_engine()
     m_bad = mk_plight_monster(name="非法怪", dw=[("狂暴", 2)])
     engine2.state.enemies.append(m_bad)
     r5 = engine2.execute_action("declare_evolution", {"monster": "非法怪", "daowen": "愤怒", "x": 1})
-    assert not r5["success"] and "不是原始怪物道纹" in r5["error"], f"借用转化道纹应被拒绝: {r5}"
-    # ---- 非法输入：借用已持有道纹 → 拒绝 ----
-    r6 = engine2.execute_action("declare_evolution", {"monster": "非法怪", "daowen": "狂暴", "x": 1})
+    assert not r5["success"] and "不在轮回者当前持有的道纹中" in r5["error"], \
+        f"借用轮回者未持有的道纹应被拒绝: {r5}"
+    # ---- 非法输入：借用怪物自身已持有的道纹 → 拒绝 ----
+    # 用轮回者也持有的"强化"，确保先通过"必须在轮回者道纹池内"这一关，
+    # 从而真正命中"怪物已持有"的拒绝分支。
+    from engine.models import DaoWen as _DW, DaoWenInstance as _DWI
+    m_bad.dao_wen["强化"] = _DWI(dao_wen=_DW(name="强化", formula="", cost_type="代价",
+                                             cost_formula="异变5X", effect_formula="",
+                                             is_monster_original=True), x_value=1)
+    r6 = engine2.execute_action("declare_evolution", {"monster": "非法怪", "daowen": "强化", "x": 1})
     assert not r6["success"] and "已持有" in r6["error"], f"借用已持有道纹应被拒绝: {r6}"
     # ---- 非法输入：X=0 → 拒绝 ----
     r7 = engine2.execute_action("declare_evolution", {"monster": "非法怪", "daowen": "自愈", "x": 0})
@@ -891,6 +903,10 @@ def test_evolution_yuanchu():
     st3 = GameState()
     st3.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60,
                         speed_limit=8, current_speed=8)
+    # 原初X 借用池 = 轮回者持有的道纹
+    st3.player.dao_wen["自愈"] = DaoWenInstance(
+        dao_wen=DaoWen(name="自愈", formula="", cost_type="消耗",
+                       cost_formula="X", effect_formula=""), x_value=1)
     m_b = mk_plight_monster(name="借用怪", hp=120, cur=30, atk=1)  # 无自有道纹，仅借用
     st3.enemies.append(m_b)
     combat3 = CombatEngine(st3, DiceEngine()); combat3.reset_monster_activation()
@@ -943,8 +959,10 @@ def test_evolution_plight_listing():
     assert len(evo["plight_monsters"]) == 1, "应恰好1只困境怪"
     info = evo["plight_monsters"][0]
     assert info["monster"] == "困境怪"
-    assert "狂暴" not in info["borrowable_daowen"], "已持有的狂暴不可借用"
-    assert len(info["borrowable_daowen"]) == 6, "7种原始道纹减去已持有狂暴应剩6种"
+    # 裁定：原初X 的借用池改为"轮回者当前持有的道纹"（不再是7种原始怪物道纹）
+    assert set(info["borrowable_daowen"]) <= set(engine.state.player.dao_wen), \
+        "借用池必须是轮回者持有的道纹的子集"
+    assert "狂暴" not in info["borrowable_daowen"], "怪物已持有的道纹不可借用"
     T_list = Entity.MUTATION_COLLAPSE_THRESHOLD
     assert info["max_x_by_mutation"] == (T_list - 1 - 10) // 5, \
         f"max_x应为({T_list-1}-10)//5={(T_list-1-10)//5}，实{info['max_x_by_mutation']}"

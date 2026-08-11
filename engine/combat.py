@@ -665,8 +665,13 @@ class CombatEngine:
     def execute_evolution(self, monster: Entity, daowen_name: str, x: int) -> dict:
         """
         特殊事件【进化】：怪物发动【原初X】（README·特殊事件）。
-        原初X：代价：异变5X。选择一种自身未持有的原始怪物道纹，[战终]前视为持有该道纹
-        （其数值固定为本次X），借用的道纹发动时照常支付其自身代价。
+        原初X：代价：异变5X。选择一种**当前轮回者已持有**、且自身未持有的道纹，
+        [战终]前视为持有该道纹（其数值固定为本次X），借用的道纹发动时照常支付其自身代价。
+
+        设计意图：借用对象改为"轮回者的道纹"而非固定的7种原始怪物道纹，
+        使玩家的构筑本身成为风险来源——越依赖某条公式化路线，被复制时反噬越重，
+        从而抑制"无脑最优解"。同时保持怪物与轮回者的身份区隔
+        （怪物仍不持有法力/速度/残韵/局外阶段，只是临时借用道纹）。
         前置（怪物准则#3）：须处于困境；逃跑与进化二选一，每场战斗限一次。
         """
         if not monster.is_alive:
@@ -676,9 +681,12 @@ class CombatEngine:
         difficulty = self.check_monster_difficulty(monster)
         if not difficulty:
             return {"success": False, "error": f"{monster.name}未陷入困境，不能进化"}
-        if daowen_name not in self.ORIGINAL_MONSTER_DAOWEN:
+        player = self.state.player
+        player_daowen = list(player.dao_wen.keys()) if player else []
+        if daowen_name not in player_daowen:
             return {"success": False,
-                    "error": f"【{daowen_name}】不是原始怪物道纹，原初X只能借用：{'、'.join(self.ORIGINAL_MONSTER_DAOWEN)}"}
+                    "error": f"【{daowen_name}】不在轮回者当前持有的道纹中，"
+                             f"原初X只能借用：{'、'.join(player_daowen) if player_daowen else '（轮回者无道纹）'}"}
         if daowen_name in monster.dao_wen:
             return {"success": False, "error": f"{monster.name}已持有【{daowen_name}】，原初X只能借用自身未持有的原始怪物道纹"}
         if not isinstance(x, int) or isinstance(x, bool) or x < 1:
@@ -735,7 +743,9 @@ class CombatEngine:
                 "difficulty_signals": difficulty.get("signals", []),
                 "mutation_layers": m.mutation_count,
                 "max_x_by_mutation": max_x,
-                "borrowable_daowen": [d for d in self.ORIGINAL_MONSTER_DAOWEN if d not in m.dao_wen],
+                # 借用池 = 轮回者当前持有、且该怪物尚未持有的道纹
+                "borrowable_daowen": [d for d in (self.state.player.dao_wen if self.state.player else {})
+                                      if d not in m.dao_wen],
             })
         return options
     

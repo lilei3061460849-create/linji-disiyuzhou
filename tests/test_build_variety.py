@@ -179,3 +179,63 @@ def test_pierce_status_drives_attack_resolution():
     r = e.combat.resolve_attack(m, p, dodge=False)
     assert r["hp_lost"] > 0, "贯穿攻击应造成实际生命损失"
     assert r["shield_absorbed"] == 0
+
+
+# ---------- 进化·原初X 借用轮回者道纹（裁定）----------
+
+def _plight_engine(player_daowen=("杀伐", "庇护", "僵化")):
+    from engine.api import GameEngine
+    from engine.models import Entity, DaoWen, DaoWenInstance
+    e = GameEngine(db_path="/tmp/evo.db", rng_seed=1)
+    e.execute_action("setup_attributes",
+                     {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+    for n in player_daowen:
+        e.state.player.dao_wen[n] = DaoWenInstance(
+            dao_wen=DaoWen(name=n, formula="", cost_type="消耗",
+                           cost_formula="X", effect_formula=""), x_value=1)
+    e.combat.reset_monster_activation()
+    e.state.phase = "in_combat"
+    m = Entity(name="困境怪", entity_type="怪物", blood_limit=120, current_hp=30,
+               attack_count=2, attack_power=1)
+    e.state.enemies.append(m)
+    return e, m
+
+
+def test_evolution_borrows_from_player_daowen():
+    """正常路径：进化只能借用轮回者当前持有的道纹"""
+    e, m = _plight_engine(("杀伐", "庇护", "僵化"))
+    r = e.execute_action("declare_evolution", {"monster": "困境怪", "daowen": "僵化", "x": 1})
+    assert r["success"], r.get("error")
+    assert "僵化" in m.dao_wen, "应借用到轮回者的【僵化】"
+
+
+def test_evolution_rejects_daowen_player_lacks():
+    """错误输入：轮回者没有的道纹不可被借用"""
+    e, m = _plight_engine(("杀伐",))
+    r = e.execute_action("declare_evolution", {"monster": "困境怪", "daowen": "自愈", "x": 1})
+    assert not r["success"]
+    assert "不在轮回者当前持有的道纹中" in r["error"]
+
+
+def test_evolution_pool_tracks_player_build():
+    """
+    边界：借用池随玩家构筑变化 —— 这正是该裁定的设计目的。
+    玩家越依赖某条公式化路线，越可能被怪物复制反制。
+    """
+    e1, _ = _plight_engine(("杀伐", "庇护", "僵化"))
+    opts1 = e1.combat.get_plight_evolution_options()[0]["borrowable_daowen"]
+    e2, _ = _plight_engine(("锐利", "贯穿"))
+    opts2 = e2.combat.get_plight_evolution_options()[0]["borrowable_daowen"]
+    assert set(opts1) == {"杀伐", "庇护", "僵化"}
+    assert set(opts2) == {"锐利", "贯穿"}
+    assert opts1 != opts2, "借用池必须随玩家构筑变化"
+
+
+def test_evolution_still_costs_mutation():
+    """边界：改动不得绕过原有代价（异变5X）与每场一次限制"""
+    e, m = _plight_engine(("庇护",))
+    r = e.execute_action("declare_evolution", {"monster": "困境怪", "daowen": "庇护", "x": 2})
+    assert r["success"]
+    assert m.mutation_count == 10, "异变代价应为5X=10"
+    r2 = e.execute_action("declare_evolution", {"monster": "困境怪", "daowen": "庇护", "x": 1})
+    assert not r2["success"], "每场战斗限一次"
