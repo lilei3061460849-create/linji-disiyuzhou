@@ -1,0 +1,231 @@
+#!/usr/bin/env python3
+"""
+战报选取器：按既定标准从多次轮回中挑出唯一一份写入战报。
+
+选取标准（用户裁定）
+--------------------
+1. 以**进入【最终的冠冕】前的当前血量**为唯一标准，剩余血量最高者胜出。
+2. 未能走到第7场（中途阵亡）的轮回不参与评选。
+3. 凡受 bug 影响的对局一律视为**无效数据**作废，不得作为平衡标准，
+   也不得写入战报。判定方式：对局过程中引擎抛出异常、
+   或任一行动返回未预期的失败即标记为 invalid。
+
+用法：
+    python3 sim/pick_best_report.py --candidates 40
+    python3 sim/pick_best_report.py --candidates 40 --out 战报_完整轮回.md
+"""
+import argparse
+import importlib.util
+import math
+import os
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
+
+from engine.api import GameEngine
+from engine.ai_tactics import TacticalAI
+from engine import battle_report as BR
+
+_s = importlib.util.spec_from_file_location("ft", os.path.join(ROOT, "sim", "format_trace.py"))
+ft = importlib.util.module_from_spec(_s)
+_s.loader.exec_module(ft)
+
+BACKGROUNDS = ["帮派巷战", "废墟据点", "黑市火并", "熔岩隘口"]
+
+HEADER = """# 完整轮回战报
+
+> **本文件的选取标准（每次重新测试后按此挑选，不得随意替换）**
+>
+> 1. 以**进入【最终的冠冕】前的当前血量**为唯一评判标准：
+>    在同一批次的多次轮回中，谁在完成第7场、即将触发【最终的冠冕】时
+>    剩余生命最高，就把谁的那一次写进本战报。
+> 2. 中途阵亡、未走到第7场的轮回**不参与评选**。
+> 3. **凡受 bug 影响的对局一律视为无效数据作废**，既不得写入本战报，
+>    也不得作为任何平衡性调整的依据。
+> 4. 战报格式必须严格遵循 README《六、战斗推演格式》：
+>    逐回合、逐次出手书写，禁止概括、跳过或合并结算。
+>
+> 生成方式：`python3 sim/pick_best_report.py --candidates 40`
+> 该脚本会跑多次轮回，自动剔除无效局，再按上述标准挑出唯一一份。
+"""
+
+
+def play_and_record(region: str, seed: int, battles: int = 7):
+    """
+    跑一次完整轮回并录制 §六 格式战报。
+    返回 dict：hp_before_crown / lines / invalid / reason
+    """
+    lines = []
+    engine = GameEngine(db_path="/tmp/pick.db", rng_seed=seed)
+    import random as _r
+    rng = _r.Random(seed)
+
+    try:
+        engine.execute_action("setup_attributes",
+                              {"name": "贾凡", "blood_points": 10,
+                               "speed_points": 8, "mana_points": 7})
+        engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
+        engine.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
+        r = engine.execute_action("setup_choose_region", {"region": region})
+        starter = r["result"]["starter_relic"]
+        ai = TacticalAI(engine)
+
+        lines.append(f"## 轮回记录（{region}，种子 {seed}）")
+        lines.append("")
+        lines.append(f"【开局】25点属性 → {engine.state.player.blood_limit}[血限]/"
+                     f"{engine.state.player.mana_limit}[法限]/"
+                     f"{engine.state.player.speed_limit}[速限]"
+                     f"｜20[碎片]｜发现遗物·{starter}｜残韵·反转｜初始道纹·杀伐"
+                     f"｜副本·{region}")
+
+        todo = ["庇护", "再生", "僵化", "加害", "裂变"]
+
+        for battle_no in range(1, battles + 1):
+            prep = []
+            while engine.state.energy > 0:
+                if todo:
+                    nm = todo[0]
+                    rr = engine.execute_action(
+                        "pre_battle_action",
+                        {"sub_action": "学习", "sub": "daowen", "name": nm})
+                    if rr.get("success"):
+                        todo.pop(0)
+                        prep.append(f"学习·{nm}")
+                        continue
+                    todo.pop(0)
+                rr = engine.execute_action(
+                    "pre_battle_action",
+                    {"sub_action": "修行", "tier": 1,
+                     "to": "mana" if battle_no % 2 else "speed"})
+                if rr.get("success"):
+                    prep.append(f"修行·{'法限' if battle_no % 2 else '速限'}+")
+                else:
+                    return {"invalid": True, "reason": f"局外行动失败:{rr.get('error')}"}
+
+            bs = engine.execute_action("battle_start")
+            if not bs.get("success"):
+                return {"invalid": True, "reason": f"battle_start:{bs.get('error')}"}
+            enemies = list(engine.state.enemies)
+            lines.append("")
+            lines.append(f"### 第{battle_no}场")
+            lines.append(f"[局外]（3精力）：{'，'.join(prep)}")
+            lines.extend(BR.format_battle_start(
+                battle_no=battle_no,
+                draw_range=f"战斗场数{battle_no}，一阶副本-3最低为1，"
+                           f"抽取{bs.get('draw_count', len(enemies))}只",
+                draw_result="、".join(e.name for e in enemies),
+                enemies=enemies,
+                player=engine.state.player,
+                allies=engine.state.friends + engine.state.employees,
+                background=rng.choice(BACKGROUNDS),
+                start_effects=list(bs.get("relic_logs", []) or [])
+                + list(bs.get("artifact_logs", []) or []),
+            ))
+
+            for rnd in range(1, 31):
+                if not engine.state.player or not engine.state.player.is_alive:
+                    break
+                if not [x for x in engine.state.enemies if x.is_alive]:
+                    break
+                rs = engine.execute_action("round_start", {})
+                lines.extend(BR.format_round_start(rnd, rs.get("result", {}),
+                                                   engine.state.player,
+                                                   engine.state.enemies))
+                ai.new_round()
+                idx = 1
+                for res in ai.take_turn():
+                    lines.extend(BR.format_player_action(
+                        idx, engine.state.player.name, res))
+                    idx += 1
+                if not [x for x in engine.state.enemies if x.is_alive]:
+                    lines.extend(BR.format_round_end({}, engine.state.player,
+                                                     engine.state.enemies))
+                    break
+                mp = engine.execute_action("monster_phase", {})
+                lines.extend(BR.format_monster_hits(idx, mp["result"].get("details", [])))
+                re_ = engine.execute_action("round_end", {})
+                lines.extend(BR.format_round_end(re_.get("result", {}),
+                                                 engine.state.player,
+                                                 engine.state.enemies))
+                if mp["result"].get("player_dead"):
+                    break
+
+            if not engine.state.player or not engine.state.player.is_alive:
+                return {"invalid": False, "cleared": battle_no - 1, "died": True,
+                        "hp_before_crown": None, "lines": lines}
+
+            # 第7场结束即触发【最终的冠冕】：先记录此刻血量
+            hp_now = engine.state.player.current_hp
+            be = engine.execute_action("battle_end", {})
+            if not be.get("success"):
+                return {"invalid": True, "reason": f"battle_end:{be.get('error')}"}
+            lines.extend(BR.format_battle_end(be.get("result", {})))
+
+            if battle_no == battles:
+                lines.append("")
+                lines.append(f"### 【最终的冠冕】触发前 · 当前生命 {hp_now}")
+                crown = be["result"].get("final_crown")
+                if crown:
+                    lines.append(f"结算：{crown}")
+                return {"invalid": False, "cleared": battles, "died": False,
+                        "hp_before_crown": hp_now, "lines": lines}
+
+    except Exception as ex:                       # 引擎异常 → 无效数据
+        return {"invalid": True, "reason": f"{type(ex).__name__}: {ex}"}
+
+    return {"invalid": True, "reason": "未知终止"}
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--candidates", type=int, default=40)
+    ap.add_argument("--out", default="战报_完整轮回.md")
+    ap.add_argument("--region", default=None)
+    a = ap.parse_args()
+
+    regions = [a.region] if a.region else ["罪孽都市", "扭曲都市", "龙心谷"]
+    finished, died, invalid = [], 0, []
+
+    for i in range(a.candidates):
+        region = regions[i % len(regions)]
+        seed = 100 + i
+        r = play_and_record(region, seed)
+        if r.get("invalid"):
+            invalid.append((region, seed, r.get("reason")))
+            continue
+        if r.get("died"):
+            died += 1
+            continue
+        finished.append((r["hp_before_crown"], region, seed, r["lines"]))
+
+    print(f"候选轮回 {a.candidates} 次："
+          f"通关 {len(finished)}｜中途阵亡 {died}｜无效(bug) {len(invalid)}")
+    if invalid:
+        print("无效对局明细（已作废，不作为平衡依据）：")
+        for rg, sd, why in invalid[:10]:
+            print(f"  {rg} seed{sd}: {why}")
+
+    if not finished:
+        print("没有任何轮回走到【最终的冠冕】，不生成战报。")
+        return
+
+    finished.sort(key=lambda t: -t[0])
+    print("\n进入【最终的冠冕】前的剩余生命排名：")
+    for hp, rg, sd, _ in finished[:8]:
+        print(f"  {hp:>4} HP   {rg}  seed{sd}")
+
+    hp, region, seed, lines = finished[0]
+    out = os.path.join(ROOT, a.out)
+    body = [HEADER,
+            f"> 本批次共 {a.candidates} 次轮回：通关 {len(finished)}、"
+            f"阵亡 {died}、无效作废 {len(invalid)}。",
+            f"> 入选依据：进入【最终的冠冕】前剩余生命 **{hp}**，为本批次最高。",
+            ""] + lines
+    with open(out, "w", encoding="utf-8") as f:
+        f.write("\n".join(body) + "\n")
+    print(f"\n已写入 {a.out}：{region} seed{seed}，冠冕前剩余 {hp} HP")
+
+
+if __name__ == "__main__":
+    main()
