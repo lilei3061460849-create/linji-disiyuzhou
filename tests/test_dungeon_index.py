@@ -31,7 +31,7 @@ def test_nested_dungeon_links_and_readme_entry_resolve():
     """边界：嵌套文档可解析根目录物品索引，README 仅保留全副本入口。"""
     assert "[全副本索引](副本索引.md)" in README.read_text(encoding="utf-8")
     assert "扭曲都市（一阶副本" not in README.read_text(encoding="utf-8")
-    for relative in ["twisted-city.md", "city-of-sin.md", "dragonheart-valley.md"]:
+    for relative in ["扭曲都市.md", "罪孽都市.md", "龙心谷.md"]:
         document_path = ROOT / "副本" / relative
         for target in LINK.findall(document_path.read_text(encoding="utf-8")):
             assert (document_path.parent / target).is_file(), f"副本文档存在失效链接：{target}"
