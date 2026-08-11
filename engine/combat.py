@@ -985,6 +985,16 @@ class CombatEngine:
             result["multiplier"] = multiplier
         x = calc.get("x", 0)
 
+        # 【冷却X】代价：README「冷却X：使用后该道纹记为【X(0)/Y】，[战终]后已完成
+        # 战斗场数+1，达到Y时才能再次使用」。此前从未写入 cooldown_remaining，
+        # 导致 固执/束缚/畸变/迟滞 可在同一场里无限重复发动（束缚因此支配全局）。
+        if calc.get("cost_type") == "冷却":
+            inst = caster.dao_wen.get(name)
+            if inst is not None:
+                inst.cooldown_remaining = max(inst.cooldown_remaining,
+                                              int(calc.get("cost", 0)))
+                result["cooldown_set"] = inst.cooldown_remaining
+
         # 蒙蔽(施法者伤害类道纹归零) / 坏死(目标禁疗)
         mengbi_blocked = caster.has_status("蒙蔽") and ("target_damage" in calc or "aoe_damage" in calc)
         if mengbi_blocked:

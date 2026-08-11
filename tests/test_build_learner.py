@@ -266,3 +266,83 @@ def test_valid_and_invalid_are_separated(monkeypatch):
     score, valid, invalid = bl.fitness("杀伐", ["庇护"], 4, gen=1)
     assert valid == 2 and invalid == 2
     assert score == 10.0, "有效局全胜时分数应为满分，不应被无效局拉低"
+
+
+# ---------- 冷却代价（回归：束缚等曾可无限刷）----------
+
+def test_cooldown_cost_is_applied():
+    """
+    正常路径：代价为【冷却X】的道纹发动后必须写入 cooldown_remaining。
+    此前从未写入，导致 固执/束缚/畸变/迟滞 可在同场无限重复发动。
+    """
+    from engine.api import GameEngine
+    e = GameEngine(db_path="/tmp/cdtest.db", rng_seed=1)
+    e.execute_action("setup_attributes",
+                     {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+    e.execute_action("setup_choose_daowen", {"daowen": "锐利"})
+    e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
+    e.execute_action("setup_choose_region", {"region": "龙心谷"})
+    e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "daowen", "name": "束缚"})
+    e.execute_action("battle_start")
+    e.execute_action("round_start", {})
+    m = e.state.enemies[0]
+    r1 = e.execute_action("use_daowen", {"daowen_name": "束缚", "x": 2, "target": m.name})
+    assert r1["success"]
+    assert e.state.player.dao_wen["束缚"].cooldown_remaining == 4, "冷却2X未写入"
+
+
+def test_cooldown_blocks_reuse_in_same_battle():
+    """边界：冷却中的道纹不得再次发动（这正是束缚曾经支配全局的原因）"""
+    from engine.api import GameEngine
+    e = GameEngine(db_path="/tmp/cdtest2.db", rng_seed=1)
+    e.execute_action("setup_attributes",
+                     {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+    e.execute_action("setup_choose_daowen", {"daowen": "锐利"})
+    e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
+    e.execute_action("setup_choose_region", {"region": "龙心谷"})
+    e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "daowen", "name": "束缚"})
+    e.execute_action("battle_start")
+    e.execute_action("round_start", {})
+    m = e.state.enemies[0]
+    e.execute_action("use_daowen", {"daowen_name": "束缚", "x": 2, "target": m.name})
+    r2 = e.execute_action("use_daowen", {"daowen_name": "束缚", "x": 2, "target": m.name})
+    assert not r2["success"], "冷却中的道纹被重复发动"
+    assert "冷却" in r2["error"] or "不可用" in r2["error"]
+
+
+def test_cooldown_decrements_at_battle_end():
+    """边界：README 规定[战终]后冷却-1，否则道纹将永久锁死"""
+    from engine.api import GameEngine
+    from engine.models import DaoWen, DaoWenInstance
+    e = GameEngine(db_path="/tmp/cdtest3.db", rng_seed=1)
+    e.execute_action("setup_attributes",
+                     {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+    e.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
+    e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
+    e.execute_action("setup_choose_region", {"region": "龙心谷"})
+    inst = DaoWenInstance(DaoWen(name="束缚", formula="", cost_type="代价",
+                                 cost_formula="", effect_formula=""))
+    inst.cooldown_remaining = 3
+    e.state.player.dao_wen["束缚"] = inst
+    e.execute_action("battle_start")
+    e.execute_action("battle_end", {})
+    assert inst.cooldown_remaining == 2, "[战终]后冷却未递减"
+
+
+def test_all_cooldown_daowen_covered():
+    """错误输入检出：所有 cost_type=冷却 的道纹都应受同一机制约束"""
+    from engine.daowen import DaoWenEngine
+    from engine.models import Entity
+    DaoWenEngine.register_all()
+    t = Entity(name="x", entity_type="怪物", blood_limit=100, current_hp=100,
+               attack_count=2, attack_power=5, speed_limit=6)
+    found = []
+    for n in DaoWenEngine._registry:
+        try:
+            r = DaoWenEngine.resolve(n, 2, target=t, caster=t)
+        except Exception:
+            continue
+        if r and r.get("cost_type") == "冷却":
+            found.append(n)
+            assert r.get("cost", 0) > 0, f"{n} 冷却代价为0，等于没有代价"
+    assert found, "未找到任何冷却型道纹，检测逻辑可能失效"

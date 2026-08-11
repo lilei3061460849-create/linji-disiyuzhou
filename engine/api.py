@@ -2474,6 +2474,14 @@ class GameEngine:
         # 真理眼冷却：每场[战终]-1
         if self.state.truth_eye_cooldown > 0:
             self.state.truth_eye_cooldown -= 1
+
+        # 道纹【冷却X】：README「[战终]后已完成战斗场数+1，达到Y时才能再次使用」。
+        # 对所有持有道纹的角色统一递减，归零即恢复可用。
+        for _ent in ([self.state.player] if self.state.player else []) \
+                + self.state.friends + self.state.employees:
+            for _inst in _ent.dao_wen.values():
+                if _inst.cooldown_remaining > 0:
+                    _inst.cooldown_remaining -= 1
         
         # 临时朋友消失
         self.state.temp_friends.clear()
