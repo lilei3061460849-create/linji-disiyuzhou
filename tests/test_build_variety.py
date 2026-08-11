@@ -120,3 +120,62 @@ def test_ai_skips_daowen_it_does_not_own():
         ai.take_turn()
     assert "封印" not in ai.used
     assert "僵化" not in ai.used
+
+
+# ---------- 贯穿（无视格挡）回归 ----------
+
+def test_pierce_bypasses_shield():
+    """
+    正常路径：贯穿/无视格挡 的伤害不得被格挡吸收。
+    此前 take_damage 只豁免"代价"，导致【贯穿】完全失效，
+    格挡因此成为无解的万能防御，是公式化的成因之一。
+    """
+    from engine.models import Entity
+    t = Entity(name="靶", entity_type="怪物", blood_limit=100, current_hp=100)
+    t.shield = 50
+    d = t.take_damage(20, "无视格挡")
+    assert d["shield_absorbed"] == 0, "无视格挡的伤害不该被格挡吸收"
+    assert d["actual_damage"] == 20
+    assert t.shield == 50, "格挡不应被消耗"
+
+
+def test_normal_damage_still_blocked():
+    """边界：普通伤害必须仍然被格挡正常吸收（不能改坏原有规则）"""
+    from engine.models import Entity
+    t = Entity(name="靶", entity_type="怪物", blood_limit=100, current_hp=100)
+    t.shield = 50
+    d = t.take_damage(20, "普通")
+    assert d["shield_absorbed"] == 20
+    assert d["actual_damage"] == 0
+    assert t.shield == 30
+
+
+def test_cost_damage_still_ignores_shield():
+    """边界：代价类伤害绝对不被格挡吸收（README 明确规定）"""
+    from engine.models import Entity
+    t = Entity(name="靶", entity_type="怪物", blood_limit=100, current_hp=100)
+    t.shield = 50
+    d = t.take_damage(15, "代价")
+    assert d["shield_absorbed"] == 0
+    assert d["actual_damage"] == 15
+    assert t.shield == 50
+
+
+def test_pierce_status_drives_attack_resolution():
+    """正常路径：持有【贯穿】状态的攻击者，其攻击应无视目标格挡"""
+    from engine.api import GameEngine
+    from engine.models import StatusEffect
+    e = GameEngine(db_path="/tmp/pierce.db", rng_seed=1)
+    e.execute_action("setup_attributes",
+                     {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+    e.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
+    e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
+    e.execute_action("setup_choose_region", {"region": "龙心谷"})
+    e.execute_action("battle_start")
+    e.execute_action("round_start", {})
+    p, m = e.state.player, e.state.enemies[0]
+    p.shield = 60
+    m.add_status(StatusEffect(name="贯穿", value=1, remaining_rounds=-1, source="test"))
+    r = e.combat.resolve_attack(m, p, dodge=False)
+    assert r["hp_lost"] > 0, "贯穿攻击应造成实际生命损失"
+    assert r["shield_absorbed"] == 0

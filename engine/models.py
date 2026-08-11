@@ -301,8 +301,8 @@ class Entity:
         
         remaining = amount
         
-        # 格挡抵消（代价类型的伤害不被格挡抵消）
-        if self.shield > 0 and damage_type != "代价":
+        # 格挡抵消（代价类型的伤害不被格挡抵消；"无视格挡"为【贯穿】等效果，同样跳过格挡）
+        if self.shield > 0 and damage_type not in ("代价", "无视格挡"):
             absorbed = min(self.shield, remaining)
             self.shield -= absorbed
             remaining -= absorbed
