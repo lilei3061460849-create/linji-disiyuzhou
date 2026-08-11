@@ -246,7 +246,7 @@ class BattleFlow:
         # 逆鳞反击
         # (由玩家侧管理，此处简化)
 
-        # 多路径胜利结算（雕塑/增生/还债）
+        # 多路径胜利结算（雕塑/癌变/还债）
         settled = self.combat.settle_victory_paths()
         if settled:
             round_result["victory_paths"] = settled

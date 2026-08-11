@@ -242,9 +242,6 @@ def run_multi_battle(player, monster_defs, rng):
                     bs.apply_control_to_player(act, m, player)
                     if bs.USE_EXCLUSIVE and act in bs.EXCLUSIVE_PRIORITY:
                         bs.apply_exclusive(act, m, player, monsters, rng)
-                if act == "活力":
-                    if bs.HUOLI_MODE == "burst": m._huoli_charges = 1
-                    if bs.HUOLI_MODE in ("charges", "flat"): bs.huoli_note_activation(m, act)
                 if bs.sim_maybe_evolve(m, combat):  # 困境进化默认策略（裁定②接线）
                     paths_used.append("进化")
         bs.exclusive_round_start(player, monsters, activated, rng)  # 专属道纹回始（裁定⑨）
@@ -259,12 +256,9 @@ def run_multi_battle(player, monster_defs, rng):
             if not m.is_alive or not player.is_alive: continue
             must_hit = "必中" in activated[id(m)]
             n_act = bs.get_monster_attack_actions(m, activated[id(m)])
-            x_h = m.dao_wen["活力"].x_value if "活力" in activated[id(m)] and "活力" in m.dao_wen else 0
-            half_base = n_act - x_h if bs.HUOLI_MODE == "half" else n_act
             for i in range(n_act):
                 if not player.is_alive: break
-                bs.monster_attack_round(m, player, combat, rng, must_hit, 1.0 if i < half_base else 0.5)
-            bs.huoli_tick(m, activated[id(m)])
+                bs.monster_attack_round(m, player, combat, rng, must_hit)
         if not player.is_alive:
             return {"win": False, "paths": paths_used}
         # 回终

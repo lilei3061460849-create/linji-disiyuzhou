@@ -218,10 +218,19 @@ class Entity:
 
     # 多路径胜利追踪
     shards: int = 0              # 怪物自带碎片（罪孽都市）/ 负值表示负债（还债）
-    total_healed: int = 0        # 累计受到的恢复量（增生；超出血限部分按双倍计）
+    total_healed: int = 0        # 累计受到的恢复量（癌变；超出血限部分按双倍计）
     is_sculptured: bool = False  # 已化为雕塑（攻击次数或攻击力归0）
-    is_proliferated: bool = False  # 已被增生吸收进死者之书
+    is_proliferated: bool = False  # 已被癌变吸收进死者之书（旧名 增生，已统一为 癌变；保留字段名兼容）
     is_debt_bound: bool = False  # 已因还债成为员工
+
+    # 兼容：is_proliferated 旧名（增生）→ 现名 癌变，is_cancer 为别名
+    @property
+    def is_cancer(self) -> bool:
+        return self.is_proliferated
+
+    @is_cancer.setter
+    def is_cancer(self, value: bool):
+        self.is_proliferated = value
 
     # 异变计数（特殊事件【崩解】：达到阈值直接命零）
     mutation_count: int = 0
@@ -355,7 +364,7 @@ class Entity:
         self.current_hp = min(self.blood_limit, self.current_hp + amount)
         actual = self.current_hp - before
         overheal = amount - actual
-        # 增生追踪：超出血限的恢复按双倍计入累计恢复量
+        # 癌变追踪：超出血限的恢复按双倍计入累计恢复量
         self.total_healed += actual + overheal * 2
         self.healed_this_battle += actual
         return {
@@ -561,9 +570,6 @@ class GameState:
     # 属性点
     attribute_points: int = 0
     allocated_blood: int = 0     # 已分配血限（从属性点）
-    
-    # 法器/遗物记录
-    relic_of_choice: Optional[str] = None  # 当前选择的遗物
     
     # ---- 遗物视图：血族/龙族项目一律以遗物形式存放，遗物是唯一事实源 ----
     # 这样它们自动继承遗物的全部通用规则（可被销毁、交换、封印、计入"一件当前遗物"）。
