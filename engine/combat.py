@@ -589,7 +589,7 @@ class CombatEngine:
                                 "heal": heal_n, "actual": h["actual_heal"]})
             entity.hp_lost_this_round = 0
 
-        # 多路径胜利结算（雕塑/增生/还债）
+        # 多路径胜利结算（雕塑/癌变/还债）
         settled = self.settle_victory_paths()
         if settled:
             effects.extend(settled)
@@ -781,14 +781,15 @@ class CombatEngine:
     # ========== 多路径胜利系统 ==========
     # 所有阈值数值均为占位初值，需经测试调整（见 AI_EXPERIENCE.md）
 
-    PROLIFERATION_THRESHOLD = 1.0  # 增生：累计受到恢复量达到血限的N倍（占位）
+    PROLIFERATION_THRESHOLD = 1.0  # 癌变：累计受到恢复量达到血限的N倍（占位）
+    CANCER_THRESHOLD = PROLIFERATION_THRESHOLD  # 别名：增生旧名已统一为癌变，二者同阈值
     DEBT_THRESHOLD = 10           # 还债：怪物负债（碎片为负）达到N触发（占位）
     SCULPTURE_DAMAGE = 15         # 雕塑：每点耐久可造成的伤害
     SCULPTURE_SHIELD = 20         # 雕塑：每点耐久可获得的格挡
 
     def settle_victory_paths(self) -> list[dict]:
         """
-        回终多路径胜利结算（依次检查：雕塑 / 增生 / 还债）
+        回终多路径胜利结算（依次检查：雕塑 / 癌变 / 还债）
         所有路径都不视为击杀，不提供碎片收益
         """
         results = []
@@ -802,7 +803,7 @@ class CombatEngine:
                 results.append(self._sculpture_monster(monster))
                 continue
 
-            # 2. 增生：累计受到恢复量达阈值
+            # 2. 癌变：累计受到恢复量达阈值
             threshold = math.ceil(monster.blood_limit * self.PROLIFERATION_THRESHOLD)
             if monster.blood_limit > 0 and monster.total_healed >= threshold:
                 results.append(self._proliferate_monster(monster))
@@ -844,19 +845,22 @@ class CombatEngine:
         }
 
     def _proliferate_monster(self, monster: Entity) -> dict:
-        """增生：累计受到恢复量达阈值→吸收进死者之书，强化休整"""
+        """癌变：累计受到恢复量达阈值→吸收进死者之书，强化休整（旧名 增生）"""
         monster.is_proliferated = True
+        # 兼容：同时写入癌变别名，便于外部以新名读取
+        monster.is_cancer = True  # type: ignore[attr-defined]
         self._remove_from_combat(monster)
         absorbed = monster.total_healed
-        # 死者之书强化：每只增生怪物使局外【休整】额外产生8点恢复量（占位，可调）
+        # 死者之书强化：每只癌变怪物使局外【休整】额外产生8点恢复量（占位，可调）
         boost = 8
-        self.state.death_book_wisdom.append(f"增生·{monster.name}：休整恢复量+{boost}")
+        self.state.death_book_wisdom.append(f"癌变·{monster.name}：休整恢复量+{boost}")
         return {
-            "type": "proliferation",
+            "type": "proliferation",  # 保留旧 key 兼容；新 key 见下一行
+            "type_alias": "cancer",
             "monster": monster.name,
             "absorbed_heal": absorbed,
             "rest_boost": boost,
-            "note": (f"{monster.name}累计承受{absorbed}点恢复被增生吸收进《死者之书》，"
+            "note": (f"{monster.name}累计承受{absorbed}点恢复被癌变吸收进《死者之书》，"
                      f"局外【休整】恢复量+{boost}"),
         }
 

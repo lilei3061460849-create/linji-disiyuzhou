@@ -25,15 +25,25 @@ AI（决策者）──→ GameEngine API ──→ 计算/随机数
 ```
 engine/
 ├── __init__.py          # 包初始化
-├── enums.py             # 枚举定义（阶段、触发时点、代价类型等）
-├── models.py            # 数据模型（Entity, Spell, Relic等）
-├── dice.py              # 随机数引擎（池系统，auto_roll默认由引擎自身生成随机数并结算，可传seed复现）
-├── monsters.py          # 怪物池解析(从README解析36怪物面板)与出怪(战始抽怪)公式
-├── daowen.py            # 道纹系统（所有道纹效果的数学计算）
-├── combat.py            # 战斗计算引擎（伤害、回合、闪避等）
-├── dm_rulings.py        # DM裁定数据库（SQLite + 全文搜索）
-└── api.py               # GameEngine主类 — AI的唯一交互入口
+├── enums.py             # 枚举/常量（阶段、触发时点、代价类型等）
+├── models.py            # 数据模型（Entity, Spell, Relic, GameState；Entity.is_proliferated = 癌变旧名增生 的兼容字段，is_cancer 为别名）
+├── dice.py              # 随机数引擎（池系统，auto_roll 默认引擎自生成并结算，可传 seed 复现）
+├── monsters.py          # 怪物池解析（从 README 解析 36 怪物面板）与出怪（战始抽怪）公式
+├── gamedata.py          # 静态数据（怪物池/遗物池/事件池常量，MONSTER_POOLS 等）
+├── events.py            # 事件池（parse_events、EventPool，通用 10 + 三副本专属）
+├── daowen.py            # 道纹系统（含全部 63 道纹 calculate_* 与 ResonanceEngine；增殖为道纹，癌变为机制，二者无关）
+├── combat.py            # 战斗计算引擎（伤害/回合/闪避/多路径 癌变/雕塑/还债，PROLIFERATION_THRESHOLD 为癌变阈值，CANCER_THRESHOLD 别名）
+├── battle_flow.py       # 战斗流程（battle_start 出怪、round_start/round_end、怪物道纹×3 判定）
+├── battle_report.py     # 战报渲染（推演格式逐回合输出）
+├── ai_player.py         # AI 玩家封装（TacticalAI 等）
+├── ai_tactics.py        # AI 战术表（TACTICAL_ROLES、各类道纹优先级）
+├── dm_rulings.py        # DM 裁定库（SQLite + FTS，先例匹配）
+├── rule_sync.py         # 规则同步（从 README 正则提取遗物/事件/怪物，校验一致性）
+├── validator.py         # 规则校验器（22 条内置检查，违规入库）
+└── api.py               # GameEngine 主类 — AI 唯一交互入口（含 TWISTED_TOOL_LIBRARY、TERMANAL_ARTIFACTS、FIRST_EMBRACE_OPTIONS 等）
 ```
+
+> **2026-08-11 F7 订正**：五章「全程自动触发」已与「特殊事件（全局触发）」13 项对齐（补 凡庸/癌变/崩解/还债/雕塑）；「增生」全量更名为「癌变」（旧名 增生 保留为兼容字段 `is_proliferated`/`PROLIFERATION_THRESHOLD`/`proliferation`），「增殖」为独立道纹（血限+2X）二者无关。
 
 ## AI交互流程
 

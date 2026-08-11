@@ -2,7 +2,7 @@
 """
 实战平衡模拟器
 解析README全部怪物面板，用不同胜利路径策略跑单场战斗，统计胜率。
-用于把占位阈值（增生/还债/雕塑）调到目标胜率。
+用于把占位阈值（癌变/还债/雕塑）调到目标胜率。
 
 用法:
     python sim/balance_sim.py            # 跑全部策略 × 全部怪物
@@ -19,7 +19,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # ===== 占位阈值（与 combat.py 保持一致，供调参覆盖） =====
 TUNING = {
-    "PROLIF_THRESHOLD": 1.0,   # 增生：累计恢复 ≥ 血限×N
+    "PROLIF_THRESHOLD": 1.0,   # 癌变：累计恢复 ≥ 血限×N
     "DEBT_THRESHOLD": 10,      # 还债：负债 ≤ -N
     "SCULPTURE_DAMAGE": 15,
     "SCULPTURE_SHIELD": 20,
@@ -660,7 +660,7 @@ def strategy_sculpt(state, p, m, combat, actions, rng):
 
 
 def strategy_proliferate(state, p, m, combat, actions, rng):
-    # 滋养/再生把怪物奶过阈值→增生；期间庇护生存
+    # 滋养/再生把怪物奶过阈值→癌变；期间庇护生存
     monster_dmg = m.attack_count * m.attack_power
     if monster_dmg > 0:
         need_x = math.ceil(monster_dmg / 4)

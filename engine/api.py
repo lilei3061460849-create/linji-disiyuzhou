@@ -1838,7 +1838,7 @@ class GameEngine:
             "result": result,
             "victory_paths": alt_paths,
             "monster_difficulties": difficulties,
-            "note": "多路径胜利（雕塑/增生/还债）已结算；消耗品可在后续回合使用"
+            "note": "多路径胜利（雕塑/癌变/还债）已结算；消耗品可在后续回合使用"
         }
     
     def _action_battle_start(self, params: dict) -> dict:
@@ -2481,7 +2481,7 @@ class GameEngine:
             self._blacklist_departure("死亡离队")
 
         relic_end = self.combat.process_relics("battle_end")
-        # 碎片奖励计算（被雕塑/增生/还债/封印移出的怪物不视为击杀，不产碎片）
+        # 碎片奖励计算（被雕塑/癌变/还债/封印移出的怪物不视为击杀，不产碎片）
         # 奖励公式用的是[战始][血限]快照(battle_start_blood_limit)，不是当前血限(增殖等会改变当前血限)
         has_money_bag = any(r.name == "钱袋" for r in self.state.relics)
         shard_reward = 0
@@ -2492,7 +2492,7 @@ class GameEngine:
                 removed.append({"name": monster.name,
                                 "way": ("雕塑" if monster.is_sculptured else
                                         "封印" if monster.removed_without_kill else
-                                        "增生" if monster.is_proliferated else "还债")})
+                                        "癌变" if monster.is_proliferated else "还债")})
                 continue
             if not monster.is_alive:
                 reward = math.ceil(monster.battle_start_blood_limit * 0.02) + len(monster.dao_wen) * 5

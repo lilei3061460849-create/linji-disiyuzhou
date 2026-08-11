@@ -366,8 +366,8 @@ def test_monster_fixed_actions():
 
 
 def test_sculpture_and_proliferation():
-    """测试雕塑（攻击力归0）与增生（恢复达阈值）路径"""
-    print("\n=== 测试：雕塑 / 增生 胜利路径 ===")
+    """测试雕塑（攻击力归0）与癌变（恢复达阈值）路径"""
+    print("\n=== 测试：雕塑 / 癌变 胜利路径 ===")
     from engine.combat import CombatEngine
     from engine.dice import DiceEngine
     from engine.models import GameState
@@ -396,7 +396,7 @@ def test_sculpture_and_proliferation():
     assert target.current_hp == 35
     print(f"  ✓ 雕塑赋能：对靶怪造成15伤害，剩余耐久{sc.current_uses}")
 
-    # --- 增生：恢复量达血限阈值 ---
+    # --- 癌变：恢复量达血限阈值 ---
     state2 = GameState()
     p2 = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60)
     state2.player = p2
@@ -408,10 +408,10 @@ def test_sculpture_and_proliferation():
     m2.heal(200)
     assert m2.total_healed >= 80
     paths2 = combat2.settle_victory_paths()
-    assert any(p["type"] == "proliferation" for p in paths2), "应触发增生"
+    assert any(p["type"] == "proliferation" for p in paths2), "应触发癌变"
     assert m2.is_proliferated and not m2.is_alive
-    print("  ✓ 恢复量超阈值→触发增生，吸收进死者之书（休整恢复量+8）")
-    print("  ✓ 雕塑/增生路径测试通过")
+    print("  ✓ 恢复量超阈值→触发癌变，吸收进死者之书（休整恢复量+8）")
+    print("  ✓ 雕塑/癌变路径测试通过")
 
 
 def test_daowen_effects_wired():
