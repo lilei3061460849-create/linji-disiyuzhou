@@ -23,6 +23,7 @@ from .dice import DiceEngine, EventPool, RandomRequest
 from .daowen import DaoWenEngine, ResonanceEngine
 from .combat import CombatEngine
 from .events import EventPool, parse_events
+from .dungeons import DEFAULT_INDEX
 from .gamedata import (REGION_EXCLUSIVE_DAOWEN, ORIGINAL_MONSTER_DAOWEN,
                        MONSTER_TRANSFORM_DAOWEN)
 from .dm_rulings import DMRulingsDB, DMRuling, Interrupt
@@ -73,11 +74,10 @@ class GameEngine:
         self._artifact_base_blood_limit = 0
         
         # 事件系统
-        _readme = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "README.md")
-        self.event_pool = EventPool(parse_events(_readme) if os.path.exists(_readme) else {})
-        # 怪物池（出怪系统）
+        self.event_pool = EventPool(parse_events(DEFAULT_INDEX) if DEFAULT_INDEX.exists() else {})
+        # 怪物池（出怪系统）：从全副本索引加载，不再解析 README。
         from .monsters import parse_monster_pool
-        self.monster_pool = parse_monster_pool(_readme) if os.path.exists(_readme) else {}
+        self.monster_pool = parse_monster_pool(DEFAULT_INDEX) if DEFAULT_INDEX.exists() else {}
         # 行动历史（可追溯）
         self._action_history: list[dict] = []
         

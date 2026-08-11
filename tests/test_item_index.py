@@ -16,6 +16,7 @@ import pytest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 README = os.path.join(ROOT, "README.md")
+DUNGEON_DIR = os.path.join(ROOT, "副本")
 INDEX = os.path.join(ROOT, "物品索引.md")
 
 
@@ -36,8 +37,11 @@ def index_anchors() -> set:
             for l in read(INDEX).split("\n") if l.startswith("#")}
 
 
-def readme_links() -> list:
-    return re.findall(r"\]\(物品索引\.md#([^)]+)\)", read(README))
+def item_links() -> list:
+    documents = [README] + [os.path.join(DUNGEON_DIR, name) for name in os.listdir(DUNGEON_DIR)
+                            if name.endswith(".md")]
+    return [anchor for document in documents
+            for anchor in re.findall(r"\]\((?:\.\./)?物品索引\.md#([^)]+)\)", read(document))]
 
 
 # ---------- 正常路径 ----------
@@ -50,8 +54,8 @@ def test_index_file_exists_and_has_four_sections():
 
 
 def test_readme_links_to_index():
-    """正常路径：README 确实产生了指向索引的跳转链接"""
-    links = readme_links()
+    """正常路径：规则文档确实产生了指向索引的跳转链接"""
+    links = item_links()
     assert len(links) >= 30, f"跳转链接过少：{len(links)}"
 
 
@@ -69,7 +73,7 @@ def test_all_relic_pool_items_documented():
 def test_every_link_resolves_to_existing_anchor():
     """边界：每一个跳转链接都必须命中真实存在的标题，不得有死链"""
     anchors = index_anchors()
-    dead = [l for l in readme_links() if gh_anchor(l) not in anchors]
+    dead = [l for l in item_links() if gh_anchor(l) not in anchors]
     assert not dead, f"存在失效锚点（死链）：{dead}"
 
 
