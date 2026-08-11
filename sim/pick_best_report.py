@@ -51,6 +51,41 @@ HEADER = """# 完整轮回战报
 """
 
 
+def _resolve_monster_plight(engine, rng) -> list:
+    """
+    让陷入困境的怪物按【怪物准则#3】行动：逃跑与进化二选一，每场限一次。
+
+    决策口径（AI 扮演怪物方，为生存与胜利作最优选择）：
+      - 异变预算足够时优先【进化】，借用轮回者的道纹翻盘；
+      - 预算不足（进化会触发崩解）则选择【逃跑】。
+    """
+    out = []
+    try:
+        opts = engine.combat.get_plight_evolution_options()
+    except Exception:
+        return out
+    for o in opts:
+        name = o["monster"]
+        pool = o.get("borrowable_daowen") or []
+        max_x = o.get("max_x_by_mutation", 0)
+        signals = "、".join(o.get("difficulty_signals", [])) or "陷入困境"
+        if pool and max_x >= 1:
+            x = min(max_x, 2)
+            dw = rng.choice(pool)
+            r = engine.execute_action("declare_evolution",
+                                      {"monster": name, "daowen": dw, "x": x})
+            if r.get("success"):
+                out.append(f"※【进化】{name}（{signals}）发动【原初{x}】"
+                           f"→ 借用轮回者道纹【{dw}{x}】，代价异变{5 * x}")
+                for lg in r.get("log", []):
+                    out.append(f"    {lg}")
+                if r.get("collapsed"):
+                    out.append(f"    → 异变达阈值，触发【崩解】：{name}直接[命零]")
+                continue
+        out.append(f"※【逃跑与追击】{name}（{signals}）异变预算不足以进化，转为尝试逃跑")
+    return out
+
+
 def play_and_record(region: str, seed: int, battles: int = 7):
     """
     跑一次完整轮回并录制 §六 格式战报。
@@ -79,7 +114,9 @@ def play_and_record(region: str, seed: int, battles: int = 7):
                      f"｜20[碎片]｜发现遗物·{starter}｜残韵·反转｜初始道纹·杀伐"
                      f"｜副本·{region}")
 
-        todo = ["庇护", "再生", "僵化", "加害", "裂变"]
+        # 只学通用道纹与怪物转化道纹：副本专属道纹须先经残韵从本副本怪物身上
+        # 转化获得，不能在局外直接学习（门禁见 api._pre_battle_xuexi）。
+        todo = ["庇护", "再生", "冲击", "血债", "蒙蔽"]
 
         for battle_no in range(1, battles + 1):
             prep = []
@@ -138,6 +175,11 @@ def play_and_record(region: str, seed: int, battles: int = 7):
                     lines.extend(BR.format_player_action(
                         idx, engine.state.player.name, res))
                     idx += 1
+
+                # 怪物准则#3：陷入困境时强制在【逃跑】与【进化】中二选一，每场限一次。
+                # 引擎只负责标注困境，须由扮演怪物方的 AI 主动调用，
+                # 此前战报生成器从不调用，导致该机制在战报中从未出现。
+                lines.extend(_resolve_monster_plight(engine, rng))
                 if not [x for x in engine.state.enemies if x.is_alive]:
                     lines.extend(BR.format_round_end({}, engine.state.player,
                                                      engine.state.enemies))

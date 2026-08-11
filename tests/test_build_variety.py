@@ -41,16 +41,40 @@ def test_ai_uses_ruili_when_it_is_the_only_nuke():
     assert ai.used.get("锐利", 0) > 0, f"未使用锐利，log={ai.log}"
 
 
+# 专属道纹 → 其所属副本（学习受门禁限制，须在对应副本内）
+_REGION_OF = {"加害": "龙心谷", "裂变": "龙心谷", "伤痕": "龙心谷",
+              "僵化": "扭曲都市", "坏死": "扭曲都市",
+              "逼债": "罪孽都市", "洗劫": "罪孽都市"}
+
+
 @pytest.mark.parametrize("dw", ["加害", "裂变", "伤痕", "僵化", "坏死", "逼债", "洗劫"])
 def test_ai_uses_region_specific_daowen(dw):
-    """正常路径：各副本专属道纹只要持有就应被实际发动"""
-    e = _engine(starter="杀伐", learn=[dw])
-    e.state.player.current_mana = 99
+    """
+    正常路径：各副本专属道纹只要持有就应被实际发动。
+
+    注：专属道纹不能直接学习（须先经残韵从本副本怪物身上转化获得），
+    故此处在对应副本内直接注入到玩家身上，只验证"持有后AI会用"。
+    """
+    from engine.models import DaoWen, DaoWenInstance
+    e = _engine(starter="杀伐", learn=[], region=_REGION_OF[dw])
+    # 只保留被测道纹（外加基础输出），避免 AI 选了同角色的其他道纹而误判
+    e.state.player.dao_wen = {
+        k: v for k, v in e.state.player.dao_wen.items() if k == "杀伐"}
+    e.state.player.dao_wen[dw] = DaoWenInstance(
+        DaoWen(name=dw, formula="", cost_type="消耗",
+               cost_formula="X", effect_formula=""))
+    # 法力需满足：单次出手预算(总法力÷出手次数) 足以让该 debuff 达到 X≥2，
+    # 同时怪物血量要高到不会被一击收割（否则 AI 直接击杀，debuff 轮不到）。
+    _cost = TACTICAL_ROLES[dw].get("cost", 1)
+    e.state.player.current_mana = max(12, _cost * 2 * 3)
+    for _m in e.state.enemies:
+        _m.blood_limit = max(_m.blood_limit, 300)
+        _m.current_hp = _m.blood_limit
     ai = TacticalAI(e)
     for _ in range(3):
         ai.new_round()
         ai.take_turn()
-    assert ai.used.get(dw, 0) > 0, f"{dw} 从未被使用"
+    assert ai.used.get(dw, 0) > 0, f"{dw} 从未被使用，实际使用：{ai.used}"
 
 
 def test_every_tactical_role_is_reachable():

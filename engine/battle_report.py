@@ -87,14 +87,17 @@ def format_battle_start(
     player: Any,
     allies: Optional[list] = None,
     background: str = "",
-    background_effect: str = "纯叙事，不影响数值",
+    # 战斗背景仅作为【急中生智】的场景素材，本身不带数值影响。
+    # 未实际触发急中生智时不再逐场重复"纯叙事，不影响数值"这句注解。
+    background_effect: str = "",
     start_effects: Optional[list] = None,
 ) -> list[str]:
     """渲染 [战始] 段。start_effects 逐条列出遗物/法器/法术开启。"""
     allies = allies or []
     lines = [f"[战始]（第{battle_no}场）"]
     lines.append(f"出怪：{draw_range}→{draw_result}")
-    lines.append(f"战斗背景：{background}（{background_effect}）")
+    lines.append(f"战斗背景：{background}"
+                 + (f"（{background_effect}）" if background_effect else ""))
     for e in enemies:
         lines.append(f"敌方面板：{enemy_panel(e)}")
     ally_txt = "｜".join(ally_panel(a) for a in allies) if allies else "无[朋友]与[员工]"

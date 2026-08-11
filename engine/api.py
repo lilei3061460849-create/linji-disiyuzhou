@@ -23,6 +23,7 @@ from .dice import DiceEngine, EventPool, RandomRequest
 from .daowen import DaoWenEngine, ResonanceEngine
 from .combat import CombatEngine
 from .events import EventPool, parse_events
+from .gamedata import REGION_EXCLUSIVE_DAOWEN
 from .dm_rulings import DMRulingsDB, DMRuling, Interrupt
 
 
@@ -803,6 +804,27 @@ class GameEngine:
             if name not in DaoWenEngine.list_all():
                 self.state.energy += 1
                 return {"success": False, "error": f"未知道纹: {name}"}
+            # 副本专属道纹门禁（README§三-4 + 用户裁定）：
+            # 专属道纹不可直接学习，只能先通过残韵从**当前副本**的怪物身上转化获得；
+            # 已持有该副本任一专属道纹后，才可学习该副本的其他专属道纹。
+            # 其他副本的专属道纹一律不可获得。
+            owner = None
+            for _rg, _pool in REGION_EXCLUSIVE_DAOWEN.items():
+                if name in _pool:
+                    owner = _rg
+                    break
+            if owner is not None:
+                if owner != self.state.current_region:
+                    self.state.energy += 1
+                    return {"success": False,
+                            "error": f"【{name}】是{owner}的专属道纹，当前副本为"
+                                     f"{self.state.current_region or '未选择'}，无法习得"}
+                own_pool = REGION_EXCLUSIVE_DAOWEN[owner]
+                if not (own_pool & set(player.dao_wen)):
+                    self.state.energy += 1
+                    return {"success": False,
+                            "error": f"【{name}】是{owner}专属道纹：须先通过残韵从本副本怪物身上"
+                                     f"转化获得一种专属道纹后，才能学习其他专属道纹"}
             if name not in player.dao_wen:
                 player.dao_wen[name] = DaoWenInstance(
                     DaoWen(name=name, formula="", cost_type="消耗", cost_formula="X", effect_formula=""))
