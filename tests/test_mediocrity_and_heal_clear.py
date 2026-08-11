@@ -204,3 +204,49 @@ def test_battle_end_heal_revert_never_kills():
     e._action_battle_end({})
     assert p.current_hp == 1, f"吐出回复应保底 1 点，实际={p.current_hp}"
     assert p.is_alive, "[战终]吐出回复不应直接致死"
+
+
+# ---------- 锐利：血限与当前生命同时扣减（README 第460行） ----------
+
+def test_ruili_reduces_hp_independently_of_blood_limit():
+    """正常路径：锐利对残血目标仍应扣当前生命（不是只做血限压顶）"""
+    e = _engine()
+    cm = e.combat
+    m = _monster(hp=200)
+    m.current_hp = 10          # 残血：血限压顶对它毫无作用
+    cm.state.enemies = [m]
+
+    calc = {"blood_limit_reduction": 20, "hp_reduction": 20}
+    cm.apply_daowen_effect("锐利", calc, cm.state.player, m)
+
+    assert m.blood_limit == 180, f"血限应-20，实际={m.blood_limit}"
+    assert m.current_hp == 0, f"当前生命应独立-20并被判定[命零]，实际={m.current_hp}"
+    assert not m.is_alive
+
+
+def test_ruili_hp_cut_counts_as_damage_dealt():
+    """边界：锐利造成的生命减少要计入本回合伤害，否则会被【凡庸】误判为无所作为"""
+    e = _engine()
+    cm = e.combat
+    m = _monster(hp=200)
+    cm.state.enemies = [m]
+    p = cm.state.player
+    p.damage_dealt_this_round = 0
+
+    cm.apply_daowen_effect("锐利", {"blood_limit_reduction": 20, "hp_reduction": 20}, p, m)
+
+    assert p.damage_dealt_this_round > 0, "锐利削减的生命必须计入伤害统计"
+
+
+def test_ruili_hp_cut_never_below_zero():
+    """错误输入/边界：扣减不得使生命变为负数，且不重复致死"""
+    e = _engine()
+    cm = e.combat
+    m = _monster(hp=200)
+    m.current_hp = 3
+    cm.state.enemies = [m]
+
+    cm.apply_daowen_effect("锐利", {"blood_limit_reduction": 40, "hp_reduction": 40}, cm.state.player, m)
+
+    assert m.current_hp <= 0
+    assert not m.is_alive

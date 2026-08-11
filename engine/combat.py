@@ -1085,9 +1085,23 @@ class CombatEngine:
             lost = min(target.shield, calc["shield_drain"]); target.shield -= lost
             result["effects"].append({"type": "shield_drain", "target": target.name, "lost": lost})
         if "blood_limit_reduction" in calc:
-            target.blood_limit -= calc["blood_limit_reduction"]; target.current_hp = min(target.current_hp, target.blood_limit)
+            _hp_before = target.current_hp
+            target.blood_limit -= calc["blood_limit_reduction"]
+            # README 第460行"[血限]及当前生命同时 -4X"：两者是各自独立的扣减。
+            # 此前实现只做 current_hp=min(current_hp, blood_limit)（血限压顶），
+            # 对残血目标等于毫无效果——锐利打 10/200 的怪一点血都掉不了。
+            if "hp_reduction" in calc:
+                target.current_hp -= calc["hp_reduction"]
+            target.current_hp = max(0, min(target.current_hp, target.blood_limit))
             if target.current_hp <= 0: target.is_alive = False
-            result["effects"].append({"type": "blood_limit_reduction", "target": target.name, "new_blood_limit": target.blood_limit})
+            # 血限压迫导致的当前生命减少，同样属于"使敌对角色生命减少"，
+            # 必须计入本回合伤害统计，否则纯锐利流派会被【凡庸】判定为无所作为而自爆。
+            _hp_cut = _hp_before - target.current_hp
+            if _hp_cut > 0 and target is not caster:
+                caster.damage_dealt_this_round += _hp_cut
+            result["effects"].append({"type": "blood_limit_reduction", "target": target.name,
+                                      "new_blood_limit": target.blood_limit,
+                                      "hp_reduced": _hp_cut})
         if "blood_limit_increase" in calc:
             # 不朽之躯（初拥之夜遗物）：血限无法增加，对该实体的增殖等血限增长一律归零
             if target is self.state.player and "不朽之躯" in self.state.first_embrace_traits:

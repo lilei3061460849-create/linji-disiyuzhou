@@ -40,6 +40,28 @@ KNOWLEDGE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file_
 
 # 候选池：所有 AI 会主动使用的道纹（数据驱动，跟着 TACTICAL_ROLES 走）
 CANDIDATES = sorted(TACTICAL_ROLES.keys())
+
+# 门禁修复后，并非所有道纹都能通过局外【学习】获得：
+#   - 怪物转化道纹：须以自身已持有的道纹为起点经残韵变化获得（README 211/248）
+#   - 副本专属道纹：须先经残韵从本副本怪物身上转化获得一种，才能学其余（README 156）
+# 若仍按全池组 build，绝大多数 build 会因"学不上"而退化成同一套，数据失真。
+# 故按副本给出"实际可通过学习获得"的候选池。
+from engine.gamedata import (REGION_EXCLUSIVE_DAOWEN, ORIGINAL_MONSTER_DAOWEN,
+                             MONSTER_TRANSFORM_DAOWEN)
+
+_ALL_EXCLUSIVE = {d for v in REGION_EXCLUSIVE_DAOWEN.values() for d in v}
+
+
+def learnable_candidates(region: str = None) -> list:
+    """当前副本下可通过局外【学习】直接获得的道纹（不含需残韵转化的）。"""
+    out = []
+    for c in CANDIDATES:
+        if c in ORIGINAL_MONSTER_DAOWEN or c in MONSTER_TRANSFORM_DAOWEN:
+            continue
+        if c in _ALL_EXCLUSIVE and c not in set(REGION_EXCLUSIVE_DAOWEN.get(region, ())):
+            continue
+        out.append(c)
+    return out
 # 可作为初始道纹的（README：开局在【杀伐】【锐利】中选一种）
 STARTERS = ["杀伐", "锐利"]
 REGIONS = ["罪孽都市", "扭曲都市", "龙心谷"]
@@ -255,9 +277,11 @@ def ucb(k: dict, name: str, total_n: int) -> float:
     return mean + 1.4 * math.sqrt(math.log(max(total_n, 2)) / t["n"])
 
 
-def propose(k: dict, rng: random.Random) -> tuple:
-    """生成下一套待测 build：50% 探索，50% 在精英基础上变异。"""
+def propose(k: dict, rng: random.Random, region: str = None) -> tuple:
+    """生成下一套待测 build：50% 探索，50% 在精英基础上变异。
+    region 给定时只从该副本实际可学的道纹中取（门禁修复后必需）。"""
     total_n = sum(t["n"] for t in k["trials"].values()) or 1
+    CAND = learnable_candidates(region)
     best = k.get("best")
     if best and rng.random() < 0.5:
         learn = list(best["learn"])
@@ -266,7 +290,7 @@ def propose(k: dict, rng: random.Random) -> tuple:
         for _ in range(rng.randint(1, 2)):
             if learn:
                 i = rng.randrange(len(learn))
-                pool = [c for c in CANDIDATES if c not in learn and c != starter]
+                pool = [c for c in CAND if c not in learn and c != starter]
                 if pool:
                     ranked = sorted(pool, key=lambda c: -ucb(k, c, total_n))
                     learn[i] = rng.choice(ranked[:8])
@@ -275,7 +299,7 @@ def propose(k: dict, rng: random.Random) -> tuple:
         return starter, learn
 
     starter = rng.choice(STARTERS)
-    pool = [c for c in CANDIDATES if c != starter]
+    pool = [c for c in CAND if c != starter]
     ranked = sorted(pool, key=lambda c: -ucb(k, c, total_n))
     head = ranked[:12]
     rng.shuffle(head)
