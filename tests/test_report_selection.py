@@ -22,7 +22,7 @@ _s = importlib.util.spec_from_file_location(
 pb = importlib.util.module_from_spec(_s)
 _s.loader.exec_module(pb)
 
-REPORT = os.path.join(ROOT, "战报_完整轮回.md")
+REPORT = os.path.join(ROOT, "战报.md")
 
 
 # ---------- 正常路径 ----------

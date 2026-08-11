@@ -4,6 +4,7 @@
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+os.makedirs("/tmp/linji_tests", exist_ok=True)
 
 from engine.api import GameEngine
 from engine.models import Entity, StatusEffect
@@ -16,7 +17,7 @@ import math
 def test_setup():
     """测试开局流程"""
     print("\n=== 测试：开局 ===")
-    engine = GameEngine(db_path="data/test_rulings.db")
+    engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
     
     # 分配属性
     result = engine.execute_action("setup_attributes", {
@@ -139,7 +140,7 @@ def test_resonance():
 def test_combat():
     """测试战斗系统"""
     print("\n=== 测试：战斗系统 ===")
-    engine = GameEngine(db_path="data/test_rulings.db")
+    engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
     
     # 设置玩家
     engine.execute_action("setup_attributes", {
@@ -247,7 +248,7 @@ def test_dice():
 def test_dm_rulings():
     """测试DM裁定系统"""
     print("\n=== 测试：DM裁定系统 ===")
-    engine = GameEngine(db_path="data/test_rulings.db")
+    engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
     
     # 设置
     engine.execute_action("setup_attributes", {
@@ -288,7 +289,7 @@ def test_dm_rulings():
 def test_full_flow():
     """测试完整流程"""
     print("\n=== 测试：完整流程 ===")
-    engine = GameEngine(db_path="data/test_rulings.db")
+    engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
     
     # 开局
     engine.execute_action("setup_attributes", {
@@ -417,7 +418,7 @@ def test_daowen_effects_wired():
     """测试道纹效果真实落地（攻面板/速度/碎片/状态/变形）"""
     print("\n=== 测试：道纹效果落地 ===")
     from engine.models import StatusEffect
-    engine = GameEngine(db_path="data/test_rulings.db")
+    engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
     engine.execute_action("setup_attributes", {"name":"测试","blood_points":10,"speed_points":8,"mana_points":7})
     engine.execute_action("setup_choose_daowen", {"daowen":"杀伐"})
     player = engine.state.player
@@ -472,7 +473,7 @@ def test_daowen_effects_wired():
 def test_out_of_combat_actions():
     """测试局外行动真实生效（休整回血/学习加道纹法术/共鸣给遗物）"""
     print("\n=== 测试：局外行动落地 ===")
-    engine = GameEngine(db_path="data/test_rulings.db")
+    engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
     engine.execute_action("setup_attributes", {"name":"测试","blood_points":10,"speed_points":8,"mana_points":7})
     engine.execute_action("setup_choose_daowen", {"daowen":"杀伐"})
     engine.execute_action("setup_choose_region", {"region":"罪孽都市"})
@@ -536,7 +537,7 @@ def test_relic_effects():
 
     # 钱袋：命零+碎片
     import math
-    engine = GameEngine(db_path="data/test_rulings.db")
+    engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
     engine.execute_action("setup_attributes", {"name":"测试","blood_points":10,"speed_points":8,"mana_points":7})
     engine.execute_action("setup_choose_daowen", {"daowen":"杀伐"})
     engine.execute_action("setup_choose_region", {"region":"罪孽都市"})
@@ -675,7 +676,7 @@ def test_huoxue():
 def test_events_system():
     """测试事件系统：解析/触发/结算"""
     print("\n=== 测试：事件系统 ===")
-    engine = GameEngine(db_path="data/test_rulings.db")
+    engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
     engine.execute_action("setup_attributes", {"name":"测试","blood_points":10,"speed_points":8,"mana_points":7})
     engine.execute_action("setup_choose_daowen", {"daowen":"杀伐"})
     engine.execute_action("setup_choose_region", {"region":"扭曲都市"})
@@ -760,7 +761,7 @@ def test_relics_five_more():
     print(f"  ✓ 买路财：100血限怪撤退成本=20碎片")
 
     # 无所求：resolve_event拒绝+1速限
-    engine = GameEngine(db_path="data/test_rulings.db")
+    engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
     engine.execute_action("setup_attributes", {"name":"t","blood_points":10,"speed_points":8,"mana_points":7})
     engine.execute_action("setup_choose_daowen", {"daowen":"杀伐"})
     engine.execute_action("setup_choose_region", {"region":"扭曲都市"})
@@ -783,7 +784,7 @@ def test_evolution_yuanchu():
     from engine.combat import CombatEngine
 
     def mk_engine():
-        engine = GameEngine(db_path="data/test_rulings.db")
+        engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
         engine.execute_action("setup_attributes", {
             "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7
         })
@@ -935,7 +936,7 @@ def test_evolution_plight_listing():
     print("\n=== 测试：进化困境标注（available_actions暴露）===")
     from engine.models import DaoWen, DaoWenInstance
 
-    engine = GameEngine(db_path="data/test_rulings.db")
+    engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
     engine.execute_action("setup_attributes", {
         "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7
     })
@@ -972,7 +973,7 @@ def test_evolution_plight_listing():
     # ---- 2. 边界：仅1个劣势信号 → 判定困境（裁定⑦：探针≥1） ----
     m2 = Entity(name="半血怪", entity_type="怪物", blood_limit=120, current_hp=120,
                 attack_count=2, attack_power=1)  # 只有攻击力极低1个信号
-    engine2 = GameEngine(db_path="data/test_rulings.db")
+    engine2 = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
     engine2.execute_action("setup_attributes", {
         "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7
     })
@@ -986,7 +987,7 @@ def test_evolution_plight_listing():
     # 边界补充：0个信号（满状态）→ 不可用
     m2b = Entity(name="满状态怪", entity_type="怪物", blood_limit=120, current_hp=120,
                  attack_count=2, attack_power=10)
-    engine2b = GameEngine(db_path="data/test_rulings.db")
+    engine2b = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
     engine2b.execute_action("setup_attributes", {
         "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7
     })
@@ -999,7 +1000,7 @@ def test_evolution_plight_listing():
     print("  ✓ 探针口径（裁定⑦）：1个劣势信号即列单（半血怪），0个信号不可用")
 
     # ---- 3. 边界：已进化过的怪物不再列出；死亡怪物不列出 ----
-    engine3 = GameEngine(db_path="data/test_rulings.db")
+    engine3 = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
     engine3.execute_action("setup_attributes", {
         "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7
     })
@@ -1088,7 +1089,7 @@ def test_consumable_mutation_wiring():
     T = Entity.MUTATION_COLLAPSE_THRESHOLD
 
     def mk_engine(mut=0):
-        engine = GameEngine(db_path="data/test_rulings.db")
+        engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
         engine.execute_action("setup_attributes", {
             "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7
         })
@@ -1141,7 +1142,7 @@ def test_twisted_tool_library():
     from engine.api import TWISTED_TOOL_LIBRARY
 
     def mk(region="扭曲都市"):
-        engine = GameEngine(db_path="data/test_rulings.db")
+        engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
         engine.execute_action("setup_attributes", {
             "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7
         })

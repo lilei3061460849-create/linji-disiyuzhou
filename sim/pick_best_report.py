@@ -12,7 +12,7 @@
 
 用法：
     python3 sim/pick_best_report.py --candidates 40
-    python3 sim/pick_best_report.py --candidates 40 --out 战报_完整轮回.md
+    python3 sim/pick_best_report.py --candidates 40 --out 战报.md
 """
 import argparse
 import importlib.util
@@ -180,7 +180,7 @@ def play_and_record(region: str, seed: int, battles: int = 7):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--candidates", type=int, default=40)
-    ap.add_argument("--out", default="战报_完整轮回.md")
+    ap.add_argument("--out", default="战报.md")
     ap.add_argument("--region", default=None)
     a = ap.parse_args()
 
