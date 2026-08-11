@@ -692,6 +692,19 @@ class DaoWenEngine:
     # ---- 罪孽都市专属道纹 ----
     
     @staticmethod
+    def calculate_jiahai(x: int, target: Entity) -> dict:
+        """加害X：消耗3X。使[目标]每次受到伤害+X，持续∞（README·龙心谷闭环起点）"""
+        cost = 3 * x
+        return {
+            "dao_wen": "加害",
+            "x": x,
+            "cost_type": "消耗",
+            "cost": cost,
+            "status": {"name": "加害", "value": x, "duration": -1},
+            "summary": f"消耗{cost}法力，使{target.name}每次受到伤害+{x}，持续∞",
+        }
+
+    @staticmethod
     def calculate_xijie(x: int, target: Entity) -> dict:
         """洗劫X：消耗3X。造成伤害时夺取目标等量碎片，持续X"""
         return {
@@ -896,6 +909,7 @@ class DaoWenEngine:
             "爆裂": cls.calculate_baolie,
             "退化": cls.calculate_tuihua,
             # 罪孽都市
+            "加害": cls.calculate_jiahai,
             "洗劫": cls.calculate_xijie,
             "逼债": cls.calculate_bizhai,
             "抵扣": cls.calculate_dikou,
@@ -938,6 +952,13 @@ class DaoWenEngine:
                 params[param_name] = kwargs[param_name]
             elif param_name == 'x':
                 params['x'] = x
+            elif param_name == 'target_action_count':
+                # 【缓慢X】需要目标"单轮出手次数"。调用方(api/combat)未显式传入时，
+                # 从 target 实体推导：出手次数 = [速限]/3 向上取整（README·[速限]定义）。
+                tgt = kwargs.get('target')
+                if tgt is not None:
+                    params[param_name] = max(1, math.ceil(getattr(tgt, 'speed_limit', 0) / 3)) \
+                        if getattr(tgt, 'speed_limit', 0) else max(1, getattr(tgt, 'attack_count', 1))
         
         result = func(**params)
         
