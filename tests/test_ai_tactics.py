@@ -122,8 +122,27 @@ def test_ai_never_bypasses_engine_validation(tmp_path):
 
 
 def test_ai_does_not_crash_without_any_daowen(tmp_path):
-    """非法配置：玩家无任何道纹时，AI 应返回 None 而不是抛异常"""
+    """
+    非法配置：玩家无任何道纹时，AI 不得抛异常。
+
+    注：残韵不要求施法者持有该道纹（可作用于敌方道纹），
+    因此此时 AI 仍可能合法地发动残韵；只要不崩溃、且结果合法即可。
+    """
+    e = _engine(tmp_path, learn=())
+    e.state.player.dao_wen.clear()
+    e.state.resonance.clear()          # 连残韵也清空，才是真正的"无牌可打"
+    ai = TacticalAI(e)
+    assert ai.take_action() is None
+
+
+def test_ai_can_use_resonance_on_monster_daowen(tmp_path):
+    """
+    正常路径：残韵闭环补齐后，AI 必须能对怪物原始道纹发动残韵。
+    修复前 CLOSED_LOOPS 只有杀伐/锐利两轨，对必中/狂暴/飞行发动必然失败。
+    """
     e = _engine(tmp_path, learn=())
     e.state.player.dao_wen.clear()
     ai = TacticalAI(e)
-    assert ai.take_action() is None
+    r = ai.try_resonance()
+    assert r is not None, "补齐闭环后仍无法对怪物道纹发动残韵"
+    assert r.get("success")
