@@ -245,11 +245,11 @@ class Entity:
     # 钱袋：[战始]时的血限快照，用于按"[战始][血限]×2%"结算额外碎片（增殖等战斗中改变血限不影响此值）
     battle_start_blood_limit: int = 0
 
-    # 寒冰法力（初拥之夜特性）：本回合内，持有该特性者对我方发动道纹累计消耗的法力（含对自己发动）
+    # 寒冰法力（初拥之夜血脉）：本回合内，持有该禀赋者对我方发动道纹累计消耗的法力（含对自己发动）
     # 回始归零；每满10点使当前回合出手次数-1（以叠加"无力"状态实现）
     mana_inflicted_this_round: int = 0
 
-    # 血族血脉（初拥之夜特性）：本回合是否已造成过伤害（[回终]判定：造成过则回复等量，否则流血20）
+    # 血族血脉（初拥之夜血脉）：本回合是否已造成过伤害（[回终]判定：造成过则回复等量，否则流血20）
     damage_dealt_this_round: int = 0
     # 赤族诅咒标记：entity_type=="赤族"的实体[回终]固定流血20；is_chizu_of记录其主人名字(仅用于血食校验)
     is_chizu_of: str = ""
@@ -515,12 +515,12 @@ class GameState:
     # 炼心在战斗中发动时不消耗出手，改为"下次局外行动多消耗1点精力"，此处累计待结算的额外精力消耗
     pending_energy_penalty: int = 0
 
-    # 熔谷终音"真龙之心"：龙性资源池 + 已解锁的龙族特性名单
+    # 熔谷终音"真龙之心"：龙性资源池 + 已解锁的龙族禀赋名单
     dragon_nature: int = 0
     dragon_traits: list[str] = field(default_factory=list)
-    # 震岳龙躯剩余持续回合数（0=未激活）；断尾求生已消耗的特性记录见dragon_traits变化
+    # 震岳龙躯剩余持续回合数（0=未激活）；断尾求生已消耗的禀赋记录见dragon_traits变化
     dragon_body_shield_rounds: int = 0
-    # 断尾求生：预先声明"若本次伤害会使自身命零，移除该龙族特性来抵消伤害"；为空=未声明保护
+    # 断尾求生：预先声明"若本次伤害会使自身命零，移除该龙族禀赋来抵消伤害"；为空=未声明保护
     dragon_tail_sacrifice_declared: str = ""
 
     # 终音法器（三选一/四选一后获得的具名法器，跨副本共享同一个列表）
@@ -536,7 +536,7 @@ class GameState:
     # 负岳碑(终音法器)：预先声明"下一次这些[朋友]/[员工]即将撤退时，改为流血20取消撤退"的名单
     fuyuebei_declared: list[str] = field(default_factory=list)
 
-    # 初拥之夜：待选择标记 + 已选过的1~8号特性(每项限一次，9号不计入) + 已获得的赤族
+    # 初拥之夜：待选择标记 + 已选过的1~8号禀赋(每项限一次，9号不计入) + 已获得的赤族
     pending_first_embrace: bool = False
     # 仅当初拥之夜是由死斗胜利(领取猩红尖牙)触发时为True：完成本次选择(非"封存血脉")后应紧接着完整封存
     seal_pending_after_embrace: bool = False
