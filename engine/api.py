@@ -1384,6 +1384,47 @@ class GameEngine:
                 if new_stacks > 0:
                     target.add_status(StatusEffect(name="无力", value=new_stacks, remaining_rounds=1, source="寒冰法力"))
 
+        # F2：赌命X/消灾X 的碎片类代价预检与支付（代价类型非"消耗"，不走法力制）
+        # 赌命X：消耗X假碎片
+        if name == "赌命":
+            fake_need = calc.get("fake_cost", x)
+            if actor is self.state.player:
+                have = self.state.fake_shards
+            else:
+                have = getattr(actor, "fake_shards", 0)
+            if have < fake_need:
+                return {"success": False, "error": f"假碎片不足：赌命X需{fake_need}假碎片，当前{have}"}
+            if actor is self.state.player:
+                self.state.fake_shards -= fake_need
+            else:
+                actor.fake_shards -= fake_need
+        # 消灾X：消耗50X假碎片/5X碎片（局外发动消耗×2）；优先假碎片
+        # 引擎战斗全程 phase="battle_start"（战始→回始/出手/回终期间不再改写），
+        # 局外=pre_battle，故以 phase=="battle_start" 作为"战斗中"标记。
+        elif name == "消灾":
+            in_combat = self.state.phase == "battle_start"
+            mult = 1 if in_combat else 2
+            fake_need = calc.get("fake_cost", 50 * x) * mult
+            real_need = calc.get("real_cost", 5 * x) * mult
+            if actor is self.state.player:
+                have_fake, have_real = self.state.fake_shards, self.state.shards
+            else:
+                have_fake, have_real = getattr(actor, "fake_shards", 0), actor.shards
+            if have_fake >= fake_need:
+                if actor is self.state.player:
+                    self.state.fake_shards -= fake_need
+                else:
+                    actor.fake_shards -= fake_need
+            elif have_real >= real_need:
+                if actor is self.state.player:
+                    self.state.lose_shards(real_need)
+                else:
+                    actor.lose_shards(real_need)
+            else:
+                return {"success": False,
+                        "error": f"碎片不足：消灾X需{fake_need}假碎片或{real_need}碎片（局外×{mult}），"
+                                 f"当前假{have_fake}/真{have_real}"}
+
         budget_error = self._consume_action_or_error(actor)
         if budget_error:
             return budget_error
@@ -1666,7 +1707,7 @@ class GameEngine:
         return self.combat.execute_evolution(monster, daowen_name, x)
 
     def _action_consume_item(self, params: dict) -> dict:
-        """使用消耗品（雕塑/普通，遵守现有消耗品规则，使用不消耗出手）"""
+        """使用消耗品（雕塑/普通/扭曲工具库8件，遵守现有消耗品规则，使用不消耗出手）"""
         item_name = params.get("name", "")
         item = None
         for c in self.state.consumables:
@@ -1675,6 +1716,10 @@ class GameEngine:
                 break
         if item is None:
             return {"success": False, "error": f"找不到可用消耗品: {item_name}"}
+
+        # 扭曲工具库 8 件：引擎侧真实结算（F3）
+        if item.name in TWISTED_TOOL_LIBRARY:
+            return self._consume_twisted_tool(item, params)
 
         # 雕塑：消耗1耐久造成15伤害或获得20格挡
         if item.kind == "sculpture":
@@ -1724,6 +1769,96 @@ class GameEngine:
             },
             "state": self.combat._get_combat_state(),
         }
+
+    def _consume_twisted_tool(self, item: Consumable, params: dict) -> dict:
+        """扭曲工具库 8 件的引擎侧真实结算（F3）"""
+        name = item.name
+        player = self.state.player
+        if not player:
+            return {"success": False, "error": "没有玩家"}
+        # 统一扣耐久（与普通消耗品一致）
+        remaining = item.use()
+        result: dict[str, Any] = {"tool": name, "uses_remaining": remaining, "is_depleted": item.is_depleted}
+        # 1. 反怪物电击枪：对目标 25 伤害，飞行目标 +15 并施坠落
+        if name == "反怪物电击枪":
+            target_name = params.get("target", "")
+            target = next((e for e in self.state.get_all_enemy_side() if e.name == target_name), None)
+            if target is None:
+                # 回滚耐久（未找到目标不消耗）
+                item.current_uses += 1
+                return {"success": False, "error": f"找不到敌方目标: {target_name}"}
+            flying = target.is_flying or target.has_status("飞行") or "飞行" in target.dao_wen
+            dmg = 25 + (15 if flying else 0)
+            detail = target.take_damage(dmg)
+            if flying:
+                target.add_status(StatusEffect(name="坠落", value=1, remaining_rounds=1, source="反怪物电击枪"))
+            result.update({"target": target.name, "damage": dmg, "flying_bonus": 15 if flying else 0, "hp_after": target.current_hp, "detail": detail})
+        # 2. 备用血泵：回复20，≤30% 额外30格挡
+        elif name == "备用血泵":
+            before = player.current_hp
+            player.current_hp = min(player.blood_limit, player.current_hp + 20)
+            healed = player.current_hp - before
+            shield_gained = 0
+            if player.current_hp <= player.blood_limit * 0.3:
+                player.shield += 30
+                shield_gained = 30
+            result.update({"healed": healed, "hp_after": player.current_hp, "shield_gained": shield_gained})
+        # 3. 强光探照灯：目标蒙蔽2
+        elif name == "强光探照灯":
+            target_name = params.get("target", "")
+            target = next((e for e in self.state.get_all_enemy_side() if e.name == target_name), None)
+            if target is None:
+                item.current_uses += 1
+                return {"success": False, "error": f"找不到敌方目标: {target_name}"}
+            target.add_status(StatusEffect(name="蒙蔽", value=2, remaining_rounds=-1, source="强光探照灯"))
+            result.update({"target": target.name, "蒙蔽": 2})
+        # 4. 高压水枪：清除全场敌方所有持续X效果
+        elif name == "高压水枪":
+            cleared = []
+            for m in self.state.get_all_enemy_side():
+                before = len(m.status_effects)
+                m.status_effects = [s for s in m.status_effects if s.remaining_rounds <= 0]
+                if len(m.status_effects) != before:
+                    cleared.append(m.name)
+            result.update({"cleared_enemies": cleared})
+        # 5. 储能电池：[回始]本回合额外+12 法力（此处立即结算）
+        elif name == "储能电池":
+            player.current_mana += 12
+            result.update({"mana_gained": 12, "mana_after": player.current_mana})
+        # 6. 急救箱：回复25 并清一种负面持续
+        elif name == "急救箱":
+            before = player.current_hp
+            player.current_hp = min(player.blood_limit, player.current_hp + 25)
+            healed = player.current_hp - before
+            # 负面定义：持续X（remaining>0）或特定名
+            neg = [s for s in player.status_effects if s.remaining_rounds > 0 or s.name in ("坏死", "退化", "伤痕", "畸变", "蒙蔽")]
+            removed = None
+            if neg:
+                s = neg[0]
+                player.status_effects.remove(s)
+                removed = s.name
+            result.update({"healed": healed, "removed_status": removed})
+        # 7. 干扰仪：全场敌方本回合无法发动道纹（加干扰1状态）
+        elif name == "干扰仪":
+            jammed = []
+            for m in self.state.get_all_enemy_side():
+                m.add_status(StatusEffect(name="干扰", value=1, remaining_rounds=1, source="干扰仪"))
+                jammed.append(m.name)
+            result.update({"jammed": jammed})
+        # 8. 高爆手雷：目标15伤害 + 本回合攻击次数-1
+        elif name == "高爆手雷":
+            target_name = params.get("target", "")
+            target = next((e for e in self.state.get_all_enemy_side() if e.name == target_name), None)
+            if target is None:
+                item.current_uses += 1
+                return {"success": False, "error": f"找不到敌方目标: {target_name}"}
+            detail = target.take_damage(15)
+            # 攻击次数-1：用状态标记，本回合内 _monster_attack_actions 会读取
+            target.add_status(StatusEffect(name="手雷减攻", value=1, remaining_rounds=1, source="高爆手雷"))
+            result.update({"target": target.name, "damage": 15, "detail": detail, "nade_minus": 1})
+        else:
+            result.update({"note": "未知工具"})
+        return {"success": True, "action": f"使用工具【{name}】", "result": result, "state": self.combat._get_combat_state()}
 
     def _action_use_spell(self, params: dict) -> dict:
         """查看/装配法术（反应型法术学会后在触发时点由引擎自动结算，无需手动发动）"""
@@ -1838,7 +1973,7 @@ class GameEngine:
             "result": result,
             "victory_paths": alt_paths,
             "monster_difficulties": difficulties,
-            "note": "多路径胜利（雕塑/增生/还债）已结算；消耗品可在后续回合使用"
+            "note": "多路径胜利（雕塑/癌变/还债）已结算；消耗品可在后续回合使用"
         }
     
     def _action_battle_start(self, params: dict) -> dict:
@@ -1871,14 +2006,18 @@ class GameEngine:
                 roll = self.dice.auto_roll(f"monster_draw_{self.state.current_battle}_{i}", pool,
                                             context=f"出怪(第{self.state.current_battle}场,第{i + 1}只)")
                 monster_def = roll["selected"]
-                self.state.enemies.append(make_monster_entity(monster_def))
+                m = make_monster_entity(monster_def)
+                self.combat.init_monster_shards(m)  # 罪孽都市：[战始]自带碎片=专属道纹数值之和×2（洗劫/赎金/逼债的碎片来源）
+                self.state.enemies.append(m)
                 drawn_names.append(monster_def["name"])
 
         # 事件登记的"下一场额外出现的怪物"（如龙心谷"追求者·拿走口粮"）
         forced = list(self.state.forced_monsters_next_battle)
         self.state.forced_monsters_next_battle = []
         for fm in forced:
-            self.state.enemies.append(make_monster_entity(fm))
+            m = make_monster_entity(fm)
+            self.combat.init_monster_shards(m)
+            self.state.enemies.append(m)
             drawn_names.append(fm["name"] + "(额外出现)")
 
         relic_logs = self.combat.process_relics("battle_start")
@@ -2481,7 +2620,7 @@ class GameEngine:
             self._blacklist_departure("死亡离队")
 
         relic_end = self.combat.process_relics("battle_end")
-        # 碎片奖励计算（被雕塑/增生/还债/封印移出的怪物不视为击杀，不产碎片）
+        # 碎片奖励计算（被雕塑/癌变/还债/封印移出的怪物不视为击杀，不产碎片）
         # 奖励公式用的是[战始][血限]快照(battle_start_blood_limit)，不是当前血限(增殖等会改变当前血限)
         has_money_bag = any(r.name == "钱袋" for r in self.state.relics)
         shard_reward = 0
@@ -2492,7 +2631,7 @@ class GameEngine:
                 removed.append({"name": monster.name,
                                 "way": ("雕塑" if monster.is_sculptured else
                                         "封印" if monster.removed_without_kill else
-                                        "增生" if monster.is_proliferated else "还债")})
+                                        "癌变" if monster.is_proliferated else "还债")})
                 continue
             if not monster.is_alive:
                 reward = math.ceil(monster.battle_start_blood_limit * 0.02) + len(monster.dao_wen) * 5
@@ -2516,6 +2655,10 @@ class GameEngine:
             # 清除局内持续效果（含持续∞的增益/减益），[代价]类不清除
             _COST_STATUS = {"流血", "衰老", "异变", "崩解"}
             _p.status_effects = [s for s in _p.status_effects if s.name in _COST_STATUS]
+            # F2：逼债/清算挂账与抵扣封印均属局内效果，[战终]随持续状态一并清除，不得跨场残留
+            _p._bizhai = []
+            _p._qingsuan = []
+            self.state.sealed_relics = {}
             # 恢复速度到速限（闪避消耗的速度战终复原）
             self.state.player.current_speed = self.state.player.speed_limit
             # 体外心脏：临时翻倍的血限[战终]还原为基准值，当前生命同步封顶

@@ -105,7 +105,36 @@ class CombatEngine:
         触发后本次伤害清零、目标保留当前生命与格挡、标记has_retreated退出本场战斗。
         负岳碑(终音法器)：若玩家已通过 declare_fuyuebei_toll(name) 预先声明保护该目标，
         且玩家当前生命>20，则改为玩家流血20，抵消本次伤害并取消本次撤退(目标不掉血也不撤退)。
+        龙心谷专属（F2）：嫁祸/背负 重定向、逆鳞层数、伤痕血限衰减在此统一处理。
         """
+        # ---- F2：嫁祸/背负 伤害重定向（在撤退判定之前） ----
+        if damage_type != "代价":
+            # 嫁祸：自身下X次受伤由目标承担
+            if hasattr(target, "_jiahuo_left") and getattr(target, "_jiahuo_left", 0) > 0:
+                j_target = getattr(target, "_jiahuo_target", None)
+                # 消耗一次
+                target._jiahuo_left -= 1
+                if target._jiahuo_left <= 0:
+                    target.status_effects = [s for s in target.status_effects if s.name != "嫁祸"]
+                    if hasattr(target, "_jiahuo_target"):
+                        delattr(target, "_jiahuo_target")
+                if j_target and j_target.is_alive:
+                    return self._apply_hostile_damage(j_target, amount, damage_type)
+                # 目标已死则不再重定向，继续按原目标结算
+            # 背负：目标的伤害由背负者承担（遍历全场找背负者）
+            for ent in self.state.get_all_player_side() + self.state.get_all_enemy_side():
+                if ent is target:
+                    continue
+                if hasattr(ent, "_beifu_left") and getattr(ent, "_beifu_left", 0) > 0:
+                    if getattr(ent, "_beifu_target", None) is target:
+                        ent._beifu_left -= 1
+                        if ent._beifu_left <= 0:
+                            # 清理被背负标记
+                            target.status_effects = [s for s in target.status_effects if s.name != "被背负"]
+                            if hasattr(ent, "_beifu_target"):
+                                delattr(ent, "_beifu_target")
+                        return self._apply_hostile_damage(ent, amount, damage_type)
+
         if damage_type != "代价" and target.entity_type in ("朋友", "员工") and not target.has_retreated and target.is_alive:
             remaining_after_shield = max(0, amount - target.shield) if amount > 0 else 0
             if remaining_after_shield >= target.current_hp and target.current_hp > 0:
@@ -142,7 +171,85 @@ class CombatEngine:
                     "blood_limit_before": target.blood_limit, "died": False,
                     "damage_type": damage_type, "tail_sacrificed": sacrificed,
                 }
-        return target.take_damage(amount, damage_type)
+        detail = target.take_damage(amount, damage_type)
+        # ---- F2：逆鳞层数、伤痕血限 ----
+        actual = detail.get("actual_damage", 0)
+        if actual > 0:
+            if target.has_status("逆鳞"):
+                target._nilin = getattr(target, "_nilin", 0) + actual
+                detail["nilin_stack_added"] = actual
+                detail["nilin_total"] = target._nilin
+            if target.has_status("伤痕"):
+                xv = target.get_status_value("伤痕")
+                target.blood_limit = max(1, target.blood_limit - xv)
+                target.current_hp = min(target.current_hp, target.blood_limit)
+                if target.current_hp <= 0:
+                    target.is_alive = False
+                    detail["died"] = True
+                    detail["hp_after"] = 0
+                detail["shanghen_blood_loss"] = xv
+        return detail
+
+    # ---- F2 全量：罪孽/扭曲专属道纹的公共辅助 ----
+    def _shards_of(self, entity: Entity) -> int:
+        """实体当前的碎片池（玩家=state.shards；怪物/同伴=entity.shards）"""
+        if entity is self.state.player:
+            return self.state.shards
+        return entity.shards
+
+    def _lose_shards_of(self, entity: Entity, amount: int) -> int:
+        """实体失去碎片（假碎片优先，玩家走 state.lose_shards）。返回实际失去的真碎片数。"""
+        if entity is self.state.player:
+            return self.state.lose_shards(amount)
+        return entity.lose_shards(amount)
+
+    def _raw_hp_loss(self, entity: Entity, amount: int) -> dict:
+        """直接生命损失（绕过格挡；爆裂反射/赌命用），计入失血追踪，含命零判定"""
+        before = entity.current_hp
+        entity.current_hp = max(0, entity.current_hp - max(0, amount))
+        lost = before - entity.current_hp
+        entity.hp_lost_this_round += lost
+        died = False
+        if entity.current_hp <= 0:
+            entity.is_alive = False
+            died = True
+        return {"hp_before": before, "hp_after": entity.current_hp, "lost": lost, "died": died}
+
+    def _seal_one_relic(self, target: Entity, rounds: int) -> str:
+        """抵扣X：封印目标拥有的一件遗物，持续X回合。返回被封印的遗物名；目标无遗物返回\"\"。"""
+        if target is self.state.player:
+            holder = self.state
+            owned = [r.name for r in self.state.relics]
+        else:
+            # 引擎中怪物/同伴无 relic 字段 → 视为不拥有遗物，封印无效果
+            holder = target
+            owned = []
+        # 目标无遗物 → 无效果
+        if not owned:
+            return ""
+        # 封印第一件未在封印中的遗物；若全部已封印则延长第一件的剩余回合
+        for rname in owned:
+            if holder.sealed_relics.get(rname, 0) <= 0:
+                holder.sealed_relics[rname] = max(1, rounds)
+                return rname
+        first = owned[0]
+        holder.sealed_relics[first] = max(holder.sealed_relics.get(first, 0), rounds)
+        return first
+
+    def _xijie_steal(self, caster: Entity, target: Entity, damage_amount: int) -> int:
+        """洗劫X：造成伤害时夺取[目标]等量[碎片]（假碎片优先由目标侧扣减；夺取量=min(目标碎片,伤害)）"""
+        if damage_amount <= 0 or target is caster:
+            return 0
+        avail = self._shards_of(target)
+        if avail <= 0:
+            return 0  # 若[目标]没有[碎片]则夺取无效
+        steal = min(avail, damage_amount)
+        self._lose_shards_of(target, steal)
+        if caster is self.state.player:
+            self.state.shards += steal
+        else:
+            caster.shards += steal
+        return steal
 
     def _pay_bleed_cost(self, payer: Entity, amount: int, dragon_heart_use: int = 0) -> dict:
         """
@@ -268,6 +375,12 @@ class CombatEngine:
         
         # 伤害结算
         damage = attacker.attack_power
+        # 逆鳞（F2）：下次伤害+全部层数后清空
+        if hasattr(attacker, "_nilin") and getattr(attacker, "_nilin", 0) > 0:
+            bonus = attacker._nilin
+            damage += bonus
+            result["nilin_bonus"] = bonus
+            attacker._nilin = 0
         # 加害：攻击者造成的伤害+X
         if attacker.has_status("加害"):
             damage += attacker.get_status_value("加害")
@@ -306,6 +419,13 @@ class CombatEngine:
                 result["spell_logs"] = slogs
             if not attacker.is_alive:
                 damage = 0  # 攻击者被法术反杀
+        # 爆裂X（F2，裁定口径：受到伤害【前】反噬）：目标持[爆裂]时攻击者先失去等量生命，
+        # 攻击者因此命零则本次伤害不落地（与 sim/balance_sim hit_monster 同口径：按结算总量反射一次）
+        if target.has_status("爆裂") and attacker is not target and damage > 0:
+            rd = self._raw_hp_loss(attacker, damage)
+            result["baolie_reflect"] = rd
+            if not attacker.is_alive:
+                damage = 0
         # 裂变：受到伤害分X次结算（每次=原伤害÷X向下取整）
         if target.has_status("裂变") and damage > 0:
             xv = target.get_status_value("裂变") or 1
@@ -334,6 +454,10 @@ class CombatEngine:
         result["hp_lost"] = damage_result["actual_damage"]
         result["target_died"] = damage_result["died"]
         result["target_hp_after"] = damage_result["hp_after"]
+        # 洗劫X（F2）：造成伤害时夺取[目标]等量[碎片]（状态挂在攻击者身上，持续X）
+        if damage_result.get("actual_damage", 0) > 0 and attacker.has_status("洗劫"):
+            stolen = self._xijie_steal(attacker, target, damage_result["actual_damage"])
+            result["xijie_stolen"] = stolen
         if damage_result["actual_damage"] > 0:
             attacker.damage_dealt_this_round += damage_result["actual_damage"]
         if "split" in damage_result:
@@ -466,7 +590,46 @@ class CombatEngine:
                     "blood_loss": blood_loss,
                     "note": "回终结算"
                 })
-        
+
+        # ---- F2：罪孽专属道纹 [回始] 结算（逼债/清算/赌命） ----
+        # 逼债X：目标失去X碎片，否则失去2X血限（二选一；与 sim/balance_sim exclusive_round_start 同口径）
+        for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
+            for entry in list(getattr(entity, "_bizhai", [])):
+                x = entry["x"]
+                if self._shards_of(entity) >= x:
+                    self._lose_shards_of(entity, x)
+                    effects.append({"type": "bizhai", "entity": entity.name, "lost_shards": x})
+                else:
+                    entity.blood_limit = max(1, entity.blood_limit - 2 * x)
+                    entity.current_hp = min(entity.current_hp, entity.blood_limit)
+                    if entity.current_hp <= 0:
+                        entity.is_alive = False
+                    effects.append({"type": "bizhai_blood", "entity": entity.name,
+                                    "lost_blood_limit": 2 * x, "blood_limit": entity.blood_limit})
+        # 清算X：目标失去[你碎片]点格挡（你=施法者当前碎片，每回始读取）
+        for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
+            for entry in list(getattr(entity, "_qingsuan", [])):
+                caster = entry["caster"]
+                drain = max(0, self._shards_of(caster))
+                lost = min(entity.shield, drain)
+                entity.shield -= lost
+                effects.append({"type": "qingsuan", "entity": entity.name, "lost_shield": lost, "drain": drain})
+        # 赌命X：按场上存活角色从轮回者方开始发放数字，投随机数，对应目标失去30%当前生命
+        duming_holders = [e for e in self.state.get_all_player_side() + self.state.get_all_enemy_side()
+                          if e.is_alive and e.has_status("赌命")]
+        for holder in duming_holders:
+            alive = [e for e in self.state.get_all_player_side() + self.state.get_all_enemy_side() if e.is_alive]
+            if len(alive) < 1:
+                continue
+            roll = self.dice.auto_roll(f"赌命_r{self.state.current_round}", [e.name for e in alive],
+                                       context=f"{holder.name}发动赌命")
+            idx = int(roll["player_number"]) - 1
+            tgt = alive[min(max(idx, 0), len(alive) - 1)]
+            d = math.ceil(tgt.current_hp * 30 / 100)  # 引擎口径：当前生命30%（B3 待裁定项，保持现状）
+            rd = self._raw_hp_loss(tgt, d)
+            effects.append({"type": "duming", "caster": holder.name, "target": tgt.name,
+                            "roll": idx + 1, "of": len(alive), "damage": rd["lost"], **rd})
+
         self.state.current_round += 1
         
         return {
@@ -574,6 +737,30 @@ class CombatEngine:
                     "entity": entity.name,
                     "expired_effects": expired
                 })
+                # 逆鳞（F2）：状态到期时清空计层
+                if "逆鳞" in expired and hasattr(entity, "_nilin"):
+                    entity._nilin = 0
+                # 嫁祸到期时清理计数（若未因次数耗尽）
+                if "嫁祸" in expired and hasattr(entity, "_jiahuo_left"):
+                    entity._jiahuo_left = 0
+                    if hasattr(entity, "_jiahuo_target"):
+                        delattr(entity, "_jiahuo_target")
+                # 干扰/手雷减攻到期自动由 tick 清理，无需额外
+            # F2：逼债/清算状态消失即清账（∞/持续X到期后不再逐回始结算）
+            if not entity.has_status("逼债") and getattr(entity, "_bizhai", None):
+                entity._bizhai = []
+            if not entity.has_status("清算") and getattr(entity, "_qingsuan", None):
+                entity._qingsuan = []
+            # F2：抵扣封印回合递减，归零解封
+            for rname in list(getattr(entity, "sealed_relics", {}).keys()):
+                entity.sealed_relics[rname] -= 1
+                if entity.sealed_relics[rname] <= 0:
+                    del entity.sealed_relics[rname]
+        # 玩家侧抵扣封印回合递减（state.sealed_relics）
+        for rname in list(self.state.sealed_relics.keys()):
+            self.state.sealed_relics[rname] -= 1
+            if self.state.sealed_relics[rname] <= 0:
+                del self.state.sealed_relics[rname]
 
         # 震岳龙躯（真龙之心遗物）：持续X回合递减，归零后护体效果失效
         if self.state.dragon_body_shield_rounds > 0:
@@ -589,7 +776,7 @@ class CombatEngine:
                                 "heal": heal_n, "actual": h["actual_heal"]})
             entity.hp_lost_this_round = 0
 
-        # 多路径胜利结算（雕塑/增生/还债）
+        # 多路径胜利结算（雕塑/癌变/还债）
         settled = self.settle_victory_paths()
         if settled:
             effects.extend(settled)
@@ -781,14 +968,15 @@ class CombatEngine:
     # ========== 多路径胜利系统 ==========
     # 所有阈值数值均为占位初值，需经测试调整（见 AI_EXPERIENCE.md）
 
-    PROLIFERATION_THRESHOLD = 1.0  # 增生：累计受到恢复量达到血限的N倍（占位）
+    PROLIFERATION_THRESHOLD = 1.0  # 癌变：累计受到恢复量达到血限的N倍（占位）
+    CANCER_THRESHOLD = PROLIFERATION_THRESHOLD  # 别名：增生旧名已统一为癌变，二者同阈值
     DEBT_THRESHOLD = 10           # 还债：怪物负债（碎片为负）达到N触发（占位）
     SCULPTURE_DAMAGE = 15         # 雕塑：每点耐久可造成的伤害
     SCULPTURE_SHIELD = 20         # 雕塑：每点耐久可获得的格挡
 
     def settle_victory_paths(self) -> list[dict]:
         """
-        回终多路径胜利结算（依次检查：雕塑 / 增生 / 还债）
+        回终多路径胜利结算（依次检查：雕塑 / 癌变 / 还债）
         所有路径都不视为击杀，不提供碎片收益
         """
         results = []
@@ -802,7 +990,7 @@ class CombatEngine:
                 results.append(self._sculpture_monster(monster))
                 continue
 
-            # 2. 增生：累计受到恢复量达阈值
+            # 2. 癌变：累计受到恢复量达阈值
             threshold = math.ceil(monster.blood_limit * self.PROLIFERATION_THRESHOLD)
             if monster.blood_limit > 0 and monster.total_healed >= threshold:
                 results.append(self._proliferate_monster(monster))
@@ -844,19 +1032,22 @@ class CombatEngine:
         }
 
     def _proliferate_monster(self, monster: Entity) -> dict:
-        """增生：累计受到恢复量达阈值→吸收进死者之书，强化休整"""
+        """癌变：累计受到恢复量达阈值→吸收进死者之书，强化休整（旧名 增生）"""
         monster.is_proliferated = True
+        # 兼容：同时写入癌变别名，便于外部以新名读取
+        monster.is_cancer = True  # type: ignore[attr-defined]
         self._remove_from_combat(monster)
         absorbed = monster.total_healed
-        # 死者之书强化：每只增生怪物使局外【休整】额外产生8点恢复量（占位，可调）
+        # 死者之书强化：每只癌变怪物使局外【休整】额外产生8点恢复量（占位，可调）
         boost = 8
-        self.state.death_book_wisdom.append(f"增生·{monster.name}：休整恢复量+{boost}")
+        self.state.death_book_wisdom.append(f"癌变·{monster.name}：休整恢复量+{boost}")
         return {
-            "type": "proliferation",
+            "type": "proliferation",  # 保留旧 key 兼容；新 key 见下一行
+            "type_alias": "cancer",
             "monster": monster.name,
             "absorbed_heal": absorbed,
             "rest_boost": boost,
-            "note": (f"{monster.name}累计承受{absorbed}点恢复被增生吸收进《死者之书》，"
+            "note": (f"{monster.name}累计承受{absorbed}点恢复被癌变吸收进《死者之书》，"
                      f"局外【休整】恢复量+{boost}"),
         }
 
@@ -1045,30 +1236,79 @@ class CombatEngine:
             result["mengbi_blocked"] = True
         huaisi_block = target.has_status("坏死") and "target_heal" in calc
 
+        # ---- 逆鳞加成（F2）：施法者若有层数，下次伤害+层数后清空 ----
+        nilin_bonus = 0
+        if hasattr(caster, "_nilin") and getattr(caster, "_nilin", 0) > 0 and any(k in calc for k in ("target_damage", "total_damage", "aoe_damage", "hp_percent_loss")):
+            nilin_bonus = caster._nilin
+            caster._nilin = 0
+            result["nilin_bonus"] = nilin_bonus
+            # 状态层数虽清空，但 status 本身仍按 duration 存在（仅清空计数）
+
+        # ---- 爆裂X（F2，裁定口径：受到伤害【前】反噬）----
+        # 目标持[爆裂]时，攻击者先失去等量生命；攻击者因此命零则本次伤害不落地。
+        # 直接生命损失（_raw_hp_loss）为叶子结算，不会再次触发反噬，无需递归防护。
+        baolie_suppress = False
+        if (target.has_status("爆裂") and caster is not target and not mengbi_blocked
+                and any(k in calc for k in ("target_damage", "total_damage", "aoe_damage", "hp_percent_loss"))):
+            incoming = 0
+            if "target_damage" in calc:
+                incoming = calc["target_damage"] * multiplier
+            elif "total_damage" in calc:
+                incoming = calc["total_damage"] * multiplier
+            elif "aoe_damage" in calc:
+                incoming = calc["aoe_damage"] * multiplier
+            if incoming > 0:
+                rd = self._raw_hp_loss(caster, incoming)
+                result["baolie_reflect"] = rd
+                if not caster.is_alive:
+                    baolie_suppress = True  # 攻击者先死，本次伤害不落地
+
         # ---- 伤害类 ----
         if "target_damage" in calc:
-            dmg = self._apply_hostile_damage(target, 0 if mengbi_blocked else calc["target_damage"] * multiplier)
+            base = calc["target_damage"] * multiplier + (nilin_bonus if nilin_bonus else 0)
+            dmg = self._apply_hostile_damage(target, 0 if (mengbi_blocked or baolie_suppress) else base)
             result["effects"].append({"type": "damage", "target": target.name, **dmg})
             if dmg.get("actual_damage", 0) > 0:
                 caster.damage_dealt_this_round += dmg["actual_damage"]
+                self._xijie_steal(caster, target, dmg["actual_damage"])
         if "total_damage" in calc and "target_damage" not in calc:  # 血债等多段
-            dmg = self._apply_hostile_damage(target, 0 if mengbi_blocked else calc["total_damage"] * multiplier)
+            add = nilin_bonus
+            nilin_bonus = 0
+            dmg = self._apply_hostile_damage(target, 0 if (mengbi_blocked or baolie_suppress) else calc["total_damage"] * multiplier + add)
+            if add:
+                dmg["nilin_bonus"] = add
             result["effects"].append({"type": "damage", "target": target.name, **dmg})
             if dmg.get("actual_damage", 0) > 0:
                 caster.damage_dealt_this_round += dmg["actual_damage"]
+                self._xijie_steal(caster, target, dmg["actual_damage"])
         if "aoe_damage" in calc:
-            a = 0 if mengbi_blocked else calc["aoe_damage"] * multiplier
+            a = 0 if (mengbi_blocked or baolie_suppress) else calc["aoe_damage"] * multiplier
+            # 逆鳞加成仅作用于首个目标的首段伤害
+            if nilin_bonus:
+                a += nilin_bonus
+                result["nilin_bonus"] = nilin_bonus
+                nilin_bonus = 0
             for enemy in self.state.get_all_enemy_side():
-                dmg = enemy.take_damage(a)
+                # 对首个敌人附加剩余加成（若前未消耗）
+                dmg_a = a
+                if nilin_bonus and enemy is self.state.get_all_enemy_side()[0]:
+                    dmg_a += nilin_bonus
+                    nilin_bonus = 0
+                dmg = enemy.take_damage(dmg_a)
                 result["effects"].append({"type": "aoe_damage", "target": enemy.name, **dmg})
                 if dmg.get("actual_damage", 0) > 0:
                     caster.damage_dealt_this_round += dmg["actual_damage"]
-        if "hp_percent_loss" in calc:  # 赌命：当前生命百分比
-            d = math.ceil(target.current_hp * calc["hp_percent_loss"] / 100)
-            dmg = self._apply_hostile_damage(target, d)
+                    self._xijie_steal(caster, enemy, dmg["actual_damage"])
+        if "hp_percent_loss" in calc and name != "赌命":  # 赌命已改为[回始]随机结算（F2），此处仅保留其他百分比道纹
+            d = math.ceil(target.current_hp * calc["hp_percent_loss"] / 100) + (nilin_bonus if nilin_bonus else 0)
+            if nilin_bonus:
+                result["nilin_bonus"] = nilin_bonus
+                nilin_bonus = 0
+            dmg = self._apply_hostile_damage(target, 0 if baolie_suppress else d)
             result["effects"].append({"type": "pct_damage", "target": target.name, **dmg})
             if dmg.get("actual_damage", 0) > 0:
                 caster.damage_dealt_this_round += dmg["actual_damage"]
+                self._xijie_steal(caster, target, dmg["actual_damage"])
 
         # ---- 回复类 ----
         if "target_heal" in calc and not huaisi_block:
@@ -1144,20 +1384,24 @@ class CombatEngine:
             result["effects"].append({"type": "speed_penalty", "target": target.name, "speed": target.current_speed})
 
         # ---- 碎片系（罪孽）----
-        if "shard_drain" in calc:  # 逼债：目标失碎片（可负债）
-            target.shards -= calc["shard_drain"]
-            result["effects"].append({"type": "shard_drain", "target": target.name, "shards": target.shards})
-        if "shard_steal" in calc:  # 赎金/洗劫：夺碎片
-            steal = calc["shard_steal"]; gained = max(0, min(target.shards, steal))
-            target.shards -= steal
-            if caster is self.state.player: self.state.shards += gained
+        if "shard_steal" in calc:  # 赎金：夺碎片（原口径保留：全额扣减可负债[喂还债路径]，仅正值部分可夺得；玩家目标假碎片优先）
+            avail = self._shards_of(target)
+            gained = max(0, min(avail, calc["shard_steal"]))
+            self._lose_shards_of(target, calc["shard_steal"])
+            if caster is self.state.player:
+                self.state.shards += gained
+            else:
+                caster.shards += gained
             result["effects"].append({"type": "shard_steal", "target": target.name, "gained": gained})
-        if "fake_shards" in calc:
-            self.state.shards += calc["fake_shards"]
+        if "fake_shards" in calc:  # 假钞：获得10X假碎片（假碎片与真碎片分离存储）
+            if caster is self.state.player:
+                self.state.fake_shards += calc["fake_shards"]
+            else:
+                caster.fake_shards = getattr(caster, "fake_shards", 0) + calc["fake_shards"]
             result["effects"].append({"type": "fake_shards", "gained": calc["fake_shards"]})
-        if "cost_shards" in calc:
-            self.state.shards -= calc["cost_shards"]
-            result["effects"].append({"type": "cost_shards", "spent": calc["cost_shards"]})
+        if "cost_shards" in calc and name != "消灾":  # 消灾的付费在专属分支统一处理
+            spent = self._lose_shards_of(self.state.player, calc["cost_shards"]) if caster is self.state.player else 0
+            result["effects"].append({"type": "cost_shards", "spent": spent})
 
         # ---- 代价（卖身契：玩家代价转由cost_proxy承担）----
         cost_target = caster
@@ -1214,10 +1458,59 @@ class CombatEngine:
             duration = calc["duration"] if calc["duration"] != 0 else -1
             effect_target = target if target else caster
             # 自身作用型道纹(变形/超频/自食等)作用于施法者
-            self_targeted = name in ("超频", "自食", "飞行", "滑翔", "狂暴", "自愈", "必中", "变形")
+            # 洗劫：状态应挂在施法者上——"造成伤害时夺取等量碎片"以施法者为触发主体（与 sim/balance_sim 口径一致）
+            self_targeted = name in ("超频", "自食", "飞行", "滑翔", "狂暴", "自愈", "必中", "变形", "洗劫")
             et = caster if self_targeted else effect_target
             et.add_status(StatusEffect(name=name, remaining_rounds=duration, value=x, source=caster.name))
             result["effects"].append({"type": "status_added", "target": et.name, "status": name, "duration": duration, "value": x})
+
+        # ---- 龙心谷专属 4 件（F2）：逆鳞/嫁祸/背负/伤痕 的 combat 侧实装 ----
+        # 逆鳞X：目标每失去1HP积1层，下次伤害+全部层后清空，持续X（已通过 duration 加状态，此处初始化计数）
+        if name == "逆鳞":
+            if not hasattr(target, "_nilin"):
+                target._nilin = 0
+            result["effects"].append({"type": "nilin_setup", "target": target.name, "x": x})
+        # 嫁祸X：自身下X次受伤由目标承担（无持续，仅计数）
+        elif name == "嫁祸":
+            caster._jiahuo_left = x
+            caster._jiahuo_target = target
+            caster.add_status(StatusEffect(name="嫁祸", value=x, remaining_rounds=x, source=caster.name))
+            result["effects"].append({"type": "jiahuo", "caster": caster.name, "target": target.name, "count": x})
+        # 背负X：目标下X次受伤由自身承担
+        elif name == "背负":
+            caster._beifu_left = x
+            caster._beifu_target = target
+            # 在目标侧加标记便于查询
+            target.add_status(StatusEffect(name="被背负", value=x, remaining_rounds=-1, source=caster.name))
+            result["effects"].append({"type": "beifu", "caster": caster.name, "target": target.name, "count": x})
+        # 伤痕X：目标每次掉血后血限-X，永久（已通过 duration 加伤痕状态，此处仅补日志）
+        elif name == "伤痕":
+            result["effects"].append({"type": "shanghen", "target": target.name, "x": x})
+
+        # ---- F2 全量：罪孽都市（逼债/清算/赌命/消灾/抵扣）的注册与即时结算 ----
+        # 逼债X：[回始]使[目标]失去X碎片，否则失去2X血限（二选一）。此处仅挂账，[回始]在 round_start 结算。
+        if name == "逼债":
+            target._bizhai.append({"x": x, "caster": caster})
+            target.add_status(StatusEffect(name="逼债", value=x, remaining_rounds=-1, source=caster.name))
+            result["effects"].append({"type": "bizhai_register", "target": target.name, "x": x})
+        # 清算X：[回始]使[目标]失去你[碎片]点格挡，持续X。此处仅挂账。
+        elif name == "清算":
+            target._qingsuan.append({"x": x, "caster": caster})
+            result["effects"].append({"type": "qingsuan_register", "target": target.name, "x": x})
+        # 赌命X：消耗X假碎片（付费在 _action_use_daowen 预检；怪物侧在 _apply_exclusive_for_monster）。
+        # 状态经 duration 挂在施法者上，[回始]在 round_start 按存活角色随机结算。
+        elif name == "赌命":
+            result["effects"].append({"type": "duming_register", "caster": caster.name, "x": x})
+        # 消灾X：付费在 _action_use_daowen 预检（怪物侧在 _apply_exclusive_for_monster）；此处登记重投次数。
+        elif name == "消灾":
+            self.dice.set_rerolls(self.dice.rerolls_pending + x)
+            result["effects"].append({"type": "xiaozai_rerolls", "added": x, "total": self.dice.rerolls_pending})
+        # 抵扣X：封印[目标]拥有的一件遗物，持续X（目标无遗物则无效果）
+        elif name == "抵扣":
+            sealed = self._seal_one_relic(target, x)
+            result["effects"].append({"type": "dikou", "target": target.name,
+                                      "sealed": sealed or None, "rounds": x})
+
         return result
 
 
@@ -1323,7 +1616,8 @@ class CombatEngine:
         logs = []
         if not player:
             return logs
-        relics = {r.name for r in self.state.relics}
+        # 抵扣X（F2）：被封印的遗物在封印期间不触发任何效果
+        relics = {r.name for r in self.state.relics if self.state.sealed_relics.get(r.name, 0) <= 0}
 
         if trigger == "on_dodge" and "避风铃" in relics:
             player.gain_shield(3); logs.append("避风铃：闪避+3格挡")
@@ -1406,7 +1700,11 @@ class CombatEngine:
         怪物道纹出手：激活一个未激活的成长/控场道纹，返回道纹名或None。
         原始怪物道纹以【异变】为代价（道纹归属规则#1）：激活时支付异变5X（X=面板数值）；
         异变达阈值触发【崩解】直接命零，返回 "崩解:道纹名"，本次激活效果中断。
+        干扰仪：若怪物本回合被【干扰】，则本回合无法发动自身道纹。
+        龙心谷专属（F2）第二梯队：通用层之后，尝试激活本副本的专属道纹。
         """
+        if m.has_status("干扰"):
+            return None
         for g in self.MONSTER_ACTIVATE_PRIORITY:
             if g in m.dao_wen and g not in activated:
                 if g in self.ORIGINAL_MONSTER_DAOWEN:
@@ -1417,16 +1715,125 @@ class CombatEngine:
                 if g == "强化":
                     m.attack_power += m.dao_wen[g].x_value
                 return g
+        # 第二梯队：副本专属（龙心谷 8 件等），按固定优先级
+        region = self.state.current_region
+        exclusive_pool = self.REGION_EXCLUSIVE_DAOWEN.get(region, set())
+        # 与 sim/balance_sim EXCLUSIVE_PRIORITY 同序，确保确定性
+        exclusive_order = ["变形","逆鳞","假钞","赌命","加害","洗劫","逼债","赎金","清算","龙鳞","爆裂","裂变","伤痕","退化","畸变","活血","嫁祸","背负","超频","定型","抵扣","消灾"]
+        for g in exclusive_order:
+            if g in exclusive_pool and g in m.dao_wen and g not in activated:
+                # 赌命需假碎片余额等代价准入（简化：若有假碎片则过，无则跳过）
+                if g == "赌命" and getattr(m, "fake_shards", 0) < m.dao_wen[g].x_value:
+                    continue
+                if g in self.ORIGINAL_MONSTER_DAOWEN:
+                    pay = m.add_mutation(self.YUANCHU_COST_RATE * m.dao_wen[g].x_value)
+                    if pay["collapsed"]:
+                        return "崩解:" + g
+                activated.add(g)
+                # 立即结算专属效果（F2 的 4 件 + 其他专属的通用状态）
+                try:
+                    calc = DaoWenEngine.resolve(g, m.dao_wen[g].x_value, target=m, caster=m)
+                    self._apply_exclusive_for_monster(g, calc, m)
+                except Exception:
+                    # 若 resolve 失败（如缺少目标），仍视为已激活但无效果
+                    m.add_status(StatusEffect(name=g, remaining_rounds=calc.get("duration", -1) if 'calc' in locals() else -1, value=m.dao_wen[g].x_value, source=m.name))
+                return g
         return None
 
+    def _apply_exclusive_for_monster(self, name: str, calc: dict, caster: Entity):
+        """怪物侧专属道纹的即时结算（F2 + 全量 24 种），与玩家侧 apply_daowen_effect 同语义但简化为状态/计数"""
+        x = calc.get("x", 0)
+        # 通用持续状态已在上层通过 calc duration 处理，此处补计数类
+        if name == "逆鳞":
+            if not hasattr(caster, "_nilin"):
+                caster._nilin = 0
+            caster.add_status(StatusEffect(name="逆鳞", value=x, remaining_rounds=x, source=caster.name))
+            # 逆鳞的流血代价已在 calculate 中声明，但怪物侧流血直接扣生命
+            if calc.get("cost_hp"):
+                caster.take_damage(calc["cost_hp"], "代价")
+                caster._nilin = getattr(caster, "_nilin", 0) + calc["cost_hp"]
+        elif name == "嫁祸":
+            # 嫁祸：自身下X次受伤由目标承担，目标选玩家（无道德底线）或同场最弱同伴
+            from .models import StatusEffect as _SE
+            # 策略：优先玩家（与 sim 的 JIAHUO_POLICY=player_first 一致）
+            target = self.state.player
+            if target and target.is_alive:
+                caster._jiahuo_left = x
+                caster._jiahuo_target = target
+                caster.add_status(_SE(name="嫁祸", value=x, remaining_rounds=x, source=caster.name))
+        elif name == "背负":
+            # 背负：目标下X次受伤由自身承担，目标选同场最濒危同伴
+            candidates = [e for e in self.state.get_all_enemy_side() if e is not caster and e.is_alive]
+            if candidates:
+                tgt = min(candidates, key=lambda e: e.current_hp)
+                caster._beifu_left = x
+                caster._beifu_target = tgt
+                tgt.add_status(StatusEffect(name="被背负", value=x, remaining_rounds=-1, source=caster.name))
+        elif name == "伤痕":
+            # 伤痕由玩家侧已在 apply_daowen_effect 中处理，此处怪物侧若对玩家使用则直接加状态
+            # 怪物对玩家使用时，目标应为玩家
+            player = self.state.player
+            if player:
+                player.add_status(StatusEffect(name="伤痕", value=x, remaining_rounds=-1, source=caster.name))
+        # ---- F2 全量：罪孽/扭曲专属（怪物侧） ----
+        # 假钞X：获得10X假碎片
+        elif name == "假钞":
+            caster.fake_shards = getattr(caster, "fake_shards", 0) + 10 * x
+        # 赌命X：代价X假碎片（激活准入已校验余额）；状态挂怪物侧，[回始]随机结算
+        elif name == "赌命":
+            if getattr(caster, "fake_shards", 0) >= x:
+                caster.fake_shards -= x
+                caster.add_status(StatusEffect(name="赌命", value=x, remaining_rounds=x, source=caster.name))
+        # 消灾X：消耗50X假碎片/5X碎片（与玩家侧付费口径一致），登记全局重投次数
+        elif name == "消灾":
+            fake_cost, real_cost = 50 * x, 5 * x
+            paid = False
+            if getattr(caster, "fake_shards", 0) >= fake_cost:
+                caster.fake_shards -= fake_cost; paid = True
+            elif caster.shards >= real_cost:
+                caster.lose_shards(real_cost); paid = True
+            if paid:
+                self.dice.set_rerolls(self.dice.rerolls_pending + x)
+        # 逼债X：[回始]目标失X碎片否则失2X血限——对玩家挂账
+        elif name == "逼债":
+            player = self.state.player
+            if player and player.is_alive:
+                player._bizhai.append({"x": x, "caster": caster})
+                player.add_status(StatusEffect(name="逼债", value=x, remaining_rounds=-1, source=caster.name))
+        # 清算X：[回始]目标失[你碎片]点格挡——对玩家挂账
+        elif name == "清算":
+            player = self.state.player
+            if player and player.is_alive:
+                player._qingsuan.append({"x": x, "caster": caster})
+                player.add_status(StatusEffect(name="清算", value=x, remaining_rounds=x, source=caster.name))
+        # 抵扣X：封印玩家一件遗物（持续X回合，[回终]递减）
+        elif name == "抵扣":
+            if self.state.player is not None and self.state.relics:
+                self._seal_one_relic(self.state.player, x)
+        # 洗劫X：状态挂怪物侧，造成伤害时夺取等量碎片
+        elif name == "洗劫":
+            caster.add_status(StatusEffect(name="洗劫", value=x, remaining_rounds=x, source=caster.name))
+        # 爆裂X：状态挂怪物侧，受到伤害前反噬攻击者
+        elif name == "爆裂":
+            caster.add_status(StatusEffect(name="爆裂", value=x, remaining_rounds=x, source=caster.name))
+        # 退化X：使玩家每次发动道纹时数值-X（持续∞）
+        elif name == "退化":
+            player = self.state.player
+            if player:
+                player.add_status(StatusEffect(name="退化", value=x, remaining_rounds=-1, source=caster.name))
+        # 其他专属的通用状态已通过 calc duration 在外层添加，此处无需额外
+
     def _monster_attack_actions(self, m: Entity, activated: set) -> int:
-        """怪物攻击出手数 = 1 + 活力X(若激活) + 狂暴1(若激活)"""
+        """怪物攻击出手数 = 1 + 活力X(若激活) + 狂暴1(若激活)；手雷减攻则-1"""
         n = 1
         if "活力" in activated:
             n += m.dao_wen["活力"].x_value
         if "狂暴" in activated:
             n += 1
-        return n
+        # 高爆手雷：本回合攻击次数-1（每枚手雷叠加）
+        if m.has_status("手雷减攻"):
+            n -= m.get_status_value("手雷减攻")
+        return max(1, n)
 
     def _apply_control_to_player(self, name: str, m: Entity, player: Entity):
         """怪物激活控场道纹后对轮回者施加效果"""

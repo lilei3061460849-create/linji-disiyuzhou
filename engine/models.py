@@ -218,10 +218,36 @@ class Entity:
 
     # 多路径胜利追踪
     shards: int = 0              # 怪物自带碎片（罪孽都市）/ 负值表示负债（还债）
-    total_healed: int = 0        # 累计受到的恢复量（增生；超出血限部分按双倍计）
+    fake_shards: int = 0         # 假碎片（罪孽都市：假钞产出；战斗中失去碎片时优先失去假碎片）
+    total_healed: int = 0        # 累计受到的恢复量（癌变；超出血限部分按双倍计）
     is_sculptured: bool = False  # 已化为雕塑（攻击次数或攻击力归0）
-    is_proliferated: bool = False  # 已被增生吸收进死者之书
+    is_proliferated: bool = False  # 已被癌变吸收进死者之书（旧名 增生，已统一为 癌变；保留字段名兼容）
     is_debt_bound: bool = False  # 已因还债成为员工
+
+    # ---- 罪孽都市专属道纹的回始记账（F2 全量） ----
+    # 逼债/清算：目标侧挂账 [{x, caster}]，[回始]逐条结算，状态消失即清账
+    _bizhai: list = field(default_factory=list)
+    _qingsuan: list = field(default_factory=list)
+    # 抵扣：被封印的遗物 {遗物名: 剩余回合}，[回终]-1，归零解封
+    sealed_relics: dict = field(default_factory=dict)
+
+    def lose_shards(self, amount: int) -> int:
+        """失去碎片（假碎片优先，余额不足则不足额损失）。返回实际失去的真碎片数。"""
+        amount = max(0, amount)
+        use_fake = min(self.fake_shards, amount)
+        self.fake_shards -= use_fake
+        real = amount - use_fake
+        self.shards -= real
+        return real
+
+    # 兼容：is_proliferated 旧名（增生）→ 现名 癌变，is_cancer 为别名
+    @property
+    def is_cancer(self) -> bool:
+        return self.is_proliferated
+
+    @is_cancer.setter
+    def is_cancer(self, value: bool):
+        self.is_proliferated = value
 
     # 异变计数（特殊事件【崩解】：达到阈值直接命零）
     mutation_count: int = 0
@@ -355,7 +381,7 @@ class Entity:
         self.current_hp = min(self.blood_limit, self.current_hp + amount)
         actual = self.current_hp - before
         overheal = amount - actual
-        # 增生追踪：超出血限的恢复按双倍计入累计恢复量
+        # 癌变追踪：超出血限的恢复按双倍计入累计恢复量
         self.total_healed += actual + overheal * 2
         self.healed_this_battle += actual
         return {
@@ -439,6 +465,7 @@ class Entity:
             "battle_start_blood_limit": self.battle_start_blood_limit,
             "deployed_at_round": self.deployed_at_round,
             "shards": self.shards,
+            "fake_shards": self.fake_shards,
             "total_healed": self.total_healed,
             "hp_ratio": round(self.hp_ratio, 2),
             "dao_wen": {k: v.dao_wen.name for k, v in self.dao_wen.items()},
@@ -474,11 +501,23 @@ class GameState:
     
     # 资源
     shards: int = 20            # 碎片
+    fake_shards: int = 0        # 假碎片（罪孽都市假钞X产出；战斗中失去碎片时优先失去假碎片）
+
+    def lose_shards(self, amount: int) -> int:
+        """玩家失去碎片（假碎片优先）。返回实际失去的真碎片数。"""
+        amount = max(0, amount)
+        use_fake = min(self.fake_shards, amount)
+        self.fake_shards -= use_fake
+        real = amount - use_fake
+        self.shards -= real
+        return real
     
     # 遗物与消耗品
     relics: list[Relic] = field(default_factory=list)
     relics_pool: list[Relic] = field(default_factory=list)  # 遗物池（未获取的）
     consumables: list[Consumable] = field(default_factory=list)
+    # 抵扣X封印的玩家遗物 {遗物名: 剩余回合}，[回终]-1，归零解封（封印期间不触发 process_relics）
+    sealed_relics: dict = field(default_factory=dict)
     
     # 残韵
     resonance: dict[str, int] = field(default_factory=dict)  # {转换: 1, 反转: 2, ...}
@@ -562,9 +601,6 @@ class GameState:
     attribute_points: int = 0
     allocated_blood: int = 0     # 已分配血限（从属性点）
     
-    # 法器/遗物记录
-    relic_of_choice: Optional[str] = None  # 当前选择的遗物
-    
     # ---- 遗物视图：血族/龙族项目一律以遗物形式存放，遗物是唯一事实源 ----
     # 这样它们自动继承遗物的全部通用规则（可被销毁、交换、封印、计入"一件当前遗物"）。
 
@@ -605,6 +641,7 @@ class GameState:
             "current_region": self.current_region,
             "energy": self.energy,
             "shards": self.shards,
+            "fake_shards": self.fake_shards,
             "blacklist_level": self.blacklist_level,
             "is_blacklisted": self.is_blacklisted,
             "pending_wage_decisions": self.pending_wage_decisions,

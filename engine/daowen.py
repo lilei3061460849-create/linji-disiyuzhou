@@ -721,11 +721,11 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_bizhai(x: int, target: Entity) -> dict:
-        """逼债X：消耗X。回始使目标失去X点碎片，否则失去2X点血限，持续∞"""
+        """逼债X：消耗X。[回始]使目标失去X点碎片，否则失去2X点血限，持续∞（二选一，不叠加）"""
         return {
             "dao_wen": "逼债", "x": x, "cost_type": "消耗", "cost": x,
-            "shard_drain": x, "blood_limit_penalty": 2 * x, "duration": -1,
-            "summary": f"消耗{x}法力，回始使{target.name}失去{x}碎片或{2*x}血限，永久"
+            "bizhai_register": x, "duration": -1,
+            "summary": f"消耗{x}法力，[回始]使{target.name}失去{x}碎片，否则失去{2*x}血限，永久"
         }
     
     @staticmethod
@@ -739,11 +739,11 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_qingsuan(x: int, target: Entity, caster_shards: int = 0) -> dict:
-        """清算X：消耗5X。回始使目标失去你碎片点格挡，持续X"""
+        """清算X：消耗5X。[回始]使目标失去你碎片点格挡，持续X"""
         return {
             "dao_wen": "清算", "x": x, "cost_type": "消耗", "cost": 5 * x,
-            "shield_drain": caster_shards, "duration": x,
-            "summary": f"消耗{5*x}法力，回始使{target.name}失去{caster_shards}格挡，持续{x}回合"
+            "qingsuan_register": True, "duration": x,
+            "summary": f"消耗{5*x}法力，[回始]使{target.name}失去{caster_shards}格挡，持续{x}回合"
         }
     
     @staticmethod
@@ -766,20 +766,21 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_duming(x: int) -> dict:
-        """赌命X：消耗X假碎片。回始按存活角色投随机数，对应目标失去30%血限当前生命"""
+        """赌命X：消耗X假碎片。[回始]按存活角色投随机数，对应目标失去30%当前生命，持续X"""
         return {
-            "dao_wen": "赌命", "x": x, "cost_type": "消耗", "cost": x,
-            "hp_percent_loss": 30, "duration": x,
-            "summary": f"消耗{x}假碎片，回始随机目标失去30%血限生命，持续{x}回合"
+            "dao_wen": "赌命", "x": x, "cost_type": "假碎片", "fake_cost": x,
+            "duming_hp_pct": 30, "duration": x,
+            "summary": f"消耗{x}假碎片，[回始]随机目标失去30%当前生命，持续{x}回合"
         }
     
     @staticmethod
     def calculate_xiaozai(x: int) -> dict:
-        """消灾X：消耗50X假碎片或5X碎片。重置随机数X次"""
+        """消灾X：消耗50X假碎片/5X碎片（局外发动消耗×2）。重置随机数X次以改变结果"""
         return {
-            "dao_wen": "消灾", "x": x, "cost_type": "消耗", "cost_shards": 5 * x,
+            "dao_wen": "消灾", "x": x, "cost_type": "碎片",
+            "fake_cost": 50 * x, "real_cost": 5 * x,
             "rerolls": x,
-            "summary": f"消耗{5*x}碎片，重置随机数{x}次"
+            "summary": f"消耗50{x}假碎片或5{x}碎片（局外×2），重置随机数{x}次"
         }
     
     # ---- 龙心谷专属道纹 ----
@@ -941,6 +942,12 @@ class DaoWenEngine:
         if dao_wen_name not in cls._registry:
             raise ValueError(f"未知道纹: {dao_wen_name}。可用道纹: {list(cls._registry.keys())}")
         
+        # 退化X（扭曲都市专属，持续∞）：使目标每次发动道纹时该次数值-X（最低0）。
+        # 在 resolve 统一入口削减（玩家/怪物/同伴所有发动路径都经此），与 sim/balance_sim eff_x 同口径。
+        caster = kwargs.get("caster")
+        if caster is not None and hasattr(caster, "has_status") and caster.has_status("退化"):
+            x = max(0, x - caster.get_status_value("退化"))
+
         # 获取该道纹的代价类型，检查X上限
         # 先调用一次获取cost_type
         func = cls._registry[dao_wen_name]
