@@ -23,7 +23,8 @@ from .dice import DiceEngine, EventPool, RandomRequest
 from .daowen import DaoWenEngine, ResonanceEngine
 from .combat import CombatEngine
 from .events import EventPool, parse_events
-from .gamedata import REGION_EXCLUSIVE_DAOWEN
+from .gamedata import (REGION_EXCLUSIVE_DAOWEN, ORIGINAL_MONSTER_DAOWEN,
+                       MONSTER_TRANSFORM_DAOWEN)
 from .dm_rulings import DMRulingsDB, DMRuling, Interrupt
 
 
@@ -825,6 +826,21 @@ class GameEngine:
                     return {"success": False,
                             "error": f"【{name}】是{owner}专属道纹：须先通过残韵从本副本怪物身上"
                                      f"转化获得一种专属道纹后，才能学习其他专属道纹"}
+            # 怪物转化道纹门禁（README 第211/247-252行）：
+            # 转化道纹须"以自身已持有的一种道纹为起点"经残韵变化获得；
+            # 而其起点全部是原始怪物道纹（狂暴/强化/活力/减速/必中/自愈/飞行），
+            # 人类无法承受并获得原始怪物道纹，故轮回者不可能凭空学会转化道纹。
+            # 例：蒙蔽源自"必中--反转-->蒙蔽"，没有必中就学不到蒙蔽。
+            if name in MONSTER_TRANSFORM_DAOWEN:
+                if name not in player.dao_wen:
+                    self.state.energy += 1
+                    return {"success": False,
+                            "error": f"【{name}】是怪物转化道纹，须以自身已持有的道纹为起点"
+                                     f"经残韵变化获得，无法通过局外【学习】直接习得"}
+            if name in ORIGINAL_MONSTER_DAOWEN:
+                self.state.energy += 1
+                return {"success": False,
+                        "error": f"【{name}】是原始怪物道纹，人类无法承受并获得"}
             if name not in player.dao_wen:
                 player.dao_wen[name] = DaoWenInstance(
                     DaoWen(name=name, formula="", cost_type="消耗", cost_formula="X", effect_formula=""))
@@ -1832,6 +1848,10 @@ class GameEngine:
         from .monsters import compute_draw_count, make_monster_entity
         self.state.phase = "battle_start"
         self.state.current_battle += 1
+        # 记录[战始]生命，作为[战终]清除"回复"类增益后的生命下限
+        if self.state.player:
+            self.state.player.battle_start_hp = self.state.player.current_hp
+            self.state.player.healed_this_battle = 0
         self.state.current_round = 0
         self.combat.reset_monster_activation()
         self.state.shared_dragon_heart_type = ""  # 共心环：每场需重新选定
@@ -2485,6 +2505,18 @@ class GameEngine:
         # 清除局内增益
         if self.state.player:
             self.state.player.clear_shield()
+            # README 第304行：[战终]清除局内增益（包括回复、格挡、持续∞等）。
+            # 此前只清了格挡，[回复]得来的生命被永久留下，等于战斗中回的血跨场生效。
+            _p = self.state.player
+            # 注：README 第304行"清除局内增益（包括回复…）"中的[回复]，按第489行
+            # "自愈X：[回始]获得自身[血限]10X%的[回复]，持续∞"的用法，指的是
+            # "持续存在的回复效果"这一增益本身，而非已经恢复到身上的生命值。
+            # 故此处清除的是回复类持续效果，不回撤已恢复的生命。
+            # （若需改为"战斗中回的血在[战终]一并失去"，请明确告知，此处仅一行之差。）
+            _p.healed_this_battle = 0
+            # 清除局内持续效果（含持续∞的增益/减益），[代价]类不清除
+            _COST_STATUS = {"流血", "衰老", "异变", "崩解"}
+            _p.status_effects = [s for s in _p.status_effects if s.name in _COST_STATUS]
             # 恢复速度到速限（闪避消耗的速度战终复原）
             self.state.player.current_speed = self.state.player.speed_limit
             # 体外心脏：临时翻倍的血限[战终]还原为基准值，当前生命同步封顶

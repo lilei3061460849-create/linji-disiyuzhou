@@ -75,7 +75,8 @@ def resource_line(entity: Any) -> str:
     return (f"{entity.name} 生命{entity.current_hp}/{entity.blood_limit}"
             f" 法力{entity.current_mana}/{entity.mana_limit}"
             f" 速度{entity.current_speed}/{entity.speed_limit}"
-            f" 格挡{entity.shield} 持续[{_status_str(entity)}]")
+            + (f" 格挡{entity.shield}" if entity.shield else "")
+            + (f" 持续[{_status_str(entity)}]" if entity.status_effects else ""))
 
 
 def format_battle_start(
@@ -114,8 +115,12 @@ def format_battle_start(
 def format_round_start(round_no: int, rs_result: dict, player: Any, enemies: list) -> list[str]:
     """渲染 第N回合 + [回始] 资源面板与逐条效果。数值全部来自引擎。"""
     lines = [f"", f"第{round_no}回合"]
-    panel = "  ｜  ".join([resource_line(player)] + [resource_line(e) for e in enemies if e.is_alive])
-    lines.append(f"[回始]：{panel}")
+    # 资源面板逐行书写：我方一行、每个敌人各一行，避免挤成一长串难以阅读
+    lines.append("[回始]：")
+    lines.append(f"　我方　{resource_line(player)}")
+    for e in enemies:
+        if e.is_alive:
+            lines.append(f"　敌方　{resource_line(e)}")
     effects = (rs_result or {}).get("effects", []) or []
     if effects:
         for eff in effects:
@@ -140,9 +145,53 @@ def _render_effect(eff: dict) -> str:
                 f"，生命{eff.get('hp_before')}→{eff.get('hp_after')}")
     if t == "heal":
         return f"{eff.get('entity') or eff.get('target')} [回复]{eff.get('amount')}"
+    if t == "shield":
+        return f"{eff.get('target') or eff.get('entity')} 获得格挡 {eff.get('amount')}"
+    if t == "bleed_cost":
+        return (f"{eff.get('source') or eff.get('entity')} 支付【流血】代价 "
+                f"{eff.get('actual_damage')}，生命{eff.get('hp_before')}→{eff.get('hp_after')}")
+    if t == "aging_cost":
+        return f"{eff.get('entity') or eff.get('source')} 支付【衰老】代价 {eff.get('amount')}"
+    if t == "mana_gain":
+        return f"{eff.get('entity') or eff.get('target')} 获得法力 {eff.get('amount')}"
+    if t == "status_added":
+        return (f"{eff.get('target') or eff.get('entity')} 获得状态【{eff.get('status')}】"
+                f"{eff.get('value', '')}"
+                + (f"（持续{eff.get('duration')}）" if eff.get("duration") else ""))
+    if t == "blood_limit_reduction":
+        return f"{eff.get('target')} [血限]降至 {eff.get('new_blood_limit')}"
+    if t == "blood_limit_increase":
+        return f"{eff.get('target')} [血限]+{eff.get('increase')}"
+    if t == "mediocrity":
+        return f"【凡庸】{eff.get('entity')}：{eff.get('note')}"
+    if t == "mediocrity_loot":
+        return f"　{eff.get('note')}"
+    if t == "deform_damage":
+        return (f"{eff.get('entity')} 受【畸变】结算，失去 {eff.get('blood_loss')} 生命"
+                f"（剩余{eff.get('hp_after')}）")
+    if t == "blood_lineage_heal":
+        return f"{eff.get('entity')} 触发【血族血脉】：[回复]{eff.get('amount')}"
+    if t == "blood_lineage_bleed":
+        return f"{eff.get('entity')} 触发【血族血脉】：流血{eff.get('amount')}"
+    if t == "seal":
+        return f"{eff.get('target')} 被【封印】移出本场战斗"
+    if t == "speed_boost":
+        return f"{eff.get('entity') or eff.get('target')} 速度+{eff.get('amount')}"
+    if t == "attack_fixed":
+        return f"{eff.get('target')} 攻击力被固定为 {eff.get('value', 1)}"
     if t == "relic":
         return f"遗物：{eff.get('log')}"
-    return "；".join(f"{k}={v}" for k, v in eff.items())
+    # 兜底：仍以中文陈述，不直接抛出英文字段名（战报要求全程中文）
+    _CN = {"entity": "对象", "target": "目标", "source": "来源", "amount": "数值",
+           "value": "数值", "actual_damage": "实际伤害", "raw_damage": "原始伤害",
+           "shield_absorbed": "格挡吸收", "hp_before": "生命(前)",
+           "hp_after": "生命(后)", "died": "是否命零", "duration": "持续",
+           "status": "状态", "note": "说明", "damage_type": "伤害类型"}
+    # 已知字段译成中文；未知字段保持 键=值 原样透传（不推算、不编造数值）
+    parts = [(f"{_CN[k]}{v}" if k in _CN else f"{k}={v}") for k, v in eff.items()
+             if k != "type" and v not in (None, "", 0, False)]
+    head = f"结算·{t}" if t else "结算"
+    return head + ("：" + "，".join(parts) if parts else "")
 
 
 def format_player_action(idx: int, actor_name: str, result: dict) -> list[str]:
@@ -164,9 +213,12 @@ def format_player_action(idx: int, actor_name: str, result: dict) -> list[str]:
     lines.append(head)
     for ef in (result.get("execution", {}) or {}).get("effects", []) or []:
         if ef.get("type") == "damage":
+            # 没有格挡时不写"格挡吸收0"，纯属噪音
+            absorbed = ef.get("shield_absorbed") or 0
+            shield_txt = f"，格挡吸收{absorbed}" if absorbed else ""
             lines.append(
                 f"  → 目标{ef.get('target')}：原始伤害{ef.get('raw_damage')}"
-                f"，格挡吸收{ef.get('shield_absorbed')}，实际{ef.get('actual_damage')}"
+                f"{shield_txt}，实际{ef.get('actual_damage')}"
                 f"，生命{ef.get('hp_before')}→{ef.get('hp_after')}"
                 f"{'（[命零]）' if ef.get('died') else ''}"
             )
@@ -210,9 +262,11 @@ def format_monster_hits(start_idx: int, details: list) -> list[str]:
             )
         else:
             dodge_txt = "声明不闪避" if not d.get("dodge_attempted") else "闪避失败"
+            absorbed = d.get("shield_absorbed") or 0
+            shield_txt = f"，格挡吸收{absorbed}" if absorbed else ""
             lines.append(
                 f"出手{idx}（{atk}）：攻击{tgt}→{tgt}{dodge_txt}"
-                f"→伤害{d.get('damage_dealt')}，格挡吸收{d.get('shield_absorbed')}"
+                f"→伤害{d.get('damage_dealt')}{shield_txt}"
                 f"，失去生命{d.get('hp_lost')}"
                 f"{'（[命零]）' if d.get('target_died') else ''}"
             )
@@ -230,8 +284,11 @@ def format_round_end(re_result: dict, player: Any, enemies: list) -> list[str]:
     else:
         lines.append("  → 无[回终]类效果")
     lines.append("  → 格挡清空；持续X剩余回合-1")
-    panel = "  ｜  ".join([resource_line(player)] + [resource_line(e) for e in enemies if e.is_alive])
-    lines.append(f"  → 回合末资源面板：{panel}")
+    lines.append("  → 回合末资源面板：")
+    lines.append(f"　我方　{resource_line(player)}")
+    for e in enemies:
+        if e.is_alive:
+            lines.append(f"　敌方　{resource_line(e)}")
     return lines
 
 

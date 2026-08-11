@@ -251,6 +251,15 @@ class Entity:
 
     # 血族血脉（初拥之夜遗物）：本回合是否已造成过伤害（[回终]判定：造成过则回复等量，否则流血20）
     damage_dealt_this_round: int = 0
+    # 特殊事件【凡庸】（README 第500行）：连续五回合未出手 / 五回合未能使敌对
+    # 角色生命减少时触发。两个条件是"或"关系，故分别计数。
+    no_action_rounds: int = 0   # 连续未出手回合数
+    no_damage_rounds: int = 0   # 连续未使敌方生命减少的回合数
+    # 本场战斗内累计获得的[回复]量。README第304行：[战终]清除局内增益(包括回复)，
+    # 故战终须把这部分回血扣除（不低于进场时的生命）。
+    healed_this_battle: int = 0
+    # 本场[战始]时的当前生命，作为回复清除后的生命下限
+    battle_start_hp: int = 0
     # 赤族诅咒标记：entity_type=="赤族"的实体[回终]固定流血20；is_chizu_of记录其主人名字(仅用于血食校验)
     is_chizu_of: str = ""
 
@@ -348,6 +357,7 @@ class Entity:
         overheal = amount - actual
         # 增生追踪：超出血限的恢复按双倍计入累计恢复量
         self.total_healed += actual + overheal * 2
+        self.healed_this_battle += actual
         return {
             "heal_amount": amount,
             "actual_heal": actual,

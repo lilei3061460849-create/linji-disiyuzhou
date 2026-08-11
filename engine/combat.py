@@ -499,6 +499,35 @@ class CombatEngine:
                     "died": result["died"]
                 })
 
+            # 特殊事件【凡庸】（README 第500行）：任一角色连续五回合未出手／
+            # 五回合未能使敌对角色生命减少时触发；轮回者直接死亡，怪物命零死亡，
+            # 轮回者获得消耗品【残骸】(1/1)。此前从未实装，导致长期僵持局面不会终结。
+            if entity.is_alive:
+                # 两个条件互相独立，任一连续满 5 回合即触发（README 用"/"表示或）
+                if entity.actions_used_this_round <= 0:
+                    entity.no_action_rounds += 1
+                else:
+                    entity.no_action_rounds = 0
+                if entity.damage_dealt_this_round <= 0:
+                    entity.no_damage_rounds += 1
+                else:
+                    entity.no_damage_rounds = 0
+                if entity.no_action_rounds >= 5 or entity.no_damage_rounds >= 5:
+                    _why = ("连续五回合未出手" if entity.no_action_rounds >= 5
+                            else "连续五回合未能使敌对角色生命减少")
+                    entity.current_hp = 0
+                    entity.is_alive = False
+                    entity.no_action_rounds = 0
+                    entity.no_damage_rounds = 0
+                    effects.append({"type": "mediocrity", "entity": entity.name,
+                                    "note": f"{_why}，触发【凡庸】：凭空全身炸裂，[命零]"})
+                    if entity.entity_type == "怪物":
+                        self.state.consumables.append(
+                            Consumable(name="残骸", effect="局内使用恢复20生命并获得异变10",
+                                       current_uses=1, max_uses=1))
+                        effects.append({"type": "mediocrity_loot", "entity": entity.name,
+                                        "note": "轮回者获得消耗品【残骸】(1/1)"})
+
             # 血族血脉（初拥之夜遗物）：[回终]本回合若造成过伤害则回复等量，否则流血20
             if "血族血脉" in self.state.first_embrace_traits and entity is self.state.player:
                 if entity.damage_dealt_this_round > 0:
@@ -1434,6 +1463,9 @@ class CombatEngine:
                     results.append({"monster": m.name, "collapsed": an[3:],
                                     "note": f"支付异变后达{m.mutation_count}层，触发【崩解】直接命零，激活效果中断"})
                     continue
+                if an:
+                    # 道纹出手计入本回合出手数（供【凡庸】判定）
+                    m.actions_used_this_round += 1
                 if an in ("蒙蔽", "坏死", "减速", "僵化"):
                     self._apply_control_to_player(an, m, player)
                     results.append({"monster": m.name, "daowen_activated": an})
@@ -1443,6 +1475,8 @@ class CombatEngine:
             for _ in range(n):
                 if not player.is_alive:
                     break
+                # 每个攻击出手计入本回合出手数（供【凡庸】判定）
+                m.actions_used_this_round += 1
                 for _h in range(m.attack_count):
                     if not player.is_alive or not m.is_alive:
                         break

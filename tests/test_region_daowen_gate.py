@@ -55,11 +55,32 @@ def test_can_learn_same_region_after_owning_one():
         assert _learn(e, dw)["success"], f"同副本专属道纹{dw}应可学习"
 
 
-def test_transformed_monster_daowen_still_learnable():
-    """正常路径：怪物转化道纹不属于副本专属，仍可正常学习"""
+def test_transformed_monster_daowen_not_learnable_outside_battle():
+    """正常路径：怪物转化道纹须以自身已持有的道纹为起点经残韵获得，
+    不可通过局外【学习】直接习得（README 第211/248行）"""
     e = _engine("龙心谷")
     for dw in ("蒙蔽", "坠落", "弱化"):
-        assert _learn(e, dw)["success"], f"转化道纹{dw}应可学习"
+        r = _learn(e, dw)
+        assert not r["success"], f"转化道纹{dw}不应能被局外直接学习"
+        assert "怪物转化道纹" in r["error"]
+
+
+def test_original_monster_daowen_never_learnable():
+    """边界：原始怪物道纹人类无法承受并获得（README 第250行）"""
+    e = _engine("龙心谷")
+    for dw in ("必中", "狂暴", "自愈", "飞行"):
+        r = _learn(e, dw)
+        assert not r["success"], f"原始怪物道纹{dw}不应能被学习"
+        assert "原始怪物道纹" in r["error"]
+
+
+def test_rejected_monster_daowen_refunds_energy():
+    """边界：被拒绝的学习必须退还精力，不能白扣"""
+    e = _engine("龙心谷")
+    before = e.state.energy
+    r = _learn(e, "蒙蔽")
+    assert not r["success"]
+    assert e.state.energy == before, "学习被拒后精力应原样退还"
 
 
 # ---------- 边界条件 ----------
