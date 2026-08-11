@@ -1384,6 +1384,47 @@ class GameEngine:
                 if new_stacks > 0:
                     target.add_status(StatusEffect(name="无力", value=new_stacks, remaining_rounds=1, source="寒冰法力"))
 
+        # F2：赌命X/消灾X 的碎片类代价预检与支付（代价类型非"消耗"，不走法力制）
+        # 赌命X：消耗X假碎片
+        if name == "赌命":
+            fake_need = calc.get("fake_cost", x)
+            if actor is self.state.player:
+                have = self.state.fake_shards
+            else:
+                have = getattr(actor, "fake_shards", 0)
+            if have < fake_need:
+                return {"success": False, "error": f"假碎片不足：赌命X需{fake_need}假碎片，当前{have}"}
+            if actor is self.state.player:
+                self.state.fake_shards -= fake_need
+            else:
+                actor.fake_shards -= fake_need
+        # 消灾X：消耗50X假碎片/5X碎片（局外发动消耗×2）；优先假碎片
+        # 引擎战斗全程 phase="battle_start"（战始→回始/出手/回终期间不再改写），
+        # 局外=pre_battle，故以 phase=="battle_start" 作为"战斗中"标记。
+        elif name == "消灾":
+            in_combat = self.state.phase == "battle_start"
+            mult = 1 if in_combat else 2
+            fake_need = calc.get("fake_cost", 50 * x) * mult
+            real_need = calc.get("real_cost", 5 * x) * mult
+            if actor is self.state.player:
+                have_fake, have_real = self.state.fake_shards, self.state.shards
+            else:
+                have_fake, have_real = getattr(actor, "fake_shards", 0), actor.shards
+            if have_fake >= fake_need:
+                if actor is self.state.player:
+                    self.state.fake_shards -= fake_need
+                else:
+                    actor.fake_shards -= fake_need
+            elif have_real >= real_need:
+                if actor is self.state.player:
+                    self.state.lose_shards(real_need)
+                else:
+                    actor.lose_shards(real_need)
+            else:
+                return {"success": False,
+                        "error": f"碎片不足：消灾X需{fake_need}假碎片或{real_need}碎片（局外×{mult}），"
+                                 f"当前假{have_fake}/真{have_real}"}
+
         budget_error = self._consume_action_or_error(actor)
         if budget_error:
             return budget_error
@@ -1965,14 +2006,18 @@ class GameEngine:
                 roll = self.dice.auto_roll(f"monster_draw_{self.state.current_battle}_{i}", pool,
                                             context=f"出怪(第{self.state.current_battle}场,第{i + 1}只)")
                 monster_def = roll["selected"]
-                self.state.enemies.append(make_monster_entity(monster_def))
+                m = make_monster_entity(monster_def)
+                self.combat.init_monster_shards(m)  # 罪孽都市：[战始]自带碎片=专属道纹数值之和×2（洗劫/赎金/逼债的碎片来源）
+                self.state.enemies.append(m)
                 drawn_names.append(monster_def["name"])
 
         # 事件登记的"下一场额外出现的怪物"（如龙心谷"追求者·拿走口粮"）
         forced = list(self.state.forced_monsters_next_battle)
         self.state.forced_monsters_next_battle = []
         for fm in forced:
-            self.state.enemies.append(make_monster_entity(fm))
+            m = make_monster_entity(fm)
+            self.combat.init_monster_shards(m)
+            self.state.enemies.append(m)
             drawn_names.append(fm["name"] + "(额外出现)")
 
         relic_logs = self.combat.process_relics("battle_start")
@@ -2610,6 +2655,10 @@ class GameEngine:
             # 清除局内持续效果（含持续∞的增益/减益），[代价]类不清除
             _COST_STATUS = {"流血", "衰老", "异变", "崩解"}
             _p.status_effects = [s for s in _p.status_effects if s.name in _COST_STATUS]
+            # F2：逼债/清算挂账与抵扣封印均属局内效果，[战终]随持续状态一并清除，不得跨场残留
+            _p._bizhai = []
+            _p._qingsuan = []
+            self.state.sealed_relics = {}
             # 恢复速度到速限（闪避消耗的速度战终复原）
             self.state.player.current_speed = self.state.player.speed_limit
             # 体外心脏：临时翻倍的血限[战终]还原为基准值，当前生命同步封顶
