@@ -715,12 +715,13 @@ class GameEngine:
             if e.name == tname:
                 target = e; break
         h = target.heal(heal) if target else {"actual_heal":0}
-        return {
-            "success": True, "action": "休整",
-            "result": {"heal_amount": heal, "shard_cost": cost, "target": target.name if target else None,
-                       "actual_heal": h.get("actual_heal", 0), "hp_after": target.current_hp if target else 0,
-                       "shards_remaining": self.state.shards},
-        }
+        cancer = self.combat.check_cancer(target) if target else None
+        payload = {"heal_amount": heal, "shard_cost": cost, "target": target.name if target else None,
+                   "actual_heal": h.get("actual_heal", 0), "hp_after": target.current_hp if target else 0,
+                   "shards_remaining": self.state.shards}
+        if cancer:
+            payload["cancer"] = cancer
+        return {"success": True, "action": "休整", "result": payload}
     
     def _pre_battle_xiuxing(self, params: dict) -> dict:
         """修行：获得属性点并立即分配（to=speed/mana；血限只能开局获得）"""
@@ -1920,7 +1921,10 @@ class GameEngine:
         opt = next((o for o in ev["options"] if o["id"] == option_id), None)
         if opt is None:
             return {"success": False, "error": f"事件{name}无选项{option_id}"}
-        res = resolve_option_effect(opt["text"], self, event_name=name)
+        res = resolve_option_effect(opt["text"], self, event_name=name, params=params)
+        if res.get("error"):
+            return {"success": False, "error": res["error"],
+                    "pages": res.get("pages"), "instruction": res.get("instruction", "")}
         reject_kw = ("拒绝", "无事发生", "观棋", "无视", "离开", "目送", "绕桥", "让炉", "避开", "捂住", "转身")
         if any(k in opt["text"] for k in reject_kw) and any(r.name == "无所求" for r in self.state.relics):
             self.state.player.speed_limit += 1
@@ -1984,7 +1988,7 @@ class GameEngine:
         # 提取多路径胜利结果（已由 combat.round_end 结算）
         alt_paths = [e for e in result.get("effects", [])
                      if isinstance(e, dict) and e.get("type") in
-                     ("sculpture", "proliferation", "debt_bind")]
+                     ("sculpture", "proliferation", "cancer", "debt_bind")]
 
         # 检查怪物困境
         difficulties = []
@@ -2778,6 +2782,8 @@ class GameEngine:
         if self.state.last_death_cause:
             return self.state.last_death_cause
         player = self.state.player
+        if player is not None and getattr(player, "is_proliferated", False):
+            return "cancer"
         if player is not None and player.mutation_count >= Entity.MUTATION_COLLAPSE_THRESHOLD:
             return "collapse"
         if self.state.in_final_duel or action_type == "resolve_final_duel":

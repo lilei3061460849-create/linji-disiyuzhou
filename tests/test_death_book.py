@@ -201,19 +201,117 @@ def test_collapse_and_mediocrity_both_trigger_inheritance(tmp_path):
     assert end["interrupt"]["context"]["cause"] == "mediocrity"
 
 
-def test_echo_corridor_writes_and_clears_file(tmp_path):
-    """正常路径：回音长廊错误遗言写入文件，打碎镜子清除最后一页。"""
+def test_echo_corridor_writes_and_clears_chosen_page(tmp_path):
+    """正常路径：打碎镜子必须自选一页，清的是指定页不是最后一页。"""
     engine, book = _engine(tmp_path, "echo")
-    r1 = engine.execute_action("resolve_event", {"event": "回音长廊", "option_id": 1})
-    assert r1["success"] is True
-    assert any("错误遗言" in item or "安魂曲" in item for item in r1["result"]["applied"])
-    assert "回音长廊安魂曲" in book.read_text(encoding="utf-8")
-    assert engine.state.shards == 30  # 开局20 + 10
+    store = DeathBookStore(book)
+    store.append(CAUSE_DRAFTS["attack"])
+    store.append(CAUSE_DRAFTS["collapse"])
+    engine.state.death_book_legacies = store.load()
+    hp_before = engine.state.player.current_hp
 
-    r2 = engine.execute_action("resolve_event", {"event": "回音长廊", "option_id": 2})
+    r2 = engine.execute_action("resolve_event", {
+        "event": "回音长廊", "option_id": 2, "legacy_index": 1,
+    })
     assert r2["success"] is True
-    assert "当前没有遗言" in book.read_text(encoding="utf-8")
-    assert engine.state.death_book_legacies == []
+    remaining = store.load()
+    assert len(remaining) == 1
+    assert remaining[0]["trigger_point"] == CAUSE_DRAFTS["collapse"]["trigger_point"]
+    assert engine.state.player.current_hp == hp_before - 5
+
+
+def test_echo_corridor_clear_without_choice_is_rejected(tmp_path):
+    """错误输入：有遗言却不指定要清哪一页，必须拒绝且不流血、不改文件。"""
+    engine, book = _engine(tmp_path, "echo_err")
+    DeathBookStore(book).append(CAUSE_DRAFTS["attack"])
+    engine.state.death_book_legacies = DeathBookStore(book).load()
+    hp_before = engine.state.player.current_hp
+    text_before = book.read_text(encoding="utf-8")
+    r = engine.execute_action("resolve_event", {"event": "回音长廊", "option_id": 2})
+    assert r["success"] is False
+    assert "自选" in r["error"]
+    assert r.get("pages")
+    assert engine.state.player.current_hp == hp_before
+    assert book.read_text(encoding="utf-8") == text_before
+
+
+def test_echo_corridor_invalid_index_is_rejected(tmp_path):
+    """错误输入：越界页码拒绝。"""
+    engine, book = _engine(tmp_path, "echo_oob")
+    DeathBookStore(book).append(CAUSE_DRAFTS["attack"])
+    r = engine.execute_action("resolve_event", {
+        "event": "回音长廊", "option_id": 2, "legacy_index": 9,
+    })
+    assert r["success"] is False
+    assert "不存在" in r["error"]
+
+
+def test_echo_corridor_empty_book_bleeds_without_clearing(tmp_path):
+    """边界：书空时打碎镜子只流血5，文件仍是空遗言。"""
+    engine, book = _engine(tmp_path, "echo_empty")
+    hp_before = engine.state.player.current_hp
+    text_before = book.read_text(encoding="utf-8")
+    r = engine.execute_action("resolve_event", {
+        "event": "回音长廊", "option_id": 2, "legacy_index": 1,
+    })
+    assert r["success"] is True
+    assert "无遗言可清除" in r["result"]["applied"]
+    assert engine.state.player.current_hp == hp_before - 5
+    assert book.read_text(encoding="utf-8") == text_before
+    assert "当前没有遗言" in text_before
+
+
+def test_echo_corridor_clears_by_title(tmp_path):
+    """正常路径：也可用遗言标题自选要打碎的那一页。"""
+    engine, book = _engine(tmp_path, "echo_title")
+    store = DeathBookStore(book)
+    store.append({**CAUSE_DRAFTS["attack"], "title": "第一页"})
+    store.append({**CAUSE_DRAFTS["collapse"], "title": "第二页"})
+    engine.state.death_book_legacies = store.load()
+    r = engine.execute_action("resolve_event", {
+        "event": "回音长廊", "option_id": 2, "legacy_title": "第一页",
+    })
+    assert r["success"] is True
+    remaining = store.load()
+    assert len(remaining) == 1
+    assert remaining[0]["title"] == "第二页"
+
+
+def test_player_cancer_mingling_triggers_inheritance(tmp_path):
+    """正常路径：轮回者累计恢复达血限×2，癌变命零并触发死之传承。"""
+    engine, _ = _engine(tmp_path, "cancer")
+    p = engine.state.player
+    need = engine.combat.cancer_threshold_of(p)
+    p.total_healed = need
+    end = engine.execute_action("round_end", {})
+    assert not p.is_alive
+    assert p.is_proliferated
+    assert end.get("interrupt", {}).get("interrupt_type") == "死之传承"
+    assert end["interrupt"]["context"]["cause"] == "cancer"
+
+
+def test_player_cancer_boundary_just_below_threshold(tmp_path):
+    """边界：差 1 点不到阈值不癌变。"""
+    engine, _ = _engine(tmp_path, "cancer_edge")
+    p = engine.state.player
+    need = engine.combat.cancer_threshold_of(p)
+    p.total_healed = need - 1
+    engine.execute_action("round_end", {})
+    assert p.is_alive
+    assert not p.is_proliferated
+
+
+def test_ally_cancer_kills_ally_not_player(tmp_path):
+    """正常路径：朋友癌变只命零该朋友，不触发轮回者死之传承。"""
+    engine, _ = _engine(tmp_path, "cancer_ally")
+    friend = Entity(name="岩行者", entity_type="朋友", blood_limit=20, current_hp=20)
+    engine.state.friends.append(friend)
+    friend.heal(engine.combat.cancer_threshold_of(friend))
+    end = engine.execute_action("round_end", {})
+    assert not friend.is_alive
+    assert friend.is_proliferated
+    assert engine.state.player.is_alive
+    assert end.get("interrupt") is None
 
 
 def test_new_engine_reloads_file_as_source_of_truth(tmp_path):

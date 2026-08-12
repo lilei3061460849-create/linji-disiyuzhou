@@ -970,16 +970,42 @@ class CombatEngine:
     # ========== 多路径胜利系统 ==========
     # 所有阈值数值均为占位初值，需经测试调整（见 AI_EXPERIENCE.md）
 
-    PROLIFERATION_THRESHOLD = 1.0  # 癌变：累计受到恢复量达到血限的N倍（占位）
+    PROLIFERATION_THRESHOLD = 2.0  # 癌变：README「累计恢复量达血限×2」；超出血限的恢复按双倍计
     CANCER_THRESHOLD = PROLIFERATION_THRESHOLD  # 别名：增生旧名已统一为癌变，二者同阈值
     DEBT_THRESHOLD = 10           # 还债：怪物负债（碎片为负）达到N触发（占位）
     SCULPTURE_DAMAGE = 15         # 雕塑：每点耐久可造成的伤害
     SCULPTURE_SHIELD = 20         # 雕塑：每点耐久可获得的格挡
 
+    def cancer_threshold_of(self, entity: Entity) -> int:
+        """README：累计恢复量达到血限×2（过量按双倍已计入 total_healed）。"""
+        if entity.blood_limit <= 0:
+            return 0
+        return math.ceil(entity.blood_limit * self.PROLIFERATION_THRESHOLD)
+
+    def check_cancer(self, entity: Entity) -> Optional[dict]:
+        """任一角色恢复量达阈值即癌变。怪物仍吸收进书；轮回者/同伴直接命零。"""
+        if entity is None or not entity.is_alive or entity.is_proliferated:
+            return None
+        threshold = self.cancer_threshold_of(entity)
+        if threshold <= 0 or entity.total_healed < threshold:
+            return None
+        if entity.entity_type == "怪物":
+            return self._proliferate_monster(entity)
+        return self._cancer_character(entity)
+
+    def check_all_cancer(self) -> list[dict]:
+        results = []
+        for entity in list(self.state.get_all_player_side()) + list(self.state.get_all_enemy_side()):
+            hit = self.check_cancer(entity)
+            if hit:
+                results.append(hit)
+        return results
+
     def settle_victory_paths(self) -> list[dict]:
         """
         回终多路径胜利结算（依次检查：雕塑 / 癌变 / 还债）
-        所有路径都不视为击杀，不提供碎片收益
+        怪物雕塑/还债不视为击杀，不提供碎片收益。
+        癌变对任一角色生效。
         """
         results = []
         for monster in list(self.state.enemies):
@@ -993,9 +1019,9 @@ class CombatEngine:
                 continue
 
             # 2. 癌变：累计受到恢复量达阈值
-            threshold = math.ceil(monster.blood_limit * self.PROLIFERATION_THRESHOLD)
-            if monster.blood_limit > 0 and monster.total_healed >= threshold:
-                results.append(self._proliferate_monster(monster))
+            cancer = self.check_cancer(monster)
+            if cancer:
+                results.append(cancer)
                 continue
 
             # 3. 还债：负债达阈值（怪物shards为负）
@@ -1003,11 +1029,33 @@ class CombatEngine:
                 results.append(self._debt_bind_monster(monster))
                 continue
 
+        for ally in list(self.state.get_all_player_side()):
+            cancer = self.check_cancer(ally)
+            if cancer:
+                results.append(cancer)
         return results
 
     def _remove_from_combat(self, monster: Entity):
         """将怪物移出战斗（不视为击杀）"""
         monster.is_alive = False
+
+    def _cancer_character(self, entity: Entity) -> dict:
+        """轮回者/同伴癌变：累计恢复达血限×2 → 直接命零。不吸收进书、不加休整+8。"""
+        entity.is_proliferated = True
+        entity.is_cancer = True
+        entity.current_hp = 0
+        entity.is_alive = False
+        if entity is self.state.player:
+            self.state.last_death_cause = "cancer"
+        return {
+            "type": "cancer",
+            "type_alias": "proliferation",
+            "entity": entity.name,
+            "entity_type": entity.entity_type,
+            "absorbed_heal": entity.total_healed,
+            "threshold": self.cancer_threshold_of(entity),
+            "note": f"{entity.name}累计承受{entity.total_healed}点恢复，触发【癌变】：直接[命零]",
+        }
 
     def _sculpture_monster(self, monster: Entity) -> dict:
         """雕塑：攻击次数或攻击力归0→化为雕塑消耗品（耐久=血限5%）"""
@@ -1318,6 +1366,10 @@ class CombatEngine:
         if "heal_percent" in calc and not (target.has_status("坏死")):
             h = math.ceil(target.blood_limit * calc["heal_percent"] / 100)
             result["effects"].append({"type": "heal_pct", "target": target.name, **target.heal(h)})
+        if "target_heal" in calc or "heal_percent" in calc:
+            cancer = self.check_cancer(target)
+            if cancer:
+                result["effects"].append(cancer)
 
         # ---- 格挡/血限 ----
         if "target_shield" in calc:

@@ -48,6 +48,11 @@ CAUSE_DRAFTS: dict[str, dict[str, str]] = {
         "fork": "支付流血未留血",
         "cost_budget": "愿以碎片换血",
     },
+    "cancer": {
+        "trigger_point": "回复过量触发癌变",
+        "fork": "继续堆回复未停手",
+        "cost_budget": "愿以失忆换停手",
+    },
     "echo_error": {
         "trigger_point": "回音长廊安魂曲",
         "fork": "选择聆听而非打碎",
@@ -236,3 +241,25 @@ class DeathBookStore:
         removed = entries.pop()
         self.write_all(entries)
         return removed
+
+    def remove_at(self, index: int) -> Optional[dict[str, str]]:
+        """按 0-based 下标删除一页。越界返回 None，文件不变。"""
+        entries = self.load()
+        if index < 0 or index >= len(entries):
+            return None
+        removed = entries.pop(index)
+        self.write_all(entries)
+        return removed
+
+    def remove_by_title(self, title: str) -> Optional[dict[str, str]]:
+        """按标题删除第一页同名遗言。找不到返回 None，文件不变。"""
+        want = (title or "").strip()
+        if not want:
+            return None
+        entries = self.load()
+        for i, entry in enumerate(entries):
+            if (entry.get("title") or "").strip() == want:
+                removed = entries.pop(i)
+                self.write_all(entries)
+                return removed
+        return None

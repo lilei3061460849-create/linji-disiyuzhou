@@ -114,7 +114,7 @@ class EventPool:
             self.current = None
 
 
-def resolve_option_effect(text: str, engine, event_name: str = "") -> dict:
+def resolve_option_effect(text: str, engine, event_name: str = "", params=None) -> dict:
     """
     结算事件选项效果（关键字解释器）。
     自动扣除常见代价（流血/失去碎片/衰老/枯竭/失去精力）与应用常见收益（获碎片/血限/残韵/遗物/法术）。
@@ -166,13 +166,47 @@ def resolve_option_effect(text: str, engine, event_name: str = "") -> dict:
                 applied.append(f"写入错误遗言：{written['trigger_point']}")
             return {"applied": applied, "instructions": instructions}
         if "清除" in text and "遗言" in text:
+            params = params or {}
+            pages = store.load() if store is not None else []
+            if not pages:
+                if player:
+                    player.take_damage(5, "代价")
+                    applied.append("流血5")
+                applied.append("无遗言可清除")
+                return {"applied": applied, "instructions": instructions}
+            listed = [{"index": i + 1,
+                       "title": p.get("title") or f"遗言{i+1}",
+                       "trigger_point": p.get("trigger_point", ""),
+                       "fork": p.get("fork", ""),
+                       "cost_budget": p.get("cost_budget", "")}
+                      for i, p in enumerate(pages)]
+            idx = params.get("legacy_index")
+            title = params.get("legacy_title")
+            removed = None
+            if isinstance(idx, int) and not isinstance(idx, bool):
+                removed = store.remove_at(idx - 1)
+            elif isinstance(title, str) and title.strip():
+                removed = store.remove_by_title(title)
+            else:
+                return {
+                    "applied": [],
+                    "instructions": [],
+                    "error": "打碎镜子必须自选一页遗言（legacy_index 从1起，或 legacy_title）",
+                    "pages": listed,
+                    "instruction": "请重新调用 resolve_event，并带上要清除的那一页",
+                }
+            if removed is None:
+                return {
+                    "applied": [],
+                    "instructions": [],
+                    "error": "指定的遗言不存在",
+                    "pages": listed,
+                }
             if player:
                 player.take_damage(5, "代价")
                 applied.append("流血5")
-            if store is not None:
-                removed = store.remove_last()
-                engine.state.death_book_legacies = store.load()
-                applied.append("清除一条遗言" if removed else "无遗言可清除")
+            engine.state.death_book_legacies = store.load()
+            applied.append(f"清除遗言：{removed.get('title') or removed.get('trigger_point')}")
             return {"applied": applied, "instructions": instructions}
 
     def hurt(hp):
