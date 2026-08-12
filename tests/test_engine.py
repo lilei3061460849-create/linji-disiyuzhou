@@ -327,8 +327,9 @@ def test_full_flow():
     # 回始
     result = engine.execute_action("round_start", {})
     assert result["success"]
-    assert engine.state.player.current_mana == engine.state.player.mana_limit
-    print(f"  ✓ 回始：法力补满")
+    # 折速法印/鲜血契约会在[战始]把法力抬到法限之上；回始只补到法限，不得冲掉溢出。
+    assert engine.state.player.current_mana >= engine.state.player.mana_limit
+    print(f"  ✓ 回始：法力不低于法限（当前{engine.state.player.current_mana}/{engine.state.player.mana_limit}）")
     
     # 使用道纹
     monster = Entity(name="千手蜈蚣", entity_type="怪物", blood_limit=120, current_hp=120,

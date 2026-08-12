@@ -45,6 +45,8 @@ class CombatEngine:
         # 卖身契代价替身 / 三相残韵盘本场消耗的残韵
         self.cost_proxy = None
         self._sanxiang_consumed = ""
+        # 残韵改写：entity_id → {源道纹: 变化后道纹}，只改下一次发动结算，不改持有
+        self._resonance_rewrites: dict[int, dict[str, str]] = {}
     
     # ========== 伤害计算 ==========
     
@@ -574,15 +576,16 @@ class CombatEngine:
         relic_logs = self.process_relics("round_start")
         effects.extend({"type": "relic", "log": l} for l in relic_logs)
         
-        # 轮回者法力补满
+        # 轮回者法力补满至法限。已高于法限的（折速法印/鲜血契约在[战始]加上的首回合法力）不得冲掉。
         if self.state.player and self.state.player.is_alive:
             old_mana = self.state.player.current_mana
-            self.state.player.current_mana = self.state.player.mana_limit
+            filled = max(old_mana, self.state.player.mana_limit)
+            self.state.player.current_mana = filled
             effects.append({
                 "type": "mana_refill",
                 "entity": self.state.player.name,
                 "from": old_mana,
-                "to": self.state.player.mana_limit
+                "to": filled
             })
         
         # 结算回始效果
@@ -1786,6 +1789,19 @@ class CombatEngine:
         self._monster_evolved = set()  # 进化（原初X）：每场战斗限一次
         self.cost_proxy = None
         self._sanxiang_consumed = ""
+        self._resonance_rewrites = {}
+
+    def queue_resonance_rewrite(self, entity: Entity, source: str, dest: str) -> None:
+        """残韵作用于他人道纹：登记其下一次发动该源道纹时按 dest 结算。"""
+        bucket = self._resonance_rewrites.setdefault(id(entity), {})
+        bucket[source] = dest
+
+    def consume_resonance_rewrite(self, entity: Entity, source: str) -> Optional[str]:
+        bucket = self._resonance_rewrites.get(id(entity)) or {}
+        dest = bucket.pop(source, None)
+        if dest and not bucket:
+            self._resonance_rewrites.pop(id(entity), None)
+        return dest
 
     def _monster_sustain_billing(self, m: Entity, activated: set) -> Optional[str]:
         """
@@ -1811,6 +1827,13 @@ class CombatEngine:
         """
         if m.has_status("干扰"):
             return None
+        # 残韵改写优先兑现：只改本次结算，不付原道纹代价，不记入 activated
+        pending = self._resonance_rewrites.get(id(m)) or {}
+        for source in list(pending.keys()):
+            if source in m.dao_wen:
+                dest = self.consume_resonance_rewrite(m, source)
+                if dest:
+                    return self._resolve_rewritten_activation(m, source, dest)
         for g in self.MONSTER_ACTIVATE_PRIORITY:
             if g in m.dao_wen and g not in activated:
                 if g in self.ORIGINAL_MONSTER_DAOWEN:
@@ -1846,6 +1869,64 @@ class CombatEngine:
                     # 若 resolve 失败（如缺少目标），仍视为已激活但无效果
                     m.add_status(StatusEffect(name=g, remaining_rounds=calc.get("duration", -1) if 'calc' in locals() else -1, value=m.dao_wen[g].x_value, source=m.name))
                 return g
+        # 第三梯队：【原初X】借来的道纹（战终前视为持有，发动时照常支付自身代价；怪物不付法力）
+        return self._monster_activate_borrowed(m, activated)
+
+    # 原初借用里对自身生效的道纹；其余默认打向轮回者
+    BORROWED_SELF_TARGET = {
+        "庇护", "再生", "固执", "慈悲", "增殖", "透支", "贯穿", "超频",
+        "变形", "自食", "滑翔", "飞行", "自愈", "狂暴", "必中",
+    }
+
+    def _resolve_rewritten_activation(self, m: Entity, source: str, dest: str) -> str:
+        """残韵改写本次发动：按新道纹原版公式结算，不改持有，不付原道纹代价。"""
+        x = m.dao_wen[source].x_value if source in m.dao_wen else 1
+        target = m if dest in self.BORROWED_SELF_TARGET or dest == "自残" else self.state.player
+        if target is None:
+            target = m
+        try:
+            calc = DaoWenEngine.resolve(dest, x, target=target, caster=m)
+            if dest == "冲击":
+                player = self.state.player
+                if player is not None and player.is_alive:
+                    dmg = self._apply_hostile_damage(
+                        player, calc.get("aoe_damage", x) * self.is_monster_triple(dest, m))
+                    if dmg.get("actual_damage", 0) > 0:
+                        m.damage_dealt_this_round += dmg["actual_damage"]
+            else:
+                self.apply_daowen_effect(dest, calc, m, target)
+        except Exception:
+            return f"改写中断:{source}→{dest}"
+        return f"改写:{source}→{dest}"
+
+    def _monster_activate_borrowed(self, m: Entity, activated: set) -> Optional[str]:
+        """发动尚未激活的原初借用道纹，对轮回者打出真实效果。"""
+        player = self.state.player
+        if player is None or not player.is_alive:
+            return None
+        for name, inst in m.dao_wen.items():
+            if name in activated:
+                continue
+            tags = getattr(inst.dao_wen, "tags", None) or []
+            if "原初借用" not in tags:
+                continue
+            rewritten = self.consume_resonance_rewrite(m, name)
+            if rewritten:
+                return self._resolve_rewritten_activation(m, name, rewritten)
+            activated.add(name)
+            target = m if name in self.BORROWED_SELF_TARGET else player
+            try:
+                calc = DaoWenEngine.resolve(name, inst.x_value, target=target, caster=m)
+                if name == "冲击":
+                    # apply_daowen_effect 的 AOE 扫的是 state.enemies；怪物发动应对准轮回者一侧
+                    dmg = self._apply_hostile_damage(player, calc.get("aoe_damage", inst.x_value) * self.is_monster_triple(name, m))
+                    if dmg.get("actual_damage", 0) > 0:
+                        m.damage_dealt_this_round += dmg["actual_damage"]
+                else:
+                    self.apply_daowen_effect(name, calc, m, target)
+            except Exception:
+                return f"借用中断:{name}"
+            return f"借用:{name}"
         return None
 
     def _apply_exclusive_for_monster(self, name: str, calc: dict, caster: Entity):
@@ -1995,9 +2076,14 @@ class CombatEngine:
                 if an:
                     # 道纹出手计入本回合出手数（供【凡庸】判定）
                     m.actions_used_this_round += 1
-                if an in ("蒙蔽", "坏死", "减速", "僵化"):
-                    self._apply_control_to_player(an, m, player)
-                    results.append({"monster": m.name, "daowen_activated": an})
+                    if an in ("蒙蔽", "坏死", "减速", "僵化"):
+                        self._apply_control_to_player(an, m, player)
+                    entry = {"monster": m.name, "daowen_activated": an}
+                    if isinstance(an, str) and an.startswith("改写:"):
+                        entry["resonance_rewrite"] = True
+                    elif isinstance(an, str) and an.startswith("借用:"):
+                        entry["borrowed"] = True
+                    results.append(entry)
             # 攻击出手
             n = self._monster_attack_actions(m, act)
             for _ in range(n):

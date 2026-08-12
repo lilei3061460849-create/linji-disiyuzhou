@@ -1475,50 +1475,90 @@ class GameEngine:
         """发动道纹：法力检查后委托combat.apply_daowen_effect"""
         return self.combat.apply_daowen_effect(name, calc, caster, target, dragon_heart_use)
 
+    def _find_resonance_holder(self, source: str, target_name: str):
+        """定位残韵作用的道纹持有者。规则1：找不到持有者则未生效。
+
+        优先级：轮回者自己 → 显式 target → 场上唯一持有该道纹的非轮回者。
+        """
+        player = self.state.player
+        if source in player.dao_wen:
+            return player, None
+        everyone = self.state.get_all_player_side() + self.state.get_all_enemy_side()
+        if target_name:
+            target = next((e for e in everyone if e.name == target_name), None)
+            if target is None:
+                return None, f"找不到目标: {target_name}"
+            if source not in target.dao_wen:
+                return None, f"{target.name}未持有道纹: {source}"
+            return target, None
+        holders = [e for e in everyone if e is not player and source in e.dao_wen]
+        if len(holders) == 1:
+            return holders[0], None
+        if not holders:
+            return None, f"场上无人持有道纹: {source}"
+        return None, f"多名角色持有{source}，请指定target"
+
+    def _grant_transformed_daowen(self, player: Entity, dest: str) -> bool:
+        """残韵获得变化后道纹。规则4：X不从原道纹拷贝；规则6：同名不重复。"""
+        if dest in player.dao_wen:
+            return False
+        player.dao_wen[dest] = DaoWenInstance(DaoWen(
+            name=dest, formula=f"{dest}X", cost_type="消耗",
+            cost_formula="X", effect_formula=""))
+        return True
+
     def _action_use_resonance(self, params: dict) -> dict:
         """使用残韵"""
         source = params.get("source_daowen", "")
         rtype = params.get("resonance_type", "")
-        
+
         # 检查玩家是否拥有该类型残韵
         if rtype not in self.state.resonance or self.state.resonance[rtype] <= 0:
             return {"success": False, "error": f"没有可用的{rtype}残韵（当前：{self.state.resonance}）"}
-        
-        # 检查源道纹是否存在于当前持有者身上
+
         player = self.state.player
         if not player:
             return {"success": False, "error": "没有玩家"}
-        
-        caster_has = source in player.dao_wen
-        
+
+        holder, holder_err = self._find_resonance_holder(source, params.get("target", "") or "")
+        if holder_err:
+            return {"success": False, "error": holder_err}
+
+        caster_has = holder is player
+
         result = ResonanceEngine.apply_resonance(
-            source, rtype, 
+            source, rtype,
             caster_has_daowen=caster_has,
             target_has_daowen=True,
             resonance_stock=self.state.resonance  # 传入残韵库存用于校验
         )
-        
+
         if not result["success"]:
             return {"success": False, "error": result["error"]}
-        
-        # 消耗残韵
+
+        # 路径与持有者均已确认，此时才消耗（规则1：未生效不消耗）
         self.state.resonance[rtype] -= 1
-        
-        # 如果是轮回者拥有的道纹，永久变化
+
+        dest = result["target"]
+        granted = False
+        # 如果是轮回者拥有的道纹，永久变化（规则3）
         if caster_has and result.get("permanent_change"):
-            target_name = result["target"]
             old_dw = player.dao_wen[source]
-            # 创建新道纹实例
             new_dw = DaoWen(
-                name=target_name,
-                formula=f"{target_name}X",
+                name=dest,
+                formula=f"{dest}X",
                 cost_type=old_dw.dao_wen.cost_type,
                 cost_formula=old_dw.dao_wen.cost_formula,
                 effect_formula=old_dw.dao_wen.effect_formula
             )
-            player.dao_wen[target_name] = DaoWenInstance(dao_wen=new_dw)
-            del player.dao_wen[source]
-        
+            player.dao_wen[dest] = DaoWenInstance(dao_wen=new_dw)
+            if dest != source:
+                del player.dao_wen[source]
+        else:
+            # 规则2：不改持有，只改下一次发动结算；施法者获得变化后道纹
+            self.combat.queue_resonance_rewrite(holder, source, dest)
+            granted = self._grant_transformed_daowen(player, dest)
+
         second = params.get("second_target", "")
         second_source_daowen = params.get("second_source_daowen", "")
         second_log = None
@@ -1539,9 +1579,8 @@ class GameEngine:
                     if r2.get("success") and r2.get("caster_gets_daowen"):
                         new_name = r2["target"]
                         # 残韵作用于非轮回者拥有的道纹时：不改变其拥有的道纹，施法者永久获得变化后的道纹
-                        if new_name not in player.dao_wen:
-                            player.dao_wen[new_name] = DaoWenInstance(DaoWen(
-                                name=new_name, formula="", cost_type="消耗", cost_formula="X", effect_formula=""))
+                        self.combat.queue_resonance_rewrite(second_entity, second_source_daowen, new_name)
+                        if self._grant_transformed_daowen(player, new_name):
                             second_log = f"同魂笔：{second}的{second_source_daowen}受{rtype}影响，施法者永久获得{new_name}"
                         else:
                             second_log = f"同魂笔：施法者已持有{new_name}，不重复获得"
@@ -1551,6 +1590,9 @@ class GameEngine:
             "success": True,
             "action": f"残韵【{rtype}】{source} → {result['target']}",
             "result": result,
+            "holder": holder.name,
+            "holder_is_player": caster_has,
+            "granted_daowen": dest if granted else None,
             "second_target_log": second_log,
             "resonance_remaining": self.state.resonance
         }
@@ -1771,7 +1813,22 @@ class GameEngine:
         #  其余效果维持既有约定——按描述由DM/AI结算，使用不消耗出手）
         remaining = item.use()
         mutation_info = None
-        mut_match = re.search(r"获得异变(\d+)", item.effect or "")
+        heal_info = None
+        cancer_info = None
+        effect = item.effect or ""
+        if self.state.player:
+            heal_match = (re.search(r"恢复(\d+)生命", effect)
+                          or re.search(r"\[回复\]\s*(\d+)", effect)
+                          or re.search(r"回复(\d+)", effect))
+            if heal_match:
+                amount = int(heal_match.group(1))
+                heal_info = self.state.player.heal(amount)
+                cancer = self.combat.check_cancer(self.state.player)
+                if cancer:
+                    cancer_info = cancer
+                    if not self.state.player.is_alive and not self.state.last_death_cause:
+                        self.state.last_death_cause = "cancer"
+        mut_match = re.search(r"获得异变(\d+)", effect)
         if mut_match and self.state.player:
             layers = int(mut_match.group(1))
             mut = self.state.player.add_mutation(layers)
@@ -1792,6 +1849,8 @@ class GameEngine:
                 "effect": item.effect,
                 "uses_remaining": remaining,
                 "is_depleted": item.is_depleted,
+                "heal": heal_info,
+                "cancer": cancer_info,
                 "mutation": mutation_info,
                 "note": "消耗品效果按其描述结算，使用不消耗出手",
             },
