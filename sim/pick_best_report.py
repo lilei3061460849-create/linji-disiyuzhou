@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
 """
-战报选取器：按既定标准从多次轮回中挑出唯一一份写入战报。
+批量平衡工具：按既定标准从多次轮回中挑出一份写入指定文件。
 
-选取标准（用户裁定）
+正式 `战报.md` 只保留最新一次手操轮回，本脚本默认不得覆盖它。
+用户说「测试」时走 GameEngine 手操，不跑本脚本。
+
+选取标准（平衡批次内部）
 --------------------
 1. 以**进入【最终的冠冕】前的当前血量**为唯一标准，剩余血量最高者胜出。
 2. 未能走到第7场（中途阵亡）的轮回不参与评选。
-3. 凡受 bug 影响的对局一律视为**无效数据**作废，不得作为平衡标准，
-   也不得写入战报。判定方式：对局过程中引擎抛出异常、
-   或任一行动返回未预期的失败即标记为 invalid。
+3. 凡受 bug 影响的对局一律视为**无效数据**作废，不得作为平衡标准。
+   判定方式：对局过程中引擎抛出异常、或任一行动返回未预期的失败即标记为 invalid。
 
 用法：
     python3 sim/pick_best_report.py --candidates 40
-    python3 sim/pick_best_report.py --candidates 40 --out 战报.md
+    python3 sim/pick_best_report.py --candidates 40 --out data/batch_report.md
 """
 import argparse
 import importlib.util

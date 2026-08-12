@@ -195,6 +195,9 @@ python main.py
 # API演示
 python main.py --api
 
-# 运行测试
+# 回归锁（不是对局本身）
 python tests/test_engine.py
+python -m pytest tests -q
 ```
+
+用户说「测试」时，默认由 AI 通过 `GameEngine.execute_action` 逐步点选手操并按 README《六、战斗推演格式》写战报。禁止把 `TacticalAI`、`sim/pick_best_report.py`、`test_with_ai.py`、sim 批量通关当作默认测试。`pytest` 只锁定回归。`战报.md` 只保留最新一次轮回记录。

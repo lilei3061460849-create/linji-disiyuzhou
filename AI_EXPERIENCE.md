@@ -85,10 +85,9 @@
   ④怪物回合(run_monster_phase自主驱动) ⑤法术系统(9法术自动触发) ⑥飞行免选中+裂变分次
   ⑦活血钩子 ⑧事件系统(解析28事件/探索触发/选项结算) ⑨员工叛变检查+死之传承 ⑩5遗物补全。
 新增api动作: monster_phase(怪物回合)、resolve_event(事件结算)。
-战报: 战报.md 由 sim/pick_best_report.py 生成。选取标准：跑多次轮回，
-剔除受bug影响的无效局，取"进入【最终的冠冕】前剩余生命最高"的那一次写入。
+战报: `战报.md` 只保留最新一次轮回记录。用户说「测试」时，默认 AI 通过 GameEngine 逐步点选手操写入，不得用 `sim/pick_best_report.py` / TacticalAI / `test_with_ai.py` / sim 批量通关覆盖。`pick_best_report.py` 仍是平衡工具，默认写到 `data/batch_report.md`，不碰正式战报。
 格式严格遵循 README《六、战斗推演格式》逐次出手书写。
-（旧的 战报.md 与 sim/engine_trace.py 因输出汇总行、违反"禁止概括、跳过或合并结算"已删除。）
+（旧的评选稿战报与 sim/engine_trace.py 因输出汇总行、违反"禁止概括、跳过或合并结算"已删除。）
 剩余收尾: 撤退/最终冠冕死斗(第8场)/初拥之夜/逆鳞嫁祸背负/消耗品具体效果。
 
 ## 多次测试通关率（run_sim, 300局/副本, 激进修行）

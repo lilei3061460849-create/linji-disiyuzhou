@@ -173,6 +173,43 @@ def test_no_zhesu_means_no_bonus_mana():
     assert p.current_speed == 8
 
 
+def test_shouyedeng_bonus_survives_round_start_after_refill():
+    """正常路径：守夜灯在回始补满之后再加法限50%，不得被冲回法限。"""
+    engine = _engine("lamp_happy")
+    p = engine.state.player
+    engine.state.relics.append(Relic(name="守夜灯", effect="[敌回始]获得等同于[法限]50%的法力"))
+    engine.execute_action("battle_start", {})
+    engine.execute_action("round_start", {})
+    assert p.current_mana == 21, f"回始应先补到14再+7，实{p.current_mana}"
+    engine.execute_action("round_end", {})
+    assert p.current_mana == 0
+    engine.execute_action("round_start", {})
+    assert p.current_mana == 21, f"回终清空后再回始，守夜灯仍应叠到21，实{p.current_mana}"
+
+
+def test_shouyedeng_stacks_on_zhesu_overflow():
+    """边界：折速溢出先被回始保留，守夜灯再叠在溢出之上。"""
+    engine = _engine("lamp_bound")
+    p = engine.state.player
+    engine.state.relics.append(Relic(name="折速法印", effect="[战始]可疲惫X获得6X法力"))
+    engine.state.relics.append(Relic(name="守夜灯", effect="[敌回始]获得等同于[法限]50%的法力"))
+    engine.execute_action("battle_start", {})
+    assert p.current_mana == 38
+    engine.execute_action("round_start", {})
+    assert p.current_mana == 45, f"38+7应45，实{p.current_mana}"
+
+
+def test_no_shouyedeng_means_no_round_start_bonus():
+    """错误输入/对照：未持有守夜灯时回始只补到法限，回终仍清空。"""
+    engine = _engine("lamp_invalid")
+    p = engine.state.player
+    engine.execute_action("battle_start", {})
+    engine.execute_action("round_start", {})
+    assert p.current_mana == 14
+    engine.execute_action("round_end", {})
+    assert p.current_mana == 0
+
+
 # ========================================================================
 # 3. 原初X 借用的杀伐必须在怪物回合发动
 # ========================================================================

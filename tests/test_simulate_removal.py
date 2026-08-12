@@ -45,7 +45,7 @@ def test_error_old_reference_not_in_code():
         # 检查是否仍有对 simulate.py 的硬编码引用（import 或路径）
         if "simulate.py" in text and "test_simulate_removal" not in text:
             hits.append(f"{p}:{text.count('simulate.py')}")
-    # 允许 data/battle.md 等历史产物中提及，但 py 代码不应再有
+    # 允许历史产物中提及，但 py 代码不应再有
     assert hits == [], f"仍有代码引用 simulate.py：{hits}"
 
 def test_static_no_simulate_in_tests():

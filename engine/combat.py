@@ -572,11 +572,8 @@ class CombatEngine:
             e.blood_oath_used_this_round = False
             e.mana_inflicted_this_round = 0
             e.damage_dealt_this_round = 0
-        # 遗物：回始触发
-        relic_logs = self.process_relics("round_start")
-        effects.extend({"type": "relic", "log": l} for l in relic_logs)
-        
         # 轮回者法力补满至法限。已高于法限的（折速法印/鲜血契约在[战始]加上的首回合法力）不得冲掉。
+        # 必须先补满，再结算回始遗物：守夜灯在[回始]加的法限50%不得被补满冲回法限。
         if self.state.player and self.state.player.is_alive:
             old_mana = self.state.player.current_mana
             filled = max(old_mana, self.state.player.mana_limit)
@@ -587,6 +584,10 @@ class CombatEngine:
                 "from": old_mana,
                 "to": filled
             })
+
+        # 遗物：回始触发（回锋刀造伤、守夜灯加法力）。守夜灯加在补满之后，才能叠在法限之上。
+        relic_logs = self.process_relics("round_start")
+        effects.extend({"type": "relic", "log": l} for l in relic_logs)
         
         # 结算回始效果
         for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
