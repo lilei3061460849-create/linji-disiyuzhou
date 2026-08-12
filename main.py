@@ -281,7 +281,6 @@ def sync_demo():
     print("=" * 60)
     
     sync = RuleSync(
-        rule_files=["README.md"],
         db_path="data/demo_sync.db",
         rules_dir="."
     )
@@ -301,15 +300,15 @@ def sync_demo():
         print(f"    • {d['name']}: {d['description'][:40]}...")
     
     # 提取怪物
-    print("\n[3] 从README提取怪物定义：")
-    monsters = sync.extract_monsters_from_file("README.md")
+    print("\n[3] 从副本索引及已实现副本文档提取怪物定义：")
+    monsters = sync.extract_monsters_from_dungeon_index("副本索引.md")
     print(f"  提取到 {len(monsters)} 个怪物")
     for m in monsters[:3]:
         print(f"    • {m['name']}: {m['attack_count']}×{m['attack_power']}/{m['blood_limit']}")
     
     # 差异检测
     print("\n[4] 道纹差异检测：")
-    diff = sync.diff_daowen("README.md")
+    diff = sync.diff_project_daowen()
     print(f"  文件中存在：{len(diff['in_file_only'])}个（引擎未注册）")
     print(f"  引擎中存在：{len(diff['in_engine_only'])}个（文件未定义）")
     print(f"  双方同步：{len(diff['in_both'])}个")
@@ -319,7 +318,7 @@ def sync_demo():
     
     # 修改建议
     print("\n[5] 修改建议：")
-    suggestions = sync.generate_patch_suggestions("README.md")
+    suggestions = sync.generate_project_patch_suggestions()
     for s in suggestions[:3]:
         print(f"  • [{s['type']}] {s['suggestion'][:60]}...")
     
@@ -337,7 +336,6 @@ def full_demo():
     engine = GameEngine(db_path="data/demo_rulings.db")
     validator = RuleValidator(db_path="data/demo_violations.db")
     sync = RuleSync(
-        rule_files=["README.md"],
         db_path="data/demo_sync.db",
         rules_dir="."
     )
@@ -501,7 +499,7 @@ def interactive_mode():
                         print(f"  [{e['rule_name']}] {e['exception_key']}: {e['description']}")
             
             elif cmd == "sync":
-                sync = RuleSync(rule_files=["README.md"], db_path="data/rule_sync.db")
+                sync = RuleSync(db_path="data/rule_sync.db")
                 report = sync.generate_sync_report()
                 print(f"变更: {len(report['changes_detected'])}个")
                 diff = report['daowen_diffs'].get('README.md', {})

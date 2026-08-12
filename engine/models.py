@@ -529,8 +529,10 @@ class GameState:
     artifacts: list[dict] = field(default_factory=list)
     
     # 死者之书
-    death_book_wisdom: list[str] = field(default_factory=list)  # 遗言
-    death_book_capacity: int = 20  # 遗言字数上限
+    # 系统记录（如癌变强化）与玩家遗言分开保存，避免结构化遗言退化为日志字符串。
+    death_book_wisdom: list[str] = field(default_factory=list)
+    death_book_legacies: list[dict[str, str]] = field(default_factory=list)
+    death_book_capacity: int = 20  # 遗言每段字数上限
     
     # 封存候选人（最终的冠冕）
     sealed_candidate: Optional[dict] = None
@@ -664,6 +666,7 @@ class GameState:
             "dragon_hearts": [d.to_dict() for d in self.dragon_hearts],
             "artifacts": self.artifacts,
             "death_book_wisdom": self.death_book_wisdom,
+            "death_book_legacies": self.death_book_legacies,
             "sealed_candidate": self.sealed_candidate,
         }
     

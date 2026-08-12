@@ -3,7 +3,7 @@ F7 验证：文档一致性（全程自动触发 + 命名漂移 + engine/README 
 - 正常：README 五章列表与特殊事件节 13 项对齐，含凡庸/癌变/崩解
 - 边界：活跃代码层（engine/*.py, sim/*.py, tests/*.py）不再出现中文“增生”，仅允许在废弃别名注释中出现
 - 错误：对旧名“增生”的显式调用应被拒绝或不存在
-- 引擎README：文件结构已补全至 15 项且含 F7 订正注记
+- 引擎README：文件结构已补全至当前19项且含F7订正注记
 """
 import pathlib
 import re
@@ -73,10 +73,10 @@ def test_error_old_name_rejected():
     assert "增殖" in DaoWenEngine._registry
 
 def test_engine_readme_completeness():
-    """engine/README 已全面复审：文件结构 15 项 + F7 订正注记"""
+    """engine/README 已全面复审：文件结构当前19项 + F7订正注记。"""
     text = pathlib.Path("engine/README.md").read_text(encoding="utf-8")
     # 文件结构应包含新增的 8 个缺漏文件
-    for fname in ["gamedata.py", "events.py", "battle_flow.py", "battle_report.py", "ai_player.py", "ai_tactics.py", "rule_sync.py", "validator.py"]:
+    for fname in ["gamedata.py", "events.py", "battle_flow.py", "battle_report.py", "ai_player.py", "ai_tactics.py", "rule_sync.py", "dungeons.py", "document_validation.py", "validator.py"]:
         assert fname in text, f"engine/README 文件结构应包含 {fname}"
     # F7 订正注记
     assert "F7 订正" in text or "增生" in text or "癌变" in text

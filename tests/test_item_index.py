@@ -84,17 +84,20 @@ def test_no_duplicate_headings_in_index():
     assert not dupes, f"索引存在重复条目：{dupes}"
 
 
-def test_effect_text_not_duplicated_in_readme():
-    """边界：被收录物品的完整效果文本不应再重复出现在 README 事件处"""
-    readme = read(README)
-    # 抽样若干条：这些效果文本应只存在于索引，不再出现在 README
+def test_effect_text_not_duplicated_outside_item_index():
+    """边界：正式与草案副本都只能链接物品，不得重复完整效果。"""
+    documents = [README] + [os.path.join(DUNGEON_DIR, name) for name in os.listdir(DUNGEON_DIR)
+                            if name.endswith(".md")]
+    external_text = "\n".join(read(document) for document in documents)
     moved = [
         "消耗品（耐久2）：对[目标]打出15点忽略【格挡】与【闪避】的伤害",
         "每场[战始]可选择是否流血10；若选择，则[战终][血限]+2",
-        "[回始]，可消耗 X 点[碎片]，获得 2X 点格挡",
+        "每场战斗前三回合开始[回始]，所有敌方[目标]受到12点伤害",
+        "声明判定错误时，可以将其改判为正确，每场一次",
+        "[战始]，可选择水府中的X份鲛绡",
     ]
-    still = [m for m in moved if m in readme]
-    assert not still, f"README 仍重复抄写了索引中的效果文本：{still}"
+    still = [effect for effect in moved if effect in external_text]
+    assert not still, f"正文仍重复抄写了物品索引效果：{still}"
 
 
 # ---------- 错误输入 / 非法配置 ----------
@@ -107,7 +110,7 @@ def test_trait_word_fully_removed_repo_wide():
     banned = "\u7279\u6027"  # 旧术语
     offenders = []
     for dirpath, dirnames, filenames in os.walk(ROOT):
-        dirnames[:] = [d for d in dirnames if d not in {".git", "__pycache__", ".pytest_cache"}]
+        dirnames[:] = [d for d in dirnames if d not in {".git", ".venv", "__pycache__", ".pytest_cache"}]
         for fn in filenames:
             if not fn.endswith((".md", ".py")):
                 continue

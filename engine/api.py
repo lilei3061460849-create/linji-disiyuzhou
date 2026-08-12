@@ -95,8 +95,8 @@ class GameEngine:
     def rule_sync(self):
         return self._rule_sync
     
-    def enable_rule_sync(self, rule_files: list[str], rules_dir: str = "."):
-        """启用规则文件同步"""
+    def enable_rule_sync(self, rule_files: list[str] | None = None, rules_dir: str = "."):
+        """启用规则同步；默认跟踪全部正文事实源。"""
         from .rule_sync import RuleSync
         self._rule_sync = RuleSync(rule_files=rule_files, rules_dir=rules_dir)
     
@@ -2110,6 +2110,7 @@ class GameEngine:
             "resonance": dict(s.resonance),
             "shards": s.shards,
             "death_book_wisdom": list(s.death_book_wisdom),
+            "death_book_legacies": [dict(entry) for entry in s.death_book_legacies],
             "attribute_points": s.attribute_points,
             "current_region": s.current_region,
             "artifacts_owned": list(s.artifacts_owned),
@@ -2197,14 +2198,14 @@ class GameEngine:
         死斗结算：
         胜利=先领取本次所属副本的终音法器(见choose_terminal_artifact)，再(连同队伍)被完整封存，
         成为下一位挑战者的候选人(二阶以上副本未实现，以封存代替"进入下一阶副本")；
-        失败=当前挑战者战败，触发死之传承，本次轮回结束，需重新开始新的轮回者。
+        失败=当前挑战者战败，提交三段式death_book_entry并触发死之传承，本次轮回结束。
         """
         if not self.state.in_final_duel:
             return {"success": False, "error": "当前没有进行中的最终死斗"}
         outcome = params.get("outcome", "")
         if outcome not in ("victory", "defeat"):
             return {"success": False, "error": "outcome必须是 victory 或 defeat"}
-        wisdom = params.get("death_book_wisdom", "")
+        legacy = params.get("death_book_entry")
 
         if outcome == "victory":
             self.state.in_final_duel = False
@@ -2224,11 +2225,12 @@ class GameEngine:
                     "instruction": "请调用 choose_terminal_artifact(choice=序号) 领取终音法器后才会完整封存",
                 }}
         else:
-            legacy = wisdom[:20] if wisdom else ""
+            legacy_result = self.combat.trigger_death_legacy(legacy)
+            recorded_legacy = legacy_result["legacy"]
             self.state = GameState()
             self.combat.state = self.state
             return {"success": True, "action": "死斗结算",
-                    "result": {"outcome": "defeat", "death_book_wisdom": legacy,
+                    "result": {"outcome": "defeat", "death_book_entry": recorded_legacy,
                                "instruction": "败者失去轮回者身份，触发死之传承；请调用 setup_attributes 开始新的轮回者"}}
 
     def _finalize_victory_seal(self) -> dict:

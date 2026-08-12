@@ -20,6 +20,15 @@ AI（决策者）──→ GameEngine API ──→ 计算/随机数
 3. **先例数据库** — DM裁定存入SQLite，下次类似场景自动匹配
 4. **自由控X** — 道纹的X值由AI在合法范围内自由指定
 
+## 正文事实源
+
+- `README.md`：通用规则与通用道纹。
+- `死者之书.md`：可学法术与三段式遗言格式。
+- `物品索引.md`：遗物、消耗品与法器。
+- `副本索引.md`：副本清单；其链接的已实现副本文档进入运行时，未实现草案只参与文档校验。
+
+`RuleSync()`默认同时跟踪以上四份正文；不得再从README推断已经迁出的物品或副本怪物。
+
 ## 文件结构
 
 ```
@@ -29,19 +38,21 @@ engine/
 ├── enums.py             # 枚举/常量（阶段、触发时点、代价类型等）
 ├── models.py            # 数据模型（Entity, Spell, Relic, GameState；Entity.is_proliferated = 癌变旧名增生 的兼容字段，is_cancer 为别名）
 ├── dice.py              # 随机数引擎（池系统，auto_roll 默认引擎自生成并结算，可传 seed 复现）
+├── dungeons.py          # 副本清单解析（已实现/未实现状态）与运行时草案隔离
 ├── monsters.py          # 怪物池解析（从副本索引加载36怪物面板）与出怪（战始抽怪）公式
 ├── gamedata.py          # 静态数据（怪物池/遗物池/事件池常量，MONSTER_POOLS 等）
 ├── events.py            # 事件池（parse_events、EventPool，通用 10 + 三副本专属）
-├── daowen.py            # 道纹系统（含全部 63 道纹 calculate_* 与 ResonanceEngine；增殖为道纹，癌变为机制，二者无关）
+├── daowen.py            # 道纹系统（含当前全部 64 道纹 calculate_* 与 ResonanceEngine；增殖为道纹，癌变为机制，二者无关）
 ├── combat.py            # 战斗计算引擎（伤害/回合/闪避/多路径 癌变/雕塑/还债，PROLIFERATION_THRESHOLD 为癌变阈值，CANCER_THRESHOLD 别名）
 ├── battle_flow.py       # 战斗流程（battle_start 出怪、round_start/round_end、怪物道纹×3 判定）
 ├── battle_report.py     # 战报渲染（推演格式逐回合输出）
 ├── ai_player.py         # AI 玩家封装（TacticalAI 等）
 ├── ai_tactics.py        # AI 战术表（TACTICAL_ROLES、各类道纹优先级）
 ├── dm_rulings.py        # DM 裁定库（SQLite + FTS，先例匹配）
-├── rule_sync.py         # 规则同步（从 README 正则提取遗物/事件/怪物，校验一致性）
+├── rule_sync.py         # 多事实源同步（README/死者之书/物品索引/副本索引）
+├── document_validation.py # Markdown标题、文件链接与锚点校验
 ├── validator.py         # 规则校验器（22 条内置检查，违规入库）
-└── api.py               # GameEngine 主类 — AI 唯一交互入口（含 TWISTED_TOOL_LIBRARY、TERMANAL_ARTIFACTS、FIRST_EMBRACE_OPTIONS 等）
+└── api.py               # GameEngine 主类 — AI 唯一交互入口（含 TWISTED_TOOL_LIBRARY、TERMINAL_ARTIFACTS、FIRST_EMBRACE_OPTIONS 等）
 ```
 
 > **2026-08-11 F7 订正**：五章「全程自动触发」已与「特殊事件（全局触发）」13 项对齐（补 凡庸/癌变/崩解/还债/雕塑）；「增生」全量更名为「癌变」（旧名 增生 保留为兼容字段 `is_proliferated`/`PROLIFERATION_THRESHOLD`/`proliferation`），「增殖」为独立道纹（血限+2X）二者无关。
@@ -136,14 +147,14 @@ engine = GameEngine(rng_seed=12345)
 | `use_resonance` | 使用残韵 |
 | `attack` | 普通攻击（attacker可指定为已部署[朋友]/[员工]，目标自动限定为对方阵营） |
 | `deploy_employee` | 派遣[员工]出战(出战支援，消耗1出手) |
-| `dismiss_employee` | 解雇[员工](自由行动，无代价) |
+| `dismiss_employee` | 解雇[员工]（自由行动，无代价） |
 | `pay_employee_wage` | 战终对某[员工]的工资做出pay/refuse决策 |
 | `choose_hired_daowen` | 雇佣diy后，从3个发现的转化道纹候选中选择1个 |
 | `suppress_rebellion` | 员工叛变·镇压：叛变员工搬入state.enemies开战 |
 | `resolve_rebellion_battle` | 镇压结算(outcome=victory/defeat) |
 | `appease_rebellion` | 员工叛变·让利：全局工资+5，平息叛乱 |
 | `negotiate_rebellion` | 员工叛变·急中生智谈判：抛Interrupt交DM裁定 |
-| `resolve_final_duel` | 最终的冠冕·第8场死斗结算(outcome=victory/defeat)，[战终]第7场自动触发死斗本身 |
+| `resolve_final_duel` | 第8场死斗结算；失败时提交`death_book_entry={trigger_point,fork,cost_budget}`，三段均必填且各≤20字 |
 | `choose_terminal_artifact` | 死斗胜利后按副本领取终音法器(choice=序号) |
 | `choose_first_embrace` | 初拥之夜9选1(choice=1~9，1~8限选1次，9可重复) |
 | `use_black_card` | 黑金名片(罪孽都市终音)：敌方血限减半，等量碎片(允许负债≤50) |
