@@ -56,7 +56,7 @@ def main():
     # 初始化
     engine = GameEngine(db_path="data/game_rulings.db")
     validator = RuleValidator(db_path="data/game_violations.db")
-    sync = RuleSync(rule_files=["README.md"], db_path="data/game_sync.db")
+    sync = RuleSync(db_path="data/game_sync.db")
     
     # 找AI后端
     if provider:

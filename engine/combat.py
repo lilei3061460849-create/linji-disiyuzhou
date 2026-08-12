@@ -1601,13 +1601,31 @@ class CombatEngine:
                     "options": ["镇压（与所有叛变员工开战）", "让利（本场每名员工工资+5碎片）", "急中生智（谈判）"]}
         return {"rebellion": False, "employee_attack_total": emp_atk, "threshold": threshold}
 
-    def trigger_death_legacy(self, wisdom: str) -> dict:
-        """
-        死之传承（轮回者[命零]时触发）：在《死者之书》新增一条遗言（≤20字）。
-        """
-        wisdom = wisdom[:self.state.death_book_capacity] if wisdom else ""
-        self.state.death_book_wisdom.append(wisdom)
-        return {"triggered": True, "wisdom": wisdom, "total_wisdom": len(self.state.death_book_wisdom)}
+    def trigger_death_legacy(self, legacy: dict[str, str]) -> dict:
+        """新增一页三段式遗言；每段必填且不得超过20字。"""
+        required = ("trigger_point", "fork", "cost_budget")
+        if not isinstance(legacy, dict):
+            raise ValueError("遗言必须是包含 trigger_point/fork/cost_budget 的对象")
+        if set(legacy) != set(required):
+            raise ValueError("遗言字段必须且只能是 trigger_point/fork/cost_budget")
+
+        normalized = {}
+        for field_name in required:
+            value = legacy[field_name]
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"遗言字段 {field_name} 必须是非空字符串")
+            value = value.strip()
+            if len(value) > self.state.death_book_capacity:
+                raise ValueError(
+                    f"遗言字段 {field_name} 超过{self.state.death_book_capacity}字上限")
+            normalized[field_name] = value
+
+        self.state.death_book_legacies.append(normalized)
+        return {
+            "triggered": True,
+            "legacy": normalized,
+            "total_legacies": len(self.state.death_book_legacies),
+        }
 
     def process_relics(self, trigger: str, ctx: dict = None) -> list:
         """遗物效果触发框架。trigger: battle_start/round_start/on_dodge/on_speed_zero"""

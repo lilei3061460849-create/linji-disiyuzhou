@@ -192,9 +192,14 @@ def test_defeat_triggers_reset_without_resealing():
     loser = _new_candidate("defeat_loser", path, name="失败者")
     _finish_battle_7(loser)
 
-    r = loser.execute_action("resolve_final_duel", {"outcome": "defeat", "death_book_wisdom": "败了"})
+    legacy = {
+        "trigger_point": "最终死斗落败",
+        "fork": "最后一次出手选择错误",
+        "cost_budget": "愿以速度换取机会",
+    }
+    r = loser.execute_action("resolve_final_duel", {"outcome": "defeat", "death_book_entry": legacy})
     assert r["success"] is True
-    assert r["result"]["death_book_wisdom"] == "败了"
+    assert r["result"]["death_book_entry"] == legacy
     assert loser.state.player is None
     assert not os.path.exists(path), "败者不应被封存，槽位保持空缺"
 

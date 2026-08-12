@@ -1,10 +1,7 @@
-"""
-规则自动同步系统
-核心功能：
-1. 读取规则文件（README.md / ALL），提取结构化数据
-2. 检测规则文件变更，自动同步到引擎
-3. 当引擎运行中发现规则与实际不符时，自动提出修改建议
-4. DM确认后自动更新规则文件和引擎内部状态
+"""规则自动同步系统。
+
+事实源分工：README.md 提供通用规则，死者之书.md 提供法术与遗言格式，
+物品索引.md 提供物品，副本索引.md 与其链接文档提供副本内容。
 """
 from __future__ import annotations
 import os
@@ -14,6 +11,7 @@ import hashlib
 import time
 import sqlite3
 from typing import Optional
+from pathlib import Path
 from .daowen import DaoWenEngine
 from .dm_rulings import DMRulingsDB
 
@@ -51,10 +49,9 @@ class RuleFile:
 
 
 class RuleSync:
-    """
-    规则同步引擎
-    管理规则文件与引擎之间的双向同步
-    """
+    """管理多份正文事实源与引擎之间的同步。"""
+
+    DEFAULT_RULE_FILES = ["README.md", "死者之书.md", "物品索引.md", "副本索引.md"]
     
     def __init__(
         self, 
@@ -66,11 +63,11 @@ class RuleSync:
         self.db_path = db_path
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         
-        # 规则文件列表
+        # 规则文件列表；未显式传入时跟踪全部正文事实源。
         self._rule_files: dict[str, RuleFile] = {}
-        if rule_files:
-            for f in rule_files:
-                self.add_rule_file(f)
+        selected_files = self.DEFAULT_RULE_FILES if rule_files is None else rule_files
+        for f in selected_files:
+            self.add_rule_file(f)
         
         # 同步记录
         self._init_db()
@@ -143,44 +140,49 @@ class RuleSync:
     # ========== 规则提取 ==========
     
     def extract_daowen_from_file(self, filepath: str) -> list[dict]:
-        """从规则文件中提取道纹定义"""
-        full_path = os.path.join(self.rules_dir, filepath)
-        if not os.path.exists(full_path):
+        """从通用规则或单个副本文档中提取道纹定义。"""
+        full_path = Path(filepath) if Path(filepath).is_absolute() else Path(self.rules_dir) / filepath
+        if not full_path.exists():
             return []
-        
-        with open(full_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-        
-        daowen_list = []
-        
-        # 匹配道纹定义模式
-        # 格式：道纹名X：描述
-        patterns = [
-            # 核心道纹：杀伐X（...）：消耗X。效果
-            r'([\u4e00-\u9fff]{2})X[（(].*?[）)].*?[：:](.+?)(?:\n|$)',
-            # 简化格式：道纹名X：效果
-            r'([\u4e00-\u9fff]{2})X[：:](.+?)(?:\n|$)',
-        ]
-        
-        for pattern in patterns:
-            for match in re.finditer(pattern, content):
-                name = match.group(1)
-                description = match.group(2).strip()
-                
-                # 排除非道纹的两字词
-                if name in ["基础", "核心", "规则", "效果", "代价", "消耗", "持续", "目标"]:
-                    continue
-                
-                daowen = {
+        content = full_path.read_text(encoding="utf-8")
+
+        # 限定到道纹正文，避免把“冷却X/流血X”等代价定义误识别成道纹。
+        if full_path.name == "README.md" and "道纹体系\n" in content:
+            content = content.split("道纹体系\n", 1)[1].split("特殊事件（", 1)[0]
+        elif "道纹定义：" in content:
+            content = content.split("道纹定义：", 1)[1].split("专属行动", 1)[0]
+        elif "道纹网络】" in content and "专属行动" in content:
+            content = content.split("道纹网络】", 1)[1].split("专属行动", 1)[0]
+
+        definitions: dict[str, dict] = {}
+        lines = content.splitlines()
+        for line_number, line in enumerate(lines, 1):
+            # 标准格式：道纹X（可选说明）：效果；副本正文统一使用此格式。
+            standard = re.match(
+                r"^(?:\d+\.)?([\u4e00-\u9fff]{2})X(?:（[^）]*）)?[：:](.+)$", line)
+            if standard:
+                name, description = standard.groups()
+                definitions.setdefault(name, {
                     "name": name,
-                    "description": description,
+                    "description": description.strip(),
                     "source": filepath,
-                    "line": content[:match.start()].count('\n') + 1
-                }
-                daowen_list.append(daowen)
-        
-        return daowen_list
-    
+                    "line": line_number,
+                })
+
+            # README 的原始/转化道纹使用“名称X（消耗/代价与效果）”内联格式。
+            for name, description in re.findall(
+                    r"([\u4e00-\u9fff]{2})X（([^（）]+)）", line):
+                if "消耗" not in description and "代价" not in description:
+                    continue
+                definitions.setdefault(name, {
+                    "name": name,
+                    "description": description.strip(),
+                    "source": filepath,
+                    "line": line_number,
+                })
+
+        return list(definitions.values())
+
     def extract_events_from_file(self, filepath: str) -> list[dict]:
         """从规则文件中提取事件定义"""
         full_path = os.path.join(self.rules_dir, filepath)
@@ -281,38 +283,151 @@ class RuleSync:
         return monsters
     
     def extract_relics_from_file(self, filepath: str) -> list[dict]:
-        """从规则文件中提取遗物定义"""
-        full_path = os.path.join(self.rules_dir, filepath)
-        if not os.path.exists(full_path):
+        """从物品索引提取遗物；保留旧方法名供现有调用方使用。"""
+        return [item for item in self.extract_items_from_file(filepath)
+                if item["kind"] == "relic"]
+
+    def extract_items_from_file(self, filepath: str = "物品索引.md") -> list[dict]:
+        """从物品索引的 Markdown 标题结构提取遗物、消耗品与法器。
+
+        重名条目或没有效果正文的条目属于非法配置，会立即拒绝。
+        """
+        full_path = Path(self.rules_dir) / filepath
+        if not full_path.exists():
             return []
-        
-        with open(full_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-        
-        relics = []
-        
-        # 匹配遗物格式：名称：效果描述
-        pattern = r'([\u4e00-\u9fff·]+)[：:](.+?)(?:\n|$)'
-        in_relic_section = False
-        
-        for line in content.split('\n'):
-            if '遗物' in line and ('池' in line or '定义' in line or '表' in line):
-                in_relic_section = True
+        lines = full_path.read_text(encoding="utf-8").splitlines()
+        items: list[dict] = []
+        current_section = ""
+        group_headings = {"扭曲都市废墟设施工具库"}
+
+        for index, line in enumerate(lines):
+            section_match = re.match(r"^##\s+(.+)$", line)
+            if section_match:
+                current_section = section_match.group(1).strip()
                 continue
-            if in_relic_section and line.strip().startswith('【') and '遗物' not in line:
-                in_relic_section = False
+            item_match = re.match(r"^(###|####)\s+(.+)$", line)
+            if not item_match or not current_section:
                 continue
-            
-            if in_relic_section:
-                match = re.match(r'([\u4e00-\u9fff·]+)[：:](.+)', line.strip())
-                if match:
-                    relics.append({
-                        "name": match.group(1),
-                        "effect": match.group(2).strip(),
-                        "source": filepath
-                    })
-        
-        return relics
+            level = len(item_match.group(1))
+            name = item_match.group(2).strip()
+            if name in group_headings:
+                continue
+
+            body = []
+            for following in lines[index + 1:]:
+                heading = re.match(r"^(#{1,6})\s+", following)
+                if heading and len(heading.group(1)) <= level:
+                    break
+                if following.strip():
+                    body.append(following.strip())
+            if not body:
+                raise ValueError(f"物品条目缺少效果正文：{name}")
+
+            if "消耗品" in current_section:
+                kind = "consumable"
+            elif "法器" in current_section:
+                kind = "artifact"
+            else:
+                kind = "relic"
+            items.append({
+                "name": name,
+                "kind": kind,
+                "category": current_section,
+                "effect": "\n".join(body),
+                "source": filepath,
+            })
+
+        names = [item["name"] for item in items]
+        duplicates = sorted({name for name in names if names.count(name) > 1})
+        if duplicates:
+            raise ValueError(f"物品索引包含重复条目：{duplicates}")
+        return items
+
+    def extract_spells_from_file(self, filepath: str = "死者之书.md") -> list[dict]:
+        """从《死者之书》的“可学法术”章节提取法术。"""
+        full_path = Path(self.rules_dir) / filepath
+        if not full_path.exists():
+            return []
+        lines = full_path.read_text(encoding="utf-8").splitlines()
+        in_spells = False
+        spells: list[dict] = []
+        index = 0
+        while index < len(lines):
+            line = lines[index]
+            if line == "## 可学法术":
+                in_spells = True
+                index += 1
+                continue
+            if in_spells and line.startswith("## "):
+                break
+            if in_spells and line.startswith("### "):
+                name = line[4:].strip()
+                fields = {}
+                index += 1
+                while index < len(lines) and not lines[index].startswith("##"):
+                    field = re.match(r"^(所需道纹|触发条件|生效流程)：(.+)$", lines[index])
+                    if field:
+                        fields[field.group(1)] = field.group(2).strip()
+                    index += 1
+                if "所需道纹" not in fields or "生效流程" not in fields:
+                    raise ValueError(f"法术条目缺少所需道纹或生效流程：{name}")
+                required = [value.strip() for value in re.split(r"[，,]", fields["所需道纹"])
+                            if value.strip()]
+                spells.append({
+                    "name": name,
+                    "required_daowen": required,
+                    "trigger_condition": fields.get("触发条件", ""),
+                    "effect_flow": fields["生效流程"],
+                    "rank": len(set(required)),
+                    "source": filepath,
+                })
+                continue
+            index += 1
+
+        names = [spell["name"] for spell in spells]
+        if len(names) != len(set(names)):
+            raise ValueError("死者之书包含重复法术名称")
+        return spells
+
+    def extract_monsters_from_dungeon_index(
+            self, filepath: str = "副本索引.md") -> list[dict]:
+        """从索引登记的已实现副本文档提取怪物，草案不会进入结果。"""
+        from .monsters import parse_monster_pool
+        full_path = Path(self.rules_dir) / filepath
+        if not full_path.exists():
+            return []
+        pools = parse_monster_pool(full_path)
+        return [monster for monsters in pools.values() for monster in monsters]
+
+    def extract_dungeon_daowen(
+            self, filepath: str = "副本索引.md", include_drafts: bool = True) -> list[dict]:
+        """提取副本专属道纹，并保留所属副本和实现状态。"""
+        from .dungeons import load_dungeon_manifest
+        index_path = Path(self.rules_dir) / filepath
+        result = []
+        for entry in load_dungeon_manifest(index_path):
+            if not include_drafts and entry.status != "已实现":
+                continue
+            for daowen in self.extract_daowen_from_file(str(entry.path.resolve())):
+                result.append({**daowen, "dungeon": entry.name, "status": entry.status})
+        return result
+
+    def extract_project_rules(self) -> dict:
+        """按裁定后的多事实源分工提取当前项目规则。"""
+        from .dungeons import load_dungeon_manifest
+        index_path = Path(self.rules_dir) / "副本索引.md"
+        manifest = load_dungeon_manifest(index_path)
+        return {
+            "common_daowen": self.extract_daowen_from_file("README.md"),
+            "dungeon_daowen": self.extract_dungeon_daowen(include_drafts=True),
+            "spells": self.extract_spells_from_file("死者之书.md"),
+            "items": self.extract_items_from_file("物品索引.md"),
+            "dungeons": [
+                {"name": entry.name, "tier": entry.tier, "status": entry.status,
+                 "path": str(entry.path)} for entry in manifest
+            ],
+            "monsters": self.extract_monsters_from_dungeon_index("副本索引.md"),
+        }
     
     # ========== 差异检测 ==========
     
@@ -328,6 +443,19 @@ class RuleSync:
             "in_file_only": list(file_names - reg_names),
             "in_engine_only": list(reg_names - file_names),
             "in_both": list(file_names & reg_names),
+            "file_daowen": file_daowen,
+        }
+
+    def diff_project_daowen(self) -> dict:
+        """比较引擎与当前已实现正文中的通用及副本专属道纹。"""
+        file_daowen = self.extract_daowen_from_file("README.md")
+        file_daowen += self.extract_dungeon_daowen(include_drafts=False)
+        file_names = {item["name"] for item in file_daowen}
+        registered = set(DaoWenEngine.list_all())
+        return {
+            "in_file_only": sorted(file_names - registered),
+            "in_engine_only": sorted(registered - file_names),
+            "in_both": sorted(file_names & registered),
             "file_daowen": file_daowen,
         }
     
@@ -360,6 +488,26 @@ class RuleSync:
             })
         
         return suggestions
+
+    def generate_project_patch_suggestions(self) -> list[dict]:
+        """根据全部已实现正文与引擎的差异生成建议。"""
+        suggestions = []
+        diff = self.diff_project_daowen()
+        for name in diff["in_file_only"]:
+            suggestions.append({
+                "type": "new_daowen", "name": name, "file": "多事实源",
+                "suggestion": f"已实现正文定义了道纹【{name}】但引擎未注册",
+                "auto_fixable": False,
+                "action_required": f"在 daowen.py 中添加 calculate_{name} 函数",
+            })
+        for name in diff["in_engine_only"]:
+            suggestions.append({
+                "type": "orphan_daowen", "name": name, "file": "多事实源",
+                "suggestion": f"引擎注册了道纹【{name}】但已实现正文未定义",
+                "auto_fixable": False,
+                "action_required": "确认应删除实现或补充对应正文",
+            })
+        return suggestions
     
     def generate_sync_report(self) -> dict:
         """生成完整的同步报告"""
@@ -368,6 +516,7 @@ class RuleSync:
             "files_tracked": list(self._rule_files.keys()),
             "changes_detected": [],
             "daowen_diffs": {},
+            "facts": {},
             "suggestions": [],
             "unresolved_violations": 0,
         }
@@ -376,19 +525,24 @@ class RuleSync:
         changes = self.check_for_changes()
         report["changes_detected"] = changes
         
-        # 道纹差异
-        for filepath in self._rule_files:
-            if filepath.endswith('.md'):
-                diff = self.diff_daowen(filepath)
-                report["daowen_diffs"][filepath] = {
-                    "new": len(diff["in_file_only"]),
-                    "missing": len(diff["in_engine_only"]),
-                    "synced": len(diff["in_both"]),
-                    "details": diff
-                }
-                suggestions = self.generate_patch_suggestions(filepath)
-                report["suggestions"].extend(suggestions)
-        
+        # 通用道纹只与 README 比较；其他 Markdown 各自使用专用提取器，
+        # 避免把物品标题或法术字段误报成道纹。
+        if "README.md" in self._rule_files and "副本索引.md" in self._rule_files:
+            diff = self.diff_project_daowen()
+            report["daowen_diffs"]["README.md"] = {
+                "new": len(diff["in_file_only"]),
+                "missing": len(diff["in_engine_only"]),
+                "synced": len(diff["in_both"]),
+                "details": diff,
+                "scope": "README通用道纹+已实现副本专属道纹",
+            }
+            report["suggestions"].extend(self.generate_project_patch_suggestions())
+
+        required_sources = set(self.DEFAULT_RULE_FILES)
+        if required_sources.issubset(self._rule_files):
+            facts = self.extract_project_rules()
+            report["facts"] = {name: len(values) for name, values in facts.items()}
+
         return report
     
     # ========== 自动修改 ==========
