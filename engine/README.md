@@ -51,6 +51,7 @@ engine/
 ├── dm_rulings.py        # DM 裁定库（SQLite + FTS，先例匹配）
 ├── rule_sync.py         # 多事实源同步（README/死者之书/物品索引/副本索引）
 ├── document_validation.py # Markdown标题、文件链接与锚点校验
+├── death_book.py        # 《死者之书》遗言节读写（文件是事实源；审核后只改 ## 遗言）
 ├── validator.py         # 规则校验器（22 条内置检查，违规入库）
 └── api.py               # GameEngine 主类 — AI 唯一交互入口（含 TWISTED_TOOL_LIBRARY、TERMINAL_ARTIFACTS、FIRST_EMBRACE_OPTIONS 等）
 ```
@@ -154,7 +155,8 @@ engine = GameEngine(rng_seed=12345)
 | `resolve_rebellion_battle` | 镇压结算(outcome=victory/defeat) |
 | `appease_rebellion` | 员工叛变·让利：全局工资+5，平息叛乱 |
 | `negotiate_rebellion` | 员工叛变·急中生智谈判：抛Interrupt交DM裁定 |
-| `resolve_final_duel` | 第8场死斗结算；失败时提交`death_book_entry={trigger_point,fork,cost_budget}`，三段均必填且各≤20字 |
+| `resolve_final_duel` | 第8场死斗结算；失败时触发【死之传承】中断，可选带`death_book_entry`作草稿 |
+| `submit_ruling`（死之传承） | 轮回者命零后审核遗言：`action=approve/edit/reject`；通过或修改后写入`死者之书.md`的「## 遗言」节 |
 | `choose_terminal_artifact` | 死斗胜利后按副本领取终音法器(choice=序号) |
 | `choose_first_embrace` | 初拥之夜9选1(choice=1~9，1~8限选1次，9可重复) |
 | `use_black_card` | 黑金名片(罪孽都市终音)：敌方血限减半，等量碎片(允许负债≤50) |

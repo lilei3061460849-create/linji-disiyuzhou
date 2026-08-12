@@ -27,6 +27,7 @@ from .dungeons import DEFAULT_INDEX
 from .gamedata import (REGION_EXCLUSIVE_DAOWEN, ORIGINAL_MONSTER_DAOWEN,
                        MONSTER_TRANSFORM_DAOWEN)
 from .dm_rulings import DMRulingsDB, DMRuling, Interrupt
+from .death_book import DeathBookStore, draft_legacy, validate_legacy
 
 
 # 扭曲都市废墟设施工具库（README正文8件：名→(耐久, 效果文本逐字)）
@@ -49,7 +50,8 @@ class GameEngine:
     """
     
     def __init__(self, db_path: str = "data/dm_rulings.db", save_dir: str = "data/saves",
-                 rng_seed: Optional[int] = None, sealed_candidate_path: str = "data/sealed_candidate.json"):
+                 rng_seed: Optional[int] = None, sealed_candidate_path: str = "data/sealed_candidate.json",
+                 death_book_path: str = "死者之书.md"):
         """
         rng_seed: 引擎自身随机源的种子。默认为None（真实随机，用于实际游戏）；
         测试/回归场景可传入固定整数，使全程随机结果可复现。
@@ -62,6 +64,9 @@ class GameEngine:
         self.rulings_db = DMRulingsDB(db_path)
         self.save_dir = save_dir
         self.sealed_candidate_path = sealed_candidate_path
+        self.death_book_path = death_book_path
+        self.death_book = DeathBookStore(death_book_path)
+        self.state.death_book_legacies = self.death_book.load()
         os.makedirs(save_dir, exist_ok=True)
         
         # 规则校验器（延迟导入避免循环）
@@ -333,11 +338,24 @@ class GameEngine:
         
         # 检查是否有待处理的中断
         if self._pending_interrupts:
+            player_dead = (self.state.player is None) or (not self.state.player.is_alive)
             return {
                 "success": False,
                 "error": "有待处理的中断等待DM裁定",
                 "pending_interrupts": [i.to_dict() for i in self._pending_interrupts],
+                "result": {"player_dead": player_dead},
                 "instruction": "请先通过 submit_ruling() 提交DM裁定"
+            }
+
+        queued = self._queue_death_inheritance_if_needed(action_type)
+        if queued:
+            return {
+                "success": False,
+                "error": "轮回者已命零，死之传承等待审核",
+                "interrupt": queued.to_dict(),
+                "pending_interrupts": [i.to_dict() for i in self._pending_interrupts],
+                "result": {"player_dead": True},
+                "instruction": "请先通过 submit_ruling() 审核遗言（approve/edit/reject）",
             }
         
         try:
@@ -465,6 +483,14 @@ class GameEngine:
                 if validation_result.get("warnings"):
                     result["validation_warnings"] = validation_result["warnings"]
                 result["validation_passed"] = validation_result.get("valid", True)
+
+            queued = self._queue_death_inheritance_if_needed(action_type)
+            if queued:
+                result["interrupt"] = queued.to_dict()
+                result["instruction"] = (
+                    (result.get("instruction") or "")
+                    + " 轮回者命零，死之传承等待审核；请调用 submit_ruling(approve/edit/reject)。"
+                ).strip()
             
             self._last_result = result
             return result
@@ -1754,6 +1780,7 @@ class GameEngine:
                 "collapsed": mut["collapsed"],
             }
             if mut["collapsed"]:
+                self.state.last_death_cause = "collapse"
                 mutation_info["note"] = (
                     f"异变达{mut['mutation_total']}层触发【崩解】，"
                     f"{self.state.player.name}直接命零，尸体变为怪物")
@@ -2160,6 +2187,7 @@ class GameEngine:
                 json.dump(snapshot, f, ensure_ascii=False, indent=2)
             self.state = GameState()
             self.combat.state = self.state
+            self.state.death_book_legacies = self.death_book.load()
             return {
                 "outcome": "sealed",
                 "sealed_name": sealed_name,
@@ -2225,13 +2253,20 @@ class GameEngine:
                     "instruction": "请调用 choose_terminal_artifact(choice=序号) 领取终音法器后才会完整封存",
                 }}
         else:
-            legacy_result = self.combat.trigger_death_legacy(legacy)
-            recorded_legacy = legacy_result["legacy"]
-            self.state = GameState()
-            self.combat.state = self.state
+            player = self.state.player
+            if player is not None:
+                player.current_hp = 0
+                player.is_alive = False
+            self.state.last_death_cause = "duel"
+            if isinstance(legacy, dict):
+                try:
+                    self.state.pending_death_draft = validate_legacy(
+                        legacy, self.state.death_book_capacity)
+                except ValueError:
+                    self.state.pending_death_draft = {}
             return {"success": True, "action": "死斗结算",
-                    "result": {"outcome": "defeat", "death_book_entry": recorded_legacy,
-                               "instruction": "败者失去轮回者身份，触发死之传承；请调用 setup_attributes 开始新的轮回者"}}
+                    "result": {"outcome": "defeat",
+                               "instruction": "败者失去轮回者身份，已触发死之传承，等待审核后写入死者之书"}}
 
     def _finalize_victory_seal(self) -> dict:
         """完整封存当前(胜利的)角色，写入候选人槽位，重置引擎状态等待新轮回者"""
@@ -2728,6 +2763,111 @@ class GameEngine:
             "result": battle_end_result,
         }
     
+    # ==================== 死之传承 / 死者之书 ====================
+
+    def _reload_death_book(self):
+        self.state.death_book_legacies = self.death_book.load()
+
+    def _reset_after_death(self):
+        """命零审核结束后结束本轮回，从文件装回已落盘遗言。"""
+        self.state = GameState()
+        self.combat.state = self.state
+        self._reload_death_book()
+
+    def _infer_death_cause(self, action_type: str = "") -> str:
+        if self.state.last_death_cause:
+            return self.state.last_death_cause
+        player = self.state.player
+        if player is not None and player.mutation_count >= Entity.MUTATION_COLLAPSE_THRESHOLD:
+            return "collapse"
+        if self.state.in_final_duel or action_type == "resolve_final_duel":
+            return "duel"
+        if action_type == "round_end":
+            return "mediocrity"
+        if action_type == "consume_item":
+            return "collapse"
+        return "attack"
+
+    def _queue_death_inheritance_if_needed(self, action_type: str = "") -> Optional[Interrupt]:
+        """轮回者命零后只抛一次死之传承中断，草稿写入 context 待审核。"""
+        if self.state.death_inheritance_queued:
+            return None
+        player = self.state.player
+        if player is None or player.is_alive:
+            return None
+        last_action = self._action_history[-1] if self._action_history else None
+        draft = self.state.pending_death_draft or draft_legacy(
+            self.state, self._infer_death_cause(action_type), last_action,
+            self.state.death_book_capacity)
+        self.state.pending_death_draft = draft
+        self.state.death_inheritance_queued = True
+        interrupt = Interrupt(
+            interrupt_type=InterruptType.DEATH_INHERITANCE,
+            context={
+                "draft": dict(draft),
+                "cause": self._infer_death_cause(action_type),
+                "player": player.name,
+                "battle": self.state.current_battle,
+                "region": self.state.current_region,
+            },
+            description=(
+                f"{player.name}已[命零]，触发【死之传承】。\n"
+                f"草稿：触发点「{draft['trigger_point']}」／"
+                f"岔路「{draft['fork']}」／代价预算「{draft['cost_budget']}」\n"
+                "请审核：通过、修改后写入、或驳回（驳回不写入死者之书）。"
+            ),
+            options=[
+                {"id": "approve", "label": "通过", "description": "按草稿写入《死者之书》"},
+                {"id": "edit", "label": "修改后写入", "description": "提交修改后的三段式再写入"},
+                {"id": "reject", "label": "驳回", "description": "不写入《死者之书》，本轮回结束"},
+            ],
+            state_snapshot=self.state.to_dict(),
+        )
+        self._pending_interrupts.append(interrupt)
+        return interrupt
+
+    def _prepare_death_ruling(self, interrupt: Interrupt, ruling_data: dict) -> dict:
+        action = (ruling_data or {}).get("action") or (ruling_data or {}).get("option") or ""
+        action = str(action).strip().lower()
+        aliases = {"通过": "approve", "修改后写入": "edit", "驳回": "reject",
+                   "approve": "approve", "edit": "edit", "reject": "reject"}
+        action = aliases.get(action, action)
+        if action not in {"approve", "edit", "reject"}:
+            raise ValueError("死之传承裁定必须是 approve / edit / reject")
+        if action == "reject":
+            return {"action": "reject"}
+        if action == "approve":
+            source = (ruling_data or {})
+            if all(source.get(field) for field in ("trigger_point", "fork", "cost_budget")):
+                legacy = validate_legacy(source, self.state.death_book_capacity)
+            else:
+                legacy = validate_legacy(
+                    interrupt.context.get("draft") or self.state.pending_death_draft,
+                    self.state.death_book_capacity)
+            return {"action": "approve", "legacy": legacy}
+        legacy = validate_legacy({
+            "trigger_point": (ruling_data or {}).get("trigger_point"),
+            "fork": (ruling_data or {}).get("fork"),
+            "cost_budget": (ruling_data or {}).get("cost_budget"),
+            **({"title": ruling_data["title"]} if (ruling_data or {}).get("title") else {}),
+        }, self.state.death_book_capacity)
+        return {"action": "edit", "legacy": legacy}
+
+    def _commit_death_ruling(self, prepared: dict) -> dict:
+        if prepared["action"] == "reject":
+            self._reset_after_death()
+            return {"written": False, "rejected": True,
+                    "instruction": "遗言已驳回，未写入死者之书；请调用 setup_attributes 开始新的轮回者"}
+        written = self.death_book.append(prepared["legacy"])
+        self._reset_after_death()
+        return {
+            "written": True,
+            "legacy": {k: written[k] for k in ("trigger_point", "fork", "cost_budget")},
+            "total_legacies": len(self.state.death_book_legacies),
+            "path": str(self.death_book.path),
+            "instruction": "遗言已写入死者之书；请调用 setup_attributes 开始新的轮回者",
+        }
+
     # ==================== DM裁定接口 ====================
     
     def submit_ruling(
@@ -2745,7 +2885,20 @@ class GameEngine:
         """
         if not self._pending_interrupts:
             return {"success": False, "error": "没有待处理的中断"}
-        
+
+        interrupt = self._pending_interrupts[0]
+        is_death = (
+            interrupt.interrupt_type == InterruptType.DEATH_INHERITANCE
+            or interrupt_type == InterruptType.DEATH_INHERITANCE.value
+        )
+        prepared = None
+        if is_death:
+            try:
+                prepared = self._prepare_death_ruling(interrupt, ruling_data or {})
+            except ValueError as exc:
+                return {"success": False, "error": str(exc),
+                        "instruction": "非法遗言未写入；中断仍在，请改提交合法三段式"}
+
         interrupt = self._pending_interrupts.pop(0)
         
         # 创建裁定记录
@@ -2758,8 +2911,7 @@ class GameEngine:
         )
         
         ruling_id = self.rulings_db.save_ruling(ruling)
-        
-        return {
+        result = {
             "success": True,
             "action": "DM裁定",
             "ruling_id": ruling_id,
@@ -2768,6 +2920,9 @@ class GameEngine:
             "ruling_data": ruling_data,
             "note": "裁定已保存，下次类似场景将自动匹配"
         }
+        if prepared is not None:
+            result["death_book"] = self._commit_death_ruling(prepared)
+        return result
     
     def check_precedent(self, interrupt_type: str, context: dict) -> dict:
         """

@@ -682,6 +682,8 @@ class CombatEngine:
                     entity.is_alive = False
                     entity.no_action_rounds = 0
                     entity.no_damage_rounds = 0
+                    if entity is self.state.player:
+                        self.state.last_death_cause = "mediocrity"
                     effects.append({"type": "mediocrity", "entity": entity.name,
                                     "note": f"{_why}，触发【凡庸】：凭空全身炸裂，[命零]"})
                     if entity.entity_type == "怪物":

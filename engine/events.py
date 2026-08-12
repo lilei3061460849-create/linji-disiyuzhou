@@ -153,6 +153,28 @@ def resolve_option_effect(text: str, engine, event_name: str = "") -> dict:
             return {"applied": applied, "instructions": instructions}
         # 选项3"离开"落入下方通用的"无事发生"分支，无需特殊处理
 
+    # ---- 回音长廊：错误遗言 / 清除遗言直接改《死者之书.md》 ----
+    if event_name == "回音长廊":
+        store = getattr(engine, "death_book", None)
+        if "错误遗言" in text or text.startswith("聆听"):
+            engine.state.shards += 10
+            applied.append("获得10碎片")
+            if store is not None:
+                from .death_book import CAUSE_DRAFTS, validate_legacy
+                written = store.append(validate_legacy(CAUSE_DRAFTS["echo_error"]))
+                engine.state.death_book_legacies = store.load()
+                applied.append(f"写入错误遗言：{written['trigger_point']}")
+            return {"applied": applied, "instructions": instructions}
+        if "清除" in text and "遗言" in text:
+            if player:
+                player.take_damage(5, "代价")
+                applied.append("流血5")
+            if store is not None:
+                removed = store.remove_last()
+                engine.state.death_book_legacies = store.load()
+                applied.append("清除一条遗言" if removed else "无遗言可清除")
+            return {"applied": applied, "instructions": instructions}
+
     def hurt(hp):
         if player:
             player.take_damage(hp, "代价")

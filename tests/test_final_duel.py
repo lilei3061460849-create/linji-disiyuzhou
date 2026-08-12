@@ -25,6 +25,7 @@ import os
 os.makedirs("/tmp/linji_tests", exist_ok=True)
 import os
 import sys
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -39,8 +40,13 @@ def _cleanup(path):
         os.remove(path)
 
 
-def _new_candidate(db_suffix, sealed_path, speed_points=8, region="龙心谷", name=None):
-    engine = GameEngine(db_path=f"data/test_duel_{db_suffix}.db", rng_seed=1, sealed_candidate_path=sealed_path)
+def _new_candidate(db_suffix, sealed_path, speed_points=8, region="龙心谷", name=None,
+                   death_book_path=None):
+    kwargs = dict(db_path=f"data/test_duel_{db_suffix}.db", rng_seed=1,
+                  sealed_candidate_path=sealed_path)
+    if death_book_path:
+        kwargs["death_book_path"] = death_book_path
+    engine = GameEngine(**kwargs)
     mana_points = 7
     blood_points = 25 - speed_points - mana_points
     params = {"blood_points": blood_points, "speed_points": speed_points, "mana_points": mana_points}
@@ -186,10 +192,13 @@ def test_victory_seals_winner_forming_arena_cycle():
 def test_defeat_triggers_reset_without_resealing():
     """正常路径：战败方触发死之传承并重置，不会被封存(封存槽位保持空缺)"""
     path = "data/test_duel_defeat.json"
+    book_path = "data/test_duel_defeat_book.md"
     _cleanup(path)
-    sealed = _new_candidate("defeat_sealed", path, name="对手")
+    _cleanup(book_path)
+    Path(book_path).write_text("# 死者之书\n\n## 遗言\n\n当前没有遗言。\n", encoding="utf-8")
+    sealed = _new_candidate("defeat_sealed", path, name="对手", death_book_path=book_path)
     _finish_battle_7(sealed)
-    loser = _new_candidate("defeat_loser", path, name="失败者")
+    loser = _new_candidate("defeat_loser", path, name="失败者", death_book_path=book_path)
     _finish_battle_7(loser)
 
     legacy = {
@@ -199,9 +208,15 @@ def test_defeat_triggers_reset_without_resealing():
     }
     r = loser.execute_action("resolve_final_duel", {"outcome": "defeat", "death_book_entry": legacy})
     assert r["success"] is True
-    assert r["result"]["death_book_entry"] == legacy
+    interrupt = r.get("interrupt") or {}
+    assert interrupt.get("interrupt_type") == "死之传承"
+    ruling = loser.submit_ruling("死之传承", "通过", {"action": "approve", **legacy})
+    assert ruling["success"] is True
+    assert ruling["death_book"]["legacy"] == legacy
     assert loser.state.player is None
     assert not os.path.exists(path), "败者不应被封存，槽位保持空缺"
+    assert "最终死斗落败" in Path(book_path).read_text(encoding="utf-8")
+    _cleanup(book_path)
 
 
 # ========================================================================

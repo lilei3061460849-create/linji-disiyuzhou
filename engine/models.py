@@ -120,7 +120,7 @@ class Consumable:
             "max_uses": self.max_uses,
             "is_depleted": self.is_depleted,
             "kind": self.kind,
-            "panel": self.panel,
+            "dragon_heart_type": self.dragon_heart_type,
         }
 
 
@@ -530,9 +530,13 @@ class GameState:
     
     # 死者之书
     # 系统记录（如癌变强化）与玩家遗言分开保存，避免结构化遗言退化为日志字符串。
+    # 遗言的事实源是 死者之书.md；death_book_legacies 只是启动/审核后从文件装回的缓存。
     death_book_wisdom: list[str] = field(default_factory=list)
     death_book_legacies: list[dict[str, str]] = field(default_factory=list)
     death_book_capacity: int = 20  # 遗言每段字数上限
+    death_inheritance_queued: bool = False
+    pending_death_draft: dict[str, str] = field(default_factory=dict)
+    last_death_cause: str = ""
     
     # 封存候选人（最终的冠冕）
     sealed_candidate: Optional[dict] = None
