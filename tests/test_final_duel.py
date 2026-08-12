@@ -248,9 +248,11 @@ def test_name_collision_between_challenger_and_opponent_is_resolved():
 
     opp = challenger.state.enemies[0]
     assert opp.name != challenger.state.player.name, "同名对手必须被改名以保证可寻址"
+    rs = challenger.execute_action("round_start", {})
+    assert rs["success"] is True, rs
     hp_before = opp.current_hp
     r = challenger.execute_action("use_daowen", {"daowen_name": "杀伐", "x": 3, "target": opp.name})
-    assert r["success"] is True
+    assert r["success"] is True, r
     assert opp.current_hp == hp_before - 6, "伤害必须真正命中改名后的对手，而不是误伤自己"
     assert challenger.state.player.current_hp == challenger.state.player.blood_limit, "挑战者自己不应被误伤"
     _cleanup(path)
@@ -295,6 +297,98 @@ def test_action_from_non_duel_side_entity_rejected():
 
     r = challenger.execute_action("attack", {"attacker": "路人甲", "target_selections": [0]})
     assert r["success"] is False
+    _cleanup(path)
+
+
+def test_duel_opponent_reincarnator_can_cast_and_both_gain_mana():
+    """正常路径：死斗对手是轮回者，回始双方获得法力，对手可发动杀伐打到挑战者"""
+    path = "data/test_duel_oppcast.json"
+    _cleanup(path)
+    sealed = _new_candidate("oppcast_sealed", path, speed_points=5, name="封存贾凡")
+    _finish_battle_7(sealed)
+    challenger = _new_candidate("oppcast_challenger", path, speed_points=13, name="挑战贾凡")
+    r = _finish_battle_7(challenger)
+    assert r["result"]["final_crown"]["outcome"] == "duel_start"
+    opp = next(e for e in challenger.state.enemies if e.entity_type == "轮回者")
+
+    rs = challenger.execute_action("round_start", {})
+    names = [e.get("entity") for e in rs["result"].get("effects", []) if e.get("type") == "mana_refill"]
+    assert "挑战贾凡" in names
+    assert opp.name in names
+    assert challenger.state.player.current_mana == challenger.state.player.mana_limit
+    assert opp.current_mana == opp.mana_limit
+
+    # 挑战者速限更高，先手让出一手后再由对手杀伐
+    skip = challenger.execute_action("use_daowen", {
+        "daowen_name": "杀伐", "x": 1, "target": opp.name,
+    })
+    assert skip["success"] is True, skip
+    hp_before = challenger.state.player.current_hp
+    cast = challenger.execute_action("use_daowen", {
+        "actor": opp.name, "daowen_name": "杀伐", "x": 3, "target": "挑战贾凡",
+    })
+    assert cast["success"] is True, cast
+    assert challenger.state.player.current_hp == hp_before - 6
+    assert opp.current_mana == opp.mana_limit - 3
+    assert challenger.state.duel_turn == "player_side"
+    _cleanup(path)
+
+
+def test_duel_opponent_impact_hits_player_side_not_self():
+    """边界：对手发动冲击必须打挑战者一侧，不能打到自己"""
+    path = "data/test_duel_oppaoe.json"
+    _cleanup(path)
+    sealed = _new_candidate("oppaoe_sealed", path, speed_points=5, name="封存贾凡")
+    sealed.state.player.dao_wen["冲击"] = DaoWenInstance(
+        DaoWen(name="冲击", formula="", cost_type="消耗", cost_formula="X", effect_formula=""))
+    _finish_battle_7(sealed)
+    challenger = _new_candidate("oppaoe_challenger", path, speed_points=13, name="挑战贾凡")
+    _finish_battle_7(challenger)
+    opp = next(e for e in challenger.state.enemies if e.entity_type == "轮回者")
+    challenger.execute_action("round_start", {})
+    skip = challenger.execute_action("use_daowen", {
+        "daowen_name": "杀伐", "x": 1, "target": opp.name,
+    })
+    assert skip["success"] is True, skip
+    hp_self = opp.current_hp
+    hp_player = challenger.state.player.current_hp
+    r = challenger.execute_action("use_daowen", {
+        "actor": opp.name, "daowen_name": "冲击", "x": 4, "target": "挑战贾凡",
+    })
+    assert r["success"] is True, r
+    assert opp.current_hp == hp_self
+    assert challenger.state.player.current_hp == hp_player - 4
+    _cleanup(path)
+
+
+def test_duel_opponent_cast_rejected_on_wrong_turn_and_without_mana():
+    """错误输入：没轮到对手时不能发动；法力不足必须失败"""
+    path = "data/test_duel_opperr.json"
+    _cleanup(path)
+    sealed = _new_candidate("opperr_sealed", path, speed_points=5, name="封存贾凡")
+    _finish_battle_7(sealed)
+    challenger = _new_candidate("opperr_challenger", path, speed_points=13, name="挑战贾凡")
+    _finish_battle_7(challenger)
+    opp = next(e for e in challenger.state.enemies if e.entity_type == "轮回者")
+
+    assert challenger.state.duel_turn == "player_side"
+    r1 = challenger.execute_action("use_daowen", {
+        "actor": opp.name, "daowen_name": "杀伐", "x": 1, "target": "挑战贾凡",
+    })
+    assert r1["success"] is False
+    assert "交替出手" in r1["error"]
+
+    challenger.execute_action("round_start", {})
+    challenger.execute_action("use_daowen", {
+        "daowen_name": "杀伐", "x": 1, "target": opp.name,
+    })
+    assert challenger.state.duel_turn == "opponent_side"
+    opp.current_mana = 0
+    r2 = challenger.execute_action("use_daowen", {
+        "actor": opp.name, "daowen_name": "杀伐", "x": 3, "target": "挑战贾凡",
+    })
+    assert r2["success"] is False
+    assert "法力不足" in r2["error"]
     _cleanup(path)
 
 

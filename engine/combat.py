@@ -542,16 +542,19 @@ class CombatEngine:
             e.blood_oath_used_this_round = False
             e.mana_inflicted_this_round = 0
             e.damage_dealt_this_round = 0
-        # 回始：获得等同当前法限的法力。战始已清零；折速/鲜血契约在战始 +=；守夜灯在本段之后 +=。
-        if self.state.player and self.state.player.is_alive:
-            old_mana = self.state.player.current_mana
-            gained = self.state.player.mana_limit
-            self.state.player.current_mana += gained
+        # 回始：每个轮回者获得等同当前法限的法力。战始已清零；折速/鲜血契约在战始 +=；守夜灯在本段之后 +=。
+        # 死斗里封存对手也是轮回者，必须同样获得法力，否则只能普攻1点。
+        for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
+            if entity.entity_type != "轮回者" or not entity.is_alive:
+                continue
+            old_mana = entity.current_mana
+            gained = entity.mana_limit
+            entity.current_mana += gained
             effects.append({
                 "type": "mana_refill",
-                "entity": self.state.player.name,
+                "entity": entity.name,
                 "from": old_mana,
-                "to": self.state.player.current_mana,
+                "to": entity.current_mana,
                 "gained": gained,
             })
 
@@ -1336,10 +1339,14 @@ class CombatEngine:
                 a += nilin_bonus
                 result["nilin_bonus"] = nilin_bonus
                 nilin_bonus = 0
-            for enemy in self.state.get_all_enemy_side():
+            if caster in self.state.get_all_player_side():
+                aoe_targets = self.state.get_all_enemy_side()
+            else:
+                aoe_targets = self.state.get_all_player_side()
+            for enemy in aoe_targets:
                 # 对首个敌人附加剩余加成（若前未消耗）
                 dmg_a = a
-                if nilin_bonus and enemy is self.state.get_all_enemy_side()[0]:
+                if nilin_bonus and enemy is aoe_targets[0]:
                     dmg_a += nilin_bonus
                     nilin_bonus = 0
                 dmg = enemy.take_damage(dmg_a)

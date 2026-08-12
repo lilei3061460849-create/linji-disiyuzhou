@@ -1342,16 +1342,27 @@ class GameEngine:
         2.必须指定一个不是其自身的目标(听从指令的道纹/攻击均需面向"其他非自身目标")。
         """
         actor_name = params.get("actor", "")
-        is_command = bool(actor_name)
-        if is_command:
-            ally_pool = self.state.friends + [e for e in self.state.employees if e.is_deployed]
-            actor = next((e for e in ally_pool if e.name == actor_name and e.is_alive and not e.has_retreated), None)
-            if actor is None:
-                return {"success": False, "error": f"找不到已参战的[朋友]/[员工]: {actor_name}"}
-        else:
+        is_command = False
+        if not actor_name:
             actor = self.state.player
             if not actor:
                 return {"success": False, "error": "没有玩家"}
+        else:
+            alive = [e for e in self.state.get_all_player_side() + self.state.get_all_enemy_side()
+                     if e.name == actor_name and e.is_alive and not e.has_retreated]
+            actor = alive[0] if alive else None
+            if actor is None:
+                return {"success": False, "error": f"找不到已参战的行动者: {actor_name}"}
+            if actor is self.state.player:
+                pass
+            elif (self.state.in_final_duel and actor.entity_type == "轮回者"
+                  and actor in self.state.get_all_enemy_side()):
+                # 死斗对手是完整轮回者：自己付法力、可对己施法，不是听令的微光者
+                pass
+            elif actor in self.state.friends or actor in [e for e in self.state.employees if e.is_deployed]:
+                is_command = True
+            else:
+                return {"success": False, "error": f"{actor_name}不能作为use_daowen的行动者"}
 
         name = params.get("daowen_name", "")
         x = params.get("x", 1)
@@ -2273,6 +2284,12 @@ class GameEngine:
         self.state.current_round = 0
         self.combat.reset_monster_activation()
         self.state.in_final_duel = True
+        # 与战始相同：死斗开场先清零双方轮回者法力，回始再获得等同法限。
+        for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
+            if entity.entity_type == "轮回者" and entity.is_alive:
+                entity.current_mana = 0
+                entity.battle_start_hp = entity.current_hp
+                entity.healed_this_battle = 0
 
         challenger_key = self._duel_priority_key(challenger_player)
         opponent_key = self._duel_priority_key(opponent_leader) if opponent_leader else (0, 0, 0, 0)
