@@ -2110,6 +2110,10 @@ class GameEngine:
             self.state.enemies.append(m)
             drawn_names.append(fm["name"] + "(额外出现)")
 
+        # 战始先清零当前法力，再结算战始遗物。回始再获得等同法限的法力。
+        # 折速/鲜血契约因此叠在 0 上，首回合 = 遗物加成 + 法限，不会被赋值冲掉。
+        if self.state.player and self.state.player.is_alive:
+            self.state.player.current_mana = 0
         relic_logs = self.combat.process_relics("battle_start")
 
         artifact_logs = []

@@ -134,7 +134,9 @@ def _render_effect(eff: dict) -> str:
     """把引擎的 effect 字典转成文字，不添加引擎未给出的数值。"""
     t = eff.get("type", "")
     if t == "mana_refill":
-        return f"{eff.get('entity')} 法力补满：{eff.get('from')}→{eff.get('to')}"
+        gained = eff.get("gained")
+        extra = f"（+{gained}）" if gained is not None else ""
+        return f"{eff.get('entity')} 获得法力：{eff.get('from')}→{eff.get('to')}{extra}"
     if t == "mana_clear":
         return f"{eff.get('entity')} 法力清空：清除{eff.get('cleared')}点"
     if t == "shield_clear":

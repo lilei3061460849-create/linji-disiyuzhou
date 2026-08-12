@@ -56,13 +56,14 @@ def battle(player, defs, log, relics, rng):
     combat.init_monster_shards(monsters[0]) if monsters else None
     for m in monsters: combat.init_monster_shards(m)
     player.current_speed = player.speed_limit; player.is_alive = True; player.status_effects = []
+    player.current_mana = 0  # 战始清零；回始再获得等同法限的法力
     activated = {id(m): set() for m in monsters}
     log.append(f"  敌方：{'、'.join(d['name']+'('+str(d['ac'])+'×'+str(d['ap'])+'/'+str(d['hp'])+')' for d in defs)}")
     log.append(f"  贾凡入场：HP{player.current_hp}/{player.blood_limit} 法{player.mana_limit} 速{player.speed_limit}(出手{max(1,math.ceil(player.speed_limit/3))})")
     for rnd in range(1, 30):
         if not player.is_alive: log.append(f"  ✗ 贾凡阵亡（第{rnd}回合）"); return False
         if not alive_ms(monsters): break
-        player.current_mana = player.mana_limit; player.shield = 0
+        player.current_mana += player.mana_limit; player.shield = 0
         # 怪回始+激活
         for m in monsters:
             if m.is_alive:

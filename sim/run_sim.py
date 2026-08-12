@@ -216,6 +216,7 @@ def run_multi_battle(player, monster_defs, rng):
     player.current_speed = player.speed_limit
     player.is_alive = True
     player.status_effects = []
+    player.current_mana = 0  # 战始清零；回始再获得等同法限的法力
     activated = {id(m): set() for m in monsters}
     paths_used = []
     max_rounds = 30
@@ -224,8 +225,8 @@ def run_multi_battle(player, monster_defs, rng):
             return {"win": False, "paths": paths_used}
         if not alive_monsters(monsters):
             break
-        # 回始
-        player.current_mana = player.mana_limit
+        # 回始：获得等同当前法限的法力
+        player.current_mana += player.mana_limit
         player.shield = 0
         player.hp_lost_this_round = 0
         for m in monsters:

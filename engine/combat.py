@@ -16,19 +16,11 @@ from .dm_rulings import Interrupt
 class CombatEngine:
     """战斗计算引擎"""
     
-    # 副本专属道纹（不×3）
+    # 副本专属道纹
     REGION_EXCLUSIVE_DAOWEN = {
         "扭曲都市": {"变形","定型","畸变","僵化","超频","坏死","爆裂","退化"},
         "罪孽都市": {"洗劫","逼债","抵扣","清算","赎金","假钞","赌命","消灾"},
         "龙心谷":   {"加害","龙鳞","逆鳞","活血","裂变","嫁祸","背负","伤痕"},
-    }
-    
-    # 怪物原始道纹+转化道纹（这些也不×3，因为是怪物自己的）
-    MONSTER_OWN_DAOWEN = {
-        "狂暴","强化","活力","减速","必中","自愈","飞行",
-        "愤怒","自残","无神","借力","弱化","自食","兴奋","无力",
-        "迟滞","急速","加速","眩晕","洞察","蒙蔽","滋养","衰败",
-        "寄生","滑翔","坠落",
     }
     
     # 原始怪物道纹（道纹归属规则：各组起点）——【原初X】可借用范围
@@ -49,28 +41,6 @@ class CombatEngine:
         self._resonance_rewrites: dict[int, dict[str, str]] = {}
     
     # ========== 伤害计算 ==========
-    
-    def is_monster_triple(self, dao_wen_name: str, entity: Entity) -> int:
-        """
-        怪物非专属道纹效果×3规则
-        规则：怪物使用非专属道纹效果×3，副本专属道纹按原效果结算
-        返回：效果倍率（1或3）
-        """
-        if entity.entity_type != "怪物":
-            return 1
-        
-        # 怪物自己的道纹（原始+转化）不×3
-        if dao_wen_name in self.MONSTER_OWN_DAOWEN:
-            return 1
-        
-        # 副本专属道纹不×3
-        region = self.state.current_region
-        if region in self.REGION_EXCLUSIVE_DAOWEN:
-            if dao_wen_name in self.REGION_EXCLUSIVE_DAOWEN[region]:
-                return 1
-        
-        # 其他道纹（核心道纹等）×3
-        return 3
     
     def calculate_attack_damage(
         self, 
@@ -559,7 +529,7 @@ class CombatEngine:
     def round_start(self) -> dict:
         """
         回始结算
-        1. 法力补满至法限
+        1. 拥有者获得等同当前法限的法力（加法，从不赋值到法限）
         2. 结算回始类效果
         3. 返回需要决策的信息
         """
@@ -572,20 +542,20 @@ class CombatEngine:
             e.blood_oath_used_this_round = False
             e.mana_inflicted_this_round = 0
             e.damage_dealt_this_round = 0
-        # 轮回者法力补满至法限。已高于法限的（折速法印/鲜血契约在[战始]加上的首回合法力）不得冲掉。
-        # 必须先补满，再结算回始遗物：守夜灯在[回始]加的法限50%不得被补满冲回法限。
+        # 回始：获得等同当前法限的法力。战始已清零；折速/鲜血契约在战始 +=；守夜灯在本段之后 +=。
         if self.state.player and self.state.player.is_alive:
             old_mana = self.state.player.current_mana
-            filled = max(old_mana, self.state.player.mana_limit)
-            self.state.player.current_mana = filled
+            gained = self.state.player.mana_limit
+            self.state.player.current_mana += gained
             effects.append({
                 "type": "mana_refill",
                 "entity": self.state.player.name,
                 "from": old_mana,
-                "to": filled
+                "to": self.state.player.current_mana,
+                "gained": gained,
             })
 
-        # 遗物：回始触发（回锋刀造伤、守夜灯加法力）。守夜灯加在补满之后，才能叠在法限之上。
+        # 遗物：回始触发（回锋刀造伤、守夜灯加法力）。守夜灯加在获得法限之后。
         relic_logs = self.process_relics("round_start")
         effects.extend({"type": "relic", "log": l} for l in relic_logs)
         
@@ -1291,10 +1261,6 @@ class CombatEngine:
     def apply_daowen_effect(self, name: str, calc: dict, caster: Entity, target: Entity, dragon_heart_use: int = 0) -> dict:
         """应用道纹效果（统一效果键处理；供api与法术共用）。dragon_heart_use仅对caster自身的数值型代价生效。"""
         result = {"daowen": name, "effects": []}
-        multiplier = self.is_monster_triple(name, caster)
-        if multiplier > 1:
-            result["monster_triple"] = True
-            result["multiplier"] = multiplier
         x = calc.get("x", 0)
 
         # 【冷却X】代价：README「冷却X：使用后该道纹记为【X(0)/Y】，[战终]后已完成
@@ -1334,11 +1300,11 @@ class CombatEngine:
                 and any(k in calc for k in ("target_damage", "total_damage", "aoe_damage", "hp_percent_loss"))):
             incoming = 0
             if "target_damage" in calc:
-                incoming = calc["target_damage"] * multiplier
+                incoming = calc["target_damage"]
             elif "total_damage" in calc:
-                incoming = calc["total_damage"] * multiplier
+                incoming = calc["total_damage"]
             elif "aoe_damage" in calc:
-                incoming = calc["aoe_damage"] * multiplier
+                incoming = calc["aoe_damage"]
             if incoming > 0:
                 rd = self._raw_hp_loss(caster, incoming)
                 result["baolie_reflect"] = rd
@@ -1347,7 +1313,7 @@ class CombatEngine:
 
         # ---- 伤害类 ----
         if "target_damage" in calc:
-            base = calc["target_damage"] * multiplier + (nilin_bonus if nilin_bonus else 0)
+            base = calc["target_damage"] + (nilin_bonus if nilin_bonus else 0)
             dmg = self._apply_hostile_damage(target, 0 if (mengbi_blocked or baolie_suppress) else base)
             result["effects"].append({"type": "damage", "target": target.name, **dmg})
             if dmg.get("actual_damage", 0) > 0:
@@ -1356,7 +1322,7 @@ class CombatEngine:
         if "total_damage" in calc and "target_damage" not in calc:  # 血债等多段
             add = nilin_bonus
             nilin_bonus = 0
-            dmg = self._apply_hostile_damage(target, 0 if (mengbi_blocked or baolie_suppress) else calc["total_damage"] * multiplier + add)
+            dmg = self._apply_hostile_damage(target, 0 if (mengbi_blocked or baolie_suppress) else calc["total_damage"] + add)
             if add:
                 dmg["nilin_bonus"] = add
             result["effects"].append({"type": "damage", "target": target.name, **dmg})
@@ -1364,7 +1330,7 @@ class CombatEngine:
                 caster.damage_dealt_this_round += dmg["actual_damage"]
                 self._xijie_steal(caster, target, dmg["actual_damage"])
         if "aoe_damage" in calc:
-            a = 0 if (mengbi_blocked or baolie_suppress) else calc["aoe_damage"] * multiplier
+            a = 0 if (mengbi_blocked or baolie_suppress) else calc["aoe_damage"]
             # 逆鳞加成仅作用于首个目标的首段伤害
             if nilin_bonus:
                 a += nilin_bonus
@@ -1394,7 +1360,7 @@ class CombatEngine:
 
         # ---- 回复类 ----
         if "target_heal" in calc and not huaisi_block:
-            result["effects"].append({"type": "heal", "target": target.name, **target.heal(calc["target_heal"] * multiplier)})
+            result["effects"].append({"type": "heal", "target": target.name, **target.heal(calc["target_heal"])})
         if "heal_percent" in calc and not (target.has_status("坏死")):
             h = math.ceil(target.blood_limit * calc["heal_percent"] / 100)
             result["effects"].append({"type": "heal_pct", "target": target.name, **target.heal(h)})
@@ -1405,7 +1371,7 @@ class CombatEngine:
 
         # ---- 格挡/血限 ----
         if "target_shield" in calc:
-            s = calc["target_shield"] * multiplier; target.gain_shield(s)
+            s = calc["target_shield"]; target.gain_shield(s)
             result["effects"].append({"type": "shield", "target": target.name, "amount": s})
         if "shield_drain" in calc:  # 清算：目标失格挡
             lost = min(target.shield, calc["shield_drain"]); target.shield -= lost
@@ -1891,7 +1857,7 @@ class CombatEngine:
                 player = self.state.player
                 if player is not None and player.is_alive:
                     dmg = self._apply_hostile_damage(
-                        player, calc.get("aoe_damage", x) * self.is_monster_triple(dest, m))
+                        player, calc.get("aoe_damage", x))
                     if dmg.get("actual_damage", 0) > 0:
                         m.damage_dealt_this_round += dmg["actual_damage"]
             else:
@@ -1920,7 +1886,7 @@ class CombatEngine:
                 calc = DaoWenEngine.resolve(name, inst.x_value, target=target, caster=m)
                 if name == "冲击":
                     # apply_daowen_effect 的 AOE 扫的是 state.enemies；怪物发动应对准轮回者一侧
-                    dmg = self._apply_hostile_damage(player, calc.get("aoe_damage", inst.x_value) * self.is_monster_triple(name, m))
+                    dmg = self._apply_hostile_damage(player, calc.get("aoe_damage", inst.x_value))
                     if dmg.get("actual_damage", 0) > 0:
                         m.damage_dealt_this_round += dmg["actual_damage"]
                 else:
