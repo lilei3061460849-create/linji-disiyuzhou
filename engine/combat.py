@@ -34,7 +34,7 @@ class CombatEngine:
     # 原始怪物道纹（道纹归属规则：各组起点）——【原初X】可借用范围
     ORIGINAL_MONSTER_DAOWEN = ("狂暴", "强化", "活力", "减速", "必中", "自愈", "飞行")
     # 持续型原始怪物道纹：效果持续期间每个[回始]重新支付异变5X（已裁定）。
-    # 必中为次数型（下X次），不参与回合计费——引擎简化模型不追踪其余数，此为映射口径，已如实标注。
+    # 必中为次数型（下X次选择[目标]无法闪避），不参与回合计费；余数记在 entity._bizhong_left。
     SUSTAIN_MONSTER_DAOWEN = ("狂暴", "强化", "活力", "减速", "自愈", "飞行")
     YUANCHU_COST_RATE = 5  # 原初X代价：异变5X（已裁定）
     
@@ -238,7 +238,7 @@ class CombatEngine:
 
     def _xijie_steal(self, caster: Entity, target: Entity, damage_amount: int) -> int:
         """洗劫X：造成伤害时夺取[目标]等量[碎片]（假碎片优先由目标侧扣减；夺取量=min(目标碎片,伤害)）"""
-        if damage_amount <= 0 or target is caster:
+        if damage_amount <= 0 or target is caster or not caster.has_status("洗劫"):
             return 0
         avail = self._shards_of(target)
         if avail <= 0:
@@ -250,6 +250,34 @@ class CombatEngine:
         else:
             caster.shards += steal
         return steal
+
+    def bizhong_remaining(self, entity: Entity) -> int:
+        """必中X剩余可选目标次数。"""
+        return max(0, int(getattr(entity, "_bizhong_left", 0) or 0))
+
+    def grant_bizhong(self, entity: Entity, x: int) -> int:
+        """获得下X次选择[目标]时无法被闪避。次数叠加。"""
+        if not isinstance(x, int) or isinstance(x, bool) or x < 1:
+            return self.bizhong_remaining(entity)
+        entity._bizhong_left = self.bizhong_remaining(entity) + x
+        entity.status_effects = [s for s in entity.status_effects if s.name != "必中"]
+        entity.add_status(StatusEffect(
+            name="必中", value=entity._bizhong_left, remaining_rounds=-1, source=entity.name))
+        return entity._bizhong_left
+
+    def consume_bizhong(self, entity: Entity) -> bool:
+        """消耗一次必中余数。还有余数则本次选择[目标]无法闪避。"""
+        left = self.bizhong_remaining(entity)
+        if left <= 0:
+            return False
+        entity._bizhong_left = left - 1
+        if entity._bizhong_left <= 0:
+            entity.status_effects = [s for s in entity.status_effects if s.name != "必中"]
+        else:
+            for s in entity.status_effects:
+                if s.name == "必中":
+                    s.value = entity._bizhong_left
+        return True
 
     def _pay_bleed_cost(self, payer: Entity, amount: int, dragon_heart_use: int = 0) -> dict:
         """
@@ -342,8 +370,8 @@ class CombatEngine:
             result["note"] = "飞行目标无法被非飞行者选中"
             return result
 
-        # 必中（含必中状态）
-        must_hit = is_must_hit or attacker.has_status("必中")
+        # 必中：显式必中，或消耗一次「下X次选择[目标]」余数
+        must_hit = is_must_hit or self.consume_bizhong(attacker)
 
         # 血影（初拥之夜遗物，仅玩家自身持有）：非必中判定下，可流血10取消本次判定，是常规闪避外的另一选项
         if (blood_shadow and not must_hit and target is self.state.player
@@ -1508,6 +1536,12 @@ class CombatEngine:
             result["effects"].append({"type": "seal", "removed": removed})
 
         # ---- 持续/触发状态（status_added）----
+        if "guaranteed_hits" in calc:
+            self.grant_bizhong(caster, int(calc["guaranteed_hits"]))
+            result["effects"].append({"type": "bizhong", "target": caster.name,
+                                      "count": calc["guaranteed_hits"],
+                                      "remaining": self.bizhong_remaining(caster)})
+
         if "duration" in calc and calc.get("duration") is not None:
             duration = calc["duration"] if calc["duration"] != 0 else -1
             effect_target = target if target else caster
@@ -1786,6 +1820,8 @@ class CombatEngine:
                 activated.add(g)
                 if g == "强化":
                     m.attack_power += m.dao_wen[g].x_value
+                if g == "必中":
+                    self.grant_bizhong(m, m.dao_wen[g].x_value)
                 return g
         # 第二梯队：副本专属（龙心谷 8 件等），按固定优先级
         region = self.state.current_region
@@ -1964,7 +2000,6 @@ class CombatEngine:
                     results.append({"monster": m.name, "daowen_activated": an})
             # 攻击出手
             n = self._monster_attack_actions(m, act)
-            must = m.has_status("必中") or "必中" in act
             for _ in range(n):
                 if not player.is_alive:
                     break
@@ -1973,9 +2008,11 @@ class CombatEngine:
                 for _h in range(m.attack_count):
                     if not player.is_alive or not m.is_alive:
                         break
+                    # 必中只覆盖剩余次数；余数在 resolve_attack 里消耗
+                    must = self.bizhong_remaining(m) > 0
                     dodge = (dodge_policy == "auto" and not must
                              and player.current_speed > 0 and m.attack_power > player.shield)
-                    _r = self.resolve_attack(m, player, is_must_hit=must, dodge=dodge)
+                    _r = self.resolve_attack(m, player, is_must_hit=False, dodge=dodge)
                     # 标记"一轮攻击内的第几击"：一次攻击出手包含 attack_count 次攻击，
                     # 每次独立判定闪避(README:204)，但它们同属一个出手，不应各占一个出手号。
                     _r["hit_index"] = _h + 1
