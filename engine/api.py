@@ -407,6 +407,8 @@ class GameEngine:
                 result = self._action_appease_rebellion(params)
             elif action_type == "negotiate_rebellion":
                 result = self._action_negotiate_rebellion(params)
+            elif action_type == "activate_duel_relic":
+                result = self._action_activate_duel_relic(params)
             elif action_type == "resolve_final_duel":
                 result = self._action_resolve_final_duel(params)
             elif action_type == "choose_terminal_artifact":
@@ -1245,6 +1247,50 @@ class GameEngine:
         if self.state.in_final_duel:
             self.state.duel_turn = "opponent_side" if self.state.duel_turn == "player_side" else "player_side"
 
+    def _hostile_to(self, actor: Entity, target: Entity) -> bool:
+        if target is None or target is actor:
+            return False
+        actor_on_player = actor in self.state.get_all_player_side()
+        target_on_player = target in self.state.get_all_player_side()
+        return actor_on_player != target_on_player
+
+    def _resolve_daowen_dodge(self, name: str, actor: Entity, target: Entity,
+                              dodge: bool, dodge_targets: list) -> dict:
+        """带[目标]的敌对道纹可被闪避。成功则本次判定与结算失效，法力与出手仍已支付。"""
+        log = {"must_hit": False, "dodged_names": [], "fully_dodged": False}
+        hostile_possible = name == "冲击" or (target is not None and self._hostile_to(actor, target))
+        if hostile_possible and self.combat.bizhong_remaining(actor) > 0:
+            log["must_hit"] = self.combat.consume_bizhong(actor)
+            if log["must_hit"]:
+                return log
+        if name == "冲击":
+            hostiles = (self.state.get_all_enemy_side() if actor in self.state.get_all_player_side()
+                        else self.state.get_all_player_side())
+            skipped = []
+            want = set(dodge_targets)
+            for ent in hostiles:
+                if ent.name not in want:
+                    continue
+                if ent.current_speed >= 1:
+                    ent.current_speed -= 1
+                    skipped.append(ent.name)
+                    log["dodged_names"].append({
+                        "name": ent.name, "speed_after": ent.current_speed,
+                    })
+            self.combat._skip_aoe_names = set(skipped)
+            alive = [e.name for e in hostiles if e.is_alive]
+            log["fully_dodged"] = bool(alive) and set(alive) <= set(skipped)
+            return log
+        if not dodge or target is None or not self._hostile_to(actor, target):
+            return log
+        if target.current_speed < 1:
+            log["dodge_fail_reason"] = "速度不足"
+            return log
+        target.current_speed -= 1
+        log["dodged_names"].append({"name": target.name, "speed_after": target.current_speed})
+        log["fully_dodged"] = True
+        return log
+
     def _action_deploy_employee(self, params: dict) -> dict:
         """派遣[员工]出战：消耗玩家1出手（现已强制校验回合出手预算）。仅[员工]需要此步骤，[朋友]开局即直接参战。"""
         name = params.get("name", "")
@@ -1468,17 +1514,33 @@ class GameEngine:
             return budget_error
         self._apply_dragon_claw_growth(actor)
 
-        # 执行效果
+        dodge = bool(params.get("dodge", False))
+        dodge_targets = list(params.get("dodge_targets") or [])
+        dodge_log = self._resolve_daowen_dodge(name, actor, target, dodge, dodge_targets)
+        if dodge_log.get("fully_dodged"):
+            self._advance_duel_turn()
+            return {
+                "success": True,
+                "action": f"发动道纹【{name}X={x}】" + (f"（{actor.name}听从指令发动）" if is_command else ""),
+                "calculation": calc,
+                "execution": {"daowen": name, "effects": [], "dodged": dodge_log},
+                "dodge": dodge_log,
+                "state": self.combat._get_combat_state(),
+            }
+
         dragon_heart_use = params.get("dragon_heart_use", 0)
         execution = self._execute_daowen_effect(name, calc, actor, target, dragon_heart_use)
+        if dodge_log.get("dodged_names"):
+            execution = dict(execution)
+            execution["dodged"] = dodge_log
         self._advance_duel_turn()
-
 
         return {
             "success": True,
             "action": f"发动道纹【{name}X={x}】" + (f"（{actor.name}听从指令发动）" if is_command else ""),
             "calculation": calc,
             "execution": execution,
+            "dodge": dodge_log or None,
             "state": self.combat._get_combat_state()
         }
     
@@ -2284,6 +2346,11 @@ class GameEngine:
         self.state.current_round = 0
         self.combat.reset_monster_activation()
         self.state.in_final_duel = True
+        self.state.opponent_relics = [
+            Relic(name=r.get("name", ""), effect=r.get("effect", ""), tags=r.get("tags") or [])
+            for r in (candidate_snapshot.get("relics") or [])
+            if r.get("name")
+        ]
         # 与战始相同：死斗开场先清零双方轮回者法力，回始再获得等同法限。
         for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
             if entity.entity_type == "轮回者" and entity.is_alive:
@@ -2296,14 +2363,70 @@ class GameEngine:
         first_mover = "player_side" if challenger_key >= opponent_key else "opponent_side"
         self.state.duel_turn = first_mover
 
+        optional = []
+        for r in self.state.opponent_relics:
+            if r.name in ("折速法印", "鲜血契约", "三相残韵盘", "卖身契"):
+                optional.append({"side": "opponent_side", "name": r.name, "effect": r.effect})
+        for r in self.state.relics:
+            if r.name in ("折速法印", "鲜血契约", "三相残韵盘", "卖身契"):
+                optional.append({"side": "player_side", "name": r.name, "effect": r.effect})
+
         return {
             "outcome": "duel_start",
             "opponent_name": opponent_leader.name if opponent_leader else "未知对手",
             "opponent_side": [e.name for e in opponent_side],
             "first_mover": first_mover,
-            "instruction": "第8场最终死斗开始：双方交替出手，残韵可任意时刻插队，无法逃跑；"
+            "optional_relics": optional,
+            "instruction": "第8场最终死斗开始：双方交替出手，残韵可任意时刻插队，无法逃跑。"
+                           "可选遗物由持有者自己决定是否发动（activate_duel_relic）；"
                            "请调用 resolve_final_duel(outcome=victory/defeat) 结算胜负",
         }
+
+    def _action_activate_duel_relic(self, params: dict) -> dict:
+        """死斗开场：持有者自己决定是否发动可选战始遗物。side=player_side/opponent_side。"""
+        if not self.state.in_final_duel:
+            return {"success": False, "error": "当前没有进行中的最终死斗"}
+        side = params.get("side", "")
+        name = params.get("relic", "")
+        use = params.get("use", True)
+        if side not in ("player_side", "opponent_side"):
+            return {"success": False, "error": "side必须是 player_side 或 opponent_side"}
+        pool = self.state.relics if side == "player_side" else self.state.opponent_relics
+        holder = self.state.player if side == "player_side" else next(
+            (e for e in self.state.enemies if e.entity_type == "轮回者" and e.is_alive), None)
+        if holder is None:
+            return {"success": False, "error": "找不到该侧轮回者"}
+        if not any(r.name == name for r in pool):
+            return {"success": False, "error": f"{side}未持有遗物: {name}"}
+        if not use:
+            return {"success": True, "action": f"{holder.name}放弃发动【{name}】",
+                    "result": {"relic": name, "used": False}}
+        if name == "折速法印":
+            try:
+                x = int(params.get("x", 0))
+            except (TypeError, ValueError):
+                return {"success": False, "error": "X必须为整数"}
+            if x < 1 or x > holder.current_speed:
+                return {"success": False, "error": f"折速X须在1~当前速度{holder.current_speed}之间"}
+            holder.current_speed -= x
+            holder.current_mana += 6 * x
+            return {"success": True, "action": f"{holder.name}发动【折速法印】",
+                    "result": {"relic": name, "used": True, "x": x,
+                               "speed": holder.current_speed, "mana": holder.current_mana}}
+        if name == "鲜血契约":
+            try:
+                x = int(params.get("x", 0))
+            except (TypeError, ValueError):
+                return {"success": False, "error": "X必须为整数"}
+            cap = holder.blood_limit // 5
+            if x < 1 or x > cap or x > holder.current_hp:
+                return {"success": False, "error": f"鲜血契约X须在1~{cap}且不超过当前生命"}
+            self.combat._pay_bleed_cost(holder, x)
+            holder.current_mana += x
+            return {"success": True, "action": f"{holder.name}发动【鲜血契约】",
+                    "result": {"relic": name, "used": True, "x": x,
+                               "hp": holder.current_hp, "mana": holder.current_mana}}
+        return {"success": False, "error": f"【{name}】不是死斗开场可选遗物，或尚未接线"}
 
     def _action_resolve_final_duel(self, params: dict) -> dict:
         """

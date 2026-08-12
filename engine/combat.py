@@ -1343,6 +1343,9 @@ class CombatEngine:
                 aoe_targets = self.state.get_all_enemy_side()
             else:
                 aoe_targets = self.state.get_all_player_side()
+            skip = getattr(self, "_skip_aoe_names", set()) or set()
+            aoe_targets = [e for e in aoe_targets if e.name not in skip]
+            self._skip_aoe_names = set()
             for enemy in aoe_targets:
                 # 对首个敌人附加剩余加成（若前未消耗）
                 dmg_a = a

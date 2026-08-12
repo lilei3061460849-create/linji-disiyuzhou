@@ -361,6 +361,93 @@ def test_duel_opponent_impact_hits_player_side_not_self():
     _cleanup(path)
 
 
+def test_duel_target_daowen_can_be_dodged_with_speed():
+    """正常路径：杀伐带[目标]，对手有速度时可闪避，法力与出手仍扣除，生命不变"""
+    path = "data/test_duel_dodge.json"
+    _cleanup(path)
+    sealed = _new_candidate("dodge_sealed", path, speed_points=8, name="封存贾凡")
+    _finish_battle_7(sealed)
+    challenger = _new_candidate("dodge_challenger", path, speed_points=13, name="挑战贾凡")
+    _finish_battle_7(challenger)
+    opp = next(e for e in challenger.state.enemies if e.entity_type == "轮回者")
+    challenger.execute_action("round_start", {})
+    hp = opp.current_hp
+    spd = opp.current_speed
+    mana = challenger.state.player.current_mana
+    r = challenger.execute_action("use_daowen", {
+        "daowen_name": "杀伐", "x": 3, "target": opp.name, "dodge": True,
+    })
+    assert r["success"] is True, r
+    assert r["dodge"]["fully_dodged"] is True
+    assert opp.current_hp == hp
+    assert opp.current_speed == spd - 1
+    assert challenger.state.player.current_mana == mana - 3
+    _cleanup(path)
+
+
+def test_duel_target_daowen_no_speed_cannot_dodge():
+    """边界：速度为0时声明闪避失败，杀伐照常结算"""
+    path = "data/test_duel_nododge.json"
+    _cleanup(path)
+    sealed = _new_candidate("nododge_sealed", path, speed_points=8, name="封存贾凡")
+    _finish_battle_7(sealed)
+    challenger = _new_candidate("nododge_challenger", path, speed_points=13, name="挑战贾凡")
+    _finish_battle_7(challenger)
+    opp = next(e for e in challenger.state.enemies if e.entity_type == "轮回者")
+    challenger.execute_action("round_start", {})
+    opp.current_speed = 0
+    hp = opp.current_hp
+    r = challenger.execute_action("use_daowen", {
+        "daowen_name": "杀伐", "x": 3, "target": opp.name, "dodge": True,
+    })
+    assert r["success"] is True, r
+    assert r["dodge"].get("fully_dodged") is False
+    assert opp.current_hp == hp - 6
+    _cleanup(path)
+
+
+def test_duel_opponent_chooses_zhesu_relic():
+    """正常路径：对手自己决定是否发动折速；发动则疲惫X换6X法力"""
+    path = "data/test_duel_zhesu.json"
+    _cleanup(path)
+    sealed = _new_candidate("zhesu_sealed", path, speed_points=8, name="封存贾凡")
+    from engine.models import Relic
+    sealed.state.relics.append(Relic(name="折速法印", effect="[战始]可疲惫X获得6X法力"))
+    _finish_battle_7(sealed)
+    challenger = _new_candidate("zhesu_challenger", path, speed_points=13, name="挑战贾凡")
+    r = _finish_battle_7(challenger)
+    crown = r["result"]["final_crown"]
+    assert any(o["name"] == "折速法印" and o["side"] == "opponent_side" for o in crown["optional_relics"])
+    opp = next(e for e in challenger.state.enemies if e.entity_type == "轮回者")
+    refuse = challenger.execute_action("activate_duel_relic", {
+        "side": "opponent_side", "relic": "折速法印", "use": False,
+    })
+    assert refuse["success"] is True
+    assert opp.current_speed == 8
+    use = challenger.execute_action("activate_duel_relic", {
+        "side": "opponent_side", "relic": "折速法印", "use": True, "x": 4,
+    })
+    assert use["success"] is True, use
+    assert opp.current_speed == 4
+    assert opp.current_mana == 24
+    bad = challenger.execute_action("activate_duel_relic", {
+        "side": "opponent_side", "relic": "折速法印", "use": True, "x": 9,
+    })
+    assert bad["success"] is False
+    _cleanup(path)
+
+
+def test_duel_activate_relic_rejected_without_duel():
+    """错误输入：没有死斗时不能发动死斗遗物"""
+    engine = GameEngine(db_path="/tmp/linji_tests/test_duel_nrelic.db", rng_seed=1,
+                         sealed_candidate_path="data/test_duel_nrelic.json")
+    engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
+    r = engine.execute_action("activate_duel_relic", {
+        "side": "player_side", "relic": "折速法印", "use": True, "x": 1,
+    })
+    assert r["success"] is False
+
+
 def test_duel_opponent_cast_rejected_on_wrong_turn_and_without_mana():
     """错误输入：没轮到对手时不能发动；法力不足必须失败"""
     path = "data/test_duel_opperr.json"

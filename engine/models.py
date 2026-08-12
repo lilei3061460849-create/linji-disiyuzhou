@@ -515,6 +515,8 @@ class GameState:
     # 遗物与消耗品
     relics: list[Relic] = field(default_factory=list)
     relics_pool: list[Relic] = field(default_factory=list)  # 遗物池（未获取的）
+    # 死斗对手自己的遗物。可选效果（折速/鲜血契约等）由对手决定是否发动，不跟挑战者的 state.relics 混用。
+    opponent_relics: list[Relic] = field(default_factory=list)
     consumables: list[Consumable] = field(default_factory=list)
     # 抵扣X封印的玩家遗物 {遗物名: 剩余回合}，[回终]-1，归零解封（封印期间不触发 process_relics）
     sealed_relics: dict = field(default_factory=dict)
