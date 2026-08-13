@@ -984,8 +984,6 @@ class CombatEngine:
     DEBT_THRESHOLD = 10           # 还债：怪物负债（碎片为负）达到N触发（占位）
     SCULPTURE_DAMAGE = 15         # 雕塑：每点耐久可造成的伤害
     SCULPTURE_SHIELD = 20         # 雕塑：每点耐久可获得的格挡
-    # 雕塑身份：仅怪物与微光者（朋友/员工/临时朋友）。轮回者、赤族不触发。
-    SCULPTURE_ENTITY_TYPES = frozenset({"怪物", "朋友", "员工", "临时朋友"})
 
     def cancer_threshold_of(self, entity: Entity) -> int:
         """README：累计恢复量达到血限×2（过量按双倍已计入 total_healed）。"""
@@ -1013,13 +1011,13 @@ class CombatEngine:
         return results
 
     def _can_be_sculptured(self, entity: Entity) -> bool:
-        """雕塑只对怪物与微光者。轮回者攻次/攻力归0不触发。"""
-        return entity.entity_type in self.SCULPTURE_ENTITY_TYPES
+        """雕塑对任何非轮回者生效。轮回者攻次/攻力归0不触发。"""
+        return entity.entity_type != "轮回者"
 
     def settle_victory_paths(self) -> list[dict]:
         """
         回终多路径胜利结算（依次检查：雕塑 / 癌变 / 还债）
-        雕塑：仅怪物与微光者（朋友/员工/临时朋友），不视为击杀，不提供碎片。
+        雕塑：任何非轮回者（怪物/微光者/赤族等），不视为击杀，不提供碎片。
         还债：仅怪物。
         癌变对任一角色生效。
         """
@@ -1029,7 +1027,7 @@ class CombatEngine:
                     or monster.is_proliferated or monster.is_debt_bound:
                 continue
 
-            # 1. 雕塑：攻击次数或攻击力之一归0（仅怪物/微光者）
+            # 1. 雕塑：攻击次数或攻击力之一归0（任何非轮回者）
             if self._can_be_sculptured(monster) and (
                     monster.attack_count <= 0 or monster.attack_power <= 0):
                 results.append(self._sculpture_monster(monster))

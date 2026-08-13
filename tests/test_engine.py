@@ -464,7 +464,7 @@ def test_daowen_effects_wired():
     assert engine.combat.is_targetable(player, player) is True or True
     print("  ✓ 飞行：地面怪无法选中飞行中的玩家")
 
-    # 变形（自身攻击力/攻击次数互换）：玩家1×1→1×1（无变化，但逻辑跑通）
+    # 变形（自身攻击力/攻击次数互换）：玩家默认 0×0，互换后仍为 0×0，只验证逻辑跑通
     r = engine.execute_action("use_daowen", {"daowen_name":"变形","x":1})
     assert r["success"], r
     print("  ✓ 变形：攻击力/攻击次数互换执行成功")

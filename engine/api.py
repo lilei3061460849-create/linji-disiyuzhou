@@ -540,8 +540,8 @@ class GameEngine:
             current_mana=mana_limit,
             speed_limit=speed_limit,
             current_speed=speed_limit,
-            attack_count=1,
-            attack_power=1,
+            attack_count=0,
+            attack_power=0,
         )
         
         self.state.player = player
@@ -557,6 +557,8 @@ class GameEngine:
                 "blood_limit": blood_limit,
                 "mana_limit": mana_limit,
                 "speed_limit": speed_limit,
+                "attack_count": player.attack_count,
+                "attack_power": player.attack_power,
                 "action_count": player.action_count,
                 "shards": 20
             },

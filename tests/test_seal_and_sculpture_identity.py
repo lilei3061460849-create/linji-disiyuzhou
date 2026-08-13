@@ -1,7 +1,7 @@
-"""封印仅移出怪物；雕塑仅怪物与微光者。
+"""封印仅移出怪物；雕塑对任何非轮回者；轮回者开局攻面板 0×0。
 
 封印 README：使 X 个[目标]怪物移出本场战斗。
-雕塑：用户裁定仅怪物和微光者（朋友/员工/临时朋友）；轮回者不触发。
+雕塑：用户裁定对任何非轮回者（怪物/微光者/赤族等）；轮回者不触发。
 """
 import os
 import sys
@@ -102,11 +102,19 @@ def test_seal_on_duel_reincarnator_only_removes_zero():
 # 雕塑
 # ========================================================================
 
+def test_setup_reincarnator_attack_panel_is_zero():
+    """正常路径：setup 后轮回者攻击次数/攻击力为 0×0。"""
+    engine = _engine("zero_atk")
+    p = engine.state.player
+    assert p.attack_count == 0
+    assert p.attack_power == 0
+
+
 def test_sculpture_monster_and_weiguang_on_both_sides():
     """正常路径：怪物与己方微光者攻力归 0 都化为雕塑。"""
     state = GameState()
     state.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60,
-                          attack_count=1, attack_power=1)
+                          attack_count=0, attack_power=0)
     m = _monster("石像鬼", hp=100, atk=2, power=0)
     friend = Entity(name="岩行者", entity_type="朋友", blood_limit=40, current_hp=40,
                     attack_count=3, attack_power=0, is_deployed=True)
@@ -142,8 +150,8 @@ def test_sculpture_employee_and_temp_friend_zero_count():
     assert ok.is_alive and not ok.is_sculptured
 
 
-def test_sculpture_skips_reincarnator_on_both_sides():
-    """错误输入/对照：轮回者攻力/攻次归 0 不雕塑；赤族也不雕塑。"""
+def test_sculpture_includes_chizu_skips_reincarnator():
+    """边界：赤族攻力归 0 雕塑；双方轮回者 0×0 不雕塑。"""
     state = GameState()
     player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60,
                     attack_count=0, attack_power=0)
@@ -156,8 +164,24 @@ def test_sculpture_skips_reincarnator_on_both_sides():
     state.friends.append(chizu)
     combat = CombatEngine(state, DiceEngine())
     paths = combat.settle_victory_paths()
-    assert not any(p["type"] == "sculpture" for p in paths)
+    assert sum(1 for p in paths if p["type"] == "sculpture") == 1
+    assert chizu.is_sculptured and not chizu.is_alive
     assert player.is_alive and not player.is_sculptured
     assert foe.is_alive and not foe.is_sculptured
-    assert chizu.is_alive and not chizu.is_sculptured
+    assert any(c.name == "赤仆雕塑" for c in state.consumables)
+
+
+def test_sculpture_skips_reincarnator_even_if_forced_zero():
+    """错误输入/对照：只剩轮回者时，攻次/攻力 0 不产生雕塑。"""
+    state = GameState()
+    player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60,
+                    attack_count=0, attack_power=0)
+    state.player = player
+    foe = Entity(name="敌对轮回者", entity_type="轮回者", blood_limit=70, current_hp=70,
+                 attack_count=0, attack_power=0)
+    state.enemies.append(foe)
+    combat = CombatEngine(state, DiceEngine())
+    paths = combat.settle_victory_paths()
+    assert not any(p["type"] == "sculpture" for p in paths)
+    assert player.is_alive and foe.is_alive
     assert state.consumables == []
