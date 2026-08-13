@@ -2109,7 +2109,9 @@ class CombatEngine:
                     break
                 # 每个攻击出手计入本回合出手数（供【凡庸】判定）
                 m.actions_used_this_round += 1
-                for _h in range(m.attack_count):
+                # 物品索引：高爆手雷「本回合攻击次数-1」。不改 attack_count 面板，避免误触雕塑。
+                hits = max(0, m.attack_count - m.get_status_value("手雷减攻"))
+                for _h in range(hits):
                     if not player.is_alive or not m.is_alive:
                         break
                     # 必中只覆盖剩余次数；余数在 resolve_attack 里消耗
@@ -2120,7 +2122,7 @@ class CombatEngine:
                     # 标记"一轮攻击内的第几击"：一次攻击出手包含 attack_count 次攻击，
                     # 每次独立判定闪避(README:204)，但它们同属一个出手，不应各占一个出手号。
                     _r["hit_index"] = _h + 1
-                    _r["hit_total"] = m.attack_count
+                    _r["hit_total"] = hits
                     _r["new_action"] = (_h == 0)
                     results.append(_r)
         return results

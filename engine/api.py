@@ -1846,10 +1846,13 @@ class GameEngine:
     def _action_declare_evolution(self, params: dict) -> dict:
         """怪物进化：发动【原初X】借用原始怪物道纹（引擎直接结算，无需DM中断）"""
         monster_name = params.get("monster", "")
-        monster = next((e for e in self.state.enemies if e.name == monster_name), None)
+        # 同名重复抽 + 封印尸体仍留在 state.enemies：必须跳过已命零/已移出的，
+        # 否则会命中第一具尸体并报「已命零」，活着的同名困境怪永远进化不了。
+        monster = next((e for e in self.state.enemies
+                        if e.name == monster_name and e.is_alive and not e.removed_without_kill), None)
         
         if not monster:
-            return {"success": False, "error": f"找不到怪物: {monster_name}"}
+            return {"success": False, "error": f"找不到存活的怪物: {monster_name}"}
         
         daowen_name = params.get("daowen", "")
         try:
@@ -1964,16 +1967,18 @@ class GameEngine:
             if flying:
                 target.add_status(StatusEffect(name="坠落", value=1, remaining_rounds=1, source="反怪物电击枪"))
             result.update({"target": target.name, "damage": dmg, "flying_bonus": 15 if flying else 0, "hp_after": target.current_hp, "detail": detail})
-        # 2. 备用血泵：回复20，≤30% 额外30格挡
+        # 2. 备用血泵：回复20（走 heal，计入癌变/战终回吐），≤30% 额外30格挡
         elif name == "备用血泵":
-            before = player.current_hp
-            player.current_hp = min(player.blood_limit, player.current_hp + 20)
-            healed = player.current_hp - before
+            heal_detail = player.heal(20)
+            healed = heal_detail["actual_heal"]
             shield_gained = 0
             if player.current_hp <= player.blood_limit * 0.3:
                 player.shield += 30
                 shield_gained = 30
-            result.update({"healed": healed, "hp_after": player.current_hp, "shield_gained": shield_gained})
+            cancer = self.combat.check_cancer(player)
+            result.update({"healed": healed, "hp_after": player.current_hp,
+                           "shield_gained": shield_gained, "heal": heal_detail,
+                           "cancer": cancer})
         # 3. 强光探照灯：目标蒙蔽2
         elif name == "强光探照灯":
             target_name = params.get("target", "")
@@ -1996,11 +2001,10 @@ class GameEngine:
         elif name == "储能电池":
             player.current_mana += 12
             result.update({"mana_gained": 12, "mana_after": player.current_mana})
-        # 6. 急救箱：回复25 并清一种负面持续
+        # 6. 急救箱：回复25（走 heal）并清一种负面持续
         elif name == "急救箱":
-            before = player.current_hp
-            player.current_hp = min(player.blood_limit, player.current_hp + 25)
-            healed = player.current_hp - before
+            heal_detail = player.heal(25)
+            healed = heal_detail["actual_heal"]
             # 负面定义：持续X（remaining>0）或特定名
             neg = [s for s in player.status_effects if s.remaining_rounds > 0 or s.name in ("坏死", "退化", "伤痕", "畸变", "蒙蔽")]
             removed = None
@@ -2008,7 +2012,9 @@ class GameEngine:
                 s = neg[0]
                 player.status_effects.remove(s)
                 removed = s.name
-            result.update({"healed": healed, "removed_status": removed})
+            cancer = self.combat.check_cancer(player)
+            result.update({"healed": healed, "removed_status": removed,
+                           "heal": heal_detail, "cancer": cancer})
         # 7. 干扰仪：全场敌方本回合无法发动道纹（加干扰1状态）
         elif name == "干扰仪":
             jammed = []
@@ -2068,8 +2074,13 @@ class GameEngine:
         if res.get("error"):
             return {"success": False, "error": res["error"],
                     "pages": res.get("pages"), "instruction": res.get("instruction", "")}
-        reject_kw = ("拒绝", "无事发生", "观棋", "无视", "离开", "目送", "绕桥", "让炉", "避开", "捂住", "转身")
-        if any(k in opt["text"] for k in reject_kw) and any(r.name == "无所求" for r in self.state.relics):
+        # 「拒绝改造」等带代价的选项也含「拒绝」，不能当拒绝类。
+        # 真拒绝：正文写「无事发生」，或选项以「拒绝：/拒绝:」起头。
+        reject_kw = ("无事发生", "观棋", "无视", "离开", "目送", "绕桥", "让炉", "避开", "捂住", "转身")
+        text = opt["text"]
+        is_reject = (any(k in text for k in reject_kw)
+                     or text.startswith("拒绝：") or text.startswith("拒绝:"))
+        if is_reject and any(r.name == "无所求" for r in self.state.relics):
             self.state.player.speed_limit += 1
             self.state.player.current_speed = self.state.player.speed_limit
             res["applied"].append("无所求：+1速限")

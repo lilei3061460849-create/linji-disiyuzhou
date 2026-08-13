@@ -270,7 +270,9 @@ def resolve_option_effect(text: str, engine, event_name: str = "", params=None) 
     if '属性点' in text and ('获得' in text or '+' in text):
         player.speed_limit += 1; player.current_speed = player.speed_limit; applied.append("获得1速限(属性点)")
     # 拒绝/无事
-    if '无事发生' in text or text.startswith('拒绝') or text.startswith('观棋') or text.startswith('无视') or text.startswith('离开') or text.startswith('目送') or text.startswith('绕桥') or text.startswith('让炉'):
+    if ('无事发生' in text or text.startswith('拒绝：') or text.startswith('拒绝:')
+            or text.startswith('观棋') or text.startswith('无视') or text.startswith('离开')
+            or text.startswith('目送') or text.startswith('绕桥') or text.startswith('让炉')):
         applied.append("无事发生")
     # 特殊效果（下注/设计/限制/移植/抽取/雇佣/自定义等）→交DM
     special_kw = ['下注', '设计', '限制选择权', '强制移植', '抽取灵魂', '雇佣', 'diy', '定制', '押注', '负债', '双倍', '随机数', '写信', '寄']
