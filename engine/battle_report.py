@@ -134,7 +134,9 @@ def _render_effect(eff: dict) -> str:
     """把引擎的 effect 字典转成文字，不添加引擎未给出的数值。"""
     t = eff.get("type", "")
     if t == "mana_refill":
-        return f"{eff.get('entity')} 法力补满：{eff.get('from')}→{eff.get('to')}"
+        gained = eff.get("gained")
+        extra = f"（+{gained}）" if gained is not None else ""
+        return f"{eff.get('entity')} 获得法力：{eff.get('from')}→{eff.get('to')}{extra}"
     if t == "mana_clear":
         return f"{eff.get('entity')} 法力清空：清除{eff.get('cleared')}点"
     if t == "shield_clear":
@@ -144,7 +146,23 @@ def _render_effect(eff: dict) -> str:
                 f"（格挡吸收{eff.get('shield_absorbed')}）"
                 f"，生命{eff.get('hp_before')}→{eff.get('hp_after')}")
     if t == "heal":
-        return f"{eff.get('entity') or eff.get('target')} [回复]{eff.get('amount')}"
+        who = eff.get("entity") or eff.get("target")
+        amt = eff.get("actual_heal", eff.get("amount"))
+        before, after = eff.get("hp_before"), eff.get("hp_after")
+        if before is not None and after is not None:
+            return f"{who} [回复]{amt}，生命{before}→{after}"
+        return f"{who} [回复]{amt}"
+    if t == "heal_pct":
+        who = eff.get("entity") or eff.get("target")
+        amt = eff.get("actual_heal", eff.get("amount"))
+        before, after = eff.get("hp_before"), eff.get("hp_after")
+        if before is not None and after is not None:
+            return f"{who} [回复]{amt}（百分比），生命{before}→{after}"
+        return f"{who} [回复]{amt}"
+    if t == "aoe_damage":
+        return (f"{eff.get('target')} 受到范围伤害{eff.get('actual_damage')}"
+                f"（格挡吸收{eff.get('shield_absorbed', 0)}）"
+                f"，生命{eff.get('hp_before')}→{eff.get('hp_after')}")
     if t == "shield":
         return f"{eff.get('target') or eff.get('entity')} 获得格挡 {eff.get('amount')}"
     if t == "bleed_cost":

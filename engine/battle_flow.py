@@ -40,9 +40,10 @@ class BattleFlow:
                 if monster.current_hp > old_hp:
                     effects.append(f"{monster.name}自愈: +{monster.current_hp - old_hp}HP")
             
-            # 庇护：回始获得格挡（怪物×3）
+            # 庇护：回始获得格挡（原版 4X）
             if dw_name == "庇护":
-                shield = 4 * 3  # 庇护4×3=12
+                x = self._daowen_value(monster, "庇护", default=1)
+                shield = 4 * x
                 monster.shield += shield
                 effects.append(f"{monster.name}庇护: +{shield}格挡")
             
@@ -176,10 +177,10 @@ class BattleFlow:
         }
         
         # === 1. 回始 ===
-        # 法力补满
+        # 获得等同当前法限的法力（加法，从不赋值到法限）
         old_mana = player.current_mana
-        player.current_mana = player.mana_limit
-        round_result["effects"].append(f"法力补满: {old_mana}→{player.mana_limit}")
+        player.current_mana += player.mana_limit
+        round_result["effects"].append(f"获得法力: {old_mana}→{player.current_mana}（+{player.mana_limit}）")
         
         # 格挡清空（新回合）
         player.shield = 0

@@ -152,7 +152,7 @@ def monster_round_start(m, activated):
         m.heal(heal)
     if "庇护" in activated:
         x = m.dao_wen["庇护"].x_value
-        m.shield += 4 * x * 3  # 怪物×3
+        m.shield += 4 * x
 
 
 def monster_activate(m, activated, rng):
@@ -538,13 +538,14 @@ def run_battle(md, policy, rng, player_dw=None):
     player.shards = 60  # 单场假设：携带60碎片入场（裁定⑨，供罪孽经济道纹咬合）
     monsters_list = [monster]
     activated = set()  # 怪物已激活的道纹（白板第1回合为空）
+    player.current_mana = 0  # 战始清零；回始再获得等同法限的法力
     for rnd in range(1, max_rounds+1):
         if not player.is_alive:
             return {"win": False, "path": "death", "rounds": rnd}
         if not monster.is_alive:
             break
-        # 回始
-        player.current_mana = player.mana_limit
+        # 回始：获得等同当前法限的法力
+        player.current_mana += player.mana_limit
         player.shield = 0
         player.hp_lost_this_round = 0
         monster.hp_lost_this_round = 0

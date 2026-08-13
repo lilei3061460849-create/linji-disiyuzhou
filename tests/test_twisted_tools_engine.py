@@ -67,11 +67,13 @@ def test_normal_blood_pump():
     p = engine.state.player
     # 高血量：仅回 20，无格挡
     p.current_hp = 50
+    th0 = p.total_healed
     _grant_tool(engine, "备用血泵")
     r = engine.execute_action("consume_item", {"name": "备用血泵"})
     assert r["success"]
     assert r["result"]["healed"] == 10  # 50->60 cap
     assert r["result"]["shield_gained"] == 0
+    assert p.total_healed > th0, "备用血泵必须走 heal()，计入累计恢复"
     # 低血量：回 20 后 ≤30% 则 +30 格挡
     p.current_hp = 10  # 16% 
     p.shield = 0
@@ -153,29 +155,30 @@ def test_normal_jammer():
 def test_normal_hand_grenade():
     engine = _setup_engine()
     m = engine.state.enemies[0]
-    m.dao_wen["活力"] = DaoWenInstance(DaoWen(name="活力", formula="", cost_type="", cost_formula="", effect_formula=""), x_value=2)
+    m.attack_count = 3
+    m.attack_power = 5
     m.current_hp = 100
-    engine.combat._monster_activated = {id(m): {"活力"}}
-    n_before = engine.combat._monster_attack_actions(m, {"活力"})
+    engine.combat._monster_activated = {id(m): set()}
     _grant_tool(engine, "高爆手雷")
     r = engine.execute_action("consume_item", {"name": "高爆手雷", "target": m.name})
     assert r["success"]
     assert r["result"]["damage"] == 15
     assert m.current_hp == 85
-    n_after = engine.combat._monster_attack_actions(m, {"活力"})
-    assert n_after == n_before - 1
     assert m.has_status("手雷减攻")
+    # 正文：本回合攻击次数-1。出手数不变，每出手少打一下。
+    assert engine.combat._monster_attack_actions(m, set()) == 1
+    assert m.attack_count == 3, "面板攻击次数不应被改写（否则会误触雕塑）"
 
 # ---------- 边界 ----------
 
 def test_boundary_depleted_tool_rejected():
     engine = _setup_engine()
-    c = _grant_tool(engine, "备用血泵")
-    # Use up all durability (3)
-    for _ in range(3):
-        engine.execute_action("consume_item", {"name": "备用血泵"})
+    # 用不回血的工具耗尽：血泵走 heal() 后满血连用会叠癌变、抛死之传承，挡不住这条断言。
+    c = _grant_tool(engine, "干扰仪")
+    for _ in range(2):
+        engine.execute_action("consume_item", {"name": "干扰仪"})
     assert c.is_depleted
-    r = engine.execute_action("consume_item", {"name": "备用血泵"})
+    r = engine.execute_action("consume_item", {"name": "干扰仪"})
     assert not r["success"]
     assert "找不到可用消耗品" in r["error"]
 

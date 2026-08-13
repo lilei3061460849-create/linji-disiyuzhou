@@ -114,7 +114,7 @@ class EventPool:
             self.current = None
 
 
-def resolve_option_effect(text: str, engine, event_name: str = "") -> dict:
+def resolve_option_effect(text: str, engine, event_name: str = "", params=None) -> dict:
     """
     结算事件选项效果（关键字解释器）。
     自动扣除常见代价（流血/失去碎片/衰老/枯竭/失去精力）与应用常见收益（获碎片/血限/残韵/遗物/法术）。
@@ -152,6 +152,62 @@ def resolve_option_effect(text: str, engine, event_name: str = "") -> dict:
                             "(记录于 state.forced_monsters_next_battle，出怪流程本身另行接入时读取)")
             return {"applied": applied, "instructions": instructions}
         # 选项3"离开"落入下方通用的"无事发生"分支，无需特殊处理
+
+    # ---- 回音长廊：错误遗言 / 清除遗言直接改《死者之书.md》 ----
+    if event_name == "回音长廊":
+        store = getattr(engine, "death_book", None)
+        if "错误遗言" in text or text.startswith("聆听"):
+            engine.state.shards += 10
+            applied.append("获得10碎片")
+            if store is not None:
+                from .death_book import CAUSE_DRAFTS, validate_legacy
+                written = store.append(validate_legacy(CAUSE_DRAFTS["echo_error"]))
+                engine.state.death_book_legacies = store.load()
+                applied.append(f"写入错误遗言：{written['trigger_point']}")
+            return {"applied": applied, "instructions": instructions}
+        if "清除" in text and "遗言" in text:
+            params = params or {}
+            pages = store.load() if store is not None else []
+            if not pages:
+                if player:
+                    player.take_damage(5, "代价")
+                    applied.append("流血5")
+                applied.append("无遗言可清除")
+                return {"applied": applied, "instructions": instructions}
+            listed = [{"index": i + 1,
+                       "title": p.get("title") or f"遗言{i+1}",
+                       "trigger_point": p.get("trigger_point", ""),
+                       "fork": p.get("fork", ""),
+                       "cost_budget": p.get("cost_budget", "")}
+                      for i, p in enumerate(pages)]
+            idx = params.get("legacy_index")
+            title = params.get("legacy_title")
+            removed = None
+            if isinstance(idx, int) and not isinstance(idx, bool):
+                removed = store.remove_at(idx - 1)
+            elif isinstance(title, str) and title.strip():
+                removed = store.remove_by_title(title)
+            else:
+                return {
+                    "applied": [],
+                    "instructions": [],
+                    "error": "打碎镜子必须自选一页遗言（legacy_index 从1起，或 legacy_title）",
+                    "pages": listed,
+                    "instruction": "请重新调用 resolve_event，并带上要清除的那一页",
+                }
+            if removed is None:
+                return {
+                    "applied": [],
+                    "instructions": [],
+                    "error": "指定的遗言不存在",
+                    "pages": listed,
+                }
+            if player:
+                player.take_damage(5, "代价")
+                applied.append("流血5")
+            engine.state.death_book_legacies = store.load()
+            applied.append(f"清除遗言：{removed.get('title') or removed.get('trigger_point')}")
+            return {"applied": applied, "instructions": instructions}
 
     def hurt(hp):
         if player:
@@ -214,7 +270,9 @@ def resolve_option_effect(text: str, engine, event_name: str = "") -> dict:
     if '属性点' in text and ('获得' in text or '+' in text):
         player.speed_limit += 1; player.current_speed = player.speed_limit; applied.append("获得1速限(属性点)")
     # 拒绝/无事
-    if '无事发生' in text or text.startswith('拒绝') or text.startswith('观棋') or text.startswith('无视') or text.startswith('离开') or text.startswith('目送') or text.startswith('绕桥') or text.startswith('让炉'):
+    if ('无事发生' in text or text.startswith('拒绝：') or text.startswith('拒绝:')
+            or text.startswith('观棋') or text.startswith('无视') or text.startswith('离开')
+            or text.startswith('目送') or text.startswith('绕桥') or text.startswith('让炉')):
         applied.append("无事发生")
     # 特殊效果（下注/设计/限制/移植/抽取/雇佣/自定义等）→交DM
     special_kw = ['下注', '设计', '限制选择权', '强制移植', '抽取灵魂', '雇佣', 'diy', '定制', '押注', '负债', '双倍', '随机数', '写信', '寄']

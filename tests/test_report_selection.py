@@ -1,10 +1,8 @@
 """
-pytest - 战报选取标准（用户裁定）
+pytest - 战报政策与批量选取脚本
 
-标准：
-1. 以进入【最终的冠冕】前的当前血量为唯一评判标准，最高者入选
-2. 中途阵亡的轮回不参与评选
-3. 受 bug 影响的对局视为无效数据作废，不入选、不作为平衡依据
+正式 `战报.md` 只保留最新一次轮回记录，由 GameEngine 手操写入。
+`sim/pick_best_report.py` 仍是平衡工具：通关、冠冕前血量、无效局标记。
 
 覆盖：正常路径 / 边界条件 / 错误输入
 """
@@ -38,10 +36,12 @@ def test_play_and_record_reports_hp_before_crown():
 
 
 def test_report_states_selection_standard():
-    """正常路径：战报开头必须写明选取标准，供后续测试遵循"""
+    """正常路径：战报开头必须写明最新一次轮回政策与推演格式要求"""
     txt = open(REPORT, encoding="utf-8").read()
     for key in ["最终的冠冕", "剩余生命", "无效数据", "六、战斗推演格式"]:
-        assert key in txt, f"战报开头缺少标准说明：{key}"
+        assert key in txt, f"战报开头缺少政策说明：{key}"
+    assert "最新一次轮回" in txt
+    assert "pick_best_report" in txt
 
 
 def test_report_follows_spec_format():

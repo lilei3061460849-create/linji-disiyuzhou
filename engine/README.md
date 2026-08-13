@@ -44,13 +44,14 @@ engine/
 ├── events.py            # 事件池（parse_events、EventPool，通用 10 + 三副本专属）
 ├── daowen.py            # 道纹系统（含当前全部 64 道纹 calculate_* 与 ResonanceEngine；增殖为道纹，癌变为机制，二者无关）
 ├── combat.py            # 战斗计算引擎（伤害/回合/闪避/多路径 癌变/雕塑/还债，PROLIFERATION_THRESHOLD 为癌变阈值，CANCER_THRESHOLD 别名）
-├── battle_flow.py       # 战斗流程（battle_start 出怪、round_start/round_end、怪物道纹×3 判定）
+├── battle_flow.py       # 战斗流程（battle_start 出怪、round_start/round_end）
 ├── battle_report.py     # 战报渲染（推演格式逐回合输出）
 ├── ai_player.py         # AI 玩家封装（TacticalAI 等）
 ├── ai_tactics.py        # AI 战术表（TACTICAL_ROLES、各类道纹优先级）
 ├── dm_rulings.py        # DM 裁定库（SQLite + FTS，先例匹配）
 ├── rule_sync.py         # 多事实源同步（README/死者之书/物品索引/副本索引）
 ├── document_validation.py # Markdown标题、文件链接与锚点校验
+├── death_book.py        # 《死者之书》遗言节读写（文件是事实源；审核后只改 ## 遗言）
 ├── validator.py         # 规则校验器（22 条内置检查，违规入库）
 └── api.py               # GameEngine 主类 — AI 唯一交互入口（含 TWISTED_TOOL_LIBRARY、TERMINAL_ARTIFACTS、FIRST_EMBRACE_OPTIONS 等）
 ```
@@ -154,7 +155,8 @@ engine = GameEngine(rng_seed=12345)
 | `resolve_rebellion_battle` | 镇压结算(outcome=victory/defeat) |
 | `appease_rebellion` | 员工叛变·让利：全局工资+5，平息叛乱 |
 | `negotiate_rebellion` | 员工叛变·急中生智谈判：抛Interrupt交DM裁定 |
-| `resolve_final_duel` | 第8场死斗结算；失败时提交`death_book_entry={trigger_point,fork,cost_budget}`，三段均必填且各≤20字 |
+| `resolve_final_duel` | 第8场死斗结算；失败时触发【死之传承】中断，可选带`death_book_entry`作草稿 |
+| `submit_ruling`（死之传承） | 轮回者命零后审核遗言：`action=approve/edit/reject`；通过或修改后写入`死者之书.md`的「## 遗言」节 |
 | `choose_terminal_artifact` | 死斗胜利后按副本领取终音法器(choice=序号) |
 | `choose_first_embrace` | 初拥之夜9选1(choice=1~9，1~8限选1次，9可重复) |
 | `use_black_card` | 黑金名片(罪孽都市终音)：敌方血限减半，等量碎片(允许负债≤50) |
@@ -193,6 +195,9 @@ python main.py
 # API演示
 python main.py --api
 
-# 运行测试
+# 回归锁（不是对局本身）
 python tests/test_engine.py
+python -m pytest tests -q
 ```
+
+用户说「测试」时，默认由 AI 通过 `GameEngine.execute_action` 逐步点选手操并按 README《六、战斗推演格式》写战报。禁止把 `TacticalAI`、`sim/pick_best_report.py`、`test_with_ai.py`、sim 批量通关当作默认测试。`pytest` 只锁定回归。`战报.md` 只保留最新一次轮回记录。

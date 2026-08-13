@@ -121,12 +121,14 @@ def test_dragon_bloodline_instakills_monsters_and_doubles_nonmonster_damage():
     monster = Entity(name="怪物", entity_type="怪物", blood_limit=999999, current_hp=999999)
     engine.state.enemies.append(monster)
     engine.execute_action("round_start", {})
+    player.attack_count = 1
+    player.attack_power = 5
     _resolve_full_attack(engine, player.name, monster)
     assert monster.is_alive is False, "怪物应被直接命零"
 
     non_monster = Entity(name="敌方轮回者", entity_type="轮回者", blood_limit=100, current_hp=100)
     dmg = engine.combat.resolve_attack(player, non_monster, is_must_hit=True)
-    assert dmg["damage_dealt"] == player.attack_power * 2
+    assert dmg["damage_dealt"] == 10
 
 
 # ========================================================================

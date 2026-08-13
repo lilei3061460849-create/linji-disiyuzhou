@@ -118,6 +118,8 @@ def test_option1_blood_lineage_heals_when_damage_dealt_else_bleeds_20():
     player = engine.state.player
     _grant(engine, 1)
     enemy = _start_battle_with_enemy(engine)
+    player.attack_count = 1
+    player.attack_power = 5
 
     _resolve_full_attack(engine, player.name, enemy)
     player.current_hp = min(player.current_hp, player.blood_limit - 5)

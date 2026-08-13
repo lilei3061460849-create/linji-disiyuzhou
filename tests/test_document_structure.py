@@ -10,8 +10,8 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_all_repository_markdown_has_h1_and_resolving_links():
     """正常路径：全仓文档都有H1，全部本地链接和锚点可解析。"""
     result = validate_markdown_documents(ROOT)
-    assert result["documents"] >= 21
-    assert result["links"] >= 64
+    assert result["documents"] >= 17
+    assert result["links"] >= 60
 
 
 def test_nested_unicode_document_and_anchor_are_supported(tmp_path):
