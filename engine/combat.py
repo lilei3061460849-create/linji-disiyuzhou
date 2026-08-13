@@ -1526,6 +1526,21 @@ class CombatEngine:
                                       "count": calc["guaranteed_hits"],
                                       "remaining": self.bizhong_remaining(caster)})
 
+        # 蒙蔽X：使[目标]下X次造成的伤害无效。次数型，不走 duration 挂状态。
+        # 此前只算出 invalid_damage_hits，apply 不消费，轮回者 use_daowen 等于白扣 5X 法力。
+        # 怪物侧走 _apply_control_to_player，探照灯走 add_status，所以旧测试都绿。
+        if "invalid_damage_hits" in calc:
+            hits = int(calc["invalid_damage_hits"])
+            if hits > 0:
+                target.add_status(StatusEffect(
+                    name="蒙蔽", remaining_rounds=-1, value=hits, source=caster.name))
+                result["effects"].append({
+                    "type": "mengbi",
+                    "target": target.name,
+                    "count": hits,
+                    "remaining": target.get_status_value("蒙蔽"),
+                })
+
         if "duration" in calc and calc.get("duration") is not None:
             duration = calc["duration"] if calc["duration"] != 0 else -1
             effect_target = target if target else caster
