@@ -1332,6 +1332,9 @@ class GameEngine:
             return {"success": False, "error": f"{name}已在场，无需重复派遣"}
         if not self.state.player:
             return {"success": False, "error": "没有玩家"}
+        duel_error = self._check_duel_turn_or_error(self.state.player)
+        if duel_error:
+            return duel_error
         budget_error = self._consume_action_or_error(self.state.player)
         if budget_error:
             return budget_error
@@ -1341,6 +1344,7 @@ class GameEngine:
         # current_round 由 round_start() 递增，代表"当前正在进行的回合序号"(1-indexed)；
         # 若在round_start之前部署(current_round仍为0)，视为从第1回合起参战。
         emp.deployed_at_round = max(1, self.state.current_round)
+        self._advance_duel_turn()
         return {
             "success": True, "action": "派遣员工",
             "result": {"employee": name, "deployed_at_round": emp.deployed_at_round},

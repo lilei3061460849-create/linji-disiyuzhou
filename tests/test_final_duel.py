@@ -761,5 +761,76 @@ def test_duel_side_has_rejects_friend_and_missing_trait():
     _cleanup(path)
 
 
+def test_duel_deploy_employee_advances_turn():
+    """正常：死斗派遣花 1 出手后换到对手。"""
+    path = "data/test_duel_deploy_turn.json"
+    _cleanup(path)
+    sealed = _new_candidate("deploy_sealed", path, speed_points=5, name="对手")
+    _finish_battle_7(sealed)
+    challenger = _new_candidate("deploy_challenger", path, speed_points=13, name="挑战者")
+    _finish_battle_7(challenger)
+    challenger.state.employees.append(Entity(
+        name="打手", entity_type="员工", blood_limit=24, current_hp=24,
+        attack_count=3, attack_power=6, is_deployed=False))
+    challenger.execute_action("round_start", {})
+    assert challenger.state.duel_turn == "player_side"
+    r = challenger.execute_action("deploy_employee", {"name": "打手"})
+    assert r["success"], r
+    assert challenger.state.duel_turn == "opponent_side"
+    emp = next(e for e in challenger.state.employees if e.name == "打手")
+    assert emp.is_deployed is True
+    twice = challenger.execute_action("attack", {"attacker": "挑战者", "target_selections": [0]})
+    assert twice["success"] is False
+    assert "交替出手" in twice["error"]
+    _cleanup(path)
+
+
+def test_duel_deploy_stays_when_opponent_exhausted():
+    """边界：对手出手用尽后派遣不换边，本侧余手连动。"""
+    path = "data/test_duel_deploy_leftover.json"
+    _cleanup(path)
+    sealed = _new_candidate("deployleft_sealed", path, speed_points=5, name="对手")
+    _finish_battle_7(sealed)
+    challenger = _new_candidate("deployleft_challenger", path, speed_points=13, name="挑战者")
+    _finish_battle_7(challenger)
+    opp = next(e for e in challenger.state.enemies if e.entity_type == "轮回者")
+    challenger.state.employees.append(Entity(
+        name="后援", entity_type="员工", blood_limit=24, current_hp=24,
+        attack_count=3, attack_power=6, is_deployed=False))
+    challenger.execute_action("round_start", {})
+    for _ in range(2):
+        assert challenger.execute_action("attack", {"attacker": "挑战者", "target_selections": [0]})["success"]
+        assert challenger.execute_action("attack", {"attacker": opp.name, "target_selections": [0]})["success"]
+    assert opp.actions_used_this_round == 2
+    assert challenger.state.duel_turn == "player_side"
+    r = challenger.execute_action("deploy_employee", {"name": "后援"})
+    assert r["success"], r
+    assert challenger.state.duel_turn == "player_side"
+    _cleanup(path)
+
+
+def test_duel_deploy_rejected_on_wrong_turn():
+    """错误：没轮到挑战者时派遣必须拒绝，员工仍待命。"""
+    path = "data/test_duel_deploy_wrong.json"
+    _cleanup(path)
+    sealed = _new_candidate("deploywrong_sealed", path, speed_points=5, name="对手")
+    _finish_battle_7(sealed)
+    challenger = _new_candidate("deploywrong_challenger", path, speed_points=13, name="挑战者")
+    _finish_battle_7(challenger)
+    challenger.state.employees.append(Entity(
+        name="待命", entity_type="员工", blood_limit=24, current_hp=24,
+        attack_count=3, attack_power=6, is_deployed=False))
+    challenger.execute_action("round_start", {})
+    assert challenger.execute_action("attack", {"attacker": "挑战者", "target_selections": [0]})["success"]
+    assert challenger.state.duel_turn == "opponent_side"
+    r = challenger.execute_action("deploy_employee", {"name": "待命"})
+    assert r["success"] is False
+    assert "交替出手" in r["error"]
+    emp = next(e for e in challenger.state.employees if e.name == "待命")
+    assert emp.is_deployed is False
+    assert challenger.state.player.actions_used_this_round == 1
+    _cleanup(path)
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
