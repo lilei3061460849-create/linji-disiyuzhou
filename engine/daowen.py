@@ -211,7 +211,7 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_fengyin(x: int) -> dict:
-        """封印X：消耗10X。使X个目标怪物移出本场战斗"""
+        """封印X：消耗10X。使X个[目标]怪物移出本场战斗。轮回者/微光者不在移出范围内。"""
         return {
             "dao_wen": "封印",
             "x": x,

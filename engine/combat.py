@@ -984,6 +984,8 @@ class CombatEngine:
     DEBT_THRESHOLD = 10           # 还债：怪物负债（碎片为负）达到N触发（占位）
     SCULPTURE_DAMAGE = 15         # 雕塑：每点耐久可造成的伤害
     SCULPTURE_SHIELD = 20         # 雕塑：每点耐久可获得的格挡
+    # 雕塑身份：仅怪物与微光者（朋友/员工/临时朋友）。轮回者、赤族不触发。
+    SCULPTURE_ENTITY_TYPES = frozenset({"怪物", "朋友", "员工", "临时朋友"})
 
     def cancer_threshold_of(self, entity: Entity) -> int:
         """README：累计恢复量达到血限×2（过量按双倍已计入 total_healed）。"""
@@ -1010,10 +1012,15 @@ class CombatEngine:
                 results.append(hit)
         return results
 
+    def _can_be_sculptured(self, entity: Entity) -> bool:
+        """雕塑只对怪物与微光者。轮回者攻次/攻力归0不触发。"""
+        return entity.entity_type in self.SCULPTURE_ENTITY_TYPES
+
     def settle_victory_paths(self) -> list[dict]:
         """
         回终多路径胜利结算（依次检查：雕塑 / 癌变 / 还债）
-        怪物雕塑/还债不视为击杀，不提供碎片收益。
+        雕塑：仅怪物与微光者（朋友/员工/临时朋友），不视为击杀，不提供碎片。
+        还债：仅怪物。
         癌变对任一角色生效。
         """
         results = []
@@ -1022,8 +1029,9 @@ class CombatEngine:
                     or monster.is_proliferated or monster.is_debt_bound:
                 continue
 
-            # 1. 雕塑：攻击次数或攻击力之一归0
-            if monster.attack_count <= 0 or monster.attack_power <= 0:
+            # 1. 雕塑：攻击次数或攻击力之一归0（仅怪物/微光者）
+            if self._can_be_sculptured(monster) and (
+                    monster.attack_count <= 0 or monster.attack_power <= 0):
                 results.append(self._sculpture_monster(monster))
                 continue
 
@@ -1033,12 +1041,21 @@ class CombatEngine:
                 results.append(cancer)
                 continue
 
-            # 3. 还债：负债达阈值（怪物shards为负）
-            if monster.shards <= -self.DEBT_THRESHOLD:
+            # 3. 还债：负债达阈值（仅怪物；shards为负）
+            if monster.entity_type == "怪物" and monster.shards <= -self.DEBT_THRESHOLD:
                 results.append(self._debt_bind_monster(monster))
                 continue
 
+        seen = {id(e) for e in self.state.enemies}
         for ally in list(self.state.get_all_player_side()):
+            if id(ally) in seen:
+                continue
+            if (ally.is_alive and not ally.is_sculptured and not ally.is_proliferated
+                    and not ally.is_debt_bound
+                    and self._can_be_sculptured(ally)
+                    and (ally.attack_count <= 0 or ally.attack_power <= 0)):
+                results.append(self._sculpture_monster(ally))
+                continue
             cancer = self.check_cancer(ally)
             if cancer:
                 results.append(cancer)
@@ -1067,7 +1084,7 @@ class CombatEngine:
         }
 
     def _sculpture_monster(self, monster: Entity) -> dict:
-        """雕塑：攻击次数或攻击力归0→化为雕塑消耗品（耐久=血限5%）"""
+        """雕塑：怪物/微光者攻击次数或攻击力归0→化为雕塑消耗品（耐久=血限5%）"""
         durability = max(1, math.ceil(monster.blood_limit * 0.05))
         reason = "攻击次数归0" if monster.attack_count <= 0 else "攻击力归0"
         monster.is_sculptured = True
@@ -1512,12 +1529,19 @@ class CombatEngine:
         if "self_attack_count" in calc:  # 自残：目标自打X次
             for _ in range(calc["self_attack_count"]):
                 result["effects"].append({"type": "self_attack", "target": target.name, **self._apply_hostile_damage(target, target.attack_power)})
-        if "targets_removed" in calc:  # 封印：移出X怪
+        if "targets_removed" in calc:  # 封印：仅移出怪物（README：X个[目标]怪物）
             removed = 0
+            removed_names = []
             for e in list(self.state.enemies):
-                if e.is_alive and removed < calc["targets_removed"]:
-                    e.is_alive = False; e.removed_without_kill = True; removed += 1
-            result["effects"].append({"type": "seal", "removed": removed})
+                if (e.is_alive and e.entity_type == "怪物"
+                        and removed < calc["targets_removed"]):
+                    e.is_alive = False
+                    e.removed_without_kill = True
+                    removed += 1
+                    removed_names.append(e.name)
+            result["effects"].append({
+                "type": "seal", "removed": removed, "targets": removed_names,
+            })
 
         # ---- 持续/触发状态（status_added）----
         if "guaranteed_hits" in calc:
