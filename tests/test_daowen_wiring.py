@@ -224,6 +224,56 @@ def test_huaxiang_zhuiluo_dingxing_wushen_xuanyun():
     assert engine.combat.can_act(m)
 
 
+def test_ziyu_cast_does_not_heal_until_round_start():
+    """正常：自愈发动当下不奶，回始才按血限10X%奶一次。"""
+    import math
+    engine = _engine("ziyu_ok")
+    p = engine.state.player
+    _give(p, "自愈")
+    engine.execute_action("round_start", {})
+    p.current_hp = 30
+    r = engine.execute_action("use_daowen", {"daowen_name": "自愈", "x": 2})
+    assert r["success"], r
+    assert p.has_status("自愈")
+    assert p.current_hp == 30
+    expected = math.ceil(p.blood_limit * 20 / 100)
+    engine.execute_action("round_start", {})
+    assert p.current_hp == 30 + expected
+
+
+def test_ziyu_necrosis_blocks_and_invalid_x():
+    """边界：坏死回始不奶；错误：X<1 拒绝。"""
+    engine = _engine("ziyu_bound")
+    p = engine.state.player
+    _give(p, "自愈")
+    engine.execute_action("round_start", {})
+    bad = engine.execute_action("use_daowen", {"daowen_name": "自愈", "x": 0})
+    assert bad["success"] is False
+    assert "X必须≥1" in bad["error"]
+    engine.execute_action("use_daowen", {"daowen_name": "自愈", "x": 1})
+    p.current_hp = 30
+    p.add_status(StatusEffect(name="坏死", remaining_rounds=-1, value=0, source="测"))
+    engine.execute_action("round_start", {})
+    assert p.current_hp == 30
+
+
+def test_ziyu_monster_activate_heals_next_round_start():
+    """正常：怪物激活自愈只挂状态，下个回始才奶。"""
+    import math
+    engine = _engine("ziyu_mon")
+    m = _monster(engine, "自愈鱼", hp=100, atk=1, ap=1)
+    m.dao_wen["自愈"] = DaoWenInstance(
+        DaoWen(name="自愈", formula="", cost_type="异变", cost_formula="5X", effect_formula=""),
+        x_value=1)
+    act = set()
+    name = engine.combat._monster_activate(m, act)
+    assert name == "自愈"
+    assert m.has_status("自愈")
+    m.current_hp = 50
+    engine.execute_action("round_start", {})
+    assert m.current_hp == 50 + math.ceil(m.blood_limit * 10 / 100)
+
+
 def test_jisu_jiasu_dongcha():
     """急速每闪两次+1 速；加速让超频翻倍；洞察闪避后下回始+10 法力。"""
     engine = _engine("speed")

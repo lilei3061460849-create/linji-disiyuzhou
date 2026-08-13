@@ -207,14 +207,13 @@ class CombatEngine:
                     "damage_type": damage_type, "retreated": True,
                 }
         # 断尾求生（真龙之心遗物）：玩家即将命零时，若已预声明愿意牺牲的龙族遗物，移除该遗物抵消本次伤害
-        if (damage_type != "代价" and target is self.state.player and target.is_alive
-                and "断尾求生" in self.state.dragon_traits and self.state.dragon_tail_sacrifice_declared):
+        if (damage_type != "代价" and target.is_alive
+                and self.state.side_has(target, "断尾求生") and self.state.side_tail_declared(target)):
             remaining_after_shield = max(0, amount - target.shield) if amount > 0 else 0
             if remaining_after_shield >= target.current_hp and target.current_hp > 0:
-                sacrificed = self.state.dragon_tail_sacrifice_declared
-                if sacrificed in self.state.dragon_traits:
-                    self.state.remove_relic(sacrificed)
-                self.state.dragon_tail_sacrifice_declared = ""
+                sacrificed = self.state.side_tail_declared(target)
+                self.state.remove_side_relic(target, sacrificed)
+                self.state.clear_side_tail_declared(target)
                 return {
                     "raw_damage": amount, "shield_absorbed": 0, "actual_damage": 0,
                     "hp_before": target.current_hp, "hp_after": target.current_hp,
@@ -436,8 +435,8 @@ class CombatEngine:
         must_hit = is_must_hit or self.consume_bizhong(attacker)
 
         # 血影（初拥之夜遗物，仅玩家自身持有）：非必中判定下，可流血10取消本次判定，是常规闪避外的另一选项
-        if (blood_shadow and not must_hit and target is self.state.player
-                and "血影" in self.state.first_embrace_traits and target.current_hp > 10):
+        if (blood_shadow and not must_hit and self.state.side_has(target, "血影")
+                and target.current_hp > 10):
             self._pay_bleed_cost(target, 10)
             result["blood_shadow_success"] = True
             result["note"] = "血影：流血10，本次判定被取消"
@@ -479,7 +478,7 @@ class CombatEngine:
         if attacker.has_status("坠落"):
             damage = math.ceil(damage / 2)
         # 龙族血脉（真龙之心遗物）：对非怪物造成伤害翻倍（对怪物的秒杀效果在伤害结算后处理）
-        if attacker is self.state.player and "龙族血脉" in self.state.dragon_traits and target.entity_type != "怪物":
+        if self.state.side_has(attacker, "龙族血脉") and target.entity_type != "怪物":
             damage *= 2
 
         # 检查蒙蔽状态
@@ -501,7 +500,7 @@ class CombatEngine:
         # 检查贯穿（无视格挡）
         ignore_shield = attacker.has_status("贯穿")
         # 震岳龙躯（真龙之心遗物）：激活期间，自身受到超出15点的伤害无效
-        if target is self.state.player and self.state.dragon_body_shield_rounds > 0:
+        if self.state.side_body_shield(target) > 0:
             damage = min(damage, 15)
         # 法术：受到伤害前（玩家为目标时触发反应型法术，可能反杀攻击者或加盾）
         if self.state.player is not None and target is self.state.player and damage > 0:
@@ -531,8 +530,8 @@ class CombatEngine:
                 damage_result = self._apply_hostile_damage(target, damage, "普通" if not ignore_shield else "无视格挡")
         else:
             damage_result = self._apply_hostile_damage(target, damage, "普通" if not ignore_shield else "无视格挡")
-        # 龙族血脉（真龙之心遗物）：对怪物造成伤害后，直接使其命零
-        if (attacker is self.state.player and "龙族血脉" in self.state.dragon_traits
+        # 龙族血脉：持有者对怪物造成伤害后，直接使其命零（死斗两边各一份）
+        if (self.state.side_has(attacker, "龙族血脉")
                 and target.entity_type == "怪物" and damage_result["actual_damage"] > 0 and target.is_alive):
             target.current_hp = 0
             target.is_alive = False
@@ -653,8 +652,8 @@ class CombatEngine:
         
         # 结算回始效果
         for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
-            # 自愈：回始获得血限10X%的回复
-            if entity.has_status("自愈"):
+            # 自愈：回始获得血限10X%的回复（坏死禁疗）
+            if entity.has_status("自愈") and not entity.has_status("坏死"):
                 x = entity.get_status_value("自愈")
                 heal_pct = 10 * x
                 heal_amount = math.ceil(entity.blood_limit * heal_pct / 100)
@@ -799,8 +798,8 @@ class CombatEngine:
                         effects.append({"type": "mediocrity_loot", "entity": entity.name,
                                         "note": "轮回者获得消耗品【残骸】(1/1)"})
 
-            # 血族血脉（初拥之夜遗物）：[回终]本回合若造成过伤害则回复等量，否则流血20
-            if "血族血脉" in self.state.first_embrace_traits and entity is self.state.player:
+            # 血族血脉：持有者这一侧各自结算（死斗两边各一份）
+            if entity.entity_type == "轮回者" and self.state.side_has(entity, "血族血脉"):
                 if entity.damage_dealt_this_round > 0:
                     heal_detail = entity.heal(entity.damage_dealt_this_round)
                     effects.append({"type": "blood_lineage_heal", "entity": entity.name,
@@ -878,10 +877,15 @@ class CombatEngine:
             if self.state.sealed_relics[rname] <= 0:
                 del self.state.sealed_relics[rname]
 
-        # 震岳龙躯（真龙之心遗物）：持续X回合递减，归零后护体效果失效
+        # 震岳龙躯：两边各自递减
         if self.state.dragon_body_shield_rounds > 0:
             self.state.dragon_body_shield_rounds -= 1
-            effects.append({"type": "dragon_body_tick", "remaining": self.state.dragon_body_shield_rounds})
+            effects.append({"type": "dragon_body_tick", "side": "player",
+                            "remaining": self.state.dragon_body_shield_rounds})
+        if self.state.opponent_dragon_body_shield_rounds > 0:
+            self.state.opponent_dragon_body_shield_rounds -= 1
+            effects.append({"type": "dragon_body_tick", "side": "opponent",
+                            "remaining": self.state.opponent_dragon_body_shield_rounds})
 
         # 活血：有活血状态的实体，回终按本回合累计失血÷2回复
         for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
@@ -1505,10 +1509,11 @@ class CombatEngine:
         # ---- 回复类 ----
         if "target_heal" in calc and not huaisi_block:
             result["effects"].append({"type": "heal", "target": target.name, **target.heal(calc["target_heal"])})
-        if "heal_percent" in calc and not (target.has_status("坏死")):
+        # 自愈的 heal_percent 只在[回始]结算，发动当下不奶。
+        if "heal_percent" in calc and name != "自愈" and not (target.has_status("坏死")):
             h = math.ceil(target.blood_limit * calc["heal_percent"] / 100)
             result["effects"].append({"type": "heal_pct", "target": target.name, **target.heal(h)})
-        if "target_heal" in calc or "heal_percent" in calc:
+        if "target_heal" in calc or ("heal_percent" in calc and name != "自愈"):
             cancer = self.check_cancer(target)
             if cancer:
                 result["effects"].append(cancer)
@@ -1540,7 +1545,7 @@ class CombatEngine:
                                       "hp_reduced": _hp_cut})
         if "blood_limit_increase" in calc:
             # 不朽之躯（初拥之夜遗物）：血限无法增加，对该实体的增殖等血限增长一律归零
-            if target is self.state.player and "不朽之躯" in self.state.first_embrace_traits:
+            if self.state.side_has(target, "不朽之躯"):
                 result["effects"].append({"type": "blood_limit_increase", "target": target.name,
                                            "increase": 0, "blocked_by": "不朽之躯"})
             else:
@@ -1624,8 +1629,8 @@ class CombatEngine:
                                        **self._pay_bleed_cost(cost_target, calc["cost_hp"], dh_use)})
             if cost_target.current_hp <= 0: self.cost_proxy = None
         if "cost_blood_limit" in calc:
-            # 不朽之躯（初拥之夜遗物）：免疫衰老，对该实体的衰老代价直接归零
-            if cost_target is self.state.player and "不朽之躯" in self.state.first_embrace_traits:
+            # 不朽之躯：免疫衰老（死斗两边各一份）
+            if self.state.side_has(cost_target, "不朽之躯"):
                 result["effects"].append({"type": "aging_cost", "source": cost_target.name,
                                            "new_blood_limit": cost_target.blood_limit,
                                            "dragon_heart_offset": 0, "immune": True})
@@ -2016,6 +2021,9 @@ class CombatEngine:
                     m.attack_power += m.dao_wen[g].x_value
                 if g == "必中":
                     self.grant_bizhong(m, m.dao_wen[g].x_value)
+                if g == "自愈":
+                    xv = m.dao_wen[g].x_value
+                    m.add_status(StatusEffect(name="自愈", remaining_rounds=-1, value=xv, source=m.name))
                 return g
         # 第二梯队：副本专属（龙心谷 8 件等），按固定优先级
         region = self.state.current_region
@@ -2235,11 +2243,10 @@ class CombatEngine:
                 why = "缓慢" if m.has_status("缓慢") else "眩晕/束缚"
                 results.append({"monster": m.name, "skipped": why})
                 continue
-            # 龙息（真龙之心遗物）：所有敌方[目标]行动前，受到10×当前回合数的必中伤害
-            if "龙息" in self.state.dragon_traits and m.is_alive:
-                breath_damage = 10 * max(1, self.state.current_round)
-                dmg = m.take_damage(breath_damage)
-                results.append({"monster": m.name, "dragon_breath": breath_damage, **dmg})
+            # 龙息：对方持有则本侧行动前受伤（死斗两边各一份）
+            breath = self.apply_opposing_longxi(m)
+            if breath:
+                results.append({"monster": m.name, "dragon_breath": breath.get("dragon_breath"), **breath})
                 if not m.is_alive:
                     continue
             act = self._monster_activated.setdefault(id(m), set())
@@ -2304,6 +2311,22 @@ class CombatEngine:
         life_cost = short * 2  # 1碎片=2生命
         return {"can_escape": True, "shard_cost": cost, "shortfall_shards": short,
                 "extra_life_cost": life_cost}
+
+    def apply_opposing_longxi(self, actor: Entity) -> Optional[dict]:
+        """若对方持有龙息，actor 行动前受 10×当前回合必中伤害。"""
+        if actor is None or not actor.is_alive:
+            return None
+        foe_has = False
+        if self.state.on_player_side(actor):
+            foe_has = "龙息" in self.state.opponent_dragon_traits
+        elif self.state.on_enemy_side(actor):
+            foe_has = "龙息" in self.state.dragon_traits
+        if not foe_has:
+            return None
+        dmg = 10 * max(1, self.state.current_round)
+        detail = actor.take_damage(dmg)
+        detail["dragon_breath"] = dmg
+        return detail
 
     def can_act(self, entity: Entity) -> bool:
         """是否可出手（眩晕/束缚/缓慢下不可）"""

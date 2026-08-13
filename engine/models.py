@@ -531,6 +531,9 @@ class GameState:
     relics_pool: list[Relic] = field(default_factory=list)  # 遗物池（未获取的）
     # 死斗对手自己的遗物。可选效果（折速/鲜血契约等）由对手决定是否发动，不跟挑战者的 state.relics 混用。
     opponent_relics: list[Relic] = field(default_factory=list)
+    opponent_artifacts_owned: list[str] = field(default_factory=list)
+    opponent_dragon_body_shield_rounds: int = 0
+    opponent_dragon_tail_sacrifice_declared: str = ""
     consumables: list[Consumable] = field(default_factory=list)
     # 抵扣X封印的玩家遗物 {遗物名: 剩余回合}，[回终]-1，归零解封（封印期间不触发 process_relics）
     sealed_relics: dict = field(default_factory=dict)
@@ -638,6 +641,88 @@ class GameState:
     def first_embrace_traits(self) -> list[str]:
         """血族遗物名单（对 relics 的只读视图）。"""
         return self._relic_names_by_tag("血族")
+
+    @property
+    def opponent_dragon_traits(self) -> list[str]:
+        """死斗对手的龙族遗物名单（对 opponent_relics 的只读视图）。"""
+        return [r.name for r in self.opponent_relics if "龙族" in r.tags]
+
+    @property
+    def opponent_first_embrace_traits(self) -> list[str]:
+        """死斗对手的血族遗物名单（对 opponent_relics 的只读视图）。"""
+        return [r.name for r in self.opponent_relics if "血族" in r.tags]
+
+    def on_player_side(self, entity: Entity) -> bool:
+        """必须用 is，不能用 dataclass 相等。"""
+        if entity is None:
+            return False
+        if self.player is not None and entity is self.player:
+            return True
+        for e in self.friends:
+            if e is entity:
+                return True
+        for e in self.employees:
+            if e is entity:
+                return True
+        for e in self.temp_friends:
+            if e is entity:
+                return True
+        return False
+
+    def on_enemy_side(self, entity: Entity) -> bool:
+        """必须用 is，不能用 dataclass 相等。"""
+        if entity is None:
+            return False
+        for e in self.enemies:
+            if e is entity:
+                return True
+        return False
+
+    def side_has(self, entity: Entity, name: str) -> bool:
+        """该实体所属轮回者是否持有该终音/初拥/龙族项目。朋友/员工不继承。"""
+        if entity is None:
+            return False
+        if entity is self.player:
+            return (name in self.dragon_traits
+                    or name in self.first_embrace_traits
+                    or name in self.artifacts_owned
+                    or any(r.name == name for r in self.relics))
+        if entity.entity_type == "轮回者" and self.on_enemy_side(entity):
+            return (name in self.opponent_dragon_traits
+                    or name in self.opponent_first_embrace_traits
+                    or name in self.opponent_artifacts_owned
+                    or any(r.name == name for r in self.opponent_relics))
+        return False
+
+    def side_body_shield(self, entity: Entity) -> int:
+        if entity is self.player:
+            return self.dragon_body_shield_rounds
+        if entity is not None and entity.entity_type == "轮回者" and self.on_enemy_side(entity):
+            return self.opponent_dragon_body_shield_rounds
+        return 0
+
+    def side_tail_declared(self, entity: Entity) -> str:
+        if entity is self.player:
+            return self.dragon_tail_sacrifice_declared
+        if entity is not None and entity.entity_type == "轮回者" and self.on_enemy_side(entity):
+            return self.opponent_dragon_tail_sacrifice_declared
+        return ""
+
+    def clear_side_tail_declared(self, entity: Entity) -> None:
+        if entity is self.player:
+            self.dragon_tail_sacrifice_declared = ""
+        elif entity is not None and entity.entity_type == "轮回者" and self.on_enemy_side(entity):
+            self.opponent_dragon_tail_sacrifice_declared = ""
+
+    def remove_side_relic(self, entity: Entity, name: str) -> bool:
+        if entity is self.player:
+            return self.remove_relic(name)
+        if entity is not None and entity.entity_type == "轮回者" and self.on_enemy_side(entity):
+            for i, r in enumerate(self.opponent_relics):
+                if r.name == name:
+                    del self.opponent_relics[i]
+                    return True
+        return False
 
     def grant_relic(self, name: str, effect: str, tag: str = "") -> Relic:
         """授予一件遗物；tag 用于标记 血族/龙族 等来源。"""

@@ -1220,6 +1220,10 @@ class GameEngine:
         if not self.combat.can_act(entity):
             return {"success": False,
                     "error": f"{entity.name}无法出手（眩晕/束缚/缓慢）"}
+        breath = self.combat.apply_opposing_longxi(entity)
+        if breath and not entity.is_alive:
+            return {"success": False, "error": f"{entity.name}被龙息命零",
+                    "dragon_breath": breath}
         if entity.actions_used_this_round >= entity.action_count:
             return {"success": False,
                     "error": f"{entity.name}本回合出手已用完({entity.actions_used_this_round}/{entity.action_count})"}
@@ -1233,7 +1237,7 @@ class GameEngine:
         必须在该次行动本身已经用到(旧的)攻击次数之后才调用——尤其是【攻击】，
         它的一轮攻击命中次数=攻击次数，若在calculate_round_attack读取攻击次数之前就先增长，
         会导致本次攻击莫名要求多一个目标选择，这是过去出现过的真实bug。"""
-        if entity is self.state.player and "龙族利爪" in self.state.dragon_traits:
+        if entity is not None and self.state.side_has(entity, "龙族利爪"):
             entity.attack_count += 1
             entity.attack_power += 2
 
@@ -1487,9 +1491,8 @@ class GameEngine:
         if not is_command and calc.get("cost_type") == "消耗" and cost > 0:
             if not actor.spend_mana(cost):
                 return {"success": False, "error": f"法力不足，需要{cost}，当前{actor.current_mana}"}
-            # 寒冰法力（初拥之夜遗物）：持有者每消耗法力发动道纹，无论目标是谁(含自己)都累计"施加法力"，
-            # 每满10点使该目标本回合出手次数-1(以叠加"无力"状态实现)
-            if "寒冰法力" in self.state.first_embrace_traits and actor is self.state.player:
+            # 寒冰法力：持有者每消耗法力发动道纹，无论目标是谁(含自己)都累计"施加法力"
+            if self.state.side_has(actor, "寒冰法力"):
                 before_tier = target.mana_inflicted_this_round // 10
                 target.mana_inflicted_this_round += cost
                 after_tier = target.mana_inflicted_this_round // 10
@@ -2184,6 +2187,44 @@ class GameEngine:
             "note": "多路径胜利（雕塑/癌变/还债）已结算；消耗品可在后续回合使用"
         }
     
+    def _apply_terminal_artifacts_on_battle_start(self) -> list[str]:
+        """终音被动：两边各一份。体外心脏翻自己；羔羊之泪每边持有就打一轮全场50%。"""
+        logs = []
+        player = self.state.player
+        opp = next((e for e in self.state.enemies
+                    if e.entity_type == "轮回者" and e.is_alive), None)
+
+        if "体外心脏" in self.state.artifacts_owned and player:
+            self._artifact_base_blood_limit = player.blood_limit
+            player.blood_limit *= 2
+            player.current_hp *= 2
+            logs.append(
+                f"体外心脏：血限与当前生命临时翻倍"
+                f"({self._artifact_base_blood_limit}→{player.blood_limit})")
+        if "体外心脏" in self.state.opponent_artifacts_owned and opp:
+            self._opponent_artifact_base_blood_limit = opp.blood_limit
+            opp.blood_limit *= 2
+            opp.current_hp *= 2
+            logs.append(
+                f"对手体外心脏：血限与当前生命临时翻倍"
+                f"({self._opponent_artifact_base_blood_limit}→{opp.blood_limit})")
+
+        def _lamb_tear():
+            for e in self.state.get_all_player_side() + self.state.get_all_enemy_side():
+                loss = math.ceil(e.current_hp * 0.5)
+                if e.entity_type in ("朋友", "员工"):
+                    self.combat._apply_hostile_damage(e, loss)
+                else:
+                    e.take_damage(loss)
+
+        if "羔羊之泪" in self.state.artifacts_owned:
+            _lamb_tear()
+            logs.append("羔羊之泪：场上所有角色与怪物立刻失去50%当前生命")
+        if "羔羊之泪" in self.state.opponent_artifacts_owned:
+            _lamb_tear()
+            logs.append("对手羔羊之泪：场上所有角色与怪物立刻失去50%当前生命")
+        return logs
+
     def _action_battle_start(self, params: dict) -> dict:
         """战始：抽取出怪(数量=战斗场数-3,最低1,允许重复抽选同一怪物种族)→结算战始遗物。
         战斗背景：文档"战斗背景：（名称与影响）"仅为战斗推演格式里的占位提示，
@@ -2234,21 +2275,7 @@ class GameEngine:
             self.state.player.current_mana = 0
         relic_logs = self.combat.process_relics("battle_start")
 
-        artifact_logs = []
-        if "体外心脏" in self.state.artifacts_owned and self.state.player:
-            player = self.state.player
-            self._artifact_base_blood_limit = player.blood_limit
-            player.blood_limit *= 2
-            player.current_hp *= 2
-            artifact_logs.append(f"体外心脏：血限与当前生命临时翻倍({self._artifact_base_blood_limit}→{player.blood_limit})")
-        if "羔羊之泪" in self.state.artifacts_owned:
-            for e in self.state.get_all_player_side() + self.state.get_all_enemy_side():
-                loss = math.ceil(e.current_hp * 0.5)
-                if e.entity_type in ("朋友", "员工"):
-                    self.combat._apply_hostile_damage(e, loss)
-                else:
-                    e.take_damage(loss)
-            artifact_logs.append("羔羊之泪：场上所有角色与怪物立刻失去50%当前生命")
+        artifact_logs = self._apply_terminal_artifacts_on_battle_start()
 
         return {
             "success": True, "action": "战始",
@@ -2309,10 +2336,7 @@ class GameEngine:
 
     def _serialize_full_character(self) -> dict:
         """完整封存：玩家+队友(朋友/员工)+遗物+残韵+碎片+死者之书等级+属性点+终音法器/初拥之夜/真龙之心记录。
-        已知限制：作为死斗对手载入时，目前只有player/friends/employees的战斗面板会真正参与战斗结算；
-        artifacts/first_embrace_traits/dragon_traits等"元状态"只做记录延续，不会让对手在死斗中
-        实际触发这些遗物的被动效果(这些trait判定目前统一挂在GameEngine.state上，只对"当前操作的这一方"
-        生效，尚未做成可同时对双方独立生效的形式)。"""
+        死斗载入时写入 opponent_relics / opponent_artifacts_owned，被动按持有者一侧各自结算。"""
         s = self.state
         return {
             "player": self._serialize_entity_full(s.player) if s.player else None,
@@ -2396,12 +2420,31 @@ class GameEngine:
             for r in (candidate_snapshot.get("relics") or [])
             if r.get("name")
         ]
+        self.state.opponent_artifacts_owned = list(candidate_snapshot.get("artifacts_owned") or [])
+        # 旧快照可能只记下了 dragon_traits / first_embrace_traits 名字，遗物缺 tag
+        dragon_names = list(candidate_snapshot.get("dragon_traits") or [])
+        embrace_names = list(candidate_snapshot.get("first_embrace_traits") or [])
+        existing = {r.name for r in self.state.opponent_relics}
+        for r in self.state.opponent_relics:
+            if r.name in dragon_names and "龙族" not in r.tags:
+                r.tags.append("龙族")
+            if r.name in embrace_names and "血族" not in r.tags:
+                r.tags.append("血族")
+        for name in dragon_names:
+            if name not in existing:
+                self.state.opponent_relics.append(Relic(name=name, effect="", tags=["龙族"]))
+                existing.add(name)
+        for name in embrace_names:
+            if name not in existing:
+                self.state.opponent_relics.append(Relic(name=name, effect="", tags=["血族"]))
+                existing.add(name)
         # 与战始相同：死斗开场先清零双方轮回者法力，回始再获得等同法限。
         for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
             if entity.entity_type == "轮回者" and entity.is_alive:
                 entity.current_mana = 0
                 entity.battle_start_hp = entity.current_hp
                 entity.healed_this_battle = 0
+        artifact_logs = self._apply_terminal_artifacts_on_battle_start()
 
         challenger_key = self._duel_priority_key(challenger_player)
         opponent_key = self._duel_priority_key(opponent_leader) if opponent_leader else (0, 0, 0, 0)
@@ -2422,6 +2465,7 @@ class GameEngine:
             "opponent_side": [e.name for e in opponent_side],
             "first_mover": first_mover,
             "optional_relics": optional,
+            "artifact_logs": artifact_logs,
             "instruction": "第8场最终死斗开始：双方交替出手，残韵可任意时刻插队，无法逃跑。"
                            "可选遗物由持有者自己决定是否发动（activate_duel_relic）；"
                            "请调用 resolve_final_duel(outcome=victory/defeat) 结算胜负",

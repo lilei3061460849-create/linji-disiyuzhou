@@ -649,5 +649,117 @@ def test_duel_round_end_does_not_clear_non_reincarnator_mana():
     _cleanup(path)
 
 
+def test_duel_opponent_dragon_bloodline_doubles_vs_challenger():
+    """正常：对手持龙族血脉，打挑战者（非怪物）伤害翻倍；挑战者自己没有则不翻。"""
+    path = "data/test_duel_opp_bloodline.json"
+    _cleanup(path)
+    sealed = _new_candidate("oppbl_sealed", path, speed_points=5, name="封存者")
+    sealed.state.grant_relic("龙族血脉", "对非怪物翻倍", tag="龙族")
+    _finish_battle_7(sealed)
+    challenger = _new_candidate("oppbl_challenger", path, speed_points=13, name="挑战者")
+    _finish_battle_7(challenger)
+    opp = next(e for e in challenger.state.enemies if e.entity_type == "轮回者")
+    player = challenger.state.player
+    assert challenger.state.side_has(opp, "龙族血脉")
+    assert not challenger.state.side_has(player, "龙族血脉")
+    opp.attack_power = 5
+    dmg = challenger.combat.resolve_attack(opp, player, is_must_hit=True)
+    assert dmg["damage_dealt"] == 10
+    player.attack_power = 5
+    dmg2 = challenger.combat.resolve_attack(player, opp, is_must_hit=True)
+    assert dmg2["damage_dealt"] == 5
+    _cleanup(path)
+
+
+def test_duel_opponent_blood_lineage_heals_at_round_end():
+    """正常：对手持血族血脉，回终按本回合伤害回血；没造成伤害则流血20。"""
+    path = "data/test_duel_opp_lineage.json"
+    _cleanup(path)
+    sealed = _new_candidate("opplin_sealed", path, speed_points=5, name="封存者")
+    sealed.state.grant_relic("血族血脉", "回终回血或流血20", tag="血族")
+    _finish_battle_7(sealed)
+    challenger = _new_candidate("opplin_challenger", path, speed_points=13, name="挑战者")
+    _finish_battle_7(challenger)
+    opp = next(e for e in challenger.state.enemies if e.entity_type == "轮回者")
+    challenger.execute_action("round_start", {})
+    opp.damage_dealt_this_round = 8
+    opp.current_hp = max(1, opp.blood_limit - 20)
+    hp = opp.current_hp
+    re = challenger.execute_action("round_end", {})
+    heals = [e for e in re["result"]["effects"] if e.get("type") == "blood_lineage_heal"]
+    assert any(e["entity"] == opp.name for e in heals)
+    assert opp.current_hp == hp + 8
+
+    challenger.execute_action("round_start", {})
+    hp2 = opp.current_hp
+    re2 = challenger.execute_action("round_end", {})
+    bleeds = [e for e in re2["result"]["effects"] if e.get("type") == "blood_lineage_bleed"]
+    assert any(e["entity"] == opp.name for e in bleeds)
+    assert opp.current_hp == hp2 - 20
+    _cleanup(path)
+
+
+def test_duel_opponent_longxi_hits_challenger_before_act():
+    """正常：对手持龙息，挑战者行动前受 10×回合 必中伤害。"""
+    path = "data/test_duel_opp_longxi.json"
+    _cleanup(path)
+    sealed = _new_candidate("opplx_sealed", path, speed_points=5, name="封存者")
+    sealed.state.grant_relic("龙息", "敌方行动前受伤", tag="龙族")
+    _finish_battle_7(sealed)
+    challenger = _new_candidate("opplx_challenger", path, speed_points=13, name="挑战者")
+    _finish_battle_7(challenger)
+    opp = next(e for e in challenger.state.enemies if e.entity_type == "轮回者")
+    player = challenger.state.player
+    challenger.execute_action("round_start", {})
+    hp = player.current_hp
+    r = challenger.execute_action("use_daowen", {
+        "daowen_name": "杀伐", "x": 1, "target": opp.name,
+    })
+    assert r["success"], r
+    assert player.current_hp == hp - 10
+    _cleanup(path)
+
+
+def test_duel_opponent_heart_and_tears_at_start():
+    """正常：对手体外心脏翻自己；羔羊之泪开场打一轮全场50%。"""
+    path = "data/test_duel_opp_art.json"
+    _cleanup(path)
+    sealed = _new_candidate("oppart_sealed", path, speed_points=5, name="封存者")
+    sealed.state.artifacts_owned.extend(["体外心脏", "羔羊之泪"])
+    base_bl = sealed.state.player.blood_limit
+    base_hp = sealed.state.player.current_hp
+    _finish_battle_7(sealed)
+    challenger = _new_candidate("oppart_challenger", path, speed_points=13, name="挑战者")
+    player_hp = challenger.state.player.current_hp
+    r = _finish_battle_7(challenger)
+    crown = r["result"]["final_crown"]
+    assert crown["outcome"] == "duel_start"
+    opp = next(e for e in challenger.state.enemies if e.entity_type == "轮回者")
+    assert opp.blood_limit == base_bl * 2
+    assert opp.current_hp == base_hp  # 翻倍后再掉 50%
+    assert challenger.state.player.current_hp == player_hp - (player_hp + 1) // 2
+    _cleanup(path)
+
+
+def test_duel_side_has_rejects_friend_and_missing_trait():
+    """错误：朋友不继承轮回者袋子；没持有的名字 side_has 为假。"""
+    path = "data/test_duel_sidehas_err.json"
+    _cleanup(path)
+    sealed = _new_candidate("sideerr_sealed", path, speed_points=5, name="封存者")
+    sealed.state.grant_relic("龙族血脉", "", tag="龙族")
+    _finish_battle_7(sealed)
+    challenger = _new_candidate("sideerr_challenger", path, speed_points=13, name="挑战者")
+    challenger.state.grant_relic("血影", "", tag="血族")
+    challenger.state.friends.append(Entity(
+        name="跟班", entity_type="朋友", blood_limit=20, current_hp=20))
+    _finish_battle_7(challenger)
+    friend = next(f for f in challenger.state.friends if f.name == "跟班")
+    opp = next(e for e in challenger.state.enemies if e.entity_type == "轮回者")
+    assert challenger.state.side_has(friend, "血影") is False
+    assert challenger.state.side_has(challenger.state.player, "龙族血脉") is False
+    assert challenger.state.side_has(opp, "血影") is False
+    _cleanup(path)
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
