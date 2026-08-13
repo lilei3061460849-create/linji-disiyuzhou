@@ -69,6 +69,73 @@ class CombatEngine:
         
         return result
     
+    def _is_flying(self, entity: Entity) -> bool:
+        return bool(getattr(entity, "is_flying", False)
+                    or entity.has_status("飞行")
+                    or entity.has_status("滑翔"))
+
+    def _field_has_zhuiluo(self) -> bool:
+        for e in self.state.get_all_player_side() + self.state.get_all_enemy_side():
+            if e.has_status("坠落"):
+                return True
+        return False
+
+    def _incoming_adjust(self, target: Entity, amount: int, damage_type: str = "普通") -> int:
+        if amount <= 0 or damage_type == "代价":
+            return amount
+        if target.has_status("加害"):
+            amount += target.get_status_value("加害")
+        if target.has_status("龙鳞"):
+            amount = max(0, amount - target.get_status_value("龙鳞"))
+        return amount
+
+    def _gain_speed(self, entity: Entity, amount: int) -> int:
+        if amount <= 0:
+            return 0
+        if entity.has_status("加速"):
+            amount *= 2
+        entity.current_speed += amount
+        return amount
+
+    def _note_dodge(self, entity: Entity) -> dict:
+        extra = {}
+        if entity.has_status("急速"):
+            entity._jisu_dodges = getattr(entity, "_jisu_dodges", 0) + 1
+            if entity._jisu_dodges >= 2:
+                entity._jisu_dodges -= 2
+                extra["jisu_speed"] = self._gain_speed(entity, 1)
+        if entity.has_status("洞察"):
+            entity._dongcha_pending = getattr(entity, "_dongcha_pending", 0) + 10
+            extra["dongcha_pending"] = entity._dongcha_pending
+        return extra
+
+    def _jieli_boost(self, dealer: Entity, amount: int) -> int:
+        if amount <= 0 or not dealer.has_status("借力"):
+            return amount
+        return math.ceil(amount * (1 + 10 * dealer.get_status_value("借力") / 100))
+
+    def _find_named(self, name: str) -> Optional[Entity]:
+        for e in self.state.get_all_player_side() + self.state.get_all_enemy_side():
+            if e.name == name:
+                return e
+        return None
+
+    def single_round_action_count(self, entity: Entity) -> int:
+        if entity is None:
+            return 0
+        if entity.entity_type == "怪物":
+            n = 2
+            act = self._monster_activated.get(id(entity), set())
+            if "活力" in act and "活力" in entity.dao_wen:
+                n += entity.dao_wen["活力"].x_value
+            else:
+                n += entity.get_status_value("活力")
+            if "狂暴" in act or entity.has_status("狂暴"):
+                n += 1
+            n -= entity.get_status_value("无力")
+            return max(0, n)
+        return DaoWenEngine.single_round_action_count(entity)
+
     def _apply_hostile_damage(self, target: Entity, amount: int, damage_type: str = "普通") -> dict:
         """
         对target造成外部/敌对伤害的统一入口（供攻击与道纹伤害调用；自身【代价】不走此入口）。
@@ -79,6 +146,7 @@ class CombatEngine:
         且玩家当前生命>20，则改为玩家流血20，抵消本次伤害并取消本次撤退(目标不掉血也不撤退)。
         龙心谷专属（F2）：嫁祸/背负 重定向、逆鳞层数、伤痕血限衰减在此统一处理。
         """
+        amount = self._incoming_adjust(target, amount, damage_type)
         # ---- F2：嫁祸/背负 伤害重定向（在撤退判定之前） ----
         if damage_type != "代价":
             # 嫁祸：自身下X次受伤由目标承担
@@ -160,6 +228,18 @@ class CombatEngine:
                     detail["died"] = True
                     detail["hp_after"] = 0
                 detail["shanghen_blood_loss"] = xv
+            if target.has_status("寄生"):
+                xv = target.get_status_value("寄生")
+                drain = math.ceil(actual * 20 * xv / 100)
+                src_name = next((s.source for s in target.status_effects
+                                 if s.name == "寄生" and not s.is_expired), "")
+                healer = self._find_named(src_name)
+                if healer is not None and healer.is_alive and drain > 0 and not healer.has_status("坏死"):
+                    h = healer.heal(drain)
+                    detail["jisheng_heal"] = {"healer": healer.name, **h}
+                    cancer = self.check_cancer(healer)
+                    if cancer:
+                        detail["jisheng_cancer"] = cancer
         return detail
 
     # ---- F2 全量：罪孽/扭曲专属道纹的公共辅助 ----
@@ -362,6 +442,10 @@ class CombatEngine:
                 target.current_speed -= 1
                 result["dodge_success"] = True
                 result["speed_after_dodge"] = target.current_speed
+                extra = self._note_dodge(target)
+                if extra:
+                    result["dodge_extra"] = extra
+                    result["speed_after_dodge"] = target.current_speed
                 # 遗物：闪避触发（目标为轮回者时）
                 if target is self.state.player:
                     result["relic_logs"] = self.process_relics("on_dodge")
@@ -381,12 +465,9 @@ class CombatEngine:
             damage += bonus
             result["nilin_bonus"] = bonus
             attacker._nilin = 0
-        # 加害：攻击者造成的伤害+X
-        if attacker.has_status("加害"):
-            damage += attacker.get_status_value("加害")
-        # 龙鳞：目标每次受到伤害-X（最低0）
-        if target.has_status("龙鳞"):
-            damage = max(0, damage - target.get_status_value("龙鳞"))
+        damage = self._jieli_boost(attacker, damage)
+        if attacker.has_status("坠落"):
+            damage = math.ceil(damage / 2)
         # 龙族血脉（真龙之心遗物）：对非怪物造成伤害翻倍（对怪物的秒杀效果在伤害结算后处理）
         if attacker is self.state.player and "龙族血脉" in self.state.dragon_traits and target.entity_type != "怪物":
             damage *= 2
@@ -470,11 +551,9 @@ class CombatEngine:
                 result.setdefault("spell_logs", []).extend(slogs2)
         
         # 结算后效果
-        # 兴奋：每次出手后速度+1
+        # 兴奋：每次出手后速度+1（X 只管持续）
         if attacker.has_status("兴奋"):
-            speed_gain = attacker.get_status_value("兴奋")
-            attacker.current_speed += speed_gain
-            result["speed_boost_from_excitement"] = speed_gain
+            result["speed_boost_from_excitement"] = self._gain_speed(attacker, 1)
 
         return result
     
@@ -576,6 +655,18 @@ class CombatEngine:
                     "heal": heal_amount,
                     "actual": heal_result["actual_heal"]
                 })
+            if entity.has_status("衰败") and entity.is_alive:
+                xv = entity.get_status_value("衰败")
+                dmg_n = math.ceil(entity.current_hp * 10 * xv / 100)
+                if dmg_n > 0:
+                    rd = entity.take_damage(dmg_n)
+                    effects.append({"type": "shuaibai_tick", "entity": entity.name,
+                                    "damage": rd["actual_damage"], "died": rd["died"]})
+            pending = getattr(entity, "_dongcha_pending", 0)
+            if pending and entity.entity_type == "轮回者" and entity.is_alive:
+                entity.current_mana += pending
+                effects.append({"type": "dongcha_mana", "entity": entity.name, "gained": pending})
+                entity._dongcha_pending = 0
             
             # 狂暴：回始发动一轮额外攻击（标记）
             if entity.has_status("狂暴"):
@@ -756,6 +847,8 @@ class CombatEngine:
                     entity._jiahuo_left = 0
                     if hasattr(entity, "_jiahuo_target"):
                         delattr(entity, "_jiahuo_target")
+                if ("飞行" in expired or "滑翔" in expired) and not self._is_flying(entity):
+                    entity.is_flying = False
                 # 干扰/手雷减攻到期自动由 tick 清理，无需额外
             # F2：逼债/清算状态消失即清账（∞/持续X到期后不再逐回始结算）
             if not entity.has_status("逼债") and getattr(entity, "_bizhai", None):
@@ -1284,6 +1377,8 @@ class CombatEngine:
         """应用道纹效果（统一效果键处理；供api与法术共用）。dragon_heart_use仅对caster自身的数值型代价生效。"""
         result = {"daowen": name, "effects": []}
         x = calc.get("x", 0)
+        if name in ("自食", "固执"):
+            target = caster
 
         # 【冷却X】代价：README「冷却X：使用后该道纹记为【X(0)/Y】，[战终]后已完成
         # 战斗场数+1，达到Y时才能再次使用」。此前从未写入 cooldown_remaining，
@@ -1336,6 +1431,9 @@ class CombatEngine:
         # ---- 伤害类 ----
         if "target_damage" in calc:
             base = calc["target_damage"] + (nilin_bonus if nilin_bonus else 0)
+            base = self._jieli_boost(caster, base)
+            if caster.has_status("坠落") and base > 0:
+                base = math.ceil(base / 2)
             dmg = self._apply_hostile_damage(target, 0 if (mengbi_blocked or baolie_suppress) else base)
             result["effects"].append({"type": "damage", "target": target.name, **dmg})
             if dmg.get("actual_damage", 0) > 0:
@@ -1344,7 +1442,10 @@ class CombatEngine:
         if "total_damage" in calc and "target_damage" not in calc:  # 血债等多段
             add = nilin_bonus
             nilin_bonus = 0
-            dmg = self._apply_hostile_damage(target, 0 if (mengbi_blocked or baolie_suppress) else calc["total_damage"] + add)
+            chunk = self._jieli_boost(caster, calc["total_damage"] + add)
+            if caster.has_status("坠落") and chunk > 0:
+                chunk = math.ceil(chunk / 2)
+            dmg = self._apply_hostile_damage(target, 0 if (mengbi_blocked or baolie_suppress) else chunk)
             if add:
                 dmg["nilin_bonus"] = add
             result["effects"].append({"type": "damage", "target": target.name, **dmg})
@@ -1352,7 +1453,9 @@ class CombatEngine:
                 caster.damage_dealt_this_round += dmg["actual_damage"]
                 self._xijie_steal(caster, target, dmg["actual_damage"])
         if "aoe_damage" in calc:
-            a = 0 if (mengbi_blocked or baolie_suppress) else calc["aoe_damage"]
+            a = 0 if (mengbi_blocked or baolie_suppress) else self._jieli_boost(caster, calc["aoe_damage"])
+            if caster.has_status("坠落") and a > 0:
+                a = math.ceil(a / 2)
             # 逆鳞加成仅作用于首个目标的首段伤害
             if nilin_bonus:
                 a += nilin_bonus
@@ -1437,26 +1540,33 @@ class CombatEngine:
             result["effects"].append({"type": "bizhai_blood", "target": target.name, "lost": calc["blood_limit_penalty"]})
 
         # ---- 攻击面板修改 ----
-        if "attack_boost" in calc:
+        _panel_keys = ("attack_boost", "attack_reduction", "attack_fixed", "attack_count_fixed")
+        panel_locked = target.has_status("定型") and any(k in calc for k in _panel_keys)
+        if panel_locked:
+            result["effects"].append({"type": "dingxing_block", "target": target.name})
+        if (not panel_locked) and "attack_boost" in calc:
             target.attack_power += calc["attack_boost"]
             result["effects"].append({"type": "attack_boost", "target": target.name, "attack_power": target.attack_power})
-        if "attack_reduction" in calc:
+        if (not panel_locked) and "attack_reduction" in calc:
             target.attack_power = max(0, target.attack_power - calc["attack_reduction"])
             result["effects"].append({"type": "attack_reduction", "target": target.name, "attack_power": target.attack_power})
-        if "attack_fixed" in calc:
+        if (not panel_locked) and "attack_fixed" in calc:
             target.attack_power = calc["attack_fixed"]
             result["effects"].append({"type": "attack_fixed", "target": target.name, "attack_power": target.attack_power})
-        if "attack_count_fixed" in calc:
+        if (not panel_locked) and "attack_count_fixed" in calc:
             target.attack_count = calc["attack_count_fixed"]
             result["effects"].append({"type": "attack_count_fixed", "target": target.name, "attack_count": target.attack_count})
         if name == "变形":  # 自身攻击力与攻击次数互换
-            caster.attack_power, caster.attack_count = caster.attack_count, caster.attack_power
-            result["effects"].append({"type": "swap", "target": caster.name, "attack_power": caster.attack_power, "attack_count": caster.attack_count})
+            if caster.has_status("定型"):
+                result["effects"].append({"type": "dingxing_block", "target": caster.name})
+            else:
+                caster.attack_power, caster.attack_count = caster.attack_count, caster.attack_power
+                result["effects"].append({"type": "swap", "target": caster.name, "attack_power": caster.attack_power, "attack_count": caster.attack_count})
 
         # ---- 速度修改 ----
         if "speed_boost" in calc:
-            target.current_speed += calc["speed_boost"]
-            result["effects"].append({"type": "speed_boost", "target": target.name, "speed": target.current_speed})
+            gained = self._gain_speed(target, calc["speed_boost"])
+            result["effects"].append({"type": "speed_boost", "target": target.name, "speed": target.current_speed, "gained": gained})
         if "speed_halved" in calc:
             target.current_speed = target.current_speed // 2
             result["effects"].append({"type": "speed_halved", "target": target.name, "speed": target.current_speed})
@@ -1563,15 +1673,46 @@ class CombatEngine:
                     "remaining": target.get_status_value("蒙蔽"),
                 })
 
-        if "duration" in calc and calc.get("duration") is not None:
+        if name == "缓慢":
+            if calc.get("effective"):
+                target.add_status(StatusEffect(
+                    name="缓慢", remaining_rounds=1, value=x, source=caster.name))
+                result["effects"].append({
+                    "type": "manqian", "target": target.name, "effective": True,
+                    "action_count": calc.get("target_action_count"),
+                })
+            else:
+                result["effects"].append({
+                    "type": "manqian", "target": target.name, "effective": False,
+                    "action_count": calc.get("target_action_count"),
+                })
+
+        if name == "坠落":
+            duration = x if calc.get("duration") in (None, 0) else calc["duration"]
+            grounded = []
+            for e in self.state.get_all_player_side() + self.state.get_all_enemy_side():
+                if not e.is_alive:
+                    continue
+                if self._is_flying(e) or e.has_status("坠落"):
+                    e.is_flying = False
+                    e.status_effects = [s for s in e.status_effects if s.name not in ("飞行", "滑翔")]
+                    e.add_status(StatusEffect(name="坠落", remaining_rounds=duration, value=x, source=caster.name))
+                    grounded.append(e.name)
+            result["effects"].append({"type": "zhuiluo", "targets": grounded, "duration": duration})
+        elif "duration" in calc and calc.get("duration") is not None:
             duration = calc["duration"] if calc["duration"] != 0 else -1
             effect_target = target if target else caster
             # 自身作用型道纹(变形/超频/自食等)作用于施法者
             # 洗劫：状态应挂在施法者上——"造成伤害时夺取等量碎片"以施法者为触发主体（与 sim/balance_sim 口径一致）
-            self_targeted = name in ("超频", "自食", "飞行", "滑翔", "狂暴", "自愈", "必中", "变形", "洗劫")
+            self_targeted = name in ("超频", "自食", "飞行", "滑翔", "狂暴", "自愈", "必中", "变形", "洗劫", "固执")
             et = caster if self_targeted else effect_target
-            et.add_status(StatusEffect(name=name, remaining_rounds=duration, value=x, source=caster.name))
-            result["effects"].append({"type": "status_added", "target": et.name, "status": name, "duration": duration, "value": x})
+            if name in ("飞行", "滑翔") and self._field_has_zhuiluo():
+                et.is_flying = False
+                et.add_status(StatusEffect(name="坠落", remaining_rounds=1, value=x, source=caster.name))
+                result["effects"].append({"type": "zhuiluo_block_flight", "target": et.name})
+            else:
+                et.add_status(StatusEffect(name=name, remaining_rounds=duration, value=x, source=caster.name))
+                result["effects"].append({"type": "status_added", "target": et.name, "status": name, "duration": duration, "value": x})
 
         # ---- 龙心谷专属 4 件（F2）：逆鳞/嫁祸/背负/伤痕 的 combat 侧实装 ----
         # 逆鳞X：目标每失去1HP积1层，下次伤害+全部层后清空，持续X（已通过 duration 加状态，此处初始化计数）
@@ -2028,6 +2169,16 @@ class CombatEngine:
             player = self.state.player
             if player:
                 player.add_status(StatusEffect(name="退化", value=x, remaining_rounds=-1, source=caster.name))
+        elif name == "加害":
+            player = self.state.player
+            if player and player.is_alive:
+                player.add_status(StatusEffect(name="加害", value=x, remaining_rounds=-1, source=caster.name))
+        elif name == "龙鳞":
+            caster.add_status(StatusEffect(name="龙鳞", value=x, remaining_rounds=-1, source=caster.name))
+        elif name == "定型":
+            player = self.state.player
+            if player and player.is_alive:
+                player.add_status(StatusEffect(name="定型", value=x, remaining_rounds=x, source=caster.name))
         # 其他专属的通用状态已通过 calc duration 在外层添加，此处无需额外
 
     def _monster_attack_actions(self, m: Entity, activated: set) -> int:
@@ -2067,7 +2218,8 @@ class CombatEngine:
         whiteboard = self.state.current_round <= 1
         for m in self.state.get_all_enemy_side():
             if not self.can_act(m):
-                results.append({"monster": m.name, "skipped": "眩晕/束缚"})
+                why = "缓慢" if m.has_status("缓慢") else "眩晕/束缚"
+                results.append({"monster": m.name, "skipped": why})
                 continue
             # 龙息（真龙之心遗物）：所有敌方[目标]行动前，受到10×当前回合数的必中伤害
             if "龙息" in self.state.dragon_traits and m.is_alive:
@@ -2116,9 +2268,11 @@ class CombatEngine:
                         break
                     # 必中只覆盖剩余次数；余数在 resolve_attack 里消耗
                     must = self.bizhong_remaining(m) > 0
+                    atk_target = m if m.has_status("无神") else player
                     dodge = (dodge_policy == "auto" and not must
-                             and player.current_speed > 0 and m.attack_power > player.shield)
-                    _r = self.resolve_attack(m, player, is_must_hit=False, dodge=dodge)
+                             and atk_target.current_speed > 0 and m.attack_power > atk_target.shield
+                             and atk_target is not m)
+                    _r = self.resolve_attack(m, atk_target, is_must_hit=False, dodge=dodge)
                     # 标记"一轮攻击内的第几击"：一次攻击出手包含 attack_count 次攻击，
                     # 每次独立判定闪避(README:204)，但它们同属一个出手，不应各占一个出手号。
                     _r["hit_index"] = _h + 1
@@ -2138,13 +2292,18 @@ class CombatEngine:
                 "extra_life_cost": life_cost}
 
     def can_act(self, entity: Entity) -> bool:
-        """是否可出手（眩晕/束缚下不可）"""
-        return entity.is_alive and not entity.has_status("眩晕") and not entity.has_status("束缚")
+        """是否可出手（眩晕/束缚/缓慢下不可）"""
+        return (entity.is_alive
+                and not entity.has_status("眩晕")
+                and not entity.has_status("束缚")
+                and not entity.has_status("缓慢"))
 
     def is_targetable(self, attacker: Entity, target: Entity) -> bool:
-        """目标是否可被选中（飞行状态下，非飞行攻击者无法选中）"""
-        if getattr(target, "is_flying", False) or target.has_status("飞行"):
-            return getattr(attacker, "is_flying", False) or attacker.has_status("飞行")
+        """目标是否可被选中。滑翔视同飞行；坠落压住全场飞行。"""
+        if self._field_has_zhuiluo() or target.has_status("坠落"):
+            return True
+        if self._is_flying(target):
+            return self._is_flying(attacker)
         return True
 
     def _get_combat_state(self) -> dict:

@@ -343,6 +343,11 @@ class Entity:
             remaining -= absorbed
             detail["shield_absorbed"] = absorbed
         
+        # 固执：自身单次失去生命最高为 1。代价不被格挡，也不被固执压帽。
+        if remaining > 0 and damage_type != "代价" and self.has_status("固执"):
+            remaining = min(remaining, 1)
+            detail["capped_by"] = "固执"
+
         # 扣除生命
         self.current_hp = max(0, self.current_hp - remaining)
         detail["actual_damage"] = remaining
@@ -352,6 +357,10 @@ class Entity:
         if self.current_hp <= 0:
             detail["died"] = True
             self.is_alive = False
+        elif remaining > 0 and self.has_status("眩晕"):
+            # 眩晕：失去生命后立刻苏醒
+            self.status_effects = [s for s in self.status_effects if s.name != "眩晕"]
+            detail["xuanyun_broken"] = True
         
         return detail
     
@@ -402,7 +411,9 @@ class Entity:
         self.shield = 0
     
     def spend_mana(self, amount: int) -> bool:
-        """消耗法力"""
+        """消耗法力。愤怒：法力消耗减半（向上取整）。"""
+        if amount > 0 and self.has_status("愤怒"):
+            amount = math.ceil(amount / 2)
         if self.current_mana < amount:
             return False
         self.current_mana -= amount

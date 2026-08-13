@@ -1217,10 +1217,15 @@ class GameEngine:
         怪物走独立的[战始]固定攻击+道纹规则(run_monster_phase)，不受此速限/攻击次数推导的出手预算约束。"""
         if entity.entity_type == "怪物":
             return None
+        if not self.combat.can_act(entity):
+            return {"success": False,
+                    "error": f"{entity.name}无法出手（眩晕/束缚/缓慢）"}
         if entity.actions_used_this_round >= entity.action_count:
             return {"success": False,
                     "error": f"{entity.name}本回合出手已用完({entity.actions_used_this_round}/{entity.action_count})"}
         entity.actions_used_this_round += 1
+        if entity.has_status("兴奋"):
+            self.combat._gain_speed(entity, 1)
         return None
 
     def _apply_dragon_claw_growth(self, entity: "Entity") -> None:
@@ -1248,7 +1253,8 @@ class GameEngine:
         """该侧是否还有未用完的出手预算（存活且未撤退；get_all_* 已排除死者/撤退者）。"""
         entities = (self.state.get_all_player_side() if side == "player_side"
                     else self.state.get_all_enemy_side())
-        return any(e.actions_used_this_round < e.action_count for e in entities)
+        return any(e.actions_used_this_round < e.action_count and self.combat.can_act(e)
+                   for e in entities)
 
     def _advance_duel_turn(self):
         """死斗中一次出手成功结算后：对方还有余手则换边；否则本侧连动，余手不作废。"""
@@ -1284,10 +1290,12 @@ class GameEngine:
                     continue
                 if ent.current_speed >= 1:
                     ent.current_speed -= 1
+                    extra = self.combat._note_dodge(ent)
                     skipped.append(ent.name)
-                    log["dodged_names"].append({
-                        "name": ent.name, "speed_after": ent.current_speed,
-                    })
+                    entry = {"name": ent.name, "speed_after": ent.current_speed}
+                    if extra:
+                        entry.update(extra)
+                    log["dodged_names"].append(entry)
             self.combat._skip_aoe_names = set(skipped)
             alive = [e.name for e in hostiles if e.is_alive]
             log["fully_dodged"] = bool(alive) and set(alive) <= set(skipped)
@@ -1298,7 +1306,11 @@ class GameEngine:
             log["dodge_fail_reason"] = "速度不足"
             return log
         target.current_speed -= 1
-        log["dodged_names"].append({"name": target.name, "speed_after": target.current_speed})
+        extra = self.combat._note_dodge(target)
+        entry = {"name": target.name, "speed_after": target.current_speed}
+        if extra:
+            entry.update(extra)
+        log["dodged_names"].append(entry)
         log["fully_dodged"] = True
         return log
 
@@ -1457,9 +1469,15 @@ class GameEngine:
         if duel_error:
             return duel_error
 
+        if actor.has_status("无神"):
+            target = actor
+
         # 调用道纹引擎计算
         try:
-            calc = DaoWenEngine.resolve(name, x, target=target, caster=actor)
+            resolve_kw = {"target": target, "caster": actor}
+            if name == "缓慢":
+                resolve_kw["target_action_count"] = self.combat.single_round_action_count(target)
+            calc = DaoWenEngine.resolve(name, x, **resolve_kw)
         except Exception as e:
             return {"success": False, "error": f"道纹计算失败: {str(e)}"}
 
@@ -1693,7 +1711,11 @@ class GameEngine:
         if not attacker:
             return {"success": False, "error": f"找不到实体: {attacker_name}"}
 
-        targets = self.state.get_all_enemy_side() if attacker in self.state.get_all_player_side() else self.state.get_all_player_side()
+        if attacker.has_status("无神"):
+            targets = [attacker]
+            target_selections = [0] * max(1, attacker.attack_count)
+        else:
+            targets = self.state.get_all_enemy_side() if attacker in self.state.get_all_player_side() else self.state.get_all_player_side()
 
         if not targets:
             return {"success": False, "error": "没有可用目标"}
@@ -1961,7 +1983,8 @@ class GameEngine:
                 # 回滚耐久（未找到目标不消耗）
                 item.current_uses += 1
                 return {"success": False, "error": f"找不到敌方目标: {target_name}"}
-            flying = target.is_flying or target.has_status("飞行") or "飞行" in target.dao_wen
+            flying = (target.is_flying or target.has_status("飞行") or target.has_status("滑翔")
+                      or "飞行" in target.dao_wen or "滑翔" in target.dao_wen)
             dmg = 25 + (15 if flying else 0)
             detail = target.take_damage(dmg)
             if flying:

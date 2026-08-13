@@ -404,7 +404,7 @@ class DaoWenEngine:
             "cost_type": "消耗",
             "cost": x,
             "attack_reduction": x,
-            "heal": x,
+            "target_heal": x,
             "summary": f"消耗{x}法力，将自身{x}攻击力转化为{x}点回复"
         }
     
@@ -522,7 +522,7 @@ class DaoWenEngine:
             "x": x,
             "cost_type": "消耗",
             "cost": cost,
-            "heal": heal,
+            "target_heal": heal,
             "summary": f"消耗{cost}法力，使{target.name}获得{heal}点回复（血限{blood_limit}的{10*x}%）"
         }
     
@@ -537,7 +537,7 @@ class DaoWenEngine:
             "x": x,
             "cost_type": "消耗",
             "cost": cost,
-            "damage": damage,
+            "target_damage": damage,
             "duration": -1,
             "summary": f"消耗{cost}法力，对{target.name}造成{damage}点伤害（当前生命{current_hp}的{10*x}%），永久"
         }
@@ -700,6 +700,7 @@ class DaoWenEngine:
             "x": x,
             "cost_type": "消耗",
             "cost": cost,
+            "duration": -1,
             "status": {"name": "加害", "value": x, "duration": -1},
             "summary": f"消耗{cost}法力，使{target.name}每次受到伤害+{x}，持续∞",
         }
@@ -929,6 +930,20 @@ class DaoWenEngine:
             "伤痕": cls.calculate_shanghen,
         }
     
+    @staticmethod
+    def single_round_action_count(entity: Entity) -> int:
+        """本回合单轮出手预算。缓慢判定用这个，禁止用攻击次数冒充。"""
+        if entity is None:
+            return 0
+        if getattr(entity, "entity_type", "") == "怪物":
+            n = 2  # 1 攻 + 1 纹
+            n += entity.get_status_value("活力")
+            if entity.has_status("狂暴"):
+                n += 1
+            n -= entity.get_status_value("无力")
+            return max(0, n)
+        return max(0, entity.action_count)
+
     @classmethod
     def resolve(cls, dao_wen_name: str, x: int, **kwargs) -> dict:
         """
@@ -960,12 +975,10 @@ class DaoWenEngine:
             elif param_name == 'x':
                 params['x'] = x
             elif param_name == 'target_action_count':
-                # 【缓慢X】需要目标"单轮出手次数"。调用方(api/combat)未显式传入时，
-                # 从 target 实体推导：出手次数 = [速限]/3 向上取整（README·[速限]定义）。
+                # 【缓慢X】要的是本回合单轮出手次数，不是攻击次数。
                 tgt = kwargs.get('target')
                 if tgt is not None:
-                    params[param_name] = max(1, math.ceil(getattr(tgt, 'speed_limit', 0) / 3)) \
-                        if getattr(tgt, 'speed_limit', 0) else max(1, getattr(tgt, 'attack_count', 1))
+                    params[param_name] = cls.single_round_action_count(tgt)
         
         result = func(**params)
         
