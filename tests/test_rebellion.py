@@ -40,7 +40,10 @@ def _setup_with_rebellion(db_suffix: str) -> GameEngine:
     engine = GameEngine(db_path=f"data/test_rebellion_{db_suffix}.db", rng_seed=1)
     engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
     engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
-    engine.execute_action("setup_choose_region", {"region": "罪孽都市"})
+    engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
+    setup = engine.execute_action("setup_choose_region", {"region": "罪孽都市"})
+    engine.execute_action("choose_discovered_relic", {"relic_name": setup["result"]["relic_choices"][0]})
+    engine.state.phase = "in_combat"
     engine.state.player.current_hp = 5  # 很低，容易被员工攻击总值超过
     engine.state.player.dao_wen["杀伐"] = DaoWenInstance(
         DaoWen(name="杀伐", formula="", cost_type="消耗", cost_formula="X", effect_formula=""))
@@ -90,8 +93,17 @@ def test_suppress_battle_uses_existing_combat_flow_unmodified():
     r_atk = engine.execute_action("use_daowen", {"daowen_name": "杀伐", "x": 7, "target": "彪悍打手"})
     assert r_atk["success"] is True
     assert rebel.current_hp == 50 - 14
-    r_phase = engine.execute_action("monster_phase", {})
-    assert r_phase["success"] is True, "叛变员工应能像怪物一样被run_monster_phase自动驱动出手"
+    prepared = engine.execute_action("prepare_monster_phase", {})
+    actor = prepared["result"]["actors"][0]
+    attacks = [{"hits": [{"target_ref": "player:0", "dodge": False}
+                          for _ in range(actor["base_hits_per_attack"])]}
+               for _ in range(actor["base_attack_actions"])]
+    r_phase = engine.execute_action("resolve_monster_phase", {
+        "token": prepared["result"]["token"],
+        "choices": [{"actor_ref": actor["actor_ref"], "daowen": None,
+                     "attack_actions": attacks}],
+    })
+    assert r_phase["success"] is True
     engine.execute_action("round_end", {})
 
 
@@ -139,6 +151,7 @@ def test_appease_wage_bonus_applies_on_top_of_cap_in_next_wage_calc():
     emp.is_deployed = True
     emp.deployed_at_round = engine.state.current_round
     engine.state.pending_wage_decisions = {}
+    engine.state.phase = "in_combat"  # 构造下一场已结束、等待工资结算的合法战终前状态
     engine.execute_action("battle_end", {})
     wage = engine.state.pending_wage_decisions.get("彪悍打手")
     assert wage is not None

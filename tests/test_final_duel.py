@@ -54,7 +54,9 @@ def _new_candidate(db_suffix, sealed_path, speed_points=8, region="龙心谷", n
         params["name"] = name
     engine.execute_action("setup_attributes", params)
     engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
-    engine.execute_action("setup_choose_region", {"region": region})
+    engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
+    setup = engine.execute_action("setup_choose_region", {"region": region})
+    engine.execute_action("choose_discovered_relic", {"relic_name": setup["result"]["relic_choices"][0]})
     engine.state.player.dao_wen["杀伐"] = DaoWenInstance(
         DaoWen(name="杀伐", formula="", cost_type="消耗", cost_formula="X", effect_formula=""))
     return engine
@@ -63,6 +65,7 @@ def _new_candidate(db_suffix, sealed_path, speed_points=8, region="龙心谷", n
 def _finish_battle_7(engine):
     engine.state.current_battle = 7
     engine.state.enemies.clear()
+    engine.state.phase = "in_combat"
     return engine.execute_action("battle_end", {})
 
 
@@ -133,14 +136,14 @@ def test_strict_turn_alternation_enforced():
     opp = challenger.state.enemies[0]
 
     assert challenger.state.duel_turn == "player_side"
-    r1 = challenger.execute_action("attack", {"attacker": "挑战者", "target_selections": [0]})
+    r1 = challenger.execute_action("attack", {"attacker": "挑战者", "target_selections": []})
     assert r1["success"] is True
     assert challenger.state.duel_turn == "opponent_side"
 
-    r2 = challenger.execute_action("attack", {"attacker": "挑战者", "target_selections": [0]})
+    r2 = challenger.execute_action("attack", {"attacker": "挑战者", "target_selections": []})
     assert r2["success"] is False, "还没轮到自己这边，不能连续行动第二次"
 
-    r3 = challenger.execute_action("attack", {"attacker": opp.name, "target_selections": [0]})
+    r3 = challenger.execute_action("attack", {"attacker": opp.name, "target_selections": []})
     assert r3["success"] is True
     assert challenger.state.duel_turn == "player_side", "对方行动后应轮回挑战者"
     _cleanup(path)
@@ -295,7 +298,7 @@ def test_action_from_non_duel_side_entity_rejected():
     challenger = _new_candidate("ghost_challenger", path, name="挑战者")
     _finish_battle_7(challenger)
 
-    r = challenger.execute_action("attack", {"attacker": "路人甲", "target_selections": [0]})
+    r = challenger.execute_action("attack", {"attacker": "路人甲", "target_selections": []})
     assert r["success"] is False
     _cleanup(path)
 
@@ -526,16 +529,16 @@ def test_duel_leftover_actions_continue_when_other_exhausted():
     assert challenger.state.duel_turn == "player_side"
 
     for _ in range(2):
-        r_p = challenger.execute_action("attack", {"attacker": "挑战者", "target_selections": [0]})
+        r_p = challenger.execute_action("attack", {"attacker": "挑战者", "target_selections": []})
         assert r_p["success"] is True, r_p
         assert challenger.state.duel_turn == "opponent_side"
-        r_o = challenger.execute_action("attack", {"attacker": opp.name, "target_selections": [0]})
+        r_o = challenger.execute_action("attack", {"attacker": opp.name, "target_selections": []})
         assert r_o["success"] is True, r_o
         assert challenger.state.duel_turn == "player_side"
 
     assert opp.actions_used_this_round == 2
     assert player.actions_used_this_round == 2
-    third = challenger.execute_action("attack", {"attacker": "挑战者", "target_selections": [0]})
+    third = challenger.execute_action("attack", {"attacker": "挑战者", "target_selections": []})
     assert third["success"] is True, third
     assert challenger.state.duel_turn == "player_side", "对方出手已尽，本侧应连动"
     assert player.actions_used_this_round == 3
@@ -578,20 +581,20 @@ def test_duel_last_leftover_then_both_exhausted_rejects():
     challenger.execute_action("round_start", {})
 
     for _ in range(2):
-        assert challenger.execute_action("attack", {"attacker": "挑战者", "target_selections": [0]})["success"]
-        assert challenger.execute_action("attack", {"attacker": opp.name, "target_selections": [0]})["success"]
+        assert challenger.execute_action("attack", {"attacker": "挑战者", "target_selections": []})["success"]
+        assert challenger.execute_action("attack", {"attacker": opp.name, "target_selections": []})["success"]
     for _ in range(3):
-        r = challenger.execute_action("attack", {"attacker": "挑战者", "target_selections": [0]})
+        r = challenger.execute_action("attack", {"attacker": "挑战者", "target_selections": []})
         assert r["success"] is True, r
 
     assert player.actions_used_this_round == 5
     assert opp.actions_used_this_round == 2
 
-    extra_p = challenger.execute_action("attack", {"attacker": "挑战者", "target_selections": [0]})
+    extra_p = challenger.execute_action("attack", {"attacker": "挑战者", "target_selections": []})
     assert extra_p["success"] is False
     assert "出手已用完" in extra_p["error"]
 
-    extra_o = challenger.execute_action("attack", {"attacker": opp.name, "target_selections": [0]})
+    extra_o = challenger.execute_action("attack", {"attacker": opp.name, "target_selections": []})
     assert extra_o["success"] is False
     assert "交替出手" in extra_o["error"] or "出手已用完" in extra_o["error"]
     _cleanup(path)
@@ -609,16 +612,16 @@ def test_duel_still_rejects_wrong_side_while_other_has_actions():
     challenger.execute_action("round_start", {})
 
     assert challenger.state.duel_turn == "player_side"
-    first = challenger.execute_action("attack", {"attacker": "挑战者", "target_selections": [0]})
+    first = challenger.execute_action("attack", {"attacker": "挑战者", "target_selections": []})
     assert first["success"] is True
     assert challenger.state.duel_turn == "opponent_side"
 
-    twice = challenger.execute_action("attack", {"attacker": "挑战者", "target_selections": [0]})
+    twice = challenger.execute_action("attack", {"attacker": "挑战者", "target_selections": []})
     assert twice["success"] is False
     assert "交替出手" in twice["error"]
     assert challenger.state.player.actions_used_this_round == 1
 
-    opp_ok = challenger.execute_action("attack", {"attacker": opp.name, "target_selections": [0]})
+    opp_ok = challenger.execute_action("attack", {"attacker": opp.name, "target_selections": []})
     assert opp_ok["success"] is True
     _cleanup(path)
 
@@ -779,7 +782,7 @@ def test_duel_deploy_employee_advances_turn():
     assert challenger.state.duel_turn == "opponent_side"
     emp = next(e for e in challenger.state.employees if e.name == "打手")
     assert emp.is_deployed is True
-    twice = challenger.execute_action("attack", {"attacker": "挑战者", "target_selections": [0]})
+    twice = challenger.execute_action("attack", {"attacker": "挑战者", "target_selections": []})
     assert twice["success"] is False
     assert "交替出手" in twice["error"]
     _cleanup(path)
@@ -799,8 +802,8 @@ def test_duel_deploy_stays_when_opponent_exhausted():
         attack_count=3, attack_power=6, is_deployed=False))
     challenger.execute_action("round_start", {})
     for _ in range(2):
-        assert challenger.execute_action("attack", {"attacker": "挑战者", "target_selections": [0]})["success"]
-        assert challenger.execute_action("attack", {"attacker": opp.name, "target_selections": [0]})["success"]
+        assert challenger.execute_action("attack", {"attacker": "挑战者", "target_selections": []})["success"]
+        assert challenger.execute_action("attack", {"attacker": opp.name, "target_selections": []})["success"]
     assert opp.actions_used_this_round == 2
     assert challenger.state.duel_turn == "player_side"
     r = challenger.execute_action("deploy_employee", {"name": "后援"})
@@ -821,7 +824,7 @@ def test_duel_deploy_rejected_on_wrong_turn():
         name="待命", entity_type="员工", blood_limit=24, current_hp=24,
         attack_count=3, attack_power=6, is_deployed=False))
     challenger.execute_action("round_start", {})
-    assert challenger.execute_action("attack", {"attacker": "挑战者", "target_selections": [0]})["success"]
+    assert challenger.execute_action("attack", {"attacker": "挑战者", "target_selections": []})["success"]
     assert challenger.state.duel_turn == "opponent_side"
     r = challenger.execute_action("deploy_employee", {"name": "待命"})
     assert r["success"] is False

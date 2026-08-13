@@ -205,6 +205,7 @@ class Entity:
     # 道纹与法术
     dao_wen: dict[str, DaoWenInstance] = field(default_factory=dict)
     spells: list[Spell] = field(default_factory=list)
+    relics: list[Relic] = field(default_factory=list)  # 由正文明确授予该角色的随身物品（如防弹插板）
     
     # 状态
     shield: int = 0              # 格挡
@@ -296,9 +297,9 @@ class Entity:
     
     @property
     def action_count(self) -> int:
-        """出手次数：轮回者=速限/3向上取整；[朋友]/[员工](微光者，面板无速限)=攻击次数/3向上取整；
-        怪物走独立的"固定1次攻击+1次道纹"规则(见battle_flow.get_monster_actions)，不使用本属性。
-        活力+X、无力-X 对两种口径均生效。"""
+        """出手次数：轮回者=速限/3向上取整；[朋友]/[员工](微光者，面板无速限)=攻击次数/3向上取整。
+        怪物行动由CombatEngine的prepare/resolve两阶段接口独立计算，不使用本属性。
+        活力+X、无力-X 对本属性的两种口径均生效。"""
         if self.entity_type in ("朋友", "员工"):
             base = math.ceil(self.attack_count / 3) if self.attack_count > 0 else 0
         else:
@@ -484,6 +485,7 @@ class Entity:
             "hp_ratio": round(self.hp_ratio, 2),
             "dao_wen": {k: v.dao_wen.name for k, v in self.dao_wen.items()},
             "spells": [s.name for s in self.spells],
+            "relics": [r.to_dict() for r in self.relics],
             "status_effects": [
                 {"name": s.name, "value": s.value, "rounds": s.remaining_rounds}
                 for s in self.status_effects
@@ -529,6 +531,15 @@ class GameState:
     # 遗物与消耗品
     relics: list[Relic] = field(default_factory=list)
     relics_pool: list[Relic] = field(default_factory=list)  # 遗物池（未获取的）
+    relic_pool_initialized: bool = False
+    # 【发现】：随机列出3个未持有候选后，必须由角色显式选1件。
+    pending_relic_choices: list[str] = field(default_factory=list)
+    pending_relic_source: str = ""
+    # 消耗品【发现】候选（如扭曲都市完成事件后的工具发现）。
+    pending_item_choices: list[str] = field(default_factory=list)
+    pending_item_source: str = ""
+    # 两阶段怪物决策：prepare产生的合法选项与一次性token；resolve后清空。
+    pending_monster_phase: dict = field(default_factory=dict)
     # 死斗对手自己的遗物。可选效果（折速/鲜血契约等）由对手决定是否发动，不跟挑战者的 state.relics 混用。
     opponent_relics: list[Relic] = field(default_factory=list)
     opponent_artifacts_owned: list[str] = field(default_factory=list)
@@ -583,6 +594,10 @@ class GameState:
     # 最终的冠冕/第8场死斗：进行中标记 + 当前该谁出手("player_side"/"opponent_side")
     in_final_duel: bool = False
     duel_turn: str = ""
+    # 四项先手属性完全相同时：首回合随机，之后每回合交换先手方。
+    duel_tie_alternating: bool = False
+    duel_round_first: str = ""
+    duel_rounds_started: int = 0
 
     # 龙心谷"炼心"：待生效标记；下一次玩家实际支付数值型代价后转化为对应类型的【××龙心】消耗品
     pending_lianxin: bool = False
@@ -753,12 +768,19 @@ class GameState:
             "is_blacklisted": self.is_blacklisted,
             "pending_wage_decisions": self.pending_wage_decisions,
             "pending_daowen_choices": self.pending_daowen_choices,
+            "pending_relic_choices": list(self.pending_relic_choices),
+            "pending_relic_source": self.pending_relic_source,
+            "pending_item_choices": list(self.pending_item_choices),
+            "pending_item_source": self.pending_item_source,
+            "pending_monster_phase": self.pending_monster_phase,
             "forced_monsters_next_battle": self.forced_monsters_next_battle,
             "rebellion_active": self.rebellion_active,
             "rebellion_in_progress": self.rebellion_in_progress,
             "wage_bonus": self.wage_bonus,
             "in_final_duel": self.in_final_duel,
             "duel_turn": self.duel_turn,
+            "duel_tie_alternating": self.duel_tie_alternating,
+            "duel_round_first": self.duel_round_first,
             "attribute_points": self.attribute_points,
             "player": self.player.to_dict() if self.player else None,
             "friends": [f.to_dict() for f in self.friends],

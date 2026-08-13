@@ -29,7 +29,16 @@ from engine.models import Relic, DaoWen, DaoWenInstance, Entity
 def _new_engine(db_suffix: str, daowen="杀伐") -> GameEngine:
     engine = GameEngine(db_path=f"data/test_relicfix_{db_suffix}.db", rng_seed=1)
     engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
-    engine.execute_action("setup_choose_daowen", {"daowen": daowen})
+    engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
+    engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
+    setup = engine.execute_action("setup_choose_region", {"region": "罪孽都市"})
+    optional = {"折速法印", "鲜血契约", "三相残韵盘", "卖身契"}
+    choice = next((n for n in setup["result"]["relic_choices"] if n not in optional),
+                  setup["result"]["relic_choices"][0])
+    engine.execute_action("choose_discovered_relic", {"relic_name": choice})
+    if daowen != "杀伐":
+        _give_daowen(engine.state.player, daowen)
+    engine.state.energy = 3
     return engine
 
 
@@ -40,7 +49,10 @@ def _give_daowen(entity, name, cost_type="消耗"):
 
 def _start_with_enemy(engine, enemy):
     """battle_start会自动出怪，这里先start再替换为受控的测试怪物"""
-    engine.execute_action("battle_start", {})
+    engine.state.energy = 0
+    choices = {r.name: {"use": False} for r in engine.state.relics
+               if r.name in ("折速法印", "鲜血契约", "三相残韵盘", "卖身契")}
+    engine.execute_action("battle_start", {"relic_choices": choices})
     engine.state.enemies.clear()
     engine.state.enemies.append(enemy)
     engine.execute_action("round_start", {})
@@ -127,6 +139,7 @@ def test_tonghunbi_grants_caster_real_daowen_from_second_target():
     engine.state.relics.append(Relic(name="同魂笔", effect=""))
     engine.state.resonance["反转"] = 1
     _give_daowen(engine.state.player, "杀伐")
+    engine.state.energy = 0
     engine.execute_action("battle_start", {})
     engine.state.enemies.clear()
     enemy = Entity(name="怪甲", entity_type="怪物", blood_limit=100, current_hp=100)
@@ -147,6 +160,7 @@ def test_moneybag_adds_bonus_shards_at_battle_end():
     """钱袋正常路径：战终结算击杀奖励时应包含钱袋的额外2%[战始][血限]碎片"""
     engine = _new_engine("moneybag_ok")
     engine.state.relics.append(Relic(name="钱袋", effect=""))
+    engine.state.energy = 0
     engine.execute_action("battle_start", {})
     engine.state.enemies.clear()
     monster = Entity(name="待宰怪", entity_type="怪物", blood_limit=100, current_hp=100)
@@ -162,6 +176,7 @@ def test_moneybag_uses_battle_start_snapshot_not_current_blood_limit():
     """钱袋边界：即使战斗中血限发生变化(如增殖)，奖励也应按[战始]快照计算，不受影响"""
     engine = _new_engine("moneybag_snapshot")
     engine.state.relics.append(Relic(name="钱袋", effect=""))
+    engine.state.energy = 0
     engine.execute_action("battle_start", {})
     engine.state.enemies.clear()
     monster = Entity(name="膨胀怪", entity_type="怪物", blood_limit=100, current_hp=100)
@@ -254,6 +269,7 @@ def test_tonghunbi_rejected_when_second_target_lacks_daowen():
     engine.state.relics.append(Relic(name="同魂笔", effect=""))
     engine.state.resonance["反转"] = 1
     _give_daowen(engine.state.player, "杀伐")
+    engine.state.energy = 0
     engine.execute_action("battle_start", {})
     engine.state.enemies.clear()
     enemy = Entity(name="怪乙", entity_type="怪物", blood_limit=100, current_hp=100)

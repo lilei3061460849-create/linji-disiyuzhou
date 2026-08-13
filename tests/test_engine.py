@@ -11,7 +11,20 @@ from engine.models import Entity, StatusEffect
 from engine.daowen import DaoWenEngine, ResonanceEngine
 from engine.dice import DiceEngine
 from engine.enums import EntityType
+from tests.monster_phase_support import resolve_monster_phase
 import math
+
+
+def _choose_region(engine, region):
+    if sum(engine.state.resonance.values()) == 0:
+        engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
+    result = engine.execute_action("setup_choose_region", {"region": region})
+    if result.get("success") and engine.state.pending_relic_choices:
+        optional = {"折速法印", "鲜血契约", "三相残韵盘", "卖身契"}
+        choice = next((n for n in engine.state.pending_relic_choices if n not in optional),
+                      engine.state.pending_relic_choices[0])
+        engine.execute_action("choose_discovered_relic", {"relic_name": choice})
+    return result
 
 
 def test_setup():
@@ -54,7 +67,7 @@ def test_setup():
     print("  ✓ 残韵选择正确")
     
     # 选择副本
-    result = engine.execute_action("setup_choose_region", {"region": "扭曲都市"})
+    result = _choose_region(engine, "扭曲都市")
     assert result["success"], f"副本选择失败: {result}"
     assert engine.state.current_region == "扭曲都市", "副本设置错误"
     assert engine.state.phase == "pre_battle", "阶段切换错误"
@@ -255,7 +268,8 @@ def test_dm_rulings():
         "name": "测试", "blood_points": 10, "speed_points": 8, "mana_points": 7
     })
     engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
-    engine.execute_action("setup_choose_region", {"region": "扭曲都市"})
+    _choose_region(engine, "扭曲都市")
+    engine.state.phase = "in_combat"
     
     # 添加怪物
     monster = Entity(name="测试怪", entity_type="怪物", blood_limit=50, current_hp=10, 
@@ -297,7 +311,7 @@ def test_full_flow():
     })
     engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
     engine.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
-    engine.execute_action("setup_choose_region", {"region": "扭曲都市"})
+    _choose_region(engine, "扭曲都市")
     print("  ✓ 开局完成")
     
     # 局外行动
@@ -422,6 +436,7 @@ def test_daowen_effects_wired():
     engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
     engine.execute_action("setup_attributes", {"name":"测试","blood_points":10,"speed_points":8,"mana_points":7})
     engine.execute_action("setup_choose_daowen", {"daowen":"杀伐"})
+    engine.state.phase = "in_combat"
     player = engine.state.player
     # 本测试连续发动6次道纹只为验证效果落地，与出手预算校验无关，给予充裕出手预算
     player.speed_limit = 99
@@ -443,11 +458,11 @@ def test_daowen_effects_wired():
     assert m.attack_power == 9, f"强化后应9，实{m.attack_power}"
     print("  ✓ 弱化/强化：靶怪攻击力 10→7→9")
 
-    # 赎金3（即时夺10X碎片）→ 靶怪碎片-30(可负债)，玩家+min(20,30)=20
+    # R35 赎金3：有碎片则最多夺取现有20，不再把不足额扩成负债。
     shards_before = engine.state.shards
     r = engine.execute_action("use_daowen", {"daowen_name":"赎金","x":3,"target":"靶怪"})
     assert r["success"], f"赎金失败: {r}"
-    assert m.shards == -10, f"赎金后靶怪碎片应-10(20-30)，实{m.shards}"
+    assert m.shards == 0, f"赎金后靶怪现有20碎片应被夺尽，实{m.shards}"
     assert engine.state.shards == shards_before + 20, f"玩家应+20碎片"
     print(f"  ✓ 赎金：靶怪碎片20→-10(负债)，玩家+20碎片")
 
@@ -477,7 +492,7 @@ def test_out_of_combat_actions():
     engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
     engine.execute_action("setup_attributes", {"name":"测试","blood_points":10,"speed_points":8,"mana_points":7})
     engine.execute_action("setup_choose_daowen", {"daowen":"杀伐"})
-    engine.execute_action("setup_choose_region", {"region":"罪孽都市"})
+    _choose_region(engine, "罪孽都市")
     player = engine.state.player
 
     # 休整：先扣血再休整，验证回血
@@ -504,8 +519,11 @@ def test_out_of_combat_actions():
     n_before = len(engine.state.relics)
     r = engine.execute_action("pre_battle_action", {"sub_action":"共鸣","sub":"discover"})
     assert r["success"], f"共鸣失败: {r}"
-    assert len(engine.state.relics) == n_before + 1, "应新获1件遗物"
-    print(f"  ✓ 共鸣：获遗物【{r['result']['gained_relic']}】，持有{len(engine.state.relics)}件")
+    picked = engine.execute_action("choose_discovered_relic", {
+        "relic_name": r["result"]["relic_choices"][0],
+    })
+    assert picked["success"] and len(engine.state.relics) == n_before + 1
+    print(f"  ✓ 共鸣：显式选择遗物【{picked['result']['relic']}】，持有{len(engine.state.relics)}件")
     print("  ✓ 局外行动落地测试通过")
 
 
@@ -532,7 +550,7 @@ def test_relic_effects():
     m2 = Entity(name="靶", entity_type="怪物", blood_limit=120, current_hp=120, attack_count=1, attack_power=1)
     st2.enemies.append(m2)
     combat2 = CombatEngine(st2, DiceEngine())
-    combat2.round_start()  # 触发回始遗物
+    combat2.round_start({"回锋刀": {"enemy_index": 0}})  # 显式选择回锋刀目标
     assert m2.current_hp < 120, f"回锋刀应造伤，实HP{m2.current_hp}"
     print(f"  ✓ 回锋刀：回始造伤(失速3→9伤)，靶HP120→{m2.current_hp}")
 
@@ -541,11 +559,12 @@ def test_relic_effects():
     engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
     engine.execute_action("setup_attributes", {"name":"测试","blood_points":10,"speed_points":8,"mana_points":7})
     engine.execute_action("setup_choose_daowen", {"daowen":"杀伐"})
-    engine.execute_action("setup_choose_region", {"region":"罪孽都市"})
+    _choose_region(engine, "罪孽都市")
     engine.state.relics = [Relic(name="钱袋", effect="")]
     mm = Entity(name="怪", entity_type="怪物", blood_limit=100, current_hp=0, attack_count=1, attack_power=1)
     mm.is_alive = False
     engine.state.enemies.append(mm)
+    engine.state.phase = "in_combat"
     sb = engine.state.shards
     engine.execute_action("battle_end", {})
     # 基础碎片(100*2%+0) + 钱袋(100*2%=2)
@@ -570,14 +589,14 @@ def test_monster_phase_engine():
 
     # 第1回合（白板）：不激活道纹，攻击力仍6
     combat.round_start()  # current_round→1
-    r1 = combat.run_monster_phase()
+    r1 = resolve_monster_phase(combat, {"打手": None})
     assert m.attack_power == 6, f"白板回合攻击力应6，实{m.attack_power}"
     assert len(r1) > 0, "怪物应有出手"
     print(f"  ✓ 第1回合(白板)：攻击力6，怪物出手{len(r1)}次，贾凡HP{st.player.current_hp} 速{st.player.current_speed}")
 
     # 第2回合：激活强化3 → 攻击力6→9
     combat.round_start()  # current_round→2
-    r2 = combat.run_monster_phase()
+    r2 = resolve_monster_phase(combat, {"打手": "强化"}, target_refs={"打手": "enemy:0"})
     assert m.attack_power == 9, f"激活强化后攻击力应9，实{m.attack_power}"
     print(f"  ✓ 第2回合：激活【强化3】，攻击力6→9，怪物自主攻击")
     print("  ✓ 怪物回合引擎化测试通过")
@@ -680,7 +699,7 @@ def test_events_system():
     engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
     engine.execute_action("setup_attributes", {"name":"测试","blood_points":10,"speed_points":8,"mana_points":7})
     engine.execute_action("setup_choose_daowen", {"daowen":"杀伐"})
-    engine.execute_action("setup_choose_region", {"region":"扭曲都市"})
+    _choose_region(engine, "扭曲都市")
     # 解析数量
     assert len(engine.event_pool.events) >= 25, f"应解析>=25事件，实{len(engine.event_pool.events)}"
     print(f"  ✓ 解析到{len(engine.event_pool.events)}个事件")
@@ -693,7 +712,10 @@ def test_events_system():
     assert r["result"]["options"], "事件应有选项"
     print(f"  ✓ 探索触发【{ev_name}】，{len(r['result']['options'])}个选项")
 
-    # 直接结算祭坛选项1：衰老8+1速限
+    # R20：不能越过当前事件直接结算祭坛；随后显式构造祭坛为当前事件再测效果。
+    wrong = engine.execute_action("resolve_event", {"event":"祭坛","option_id":1})
+    assert not wrong["success"] and engine.event_pool.current == ev_name
+    engine.event_pool.current = "祭坛"
     bl_before = engine.state.player.blood_limit
     sp_before = engine.state.player.speed_limit
     r2 = engine.execute_action("resolve_event", {"event":"祭坛","option_id":1})
@@ -751,7 +773,9 @@ def test_relics_five_more():
     st.resonance = {"转换":2, "反转":1, "曲解":0}
     st.relics = [Relic(name="三相残韵盘", effect="")]
     combat = CombatEngine(st, DiceEngine()); combat.reset_monster_activation()
-    combat.process_relics("battle_start")  # 消耗转换→转换1
+    combat.process_relics("battle_start", {"relic_choices": {
+        "三相残韵盘": {"use": True, "resonance_type": "转换"},
+    }})  # 显式选择消耗转换
     assert st.resonance["转换"] == 1, f"应消耗转换，实{st.resonance}"
     combat.process_relics("battle_end")  # 获反转+曲解各1
     assert st.resonance["反转"] == 2 and st.resonance["曲解"] == 1, f"战终应+反转+曲解，实{st.resonance}"
@@ -770,8 +794,9 @@ def test_relics_five_more():
     engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
     engine.execute_action("setup_attributes", {"name":"t","blood_points":10,"speed_points":8,"mana_points":7})
     engine.execute_action("setup_choose_daowen", {"daowen":"杀伐"})
-    engine.execute_action("setup_choose_region", {"region":"扭曲都市"})
+    _choose_region(engine, "扭曲都市")
     engine.state.relics = [Relic(name="无所求", effect="")]
+    engine.event_pool.current = "祭坛"
     sp = engine.state.player.speed_limit
     engine.execute_action("resolve_event", {"event":"祭坛","option_id":3})  # 拒绝：无事发生
     assert engine.state.player.speed_limit == sp + 1, "无所求拒绝应+1速限"
@@ -800,6 +825,7 @@ def test_evolution_yuanchu():
                 dao_wen=DaoWen(name=_n, formula="", cost_type="消耗",
                                cost_formula="X", effect_formula=""), x_value=1)
         engine.combat.reset_monster_activation()
+        engine.state.phase = "in_combat"
         return engine
 
     def mk_plight_monster(name="困境怪", hp=120, cur=30, atk=1, dw=None):
@@ -887,7 +913,7 @@ def test_evolution_yuanchu():
     combat = CombatEngine(st, DiceEngine()); combat.reset_monster_activation()
     combat.round_start()  # 第1回合（白板）
     combat.round_start()  # 第2回合：激活狂暴3
-    r9 = combat.run_monster_phase()
+    r9 = resolve_monster_phase(combat, {"计费怪": "狂暴"})
     assert m_act.mutation_count == 15, f"激活狂暴3应付异变5×3=15，实{m_act.mutation_count}"
     print(f"  ✓ 怪物激活【狂暴3】真实支付异变15层（当前{m_act.mutation_count}层）")
 
@@ -900,7 +926,7 @@ def test_evolution_yuanchu():
     st2.enemies.append(m_col)
     combat2 = CombatEngine(st2, DiceEngine()); combat2.reset_monster_activation()
     combat2.round_start(); combat2.round_start()
-    r10 = combat2.run_monster_phase()
+    r10 = resolve_monster_phase(combat2, {"自毁怪": "狂暴"})
     assert m_col.mutation_count == Entity.MUTATION_COLLAPSE_THRESHOLD and not m_col.is_alive, "激活付异变达阈值应崩解命零"
     assert st2.player.current_hp == 60, "崩解怪攻击出手应被中断，玩家无伤"
     assert any(e.get("collapsed") == "狂暴" for e in r10), "结果应记录崩解事件"
@@ -920,12 +946,12 @@ def test_evolution_yuanchu():
     ev = combat3.execute_evolution(m_b, "自愈", 2)
     assert ev["success"] and m_b.mutation_count == 10, f"原初2门票应为10层: {ev}"
     combat3.round_start(); combat3.round_start()
-    combat3.run_monster_phase()  # 第2回合：激活借用的自愈2 → +10（当回合不收持续费）
+    resolve_monster_phase(combat3, {"借用怪": "自愈"})  # 第2回合显式选择借用的自愈2
     total1 = m_b.mutation_count
     assert total1 == 20, f"借用自愈2激活应付异变5×2=10（门票10+激活10=20），实{total1}"
     assert m_b.is_alive, "20层应存活"
     combat3.round_start()
-    r3p = combat3.run_monster_phase()  # 第3回合回始：自愈持续计费+10 → 累计30层
+    r3p = resolve_monster_phase(combat3, {"借用怪": None})  # 第3回合持续计费
     total2 = m_b.mutation_count
     T3 = Entity.MUTATION_COLLAPSE_THRESHOLD
     assert total2 == 30, f"持续计费后应恰为30层，实{total2}"
@@ -1055,16 +1081,16 @@ def test_mutation_sustain_billing():
     m1 = mk("持续怪", [("自愈", 2)])
     st1, c1 = mkbed(m1)
     c1.round_start()  # 回合1（白板）
-    c1.run_monster_phase()
+    resolve_monster_phase(c1, {"持续怪": None})
     assert m1.mutation_count == 0, "白板回合不应有激活与计费"
-    c1.round_start(); c1.run_monster_phase()  # 回合2：激活自愈2 +10
+    c1.round_start(); resolve_monster_phase(c1, {"持续怪": "自愈"})  # 回合2：激活自愈2 +10
     assert m1.mutation_count == 10, f"激活回合应付10层，实{m1.mutation_count}"
-    c1.round_start(); c1.run_monster_phase()  # 回合3：持续计费 +10
+    c1.round_start(); resolve_monster_phase(c1, {"持续怪": None})  # 回合3：持续计费 +10
     assert m1.mutation_count == 20, f"首个持续回合应至20层，实{m1.mutation_count}"
     assert m1.is_alive == (20 < T), f"20层与阈值{T}关系不符"
     hp_before = st1.player.current_hp
     c1.round_start()
-    r4 = c1.run_monster_phase()  # 回合4：持续计费 +10 → 累计30层
+    r4 = resolve_monster_phase(c1, {"持续怪": None})  # 回合4：持续计费 +10 → 累计30层
     assert m1.mutation_count == 30, f"回合4持续计费后应恰为30层，实{m1.mutation_count}"
     assert m1.is_alive == (30 < T), f"30层与阈值{T}关系不符"
     if not m1.is_alive:
@@ -1075,10 +1101,10 @@ def test_mutation_sustain_billing():
     # ---- 2. 次数型道纹豁免：必中3激活计费一次，持续回合不再计费 ----
     m2 = mk("次数怪", [("必中", 3)])
     st2, c2 = mkbed(m2)
-    c2.round_start(); c2.run_monster_phase()      # 回合1白板
-    c2.round_start(); c2.run_monster_phase()      # 回合2：激活必中3 +15
+    c2.round_start(); resolve_monster_phase(c2, {"次数怪": None})      # 回合1白板
+    c2.round_start(); resolve_monster_phase(c2, {"次数怪": "必中"})      # 回合2：激活必中3 +15
     assert m2.mutation_count == 15, f"必中激活应付15层，实{m2.mutation_count}"
-    c2.round_start(); c2.run_monster_phase()      # 回合3：次 数型豁免，不再计费
+    c2.round_start(); resolve_monster_phase(c2, {"次数怪": None})      # 回合3：次数型豁免
     assert m2.mutation_count == 15 and m2.is_alive, f"必中不应持续计费，实{m2.mutation_count}"
     print(f"  ✓ 次数型【必中3】：激活付15层，持续回合豁免不再计费，怪物存活")
     print("  ✓ 持续型原始道纹回合计费测试通过")
@@ -1152,7 +1178,8 @@ def test_twisted_tool_library():
         engine.execute_action("setup_attributes", {
             "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7
         })
-        engine.execute_action("setup_choose_region", {"region": region})
+        engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
+        _choose_region(engine, region)
         return engine
 
     ev_name = None
@@ -1160,38 +1187,43 @@ def test_twisted_tool_library():
     ev_name = next(n for n, ev in engine.event_pool.events.items()
                    if ev["region"] == "扭曲都市")
 
-    # ---- 1. 正常路径：扭曲都市结算事件 → 附赠发现1件工具库道具 ----
+    # ---- 1. 正常路径：扭曲都市结算事件 → 随机列3件，再显式选1件 ----
+    engine.event_pool.current = ev_name
     r = engine.execute_action("resolve_event", {"event": ev_name, "option_id": 1})
     assert r["success"], f"事件结算失败: {r}"
     bonus = r["result"].get("附赠发现")
-    assert bonus is not None, "扭曲都市事件应有附赠发现"
-    assert bonus["获得"] in bonus["候选"] and len(bonus["候选"]) <= 3
-    assert bonus["获得"] in TWISTED_TOOL_LIBRARY, f"{bonus['获得']}不在工具库"
-    dur_expected = TWISTED_TOOL_LIBRARY[bonus["获得"]][0]
-    got_item = next(c for c in engine.state.consumables if c.name == bonus["获得"])
-    assert got_item.current_uses == dur_expected == bonus["耐久"], \
-        f"耐久应={dur_expected}，实{got_item.current_uses}"
-    print(f"  ✓ 事件【{ev_name}】附赠发现：候选{bonus['候选']}→获得【{bonus['获得']}】（耐久{bonus['耐久']}）")
+    assert bonus is not None and bonus["等待选择"] is True
+    assert len(bonus["候选"]) <= 3
+    chosen = bonus["候选"][-1]
+    picked = engine.execute_action("choose_discovered_item", {"item_name": chosen})
+    assert picked["success"]
+    dur_expected = TWISTED_TOOL_LIBRARY[chosen][0]
+    got_item = next(c for c in engine.state.consumables if c.name == chosen)
+    assert got_item.current_uses == dur_expected
+    print(f"  ✓ 事件【{ev_name}】附赠发现：候选{bonus['候选']}→显式选择【{chosen}】")
 
-    # ---- 2. 非法输入：bonus_pick不在候选 → 回退候选第一件且标记fallback ----
+    # ---- 2. 非法输入：不在候选的显式选择必须拒绝，不得回退第一件 ----
     engine2 = mk()
     ev2 = next(n for n, ev in engine2.event_pool.events.items()
                if ev["region"] == "扭曲都市" and n != ev_name)
-    r2 = engine2.execute_action("resolve_event",
-                                {"event": ev2, "option_id": 1, "bonus_pick": "不存在的道具"})
-    assert r2["success"] and r2["result"]["附赠发现"]["fallback"] is True, "非法选择应标记回退"
-    assert r2["result"]["附赠发现"]["获得"] == r2["result"]["附赠发现"]["候选"][0]
-    print("  ✓ 非法bonus_pick：回退候选[0]且fallback=True")
+    engine2.event_pool.current = ev2
+    r2 = engine2.execute_action("resolve_event", {"event": ev2, "option_id": 1})
+    assert r2["success"]
+    bad = engine2.execute_action("choose_discovered_item", {"item_name": "不存在的道具"})
+    assert not bad["success"] and engine2.state.pending_item_choices
+    print("  ✓ 非候选选择被拒绝，候选保持待选")
 
     # ---- 3. 边界：8件全持有 → 再无附赠；非扭曲副本也不附赠 ----
     engine3 = mk()
     for n, (dur, txt) in TWISTED_TOOL_LIBRARY.items():
         engine3.state.consumables.append(Consumable(name=n, effect=txt,
                                                     current_uses=dur, max_uses=dur))
+    engine3.event_pool.current = ev_name
     r3 = engine3.execute_action("resolve_event", {"event": ev_name, "option_id": 1})
     assert r3["success"] and "附赠发现" not in r3["result"], "全持有后不应再附赠"
     engine4 = mk(region="龙心谷")
     ev4 = next(n for n, ev in engine4.event_pool.events.items() if ev["region"] == "龙心谷")
+    engine4.event_pool.current = ev4
     r4 = engine4.execute_action("resolve_event", {"event": ev4, "option_id": 1})
     assert r4["success"] and "附赠发现" not in r4["result"], "非扭曲副本不应附赠工具库"
     print("  ✓ 边界：8件全持有不再附赠；龙心谷事件不附赠")

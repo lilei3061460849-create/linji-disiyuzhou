@@ -20,7 +20,11 @@ def _engine(suffix):
         "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7,
     })
     engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
-    engine.execute_action("setup_choose_region", {"region": "龙心谷"})
+    engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
+    setup = engine.execute_action("setup_choose_region", {"region": "龙心谷"})
+    engine.execute_action("choose_discovered_relic", {"relic_name": setup["result"]["relic_choices"][0]})
+    # 本文件是道纹单元接线测试，直接构造合法战斗阶段，避免随机出怪干扰。
+    engine.state.phase = "in_combat"
     p = engine.state.player
     # 多道纹同回合连发：速限 24 → 出手 8，避免第 5 手被预算挡掉误报“没接线”。
     p.speed_limit = 24
@@ -116,7 +120,7 @@ def test_manqian_invalid_and_ziyang_zishi_shuaibai():
 
     p.attack_power = 5
     p.current_hp = 40
-    r3 = engine.execute_action("use_daowen", {"daowen_name": "自食", "x": 3})
+    r3 = engine.execute_action("use_daowen", {"daowen_name": "自食", "x": 3, "target": p.name})
     assert r3["success"]
     assert p.attack_power == 2
     assert p.current_hp == 43
@@ -124,8 +128,10 @@ def test_manqian_invalid_and_ziyang_zishi_shuaibai():
     hp = m.current_hp
     r4 = engine.execute_action("use_daowen", {"daowen_name": "衰败", "x": 1, "target": m.name})
     assert r4["success"]
-    assert m.current_hp == hp - 6  # ceil(60*10%)
+    assert m.current_hp == hp  # R32：发动时不立即触发
     assert m.has_status("衰败")
+    engine.execute_action("round_start", {})
+    assert m.current_hp == hp - 6  # [回始]ceil(60*10%)
 
 
 def test_jiahai_guzhi_fennu_jieli_jisheng():
@@ -265,9 +271,16 @@ def test_ziyu_monster_activate_heals_next_round_start():
     m.dao_wen["自愈"] = DaoWenInstance(
         DaoWen(name="自愈", formula="", cost_type="异变", cost_formula="5X", effect_formula=""),
         x_value=1)
-    act = set()
-    name = engine.combat._monster_activate(m, act)
-    assert name == "自愈"
+    engine.state.current_round = 2
+    prepared = engine.execute_action("prepare_monster_phase", {})
+    actor = prepared["result"]["actors"][0]
+    resolved = engine.execute_action("resolve_monster_phase", {
+        "token": prepared["result"]["token"],
+        "choices": [{"actor_ref": actor["actor_ref"],
+                     "daowen": {"name": "自愈", "dodge": False},
+                     "attack_actions": [{"hits": [{"target_ref": "player:0", "dodge": False}]}]}],
+    })
+    assert resolved["success"]
     assert m.has_status("自愈")
     m.current_hp = 50
     engine.execute_action("round_start", {})

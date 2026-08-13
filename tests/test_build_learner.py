@@ -28,6 +28,22 @@ def _load():
 bl = _load()
 
 
+def _finish_region_setup(engine, region):
+    result = engine.execute_action("setup_choose_region", {"region": region})
+    optional = {"折速法印", "鲜血契约", "三相残韵盘", "卖身契"}
+    choice = next((n for n in result["result"]["relic_choices"] if n not in optional),
+                  result["result"]["relic_choices"][0])
+    engine.execute_action("choose_discovered_relic", {"relic_name": choice})
+    return choice
+
+
+def _start_battle(engine, relic):
+    engine.state.energy = 0
+    choices = {relic: {"use": False}} if relic in {
+        "折速法印", "鲜血契约", "三相残韵盘", "卖身契"} else {}
+    return engine.execute_action("battle_start", {"relic_choices": choices})
+
+
 # ---------- 正常路径 ----------
 
 def test_play_returns_wellformed_result():
@@ -219,7 +235,7 @@ def test_region_exclusive_enforced_by_engine():
                      {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
     e.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
-    e.execute_action("setup_choose_region", {"region": "龙心谷"})
+    _finish_region_setup(e, "龙心谷")
     r = e.execute_action("pre_battle_action", {"sub_action": "维修", "tier": 1})
     assert not r["success"]
     assert "扭曲都市" in r["error"]
@@ -281,9 +297,9 @@ def test_cooldown_cost_is_applied():
                      {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
     e.execute_action("setup_choose_daowen", {"daowen": "锐利"})
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
-    e.execute_action("setup_choose_region", {"region": "龙心谷"})
+    relic = _finish_region_setup(e, "龙心谷")
     e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "daowen", "name": "束缚"})
-    e.execute_action("battle_start")
+    _start_battle(e, relic)
     e.execute_action("round_start", {})
     m = e.state.enemies[0]
     r1 = e.execute_action("use_daowen", {"daowen_name": "束缚", "x": 2, "target": m.name})
@@ -299,9 +315,9 @@ def test_cooldown_blocks_reuse_in_same_battle():
                      {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
     e.execute_action("setup_choose_daowen", {"daowen": "锐利"})
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
-    e.execute_action("setup_choose_region", {"region": "龙心谷"})
+    relic = _finish_region_setup(e, "龙心谷")
     e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "daowen", "name": "束缚"})
-    e.execute_action("battle_start")
+    _start_battle(e, relic)
     e.execute_action("round_start", {})
     m = e.state.enemies[0]
     e.execute_action("use_daowen", {"daowen_name": "束缚", "x": 2, "target": m.name})
@@ -319,12 +335,12 @@ def test_cooldown_decrements_at_battle_end():
                      {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
     e.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
-    e.execute_action("setup_choose_region", {"region": "龙心谷"})
+    _finish_region_setup(e, "龙心谷")
     inst = DaoWenInstance(DaoWen(name="束缚", formula="", cost_type="代价",
                                  cost_formula="", effect_formula=""))
     inst.cooldown_remaining = 3
     e.state.player.dao_wen["束缚"] = inst
-    e.execute_action("battle_start")
+    e.state.phase = "in_combat"
     e.execute_action("battle_end", {})
     assert inst.cooldown_remaining == 2, "[战终]后冷却未递减"
 

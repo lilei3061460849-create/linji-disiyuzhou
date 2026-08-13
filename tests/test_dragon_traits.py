@@ -18,6 +18,7 @@ import pytest
 
 from engine.api import GameEngine
 from engine.models import Entity, DaoWen, DaoWenInstance
+from tests.monster_phase_support import resolve_monster_phase
 
 
 def _new_engine(region="龙心谷", name="老张", speed=8, mana=7, dbsuffix="a"):
@@ -27,7 +28,13 @@ def _new_engine(region="龙心谷", name="老张", speed=8, mana=7, dbsuffix="a"
     engine.execute_action("setup_attributes",
                            {"blood_points": blood, "speed_points": speed, "mana_points": mana, "name": name})
     engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
-    engine.execute_action("setup_choose_region", {"region": region})
+    engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
+    setup = engine.execute_action("setup_choose_region", {"region": region})
+    optional = {"折速法印", "鲜血契约", "三相残韵盘", "卖身契"}
+    choice = next((n for n in setup["result"]["relic_choices"] if n not in optional),
+                  setup["result"]["relic_choices"][0])
+    engine.execute_action("choose_discovered_relic", {"relic_name": choice})
+    engine.state.energy = 0
     engine.state.player.dao_wen["杀伐"] = DaoWenInstance(
         DaoWen(name="杀伐", formula="", cost_type="消耗", cost_formula="X", effect_formula=""))
     return engine
@@ -147,7 +154,7 @@ def test_dragon_might_monsters_always_target_player():
     engine.state.enemies.append(monster)
     engine.state.friends.append(Entity(name="队友", entity_type="朋友", blood_limit=30, current_hp=30, is_deployed=True))
     engine.execute_action("round_start", {})
-    results = engine.combat.run_monster_phase()
+    results = resolve_monster_phase(engine.combat, {"怪物": None})
     targets = {r["target"] for r in results if "target" in r}
     assert targets == {player.name}
 
@@ -188,7 +195,7 @@ def test_dragon_breath_deals_10_times_round_damage_before_each_monster_acts():
     monster = Entity(name="怪物", entity_type="怪物", blood_limit=100, current_hp=100, attack_power=1, attack_count=1)
     engine.state.enemies.append(monster)
     engine.execute_action("round_start", {})  # current_round -> 1
-    results = engine.combat.run_monster_phase()
+    results = resolve_monster_phase(engine.combat, {"怪物": None})
     breath_entries = [r for r in results if r.get("dragon_breath")]
     assert breath_entries and breath_entries[0]["dragon_breath"] == 10
     assert monster.current_hp == 90
@@ -204,7 +211,7 @@ def test_dragon_breath_can_kill_monster_before_it_acts():
     weak = Entity(name="弱怪", entity_type="怪物", blood_limit=5, current_hp=5, attack_power=1, attack_count=1)
     engine.state.enemies.append(weak)
     engine.execute_action("round_start", {})
-    results = engine.combat.run_monster_phase()
+    results = resolve_monster_phase(engine.combat, {"弱怪": None})
     assert weak.is_alive is False
     assert not any(r.get("attacker") == "弱怪" for r in results), "已被龙息命零的怪物不应再发动攻击"
 
@@ -219,11 +226,11 @@ def test_dragon_body_caps_damage_at_15_and_ticks_down_each_round():
     player = engine.state.player
     _with_heart(engine)
     engine.execute_action("unlock_dragon_trait", {"trait": "震岳龙躯"})
+    engine.execute_action("battle_start", {})
     r = engine.execute_action("activate_dragon_body", {"x": 2})
     assert r["success"] is True
     assert engine.state.dragon_body_shield_rounds == 2
 
-    engine.execute_action("battle_start", {})
     engine.state.enemies.clear()
     heavy = Entity(name="重击怪", entity_type="怪物", blood_limit=50, current_hp=50, attack_power=999, attack_count=1)
     engine.state.enemies.append(heavy)
@@ -305,8 +312,8 @@ def test_tail_sacrifice_removes_declared_trait_to_negate_lethal_damage():
     _with_heart(engine)
     engine.execute_action("unlock_dragon_trait", {"trait": "断尾求生"})
     engine.execute_action("unlock_dragon_trait", {"trait": "龙威"})
-    engine.execute_action("declare_tail_sacrifice", {"trait": "龙威"})
     engine.execute_action("battle_start", {})
+    engine.execute_action("declare_tail_sacrifice", {"trait": "龙威"})
     player.current_hp = 5
     result = engine.combat._apply_hostile_damage(player, 9999, "普通")
     assert result.get("tail_sacrificed") == "龙威"
@@ -321,6 +328,7 @@ def test_tail_sacrifice_error_declare_self_or_unowned_trait():
     engine = _new_engine(dbsuffix="tail_err")
     _with_heart(engine)
     engine.execute_action("unlock_dragon_trait", {"trait": "断尾求生"})
+    engine.state.phase = "in_combat"
     r_self = engine.execute_action("declare_tail_sacrifice", {"trait": "断尾求生"})
     assert r_self["success"] is False
     r_unowned = engine.execute_action("declare_tail_sacrifice", {"trait": "龙威"})
@@ -337,6 +345,7 @@ def test_dragon_wings_costs_dragon_nature_for_flight():
     player = engine.state.player
     _with_heart(engine, nature=30)
     engine.execute_action("unlock_dragon_trait", {"trait": "烬翼"})
+    engine.state.phase = "in_combat"
     nature_before = engine.state.dragon_nature
     r = engine.execute_action("use_dragon_wings", {"x": 3})
     assert r["success"] is True
@@ -349,5 +358,6 @@ def test_dragon_wings_boundary_insufficient_nature_rejected():
     engine = _new_engine(dbsuffix="wings_err")
     _with_heart(engine, nature=2)
     engine.execute_action("unlock_dragon_trait", {"trait": "烬翼"})
+    engine.state.phase = "in_combat"
     r = engine.execute_action("use_dragon_wings", {"x": 1})
     assert r["success"] is False

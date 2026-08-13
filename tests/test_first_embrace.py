@@ -28,7 +28,13 @@ def _new_engine(region="龙心谷", name="老张", speed=8, mana=7, dbsuffix="a"
     engine.execute_action("setup_attributes",
                            {"blood_points": blood, "speed_points": speed, "mana_points": mana, "name": name})
     engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
-    engine.execute_action("setup_choose_region", {"region": region})
+    engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
+    setup = engine.execute_action("setup_choose_region", {"region": region})
+    optional = {"折速法印", "鲜血契约", "三相残韵盘", "卖身契"}
+    choice = next((n for n in setup["result"]["relic_choices"] if n not in optional),
+                  setup["result"]["relic_choices"][0])
+    engine.execute_action("choose_discovered_relic", {"relic_name": choice})
+    engine.state.energy = 0
     engine.state.player.dao_wen["杀伐"] = DaoWenInstance(
         DaoWen(name="杀伐", formula="", cost_type="消耗", cost_formula="X", effect_formula=""))
     return engine
@@ -290,13 +296,14 @@ def test_option5_cooldown_blocks_reuse_and_decrements_per_battle_end():
     r_again = engine.execute_action("use_truth_eye", {"target": "怪物甲", "statement": "立刻再来"})
     assert r_again["success"] is False, "冷却期内应拒绝"
 
+    engine.state.enemies.clear()
     engine.execute_action("battle_end", {})
     assert engine.state.truth_eye_cooldown == 1
-    engine.execute_action("battle_start", {})
+    engine.state.phase = "in_combat"  # 构造下一场已结束的合法战终状态
     engine.execute_action("battle_end", {})
     assert engine.state.truth_eye_cooldown == 0
 
-    engine.execute_action("battle_start", {})
+    engine.state.phase = "in_combat"
     engine.state.enemies.clear()
     engine.state.enemies.append(Entity(name="怪物乙", entity_type="怪物", blood_limit=10, current_hp=10))
     r_ok = engine.execute_action("use_truth_eye", {"target": "怪物乙", "statement": "冷却结束"})
@@ -324,6 +331,7 @@ def test_option6_boundary_below_10_does_not_stack():
     # 提高法限分配，使单次施放能一次性跨越多个10点门槛
     engine = _new_engine(dbsuffix="ice_bound", speed=2, mana=21)
     player = engine.state.player
+    player.speed_limit = player.current_speed = 6  # 同回合允许两次施放
     _grant(engine, 6)
     enemy = _start_battle_with_enemy(engine, hp=1000)
     engine.execute_action("use_daowen", {"daowen_name": "杀伐", "x": 5, "target": "怪物甲"})

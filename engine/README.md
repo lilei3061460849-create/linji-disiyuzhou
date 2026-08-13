@@ -44,7 +44,7 @@ engine/
 ├── events.py            # 事件池（parse_events、EventPool，通用 10 + 三副本专属）
 ├── daowen.py            # 道纹系统（含当前全部 64 道纹 calculate_* 与 ResonanceEngine；增殖为道纹，癌变为机制，二者无关）
 ├── combat.py            # 战斗计算引擎（伤害/回合/闪避/多路径 癌变/雕塑/还债，PROLIFERATION_THRESHOLD 为癌变阈值，CANCER_THRESHOLD 别名）
-├── battle_flow.py       # 战斗流程（battle_start 出怪、round_start/round_end）
+├── battle_flow.py       # 旧版独立流程（仅兼容单元测试；生产入口不调用）
 ├── battle_report.py     # 战报渲染（推演格式逐回合输出）
 ├── ai_player.py         # AI 玩家封装（TacticalAI 等）
 ├── ai_tactics.py        # AI 战术表（TACTICAL_ROLES、各类道纹优先级）

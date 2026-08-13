@@ -28,7 +28,9 @@ def _new_engine(db_suffix: str, region: str = "罪孽都市") -> GameEngine:
     engine = GameEngine(db_path=f"data/test_hd_{db_suffix}.db", rng_seed=1)
     engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
     engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
-    engine.execute_action("setup_choose_region", {"region": region})
+    engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
+    setup = engine.execute_action("setup_choose_region", {"region": region})
+    engine.execute_action("choose_discovered_relic", {"relic_name": setup["result"]["relic_choices"][0]})
     engine.state.energy = 3
     return engine
 
@@ -67,6 +69,7 @@ def test_zhuiqiuzhe_event_option1_hires_real_employee_with_fixed_panel():
     """正常路径：龙心谷"追求者"选项1必须创建真实员工，面板与道纹数值完全按文档写死"""
     engine = _new_engine("zqz_hire", region="龙心谷")
     engine.state.shards = 50
+    engine.event_pool.current = "追求者"
     r = engine.execute_action("resolve_event", {"event": "追求者", "option_id": 1})
     assert r["success"] is True
     assert engine.state.shards == 40, "应扣除10碎片"
@@ -81,6 +84,7 @@ def test_zhuiqiuzhe_event_option2_queues_forced_monster_next_battle():
     """正常路径：选项2(拿走口粮)必须真实登记到forced_monsters_next_battle，而不是静默丢弃"""
     engine = _new_engine("zqz_food", region="龙心谷")
     engine.state.shards = 0
+    engine.event_pool.current = "追求者"
     r = engine.execute_action("resolve_event", {"event": "追求者", "option_id": 2})
     assert r["success"] is True
     assert engine.state.shards == 50

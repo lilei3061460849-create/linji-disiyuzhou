@@ -175,15 +175,18 @@ SYSTEM_PROMPT = """你是第四宇宙游戏的AI玩家。你的任务是根据�
 - setup_attributes: 开局分配属性（params: name, blood_points, speed_points, mana_points，总和必须25）
 - setup_choose_daowen: 选择初始道纹（params: daowen，可选"杀伐"或"锐利"）
 - setup_choose_resonance: 选择残韵（params: resonance_type，可选"转换"/"反转"/"曲解"）
-- setup_choose_region: 选择副本（params: region，可选"罪孽都市"/"扭曲都市"/"龙心谷"）
+- setup_choose_region: 选择副本（params: region，可选"罪孽都市"/"扭曲都市"/"龙心谷"），返回3件开局遗物候选
+- choose_discovered_relic: 从当前遗物发现候选中显式选1件（params: relic_name）
+- choose_discovered_item: 从当前消耗品发现候选中显式选1件（params: item_name）
 - pre_battle_action: 局外行动（params: sub_action + tier等）
 - use_daowen: 发动道纹（params: daowen_name, x, target）
 - attack: 普通攻击（params: target_selections）
 - declare_evolution: 怪物进化·发动原初X（params: monster, daowen, x；仅当可用行动中出现evolution项且available=true时可对其中列出的困境怪物使用，x不得超过max_x_by_mutation，否则触发崩解自杀）
-- monster_phase: 怪物回合
+- prepare_monster_phase: 只获取本次怪物阶段的合法道纹、目标、攻击与闪避选项
+- resolve_monster_phase: 携带prepare返回的一次性token，为全部可行动怪物提交完整选择后统一结算；禁止使用旧monster_phase
 - round_start: 回始
 - round_end: 回终
-- battle_start: 战始
+- battle_start: 战始（持有可选战始遗物时，params.relic_choices必须逐件显式提交use及所需X/目标/残韵）
 - battle_end: 战终"""
 
 def _build_user_prompt(state: dict, available_actions: dict, context: str) -> str:

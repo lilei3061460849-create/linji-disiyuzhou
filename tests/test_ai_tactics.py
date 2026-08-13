@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
 from engine.ai_tactics import TacticalAI
+from engine.models import DaoWen, DaoWenInstance
 
 
 def _engine(tmp_path, seed=4, learn=("庇护", "再生", "冲击")):
@@ -24,10 +25,16 @@ def _engine(tmp_path, seed=4, learn=("庇护", "再生", "冲击")):
                      {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
     e.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
-    e.execute_action("setup_choose_region", {"region": "龙心谷"})
+    setup = e.execute_action("setup_choose_region", {"region": "龙心谷"})
+    e.execute_action("choose_discovered_relic", {"relic_name": setup["result"]["relic_choices"][0]})
     for dw in learn:
         e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "daowen", "name": dw})
-    e.execute_action("battle_start")
+    e.state.energy = 0
+    choices = {}
+    relic = e.state.relics[0].name
+    if relic in ("折速法印", "鲜血契约", "三相残韵盘", "卖身契"):
+        choices[relic] = {"use": False}
+    e.execute_action("battle_start", {"relic_choices": choices})
     e.execute_action("round_start", {})
     return e
 
@@ -142,6 +149,9 @@ def test_ai_can_use_resonance_on_monster_daowen(tmp_path):
     """
     e = _engine(tmp_path, learn=())
     e.state.player.dao_wen.clear()
+    e.state.enemies[0].dao_wen["飞行"] = DaoWenInstance(
+        DaoWen("飞行", "", "异变", "5X", "飞行X"), x_value=1,
+    )
     ai = TacticalAI(e)
     r = ai.try_resonance()
     assert r is not None, "补齐闭环后仍无法对怪物道纹发动残韵"

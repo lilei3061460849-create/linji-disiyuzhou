@@ -88,6 +88,44 @@ def _resolve_monster_plight(engine, rng) -> list:
     return out
 
 
+def _resolve_monster_turn(engine):
+    """平衡模拟器的怪物AI：从prepare合法项中提交完整选择，不调用旧自动入口。"""
+    prepared = engine.execute_action("prepare_monster_phase", {})
+    if not prepared.get("success"):
+        return prepared
+    choices = []
+    for actor in prepared["result"]["actors"]:
+        dao = None
+        action_count = actor["base_attack_actions"]
+        hit_count = actor["base_hits_per_attack"]
+        if actor["daowen_options"]:
+            option = actor["daowen_options"][0]
+            dao = {"name": option["name"], "dodge": False}
+            if option["requires_target"]:
+                dao["target_ref"] = option["target_options"][0]["ref"]
+            if option["dodge_submission"] == "per_target":
+                dao["dodge_targets"] = [
+                    {"target_ref": target["ref"], "dodge": False}
+                    for target in option["dodge_target_options"]
+                ]
+            if option["resolves_as"] == "活力":
+                action_count += option["x"]
+            elif option["resolves_as"] == "狂暴":
+                action_count += 1
+            elif option["resolves_as"] == "变形":
+                enemy_index = int(actor["actor_ref"].split(":", 1)[1])
+                hit_count = engine.state.enemies[enemy_index].attack_power
+        target_ref = actor["attack_target_options"][0]["ref"]
+        attacks = [{"hits": [{"target_ref": target_ref, "dodge": False}
+                              for _ in range(hit_count)]}
+                   for _ in range(action_count)]
+        choices.append({"actor_ref": actor["actor_ref"], "daowen": dao,
+                        "attack_actions": attacks})
+    return engine.execute_action("resolve_monster_phase", {
+        "token": prepared["result"]["token"], "choices": choices,
+    })
+
+
 def play_and_record(region: str, seed: int, battles: int = 7):
     """
     跑一次完整轮回并录制 §六 格式战报。
@@ -105,7 +143,12 @@ def play_and_record(region: str, seed: int, battles: int = 7):
         engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
         engine.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
         r = engine.execute_action("setup_choose_region", {"region": region})
-        starter = r["result"]["starter_relic"]
+        optional_relics = {"折速法印", "鲜血契约", "三相残韵盘", "卖身契"}
+        starter = next((n for n in r["result"]["relic_choices"] if n not in optional_relics),
+                       r["result"]["relic_choices"][0])
+        chosen = engine.execute_action("choose_discovered_relic", {"relic_name": starter})
+        if not chosen.get("success"):
+            return {"invalid": True, "reason": f"starter_relic:{chosen.get('error')}"}
         ai = TacticalAI(engine)
 
         lines.append(f"## 轮回记录（{region}，种子 {seed}）")
@@ -142,7 +185,9 @@ def play_and_record(region: str, seed: int, battles: int = 7):
                 else:
                     return {"invalid": True, "reason": f"局外行动失败:{rr.get('error')}"}
 
-            bs = engine.execute_action("battle_start")
+            relic_choices = ({starter: {"use": False}}
+                             if starter in optional_relics else {})
+            bs = engine.execute_action("battle_start", {"relic_choices": relic_choices})
             if not bs.get("success"):
                 return {"invalid": True, "reason": f"battle_start:{bs.get('error')}"}
             enemies = list(engine.state.enemies)
@@ -186,7 +231,9 @@ def play_and_record(region: str, seed: int, battles: int = 7):
                     lines.extend(BR.format_round_end({}, engine.state.player,
                                                      engine.state.enemies))
                     break
-                mp = engine.execute_action("monster_phase", {})
+                mp = _resolve_monster_turn(engine)
+                if not mp.get("success"):
+                    return {"invalid": True, "reason": f"monster_phase:{mp.get('error')}"}
                 lines.extend(BR.format_monster_hits(idx, mp["result"].get("details", [])))
                 re_ = engine.execute_action("round_end", {})
                 lines.extend(BR.format_round_end(re_.get("result", {}),

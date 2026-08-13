@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
 from engine.ai_tactics import TacticalAI
+from sim.build_learner import _resolve_monster_turn
 
 # 流派 = 局外要学习的道纹清单（初始道纹另选）。学习受精力限制，最多3个/场，
 # 故这里允许跨场累积：列表按顺序学，每场最多学 energy 个。
@@ -50,7 +51,11 @@ def run_one(build: str, region: str, seed: int, battles: int = 7) -> dict:
                      {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
     e.execute_action("setup_choose_daowen", {"daowen": cfg["starter"]})
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
-    e.execute_action("setup_choose_region", {"region": region})
+    setup = e.execute_action("setup_choose_region", {"region": region})
+    optional_relics = {"折速法印", "鲜血契约", "三相残韵盘", "卖身契"}
+    starter_relic = next((n for n in setup["result"]["relic_choices"] if n not in optional_relics),
+                         setup["result"]["relic_choices"][0])
+    e.execute_action("choose_discovered_relic", {"relic_name": starter_relic})
 
     ai = TacticalAI(e)
     to_learn = list(cfg["learn"])
@@ -72,7 +77,12 @@ def run_one(build: str, region: str, seed: int, battles: int = 7) -> dict:
                                  {"sub_action": "修行", "tier": 1,
                                   "to": "mana" if battle_no % 2 else "speed"})
 
-        e.execute_action("battle_start")
+        relic_choices = ({starter_relic: {"use": False}}
+                         if starter_relic in optional_relics else {})
+        started = e.execute_action("battle_start", {"relic_choices": relic_choices})
+        if not started.get("success"):
+            return {"cleared": cleared, "won": False, "died_at": battle_no,
+                    "used": dict(ai.used), "hp": e.state.player.current_hp}
 
         for _ in range(30):
             if not e.state.player.is_alive:
@@ -84,15 +94,21 @@ def run_one(build: str, region: str, seed: int, battles: int = 7) -> dict:
             ai.take_turn()
             if not [x for x in e.state.enemies if x.is_alive]:
                 break
-            mp = e.execute_action("monster_phase", {})
-            if mp["result"].get("player_dead"):
+            mp = _resolve_monster_turn(e)
+            if not mp.get("success") or mp["result"].get("player_dead"):
                 break
             e.execute_action("round_end", {})
 
         if not e.state.player.is_alive:
             return {"cleared": cleared, "won": False, "died_at": battle_no,
                     "used": dict(ai.used), "hp": 0}
-        e.execute_action("battle_end", {})
+        if [x for x in e.state.enemies if x.is_alive]:
+            return {"cleared": cleared, "won": False, "died_at": battle_no,
+                    "used": dict(ai.used), "hp": e.state.player.current_hp}
+        ended = e.execute_action("battle_end", {})
+        if not ended.get("success"):
+            return {"cleared": cleared, "won": False, "died_at": battle_no,
+                    "used": dict(ai.used), "hp": e.state.player.current_hp}
         cleared += 1
 
     # 完成第7场会触发【最终的冠冕】：角色被完整封存，state.player 可能已被置空/替换。

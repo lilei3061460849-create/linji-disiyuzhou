@@ -34,8 +34,15 @@ def _new_engine_with_enemy(db_suffix: str, region: str = "龙心谷") -> GameEng
     engine = GameEngine(db_path=f"data/test_ally_{db_suffix}.db", rng_seed=1)
     engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
     engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
-    engine.execute_action("setup_choose_region", {"region": region})
-    engine.execute_action("battle_start", {})
+    engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
+    setup = engine.execute_action("setup_choose_region", {"region": region})
+    engine.execute_action("choose_discovered_relic", {"relic_name": setup["result"]["relic_choices"][0]})
+    engine.state.energy = 0
+    choices = {}
+    relic = engine.state.relics[0].name
+    if relic in ("折速法印", "鲜血契约", "三相残韵盘", "卖身契"):
+        choices[relic] = {"use": False}
+    engine.execute_action("battle_start", {"relic_choices": choices})
     # battle_start会自动出怪(见engine/monsters.py)，这里替换为受控的单一测试怪物，保证断言确定性
     engine.state.enemies.clear()
     engine.state.enemies.append(Entity(name="测试怪", entity_type="怪物", blood_limit=100, current_hp=100,
@@ -67,11 +74,9 @@ def test_friend_attack_commanded_by_player_hits_enemy_side():
 def test_deployed_employee_can_be_commanded_to_use_daowen_on_enemy():
     """正常路径：已部署[员工]听从指令对敌方发动道纹，无需法力(与怪物同规则)，只消耗出手"""
     engine = _new_engine_with_enemy("emp_daowen", region="罪孽都市")
-    engine.state.energy = 3
-    engine.execute_action("pre_battle_action", {
-        "sub_action": "雇佣", "name": "工头", "blood_alloc": 8, "atk_bundles": 4,  # 攻击次数4>0，出手预算=ceil(4/3)=2
-    })
-    emp = next(e for e in engine.state.employees if e.name == "工头")
+    emp = Entity(name="工头", entity_type="员工", blood_limit=96, current_hp=96,
+                 attack_count=4, attack_power=8, is_deployed=False)
+    engine.state.employees.append(emp)
     _give_daowen(emp, "杀伐")
     emp.current_mana = 0
     emp.mana_limit = 0
@@ -86,15 +91,15 @@ def test_deployed_employee_can_be_commanded_to_use_daowen_on_enemy():
 
 
 def test_player_self_cast_unaffected_backward_compatible():
-    """正常路径：不传actor时，玩家自身发动道纹的行为(法力制、默认目标自身)必须与改造前完全一致"""
+    """正常路径：不传actor时玩家自身发动仍走法力制；带[目标]效果须按R03显式指定自身。"""
     engine = _new_engine_with_enemy("player_selfcast")
     player = engine.state.player
     _give_daowen(player, "庇护")
     mana_before = player.current_mana
-    r = engine.execute_action("use_daowen", {"daowen_name": "庇护", "x": 3})
+    r = engine.execute_action("use_daowen", {"daowen_name": "庇护", "x": 3, "target": player.name})
     assert r["success"] is True
     assert player.current_mana == mana_before - 3, "玩家自身发动仍应正常扣除法力"
-    assert player.shield == 12, "庇护3=消耗3法力获得4*3=12点格挡，默认目标为自身"
+    assert player.shield == 12, "庇护3=消耗3法力获得4*3=12点格挡"
 
 
 # ========================================================================
@@ -104,8 +109,7 @@ def test_player_self_cast_unaffected_backward_compatible():
 def test_zero_attack_count_ally_has_zero_action_budget_and_cannot_act():
     """边界：出手次数公式=攻击次数/3(向上取整)，攻击次数为0的盟友出手预算=0，
     指令其攻击必须被拒绝(不是"能行动但0次命中"，而是压根没有出手可用)。
-    注：DM已追加裁定禁止【雇佣】创建这种0攻击次数的员工(见test_employee_economy.py同名校验)，
-    本测试锁定的是公式本身在极端输入下的行为，防止未来其他来源(如手工构造/事件赋值)的
+    R05已允许【雇佣】创建0攻击次数员工；本测试锁定其出手预算仍为0，防止此类角色
     盟友意外携带0攻击次数时，行为依然可预期而不是崩溃。"""
     engine = _new_engine_with_enemy("zero_atk")
     friend = Entity(name="纯辅助", entity_type="朋友", blood_limit=30, current_hp=30,
@@ -120,11 +124,9 @@ def test_zero_attack_count_ally_has_zero_action_budget_and_cannot_act():
 def test_undeployed_employee_cannot_be_commanded():
     """边界：未部署(待命中)的[员工]不应能被指令发动道纹——不在战场上，指令找不到它"""
     engine = _new_engine_with_enemy("undeployed_cmd", region="罪孽都市")
-    engine.state.energy = 3
-    engine.execute_action("pre_battle_action", {
-        "sub_action": "雇佣", "name": "候补员工", "blood_alloc": 17, "atk_bundles": 1,
-    })
-    emp = next(e for e in engine.state.employees if e.name == "候补员工")
+    emp = Entity(name="候补员工", entity_type="员工", blood_limit=204, current_hp=204,
+                 attack_count=1, attack_power=2, is_deployed=False)
+    engine.state.employees.append(emp)
     _give_daowen(emp, "杀伐")
     # 故意不调用 deploy_employee
     r = engine.execute_action("use_daowen", {"actor": "候补员工", "daowen_name": "杀伐", "x": 1, "target": "测试怪"})

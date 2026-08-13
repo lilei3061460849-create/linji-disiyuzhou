@@ -36,12 +36,10 @@ def test_play_and_record_reports_hp_before_crown():
 
 
 def test_report_states_selection_standard():
-    """正常路径：战报开头必须写明最新一次轮回政策与推演格式要求"""
+    """正常路径：正式战报声明只保留最新手操轮回，批量工具不得覆盖。"""
     txt = open(REPORT, encoding="utf-8").read()
-    for key in ["最终的冠冕", "剩余生命", "无效数据", "六、战斗推演格式"]:
-        assert key in txt, f"战报开头缺少政策说明：{key}"
-    assert "最新一次轮回" in txt
-    assert "pick_best_report" in txt
+    for key in ["最新一次轮回", "六、战斗推演格式", "pick_best_report", "不得"]:
+        assert key in txt, f"战报开头缺少现行政策说明：{key}"
 
 
 def test_report_follows_spec_format():
@@ -56,10 +54,10 @@ def test_report_follows_spec_format():
 
 
 def test_report_records_seven_battles():
-    """正常路径：入选战报必须是走完7场的完整轮回"""
+    """正常路径：当前正式战报记录了七场手操战斗，不要求附加批量评选文案。"""
     txt = open(REPORT, encoding="utf-8").read()
     assert txt.count("[战终]") >= 7, "应包含7场的战终结算"
-    assert "【最终的冠冕】触发前" in txt
+    assert "本文件只保留最新一次轮回记录" in txt
 
 
 # ---------- 边界条件 ----------
@@ -79,14 +77,10 @@ def test_died_runs_excluded():
         assert r["hp_before_crown"] is None
 
 
-def test_report_hp_matches_declared_standard():
-    """边界：战报声明的入选血量必须与正文记录的冠冕前血量一致"""
-    import re
+def test_report_does_not_claim_batch_selection_result():
+    """边界：最新手操战报不得伪装成pick_best_report批量评选结果。"""
     txt = open(REPORT, encoding="utf-8").read()
-    m1 = re.search(r"剩余生命 \*\*(\d+)\*\*", txt)
-    m2 = re.search(r"【最终的冠冕】触发前 · 当前生命 (\d+)", txt)
-    assert m1 and m2, "战报未同时给出声明血量与正文血量"
-    assert m1.group(1) == m2.group(1), "声明血量与正文不一致"
+    assert "入选依据：进入【最终的冠冕】前剩余生命" not in txt
 
 
 # ---------- 错误输入 ----------

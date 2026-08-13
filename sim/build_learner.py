@@ -72,6 +72,43 @@ BUILD_SIZE = 5          # 每套 build 学习的道纹数量
 # 一局轮回
 # --------------------------------------------------------------------------
 
+def _resolve_monster_turn(engine):
+    prepared = engine.execute_action("prepare_monster_phase", {})
+    if not prepared.get("success"):
+        return prepared
+    choices = []
+    for actor in prepared["result"]["actors"]:
+        dao = None
+        action_count = actor["base_attack_actions"]
+        hit_count = actor["base_hits_per_attack"]
+        if actor["daowen_options"]:
+            option = actor["daowen_options"][0]
+            dao = {"name": option["name"], "dodge": False}
+            if option["requires_target"]:
+                dao["target_ref"] = option["target_options"][0]["ref"]
+            if option["dodge_submission"] == "per_target":
+                dao["dodge_targets"] = [
+                    {"target_ref": target["ref"], "dodge": False}
+                    for target in option["dodge_target_options"]
+                ]
+            if option["resolves_as"] == "活力":
+                action_count += option["x"]
+            elif option["resolves_as"] == "狂暴":
+                action_count += 1
+            elif option["resolves_as"] == "变形":
+                enemy_index = int(actor["actor_ref"].split(":", 1)[1])
+                hit_count = engine.state.enemies[enemy_index].attack_power
+        target_ref = actor["attack_target_options"][0]["ref"]
+        attacks = [{"hits": [{"target_ref": target_ref, "dodge": False}
+                              for _ in range(hit_count)]}
+                   for _ in range(action_count)]
+        choices.append({"actor_ref": actor["actor_ref"], "daowen": dao,
+                        "attack_actions": attacks})
+    return engine.execute_action("resolve_monster_phase", {
+        "token": prepared["result"]["token"], "choices": choices,
+    })
+
+
 def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
          rng: random.Random = None, policy: dict = None, telemetry: dict = None) -> dict:
     """
@@ -90,7 +127,11 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                      {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
     e.execute_action("setup_choose_daowen", {"daowen": starter})
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
-    e.execute_action("setup_choose_region", {"region": region})
+    setup = e.execute_action("setup_choose_region", {"region": region})
+    optional_relics = {"折速法印", "鲜血契约", "三相残韵盘", "卖身契"}
+    starter_relic = next((n for n in setup["result"]["relic_choices"] if n not in optional_relics),
+                         setup["result"]["relic_choices"][0])
+    e.execute_action("choose_discovered_relic", {"relic_name": starter_relic})
 
     ai = TacticalAI(e)
     todo = list(learn)
@@ -118,6 +159,14 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                 record("succeeded", act)
                 if act == "学习" and params.get("name") in todo:
                     todo.remove(params["name"])
+                if e.state.pending_relic_choices:
+                    e.execute_action("choose_discovered_relic", {
+                        "relic_name": e.state.pending_relic_choices[0],
+                    })
+                if e.state.pending_item_choices:
+                    e.execute_action("choose_discovered_item", {
+                        "item_name": e.state.pending_item_choices[0],
+                    })
             else:
                 record("failed", act, str(r.get("error"))[:60])
                 # 失败必须退还精力，否则会死循环；引擎已退还，这里兜底防死锁
@@ -125,7 +174,12 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                     e.execute_action("pre_battle_action",
                                      {"sub_action": "修行", "tier": 1, "to": "mana"})
 
-        e.execute_action("battle_start")
+        relic_choices = ({starter_relic: {"use": False}}
+                         if starter_relic in optional_relics else {})
+        bs = e.execute_action("battle_start", {"relic_choices": relic_choices})
+        if not bs.get("success"):
+            return {"cleared": cleared, "won": False, "invalid": True,
+                    "reason": f"battle_start: {bs.get('error')}"}
         for _ in range(40):
             if not e.state.player or not e.state.player.is_alive:
                 break
@@ -141,14 +195,22 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                         "reason": f"combat: {ex}"}
             if not [x for x in e.state.enemies if x.is_alive]:
                 break
-            mp = e.execute_action("monster_phase", {})
+            mp = _resolve_monster_turn(e)
+            if not mp.get("success"):
+                return {"cleared": cleared, "won": False, "invalid": True,
+                        "reason": f"monster_phase: {mp.get('error')}"}
             if mp["result"].get("player_dead"):
                 break
             e.execute_action("round_end", {})
 
         if not e.state.player or not e.state.player.is_alive:
             return {"cleared": cleared, "won": False, "invalid": False}
-        e.execute_action("battle_end", {})
+        if [x for x in e.state.enemies if x.is_alive]:
+            return {"cleared": cleared, "won": False, "invalid": False}
+        ended = e.execute_action("battle_end", {})
+        if not ended.get("success"):
+            return {"cleared": cleared, "won": False, "invalid": True,
+                    "reason": f"battle_end: {ended.get('error')}"}
         cleared += 1
 
     return {"cleared": cleared, "won": True, "invalid": False}

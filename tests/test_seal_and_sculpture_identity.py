@@ -21,7 +21,8 @@ def _engine(suffix):
         "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7,
     })
     engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
-    engine.execute_action("setup_choose_region", {"region": "龙心谷"})
+    engine.state.current_region = "龙心谷"
+    engine.state.phase = "in_combat"
     p = engine.state.player
     p.dao_wen["封印"] = DaoWenInstance(
         DaoWen(name="封印", formula="", cost_type="消耗", cost_formula="10X", effect_formula=""))

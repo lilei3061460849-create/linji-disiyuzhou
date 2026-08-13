@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
 from engine.models import Consumable, DaoWen, DaoWenInstance, Entity, Relic, StatusEffect
+from tests.monster_phase_support import resolve_monster_phase
 
 
 def _engine(suffix: str, region: str = "扭曲都市") -> GameEngine:
@@ -22,7 +23,9 @@ def _engine(suffix: str, region: str = "扭曲都市") -> GameEngine:
         "name": "探灯贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7,
     })
     engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
-    engine.execute_action("setup_choose_region", {"region": region})
+    engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
+    setup = engine.execute_action("setup_choose_region", {"region": region})
+    engine.execute_action("choose_discovered_relic", {"relic_name": setup["result"]["relic_choices"][0]})
     return engine
 
 
@@ -43,6 +46,7 @@ def test_evolution_skips_sealed_corpse_and_hits_living_namesake():
     dead.removed_without_kill = True
     live = _plight("孢子母体", hp=30, limit=252)
     engine.state.enemies = [dead, live]
+    engine.state.phase = "in_combat"
     r = engine.execute_action("declare_evolution", {
         "monster": "孢子母体", "daowen": "杀伐", "x": 1,
     })
@@ -58,6 +62,7 @@ def test_evolution_two_living_namesakes_picks_first_alive():
     a = _plight("血肉巨囊", hp=20, limit=258)
     b = _plight("血肉巨囊", hp=20, limit=258)
     engine.state.enemies = [a, b]
+    engine.state.phase = "in_combat"
     r = engine.execute_action("declare_evolution", {
         "monster": "血肉巨囊", "daowen": "杀伐", "x": 1,
     })
@@ -73,6 +78,7 @@ def test_evolution_only_corpses_rejected():
     dead.is_alive = False
     dead.removed_without_kill = True
     engine.state.enemies = [dead]
+    engine.state.phase = "in_combat"
     r = engine.execute_action("declare_evolution", {
         "monster": "孢子母体", "daowen": "杀伐", "x": 1,
     })
@@ -91,6 +97,7 @@ def test_refuse_gaizao_applies_bleed_and_shards_without_wushi():
     p = engine.state.player
     p.current_hp = 56
     engine.state.shards = 97
+    engine.event_pool.current = "医生"
     r = engine.execute_action("resolve_event", {"event": "医生", "option_id": 2})
     assert r["success"], r
     applied = r["result"]["applied"]
@@ -106,6 +113,7 @@ def test_true_refuse_still_wushi_and_wusuoqiu():
     engine = _engine("doc_bound")
     engine.state.relics.append(Relic(name="无所求", effect=""))
     sp = engine.state.player.speed_limit
+    engine.event_pool.current = "祭坛"
     r = engine.execute_action("resolve_event", {"event": "祭坛", "option_id": 3})
     assert r["success"], r
     assert "无事发生" in r["result"]["applied"]
@@ -119,6 +127,7 @@ def test_wusuoqiu_does_not_fire_on_refuse_gaizao():
     engine.state.relics.append(Relic(name="无所求", effect=""))
     sp = engine.state.player.speed_limit
     engine.state.shards = 10
+    engine.event_pool.current = "医生"
     r = engine.execute_action("resolve_event", {"event": "医生", "option_id": 2})
     assert r["success"], r
     assert engine.state.player.speed_limit == sp
@@ -189,7 +198,7 @@ def test_grenade_cuts_hits_not_actions():
     assert m.current_hp == 195
     assert m.attack_count == 3
     assert engine.combat._monster_attack_actions(m, set()) == 1
-    details = engine.combat.run_monster_phase(dodge_policy="never")
+    details = resolve_monster_phase(engine.combat, {m.name: None})
     hits = [d for d in details if "damage_dealt" in d or "dodge_success" in d]
     assert len(hits) == 2, f"应打2下，实{len(hits)} {details}"
     assert all(d.get("hit_total") == 2 for d in hits)
@@ -207,7 +216,7 @@ def test_grenade_can_zero_hits_without_sculpting():
         name="高爆手雷", effect="造成15点伤害，并使其本回合攻击次数-1",
         current_uses=2, max_uses=2))
     engine.execute_action("consume_item", {"name": "高爆手雷", "target": "眼树"})
-    details = engine.combat.run_monster_phase(dodge_policy="never")
+    details = resolve_monster_phase(engine.combat, {m.name: None})
     hits = [d for d in details if "damage_dealt" in d or "dodge_success" in d]
     assert hits == []
     assert m.attack_count == 1

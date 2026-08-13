@@ -7,6 +7,8 @@
 4. DM裁定存入数据库，下次类似情况自动匹配
 """
 from __future__ import annotations
+import copy
+import dataclasses
 import json
 import os
 import re
@@ -36,7 +38,7 @@ TWISTED_TOOL_LIBRARY = {
     "备用血泵": (3, "使自身获得20点［回复］；若自身当前生命≤30%，额外获得30点格挡。"),
     "强光探照灯": (2, "使一个[目标]陷入【蒙蔽2】"),
     "高压水枪": (2, "清除全场所有敌方[目标]身上的所有“持续X”效果"),
-    "储能电池": (3, "[回始]本回合额外获得12点法力。"),
+    "储能电池": (3, "立即获得12点法力。"),
     "急救箱": (2, "使自身获得[回复25]，并清除自身身上一种“持续X”的负面减益。"),
     "干扰仪": (2, "使全场所有敌方[目标]本回合无法发动自身道纹"),
     "高爆手雷": (2, "对一个[目标]造成15点伤害，并使其本回合攻击次数-1"),
@@ -124,6 +126,29 @@ class GameEngine:
         获取当前可用行动
         根据游戏阶段返回不同的行动列表
         """
+        if self.state.pending_relic_choices:
+            return {
+                "phase": "遗物发现待选",
+                "actions": [{"type": "choose_discovered_relic",
+                             "relic_name": name} for name in self.state.pending_relic_choices],
+                "source": self.state.pending_relic_source,
+            }
+        if self.state.pending_item_choices:
+            return {
+                "phase": "消耗品发现待选",
+                "actions": [{"type": "choose_discovered_item",
+                             "item_name": name} for name in self.state.pending_item_choices],
+                "source": self.state.pending_item_source,
+            }
+        if self.state.pending_monster_phase:
+            pending = self.state.pending_monster_phase
+            return {
+                "phase": "怪物阶段待提交",
+                "action": "resolve_monster_phase",
+                "token": pending["token"],
+                **pending["options"],
+            }
+
         phase = self.state.phase
         
         if phase == "setup":
@@ -317,6 +342,119 @@ class GameEngine:
         }
     
     # ==================== 核心行动接口 ====================
+
+    _COMBAT_ONLY_ACTIONS = {
+        "attack", "dodge_decision", "declare_wit", "declare_escape",
+        "retreat_via_toll", "deploy_employee", "lianxin_in_battle", "declare_evolution",
+        "prepare_monster_phase", "resolve_monster_phase", "monster_phase",
+        "round_start", "round_end", "resolve_rebellion_battle",
+        "activate_duel_relic", "resolve_final_duel", "use_black_card", "use_crime_vault",
+        "fire_godfather_revolver", "select_shared_dragon_heart", "declare_fuyuebei_toll",
+        "activate_dragon_body", "devour_monster", "declare_tail_sacrifice",
+        "use_dragon_wings", "use_blood_wings", "enslave_as_chizu", "blood_feast",
+    }
+
+    def _restore_state_in_place(self, snapshot: GameState) -> None:
+        """事务失败时原位恢复，既回滚数值，也保持调用方已持有的实体引用有效。"""
+        def restore_object(current, saved):
+            current_keys = set(current.__dict__)
+            saved_keys = set(saved.__dict__)
+            for key in current_keys - saved_keys:
+                delattr(current, key)
+            for key in saved_keys:
+                saved_value = getattr(saved, key)
+                if not hasattr(current, key):
+                    setattr(current, key, copy.deepcopy(saved_value))
+                    continue
+                current_value = getattr(current, key)
+                if (dataclasses.is_dataclass(current_value)
+                        and dataclasses.is_dataclass(saved_value)
+                        and type(current_value) is type(saved_value)):
+                    restore_object(current_value, saved_value)
+                elif isinstance(current_value, list) and isinstance(saved_value, list):
+                    if (len(current_value) == len(saved_value)
+                            and all(dataclasses.is_dataclass(a) and dataclasses.is_dataclass(b)
+                                    and type(a) is type(b) for a, b in zip(current_value, saved_value))):
+                        for a, b in zip(current_value, saved_value):
+                            restore_object(a, b)
+                    else:
+                        current_value[:] = copy.deepcopy(saved_value)
+                elif isinstance(current_value, dict) and isinstance(saved_value, dict):
+                    if (set(current_value) == set(saved_value)
+                            and all(dataclasses.is_dataclass(current_value[k])
+                                    and dataclasses.is_dataclass(saved_value[k])
+                                    and type(current_value[k]) is type(saved_value[k])
+                                    for k in current_value)):
+                        for k in current_value:
+                            restore_object(current_value[k], saved_value[k])
+                    else:
+                        current_value.clear()
+                        current_value.update(copy.deepcopy(saved_value))
+                else:
+                    setattr(current, key, copy.deepcopy(saved_value))
+
+        restore_object(self.state, snapshot)
+
+    def _snapshot_combat_runtime(self) -> dict:
+        """保存不在GameState内、但会被行动修改的战斗运行态，供失败事务回滚。"""
+        groups = {
+            "player": [self.state.player] if self.state.player else [],
+            "friend": self.state.friends,
+            "employee": self.state.employees,
+            "temp_friend": self.state.temp_friends,
+            "enemy": self.state.enemies,
+        }
+        refs = {(kind, i): entity for kind, entities in groups.items() for i, entity in enumerate(entities)}
+        by_id = {id(entity): ref for ref, entity in refs.items()}
+        return {
+            "activated": {by_id[key]: set(value) for key, value in self.combat._monster_activated.items()
+                          if key in by_id},
+            "rewrites": {by_id[key]: dict(value) for key, value in self.combat._resonance_rewrites.items()
+                         if key in by_id},
+            "cost_proxy": by_id.get(id(self.combat.cost_proxy)) if self.combat.cost_proxy else None,
+            "sanxiang": self.combat._sanxiang_consumed,
+        }
+
+    def _restore_combat_runtime(self, snapshot: dict) -> None:
+        groups = {
+            "player": [self.state.player] if self.state.player else [],
+            "friend": self.state.friends,
+            "employee": self.state.employees,
+            "temp_friend": self.state.temp_friends,
+            "enemy": self.state.enemies,
+        }
+        refs = {(kind, i): entity for kind, entities in groups.items() for i, entity in enumerate(entities)}
+        self.combat._monster_activated = {
+            id(refs[ref]): set(value) for ref, value in snapshot["activated"].items() if ref in refs
+        }
+        self.combat._resonance_rewrites = {
+            id(refs[ref]): dict(value) for ref, value in snapshot["rewrites"].items() if ref in refs
+        }
+        self.combat.cost_proxy = refs.get(snapshot["cost_proxy"])
+        self.combat._sanxiang_consumed = snapshot["sanxiang"]
+
+    def _phase_error(self, action_type: str, params: dict) -> Optional[dict]:
+        """执行入口的阶段门禁；【消灾】是唯一允许在局外发动的道纹。"""
+        phase = self.state.phase
+        if action_type.startswith("setup_") and phase != "setup":
+            return {"success": False, "error": f"【{action_type}】只能在开局阶段执行"}
+        if action_type in ("pre_battle_action", "resolve_event") and phase != "pre_battle":
+            return {"success": False, "error": "局外行动/事件只能在局外阶段执行"}
+        if action_type == "battle_start" and phase != "pre_battle":
+            return {"success": False, "error": "只有局外阶段可以进入战始"}
+        if action_type == "battle_start" and self.state.energy > 0:
+            return {"success": False, "error": f"尚有{self.state.energy}点精力，耗尽后才能进入战斗"}
+        if action_type == "use_daowen":
+            name = params.get("daowen_name", "")
+            if phase == "pre_battle" and name == "消灾":
+                return None
+            if phase != "in_combat":
+                return {"success": False, "error": "道纹只能在战斗中发动；局外唯一例外是【消灾】"}
+        if action_type in self._COMBAT_ONLY_ACTIONS and phase != "in_combat":
+            return {"success": False, "error": f"【{action_type}】只能在战斗中执行"}
+        if action_type == "battle_end" and phase != "in_combat":
+            return {"success": False, "error": "只有进行中的战斗可以结算战终"}
+        return None
     
     def execute_action(self, action_type: str, params: dict = None) -> dict:
         """
@@ -335,6 +473,28 @@ class GameEngine:
         """
         if params is None:
             params = {}
+
+        if self.state.pending_relic_choices and action_type != "choose_discovered_relic":
+            return {
+                "success": False,
+                "error": "必须先从发现候选中选择1件遗物",
+                "choices": list(self.state.pending_relic_choices),
+            }
+        if self.state.pending_item_choices and action_type != "choose_discovered_item":
+            return {
+                "success": False,
+                "error": "必须先从发现候选中选择1件消耗品",
+                "choices": list(self.state.pending_item_choices),
+            }
+        if self.state.pending_monster_phase and action_type != "resolve_monster_phase":
+            return {
+                "success": False,
+                "error": "已有待提交的怪物阶段决策，请先调用resolve_monster_phase",
+                "token": self.state.pending_monster_phase.get("token"),
+            }
+        phase_error = self._phase_error(action_type, params)
+        if phase_error:
+            return phase_error
         
         # 检查是否有待处理的中断
         if self._pending_interrupts:
@@ -358,6 +518,11 @@ class GameEngine:
                 "instruction": "请先通过 submit_ruling() 审核遗言（approve/edit/reject）",
             }
         
+        # 所有行动按“校验失败不改变游戏状态”的原子契约执行。
+        # 随机数请求必须在各处理器完成静态校验后才发起，避免失败消耗随机源。
+        state_before = copy.deepcopy(self.state)
+        combat_runtime_before = self._snapshot_combat_runtime()
+        event_pool_before = (set(self.event_pool.triggered), self.event_pool.current)
         try:
             if action_type == "setup_attributes":
                 result = self._action_setup_attributes(params)
@@ -445,8 +610,18 @@ class GameEngine:
                 result = self._action_use_truth_eye(params)
             elif action_type == "blood_feast":
                 result = self._action_blood_feast(params)
+            elif action_type == "prepare_monster_phase":
+                result = self._action_prepare_monster_phase(params)
+            elif action_type == "resolve_monster_phase":
+                result = self._action_resolve_monster_phase(params)
             elif action_type == "monster_phase":
                 result = self._action_monster_phase(params)
+            elif action_type == "choose_discovered_relic":
+                result = self._action_choose_discovered_relic(params)
+            elif action_type == "choose_discovered_item":
+                result = self._action_choose_discovered_item(params)
+            elif action_type == "repay_debt_employee":
+                result = self._action_repay_debt_employee(params)
             elif action_type == "round_start":
                 result = self._action_round_start(params)
             elif action_type == "round_end":
@@ -461,6 +636,12 @@ class GameEngine:
                 result = self._action_submit_random(params)
             else:
                 result = {"success": False, "error": f"未知行动类型: {action_type}"}
+
+            if not result.get("success", False):
+                self._restore_state_in_place(state_before)
+                self.combat.state = self.state
+                self._restore_combat_runtime(combat_runtime_before)
+                self.event_pool.triggered, self.event_pool.current = event_pool_before
             
             # 记录行动历史
             self._action_history.append({
@@ -498,6 +679,10 @@ class GameEngine:
             return result
             
         except Exception as e:
+            self._restore_state_in_place(state_before)
+            self.combat.state = self.state
+            self._restore_combat_runtime(combat_runtime_before)
+            self.event_pool.triggered, self.event_pool.current = event_pool_before
             error_result = {
                 "success": False,
                 "error": str(e),
@@ -514,6 +699,8 @@ class GameEngine:
         分配初始属性点
         1属性点 = 6血限 = 1速限 = 2法限
         """
+        if self.state.player is not None:
+            return {"success": False, "error": "初始属性已经分配，不能重复开局"}
         blood_points = params.get("blood_points", 0)
         speed_points = params.get("speed_points", 0)
         mana_points = params.get("mana_points", 0)
@@ -568,6 +755,10 @@ class GameEngine:
     
     def _action_setup_choose_daowen(self, params: dict) -> dict:
         """选择初始道纹"""
+        if self.state.player is None:
+            return {"success": False, "error": "请先分配初始属性"}
+        if self.state.player.dao_wen:
+            return {"success": False, "error": "初始道纹已经选择，不能重复选择"}
         choice = params.get("daowen", "")
         valid = ["杀伐", "锐利"]
         
@@ -592,7 +783,11 @@ class GameEngine:
         }
     
     def _action_setup_choose_region(self, params: dict) -> dict:
-        """选择副本（同时初始化遗物池、开局发现一件遗物）"""
+        """选择副本，并生成开局“随机3件、显式选1件”的遗物发现。"""
+        if self.state.player is None:
+            return {"success": False, "error": "请先分配初始属性"}
+        if not self.state.player.dao_wen or sum(self.state.resonance.values()) != 1:
+            return {"success": False, "error": "选择副本前必须先完成初始道纹与1种初始残韵选择"}
         region = params.get("region", "")
         valid = ["罪孽都市", "扭曲都市", "龙心谷"]
         if region not in valid:
@@ -600,25 +795,23 @@ class GameEngine:
         self.state.current_region = region
         self.state.phase = "pre_battle"
         self._init_relic_pool()
-        # 开局发现一件遗物（引擎自动生成随机数并结算，见 DiceEngine.auto_roll）
-        if self.state.relics_pool:
-            names = [r.name for r in self.state.relics_pool]
-            roll = self.dice.auto_roll("setup_starter_relic", names, context="开局发现一件遗物")
-            idx = roll["record"]["selected_index"]
-            r = self.state.relics_pool.pop(idx)
-            self.state.relics.append(r)
-            starter = r.name
-        else:
-            starter = None
+        discovery = self._offer_relic_discovery("开局发现")
+        if not discovery.get("success"):
+            return discovery
         return {
-            "success": True, "action": "选择副本",
-            "result": {"region": region, "starter_relic": starter},
-            "next_actions": ["pre_battle_action"],
-            "note": "开局完成，进入局外阶段。每个副本3点精力，耗尽后进入战斗。"
+            "success": True,
+            "action": "选择副本",
+            "result": {"region": region, "relic_choices": discovery["choices"]},
+            "next_actions": ["choose_discovered_relic"],
+            "note": "开局发现已随机列出3件遗物；必须显式选择1件后进入局外行动。",
         }
     
     def _action_setup_choose_resonance(self, params: dict) -> dict:
         """选择初始残韵"""
+        if self.state.player is None:
+            return {"success": False, "error": "请先分配初始属性"}
+        if sum(self.state.resonance.values()) > 0:
+            return {"success": False, "error": "初始残韵已经选择，不能重复选择"}
         rtype = params.get("resonance_type", "")
         valid = ["转换", "反转", "曲解"]
         
@@ -798,7 +991,7 @@ class GameEngine:
         9: ("封存血脉", "保留触发权，随时再次触发初拥之夜"),
     }
 
-    # 遗物池定义（12件，效果应用在第3阶段）
+    # 遗物池定义（13件；【发现】只列候选，效果在对应触发时点应用）
     RELIC_DEFS = [
         ("血誓戒", "[回始]首次主动支付流血代价时，获得等同于本次流血的格挡；若支付后生命≤30%，改为获得等量生命"),
         ("买路财", "战斗中可失去等同于怪物20%[血限]的[碎片]安全撤退"),
@@ -816,8 +1009,89 @@ class GameEngine:
     ]
 
     def _init_relic_pool(self):
+        """每局仅初始化一次，池耗尽后不得重新生成重复遗物。"""
+        if self.state.relic_pool_initialized:
+            return
+        self.state.relics_pool = [Relic(name=n, effect=e) for n, e in self.RELIC_DEFS]
+        self.state.relic_pool_initialized = True
+
+    def _offer_relic_discovery(self, source: str) -> dict:
+        """从当前池不重复随机列出至多3件；只列候选，不替AI作选择。"""
+        self._init_relic_pool()
+        if self.state.pending_relic_choices:
+            return {"success": False, "error": "已有待选择的遗物发现"}
         if not self.state.relics_pool:
-            self.state.relics_pool = [Relic(name=n, effect=e) for n, e in self.RELIC_DEFS]
+            return {"success": False, "error": "遗物池已耗尽"}
+        remaining = [r.name for r in self.state.relics_pool]
+        choices: list[str] = []
+        for slot in range(min(3, len(remaining))):
+            roll = self.dice.auto_roll(
+                f"relic_discovery_{source}_{slot + 1}",
+                remaining,
+                context=f"{source}：随机列出遗物候选{slot + 1}",
+            )
+            selected = remaining.pop(roll["record"]["selected_index"])
+            choices.append(selected)
+        self.state.pending_relic_choices = choices
+        self.state.pending_relic_source = source
+        return {"success": True, "choices": choices, "source": source}
+
+    def _action_choose_discovered_relic(self, params: dict) -> dict:
+        choice = params.get("relic_name", "")
+        choices = self.state.pending_relic_choices
+        if not choices:
+            return {"success": False, "error": "当前没有待选择的遗物发现"}
+        if choice not in choices:
+            return {"success": False, "error": "只能选择本次发现列出的遗物", "choices": list(choices)}
+        relic = next((r for r in self.state.relics_pool if r.name == choice), None)
+        if relic is None:
+            return {"success": False, "error": f"遗物池中不存在【{choice}】"}
+        self.state.relics_pool.remove(relic)
+        self.state.relics.append(relic)
+        source = self.state.pending_relic_source
+        self.state.pending_relic_choices = []
+        self.state.pending_relic_source = ""
+        return {
+            "success": True,
+            "action": "选择发现遗物",
+            "result": {"relic": choice, "source": source},
+        }
+
+    def _offer_item_discovery(self, pool: list[str], source: str) -> dict:
+        if self.state.pending_item_choices:
+            return {"success": False, "error": "已有待选择的消耗品发现"}
+        remaining = list(dict.fromkeys(pool))
+        if not remaining:
+            return {"success": False, "error": "没有可发现的消耗品"}
+        choices = []
+        for slot in range(min(3, len(remaining))):
+            roll = self.dice.auto_roll(
+                f"item_discovery_{source}_{slot + 1}", remaining,
+                context=f"{source}：随机列出消耗品候选{slot + 1}",
+            )
+            choices.append(remaining.pop(roll["record"]["selected_index"]))
+        self.state.pending_item_choices = choices
+        self.state.pending_item_source = source
+        return {"success": True, "choices": choices, "source": source}
+
+    def _action_choose_discovered_item(self, params: dict) -> dict:
+        choice = params.get("item_name", "")
+        if not self.state.pending_item_choices:
+            return {"success": False, "error": "当前没有待选择的消耗品发现"}
+        if choice not in self.state.pending_item_choices:
+            return {"success": False, "error": "只能选择本次发现列出的消耗品",
+                    "choices": list(self.state.pending_item_choices)}
+        if choice not in TWISTED_TOOL_LIBRARY:
+            return {"success": False, "error": f"未知工具: {choice}"}
+        durability, effect = TWISTED_TOOL_LIBRARY[choice]
+        self.state.consumables.append(Consumable(
+            name=choice, effect=effect, current_uses=durability, max_uses=durability,
+        ))
+        source = self.state.pending_item_source
+        self.state.pending_item_choices = []
+        self.state.pending_item_source = ""
+        return {"success": True, "action": "选择发现消耗品",
+                "result": {"item": choice, "durability": durability, "source": source}}
 
     def _pre_battle_xuexi(self, params: dict) -> dict:
         """学习：实际添加道纹或法术到玩家"""
@@ -890,7 +1164,7 @@ class GameEngine:
                     "result": {"learned": "spell", "name": name, "required_daowen": req, "shard_cost": cost}}
     
     def _pre_battle_gongming(self, params: dict) -> dict:
-        """共鸣：发现/自选遗物并实际加入"""
+        """共鸣：发现时随机列3件后显式选1；付费自选则直接加入。"""
         self._init_relic_pool()
         sub = params.get("sub", "discover")
         if not self.state.relics_pool:
@@ -911,18 +1185,22 @@ class GameEngine:
             relic = self.state.relics_pool.pop(idx)
             self.state.relics.append(relic)
             return {"success": True, "action": "共鸣(自选)", "result": {"gained_relic": relic.name, "effect": relic.effect}}
-        # discover：引擎自动生成随机数并结算（DiceEngine.auto_roll）
-        names = [r.name for r in self.state.relics_pool]
-        roll = self.dice.auto_roll("resonance_relic_pool", names, context="共鸣(发现)")
-        idx = roll["record"]["selected_index"]
-        relic = self.state.relics_pool.pop(idx)
-        self.state.relics.append(relic)
-        return {"success": True, "action": "共鸣(发现)", "result": {"gained_relic": relic.name, "effect": relic.effect,
-                                                                      "pool_remaining": len(self.state.relics_pool)}}
+        discovery = self._offer_relic_discovery("共鸣发现")
+        if not discovery.get("success"):
+            return discovery
+        return {
+            "success": True,
+            "action": "共鸣(发现)",
+            "result": {"relic_choices": discovery["choices"]},
+            "next_actions": ["choose_discovered_relic"],
+        }
     
 
     def _pre_battle_tansuo(self, params: dict) -> dict:
         """探索：从当前事件池(通用+本副本专属)中，由引擎自动生成随机数抽取一个事件"""
+        if self.event_pool.current is not None:
+            return {"success": False,
+                    "error": f"事件【{self.event_pool.current}】尚未结算，不能再次探索"}
         region = self.state.current_region
         pool = self.event_pool.build_pool(region)
         if not pool:
@@ -985,13 +1263,12 @@ class GameEngine:
             return {"success": False, "error": f"已存在同名员工: {name}，请更换名称"}
         blood_alloc = params.get("blood_alloc", 0)
         atk_bundles = params.get("atk_bundles", 0)
-        if (not isinstance(blood_alloc, int) or not isinstance(atk_bundles, int)
-                or blood_alloc < 0 or atk_bundles < 1 or blood_alloc + 3 * atk_bundles != 20):
-            self.state.energy += 1
+        if (not isinstance(blood_alloc, int) or isinstance(blood_alloc, bool)
+                or not isinstance(atk_bundles, int) or isinstance(atk_bundles, bool)
+                or blood_alloc < 0 or atk_bundles < 0 or blood_alloc + 3 * atk_bundles != 20):
             return {"success": False,
-                    "error": "预算分配非法：blood_alloc + 3×atk_bundles 必须恰好等于20，且 atk_bundles 至少为1"
-                             "（1点分配值=12血限；每3点分配值捆绑购买1攻击次数+2攻击力，不可拆分；"
-                             "禁止雇佣攻击次数为0的纯沙包盟友，出手预算=攻击次数/3也会因此永远为0而无法行动）"}
+                    "error": "预算分配非法：blood_alloc + 3×atk_bundles 必须恰好等于20，且均为非负整数"
+                             "（允许攻击次数为0；1点分配值=12血限；每3点分配值捆绑购买1攻击次数+2攻击力）"}
         blood_limit = blood_alloc * 12
         attack_count = atk_bundles
         attack_power = atk_bundles * 2
@@ -1072,6 +1349,7 @@ class GameEngine:
         self.combat.reset_monster_activation()
         self.state.rebellion_in_progress = True
         self.state.rebellion_active = False
+        self.state.phase = "in_combat"
         return {
             "success": True, "action": "镇压叛变",
             "result": {
@@ -1100,6 +1378,7 @@ class GameEngine:
             self.state.shards = 0
         self.state.enemies = []
         self.state.rebellion_in_progress = False
+        self.state.phase = "pre_battle"
         return {
             "success": True, "action": "镇压结算",
             "result": {"outcome": outcome, "shards": self.state.shards,
@@ -1214,7 +1493,7 @@ class GameEngine:
 
     def _consume_action_or_error(self, entity: "Entity") -> Optional[dict]:
         """校验entity本回合出手是否用尽；未用尽则消耗1次并返回None，用尽则返回错误dict。
-        怪物走独立的[战始]固定攻击+道纹规则(run_monster_phase)，不受此速限/攻击次数推导的出手预算约束。"""
+        怪物走prepare/resolve两阶段规则，不受此速限/攻击次数推导的出手预算约束。"""
         if entity.entity_type == "怪物":
             return None
         if not self.combat.can_act(entity):
@@ -1276,14 +1555,14 @@ class GameEngine:
         return actor_on_player != target_on_player
 
     def _resolve_daowen_dodge(self, name: str, actor: Entity, target: Entity,
-                              dodge: bool, dodge_targets: list) -> dict:
-        """带[目标]的敌对道纹可被闪避。成功则本次判定与结算失效，法力与出手仍已支付。"""
+                              dodge: bool, dodge_targets: list) -> tuple[dict, Optional[list[Entity]]]:
+        """结算显式闪避，并直接返回本次AOE目标，避免跨行动保存临时跳过状态。"""
         log = {"must_hit": False, "dodged_names": [], "fully_dodged": False}
         hostile_possible = name == "冲击" or (target is not None and self._hostile_to(actor, target))
         if hostile_possible and self.combat.bizhong_remaining(actor) > 0:
             log["must_hit"] = self.combat.consume_bizhong(actor)
             if log["must_hit"]:
-                return log
+                return log, None
         if name == "冲击":
             hostiles = (self.state.get_all_enemy_side() if actor in self.state.get_all_player_side()
                         else self.state.get_all_player_side())
@@ -1300,15 +1579,15 @@ class GameEngine:
                     if extra:
                         entry.update(extra)
                     log["dodged_names"].append(entry)
-            self.combat._skip_aoe_names = set(skipped)
             alive = [e.name for e in hostiles if e.is_alive]
             log["fully_dodged"] = bool(alive) and set(alive) <= set(skipped)
-            return log
+            aoe_targets = [e for e in hostiles if e.is_alive and e.name not in set(skipped)]
+            return log, aoe_targets
         if not dodge or target is None or not self._hostile_to(actor, target):
-            return log
+            return log, None
         if target.current_speed < 1:
             log["dodge_fail_reason"] = "速度不足"
-            return log
+            return log, None
         target.current_speed -= 1
         extra = self.combat._note_dodge(target)
         entry = {"name": target.name, "speed_after": target.current_speed}
@@ -1316,7 +1595,7 @@ class GameEngine:
             entry.update(extra)
         log["dodged_names"].append(entry)
         log["fully_dodged"] = True
-        return log
+        return log, None
 
     def _action_deploy_employee(self, params: dict) -> dict:
         """派遣[员工]出战：消耗玩家1出手（现已强制校验回合出手预算）。仅[员工]需要此步骤，[朋友]开局即直接参战。"""
@@ -1377,6 +1656,31 @@ class GameEngine:
                 rounds_participated = max(0, self.state.current_round - e.deployed_at_round + 1)
                 wage = min(self.WAGE_CAP, 2 * (1 + rounds_participated)) + self.state.wage_bonus
                 self.state.pending_wage_decisions[e.name] = wage
+
+    def _action_repay_debt_employee(self, params: dict) -> dict:
+        """独立还债轨道：一次付清该员工负债后离队；不发工资、不计黑名单。"""
+        name = params.get("name", "")
+        employee = next((e for e in self.state.employees
+                         if e.name == name and e.is_debt_bound), None)
+        if employee is None:
+            return {"success": False, "error": f"找不到还债员工: {name}"}
+        debt = max(0, -employee.shards)
+        if debt <= 0:
+            return {"success": False, "error": f"{name}当前没有未清负债"}
+        if self.state.shards < debt:
+            return {"success": False,
+                    "error": f"必须一次付清{debt}碎片，当前只有{self.state.shards}"}
+        self.state.shards -= debt
+        employee.shards = 0
+        self.state.employees.remove(employee)
+        self.state.pending_wage_decisions.pop(name, None)
+        return {
+            "success": True,
+            "action": "付清还债员工负债",
+            "result": {"employee": name, "paid": debt, "departed": True,
+                       "blacklist_unchanged": self.state.blacklist_level,
+                       "shards": self.state.shards},
+        }
 
     def _action_pay_employee_wage(self, params: dict) -> dict:
         """对战终待决的某个员工工资做出 pay/refuse 决策。拒付=战终触发，强制离队+计入黑名单。
@@ -1453,8 +1757,15 @@ class GameEngine:
         if not dw_instance.can_use():
             return {"success": False, "error": f"道纹{name}不可用（冷却/封印）"}
 
-        if x < 1:
-            return {"success": False, "error": "X必须≥1"}
+        if not isinstance(x, int) or isinstance(x, bool) or x < 1:
+            return {"success": False, "error": "X必须≥1且为整数"}
+
+        # 计算函数声明了target即正文含[目标]：缺少显式目标时判定失效，禁止静默改为自身。
+        import inspect
+        DaoWenEngine.register_all()
+        requires_target = "target" in inspect.signature(DaoWenEngine._registry[name]).parameters
+        if requires_target and not target_name:
+            return {"success": False, "error": f"【{name}】需要显式指定目标；缺少[目标]时失效"}
 
         if is_command and (not target_name or target_name == actor.name):
             return {"success": False, "error": "听从指令发动道纹必须指定一个非自身的目标"}
@@ -1476,6 +1787,12 @@ class GameEngine:
         duel_error = self._check_duel_turn_or_error(actor)
         if duel_error:
             return duel_error
+        if self.state.phase == "in_combat":
+            if not self.combat.can_act(actor):
+                return {"success": False, "error": f"{actor.name}当前无法出手"}
+            if actor.entity_type != "怪物" and actor.actions_used_this_round >= actor.action_count:
+                return {"success": False,
+                        "error": f"{actor.name}本回合出手已用完({actor.actions_used_this_round}/{actor.action_count})"}
 
         if actor.has_status("无神"):
             target = actor
@@ -1519,10 +1836,9 @@ class GameEngine:
             else:
                 actor.fake_shards -= fake_need
         # 消灾X：消耗50X假碎片/5X碎片（局外发动消耗×2）；优先假碎片
-        # 引擎战斗全程 phase="battle_start"（战始→回始/出手/回终期间不再改写），
-        # 局外=pre_battle，故以 phase=="battle_start" 作为"战斗中"标记。
+        # 战斗全程 phase="in_combat"；局外发动时两类碎片代价均×2。
         elif name == "消灾":
-            in_combat = self.state.phase == "battle_start"
+            in_combat = self.state.phase == "in_combat"
             mult = 1 if in_combat else 2
             fake_need = calc.get("fake_cost", 50 * x) * mult
             real_need = calc.get("real_cost", 5 * x) * mult
@@ -1545,14 +1861,17 @@ class GameEngine:
                         "error": f"碎片不足：消灾X需{fake_need}假碎片或{real_need}碎片（局外×{mult}），"
                                  f"当前假{have_fake}/真{have_real}"}
 
-        budget_error = self._consume_action_or_error(actor)
-        if budget_error:
-            return budget_error
-        self._apply_dragon_claw_growth(actor)
+        if self.state.phase == "in_combat":
+            budget_error = self._consume_action_or_error(actor)
+            if budget_error:
+                return budget_error
+            self._apply_dragon_claw_growth(actor)
 
         dodge = bool(params.get("dodge", False))
         dodge_targets = list(params.get("dodge_targets") or [])
-        dodge_log = self._resolve_daowen_dodge(name, actor, target, dodge, dodge_targets)
+        dodge_log, aoe_targets_override = self._resolve_daowen_dodge(
+            name, actor, target, dodge, dodge_targets,
+        )
         if dodge_log.get("fully_dodged"):
             self._advance_duel_turn()
             return {
@@ -1565,7 +1884,10 @@ class GameEngine:
             }
 
         dragon_heart_use = params.get("dragon_heart_use", 0)
-        execution = self._execute_daowen_effect(name, calc, actor, target, dragon_heart_use)
+        execution = self._execute_daowen_effect(
+            name, calc, actor, target, dragon_heart_use,
+            aoe_targets_override=aoe_targets_override,
+        )
         if dodge_log.get("dodged_names"):
             execution = dict(execution)
             execution["dodged"] = dodge_log
@@ -1580,9 +1902,15 @@ class GameEngine:
             "state": self.combat._get_combat_state()
         }
     
-    def _execute_daowen_effect(self, name: str, calc: dict, caster: Entity, target: Entity, dragon_heart_use: int = 0) -> dict:
-        """发动道纹：法力检查后委托combat.apply_daowen_effect"""
-        return self.combat.apply_daowen_effect(name, calc, caster, target, dragon_heart_use)
+    def _execute_daowen_effect(
+        self, name: str, calc: dict, caster: Entity, target: Entity,
+        dragon_heart_use: int = 0, *, aoe_targets_override: Optional[list[Entity]] = None,
+    ) -> dict:
+        """发动道纹：法力检查后委托combat.apply_daowen_effect。"""
+        return self.combat.apply_daowen_effect(
+            name, calc, caster, target, dragon_heart_use,
+            aoe_targets_override=aoe_targets_override,
+        )
 
     def _find_resonance_holder(self, source: str, target_name: str):
         """定位残韵作用的道纹持有者。规则1：找不到持有者则未生效。
@@ -1726,6 +2054,16 @@ class GameEngine:
 
         if not targets:
             return {"success": False, "error": "没有可用目标"}
+        if not isinstance(target_selections, list) or len(target_selections) != attacker.attack_count:
+            return {"success": False,
+                    "error": f"必须提交恰好{attacker.attack_count}个target_selections"}
+        for target_index in target_selections:
+            if (not isinstance(target_index, int) or isinstance(target_index, bool)
+                    or target_index < 0 or target_index >= len(targets)):
+                return {"success": False, "error": f"非法目标索引: {target_index}"}
+            target = targets[target_index]
+            if not target.is_alive or not self.combat.is_targetable(attacker, target):
+                return {"success": False, "error": f"目标{target.name}已命零或当前不可选中"}
 
         duel_error = self._check_duel_turn_or_error(attacker)
         if duel_error:
@@ -1979,7 +2317,21 @@ class GameEngine:
         player = self.state.player
         if not player:
             return {"success": False, "error": "没有玩家"}
-        # 统一扣耐久（与普通消耗品一致）
+        # 急救箱的“清除一种”必须由AI显式选择，先校验后扣耐久。
+        aid_status = None
+        if name == "急救箱":
+            negative = [s for s in player.status_effects
+                        if s.remaining_rounds > 0 or s.name in ("坏死", "退化", "伤痕", "畸变", "蒙蔽")]
+            selected = params.get("remove_status")
+            if negative:
+                if not isinstance(selected, str) or selected not in [s.name for s in negative]:
+                    return {"success": False,
+                            "error": f"急救箱必须显式提交remove_status，可选{[s.name for s in negative]}"}
+                aid_status = next(s for s in negative if s.name == selected)
+            elif selected not in (None, ""):
+                return {"success": False, "error": "当前没有可由急救箱清除的负面状态"}
+
+        # 全部参数合法后统一扣耐久。
         remaining = item.use()
         result: dict[str, Any] = {"tool": name, "uses_remaining": remaining, "is_depleted": item.is_depleted}
         # 1. 反怪物电击枪：对目标 25 伤害，飞行目标 +15 并施坠落
@@ -1990,8 +2342,8 @@ class GameEngine:
                 # 回滚耐久（未找到目标不消耗）
                 item.current_uses += 1
                 return {"success": False, "error": f"找不到敌方目标: {target_name}"}
-            flying = (target.is_flying or target.has_status("飞行") or target.has_status("滑翔")
-                      or "飞行" in target.dao_wen or "滑翔" in target.dao_wen)
+            # 只有当前飞行/滑翔状态算飞行；仅“持有”飞行道纹不算已经飞行。
+            flying = target.is_flying or target.has_status("飞行") or target.has_status("滑翔")
             dmg = 25 + (15 if flying else 0)
             detail = target.take_damage(dmg)
             if flying:
@@ -2027,7 +2379,7 @@ class GameEngine:
                 if len(m.status_effects) != before:
                     cleared.append(m.name)
             result.update({"cleared_enemies": cleared})
-        # 5. 储能电池：[回始]本回合额外+12 法力（此处立即结算）
+        # 5. 储能电池：使用后立即获得12法力
         elif name == "储能电池":
             player.current_mana += 12
             result.update({"mana_gained": 12, "mana_after": player.current_mana})
@@ -2035,13 +2387,10 @@ class GameEngine:
         elif name == "急救箱":
             heal_detail = player.heal(25)
             healed = heal_detail["actual_heal"]
-            # 负面定义：持续X（remaining>0）或特定名
-            neg = [s for s in player.status_effects if s.remaining_rounds > 0 or s.name in ("坏死", "退化", "伤痕", "畸变", "蒙蔽")]
             removed = None
-            if neg:
-                s = neg[0]
-                player.status_effects.remove(s)
-                removed = s.name
+            if aid_status is not None:
+                player.status_effects.remove(aid_status)
+                removed = aid_status.name
             cancer = self.combat.check_cancer(player)
             result.update({"healed": healed, "removed_status": removed,
                            "heal": heal_detail, "cancer": cancer})
@@ -2094,6 +2443,11 @@ class GameEngine:
         from .events import resolve_option_effect
         name = params.get("event", "")
         option_id = params.get("option_id")
+        if self.event_pool.current is None:
+            return {"success": False, "error": "当前没有待结算事件；请先通过探索触发事件"}
+        if name != self.event_pool.current:
+            return {"success": False,
+                    "error": f"只能结算当前事件【{self.event_pool.current}】，不能结算【{name}】"}
         ev = self.event_pool.events.get(name)
         if not ev:
             return {"success": False, "error": f"未知事件: {name}"}
@@ -2115,22 +2469,17 @@ class GameEngine:
             self.state.player.current_speed = self.state.player.speed_limit
             res["applied"].append("无所求：+1速限")
         self.event_pool.resolve(name)
-        # 裁定⑬：扭曲都市完成事件后附赠【发现】——从随机抽取的未持有工具库选项中选定1件
+        # 扭曲都市完成事件后附赠【发现】：正式随机只走DiceEngine，并等待显式选1。
         bonus = None
         if self.state.current_region == "扭曲都市":
             owned = {c.name for c in self.state.consumables}
             pool = [n for n in TWISTED_TOOL_LIBRARY if n not in owned]
             if pool:
-                import random as _r2
-                candidates = _r2.sample(pool, min(3, len(pool)))
-                want = params.get("bonus_pick")
-                chosen = want if want in candidates else candidates[0]
-                dur, txt = TWISTED_TOOL_LIBRARY[chosen]
-                self.state.consumables.append(Consumable(
-                    name=chosen, effect=txt, current_uses=dur, max_uses=dur))
-                bonus = {"候选": candidates, "获得": chosen, "耐久": dur,
-                         "来源": f"事件【{name}】完成后附赠【发现】",
-                         "fallback": want is not None and want not in candidates}
+                discovery = self._offer_item_discovery(pool, f"事件【{name}】完成后附赠发现")
+                if not discovery.get("success"):
+                    return discovery
+                bonus = {"候选": discovery["choices"], "等待选择": True,
+                         "来源": discovery["source"]}
         result_payload = {"option": opt["text"], "applied": res["applied"], "instructions": res["instructions"],
                           "shards": self.state.shards,
                           "player_hp": self.state.player.current_hp if self.state.player else None}
@@ -2144,25 +2493,62 @@ class GameEngine:
 
     # ==================== 回合管理 ====================
     
-    def _action_monster_phase(self, params: dict) -> dict:
-        """怪物回合：引擎自主运行所有怪物的道纹出手+攻击出手"""
-        dodge_policy = params.get("dodge_policy", "auto")
-        results = self.combat.run_monster_phase(dodge_policy)
-        # 怪物出手后若玩家死亡
+    def _action_prepare_monster_phase(self, params: dict) -> dict:
+        """第一阶段：只返回合法选项，绝不替AI选择道纹、目标或闪避。"""
+        if self.state.pending_monster_phase:
+            return {"success": False, "error": "已有待提交的怪物阶段决策"}
+        options = self.combat.prepare_monster_phase()
+        token = uuid.uuid4().hex
+        self.state.pending_monster_phase = {"token": token, "round": self.state.current_round,
+                                            "options": options}
+        return {"success": True, "action": "准备怪物阶段",
+                "result": {"token": token, **options},
+                "instruction": "请为每个actors条目提交完整选择后调用resolve_monster_phase"}
+
+    def _action_resolve_monster_phase(self, params: dict) -> dict:
+        """第二阶段：验证完整选择与一次性token，通过后统一结算。"""
+        pending = self.state.pending_monster_phase
+        if not pending:
+            return {"success": False, "error": "请先调用prepare_monster_phase"}
+        if params.get("token") != pending.get("token"):
+            return {"success": False, "error": "怪物阶段token无效或已过期"}
+        if pending.get("round") != self.state.current_round:
+            return {"success": False, "error": "回合已变化，请重新prepare_monster_phase"}
+        try:
+            results = self.combat.resolve_monster_phase(
+                params.get("choices"), prepared=pending["options"],
+            )
+        except (TypeError, ValueError) as exc:
+            return {"success": False, "error": str(exc)}
+        self.state.pending_monster_phase = {}
         player_dead = (self.state.player is None) or (not self.state.player.is_alive)
-        # README《六、战斗推演格式》要求"按出手次数依次列出"，禁止概括或合并结算。
-        # run_monster_phase 已逐次产出每一击的明细，此处必须原样上抛，
-        # 否则调用方只能拿到一个汇总计数，无法书写合规战报。
         return {
-            "success": True, "action": "怪物回合",
-            "result": {"attacks": len(results), "player_dead": player_dead,
+            "success": True,
+            "action": "结算怪物阶段",
+            "result": {"entries": len(results), "player_dead": player_dead,
                        "player_hp": self.state.player.current_hp if self.state.player else 0,
                        "details": results},
         }
 
+    def _action_monster_phase(self, params: dict) -> dict:
+        """拒绝旧版固定策略入口，防止绕过两阶段AI显式决策。"""
+        return {"success": False,
+                "error": "monster_phase已停用；请依次调用prepare_monster_phase与resolve_monster_phase"}
+
     def _action_round_start(self, params: dict) -> dict:
-        """回始"""
-        result = self.combat.round_start()
+        """回始；完全平局死斗在每个新回合交换该回合首手方。"""
+        relic_choices = params.get("relic_choices", {})
+        self.combat.validate_round_start_relic_choices(relic_choices)
+        result = self.combat.round_start(relic_choices)
+        if self.state.in_final_duel and self.state.duel_tie_alternating:
+            if self.state.duel_rounds_started > 0:
+                self.state.duel_round_first = (
+                    "opponent_side" if self.state.duel_round_first == "player_side" else "player_side"
+                )
+            self.state.duel_rounds_started += 1
+            self.state.duel_turn = self.state.duel_round_first
+            result["duel_round_first"] = self.state.duel_round_first
+            result["duel_tie_alternating"] = True
         return {"success": True, "action": "回始", "result": result}
     
     def _action_round_end(self, params: dict) -> dict:
@@ -2234,7 +2620,10 @@ class GameEngine:
         战斗背景：文档"战斗背景：（名称与影响）"仅为战斗推演格式里的占位提示，
         正文未定义任何具体名称与机制效果，故本引擎不做机制化处理，留给叙事层自由发挥。"""
         from .monsters import compute_draw_count, make_monster_entity
-        self.state.phase = "battle_start"
+        relic_choices = params.get("relic_choices", {})
+        # 先完成全部静态校验，再抽怪；非法遗物参数不得消耗正式随机源。
+        self.combat.validate_battle_start_relic_choices(relic_choices)
+        self.state.phase = "in_combat"
         self.state.current_battle += 1
         # 记录[战始]生命，作为[战终]清除"回复"类增益后的生命下限
         if self.state.player:
@@ -2277,7 +2666,7 @@ class GameEngine:
         # 折速/鲜血契约因此叠在 0 上，首回合 = 遗物加成 + 法限，不会被赋值冲掉。
         if self.state.player and self.state.player.is_alive:
             self.state.player.current_mana = 0
-        relic_logs = self.combat.process_relics("battle_start")
+        relic_logs = self.combat.process_relics("battle_start", {"relic_choices": relic_choices})
 
         artifact_logs = self._apply_terminal_artifacts_on_battle_start()
 
@@ -2310,6 +2699,7 @@ class GameEngine:
             "shards": e.shards, "is_debt_bound": e.is_debt_bound,
             "dao_wen": {k: v.x_value for k, v in e.dao_wen.items()},
             "spells": [s.to_dict() for s in e.spells],
+            "relics": [r.to_dict() for r in e.relics],
             "status_effects": [{"name": s.name, "value": s.value,
                                  "remaining_rounds": s.remaining_rounds, "source": s.source}
                                 for s in e.status_effects],
@@ -2332,6 +2722,9 @@ class GameEngine:
             e.spells.append(Spell(name=sp["name"], required_daowen=sp["required_daowen"],
                                    trigger_condition=sp["trigger_condition"], effect_flow=sp["effect_flow"],
                                    rank=sp.get("rank", 1)))
+        for relic in d.get("relics", []):
+            e.relics.append(Relic(name=relic["name"], effect=relic.get("effect", ""),
+                                  tags=list(relic.get("tags") or [])))
         for st in d.get("status_effects", []):
             e.status_effects.append(StatusEffect(name=st["name"], value=st.get("value", 0),
                                                   remaining_rounds=st.get("remaining_rounds", -1),
@@ -2452,8 +2845,21 @@ class GameEngine:
 
         challenger_key = self._duel_priority_key(challenger_player)
         opponent_key = self._duel_priority_key(opponent_leader) if opponent_leader else (0, 0, 0, 0)
-        first_mover = "player_side" if challenger_key >= opponent_key else "opponent_side"
+        complete_tie = challenger_key == opponent_key
+        if complete_tie:
+            roll = self.dice.auto_roll(
+                "final_duel_complete_tie_first",
+                ["player_side", "opponent_side"],
+                context="最终死斗四项先手属性完全平局：随机首手",
+            )
+            first_mover = roll["selected"]
+        else:
+            first_mover = "player_side" if challenger_key > opponent_key else "opponent_side"
         self.state.duel_turn = first_mover
+        self.state.duel_tie_alternating = complete_tie
+        self.state.duel_round_first = first_mover
+        self.state.duel_rounds_started = 0
+        self.state.phase = "in_combat"
 
         optional = []
         for r in self.state.opponent_relics:
@@ -2468,6 +2874,7 @@ class GameEngine:
             "opponent_name": opponent_leader.name if opponent_leader else "未知对手",
             "opponent_side": [e.name for e in opponent_side],
             "first_mover": first_mover,
+            "complete_tie_alternating": complete_tie,
             "optional_relics": optional,
             "artifact_logs": artifact_logs,
             "instruction": "第8场最终死斗开始：双方交替出手，残韵可任意时刻插队，无法逃跑。"
@@ -2828,8 +3235,7 @@ class GameEngine:
         "断尾求生": "自身即将［命零］时，可销毁一件本场获得的其他龙族遗物，抵消本次使自身［命零］的伤害",
         "烬翼": "［回始］，可消耗3X点龙性，获得【飞行X】",
     }
-    # 龙威("所有敌方必须优先选择自身为目标")：run_monster_phase目前本就总是让怪物攻击玩家本人
-    # (从未实现"怪物选中朋友/员工"的目标分配逻辑)，故该遗物在当前引擎下恒定已满足、无需额外代码。
+    # 龙威通过prepare_monster_phase收窄合法目标列表实现；resolve只接受prepare列出的目标。
 
     def _action_pay_for_dragon_nature(self, params: dict) -> dict:
         """真龙之心：支付衰老/枯竭/萎缩代价换取龙性（6X衰老=2X枯竭=X萎缩=12X龙性）"""
@@ -2939,15 +3345,22 @@ class GameEngine:
                 "result": {"flying_rounds": x, "dragon_nature": self.state.dragon_nature}}
 
     def _action_battle_end(self, params: dict) -> dict:
-        """战终"""
+        """战终；仍有未移出的存活敌人时不得跳过战斗直接结算。"""
+        living = [e.name for e in self.state.enemies
+                  if e.is_alive and not e.removed_without_kill and not e.is_sculptured
+                  and not e.is_proliferated and not e.is_debt_bound]
+        if living:
+            return {"success": False, "error": f"仍有存活敌人，不能结算战终: {living}"}
         # 员工经济系统·工资结算门槛：先按"存活+已部署+非还债"员工计算工资写入待决列表；
         # 任何一名待决(值不为None，代表尚未pay/refuse)即阻塞后续战终结算。
         self._compute_pending_wages()
         still_pending = {k: v for k, v in self.state.pending_wage_decisions.items() if v is not None}
         if still_pending:
             return {
-                "success": False,
-                "error": "存在未决的员工工资结算，请先为以下员工逐个调用 pay_employee_wage(name, decision=pay/refuse)",
+                "success": True,
+                "action": "战终工资待决",
+                "completed": False,
+                "instruction": "请先为以下员工逐个调用 pay_employee_wage(name, decision=pay/refuse)，再重新调用battle_end",
                 "pending_wage_decisions": still_pending,
             }
         self.state.pending_wage_decisions = {}
@@ -2978,31 +3391,32 @@ class GameEngine:
         
         self.state.shards += shard_reward
         
-        # 清除局内增益
-        if self.state.player:
-            self.state.player.clear_shield()
-            _p = self.state.player
-            # README 第304行：[战终]清除局内增益（包括回复、格挡、持续∞等）。
-            # [回复]在此按"局内增益"处理：战斗中恢复的生命在[战终]一并吐出，
-            # 战斗中受到的伤害如实保留。局内[回复]因此只是"撑过本场"的手段，
-            # 跨场恢复生命只能靠局外行动【休整】(README 第266行)。
-            if _p.healed_this_battle > 0:
-                _p.current_hp = max(1, _p.current_hp - _p.healed_this_battle)
-            _p.healed_this_battle = 0
-            # 清除局内持续效果（含持续∞的增益/减益），[代价]类不清除
-            _COST_STATUS = {"流血", "衰老", "异变", "崩解"}
-            _p.status_effects = [s for s in _p.status_effects if s.name in _COST_STATUS]
-            # F2：逼债/清算挂账与抵扣封印均属局内效果，[战终]随持续状态一并清除，不得跨场残留
-            _p._bizhai = []
-            _p._qingsuan = []
-            self.state.sealed_relics = {}
-            # 恢复速度到速限（闪避消耗的速度战终复原）
-            self.state.player.current_speed = self.state.player.speed_limit
-            # 体外心脏：临时翻倍的血限[战终]还原为基准值，当前生命同步封顶
-            if "体外心脏" in self.state.artifacts_owned and self._artifact_base_blood_limit > 0:
-                self.state.player.blood_limit = self._artifact_base_blood_limit
-                self.state.player.current_hp = min(self.state.player.current_hp, self.state.player.blood_limit)
-                self._artifact_base_blood_limit = 0
+        # [战终]对所有角色统一清除局内回复、格挡与状态；不得只清轮回者。
+        all_characters = (([self.state.player] if self.state.player else [])
+                          + self.state.friends + self.state.employees
+                          + self.state.temp_friends + self.state.enemies)
+        _COST_STATUS = {"流血", "衰老", "异变", "崩解"}
+        for entity in all_characters:
+            entity.clear_shield()
+            if entity.healed_this_battle > 0:
+                entity.current_hp = (max(1, entity.current_hp - entity.healed_this_battle)
+                                     if entity.is_alive else 0)
+            entity.healed_this_battle = 0
+            entity.status_effects = [s for s in entity.status_effects if s.name in _COST_STATUS]
+            entity._bizhai = []
+            entity._qingsuan = []
+            entity.current_speed = entity.speed_limit
+            if hasattr(entity, "_bianxing_original"):
+                entity.attack_power, entity.attack_count = entity._bianxing_original
+                delattr(entity, "_bianxing_original")
+        self.state.sealed_relics = {}
+
+        # 体外心脏：临时翻倍的血限[战终]还原为基准值，当前生命同步封顶。
+        if (self.state.player and "体外心脏" in self.state.artifacts_owned
+                and self._artifact_base_blood_limit > 0):
+            self.state.player.blood_limit = self._artifact_base_blood_limit
+            self.state.player.current_hp = min(self.state.player.current_hp, self.state.player.blood_limit)
+            self._artifact_base_blood_limit = 0
 
         # 真理眼冷却：每场[战终]-1
         if self.state.truth_eye_cooldown > 0:

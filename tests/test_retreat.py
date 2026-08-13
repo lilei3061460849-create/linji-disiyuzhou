@@ -33,8 +33,15 @@ def _setup(db_suffix: str):
     engine = GameEngine(db_path=f"data/test_retreat_{db_suffix}.db", rng_seed=1)
     engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
     engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
-    engine.execute_action("setup_choose_region", {"region": "罪孽都市"})  # 雇佣为罪孽都市专属
-    engine.execute_action("battle_start", {})
+    engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
+    setup = engine.execute_action("setup_choose_region", {"region": "罪孽都市"})
+    engine.execute_action("choose_discovered_relic", {"relic_name": setup["result"]["relic_choices"][0]})
+    engine.state.energy = 0
+    choices = {}
+    relic = engine.state.relics[0].name
+    if relic in ("折速法印", "鲜血契约", "三相残韵盘", "卖身契"):
+        choices[relic] = {"use": False}
+    engine.execute_action("battle_start", {"relic_choices": choices})
     return engine
 
 
@@ -110,7 +117,8 @@ def test_battle_end_resets_retreat_flag_for_next_battle():
     engine.combat.resolve_attack(monster, friend, dodge=False)
     assert friend.has_retreated is True
 
-    engine.state.energy = 3
+    monster.current_hp = 0
+    monster.is_alive = False
     r = engine.execute_action("battle_end", {})
     assert r["success"] is True
     assert friend.has_retreated is False, "战终应重置撤退状态"
@@ -209,11 +217,9 @@ def test_already_retreated_ally_cannot_retreat_again_and_takes_real_damage():
 def test_retreated_employee_cannot_be_redeployed_this_battle():
     """错误输入：本场已撤退的员工，deploy_employee必须拒绝，不能重新参战"""
     engine = _setup("redeploy_rejected")
-    engine.state.energy = 3
-    engine.execute_action("pre_battle_action", {
-        "sub_action": "雇佣", "name": "老张", "blood_alloc": 17, "atk_bundles": 1,
-    })
-    emp = next(e for e in engine.state.employees if e.name == "老张")
+    emp = Entity(name="老张", entity_type="员工", blood_limit=204, current_hp=204,
+                 attack_count=1, attack_power=2, is_deployed=False)
+    engine.state.employees.append(emp)
     monster = Entity(name="测试怪", entity_type="怪物", blood_limit=100, current_hp=100,
                       attack_count=1, attack_power=99)
     engine.state.enemies.clear()

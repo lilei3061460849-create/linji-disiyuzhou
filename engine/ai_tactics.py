@@ -163,14 +163,14 @@ class TacticalAI:
                 per = TACTICAL_ROLES[name].get("shield_per_x", 4)
                 need = max(0, threat - p.shield)
                 x = min(self._x_for(name), math.ceil(need / per))
-                r = self._cast(name, x)
+                r = self._cast(name, x, p.name)
                 if r:
                     return r
         if p.current_hp <= p.blood_limit * 0.35 and not p.has_status("坏死"):
             for name in self.owned("heal"):
                 per = TACTICAL_ROLES[name].get("heal_per_x", 3)
                 x = min(self._x_for(name), max(1, math.ceil((p.blood_limit - p.current_hp) / per)))
-                r = self._cast(name, x)
+                r = self._cast(name, x, p.name)
                 if r:
                     return r
         return None

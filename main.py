@@ -199,6 +199,9 @@ def api_demo():
     # 4. 选择副本
     print("\n[4] 选择副本：扭曲都市")
     result = engine.execute_action("setup_choose_region", {"region": "扭曲都市"})
+    relic_choice = result["result"]["relic_choices"][0]
+    engine.execute_action("choose_discovered_relic", {"relic_name": relic_choice})
+    print(f"  → 开局发现候选：{result['result']['relic_choices']}；选择：{relic_choice}")
     
     # 5. 局外行动
     print("\n[5] 局外行动：修行")
@@ -228,7 +231,11 @@ def validate_demo():
         "name": "测试", "blood_points": 10, "speed_points": 8, "mana_points": 7
     })
     engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
-    engine.execute_action("setup_choose_region", {"region": "扭曲都市"})
+    engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
+    setup = engine.execute_action("setup_choose_region", {"region": "扭曲都市"})
+    engine.execute_action("choose_discovered_relic", {
+        "relic_name": setup["result"]["relic_choices"][0],
+    })
     
     # 测试1：正常行动校验
     print("\n[测试1] 正常修行行动：")

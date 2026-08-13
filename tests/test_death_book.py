@@ -1,6 +1,9 @@
 """《死者之书》三段式遗言：校验、命零中断、审核落盘、回音长廊改文件。"""
 import os
+import sys
 from pathlib import Path
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
 from engine.combat import CombatEngine
@@ -39,8 +42,16 @@ def _engine(tmp_path, suffix="legacy"):
         "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7,
     })
     engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
-    engine.execute_action("setup_choose_region", {"region": "罪孽都市"})
+    engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
+    setup = engine.execute_action("setup_choose_region", {"region": "罪孽都市"})
+    engine.execute_action("choose_discovered_relic", {"relic_name": setup["result"]["relic_choices"][0]})
+    engine.state.phase = "in_combat"
     return engine, book
+
+
+def _current_event(engine, name="回音长廊"):
+    engine.state.phase = "pre_battle"
+    engine.event_pool.current = name
 
 
 def test_three_part_legacy_normal_path_is_recorded_without_mutation():
@@ -96,7 +107,12 @@ def test_player_mingling_queues_interrupt_and_approve_writes_file(tmp_path):
     engine.state.enemies.append(Entity(
         name="打手", entity_type="怪物", blood_limit=80, current_hp=80,
         attack_count=1, attack_power=20))
-    r = engine.execute_action("monster_phase", {"dodge_policy": "never"})
+    prepared = engine.execute_action("prepare_monster_phase", {})
+    r = engine.execute_action("resolve_monster_phase", {
+        "token": prepared["result"]["token"],
+        "choices": [{"actor_ref": "enemy:0", "daowen": None,
+                     "attack_actions": [{"hits": [{"target_ref": "player:0", "dodge": False}]}]}],
+    })
     assert r["result"]["player_dead"] is True
     assert r.get("interrupt", {}).get("interrupt_type") == "死之传承"
     draft = r["interrupt"]["context"]["draft"]
@@ -204,6 +220,7 @@ def test_collapse_and_mediocrity_both_trigger_inheritance(tmp_path):
 def test_echo_corridor_writes_and_clears_chosen_page(tmp_path):
     """正常路径：打碎镜子必须自选一页，清的是指定页不是最后一页。"""
     engine, book = _engine(tmp_path, "echo")
+    _current_event(engine)
     store = DeathBookStore(book)
     store.append(CAUSE_DRAFTS["attack"])
     store.append(CAUSE_DRAFTS["collapse"])
@@ -223,6 +240,7 @@ def test_echo_corridor_writes_and_clears_chosen_page(tmp_path):
 def test_echo_corridor_clear_without_choice_is_rejected(tmp_path):
     """错误输入：有遗言却不指定要清哪一页，必须拒绝且不流血、不改文件。"""
     engine, book = _engine(tmp_path, "echo_err")
+    _current_event(engine)
     DeathBookStore(book).append(CAUSE_DRAFTS["attack"])
     engine.state.death_book_legacies = DeathBookStore(book).load()
     hp_before = engine.state.player.current_hp
@@ -238,6 +256,7 @@ def test_echo_corridor_clear_without_choice_is_rejected(tmp_path):
 def test_echo_corridor_invalid_index_is_rejected(tmp_path):
     """错误输入：越界页码拒绝。"""
     engine, book = _engine(tmp_path, "echo_oob")
+    _current_event(engine)
     DeathBookStore(book).append(CAUSE_DRAFTS["attack"])
     r = engine.execute_action("resolve_event", {
         "event": "回音长廊", "option_id": 2, "legacy_index": 9,
@@ -249,6 +268,7 @@ def test_echo_corridor_invalid_index_is_rejected(tmp_path):
 def test_echo_corridor_empty_book_bleeds_without_clearing(tmp_path):
     """边界：书空时打碎镜子只流血5，文件仍是空遗言。"""
     engine, book = _engine(tmp_path, "echo_empty")
+    _current_event(engine)
     hp_before = engine.state.player.current_hp
     text_before = book.read_text(encoding="utf-8")
     r = engine.execute_action("resolve_event", {
@@ -264,6 +284,7 @@ def test_echo_corridor_empty_book_bleeds_without_clearing(tmp_path):
 def test_echo_corridor_clears_by_title(tmp_path):
     """正常路径：也可用遗言标题自选要打碎的那一页。"""
     engine, book = _engine(tmp_path, "echo_title")
+    _current_event(engine)
     store = DeathBookStore(book)
     store.append({**CAUSE_DRAFTS["attack"], "title": "第一页"})
     store.append({**CAUSE_DRAFTS["collapse"], "title": "第二页"})
@@ -304,7 +325,8 @@ def test_player_cancer_boundary_just_below_threshold(tmp_path):
 def test_ally_cancer_kills_ally_not_player(tmp_path):
     """正常路径：朋友癌变只命零该朋友，不触发轮回者死之传承。"""
     engine, _ = _engine(tmp_path, "cancer_ally")
-    friend = Entity(name="岩行者", entity_type="朋友", blood_limit=20, current_hp=20)
+    friend = Entity(name="岩行者", entity_type="朋友", blood_limit=20, current_hp=20,
+                    attack_count=1, attack_power=1)
     engine.state.friends.append(friend)
     friend.heal(engine.combat.cancer_threshold_of(friend))
     end = engine.execute_action("round_end", {})

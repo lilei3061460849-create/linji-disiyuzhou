@@ -4,25 +4,33 @@ F2 全量验证：罪孽都市（洗劫/逼债/抵扣/清算/赌命/消灾/假�
 - 边界：碎片不足/无遗物/无碎片/反噬致死/退化归零等
 - 错误：假碎片不足/碎片不足被拒绝
 """
+import os
+import sys
 import pytest
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from engine.api import GameEngine
 from engine.models import Entity, DaoWen, DaoWenInstance, Relic, StatusEffect
 from engine.combat import CombatEngine
 from engine.dice import DiceEngine
+from engine.daowen import DaoWenEngine
 from engine.models import GameState
+from tests.monster_phase_support import resolve_monster_phase
 
 
 def _setup(region="罪孽都市", mana=100, speed_limit=99):
     engine = GameEngine(rng_seed=42)
     engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 7, "mana_points": 8})
     engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
-    engine.execute_action("setup_choose_region", {"region": region})
+    engine.state.current_region = region
+    engine.state.phase = "in_combat"
     player = engine.state.player
     player.current_mana = mana
     player.speed_limit = speed_limit
     player.current_speed = speed_limit
     player.attack_power = 5  # 默认面板攻击力1，测试固定为5以便断言伤害
-    engine.state.phase = "battle_start"  # 战斗中标记（消灾局外×2 判定用）
+    engine.state.phase = "in_combat"
     return engine
 
 
@@ -38,6 +46,12 @@ def _add_monster(engine, name="靶怪", hp=100, atk=5, shards=0, **kw):
     m.shards = shards
     engine.state.enemies.append(m)
     return m
+
+
+def _apply_monster_daowen(engine, caster, name, x, target=None):
+    target = target or caster
+    calc = DaoWenEngine.resolve(name, x, target=target, caster=caster)
+    return engine.combat.apply_daowen_effect(name, calc, caster, target)
 
 
 # ==================== 洗劫 ====================
@@ -104,7 +118,7 @@ def test_monster_bizhai_on_player():
     engine = _setup()
     player = engine.state.player
     m = _add_monster(engine, shards=0)
-    engine.combat._apply_exclusive_for_monster("逼债", {"x": 2}, m)
+    _apply_monster_daowen(engine, m, "逼债", 2, player)
     assert getattr(player, "_bizhai", []), "玩家应被挂账"
     engine.combat.round_start()
     assert engine.state.shards == 18, "玩家回始应失2碎片"
@@ -115,10 +129,12 @@ def test_boundary_battle_end_clears_ledger():
     engine = _setup()
     player = engine.state.player
     m = _add_monster(engine, shards=0)
-    engine.combat._apply_exclusive_for_monster("逼债", {"x": 2}, m)
-    engine.combat._apply_exclusive_for_monster("清算", {"x": 1}, m)
+    _apply_monster_daowen(engine, m, "逼债", 2, player)
+    _apply_monster_daowen(engine, m, "清算", 1, player)
     engine.state.sealed_relics = {"避风铃": 3}
     assert player._bizhai and player._qingsuan
+    m.current_hp = 0
+    m.is_alive = False
     engine.execute_action("battle_end")
     assert player._bizhai == [], "战终应清逼债挂账"
     assert player._qingsuan == [], "战终应清算算挂账"
@@ -293,10 +309,19 @@ def test_monster_jiachao_and_duming_flow():
                                               cost_formula="X", effect_formula=""), x_value=2),
                  "赌命": DaoWenInstance(DaoWen(name="赌命", formula="", cost_type="假碎片",
                                               cost_formula="X", effect_formula=""), x_value=2)}
-    act = set()
-    assert engine.combat._monster_activate(m, act) == "假钞"
-    assert getattr(m, "fake_shards", 0) == 20
-    assert engine.combat._monster_activate(m, act) == "赌命"
+    engine.state.current_round = 2
+    for expected in ("假钞", "赌命"):
+        prepared = engine.execute_action("prepare_monster_phase", {})
+        actor = prepared["result"]["actors"][0]
+        resolved = engine.execute_action("resolve_monster_phase", {
+            "token": prepared["result"]["token"],
+            "choices": [{"actor_ref": actor["actor_ref"],
+                         "daowen": {"name": expected, "dodge": False},
+                         "attack_actions": [{"hits": [{"target_ref": "player:0", "dodge": False}]}]}],
+        })
+        assert resolved["success"]
+        if expected == "假钞":
+            assert getattr(m, "fake_shards", 0) == 20
     assert m.fake_shards == 20 - 2, "赌命2应扣2假碎片"
     assert m.has_status("赌命")
     engine.combat.round_start()  # 回始赌命结算（玩家+怪物都在场）
@@ -347,7 +372,7 @@ def test_normal_monster_baolie1_survives_same_round_end():
     engine = _setup(region="扭曲都市")
     player = engine.state.player
     m = _add_monster(engine, hp=100)
-    engine.combat._apply_exclusive_for_monster("爆裂", {"x": 1}, m)
+    _apply_monster_daowen(engine, m, "爆裂", 1)
     assert m.has_status("爆裂")
     engine.combat.round_end()
     assert m.has_status("爆裂"), "敌方爆裂1不应在同回终清掉"
@@ -361,11 +386,11 @@ def test_boundary_monster_baolie1_expires_at_next_enemy_round_end():
     """边界：怪挂爆裂1，下一次怪物回合开始（它们的敌回终）才到期。"""
     engine = _setup(region="扭曲都市")
     m = _add_monster(engine, hp=100)
-    engine.combat._apply_exclusive_for_monster("爆裂", {"x": 1}, m)
+    _apply_monster_daowen(engine, m, "爆裂", 1)
     engine.combat.round_end()
     assert m.has_status("爆裂")
     engine.state.current_round = 2  # 跳过白板，让怪物回合能跑
-    engine.combat.run_monster_phase(dodge_policy="never")
+    resolve_monster_phase(engine.combat, {m.name: None})
     assert not m.has_status("爆裂"), "下一敌回终应到期"
 
 

@@ -24,8 +24,13 @@ from engine.models import DaoWen, DaoWenInstance, Entity
 def _new_engine(db_suffix: str) -> GameEngine:
     engine = GameEngine(db_path=f"data/test_dragonheart_{db_suffix}.db", rng_seed=1)
     engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
-    engine.execute_action("setup_choose_daowen", {"daowen": "血债"})
-    engine.execute_action("setup_choose_region", {"region": "龙心谷"})
+    engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
+    engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
+    setup = engine.execute_action("setup_choose_region", {"region": "龙心谷"})
+    optional = {"折速法印", "鲜血契约", "三相残韵盘", "卖身契"}
+    choice = next((n for n in setup["result"]["relic_choices"] if n not in optional),
+                  setup["result"]["relic_choices"][0])
+    engine.execute_action("choose_discovered_relic", {"relic_name": choice})
     engine.state.player.dao_wen["血债"] = DaoWenInstance(
         DaoWen(name="血债", formula="", cost_type="流血", cost_formula="X", effect_formula=""))
     engine.state.energy = 3
@@ -33,7 +38,8 @@ def _new_engine(db_suffix: str) -> GameEngine:
 
 
 def _start_with_enemy(engine):
-    engine.execute_action("battle_start", {})
+    engine.state.energy = 0
+    engine.execute_action("battle_start", {"relic_choices": {}})
     engine.state.enemies.clear()
     engine.state.enemies.append(Entity(name="靶怪", entity_type="怪物", blood_limit=999, current_hp=999))
     engine.execute_action("round_start", {})
@@ -101,6 +107,7 @@ def test_lianxin_in_battle_does_not_cost_action_but_defers_energy():
     assert engine.state.player.actions_used_this_round == actions_before, "不应消耗出手"
     assert engine.state.pending_energy_penalty == 1
 
+    engine.state.phase = "pre_battle"  # 模拟该场战斗已合法结束
     engine.state.energy = 3
     engine.execute_action("pre_battle_action", {"sub_action": "领悟", "resonance_type": "曲解"})
     assert engine.state.energy == 3 - 1 - 1, "应额外多扣1点精力(基础1点+炼心追加1点)"

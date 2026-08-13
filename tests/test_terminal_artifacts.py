@@ -37,10 +37,19 @@ def _new_engine(region, name="老张", speed=8, mana=7, dbsuffix="a", sealed="da
     engine.execute_action("setup_attributes",
                            {"blood_points": blood, "speed_points": speed, "mana_points": mana, "name": name})
     engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
-    engine.execute_action("setup_choose_region", {"region": region})
+    engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
+    setup = engine.execute_action("setup_choose_region", {"region": region})
+    engine.execute_action("choose_discovered_relic", {"relic_name": setup["result"]["relic_choices"][0]})
     engine.state.player.dao_wen["杀伐"] = DaoWenInstance(
         DaoWen(name="杀伐", formula="", cost_type="消耗", cost_formula="X", effect_formula=""))
     return engine
+
+
+def _start_battle(engine):
+    engine.state.energy = 0
+    choices = {r.name: {"use": False} for r in engine.state.relics
+               if r.name in ("折速法印", "鲜血契约", "三相残韵盘", "卖身契")}
+    return engine.execute_action("battle_start", {"relic_choices": choices})
 
 
 # ========================================================================
@@ -76,9 +85,12 @@ def test_body_outside_heart_doubles_and_reverts():
     player = engine.state.player
     engine.state.artifacts_owned.append("体外心脏")
     base_bl, base_hp = player.blood_limit, player.current_hp
-    engine.execute_action("battle_start", {})
+    _start_battle(engine)
     assert player.blood_limit == base_bl * 2
     assert player.current_hp == base_hp * 2
+    for enemy in engine.state.enemies:
+        enemy.current_hp = 0
+        enemy.is_alive = False
     engine.execute_action("battle_end", {})
     assert player.blood_limit == base_bl
     assert player.current_hp == base_hp
@@ -91,7 +103,7 @@ def test_lamb_tears_halves_everyone_on_battle_start():
     player = engine.state.player
     player.current_hp = 100
     player.blood_limit = 100
-    engine.execute_action("battle_start", {})
+    _start_battle(engine)
     assert player.current_hp == 50
     assert engine.state.enemies, "本回合应有抽取到的怪物"
     for m in engine.state.enemies:
@@ -123,11 +135,13 @@ def test_crimson_fang_triggers_first_embrace_then_seals():
     engine = _new_engine("扭曲都市", name="种子候选", dbsuffix="fang_seed", sealed=sealed)
     engine.state.current_battle = 7
     engine.state.enemies.clear()
+    engine.state.phase = "in_combat"
     engine.execute_action("battle_end", {})  # 无候选，直接封存
 
     challenger = _new_engine("扭曲都市", name="挑战者", speed=13, dbsuffix="fang_challenger", sealed=sealed)
     challenger.state.current_battle = 7
     challenger.state.enemies.clear()
+    challenger.state.phase = "in_combat"
     challenger.execute_action("battle_end", {})
     assert challenger.state.in_final_duel
     challenger.execute_action("resolve_final_duel", {"outcome": "victory"})
@@ -159,7 +173,7 @@ def test_black_gold_card_debt_limit_rejects_before_mutating_state():
     engine = _new_engine("罪孽都市", dbsuffix="card_debt")
     engine.state.artifacts_owned.append("黑金名片")
     engine.state.shards = 10
-    engine.execute_action("battle_start", {})
+    _start_battle(engine)
     engine.state.enemies.clear()
     big = Entity(name="大怪", entity_type="怪物", blood_limit=200, current_hp=200)
     engine.state.enemies.append(big)
@@ -175,7 +189,7 @@ def test_black_gold_card_success_path():
     engine = _new_engine("罪孽都市", dbsuffix="card_ok")
     engine.state.artifacts_owned.append("黑金名片")
     engine.state.shards = 200
-    engine.execute_action("battle_start", {})
+    _start_battle(engine)
     engine.state.enemies.clear()
     big = Entity(name="大怪", entity_type="怪物", blood_limit=200, current_hp=200)
     engine.state.enemies.append(big)
@@ -190,6 +204,7 @@ def test_crime_vault_boundary_2_percent_cap():
     engine = _new_engine("罪孽都市", dbsuffix="vault")
     engine.state.artifacts_owned.append("罪业金库")
     engine.state.shards = 1000
+    engine.state.phase = "in_combat"
     player = engine.state.player
     r_ok = engine.execute_action("use_crime_vault", {"x": 20})  # 2%×1000=20
     assert r_ok["success"] is True
@@ -207,7 +222,7 @@ def test_godfather_revolver_escalates_and_refills_next_battle():
     engine.state.consumables.append(
         Consumable(name="教父左轮", effect="", current_uses=6, max_uses=6, kind="artifact_weapon"))
     player = engine.state.player
-    engine.execute_action("battle_start", {})
+    _start_battle(engine)
     engine.state.enemies.clear()
     foe = Entity(name="靶子", entity_type="怪物", blood_limit=100000, current_hp=100000)
     engine.state.enemies.append(foe)
@@ -222,8 +237,10 @@ def test_godfather_revolver_escalates_and_refills_next_battle():
     r_out = engine.execute_action("fire_godfather_revolver", {"target": "靶子"})
     assert r_out["success"] is False, "6发耗尽后应拒绝"
 
+    foe.current_hp = 0
+    foe.is_alive = False
     engine.execute_action("battle_end", {})
-    engine.execute_action("battle_start", {})
+    _start_battle(engine)
     gun = next(c for c in engine.state.consumables if c.name == "教父左轮")
     assert gun.current_uses == 6
     assert engine.state.godfather_revolver_uses == 0
@@ -248,6 +265,7 @@ def test_fuyuebei_toll_protects_ally_from_retreat_and_costs_player_20():
     engine.state.artifacts_owned.append("负岳碑")
     ally = Entity(name="队友甲", entity_type="朋友", blood_limit=30, current_hp=10, is_deployed=True)
     engine.state.friends.append(ally)
+    engine.state.phase = "in_combat"
     engine.execute_action("declare_fuyuebei_toll", {"name": "队友甲"})
     player.current_hp = 40
 

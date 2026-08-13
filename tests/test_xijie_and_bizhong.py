@@ -1,9 +1,15 @@
 """洗劫只在持有状态下夺碎片；必中只覆盖下X次选择[目标]。"""
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from engine.api import GameEngine
 from engine.combat import CombatEngine
 from engine.daowen import DaoWenEngine
 from engine.dice import DiceEngine
 from engine.models import DaoWen, DaoWenInstance, Entity, GameState, StatusEffect
+from tests.monster_phase_support import resolve_monster_phase
 
 
 def _engine(region="罪孽都市"):
@@ -12,7 +18,8 @@ def _engine(region="罪孽都市"):
         "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7,
     })
     engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
-    engine.execute_action("setup_choose_region", {"region": region})
+    engine.state.current_region = region
+    engine.state.phase = "in_combat"
     engine.state.player.current_mana = 40
     engine.state.player.attack_power = 5
     return engine
@@ -83,21 +90,21 @@ def test_bizhong_only_next_x_target_selections():
     engine.combat.reset_monster_activation()
     engine.state.current_round = 0
     engine.combat.round_start()  # -> 1 白板
-    engine.combat.run_monster_phase(dodge_policy="auto")
+    resolve_monster_phase(engine.combat, {m.name: None}, dodge=True)
     assert engine.combat.bizhong_remaining(m) == 0
     engine.combat.round_start()  # -> 2 激活必中2，打1击
-    r2 = engine.combat.run_monster_phase(dodge_policy="auto")
+    r2 = resolve_monster_phase(engine.combat, {m.name: "必中"}, dodge=True)
     hits2 = [d for d in r2 if d.get("attacker") == m.name]
     assert hits2 and hits2[0].get("dodge_success") is False
     assert engine.combat.bizhong_remaining(m) == 1
     engine.combat.round_start()  # -> 3 再打1击，用尽
-    r3 = engine.combat.run_monster_phase(dodge_policy="auto")
+    r3 = resolve_monster_phase(engine.combat, {m.name: None}, dodge=True)
     hits3 = [d for d in r3 if d.get("attacker") == m.name]
     assert hits3 and hits3[0].get("dodge_success") is False
     assert engine.combat.bizhong_remaining(m) == 0
     assert not m.has_status("必中")
     engine.combat.round_start()  # -> 4 可闪
-    r4 = engine.combat.run_monster_phase(dodge_policy="auto")
+    r4 = resolve_monster_phase(engine.combat, {m.name: None}, dodge=True)
     hits4 = [d for d in r4 if d.get("attacker") == m.name]
     assert hits4 and hits4[0].get("dodge_success") is True
 
@@ -112,9 +119,9 @@ def test_bizhong_two_hits_in_one_round_consume_two_charges():
     engine.combat.reset_monster_activation()
     engine.state.current_round = 0
     engine.combat.round_start()
-    engine.combat.run_monster_phase(dodge_policy="auto")
+    resolve_monster_phase(engine.combat, {m.name: None}, dodge=True)
     engine.combat.round_start()
-    results = engine.combat.run_monster_phase(dodge_policy="auto")
+    results = resolve_monster_phase(engine.combat, {m.name: "必中"}, dodge=True)
     hits = [d for d in results if d.get("attacker") == m.name]
     assert len(hits) == 2
     assert all(h.get("dodge_success") is False for h in hits)
@@ -131,7 +138,7 @@ def test_no_bizhong_auto_dodge_still_works():
     engine.combat.reset_monster_activation()
     engine.state.current_round = 0
     engine.combat.round_start()
-    results = engine.combat.run_monster_phase(dodge_policy="auto")
+    results = resolve_monster_phase(engine.combat, {m.name: None}, dodge=True)
     hits = [d for d in results if d.get("attacker") == m.name]
     assert hits and hits[0].get("dodge_success") is True
 

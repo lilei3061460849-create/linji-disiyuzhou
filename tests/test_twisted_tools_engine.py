@@ -4,7 +4,12 @@ F3 验证：扭曲工具库 8 件的引擎侧真实结算（此前仅 sim/run_si
 - 边界：耐久耗尽后不可用、飞行加成、无持续可清时等
 - 错误：缺少目标、非扭曲副本、非法消耗等应被拒绝
 """
+import os
+import sys
 import pytest
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from engine.api import GameEngine, TWISTED_TOOL_LIBRARY
 from engine.models import Entity, DaoWen, DaoWenInstance, StatusEffect, Consumable
 from engine.monsters import make_monster_entity
@@ -13,7 +18,8 @@ def _setup_engine(region="扭曲都市", seed=42):
     engine = GameEngine(rng_seed=seed)
     engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 7, "mana_points": 8})
     engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
-    engine.execute_action("setup_choose_region", {"region": region})
+    engine.state.current_region = region
+    engine.state.phase = "in_combat"
     # Ensure player exists
     assert engine.state.player is not None
     engine.state.player.current_hp = 60
@@ -133,7 +139,7 @@ def test_normal_medkit():
     p.add_status(StatusEffect(name="坏死", value=0, remaining_rounds=2, source="test"))
     p.add_status(StatusEffect(name="蒙蔽", value=1, remaining_rounds=-1, source="test"))
     _grant_tool(engine, "急救箱")
-    r = engine.execute_action("consume_item", {"name": "急救箱"})
+    r = engine.execute_action("consume_item", {"name": "急救箱", "remove_status": "坏死"})
     assert r["success"]
     assert r["result"]["healed"] == 25
     assert p.current_hp == 55
@@ -148,9 +154,10 @@ def test_normal_jammer():
     r = engine.execute_action("consume_item", {"name": "干扰仪"})
     assert r["success"]
     assert m.has_status("干扰")
-    # Should block activation
-    act = engine.combat._monster_activate(m, engine.combat._monster_activated[id(m)])
-    assert act is None
+    # 两阶段接口不得列出任何可发动道纹。
+    engine.state.current_round = 2
+    prepared = engine.execute_action("prepare_monster_phase", {})
+    assert prepared["result"]["actors"][0]["daowen_options"] == []
 
 def test_normal_hand_grenade():
     engine = _setup_engine()

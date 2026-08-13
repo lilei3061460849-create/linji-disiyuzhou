@@ -22,7 +22,13 @@ def _engine(suffix: str) -> GameEngine:
         "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7,
     })
     engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
-    engine.execute_action("setup_choose_region", {"region": "罪孽都市"})
+    engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
+    setup = engine.execute_action("setup_choose_region", {"region": "罪孽都市"})
+    optional = {"折速法印", "鲜血契约", "三相残韵盘", "卖身契"}
+    choice = next((n for n in setup["result"]["relic_choices"] if n not in optional),
+                  setup["result"]["relic_choices"][0])
+    engine.execute_action("choose_discovered_relic", {"relic_name": choice})
+    engine.state.energy = 0
     return engine
 
 
@@ -43,6 +49,31 @@ def _advance_to_active_round(engine: GameEngine) -> None:
     """跨过白板第1回合，使怪物可以发动道纹。不走回终，避免攻击力0触发雕塑。"""
     engine.execute_action("round_start", {})
     engine.execute_action("round_start", {})
+
+
+def _resolve_prepared_monsters(engine: GameEngine, daowen_name: str | None = None):
+    prepared = engine.execute_action("prepare_monster_phase", {})
+    choices = []
+    for actor in prepared["result"]["actors"]:
+        dao = None
+        if daowen_name is not None:
+            option = next(o for o in actor["daowen_options"] if o["name"] == daowen_name)
+            dao = {"name": daowen_name, "dodge": False}
+            if option["requires_target"]:
+                dao["target_ref"] = "player:0"
+            if option["dodge_submission"] == "per_target":
+                dao["dodge_targets"] = [
+                    {"target_ref": target["ref"], "dodge": False}
+                    for target in option["dodge_target_options"]
+                ]
+        attacks = [{"hits": [{"target_ref": "player:0", "dodge": False}
+                              for _ in range(actor["base_hits_per_attack"])]}
+                   for _ in range(actor["base_attack_actions"])]
+        choices.append({"actor_ref": actor["actor_ref"], "daowen": dao,
+                        "attack_actions": attacks})
+    return engine.execute_action("resolve_monster_phase", {
+        "token": prepared["result"]["token"], "choices": choices,
+    })
 
 
 # ========================================================================
@@ -72,11 +103,21 @@ def test_resonance_on_enemy_grants_dest_and_rewrites_next_activation():
 
     engine.execute_action("round_end", {})
     engine.execute_action("round_start", {})
-    phase = engine.execute_action("monster_phase", {"dodge_policy": "never"})
+    prepared = engine.execute_action("prepare_monster_phase", {})
+    actor = prepared["result"]["actors"][0]
+    phase = engine.execute_action("resolve_monster_phase", {
+        "token": prepared["result"]["token"],
+        "choices": [{
+            "actor_ref": actor["actor_ref"],
+            "daowen": {"name": "狂暴", "target_ref": "enemy:0", "dodge": False},
+            "attack_actions": [{"hits": [{"target_ref": "player:0", "dodge": False}]}],
+        }],
+    })
     details = phase["result"]["details"]
     rewritten = [d for d in details if d.get("resonance_rewrite")]
     assert rewritten, f"应兑现残韵改写: {details}"
-    assert rewritten[0]["daowen_activated"] == "改写:狂暴→自残"
+    assert rewritten[0]["daowen_activated"] == "狂暴"
+    assert rewritten[0]["resolves_as"] == "自残"
     assert monster.current_hp == 70, f"自残2次×攻击力5，HP应80→70，实{monster.current_hp}"
     assert "狂暴" in monster.dao_wen
 
@@ -137,8 +178,10 @@ def test_zhesu_and_blood_pact_overflow_survives_first_round_start():
     p = engine.state.player
     assert p.mana_limit == 14 and p.speed_limit == 8
     engine.state.relics.append(Relic(name="折速法印", effect="[战始]可疲惫X获得6X法力"))
-    engine.execute_action("battle_start", {})
-    assert p.current_mana == 24, f"战始清零后折速速限8→疲惫4，+24法力，应24，实{p.current_mana}"
+    engine.execute_action("battle_start", {"relic_choices": {
+        "折速法印": {"use": True, "x": 4},
+    }})
+    assert p.current_mana == 24, f"战始清零后显式折速4，+24法力，应24，实{p.current_mana}"
     assert p.current_speed == 4
     engine.execute_action("round_start", {})
     assert p.current_mana == 38, f"回始获得法限14：24+14=38，实{p.current_mana}"
@@ -147,8 +190,10 @@ def test_zhesu_and_blood_pact_overflow_survives_first_round_start():
     p2 = engine2.state.player
     engine2.state.relics.append(Relic(name="鲜血契约", effect="[战始]可流血X使首回合法力+X"))
     hp_before = p2.current_hp
-    engine2.execute_action("battle_start", {})
-    assert p2.current_mana == 12, f"战始清零后鲜血契约X=12，应12，实{p2.current_mana}"
+    engine2.execute_action("battle_start", {"relic_choices": {
+        "鲜血契约": {"use": True, "x": 12},
+    }})
+    assert p2.current_mana == 12, f"战始清零后显式鲜血契约X=12，应12，实{p2.current_mana}"
     assert p2.current_hp == hp_before - 12
     engine2.execute_action("round_start", {})
     assert p2.current_mana == 26, f"回始+法限：12+14=26，实{p2.current_mana}"
@@ -199,7 +244,9 @@ def test_shouyedeng_stacks_on_zhesu_overflow():
     p = engine.state.player
     engine.state.relics.append(Relic(name="折速法印", effect="[战始]可疲惫X获得6X法力"))
     engine.state.relics.append(Relic(name="守夜灯", effect="[敌回始]获得等同于[法限]50%的法力"))
-    engine.execute_action("battle_start", {})
+    engine.execute_action("battle_start", {"relic_choices": {
+        "折速法印": {"use": True, "x": 4},
+    }})
     assert p.current_mana == 24
     engine.execute_action("round_start", {})
     assert p.current_mana == 45, f"24+14+7应45，实{p.current_mana}"
@@ -235,11 +282,11 @@ def test_borrowed_shaifa_fires_in_monster_phase():
 
     _advance_to_active_round(engine)
     hp_before = engine.state.player.current_hp
-    phase = engine.execute_action("monster_phase", {"dodge_policy": "never"})
+    phase = _resolve_prepared_monsters(engine, "杀伐")
     details = phase["result"]["details"]
-    borrowed = [d for d in details if d.get("borrowed")]
+    borrowed = [d for d in details if d.get("resolves_as") == "杀伐"]
     assert borrowed, f"应发动借用杀伐: {details}"
-    assert borrowed[0]["daowen_activated"] == "借用:杀伐"
+    assert borrowed[0]["daowen_activated"] == "杀伐"
     assert engine.state.player.current_hp == hp_before - 4, (
         f"杀伐2→2X=4，HP应{hp_before}→{hp_before - 4}，实{engine.state.player.current_hp}")
 
@@ -256,7 +303,7 @@ def test_borrowed_shaifa_x1_deals_two():
     })["success"]
     _advance_to_active_round(engine)
     hp_before = engine.state.player.current_hp
-    engine.execute_action("monster_phase", {"dodge_policy": "never"})
+    _resolve_prepared_monsters(engine, "杀伐")
     assert engine.state.player.current_hp == hp_before - 2
 
 
@@ -269,7 +316,7 @@ def test_unevolved_monster_does_not_cast_shaifa():
     _put_enemy(engine, monster)
     _advance_to_active_round(engine)
     hp_before = engine.state.player.current_hp
-    phase = engine.execute_action("monster_phase", {"dodge_policy": "never"})
+    phase = _resolve_prepared_monsters(engine)
     details = phase["result"]["details"]
     assert not any("杀伐" in str(d.get("daowen_activated", "")) for d in details)
     assert engine.state.player.current_hp == hp_before

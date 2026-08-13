@@ -36,7 +36,13 @@ def _new_engine(db_suffix: str, region: str) -> GameEngine:
     engine = GameEngine(db_path=f"data/test_draw_{db_suffix}.db", rng_seed=1)
     engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
     engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
-    engine.execute_action("setup_choose_region", {"region": region})
+    engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
+    setup = engine.execute_action("setup_choose_region", {"region": region})
+    optional = {"折速法印", "鲜血契约", "三相残韵盘", "卖身契"}
+    choice = next((n for n in setup["result"]["relic_choices"] if n not in optional),
+                  setup["result"]["relic_choices"][0])
+    engine.execute_action("choose_discovered_relic", {"relic_name": choice})
+    engine.state.energy = 0
     return engine
 
 
@@ -76,9 +82,12 @@ def test_repetition_allowed_across_many_draws():
     engine = _new_engine("repeat_ok", "龙心谷")
     all_names = []
     for _ in range(7):
+        engine.state.energy = 0
         r = engine.execute_action("battle_start", {})
         all_names.extend(r["enemies"])
-        engine.state.energy = 3
+        for enemy in engine.state.enemies:
+            enemy.current_hp = 0
+            enemy.is_alive = False
         engine.execute_action("battle_end", {})
     assert len(all_names) == 13  # 1+1+1+1+2+3+4 = 13
     assert len(set(all_names)) < len(all_names), "13次抽取(池仅12种)必然会出现至少一次重复(抽屉原理)"
@@ -88,6 +97,7 @@ def test_forced_monster_from_event_appears_extra_next_battle():
     """正常路径：追求者·拿走口粮登记的怪物，必须在下一场[战始]时真正额外出现"""
     engine = _new_engine("forced_monster", "龙心谷")
     engine.state.shards = 0
+    engine.event_pool.current = "追求者"
     engine.execute_action("resolve_event", {"event": "追求者", "option_id": 2})
     assert len(engine.state.forced_monsters_next_battle) == 1
 
@@ -118,6 +128,8 @@ def test_unknown_region_draws_nothing_but_does_not_crash():
     engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
     engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
     engine.state.current_region = "尚未实现的副本"
+    engine.state.phase = "pre_battle"
+    engine.state.energy = 0
     r = engine.execute_action("battle_start", {})
     assert r["success"] is True
     assert r["draw_count"] == 0

@@ -23,10 +23,16 @@ def _engine(starter="杀伐", learn=(), region="龙心谷", seed=1, tmp="/tmp/bv
                      {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
     e.execute_action("setup_choose_daowen", {"daowen": starter})
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
-    e.execute_action("setup_choose_region", {"region": region})
+    setup = e.execute_action("setup_choose_region", {"region": region})
+    e.execute_action("choose_discovered_relic", {"relic_name": setup["result"]["relic_choices"][0]})
     for dw in learn:
         e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "daowen", "name": dw})
-    e.execute_action("battle_start")
+    e.state.energy = 0
+    choices = {}
+    relic = e.state.relics[0].name
+    if relic in ("折速法印", "鲜血契约", "三相残韵盘", "卖身契"):
+        choices[relic] = {"use": False}
+    e.execute_action("battle_start", {"relic_choices": choices})
     e.execute_action("round_start", {})
     return e
 
@@ -70,6 +76,8 @@ def test_ai_uses_region_specific_daowen(dw):
     for _m in e.state.enemies:
         _m.blood_limit = max(_m.blood_limit, 300)
         _m.current_hp = _m.blood_limit
+        if dw == "僵化":
+            _m.attack_power = max(_m.attack_power, 20)  # 满足控场策略的威胁阈值
     ai = TacticalAI(e)
     for _ in range(3):
         ai.new_round()
@@ -187,16 +195,8 @@ def test_cost_damage_still_ignores_shield():
 
 def test_pierce_status_drives_attack_resolution():
     """正常路径：持有【贯穿】状态的攻击者，其攻击应无视目标格挡"""
-    from engine.api import GameEngine
     from engine.models import StatusEffect
-    e = GameEngine(db_path="/tmp/pierce.db", rng_seed=1)
-    e.execute_action("setup_attributes",
-                     {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
-    e.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
-    e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
-    e.execute_action("setup_choose_region", {"region": "龙心谷"})
-    e.execute_action("battle_start")
-    e.execute_action("round_start", {})
+    e = _engine(starter="杀伐", learn=[], region="龙心谷", tmp="/tmp/pierce.db")
     p, m = e.state.player, e.state.enemies[0]
     p.shield = 60
     m.add_status(StatusEffect(name="贯穿", value=1, remaining_rounds=-1, source="test"))

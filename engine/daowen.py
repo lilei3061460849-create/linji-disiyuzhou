@@ -396,7 +396,7 @@ class DaoWenEngine:
         }
     
     @staticmethod
-    def calculate_zishi(x: int, target: Entity) -> dict:
+    def calculate_zishi(x: int) -> dict:
         """自食X：消耗X。将自身X点攻击力转化为等量回复"""
         return {
             "dao_wen": "自食",
@@ -528,18 +528,15 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_shuaibai(x: int, target: Entity) -> dict:
-        """衰败X：消耗15X。对[目标]造成10X%当前生命的伤害，持续∞"""
+        """衰败X：消耗15X。使[目标][回始]失去10X%当前生命，持续∞；发动时不立即触发。"""
         cost = 15 * x
-        current_hp = target.current_hp
-        damage = DaoWenEngine.ceil(current_hp * 10 * x / 100)
         return {
             "dao_wen": "衰败",
             "x": x,
             "cost_type": "消耗",
             "cost": cost,
-            "target_damage": damage,
             "duration": -1,
-            "summary": f"消耗{cost}法力，对{target.name}造成{damage}点伤害（当前生命{current_hp}的{10*x}%），永久"
+            "summary": f"消耗{cost}法力，使{target.name}[回始]失去{10*x}%当前生命，持续∞"
         }
     
     @staticmethod
@@ -584,7 +581,7 @@ class DaoWenEngine:
     # ---- 扭曲都市专属道纹 ----
     
     @staticmethod
-    def calculate_bianxing(x: int, target: Entity) -> dict:
+    def calculate_bianxing(x: int) -> dict:
         """变形X：消耗X。使自身攻击力与攻击次数互换，持续X"""
         return {
             "dao_wen": "变形",
@@ -706,7 +703,7 @@ class DaoWenEngine:
         }
 
     @staticmethod
-    def calculate_xijie(x: int, target: Entity) -> dict:
+    def calculate_xijie(x: int) -> dict:
         """洗劫X：消耗3X。造成伤害时夺取目标等量碎片，持续X"""
         return {
             "dao_wen": "洗劫",
@@ -715,7 +712,7 @@ class DaoWenEngine:
             "cost": 3 * x,
             "duration": x,
             "effect": "造成伤害时夺取等量碎片",
-            "summary": f"消耗{3*x}法力，造成伤害时夺取{target.name}等量碎片，持续{x}回合"
+            "summary": f"消耗{3*x}法力，造成伤害时夺取受伤目标等量碎片，持续{x}回合"
         }
     
     # ---- 罪孽都市专属道纹 ----
