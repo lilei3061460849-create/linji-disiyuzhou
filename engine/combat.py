@@ -725,15 +725,19 @@ class CombatEngine:
                 entity.clear_shield()
             
         # 法力清空（敌回终）
-        # 规则：[法限]用于发动道纹与法术，法力[敌回终]清空
-        if self.state.player and self.state.player.is_alive:
-            if self.state.player.current_mana > 0:
+        # 规则：[法限]用于发动道纹与法术，法力[敌回终]清空。
+        # 死斗双方都是轮回者，必须与回始同一套循环：每个存活轮回者各自清空。
+        # 朋友/员工/怪物没有法限，不走这条。
+        for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
+            if entity.entity_type != "轮回者" or not entity.is_alive:
+                continue
+            if entity.current_mana > 0:
                 effects.append({
                     "type": "mana_clear",
-                    "entity": self.state.player.name,
-                    "cleared": self.state.player.current_mana
+                    "entity": entity.name,
+                    "cleared": entity.current_mana
                 })
-                self.state.player.current_mana = 0
+                entity.current_mana = 0
         
         # 持续效果递减
         for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():

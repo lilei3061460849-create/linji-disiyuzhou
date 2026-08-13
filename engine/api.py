@@ -1242,10 +1242,19 @@ class GameEngine:
                     "error": f"死斗须严格交替出手：当前轮到{self.state.duel_turn}，{actor.name}({actor_side})不能行动"}
         return None
 
+    def _duel_side_can_act(self, side: str) -> bool:
+        """该侧是否还有未用完的出手预算（存活且未撤退；get_all_* 已排除死者/撤退者）。"""
+        entities = (self.state.get_all_player_side() if side == "player_side"
+                    else self.state.get_all_enemy_side())
+        return any(e.actions_used_this_round < e.action_count for e in entities)
+
     def _advance_duel_turn(self):
-        """死斗中一次出手成功结算后，轮次交给对方"""
-        if self.state.in_final_duel:
-            self.state.duel_turn = "opponent_side" if self.state.duel_turn == "player_side" else "player_side"
+        """死斗中一次出手成功结算后：对方还有余手则换边；否则本侧连动，余手不作废。"""
+        if not self.state.in_final_duel:
+            return
+        other = "opponent_side" if self.state.duel_turn == "player_side" else "player_side"
+        if self._duel_side_can_act(other):
+            self.state.duel_turn = other
 
     def _hostile_to(self, actor: Entity, target: Entity) -> bool:
         if target is None or target is actor:
