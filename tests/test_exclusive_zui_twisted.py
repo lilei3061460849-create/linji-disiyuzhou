@@ -342,6 +342,46 @@ def test_boundary_baolie_attack_path():
     assert player.current_hp == hp_before - 5, "攻击者先被反噬等量生命"
 
 
+def test_normal_monster_baolie1_survives_same_round_end():
+    """正常：怪挂爆裂1，同回终不掉，下一手玩家打仍反噬。"""
+    engine = _setup(region="扭曲都市")
+    player = engine.state.player
+    m = _add_monster(engine, hp=100)
+    engine.combat._apply_exclusive_for_monster("爆裂", {"x": 1}, m)
+    assert m.has_status("爆裂")
+    engine.combat.round_end()
+    assert m.has_status("爆裂"), "敌方爆裂1不应在同回终清掉"
+    hp_before = player.current_hp
+    res = engine.combat.resolve_attack(player, m, is_must_hit=True, dodge=False)
+    assert res["damage_dealt"] == 5
+    assert player.current_hp == hp_before - 5
+
+
+def test_boundary_monster_baolie1_expires_at_next_enemy_round_end():
+    """边界：怪挂爆裂1，下一次怪物回合开始（它们的敌回终）才到期。"""
+    engine = _setup(region="扭曲都市")
+    m = _add_monster(engine, hp=100)
+    engine.combat._apply_exclusive_for_monster("爆裂", {"x": 1}, m)
+    engine.combat.round_end()
+    assert m.has_status("爆裂")
+    engine.state.current_round = 2  # 跳过白板，让怪物回合能跑
+    engine.combat.run_monster_phase(dodge_policy="never")
+    assert not m.has_status("爆裂"), "下一敌回终应到期"
+
+
+def test_boundary_player_baolie1_expires_after_monster_phase():
+    """边界：自己挂爆裂1，撑过本轮怪物出手，回终到期。"""
+    engine = _setup(region="扭曲都市")
+    _grant(engine, ["爆裂"])
+    player = engine.state.player
+    _add_monster(engine, hp=100)
+    r = engine.execute_action("use_daowen", {"daowen_name": "爆裂", "x": 1})
+    assert r["success"], r
+    assert player.has_status("爆裂")
+    engine.combat.round_end()
+    assert not player.has_status("爆裂"), "己方爆裂1在回终（敌回终）到期"
+
+
 # ==================== 退化（扭曲都市） ====================
 
 def test_normal_tuihua_reduces_daowen_x():

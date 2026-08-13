@@ -435,11 +435,14 @@ class Entity:
     def get_status_value(self, name: str) -> int:
         return sum(s.value for s in self.status_effects if s.name == name and not s.is_expired)
     
-    def tick_status_effects(self) -> list[str]:
-        """回合递减，返回已过期的效果名"""
+    def tick_status_effects(self, skip_names: tuple = ()) -> list[str]:
+        """回合递减，返回已过期的效果名。skip_names 本拍不减（爆裂改走敌回终）。"""
         expired = []
         remaining = []
         for s in self.status_effects:
+            if s.name in skip_names:
+                remaining.append(s)
+                continue
             if not s.tick():
                 expired.append(s.name)
             else:

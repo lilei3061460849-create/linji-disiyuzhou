@@ -80,6 +80,16 @@ class CombatEngine:
                 return True
         return False
 
+    def _tick_baolie(self, entities) -> list:
+        """只递减爆裂。持续X按持有者的[敌回终]计数。"""
+        logs = []
+        for entity in entities:
+            keep = tuple(s.name for s in entity.status_effects if s.name != "爆裂")
+            expired = entity.tick_status_effects(skip_names=keep)
+            if expired:
+                logs.append({"type": "baolie_expired", "entity": entity.name})
+        return logs
+
     def _incoming_adjust(self, target: Entity, amount: int, damage_type: str = "普通") -> int:
         if amount <= 0 or damage_type == "代价":
             return amount
@@ -830,9 +840,11 @@ class CombatEngine:
                 })
                 entity.current_mana = 0
         
-        # 持续效果递减
+        # 持续效果递减。爆裂按[敌回终]：己方身上在此拍；敌方身上改在怪物回合开始时减。
+        player_side_ids = {id(e) for e in self.state.get_all_player_side()}
         for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
-            expired = entity.tick_status_effects()
+            skip = ("爆裂",) if id(entity) not in player_side_ids else ()
+            expired = entity.tick_status_effects(skip_names=skip)
             if expired:
                 effects.append({
                     "type": "status_expired",
@@ -2215,6 +2227,8 @@ class CombatEngine:
         results = []
         if not player or not player.is_alive:
             return results
+        # 敌方持有的爆裂：玩家回合刚结束 = 它们的[敌回终]
+        results.extend(self._tick_baolie(self.state.get_all_enemy_side()))
         whiteboard = self.state.current_round <= 1
         for m in self.state.get_all_enemy_side():
             if not self.can_act(m):
