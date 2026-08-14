@@ -407,7 +407,8 @@ def test_sculpture_and_proliferation():
     paths2 = combat2.settle_victory_paths()
     assert any(p["type"] == "proliferation" for p in paths2), "应触发癌变"
     assert m2.is_proliferated and not m2.is_alive
-    print("  ✓ 恢复量超阈值→触发癌变，吸收进死者之书（休整恢复量+8）")
+    assert state2.rest_heal_bonus == 8
+    print("  ✓ 恢复量超阈值→触发癌变，吸收进死者之书（休整恢复量永久+8）")
     print("  ✓ 雕塑/癌变路径测试通过")
 
 

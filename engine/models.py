@@ -623,6 +623,8 @@ class GameState:
     # 系统记录（如癌变强化）与玩家遗言分开保存，避免结构化遗言退化为日志字符串。
     # 遗言的事实源是 死者之书.md；death_book_legacies 只是启动/审核后从文件装回的缓存。
     death_book_wisdom: list[str] = field(default_factory=list)
+    # 癌变怪物被吸收后对【休整】的永久恢复量加成；每只+8，跨战斗/轮回保留。
+    rest_heal_bonus: int = 0
     death_book_legacies: list[dict[str, str]] = field(default_factory=list)
     death_book_capacity: int = 20  # 遗言每段字数上限
     death_inheritance_queued: bool = False
@@ -988,6 +990,7 @@ class GameState:
             "dragon_hearts": [d.to_dict() for d in self.dragon_hearts],
             "artifacts": self.artifacts,
             "death_book_wisdom": self.death_book_wisdom,
+            "rest_heal_bonus": self.rest_heal_bonus,
             "death_book_legacies": self.death_book_legacies,
             "sealed_candidate": self.sealed_candidate,
         }

@@ -280,7 +280,7 @@ def test_scoped_ledger_survives_versioned_save_round_trip(tmp_path):
     engine = GameEngine(db_path=str(tmp_path / "rulings.db"))
     engine.state = state
     engine.combat.state = state
-    assert engine.save_game("scope")["version"] == 3
+    assert engine.save_game("scope")["version"] == 4
     player.attack_power = 99
 
     loaded = engine.load_game("scope")

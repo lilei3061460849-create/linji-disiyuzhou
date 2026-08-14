@@ -72,6 +72,15 @@ class GameEngine:
         self.death_book_path = death_book_path
         self.death_book = DeathBookStore(death_book_path)
         self.state.death_book_legacies = self.death_book.load()
+        # 封存槽是跨轮回持久文件；若进程重启，从中恢复《死者之书》的永久癌变强化。
+        if os.path.exists(sealed_candidate_path):
+            try:
+                with open(sealed_candidate_path, encoding="utf-8") as handle:
+                    sealed = json.load(handle)
+                self.state.rest_heal_bonus = max(0, int(sealed.get("rest_heal_bonus", 0)))
+                self.state.death_book_wisdom = list(sealed.get("death_book_wisdom") or [])
+            except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                pass  # 正式读取/报错仍由最终冠冕流程负责；初始化不得因坏候选阻塞。
         os.makedirs(save_dir, exist_ok=True)
 
         # 规则校验器（延迟导入避免循环）
@@ -1080,7 +1089,9 @@ class GameEngine:
         if tier not in heal_map:
             self.state.energy += 1
             return {"success": False, "error": "休整档位无效"}
-        heal, cost = heal_map[tier]
+        base_heal, cost = heal_map[tier]
+        bonus = self.state.rest_heal_bonus
+        heal = base_heal + bonus
         if self.state.shards < cost:
             self.state.energy += 1
             return {"success": False, "error": f"碎片不足，需要{cost}，当前{self.state.shards}"}
@@ -1091,13 +1102,19 @@ class GameEngine:
         for e in self.state.friends + self.state.employees:
             if e.name == tname:
                 target = e; break
-        h = self.state.apply_heal(target, heal) if target else {"actual_heal":0}
-        cancer = self.combat.check_cancer(target) if target else None
-        payload = {"heal_amount": heal, "shard_cost": cost, "target": target.name if target else None,
+        if target:
+            total_healed_before = target.total_healed
+            healed_this_battle_before = target.healed_this_battle
+            h = self.state.apply_heal(target, heal)
+            # 【休整】是局外行动，不计入“本场战斗内”的癌变/战终回复追踪。
+            target.total_healed = total_healed_before
+            target.healed_this_battle = healed_this_battle_before
+        else:
+            h = {"actual_heal": 0}
+        payload = {"base_heal_amount": base_heal, "rest_heal_bonus": bonus,
+                   "heal_amount": heal, "shard_cost": cost, "target": target.name if target else None,
                    "actual_heal": h.get("actual_heal", 0), "hp_after": target.current_hp if target else 0,
                    "shards_remaining": self.state.shards}
-        if cancer:
-            payload["cancer"] = cancer
         return {"success": True, "action": "休整", "result": payload}
 
     def _pre_battle_xiuxing(self, params: dict) -> dict:
@@ -3227,6 +3244,7 @@ class GameEngine:
             "resonance": dict(s.resonance),
             "shards": s.shards,
             "death_book_wisdom": list(s.death_book_wisdom),
+            "rest_heal_bonus": s.rest_heal_bonus,
             "death_book_legacies": [dict(entry) for entry in s.death_book_legacies],
             "attribute_points": s.attribute_points,
             "current_region": s.current_region,
@@ -3275,9 +3293,7 @@ class GameEngine:
             os.makedirs(os.path.dirname(self.sealed_candidate_path) or ".", exist_ok=True)
             with open(self.sealed_candidate_path, "w", encoding="utf-8") as f:
                 json.dump(snapshot, f, ensure_ascii=False, indent=2)
-            self.state = GameState()
-            self.combat.state = self.state
-            self.state.death_book_legacies = self.death_book.load()
+            self._replace_state_preserving_death_book_progress()
             return {
                 "outcome": "sealed",
                 "sealed_name": sealed_name,
@@ -3454,8 +3470,7 @@ class GameEngine:
         os.makedirs(os.path.dirname(self.sealed_candidate_path) or ".", exist_ok=True)
         with open(self.sealed_candidate_path, "w", encoding="utf-8") as f:
             json.dump(snapshot, f, ensure_ascii=False, indent=2)
-        self.state = GameState()
-        self.combat.state = self.state
+        self._replace_state_preserving_death_book_progress()
         return {"sealed_name": sealed_name,
                 "instruction": f"{sealed_name}获胜并连同队伍完整封存，成为下一位挑战者的候选人；"
                                "请调用 setup_attributes 开始新的轮回者"}
@@ -4024,11 +4039,17 @@ class GameEngine:
     def _reload_death_book(self):
         self.state.death_book_legacies = self.death_book.load()
 
-    def _reset_after_death(self):
-        """命零审核结束后结束本轮回，从文件装回已落盘遗言。"""
-        self.state = GameState()
+    def _replace_state_preserving_death_book_progress(self) -> None:
+        """开始新轮回者时保留《死者之书》的永久癌变强化。"""
+        bonus = self.state.rest_heal_bonus
+        wisdom = list(self.state.death_book_wisdom)
+        self.state = GameState(rest_heal_bonus=bonus, death_book_wisdom=wisdom)
         self.combat.state = self.state
         self._reload_death_book()
+
+    def _reset_after_death(self):
+        """命零审核结束后结束本轮回，从文件装回已落盘遗言并保留永久强化。"""
+        self._replace_state_preserving_death_book_progress()
 
     def _infer_death_cause(self, action_type: str = "") -> str:
         if self.state.last_death_cause:
@@ -4198,7 +4219,7 @@ class GameEngine:
 
     # ==================== 存档系统 ====================
 
-    SAVE_FORMAT_VERSION = 3
+    SAVE_FORMAT_VERSION = 4
 
     def save_game(self, slot: str = "auto") -> dict:
         """保存可完整往返的版本化快照；只允许load_game读取本引擎生成的本地文件。"""
