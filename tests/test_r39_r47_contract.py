@@ -294,7 +294,7 @@ def test_r43_all_implemented_event_options_have_a_runtime_route(tmp_path):
             params = {"event": event_name, "option_id": option["id"], "x": 1, "wager": 1,
                       "target_ref": "friend:0", "friend_ref": "friend:0", "friend": "F",
                       "relic_name": "测试遗物", "spell_names": list(engine.SPELL_REGISTRY)[:2],
-                      "daowen_names": ["杀伐"]}
+                      "resonance_type": "转换", "daowen_names": ["杀伐"]}
             if "自选一件遗物" in text:
                 engine._init_relic_pool(); params["relic_name"] = engine.state.relics_pool[0].name
             if "48点恢复量" in text:

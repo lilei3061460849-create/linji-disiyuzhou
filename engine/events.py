@@ -279,6 +279,14 @@ def resolve_option_effect(text: str, engine, event_name: str = "", params=None) 
         entity.dao_wen[name] = DaoWenInstance(
             DaoWen(name=name, formula="", cost_type="", cost_formula="", effect_formula=""), x_value=x)
 
+    if event_name == "遗忘书屋" and text.startswith("阅读《自我剖析》"):
+        resonance_type = params.get("resonance_type")
+        if resonance_type not in ("转换", "反转", "曲解"):
+            return {"applied": [], "instructions": [], "error": "必须用resonance_type显式选择一种残韵"}
+        player.mana_limit = max(0, player.mana_limit - 1)
+        player.current_mana = min(player.current_mana, player.mana_limit)
+        engine.state.resonance[resonance_type] = engine.state.resonance.get(resonance_type, 0) + 1
+        return {"applied": ["枯竭1", f"获得{resonance_type}残韵"], "instructions": []}
     if event_name == "手术" and text.startswith("强制移植"):
         refs = {f"friend:{i}": entity for i, entity in enumerate(engine.state.friends) if entity.is_alive}
         refs.update({f"employee:{i}": entity for i, entity in enumerate(engine.state.employees) if entity.is_alive})

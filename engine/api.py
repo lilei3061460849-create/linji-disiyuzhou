@@ -3020,6 +3020,7 @@ class GameEngine:
 
         # 事件登记的下一场修正全部在战始一次性消费。
         modifiers = self.state.event_modifiers
+        reveal_full_information = bool(modifiers.pop("next_battle_full_information", False))
         if modifiers.pop("bounty_extra_monster", False) and pool:
             roll = self.dice.auto_roll(
                 f"bounty_monster_{self.state.current_battle}", pool,
@@ -3072,6 +3073,8 @@ class GameEngine:
             "region": region,
             "draw_count": draw_count,
             "enemies": drawn_names,
+            "full_information": ([enemy.to_dict() for enemy in self.state.enemies]
+                                 if reveal_full_information else None),
             "relic_logs": relic_logs,
             "artifact_logs": artifact_logs,
             "instruction": "怪物已抽取完毕；请补充选择本场战斗背景(纯叙事，不影响数值)并结算其余[战始]效果",
