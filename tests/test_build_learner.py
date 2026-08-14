@@ -218,7 +218,6 @@ def test_choose_pre_battle_respects_region_exclusive():
     e = GameEngine(db_path="/tmp/tele.db", rng_seed=1)
     e.execute_action("setup_attributes",
                      {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
-    e.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     e.execute_action("setup_choose_region", {"region": "龙心谷"})
     picked = {bl.choose_pre_battle(e, [], 1, _r.Random(i), bl.DEFAULT_POLICY)[0]
@@ -233,7 +232,6 @@ def test_region_exclusive_enforced_by_engine():
     e = GameEngine(db_path="/tmp/tele2.db", rng_seed=1)
     e.execute_action("setup_attributes",
                      {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
-    e.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     _finish_region_setup(e, "龙心谷")
     r = e.execute_action("pre_battle_action", {"sub_action": "维修", "tier": 1})
@@ -295,7 +293,6 @@ def test_cooldown_cost_is_applied():
     e = GameEngine(db_path="/tmp/cdtest.db", rng_seed=1)
     e.execute_action("setup_attributes",
                      {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
-    e.execute_action("setup_choose_daowen", {"daowen": "锐利"})
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     relic = _finish_region_setup(e, "龙心谷")
     e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "daowen", "name": "束缚"})
@@ -313,7 +310,6 @@ def test_cooldown_blocks_reuse_in_same_battle():
     e = GameEngine(db_path="/tmp/cdtest2.db", rng_seed=1)
     e.execute_action("setup_attributes",
                      {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
-    e.execute_action("setup_choose_daowen", {"daowen": "锐利"})
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     relic = _finish_region_setup(e, "龙心谷")
     e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "daowen", "name": "束缚"})
@@ -333,7 +329,6 @@ def test_cooldown_decrements_at_battle_end():
     e = GameEngine(db_path="/tmp/cdtest3.db", rng_seed=1)
     e.execute_action("setup_attributes",
                      {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
-    e.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     _finish_region_setup(e, "龙心谷")
     inst = DaoWenInstance(DaoWen(name="束缚", formula="", cost_type="代价",

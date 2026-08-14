@@ -17,7 +17,6 @@ from engine.monsters import make_monster_entity
 def _setup_engine(region="扭曲都市", seed=42):
     engine = GameEngine(rng_seed=seed)
     engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 7, "mana_points": 8})
-    engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
     engine.state.current_region = region
     engine.state.phase = "in_combat"
     # Ensure player exists

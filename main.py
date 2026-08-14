@@ -188,10 +188,9 @@ def api_demo():
     print(f"  → 血限:{10*6}=60, 速限:8, 法限:{7*2}=14")
     print(f"  → 出手次数: {math.ceil(8/3)}")
     
-    # 2. 选择初始道纹
-    print("\n[2] 选择初始道纹：杀伐")
-    result = engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
-    
+    # 2. 初始道纹【杀伐】已随属性分配自动获得
+    print("\n[2] 自动获得初始道纹：杀伐")
+
     # 3. 选择残韵
     print("\n[3] 选择初始残韵：反转")
     result = engine.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
@@ -230,7 +229,6 @@ def validate_demo():
     engine.execute_action("setup_attributes", {
         "name": "测试", "blood_points": 10, "speed_points": 8, "mana_points": 7
     })
-    engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
     setup = engine.execute_action("setup_choose_region", {"region": "扭曲都市"})
     engine.execute_action("choose_discovered_relic", {
@@ -372,10 +370,8 @@ def full_demo():
     print(f"  原因: {result['reasoning']}")
     print(f"  校验: {'✓' if result.get('validation', {}).get('valid', True) else '✗'}")
     
-    # AI选择道纹
-    result = ai.play_turn("选择初始道纹")
-    print(f"\n  AI决策: {result['action']} → {result.get('result', {}).get('result', {}).get('daowen', '?')}")
-    
+    print("\n  初始道纹已自动获得：杀伐")
+
     # AI选择残韵
     result = ai.play_turn("选择残韵")
     print(f"\n  AI决策: {result['action']} → {result.get('result', {}).get('result', {}).get('resonance_type', '?')}")

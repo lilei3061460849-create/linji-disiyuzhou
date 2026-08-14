@@ -54,11 +54,14 @@ def test_setup():
     assert not result["success"], "应该拒绝错误的属性分配"
     print("  ✓ 错误分配被拒绝")
     
-    # 选择道纹
-    result = engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
-    assert result["success"], f"道纹选择失败: {result}"
-    assert "杀伐" in engine.state.player.dao_wen, "道纹未添加"
-    print("  ✓ 道纹选择正确")
+    # 初始道纹没有选择步骤，属性分配成功后自动授予杀伐。
+    assert set(engine.state.player.dao_wen) == {"杀伐"}, "属性分配后应只自动添加杀伐"
+    assert not any(action.get("action_type") == "setup_choose_daowen"
+                   for action in engine.get_available_actions()["actions"])
+    before = set(engine.state.player.dao_wen)
+    removed = engine.execute_action("setup_choose_daowen", {"daowen": "锐利"})
+    assert not removed["success"] and set(engine.state.player.dao_wen) == before
+    print("  ✓ 初始杀伐自动授予，旧选择步骤已删除且不能借旧接口改成锐利")
     
     # 选择残韵
     result = engine.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
@@ -159,7 +162,6 @@ def test_combat():
     engine.execute_action("setup_attributes", {
         "name": "测试", "blood_points": 10, "speed_points": 8, "mana_points": 7
     })
-    engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
     
     # 添加怪物
     monster = Entity(
@@ -267,7 +269,6 @@ def test_dm_rulings():
     engine.execute_action("setup_attributes", {
         "name": "测试", "blood_points": 10, "speed_points": 8, "mana_points": 7
     })
-    engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
     _choose_region(engine, "扭曲都市")
     engine.state.phase = "in_combat"
     
@@ -309,7 +310,6 @@ def test_full_flow():
     engine.execute_action("setup_attributes", {
         "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7
     })
-    engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
     engine.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     _choose_region(engine, "扭曲都市")
     print("  ✓ 开局完成")
@@ -417,7 +417,6 @@ def test_daowen_effects_wired():
     from engine.models import StatusEffect
     engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
     engine.execute_action("setup_attributes", {"name":"测试","blood_points":10,"speed_points":8,"mana_points":7})
-    engine.execute_action("setup_choose_daowen", {"daowen":"杀伐"})
     engine.state.phase = "in_combat"
     player = engine.state.player
     # 本测试连续发动6次道纹只为验证效果落地，与出手预算校验无关，给予充裕出手预算
@@ -473,7 +472,6 @@ def test_out_of_combat_actions():
     print("\n=== 测试：局外行动落地 ===")
     engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
     engine.execute_action("setup_attributes", {"name":"测试","blood_points":10,"speed_points":8,"mana_points":7})
-    engine.execute_action("setup_choose_daowen", {"daowen":"杀伐"})
     _choose_region(engine, "罪孽都市")
     player = engine.state.player
 
@@ -540,7 +538,6 @@ def test_relic_effects():
     import math
     engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
     engine.execute_action("setup_attributes", {"name":"测试","blood_points":10,"speed_points":8,"mana_points":7})
-    engine.execute_action("setup_choose_daowen", {"daowen":"杀伐"})
     _choose_region(engine, "罪孽都市")
     engine.state.relics = [Relic(name="钱袋", effect="")]
     mm = Entity(name="怪", entity_type="怪物", blood_limit=100, current_hp=0, attack_count=1, attack_power=1)
@@ -690,7 +687,6 @@ def test_events_system():
     print("\n=== 测试：事件系统 ===")
     engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
     engine.execute_action("setup_attributes", {"name":"测试","blood_points":10,"speed_points":8,"mana_points":7})
-    engine.execute_action("setup_choose_daowen", {"daowen":"杀伐"})
     _choose_region(engine, "扭曲都市")
     # 解析数量
     assert len(engine.event_pool.events) >= 25, f"应解析>=25事件，实{len(engine.event_pool.events)}"
@@ -786,7 +782,6 @@ def test_relics_five_more():
     # 无所求：resolve_event拒绝+1速限
     engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
     engine.execute_action("setup_attributes", {"name":"t","blood_points":10,"speed_points":8,"mana_points":7})
-    engine.execute_action("setup_choose_daowen", {"daowen":"杀伐"})
     _choose_region(engine, "扭曲都市")
     engine.state.relics = [Relic(name="无所求", effect="")]
     engine.event_pool.current = "祭坛"
@@ -925,7 +920,7 @@ def test_evolution_yuanchu():
     assert any(e.get("collapsed") == "狂暴" for e in r10), "结果应记录崩解事件"
     print(f"  ✓ 异变{Entity.MUTATION_COLLAPSE_THRESHOLD-15}+激活狂暴3(15)={Entity.MUTATION_COLLAPSE_THRESHOLD}层：崩解命零，攻击中断，玩家HP仍为{st2.player.current_hp}")
 
-    # ---- 7. 借用道纹经激活路径发动时照常计费（激活回合付一次，次回合起持续计费） ----
+    # ---- 7. 借用道纹：原初门票与首次发动各付一次，持续期间不再计费 ----
     st3 = GameState()
     st3.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60,
                         speed_limit=8, current_speed=8)
@@ -944,15 +939,10 @@ def test_evolution_yuanchu():
     assert total1 == 20, f"借用自愈2激活应付异变5×2=10（门票10+激活10=20），实{total1}"
     assert m_b.is_alive, "20层应存活"
     combat3.round_start()
-    r3p = resolve_monster_phase(combat3, {"借用怪": None})  # 第3回合持续计费
+    resolve_monster_phase(combat3, {"借用怪": None})
     total2 = m_b.mutation_count
-    T3 = Entity.MUTATION_COLLAPSE_THRESHOLD
-    assert total2 == 30, f"持续计费后应恰为30层，实{total2}"
-    assert m_b.is_alive == (30 < T3), f"30层与阈值{T3}关系不符"
-    if 30 >= T3:
-        assert any(e.get("collapsed") == "自愈" for e in r3p), "结果应记录持续计费导致的崩解"
-    print(f"  ✓ 借用道纹激活计费（门票10+激活10=20层）；次回合持续计费+10→30层"
-          f"（阈值{T3}，{'崩解命零' if 30 >= T3 else '存活'}）")
+    assert total2 == 20 and m_b.is_alive, f"借用道纹持续期间不应重复计费，实{total2}"
+    print("  ✓ 借用道纹门票10+首次发动10=20层；后续维持自愈不再增加异变")
     print("  ✓ 进化（原初X）与崩解测试通过")
 
 
@@ -1045,9 +1035,9 @@ def test_evolution_plight_listing():
     print("  ✓ 进化困境标注测试通过")
 
 
-def test_mutation_sustain_billing():
-    """测试持续型原始道纹回合计费（裁定：改计费粒度）：效果持续期间每个[回始]再付异变5X"""
-    print("\n=== 测试：持续型原始道纹回合计费 ===")
+def test_original_daowen_only_charges_mutation_on_activation():
+    """原始怪物道纹首次发动支付异变5X，持续期间不再重复计费。"""
+    print("\n=== 测试：原始怪物道纹仅首次发动计费 ===")
     from engine.models import GameState, DaoWen, DaoWenInstance
     from engine.combat import CombatEngine
     from engine.dice import DiceEngine
@@ -1069,38 +1059,35 @@ def test_mutation_sustain_billing():
         c = CombatEngine(st, DiceEngine()); c.reset_monster_activation()
         return st, c
 
-    # ---- 1. 正常路径+边界：自愈2持续怪，激活10层→每回合+10→累计30层（按阈值校验生死） ----
-    T = Entity.MUTATION_COLLAPSE_THRESHOLD
+    # 正常：自愈2激活只付10；后续回合维持自愈但异变保持10。
     m1 = mk("持续怪", [("自愈", 2)])
-    st1, c1 = mkbed(m1)
-    c1.round_start()  # 回合1（白板）
-    resolve_monster_phase(c1, {"持续怪": None})
-    assert m1.mutation_count == 0, "白板回合不应有激活与计费"
-    c1.round_start(); resolve_monster_phase(c1, {"持续怪": "自愈"})  # 回合2：激活自愈2 +10
-    assert m1.mutation_count == 10, f"激活回合应付10层，实{m1.mutation_count}"
-    c1.round_start(); resolve_monster_phase(c1, {"持续怪": None})  # 回合3：持续计费 +10
-    assert m1.mutation_count == 20, f"首个持续回合应至20层，实{m1.mutation_count}"
-    assert m1.is_alive == (20 < T), f"20层与阈值{T}关系不符"
-    hp_before = st1.player.current_hp
-    c1.round_start()
-    r4 = resolve_monster_phase(c1, {"持续怪": None})  # 回合4：持续计费 +10 → 累计30层
-    assert m1.mutation_count == 30, f"回合4持续计费后应恰为30层，实{m1.mutation_count}"
-    assert m1.is_alive == (30 < T), f"30层与阈值{T}关系不符"
-    if not m1.is_alive:
-        assert st1.player.current_hp == hp_before, "崩解回合怪物攻击应中断"
-        assert any(e.get("collapsed") == "自愈" for e in r4), "结果应记录崩解"
-    print(f"  ✓ 持续怪自愈2：激活10→持续+10→+10=30层（阈值{T}，{'崩解且攻击中断' if 30 >= T else '存活'}；白板回合不计费）")
+    _, c1 = mkbed(m1)
+    c1.round_start(); resolve_monster_phase(c1, {"持续怪": None})
+    c1.round_start(); resolve_monster_phase(c1, {"持续怪": "自愈"})
+    assert m1.mutation_count == 10 and m1.is_alive
+    for _ in range(3):
+        c1.round_start(); resolve_monster_phase(c1, {"持续怪": None})
+        assert m1.mutation_count == 10 and m1.is_alive
+    print("  ✓ 自愈2首次支付异变10，后续三回合维持效果但不再计费")
 
-    # ---- 2. 次数型道纹豁免：必中3激活计费一次，持续回合不再计费 ----
+    # 边界：次数型必中同样只在激活时付一次，不存在额外豁免分支。
     m2 = mk("次数怪", [("必中", 3)])
-    st2, c2 = mkbed(m2)
-    c2.round_start(); resolve_monster_phase(c2, {"次数怪": None})      # 回合1白板
-    c2.round_start(); resolve_monster_phase(c2, {"次数怪": "必中"})      # 回合2：激活必中3 +15
-    assert m2.mutation_count == 15, f"必中激活应付15层，实{m2.mutation_count}"
-    c2.round_start(); resolve_monster_phase(c2, {"次数怪": None})      # 回合3：次数型豁免
-    assert m2.mutation_count == 15 and m2.is_alive, f"必中不应持续计费，实{m2.mutation_count}"
-    print(f"  ✓ 次数型【必中3】：激活付15层，持续回合豁免不再计费，怪物存活")
-    print("  ✓ 持续型原始道纹回合计费测试通过")
+    _, c2 = mkbed(m2)
+    c2.round_start(); resolve_monster_phase(c2, {"次数怪": None})
+    c2.round_start(); resolve_monster_phase(c2, {"次数怪": "必中"})
+    c2.round_start(); resolve_monster_phase(c2, {"次数怪": None})
+    assert m2.mutation_count == 15 and m2.is_alive
+    print("  ✓ 必中3首次支付异变15，后续不再计费")
+
+    # 崩解仍保留：若首次发动本身使异变达到阈值，效果中断并命零。
+    m3 = mk("临界怪", [("自愈", 2)])
+    m3.mutation_count = Entity.MUTATION_COLLAPSE_THRESHOLD - 10
+    _, c3 = mkbed(m3)
+    c3.round_start(); resolve_monster_phase(c3, {"临界怪": None})
+    c3.round_start(); result = resolve_monster_phase(c3, {"临界怪": "自愈"})
+    assert not m3.is_alive and m3.mutation_count == Entity.MUTATION_COLLAPSE_THRESHOLD
+    assert any(entry.get("collapsed") == "自愈" for entry in result)
+    print("  ✓ 首次发动支付异变达到阈值时仍会崩解，效果中断")
 
 
 def test_consumable_mutation_wiring():
@@ -1171,7 +1158,6 @@ def test_twisted_tool_library():
         engine.execute_action("setup_attributes", {
             "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7
         })
-        engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
         _choose_region(engine, region)
         return engine
 

@@ -27,7 +27,6 @@ def _engine(seed=7):
     e = GameEngine(db_path=f"{DB_DIR}/mediocrity.db", rng_seed=seed)
     e.execute_action("setup_attributes",
                      {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
-    e.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     e.execute_action("setup_choose_region", {"region": "罪孽都市"})
     return e

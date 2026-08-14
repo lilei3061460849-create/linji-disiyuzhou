@@ -149,7 +149,6 @@ def play_and_record(region: str, seed: int, battles: int = 7):
         engine.execute_action("setup_attributes",
                               {"name": "贾凡", "blood_points": 10,
                                "speed_points": 8, "mana_points": 7})
-        engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
         engine.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
         r = engine.execute_action("setup_choose_region", {"region": region})
         optional_relics = {"折速法印", "三相残韵盘"}

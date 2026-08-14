@@ -34,7 +34,6 @@ from engine.models import Entity, DaoWen, DaoWenInstance
 def _new_engine_with_enemy(db_suffix: str, region: str = "龙心谷") -> GameEngine:
     engine = GameEngine(db_path=f"data/test_ally_{db_suffix}.db", rng_seed=1)
     engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
-    engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
     setup = engine.execute_action("setup_choose_region", {"region": region})
     engine.execute_action("choose_discovered_relic", {"relic_name": setup["result"]["relic_choices"][0]})

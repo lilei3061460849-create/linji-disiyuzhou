@@ -132,8 +132,7 @@ engine = GameEngine(rng_seed=12345)
 
 | 行动类型 | 说明 |
 |---------|------|
-| `setup_attributes` | 分配初始25属性点 |
-| `setup_choose_daowen` | 选择初始道纹（杀伐/锐利） |
+| `setup_attributes` | 分配初始25属性点，并自动获得初始道纹【杀伐】 |
 | `setup_choose_resonance` | 选择初始残韵 |
 | `setup_choose_region` | 选择副本 |
 | `pre_battle_action` | 局外行动（领悟/休整/修行/学习/共鸣/探索/忘忧(需持有忘忧香)/献祭(需持有红头绳)） |

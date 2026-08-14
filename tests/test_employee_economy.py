@@ -36,7 +36,6 @@ def _finish_round_without_monster_actions(engine):
 def _new_engine(db_suffix: str) -> GameEngine:
     engine = GameEngine(db_path=f"data/test_emp_{db_suffix}.db", rng_seed=1)
     engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
-    engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
     setup = engine.execute_action("setup_choose_region", {"region": "罪孽都市"})
     engine.execute_action("choose_discovered_relic", {"relic_name": setup["result"]["relic_choices"][0]})

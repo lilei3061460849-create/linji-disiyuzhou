@@ -20,7 +20,6 @@ def _engine(suffix):
     engine.execute_action("setup_attributes", {
         "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7,
     })
-    engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
     engine.state.current_region = "龙心谷"
     engine.state.phase = "in_combat"
     p = engine.state.player

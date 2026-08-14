@@ -172,8 +172,7 @@ SYSTEM_PROMPT = """你是第四宇宙游戏的AI玩家。你的任务是根据�
 - 优先使用能改变局势的道纹，不要无脑输出
 
 可选的action_type包括：
-- setup_attributes: 开局分配属性（params: name, blood_points, speed_points, mana_points，总和必须25）
-- setup_choose_daowen: 选择初始道纹（params: daowen，可选"杀伐"或"锐利"）
+- setup_attributes: 开局分配属性（params: name, blood_points, speed_points, mana_points，总和必须25；成功后自动获得初始道纹"杀伐"）
 - setup_choose_resonance: 选择残韵（params: resonance_type，可选"转换"/"反转"/"曲解"）
 - setup_choose_region: 选择副本（params: region，可选"罪孽都市"/"扭曲都市"/"龙心谷"），返回3件开局遗物候选
 - choose_discovered_relic: 从当前遗物发现候选中显式选1件（params: relic_name）

@@ -184,9 +184,6 @@ class GameEngine:
                 "name": "string", "blood_points": "integer", "speed_points": "integer",
                 "mana_points": "integer", "constraint": "sum=25"}})
         else:
-            if not self.state.player.dao_wen:
-                actions.append({"action_type": "setup_choose_daowen",
-                                "params_schema": {"daowen": ["杀伐", "锐利"]}})
             if not self.state.resonance:
                 actions.append({"action_type": "setup_choose_resonance",
                                 "params_schema": {"resonance_type": ["转换", "反转", "曲解"]}})
@@ -706,8 +703,6 @@ class GameEngine:
         try:
             if action_type == "setup_attributes":
                 result = self._action_setup_attributes(params)
-            elif action_type == "setup_choose_daowen":
-                result = self._action_setup_choose_daowen(params)
             elif action_type == "setup_choose_region":
                 result = self._action_setup_choose_region(params)
             elif action_type == "setup_choose_resonance":
@@ -919,6 +914,10 @@ class GameEngine:
             attack_power=0,
         )
 
+        # 开局唯一初始道纹为【杀伐】，没有选择空间，因此随属性分配自动授予。
+        player.dao_wen["杀伐"] = DaoWenInstance(dao_wen=DaoWen(
+            name="杀伐", formula="杀伐X的公式", cost_type="消耗",
+            cost_formula="X", effect_formula="2X伤害"))
         self.state.player = player
         self.state.attribute_points = 0
         self.state.allocated_blood = blood_limit
@@ -935,47 +934,19 @@ class GameEngine:
                 "attack_count": player.attack_count,
                 "attack_power": player.attack_power,
                 "action_count": player.action_count,
-                "shards": 20
+                "shards": 20,
+                "initial_daowen": "杀伐",
             },
-            "next_actions": ["setup_choose_daowen", "setup_choose_resonance", "setup_choose_region"],
-            "note": "接下来需要：选择初始道纹、选择残韵、选择副本。遗物发现需要随机数。"
-        }
-
-    def _action_setup_choose_daowen(self, params: dict) -> dict:
-        """选择初始道纹"""
-        if self.state.player is None:
-            return {"success": False, "error": "请先分配初始属性"}
-        if self.state.player.dao_wen:
-            return {"success": False, "error": "初始道纹已经选择，不能重复选择"}
-        choice = params.get("daowen", "")
-        valid = ["杀伐", "锐利"]
-
-        if choice not in valid:
-            return {"success": False, "error": f"只能从{valid}中选择"}
-
-        dw = DaoWen(
-            name=choice,
-            formula=f"{choice}X的公式",
-            cost_type="消耗",
-            cost_formula="X",
-            effect_formula="2X伤害" if choice == "杀伐" else "4X血限减少"
-        )
-
-        self.state.player.dao_wen[choice] = DaoWenInstance(dao_wen=dw)
-
-        return {
-            "success": True,
-            "action": "选择初始道纹",
-            "result": {"daowen": choice},
-            "next_actions": ["setup_choose_resonance", "setup_choose_region"]
+            "next_actions": ["setup_choose_resonance", "setup_choose_region"],
+            "note": "已自动获得初始道纹【杀伐】；接下来选择残韵与副本。遗物发现需要随机数。"
         }
 
     def _action_setup_choose_region(self, params: dict) -> dict:
         """选择副本，并生成开局“随机3件、显式选1件”的遗物发现。"""
         if self.state.player is None:
             return {"success": False, "error": "请先分配初始属性"}
-        if not self.state.player.dao_wen or sum(self.state.resonance.values()) != 1:
-            return {"success": False, "error": "选择副本前必须先完成初始道纹与1种初始残韵选择"}
+        if "杀伐" not in self.state.player.dao_wen or sum(self.state.resonance.values()) != 1:
+            return {"success": False, "error": "选择副本前必须先获得初始杀伐并选择1种初始残韵"}
         region = params.get("region", "")
         valid = ["罪孽都市", "扭曲都市", "龙心谷"]
         if region not in valid:
@@ -1012,7 +983,7 @@ class GameEngine:
             "success": True,
             "action": "选择残韵",
             "result": {"resonance_type": rtype, "count": self.state.resonance[rtype]},
-            "next_actions": ["setup_choose_daowen", "setup_choose_region"]
+            "next_actions": ["setup_choose_region"]
         }
 
     # ==================== 局外行动 ====================

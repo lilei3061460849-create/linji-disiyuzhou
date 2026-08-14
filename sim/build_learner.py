@@ -67,8 +67,8 @@ def learnable_candidates(region: str = None) -> list:
             continue
         out.append(c)
     return out
-# 可作为初始道纹的（README：开局在【杀伐】【锐利】中选一种）
-STARTERS = ["杀伐", "锐利"]
+# 现行开局自动获得【杀伐】，不再选择初始道纹。
+STARTERS = ["杀伐"]
 REGIONS = ["罪孽都市", "扭曲都市", "龙心谷"]
 BUILD_SIZE = 5          # 每套 build 学习的道纹数量
 
@@ -134,7 +134,8 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
     e = GameEngine(db_path="/tmp/learner.db", rng_seed=seed)
     e.execute_action("setup_attributes",
                      {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
-    e.execute_action("setup_choose_daowen", {"daowen": starter})
+    if starter != "杀伐":
+        raise ValueError("现行开局只会自动获得杀伐；其他道纹须放入learn")
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": region})
     optional_relics = {"折速法印", "三相残韵盘"}

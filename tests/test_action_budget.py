@@ -35,7 +35,6 @@ def _new_engine(db_suffix: str, speed_points: int = 8) -> GameEngine:
     blood_points = 25 - speed_points - mana_points  # 属性点总和必须=25
     engine.execute_action("setup_attributes",
                            {"blood_points": blood_points, "speed_points": speed_points, "mana_points": mana_points})
-    engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
     setup = engine.execute_action("setup_choose_region", {"region": "罪孽都市"})  # 雇佣为罪孽都市专属
     choices = setup["result"]["relic_choices"]

@@ -26,10 +26,9 @@ class CombatEngine:
     
     # 原始怪物道纹（道纹归属规则：各组起点）——【原初X】可借用范围
     ORIGINAL_MONSTER_DAOWEN = ("狂暴", "强化", "活力", "减速", "必中", "自愈", "飞行")
-    # 持续型原始怪物道纹：效果持续期间每个[回始]重新支付异变5X（已裁定）。
-    # 必中为次数型（下X次选择[目标]无法闪避），不参与回合计费；余数记在 entity._bizhong_left。
-    SUSTAIN_MONSTER_DAOWEN = ("狂暴", "强化", "活力", "减速", "自愈", "飞行")
-    YUANCHU_COST_RATE = 5  # 原初X代价：异变5X（已裁定）
+    # 原始怪物道纹只在首次发动时支付异变5X；效果持续期间不再重复计费。
+    # 必中为次数型（下X次选择[目标]无法闪避），余数记在 entity._bizhong_left。
+    YUANCHU_COST_RATE = 5
     
     def __init__(self, state: GameState, dice: DiceEngine):
         self.state = state
@@ -2597,20 +2596,6 @@ class CombatEngine:
             self._resonance_rewrites.pop(id(entity), None)
         return dest
 
-    def _monster_sustain_billing(self, m: Entity, activated: set) -> Optional[str]:
-        """
-        持续型原始道纹的回合计费（已裁定：改计费粒度）：
-        已激活的持续型原始怪物道纹，效果持续期间每个[回始]重新支付异变5X；
-        达阈值触发【崩解】直接命零，回合计费中断。返回崩解时正在计费的道纹名或None。
-        调用时点：怪物回合内的道纹出手激活之前（即计费按上个回合已激活的集合结算，不重复收本场激活当回合）。
-        """
-        for g in list(activated):
-            if g in self.SUSTAIN_MONSTER_DAOWEN and g in m.dao_wen:
-                pay = m.add_mutation(self.YUANCHU_COST_RATE * m.dao_wen[g].x_value)
-                if pay["collapsed"]:
-                    return g
-        return None
-
     def _monster_attack_actions(self, m: Entity, activated: set) -> int:
         """怪物攻击出手数 = 1 + 活力X(若激活) + 狂暴1(若激活)。
 
@@ -2929,7 +2914,6 @@ class CombatEngine:
         results: list[dict] = []
         results.extend(self._tick_baolie(self.state.get_all_enemy_side()))
         results.extend(prepared["skipped"])
-        whiteboard = self.state.current_round <= 1
         for actor_ref in expected:
             monster = refs.get(actor_ref)
             if monster is None or not monster.is_alive:
@@ -2941,12 +2925,6 @@ class CombatEngine:
                 if not monster.is_alive:
                     continue
             activated = self._monster_activated.setdefault(id(monster), set())
-            if not whiteboard:
-                collapsed_on = self._monster_sustain_billing(monster, activated)
-                if collapsed_on is not None:
-                    results.append({"monster": monster.name, "collapsed": collapsed_on,
-                                    "note": "持续型道纹回始计费后触发【崩解】"})
-                    continue
 
             dao_choice = choice.get("daowen")
             options = {o["name"] for o in expected[actor_ref]["daowen_options"]}

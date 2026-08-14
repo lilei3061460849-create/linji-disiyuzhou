@@ -40,7 +40,7 @@ TACTICAL_ROLES: dict[str, dict] = {
     "再生": {"role": "heal", "cost": 1, "pri": 1, "heal_per_x": 6},
     "慈悲": {"role": "heal", "cost": 0, "pay": "流血", "pri": 3, "heal_per_x": 1},
     "固执": {"role": "buff", "cost": 0, "pay": "冷却", "pri": 2},
-    # ---- 锐利闭环 ----
+    # ---- 杀伐14节点闭环后半（锐利至封印）----
     "锐利": {"role": "nuke", "cost": 3, "pri": 2, "dmg_per_x": 4},   # 血限与生命同时-4X
     "增殖": {"role": "buff", "cost": 5, "pri": 3},
     "透支": {"role": "ramp", "cost": 0, "pay": "衰老", "pri": 1, "mana_per_x": 4},

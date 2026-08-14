@@ -377,7 +377,7 @@ class Entity:
         
         return detail
     
-    MUTATION_COLLAPSE_THRESHOLD = 50  # 特殊事件【崩解】阈值：异变达到50层直接命零（阈值定稿；计费粒度=持续型每回始5X后存在真实牙齿）
+    MUTATION_COLLAPSE_THRESHOLD = 50  # 特殊事件【崩解】阈值：异变达到50层直接命零；原始道纹仅首次发动支付异变5X
 
     def add_mutation(self, layers: int) -> dict:
         """

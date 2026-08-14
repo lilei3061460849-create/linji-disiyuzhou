@@ -28,7 +28,7 @@ def _full_setup(engine: GameEngine, region: str = "罪孽都市") -> GameEngine:
     assert engine.execute_action("setup_attributes", {
         "blood_points": 10, "speed_points": 8, "mana_points": 7,
     })["success"]
-    assert engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})["success"]
+    assert "杀伐" in engine.state.player.dao_wen
     assert engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})["success"]
     result = engine.execute_action("setup_choose_region", {"region": region})
     assert result["success"]

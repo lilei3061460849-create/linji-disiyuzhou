@@ -24,7 +24,6 @@ from engine.models import DaoWen, DaoWenInstance, Entity
 def _new_engine(db_suffix: str) -> GameEngine:
     engine = GameEngine(db_path=f"data/test_dragonheart_{db_suffix}.db", rng_seed=1)
     engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
-    engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
     setup = engine.execute_action("setup_choose_region", {"region": "龙心谷"})
     optional = {"折速法印", "三相残韵盘"}

@@ -17,7 +17,6 @@ def _engine(region="罪孽都市"):
     engine.execute_action("setup_attributes", {
         "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7,
     })
-    engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
     engine.state.current_region = region
     engine.state.phase = "in_combat"
     engine.state.player.current_mana = 40
