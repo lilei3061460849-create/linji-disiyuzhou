@@ -137,7 +137,7 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
     e.execute_action("setup_choose_daowen", {"daowen": starter})
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": region})
-    optional_relics = {"折速法印", "鲜血契约", "三相残韵盘", "卖身契"}
+    optional_relics = {"折速法印", "三相残韵盘"}
     starter_relic = next((n for n in setup["result"]["relic_choices"] if n not in optional_relics),
                          setup["result"]["relic_choices"][0])
     e.execute_action("choose_discovered_relic", {"relic_name": starter_relic})
@@ -194,7 +194,7 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                 break
             if not [x for x in e.state.enemies if x.is_alive]:
                 break
-            e.execute_action("round_start", {})
+            e.execute_action("round_start", {"relic_choices": ({"血契": {"use": False}} if any(r.name == "血契" for r in e.state.relics) else {})})
             ai.new_round()
             try:
                 ai.take_turn()

@@ -28,7 +28,7 @@ def _new_engine(tmp_path, region="龙心谷"):
     e.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": region})
-    optional = {"折速法印", "鲜血契约", "三相残韵盘", "卖身契"}
+    optional = {"折速法印", "三相残韵盘"}
     choice = next((name for name in setup["result"]["relic_choices"] if name not in optional),
                   setup["result"]["relic_choices"][0])
     e.execute_action("choose_discovered_relic", {"relic_name": choice})

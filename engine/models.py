@@ -6,6 +6,9 @@ from dataclasses import dataclass, field
 from typing import Optional, Any
 import math
 import json
+import uuid
+
+from .enums import EffectScope, EffectPolarity
 
 
 @dataclass
@@ -126,12 +129,20 @@ class Consumable:
 
 @dataclass
 class StatusEffect:
-    """持续效果"""
+    """持续效果。scope 与 polarity 显式区分生命周期和增减益极性。"""
     name: str
-    remaining_rounds: int        # 剩余回合（-1=∞）
+    remaining_rounds: int        # 剩余回合（-1=∞；仍只代表本场战斗内的无限）
     value: int = 0               # 效果数值
     source: str = ""             # 来源
+    scope: str = EffectScope.BATTLE.value
+    polarity: str = EffectPolarity.NEUTRAL.value
     
+    def __post_init__(self):
+        # 即使调用方直接append而不经过Entity.add_status，代价标记也不能被战终误清。
+        if (self.name in {"流血", "衰老", "枯竭", "萎缩", "疲惫", "异变", "崩解"}
+                and self.scope == EffectScope.BATTLE.value):
+            self.scope = EffectScope.COST.value
+
     @property
     def is_permanent(self) -> bool:
         return self.remaining_rounds == -1
@@ -189,6 +200,7 @@ class Entity:
     """游戏实体（轮回者/怪物/朋友/员工通用基础）"""
     name: str
     entity_type: str
+    runtime_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     
     # 基础属性
     blood_limit: int = 0         # 血限
@@ -452,7 +464,22 @@ class Entity:
         return expired
     
     def add_status(self, effect: StatusEffect):
-        """添加状态效果，同名合并"""
+        """添加状态效果；未显式给出极性时按规则表标注，生命周期仍由scope独立决定。"""
+        if effect.polarity == EffectPolarity.NEUTRAL.value:
+            buffs = {
+                "固执", "贯穿", "急速", "洞察", "兴奋", "飞行", "滑翔", "狂暴",
+                "强化", "活力", "必中", "自愈", "洗劫", "逆鳞", "嫁祸", "背负",
+                "负岳索", "加速", "愤怒",
+            }
+            debuffs = {
+                "弱化", "无力", "减速", "迟滞", "束缚", "封印", "缓慢", "坠落",
+                "坏死", "爆裂", "退化", "定型", "畸变", "僵化", "加害", "伤痕",
+                "寄生", "蒙蔽", "眩晕", "手雷减攻", "衰败", "被背负",
+            }
+            if effect.name in buffs:
+                effect.polarity = EffectPolarity.BUFF.value
+            elif effect.name in debuffs:
+                effect.polarity = EffectPolarity.DEBUFF.value
         for existing in self.status_effects:
             if existing.merge_with(effect):
                 return
@@ -462,6 +489,7 @@ class Entity:
         return {
             "name": self.name,
             "entity_type": self.entity_type,
+            "runtime_id": self.runtime_id,
             "blood_limit": self.blood_limit,
             "current_hp": self.current_hp,
             "mana_limit": self.mana_limit,
@@ -487,9 +515,33 @@ class Entity:
             "spells": [s.name for s in self.spells],
             "relics": [r.to_dict() for r in self.relics],
             "status_effects": [
-                {"name": s.name, "value": s.value, "rounds": s.remaining_rounds}
+                {"name": s.name, "value": s.value, "rounds": s.remaining_rounds,
+                 "source": s.source, "scope": s.scope, "polarity": s.polarity}
                 for s in self.status_effects
             ]
+        }
+
+
+@dataclass
+class ScopedStatDelta:
+    """一笔可逆的字段变化；使用稳定实体引用，存档/事务回滚后仍指向当前状态对象。"""
+    entity_id: str
+    entity_name: str
+    field_name: str
+    delta: int
+    scope: str
+    polarity: str
+    source: str
+
+    def to_dict(self) -> dict:
+        return {
+            "entity_id": self.entity_id,
+            "entity": self.entity_name,
+            "field": self.field_name,
+            "delta": self.delta,
+            "scope": self.scope,
+            "polarity": self.polarity,
+            "source": self.source,
         }
 
 
@@ -546,7 +598,10 @@ class GameState:
     pending_attack: dict = field(default_factory=dict)
     # 事件产生的跨行动/跨战斗确定性状态，键均由事件handler登记。
     event_modifiers: dict[str, Any] = field(default_factory=dict)
-    # 死斗对手自己的遗物。可选效果（折速/鲜血契约等）由对手决定是否发动，不跟挑战者的 state.relics 混用。
+    # 显式作用域账本：只登记需要按回合/战斗回滚的面板字段变化。
+    # 代价、伤害、资源支出与永久成长不进入可逆账本。
+    scoped_effect_ledger: list[ScopedStatDelta] = field(default_factory=list)
+    # 死斗对手自己的遗物。可选效果由对手决定是否发动，不跟挑战者的 state.relics 混用。
     opponent_relics: list[Relic] = field(default_factory=list)
     opponent_artifacts_owned: list[str] = field(default_factory=list)
     opponent_dragon_body_shield_rounds: int = 0
@@ -757,6 +812,124 @@ class GameState:
                     return True
         return False
 
+    def entity_ref(self, entity: Entity) -> str:
+        if entity is self.player:
+            return "player:0"
+        for prefix, entities in (
+            ("friend", self.friends), ("employee", self.employees),
+            ("temp_friend", self.temp_friends), ("enemy", self.enemies),
+        ):
+            for index, candidate in enumerate(entities):
+                if candidate is entity:
+                    return f"{prefix}:{index}"
+        raise ValueError(f"实体{entity.name}不在当前GameState中")
+
+    def entity_by_ref(self, entity_ref: str) -> Optional[Entity]:
+        if entity_ref == "player:0":
+            return self.player
+        try:
+            prefix, raw_index = entity_ref.split(":", 1)
+            index = int(raw_index)
+        except (ValueError, AttributeError):
+            return None
+        groups = {
+            "friend": self.friends, "employee": self.employees,
+            "temp_friend": self.temp_friends, "enemy": self.enemies,
+        }
+        entities = groups.get(prefix)
+        if entities is None or index < 0 or index >= len(entities):
+            return None
+        return entities[index]
+
+    def entity_by_runtime_id(self, runtime_id: str) -> Optional[Entity]:
+        entities = (([self.player] if self.player else []) + self.friends + self.employees
+                    + self.temp_friends + self.enemies)
+        return next((entity for entity in entities if entity.runtime_id == runtime_id), None)
+
+    def apply_scoped_delta(
+        self,
+        entity: Entity,
+        field_name: str,
+        delta: int,
+        *,
+        scope: str = EffectScope.BATTLE.value,
+        polarity: str = EffectPolarity.NEUTRAL.value,
+        source: str,
+    ) -> int:
+        """应用并登记一笔可逆面板变化；仅 round/battle 作用域允许进入账本。"""
+        if scope not in (EffectScope.ROUND.value, EffectScope.BATTLE.value):
+            raise ValueError("可逆作用域账本只接受round或battle")
+        if field_name not in {"blood_limit", "mana_limit", "speed_limit", "attack_count", "attack_power"}:
+            raise ValueError(f"字段{field_name}不允许进入作用域账本")
+        if not isinstance(delta, int) or isinstance(delta, bool):
+            raise ValueError("作用域delta必须是整数")
+        before = getattr(entity, field_name)
+        after = before + delta
+        if field_name in {"blood_limit", "mana_limit", "speed_limit", "attack_count", "attack_power"}:
+            after = max(0, after)
+        actual_delta = after - before
+        setattr(entity, field_name, after)
+        if actual_delta:
+            self.scoped_effect_ledger.append(ScopedStatDelta(
+                entity_id=entity.runtime_id,
+                entity_name=entity.name,
+                field_name=field_name,
+                delta=actual_delta,
+                scope=scope,
+                polarity=polarity,
+                source=source,
+            ))
+        return actual_delta
+
+    def rollback_scoped_effects(self, scope: str) -> list[dict]:
+        """逆序回滚指定作用域，保留代价/伤害/资源与其他作用域。"""
+        rolled_back: list[dict] = []
+        remaining: list[ScopedStatDelta] = []
+        for entry in reversed(self.scoped_effect_ledger):
+            if entry.scope != scope:
+                remaining.append(entry)
+                continue
+            entity = self.entity_by_runtime_id(entry.entity_id)
+            if entity is None:
+                remaining.append(entry)
+                continue
+            current = getattr(entity, entry.field_name)
+            setattr(entity, entry.field_name, max(0, current - entry.delta))
+            if entry.field_name in ("blood_limit", "mana_limit", "speed_limit"):
+                current_field = {
+                    "blood_limit": "current_hp",
+                    "mana_limit": "current_mana",
+                    "speed_limit": "current_speed",
+                }[entry.field_name]
+                setattr(entity, current_field,
+                        min(getattr(entity, current_field), getattr(entity, entry.field_name)))
+            rolled_back.append(entry.to_dict())
+        self.scoped_effect_ledger = list(reversed(remaining))
+        return rolled_back
+
+    def rollback_scoped_sources(self, entity: Entity, sources: set[str]) -> list[dict]:
+        """持续效果到期时回滚同一实体、同一来源的局内面板变化。"""
+        rolled_back: list[dict] = []
+        remaining: list[ScopedStatDelta] = []
+        entity_id = entity.runtime_id
+        for entry in reversed(self.scoped_effect_ledger):
+            if entry.entity_id != entity_id or entry.source not in sources:
+                remaining.append(entry)
+                continue
+            current = getattr(entity, entry.field_name)
+            setattr(entity, entry.field_name, max(0, current - entry.delta))
+            if entry.field_name in ("blood_limit", "mana_limit", "speed_limit"):
+                current_field = {
+                    "blood_limit": "current_hp",
+                    "mana_limit": "current_mana",
+                    "speed_limit": "current_speed",
+                }[entry.field_name]
+                setattr(entity, current_field,
+                        min(getattr(entity, current_field), getattr(entity, entry.field_name)))
+            rolled_back.append(entry.to_dict())
+        self.scoped_effect_ledger = list(reversed(remaining))
+        return rolled_back
+
     def grant_relic(self, name: str, effect: str, tag: str = "") -> Relic:
         """授予一件遗物；tag 用于标记 血族/龙族 等来源。"""
         r = Relic(name=name, effect=effect, tags=[tag] if tag else [])
@@ -794,6 +967,7 @@ class GameState:
             "pending_monster_phase": self.pending_monster_phase,
             "pending_attack": self.pending_attack,
             "event_modifiers": self.event_modifiers,
+            "scoped_effect_ledger": [entry.to_dict() for entry in self.scoped_effect_ledger],
             "forced_monsters_next_battle": self.forced_monsters_next_battle,
             "rebellion_active": self.rebellion_active,
             "rebellion_in_progress": self.rebellion_in_progress,

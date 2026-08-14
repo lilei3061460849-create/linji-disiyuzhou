@@ -47,6 +47,22 @@ class TriggerTiming(Enum):
     ALWAYS = "常驻"
 
 
+class EffectScope(Enum):
+    """状态变化的生命周期；数值正负与生命周期相互独立。"""
+    ROUND = "round"            # 当前回合结束时回滚
+    BATTLE = "battle"          # 当前战斗结束时回滚
+    RUN = "run"                # 本次轮回持续
+    PERMANENT = "permanent"    # 跨轮回永久
+    COST = "cost"              # 代价后果，不因清除增益/减益而回滚
+
+
+class EffectPolarity(Enum):
+    """效果极性仅供规则/界面识别，不决定何时清除。"""
+    BUFF = "buff"
+    DEBUFF = "debuff"
+    NEUTRAL = "neutral"
+
+
 class CostType(Enum):
     """代价类型"""
     MANA = "消耗"           # 法力消耗

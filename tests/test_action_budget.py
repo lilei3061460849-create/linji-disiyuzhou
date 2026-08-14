@@ -42,7 +42,7 @@ def _new_engine(db_suffix: str, speed_points: int = 8) -> GameEngine:
     engine.execute_action("choose_discovered_relic", {"relic_name": choices[0]})
     engine.state.energy = 0
     relic_choices = {}
-    if engine.state.relics[0].name in ("折速法印", "鲜血契约", "三相残韵盘", "卖身契"):
+    if engine.state.relics[0].name in ("折速法印", "三相残韵盘"):
         relic_choices[engine.state.relics[0].name] = {"use": False}
     engine.execute_action("battle_start", {"relic_choices": relic_choices})
     # battle_start会自动出怪，这里替换为受控的单一测试怪物，保证断言确定性

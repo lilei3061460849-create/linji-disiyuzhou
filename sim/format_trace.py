@@ -40,7 +40,7 @@ def run(region: str = "龙心谷", seed: int = 7, battles: int = 3) -> list[str]
     engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
     engine.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     r = engine.execute_action("setup_choose_region", {"region": region})
-    optional = {"折速法印", "鲜血契约", "三相残韵盘", "卖身契"}
+    optional = {"折速法印", "三相残韵盘"}
     starter = next((name for name in r["result"]["relic_choices"] if name not in optional),
                    r["result"]["relic_choices"][0])
     engine.execute_action("choose_discovered_relic", {"relic_name": starter})
@@ -85,7 +85,7 @@ def run(region: str = "龙心谷", seed: int = 7, battles: int = 3) -> list[str]
             alive = [e for e in engine.state.enemies if e.is_alive]
             if not alive or not engine.state.player.is_alive:
                 break
-            rs = engine.execute_action("round_start", {})
+            rs = engine.execute_action("round_start", {"relic_choices": ({"血契": {"use": False}} if any(r.name == "血契" for r in engine.state.relics) else {})})
             out.extend(BR.format_round_start(rnd, rs.get("result", {}),
                                              engine.state.player, engine.state.enemies))
 
@@ -97,6 +97,11 @@ def run(region: str = "龙心谷", seed: int = 7, battles: int = 3) -> list[str]
 
             if not [e for e in engine.state.enemies if e.is_alive]:
                 out.extend(BR.format_round_end({}, engine.state.player, engine.state.enemies))
+                break
+            if not engine.state.player.is_alive:
+                out.extend(BR.format_round_end({}, engine.state.player, engine.state.enemies))
+                out.append("")
+                out.append("【结局】轮回者[命零]")
                 break
 
             prepared = engine.execute_action("prepare_monster_phase", {})

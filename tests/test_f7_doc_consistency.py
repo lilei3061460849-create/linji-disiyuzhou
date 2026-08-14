@@ -23,7 +23,8 @@ def test_normal_readme_auto_trigger_list():
         assert kw in line, f"同步后五章应含 {kw}"
     # 验证特殊事件节的标题与五章一致（不校验数量，仅校验关键词存在）
     assert "凡庸（任一角色连续五回合" in readme
-    assert "癌变（任一角色受到累计" in readme
+    assert "癌变（任一角色在本场战斗内受到的累计" in readme
+    assert "累计恢复量属于局内减益追踪，[战终]清零" in readme
     assert "崩解（任一角色【异变】达到" in readme
 
 def test_boundary_no_zengsheng_in_active_code():

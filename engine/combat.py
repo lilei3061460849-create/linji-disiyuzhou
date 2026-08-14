@@ -9,7 +9,8 @@ from typing import Optional, Any
 from .models import Entity, StatusEffect, GameState, DaoWenInstance, DaoWen, Spell, Consumable
 from .daowen import DaoWenEngine, ResonanceEngine
 from .dice import DiceEngine
-from .enums import ActionPhase, TriggerTiming, InterruptType, DamageType
+from .enums import (ActionPhase, TriggerTiming, InterruptType, DamageType,
+                    EffectScope, EffectPolarity)
 from .dm_rulings import Interrupt
 
 
@@ -34,12 +35,21 @@ class CombatEngine:
         self.state = state
         self.dice = dice
         self.combat_log: list[dict] = []  # 完整战斗日志
-        # 卖身契代价替身 / 三相残韵盘本场消耗的残韵
-        self.cost_proxy = None
+        # 三相残韵盘本场消耗的残韵
         self._sanxiang_consumed = ""
         # 残韵改写：entity_id → {源道纹: 变化后道纹}，只改下一次发动结算，不改持有
         self._resonance_rewrites: dict[int, dict[str, str]] = {}
     
+    def _battle_delta(self, entity: Entity, field_name: str, delta: int,
+                      source: str, polarity: str) -> int:
+        """战斗中未注明永久且不是代价/伤害的面板变化统一登记为局内效果。"""
+        return self.state.apply_scoped_delta(
+            entity, field_name, delta,
+            scope=EffectScope.BATTLE.value,
+            polarity=polarity,
+            source=source,
+        )
+
     # ========== 伤害计算 ==========
     
     def calculate_attack_damage(
@@ -214,12 +224,16 @@ class CombatEngine:
                 if (target_ref in self.state.fuyuebei_declared and "负岳碑" in self.state.artifacts_owned
                         and player is not None and player.current_hp > 20):
                     self.state.fuyuebei_declared.remove(target_ref)
-                    self._pay_bleed_cost(player, 20)
+                    share_map = self.state.event_modifiers.get("fuyuebei_cost_share_refs", {})
+                    payment = self.pay_numeric_cost(
+                        player, "流血", 20,
+                        cost_share_target_ref=share_map.pop(target_ref, ""))
                     return {
                         "raw_damage": amount, "shield_absorbed": 0, "actual_damage": 0,
                         "hp_before": target.current_hp, "hp_after": target.current_hp,
                         "blood_limit_before": target.blood_limit, "died": False,
-                        "damage_type": damage_type, "retreated": False, "fuyuebei_toll_paid": 20,
+                        "damage_type": damage_type, "retreated": False,
+                        "fuyuebei_toll_paid": 20, "fuyuebei_cost": payment,
                     }
                 target.has_retreated = True
                 return {
@@ -252,7 +266,9 @@ class CombatEngine:
                 detail["nilin_total"] = target._nilin
             if target.has_status("伤痕"):
                 xv = target.get_status_value("伤痕")
-                target.blood_limit = max(1, target.blood_limit - xv)
+                delta = max(1, target.blood_limit - xv) - target.blood_limit
+                self._battle_delta(
+                    target, "blood_limit", delta, "伤痕", EffectPolarity.DEBUFF.value)
                 target.current_hp = min(target.current_hp, target.blood_limit)
                 if target.current_hp <= 0:
                     target.is_alive = False
@@ -393,11 +409,175 @@ class CombatEngine:
         detail = self._apply_hostile_damage(target, 10, "必中", payer)
         return {"target": target.name, **detail}
 
+    SHAREABLE_NUMERIC_COSTS = {"流血", "衰老", "枯竭", "萎缩", "疲惫", "异变"}
+
+    def blood_pact_targets(self, payer: Optional[Entity] = None) -> dict[str, Entity]:
+        """【血契】可共同承担代价的存活朋友/员工；不要求玩家侧员工已部署。"""
+        payer = payer or self.state.player
+        if payer is self.state.player:
+            targets: dict[str, Entity] = {}
+            for prefix, entities in (("friend", self.state.friends), ("employee", self.state.employees)):
+                for index, entity in enumerate(entities):
+                    if entity.is_alive:
+                        targets[f"{prefix}:{index}"] = entity
+            return targets
+        if payer is not None and payer.entity_type == "轮回者" and self.state.on_enemy_side(payer):
+            return {
+                f"enemy:{index}": entity
+                for index, entity in enumerate(self.state.enemies)
+                if entity is not payer and entity.is_alive
+                and entity.entity_type in ("朋友", "员工")
+            }
+        return {}
+
+    def _has_active_blood_pact(self, payer: Entity) -> bool:
+        if payer is self.state.player:
+            return (any(relic.name == "血契" for relic in self.state.relics)
+                    and self.state.sealed_relics.get("血契", 0) <= 0)
+        if payer is not None and payer.entity_type == "轮回者" and self.state.on_enemy_side(payer):
+            return any(relic.name == "血契" for relic in self.state.opponent_relics)
+        return False
+
+    def blood_shadow_cost_share_options(self, payer: Entity) -> list[dict]:
+        """血影要求所有承担者支付后仍存活，返回可执行的血契分担引用。"""
+        if not self._has_active_blood_pact(payer) or payer.current_hp <= 5:
+            return []
+        return [
+            {"ref": ref, "name": ally.name}
+            for ref, ally in self.blood_pact_targets(payer).items()
+            if ally.current_hp > 5
+        ]
+
+    @staticmethod
+    def _cost_capacity(entity: Entity, cost_type: str) -> Optional[int]:
+        return {
+            "流血": entity.current_hp,
+            "衰老": entity.blood_limit,
+            "枯竭": entity.mana_limit,
+            "萎缩": entity.speed_limit,
+            "疲惫": entity.current_speed,
+            "异变": None,
+        }.get(cost_type)
+
+    def validate_numeric_cost(
+        self,
+        payer: Entity,
+        cost_type: str,
+        amount: int,
+        cost_share_target_ref: str = "",
+    ) -> tuple[Entity, int, Optional[Entity], int]:
+        """纯校验并计算血契拆分；奇数由原支付者承担向上取整的一半。"""
+        if cost_type not in self.SHAREABLE_NUMERIC_COSTS:
+            raise ValueError(f"{cost_type}不是可共同承担的数值代价")
+        if not isinstance(amount, int) or isinstance(amount, bool) or amount < 0:
+            raise ValueError("数值代价必须是非负整数")
+        ally = None
+        owner_amount = amount
+        ally_amount = 0
+        if cost_share_target_ref:
+            if not self._has_active_blood_pact(payer):
+                raise ValueError("只有持有且未被封印【血契】的轮回者才能提交cost_share_target_ref")
+            ally = self.blood_pact_targets(payer).get(cost_share_target_ref)
+            if ally is None:
+                raise ValueError("cost_share_target_ref必须指向一名存活朋友/员工")
+            owner_amount = math.ceil(amount / 2)
+            ally_amount = amount // 2
+        for entity, part in ((payer, owner_amount), (ally, ally_amount)):
+            if entity is None or part <= 0:
+                continue
+            capacity = (None if cost_type == "衰老" and self.state.side_has(entity, "不朽之躯")
+                        else self._cost_capacity(entity, cost_type))
+            if capacity is not None and part > capacity:
+                raise ValueError(
+                    f"{entity.name}无法完整承担{cost_type}{part}（可支付{capacity}）")
+        return payer, owner_amount, ally, ally_amount
+
+    def _apply_numeric_cost_part(self, payer: Entity, cost_type: str, amount: int) -> dict:
+        """支付一方的已拆分数值代价；不再进行血契递归。"""
+        if amount <= 0:
+            return {"payer": payer.name, "cost_type": cost_type, "paid": 0}
+        if cost_type == "流血":
+            detail = self._pay_bleed_cost(payer, amount)
+            return {"payer": payer.name, "cost_type": cost_type,
+                    "paid": detail.get("actual_damage", 0), "detail": detail}
+        if cost_type == "衰老":
+            if self.state.side_has(payer, "不朽之躯"):
+                return {"payer": payer.name, "cost_type": cost_type, "paid": 0, "immune": True}
+            payer.blood_limit = max(0, payer.blood_limit - amount)
+            payer.current_hp = min(payer.current_hp, payer.blood_limit)
+            if payer.current_hp <= 0:
+                payer.is_alive = False
+                self._on_entity_death(payer)
+        elif cost_type == "枯竭":
+            payer.mana_limit = max(0, payer.mana_limit - amount)
+            payer.current_mana = min(payer.current_mana, payer.mana_limit)
+        elif cost_type == "萎缩":
+            payer.speed_limit = max(0, payer.speed_limit - amount)
+            payer.current_speed = min(payer.current_speed, payer.speed_limit)
+        elif cost_type == "疲惫":
+            payer.current_speed = max(0, payer.current_speed - amount)
+        elif cost_type == "异变":
+            mutation = payer.add_mutation(amount)
+            self._bank_lianxin(payer, cost_type, amount)
+            nail = self._on_cost_paid(payer)
+            return {"payer": payer.name, "cost_type": cost_type, "paid": amount,
+                    "mutation": mutation, "brand_nail": nail}
+        self._bank_lianxin(payer, cost_type, amount)
+        nail = self._on_cost_paid(payer)
+        return {"payer": payer.name, "cost_type": cost_type, "paid": amount,
+                "brand_nail": nail}
+
+    def pay_numeric_cost(
+        self,
+        payer: Entity,
+        cost_type: str,
+        amount: int,
+        *,
+        cost_share_target_ref: str = "",
+        dragon_heart_use: int = 0,
+    ) -> dict:
+        """统一支付可分担的数值代价：龙心先抵消，血契再拆分剩余后果。"""
+        if not isinstance(dragon_heart_use, int) or isinstance(dragon_heart_use, bool) or dragon_heart_use < 0:
+            raise ValueError("dragon_heart_use必须是非负整数")
+        if payer is not self.state.player:
+            shared_ok = ("共心环" in self.state.artifacts_owned
+                         and self.state.shared_dragon_heart_type == cost_type)
+            if not shared_ok:
+                dragon_heart_use = 0
+        heart = None
+        offset = 0
+        if dragon_heart_use > 0 and amount > 0:
+            heart = next((item for item in self.state.consumables
+                          if item.kind == "dragon_heart"
+                          and item.dragon_heart_type == cost_type
+                          and item.name == f"{cost_type}龙心"
+                          and not item.is_depleted), None)
+            if heart is not None:
+                offset = min(dragon_heart_use, heart.current_uses, amount)
+        remaining = amount - offset
+        _, owner_amount, ally, ally_amount = self.validate_numeric_cost(
+            payer, cost_type, remaining, cost_share_target_ref)
+        if heart is not None and offset > 0:
+            heart.current_uses -= offset
+        owner_detail = self._apply_numeric_cost_part(payer, cost_type, owner_amount)
+        ally_detail = (self._apply_numeric_cost_part(ally, cost_type, ally_amount)
+                       if ally is not None else None)
+        return {
+            "cost_type": cost_type,
+            "requested": amount,
+            "dragon_heart_offset": offset,
+            "remaining": remaining,
+            "owner": owner_detail,
+            "shared_with": ally_detail,
+            "cost_share_target_ref": cost_share_target_ref or None,
+            "actual_paid": owner_detail.get("paid", 0) + (ally_detail or {}).get("paid", 0),
+        }
+
     def _pay_bleed_cost(self, payer: Entity, amount: int, dragon_heart_use: int = 0) -> dict:
         """
-        支付"流血X"代价的统一入口（供道纹代价与鲜血契约等遗物自身的流血代价共用）。
+        支付单个承担者的"流血X"代价；血契拆分由 pay_numeric_cost 在外层完成。
         血誓戒：[回始]玩家首次主动支付流血代价时，获得等同于本次流血的格挡；
-        若支付后生命≤30%[血限]，改为获得等量生命。仅玩家本人支付时生效(卖身契转嫁给他人不算)。
+        若支付后生命≤30%[血限]，改为获得等量生命。血契分担时只按玩家本人实际承担的部分触发。
         dragon_heart_use：本次希望消耗"流血龙心"抵消的点数(龙心谷"炼心"产出)，抵消后剩余部分才真正支付。
         """
         actual, offset = self._offset_with_dragon_heart(payer, "流血", amount, dragon_heart_use)
@@ -468,6 +648,7 @@ class CombatEngine:
         spell_choices: Optional[dict] = None,
         entity_refs: Optional[dict[str, Entity]] = None,
         dodge_relic_target_ref: Optional[str] = None,
+        cost_share_target_ref: str = "",
     ) -> dict:
         """
         解析一次攻击
@@ -498,9 +679,10 @@ class CombatEngine:
         must_hit = is_must_hit or self.consume_bizhong(attacker)
 
         # 血影（初拥之夜遗物，仅玩家自身持有）：非必中判定下，可流血10取消本次判定，是常规闪避外的另一选项
-        if (blood_shadow and not must_hit and self.state.side_has(target, "血影")
-                and target.current_hp > 10):
-            self._pay_bleed_cost(target, 10)
+        if (blood_shadow and not must_hit and self.state.side_has(target, "血影")):
+            self.pay_numeric_cost(
+                target, "流血", 10,
+                cost_share_target_ref=cost_share_target_ref)
             result["blood_shadow_success"] = True
             result["note"] = "血影：流血10，本次判定被取消"
             return result
@@ -690,7 +872,7 @@ class CombatEngine:
             e.blood_oath_used_this_round = False
             e.mana_inflicted_this_round = 0
             e.damage_dealt_this_round = 0
-        # 回始：每个轮回者获得等同当前法限的法力。战始已清零；折速/鲜血契约在战始 +=；守夜灯在本段之后 +=。
+        # 回始：每个轮回者获得等同当前法限的法力。战始已清零；折速法印在战始+=；血契/守夜灯在本段之后+=。
         # 死斗里封存对手也是轮回者，必须同样获得法力，否则只能普攻1点。
         for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
             if entity.entity_type != "轮回者" or not entity.is_alive:
@@ -766,7 +948,9 @@ class CombatEngine:
                     self._lose_shards_of(entity, x)
                     effects.append({"type": "bizhai", "entity": entity.name, "lost_shards": x})
                 else:
-                    entity.blood_limit = max(1, entity.blood_limit - 2 * x)
+                    delta = max(1, entity.blood_limit - 2 * x) - entity.blood_limit
+                    self._battle_delta(
+                        entity, "blood_limit", delta, "逼债", EffectPolarity.DEBUFF.value)
                     entity.current_hp = min(entity.current_hp, entity.blood_limit)
                     if entity.current_hp <= 0:
                         entity.is_alive = False
@@ -805,7 +989,7 @@ class CombatEngine:
             "state": self._get_combat_state()
         }
     
-    def round_end(self) -> dict:
+    def round_end(self, blood_lineage_cost_share_target_ref: str = "") -> dict:
         """
         回终结算
         1. 回终类效果结算
@@ -819,7 +1003,9 @@ class CombatEngine:
             if entity.has_status("畸变") and entity.is_alive:
                 blood_loss = max(0, entity.attack_count * entity.attack_power)
                 before_limit = entity.blood_limit
-                entity.blood_limit = max(0, entity.blood_limit - blood_loss)
+                delta = max(0, entity.blood_limit - blood_loss) - entity.blood_limit
+                self._battle_delta(
+                    entity, "blood_limit", delta, "畸变", EffectPolarity.DEBUFF.value)
                 entity.current_hp = min(entity.current_hp, entity.blood_limit)
                 if entity.blood_limit <= 0 or entity.current_hp <= 0:
                     entity.current_hp = 0
@@ -872,9 +1058,12 @@ class CombatEngine:
                     effects.append({"type": "blood_lineage_heal", "entity": entity.name,
                                      "amount": heal_detail["actual_heal"]})
                 else:
-                    bleed_detail = self._pay_bleed_cost(entity, 20)
+                    payment = self.pay_numeric_cost(
+                        entity, "流血", 20,
+                        cost_share_target_ref=(blood_lineage_cost_share_target_ref
+                                               if entity is self.state.player else ""))
                     effects.append({"type": "blood_lineage_bleed", "entity": entity.name,
-                                     "amount": bleed_detail["actual_damage"]})
+                                     "cost": payment, "amount": payment["actual_paid"]})
 
             # 赤族诅咒：[回终]固定流血20
             if entity.entity_type == "赤族" and entity.is_alive:
@@ -912,10 +1101,16 @@ class CombatEngine:
             skip = ("爆裂",) if id(entity) not in player_side_ids else ()
             expired = entity.tick_status_effects(skip_names=skip)
             if expired:
+                # 只有“持续期间直接改写面板”的效果到期即还原；畸变/伤痕/逼债等
+                # 已经产生的累计局内后果保留到战终，再由battle作用域统一回滚。
+                panel_modifier_sources = {"强化", "弱化", "僵化"}
+                rolled_back = self.state.rollback_scoped_sources(
+                    entity, set(expired) & panel_modifier_sources)
                 effects.append({
                     "type": "status_expired",
                     "entity": entity.name,
-                    "expired_effects": expired
+                    "expired_effects": expired,
+                    "rolled_back_deltas": rolled_back,
                 })
                 # 逆鳞（F2）：状态到期时清空计层
                 if "逆鳞" in expired and hasattr(entity, "_nilin"):
@@ -1485,7 +1680,8 @@ class CombatEngine:
     
     def apply_daowen_effect(
         self, name: str, calc: dict, caster: Entity, target: Entity,
-        dragon_heart_use: int = 0, *, aoe_targets_override: Optional[list[Entity]] = None,
+        dragon_heart_use: int = 0, *, cost_share_target_ref: str = "",
+        aoe_targets_override: Optional[list[Entity]] = None,
     ) -> dict:
         """应用道纹效果；aoe_targets_override用于绑定两阶段决策的目标快照。"""
         result = {"daowen": name, "effects": []}
@@ -1624,7 +1820,9 @@ class CombatEngine:
             result["effects"].append({"type": "shield_drain", "target": target.name, "lost": lost})
         if "blood_limit_reduction" in calc:
             _hp_before = target.current_hp
-            target.blood_limit -= calc["blood_limit_reduction"]
+            self._battle_delta(
+                target, "blood_limit", -calc["blood_limit_reduction"],
+                name, EffectPolarity.DEBUFF.value)
             # README 第460行"[血限]及当前生命同时 -4X"：两者是各自独立的扣减。
             # 此前实现只做 current_hp=min(current_hp, blood_limit)（血限压顶），
             # 对残血目标等于毫无效果——锐利打 10/200 的怪一点血都掉不了。
@@ -1646,12 +1844,18 @@ class CombatEngine:
                 result["effects"].append({"type": "blood_limit_increase", "target": target.name,
                                            "increase": 0, "blocked_by": "不朽之躯"})
             else:
-                target.blood_limit += calc["blood_limit_increase"]
-                result["effects"].append({"type": "blood_limit_increase", "target": target.name, "increase": calc["blood_limit_increase"]})
+                increase = self._battle_delta(
+                    target, "blood_limit", calc["blood_limit_increase"],
+                    name, EffectPolarity.BUFF.value)
+                result["effects"].append({"type": "blood_limit_increase", "target": target.name,
+                                          "increase": increase})
         if "blood_limit_penalty" in calc and target.shards < (calc.get("shard_drain", 0) or 0):
-            # 逼债：碎片不足则失血限
-            target.blood_limit -= calc["blood_limit_penalty"]; target.current_hp = min(target.current_hp, target.blood_limit)
-            result["effects"].append({"type": "bizhai_blood", "target": target.name, "lost": calc["blood_limit_penalty"]})
+            # 逼债：碎片不足则失血限；不是代价，按局内减益登记。
+            lost = -self._battle_delta(
+                target, "blood_limit", -calc["blood_limit_penalty"],
+                name, EffectPolarity.DEBUFF.value)
+            target.current_hp = min(target.current_hp, target.blood_limit)
+            result["effects"].append({"type": "bizhai_blood", "target": target.name, "lost": lost})
 
         # ---- 攻击面板修改 ----
         _panel_keys = ("attack_boost", "attack_reduction", "attack_fixed", "attack_count_fixed")
@@ -1659,16 +1863,24 @@ class CombatEngine:
         if panel_locked:
             result["effects"].append({"type": "dingxing_block", "target": target.name})
         if (not panel_locked) and "attack_boost" in calc:
-            target.attack_power += calc["attack_boost"]
+            self._battle_delta(
+                target, "attack_power", calc["attack_boost"],
+                name, EffectPolarity.BUFF.value)
             result["effects"].append({"type": "attack_boost", "target": target.name, "attack_power": target.attack_power})
         if (not panel_locked) and "attack_reduction" in calc:
-            target.attack_power = max(0, target.attack_power - calc["attack_reduction"])
+            delta = max(0, target.attack_power - calc["attack_reduction"]) - target.attack_power
+            self._battle_delta(
+                target, "attack_power", delta, name, EffectPolarity.DEBUFF.value)
             result["effects"].append({"type": "attack_reduction", "target": target.name, "attack_power": target.attack_power})
         if (not panel_locked) and "attack_fixed" in calc:
-            target.attack_power = calc["attack_fixed"]
+            self._battle_delta(
+                target, "attack_power", calc["attack_fixed"] - target.attack_power,
+                name, EffectPolarity.NEUTRAL.value)
             result["effects"].append({"type": "attack_fixed", "target": target.name, "attack_power": target.attack_power})
         if (not panel_locked) and "attack_count_fixed" in calc:
-            target.attack_count = calc["attack_count_fixed"]
+            self._battle_delta(
+                target, "attack_count", calc["attack_count_fixed"] - target.attack_count,
+                name, EffectPolarity.NEUTRAL.value)
             result["effects"].append({"type": "attack_count_fixed", "target": target.name, "attack_count": target.attack_count})
         bianxing_blocked = False
         if name == "变形":  # 自身攻击力与攻击次数互换；持续结束后还原首次变形前面板
@@ -1715,44 +1927,32 @@ class CombatEngine:
             spent = self._lose_shards_of(self.state.player, calc["cost_shards"]) if caster is self.state.player else 0
             result["effects"].append({"type": "cost_shards", "spent": spent})
 
-        # ---- 代价（卖身契：玩家代价转由cost_proxy承担）----
-        cost_target = caster
-        if caster is self.state.player and self.cost_proxy is not None:
-            cost_target = self.cost_proxy
-        # 共心环(终音法器)：本场选定类型后，[朋友]/[员工]也可使用该共享龙心抵消同类型代价；
-        # 未持有共心环、或类型与选定的不同时，仍只有玩家自身可以使用自己的龙心。
-        dh_use = dragon_heart_use
-        if cost_target is not self.state.player:
-            heart_type = "衰老" if "cost_blood_limit" in calc else ("疲惫" if "cost_speed" in calc else "流血")
-            shared_ok = ("共心环" in self.state.artifacts_owned
-                         and self.state.shared_dragon_heart_type == heart_type)
-            if not shared_ok:
-                dh_use = 0
+        # ---- 数值代价：统一走代价总线；【血契】可按显式引用共同承担 ----
+        cost_spec = None
         if "cost_hp" in calc:
-            result["effects"].append({"type": "bleed_cost", "source": cost_target.name,
-                                       **self._pay_bleed_cost(cost_target, calc["cost_hp"], dh_use)})
-        if "cost_blood_limit" in calc:
-            # 不朽之躯：免疫衰老（死斗两边各一份）
-            if self.state.side_has(cost_target, "不朽之躯"):
-                result["effects"].append({"type": "aging_cost", "source": cost_target.name,
-                                           "new_blood_limit": cost_target.blood_limit,
-                                           "dragon_heart_offset": 0, "immune": True})
-            else:
-                actual, offset = self._offset_with_dragon_heart(cost_target, "衰老", calc["cost_blood_limit"], dh_use)
-                cost_target.blood_limit -= actual; cost_target.current_hp = min(cost_target.current_hp, cost_target.blood_limit)
-                self._bank_lianxin(cost_target, "衰老", actual)
-                nail = self._on_cost_paid(cost_target) if actual > 0 else None
-                result["effects"].append({"type": "aging_cost", "source": cost_target.name,
-                                           "new_blood_limit": cost_target.blood_limit, "dragon_heart_offset": offset,
-                                           "brand_nail": nail})
-        if "cost_speed" in calc:
-            actual, offset = self._offset_with_dragon_heart(cost_target, "疲惫", calc["cost_speed"], dh_use)
-            cost_target.current_speed -= actual
-            self._bank_lianxin(cost_target, "疲惫", actual)
-            nail = self._on_cost_paid(cost_target) if actual > 0 else None
-            result["effects"].append({"type": "fatigue_cost", "source": cost_target.name,
-                                       "new_speed": cost_target.current_speed, "dragon_heart_offset": offset,
-                                       "brand_nail": nail})
+            cost_spec = ("流血", calc["cost_hp"], "bleed_cost")
+        elif "cost_blood_limit" in calc:
+            cost_spec = ("衰老", calc["cost_blood_limit"], "aging_cost")
+        elif "cost_speed" in calc:
+            cost_spec = ("疲惫", calc["cost_speed"], "fatigue_cost")
+        elif "cost_mutation" in calc and caster.entity_type != "怪物":
+            # 怪物原始道纹在两阶段怪物流程中已先支付异变5X；此处只补轮回者/同伴的同类代价。
+            cost_spec = ("异变", calc["cost_mutation"], "mutation_cost")
+        if cost_spec is not None:
+            cost_type, amount, effect_type = cost_spec
+            payment = self.pay_numeric_cost(
+                caster, cost_type, amount,
+                cost_share_target_ref=cost_share_target_ref,
+                dragon_heart_use=dragon_heart_use,
+            )
+            cost_effect = {"type": effect_type, **payment}
+            if cost_type == "流血":
+                # 保留既有公开字段，同时以owner/shared_with暴露血契拆分详情。
+                cost_effect["actual_damage"] = payment["actual_paid"]
+                cost_effect["hp_after"] = caster.current_hp
+            result["effects"].append(cost_effect)
+        elif cost_share_target_ref:
+            raise ValueError("该道纹没有可由【血契】共同承担的数值代价")
         if "mana_gain" in calc:
             caster.current_mana += calc["mana_gain"]
             result["effects"].append({"type": "mana_gain", "source": caster.name, "mana_gained": calc["mana_gain"]})
@@ -2146,7 +2346,7 @@ class CombatEngine:
             raise ValueError("relic_choices必须是对象")
         active = {r.name for r in self.state.relics if self.state.sealed_relics.get(r.name, 0) <= 0}
         player = self.state.player
-        for name in ("折速法印", "鲜血契约", "三相残韵盘", "卖身契"):
+        for name in ("折速法印", "三相残韵盘"):
             if name not in active:
                 continue
             decision = choices.get(name)
@@ -2156,29 +2356,25 @@ class CombatEngine:
                 continue
             if name == "折速法印":
                 x = decision.get("x")
-                if not isinstance(x, int) or isinstance(x, bool) or x < 1 or not player or x > player.current_speed:
-                    raise ValueError("折速法印x必须是1~当前速度的整数")
-            elif name == "鲜血契约":
-                x = decision.get("x")
-                cap = math.floor(player.blood_limit * 0.2) if player else 0
-                if not isinstance(x, int) or isinstance(x, bool) or x < 1 or x > cap:
-                    raise ValueError(f"鲜血契约x必须是1~血限20%({cap})的整数")
+                if not isinstance(x, int) or isinstance(x, bool) or x < 1 or not player:
+                    raise ValueError("折速法印x必须是正整数")
+                self.validate_numeric_cost(
+                    player, "疲惫", x, decision.get("cost_share_target_ref", ""))
             elif name == "三相残韵盘":
                 resonance = decision.get("resonance_type", "")
                 if resonance not in ("转换", "反转", "曲解") or self.state.resonance.get(resonance, 0) < 1:
                     raise ValueError("三相残韵盘必须显式选择一种当前持有的resonance_type")
-            elif name == "卖身契":
-                target = decision.get("target", "")
-                proxies = [e.name for e in self.state.friends + self.state.employees if e.is_alive]
-                if target not in proxies:
-                    raise ValueError(f"卖身契必须显式指定一名存活朋友/员工作为target，可选{proxies}")
         for name in ("猩红果实", "苍白之花"):
             if name in active:
                 decision = choices.get(name)
                 if not isinstance(decision, dict) or not isinstance(decision.get("use"), bool):
                     raise ValueError(f"持有【{name}】时必须显式提交use布尔值")
-                if name == "苍白之花" and decision["use"] and (not player or player.current_speed < 5):
-                    raise ValueError("苍白之花：当前速度不足以疲惫5")
+                if decision["use"] and name == "猩红果实":
+                    self.validate_numeric_cost(
+                        player, "流血", 10, decision.get("cost_share_target_ref", ""))
+                if decision["use"] and name == "苍白之花":
+                    self.validate_numeric_cost(
+                        player, "疲惫", 5, decision.get("cost_share_target_ref", ""))
         refs = self._combat_entity_refs()
         if "负岳索" in active:
             decision = choices.get("负岳索")
@@ -2221,6 +2417,34 @@ class CombatEngine:
                 if (heart is None or not isinstance(x, int) or isinstance(x, bool)
                         or x < 1 or x > heart.current_uses):
                     raise ValueError("余火印必须提交合法heart_name与1~当前耐久的x")
+        def _validate_blood_pact_decision(holder: Entity, key: str, allow_heart: bool):
+            decision = choices.get(key)
+            if not isinstance(decision, dict) or not isinstance(decision.get("use"), bool):
+                raise ValueError(f"{key}每个回始必须显式提交use布尔值")
+            if not decision["use"]:
+                return
+            x = decision.get("x")
+            heart_use = decision.get("dragon_heart_use", 0)
+            if not isinstance(x, int) or isinstance(x, bool) or x < 1:
+                raise ValueError(f"{key}.x必须是正整数")
+            if (not isinstance(heart_use, int) or isinstance(heart_use, bool)
+                    or heart_use < 0 or (heart_use and not allow_heart)):
+                raise ValueError(f"{key}.dragon_heart_use非法")
+            heart = next((item for item in self.state.consumables
+                          if item.kind == "dragon_heart" and item.dragon_heart_type == "流血"
+                          and not item.is_depleted), None) if allow_heart else None
+            offset = min(heart_use, heart.current_uses, 4 * x) if heart else 0
+            self.validate_numeric_cost(
+                holder, "流血", 4 * x - offset,
+                decision.get("cost_share_target_ref", ""),
+            )
+
+        if "血契" in active:
+            _validate_blood_pact_decision(player, "血契", True)
+        opponent = next((entity for entity in self.state.enemies
+                         if entity.entity_type == "轮回者" and entity.is_alive), None)
+        if opponent is not None and self._has_active_blood_pact(opponent):
+            _validate_blood_pact_decision(opponent, "对手血契", False)
 
     def process_relics(self, trigger: str | TriggerTiming, ctx: dict = None) -> list:
         """遗物效果触发框架。可选效果只读取AI显式提交的ctx，不设置启发式默认值。"""
@@ -2254,6 +2478,31 @@ class CombatEngine:
                 g = math.ceil(player.mana_limit / 2)
                 if g > 0:
                     player.current_mana += g; logs.append(f"守夜灯：+{g}法力")
+            if "血契" in relics and choices["血契"]["use"]:
+                decision = choices["血契"]
+                x = decision["x"]
+                payment = self.pay_numeric_cost(
+                    player, "流血", 4 * x,
+                    cost_share_target_ref=decision.get("cost_share_target_ref", ""),
+                    dragon_heart_use=decision.get("dragon_heart_use", 0),
+                )
+                player.current_mana += x
+                shared = payment.get("shared_with")
+                shared_note = f"，与{shared['payer']}共同承担" if shared else ""
+                logs.append(f"血契：流血{4*x}{shared_note}，+{x}法力")
+            opponent = next((entity for entity in self.state.enemies
+                             if entity.entity_type == "轮回者" and entity.is_alive), None)
+            if (opponent is not None and self._has_active_blood_pact(opponent)
+                    and choices["对手血契"]["use"]):
+                decision = choices["对手血契"]
+                x = decision["x"]
+                payment = self.pay_numeric_cost(
+                    opponent, "流血", 4 * x,
+                    cost_share_target_ref=decision.get("cost_share_target_ref", ""))
+                opponent.current_mana += x
+                shared = payment.get("shared_with")
+                shared_note = f"，与{shared['payer']}共同承担" if shared else ""
+                logs.append(f"对手血契：流血{4*x}{shared_note}，+{x}法力")
             if "余火印" in relics and choices["余火印"]["use"]:
                 x = choices["余火印"]["x"]
                 heart = next(item for item in self.state.consumables
@@ -2265,33 +2514,30 @@ class CombatEngine:
             choices = ctx.get("relic_choices", {})
             self.validate_battle_start_relic_choices(choices)
             if "折速法印" in relics and choices["折速法印"]["use"]:
-                x = choices["折速法印"]["x"]
-                player.current_speed -= x
+                decision = choices["折速法印"]
+                x = decision["x"]
+                self.pay_numeric_cost(
+                    player, "疲惫", x,
+                    cost_share_target_ref=decision.get("cost_share_target_ref", ""))
                 player.current_mana += 6 * x
                 logs.append(f"折速法印：疲惫{x}，+{6*x}法力")
-            if "鲜血契约" in relics and choices["鲜血契约"]["use"]:
-                x = choices["鲜血契约"]["x"]
-                self._pay_bleed_cost(player, x)
-                player.current_mana += x
-                logs.append(f"鲜血契约：流血{x}，+{x}法力")
             if "三相残韵盘" in relics and choices["三相残韵盘"]["use"]:
                 consume = choices["三相残韵盘"]["resonance_type"]
                 self.state.resonance[consume] -= 1
                 self._sanxiang_consumed = consume
                 logs.append(f"三相残韵盘：消耗{consume}残韵")
-            if "卖身契" in relics and choices["卖身契"]["use"]:
-                target_name = choices["卖身契"]["target"]
-                self.cost_proxy = next(e for e in self.state.friends + self.state.employees
-                                       if e.is_alive and e.name == target_name)
-                logs.append(f"卖身契：本场代价由{self.cost_proxy.name}承担")
             if "猩红果实" in relics and choices["猩红果实"]["use"]:
-                self._pay_bleed_cost(player, 10)
+                decision = choices["猩红果实"]
+                self.pay_numeric_cost(
+                    player, "流血", 10,
+                    cost_share_target_ref=decision.get("cost_share_target_ref", ""))
                 self.state.event_modifiers["scarlet_fruit_active"] = True
                 logs.append("猩红果实：流血10；战终血限+2")
             if "苍白之花" in relics and choices["苍白之花"]["use"]:
-                if player.current_speed < 5:
-                    raise ValueError("苍白之花：当前速度不足以疲惫5")
-                player.current_speed -= 5
+                decision = choices["苍白之花"]
+                self.pay_numeric_cost(
+                    player, "疲惫", 5,
+                    cost_share_target_ref=decision.get("cost_share_target_ref", ""))
                 self.state.event_modifiers["pale_flower_active"] = True
                 logs.append("苍白之花：疲惫5；战终精力+1")
             if "缄默面具" in relics:
@@ -2336,7 +2582,6 @@ class CombatEngine:
         """战始重置怪物激活状态与战斗遗物状态"""
         self._monster_activated = {}
         self._monster_evolved = set()  # 进化（原初X）：每场战斗限一次
-        self.cost_proxy = None
         self._sanxiang_consumed = ""
         self._resonance_rewrites = {}
 
@@ -2465,7 +2710,11 @@ class CombatEngine:
                 attack_targets = [target for target in attack_targets if target["ref"] == "player:0"]
             for target_option in attack_targets:
                 entity = refs[target_option["ref"]]
-                target_option["can_blood_shadow"] = self.state.side_has(entity, "血影") and entity.current_hp > 10
+                blood_pact_options = self.blood_shadow_cost_share_options(entity)
+                target_option["can_blood_shadow"] = (
+                    self.state.side_has(entity, "血影")
+                    and (entity.current_hp > 10 or bool(blood_pact_options)))
+                target_option["blood_shadow_cost_share_target_options"] = blood_pact_options
                 target_option["spell_options"] = self.prepare_spell_reactions(entity, monster)
                 target_option["dodge_relic_target_options"] = [
                     candidate for candidate in all_targets
@@ -2624,7 +2873,9 @@ class CombatEngine:
                 aoe_targets_override = []
                 for entity, want_dodge, entry in aoe_dodge_choices:
                     if entry["blood_shadow"]:
-                        self._pay_bleed_cost(entity, 10)
+                        self.pay_numeric_cost(
+                            entity, "流血", 10,
+                            cost_share_target_ref=entry.get("cost_share_target_ref", ""))
                     elif want_dodge:
                         entity.current_speed -= 1
                         self._note_dodge(entity, entry.get("dodge_relic_target_ref"))
@@ -2634,7 +2885,9 @@ class CombatEngine:
             if must_hit_preview:
                 self.consume_bizhong(monster)
             elif blood_shadow:
-                self._pay_bleed_cost(target, 10)
+                self.pay_numeric_cost(
+                    target, "流血", 10,
+                    cost_share_target_ref=choice.get("cost_share_target_ref", ""))
                 return {"monster": monster.name, "daowen_activated": name,
                         "resolves_as": effective_name, "target": target.name, "blood_shadow": True,
                         "trigger_spell_logs": trigger_logs}
@@ -2770,6 +3023,7 @@ class CombatEngine:
                         monster, attack_target, dodge=hit["dodge"], blood_shadow=hit["blood_shadow"],
                         spell_choices=hit.get("spell_choices"), entity_refs=refs,
                         dodge_relic_target_ref=hit.get("dodge_relic_target_ref"),
+                        cost_share_target_ref=hit.get("cost_share_target_ref", ""),
                     )
                     resolved.update({"hit_index": hit_index + 1, "hit_total": hits_per_action,
                                      "attack_action_index": action_index + 1})

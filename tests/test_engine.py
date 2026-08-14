@@ -20,7 +20,7 @@ def _choose_region(engine, region):
         engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
     result = engine.execute_action("setup_choose_region", {"region": region})
     if result.get("success") and engine.state.pending_relic_choices:
-        optional = {"折速法印", "鲜血契约", "三相残韵盘", "卖身契"}
+        optional = {"折速法印", "三相残韵盘"}
         choice = next((n for n in engine.state.pending_relic_choices if n not in optional),
                       engine.state.pending_relic_choices[0])
         engine.execute_action("choose_discovered_relic", {"relic_name": choice})
@@ -94,8 +94,8 @@ def test_daowen_calculations():
     # 测试再生
     result = DaoWenEngine.resolve("再生", 4, target=target)
     assert result["cost"] == 4
-    assert result["target_heal"] == 12
-    print("  ✓ 再生X=4: 消耗4，回复12")
+    assert result["target_heal"] == 24
+    print("  ✓ 再生X=4: 消耗4，回复24")
     
     # 测试冲击
     result = DaoWenEngine.resolve("冲击", 2)
@@ -755,7 +755,7 @@ def test_rebellion_and_legacy():
 
 
 def test_relics_five_more():
-    """测试三相残韵盘/无所求/卖身契/买路财/同魂笔"""
+    """测试三相残韵盘/无所求/买路财/同魂笔"""
     print("\n=== 测试：剩余5遗物 ===")
     from engine.models import GameState, Relic
     from engine.combat import CombatEngine

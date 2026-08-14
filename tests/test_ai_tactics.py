@@ -32,7 +32,7 @@ def _engine(tmp_path, seed=4, learn=("庇护", "再生", "冲击")):
     e.state.energy = 0
     choices = {}
     relic = e.state.relics[0].name
-    if relic in ("折速法印", "鲜血契约", "三相残韵盘", "卖身契"):
+    if relic in ("折速法印", "三相残韵盘"):
         choices[relic] = {"use": False}
     e.execute_action("battle_start", {"relic_choices": choices})
     e.execute_action("round_start", {})

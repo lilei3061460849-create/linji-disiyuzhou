@@ -37,7 +37,7 @@ TACTICAL_ROLES: dict[str, dict] = {
     "冲击": {"role": "aoe", "cost": 1, "pri": 1, "dmg_per_x": 1},
     "血债": {"role": "nuke", "cost": 0, "pay": "流血", "pri": 3, "dmg_per_x": 2},
     "庇护": {"role": "shield", "cost": 1, "pri": 1, "shield_per_x": 4},
-    "再生": {"role": "heal", "cost": 1, "pri": 1, "heal_per_x": 3},
+    "再生": {"role": "heal", "cost": 1, "pri": 1, "heal_per_x": 6},
     "慈悲": {"role": "heal", "cost": 0, "pay": "流血", "pri": 3, "heal_per_x": 1},
     "固执": {"role": "buff", "cost": 0, "pay": "冷却", "pri": 2},
     # ---- 锐利闭环 ----

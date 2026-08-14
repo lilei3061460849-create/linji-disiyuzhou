@@ -513,7 +513,8 @@ def test_r47_illegal_corrupt_save_is_atomic(tmp_path):
     engine = _engine(tmp_path); player, _ = _combat(engine)
     path = Path(engine.save_dir) / "save_bad.json"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"format": "linji-save", "version": 2, "payload": "%%%"}), encoding="utf-8")
+    path.write_text(json.dumps({"format": "linji-save", "version": engine.SAVE_FORMAT_VERSION,
+                                "payload": "%%%"}), encoding="utf-8")
     before = (id(engine.state), player.current_hp)
     result = engine.load_game("bad")
     assert not result["success"] and (id(engine.state), engine.state.player.current_hp) == before

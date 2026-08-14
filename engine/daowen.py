@@ -59,9 +59,9 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_zaisheng(x: int, target: Entity) -> dict:
-        """再生X：消耗X。为[目标]回复3X点生命"""
+        """再生X：消耗X。为[目标]回复6X点生命"""
         cost = x
-        heal = 3 * x
+        heal = 6 * x
         return {
             "dao_wen": "再生",
             "x": x,

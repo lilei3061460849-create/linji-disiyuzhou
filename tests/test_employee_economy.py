@@ -48,7 +48,7 @@ def _start_battle(engine):
     engine.state.energy = 0
     choices = {}
     relic = engine.state.relics[0].name
-    if relic in ("折速法印", "鲜血契约", "三相残韵盘", "卖身契"):
+    if relic in ("折速法印", "三相残韵盘"):
         choices[relic] = {"use": False}
     result = engine.execute_action("battle_start", {"relic_choices": choices})
     engine.state.enemies.clear()  # 本文件只测员工经济，不保留随机怪物。

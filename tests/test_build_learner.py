@@ -30,7 +30,7 @@ bl = _load()
 
 def _finish_region_setup(engine, region):
     result = engine.execute_action("setup_choose_region", {"region": region})
-    optional = {"折速法印", "鲜血契约", "三相残韵盘", "卖身契"}
+    optional = {"折速法印", "三相残韵盘"}
     choice = next((n for n in result["result"]["relic_choices"] if n not in optional),
                   result["result"]["relic_choices"][0])
     engine.execute_action("choose_discovered_relic", {"relic_name": choice})
@@ -40,7 +40,7 @@ def _finish_region_setup(engine, region):
 def _start_battle(engine, relic):
     engine.state.energy = 0
     choices = {relic: {"use": False}} if relic in {
-        "折速法印", "鲜血契约", "三相残韵盘", "卖身契"} else {}
+        "折速法印", "三相残韵盘"} else {}
     return engine.execute_action("battle_start", {"relic_choices": choices})
 
 

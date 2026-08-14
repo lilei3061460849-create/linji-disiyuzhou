@@ -445,7 +445,12 @@ class PlaceholderBackend(AIBackend):
             for action in actions:
                 action_type = action.get("action_type")
                 if action_type in ("round_start", "round_end", "prepare_monster_phase"):
-                    return AIDecision(action_type, {"relic_choices": {}} if action_type == "round_start" else {},
+                    round_params = {}
+                    if action_type == "round_start":
+                        schema = action.get("params_schema", {}).get("relic_choices", {})
+                        choices = {name: {"use": False} for name in schema if name != "_instruction"}
+                        round_params = {"relic_choices": choices}
+                    return AIDecision(action_type, round_params,
                                       "推进合法战斗子阶段")
                 if action_type == "use_daowen" and action.get("available", True):
                     schema = action["params_schema"]

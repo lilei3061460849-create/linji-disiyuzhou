@@ -152,7 +152,7 @@ def play_and_record(region: str, seed: int, battles: int = 7):
         engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
         engine.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
         r = engine.execute_action("setup_choose_region", {"region": region})
-        optional_relics = {"折速法印", "鲜血契约", "三相残韵盘", "卖身契"}
+        optional_relics = {"折速法印", "三相残韵盘"}
         starter = next((n for n in r["result"]["relic_choices"] if n not in optional_relics),
                        r["result"]["relic_choices"][0])
         chosen = engine.execute_action("choose_discovered_relic", {"relic_name": starter})
@@ -221,7 +221,7 @@ def play_and_record(region: str, seed: int, battles: int = 7):
                     break
                 if not [x for x in engine.state.enemies if x.is_alive]:
                     break
-                rs = engine.execute_action("round_start", {})
+                rs = engine.execute_action("round_start", {"relic_choices": ({"血契": {"use": False}} if any(r.name == "血契" for r in engine.state.relics) else {})})
                 lines.extend(BR.format_round_start(rnd, rs.get("result", {}),
                                                    engine.state.player,
                                                    engine.state.enemies))

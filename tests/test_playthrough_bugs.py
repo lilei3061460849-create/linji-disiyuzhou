@@ -29,7 +29,7 @@ def _engine(suffix: str) -> GameEngine:
     engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
     setup = engine.execute_action("setup_choose_region", {"region": "罪孽都市"})
-    optional = {"折速法印", "鲜血契约", "三相残韵盘", "卖身契"}
+    optional = {"折速法印", "三相残韵盘"}
     choice = next((n for n in setup["result"]["relic_choices"] if n not in optional),
                   setup["result"]["relic_choices"][0])
     engine.execute_action("choose_discovered_relic", {"relic_name": choice})
@@ -178,7 +178,7 @@ def test_resonance_fails_without_holder_or_stock():
 # ========================================================================
 
 def test_zhesu_and_blood_pact_overflow_survives_first_round_start():
-    """正常路径：战始清零后折速+24 / 鲜血+12，回始再 +法限。"""
+    """正常路径：折速在战始加法力；血契在回始流血4X并叠加X法力。"""
     engine = _engine("mana_happy")
     p = engine.state.player
     assert p.mana_limit == 14 and p.speed_limit == 8
@@ -193,15 +193,15 @@ def test_zhesu_and_blood_pact_overflow_survives_first_round_start():
 
     engine2 = _engine("mana_pact")
     p2 = engine2.state.player
-    engine2.state.relics.append(Relic(name="鲜血契约", effect="[战始]可流血X使首回合法力+X"))
+    engine2.state.relics.append(Relic(name="血契", effect="[回始]可流血4X获得X法力"))
     hp_before = p2.current_hp
-    engine2.execute_action("battle_start", {"relic_choices": {
-        "鲜血契约": {"use": True, "x": 12},
+    engine2.execute_action("battle_start", {"relic_choices": {}})
+    assert p2.current_mana == 0
+    engine2.execute_action("round_start", {"relic_choices": {
+        "血契": {"use": True, "x": 3},
     }})
-    assert p2.current_mana == 12, f"战始清零后显式鲜血契约X=12，应12，实{p2.current_mana}"
+    assert p2.current_mana == 17, f"回始先+法限14，再由血契+3，应17，实{p2.current_mana}"
     assert p2.current_hp == hp_before - 12
-    engine2.execute_action("round_start", {})
-    assert p2.current_mana == 26, f"回始+法限：12+14=26，实{p2.current_mana}"
 
 
 def test_round_start_adds_mana_limit_even_with_leftover():

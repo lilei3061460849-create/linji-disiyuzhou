@@ -146,18 +146,24 @@ def _event_preflight(text: str, engine, params: dict) -> Optional[str]:
     bleed = sum(int(v) for v in re.findall(r"流血\s*(\d+)", text))
     if "流血X" in text and x is not None:
         bleed += x
-    if bleed > player.current_hp:
-        return f"生命不足，无法完整支付流血{bleed}（当前{player.current_hp}）"
-
     aging = sum(int(v) for v in re.findall(r"衰老\s*(\d+)", text))
     exhaustion = sum(int(v) for v in re.findall(r"枯竭\s*(\d+)", text))
+    shrink = sum(int(v) for v in re.findall(r"萎缩\s*(\d+)", text))
     fatigue = sum(int(v) for v in re.findall(r"疲惫\s*(\d+)", text))
-    if aging > player.blood_limit:
-        return f"血限不足，无法完整支付衰老{aging}"
-    if exhaustion > player.mana_limit:
-        return f"法限不足，无法完整支付枯竭{exhaustion}"
-    if fatigue > player.current_speed:
-        return f"速度不足，无法完整支付疲惫{fatigue}"
+    cost_share_ref = params.get("cost_share_target_ref", "")
+    numeric_costs = {
+        "流血": bleed, "衰老": aging, "枯竭": exhaustion,
+        "萎缩": shrink, "疲惫": fatigue,
+    }
+    try:
+        for cost_type, amount in numeric_costs.items():
+            if amount > 0:
+                engine.combat.validate_numeric_cost(
+                    player, cost_type, amount, cost_share_ref)
+    except ValueError as exc:
+        return str(exc)
+    if cost_share_ref and not any(numeric_costs.values()):
+        return "该事件选项没有可由【血契】共同承担的数值代价"
 
     shard_cost = sum(int(v) for v in re.findall(r"(?:失去|消耗)\s*(\d+)\s*\[?碎片\]?", text))
     if params.get("_event_name") == "医生" and text.startswith("雇佣医生"):
@@ -226,6 +232,11 @@ def resolve_option_effect(text: str, engine, event_name: str = "", params=None) 
         return {"applied": [], "instructions": [],
                 "interrupt_required": {"event": event_name, "option": text, "params": params}}
 
+    def _pay_numeric(cost_type: str, amount: int) -> dict:
+        return engine.combat.pay_numeric_cost(
+            player, cost_type, amount,
+            cost_share_target_ref=params.get("cost_share_target_ref", ""))
+
     # ---- 罪孽都市·遗落的赌局：正式随机只走DiceEngine，结果不可由调用方注入 ----
     if event_name == "遗落的赌局" and text.startswith("下注"):
         x = params["x"]
@@ -238,7 +249,7 @@ def resolve_option_effect(text: str, engine, event_name: str = "", params=None) 
             applied.append(f"赌局{roll['selected']}：碎片{delta:+d}")
             return {"applied": applied, "instructions": [], "random": roll["record"]}
         if text.startswith("下注生命"):
-            player.take_damage(x, "代价")
+            _pay_numeric("流血", x)
             applied.append(f"流血{x}")
             roll = engine.dice.auto_roll("event_lost_gamble_life", ["win", "lose"], context="遗落的赌局·生命")
             if roll["selected"] == "win":
@@ -283,8 +294,7 @@ def resolve_option_effect(text: str, engine, event_name: str = "", params=None) 
         resonance_type = params.get("resonance_type")
         if resonance_type not in ("转换", "反转", "曲解"):
             return {"applied": [], "instructions": [], "error": "必须用resonance_type显式选择一种残韵"}
-        player.mana_limit = max(0, player.mana_limit - 1)
-        player.current_mana = min(player.current_mana, player.mana_limit)
+        _pay_numeric("枯竭", 1)
         engine.state.resonance[resonance_type] = engine.state.resonance.get(resonance_type, 0) + 1
         return {"applied": ["枯竭1", f"获得{resonance_type}残韵"], "instructions": []}
     if event_name == "手术" and text.startswith("强制移植"):
@@ -409,7 +419,7 @@ def resolve_option_effect(text: str, engine, event_name: str = "", params=None) 
             pages = store.load() if store is not None else []
             if not pages:
                 if player:
-                    player.take_damage(5, "代价")
+                    _pay_numeric("流血", 5)
                     applied.append("流血5")
                 applied.append("无遗言可清除")
                 return {"applied": applied, "instructions": instructions}
@@ -442,7 +452,7 @@ def resolve_option_effect(text: str, engine, event_name: str = "", params=None) 
                     "pages": listed,
                 }
             if player:
-                player.take_damage(5, "代价")
+                _pay_numeric("流血", 5)
                 applied.append("流血5")
             engine.state.death_book_legacies = store.load()
             applied.append(f"清除遗言：{removed.get('title') or removed.get('trigger_point')}")
@@ -450,26 +460,27 @@ def resolve_option_effect(text: str, engine, event_name: str = "", params=None) 
 
     def hurt(hp):
         if player:
-            player.take_damage(hp, "代价")
+            _pay_numeric("流血", hp)
             applied.append(f"流血{hp}")
 
     # 流血
     for m in re.finditer(r'流血\s*(\d+)', text):
         hurt(int(m.group(1)))
-    # 衰老（血限-X）
+    if "流血X" in text:
+        hurt(params["x"])
+    # 数值代价统一走代价总线，允许【血契】按显式引用共同承担。
     for m in re.finditer(r'衰老\s*(\d+)', text):
-        x = int(m.group(1)); player.blood_limit -= x
-        player.current_hp = min(player.current_hp, player.blood_limit)
-        if player.current_hp <= 0:
-            player.current_hp = 0; player.is_alive = False
+        x = int(m.group(1)); _pay_numeric("衰老", x)
         applied.append(f"衰老{x}(血限-{x})")
-    # 枯竭（法限-X）
     for m in re.finditer(r'枯竭\s*(\d+)', text):
-        x = int(m.group(1)); player.mana_limit -= x
-        player.current_mana = min(player.current_mana, player.mana_limit); applied.append(f"枯竭{x}(法限-{x})")
-    # 疲惫（当前速度-X）
+        x = int(m.group(1)); _pay_numeric("枯竭", x)
+        applied.append(f"枯竭{x}(法限-{x})")
+    for m in re.finditer(r'萎缩\s*(\d+)', text):
+        x = int(m.group(1)); _pay_numeric("萎缩", x)
+        applied.append(f"萎缩{x}(速限-{x})")
     for m in re.finditer(r'疲惫\s*(\d+)', text):
-        x = int(m.group(1)); player.current_speed -= x; applied.append(f"疲惫{x}")
+        x = int(m.group(1)); _pay_numeric("疲惫", x)
+        applied.append(f"疲惫{x}")
     # 失忆（显式指定失去的道纹）
     memory_cost = sum(int(v) for v in re.findall(r'失忆\s*(\d+)', text))
     if '失忆X' in text:

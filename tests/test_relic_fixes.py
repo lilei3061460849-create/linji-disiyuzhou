@@ -1,16 +1,15 @@
 """
 pytest 风格测试 - 里程碑8：修复5件坏掉/缺失的遗物（血誓戒/买路财/同魂笔/钱袋/忘忧香）
 
-背景（用户直接点名要求先修再继续做初拥之夜/终音法器）：审计发现遗物池13件里
-只有7件真正在战斗中生效，血誓戒完全没做、买路财只有计算没有执行动作、同魂笔只生成
-一条虚假日志不改任何状态、钱袋的触发点从未被调用过是死代码、忘忧香(第13件)压根没注册。
+历史背景：早期遗物池中只有7件真正在战斗中生效，血誓戒完全没做、买路财只有计算没有执行动作、同魂笔只生成
+一条虚假日志不改任何状态、钱袋的触发点从未被调用过是死代码、忘忧香曾未注册。当前遗物池经契约类合并后为12件。
 
 覆盖范围：
 1. 血誓戒：[回始]玩家首次主动支付流血代价获得等量格挡/低血量时改为等量生命，每回合限一次
 2. 买路财：新增retreat_via_toll真正执行撤退(扣碎片/生命、清空战场)，不再只是算个数字
 3. 同魂笔：真正让施法者永久获得"第二目标"道纹残韵变化后的新道纹，第二目标自身不受影响
 4. 钱袋：改为在battle_end随标准击杀奖励一并结算(用battle_start_blood_limit快照)，不再是死代码
-5. 忘忧香：补齐为遗物池第13件，并实现对应的"忘忧"局外行动
+5. 忘忧香：保持在当前12件遗物池中，并实现对应的"忘忧"局外行动
 
 运行方式：
     python -m pytest tests/test_relic_fixes.py -v
@@ -32,7 +31,7 @@ def _new_engine(db_suffix: str, daowen="杀伐") -> GameEngine:
     engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
     setup = engine.execute_action("setup_choose_region", {"region": "罪孽都市"})
-    optional = {"折速法印", "鲜血契约", "三相残韵盘", "卖身契"}
+    optional = {"折速法印", "三相残韵盘"}
     choice = next((n for n in setup["result"]["relic_choices"] if n not in optional),
                   setup["result"]["relic_choices"][0])
     engine.execute_action("choose_discovered_relic", {"relic_name": choice})
@@ -51,7 +50,7 @@ def _start_with_enemy(engine, enemy):
     """battle_start会自动出怪，这里先start再替换为受控的测试怪物"""
     engine.state.energy = 0
     choices = {r.name: {"use": False} for r in engine.state.relics
-               if r.name in ("折速法印", "鲜血契约", "三相残韵盘", "卖身契")}
+               if r.name in ("折速法印", "三相残韵盘")}
     engine.execute_action("battle_start", {"relic_choices": choices})
     engine.state.enemies.clear()
     engine.state.enemies.append(enemy)
@@ -189,13 +188,14 @@ def test_moneybag_uses_battle_start_snapshot_not_current_blood_limit():
     assert r["result"]["shard_reward"] == 4, "应按战始快照100算(2%+2%=4)，不是当前500(会算出20)"
 
 
-def test_wangyouxiang_registered_as_thirteenth_relic():
-    """忘忧香正常路径：应作为遗物池第13件被注册"""
+def test_wangyouxiang_registered_in_revised_relic_pool():
+    """删除两件旧契约、新增血契后，忘忧香仍在12件遗物池中。"""
     engine = _new_engine("wangyou_registered")
     engine._init_relic_pool()
     names = {r.name for r in engine.state.relics_pool}
     assert "忘忧香" in names
-    assert len(engine.RELIC_DEFS) == 13
+    assert len(engine.RELIC_DEFS) == 12
+    assert "血契" in names
 
 
 def test_wangyouxiang_action_loses_daowen_and_gains_shards():

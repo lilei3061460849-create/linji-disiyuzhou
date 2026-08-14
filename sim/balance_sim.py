@@ -104,9 +104,11 @@ def cast_zaisheng(player, target, x):
     if USE_EXCLUSIVE and player.has_status("坏死"): return 0  # 坏死禁疗生效（裁定⑨补漏，此前只挂状态未拦截）
     player.current_mana -= x
     before = target.current_hp
-    target.current_hp = min(target.blood_limit, target.current_hp + 3*x)
-    target.total_healed += (target.current_hp - before)  # 再生不计过量双倍（实恢）
-    return target.current_hp - before
+    amount = 6 * x
+    target.current_hp = min(target.blood_limit, target.current_hp + amount)
+    actual = target.current_hp - before
+    target.total_healed += actual + (amount - actual) * 2
+    return actual
 
 def cast_ziyang(player, monster, x):  # 滋养X：治疗血限10X%
     x = eff_x(player, x)
