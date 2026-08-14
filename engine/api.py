@@ -152,6 +152,27 @@ class GameEngine:
                              "item_name": name} for name in self.state.pending_item_choices],
                 "source": self.state.pending_item_source,
             }
+        if self.state.pending_daowen_choices:
+            return {
+                "phase": "员工转化道纹待选",
+                "actions": [{"action_type": "choose_hired_daowen",
+                             "params_schema": {"name": employee_name, "daowen": choices}}
+                            for employee_name, choices in self.state.pending_daowen_choices.items()],
+            }
+        if self.event_pool.current is not None:
+            event = self.event_pool.events[self.event_pool.current]
+            return {
+                "phase": "事件待结算",
+                "event": self.event_pool.current,
+                "desc": event["desc"],
+                "actions": [{"action_type": "resolve_event",
+                             "params_schema": {"event": self.event_pool.current,
+                                               "option_id": option["id"]},
+                             "option": option["text"],
+                             "parameter_note": "按选项正文中的X/目标/分配要求补充真实参数"}
+                            for option in event["options"]],
+                "queued_events_remaining": len(self.state.pending_event_queue),
+            }
         if self.state.pending_attack:
             pending = self.state.pending_attack
             return {
@@ -202,18 +223,43 @@ class GameEngine:
         return {"phase": GamePhase.SETUP.value, "actions": actions}
 
     def _get_pre_battle_actions(self) -> dict:
-        tiers = {
-            "领悟": [1, 2, 3], "休整": [1, 2, 3], "修行": [1, 2, 3, 4, 5, 6],
-            "学习": [1, 2], "共鸣": [1, 2], "探索": [1],
-        }
-        actions = [{"action_type": "pre_battle_action",
-                    "params_schema": {"sub_action": name, "tier": values,
-                                      "additional": "按action返回的正文选项显式提交"}}
-                   for name, values in tiers.items()]
+        heal_targets = ([{"ref": "player:0", "name": self.state.player.name}]
+                        if self.state.player and self.state.player.is_alive else [])
+        heal_targets += [{"ref": f"friend:{index}", "name": entity.name}
+                         for index, entity in enumerate(self.state.friends) if entity.is_alive]
+        heal_targets += [{"ref": f"employee:{index}", "name": entity.name}
+                         for index, entity in enumerate(self.state.employees) if entity.is_alive]
+        actions = [
+            {"action_type": "pre_battle_action", "params_schema": {
+                "sub_action": "领悟", "resonance_type": ["转换", "反转", "曲解"]}},
+            {"action_type": "pre_battle_action", "params_schema": {
+                "sub_action": "休整", "tier": [1, 2, 3],
+                "heal_allocations": {"target_options": heal_targets,
+                                     "constraint": "amount总和=档位基础恢复量+永久休整加成"}}},
+            {"action_type": "pre_battle_action", "params_schema": {
+                "sub_action": "修行", "tier": [1, 2, 3, 4, 5, 6],
+                "allocations": {"speed_points": "nonnegative integer",
+                                "mana_points": "nonnegative integer",
+                                "constraint": "两者之和=档位属性点"}}},
+            {"action_type": "pre_battle_action", "params_schema": {
+                "sub_action": "学习", "sub": ["spell", "daowen", "custom_spell"],
+                "tier": {"spell": [1, 2, 3], "daowen": [1, 2]},
+                "names": "spell/daowen必填，数量必须等于tier",
+                "spell": "custom_spell必填的完整法术定义",
+                "dm_approved": "custom_spell经审核后为true"}},
+            {"action_type": "pre_battle_action", "params_schema": {
+                "sub_action": "共鸣",
+                "tier": {1: "随机列3件候选并显式选择1件", 2: "额外1精力+15碎片自选"},
+                "name": "2档必填，当前遗物池名称"}},
+            {"action_type": "pre_battle_action", "params_schema": {
+                "sub_action": "探索", "tier": {1: "发现1个未遇事件", 2: "30碎片发现2个未遇事件"}}},
+        ]
         for region_action in self._get_region_actions():
-            actions.append({"action_type": "pre_battle_action",
-                            "params_schema": {"sub_action": region_action["id"],
-                                              "additional": region_action["params_schema"]}})
+            actions.append({
+                "action_type": "pre_battle_action",
+                "params_schema": {"sub_action": region_action["id"],
+                                  **region_action["params_schema"]},
+            })
         if any(entity.name == "医生" and entity.is_alive for entity in self.state.employees):
             actions.append({"action_type": "upgrade_doctor",
                             "params_schema": {"mode": ["attack_count", "attack_power"]},
@@ -260,7 +306,18 @@ class GameEngine:
 
     def _get_region_actions(self) -> list[dict]:
         if self.state.current_region == "扭曲都市":
-            return [{"id": "维修", "params_schema": {"tier": [1, 2, 3], "allocations": "耐久分配"}}]
+            repairable = [
+                {"item_ref": f"consumable:{index}", "name": item.name,
+                 "current_uses": item.current_uses, "max_uses": item.max_uses}
+                for index, item in enumerate(self.state.consumables)
+                if 0 < item.current_uses < item.max_uses
+            ]
+            return [{"id": "维修", "params_schema": {
+                "tier": [1, 2, 3],
+                "allocations": {"type": "list", "items": {
+                    "item_ref": repairable, "amount": "positive integer"},
+                    "constraint": "amount总和必须等于档位耐久点"},
+            }}]
         if self.state.current_region == "罪孽都市":
             return [{"id": "雇佣", "params_schema": {"name": "string", "blood_alloc": "integer",
                                                        "atk_bundles": "integer"}}]
@@ -581,6 +638,13 @@ class GameEngine:
     def _phase_error(self, action_type: str, params: dict) -> Optional[dict]:
         """执行入口的阶段门禁；【消灾】是唯一允许在局外发动的道纹。"""
         phase = self.state.phase
+        if self.state.pending_daowen_choices and action_type != "choose_hired_daowen":
+            return {"success": False,
+                    "error": "雇佣后的转化道纹尚未选择，不能执行其它行动"}
+        if (self.event_pool.current is not None
+                and action_type not in {"resolve_event", "choose_discovered_relic", "choose_discovered_item"}):
+            return {"success": False,
+                    "error": f"事件【{self.event_pool.current}】尚未结算，不能执行其它行动"}
         if action_type.startswith("setup_") and phase != "setup":
             return {"success": False, "error": f"【{action_type}】只能在开局阶段执行"}
         if action_type in ("pre_battle_action", "resolve_event", "upgrade_doctor") and phase != "pre_battle":
@@ -1083,37 +1147,48 @@ class GameEngine:
         }
 
     def _pre_battle_xiuzheng(self, params: dict) -> dict:
-        """休整：产生恢复量并实际回复目标（默认自己，可指定朋友/员工）"""
+        """休整：产生恢复量，并按稳定引用在自己/朋友/员工间自由完整分配。"""
         tier = params.get("tier", 1)
         heal_map = {1: (8, 0), 2: (24, 10), 3: (48, 25)}
-        if tier not in heal_map:
+        if not isinstance(tier, int) or isinstance(tier, bool) or tier not in heal_map:
             self.state.energy += 1
-            return {"success": False, "error": "休整档位无效"}
+            return {"success": False, "error": "休整档位必须是1/2/3"}
         base_heal, cost = heal_map[tier]
         bonus = self.state.rest_heal_bonus
         heal = base_heal + bonus
+        refs = ({"player:0": self.state.player}
+                if self.state.player and self.state.player.is_alive else {})
+        refs.update({f"friend:{index}": entity for index, entity in enumerate(self.state.friends)
+                     if entity.is_alive})
+        refs.update({f"employee:{index}": entity for index, entity in enumerate(self.state.employees)
+                     if entity.is_alive})
+        allocations = params.get("heal_allocations")
+        if (not isinstance(allocations, list) or not allocations
+                or any(not isinstance(entry, dict) or entry.get("target_ref") not in refs
+                       or not isinstance(entry.get("amount"), int) or isinstance(entry.get("amount"), bool)
+                       or entry["amount"] < 0 for entry in allocations)
+                or sum(entry["amount"] for entry in allocations) != heal):
+            self.state.energy += 1
+            return {"success": False,
+                    "error": f"休整必须用heal_allocations把{heal}点恢复量完整分配给合法目标"}
         if self.state.shards < cost:
             self.state.energy += 1
             return {"success": False, "error": f"碎片不足，需要{cost}，当前{self.state.shards}"}
+
         self.state.shards -= cost
-        # 选择目标
-        target = self.state.player
-        tname = params.get("target", "")
-        for e in self.state.friends + self.state.employees:
-            if e.name == tname:
-                target = e; break
-        if target:
+        healed = []
+        for entry in allocations:
+            target = refs[entry["target_ref"]]
             total_healed_before = target.total_healed
             healed_this_battle_before = target.healed_this_battle
-            h = self.state.apply_heal(target, heal)
-            # 【休整】是局外行动，不计入“本场战斗内”的癌变/战终回复追踪。
+            detail = self.state.apply_heal(target, entry["amount"])
+            # 局外恢复不计入“本场战斗内”的癌变/战终回复追踪。
             target.total_healed = total_healed_before
             target.healed_this_battle = healed_this_battle_before
-        else:
-            h = {"actual_heal": 0}
+            healed.append({"target_ref": entry["target_ref"], "target": target.name,
+                           "allocated": entry["amount"], **detail})
         payload = {"base_heal_amount": base_heal, "rest_heal_bonus": bonus,
-                   "heal_amount": heal, "shard_cost": cost, "target": target.name if target else None,
-                   "actual_heal": h.get("actual_heal", 0), "hp_after": target.current_hp if target else 0,
+                   "heal_amount": heal, "shard_cost": cost, "heals": healed,
                    "shards_remaining": self.state.shards}
         return {"success": True, "action": "休整", "result": payload}
 
@@ -1124,30 +1199,39 @@ class GameEngine:
             return {"success": False, "error": "不朽之躯：属性无法突破上限，无法修行"}
         tier = params.get("tier", 1)
         tier_map = {1: (1, 0), 2: (2, 15), 3: (3, 35), 4: (4, 65), 5: (5, 100), 6: (6, 150)}
-        if tier not in tier_map:
+        if not isinstance(tier, int) or isinstance(tier, bool) or tier not in tier_map:
             self.state.energy += 1
-            return {"success": False, "error": "修行档位无效"}
+            return {"success": False, "error": "修行档位必须是1~6"}
         points, cost = tier_map[tier]
         if self.state.shards < cost:
             self.state.energy += 1
             return {"success": False, "error": f"碎片不足，需要{cost}"}
+        allocations = params.get("allocations")
+        if allocations is None and params.get("to") in ("speed", "mana"):
+            selected = params["to"]
+            allocations = {"speed_points": points if selected == "speed" else 0,
+                           "mana_points": points if selected == "mana" else 0}
+        speed_points = allocations.get("speed_points") if isinstance(allocations, dict) else None
+        mana_points = allocations.get("mana_points") if isinstance(allocations, dict) else None
+        if (not isinstance(speed_points, int) or isinstance(speed_points, bool) or speed_points < 0
+                or not isinstance(mana_points, int) or isinstance(mana_points, bool) or mana_points < 0
+                or speed_points + mana_points != points):
+            self.state.energy += 1
+            return {"success": False,
+                    "error": f"修行{tier}档必须用allocations把{points}属性点分配到speed_points/mana_points"}
+
         self.state.shards -= cost
         player = self.state.player
-        alloc = params.get("to", "speed")  # speed / mana
-        gained = {"speed": 0, "mana": 0}
-        for _ in range(points):
-            if alloc == "mana":
-                player.mana_limit += 2; gained["mana"] += 2
-            else:
-                player.speed_limit += 1; gained["speed"] += 1
+        player.speed_limit += speed_points
+        player.mana_limit += 2 * mana_points
         player.current_speed = player.speed_limit
         player.current_mana = player.mana_limit
-        return {
-            "success": True, "action": "修行",
-            "result": {"points_gained": points, "shard_cost": cost, "allocated": alloc, "gained": gained,
-                       "speed_limit": player.speed_limit, "mana_limit": player.mana_limit,
-                       "action_count": player.action_count},
-        }
+        gained = {"speed": speed_points, "mana": 2 * mana_points}
+        return {"success": True, "action": "修行",
+                "result": {"points_gained": points, "shard_cost": cost,
+                           "allocations": {"speed_points": speed_points, "mana_points": mana_points},
+                           "gained": gained, "speed_limit": player.speed_limit,
+                           "mana_limit": player.mana_limit, "action_count": player.action_count}}
 
     # 可学法术注册表（名 → 所需道纹）
     SPELL_REGISTRY = {
@@ -1290,84 +1374,143 @@ class GameEngine:
                 "result": {"item": choice, "durability": durability, "source": source}}
 
     def _pre_battle_xuexi(self, params: dict) -> dict:
-        """学习：实际添加道纹或法术到玩家"""
-        sub = params.get("sub", "daowen")  # daowen / spell
-        tier = params.get("tier", 1)
-        cost = {1: 0, 2: 10, 3: 25}.get(tier, 0)
-        if self.state.shards < cost:
-            self.state.energy += 1
-            return {"success": False, "error": f"碎片不足，需要{cost}"}
-        name = params.get("name", "")
+        """学习：法术1/2/3种对应0/10/25碎片；道纹1/2种对应0/10碎片；自创法术进入DM审核。"""
         player = self.state.player
         if not player:
             self.state.energy += 1
             return {"success": False, "error": "没有玩家"}
-        if sub in ("daowen", "转化道纹"):
-            if name not in DaoWenEngine.list_all():
+        sub = params.get("sub", "daowen")
+
+        if sub in ("custom_spell", "自创法术"):
+            definition = params.get("spell")
+            if not isinstance(definition, dict):
                 self.state.energy += 1
-                return {"success": False, "error": f"未知道纹: {name}"}
-            # 副本专属道纹门禁（README§三-4 + 用户裁定）：
-            # 专属道纹不可直接学习，只能先通过残韵从**当前副本**的怪物身上转化获得；
-            # 已持有该副本任一专属道纹后，才可学习该副本的其他专属道纹。
-            # 其他副本的专属道纹一律不可获得。
-            owner = None
-            for _rg, _pool in REGION_EXCLUSIVE_DAOWEN.items():
-                if name in _pool:
-                    owner = _rg
-                    break
-            if owner is not None:
-                if owner != self.state.current_region:
-                    self.state.energy += 1
-                    return {"success": False,
-                            "error": f"【{name}】是{owner}的专属道纹，当前副本为"
-                                     f"{self.state.current_region or '未选择'}，无法习得"}
-                own_pool = REGION_EXCLUSIVE_DAOWEN[owner]
-                if not (own_pool & set(player.dao_wen)):
-                    self.state.energy += 1
-                    return {"success": False,
-                            "error": f"【{name}】是{owner}专属道纹：须先通过残韵从本副本怪物身上"
-                                     f"转化获得一种专属道纹后，才能学习其他专属道纹"}
-            # 怪物转化道纹门禁（README 第211/247-252行）：
-            # 转化道纹须"以自身已持有的一种道纹为起点"经残韵变化获得；
-            # 而其起点全部是原始怪物道纹（狂暴/强化/活力/减速/必中/自愈/飞行），
-            # 人类无法承受并获得原始怪物道纹，故轮回者不可能凭空学会转化道纹。
-            # 例：蒙蔽源自"必中--反转-->蒙蔽"，没有必中就学不到蒙蔽。
-            if name in MONSTER_TRANSFORM_DAOWEN:
-                if name not in player.dao_wen:
-                    self.state.energy += 1
-                    return {"success": False,
-                            "error": f"【{name}】是怪物转化道纹，须以自身已持有的道纹为起点"
-                                     f"经残韵变化获得，无法通过局外【学习】直接习得"}
-            if name in ORIGINAL_MONSTER_DAOWEN:
+                return {"success": False, "error": "自创法术必须提交spell对象"}
+            name = definition.get("name")
+            required = definition.get("required_daowen")
+            trigger = definition.get("trigger_condition")
+            flow = definition.get("effect_flow")
+            if (not isinstance(name, str) or not name.strip()
+                    or name in self.SPELL_REGISTRY or any(spell.name == name for spell in player.spells)
+                    or not isinstance(required, list) or not required or len(set(required)) != len(required)
+                    or any(daowen not in player.dao_wen for daowen in required)
+                    or not isinstance(trigger, str) or not trigger.strip()
+                    or not isinstance(flow, str) or not flow.strip()):
                 self.state.energy += 1
                 return {"success": False,
-                        "error": f"【{name}】是原始怪物道纹，人类无法承受并获得"}
-            if name not in player.dao_wen:
-                player.dao_wen[name] = DaoWenInstance(
-                    DaoWen(name=name, formula="", cost_type="消耗", cost_formula="X", effect_formula=""))
-            self.state.shards -= cost
-            return {"success": True, "action": "学习",
-                    "result": {"learned": "daowen", "name": name, "shard_cost": cost,
-                               "player_daowen": list(player.dao_wen.keys())}}
-        elif sub == "spell":
-            if name not in self.SPELL_REGISTRY:
+                        "error": "自创法术需唯一名称、至少一种自身已持有道纹、触发条件和效果流程"}
+            if not params.get("dm_approved"):
+                interrupt = Interrupt(
+                    interrupt_type=InterruptType.UNSEEN_SCENE,
+                    context={"kind": "custom_spell", "spell": definition},
+                    description=f"自创法术【{name}】需审核是否完全由已有道纹按三大法则组装",
+                    options=[], state_snapshot=self.state.to_dict(),
+                )
+                self._pending_interrupts.append(interrupt)
+                self.state.energy += 1  # 审核阶段不消耗；dm_approved后重新提交才正式消耗本次行动。
+                return {"success": True, "action": "自创法术等待裁定",
+                        "completed": False, "interrupt": interrupt.to_dict()}
+            spell = Spell(name=name.strip(), required_daowen=list(required),
+                          trigger_condition=trigger.strip(), effect_flow=flow.strip(),
+                          rank=len(required), custom_conditions=list(definition.get("custom_conditions") or []))
+            player.spells.append(spell)
+            return {"success": True, "action": "学习·自创法术",
+                    "result": {"learned": "custom_spell", "spell": spell.to_dict(), "shard_cost": 0}}
+
+        tier = params.get("tier", 1)
+        if not isinstance(tier, int) or isinstance(tier, bool):
+            self.state.energy += 1
+            return {"success": False, "error": "学习tier必须是整数"}
+        if sub == "spell":
+            cost_map = {1: 0, 2: 10, 3: 25}
+            kind = "spell"
+        elif sub in ("daowen", "转化道纹"):
+            cost_map = {1: 0, 2: 10}
+            kind = "daowen"
+        else:
+            self.state.energy += 1
+            return {"success": False, "error": "学习sub必须是spell/daowen/custom_spell"}
+        if tier not in cost_map:
+            self.state.energy += 1
+            return {"success": False,
+                    "error": ("学习法术档位必须是1/2/3" if kind == "spell" else "学习道纹档位必须是1/2")}
+        cost = cost_map[tier]
+        names = params.get("names")
+        if names is None and tier == 1 and isinstance(params.get("name"), str):
+            names = [params["name"]]
+        if (not isinstance(names, list) or len(names) != tier or len(set(names)) != tier
+                or any(not isinstance(name, str) or not name for name in names)):
+            self.state.energy += 1
+            return {"success": False, "error": f"学习{tier}档必须用names提交{tier}个不同名称"}
+        if self.state.shards < cost:
+            self.state.energy += 1
+            return {"success": False, "error": f"碎片不足，需要{cost}"}
+
+        if kind == "spell":
+            invalid = [name for name in names if name not in self.SPELL_REGISTRY]
+            duplicate = [name for name in names if any(spell.name == name for spell in player.spells)]
+            if invalid or duplicate:
                 self.state.energy += 1
-                return {"success": False, "error": f"未知法术: {name}"}
-            req = self.SPELL_REGISTRY[name]
-            player.spells.append(Spell(name=name, required_daowen=req, trigger_condition="", effect_flow=""))
+                return {"success": False,
+                        "error": f"未知法术{invalid}；已掌握不可重复学习{duplicate}"}
+            learned = []
+            for name in names:
+                required = self.SPELL_REGISTRY[name]
+                spell = Spell(name=name, required_daowen=required, trigger_condition="", effect_flow="")
+                player.spells.append(spell)
+                learned.append({"name": name, "required_daowen": required})
             self.state.shards -= cost
-            return {"success": True, "action": "学习",
-                    "result": {"learned": "spell", "name": name, "required_daowen": req, "shard_cost": cost}}
+            return {"success": True, "action": "学习·法术",
+                    "result": {"learned": "spell", "spells": learned, "shard_cost": cost}}
+
+        def daowen_error(name: str) -> Optional[str]:
+            if name not in DaoWenEngine.list_all():
+                return f"未知道纹: {name}"
+            if name in player.dao_wen:
+                return f"已经掌握道纹: {name}"
+            owner = next((region for region, pool in REGION_EXCLUSIVE_DAOWEN.items() if name in pool), None)
+            if owner is not None:
+                if owner != self.state.current_region:
+                    return f"【{name}】是{owner}专属道纹，当前副本无法习得"
+                if not (REGION_EXCLUSIVE_DAOWEN[owner] & set(player.dao_wen)):
+                    return f"【{name}】须先经残韵获得本副本一种专属道纹后才能学习"
+            if name in MONSTER_TRANSFORM_DAOWEN:
+                return f"【{name}】是怪物转化道纹，只能由自身已有道纹经残韵获得"
+            if name in ORIGINAL_MONSTER_DAOWEN:
+                return f"【{name}】是原始怪物道纹，人类无法承受并获得"
+            return None
+
+        errors = [error for name in names if (error := daowen_error(name))]
+        if errors:
+            self.state.energy += 1
+            return {"success": False, "error": "；".join(errors)}
+        for name in names:
+            player.dao_wen[name] = DaoWenInstance(
+                DaoWen(name=name, formula="", cost_type="消耗", cost_formula="X", effect_formula=""))
+        self.state.shards -= cost
+        return {"success": True, "action": "学习·道纹",
+                "result": {"learned": "daowen", "names": names, "shard_cost": cost,
+                           "player_daowen": list(player.dao_wen)}}
 
     def _pre_battle_gongming(self, params: dict) -> dict:
         """共鸣：发现时随机列3件后显式选1；付费自选则直接加入。"""
         self._init_relic_pool()
-        sub = params.get("sub", "discover")
+        tier = params.get("tier", 1)
+        if not isinstance(tier, int) or isinstance(tier, bool) or tier not in (1, 2):
+            self.state.energy += 1
+            return {"success": False, "error": "共鸣档位必须是1（发现）或2（自选）"}
+        sub = params.get("sub", "choose" if tier == 2 else "discover")
+        if sub not in ("discover", "choose") or (tier == 1 and sub != "discover") or (tier == 2 and sub != "choose"):
+            self.state.energy += 1
+            return {"success": False, "error": "共鸣1档=发现，2档=额外1精力并支付15碎片自选"}
         if not self.state.relics_pool:
             self.state.energy += 1
             return {"success": False, "error": "遗物池为空"}
         if sub == "choose":
-            # 自选(额外消耗1精力+15碎片)
+            # 自选在通用局外行动1精力之外再次消耗1精力，并支付15碎片。
+            if self.state.energy < 1:
+                self.state.energy += 1
+                return {"success": False, "error": "共鸣自选总共需要2点精力，当前不足"}
             name = params.get("name", "")
             idx = next((i for i,r in enumerate(self.state.relics_pool) if r.name == name), -1)
             if idx < 0:
@@ -1393,52 +1536,113 @@ class GameEngine:
 
 
     def _pre_battle_tansuo(self, params: dict) -> dict:
-        """探索：从当前事件池(通用+本副本专属)中，由引擎自动生成随机数抽取一个事件"""
-        if self.event_pool.current is not None:
-            return {"success": False,
-                    "error": f"事件【{self.event_pool.current}】尚未结算，不能再次探索"}
+        """探索：一档免费发现1个未遇事件；二档支付30碎片并依次发现2个不同未遇事件。"""
+        if self.event_pool.current is not None or self.state.pending_event_queue:
+            self.state.energy += 1
+            pending = self.event_pool.current or self.state.pending_event_queue[0]
+            return {"success": False, "error": f"事件【{pending}】尚未结算，不能再次探索"}
+        tier = params.get("tier", 1)
+        tier_map = {1: (1, 0), 2: (2, 30)}
+        if not isinstance(tier, int) or isinstance(tier, bool) or tier not in tier_map:
+            self.state.energy += 1
+            return {"success": False, "error": "探索档位必须是1或2"}
+        draw_count, shard_cost = tier_map[tier]
         region = self.state.current_region
         pool = self.event_pool.build_pool(region)
-        if not pool:
+        if len(pool) < draw_count:
             self.state.energy += 1
-            return {"success": False, "error": "当前事件池已空（所有事件均已触发）"}
-        roll = self.dice.auto_roll("event_pool", pool, context=f"探索（{region}）")
-        name = roll["selected"]
-        self.event_pool.current = name
-        ev = self.event_pool.events[name]
+            return {"success": False,
+                    "error": f"当前事件池只剩{len(pool)}个未遇事件，无法执行发现{draw_count}次"}
+        if self.state.shards < shard_cost:
+            self.state.energy += 1
+            return {"success": False,
+                    "error": f"探索{tier}档需要{shard_cost}碎片，当前{self.state.shards}"}
+
+        self.state.shards -= shard_cost
+        remaining = list(pool)
+        discovered: list[str] = []
+        random_records: list[dict] = []
+        for index in range(draw_count):
+            # 保留一档既有审计池名；二档用带序号的池名区分两次无放回抽取。
+            pool_name = "event_pool" if tier == 1 else f"event_pool_{index + 1}"
+            roll = self.dice.auto_roll(
+                pool_name, remaining,
+                context=f"探索{tier}档（{region}）第{index + 1}次",
+            )
+            name = roll["selected"]
+            discovered.append(name)
+            random_records.append(roll["record"])
+            remaining.remove(name)
+        self.event_pool.current = discovered[0]
+        self.state.pending_event_queue = discovered[1:]
+        event = self.event_pool.events[discovered[0]]
         return {
-            "success": True, "action": "探索",
-            "result": {"event": name, "region": ev["region"], "desc": ev["desc"],
-                       "options": [{"id": o["id"], "text": o["text"]} for o in ev["options"]]},
-            "instruction": f"遭遇【{name}】，请选择选项后调用 resolve_event"
+            "success": True,
+            "action": f"探索{tier}档",
+            "result": {
+                "tier": tier,
+                "shard_cost": shard_cost,
+                "discovered_events": discovered,
+                "event": discovered[0],
+                "region": event["region"],
+                "desc": event["desc"],
+                "options": [{"id": option["id"], "text": option["text"]}
+                            for option in event["options"]],
+                "queued_events_remaining": len(self.state.pending_event_queue),
+                "random": random_records,
+            },
+            "instruction": (f"遭遇【{discovered[0]}】，请先结算；"
+                            f"其后还有{len(self.state.pending_event_queue)}个探索事件依次结算"),
         }
 
     def _pre_battle_weixiu(self, params: dict) -> dict:
-        """维修（扭曲都市专属）"""
+        """维修：显式分配耐久，实际补入未耗尽消耗品且不得超过当前耐久上限。"""
         tier = params.get("tier", 1)
         tier_map = {1: (1, 0), 2: (2, 5), 3: (3, 12)}
-
-        if tier not in tier_map:
+        if not isinstance(tier, int) or isinstance(tier, bool) or tier not in tier_map:
             self.state.energy += 1
-            return {"success": False, "error": "维修档位无效"}
-
+            return {"success": False, "error": "维修档位必须是1/2/3"}
         points, cost = tier_map[tier]
-
+        allocations = params.get("allocations")
+        if not isinstance(allocations, list) or not allocations:
+            self.state.energy += 1
+            return {"success": False, "error": "维修必须用allocations显式分配全部耐久点"}
+        refs = {f"consumable:{index}": item for index, item in enumerate(self.state.consumables)}
+        totals: dict[str, int] = {}
+        for entry in allocations:
+            if (not isinstance(entry, dict) or entry.get("item_ref") not in refs
+                    or not isinstance(entry.get("amount"), int) or isinstance(entry.get("amount"), bool)
+                    or entry["amount"] < 1):
+                self.state.energy += 1
+                return {"success": False, "error": "维修分配必须包含合法item_ref和正整数amount"}
+            ref = entry["item_ref"]
+            totals[ref] = totals.get(ref, 0) + entry["amount"]
+        if sum(totals.values()) != points:
+            self.state.energy += 1
+            return {"success": False, "error": f"维修{tier}档必须恰好分配{points}点耐久"}
+        for ref, amount in totals.items():
+            item = refs[ref]
+            if item.current_uses < 1:
+                self.state.energy += 1
+                return {"success": False, "error": f"【{item.name}】耐久已归零，不能维修"}
+            if item.current_uses + amount > item.max_uses:
+                self.state.energy += 1
+                return {"success": False,
+                        "error": f"【{item.name}】维修后将超过耐久上限{item.max_uses}"}
         if self.state.shards < cost:
             self.state.energy += 1
             return {"success": False, "error": f"碎片不足，需要{cost}"}
 
         self.state.shards -= cost
-
-        return {
-            "success": True,
-            "action": "维修",
-            "result": {
-                "durability_points": points,
-                "shard_cost": cost,
-                "instruction": f"获得{points}点耐久分配，可分配给消耗品"
-            }
-        }
+        repaired = []
+        for ref, amount in totals.items():
+            item = refs[ref]
+            item.current_uses += amount
+            repaired.append({"item_ref": ref, "item": item.name, "amount": amount,
+                             "current_uses": item.current_uses, "max_uses": item.max_uses})
+        return {"success": True, "action": "维修",
+                "result": {"durability_points": points, "shard_cost": cost,
+                           "allocations": repaired}}
 
     def _pre_battle_guyong(self, params: dict) -> dict:
         """
@@ -2680,8 +2884,10 @@ class GameEngine:
             self.state.event_modifiers["escape_at_battle_end"] = True
             result["battle_end_escape"] = True
         elif name == "活性土壤":
-            if self.state.combat_subphase != CombatSubphase.AWAIT_ROUND_START.value:
-                return {"success": False, "error": "活性土壤只能在战始、回始前使用"}
+            if (self.state.phase != GamePhase.IN_COMBAT.value
+                    or self.state.combat_subphase != CombatSubphase.AWAIT_ROUND_START.value
+                    or self.state.current_round != 0):
+                return {"success": False, "error": "活性土壤只能在本场[战始]窗口使用"}
             x = params.get("x")
             panel = params.get("friend")
             if not params.get("dm_approved"):
@@ -2938,10 +3144,25 @@ class GameEngine:
                           "player_hp": self.state.player.current_hp if self.state.player else None}
         if bonus:
             result_payload["附赠发现"] = bonus
+        next_event = None
+        if self.state.pending_event_queue:
+            next_event = self.state.pending_event_queue.pop(0)
+            self.event_pool.current = next_event
+            queued = self.event_pool.events[next_event]
+            result_payload["next_event"] = {
+                "event": next_event,
+                "region": queued["region"],
+                "desc": queued["desc"],
+                "options": [{"id": option["id"], "text": option["text"]}
+                            for option in queued["options"]],
+                "queued_events_remaining": len(self.state.pending_event_queue),
+            }
         return {
             "success": True, "action": f"事件【{name}】选项{option_id}",
             "result": result_payload,
-            "note": "已自动结算可解析的代价/收益；instructions中的特殊效果需DM裁定"
+            "completed_exploration": next_event is None,
+            "instruction": (f"请继续结算探索队列中的事件【{next_event}】"
+                            if next_event else "本次探索事件已全部结算"),
         }
 
     # ==================== 回合管理 ====================
@@ -4045,6 +4266,9 @@ class GameEngine:
         wisdom = list(self.state.death_book_wisdom)
         self.state = GameState(rest_heal_bonus=bonus, death_book_wisdom=wisdom)
         self.combat.state = self.state
+        # 事件遭遇记录属于单次轮回；新轮回不得继承已触发事件或未结算队列。
+        self.event_pool.triggered.clear()
+        self.event_pool.current = None
         self._reload_death_book()
 
     def _reset_after_death(self):
@@ -4219,7 +4443,7 @@ class GameEngine:
 
     # ==================== 存档系统 ====================
 
-    SAVE_FORMAT_VERSION = 4
+    SAVE_FORMAT_VERSION = 5
 
     def save_game(self, slot: str = "auto") -> dict:
         """保存可完整往返的版本化快照；只允许load_game读取本引擎生成的本地文件。"""

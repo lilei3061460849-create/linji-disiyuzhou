@@ -307,7 +307,7 @@ def test_r43_all_implemented_event_options_have_a_runtime_route(tmp_path):
             assert result["success"], (event_name, option["id"], result)
             assert not result.get("result", {}).get("instructions"), (event_name, option["id"], result)
             checked += 1
-    assert checked == 84
+    assert checked == 87
 
 
 # R44：统一向上取整
@@ -346,6 +346,7 @@ def test_r45_normal_fake_note_applies_before_durability(tmp_path):
 
 def test_r45_boundary_red_spring_requires_exact_eight(tmp_path):
     engine = _event_engine(tmp_path, "医生")
+    engine.event_pool.current = None  # 本测试只覆盖物品；待结算事件会按全局门禁阻止其它行动。
     engine.state.consumables = [Consumable("赤泉囊", "", 6, 6)]
     engine.state.player.current_hp = 50
     result = engine.execute_action("consume_item", {
@@ -381,7 +382,9 @@ def test_r45_all_current_named_consumable_handlers(tmp_path):
     assert bottle["success"] and player.current_hp == 83 and items[2].current_uses == 7
     mud = engine.execute_action("consume_item", {"name": "绝息淤泥"})
     assert mud["success"] and engine.state.event_modifiers["escape_at_battle_end"] is True
-    engine.state.combat_subphase = "await_round_start"; player.current_mana = 5
+    engine.state.combat_subphase = "await_round_start"
+    engine.state.current_round = 0
+    player.current_mana = 5
     soil = engine.execute_action("consume_item", {
         "name": "活性土壤", "x": 5, "dm_approved": True,
         "friend": {"name": "芽", "attack_count": 0, "attack_power": 0, "blood_limit": 6},

@@ -596,6 +596,8 @@ class GameState:
     pending_monster_phase: dict = field(default_factory=dict)
     # 两阶段攻击：prepare绑定行动者、逐击合法目标与反应选项；resolve后清空。
     pending_attack: dict = field(default_factory=dict)
+    # 二档【探索】一次抽取两个未遇事件，首个结算后按顺序激活其余事件。
+    pending_event_queue: list[str] = field(default_factory=list)
     # 事件产生的跨行动/跨战斗确定性状态，键均由事件handler登记。
     event_modifiers: dict[str, Any] = field(default_factory=dict)
     # 显式作用域账本：只登记需要按回合/战斗回滚的面板字段变化。
@@ -968,6 +970,7 @@ class GameState:
             "pending_item_source": self.pending_item_source,
             "pending_monster_phase": self.pending_monster_phase,
             "pending_attack": self.pending_attack,
+            "pending_event_queue": list(self.pending_event_queue),
             "event_modifiers": self.event_modifiers,
             "scoped_effect_ledger": [entry.to_dict() for entry in self.scoped_effect_ledger],
             "forced_monsters_next_battle": self.forced_monsters_next_battle,

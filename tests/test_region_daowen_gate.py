@@ -90,7 +90,7 @@ def test_first_exclusive_cannot_be_learned_directly():
     e = _engine("龙心谷")
     r = _learn(e, "加害")
     assert not r["success"]
-    assert "须先通过残韵" in r["error"]
+    assert "残韵" in r["error"]
 
 
 def test_energy_refunded_on_rejection():

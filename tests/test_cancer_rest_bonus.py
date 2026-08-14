@@ -49,7 +49,10 @@ def test_monster_cancer_adds_real_stackable_rest_bonus(tmp_path):
     engine.state.phase = "pre_battle"
     player.current_hp = 1
     before_cancer = player.total_healed
-    rest = engine.execute_action("pre_battle_action", {"sub_action": "休整", "tier": 1})
+    rest = engine.execute_action("pre_battle_action", {
+        "sub_action": "休整", "tier": 1,
+        "heal_allocations": [{"target_ref": "player:0", "amount": 24}],
+    })
     assert rest["success"]
     assert rest["result"]["base_heal_amount"] == 8
     assert rest["result"]["rest_heal_bonus"] == 16
@@ -70,7 +73,10 @@ def test_cancer_rest_bonus_applies_to_every_rest_tier(tmp_path):
     for tier, total in expected.items():
         player.current_hp = 1
         engine.state.energy = 3
-        result = engine.execute_action("pre_battle_action", {"sub_action": "休整", "tier": tier})
+        result = engine.execute_action("pre_battle_action", {
+            "sub_action": "休整", "tier": tier,
+            "heal_allocations": [{"target_ref": "player:0", "amount": total}],
+        })
         assert result["success"] and result["result"]["heal_amount"] == total
 
 
@@ -129,12 +135,12 @@ def test_new_engine_restores_bonus_from_sealed_cycle(tmp_path):
 
 
 def test_rest_bonus_survives_versioned_save_round_trip(tmp_path):
-    """存档边界：永久休整加成包含在版本4完整存档中。"""
+    """存档边界：永久休整加成包含在版本5完整存档中。"""
     engine = _engine(tmp_path)
     _setup_player(engine)
     engine.state.rest_heal_bonus = 24
     saved = engine.save_game("cancer_bonus")
-    assert saved["version"] == 4
+    assert saved["version"] == 5
     engine.state.rest_heal_bonus = 0
 
     loaded = engine.load_game("cancer_bonus")

@@ -70,7 +70,7 @@ def parse_events(index_path: str | Path) -> dict:
         matched_name = None
         for n in all_names:
             # 行以 "name"： 或 name： 开头，或行就是 name（无冒号，描述在下一行）
-            if re.match(rf'^["“]?{re.escape(n)}["”]?\s*[：:]', line) or line.strip('“"') == n:
+            if re.match(rf'^["“]?{re.escape(n)}["”]?\s*[：:]', line) or line.strip('“”"') == n:
                 matched_name = n
                 break
         if matched_name:
@@ -95,7 +95,7 @@ def parse_events(index_path: str | Path) -> dict:
                 # 非选项非空行：若遇到下一个事件名则结束；否则视为描述续行
                 next_name = None
                 for n in all_names:
-                    if re.match(rf'^["“]?{re.escape(n)}["”]?\s*[：:]', lj) or lj.strip('“"') == n:
+                    if re.match(rf'^["“]?{re.escape(n)}["”]?\s*[：:]', lj) or lj.strip('“”"') == n:
                         next_name = n; break
                 if next_name:
                     break

@@ -54,6 +54,34 @@ def test_play_returns_wellformed_result():
     assert isinstance(r["won"], bool)
 
 
+def test_pending_event_requiring_dm_stops_instead_of_looping(tmp_path):
+    """边界：模拟器遇到不能代裁的事件时应明确作废，而不是反复结算同一事件。"""
+    from engine.api import GameEngine
+
+    engine = GameEngine(
+        db_path=str(tmp_path / "r.db"), save_dir=str(tmp_path / "saves"),
+        sealed_candidate_path=str(tmp_path / "sealed.json"),
+        death_book_path=str(tmp_path / "death.md"), rng_seed=1,
+    )
+    engine.execute_action("setup_attributes", {
+        "blood_points": 10, "speed_points": 8, "mana_points": 7,
+    })
+    engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
+    setup = engine.execute_action("setup_choose_region", {"region": "罪孽都市"})
+    engine.execute_action("choose_discovered_relic", {
+        "relic_name": setup["result"]["relic_choices"][0],
+    })
+    creative = next(option for option in engine.event_pool.events["过路商人"]["options"]
+                    if option["text"].startswith("限制选择权"))
+    engine.event_pool.events["过路商人"]["options"] = [creative]
+    engine.event_pool.current = "过路商人"
+
+    result = bl._resolve_pending_event(engine)
+
+    assert not result["success"] and "需要DM裁定" in result["error"]
+    assert engine.event_pool.current == "过路商人"
+
+
 def test_synergy_detects_positive_pair():
     """
     正常路径：协同挖掘必须能识别出 1+1>2。

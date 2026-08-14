@@ -20,7 +20,8 @@ def _choose_region(engine, region):
         engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
     result = engine.execute_action("setup_choose_region", {"region": region})
     if result.get("success") and engine.state.pending_relic_choices:
-        optional = {"折速法印", "三相残韵盘"}
+        # 通用流程测试不覆盖需要额外显式选择的遗物；相关遗物有独立测试。
+        optional = {"折速法印", "三相残韵盘", "回锋刀"}
         choice = next((n for n in engine.state.pending_relic_choices if n not in optional),
                       engine.state.pending_relic_choices[0])
         engine.execute_action("choose_discovered_relic", {"relic_name": choice})
@@ -325,7 +326,10 @@ def test_full_flow():
     assert engine.state.player.speed_limit == speed_before + 1, "修行应+1速限"
     print(f"  ✓ 修行：速限{speed_before}→{engine.state.player.speed_limit}")
     
-    result = engine.execute_action("pre_battle_action", {"sub_action": "休整", "tier": 1})
+    result = engine.execute_action("pre_battle_action", {
+        "sub_action": "休整", "tier": 1,
+        "heal_allocations": [{"target_ref": "player:0", "amount": 8}],
+    })
     assert result["success"]
     print(f"  ✓ 休整：8点恢复量")
     
@@ -338,9 +342,12 @@ def test_full_flow():
     assert engine.state.current_battle == 1
     print(f"  ✓ 进入第1场战斗")
     
-    # 回始
-    result = engine.execute_action("round_start", {})
-    assert result["success"]
+    # 回始；若随机发现的是回锋刀，则显式选择一个合法敌方目标。
+    round_relic_choices = {}
+    if any(relic.name == "回锋刀" for relic in engine.state.relics):
+        round_relic_choices["回锋刀"] = {"enemy_index": 0}
+    result = engine.execute_action("round_start", {"relic_choices": round_relic_choices})
+    assert result["success"], result
     # 回始获得等同当前法限的法力；战始已清零，无遗物时恰好等于法限。
     assert engine.state.player.current_mana >= engine.state.player.mana_limit
     print(f"  ✓ 回始：法力不低于法限（当前{engine.state.player.current_mana}/{engine.state.player.mana_limit}）")
@@ -478,7 +485,10 @@ def test_out_of_combat_actions():
 
     # 休整：先扣血再休整，验证回血
     player.current_hp = 30
-    r = engine.execute_action("pre_battle_action", {"sub_action":"休整","tier":2})
+    r = engine.execute_action("pre_battle_action", {
+        "sub_action": "休整", "tier": 2,
+        "heal_allocations": [{"target_ref": "player:0", "amount": 24}],
+    })
     assert r["success"], f"休整失败: {r}"
     assert player.current_hp == 54, f"休整2档应回24→54，实{player.current_hp}"
     print(f"  ✓ 休整2档：HP30→{player.current_hp}")
@@ -489,11 +499,14 @@ def test_out_of_combat_actions():
     assert "庇护" in player.dao_wen, "庇护应已加入玩家道纹"
     print(f"  ✓ 学习道纹：玩家道纹={list(player.dao_wen.keys())}")
 
-    # 学习法术·先发制人
-    r = engine.execute_action("pre_battle_action", {"sub_action":"学习","sub":"spell","name":"先发制人","tier":2})
+    # 学习法术2档：同时学习两种并支付10碎片
+    r = engine.execute_action("pre_battle_action", {
+        "sub_action": "学习", "sub": "spell", "tier": 2,
+        "names": ["先发制人", "后发制人"],
+    })
     assert r["success"], f"学习法术失败: {r}"
-    assert any(sp.name=="先发制人" for sp in player.spells), "先发制人应已学会"
-    print(f"  ✓ 学习法术：先发制人(所需杀伐)已掌握")
+    assert {sp.name for sp in player.spells} == {"先发制人", "后发制人"}
+    print("  ✓ 学习法术2档：先发制人、后发制人均已掌握")
 
     # 共鸣：获得遗物（补满精力以便测试）
     engine.state.energy = 3

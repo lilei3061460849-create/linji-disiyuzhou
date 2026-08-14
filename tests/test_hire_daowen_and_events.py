@@ -100,17 +100,30 @@ def test_zhuiqiuzhe_event_option2_queues_forced_monster_next_battle():
 # ========================================================================
 
 def test_hire_multiple_employees_have_independent_discovery_pools():
-    """边界：连续雇佣多名员工，各自的发现候选互不影响、互不复用同一批dice历史key"""
+    """边界：必须先完成前一名员工的道纹选择；两次发现各自独立。"""
     engine = _new_engine("discover_multi")
     r1 = engine.execute_action("pre_battle_action", {
         "sub_action": "雇佣", "name": "甲员工", "blood_alloc": 17, "atk_bundles": 1,
     })
+    first_choices = r1["result"]["discovered_daowen_choices"]
+
+    blocked = engine.execute_action("pre_battle_action", {
+        "sub_action": "雇佣", "name": "乙员工", "blood_alloc": 17, "atk_bundles": 1,
+    })
+    assert blocked["success"] is False
+    assert "乙员工" not in engine.state.pending_daowen_choices
+
+    chosen = engine.execute_action("choose_hired_daowen", {
+        "name": "甲员工", "daowen": first_choices[0],
+    })
+    assert chosen["success"] is True
     r2 = engine.execute_action("pre_battle_action", {
         "sub_action": "雇佣", "name": "乙员工", "blood_alloc": 17, "atk_bundles": 1,
     })
-    assert "甲员工" in engine.state.pending_daowen_choices
+    assert r2["success"] is True
+    assert "甲员工" not in engine.state.pending_daowen_choices
     assert "乙员工" in engine.state.pending_daowen_choices
-    assert len(r1["result"]["discovered_daowen_choices"]) == 3
+    assert len(first_choices) == 3
     assert len(r2["result"]["discovered_daowen_choices"]) == 3
 
 

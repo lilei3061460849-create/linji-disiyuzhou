@@ -43,6 +43,16 @@ def _new_engine(db_suffix: str) -> GameEngine:
     return engine
 
 
+def _hire(engine, params):
+    result = engine.execute_action("pre_battle_action", params)
+    if result.get("success"):
+        name = params["name"]
+        choices = engine.state.pending_daowen_choices[name]
+        chosen = engine.execute_action("choose_hired_daowen", {"name": name, "daowen": choices[0]})
+        assert chosen["success"]
+    return result
+
+
 def _start_battle(engine):
     engine.state.energy = 0
     choices = {}
@@ -61,7 +71,7 @@ def _start_battle(engine):
 def test_hire_creates_real_employee_not_deployed():
     """正常路径：雇佣必须真正创建Entity并加入state.employees，默认待命(is_deployed=False)"""
     engine = _new_engine("hire_ok")
-    r = engine.execute_action("pre_battle_action", {
+    r = _hire(engine, {
         "sub_action": "雇佣", "name": "打手甲", "blood_alloc": 5, "atk_bundles": 5,
     })
     assert r["success"] is True, r
@@ -75,7 +85,7 @@ def test_hire_creates_real_employee_not_deployed():
 def test_deploy_employee_then_counts_as_battlefield_entity():
     """正常路径：deploy_employee后，该员工才计入 get_all_player_side()（可被选中/参战）"""
     engine = _new_engine("deploy_ok")
-    engine.execute_action("pre_battle_action", {
+    _hire(engine, {
         "sub_action": "雇佣", "name": "打手乙", "blood_alloc": 8, "atk_bundles": 4,
     })
     emp = next(e for e in engine.state.employees if e.name == "打手乙")
@@ -93,7 +103,7 @@ def test_wage_settlement_pay_then_battle_end_succeeds():
     """正常路径：3个完整回合参战 -> 工资=min(12,2*(1+3))=8 -> pay -> battle_end 成功"""
     engine = _new_engine("wage_pay")
     engine.state.shards = 100
-    engine.execute_action("pre_battle_action", {
+    _hire(engine, {
         "sub_action": "雇佣", "name": "小张", "blood_alloc": 2, "atk_bundles": 6,
     })
     _start_battle(engine)
@@ -132,7 +142,7 @@ def test_wage_settlement_pay_then_battle_end_succeeds():
 def test_refuse_wage_forces_departure_and_blacklist_increment():
     """正常路径：拒付工资 -> 强制离队 + 黑名单计数+1"""
     engine = _new_engine("wage_refuse")
-    engine.execute_action("pre_battle_action", {
+    _hire(engine, {
         "sub_action": "雇佣", "name": "老王", "blood_alloc": 8, "atk_bundles": 4,
     })
     _start_battle(engine)
@@ -153,7 +163,7 @@ def test_refuse_wage_forces_departure_and_blacklist_increment():
 def test_dismiss_employee_free_and_immediate():
     """正常路径：解雇是自由行动，无代价，立即移除，不结算工资"""
     engine = _new_engine("dismiss_ok")
-    engine.execute_action("pre_battle_action", {
+    _hire(engine, {
         "sub_action": "雇佣", "name": "阿强", "blood_alloc": 17, "atk_bundles": 1,
     })
     before_shards = engine.state.shards
@@ -186,7 +196,7 @@ def test_debt_bound_employee_exempt_from_deployment_and_wage():
 def test_deploy_already_deployed_is_rejected():
     """边界：重复部署同一员工应报错，而不是静默成功或叠加状态"""
     engine = _new_engine("deploy_dup")
-    engine.execute_action("pre_battle_action", {
+    _hire(engine, {
         "sub_action": "雇佣", "name": "重复哥", "blood_alloc": 17, "atk_bundles": 1,
     })
     _start_battle(engine)
@@ -201,14 +211,14 @@ def test_blacklist_triggers_exactly_at_three_departures():
     """边界：累计正好3次离队(解雇)才触发is_blacklisted，第2次时仍未触发"""
     engine = _new_engine("blacklist_edge")
     for i in range(2):
-        engine.execute_action("pre_battle_action", {
+        _hire(engine, {
             "sub_action": "雇佣", "name": f"路人{i}", "blood_alloc": 17, "atk_bundles": 1,
         })
         engine.execute_action("dismiss_employee", {"name": f"路人{i}"})
     assert engine.state.blacklist_level == 2
     assert engine.state.is_blacklisted is False, "累计2次不应触发黑名单"
 
-    engine.execute_action("pre_battle_action", {
+    _hire(engine, {
         "sub_action": "雇佣", "name": "路人2", "blood_alloc": 17, "atk_bundles": 1,
     })
     engine.execute_action("dismiss_employee", {"name": "路人2"})
@@ -220,7 +230,7 @@ def test_wage_single_round_gives_floor_wage():
     """边界：部署后仅参战当前这1个回合就结束战斗，工资=min(12,2*(1+1))=4，而不是0或报错"""
     engine = _new_engine("wage_zero_round")
     engine.state.shards = 100
-    engine.execute_action("pre_battle_action", {
+    _hire(engine, {
         "sub_action": "雇佣", "name": "秒退", "blood_alloc": 17, "atk_bundles": 1,
     })
     _start_battle(engine)
@@ -238,7 +248,7 @@ def test_hire_rejects_illegal_budget_allocation():
     """错误输入：blood_alloc + 3*atk_bundles 必须恰好=20，非法分配必须被拒绝且不创建员工"""
     engine = _new_engine("hire_bad_budget")
     before_count = len(engine.state.employees)
-    r = engine.execute_action("pre_battle_action", {
+    r = _hire(engine, {
         "sub_action": "雇佣", "name": "超支哥", "blood_alloc": 5, "atk_bundles": 6,  # 5+18=23≠20
     })
     assert r["success"] is False
@@ -249,7 +259,7 @@ def test_hire_allows_zero_attack_count_boundary():
     """R05边界：允许把20点全投血限；该员工合法存在，但出手预算为0。"""
     engine = _new_engine("hire_zero_atk")
     before_count = len(engine.state.employees)
-    r = engine.execute_action("pre_battle_action", {
+    r = _hire(engine, {
         "sub_action": "雇佣", "name": "纯坦克", "blood_alloc": 20, "atk_bundles": 0,
     })
     assert r["success"] is True
@@ -257,7 +267,7 @@ def test_hire_allows_zero_attack_count_boundary():
     emp = next(e for e in engine.state.employees if e.name == "纯坦克")
     assert emp.attack_count == 0 and emp.action_count == 0
 
-    r2 = engine.execute_action("pre_battle_action", {
+    r2 = _hire(engine, {
         "sub_action": "雇佣", "name": "合法员工", "blood_alloc": 17, "atk_bundles": 1,
     })
     assert r2["success"] is True
@@ -267,7 +277,7 @@ def test_hire_rejects_when_blacklisted():
     """错误输入：is_blacklisted=True 时雇佣动作必须被拒绝"""
     engine = _new_engine("hire_blacklisted")
     engine.state.is_blacklisted = True
-    r = engine.execute_action("pre_battle_action", {
+    r = _hire(engine, {
         "sub_action": "雇佣", "name": "黑名单后来客", "blood_alloc": 17, "atk_bundles": 1,
     })
     assert r["success"] is False
@@ -278,7 +288,7 @@ def test_pay_wage_with_insufficient_shards_is_rejected_not_auto_refused():
     """错误输入：碎片不足时选择pay必须被拒绝(报错)，不能静默转成拒付，也不能强行倒扣负数碎片"""
     engine = _new_engine("wage_insufficient")
     engine.state.shards = 3  # 明显不够付工资(3回合参战工资=8)
-    engine.execute_action("pre_battle_action", {
+    _hire(engine, {
         "sub_action": "雇佣", "name": "穷雇主专属员工", "blood_alloc": 17, "atk_bundles": 1,
     })
     _start_battle(engine)
@@ -303,7 +313,7 @@ def test_battle_end_blocked_until_all_pending_wages_resolved():
     engine = _new_engine("wage_block_multi")
     engine.state.shards = 100
     for name, alloc in [("甲", 8), ("乙", 17)]:
-        engine.execute_action("pre_battle_action", {
+        _hire(engine, {
             "sub_action": "雇佣", "name": name, "blood_alloc": alloc, "atk_bundles": (20 - alloc) // 3,
         })
     _start_battle(engine)

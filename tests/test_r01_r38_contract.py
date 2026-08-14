@@ -68,6 +68,10 @@ def test_r01_r10_normal_setup_debt_and_zero_attack_employee(tmp_path):
     })
     assert result["success"]
     assert engine.state.employees[-1].attack_count == 0
+    choices = result["result"]["discovered_daowen_choices"]
+    assert engine.execute_action("choose_hired_daowen", {
+        "name": "守门人", "daowen": choices[0],
+    })["success"]
 
     debtor = Entity("欠债者", "员工", blood_limit=30, current_hp=30,
                     attack_count=1, attack_power=1, shards=-10,
