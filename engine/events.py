@@ -160,6 +160,8 @@ def _event_preflight(text: str, engine, params: dict) -> Optional[str]:
         return f"速度不足，无法完整支付疲惫{fatigue}"
 
     shard_cost = sum(int(v) for v in re.findall(r"(?:失去|消耗)\s*(\d+)\s*\[?碎片\]?", text))
+    if params.get("_event_name") == "医生" and text.startswith("雇佣医生"):
+        shard_cost = 10  # 后半句5碎片是未来升级价格，不是本选项即时支出。
     # 赌局明确允许负债，单独由具名分支校验-50边界。
     if event_name := params.get("_event_name"):
         allow_debt = event_name == "遗落的赌局"
@@ -191,9 +193,9 @@ def _event_preflight(text: str, engine, params: dict) -> Optional[str]:
                 or any(n not in engine.SPELL_REGISTRY for n in names)):
             return "必须用spell_names显式提交两种不同的合法法术"
     if "使一名[朋友]获得[防弹插板]" in text:
-        friend = params.get("friend", "")
-        if friend not in [f.name for f in engine.state.friends if f.is_alive]:
-            return "必须用friend显式指定一名存活[朋友]"
+        legal = {f"friend:{i}" for i, friend in enumerate(engine.state.friends) if friend.is_alive}
+        if params.get("friend_ref") not in legal:
+            return "必须用friend_ref显式指定一名存活[朋友]"
     return None
 
 
@@ -214,6 +216,15 @@ def resolve_option_effect(text: str, engine, event_name: str = "", params=None) 
     preflight_error = _event_preflight(text, engine, params)
     if preflight_error:
         return {"applied": [], "instructions": [], "error": preflight_error}
+    creative = (
+        (event_name == "无名冢" and "设计一种新的遗物" in text)
+        or (event_name == "过路商人" and text.startswith("限制选择权"))
+        or (event_name == "绝望来电" and text.startswith("接听"))
+        or (event_name == "生锈邮筒" and text.startswith("写信"))
+    )
+    if creative and not params.get("dm_approved"):
+        return {"applied": [], "instructions": [],
+                "interrupt_required": {"event": event_name, "option": text, "params": params}}
 
     # ---- 罪孽都市·遗落的赌局：正式随机只走DiceEngine，结果不可由调用方注入 ----
     if event_name == "遗落的赌局" and text.startswith("下注"):
@@ -262,6 +273,116 @@ def resolve_option_effect(text: str, engine, event_name: str = "", params=None) 
                             "(记录于 state.forced_monsters_next_battle，出怪流程本身另行接入时读取)")
             return {"applied": applied, "instructions": instructions}
         # 选项3"离开"落入下方通用的"无事发生"分支，无需特殊处理
+
+    # ---- 已写死面板/跨战斗结果的确定性事件登记；创造性文本才进入Interrupt。 ----
+    def _grant_daowen(entity, name, x):
+        entity.dao_wen[name] = DaoWenInstance(
+            DaoWen(name=name, formula="", cost_type="", cost_formula="", effect_formula=""), x_value=x)
+
+    if event_name == "手术" and text.startswith("强制移植"):
+        refs = {f"friend:{i}": entity for i, entity in enumerate(engine.state.friends) if entity.is_alive}
+        refs.update({f"employee:{i}": entity for i, entity in enumerate(engine.state.employees) if entity.is_alive})
+        target = refs.get(params.get("target_ref"))
+        if target is None:
+            return {"applied": [], "instructions": [], "error": "强制移植必须显式提交微光者target_ref"}
+        from .gamedata import ORIGINAL_MONSTER_DAOWEN, MONSTER_TRANSFORM_DAOWEN
+        candidates = sorted((ORIGINAL_MONSTER_DAOWEN | MONSTER_TRANSFORM_DAOWEN) - set(target.dao_wen))
+        if not candidates:
+            return {"applied": [], "instructions": [], "error": "目标没有可移植的怪物道纹"}
+        roll = engine.dice.auto_roll("event_transplant_daowen", candidates, context="手术·强制移植")
+        _grant_daowen(target, roll["selected"], 1)
+        target._transplanted_daowen = roll["selected"]
+        target._transplant_rounds_unchanged = 0
+        return {"applied": [f"{target.name}被移植{roll['selected']}1"], "instructions": [],
+                "random": roll["record"]}
+    if event_name == "手术" and text.startswith("抽取灵魂"):
+        refs = {f"friend:{i}": entity for i, entity in enumerate(engine.state.friends) if entity.is_alive}
+        refs.update({f"employee:{i}": entity for i, entity in enumerate(engine.state.employees) if entity.is_alive})
+        target = refs.get(params.get("target_ref"))
+        if target is None:
+            return {"applied": [], "instructions": [], "error": "抽取灵魂必须显式提交微光者target_ref"}
+        gain = math.ceil(target.blood_limit * 0.5)
+        if target in engine.state.friends: engine.state.friends.remove(target)
+        if target in engine.state.employees: engine.state.employees.remove(target)
+        engine.state.shards += gain
+        return {"applied": [f"失去{target.name}", f"获得{gain}碎片"], "instructions": []}
+    if event_name == "黑市军火贩" and text.startswith("购买安保雇佣"):
+        ref = params.get("friend_ref")
+        friends = {f"friend:{i}": entity for i, entity in enumerate(engine.state.friends) if entity.is_alive}
+        target = friends.get(ref)
+        if target is None:
+            return {"applied": [], "instructions": [], "error": "必须用friend_ref显式选择一名存活朋友"}
+        engine.state.shards -= 15
+        target.relics.append(Relic("防弹插板", EVENT_RELICS["防弹插板"]))
+        target.blood_limit += 10; target.current_hp += 10
+        return {"applied": ["失去15碎片", f"{target.name}获得防弹插板并血限+10"], "instructions": []}
+    if event_name == "医生" and text.startswith("雇佣医生"):
+        doctor = Entity("医生", "员工", blood_limit=50, current_hp=50,
+                        attack_count=1, attack_power=1, is_deployed=False)
+        engine.state.shards -= 10
+        engine.state.employees.append(doctor)
+        return {"applied": ["失去10碎片", "医生作为待命员工加入"], "instructions": []}
+    elif event_name == "乞丐" and text.startswith("给予庇护"):
+        beggar = Entity("乞丐", "朋友", blood_limit=50, current_hp=50,
+                        attack_count=2, attack_power=3)
+        _grant_daowen(beggar, "狂暴", 2)
+        beggar.mutation_count = 3
+        engine.state.friends.append(beggar)
+        applied.append("乞丐作为朋友加入")
+    elif event_name == "断桥余烬" and text.startswith("接过伤者"):
+        friend = Entity("岩行者", "朋友", blood_limit=54, current_hp=54,
+                        attack_count=2, attack_power=4)
+        _grant_daowen(friend, "背负", 1)
+        engine.state.friends.append(friend)
+        applied.append("岩行者作为朋友加入")
+    elif event_name == "逆行者" and text.startswith("让他同行"):
+        friend = Entity("赴火者", "朋友", blood_limit=60, current_hp=60,
+                        attack_count=3, attack_power=3)
+        _grant_daowen(friend, "逆鳞", 1)
+        engine.state.friends.append(friend)
+        applied.append("赴火者作为朋友加入")
+    elif event_name == "皮衣店" and text.startswith("试穿"):
+        engine.state.event_modifiers["next_battle_first_round_shield"] = 30
+        applied.append("已登记：下一场第一回始获得30格挡")
+    elif event_name == "尖叫下水道" and "缄默面具" in text:
+        engine.state.event_modifiers["silent_mask_x"] = params["x"]
+    elif event_name == "高利贷钱庄" and text.startswith("获得债务"):
+        engine.state.event_modifiers["loan_active"] = True
+        applied.append("已登记高利贷战始还款与负债利息")
+    elif event_name == "地下角斗场" and text.startswith("签署下场打擂"):
+        engine.state.event_modifiers.update({"arena_health_percent": 20, "arena_double_loot": True})
+        applied.append("已登记下一场敌方血限+20%且战利品翻倍")
+    elif event_name == "地下角斗场" and text.startswith("押注盘外博彩"):
+        engine.state.event_modifiers["arena_bet_three_rounds"] = True
+        applied.append("已登记三回合押注")
+    elif event_name == "通缉悬赏榜" and text.startswith("撕下巨头"):
+        engine.state.event_modifiers.update({"bounty_extra_monster": True, "bounty_reward": 30})
+        applied.append("已登记下一场额外怪物与30碎片悬赏")
+    elif event_name == "通缉悬赏榜" and text.startswith("举报"):
+        engine.state.event_modifiers["next_battle_full_information"] = True
+    elif event_name == "假钞印钞厂" and text.startswith("启动"):
+        engine.state.event_modifiers["next_battle_fake_shards"] = 50
+        applied.append("已登记下一场战始获得50假碎片")
+    elif event_name == "裂隙温泉" and text.startswith("饮下泉水"):
+        allocations = params.get("heal_allocations")
+        refs = {"player:0": engine.state.player}
+        refs.update({f"friend:{i}": e for i, e in enumerate(engine.state.friends) if e.is_alive})
+        refs.update({f"employee:{i}": e for i, e in enumerate(engine.state.employees) if e.is_alive})
+        if (not isinstance(allocations, list)
+                or sum(entry.get("amount", -1) for entry in allocations if isinstance(entry, dict)) != 48
+                or any(not isinstance(entry, dict) or entry.get("target_ref") not in refs
+                       or not isinstance(entry.get("amount"), int) or isinstance(entry.get("amount"), bool)
+                       or entry["amount"] < 0 for entry in allocations)):
+            return {"applied": [], "instructions": [], "error": "必须用heal_allocations完整分配48点恢复量"}
+        for entry in allocations:
+            detail = engine.state.apply_heal(refs[entry["target_ref"]], entry["amount"])
+            applied.append(f"{refs[entry['target_ref']].name}获得回复{detail['actual_heal']}")
+        engine.state.pending_energy_penalty += 1
+        return {"applied": applied, "instructions": instructions}
+    elif event_name == "回忆当铺" and text.startswith("典当"):
+        engine.state.event_modifiers["memory_gain_locked"] = True
+    elif event_name == "回忆当铺" and text.startswith("赎回"):
+        engine.state.event_modifiers["past_memory_count"] = engine.state.event_modifiers.get("past_memory_count", 0) + 1
 
     # ---- 回音长廊：错误遗言 / 清除遗言直接改《死者之书.md》 ----
     if event_name == "回音长廊":

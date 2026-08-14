@@ -95,7 +95,7 @@ def test_suppress_battle_uses_existing_combat_flow_unmodified():
     assert rebel.current_hp == 50 - 14
     prepared = engine.execute_action("prepare_monster_phase", {})
     actor = prepared["result"]["actors"][0]
-    attacks = [{"hits": [{"target_ref": "player:0", "dodge": False}
+    attacks = [{"hits": [{"target_ref": "player:0", "dodge": False, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}}
                           for _ in range(actor["base_hits_per_attack"])]}
                for _ in range(actor["base_attack_actions"])]
     r_phase = engine.execute_action("resolve_monster_phase", {

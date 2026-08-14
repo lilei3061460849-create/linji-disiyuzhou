@@ -13,6 +13,14 @@ class GamePhase(Enum):
     GAME_OVER = "game_over"
 
 
+class CombatSubphase(Enum):
+    """一场战斗内的强制结算顺序。"""
+    AWAIT_ROUND_START = "await_round_start"
+    PLAYER_ACTIONS = "player_actions"
+    MONSTER_ACTIONS = "monster_actions"
+    AWAIT_ROUND_END = "await_round_end"
+
+
 class ActionPhase(Enum):
     """回合内结算阶段"""
     BEFORE_DAMAGE_TAKEN = "受到伤害前"

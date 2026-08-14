@@ -30,6 +30,11 @@ def _combat():
     return CombatEngine(GameState(), DiceEngine(seed=1))
 
 
+def finish_round(engine):
+    engine.state.combat_subphase = "await_round_end"
+    return engine.execute_action("round_end", {})
+
+
 def _engine(tmp_path, suffix="legacy"):
     book = _empty_book(tmp_path / f"死者之书_{suffix}.md")
     engine = GameEngine(
@@ -111,7 +116,7 @@ def test_player_mingling_queues_interrupt_and_approve_writes_file(tmp_path):
     r = engine.execute_action("resolve_monster_phase", {
         "token": prepared["result"]["token"],
         "choices": [{"actor_ref": "enemy:0", "daowen": None,
-                     "attack_actions": [{"hits": [{"target_ref": "player:0", "dodge": False}]}]}],
+                     "attack_actions": [{"hits": [{"target_ref": "player:0", "dodge": False, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}}]}]}],
     })
     assert r["result"]["player_dead"] is True
     assert r.get("interrupt", {}).get("interrupt_type") == "死之传承"
@@ -171,7 +176,7 @@ def test_reject_does_not_write_and_invalid_edit_keeps_interrupt(tmp_path):
     engine.state.player.current_hp = 0
     engine.state.player.is_alive = False
     engine.state.last_death_cause = "collapse"
-    engine.execute_action("round_end", {})
+    finish_round(engine)
     assert engine._pending_interrupts
 
     bad = engine.submit_ruling("死之传承", "改", {
@@ -211,7 +216,7 @@ def test_collapse_and_mediocrity_both_trigger_inheritance(tmp_path):
     for _ in range(5):
         p.actions_used_this_round = 0
         p.damage_dealt_this_round = 0
-        end = engine2.execute_action("round_end", {})
+        end = finish_round(engine2)
     assert not p.is_alive
     assert end.get("interrupt", {}).get("interrupt_type") == "死之传承"
     assert end["interrupt"]["context"]["cause"] == "mediocrity"
@@ -304,7 +309,7 @@ def test_player_cancer_mingling_triggers_inheritance(tmp_path):
     p = engine.state.player
     need = engine.combat.cancer_threshold_of(p)
     p.total_healed = need
-    end = engine.execute_action("round_end", {})
+    end = finish_round(engine)
     assert not p.is_alive
     assert p.is_proliferated
     assert end.get("interrupt", {}).get("interrupt_type") == "死之传承"
@@ -317,7 +322,7 @@ def test_player_cancer_boundary_just_below_threshold(tmp_path):
     p = engine.state.player
     need = engine.combat.cancer_threshold_of(p)
     p.total_healed = need - 1
-    engine.execute_action("round_end", {})
+    finish_round(engine)
     assert p.is_alive
     assert not p.is_proliferated
 
@@ -329,7 +334,7 @@ def test_ally_cancer_kills_ally_not_player(tmp_path):
                     attack_count=1, attack_power=1)
     engine.state.friends.append(friend)
     friend.heal(engine.combat.cancer_threshold_of(friend))
-    end = engine.execute_action("round_end", {})
+    end = finish_round(engine)
     assert not friend.is_alive
     assert friend.is_proliferated
     assert engine.state.player.is_alive

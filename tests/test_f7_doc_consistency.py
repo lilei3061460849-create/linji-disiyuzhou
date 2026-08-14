@@ -76,7 +76,7 @@ def test_engine_readme_completeness():
     """engine/README 已全面复审：文件结构当前19项 + F7订正注记。"""
     text = pathlib.Path("engine/README.md").read_text(encoding="utf-8")
     # 文件结构应包含新增的 8 个缺漏文件
-    for fname in ["gamedata.py", "events.py", "battle_flow.py", "battle_report.py", "ai_player.py", "ai_tactics.py", "rule_sync.py", "dungeons.py", "document_validation.py", "validator.py"]:
+    for fname in ["gamedata.py", "events.py", "battle_report.py", "ai_player.py", "ai_tactics.py", "rule_sync.py", "dungeons.py", "document_validation.py", "validator.py"]:
         assert fname in text, f"engine/README 文件结构应包含 {fname}"
     # F7 订正注记
     assert "F7 订正" in text or "增生" in text or "癌变" in text

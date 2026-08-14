@@ -130,6 +130,8 @@ def test_manqian_invalid_and_ziyang_zishi_shuaibai():
     assert r4["success"]
     assert m.current_hp == hp  # R32：发动时不立即触发
     assert m.has_status("衰败")
+    engine.state.combat_subphase = "await_round_end"  # 单元测试跳过怪物行动
+    engine.execute_action("round_end", {})
     engine.execute_action("round_start", {})
     assert m.current_hp == hp - 6  # [回始]ceil(60*10%)
 
@@ -243,6 +245,8 @@ def test_ziyu_cast_does_not_heal_until_round_start():
     assert p.has_status("自愈")
     assert p.current_hp == 30
     expected = math.ceil(p.blood_limit * 20 / 100)
+    engine.state.combat_subphase = "await_round_end"
+    engine.execute_action("round_end", {})
     engine.execute_action("round_start", {})
     assert p.current_hp == 30 + expected
 
@@ -277,12 +281,13 @@ def test_ziyu_monster_activate_heals_next_round_start():
     resolved = engine.execute_action("resolve_monster_phase", {
         "token": prepared["result"]["token"],
         "choices": [{"actor_ref": actor["actor_ref"],
-                     "daowen": {"name": "自愈", "dodge": False},
-                     "attack_actions": [{"hits": [{"target_ref": "player:0", "dodge": False}]}]}],
+                     "daowen": {"name": "自愈", "dodge": False, "blood_shadow": False, "trigger_spell_choices": {}},
+                     "attack_actions": [{"hits": [{"target_ref": "player:0", "dodge": False, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}}]}]}],
     })
     assert resolved["success"]
     assert m.has_status("自愈")
     m.current_hp = 50
+    engine.execute_action("round_end", {})
     engine.execute_action("round_start", {})
     assert m.current_hp == 50 + math.ceil(m.blood_limit * 10 / 100)
 
@@ -311,5 +316,7 @@ def test_jisu_jiasu_dongcha():
     engine.combat._note_dodge(p)
     assert getattr(p, "_dongcha_pending", 0) == 10
     mana = p.current_mana
+    engine.state.combat_subphase = "await_round_end"
+    engine.execute_action("round_end", {})
     engine.execute_action("round_start", {})
-    assert p.current_mana == mana + p.mana_limit + 10
+    assert p.current_mana == p.mana_limit + 10

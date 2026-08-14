@@ -45,11 +45,14 @@ def _new_engine(region, name="老张", speed=8, mana=7, dbsuffix="a", sealed="da
     return engine
 
 
-def _start_battle(engine):
+def _start_battle(engine, *, start_round=True):
     engine.state.energy = 0
     choices = {r.name: {"use": False} for r in engine.state.relics
                if r.name in ("折速法印", "鲜血契约", "三相残韵盘", "卖身契")}
-    return engine.execute_action("battle_start", {"relic_choices": choices})
+    result = engine.execute_action("battle_start", {"relic_choices": choices})
+    if result.get("success") and start_round:
+        engine.execute_action("round_start", {"relic_choices": {}})
+    return result
 
 
 # ========================================================================
@@ -173,7 +176,7 @@ def test_black_gold_card_debt_limit_rejects_before_mutating_state():
     engine = _new_engine("罪孽都市", dbsuffix="card_debt")
     engine.state.artifacts_owned.append("黑金名片")
     engine.state.shards = 10
-    _start_battle(engine)
+    _start_battle(engine, start_round=False)
     engine.state.enemies.clear()
     big = Entity(name="大怪", entity_type="怪物", blood_limit=200, current_hp=200)
     engine.state.enemies.append(big)
@@ -189,7 +192,7 @@ def test_black_gold_card_success_path():
     engine = _new_engine("罪孽都市", dbsuffix="card_ok")
     engine.state.artifacts_owned.append("黑金名片")
     engine.state.shards = 200
-    _start_battle(engine)
+    _start_battle(engine, start_round=False)
     engine.state.enemies.clear()
     big = Entity(name="大怪", entity_type="怪物", blood_limit=200, current_hp=200)
     engine.state.enemies.append(big)
@@ -205,6 +208,7 @@ def test_crime_vault_boundary_2_percent_cap():
     engine.state.artifacts_owned.append("罪业金库")
     engine.state.shards = 1000
     engine.state.phase = "in_combat"
+    engine.state.combat_subphase = "await_round_start"
     player = engine.state.player
     r_ok = engine.execute_action("use_crime_vault", {"x": 20})  # 2%×1000=20
     assert r_ok["success"] is True
@@ -230,11 +234,11 @@ def test_godfather_revolver_escalates_and_refills_next_battle():
     import math
     base = math.ceil(player.blood_limit * 0.3)
     for i in range(1, 7):
-        r = engine.execute_action("fire_godfather_revolver", {"target": "靶子"})
+        r = engine.execute_action("fire_godfather_revolver", {"target_ref": "enemy:0"})
         assert r["success"] is True
         assert r["result"]["damage"] == base * i
 
-    r_out = engine.execute_action("fire_godfather_revolver", {"target": "靶子"})
+    r_out = engine.execute_action("fire_godfather_revolver", {"target_ref": "enemy:0"})
     assert r_out["success"] is False, "6发耗尽后应拒绝"
 
     foe.current_hp = 0
@@ -254,8 +258,14 @@ def test_shared_dragon_heart_ring_requires_owned_heart_of_that_type():
     """错误输入：选择一个自己并未持有的龙心类型应拒绝"""
     engine = _new_engine("龙心谷", dbsuffix="ring_err")
     engine.state.artifacts_owned.append("共心环")
+    engine.state.phase = "in_combat"; engine.state.combat_subphase = "await_round_start"
     r = engine.execute_action("select_shared_dragon_heart", {"dragon_heart_type": "衰老"})
     assert r["success"] is False
+    engine.state.consumables.append(Consumable(
+        name="衰老龙心", effect="", current_uses=3, max_uses=3,
+        kind="dragon_heart", dragon_heart_type="衰老"))
+    ok = engine.execute_action("select_shared_dragon_heart", {"dragon_heart_type": "衰老"})
+    assert ok["success"] and engine.state.shared_dragon_heart_type == "衰老"
 
 
 def test_fuyuebei_toll_protects_ally_from_retreat_and_costs_player_20():
@@ -266,7 +276,7 @@ def test_fuyuebei_toll_protects_ally_from_retreat_and_costs_player_20():
     ally = Entity(name="队友甲", entity_type="朋友", blood_limit=30, current_hp=10, is_deployed=True)
     engine.state.friends.append(ally)
     engine.state.phase = "in_combat"
-    engine.execute_action("declare_fuyuebei_toll", {"name": "队友甲"})
+    engine.execute_action("declare_fuyuebei_toll", {"target_ref": "friend:0"})
     player.current_hp = 40
 
     result = engine.combat._apply_hostile_damage(ally, 9999, "普通")
@@ -284,7 +294,7 @@ def test_fuyuebei_toll_boundary_player_hp_too_low_falls_back_to_retreat():
     engine.state.artifacts_owned.append("负岳碑")
     ally = Entity(name="队友乙", entity_type="朋友", blood_limit=30, current_hp=10, is_deployed=True)
     engine.state.friends.append(ally)
-    engine.execute_action("declare_fuyuebei_toll", {"name": "队友乙"})
+    engine.execute_action("declare_fuyuebei_toll", {"target_ref": "friend:0"})
     player.current_hp = 15
 
     result = engine.combat._apply_hostile_damage(ally, 9999, "普通")

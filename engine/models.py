@@ -499,6 +499,8 @@ class GameState:
     # 游戏元数据
     game_id: str = ""
     phase: str = "setup"
+    # 战斗内强制顺序；正式战始会置为 await_round_start。
+    combat_subphase: str = "player_actions"
     current_round: int = 0
     current_battle: int = 0     # 第几场战斗
     current_region: str = ""    # 当前副本
@@ -540,6 +542,10 @@ class GameState:
     pending_item_source: str = ""
     # 两阶段怪物决策：prepare产生的合法选项与一次性token；resolve后清空。
     pending_monster_phase: dict = field(default_factory=dict)
+    # 两阶段攻击：prepare绑定行动者、逐击合法目标与反应选项；resolve后清空。
+    pending_attack: dict = field(default_factory=dict)
+    # 事件产生的跨行动/跨战斗确定性状态，键均由事件handler登记。
+    event_modifiers: dict[str, Any] = field(default_factory=dict)
     # 死斗对手自己的遗物。可选效果（折速/鲜血契约等）由对手决定是否发动，不跟挑战者的 state.relics 混用。
     opponent_relics: list[Relic] = field(default_factory=list)
     opponent_artifacts_owned: list[str] = field(default_factory=list)
@@ -623,7 +629,7 @@ class GameState:
     pending_terminal_region: str = ""
     # 共心环：本场战斗选定的可共享龙心类型（空=未选定/未持有共心环）
     shared_dragon_heart_type: str = ""
-    # 负岳碑(终音法器)：预先声明"下一次这些[朋友]/[员工]即将撤退时，改为流血20取消撤退"的名单
+    # 负岳碑：预先声明保护的稳定实体引用（friend:index / employee:index）。
     fuyuebei_declared: list[str] = field(default_factory=list)
 
     # 初拥之夜：待选择标记 + 已选过的1~8号遗物(每项限一次，9号不计入) + 已获得的赤族
@@ -666,6 +672,18 @@ class GameState:
     def opponent_first_embrace_traits(self) -> list[str]:
         """死斗对手的血族遗物名单（对 opponent_relics 的只读视图）。"""
         return [r.name for r in self.opponent_relics if "血族" in r.tags]
+
+    def apply_heal(self, entity: Entity, amount: int) -> dict:
+        """统一回复入口；玩家侧溢出回复会被【龙血瓶】转为可提取耐久。"""
+        detail = entity.heal(amount)
+        overheal = detail.get("overheal", 0)
+        if overheal > 0 and self.on_player_side(entity):
+            bottle = next((item for item in self.consumables if item.name == "龙血瓶"), None)
+            if bottle is not None:
+                bottle.current_uses += overheal
+                bottle.max_uses += overheal
+                detail["dragon_blood_bottle_stored"] = overheal
+        return detail
 
     def on_player_side(self, entity: Entity) -> bool:
         """必须用 is，不能用 dataclass 相等。"""
@@ -758,6 +776,7 @@ class GameState:
         return {
             "game_id": self.game_id,
             "phase": self.phase,
+            "combat_subphase": self.combat_subphase,
             "current_round": self.current_round,
             "current_battle": self.current_battle,
             "current_region": self.current_region,
@@ -773,6 +792,8 @@ class GameState:
             "pending_item_choices": list(self.pending_item_choices),
             "pending_item_source": self.pending_item_source,
             "pending_monster_phase": self.pending_monster_phase,
+            "pending_attack": self.pending_attack,
+            "event_modifiers": self.event_modifiers,
             "forced_monsters_next_battle": self.forced_monsters_next_battle,
             "rebellion_active": self.rebellion_active,
             "rebellion_in_progress": self.rebellion_in_progress,

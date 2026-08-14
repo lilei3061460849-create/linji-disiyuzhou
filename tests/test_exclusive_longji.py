@@ -190,11 +190,13 @@ def test_monster_activates_exclusive():
     resolved = engine.execute_action("resolve_monster_phase", {
         "token": prepared["result"]["token"],
         "choices": [{"actor_ref": actor["actor_ref"],
-                     "daowen": {"name": "逆鳞", "target_ref": "enemy:0", "dodge": False},
-                     "attack_actions": [{"hits": [{"target_ref": "player:0", "dodge": False}]}]}],
+                     "daowen": {"name": "逆鳞", "target_ref": "enemy:0", "dodge": False, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}},
+                     "attack_actions": [{"hits": [{"target_ref": "player:0", "dodge": False, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}}]}]}],
     })
     assert resolved["success"]
     assert m.has_status("逆鳞")
+    engine.execute_action("round_end", {})
+    engine.execute_action("round_start", {})
     prepared2 = engine.execute_action("prepare_monster_phase", {})
     assert "逆鳞" not in [o["name"] for o in prepared2["result"]["actors"][0]["daowen_options"]]
 

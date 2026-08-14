@@ -133,10 +133,10 @@ def test_r11_r17_normal_two_stage_monster_choices(tmp_path):
 
     choices = [{
         "actor_ref": "enemy:0",
-        "daowen": {"name": "杀伐", "target_ref": "friend:0", "dodge": False},
+        "daowen": {"name": "杀伐", "target_ref": "friend:0", "dodge": False, "blood_shadow": False},
         "attack_actions": [{"hits": [
-            {"target_ref": "player:0", "dodge": True},
-            {"target_ref": "friend:0", "dodge": False},
+            {"target_ref": "player:0", "dodge": True, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}},
+            {"target_ref": "friend:0", "dodge": False, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}},
         ]}],
     }]
     result = engine.execute_action("resolve_monster_phase", {
@@ -158,6 +158,7 @@ def test_r11_r17_boundary_relic_and_first_aid_require_explicit_choices(tmp_path)
         "relic_choices": {"折速法印": {"use": True, "x": 1}},
     })
     assert ok["success"]
+    assert engine.execute_action("round_start", {"relic_choices": {}})["success"]
 
     engine.state.consumables.append(Consumable(
         "急救箱", TWISTED_TOOL_LIBRARY["急救箱"][1], current_uses=2, max_uses=2,
@@ -200,11 +201,11 @@ def test_r11_r17_aoe_and_control_dodge_are_explicit(tmp_path):
     option = actor["daowen_options"][0]
     assert option["dodge_submission"] == "per_target"
     attacks = [{"hits": [
-        {"target_ref": "player:0", "dodge": False},
-        {"target_ref": "player:0", "dodge": False},
+        {"target_ref": "player:0", "dodge": False, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}},
+        {"target_ref": "player:0", "dodge": False, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}},
     ]}]
     incomplete = [{"actor_ref": "enemy:0",
-                   "daowen": {"name": "冲击", "dodge": False},
+                   "daowen": {"name": "冲击", "dodge": False, "blood_shadow": False},
                    "attack_actions": attacks}]
     hp_before = player.current_hp
     bad = engine.execute_action("resolve_monster_phase", {
@@ -214,8 +215,8 @@ def test_r11_r17_aoe_and_control_dodge_are_explicit(tmp_path):
 
     duplicated = [{"actor_ref": "enemy:0",
                    "daowen": {"name": "冲击", "dodge": False, "dodge_targets": [
-                       {"target_ref": "player:0", "dodge": False},
-                       {"target_ref": "player:0", "dodge": True},
+                       {"target_ref": "player:0", "dodge": False, "blood_shadow": False},
+                       {"target_ref": "player:0", "dodge": True, "blood_shadow": False},
                    ]},
                    "attack_actions": attacks}]
     duplicate_result = engine.execute_action("resolve_monster_phase", {
@@ -225,8 +226,8 @@ def test_r11_r17_aoe_and_control_dodge_are_explicit(tmp_path):
 
     complete = [{"actor_ref": "enemy:0",
                  "daowen": {"name": "冲击", "dodge": False, "dodge_targets": [
-                     {"target_ref": "player:0", "dodge": False},
-                     {"target_ref": "friend:0", "dodge": True},
+                     {"target_ref": "player:0", "dodge": False, "blood_shadow": False},
+                     {"target_ref": "friend:0", "dodge": True, "blood_shadow": False},
                  ]},
                  "attack_actions": attacks}]
     ok = engine.execute_action("resolve_monster_phase", {
@@ -256,8 +257,8 @@ def test_r11_r17_impact_dodge_targets_are_bound_to_prepare_snapshot(tmp_path):
         "choices": [{
             "actor_ref": "enemy:0",
             "daowen": {"name": "冲击", "dodge": False, "dodge_targets": [
-                {"target_ref": "player:0", "dodge": False},
-                {"target_ref": "friend:0", "dodge": False},
+                {"target_ref": "player:0", "dodge": False, "blood_shadow": False},
+                {"target_ref": "friend:0", "dodge": False, "blood_shadow": False},
             ]},
             "attack_actions": [{"hits": []}],
         }],
@@ -271,7 +272,7 @@ def test_r11_r17_impact_dodge_targets_are_bound_to_prepare_snapshot(tmp_path):
         "choices": [{
             "actor_ref": "enemy:0",
             "daowen": {"name": "冲击", "dodge": False, "dodge_targets": [
-                {"target_ref": "player:0", "dodge": False},
+                {"target_ref": "player:0", "dodge": False, "blood_shadow": False},
             ]},
             "attack_actions": [{"hits": []}],
         }],
@@ -292,13 +293,19 @@ def test_r11_r17_aoe_dodge_does_not_leak_into_next_resolution(tmp_path):
     _dw(player, "冲击", 1)
 
     one = engine.execute_action("use_daowen", {
-        "daowen_name": "冲击", "x": 1, "dodge_targets": ["甲怪"],
+        "daowen_name": "冲击", "x": 1, "dodge_targets": [
+            {"target_ref": "enemy:0", "dodge": True, "blood_shadow": False},
+            {"target_ref": "enemy:1", "dodge": False, "blood_shadow": False},
+        ],
     })
     assert one["success"]
     assert (first.current_hp, second.current_hp) == (100, 99)
 
     two = engine.execute_action("use_daowen", {
-        "daowen_name": "冲击", "x": 1, "dodge_targets": [],
+        "daowen_name": "冲击", "x": 1, "dodge_targets": [
+            {"target_ref": "enemy:0", "dodge": False, "blood_shadow": False},
+            {"target_ref": "enemy:1", "dodge": False, "blood_shadow": False},
+        ],
     })
     assert two["success"]
     assert (first.current_hp, second.current_hp) == (99, 98)
@@ -320,15 +327,15 @@ def test_r11_r17_targets_must_come_from_prepare_and_fail_atomically(tmp_path):
     hp_before = (player.current_hp, late_friend.current_hp)
     mutation_before = monster.mutation_count
     attacks_on_player = [{"hits": [
-        {"target_ref": "player:0", "dodge": False},
-        {"target_ref": "player:0", "dodge": False},
+        {"target_ref": "player:0", "dodge": False, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}},
+        {"target_ref": "player:0", "dodge": False, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}},
     ]}]
 
     bad_daowen_target = engine.execute_action("resolve_monster_phase", {
         "token": token,
         "choices": [{
             "actor_ref": "enemy:0",
-            "daowen": {"name": "杀伐", "target_ref": "friend:0", "dodge": False},
+            "daowen": {"name": "杀伐", "target_ref": "friend:0", "dodge": False, "blood_shadow": False},
             "attack_actions": attacks_on_player,
         }],
     })
@@ -343,8 +350,8 @@ def test_r11_r17_targets_must_come_from_prepare_and_fail_atomically(tmp_path):
             "actor_ref": "enemy:0",
             "daowen": None,
             "attack_actions": [{"hits": [
-                {"target_ref": "friend:0", "dodge": False},
-                {"target_ref": "player:0", "dodge": False},
+                {"target_ref": "friend:0", "dodge": False, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}},
+                {"target_ref": "player:0", "dodge": False, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}},
             ]}],
         }],
     })
@@ -528,7 +535,7 @@ def test_r32_r38_normal_decay_deform_ransom_and_transform_restore(tmp_path):
     speed_before = player.current_speed
     slow = DaoWenEngine.resolve("减速", 1, target=player, caster=monster)
     engine.combat.apply_daowen_effect("减速", slow, monster, player)
-    assert player.current_speed == speed_before // 2
+    assert player.current_speed == (speed_before + 1) // 2
     engine.combat.apply_daowen_effect("变形", transformed, player, player)
     assert (player.attack_power, player.attack_count) == (5, 2)
     assert not player.has_status("变形")
@@ -552,6 +559,7 @@ def test_r32_r38_boundary_complete_tie_alternates_round_first(tmp_path):
     first = engine.state.duel_round_first
     engine.execute_action("round_start", {"relic_choices": {}})
     assert engine.state.duel_turn == first
+    engine.state.combat_subphase = "await_round_end"  # 边界测试跳过双方出手，仅验证完全平局首手轮换
     engine.execute_action("round_end", {})
     engine.execute_action("round_start", {"relic_choices": {}})
     assert engine.state.duel_turn != first

@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
 
+from tests.attack_support import resolve_attack as resolve_player_attack
 from engine.api import GameEngine
 from engine.models import Entity, DaoWen, DaoWenInstance
 
@@ -45,6 +46,11 @@ def _grant(engine, choice):
     return engine.execute_action("choose_first_embrace", {"choice": choice})
 
 
+def finish_round(engine):
+    engine.state.combat_subphase = "await_round_end"
+    return engine.execute_action("round_end", {})
+
+
 def _start_battle_with_enemy(engine, hp=50):
     engine.execute_action("battle_start", {})
     engine.state.enemies.clear()
@@ -55,9 +61,7 @@ def _start_battle_with_enemy(engine, hp=50):
 
 
 def _resolve_full_attack(engine, attacker_name, target):
-    r = engine.execute_action("attack", {"attacker": attacker_name, "target_selections": [0]})
-    for _ in r["result"]["hits"]:
-        engine.execute_action("dodge_decision", {"attacker": attacker_name, "target": target.name, "dodge": False})
+    return resolve_player_attack(engine, attacker_name, [0])
 
 
 # ========================================================================
@@ -130,7 +134,7 @@ def test_option1_blood_lineage_heals_when_damage_dealt_else_bleeds_20():
     _resolve_full_attack(engine, player.name, enemy)
     player.current_hp = min(player.current_hp, player.blood_limit - 5)
     hp_before_heal = player.current_hp
-    r = engine.execute_action("round_end", {})
+    r = finish_round(engine)
     heal_effects = [e for e in r["result"]["effects"] if e["type"] == "blood_lineage_heal"]
     assert heal_effects, "本回合造成过伤害应触发回复"
     assert player.current_hp > hp_before_heal
@@ -138,7 +142,7 @@ def test_option1_blood_lineage_heals_when_damage_dealt_else_bleeds_20():
     # 第二回合不出手，应改为流血
     engine.execute_action("round_start", {})
     hp_before_bleed = player.current_hp
-    r2 = engine.execute_action("round_end", {})
+    r2 = finish_round(engine)
     bleed_effects = [e for e in r2["result"]["effects"] if e["type"] == "blood_lineage_bleed"]
     assert bleed_effects
     assert player.current_hp == hp_before_bleed - 20
@@ -181,6 +185,7 @@ def test_option3_blood_wings_costs_bleed_and_grants_flight():
     player = engine.state.player
     _grant(engine, 3)
     engine.execute_action("battle_start", {})
+    engine.execute_action("round_start", {})
     hp_before = player.current_hp
     r = engine.execute_action("use_blood_wings", {"x": 2})
     assert r["success"] is True
@@ -208,7 +213,7 @@ def test_option4_vampire_fang_enslaves_weaker_target_as_chizu():
     enemy = _start_battle_with_enemy(engine, hp=5)
     bl_before = player.blood_limit
 
-    r = engine.execute_action("enslave_as_chizu", {"target": "怪物甲"})
+    r = engine.execute_action("enslave_as_chizu", {"target_ref": "enemy:0"})
     assert r["success"] is True
     assert player.blood_limit == bl_before - 20
     assert "怪物甲" in engine.state.chizu_names
@@ -223,10 +228,10 @@ def test_option4_error_target_not_weaker_or_missing():
     engine = _new_engine(dbsuffix="fang_err")
     _grant(engine, 4)
     _start_battle_with_enemy(engine, hp=99999)
-    r = engine.execute_action("enslave_as_chizu", {"target": "怪物甲"})
+    r = engine.execute_action("enslave_as_chizu", {"target_ref": "enemy:0"})
     assert r["success"] is False
 
-    r2 = engine.execute_action("enslave_as_chizu", {"target": "不存在的怪物"})
+    r2 = engine.execute_action("enslave_as_chizu", {"target_ref": "enemy:99"})
     assert r2["success"] is False
 
 
@@ -237,11 +242,11 @@ def test_option8_blood_feast_kills_chizu_and_heals_equal_amount():
     _grant(engine, 4)
     _grant(engine, 8)
     _start_battle_with_enemy(engine, hp=5)
-    engine.execute_action("enslave_as_chizu", {"target": "怪物甲"})
+    engine.execute_action("enslave_as_chizu", {"target_ref": "enemy:0"})
     chizu = next(f for f in engine.state.friends if f.name == "怪物甲")
     chizu.current_hp = 18
     player.current_hp = 10
-    r = engine.execute_action("blood_feast", {"chizu": "怪物甲"})
+    r = engine.execute_action("blood_feast", {"target_ref": "friend:0"})
     assert r["success"] is True
     assert chizu.is_alive is False
     assert player.current_hp == 10 + 18
@@ -250,10 +255,10 @@ def test_option8_blood_feast_kills_chizu_and_heals_equal_amount():
 def test_option8_error_without_trait_or_invalid_chizu():
     """错误输入：没有血食血脉时拒绝；指定的赤族不存在时拒绝"""
     engine = _new_engine(dbsuffix="feast_err")
-    r = engine.execute_action("blood_feast", {"chizu": "不存在"})
+    r = engine.execute_action("blood_feast", {"target_ref": "friend:99"})
     assert r["success"] is False
     _grant(engine, 8)
-    r2 = engine.execute_action("blood_feast", {"chizu": "不存在"})
+    r2 = engine.execute_action("blood_feast", {"target_ref": "friend:99"})
     assert r2["success"] is False
 
 
@@ -262,10 +267,10 @@ def test_chizu_curse_bleeds_20_each_round_end():
     engine = _new_engine(dbsuffix="curse")
     _grant(engine, 4)
     _start_battle_with_enemy(engine, hp=5)
-    engine.execute_action("enslave_as_chizu", {"target": "怪物甲"})
+    engine.execute_action("enslave_as_chizu", {"target_ref": "enemy:0"})
     chizu = next(f for f in engine.state.friends if f.name == "怪物甲")
     chizu.current_hp = 30
-    engine.execute_action("round_end", {})
+    finish_round(engine)
     assert chizu.current_hp == 10
 
 
@@ -278,7 +283,7 @@ def test_option5_truth_eye_raises_interrupt_and_sets_cooldown():
     engine = _new_engine(dbsuffix="eye")
     _grant(engine, 5)
     enemy = _start_battle_with_enemy(engine)
-    r = engine.execute_action("use_truth_eye", {"target": "怪物甲", "statement": "你藏着钥匙"})
+    r = engine.execute_action("use_truth_eye", {"target_ref": "enemy:0", "statement": "你藏着钥匙"})
     assert r["success"] is True
     assert "interrupt" in r["result"]
     assert engine.state.truth_eye_cooldown == 2
@@ -290,10 +295,10 @@ def test_option5_cooldown_blocks_reuse_and_decrements_per_battle_end():
     engine = _new_engine(dbsuffix="eye_cd")
     _grant(engine, 5)
     _start_battle_with_enemy(engine)
-    engine.execute_action("use_truth_eye", {"target": "怪物甲", "statement": "第一次"})
+    engine.execute_action("use_truth_eye", {"target_ref": "enemy:0", "statement": "第一次"})
     engine.submit_ruling(interrupt_type="自定义", ruling_text="属实")
 
-    r_again = engine.execute_action("use_truth_eye", {"target": "怪物甲", "statement": "立刻再来"})
+    r_again = engine.execute_action("use_truth_eye", {"target_ref": "enemy:0", "statement": "立刻再来"})
     assert r_again["success"] is False, "冷却期内应拒绝"
 
     engine.state.enemies.clear()
@@ -306,7 +311,7 @@ def test_option5_cooldown_blocks_reuse_and_decrements_per_battle_end():
     engine.state.phase = "in_combat"
     engine.state.enemies.clear()
     engine.state.enemies.append(Entity(name="怪物乙", entity_type="怪物", blood_limit=10, current_hp=10))
-    r_ok = engine.execute_action("use_truth_eye", {"target": "怪物乙", "statement": "冷却结束"})
+    r_ok = engine.execute_action("use_truth_eye", {"target_ref": "enemy:0", "statement": "冷却结束"})
     assert r_ok["success"] is True
 
 

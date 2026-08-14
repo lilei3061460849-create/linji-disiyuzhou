@@ -277,7 +277,7 @@ def test_dm_rulings():
     engine.state.enemies.append(monster)
     
     # 声明急中生智
-    result = engine.execute_action("declare_wit", {"target": "测试怪"})
+    result = engine.execute_action("declare_wit", {"target_ref": "enemy:0"})
     assert result["success"]
     assert result["interrupt"]["interrupt_type"] == "急中生智"
     print("  ✓ 急中生智中断触发")
@@ -293,7 +293,7 @@ def test_dm_rulings():
     print(f"  ✓ DM裁定保存，ID={result['ruling_id']}")
     
     # 查询先例
-    precedent = engine.check_precedent("急中生智", {"target": "测试怪"})
+    precedent = engine.check_precedent("急中生智", {"target_ref": "enemy:0"})
     assert precedent["found"]
     print(f"  ✓ 查询到{precedent['count']}个先例")
     
@@ -353,31 +353,13 @@ def test_full_flow():
     result = engine.execute_action("use_daowen", {
         "daowen_name": "杀伐",
         "x": 5,
-        "target": "千手蜈蚣"
+        "target_ref": f"enemy:{len(engine.state.enemies) - 1}",
+        "dodge": False, "blood_shadow": False, "trigger_spell_choices": {},
     })
     assert result["success"]
     print(f"  ✓ 发动杀伐X=5: 对千手蜈蚣造成10伤害")
     
     print("  ✓ 完整流程测试通过")
-
-
-def test_monster_fixed_actions():
-    """测试怪物出手拆分（攻击出手固定1 + 道纹出手固定1，不随回合增加）"""
-    print("\n=== 测试：怪物出手拆分（已删除随回合增加）===")
-    from engine.battle_flow import BattleFlow
-    from engine.models import GameState
-
-    state = GameState()
-    bf = BattleFlow(state)
-    monster = Entity(name="测试怪", entity_type="怪物", blood_limit=100,
-                     current_hp=100, attack_count=3, attack_power=5)
-
-    for rnd in [1, 3, 6, 9, 15]:
-        actions = bf.get_monster_actions(monster, rnd)
-        assert actions["attack"] == 1, f"回合{rnd}攻击出手应为1"
-        assert actions["daowen"] == 1, f"回合{rnd}道纹出手应为1"
-    print("  ✓ 怪物攻击出手与道纹出手均固定为1，回合1/3/6/9/15均不增加")
-    print("  ✓ 怪物出手拆分测试通过")
 
 
 def test_sculpture_and_proliferation():
@@ -623,7 +605,12 @@ def test_spells_trigger():
     m = Entity(name="打手", entity_type="怪物", blood_limit=120, current_hp=120, attack_count=1, attack_power=20)
     st.enemies.append(m)
     combat = CombatEngine(st, DiceEngine())
-    r = combat.resolve_attack(m, st.player)  # 不闪避，让法术挡
+    r = combat.resolve_attack(m, st.player, spell_choices={
+        "before": {"后发制人": {"use": True, "cycles": [[
+            {"x": 5, "target_ref": "player:0", "dodge": False},
+        ]]}},
+        "after": {},
+    })
     assert st.player.current_hp == 60, f"后发制人应挡掉20伤，实HP{st.player.current_hp}"
     assert "spell_logs" in r and r["spell_logs"], "应触发后发制人"
     print(f"  ✓ 后发制人：受伤害前发动庇护，挡掉20伤(HP仍{st.player.current_hp})")
@@ -635,7 +622,12 @@ def test_spells_trigger():
     combat2 = CombatEngine(st2, DiceEngine())
     # 玩家速度设0避免闪避，确保实损触发失血后
     st2.player.current_speed = 0
-    r2 = combat2.resolve_attack(m2, st2.player)
+    r2 = combat2.resolve_attack(m2, st2.player, spell_choices={
+        "before": {},
+        "after": {"生生不息": {"use": True, "cycles": [[
+            {"x": 4, "target_ref": "player:0", "dodge": False},
+        ]]}},
+    })
     assert st2.player.current_hp == 60, f"生生不息应奶回满，实HP{st2.player.current_hp}"
     print(f"  ✓ 生生不息：失血后发动再生，奶回满(HP{st2.player.current_hp})")
     print("  ✓ 法术触发测试通过")
@@ -713,7 +705,8 @@ def test_events_system():
     print(f"  ✓ 探索触发【{ev_name}】，{len(r['result']['options'])}个选项")
 
     # R20：不能越过当前事件直接结算祭坛；随后显式构造祭坛为当前事件再测效果。
-    wrong = engine.execute_action("resolve_event", {"event":"祭坛","option_id":1})
+    wrong_name = "祭坛" if ev_name != "祭坛" else "无名冢"
+    wrong = engine.execute_action("resolve_event", {"event": wrong_name, "option_id": 1})
     assert not wrong["success"] and engine.event_pool.current == ev_name
     engine.event_pool.current = "祭坛"
     bl_before = engine.state.player.blood_limit
@@ -986,7 +979,7 @@ def test_evolution_plight_listing():
 
     # ---- 1. 正常路径：行动列表出现evolution项，参数由引擎算好 ----
     actions = engine.get_available_actions()
-    evo = next((a for a in actions["actions"] if a.get("type") == "evolution"), None)
+    evo = next((a for a in actions["actions"] if a.get("action_type") == "declare_evolution"), None)
     assert evo is not None, "战斗行动列表应包含evolution项"
     assert evo["available"] is True, "存在困境怪物时evolution应可用"
     assert len(evo["plight_monsters"]) == 1, "应恰好1只困境怪"
@@ -1012,7 +1005,7 @@ def test_evolution_plight_listing():
     engine2.combat.reset_monster_activation()
     engine2.state.phase = "in_combat"
     engine2.state.enemies.append(m2)
-    evo2 = next(a for a in engine2.get_available_actions()["actions"] if a.get("type") == "evolution")
+    evo2 = next(a for a in engine2.get_available_actions()["actions"] if a.get("action_type") == "declare_evolution")
     assert evo2["available"] is True and len(evo2["plight_monsters"]) == 1, \
         "裁定⑦后仅1个劣势信号即判定困境，应列单"
     assert evo2["plight_monsters"][0]["monster"] == "半血怪"
@@ -1026,7 +1019,7 @@ def test_evolution_plight_listing():
     engine2b.combat.reset_monster_activation()
     engine2b.state.phase = "in_combat"
     engine2b.state.enemies.append(m2b)
-    evo2b = next(a for a in engine2b.get_available_actions()["actions"] if a.get("type") == "evolution")
+    evo2b = next(a for a in engine2b.get_available_actions()["actions"] if a.get("action_type") == "declare_evolution")
     assert evo2b["available"] is False and evo2b["plight_monsters"] == [], \
         "0个劣势信号不应判定困境"
     print("  ✓ 探针口径（裁定⑦）：1个劣势信号即列单（半血怪），0个信号不可用")
@@ -1045,7 +1038,7 @@ def test_evolution_plight_listing():
                 attack_count=2, attack_power=1)
     m4.is_alive = False
     engine3.state.enemies.extend([m3, m4])
-    evo3 = next(a for a in engine3.get_available_actions()["actions"] if a.get("type") == "evolution")
+    evo3 = next(a for a in engine3.get_available_actions()["actions"] if a.get("action_type") == "declare_evolution")
     assert evo3["available"] is False and evo3["plight_monsters"] == [], \
         "已进化/已死亡怪物均不应列为困境可进化"
     print("  ✓ 已进化（二选一已用）与已死亡怪物均不出现在标注中")
@@ -1154,8 +1147,8 @@ def test_consumable_mutation_wiring():
     # ---- 3. 非法/对照：不含异变的普通消耗品不触碰异变；找不到的消耗品拒绝 ----
     engine3 = mk_engine()
     engine3.state.consumables.append(Consumable(
-        name="赤泉囊", effect="局外使用后产生8点恢复量", current_uses=6, max_uses=6))
-    r3 = engine3.execute_action("consume_item", {"name": "赤泉囊"})
+        name="无异变测试品", effect="回复0", current_uses=1, max_uses=1))
+    r3 = engine3.execute_action("consume_item", {"name": "无异变测试品"})
     assert r3["success"] and r3["result"]["mutation"] is None, "无异变文本应不触碰异变"
     assert engine3.state.player.mutation_count == 0
     r4 = engine3.execute_action("consume_item", {"name": "不存在的道具"})

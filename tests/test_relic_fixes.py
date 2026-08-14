@@ -149,7 +149,7 @@ def test_tonghunbi_grants_caster_real_daowen_from_second_target():
 
     r = engine.execute_action("use_resonance", {
         "source_daowen": "杀伐", "resonance_type": "反转",
-        "second_target": "怪甲", "second_source_daowen": "固执",
+        "second_target_ref": "enemy:0", "second_source_daowen": "固执",
     })
     assert r["success"] is True
     assert "血债" in engine.state.player.dao_wen, "施法者应永久获得固执反转后的血债"
@@ -278,7 +278,7 @@ def test_tonghunbi_rejected_when_second_target_lacks_daowen():
 
     r = engine.execute_action("use_resonance", {
         "source_daowen": "杀伐", "resonance_type": "反转",
-        "second_target": "怪乙", "second_source_daowen": "固执",
+        "second_target_ref": "enemy:0", "second_source_daowen": "固执",
     })
     assert r["success"] is True  # 主残韵仍然成功，只是second分支未生效
     assert "未生效" in r["second_target_log"]

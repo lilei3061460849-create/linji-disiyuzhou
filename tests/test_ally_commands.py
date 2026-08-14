@@ -26,6 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
 
+from tests.attack_support import resolve_attack as resolve_player_attack
 from engine.api import GameEngine
 from engine.models import Entity, DaoWen, DaoWenInstance
 
@@ -65,7 +66,7 @@ def test_friend_attack_commanded_by_player_hits_enemy_side():
     engine.state.friends.append(Entity(name="岩行者", entity_type="朋友", blood_limit=54, current_hp=54,
                                         attack_count=2, attack_power=4))
     enemy = engine.state.enemies[0]
-    r = engine.execute_action("attack", {"attacker": "岩行者", "target_selections": [0, 0]})
+    r = resolve_player_attack(engine, "岩行者", [0, 0])
     assert r["success"] is True
     assert r["result"]["attacker"] == "岩行者"
     assert len(r["result"]["hits"]) == 2
@@ -116,7 +117,7 @@ def test_zero_attack_count_ally_has_zero_action_budget_and_cannot_act():
                      attack_count=0, attack_power=0)
     engine.state.friends.append(friend)
     assert friend.action_count == 0
-    r = engine.execute_action("attack", {"attacker": "纯辅助", "target_selections": []})
+    r = resolve_player_attack(engine, "纯辅助", [])
     assert r["success"] is False
     assert "出手已用完" in r["error"]
 

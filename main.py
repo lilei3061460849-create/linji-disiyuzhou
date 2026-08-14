@@ -516,18 +516,6 @@ def interactive_mode():
                 if diff.get('missing'):
                     print(f"缺失: {diff['missing']}个")
             
-            elif cmd.startswith("random "):
-                parts = cmd[7:].strip().split(" ", 1)
-                if len(parts) != 2:
-                    print("格式: random <池名> <数字>")
-                    continue
-                pool_name, number = parts
-                result = engine.execute_action("random_number", {
-                    "pool_name": pool_name,
-                    "number": int(number)
-                })
-                print(json.dumps(result, ensure_ascii=False, indent=2))
-            
             elif cmd.startswith("ruling "):
                 parts = cmd[7:].strip().split(" ", 1)
                 if len(parts) < 2:

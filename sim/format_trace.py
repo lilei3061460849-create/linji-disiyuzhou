@@ -26,6 +26,11 @@ from engine.ai_tactics import TacticalAI
 BACKGROUNDS = ["帮派巷战", "废墟据点", "黑市火并", "熔岩隘口"]
 
 
+def _decline_spells(option):
+    return {timing: {spell["spell_name"]: {"use": False}
+                     for spell in option.get("spell_options", {}).get(timing, [])}
+            for timing in ("before", "after")}
+
 def run(region: str = "龙心谷", seed: int = 7, battles: int = 3) -> list[str]:
     rng = random.Random(seed)
     # rng_seed 交给引擎自身的随机源，保证同一 seed 产出完全一致的战报（可复现）
@@ -102,12 +107,14 @@ def run(region: str = "龙心谷", seed: int = 7, battles: int = 3) -> list[str]
                 hit_count = actor["base_hits_per_attack"]
                 if actor["daowen_options"]:
                     option = actor["daowen_options"][0]
-                    dao = {"name": option["name"], "dodge": False}
+                    dao = {"name": option["name"], "dodge": False, "blood_shadow": False,
+                   "trigger_spell_choices": {holder: {sp["spell_name"]: {"use": False} for sp in spells}
+                                               for holder, spells in option.get("trigger_spell_options", {}).items()}}
                     if option["requires_target"]:
                         dao["target_ref"] = option["target_options"][0]["ref"]
                     if option["dodge_submission"] == "per_target":
                         dao["dodge_targets"] = [
-                            {"target_ref": target["ref"], "dodge": False}
+                            {"target_ref": target["ref"], "dodge": False, "blood_shadow": False}
                             for target in option["dodge_target_options"]
                         ]
                     if option["name"] == "活力":
@@ -118,7 +125,9 @@ def run(region: str = "龙心谷", seed: int = 7, battles: int = 3) -> list[str]
                         enemy_index = int(actor["actor_ref"].split(":", 1)[1])
                         hit_count = engine.state.enemies[enemy_index].attack_power
                 target_ref = actor["attack_target_options"][0]["ref"]
-                attacks = [{"hits": [{"target_ref": target_ref, "dodge": False}
+                target_option = next(option for option in actor["attack_target_options"] if option["ref"] == target_ref)
+                attacks = [{"hits": [{"target_ref": target_ref, "dodge": False, "blood_shadow": False,
+                                       "spell_choices": _decline_spells(target_option)}
                                       for _ in range(hit_count)]}
                            for _ in range(action_count)]
                 monster_choices.append({"actor_ref": actor["actor_ref"], "daowen": dao,

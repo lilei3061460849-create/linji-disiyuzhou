@@ -28,6 +28,11 @@ from engine.combat import CombatEngine
 from engine.dice import DiceEngine
 
 
+def _finish_round_without_monster_actions(engine):
+    engine.state.combat_subphase = "await_round_end"
+    return engine.execute_action("round_end", {})
+
+
 def _new_engine(db_suffix: str) -> GameEngine:
     engine = GameEngine(db_path=f"data/test_emp_{db_suffix}.db", rng_seed=1)
     engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
@@ -100,11 +105,11 @@ def test_wage_settlement_pay_then_battle_end_succeeds():
     assert emp.deployed_at_round == 1
 
     # 走完3个完整回合(round1已在上面start过，这里补上round1的end，再走round2/round3)
-    engine.execute_action("round_end", {})
+    _finish_round_without_monster_actions(engine)
     engine.execute_action("round_start", {})
-    engine.execute_action("round_end", {})
+    _finish_round_without_monster_actions(engine)
     engine.execute_action("round_start", {})
-    engine.execute_action("round_end", {})
+    _finish_round_without_monster_actions(engine)
     assert engine.state.current_round == 3
 
     blocked = engine.execute_action("battle_end", {})
@@ -280,11 +285,11 @@ def test_pay_wage_with_insufficient_shards_is_rejected_not_auto_refused():
     _start_battle(engine)
     engine.execute_action("round_start", {})
     engine.execute_action("deploy_employee", {"name": "穷雇主专属员工"})
-    engine.execute_action("round_end", {})
+    _finish_round_without_monster_actions(engine)
     engine.execute_action("round_start", {})
-    engine.execute_action("round_end", {})
+    _finish_round_without_monster_actions(engine)
     engine.execute_action("round_start", {})
-    engine.execute_action("round_end", {})  # 3回合 -> 工资=8 > 3碎片
+    _finish_round_without_monster_actions(engine)  # 3回合 -> 工资=8 > 3碎片
     engine.execute_action("battle_end", {})  # 触发待决计算
 
     r = engine.execute_action("pay_employee_wage", {"name": "穷雇主专属员工", "decision": "pay"})
@@ -306,7 +311,7 @@ def test_battle_end_blocked_until_all_pending_wages_resolved():
     engine.execute_action("round_start", {})
     engine.execute_action("deploy_employee", {"name": "甲"})
     engine.execute_action("deploy_employee", {"name": "乙"})
-    engine.execute_action("round_end", {})
+    _finish_round_without_monster_actions(engine)
 
     r1 = engine.execute_action("battle_end", {})
     assert r1["success"] is True and r1["completed"] is False

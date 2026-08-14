@@ -44,7 +44,6 @@ engine/
 ├── events.py            # 事件池（parse_events、EventPool，通用 10 + 三副本专属）
 ├── daowen.py            # 道纹系统（含当前全部 64 道纹 calculate_* 与 ResonanceEngine；增殖为道纹，癌变为机制，二者无关）
 ├── combat.py            # 战斗计算引擎（伤害/回合/闪避/多路径 癌变/雕塑/还债，PROLIFERATION_THRESHOLD 为癌变阈值，CANCER_THRESHOLD 别名）
-├── battle_flow.py       # 旧版独立流程（仅兼容单元测试；生产入口不调用）
 ├── battle_report.py     # 战报渲染（推演格式逐回合输出）
 ├── ai_player.py         # AI 玩家封装（TacticalAI 等）
 ├── ai_tactics.py        # AI 战术表（TACTICAL_ROLES、各类道纹优先级）
@@ -102,11 +101,6 @@ if precedent["found"]:
 # 直接生成随机数并结算，AI拿到的是已经确定的结果，无需再向玩家索要数字：
 result = engine.execute_action("pre_battle_action", {"sub_action": "探索"})
 # result["result"]["event"] 已经是引擎自动摇出的具体事件名
-
-# 历史遗留的手动流程仍保留，仅用于DM需要强制指定结果的调试/裁定场景：
-pool = engine.request_random("event_pool", ["事件A", "事件B", "事件C"])
-# pool["range"] = "1~3"
-result = engine.execute_action("random_number", {"pool_name": "event_pool", "number": 2})
 
 # 需要可复现的随机结果时（例如回归测试），在构造引擎时传入固定种子：
 engine = GameEngine(rng_seed=12345)
@@ -175,7 +169,7 @@ engine = GameEngine(rng_seed=12345)
 | `use_truth_eye` | 初拥之夜·真理眼：抛Interrupt交DM裁定，冷却2场 |
 | `blood_feast` | 初拥之夜·血食：命零一名赤族，回复等量生命 |
 | `retreat_via_toll` | 买路财：真正执行安全撤退(需持有该遗物) |
-| `dodge_decision` | 闪避决策 |
+| `prepare_attack` / `resolve_attack` | 两阶段攻击：逐击绑定目标、闪避、血影和法术反应 |
 | `consume_item` | 使用消耗品 |
 | `declare_wit` | 声明急中生智 |
 | `declare_escape` | 声明逃跑 |
@@ -184,7 +178,6 @@ engine = GameEngine(rng_seed=12345)
 | `round_end` | 回终结算 |
 | `battle_start` | 战始（自动出怪：数量=战斗场数-3(最低1)，从当前副本12怪物池随机抽取，允许重复；战斗背景纯叙事不做机制化） |
 | `battle_end` | 战终 |
-| `random_number` | 手动提交随机数（历史遗留手动覆盖入口，非默认流程；默认流程由引擎自动摇号） |
 
 ## 运行
 

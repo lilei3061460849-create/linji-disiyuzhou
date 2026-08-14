@@ -316,12 +316,14 @@ def test_monster_jiachao_and_duming_flow():
         resolved = engine.execute_action("resolve_monster_phase", {
             "token": prepared["result"]["token"],
             "choices": [{"actor_ref": actor["actor_ref"],
-                         "daowen": {"name": expected, "dodge": False},
-                         "attack_actions": [{"hits": [{"target_ref": "player:0", "dodge": False}]}]}],
+                         "daowen": {"name": expected, "dodge": False, "blood_shadow": False, "trigger_spell_choices": {}},
+                         "attack_actions": [{"hits": [{"target_ref": "player:0", "dodge": False, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}}]}]}],
         })
         assert resolved["success"]
         if expected == "假钞":
             assert getattr(m, "fake_shards", 0) == 20
+            engine.execute_action("round_end", {})
+            engine.execute_action("round_start", {})
     assert m.fake_shards == 20 - 2, "赌命2应扣2假碎片"
     assert m.has_status("赌命")
     engine.combat.round_start()  # 回始赌命结算（玩家+怪物都在场）

@@ -42,7 +42,7 @@ def _resolve_monster_phase(e):
     choices = []
     for actor in prepared["result"]["actors"]:
         attacks = [{"hits": [
-            {"target_ref": actor["attack_target_options"][0]["ref"], "dodge": False}
+            {"target_ref": actor["attack_target_options"][0]["ref"], "dodge": False, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}}
             for _ in range(actor["base_hits_per_attack"])
         ]} for _ in range(actor["base_attack_actions"])]
         choices.append({"actor_ref": actor["actor_ref"], "daowen": None,
@@ -143,6 +143,7 @@ def test_round_end_reports_shield_clear_and_duration(tmp_path):
     e = _new_engine(tmp_path)
     e.execute_action("battle_start")
     e.execute_action("round_start", {})
+    e.state.combat_subphase = "await_round_end"  # 本单元仅校验回终格式，跳过怪物行动内容
     re_ = e.execute_action("round_end", {})
     text = "\n".join(BR.format_round_end(re_["result"], e.state.player, e.state.enemies))
     assert "格挡清空" in text

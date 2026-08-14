@@ -52,6 +52,11 @@ from engine.gamedata import (REGION_EXCLUSIVE_DAOWEN, ORIGINAL_MONSTER_DAOWEN,
 _ALL_EXCLUSIVE = {d for v in REGION_EXCLUSIVE_DAOWEN.values() for d in v}
 
 
+def _decline_spells(option):
+    return {timing: {spell["spell_name"]: {"use": False}
+                     for spell in option.get("spell_options", {}).get(timing, [])}
+            for timing in ("before", "after")}
+
 def learnable_candidates(region: str = None) -> list:
     """当前副本下可通过局外【学习】直接获得的道纹（不含需残韵转化的）。"""
     out = []
@@ -83,12 +88,14 @@ def _resolve_monster_turn(engine):
         hit_count = actor["base_hits_per_attack"]
         if actor["daowen_options"]:
             option = actor["daowen_options"][0]
-            dao = {"name": option["name"], "dodge": False}
+            dao = {"name": option["name"], "dodge": False, "blood_shadow": False,
+                   "trigger_spell_choices": {holder: {sp["spell_name"]: {"use": False} for sp in spells}
+                                               for holder, spells in option.get("trigger_spell_options", {}).items()}}
             if option["requires_target"]:
                 dao["target_ref"] = option["target_options"][0]["ref"]
             if option["dodge_submission"] == "per_target":
                 dao["dodge_targets"] = [
-                    {"target_ref": target["ref"], "dodge": False}
+                    {"target_ref": target["ref"], "dodge": False, "blood_shadow": False}
                     for target in option["dodge_target_options"]
                 ]
             if option["resolves_as"] == "活力":
@@ -99,7 +106,9 @@ def _resolve_monster_turn(engine):
                 enemy_index = int(actor["actor_ref"].split(":", 1)[1])
                 hit_count = engine.state.enemies[enemy_index].attack_power
         target_ref = actor["attack_target_options"][0]["ref"]
-        attacks = [{"hits": [{"target_ref": target_ref, "dodge": False}
+        target_option = next(option for option in actor["attack_target_options"] if option["ref"] == target_ref)
+        attacks = [{"hits": [{"target_ref": target_ref, "dodge": False, "blood_shadow": False,
+                               "spell_choices": _decline_spells(target_option)}
                               for _ in range(hit_count)]}
                    for _ in range(action_count)]
         choices.append({"actor_ref": actor["actor_ref"], "daowen": dao,

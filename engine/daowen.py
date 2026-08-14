@@ -50,7 +50,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "杀伐",
             "x": x,
-            "cost_type": "消耗",
+            "cost_type": CostType.MANA.value,
             "cost": cost,
             "target_damage": damage,
             "damage_type": "普通",
@@ -65,7 +65,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "再生",
             "x": x,
-            "cost_type": "消耗",
+            "cost_type": CostType.MANA.value,
             "cost": cost,
             "target_heal": heal,
             "summary": f"消耗{x}法力，为{target.name}回复{heal}点生命"
@@ -79,7 +79,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "庇护",
             "x": x,
-            "cost_type": "消耗",
+            "cost_type": CostType.MANA.value,
             "cost": cost,
             "target_shield": shield,
             "summary": f"消耗{x}法力，使{target.name}获得{shield}点格挡"
@@ -91,7 +91,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "固执",
             "x": x,
-            "cost_type": "冷却",
+            "cost_type": CostType.COOLDOWN.value,
             "cost": x,
             "duration": x,
             "max_life_loss_per_hit": 1,
@@ -107,7 +107,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "血债",
             "x": x,
-            "cost_type": "流血",
+            "cost_type": CostType.BLEED.value,
             "cost_hp": cost_hp,
             "hits": hits,
             "damage_per_hit": damage_per_hit,
@@ -121,7 +121,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "冲击",
             "x": x,
-            "cost_type": "消耗",
+            "cost_type": CostType.MANA.value,
             "cost": x,
             "aoe_damage": x,
             "target": "all_enemies",
@@ -134,7 +134,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "慈悲",
             "x": x,
-            "cost_type": "流血",
+            "cost_type": CostType.BLEED.value,
             "cost_hp": x,
             "target_heal": x,
             "summary": f"流血{x}，为{target.name}回复{x}点生命"
@@ -150,7 +150,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "锐利",
             "x": x,
-            "cost_type": "消耗",
+            "cost_type": CostType.MANA.value,
             "cost": cost,
             "blood_limit_reduction": reduction,
             "hp_reduction": reduction,
@@ -165,7 +165,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "增殖",
             "x": x,
-            "cost_type": "消耗",
+            "cost_type": CostType.MANA.value,
             "cost": cost,
             "blood_limit_increase": increase,
             "summary": f"消耗{cost}法力，{target.name}血限+{increase}"
@@ -177,7 +177,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "束缚",
             "x": x,
-            "cost_type": "冷却",
+            "cost_type": CostType.COOLDOWN.value,
             "cost": 2 * x,
             "duration": x,
             "effect": "无法行动",
@@ -190,7 +190,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "透支",
             "x": x,
-            "cost_type": "衰老",
+            "cost_type": CostType.AGING.value,
             "cost_blood_limit": x,
             "mana_gain": 4 * x,
             "summary": f"衰老{x}(血限-{x})，获得{4*x}点法力"
@@ -202,7 +202,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "贯穿",
             "x": x,
-            "cost_type": "消耗",
+            "cost_type": CostType.MANA.value,
             "cost": 5 * x,
             "duration": x,
             "effect": "伤害无视格挡",
@@ -215,7 +215,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "封印",
             "x": x,
-            "cost_type": "消耗",
+            "cost_type": CostType.MANA.value,
             "cost": 10 * x,
             "targets_removed": x,
             "note": "被移出的怪物不提供任何碎片收益",
@@ -230,7 +230,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "缓慢",
             "x": x,
-            "cost_type": "消耗",
+            "cost_type": CostType.MANA.value,
             "cost": cost,
             "target_action_count": target_action_count,
             "effective": effective,
@@ -245,7 +245,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "狂暴",
             "x": x,
-            "cost_type": "异变",
+            "cost_type": CostType.MUTATION.value,
             "cost_mutation": 5 * x,
             "duration": x,
             "effect": "回始发动一轮额外攻击",
@@ -258,7 +258,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "强化",
             "x": x,
-            "cost_type": "异变",
+            "cost_type": CostType.MUTATION.value,
             "cost_mutation": 5 * x,
             "attack_boost": x,
             "duration": -1,  # ∞
@@ -271,7 +271,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "活力",
             "x": x,
-            "cost_type": "异变",
+            "cost_type": CostType.MUTATION.value,
             "cost_mutation": 5 * x,
             "action_boost": x,
             "duration": -1,
@@ -284,7 +284,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "减速",
             "x": x,
-            "cost_type": "异变",
+            "cost_type": CostType.MUTATION.value,
             "cost_mutation": 5 * x,
             "speed_halved": True,
             "duration": x,
@@ -297,7 +297,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "必中",
             "x": x,
-            "cost_type": "异变",
+            "cost_type": CostType.MUTATION.value,
             "cost_mutation": 5 * x,
             "guaranteed_hits": x,
             "summary": f"异变+{5*x}，自身下{x}次攻击附带必中"
@@ -309,7 +309,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "自愈",
             "x": x,
-            "cost_type": "异变",
+            "cost_type": CostType.MUTATION.value,
             "cost_mutation": 5 * x,
             "heal_percent": 10 * x,
             "duration": -1,
@@ -322,7 +322,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "飞行",
             "x": x,
-            "cost_type": "异变",
+            "cost_type": CostType.MUTATION.value,
             "cost_mutation": 5 * x,
             "duration": x,
             "effect": "无法被非飞行角色选为目标",
@@ -337,7 +337,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "愤怒",
             "x": x,
-            "cost_type": "消耗",
+            "cost_type": CostType.MANA.value,
             "cost": 5 * x,
             "mana_cost_halved": True,
             "duration": x,
@@ -350,7 +350,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "自残",
             "x": x,
-            "cost_type": "消耗",
+            "cost_type": CostType.MANA.value,
             "cost": 10 * x,
             "self_attack_count": x,
             "summary": f"消耗{10*x}法力，使{target.name}对自身打出{x}次攻击"
@@ -362,7 +362,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "无神",
             "x": x,
-            "cost_type": "消耗",
+            "cost_type": CostType.MANA.value,
             "cost": 20 * x,
             "duration": x,
             "effect": "选择目标时强制改为自身",
@@ -375,7 +375,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "借力",
             "x": x,
-            "cost_type": "消耗",
+            "cost_type": CostType.MANA.value,
             "cost": 10 * x,
             "damage_boost_percent": 10 * x,
             "duration": -1,
@@ -388,7 +388,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "弱化",
             "x": x,
-            "cost_type": "消耗",
+            "cost_type": CostType.MANA.value,
             "cost": 3 * x,
             "attack_reduction": x,
             "duration": -1,
@@ -401,7 +401,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "自食",
             "x": x,
-            "cost_type": "消耗",
+            "cost_type": CostType.MANA.value,
             "cost": x,
             "attack_reduction": x,
             "target_heal": x,
@@ -414,7 +414,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "兴奋",
             "x": x,
-            "cost_type": "消耗",
+            "cost_type": CostType.MANA.value,
             "cost": 5 * x,
             "speed_gain_per_action": 1,
             "duration": x,
@@ -427,7 +427,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "无力",
             "x": x,
-            "cost_type": "消耗",
+            "cost_type": CostType.MANA.value,
             "cost": 10 * x,
             "action_reduction": x,
             "duration": -1,
@@ -440,7 +440,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "迟滞",
             "x": x,
-            "cost_type": "冷却",
+            "cost_type": CostType.COOLDOWN.value,
             "cost": x,
             "attack_count_fixed": 1,
             "duration": x,
@@ -453,7 +453,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "急速",
             "x": x,
-            "cost_type": "消耗",
+            "cost_type": CostType.MANA.value,
             "cost": 20 * x,
             "speed_per_2_dodges": 1,
             "duration": x,
@@ -466,7 +466,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "加速",
             "x": x,
-            "cost_type": "消耗",
+            "cost_type": CostType.MANA.value,
             "cost": 20 * x,
             "speed_doubled": True,
             "duration": x,
@@ -479,7 +479,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "眩晕",
             "x": x,
-            "cost_type": "消耗",
+            "cost_type": CostType.MANA.value,
             "cost": 20 * x,
             "duration": x,
             "effect": "无法出手，受到伤害后解除",
@@ -492,7 +492,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "洞察",
             "x": x,
-            "cost_type": "疲惫",
+            "cost_type": CostType.FATIGUE.value,
             "cost_speed": x,
             "mana_per_dodge": 10,
             "duration": x,
@@ -505,7 +505,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "蒙蔽",
             "x": x,
-            "cost_type": "消耗",
+            "cost_type": CostType.MANA.value,
             "cost": 5 * x,
             "invalid_damage_hits": x,
             "summary": f"消耗{5*x}法力，使{target.name}下{x}次造成的伤害无效"
@@ -520,7 +520,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "滋养",
             "x": x,
-            "cost_type": "消耗",
+            "cost_type": CostType.MANA.value,
             "cost": cost,
             "target_heal": heal,
             "summary": f"消耗{cost}法力，使{target.name}获得{heal}点回复（血限{blood_limit}的{10*x}%）"
@@ -533,7 +533,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "衰败",
             "x": x,
-            "cost_type": "消耗",
+            "cost_type": CostType.MANA.value,
             "cost": cost,
             "duration": -1,
             "summary": f"消耗{cost}法力，使{target.name}[回始]失去{10*x}%当前生命，持续∞"
@@ -545,7 +545,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "寄生",
             "x": x,
-            "cost_type": "消耗",
+            "cost_type": CostType.MANA.value,
             "cost": 10 * x,
             "drain_percent": 20 * x,
             "duration": -1,
@@ -558,7 +558,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "滑翔",
             "x": x,
-            "cost_type": "消耗",
+            "cost_type": CostType.MANA.value,
             "cost": 5 * x,
             "duration": x,
             "effect": "获得飞行",
@@ -571,7 +571,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "坠落",
             "x": x,
-            "cost_type": "消耗",
+            "cost_type": CostType.MANA.value,
             "cost": x,
             "duration": x,
             "effect": "所有飞行角色无法飞行且造成伤害减半",
@@ -586,7 +586,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "变形",
             "x": x,
-            "cost_type": "消耗",
+            "cost_type": CostType.MANA.value,
             "cost": x,
             "duration": x,
             "effect": "攻击力与攻击次数互换",
@@ -599,7 +599,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "定型",
             "x": x,
-            "cost_type": "消耗",
+            "cost_type": CostType.MANA.value,
             "cost": 3 * x,
             "duration": x,
             "effect": "攻击次数与攻击力无法被改变",
@@ -615,7 +615,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "畸变",
             "x": x,
-            "cost_type": "冷却",
+            "cost_type": CostType.COOLDOWN.value,
             "cost": x,
             "blood_loss_per_round": blood_loss,
             "duration": x,
@@ -628,7 +628,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "僵化",
             "x": x,
-            "cost_type": "消耗",
+            "cost_type": CostType.MANA.value,
             "cost": 5 * x,
             "attack_fixed": 1,
             "duration": x,
@@ -641,7 +641,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "超频",
             "x": x,
-            "cost_type": "消耗",
+            "cost_type": CostType.MANA.value,
             "cost": 2 * x,
             "speed_boost": x,
             "summary": f"消耗{2*x}法力，自身速度+{x}"
@@ -653,7 +653,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "坏死",
             "x": x,
-            "cost_type": "消耗",
+            "cost_type": CostType.MANA.value,
             "cost": 5 * x,
             "duration": x,
             "effect": "无法获得回复",
@@ -666,7 +666,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "爆裂",
             "x": x,
-            "cost_type": "消耗",
+            "cost_type": CostType.MANA.value,
             "cost": 3 * x,
             "duration": x,
             "effect": "受到伤害后，攻击者失去等量生命",
@@ -679,7 +679,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "退化",
             "x": x,
-            "cost_type": "消耗",
+            "cost_type": CostType.MANA.value,
             "cost": 5 * x,
             "dao_wen_reduction": x,
             "duration": -1,
@@ -695,7 +695,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "加害",
             "x": x,
-            "cost_type": "消耗",
+            "cost_type": CostType.MANA.value,
             "cost": cost,
             "duration": -1,
             "status": {"name": "加害", "value": x, "duration": -1},
@@ -708,7 +708,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "洗劫",
             "x": x,
-            "cost_type": "消耗",
+            "cost_type": CostType.MANA.value,
             "cost": 3 * x,
             "duration": x,
             "effect": "造成伤害时夺取等量碎片",
@@ -721,7 +721,7 @@ class DaoWenEngine:
     def calculate_bizhai(x: int, target: Entity) -> dict:
         """逼债X：消耗X。[回始]使目标失去X点碎片，否则失去2X点血限，持续∞（二选一，不叠加）"""
         return {
-            "dao_wen": "逼债", "x": x, "cost_type": "消耗", "cost": x,
+            "dao_wen": "逼债", "x": x, "cost_type": CostType.MANA.value, "cost": x,
             "bizhai_register": x, "duration": -1,
             "summary": f"消耗{x}法力，[回始]使{target.name}失去{x}碎片，否则失去{2*x}血限，永久"
         }
@@ -730,7 +730,7 @@ class DaoWenEngine:
     def calculate_dikou(x: int, target: Entity) -> dict:
         """抵扣X：消耗10X。封印目标拥有的一件遗物，持续X"""
         return {
-            "dao_wen": "抵扣", "x": x, "cost_type": "消耗", "cost": 10 * x,
+            "dao_wen": "抵扣", "x": x, "cost_type": CostType.MANA.value, "cost": 10 * x,
             "relic_seal": 1, "duration": x,
             "summary": f"消耗{10*x}法力，封印{target.name}一件遗物，持续{x}回合"
         }
@@ -739,7 +739,7 @@ class DaoWenEngine:
     def calculate_qingsuan(x: int, target: Entity, caster_shards: int = 0) -> dict:
         """清算X：消耗5X。[回始]使目标失去你碎片点格挡，持续X"""
         return {
-            "dao_wen": "清算", "x": x, "cost_type": "消耗", "cost": 5 * x,
+            "dao_wen": "清算", "x": x, "cost_type": CostType.MANA.value, "cost": 5 * x,
             "qingsuan_register": True, "duration": x,
             "summary": f"消耗{5*x}法力，[回始]使{target.name}失去{caster_shards}格挡，持续{x}回合"
         }
@@ -748,7 +748,7 @@ class DaoWenEngine:
     def calculate_shujin(x: int, target: Entity) -> dict:
         """赎金X：消耗10X。夺取目标10X碎片；若无碎片则失去X点速度"""
         return {
-            "dao_wen": "赎金", "x": x, "cost_type": "消耗", "cost": 10 * x,
+            "dao_wen": "赎金", "x": x, "cost_type": CostType.MANA.value, "cost": 10 * x,
             "shard_steal": 10 * x, "speed_penalty": x,
             "summary": f"消耗{10*x}法力，夺取{target.name} {10*x}碎片或{x}速度"
         }
@@ -757,7 +757,7 @@ class DaoWenEngine:
     def calculate_jiachao(x: int) -> dict:
         """假钞X：消耗X。获得10X假碎片"""
         return {
-            "dao_wen": "假钞", "x": x, "cost_type": "消耗", "cost": x,
+            "dao_wen": "假钞", "x": x, "cost_type": CostType.MANA.value, "cost": x,
             "fake_shards": 10 * x,
             "summary": f"消耗{x}法力，获得{10*x}假碎片"
         }
@@ -787,7 +787,7 @@ class DaoWenEngine:
     def calculate_longlin(x: int, target: Entity) -> dict:
         """龙鳞X：消耗5X。使目标每次受到伤害-X，最低为0，持续∞"""
         return {
-            "dao_wen": "龙鳞", "x": x, "cost_type": "消耗", "cost": 5 * x,
+            "dao_wen": "龙鳞", "x": x, "cost_type": CostType.MANA.value, "cost": 5 * x,
             "damage_reduction": x, "duration": -1,
             "summary": f"消耗{5*x}法力，{target.name}每次受伤-{x}(最低0)，永久"
         }
@@ -796,7 +796,7 @@ class DaoWenEngine:
     def calculate_nilin(x: int, target: Entity) -> dict:
         """逆鳞X：代价：流血X。目标每失去1生命获得1层逆鳞，下次伤害+全部层数，持续X"""
         return {
-            "dao_wen": "逆鳞", "x": x, "cost_type": "流血", "cost_hp": x,
+            "dao_wen": "逆鳞", "x": x, "cost_type": CostType.BLEED.value, "cost_hp": x,
             "stack_per_hp": 1, "duration": x,
             "summary": f"流血{x}，{target.name}每掉1HP积1层逆鳞，下次伤害+全部层数"
         }
@@ -805,7 +805,7 @@ class DaoWenEngine:
     def calculate_huoxue(x: int, target: Entity) -> dict:
         """活血X：消耗2X。目标每累计失去2生命，回终获得回复1，持续X"""
         return {
-            "dao_wen": "活血", "x": x, "cost_type": "消耗", "cost": 2 * x,
+            "dao_wen": "活血", "x": x, "cost_type": CostType.MANA.value, "cost": 2 * x,
             "heal_per_2hp": 1, "duration": x,
             "summary": f"消耗{2*x}法力，{target.name}每失去2HP回终回复1，持续{x}回合"
         }
@@ -814,7 +814,7 @@ class DaoWenEngine:
     def calculate_liebian(x: int, target: Entity) -> dict:
         """裂变X：消耗3X。使目标受到伤害改为分X次结算，持续∞"""
         return {
-            "dao_wen": "裂变", "x": x, "cost_type": "消耗", "cost": 3 * x,
+            "dao_wen": "裂变", "x": x, "cost_type": CostType.MANA.value, "cost": 3 * x,
             "split_count": x, "duration": -1,
             "summary": f"消耗{3*x}法力，{target.name}受伤分{x}次结算，永久"
         }
@@ -823,7 +823,7 @@ class DaoWenEngine:
     def calculate_jiahuo(x: int, target: Entity) -> dict:
         """嫁祸X：消耗15X。自身下X次受到伤害由目标承担"""
         return {
-            "dao_wen": "嫁祸", "x": x, "cost_type": "消耗", "cost": 15 * x,
+            "dao_wen": "嫁祸", "x": x, "cost_type": CostType.MANA.value, "cost": 15 * x,
             "redirect_count": x,
             "summary": f"消耗{15*x}法力，自身下{x}次受伤由{target.name}承担"
         }
@@ -832,7 +832,7 @@ class DaoWenEngine:
     def calculate_beifu(x: int, target: Entity) -> dict:
         """背负X：消耗5X。选择目标，其下X次受到伤害由自身承担"""
         return {
-            "dao_wen": "背负", "x": x, "cost_type": "消耗", "cost": 5 * x,
+            "dao_wen": "背负", "x": x, "cost_type": CostType.MANA.value, "cost": 5 * x,
             "absorb_count": x,
             "summary": f"消耗{5*x}法力，{target.name}下{x}次受伤由自身承担"
         }
@@ -841,7 +841,7 @@ class DaoWenEngine:
     def calculate_shanghen(x: int, target: Entity) -> dict:
         """伤痕X：消耗5X。使目标每次失去生命后血限-X，持续∞"""
         return {
-            "dao_wen": "伤痕", "x": x, "cost_type": "消耗", "cost": 5 * x,
+            "dao_wen": "伤痕", "x": x, "cost_type": CostType.MANA.value, "cost": 5 * x,
             "blood_limit_loss": x, "duration": -1,
             "summary": f"消耗{5*x}法力，{target.name}每次掉血后血限-{x}，永久"
         }

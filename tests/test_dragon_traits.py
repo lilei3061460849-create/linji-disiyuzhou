@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
 
+from tests.attack_support import resolve_attack as resolve_player_attack
 from engine.api import GameEngine
 from engine.models import Entity, DaoWen, DaoWenInstance
 from tests.monster_phase_support import resolve_monster_phase
@@ -47,9 +48,7 @@ def _with_heart(engine, nature=100):
 
 
 def _resolve_full_attack(engine, attacker_name, target, n_hits=1):
-    r = engine.execute_action("attack", {"attacker": attacker_name, "target_selections": [0] * n_hits})
-    for _ in r["result"]["hits"]:
-        engine.execute_action("dodge_decision", {"attacker": attacker_name, "target": target.name, "dodge": False})
+    return resolve_player_attack(engine, attacker_name, [0] * n_hits)
 
 
 # ========================================================================
@@ -227,6 +226,7 @@ def test_dragon_body_caps_damage_at_15_and_ticks_down_each_round():
     _with_heart(engine)
     engine.execute_action("unlock_dragon_trait", {"trait": "震岳龙躯"})
     engine.execute_action("battle_start", {})
+    engine.execute_action("round_start", {})
     r = engine.execute_action("activate_dragon_body", {"x": 2})
     assert r["success"] is True
     assert engine.state.dragon_body_shield_rounds == 2
@@ -234,15 +234,16 @@ def test_dragon_body_caps_damage_at_15_and_ticks_down_each_round():
     engine.state.enemies.clear()
     heavy = Entity(name="重击怪", entity_type="怪物", blood_limit=50, current_hp=50, attack_power=999, attack_count=1)
     engine.state.enemies.append(heavy)
-    engine.execute_action("round_start", {})
     hp_before = player.current_hp
     result = engine.combat.resolve_attack(heavy, player, is_must_hit=True)
     assert result["damage_dealt"] == 15
     assert player.current_hp == hp_before - 15
 
+    engine.state.combat_subphase = "await_round_end"
     engine.execute_action("round_end", {})
     assert engine.state.dragon_body_shield_rounds == 1
     engine.execute_action("round_start", {})
+    engine.state.combat_subphase = "await_round_end"
     engine.execute_action("round_end", {})
     assert engine.state.dragon_body_shield_rounds == 0
 
@@ -273,6 +274,7 @@ def test_dragon_stomach_devour_heals_and_boosts_dragon_heart():
     _with_heart(engine)
     engine.execute_action("unlock_dragon_trait", {"trait": "吞骸龙胃"})
     engine.execute_action("battle_start", {})
+    engine.execute_action("round_start", {})
     engine.state.enemies.clear()
     dead = Entity(name="尸体", entity_type="怪物", blood_limit=30, current_hp=0, is_alive=False)
     engine.state.enemies.append(dead)
@@ -280,7 +282,7 @@ def test_dragon_stomach_devour_heals_and_boosts_dragon_heart():
         Consumable(name="衰老龙心", effect="", current_uses=4, max_uses=4, kind="dragon_heart",
                    dragon_heart_type="衰老"))
     player.current_hp = 10
-    r = engine.execute_action("devour_monster", {"monster": "尸体", "dragon_heart": "衰老龙心"})
+    r = engine.execute_action("devour_monster", {"monster_ref": "enemy:0", "dragon_heart": "衰老龙心"})
     assert r["success"] is True
     assert player.current_hp == 22
     heart = next(c for c in engine.state.consumables if c.name == "衰老龙心")
@@ -297,7 +299,7 @@ def test_dragon_stomach_error_target_still_alive():
     engine.state.enemies.clear()
     alive = Entity(name="活怪", entity_type="怪物", blood_limit=30, current_hp=30)
     engine.state.enemies.append(alive)
-    r = engine.execute_action("devour_monster", {"monster": "活怪", "dragon_heart": ""})
+    r = engine.execute_action("devour_monster", {"monster_ref": "enemy:0", "dragon_heart": ""})
     assert r["success"] is False
 
 
@@ -313,6 +315,7 @@ def test_tail_sacrifice_removes_declared_trait_to_negate_lethal_damage():
     engine.execute_action("unlock_dragon_trait", {"trait": "断尾求生"})
     engine.execute_action("unlock_dragon_trait", {"trait": "龙威"})
     engine.execute_action("battle_start", {})
+    engine.execute_action("round_start", {})
     engine.execute_action("declare_tail_sacrifice", {"trait": "龙威"})
     player.current_hp = 5
     result = engine.combat._apply_hostile_damage(player, 9999, "普通")
@@ -346,6 +349,7 @@ def test_dragon_wings_costs_dragon_nature_for_flight():
     _with_heart(engine, nature=30)
     engine.execute_action("unlock_dragon_trait", {"trait": "烬翼"})
     engine.state.phase = "in_combat"
+    engine.state.combat_subphase = "await_round_start"
     nature_before = engine.state.dragon_nature
     r = engine.execute_action("use_dragon_wings", {"x": 3})
     assert r["success"] is True
@@ -359,5 +363,6 @@ def test_dragon_wings_boundary_insufficient_nature_rejected():
     _with_heart(engine, nature=2)
     engine.execute_action("unlock_dragon_trait", {"trait": "烬翼"})
     engine.state.phase = "in_combat"
+    engine.state.combat_subphase = "await_round_start"
     r = engine.execute_action("use_dragon_wings", {"x": 1})
     assert r["success"] is False

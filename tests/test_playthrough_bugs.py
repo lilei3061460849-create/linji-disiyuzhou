@@ -16,6 +16,11 @@ from engine.api import GameEngine
 from engine.models import Consumable, DaoWen, DaoWenInstance, Entity, Relic
 
 
+def finish_round(engine):
+    engine.state.combat_subphase = "await_round_end"
+    return engine.execute_action("round_end", {})
+
+
 def _engine(suffix: str) -> GameEngine:
     engine = GameEngine(db_path=f"data/test_playthrough_{suffix}.db", rng_seed=1)
     engine.execute_action("setup_attributes", {
@@ -46,9 +51,9 @@ def _put_enemy(engine: GameEngine, monster: Entity) -> None:
 
 
 def _advance_to_active_round(engine: GameEngine) -> None:
-    """跨过白板第1回合，使怪物可以发动道纹。不走回终，避免攻击力0触发雕塑。"""
-    engine.execute_action("round_start", {})
-    engine.execute_action("round_start", {})
+    """计算单元测试直接构造第2回合玩家行动阶段，避免攻击力0的夹具触发雕塑。"""
+    engine.state.current_round = 2
+    engine.state.combat_subphase = "player_actions"
 
 
 def _resolve_prepared_monsters(engine: GameEngine, daowen_name: str | None = None):
@@ -58,15 +63,15 @@ def _resolve_prepared_monsters(engine: GameEngine, daowen_name: str | None = Non
         dao = None
         if daowen_name is not None:
             option = next(o for o in actor["daowen_options"] if o["name"] == daowen_name)
-            dao = {"name": daowen_name, "dodge": False}
+            dao = {"name": daowen_name, "dodge": False, "blood_shadow": False, "trigger_spell_choices": {}}
             if option["requires_target"]:
                 dao["target_ref"] = "player:0"
             if option["dodge_submission"] == "per_target":
                 dao["dodge_targets"] = [
-                    {"target_ref": target["ref"], "dodge": False}
+                    {"target_ref": target["ref"], "dodge": False, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}}
                     for target in option["dodge_target_options"]
                 ]
-        attacks = [{"hits": [{"target_ref": "player:0", "dodge": False}
+        attacks = [{"hits": [{"target_ref": "player:0", "dodge": False, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}}
                               for _ in range(actor["base_hits_per_attack"])]}
                    for _ in range(actor["base_attack_actions"])]
         choices.append({"actor_ref": actor["actor_ref"], "daowen": dao,
@@ -92,7 +97,7 @@ def test_resonance_on_enemy_grants_dest_and_rewrites_next_activation():
     engine.execute_action("round_start", {})
 
     r = engine.execute_action("use_resonance", {
-        "source_daowen": "狂暴", "resonance_type": "反转", "target": "通缉犯",
+        "source_daowen": "狂暴", "resonance_type": "反转", "target_ref": "enemy:0",
     })
     assert r["success"], r
     assert r["granted_daowen"] == "自残"
@@ -101,7 +106,7 @@ def test_resonance_on_enemy_grants_dest_and_rewrites_next_activation():
     assert "自残" not in monster.dao_wen
     assert engine.state.resonance["反转"] == 0
 
-    engine.execute_action("round_end", {})
+    finish_round(engine)
     engine.execute_action("round_start", {})
     prepared = engine.execute_action("prepare_monster_phase", {})
     actor = prepared["result"]["actors"][0]
@@ -109,8 +114,8 @@ def test_resonance_on_enemy_grants_dest_and_rewrites_next_activation():
         "token": prepared["result"]["token"],
         "choices": [{
             "actor_ref": actor["actor_ref"],
-            "daowen": {"name": "狂暴", "target_ref": "enemy:0", "dodge": False},
-            "attack_actions": [{"hits": [{"target_ref": "player:0", "dodge": False}]}],
+            "daowen": {"name": "狂暴", "target_ref": "enemy:0", "dodge": False, "blood_shadow": False, "trigger_spell_choices": {}},
+            "attack_actions": [{"hits": [{"target_ref": "player:0", "dodge": False, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}}]}],
         }],
     })
     details = phase["result"]["details"]
@@ -154,7 +159,7 @@ def test_resonance_fails_without_holder_or_stock():
     engine.execute_action("round_start", {})
 
     r = engine.execute_action("use_resonance", {
-        "source_daowen": "狂暴", "resonance_type": "反转", "target": "白板怪",
+        "source_daowen": "狂暴", "resonance_type": "反转", "target_ref": "enemy:0",
     })
     assert r["success"] is False
     assert engine.state.resonance["反转"] == 1
@@ -209,7 +214,7 @@ def test_round_start_adds_mana_limit_even_with_leftover():
     engine.execute_action("round_start", {})
     assert p.current_mana == 17, f"残量3+法限14应17，实{p.current_mana}"
 
-    engine.execute_action("round_end", {})
+    finish_round(engine)
     assert p.current_mana == 0
     engine.execute_action("round_start", {})
     assert p.current_mana == p.mana_limit == 14
@@ -232,7 +237,7 @@ def test_shouyedeng_bonus_survives_round_start_after_refill():
     engine.execute_action("battle_start", {})
     engine.execute_action("round_start", {})
     assert p.current_mana == 21, f"回始应0+14+7=21，实{p.current_mana}"
-    engine.execute_action("round_end", {})
+    finish_round(engine)
     assert p.current_mana == 0
     engine.execute_action("round_start", {})
     assert p.current_mana == 21, f"回终清空后再回始，守夜灯仍应叠到21，实{p.current_mana}"
@@ -259,7 +264,7 @@ def test_no_shouyedeng_means_no_round_start_bonus():
     engine.execute_action("battle_start", {})
     engine.execute_action("round_start", {})
     assert p.current_mana == 14
-    engine.execute_action("round_end", {})
+    finish_round(engine)
     assert p.current_mana == 0
 
 
@@ -274,6 +279,7 @@ def test_borrowed_shaifa_fires_in_monster_phase():
     monster = Entity(name="困境怪", entity_type="怪物", blood_limit=120, current_hp=30,
                      attack_count=1, attack_power=0)
     _put_enemy(engine, monster)
+    _advance_to_active_round(engine)
     ev = engine.execute_action("declare_evolution", {
         "monster": "困境怪", "daowen": "杀伐", "x": 2,
     })
@@ -298,6 +304,7 @@ def test_borrowed_shaifa_x1_deals_two():
     monster = Entity(name="困境怪", entity_type="怪物", blood_limit=120, current_hp=30,
                      attack_count=1, attack_power=0)
     _put_enemy(engine, monster)
+    _advance_to_active_round(engine)
     assert engine.execute_action("declare_evolution", {
         "monster": "困境怪", "daowen": "杀伐", "x": 1,
     })["success"]
