@@ -23,20 +23,20 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
 from engine.ai_tactics import TacticalAI
+from sim.build_learner import _resolve_monster_turn
 
-# 流派 = 局外要学习的道纹清单（初始道纹另选）。学习受精力限制，最多3个/场，
-# 故这里允许跨场累积：列表按顺序学，每场最多学 energy 个。
+# 流派 = 局外要学习的道纹清单；所有构筑开局都自动持有【杀伐】。
+# 学习受精力限制，最多3个/场，列表可跨场累积。
 BUILDS: dict[str, dict] = {
-    "杀伐系":   {"starter": "杀伐", "learn": ["庇护", "再生", "冲击", "血债", "慈悲"]},
-    "锐利系":   {"starter": "锐利", "learn": ["贯穿", "透支", "束缚", "封印", "缓慢", "增殖"]},
-    # 注意：锐利每点X造成4点(血限与生命同扣)但耗3法力(1.33伤害/法力)，
-    # 杀伐是2伤害/1法力。若流派里混入杀伐，AI 会理性地只用杀伐，
-    # 等于没在测锐利。故锐利系流派刻意不带杀伐。
-    "锐利纯控": {"starter": "锐利", "learn": ["束缚", "缓慢", "封印", "贯穿"]},
-    "龙心谷系": {"starter": "杀伐", "learn": ["加害", "裂变", "伤痕", "龙鳞", "活血"]},
-    "扭曲都市系": {"starter": "杀伐", "learn": ["僵化", "坏死", "退化", "定型", "爆裂"]},
-    "罪孽都市系": {"starter": "杀伐", "learn": ["逼债", "洗劫", "清算", "假钞"]},
-    "纯杀伐对照": {"starter": "杀伐", "learn": []},
+    "杀伐系":   {"learn": ["庇护", "再生", "冲击", "血债", "慈悲"]},
+    "锐利系":   {"learn": ["锐利", "贯穿", "透支", "束缚", "封印", "缓慢", "增殖"]},
+    # 锐利已从起手移入杀伐的14节点闭环；该组测试“学到锐利后的边际价值”，
+    # 不再伪造一个规则中不存在的纯锐利起手。
+    "锐利纯控": {"learn": ["锐利", "束缚", "缓慢", "封印", "贯穿"]},
+    "龙心谷系": {"learn": ["加害", "裂变", "伤痕", "龙鳞", "活血"]},
+    "扭曲都市系": {"learn": ["僵化", "坏死", "退化", "定型", "爆裂"]},
+    "罪孽都市系": {"learn": ["逼债", "洗劫", "清算", "假钞"]},
+    "纯杀伐对照": {"learn": []},
 }
 
 REGIONS = ["罪孽都市", "扭曲都市", "龙心谷"]
@@ -48,9 +48,12 @@ def run_one(build: str, region: str, seed: int, battles: int = 7) -> dict:
     e = GameEngine(db_path="/tmp/winrate.db", rng_seed=seed)
     e.execute_action("setup_attributes",
                      {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
-    e.execute_action("setup_choose_daowen", {"daowen": cfg["starter"]})
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
-    e.execute_action("setup_choose_region", {"region": region})
+    setup = e.execute_action("setup_choose_region", {"region": region})
+    optional_relics = {"折速法印", "三相残韵盘"}
+    starter_relic = next((n for n in setup["result"]["relic_choices"] if n not in optional_relics),
+                         setup["result"]["relic_choices"][0])
+    e.execute_action("choose_discovered_relic", {"relic_name": starter_relic})
 
     ai = TacticalAI(e)
     to_learn = list(cfg["learn"])
@@ -72,27 +75,38 @@ def run_one(build: str, region: str, seed: int, battles: int = 7) -> dict:
                                  {"sub_action": "修行", "tier": 1,
                                   "to": "mana" if battle_no % 2 else "speed"})
 
-        e.execute_action("battle_start")
+        relic_choices = ({starter_relic: {"use": False}}
+                         if starter_relic in optional_relics else {})
+        started = e.execute_action("battle_start", {"relic_choices": relic_choices})
+        if not started.get("success"):
+            return {"cleared": cleared, "won": False, "died_at": battle_no,
+                    "used": dict(ai.used), "hp": e.state.player.current_hp}
 
         for _ in range(30):
             if not e.state.player.is_alive:
                 break
             if not [x for x in e.state.enemies if x.is_alive]:
                 break
-            e.execute_action("round_start", {})
+            e.execute_action("round_start", {"relic_choices": ({"血契": {"use": False}} if any(r.name == "血契" for r in e.state.relics) else {})})
             ai.new_round()
             ai.take_turn()
             if not [x for x in e.state.enemies if x.is_alive]:
                 break
-            mp = e.execute_action("monster_phase", {})
-            if mp["result"].get("player_dead"):
+            mp = _resolve_monster_turn(e)
+            if not mp.get("success") or mp["result"].get("player_dead"):
                 break
             e.execute_action("round_end", {})
 
         if not e.state.player.is_alive:
             return {"cleared": cleared, "won": False, "died_at": battle_no,
                     "used": dict(ai.used), "hp": 0}
-        e.execute_action("battle_end", {})
+        if [x for x in e.state.enemies if x.is_alive]:
+            return {"cleared": cleared, "won": False, "died_at": battle_no,
+                    "used": dict(ai.used), "hp": e.state.player.current_hp}
+        ended = e.execute_action("battle_end", {})
+        if not ended.get("success"):
+            return {"cleared": cleared, "won": False, "died_at": battle_no,
+                    "used": dict(ai.used), "hp": e.state.player.current_hp}
         cleared += 1
 
     # 完成第7场会触发【最终的冠冕】：角色被完整封存，state.player 可能已被置空/替换。
@@ -137,7 +151,7 @@ def main():
 
     if a.list:
         for k, v in BUILDS.items():
-            print(f"{k:12} 初始={v['starter']:4} 学习={v['learn']}")
+            print(f"{k:12} 初始=杀伐（自动） 学习={v['learn']}")
         return
 
     builds = [a.build] if a.build else list(BUILDS)

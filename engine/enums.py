@@ -13,6 +13,14 @@ class GamePhase(Enum):
     GAME_OVER = "game_over"
 
 
+class CombatSubphase(Enum):
+    """一场战斗内的强制结算顺序。"""
+    AWAIT_ROUND_START = "await_round_start"
+    PLAYER_ACTIONS = "player_actions"
+    MONSTER_ACTIONS = "monster_actions"
+    AWAIT_ROUND_END = "await_round_end"
+
+
 class ActionPhase(Enum):
     """回合内结算阶段"""
     BEFORE_DAMAGE_TAKEN = "受到伤害前"
@@ -37,6 +45,22 @@ class TriggerTiming(Enum):
     AFTER_LIFE_LOST = "失去生命后"
     BEFORE_LIFE_LOST = "失去生命前"
     ALWAYS = "常驻"
+
+
+class EffectScope(Enum):
+    """状态变化的生命周期；数值正负与生命周期相互独立。"""
+    ROUND = "round"            # 当前回合结束时回滚
+    BATTLE = "battle"          # 当前战斗结束时回滚
+    RUN = "run"                # 本次轮回持续
+    PERMANENT = "permanent"    # 跨轮回永久
+    COST = "cost"              # 代价后果，不因清除增益/减益而回滚
+
+
+class EffectPolarity(Enum):
+    """效果极性仅供规则/界面识别，不决定何时清除。"""
+    BUFF = "buff"
+    DEBUFF = "debuff"
+    NEUTRAL = "neutral"
 
 
 class CostType(Enum):

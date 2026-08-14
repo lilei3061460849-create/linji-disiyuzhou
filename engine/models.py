@@ -6,6 +6,9 @@ from dataclasses import dataclass, field
 from typing import Optional, Any
 import math
 import json
+import uuid
+
+from .enums import EffectScope, EffectPolarity
 
 
 @dataclass
@@ -126,12 +129,20 @@ class Consumable:
 
 @dataclass
 class StatusEffect:
-    """持续效果"""
+    """持续效果。scope 与 polarity 显式区分生命周期和增减益极性。"""
     name: str
-    remaining_rounds: int        # 剩余回合（-1=∞）
+    remaining_rounds: int        # 剩余回合（-1=∞；仍只代表本场战斗内的无限）
     value: int = 0               # 效果数值
     source: str = ""             # 来源
+    scope: str = EffectScope.BATTLE.value
+    polarity: str = EffectPolarity.NEUTRAL.value
     
+    def __post_init__(self):
+        # 即使调用方直接append而不经过Entity.add_status，代价标记也不能被战终误清。
+        if (self.name in {"流血", "衰老", "枯竭", "萎缩", "疲惫", "异变", "崩解"}
+                and self.scope == EffectScope.BATTLE.value):
+            self.scope = EffectScope.COST.value
+
     @property
     def is_permanent(self) -> bool:
         return self.remaining_rounds == -1
@@ -189,6 +200,7 @@ class Entity:
     """游戏实体（轮回者/怪物/朋友/员工通用基础）"""
     name: str
     entity_type: str
+    runtime_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     
     # 基础属性
     blood_limit: int = 0         # 血限
@@ -205,6 +217,7 @@ class Entity:
     # 道纹与法术
     dao_wen: dict[str, DaoWenInstance] = field(default_factory=dict)
     spells: list[Spell] = field(default_factory=list)
+    relics: list[Relic] = field(default_factory=list)  # 由正文明确授予该角色的随身物品（如防弹插板）
     
     # 状态
     shield: int = 0              # 格挡
@@ -296,9 +309,9 @@ class Entity:
     
     @property
     def action_count(self) -> int:
-        """出手次数：轮回者=速限/3向上取整；[朋友]/[员工](微光者，面板无速限)=攻击次数/3向上取整；
-        怪物走独立的"固定1次攻击+1次道纹"规则(见battle_flow.get_monster_actions)，不使用本属性。
-        活力+X、无力-X 对两种口径均生效。"""
+        """出手次数：轮回者=速限/3向上取整；[朋友]/[员工](微光者，面板无速限)=攻击次数/3向上取整。
+        怪物行动由CombatEngine的prepare/resolve两阶段接口独立计算，不使用本属性。
+        活力+X、无力-X 对本属性的两种口径均生效。"""
         if self.entity_type in ("朋友", "员工"):
             base = math.ceil(self.attack_count / 3) if self.attack_count > 0 else 0
         else:
@@ -364,7 +377,7 @@ class Entity:
         
         return detail
     
-    MUTATION_COLLAPSE_THRESHOLD = 50  # 特殊事件【崩解】阈值：异变达到50层直接命零（阈值定稿；计费粒度=持续型每回始5X后存在真实牙齿）
+    MUTATION_COLLAPSE_THRESHOLD = 50  # 特殊事件【崩解】阈值：异变达到50层直接命零；原始道纹仅首次发动支付异变5X
 
     def add_mutation(self, layers: int) -> dict:
         """
@@ -451,7 +464,22 @@ class Entity:
         return expired
     
     def add_status(self, effect: StatusEffect):
-        """添加状态效果，同名合并"""
+        """添加状态效果；未显式给出极性时按规则表标注，生命周期仍由scope独立决定。"""
+        if effect.polarity == EffectPolarity.NEUTRAL.value:
+            buffs = {
+                "固执", "贯穿", "急速", "洞察", "兴奋", "飞行", "滑翔", "狂暴",
+                "强化", "活力", "必中", "自愈", "洗劫", "逆鳞", "嫁祸", "背负",
+                "负岳索", "加速", "愤怒",
+            }
+            debuffs = {
+                "弱化", "无力", "减速", "迟滞", "束缚", "封印", "缓慢", "坠落",
+                "坏死", "爆裂", "退化", "定型", "畸变", "僵化", "加害", "伤痕",
+                "寄生", "蒙蔽", "眩晕", "手雷减攻", "衰败", "被背负",
+            }
+            if effect.name in buffs:
+                effect.polarity = EffectPolarity.BUFF.value
+            elif effect.name in debuffs:
+                effect.polarity = EffectPolarity.DEBUFF.value
         for existing in self.status_effects:
             if existing.merge_with(effect):
                 return
@@ -461,6 +489,7 @@ class Entity:
         return {
             "name": self.name,
             "entity_type": self.entity_type,
+            "runtime_id": self.runtime_id,
             "blood_limit": self.blood_limit,
             "current_hp": self.current_hp,
             "mana_limit": self.mana_limit,
@@ -484,10 +513,35 @@ class Entity:
             "hp_ratio": round(self.hp_ratio, 2),
             "dao_wen": {k: v.dao_wen.name for k, v in self.dao_wen.items()},
             "spells": [s.name for s in self.spells],
+            "relics": [r.to_dict() for r in self.relics],
             "status_effects": [
-                {"name": s.name, "value": s.value, "rounds": s.remaining_rounds}
+                {"name": s.name, "value": s.value, "rounds": s.remaining_rounds,
+                 "source": s.source, "scope": s.scope, "polarity": s.polarity}
                 for s in self.status_effects
             ]
+        }
+
+
+@dataclass
+class ScopedStatDelta:
+    """一笔可逆的字段变化；使用稳定实体引用，存档/事务回滚后仍指向当前状态对象。"""
+    entity_id: str
+    entity_name: str
+    field_name: str
+    delta: int
+    scope: str
+    polarity: str
+    source: str
+
+    def to_dict(self) -> dict:
+        return {
+            "entity_id": self.entity_id,
+            "entity": self.entity_name,
+            "field": self.field_name,
+            "delta": self.delta,
+            "scope": self.scope,
+            "polarity": self.polarity,
+            "source": self.source,
         }
 
 
@@ -497,6 +551,8 @@ class GameState:
     # 游戏元数据
     game_id: str = ""
     phase: str = "setup"
+    # 战斗内强制顺序；正式战始会置为 await_round_start。
+    combat_subphase: str = "player_actions"
     current_round: int = 0
     current_battle: int = 0     # 第几场战斗
     current_region: str = ""    # 当前副本
@@ -529,7 +585,25 @@ class GameState:
     # 遗物与消耗品
     relics: list[Relic] = field(default_factory=list)
     relics_pool: list[Relic] = field(default_factory=list)  # 遗物池（未获取的）
-    # 死斗对手自己的遗物。可选效果（折速/鲜血契约等）由对手决定是否发动，不跟挑战者的 state.relics 混用。
+    relic_pool_initialized: bool = False
+    # 【发现】：随机列出3个未持有候选后，必须由角色显式选1件。
+    pending_relic_choices: list[str] = field(default_factory=list)
+    pending_relic_source: str = ""
+    # 消耗品【发现】候选（如扭曲都市完成事件后的工具发现）。
+    pending_item_choices: list[str] = field(default_factory=list)
+    pending_item_source: str = ""
+    # 两阶段怪物决策：prepare产生的合法选项与一次性token；resolve后清空。
+    pending_monster_phase: dict = field(default_factory=dict)
+    # 两阶段攻击：prepare绑定行动者、逐击合法目标与反应选项；resolve后清空。
+    pending_attack: dict = field(default_factory=dict)
+    # 二档【探索】一次抽取两个未遇事件，首个结算后按顺序激活其余事件。
+    pending_event_queue: list[str] = field(default_factory=list)
+    # 事件产生的跨行动/跨战斗确定性状态，键均由事件handler登记。
+    event_modifiers: dict[str, Any] = field(default_factory=dict)
+    # 显式作用域账本：只登记需要按回合/战斗回滚的面板字段变化。
+    # 代价、伤害、资源支出与永久成长不进入可逆账本。
+    scoped_effect_ledger: list[ScopedStatDelta] = field(default_factory=list)
+    # 死斗对手自己的遗物。可选效果由对手决定是否发动，不跟挑战者的 state.relics 混用。
     opponent_relics: list[Relic] = field(default_factory=list)
     opponent_artifacts_owned: list[str] = field(default_factory=list)
     opponent_dragon_body_shield_rounds: int = 0
@@ -551,6 +625,8 @@ class GameState:
     # 系统记录（如癌变强化）与玩家遗言分开保存，避免结构化遗言退化为日志字符串。
     # 遗言的事实源是 死者之书.md；death_book_legacies 只是启动/审核后从文件装回的缓存。
     death_book_wisdom: list[str] = field(default_factory=list)
+    # 癌变怪物被吸收后对【休整】的永久恢复量加成；每只+8，跨战斗/轮回保留。
+    rest_heal_bonus: int = 0
     death_book_legacies: list[dict[str, str]] = field(default_factory=list)
     death_book_capacity: int = 20  # 遗言每段字数上限
     death_inheritance_queued: bool = False
@@ -583,6 +659,10 @@ class GameState:
     # 最终的冠冕/第8场死斗：进行中标记 + 当前该谁出手("player_side"/"opponent_side")
     in_final_duel: bool = False
     duel_turn: str = ""
+    # 四项先手属性完全相同时：首回合随机，之后每回合交换先手方。
+    duel_tie_alternating: bool = False
+    duel_round_first: str = ""
+    duel_rounds_started: int = 0
 
     # 龙心谷"炼心"：待生效标记；下一次玩家实际支付数值型代价后转化为对应类型的【××龙心】消耗品
     pending_lianxin: bool = False
@@ -608,7 +688,7 @@ class GameState:
     pending_terminal_region: str = ""
     # 共心环：本场战斗选定的可共享龙心类型（空=未选定/未持有共心环）
     shared_dragon_heart_type: str = ""
-    # 负岳碑(终音法器)：预先声明"下一次这些[朋友]/[员工]即将撤退时，改为流血20取消撤退"的名单
+    # 负岳碑：预先声明保护的稳定实体引用（friend:index / employee:index）。
     fuyuebei_declared: list[str] = field(default_factory=list)
 
     # 初拥之夜：待选择标记 + 已选过的1~8号遗物(每项限一次，9号不计入) + 已获得的赤族
@@ -651,6 +731,18 @@ class GameState:
     def opponent_first_embrace_traits(self) -> list[str]:
         """死斗对手的血族遗物名单（对 opponent_relics 的只读视图）。"""
         return [r.name for r in self.opponent_relics if "血族" in r.tags]
+
+    def apply_heal(self, entity: Entity, amount: int) -> dict:
+        """统一回复入口；玩家侧溢出回复会被【龙血瓶】转为可提取耐久。"""
+        detail = entity.heal(amount)
+        overheal = detail.get("overheal", 0)
+        if overheal > 0 and self.on_player_side(entity):
+            bottle = next((item for item in self.consumables if item.name == "龙血瓶"), None)
+            if bottle is not None:
+                bottle.current_uses += overheal
+                bottle.max_uses += overheal
+                detail["dragon_blood_bottle_stored"] = overheal
+        return detail
 
     def on_player_side(self, entity: Entity) -> bool:
         """必须用 is，不能用 dataclass 相等。"""
@@ -724,6 +816,124 @@ class GameState:
                     return True
         return False
 
+    def entity_ref(self, entity: Entity) -> str:
+        if entity is self.player:
+            return "player:0"
+        for prefix, entities in (
+            ("friend", self.friends), ("employee", self.employees),
+            ("temp_friend", self.temp_friends), ("enemy", self.enemies),
+        ):
+            for index, candidate in enumerate(entities):
+                if candidate is entity:
+                    return f"{prefix}:{index}"
+        raise ValueError(f"实体{entity.name}不在当前GameState中")
+
+    def entity_by_ref(self, entity_ref: str) -> Optional[Entity]:
+        if entity_ref == "player:0":
+            return self.player
+        try:
+            prefix, raw_index = entity_ref.split(":", 1)
+            index = int(raw_index)
+        except (ValueError, AttributeError):
+            return None
+        groups = {
+            "friend": self.friends, "employee": self.employees,
+            "temp_friend": self.temp_friends, "enemy": self.enemies,
+        }
+        entities = groups.get(prefix)
+        if entities is None or index < 0 or index >= len(entities):
+            return None
+        return entities[index]
+
+    def entity_by_runtime_id(self, runtime_id: str) -> Optional[Entity]:
+        entities = (([self.player] if self.player else []) + self.friends + self.employees
+                    + self.temp_friends + self.enemies)
+        return next((entity for entity in entities if entity.runtime_id == runtime_id), None)
+
+    def apply_scoped_delta(
+        self,
+        entity: Entity,
+        field_name: str,
+        delta: int,
+        *,
+        scope: str = EffectScope.BATTLE.value,
+        polarity: str = EffectPolarity.NEUTRAL.value,
+        source: str,
+    ) -> int:
+        """应用并登记一笔可逆面板变化；仅 round/battle 作用域允许进入账本。"""
+        if scope not in (EffectScope.ROUND.value, EffectScope.BATTLE.value):
+            raise ValueError("可逆作用域账本只接受round或battle")
+        if field_name not in {"blood_limit", "mana_limit", "speed_limit", "attack_count", "attack_power"}:
+            raise ValueError(f"字段{field_name}不允许进入作用域账本")
+        if not isinstance(delta, int) or isinstance(delta, bool):
+            raise ValueError("作用域delta必须是整数")
+        before = getattr(entity, field_name)
+        after = before + delta
+        if field_name in {"blood_limit", "mana_limit", "speed_limit", "attack_count", "attack_power"}:
+            after = max(0, after)
+        actual_delta = after - before
+        setattr(entity, field_name, after)
+        if actual_delta:
+            self.scoped_effect_ledger.append(ScopedStatDelta(
+                entity_id=entity.runtime_id,
+                entity_name=entity.name,
+                field_name=field_name,
+                delta=actual_delta,
+                scope=scope,
+                polarity=polarity,
+                source=source,
+            ))
+        return actual_delta
+
+    def rollback_scoped_effects(self, scope: str) -> list[dict]:
+        """逆序回滚指定作用域，保留代价/伤害/资源与其他作用域。"""
+        rolled_back: list[dict] = []
+        remaining: list[ScopedStatDelta] = []
+        for entry in reversed(self.scoped_effect_ledger):
+            if entry.scope != scope:
+                remaining.append(entry)
+                continue
+            entity = self.entity_by_runtime_id(entry.entity_id)
+            if entity is None:
+                remaining.append(entry)
+                continue
+            current = getattr(entity, entry.field_name)
+            setattr(entity, entry.field_name, max(0, current - entry.delta))
+            if entry.field_name in ("blood_limit", "mana_limit", "speed_limit"):
+                current_field = {
+                    "blood_limit": "current_hp",
+                    "mana_limit": "current_mana",
+                    "speed_limit": "current_speed",
+                }[entry.field_name]
+                setattr(entity, current_field,
+                        min(getattr(entity, current_field), getattr(entity, entry.field_name)))
+            rolled_back.append(entry.to_dict())
+        self.scoped_effect_ledger = list(reversed(remaining))
+        return rolled_back
+
+    def rollback_scoped_sources(self, entity: Entity, sources: set[str]) -> list[dict]:
+        """持续效果到期时回滚同一实体、同一来源的局内面板变化。"""
+        rolled_back: list[dict] = []
+        remaining: list[ScopedStatDelta] = []
+        entity_id = entity.runtime_id
+        for entry in reversed(self.scoped_effect_ledger):
+            if entry.entity_id != entity_id or entry.source not in sources:
+                remaining.append(entry)
+                continue
+            current = getattr(entity, entry.field_name)
+            setattr(entity, entry.field_name, max(0, current - entry.delta))
+            if entry.field_name in ("blood_limit", "mana_limit", "speed_limit"):
+                current_field = {
+                    "blood_limit": "current_hp",
+                    "mana_limit": "current_mana",
+                    "speed_limit": "current_speed",
+                }[entry.field_name]
+                setattr(entity, current_field,
+                        min(getattr(entity, current_field), getattr(entity, entry.field_name)))
+            rolled_back.append(entry.to_dict())
+        self.scoped_effect_ledger = list(reversed(remaining))
+        return rolled_back
+
     def grant_relic(self, name: str, effect: str, tag: str = "") -> Relic:
         """授予一件遗物；tag 用于标记 血族/龙族 等来源。"""
         r = Relic(name=name, effect=effect, tags=[tag] if tag else [])
@@ -743,6 +953,7 @@ class GameState:
         return {
             "game_id": self.game_id,
             "phase": self.phase,
+            "combat_subphase": self.combat_subphase,
             "current_round": self.current_round,
             "current_battle": self.current_battle,
             "current_region": self.current_region,
@@ -753,12 +964,23 @@ class GameState:
             "is_blacklisted": self.is_blacklisted,
             "pending_wage_decisions": self.pending_wage_decisions,
             "pending_daowen_choices": self.pending_daowen_choices,
+            "pending_relic_choices": list(self.pending_relic_choices),
+            "pending_relic_source": self.pending_relic_source,
+            "pending_item_choices": list(self.pending_item_choices),
+            "pending_item_source": self.pending_item_source,
+            "pending_monster_phase": self.pending_monster_phase,
+            "pending_attack": self.pending_attack,
+            "pending_event_queue": list(self.pending_event_queue),
+            "event_modifiers": self.event_modifiers,
+            "scoped_effect_ledger": [entry.to_dict() for entry in self.scoped_effect_ledger],
             "forced_monsters_next_battle": self.forced_monsters_next_battle,
             "rebellion_active": self.rebellion_active,
             "rebellion_in_progress": self.rebellion_in_progress,
             "wage_bonus": self.wage_bonus,
             "in_final_duel": self.in_final_duel,
             "duel_turn": self.duel_turn,
+            "duel_tie_alternating": self.duel_tie_alternating,
+            "duel_round_first": self.duel_round_first,
             "attribute_points": self.attribute_points,
             "player": self.player.to_dict() if self.player else None,
             "friends": [f.to_dict() for f in self.friends],
@@ -771,6 +993,7 @@ class GameState:
             "dragon_hearts": [d.to_dict() for d in self.dragon_hearts],
             "artifacts": self.artifacts,
             "death_book_wisdom": self.death_book_wisdom,
+            "rest_heal_bonus": self.rest_heal_bonus,
             "death_book_legacies": self.death_book_legacies,
             "sealed_candidate": self.sealed_candidate,
         }

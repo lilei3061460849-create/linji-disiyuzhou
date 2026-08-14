@@ -1,8 +1,8 @@
 """
 pytest - 残韵闭环完整性（引擎 CLOSED_LOOPS 必须与 README 声明一致）
 
-背景：修复前引擎只登记了「杀伐闭环」「锐利闭环」两条主轨，
-README 声明的三条副本闭环与 19 条怪物原始道纹转化全部缺失，
+背景：现行将原杀伐/锐利两轨首尾接成一个14节点【杀伐闭环】；
+README 声明的三条副本闭环与怪物原始道纹转化也必须完整登记，
 导致对怪物面板道纹发动残韵必然失败。
 
 覆盖：正常路径 / 边界条件 / 错误输入
@@ -42,6 +42,17 @@ def test_all_readme_monster_transforms_registered():
     assert spec, "未能从 README 解析出怪物转化关系"
     missing = spec - engine_edges()
     assert not missing, f"引擎缺失 README 声明的转化：{sorted(missing)}"
+
+
+def test_single_fourteen_node_core_loop():
+    """正常路径：杀伐与原锐利闭环必须首尾接成唯一14节点核心闭环。"""
+    assert "杀伐闭环" in R.CLOSED_LOOPS
+    assert "锐利闭环" not in R.CLOSED_LOOPS
+    edges = R.CLOSED_LOOPS["杀伐闭环"]
+    assert len(edges) == 14
+    assert sorted(source for source, _, _ in edges) == sorted(target for _, _, target in edges)
+    assert R.find_transformation("慈悲", "反转") == "锐利"
+    assert R.find_transformation("封印", "反转") == "杀伐"
 
 
 def test_three_region_loops_present():

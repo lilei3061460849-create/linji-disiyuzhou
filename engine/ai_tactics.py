@@ -37,10 +37,10 @@ TACTICAL_ROLES: dict[str, dict] = {
     "冲击": {"role": "aoe", "cost": 1, "pri": 1, "dmg_per_x": 1},
     "血债": {"role": "nuke", "cost": 0, "pay": "流血", "pri": 3, "dmg_per_x": 2},
     "庇护": {"role": "shield", "cost": 1, "pri": 1, "shield_per_x": 4},
-    "再生": {"role": "heal", "cost": 1, "pri": 1, "heal_per_x": 3},
+    "再生": {"role": "heal", "cost": 1, "pri": 1, "heal_per_x": 6},
     "慈悲": {"role": "heal", "cost": 0, "pay": "流血", "pri": 3, "heal_per_x": 1},
     "固执": {"role": "buff", "cost": 0, "pay": "冷却", "pri": 2},
-    # ---- 锐利闭环 ----
+    # ---- 杀伐14节点闭环后半（锐利至封印）----
     "锐利": {"role": "nuke", "cost": 3, "pri": 2, "dmg_per_x": 4},   # 血限与生命同时-4X
     "增殖": {"role": "buff", "cost": 5, "pri": 3},
     "透支": {"role": "ramp", "cost": 0, "pay": "衰老", "pri": 1, "mana_per_x": 4},
@@ -163,14 +163,14 @@ class TacticalAI:
                 per = TACTICAL_ROLES[name].get("shield_per_x", 4)
                 need = max(0, threat - p.shield)
                 x = min(self._x_for(name), math.ceil(need / per))
-                r = self._cast(name, x)
+                r = self._cast(name, x, p.name)
                 if r:
                     return r
         if p.current_hp <= p.blood_limit * 0.35 and not p.has_status("坏死"):
             for name in self.owned("heal"):
                 per = TACTICAL_ROLES[name].get("heal_per_x", 3)
                 x = min(self._x_for(name), max(1, math.ceil((p.blood_limit - p.current_hp) / per)))
-                r = self._cast(name, x)
+                r = self._cast(name, x, p.name)
                 if r:
                     return r
         return None

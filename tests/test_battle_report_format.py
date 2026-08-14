@@ -22,13 +22,33 @@ from engine import battle_report as BR
 
 
 def _new_engine(tmp_path, region="龙心谷"):
-    e = GameEngine(db_path=str(tmp_path / "rep.db"))
+    e = GameEngine(db_path=str(tmp_path / "rep.db"), rng_seed=1)
     e.execute_action("setup_attributes",
                      {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
-    e.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
-    e.execute_action("setup_choose_region", {"region": region})
+    setup = e.execute_action("setup_choose_region", {"region": region})
+    optional = {"折速法印", "三相残韵盘"}
+    choice = next((name for name in setup["result"]["relic_choices"] if name not in optional),
+                  setup["result"]["relic_choices"][0])
+    e.execute_action("choose_discovered_relic", {"relic_name": choice})
+    # 本文件不测局外经济，直接构造“精力已耗尽”的合法战始前状态。
+    e.state.energy = 0
     return e
+
+
+def _resolve_monster_phase(e):
+    prepared = e.execute_action("prepare_monster_phase", {})
+    choices = []
+    for actor in prepared["result"]["actors"]:
+        attacks = [{"hits": [
+            {"target_ref": actor["attack_target_options"][0]["ref"], "dodge": False, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}}
+            for _ in range(actor["base_hits_per_attack"])
+        ]} for _ in range(actor["base_attack_actions"])]
+        choices.append({"actor_ref": actor["actor_ref"], "daowen": None,
+                        "attack_actions": attacks})
+    return e.execute_action("resolve_monster_phase", {
+        "token": prepared["result"]["token"], "choices": choices,
+    })
 
 
 # ---------- 正常路径 ----------
@@ -70,9 +90,9 @@ def test_monster_hits_listed_one_per_line(tmp_path):
     e = _new_engine(tmp_path)
     e.execute_action("battle_start")
     e.execute_action("round_start", {})
-    mp = e.execute_action("monster_phase", {})
+    mp = _resolve_monster_phase(e)
     details = mp["result"]["details"]
-    assert details, "monster_phase 必须上抛逐次出手明细"
+    assert details, "resolve_monster_phase 必须上抛逐次出手明细"
     lines = BR.format_monster_hits(1, details)
     assert len(lines) == len(details), "出手行数必须等于实际出手次数"
 
@@ -122,6 +142,7 @@ def test_round_end_reports_shield_clear_and_duration(tmp_path):
     e = _new_engine(tmp_path)
     e.execute_action("battle_start")
     e.execute_action("round_start", {})
+    e.state.combat_subphase = "await_round_end"  # 本单元仅校验回终格式，跳过怪物行动内容
     re_ = e.execute_action("round_end", {})
     text = "\n".join(BR.format_round_end(re_["result"], e.state.player, e.state.enemies))
     assert "格挡清空" in text

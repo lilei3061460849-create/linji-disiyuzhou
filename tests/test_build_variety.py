@@ -21,24 +21,35 @@ def _engine(starter="杀伐", learn=(), region="龙心谷", seed=1, tmp="/tmp/bv
     e = GameEngine(db_path=tmp, rng_seed=seed)
     e.execute_action("setup_attributes",
                      {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
-    e.execute_action("setup_choose_daowen", {"daowen": starter})
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
-    e.execute_action("setup_choose_region", {"region": region})
-    for dw in learn:
+    setup = e.execute_action("setup_choose_region", {"region": region})
+    e.execute_action("choose_discovered_relic", {"relic_name": setup["result"]["relic_choices"][0]})
+    planned = ([] if starter == "杀伐" else [starter]) + [dw for dw in learn if dw != "杀伐"]
+    for dw in planned:
         e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "daowen", "name": dw})
-    e.execute_action("battle_start")
+    e.state.energy = 0
+    choices = {}
+    relic = e.state.relics[0].name
+    if relic in ("折速法印", "三相残韵盘"):
+        choices[relic] = {"use": False}
+    e.execute_action("battle_start", {"relic_choices": choices})
     e.execute_action("round_start", {})
     return e
 
 
 # ---------- 正常路径 ----------
 
-def test_ai_uses_ruili_when_it_is_the_only_nuke():
-    """正常路径：只有锐利时，AI 必须用锐利（而不是因为找不到杀伐就罢工）"""
+def test_ruili_remains_learnable_after_auto_kill_start():
+    """正常路径：锐利不再作为起手，但仍可经局外学习获得并真实发动。"""
     e = _engine(starter="锐利")
-    ai = TacticalAI(e, verbose=True)
-    ai.take_turn()
-    assert ai.used.get("锐利", 0) > 0, f"未使用锐利，log={ai.log}"
+    assert set(e.state.player.dao_wen) >= {"杀伐", "锐利"}
+    target = next(enemy for enemy in e.state.enemies if enemy.is_alive)
+    result = e.execute_action("use_daowen", {
+        "daowen_name": "锐利", "x": 1,
+        "target_ref": f"enemy:{e.state.enemies.index(target)}",
+        "dodge": False, "blood_shadow": False,
+    })
+    assert result["success"]
 
 
 # 专属道纹 → 其所属副本（学习受门禁限制，须在对应副本内）
@@ -70,6 +81,8 @@ def test_ai_uses_region_specific_daowen(dw):
     for _m in e.state.enemies:
         _m.blood_limit = max(_m.blood_limit, 300)
         _m.current_hp = _m.blood_limit
+        if dw == "僵化":
+            _m.attack_power = max(_m.attack_power, 20)  # 满足控场策略的威胁阈值
     ai = TacticalAI(e)
     for _ in range(3):
         ai.new_round()
@@ -187,16 +200,8 @@ def test_cost_damage_still_ignores_shield():
 
 def test_pierce_status_drives_attack_resolution():
     """正常路径：持有【贯穿】状态的攻击者，其攻击应无视目标格挡"""
-    from engine.api import GameEngine
     from engine.models import StatusEffect
-    e = GameEngine(db_path="/tmp/pierce.db", rng_seed=1)
-    e.execute_action("setup_attributes",
-                     {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
-    e.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
-    e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
-    e.execute_action("setup_choose_region", {"region": "龙心谷"})
-    e.execute_action("battle_start")
-    e.execute_action("round_start", {})
+    e = _engine(starter="杀伐", learn=[], region="龙心谷", tmp="/tmp/pierce.db")
     p, m = e.state.player, e.state.enemies[0]
     p.shield = 60
     m.add_status(StatusEffect(name="贯穿", value=1, remaining_rounds=-1, source="test"))
@@ -251,7 +256,7 @@ def test_evolution_pool_tracks_player_build():
     e2, _ = _plight_engine(("锐利", "贯穿"))
     opts2 = e2.combat.get_plight_evolution_options()[0]["borrowable_daowen"]
     assert set(opts1) == {"杀伐", "庇护", "僵化"}
-    assert set(opts2) == {"锐利", "贯穿"}
+    assert set(opts2) == {"杀伐", "锐利", "贯穿"}
     assert opts1 != opts2, "借用池必须随玩家构筑变化"
 
 

@@ -133,7 +133,7 @@ def run_one(seed):
     shards = 20
     relics = ["钱袋"]  # 开局发现遗物·钱袋（敌方命零额外+战始血限2%碎片）
     log.append("【开局】分配25点→10血/7速/8法(60血/14法/8速，出手3)；获20碎片；发现遗物·钱袋；")
-    log.append("        自选残韵·反转；选初始道纹·杀伐；进入一阶副本·罪孽都市。\n")
+    log.append("        自动获得初始道纹·杀伐；自选残韵·反转；进入一阶副本·罪孽都市。\n")
     for n in range(1, 8):
         count = CombatEngine.monster_spawn_count(n, REGION)
         defs = [rng.choice(POOL) for _ in range(count)]

@@ -23,7 +23,8 @@ def test_normal_readme_auto_trigger_list():
         assert kw in line, f"同步后五章应含 {kw}"
     # 验证特殊事件节的标题与五章一致（不校验数量，仅校验关键词存在）
     assert "凡庸（任一角色连续五回合" in readme
-    assert "癌变（任一角色受到累计" in readme
+    assert "癌变（任一角色在本场战斗内受到的累计" in readme
+    assert "累计恢复量属于局内减益追踪，[战终]清零" in readme
     assert "崩解（任一角色【异变】达到" in readme
 
 def test_boundary_no_zengsheng_in_active_code():
@@ -76,7 +77,7 @@ def test_engine_readme_completeness():
     """engine/README 已全面复审：文件结构当前19项 + F7订正注记。"""
     text = pathlib.Path("engine/README.md").read_text(encoding="utf-8")
     # 文件结构应包含新增的 8 个缺漏文件
-    for fname in ["gamedata.py", "events.py", "battle_flow.py", "battle_report.py", "ai_player.py", "ai_tactics.py", "rule_sync.py", "dungeons.py", "document_validation.py", "validator.py"]:
+    for fname in ["gamedata.py", "events.py", "battle_report.py", "ai_player.py", "ai_tactics.py", "rule_sync.py", "dungeons.py", "document_validation.py", "validator.py"]:
         assert fname in text, f"engine/README 文件结构应包含 {fname}"
     # F7 订正注记
     assert "F7 订正" in text or "增生" in text or "癌变" in text

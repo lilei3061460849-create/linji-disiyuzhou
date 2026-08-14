@@ -9,7 +9,8 @@ from typing import Optional, Any
 from .models import Entity, StatusEffect, GameState, DaoWenInstance, DaoWen, Spell, Consumable
 from .daowen import DaoWenEngine, ResonanceEngine
 from .dice import DiceEngine
-from .enums import InterruptType, DamageType
+from .enums import (ActionPhase, TriggerTiming, InterruptType, DamageType,
+                    EffectScope, EffectPolarity)
 from .dm_rulings import Interrupt
 
 
@@ -25,21 +26,29 @@ class CombatEngine:
     
     # 原始怪物道纹（道纹归属规则：各组起点）——【原初X】可借用范围
     ORIGINAL_MONSTER_DAOWEN = ("狂暴", "强化", "活力", "减速", "必中", "自愈", "飞行")
-    # 持续型原始怪物道纹：效果持续期间每个[回始]重新支付异变5X（已裁定）。
-    # 必中为次数型（下X次选择[目标]无法闪避），不参与回合计费；余数记在 entity._bizhong_left。
-    SUSTAIN_MONSTER_DAOWEN = ("狂暴", "强化", "活力", "减速", "自愈", "飞行")
-    YUANCHU_COST_RATE = 5  # 原初X代价：异变5X（已裁定）
+    # 原始怪物道纹只在首次发动时支付异变5X；效果持续期间不再重复计费。
+    # 必中为次数型（下X次选择[目标]无法闪避），余数记在 entity._bizhong_left。
+    YUANCHU_COST_RATE = 5
     
     def __init__(self, state: GameState, dice: DiceEngine):
         self.state = state
         self.dice = dice
         self.combat_log: list[dict] = []  # 完整战斗日志
-        # 卖身契代价替身 / 三相残韵盘本场消耗的残韵
-        self.cost_proxy = None
+        # 三相残韵盘本场消耗的残韵
         self._sanxiang_consumed = ""
         # 残韵改写：entity_id → {源道纹: 变化后道纹}，只改下一次发动结算，不改持有
         self._resonance_rewrites: dict[int, dict[str, str]] = {}
     
+    def _battle_delta(self, entity: Entity, field_name: str, delta: int,
+                      source: str, polarity: str) -> int:
+        """战斗中未注明永久且不是代价/伤害的面板变化统一登记为局内效果。"""
+        return self.state.apply_scoped_delta(
+            entity, field_name, delta,
+            scope=EffectScope.BATTLE.value,
+            polarity=polarity,
+            source=source,
+        )
+
     # ========== 伤害计算 ==========
     
     def calculate_attack_damage(
@@ -107,8 +116,23 @@ class CombatEngine:
         entity.current_speed += amount
         return amount
 
-    def _note_dodge(self, entity: Entity) -> dict:
+    def _note_dodge(self, entity: Entity, relic_target_ref: Optional[str] = None) -> dict:
+        """所有闪避共用触发入口；需要选目标的回锋刀必须由提交显式携带引用。"""
         extra = {}
+        if self.state.side_has(entity, "避风铃"):
+            entity.gain_shield(3)
+            extra["avoid_wind_shield"] = 3
+            if entity.current_speed == 0:
+                entity.gain_shield(15)
+                extra["avoid_wind_zero_shield"] = 15
+        if self.state.side_has(entity, "回锋刀"):
+            refs = self._combat_entity_refs()
+            target = refs.get(relic_target_ref or "")
+            if (target is None or not target.is_alive
+                    or self.state.on_player_side(target) == self.state.on_player_side(entity)):
+                raise ValueError("回锋刀触发必须显式提交合法敌方目标引用")
+            detail = self._apply_hostile_damage(target, 3, source=entity)
+            extra["counter_blade"] = {"target": target.name, **detail}
         if entity.has_status("急速"):
             entity._jisu_dodges = getattr(entity, "_jisu_dodges", 0) + 1
             if entity._jisu_dodges >= 2:
@@ -146,7 +170,9 @@ class CombatEngine:
             return max(0, n)
         return DaoWenEngine.single_round_action_count(entity)
 
-    def _apply_hostile_damage(self, target: Entity, amount: int, damage_type: str = "普通") -> dict:
+    def _apply_hostile_damage(self, target: Entity, amount: int,
+                              damage_type: str = DamageType.NORMAL.value,
+                              source: Optional[Entity] = None) -> dict:
         """
         对target造成外部/敌对伤害的统一入口（供攻击与道纹伤害调用；自身【代价】不走此入口）。
         撤退（任意[朋友]/[员工]即将受到足以使当前命零的伤害时触发）：
@@ -156,6 +182,9 @@ class CombatEngine:
         且玩家当前生命>20，则改为玩家流血20，抵消本次伤害并取消本次撤退(目标不掉血也不撤退)。
         龙心谷专属（F2）：嫁祸/背负 重定向、逆鳞层数、伤痕血限衰减在此统一处理。
         """
+        if (source is not None and self.state.side_has(source, "龙族血脉")
+                and target.entity_type != "怪物" and damage_type != "代价"):
+            amount *= 2
         amount = self._incoming_adjust(target, amount, damage_type)
         # ---- F2：嫁祸/背负 伤害重定向（在撤退判定之前） ----
         if damage_type != "代价":
@@ -169,7 +198,7 @@ class CombatEngine:
                     if hasattr(target, "_jiahuo_target"):
                         delattr(target, "_jiahuo_target")
                 if j_target and j_target.is_alive:
-                    return self._apply_hostile_damage(j_target, amount, damage_type)
+                    return self._apply_hostile_damage(j_target, amount, damage_type, source)
                 # 目标已死则不再重定向，继续按原目标结算
             # 背负：目标的伤害由背负者承担（遍历全场找背负者）
             for ent in self.state.get_all_player_side() + self.state.get_all_enemy_side():
@@ -183,21 +212,27 @@ class CombatEngine:
                             target.status_effects = [s for s in target.status_effects if s.name != "被背负"]
                             if hasattr(ent, "_beifu_target"):
                                 delattr(ent, "_beifu_target")
-                        return self._apply_hostile_damage(ent, amount, damage_type)
+                        return self._apply_hostile_damage(ent, amount, damage_type, source)
 
         if damage_type != "代价" and target.entity_type in ("朋友", "员工") and not target.has_retreated and target.is_alive:
             remaining_after_shield = max(0, amount - target.shield) if amount > 0 else 0
             if remaining_after_shield >= target.current_hp and target.current_hp > 0:
                 player = self.state.player
-                if (target.name in self.state.fuyuebei_declared and "负岳碑" in self.state.artifacts_owned
+                target_ref = next((ref for ref, entity in self._combat_entity_refs().items()
+                                   if entity is target), "")
+                if (target_ref in self.state.fuyuebei_declared and "负岳碑" in self.state.artifacts_owned
                         and player is not None and player.current_hp > 20):
-                    self.state.fuyuebei_declared.remove(target.name)
-                    self._pay_bleed_cost(player, 20)
+                    self.state.fuyuebei_declared.remove(target_ref)
+                    share_map = self.state.event_modifiers.get("fuyuebei_cost_share_refs", {})
+                    payment = self.pay_numeric_cost(
+                        player, "流血", 20,
+                        cost_share_target_ref=share_map.pop(target_ref, ""))
                     return {
                         "raw_damage": amount, "shield_absorbed": 0, "actual_damage": 0,
                         "hp_before": target.current_hp, "hp_after": target.current_hp,
                         "blood_limit_before": target.blood_limit, "died": False,
-                        "damage_type": damage_type, "retreated": False, "fuyuebei_toll_paid": 20,
+                        "damage_type": damage_type, "retreated": False,
+                        "fuyuebei_toll_paid": 20, "fuyuebei_cost": payment,
                     }
                 target.has_retreated = True
                 return {
@@ -230,7 +265,9 @@ class CombatEngine:
                 detail["nilin_total"] = target._nilin
             if target.has_status("伤痕"):
                 xv = target.get_status_value("伤痕")
-                target.blood_limit = max(1, target.blood_limit - xv)
+                delta = max(1, target.blood_limit - xv) - target.blood_limit
+                self._battle_delta(
+                    target, "blood_limit", delta, "伤痕", EffectPolarity.DEBUFF.value)
                 target.current_hp = min(target.current_hp, target.blood_limit)
                 if target.current_hp <= 0:
                     target.is_alive = False
@@ -244,19 +281,38 @@ class CombatEngine:
                                  if s.name == "寄生" and not s.is_expired), "")
                 healer = self._find_named(src_name)
                 if healer is not None and healer.is_alive and drain > 0 and not healer.has_status("坏死"):
-                    h = healer.heal(drain)
+                    h = self.state.apply_heal(healer, drain)
                     detail["jisheng_heal"] = {"healer": healer.name, **h}
                     cancer = self.check_cancer(healer)
                     if cancer:
                         detail["jisheng_cancer"] = cancer
+            if target.has_status("负岳索"):
+                target.status_effects = [status for status in target.status_effects if status.name != "负岳索"]
+                healed = self.state.apply_heal(target, actual)
+                detail["fuyuesuo_heal"] = healed
+            if (source is not None and self.state.side_has(source, "龙族血脉")
+                    and target.entity_type == "怪物" and target.is_alive):
+                target.current_hp = 0
+                target.is_alive = False
+                detail.update({"died": True, "hp_after": 0, "dragon_bloodline_kill": True})
+            if detail.get("died"):
+                self._on_entity_death(target)
         return detail
+
+    def _on_entity_death(self, entity: Entity) -> None:
+        """统一死亡触发；重复通知通过实体标记幂等。"""
+        if getattr(entity, "_death_triggers_emitted", False):
+            return
+        entity._death_triggers_emitted = True
+        if entity.entity_type == "怪物" and self.state.player and self.state.side_has(self.state.player, "焦黑发丝"):
+            self._gain_speed(self.state.player, 2)
 
     # ---- F2 全量：罪孽/扭曲专属道纹的公共辅助 ----
     def _shards_of(self, entity: Entity) -> int:
-        """实体当前的碎片池（玩家=state.shards；怪物/同伴=entity.shards）"""
+        """实体可失去/被夺取的碎片量；假碎片优先，负债不抵消仍可支付的假碎片。"""
         if entity is self.state.player:
-            return self.state.shards
-        return entity.shards
+            return self.state.fake_shards + max(0, self.state.shards)
+        return entity.fake_shards + max(0, entity.shards)
 
     def _lose_shards_of(self, entity: Entity, amount: int) -> int:
         """实体失去碎片（假碎片优先，玩家走 state.lose_shards）。返回实际失去的真碎片数。"""
@@ -274,6 +330,7 @@ class CombatEngine:
         if entity.current_hp <= 0:
             entity.is_alive = False
             died = True
+            self._on_entity_death(entity)
         return {"hp_before": before, "hp_after": entity.current_hp, "lost": lost, "died": died}
 
     def _seal_one_relic(self, target: Entity, rounds: int) -> str:
@@ -340,11 +397,186 @@ class CombatEngine:
                     s.value = entity._bizhong_left
         return True
 
+    def _on_cost_paid(self, payer: Entity) -> Optional[dict]:
+        """烙痕钉等“每付出一次代价”效果的统一触发点。"""
+        if payer is not self.state.player:
+            return None
+        ref = self.state.event_modifiers.get("brand_nail_target_ref")
+        target = self._combat_entity_refs().get(ref or "")
+        if target is None or not target.is_alive:
+            return None
+        detail = self._apply_hostile_damage(target, 10, "必中", payer)
+        return {"target": target.name, **detail}
+
+    SHAREABLE_NUMERIC_COSTS = {"流血", "衰老", "枯竭", "萎缩", "疲惫", "异变"}
+
+    def blood_pact_targets(self, payer: Optional[Entity] = None) -> dict[str, Entity]:
+        """【血契】可共同承担代价的存活朋友/员工；不要求玩家侧员工已部署。"""
+        payer = payer or self.state.player
+        if payer is self.state.player:
+            targets: dict[str, Entity] = {}
+            for prefix, entities in (("friend", self.state.friends), ("employee", self.state.employees)):
+                for index, entity in enumerate(entities):
+                    if entity.is_alive:
+                        targets[f"{prefix}:{index}"] = entity
+            return targets
+        if payer is not None and payer.entity_type == "轮回者" and self.state.on_enemy_side(payer):
+            return {
+                f"enemy:{index}": entity
+                for index, entity in enumerate(self.state.enemies)
+                if entity is not payer and entity.is_alive
+                and entity.entity_type in ("朋友", "员工")
+            }
+        return {}
+
+    def _has_active_blood_pact(self, payer: Entity) -> bool:
+        if payer is self.state.player:
+            return (any(relic.name == "血契" for relic in self.state.relics)
+                    and self.state.sealed_relics.get("血契", 0) <= 0)
+        if payer is not None and payer.entity_type == "轮回者" and self.state.on_enemy_side(payer):
+            return any(relic.name == "血契" for relic in self.state.opponent_relics)
+        return False
+
+    def blood_shadow_cost_share_options(self, payer: Entity) -> list[dict]:
+        """血影要求所有承担者支付后仍存活，返回可执行的血契分担引用。"""
+        if not self._has_active_blood_pact(payer) or payer.current_hp <= 5:
+            return []
+        return [
+            {"ref": ref, "name": ally.name}
+            for ref, ally in self.blood_pact_targets(payer).items()
+            if ally.current_hp > 5
+        ]
+
+    @staticmethod
+    def _cost_capacity(entity: Entity, cost_type: str) -> Optional[int]:
+        return {
+            "流血": entity.current_hp,
+            "衰老": entity.blood_limit,
+            "枯竭": entity.mana_limit,
+            "萎缩": entity.speed_limit,
+            "疲惫": entity.current_speed,
+            "异变": None,
+        }.get(cost_type)
+
+    def validate_numeric_cost(
+        self,
+        payer: Entity,
+        cost_type: str,
+        amount: int,
+        cost_share_target_ref: str = "",
+    ) -> tuple[Entity, int, Optional[Entity], int]:
+        """纯校验并计算血契拆分；奇数由原支付者承担向上取整的一半。"""
+        if cost_type not in self.SHAREABLE_NUMERIC_COSTS:
+            raise ValueError(f"{cost_type}不是可共同承担的数值代价")
+        if not isinstance(amount, int) or isinstance(amount, bool) or amount < 0:
+            raise ValueError("数值代价必须是非负整数")
+        ally = None
+        owner_amount = amount
+        ally_amount = 0
+        if cost_share_target_ref:
+            if not self._has_active_blood_pact(payer):
+                raise ValueError("只有持有且未被封印【血契】的轮回者才能提交cost_share_target_ref")
+            ally = self.blood_pact_targets(payer).get(cost_share_target_ref)
+            if ally is None:
+                raise ValueError("cost_share_target_ref必须指向一名存活朋友/员工")
+            owner_amount = math.ceil(amount / 2)
+            ally_amount = amount // 2
+        for entity, part in ((payer, owner_amount), (ally, ally_amount)):
+            if entity is None or part <= 0:
+                continue
+            capacity = (None if cost_type == "衰老" and self.state.side_has(entity, "不朽之躯")
+                        else self._cost_capacity(entity, cost_type))
+            if capacity is not None and part > capacity:
+                raise ValueError(
+                    f"{entity.name}无法完整承担{cost_type}{part}（可支付{capacity}）")
+        return payer, owner_amount, ally, ally_amount
+
+    def _apply_numeric_cost_part(self, payer: Entity, cost_type: str, amount: int) -> dict:
+        """支付一方的已拆分数值代价；不再进行血契递归。"""
+        if amount <= 0:
+            return {"payer": payer.name, "cost_type": cost_type, "paid": 0}
+        if cost_type == "流血":
+            detail = self._pay_bleed_cost(payer, amount)
+            return {"payer": payer.name, "cost_type": cost_type,
+                    "paid": detail.get("actual_damage", 0), "detail": detail}
+        if cost_type == "衰老":
+            if self.state.side_has(payer, "不朽之躯"):
+                return {"payer": payer.name, "cost_type": cost_type, "paid": 0, "immune": True}
+            payer.blood_limit = max(0, payer.blood_limit - amount)
+            payer.current_hp = min(payer.current_hp, payer.blood_limit)
+            if payer.current_hp <= 0:
+                payer.is_alive = False
+                self._on_entity_death(payer)
+        elif cost_type == "枯竭":
+            payer.mana_limit = max(0, payer.mana_limit - amount)
+            payer.current_mana = min(payer.current_mana, payer.mana_limit)
+        elif cost_type == "萎缩":
+            payer.speed_limit = max(0, payer.speed_limit - amount)
+            payer.current_speed = min(payer.current_speed, payer.speed_limit)
+        elif cost_type == "疲惫":
+            payer.current_speed = max(0, payer.current_speed - amount)
+        elif cost_type == "异变":
+            mutation = payer.add_mutation(amount)
+            self._bank_lianxin(payer, cost_type, amount)
+            nail = self._on_cost_paid(payer)
+            return {"payer": payer.name, "cost_type": cost_type, "paid": amount,
+                    "mutation": mutation, "brand_nail": nail}
+        self._bank_lianxin(payer, cost_type, amount)
+        nail = self._on_cost_paid(payer)
+        return {"payer": payer.name, "cost_type": cost_type, "paid": amount,
+                "brand_nail": nail}
+
+    def pay_numeric_cost(
+        self,
+        payer: Entity,
+        cost_type: str,
+        amount: int,
+        *,
+        cost_share_target_ref: str = "",
+        dragon_heart_use: int = 0,
+    ) -> dict:
+        """统一支付可分担的数值代价：龙心先抵消，血契再拆分剩余后果。"""
+        if not isinstance(dragon_heart_use, int) or isinstance(dragon_heart_use, bool) or dragon_heart_use < 0:
+            raise ValueError("dragon_heart_use必须是非负整数")
+        if payer is not self.state.player:
+            shared_ok = ("共心环" in self.state.artifacts_owned
+                         and self.state.shared_dragon_heart_type == cost_type)
+            if not shared_ok:
+                dragon_heart_use = 0
+        heart = None
+        offset = 0
+        if dragon_heart_use > 0 and amount > 0:
+            heart = next((item for item in self.state.consumables
+                          if item.kind == "dragon_heart"
+                          and item.dragon_heart_type == cost_type
+                          and item.name == f"{cost_type}龙心"
+                          and not item.is_depleted), None)
+            if heart is not None:
+                offset = min(dragon_heart_use, heart.current_uses, amount)
+        remaining = amount - offset
+        _, owner_amount, ally, ally_amount = self.validate_numeric_cost(
+            payer, cost_type, remaining, cost_share_target_ref)
+        if heart is not None and offset > 0:
+            heart.current_uses -= offset
+        owner_detail = self._apply_numeric_cost_part(payer, cost_type, owner_amount)
+        ally_detail = (self._apply_numeric_cost_part(ally, cost_type, ally_amount)
+                       if ally is not None else None)
+        return {
+            "cost_type": cost_type,
+            "requested": amount,
+            "dragon_heart_offset": offset,
+            "remaining": remaining,
+            "owner": owner_detail,
+            "shared_with": ally_detail,
+            "cost_share_target_ref": cost_share_target_ref or None,
+            "actual_paid": owner_detail.get("paid", 0) + (ally_detail or {}).get("paid", 0),
+        }
+
     def _pay_bleed_cost(self, payer: Entity, amount: int, dragon_heart_use: int = 0) -> dict:
         """
-        支付"流血X"代价的统一入口（供道纹代价与鲜血契约等遗物自身的流血代价共用）。
+        支付单个承担者的"流血X"代价；血契拆分由 pay_numeric_cost 在外层完成。
         血誓戒：[回始]玩家首次主动支付流血代价时，获得等同于本次流血的格挡；
-        若支付后生命≤30%[血限]，改为获得等量生命。仅玩家本人支付时生效(卖身契转嫁给他人不算)。
+        若支付后生命≤30%[血限]，改为获得等量生命。血契分担时只按玩家本人实际承担的部分触发。
         dragon_heart_use：本次希望消耗"流血龙心"抵消的点数(龙心谷"炼心"产出)，抵消后剩余部分才真正支付。
         """
         actual, offset = self._offset_with_dragon_heart(payer, "流血", amount, dragon_heart_use)
@@ -354,12 +586,16 @@ class CombatEngine:
                 and any(r.name == "血誓戒" for r in self.state.relics)):
             payer.blood_oath_used_this_round = True
             if payer.blood_limit > 0 and payer.current_hp / payer.blood_limit <= 0.3:
-                heal_detail = payer.heal(actual)
+                heal_detail = self.state.apply_heal(payer, actual)
                 detail["blood_oath"] = {"type": "life", "amount": heal_detail["actual_heal"]}
             else:
                 payer.gain_shield(actual)
                 detail["blood_oath"] = {"type": "shield", "amount": actual}
         self._bank_lianxin(payer, "流血", actual)
+        if actual > 0:
+            nail = self._on_cost_paid(payer)
+            if nail:
+                detail["brand_nail"] = nail
         return detail
 
     def _offset_with_dragon_heart(self, payer: Entity, cost_type: str, amount: int, dragon_heart_use: int) -> tuple:
@@ -408,12 +644,19 @@ class CombatEngine:
         is_must_hit: bool = False,
         dodge: bool = False,
         blood_shadow: bool = False,
+        spell_choices: Optional[dict] = None,
+        entity_refs: Optional[dict[str, Entity]] = None,
+        dodge_relic_target_ref: Optional[str] = None,
+        cost_share_target_ref: str = "",
     ) -> dict:
         """
         解析一次攻击
         dodge: 目标是否选择闪避（由AI决策）
         blood_shadow: 目标是否选择用【血影】遗物(流血10取消本次判定)代替常规闪避
         """
+        entity_refs = entity_refs or self._combat_entity_refs()
+        spell_choices = spell_choices if spell_choices is not None else {"before": {}, "after": {}}
+        self.validate_spell_reaction_submission(target, attacker, spell_choices, entity_refs)
         result = {
             "attacker": attacker.name,
             "target": target.name,
@@ -435,9 +678,10 @@ class CombatEngine:
         must_hit = is_must_hit or self.consume_bizhong(attacker)
 
         # 血影（初拥之夜遗物，仅玩家自身持有）：非必中判定下，可流血10取消本次判定，是常规闪避外的另一选项
-        if (blood_shadow and not must_hit and self.state.side_has(target, "血影")
-                and target.current_hp > 10):
-            self._pay_bleed_cost(target, 10)
+        if (blood_shadow and not must_hit and self.state.side_has(target, "血影")):
+            self.pay_numeric_cost(
+                target, "流血", 10,
+                cost_share_target_ref=cost_share_target_ref)
             result["blood_shadow_success"] = True
             result["note"] = "血影：流血10，本次判定被取消"
             return result
@@ -451,15 +695,10 @@ class CombatEngine:
                 target.current_speed -= 1
                 result["dodge_success"] = True
                 result["speed_after_dodge"] = target.current_speed
-                extra = self._note_dodge(target)
+                extra = self._note_dodge(target, dodge_relic_target_ref)
                 if extra:
                     result["dodge_extra"] = extra
                     result["speed_after_dodge"] = target.current_speed
-                # 遗物：闪避触发（目标为轮回者时）
-                if target is self.state.player:
-                    result["relic_logs"] = self.process_relics("on_dodge")
-                    if target.current_speed == 0:
-                        result["relic_logs"] += self.process_relics("on_speed_zero")
                 # 闪避成功，本局速度-1（战终复原）
                 return result
             else:
@@ -477,10 +716,6 @@ class CombatEngine:
         damage = self._jieli_boost(attacker, damage)
         if attacker.has_status("坠落"):
             damage = math.ceil(damage / 2)
-        # 龙族血脉（真龙之心遗物）：对非怪物造成伤害翻倍（对怪物的秒杀效果在伤害结算后处理）
-        if self.state.side_has(attacker, "龙族血脉") and target.entity_type != "怪物":
-            damage *= 2
-
         # 检查蒙蔽状态
         if attacker.has_status("蒙蔽"):
             stacks = attacker.get_status_value("蒙蔽")
@@ -502,13 +737,16 @@ class CombatEngine:
         # 震岳龙躯（真龙之心遗物）：激活期间，自身受到超出15点的伤害无效
         if self.state.side_body_shield(target) > 0:
             damage = min(damage, 15)
-        # 法术：受到伤害前（玩家为目标时触发反应型法术，可能反杀攻击者或加盾）
-        if self.state.player is not None and target is self.state.player and damage > 0:
-            slogs = self.trigger_spells("受到伤害前", {"attacker": attacker, "target": target, "incoming": damage})
+        # 反应法术由攻击prepare列出、resolve显式提交；计算层不再自动选择X或目标。
+        if damage > 0:
+            slogs = self._resolve_spell_reactions(
+                ActionPhase.BEFORE_DAMAGE_TAKEN.value, target, attacker,
+                spell_choices["before"], entity_refs,
+            )
             if slogs:
                 result["spell_logs"] = slogs
             if not attacker.is_alive:
-                damage = 0  # 攻击者被法术反杀
+                damage = 0
         # 爆裂X（F2，裁定口径：受到伤害【前】反噬）：目标持[爆裂]时攻击者先失去等量生命，
         # 攻击者因此命零则本次伤害不落地（与 sim/balance_sim hit_monster 同口径：按结算总量反射一次）
         if target.has_status("爆裂") and attacker is not target and damage > 0:
@@ -516,29 +754,20 @@ class CombatEngine:
             result["baolie_reflect"] = rd
             if not attacker.is_alive:
                 damage = 0
-        # 裂变：受到伤害分X次结算（每次=原伤害÷X向下取整）
+        # 裂变：受到伤害分X次结算；依全局整数规则，每次除法向上取整。
         if target.has_status("裂变") and damage > 0:
             xv = target.get_status_value("裂变") or 1
             if xv > 1:
-                per = damage // xv
+                per = math.ceil(damage / xv)
                 ta = ts = 0; died = False
                 for _ in range(xv):
-                    dr = self._apply_hostile_damage(target, per, "普通" if not ignore_shield else "无视格挡")
+                    dr = self._apply_hostile_damage(target, per, "普通" if not ignore_shield else "无视格挡", attacker)
                     ta += dr["actual_damage"]; ts += dr["shield_absorbed"]; died = died or dr["died"]
                 damage_result = {"actual_damage": ta, "shield_absorbed": ts, "hp_after": target.current_hp, "died": died, "split": xv}
             else:
-                damage_result = self._apply_hostile_damage(target, damage, "普通" if not ignore_shield else "无视格挡")
+                damage_result = self._apply_hostile_damage(target, damage, "普通" if not ignore_shield else "无视格挡", attacker)
         else:
-            damage_result = self._apply_hostile_damage(target, damage, "普通" if not ignore_shield else "无视格挡")
-        # 龙族血脉：持有者对怪物造成伤害后，直接使其命零（死斗两边各一份）
-        if (self.state.side_has(attacker, "龙族血脉")
-                and target.entity_type == "怪物" and damage_result["actual_damage"] > 0 and target.is_alive):
-            target.current_hp = 0
-            target.is_alive = False
-            damage_result = dict(damage_result)
-            damage_result["died"] = True
-            damage_result["hp_after"] = 0
-            damage_result["dragon_bloodline_kill"] = True
+            damage_result = self._apply_hostile_damage(target, damage, "普通" if not ignore_shield else "无视格挡", attacker)
         result["damage_dealt"] = damage_result["actual_damage"]
         result["shield_absorbed"] = damage_result["shield_absorbed"]
         result["hp_lost"] = damage_result["actual_damage"]
@@ -552,10 +781,11 @@ class CombatEngine:
             attacker.damage_dealt_this_round += damage_result["actual_damage"]
         if "split" in damage_result:
             result["split"] = damage_result["split"]
-        # 法术：失去生命后（玩家实损>0时触发）
-        if (self.state.player is not None and target is self.state.player
-                and damage_result["actual_damage"] > 0 and target.is_alive):
-            slogs2 = self.trigger_spells("失去生命后", {"attacker": attacker, "target": target})
+        if damage_result["actual_damage"] > 0 and target.is_alive:
+            slogs2 = self._resolve_spell_reactions(
+                ActionPhase.AFTER_LIFE_LOST.value, target, attacker,
+                spell_choices["after"], entity_refs,
+            )
             if slogs2:
                 result.setdefault("spell_logs", []).extend(slogs2)
         
@@ -614,7 +844,7 @@ class CombatEngine:
     
     # ========== 回合管理 ==========
     
-    def round_start(self) -> dict:
+    def round_start(self, relic_choices: Optional[dict] = None) -> dict:
         """
         回始结算
         1. 拥有者获得等同当前法限的法力（加法，从不赋值到法限）
@@ -622,6 +852,17 @@ class CombatEngine:
         3. 返回需要决策的信息
         """
         effects = []
+        player = self.state.player
+        if player is not None:
+            if self.state.current_round == 0:
+                shield = self.state.event_modifiers.pop("next_battle_first_round_shield", 0)
+                if shield:
+                    player.gain_shield(shield)
+                    effects.append({"type": "event_first_round_shield", "amount": shield})
+            leather = self.state.event_modifiers.pop("leather_shield_next", 0)
+            if leather and self.state.side_has(player, "皮衣"):
+                player.gain_shield(leather)
+                effects.append({"type": "leather_shield", "amount": leather})
         
         # 活血追踪归零 + 出手预算归零（回始重置本回合已用出手次数）+ 血誓戒每回合限一次归零 + 血族血脉判定归零
         for e in self.state.get_all_player_side() + self.state.get_all_enemy_side():
@@ -630,7 +871,7 @@ class CombatEngine:
             e.blood_oath_used_this_round = False
             e.mana_inflicted_this_round = 0
             e.damage_dealt_this_round = 0
-        # 回始：每个轮回者获得等同当前法限的法力。战始已清零；折速/鲜血契约在战始 +=；守夜灯在本段之后 +=。
+        # 回始：每个轮回者获得等同当前法限的法力。战始已清零；折速法印在战始+=；血契/守夜灯在本段之后+=。
         # 死斗里封存对手也是轮回者，必须同样获得法力，否则只能普攻1点。
         for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
             if entity.entity_type != "轮回者" or not entity.is_alive:
@@ -647,7 +888,7 @@ class CombatEngine:
             })
 
         # 遗物：回始触发（回锋刀造伤、守夜灯加法力）。守夜灯加在获得法限之后。
-        relic_logs = self.process_relics("round_start")
+        relic_logs = self.process_relics(TriggerTiming.ROUND_START, {"relic_choices": relic_choices or {}})
         effects.extend({"type": "relic", "log": l} for l in relic_logs)
         
         # 结算回始效果
@@ -657,7 +898,7 @@ class CombatEngine:
                 x = entity.get_status_value("自愈")
                 heal_pct = 10 * x
                 heal_amount = math.ceil(entity.blood_limit * heal_pct / 100)
-                heal_result = entity.heal(heal_amount)
+                heal_result = self.state.apply_heal(entity, heal_amount)
                 effects.append({
                     "type": "self_heal",
                     "entity": entity.name,
@@ -668,7 +909,8 @@ class CombatEngine:
                 xv = entity.get_status_value("衰败")
                 dmg_n = math.ceil(entity.current_hp * 10 * xv / 100)
                 if dmg_n > 0:
-                    rd = entity.take_damage(dmg_n)
+                    source_name = next((status.source for status in entity.status_effects if status.name == "衰败"), "")
+                    rd = self._apply_hostile_damage(entity, dmg_n, source=self._find_named(source_name))
                     effects.append({"type": "shuaibai_tick", "entity": entity.name,
                                     "damage": rd["actual_damage"], "died": rd["died"]})
             pending = getattr(entity, "_dongcha_pending", 0)
@@ -705,7 +947,9 @@ class CombatEngine:
                     self._lose_shards_of(entity, x)
                     effects.append({"type": "bizhai", "entity": entity.name, "lost_shards": x})
                 else:
-                    entity.blood_limit = max(1, entity.blood_limit - 2 * x)
+                    delta = max(1, entity.blood_limit - 2 * x) - entity.blood_limit
+                    self._battle_delta(
+                        entity, "blood_limit", delta, "逼债", EffectPolarity.DEBUFF.value)
                     entity.current_hp = min(entity.current_hp, entity.blood_limit)
                     if entity.current_hp <= 0:
                         entity.is_alive = False
@@ -744,7 +988,7 @@ class CombatEngine:
             "state": self._get_combat_state()
         }
     
-    def round_end(self) -> dict:
+    def round_end(self, blood_lineage_cost_share_target_ref: str = "") -> dict:
         """
         回终结算
         1. 回终类效果结算
@@ -754,17 +998,24 @@ class CombatEngine:
         effects = []
         
         for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
-            # 畸变结算
-            if entity.has_status("畸变"):
-                x = entity.get_status_value("畸变")
-                blood_loss = entity.attack_count * entity.attack_power
-                result = entity.take_damage(blood_loss, "代价")
+            # 畸变结算：正文是失去[血限]，不是受到等量伤害；按回终时的当前攻击面板动态计算。
+            if entity.has_status("畸变") and entity.is_alive:
+                blood_loss = max(0, entity.attack_count * entity.attack_power)
+                before_limit = entity.blood_limit
+                delta = max(0, entity.blood_limit - blood_loss) - entity.blood_limit
+                self._battle_delta(
+                    entity, "blood_limit", delta, "畸变", EffectPolarity.DEBUFF.value)
+                entity.current_hp = min(entity.current_hp, entity.blood_limit)
+                if entity.blood_limit <= 0 or entity.current_hp <= 0:
+                    entity.current_hp = 0
+                    entity.is_alive = False
                 effects.append({
-                    "type": "deform_damage",
+                    "type": "deform_blood_limit_loss",
                     "entity": entity.name,
-                    "blood_loss": blood_loss,
-                    "hp_after": result["hp_after"],
-                    "died": result["died"]
+                    "blood_loss": before_limit - entity.blood_limit,
+                    "blood_limit_after": entity.blood_limit,
+                    "hp_after": entity.current_hp,
+                    "died": not entity.is_alive,
                 })
 
             # 特殊事件【凡庸】（README 第500行）：任一角色连续五回合未出手／
@@ -785,6 +1036,7 @@ class CombatEngine:
                             else "连续五回合未能使敌对角色生命减少")
                     entity.current_hp = 0
                     entity.is_alive = False
+                    self._on_entity_death(entity)
                     entity.no_action_rounds = 0
                     entity.no_damage_rounds = 0
                     if entity is self.state.player:
@@ -801,13 +1053,16 @@ class CombatEngine:
             # 血族血脉：持有者这一侧各自结算（死斗两边各一份）
             if entity.entity_type == "轮回者" and self.state.side_has(entity, "血族血脉"):
                 if entity.damage_dealt_this_round > 0:
-                    heal_detail = entity.heal(entity.damage_dealt_this_round)
+                    heal_detail = self.state.apply_heal(entity, entity.damage_dealt_this_round)
                     effects.append({"type": "blood_lineage_heal", "entity": entity.name,
                                      "amount": heal_detail["actual_heal"]})
                 else:
-                    bleed_detail = self._pay_bleed_cost(entity, 20)
+                    payment = self.pay_numeric_cost(
+                        entity, "流血", 20,
+                        cost_share_target_ref=(blood_lineage_cost_share_target_ref
+                                               if entity is self.state.player else ""))
                     effects.append({"type": "blood_lineage_bleed", "entity": entity.name,
-                                     "amount": bleed_detail["actual_damage"]})
+                                     "cost": payment, "amount": payment["actual_paid"]})
 
             # 赤族诅咒：[回终]固定流血20
             if entity.entity_type == "赤族" and entity.is_alive:
@@ -845,10 +1100,16 @@ class CombatEngine:
             skip = ("爆裂",) if id(entity) not in player_side_ids else ()
             expired = entity.tick_status_effects(skip_names=skip)
             if expired:
+                # 只有“持续期间直接改写面板”的效果到期即还原；畸变/伤痕/逼债等
+                # 已经产生的累计局内后果保留到战终，再由battle作用域统一回滚。
+                panel_modifier_sources = {"强化", "弱化", "僵化"}
+                rolled_back = self.state.rollback_scoped_sources(
+                    entity, set(expired) & panel_modifier_sources)
                 effects.append({
                     "type": "status_expired",
                     "entity": entity.name,
-                    "expired_effects": expired
+                    "expired_effects": expired,
+                    "rolled_back_deltas": rolled_back,
                 })
                 # 逆鳞（F2）：状态到期时清空计层
                 if "逆鳞" in expired and hasattr(entity, "_nilin"):
@@ -860,6 +1121,12 @@ class CombatEngine:
                         delattr(entity, "_jiahuo_target")
                 if ("飞行" in expired or "滑翔" in expired) and not self._is_flying(entity):
                     entity.is_flying = False
+                if "变形" in expired and hasattr(entity, "_bianxing_original"):
+                    entity.attack_power, entity.attack_count = entity._bianxing_original
+                    delattr(entity, "_bianxing_original")
+                    effects.append({"type": "bianxing_restore", "entity": entity.name,
+                                    "attack_power": entity.attack_power,
+                                    "attack_count": entity.attack_count})
                 # 干扰/手雷减攻到期自动由 tick 清理，无需额外
             # F2：逼债/清算状态消失即清账（∞/持续X到期后不再逐回始结算）
             if not entity.has_status("逼债") and getattr(entity, "_bizhai", None):
@@ -887,14 +1154,31 @@ class CombatEngine:
             effects.append({"type": "dragon_body_tick", "side": "opponent",
                             "remaining": self.state.opponent_dragon_body_shield_rounds})
 
+        # 皮衣记录本回合失血，下一回始获得等量格挡。
+        if (self.state.player and self.state.side_has(self.state.player, "皮衣")
+                and self.state.player.hp_lost_this_round > 0):
+            self.state.event_modifiers["leather_shield_next"] = self.state.player.hp_lost_this_round
+
         # 活血：有活血状态的实体，回终按本回合累计失血÷2回复
         for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
             if entity.has_status("活血") and entity.hp_lost_this_round >= 2:
                 heal_n = entity.hp_lost_this_round // 2
-                h = entity.heal(heal_n)
+                h = self.state.apply_heal(entity, heal_n)
                 effects.append({"type": "huoxue_heal", "entity": entity.name,
                                 "heal": heal_n, "actual": h["actual_heal"]})
             entity.hp_lost_this_round = 0
+
+        # 手术·强制移植：本场第三回终仍保持原移植道纹时转为怪物。
+        if self.state.current_round >= 3:
+            for entity in list(self.state.friends + self.state.employees):
+                transplanted = getattr(entity, "_transplanted_daowen", "")
+                if transplanted and transplanted in entity.dao_wen:
+                    if entity in self.state.friends: self.state.friends.remove(entity)
+                    if entity in self.state.employees: self.state.employees.remove(entity)
+                    entity.entity_type = "怪物"; entity.is_deployed = True
+                    self.state.enemies.append(entity)
+                    effects.append({"type": "transplant_monster", "entity": entity.name,
+                                    "daowen": transplanted})
 
         # 多路径胜利结算（雕塑/癌变/还债）
         settled = self.settle_victory_paths()
@@ -1090,7 +1374,7 @@ class CombatEngine:
 
     PROLIFERATION_THRESHOLD = 2.0  # 癌变：README「累计恢复量达血限×2」；超出血限的恢复按双倍计
     CANCER_THRESHOLD = PROLIFERATION_THRESHOLD  # 别名：增生旧名已统一为癌变，二者同阈值
-    DEBT_THRESHOLD = 10           # 还债：怪物负债（碎片为负）达到N触发（占位）
+    DEBT_THRESHOLD = 10           # 还债：怪物负债达到10碎片时触发（已裁定固定值）
     SCULPTURE_DAMAGE = 15         # 雕塑：每点耐久可造成的伤害
     SCULPTURE_SHIELD = 20         # 雕塑：每点耐久可获得的格挡
 
@@ -1221,8 +1505,9 @@ class CombatEngine:
         monster.is_cancer = True  # type: ignore[attr-defined]
         self._remove_from_combat(monster)
         absorbed = monster.total_healed
-        # 死者之书强化：每只癌变怪物使局外【休整】额外产生8点恢复量（占位，可调）
+        # 正文：每只被吸收的癌变怪物使局外【休整】永久额外产生8点恢复量，可叠加。
         boost = 8
+        self.state.rest_heal_bonus += boost
         self.state.death_book_wisdom.append(f"癌变·{monster.name}：休整恢复量+{boost}")
         return {
             "type": "proliferation",  # 保留旧 key 兼容；新 key 见下一行
@@ -1230,8 +1515,9 @@ class CombatEngine:
             "monster": monster.name,
             "absorbed_heal": absorbed,
             "rest_boost": boost,
+            "rest_heal_bonus_total": self.state.rest_heal_bonus,
             "note": (f"{monster.name}累计承受{absorbed}点恢复被癌变吸收进《死者之书》，"
-                     f"局外【休整】恢复量+{boost}"),
+                     f"局外【休整】恢复量永久+{boost}（累计+{self.state.rest_heal_bonus}）"),
         }
 
     def _debt_bind_monster(self, monster: Entity) -> dict:
@@ -1260,6 +1546,12 @@ class CombatEngine:
             return {"success": False, "error": "非雕塑消耗品"}
         if consumable.is_depleted:
             return {"success": False, "error": "雕塑已耗尽"}
+        if mode not in ("damage", "shield"):
+            return {"success": False, "error": "雕塑mode必须是damage或shield"}
+        if mode == "damage" and target is None:
+            return {"success": False, "error": "伤害模式需指定目标"}
+        if mode == "shield" and self.state.player is None:
+            return {"success": False, "error": "没有玩家，无法获得格挡"}
         consumable.use()
         if mode == "shield":
             player = self.state.player
@@ -1272,9 +1564,7 @@ class CombatEngine:
                 "note": f"雕塑赋能：获得{self.SCULPTURE_SHIELD}点格挡",
             }
         else:
-            if target is None:
-                return {"success": False, "error": "伤害模式需指定目标"}
-            dmg = target.take_damage(self.SCULPTURE_DAMAGE)
+            dmg = self._apply_hostile_damage(target, self.SCULPTURE_DAMAGE, source=self.state.player)
             return {
                 "success": True,
                 "type": "sculpture_damage",
@@ -1389,8 +1679,12 @@ class CombatEngine:
 
     # ========== 辅助方法 ==========
     
-    def apply_daowen_effect(self, name: str, calc: dict, caster: Entity, target: Entity, dragon_heart_use: int = 0) -> dict:
-        """应用道纹效果（统一效果键处理；供api与法术共用）。dragon_heart_use仅对caster自身的数值型代价生效。"""
+    def apply_daowen_effect(
+        self, name: str, calc: dict, caster: Entity, target: Entity,
+        dragon_heart_use: int = 0, *, cost_share_target_ref: str = "",
+        aoe_targets_override: Optional[list[Entity]] = None,
+    ) -> dict:
+        """应用道纹效果；aoe_targets_override用于绑定两阶段决策的目标快照。"""
         result = {"daowen": name, "effects": []}
         x = calc.get("x", 0)
         if name in ("自食", "固执"):
@@ -1450,7 +1744,7 @@ class CombatEngine:
             base = self._jieli_boost(caster, base)
             if caster.has_status("坠落") and base > 0:
                 base = math.ceil(base / 2)
-            dmg = self._apply_hostile_damage(target, 0 if (mengbi_blocked or baolie_suppress) else base)
+            dmg = self._apply_hostile_damage(target, 0 if (mengbi_blocked or baolie_suppress) else base, source=caster)
             result["effects"].append({"type": "damage", "target": target.name, **dmg})
             if dmg.get("actual_damage", 0) > 0:
                 caster.damage_dealt_this_round += dmg["actual_damage"]
@@ -1461,7 +1755,7 @@ class CombatEngine:
             chunk = self._jieli_boost(caster, calc["total_damage"] + add)
             if caster.has_status("坠落") and chunk > 0:
                 chunk = math.ceil(chunk / 2)
-            dmg = self._apply_hostile_damage(target, 0 if (mengbi_blocked or baolie_suppress) else chunk)
+            dmg = self._apply_hostile_damage(target, 0 if (mengbi_blocked or baolie_suppress) else chunk, source=caster)
             if add:
                 dmg["nilin_bonus"] = add
             result["effects"].append({"type": "damage", "target": target.name, **dmg})
@@ -1477,20 +1771,20 @@ class CombatEngine:
                 a += nilin_bonus
                 result["nilin_bonus"] = nilin_bonus
                 nilin_bonus = 0
-            if caster in self.state.get_all_player_side():
+            if aoe_targets_override is not None:
+                # 两阶段怪物决策必须只结算prepare时列出的目标，且已闪避目标已由调用方剔除。
+                aoe_targets = [e for e in aoe_targets_override if e.is_alive]
+            elif caster in self.state.get_all_player_side():
                 aoe_targets = self.state.get_all_enemy_side()
             else:
                 aoe_targets = self.state.get_all_player_side()
-            skip = getattr(self, "_skip_aoe_names", set()) or set()
-            aoe_targets = [e for e in aoe_targets if e.name not in skip]
-            self._skip_aoe_names = set()
             for enemy in aoe_targets:
                 # 对首个敌人附加剩余加成（若前未消耗）
                 dmg_a = a
                 if nilin_bonus and enemy is aoe_targets[0]:
                     dmg_a += nilin_bonus
                     nilin_bonus = 0
-                dmg = enemy.take_damage(dmg_a)
+                dmg = self._apply_hostile_damage(enemy, dmg_a, source=caster)
                 result["effects"].append({"type": "aoe_damage", "target": enemy.name, **dmg})
                 if dmg.get("actual_damage", 0) > 0:
                     caster.damage_dealt_this_round += dmg["actual_damage"]
@@ -1500,7 +1794,7 @@ class CombatEngine:
             if nilin_bonus:
                 result["nilin_bonus"] = nilin_bonus
                 nilin_bonus = 0
-            dmg = self._apply_hostile_damage(target, 0 if baolie_suppress else d)
+            dmg = self._apply_hostile_damage(target, 0 if baolie_suppress else d, source=caster)
             result["effects"].append({"type": "pct_damage", "target": target.name, **dmg})
             if dmg.get("actual_damage", 0) > 0:
                 caster.damage_dealt_this_round += dmg["actual_damage"]
@@ -1508,11 +1802,11 @@ class CombatEngine:
 
         # ---- 回复类 ----
         if "target_heal" in calc and not huaisi_block:
-            result["effects"].append({"type": "heal", "target": target.name, **target.heal(calc["target_heal"])})
+            result["effects"].append({"type": "heal", "target": target.name, **self.state.apply_heal(target, calc["target_heal"])})
         # 自愈的 heal_percent 只在[回始]结算，发动当下不奶。
         if "heal_percent" in calc and name != "自愈" and not (target.has_status("坏死")):
             h = math.ceil(target.blood_limit * calc["heal_percent"] / 100)
-            result["effects"].append({"type": "heal_pct", "target": target.name, **target.heal(h)})
+            result["effects"].append({"type": "heal_pct", "target": target.name, **self.state.apply_heal(target, h)})
         if "target_heal" in calc or ("heal_percent" in calc and name != "自愈"):
             cancer = self.check_cancer(target)
             if cancer:
@@ -1527,7 +1821,9 @@ class CombatEngine:
             result["effects"].append({"type": "shield_drain", "target": target.name, "lost": lost})
         if "blood_limit_reduction" in calc:
             _hp_before = target.current_hp
-            target.blood_limit -= calc["blood_limit_reduction"]
+            self._battle_delta(
+                target, "blood_limit", -calc["blood_limit_reduction"],
+                name, EffectPolarity.DEBUFF.value)
             # README 第460行"[血限]及当前生命同时 -4X"：两者是各自独立的扣减。
             # 此前实现只做 current_hp=min(current_hp, blood_limit)（血限压顶），
             # 对残血目标等于毫无效果——锐利打 10/200 的怪一点血都掉不了。
@@ -1549,12 +1845,18 @@ class CombatEngine:
                 result["effects"].append({"type": "blood_limit_increase", "target": target.name,
                                            "increase": 0, "blocked_by": "不朽之躯"})
             else:
-                target.blood_limit += calc["blood_limit_increase"]
-                result["effects"].append({"type": "blood_limit_increase", "target": target.name, "increase": calc["blood_limit_increase"]})
+                increase = self._battle_delta(
+                    target, "blood_limit", calc["blood_limit_increase"],
+                    name, EffectPolarity.BUFF.value)
+                result["effects"].append({"type": "blood_limit_increase", "target": target.name,
+                                          "increase": increase})
         if "blood_limit_penalty" in calc and target.shards < (calc.get("shard_drain", 0) or 0):
-            # 逼债：碎片不足则失血限
-            target.blood_limit -= calc["blood_limit_penalty"]; target.current_hp = min(target.current_hp, target.blood_limit)
-            result["effects"].append({"type": "bizhai_blood", "target": target.name, "lost": calc["blood_limit_penalty"]})
+            # 逼债：碎片不足则失血限；不是代价，按局内减益登记。
+            lost = -self._battle_delta(
+                target, "blood_limit", -calc["blood_limit_penalty"],
+                name, EffectPolarity.DEBUFF.value)
+            target.current_hp = min(target.current_hp, target.blood_limit)
+            result["effects"].append({"type": "bizhai_blood", "target": target.name, "lost": lost})
 
         # ---- 攻击面板修改 ----
         _panel_keys = ("attack_boost", "attack_reduction", "attack_fixed", "attack_count_fixed")
@@ -1562,40 +1864,55 @@ class CombatEngine:
         if panel_locked:
             result["effects"].append({"type": "dingxing_block", "target": target.name})
         if (not panel_locked) and "attack_boost" in calc:
-            target.attack_power += calc["attack_boost"]
+            self._battle_delta(
+                target, "attack_power", calc["attack_boost"],
+                name, EffectPolarity.BUFF.value)
             result["effects"].append({"type": "attack_boost", "target": target.name, "attack_power": target.attack_power})
         if (not panel_locked) and "attack_reduction" in calc:
-            target.attack_power = max(0, target.attack_power - calc["attack_reduction"])
+            delta = max(0, target.attack_power - calc["attack_reduction"]) - target.attack_power
+            self._battle_delta(
+                target, "attack_power", delta, name, EffectPolarity.DEBUFF.value)
             result["effects"].append({"type": "attack_reduction", "target": target.name, "attack_power": target.attack_power})
         if (not panel_locked) and "attack_fixed" in calc:
-            target.attack_power = calc["attack_fixed"]
+            self._battle_delta(
+                target, "attack_power", calc["attack_fixed"] - target.attack_power,
+                name, EffectPolarity.NEUTRAL.value)
             result["effects"].append({"type": "attack_fixed", "target": target.name, "attack_power": target.attack_power})
         if (not panel_locked) and "attack_count_fixed" in calc:
-            target.attack_count = calc["attack_count_fixed"]
+            self._battle_delta(
+                target, "attack_count", calc["attack_count_fixed"] - target.attack_count,
+                name, EffectPolarity.NEUTRAL.value)
             result["effects"].append({"type": "attack_count_fixed", "target": target.name, "attack_count": target.attack_count})
-        if name == "变形":  # 自身攻击力与攻击次数互换
+        bianxing_blocked = False
+        if name == "变形":  # 自身攻击力与攻击次数互换；持续结束后还原首次变形前面板
             if caster.has_status("定型"):
+                bianxing_blocked = True
                 result["effects"].append({"type": "dingxing_block", "target": caster.name})
             else:
+                if not hasattr(caster, "_bianxing_original"):
+                    caster._bianxing_original = (caster.attack_power, caster.attack_count)
                 caster.attack_power, caster.attack_count = caster.attack_count, caster.attack_power
-                result["effects"].append({"type": "swap", "target": caster.name, "attack_power": caster.attack_power, "attack_count": caster.attack_count})
+                result["effects"].append({"type": "swap", "target": caster.name,
+                                          "attack_power": caster.attack_power,
+                                          "attack_count": caster.attack_count})
 
         # ---- 速度修改 ----
         if "speed_boost" in calc:
             gained = self._gain_speed(target, calc["speed_boost"])
             result["effects"].append({"type": "speed_boost", "target": target.name, "speed": target.current_speed, "gained": gained})
         if "speed_halved" in calc:
-            target.current_speed = target.current_speed // 2
+            target.current_speed = math.ceil(target.current_speed / 2)
             result["effects"].append({"type": "speed_halved", "target": target.name, "speed": target.current_speed})
-        if "speed_penalty" in calc:
+        if "speed_penalty" in calc and (name != "赎金" or self._shards_of(target) <= 0):
             target.current_speed = max(0, target.current_speed - calc["speed_penalty"])
-            result["effects"].append({"type": "speed_penalty", "target": target.name, "speed": target.current_speed})
+            result["effects"].append({"type": "speed_penalty", "target": target.name,
+                                      "lost": calc["speed_penalty"], "speed": target.current_speed})
 
         # ---- 碎片系（罪孽）----
-        if "shard_steal" in calc:  # 赎金：夺碎片（原口径保留：全额扣减可负债[喂还债路径]，仅正值部分可夺得；玩家目标假碎片优先）
-            avail = self._shards_of(target)
-            gained = max(0, min(avail, calc["shard_steal"]))
-            self._lose_shards_of(target, calc["shard_steal"])
+        if "shard_steal" in calc and self._shards_of(target) > 0:
+            # 赎金是“有碎片则夺取，若无碎片才失速”的二选一；不得把不足额偷取扩成负债。
+            gained = min(self._shards_of(target), calc["shard_steal"])
+            self._lose_shards_of(target, gained)
             if caster is self.state.player:
                 self.state.shards += gained
             else:
@@ -1611,41 +1928,32 @@ class CombatEngine:
             spent = self._lose_shards_of(self.state.player, calc["cost_shards"]) if caster is self.state.player else 0
             result["effects"].append({"type": "cost_shards", "spent": spent})
 
-        # ---- 代价（卖身契：玩家代价转由cost_proxy承担）----
-        cost_target = caster
-        if (caster is self.state.player and self.cost_proxy is not None and self.cost_proxy.is_alive):
-            cost_target = self.cost_proxy
-        # 共心环(终音法器)：本场选定类型后，[朋友]/[员工]也可使用该共享龙心抵消同类型代价；
-        # 未持有共心环、或类型与选定的不同时，仍只有玩家自身可以使用自己的龙心。
-        dh_use = dragon_heart_use
-        if cost_target is not self.state.player:
-            heart_type = "衰老" if "cost_blood_limit" in calc else ("疲惫" if "cost_speed" in calc else "流血")
-            shared_ok = ("共心环" in self.state.artifacts_owned
-                         and self.state.shared_dragon_heart_type == heart_type)
-            if not shared_ok:
-                dh_use = 0
+        # ---- 数值代价：统一走代价总线；【血契】可按显式引用共同承担 ----
+        cost_spec = None
         if "cost_hp" in calc:
-            result["effects"].append({"type": "bleed_cost", "source": cost_target.name,
-                                       **self._pay_bleed_cost(cost_target, calc["cost_hp"], dh_use)})
-            if cost_target.current_hp <= 0: self.cost_proxy = None
-        if "cost_blood_limit" in calc:
-            # 不朽之躯：免疫衰老（死斗两边各一份）
-            if self.state.side_has(cost_target, "不朽之躯"):
-                result["effects"].append({"type": "aging_cost", "source": cost_target.name,
-                                           "new_blood_limit": cost_target.blood_limit,
-                                           "dragon_heart_offset": 0, "immune": True})
-            else:
-                actual, offset = self._offset_with_dragon_heart(cost_target, "衰老", calc["cost_blood_limit"], dh_use)
-                cost_target.blood_limit -= actual; cost_target.current_hp = min(cost_target.current_hp, cost_target.blood_limit)
-                self._bank_lianxin(cost_target, "衰老", actual)
-                result["effects"].append({"type": "aging_cost", "source": cost_target.name,
-                                           "new_blood_limit": cost_target.blood_limit, "dragon_heart_offset": offset})
-        if "cost_speed" in calc:
-            actual, offset = self._offset_with_dragon_heart(cost_target, "疲惫", calc["cost_speed"], dh_use)
-            cost_target.current_speed -= actual
-            self._bank_lianxin(cost_target, "疲惫", actual)
-            result["effects"].append({"type": "fatigue_cost", "source": cost_target.name,
-                                       "new_speed": cost_target.current_speed, "dragon_heart_offset": offset})
+            cost_spec = ("流血", calc["cost_hp"], "bleed_cost")
+        elif "cost_blood_limit" in calc:
+            cost_spec = ("衰老", calc["cost_blood_limit"], "aging_cost")
+        elif "cost_speed" in calc:
+            cost_spec = ("疲惫", calc["cost_speed"], "fatigue_cost")
+        elif "cost_mutation" in calc and caster.entity_type != "怪物":
+            # 怪物原始道纹在两阶段怪物流程中已先支付异变5X；此处只补轮回者/同伴的同类代价。
+            cost_spec = ("异变", calc["cost_mutation"], "mutation_cost")
+        if cost_spec is not None:
+            cost_type, amount, effect_type = cost_spec
+            payment = self.pay_numeric_cost(
+                caster, cost_type, amount,
+                cost_share_target_ref=cost_share_target_ref,
+                dragon_heart_use=dragon_heart_use,
+            )
+            cost_effect = {"type": effect_type, **payment}
+            if cost_type == "流血":
+                # 保留既有公开字段，同时以owner/shared_with暴露血契拆分详情。
+                cost_effect["actual_damage"] = payment["actual_paid"]
+                cost_effect["hp_after"] = caster.current_hp
+            result["effects"].append(cost_effect)
+        elif cost_share_target_ref:
+            raise ValueError("该道纹没有可由【血契】共同承担的数值代价")
         if "mana_gain" in calc:
             caster.current_mana += calc["mana_gain"]
             result["effects"].append({"type": "mana_gain", "source": caster.name, "mana_gained": calc["mana_gain"]})
@@ -1653,7 +1961,7 @@ class CombatEngine:
         # ---- 特殊 ----
         if "self_attack_count" in calc:  # 自残：目标自打X次
             for _ in range(calc["self_attack_count"]):
-                result["effects"].append({"type": "self_attack", "target": target.name, **self._apply_hostile_damage(target, target.attack_power)})
+                result["effects"].append({"type": "self_attack", "target": target.name, **self._apply_hostile_damage(target, target.attack_power, source=target)})
         if "targets_removed" in calc:  # 封印：仅移出怪物（README：X个[目标]怪物）
             removed = 0
             removed_names = []
@@ -1716,7 +2024,8 @@ class CombatEngine:
                     e.add_status(StatusEffect(name="坠落", remaining_rounds=duration, value=x, source=caster.name))
                     grounded.append(e.name)
             result["effects"].append({"type": "zhuiluo", "targets": grounded, "duration": duration})
-        elif "duration" in calc and calc.get("duration") is not None:
+        elif ("duration" in calc and calc.get("duration") is not None
+              and not (name == "变形" and bianxing_blocked)):
             duration = calc["duration"] if calc["duration"] != 0 else -1
             effect_target = target if target else caster
             # 自身作用型道纹(变形/超频/自食等)作用于施法者
@@ -1764,11 +2073,11 @@ class CombatEngine:
         elif name == "清算":
             target._qingsuan.append({"x": x, "caster": caster})
             result["effects"].append({"type": "qingsuan_register", "target": target.name, "x": x})
-        # 赌命X：消耗X假碎片（付费在 _action_use_daowen 预检；怪物侧在 _apply_exclusive_for_monster）。
+        # 赌命X：玩家侧在_action_use_daowen预检付费；怪物侧由两阶段决策结算器付费。
         # 状态经 duration 挂在施法者上，[回始]在 round_start 按存活角色随机结算。
         elif name == "赌命":
             result["effects"].append({"type": "duming_register", "caster": caster.name, "x": x})
-        # 消灾X：付费在 _action_use_daowen 预检（怪物侧在 _apply_exclusive_for_monster）；此处登记重投次数。
+        # 消灾X：玩家侧在_action_use_daowen预检付费；怪物侧由两阶段决策结算器付费；此处登记重投次数。
         elif name == "消灾":
             self.dice.set_rerolls(self.dice.rerolls_pending + x)
             result["effects"].append({"type": "xiaozai_rerolls", "added": x, "total": self.dice.rerolls_pending})
@@ -1782,70 +2091,208 @@ class CombatEngine:
 
 
 
-    # 法术流程注册表：法术名 → {触发时点, [(道纹, 目标角色, x模式)]}
-    # 目标角色: attacker(伤害来源)/self/target；x模式: kill(够杀)/heal(够奶)/shield(够挡)/auto(默认3)
+    # 法术流程注册表；计算层只描述步骤，不再替持有者选择X、目标或闪避。
     SPELL_FLOWS = {
-        "先发制人": {"trigger": "受到伤害前", "steps": [("杀伐", "attacker", "kill")]},
-        "临界泄压": {"trigger": "受到伤害前", "steps": [("锐利", "attacker", "auto")]},
-        "后发制人": {"trigger": "受到伤害前", "steps": [("庇护", "self", "shield")]},
-        "生生不息": {"trigger": "失去生命后", "steps": [("再生", "self", "heal")]},
-        "以牙还牙": {"trigger": "失去生命后", "steps": [("再生", "self", "heal"), ("杀伐", "attacker", "kill")]},
-        "借力打力": {"trigger": "受到伤害前", "steps": [("庇护", "self", "shield"), ("杀伐", "attacker", "kill")]},
-        "不死不休": {"trigger": "失去生命后", "steps": [("血债", "attacker", "auto")]},
-        "千刀万剐": {"trigger": "失去生命后", "steps": [("再生", "self", "heal"), ("血债", "attacker", "auto")]},
-        "咎由自取": {"trigger": "目标发动道纹前", "steps": [("坠落", "target", "auto"), ("杀伐", "target", "kill"), ("血债", "target", "auto")]},
+        "先发制人": {"trigger": ActionPhase.BEFORE_DAMAGE_TAKEN.value, "steps": [("杀伐", "attacker")]},
+        "临界泄压": {"trigger": ActionPhase.BEFORE_DAMAGE_TAKEN.value, "steps": [("锐利", "attacker")]},
+        "后发制人": {"trigger": ActionPhase.BEFORE_DAMAGE_TAKEN.value, "steps": [("庇护", "self")]},
+        "生生不息": {"trigger": ActionPhase.AFTER_LIFE_LOST.value, "steps": [("再生", "self")]},
+        "以牙还牙": {"trigger": ActionPhase.AFTER_LIFE_LOST.value, "steps": [("再生", "self"), ("杀伐", "attacker")]},
+        "借力打力": {"trigger": ActionPhase.BEFORE_DAMAGE_TAKEN.value, "steps": [("庇护", "self"), ("杀伐", "attacker")]},
+        "不死不休": {"trigger": ActionPhase.AFTER_LIFE_LOST.value, "steps": [("血债", "attacker")], "loop": True},
+        "千刀万剐": {"trigger": ActionPhase.AFTER_LIFE_LOST.value, "steps": [("再生", "self"), ("血债", "attacker")], "loop": True},
+        "咎由自取": {"trigger": "目标发动道纹前", "steps": [("坠落", "target"), ("杀伐", "target"), ("血债", "target")]},
     }
 
-    def _spell_x(self, xmode, player, tgt, ctx):
-        mana = player.current_mana
-        if xmode == "kill":
-            return min(mana, max(1, math.ceil(tgt.current_hp / 2))) if (tgt and tgt.is_alive) else 0
-        if xmode == "heal":
-            return min(mana, max(1, math.ceil((player.blood_limit - player.current_hp) / 3)))
-        if xmode == "shield":
-            return min(mana, max(1, math.ceil(ctx.get("incoming", 0) / 4)))
-        return 3
-
-    def trigger_spells(self, trigger: str, ctx: dict = None) -> list:
-        """触发玩家持有的反应型法术（受伤害前/失血后/目标发动道纹前）"""
-        ctx = ctx or {}
-        player = self.state.player
-        logs = []
-        if not player or not player.is_alive:
-            return logs
-        for spell in list(player.spells):
+    def _eligible_spell_flows(self, holder: Entity, trigger: str) -> dict[str, dict]:
+        flows = {}
+        if holder is None or not holder.is_alive:
+            return flows
+        for spell in holder.spells:
             flow = self.SPELL_FLOWS.get(spell.name)
-            if not flow or flow["trigger"] != trigger:
+            if (flow and flow["trigger"] == trigger
+                    and all(name in holder.dao_wen and holder.dao_wen[name].can_use()
+                            for name in spell.required_daowen)):
+                flows[spell.name] = flow
+        return flows
+
+    def prepare_spell_reactions(self, holder: Entity, attacker: Entity) -> dict:
+        """列出一次受击前/失血后可能触发的法术，供攻击prepare嵌入。"""
+        refs = self._combat_entity_refs()
+        reverse = {id(entity): ref for ref, entity in refs.items()}
+        result = {}
+        for key, trigger in (("before", ActionPhase.BEFORE_DAMAGE_TAKEN.value),
+                             ("after", ActionPhase.AFTER_LIFE_LOST.value)):
+            result[key] = []
+            for name, flow in self._eligible_spell_flows(holder, trigger).items():
+                steps = []
+                for daowen, role in flow["steps"]:
+                    target = holder if role == "self" else attacker
+                    steps.append({"daowen": daowen, "target_ref": reverse.get(id(target)),
+                                  "x": "positive integer", "dodge": "boolean if hostile"})
+                result[key].append({"spell_name": name, "steps": steps,
+                                    "loop": bool(flow.get("loop"))})
+        return result
+
+    def validate_spell_reaction_submission(self, holder: Entity, attacker: Entity,
+                                           submitted: Any, refs: dict[str, Entity]) -> None:
+        if not isinstance(submitted, dict):
+            raise ValueError("每次攻击必须显式提交spell_choices对象")
+        reverse = {id(entity): ref for ref, entity in refs.items()}
+        for key, trigger in (("before", ActionPhase.BEFORE_DAMAGE_TAKEN.value),
+                             ("after", ActionPhase.AFTER_LIFE_LOST.value)):
+            eligible = self._eligible_spell_flows(holder, trigger)
+            choices = submitted.get(key)
+            if not isinstance(choices, dict) or set(choices) != set(eligible):
+                raise ValueError(f"spell_choices.{key}必须逐一覆盖{sorted(eligible)}")
+            mana = holder.current_mana
+            speed_budget = {ref: entity.current_speed for ref, entity in refs.items()}
+            for spell_name, flow in eligible.items():
+                decision = choices[spell_name]
+                if not isinstance(decision, dict) or not isinstance(decision.get("use"), bool):
+                    raise ValueError(f"法术{spell_name}必须显式提交use布尔值")
+                if not decision["use"]:
+                    continue
+                cycles = decision.get("cycles")
+                if not isinstance(cycles, list) or not cycles:
+                    raise ValueError(f"法术{spell_name}发动时必须提交至少一个cycles")
+                if not flow.get("loop") and len(cycles) != 1:
+                    raise ValueError(f"法术{spell_name}不是循环法术，只能提交一个cycle")
+                for cycle in cycles:
+                    if not isinstance(cycle, list) or len(cycle) != len(flow["steps"]):
+                        raise ValueError(f"法术{spell_name}每个cycle必须完整提交{len(flow['steps'])}步")
+                    for entry, (daowen, role) in zip(cycle, flow["steps"]):
+                        if not isinstance(entry, dict):
+                            raise ValueError("法术步骤必须是对象")
+                        x = entry.get("x")
+                        expected_target = holder if role == "self" else attacker
+                        expected_ref = reverse.get(id(expected_target))
+                        if (not isinstance(x, int) or isinstance(x, bool) or x < 1
+                                or entry.get("target_ref") != expected_ref):
+                            raise ValueError(f"法术{spell_name}步骤必须提交合法x与target_ref")
+                        calc = DaoWenEngine.resolve(daowen, x, target=expected_target, caster=holder)
+                        if calc.get("cost_type") == "消耗":
+                            mana -= calc.get("cost", 0)
+                            if mana < 0:
+                                raise ValueError(f"法术{spell_name}提交的法力不足")
+                        hostile = self.state.on_player_side(holder) != self.state.on_player_side(expected_target)
+                        if hostile:
+                            if not isinstance(entry.get("dodge"), bool):
+                                raise ValueError("敌对法术步骤必须显式提交dodge")
+                            if entry["dodge"]:
+                                speed_budget[expected_ref] -= 1
+                                if speed_budget[expected_ref] < 0:
+                                    raise ValueError("法术目标速度不足以闪避")
+
+    def prepare_daowen_trigger_spells(self, actor: Entity) -> dict:
+        refs = self._combat_entity_refs()
+        result = {}
+        for ref, holder in refs.items():
+            if self.state.on_player_side(holder) == self.state.on_player_side(actor):
                 continue
-            # 所需道纹须持有且可用
-            if not all(d in player.dao_wen and player.dao_wen[d].can_use() for d in spell.required_daowen):
-                continue
-            step_logs = []
-            for dw, role, xmode in flow["steps"]:
-                tgt = {"attacker": ctx.get("attacker"), "self": player,
-                       "target": ctx.get("target") or ctx.get("attacker")}.get(role, player)
-                if role != "self" and (tgt is None or not tgt.is_alive):
+            flows = self._eligible_spell_flows(holder, "目标发动道纹前")
+            if flows:
+                result[ref] = [{"spell_name": name, "steps": [
+                    {"daowen": daowen, "target_ref": next((r for r, e in refs.items() if e is actor), None),
+                     "x": "positive integer", "dodge": "boolean"}
+                    for daowen, _ in flow["steps"]]} for name, flow in flows.items()]
+        return result
+
+    def validate_daowen_trigger_spells(self, actor: Entity, submitted: Any,
+                                       refs: dict[str, Entity]) -> None:
+        expected = self.prepare_daowen_trigger_spells(actor)
+        if not isinstance(submitted, dict) or set(submitted) != set(expected):
+            raise ValueError(f"trigger_spell_choices必须覆盖{sorted(expected)}")
+        actor_ref = next((ref for ref, entity in refs.items() if entity is actor), None)
+        for holder_ref in expected:
+            holder = refs[holder_ref]
+            flows = self._eligible_spell_flows(holder, "目标发动道纹前")
+            choices = submitted[holder_ref]
+            if not isinstance(choices, dict) or set(choices) != set(flows):
+                raise ValueError("目标发动道纹前的法术提交不完整")
+            mana = holder.current_mana
+            for spell_name, flow in flows.items():
+                decision = choices[spell_name]
+                if not isinstance(decision, dict) or not isinstance(decision.get("use"), bool):
+                    raise ValueError(f"法术{spell_name}必须显式提交use")
+                if not decision["use"]:
                     continue
-                if tgt is None:
-                    tgt = player
-                x = self._spell_x(xmode, player, tgt, ctx)
-                if x < 1:
+                steps = decision.get("steps")
+                if not isinstance(steps, list) or len(steps) != len(flow["steps"]):
+                    raise ValueError(f"法术{spell_name}必须完整提交steps")
+                for entry, (daowen, _) in zip(steps, flow["steps"]):
+                    x = entry.get("x") if isinstance(entry, dict) else None
+                    if (not isinstance(x, int) or isinstance(x, bool) or x < 1
+                            or entry.get("target_ref") != actor_ref or not isinstance(entry.get("dodge"), bool)):
+                        raise ValueError("法术步骤的x/target_ref/dodge非法")
+                    calc = DaoWenEngine.resolve(daowen, x, target=actor, caster=holder)
+                    if calc.get("cost_type") == "消耗":
+                        mana -= calc.get("cost", 0)
+                        if mana < 0:
+                            raise ValueError(f"法术{spell_name}法力不足")
+
+    def resolve_daowen_trigger_spells(self, actor: Entity, submitted: dict,
+                                      refs: dict[str, Entity]) -> list[dict]:
+        logs = []
+        for holder_ref, choices in submitted.items():
+            holder = refs[holder_ref]
+            for spell_name, flow in self._eligible_spell_flows(holder, "目标发动道纹前").items():
+                decision = choices[spell_name]
+                if not decision["use"]:
                     continue
-                try:
-                    calc = DaoWenEngine.resolve(dw, x, target=tgt, caster=player)
-                except Exception:
-                    continue
-                # 消耗型道纹需扣法力（代价型由apply处理）
-                if calc.get("cost_type") == "消耗":
-                    cost = calc.get("cost", 0)
-                    if cost > 0 and not player.spend_mana(cost):
+                previous_damage = 0
+                for entry, (daowen, _) in zip(decision["steps"], flow["steps"]):
+                    if daowen == "坠落" and not (actor.is_flying or actor.has_status("飞行") or actor.has_status("滑翔")):
                         continue
-                self.apply_daowen_effect(dw, calc, player, tgt)
-                step_logs.append(f"{spell.name}:{dw}{x}→{tgt.name}")
-                if role != "self" and tgt is not player and not tgt.is_alive:
-                    break  # 目标已倒，后续步骤跳过
-            if step_logs:
-                logs.extend(step_logs)
+                    if daowen == "血债" and previous_damage > 0:
+                        continue
+                    calc = DaoWenEngine.resolve(daowen, entry["x"], target=actor, caster=holder)
+                    if calc.get("cost_type") == "消耗" and not holder.spend_mana(calc.get("cost", 0)):
+                        raise ValueError("法术结算法力不足")
+                    if entry["dodge"]:
+                        if actor.current_speed < 1:
+                            raise ValueError("道纹行动者速度不足以闪避反应法术")
+                        actor.current_speed -= 1
+                        self._note_dodge(actor, entry.get("dodge_relic_target_ref"))
+                        logs.append({"spell": spell_name, "daowen": daowen, "dodged": True})
+                        previous_damage = 0
+                        continue
+                    execution = self.apply_daowen_effect(daowen, calc, holder, actor)
+                    previous_damage = sum(effect.get("actual_damage", 0) for effect in execution.get("effects", []))
+                    logs.append({"spell": spell_name, "daowen": daowen, "execution": execution})
+        return logs
+
+    def _resolve_spell_reactions(self, trigger: str, holder: Entity, attacker: Entity,
+                                 submitted: dict, refs: dict[str, Entity]) -> list[dict]:
+        flows = self._eligible_spell_flows(holder, trigger)
+        logs = []
+        for spell_name, flow in flows.items():
+            decision = submitted[spell_name]
+            if not decision["use"]:
+                logs.append({"spell": spell_name, "used": False})
+                continue
+            for cycle_index, cycle in enumerate(decision["cycles"], 1):
+                for entry, (daowen, role) in zip(cycle, flow["steps"]):
+                    target = holder if role == "self" else attacker
+                    if target is None or not target.is_alive:
+                        logs.append({"spell": spell_name, "cycle": cycle_index,
+                                     "daowen": daowen, "skipped": "目标已失效"})
+                        continue
+                    x = entry["x"]
+                    calc = DaoWenEngine.resolve(daowen, x, target=target, caster=holder)
+                    if calc.get("cost_type") == "消耗":
+                        if not holder.spend_mana(calc.get("cost", 0)):
+                            raise ValueError(f"法术{spell_name}结算时法力不足")
+                    hostile = self.state.on_player_side(holder) != self.state.on_player_side(target)
+                    if hostile and entry.get("dodge"):
+                        target.current_speed -= 1
+                        self._note_dodge(target, entry.get("dodge_relic_target_ref"))
+                        logs.append({"spell": spell_name, "cycle": cycle_index,
+                                     "daowen": daowen, "target": target.name, "dodged": True})
+                        continue
+                    execution = self.apply_daowen_effect(daowen, calc, holder, target)
+                    logs.append({"spell": spell_name, "cycle": cycle_index, "daowen": daowen,
+                                 "x": x, "target": target.name, "execution": execution})
         return logs
 
     # ========== 大流程：员工叛变 / 死之传承 ==========
@@ -1894,8 +2341,119 @@ class CombatEngine:
             "total_legacies": len(self.state.death_book_legacies),
         }
 
-    def process_relics(self, trigger: str, ctx: dict = None) -> list:
-        """遗物效果触发框架。trigger: battle_start/round_start/on_dodge/on_speed_zero"""
+    def validate_battle_start_relic_choices(self, choices: dict) -> None:
+        """校验所有可选[战始]遗物参数；缺项不得由计算层猜测或代选。"""
+        if not isinstance(choices, dict):
+            raise ValueError("relic_choices必须是对象")
+        active = {r.name for r in self.state.relics if self.state.sealed_relics.get(r.name, 0) <= 0}
+        player = self.state.player
+        for name in ("折速法印", "三相残韵盘"):
+            if name not in active:
+                continue
+            decision = choices.get(name)
+            if not isinstance(decision, dict) or not isinstance(decision.get("use"), bool):
+                raise ValueError(f"持有【{name}】时必须显式提交relic_choices.{name}.use布尔值")
+            if not decision["use"]:
+                continue
+            if name == "折速法印":
+                x = decision.get("x")
+                if not isinstance(x, int) or isinstance(x, bool) or x < 1 or not player:
+                    raise ValueError("折速法印x必须是正整数")
+                self.validate_numeric_cost(
+                    player, "疲惫", x, decision.get("cost_share_target_ref", ""))
+            elif name == "三相残韵盘":
+                resonance = decision.get("resonance_type", "")
+                if resonance not in ("转换", "反转", "曲解") or self.state.resonance.get(resonance, 0) < 1:
+                    raise ValueError("三相残韵盘必须显式选择一种当前持有的resonance_type")
+        for name in ("猩红果实", "苍白之花"):
+            if name in active:
+                decision = choices.get(name)
+                if not isinstance(decision, dict) or not isinstance(decision.get("use"), bool):
+                    raise ValueError(f"持有【{name}】时必须显式提交use布尔值")
+                if decision["use"] and name == "猩红果实":
+                    self.validate_numeric_cost(
+                        player, "流血", 10, decision.get("cost_share_target_ref", ""))
+                if decision["use"] and name == "苍白之花":
+                    self.validate_numeric_cost(
+                        player, "疲惫", 5, decision.get("cost_share_target_ref", ""))
+        refs = self._combat_entity_refs()
+        if "负岳索" in active:
+            decision = choices.get("负岳索")
+            legal = {ref for ref, entity in refs.items()
+                     if entity in self.state.friends + self.state.employees and entity.is_alive}
+            if not isinstance(decision, dict) or decision.get("target_ref") not in legal:
+                raise ValueError(f"负岳索必须显式选择朋友/员工target_ref，可选{sorted(legal)}")
+        if "炉心坠" in active:
+            decision = choices.get("炉心坠")
+            hearts = {item.name for item in self.state.consumables if item.kind == "dragon_heart"}
+            if not isinstance(decision, dict) or decision.get("heart_name") not in hearts:
+                raise ValueError(f"炉心坠必须显式选择龙心heart_name，可选{sorted(hearts)}")
+        if "烙痕钉" in active:
+            decision = choices.get("烙痕钉")
+            legal = {ref for ref, entity in refs.items() if self.state.on_enemy_side(entity)}
+            if not isinstance(decision, dict) or decision.get("target_ref") not in legal:
+                raise ValueError(f"烙痕钉必须显式选择敌方target_ref，可选{sorted(legal)}")
+
+    def validate_round_start_relic_choices(self, choices: dict) -> None:
+        if not isinstance(choices, dict):
+            raise ValueError("relic_choices必须是对象")
+        active = {r.name for r in self.state.relics if self.state.sealed_relics.get(r.name, 0) <= 0}
+        player = self.state.player
+        damage = 3 * max(0, player.speed_limit - player.current_speed) if player else 0
+        if "回锋刀" in active and damage > 0:
+            decision = choices.get("回锋刀")
+            index = decision.get("enemy_index") if isinstance(decision, dict) else None
+            if (not isinstance(index, int) or isinstance(index, bool) or index < 0
+                    or index >= len(self.state.enemies) or not self.state.enemies[index].is_alive):
+                legal = [i for i, enemy in enumerate(self.state.enemies) if enemy.is_alive]
+                raise ValueError(f"回锋刀触发时必须显式提交合法relic_choices.回锋刀.enemy_index，可选{legal}")
+        if "余火印" in active:
+            decision = choices.get("余火印")
+            if not isinstance(decision, dict) or not isinstance(decision.get("use"), bool):
+                raise ValueError("余火印每个回始必须显式提交use布尔值")
+            if decision["use"]:
+                heart = next((item for item in self.state.consumables
+                              if item.name == decision.get("heart_name") and item.kind == "dragon_heart"), None)
+                x = decision.get("x")
+                if (heart is None or not isinstance(x, int) or isinstance(x, bool)
+                        or x < 1 or x > heart.current_uses):
+                    raise ValueError("余火印必须提交合法heart_name与1~当前耐久的x")
+        def _validate_blood_pact_decision(holder: Entity, key: str, allow_heart: bool):
+            decision = choices.get(key)
+            if not isinstance(decision, dict) or not isinstance(decision.get("use"), bool):
+                raise ValueError(f"{key}每个回始必须显式提交use布尔值")
+            if not decision["use"]:
+                return
+            x = decision.get("x")
+            heart_use = decision.get("dragon_heart_use", 0)
+            if not isinstance(x, int) or isinstance(x, bool) or x < 1:
+                raise ValueError(f"{key}.x必须是正整数")
+            if (not isinstance(heart_use, int) or isinstance(heart_use, bool)
+                    or heart_use < 0 or (heart_use and not allow_heart)):
+                raise ValueError(f"{key}.dragon_heart_use非法")
+            heart = next((item for item in self.state.consumables
+                          if item.kind == "dragon_heart" and item.dragon_heart_type == "流血"
+                          and not item.is_depleted), None) if allow_heart else None
+            offset = min(heart_use, heart.current_uses, 4 * x) if heart else 0
+            self.validate_numeric_cost(
+                holder, "流血", 4 * x - offset,
+                decision.get("cost_share_target_ref", ""),
+            )
+
+        if "血契" in active:
+            _validate_blood_pact_decision(player, "血契", True)
+        opponent = next((entity for entity in self.state.enemies
+                         if entity.entity_type == "轮回者" and entity.is_alive), None)
+        if opponent is not None and self._has_active_blood_pact(opponent):
+            _validate_blood_pact_decision(opponent, "对手血契", False)
+
+    def process_relics(self, trigger: str | TriggerTiming, ctx: dict = None) -> list:
+        """遗物效果触发框架。可选效果只读取AI显式提交的ctx，不设置启发式默认值。"""
+        timing_map = {
+            TriggerTiming.BATTLE_START: "battle_start", TriggerTiming.BATTLE_END: "battle_end",
+            TriggerTiming.ROUND_START: "round_start", TriggerTiming.ROUND_END: "round_end",
+        }
+        trigger = timing_map.get(trigger, trigger)
         ctx = ctx or {}
         player = self.state.player
         logs = []
@@ -1909,39 +2467,104 @@ class CombatEngine:
         if trigger == "on_speed_zero" and "避风铃" in relics and player.current_speed == 0:
             player.gain_shield(15); logs.append("避风铃：速度归零+15格挡")
         if trigger == "round_start":
+            choices = ctx.get("relic_choices", {})
+            self.validate_round_start_relic_choices(choices)
             if "回锋刀" in relics:
                 d = 3 * max(0, player.speed_limit - player.current_speed)
                 if d > 0:
-                    enemies = self.state.get_all_enemy_side()
-                    if enemies:
-                        enemies[0].take_damage(d); logs.append(f"回锋刀：对{enemies[0].name}造{d}伤")
+                    enemy = self.state.enemies[choices["回锋刀"]["enemy_index"]]
+                    self._apply_hostile_damage(enemy, d, source=player)
+                    logs.append(f"回锋刀：对{enemy.name}造{d}伤")
             if "守夜灯" in relics:  # 敌回始+法限50%法力
-                g = player.mana_limit // 2
+                g = math.ceil(player.mana_limit / 2)
                 if g > 0:
                     player.current_mana += g; logs.append(f"守夜灯：+{g}法力")
+            if "血契" in relics and choices["血契"]["use"]:
+                decision = choices["血契"]
+                x = decision["x"]
+                payment = self.pay_numeric_cost(
+                    player, "流血", 4 * x,
+                    cost_share_target_ref=decision.get("cost_share_target_ref", ""),
+                    dragon_heart_use=decision.get("dragon_heart_use", 0),
+                )
+                player.current_mana += x
+                shared = payment.get("shared_with")
+                shared_note = f"，与{shared['payer']}共同承担" if shared else ""
+                logs.append(f"血契：流血{4*x}{shared_note}，+{x}法力")
+            opponent = next((entity for entity in self.state.enemies
+                             if entity.entity_type == "轮回者" and entity.is_alive), None)
+            if (opponent is not None and self._has_active_blood_pact(opponent)
+                    and choices["对手血契"]["use"]):
+                decision = choices["对手血契"]
+                x = decision["x"]
+                payment = self.pay_numeric_cost(
+                    opponent, "流血", 4 * x,
+                    cost_share_target_ref=decision.get("cost_share_target_ref", ""))
+                opponent.current_mana += x
+                shared = payment.get("shared_with")
+                shared_note = f"，与{shared['payer']}共同承担" if shared else ""
+                logs.append(f"对手血契：流血{4*x}{shared_note}，+{x}法力")
+            if "余火印" in relics and choices["余火印"]["use"]:
+                x = choices["余火印"]["x"]
+                heart = next(item for item in self.state.consumables
+                             if item.name == choices["余火印"]["heart_name"] and item.kind == "dragon_heart")
+                heart.current_uses -= x
+                player.current_mana += 2 * x
+                logs.append(f"余火印：消耗{heart.name}耐久{x}，+{2*x}法力")
         if trigger == "battle_start":
-            if "折速法印" in relics:
-                x = min(5, max(1, player.speed_limit // 2))
-                player.current_speed = max(0, player.current_speed - x); player.current_mana += 6 * x
+            choices = ctx.get("relic_choices", {})
+            self.validate_battle_start_relic_choices(choices)
+            if "折速法印" in relics and choices["折速法印"]["use"]:
+                decision = choices["折速法印"]
+                x = decision["x"]
+                self.pay_numeric_cost(
+                    player, "疲惫", x,
+                    cost_share_target_ref=decision.get("cost_share_target_ref", ""))
+                player.current_mana += 6 * x
                 logs.append(f"折速法印：疲惫{x}，+{6*x}法力")
-            if "鲜血契约" in relics:
-                x = min(player.blood_limit // 5, 12)
-                if x > 0:
-                    self._pay_bleed_cost(player, x); player.current_mana += x
-                    logs.append(f"鲜血契约：流血{x}，+{x}法力")
-            # 三相残韵盘：消耗一种残韵，战终获另两种
-            if "三相残韵盘" in relics:
-                held = [t for t, c in self.state.resonance.items() if c > 0]
-                if held:
-                    consume = max(held, key=lambda t: self.state.resonance[t])
-                    self.state.resonance[consume] -= 1; self._sanxiang_consumed = consume
-                    logs.append(f"三相残韵盘：消耗{consume}残韵")
-            # 卖身契：指定第一名朋友/员工为代价替身
-            if "卖身契" in relics:
-                proxies = [e for e in (self.state.friends + self.state.employees) if e.is_alive]
-                if proxies:
-                    self.cost_proxy = proxies[0]
-                    logs.append(f"卖身契：本场代价由{self.cost_proxy.name}承担")
+            if "三相残韵盘" in relics and choices["三相残韵盘"]["use"]:
+                consume = choices["三相残韵盘"]["resonance_type"]
+                self.state.resonance[consume] -= 1
+                self._sanxiang_consumed = consume
+                logs.append(f"三相残韵盘：消耗{consume}残韵")
+            if "猩红果实" in relics and choices["猩红果实"]["use"]:
+                decision = choices["猩红果实"]
+                self.pay_numeric_cost(
+                    player, "流血", 10,
+                    cost_share_target_ref=decision.get("cost_share_target_ref", ""))
+                self.state.event_modifiers["scarlet_fruit_active"] = True
+                logs.append("猩红果实：流血10；战终血限+2")
+            if "苍白之花" in relics and choices["苍白之花"]["use"]:
+                decision = choices["苍白之花"]
+                self.pay_numeric_cost(
+                    player, "疲惫", 5,
+                    cost_share_target_ref=decision.get("cost_share_target_ref", ""))
+                self.state.event_modifiers["pale_flower_active"] = True
+                logs.append("苍白之花：疲惫5；战终精力+1")
+            if "缄默面具" in relics:
+                x = self.state.event_modifiers.get("silent_mask_x", 0)
+                player.current_mana += 20 * x
+                logs.append(f"缄默面具：+{20*x}法力")
+            if "帮派令" in relics:
+                player.add_status(StatusEffect("洗劫", 3, 3, "帮派令"))
+                logs.append("帮派令：获得洗劫3")
+            refs = self._combat_entity_refs()
+            if "负岳索" in relics:
+                target = refs[choices["负岳索"]["target_ref"]]
+                target.add_status(StatusEffect("负岳索", -1, 1, "负岳索"))
+                logs.append(f"负岳索：保护{target.name}首次受伤")
+            if "炉心坠" in relics:
+                heart = next(item for item in self.state.consumables
+                             if item.name == choices["炉心坠"]["heart_name"] and item.kind == "dragon_heart")
+                heart.current_uses += 10; heart.max_uses += 10
+                logs.append(f"炉心坠：{heart.name}耐久+10")
+            if "烙痕钉" in relics:
+                self.state.event_modifiers["brand_nail_target_ref"] = choices["烙痕钉"]["target_ref"]
+                logs.append("烙痕钉：已锁定目标")
+            for ally in self.state.friends + self.state.employees:
+                if ally.is_alive and any(relic.name == "防弹插板" for relic in ally.relics):
+                    ally.gain_shield(15)
+                    logs.append(f"防弹插板：{ally.name}+15格挡")
         if trigger == "battle_end" and "三相残韵盘" in relics and self._sanxiang_consumed:
             others = [t for t in ("转换", "反转", "曲解") if t != self._sanxiang_consumed]
             for t in others:
@@ -1951,10 +2574,7 @@ class CombatEngine:
         # 不再用"on_monster_death"这个从未被调用过的触发点(此前是死代码)。
         return logs
 
-    # ========== 怪物回合（引擎自主驱动） ==========
-    # 成长/控场道纹激活优先级
-    MONSTER_ACTIVATE_PRIORITY = ["活力", "强化", "狂暴", "必中", "蒙蔽", "坏死", "减速", "僵化", "自愈", "庇护", "飞行"]
-
+    # ========== 怪物回合（两阶段显式决策） ==========
     # 怪物已激活的道纹 / 已进化的怪物（均按战斗重置）
     _monster_activated: dict = {}
     _monster_evolved: set = set()  # 进化（原初X）：本场已进化的怪物 id 集合
@@ -1963,7 +2583,6 @@ class CombatEngine:
         """战始重置怪物激活状态与战斗遗物状态"""
         self._monster_activated = {}
         self._monster_evolved = set()  # 进化（原初X）：每场战斗限一次
-        self.cost_proxy = None
         self._sanxiang_consumed = ""
         self._resonance_rewrites = {}
 
@@ -1979,327 +2598,420 @@ class CombatEngine:
             self._resonance_rewrites.pop(id(entity), None)
         return dest
 
-    def _monster_sustain_billing(self, m: Entity, activated: set) -> Optional[str]:
-        """
-        持续型原始道纹的回合计费（已裁定：改计费粒度）：
-        已激活的持续型原始怪物道纹，效果持续期间每个[回始]重新支付异变5X；
-        达阈值触发【崩解】直接命零，回合计费中断。返回崩解时正在计费的道纹名或None。
-        调用时点：怪物回合内的道纹出手激活之前（即计费按上个回合已激活的集合结算，不重复收本场激活当回合）。
-        """
-        for g in list(activated):
-            if g in self.SUSTAIN_MONSTER_DAOWEN and g in m.dao_wen:
-                pay = m.add_mutation(self.YUANCHU_COST_RATE * m.dao_wen[g].x_value)
-                if pay["collapsed"]:
-                    return g
-        return None
-
-    def _monster_activate(self, m: Entity, activated: set):
-        """
-        怪物道纹出手：激活一个未激活的成长/控场道纹，返回道纹名或None。
-        原始怪物道纹以【异变】为代价（道纹归属规则#1）：激活时支付异变5X（X=面板数值）；
-        异变达阈值触发【崩解】直接命零，返回 "崩解:道纹名"，本次激活效果中断。
-        干扰仪：若怪物本回合被【干扰】，则本回合无法发动自身道纹。
-        龙心谷专属（F2）第二梯队：通用层之后，尝试激活本副本的专属道纹。
-        """
-        if m.has_status("干扰"):
-            return None
-        # 残韵改写优先兑现：只改本次结算，不付原道纹代价，不记入 activated
-        pending = self._resonance_rewrites.get(id(m)) or {}
-        for source in list(pending.keys()):
-            if source in m.dao_wen:
-                dest = self.consume_resonance_rewrite(m, source)
-                if dest:
-                    return self._resolve_rewritten_activation(m, source, dest)
-        for g in self.MONSTER_ACTIVATE_PRIORITY:
-            if g in m.dao_wen and g not in activated:
-                if g in self.ORIGINAL_MONSTER_DAOWEN:
-                    pay = m.add_mutation(self.YUANCHU_COST_RATE * m.dao_wen[g].x_value)
-                    if pay["collapsed"]:
-                        return "崩解:" + g
-                activated.add(g)
-                if g == "强化":
-                    m.attack_power += m.dao_wen[g].x_value
-                if g == "必中":
-                    self.grant_bizhong(m, m.dao_wen[g].x_value)
-                if g == "自愈":
-                    xv = m.dao_wen[g].x_value
-                    m.add_status(StatusEffect(name="自愈", remaining_rounds=-1, value=xv, source=m.name))
-                return g
-        # 第二梯队：副本专属（龙心谷 8 件等），按固定优先级
-        region = self.state.current_region
-        exclusive_pool = self.REGION_EXCLUSIVE_DAOWEN.get(region, set())
-        # 与 sim/balance_sim EXCLUSIVE_PRIORITY 同序，确保确定性
-        exclusive_order = ["变形","逆鳞","假钞","赌命","加害","洗劫","逼债","赎金","清算","龙鳞","爆裂","裂变","伤痕","退化","畸变","活血","嫁祸","背负","超频","定型","抵扣","消灾"]
-        for g in exclusive_order:
-            if g in exclusive_pool and g in m.dao_wen and g not in activated:
-                # 赌命需假碎片余额等代价准入（简化：若有假碎片则过，无则跳过）
-                if g == "赌命" and getattr(m, "fake_shards", 0) < m.dao_wen[g].x_value:
-                    continue
-                if g in self.ORIGINAL_MONSTER_DAOWEN:
-                    pay = m.add_mutation(self.YUANCHU_COST_RATE * m.dao_wen[g].x_value)
-                    if pay["collapsed"]:
-                        return "崩解:" + g
-                activated.add(g)
-                # 立即结算专属效果（F2 的 4 件 + 其他专属的通用状态）
-                try:
-                    calc = DaoWenEngine.resolve(g, m.dao_wen[g].x_value, target=m, caster=m)
-                    self._apply_exclusive_for_monster(g, calc, m)
-                except Exception:
-                    # 若 resolve 失败（如缺少目标），仍视为已激活但无效果
-                    m.add_status(StatusEffect(name=g, remaining_rounds=calc.get("duration", -1) if 'calc' in locals() else -1, value=m.dao_wen[g].x_value, source=m.name))
-                return g
-        # 第三梯队：【原初X】借来的道纹（战终前视为持有，发动时照常支付自身代价；怪物不付法力）
-        return self._monster_activate_borrowed(m, activated)
-
-    # 原初借用里对自身生效的道纹；其余默认打向轮回者
-    BORROWED_SELF_TARGET = {
-        "庇护", "再生", "固执", "慈悲", "增殖", "透支", "贯穿", "超频",
-        "变形", "自食", "滑翔", "飞行", "自愈", "狂暴", "必中",
-    }
-
-    def _resolve_rewritten_activation(self, m: Entity, source: str, dest: str) -> str:
-        """残韵改写本次发动：按新道纹原版公式结算，不改持有，不付原道纹代价。"""
-        x = m.dao_wen[source].x_value if source in m.dao_wen else 1
-        target = m if dest in self.BORROWED_SELF_TARGET or dest == "自残" else self.state.player
-        if target is None:
-            target = m
-        try:
-            calc = DaoWenEngine.resolve(dest, x, target=target, caster=m)
-            if dest == "冲击":
-                player = self.state.player
-                if player is not None and player.is_alive:
-                    dmg = self._apply_hostile_damage(
-                        player, calc.get("aoe_damage", x))
-                    if dmg.get("actual_damage", 0) > 0:
-                        m.damage_dealt_this_round += dmg["actual_damage"]
-            else:
-                self.apply_daowen_effect(dest, calc, m, target)
-        except Exception:
-            return f"改写中断:{source}→{dest}"
-        return f"改写:{source}→{dest}"
-
-    def _monster_activate_borrowed(self, m: Entity, activated: set) -> Optional[str]:
-        """发动尚未激活的原初借用道纹，对轮回者打出真实效果。"""
-        player = self.state.player
-        if player is None or not player.is_alive:
-            return None
-        for name, inst in m.dao_wen.items():
-            if name in activated:
-                continue
-            tags = getattr(inst.dao_wen, "tags", None) or []
-            if "原初借用" not in tags:
-                continue
-            rewritten = self.consume_resonance_rewrite(m, name)
-            if rewritten:
-                return self._resolve_rewritten_activation(m, name, rewritten)
-            activated.add(name)
-            target = m if name in self.BORROWED_SELF_TARGET else player
-            try:
-                calc = DaoWenEngine.resolve(name, inst.x_value, target=target, caster=m)
-                if name == "冲击":
-                    # apply_daowen_effect 的 AOE 扫的是 state.enemies；怪物发动应对准轮回者一侧
-                    dmg = self._apply_hostile_damage(player, calc.get("aoe_damage", inst.x_value))
-                    if dmg.get("actual_damage", 0) > 0:
-                        m.damage_dealt_this_round += dmg["actual_damage"]
-                else:
-                    self.apply_daowen_effect(name, calc, m, target)
-            except Exception:
-                return f"借用中断:{name}"
-            return f"借用:{name}"
-        return None
-
-    def _apply_exclusive_for_monster(self, name: str, calc: dict, caster: Entity):
-        """怪物侧专属道纹的即时结算（F2 + 全量 24 种），与玩家侧 apply_daowen_effect 同语义但简化为状态/计数"""
-        x = calc.get("x", 0)
-        # 通用持续状态已在上层通过 calc duration 处理，此处补计数类
-        if name == "逆鳞":
-            if not hasattr(caster, "_nilin"):
-                caster._nilin = 0
-            caster.add_status(StatusEffect(name="逆鳞", value=x, remaining_rounds=x, source=caster.name))
-            # 逆鳞的流血代价已在 calculate 中声明，但怪物侧流血直接扣生命
-            if calc.get("cost_hp"):
-                caster.take_damage(calc["cost_hp"], "代价")
-                caster._nilin = getattr(caster, "_nilin", 0) + calc["cost_hp"]
-        elif name == "嫁祸":
-            # 嫁祸：自身下X次受伤由目标承担，目标选玩家（无道德底线）或同场最弱同伴
-            from .models import StatusEffect as _SE
-            # 策略：优先玩家（与 sim 的 JIAHUO_POLICY=player_first 一致）
-            target = self.state.player
-            if target and target.is_alive:
-                caster._jiahuo_left = x
-                caster._jiahuo_target = target
-                caster.add_status(_SE(name="嫁祸", value=x, remaining_rounds=x, source=caster.name))
-        elif name == "背负":
-            # 背负：目标下X次受伤由自身承担，目标选同场最濒危同伴
-            candidates = [e for e in self.state.get_all_enemy_side() if e is not caster and e.is_alive]
-            if candidates:
-                tgt = min(candidates, key=lambda e: e.current_hp)
-                caster._beifu_left = x
-                caster._beifu_target = tgt
-                tgt.add_status(StatusEffect(name="被背负", value=x, remaining_rounds=-1, source=caster.name))
-        elif name == "伤痕":
-            # 伤痕由玩家侧已在 apply_daowen_effect 中处理，此处怪物侧若对玩家使用则直接加状态
-            # 怪物对玩家使用时，目标应为玩家
-            player = self.state.player
-            if player:
-                player.add_status(StatusEffect(name="伤痕", value=x, remaining_rounds=-1, source=caster.name))
-        # ---- F2 全量：罪孽/扭曲专属（怪物侧） ----
-        # 假钞X：获得10X假碎片
-        elif name == "假钞":
-            caster.fake_shards = getattr(caster, "fake_shards", 0) + 10 * x
-        # 赌命X：代价X假碎片（激活准入已校验余额）；状态挂怪物侧，[回始]随机结算
-        elif name == "赌命":
-            if getattr(caster, "fake_shards", 0) >= x:
-                caster.fake_shards -= x
-                caster.add_status(StatusEffect(name="赌命", value=x, remaining_rounds=x, source=caster.name))
-        # 消灾X：消耗50X假碎片/5X碎片（与玩家侧付费口径一致），登记全局重投次数
-        elif name == "消灾":
-            fake_cost, real_cost = 50 * x, 5 * x
-            paid = False
-            if getattr(caster, "fake_shards", 0) >= fake_cost:
-                caster.fake_shards -= fake_cost; paid = True
-            elif caster.shards >= real_cost:
-                caster.lose_shards(real_cost); paid = True
-            if paid:
-                self.dice.set_rerolls(self.dice.rerolls_pending + x)
-        # 逼债X：[回始]目标失X碎片否则失2X血限——对玩家挂账
-        elif name == "逼债":
-            player = self.state.player
-            if player and player.is_alive:
-                player._bizhai.append({"x": x, "caster": caster})
-                player.add_status(StatusEffect(name="逼债", value=x, remaining_rounds=-1, source=caster.name))
-        # 清算X：[回始]目标失[你碎片]点格挡——对玩家挂账
-        elif name == "清算":
-            player = self.state.player
-            if player and player.is_alive:
-                player._qingsuan.append({"x": x, "caster": caster})
-                player.add_status(StatusEffect(name="清算", value=x, remaining_rounds=x, source=caster.name))
-        # 抵扣X：封印玩家一件遗物（持续X回合，[回终]递减）
-        elif name == "抵扣":
-            if self.state.player is not None and self.state.relics:
-                self._seal_one_relic(self.state.player, x)
-        # 洗劫X：状态挂怪物侧，造成伤害时夺取等量碎片
-        elif name == "洗劫":
-            caster.add_status(StatusEffect(name="洗劫", value=x, remaining_rounds=x, source=caster.name))
-        # 爆裂X：状态挂怪物侧，受到伤害前反噬攻击者
-        elif name == "爆裂":
-            caster.add_status(StatusEffect(name="爆裂", value=x, remaining_rounds=x, source=caster.name))
-        # 退化X：使玩家每次发动道纹时数值-X（持续∞）
-        elif name == "退化":
-            player = self.state.player
-            if player:
-                player.add_status(StatusEffect(name="退化", value=x, remaining_rounds=-1, source=caster.name))
-        elif name == "加害":
-            player = self.state.player
-            if player and player.is_alive:
-                player.add_status(StatusEffect(name="加害", value=x, remaining_rounds=-1, source=caster.name))
-        elif name == "龙鳞":
-            caster.add_status(StatusEffect(name="龙鳞", value=x, remaining_rounds=-1, source=caster.name))
-        elif name == "定型":
-            player = self.state.player
-            if player and player.is_alive:
-                player.add_status(StatusEffect(name="定型", value=x, remaining_rounds=x, source=caster.name))
-        # 其他专属的通用状态已通过 calc duration 在外层添加，此处无需额外
-
     def _monster_attack_actions(self, m: Entity, activated: set) -> int:
-        """怪物攻击出手数 = 1 + 活力X(若激活) + 狂暴1(若激活)；手雷减攻则-1"""
+        """怪物攻击出手数 = 1 + 活力X(若激活) + 狂暴1(若激活)。
+
+        高爆手雷修改的是每轮攻击中的“攻击次数”，不再同时削减攻击出手数。
+        """
         n = 1
         if "活力" in activated:
             n += m.dao_wen["活力"].x_value
         if "狂暴" in activated:
             n += 1
-        # 高爆手雷：本回合攻击次数-1（每枚手雷叠加）
-        if m.has_status("手雷减攻"):
-            n -= m.get_status_value("手雷减攻")
-        return max(1, n)
+        return max(0, n)
 
-    def _apply_control_to_player(self, name: str, m: Entity, player: Entity):
-        """怪物激活控场道纹后对轮回者施加效果"""
-        x = m.dao_wen[name].x_value
-        if name == "蒙蔽":
-            player.add_status(StatusEffect("蒙蔽", -1, x))
-        elif name == "坏死":
-            player.add_status(StatusEffect("坏死", -1, 0))
-        elif name == "减速":
-            player.current_speed = max(0, player.current_speed // 2)
-        elif name == "僵化":
-            player.attack_power = 1
+    def _combat_entity_refs(self) -> dict[str, Entity]:
+        """为两阶段决策提供本场稳定的显式目标引用，避免同名实体歧义。"""
+        refs: dict[str, Entity] = {}
+        if self.state.player and self.state.player.is_alive:
+            refs["player:0"] = self.state.player
+        for prefix, entities in (
+            ("friend", self.state.friends),
+            ("employee", self.state.employees),
+            ("temp_friend", self.state.temp_friends),
+            ("enemy", self.state.enemies),
+        ):
+            for i, entity in enumerate(entities):
+                if not entity.is_alive or entity.has_retreated:
+                    continue
+                if prefix == "employee" and not entity.is_deployed:
+                    continue
+                refs[f"{prefix}:{i}"] = entity
+        return refs
 
-    def run_monster_phase(self, dodge_policy: str = "auto") -> list:
-        """
-        运行所有存活怪物的回合：道纹出手(激活成长/控场道纹) + 攻击出手(一轮攻击×攻击出手数)。
-        玩家闪避按policy：auto=单次伤害>当前格挡且有速度则闪避。
-        第1回合(白板)不激活道纹。返回每只怪的出手结果。
-        """
-        player = self.state.player
-        results = []
-        if not player or not player.is_alive:
-            return results
-        # 敌方持有的爆裂：玩家回合刚结束 = 它们的[敌回终]
-        results.extend(self._tick_baolie(self.state.get_all_enemy_side()))
+    def _daowen_requires_target(self, name: str) -> bool:
+        import inspect
+        DaoWenEngine.register_all()
+        func = DaoWenEngine._registry.get(name)
+        return bool(func and "target" in inspect.signature(func).parameters)
+
+    def prepare_monster_phase(self) -> dict:
+        """只枚举合法选择，不决定道纹、目标或闪避，也不改变战斗数值。"""
+        refs = self._combat_entity_refs()
+        player_refs = [
+            {"ref": ref, "name": e.name}
+            for ref, e in refs.items()
+            if self.state.on_player_side(e)
+        ]
+        all_targets = [{"ref": ref, "name": e.name} for ref, e in refs.items()]
         whiteboard = self.state.current_round <= 1
-        for m in self.state.get_all_enemy_side():
-            if not self.can_act(m):
-                why = "缓慢" if m.has_status("缓慢") else "眩晕/束缚"
-                results.append({"monster": m.name, "skipped": why})
+        actors = []
+        skipped = []
+        for index, monster in enumerate(self.state.enemies):
+            if not monster.is_alive or monster.removed_without_kill:
                 continue
-            # 龙息：对方持有则本侧行动前受伤（死斗两边各一份）
-            breath = self.apply_opposing_longxi(m)
+            actor_ref = f"enemy:{index}"
+            if not self.can_act(monster):
+                skipped.append({"actor_ref": actor_ref, "monster": monster.name, "reason": "无法行动"})
+                continue
+            activated = self._monster_activated.get(id(monster), set())
+            daowen_options = []
+            if not whiteboard and not monster.has_status("干扰"):
+                for name, inst in monster.dao_wen.items():
+                    if name in activated or not inst.can_use() or name not in DaoWenEngine.list_all():
+                        continue
+                    if name == "赌命" and getattr(monster, "fake_shards", 0) < inst.x_value:
+                        continue
+                    if (name == "消灾" and monster.fake_shards < 50 * inst.x_value
+                            and monster.shards < 5 * inst.x_value):
+                        continue
+                    rewritten_as = (self._resonance_rewrites.get(id(monster)) or {}).get(name)
+                    effective_name = rewritten_as or name
+                    requires_target = self._daowen_requires_target(effective_name)
+                    legal_targets = ([target for target in all_targets
+                                      if self.is_targetable(monster, refs[target["ref"]])]
+                                     if requires_target else [])
+                    if "龙威" in self.state.dragon_traits and self.state.player and self.state.player.is_alive:
+                        legal_targets = [target for target in legal_targets
+                                         if (not self.state.on_player_side(refs[target["ref"]])
+                                             or target["ref"] == "player:0")]
+                    if requires_target and not legal_targets:
+                        continue
+                    daowen_options.append({
+                        "name": name,
+                        "resolves_as": effective_name,
+                        "x": inst.x_value,
+                        "requires_target": requires_target,
+                        "target_options": legal_targets,
+                        "dodge_submission": ("per_target" if effective_name == "冲击"
+                                             else ("single_if_hostile" if requires_target else "none")),
+                        "dodge_target_options": player_refs if effective_name == "冲击" else [],
+                        "trigger_spell_options": self.prepare_daowen_trigger_spells(monster),
+                    })
+            attack_targets = [
+                target for target in player_refs
+                if self.is_targetable(monster, refs[target["ref"]])
+            ]
+            # 【龙威】是规则约束而非策略默认：敌方只能把持有者列为合法攻击目标。
+            if "龙威" in self.state.dragon_traits and self.state.player and self.state.player.is_alive:
+                attack_targets = [target for target in attack_targets if target["ref"] == "player:0"]
+            for target_option in attack_targets:
+                entity = refs[target_option["ref"]]
+                blood_pact_options = self.blood_shadow_cost_share_options(entity)
+                target_option["can_blood_shadow"] = (
+                    self.state.side_has(entity, "血影")
+                    and (entity.current_hp > 10 or bool(blood_pact_options)))
+                target_option["blood_shadow_cost_share_target_options"] = blood_pact_options
+                target_option["spell_options"] = self.prepare_spell_reactions(entity, monster)
+                target_option["dodge_relic_target_options"] = [
+                    candidate for candidate in all_targets
+                    if self.state.on_player_side(refs[candidate["ref"]]) != self.state.on_player_side(entity)
+                ] if self.state.side_has(entity, "回锋刀") else []
+            actors.append({
+                "actor_ref": actor_ref,
+                "monster": monster.name,
+                "daowen_required": bool(daowen_options),
+                "daowen_options": daowen_options,
+                "attack_target_options": attack_targets,
+                "base_attack_actions": self._monster_attack_actions(monster, activated),
+                "base_hits_per_attack": max(0, monster.attack_count - monster.get_status_value("手雷减攻")),
+                "dodge_must_be_explicit": True,
+            })
+        return {"round": self.state.current_round, "actors": actors, "skipped": skipped}
+
+    def _resolve_monster_daowen_choice(
+        self, monster: Entity, choice: dict, refs: dict[str, Entity], activated: set,
+        prepared_option: dict,
+    ) -> dict:
+        name = choice.get("name", "")
+        inst = monster.dao_wen.get(name)
+        if inst is None or name in activated or not inst.can_use():
+            raise ValueError(f"{monster.name}不能发动道纹【{name}】")
+        if name not in DaoWenEngine.list_all():
+            raise ValueError(f"未知道纹【{name}】")
+        rewritten_as = (self._resonance_rewrites.get(id(monster)) or {}).get(name)
+        effective_name = rewritten_as or name
+        requires_target = self._daowen_requires_target(effective_name)
+        target_ref = choice.get("target_ref", "")
+        if requires_target:
+            target = refs.get(target_ref)
+            if target is None:
+                raise ValueError(f"道纹【{effective_name}】必须提交合法target_ref")
+            if target is not monster and not self.is_targetable(monster, target):
+                raise ValueError(f"目标{target.name}当前不可被{monster.name}选中")
+        else:
+            if target_ref:
+                raise ValueError(f"道纹【{effective_name}】不接受target_ref")
+            target = monster
+
+        # 先完成完整闪避提交的静态校验，再支付任何代价或改变激活状态。
+        calc = DaoWenEngine.resolve(effective_name, inst.x_value, target=target, caster=monster)
+        hostile = self.state.on_player_side(target) != self.state.on_player_side(monster)
+        dodge = choice.get("dodge")
+        blood_shadow = choice.get("blood_shadow", False)
+        aoe_dodge_choices: list[tuple[Entity, bool, dict]] = []
+        must_hit_preview = self.bizhong_remaining(monster) > 0
+        if effective_name == "冲击":
+            submitted_dodges = choice.get("dodge_targets")
+            if not isinstance(submitted_dodges, list):
+                raise ValueError("道纹【冲击】必须为全部敌对目标显式提交dodge_targets")
+            expected_ref_list = [
+                target.get("ref") for target in prepared_option.get("dodge_target_options", [])
+            ]
+            if (any(not isinstance(ref, str) for ref in expected_ref_list)
+                    or len(expected_ref_list) != len(set(expected_ref_list))):
+                raise ValueError("prepare返回的冲击闪避目标快照无效")
+            expected_refs = set(expected_ref_list)
+            received: dict[str, dict] = {}
+            for entry in submitted_dodges:
+                if (not isinstance(entry, dict) or not isinstance(entry.get("dodge"), bool)
+                        or not isinstance(entry.get("blood_shadow"), bool)
+                        or not isinstance(entry.get("target_ref"), str)
+                        or entry["dodge"] and entry["blood_shadow"]):
+                    raise ValueError("dodge_targets每项必须包含target_ref与布尔值dodge/blood_shadow")
+                ref = entry["target_ref"]
+                if ref in received:
+                    raise ValueError(f"重复提交闪避目标: {ref}")
+                received[ref] = entry
+            if set(received) != expected_refs:
+                raise ValueError(f"冲击必须覆盖全部敌对目标；需要{sorted(expected_refs)}")
+            for ref in expected_ref_list:
+                entity = refs.get(ref)
+                if entity is None or not self.state.on_player_side(entity):
+                    raise ValueError("prepare中的冲击目标已失效，请重新prepare_monster_phase")
+                entry = received[ref]
+                want_dodge = entry["dodge"]
+                if want_dodge and not must_hit_preview and entity.current_speed < 1:
+                    raise ValueError(f"{entity.name}速度不足，不能选择闪避")
+                if entry["blood_shadow"] and (must_hit_preview or not self.state.side_has(entity, "血影")
+                                                or entity.current_hp <= 10):
+                    raise ValueError(f"{entity.name}不能使用血影")
+                if want_dodge and not must_hit_preview and self.state.side_has(entity, "回锋刀"):
+                    allowed = {target["ref"] for target in prepared_option["target_options"]
+                               if not self.state.on_player_side(refs[target["ref"]])}
+                    if entry.get("dodge_relic_target_ref") not in allowed:
+                        raise ValueError("回锋刀触发必须显式提交合法目标")
+                aoe_dodge_choices.append((entity, want_dodge, entry))
+            if dodge not in (None, False):
+                raise ValueError("冲击使用dodge_targets，不接受dodge=true")
+        elif requires_target and hostile:
+            if not isinstance(dodge, bool) or not isinstance(blood_shadow, bool):
+                raise ValueError(f"道纹【{effective_name}】必须显式提交布尔值dodge/blood_shadow")
+            if dodge and blood_shadow:
+                raise ValueError("不能同时闪避并使用血影")
+            if dodge and not must_hit_preview and target.current_speed < 1:
+                raise ValueError(f"{target.name}速度不足，不能选择闪避")
+            if blood_shadow and (must_hit_preview or not self.state.side_has(target, "血影")
+                                 or target.current_hp <= 10):
+                raise ValueError(f"{target.name}不能使用血影")
+            if dodge and not must_hit_preview and self.state.side_has(target, "回锋刀"):
+                allowed = {entry["ref"] for entry in prepared_option["target_options"]
+                           if self.state.on_player_side(refs[entry["ref"]]) != self.state.on_player_side(target)}
+                if choice.get("dodge_relic_target_ref") not in allowed:
+                    raise ValueError("回锋刀触发必须显式提交合法目标")
+            if choice.get("dodge_targets") not in (None, []):
+                raise ValueError(f"道纹【{effective_name}】不接受dodge_targets")
+        else:
+            if (dodge not in (None, False) or blood_shadow not in (None, False)
+                    or choice.get("dodge_targets") not in (None, [])):
+                raise ValueError(f"道纹【{effective_name}】当前结算不接受闪避提交")
+
+        trigger_choices = choice.get("trigger_spell_choices", {})
+        self.validate_daowen_trigger_spells(monster, trigger_choices, refs)
+        trigger_logs = self.resolve_daowen_trigger_spells(monster, trigger_choices, refs)
+        if not monster.is_alive:
+            return {"monster": monster.name, "daowen_activated": name,
+                    "interrupted_by_spell": True, "trigger_spell_logs": trigger_logs}
+
+        # 残韵改写只替换本次结算：不支付源道纹代价，也不将源道纹记为已激活。
+        if rewritten_as:
+            consumed = self.consume_resonance_rewrite(monster, name)
+            if consumed != rewritten_as:
+                raise ValueError("残韵改写已变化，请重新prepare_monster_phase")
+        # 原始怪物道纹发动时支付异变5X；选择导致崩解仍是合法结算，效果中断。
+        elif name in self.ORIGINAL_MONSTER_DAOWEN:
+            paid = monster.add_mutation(self.YUANCHU_COST_RATE * inst.x_value)
+            if paid["collapsed"]:
+                return {"monster": monster.name, "collapsed": name,
+                        "note": "支付异变后触发【崩解】，道纹效果中断"}
+        elif name == "赌命":
+            if monster.fake_shards < inst.x_value:
+                raise ValueError(f"{monster.name}假碎片不足，不能发动【赌命】")
+            monster.fake_shards -= inst.x_value
+        elif name == "消灾":
+            fake_cost, real_cost = 50 * inst.x_value, 5 * inst.x_value
+            if monster.fake_shards >= fake_cost:
+                monster.fake_shards -= fake_cost
+            elif monster.shards >= real_cost:
+                monster.shards -= real_cost
+            else:
+                raise ValueError(f"{monster.name}碎片不足，不能发动【消灾】")
+
+        if not rewritten_as:
+            activated.add(name)
+        monster.actions_used_this_round += 1
+
+        aoe_targets_override = None
+        if effective_name == "冲击":
+            if must_hit_preview:
+                self.consume_bizhong(monster)
+                aoe_targets_override = [entity for entity, _, _ in aoe_dodge_choices]
+            else:
+                aoe_targets_override = []
+                for entity, want_dodge, entry in aoe_dodge_choices:
+                    if entry["blood_shadow"]:
+                        self.pay_numeric_cost(
+                            entity, "流血", 10,
+                            cost_share_target_ref=entry.get("cost_share_target_ref", ""))
+                    elif want_dodge:
+                        entity.current_speed -= 1
+                        self._note_dodge(entity, entry.get("dodge_relic_target_ref"))
+                    else:
+                        aoe_targets_override.append(entity)
+        elif requires_target and hostile:
+            if must_hit_preview:
+                self.consume_bizhong(monster)
+            elif blood_shadow:
+                self.pay_numeric_cost(
+                    target, "流血", 10,
+                    cost_share_target_ref=choice.get("cost_share_target_ref", ""))
+                return {"monster": monster.name, "daowen_activated": name,
+                        "resolves_as": effective_name, "target": target.name, "blood_shadow": True,
+                        "trigger_spell_logs": trigger_logs}
+            elif dodge:
+                target.current_speed -= 1
+                self._note_dodge(target, choice.get("dodge_relic_target_ref"))
+                return {"monster": monster.name, "daowen_activated": name,
+                        "resolves_as": effective_name, "target": target.name, "dodged": True,
+                        "trigger_spell_logs": trigger_logs}
+
+        execution = self.apply_daowen_effect(
+            effective_name, calc, monster, target,
+            aoe_targets_override=aoe_targets_override,
+        )
+        return {"monster": monster.name, "daowen_activated": name,
+                "resolves_as": effective_name, "resonance_rewrite": bool(rewritten_as),
+                "target": target.name, "execution": execution,
+                "trigger_spell_logs": trigger_logs}
+
+    def resolve_monster_phase(self, choices: list[dict], prepared: dict) -> list[dict]:
+        """严格按传入的prepare快照验证并结算；任何非法输入由API事务整体回滚。"""
+        if not isinstance(choices, list):
+            raise ValueError("choices必须是列表")
+        if not isinstance(prepared, dict) or not isinstance(prepared.get("actors"), list):
+            raise ValueError("prepared必须是prepare_monster_phase返回的合法快照")
+        expected = {actor["actor_ref"]: actor for actor in prepared["actors"]}
+        submitted: dict[str, dict] = {}
+        for choice in choices:
+            if not isinstance(choice, dict):
+                raise ValueError("每个怪物选择必须是对象")
+            ref = choice.get("actor_ref", "")
+            if ref in submitted:
+                raise ValueError(f"重复提交怪物选择: {ref}")
+            submitted[ref] = choice
+        if set(submitted) != set(expected):
+            raise ValueError(f"必须为全部可行动怪物各提交一次选择；需要{sorted(expected)}，收到{sorted(submitted)}")
+
+        refs = self._combat_entity_refs()
+        results: list[dict] = []
+        results.extend(self._tick_baolie(self.state.get_all_enemy_side()))
+        results.extend(prepared["skipped"])
+        for actor_ref in expected:
+            monster = refs.get(actor_ref)
+            if monster is None or not monster.is_alive:
+                continue
+            choice = submitted[actor_ref]
+            breath = self.apply_opposing_longxi(monster)
             if breath:
-                results.append({"monster": m.name, "dragon_breath": breath.get("dragon_breath"), **breath})
-                if not m.is_alive:
+                results.append({"monster": monster.name, **breath})
+                if not monster.is_alive:
                     continue
-            act = self._monster_activated.setdefault(id(m), set())
-            # 持续型原始道纹回合计费（道纹出手激活之前）
-            if not whiteboard:
-                cg = self._monster_sustain_billing(m, act)
-                if cg is not None:
-                    results.append({"monster": m.name, "collapsed": cg,
-                                    "note": f"持续型道纹【{cg}】回合计费后异变达{m.mutation_count}层，触发【崩解】直接命零"})
+            activated = self._monster_activated.setdefault(id(monster), set())
+
+            dao_choice = choice.get("daowen")
+            options = {o["name"] for o in expected[actor_ref]["daowen_options"]}
+            if options and not isinstance(dao_choice, dict):
+                raise ValueError(f"{monster.name}必须从合法选项中提交一个daowen对象")
+            if not options and dao_choice is not None:
+                raise ValueError(f"{monster.name}本次没有合法道纹选项，daowen必须为null")
+            if isinstance(dao_choice, dict):
+                if dao_choice.get("name") not in options:
+                    raise ValueError(f"{monster.name}提交的道纹不在prepare合法选项中")
+                prepared_option = next(
+                    option for option in expected[actor_ref]["daowen_options"]
+                    if option["name"] == dao_choice["name"]
+                )
+                if (prepared_option["requires_target"]
+                        and dao_choice.get("target_ref") not in {
+                            target["ref"] for target in prepared_option["target_options"]
+                        }):
+                    raise ValueError(f"{monster.name}提交的道纹目标不在prepare合法选项中")
+                dao_result = self._resolve_monster_daowen_choice(
+                    monster, dao_choice, refs, activated, prepared_option,
+                )
+                results.append(dao_result)
+                if not monster.is_alive:
                     continue
-            # 道纹出手（白板第1回合不激活）
-            if not whiteboard:
-                an = self._monster_activate(m, act)
-                if an and an.startswith("崩解:"):
-                    results.append({"monster": m.name, "collapsed": an[3:],
-                                    "note": f"支付异变后达{m.mutation_count}层，触发【崩解】直接命零，激活效果中断"})
-                    continue
-                if an:
-                    # 道纹出手计入本回合出手数（供【凡庸】判定）
-                    m.actions_used_this_round += 1
-                    if an in ("蒙蔽", "坏死", "减速", "僵化"):
-                        self._apply_control_to_player(an, m, player)
-                    entry = {"monster": m.name, "daowen_activated": an}
-                    if isinstance(an, str) and an.startswith("改写:"):
-                        entry["resonance_rewrite"] = True
-                    elif isinstance(an, str) and an.startswith("借用:"):
-                        entry["borrowed"] = True
-                    results.append(entry)
-            # 攻击出手
-            n = self._monster_attack_actions(m, act)
-            for _ in range(n):
-                if not player.is_alive:
-                    break
-                # 每个攻击出手计入本回合出手数（供【凡庸】判定）
-                m.actions_used_this_round += 1
-                # 物品索引：高爆手雷「本回合攻击次数-1」。不改 attack_count 面板，避免误触雕塑。
-                hits = max(0, m.attack_count - m.get_status_value("手雷减攻"))
-                for _h in range(hits):
-                    if not player.is_alive or not m.is_alive:
+
+            attack_actions = choice.get("attack_actions")
+            expected_actions = self._monster_attack_actions(monster, activated)
+            if not isinstance(attack_actions, list) or len(attack_actions) != expected_actions:
+                raise ValueError(f"{monster.name}必须提交{expected_actions}个attack_actions")
+            hits_per_action = max(0, monster.attack_count - monster.get_status_value("手雷减攻"))
+            for action_index, attack_action in enumerate(attack_actions):
+                if not isinstance(attack_action, dict) or not isinstance(attack_action.get("hits"), list):
+                    raise ValueError("每个attack_action必须包含hits列表")
+                hits = attack_action["hits"]
+                if len(hits) != hits_per_action:
+                    raise ValueError(f"{monster.name}每个攻击出手必须提交{hits_per_action}次命中选择")
+                monster.actions_used_this_round += 1
+                legal_attack_options = {
+                    target["ref"]: target for target in expected[actor_ref]["attack_target_options"]
+                }
+                for hit_index, hit in enumerate(hits):
+                    if (not isinstance(hit, dict) or not isinstance(hit.get("dodge"), bool)
+                            or not isinstance(hit.get("blood_shadow"), bool)):
+                        raise ValueError("每次攻击必须显式提交target_ref、dodge与blood_shadow")
+                    if hit["dodge"] and hit["blood_shadow"]:
+                        raise ValueError("同一次判定不能同时闪避并使用血影")
+                    if hit.get("target_ref") not in legal_attack_options:
+                        raise ValueError("怪物攻击目标不在prepare合法选项中")
+                    target = refs.get(hit.get("target_ref", ""))
+                    if target is None or not self.state.on_player_side(target):
+                        raise ValueError("怪物攻击target_ref必须是prepare列出的己方目标")
+                    if not self.is_targetable(monster, target):
+                        raise ValueError(f"{target.name}当前不可被{monster.name}选中")
+                    if not target.is_alive:
+                        results.append({"attacker": monster.name, "target": target.name,
+                                        "skipped": "预选目标已命零", "hit_index": hit_index + 1})
+                        continue
+                    must_hit = self.bizhong_remaining(monster) > 0
+                    if hit["dodge"] and not must_hit and target.current_speed < 1:
+                        raise ValueError(f"{target.name}速度不足，不能选择闪避")
+                    option = legal_attack_options[hit["target_ref"]]
+                    if hit["blood_shadow"] and not option.get("can_blood_shadow"):
+                        raise ValueError(f"{target.name}不能使用血影")
+                    if hit["dodge"] and not must_hit and self.state.side_has(target, "回锋刀"):
+                        allowed = {entry["ref"] for entry in option["dodge_relic_target_options"]}
+                        if hit.get("dodge_relic_target_ref") not in allowed:
+                            raise ValueError("回锋刀触发必须显式提交合法目标")
+                    self.validate_spell_reaction_submission(
+                        target, monster, hit.get("spell_choices"), refs,
+                    )
+                    attack_target = monster if monster.has_status("无神") else target
+                    resolved = self.resolve_attack(
+                        monster, attack_target, dodge=hit["dodge"], blood_shadow=hit["blood_shadow"],
+                        spell_choices=hit.get("spell_choices"), entity_refs=refs,
+                        dodge_relic_target_ref=hit.get("dodge_relic_target_ref"),
+                        cost_share_target_ref=hit.get("cost_share_target_ref", ""),
+                    )
+                    resolved.update({"hit_index": hit_index + 1, "hit_total": hits_per_action,
+                                     "attack_action_index": action_index + 1})
+                    results.append(resolved)
+                    if not monster.is_alive:
                         break
-                    # 必中只覆盖剩余次数；余数在 resolve_attack 里消耗
-                    must = self.bizhong_remaining(m) > 0
-                    atk_target = m if m.has_status("无神") else player
-                    dodge = (dodge_policy == "auto" and not must
-                             and atk_target.current_speed > 0 and m.attack_power > atk_target.shield
-                             and atk_target is not m)
-                    _r = self.resolve_attack(m, atk_target, is_must_hit=False, dodge=dodge)
-                    # 标记"一轮攻击内的第几击"：一次攻击出手包含 attack_count 次攻击，
-                    # 每次独立判定闪避(README:204)，但它们同属一个出手，不应各占一个出手号。
-                    _r["hit_index"] = _h + 1
-                    _r["hit_total"] = hits
-                    _r["new_action"] = (_h == 0)
-                    results.append(_r)
+                if not monster.is_alive:
+                    break
         return results
 
     def buyaicai_escape_cost(self, monster: Entity) -> dict:
@@ -2324,7 +3036,9 @@ class CombatEngine:
         if not foe_has:
             return None
         dmg = 10 * max(1, self.state.current_round)
-        detail = actor.take_damage(dmg)
+        source = (self.state.player if self.state.on_enemy_side(actor)
+                  else next((e for e in self.state.enemies if e.entity_type == "轮回者"), None))
+        detail = self._apply_hostile_damage(actor, dmg, "必中", source)
         detail["dragon_breath"] = dmg
         return detail
 

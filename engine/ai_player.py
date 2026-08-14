@@ -172,18 +172,21 @@ SYSTEM_PROMPT = """你是第四宇宙游戏的AI玩家。你的任务是根据�
 - 优先使用能改变局势的道纹，不要无脑输出
 
 可选的action_type包括：
-- setup_attributes: 开局分配属性（params: name, blood_points, speed_points, mana_points，总和必须25）
-- setup_choose_daowen: 选择初始道纹（params: daowen，可选"杀伐"或"锐利"）
+- setup_attributes: 开局分配属性（params: name, blood_points, speed_points, mana_points，总和必须25；成功后自动获得初始道纹"杀伐"）
 - setup_choose_resonance: 选择残韵（params: resonance_type，可选"转换"/"反转"/"曲解"）
-- setup_choose_region: 选择副本（params: region，可选"罪孽都市"/"扭曲都市"/"龙心谷"）
+- setup_choose_region: 选择副本（params: region，可选"罪孽都市"/"扭曲都市"/"龙心谷"），返回3件开局遗物候选
+- choose_discovered_relic: 从当前遗物发现候选中显式选1件（params: relic_name）
+- choose_discovered_item: 从当前消耗品发现候选中显式选1件（params: item_name）
 - pre_battle_action: 局外行动（params: sub_action + tier等）
 - use_daowen: 发动道纹（params: daowen_name, x, target）
-- attack: 普通攻击（params: target_selections）
+- prepare_attack: 准备一轮攻击并取得逐击合法目标、闪避、血影与法术反应选项
+- resolve_attack: 携带prepare返回的一次性token，逐击显式提交完整选择后原子结算；禁止使用旧attack/dodge_decision
 - declare_evolution: 怪物进化·发动原初X（params: monster, daowen, x；仅当可用行动中出现evolution项且available=true时可对其中列出的困境怪物使用，x不得超过max_x_by_mutation，否则触发崩解自杀）
-- monster_phase: 怪物回合
+- prepare_monster_phase: 只获取本次怪物阶段的合法道纹、目标、攻击与闪避选项
+- resolve_monster_phase: 携带prepare返回的一次性token，为全部可行动怪物提交完整选择后统一结算；禁止使用旧monster_phase
 - round_start: 回始
 - round_end: 回终
-- battle_start: 战始
+- battle_start: 战始（持有可选战始遗物时，params.relic_choices必须逐件显式提交use及所需X/目标/残韵）
 - battle_end: 战终"""
 
 def _build_user_prompt(state: dict, available_actions: dict, context: str) -> str:
@@ -394,19 +397,75 @@ class PlaceholderBackend(AIBackend):
             }, "默认修行获取属性点")
         
         elif phase == "in_combat":
+            pending_type = available_actions.get("action_type")
+            if pending_type == "resolve_attack":
+                options = available_actions.get("target_options", [])
+                target = options[0] if options else None
+                hits = [] if target is None else [{
+                    "target_ref": target["ref"], "dodge": False, "blood_shadow": False,
+                    "spell_choices": {timing: {spell["spell_name"]: {"use": False}
+                                               for spell in target.get("spell_options", {}).get(timing, [])}
+                                      for timing in ("before", "after")},
+                } for _ in range(available_actions.get("hit_count", 0))]
+                return AIDecision("resolve_attack", {"token": available_actions["token"], "hits": hits},
+                                  "提交完整攻击选择")
+            if pending_type == "resolve_monster_phase":
+                choices = []
+                for actor in available_actions.get("actors", []):
+                    dao = None
+                    action_count = actor["base_attack_actions"]
+                    hit_count = actor["base_hits_per_attack"]
+                    if actor["daowen_options"]:
+                        option = actor["daowen_options"][0]
+                        dao = {"name": option["name"], "dodge": False, "blood_shadow": False,
+                               "trigger_spell_choices": {
+                                   holder: {spell["spell_name"]: {"use": False} for spell in spells}
+                                   for holder, spells in option.get("trigger_spell_options", {}).items()}}
+                        if option["requires_target"]: dao["target_ref"] = option["target_options"][0]["ref"]
+                        if option["dodge_submission"] == "per_target":
+                            dao["dodge_targets"] = [{"target_ref": t["ref"], "dodge": False,
+                                                     "blood_shadow": False}
+                                                    for t in option["dodge_target_options"]]
+                        if option["resolves_as"] == "活力": action_count += option["x"]
+                        if option["resolves_as"] == "狂暴": action_count += 1
+                    target = actor["attack_target_options"][0]
+                    spell_choices = {timing: {spell["spell_name"]: {"use": False}
+                                               for spell in target.get("spell_options", {}).get(timing, [])}
+                                     for timing in ("before", "after")}
+                    attacks = [{"hits": [{"target_ref": target["ref"], "dodge": False,
+                                            "blood_shadow": False, "spell_choices": spell_choices}
+                                           for _ in range(hit_count)]} for _ in range(action_count)]
+                    choices.append({"actor_ref": actor["actor_ref"], "daowen": dao,
+                                    "attack_actions": attacks})
+                return AIDecision("resolve_monster_phase",
+                                  {"token": available_actions["token"], "choices": choices},
+                                  "提交完整怪物阶段选择")
             actions = available_actions.get("actions", [])
-            for a in actions:
-                if a.get("type") == "daowen" and a.get("available", True):
-                    return AIDecision("use_daowen", {
-                        "daowen_name": a["id"],
-                        "x": min(5, a.get("max_x", 1)),
-                        "target": state.get("state", {}).get("enemies", [{}])[0].get("name", "")
-                    }, "使用道纹")
-            
-            return AIDecision("attack", {
-                "target_selections": [0]
-            }, "普通攻击")
-        
+            for action in actions:
+                action_type = action.get("action_type")
+                if action_type in ("round_start", "round_end", "prepare_monster_phase"):
+                    round_params = {}
+                    if action_type == "round_start":
+                        schema = action.get("params_schema", {}).get("relic_choices", {})
+                        choices = {name: {"use": False} for name in schema if name != "_instruction"}
+                        round_params = {"relic_choices": choices}
+                    return AIDecision(action_type, round_params,
+                                      "推进合法战斗子阶段")
+                if action_type == "use_daowen" and action.get("available", True):
+                    schema = action["params_schema"]
+                    enemies = [target for target in schema.get("target_ref", [])
+                               if str(target.get("ref", "")).startswith("enemy:")]
+                    params = {"daowen_name": schema["daowen_name"],
+                              "x": max(1, min(5, schema["x"]["maximum"])),
+                              "dodge": False, "blood_shadow": False,
+                              "trigger_spell_choices": {}}
+                    if enemies: params["target_ref"] = enemies[0]["ref"]
+                    return AIDecision("use_daowen", params, "使用合法道纹选项")
+                if action_type == "prepare_attack":
+                    actor_schema = action["params_schema"]["actor_ref"]
+                    actor_ref = actor_schema[0]["ref"] if isinstance(actor_schema, list) else actor_schema
+                    return AIDecision("prepare_attack", {"actor_ref": actor_ref}, "准备攻击")
+
         return AIDecision("noop", {}, "无可用行动")
 
 

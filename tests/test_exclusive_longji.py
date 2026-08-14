@@ -4,7 +4,12 @@ F2 验证：龙心谷专属 4 件（逆鳞/嫁祸/背负/伤痕）的 combat 侧
 - 边界：持续到期清空、次数耗尽、死亡目标等
 - 错误：非法目标/非法发动应被拒绝
 """
+import os
+import sys
 import pytest
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from engine.api import GameEngine
 from engine.models import Entity, DaoWen, DaoWenInstance, StatusEffect, Consumable
 from engine.monsters import make_monster_entity
@@ -15,8 +20,8 @@ from engine.models import GameState
 def _setup_player_with_daowen(names):
     engine = GameEngine(rng_seed=42)
     engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 7, "mana_points": 8})
-    engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
-    engine.execute_action("setup_choose_region", {"region": "龙心谷"})
+    engine.state.current_region = "龙心谷"
+    engine.state.phase = "in_combat"
     # 直接赋予测试用道纹（绕过学习门禁，仅用于单测）
     for n in names:
         engine.state.player.dao_wen[n] = DaoWenInstance(DaoWen(name=n, formula="", cost_type="消耗", cost_formula="X", effect_formula=""))
@@ -170,21 +175,28 @@ def test_monster_activates_exclusive():
     """怪物侧编排：龙心谷怪可激活逆鳞等专属"""
     engine = GameEngine(rng_seed=1)
     engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 7, "mana_points": 8})
-    engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
-    engine.execute_action("setup_choose_region", {"region": "龙心谷"})
+    engine.state.current_region = "龙心谷"
+    engine.state.phase = "in_combat"
     # 创建带逆鳞的怪
     m = Entity(name="龙鳞怪", entity_type="怪物", blood_limit=60, current_hp=60, attack_count=1, attack_power=5)
     m.dao_wen["逆鳞"] = DaoWenInstance(DaoWen(name="逆鳞", formula="", cost_type="流血", cost_formula="X", effect_formula=""), x_value=2)
     engine.state.enemies = [m]
     engine.state.current_round = 2
-    engine.combat._monster_activated = {id(m): set()}
-    # 激活
-    act = engine.combat._monster_activate(m, engine.combat._monster_activated[id(m)])
-    assert act == "逆鳞"
+    prepared = engine.execute_action("prepare_monster_phase", {})
+    actor = prepared["result"]["actors"][0]
+    assert [o["name"] for o in actor["daowen_options"]] == ["逆鳞"]
+    resolved = engine.execute_action("resolve_monster_phase", {
+        "token": prepared["result"]["token"],
+        "choices": [{"actor_ref": actor["actor_ref"],
+                     "daowen": {"name": "逆鳞", "target_ref": "enemy:0", "dodge": False, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}},
+                     "attack_actions": [{"hits": [{"target_ref": "player:0", "dodge": False, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}}]}]}],
+    })
+    assert resolved["success"]
     assert m.has_status("逆鳞")
-    # 第二次同样怪不应再激活同一道纹
-    act2 = engine.combat._monster_activate(m, engine.combat._monster_activated[id(m)])
-    assert act2 != "逆鳞"
+    engine.execute_action("round_end", {})
+    engine.execute_action("round_start", {})
+    prepared2 = engine.execute_action("prepare_monster_phase", {})
+    assert "逆鳞" not in [o["name"] for o in prepared2["result"]["actors"][0]["daowen_options"]]
 
 def test_custom_extensibility():
     """可自定义：不改引擎代码，仅改配置即可新增专属道纹实例（演示 2 示例）"""

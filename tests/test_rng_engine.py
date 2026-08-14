@@ -139,43 +139,50 @@ def test_dice_engine_negative_seed_type_is_still_deterministic_or_rejected():
 # 而不是仍然residual地调用未经审计的 random.randrange
 # ========================================================================
 
+
+def _choose_region(engine, region, finish_discovery=False):
+    engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
+    result = engine.execute_action("setup_choose_region", {"region": region})
+    if finish_discovery:
+        engine.execute_action("choose_discovered_relic", {
+            "relic_name": result["result"]["relic_choices"][0],
+        })
+    return result
+
+
 def test_setup_choose_region_uses_engine_auto_roll_not_bare_random():
     """集成：开局选择副本后自动发现的初始遗物，必须来自 engine.dice 的可复现随机源"""
     engine = GameEngine(db_path="/tmp/linji_tests/test_rng_1.db", rng_seed=999)
     engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
-    engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
-    r = engine.execute_action("setup_choose_region", {"region": "扭曲都市"})
+    r = _choose_region(engine, "扭曲都市")
 
     assert r["success"] is True
-    assert r["result"]["starter_relic"] is not None
-    # 引擎自身的dice历史里必须能查到这次摇号，且标记为auto，证明真的走了新流程
+    assert len(r["result"]["relic_choices"]) == 3
     history = engine.dice.get_history()
-    assert any(h.get("auto") is True and h.get("context") == "开局发现一件遗物" for h in history), \
-        "开局发现遗物必须经由 DiceEngine.auto_roll 完成，且在历史记录中可追溯"
+    setup_rolls = [h for h in history if h.get("auto") is True
+                   and h["pool_name"].startswith("relic_discovery_开局发现_")]
+    assert len(setup_rolls) == 3, "开局发现必须由DiceEngine不重复随机列出3件候选"
 
 
 def test_setup_choose_region_reproducible_across_two_engines_same_seed():
     """集成 + 可复现性：相同 rng_seed 的两个独立 GameEngine 实例，开局摇到的初始遗物必须完全一致"""
     e1 = GameEngine(db_path="/tmp/linji_tests/test_rng_2a.db", rng_seed=555)
     e1.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
-    e1.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
-    r1 = e1.execute_action("setup_choose_region", {"region": "龙心谷"})
+    r1 = _choose_region(e1, "龙心谷")
 
     e2 = GameEngine(db_path="/tmp/linji_tests/test_rng_2b.db", rng_seed=555)
     e2.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
-    e2.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
-    r2 = e2.execute_action("setup_choose_region", {"region": "龙心谷"})
+    r2 = _choose_region(e2, "龙心谷")
 
-    assert r1["result"]["starter_relic"] == r2["result"]["starter_relic"], \
-        "同种子的两局，开局初始遗物必须一致，这是判断随机数是否真正接入引擎(而非各处裸用未播种random)的关键证据"
+    assert r1["result"]["relic_choices"] == r2["result"]["relic_choices"], \
+        "同种子的两局必须列出完全一致的3件开局候选"
 
 
 def test_explore_action_uses_engine_auto_roll():
     """集成：局外【探索】抽取事件，必须经由 engine.dice.auto_roll，且历史可查"""
     engine = GameEngine(db_path="/tmp/linji_tests/test_rng_3.db", rng_seed=123)
     engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
-    engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
-    engine.execute_action("setup_choose_region", {"region": "罪孽都市"})
+    _choose_region(engine, "罪孽都市", finish_discovery=True)
     engine.state.energy = 3
 
     r = engine.execute_action("pre_battle_action", {"sub_action": "探索"})
@@ -192,18 +199,18 @@ def test_gongming_discover_uses_engine_auto_roll():
     """集成：局外【共鸣】(发现分支)获取遗物，必须经由 engine.dice.auto_roll"""
     engine = GameEngine(db_path="/tmp/linji_tests/test_rng_4.db", rng_seed=321)
     engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
-    engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
-    engine.execute_action("setup_choose_region", {"region": "扭曲都市"})  # 已消耗一件遗物到 state.relics
+    _choose_region(engine, "扭曲都市", finish_discovery=True)
     engine.state.energy = 3
 
     before = len(engine.dice.get_history())
     r = engine.execute_action("pre_battle_action", {"sub_action": "共鸣"})
     assert r["success"] is True
-    assert r["result"]["gained_relic"]
+    assert len(r["result"]["relic_choices"]) == 3
 
     history = engine.dice.get_history()
-    assert len(history) > before
-    assert history[-1]["auto"] is True and history[-1]["pool_name"] == "resonance_relic_pool"
+    assert len(history) == before + 3
+    assert all(h["auto"] is True and h["pool_name"].startswith("relic_discovery_共鸣发现_")
+               for h in history[-3:])
 
 
 if __name__ == "__main__":

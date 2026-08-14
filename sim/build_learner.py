@@ -52,6 +52,11 @@ from engine.gamedata import (REGION_EXCLUSIVE_DAOWEN, ORIGINAL_MONSTER_DAOWEN,
 _ALL_EXCLUSIVE = {d for v in REGION_EXCLUSIVE_DAOWEN.values() for d in v}
 
 
+def _decline_spells(option):
+    return {timing: {spell["spell_name"]: {"use": False}
+                     for spell in option.get("spell_options", {}).get(timing, [])}
+            for timing in ("before", "after")}
+
 def learnable_candidates(region: str = None) -> list:
     """当前副本下可通过局外【学习】直接获得的道纹（不含需残韵转化的）。"""
     out = []
@@ -62,8 +67,8 @@ def learnable_candidates(region: str = None) -> list:
             continue
         out.append(c)
     return out
-# 可作为初始道纹的（README：开局在【杀伐】【锐利】中选一种）
-STARTERS = ["杀伐", "锐利"]
+# 现行开局自动获得【杀伐】，不再选择初始道纹。
+STARTERS = ["杀伐"]
 REGIONS = ["罪孽都市", "扭曲都市", "龙心谷"]
 BUILD_SIZE = 5          # 每套 build 学习的道纹数量
 
@@ -71,6 +76,100 @@ BUILD_SIZE = 5          # 每套 build 学习的道纹数量
 # --------------------------------------------------------------------------
 # 一局轮回
 # --------------------------------------------------------------------------
+
+def _resolve_monster_turn(engine):
+    prepared = engine.execute_action("prepare_monster_phase", {})
+    if not prepared.get("success"):
+        return prepared
+    choices = []
+    for actor in prepared["result"]["actors"]:
+        dao = None
+        action_count = actor["base_attack_actions"]
+        hit_count = actor["base_hits_per_attack"]
+        if actor["daowen_options"]:
+            option = actor["daowen_options"][0]
+            dao = {"name": option["name"], "dodge": False, "blood_shadow": False,
+                   "trigger_spell_choices": {holder: {sp["spell_name"]: {"use": False} for sp in spells}
+                                               for holder, spells in option.get("trigger_spell_options", {}).items()}}
+            if option["requires_target"]:
+                dao["target_ref"] = option["target_options"][0]["ref"]
+            if option["dodge_submission"] == "per_target":
+                dao["dodge_targets"] = [
+                    {"target_ref": target["ref"], "dodge": False, "blood_shadow": False}
+                    for target in option["dodge_target_options"]
+                ]
+            if option["resolves_as"] == "活力":
+                action_count += option["x"]
+            elif option["resolves_as"] == "狂暴":
+                action_count += 1
+            elif option["resolves_as"] == "变形":
+                enemy_index = int(actor["actor_ref"].split(":", 1)[1])
+                hit_count = engine.state.enemies[enemy_index].attack_power
+        target_ref = actor["attack_target_options"][0]["ref"]
+        target_option = next(option for option in actor["attack_target_options"] if option["ref"] == target_ref)
+        attacks = [{"hits": [{"target_ref": target_ref, "dodge": False, "blood_shadow": False,
+                               "spell_choices": _decline_spells(target_option)}
+                              for _ in range(hit_count)]}
+                   for _ in range(action_count)]
+        choices.append({"actor_ref": actor["actor_ref"], "daowen": dao,
+                        "attack_actions": attacks})
+    result = engine.execute_action("resolve_monster_phase", {
+        "token": prepared["result"]["token"], "choices": choices,
+    })
+    if result.get("success"):
+        return result
+
+    # prepare 的首个候选可能在结算时因动态支付能力失效；原子失败后以同一快照
+    # 显式提交“不发动道纹”的合法决策，避免把可继续的模拟误记为引擎异常。
+    fallback = []
+    for actor in prepared["result"]["actors"]:
+        target_ref = actor["attack_target_options"][0]["ref"]
+        target_option = next(option for option in actor["attack_target_options"]
+                             if option["ref"] == target_ref)
+        attacks = [{"hits": [{
+            "target_ref": target_ref, "dodge": False, "blood_shadow": False,
+            "spell_choices": _decline_spells(target_option),
+        } for _ in range(actor["base_hits_per_attack"])]}
+                   for _ in range(actor["base_attack_actions"])]
+        fallback.append({"actor_ref": actor["actor_ref"], "daowen": None,
+                         "attack_actions": attacks})
+    return engine.execute_action("resolve_monster_phase", {
+        "token": prepared["result"]["token"], "choices": fallback,
+    })
+
+
+def _resolve_pending_event(engine):
+    """平衡模拟器显式选择拒绝/离开类选项；不替正式玩家作选择。"""
+    while engine.event_pool.current is not None:
+        name = engine.event_pool.current
+        event = engine.event_pool.events[name]
+        option = next((entry for entry in event["options"]
+                       if any(word in entry["text"] for word in
+                              ("无事发生", "拒绝", "离开", "观棋", "视而不见", "绕桥"))),
+                      event["options"][-1])
+        result = engine.execute_action("resolve_event", {
+            "event": name, "option_id": option["id"], "x": 1,
+            "resonance_type": "转换", "daowen_names": ["杀伐"],
+        })
+        if not result.get("success"):
+            return result
+        if result.get("completed") is False:
+            return {"success": False,
+                    "error": f"事件【{name}】需要DM裁定，平衡模拟器不能代替裁定"}
+        if engine.state.pending_item_choices:
+            chosen = engine.execute_action("choose_discovered_item", {
+                "item_name": engine.state.pending_item_choices[0],
+            })
+            if not chosen.get("success"):
+                return chosen
+        if engine.state.pending_relic_choices:
+            chosen = engine.execute_action("choose_discovered_relic", {
+                "relic_name": engine.state.pending_relic_choices[0],
+            })
+            if not chosen.get("success"):
+                return chosen
+    return {"success": True}
+
 
 def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
          rng: random.Random = None, policy: dict = None, telemetry: dict = None) -> dict:
@@ -88,9 +187,14 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
     e = GameEngine(db_path="/tmp/learner.db", rng_seed=seed)
     e.execute_action("setup_attributes",
                      {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
-    e.execute_action("setup_choose_daowen", {"daowen": starter})
+    if starter != "杀伐":
+        raise ValueError("现行开局只会自动获得杀伐；其他道纹须放入learn")
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
-    e.execute_action("setup_choose_region", {"region": region})
+    setup = e.execute_action("setup_choose_region", {"region": region})
+    optional_relics = {"折速法印", "三相残韵盘"}
+    starter_relic = next((n for n in setup["result"]["relic_choices"] if n not in optional_relics),
+                         setup["result"]["relic_choices"][0])
+    e.execute_action("choose_discovered_relic", {"relic_name": starter_relic})
 
     ai = TacticalAI(e)
     todo = list(learn)
@@ -118,6 +222,23 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                 record("succeeded", act)
                 if act == "学习" and params.get("name") in todo:
                     todo.remove(params["name"])
+                if e.state.pending_relic_choices:
+                    e.execute_action("choose_discovered_relic", {
+                        "relic_name": e.state.pending_relic_choices[0],
+                    })
+                if e.state.pending_item_choices:
+                    e.execute_action("choose_discovered_item", {
+                        "item_name": e.state.pending_item_choices[0],
+                    })
+                for employee_name, choices in list(e.state.pending_daowen_choices.items()):
+                    e.execute_action("choose_hired_daowen", {
+                        "name": employee_name, "daowen": choices[0],
+                    })
+                if e.event_pool.current is not None:
+                    event_result = _resolve_pending_event(e)
+                    if not event_result.get("success"):
+                        return {"cleared": cleared, "won": False, "invalid": True,
+                                "reason": f"event: {event_result.get('error')}"}
             else:
                 record("failed", act, str(r.get("error"))[:60])
                 # 失败必须退还精力，否则会死循环；引擎已退还，这里兜底防死锁
@@ -125,13 +246,24 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                     e.execute_action("pre_battle_action",
                                      {"sub_action": "修行", "tier": 1, "to": "mana"})
 
-        e.execute_action("battle_start")
+        # 共鸣/事件可能在开局后继续获得可选战始遗物；按当前持有列表逐件显式拒绝，
+        # 不能只提交开局遗物，否则模拟会被合法的显式选择门禁判为无效。
+        active_relics = {relic.name for relic in e.state.relics}
+        relic_choices = {
+            name: {"use": False}
+            for name in ("折速法印", "三相残韵盘", "猩红果实", "苍白之花")
+            if name in active_relics
+        }
+        bs = e.execute_action("battle_start", {"relic_choices": relic_choices})
+        if not bs.get("success"):
+            return {"cleared": cleared, "won": False, "invalid": True,
+                    "reason": f"battle_start: {bs.get('error')}"}
         for _ in range(40):
             if not e.state.player or not e.state.player.is_alive:
                 break
             if not [x for x in e.state.enemies if x.is_alive]:
                 break
-            e.execute_action("round_start", {})
+            e.execute_action("round_start", {"relic_choices": ({"血契": {"use": False}} if any(r.name == "血契" for r in e.state.relics) else {})})
             ai.new_round()
             try:
                 ai.take_turn()
@@ -141,14 +273,22 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                         "reason": f"combat: {ex}"}
             if not [x for x in e.state.enemies if x.is_alive]:
                 break
-            mp = e.execute_action("monster_phase", {})
+            mp = _resolve_monster_turn(e)
+            if not mp.get("success"):
+                return {"cleared": cleared, "won": False, "invalid": True,
+                        "reason": f"monster_phase: {mp.get('error')}"}
             if mp["result"].get("player_dead"):
                 break
             e.execute_action("round_end", {})
 
         if not e.state.player or not e.state.player.is_alive:
             return {"cleared": cleared, "won": False, "invalid": False}
-        e.execute_action("battle_end", {})
+        if [x for x in e.state.enemies if x.is_alive]:
+            return {"cleared": cleared, "won": False, "invalid": False}
+        ended = e.execute_action("battle_end", {})
+        if not ended.get("success"):
+            return {"cleared": cleared, "won": False, "invalid": True,
+                    "reason": f"battle_end: {ended.get('error')}"}
         cleared += 1
 
     return {"cleared": cleared, "won": True, "invalid": False}
@@ -171,6 +311,9 @@ def choose_pre_battle(e, todo, battle_no, rng, policy):
     for act, w in policy.items():
         need = REGION_ACTION.get(act)
         if need and e.state.current_region != need:
+            continue
+        if act == "维修" and not any(0 < item.current_uses < item.max_uses
+                                      for item in e.state.consumables):
             continue
         if act == "学习" and not todo:
             continue
@@ -195,11 +338,17 @@ def choose_pre_battle(e, todo, battle_no, rng, policy):
     if act == "修行":
         return act, {"tier": 1, "to": "mana" if battle_no % 2 else "speed"}
     if act == "休整":
-        return act, {"tier": 1}
+        return act, {"tier": 1, "heal_allocations": [
+            {"target_ref": "player:0", "amount": 8 + e.state.rest_heal_bonus},
+        ]}
     if act == "领悟":
         return act, {"resonance_type": rng.choice(["转换", "反转", "曲解"])}
     if act == "维修":
-        return act, {"tier": 1}
+        index = next(index for index, item in enumerate(e.state.consumables)
+                     if 0 < item.current_uses < item.max_uses)
+        return act, {"tier": 1, "allocations": [
+            {"item_ref": f"consumable:{index}", "amount": 1},
+        ]}
     if act == "雇佣":
         return act, {"name": f"雇员{rng.randrange(1000)}", "blood_alloc": 8, "atk_bundles": 4}
     return act, {}

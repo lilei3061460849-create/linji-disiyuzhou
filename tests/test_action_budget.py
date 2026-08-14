@@ -19,6 +19,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
 
+from tests.attack_support import resolve_attack as resolve_player_attack
+from tests.monster_phase_support import resolve_monster_phase
 from engine.api import GameEngine
 from engine.models import Entity, DaoWen, DaoWenInstance, Consumable
 
@@ -33,9 +35,15 @@ def _new_engine(db_suffix: str, speed_points: int = 8) -> GameEngine:
     blood_points = 25 - speed_points - mana_points  # 属性点总和必须=25
     engine.execute_action("setup_attributes",
                            {"blood_points": blood_points, "speed_points": speed_points, "mana_points": mana_points})
-    engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
-    engine.execute_action("setup_choose_region", {"region": "罪孽都市"})  # 雇佣为罪孽都市专属
-    engine.execute_action("battle_start", {})
+    engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
+    setup = engine.execute_action("setup_choose_region", {"region": "罪孽都市"})  # 雇佣为罪孽都市专属
+    choices = setup["result"]["relic_choices"]
+    engine.execute_action("choose_discovered_relic", {"relic_name": choices[0]})
+    engine.state.energy = 0
+    relic_choices = {}
+    if engine.state.relics[0].name in ("折速法印", "三相残韵盘"):
+        relic_choices[engine.state.relics[0].name] = {"use": False}
+    engine.execute_action("battle_start", {"relic_choices": relic_choices})
     # battle_start会自动出怪，这里替换为受控的单一测试怪物，保证断言确定性
     engine.state.enemies.clear()
     engine.state.enemies.append(Entity(name="靶怪", entity_type="怪物", blood_limit=999, current_hp=999,
@@ -55,9 +63,9 @@ def test_player_action_count_formula_and_budget_enforced():
     player = engine.state.player
     assert player.action_count == 3
     for i in range(3):
-        r = engine.execute_action("attack", {"attacker": player.name, "target_selections": [0]})
+        r = resolve_player_attack(engine, player.name, [])
         assert r["success"] is True, f"第{i+1}次攻击应成功: {r}"
-    r4 = engine.execute_action("attack", {"attacker": player.name, "target_selections": [0]})
+    r4 = resolve_player_attack(engine, player.name, [])
     assert r4["success"] is False
     assert "出手已用完" in r4["error"]
 
@@ -67,14 +75,16 @@ def test_budget_resets_at_round_start():
     engine = _new_engine("reset_budget", speed_points=3)  # action_count=1
     player = engine.state.player
     assert player.action_count == 1
-    r1 = engine.execute_action("attack", {"attacker": player.name, "target_selections": [0]})
+    r1 = resolve_player_attack(engine, player.name, [])
     assert r1["success"] is True
-    r2 = engine.execute_action("attack", {"attacker": player.name, "target_selections": [0]})
+    r2 = resolve_player_attack(engine, player.name, [])
     assert r2["success"] is False
 
+    resolve_monster_phase(engine.combat, {"靶怪": None})
+    engine.state.combat_subphase = "await_round_end"  # 单元测试直接调用CombatEngine，手动同步API子阶段
     engine.execute_action("round_end", {})
     engine.execute_action("round_start", {})
-    r3 = engine.execute_action("attack", {"attacker": player.name, "target_selections": [0]})
+    r3 = resolve_player_attack(engine, player.name, [])
     assert r3["success"] is True, "新回合应重置出手预算"
 
 
@@ -90,15 +100,15 @@ def test_ally_action_count_uses_attack_count_not_speed():
 def test_deploy_employee_consumes_player_budget_not_employee():
     """正常路径：deploy_employee扣的是玩家的出手，不是被部署员工的出手"""
     engine = _new_engine("deploy_budget", speed_points=3)  # 玩家action_count=1
-    engine.state.energy = 3
-    engine.execute_action("pre_battle_action", {
-        "sub_action": "雇佣", "name": "小李", "blood_alloc": 8, "atk_bundles": 4,
-    })
+    engine.state.employees.append(Entity(
+        name="小李", entity_type="员工", blood_limit=96, current_hp=96,
+        attack_count=4, attack_power=8, is_deployed=False,
+    ))
     player = engine.state.player
     r = engine.execute_action("deploy_employee", {"name": "小李"})
     assert r["success"] is True
     assert player.actions_used_this_round == 1
-    r2 = engine.execute_action("attack", {"attacker": player.name, "target_selections": [0]})
+    r2 = resolve_player_attack(engine, player.name, [])
     assert r2["success"] is False, "玩家出手(1次)已被deploy_employee用掉，不应再能攻击"
 
 
@@ -108,7 +118,7 @@ def test_consume_item_and_resonance_do_not_consume_budget():
     player = engine.state.player
     player.dao_wen["杀伐"] = DaoWenInstance(DaoWen(name="杀伐", formula="", cost_type="消耗", cost_formula="X", effect_formula=""))
     engine.state.consumables.append(Consumable(name="急救箱", effect="使自身获得[回复25]", current_uses=2, max_uses=2))
-    engine.execute_action("attack", {"attacker": player.name, "target_selections": [0]})  # 用光唯一1次出手
+    resolve_player_attack(engine, player.name, [])  # 用光唯一1次出手
     r_item = engine.execute_action("consume_item", {"name": "急救箱"})
     assert r_item["success"] is True, "消耗品不应受出手预算限制"
 
@@ -126,7 +136,7 @@ def test_ally_command_daowen_shares_same_budget_pool_as_attack():
     engine = _new_engine("shared_pool", speed_points=3)  # action_count=1
     player = engine.state.player
     player.dao_wen["杀伐"] = DaoWenInstance(DaoWen(name="杀伐", formula="", cost_type="消耗", cost_formula="X", effect_formula=""))
-    r1 = engine.execute_action("attack", {"attacker": player.name, "target_selections": [0]})
+    r1 = resolve_player_attack(engine, player.name, [])
     assert r1["success"] is True
     r2 = engine.execute_action("use_daowen", {"daowen_name": "杀伐", "x": 1, "target": "靶怪"})
     assert r2["success"] is False, "预算已被攻击用完，发动道纹也应被拒绝"
@@ -136,11 +146,11 @@ def test_failed_target_lookup_does_not_consume_budget():
     """边界：因攻击者不存在而提前失败的行动，不应消耗任何人的出手（不能因为无效指令白白扣掉一次机会）"""
     engine = _new_engine("no_consume_on_fail", speed_points=3)
     player = engine.state.player
-    r_fail = engine.execute_action("attack", {"attacker": "不存在的攻击者", "target_selections": [0]})
+    r_fail = resolve_player_attack(engine, "不存在的攻击者", [])
     assert r_fail["success"] is False
     assert player.actions_used_this_round == 0, "查找攻击者失败不应消耗任何人的出手"
     # 验证出手预算确实完好：随后一次正常攻击应能成功
-    r_ok = engine.execute_action("attack", {"attacker": player.name, "target_selections": [0]})
+    r_ok = resolve_player_attack(engine, player.name, [])
     assert r_ok["success"] is True
 
 
@@ -152,8 +162,8 @@ def test_declare_wit_and_escape_consume_budget_and_reject_when_exhausted():
     """错误输入：出手耗尽后声明急中生智/逃跑必须被拒绝"""
     engine = _new_engine("wit_escape_budget", speed_points=3)  # action_count=1
     player = engine.state.player
-    engine.execute_action("attack", {"attacker": player.name, "target_selections": [0]})  # 用掉唯一1次出手
-    r_wit = engine.execute_action("declare_wit", {"target": "靶怪"})
+    resolve_player_attack(engine, player.name, [])  # 用掉唯一1次出手
+    r_wit = engine.execute_action("declare_wit", {"target_ref": "enemy:0"})
     assert r_wit["success"] is False
     assert "出手已用完" in r_wit["error"]
 
@@ -165,12 +175,12 @@ def test_declare_wit_and_escape_consume_budget_and_reject_when_exhausted():
 def test_deploy_employee_rejected_when_player_budget_exhausted():
     """错误输入：玩家出手耗尽后不能再派遣员工，必须报错而不是免费执行"""
     engine = _new_engine("deploy_no_budget", speed_points=3)  # action_count=1
-    engine.state.energy = 3
-    engine.execute_action("pre_battle_action", {
-        "sub_action": "雇佣", "name": "小周", "blood_alloc": 8, "atk_bundles": 4,
-    })
+    engine.state.employees.append(Entity(
+        name="小周", entity_type="员工", blood_limit=96, current_hp=96,
+        attack_count=4, attack_power=8, is_deployed=False,
+    ))
     player = engine.state.player
-    engine.execute_action("attack", {"attacker": player.name, "target_selections": [0]})  # 用掉唯一1次出手
+    resolve_player_attack(engine, player.name, [])  # 用掉唯一1次出手
     r = engine.execute_action("deploy_employee", {"name": "小周"})
     assert r["success"] is False
     emp = next(e for e in engine.state.employees if e.name == "小周")

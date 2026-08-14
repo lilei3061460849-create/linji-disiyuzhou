@@ -14,6 +14,30 @@ from .dungeons import load_dungeon_documents
 
 
 # 各池事件名（与README一致）
+EVENT_RELICS = {
+    "猩红果实": "每场[战始]可选择是否流血10；若选择，则[战终][血限]+2",
+    "苍白之花": "每场[战始]可选择是否疲惫5；若选择，则[战终]精力+1",
+    "缄默面具": "无法再使用任何附带「代价」的道纹，每场[战始]获得20X点法力",
+    "焦黑发丝": "每当场上有一个怪物死亡时，你的速度+2",
+    "皮衣": "上回合失去生命时，下回合获得等量格挡",
+    "帮派令": "[战始]获得【洗劫3】",
+    "防弹插板": "[血限]+10，且[战始]获得15格挡",
+    "负岳索": "[战始]选择一名[朋友]或[员工]；其首次受到伤害时，自身[回复]等量生命",
+    "炉心坠": "[战始]选择一枚自身拥有的龙心，使其当前耐久+10",
+    "烙痕钉": "[战始]必中，选择一个[目标]；你每付出一次代价，其失去10生命",
+    "余火印": "[回始]可消耗一枚龙心X点耐久，获得2X点法力",
+}
+
+EVENT_CONSUMABLES = {
+    "绝息淤泥": (1, "使用后屏蔽自身灵魂位置，使本次[战终]立刻逃脱"),
+    "活性土壤": (1, "[战始]可失去X法力，以X点基础预算打造一名[朋友]"),
+    "假钞贴": (2, "使用后获得20[假碎片]"),
+    "穿甲弹": (2, "对[目标]造成15点忽略格挡与闪避的伤害"),
+    "洗劫面具": (2, "使自身下2次攻击附带【必中】"),
+    "赤泉囊": (6, "局外使用后产生8点恢复量；下两场[战始]失去4生命"),
+    "龙血瓶": (10, "储存超出血限的回复量，并可自由提取分配"),
+}
+
 EVENT_NAMES = {
     "通用": ["无名冢", "遗忘书屋", "祭坛", "过路商人", "猩红暴雨", "无名碑林", "回音长廊", "回忆当铺", "手术", "无魂泥潭"],
     "扭曲都市": ["医生", "乞丐", "血肉温室", "绝望来电", "皮衣店", "生锈邮筒", "尖叫下水道"],
@@ -46,7 +70,7 @@ def parse_events(index_path: str | Path) -> dict:
         matched_name = None
         for n in all_names:
             # 行以 "name"： 或 name： 开头，或行就是 name（无冒号，描述在下一行）
-            if re.match(rf'^["“]?{re.escape(n)}["”]?\s*[：:]', line) or line.strip('“"') == n:
+            if re.match(rf'^["“]?{re.escape(n)}["”]?\s*[：:]', line) or line.strip('“”"') == n:
                 matched_name = n
                 break
         if matched_name:
@@ -71,7 +95,7 @@ def parse_events(index_path: str | Path) -> dict:
                 # 非选项非空行：若遇到下一个事件名则结束；否则视为描述续行
                 next_name = None
                 for n in all_names:
-                    if re.match(rf'^["“]?{re.escape(n)}["”]?\s*[：:]', lj) or lj.strip('“"') == n:
+                    if re.match(rf'^["“]?{re.escape(n)}["”]?\s*[：:]', lj) or lj.strip('“”"') == n:
                         next_name = n; break
                 if next_name:
                     break
@@ -98,20 +122,87 @@ class EventPool:
         pool += [n for n in EVENT_NAMES.get(region, []) if n in self.events and n not in self.triggered]
         return pool
 
-    def trigger(self, region: str, rng) -> Optional[str]:
-        """随机抽取一个事件（按随机数规则：池中随机）"""
-        pool = self.build_pool(region)
-        if not pool:
-            return None
-        name = pool[rng.randrange(len(pool))]
-        self.current = name
-        return name
-
     def resolve(self, name: str):
         """标记事件已触发"""
         self.triggered.add(name)
         if self.current == name:
             self.current = None
+
+
+def _event_preflight(text: str, engine, params: dict) -> Optional[str]:
+    """在任何支付或随机前校验条件与完整参数。"""
+    player = engine.state.player
+    if player is None:
+        return "没有玩家，无法结算事件"
+
+    def _positive_x() -> Optional[int]:
+        x = params.get("x")
+        return x if isinstance(x, int) and not isinstance(x, bool) and x > 0 else None
+
+    x = _positive_x()
+    if any(token in text for token in ("流血X", "失忆X", "押注X")) and x is None:
+        return "该选项必须显式提交正整数x"
+
+    bleed = sum(int(v) for v in re.findall(r"流血\s*(\d+)", text))
+    if "流血X" in text and x is not None:
+        bleed += x
+    aging = sum(int(v) for v in re.findall(r"衰老\s*(\d+)", text))
+    exhaustion = sum(int(v) for v in re.findall(r"枯竭\s*(\d+)", text))
+    shrink = sum(int(v) for v in re.findall(r"萎缩\s*(\d+)", text))
+    fatigue = sum(int(v) for v in re.findall(r"疲惫\s*(\d+)", text))
+    cost_share_ref = params.get("cost_share_target_ref", "")
+    numeric_costs = {
+        "流血": bleed, "衰老": aging, "枯竭": exhaustion,
+        "萎缩": shrink, "疲惫": fatigue,
+    }
+    try:
+        for cost_type, amount in numeric_costs.items():
+            if amount > 0:
+                engine.combat.validate_numeric_cost(
+                    player, cost_type, amount, cost_share_ref)
+    except ValueError as exc:
+        return str(exc)
+    if cost_share_ref and not any(numeric_costs.values()):
+        return "该事件选项没有可由【血契】共同承担的数值代价"
+
+    shard_cost = sum(int(v) for v in re.findall(r"(?:失去|消耗)\s*(\d+)\s*\[?碎片\]?", text))
+    if params.get("_event_name") == "医生" and text.startswith("雇佣医生"):
+        shard_cost = 10  # 后半句5碎片是未来升级价格，不是本选项即时支出。
+    # 赌局明确允许负债，单独由具名分支校验-50边界。
+    if event_name := params.get("_event_name"):
+        allow_debt = event_name == "遗落的赌局"
+    else:
+        allow_debt = False
+    if shard_cost > engine.state.shards and not allow_debt:
+        return f"碎片不足，无法支付{shard_cost}（当前{engine.state.shards}）"
+
+    if ("销毁一件当前遗物" in text or "失去一件当前遗物" in text):
+        relic_name = params.get("relic_name", "")
+        if not isinstance(relic_name, str) or not any(r.name == relic_name for r in engine.state.relics):
+            return "必须用relic_name显式指定一件当前持有的遗物"
+    memory_cost = sum(int(v) for v in re.findall(r"失忆\s*(\d+)", text))
+    if "失忆X" in text and x is not None:
+        memory_cost += x
+    if memory_cost:
+        names = params.get("daowen_names")
+        if (not isinstance(names, list) or len(names) != memory_cost or len(set(names)) != memory_cost
+                or any(n not in player.dao_wen for n in names)):
+            return f"必须用daowen_names显式指定{memory_cost}种当前持有的不同道纹"
+    if "自选一件遗物" in text:
+        relic_name = params.get("relic_name", "")
+        engine._init_relic_pool()
+        if not isinstance(relic_name, str) or not any(r.name == relic_name for r in engine.state.relics_pool):
+            return "必须用relic_name显式指定遗物池中的一件遗物"
+    if "选择学会两种法术" in text:
+        names = params.get("spell_names")
+        if (not isinstance(names, list) or len(names) != 2 or len(set(names)) != 2
+                or any(n not in engine.SPELL_REGISTRY for n in names)):
+            return "必须用spell_names显式提交两种不同的合法法术"
+    if "使一名[朋友]获得[防弹插板]" in text:
+        legal = {f"friend:{i}" for i, friend in enumerate(engine.state.friends) if friend.is_alive}
+        if params.get("friend_ref") not in legal:
+            return "必须用friend_ref显式指定一名存活[朋友]"
+    return None
 
 
 def resolve_option_effect(text: str, engine, event_name: str = "", params=None) -> dict:
@@ -122,10 +213,51 @@ def resolve_option_effect(text: str, engine, event_name: str = "", params=None) 
     event_name不为空时，优先匹配需要精确具名结算的专属事件分支(如龙心谷"追求者")，
     这类事件的收益包含固定面板与固定道纹数值，无法用通用正则安全推断，需按事件名单独处理。
     """
-    from .models import Relic, DaoWen, DaoWenInstance, Spell, Entity
+    from .models import Relic, Consumable, DaoWen, DaoWenInstance, Spell, Entity
     player = engine.state.player
     applied = []
     instructions = []
+    params = dict(params or {})
+    params["_event_name"] = event_name
+    preflight_error = _event_preflight(text, engine, params)
+    if preflight_error:
+        return {"applied": [], "instructions": [], "error": preflight_error}
+    creative = (
+        (event_name == "无名冢" and "设计一种新的遗物" in text)
+        or (event_name == "过路商人" and text.startswith("限制选择权"))
+        or (event_name == "绝望来电" and text.startswith("接听"))
+        or (event_name == "生锈邮筒" and text.startswith("写信"))
+    )
+    if creative and not params.get("dm_approved"):
+        return {"applied": [], "instructions": [],
+                "interrupt_required": {"event": event_name, "option": text, "params": params}}
+
+    def _pay_numeric(cost_type: str, amount: int) -> dict:
+        return engine.combat.pay_numeric_cost(
+            player, cost_type, amount,
+            cost_share_target_ref=params.get("cost_share_target_ref", ""))
+
+    # ---- 罪孽都市·遗落的赌局：正式随机只走DiceEngine，结果不可由调用方注入 ----
+    if event_name == "遗落的赌局" and text.startswith("下注"):
+        x = params["x"]
+        if text.startswith("下注[碎片]"):
+            if engine.state.shards - 2 * x < -50:
+                return {"applied": [], "instructions": [], "error": "赌局失败后负债不得低于-50"}
+            roll = engine.dice.auto_roll("event_lost_gamble_shards", ["win", "lose"], context="遗落的赌局·碎片")
+            delta = 2 * x if roll["selected"] == "win" else -2 * x
+            engine.state.shards += delta
+            applied.append(f"赌局{roll['selected']}：碎片{delta:+d}")
+            return {"applied": applied, "instructions": [], "random": roll["record"]}
+        if text.startswith("下注生命"):
+            _pay_numeric("流血", x)
+            applied.append(f"流血{x}")
+            roll = engine.dice.auto_roll("event_lost_gamble_life", ["win", "lose"], context="遗落的赌局·生命")
+            if roll["selected"] == "win":
+                engine.state.shards += 2 * x
+                applied.append(f"获得{2*x}碎片")
+            else:
+                applied.append("无事发生")
+            return {"applied": applied, "instructions": [], "random": roll["record"]}
 
     # ---- 专属具名事件：龙心谷"追求者"（面板与道纹数值均为文档写死的固定值，不走通用正则） ----
     if event_name == "追求者":
@@ -153,6 +285,123 @@ def resolve_option_effect(text: str, engine, event_name: str = "", params=None) 
             return {"applied": applied, "instructions": instructions}
         # 选项3"离开"落入下方通用的"无事发生"分支，无需特殊处理
 
+    # ---- 已写死面板/跨战斗结果的确定性事件登记；创造性文本才进入Interrupt。 ----
+    def _grant_daowen(entity, name, x):
+        entity.dao_wen[name] = DaoWenInstance(
+            DaoWen(name=name, formula="", cost_type="", cost_formula="", effect_formula=""), x_value=x)
+
+    if event_name == "遗忘书屋" and text.startswith("阅读《自我剖析》"):
+        resonance_type = params.get("resonance_type")
+        if resonance_type not in ("转换", "反转", "曲解"):
+            return {"applied": [], "instructions": [], "error": "必须用resonance_type显式选择一种残韵"}
+        _pay_numeric("枯竭", 1)
+        engine.state.resonance[resonance_type] = engine.state.resonance.get(resonance_type, 0) + 1
+        return {"applied": ["枯竭1", f"获得{resonance_type}残韵"], "instructions": []}
+    if event_name == "手术" and text.startswith("强制移植"):
+        refs = {f"friend:{i}": entity for i, entity in enumerate(engine.state.friends) if entity.is_alive}
+        refs.update({f"employee:{i}": entity for i, entity in enumerate(engine.state.employees) if entity.is_alive})
+        target = refs.get(params.get("target_ref"))
+        if target is None:
+            return {"applied": [], "instructions": [], "error": "强制移植必须显式提交微光者target_ref"}
+        from .gamedata import ORIGINAL_MONSTER_DAOWEN, MONSTER_TRANSFORM_DAOWEN
+        candidates = sorted((ORIGINAL_MONSTER_DAOWEN | MONSTER_TRANSFORM_DAOWEN) - set(target.dao_wen))
+        if not candidates:
+            return {"applied": [], "instructions": [], "error": "目标没有可移植的怪物道纹"}
+        roll = engine.dice.auto_roll("event_transplant_daowen", candidates, context="手术·强制移植")
+        _grant_daowen(target, roll["selected"], 1)
+        target._transplanted_daowen = roll["selected"]
+        target._transplant_rounds_unchanged = 0
+        return {"applied": [f"{target.name}被移植{roll['selected']}1"], "instructions": [],
+                "random": roll["record"]}
+    if event_name == "手术" and text.startswith("抽取灵魂"):
+        refs = {f"friend:{i}": entity for i, entity in enumerate(engine.state.friends) if entity.is_alive}
+        refs.update({f"employee:{i}": entity for i, entity in enumerate(engine.state.employees) if entity.is_alive})
+        target = refs.get(params.get("target_ref"))
+        if target is None:
+            return {"applied": [], "instructions": [], "error": "抽取灵魂必须显式提交微光者target_ref"}
+        gain = math.ceil(target.blood_limit * 0.5)
+        if target in engine.state.friends: engine.state.friends.remove(target)
+        if target in engine.state.employees: engine.state.employees.remove(target)
+        engine.state.shards += gain
+        return {"applied": [f"失去{target.name}", f"获得{gain}碎片"], "instructions": []}
+    if event_name == "黑市军火贩" and text.startswith("购买安保雇佣"):
+        ref = params.get("friend_ref")
+        friends = {f"friend:{i}": entity for i, entity in enumerate(engine.state.friends) if entity.is_alive}
+        target = friends.get(ref)
+        if target is None:
+            return {"applied": [], "instructions": [], "error": "必须用friend_ref显式选择一名存活朋友"}
+        engine.state.shards -= 15
+        target.relics.append(Relic("防弹插板", EVENT_RELICS["防弹插板"]))
+        target.blood_limit += 10; target.current_hp += 10
+        return {"applied": ["失去15碎片", f"{target.name}获得防弹插板并血限+10"], "instructions": []}
+    if event_name == "医生" and text.startswith("雇佣医生"):
+        doctor = Entity("医生", "员工", blood_limit=50, current_hp=50,
+                        attack_count=1, attack_power=1, is_deployed=False)
+        engine.state.shards -= 10
+        engine.state.employees.append(doctor)
+        return {"applied": ["失去10碎片", "医生作为待命员工加入"], "instructions": []}
+    elif event_name == "乞丐" and text.startswith("给予庇护"):
+        beggar = Entity("乞丐", "朋友", blood_limit=50, current_hp=50,
+                        attack_count=2, attack_power=3)
+        _grant_daowen(beggar, "狂暴", 2)
+        beggar.mutation_count = 3
+        engine.state.friends.append(beggar)
+        applied.append("乞丐作为朋友加入")
+    elif event_name == "断桥余烬" and text.startswith("接过伤者"):
+        friend = Entity("岩行者", "朋友", blood_limit=54, current_hp=54,
+                        attack_count=2, attack_power=4)
+        _grant_daowen(friend, "背负", 1)
+        engine.state.friends.append(friend)
+        applied.append("岩行者作为朋友加入")
+    elif event_name == "逆行者" and text.startswith("让他同行"):
+        friend = Entity("赴火者", "朋友", blood_limit=60, current_hp=60,
+                        attack_count=3, attack_power=3)
+        _grant_daowen(friend, "逆鳞", 1)
+        engine.state.friends.append(friend)
+        applied.append("赴火者作为朋友加入")
+    elif event_name == "皮衣店" and text.startswith("试穿"):
+        engine.state.event_modifiers["next_battle_first_round_shield"] = 30
+        applied.append("已登记：下一场第一回始获得30格挡")
+    elif event_name == "尖叫下水道" and "缄默面具" in text:
+        engine.state.event_modifiers["silent_mask_x"] = params["x"]
+    elif event_name == "高利贷钱庄" and text.startswith("获得债务"):
+        engine.state.event_modifiers["loan_active"] = True
+        applied.append("已登记高利贷战始还款与负债利息")
+    elif event_name == "地下角斗场" and text.startswith("签署下场打擂"):
+        engine.state.event_modifiers.update({"arena_health_percent": 20, "arena_double_loot": True})
+        applied.append("已登记下一场敌方血限+20%且战利品翻倍")
+    elif event_name == "地下角斗场" and text.startswith("押注盘外博彩"):
+        engine.state.event_modifiers["arena_bet_three_rounds"] = True
+        applied.append("已登记三回合押注")
+    elif event_name == "通缉悬赏榜" and text.startswith("撕下巨头"):
+        engine.state.event_modifiers.update({"bounty_extra_monster": True, "bounty_reward": 30})
+        applied.append("已登记下一场额外怪物与30碎片悬赏")
+    elif event_name == "通缉悬赏榜" and text.startswith("举报"):
+        engine.state.event_modifiers["next_battle_full_information"] = True
+    elif event_name == "假钞印钞厂" and text.startswith("启动"):
+        engine.state.event_modifiers["next_battle_fake_shards"] = 50
+        applied.append("已登记下一场战始获得50假碎片")
+    elif event_name == "裂隙温泉" and text.startswith("饮下泉水"):
+        allocations = params.get("heal_allocations")
+        refs = {"player:0": engine.state.player}
+        refs.update({f"friend:{i}": e for i, e in enumerate(engine.state.friends) if e.is_alive})
+        refs.update({f"employee:{i}": e for i, e in enumerate(engine.state.employees) if e.is_alive})
+        if (not isinstance(allocations, list)
+                or sum(entry.get("amount", -1) for entry in allocations if isinstance(entry, dict)) != 48
+                or any(not isinstance(entry, dict) or entry.get("target_ref") not in refs
+                       or not isinstance(entry.get("amount"), int) or isinstance(entry.get("amount"), bool)
+                       or entry["amount"] < 0 for entry in allocations)):
+            return {"applied": [], "instructions": [], "error": "必须用heal_allocations完整分配48点恢复量"}
+        for entry in allocations:
+            detail = engine.state.apply_heal(refs[entry["target_ref"]], entry["amount"])
+            applied.append(f"{refs[entry['target_ref']].name}获得回复{detail['actual_heal']}")
+        engine.state.pending_energy_penalty += 1
+        return {"applied": applied, "instructions": instructions}
+    elif event_name == "回忆当铺" and text.startswith("典当"):
+        engine.state.event_modifiers["memory_gain_locked"] = True
+    elif event_name == "回忆当铺" and text.startswith("赎回"):
+        engine.state.event_modifiers["past_memory_count"] = engine.state.event_modifiers.get("past_memory_count", 0) + 1
+
     # ---- 回音长廊：错误遗言 / 清除遗言直接改《死者之书.md》 ----
     if event_name == "回音长廊":
         store = getattr(engine, "death_book", None)
@@ -170,7 +419,7 @@ def resolve_option_effect(text: str, engine, event_name: str = "", params=None) 
             pages = store.load() if store is not None else []
             if not pages:
                 if player:
-                    player.take_damage(5, "代价")
+                    _pay_numeric("流血", 5)
                     applied.append("流血5")
                 applied.append("无遗言可清除")
                 return {"applied": applied, "instructions": instructions}
@@ -203,7 +452,7 @@ def resolve_option_effect(text: str, engine, event_name: str = "", params=None) 
                     "pages": listed,
                 }
             if player:
-                player.take_damage(5, "代价")
+                _pay_numeric("流血", 5)
                 applied.append("流血5")
             engine.state.death_book_legacies = store.load()
             applied.append(f"清除遗言：{removed.get('title') or removed.get('trigger_point')}")
@@ -211,25 +460,41 @@ def resolve_option_effect(text: str, engine, event_name: str = "", params=None) 
 
     def hurt(hp):
         if player:
-            player.take_damage(hp, "代价")
+            _pay_numeric("流血", hp)
             applied.append(f"流血{hp}")
 
     # 流血
     for m in re.finditer(r'流血\s*(\d+)', text):
         hurt(int(m.group(1)))
-    # 衰老（血限-X）
+    if "流血X" in text:
+        hurt(params["x"])
+    # 数值代价统一走代价总线，允许【血契】按显式引用共同承担。
     for m in re.finditer(r'衰老\s*(\d+)', text):
-        x = int(m.group(1)); player.blood_limit = max(1, player.blood_limit - x)
-        player.current_hp = min(player.current_hp, player.blood_limit); applied.append(f"衰老{x}(血限-{x})")
-    # 枯竭（法限-X）
+        x = int(m.group(1)); _pay_numeric("衰老", x)
+        applied.append(f"衰老{x}(血限-{x})")
     for m in re.finditer(r'枯竭\s*(\d+)', text):
-        x = int(m.group(1)); player.mana_limit = max(0, player.mana_limit - x)
-        player.current_mana = min(player.current_mana, player.mana_limit); applied.append(f"枯竭{x}(法限-{x})")
+        x = int(m.group(1)); _pay_numeric("枯竭", x)
+        applied.append(f"枯竭{x}(法限-{x})")
+    for m in re.finditer(r'萎缩\s*(\d+)', text):
+        x = int(m.group(1)); _pay_numeric("萎缩", x)
+        applied.append(f"萎缩{x}(速限-{x})")
+    for m in re.finditer(r'疲惫\s*(\d+)', text):
+        x = int(m.group(1)); _pay_numeric("疲惫", x)
+        applied.append(f"疲惫{x}")
+    # 失忆（显式指定失去的道纹）
+    memory_cost = sum(int(v) for v in re.findall(r'失忆\s*(\d+)', text))
+    if '失忆X' in text:
+        memory_cost += params['x']
+    if memory_cost:
+        forgotten = params['daowen_names']
+        for name in forgotten:
+            del player.dao_wen[name]
+        applied.append(f"失忆{memory_cost}：失去{'、'.join(forgotten)}")
     # 失去精力
     if '失去1次精力' in text or '精力-1' in text:
         engine.state.energy = max(0, engine.state.energy - 1); applied.append("失去1精力")
-    # 失去碎片
-    for m in re.finditer(r'失去\s*(\d+)\s*\[?碎片\]?', text):
+    # 支付碎片（“失去”与“消耗”同为支出）
+    for m in re.finditer(r'(?:失去|消耗)\s*(\d+)\s*\[?碎片\]?', text):
         x = int(m.group(1)); engine.state.shards -= x; applied.append(f"失去{x}碎片")
     # 获得碎片（含"获得X碎片"/"获得X[碎片]"；跳过"双倍"等需随机的）
     for m in re.finditer(r'获得\s*(\d+)\s*\[?碎片\]?', text):
@@ -242,25 +507,53 @@ def resolve_option_effect(text: str, engine, event_name: str = "", params=None) 
         if rtype in text and ('残韵' in text or '获得' in text):
             engine.state.resonance[rtype] = engine.state.resonance.get(rtype, 0) + 1
             applied.append(f"获得{rtype}残韵")
-    # 随机/获得遗物（引擎自动生成随机数并结算，见 DiceEngine.auto_roll）
-    if ('遗物' in text) and ('获得' in text or '随机' in text):
-        engine._init_relic_pool()
-        if engine.state.relics_pool:
-            names = [r.name for r in engine.state.relics_pool]
-            roll = engine.dice.auto_roll("event_relic_pool", names, context="事件获得遗物")
-            idx = roll["record"]["selected_index"]
-            r = engine.state.relics_pool.pop(idx)
-            engine.state.relics.append(r); applied.append(f"获得遗物·{r.name}")
+    # 明确失去/销毁当前遗物：严格使用预检过的relic_name，不得默认弹出最后一件。
+    if "销毁一件当前遗物" in text or "失去一件当前遗物" in text:
+        relic_name = params["relic_name"]
+        relic = next(r for r in engine.state.relics if r.name == relic_name)
+        engine.state.relics.remove(relic)
+        applied.append(f"销毁遗物·{relic_name}")
+
+    # 正文具名事件物品按名称授予，不得误抽普通遗物池。
+    named_relics = [name for name in EVENT_RELICS if name in text]
+    for name in named_relics:
+        relic = Relic(name=name, effect=EVENT_RELICS[name], tags=["事件"])
+        if name == "防弹插板":
+            friend = next(f for f in engine.state.friends if f.name == params["friend"] and f.is_alive)
+            friend.relics.append(relic)
+            friend.blood_limit += 10
+            friend.current_hp += 10
+            applied.append(f"{friend.name}获得事件遗物·{name}")
         else:
-            instructions.append("遗物池空，无法获得遗物")
-    # 学会法术
-    if '法术' in text and ('学会' in text or '学习' in text):
-        known = list(engine.SPELL_REGISTRY.keys())
-        instructions.append(f"学会法术（可选：{known}）—请指定")
-    # 销毁遗物
-    if '销毁' in text and '遗物' in text:
-        if engine.state.relics:
-            r = engine.state.relics.pop(); applied.append(f"销毁遗物·{r.name}")
+            engine.state.relics.append(relic)
+            applied.append(f"获得事件遗物·{name}")
+    for name, (durability, effect) in EVENT_CONSUMABLES.items():
+        if name in text:
+            engine.state.consumables.append(Consumable(
+                name=name, effect=effect, current_uses=durability, max_uses=durability,
+            ))
+            applied.append(f"获得消耗品·{name}({durability}/{durability})")
+
+    # 自选遗物直接按显式名称取得；“随机遗物”则随机列3件后等待显式选1。
+    if "自选一件遗物" in text:
+        relic_name = params["relic_name"]
+        relic = next(r for r in engine.state.relics_pool if r.name == relic_name)
+        engine.state.relics_pool.remove(relic)
+        engine.state.relics.append(relic)
+        applied.append(f"获得遗物·{relic_name}")
+    elif "随机" in text and "遗物" in text and not named_relics:
+        discovery = engine._offer_relic_discovery(f"事件【{event_name}】")
+        if not discovery.get("success"):
+            return {"applied": applied, "instructions": instructions,
+                    "error": discovery.get("error", "无法发现遗物")}
+        applied.append(f"随机列出遗物候选：{'、'.join(discovery['choices'])}")
+
+    # 学会法术必须由调用方在本次请求中显式提交合法名称。
+    if "选择学会两种法术" in text:
+        for name in params["spell_names"]:
+            player.spells.append(Spell(name=name, required_daowen=engine.SPELL_REGISTRY[name],
+                                       trigger_condition="", effect_flow=""))
+        applied.append(f"学会法术：{'、'.join(params['spell_names'])}")
     # 获得N点[速限]/[法限]（属性点直接分配）
     for m in re.finditer(r'获得(\d+)点\s*\[?速限\]?', text):
         x = int(m.group(1)); player.speed_limit += x; player.current_speed = player.speed_limit; applied.append(f"获得{x}速限")

@@ -188,10 +188,9 @@ def api_demo():
     print(f"  → 血限:{10*6}=60, 速限:8, 法限:{7*2}=14")
     print(f"  → 出手次数: {math.ceil(8/3)}")
     
-    # 2. 选择初始道纹
-    print("\n[2] 选择初始道纹：杀伐")
-    result = engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
-    
+    # 2. 初始道纹【杀伐】已随属性分配自动获得
+    print("\n[2] 自动获得初始道纹：杀伐")
+
     # 3. 选择残韵
     print("\n[3] 选择初始残韵：反转")
     result = engine.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
@@ -199,6 +198,9 @@ def api_demo():
     # 4. 选择副本
     print("\n[4] 选择副本：扭曲都市")
     result = engine.execute_action("setup_choose_region", {"region": "扭曲都市"})
+    relic_choice = result["result"]["relic_choices"][0]
+    engine.execute_action("choose_discovered_relic", {"relic_name": relic_choice})
+    print(f"  → 开局发现候选：{result['result']['relic_choices']}；选择：{relic_choice}")
     
     # 5. 局外行动
     print("\n[5] 局外行动：修行")
@@ -227,8 +229,11 @@ def validate_demo():
     engine.execute_action("setup_attributes", {
         "name": "测试", "blood_points": 10, "speed_points": 8, "mana_points": 7
     })
-    engine.execute_action("setup_choose_daowen", {"daowen": "杀伐"})
-    engine.execute_action("setup_choose_region", {"region": "扭曲都市"})
+    engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
+    setup = engine.execute_action("setup_choose_region", {"region": "扭曲都市"})
+    engine.execute_action("choose_discovered_relic", {
+        "relic_name": setup["result"]["relic_choices"][0],
+    })
     
     # 测试1：正常行动校验
     print("\n[测试1] 正常修行行动：")
@@ -365,10 +370,8 @@ def full_demo():
     print(f"  原因: {result['reasoning']}")
     print(f"  校验: {'✓' if result.get('validation', {}).get('valid', True) else '✗'}")
     
-    # AI选择道纹
-    result = ai.play_turn("选择初始道纹")
-    print(f"\n  AI决策: {result['action']} → {result.get('result', {}).get('result', {}).get('daowen', '?')}")
-    
+    print("\n  初始道纹已自动获得：杀伐")
+
     # AI选择残韵
     result = ai.play_turn("选择残韵")
     print(f"\n  AI决策: {result['action']} → {result.get('result', {}).get('result', {}).get('resonance_type', '?')}")
@@ -508,18 +511,6 @@ def interactive_mode():
                     print(f"新增: {diff['new']}个")
                 if diff.get('missing'):
                     print(f"缺失: {diff['missing']}个")
-            
-            elif cmd.startswith("random "):
-                parts = cmd[7:].strip().split(" ", 1)
-                if len(parts) != 2:
-                    print("格式: random <池名> <数字>")
-                    continue
-                pool_name, number = parts
-                result = engine.execute_action("random_number", {
-                    "pool_name": pool_name,
-                    "number": int(number)
-                })
-                print(json.dumps(result, ensure_ascii=False, indent=2))
             
             elif cmd.startswith("ruling "):
                 parts = cmd[7:].strip().split(" ", 1)

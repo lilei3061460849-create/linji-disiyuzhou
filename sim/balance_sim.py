@@ -104,9 +104,11 @@ def cast_zaisheng(player, target, x):
     if USE_EXCLUSIVE and player.has_status("坏死"): return 0  # 坏死禁疗生效（裁定⑨补漏，此前只挂状态未拦截）
     player.current_mana -= x
     before = target.current_hp
-    target.current_hp = min(target.blood_limit, target.current_hp + 3*x)
-    target.total_healed += (target.current_hp - before)  # 再生不计过量双倍（实恢）
-    return target.current_hp - before
+    amount = 6 * x
+    target.current_hp = min(target.blood_limit, target.current_hp + amount)
+    actual = target.current_hp - before
+    target.total_healed += actual + (amount - actual) * 2
+    return actual
 
 def cast_ziyang(player, monster, x):  # 滋养X：治疗血限10X%
     x = eff_x(player, x)
@@ -135,17 +137,7 @@ def cast_shujin(player, monster, x):  # 赎金X：夺10X碎片（消耗10X）；
 
 
 def monster_round_start(m, activated):
-    """
-    怪物回始被动：自愈/庇护（须已激活才生效，白板第1回合无）。
-    【计费粒度裁定】持续型原始道纹效果持续期间，每个[回始]重新支付异变5X；
-    达阈值触发【崩解】直接命零，本次回始被动中断。
-    """
-    for g in list(activated):
-        if g in CombatEngine.SUSTAIN_MONSTER_DAOWEN and g in m.dao_wen:
-            pay = m.add_mutation(CombatEngine.YUANCHU_COST_RATE * m.dao_wen[g].x_value)
-            if pay["collapsed"]:
-                SIM_STATS["collapses"] += 1
-                return
+    """怪物回始被动：自愈/庇护（须已激活才生效；原始道纹只在首次发动时支付异变）。"""
     if "自愈" in activated:
         x = m.dao_wen["自愈"].x_value
         heal = math.ceil(m.blood_limit * 10 * x / 100)
@@ -463,7 +455,7 @@ def monster_can_pay_exclusive(m, g):
 
 
 # ===== 活力（现行口径；裁定⑫其余候选已归档删除 2026-08-11） =====
-# 现行：活力X → 攻击出手+X，持续∞，每回始异变5X持续计费（见 monster_round_start 通用 SUSTAIN 计费）
+# 现行：活力X → 攻击出手+X，持续∞；异变5X仅在首次发动时支付。
 # 已归档候选（AI_EXPERIENCE 追记4）：charges / flat / burst / half — 已从本文件彻底删除，仅保留 current。
 # 归档原因：扫描 300局/副本 现行面板，活力任何形态对 60HP/8闪速度玩家均为断崖致命（甲乙丁 0~2%，丙 99% 因自崩解），
 # 无单点方案可击中 30% 目标，需组合方案或覆盖率杠杆另议。
@@ -550,7 +542,7 @@ def run_battle(md, policy, rng, player_dw=None):
         player.hp_lost_this_round = 0
         monster.hp_lost_this_round = 0
         monster_round_start(monster, activated)
-        # 怪物道纹出手（第1回合白板不激活；持续计费可能已使其崩解）
+        # 怪物道纹出手（第1回合白板不激活；首次发动才支付异变）
         if rnd > 1 and monster.is_alive:
             act = monster_activate(monster, activated, rng)
             if act and not act.startswith("崩解:"):  # 崩解：激活效果中断
