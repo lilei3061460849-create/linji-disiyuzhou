@@ -82,14 +82,14 @@ def _pick_monster_daowen(engine, actor):
     return min(cands, key=group)
 
 def _spell_step_entry(step: dict, player_ref: str, mana: int) -> dict:
-    """为单个法术步骤构造 cycle 内的条目：x 按需推导，target_ref 用 prepare 给的引用。"""
+    """为单个法术步骤构造 cycle 内的条目：x 按需推导，target_ref 用 prepare 给的引用。
+    自由控X：攻击步骤拿剩余法力（最大化反打），自保/回复步骤留1。"""
     target_ref = step["target_ref"]
     hostile = target_ref != player_ref
     entry = {"x": 1, "target_ref": target_ref}
     if hostile:
         entry["dodge"] = False
-    # 简单策略：杀伐/庇护/再生 X=1 起步，法力充足时可加大到 2
-    entry["x"] = 2 if mana >= 2 else 1
+        entry["x"] = max(1, mana - 1)  # 攻击步自由控X
     return entry
 
 
@@ -119,7 +119,16 @@ def build_spell_choices(target_option: dict, player_ref: str, mana_budget: int) 
                 # after：生生不息/以牙还牙 —— 掉血后回血，视为总是值得（血量不满才触发）
                 use = True
             if use and mana_budget >= 1:
-                cycles = [[_spell_step_entry(s, player_ref, mana_budget) for s in steps]]
+                # 跨步骤递减法力：攻击步拿剩余，自保步留1，避免多步法术超支
+                remaining = mana_budget
+                cycle = []
+                for st in steps:
+                    entry = _spell_step_entry(st, player_ref, remaining)
+                    cycle.append(entry)
+                    remaining -= entry["x"]
+                    if remaining < 1:
+                        break
+                cycles = [cycle]
             else:
                 use = False  # 预算不足时显式拒绝，避免结算法力不足报错
             out[timing][name] = {"use": use, "cycles": cycles} if use else {"use": False}
