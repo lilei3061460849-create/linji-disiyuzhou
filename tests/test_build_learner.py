@@ -326,6 +326,8 @@ def test_cooldown_cost_is_applied():
     e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "daowen", "name": "束缚"})
     _start_battle(e, relic)
     e.execute_action("round_start", {})
+    for _m in e.state.enemies:
+        _m.is_flying = False  # 本测试聚焦冷却，落地飞行怪
     m = e.state.enemies[0]
     r1 = e.execute_action("use_daowen", {"daowen_name": "束缚", "x": 2, "target": m.name})
     assert r1["success"]
@@ -343,6 +345,8 @@ def test_cooldown_blocks_reuse_in_same_battle():
     e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "daowen", "name": "束缚"})
     _start_battle(e, relic)
     e.execute_action("round_start", {})
+    for _m in e.state.enemies:
+        _m.is_flying = False  # 本测试聚焦冷却，落地飞行怪
     m = e.state.enemies[0]
     e.execute_action("use_daowen", {"daowen_name": "束缚", "x": 2, "target": m.name})
     r2 = e.execute_action("use_daowen", {"daowen_name": "束缚", "x": 2, "target": m.name})
