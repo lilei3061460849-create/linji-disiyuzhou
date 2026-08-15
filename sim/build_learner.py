@@ -54,17 +54,56 @@ _ALL_EXCLUSIVE = {d for v in REGION_EXCLUSIVE_DAOWEN.values() for d in v}
 
 
 def _pick_monster_daowen(engine, actor):
-    """轮换选怪物道纹：跳过本场已激活的（README每回合1道纹，怪物应轮流用面板道纹）。"""
+    """怪物按当前情形择优选道纹（README：怪物为胜利和生存作最优决策）。
+
+    优先规则（按情形，非轮换）：
+      1. 输出型（狂暴/强化/杀伐/血债/锐利等）——怪物活着就要打输出，优先
+      2. 自保型（自愈/庇护/再生/固执）——自己血低时优先
+      3. 控制/削弱型（减速/束缚/衰败/勾魂/镇尸等）——对手血低/快赢时压制
+      4. 机制型（飞行/必中/贯穿/蒙蔽）——需要时开启（如对非飞行者飞行）
+    """
     opts = actor["daowen_options"]
     if not opts:
         return None
     m_idx = int(actor["actor_ref"].split(":", 1)[1]) if ":" in actor["actor_ref"] else 0
     activated = set()
     enemies = engine.state.enemies
+    monster = None
     if 0 <= m_idx < len(enemies):
-        activated = engine.combat._monster_activated.get(id(enemies[m_idx]), set())
+        monster = enemies[m_idx]
+        activated = engine.combat._monster_activated.get(id(monster), set())
     cands = [o for o in opts if o["name"] not in activated]
-    return cands[0] if cands else opts[0]
+    if not cands:
+        return opts[0]
+
+    # 输出/自保/控制/机制 优先级分组
+    OUTPUT = {"狂暴", "强化", "杀伐", "血债", "锐利", "冲击", "加害", "活血", "裂变", "洗劫", "赎金", "逼债", "清算", "假钞", "赌命"}
+    SELF = {"自愈", "庇护", "再生", "固执", "活力", "兴奋", "坚韧", "龙鳞"}
+    CONTROL = {"减速", "束缚", "衰败", "勾魂", "镇尸", "僵化", "眩晕", "蒙蔽", "弱化", "退化", "冥气", "缄默", "瓦解", "招魂", "堕落", "坠落", "无力", "迟滞", "定型", "封印", "缓慢"}
+    MECH = {"飞行", "必中", "贯穿", "滑翔", "洞察", "超频", "变形", "增殖", "寄生", "自残", "透支", "假钞", "无神", "借力", "自食"}
+
+    p = engine.state.player
+    player_low = p is not None and p.is_alive and p.current_hp <= p.blood_limit * 0.5
+    monster_low = monster is not None and monster.current_hp <= monster.blood_limit * 0.5
+
+    def group(o):
+        n = o["name"]
+        if n in OUTPUT: return 0
+        if n in SELF: return 1
+        if n in CONTROL: return 2
+        return 3
+
+    # 情形调整：血低自保优先；玩家血低→控制/输出收割
+    if monster_low:
+        self_cands = [o for o in cands if o["name"] in SELF]
+        if self_cands:
+            return self_cands[0]
+    if player_low:
+        kill_cands = [o for o in cands if o["name"] in OUTPUT or o["name"] in CONTROL]
+        if kill_cands:
+            return kill_cands[0]
+    # 默认按组优先级（输出>自保>控制>机制）
+    return min(cands, key=group)
 
 def _decline_spells(option):
     return {timing: {spell["spell_name"]: {"use": False}

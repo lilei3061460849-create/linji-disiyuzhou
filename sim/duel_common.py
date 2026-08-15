@@ -21,17 +21,42 @@ from sim.build_learner import _decline_spells, round_start_relic_choices
 
 
 def _pick_monster_daowen(engine, actor):
-    """轮换选怪物道纹：跳过本场已激活的（README每回合1道纹，怪物应轮流用面板道纹）。"""
+    """怪物按当前情形择优选道纹（README：怪物为胜利和生存作最优决策）。
+    输出优先，血低自保，玩家血低收割，机制型按需。"""
     opts = actor["daowen_options"]
     if not opts:
         return None
     m_idx = int(actor["actor_ref"].split(":", 1)[1]) if ":" in actor["actor_ref"] else 0
     activated = set()
     enemies = engine.state.enemies
+    monster = None
     if 0 <= m_idx < len(enemies):
-        activated = engine.combat._monster_activated.get(id(enemies[m_idx]), set())
+        monster = enemies[m_idx]
+        activated = engine.combat._monster_activated.get(id(monster), set())
     cands = [o for o in opts if o["name"] not in activated]
-    return cands[0] if cands else opts[0]
+    if not cands:
+        return opts[0]
+    OUTPUT = {"狂暴", "强化", "杀伐", "血债", "锐利", "冲击", "加害", "活血", "裂变", "洗劫", "赎金", "逼债", "清算", "赌命"}
+    SELF = {"自愈", "庇护", "再生", "固执", "活力", "龙鳞"}
+    CONTROL = {"减速", "束缚", "衰败", "勾魂", "镇尸", "僵化", "眩晕", "蒙蔽", "弱化", "退化", "冥气", "缄默", "瓦解", "招魂", "无力", "迟滞", "定型", "封印", "缓慢"}
+    p = engine.state.player
+    player_low = p is not None and p.is_alive and p.current_hp <= p.blood_limit * 0.5
+    monster_low = monster is not None and monster.current_hp <= monster.blood_limit * 0.5
+    def group(o):
+        n = o["name"]
+        if n in OUTPUT: return 0
+        if n in SELF: return 1
+        if n in CONTROL: return 2
+        return 3
+    if monster_low:
+        self_cands = [o for o in cands if o["name"] in SELF]
+        if self_cands:
+            return self_cands[0]
+    if player_low:
+        kill_cands = [o for o in cands if o["name"] in OUTPUT or o["name"] in CONTROL]
+        if kill_cands:
+            return kill_cands[0]
+    return min(cands, key=group)
 
 def _resolve_monster_turn_one(e, skip_refs: set):
     """守擂一步：prepare 后只结算1个尚未行动过的 actor，其余本步不动。
