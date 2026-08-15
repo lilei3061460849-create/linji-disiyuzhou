@@ -280,9 +280,8 @@ def play_dungeon(winner_path: str, battles: int, seed: int):
                 "allocations": {"speed_points": 0, "mana_points": 1}})
             print("局外：修行1档 → 法限+2")
         print(f"\n──── 第{b}场 · 战始 ────")
-        active = {r.name for r in e.state.relics if e.state.sealed_relics.get(r.name, 0) <= 0}
-        bs_choices = {n: {"use": False} for n in ("三相残韵盘", "折速法印", "猩红果实", "苍白之花") if n in active}
-        bs = e.execute_action("battle_start", {"relic_choices": bs_choices})
+        from sim.optional_actions import start_battle
+        bs, _art = start_battle(e)
         if not bs.get("success"):
             print("battle_start失败:", bs.get("error"))
             break
@@ -297,7 +296,8 @@ def play_dungeon(winner_path: str, battles: int, seed: int):
             if not [x for x in e.state.enemies if x.is_alive]:
                 won = True
                 break
-            rs = e.execute_action("round_start", {"relic_choices": round_start_relic_choices(e)})
+            from sim.optional_actions import start_round
+            rs, _rsart = start_round(e)
             print(f"\nR{rnd} 回始：玩家 hp={p.current_hp}/{p.blood_limit} 法={p.current_mana} "
                   f"速={p.current_speed} | 敌={[(x.name, x.current_hp) for x in e.state.enemies if x.is_alive]}")
             log = []

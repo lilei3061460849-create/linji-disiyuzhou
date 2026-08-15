@@ -18,10 +18,8 @@ from sim.build_learner import round_start_relic_choices
 
 def battle_one(e, strategy: str, battle_no: int, log_out):
     """打一场，返回 (win, path, rounds, detail)。"""
-    active = {r.name for r in e.state.relics if e.state.sealed_relics.get(r.name, 0) <= 0}
-    bs_choices = {n: {"use": False} for n in ("三相残韵盘", "折速法印", "猩红果实", "苍白之花")
-                  if n in active}
-    bs = e.execute_action("battle_start", {"relic_choices": bs_choices})
+    from sim.optional_actions import start_battle
+    bs, _art = start_battle(e)
     names = list(bs.get("enemies") or [])
     log_out.append(f"  第{battle_no}场出怪：{names}")
     result = {"win": False, "path": None, "rounds": 0, "detail": ""}
@@ -35,7 +33,7 @@ def battle_one(e, strategy: str, battle_no: int, log_out):
             result["win"] = True
             result["rounds"] = rnd
             break
-        e.execute_action("round_start", {"relic_choices": round_start_relic_choices(e)})
+        rs, _rsart = start_round(e)
         log = []
         strategy_turn(e, strategy, log)
         if not [x for x in e.state.enemies if x.is_alive]:
@@ -164,10 +162,8 @@ def full_run_mixed(winner_path: str, seed: int, db: str):
             e.execute_action("pre_battle_action", {
                 "sub_action": "修行", "tier": 1,
                 "allocations": {"speed_points": 0, "mana_points": 1}})
-        active = {r.name for r in e.state.relics if e.state.sealed_relics.get(r.name, 0) <= 0}
-        bs_choices = {n: {"use": False} for n in ("三相残韵盘", "折速法印", "猩红果实", "苍白之花")
-                      if n in active}
-        bs = e.execute_action("battle_start", {"relic_choices": bs_choices})
+        from sim.optional_actions import start_battle
+        bs, _art = start_battle(e)
         names = list(bs.get("enemies") or [])
         logs.append(f"  第{b}场出怪：{names}")
         n = len([x for x in e.state.enemies if x.is_alive])
@@ -179,7 +175,7 @@ def full_run_mixed(winner_path: str, seed: int, db: str):
             if not [x for x in e.state.enemies if x.is_alive]:
                 won = True
                 break
-            e.execute_action("round_start", {"relic_choices": round_start_relic_choices(e)})
+            rs, _rsart = start_round(e)
             # 第1回合：封印全部；法力不足则毒奶
             if rnd == 1 and p.current_mana >= 10 * n and "封印" in p.dao_wen:
                 r = e.execute_action("use_daowen", {"daowen_name": "封印", "x": n,

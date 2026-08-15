@@ -470,12 +470,8 @@ def play_first_tier(seed: int, region: str, sealed_path: str,
                                       "allocations": {"speed_points": 0, "mana_points": 1}})
 
         active_relics = {relic.name for relic in e.state.relics}
-        relic_choices = {
-            name: {"use": False}
-            for name in ("折速法印", "三相残韵盘", "猩红果实", "苍白之花")
-            if name in active_relics
-        }
-        bs = e.execute_action("battle_start", {"relic_choices": relic_choices})
+        from sim.optional_actions import start_battle as _sb
+        bs, _bs_artifacts = _sb(e)
         if not bs.get("success"):
             return {"cleared": cleared, "won": False, "invalid": True,
                     "reason": f"battle_start: {bs.get('error')}"}
@@ -485,7 +481,11 @@ def play_first_tier(seed: int, region: str, sealed_path: str,
                 break
             if not [x for x in e.state.enemies if x.is_alive]:
                 break
-            e.execute_action("round_start", {"relic_choices": round_start_relic_choices(e)})
+            from sim.optional_actions import start_round as _sr
+            rs, _rs_artifacts = _sr(e)
+            if not rs.get("success"):
+                return {"cleared": cleared, "won": False, "invalid": True,
+                        "reason": f"round_start: {rs.get('error')}"}
             # 罪孽都市专属：战斗内先用残韵解锁债务道纹（获得第一种专属道纹后局外才能学逼债）
             if debt_build:
                 unlock_sin_city_daowen(e)

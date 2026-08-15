@@ -104,7 +104,8 @@ def run_duel_pvp(e, player_act, max_rounds=60, max_steps=400, log=None):
             return {"winner": "defender", "rounds": rnd, "reason": "挑战者阵亡"}
         if not _lord_alive():
             return {"winner": "challenger", "rounds": rnd, "reason": "守擂主将阵亡"}
-        e.execute_action("round_start", {"relic_choices": round_start_relic_choices(e)})
+        from sim.optional_actions import start_round
+        rs, _rsart = start_round(e)
         for _ in range(max_steps):
             if not _challenger_alive():
                 return {"winner": "defender", "rounds": rnd, "reason": "挑战者阵亡"}

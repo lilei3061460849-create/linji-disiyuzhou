@@ -209,10 +209,8 @@ def run_strategy_battle(strategy: str, winner_path: str, seed: int, db: str):
     for line in log:
         print(" ", line)
     e.state.energy = 0
-    active = {r.name for r in e.state.relics if e.state.sealed_relics.get(r.name, 0) <= 0}
-    bs_choices = {n: {"use": False} for n in ("三相残韵盘", "折速法印", "猩红果实", "苍白之花")
-                  if n in active}
-    bs = e.execute_action("battle_start", {"relic_choices": bs_choices})
+    from sim.optional_actions import start_battle
+    bs, _art = start_battle(e)
     names = list(bs.get("enemies") or [])
     print(f"  出怪：{names}")
 
@@ -242,7 +240,8 @@ def run_strategy_battle(strategy: str, winner_path: str, seed: int, db: str):
             result["win"] = True
             result["rounds"] = rnd
             break
-        e.execute_action("round_start", {"relic_choices": round_start_relic_choices(e)})
+        from sim.optional_actions import start_round
+        rs, _rsart = start_round(e)
         log.clear()
         strategy_turn(e, strategy, log)
         for line in log:

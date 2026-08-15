@@ -53,9 +53,8 @@ def main():
             "sub_action": "修行", "tier": 1,
             "allocations": {"speed_points": 0, "mana_points": 1}})
     e.state.energy = 0
-    active = {r.name for r in e.state.relics if e.state.sealed_relics.get(r.name, 0) <= 0}
-    bs = e.execute_action("battle_start", {"relic_choices": {
-        n: {"use": False} for n in ("三相残韵盘", "折速法印", "猩红果实", "苍白之花") if n in active}})
+    from sim.optional_actions import start_battle
+    bs, _art = start_battle(e)
     print("出怪:", bs.get("enemies"))
 
     for rnd in range(1, 15):
@@ -67,7 +66,8 @@ def main():
         if not [x for x in e.state.enemies if x.is_alive]:
             print(f"R{rnd} 清场")
             break
-        e.execute_action("round_start", {"relic_choices": round_start_relic_choices(e)})
+        from sim.optional_actions import start_round
+        rs, _rsart = start_round(e)
         print(f"\nR{rnd} 回始：玩家hp={p.current_hp} 岩行者hp={fr.current_hp} 速={p.current_speed}")
         # 命令岩行者：发动背负 打 轮回者（X=1，挡1次伤害）
         r = e.execute_action("command_ally", {

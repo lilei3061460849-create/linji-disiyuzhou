@@ -75,9 +75,9 @@ def run_one(build: str, region: str, seed: int, battles: int = 7) -> dict:
                                  {"sub_action": "修行", "tier": 1,
                                   "to": "mana" if battle_no % 2 else "speed"})
 
-        relic_choices = ({starter_relic: {"use": False}}
-                         if starter_relic in optional_relics else {})
-        started = e.execute_action("battle_start", {"relic_choices": relic_choices})
+        from sim.optional_actions import battle_start_relic_choices
+        started = e.execute_action("battle_start",
+                                   {"relic_choices": battle_start_relic_choices(e)})
         if not started.get("success"):
             return {"cleared": cleared, "won": False, "died_at": battle_no,
                     "used": dict(ai.used), "hp": e.state.player.current_hp}
@@ -87,7 +87,8 @@ def run_one(build: str, region: str, seed: int, battles: int = 7) -> dict:
                 break
             if not [x for x in e.state.enemies if x.is_alive]:
                 break
-            e.execute_action("round_start", {"relic_choices": ({"血契": {"use": False}} if any(r.name == "血契" for r in e.state.relics) else {})})
+            from sim.optional_actions import round_start_relic_choices
+            e.execute_action("round_start", {"relic_choices": round_start_relic_choices(e)})
             ai.new_round()
             ai.take_turn()
             if not [x for x in e.state.enemies if x.is_alive]:

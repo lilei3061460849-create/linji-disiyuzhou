@@ -36,12 +36,13 @@ def main():
             print(f"== 第{b}场：轮回者已阵亡 ==")
             break
         pre_battle(e, [])
-        active = {r.name for r in e.state.relics if e.state.sealed_relics.get(r.name, 0) <= 0}
-        bs = e.execute_action("battle_start", {"relic_choices": {
-            n: {"use": False} for n in ("三相残韵盘", "折速法印", "猩红果实", "苍白之花") if n in active}})
+        from sim.optional_actions import start_battle, start_round
+        bs, _art = start_battle(e)
         if not bs.get("success"):
             print(f"== 第{b}场 battle_start失败：{bs.get('error')} ==")
             break
+        for _a in _art:
+            print(f"== 第{b}场 [法器] {_a.get('action')} ==")
         names = list(bs.get("enemies") or [])
         print(f"== 第{b}场 [战始] ==")
         print(f"出怪：{names}")
@@ -57,7 +58,12 @@ def main():
             if not [x for x in e.state.enemies if x.is_alive]:
                 won = True
                 break
-            e.execute_action("round_start", {"relic_choices": round_start_relic_choices(e)})
+            rs, _rsart = start_round(e)
+            if not rs.get("success"):
+                print(f"[回始] 第{rnd}回合失败：{rs.get('error')}")
+                break
+            for _a in _rsart:
+                print(f"[回始] 第{rnd}回合 [法器] {_a.get('action')}")
             print(f"[回始]：第{rnd}回合")
             print(f"  玩家 hp={p.current_hp}/{p.blood_limit} 法={p.current_mana} 速={p.current_speed} | " +
                   "、".join(f"{f.name}{f.current_hp}/{f.blood_limit}" for f in e.state.friends if f.is_alive) +

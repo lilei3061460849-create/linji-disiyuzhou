@@ -53,9 +53,8 @@ def clear_battle_7(e):
     触发 final_crown → duel_start，保证双方满状态进入死斗擂台。"""
     e.state.energy = 0
     e.state.current_battle = 6  # battle_start 会 +1 → 7 → battle_end 触发 final_crown
-    active = {r.name for r in e.state.relics if e.state.sealed_relics.get(r.name, 0) <= 0}
-    bs = e.execute_action("battle_start", {"relic_choices": {
-        n: {"use": False} for n in ("三相残韵盘", "折速法印", "猩红果实", "苍白之花") if n in active}})
+    from sim.optional_actions import start_battle
+    bs, _art = start_battle(e)
     if not bs.get("success"):
         return bs
     # 仪式战：直接判定清场（不消耗挑战者状态）

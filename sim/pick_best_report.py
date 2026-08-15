@@ -239,9 +239,9 @@ def play_and_record(region: str, seed: int, battles: int = 7):
                 else:
                     return {"invalid": True, "reason": f"局外行动失败:{rr.get('error')}"}
 
-            relic_choices = ({starter: {"use": False}}
-                             if starter in optional_relics else {})
-            bs = engine.execute_action("battle_start", {"relic_choices": relic_choices})
+            from sim.optional_actions import battle_start_relic_choices
+            bs = engine.execute_action("battle_start",
+                                       {"relic_choices": battle_start_relic_choices(engine)})
             if not bs.get("success"):
                 return {"invalid": True, "reason": f"battle_start:{bs.get('error')}"}
             enemies = list(engine.state.enemies)

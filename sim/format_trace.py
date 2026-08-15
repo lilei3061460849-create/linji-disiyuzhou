@@ -62,10 +62,9 @@ def run(region: str = "龙心谷", seed: int = 7, battles: int = 3) -> list[str]
 
     for battle_no in range(1, battles + 1):
         engine.state.energy = 0
-        relic_choices = {}
-        if starter in optional:
-            relic_choices[starter] = {"use": False}
-        bs = engine.execute_action("battle_start", {"relic_choices": relic_choices})
+        from sim.optional_actions import battle_start_relic_choices
+        bs = engine.execute_action("battle_start",
+                                   {"relic_choices": battle_start_relic_choices(engine)})
         enemies = list(engine.state.enemies)
         draw_count = bs.get("draw_count", len(enemies))
         start_effects = list(bs.get("relic_logs", []) or []) + list(bs.get("artifact_logs", []) or [])

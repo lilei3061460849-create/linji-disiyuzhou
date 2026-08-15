@@ -376,10 +376,29 @@ class TacticalAI:
                 return r
         return None
 
+    def try_artifact(self) -> Optional[dict]:
+        """可选法器（教父左轮/鲜血之翼等战斗内行动）：不占出手，能发动就发动。
+
+        此前 AI 从不发动任何可选法器（黑金名片/罪业金库/烬翼/左轮/血翼/共心环），
+        玩家战力被系统性低估。战始/回始窗口法器由 sim.optional_actions.start_battle/
+        start_round 在对应子阶段驱动；本策略处理 PLAYER_ACTIONS 阶段的法器。
+        """
+        from sim.optional_actions import (
+            try_fire_godfather_revolver, try_use_blood_wings,
+        )
+        for fn in (try_fire_godfather_revolver, try_use_blood_wings):
+            r = fn(self.engine)
+            if r and r.get("success"):
+                self.used[f"法器·{r.get('action', '')}"] = self.used.get(
+                    f"法器·{r.get('action', '')}", 0) + 1
+                return r
+        return None
+
     # ---------- 主入口 ----------
 
-    STRATEGIES = ("try_survive", "try_buff", "try_resonance", "try_finish", "try_remove",
-                  "try_control", "try_aoe", "try_debuff", "try_pressure", "try_ramp")
+    STRATEGIES = ("try_artifact", "try_survive", "try_buff", "try_resonance", "try_finish",
+                  "try_remove", "try_control", "try_aoe", "try_debuff", "try_pressure",
+                  "try_ramp")
 
     def take_action(self) -> Optional[dict]:
         """执行一次出手。返回引擎结果；无可行动作时返回 None。"""

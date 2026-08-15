@@ -112,10 +112,8 @@ def main():
                     logs.append(f"  第{b}场：阵亡")
                     break
                 pre_battle(e, logs)
-                active = {r.name for r in e.state.relics if e.state.sealed_relics.get(r.name, 0) <= 0}
-                bs_choices = {n: {"use": False} for n in ("三相残韵盘", "折速法印", "猩红果实", "苍白之花")
-                              if n in active}
-                bs = e.execute_action("battle_start", {"relic_choices": bs_choices})
+                from sim.optional_actions import start_battle
+                bs, _art = start_battle(e)
                 names = list(bs.get("enemies") or [])
                 logs.append(f"  第{b}场出怪：{names}")
                 won = False
@@ -126,7 +124,8 @@ def main():
                     if not [x for x in e.state.enemies if x.is_alive]:
                         won = True
                         break
-                    e.execute_action("round_start", {"relic_choices": round_start_relic_choices(e)})
+                    from sim.optional_actions import start_round
+                    rs, _rsart = start_round(e)
                     log = []
                     player_turn(e, log)
                     for line in log:

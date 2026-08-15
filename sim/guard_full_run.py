@@ -126,12 +126,13 @@ def settle_wages(e, logs):
 
 
 def battle_one(e, battle_no, logs):
-    active = {r.name for r in e.state.relics if e.state.sealed_relics.get(r.name, 0) <= 0}
-    bs = e.execute_action("battle_start", {"relic_choices": {
-        n: {"use": False} for n in ("三相残韵盘", "折速法印", "猩红果实", "苍白之花") if n in active}})
+    from sim.optional_actions import start_battle, start_round
+    bs, _art = start_battle(e)
     if not bs.get("success"):
         logs.append(f"  第{battle_no}场 battle_start失败：{bs.get('error')}")
         return False
+    for _a in _art:
+        logs.append(f"  法器：{_a.get('action')}")
     names = list(bs.get("enemies") or [])
     logs.append(f"  第{battle_no}场出怪：{names}")
     p = e.state.player
@@ -143,7 +144,12 @@ def battle_one(e, battle_no, logs):
         if not [x for x in e.state.enemies if x.is_alive]:
             won = True
             break
-        e.execute_action("round_start", {"relic_choices": round_start_relic_choices(e)})
+        rs, _rsart = start_round(e)
+        if not rs.get("success"):
+            logs.append(f"    R{rnd} round_start失败 {rs.get('error')}")
+            break
+        for _a in _rsart:
+            logs.append(f"    R{rnd} 法器：{_a.get('action')}")
         log = []
         player_turn(e, log)
         for line in log:

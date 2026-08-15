@@ -391,6 +391,14 @@ class PlaceholderBackend(AIBackend):
             }, "默认开局分配")
         
         elif phase == "pre_battle":
+            engine = getattr(self, "engine", None)
+            # 精力耗尽时，可进入战始：按共享策略显式提交可选战始遗物（可以不用但不能不让用）。
+            for action in available_actions.get("actions", []) or []:
+                if action.get("action_type") == "battle_start" and engine is not None:
+                    from sim.optional_actions import battle_start_relic_choices
+                    return AIDecision("battle_start", {
+                        "relic_choices": battle_start_relic_choices(engine),
+                    }, "进入战始并提交可选遗物决策")
             return AIDecision("pre_battle_action", {
                 "sub_action": "修行",
                 "tier": 1
@@ -398,6 +406,33 @@ class PlaceholderBackend(AIBackend):
         
         elif phase == "in_combat":
             pending_type = available_actions.get("action_type")
+            # 可选法器（黑金名片/罪业金库/烬翼/鲜血之翼/教父左轮/共心环）：
+            # 有引擎引用且对应行动在可用列表时，按策略函数尝试发动（可以不用但不能不让用）。
+            # commit=False 只返回计划不执行，由 AIPlayer.play_turn 统一 execute_action。
+            engine = getattr(self, "engine", None)
+            actions = available_actions.get("actions", [])
+            if engine is not None:
+                from sim.optional_actions import (
+                    try_select_shared_dragon_heart, try_use_black_card,
+                    try_use_crime_vault, try_use_dragon_wings,
+                    try_use_blood_wings, try_fire_godfather_revolver,
+                )
+                artifact_map = {
+                    "select_shared_dragon_heart": try_select_shared_dragon_heart,
+                    "use_black_card": try_use_black_card,
+                    "use_crime_vault": try_use_crime_vault,
+                    "use_dragon_wings": try_use_dragon_wings,
+                    "use_blood_wings": try_use_blood_wings,
+                    "fire_godfather_revolver": try_fire_godfather_revolver,
+                }
+                for action in actions:
+                    fn = artifact_map.get(action.get("action_type"))
+                    if fn is None:
+                        continue
+                    plan = fn(engine, commit=False)
+                    if plan and plan.get("_plan"):
+                        return AIDecision(plan["action_type"], plan["params"],
+                                          "发动可选法器")
             if pending_type == "resolve_attack":
                 options = available_actions.get("target_options", [])
                 target = options[0] if options else None
@@ -446,8 +481,14 @@ class PlaceholderBackend(AIBackend):
                 if action_type in ("round_start", "round_end", "prepare_monster_phase"):
                     round_params = {}
                     if action_type == "round_start":
-                        schema = action.get("params_schema", {}).get("relic_choices", {})
-                        choices = {name: {"use": False} for name in schema if name != "_instruction"}
+                        engine = getattr(self, "engine", None)
+                        if engine is not None:
+                            from sim.optional_actions import round_start_relic_choices
+                            choices = round_start_relic_choices(engine)
+                        else:
+                            schema = action.get("params_schema", {}).get("relic_choices", {})
+                            choices = {name: {"use": False}
+                                       for name in schema if name != "_instruction"}
                         round_params = {"relic_choices": choices}
                     return AIDecision(action_type, round_params,
                                       "推进合法战斗子阶段")
@@ -518,6 +559,12 @@ class AIPlayer:
     ):
         self.engine = game_engine
         self.backend = backend or PlaceholderBackend()
+        # 让后端能读到引擎实时状态，用于可选法器/遗物的显式决策（可以不用但不能不让用）。
+        if not getattr(self.backend, "engine", None):
+            try:
+                self.backend.engine = game_engine
+            except Exception:
+                pass
         self.validator = validator or RuleValidator()
         self.rule_sync = rule_sync
         self.auto_validate = auto_validate

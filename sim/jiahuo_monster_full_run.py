@@ -89,9 +89,8 @@ def main():
                 if not p or not p.is_alive:
                     logs.append(f"  第{b}场：阵亡"); break
                 pre_battle(e, logs)
-                active = {r.name for r in e.state.relics if e.state.sealed_relics.get(r.name, 0) <= 0}
-                bs = e.execute_action("battle_start", {"relic_choices": {
-                    n: {"use": False} for n in ("三相残韵盘", "折速法印", "猩红果实", "苍白之花") if n in active}})
+                from sim.optional_actions import start_battle, start_round
+                bs, _art = start_battle(e)
                 if not bs.get("success"):
                     logs.append(f"  第{b}场 battle_start失败：{bs.get('error')}"); break
                 names = list(bs.get("enemies") or [])
@@ -101,7 +100,7 @@ def main():
                     p = e.state.player
                     if not p or not p.is_alive: break
                     if not [x for x in e.state.enemies if x.is_alive]: won = True; break
-                    e.execute_action("round_start", {"relic_choices": round_start_relic_choices(e)})
+                    rs, _rsart = start_round(e)
                     log = []
                     player_turn(e, log)
                     for line in log: logs.append(f"    R{rnd}{line}")

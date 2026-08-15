@@ -449,24 +449,24 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                     e.execute_action("pre_battle_action",
                                      {"sub_action": "修行", "tier": 1, "to": "mana"})
 
-        # 共鸣/事件可能在开局后继续获得可选战始遗物；按当前持有列表逐件显式拒绝，
-        # 不能只提交开局遗物，否则模拟会被合法的显式选择门禁判为无效。
-        active_relics = {relic.name for relic in e.state.relics}
-        relic_choices = {
-            name: {"use": False}
-            for name in ("折速法印", "三相残韵盘", "猩红果实", "苍白之花")
-            if name in active_relics
-        }
-        bs = e.execute_action("battle_start", {"relic_choices": relic_choices})
+        # 共鸣/事件可能在开局后继续获得可选战始遗物；按当前持有列表逐件显式决策
+        # （可以不用但不能不让用：折速法印换法力/三相残韵盘/猩红果实/苍白之花按情形发动）。
+        bs, bs_artifact_logs = start_battle_with_artifacts(e)
         if not bs.get("success"):
             return {"cleared": cleared, "won": False, "invalid": True,
                     "reason": f"battle_start: {bs.get('error')}"}
+        if bs_artifact_logs:
+            for _r in bs_artifact_logs:
+                record("artifact", _r.get("action", ""))
         for _ in range(40):
             if not e.state.player or not e.state.player.is_alive:
                 break
             if not [x for x in e.state.enemies if x.is_alive]:
                 break
-            e.execute_action("round_start", {"relic_choices": round_start_relic_choices(e)})
+            rs, _rs_logs = start_round_with_artifacts(e)
+            if not rs.get("success"):
+                return {"cleared": cleared, "won": False, "invalid": True,
+                        "reason": f"round_start: {rs.get('error')}"}
             ai.new_round()
             try:
                 ai.take_turn()
@@ -950,19 +950,21 @@ if __name__ == "__main__":
 
 
 def round_start_relic_choices(e) -> dict:
-    """构建 [回始] 显式遗物选择：回锋刀需显式敌方目标；血契/余火印需显式use布尔。
+    """构建 [回始] 显式遗物选择：回锋刀需显式敌方目标；血契/余火印按情形主动使用。
 
-    AI 不得替玩家作选择，但平衡模拟器必须逐件显式提交以通过门禁（与 battle_start 同理）。
+    委托 sim/optional_actions（可以不用但不能不让用：血厚且法力有缺口时就换法力）。
     """
-    choices: dict = {}
-    active = {r.name for r in e.state.relics
-              if e.state.sealed_relics.get(r.name, 0) <= 0}
-    p = e.state.player
-    if "回锋刀" in active and p is not None and p.speed_limit > p.current_speed:
-        alive = [i for i, enemy in enumerate(e.state.enemies) if enemy.is_alive]
-        if alive:
-            choices["回锋刀"] = {"enemy_index": alive[0]}
-    for name in ("血契", "余火印"):
-        if name in active:
-            choices[name] = {"use": False}
-    return choices
+    from sim.optional_actions import round_start_relic_choices as _impl
+    return _impl(e)
+
+
+def start_battle_with_artifacts(e):
+    """战始 + 战始窗口法器（共心环/黑金名片）。返回 (battle_start结果, 法器结果列表)。"""
+    from sim.optional_actions import start_battle
+    return start_battle(e)
+
+
+def start_round_with_artifacts(e):
+    """回始窗口法器（罪业金库/烬翼）+ round_start。返回 (round_start结果, 法器结果列表)。"""
+    from sim.optional_actions import start_round
+    return start_round(e)
