@@ -19,6 +19,20 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sim.build_learner import _decline_spells, round_start_relic_choices
 
 
+
+def _pick_monster_daowen(engine, actor):
+    """轮换选怪物道纹：跳过本场已激活的（README每回合1道纹，怪物应轮流用面板道纹）。"""
+    opts = actor["daowen_options"]
+    if not opts:
+        return None
+    m_idx = int(actor["actor_ref"].split(":", 1)[1]) if ":" in actor["actor_ref"] else 0
+    activated = set()
+    enemies = engine.state.enemies
+    if 0 <= m_idx < len(enemies):
+        activated = engine.combat._monster_activated.get(id(enemies[m_idx]), set())
+    cands = [o for o in opts if o["name"] not in activated]
+    return cands[0] if cands else opts[0]
+
 def _resolve_monster_turn_one(e, skip_refs: set):
     """守擂一步：prepare 后只结算1个尚未行动过的 actor，其余本步不动。
     返回 (result, acted_ref)；acted_ref=None 表示本回合守擂已全部行动。"""
@@ -34,7 +48,7 @@ def _resolve_monster_turn_one(e, skip_refs: set):
     actor = todo[0]
     dao = None
     if actor["daowen_options"]:
-        option = actor["daowen_options"][0]
+        option = _pick_monster_daowen(engine, actor)
         dao = {"name": option["name"], "dodge": False, "blood_shadow": False,
                "trigger_spell_choices": {holder: {sp["spell_name"]: {"use": False}
                                                   for sp in spells}

@@ -52,6 +52,20 @@ from engine.gamedata import (REGION_EXCLUSIVE_DAOWEN, ORIGINAL_MONSTER_DAOWEN,
 _ALL_EXCLUSIVE = {d for v in REGION_EXCLUSIVE_DAOWEN.values() for d in v}
 
 
+
+def _pick_monster_daowen(engine, actor):
+    """轮换选怪物道纹：跳过本场已激活的（README每回合1道纹，怪物应轮流用面板道纹）。"""
+    opts = actor["daowen_options"]
+    if not opts:
+        return None
+    m_idx = int(actor["actor_ref"].split(":", 1)[1]) if ":" in actor["actor_ref"] else 0
+    activated = set()
+    enemies = engine.state.enemies
+    if 0 <= m_idx < len(enemies):
+        activated = engine.combat._monster_activated.get(id(enemies[m_idx]), set())
+    cands = [o for o in opts if o["name"] not in activated]
+    return cands[0] if cands else opts[0]
+
 def _decline_spells(option):
     return {timing: {spell["spell_name"]: {"use": False}
                      for spell in option.get("spell_options", {}).get(timing, [])}
@@ -90,7 +104,7 @@ def _resolve_monster_turn(engine):
         action_count = actor["base_attack_actions"]
         hit_count = actor["base_hits_per_attack"]
         if actor["daowen_options"]:
-            option = actor["daowen_options"][0]
+            option = _pick_monster_daowen(engine, actor)
             dao = {"name": option["name"], "dodge": False, "blood_shadow": False,
                    "trigger_spell_choices": {holder: {sp["spell_name"]: {"use": False} for sp in spells}
                                                for holder, spells in option.get("trigger_spell_options", {}).items()}}
@@ -139,7 +153,7 @@ def _resolve_monster_turn(engine):
     for actor in prepared["result"]["actors"]:
         dao = None
         if actor["daowen_options"]:
-            option = actor["daowen_options"][0]
+            option = _pick_monster_daowen(engine, actor)
             dao = {"name": option["name"], "dodge": False, "blood_shadow": False,
                    "trigger_spell_choices": {holder: {sp["spell_name"]: {"use": False} for sp in spells}
                                                for holder, spells in option.get("trigger_spell_options", {}).items()}}

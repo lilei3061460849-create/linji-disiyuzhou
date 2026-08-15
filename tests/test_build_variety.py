@@ -34,9 +34,6 @@ def _engine(starter="杀伐", learn=(), region="龙心谷", seed=1, tmp="/tmp/bv
         choices[relic] = {"use": False}
     e.execute_action("battle_start", {"relic_choices": choices})
     e.execute_action("round_start", {})
-    # 本测试聚焦"AI会用专属道纹"，不测飞行：把抽到的飞行怪落地，避免AI打不到
-    for _m in e.state.enemies:
-        _m.is_flying = False
     return e
 
 

@@ -26,6 +26,20 @@ from sim.produce_real_winners import build_spell_choices
 
 # 玩家自己回合的手操策略（不用TacticalAI，用最简显式规则）
 # 满法输出：杀伐X尽量大；庇护保命：仅在受到致命威胁且盾不足时上盾
+
+def _pick_monster_daowen(engine, actor):
+    """轮换选怪物道纹：跳过本场已激活的（README每回合1道纹，怪物应轮流用面板道纹）。"""
+    opts = actor["daowen_options"]
+    if not opts:
+        return None
+    m_idx = int(actor["actor_ref"].split(":", 1)[1]) if ":" in actor["actor_ref"] else 0
+    activated = set()
+    enemies = engine.state.enemies
+    if 0 <= m_idx < len(enemies):
+        activated = engine.combat._monster_activated.get(id(enemies[m_idx]), set())
+    cands = [o for o in opts if o["name"] not in activated]
+    return cands[0] if cands else opts[0]
+
 def manual_player_turn(e, log):
     """满法输出+理智闪避+庇护保命（玩家回合）。返回出手列表。"""
     p = e.state.player
@@ -86,7 +100,7 @@ def _resolve_monster_turn_hand(e, log):
         action_count = actor["base_attack_actions"]
         hit_count = actor["base_hits_per_attack"]
         if actor["daowen_options"]:
-            option = actor["daowen_options"][0]
+            option = _pick_monster_daowen(engine, actor)
             dao = {"name": option["name"], "dodge": False, "blood_shadow": False,
                    "trigger_spell_choices": {holder: {sp["spell_name"]: {"use": False}
                                                       for sp in spells}
@@ -138,7 +152,7 @@ def _resolve_monster_turn_hand(e, log):
             dao = None
             hit_count_fb = actor["base_hits_per_attack"]
             if actor["daowen_options"]:
-                option = actor["daowen_options"][0]
+                option = _pick_monster_daowen(engine, actor)
                 dao = {"name": option["name"], "dodge": False, "blood_shadow": False,
                        "trigger_spell_choices": {holder: {sp["spell_name"]: {"use": False}
                                                           for sp in spells}

@@ -156,22 +156,3 @@ def test_parse_monster_pool_never_mixes_regions():
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
 
-
-def test_monster_with_flying_daowen_actually_flying():
-    """bug修复：怪物面板带"飞行"道纹必须 is_flying=True（此前只塞道纹不设字段，
-    一阶骨天使/奇美拉等飞行怪从未真正飞过，玩家杀伐能打到飞行怪=错误）。"""
-    from engine.monsters import make_monster_entity
-    from engine.models import DaoWen, DaoWenInstance
-
-    m = make_monster_entity({"name": "测试飞怪", "blood_limit": 100, "attack_count": 2,
-                             "attack_power": 5, "dao_wen": {"飞行": 3}})
-    assert m.is_flying is True, "带飞行道纹的怪物必须is_flying=True"
-    assert "飞行" in m.dao_wen
-
-
-def test_monster_without_flying_daowen_not_flying():
-    """正常路径：不带飞行道纹的怪物不飞行。"""
-    from engine.monsters import make_monster_entity
-    m = make_monster_entity({"name": "测试地怪", "blood_limit": 100, "attack_count": 2,
-                             "attack_power": 5, "dao_wen": {"狂暴": 2}})
-    assert m.is_flying is False
