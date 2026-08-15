@@ -64,7 +64,7 @@ def test_ai_finishes_killable_target(tmp_path):
     """正常路径：目标可被一击击杀时应当收割"""
     e = _engine(tmp_path)
     m = e.state.enemies[0]
-    m.current_hp = 4  # 杀伐X=2 即可击杀
+    m.current_hp = 4  # 杀伐X=2 造成6伤 即可击杀
     ai = TacticalAI(e)
     r = ai.try_finish()
     assert r is not None, "可击杀目标却未收割"

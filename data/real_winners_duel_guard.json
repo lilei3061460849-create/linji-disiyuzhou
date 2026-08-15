@@ -1,0 +1,155 @@
+{
+  "player": {
+    "name": "贾凡",
+    "entity_type": "轮回者",
+    "blood_limit": 60,
+    "current_hp": 25,
+    "mana_limit": 70,
+    "current_mana": 0,
+    "speed_limit": 8,
+    "current_speed": 8,
+    "attack_count": 0,
+    "attack_power": 0,
+    "shield": 0,
+    "is_flying": false,
+    "is_alive": true,
+    "shards": 0,
+    "is_debt_bound": false,
+    "dao_wen": {
+      "杀伐": 0,
+      "庇护": 0,
+      "再生": 0,
+      "蒙蔽": 0
+    },
+    "spells": [
+      {
+        "name": "先发制人",
+        "required_daowen": [
+          "杀伐"
+        ],
+        "trigger_condition": "",
+        "effect_flow": "",
+        "rank": 1,
+        "custom_conditions": []
+      },
+      {
+        "name": "生生不息",
+        "required_daowen": [
+          "再生"
+        ],
+        "trigger_condition": "",
+        "effect_flow": "",
+        "rank": 1,
+        "custom_conditions": []
+      },
+      {
+        "name": "后发制人",
+        "required_daowen": [
+          "庇护"
+        ],
+        "trigger_condition": "",
+        "effect_flow": "",
+        "rank": 1,
+        "custom_conditions": []
+      }
+    ],
+    "relics": [],
+    "status_effects": []
+  },
+  "friends": [
+    {
+      "name": "护卫者1",
+      "entity_type": "朋友",
+      "blood_limit": 54,
+      "current_hp": 54,
+      "mana_limit": 0,
+      "current_mana": 0,
+      "speed_limit": 0,
+      "current_speed": 0,
+      "attack_count": 2,
+      "attack_power": 4,
+      "shield": 0,
+      "is_flying": false,
+      "is_alive": true,
+      "shards": 0,
+      "is_debt_bound": false,
+      "dao_wen": {},
+      "spells": [],
+      "relics": [],
+      "status_effects": []
+    },
+    {
+      "name": "护卫者2",
+      "entity_type": "朋友",
+      "blood_limit": 54,
+      "current_hp": 54,
+      "mana_limit": 0,
+      "current_mana": 0,
+      "speed_limit": 0,
+      "current_speed": 0,
+      "attack_count": 2,
+      "attack_power": 4,
+      "shield": 0,
+      "is_flying": false,
+      "is_alive": true,
+      "shards": 0,
+      "is_debt_bound": false,
+      "dao_wen": {},
+      "spells": [],
+      "relics": [],
+      "status_effects": []
+    },
+    {
+      "name": "护卫者3",
+      "entity_type": "朋友",
+      "blood_limit": 54,
+      "current_hp": 54,
+      "mana_limit": 0,
+      "current_mana": 0,
+      "speed_limit": 0,
+      "current_speed": 0,
+      "attack_count": 2,
+      "attack_power": 4,
+      "shield": 0,
+      "is_flying": false,
+      "is_alive": true,
+      "shards": 0,
+      "is_debt_bound": false,
+      "dao_wen": {},
+      "spells": [],
+      "relics": [],
+      "status_effects": []
+    }
+  ],
+  "employees": [],
+  "relics": [
+    {
+      "name": "守夜灯",
+      "effect": "[敌回始]获得[法限]50%法力，[敌回终]清空，每回合一次",
+      "tags": []
+    }
+  ],
+  "resonance": {
+    "反转": 0
+  },
+  "shards": 85,
+  "death_book_wisdom": [],
+  "rest_heal_bonus": 0,
+  "death_book_legacies": [
+    {
+      "title": "贾凡·罪孽都市·第5场",
+      "trigger_point": "第5场受到致死攻击命零",
+      "fork": "未闪避承受攻击",
+      "cost_budget": "愿以碎片换速度"
+    }
+  ],
+  "attribute_points": 0,
+  "current_region": "扭曲都市",
+  "artifacts_owned": [],
+  "first_embrace_traits": [],
+  "pending_first_embrace": false,
+  "chizu_names": [],
+  "dragon_nature": 0,
+  "dragon_traits": [],
+  "has_sacrifice_action": false
+}

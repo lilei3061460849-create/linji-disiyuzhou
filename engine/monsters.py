@@ -43,12 +43,11 @@ def parse_monster_pool(index_path: str | Path) -> dict:
     return pools
 
 
-def compute_draw_count(battle_number: int, is_tier_one: bool = True) -> int:
-    """出怪数量公式（一阶副本，DM裁定采用记录版"-3"，README已同步更正）：
-    数量 = 战斗场数 - 3，最低为1。（一阶7场序列：1/1/1/1/2/3/4）
-    非一阶副本目前未设计/未实现，暂按同一公式退化处理，遇到时应重新裁定。"""
-    reduction = 3 if is_tier_one else 0
-    return max(1, battle_number - reduction)
+def compute_draw_count(battle_number: int) -> int:
+    """出怪数量公式（全部副本统一，DM裁定采用记录版"-3"）：
+    数量 = 战斗场数 - 3，最低为1。（7场序列：1/1/1/1/2/3/4）
+    乱葬岗等二阶及以上副本与一阶共用同一公式。"""
+    return max(1, battle_number - 3)
 
 
 def make_monster_entity(monster_def: dict):
@@ -61,4 +60,6 @@ def make_monster_entity(monster_def: dict):
         m.dao_wen[dw_name] = DaoWenInstance(
             dao_wen=DaoWen(name=dw_name, formula="", cost_type="", cost_formula="", effect_formula=""),
             x_value=x)
+    # 注意：不在此设 is_flying——README 358 白板开局：怪物第1回合非飞行，
+    # 须在出手轮主动发动"飞行"道纹后才生效（combat 发动道纹时设 is_flying）。
     return m

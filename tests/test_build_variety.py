@@ -102,7 +102,7 @@ def test_every_tactical_role_is_reachable():
 # ---------- 边界条件 ----------
 
 def test_nuke_ranked_prefers_higher_damage_per_budget():
-    """边界：小预算下应选性价比更高者（杀伐2伤/法 > 锐利1.33伤/法）"""
+    """边界：小预算下应选性价比更高者（杀伐3伤/法 > 锐利1.67伤/法）"""
     e = _engine(starter="锐利", learn=["杀伐"])
     ai = TacticalAI(e)
     ranked = ai._nuke_ranked(4)

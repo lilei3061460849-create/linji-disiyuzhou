@@ -1,0 +1,653 @@
+#!/usr/bin/env python3
+"""从一阶真实对局逐个跑出「真实的一阶胜者」，供二阶（乱葬岗）测试使用。
+
+背景（用户要求）：测试二阶不能用初始角色（60血/无法术/无朋友/无碎片），
+必须用「真实的一阶胜者」——实际赢下 7 场一阶战斗、被【最终的冠冕】完整封存、
+带着成长/道纹/法术/朋友/遗物/碎片进入二阶的角色。
+
+本脚本与 build_learner.play 的区别：
+1. 局外【学习】包含法术：先发制人（免费1种）→ 庇护/再生（免费道纹）→ 生生不息/后发制人
+2. 怪物阶段触发反应型法术（先发制人 before / 生生不息 after / 后发制人 before）
+3. 玩家回合：TacticalAI（满法输出+理智闪避+庇护保命），但保留少量法力给法术
+4. 通关后把封存快照单独保存到 data/real_winners/winner_XX.json
+
+用法：
+    python3 sim/produce_real_winners.py --count 10
+    python3 sim/produce_real_winners.py --max-games 200
+"""
+import argparse
+import json
+import os
+import random
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from engine.api import GameEngine
+from engine.ai_tactics import TacticalAI, choose_dodge, choose_attack_target
+from sim.build_learner import _decline_spells, _resolve_pending_event, round_start_relic_choices
+
+REGIONS = ["罪孽都市", "扭曲都市", "龙心谷"]
+WINNER_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                          "data", "real_winners")
+
+# 学习顺序：先发制人(法术,免费,需杀伐=起手道纹) → 庇护/再生(道纹,免费)
+#          → 生生不息(法术,免费) → 后发制人(法术,免费)
+# 但第1场先修行(+2法限)与baseline对齐，成长优先，法术第2场起补学。
+SPELL_ORDER = ["先发制人", "生生不息", "后发制人"]
+DAOWEN_ORDER = ["庇护", "再生"]
+SPELL_REQUIRES = {"先发制人": ["杀伐"], "生生不息": ["再生"], "后发制人": ["庇护"]}
+
+# 每场战斗保留给反应法术的法力（手操会留一手：先发制人反打、后发制人上盾、生生不息回血）
+SPELL_MANA_RESERVE = 2
+
+
+
+def _pick_monster_daowen(engine, actor):
+    """怪物按当前情形择优选道纹（README：怪物为胜利和生存作最优决策）。
+    输出优先，血低自保，玩家血低收割，机制型按需。"""
+    opts = actor["daowen_options"]
+    if not opts:
+        return None
+    m_idx = int(actor["actor_ref"].split(":", 1)[1]) if ":" in actor["actor_ref"] else 0
+    activated = set()
+    enemies = engine.state.enemies
+    monster = None
+    if 0 <= m_idx < len(enemies):
+        monster = enemies[m_idx]
+        activated = engine.combat._monster_activated.get(id(monster), set())
+    cands = [o for o in opts if o["name"] not in activated]
+    if not cands:
+        return opts[0]
+    OUTPUT = {"狂暴", "强化", "杀伐", "血债", "锐利", "冲击", "加害", "活血", "裂变", "洗劫", "赎金", "逼债", "清算", "赌命"}
+    SELF = {"自愈", "庇护", "再生", "固执", "活力", "龙鳞"}
+    CONTROL = {"减速", "束缚", "衰败", "勾魂", "镇尸", "僵化", "眩晕", "蒙蔽", "弱化", "退化", "冥气", "缄默", "瓦解", "招魂", "无力", "迟滞", "定型", "封印", "缓慢"}
+    p = engine.state.player
+    player_low = p is not None and p.is_alive and p.current_hp <= p.blood_limit * 0.5
+    monster_low = monster is not None and monster.current_hp <= monster.blood_limit * 0.5
+    def group(o):
+        n = o["name"]
+        if n in OUTPUT: return 0
+        if n in SELF: return 1
+        if n in CONTROL: return 2
+        return 3
+    if monster_low:
+        self_cands = [o for o in cands if o["name"] in SELF]
+        if self_cands:
+            return self_cands[0]
+    if player_low:
+        kill_cands = [o for o in cands if o["name"] in OUTPUT or o["name"] in CONTROL]
+        if kill_cands:
+            return kill_cands[0]
+    return min(cands, key=group)
+
+def _spell_step_entry(step: dict, player_ref: str, mana: int) -> dict:
+    """为单个法术步骤构造 cycle 内的条目：x 按需推导，target_ref 用 prepare 给的引用。
+    自由控X：攻击步骤拿剩余法力（最大化反打），自保/回复步骤留1。"""
+    target_ref = step["target_ref"]
+    hostile = target_ref != player_ref
+    entry = {"x": 1, "target_ref": target_ref}
+    if hostile:
+        entry["dodge"] = False
+        entry["x"] = max(1, mana - 1)  # 攻击步自由控X
+    return entry
+
+
+def build_spell_choices(target_option: dict, player_ref: str, mana_budget: int) -> dict:
+    """根据 prepare 给出的 spell_options 构造完整 spell_choices（逐法术显式 use）。
+
+    mana_budget：当前可支配法力（由调用方按命中次数递减），保证法术提交合法。
+    """
+    spell_options = target_option.get("spell_options", {}) or {}
+    out = {}
+    for timing in ("before", "after"):
+        out[timing] = {}
+        for spell in spell_options.get(timing, []) or []:
+            name = spell["spell_name"]
+            steps = spell.get("steps", [])
+            # 决定是否使用
+            use = False
+            cycles = []
+            if timing == "before":
+                # 先发制人/借力打力等：有敌对步骤就打；后发制人/庇护类上盾
+                has_hostile = any(s.get("target_ref") != player_ref for s in steps)
+                if has_hostile:
+                    use = True
+                elif steps and steps[0].get("daowen") == "庇护":
+                    use = True  # 后发制人：上盾
+            else:
+                # after：生生不息/以牙还牙 —— 掉血后回血，视为总是值得（血量不满才触发）
+                use = True
+            if use and mana_budget >= 1:
+                # 跨步骤递减法力：攻击步拿剩余，自保步留1，避免多步法术超支
+                remaining = mana_budget
+                cycle = []
+                for st in steps:
+                    entry = _spell_step_entry(st, player_ref, remaining)
+                    cycle.append(entry)
+                    remaining -= entry["x"]
+                    if remaining < 1:
+                        break
+                cycles = [cycle]
+            else:
+                use = False  # 预算不足时显式拒绝，避免结算法力不足报错
+            out[timing][name] = {"use": use, "cycles": cycles} if use else {"use": False}
+    return out
+
+
+def _resolve_monster_turn_with_spells(engine):
+    """怪物阶段解析器：与 build_learner._resolve_monster_turn 相同，
+    但攻击玩家时会触发玩家的反应型法术（先发制人/后发制人/生生不息）。"""
+    prepared = engine.execute_action("prepare_monster_phase", {})
+    if not prepared.get("success"):
+        return prepared
+    choices = []
+    dodge_budget = 0
+    refs = engine.combat._combat_entity_refs()
+    player_ref = "player:0"
+    for actor in prepared["result"]["actors"]:
+        dao = None
+        action_count = actor["base_attack_actions"]
+        hit_count = actor["base_hits_per_attack"]
+        if actor["daowen_options"]:
+            option = _pick_monster_daowen(engine, actor)
+            dao = {"name": option["name"], "dodge": False, "blood_shadow": False,
+                   "trigger_spell_choices": {holder: {sp["spell_name"]: {"use": False}
+                                                      for sp in spells}
+                                             for holder, spells in option.get("trigger_spell_options", {}).items()}}
+            if option["requires_target"]:
+                dao["target_ref"] = option["target_options"][0]["ref"]
+            if option["dodge_submission"] == "per_target":
+                dao["dodge_targets"] = [
+                    {"target_ref": t["ref"], "dodge": False, "blood_shadow": False}
+                    for t in option["dodge_target_options"]]
+            if option["resolves_as"] == "变形":
+                enemy_index = int(actor["actor_ref"].split(":", 1)[1])
+                hit_count = engine.state.enemies[enemy_index].attack_power
+        monster = refs.get(actor["actor_ref"])
+        per_hit = monster.attack_power if monster is not None else 0
+        target_ref = choose_attack_target(actor["attack_target_options"], refs)
+        target_option = next(o for o in actor["attack_target_options"] if o["ref"] == target_ref)
+        # 法术法力预算：整个怪物阶段共享（多怪多击会连续触发，逐击递减保证合法）
+        spell_mana_left = engine.state.player.current_mana if engine.state.player else 0
+        attacks = []
+        for _ in range(action_count):
+            hits = []
+            for _ in range(hit_count):
+                want_dodge = choose_dodge(engine, per_hit, budget_used=dodge_budget)
+                if want_dodge:
+                    dodge_budget += 1
+                hit = {"target_ref": target_ref, "dodge": want_dodge,
+                       "blood_shadow": False,
+                       "spell_choices": build_spell_choices(target_option, player_ref,
+                                                            mana_budget=spell_mana_left)}
+                if target_ref == player_ref:
+                    # 每次对玩家的命中若触发法术会消耗法力（杀伐X消耗X、庇护X消耗X）
+                    eligible = target_option.get("spell_options", {}) or {}
+                    for timing in ("before", "after"):
+                        for sp in eligible.get(timing, []) or []:
+                            if hit["spell_choices"].get(timing, {}).get(sp["spell_name"], {}).get("use"):
+                                spell_mana_left = max(0, spell_mana_left - 2)
+                if want_dodge and target_option.get("dodge_relic_target_options"):
+                    hit["dodge_relic_target_ref"] = target_option["dodge_relic_target_options"][0]["ref"]
+                hits.append(hit)
+            attacks.append({"hits": hits})
+        choices.append({"actor_ref": actor["actor_ref"], "daowen": dao,
+                        "attack_actions": attacks})
+    result = engine.execute_action("resolve_monster_phase", {
+        "token": prepared["result"]["token"], "choices": choices})
+    if result.get("success"):
+        return result
+    # 原子失败后兜底：退回不触发法术（与 build_learner 一致），避免把可继续的模拟误记为异常
+    fallback = []
+    for actor in prepared["result"]["actors"]:
+        dao = None
+        hit_count_fb = actor["base_hits_per_attack"]
+        if actor["daowen_options"]:
+            option = _pick_monster_daowen(engine, actor)
+            dao = {"name": option["name"], "dodge": False, "blood_shadow": False,
+                   "trigger_spell_choices": {holder: {sp["spell_name"]: {"use": False}
+                                                      for sp in spells}
+                                             for holder, spells in option.get("trigger_spell_options", {}).items()}}
+            if option["requires_target"]:
+                dao["target_ref"] = option["target_options"][0]["ref"]
+            if option["dodge_submission"] == "per_target":
+                dao["dodge_targets"] = [
+                    {"target_ref": t["ref"], "dodge": False, "blood_shadow": False}
+                    for t in option["dodge_target_options"]]
+            if option["resolves_as"] == "变形":
+                enemy_index = int(actor["actor_ref"].split(":", 1)[1])
+                hit_count_fb = engine.state.enemies[enemy_index].attack_power
+        target_ref = choose_attack_target(actor["attack_target_options"], refs)
+        target_option = next(o for o in actor["attack_target_options"] if o["ref"] == target_ref)
+        attacks = [{"hits": [{
+            "target_ref": target_ref, "dodge": False, "blood_shadow": False,
+            "spell_choices": _decline_spells(target_option),
+        } for _ in range(hit_count_fb)]}
+            for _ in range(actor["base_attack_actions"])]
+        fallback.append({"actor_ref": actor["actor_ref"], "daowen": dao,
+                         "attack_actions": attacks})
+    return engine.execute_action("resolve_monster_phase", {
+        "token": prepared["result"]["token"], "choices": fallback})
+
+
+def choose_pre_battle(e, battle_no, todo_spells, todo_daowen, rng=None):
+    """局外行动：优先学法术/道纹（免费），其余按真实策略权重选（修行/休整/探索/共鸣/领悟/雇佣）。
+
+    与 baseline 对齐的成长顺序：第1场先修行(+2法限)再学道纹（实测保证第1场能打）；
+    法术从第2场起补学（先发制人=免费，需要杀伐=起手道纹）。
+    探索/雇佣/共鸣会让胜者像真实玩家一样带朋友/员工/遗物，而不是光杆司令。"""
+    rng = rng or random.Random()
+    p = e.state.player
+    if battle_no == 1 and not getattr(p, "_b1_xiuxing", False):
+        p._b1_xiuxing = True
+        return "修行", {"tier": 1, "allocations": {"speed_points": 0, "mana_points": 1}}
+    # 罪孽都市：雇佣高攻员工当靶子（威胁分压过玩家 → 怪物集火员工替轮回者抗伤）
+    if e.state.current_region == "罪孽都市" and len(e.state.employees) < 3:
+        # 20点预算：5攻次10攻力(15点)+60血(5点) → 威胁50+转化道纹10=60 > 玩家30-40
+        return "雇佣", {"name": f"铁卫{len(e.state.employees) + 1}",
+                        "blood_alloc": 5, "atk_bundles": 5}
+    # 债务构建：需要 转换(洗劫→逼债) + 反转(TacticalAI用) 两个残韵，第1场前就攒
+    from engine.gamedata import REGION_EXCLUSIVE_DAOWEN
+    if "逼债" in todo_daowen and not (REGION_EXCLUSIVE_DAOWEN["罪孽都市"] & set(p.dao_wen)):
+        have = sum(1 for k in ("转换", "反转") if e.state.resonance.get(k, 0) > 0)
+        if have < 2:
+            want = "转换" if e.state.resonance.get("转换", 0) <= 0 else "反转"
+            r = e.execute_action("pre_battle_action", {"sub_action": "领悟", "resonance_type": want})
+            if r.get("success"):
+                return "领悟", {"resonance_type": want}
+    if todo_daowen:
+        name = todo_daowen[0]
+        # 逼债是罪孽都市专属：未残韵解锁前不能学（学习门禁），先领悟攒残韵
+        from engine.gamedata import REGION_EXCLUSIVE_DAOWEN
+        if name in REGION_EXCLUSIVE_DAOWEN["罪孽都市"]:
+            if not (REGION_EXCLUSIVE_DAOWEN["罪孽都市"] & set(p.dao_wen)):
+                r = e.execute_action("pre_battle_action", {"sub_action": "领悟", "resonance_type": "转换"})
+                if not r.get("success"):
+                    r = e.execute_action("pre_battle_action", {"sub_action": "领悟", "resonance_type": "反转"})
+                if r.get("success"):
+                    return "领悟", {"resonance_type": r.get("result", {}).get("gained_resonance", "转换")}
+                todo_daowen.pop(0)  # 学不了就放弃
+                return choose_pre_battle(e, battle_no, todo_spells, todo_daowen, rng)
+        return "学习", {"sub": "daowen", "tier": 1, "names": [name]}
+    # 龙心谷：优先探索拿带保护道纹的朋友（岩行者背负1/赴火者逆鳞1）——护卫命令的载体。
+    # 断桥余烬是龙心谷专属事件，探索随机遭遇；拿到任一朋友即停。
+    if e.state.current_region == "龙心谷" and not e.state.friends:
+        return "探索", {"tier": 1}
+    if todo_spells:
+        name = todo_spells[0]
+        req = SPELL_REQUIRES.get(name, [])
+        if all(r in p.dao_wen for r in req):
+            return "学习", {"sub": "spell", "tier": 1, "names": [name]}
+        todo_spells.pop(0)  # 所需道纹未就绪，跳过（后续学完道纹再试）
+        return choose_pre_battle(e, battle_no, todo_spells, todo_daowen, rng)
+    if p and p.current_hp < p.blood_limit * 0.6:
+        return "休整", {"tier": 1, "heal_allocations": [
+            {"target_ref": "player:0", "amount": 8 + e.state.rest_heal_bonus}]}
+    # 碎片→战力（spend_shards 模式，由 play_first_tier 传入全局标记；这里保守：
+    # 主循环在每次局外结束后额外尝试花碎片，见 play_first_tier）。
+    return "修行", {"tier": 1, "allocations": {"speed_points": 0, "mana_points": 1}}
+
+
+def unlock_sin_city_daowen(e, log=None):
+    """罪孽都市一阶：用残韵对怪物的专属道纹转化，让玩家获得第一种罪孽都市道纹。
+
+    门禁：学习罪孽都市专属道纹须先经残韵获得一种（README）。优先 洗劫→转换→逼债
+    （逼债对乱葬岗0碎片怪=每回始削2X血限，是二阶可用武器）；无洗劫怪则用任意
+    专属道纹+存在的残韵路径解锁门禁。返回是否成功解锁。"""
+    p = e.state.player
+    if p is None or not p.is_alive:
+        return False
+    from engine.gamedata import REGION_EXCLUSIVE_DAOWEN
+    from engine.daowen import ResonanceEngine
+    exclusive = REGION_EXCLUSIVE_DAOWEN["罪孽都市"]
+    if exclusive & set(p.dao_wen):
+        return True  # 已解锁
+    stock = {k: v for k, v in e.state.resonance.items() if v > 0}
+    if not stock:
+        return False
+
+    # 第一优先：洗劫怪 → 转换 → 逼债（最想要的二阶武器）
+    if "转换" in stock:
+        for m in e.state.enemies:
+            if m.is_alive and "洗劫" in m.dao_wen:
+                r = e.execute_action("use_resonance", {
+                    "source_daowen": "洗劫", "resonance_type": "转换",
+                    "target_ref": f"enemy:{e.state.enemies.index(m)}"})
+                if r.get("success"):
+                    if log is not None:
+                        log.append(f"  残韵：转换 洗劫 → 逼债（现持有{list(p.dao_wen)}）")
+                    return True
+    # 兜底：任意专属道纹 × 存在路径的残韵类型
+    for m in e.state.enemies:
+        if not m.is_alive:
+            continue
+        for src in list(m.dao_wen):
+            if src not in exclusive:
+                continue
+            for rtype in ("转换", "反转", "曲解"):
+                if stock.get(rtype, 0) <= 0:
+                    continue
+                if ResonanceEngine.find_transformation(src, rtype) is None:
+                    continue
+                r = e.execute_action("use_resonance", {
+                    "source_daowen": src, "resonance_type": rtype,
+                    "target_ref": f"enemy:{e.state.enemies.index(m)}"})
+                if r.get("success"):
+                    if log is not None:
+                        log.append(f"  残韵：{rtype} {src} → 解锁罪孽都市道纹（现持有{list(p.dao_wen)}）")
+                    return True
+    return False
+
+
+def play_first_tier(seed: int, region: str, sealed_path: str,
+                    db_path: str = None, telemetry: dict = None,
+                    debt_build: bool = False, spend_shards: bool = True) -> dict:
+    """跑一局一阶轮回，通关后把封存快照写到 sealed_path。
+
+    debt_build=True：罪孽都市专属构建——残韵解锁债务道纹并学习【逼债】，
+    使胜者带着乱葬岗可用的削血限武器进入二阶。
+    spend_shards=True（默认）：七场局外把碎片尽量花成战力（高阶修行/附煞/
+    共鸣遗物），封存带"已转化战力"而非"剩余碎片"——不花碎片怎么快速提高战力？
+    不提高战力怎么通过战斗？（用户裁定：花碎片是正常玩法，设为默认）"""
+    rng = random.Random(seed)
+    db_path = db_path or f"/tmp/winner_{seed}_{os.getpid()}_{random.random():.6f}.db"
+    e = GameEngine(db_path=db_path, rng_seed=seed,
+                   sealed_candidate_path=sealed_path)
+    e.execute_action("setup_attributes",
+                     {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+    e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
+    setup = e.execute_action("setup_choose_region", {"region": region})
+    optional_relics = {"折速法印", "三相残韵盘"}
+    starter_relic = next((n for n in setup["result"]["relic_choices"] if n not in optional_relics),
+                         setup["result"]["relic_choices"][0])
+    e.execute_action("choose_discovered_relic", {"relic_name": starter_relic})
+
+    ai = TacticalAI(e)
+    todo_spells = list(SPELL_ORDER)
+    todo_daowen = list(DAOWEN_ORDER)
+    if debt_build:
+        todo_daowen.append("逼债")
+    cleared = 0
+
+    for b in range(1, 8):
+        while e.state.energy > 0:
+            # 花碎片→战力（spend_shards）：**先学完免费法术/道纹，再花碎片修行**。
+            # 顺序错误会让 spend 把精力花光、免费法术学不上（胜者法术为空的bug）。
+            if todo_spells or todo_daowen:
+                act, params = choose_pre_battle(e, b, todo_spells, todo_daowen, rng)
+                r = e.execute_action("pre_battle_action", {"sub_action": act, **params})
+                if r.get("success"):
+                    if act == "学习" and params.get("sub") == "spell":
+                        learned = r["result"].get("spells") or []
+                        for sp in learned:
+                            if sp["name"] in todo_spells:
+                                todo_spells.remove(sp["name"])
+                    if act == "学习" and params.get("sub") == "daowen":
+                        for nm in r["result"].get("names", []):
+                            if nm in todo_daowen:
+                                todo_daowen.remove(nm)
+                    # 雇佣后：选择发现的转化道纹（否则引擎阻塞后续行动导致死循环）
+                    if act == "雇佣" and e.state.pending_daowen_choices:
+                        emp_name = next(iter(e.state.pending_daowen_choices))
+                        choices = e.state.pending_daowen_choices[emp_name]
+                        prefer = next((d for d in choices
+                                       if d in ("蒙蔽", "迟滞", "弱化", "愤怒", "自残", "衰败", "坠落")),
+                                      choices[0])
+                        e.execute_action("choose_hired_daowen", {"name": emp_name, "daowen": prefer})
+                    if e.state.pending_relic_choices:
+                        e.execute_action("choose_discovered_relic",
+                                         {"relic_name": e.state.pending_relic_choices[0]})
+                    if e.state.pending_item_choices:
+                        e.execute_action("choose_discovered_item",
+                                         {"item_name": e.state.pending_item_choices[0]})
+                    if e.event_pool.current is not None:
+                        _resolve_pending_event(e)
+                    continue
+                # 学习失败（门禁/碎片不足）：避免死循环，兜底修行1档
+                e.execute_action("pre_battle_action", {
+                    "sub_action": "修行", "tier": 1,
+                    "allocations": {"speed_points": 0, "mana_points": 1}})
+                continue
+            # 花碎片→战力：修行高阶（1点法限/档，越贵越省精力）> 附煞冥煞 > 共鸣2档遗物。
+            if spend_shards and e.state.shards >= 35 and e.state.player:
+                r = e.execute_action("pre_battle_action", {
+                    "sub_action": "修行", "tier": 3,
+                    "allocations": {"speed_points": 0, "mana_points": 3}})
+                if r.get("success"):
+                    continue
+            if spend_shards and e.state.shards >= 25 and e.state.player:
+                r = e.execute_action("pre_battle_action", {
+                    "sub_action": "附煞", "mode": "选择", "sha_qi": "冥煞", "daowen_name": "杀伐"})
+                if r.get("success"):
+                    continue
+            if spend_shards and e.state.shards >= 15 and e.state.player:
+                r = e.execute_action("pre_battle_action", {
+                    "sub_action": "修行", "tier": 2,
+                    "allocations": {"speed_points": 0, "mana_points": 2}})
+                if r.get("success"):
+                    continue
+            if spend_shards and e.state.shards >= 15 and e.state.player:
+                r = e.execute_action("pre_battle_action", {"sub_action": "共鸣", "tier": 2})
+                if r.get("success") and e.state.pending_relic_choices:
+                    e.execute_action("choose_discovered_relic",
+                                     {"relic_name": e.state.pending_relic_choices[0]})
+                    continue
+            act, params = choose_pre_battle(e, b, todo_spells, todo_daowen, rng)
+            r = e.execute_action("pre_battle_action", {"sub_action": act, **params})
+            if r.get("success"):
+                if act == "学习" and params.get("sub") == "spell":
+                    learned = r["result"].get("spells") or []
+                    for sp in learned:
+                        if sp["name"] in todo_spells:
+                            todo_spells.remove(sp["name"])
+                if act == "学习" and params.get("sub") == "daowen":
+                    for nm in r["result"].get("names", []):
+                        if nm in todo_daowen:
+                            todo_daowen.remove(nm)
+                # 雇佣后：从发现的转化道纹中选输出/控制类（提高员工威胁分）
+                if act == "雇佣" and e.state.pending_daowen_choices:
+                    emp_name = next(iter(e.state.pending_daowen_choices))
+                    choices = e.state.pending_daowen_choices[emp_name]
+                    prefer = next((d for d in choices
+                                   if d in ("蒙蔽", "迟滞", "弱化", "愤怒", "自残", "衰败", "坠落")),
+                                  choices[0])
+                    e.execute_action("choose_hired_daowen", {"name": emp_name, "daowen": prefer})
+                if e.state.pending_relic_choices:
+                    e.execute_action("choose_discovered_relic",
+                                     {"relic_name": e.state.pending_relic_choices[0]})
+                if e.state.pending_item_choices:
+                    e.execute_action("choose_discovered_item",
+                                     {"item_name": e.state.pending_item_choices[0]})
+                if e.event_pool.current is not None:
+                    _resolve_pending_event(e)
+                if not e.state.player or not e.state.player.is_alive:
+                    return {"cleared": cleared, "won": False, "invalid": False}
+            else:
+                if e.state.energy >= e.state.energy + 0:  # 失败已退精力，兜底修行
+                    e.execute_action("pre_battle_action",
+                                     {"sub_action": "修行", "tier": 1,
+                                      "allocations": {"speed_points": 0, "mana_points": 1}})
+
+        active_relics = {relic.name for relic in e.state.relics}
+        from sim.optional_actions import start_battle as _sb
+        bs, _bs_artifacts = _sb(e)
+        if not bs.get("success"):
+            return {"cleared": cleared, "won": False, "invalid": True,
+                    "reason": f"battle_start: {bs.get('error')}"}
+
+        for _ in range(40):
+            if not e.state.player or not e.state.player.is_alive:
+                break
+            if not [x for x in e.state.enemies if x.is_alive]:
+                break
+            from sim.optional_actions import start_round as _sr
+            rs, _rs_artifacts = _sr(e)
+            if not rs.get("success"):
+                return {"cleared": cleared, "won": False, "invalid": True,
+                        "reason": f"round_start: {rs.get('error')}"}
+            # 罪孽都市专属：战斗内先用残韵解锁债务道纹（获得第一种专属道纹后局外才能学逼债）
+            if debt_build:
+                unlock_sin_city_daowen(e)
+            # 玩家回合：保留法术法力（手操留一手），其余满法输出
+            p = e.state.player
+            actual_mana = p.current_mana
+            reserve = min(SPELL_MANA_RESERVE, max(0, actual_mana - 1))
+            if reserve > 0:
+                p.current_mana = actual_mana - reserve  # 让AI只看到可花部分
+            ai.new_round()
+            try:
+                ai.take_turn()
+            except Exception as ex:
+                return {"cleared": cleared, "won": False, "invalid": True,
+                        "reason": f"combat: {type(ex).__name__}: {ex}"}
+            # 把保留法力还给玩家，供怪物阶段反应法术使用
+            if reserve > 0:
+                p.current_mana = min(p.mana_limit, p.current_mana + reserve)
+            if not [x for x in e.state.enemies if x.is_alive]:
+                break
+            if not e.state.player or not e.state.player.is_alive:
+                break
+            e.execute_action("resolve_ally_phases", {})
+            if not [x for x in e.state.enemies if x.is_alive]:
+                break
+            mp = _resolve_monster_turn_with_spells(e)
+            if not mp.get("success"):
+                return {"cleared": cleared, "won": False, "invalid": True,
+                        "reason": f"monster_phase: {mp.get('error')}"}
+            if mp["result"].get("player_dead"):
+                break
+            e.execute_action("round_end", {})
+
+        if not e.state.player or not e.state.player.is_alive:
+            return {"cleared": cleared, "won": False, "invalid": False}
+        if [x for x in e.state.enemies if x.is_alive]:
+            return {"cleared": cleared, "won": False, "invalid": False}
+        ended = e.execute_action("battle_end", {})
+        if not ended.get("success"):
+            return {"cleared": cleared, "won": False, "invalid": True,
+                    "reason": f"battle_end: {ended.get('error')}"}
+        crown = ended.get("result", {}).get("final_crown", {})
+        outcome = crown.get("outcome")
+        # 先看冠冕：无候选时【封存】会重置状态（player=None），必须在阵亡检查前判定
+        if outcome == "sealed":
+            return {"cleared": cleared + 1, "won": True, "invalid": False,
+                    "sealed": True, "sealed_name": crown.get("sealed_name")}
+        if not e.state.player or not e.state.player.is_alive:
+            return {"cleared": cleared + 1, "won": False, "invalid": False}
+        cleared += 1
+
+        if outcome == "duel_start" or e.state.in_final_duel:
+            # 第8场死斗：用修复后的PvP对称驱动（守擂方走玩家侧接口：法力制/
+            # 出手次数=速限/3/自由控X，勿当怪物处理——用户裁定死斗必须按PvP规则）。
+            from sim.duel_pvp import run_duel_pvp
+            def _act():
+                """挑战者死斗：专注杀守擂主将（轮回者）——与守擂方专注策略对称。
+                TacticalAI 会分散输出（保命/控场），死斗胜率仅1/6；专注杀主将
+                才能与守擂方五五开（死斗只允许一名轮回者离开：主将死即败）。"""
+                p = e.state.player
+                if not p or not p.is_alive:
+                    return False
+                lord = next((x for x in e.state.enemies
+                             if x.is_alive and x.entity_type == "轮回者"), None)
+                if lord is None:
+                    return False
+                x = max(1, p.current_mana - 3)
+                if x < 1:
+                    return False
+                r = e.execute_action("use_daowen", {
+                    "daowen_name": "杀伐", "x": x,
+                    "target_ref": f"enemy:{e.state.enemies.index(lord)}",
+                    "trigger_spell_choices": {}})
+                return bool(r.get("success"))
+            dr = run_duel_pvp(e, _act, max_rounds=60, max_steps=400)
+            duel_won = dr.get("winner") == "challenger"
+            if not duel_won or not e.state.player or not e.state.player.is_alive:
+                return {"cleared": cleared, "won": False, "invalid": False,
+                        "duel": "lost", "duel_reason": dr.get("reason")}
+            dr = e.execute_action("resolve_final_duel", {"outcome": "victory"})
+            if not dr.get("success"):
+                return {"cleared": cleared, "won": False, "invalid": True,
+                        "reason": f"resolve_final_duel: {dr.get('error')}"}
+            if dr.get("result", {}).get("pending_terminal_choice"):
+                options = dr["result"].get("options") or []
+                if options:
+                    ca = e.execute_action("choose_terminal_artifact", {"choice": 1})
+                    if not ca.get("success"):
+                        return {"cleared": cleared, "won": False, "invalid": True,
+                                "reason": f"choose_terminal_artifact: {ca.get('error')}"}
+                    if e.state.pending_first_embrace:
+                        e.execute_action("choose_first_embrace", {"choice": 1})
+            return {"cleared": cleared, "won": True, "invalid": False,
+                    "duel_won": True, "terminal_artifact": True}
+    return {"cleared": cleared, "won": True, "invalid": False}
+
+
+def winner_summary(path: str) -> dict:
+    with open(path, encoding="utf-8") as f:
+        d = json.load(f)
+    p = d.get("player") or {}
+    return {
+        "name": p.get("name"), "血": p.get("blood_limit"), "法": p.get("mana_limit"),
+        "速": p.get("speed_limit"), "攻": f"{p.get('attack_count')}×{p.get('attack_power')}",
+        "道纹": sorted(p.get("dao_wen", {})),
+        "法术": [s.get("name") for s in p.get("spells", [])],
+        "朋友": [(fr.get("name"), fr.get("attack_count"), fr.get("attack_power"))
+                for fr in d.get("friends", [])],
+        "员工": len(d.get("employees", [])),
+        "碎片": d.get("shards"),
+        "遗物": [r.get("name") for r in d.get("relics", [])],
+    }
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--count", type=int, default=3, help="需要的胜者数量")
+    ap.add_argument("--max-games", type=int, default=500, help="最多跑多少局")
+    ap.add_argument("--no-spend", action="store_true",
+                    help="七场局外不花碎片提升战力（对照实验用；默认花满碎片）")
+    args = ap.parse_args()
+
+    os.makedirs(WINNER_DIR, exist_ok=True)
+    # 清掉历史胜者文件，从零计数
+    for fn in os.listdir(WINNER_DIR):
+        os.remove(os.path.join(WINNER_DIR, fn))
+
+    winners = 0
+    seed = 1
+    played = 0
+    while winners < args.count and played < args.max_games:
+        region = REGIONS[seed % len(REGIONS)]
+        sealed_path = f"/tmp/winner_seal_{seed}.json"
+        if os.path.exists(sealed_path):
+            os.remove(sealed_path)
+        r = play_first_tier(seed, region, sealed_path, spend_shards=not args.no_spend)
+        played += 1
+        tag = "✅通关" if r.get("won") else "❌阵亡"
+        extra = ""
+        if r.get("won") and os.path.exists(sealed_path):
+            winners += 1
+            out = os.path.join(WINNER_DIR, f"winner_{winners:02d}.json")
+            with open(sealed_path, encoding="utf-8") as f:
+                snapshot = json.load(f)
+            # 溯源：一阶来源副本 + 通关种子 + 封存序号
+            snapshot["origin"] = {"region": region, "seed": seed, "rank": winners}
+            with open(out, "w", encoding="utf-8") as f:
+                json.dump(snapshot, f, ensure_ascii=False, indent=2)
+            s = winner_summary(out)
+            extra = "  " + " ".join(f"{k}{v}" for k, v in s.items())
+        elif r.get("won"):
+            extra = "（封存槽冲突）"
+        print(f"#{played:>3} seed={seed:<4} {region} 通关{ r['cleared']}/7 {tag}{extra}")
+        seed += 1
+
+    print(f"\n完成：{played} 局跑出 {winners} 位真实一阶胜者 → {WINNER_DIR}/")
+    if winners:
+        print("胜者状态示例（winner_01）：")
+        s = winner_summary(os.path.join(WINNER_DIR, "winner_01.json"))
+        for k, v in s.items():
+            print(f"  {k}: {v}")
+
+
+if __name__ == "__main__":
+    main()

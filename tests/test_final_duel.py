@@ -261,7 +261,7 @@ def test_name_collision_between_challenger_and_opponent_is_resolved():
     hp_before = opp.current_hp
     r = challenger.execute_action("use_daowen", {"daowen_name": "杀伐", "x": 3, "target": opp.name})
     assert r["success"] is True, r
-    assert opp.current_hp == hp_before - 6, "伤害必须真正命中改名后的对手，而不是误伤自己"
+    assert opp.current_hp == hp_before - 9, "伤害必须真正命中改名后的对手，而不是误伤自己"
     assert challenger.state.player.current_hp == challenger.state.player.blood_limit, "挑战者自己不应被误伤"
     _cleanup(path)
 
@@ -336,7 +336,7 @@ def test_duel_opponent_reincarnator_can_cast_and_both_gain_mana():
         "actor": opp.name, "daowen_name": "杀伐", "x": 3, "target": "挑战贾凡",
     })
     assert cast["success"] is True, cast
-    assert challenger.state.player.current_hp == hp_before - 6
+    assert challenger.state.player.current_hp == hp_before - 9
     assert opp.current_mana == opp.mana_limit - 3
     assert challenger.state.duel_turn == "player_side"
     _cleanup(path)
@@ -366,7 +366,7 @@ def test_duel_opponent_impact_hits_player_side_not_self():
     })
     assert r["success"] is True, r
     assert opp.current_hp == hp_self
-    assert challenger.state.player.current_hp == hp_player - 4
+    assert challenger.state.player.current_hp == hp_player - 8
     _cleanup(path)
 
 
@@ -411,7 +411,7 @@ def test_duel_target_daowen_no_speed_cannot_dodge():
     })
     assert r["success"] is True, r
     assert r["dodge"].get("fully_dodged") is False
-    assert opp.current_hp == hp - 6
+    assert opp.current_hp == hp - 9
     _cleanup(path)
 
 

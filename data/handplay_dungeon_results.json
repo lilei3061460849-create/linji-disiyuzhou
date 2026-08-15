@@ -1,0 +1,1176 @@
+[
+  {
+    "winner": "winner_01.json",
+    "seed": 1000,
+    "cleared": 0,
+    "monsters": [
+      "['纸人']"
+    ]
+  },
+  {
+    "winner": "winner_01.json",
+    "seed": 1017,
+    "cleared": 0,
+    "monsters": [
+      "['不死骸骨']"
+    ]
+  },
+  {
+    "winner": "winner_01.json",
+    "seed": 1034,
+    "cleared": 0,
+    "monsters": [
+      "['哀嚎者']"
+    ]
+  },
+  {
+    "winner": "winner_01.json",
+    "seed": 1051,
+    "cleared": 1,
+    "monsters": [
+      "['寄骨蝇']",
+      "['腐疫鼠']"
+    ]
+  },
+  {
+    "winner": "winner_01.json",
+    "seed": 1068,
+    "cleared": 0,
+    "monsters": [
+      "['纸人']"
+    ]
+  },
+  {
+    "winner": "winner_02.json",
+    "seed": 1053,
+    "cleared": 4,
+    "monsters": [
+      "['血僵']",
+      "['红嫁衣鬼']",
+      "['不死骸骨']",
+      "['执念']",
+      "['纸人', '勾魂使者']"
+    ]
+  },
+  {
+    "winner": "winner_02.json",
+    "seed": 1070,
+    "cleared": 4,
+    "monsters": [
+      "['蛆冢']",
+      "['红嫁衣鬼']",
+      "['执念']",
+      "['白骨祭坛']",
+      "['不死骸骨', '纸人']"
+    ]
+  },
+  {
+    "winner": "winner_02.json",
+    "seed": 1087,
+    "cleared": 5,
+    "monsters": [
+      "['纸人']",
+      "['不死骸骨']",
+      "['执念']",
+      "['不死骸骨']",
+      "['蛆冢', '勾魂使者']",
+      "['寄骨蝇', '不死骸骨', '腐疫鼠']"
+    ]
+  },
+  {
+    "winner": "winner_02.json",
+    "seed": 1104,
+    "cleared": 5,
+    "monsters": [
+      "['哀嚎者']",
+      "['寄骨蝇']",
+      "['执念']",
+      "['哀嚎者']",
+      "['纸人', '寄骨蝇']",
+      "['勾魂使者', '执念', '腐疫鼠']"
+    ]
+  },
+  {
+    "winner": "winner_02.json",
+    "seed": 1121,
+    "cleared": 4,
+    "monsters": [
+      "['勾魂使者']",
+      "['蛆冢']",
+      "['寄骨蝇']",
+      "['血僵']",
+      "['勾魂使者', '血僵']"
+    ]
+  },
+  {
+    "winner": "winner_03.json",
+    "seed": 1106,
+    "cleared": 1,
+    "monsters": [
+      "['蛆冢']",
+      "['腐疫鼠']"
+    ]
+  },
+  {
+    "winner": "winner_03.json",
+    "seed": 1123,
+    "cleared": 0,
+    "monsters": [
+      "['尸霸']"
+    ]
+  },
+  {
+    "winner": "winner_03.json",
+    "seed": 1140,
+    "cleared": 0,
+    "monsters": [
+      "['尸霸']"
+    ]
+  },
+  {
+    "winner": "winner_03.json",
+    "seed": 1157,
+    "cleared": 0,
+    "monsters": [
+      "['哀嚎者']"
+    ]
+  },
+  {
+    "winner": "winner_03.json",
+    "seed": 1174,
+    "cleared": 0,
+    "monsters": [
+      "['红嫁衣鬼']"
+    ]
+  },
+  {
+    "winner": "winner_04.json",
+    "seed": 1159,
+    "cleared": 5,
+    "monsters": [
+      "['不死骸骨']",
+      "['执念']",
+      "['勾魂使者']",
+      "['血僵']",
+      "['蛆冢', '尸霸']",
+      "['蛆冢', '白骨祭坛', '蛆冢']"
+    ]
+  },
+  {
+    "winner": "winner_04.json",
+    "seed": 1176,
+    "cleared": 4,
+    "monsters": [
+      "['血僵']",
+      "['哀嚎者']",
+      "['哀嚎者']",
+      "['白骨祭坛']",
+      "['执念', '不死骸骨']"
+    ]
+  },
+  {
+    "winner": "winner_04.json",
+    "seed": 1193,
+    "cleared": 4,
+    "monsters": [
+      "['纸人']",
+      "['纸人']",
+      "['尸霸']",
+      "['尸霸']",
+      "['血僵', '勾魂使者']"
+    ]
+  },
+  {
+    "winner": "winner_04.json",
+    "seed": 1210,
+    "cleared": 4,
+    "monsters": [
+      "['勾魂使者']",
+      "['蛆冢']",
+      "['蛆冢']",
+      "['纸人']",
+      "['哀嚎者', '哀嚎者']"
+    ]
+  },
+  {
+    "winner": "winner_04.json",
+    "seed": 1227,
+    "cleared": 5,
+    "monsters": [
+      "['红嫁衣鬼']",
+      "['白骨祭坛']",
+      "['执念']",
+      "['尸霸']",
+      "['执念', '寄骨蝇']",
+      "['勾魂使者', '腐疫鼠', '寄骨蝇']"
+    ]
+  },
+  {
+    "winner": "winner_05.json",
+    "seed": 1212,
+    "cleared": 0,
+    "monsters": [
+      "['纸人']"
+    ]
+  },
+  {
+    "winner": "winner_05.json",
+    "seed": 1229,
+    "cleared": 0,
+    "monsters": [
+      "['红嫁衣鬼']"
+    ]
+  },
+  {
+    "winner": "winner_05.json",
+    "seed": 1246,
+    "cleared": 1,
+    "monsters": [
+      "['白骨祭坛']",
+      "['红嫁衣鬼']"
+    ]
+  },
+  {
+    "winner": "winner_05.json",
+    "seed": 1263,
+    "cleared": 0,
+    "monsters": [
+      "['哀嚎者']"
+    ]
+  },
+  {
+    "winner": "winner_05.json",
+    "seed": 1280,
+    "cleared": 0,
+    "monsters": [
+      "['腐疫鼠']"
+    ]
+  },
+  {
+    "winner": "winner_06.json",
+    "seed": 1265,
+    "cleared": 0,
+    "monsters": [
+      "['红嫁衣鬼']"
+    ]
+  },
+  {
+    "winner": "winner_06.json",
+    "seed": 1282,
+    "cleared": 0,
+    "monsters": [
+      "['不死骸骨']"
+    ]
+  },
+  {
+    "winner": "winner_06.json",
+    "seed": 1299,
+    "cleared": 3,
+    "monsters": [
+      "['白骨祭坛']",
+      "['执念']",
+      "['寄骨蝇']",
+      "['红嫁衣鬼']"
+    ]
+  },
+  {
+    "winner": "winner_06.json",
+    "seed": 1316,
+    "cleared": 0,
+    "monsters": [
+      "['哀嚎者']"
+    ]
+  },
+  {
+    "winner": "winner_06.json",
+    "seed": 1333,
+    "cleared": 0,
+    "monsters": [
+      "['不死骸骨']"
+    ]
+  },
+  {
+    "winner": "winner_07.json",
+    "seed": 1318,
+    "cleared": 0,
+    "monsters": [
+      "['尸霸']"
+    ]
+  },
+  {
+    "winner": "winner_07.json",
+    "seed": 1335,
+    "cleared": 0,
+    "monsters": [
+      "['哀嚎者']"
+    ]
+  },
+  {
+    "winner": "winner_07.json",
+    "seed": 1352,
+    "cleared": 0,
+    "monsters": [
+      "['尸霸']"
+    ]
+  },
+  {
+    "winner": "winner_07.json",
+    "seed": 1369,
+    "cleared": 0,
+    "monsters": [
+      "['哀嚎者']"
+    ]
+  },
+  {
+    "winner": "winner_07.json",
+    "seed": 1386,
+    "cleared": 4,
+    "monsters": [
+      "['勾魂使者']",
+      "['蛆冢']",
+      "['寄骨蝇']",
+      "['红嫁衣鬼']",
+      "['红嫁衣鬼', '不死骸骨']"
+    ]
+  },
+  {
+    "winner": "winner_08.json",
+    "seed": 1371,
+    "cleared": 0,
+    "monsters": [
+      "['尸霸']"
+    ]
+  },
+  {
+    "winner": "winner_08.json",
+    "seed": 1388,
+    "cleared": 5,
+    "monsters": [
+      "['白骨祭坛']",
+      "['执念']",
+      "['勾魂使者']",
+      "['蛆冢']",
+      "['白骨祭坛', '哀嚎者']",
+      "['纸人', '血僵', '腐疫鼠']"
+    ]
+  },
+  {
+    "winner": "winner_08.json",
+    "seed": 1405,
+    "cleared": 0,
+    "monsters": [
+      "['不死骸骨']"
+    ]
+  },
+  {
+    "winner": "winner_08.json",
+    "seed": 1422,
+    "cleared": 0,
+    "monsters": [
+      "['腐疫鼠']"
+    ]
+  },
+  {
+    "winner": "winner_08.json",
+    "seed": 1439,
+    "cleared": 4,
+    "monsters": [
+      "['红嫁衣鬼']",
+      "['红嫁衣鬼']",
+      "['红嫁衣鬼']",
+      "['执念']",
+      "['尸霸', '尸霸']"
+    ]
+  },
+  {
+    "winner": "winner_09.json",
+    "seed": 1424,
+    "cleared": 0,
+    "monsters": [
+      "['寄骨蝇']"
+    ]
+  },
+  {
+    "winner": "winner_09.json",
+    "seed": 1441,
+    "cleared": 0,
+    "monsters": [
+      "['血僵']"
+    ]
+  },
+  {
+    "winner": "winner_09.json",
+    "seed": 1458,
+    "cleared": 0,
+    "monsters": [
+      "['纸人']"
+    ]
+  },
+  {
+    "winner": "winner_09.json",
+    "seed": 1475,
+    "cleared": 0,
+    "monsters": [
+      "['纸人']"
+    ]
+  },
+  {
+    "winner": "winner_09.json",
+    "seed": 1492,
+    "cleared": 0,
+    "monsters": [
+      "['尸霸']"
+    ]
+  },
+  {
+    "winner": "winner_10.json",
+    "seed": 1477,
+    "cleared": 5,
+    "monsters": [
+      "['不死骸骨']",
+      "['腐疫鼠']",
+      "['红嫁衣鬼']",
+      "['腐疫鼠']",
+      "['红嫁衣鬼', '寄骨蝇']",
+      "['尸霸', '勾魂使者', '不死骸骨']"
+    ]
+  },
+  {
+    "winner": "winner_10.json",
+    "seed": 1494,
+    "cleared": 5,
+    "monsters": [
+      "['不死骸骨']",
+      "['勾魂使者']",
+      "['白骨祭坛']",
+      "['勾魂使者']",
+      "['蛆冢', '执念']",
+      "['纸人', '纸人', '执念']"
+    ]
+  },
+  {
+    "winner": "winner_10.json",
+    "seed": 1511,
+    "cleared": 5,
+    "monsters": [
+      "['尸霸']",
+      "['蛆冢']",
+      "['寄骨蝇']",
+      "['哀嚎者']",
+      "['勾魂使者', '蛆冢']",
+      "['腐疫鼠', '腐疫鼠', '寄骨蝇']"
+    ]
+  },
+  {
+    "winner": "winner_10.json",
+    "seed": 1528,
+    "cleared": 4,
+    "monsters": [
+      "['纸人']",
+      "['勾魂使者']",
+      "['寄骨蝇']",
+      "['白骨祭坛']",
+      "['执念', '尸霸']"
+    ]
+  },
+  {
+    "winner": "winner_10.json",
+    "seed": 1545,
+    "cleared": 4,
+    "monsters": [
+      "['白骨祭坛']",
+      "['白骨祭坛']",
+      "['蛆冢']",
+      "['腐疫鼠']",
+      "['纸人', '执念']"
+    ]
+  },
+  {
+    "winner": "winner_11.json",
+    "seed": 1530,
+    "cleared": 1,
+    "monsters": [
+      "['寄骨蝇']",
+      "['哀嚎者']"
+    ]
+  },
+  {
+    "winner": "winner_11.json",
+    "seed": 1547,
+    "cleared": 0,
+    "monsters": [
+      "['不死骸骨']"
+    ]
+  },
+  {
+    "winner": "winner_11.json",
+    "seed": 1564,
+    "cleared": 5,
+    "monsters": [
+      "['白骨祭坛']",
+      "['白骨祭坛']",
+      "['白骨祭坛']",
+      "['蛆冢']",
+      "['白骨祭坛', '尸霸']",
+      "['纸人', '不死骸骨', '血僵']"
+    ]
+  },
+  {
+    "winner": "winner_11.json",
+    "seed": 1581,
+    "cleared": 0,
+    "monsters": [
+      "['腐疫鼠']"
+    ]
+  },
+  {
+    "winner": "winner_11.json",
+    "seed": 1598,
+    "cleared": 0,
+    "monsters": [
+      "['纸人']"
+    ]
+  },
+  {
+    "winner": "winner_12.json",
+    "seed": 1583,
+    "cleared": 0,
+    "monsters": [
+      "['腐疫鼠']"
+    ]
+  },
+  {
+    "winner": "winner_12.json",
+    "seed": 1600,
+    "cleared": 4,
+    "monsters": [
+      "['白骨祭坛']",
+      "['红嫁衣鬼']",
+      "['纸人']",
+      "['红嫁衣鬼']",
+      "['红嫁衣鬼', '尸霸']"
+    ]
+  },
+  {
+    "winner": "winner_12.json",
+    "seed": 1617,
+    "cleared": 4,
+    "monsters": [
+      "['寄骨蝇']",
+      "['不死骸骨']",
+      "['血僵']",
+      "['血僵']",
+      "['不死骸骨', '执念']"
+    ]
+  },
+  {
+    "winner": "winner_12.json",
+    "seed": 1634,
+    "cleared": 4,
+    "monsters": [
+      "['寄骨蝇']",
+      "['执念']",
+      "['蛆冢']",
+      "['执念']",
+      "['不死骸骨', '腐疫鼠']"
+    ]
+  },
+  {
+    "winner": "winner_12.json",
+    "seed": 1651,
+    "cleared": 4,
+    "monsters": [
+      "['寄骨蝇']",
+      "['白骨祭坛']",
+      "['尸霸']",
+      "['不死骸骨']",
+      "['勾魂使者', '红嫁衣鬼']"
+    ]
+  },
+  {
+    "winner": "winner_13.json",
+    "seed": 1636,
+    "cleared": 0,
+    "monsters": [
+      "['哀嚎者']"
+    ]
+  },
+  {
+    "winner": "winner_13.json",
+    "seed": 1653,
+    "cleared": 0,
+    "monsters": [
+      "['哀嚎者']"
+    ]
+  },
+  {
+    "winner": "winner_13.json",
+    "seed": 1670,
+    "cleared": 0,
+    "monsters": [
+      "['纸人']"
+    ]
+  },
+  {
+    "winner": "winner_13.json",
+    "seed": 1687,
+    "cleared": 0,
+    "monsters": [
+      "['不死骸骨']"
+    ]
+  },
+  {
+    "winner": "winner_13.json",
+    "seed": 1704,
+    "cleared": 1,
+    "monsters": [
+      "['勾魂使者']",
+      "['哀嚎者']"
+    ]
+  },
+  {
+    "winner": "winner_14.json",
+    "seed": 1689,
+    "cleared": 1,
+    "monsters": [
+      "['执念']",
+      "['尸霸']"
+    ]
+  },
+  {
+    "winner": "winner_14.json",
+    "seed": 1706,
+    "cleared": 0,
+    "monsters": [
+      "['红嫁衣鬼']"
+    ]
+  },
+  {
+    "winner": "winner_14.json",
+    "seed": 1723,
+    "cleared": 0,
+    "monsters": [
+      "['哀嚎者']"
+    ]
+  },
+  {
+    "winner": "winner_14.json",
+    "seed": 1740,
+    "cleared": 4,
+    "monsters": [
+      "['蛆冢']",
+      "['勾魂使者']",
+      "['红嫁衣鬼']",
+      "['蛆冢']",
+      "['尸霸', '尸霸']"
+    ]
+  },
+  {
+    "winner": "winner_14.json",
+    "seed": 1757,
+    "cleared": 0,
+    "monsters": [
+      "['纸人']"
+    ]
+  },
+  {
+    "winner": "winner_15.json",
+    "seed": 1742,
+    "cleared": 5,
+    "monsters": [
+      "['寄骨蝇']",
+      "['执念']",
+      "['哀嚎者']",
+      "['尸霸']",
+      "['白骨祭坛', '勾魂使者']",
+      "['白骨祭坛', '蛆冢', '哀嚎者']"
+    ]
+  },
+  {
+    "winner": "winner_15.json",
+    "seed": 1759,
+    "cleared": 0,
+    "monsters": [
+      "['红嫁衣鬼']"
+    ]
+  },
+  {
+    "winner": "winner_15.json",
+    "seed": 1776,
+    "cleared": 4,
+    "monsters": [
+      "['执念']",
+      "['白骨祭坛']",
+      "['纸人']",
+      "['红嫁衣鬼']",
+      "['腐疫鼠', '白骨祭坛']"
+    ]
+  },
+  {
+    "winner": "winner_15.json",
+    "seed": 1793,
+    "cleared": 4,
+    "monsters": [
+      "['蛆冢']",
+      "['蛆冢']",
+      "['寄骨蝇']",
+      "['血僵']",
+      "['不死骸骨', '哀嚎者']"
+    ]
+  },
+  {
+    "winner": "winner_15.json",
+    "seed": 1810,
+    "cleared": 5,
+    "monsters": [
+      "['白骨祭坛']",
+      "['白骨祭坛']",
+      "['不死骸骨']",
+      "['红嫁衣鬼']",
+      "['白骨祭坛', '血僵']",
+      "['执念', '执念', '尸霸']"
+    ]
+  },
+  {
+    "winner": "winner_16.json",
+    "seed": 1795,
+    "cleared": 0,
+    "monsters": [
+      "['腐疫鼠']"
+    ]
+  },
+  {
+    "winner": "winner_16.json",
+    "seed": 1812,
+    "cleared": 5,
+    "monsters": [
+      "['执念']",
+      "['腐疫鼠']",
+      "['寄骨蝇']",
+      "['尸霸']",
+      "['白骨祭坛', '执念']",
+      "['执念', '尸霸', '白骨祭坛']"
+    ]
+  },
+  {
+    "winner": "winner_16.json",
+    "seed": 1829,
+    "cleared": 4,
+    "monsters": [
+      "['寄骨蝇']",
+      "['执念']",
+      "['白骨祭坛']",
+      "['勾魂使者']",
+      "['执念', '哀嚎者']"
+    ]
+  },
+  {
+    "winner": "winner_16.json",
+    "seed": 1846,
+    "cleared": 0,
+    "monsters": [
+      "['尸霸']"
+    ]
+  },
+  {
+    "winner": "winner_16.json",
+    "seed": 1863,
+    "cleared": 0,
+    "monsters": [
+      "['不死骸骨']"
+    ]
+  },
+  {
+    "winner": "winner_17.json",
+    "seed": 1848,
+    "cleared": 5,
+    "monsters": [
+      "['纸人']",
+      "['纸人']",
+      "['哀嚎者']",
+      "['哀嚎者']",
+      "['勾魂使者', '寄骨蝇']",
+      "['寄骨蝇', '尸霸', '寄骨蝇']"
+    ]
+  },
+  {
+    "winner": "winner_17.json",
+    "seed": 1865,
+    "cleared": 0,
+    "monsters": [
+      "['血僵']"
+    ]
+  },
+  {
+    "winner": "winner_17.json",
+    "seed": 1882,
+    "cleared": 0,
+    "monsters": [
+      "['血僵']"
+    ]
+  },
+  {
+    "winner": "winner_17.json",
+    "seed": 1899,
+    "cleared": 5,
+    "monsters": [
+      "['寄骨蝇']",
+      "['哀嚎者']",
+      "['不死骸骨']",
+      "['尸霸']",
+      "['白骨祭坛', '哀嚎者']",
+      "['腐疫鼠', '腐疫鼠', '血僵']"
+    ]
+  },
+  {
+    "winner": "winner_17.json",
+    "seed": 1916,
+    "cleared": 4,
+    "monsters": [
+      "['红嫁衣鬼']",
+      "['哀嚎者']",
+      "['白骨祭坛']",
+      "['红嫁衣鬼']",
+      "['白骨祭坛', '白骨祭坛']"
+    ]
+  },
+  {
+    "winner": "winner_18.json",
+    "seed": 1901,
+    "cleared": 4,
+    "monsters": [
+      "['血僵']",
+      "['血僵']",
+      "['血僵']",
+      "['腐疫鼠']",
+      "['红嫁衣鬼', '尸霸']"
+    ]
+  },
+  {
+    "winner": "winner_18.json",
+    "seed": 1918,
+    "cleared": 0,
+    "monsters": [
+      "['尸霸']"
+    ]
+  },
+  {
+    "winner": "winner_18.json",
+    "seed": 1935,
+    "cleared": 0,
+    "monsters": [
+      "['红嫁衣鬼']"
+    ]
+  },
+  {
+    "winner": "winner_18.json",
+    "seed": 1952,
+    "cleared": 0,
+    "monsters": [
+      "['尸霸']"
+    ]
+  },
+  {
+    "winner": "winner_18.json",
+    "seed": 1969,
+    "cleared": 0,
+    "monsters": [
+      "['红嫁衣鬼']"
+    ]
+  },
+  {
+    "winner": "winner_19.json",
+    "seed": 1954,
+    "cleared": 1,
+    "monsters": [
+      "['勾魂使者']",
+      "['腐疫鼠']"
+    ]
+  },
+  {
+    "winner": "winner_19.json",
+    "seed": 1971,
+    "cleared": 2,
+    "monsters": [
+      "['勾魂使者']",
+      "['执念']",
+      "['哀嚎者']"
+    ]
+  },
+  {
+    "winner": "winner_19.json",
+    "seed": 1988,
+    "cleared": 4,
+    "monsters": [
+      "['勾魂使者']",
+      "['白骨祭坛']",
+      "['哀嚎者']",
+      "['白骨祭坛']",
+      "['腐疫鼠', '腐疫鼠']"
+    ]
+  },
+  {
+    "winner": "winner_19.json",
+    "seed": 2005,
+    "cleared": 0,
+    "monsters": [
+      "['腐疫鼠']"
+    ]
+  },
+  {
+    "winner": "winner_19.json",
+    "seed": 2022,
+    "cleared": 0,
+    "monsters": [
+      "['尸霸']"
+    ]
+  },
+  {
+    "winner": "winner_20.json",
+    "seed": 2007,
+    "cleared": 5,
+    "monsters": [
+      "['纸人']",
+      "['勾魂使者']",
+      "['红嫁衣鬼']",
+      "['执念']",
+      "['白骨祭坛', '尸霸']",
+      "['红嫁衣鬼', '白骨祭坛', '红嫁衣鬼']"
+    ]
+  },
+  {
+    "winner": "winner_20.json",
+    "seed": 2024,
+    "cleared": 5,
+    "monsters": [
+      "['寄骨蝇']",
+      "['不死骸骨']",
+      "['红嫁衣鬼']",
+      "['纸人']",
+      "['红嫁衣鬼', '寄骨蝇']",
+      "['尸霸', '不死骸骨', '血僵']"
+    ]
+  },
+  {
+    "winner": "winner_20.json",
+    "seed": 2041,
+    "cleared": 4,
+    "monsters": [
+      "['寄骨蝇']",
+      "['白骨祭坛']",
+      "['腐疫鼠']",
+      "['不死骸骨']",
+      "['哀嚎者', '尸霸']"
+    ]
+  },
+  {
+    "winner": "winner_20.json",
+    "seed": 2058,
+    "cleared": 4,
+    "monsters": [
+      "['红嫁衣鬼']",
+      "['红嫁衣鬼']",
+      "['纸人']",
+      "['红嫁衣鬼']",
+      "['不死骸骨', '执念']"
+    ]
+  },
+  {
+    "winner": "winner_20.json",
+    "seed": 2075,
+    "cleared": 0,
+    "monsters": [
+      "['腐疫鼠']"
+    ]
+  },
+  {
+    "winner": "winner_21.json",
+    "seed": 2060,
+    "cleared": 0,
+    "monsters": [
+      "['哀嚎者']"
+    ]
+  },
+  {
+    "winner": "winner_21.json",
+    "seed": 2077,
+    "cleared": 2,
+    "monsters": [
+      "['蛆冢']",
+      "['寄骨蝇']",
+      "['血僵']"
+    ]
+  },
+  {
+    "winner": "winner_21.json",
+    "seed": 2094,
+    "cleared": 0,
+    "monsters": [
+      "['纸人']"
+    ]
+  },
+  {
+    "winner": "winner_21.json",
+    "seed": 2111,
+    "cleared": 0,
+    "monsters": [
+      "['腐疫鼠']"
+    ]
+  },
+  {
+    "winner": "winner_21.json",
+    "seed": 2128,
+    "cleared": 0,
+    "monsters": [
+      "['红嫁衣鬼']"
+    ]
+  },
+  {
+    "winner": "winner_22.json",
+    "seed": 2113,
+    "cleared": 0,
+    "monsters": [
+      "['红嫁衣鬼']"
+    ]
+  },
+  {
+    "winner": "winner_22.json",
+    "seed": 2130,
+    "cleared": 0,
+    "monsters": [
+      "['红嫁衣鬼']"
+    ]
+  },
+  {
+    "winner": "winner_22.json",
+    "seed": 2147,
+    "cleared": 1,
+    "monsters": [
+      "['执念']",
+      "['腐疫鼠']"
+    ]
+  },
+  {
+    "winner": "winner_22.json",
+    "seed": 2164,
+    "cleared": 1,
+    "monsters": [
+      "['白骨祭坛']",
+      "['不死骸骨']"
+    ]
+  },
+  {
+    "winner": "winner_22.json",
+    "seed": 2181,
+    "cleared": 2,
+    "monsters": [
+      "['勾魂使者']",
+      "['蛆冢']",
+      "['哀嚎者']"
+    ]
+  },
+  {
+    "winner": "winner_23.json",
+    "seed": 2166,
+    "cleared": 4,
+    "monsters": [
+      "['勾魂使者']",
+      "['勾魂使者']",
+      "['白骨祭坛']",
+      "['尸霸']",
+      "['执念', '纸人']"
+    ]
+  },
+  {
+    "winner": "winner_23.json",
+    "seed": 2183,
+    "cleared": 5,
+    "monsters": [
+      "['红嫁衣鬼']",
+      "['不死骸骨']",
+      "['红嫁衣鬼']",
+      "['蛆冢']",
+      "['寄骨蝇', '蛆冢']",
+      "['蛆冢', '红嫁衣鬼', '血僵']"
+    ]
+  },
+  {
+    "winner": "winner_23.json",
+    "seed": 2200,
+    "cleared": 0,
+    "monsters": [
+      "['尸霸']"
+    ]
+  },
+  {
+    "winner": "winner_23.json",
+    "seed": 2217,
+    "cleared": 0,
+    "monsters": [
+      "['不死骸骨']"
+    ]
+  },
+  {
+    "winner": "winner_23.json",
+    "seed": 2234,
+    "cleared": 0,
+    "monsters": [
+      "['纸人']"
+    ]
+  },
+  {
+    "winner": "winner_24.json",
+    "seed": 2219,
+    "cleared": 4,
+    "monsters": [
+      "['白骨祭坛']",
+      "['寄骨蝇']",
+      "['蛆冢']",
+      "['红嫁衣鬼']",
+      "['蛆冢', '蛆冢']"
+    ]
+  },
+  {
+    "winner": "winner_24.json",
+    "seed": 2236,
+    "cleared": 5,
+    "monsters": [
+      "['白骨祭坛']",
+      "['血僵']",
+      "['勾魂使者']",
+      "['血僵']",
+      "['寄骨蝇', '尸霸']",
+      "['白骨祭坛', '哀嚎者', '腐疫鼠']"
+    ]
+  },
+  {
+    "winner": "winner_24.json",
+    "seed": 2253,
+    "cleared": 4,
+    "monsters": [
+      "['勾魂使者']",
+      "['蛆冢']",
+      "['纸人']",
+      "['白骨祭坛']",
+      "['蛆冢', '血僵']"
+    ]
+  },
+  {
+    "winner": "winner_24.json",
+    "seed": 2270,
+    "cleared": 1,
+    "monsters": [
+      "['白骨祭坛']",
+      "['尸霸']"
+    ]
+  },
+  {
+    "winner": "winner_24.json",
+    "seed": 2287,
+    "cleared": 1,
+    "monsters": [
+      "['白骨祭坛']",
+      "['腐疫鼠']"
+    ]
+  }
+]

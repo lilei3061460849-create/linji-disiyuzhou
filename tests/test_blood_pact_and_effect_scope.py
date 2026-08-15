@@ -243,11 +243,11 @@ def test_blood_limit_debuff_rolls_back_without_erasing_life_loss():
     calc = DaoWenEngine.resolve("锐利", 1, target=target)
 
     combat.apply_daowen_effect("锐利", calc, player, target)
-    assert target.blood_limit == 96 and target.current_hp == 96
+    assert target.blood_limit == 95 and target.current_hp == 95
     state.rollback_scoped_effects(EffectScope.BATTLE.value)
 
     assert target.blood_limit == 100
-    assert target.current_hp == 96  # 生命损失不是局内面板减益，不能被回滚顺带治疗
+    assert target.current_hp == 95  # 生命损失不是局内面板减益，不能被回滚顺带治疗
 
 
 def test_duration_expiry_rolls_back_matching_scoped_delta():

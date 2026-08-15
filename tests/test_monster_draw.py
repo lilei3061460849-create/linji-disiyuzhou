@@ -50,10 +50,15 @@ def _new_engine(db_suffix: str, region: str) -> GameEngine:
 # ========================================================================
 
 def test_draw_count_formula_matches_confirmed_sequence():
-    """正常路径：一阶7场出怪数量必须是 1/1/1/1/2/3/4（DM已裁定的-3公式）"""
+    """正常路径：全部副本统一，7场出怪数量必须是 1/1/1/1/2/3/4（DM已裁定的-3公式）"""
     expected = [1, 1, 1, 1, 2, 3, 4]
-    actual = [compute_draw_count(n, is_tier_one=True) for n in range(1, 8)]
+    actual = [compute_draw_count(n) for n in range(1, 8)]
     assert actual == expected
+
+
+def test_draw_count_same_for_all_tiers():
+    """正常路径：二阶乱葬岗与一阶共用同一出怪公式（不区分阶级）"""
+    assert [compute_draw_count(n) for n in range(1, 8)] == [1, 1, 1, 1, 2, 3, 4]
 
 
 def test_battle_start_actually_populates_enemies_from_correct_region_pool():
@@ -116,9 +121,10 @@ def test_forced_monster_from_event_appears_extra_next_battle():
 
 def test_draw_count_floors_at_one_for_high_battle_number_underflow():
     """边界：公式在场次很小时不能算出0或负数，必须floor在1"""
-    assert compute_draw_count(1, is_tier_one=True) == 1
-    assert compute_draw_count(2, is_tier_one=True) == 1
-    assert compute_draw_count(3, is_tier_one=True) == 1
+    assert compute_draw_count(1) == 1
+    assert compute_draw_count(2) == 1
+    assert compute_draw_count(3) == 1
+    assert compute_draw_count(0) == 1
 
 
 def test_unknown_region_draws_nothing_but_does_not_crash():
@@ -149,3 +155,4 @@ def test_parse_monster_pool_never_mixes_regions():
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
+

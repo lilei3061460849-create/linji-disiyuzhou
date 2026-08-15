@@ -21,7 +21,7 @@ def _choose_region(engine, region):
     result = engine.execute_action("setup_choose_region", {"region": region})
     if result.get("success") and engine.state.pending_relic_choices:
         # 通用流程测试不覆盖需要额外显式选择的遗物；相关遗物有独立测试。
-        optional = {"折速法印", "三相残韵盘", "回锋刀"}
+        optional = {"折速法印", "三相残韵盘", "回锋刀", "血契"}
         choice = next((n for n in engine.state.pending_relic_choices if n not in optional),
                       engine.state.pending_relic_choices[0])
         engine.execute_action("choose_discovered_relic", {"relic_name": choice})
@@ -86,8 +86,8 @@ def test_daowen_calculations():
     target = Entity(name="目标", entity_type=EntityType.MONSTER.value, blood_limit=100, current_hp=100)
     result = DaoWenEngine.resolve("杀伐", 3, target=target)
     assert result["cost"] == 3, f"杀伐消耗错误: {result['cost']}"
-    assert result["target_damage"] == 6, f"杀伐伤害错误: {result['target_damage']}"
-    print("  ✓ 杀伐X=3: 消耗3，伤害6")
+    assert result["target_damage"] == 9, f"杀伐伤害错误: {result['target_damage']}"
+    print("  ✓ 杀伐X=3: 消耗3，伤害9")
     
     # 测试庇护
     result = DaoWenEngine.resolve("庇护", 5, target=target)
@@ -104,14 +104,14 @@ def test_daowen_calculations():
     # 测试冲击
     result = DaoWenEngine.resolve("冲击", 2)
     assert result["cost"] == 2
-    assert result["aoe_damage"] == 2
-    print("  ✓ 冲击X=2: 消耗2，AOE伤害2")
+    assert result["aoe_damage"] == 4
+    print("  ✓ 冲击X=2: 消耗2，AOE伤害4")
     
     # 测试锐利
     result = DaoWenEngine.resolve("锐利", 3, target=target)
     assert result["cost"] == 9
-    assert result["blood_limit_reduction"] == 12
-    print("  ✓ 锐利X=3: 消耗9，血限-12，生命-12")
+    assert result["blood_limit_reduction"] == 15
+    print("  ✓ 锐利X=3: 消耗9，血限-15，生命-15")
     
     # 测试飞行
     result = DaoWenEngine.resolve("飞行", 2)
@@ -346,6 +346,8 @@ def test_full_flow():
     round_relic_choices = {}
     if any(relic.name == "回锋刀" for relic in engine.state.relics):
         round_relic_choices["回锋刀"] = {"enemy_index": 0}
+    if any(relic.name == "血契" for relic in engine.state.relics):
+        round_relic_choices["血契"] = {"use": False}
     result = engine.execute_action("round_start", {"relic_choices": round_relic_choices})
     assert result["success"], result
     # 回始获得等同当前法限的法力；战始已清零，无遗物时恰好等于法限。
@@ -364,7 +366,7 @@ def test_full_flow():
         "dodge": False, "blood_shadow": False, "trigger_spell_choices": {},
     })
     assert result["success"]
-    print(f"  ✓ 发动杀伐X=5: 对千手蜈蚣造成10伤害")
+    print(f"  ✓ 发动杀伐X=5: 对千手蜈蚣造成15伤害")
     
     print("  ✓ 完整流程测试通过")
 
@@ -800,7 +802,7 @@ def test_relics_five_more():
     engine.state.relics = [Relic(name="无所求", effect="")]
     engine.event_pool.current = "祭坛"
     sp = engine.state.player.speed_limit
-    engine.execute_action("resolve_event", {"event":"祭坛","option_id":3})  # 拒绝：无事发生
+    engine.execute_action("resolve_event", {"event":"祭坛","option_id":3, "wusuoqiu_allocation": "speed"})  # 拒绝：无事发生
     assert engine.state.player.speed_limit == sp + 1, "无所求拒绝应+1速限"
     print(f"  ✓ 无所求：选拒绝类选项+1速限({sp}→{engine.state.player.speed_limit})")
     print("  ✓ 剩余5遗物测试通过")

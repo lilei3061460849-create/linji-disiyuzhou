@@ -42,7 +42,8 @@ EVENT_NAMES = {
     "通用": ["无名冢", "遗忘书屋", "祭坛", "过路商人", "猩红暴雨", "无名碑林", "回音长廊", "回忆当铺", "手术", "无魂泥潭"],
     "扭曲都市": ["医生", "乞丐", "血肉温室", "绝望来电", "皮衣店", "生锈邮筒", "尖叫下水道"],
     "罪孽都市": ["遗落的赌局", "高利贷钱庄", "地下角斗场", "黑市军火贩", "通缉悬赏榜", "假钞印钞厂", "帮派断指酒吧"],
-    "龙心谷": ["断桥余烬", "熔炉余火", "逆行者", "裂隙温泉", "追求者"],
+    "龙心谷": ["断桥余烬", "熔炉余火", "逆行者", "裂隙温泉", "追求者", "埋骨之地"],
+    "乱葬岗": ["纸人冥婚", "镇尸棺材钉", "悬木红煞", "孤坟香案", "赶尸栈房", "无名将军墓"],
 }
 
 
@@ -259,6 +260,174 @@ def resolve_option_effect(text: str, engine, event_name: str = "", params=None) 
                 applied.append("无事发生")
             return {"applied": applied, "instructions": [], "random": roll["record"]}
 
+    # ---- 龙族起源事件：埋骨之地（龙心谷专属） ----
+    # 结算覆盖：获得龙性（选项1）/ 获得龙心资源（选项2）/ 拒绝（选项3）。
+    if event_name == "埋骨之地":
+        if text.startswith("继承龙骨"):
+            engine.state.dragon_nature += 12
+            applied.append("获得12龙性")
+            return {"applied": applied, "instructions": instructions}
+        if text.startswith("拾取龙心"):
+            from .models import Consumable
+            existing = next((c for c in engine.state.consumables
+                             if c.name == "衰老龙心" and c.kind == "dragon_heart"), None)
+            if existing:
+                existing.current_uses += 6
+                existing.max_uses += 6
+            else:
+                engine.state.consumables.append(Consumable(
+                    name="衰老龙心", effect="消耗Y点耐久可抵消Y点衰老代价",
+                    current_uses=6, max_uses=6,
+                    kind="dragon_heart", dragon_heart_type="衰老"))
+            applied.append("获得衰老龙心(6/6)：消耗耐久可抵消等量衰老代价")
+            return {"applied": applied, "instructions": instructions}
+        # 选项3"掩埋龙骨"落入通用"无事发生"分支。
+
+    # ---- 乱葬岗（二阶）专属事件 ----
+    from .models import Relic, Consumable
+
+    def _grant_item(name, effect, kind="relic"):
+        if kind == "consumable":
+            engine.state.consumables.append(Consumable(
+                name=name, effect=effect, current_uses=1, max_uses=1))
+            applied.append(f"获得消耗品{name}")
+        else:
+            engine.state.relics.append(Relic(name=name, effect=effect))
+            applied.append(f"获得遗物{name}")
+
+    if event_name == "纸人冥婚":
+        if text.startswith("替新郎交拜"):
+            _pay_numeric("流血", 15)
+            applied.append("流血15")
+            player.add_mutation(3)
+            applied.append("获得异变3")
+            _grant_item("冥婚契约", "[战始]选择一名[目标]，自身与其共享受到的伤害")
+            return {"applied": applied, "instructions": instructions}
+        if text.startswith("抢撒殡钱"):
+            _pay_numeric("萎缩", 2)
+            applied.append("萎缩2")
+            engine.state.shards += 25
+            applied.append("获得25碎片")
+            engine.state.event_modifiers["next_battle_no_dodge"] = True
+            applied.append("下一场首回合敌人非必中攻击无法闪避")
+            return {"applied": applied, "instructions": instructions}
+        # 选项3避让旁观：无事发生
+
+    if event_name == "镇尸棺材钉":
+        if text.startswith("拔出"):
+            _pay_numeric("枯竭", 3)
+            applied.append("枯竭3")
+            engine.state.consumables.append(Consumable(
+                name="镇魂铁钉", effect="对[目标]施加【束缚2】；若[目标]是轮回者，可选择耐久额外-1使其速度归零",
+                current_uses=3, max_uses=3))
+            applied.append("获得消耗品镇魂铁钉（耐久3/3）")
+            return {"applied": applied, "instructions": instructions}
+        if text.startswith("贴符加固"):
+            memory_cost = 1
+            names = params.get("daowen_names")
+            if not isinstance(names, list) or len(names) != memory_cost or names[0] not in player.dao_wen:
+                return {"applied": [], "instructions": [], "error": "失忆1必须用daowen_names指定1种持有的道纹"}
+            del player.dao_wen[names[0]]
+            applied.append(f"失忆1：失去{names[0]}")
+            engine.state.resonance["反转"] = engine.state.resonance.get("反转", 0) + 1
+            applied.append("获得残韵·反转×1")
+            engine.state.shards += 15
+            applied.append("获得15碎片")
+            return {"applied": applied, "instructions": instructions}
+        # 选项3绕道远离：无事发生
+
+    if event_name == "悬木红煞":
+        if text.startswith("许诺替身"):
+            if engine.state.employees:
+                emp = engine.state.employees.pop(0)
+                applied.append(f"失去员工{emp.name}")
+            elif engine.state.friends:
+                friend = engine.state.friends.pop(0)
+                applied.append(f"失去朋友{friend.name}")
+            else:
+                _pay_numeric("衰老", 10)
+                applied.append("衰老10（无员工/朋友，自身血限-10）")
+            _grant_item("替死鬼", "当自身即将受到致死伤时，将其转移给攻击者", "consumable")
+            return {"applied": applied, "instructions": instructions}
+        if text.startswith("割血点唇"):
+            _pay_numeric("流血", 18)
+            applied.append("流血18")
+            # 使杀伐或锐利获得红煞（对格挡造成双倍伤害）
+            target_dw = next((n for n in ("杀伐", "锐利") if n in player.dao_wen), None)
+            if target_dw:
+                inst = player.dao_wen[target_dw]
+                inst.sha_qi = "红煞"
+                applied.append(f"{target_dw}获得红煞：对[目标]格挡造成双倍伤害")
+            return {"applied": applied, "instructions": instructions}
+        # 选项3默念心经：无事发生
+
+    if event_name == "孤坟香案":
+        if text.startswith("上前续香"):
+            _pay_numeric("衰老", 6)
+            applied.append("衰老6")
+            _grant_item("三香通冥",
+                        "每场战斗前三回合开始[回始]，所有敌方[目标]受到12点伤害；第3回合后熄灭")
+            return {"applied": applied, "instructions": instructions}
+        if text.startswith("踢翻香炉"):
+            _pay_numeric("萎缩", 2)
+            applied.append("萎缩2")
+            engine.state.shards += 30
+            applied.append("获得30碎片")
+            return {"applied": applied, "instructions": instructions}
+        # 选项3躬身施礼：无事发生
+
+    if event_name == "赶尸栈房":
+        if text.startswith("摇动赶尸铃"):
+            _pay_numeric("流血", 12)
+            applied.append("流血12")
+            _pay_numeric("疲惫", 2)
+            applied.append("疲惫2")
+            _grant_item("赶尸铃", "召唤2具【行尸】1×4/36作为[临时朋友]加入本场战斗，战终尸体解体",
+                        "consumable")
+            return {"applied": applied, "instructions": instructions}
+        if text.startswith("剥取黄符"):
+            x = params.get("x")
+            if not isinstance(x, int) or isinstance(x, bool) or x < 1:
+                return {"applied": [], "instructions": [], "error": "剥取黄符必须显式提交正整数x"}
+            _pay_numeric("枯竭", x)
+            applied.append(f"枯竭{x}")
+            for _ in range(x):
+                engine.state.consumables.append(Consumable(
+                    name="黄符", effect="将已学法术刻印其中，交给朋友/员工以法力/代价发动",
+                    current_uses=1, max_uses=1))
+            applied.append(f"获得{x}张黄符")
+            return {"applied": applied, "instructions": instructions}
+        # 选项3挂门离开：无事发生
+
+    if event_name == "无名将军墓":
+        if text.startswith("拔戟试锋"):
+            _pay_numeric("流血", 20)
+            applied.append("流血20")
+            target_dw = params.get("daowen_name", "")
+            if target_dw not in player.dao_wen:
+                return {"applied": [], "instructions": [],
+                        "error": "拔戟试锋必须用daowen_name指定自身一种道纹"}
+            inst = player.dao_wen[target_dw]
+            inst.sha_qi = "兵煞"
+            applied.append(f"{target_dw}获得兵煞：该道纹造成的伤害额外+4")
+            return {"applied": applied, "instructions": instructions}
+        if text.startswith("供奉"):
+            engine.state.shards = max(0, engine.state.shards - 20)
+            applied.append("失去20碎片")
+            ally = next((a for a in engine.state.friends + engine.state.employees if a.is_alive), None)
+            if ally is not None:
+                from .models import Relic
+                ally.relics.append(Relic(name="重甲兵躯", effect="[血限]+15，受到≥20的伤害前将其减半"))
+                ally.blood_limit += 15
+                ally.current_hp = min(ally.current_hp + 15, ally.blood_limit)
+                applied.append(f"{ally.name}获得重甲兵躯（血限+15）")
+            else:
+                player.blood_limit += 15
+                player.current_hp = min(player.current_hp + 15, player.blood_limit)
+                applied.append("无队友，自身血限+15并获得重甲兵躯")
+            return {"applied": applied, "instructions": instructions}
+        # 选项3拜祭退避：无事发生
+
     # ---- 专属具名事件：龙心谷"追求者"（面板与道纹数值均为文档写死的固定值，不走通用正则） ----
     if event_name == "追求者":
         if text.startswith("雇佣"):
@@ -351,14 +520,20 @@ def resolve_option_effect(text: str, engine, event_name: str = "", params=None) 
         friend = Entity("岩行者", "朋友", blood_limit=54, current_hp=54,
                         attack_count=2, attack_power=4)
         _grant_daowen(friend, "背负", 1)
+        _pay_numeric("流血", 10)
+        applied.append("流血10")
         engine.state.friends.append(friend)
         applied.append("岩行者作为朋友加入")
+        return {"applied": applied, "instructions": instructions}
     elif event_name == "逆行者" and text.startswith("让他同行"):
         friend = Entity("赴火者", "朋友", blood_limit=60, current_hp=60,
                         attack_count=3, attack_power=3)
         _grant_daowen(friend, "逆鳞", 1)
+        engine.state.shards = max(0, engine.state.shards - 10)
+        applied.append("失去10碎片")
         engine.state.friends.append(friend)
         applied.append("赴火者作为朋友加入")
+        return {"applied": applied, "instructions": instructions}
     elif event_name == "皮衣店" and text.startswith("试穿"):
         engine.state.event_modifiers["next_battle_first_round_shield"] = 30
         applied.append("已登记：下一场第一回始获得30格挡")

@@ -86,7 +86,7 @@ def test_deployed_employee_can_be_commanded_to_use_daowen_on_enemy():
     hp_before = enemy.current_hp
     r = engine.execute_action("use_daowen", {"actor": "工头", "daowen_name": "杀伐", "x": 5, "target": "测试怪"})
     assert r["success"] is True, r
-    assert enemy.current_hp == hp_before - 10, "杀伐5应造成2*5=10点伤害"
+    assert enemy.current_hp == hp_before - 15, "杀伐5应造成3*5=15点伤害"
     assert emp.current_mana == 0, "员工不应被扣减法力(本就没有法力)"
 
 

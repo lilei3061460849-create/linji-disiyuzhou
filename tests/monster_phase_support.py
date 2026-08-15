@@ -43,10 +43,6 @@ def resolve_monster_phase(combat, daowen_choices=None, *, dodge=False, target_re
                     {"target_ref": target["ref"], "dodge": False, "blood_shadow": False}
                     for target in option["dodge_target_options"]
                 ]
-            if option["resolves_as"] == "活力":
-                action_count += option["x"]
-            elif option["resolves_as"] == "狂暴":
-                action_count += 1
             elif option["resolves_as"] == "变形":
                 enemy_index = int(key.split(":", 1)[1])
                 hit_count = combat.state.enemies[enemy_index].attack_power

@@ -33,15 +33,15 @@ from typing import Any, Optional
 # ---------------------------------------------------------------------------
 TACTICAL_ROLES: dict[str, dict] = {
     # ---- 杀伐闭环 ----
-    "杀伐": {"role": "nuke", "cost": 1, "pri": 1, "dmg_per_x": 2},
-    "冲击": {"role": "aoe", "cost": 1, "pri": 1, "dmg_per_x": 1},
+    "杀伐": {"role": "nuke", "cost": 1, "pri": 1, "dmg_per_x": 3},
+    "冲击": {"role": "aoe", "cost": 1, "pri": 1, "dmg_per_x": 2},
     "血债": {"role": "nuke", "cost": 0, "pay": "流血", "pri": 3, "dmg_per_x": 2},
     "庇护": {"role": "shield", "cost": 1, "pri": 1, "shield_per_x": 4},
     "再生": {"role": "heal", "cost": 1, "pri": 1, "heal_per_x": 6},
     "慈悲": {"role": "heal", "cost": 0, "pay": "流血", "pri": 3, "heal_per_x": 1},
     "固执": {"role": "buff", "cost": 0, "pay": "冷却", "pri": 2},
     # ---- 杀伐14节点闭环后半（锐利至封印）----
-    "锐利": {"role": "nuke", "cost": 3, "pri": 2, "dmg_per_x": 4},   # 血限与生命同时-4X
+    "锐利": {"role": "nuke", "cost": 3, "pri": 2, "dmg_per_x": 5},   # 血限与生命同时-5X
     "增殖": {"role": "buff", "cost": 5, "pri": 3},
     "透支": {"role": "ramp", "cost": 0, "pay": "衰老", "pri": 1, "mana_per_x": 4},
     "贯穿": {"role": "buff", "cost": 5, "pri": 1},                    # 伤害无视格挡
@@ -55,6 +55,15 @@ TACTICAL_ROLES: dict[str, dict] = {
     "活血": {"role": "buff", "cost": 2, "pri": 3},
     "裂变": {"role": "debuff", "cost": 3, "pri": 2},
     "伤痕": {"role": "debuff", "cost": 5, "pri": 2},
+    # ---- 乱葬岗（二阶）----
+    "分裂": {"role": "buff", "cost": 0, "pay": "冷却", "pri": 3},
+    "尸爆": {"role": "aoe", "cost": 10, "pri": 3},
+    "缄默": {"role": "control", "cost": 2, "pri": 2},
+    "瓦解": {"role": "debuff", "cost": 10, "pri": 2},
+    "冥气": {"role": "debuff", "cost": 5, "pri": 2},
+    "勾魂": {"role": "debuff", "cost": 1, "pri": 2},
+    "镇尸": {"role": "debuff", "cost": 5, "pri": 1},
+    "招魂": {"role": "buff", "cost": 10, "pri": 3},
     # ---- 扭曲都市 ----
     "僵化": {"role": "control", "cost": 5, "pri": 1},
     "坏死": {"role": "debuff", "cost": 5, "pri": 1},
@@ -174,6 +183,30 @@ class TacticalAI:
                 if r:
                     return r
         return None
+
+    def try_buff(self) -> Optional[dict]:
+        """1.5 防御性buff：开局挂【固执】（冷却3，单次失去生命最高为1）。
+
+        固执以冷却为代价、不耗法力，是克制爆裂反伤/高攻连击的关键；
+        每场战斗只能发动一次（冷却3），在首回合尽早挂上。
+        """
+        p = self.player
+        if self.used.get("固执"):
+            return None
+        if "固执" not in p.dao_wen:
+            return None
+        inst = p.dao_wen.get("固执")
+        if inst is not None and not inst.can_use():
+            return None
+        enemies = self.alive_enemies()
+        if not enemies:
+            return None
+        if self.incoming_damage() <= 0:
+            return None
+        r = self._cast("固执", 3, p.name)
+        if r:
+            self.used["固执"] = 1
+        return r
 
     def try_resonance(self) -> Optional[dict]:
         """2. 残韵插队：只对**存在变化路径**的敌方道纹发动。"""
@@ -343,10 +376,29 @@ class TacticalAI:
                 return r
         return None
 
+    def try_artifact(self) -> Optional[dict]:
+        """可选法器（教父左轮/鲜血之翼等战斗内行动）：不占出手，能发动就发动。
+
+        此前 AI 从不发动任何可选法器（黑金名片/罪业金库/烬翼/左轮/血翼/共心环），
+        玩家战力被系统性低估。战始/回始窗口法器由 sim.optional_actions.start_battle/
+        start_round 在对应子阶段驱动；本策略处理 PLAYER_ACTIONS 阶段的法器。
+        """
+        from sim.optional_actions import (
+            try_fire_godfather_revolver, try_use_blood_wings,
+        )
+        for fn in (try_fire_godfather_revolver, try_use_blood_wings):
+            r = fn(self.engine)
+            if r and r.get("success"):
+                self.used[f"法器·{r.get('action', '')}"] = self.used.get(
+                    f"法器·{r.get('action', '')}", 0) + 1
+                return r
+        return None
+
     # ---------- 主入口 ----------
 
-    STRATEGIES = ("try_survive", "try_resonance", "try_finish", "try_remove",
-                  "try_control", "try_aoe", "try_debuff", "try_pressure", "try_ramp")
+    STRATEGIES = ("try_artifact", "try_survive", "try_buff", "try_resonance", "try_finish",
+                  "try_remove", "try_control", "try_aoe", "try_debuff", "try_pressure",
+                  "try_ramp")
 
     def take_action(self) -> Optional[dict]:
         """执行一次出手。返回引擎结果；无可行动作时返回 None。"""
@@ -374,3 +426,56 @@ class TacticalAI:
                 break
             results.append(r)
         return results
+
+
+def choose_dodge(engine, per_hit_damage: int, *, budget_used: int = 0,
+                 max_dodges: int = 2, min_hit_pct: float = 0.10) -> bool:
+    """AI 闪避决策（供 sim 怪物阶段解析器调用，处理轮回者受到的攻击）。
+
+    规则依据（README 基础定义）：被选为[目标]后可消耗 1 点当前速度完全闪避。
+    - 速度不足/必中已由引擎拒绝，这里只做预算与收益判断；
+    - 每回合最多闪避 max_dodges 次（留速度应对残韵/回锋刀等）；
+    - 只闪避会伤 ≥ min_hit_pct×[血限] 的命中，低伤不浪费速度。
+    """
+    p = engine.state.player
+    if p is None or not p.is_alive:
+        return False
+    if p.current_speed <= budget_used:
+        return False
+    if p.has_status("固执"):
+        return False            # 固执3：单次失去生命≤1，无需闪避
+    if per_hit_damage < max(3, math.ceil(p.blood_limit * min_hit_pct)):
+        return False
+    if budget_used >= max_dodges:
+        return False
+    return True
+
+
+def monster_threat(entity) -> int:
+    """怪物视角的目标威胁分：物理输出（攻击力×攻击次数）+ 输出类道纹加成。
+
+    玩家面板 0×0 但靠道纹输出，需额外加成；朋友/员工高攻会被优先打。
+    """
+    if entity is None:
+        return 0
+    score = (entity.attack_power or 0) * (entity.attack_count or 0)
+    for name in entity.dao_wen:
+        info = TACTICAL_ROLES.get(name, {})
+        if info.get("role") in ("nuke", "aoe", "finisher", "debuff", "remove", "control"):
+            score += 10
+    return score
+
+
+def choose_attack_target(attack_target_options: list[dict], refs: dict) -> str:
+    """怪物攻击目标：挑威胁最大者。威胁分相同时取当前生命最低（脆的先倒）。"""
+    if not attack_target_options:
+        return ""
+    scored = []
+    for option in attack_target_options:
+        entity = refs.get(option["ref"])
+        score = monster_threat(entity)
+        hp = entity.current_hp if entity is not None else 10 ** 9
+        scored.append((score, hp, option["ref"]))
+    # 威胁分高优先；同威胁血低优先（hp 升序）
+    scored.sort(key=lambda x: (-x[0], x[1]))
+    return scored[0][2]

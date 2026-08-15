@@ -12,7 +12,13 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_INDEX = ROOT / "副本索引.md"
 
 # 已实现副本保留数值元数据，供现有运行时和面板审计使用。
+# 支持带阶级列（一阶/二阶/...）：| 副本 | 阶级 | 预算 | 数量 | 总值 | 文档 |
 IMPLEMENTED_ROW = re.compile(
+    r"^\|\s*([^|]+?)\s*\|\s*(一阶|二阶|三阶|四阶|五阶)?\s*\|?\s*(\d+)\s*\|\s*(\d+)\s*\|\s*(\d+)\s*\|"
+    r"\s*\[查看副本\]\(([^)]+)\)\s*\|\s*$"
+)
+# 旧格式（无阶级列，一阶）：| 副本 | 预算 | 数量 | 总值 | 文档 |
+IMPLEMENTED_ROW_LEGACY = re.compile(
     r"^\|\s*([^|]+?)\s*\|\s*(\d+)\s*\|\s*(\d+)\s*\|\s*(\d+)\s*\|"
     r"\s*\[查看副本\]\(([^)]+)\)\s*\|\s*$"
 )
@@ -46,7 +52,20 @@ def load_dungeon_manifest(index_path: str | Path = DEFAULT_INDEX) -> list[Dungeo
     for line in index.read_text(encoding="utf-8").splitlines():
         implemented = IMPLEMENTED_ROW.match(line)
         if implemented:
-            name, budget, count, total, target = implemented.groups()
+            name, tier, budget, count, total, target = implemented.groups()
+            entries.append(DungeonDocument(
+                name=name,
+                tier=tier or "一阶",
+                status="已实现",
+                path=index.parent / target,
+                mana_budget=int(budget),
+                daowen_count=int(count),
+                total_value=int(total),
+            ))
+            continue
+        legacy = IMPLEMENTED_ROW_LEGACY.match(line)
+        if legacy:
+            name, budget, count, total, target = legacy.groups()
             entries.append(DungeonDocument(
                 name=name,
                 tier="一阶",

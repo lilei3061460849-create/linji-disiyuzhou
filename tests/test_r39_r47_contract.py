@@ -222,7 +222,7 @@ def test_r42_target_daowen_trigger_is_explicit(tmp_path):
         ]}}},
     })
     assert result["success"] and result["trigger_spell_logs"]
-    assert player.current_hp == 98 and opponent.current_hp == 98
+    assert player.current_hp == 97 and opponent.current_hp == 97
 
 
 # R43：确定性事件
@@ -307,7 +307,7 @@ def test_r43_all_implemented_event_options_have_a_runtime_route(tmp_path):
             assert result["success"], (event_name, option["id"], result)
             assert not result.get("result", {}).get("instructions"), (event_name, option["id"], result)
             checked += 1
-    assert checked == 87
+    assert checked == 90  # 87 + 埋骨之地(龙族起源事件)3选项
 
 
 # R44：统一向上取整

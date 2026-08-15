@@ -53,6 +53,45 @@ HEADER = """# 完整轮回战报
 """
 
 
+
+def _pick_monster_daowen(engine, actor):
+    """怪物按当前情形择优选道纹（README：怪物为胜利和生存作最优决策）。
+    输出优先，血低自保，玩家血低收割，机制型按需。"""
+    opts = actor["daowen_options"]
+    if not opts:
+        return None
+    m_idx = int(actor["actor_ref"].split(":", 1)[1]) if ":" in actor["actor_ref"] else 0
+    activated = set()
+    enemies = engine.state.enemies
+    monster = None
+    if 0 <= m_idx < len(enemies):
+        monster = enemies[m_idx]
+        activated = engine.combat._monster_activated.get(id(monster), set())
+    cands = [o for o in opts if o["name"] not in activated]
+    if not cands:
+        return opts[0]
+    OUTPUT = {"狂暴", "强化", "杀伐", "血债", "锐利", "冲击", "加害", "活血", "裂变", "洗劫", "赎金", "逼债", "清算", "赌命"}
+    SELF = {"自愈", "庇护", "再生", "固执", "活力", "龙鳞"}
+    CONTROL = {"减速", "束缚", "衰败", "勾魂", "镇尸", "僵化", "眩晕", "蒙蔽", "弱化", "退化", "冥气", "缄默", "瓦解", "招魂", "无力", "迟滞", "定型", "封印", "缓慢"}
+    p = engine.state.player
+    player_low = p is not None and p.is_alive and p.current_hp <= p.blood_limit * 0.5
+    monster_low = monster is not None and monster.current_hp <= monster.blood_limit * 0.5
+    def group(o):
+        n = o["name"]
+        if n in OUTPUT: return 0
+        if n in SELF: return 1
+        if n in CONTROL: return 2
+        return 3
+    if monster_low:
+        self_cands = [o for o in cands if o["name"] in SELF]
+        if self_cands:
+            return self_cands[0]
+    if player_low:
+        kill_cands = [o for o in cands if o["name"] in OUTPUT or o["name"] in CONTROL]
+        if kill_cands:
+            return kill_cands[0]
+    return min(cands, key=group)
+
 def _decline_spells(option):
     return {timing: {spell["spell_name"]: {"use": False}
                      for spell in option.get("spell_options", {}).get(timing, [])}
@@ -95,6 +134,7 @@ def _resolve_monster_plight(engine, rng) -> list:
 
 def _resolve_monster_turn(engine):
     """平衡模拟器的怪物AI：从prepare合法项中提交完整选择，不调用旧自动入口。"""
+    from engine.ai_tactics import choose_dodge, choose_attack_target
     prepared = engine.execute_action("prepare_monster_phase", {})
     if not prepared.get("success"):
         return prepared
@@ -104,7 +144,7 @@ def _resolve_monster_turn(engine):
         action_count = actor["base_attack_actions"]
         hit_count = actor["base_hits_per_attack"]
         if actor["daowen_options"]:
-            option = actor["daowen_options"][0]
+            option = _pick_monster_daowen(engine, actor)
             dao = {"name": option["name"], "dodge": False, "blood_shadow": False,
                    "trigger_spell_choices": {holder: {sp["spell_name"]: {"use": False} for sp in spells}
                                                for holder, spells in option.get("trigger_spell_options", {}).items()}}
@@ -115,19 +155,25 @@ def _resolve_monster_turn(engine):
                     {"target_ref": target["ref"], "dodge": False, "blood_shadow": False}
                     for target in option["dodge_target_options"]
                 ]
-            if option["resolves_as"] == "活力":
-                action_count += option["x"]
-            elif option["resolves_as"] == "狂暴":
-                action_count += 1
-            elif option["resolves_as"] == "变形":
+            if option["resolves_as"] == "变形":
                 enemy_index = int(actor["actor_ref"].split(":", 1)[1])
                 hit_count = engine.state.enemies[enemy_index].attack_power
-        target_ref = actor["attack_target_options"][0]["ref"]
+        refs = engine.combat._combat_entity_refs()
+        monster = refs.get(actor["actor_ref"])
+        per_hit = monster.attack_power if monster is not None else 0
+        target_ref = choose_attack_target(actor["attack_target_options"], refs)
         target_option = next(option for option in actor["attack_target_options"] if option["ref"] == target_ref)
-        attacks = [{"hits": [{"target_ref": target_ref, "dodge": False, "blood_shadow": False,
-                               "spell_choices": _decline_spells(target_option)}
-                              for _ in range(hit_count)]}
-                   for _ in range(action_count)]
+        dodge_budget = 0
+        attacks = []
+        for _ in range(action_count):
+            hits = []
+            for _ in range(hit_count):
+                want_dodge = choose_dodge(engine, per_hit, budget_used=dodge_budget)
+                if want_dodge:
+                    dodge_budget += 1
+                hits.append({"target_ref": target_ref, "dodge": want_dodge,
+                             "blood_shadow": False, "spell_choices": _decline_spells(target_option)})
+            attacks.append({"hits": hits})
         choices.append({"actor_ref": actor["actor_ref"], "daowen": dao,
                         "attack_actions": attacks})
     return engine.execute_action("resolve_monster_phase", {
@@ -193,9 +239,9 @@ def play_and_record(region: str, seed: int, battles: int = 7):
                 else:
                     return {"invalid": True, "reason": f"局外行动失败:{rr.get('error')}"}
 
-            relic_choices = ({starter: {"use": False}}
-                             if starter in optional_relics else {})
-            bs = engine.execute_action("battle_start", {"relic_choices": relic_choices})
+            from sim.optional_actions import battle_start_relic_choices
+            bs = engine.execute_action("battle_start",
+                                       {"relic_choices": battle_start_relic_choices(engine)})
             if not bs.get("success"):
                 return {"invalid": True, "reason": f"battle_start:{bs.get('error')}"}
             enemies = list(engine.state.enemies)
@@ -220,7 +266,8 @@ def play_and_record(region: str, seed: int, battles: int = 7):
                     break
                 if not [x for x in engine.state.enemies if x.is_alive]:
                     break
-                rs = engine.execute_action("round_start", {"relic_choices": ({"血契": {"use": False}} if any(r.name == "血契" for r in engine.state.relics) else {})})
+                from sim.build_learner import round_start_relic_choices
+                rs = engine.execute_action("round_start", {"relic_choices": round_start_relic_choices(engine)})
                 lines.extend(BR.format_round_start(rnd, rs.get("result", {}),
                                                    engine.state.player,
                                                    engine.state.enemies))
@@ -230,6 +277,12 @@ def play_and_record(region: str, seed: int, battles: int = 7):
                     lines.extend(BR.format_player_action(
                         idx, engine.state.player.name, res))
                     idx += 1
+                # [朋友]/[员工]自主出手
+                ap = engine.execute_action("resolve_ally_phases", {})
+                for entry in (ap.get("result", {}).get("allies") or []):
+                    for act in entry.get("actions", []):
+                        lines.extend(BR.format_player_action(idx, entry["ally"], act.get("detail") or {}))
+                        idx += 1
 
                 # 怪物准则#3：陷入困境时强制在【逃跑】与【进化】中二选一，每场限一次。
                 # 引擎只负责标注困境，须由扮演怪物方的 AI 主动调用，
@@ -238,6 +291,8 @@ def play_and_record(region: str, seed: int, battles: int = 7):
                 if not [x for x in engine.state.enemies if x.is_alive]:
                     lines.extend(BR.format_round_end({}, engine.state.player,
                                                      engine.state.enemies))
+                    break
+                if not engine.state.player or not engine.state.player.is_alive:
                     break
                 mp = _resolve_monster_turn(engine)
                 if not mp.get("success"):
