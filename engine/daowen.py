@@ -43,8 +43,9 @@ class DaoWenEngine:
     # ---- 杀伐闭环 ----
     
     @staticmethod
-    def calculate_shaifa(x: int, target: Entity) -> dict:
+    def calculate_shaifa(x: int, target: Entity = None) -> dict:
         """杀伐X：消耗X。对[目标]造成3X点伤害"""
+        target_name = target.name if target is not None else "未选定目标"
         cost = x
         damage = 3 * x
         return {
@@ -54,12 +55,13 @@ class DaoWenEngine:
             "cost": cost,
             "target_damage": damage,
             "damage_type": "普通",
-            "summary": f"消耗{x}法力，对{target.name}造成{damage}点伤害"
+            "summary": f"消耗{x}法力，对{target_name}造成{damage}点伤害"
         }
     
     @staticmethod
-    def calculate_zaisheng(x: int, target: Entity) -> dict:
+    def calculate_zaisheng(x: int, target: Entity = None) -> dict:
         """再生X：消耗X。为[目标]回复6X点生命"""
+        target_name = target.name if target is not None else "未选定目标"
         cost = x
         heal = 6 * x
         return {
@@ -68,12 +70,13 @@ class DaoWenEngine:
             "cost_type": CostType.MANA.value,
             "cost": cost,
             "target_heal": heal,
-            "summary": f"消耗{x}法力，为{target.name}回复{heal}点生命"
+            "summary": f"消耗{x}法力，为{target_name}回复{heal}点生命"
         }
     
     @staticmethod
-    def calculate_bihu(x: int, target: Entity) -> dict:
+    def calculate_bihu(x: int, target: Entity = None) -> dict:
         """庇护X：消耗X。使[目标]获得4X点格挡"""
+        target_name = target.name if target is not None else "未选定目标"
         cost = x
         shield = 4 * x
         return {
@@ -82,7 +85,7 @@ class DaoWenEngine:
             "cost_type": CostType.MANA.value,
             "cost": cost,
             "target_shield": shield,
-            "summary": f"消耗{x}法力，使{target.name}获得{shield}点格挡"
+            "summary": f"消耗{x}法力，使{target_name}获得{shield}点格挡"
         }
     
     @staticmethod
@@ -99,8 +102,9 @@ class DaoWenEngine:
         }
     
     @staticmethod
-    def calculate_xuezhai(x: int, target: Entity) -> dict:
+    def calculate_xuezhai(x: int, target: Entity = None) -> dict:
         """血债X：代价：流血X。对[目标]造成2X次1点伤害"""
+        target_name = target.name if target is not None else "未选定目标"
         cost_hp = x
         hits = 2 * x
         damage_per_hit = 1
@@ -112,7 +116,7 @@ class DaoWenEngine:
             "hits": hits,
             "damage_per_hit": damage_per_hit,
             "total_damage": hits * damage_per_hit,
-            "summary": f"流血{x}，对{target.name}造成{hits}次{damage_per_hit}点伤害"
+            "summary": f"流血{x}，对{target_name}造成{hits}次{damage_per_hit}点伤害"
         }
     
     @staticmethod
@@ -129,22 +133,24 @@ class DaoWenEngine:
         }
     
     @staticmethod
-    def calculate_cibei(x: int, target: Entity) -> dict:
+    def calculate_cibei(x: int, target: Entity = None) -> dict:
         """慈悲X：代价：流血X。为[目标]回复X点生命"""
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "慈悲",
             "x": x,
             "cost_type": CostType.BLEED.value,
             "cost_hp": x,
             "target_heal": x,
-            "summary": f"流血{x}，为{target.name}回复{x}点生命"
+            "summary": f"流血{x}，为{target_name}回复{x}点生命"
         }
     
     # ---- 杀伐14节点闭环后半（锐利至封印）----
     
     @staticmethod
-    def calculate_ruili(x: int, target: Entity) -> dict:
+    def calculate_ruili(x: int, target: Entity = None) -> dict:
         """锐利X：消耗3X。[目标]血限及当前生命同时-5X"""
+        target_name = target.name if target is not None else "未选定目标"
         cost = 3 * x
         reduction = 5 * x
         return {
@@ -154,12 +160,13 @@ class DaoWenEngine:
             "cost": cost,
             "blood_limit_reduction": reduction,
             "hp_reduction": reduction,
-            "summary": f"消耗{cost}法力，{target.name}血限与当前生命各-{reduction}"
+            "summary": f"消耗{cost}法力，{target_name}血限与当前生命各-{reduction}"
         }
     
     @staticmethod
-    def calculate_zengzhi(x: int, target: Entity) -> dict:
+    def calculate_zengzhi(x: int, target: Entity = None) -> dict:
         """增殖X：消耗5X。[目标]血限+2X"""
+        target_name = target.name if target is not None else "未选定目标"
         cost = 5 * x
         increase = 2 * x
         return {
@@ -168,12 +175,13 @@ class DaoWenEngine:
             "cost_type": CostType.MANA.value,
             "cost": cost,
             "blood_limit_increase": increase,
-            "summary": f"消耗{cost}法力，{target.name}血限+{increase}"
+            "summary": f"消耗{cost}法力，{target_name}血限+{increase}"
         }
     
     @staticmethod
-    def calculate_shufu(x: int, target: Entity) -> dict:
+    def calculate_shufu(x: int, target: Entity = None) -> dict:
         """束缚X：代价：冷却2X。使[目标]无法行动，持续X"""
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "束缚",
             "x": x,
@@ -181,7 +189,7 @@ class DaoWenEngine:
             "cost": 2 * x,
             "duration": x,
             "effect": "无法行动",
-            "summary": f"冷却{2*x}场，使{target.name}无法行动，持续{x}回合"
+            "summary": f"冷却{2*x}场，使{target_name}无法行动，持续{x}回合"
         }
     
     @staticmethod
@@ -223,8 +231,9 @@ class DaoWenEngine:
         }
     
     @staticmethod
-    def calculate_manqian(x: int, target: Entity, target_action_count: int) -> dict:
+    def calculate_manqian(x: int, target: Entity = None, target_action_count: int = 0) -> dict:
         """缓慢X：代价：冷却X。本回合若[目标]单轮出手次数≤X，则其无法出手"""
+        target_name = target.name if target is not None else "未选定目标"
         cost = x
         effective = target_action_count <= x
         return {
@@ -234,7 +243,7 @@ class DaoWenEngine:
             "cost": cost,
             "target_action_count": target_action_count,
             "effective": effective,
-            "summary": f"冷却{cost}，{'生效' if effective else '未生效'}（{target.name}出手{target_action_count}次，阈值{x}）"
+            "summary": f"冷却{cost}，{'生效' if effective else '未生效'}（{target_name}出手{target_action_count}次，阈值{x}）"
         }
     
     # ---- 怪物原始道纹 ----
@@ -253,8 +262,9 @@ class DaoWenEngine:
         }
     
     @staticmethod
-    def calculate_qianghua(x: int, target: Entity) -> dict:
+    def calculate_qianghua(x: int, target: Entity = None) -> dict:
         """强化X：代价：异变5X。使[目标]攻击力+X，持续∞"""
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "强化",
             "x": x,
@@ -262,12 +272,13 @@ class DaoWenEngine:
             "cost_mutation": 5 * x,
             "attack_boost": x,
             "duration": -1,  # ∞
-            "summary": f"异变+{5*x}，使{target.name}攻击力+{x}，永久"
+            "summary": f"异变+{5*x}，使{target_name}攻击力+{x}，永久"
         }
     
     @staticmethod
-    def calculate_huoli(x: int, target: Entity) -> dict:
+    def calculate_huoli(x: int, target: Entity = None) -> dict:
         """活力X：代价：异变5X。使[目标]出手次数+X，持续∞"""
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "活力",
             "x": x,
@@ -275,12 +286,13 @@ class DaoWenEngine:
             "cost_mutation": 5 * x,
             "action_boost": x,
             "duration": -1,
-            "summary": f"异变+{5*x}，使{target.name}出手次数+{x}，永久"
+            "summary": f"异变+{5*x}，使{target_name}出手次数+{x}，永久"
         }
     
     @staticmethod
-    def calculate_jiansu(x: int, target: Entity) -> dict:
+    def calculate_jiansu(x: int, target: Entity = None) -> dict:
         """减速X：代价：异变5X。使[目标]速度减半，持续X"""
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "减速",
             "x": x,
@@ -288,7 +300,7 @@ class DaoWenEngine:
             "cost_mutation": 5 * x,
             "speed_halved": True,
             "duration": x,
-            "summary": f"异变+{5*x}，使{target.name}速度减半，持续{x}回合"
+            "summary": f"异变+{5*x}，使{target_name}速度减半，持续{x}回合"
         }
     
     @staticmethod
@@ -332,8 +344,9 @@ class DaoWenEngine:
     # ---- 怪物转化道纹 ----
     
     @staticmethod
-    def calculate_fennu(x: int, target: Entity) -> dict:
+    def calculate_fennu(x: int, target: Entity = None) -> dict:
         """愤怒X：消耗5X。使[目标]法力消耗减半，持续X"""
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "愤怒",
             "x": x,
@@ -341,24 +354,26 @@ class DaoWenEngine:
             "cost": 5 * x,
             "mana_cost_halved": True,
             "duration": x,
-            "summary": f"消耗{5*x}法力，使{target.name}法力消耗减半，持续{x}回合"
+            "summary": f"消耗{5*x}法力，使{target_name}法力消耗减半，持续{x}回合"
         }
     
     @staticmethod
-    def calculate_zican(x: int, target: Entity) -> dict:
+    def calculate_zican(x: int, target: Entity = None) -> dict:
         """自残X：消耗10X。使[目标]对其自身打出X次攻击"""
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "自残",
             "x": x,
             "cost_type": CostType.MANA.value,
             "cost": 10 * x,
             "self_attack_count": x,
-            "summary": f"消耗{10*x}法力，使{target.name}对自身打出{x}次攻击"
+            "summary": f"消耗{10*x}法力，使{target_name}对自身打出{x}次攻击"
         }
     
     @staticmethod
-    def calculate_wushen(x: int, target: Entity) -> dict:
+    def calculate_wushen(x: int, target: Entity = None) -> dict:
         """无神X：消耗20X。使[目标]选择目标时强制改为自身，持续X"""
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "无神",
             "x": x,
@@ -366,12 +381,13 @@ class DaoWenEngine:
             "cost": 20 * x,
             "duration": x,
             "effect": "选择目标时强制改为自身",
-            "summary": f"消耗{20*x}法力，使{target.name}选择目标时强制改为自身，持续{x}回合"
+            "summary": f"消耗{20*x}法力，使{target_name}选择目标时强制改为自身，持续{x}回合"
         }
     
     @staticmethod
-    def calculate_jieli(x: int, target: Entity) -> dict:
+    def calculate_jieli(x: int, target: Entity = None) -> dict:
         """借力X：消耗10X。使[目标]造成伤害+10X%，持续∞"""
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "借力",
             "x": x,
@@ -379,12 +395,13 @@ class DaoWenEngine:
             "cost": 10 * x,
             "damage_boost_percent": 10 * x,
             "duration": -1,
-            "summary": f"消耗{10*x}法力，使{target.name}造成伤害+{10*x}%，永久"
+            "summary": f"消耗{10*x}法力，使{target_name}造成伤害+{10*x}%，永久"
         }
     
     @staticmethod
-    def calculate_ruhua(x: int, target: Entity) -> dict:
+    def calculate_ruhua(x: int, target: Entity = None) -> dict:
         """弱化X：消耗3X。使[目标]攻击力-X，持续∞"""
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "弱化",
             "x": x,
@@ -392,7 +409,7 @@ class DaoWenEngine:
             "cost": 3 * x,
             "attack_reduction": x,
             "duration": -1,
-            "summary": f"消耗{3*x}法力，使{target.name}攻击力-{x}，永久"
+            "summary": f"消耗{3*x}法力，使{target_name}攻击力-{x}，永久"
         }
     
     @staticmethod
@@ -409,8 +426,9 @@ class DaoWenEngine:
         }
     
     @staticmethod
-    def calculate_xingfen(x: int, target: Entity) -> dict:
+    def calculate_xingfen(x: int, target: Entity = None) -> dict:
         """兴奋X：消耗5X。使[目标]每次出手后速度+1，持续X"""
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "兴奋",
             "x": x,
@@ -418,12 +436,13 @@ class DaoWenEngine:
             "cost": 5 * x,
             "speed_gain_per_action": 1,
             "duration": x,
-            "summary": f"消耗{5*x}法力，使{target.name}每次出手后速度+1，持续{x}回合"
+            "summary": f"消耗{5*x}法力，使{target_name}每次出手后速度+1，持续{x}回合"
         }
     
     @staticmethod
-    def calculate_wuli(x: int, target: Entity) -> dict:
+    def calculate_wuli(x: int, target: Entity = None) -> dict:
         """无力X：消耗10X。回始使[目标]出手次数-X，持续∞"""
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "无力",
             "x": x,
@@ -431,12 +450,13 @@ class DaoWenEngine:
             "cost": 10 * x,
             "action_reduction": x,
             "duration": -1,
-            "summary": f"消耗{10*x}法力，回始使{target.name}出手次数-{x}，永久"
+            "summary": f"消耗{10*x}法力，回始使{target_name}出手次数-{x}，永久"
         }
     
     @staticmethod
-    def calculate_chizhi(x: int, target: Entity) -> dict:
+    def calculate_chizhi(x: int, target: Entity = None) -> dict:
         """迟滞X：代价：冷却X。使[目标]攻击次数固定为1，持续X"""
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "迟滞",
             "x": x,
@@ -444,12 +464,13 @@ class DaoWenEngine:
             "cost": x,
             "attack_count_fixed": 1,
             "duration": x,
-            "summary": f"冷却{x}场，使{target.name}攻击次数固定为1，持续{x}回合"
+            "summary": f"冷却{x}场，使{target_name}攻击次数固定为1，持续{x}回合"
         }
     
     @staticmethod
-    def calculate_jisu(x: int, target: Entity) -> dict:
+    def calculate_jisu(x: int, target: Entity = None) -> dict:
         """急速X：消耗20X。使[目标]每闪避两次速度+1，持续X"""
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "急速",
             "x": x,
@@ -457,12 +478,13 @@ class DaoWenEngine:
             "cost": 20 * x,
             "speed_per_2_dodges": 1,
             "duration": x,
-            "summary": f"消耗{20*x}法力，使{target.name}每闪避两次速度+1，持续{x}回合"
+            "summary": f"消耗{20*x}法力，使{target_name}每闪避两次速度+1，持续{x}回合"
         }
     
     @staticmethod
-    def calculate_jiasu(x: int, target: Entity) -> dict:
+    def calculate_jiasu(x: int, target: Entity = None) -> dict:
         """加速X：消耗20X。使[目标]获得的速度翻倍，持续X"""
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "加速",
             "x": x,
@@ -470,12 +492,13 @@ class DaoWenEngine:
             "cost": 20 * x,
             "speed_doubled": True,
             "duration": x,
-            "summary": f"消耗{20*x}法力，使{target.name}获得的速度翻倍，持续{x}回合"
+            "summary": f"消耗{20*x}法力，使{target_name}获得的速度翻倍，持续{x}回合"
         }
     
     @staticmethod
-    def calculate_xuanyun(x: int, target: Entity) -> dict:
+    def calculate_xuanyun(x: int, target: Entity = None) -> dict:
         """眩晕X：消耗20X。使[目标]无法出手，受到伤害后解除，持续X"""
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "眩晕",
             "x": x,
@@ -483,12 +506,13 @@ class DaoWenEngine:
             "cost": 20 * x,
             "duration": x,
             "effect": "无法出手，受到伤害后解除",
-            "summary": f"消耗{20*x}法力，使{target.name}无法出手，受伤害后解除，持续{x}回合"
+            "summary": f"消耗{20*x}法力，使{target_name}无法出手，受伤害后解除，持续{x}回合"
         }
     
     @staticmethod
-    def calculate_dongcha(x: int, target: Entity) -> dict:
+    def calculate_dongcha(x: int, target: Entity = None) -> dict:
         """洞察X：代价：疲惫X。使[目标]每次闪避后下回合法力+10，持续X"""
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "洞察",
             "x": x,
@@ -496,39 +520,45 @@ class DaoWenEngine:
             "cost_speed": x,
             "mana_per_dodge": 10,
             "duration": x,
-            "summary": f"疲惫{x}，使{target.name}每次闪避后下回合法力+10，持续{x}回合"
+            "summary": f"疲惫{x}，使{target_name}每次闪避后下回合法力+10，持续{x}回合"
         }
     
     @staticmethod
-    def calculate_mengbi(x: int, target: Entity) -> dict:
+    def calculate_mengbi(x: int, target: Entity = None) -> dict:
         """蒙蔽X：消耗5X。使[目标]下X次造成的伤害无效"""
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "蒙蔽",
             "x": x,
             "cost_type": CostType.MANA.value,
             "cost": 5 * x,
             "invalid_damage_hits": x,
-            "summary": f"消耗{5*x}法力，使{target.name}下{x}次造成的伤害无效"
+            "summary": f"消耗{5*x}法力，使{target_name}下{x}次造成的伤害无效"
         }
     
     @staticmethod
-    def calculate_ziyang(x: int, target: Entity) -> dict:
+    def calculate_ziyang(x: int, target: Entity = None) -> dict:
         """滋养X：消耗5X。使[目标]获得血限10X%的回复"""
+        target_name = target.name if target is not None else "未选定目标"
         cost = 5 * x
-        blood_limit = target.blood_limit
-        heal = DaoWenEngine.ceil(blood_limit * 10 * x / 100)
+        if target is not None:
+            blood_limit = target.blood_limit
+            heal = DaoWenEngine.ceil(blood_limit * 10 * x / 100)
+        else:
+            heal = 0
         return {
             "dao_wen": "滋养",
             "x": x,
             "cost_type": CostType.MANA.value,
             "cost": cost,
             "target_heal": heal,
-            "summary": f"消耗{cost}法力，使{target.name}获得{heal}点回复（血限{blood_limit}的{10*x}%）"
+            "summary": f"消耗{cost}法力，使{target_name}获得{heal}点回复（血限{target.blood_limit if target is not None else 0}的{10*x}%）"
         }
     
     @staticmethod
-    def calculate_shuaibai(x: int, target: Entity) -> dict:
+    def calculate_shuaibai(x: int, target: Entity = None) -> dict:
         """衰败X：消耗15X。使[目标][回始]失去10X%当前生命，持续∞；发动时不立即触发。"""
+        target_name = target.name if target is not None else "未选定目标"
         cost = 15 * x
         return {
             "dao_wen": "衰败",
@@ -536,12 +566,14 @@ class DaoWenEngine:
             "cost_type": CostType.MANA.value,
             "cost": cost,
             "duration": -1,
-            "summary": f"消耗{cost}法力，使{target.name}[回始]失去{10*x}%当前生命，持续∞"
+            "summary": f"消耗{cost}法力，使{target_name}[回始]失去{10*x}%当前生命，持续∞"
         }
     
     @staticmethod
-    def calculate_jisheng(x: int, target: Entity, caster: Entity) -> dict:
+    def calculate_jisheng(x: int, target: Entity = None, caster: Entity = None) -> dict:
         """寄生X：消耗10X。使[目标]受到的伤害20X%转化为施法者的回复，持续∞"""
+        target_name = target.name if target is not None else "未选定目标"
+        caster_name = caster.name if caster is not None else "未知施法者"
         return {
             "dao_wen": "寄生",
             "x": x,
@@ -549,7 +581,7 @@ class DaoWenEngine:
             "cost": 10 * x,
             "drain_percent": 20 * x,
             "duration": -1,
-            "summary": f"消耗{10*x}法力，使{target.name}受到伤害的{20*x}%转化为{caster.name}的回复，永久"
+            "summary": f"消耗{10*x}法力，使{target_name}受到伤害的{20*x}%转化为{caster_name}的回复，永久"
         }
     
     @staticmethod
@@ -594,8 +626,9 @@ class DaoWenEngine:
         }
     
     @staticmethod
-    def calculate_dingxing(x: int, target: Entity) -> dict:
+    def calculate_dingxing(x: int, target: Entity = None) -> dict:
         """定型X：消耗3X。使[目标]攻击次数与攻击力无法被改变，持续X"""
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "定型",
             "x": x,
@@ -603,15 +636,19 @@ class DaoWenEngine:
             "cost": 3 * x,
             "duration": x,
             "effect": "攻击次数与攻击力无法被改变",
-            "summary": f"消耗{3*x}法力，使{target.name}攻击次数与攻击力无法被改变，持续{x}回合"
+            "summary": f"消耗{3*x}法力，使{target_name}攻击次数与攻击力无法被改变，持续{x}回合"
         }
     
     @staticmethod
-    def calculate_jibian(x: int, target: Entity) -> dict:
+    def calculate_jibian(x: int, target: Entity = None) -> dict:
         """畸变X：代价：冷却X。回终使[目标]失去(攻击力×攻击次数)的血限，持续X"""
-        atk = target.attack_count
-        ap = target.attack_power
-        blood_loss = atk * ap
+        target_name = target.name if target is not None else "未选定目标"
+        if target is not None:
+            atk = target.attack_count
+            ap = target.attack_power
+            blood_loss = atk * ap
+        else:
+            blood_loss = 0
         return {
             "dao_wen": "畸变",
             "x": x,
@@ -619,12 +656,13 @@ class DaoWenEngine:
             "cost": x,
             "blood_loss_per_round": blood_loss,
             "duration": x,
-            "summary": f"冷却{x}场，回终使{target.name}失去{blood_loss}血限（{atk}×{ap}），持续{x}回合"
+            "summary": f"冷却{x}场，回终使{target_name}失去{blood_loss}血限（{atk if target is not None else 0}×{ap if target is not None else 0}），持续{x}回合"
         }
     
     @staticmethod
-    def calculate_jianghua(x: int, target: Entity) -> dict:
+    def calculate_jianghua(x: int, target: Entity = None) -> dict:
         """僵化X：消耗5X。使[目标]攻击力固定为1，持续X"""
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "僵化",
             "x": x,
@@ -632,7 +670,7 @@ class DaoWenEngine:
             "cost": 5 * x,
             "attack_fixed": 1,
             "duration": x,
-            "summary": f"消耗{5*x}法力，使{target.name}攻击力固定为1，持续{x}回合"
+            "summary": f"消耗{5*x}法力，使{target_name}攻击力固定为1，持续{x}回合"
         }
     
     @staticmethod
@@ -648,8 +686,9 @@ class DaoWenEngine:
         }
     
     @staticmethod
-    def calculate_huaisi(x: int, target: Entity) -> dict:
+    def calculate_huaisi(x: int, target: Entity = None) -> dict:
         """坏死X：消耗5X。使[目标]无法获得回复，持续X"""
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "坏死",
             "x": x,
@@ -657,7 +696,7 @@ class DaoWenEngine:
             "cost": 5 * x,
             "duration": x,
             "effect": "无法获得回复",
-            "summary": f"消耗{5*x}法力，使{target.name}无法获得回复，持续{x}回合"
+            "summary": f"消耗{5*x}法力，使{target_name}无法获得回复，持续{x}回合"
         }
     
     @staticmethod
@@ -674,8 +713,9 @@ class DaoWenEngine:
         }
     
     @staticmethod
-    def calculate_tuihua(x: int, target: Entity) -> dict:
+    def calculate_tuihua(x: int, target: Entity = None) -> dict:
         """退化X：消耗5X。使[目标]每次发动道纹时该次数值-X(最低0)，持续∞"""
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "退化",
             "x": x,
@@ -683,14 +723,15 @@ class DaoWenEngine:
             "cost": 5 * x,
             "dao_wen_reduction": x,
             "duration": -1,
-            "summary": f"消耗{5*x}法力，使{target.name}每次发动道纹数值-{x}(最低0)，永久"
+            "summary": f"消耗{5*x}法力，使{target_name}每次发动道纹数值-{x}(最低0)，永久"
         }
     
     # ---- 罪孽都市专属道纹 ----
     
     @staticmethod
-    def calculate_jiahai(x: int, target: Entity) -> dict:
+    def calculate_jiahai(x: int, target: Entity = None) -> dict:
         """加害X：消耗3X。使[目标]每次受到伤害+X，持续∞（README·龙心谷闭环起点）"""
+        target_name = target.name if target is not None else "未选定目标"
         cost = 3 * x
         return {
             "dao_wen": "加害",
@@ -699,7 +740,7 @@ class DaoWenEngine:
             "cost": cost,
             "duration": -1,
             "status": {"name": "加害", "value": x, "duration": -1},
-            "summary": f"消耗{cost}法力，使{target.name}每次受到伤害+{x}，持续∞",
+            "summary": f"消耗{cost}法力，使{target_name}每次受到伤害+{x}，持续∞",
         }
 
     @staticmethod
@@ -718,39 +759,43 @@ class DaoWenEngine:
     # ---- 罪孽都市专属道纹 ----
     
     @staticmethod
-    def calculate_bizhai(x: int, target: Entity) -> dict:
+    def calculate_bizhai(x: int, target: Entity = None) -> dict:
         """逼债X：消耗X。[回始]使目标失去X点碎片，否则失去2X点血限，持续∞（二选一，不叠加）"""
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "逼债", "x": x, "cost_type": CostType.MANA.value, "cost": x,
             "bizhai_register": x, "duration": -1,
-            "summary": f"消耗{x}法力，[回始]使{target.name}失去{x}碎片，否则失去{2*x}血限，永久"
+            "summary": f"消耗{x}法力，[回始]使{target_name}失去{x}碎片，否则失去{2*x}血限，永久"
         }
     
     @staticmethod
-    def calculate_dikou(x: int, target: Entity) -> dict:
+    def calculate_dikou(x: int, target: Entity = None) -> dict:
         """抵扣X：消耗10X。封印目标拥有的一件遗物，持续X"""
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "抵扣", "x": x, "cost_type": CostType.MANA.value, "cost": 10 * x,
             "relic_seal": 1, "duration": x,
-            "summary": f"消耗{10*x}法力，封印{target.name}一件遗物，持续{x}回合"
+            "summary": f"消耗{10*x}法力，封印{target_name}一件遗物，持续{x}回合"
         }
     
     @staticmethod
-    def calculate_qingsuan(x: int, target: Entity, caster_shards: int = 0) -> dict:
+    def calculate_qingsuan(x: int, target: Entity = None, caster_shards: int = 0) -> dict:
         """清算X：消耗5X。[回始]使目标失去你碎片点格挡，持续X"""
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "清算", "x": x, "cost_type": CostType.MANA.value, "cost": 5 * x,
             "qingsuan_register": True, "duration": x,
-            "summary": f"消耗{5*x}法力，[回始]使{target.name}失去{caster_shards}格挡，持续{x}回合"
+            "summary": f"消耗{5*x}法力，[回始]使{target_name}失去{caster_shards}格挡，持续{x}回合"
         }
     
     @staticmethod
-    def calculate_shujin(x: int, target: Entity) -> dict:
+    def calculate_shujin(x: int, target: Entity = None) -> dict:
         """赎金X：消耗10X。夺取目标10X碎片；若无碎片则失去X点速度"""
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "赎金", "x": x, "cost_type": CostType.MANA.value, "cost": 10 * x,
             "shard_steal": 10 * x, "speed_penalty": x,
-            "summary": f"消耗{10*x}法力，夺取{target.name} {10*x}碎片或{x}速度"
+            "summary": f"消耗{10*x}法力，夺取{target_name} {10*x}碎片或{x}速度"
         }
     
     @staticmethod
@@ -778,72 +823,79 @@ class DaoWenEngine:
             "dao_wen": "消灾", "x": x, "cost_type": "碎片",
             "fake_cost": 50 * x, "real_cost": 5 * x,
             "rerolls": x,
-            "summary": f"消耗50{x}假碎片或5{x}碎片（局外×2），重置随机数{x}次"
+            "summary": f"消耗{50*x}假碎片或{5*x}碎片（局外×2），重置随机数{x}次"
         }
     
     # ---- 龙心谷专属道纹 ----
     
     @staticmethod
-    def calculate_longlin(x: int, target: Entity) -> dict:
+    def calculate_longlin(x: int, target: Entity = None) -> dict:
         """龙鳞X：消耗5X。使目标每次受到伤害-X，最低为0，持续∞"""
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "龙鳞", "x": x, "cost_type": CostType.MANA.value, "cost": 5 * x,
             "damage_reduction": x, "duration": -1,
-            "summary": f"消耗{5*x}法力，{target.name}每次受伤-{x}(最低0)，永久"
+            "summary": f"消耗{5*x}法力，{target_name}每次受伤-{x}(最低0)，永久"
         }
     
     @staticmethod
-    def calculate_nilin(x: int, target: Entity) -> dict:
+    def calculate_nilin(x: int, target: Entity = None) -> dict:
         """逆鳞X：代价：流血X。目标每失去1生命获得1层逆鳞，下次伤害+全部层数，持续X"""
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "逆鳞", "x": x, "cost_type": CostType.BLEED.value, "cost_hp": x,
             "stack_per_hp": 1, "duration": x,
-            "summary": f"流血{x}，{target.name}每掉1HP积1层逆鳞，下次伤害+全部层数"
+            "summary": f"流血{x}，{target_name}每掉1HP积1层逆鳞，下次伤害+全部层数"
         }
     
     @staticmethod
-    def calculate_huoxue(x: int, target: Entity) -> dict:
+    def calculate_huoxue(x: int, target: Entity = None) -> dict:
         """活血X：消耗2X。目标每累计失去2生命，回终获得回复1，持续X"""
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "活血", "x": x, "cost_type": CostType.MANA.value, "cost": 2 * x,
             "heal_per_2hp": 1, "duration": x,
-            "summary": f"消耗{2*x}法力，{target.name}每失去2HP回终回复1，持续{x}回合"
+            "summary": f"消耗{2*x}法力，{target_name}每失去2HP回终回复1，持续{x}回合"
         }
     
     @staticmethod
-    def calculate_liebian(x: int, target: Entity) -> dict:
+    def calculate_liebian(x: int, target: Entity = None) -> dict:
         """裂变X：消耗3X。使目标受到伤害改为分X次结算，持续∞"""
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "裂变", "x": x, "cost_type": CostType.MANA.value, "cost": 3 * x,
             "split_count": x, "duration": -1,
-            "summary": f"消耗{3*x}法力，{target.name}受伤分{x}次结算，永久"
+            "summary": f"消耗{3*x}法力，{target_name}受伤分{x}次结算，永久"
         }
     
     @staticmethod
-    def calculate_jiahuo(x: int, target: Entity) -> dict:
+    def calculate_jiahuo(x: int, target: Entity = None) -> dict:
         """嫁祸X：消耗15X。自身下X次受到伤害由目标承担"""
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "嫁祸", "x": x, "cost_type": CostType.MANA.value, "cost": 15 * x,
             "redirect_count": x,
-            "summary": f"消耗{15*x}法力，自身下{x}次受伤由{target.name}承担"
+            "summary": f"消耗{15*x}法力，自身下{x}次受伤由{target_name}承担"
         }
     
     @staticmethod
-    def calculate_beifu(x: int, target: Entity) -> dict:
+    def calculate_beifu(x: int, target: Entity = None) -> dict:
         """背负X：消耗5X。选择目标，其下X次受到伤害由自身承担"""
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "背负", "x": x, "cost_type": CostType.MANA.value, "cost": 5 * x,
             "absorb_count": x,
-            "summary": f"消耗{5*x}法力，{target.name}下{x}次受伤由自身承担"
+            "summary": f"消耗{5*x}法力，{target_name}下{x}次受伤由自身承担"
         }
     
     @staticmethod
-    def calculate_shanghen(x: int, target: Entity) -> dict:
+    def calculate_shanghen(x: int, target: Entity = None) -> dict:
         """伤痕X：消耗5X。使目标每次失去生命后血限-X，持续∞"""
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "伤痕", "x": x, "cost_type": CostType.MANA.value, "cost": 5 * x,
             "blood_limit_loss": x, "duration": -1,
-            "summary": f"消耗{5*x}法力，{target.name}每次掉血后血限-{x}，永久"
+            "summary": f"消耗{5*x}法力，{target_name}每次掉血后血限-{x}，永久"
         }
     
     # ... 其他道纹可按需添加
@@ -881,13 +933,14 @@ class DaoWenEngine:
         }
 
     @staticmethod
-    def calculate_wajie(x: int, target: Entity) -> dict:
+    def calculate_wajie(x: int, target: Entity = None) -> dict:
         """瓦解X：消耗10X。使一个[目标]的[血限]减少10X%。"""
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "瓦解", "x": x,
             "cost_type": CostType.MANA.value, "cost": 10 * x,
             "blood_limit_pct": 10 * x,
-            "summary": f"消耗{10*x}法力，{target.name}血限-{10*x}%"
+            "summary": f"消耗{10*x}法力，{target_name}血限-{10*x}%"
         }
 
     @staticmethod
