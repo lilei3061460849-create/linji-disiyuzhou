@@ -182,3 +182,41 @@ def test_guard_command_bad_x_rejected():
         r = e.execute_action("command_ally", {"ally_ref": "friend:0", "instruction": bad})
         assert not r["success"], bad
     assert getattr(fr, "_beifu_left", 0) == 0
+
+
+# ========================================================================
+# 自创法术（custom_spell）—— 文本→解析→实战触发
+# ========================================================================
+
+def _engine_custom(db_suffix, daowen_list):
+    from engine.models import DaoWen, DaoWenInstance
+    e = _engine(db_suffix, region="罪孽都市")
+    for dn in daowen_list:
+        e.state.player.dao_wen[dn] = DaoWenInstance(
+            DaoWen(name=dn, formula="", cost_type="消耗", cost_formula="X", effect_formula=""), x_value=0)
+    return e
+
+
+def test_custom_spell_learn_requires_dm_then_approve():
+    """正常路径：自创法术先提交→未见场景中断→dm_approved后学会。"""
+    e = _engine_custom("custom_learn", ["杀伐", "再生"])
+    definition = {"name": "以杀养伤", "required_daowen": ["杀伐", "再生"],
+                  "trigger_condition": "受到伤害前",
+                  "effect_flow": "受到伤害前→发动杀伐X→发动再生X"}
+    r = e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "custom_spell", "spell": definition})
+    assert r["success"] and r.get("completed") is False
+    assert e._pending_interrupts, "应生成未见场景中断等DM裁定"
+    r2 = e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "custom_spell",
+                                                "spell": definition, "dm_approved": True})
+    assert r2["success"], r2
+    assert [s.name for s in e.state.player.spells] == ["以杀养伤"]
+    assert not e._pending_interrupts, "dm_approved后中断应清除"
+
+
+def test_custom_spell_rejects_unknown_daowen_in_flow():
+    """错误输入：effect_flow含非已有道纹（凭空回复X）→ 校验拦截。"""
+    e = _engine_custom("custom_bad", ["杀伐"])
+    definition = {"name": "假回复", "required_daowen": ["回复"],  # 无此道纹
+                  "trigger_condition": "受到伤害前", "effect_flow": "受到伤害前→发动回复X"}
+    r = e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "custom_spell", "spell": definition})
+    assert not r["success"], "不存在道纹'回复'必须拒绝"

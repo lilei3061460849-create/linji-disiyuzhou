@@ -2255,13 +2255,59 @@ class CombatEngine:
         "咎由自取": {"trigger": "目标发动道纹前", "steps": [("坠落", "target"), ("杀伐", "target"), ("血债", "target")]},
     }
 
+    # 自创法术文本→执行：解析 trigger_condition / effect_flow 为 SPELL_FLOWS 同构结构。
+    # 格式（与死者之书一致）：trigger如"受到伤害前"/"失去生命后"；flow如"发动杀伐X→发动再生X"。
+    # 目标推断：攻击/削弱/控制类道纹打attacker，自保/增益/回复类打self，坠落打target（若飞行）。
+    _SPELL_SELF_DAOWEN = {"庇护", "再生", "固执", "活血", "龙鳞", "自食", "透支", "假钞", "超频", "变形"}
+    _SPELL_TRIGGER_MAP = {
+        "受到伤害前": ActionPhase.BEFORE_DAMAGE_TAKEN.value,
+        "失去生命后": ActionPhase.AFTER_LIFE_LOST.value,
+        "失去生命后（循环）": ActionPhase.AFTER_LIFE_LOST.value,
+        "目标发动道纹前": "目标发动道纹前",
+    }
+
+    def _parse_custom_spell(self, spell) -> Optional[dict]:
+        """把自创法术的文本解析为 SPELL_FLOWS 同构结构；解析失败返回None。"""
+        from engine.daowen import DaoWenEngine
+        trigger = (spell.trigger_condition or "").strip()
+        trigger = trigger.replace("（循环）", "（循环）")
+        ph = self._SPELL_TRIGGER_MAP.get(trigger)
+        if ph is None:
+            return None
+        flow = (spell.effect_flow or "").strip()
+        # 提取所有"发动<道纹>X"步骤（跳过"付出代价/若...否则跳过"等条件语）
+        import re
+        steps = []
+        for m in re.finditer(r"发动\s*([\u4e00-\u9fa5]{2,4})\s*X", flow):
+            daowen = m.group(1)
+            if daowen not in DaoWenEngine.list_all():
+                return None  # 非已有道纹=违规
+            if daowen in self._SPELL_SELF_DAOWEN:
+                role = "self"
+            elif daowen == "坠落":
+                role = "target"
+            else:
+                role = "attacker"
+            steps.append((daowen, role))
+        if not steps:
+            return None
+        return {"trigger": ph, "steps": steps}
+
     def _eligible_spell_flows(self, holder: Entity, trigger: str) -> dict[str, dict]:
         flows = {}
         if holder is None or not holder.is_alive:
             return flows
         for spell in holder.spells:
             flow = self.SPELL_FLOWS.get(spell.name)
-            if (flow and flow["trigger"] == trigger
+            if flow is None:
+                # 自创法术：解析文本（可能被缓存到 spell 上）
+                flow = getattr(spell, "_parsed_flow", None)
+                if flow is None:
+                    flow = self._parse_custom_spell(spell)
+                    if flow is None:
+                        continue  # 解析失败=违规或格式错，不触发
+                    spell._parsed_flow = flow
+            if (flow["trigger"] == trigger
                     and all(name in holder.dao_wen and holder.dao_wen[name].can_use()
                             for name in spell.required_daowen)):
                 flows[spell.name] = flow
