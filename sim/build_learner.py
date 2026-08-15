@@ -124,11 +124,18 @@ def _trigger_spells(option, player_mana):
             cycles = []
             if player_mana >= 1:
                 use = True
-                cycles = [[
-                    {"x": 1, "target_ref": st.get("target_ref"),
-                     **({"dodge": False} if st.get("target_ref") != "player:0" else {})}
-                    for st in steps
-                ]]
+                # 自由控X：攻击步骤尽量大X（杀伐/锐利/血债等），自保步骤留1
+                cycle = []
+                remaining = player_mana
+                for st in steps:
+                    is_self = st.get("target_ref") == "player:0"
+                    x = max(1, remaining - 1) if not is_self else 1
+                    entry = {"x": x, "target_ref": st.get("target_ref")}
+                    if st.get("target_ref") != "player:0":
+                        entry["dodge"] = False
+                    cycle.append(entry)
+                    remaining -= x
+                cycles = [cycle]
             out[timing][name] = {"use": use, "cycles": cycles} if use else {"use": False}
     return out
 
@@ -290,7 +297,7 @@ def _resolve_pending_event(engine):
 
 def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
          rng: random.Random = None, policy: dict = None, telemetry: dict = None,
-         spend_shards: bool = False) -> dict:
+         spend_shards: bool = False, spell_plan: list = None) -> dict:
     """
     跑一局轮回。seed=None 时引擎使用真随机源。
 
@@ -325,7 +332,7 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
     todo = list(learn)
     # 法术（反应型，受击自动触发）：先发制人免费（需杀伐=起手），
     # 生生不息需再生、后发制人需庇护——学到对应道纹后学。
-    SPELL_PLAN = [("先发制人", ["杀伐"]), ("生生不息", ["再生"]), ("后发制人", ["庇护"])]
+    SPELL_PLAN = spell_plan or [("先发制人", ["杀伐"]), ("生生不息", ["再生"]), ("后发制人", ["庇护"])]
     learned_spells = set()
     cleared = 0
 
@@ -361,17 +368,38 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                         "allocations": {"speed_points": 0, "mana_points": 2}})
                     if r.get("success"):
                         continue
-            # 学法术：已有对应道纹且没学过的先学（免费1精力）
+            # 学法术：已有对应道纹且没学过的先学（免费1精力）。
+            # spell_plan 元素可为 ("名", [道纹]) 或 {"name","required_daowen","trigger_condition",
+            # "effect_flow"}（自创法术，走 dm_approved 自动通过）。
             spell_next = None
-            for sname, req in SPELL_PLAN:
-                if sname in learned_spells:
-                    continue
-                if all(r in e.state.player.dao_wen for r in req):
-                    spell_next = sname
-                    break
+            spell_definition = None
+            for item in SPELL_PLAN:
+                if isinstance(item, dict):
+                    sname = item["name"]
+                    req = item["required_daowen"]
+                    if sname in learned_spells:
+                        continue
+                    if all(r in e.state.player.dao_wen for r in req):
+                        spell_next = sname
+                        spell_definition = item
+                        break
+                else:
+                    sname, req = item
+                    if sname in learned_spells:
+                        continue
+                    if all(r in e.state.player.dao_wen for r in req):
+                        spell_next = sname
+                        break
             if spell_next:
-                r = e.execute_action("pre_battle_action", {
-                    "sub_action": "学习", "sub": "spell", "tier": 1, "names": [spell_next]})
+                if spell_definition:
+                    # 自创法术：提交→dm_approved
+                    e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "custom_spell",
+                                                           "spell": spell_definition})
+                    r = e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "custom_spell",
+                                                               "spell": spell_definition, "dm_approved": True})
+                else:
+                    r = e.execute_action("pre_battle_action", {
+                        "sub_action": "学习", "sub": "spell", "tier": 1, "names": [spell_next]})
                 if r.get("success"):
                     learned_spells.add(spell_next)
                     continue
