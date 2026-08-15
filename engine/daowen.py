@@ -44,9 +44,9 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_shaifa(x: int, target: Entity) -> dict:
-        """杀伐X：消耗X。对[目标]造成2X点伤害"""
+        """杀伐X：消耗X。对[目标]造成3X点伤害"""
         cost = x
-        damage = 2 * x
+        damage = 3 * x
         return {
             "dao_wen": "杀伐",
             "x": x,
@@ -117,15 +117,15 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_chongji(x: int) -> dict:
-        """冲击X：消耗X。对所有敌对[目标]造成X点伤害"""
+        """冲击X：消耗X。对所有敌对[目标]造成2X点伤害"""
         return {
             "dao_wen": "冲击",
             "x": x,
             "cost_type": CostType.MANA.value,
             "cost": x,
-            "aoe_damage": x,
+            "aoe_damage": 2 * x,
             "target": "all_enemies",
-            "summary": f"消耗{x}法力，对所有敌方造成{x}点伤害"
+            "summary": f"消耗{x}法力，对所有敌方造成{2 * x}点伤害"
         }
     
     @staticmethod
@@ -144,9 +144,9 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_ruili(x: int, target: Entity) -> dict:
-        """锐利X：消耗3X。[目标]血限及当前生命同时-4X"""
+        """锐利X：消耗3X。[目标]血限及当前生命同时-5X"""
         cost = 3 * x
-        reduction = 4 * x
+        reduction = 5 * x
         return {
             "dao_wen": "锐利",
             "x": x,
@@ -224,17 +224,17 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_manqian(x: int, target: Entity, target_action_count: int) -> dict:
-        """缓慢X：消耗10X。本回合若[目标]单轮出手次数≤X，则其无法出手"""
-        cost = 10 * x
+        """缓慢X：代价：冷却X。本回合若[目标]单轮出手次数≤X，则其无法出手"""
+        cost = x
         effective = target_action_count <= x
         return {
             "dao_wen": "缓慢",
             "x": x,
-            "cost_type": CostType.MANA.value,
+            "cost_type": CostType.COOLDOWN.value,
             "cost": cost,
             "target_action_count": target_action_count,
             "effective": effective,
-            "summary": f"消耗{cost}法力，{'生效' if effective else '未生效'}（{target.name}出手{target_action_count}次，阈值{x}）"
+            "summary": f"冷却{cost}，{'生效' if effective else '未生效'}（{target.name}出手{target_action_count}次，阈值{x}）"
         }
     
     # ---- 怪物原始道纹 ----
@@ -847,7 +847,89 @@ class DaoWenEngine:
         }
     
     # ... 其他道纹可按需添加
-    
+
+    # ========== 乱葬岗（二阶）专属道纹 ==========
+
+    @staticmethod
+    def calculate_fenlie(x: int) -> dict:
+        """分裂X：代价：冷却X。[命零]创造X个无分裂道纹的复制体；每个复制体血限/生命=本体血限20%。"""
+        return {
+            "dao_wen": "分裂", "x": x,
+            "cost_type": CostType.COOLDOWN.value, "cost": x,
+            "split_clones": x, "clone_hp_pct": 20,
+            "summary": f"冷却{x}，[命零]时创造{x}个复制体（血限20%）"
+        }
+
+    @staticmethod
+    def calculate_shibao(x: int) -> dict:
+        """尸爆X：消耗10X。[命零]对所有敌方[目标]打出自身[血限]的10X%伤害。"""
+        return {
+            "dao_wen": "尸爆", "x": x,
+            "cost_type": CostType.MANA.value, "cost": 10 * x,
+            "self_destruct": True, "aoe_pct": 10 * x,
+            "summary": f"消耗{10*x}法力，[命零]对全体敌造成自身血限{10*x}%伤害"
+        }
+
+    @staticmethod
+    def calculate_qianmo(x: int) -> dict:
+        """缄默X：消耗2X。使场上所有由[命零]触发的效果无法触发，持续X。"""
+        return {
+            "dao_wen": "缄默", "x": x,
+            "cost_type": CostType.MANA.value, "cost": 2 * x,
+            "duration": x, "silence_death_triggers": True,
+            "summary": f"消耗{2*x}法力，封禁全场[命零]触发效果，持续{x}回合"
+        }
+
+    @staticmethod
+    def calculate_wajie(x: int, target: Entity) -> dict:
+        """瓦解X：消耗10X。使一个[目标]的[血限]减少10X%。"""
+        return {
+            "dao_wen": "瓦解", "x": x,
+            "cost_type": CostType.MANA.value, "cost": 10 * x,
+            "blood_limit_pct": 10 * x,
+            "summary": f"消耗{10*x}法力，{target.name}血限-{10*x}%"
+        }
+
+    @staticmethod
+    def calculate_mingqi(x: int) -> dict:
+        """冥气X：消耗5X。[目标]每失去一次速度[速限]-2，持续X。"""
+        return {
+            "dao_wen": "冥气", "x": x,
+            "cost_type": CostType.MANA.value, "cost": 5 * x,
+            "speed_loss_speed_limit": 2, "duration": x,
+            "summary": f"消耗{5*x}法力，{x}回合内目标每失去速度速限-2"
+        }
+
+    @staticmethod
+    def calculate_gouhun(x: int) -> dict:
+        """勾魂X：消耗X。[回始]使[目标]失去2X点当前法力，持续∞。"""
+        return {
+            "dao_wen": "勾魂", "x": x,
+            "cost_type": CostType.MANA.value, "cost": x,
+            "round_start_mana_drain": 2 * x, "duration": -1,
+            "summary": f"消耗{x}法力，[回始]目标失去{2*x}法力，永久"
+        }
+
+    @staticmethod
+    def calculate_zhenshi(x: int) -> dict:
+        """镇尸X：消耗5X。使一个[目标]无法获得[回复]，持续X。"""
+        return {
+            "dao_wen": "镇尸", "x": x,
+            "cost_type": CostType.MANA.value, "cost": 5 * x,
+            "duration": x, "no_heal": True,
+            "summary": f"消耗{5*x}法力，目标无法获得回复，持续{x}回合"
+        }
+
+    @staticmethod
+    def calculate_zhaohun(x: int) -> dict:
+        """招魂X：消耗10X。唤回1具已击灭的怪物尸体作为[临时朋友]，生命为20X。"""
+        return {
+            "dao_wen": "招魂", "x": x,
+            "cost_type": CostType.MANA.value, "cost": 10 * x,
+            "revive_temp_friend": True, "temp_hp": 20 * x,
+            "summary": f"消耗{10*x}法力，唤回1具已灭怪物作为临时朋友（生命{20*x}）"
+        }
+
     # ========== 统一调度入口 ==========
     
     _registry: dict = {}  # 运行时注册
@@ -925,6 +1007,15 @@ class DaoWenEngine:
             "嫁祸": cls.calculate_jiahuo,
             "背负": cls.calculate_beifu,
             "伤痕": cls.calculate_shanghen,
+            # ---- 乱葬岗（二阶）----
+            "分裂": cls.calculate_fenlie,
+            "尸爆": cls.calculate_shibao,
+            "缄默": cls.calculate_qianmo,
+            "瓦解": cls.calculate_wajie,
+            "冥气": cls.calculate_mingqi,
+            "勾魂": cls.calculate_gouhun,
+            "镇尸": cls.calculate_zhenshi,
+            "招魂": cls.calculate_zhaohun,
         }
     
     @staticmethod
@@ -1057,6 +1148,16 @@ class ResonanceEngine:
             ("嫁祸", "反转", "背负"),
             ("背负", "曲解", "伤痕"),
             ("伤痕", "转换", "加害"),
+        ],
+        "乱葬岗闭环": [
+            ("分裂", "转换", "尸爆"),
+            ("尸爆", "反转", "缄默"),
+            ("缄默", "曲解", "瓦解"),
+            ("瓦解", "转换", "冥气"),
+            ("冥气", "反转", "勾魂"),
+            ("勾魂", "曲解", "镇尸"),
+            ("镇尸", "曲解", "招魂"),
+            ("招魂", "转换", "分裂"),
         ],
         # ---- 原始怪物道纹 → 转化道纹（README 第469-490行）----
         # 非闭环，是以原始道纹为根的分支树；怪物面板上的道纹多属此类，

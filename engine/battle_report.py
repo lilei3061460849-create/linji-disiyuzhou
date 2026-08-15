@@ -282,6 +282,11 @@ def format_monster_hits(start_idx: int, details: list) -> list[str]:
         pad = "　　" if multi and hi > 1 else ""
         if d.get("cant_target"):
             lines.append(f"{pad}{head}：选定{tgt}失败——{d.get('note')}")
+        elif d.get("retreated"):
+            lines.append(
+                f"{pad}{head}：攻击{tgt}→伤害{d.get('damage_dealt')}"
+                f"——{tgt}即将[命零]，自动【撤退】（保留当前生命{d.get('target_hp_after')}，退出本场）"
+            )
         elif d.get("dodge_success"):
             lines.append(
                 f"{pad}{head}：攻击{tgt}→{tgt}声明消耗1点速度闪避，成功"

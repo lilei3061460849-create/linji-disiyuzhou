@@ -19,7 +19,7 @@ import pytest
 
 from tests.attack_support import resolve_attack as resolve_player_attack
 from engine.api import GameEngine
-from engine.models import Entity, DaoWen, DaoWenInstance
+from engine.models import Entity, DaoWen, DaoWenInstance, Relic
 
 
 def _new_engine(region="龙心谷", name="老张", speed=8, mana=7, dbsuffix="a"):
@@ -152,7 +152,7 @@ def test_option1_blood_lineage_heals_when_damage_dealt_else_bleeds_20():
 # ========================================================================
 
 def test_option2_immortal_body_halves_blood_limit_and_blocks_growth():
-    """正常路径：立即血限减半；免疫衰老代价；血限无法增加；无法修行突破上限"""
+    """正常路径：立即血限减半；免疫衰老代价；血限无法增加；属性点修行不受限；获得的法力不超法限"""
     engine = _new_engine(dbsuffix="immortal")
     player = engine.state.player
     base_bl = player.blood_limit
@@ -160,18 +160,36 @@ def test_option2_immortal_body_halves_blood_limit_and_blocks_growth():
     assert r["success"] is True
     assert player.blood_limit == math.ceil(base_bl / 2)
 
-    engine.execute_action("battle_start", {})
+    # 属性点增长与不朽之躯无关：修行照常提升速限（“无法超过上限”只限制获得的当前法力/速度）
+    engine.state.energy = 3
+    sp_before = player.speed_limit
+    r_xiuxing = engine.execute_action("pre_battle_action", {
+        "sub_action": "修行", "tier": 1,
+        "allocations": {"speed_points": 1, "mana_points": 0}})
+    assert r_xiuxing["success"] is True, r_xiuxing
+    assert player.speed_limit == sp_before + 1, "不朽之躯不阻止修行提升速限"
+    engine.state.energy = 0
+
+    # 获得的法力无法超过法限：折速战始+24被钳到法限；守夜灯回始叠加也被钳到法限
+    engine.state.relics.append(Relic(name="折速法印", effect="[战始]可疲惫X获得6X法力"))
+    engine.state.relics.append(Relic(name="守夜灯", effect="[敌回始]获得等同于[法限]50%的法力"))
+    r_bs = engine.execute_action("battle_start", {"relic_choices": {
+        "折速法印": {"use": True, "x": 4}}})
+    assert r_bs["success"] is True, r_bs
+    assert player.current_mana == player.mana_limit, \
+        f"不朽之躯获得的法力不得超过法限：当前{player.current_mana} 法限{player.mana_limit}"
     engine.state.enemies.clear()
     engine.execute_action("round_start", {})
+    assert player.current_mana == player.mana_limit, \
+        f"守夜灯叠加的法力也被钳到法限：当前{player.current_mana} 法限{player.mana_limit}"
+
+    # 免疫衰老代价
     engine.state.player.dao_wen["透支"] = DaoWenInstance(
         DaoWen(name="透支", formula="", cost_type="代价", cost_formula="X", effect_formula=""))
     bl_before = player.blood_limit
     r_dw = engine.execute_action("use_daowen", {"daowen_name": "透支", "x": 5})
     assert r_dw["success"] is True
     assert player.blood_limit == bl_before, "不朽之躯应免疫衰老代价"
-
-    r_xiuxing = engine.execute_action("pre_battle_action", {"sub_action": "修行"})
-    assert r_xiuxing["success"] is False, "不朽之躯持有者无法修行突破上限"
 
 
 # ========================================================================

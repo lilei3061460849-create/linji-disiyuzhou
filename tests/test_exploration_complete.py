@@ -44,7 +44,7 @@ def test_all_declared_first_tier_events_are_parsed():
     engine = GameEngine(rng_seed=1)
     declared = {name for names in EVENT_NAMES.values() for name in names}
     assert set(engine.event_pool.events) == declared
-    assert len(declared) == 29
+    assert len(declared) == 36  # 30 + 乱葬岗6事件
     assert "猩红暴雨" in engine.event_pool.events
 
 

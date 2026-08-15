@@ -113,11 +113,47 @@ def test_true_refuse_still_wushi_and_wusuoqiu():
     engine.state.relics.append(Relic(name="无所求", effect=""))
     sp = engine.state.player.speed_limit
     engine.event_pool.current = "祭坛"
-    r = engine.execute_action("resolve_event", {"event": "祭坛", "option_id": 3})
+    r = engine.execute_action("resolve_event", {"event": "祭坛", "option_id": 3, "wusuoqiu_allocation": "speed"})
     assert r["success"], r
     assert "无事发生" in r["result"]["applied"]
     assert any("无所求" in a for a in r["result"]["applied"])
     assert engine.state.player.speed_limit == sp + 1
+
+
+def test_wusuoqiu_mana_allocation():
+    """正常路径：无所求属性点可自选加到法限（1属性点=2法限）。"""
+    engine = _engine("wusuoqiu_mana")
+    engine.state.relics.append(Relic(name="无所求", effect=""))
+    p = engine.state.player
+    ml = p.mana_limit
+    sp = p.speed_limit
+    engine.event_pool.current = "祭坛"
+    r = engine.execute_action("resolve_event", {"event": "祭坛", "option_id": 3, "wusuoqiu_allocation": "mana"})
+    assert r["success"], r
+    assert any("无所求" in a for a in r["result"]["applied"])
+    assert p.mana_limit == ml + 2, f"无所求mana应+2法限，实{p.mana_limit}"
+    assert p.speed_limit == sp, "选mana不应影响速限"
+
+
+def test_wusuoqiu_requires_explicit_allocation():
+    """错误输入：持无所求选拒绝类选项但未提交wusuoqiu_allocation，必须拒绝且不生效。"""
+    engine = _engine("wusuoqiu_missing")
+    engine.state.relics.append(Relic(name="无所求", effect=""))
+    sp = engine.state.player.speed_limit
+    engine.event_pool.current = "祭坛"
+    r = engine.execute_action("resolve_event", {"event": "祭坛", "option_id": 3})
+    assert not r["success"] and "wusuoqiu_allocation" in r["error"]
+    assert engine.state.player.speed_limit == sp
+    assert engine.event_pool.current == "祭坛", "校验失败不应推进事件"
+
+
+def test_wusuoqiu_invalid_allocation_rejected():
+    """错误输入：wusuoqiu_allocation只能是speed/mana。"""
+    engine = _engine("wusuoqiu_invalid")
+    engine.state.relics.append(Relic(name="无所求", effect=""))
+    engine.event_pool.current = "祭坛"
+    r = engine.execute_action("resolve_event", {"event": "祭坛", "option_id": 3, "wusuoqiu_allocation": "blood"})
+    assert not r["success"] and "wusuoqiu_allocation" in r["error"]
 
 
 def test_wusuoqiu_does_not_fire_on_refuse_gaizao():
@@ -127,7 +163,7 @@ def test_wusuoqiu_does_not_fire_on_refuse_gaizao():
     sp = engine.state.player.speed_limit
     engine.state.shards = 10
     engine.event_pool.current = "医生"
-    r = engine.execute_action("resolve_event", {"event": "医生", "option_id": 2})
+    r = engine.execute_action("resolve_event", {"event": "医生", "option_id": 2, "wusuoqiu_allocation": "speed"})
     assert r["success"], r
     assert engine.state.player.speed_limit == sp
     assert not any("无所求" in a for a in r["result"]["applied"])

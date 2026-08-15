@@ -62,7 +62,7 @@ def test_manqian_happy_blocks_when_budget_le_x():
     assert r["success"], r
     assert r["calculation"]["effective"] is True
     assert foe.has_status("缓慢")
-    assert p.current_mana == mana - 30
+    assert p.current_mana == mana  # 缓慢改冷却后不消耗法力
     assert engine.combat.can_act(foe) is False
     blocked = engine._consume_action_or_error(foe)
     assert blocked is not None
@@ -102,14 +102,17 @@ def test_manqian_invalid_and_ziyang_zishi_shuaibai():
     m = _monster(engine)
     engine.execute_action("round_start", {})
 
-    p.current_mana = 5
-    r1 = engine.execute_action("use_daowen", {"daowen_name": "缓慢", "x": 1, "target": m.name})
-    assert r1["success"] is False
-    assert "法力不足" in r1["error"]
-
-    p.current_mana = 80
+    # 缓慢已改为代价：冷却X，不耗法力；X=0 仍非法
     r0 = engine.execute_action("use_daowen", {"daowen_name": "缓慢", "x": 0, "target": m.name})
     assert r0["success"] is False
+    # 怪物出手2，缓慢X=2才生效
+    r1 = engine.execute_action("use_daowen", {"daowen_name": "缓慢", "x": 2, "target": m.name})
+    assert r1["success"] is True
+    assert m.has_status("缓慢")
+    # 冷却X=2：本场已用，再次发动被拒
+    r2 = engine.execute_action("use_daowen", {"daowen_name": "缓慢", "x": 2, "target": m.name})
+    assert r2["success"] is False
+    assert "冷却" in r2["error"] or "不可用" in r2["error"]
     assert "X必须≥1" in r0["error"]
 
     m.current_hp = 50
@@ -222,7 +225,7 @@ def test_huaxiang_zhuiluo_dingxing_wushen_xuanyun():
         "actor": foe.name, "daowen_name": "杀伐", "x": 2, "target": p.name,
     })
     assert r["success"], r
-    assert foe.current_hp == hp_f - 4  # 无神改打自己
+    assert foe.current_hp == hp_f - 6  # 无神改打自己(杀伐3X)
 
     m.add_status(StatusEffect(name="眩晕", remaining_rounds=2, value=1, source="测"))
     assert engine.combat.can_act(m) is False

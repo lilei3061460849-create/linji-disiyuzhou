@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from engine.api import GameEngine
 from engine import battle_report as BR
 from engine.ai_tactics import TacticalAI
+from sim.build_learner import _resolve_monster_turn as _resolve_monster_turn
 
 BACKGROUNDS = ["帮派巷战", "废墟据点", "黑市火并", "熔岩隘口"]
 
@@ -84,7 +85,8 @@ def run(region: str = "龙心谷", seed: int = 7, battles: int = 3) -> list[str]
             alive = [e for e in engine.state.enemies if e.is_alive]
             if not alive or not engine.state.player.is_alive:
                 break
-            rs = engine.execute_action("round_start", {"relic_choices": ({"血契": {"use": False}} if any(r.name == "血契" for r in engine.state.relics) else {})})
+            from sim.build_learner import round_start_relic_choices
+            rs = engine.execute_action("round_start", {"relic_choices": round_start_relic_choices(engine)})
             out.extend(BR.format_round_start(rnd, rs.get("result", {}),
                                              engine.state.player, engine.state.enemies))
 
@@ -93,6 +95,12 @@ def run(region: str = "龙心谷", seed: int = 7, battles: int = 3) -> list[str]
             for res in ai.take_turn():
                 out.extend(BR.format_player_action(idx, engine.state.player.name, res))
                 idx += 1
+            # [朋友]/[员工]自主出手
+            ap = engine.execute_action("resolve_ally_phases", {})
+            for entry in (ap.get("result", {}).get("allies") or []):
+                for act in entry.get("actions", []):
+                    out.extend(BR.format_player_action(idx, entry["ally"], act.get("detail") or {}))
+                    idx += 1
 
             if not [e for e in engine.state.enemies if e.is_alive]:
                 out.extend(BR.format_round_end({}, engine.state.player, engine.state.enemies))
@@ -103,42 +111,10 @@ def run(region: str = "龙心谷", seed: int = 7, battles: int = 3) -> list[str]
                 out.append("【结局】轮回者[命零]")
                 break
 
-            prepared = engine.execute_action("prepare_monster_phase", {})
-            monster_choices = []
-            for actor in prepared["result"]["actors"]:
-                dao = None
-                action_count = actor["base_attack_actions"]
-                hit_count = actor["base_hits_per_attack"]
-                if actor["daowen_options"]:
-                    option = actor["daowen_options"][0]
-                    dao = {"name": option["name"], "dodge": False, "blood_shadow": False,
-                   "trigger_spell_choices": {holder: {sp["spell_name"]: {"use": False} for sp in spells}
-                                               for holder, spells in option.get("trigger_spell_options", {}).items()}}
-                    if option["requires_target"]:
-                        dao["target_ref"] = option["target_options"][0]["ref"]
-                    if option["dodge_submission"] == "per_target":
-                        dao["dodge_targets"] = [
-                            {"target_ref": target["ref"], "dodge": False, "blood_shadow": False}
-                            for target in option["dodge_target_options"]
-                        ]
-                    if option["name"] == "活力":
-                        action_count += option["x"]
-                    elif option["name"] == "狂暴":
-                        action_count += 1
-                    elif option["name"] == "变形":
-                        enemy_index = int(actor["actor_ref"].split(":", 1)[1])
-                        hit_count = engine.state.enemies[enemy_index].attack_power
-                target_ref = actor["attack_target_options"][0]["ref"]
-                target_option = next(option for option in actor["attack_target_options"] if option["ref"] == target_ref)
-                attacks = [{"hits": [{"target_ref": target_ref, "dodge": False, "blood_shadow": False,
-                                       "spell_choices": _decline_spells(target_option)}
-                                      for _ in range(hit_count)]}
-                           for _ in range(action_count)]
-                monster_choices.append({"actor_ref": actor["actor_ref"], "daowen": dao,
-                                        "attack_actions": attacks})
-            mp = engine.execute_action("resolve_monster_phase", {
-                "token": prepared["result"]["token"], "choices": monster_choices,
-            })
+            mp = _resolve_monster_turn(engine)
+            if not mp.get("success"):
+                out.append(f"【怪物阶段失败】{mp.get('error')}")
+                return out
             out.extend(BR.format_monster_hits(idx, mp["result"].get("details", [])))
 
             re_ = engine.execute_action("round_end", {})

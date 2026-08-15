@@ -12,12 +12,12 @@ INDEX = ROOT / "副本索引.md"
 README = ROOT / "README.md"
 LINK = re.compile(r"\[[^]]+\]\(([^)#]+)(?:#[^)]+)?\)")
 
-IMPLEMENTED = ["扭曲都市", "罪孽都市", "龙心谷"]
-DRAFTS = ["乱葬岗", "永夜庭", "沉沦海", "荒疫古城", "巴别塔"]
+IMPLEMENTED = ["扭曲都市", "罪孽都市", "龙心谷", "乱葬岗"]
+DRAFTS = ["永夜庭", "沉沦海", "荒疫古城", "巴别塔"]
 
 
-def test_index_normal_path_loads_only_three_implemented_dungeons():
-    """正常路径：清单登记8个文档，运行时只加载3个已实现副本。"""
+def test_index_normal_path_loads_only_four_implemented_dungeons():
+    """正常路径：清单登记8个文档，运行时只加载4个已实现副本（含乱葬岗）。"""
     manifest = load_dungeon_manifest()
     assert [entry.name for entry in manifest] == IMPLEMENTED + DRAFTS
     assert {entry.name: entry.status for entry in manifest} == {
@@ -29,7 +29,7 @@ def test_index_normal_path_loads_only_three_implemented_dungeons():
     assert list(documents) == IMPLEMENTED
     pools = parse_monster_pool(INDEX)
     assert {name: len(pool) for name, pool in pools.items()} == {
-        "扭曲都市": 12, "罪孽都市": 12, "龙心谷": 12,
+        "扭曲都市": 12, "罪孽都市": 12, "龙心谷": 12, "乱葬岗": 12,
     }
     events = parse_events(INDEX)
     assert events["医生"]["region"] == "扭曲都市"

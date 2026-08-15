@@ -45,7 +45,7 @@ def test_shaifa_without_xijie_does_not_steal():
     before = engine.state.shards
     r = engine.execute_action("use_daowen", {"daowen_name": "杀伐", "x": 3, "target": m.name})
     assert r["success"] is True
-    assert m.current_hp == 80 - 6
+    assert m.current_hp == 80 - 9
     assert m.shards == 20
     assert engine.state.shards == before
 
@@ -59,8 +59,8 @@ def test_shaifa_with_xijie_status_steals():
     before = engine.state.shards
     r = engine.execute_action("use_daowen", {"daowen_name": "杀伐", "x": 3, "target": m.name})
     assert r["success"] is True
-    assert m.shards == 14
-    assert engine.state.shards == before + 6
+    assert m.shards == 11
+    assert engine.state.shards == before + 9
 
 
 def test_xijie_expired_no_longer_steals():

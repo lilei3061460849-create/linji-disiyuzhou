@@ -21,13 +21,13 @@ def test_project_rules_are_extracted_from_their_authoritative_documents():
     assert len(facts["dungeon_daowen"]) == 64
     assert len(facts["spells"]) == 9
     assert len(facts["dungeons"]) == 8
-    assert len(facts["monsters"]) == 36
+    assert len(facts["monsters"]) == 48  # 36 + 乱葬岗12(已实现)
     assert sync.diff_project_daowen()["in_file_only"] == []
     assert sync.diff_project_daowen()["in_engine_only"] == []
 
     spell_names = {spell["name"] for spell in facts["spells"]}
     item_names = {item["name"] for item in facts["items"]}
-    assert {"先发制人", "咎由自取（金石定型）"} <= spell_names
+    assert {"先发制人", "咎由自取"} <= spell_names
     assert {"血誓戒", "冥婚契约", "归潮梭"} <= item_names
     assert "遗忘书屋" not in item_names, "事件不得再被误识别为遗物"
 
@@ -36,10 +36,10 @@ def test_draft_rules_are_visible_to_docs_but_not_runtime_monster_source():
     """边界：草案及其物品可被审计，但草案怪物不进入现行怪物源。"""
     facts = _sync().extract_project_rules()
     status = {entry["name"]: entry["status"] for entry in facts["dungeons"]}
-    assert status["乱葬岗"] == "未实现"
+    assert status["乱葬岗"] == "已实现"  # 乱葬岗已转已实现
     assert status["巴别塔"] == "未实现"
     assert {monster["region"] for monster in facts["monsters"]} == {
-        "扭曲都市", "罪孽都市", "龙心谷",
+        "扭曲都市", "罪孽都市", "龙心谷", "乱葬岗",
     }
 
 

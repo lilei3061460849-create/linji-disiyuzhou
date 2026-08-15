@@ -53,10 +53,19 @@ def test_report_follows_spec_format():
     assert not re.search(r"怪物出手\d+次", txt), "出现被禁止的概括式结算"
 
 
-def test_report_records_seven_battles():
-    """正常路径：当前正式战报记录了七场手操战斗，不要求附加批量评选文案。"""
+def test_report_records_full_run_with_declared_battles():
+    """正常路径：正式战报必须逐场结算到战报顶部声明的战斗场数。
+
+    通关7场或中途阵亡都算完整轮回记录；战报顶部必须声明「共N场」，
+    正文的 [战终]/[死亡结算] 数量不得少于声明场数，不允许缩写成摘要。
+    """
     txt = open(REPORT, encoding="utf-8").read()
-    assert txt.count("[战终]") >= 7, "应包含7场的战终结算"
+    import re
+    declared = re.search(r"共\s*(\d+)\s*场", txt)
+    assert declared, "战报顶部必须声明本轮战斗场数（共N场）"
+    battles = int(declared.group(1))
+    endings = txt.count("[战终]") + txt.count("[死亡结算]")
+    assert endings >= battles, f"应结算{battles}场，实际结算{endings}场"
     assert "本文件只保留最新一次轮回记录" in txt
 
 

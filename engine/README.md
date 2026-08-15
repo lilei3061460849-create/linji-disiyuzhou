@@ -51,7 +51,7 @@ engine/
 ├── rule_sync.py         # 多事实源同步（README/死者之书/物品索引/副本索引）
 ├── document_validation.py # Markdown标题、文件链接与锚点校验
 ├── death_book.py        # 《死者之书》遗言节读写（文件是事实源；审核后只改 ## 遗言）
-├── validator.py         # 规则校验器（22 条内置检查，违规入库）
+├── validator.py         # 规则校验器（20 条内置检查，违规入库）
 └── api.py               # GameEngine 主类 — AI 唯一交互入口（含 TWISTED_TOOL_LIBRARY、TERMINAL_ARTIFACTS、FIRST_EMBRACE_OPTIONS 等）
 ```
 

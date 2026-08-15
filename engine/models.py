@@ -45,6 +45,7 @@ class DaoWenInstance:
     x_value: int = 0            # 当前X值（自由控X规则）
     cooldown_remaining: int = 0 # 冷却剩余
     is_frozen: bool = False     # 是否被封印
+    sha_qi: str = ""            # 乱葬岗附煞：法煞/魂煞/冥煞/血煞/锁煞/蚀煞/心煞
     
     def can_use(self) -> bool:
         return not self.is_frozen and self.cooldown_remaining <= 0
@@ -666,6 +667,9 @@ class GameState:
 
     # 龙心谷"炼心"：待生效标记；下一次玩家实际支付数值型代价后转化为对应类型的【××龙心】消耗品
     pending_lianxin: bool = False
+    pending_sha_qi_choices: list = field(default_factory=list)
+    dead_monsters: list = field(default_factory=list)  # 乱葬岗招魂：本场已命零的怪物尸体
+    pending_sha_qi_mode: str = ""
     # 炼心在战斗中发动时不消耗出手，改为"下次局外行动多消耗1点精力"，此处累计待结算的额外精力消耗
     pending_energy_penalty: int = 0
 
