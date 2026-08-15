@@ -5,7 +5,7 @@
     "blood_limit": 60,
     "current_hp": 1,
     "mana_limit": 58,
-    "current_mana": 0,
+    "current_mana": 3,
     "speed_limit": 8,
     "current_speed": 8,
     "attack_count": 0,
@@ -19,7 +19,7 @@
       "杀伐": 0,
       "庇护": 0,
       "再生": 0,
-      "弱化": 0
+      "自残": 0
     },
     "spells": [
       {
@@ -60,15 +60,15 @@
   "employees": [],
   "relics": [
     {
-      "name": "买路财",
-      "effect": "战斗中可失去等同于怪物20%[血限]的[碎片]安全撤退",
+      "name": "血誓戒",
+      "effect": "[回始]首次主动支付流血代价时，获得等同于本次流血的格挡；若支付后生命≤30%，改为获得等量生命",
       "tags": []
     }
   ],
   "resonance": {
     "反转": 0
   },
-  "shards": 85,
+  "shards": 84,
   "death_book_wisdom": [],
   "rest_heal_bonus": 0,
   "death_book_legacies": [
@@ -81,7 +81,9 @@
   ],
   "attribute_points": 0,
   "current_region": "扭曲都市",
-  "artifacts_owned": [],
+  "artifacts_owned": [
+    "体外心脏"
+  ],
   "first_embrace_traits": [],
   "pending_first_embrace": false,
   "chizu_names": [],
@@ -90,7 +92,10 @@
   "has_sacrifice_action": false,
   "origin": {
     "region": "扭曲都市",
-    "seed": 67,
-    "rank": 5
+    "seed": 127,
+    "rank": 5,
+    "duel_won": true,
+    "duels_fought": 5,
+    "terminal_artifact": true
   }
 }

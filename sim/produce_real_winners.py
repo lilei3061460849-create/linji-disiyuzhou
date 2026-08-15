@@ -490,35 +490,33 @@ def play_first_tier(seed: int, region: str, sealed_path: str,
         cleared += 1
 
         if outcome == "duel_start" or e.state.in_final_duel:
-            # 第8场死斗：正常推进
-            duel_won = False
-            for _ in range(60):
-                if not e.state.player or not e.state.player.is_alive:
-                    break
-                if not [x for x in e.state.enemies if x.is_alive]:
-                    duel_won = True
-                    break
-                e.execute_action("round_start", {"relic_choices": round_start_relic_choices(e)})
-                ai.new_round()
-                ai.take_turn()
-                if not [x for x in e.state.enemies if x.is_alive]:
-                    duel_won = True
-                    break
-                if not e.state.player or not e.state.player.is_alive:
-                    break
-                e.execute_action("resolve_ally_phases", {})
-                if not [x for x in e.state.enemies if x.is_alive]:
-                    duel_won = True
-                    break
-                mp = _resolve_monster_turn_with_spells(e)
-                if not mp.get("success"):
-                    return {"cleared": cleared, "won": False, "invalid": True,
-                            "reason": f"duel: {mp.get('error')}"}
-                if not e.state.player or not e.state.player.is_alive:
-                    break
-                e.execute_action("round_end", {})
+            # 第8场死斗：用修复后的PvP对称驱动（守擂方走玩家侧接口：法力制/
+            # 出手次数=速限/3/自由控X，勿当怪物处理——用户裁定死斗必须按PvP规则）。
+            from sim.duel_pvp import run_duel_pvp
+            def _act():
+                """挑战者死斗：专注杀守擂主将（轮回者）——与守擂方专注策略对称。
+                TacticalAI 会分散输出（保命/控场），死斗胜率仅1/6；专注杀主将
+                才能与守擂方五五开（死斗只允许一名轮回者离开：主将死即败）。"""
+                p = e.state.player
+                if not p or not p.is_alive:
+                    return False
+                lord = next((x for x in e.state.enemies
+                             if x.is_alive and x.entity_type == "轮回者"), None)
+                if lord is None:
+                    return False
+                x = max(1, p.current_mana - 3)
+                if x < 1:
+                    return False
+                r = e.execute_action("use_daowen", {
+                    "daowen_name": "杀伐", "x": x,
+                    "target_ref": f"enemy:{e.state.enemies.index(lord)}",
+                    "trigger_spell_choices": {}})
+                return bool(r.get("success"))
+            dr = run_duel_pvp(e, _act, max_rounds=60, max_steps=400)
+            duel_won = dr.get("winner") == "challenger"
             if not duel_won or not e.state.player or not e.state.player.is_alive:
-                return {"cleared": cleared, "won": False, "invalid": False}
+                return {"cleared": cleared, "won": False, "invalid": False,
+                        "duel": "lost", "duel_reason": dr.get("reason")}
             dr = e.execute_action("resolve_final_duel", {"outcome": "victory"})
             if not dr.get("success"):
                 return {"cleared": cleared, "won": False, "invalid": True,

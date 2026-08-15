@@ -3,9 +3,9 @@
     "name": "贾凡",
     "entity_type": "轮回者",
     "blood_limit": 60,
-    "current_hp": 1,
-    "mana_limit": 58,
-    "current_mana": 58,
+    "current_hp": 9,
+    "mana_limit": 64,
+    "current_mana": 3,
     "speed_limit": 8,
     "current_speed": 8,
     "attack_count": 0,
@@ -19,7 +19,7 @@
       "杀伐": 0,
       "庇护": 0,
       "再生": 0,
-      "自残": 0
+      "蒙蔽": 0
     },
     "spells": [
       {
@@ -60,15 +60,15 @@
   "employees": [],
   "relics": [
     {
-      "name": "守夜灯",
-      "effect": "[敌回始]获得[法限]50%法力，[敌回终]清空，每回合一次",
+      "name": "同魂笔",
+      "effect": "对[目标]发动残韵时，可另选一[目标]使其一种道纹受同种残韵影响",
       "tags": []
     }
   ],
   "resonance": {
     "反转": 0
   },
-  "shards": 85,
+  "shards": 93,
   "death_book_wisdom": [],
   "rest_heal_bonus": 0,
   "death_book_legacies": [
@@ -81,7 +81,9 @@
   ],
   "attribute_points": 0,
   "current_region": "扭曲都市",
-  "artifacts_owned": [],
+  "artifacts_owned": [
+    "体外心脏"
+  ],
   "first_embrace_traits": [],
   "pending_first_embrace": false,
   "chizu_names": [],
@@ -90,7 +92,10 @@
   "has_sacrifice_action": false,
   "origin": {
     "region": "扭曲都市",
-    "seed": 34,
-    "rank": 4
+    "seed": 82,
+    "rank": 4,
+    "duel_won": true,
+    "duels_fought": 4,
+    "terminal_artifact": true
   }
 }

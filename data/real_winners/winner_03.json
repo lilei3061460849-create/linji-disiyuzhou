@@ -3,9 +3,9 @@
     "name": "贾凡",
     "entity_type": "轮回者",
     "blood_limit": 60,
-    "current_hp": 38,
-    "mana_limit": 48,
-    "current_mana": 0,
+    "current_hp": 1,
+    "mana_limit": 62,
+    "current_mana": 3,
     "speed_limit": 8,
     "current_speed": 8,
     "attack_count": 0,
@@ -19,7 +19,7 @@
       "杀伐": 0,
       "庇护": 0,
       "再生": 0,
-      "蒙蔽": 0
+      "弱化": 0
     },
     "spells": [
       {
@@ -57,77 +57,7 @@
     "status_effects": []
   },
   "friends": [],
-  "employees": [
-    {
-      "name": "铁卫1",
-      "entity_type": "员工",
-      "blood_limit": 60,
-      "current_hp": 60,
-      "mana_limit": 0,
-      "current_mana": 0,
-      "speed_limit": 0,
-      "current_speed": 0,
-      "attack_count": 5,
-      "attack_power": 10,
-      "shield": 0,
-      "is_flying": false,
-      "is_alive": true,
-      "shards": 0,
-      "is_debt_bound": false,
-      "dao_wen": {
-        "愤怒": 0
-      },
-      "spells": [],
-      "relics": [],
-      "status_effects": []
-    },
-    {
-      "name": "铁卫2",
-      "entity_type": "员工",
-      "blood_limit": 60,
-      "current_hp": 60,
-      "mana_limit": 0,
-      "current_mana": 0,
-      "speed_limit": 0,
-      "current_speed": 0,
-      "attack_count": 5,
-      "attack_power": 10,
-      "shield": 0,
-      "is_flying": false,
-      "is_alive": true,
-      "shards": 0,
-      "is_debt_bound": false,
-      "dao_wen": {
-        "自残": 0
-      },
-      "spells": [],
-      "relics": [],
-      "status_effects": []
-    },
-    {
-      "name": "铁卫3",
-      "entity_type": "员工",
-      "blood_limit": 60,
-      "current_hp": 60,
-      "mana_limit": 0,
-      "current_mana": 0,
-      "speed_limit": 0,
-      "current_speed": 0,
-      "attack_count": 5,
-      "attack_power": 10,
-      "shield": 0,
-      "is_flying": false,
-      "is_alive": true,
-      "shards": 0,
-      "is_debt_bound": false,
-      "dao_wen": {
-        "衰败": 0
-      },
-      "spells": [],
-      "relics": [],
-      "status_effects": []
-    }
-  ],
+  "employees": [],
   "relics": [
     {
       "name": "守夜灯",
@@ -138,7 +68,7 @@
   "resonance": {
     "反转": 0
   },
-  "shards": 90,
+  "shards": 81,
   "death_book_wisdom": [],
   "rest_heal_bonus": 0,
   "death_book_legacies": [
@@ -150,8 +80,10 @@
     }
   ],
   "attribute_points": 0,
-  "current_region": "罪孽都市",
-  "artifacts_owned": [],
+  "current_region": "扭曲都市",
+  "artifacts_owned": [
+    "体外心脏"
+  ],
   "first_embrace_traits": [],
   "pending_first_embrace": false,
   "chizu_names": [],
@@ -159,8 +91,11 @@
   "dragon_traits": [],
   "has_sacrifice_action": false,
   "origin": {
-    "region": "罪孽都市",
-    "seed": 30,
-    "rank": 3
+    "region": "扭曲都市",
+    "seed": 76,
+    "rank": 3,
+    "duel_won": true,
+    "duels_fought": 3,
+    "terminal_artifact": true
   }
 }

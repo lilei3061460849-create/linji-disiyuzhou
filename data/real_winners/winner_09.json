@@ -3,9 +3,9 @@
     "name": "贾凡",
     "entity_type": "轮回者",
     "blood_limit": 60,
-    "current_hp": 25,
-    "mana_limit": 56,
-    "current_mana": 0,
+    "current_hp": 1,
+    "mana_limit": 50,
+    "current_mana": 3,
     "speed_limit": 8,
     "current_speed": 8,
     "attack_count": 0,
@@ -17,9 +17,9 @@
     "is_debt_bound": false,
     "dao_wen": {
       "杀伐": 0,
+      "衰败": 0,
       "庇护": 0,
-      "再生": 0,
-      "弱化": 0
+      "再生": 0
     },
     "spells": [
       {
@@ -57,18 +57,88 @@
     "status_effects": []
   },
   "friends": [],
-  "employees": [],
+  "employees": [
+    {
+      "name": "铁卫1",
+      "entity_type": "员工",
+      "blood_limit": 60,
+      "current_hp": 60,
+      "mana_limit": 0,
+      "current_mana": 0,
+      "speed_limit": 0,
+      "current_speed": 0,
+      "attack_count": 5,
+      "attack_power": 10,
+      "shield": 0,
+      "is_flying": false,
+      "is_alive": true,
+      "shards": 0,
+      "is_debt_bound": false,
+      "dao_wen": {
+        "弱化": 0
+      },
+      "spells": [],
+      "relics": [],
+      "status_effects": []
+    },
+    {
+      "name": "铁卫2",
+      "entity_type": "员工",
+      "blood_limit": 60,
+      "current_hp": 60,
+      "mana_limit": 0,
+      "current_mana": 0,
+      "speed_limit": 0,
+      "current_speed": 0,
+      "attack_count": 5,
+      "attack_power": 10,
+      "shield": 0,
+      "is_flying": false,
+      "is_alive": true,
+      "shards": 0,
+      "is_debt_bound": false,
+      "dao_wen": {
+        "愤怒": 0
+      },
+      "spells": [],
+      "relics": [],
+      "status_effects": []
+    },
+    {
+      "name": "铁卫3",
+      "entity_type": "员工",
+      "blood_limit": 60,
+      "current_hp": 60,
+      "mana_limit": 0,
+      "current_mana": 0,
+      "speed_limit": 0,
+      "current_speed": 0,
+      "attack_count": 5,
+      "attack_power": 10,
+      "shield": 0,
+      "is_flying": false,
+      "is_alive": true,
+      "shards": 0,
+      "is_debt_bound": false,
+      "dao_wen": {
+        "迟滞": 0
+      },
+      "spells": [],
+      "relics": [],
+      "status_effects": []
+    }
+  ],
   "relics": [
     {
-      "name": "回锋刀",
-      "effect": "每失去1点速度后对[目标]造成3伤害；[回始]对[目标]造成3×([速限]-当前速度)伤害",
+      "name": "守夜灯",
+      "effect": "[敌回始]获得[法限]50%法力，[敌回终]清空，每回合一次",
       "tags": []
     }
   ],
   "resonance": {
     "反转": 0
   },
-  "shards": 82,
+  "shards": 80,
   "death_book_wisdom": [],
   "rest_heal_bonus": 0,
   "death_book_legacies": [
@@ -80,8 +150,10 @@
     }
   ],
   "attribute_points": 0,
-  "current_region": "扭曲都市",
-  "artifacts_owned": [],
+  "current_region": "罪孽都市",
+  "artifacts_owned": [
+    "黑金名片"
+  ],
   "first_embrace_traits": [],
   "pending_first_embrace": false,
   "chizu_names": [],
@@ -89,8 +161,11 @@
   "dragon_traits": [],
   "has_sacrifice_action": false,
   "origin": {
-    "region": "扭曲都市",
-    "seed": 109,
-    "rank": 9
+    "region": "罪孽都市",
+    "seed": 864,
+    "rank": 9,
+    "duel_won": true,
+    "duels_fought": 7,
+    "terminal_artifact": true
   }
 }

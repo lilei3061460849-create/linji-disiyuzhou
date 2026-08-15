@@ -3,9 +3,9 @@
     "name": "贾凡",
     "entity_type": "轮回者",
     "blood_limit": 60,
-    "current_hp": 1,
-    "mana_limit": 62,
-    "current_mana": 0,
+    "current_hp": 25,
+    "mana_limit": 56,
+    "current_mana": 3,
     "speed_limit": 8,
     "current_speed": 8,
     "attack_count": 0,
@@ -60,15 +60,15 @@
   "employees": [],
   "relics": [
     {
-      "name": "守夜灯",
-      "effect": "[敌回始]获得[法限]50%法力，[敌回终]清空，每回合一次",
+      "name": "血契",
+      "effect": "数值型【代价】可与一名存活朋友/员工共同承担（通用规则见README《基础定义·数值型代价》）；[回始]可流血4X获得X法力，本次流血也可共同承担",
       "tags": []
     }
   ],
   "resonance": {
     "反转": 0
   },
-  "shards": 81,
+  "shards": 83,
   "death_book_wisdom": [],
   "rest_heal_bonus": 0,
   "death_book_legacies": [
@@ -81,7 +81,9 @@
   ],
   "attribute_points": 0,
   "current_region": "扭曲都市",
-  "artifacts_owned": [],
+  "artifacts_owned": [
+    "体外心脏"
+  ],
   "first_embrace_traits": [],
   "pending_first_embrace": false,
   "chizu_names": [],
@@ -90,7 +92,10 @@
   "has_sacrifice_action": false,
   "origin": {
     "region": "扭曲都市",
-    "seed": 76,
-    "rank": 6
+    "seed": 301,
+    "rank": 6,
+    "duel_won": true,
+    "duels_fought": 8,
+    "terminal_artifact": true
   }
 }
