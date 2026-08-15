@@ -110,6 +110,28 @@ def _decline_spells(option):
                      for spell in option.get("spell_options", {}).get(timing, [])}
             for timing in ("before", "after")}
 
+
+def _trigger_spells(option, player_mana):
+    """玩家受击时触发反应法术（此前 _decline_spells 全部拒绝，先发制人/生生不息
+    从不触发=玩家法术白学）。有法力就触发：先发制人反击、后发制人上盾、生生不息回血。"""
+    out = {}
+    for timing in ("before", "after"):
+        out[timing] = {}
+        for spell in option.get("spell_options", {}).get(timing, []) or []:
+            name = spell["spell_name"]
+            steps = spell.get("steps", [])
+            use = False
+            cycles = []
+            if player_mana >= 1:
+                use = True
+                cycles = [[
+                    {"x": 1, "target_ref": st.get("target_ref"),
+                     **({"dodge": False} if st.get("target_ref") != "player:0" else {})}
+                    for st in steps
+                ]]
+            out[timing][name] = {"use": use, "cycles": cycles} if use else {"use": False}
+    return out
+
 def learnable_candidates(region: str = None) -> list:
     """当前副本下可通过局外【学习】直接获得的道纹（不含需残韵转化的）。"""
     out = []
@@ -170,8 +192,10 @@ def _resolve_monster_turn(engine):
                                           budget_used=dodge_budget)
                 if want_dodge:
                     dodge_budget += 1
+                spell_choices = (_trigger_spells(target_option, engine.state.player.current_mana if engine.state.player else 0)
+                                 if target_ref == "player:0" else _decline_spells(target_option))
                 hit = {"target_ref": target_ref, "dodge": want_dodge,
-                       "blood_shadow": False, "spell_choices": _decline_spells(target_option)}
+                       "blood_shadow": False, "spell_choices": spell_choices}
                 # 回锋刀：闪避触发反击必须显式提交合法敌方目标
                 if want_dodge and target_option.get("dodge_relic_target_options"):
                     hit["dodge_relic_target_ref"] = target_option["dodge_relic_target_options"][0]["ref"]
@@ -299,6 +323,10 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
 
     ai = TacticalAI(e)
     todo = list(learn)
+    # 法术（反应型，受击自动触发）：先发制人免费（需杀伐=起手），
+    # 生生不息需再生、后发制人需庇护——学到对应道纹后学。
+    SPELL_PLAN = [("先发制人", ["杀伐"]), ("生生不息", ["再生"]), ("后发制人", ["庇护"])]
+    learned_spells = set()
     cleared = 0
 
     def record(kind, name, detail=""):
@@ -311,8 +339,10 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
     for b in range(1, battles + 1):
         while e.state.energy > 0:
             before = e.state.energy
-            # 花碎片→战力（spend_shards）：先学完免费法术/道纹，再花碎片修行/附煞。
-            if spend_shards and not todo:
+            # 花碎片→战力（spend_shards）：与学习并行——每场优先修行1次保证法限成长，
+            # 其余精力学道纹（此前"学完todo才花碎片"导致5道纹build学5场碎片花晚了，
+            # 法限没提上去，更强build反而更弱）。
+            if spend_shards:
                 p = e.state.player
                 if p and e.state.shards >= 35:
                     r = e.execute_action("pre_battle_action", {
@@ -325,12 +355,26 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                         "sub_action": "附煞", "mode": "选择", "sha_qi": "冥煞", "daowen_name": "杀伐"})
                     if r.get("success"):
                         continue
-                if p and e.state.shards >= 15:
+                if p and e.state.shards >= 15 and todo:
                     r = e.execute_action("pre_battle_action", {
                         "sub_action": "修行", "tier": 2,
                         "allocations": {"speed_points": 0, "mana_points": 2}})
                     if r.get("success"):
                         continue
+            # 学法术：已有对应道纹且没学过的先学（免费1精力）
+            spell_next = None
+            for sname, req in SPELL_PLAN:
+                if sname in learned_spells:
+                    continue
+                if all(r in e.state.player.dao_wen for r in req):
+                    spell_next = sname
+                    break
+            if spell_next:
+                r = e.execute_action("pre_battle_action", {
+                    "sub_action": "学习", "sub": "spell", "tier": 1, "names": [spell_next]})
+                if r.get("success"):
+                    learned_spells.add(spell_next)
+                    continue
             act, params = choose_pre_battle(e, todo, b, rng, policy)
             record("attempted", act)
             try:

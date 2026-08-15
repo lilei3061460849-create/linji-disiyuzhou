@@ -763,7 +763,13 @@ class GameEngine:
                 "token": self.state.pending_monster_phase.get("token"),
             }
         # 检查是否有待处理的中断
-        if self._pending_interrupts:
+        # 豁免：自创法术 dm_approved 重提是"结算中断"的动作，不该被自己挡住
+        is_custom_approve = (action_type == "pre_battle_action"
+                             and isinstance(params, dict)
+                             and params.get("sub_action") in ("学习",)
+                             and params.get("sub") in ("custom_spell", "自创法术")
+                             and params.get("dm_approved"))
+        if self._pending_interrupts and not is_custom_approve:
             player_dead = (self.state.player is None) or (not self.state.player.is_alive)
             return {
                 "success": False,
@@ -1437,6 +1443,12 @@ class GameEngine:
                 self.state.energy += 1  # 审核阶段不消耗；dm_approved后重新提交才正式消耗本次行动。
                 return {"success": True, "action": "自创法术等待裁定",
                         "completed": False, "interrupt": interrupt.to_dict()}
+            # dm_approved 重提：清掉本次待审的自创法术中断（否则留在队列，
+            # 后续所有行动被"有待处理的中断"门禁挡住，自创法术无法真正完成）。
+            self._pending_interrupts = [
+                i for i in self._pending_interrupts
+                if not (i.interrupt_type == InterruptType.UNSEEN_SCENE
+                        and (i.context or {}).get("kind") == "custom_spell")]
             spell = Spell(name=name.strip(), required_daowen=list(required),
                           trigger_condition=trigger.strip(), effect_flow=flow.strip(),
                           rank=len(required), custom_conditions=list(definition.get("custom_conditions") or []))
