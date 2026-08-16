@@ -10,7 +10,7 @@ from .models import Entity, StatusEffect, GameState, DaoWenInstance, DaoWen, Spe
 from .daowen import DaoWenEngine, ResonanceEngine
 from .dice import DiceEngine
 from .enums import (ActionPhase, TriggerTiming, InterruptType, DamageType,
-                    EffectScope, EffectPolarity)
+                    EffectScope, EffectPolarity, CostType)
 from .dm_rulings import Interrupt
 
 
@@ -2021,6 +2021,19 @@ class CombatEngine:
         elif "cost_mutation" in calc and caster.entity_type != "怪物":
             # 怪物原始道纹在两阶段怪物流程中已先支付异变5X；此处只补轮回者/同伴的同类代价。
             cost_spec = ("异变", calc["cost_mutation"], "mutation_cost")
+        elif calc.get("cost_type") == CostType.MANA.value and calc.get("cost", 0) > 0:
+            # 消耗法力的道纹：统一处理法力消耗
+            # 根据README：法力用于发动道纹与法术，法力[敌回终]清空
+            # 但是根据README：怪物发动道纹不支付法力，只消耗行动
+            # 所以只有非怪物实体才需要消耗法力
+            mana_cost = calc.get("cost", 0)
+            if mana_cost > 0 and caster.entity_type != "怪物":
+                if not caster.spend_mana(mana_cost):
+                    # 法力不足，道纹发动失败
+                    result["effects"].append({"type": "mana_cost_failed", "daowen": name, "cost": mana_cost})
+                    return result
+                # 法力消耗成功
+                result["effects"].append({"type": "mana_cost", "daowen": name, "cost": mana_cost, "remaining_mana": caster.current_mana})
         if cost_spec is not None:
             cost_type, amount, effect_type = cost_spec
             payment = self.pay_numeric_cost(
