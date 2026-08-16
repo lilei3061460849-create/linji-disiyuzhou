@@ -26,6 +26,19 @@ def run_playthrough(seed=42):
     battle_blocks = []
     battles_count = 0
 
+    def best_cultivate_tier(shards):
+        if shards >= 150:
+            return 6, 150, 6
+        if shards >= 100:
+            return 5, 100, 5
+        if shards >= 65:
+            return 4, 65, 4
+        if shards >= 35:
+            return 3, 35, 3
+        if shards >= 15:
+            return 2, 15, 2
+        return 1, 0, 1
+
     for battle_no in range(1, 8):
         battles_count += 1
         b_lines = []
@@ -33,9 +46,9 @@ def run_playthrough(seed=42):
         b_lines.append("")
 
         pre_texts = []
-        # 局外规划：3点精力
+        # 激进局外消费规划：花满碎片，即时将经济转化为战斗力
         while e.state.energy > 0:
-            if p.current_hp < p.blood_limit:
+            if p.current_hp < p.blood_limit - 10:
                 heal = 8 + e.state.rest_heal_bonus
                 r = e.execute_action("pre_battle_action", {
                     "sub_action": "休整", "tier": 1,
@@ -72,22 +85,17 @@ def run_playthrough(seed=42):
                 assert r["success"], r
                 pre_texts.append("学习·法术 → 学会【生生不息】（再生）")
             else:
+                tier, cost, pts = best_cultivate_tier(e.state.shards)
+                spd_pts = 1 if (p.speed_limit < 12 and pts >= 2) else 0
+                mana_pts = pts - spd_pts
                 spd_bef = p.speed_limit
                 mana_bef = p.mana_limit
-                if e.state.shards >= 15 and e.state.energy == 1:
-                    r = e.execute_action("pre_battle_action", {
-                        "sub_action": "修行", "tier": 2,
-                        "allocations": {"speed_points": 1, "mana_points": 1}
-                    })
-                    assert r["success"], r
-                    pre_texts.append(f"修行2档（消耗15碎片） → 速限+1（{spd_bef}→{p.speed_limit}）、法限+2（{mana_bef}→{p.mana_limit}）")
-                else:
-                    r = e.execute_action("pre_battle_action", {
-                        "sub_action": "修行", "tier": 1,
-                        "allocations": {"speed_points": 0, "mana_points": 1}
-                    })
-                    assert r["success"], r
-                    pre_texts.append(f"修行1档 → 法限+2（{mana_bef}→{p.mana_limit}）")
+                r = e.execute_action("pre_battle_action", {
+                    "sub_action": "修行", "tier": tier,
+                    "allocations": {"speed_points": spd_pts, "mana_points": mana_pts}
+                })
+                assert r["success"], r
+                pre_texts.append(f"修行{tier}档（消耗{cost}碎片） → 速限+{spd_pts}（{spd_bef}→{p.speed_limit}）、法限+{mana_pts*2}（{mana_bef}→{p.mana_limit}）")
 
         b_lines.append("[局外]（3精力）：")
         for i, t in enumerate(pre_texts, 1):
@@ -120,7 +128,7 @@ def run_playthrough(seed=42):
             rs = e.execute_action("round_start", {"relic_choices": r_choices})
             b_lines.extend(BR.format_round_start(rnd, rs.get("result", {}), p, e.state.enemies))
 
-            # 玩家行动：严格践行 DM 裁定战术（卖盾保速、集火收割、再生急救）
+            # 玩家行动：DM战术（集火收割、卖盾保速）
             act_idx = 1
             while p.actions_used_this_round < p.action_count and [m for m in e.state.enemies if m.is_alive]:
                 targetable = [m for m in e.state.enemies if m.is_alive and e.combat.is_targetable(p, m)]
@@ -135,7 +143,7 @@ def run_playthrough(seed=42):
                         res = e.execute_action("use_daowen", {
                             "daowen_name": "庇护", "x": min(5, p.current_mana), "target": p.name
                         })
-                elif p.current_hp <= 25 and p.current_mana >= 4 and "再生" in p.dao_wen:
+                elif p.current_hp <= 20 and p.current_mana >= 4 and "再生" in p.dao_wen:
                     res = e.execute_action("use_daowen", {
                         "daowen_name": "再生", "x": 4, "target": p.name
                     })
@@ -144,7 +152,6 @@ def run_playthrough(seed=42):
                         "daowen_name": "庇护", "x": 5, "target": p.name
                     })
                 elif targetable and p.current_mana > 0 and "杀伐" in p.dao_wen:
-                    # 战术集火：优先秒杀非固执、高威胁目标
                     non_guzhi = [m for m in targetable if not m.has_status("固执")]
                     pool_t = non_guzhi if non_guzhi else targetable
                     pool_t.sort(key=lambda x: x.current_hp)
@@ -205,7 +212,7 @@ def run_playthrough(seed=42):
         ">",
         "> 格式遵循 README《六、战斗推演格式》与 AI 知识库七步原子时序切片管道：逐回合、逐次出手，禁止概括、跳过或合并结算。本局全程通过 GameEngine.execute_action 逐步手操点选，数值逐条取自引擎真实返回值（无推断、无口胡）。",
         ">",
-        f"> 来源：2026-08-16 真实一阶手操实测。轮回者贾希希（42[血限]/20[法限]/8[速限]，开局遗物·{relic_choice}）进入龙心谷（一阶），践行 DM 裁定高法限开局与集火承伤战术。",
+        f"> 来源：2026-08-16 真实一阶手操实测。轮回者贾希希（42[血限]/20[法限]/8[速限]，开局遗物·{relic_choice}）进入龙心谷（一阶），践行 DM 高法限开局、积极消费碎片修行与残韵克制战术。",
         ">",
         f"> 共{battles_count}场。结果：{result_text}",
         "",
