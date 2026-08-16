@@ -1816,7 +1816,22 @@ class CombatEngine:
             if dmg.get("actual_damage", 0) > 0:
                 caster.damage_dealt_this_round += dmg["actual_damage"]
                 self._xijie_steal(caster, target, dmg["actual_damage"])
-        if "total_damage" in calc and "target_damage" not in calc:  # 血债等多段
+        if name == "血债" or ("hits" in calc and calc.get("damage_per_hit") == 1 and "target_damage" not in calc):
+            hits = calc.get("hits", 1)
+            total_act = 0
+            total_abs = 0
+            for _ in range(hits):
+                if not target.is_alive:
+                    break
+                dmg_i = self._apply_hostile_damage(target, 0 if (mengbi_blocked or baolie_suppress) else 1, source=caster)
+                total_act += dmg_i.get("actual_damage", 0)
+                total_abs += dmg_i.get("shield_absorbed", 0)
+            dmg = {"raw_damage": hits, "actual_damage": total_act, "shield_absorbed": total_abs, "hp_after": target.current_hp, "died": not target.is_alive}
+            result["effects"].append({"type": "damage", "target": target.name, **dmg})
+            if total_act > 0:
+                caster.damage_dealt_this_round += total_act
+                self._xijie_steal(caster, target, total_act)
+        elif "total_damage" in calc and "target_damage" not in calc:  # 其他多段
             add = nilin_bonus
             nilin_bonus = 0
             chunk = self._jieli_boost(caster, calc["total_damage"] + add)
