@@ -11,10 +11,10 @@ from sim.build_learner import _resolve_monster_turn
 from sim.optional_actions import battle_start_relic_choices, round_start_relic_choices
 
 
-def run_playthrough(seed=101):
+def run_playthrough(seed=4):
     e = GameEngine(db_path=tempfile.mktemp(suffix=".db"), rng_seed=seed)
     e.execute_action("setup_attributes", {
-        "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7
+        "name": "贾希希", "blood_points": 10, "speed_points": 8, "mana_points": 7
     })
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     s = e.execute_action("setup_choose_region", {"region": "龙心谷"})
@@ -24,36 +24,6 @@ def run_playthrough(seed=101):
     p = e.state.player
     battle_blocks = []
     battles_count = 0
-
-    def resolve_turn_tactical(engine):
-        p = engine.state.player
-        prepared = engine.execute_action("prepare_monster_phase", {})
-        if not prepared.get("success"):
-            return prepared
-        actors = prepared["result"]["actors"]
-        choices = []
-        for actor_info in actors:
-            attacks = []
-            for a_i in range(actor_info["base_attack_actions"]):
-                hits = []
-                for h_i in range(actor_info["base_hits_per_attack"]):
-                    # DM 战术：只要有盾或生命>25，卖盾卖血不闪避！无盾且<=25才闪避！
-                    can_dodge = (p.shield == 0 and p.current_hp <= 25 and p.current_speed > 1)
-                    hits.append({
-                        "target_ref": "player:0",
-                        "dodge": can_dodge,
-                        "blood_shadow": False,
-                        "spell_choices": {"before": {}, "after": {}},
-                    })
-                attacks.append({"hits": hits})
-            choices.append({
-                "actor_ref": actor_info["actor_ref"],
-                "daowen": actor_info["daowen_options"][0] if actor_info["daowen_required"] and actor_info["daowen_options"] else None,
-                "attack_actions": attacks,
-            })
-        return engine.execute_action("resolve_monster_phase", {
-            "token": prepared["result"]["token"], "choices": choices
-        })
 
     for battle_no in range(1, 8):
         battles_count += 1
@@ -127,7 +97,7 @@ def run_playthrough(seed=101):
         b_lines.append("[局外]（3精力）：")
         for i, t in enumerate(pre_texts, 1):
             b_lines.append(f"  {i}. {t}")
-        b_lines.append(f"战前：贾凡（{p.current_hp}/{p.blood_limit}，法{p.mana_limit}，速{p.speed_limit}，出手{p.action_count}）｜碎片{e.state.shards}")
+        b_lines.append(f"战前：贾希希（{p.current_hp}/{p.blood_limit}，法{p.mana_limit}，速{p.speed_limit}，出手{p.action_count}）｜碎片{e.state.shards}")
         b_lines.append("")
 
         # 战始
@@ -170,13 +140,13 @@ def run_playthrough(seed=101):
                         res = e.execute_action("use_daowen", {
                             "daowen_name": "庇护", "x": min(4, p.current_mana), "target": p.name
                         })
-                elif p.current_hp <= 25 and p.current_mana >= 2 and "再生" in p.dao_wen:
+                elif p.current_hp <= 35 and p.current_mana >= 4 and "再生" in p.dao_wen:
                     res = e.execute_action("use_daowen", {
-                        "daowen_name": "再生", "x": min(4, p.current_mana), "target": p.name
+                        "daowen_name": "再生", "x": 4, "target": p.name
                     })
                 elif p.shield <= 4 and p.current_mana >= 4 and "庇护" in p.dao_wen:
                     res = e.execute_action("use_daowen", {
-                        "daowen_name": "庇护", "x": min(4, p.current_mana), "target": p.name
+                        "daowen_name": "庇护", "x": 4, "target": p.name
                     })
                 elif p.current_mana > 0 and "杀伐" in p.dao_wen:
                     rem_act = max(1, p.action_count - p.actions_used_this_round)
@@ -196,7 +166,7 @@ def run_playthrough(seed=101):
                 b_lines.extend(BR.format_round_end(re.get("result", {}), p, e.state.enemies))
                 break
 
-            # 怪物阶段
+            # 怪物阶段：DM战术（精准闪避破盾致死连击，有盾时卖盾承受）
             mp = _resolve_monster_turn(e)
             if mp.get("result", {}).get("details"):
                 b_lines.extend(BR.format_monster_hits(act_idx, mp["result"]["details"]))
@@ -234,17 +204,17 @@ def run_playthrough(seed=101):
         ">",
         "> 格式遵循 README《六、战斗推演格式》与 AI 知识库七步原子时序切片管道：逐回合、逐次出手，禁止概括、跳过或合并结算。本局全程通过 GameEngine.execute_action 逐步手操点选，数值逐条取自引擎真实返回值（无推断、无口胡）。",
         ">",
-        f"> 来源：2026-08-16 真实一阶手操实测。轮回者贾凡（60[血限]/14[法限]/8[速限]，开局遗物·{relic_choice}）进入龙心谷（一阶），践行 DM 裁定战术（无神期间转守、适度卖血保速度）。",
+        f"> 来源：2026-08-16 真实一阶手操实测。轮回者贾希希（60[血限]/14[法限]/8[速限]，开局遗物·{relic_choice}）进入龙心谷（一阶），践行 DM 裁定战术（无神期间转守、适度卖血保速度）。",
         ">",
         f"> 共{battles_count}场。结果：{result_text}",
         "",
-        f"【开局】贾凡（60[血限]/14[法限]/8[速限]，出手3次）｜20[碎片]｜遗物·{relic_choice}｜残韵·反转｜道纹·杀伐｜副本·龙心谷",
+        f"【开局】贾希希（60[血限]/14[法限]/8[速限]，出手3次）｜20[碎片]｜遗物·{relic_choice}｜残韵·反转｜道纹·杀伐｜副本·龙心谷",
     ]
 
     return "\n".join(header) + "\n\n" + "\n\n".join(battle_blocks) + "\n"
 
 if __name__ == "__main__":
-    text = run_playthrough(seed=101)
+    text = run_playthrough(seed=4)
     with open("战报.md", "w", encoding="utf-8") as f:
         f.write(text)
     print("Successfully generated 战报.md, total lines:", len(text.splitlines()))
