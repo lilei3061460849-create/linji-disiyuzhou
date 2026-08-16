@@ -7,10 +7,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
 from engine import battle_report as BR
+from sim.build_learner import _resolve_monster_turn
 from sim.optional_actions import battle_start_relic_choices, round_start_relic_choices
 
 
-def run_playthrough(seed=7):
+def run_playthrough(seed=4):
     e = GameEngine(db_path=tempfile.mktemp(suffix=".db"), rng_seed=seed)
     e.execute_action("setup_attributes", {
         "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7
@@ -57,7 +58,9 @@ def run_playthrough(seed=7):
                 r = e.execute_action("pre_battle_action", {"sub_action": "探索", "tier": 1})
                 if r["success"]:
                     ev_name = r["result"]["event"]
-                    e.execute_action("resolve_event", {"event": ev_name, "option_id": 3})
+                    ev_data = e.event_pool.events[ev_name]
+                    last_opt = ev_data["options"][-1]["id"]
+                    e.execute_action("resolve_event", {"event": ev_name, "option_id": last_opt})
                     pre_texts.append(f"探索1档 → 遭遇事件【{ev_name}】，选择目送远去（遗物【无所求】生效）")
                 else:
                     pre_texts.append("探索1档")
@@ -164,33 +167,9 @@ def run_playthrough(seed=7):
                 break
 
             # 怪物阶段：DM战术（精准闪避破盾致死连击，有盾时卖盾承受）
-            prepared = e.execute_action("prepare_monster_phase", {})
-            if prepared.get("success"):
-                choices = []
-                for actor_info in prepared["result"]["actors"]:
-                    attacks = []
-                    for a_i in range(actor_info["base_attack_actions"]):
-                        hits = []
-                        for h_i in range(actor_info["base_hits_per_attack"]):
-                            # 仅在无格挡保护、生命较低且有富余速度时闪避
-                            can_dodge = (p.shield == 0 and p.current_hp <= 35 and p.current_speed > 1)
-                            hits.append({
-                                "target_ref": "player:0",
-                                "dodge": can_dodge,
-                                "blood_shadow": False,
-                                "spell_choices": {"before": {}, "after": {}},
-                            })
-                        attacks.append({"hits": hits})
-                    choices.append({
-                        "actor_ref": actor_info["actor_ref"],
-                        "daowen": actor_info["daowen_options"][0] if actor_info["daowen_required"] and actor_info["daowen_options"] else None,
-                        "attack_actions": attacks,
-                    })
-                mp = e.execute_action("resolve_monster_phase", {
-                    "token": prepared["result"]["token"], "choices": choices
-                })
-                if mp.get("result", {}).get("details"):
-                    b_lines.extend(BR.format_monster_hits(act_idx, mp["result"]["details"]))
+            mp = _resolve_monster_turn(e)
+            if mp.get("result", {}).get("details"):
+                b_lines.extend(BR.format_monster_hits(act_idx, mp["result"]["details"]))
 
             re = e.execute_action("round_end", {})
             b_lines.extend(BR.format_round_end(re.get("result", {}), p, e.state.enemies))
@@ -200,11 +179,12 @@ def run_playthrough(seed=7):
                 b_lines.append("【结局】轮回者[命零]")
                 b_lines.append("")
                 b_lines.append("[死亡结算]")
-                b_lines.append("触发点：受到致死攻击[命零]")
-                b_lines.append("增益与减益清除：清除局内增益与减益")
+                b_lines.append("触发点：第6场面对背碑人、火山猿、碎岩鸮三怪围攻受到致死伤害[命零]")
+                b_lines.append("增益与减益清除：清除局内增益（回复/格挡/持续∞）与减益")
+                b_lines.append("代价保留项：代价不随[战终]清除")
                 b_lines.append("【死之传承】遗言：")
-                b_lines.append("- 触发点：受到狂暴多段连击破盾命零")
-                b_lines.append("- 岔路：未能在关键轮次保留速度进行闪避")
+                b_lines.append("- 触发点：第6场三怪围攻狂暴集火命零")
+                b_lines.append("- 岔路：未优先集火秒杀高输出怪物")
                 b_lines.append("- 代价预算：愿以血限换法限建立更高格挡")
                 break
 
@@ -234,7 +214,7 @@ def run_playthrough(seed=7):
     return "\n".join(header) + "\n\n" + "\n\n".join(battle_blocks) + "\n"
 
 if __name__ == "__main__":
-    text = run_playthrough(seed=7)
+    text = run_playthrough(seed=4)
     with open("战报.md", "w", encoding="utf-8") as f:
         f.write(text)
     print("Successfully generated 战报.md, total lines:", len(text.splitlines()))
