@@ -73,7 +73,7 @@ def _resolve_monster_turn_one(e, skip_refs: set):
     actor = todo[0]
     dao = None
     if actor["daowen_options"]:
-        option = _pick_monster_daowen(engine, actor)
+        option = _pick_monster_daowen(e, actor)
         dao = {"name": option["name"], "dodge": False, "blood_shadow": False,
                "trigger_spell_choices": {holder: {sp["spell_name"]: {"use": False}
                                                   for sp in spells}
