@@ -487,15 +487,16 @@ def test_out_of_combat_actions():
     player = engine.state.player
 
     # 休整：先扣血再休整，验证回血
-    player.current_hp = 30
+    player.current_hp = 20
     heal_amt2 = 24 + engine.state.rest_heal_bonus
     r = engine.execute_action("pre_battle_action", {
         "sub_action": "休整", "tier": 2,
         "heal_allocations": [{"target_ref": "player:0", "amount": heal_amt2}],
     })
     assert r["success"], f"休整失败: {r}"
-    assert player.current_hp == 30 + heal_amt2, f"休整2档应回{heal_amt2}→{30 + heal_amt2}，实{player.current_hp}"
-    print(f"  ✓ 休整2档：HP30→{player.current_hp}")
+    expected_hp = min(player.blood_limit, 20 + heal_amt2)
+    assert player.current_hp == expected_hp, f"休整2档应回{heal_amt2}→{expected_hp}，实{player.current_hp}"
+    print(f"  ✓ 休整2档：HP20→{player.current_hp}")
 
     # 学习道纹·庇护
     r = engine.execute_action("pre_battle_action", {"sub_action":"学习","sub":"daowen","name":"庇护"})
