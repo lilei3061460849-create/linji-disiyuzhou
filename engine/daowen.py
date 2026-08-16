@@ -165,10 +165,10 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_zengzhi(x: int, target: Entity = None) -> dict:
-        """增殖X：消耗5X。[目标]血限+2X"""
+        """增殖X：消耗X。［目标］［血限］+X"""
         target_name = target.name if target is not None else "未选定目标"
-        cost = 5 * x
-        increase = 2 * x
+        cost = x
+        increase = x
         return {
             "dao_wen": "增殖",
             "x": x,
