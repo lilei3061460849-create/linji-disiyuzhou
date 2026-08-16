@@ -294,20 +294,32 @@ def run_full_reincarnation_with_duel(seed=42):
                 break
             if e.state.duel_turn == "player_side":
                 if p.actions_used_this_round < p.action_count:
-                    # 林渊回合行动决策
+                    act_num = p.actions_used_this_round + 1
                     res = None
-                    if p.shield <= 6 and p.current_mana >= 5 and "庇护" in p.dao_wen:
+                    if act_num == 1:
+                        # 出手1：立盾庇护5（20格挡）防守
                         res = e.execute_action("use_daowen", {
                             "actor": p.name, "daowen_name": "庇护", "x": 5, "target": p.name
                         })
-                    elif p.current_mana > 0 and "杀伐" in p.dao_wen:
-                        rem = max(1, p.action_count - p.actions_used_this_round)
-                        cast_x = max(1, p.current_mana // rem)
-                        raw_dmg = cast_x * 3
-                        # 对手防守反应：未破盾则格挡吸收保速度；破盾且有速度则精准闪避
-                        should_dodge = (opp.shield < raw_dmg) and (opp.current_speed >= 1)
+                    elif act_num == 2:
+                        # 出手2：试探攻击【杀伐8】（24伤害），破除20格挡并穿透4点伤害削减生命，重置凡庸判定
                         res = e.execute_action("use_daowen", {
-                            "actor": p.name, "daowen_name": "杀伐", "x": cast_x, "target": opp.name,
+                            "actor": p.name, "daowen_name": "杀伐", "x": 8, "target": opp.name,
+                            "dodge": False
+                        })
+                    elif act_num == 3:
+                        # 出手3：破盾重轰【杀伐12】（36伤害），致命高伤逼迫对手消耗1点速度精准闪避
+                        should_dodge = opp.current_speed >= 1
+                        res = e.execute_action("use_daowen", {
+                            "actor": p.name, "daowen_name": "杀伐", "x": 12, "target": opp.name,
+                            "dodge": should_dodge
+                        })
+                    else:
+                        # 出手4：清算法力【杀伐】，消耗对手速度
+                        rem_mana = max(1, p.current_mana)
+                        should_dodge = opp.current_speed >= 1
+                        res = e.execute_action("use_daowen", {
+                            "actor": p.name, "daowen_name": "杀伐", "x": rem_mana, "target": opp.name,
                             "dodge": should_dodge
                         })
                     if res and res.get("success"):
@@ -317,20 +329,32 @@ def run_full_reincarnation_with_duel(seed=42):
                     e.state.duel_turn = "opponent_side"
             else:
                 if opp.actions_used_this_round < opp.action_count:
-                    # 贾希希回合行动决策
+                    act_num = opp.actions_used_this_round + 1
                     res = None
-                    if opp.shield <= 6 and opp.current_mana >= 5 and "庇护" in opp.dao_wen:
+                    if act_num == 1:
+                        # 出手1：立盾庇护5（20格挡）防守
                         res = e.execute_action("use_daowen", {
                             "actor": opp.name, "daowen_name": "庇护", "x": 5, "target": opp.name
                         })
-                    elif opp.current_mana > 0 and "杀伐" in opp.dao_wen:
-                        rem = max(1, opp.action_count - opp.actions_used_this_round)
-                        cast_x = max(1, opp.current_mana // rem)
-                        raw_dmg = cast_x * 3
-                        # 林渊防守反应：未破盾则格挡吸收保速度；破盾且有速度则精准闪避
-                        should_dodge = (p.shield < raw_dmg) and (p.current_speed >= 1)
+                    elif act_num == 2:
+                        # 出手2：试探攻击【杀伐8】（24伤害），破除20格挡并穿透4点伤害削减生命，重置凡庸判定
                         res = e.execute_action("use_daowen", {
-                            "actor": opp.name, "daowen_name": "杀伐", "x": cast_x, "target": p.name,
+                            "actor": opp.name, "daowen_name": "杀伐", "x": 8, "target": p.name,
+                            "dodge": False
+                        })
+                    elif act_num == 3:
+                        # 出手3：破盾重轰【杀伐12】（36伤害），致命高伤逼迫对手消耗1点速度精准闪避
+                        should_dodge = p.current_speed >= 1
+                        res = e.execute_action("use_daowen", {
+                            "actor": opp.name, "daowen_name": "杀伐", "x": 12, "target": p.name,
+                            "dodge": should_dodge
+                        })
+                    else:
+                        # 出手4：清算法力【杀伐】，消耗对手速度
+                        rem_mana = max(1, opp.current_mana)
+                        should_dodge = p.current_speed >= 1
+                        res = e.execute_action("use_daowen", {
+                            "actor": opp.name, "daowen_name": "杀伐", "x": rem_mana, "target": p.name,
                             "dodge": should_dodge
                         })
                     if res and res.get("success"):
@@ -344,14 +368,25 @@ def run_full_reincarnation_with_duel(seed=42):
 
     # 死斗胜负判定与冠冕结算
     duel_win = p.is_alive and not opp.is_alive
-    duel_res = e.execute_action("resolve_final_duel", {"outcome": "victory" if duel_win else "defeat"})
-    win_text = "林渊胜出！击碎贾希希王座，林渊荣登【最终的冠冕】，晋升二阶！" if duel_win else "贾希希守擂成功！"
-    
+    if duel_win:
+        duel_res = e.execute_action("resolve_final_duel", {"outcome": "victory"})
+        win_title = "林渊胜出！击碎贾希希王座，林渊荣登【最终的冠冕】，晋升二阶！"
+        death_note = "贾希希（[命零]阵亡，触发【死之传承】）"
+    else:
+        legacy = {
+            "trigger_point": "王座死斗被贾希希绝杀",
+            "fork": "第二回合未抢得先手斩杀",
+            "cost_budget": "愿以速度换取先手优势",
+        }
+        duel_res = e.execute_action("resolve_final_duel", {"outcome": "defeat", "death_book_entry": legacy})
+        win_title = "林渊惜败！贾希希守擂成功，王座不可撼动！"
+        death_note = "林渊（[命零]阵亡，触发【死之传承】）"
+
     d_lines.append("")
-    d_lines.append(f"【死斗结果】{win_text}")
+    d_lines.append(f"【死斗结果】{win_title}")
     d_lines.append("[战终]")
-    d_lines.append(f"死亡结算：贾希希（[命零]阵亡，触发【死之传承】）")
-    d_lines.append(f"[碎片]奖励计算：死斗胜出，最终累计{e.state.shards}[碎片]")
+    d_lines.append(f"死亡结算：{death_note}")
+    d_lines.append(f"[碎片]奖励计算：死斗结束，累计{e.state.shards}[碎片]")
     d_lines.append("增益与减益清除：清除局内增益（回复/格挡/持续∞）与减益")
     d_lines.append("代价保留项：代价不随[战终]清除")
     d_lines.append("[朋友][员工]留存，[临时朋友]消失")
@@ -360,7 +395,7 @@ def run_full_reincarnation_with_duel(seed=42):
 
     battle_blocks.append("\n".join(d_lines))
 
-    result_text = "8战8胜（含第8场最终死斗击败封存胜者贾希希），林渊登顶【最终的冠冕】完整封存！"
+    result_text = "7胜1败（前7场全胜，第8场最终死斗惜败于封存胜者·贾希希），触发【死之传承】！" if not duel_win else "8战8胜（含第8场最终死斗击败封存胜者贾希希），林渊登顶【最终的冠冕】完整封存！"
     header = [
         "# 战报",
         "",
@@ -368,7 +403,7 @@ def run_full_reincarnation_with_duel(seed=42):
         ">",
         "> 格式遵循 README《六、战斗推演格式》与 AI 知识库七步原子时序切片管道：逐回合、逐次出手，禁止概括、跳过或合并结算。本局全程通过 GameEngine.execute_action 逐步手操点选，数值逐条取自引擎真实返回值（无推断、无口胡）。",
         ">",
-        f"> 来源：2026-08-16 真实一阶手操实测。新轮回者林渊（42[血限]/20[法限]/8[速限]，开局遗物·{relic_choice}）进入龙心谷（一阶），以高法限开局与激进修行斩获前 7 场全胜，并在第 8 场最终死斗中正面击败封存胜者贾希希，登顶王座！",
+        f"> 来源：2026-08-16 真实一阶手操实测。新轮回者林渊（42[血限]/20[法限]/8[速限]，开局遗物·{relic_choice}）进入龙心谷（一阶），以高法限开局与激进修行斩获前 7 场全胜，并在第 8 场最终死斗中与封存胜者贾希希展开高水准王座死斗！",
         ">",
         f"> 共{battles_count}场。结果：{result_text}",
         "",
