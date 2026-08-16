@@ -150,15 +150,15 @@ def _render_effect(eff: dict) -> str:
         amt = eff.get("actual_heal", eff.get("amount"))
         before, after = eff.get("hp_before"), eff.get("hp_after")
         if before is not None and after is not None:
-            return f"{who} [回复]{amt}，生命{before}→{after}"
-        return f"{who} [回复]{amt}"
+            return f"{who} [回复]{amt}点生命（生命由{before}升至{after}）"
+        return f"{who} [回复]{amt}点生命"
     if t == "heal_pct":
         who = eff.get("entity") or eff.get("target")
         amt = eff.get("actual_heal", eff.get("amount"))
         before, after = eff.get("hp_before"), eff.get("hp_after")
         if before is not None and after is not None:
-            return f"{who} [回复]{amt}（百分比），生命{before}→{after}"
-        return f"{who} [回复]{amt}"
+            return f"{who} [回复]{amt}点生命（百分比，生命由{before}升至{after}）"
+        return f"{who} [回复]{amt}点生命（百分比）"
     if t == "aoe_damage":
         return (f"{eff.get('target')} 受到范围伤害{eff.get('actual_damage')}"
                 f"（格挡吸收{eff.get('shield_absorbed', 0)}）"
