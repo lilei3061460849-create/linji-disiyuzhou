@@ -13,9 +13,9 @@ from sim.optional_actions import battle_start_relic_choices, round_start_relic_c
 
 def run_playthrough(seed=4):
     e = GameEngine(db_path=tempfile.mktemp(suffix=".db"), rng_seed=seed)
-    # DM 裁定策略：开局 8点血限(48血)、8点速限(8速)、9点法限(18法限)
+    # DM 极端高法限策略：5点血限(30血)、8点速限(8速)、12点法限(24法限)
     e.execute_action("setup_attributes", {
-        "name": "贾希希", "blood_points": 8, "speed_points": 8, "mana_points": 9
+        "name": "贾希希", "blood_points": 5, "speed_points": 8, "mana_points": 12
     })
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     s = e.execute_action("setup_choose_region", {"region": "龙心谷"})
@@ -129,31 +129,32 @@ def run_playthrough(seed=4):
             # Player turn with DM tactics
             act_idx = 1
             while p.actions_used_this_round < p.action_count and [m for m in e.state.enemies if m.is_alive]:
-                target = [m for m in e.state.enemies if m.is_alive][0]
+                targetable = [m for m in e.state.enemies if m.is_alive and e.combat.is_targetable(p, m)]
 
                 res = None
                 if p.has_status("无神"):
-                    if p.current_hp <= 35 and p.current_mana >= 2 and "再生" in p.dao_wen:
+                    if p.current_hp <= 20 and p.current_mana >= 2 and "再生" in p.dao_wen:
                         res = e.execute_action("use_daowen", {
                             "daowen_name": "再生", "x": min(3, p.current_mana), "target": p.name
                         })
                     elif p.current_mana >= 2 and "庇护" in p.dao_wen:
                         res = e.execute_action("use_daowen", {
-                            "daowen_name": "庇护", "x": min(4, p.current_mana), "target": p.name
+                            "daowen_name": "庇护", "x": min(5, p.current_mana), "target": p.name
                         })
-                elif p.current_hp <= 25 and p.current_mana >= 4 and "再生" in p.dao_wen:
+                elif p.current_hp <= 20 and p.current_mana >= 4 and "再生" in p.dao_wen:
                     res = e.execute_action("use_daowen", {
                         "daowen_name": "再生", "x": 4, "target": p.name
                     })
-                elif p.shield <= 4 and p.current_mana >= 4 and "庇护" in p.dao_wen:
+                elif p.shield <= 10 and p.current_mana >= 5 and "庇护" in p.dao_wen:
                     res = e.execute_action("use_daowen", {
-                        "daowen_name": "庇护", "x": 4, "target": p.name
+                        "daowen_name": "庇护", "x": 5, "target": p.name
                     })
-                elif p.current_mana > 0 and "杀伐" in p.dao_wen:
-                    rem_act = max(1, p.action_count - p.actions_used_this_round)
-                    cast_x = max(1, p.current_mana // rem_act)
+                elif targetable and p.current_mana > 0 and "杀伐" in p.dao_wen:
+                    t = targetable[0]
+                    rem = max(1, p.action_count - p.actions_used_this_round)
+                    cast_x = max(1, p.current_mana // rem)
                     res = e.execute_action("use_daowen", {
-                        "daowen_name": "杀伐", "x": cast_x, "target": target.name
+                        "daowen_name": "杀伐", "x": cast_x, "target": t.name
                     })
 
                 if res and res.get("success"):
@@ -205,11 +206,11 @@ def run_playthrough(seed=4):
         ">",
         "> 格式遵循 README《六、战斗推演格式》与 AI 知识库七步原子时序切片管道：逐回合、逐次出手，禁止概括、跳过或合并结算。本局全程通过 GameEngine.execute_action 逐步手操点选，数值逐条取自引擎真实返回值（无推断、无口胡）。",
         ">",
-        f"> 来源：2026-08-16 真实一阶手操实测。轮回者贾希希（48[血限]/18[法限]/8[速限]，开局遗物·{relic_choice}）进入龙心谷（一阶），践行 DM 高法限开局与分级承伤战术。",
+        f"> 来源：2026-08-16 真实一阶手操实测。轮回者贾希希（30[血限]/24[法限]/8[速限]，开局遗物·{relic_choice}）进入龙心谷（一阶），践行 DM 极限30血压制与高法限护盾战术。",
         ">",
         f"> 共{battles_count}场。结果：{result_text}",
         "",
-        f"【开局】贾希希（48[血限]/18[法限]/8[速限]，出手3次）｜20[碎片]｜遗物·{relic_choice}｜残韵·反转｜道纹·杀伐｜副本·龙心谷",
+        f"【开局】贾希希（30[血限]/24[法限]/8[速限]，出手3次）｜20[碎片]｜遗物·{relic_choice}｜残韵·反转｜道纹·杀伐｜副本·龙心谷",
     ]
 
     return "\n".join(header) + "\n\n" + "\n\n".join(battle_blocks) + "\n"
