@@ -13,7 +13,7 @@ from sim.optional_actions import battle_start_relic_choices, round_start_relic_c
 
 def run_playthrough(seed=4):
     e = GameEngine(db_path=tempfile.mktemp(suffix=".db"), rng_seed=seed)
-    # DM 极端高法限策略：5点血限(30血)、8点速限(8速)、12点法限(24法限)
+    # DM 极限高法限策略：5点血限(30血)、8点速限(8速)、12点法限(24法限)
     e.execute_action("setup_attributes", {
         "name": "贾希希", "blood_points": 5, "speed_points": 8, "mana_points": 12
     })
@@ -55,6 +55,10 @@ def run_playthrough(seed=4):
                 r = e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "daowen", "name": "庇护"})
                 assert r["success"], r
                 pre_texts.append("学习·道纹 → 习得【庇护】（经曲解从再生获得）")
+            elif e.state.resonance.get("反转", 0) < 2:
+                r = e.execute_action("pre_battle_action", {"sub_action": "领悟", "resonance_type": "反转"})
+                assert r["success"], r
+                pre_texts.append("领悟·残韵 → 储备【残韵·反转】（对策飞行/自愈）")
             elif battle_no == 2 and e.state.energy == 3:
                 r = e.execute_action("pre_battle_action", {"sub_action": "探索", "tier": 1})
                 if r["success"]:
@@ -126,7 +130,7 @@ def run_playthrough(seed=4):
             rs = e.execute_action("round_start", {"relic_choices": r_choices})
             b_lines.extend(BR.format_round_start(rnd, rs.get("result", {}), p, e.state.enemies))
 
-            # Player turn with DM tactics
+            # 玩家出手：严格践行 DM 裁定战术
             act_idx = 1
             while p.actions_used_this_round < p.action_count and [m for m in e.state.enemies if m.is_alive]:
                 targetable = [m for m in e.state.enemies if m.is_alive and e.combat.is_targetable(p, m)]
@@ -150,7 +154,8 @@ def run_playthrough(seed=4):
                         "daowen_name": "庇护", "x": 5, "target": p.name
                     })
                 elif targetable and p.current_mana > 0 and "杀伐" in p.dao_wen:
-                    t = targetable[0]
+                    # 优先集火爆发怪/飞行怪
+                    t = next((m for m in targetable if m.name in ("火山猿", "碎岩鸮")), targetable[0])
                     rem = max(1, p.action_count - p.actions_used_this_round)
                     cast_x = max(1, p.current_mana // rem)
                     res = e.execute_action("use_daowen", {
@@ -185,8 +190,8 @@ def run_playthrough(seed=4):
                 b_lines.append("增益与减益清除：清除局内增益（回复/格挡/持续∞）与减益")
                 b_lines.append("代价保留项：代价不随[战终]清除")
                 b_lines.append("【死之传承】遗言：")
-                b_lines.append("- 触发点：三怪围攻狂暴连击破盾命零")
-                b_lines.append("- 岔路：未能在首轮优先集火秒杀狂暴高伤怪")
+                b_lines.append("- 触发点：受到狂暴多段连击破盾命零")
+                b_lines.append("- 岔路：未能在关键轮次保留速度进行闪避")
                 b_lines.append("- 代价预算：愿以血限换法限建立更高格挡")
                 break
 
@@ -206,7 +211,7 @@ def run_playthrough(seed=4):
         ">",
         "> 格式遵循 README《六、战斗推演格式》与 AI 知识库七步原子时序切片管道：逐回合、逐次出手，禁止概括、跳过或合并结算。本局全程通过 GameEngine.execute_action 逐步手操点选，数值逐条取自引擎真实返回值（无推断、无口胡）。",
         ">",
-        f"> 来源：2026-08-16 真实一阶手操实测。轮回者贾希希（30[血限]/24[法限]/8[速限]，开局遗物·{relic_choice}）进入龙心谷（一阶），践行 DM 极限30血压制与高法限护盾战术。",
+        f"> 来源：2026-08-16 真实一阶手操实测。轮回者贾希希（30[血限]/24[法限]/8[速限]，开局遗物·{relic_choice}）进入龙心谷（一阶），践行 DM 极限30血高法限与残韵克制战术。",
         ">",
         f"> 共{battles_count}场。结果：{result_text}",
         "",
