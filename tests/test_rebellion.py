@@ -91,7 +91,7 @@ def test_suppress_battle_uses_existing_combat_flow_unmodified():
     engine.execute_action("round_start", {})
     r_atk = engine.execute_action("use_daowen", {"daowen_name": "杀伐", "x": 7, "target": "彪悍打手"})
     assert r_atk["success"] is True
-    assert rebel.current_hp == 50 - 21
+    assert rebel.current_hp == 50 - 14
     prepared = engine.execute_action("prepare_monster_phase", {})
     actor = prepared["result"]["actors"][0]
     attacks = [{"hits": [{"target_ref": "player:0", "dodge": False, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}}

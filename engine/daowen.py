@@ -44,10 +44,10 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_shaifa(x: int, target: Entity = None) -> dict:
-        """杀伐X：消耗X。对[目标]造成3X点伤害"""
+        """杀伐X：消耗X。对[目标]造成2X点伤害"""
         target_name = target.name if target is not None else "未选定目标"
         cost = x
-        damage = 3 * x
+        damage = 2 * x
         return {
             "dao_wen": "杀伐",
             "x": x,
@@ -60,10 +60,10 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_zaisheng(x: int, target: Entity = None) -> dict:
-        """再生X：消耗X。为[目标]回复6X点生命"""
+        """再生X：消耗X。为[目标]回复3X点生命"""
         target_name = target.name if target is not None else "未选定目标"
         cost = x
-        heal = 6 * x
+        heal = 3 * x
         return {
             "dao_wen": "再生",
             "x": x,
@@ -75,10 +75,10 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_bihu(x: int, target: Entity = None) -> dict:
-        """庇护X：消耗X。使[目标]获得4X点格挡（可抵消等量伤害），持续1"""
+        """庇护X：消耗X。使[目标]获得2X点格挡（可抵消等量伤害），持续1"""
         target_name = target.name if target is not None else "未选定目标"
         cost = x
-        shield = 4 * x
+        shield = 2 * x
         return {
             "dao_wen": "庇护",
             "x": x,
@@ -122,15 +122,15 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_chongji(x: int) -> dict:
-        """冲击X：消耗X。对所有敌对[目标]造成2X点伤害"""
+        """冲击X：消耗3X。对所有敌对[目标]造成5X点伤害"""
         return {
             "dao_wen": "冲击",
             "x": x,
             "cost_type": CostType.MANA.value,
-            "cost": x,
-            "aoe_damage": 2 * x,
+            "cost": 3 * x,
+            "aoe_damage": 5 * x,
             "target": "all_enemies",
-            "summary": f"消耗{x}法力，对所有敌方造成{2 * x}点伤害"
+            "summary": f"消耗{3 * x}法力，对所有敌方造成{5 * x}点伤害"
         }
     
     @staticmethod

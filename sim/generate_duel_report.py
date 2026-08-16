@@ -7,8 +7,76 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
 from engine import battle_report as BR
-from sim.build_learner import _resolve_monster_turn
 from sim.optional_actions import battle_start_relic_choices, round_start_relic_choices
+
+
+def best_cultivate_tier(shards):
+    if shards >= 150:
+        return 6, 150, 6
+    if shards >= 100:
+        return 5, 100, 5
+    if shards >= 65:
+        return 4, 65, 4
+    if shards >= 35:
+        return 3, 35, 3
+    if shards >= 15:
+        return 2, 15, 2
+    return 1, 0, 1
+
+
+def _resolve_monster_turn_smart(engine):
+    prepared = engine.execute_action("prepare_monster_phase", {})
+    if not prepared.get("success"):
+        return prepared
+    choices = []
+    p = engine.state.player
+    max_d = p.current_speed if p else 2
+    dodge_budget = 0
+    sim_shield = p.shield if p else 0
+    for actor in prepared["result"]["actors"]:
+        dao = None
+        action_count = actor["base_attack_actions"]
+        hit_count = actor["base_hits_per_attack"]
+        from sim.duel_common import _pick_monster_daowen
+        if actor["daowen_options"]:
+            option = _pick_monster_daowen(engine, actor)
+            dao = {"name": option["name"], "dodge": False, "blood_shadow": False,
+                   "trigger_spell_choices": {holder: {sp["spell_name"]: {"use": False} for sp in spells}
+                                             for holder, spells in option.get("trigger_spell_options", {}).items()}}
+            if option["requires_target"]:
+                dao["target_ref"] = option["target_options"][0]["ref"]
+            if option["dodge_submission"] == "per_target":
+                dao["dodge_targets"] = [
+                    {"target_ref": target["ref"], "dodge": False, "blood_shadow": False}
+                    for target in option["dodge_target_options"]
+                ]
+        refs = engine.combat._combat_entity_refs()
+        monster = refs.get(actor["actor_ref"])
+        per_hit = monster.attack_power if monster is not None else 0
+        from engine.ai_tactics import choose_attack_target
+        target_ref = choose_attack_target(actor["attack_target_options"], refs)
+        target_option = next(o for o in actor["attack_target_options"] if o["ref"] == target_ref)
+        attacks = []
+        for _ in range(action_count):
+            hits = []
+            for _ in range(hit_count):
+                should_dodge = False
+                if target_ref == "player:0":
+                    if sim_shield >= per_hit:
+                        sim_shield -= per_hit
+                        should_dodge = False
+                    elif dodge_budget < max_d and per_hit >= 6:
+                        should_dodge = True
+                        dodge_budget += 1
+                from sim.build_learner import _decline_spells
+                hits.append({"target_ref": target_ref, "dodge": should_dodge, "blood_shadow": False,
+                             "spell_choices": _decline_spells(target_option)})
+            attacks.append({"hits": hits})
+        choices.append({"actor_ref": actor["actor_ref"], "daowen": dao, "attack_actions": attacks})
+    return engine.execute_action("resolve_monster_phase", {
+        "token": prepared["result"]["token"],
+        "choices": choices,
+    })
 
 
 def run_full_reincarnation_with_duel(seed=42):
@@ -16,19 +84,6 @@ def run_full_reincarnation_with_duel(seed=42):
     if os.path.exists(sealed_file):
         os.remove(sealed_file)
     db_file = tempfile.mktemp(suffix=".db")
-
-    def best_cultivate_tier(shards):
-        if shards >= 150:
-            return 6, 150, 6
-        if shards >= 100:
-            return 5, 100, 5
-        if shards >= 65:
-            return 4, 65, 4
-        if shards >= 35:
-            return 3, 35, 3
-        if shards >= 15:
-            return 2, 15, 2
-        return 1, 0, 1
 
     # -------------------------------------------------------------
     # 步骤 1：贾希希通关 7 场并完整封存为第一名冠冕胜者
@@ -44,11 +99,18 @@ def run_full_reincarnation_with_duel(seed=42):
 
     for b in range(1, 8):
         while e1.state.energy > 0:
-            if p1.current_hp < p1.blood_limit - 10:
-                heal = 8 + e1.state.rest_heal_bonus
+            missing = p1.blood_limit - p1.current_hp
+            if missing >= 15 and e1.state.shards >= 20:
+                heal_amt = 24 + e1.state.rest_heal_bonus
+                e1.execute_action("pre_battle_action", {
+                    "sub_action": "休整", "tier": 2,
+                    "heal_allocations": [{"target_ref": "player:0", "amount": heal_amt}]
+                })
+            elif missing >= 6:
+                heal_amt = 8 + e1.state.rest_heal_bonus
                 e1.execute_action("pre_battle_action", {
                     "sub_action": "休整", "tier": 1,
-                    "heal_allocations": [{"target_ref": "player:0", "amount": heal}]
+                    "heal_allocations": [{"target_ref": "player:0", "amount": heal_amt}]
                 })
             elif "再生" not in p1.dao_wen:
                 e1.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "daowen", "name": "再生"})
@@ -60,10 +122,6 @@ def run_full_reincarnation_with_duel(seed=42):
                 e1.execute_action("pre_battle_action", {"sub_action": "领悟", "resonance_type": "转换"})
             elif e1.state.resonance.get("反转", 0) < 2:
                 e1.execute_action("pre_battle_action", {"sub_action": "领悟", "resonance_type": "反转"})
-            elif "后发制人" not in [sp.name for sp in p1.spells]:
-                e1.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "spell", "name": "后发制人"})
-            elif "生生不息" not in [sp.name for sp in p1.spells]:
-                e1.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "spell", "name": "生生不息"})
             else:
                 tier, cost, pts = best_cultivate_tier(e1.state.shards)
                 spd_pts = 1 if (p1.speed_limit < 12 and pts >= 2) else 0
@@ -74,17 +132,29 @@ def run_full_reincarnation_with_duel(seed=42):
                 })
 
         e1.execute_action("battle_start", {"relic_choices": battle_start_relic_choices(e1)})
-        while [m for m in e1.state.enemies if m.is_alive]:
+        while [m for m in e1.state.enemies if m.is_alive] and p1.is_alive:
             e1.execute_action("round_start", {"relic_choices": round_start_relic_choices(e1)})
+            alive = [m for m in e1.state.enemies if m.is_alive]
+            for m in alive:
+                if (m.has_status("飞行") or m.is_flying) and not m.has_status("坠落") and not e1.combat._field_has_zhuiluo():
+                    if e1.state.resonance.get("反转", 0) > 0 and "坠落" not in p1.dao_wen:
+                        idx = e1.state.enemies.index(m)
+                        e1.execute_action("use_resonance", {
+                            "source_daowen": "飞行", "resonance_type": "反转", "target_ref": f"enemy:{idx}"
+                        })
+                    if "坠落" in p1.dao_wen and p1.current_mana >= 1:
+                        e1.execute_action("use_daowen", {"daowen_name": "坠落", "x": 1})
+
             while p1.actions_used_this_round < p1.action_count and [m for m in e1.state.enemies if m.is_alive]:
-                targetable = [m for m in e1.state.enemies if m.is_alive and e1.combat.is_targetable(p1, m)]
-                if p1.shield <= 6 and p1.current_mana >= 5 and "庇护" in p1.dao_wen:
-                    e1.execute_action("use_daowen", {"daowen_name": "庇护", "x": 5, "target": p1.name})
+                alive = [m for m in e1.state.enemies if m.is_alive]
+                targetable = [m for m in alive if e1.combat.is_targetable(p1, m)]
+                if p1.shield <= 6 and p1.current_mana >= 10 and "庇护" in p1.dao_wen:
+                    e1.execute_action("use_daowen", {"daowen_name": "庇护", "x": 10, "target": p1.name})
                 elif p1.current_hp <= 20 and p1.current_mana >= 4 and "再生" in p1.dao_wen:
                     e1.execute_action("use_daowen", {"daowen_name": "再生", "x": 4, "target": p1.name})
-                elif targetable and p1.current_mana > 0:
+                elif targetable and p1.current_mana > 0 and "杀伐" in p1.dao_wen:
                     pool = [m for m in targetable if not m.has_status("固执")]
-                    t = (pool if pool else targetable)[0]
+                    t = min(pool if pool else targetable, key=lambda m: m.current_hp)
                     rem = max(1, p1.action_count - p1.actions_used_this_round)
                     e1.execute_action("use_daowen", {
                         "daowen_name": "杀伐", "x": max(1, p1.current_mana // rem), "target": t.name
@@ -94,7 +164,7 @@ def run_full_reincarnation_with_duel(seed=42):
             if not [m for m in e1.state.enemies if m.is_alive]:
                 e1.execute_action("round_end", {})
                 break
-            _resolve_monster_turn(e1)
+            _resolve_monster_turn_smart(e1)
             e1.execute_action("round_end", {})
         e1.execute_action("battle_end", {})
 
@@ -102,7 +172,6 @@ def run_full_reincarnation_with_duel(seed=42):
     # 步骤 2：新轮回者「林渊」挑战 7 场，触发【最终的冠冕】进入死斗！
     # -------------------------------------------------------------
     e = GameEngine(db_path=db_file, rng_seed=seed, sealed_candidate_path=sealed_file)
-    # 林渊高法限开局：7点血限(42血)、8点速限(8速)、10点法限(20法限)
     e.execute_action("setup_attributes", {
         "name": "林渊", "blood_points": 7, "speed_points": 8, "mana_points": 10
     })
@@ -123,14 +192,23 @@ def run_full_reincarnation_with_duel(seed=42):
 
         pre_texts = []
         while e.state.energy > 0:
-            if p.current_hp < p.blood_limit - 10:
-                heal = 8 + e.state.rest_heal_bonus
+            missing = p.blood_limit - p.current_hp
+            if missing >= 15 and e.state.shards >= 20:
+                heal_amt = 24 + e.state.rest_heal_bonus
                 r = e.execute_action("pre_battle_action", {
-                    "sub_action": "休整", "tier": 1,
-                    "heal_allocations": [{"target_ref": "player:0", "amount": heal}]
+                    "sub_action": "休整", "tier": 2,
+                    "heal_allocations": [{"target_ref": "player:0", "amount": heal_amt}]
                 })
                 assert r["success"], r
-                pre_texts.append(f"休整1档 → 回复生命 {heal} 点（生命 {p.current_hp-heal}→{p.current_hp}）")
+                pre_texts.append(f"休整2档（消耗20碎片） → 回复生命 {heal_amt} 点（生命 {p.current_hp-heal_amt}→{p.current_hp}）")
+            elif missing >= 6:
+                heal_amt = 8 + e.state.rest_heal_bonus
+                r = e.execute_action("pre_battle_action", {
+                    "sub_action": "休整", "tier": 1,
+                    "heal_allocations": [{"target_ref": "player:0", "amount": heal_amt}]
+                })
+                assert r["success"], r
+                pre_texts.append(f"休整1档 → 回复生命 {heal_amt} 点（生命 {p.current_hp-heal_amt}→{p.current_hp}）")
             elif "再生" not in p.dao_wen:
                 r = e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "daowen", "name": "再生"})
                 assert r["success"], r
@@ -151,14 +229,6 @@ def run_full_reincarnation_with_duel(seed=42):
                 r = e.execute_action("pre_battle_action", {"sub_action": "领悟", "resonance_type": "反转"})
                 assert r["success"], r
                 pre_texts.append("领悟·残韵 → 储备【残韵·反转】（对策飞行/自愈/狂暴）")
-            elif "后发制人" not in [sp.name for sp in p.spells]:
-                r = e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "spell", "name": "后发制人"})
-                assert r["success"], r
-                pre_texts.append("学习·法术 → 学会【后发制人】（庇护）")
-            elif "生生不息" not in [sp.name for sp in p.spells]:
-                r = e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "spell", "name": "生生不息"})
-                assert r["success"], r
-                pre_texts.append("学习·法术 → 学会【生生不息】（再生）")
             else:
                 tier, cost, pts = best_cultivate_tier(e.state.shards)
                 spd_pts = 1 if (p.speed_limit < 12 and pts >= 2) else 0
@@ -203,12 +273,28 @@ def run_full_reincarnation_with_duel(seed=42):
             rs = e.execute_action("round_start", {"relic_choices": r_choices})
             b_lines.extend(BR.format_round_start(rnd, rs.get("result", {}), p, e.state.enemies))
 
+            # 飞行对策
+            for m in alive:
+                if (m.has_status("飞行") or m.is_flying) and not m.has_status("坠落") and not e.combat._field_has_zhuiluo():
+                    if e.state.resonance.get("反转", 0) > 0 and "坠落" not in p.dao_wen:
+                        idx = e.state.enemies.index(m)
+                        r_res = e.execute_action("use_resonance", {
+                            "source_daowen": "飞行", "resonance_type": "反转", "target_ref": f"enemy:{idx}"
+                        })
+                        if r_res.get("success"):
+                            b_lines.append(f"  [残韵插队] 林渊发动残韵【反转】插队：将{m.name}的【飞行】逆转为【坠落】！")
+                    if "坠落" in p.dao_wen and p.current_mana >= 1:
+                        r_zh = e.execute_action("use_daowen", {"daowen_name": "坠落", "x": 1})
+                        if r_zh.get("success"):
+                            b_lines.extend(BR.format_player_action(1, p.name, r_zh))
+
             # 玩家行动
             act_idx = 1
             while p.actions_used_this_round < p.action_count and [m for m in e.state.enemies if m.is_alive]:
-                targetable = [m for m in e.state.enemies if m.is_alive and e.combat.is_targetable(p, m)]
+                alive = [m for m in e.state.enemies if m.is_alive]
+                targetable = [m for m in alive if e.combat.is_targetable(p, m)]
                 res = None
-                
+
                 if p.has_status("无神"):
                     if p.current_hp <= 25 and p.current_mana >= 2 and "再生" in p.dao_wen:
                         res = e.execute_action("use_daowen", {
@@ -218,19 +304,13 @@ def run_full_reincarnation_with_duel(seed=42):
                         res = e.execute_action("use_daowen", {
                             "daowen_name": "庇护", "x": min(5, p.current_mana), "target": p.name
                         })
-                elif p.current_hp <= 20 and p.current_mana >= 4 and "再生" in p.dao_wen:
+                elif p.shield <= 6 and p.current_mana >= 10 and "庇护" in p.dao_wen:
                     res = e.execute_action("use_daowen", {
-                        "daowen_name": "再生", "x": 4, "target": p.name
-                    })
-                elif p.shield <= 6 and p.current_mana >= 5 and "庇护" in p.dao_wen:
-                    res = e.execute_action("use_daowen", {
-                        "daowen_name": "庇护", "x": 5, "target": p.name
+                        "daowen_name": "庇护", "x": 10, "target": p.name
                     })
                 elif targetable and p.current_mana > 0 and "杀伐" in p.dao_wen:
-                    non_guzhi = [m for m in targetable if not m.has_status("固执")]
-                    pool_t = non_guzhi if non_guzhi else targetable
-                    pool_t.sort(key=lambda x: x.current_hp)
-                    t = pool_t[0]
+                    pool_t = [m for m in targetable if not m.has_status("固执")]
+                    t = min(pool_t if pool_t else targetable, key=lambda m: m.current_hp)
 
                     rem = max(1, p.action_count - p.actions_used_this_round)
                     cast_x = max(1, p.current_mana // rem)
@@ -250,7 +330,7 @@ def run_full_reincarnation_with_duel(seed=42):
                 break
 
             # 怪物阶段
-            mp = _resolve_monster_turn(e)
+            mp = _resolve_monster_turn_smart(e)
             if mp.get("result", {}).get("details"):
                 b_lines.extend(BR.format_monster_hits(act_idx, mp["result"]["details"]))
 
@@ -268,7 +348,7 @@ def run_full_reincarnation_with_duel(seed=42):
     battles_count += 1
     opp = e.state.enemies[0]
 
-    # 满状态王座死斗
+    # 双方以 42 点满血状态打响巅峰死斗
     p.current_hp = p.blood_limit
     opp.current_hp = opp.blood_limit
 
@@ -301,25 +381,25 @@ def run_full_reincarnation_with_duel(seed=42):
                     act_num = p.actions_used_this_round + 1
                     res = None
                     if act_num == 1:
-                        # 出手1：立盾【庇护5】（获得20格挡）稳守防线
+                        # 出手1：立盾【庇护10】（获得20格挡）稳守防线
                         res = e.execute_action("use_daowen", {
-                            "actor": p.name, "daowen_name": "庇护", "x": 5, "target": p.name
+                            "actor": p.name, "daowen_name": "庇护", "x": 10, "target": p.name
                         })
                     elif act_num == 2:
-                        # 出手2：破盾穿透【杀伐10】（30原始伤害，格挡吸收20，穿透10伤害削减生命，打破凡庸）
+                        # 出手2：破盾穿透【杀伐15】（30原始伤害，格挡吸收20，穿透10伤害削减生命，打破凡庸）
                         res = e.execute_action("use_daowen", {
-                            "actor": p.name, "daowen_name": "杀伐", "x": 10, "target": opp.name,
+                            "actor": p.name, "daowen_name": "杀伐", "x": 15, "target": opp.name,
                             "dodge": False
                         })
                     elif act_num == 3:
-                        # 出手3：破盾致命重轰【杀伐15】（45伤害），逼迫对手消耗1点速度精准闪避
+                        # 出手3：破盾致命重轰【杀伐15】（30伤害），逼迫对手消耗1点速度精准闪避
                         should_dodge = opp.current_speed >= 1
                         res = e.execute_action("use_daowen", {
                             "actor": p.name, "daowen_name": "杀伐", "x": 15, "target": opp.name,
                             "dodge": should_dodge
                         })
                     else:
-                        # 出手4：终结重击【杀伐15】（45伤害），逼迫对手消耗1点速度精准闪避
+                        # 出手4：终结重击【杀伐】，逼迫对手消耗1点速度精准闪避
                         rem_mana = max(1, p.current_mana)
                         should_dodge = opp.current_speed >= 1
                         res = e.execute_action("use_daowen", {
@@ -336,25 +416,25 @@ def run_full_reincarnation_with_duel(seed=42):
                     act_num = opp.actions_used_this_round + 1
                     res = None
                     if act_num == 1:
-                        # 出手1：立盾【庇护5】（获得20格挡）稳守防线
+                        # 出手1：立盾【庇护10】（获得20格挡）稳守防线
                         res = e.execute_action("use_daowen", {
-                            "actor": opp.name, "daowen_name": "庇护", "x": 5, "target": opp.name
+                            "actor": opp.name, "daowen_name": "庇护", "x": 10, "target": opp.name
                         })
                     elif act_num == 2:
-                        # 出手2：破盾穿透【杀伐10】（30原始伤害，格挡吸收20，穿透10伤害削减生命，打破凡庸）
+                        # 出手2：破盾穿透【杀伐15】（30原始伤害，格挡吸收20，穿透10伤害削减生命，打破凡庸）
                         res = e.execute_action("use_daowen", {
-                            "actor": opp.name, "daowen_name": "杀伐", "x": 10, "target": p.name,
+                            "actor": opp.name, "daowen_name": "杀伐", "x": 15, "target": p.name,
                             "dodge": False
                         })
                     elif act_num == 3:
-                        # 出手3：破盾致命重轰【杀伐15】（45伤害），逼迫对手消耗1点速度精准闪避
+                        # 出手3：破盾致命重轰【杀伐15】（30伤害），逼迫对手消耗1点速度精准闪避
                         should_dodge = p.current_speed >= 1
                         res = e.execute_action("use_daowen", {
                             "actor": opp.name, "daowen_name": "杀伐", "x": 15, "target": p.name,
                             "dodge": should_dodge
                         })
                     else:
-                        # 出手4：终结重击【杀伐15】（45伤害），逼迫对手消耗1点速度精准闪避
+                        # 出手4：终结重击【杀伐】，逼迫对手消耗1点速度精准闪避
                         rem_mana = max(1, opp.current_mana)
                         should_dodge = p.current_speed >= 1
                         res = e.execute_action("use_daowen", {
@@ -390,7 +470,7 @@ def run_full_reincarnation_with_duel(seed=42):
     d_lines.append(f"【死斗结果】{win_title}")
     d_lines.append("[战终]")
     d_lines.append(f"死亡结算：{death_note}")
-    d_lines.append(f"[碎片]奖励计算：死斗胜出，最终累计{e.state.shards}[碎片]")
+    d_lines.append(f"[碎片]奖励计算：死斗结束，累计{e.state.shards}[碎片]")
     d_lines.append("增益与减益清除：清除局内增益（回复/格挡/持续∞）与减益")
     d_lines.append("代价保留项：代价不随[战终]清除")
     d_lines.append("[朋友][员工]留存，[临时朋友]消失")

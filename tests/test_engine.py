@@ -86,26 +86,26 @@ def test_daowen_calculations():
     target = Entity(name="目标", entity_type=EntityType.MONSTER.value, blood_limit=100, current_hp=100)
     result = DaoWenEngine.resolve("杀伐", 3, target=target)
     assert result["cost"] == 3, f"杀伐消耗错误: {result['cost']}"
-    assert result["target_damage"] == 9, f"杀伐伤害错误: {result['target_damage']}"
-    print("  ✓ 杀伐X=3: 消耗3，伤害9")
+    assert result["target_damage"] == 6, f"杀伐伤害错误: {result['target_damage']}"
+    print("  ✓ 杀伐X=3: 消耗3，伤害6")
     
     # 测试庇护
     result = DaoWenEngine.resolve("庇护", 5, target=target)
     assert result["cost"] == 5
-    assert result["target_shield"] == 20
-    print("  ✓ 庇护X=5: 消耗5，格挡20")
+    assert result["target_shield"] == 10
+    print("  ✓ 庇护X=5: 消耗5，格挡10")
     
     # 测试再生
     result = DaoWenEngine.resolve("再生", 4, target=target)
     assert result["cost"] == 4
-    assert result["target_heal"] == 24
-    print("  ✓ 再生X=4: 消耗4，回复24")
+    assert result["target_heal"] == 12
+    print("  ✓ 再生X=4: 消耗4，回复12")
     
     # 测试冲击
     result = DaoWenEngine.resolve("冲击", 2)
-    assert result["cost"] == 2
-    assert result["aoe_damage"] == 4
-    print("  ✓ 冲击X=2: 消耗2，AOE伤害4")
+    assert result["cost"] == 6
+    assert result["aoe_damage"] == 10
+    print("  ✓ 冲击X=2: 消耗6，AOE伤害10")
     
     # 测试锐利
     result = DaoWenEngine.resolve("锐利", 3, target=target)
@@ -367,7 +367,7 @@ def test_full_flow():
         "dodge": False, "blood_shadow": False, "trigger_spell_choices": {},
     })
     assert result["success"]
-    print(f"  ✓ 发动杀伐X=5: 对千手蜈蚣造成15伤害")
+    print(f"  ✓ 发动杀伐X=5: 对千手蜈蚣造成10伤害")
     
     print("  ✓ 完整流程测试通过")
 
@@ -623,7 +623,7 @@ def test_spells_trigger():
     combat = CombatEngine(st, DiceEngine())
     r = combat.resolve_attack(m, st.player, spell_choices={
         "before": {"后发制人": {"use": True, "cycles": [[
-            {"x": 5, "target_ref": "player:0", "dodge": False},
+            {"x": 10, "target_ref": "player:0", "dodge": False},
         ]]}},
         "after": {},
     })

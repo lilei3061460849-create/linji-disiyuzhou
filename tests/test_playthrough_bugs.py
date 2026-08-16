@@ -292,12 +292,12 @@ def test_borrowed_shaifa_fires_in_monster_phase():
     borrowed = [d for d in details if d.get("resolves_as") == "杀伐"]
     assert borrowed, f"应发动借用杀伐: {details}"
     assert borrowed[0]["daowen_activated"] == "杀伐"
-    assert engine.state.player.current_hp == hp_before - 6, (
-        f"杀伐2→3X=6，HP应{hp_before}→{hp_before - 6}，实{engine.state.player.current_hp}")
+    assert engine.state.player.current_hp == hp_before - 4, (
+        f"杀伐2→2X=4，HP应{hp_before}→{hp_before - 4}，实{engine.state.player.current_hp}")
 
 
 def test_borrowed_shaifa_x1_deals_two():
-    """边界：借用杀伐X=1，伤害3X=3。"""
+    """边界：借用杀伐X=1，伤害2X=2。"""
     engine = _engine("evo_bound")
     engine.execute_action("battle_start", {})
     monster = Entity(name="困境怪", entity_type="怪物", blood_limit=120, current_hp=30,
@@ -310,7 +310,7 @@ def test_borrowed_shaifa_x1_deals_two():
     _advance_to_active_round(engine)
     hp_before = engine.state.player.current_hp
     _resolve_prepared_monsters(engine, "杀伐")
-    assert engine.state.player.current_hp == hp_before - 3
+    assert engine.state.player.current_hp == hp_before - 2
 
 
 def test_unevolved_monster_does_not_cast_shaifa():

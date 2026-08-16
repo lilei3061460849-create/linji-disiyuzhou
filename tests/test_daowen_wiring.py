@@ -224,7 +224,7 @@ def test_huaxiang_zhuiluo_dingxing_wushen_xuanyun():
         "actor": foe.name, "daowen_name": "杀伐", "x": 2, "target": p.name,
     })
     assert r["success"], r
-    assert foe.current_hp == hp_f - 6  # 无神改打自己(杀伐3X)
+    assert foe.current_hp == hp_f - 4  # 无神改打自己(杀伐2X)
 
     m.add_status(StatusEffect(name="眩晕", remaining_rounds=2, value=1, source="测"))
     assert engine.combat.can_act(m) is False

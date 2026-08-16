@@ -75,7 +75,7 @@ def test_use_daowen_mengbi_blocks_next_hits():
 
     a3 = _shaifa()
     assert not a3.get("mengbi_blocked")
-    assert player.current_hp == hp - 9
+    assert player.current_hp == hp - 6
 
 
 def test_mengbi_x1_blocks_one_attack_then_expires():

@@ -339,9 +339,9 @@ def test_normal_baolie_reflects_before_damage():
     hp_before = player.current_hp
     r = engine.execute_action("use_daowen", {"daowen_name": "杀伐", "x": 2, "target": m.name})
     assert r["success"], r
-    # 杀伐2 造成6伤害：玩家先被反噬6，怪物仍受6伤害
-    assert player.current_hp == hp_before - 6, f"攻击者应先失去等量生命，实差{hp_before - player.current_hp}"
-    assert m.current_hp == 100 - 6
+    # 杀伐2 造成4伤害：玩家先被反噬4，怪物仍受4伤害
+    assert player.current_hp == hp_before - 4, f"攻击者应先失去等量生命，实差{hp_before - player.current_hp}"
+    assert m.current_hp == 100 - 4
 
 
 def test_boundary_baolie_attacker_dies_damage_cancelled():
@@ -418,8 +418,8 @@ def test_normal_tuihua_reduces_daowen_x():
     hp_before = m.current_hp
     r = engine.execute_action("use_daowen", {"daowen_name": "杀伐", "x": 3, "target": m.name})
     assert r["success"], r
-    # 杀伐3 退化2 → 实际 X=1 → 伤害3
-    assert m.current_hp == hp_before - 3, f"退化2应使X=1(伤害3)，实减{hp_before - m.current_hp}"
+    # 杀伐3 退化2 → 实际 X=1 → 伤害2
+    assert m.current_hp == hp_before - 2, f"退化2应使X=1(伤害2)，实减{hp_before - m.current_hp}"
 
 
 def test_boundary_tuihua_zero_floor():

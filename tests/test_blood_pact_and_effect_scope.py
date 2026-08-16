@@ -183,10 +183,10 @@ def test_event_and_daowen_costs_use_blood_pact_bus(tmp_path):
     assert player.current_hp == 89 and ally.current_hp == 71  # 再分3/2
 
 
-def test_regeneration_is_six_x_and_old_contracts_are_removed():
-    """规则替换：再生为6X；遗物池只保留新血契，不再包含两件旧契约。"""
+def test_regeneration_is_three_x_and_old_contracts_are_removed():
+    """规则替换：再生为3X；遗物池只保留新血契，不再包含两件旧契约。"""
     target = Entity("目标", "朋友", blood_limit=100, current_hp=10)
-    assert DaoWenEngine.resolve("再生", 4, target=target)["target_heal"] == 24
+    assert DaoWenEngine.resolve("再生", 4, target=target)["target_heal"] == 12
     names = {name for name, _ in GameEngine.RELIC_DEFS}
     assert "血契" in names
     assert "鲜血契约" not in names

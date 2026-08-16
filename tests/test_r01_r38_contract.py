@@ -282,7 +282,7 @@ def test_r11_r17_impact_dodge_targets_are_bound_to_prepare_snapshot(tmp_path):
         }],
     })
     assert resolved["success"]
-    assert player.current_hp == 98
+    assert player.current_hp == 95
     assert late_friend.current_hp == 40
 
 
@@ -303,7 +303,7 @@ def test_r11_r17_aoe_dodge_does_not_leak_into_next_resolution(tmp_path):
         ],
     })
     assert one["success"]
-    assert (first.current_hp, second.current_hp) == (100, 98)
+    assert (first.current_hp, second.current_hp) == (100, 95)
 
     two = engine.execute_action("use_daowen", {
         "daowen_name": "冲击", "x": 1, "dodge_targets": [
@@ -312,7 +312,7 @@ def test_r11_r17_aoe_dodge_does_not_leak_into_next_resolution(tmp_path):
         ],
     })
     assert two["success"]
-    assert (first.current_hp, second.current_hp) == (98, 96)
+    assert (first.current_hp, second.current_hp) == (95, 90)
     assert "_skip_aoe_names" not in vars(engine.combat)
 
 
