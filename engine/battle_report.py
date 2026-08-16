@@ -264,6 +264,10 @@ def format_player_action(idx: int, actor_name: str, result: dict) -> list[str]:
     else:
         head += result.get("action", "行动")
     lines.append(head)
+    dodge_info = result.get("dodge") or (result.get("execution", {}) or {}).get("dodged")
+    if dodge_info and dodge_info.get("fully_dodged"):
+        for d in dodge_info.get("dodged_names", []):
+            lines.append(f"  → 目标{d.get('name')}声明消耗1点速度闪避，成功（速度→{d.get('speed_after')}），判定与结算完全失效")
     for ef in (result.get("execution", {}) or {}).get("effects", []) or []:
         if ef.get("type") == "damage":
             # 没有格挡时不写"格挡吸收0"，纯属噪音

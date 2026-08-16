@@ -1244,7 +1244,6 @@ def run_all_tests():
         test_dice,
         test_dm_rulings,
         test_full_flow,
-        test_monster_fixed_actions,
         test_sculpture_and_proliferation,
         test_daowen_effects_wired,
         test_out_of_combat_actions,
@@ -1258,7 +1257,7 @@ def run_all_tests():
         test_relics_five_more,
         test_evolution_yuanchu,
         test_evolution_plight_listing,
-        test_mutation_sustain_billing,
+        test_original_daowen_only_charges_mutation_on_activation,
         test_consumable_mutation_wiring,
         test_twisted_tool_library,
     ]

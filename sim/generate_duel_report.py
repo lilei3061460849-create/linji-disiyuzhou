@@ -9,7 +9,6 @@ from engine.api import GameEngine
 from engine import battle_report as BR
 from sim.build_learner import _resolve_monster_turn
 from sim.optional_actions import battle_start_relic_choices, round_start_relic_choices
-from sim.duel_common import _resolve_monster_turn_one, _pick_monster_daowen
 
 
 def run_full_reincarnation_with_duel(seed=42):
@@ -17,6 +16,19 @@ def run_full_reincarnation_with_duel(seed=42):
     if os.path.exists(sealed_file):
         os.remove(sealed_file)
     db_file = tempfile.mktemp(suffix=".db")
+
+    def best_cultivate_tier(shards):
+        if shards >= 150:
+            return 6, 150, 6
+        if shards >= 100:
+            return 5, 100, 5
+        if shards >= 65:
+            return 4, 65, 4
+        if shards >= 35:
+            return 3, 35, 3
+        if shards >= 15:
+            return 2, 15, 2
+        return 1, 0, 1
 
     # -------------------------------------------------------------
     # 步骤 1：贾希希通关 7 场并完整封存为第一名冠冕胜者
@@ -53,9 +65,12 @@ def run_full_reincarnation_with_duel(seed=42):
             elif "生生不息" not in [sp.name for sp in p1.spells]:
                 e1.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "spell", "name": "生生不息"})
             else:
+                tier, cost, pts = best_cultivate_tier(e1.state.shards)
+                spd_pts = 1 if (p1.speed_limit < 12 and pts >= 2) else 0
+                mana_pts = pts - spd_pts
                 e1.execute_action("pre_battle_action", {
-                    "sub_action": "修行", "tier": 1,
-                    "allocations": {"speed_points": 0, "mana_points": 1}
+                    "sub_action": "修行", "tier": tier,
+                    "allocations": {"speed_points": spd_pts, "mana_points": mana_pts}
                 })
 
         e1.execute_action("battle_start", {"relic_choices": battle_start_relic_choices(e1)})
@@ -63,12 +78,13 @@ def run_full_reincarnation_with_duel(seed=42):
             e1.execute_action("round_start", {"relic_choices": round_start_relic_choices(e1)})
             while p1.actions_used_this_round < p1.action_count and [m for m in e1.state.enemies if m.is_alive]:
                 targetable = [m for m in e1.state.enemies if m.is_alive and e1.combat.is_targetable(p1, m)]
-                if p1.current_hp <= 25 and p1.current_mana >= 4 and "再生" in p1.dao_wen:
-                    e1.execute_action("use_daowen", {"daowen_name": "再生", "x": 4, "target": p1.name})
-                elif p1.shield <= 6 and p1.current_mana >= 5 and "庇护" in p1.dao_wen:
+                if p1.shield <= 6 and p1.current_mana >= 5 and "庇护" in p1.dao_wen:
                     e1.execute_action("use_daowen", {"daowen_name": "庇护", "x": 5, "target": p1.name})
+                elif p1.current_hp <= 20 and p1.current_mana >= 4 and "再生" in p1.dao_wen:
+                    e1.execute_action("use_daowen", {"daowen_name": "再生", "x": 4, "target": p1.name})
                 elif targetable and p1.current_mana > 0:
-                    t = next((m for m in targetable if not m.has_status("固执")), targetable[0])
+                    pool = [m for m in targetable if not m.has_status("固执")]
+                    t = (pool if pool else targetable)[0]
                     rem = max(1, p1.action_count - p1.actions_used_this_round)
                     e1.execute_action("use_daowen", {
                         "daowen_name": "杀伐", "x": max(1, p1.current_mana // rem), "target": t.name
@@ -98,19 +114,6 @@ def run_full_reincarnation_with_duel(seed=42):
     p = e.state.player
     battle_blocks = []
     battles_count = 0
-
-    def best_cultivate_tier(shards):
-        if shards >= 150:
-            return 6, 150, 6
-        if shards >= 100:
-            return 5, 100, 5
-        if shards >= 65:
-            return 4, 65, 4
-        if shards >= 35:
-            return 3, 35, 3
-        if shards >= 15:
-            return 2, 15, 2
-        return 1, 0, 1
 
     for battle_no in range(1, 8):
         battles_count += 1
@@ -285,37 +288,54 @@ def run_full_reincarnation_with_duel(seed=42):
         rs_d = e.execute_action("round_start", {"relic_choices": round_start_relic_choices(e)})
         d_lines.extend(BR.format_round_start(rnd, rs_d.get("result", {}), p, [opp]))
 
-        # 对称逐出手交替死斗
         act_i = 1
-        acted_refs: set = set()
         for _ in range(30):
             if not p.is_alive or not opp.is_alive:
                 break
             if e.state.duel_turn == "player_side":
                 if p.actions_used_this_round < p.action_count:
-                    # 林渊行动：立盾庇护5(20盾) + 杀伐重轰
+                    # 林渊回合行动决策
                     res = None
-                    if p.current_hp <= 20 and p.current_mana >= 4 and "再生" in p.dao_wen:
-                        res = e.execute_action("use_daowen", {"daowen_name": "再生", "x": 4, "target": p.name})
-                    elif p.shield <= 6 and p.current_mana >= 5 and "庇护" in p.dao_wen:
-                        res = e.execute_action("use_daowen", {"daowen_name": "庇护", "x": 5, "target": p.name})
+                    if p.shield <= 6 and p.current_mana >= 5 and "庇护" in p.dao_wen:
+                        res = e.execute_action("use_daowen", {
+                            "actor": p.name, "daowen_name": "庇护", "x": 5, "target": p.name
+                        })
                     elif p.current_mana > 0 and "杀伐" in p.dao_wen:
                         rem = max(1, p.action_count - p.actions_used_this_round)
                         cast_x = max(1, p.current_mana // rem)
-                        res = e.execute_action("use_daowen", {"daowen_name": "杀伐", "x": cast_x, "target": opp.name})
+                        raw_dmg = cast_x * 3
+                        # 对手防守反应：未破盾则格挡吸收保速度；破盾且有速度则精准闪避
+                        should_dodge = (opp.shield < raw_dmg) and (opp.current_speed >= 1)
+                        res = e.execute_action("use_daowen", {
+                            "actor": p.name, "daowen_name": "杀伐", "x": cast_x, "target": opp.name,
+                            "dodge": should_dodge
+                        })
                     if res and res.get("success"):
                         d_lines.extend(BR.format_player_action(act_i, p.name, res))
                         act_i += 1
                 else:
                     e.state.duel_turn = "opponent_side"
-            else:  # opponent_side
+            else:
                 if opp.actions_used_this_round < opp.action_count:
-                    mp_one, acted_ref = _resolve_monster_turn_one(e, acted_refs)
-                    if mp_one.get("result", {}).get("details"):
-                        d_lines.extend(BR.format_monster_hits(act_i, mp_one["result"]["details"]))
+                    # 贾希希回合行动决策
+                    res = None
+                    if opp.shield <= 6 and opp.current_mana >= 5 and "庇护" in opp.dao_wen:
+                        res = e.execute_action("use_daowen", {
+                            "actor": opp.name, "daowen_name": "庇护", "x": 5, "target": opp.name
+                        })
+                    elif opp.current_mana > 0 and "杀伐" in opp.dao_wen:
+                        rem = max(1, opp.action_count - opp.actions_used_this_round)
+                        cast_x = max(1, opp.current_mana // rem)
+                        raw_dmg = cast_x * 3
+                        # 林渊防守反应：未破盾则格挡吸收保速度；破盾且有速度则精准闪避
+                        should_dodge = (p.shield < raw_dmg) and (p.current_speed >= 1)
+                        res = e.execute_action("use_daowen", {
+                            "actor": opp.name, "daowen_name": "杀伐", "x": cast_x, "target": p.name,
+                            "dodge": should_dodge
+                        })
+                    if res and res.get("success"):
+                        d_lines.extend(BR.format_player_action(act_i, opp.name, res))
                         act_i += 1
-                    if acted_ref:
-                        acted_refs.add(acted_ref)
                 else:
                     e.state.duel_turn = "player_side"
 
@@ -325,9 +345,10 @@ def run_full_reincarnation_with_duel(seed=42):
     # 死斗胜负判定与冠冕结算
     duel_win = p.is_alive and not opp.is_alive
     duel_res = e.execute_action("resolve_final_duel", {"outcome": "victory" if duel_win else "defeat"})
+    win_text = "林渊胜出！击碎贾希希王座，林渊荣登【最终的冠冕】，晋升二阶！" if duel_win else "贾希希守擂成功！"
     
     d_lines.append("")
-    d_lines.append(f"【死斗结果】{'林渊胜出！击碎贾希希王座，林渊荣登【最终的冠冕】，晋升二阶！' if duel_win else '贾希希守擂成功！'}")
+    d_lines.append(f"【死斗结果】{win_text}")
     d_lines.append("[战终]")
     d_lines.append(f"死亡结算：贾希希（[命零]阵亡，触发【死之传承】）")
     d_lines.append(f"[碎片]奖励计算：死斗胜出，最终累计{e.state.shards}[碎片]")

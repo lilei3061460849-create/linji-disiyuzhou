@@ -2482,6 +2482,8 @@ class GameEngine:
         )
         if dodge_log.get("fully_dodged"):
             self._advance_duel_turn()
+            if self.state.in_final_duel and not self._duel_side_can_act("player_side") and not self._duel_side_can_act("opponent_side"):
+                self.state.combat_subphase = CombatSubphase.AWAIT_ROUND_END.value
             return {
                 "success": True,
                 "action": f"发动道纹【{name}X={x}】" + (f"（{actor.name}听从指令发动）" if is_command else ""),
@@ -2502,6 +2504,8 @@ class GameEngine:
             execution = dict(execution)
             execution["dodged"] = dodge_log
         self._advance_duel_turn()
+        if self.state.in_final_duel and not self._duel_side_can_act("player_side") and not self._duel_side_can_act("opponent_side"):
+            self.state.combat_subphase = CombatSubphase.AWAIT_ROUND_END.value
 
         return {
             "success": True,
