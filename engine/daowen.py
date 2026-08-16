@@ -75,7 +75,7 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_bihu(x: int, target: Entity = None) -> dict:
-        """庇护X：消耗X。使[目标]获得4X点格挡"""
+        """庇护X：消耗X。使[目标]获得4X点格挡（可抵消等量伤害），持续1"""
         target_name = target.name if target is not None else "未选定目标"
         cost = x
         shield = 4 * x
@@ -85,7 +85,8 @@ class DaoWenEngine:
             "cost_type": CostType.MANA.value,
             "cost": cost,
             "target_shield": shield,
-            "summary": f"消耗{x}法力，使{target_name}获得{shield}点格挡"
+            "duration": 1,
+            "summary": f"消耗{x}法力，使{target_name}获得{shield}点格挡（可抵消等量伤害），持续1回合"
         }
     
     @staticmethod

@@ -199,6 +199,41 @@ def _render_effect(eff: dict) -> str:
         return f"{eff.get('target')} 攻击力被固定为 {eff.get('value', 1)}"
     if t == "relic":
         return f"遗物：{eff.get('log')}"
+    if t == "huoxue_heal":
+        return f"{eff.get('entity') or eff.get('target')} 触发【活血】：[回复]{eff.get('actual', eff.get('heal'))}点生命"
+    if t == "status_expired":
+        expired = "、".join(eff.get("expired_effects", []))
+        return f"{eff.get('entity') or eff.get('target')} 状态到期清除：{expired}"
+    if t == "extra_attack_ready":
+        return f"{eff.get('entity') or eff.get('target')} 【狂暴】生效：本回合获得额外一轮攻击"
+    if t == "duming":
+        return f"【赌命】结算：{eff.get('target')} 失去 {eff.get('damage')} 点生命"
+    if t == "duming_register":
+        return f"{eff.get('caster')} 登记【赌命X={eff.get('x')}】"
+    if t == "self_heal":
+        return f"{eff.get('entity')} 触发【自愈】：[回复]{eff.get('actual', eff.get('heal'))}点生命"
+    if t == "decay_damage":
+        return f"{eff.get('entity')} 触发【衰败】：失去{eff.get('damage')}点生命"
+    if t == "bizhong":
+        return f"{eff.get('target')} 获得【必中】{eff.get('count')}次"
+    if t == "mengbi":
+        return f"{eff.get('target')} 获得【蒙蔽】{eff.get('count')}次"
+    if t == "manqian":
+        eff_txt = "生效（本回合无法出手）" if eff.get("effective") else "未生效"
+        return f"【缓慢】结算：目标{eff.get('target')}（出手{eff.get('action_count')}次）{eff_txt}"
+    if t == "zhuiluo":
+        targets = "、".join(eff.get("targets", []))
+        return f"【坠落】生效：击落飞行目标 {targets}"
+    if t == "jiahuo":
+        return f"{eff.get('caster')} 发动【嫁祸】：受到伤害由 {eff.get('target')} 承担"
+    if t == "beifu":
+        return f"{eff.get('caster')} 发动【背负】：替 {eff.get('target')} 承担受到伤害"
+    if t == "shanghen":
+        return f"{eff.get('target')} 获得【伤痕】"
+    if t == "nilin_setup":
+        return f"{eff.get('target')} 获得【逆鳞】"
+    if t == "self_attack":
+        return f"{eff.get('target')} 受【自残】影响攻击自身"
     # 兜底：仍以中文陈述，不直接抛出英文字段名（战报要求全程中文）
     _CN = {"entity": "对象", "target": "目标", "source": "来源", "amount": "数值",
            "value": "数值", "actual_damage": "实际伤害", "raw_damage": "原始伤害",
@@ -262,7 +297,8 @@ def format_monster_hits(start_idx: int, details: list) -> list[str]:
             idx += 1
             continue
         if "daowen_activated" in d:
-            lines.append(f"出手{idx}（{d.get('monster')}）：发动【{d['daowen_activated']}】")
+            x_str = f"X={d.get('x')}" if d.get("x") else ""
+            lines.append(f"出手{idx}（{d.get('monster')}）：发动【{d['daowen_activated']}{x_str}】")
             idx += 1
             continue
         if "collapsed" in d:

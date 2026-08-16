@@ -3125,7 +3125,7 @@ class CombatEngine:
             effective_name, calc, monster, target,
             aoe_targets_override=aoe_targets_override,
         )
-        return {"monster": monster.name, "daowen_activated": name,
+        return {"monster": monster.name, "daowen_activated": name, "x": inst.x_value,
                 "resolves_as": effective_name, "resonance_rewrite": bool(rewritten_as),
                 "target": target.name, "execution": execution,
                 "trigger_spell_logs": trigger_logs}
@@ -3248,7 +3248,8 @@ class CombatEngine:
                         cost_share_target_ref=hit.get("cost_share_target_ref", ""),
                     )
                     resolved.update({"hit_index": hit_index + 1, "hit_total": hits_per_action,
-                                     "attack_action_index": action_index + 1})
+                                     "attack_action_index": action_index + 1,
+                                     "new_action": (hit_index == 0)})
                     results.append(resolved)
                     if not monster.is_alive:
                         break
