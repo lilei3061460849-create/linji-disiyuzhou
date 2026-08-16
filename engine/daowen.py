@@ -103,10 +103,10 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_xuezhai(x: int, target: Entity = None) -> dict:
-        """血债X：代价：流血X。对[目标]造成2X次1点伤害"""
+        """血债X：代价：流血X。选择[目标] X 次，每次对其造成 1 点伤害"""
         target_name = target.name if target is not None else "未选定目标"
         cost_hp = x
-        hits = 2 * x
+        hits = x
         damage_per_hit = 1
         return {
             "dao_wen": "血债",
@@ -116,7 +116,7 @@ class DaoWenEngine:
             "hits": hits,
             "damage_per_hit": damage_per_hit,
             "total_damage": hits * damage_per_hit,
-            "summary": f"流血{x}，对{target_name}造成{hits}次{damage_per_hit}点伤害"
+            "summary": f"流血{x}，选择{target_name} {hits}次，每次造成{damage_per_hit}点伤害"
         }
     
     @staticmethod
@@ -232,10 +232,10 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_manqian(x: int, target: Entity = None, target_action_count: int = 0) -> dict:
-        """缓慢X：代价：冷却X。本回合若[目标]单轮出手次数≤X，则其无法出手"""
+        """缓慢X：代价：冷却X。若[目标]出手次数≤2，则其无法出手，持续X"""
         target_name = target.name if target is not None else "未选定目标"
         cost = x
-        effective = target_action_count <= x
+        effective = target_action_count <= 2
         return {
             "dao_wen": "缓慢",
             "x": x,
@@ -243,7 +243,8 @@ class DaoWenEngine:
             "cost": cost,
             "target_action_count": target_action_count,
             "effective": effective,
-            "summary": f"冷却{cost}，{'生效' if effective else '未生效'}（{target_name}出手{target_action_count}次，阈值{x}）"
+            "duration": x,
+            "summary": f"冷却{cost}，{'生效' if effective else '未生效'}（{target_name}出手{target_action_count}次，<=2判定，持续{x}回合）"
         }
     
     # ---- 怪物原始道纹 ----

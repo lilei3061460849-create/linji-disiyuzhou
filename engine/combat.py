@@ -1023,7 +1023,7 @@ class CombatEngine:
                                        context=f"{holder.name}发动赌命")
             idx = int(roll["player_number"]) - 1
             tgt = alive[min(max(idx, 0), len(alive) - 1)]
-            d = math.ceil(tgt.current_hp * 30 / 100)  # 引擎口径：当前生命30%（B3 待裁定项，保持现状）
+            d = math.ceil(tgt.blood_limit * 30 / 100)  # 用户裁定口径：血限30%
             rd = self._raw_hp_loss(tgt, d)
             effects.append({"type": "duming", "caster": holder.name, "target": tgt.name,
                             "roll": idx + 1, "of": len(alive), "damage": rd["lost"], **rd})
@@ -2163,7 +2163,7 @@ class CombatEngine:
         if name == "缓慢":
             if calc.get("effective"):
                 target.add_status(StatusEffect(
-                    name="缓慢", remaining_rounds=1, value=x, source=caster.name))
+                    name="缓慢", remaining_rounds=x, value=x, source=caster.name))
                 result["effects"].append({
                     "type": "manqian", "target": target.name, "effective": True,
                     "action_count": calc.get("target_action_count"),
