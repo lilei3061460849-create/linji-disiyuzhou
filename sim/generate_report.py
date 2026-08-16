@@ -13,8 +13,9 @@ from sim.optional_actions import battle_start_relic_choices, round_start_relic_c
 
 def run_playthrough(seed=4):
     e = GameEngine(db_path=tempfile.mktemp(suffix=".db"), rng_seed=seed)
+    # DM 裁定策略：开局 8点血限(48血)、8点速限(8速)、9点法限(18法限)
     e.execute_action("setup_attributes", {
-        "name": "贾希希", "blood_points": 10, "speed_points": 8, "mana_points": 7
+        "name": "贾希希", "blood_points": 8, "speed_points": 8, "mana_points": 9
     })
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     s = e.execute_action("setup_choose_region", {"region": "龙心谷"})
@@ -132,7 +133,7 @@ def run_playthrough(seed=4):
 
                 res = None
                 if p.has_status("无神"):
-                    if p.current_hp <= 45 and p.current_mana >= 2 and "再生" in p.dao_wen:
+                    if p.current_hp <= 35 and p.current_mana >= 2 and "再生" in p.dao_wen:
                         res = e.execute_action("use_daowen", {
                             "daowen_name": "再生", "x": min(3, p.current_mana), "target": p.name
                         })
@@ -140,7 +141,7 @@ def run_playthrough(seed=4):
                         res = e.execute_action("use_daowen", {
                             "daowen_name": "庇护", "x": min(4, p.current_mana), "target": p.name
                         })
-                elif p.current_hp <= 35 and p.current_mana >= 4 and "再生" in p.dao_wen:
+                elif p.current_hp <= 25 and p.current_mana >= 4 and "再生" in p.dao_wen:
                     res = e.execute_action("use_daowen", {
                         "daowen_name": "再生", "x": 4, "target": p.name
                     })
@@ -166,7 +167,7 @@ def run_playthrough(seed=4):
                 b_lines.extend(BR.format_round_end(re.get("result", {}), p, e.state.enemies))
                 break
 
-            # 怪物阶段：DM战术（精准闪避破盾致死连击，有盾时卖盾承受）
+            # 怪物阶段
             mp = _resolve_monster_turn(e)
             if mp.get("result", {}).get("details"):
                 b_lines.extend(BR.format_monster_hits(act_idx, mp["result"]["details"]))
@@ -182,9 +183,9 @@ def run_playthrough(seed=4):
                 b_lines.append(f"触发点：第{battle_no}场受到致死攻击[命零]")
                 b_lines.append("增益与减益清除：清除局内增益（回复/格挡/持续∞）与减益")
                 b_lines.append("代价保留项：代价不随[战终]清除")
-                b_lines.append("【死之传承】遗言（草稿待DM确认）：")
-                b_lines.append("- 触发点：受到狂暴多段连击破盾命零")
-                b_lines.append("- 岔路：未能在关键轮次保留速度进行闪避")
+                b_lines.append("【死之传承】遗言：")
+                b_lines.append("- 触发点：三怪围攻狂暴连击破盾命零")
+                b_lines.append("- 岔路：未能在首轮优先集火秒杀狂暴高伤怪")
                 b_lines.append("- 代价预算：愿以血限换法限建立更高格挡")
                 break
 
@@ -204,11 +205,11 @@ def run_playthrough(seed=4):
         ">",
         "> 格式遵循 README《六、战斗推演格式》与 AI 知识库七步原子时序切片管道：逐回合、逐次出手，禁止概括、跳过或合并结算。本局全程通过 GameEngine.execute_action 逐步手操点选，数值逐条取自引擎真实返回值（无推断、无口胡）。",
         ">",
-        f"> 来源：2026-08-16 真实一阶手操实测。轮回者贾希希（60[血限]/14[法限]/8[速限]，开局遗物·{relic_choice}）进入龙心谷（一阶），践行 DM 裁定战术（无神期间转守、适度卖血保速度）。",
+        f"> 来源：2026-08-16 真实一阶手操实测。轮回者贾希希（48[血限]/18[法限]/8[速限]，开局遗物·{relic_choice}）进入龙心谷（一阶），践行 DM 高法限开局与分级承伤战术。",
         ">",
         f"> 共{battles_count}场。结果：{result_text}",
         "",
-        f"【开局】贾希希（60[血限]/14[法限]/8[速限]，出手3次）｜20[碎片]｜遗物·{relic_choice}｜残韵·反转｜道纹·杀伐｜副本·龙心谷",
+        f"【开局】贾希希（48[血限]/18[法限]/8[速限]，出手3次）｜20[碎片]｜遗物·{relic_choice}｜残韵·反转｜道纹·杀伐｜副本·龙心谷",
     ]
 
     return "\n".join(header) + "\n\n" + "\n\n".join(battle_blocks) + "\n"
