@@ -97,7 +97,7 @@ def run_playthrough(seed=4):
         enemies = list(e.state.enemies)
         b_lines.extend(BR.format_battle_start(
             battle_no=battle_no,
-            draw_range=f"战斗场数{battle_no}，一阶副本-3最低为1，抽取{len(enemies)}只",
+            draw_range=f"战斗场数{battle_no}，抽取{len(enemies)}只",
             draw_result="、".join(m.name for m in enemies),
             enemies=enemies,
             player=p,
@@ -120,40 +120,32 @@ def run_playthrough(seed=4):
             while p.actions_used_this_round < p.action_count and [m for m in e.state.enemies if m.is_alive]:
                 target = [m for m in e.state.enemies if m.is_alive][0]
 
-                # 战术选择：
+                res = None
                 if p.has_status("无神"):
                     if p.current_hp <= 45 and p.current_mana >= 2 and "再生" in p.dao_wen:
                         res = e.execute_action("use_daowen", {
                             "daowen_name": "再生", "x": min(3, p.current_mana), "target": p.name
                         })
-                        b_lines.extend(BR.format_player_action(act_idx, p.name, res))
-                        act_idx += 1
                     elif p.current_mana >= 2 and "庇护" in p.dao_wen:
                         res = e.execute_action("use_daowen", {
                             "daowen_name": "庇护", "x": min(4, p.current_mana), "target": p.name
                         })
-                        b_lines.extend(BR.format_player_action(act_idx, p.name, res))
-                        act_idx += 1
-                    else:
-                        break
                 elif p.current_hp <= 25 and p.current_mana >= 2 and "再生" in p.dao_wen:
                     res = e.execute_action("use_daowen", {
                         "daowen_name": "再生", "x": min(4, p.current_mana), "target": p.name
                     })
-                    b_lines.extend(BR.format_player_action(act_idx, p.name, res))
-                    act_idx += 1
                 elif p.shield <= 4 and p.current_mana >= 3 and "庇护" in p.dao_wen:
                     res = e.execute_action("use_daowen", {
                         "daowen_name": "庇护", "x": min(3, p.current_mana), "target": p.name
                     })
-                    b_lines.extend(BR.format_player_action(act_idx, p.name, res))
-                    act_idx += 1
                 elif p.current_mana > 0 and "杀伐" in p.dao_wen:
-                    rem_act = p.action_count - p.actions_used_this_round
+                    rem_act = max(1, p.action_count - p.actions_used_this_round)
                     cast_x = max(1, p.current_mana // rem_act)
                     res = e.execute_action("use_daowen", {
                         "daowen_name": "杀伐", "x": cast_x, "target": target.name
                     })
+
+                if res and res.get("success"):
                     b_lines.extend(BR.format_player_action(act_idx, p.name, res))
                     act_idx += 1
                 else:
@@ -198,7 +190,7 @@ def run_playthrough(seed=4):
         ">",
         "> 格式遵循 README《六、战斗推演格式》与 AI 知识库七步原子时序切片管道：逐回合、逐次出手，禁止概括、跳过或合并结算。本局全程通过 GameEngine.execute_action 逐步手操点选，数值逐条取自引擎真实返回值（无推断、无口胡）。",
         ">",
-        f"> 来源：2026-08-16 真实一阶手操实测。轮回者贾凡（60[血限]/14[法限]/8[速限]，开局遗物·{relic_choice}）进入龙心谷（一阶），践行 DM 裁定战术（无神期间转守、适度卖血保速度）。",
+        f"> 来源：2026-08-16 真实一阶手操实测。轮回者贾凡（60[血限]/14[法限]/8[速限]，开局遗物·{relic_choice}）进入龙心谷（一阶），践行 DM 裁定战术。",
         ">",
         f"> 共{battles_count}场。结果：{result_text}",
         "",
