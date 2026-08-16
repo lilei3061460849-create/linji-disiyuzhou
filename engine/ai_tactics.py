@@ -33,11 +33,11 @@ from typing import Any, Optional
 # ---------------------------------------------------------------------------
 TACTICAL_ROLES: dict[str, dict] = {
     # ---- 杀伐闭环 ----
-    "杀伐": {"role": "nuke", "cost": 1, "pri": 1, "dmg_per_x": 3},
-    "冲击": {"role": "aoe", "cost": 1, "pri": 1, "dmg_per_x": 2},
-    "血债": {"role": "nuke", "cost": 0, "pay": "流血", "pri": 3, "dmg_per_x": 2},
-    "庇护": {"role": "shield", "cost": 1, "pri": 1, "shield_per_x": 4},
-    "再生": {"role": "heal", "cost": 1, "pri": 1, "heal_per_x": 6},
+    "杀伐": {"role": "nuke", "cost": 1, "pri": 1, "dmg_per_x": 2},
+    "冲击": {"role": "aoe", "cost": 3, "pri": 1, "dmg_per_x": 5},
+    "血债": {"role": "nuke", "cost": 0, "pay": "流血", "pri": 3, "dmg_per_x": 1},
+    "庇护": {"role": "shield", "cost": 1, "pri": 1, "shield_per_x": 2},
+    "再生": {"role": "heal", "cost": 1, "pri": 1, "heal_per_x": 3},
     "慈悲": {"role": "heal", "cost": 0, "pay": "流血", "pri": 3, "heal_per_x": 1},
     "固执": {"role": "buff", "cost": 0, "pay": "冷却", "pri": 2},
     # ---- 杀伐14节点闭环后半（锐利至封印）----
