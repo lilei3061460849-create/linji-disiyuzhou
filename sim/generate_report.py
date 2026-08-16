@@ -11,7 +11,7 @@ from sim.build_learner import _resolve_monster_turn
 from sim.optional_actions import battle_start_relic_choices, round_start_relic_choices
 
 
-def run_playthrough(seed=4):
+def run_playthrough(seed=101):
     e = GameEngine(db_path=tempfile.mktemp(suffix=".db"), rng_seed=seed)
     e.execute_action("setup_attributes", {
         "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7
@@ -25,6 +25,36 @@ def run_playthrough(seed=4):
     battle_blocks = []
     battles_count = 0
 
+    def resolve_turn_tactical(engine):
+        p = engine.state.player
+        prepared = engine.execute_action("prepare_monster_phase", {})
+        if not prepared.get("success"):
+            return prepared
+        actors = prepared["result"]["actors"]
+        choices = []
+        for actor_info in actors:
+            attacks = []
+            for a_i in range(actor_info["base_attack_actions"]):
+                hits = []
+                for h_i in range(actor_info["base_hits_per_attack"]):
+                    # DM 战术：只要有盾或生命>25，卖盾卖血不闪避！无盾且<=25才闪避！
+                    can_dodge = (p.shield == 0 and p.current_hp <= 25 and p.current_speed > 1)
+                    hits.append({
+                        "target_ref": "player:0",
+                        "dodge": can_dodge,
+                        "blood_shadow": False,
+                        "spell_choices": {"before": {}, "after": {}},
+                    })
+                attacks.append({"hits": hits})
+            choices.append({
+                "actor_ref": actor_info["actor_ref"],
+                "daowen": actor_info["daowen_options"][0] if actor_info["daowen_required"] and actor_info["daowen_options"] else None,
+                "attack_actions": attacks,
+            })
+        return engine.execute_action("resolve_monster_phase", {
+            "token": prepared["result"]["token"], "choices": choices
+        })
+
     for battle_no in range(1, 8):
         battles_count += 1
         b_lines = []
@@ -32,7 +62,7 @@ def run_playthrough(seed=4):
         b_lines.append("")
 
         pre_texts = []
-        # Pre-battle: Exactly 3 energy
+        # 局外规划：3点精力
         while e.state.energy > 0:
             if p.current_hp < p.blood_limit:
                 heal = 8 + e.state.rest_heal_bonus
@@ -144,9 +174,9 @@ def run_playthrough(seed=4):
                     res = e.execute_action("use_daowen", {
                         "daowen_name": "再生", "x": min(4, p.current_mana), "target": p.name
                     })
-                elif p.shield <= 4 and p.current_mana >= 3 and "庇护" in p.dao_wen:
+                elif p.shield <= 4 and p.current_mana >= 4 and "庇护" in p.dao_wen:
                     res = e.execute_action("use_daowen", {
-                        "daowen_name": "庇护", "x": min(3, p.current_mana), "target": p.name
+                        "daowen_name": "庇护", "x": min(4, p.current_mana), "target": p.name
                     })
                 elif p.current_mana > 0 and "杀伐" in p.dao_wen:
                     rem_act = max(1, p.action_count - p.actions_used_this_round)
@@ -166,7 +196,7 @@ def run_playthrough(seed=4):
                 b_lines.extend(BR.format_round_end(re.get("result", {}), p, e.state.enemies))
                 break
 
-            # 怪物阶段：DM战术（精准闪避破盾致死连击，有盾时卖盾承受）
+            # 怪物阶段
             mp = _resolve_monster_turn(e)
             if mp.get("result", {}).get("details"):
                 b_lines.extend(BR.format_monster_hits(act_idx, mp["result"]["details"]))
@@ -179,12 +209,12 @@ def run_playthrough(seed=4):
                 b_lines.append("【结局】轮回者[命零]")
                 b_lines.append("")
                 b_lines.append("[死亡结算]")
-                b_lines.append("触发点：第6场面对背碑人、火山猿、碎岩鸮三怪围攻受到致死伤害[命零]")
+                b_lines.append(f"触发点：第{battle_no}场受到致死攻击[命零]")
                 b_lines.append("增益与减益清除：清除局内增益（回复/格挡/持续∞）与减益")
                 b_lines.append("代价保留项：代价不随[战终]清除")
-                b_lines.append("【死之传承】遗言：")
-                b_lines.append("- 触发点：第6场三怪围攻狂暴集火命零")
-                b_lines.append("- 岔路：未优先集火秒杀高输出怪物")
+                b_lines.append("【死之传承】遗言（草稿待DM确认）：")
+                b_lines.append("- 触发点：受到狂暴多段连击破盾命零")
+                b_lines.append("- 岔路：未能在关键轮次保留速度进行闪避")
                 b_lines.append("- 代价预算：愿以血限换法限建立更高格挡")
                 break
 
@@ -214,7 +244,7 @@ def run_playthrough(seed=4):
     return "\n".join(header) + "\n\n" + "\n\n".join(battle_blocks) + "\n"
 
 if __name__ == "__main__":
-    text = run_playthrough(seed=4)
+    text = run_playthrough(seed=101)
     with open("战报.md", "w", encoding="utf-8") as f:
         f.write(text)
     print("Successfully generated 战报.md, total lines:", len(text.splitlines()))
