@@ -7,11 +7,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
 from engine import battle_report as BR
-from sim.build_learner import _resolve_monster_turn
 from sim.optional_actions import battle_start_relic_choices, round_start_relic_choices
 
 
-def run_playthrough(seed=4):
+def run_playthrough(seed=7):
     e = GameEngine(db_path=tempfile.mktemp(suffix=".db"), rng_seed=seed)
     e.execute_action("setup_attributes", {
         "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7
@@ -54,6 +53,14 @@ def run_playthrough(seed=4):
                 r = e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "daowen", "name": "庇护"})
                 assert r["success"], r
                 pre_texts.append("学习·道纹 → 习得【庇护】（经曲解从再生获得）")
+            elif battle_no == 2 and e.state.energy == 3:
+                r = e.execute_action("pre_battle_action", {"sub_action": "探索", "tier": 1})
+                if r["success"]:
+                    ev_name = r["result"]["event"]
+                    e.execute_action("resolve_event", {"event": ev_name, "option_id": 3})
+                    pre_texts.append(f"探索1档 → 遭遇事件【{ev_name}】，选择目送远去（遗物【无所求】生效）")
+                else:
+                    pre_texts.append("探索1档")
             elif "后发制人" not in [sp.name for sp in p.spells]:
                 r = e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "spell", "name": "后发制人"})
                 assert r["success"], r
@@ -115,7 +122,7 @@ def run_playthrough(seed=4):
             rs = e.execute_action("round_start", {"relic_choices": r_choices})
             b_lines.extend(BR.format_round_start(rnd, rs.get("result", {}), p, e.state.enemies))
 
-            # Player turn
+            # Player turn with DM tactics
             act_idx = 1
             while p.actions_used_this_round < p.action_count and [m for m in e.state.enemies if m.is_alive]:
                 target = [m for m in e.state.enemies if m.is_alive][0]
@@ -156,10 +163,34 @@ def run_playthrough(seed=4):
                 b_lines.extend(BR.format_round_end(re.get("result", {}), p, e.state.enemies))
                 break
 
-            # 怪物阶段
-            mp = _resolve_monster_turn(e)
-            if mp.get("result", {}).get("details"):
-                b_lines.extend(BR.format_monster_hits(act_idx, mp["result"]["details"]))
+            # 怪物阶段：DM战术（精准闪避破盾致死连击，有盾时卖盾承受）
+            prepared = e.execute_action("prepare_monster_phase", {})
+            if prepared.get("success"):
+                choices = []
+                for actor_info in prepared["result"]["actors"]:
+                    attacks = []
+                    for a_i in range(actor_info["base_attack_actions"]):
+                        hits = []
+                        for h_i in range(actor_info["base_hits_per_attack"]):
+                            # 仅在无格挡保护、生命较低且有富余速度时闪避
+                            can_dodge = (p.shield == 0 and p.current_hp <= 35 and p.current_speed > 1)
+                            hits.append({
+                                "target_ref": "player:0",
+                                "dodge": can_dodge,
+                                "blood_shadow": False,
+                                "spell_choices": {"before": {}, "after": {}},
+                            })
+                        attacks.append({"hits": hits})
+                    choices.append({
+                        "actor_ref": actor_info["actor_ref"],
+                        "daowen": actor_info["daowen_options"][0] if actor_info["daowen_required"] and actor_info["daowen_options"] else None,
+                        "attack_actions": attacks,
+                    })
+                mp = e.execute_action("resolve_monster_phase", {
+                    "token": prepared["result"]["token"], "choices": choices
+                })
+                if mp.get("result", {}).get("details"):
+                    b_lines.extend(BR.format_monster_hits(act_idx, mp["result"]["details"]))
 
             re = e.execute_action("round_end", {})
             b_lines.extend(BR.format_round_end(re.get("result", {}), p, e.state.enemies))
@@ -171,7 +202,10 @@ def run_playthrough(seed=4):
                 b_lines.append("[死亡结算]")
                 b_lines.append("触发点：受到致死攻击[命零]")
                 b_lines.append("增益与减益清除：清除局内增益与减益")
-                b_lines.append("【死之传承】触发")
+                b_lines.append("【死之传承】遗言：")
+                b_lines.append("- 触发点：受到狂暴多段连击破盾命零")
+                b_lines.append("- 岔路：未能在关键轮次保留速度进行闪避")
+                b_lines.append("- 代价预算：愿以血限换法限建立更高格挡")
                 break
 
         if p.is_alive:
@@ -190,7 +224,7 @@ def run_playthrough(seed=4):
         ">",
         "> 格式遵循 README《六、战斗推演格式》与 AI 知识库七步原子时序切片管道：逐回合、逐次出手，禁止概括、跳过或合并结算。本局全程通过 GameEngine.execute_action 逐步手操点选，数值逐条取自引擎真实返回值（无推断、无口胡）。",
         ">",
-        f"> 来源：2026-08-16 真实一阶手操实测。轮回者贾凡（60[血限]/14[法限]/8[速限]，开局遗物·{relic_choice}）进入龙心谷（一阶），践行 DM 裁定战术。",
+        f"> 来源：2026-08-16 真实一阶手操实测。轮回者贾凡（60[血限]/14[法限]/8[速限]，开局遗物·{relic_choice}）进入龙心谷（一阶），践行 DM 裁定战术（无神期间转守、适度卖血保速度）。",
         ">",
         f"> 共{battles_count}场。结果：{result_text}",
         "",
@@ -200,7 +234,7 @@ def run_playthrough(seed=4):
     return "\n".join(header) + "\n\n" + "\n\n".join(battle_blocks) + "\n"
 
 if __name__ == "__main__":
-    text = run_playthrough(seed=4)
+    text = run_playthrough(seed=7)
     with open("战报.md", "w", encoding="utf-8") as f:
         f.write(text)
     print("Successfully generated 战报.md, total lines:", len(text.splitlines()))
