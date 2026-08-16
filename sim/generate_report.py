@@ -11,11 +11,11 @@ from sim.build_learner import _resolve_monster_turn
 from sim.optional_actions import battle_start_relic_choices, round_start_relic_choices
 
 
-def run_playthrough(seed=4):
+def run_playthrough(seed=42):
     e = GameEngine(db_path=tempfile.mktemp(suffix=".db"), rng_seed=seed)
-    # DM 极限高法限策略：5点血限(30血)、8点速限(8速)、12点法限(24法限)
+    # DM 核心战术：开局 7点血限(42血)、8点速限(8速)、10点法限(20法限)
     e.execute_action("setup_attributes", {
-        "name": "贾希希", "blood_points": 5, "speed_points": 8, "mana_points": 12
+        "name": "贾希希", "blood_points": 7, "speed_points": 8, "mana_points": 10
     })
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     s = e.execute_action("setup_choose_region", {"region": "龙心谷"})
@@ -55,20 +55,14 @@ def run_playthrough(seed=4):
                 r = e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "daowen", "name": "庇护"})
                 assert r["success"], r
                 pre_texts.append("学习·道纹 → 习得【庇护】（经曲解从再生获得）")
+            elif "转换" not in e.state.resonance:
+                r = e.execute_action("pre_battle_action", {"sub_action": "领悟", "resonance_type": "转换"})
+                assert r["success"], r
+                pre_texts.append("领悟·残韵 → 获得【残韵·转换】")
             elif e.state.resonance.get("反转", 0) < 2:
                 r = e.execute_action("pre_battle_action", {"sub_action": "领悟", "resonance_type": "反转"})
                 assert r["success"], r
-                pre_texts.append("领悟·残韵 → 储备【残韵·反转】（对策飞行/自愈）")
-            elif battle_no == 2 and e.state.energy == 3:
-                r = e.execute_action("pre_battle_action", {"sub_action": "探索", "tier": 1})
-                if r["success"]:
-                    ev_name = r["result"]["event"]
-                    ev_data = e.event_pool.events[ev_name]
-                    last_opt = ev_data["options"][-1]["id"]
-                    e.execute_action("resolve_event", {"event": ev_name, "option_id": last_opt})
-                    pre_texts.append(f"探索1档 → 遭遇事件【{ev_name}】，选择目送远去（遗物【无所求】生效）")
-                else:
-                    pre_texts.append("探索1档")
+                pre_texts.append("领悟·残韵 → 储备【残韵·反转】（对策飞行/自愈/狂暴）")
             elif "后发制人" not in [sp.name for sp in p.spells]:
                 r = e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "spell", "name": "后发制人"})
                 assert r["success"], r
@@ -77,10 +71,6 @@ def run_playthrough(seed=4):
                 r = e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "spell", "name": "生生不息"})
                 assert r["success"], r
                 pre_texts.append("学习·法术 → 学会【生生不息】（再生）")
-            elif "先发制人" not in [sp.name for sp in p.spells]:
-                r = e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "spell", "name": "先发制人"})
-                assert r["success"], r
-                pre_texts.append("学习·法术 → 学会【先发制人】（杀伐）")
             else:
                 spd_bef = p.speed_limit
                 mana_bef = p.mana_limit
@@ -130,14 +120,14 @@ def run_playthrough(seed=4):
             rs = e.execute_action("round_start", {"relic_choices": r_choices})
             b_lines.extend(BR.format_round_start(rnd, rs.get("result", {}), p, e.state.enemies))
 
-            # 玩家出手：严格践行 DM 裁定战术
+            # 玩家行动：严格践行 DM 裁定战术（卖盾保速、集火收割、再生急救）
             act_idx = 1
             while p.actions_used_this_round < p.action_count and [m for m in e.state.enemies if m.is_alive]:
                 targetable = [m for m in e.state.enemies if m.is_alive and e.combat.is_targetable(p, m)]
-
                 res = None
+                
                 if p.has_status("无神"):
-                    if p.current_hp <= 20 and p.current_mana >= 2 and "再生" in p.dao_wen:
+                    if p.current_hp <= 25 and p.current_mana >= 2 and "再生" in p.dao_wen:
                         res = e.execute_action("use_daowen", {
                             "daowen_name": "再生", "x": min(3, p.current_mana), "target": p.name
                         })
@@ -145,17 +135,21 @@ def run_playthrough(seed=4):
                         res = e.execute_action("use_daowen", {
                             "daowen_name": "庇护", "x": min(5, p.current_mana), "target": p.name
                         })
-                elif p.current_hp <= 20 and p.current_mana >= 4 and "再生" in p.dao_wen:
+                elif p.current_hp <= 25 and p.current_mana >= 4 and "再生" in p.dao_wen:
                     res = e.execute_action("use_daowen", {
                         "daowen_name": "再生", "x": 4, "target": p.name
                     })
-                elif p.shield <= 10 and p.current_mana >= 5 and "庇护" in p.dao_wen:
+                elif p.shield <= 6 and p.current_mana >= 5 and "庇护" in p.dao_wen:
                     res = e.execute_action("use_daowen", {
                         "daowen_name": "庇护", "x": 5, "target": p.name
                     })
                 elif targetable and p.current_mana > 0 and "杀伐" in p.dao_wen:
-                    # 优先集火爆发怪/飞行怪
-                    t = next((m for m in targetable if m.name in ("火山猿", "碎岩鸮")), targetable[0])
+                    # 战术集火：优先秒杀非固执、高威胁目标
+                    non_guzhi = [m for m in targetable if not m.has_status("固执")]
+                    pool_t = non_guzhi if non_guzhi else targetable
+                    pool_t.sort(key=lambda x: x.current_hp)
+                    t = pool_t[0]
+
                     rem = max(1, p.action_count - p.actions_used_this_round)
                     cast_x = max(1, p.current_mana // rem)
                     res = e.execute_action("use_daowen", {
@@ -211,17 +205,17 @@ def run_playthrough(seed=4):
         ">",
         "> 格式遵循 README《六、战斗推演格式》与 AI 知识库七步原子时序切片管道：逐回合、逐次出手，禁止概括、跳过或合并结算。本局全程通过 GameEngine.execute_action 逐步手操点选，数值逐条取自引擎真实返回值（无推断、无口胡）。",
         ">",
-        f"> 来源：2026-08-16 真实一阶手操实测。轮回者贾希希（30[血限]/24[法限]/8[速限]，开局遗物·{relic_choice}）进入龙心谷（一阶），践行 DM 极限30血高法限与残韵克制战术。",
+        f"> 来源：2026-08-16 真实一阶手操实测。轮回者贾希希（42[血限]/20[法限]/8[速限]，开局遗物·{relic_choice}）进入龙心谷（一阶），践行 DM 裁定高法限开局与集火承伤战术。",
         ">",
         f"> 共{battles_count}场。结果：{result_text}",
         "",
-        f"【开局】贾希希（30[血限]/24[法限]/8[速限]，出手3次）｜20[碎片]｜遗物·{relic_choice}｜残韵·反转｜道纹·杀伐｜副本·龙心谷",
+        f"【开局】贾希希（42[血限]/20[法限]/8[速限]，出手3次）｜20[碎片]｜遗物·{relic_choice}｜残韵·反转｜道纹·杀伐｜副本·龙心谷",
     ]
 
     return "\n".join(header) + "\n\n" + "\n\n".join(battle_blocks) + "\n"
 
 if __name__ == "__main__":
-    text = run_playthrough(seed=4)
+    text = run_playthrough(seed=42)
     with open("战报.md", "w", encoding="utf-8") as f:
         f.write(text)
     print("Successfully generated 战报.md, total lines:", len(text.splitlines()))
