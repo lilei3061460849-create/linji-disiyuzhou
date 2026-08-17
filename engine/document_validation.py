@@ -32,6 +32,15 @@ AI_DELIVERY_SECTIONS = (
     "(6) 测试",
     "(7) 进度与限制",
 )
+AI_DEDUCTION_HEADING = "推演铁律"
+AI_DEDUCTION_RULE_MARKERS = (
+    "只能取自引擎真实返回值",
+    "AI 无权书写、改写或预写任何结局",
+    "禁止结论先行",
+    "文学创作仅限叙事层",
+    "后台发生的事件不得遗漏，后台没有的事件不得新增",
+    "禁止复制同一段模板叙事",
+)
 STALE_KNOWLEDGE_HEADING = re.compile(
     r"^#{2,6}\s+.*(?:过时|作废|已删除|已修复|已解决|补全进度|追记|"
     r"实测数据|测试通过|问题\s*/\s*方法\s*/\s*结果).*$",
@@ -62,7 +71,7 @@ def _document_anchors(path: Path) -> set[str]:
 
 
 def validate_ai_knowledge_base(path: str | Path) -> dict:
-    """校验 AI 知识库定位、12 条工程准则、交付顺序和废案标题。"""
+    """校验 AI 知识库定位、12 条工程准则、交付顺序、推演铁律和废案标题。"""
     path = Path(path)
     if not path.is_file():
         raise ValueError(f"AI知识库校验失败：文件不存在：{path}")
@@ -102,6 +111,18 @@ def validate_ai_knowledge_base(path: str | Path) -> dict:
             errors.append(
                 "固定交付结构必须完整且顺序为：" + " -> ".join(AI_DELIVERY_SECTIONS)
             )
+
+    deduction = re.search(
+        rf"^###\s+{re.escape(AI_DEDUCTION_HEADING)}\s*$\n(?P<body>.*?)(?=^#{2,3}\s|\Z)",
+        text,
+        re.MULTILINE | re.DOTALL,
+    )
+    if deduction is None:
+        errors.append(f"缺少“### {AI_DEDUCTION_HEADING}”章节")
+    else:
+        for marker in AI_DEDUCTION_RULE_MARKERS:
+            if marker not in deduction.group("body"):
+                errors.append(f"推演铁律缺少关键要求：{marker}")
 
     stale_headings = STALE_KNOWLEDGE_HEADING.findall(text)
     if stale_headings:

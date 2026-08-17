@@ -172,10 +172,9 @@ class CombatEngine:
         if entity.entity_type == "怪物":
             n = 2
             act = self._monster_activated.get(id(entity), set())
-            if "活力" in act and "活力" in entity.dao_wen:
-                n += entity.dao_wen["活力"].x_value
-            else:
-                n += entity.get_status_value("活力")
+            # 活力(2026-08-17全局裁定)：状态盖到所有角色，怪物从自身状态读+X。
+            # 不再走激活集合分支，避免与全局状态双重计数。
+            n += entity.get_status_value("活力")
             if "狂暴" in act or entity.has_status("狂暴"):
                 n += 1
             n -= entity.get_status_value("无力")
@@ -2081,7 +2080,18 @@ class CombatEngine:
             # 洗劫：状态应挂在施法者上——"造成伤害时夺取等量碎片"以施法者为触发主体（与 sim/balance_sim 口径一致）
             self_targeted = name in ("超频", "自食", "飞行", "滑翔", "狂暴", "自愈", "必中", "变形", "洗劫", "固执")
             et = caster if self_targeted else effect_target
-            if name in ("飞行", "滑翔") and self._field_has_zhuiluo():
+            if name == "活力":
+                # 2026-08-17 用户裁定：活力X改为【所有角色出手+X】（全局，变相平衡）。
+                # 状态盖到双方全部存活角色；出手口径各自读取自身活力状态：
+                # 轮回者/朋友/员工走 Entity.action_count，怪物攻击轮数走 _monster_attack_actions。
+                for et_all in self.state.get_all_player_side() + self.state.get_all_enemy_side():
+                    if not et_all.is_alive:
+                        continue
+                    et_all.add_status(StatusEffect(name="活力", remaining_rounds=duration,
+                                                   value=x, source=caster.name))
+                    result["effects"].append({"type": "status_added", "target": et_all.name,
+                                              "status": name, "duration": duration, "value": x})
+            elif name in ("飞行", "滑翔") and self._field_has_zhuiluo():
                 et.is_flying = False
                 et.add_status(StatusEffect(name="坠落", remaining_rounds=1, value=x, source=caster.name))
                 result["effects"].append({"type": "zhuiluo_block_flight", "target": et.name})
@@ -2701,14 +2711,16 @@ class CombatEngine:
         return dest
 
     def _monster_attack_actions(self, m: Entity, activated: set) -> int:
-        """怪物攻击出手数 = 1 + 活力X(若激活) + 狂暴1(若激活)。
+        """怪物攻击出手数 = 1 + 活力X(自身状态) + 狂暴1(若激活)。
 
-        高爆手雷修改的是每轮攻击中的“攻击次数”，不再同时削减攻击出手数。
+        活力2026-08-17全局裁定：发动方把活力状态盖到所有角色，怪物从自身状态读+X；
+        激活集合口径仅保留给狂暴。发动当回合的状态在resolve阶段才落下，
+        prepare在本回合道纹结算前已快照出手数，因此活力自下回合生效的时序不变。
+        高爆手雷修改的是每轮攻击中的"攻击次数"，不再同时削减攻击出手数。
         """
         n = 1
-        if "活力" in activated:
-            n += m.dao_wen["活力"].x_value
-        if "狂暴" in activated:
+        n += m.get_status_value("活力")
+        if "狂暴" in activated or m.has_status("狂暴"):
             n += 1
         return max(0, n)
 
@@ -3094,7 +3106,10 @@ class CombatEngine:
                     continue
 
             attack_actions = choice.get("attack_actions")
-            expected_actions = self._monster_attack_actions(monster, activated_before)
+            # 出手数按prepare快照校验：2026-08-17活力全局裁定后，状态在本actor
+            # 道纹结算中即盖到全场，若此处按当前状态重算会把"自下回合生效"提前到
+            # 本回合，导致按prepare提交必然失败；快照即契约（两处必须一致）。
+            expected_actions = expected[actor_ref]["base_attack_actions"]
             if not isinstance(attack_actions, list) or len(attack_actions) != expected_actions:
                 raise ValueError(f"{monster.name}必须提交{expected_actions}个attack_actions")
             hits_per_action = max(0, monster.attack_count - monster.get_status_value("手雷减攻"))

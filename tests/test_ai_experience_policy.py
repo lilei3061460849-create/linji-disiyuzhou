@@ -19,6 +19,40 @@ def test_ai_knowledge_base_contains_complete_engineering_policy():
     assert result == {"rules": 12, "delivery_sections": 7, "stale_headings": 0}
 
 
+def test_ai_knowledge_base_contains_engine_driven_outcome_rules():
+    """正常路径：推演铁律包含结局引擎驱动与文学创作边界的全部关键要求。"""
+    from engine.document_validation import AI_DEDUCTION_RULE_MARKERS
+
+    text = KNOWLEDGE.read_text(encoding="utf-8")
+    assert all(marker in text for marker in AI_DEDUCTION_RULE_MARKERS)
+    validate_ai_knowledge_base(KNOWLEDGE)
+
+
+def test_partial_missing_outcome_marker_is_rejected(tmp_path):
+    """边界条件：六条结局规则标记仅删除一条，校验器仍必须拒绝。"""
+    text = KNOWLEDGE.read_text(encoding="utf-8")
+    assert "禁止结论先行" in text
+    invalid = text.replace("禁止结论先行，不得先确定全胜叙事再补数值。", "", 1)
+    assert invalid != text
+    path = tmp_path / "AI_EXPERIENCE.md"
+    path.write_text(invalid, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="推演铁律缺少关键要求：禁止结论先行"):
+        validate_ai_knowledge_base(path)
+
+
+def test_missing_deduction_iron_rules_section_is_rejected(tmp_path):
+    """错误输入/非法配置：删除整个推演铁律章节时必须拒绝。"""
+    text = KNOWLEDGE.read_text(encoding="utf-8")
+    assert "### 推演铁律" in text
+    invalid = text.replace("### 推演铁律", "### 已移除章节", 1)
+    path = tmp_path / "AI_EXPERIENCE.md"
+    path.write_text(invalid, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="缺少“### 推演铁律”章节"):
+        validate_ai_knowledge_base(path)
+
+
 def test_delivery_sections_with_all_items_but_wrong_order_are_rejected(tmp_path):
     """边界条件：7段一个不少但顺序互换，校验器仍必须拒绝。"""
     text = KNOWLEDGE.read_text(encoding="utf-8")
