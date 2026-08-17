@@ -33,6 +33,25 @@ from .gamedata import (REGION_EXCLUSIVE_DAOWEN, ORIGINAL_MONSTER_DAOWEN,
                        MONSTER_TRANSFORM_DAOWEN)
 from .dm_rulings import DMRulingsDB, DMRuling, Interrupt
 from .death_book import DeathBookStore, draft_legacy, validate_legacy
+from .handlers.setup import (
+    handle_setup_attributes,
+    handle_setup_choose_region,
+    handle_setup_choose_resonance,
+)
+from .handlers.economy import (
+    handle_deploy_employee,
+    handle_dismiss_employee,
+    handle_repay_debt_employee,
+    handle_pay_employee_wage,
+    handle_suppress_rebellion,
+    handle_resolve_rebellion_battle,
+    handle_appease_rebellion,
+    handle_negotiate_rebellion,
+)
+from .handlers.duel import (
+    handle_activate_duel_relic,
+    handle_resolve_final_duel,
+)
 
 
 # 扭曲都市废墟设施工具库（README正文8件：名→(耐久, 效果文本逐字)）
@@ -985,113 +1004,13 @@ class GameEngine:
     # ==================== 开局行动 ====================
 
     def _action_setup_attributes(self, params: dict) -> dict:
-        """
-        分配初始属性点
-        1属性点 = 6血限 = 1速限 = 2法限
-        """
-        if self.state.player is not None:
-            return {"success": False, "error": "初始属性已经分配，不能重复开局"}
-        blood_points = params.get("blood_points", 0)
-        speed_points = params.get("speed_points", 0)
-        mana_points = params.get("mana_points", 0)
-
-        total = blood_points + speed_points + mana_points
-
-        if total != 25:
-            return {
-                "success": False,
-                "error": f"属性点总和必须为25，当前为{total}",
-                "instruction": "1属性点=6血限=1速限=2法限，请重新分配"
-            }
-
-        blood_limit = blood_points * 6
-        speed_limit = speed_points
-        mana_limit = mana_points * 2
-
-        player = Entity(
-            name=params.get("name", "轮回者"),
-            entity_type=EntityType.REINCARNATOR.value,
-            blood_limit=blood_limit,
-            current_hp=blood_limit,
-            mana_limit=mana_limit,
-            current_mana=mana_limit,
-            speed_limit=speed_limit,
-            current_speed=speed_limit,
-            attack_count=0,
-            attack_power=0,
-        )
-
-        # 开局唯一初始道纹为【杀伐】，没有选择空间，因此随属性分配自动授予。
-        player.dao_wen["杀伐"] = DaoWenInstance(dao_wen=DaoWen(
-            name="杀伐", formula="杀伐X的公式", cost_type="消耗",
-            cost_formula="X", effect_formula="2X伤害"))
-        self.state.player = player
-        self.state.attribute_points = 0
-        self.state.allocated_blood = blood_limit
-        self.state.shards = 20
-
-        return {
-            "success": True,
-            "action": "分配属性点",
-            "result": {
-                "name": player.name,
-                "blood_limit": blood_limit,
-                "mana_limit": mana_limit,
-                "speed_limit": speed_limit,
-                "attack_count": player.attack_count,
-                "attack_power": player.attack_power,
-                "action_count": player.action_count,
-                "shards": 20,
-                "initial_daowen": "杀伐",
-            },
-            "next_actions": ["setup_choose_resonance", "setup_choose_region"],
-            "note": "已自动获得初始道纹【杀伐】；接下来选择残韵与副本。遗物发现需要随机数。"
-        }
+        return handle_setup_attributes(self, params)
 
     def _action_setup_choose_region(self, params: dict) -> dict:
-        """选择副本，并生成开局“随机3件、显式选1件”的遗物发现。"""
-        if self.state.player is None:
-            return {"success": False, "error": "请先分配初始属性"}
-        if "杀伐" not in self.state.player.dao_wen or sum(self.state.resonance.values()) != 1:
-            return {"success": False, "error": "选择副本前必须先获得初始杀伐并选择1种初始残韵"}
-        region = params.get("region", "")
-        valid = ["罪孽都市", "扭曲都市", "龙心谷", "乱葬岗"]
-        if region not in valid:
-            return {"success": False, "error": f"只能从{valid}中选择"}
-        self.state.current_region = region
-        self.state.phase = "pre_battle"
-        self._init_relic_pool()
-        discovery = self._offer_relic_discovery("开局发现")
-        if not discovery.get("success"):
-            return discovery
-        return {
-            "success": True,
-            "action": "选择副本",
-            "result": {"region": region, "relic_choices": discovery["choices"]},
-            "next_actions": ["choose_discovered_relic"],
-            "note": "开局发现已随机列出3件遗物；必须显式选择1件后进入局外行动。",
-        }
+        return handle_setup_choose_region(self, params)
 
     def _action_setup_choose_resonance(self, params: dict) -> dict:
-        """选择初始残韵"""
-        if self.state.player is None:
-            return {"success": False, "error": "请先分配初始属性"}
-        if sum(self.state.resonance.values()) > 0:
-            return {"success": False, "error": "初始残韵已经选择，不能重复选择"}
-        rtype = params.get("resonance_type", "")
-        valid = ["转换", "反转", "曲解"]
-
-        if rtype not in valid:
-            return {"success": False, "error": f"只能从{valid}中选择"}
-
-        self.state.resonance[rtype] = self.state.resonance.get(rtype, 0) + 1
-
-        return {
-            "success": True,
-            "action": "选择残韵",
-            "result": {"resonance_type": rtype, "count": self.state.resonance[rtype]},
-            "next_actions": ["setup_choose_region"]
-        }
+        return handle_setup_choose_resonance(self, params)
 
     # ==================== 局外行动 ====================
 
@@ -1765,93 +1684,16 @@ class GameEngine:
         return None
 
     def _action_suppress_rebellion(self, params: dict) -> dict:
-        """
-        镇压：与所有叛变[员工]开启战斗。
-        直接复用现有战斗体系——把当前state.employees的完整面板(含道纹)原样搬进state.enemies，
-        当作本场"出怪"结果；随后按普通战斗流程(round_start/attack/use_daowen/monster_phase/
-        round_end)进行，[员工]自身的攻击/道纹沿用其原有面板，不做任何强化或削弱。
-        战斗结束后须调用 resolve_rebellion_battle(outcome=victory/defeat) 结算后果。
-        """
-        force = params.get("force", False)
-        err = self._pending_rebellion_error(force)
-        if err:
-            return err
-        if not self.state.employees:
-            return {"success": False, "error": "没有员工可镇压"}
-        rebels = list(self.state.employees)
-        for e in rebels:
-            e.is_deployed = True
-            e.has_retreated = False
-        self.state.employees = []
-        self.state.enemies = rebels
-        self.state.current_round = 0
-        self.combat.reset_monster_activation()
-        self.state.rebellion_in_progress = True
-        self.state.rebellion_active = False
-        self.state.phase = GamePhase.IN_COMBAT.value
-        self.state.combat_subphase = CombatSubphase.AWAIT_ROUND_START.value
-        return {
-            "success": True, "action": "镇压叛变",
-            "result": {
-                "rebels": [e.name for e in rebels],
-                "panels": [{"name": e.name, "attack_count": e.attack_count, "attack_power": e.attack_power,
-                            "blood_limit": e.blood_limit, "current_hp": e.current_hp,
-                            "dao_wen": {k: v.x_value for k, v in e.dao_wen.items()}} for e in rebels],
-            },
-            "instruction": "叛变员工已作为本场敌方(state.enemies)，按普通战斗流程推进；"
-                           "战斗分出胜负后调用 resolve_rebellion_battle(outcome=victory/defeat) 结算",
-        }
+        return handle_suppress_rebellion(self, params)
 
     def _action_resolve_rebellion_battle(self, params: dict) -> dict:
-        """
-        镇压战斗结算：
-        胜利=肃清叛徒并保留财产(不额外掉碎片，也不产生击杀碎片奖励，叛徒清空)；
-        失败或撤退=失去全部碎片，本场仍存活的叛徒携财逃跑(永久离开，不回到员工名单)。
-        """
-        if not self.state.rebellion_in_progress:
-            return {"success": False, "error": "当前没有进行中的员工叛变战斗"}
-        outcome = params.get("outcome", "")
-        if outcome not in ("victory", "defeat"):
-            return {"success": False, "error": "outcome必须是 victory 或 defeat（战斗失败与主动撤退统一按defeat结算）"}
-        escaped = [e.name for e in self.state.enemies if e.is_alive]
-        if outcome == "defeat":
-            self.state.shards = 0
-        self.state.enemies = []
-        self.state.rebellion_in_progress = False
-        self.state.phase = "pre_battle"
-        return {
-            "success": True, "action": "镇压结算",
-            "result": {"outcome": outcome, "shards": self.state.shards,
-                       "escaped_with_loot": escaped if outcome == "defeat" else []},
-        }
+        return handle_resolve_rebellion_battle(self, params)
 
     def _action_appease_rebellion(self, params: dict) -> dict:
-        """让利：本次轮回所有[员工]每场工资+5，叛变平息"""
-        force = params.get("force", False)
-        err = self._pending_rebellion_error(force)
-        if err:
-            return err
-        self.state.wage_bonus += 5
-        self.state.rebellion_active = False
-        return {"success": True, "action": "让利", "result": {"wage_bonus": self.state.wage_bonus}}
+        return handle_appease_rebellion(self, params)
 
     def _action_negotiate_rebellion(self, params: dict) -> dict:
-        """急中生智：给出合理的谈判方案破解叛乱，需要DM裁定方案是否成立"""
-        force = params.get("force", False)
-        err = self._pending_rebellion_error(force)
-        if err:
-            return err
-        proposal = params.get("proposal", "")
-        if not proposal:
-            return {"success": False, "error": "必须给出谈判方案(proposal)，禁止空谈判"}
-        interrupt = self.combat.initiate_negotiation(proposal)
-        self._pending_interrupts.append(interrupt)
-        return {
-            "success": True, "action": "员工叛变·急中生智谈判",
-            "interrupt": interrupt.to_dict(),
-            "instruction": "需要DM裁定谈判方案是否合理；裁定后请调用 appease_rebellion(force=True) 平息叛乱"
-                           "或改用 suppress_rebellion(force=True) 镇压",
-        }
+        return handle_negotiate_rebellion(self, params)
 
     def _pre_battle_lianxin(self, params: dict) -> dict:
         """炼心（龙心谷专属，局外版：已消耗1精力，见_action_pre_battle统一扣减）"""
@@ -2168,63 +2010,10 @@ class GameEngine:
         return log, None
 
     def _action_deploy_employee(self, params: dict) -> dict:
-        """派遣[员工]出战：消耗玩家1出手（现已强制校验回合出手预算）。仅[员工]需要此步骤，[朋友]开局即直接参战。"""
-        employee_ref = params.get("employee_ref", "")
-        emp = None
-        if isinstance(employee_ref, str) and employee_ref.startswith("employee:"):
-            try:
-                emp = self.state.employees[int(employee_ref.split(":", 1)[1])]
-            except (ValueError, IndexError):
-                emp = None
-        if emp is None and params.get("name"):
-            matches = [entity for entity in self.state.employees
-                       if entity.name == params["name"] and entity.is_alive]
-            emp = matches[0] if len(matches) == 1 else None
-        if emp is None or not emp.is_alive:
-            return {"success": False, "error": "employee_ref不是存活员工"}
-        name = emp.name
-        if emp.is_debt_bound:
-            return {"success": False, "error": f"{name}属于还债转化员工，已自动参战，无需派遣"}
-        if emp.has_retreated:
-            return {"success": False, "error": f"{name}本场已【撤退】，无法再次加入本场战斗"}
-        if emp.is_deployed:
-            return {"success": False, "error": f"{name}已在场，无需重复派遣"}
-        if not self.state.player:
-            return {"success": False, "error": "没有玩家"}
-        duel_error = self._check_duel_turn_or_error(self.state.player)
-        if duel_error:
-            return duel_error
-        budget_error = self._consume_action_or_error(self.state.player)
-        if budget_error:
-            return budget_error
-        self._apply_dragon_claw_growth(self.state.player)
-        emp.is_deployed = True
-
-        # current_round 由 round_start() 递增，代表"当前正在进行的回合序号"(1-indexed)；
-        # 若在round_start之前部署(current_round仍为0)，视为从第1回合起参战。
-        emp.deployed_at_round = max(1, self.state.current_round)
-        self._advance_duel_turn()
-        return {
-            "success": True, "action": "派遣员工",
-            "result": {"employee": name, "deployed_at_round": emp.deployed_at_round},
-            "note": "本次派遣已消耗玩家1出手",
-            "state": self.combat._get_combat_state(),
-        }
+        return handle_deploy_employee(self, params)
 
     def _action_dismiss_employee(self, params: dict) -> dict:
-        """解雇[员工]：自由行动，无代价，随时可用；直接移除，计入黑名单，不结算工资、不触发死亡结算"""
-        name = params.get("name", "")
-        emp = next((e for e in self.state.employees if e.name == name), None)
-        if emp is None:
-            return {"success": False, "error": f"找不到员工: {name}"}
-        self.state.employees.remove(emp)
-        self.state.pending_wage_decisions.pop(name, None)
-        self._blacklist_departure("解雇")
-        return {
-            "success": True, "action": "解雇员工",
-            "result": {"employee": name, "blacklist_level": self.state.blacklist_level,
-                       "is_blacklisted": self.state.is_blacklisted},
-        }
+        return handle_dismiss_employee(self, params)
 
     def _compute_pending_wages(self):
         """战终首次结算：为每个"存活+已部署+非还债"的员工计算应付工资，写入 pending_wage_decisions。
@@ -2238,58 +2027,10 @@ class GameEngine:
                 self.state.pending_wage_decisions[e.name] = wage
 
     def _action_repay_debt_employee(self, params: dict) -> dict:
-        """独立还债轨道：一次付清该员工负债后离队；不发工资、不计黑名单。"""
-        name = params.get("name", "")
-        employee = next((e for e in self.state.employees
-                         if e.name == name and e.is_debt_bound), None)
-        if employee is None:
-            return {"success": False, "error": f"找不到还债员工: {name}"}
-        debt = max(0, -employee.shards)
-        if debt <= 0:
-            return {"success": False, "error": f"{name}当前没有未清负债"}
-        if self.state.shards < debt:
-            return {"success": False,
-                    "error": f"必须一次付清{debt}碎片，当前只有{self.state.shards}"}
-        self.state.shards -= debt
-        employee.shards = 0
-        self.state.employees.remove(employee)
-        self.state.pending_wage_decisions.pop(name, None)
-        return {
-            "success": True,
-            "action": "付清还债员工负债",
-            "result": {"employee": name, "paid": debt, "departed": True,
-                       "blacklist_unchanged": self.state.blacklist_level,
-                       "shards": self.state.shards},
-        }
+        return handle_repay_debt_employee(self, params)
 
     def _action_pay_employee_wage(self, params: dict) -> dict:
-        """对战终待决的某个员工工资做出 pay/refuse 决策。拒付=战终触发，强制离队+计入黑名单。
-        决策后不会立即从 pending_wage_decisions 中删除该key，而是标记为None(已决策)，
-        防止同一场战斗多次调用 battle_end 时被重新计费；真正清空发生在 battle_end 成功结算之后。"""
-        name = params.get("name", "")
-        decision = params.get("decision", "")
-        wage = self.state.pending_wage_decisions.get(name)
-        if wage is None:
-            return {"success": False, "error": f"{name}当前没有待决的工资结算（未部署/未存活/已决策过）"}
-        if decision == "pay":
-            if self.state.shards < wage:
-                return {"success": False, "error": f"碎片不足，需要{wage}，当前{self.state.shards}，无法支付，请改为提交 refuse"}
-            self.state.shards -= wage
-            self.state.pending_wage_decisions[name] = None
-            return {"success": True, "action": "支付工资",
-                    "result": {"employee": name, "wage_paid": wage, "shards": self.state.shards}}
-        elif decision == "refuse":
-            self.state.pending_wage_decisions[name] = None
-            emp = next((e for e in self.state.employees if e.name == name), None)
-            if emp is not None:
-                self.state.employees.remove(emp)
-            self._blacklist_departure("拒付工资")
-            return {"success": True, "action": "拒付工资",
-                    "result": {"employee": name, "wage_refused": wage, "departed": True,
-                               "blacklist_level": self.state.blacklist_level,
-                               "is_blacklisted": self.state.is_blacklisted}}
-        else:
-            return {"success": False, "error": "decision必须是 pay 或 refuse"}
+        return handle_pay_employee_wage(self, params)
 
     # ==================== 战斗行动 ====================
 
@@ -3990,85 +3731,10 @@ class GameEngine:
         }
 
     def _action_activate_duel_relic(self, params: dict) -> dict:
-        """死斗开场：持有者自己决定是否发动可选战始遗物。side=player_side/opponent_side。"""
-        if not self.state.in_final_duel:
-            return {"success": False, "error": "当前没有进行中的最终死斗"}
-        side = params.get("side", "")
-        name = params.get("relic", "")
-        use = params.get("use", True)
-        if side not in ("player_side", "opponent_side"):
-            return {"success": False, "error": "side必须是 player_side 或 opponent_side"}
-        pool = self.state.relics if side == "player_side" else self.state.opponent_relics
-        holder = self.state.player if side == "player_side" else next(
-            (e for e in self.state.enemies if e.entity_type == "轮回者" and e.is_alive), None)
-        if holder is None:
-            return {"success": False, "error": "找不到该侧轮回者"}
-        if not any(r.name == name for r in pool):
-            return {"success": False, "error": f"{side}未持有遗物: {name}"}
-        if not use:
-            return {"success": True, "action": f"{holder.name}放弃发动【{name}】",
-                    "result": {"relic": name, "used": False}}
-        if name == "折速法印":
-            try:
-                x = int(params.get("x", 0))
-            except (TypeError, ValueError):
-                return {"success": False, "error": "X必须为整数"}
-            if x < 1 or x > holder.current_speed:
-                return {"success": False, "error": f"折速X须在1~当前速度{holder.current_speed}之间"}
-            holder.current_speed -= x
-            holder.current_mana += 6 * x
-            self.combat.clamp_immortal_body(holder)
-            return {"success": True, "action": f"{holder.name}发动【折速法印】",
-                    "result": {"relic": name, "used": True, "x": x,
-                               "speed": holder.current_speed, "mana": holder.current_mana}}
-        return {"success": False, "error": f"【{name}】不是死斗开场可选遗物，或尚未接线"}
+        return handle_activate_duel_relic(self, params)
 
     def _action_resolve_final_duel(self, params: dict) -> dict:
-        """
-        死斗结算：
-        胜利=先领取本次所属副本的终音法器(见choose_terminal_artifact)，再(连同队伍)被完整封存，
-        成为下一位挑战者的候选人(二阶以上副本未实现，以封存代替"进入下一阶副本")；
-        失败=当前挑战者战败，提交三段式death_book_entry并触发死之传承，本次轮回结束。
-        """
-        if not self.state.in_final_duel:
-            return {"success": False, "error": "当前没有进行中的最终死斗"}
-        outcome = params.get("outcome", "")
-        if outcome not in ("victory", "defeat"):
-            return {"success": False, "error": "outcome必须是 victory 或 defeat"}
-        legacy = params.get("death_book_entry")
-
-        if outcome == "victory":
-            self.state.in_final_duel = False
-            region = self.state.current_region
-            options = self.TERMINAL_ARTIFACTS.get(region, [])
-            if not options:
-                seal = self._finalize_victory_seal()
-                return {"success": True, "action": "死斗结算",
-                        "result": {"outcome": "victory", "seal": seal,
-                                   "instruction": f"{region}没有已定义的终音法器，已直接完整封存"}}
-            self.state.pending_terminal_region = region
-            return {
-                "success": True, "action": "死斗结算",
-                "result": {
-                    "outcome": "victory", "pending_terminal_choice": region,
-                    "options": [{"id": i + 1, "name": n, "effect": e} for i, (n, e) in enumerate(options)],
-                    "instruction": "请调用 choose_terminal_artifact(choice=序号) 领取终音法器后才会完整封存",
-                }}
-        else:
-            player = self.state.player
-            if player is not None:
-                player.current_hp = 0
-                player.is_alive = False
-            self.state.last_death_cause = "duel"
-            if isinstance(legacy, dict):
-                try:
-                    self.state.pending_death_draft = validate_legacy(
-                        legacy, self.state.death_book_capacity)
-                except ValueError:
-                    self.state.pending_death_draft = {}
-            return {"success": True, "action": "死斗结算",
-                    "result": {"outcome": "defeat",
-                               "instruction": "败者失去轮回者身份，已触发死之传承，等待审核后写入死者之书"}}
+        return handle_resolve_final_duel(self, params)
 
     def _finalize_victory_seal(self) -> dict:
         """完整封存当前(胜利的)角色，写入候选人槽位，重置引擎状态等待新轮回者"""
