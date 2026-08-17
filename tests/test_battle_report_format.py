@@ -293,15 +293,40 @@ def test_action_linter_rejects_multi_daowen_bundled_in_single_action():
         BR.validate_battle_report_actions(illegal_snippet)
 
 
-def test_action_linter_rejects_consecutive_actions_in_duel():
-    """错误输入/非法配置：死斗阶段同一阵营连续出手两次必须被校验器拒绝"""
-    illegal_duel_snippet = """## 第8场（死斗）
+def test_action_linter_allows_consecutive_actions_when_opponent_budget_exhausted():
+    """边界条件：当对手出手预算耗尽时，出手多的一方连续执行剩余出手（正文铁律：一方出手耗尽后另一方余下出手继续）必须合法通过"""
+    asymmetric_snippet = """## 第8场（死斗）
+守擂冠军：林渊（42/50/6，出手2次）
+挑战胜者：莫非（42/52/12，出手4次）
 第1回合
 [回始]：
-出手1（莫非）：发动【退化X=2】
-出手2（莫非）：发动【超频X=3】
+出手1（莫非·第1动）：[动作声明] 发动【退化X=2】
+出手2（林渊·第1动）：[动作声明] 发动【加害X=2】
+出手3（莫非·第2动）：[动作声明] 发动【超频X=3】
+出手4（林渊·第2动）：[动作声明] 发动【庇护X=12】
+出手5（莫非·第3动）：[动作声明] 发动【爆裂X=2】
+出手6（莫非·第4动）：[动作声明] 发动【庇护X=10】
 [回终]：
 """
-    with pytest.raises(ValueError, match="违反死斗严格对称交替出手铁律"):
-        BR.validate_battle_report_actions(illegal_duel_snippet)
+    res = BR.validate_battle_report_actions(asymmetric_snippet)
+    assert res["status"] == "compliant"
+    assert res["total_actions_validated"] == 6
+
+
+def test_action_linter_rejects_exceeding_action_budget():
+    """错误输入/非法配置：单回合内出手次数超过速限允许上限必须被校验器拒绝"""
+    exceed_budget_snippet = """## 第8场（死斗）
+守擂冠军：林渊（42/50/6，出手2次）
+挑战胜者：莫非（42/52/12，出手4次）
+第1回合
+[回始]：
+出手1（莫非·第1动）：[动作声明] 发动【退化X=2】
+出手2（林渊·第1动）：[动作声明] 发动【加害X=2】
+出手3（林渊·第2动）：[动作声明] 发动【庇护X=12】
+出手4（林渊·第3动）：[动作声明] 发动【杀伐X=5】
+[回终]：
+"""
+    with pytest.raises(ValueError, match="超过速限允许上限"):
+        BR.validate_battle_report_actions(exceed_budget_snippet)
+
 
