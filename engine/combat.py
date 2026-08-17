@@ -196,16 +196,26 @@ class CombatEngine:
         if redirected_target is not None:
             return self._apply_hostile_damage(redirected_target, amount, damage_type, source)
 
-        # 2. 濒死伤害拦截与保护 (撤退 / 负岳碑 / 断尾求生)
+        # 2. 受到伤害前反噬 (爆裂 Hook)
+        before_res = self.hook_manager.apply_before_damage(target, amount, damage_type, source, self.state)
+        if before_res.get("suppressed"):
+            return {
+                "raw_damage": amount, "shield_absorbed": 0, "actual_damage": 0,
+                "hp_before": target.current_hp, "hp_after": target.current_hp,
+                "blood_limit_before": target.blood_limit, "died": False,
+                "damage_type": damage_type, "baolie_suppress": True,
+            }
+
+        # 3. 濒死伤害拦截与保护 (撤退 / 负岳碑 / 断尾求生)
         mitigation = self.hook_manager.apply_mitigation(target, amount, damage_type, self)
         if mitigation is not None:
             return mitigation
 
-        # 3. 基础扣血
+        # 4. 基础扣血
         detail = target.take_damage(amount, damage_type)
         actual = detail.get("actual_damage", 0)
 
-        # 4. 落地后效果 (逆鳞 / 伤痕 / 寄生 / 负岳索 / 龙族血脉斩杀)
+        # 5. 落地后效果 (逆鳞 / 伤痕 / 寄生 / 负岳索 / 龙族血脉斩杀)
         self.hook_manager.apply_after_damage_pipeline(target, actual, detail.get("shield_absorbed", 0), detail, source, self)
 
         return detail
@@ -683,13 +693,6 @@ class CombatEngine:
             )
             if slogs:
                 result["spell_logs"] = slogs
-            if not attacker.is_alive:
-                damage = 0
-        # 爆裂X（F2，裁定口径：受到伤害【前】反噬）：目标持[爆裂]时攻击者先失去等量生命，
-        # 攻击者因此命零则本次伤害不落地（与 sim/balance_sim hit_monster 同口径：按结算总量反射一次）
-        if target.has_status("爆裂") and attacker is not target and damage > 0:
-            rd = self._raw_hp_loss(attacker, damage)
-            result["baolie_reflect"] = rd
             if not attacker.is_alive:
                 damage = 0
         # 裂变：受到伤害分X次结算；依全局整数规则，每次除法向上取整。
@@ -1685,32 +1688,13 @@ class CombatEngine:
             result["nilin_bonus"] = nilin_bonus
             # 状态层数虽清空，但 status 本身仍按 duration 存在（仅清空计数）
 
-        # ---- 爆裂X（F2，裁定口径：受到伤害【前】反噬）----
-        # 目标持[爆裂]时，攻击者先失去等量生命；攻击者因此命零则本次伤害不落地。
-        # 直接生命损失（_raw_hp_loss）为叶子结算，不会再次触发反噬，无需递归防护。
-        baolie_suppress = False
-        if (target.has_status("爆裂") and caster is not target and not mengbi_blocked
-                and any(k in calc for k in ("target_damage", "total_damage", "aoe_damage", "hp_percent_loss"))):
-            incoming = 0
-            if "target_damage" in calc:
-                incoming = calc["target_damage"]
-            elif "total_damage" in calc:
-                incoming = calc["total_damage"]
-            elif "aoe_damage" in calc:
-                incoming = calc["aoe_damage"]
-            if incoming > 0:
-                rd = self._raw_hp_loss(caster, incoming)
-                result["baolie_reflect"] = rd
-                if not caster.is_alive:
-                    baolie_suppress = True  # 攻击者先死，本次伤害不落地
-
         # ---- 伤害类 ----
         if "target_damage" in calc:
             base = calc["target_damage"] + (nilin_bonus if nilin_bonus else 0)
             base = self._jieli_boost(caster, base)
             if caster.has_status("坠落") and base > 0:
                 base = math.ceil(base / 2)
-            dmg = self._apply_hostile_damage(target, 0 if (mengbi_blocked or baolie_suppress) else base, source=caster)
+            dmg = self._apply_hostile_damage(target, 0 if mengbi_blocked else base, source=caster)
             result["effects"].append({"type": "damage", "target": target.name, **dmg})
             if dmg.get("actual_damage", 0) > 0:
                 caster.damage_dealt_this_round += dmg["actual_damage"]
@@ -1722,7 +1706,7 @@ class CombatEngine:
             for _ in range(hits):
                 if not target.is_alive:
                     break
-                dmg_i = self._apply_hostile_damage(target, 0 if (mengbi_blocked or baolie_suppress) else 1, source=caster)
+                dmg_i = self._apply_hostile_damage(target, 0 if mengbi_blocked else 1, source=caster)
                 total_act += dmg_i.get("actual_damage", 0)
                 total_abs += dmg_i.get("shield_absorbed", 0)
             dmg = {"raw_damage": hits, "actual_damage": total_act, "shield_absorbed": total_abs, "hp_after": target.current_hp, "died": not target.is_alive}
@@ -1736,7 +1720,7 @@ class CombatEngine:
             chunk = self._jieli_boost(caster, calc["total_damage"] + add)
             if caster.has_status("坠落") and chunk > 0:
                 chunk = math.ceil(chunk / 2)
-            dmg = self._apply_hostile_damage(target, 0 if (mengbi_blocked or baolie_suppress) else chunk, source=caster)
+            dmg = self._apply_hostile_damage(target, 0 if mengbi_blocked else chunk, source=caster)
             if add:
                 dmg["nilin_bonus"] = add
             result["effects"].append({"type": "damage", "target": target.name, **dmg})
@@ -1759,7 +1743,7 @@ class CombatEngine:
                     result["sha_qi_erode_atk"] = -1
 
         if "aoe_damage" in calc:
-            a = 0 if (mengbi_blocked or baolie_suppress) else self._jieli_boost(caster, calc["aoe_damage"])
+            a = 0 if mengbi_blocked else self._jieli_boost(caster, calc["aoe_damage"])
             if caster.has_status("坠落") and a > 0:
                 a = math.ceil(a / 2)
             # 逆鳞加成仅作用于首个目标的首段伤害
@@ -1790,7 +1774,7 @@ class CombatEngine:
             if nilin_bonus:
                 result["nilin_bonus"] = nilin_bonus
                 nilin_bonus = 0
-            dmg = self._apply_hostile_damage(target, 0 if baolie_suppress else d, source=caster)
+            dmg = self._apply_hostile_damage(target, d, source=caster)
             result["effects"].append({"type": "pct_damage", "target": target.name, **dmg})
             if dmg.get("actual_damage", 0) > 0:
                 caster.damage_dealt_this_round += dmg["actual_damage"]
