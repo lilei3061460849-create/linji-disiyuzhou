@@ -12,6 +12,7 @@ import math
 import os
 import re
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -248,3 +249,59 @@ def test_report_is_reproducible_with_same_seed():
     a = format_trace.run(region="龙心谷", seed=4, battles=1)
     b = format_trace.run(region="龙心谷", seed=4, battles=1)
     assert a == b, "同一 seed 两次运行结果不一致，战报不可复现"
+
+
+# ---------- 出手合规性程序校验器（新增三类测试） ----------
+
+def test_current_zhanbao_passes_action_linter():
+    """正常路径：当前权威《战报.md》必须通过出手合规性程序化校验（无打包施法、死斗严格交替）"""
+    zhanbao_path = Path(__file__).resolve().parents[1] / "战报.md"
+    assert zhanbao_path.exists(), "战报.md 必须存在"
+    text = zhanbao_path.read_text(encoding="utf-8")
+    res = BR.validate_battle_report_actions(text)
+    assert res["status"] == "compliant"
+    assert res["total_actions_validated"] > 0
+
+
+def test_action_linter_allows_single_daowen_per_action():
+    """边界条件：单回合内每动仅发动1个道纹的合法战报片段必须通过校验"""
+    valid_snippet = """## 第1场
+第1回合
+[回始]：
+出手1（莫非）：发动【庇护X=10】→ 消耗10法力
+出手2（莫非）：发动【杀伐X=5】→ 消耗5法力
+[回终]：
+"""
+    res = BR.validate_battle_report_actions(valid_snippet)
+    assert res["status"] == "compliant"
+    assert res["total_actions_validated"] == 2
+
+
+def test_action_linter_rejects_multi_daowen_bundled_in_single_action():
+    """错误输入/非法配置：单次出手内打包发动多个道纹（如超频+爆裂+庇护）必须被校验器拒绝"""
+    illegal_snippet = """## 第8场（死斗）
+第1回合
+[回始]：
+出手1（莫非）：
+  发动【超频X=3】
+  发动【爆裂X=2】
+  发动【庇护X=10】
+出手2（林渊）：发动【杀伐X=5】
+[回终]：
+"""
+    with pytest.raises(ValueError, match="违规合并发动了多个道纹"):
+        BR.validate_battle_report_actions(illegal_snippet)
+
+
+def test_action_linter_rejects_consecutive_actions_in_duel():
+    """错误输入/非法配置：死斗阶段同一阵营连续出手两次必须被校验器拒绝"""
+    illegal_duel_snippet = """## 第8场（死斗）
+第1回合
+[回始]：
+出手1（莫非）：发动【退化X=2】
+出手2（莫非）：发动【超频X=3】
+[回终]：
+"""
+    with pytest.raises(ValueError, match="违反死斗严格对称交替出手铁律"):
+        BR.validate_battle_report_actions(illegal_duel_snippet)
+

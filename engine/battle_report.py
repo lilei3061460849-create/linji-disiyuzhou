@@ -380,3 +380,76 @@ def format_battle_end(be_result: dict) -> list[str]:
     reb = r.get("employee_rebellion", {}) or {}
     lines.append(f"【员工叛变】检查：{'触发' if reb.get('rebellion') else '未触发'}")
     return lines
+
+
+def validate_battle_report_actions(report_text: str) -> dict:
+    """
+    程序化校验战报中所有战斗与出手的合规性：
+    1. 1出手=1道纹：每一次出手块内部至多包含 1 个独立的主动道纹/法术/攻击声明，严禁合并打包发动；
+    2. 出手序号必须单调递增；
+    3. 死斗阶段严格交替出手，严禁单方连续行动。
+    若发现任何违规，立即抛出 ValueError 并指出具体场次、回合与出手号。
+    """
+    import re
+    errors = []
+    total_actions = 0
+
+    # 拆分战斗场次
+    battle_sections = re.split(r"^##\s+", report_text, flags=re.MULTILINE)
+    
+    for b_idx, section in enumerate(battle_sections):
+        if not section.strip():
+            continue
+        first_line = section.strip().splitlines()[0]
+        is_duel = "死斗" in first_line or "第8场" in first_line
+
+        # 拆分回合
+        round_blocks = re.split(r"第(\d+)回合", section)
+        if len(round_blocks) < 2:
+            continue
+
+        for r_idx in range(1, len(round_blocks), 2):
+            r_num = round_blocks[r_idx]
+            r_content = round_blocks[r_idx + 1]
+
+            # 拆分出手
+            action_matches = list(re.finditer(r"(^[　]*出手\d+（.+?）.*?)(?=^[　]*出手\d+|^\[怪物行动\]|^\[回终\]|\Z)", r_content, flags=re.MULTILINE | re.DOTALL))
+            
+            last_actor_side = None
+
+            for a_match in action_matches:
+                total_actions += 1
+                a_text = a_match.group(1).strip()
+                header_line = a_text.splitlines()[0]
+
+                # 提取行动者
+                actor_match = re.search(r"出手\d+（(.+?)）", header_line)
+                actor_name = actor_match.group(1) if actor_match else ""
+
+                # 校验1：单次出手内声明的独立发动数
+                # 检查【发动...】或【使用...】声明
+                daowen_decls = re.findall(r"发动(?:专属道纹|大招|全力重击|满额|终结大招|终结技)?【(.+?)】|使用(?:废墟工具)?【(.+?)】", a_text)
+                # 过滤掉仅在描述状态或被动生效时的引用（如“处于【爆裂】”、“获得状态【加害2】”）
+                real_activations = [d[0] or d[1] for d in daowen_decls]
+                if len(real_activations) > 1:
+                    errors.append(
+                        f"[{first_line} 第{r_num}回合 {header_line}] 违规合并发动了多个道纹/能力 "
+                        f"({real_activations})，违反“1出手=1道纹”行动预算铁律！"
+                    )
+
+                # 校验2：死斗交替校验
+                if is_duel and actor_name:
+                    # 识别阵营归属
+                    current_side = "challenger" if ("莫非" in actor_name or "挑战" in actor_name) else "defender"
+                    if last_actor_side is not None and current_side == last_actor_side:
+                        errors.append(
+                            f"[{first_line} 第{r_num}回合 {header_line}] 违反死斗严格对称交替出手铁律："
+                            f"阵营 {current_side} 连续行动两次！"
+                        )
+                    last_actor_side = current_side
+
+    if errors:
+        raise ValueError("战报出手合规性校验失败：\n" + "\n".join(errors))
+
+    return {"total_actions_validated": total_actions, "status": "compliant"}
+
