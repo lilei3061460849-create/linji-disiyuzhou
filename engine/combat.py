@@ -194,9 +194,7 @@ class CombatEngine:
         且玩家当前生命>20，则改为玩家流血20，抵消本次伤害并取消本次撤退(目标不掉血也不撤退)。
         龙心谷专属（F2）：嫁祸/背负 重定向、逆鳞层数、伤痕血限衰减在此统一处理。
         """
-        if (source is not None and self.state.side_has(source, "龙族血脉")
-                and target.entity_type != "怪物" and damage_type != "代价"):
-            amount *= 2
+        amount = self.hook_manager.apply_multiplier_adjust(target, amount, damage_type, source, self.state)
         amount = self._incoming_adjust(target, amount, damage_type)
         # ---- F2：嫁祸/背负 伤害重定向（在撤退判定之前） ----
         if damage_type != "代价":

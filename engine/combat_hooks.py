@@ -12,13 +12,16 @@ from .combat_events import CombatEvent, CombatEventType
 class CombatHook(Protocol):
     """战斗生命周期钩子协议"""
 
+    def on_multiplier_adjust(self, target: Any, amount: int, damage_type: str, source: Optional[Any], state: Any) -> int:
+        return amount
+
     def on_incoming_adjust(self, target: Any, amount: int, damage_type: str, source: Optional[Any], state: Any) -> int:
         return amount
 
     def on_before_damage(self, target: Any, amount: int, damage_type: str, attacker: Optional[Any], state: Any) -> Dict[str, Any]:
         return {}
 
-    def on_after_damage(self, target: Any, actual_damage: int, shield_absorbed: int, attacker: Optional[Any], state: Any) -> Dict[str, Any]:
+    def on_after_damage(self, target: Any, actual_damage: int, shield_absorbed: int, detail: Dict[str, Any], attacker: Optional[Any], state: Any) -> Dict[str, Any]:
         return {}
 
     def on_dodge(self, entity: Any, state: Any) -> Dict[str, Any]:
@@ -26,6 +29,15 @@ class CombatHook(Protocol):
 
     def on_round_start(self, entity: Any, is_enemy_turn: bool, state: Any) -> Dict[str, Any]:
         return {}
+
+
+class DragonBloodlineMultiplierHook:
+    """龙族血脉：对非怪物造成伤害翻倍"""
+    def on_multiplier_adjust(self, target: Any, amount: int, damage_type: str, source: Optional[Any], state: Any) -> int:
+        if (source is not None and hasattr(state, "side_has") and state.side_has(source, "龙族血脉")
+                and getattr(target, "entity_type", "") != "怪物" and damage_type != "代价"):
+            return amount * 2
+        return amount
 
 
 class JiahaiHook:
@@ -50,7 +62,6 @@ class BaolieHook:
     def on_before_damage(self, target: Any, amount: int, damage_type: str, attacker: Optional[Any], state: Any) -> Dict[str, Any]:
         if (target and hasattr(target, "has_status") and target.has_status("爆裂")
                 and attacker is not None and attacker is not target and amount > 0 and damage_type != "代价"):
-            # 受到伤害前直接扣除攻击者生命
             prev_hp = attacker.current_hp
             attacker.current_hp = max(0, attacker.current_hp - amount)
             reflect_amt = prev_hp - attacker.current_hp
@@ -96,6 +107,7 @@ class CombatHookManager:
 
     def __init__(self):
         self._hooks: List[Any] = [
+            DragonBloodlineMultiplierHook(),
             JiahaiHook(),
             LonglinHook(),
             BaolieHook(),
@@ -106,6 +118,12 @@ class CombatHookManager:
     def register_hook(self, hook: Any) -> None:
         if hook not in self._hooks:
             self._hooks.append(hook)
+
+    def apply_multiplier_adjust(self, target: Any, amount: int, damage_type: str, source: Optional[Any], state: Any) -> int:
+        for hook in self._hooks:
+            if hasattr(hook, "on_multiplier_adjust"):
+                amount = hook.on_multiplier_adjust(target, amount, damage_type, source, state)
+        return amount
 
     def apply_incoming_adjust(self, target: Any, amount: int, damage_type: str, source: Optional[Any], state: Any) -> int:
         for hook in self._hooks:
@@ -122,11 +140,11 @@ class CombatHookManager:
                     result.update(res)
         return result
 
-    def apply_after_damage(self, target: Any, actual_damage: int, shield_absorbed: int, attacker: Optional[Any], state: Any) -> Dict[str, Any]:
+    def apply_after_damage(self, target: Any, actual_damage: int, shield_absorbed: int, detail: Dict[str, Any], attacker: Optional[Any], state: Any) -> Dict[str, Any]:
         result = {}
         for hook in self._hooks:
             if hasattr(hook, "on_after_damage"):
-                res = hook.on_after_damage(target, actual_damage, shield_absorbed, attacker, state)
+                res = hook.on_after_damage(target, actual_damage, shield_absorbed, detail, attacker, state)
                 if res:
                     result.update(res)
         return result
