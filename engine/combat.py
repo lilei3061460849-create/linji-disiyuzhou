@@ -186,127 +186,28 @@ class CombatEngine:
                               damage_type: str = DamageType.NORMAL.value,
                               source: Optional[Entity] = None) -> dict:
         """
-        对target造成外部/敌对伤害的统一入口（供攻击与道纹伤害调用；自身【代价】不走此入口）。
-        撤退（任意[朋友]/[员工]即将受到足以使当前命零的伤害时触发）：
-        判定须扣除格挡后的实际伤害是否≥当前生命（格挡足够抵消则不触发撤退，也不触发死亡）；
-        触发后本次伤害清零、目标保留当前生命与格挡、标记has_retreated退出本场战斗。
-        负岳碑(终音法器)：若玩家已通过 declare_fuyuebei_toll(name) 预先声明保护该目标，
-        且玩家当前生命>20，则改为玩家流血20，抵消本次伤害并取消本次撤退(目标不掉血也不撤退)。
-        龙心谷专属（F2）：嫁祸/背负 重定向、逆鳞层数、伤痕血限衰减在此统一处理。
+        对target造成外部/敌对伤害的统一入口（通过 HookManager 全生命周期调度）。
         """
         amount = self.hook_manager.apply_multiplier_adjust(target, amount, damage_type, source, self.state)
         amount = self._incoming_adjust(target, amount, damage_type)
-        # ---- F2：嫁祸/背负 伤害重定向（在撤退判定之前） ----
-        if damage_type != "代价":
-            # 嫁祸：自身下X次受伤由目标承担
-            if hasattr(target, "_jiahuo_left") and getattr(target, "_jiahuo_left", 0) > 0:
-                j_target = getattr(target, "_jiahuo_target", None)
-                # 消耗一次
-                target._jiahuo_left -= 1
-                if target._jiahuo_left <= 0:
-                    target.status_effects = [s for s in target.status_effects if s.name != "嫁祸"]
-                    if hasattr(target, "_jiahuo_target"):
-                        delattr(target, "_jiahuo_target")
-                if j_target and j_target.is_alive:
-                    return self._apply_hostile_damage(j_target, amount, damage_type, source)
-                # 目标已死则不再重定向，继续按原目标结算
-            # 背负：目标的伤害由背负者承担（遍历全场找背负者）
-            for ent in self.state.get_all_player_side() + self.state.get_all_enemy_side():
-                if ent is target:
-                    continue
-                if hasattr(ent, "_beifu_left") and getattr(ent, "_beifu_left", 0) > 0:
-                    if getattr(ent, "_beifu_target", None) is target:
-                        ent._beifu_left -= 1
-                        if ent._beifu_left <= 0:
-                            # 清理被背负标记
-                            target.status_effects = [s for s in target.status_effects if s.name != "被背负"]
-                            if hasattr(ent, "_beifu_target"):
-                                delattr(ent, "_beifu_target")
-                        return self._apply_hostile_damage(ent, amount, damage_type, source)
 
-        if damage_type != "代价" and target.entity_type in ("朋友", "员工") and not target.has_retreated and target.is_alive:
-            remaining_after_shield = max(0, amount - target.shield) if amount > 0 else 0
-            if remaining_after_shield >= target.current_hp and target.current_hp > 0:
-                player = self.state.player
-                target_ref = next((ref for ref, entity in self._combat_entity_refs().items()
-                                   if entity is target), "")
-                if (target_ref in self.state.fuyuebei_declared and "负岳碑" in self.state.artifacts_owned
-                        and player is not None and player.current_hp > 20):
-                    self.state.fuyuebei_declared.remove(target_ref)
-                    share_map = self.state.event_modifiers.get("fuyuebei_cost_share_refs", {})
-                    payment = self.pay_numeric_cost(
-                        player, "流血", 20,
-                        cost_share_target_ref=share_map.pop(target_ref, ""))
-                    return {
-                        "raw_damage": amount, "shield_absorbed": 0, "actual_damage": 0,
-                        "hp_before": target.current_hp, "hp_after": target.current_hp,
-                        "blood_limit_before": target.blood_limit, "died": False,
-                        "damage_type": damage_type, "retreated": False,
-                        "fuyuebei_toll_paid": 20, "fuyuebei_cost": payment,
-                    }
-                target.has_retreated = True
-                return {
-                    "raw_damage": amount, "shield_absorbed": 0, "actual_damage": 0,
-                    "hp_before": target.current_hp, "hp_after": target.current_hp,
-                    "blood_limit_before": target.blood_limit, "died": False,
-                    "damage_type": damage_type, "retreated": True,
-                }
-        # 断尾求生（真龙之心遗物）：玩家即将命零时，若已预声明愿意牺牲的龙族遗物，移除该遗物抵消本次伤害
-        if (damage_type != "代价" and target.is_alive
-                and self.state.side_has(target, "断尾求生") and self.state.side_tail_declared(target)):
-            remaining_after_shield = max(0, amount - target.shield) if amount > 0 else 0
-            if remaining_after_shield >= target.current_hp and target.current_hp > 0:
-                sacrificed = self.state.side_tail_declared(target)
-                self.state.remove_side_relic(target, sacrificed)
-                self.state.clear_side_tail_declared(target)
-                return {
-                    "raw_damage": amount, "shield_absorbed": 0, "actual_damage": 0,
-                    "hp_before": target.current_hp, "hp_after": target.current_hp,
-                    "blood_limit_before": target.blood_limit, "died": False,
-                    "damage_type": damage_type, "tail_sacrificed": sacrificed,
-                }
+        # 1. 伤害重定向 (嫁祸 / 背负)
+        redirected_target = self.hook_manager.apply_redirection(target, damage_type, self.state)
+        if redirected_target is not None:
+            return self._apply_hostile_damage(redirected_target, amount, damage_type, source)
+
+        # 2. 濒死伤害拦截与保护 (撤退 / 负岳碑 / 断尾求生)
+        mitigation = self.hook_manager.apply_mitigation(target, amount, damage_type, self)
+        if mitigation is not None:
+            return mitigation
+
+        # 3. 基础扣血
         detail = target.take_damage(amount, damage_type)
-        # ---- F2：逆鳞层数、伤痕血限 ----
         actual = detail.get("actual_damage", 0)
-        if actual > 0:
-            if target.has_status("逆鳞"):
-                target._nilin = getattr(target, "_nilin", 0) + actual
-                detail["nilin_stack_added"] = actual
-                detail["nilin_total"] = target._nilin
-            if target.has_status("伤痕"):
-                xv = target.get_status_value("伤痕")
-                delta = max(1, target.blood_limit - xv) - target.blood_limit
-                self._battle_delta(
-                    target, "blood_limit", delta, "伤痕", EffectPolarity.DEBUFF.value)
-                target.current_hp = min(target.current_hp, target.blood_limit)
-                if target.current_hp <= 0:
-                    target.is_alive = False
-                    detail["died"] = True
-                    detail["hp_after"] = 0
-                detail["shanghen_blood_loss"] = xv
-            if target.has_status("寄生"):
-                xv = target.get_status_value("寄生")
-                drain = math.ceil(actual * 20 * xv / 100)
-                src_name = next((s.source for s in target.status_effects
-                                 if s.name == "寄生" and not s.is_expired), "")
-                healer = self._find_named(src_name)
-                if healer is not None and healer.is_alive and drain > 0 and not healer.has_status("坏死"):
-                    h = self.state.apply_heal(healer, drain)
-                    detail["jisheng_heal"] = {"healer": healer.name, **h}
-                    cancer = self.check_cancer(healer)
-                    if cancer:
-                        detail["jisheng_cancer"] = cancer
-            if target.has_status("负岳索"):
-                target.status_effects = [status for status in target.status_effects if status.name != "负岳索"]
-                healed = self.state.apply_heal(target, actual)
-                detail["fuyuesuo_heal"] = healed
-            if (source is not None and self.state.side_has(source, "龙族血脉")
-                    and target.entity_type == "怪物" and target.is_alive):
-                target.current_hp = 0
-                target.is_alive = False
-                detail.update({"died": True, "hp_after": 0, "dragon_bloodline_kill": True})
-            if detail.get("died"):
-                self._on_entity_death(target)
+
+        # 4. 落地后效果 (逆鳞 / 伤痕 / 寄生 / 负岳索 / 龙族血脉斩杀)
+        self.hook_manager.apply_after_damage_pipeline(target, actual, detail.get("shield_absorbed", 0), detail, source, self)
+
         return detail
 
     def _on_entity_death(self, entity: Entity) -> None:

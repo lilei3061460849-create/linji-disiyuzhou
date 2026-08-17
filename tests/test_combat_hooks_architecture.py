@@ -121,3 +121,39 @@ def test_hooks_handles_none_and_invalid_state():
     # 负数伤害调整
     neg_adj = manager.apply_incoming_adjust(None, -5, "普通", None, None)
     assert neg_adj == -5
+
+
+def test_damage_redirection_and_mitigation_hooks():
+    """正常路径与边界：嫁祸重定向、背负援护、朋友濒死撤退保护"""
+    manager = CombatHookManager()
+    
+    # 1. 嫁祸重定向
+    victim = Entity(name="受害者", blood_limit=30, current_hp=30, entity_type="轮回者")
+    scapegoat = Entity(name="替罪羊", blood_limit=30, current_hp=30, entity_type="轮回者")
+    victim._jiahuo_left = 1
+    victim._jiahuo_target = scapegoat
+    victim.add_status(StatusEffect(name="嫁祸", value=1, remaining_rounds=-1, source="test"))
+
+    target_redirected = manager.apply_redirection(victim, "普通", None)
+    assert target_redirected is scapegoat
+    assert victim._jiahuo_left == 0
+    assert not victim.has_status("嫁祸")
+
+    # 2. 撤退保护
+    friend = Entity(name="小跟班", blood_limit=20, current_hp=5, entity_type="朋友")
+    class MockCombat:
+        def __init__(self):
+            self.state = MockState()
+            self.state.player = Entity(name="玩家", blood_limit=42, current_hp=42, entity_type="轮回者")
+            self.state.artifacts_owned = []
+            self.state.fuyuebei_declared = set()
+            self.state.event_modifiers = {}
+        def _combat_entity_refs(self):
+            return {"friend:0": friend}
+    mock_c = MockCombat()
+    mit_res = manager.apply_mitigation(friend, 15, "普通", mock_c)
+    assert mit_res is not None
+    assert mit_res["retreated"] is True
+    assert friend.has_retreated is True
+    assert friend.current_hp == 5, "撤退后生命完好保留"
+

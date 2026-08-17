@@ -102,6 +102,146 @@ class ShouyedengHook:
         return {}
 
 
+class DamageRedirectionHook:
+    """嫁祸与背负：伤害重定向逻辑"""
+    def find_redirection_target(self, target: Any, damage_type: str, state: Any) -> Optional[Any]:
+        if damage_type == "代价" or not target:
+            return None
+        # 嫁祸：自身下X次受伤由目标承担
+        if hasattr(target, "_jiahuo_left") and getattr(target, "_jiahuo_left", 0) > 0:
+            j_target = getattr(target, "_jiahuo_target", None)
+            target._jiahuo_left -= 1
+            if target._jiahuo_left <= 0:
+                target.status_effects = [s for s in target.status_effects if s.name != "嫁祸"]
+                if hasattr(target, "_jiahuo_target"):
+                    delattr(target, "_jiahuo_target")
+            if j_target and getattr(j_target, "is_alive", False):
+                return j_target
+
+        # 背负：目标的伤害由背负者承担
+        all_entities = (state.get_all_player_side() + state.get_all_enemy_side()) if hasattr(state, "get_all_player_side") else []
+        for ent in all_entities:
+            if ent is target:
+                continue
+            if hasattr(ent, "_beifu_left") and getattr(ent, "_beifu_left", 0) > 0:
+                if getattr(ent, "_beifu_target", None) is target:
+                    ent._beifu_left -= 1
+                    if ent._beifu_left <= 0:
+                        target.status_effects = [s for s in target.status_effects if s.name != "被背负"]
+                        if hasattr(ent, "_beifu_target"):
+                            delattr(ent, "_beifu_target")
+                    return ent
+        return None
+
+
+class LethalMitigationHook:
+    """撤退、负岳碑与断尾求生：濒死保护与伤害吸收"""
+    def check_mitigation(self, target: Any, amount: int, damage_type: str, combat: Any) -> Optional[Dict[str, Any]]:
+        if damage_type == "代价" or not target or not getattr(target, "is_alive", False):
+            return None
+
+        # 1. 朋友/员工撤退与负岳碑
+        if getattr(target, "entity_type", "") in ("朋友", "员工") and not getattr(target, "has_retreated", False):
+            remaining_after_shield = max(0, amount - getattr(target, "shield", 0)) if amount > 0 else 0
+            if remaining_after_shield >= target.current_hp and target.current_hp > 0:
+                player = combat.state.player
+                target_ref = next((ref for ref, entity in combat._combat_entity_refs().items() if entity is target), "")
+                if (target_ref in combat.state.fuyuebei_declared and "负岳碑" in combat.state.artifacts_owned
+                        and player is not None and player.current_hp > 20):
+                    combat.state.fuyuebei_declared.remove(target_ref)
+                    share_map = combat.state.event_modifiers.get("fuyuebei_cost_share_refs", {})
+                    payment = combat.pay_numeric_cost(
+                        player, "流血", 20,
+                        cost_share_target_ref=share_map.pop(target_ref, ""))
+                    return {
+                        "raw_damage": amount, "shield_absorbed": 0, "actual_damage": 0,
+                        "hp_before": target.current_hp, "hp_after": target.current_hp,
+                        "blood_limit_before": target.blood_limit, "died": False,
+                        "damage_type": damage_type, "retreated": False,
+                        "fuyuebei_toll_paid": 20, "fuyuebei_cost": payment,
+                    }
+                target.has_retreated = True
+                return {
+                    "raw_damage": amount, "shield_absorbed": 0, "actual_damage": 0,
+                    "hp_before": target.current_hp, "hp_after": target.current_hp,
+                    "blood_limit_before": target.blood_limit, "died": False,
+                    "damage_type": damage_type, "retreated": True,
+                }
+
+        # 2. 断尾求生
+        if (getattr(target, "is_alive", False) and combat.state.side_has(target, "断尾求生")
+                and combat.state.side_tail_declared(target)):
+            remaining_after_shield = max(0, amount - getattr(target, "shield", 0)) if amount > 0 else 0
+            if remaining_after_shield >= target.current_hp and target.current_hp > 0:
+                sacrificed = combat.state.side_tail_declared(target)
+                combat.state.remove_side_relic(target, sacrificed)
+                combat.state.clear_side_tail_declared(target)
+                return {
+                    "raw_damage": amount, "shield_absorbed": 0, "actual_damage": 0,
+                    "hp_before": target.current_hp, "hp_after": target.current_hp,
+                    "blood_limit_before": target.blood_limit, "died": False,
+                    "damage_type": damage_type, "tail_sacrificed": sacrificed,
+                }
+        return None
+
+
+class AfterDamageEffectsHook:
+    """逆鳞、伤痕、寄生、负岳索与龙族血脉斩杀：伤害落地后综合处理"""
+    def on_after_damage(self, target: Any, actual_damage: int, shield_absorbed: int, detail: Dict[str, Any], attacker: Optional[Any], combat: Any) -> Dict[str, Any]:
+        if actual_damage <= 0 or not target:
+            return {}
+
+        res = {}
+        # 逆鳞层数
+        if hasattr(target, "has_status") and target.has_status("逆鳞"):
+            target._nilin = getattr(target, "_nilin", 0) + actual_damage
+            detail["nilin_stack_added"] = actual_damage
+            detail["nilin_total"] = target._nilin
+
+        # 伤痕扣血限
+        if hasattr(target, "has_status") and target.has_status("伤痕"):
+            xv = target.get_status_value("伤痕") or 0
+            delta = max(1, target.blood_limit - xv) - target.blood_limit
+            combat._battle_delta(target, "blood_limit", delta, "伤痕", "debuff")
+            target.current_hp = min(target.current_hp, target.blood_limit)
+            if target.current_hp <= 0:
+                target.is_alive = False
+                detail["died"] = True
+                detail["hp_after"] = 0
+            detail["shanghen_blood_loss"] = xv
+
+        # 寄生吸血
+        if hasattr(target, "has_status") and target.has_status("寄生"):
+            xv = target.get_status_value("寄生") or 0
+            drain = math.ceil(actual_damage * 20 * xv / 100)
+            src_name = next((s.source for s in getattr(target, "status_effects", []) if s.name == "寄生" and not getattr(s, "is_expired", False)), "")
+            healer = combat._find_named(src_name)
+            if healer is not None and getattr(healer, "is_alive", False) and drain > 0 and not healer.has_status("坏死"):
+                h = combat.state.apply_heal(healer, drain)
+                detail["jisheng_heal"] = {"healer": healer.name, **h}
+                cancer = combat.check_cancer(healer)
+                if cancer:
+                    detail["jisheng_cancer"] = cancer
+
+        # 负岳索首击自愈
+        if hasattr(target, "has_status") and target.has_status("负岳索"):
+            target.status_effects = [s for s in target.status_effects if s.name != "负岳索"]
+            healed = combat.state.apply_heal(target, actual_damage)
+            detail["fuyuesuo_heal"] = healed
+
+        # 龙族血脉攻击怪物直接命零
+        if (attacker is not None and hasattr(combat.state, "side_has") and combat.state.side_has(attacker, "龙族血脉")
+                and getattr(target, "entity_type", "") == "怪物" and getattr(target, "is_alive", False)):
+            target.current_hp = 0
+            target.is_alive = False
+            detail.update({"died": True, "hp_after": 0, "dragon_bloodline_kill": True})
+
+        if detail.get("died"):
+            combat._on_entity_death(target)
+
+        return res
+
+
 class CombatHookManager:
     """钩子管理器：集中注册与生命周期分发"""
 
@@ -113,11 +253,26 @@ class CombatHookManager:
             BaolieHook(),
             BifenglingHook(),
             ShouyedengHook(),
+            DamageRedirectionHook(),
+            LethalMitigationHook(),
+            AfterDamageEffectsHook(),
         ]
+        self.redirection_hook = DamageRedirectionHook()
+        self.mitigation_hook = LethalMitigationHook()
+        self.after_damage_hook = AfterDamageEffectsHook()
 
     def register_hook(self, hook: Any) -> None:
         if hook not in self._hooks:
             self._hooks.append(hook)
+
+    def apply_redirection(self, target: Any, damage_type: str, state: Any) -> Optional[Any]:
+        return self.redirection_hook.find_redirection_target(target, damage_type, state)
+
+    def apply_mitigation(self, target: Any, amount: int, damage_type: str, combat: Any) -> Optional[Dict[str, Any]]:
+        return self.mitigation_hook.check_mitigation(target, amount, damage_type, combat)
+
+    def apply_after_damage_pipeline(self, target: Any, actual_damage: int, shield_absorbed: int, detail: Dict[str, Any], attacker: Optional[Any], combat: Any) -> Dict[str, Any]:
+        return self.after_damage_hook.on_after_damage(target, actual_damage, shield_absorbed, detail, attacker, combat)
 
     def apply_multiplier_adjust(self, target: Any, amount: int, damage_type: str, source: Optional[Any], state: Any) -> int:
         for hook in self._hooks:
