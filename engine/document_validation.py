@@ -40,6 +40,20 @@ AI_DEDUCTION_RULE_MARKERS = (
     "文学创作仅限叙事层",
     "后台发生的事件不得遗漏，后台没有的事件不得新增",
     "禁止复制同一段模板叙事",
+    "后台数据集中置于该场末尾",
+)
+AI_WRITING_HEADING = "行文十诫"
+AI_WRITING_RULE_MARKERS = (
+    "严禁杜撰",
+    "先否定后肯定",
+    "三词并列",
+    "高频词不得置于句首",
+    "句尾不得拔高",
+    "长短句混用",
+    "一篇至多一两处",
+    "毫无疑问",
+    "堵死反驳",
+    "假精确",
 )
 STALE_KNOWLEDGE_HEADING = re.compile(
     r"^#{2,6}\s+.*(?:过时|作废|已删除|已修复|已解决|补全进度|追记|"
@@ -71,7 +85,7 @@ def _document_anchors(path: Path) -> set[str]:
 
 
 def validate_ai_knowledge_base(path: str | Path) -> dict:
-    """校验 AI 知识库定位、12 条工程准则、交付顺序、推演铁律和废案标题。"""
+    """校验 AI 知识库定位、12 条工程准则、交付顺序、推演铁律、行文十诫和废案标题。"""
     path = Path(path)
     if not path.is_file():
         raise ValueError(f"AI知识库校验失败：文件不存在：{path}")
@@ -123,6 +137,18 @@ def validate_ai_knowledge_base(path: str | Path) -> dict:
         for marker in AI_DEDUCTION_RULE_MARKERS:
             if marker not in deduction.group("body"):
                 errors.append(f"推演铁律缺少关键要求：{marker}")
+
+    writing = re.search(
+        rf"^###\s+{re.escape(AI_WRITING_HEADING)}\s*$\n(?P<body>.*?)(?=^#{2,3}\s|\Z)",
+        text,
+        re.MULTILINE | re.DOTALL,
+    )
+    if writing is None:
+        errors.append(f"缺少“### {AI_WRITING_HEADING}”章节")
+    else:
+        for marker in AI_WRITING_RULE_MARKERS:
+            if marker not in writing.group("body"):
+                errors.append(f"行文十诫缺少关键要求：{marker}")
 
     stale_headings = STALE_KNOWLEDGE_HEADING.findall(text)
     if stale_headings:

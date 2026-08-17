@@ -83,3 +83,37 @@ def test_missing_mapping_and_resolved_history_heading_are_rejected(tmp_path):
     message = str(exc.value)
     assert "缺少 AI 知识库到 AI_EXPERIENCE.md 的明确映射" in message
     assert "知识库仍含过期/已解决流水账标题" in message
+
+
+def test_ai_knowledge_base_contains_writing_ten_commandments():
+    """正常路径：行文十诫完整存在且校验通过。"""
+    from engine.document_validation import AI_WRITING_RULE_MARKERS
+
+    text = KNOWLEDGE.read_text(encoding="utf-8")
+    assert all(marker in text for marker in AI_WRITING_RULE_MARKERS)
+    validate_ai_knowledge_base(KNOWLEDGE)
+
+
+def test_partial_missing_writing_marker_is_rejected(tmp_path):
+    """边界条件：十诫仅删一条（金句节制）也必须拒绝。"""
+    text = KNOWLEDGE.read_text(encoding="utf-8")
+    assert "7. 金句节制，一篇至多一两处。" in text
+    invalid = text.replace("7. 金句节制，一篇至多一两处。", "", 1)
+    assert invalid != text
+    path = tmp_path / "AI_EXPERIENCE.md"
+    path.write_text(invalid, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="行文十诫缺少关键要求：一篇至多一两处"):
+        validate_ai_knowledge_base(path)
+
+
+def test_missing_writing_section_is_rejected(tmp_path):
+    """错误输入/非法配置：删除整个行文十诫章节必须拒绝。"""
+    text = KNOWLEDGE.read_text(encoding="utf-8")
+    assert "### 行文十诫" in text
+    invalid = text.replace("### 行文十诫", "### 已移除章节", 1)
+    path = tmp_path / "AI_EXPERIENCE.md"
+    path.write_text(invalid, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="缺少“### 行文十诫”章节"):
+        validate_ai_knowledge_base(path)
