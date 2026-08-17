@@ -31,10 +31,10 @@ def panel_cost(hp, ap, ac, hp_div):
     return math.ceil(hp / hp_div) + 2 * ap + ac * ac
 
 def audit():
-    monsters = bs.parse_monsters()
-    assert len(monsters) == 36, f"应解析36只池怪，实{len(monsters)}"
+    monsters = [m for m in bs.parse_monsters() if m.get("region") in REGION_EXCLUSIVE]
+    assert len(monsters) == 36, f"应解析36只一阶池怪，实{len(monsters)}"
     BUDGET = 60
-    print(f"解析到36只副本池怪，预算BUDGET={BUDGET}（⌈血限/6⌉+2×攻击力+攻击次数²）\n")
+    print(f"解析到36只一阶副本池怪，预算BUDGET={BUDGET}（⌈血限/6⌉+2×攻击力+攻击次数²）\n")
     print(f"{'怪物':<8}{'副本':<6}{'面板':<13}{'道纹(数量/总值)':<22}"
           f"{'成本':<6}{'判定':<8}{'道纹审查'}")
     all_viol = []

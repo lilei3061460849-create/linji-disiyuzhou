@@ -1,0 +1,87 @@
+"""
+最终死斗与冠冕处理器（Duel & Crown Handler）
+负责死斗遗物激活、死斗胜负结算、终音法器选择与角色封存。
+"""
+from __future__ import annotations
+import os
+import json
+from typing import Any, Dict, Optional
+from ..death_book import validate_legacy
+
+
+def handle_activate_duel_relic(engine: Any, params: Dict[str, Any]) -> Dict[str, Any]:
+    """死斗开场可选遗物激活"""
+    if not engine.state.in_final_duel:
+        return {"success": False, "error": "当前没有进行中的最终死斗"}
+    side = params.get("side", "")
+    name = params.get("relic", "")
+    use = params.get("use", True)
+    if side not in ("player_side", "opponent_side"):
+        return {"success": False, "error": "side必须是 player_side 或 opponent_side"}
+    pool = engine.state.relics if side == "player_side" else engine.state.opponent_relics
+    holder = engine.state.player if side == "player_side" else next(
+        (e for e in engine.state.enemies if e.entity_type == "轮回者" and e.is_alive), None)
+    if holder is None:
+        return {"success": False, "error": "找不到该侧轮回者"}
+    if not any(r.name == name for r in pool):
+        return {"success": False, "error": f"{side}未持有遗物: {name}"}
+    if not use:
+        return {"success": True, "action": f"{holder.name}放弃发动【{name}】",
+                "result": {"relic": name, "used": False}}
+    if name == "折速法印":
+        try:
+            x = int(params.get("x", 0))
+        except (TypeError, ValueError):
+            return {"success": False, "error": "X必须为整数"}
+        if x < 1 or x > holder.current_speed:
+            return {"success": False, "error": f"折速X须在1~当前速度{holder.current_speed}之间"}
+        holder.current_speed -= x
+        holder.current_mana += 6 * x
+        engine.combat.clamp_immortal_body(holder)
+        return {"success": True, "action": f"{holder.name}发动【折速法印】",
+                "result": {"relic": name, "used": True, "x": x,
+                           "speed": holder.current_speed, "mana": holder.current_mana}}
+    return {"success": False, "error": f"【{name}】不是死斗开场可选遗物，或尚未接线"}
+
+
+def handle_resolve_final_duel(engine: Any, params: Dict[str, Any]) -> Dict[str, Any]:
+    """死斗胜负结算"""
+    if not engine.state.in_final_duel:
+        return {"success": False, "error": "当前没有进行中的最终死斗"}
+    outcome = params.get("outcome", "")
+    if outcome not in ("victory", "defeat"):
+        return {"success": False, "error": "outcome必须是 victory 或 defeat"}
+    legacy = params.get("death_book_entry")
+
+    if outcome == "victory":
+        engine.state.in_final_duel = False
+        region = engine.state.current_region
+        options = engine.TERMINAL_ARTIFACTS.get(region, [])
+        if not options:
+            seal = engine._finalize_victory_seal()
+            return {"success": True, "action": "死斗结算",
+                    "result": {"outcome": "victory", "seal": seal,
+                               "instruction": f"{region}没有已定义的终音法器，已直接完整封存"}}
+        engine.state.pending_terminal_region = region
+        return {
+            "success": True, "action": "死斗结算",
+            "result": {
+                "outcome": "victory", "pending_terminal_choice": region,
+                "options": [{"id": i + 1, "name": n, "effect": e} for i, (n, e) in enumerate(options)],
+                "instruction": "请调用 choose_terminal_artifact(choice=序号) 领取终音法器后才会完整封存",
+            }}
+    else:
+        player = engine.state.player
+        if player is not None:
+            player.current_hp = 0
+            player.is_alive = False
+        engine.state.last_death_cause = "duel"
+        if isinstance(legacy, dict):
+            try:
+                engine.state.pending_death_draft = validate_legacy(
+                    legacy, engine.state.death_book_capacity)
+            except ValueError:
+                engine.state.pending_death_draft = {}
+        return {"success": True, "action": "死斗结算",
+                "result": {"outcome": "defeat",
+                           "instruction": "败者失去轮回者身份，已触发死之传承，等待审核后写入死者之书"}}

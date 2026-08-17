@@ -46,19 +46,19 @@ def _monster(engine, name="靶怪", hp=100, atk=3, ap=6):
 
 
 def test_manqian_happy_blocks_when_budget_le_x():
-    """正常：目标出手 3，缓慢 3 生效，本回合无法出手。"""
+    """正常：目标出手 <=2，缓慢生效，挂上持续X回合状态，本回合无法出手。"""
     engine = _engine("manqian_ok")
     p = engine.state.player
     _give(p, "缓慢")
     foe = Entity(name="对手", entity_type="轮回者", blood_limit=80, current_hp=80,
-                 mana_limit=20, current_mana=20, speed_limit=8, current_speed=8)
+                 mana_limit=20, current_mana=20, speed_limit=6, current_speed=6)
     foe.dao_wen["杀伐"] = DaoWenInstance(
         DaoWen(name="杀伐", formula="", cost_type="消耗", cost_formula="X", effect_formula=""))
     engine.state.enemies.append(foe)
     engine.execute_action("round_start", {})
-    assert foe.action_count == 3
+    assert foe.action_count == 2
     mana = p.current_mana
-    r = engine.execute_action("use_daowen", {"daowen_name": "缓慢", "x": 3, "target": foe.name})
+    r = engine.execute_action("use_daowen", {"daowen_name": "缓慢", "x": 2, "target": foe.name})
     assert r["success"], r
     assert r["calculation"]["effective"] is True
     assert foe.has_status("缓慢")
@@ -70,7 +70,7 @@ def test_manqian_happy_blocks_when_budget_le_x():
 
 
 def test_manqian_boundary_not_effective_and_monster_budget():
-    """边界：出手 3 用缓慢 2 不生效；怪物按 2 手不算攻击次数。"""
+    """边界：出手 3 (>2) 缓慢不生效；怪物按 2 手 (<=2) 缓慢生效。"""
     engine = _engine("manqian_bound")
     p = engine.state.player
     _give(p, "缓慢")
@@ -78,6 +78,7 @@ def test_manqian_boundary_not_effective_and_monster_budget():
                  speed_limit=8, current_speed=8)
     engine.state.enemies.append(foe)
     engine.execute_action("round_start", {})
+    assert foe.action_count == 3
     r = engine.execute_action("use_daowen", {"daowen_name": "缓慢", "x": 2, "target": foe.name})
     assert r["success"]
     assert r["calculation"]["effective"] is False
@@ -88,9 +89,7 @@ def test_manqian_boundary_not_effective_and_monster_budget():
     assert DaoWenEngine.single_round_action_count(fish) == 2
     calc = DaoWenEngine.resolve("缓慢", 1, target=fish)
     assert calc["target_action_count"] == 2
-    assert calc["effective"] is False
-    calc2 = DaoWenEngine.resolve("缓慢", 2, target=fish)
-    assert calc2["effective"] is True
+    assert calc["effective"] is True
 
 
 def test_manqian_invalid_and_ziyang_zishi_shuaibai():
@@ -225,7 +224,7 @@ def test_huaxiang_zhuiluo_dingxing_wushen_xuanyun():
         "actor": foe.name, "daowen_name": "杀伐", "x": 2, "target": p.name,
     })
     assert r["success"], r
-    assert foe.current_hp == hp_f - 6  # 无神改打自己(杀伐3X)
+    assert foe.current_hp == hp_f - 4  # 无神改打自己(杀伐2X)
 
     m.add_status(StatusEffect(name="眩晕", remaining_rounds=2, value=1, source="测"))
     assert engine.combat.can_act(m) is False

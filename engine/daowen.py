@@ -44,10 +44,10 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_shaifa(x: int, target: Entity = None) -> dict:
-        """杀伐X：消耗X。对[目标]造成3X点伤害"""
+        """杀伐X：消耗X。对[目标]造成2X点伤害"""
         target_name = target.name if target is not None else "未选定目标"
         cost = x
-        damage = 3 * x
+        damage = 2 * x
         return {
             "dao_wen": "杀伐",
             "x": x,
@@ -60,10 +60,10 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_zaisheng(x: int, target: Entity = None) -> dict:
-        """再生X：消耗X。为[目标]回复6X点生命"""
+        """再生X：消耗X。为[目标]回复3X点生命"""
         target_name = target.name if target is not None else "未选定目标"
         cost = x
-        heal = 6 * x
+        heal = 3 * x
         return {
             "dao_wen": "再生",
             "x": x,
@@ -75,17 +75,18 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_bihu(x: int, target: Entity = None) -> dict:
-        """庇护X：消耗X。使[目标]获得4X点格挡"""
+        """庇护X：消耗X。使[目标]获得2X点格挡（可抵消等量伤害），持续1"""
         target_name = target.name if target is not None else "未选定目标"
         cost = x
-        shield = 4 * x
+        shield = 2 * x
         return {
             "dao_wen": "庇护",
             "x": x,
             "cost_type": CostType.MANA.value,
             "cost": cost,
             "target_shield": shield,
-            "summary": f"消耗{x}法力，使{target_name}获得{shield}点格挡"
+            "duration": 1,
+            "summary": f"消耗{x}法力，使{target_name}获得{shield}点格挡（可抵消等量伤害），持续1回合"
         }
     
     @staticmethod
@@ -103,10 +104,10 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_xuezhai(x: int, target: Entity = None) -> dict:
-        """血债X：代价：流血X。对[目标]造成2X次1点伤害"""
+        """血债X：代价：流血X。选择[目标] X 次，每次对其造成 1 点伤害"""
         target_name = target.name if target is not None else "未选定目标"
         cost_hp = x
-        hits = 2 * x
+        hits = x
         damage_per_hit = 1
         return {
             "dao_wen": "血债",
@@ -116,20 +117,20 @@ class DaoWenEngine:
             "hits": hits,
             "damage_per_hit": damage_per_hit,
             "total_damage": hits * damage_per_hit,
-            "summary": f"流血{x}，对{target_name}造成{hits}次{damage_per_hit}点伤害"
+            "summary": f"流血{x}，选择{target_name} {hits}次，每次造成{damage_per_hit}点伤害"
         }
     
     @staticmethod
     def calculate_chongji(x: int) -> dict:
-        """冲击X：消耗X。对所有敌对[目标]造成2X点伤害"""
+        """冲击X：消耗3X。对所有敌对[目标]造成5X点伤害"""
         return {
             "dao_wen": "冲击",
             "x": x,
             "cost_type": CostType.MANA.value,
-            "cost": x,
-            "aoe_damage": 2 * x,
+            "cost": 3 * x,
+            "aoe_damage": 5 * x,
             "target": "all_enemies",
-            "summary": f"消耗{x}法力，对所有敌方造成{2 * x}点伤害"
+            "summary": f"消耗{3 * x}法力，对所有敌方造成{5 * x}点伤害"
         }
     
     @staticmethod
@@ -165,10 +166,10 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_zengzhi(x: int, target: Entity = None) -> dict:
-        """增殖X：消耗5X。[目标]血限+2X"""
+        """增殖X：消耗X。［目标］［血限］+X"""
         target_name = target.name if target is not None else "未选定目标"
-        cost = 5 * x
-        increase = 2 * x
+        cost = x
+        increase = x
         return {
             "dao_wen": "增殖",
             "x": x,
@@ -232,10 +233,10 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_manqian(x: int, target: Entity = None, target_action_count: int = 0) -> dict:
-        """缓慢X：代价：冷却X。本回合若[目标]单轮出手次数≤X，则其无法出手"""
+        """缓慢X：代价：冷却X。若[目标]出手次数≤2，则其无法出手，持续X"""
         target_name = target.name if target is not None else "未选定目标"
         cost = x
-        effective = target_action_count <= x
+        effective = target_action_count <= 2
         return {
             "dao_wen": "缓慢",
             "x": x,
@@ -243,7 +244,8 @@ class DaoWenEngine:
             "cost": cost,
             "target_action_count": target_action_count,
             "effective": effective,
-            "summary": f"冷却{cost}，{'生效' if effective else '未生效'}（{target_name}出手{target_action_count}次，阈值{x}）"
+            "duration": x,
+            "summary": f"冷却{cost}，{'生效' if effective else '未生效'}（{target_name}出手{target_action_count}次，<=2判定，持续{x}回合）"
         }
     
     # ---- 怪物原始道纹 ----

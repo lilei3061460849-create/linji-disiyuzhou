@@ -150,15 +150,15 @@ def _render_effect(eff: dict) -> str:
         amt = eff.get("actual_heal", eff.get("amount"))
         before, after = eff.get("hp_before"), eff.get("hp_after")
         if before is not None and after is not None:
-            return f"{who} [回复]{amt}，生命{before}→{after}"
-        return f"{who} [回复]{amt}"
+            return f"{who} [回复]{amt}点生命（生命由{before}升至{after}）"
+        return f"{who} [回复]{amt}点生命"
     if t == "heal_pct":
         who = eff.get("entity") or eff.get("target")
         amt = eff.get("actual_heal", eff.get("amount"))
         before, after = eff.get("hp_before"), eff.get("hp_after")
         if before is not None and after is not None:
-            return f"{who} [回复]{amt}（百分比），生命{before}→{after}"
-        return f"{who} [回复]{amt}"
+            return f"{who} [回复]{amt}点生命（百分比，生命由{before}升至{after}）"
+        return f"{who} [回复]{amt}点生命（百分比）"
     if t == "aoe_damage":
         return (f"{eff.get('target')} 受到范围伤害{eff.get('actual_damage')}"
                 f"（格挡吸收{eff.get('shield_absorbed', 0)}）"
@@ -199,6 +199,41 @@ def _render_effect(eff: dict) -> str:
         return f"{eff.get('target')} 攻击力被固定为 {eff.get('value', 1)}"
     if t == "relic":
         return f"遗物：{eff.get('log')}"
+    if t == "huoxue_heal":
+        return f"{eff.get('entity') or eff.get('target')} 触发【活血】：[回复]{eff.get('actual', eff.get('heal'))}点生命"
+    if t == "status_expired":
+        expired = "、".join(eff.get("expired_effects", []))
+        return f"{eff.get('entity') or eff.get('target')} 状态到期清除：{expired}"
+    if t == "extra_attack_ready":
+        return f"{eff.get('entity') or eff.get('target')} 【狂暴】生效：本回合获得额外一轮攻击"
+    if t == "duming":
+        return f"【赌命】结算：{eff.get('target')} 失去 {eff.get('damage')} 点生命"
+    if t == "duming_register":
+        return f"{eff.get('caster')} 登记【赌命X={eff.get('x')}】"
+    if t == "self_heal":
+        return f"{eff.get('entity')} 触发【自愈】：[回复]{eff.get('actual', eff.get('heal'))}点生命"
+    if t == "decay_damage":
+        return f"{eff.get('entity')} 触发【衰败】：失去{eff.get('damage')}点生命"
+    if t == "bizhong":
+        return f"{eff.get('target')} 获得【必中】{eff.get('count')}次"
+    if t == "mengbi":
+        return f"{eff.get('target')} 获得【蒙蔽】{eff.get('count')}次"
+    if t == "manqian":
+        eff_txt = "生效（本回合无法出手）" if eff.get("effective") else "未生效"
+        return f"【缓慢】结算：目标{eff.get('target')}（出手{eff.get('action_count')}次）{eff_txt}"
+    if t == "zhuiluo":
+        targets = "、".join(eff.get("targets", []))
+        return f"【坠落】生效：击落飞行目标 {targets}"
+    if t == "jiahuo":
+        return f"{eff.get('caster')} 发动【嫁祸】：受到伤害由 {eff.get('target')} 承担"
+    if t == "beifu":
+        return f"{eff.get('caster')} 发动【背负】：替 {eff.get('target')} 承担受到伤害"
+    if t == "shanghen":
+        return f"{eff.get('target')} 获得【伤痕】"
+    if t == "nilin_setup":
+        return f"{eff.get('target')} 获得【逆鳞】"
+    if t == "self_attack":
+        return f"{eff.get('target')} 受【自残】影响攻击自身"
     # 兜底：仍以中文陈述，不直接抛出英文字段名（战报要求全程中文）
     _CN = {"entity": "对象", "target": "目标", "source": "来源", "amount": "数值",
            "value": "数值", "actual_damage": "实际伤害", "raw_damage": "原始伤害",
@@ -229,6 +264,10 @@ def format_player_action(idx: int, actor_name: str, result: dict) -> list[str]:
     else:
         head += result.get("action", "行动")
     lines.append(head)
+    dodge_info = result.get("dodge") or (result.get("execution", {}) or {}).get("dodged")
+    if dodge_info and dodge_info.get("fully_dodged"):
+        for d in dodge_info.get("dodged_names", []):
+            lines.append(f"  → 目标{d.get('name')}声明消耗1点速度闪避，成功（速度→{d.get('speed_after')}），判定与结算完全失效")
     for ef in (result.get("execution", {}) or {}).get("effects", []) or []:
         if ef.get("type") == "damage":
             # 没有格挡时不写"格挡吸收0"，纯属噪音
@@ -262,7 +301,8 @@ def format_monster_hits(start_idx: int, details: list) -> list[str]:
             idx += 1
             continue
         if "daowen_activated" in d:
-            lines.append(f"出手{idx}（{d.get('monster')}）：发动【{d['daowen_activated']}】")
+            x_str = f"X={d.get('x')}" if d.get("x") else ""
+            lines.append(f"出手{idx}（{d.get('monster')}）：发动【{d['daowen_activated']}{x_str}】")
             idx += 1
             continue
         if "collapsed" in d:
@@ -340,3 +380,110 @@ def format_battle_end(be_result: dict) -> list[str]:
     reb = r.get("employee_rebellion", {}) or {}
     lines.append(f"【员工叛变】检查：{'触发' if reb.get('rebellion') else '未触发'}")
     return lines
+
+
+def validate_battle_report_actions(report_text: str) -> dict:
+    """
+    程序化校验战报中所有战斗与出手的合规性：
+    1. 1出手=1道纹：每一次出手块内部至多包含 1 个独立的主动道纹/法术/能力声明，严禁合并打包发动；
+    2. 行动预算：单回合内各角色出手次数严格受限（轮回者为速限/3向上取整），严禁超额出手；
+    3. 死斗交替与余量规则：在对手仍有剩余出手预算时，双方严格 1 对 1 对称交替；当一方出手耗尽后，另一方可连续执行剩余出手（符合正文铁律）；
+    4. 出手序号必须单调递增。
+    若发现任何违规，立即抛出 ValueError 并指出具体场次、回合与出手号。
+    """
+    import re
+    import math
+    errors = []
+    total_actions = 0
+
+    # 拆分战斗场次
+    battle_sections = re.split(r"^##\s+", report_text, flags=re.MULTILINE)
+    
+    for b_idx, section in enumerate(battle_sections):
+        if not section.strip():
+            continue
+        first_line = section.strip().splitlines()[0]
+        is_duel = "死斗" in first_line or "第8场" in first_line
+
+        # 提取双方初始速限与出手次数预算
+        challenger_budget = 4
+        defender_budget = 4
+        
+        ch_match = re.search(r"挑战[^\n]*?出手(\d+)次", section) or re.search(r"挑战[^\n]*?/\d+/(\d+)", section)
+        if ch_match:
+            val = int(ch_match.group(1))
+            challenger_budget = val if val <= 6 else math.ceil(val / 3)
+            
+        def_match = re.search(r"守擂[^\n]*?出手(\d+)次", section) or re.search(r"守擂[^\n]*?/\d+/(\d+)", section)
+        if def_match:
+            val = int(def_match.group(1))
+            defender_budget = val if val <= 6 else math.ceil(val / 3)
+
+        # 拆分回合
+        round_blocks = re.split(r"第(\d+)回合", section)
+        if len(round_blocks) < 2:
+            continue
+
+        for r_idx in range(1, len(round_blocks), 2):
+            r_num = round_blocks[r_idx]
+            r_content = round_blocks[r_idx + 1]
+
+            action_matches = list(re.finditer(r"(^[　]*出手\d+（.+?）.*?)(?=^[　]*出手\d+|^\[怪物行动\]|^\[回终\]|\Z)", r_content, flags=re.MULTILINE | re.DOTALL))
+            
+            last_actor_side = None
+            side_action_counts = {"challenger": 0, "defender": 0}
+
+            for a_match in action_matches:
+                total_actions += 1
+                a_text = a_match.group(1).strip()
+                header_line = a_text.splitlines()[0]
+
+                actor_match = re.search(r"出手\d+（(.+?)）", header_line)
+                actor_name = actor_match.group(1) if actor_match else ""
+
+                # 校验1：单次出手内声明的独立主动发动数
+                daowen_decls = re.findall(r"\[动作声明\].*?发动(?:专属道纹|大招|全力重击|满额|终结大招|终结技)?【(.+?)】|\[动作声明\].*?使用(?:废墟工具)?【(.+?)】|(?<!被动)发动(?:专属道纹|大招|全力重击|满额|终结大招|终结技)?【(.+?)】", a_text)
+                real_activations = []
+                for d in daowen_decls:
+                    act = d[0] or d[1] or d[2]
+                    if act and act not in real_activations:
+                        real_activations.append(act)
+
+                clean_activations = [x for x in real_activations if "处于" not in x and "获得状态" not in x and "触发" not in x and "被动" not in x]
+                if len(clean_activations) > 1:
+                    errors.append(
+                        f"[{first_line} 第{r_num}回合 {header_line}] 违规合并发动了多个道纹/能力 "
+                        f"({clean_activations})，违反“1出手=1道纹”行动预算铁律！"
+                    )
+
+                # 校验2：死斗交替与预算校验（智能支持对手耗尽时余量继续）
+                if is_duel and actor_name:
+                    current_side = "challenger" if ("莫非" in actor_name or "挑战" in actor_name) else "defender"
+                    other_side = "defender" if current_side == "challenger" else "challenger"
+                    side_action_counts[current_side] += 1
+
+                    # 检查预算是否超限
+                    cur_budget = challenger_budget if current_side == "challenger" else defender_budget
+                    if side_action_counts[current_side] > cur_budget:
+                        errors.append(
+                            f"[{first_line} 第{r_num}回合 {header_line}] {actor_name} 本回合出手次数 "
+                            f"({side_action_counts[current_side]}) 超过速限允许上限 ({cur_budget})！"
+                        )
+
+                    # 检查交替合法性：仅当对手阵营仍有剩余行动预算时，才强制交替
+                    other_budget = defender_budget if current_side == "challenger" else challenger_budget
+                    other_has_remaining = side_action_counts[other_side] < other_budget
+                    
+                    if last_actor_side == current_side and other_has_remaining:
+                        errors.append(
+                            f"[{first_line} 第{r_num}回合 {header_line}] 违反死斗交替出手铁律："
+                            f"在对手仍有剩余出手 ({side_action_counts[other_side]}/{other_budget}) 时，"
+                            f"阵营 {current_side} 连续行动！"
+                        )
+                    last_actor_side = current_side
+
+    if errors:
+        raise ValueError("战报出手合规性校验失败：\n" + "\n".join(errors))
+
+    return {"total_actions_validated": total_actions, "status": "compliant"}
+

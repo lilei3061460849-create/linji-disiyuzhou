@@ -184,10 +184,10 @@ def test_r42_normal_explicit_spell_x_resolves():
     state, player, enemy, combat = _spell_combat()
     result = combat.resolve_attack(enemy, player, spell_choices={
         "before": {"后发制人": {"use": True, "cycles": [[
-            {"x": 2, "target_ref": "player:0", "dodge": False},
+            {"x": 4, "target_ref": "player:0", "dodge": False},
         ]]}}, "after": {},
     })
-    assert result["spell_logs"] and player.current_hp == 60 and player.current_mana == 18
+    assert result["spell_logs"] and player.current_hp == 60 and player.current_mana == 16
 
 
 def test_r42_boundary_explicit_decline_takes_damage():
@@ -222,7 +222,7 @@ def test_r42_target_daowen_trigger_is_explicit(tmp_path):
         ]}}},
     })
     assert result["success"] and result["trigger_spell_logs"]
-    assert player.current_hp == 97 and opponent.current_hp == 97
+    assert player.current_hp == 98 and opponent.current_hp == 98
 
 
 # R43：确定性事件

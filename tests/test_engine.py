@@ -86,26 +86,26 @@ def test_daowen_calculations():
     target = Entity(name="目标", entity_type=EntityType.MONSTER.value, blood_limit=100, current_hp=100)
     result = DaoWenEngine.resolve("杀伐", 3, target=target)
     assert result["cost"] == 3, f"杀伐消耗错误: {result['cost']}"
-    assert result["target_damage"] == 9, f"杀伐伤害错误: {result['target_damage']}"
-    print("  ✓ 杀伐X=3: 消耗3，伤害9")
+    assert result["target_damage"] == 6, f"杀伐伤害错误: {result['target_damage']}"
+    print("  ✓ 杀伐X=3: 消耗3，伤害6")
     
     # 测试庇护
     result = DaoWenEngine.resolve("庇护", 5, target=target)
     assert result["cost"] == 5
-    assert result["target_shield"] == 20
-    print("  ✓ 庇护X=5: 消耗5，格挡20")
+    assert result["target_shield"] == 10
+    print("  ✓ 庇护X=5: 消耗5，格挡10")
     
     # 测试再生
     result = DaoWenEngine.resolve("再生", 4, target=target)
     assert result["cost"] == 4
-    assert result["target_heal"] == 24
-    print("  ✓ 再生X=4: 消耗4，回复24")
+    assert result["target_heal"] == 12
+    print("  ✓ 再生X=4: 消耗4，回复12")
     
     # 测试冲击
     result = DaoWenEngine.resolve("冲击", 2)
-    assert result["cost"] == 2
-    assert result["aoe_damage"] == 4
-    print("  ✓ 冲击X=2: 消耗2，AOE伤害4")
+    assert result["cost"] == 6
+    assert result["aoe_damage"] == 10
+    print("  ✓ 冲击X=2: 消耗6，AOE伤害10")
     
     # 测试锐利
     result = DaoWenEngine.resolve("锐利", 3, target=target)
@@ -326,12 +326,13 @@ def test_full_flow():
     assert engine.state.player.speed_limit == speed_before + 1, "修行应+1速限"
     print(f"  ✓ 修行：速限{speed_before}→{engine.state.player.speed_limit}")
     
+    heal_amt = 8 + engine.state.rest_heal_bonus
     result = engine.execute_action("pre_battle_action", {
         "sub_action": "休整", "tier": 1,
-        "heal_allocations": [{"target_ref": "player:0", "amount": 8}],
+        "heal_allocations": [{"target_ref": "player:0", "amount": heal_amt}],
     })
     assert result["success"]
-    print(f"  ✓ 休整：8点恢复量")
+    print(f"  ✓ 休整：{heal_amt}点恢复量")
     
     assert engine.state.energy == 0, f"精力应为0，实际{engine.state.energy}"
     print(f"  ✓ 精力耗尽")
@@ -366,7 +367,7 @@ def test_full_flow():
         "dodge": False, "blood_shadow": False, "trigger_spell_choices": {},
     })
     assert result["success"]
-    print(f"  ✓ 发动杀伐X=5: 对千手蜈蚣造成15伤害")
+    print(f"  ✓ 发动杀伐X=5: 对千手蜈蚣造成10伤害")
     
     print("  ✓ 完整流程测试通过")
 
@@ -486,14 +487,16 @@ def test_out_of_combat_actions():
     player = engine.state.player
 
     # 休整：先扣血再休整，验证回血
-    player.current_hp = 30
+    player.current_hp = 20
+    heal_amt2 = 24 + engine.state.rest_heal_bonus
     r = engine.execute_action("pre_battle_action", {
         "sub_action": "休整", "tier": 2,
-        "heal_allocations": [{"target_ref": "player:0", "amount": 24}],
+        "heal_allocations": [{"target_ref": "player:0", "amount": heal_amt2}],
     })
     assert r["success"], f"休整失败: {r}"
-    assert player.current_hp == 54, f"休整2档应回24→54，实{player.current_hp}"
-    print(f"  ✓ 休整2档：HP30→{player.current_hp}")
+    expected_hp = min(player.blood_limit, 20 + heal_amt2)
+    assert player.current_hp == expected_hp, f"休整2档应回{heal_amt2}→{expected_hp}，实{player.current_hp}"
+    print(f"  ✓ 休整2档：HP20→{player.current_hp}")
 
     # 学习道纹·庇护
     r = engine.execute_action("pre_battle_action", {"sub_action":"学习","sub":"daowen","name":"庇护"})
@@ -620,7 +623,7 @@ def test_spells_trigger():
     combat = CombatEngine(st, DiceEngine())
     r = combat.resolve_attack(m, st.player, spell_choices={
         "before": {"后发制人": {"use": True, "cycles": [[
-            {"x": 5, "target_ref": "player:0", "dodge": False},
+            {"x": 10, "target_ref": "player:0", "dodge": False},
         ]]}},
         "after": {},
     })
@@ -1241,7 +1244,6 @@ def run_all_tests():
         test_dice,
         test_dm_rulings,
         test_full_flow,
-        test_monster_fixed_actions,
         test_sculpture_and_proliferation,
         test_daowen_effects_wired,
         test_out_of_combat_actions,
@@ -1255,7 +1257,7 @@ def run_all_tests():
         test_relics_five_more,
         test_evolution_yuanchu,
         test_evolution_plight_listing,
-        test_mutation_sustain_billing,
+        test_original_daowen_only_charges_mutation_on_activation,
         test_consumable_mutation_wiring,
         test_twisted_tool_library,
     ]
