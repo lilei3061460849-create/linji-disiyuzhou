@@ -12,6 +12,8 @@ from .dice import DiceEngine
 from .enums import (ActionPhase, TriggerTiming, InterruptType, DamageType,
                     EffectScope, EffectPolarity, CostType)
 from .dm_rulings import Interrupt
+from .combat_events import CombatEvent, CombatEventType
+from .combat_hooks import CombatHookManager
 
 
 class CombatEngine:
@@ -34,6 +36,8 @@ class CombatEngine:
         self.state = state
         self.dice = dice
         self.combat_log: list[dict] = []  # 完整战斗日志
+        self.hook_manager = CombatHookManager()
+        self.event_stream: list[CombatEvent] = []
         # 三相残韵盘本场消耗的残韵
         self._sanxiang_consumed = ""
         # 残韵改写：entity_id → {源道纹: 变化后道纹}，只改下一次发动结算，不改持有
@@ -100,13 +104,9 @@ class CombatEngine:
         return logs
 
     def _incoming_adjust(self, target: Entity, amount: int, damage_type: str = "普通") -> int:
-        if amount <= 0 or damage_type == "代价":
+        if amount <= 0 or damage_type == "代价" or target is None:
             return amount
-        if target.has_status("加害"):
-            amount += target.get_status_value("加害")
-        if target.has_status("龙鳞"):
-            amount = max(0, amount - target.get_status_value("龙鳞"))
-        return amount
+        return self.hook_manager.apply_incoming_adjust(target, amount, damage_type, None, self.state)
 
     def _gain_speed(self, entity: Entity, amount: int) -> int:
         if amount <= 0:
