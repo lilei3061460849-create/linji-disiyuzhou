@@ -278,9 +278,8 @@ class DaoWenEngine:
         }
     
     @staticmethod
-    def calculate_huoli(x: int, target: Entity = None) -> dict:
-        """活力X：代价：异变5X。使[目标]出手次数+X，持续∞"""
-        target_name = target.name if target is not None else "未选定目标"
+    def calculate_huoli(x: int) -> dict:
+        """活力X：代价：异变5X。所有角色出手次数+X，持续∞（2026-08-17裁定：全局生效，变相平衡）"""
         return {
             "dao_wen": "活力",
             "x": x,
@@ -288,7 +287,7 @@ class DaoWenEngine:
             "cost_mutation": 5 * x,
             "action_boost": x,
             "duration": -1,
-            "summary": f"异变+{5*x}，使{target_name}出手次数+{x}，永久"
+            "summary": f"异变+{5*x}，所有角色出手次数+{x}，永久"
         }
     
     @staticmethod
