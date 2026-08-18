@@ -96,8 +96,11 @@ class ShouyedengHook:
         if not entity or not hasattr(state, "side_has") or not state.side_has(entity, "守夜灯"):
             return {}
         if is_enemy_turn:
+            if getattr(entity, "_shouyedeng_granted", 0):
+                return {}
             mana_to_gain = math.ceil(entity.mana_limit * 0.5)
             entity.current_mana += mana_to_gain
+            entity._shouyedeng_granted = mana_to_gain
             return {"mana_gained": mana_to_gain, "for_reaction": True}
         return {}
 

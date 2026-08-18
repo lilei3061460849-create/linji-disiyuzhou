@@ -318,6 +318,9 @@ def test_r44_normal_guard_lamp_ceil(tmp_path):
     player.mana_limit = 5; player.current_mana = 0
     engine.state.relics = [Relic("守夜灯", "")]
     engine.combat.round_start({})
+    assert player.current_mana == 5
+    granted = engine.combat._grant_shouyedeng(player)
+    assert granted["gained"] == 3
     assert player.current_mana == 8
 
 

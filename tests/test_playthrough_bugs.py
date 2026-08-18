@@ -191,9 +191,10 @@ def test_zhesu_and_blood_pact_overflow_survives_first_round_start():
     p = engine.state.player
     assert p.mana_limit == 14 and p.speed_limit == 8
     engine.state.relics.append(Relic(name="折速法印", effect="[战始]可疲惫X获得6X法力"))
-    engine.execute_action("battle_start", {"relic_choices": {
-        "折速法印": {"use": True, "x": 4},
-    }})
+    zhesu = {"折速法印": {"use": True, "x": 4}}
+    if any(r.name == "回锋刀" for r in engine.state.relics):
+        zhesu["回锋刀"] = {"enemy_index": 0}
+    engine.execute_action("battle_start", {"relic_choices": zhesu})
     assert p.current_mana == 24, f"战始清零后显式折速4，+24法力，应24，实{p.current_mana}"
     assert p.current_speed == 4
     engine.execute_action("round_start", {})
@@ -238,31 +239,39 @@ def test_no_zhesu_means_no_bonus_mana():
 
 
 def test_shouyedeng_bonus_survives_round_start_after_refill():
-    """正常路径：守夜灯在回始获得法限之后再加法限50%。"""
+    """正常路径：守夜灯不在回始叠加；[敌回始]加法限50%，[敌回终]只清该法力。"""
     engine = _engine("lamp_happy")
     p = engine.state.player
     engine.state.relics.append(Relic(name="守夜灯", effect="[敌回始]获得等同于[法限]50%的法力"))
     engine.execute_action("battle_start", {})
     engine.execute_action("round_start", {})
-    assert p.current_mana == 21, f"回始应0+14+7=21，实{p.current_mana}"
+    assert p.current_mana == 14, f"回始只获得法限14，实{p.current_mana}"
+    granted = engine.combat._grant_shouyedeng(p)
+    assert granted and granted["gained"] == 7
+    assert p.current_mana == 21
+    cleared = engine.combat._clear_shouyedeng(p)
+    assert cleared and p.current_mana == 14
     finish_round(engine)
     assert p.current_mana == 0
     engine.execute_action("round_start", {})
-    assert p.current_mana == 21, f"回终清空后再回始，守夜灯仍应叠到21，实{p.current_mana}"
+    assert p.current_mana == 14, f"回终清空后再回始仍只加法限，实{p.current_mana}"
 
 
 def test_shouyedeng_stacks_on_zhesu_overflow():
-    """边界：折速战始+24，回始再+法限+守夜灯。"""
+    """边界：折速战始+24，回始只加法限；守夜灯改到敌回始。"""
     engine = _engine("lamp_bound")
     p = engine.state.player
     engine.state.relics.append(Relic(name="折速法印", effect="[战始]可疲惫X获得6X法力"))
     engine.state.relics.append(Relic(name="守夜灯", effect="[敌回始]获得等同于[法限]50%的法力"))
-    engine.execute_action("battle_start", {"relic_choices": {
-        "折速法印": {"use": True, "x": 4},
-    }})
+    zhesu = {"折速法印": {"use": True, "x": 4}}
+    if any(r.name == "回锋刀" for r in engine.state.relics):
+        zhesu["回锋刀"] = {"enemy_index": 0}
+    engine.execute_action("battle_start", {"relic_choices": zhesu})
     assert p.current_mana == 24
     engine.execute_action("round_start", {})
-    assert p.current_mana == 45, f"24+14+7应45，实{p.current_mana}"
+    assert p.current_mana == 38, f"24+14应38，实{p.current_mana}"
+    engine.combat._grant_shouyedeng(p)
+    assert p.current_mana == 45, f"敌回始再+7应45，实{p.current_mana}"
 
 
 def test_no_shouyedeng_means_no_round_start_bonus():

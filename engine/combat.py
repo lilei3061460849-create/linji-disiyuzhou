@@ -138,13 +138,9 @@ class CombatEngine:
                 entity.gain_shield(15)
                 extra["avoid_wind_zero_shield"] = 15
         if self.state.side_has(entity, "回锋刀"):
-            refs = self._combat_entity_refs()
-            target = refs.get(relic_target_ref or "")
-            if (target is None or not target.is_alive
-                    or self.state.on_player_side(target) == self.state.on_player_side(entity)):
-                raise ValueError("回锋刀触发必须显式提交合法敌方目标引用")
-            detail = self._apply_hostile_damage(target, 3, source=entity)
-            extra["counter_blade"] = {"target": target.name, **detail}
+            # 闪避失速的即时伤走这里，避免与 _lose_current_speed 双触发。
+            extra["counter_blade"] = self._trigger_huifeng_on_speed_loss(
+                entity, 1, relic_target_ref, require_target=True)
         if entity.has_status("急速"):
             entity._jisu_dodges = getattr(entity, "_jisu_dodges", 0) + 1
             if entity._jisu_dodges >= 2:
@@ -154,6 +150,114 @@ class CombatEngine:
             entity._dongcha_pending = getattr(entity, "_dongcha_pending", 0) + 10
             extra["dongcha_pending"] = entity._dongcha_pending
         return extra
+
+    def _huifeng_active(self, entity: Entity) -> bool:
+        if entity is None or not self.state.side_has(entity, "回锋刀"):
+            return False
+        if entity is self.state.player:
+            return self.state.sealed_relics.get("回锋刀", 0) <= 0
+        return True
+
+    def _huifeng_ref_from_choice(self, decision: Any) -> str:
+        if not isinstance(decision, dict):
+            return ""
+        ref = decision.get("target_ref") or decision.get("dodge_relic_target_ref") or ""
+        if isinstance(ref, str) and ref:
+            return ref
+        index = decision.get("enemy_index")
+        if isinstance(index, int) and not isinstance(index, bool) and index >= 0:
+            return f"enemy:{index}"
+        return ""
+
+    def _remember_huifeng_target(self, holder: Entity, ref: str) -> None:
+        if not ref:
+            return
+        if holder is self.state.player:
+            self.state.event_modifiers["huifeng_target_ref"] = ref
+        elif holder is not None:
+            holder._huifeng_target_ref = ref
+            self.state.event_modifiers["huifeng_target_ref_opponent"] = ref
+
+    def _resolve_huifeng_target(self, holder: Entity, explicit_ref: Optional[str] = None):
+        refs = self._combat_entity_refs()
+        stored = ""
+        if holder is self.state.player:
+            stored = self.state.event_modifiers.get("huifeng_target_ref") or ""
+        elif holder is not None:
+            stored = (getattr(holder, "_huifeng_target_ref", "")
+                      or self.state.event_modifiers.get("huifeng_target_ref_opponent")
+                      or "")
+        for ref in (explicit_ref or "", stored):
+            if not ref:
+                continue
+            target = refs.get(ref)
+            if (target is not None and target.is_alive
+                    and self.state.on_player_side(target) != self.state.on_player_side(holder)):
+                return ref, target
+        return None, None
+
+    def _trigger_huifeng_on_speed_loss(
+        self, holder: Entity, lost: int, explicit_ref: Optional[str] = None,
+        *, require_target: bool = False,
+    ) -> Optional[dict]:
+        """回锋刀：每失去1点当前速度后，对已显式提交的[目标]造成3点伤害。不自动选目标。"""
+        if lost <= 0 or not self._huifeng_active(holder):
+            return None
+        ref, target = self._resolve_huifeng_target(holder, explicit_ref)
+        if target is None:
+            if require_target:
+                raise ValueError("回锋刀触发必须显式提交合法敌方目标引用")
+            return None
+        self._remember_huifeng_target(holder, ref)
+        detail = self._apply_hostile_damage(target, 3 * lost, source=holder)
+        if holder is not None and detail.get("actual_damage", 0) > 0:
+            holder.damage_dealt_this_round += detail["actual_damage"]
+        return {"target": target.name, "lost_speed": lost, **detail}
+
+    def _lose_current_speed(
+        self, entity: Entity, amount: int, relic_target_ref: Optional[str] = None,
+        *, require_huifeng: bool = False,
+    ) -> int:
+        """失去当前速度的统一入口；回锋刀按实际失去点数即时造伤。"""
+        if entity is None or amount <= 0:
+            return 0
+        before = entity.current_speed
+        entity.current_speed = max(0, entity.current_speed - amount)
+        lost = before - entity.current_speed
+        self._trigger_huifeng_on_speed_loss(
+            entity, lost, relic_target_ref, require_target=require_huifeng)
+        return lost
+
+    def _grant_shouyedeng(self, entity: Optional[Entity]) -> Optional[dict]:
+        """守夜灯：[敌回始]获得法限50%法力，每回合一次。"""
+        if entity is None or not entity.is_alive or entity.entity_type != "轮回者":
+            return None
+        if not self.state.side_has(entity, "守夜灯"):
+            return None
+        if entity is self.state.player and self.state.sealed_relics.get("守夜灯", 0) > 0:
+            return None
+        if getattr(entity, "_shouyedeng_granted", 0):
+            return None
+        gained = math.ceil(entity.mana_limit / 2)
+        if gained <= 0:
+            return None
+        entity.current_mana += gained
+        self.clamp_immortal_body(entity)
+        entity._shouyedeng_granted = gained
+        return {"type": "shouyedeng_grant", "entity": entity.name, "gained": gained}
+
+    def _clear_shouyedeng(self, entity: Optional[Entity]) -> Optional[dict]:
+        """守夜灯：该法力[敌回终]清空（只扣本回合授予量）。"""
+        if entity is None:
+            return None
+        granted = getattr(entity, "_shouyedeng_granted", 0) or 0
+        entity._shouyedeng_granted = 0
+        if granted <= 0:
+            return None
+        before = entity.current_mana
+        entity.current_mana = max(0, entity.current_mana - granted)
+        return {"type": "shouyedeng_clear", "entity": entity.name,
+                "cleared": before - entity.current_mana, "granted": granted}
 
     def _jieli_boost(self, dealer: Entity, amount: int) -> int:
         if amount <= 0 or not dealer.has_status("借力"):
@@ -210,8 +314,12 @@ class CombatEngine:
         if mitigation is not None:
             return mitigation
 
-        # 4. 基础扣血
-        detail = target.take_damage(amount, damage_type)
+        # 4. 基础扣血。贯穿：你造成的伤害（任意通道）无视格挡；代价仍按代价结算。
+        apply_type = damage_type
+        if (source is not None and damage_type != "代价"
+                and hasattr(source, "has_status") and source.has_status("贯穿")):
+            apply_type = "无视格挡"
+        detail = target.take_damage(amount, apply_type)
         actual = detail.get("actual_damage", 0)
 
         # 5. 落地后效果 (逆鳞 / 伤痕 / 切割 / 寄生 / 负岳索 / 龙族血脉斩杀)
@@ -463,9 +571,13 @@ class CombatEngine:
             payer.current_mana = min(payer.current_mana, payer.mana_limit)
         elif cost_type == "萎缩":
             payer.speed_limit = max(0, payer.speed_limit - amount)
-            payer.current_speed = min(payer.current_speed, payer.speed_limit)
+            overflow = max(0, payer.current_speed - payer.speed_limit)
+            if overflow:
+                self._lose_current_speed(payer, overflow)
+            else:
+                payer.current_speed = min(payer.current_speed, payer.speed_limit)
         elif cost_type == "疲惫":
-            payer.current_speed = max(0, payer.current_speed - amount)
+            self._lose_current_speed(payer, amount)
         elif cost_type == "异变":
             mutation = payer.add_mutation(amount)
             self._bank_lianxin(payer, cost_type, amount)
@@ -818,7 +930,8 @@ class CombatEngine:
             e.blood_oath_used_this_round = False
             e.mana_inflicted_this_round = 0
             e.damage_dealt_this_round = 0
-        # 回始：每个轮回者获得等同当前法限的法力。战始已清零；折速法印在战始+=；血契/守夜灯在本段之后+=。
+        # 回始：每个轮回者获得等同当前法限的法力。战始已清零；折速法印在战始+=；血契在本段之后+=。
+        # 守夜灯按[敌回始]授予，不在回始叠加。
         # 死斗里封存对手也是轮回者，必须同样获得法力，否则只能普攻1点。
         for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
             if entity.entity_type != "轮回者" or not entity.is_alive:
@@ -826,6 +939,7 @@ class CombatEngine:
             old_mana = entity.current_mana
             gained = entity.mana_limit
             entity.current_mana += gained
+            self.clamp_immortal_body(entity)
             effects.append({
                 "type": "mana_refill",
                 "entity": entity.name,
@@ -834,9 +948,14 @@ class CombatEngine:
                 "gained": gained,
             })
 
-        # 遗物：回始触发（回锋刀造伤、守夜灯加法力）。守夜灯加在获得法限之后。
+        # 遗物：回始触发（回锋刀按速限缺口造伤）。守夜灯改走[敌回始]。
         relic_logs = self.process_relics(TriggerTiming.ROUND_START, {"relic_choices": relic_choices or {}})
         effects.extend({"type": "relic", "log": l} for l in relic_logs)
+        # 死斗对手的[敌回始]≈玩家行动开始：在回始法力之后授予守夜灯。
+        for entity in self.state.enemies:
+            granted = self._grant_shouyedeng(entity) if entity.entity_type == "轮回者" else None
+            if granted:
+                effects.append(granted)
         
         # 结算回始效果
         for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
@@ -1958,10 +2077,11 @@ class CombatEngine:
             gained = self._gain_speed(target, calc["speed_boost"])
             result["effects"].append({"type": "speed_boost", "target": target.name, "speed": target.current_speed, "gained": gained})
         if "speed_halved" in calc:
-            target.current_speed = math.ceil(target.current_speed / 2)
+            lost = target.current_speed - math.ceil(target.current_speed / 2)
+            self._lose_current_speed(target, lost)
             result["effects"].append({"type": "speed_halved", "target": target.name, "speed": target.current_speed})
         if "speed_penalty" in calc and (name != "赎金" or self._shards_of(target) <= 0):
-            target.current_speed = max(0, target.current_speed - calc["speed_penalty"])
+            self._lose_current_speed(target, calc["speed_penalty"])
             result["effects"].append({"type": "speed_penalty", "target": target.name,
                                       "lost": calc["speed_penalty"], "speed": target.current_speed})
 
@@ -2575,6 +2695,14 @@ class CombatEngine:
             legal = {ref for ref, entity in refs.items() if self.state.on_enemy_side(entity)}
             if not isinstance(decision, dict) or decision.get("target_ref") not in legal:
                 raise ValueError(f"烙痕钉必须显式选择敌方target_ref，可选{sorted(legal)}")
+        using_fatigue = (
+            ("折速法印" in active and isinstance(choices.get("折速法印"), dict)
+             and choices["折速法印"].get("use"))
+            or ("苍白之花" in active and isinstance(choices.get("苍白之花"), dict)
+                and choices["苍白之花"].get("use"))
+        )
+        if "回锋刀" in active and using_fatigue and not self._huifeng_ref_from_choice(choices.get("回锋刀")):
+            raise ValueError("持有回锋刀并发动折速法印或苍白之花时必须显式提交relic_choices.回锋刀目标")
 
     def validate_round_start_relic_choices(self, choices: dict) -> None:
         if not isinstance(choices, dict):
@@ -2655,14 +2783,9 @@ class CombatEngine:
                 d = 3 * max(0, player.speed_limit - player.current_speed)
                 if d > 0:
                     enemy = self.state.enemies[choices["回锋刀"]["enemy_index"]]
+                    self._remember_huifeng_target(player, f"enemy:{choices['回锋刀']['enemy_index']}")
                     self._apply_hostile_damage(enemy, d, source=player)
                     logs.append(f"回锋刀：对{enemy.name}造{d}伤")
-            if "守夜灯" in relics:  # 敌回始+法限50%法力
-                g = math.ceil(player.mana_limit / 2)
-                if g > 0:
-                    player.current_mana += g
-                    self.clamp_immortal_body(player)
-                    logs.append(f"守夜灯：+{g}法力")
             if "血契" in relics and choices["血契"]["use"]:
                 decision = choices["血契"]
                 x = decision["x"]
@@ -2701,6 +2824,19 @@ class CombatEngine:
         if trigger == "battle_start":
             choices = ctx.get("relic_choices", {})
             self.validate_battle_start_relic_choices(choices)
+            using_fatigue = (
+                ("折速法印" in relics and isinstance(choices.get("折速法印"), dict)
+                 and choices["折速法印"].get("use"))
+                or ("苍白之花" in relics and isinstance(choices.get("苍白之花"), dict)
+                    and choices["苍白之花"].get("use"))
+            )
+            if "回锋刀" in relics and using_fatigue:
+                ref = self._huifeng_ref_from_choice(choices.get("回锋刀"))
+                target = self._combat_entity_refs().get(ref)
+                if (target is None or not target.is_alive
+                        or not self.state.on_enemy_side(target)):
+                    raise ValueError("回锋刀触发必须显式提交合法敌方目标引用")
+                self._remember_huifeng_target(player, ref)
             if "折速法印" in relics and choices["折速法印"]["use"]:
                 decision = choices["折速法印"]
                 x = decision["x"]
@@ -3163,6 +3299,16 @@ class CombatEngine:
 
         refs = self._combat_entity_refs()
         results: list[dict] = []
+        enemy_turn = bool(prepared.get("actors") or prepared.get("skipped"))
+        if enemy_turn:
+            granted = self._grant_shouyedeng(self.state.player)
+            if granted:
+                results.append(granted)
+        opponent = next((entity for entity in self.state.enemies
+                         if entity.entity_type == "轮回者" and entity.is_alive), None)
+        cleared_opp = self._clear_shouyedeng(opponent)
+        if cleared_opp:
+            results.append(cleared_opp)
         results.extend(self._tick_baolie(self.state.get_all_enemy_side()))
         results.extend(prepared["skipped"])
         for actor_ref in submitted:  # 死斗部分提交：只结算本步提交的actor
@@ -3269,6 +3415,10 @@ class CombatEngine:
                         break
                 if not monster.is_alive:
                     break
+        if not self.state.in_final_duel:
+            cleared = self._clear_shouyedeng(self.state.player)
+            if cleared:
+                results.append(cleared)
         return results
 
     def buyaicai_escape_cost(self, monster: Entity) -> dict:

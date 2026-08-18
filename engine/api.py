@@ -3458,6 +3458,9 @@ class GameEngine:
             self._advance_duel_turn()
         else:
             self.state.combat_subphase = CombatSubphase.AWAIT_ROUND_END.value
+        if (self.state.in_final_duel
+                and self.state.combat_subphase == CombatSubphase.AWAIT_ROUND_END.value):
+            self.combat._clear_shouyedeng(self.state.player)
         player_dead = (self.state.player is None) or (not self.state.player.is_alive)
         return {
             "success": True,
@@ -4320,6 +4323,8 @@ class GameEngine:
             self.state.player.blood_limit += 2
         pale_flower_bonus = 1 if modifiers.pop("pale_flower_active", False) else 0
         modifiers.pop("brand_nail_target_ref", None)
+        modifiers.pop("huifeng_target_ref", None)
+        modifiers.pop("huifeng_target_ref_opponent", None)
 
         # [战终]对所有角色统一清除局内回复、格挡与状态；不得只清轮回者。
         all_characters = (([self.state.player] if self.state.player else [])
@@ -4331,7 +4336,7 @@ class GameEngine:
         runtime_counter_attrs = (
             "_jisu_dodges", "_dongcha_pending", "_bizhong_left", "_nilin",
             "_jiahuo_left", "_jiahuo_target", "_beifu_left", "_beifu_target",
-            "_death_triggers_emitted",
+            "_death_triggers_emitted", "_shouyedeng_granted", "_huifeng_target_ref",
         )
         for entity in all_characters:
             entity.clear_shield()
