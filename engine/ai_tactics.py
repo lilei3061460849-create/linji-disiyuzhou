@@ -32,8 +32,8 @@ from typing import Any, Optional
 # 未列出的道纹 AI 不会主动发动（例如需要复杂声明的），但引擎仍支持手动调用。
 # ---------------------------------------------------------------------------
 TACTICAL_ROLES: dict[str, dict] = {
-    # ---- 杀伐闭环 ----
-    "杀伐": {"role": "nuke", "cost": 1, "pri": 1, "dmg_per_x": 2},
+    # ---- 杀伐闭环（cost/dmg 必须跟 README 现行公式一致，禁止沿用旧 3X/自动起手）----
+    "杀伐": {"role": "nuke", "cost": 1, "pri": 2, "dmg_per_x": 2},
     "冲击": {"role": "aoe", "cost": 3, "pri": 1, "dmg_per_x": 5},
     "血债": {"role": "nuke", "cost": 0, "pay": "流血", "pri": 3, "dmg_per_x": 1},
     "庇护": {"role": "shield", "cost": 1, "pri": 1, "shield_per_x": 2},
@@ -41,12 +41,12 @@ TACTICAL_ROLES: dict[str, dict] = {
     "慈悲": {"role": "heal", "cost": 0, "pay": "流血", "pri": 3, "heal_per_x": 1},
     "固执": {"role": "buff", "cost": 0, "pay": "冷却", "pri": 2},
     # ---- 杀伐14节点闭环后半（锐利至封印）----
-    "锐利": {"role": "nuke", "cost": 3, "pri": 2, "dmg_per_x": 5},   # 血限与生命同时-5X
-    "增殖": {"role": "buff", "cost": 5, "pri": 3},
+    "锐利": {"role": "nuke", "cost": 3, "pri": 1, "dmg_per_x": 5, "limit_per_x": 5},
+    "增殖": {"role": "buff", "cost": 1, "pri": 3},
     "透支": {"role": "ramp", "cost": 0, "pay": "衰老", "pri": 1, "mana_per_x": 4},
     "贯穿": {"role": "buff", "cost": 5, "pri": 1},                    # 伤害无视格挡
     "封印": {"role": "remove", "cost": 10, "pri": 1},                 # 直接移出战斗
-    "缓慢": {"role": "control", "cost": 10, "pri": 2},
+    "缓慢": {"role": "control", "cost": 0, "pay": "冷却", "pri": 2},
     "束缚": {"role": "control", "cost": 0, "pay": "冷却", "pri": 1},
     # ---- 龙心谷 ----
     "加害": {"role": "debuff", "cost": 3, "pri": 1},
@@ -150,9 +150,21 @@ class TacticalAI:
     def _cast(self, name: str, x: int, target: Optional[str] = None) -> Optional[dict]:
         if x < 1:
             return None
-        p = {"daowen_name": name, "x": x}
+        p = {"daowen_name": name, "x": x, "dodge": False, "blood_shadow": False}
         if target:
             p["target"] = target
+        if name == "冲击":
+            refs = self.engine.combat._combat_entity_refs()
+            actor = self.player
+            p["dodge_targets"] = [
+                {"target_ref": ref, "dodge": False, "blood_shadow": False}
+                for ref, entity in refs.items()
+                if (self.engine.state.on_player_side(entity)
+                    != self.engine.state.on_player_side(actor)
+                    and entity.is_alive)
+            ]
+            if not p["dodge_targets"]:
+                return None
         r = self.engine.execute_action("use_daowen", p)
         if r.get("success"):
             self.used[name] = self.used.get(name, 0) + 1
@@ -290,12 +302,21 @@ class TacticalAI:
         return None
 
     def try_aoe(self) -> Optional[dict]:
-        """6. AOE：敌数≥3 时群伤。"""
+        """6. AOE：按群体总伤与当次单体比较，敌数≥2 且总伤不低于单体时用群伤。"""
         enemies = self.alive_enemies()
-        if len(enemies) < 3:
+        n = len(enemies)
+        if n < 2:
             return None
+        budget = self.mana_budget()
+        ranked = self._nuke_ranked(budget)
+        best_single = ranked[0][2] if ranked else 0
         for name in self.owned("aoe"):
-            x = self._x_for(name, self.mana_budget())
+            x = self._x_for(name, budget)
+            if x < 1:
+                continue
+            total = x * TACTICAL_ROLES[name].get("dmg_per_x", 0) * n
+            if total < best_single:
+                continue
             r = self._cast(name, x)
             if r:
                 return r
@@ -336,9 +357,10 @@ class TacticalAI:
             if x < 1:
                 continue
             dmg = x * info.get("dmg_per_x", 2)
-            out.append((name, x, dmg))
-        out.sort(key=lambda t: (-t[2], TACTICAL_ROLES[t[0]].get("cost", 1)))
-        return out
+            score = dmg + x * info.get("limit_per_x", 0)
+            out.append((name, x, dmg, score))
+        out.sort(key=lambda t: (-t[3], TACTICAL_ROLES[t[0]].get("cost", 1)))
+        return [(name, x, dmg) for name, x, dmg, _score in out]
 
     def try_pressure(self) -> Optional[dict]:
         """8. 输出：按预算选性价比最高的输出道纹，焦点打击血最少的目标。"""

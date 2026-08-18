@@ -104,11 +104,19 @@ def test_every_tactical_role_is_reachable():
 # ---------- 边界条件 ----------
 
 def test_nuke_ranked_prefers_higher_damage_per_budget():
-    """边界：小预算下应选性价比更高者（杀伐3伤/法 > 锐利1.67伤/法）"""
+    """边界：锐利 3 法力才能发动时，小预算只能打杀伐。"""
     e = _engine(starter="锐利", learn=["杀伐"])
     ai = TacticalAI(e)
-    ranked = ai._nuke_ranked(4)
-    assert ranked[0][0] == "杀伐", f"预算4时应优先杀伐，实际 {ranked}"
+    ranked = ai._nuke_ranked(2)
+    assert ranked[0][0] == "杀伐", f"预算2时应只能发动杀伐，实际 {ranked}"
+
+
+def test_nuke_ranked_counts_ruili_blood_limit():
+    """正常：预算够发动锐利时，血限削减计入压力，不得只看法力效率把杀伐排第一。"""
+    e = _engine(starter="锐利", learn=["杀伐"])
+    ai = TacticalAI(e)
+    ranked = ai._nuke_ranked(6)
+    assert ranked[0][0] == "锐利", f"预算6时应因血限削减优先锐利，实际 {ranked}"
 
 
 def test_control_not_repeated_on_same_target_in_one_round():

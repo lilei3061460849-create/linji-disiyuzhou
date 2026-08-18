@@ -47,6 +47,70 @@ def _start_battle(engine, relic):
 
 # ---------- 正常路径 ----------
 
+def test_starters_are_shafa_loop_not_forced_shaifa():
+    """正常：可偏好的起手是整个杀伐闭环，不再写死只开杀伐。"""
+    from engine.gamedata import SHAFA_LOOP_DAOWEN
+    assert bl.STARTERS == list(SHAFA_LOOP_DAOWEN)
+    assert "冲击" in bl.STARTERS and "再生" in bl.STARTERS
+
+
+def test_play_does_not_inject_shaifa_when_not_discovered():
+    """边界：发现列表没有杀伐时，模拟不得把杀伐塞进玩家。"""
+    from engine.api import GameEngine
+    from tests.setup_support import choose_discovered_initial_daowen
+
+    found = None
+    for seed in range(1, 80):
+        engine = GameEngine(db_path=f"/tmp/disc{seed}.db", rng_seed=seed)
+        engine.execute_action("setup_attributes", {
+            "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7,
+        })
+        offered = list(engine.state.pending_initial_daowen_choices)
+        if "杀伐" not in offered:
+            found = (engine, offered)
+            break
+    assert found, "80 个种子里应能抽到不含杀伐的发现"
+    engine, offered = found
+    chosen = choose_discovered_initial_daowen(engine, prefer="杀伐")
+    assert chosen["success"]
+    assert chosen["picked"] in offered
+    assert chosen["picked"] != "杀伐"
+    assert "杀伐" not in engine.state.player.dao_wen
+
+
+def test_choose_discovered_honors_prefer_only_when_offered():
+    """正常：prefer 在候选中才选它。"""
+    from engine.api import GameEngine
+    from tests.setup_support import choose_discovered_initial_daowen
+
+    engine = GameEngine(db_path="/tmp/disc_pref.db", rng_seed=1)
+    engine.execute_action("setup_attributes", {
+        "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7,
+    })
+    offered = list(engine.state.pending_initial_daowen_choices)
+    prefer = offered[1]
+    chosen = choose_discovered_initial_daowen(engine, prefer=prefer)
+    assert chosen["picked"] == prefer
+    assert list(engine.state.player.dao_wen) == [prefer]
+
+
+def test_choose_discovered_rejects_missing_pending():
+    """错误输入：没有待选发现时必须拒绝，不能凭空发道纹。"""
+    from engine.api import GameEngine
+    from tests.setup_support import choose_discovered_initial_daowen
+
+    engine = GameEngine(db_path="/tmp/disc_bad.db", rng_seed=1)
+    engine.execute_action("setup_attributes", {
+        "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7,
+    })
+    engine.execute_action("setup_choose_initial_daowen", {
+        "daowen_name": engine.state.pending_initial_daowen_choices[0],
+    })
+    bad = choose_discovered_initial_daowen(engine, prefer="杀伐")
+    assert not bad["success"]
+    assert "没有待选择" in bad["error"]
+
+
 def test_play_returns_wellformed_result():
     """正常路径：跑一局应返回通关场数与胜负"""
     r = bl.play("杀伐", ["庇护", "再生"], "龙心谷", seed=1)

@@ -30,7 +30,7 @@ import random
 import sys
 from collections import defaultdict
 
-from tests.setup_support import finish_initial_daowen
+from tests.setup_support import choose_discovered_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
@@ -48,7 +48,7 @@ CANDIDATES = sorted(TACTICAL_ROLES.keys())
 # 若仍按全池组 build，绝大多数 build 会因"学不上"而退化成同一套，数据失真。
 # 故按副本给出"实际可通过学习获得"的候选池。
 from engine.gamedata import (REGION_EXCLUSIVE_DAOWEN, ORIGINAL_MONSTER_DAOWEN,
-                             MONSTER_TRANSFORM_DAOWEN)
+                             MONSTER_TRANSFORM_DAOWEN, SHAFA_LOOP_DAOWEN)
 
 _ALL_EXCLUSIVE = {d for v in REGION_EXCLUSIVE_DAOWEN.values() for d in v}
 
@@ -150,8 +150,8 @@ def learnable_candidates(region: str = None) -> list:
             continue
         out.append(c)
     return out
-# 现行开局自动获得【杀伐】，不再选择初始道纹。
-STARTERS = ["杀伐"]
+# 开局从杀伐闭环【发现】3选1；STARTERS 只表示可被偏好的闭环节点，不能绕过发现。
+STARTERS = list(SHAFA_LOOP_DAOWEN)
 REGIONS = ["罪孽都市", "扭曲都市", "龙心谷"]
 BUILD_SIZE = 5          # 每套 build 学习的道纹数量
 
@@ -320,9 +320,10 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
     e = GameEngine(db_path="/tmp/learner.db", rng_seed=seed)
     e.execute_action("setup_attributes",
                      {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
-    finish_initial_daowen(e)
-    if starter != "杀伐":
-        raise ValueError("现行开局只会自动获得杀伐；其他道纹须放入learn")
+    chosen = choose_discovered_initial_daowen(e, prefer=starter)
+    if not chosen.get("success"):
+        raise ValueError(chosen.get("error", "开局发现选择失败"))
+    actual_starter = chosen["picked"]
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": region})
     optional_relics = {"折速法印", "三相残韵盘"}
@@ -331,9 +332,8 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
     e.execute_action("choose_discovered_relic", {"relic_name": starter_relic})
 
     ai = TacticalAI(e)
-    todo = list(learn)
-    # 法术（反应型，受击自动触发）：先发制人免费（需杀伐=起手），
-    # 生生不息需再生、后发制人需庇护——学到对应道纹后学。
+    todo = [name for name in learn if name != actual_starter]
+    # 法术按当前持有道纹解锁，不再默认杀伐起手。
     SPELL_PLAN = spell_plan or [("先发制人", ["杀伐"]), ("生生不息", ["再生"]), ("后发制人", ["庇护"])]
     learned_spells = set()
     cleared = 0
@@ -360,8 +360,9 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                     if r.get("success"):
                         continue
                 if p and e.state.shards >= 25 and e.state.current_region == "乱葬岗":
+                    held = next(iter(p.dao_wen), actual_starter)
                     r = e.execute_action("pre_battle_action", {
-                        "sub_action": "附煞", "mode": "选择", "sha_qi": "冥煞", "daowen_name": "杀伐"})
+                        "sub_action": "附煞", "mode": "选择", "sha_qi": "冥煞", "daowen_name": held})
                     if r.get("success"):
                         continue
                 if p and e.state.shards >= 15 and todo:
@@ -419,9 +420,10 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                     todo.remove(params["name"])
                 # 附煞·发现模式：显式选择候选煞气
                 if act == "附煞" and e.state.pending_sha_qi_choices:
+                    held = params.get("daowen_name") or next(iter(e.state.player.dao_wen), actual_starter)
                     e.execute_action("choose_sha_qi", {
                         "sha_qi": e.state.pending_sha_qi_choices[0],
-                        "daowen_name": params.get("daowen_name", "杀伐"),
+                        "daowen_name": held,
                     })
                 if e.state.pending_relic_choices:
                     e.execute_action("choose_discovered_relic", {
@@ -598,11 +600,14 @@ def choose_pre_battle(e, todo, battle_no, rng, policy):
     if act == "学习":
         return act, {"sub": "daowen", "name": todo[0]}
     if act == "附煞":
-        # 确定性：碎片≥25用选择（冥煞附杀伐，伤害+100%），≥10用发现，否则跳过（避免反复失败退精力）
+        held = next(iter(p.dao_wen), None) if p else None
+        if not held:
+            return "修行", {"tier": 1, "to": "mana"}
+        # 确定性：碎片≥25用选择（冥煞附当前持有道纹），≥10用发现，否则跳过
         if e.state.shards >= 25:
-            return act, {"mode": "选择", "sha_qi": "冥煞", "daowen_name": "杀伐"}
+            return act, {"mode": "选择", "sha_qi": "冥煞", "daowen_name": held}
         if e.state.shards >= 10:
-            return act, {"mode": "发现", "daowen_name": "杀伐"}
+            return act, {"mode": "发现", "daowen_name": held}
         return "修行", {"tier": 1, "to": "mana"}
     if act == "修行":
         return act, {"tier": 1, "to": "mana" if battle_no % 2 else "speed"}
