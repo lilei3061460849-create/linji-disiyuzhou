@@ -98,6 +98,9 @@ def test_bizhong_only_next_x_target_selections():
     hits2 = [d for d in r2 if d.get("attacker") == m.name]
     assert hits2 and hits2[0].get("dodge_success") is False
     assert engine.combat.bizhong_remaining(m) == 1
+    # 准则9下怪物会每回合复读必中刷新次数；本测试只验证已获得次数的消耗语义，
+    # 故激活后移除该道纹，隔离变量。
+    del m.dao_wen["必中"]
     engine.combat.round_start()  # -> 3 再打1击，用尽
     r3 = resolve_monster_phase(engine.combat, {m.name: None}, dodge=True)
     hits3 = [d for d in r3 if d.get("attacker") == m.name]

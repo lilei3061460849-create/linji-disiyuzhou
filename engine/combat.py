@@ -2765,13 +2765,29 @@ class CombatEngine:
     # 怪物已激活的道纹 / 已进化的怪物（均按战斗重置）
     _monster_activated: dict = {}
     _monster_evolved: set = set()  # 进化（原初X）：本场已进化的怪物 id 集合
+    _monster_daowen_round_used: dict = {}  # 本回合已发动的道纹（DM裁定2026-08-18：跨回合可重复发动）
 
     def reset_monster_activation(self):
         """战始重置怪物激活状态与战斗遗物状态"""
         self._monster_activated = {}
         self._monster_evolved = set()  # 进化（原初X）：每场战斗限一次
+        self._monster_daowen_round_used = {}
         self._sanxiang_consumed = ""
         self._resonance_rewrites = {}
+
+    def _monster_round_used(self, monster: Entity) -> set:
+        """该怪物本回合已发动的道纹集合（换回合自动清空）。
+
+        DM裁定（2026-08-18，README怪物准则9）：怪物可在不同回合重复发动同一
+        道纹（冷却类由 can_use 管辖），每回合每道纹至多一次；重复使用的代价
+        由道纹递增机制承担（每次实际发动 X+2×副本阶级）。
+        _monster_activated 保留为持续激活口径（狂暴出手加成等），不再作发动门禁。
+        """
+        rec = self._monster_daowen_round_used.get(id(monster))
+        if rec is None or rec[0] != self.state.current_round:
+            rec = (self.state.current_round, set())
+            self._monster_daowen_round_used[id(monster)] = rec
+        return rec[1]
 
     def queue_resonance_rewrite(self, entity: Entity, source: str, dest: str) -> None:
         """残韵作用于他人道纹：登记其下一次发动该源道纹时按 dest 结算。"""
@@ -2846,10 +2862,12 @@ class CombatEngine:
                 skipped.append({"actor_ref": actor_ref, "monster": monster.name, "reason": "无法行动"})
                 continue
             activated = self._monster_activated.get(id(monster), set())
+            round_used = self._monster_round_used(monster)
             daowen_options = []
             if not whiteboard and not monster.has_status("干扰"):
                 for name, inst in monster.dao_wen.items():
-                    if name in activated or not inst.can_use() or name not in DaoWenEngine.list_all():
+                    if (name in round_used or not inst.can_use()
+                            or name not in DaoWenEngine.list_all()):
                         continue
                     if name == "赌命" and getattr(monster, "fake_shards", 0) < inst.x_value:
                         continue
@@ -2941,7 +2959,8 @@ class CombatEngine:
     ) -> dict:
         name = choice.get("name", "")
         inst = monster.dao_wen.get(name)
-        if inst is None or name in activated or not inst.can_use():
+        if (inst is None or name in self._monster_round_used(monster)
+                or not inst.can_use()):
             raise ValueError(f"{monster.name}不能发动道纹【{name}】")
         if name not in DaoWenEngine.list_all():
             raise ValueError(f"未知道纹【{name}】")
@@ -3070,6 +3089,13 @@ class CombatEngine:
 
         if not rewritten_as:
             activated.add(name)
+            self._monster_round_used(monster).add(name)
+            # 怪物道纹递增（DM裁定2026-08-18，README怪物准则9）：每实际发动一次，
+            # 该道纹X本场累加+2×副本阶级。只在真正完成发动时累加（无法支付代价、
+            # 崩解中断、被控跳过的回合均不计）；残韵改写的一次性结算不递增源道纹。
+            # 怪物无法力概念，递增只放大效果数值与真实代价；实例随战斗结束消散。
+            from .gamedata import REGION_TIERS
+            inst.x_value += 2 * REGION_TIERS.get(self.state.current_region, 1)
         monster.actions_used_this_round += 1
 
         aoe_targets_override = None

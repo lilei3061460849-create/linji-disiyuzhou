@@ -91,6 +91,14 @@ def _pick_monster_daowen(engine, actor):
         return 3
 
     # 机制组是最后手段：存在任何自保/输出/控制候选时一律不选机制。
+    # 例外（裁定原文"完全无法对轮回者造成任何影响"的字面情形）：怪物已连续
+    # ≥2回合未能使敌方生命减少（如伤害被格挡完全吸收），说明常规手段已失效，
+    # 允许动用机制组（必中破盾/飞行脱离等）。
+    blocked = monster is not None and getattr(monster, "no_damage_rounds", 0) >= 2
+    if blocked:
+        mech_cands = [o for o in cands if group(o) == 3]
+        if mech_cands:
+            return mech_cands[0]
     effective = [o for o in cands if group(o) < 3]
     return min(effective or cands, key=group)
 
