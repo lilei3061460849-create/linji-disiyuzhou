@@ -64,9 +64,9 @@ def test_six_scenarios_contain_exact_mechanic_details():
     """边界条件：验证场景3中残韵作用于轮回者永久转化道纹、场景6千刀万剐完整三轮自驱动循环直到法力耗尽中断。"""
     text = AI_EXPERIENCE_FILE.read_text(encoding="utf-8")
 
-    # 场景3边界：作用于轮回者A，A拥有道纹永久转化为再生，B不获得道纹
-    assert "作用对象为轮回者 A：A 拥有的道纹【杀伐】永久转化为【再生】" in text
-    assert "B 不会因此习得【再生】" in text
+    # 场景3边界：A的杀伐永久转化为再生，B同时永久获得再生
+    assert "A 拥有的道纹【杀伐】永久转化为【再生】" in text
+    assert "B 同时永久获得【再生】" in text
 
     # 场景6边界：千刀万剐 3 轮循环展开，法力从 6 扣减至 0，中断检查法力不足
     assert "【失去生命后】B 触发循环法术【千刀万剐】（第 1 轮循环，X=2）" in text

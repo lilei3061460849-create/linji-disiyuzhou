@@ -11,6 +11,7 @@ import sys
 
 import pytest
 
+from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
@@ -21,6 +22,7 @@ def _engine(starter="杀伐", learn=(), region="龙心谷", seed=1, tmp="/tmp/bv
     e = GameEngine(db_path=tmp, rng_seed=seed)
     e.execute_action("setup_attributes",
                      {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+    finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": region})
     e.execute_action("choose_discovered_relic", {"relic_name": setup["result"]["relic_choices"][0]})
@@ -218,6 +220,7 @@ def _plight_engine(player_daowen=("杀伐", "庇护", "僵化")):
     e = GameEngine(db_path="/tmp/evo.db", rng_seed=1)
     e.execute_action("setup_attributes",
                      {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+    finish_initial_daowen(e)
     for n in player_daowen:
         e.state.player.dao_wen[n] = DaoWenInstance(
             dao_wen=DaoWen(name=n, formula="", cost_type="消耗",

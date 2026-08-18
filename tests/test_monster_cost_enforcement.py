@@ -10,11 +10,13 @@ from engine.api import GameEngine
 from engine.models import Entity, DaoWen, DaoWenInstance
 
 
+from tests.setup_support import begin_battle, finish_initial_daowen
 def _setup_engine(tmp_path):
     e = GameEngine(db_path=str(tmp_path / "test.db"), rng_seed=4)
     e.execute_action("setup_attributes", {
         "name": "贾希希", "blood_points": 5, "speed_points": 8, "mana_points": 12
     })
+    finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     s = e.execute_action("setup_choose_region", {"region": "龙心谷"})
     e.execute_action("choose_discovered_relic", {"relic_name": s["result"]["relic_choices"][0]})
@@ -30,14 +32,14 @@ def test_monster_cooldown_daowen_sets_cooldown_and_cannot_repeat(tmp_path):
             "sub_action": "修行", "tier": 1,
             "allocations": {"speed_points": 0, "mana_points": 1}
         })
-    e.execute_action("battle_start", {"relic_choices": {}})
-    
-    # 构造带固执3的怪物
-    m = e.state.enemies[0]
+    started = begin_battle(e)
+    assert started["success"], started
+    m = Entity("靶怪", "怪物", blood_limit=80, current_hp=80, attack_count=1, attack_power=1)
     m.dao_wen["固执"] = DaoWenInstance(
         DaoWen(name="固执", formula="", cost_type="冷却", cost_formula="X", effect_formula=""),
         x_value=3
     )
+    e.state.enemies[:] = [m]
 
     # 第1回合（白板回合）
     e.execute_action("round_start", {"relic_choices": {}})
@@ -94,12 +96,14 @@ def test_monster_bleed_cost_daowen_deducts_monster_hp(tmp_path):
             "sub_action": "修行", "tier": 1,
             "allocations": {"speed_points": 0, "mana_points": 1}
         })
-    e.execute_action("battle_start", {"relic_choices": {}})
-    m = e.state.enemies[0]
+    started = begin_battle(e)
+    assert started["success"], started
+    m = Entity("靶怪", "怪物", blood_limit=80, current_hp=80, attack_count=1, attack_power=1)
     m.dao_wen["血债"] = DaoWenInstance(
         DaoWen(name="血债", formula="", cost_type="流血", cost_formula="X", effect_formula=""),
         x_value=5
     )
+    e.state.enemies[:] = [m]
 
     # 第1回合（白板）
     e.execute_action("round_start", {"relic_choices": {}})
@@ -146,14 +150,14 @@ def test_monster_cannot_cast_when_hp_insufficient_for_cost(tmp_path):
             "sub_action": "修行", "tier": 1,
             "allocations": {"speed_points": 0, "mana_points": 1}
         })
-    e.execute_action("battle_start", {"relic_choices": {}})
-    m = e.state.enemies[0]
+    started = begin_battle(e)
+    assert started["success"], started
+    m = Entity("靶怪", "怪物", blood_limit=80, current_hp=10, attack_count=1, attack_power=1)
     m.dao_wen["血债"] = DaoWenInstance(
         DaoWen(name="血债", formula="", cost_type="流血", cost_formula="X", effect_formula=""),
         x_value=50
     )
-    # 怪物只剩10血，无法支付50流血
-    m.current_hp = 10
+    e.state.enemies[:] = [m]
 
     e.execute_action("round_start", {"relic_choices": {}})
     pmp = e.execute_action("prepare_monster_phase", {})

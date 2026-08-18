@@ -16,6 +16,7 @@ import os
 import sys
 import pytest
 
+from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
@@ -28,6 +29,7 @@ def _setup_engine(tmp_path, region="龙心谷", relic="避风铃"):
     e.execute_action("setup_attributes", {
         "name": "测试者", "blood_points": 7, "speed_points": 8, "mana_points": 10
     })
+    finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     s = e.execute_action("setup_choose_region", {"region": region})
     # 显式选择或挂载遗物

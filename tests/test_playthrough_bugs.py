@@ -1,6 +1,6 @@
 """手操通关(seed 2026081202)暴露的四条引擎回归锁。
 
-1. 残韵打在敌人道纹上：不改敌人持有，改写下一次发动，施法者获得变化后道纹
+1. 残韵打在敌人道纹上：永久改写敌人持有，施法者同时永久获得变化后道纹
 2. 回始获得等同当前法限的法力（加法）；战始先清零再结算遗物
 3. 原初X借到的【杀伐】等非优先队列道纹必须在怪物回合发动（按原版2X，无×3）
 4. 残骸：恢复20生命并获得异变10
@@ -10,6 +10,7 @@
 import os
 import sys
 
+from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
@@ -26,6 +27,7 @@ def _engine(suffix: str) -> GameEngine:
     engine.execute_action("setup_attributes", {
         "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7,
     })
+    finish_initial_daowen(engine)
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
     setup = engine.execute_action("setup_choose_region", {"region": "罪孽都市"})
     optional = {"折速法印", "三相残韵盘"}
@@ -85,13 +87,14 @@ def _resolve_prepared_monsters(engine: GameEngine, daowen_name: str | None = Non
 # ========================================================================
 
 def test_resonance_on_enemy_grants_dest_and_rewrites_next_activation():
-    """正常路径：反转敌方狂暴 → 贾凡获得自残，敌人仍持有狂暴，下次发动按自残打自己。"""
+    """正常路径：反转敌方狂暴 → 敌人永久变为自残，贾凡同时永久获得自残。"""
     engine = _engine("res_happy")
     engine.state.resonance["反转"] = 1
     engine.execute_action("battle_start", {})
     monster = Entity(name="通缉犯", entity_type="怪物", blood_limit=80, current_hp=80,
                      attack_count=1, attack_power=5)
     _give_daowen(monster, "狂暴", x=2)
+    monster._had_monster_daowen = True
     _put_enemy(engine, monster)
     engine.execute_action("round_start", {})
 
@@ -101,33 +104,35 @@ def test_resonance_on_enemy_grants_dest_and_rewrites_next_activation():
     assert r["success"], r
     assert r["granted_daowen"] == "自残"
     assert "自残" in engine.state.player.dao_wen
-    assert "狂暴" in monster.dao_wen
-    assert "自残" not in monster.dao_wen
+    assert "狂暴" not in monster.dao_wen
+    assert "自残" in monster.dao_wen
     assert engine.state.resonance["反转"] == 0
 
     finish_round(engine)
     engine.execute_action("round_start", {})
     prepared = engine.execute_action("prepare_monster_phase", {})
     actor = prepared["result"]["actors"][0]
+    option = next(o for o in actor["daowen_options"] if o["name"] == "自残")
     phase = engine.execute_action("resolve_monster_phase", {
         "token": prepared["result"]["token"],
         "choices": [{
             "actor_ref": actor["actor_ref"],
-            "daowen": {"name": "狂暴", "target_ref": "enemy:0", "dodge": False, "blood_shadow": False, "trigger_spell_choices": {}},
+            "daowen": {"name": "自残", "target_ref": "enemy:0",
+                       "dodge": False, "blood_shadow": False, "trigger_spell_choices": {}},
             "attack_actions": [{"hits": [{"target_ref": "player:0", "dodge": False, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}}]}],
         }],
     })
+    assert phase["success"], phase
     details = phase["result"]["details"]
-    rewritten = [d for d in details if d.get("resonance_rewrite")]
-    assert rewritten, f"应兑现残韵改写: {details}"
-    assert rewritten[0]["daowen_activated"] == "狂暴"
-    assert rewritten[0]["resolves_as"] == "自残"
+    activated = [d for d in details if d.get("daowen_activated") == "自残"]
+    assert activated, f"应发动永久改写后的自残: {details}"
     assert monster.current_hp == 70, f"自残2次×攻击力5，HP应80→70，实{monster.current_hp}"
-    assert "狂暴" in monster.dao_wen
+    assert "自残" in monster.dao_wen
+    assert "狂暴" not in monster.dao_wen
 
 
 def test_resonance_no_duplicate_when_caster_already_owns_dest():
-    """边界：施法者已持有变化后道纹则不重复获得；无 target 时场上唯一持有者也可命中。"""
+    """边界：施法者已持有变化后道纹则不重复获得；目标道纹仍永久变化。"""
     engine = _engine("res_bound")
     engine.state.resonance["反转"] = 1
     _give_daowen(engine.state.player, "自残")
@@ -135,6 +140,7 @@ def test_resonance_no_duplicate_when_caster_already_owns_dest():
     monster = Entity(name="唯一狂暴", entity_type="怪物", blood_limit=80, current_hp=80,
                      attack_count=1, attack_power=4)
     _give_daowen(monster, "狂暴", x=1)
+    monster._had_monster_daowen = True
     _put_enemy(engine, monster)
     engine.execute_action("round_start", {})
 
@@ -144,7 +150,8 @@ def test_resonance_no_duplicate_when_caster_already_owns_dest():
     assert r["success"], r
     assert r["granted_daowen"] is None
     assert list(engine.state.player.dao_wen).count("自残") == 1
-    assert list(monster.dao_wen.keys()) == ["狂暴"]
+    assert "狂暴" not in monster.dao_wen
+    assert "自残" in monster.dao_wen
 
 
 def test_resonance_fails_without_holder_or_stock():

@@ -17,6 +17,7 @@ pytest 风格测试 - 里程碑1：随机数规则改造（引擎自动生成随
     python -m pytest tests/test_rng_engine.py -v
 """
 import os
+from tests.setup_support import finish_initial_daowen
 os.makedirs("/tmp/linji_tests", exist_ok=True)
 import os
 import sys
@@ -154,6 +155,7 @@ def test_setup_choose_region_uses_engine_auto_roll_not_bare_random():
     """集成：开局选择副本后自动发现的初始遗物，必须来自 engine.dice 的可复现随机源"""
     engine = GameEngine(db_path="/tmp/linji_tests/test_rng_1.db", rng_seed=999)
     engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
+    finish_initial_daowen(engine)
     r = _choose_region(engine, "扭曲都市")
 
     assert r["success"] is True
@@ -168,10 +170,12 @@ def test_setup_choose_region_reproducible_across_two_engines_same_seed():
     """集成 + 可复现性：相同 rng_seed 的两个独立 GameEngine 实例，开局摇到的初始遗物必须完全一致"""
     e1 = GameEngine(db_path="/tmp/linji_tests/test_rng_2a.db", rng_seed=555)
     e1.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
+    finish_initial_daowen(e1)
     r1 = _choose_region(e1, "龙心谷")
 
     e2 = GameEngine(db_path="/tmp/linji_tests/test_rng_2b.db", rng_seed=555)
     e2.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
+    finish_initial_daowen(e2)
     r2 = _choose_region(e2, "龙心谷")
 
     assert r1["result"]["relic_choices"] == r2["result"]["relic_choices"], \
@@ -182,6 +186,7 @@ def test_explore_action_uses_engine_auto_roll():
     """集成：局外【探索】抽取事件，必须经由 engine.dice.auto_roll，且历史可查"""
     engine = GameEngine(db_path="/tmp/linji_tests/test_rng_3.db", rng_seed=123)
     engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
+    finish_initial_daowen(engine)
     _choose_region(engine, "罪孽都市", finish_discovery=True)
     engine.state.energy = 3
 
@@ -199,6 +204,7 @@ def test_gongming_discover_uses_engine_auto_roll():
     """集成：局外【共鸣】(发现分支)获取遗物，必须经由 engine.dice.auto_roll"""
     engine = GameEngine(db_path="/tmp/linji_tests/test_rng_4.db", rng_seed=321)
     engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
+    finish_initial_daowen(engine)
     _choose_region(engine, "扭曲都市", finish_discovery=True)
     engine.state.energy = 3
 

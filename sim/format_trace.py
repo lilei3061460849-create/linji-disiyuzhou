@@ -17,6 +17,7 @@ import os
 import random
 import sys
 
+from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
@@ -38,6 +39,7 @@ def run(region: str = "龙心谷", seed: int = 7, battles: int = 3) -> list[str]
     engine = GameEngine(db_path="/tmp/format_trace.db", rng_seed=seed)
     engine.execute_action("setup_attributes",
                           {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+    finish_initial_daowen(engine)
     engine.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     r = engine.execute_action("setup_choose_region", {"region": region})
     optional = {"折速法印", "三相残韵盘"}

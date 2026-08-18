@@ -4,12 +4,13 @@
 角色:秦无衣(7血/8速/10法=42血限/8速限/20法限),初始道纹·杀伐,残韵·曲解,副本·罪孽都市。
 局外:学习庇护(0碎片)+学习再生(10碎片)+领悟转换。
 战术修正(相对一号驱动):敌方【贯穿】生效后不再立盾、改为速度闪避;濒血用【再生】;
-怪物道纹按自身利益优先级出手(活力已按2026-08-17全局裁定无需目标)。
+怪物道纹按自身利益优先级出手(疯狂已按2026-08-17全局裁定无需目标)。
 """
 import json
 import os
 import sys
 
+from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
@@ -24,13 +25,14 @@ def act(e, action, params):
     return r
 
 
-MONSTER_DAO_PRIORITY = ["贯穿", "洗劫", "活力", "狂暴", "强化", "必中", "自愈", "飞行"]
+MONSTER_DAO_PRIORITY = ["贯穿", "洗劫", "疯狂", "狂暴", "强化", "必中", "自愈", "飞行"]
 
 
 def main():
     e = GameEngine(db_path="/tmp/story2_dm.db", rng_seed=20260817,
                    sealed_candidate_path="/tmp/story2_sealed.json")
     act(e, "setup_attributes", {"name": "秦无衣", "blood_points": 7, "speed_points": 8, "mana_points": 10})
+Nonefinish_initial_daowen(e)
     act(e, "setup_choose_resonance", {"resonance_type": "反转"})
     s = act(e, "setup_choose_region", {"region": "罪孽都市"})
     act(e, "choose_discovered_relic", {"relic_name": s["result"]["relic_choices"][0]})
@@ -47,11 +49,11 @@ def main():
     while any(m.is_alive for m in e.state.enemies) and p.is_alive:
         act(e, "round_start", {"relic_choices": round_start_relic_choices(e)})
 
-        # ---- 残韵反转陷阱:敌方持有【活力】时,预埋反转,将其激活烧成【无力】 ----
+        # ---- 残韵反转陷阱:敌方持有【疯狂】时,预埋反转,将其激活烧成【无力】 ----
         if e.state.resonance.get("反转", 0) > 0:
             for idx, m in enumerate(e.state.enemies):
-                if m.is_alive and "活力" in m.dao_wen:
-                    trap = act(e, "use_resonance", {"source_daowen": "活力",
+                if m.is_alive and "疯狂" in m.dao_wen:
+                    trap = act(e, "use_resonance", {"source_daowen": "疯狂",
                                                     "resonance_type": "反转",
                                                     "target_ref": f"enemy:{idx}"})
                     if not trap.get("success"):
@@ -72,8 +74,8 @@ def main():
             for m in e.state.enemies:
                 if not m.is_alive:
                     continue
-                v = 2 if (m.get_status_value("活力") or
-                          ("活力" in m.dao_wen and e.state.current_round >= 2)) else 0
+                v = 2 if (m.get_status_value("疯狂") or
+                          ("疯狂" in m.dao_wen and e.state.current_round >= 2)) else 0
                 incoming += max(0, (1 + v) * m.attack_count - p.current_speed) * m.attack_power
             if (incoming > p.current_hp + p.shield and "再生" in p.dao_wen
                     and p.current_mana >= 6 and p.current_hp < p.blood_limit

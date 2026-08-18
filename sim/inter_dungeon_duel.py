@@ -10,6 +10,7 @@ import os
 import sys
 import tempfile
 
+from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
@@ -118,6 +119,7 @@ def run_inter_dungeon_playthrough():
     e1.execute_action("setup_attributes", {
         "name": "苏星河", "blood_points": 7, "speed_points": 8, "mana_points": 10
     })
+    finish_initial_daowen(e1)
     e1.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     s1 = e1.execute_action("setup_choose_region", {"region": "罪孽都市"})
     relic_s1 = next((r for r in s1["result"]["relic_choices"] if r == "守夜灯"), s1["result"]["relic_choices"][0])
@@ -227,6 +229,7 @@ def run_inter_dungeon_playthrough():
     e2.execute_action("setup_attributes", {
         "name": "叶清弦", "blood_points": 7, "speed_points": 8, "mana_points": 10
     })
+    finish_initial_daowen(e2)
     e2.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     s2 = e2.execute_action("setup_choose_region", {"region": "扭曲都市"})
     relic_s2 = next((r for r in s2["result"]["relic_choices"] if r not in ("血契", "折速法印")), s2["result"]["relic_choices"][0])

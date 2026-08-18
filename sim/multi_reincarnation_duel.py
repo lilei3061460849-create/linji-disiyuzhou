@@ -10,6 +10,7 @@ import os
 import sys
 import tempfile
 
+from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
@@ -112,6 +113,7 @@ def run_three_generations():
     e1.execute_action("setup_attributes", {
         "name": "贾希希", "blood_points": 7, "speed_points": 8, "mana_points": 10
     })
+    finish_initial_daowen(e1)
     e1.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     s1 = e1.execute_action("setup_choose_region", {"region": "龙心谷"})
     e1.execute_action("choose_discovered_relic", {"relic_name": s1["result"]["relic_choices"][0]})
@@ -221,6 +223,7 @@ def run_three_generations():
     e2.execute_action("setup_attributes", {
         "name": "苏星河", "blood_points": 7, "speed_points": 8, "mana_points": 10
     })
+    finish_initial_daowen(e2)
     e2.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     s2 = e2.execute_action("setup_choose_region", {"region": "龙心谷"})
     e2.execute_action("choose_discovered_relic", {"relic_name": s2["result"]["relic_choices"][0]})
@@ -341,6 +344,7 @@ def run_three_generations():
     e3.execute_action("setup_attributes", {
         "name": "林渊", "blood_points": 7, "speed_points": 8, "mana_points": 10
     })
+    finish_initial_daowen(e3)
     e3.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     s3 = e3.execute_action("setup_choose_region", {"region": "龙心谷"})
     e3.execute_action("choose_discovered_relic", {"relic_name": s3["result"]["relic_choices"][0]})

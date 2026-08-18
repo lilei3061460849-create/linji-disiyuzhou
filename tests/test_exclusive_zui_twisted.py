@@ -8,6 +8,7 @@ import os
 import sys
 import pytest
 
+from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
@@ -22,6 +23,7 @@ from tests.monster_phase_support import resolve_monster_phase
 def _setup(region="罪孽都市", mana=100, speed_limit=99):
     engine = GameEngine(rng_seed=42)
     engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 7, "mana_points": 8})
+    finish_initial_daowen(engine)
     engine.state.current_region = region
     engine.state.phase = "in_combat"
     player = engine.state.player

@@ -5,6 +5,7 @@ import json
 import os
 import sys
 
+from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine, TWISTED_TOOL_LIBRARY
@@ -28,6 +29,7 @@ def _full_setup(engine: GameEngine, region: str = "罪孽都市") -> GameEngine:
     assert engine.execute_action("setup_attributes", {
         "blood_points": 10, "speed_points": 8, "mana_points": 7,
     })["success"]
+    assert finish_initial_daowen(engine)["success"]
     assert "杀伐" in engine.state.player.dao_wen
     assert engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})["success"]
     result = engine.execute_action("setup_choose_region", {"region": region})

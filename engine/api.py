@@ -30,13 +30,15 @@ from .combat import CombatEngine
 from .events import EventPool, parse_events
 from .dungeons import DEFAULT_INDEX
 from .gamedata import (REGION_EXCLUSIVE_DAOWEN, ORIGINAL_MONSTER_DAOWEN,
-                       MONSTER_TRANSFORM_DAOWEN)
+                       MONSTER_TRANSFORM_DAOWEN, SHAFA_LOOP_DAOWEN,
+                       MONSTER_DAOWEN, UNIMPLEMENTED_REGION_EXCLUSIVE_DAOWEN)
 from .dm_rulings import DMRulingsDB, DMRuling, Interrupt
 from .death_book import DeathBookStore, draft_legacy, validate_legacy
 from .handlers.setup import (
     handle_setup_attributes,
     handle_setup_choose_region,
     handle_setup_choose_resonance,
+    handle_setup_choose_initial_daowen,
 )
 from .handlers.economy import (
     handle_deploy_employee,
@@ -157,6 +159,23 @@ class GameEngine:
         获取当前可用行动
         根据游戏阶段返回不同的行动列表
         """
+        if self.state.pending_initial_daowen_choices:
+            return {
+                "phase": "初始道纹发现待选",
+                "actions": [{"action_type": "setup_choose_initial_daowen",
+                             "params_schema": {
+                                 "daowen_name": list(self.state.pending_initial_daowen_choices)}}],
+                "source": self.state.pending_initial_daowen_source,
+            }
+        if self.state.pending_redemption:
+            return {
+                "phase": "救赎待选",
+                "actions": [{"action_type": "resolve_redemption",
+                             "params_schema": {
+                                 "option": [1, 2, "接纳", "无视"],
+                                 "name": "接纳时必填且不得与场上重名"}}],
+                "pending": dict(self.state.pending_redemption),
+            }
         if self.state.pending_relic_choices:
             return {
                 "phase": "遗物发现待选",
@@ -238,6 +257,11 @@ class GameEngine:
                 "name": "string", "blood_points": "integer", "speed_points": "integer",
                 "mana_points": "integer", "constraint": "sum=25"}})
         else:
+            if self.state.pending_initial_daowen_choices or not self.state.player.dao_wen:
+                actions.append({"action_type": "setup_choose_initial_daowen",
+                                "params_schema": {
+                                    "daowen_name": list(self.state.pending_initial_daowen_choices)}})
+                return {"phase": GamePhase.SETUP.value, "actions": actions}
             if not self.state.resonance:
                 actions.append({"action_type": "setup_choose_resonance",
                                 "params_schema": {"resonance_type": ["转换", "反转", "曲解"]}})
@@ -757,6 +781,19 @@ class GameEngine:
         if params is None:
             params = {}
 
+        if (self.state.pending_initial_daowen_choices
+                and action_type != "setup_choose_initial_daowen"):
+            return {
+                "success": False,
+                "error": "必须先从杀伐闭环发现候选中选择1种初始道纹",
+                "choices": list(self.state.pending_initial_daowen_choices),
+            }
+        if self.state.pending_redemption and action_type != "resolve_redemption":
+            return {
+                "success": False,
+                "error": "必须先结算【救赎】：接纳或无视",
+                "pending": dict(self.state.pending_redemption),
+            }
         if self.state.pending_relic_choices and action_type != "choose_discovered_relic":
             return {
                 "success": False,
@@ -827,6 +864,10 @@ class GameEngine:
                 result = self._action_setup_choose_region(params)
             elif action_type == "setup_choose_resonance":
                 result = self._action_setup_choose_resonance(params)
+            elif action_type == "setup_choose_initial_daowen":
+                result = self._action_setup_choose_initial_daowen(params)
+            elif action_type == "resolve_redemption":
+                result = self._action_resolve_redemption(params)
             elif action_type == "pre_battle_action":
                 result = self._action_pre_battle(params)
             elif action_type == "upgrade_doctor":
@@ -1011,6 +1052,76 @@ class GameEngine:
 
     def _action_setup_choose_resonance(self, params: dict) -> dict:
         return handle_setup_choose_resonance(self, params)
+
+    def _action_setup_choose_initial_daowen(self, params: dict) -> dict:
+        return handle_setup_choose_initial_daowen(self, params)
+
+    def _offer_initial_daowen_discovery(self, source: str) -> dict:
+        """从杀伐闭环不重复随机列出至多3种；只列候选，不替AI作选择。"""
+        if self.state.pending_initial_daowen_choices:
+            return {"success": False, "error": "已有待选择的初始道纹发现"}
+        owned = set(self.state.player.dao_wen) if self.state.player else set()
+        remaining = [name for name in SHAFA_LOOP_DAOWEN if name not in owned]
+        if not remaining:
+            return {"success": False, "error": "杀伐闭环已无可发现的道纹"}
+        choices: list[str] = []
+        for slot in range(min(3, len(remaining))):
+            roll = self.dice.auto_roll(
+                f"initial_daowen_discovery_{source}_{slot + 1}",
+                remaining,
+                context=f"{source}：随机列出初始道纹候选{slot + 1}",
+            )
+            selected = remaining.pop(roll["record"]["selected_index"])
+            choices.append(selected)
+        self.state.pending_initial_daowen_choices = choices
+        self.state.pending_initial_daowen_source = source
+        return {"success": True, "choices": choices, "source": source}
+
+    def _grant_named_daowen(self, entity: Entity, name: str) -> None:
+        if entity is None or name in entity.dao_wen:
+            return
+        entity.dao_wen[name] = DaoWenInstance(DaoWen(
+            name=name, formula=f"{name}X", cost_type="消耗",
+            cost_formula="X", effect_formula=""))
+
+    def _action_resolve_redemption(self, params: dict) -> dict:
+        """救赎：接纳昏迷微光者为朋友，或无视。"""
+        pending = self.state.pending_redemption
+        if not pending:
+            return {"success": False, "error": "当前没有待结算的救赎"}
+        option = params.get("option")
+        if option in (1, "1", "接纳"):
+            name = params.get("name", "")
+            if not isinstance(name, str) or not name.strip():
+                return {"success": False, "error": "接纳时必须自定义朋友名字"}
+            name = name.strip()
+            existing = set()
+            if self.state.player:
+                existing.add(self.state.player.name)
+            for group in (self.state.friends, self.state.employees, self.state.temp_friends):
+                existing.update(entity.name for entity in group)
+            existing.update(entity.name for entity in self.state.enemies if entity.is_alive)
+            if name in existing:
+                return {"success": False, "error": f"名字【{name}】已被占用，请换一个"}
+            friend = Entity(
+                name=name,
+                entity_type="朋友",
+                blood_limit=math.ceil(pending["blood_limit"] / 2),
+                current_hp=math.ceil(pending["blood_limit"] / 2),
+                attack_count=math.ceil(pending["attack_count"] / 2),
+                attack_power=math.ceil(pending["attack_power"] / 2),
+            )
+            self.state.friends.append(friend)
+            self.state.pending_redemption = {}
+            return {
+                "success": True,
+                "action": "救赎·接纳",
+                "result": {"friend": friend.to_dict(), "from": pending["name"]},
+            }
+        if option in (2, "2", "无视"):
+            self.state.pending_redemption = {}
+            return {"success": True, "action": "救赎·无视", "result": {"note": "无事发生"}}
+        return {"success": False, "error": "option必须是1/接纳或2/无视"}
 
     # ==================== 局外行动 ====================
 
@@ -1235,7 +1346,7 @@ class GameEngine:
         ("血契", "数值型【代价】可与一名存活朋友/员工共同承担（通用规则见README《基础定义·数值型代价》）；[回始]可流血4X获得X法力，本次流血也可共同承担"),
         ("避风铃", "每次闪避后获得3格挡；当前速度归零时获得15格挡"),
         ("守夜灯", "[敌回始]获得[法限]50%法力，[敌回终]清空，每回合一次"),
-        ("钱袋", "每当敌方[目标][命零]，额外获得其[战始][血限]2%的[碎片]"),
+        ("钱袋", "你不再受到“癌变”事件的影响"),
         ("无所求", "每当在事件中选拒绝类选项，永久获得1属性点"),
         ("忘忧香", "局外行动你可以选择\"忘忧\"（失忆1/2/3，获得30/55/80[碎片]）"),
     ]
@@ -1436,6 +1547,9 @@ class GameEngine:
                 return f"【{name}】是怪物转化道纹，只能由自身已有道纹经残韵获得"
             if name in ORIGINAL_MONSTER_DAOWEN:
                 return f"【{name}】是原始怪物道纹，人类无法承受并获得"
+            owner = UNIMPLEMENTED_REGION_EXCLUSIVE_DAOWEN.get(name)
+            if owner is not None:
+                return f"【{name}】是{owner}专属道纹，当前副本无法习得"
             return None
 
         errors = [error for name in names if (error := daowen_error(name))]
@@ -2290,9 +2404,29 @@ class GameEngine:
             return None, f"场上无人持有道纹: {source}"
         return None, f"多名角色持有{source}，请指定target_ref"
 
+    def _permanently_convert_daowen(self, holder: Entity, source: str, dest: str) -> bool:
+        """将持有者的源道纹永久变为变化后的道纹；同名只保留一份。"""
+        if source not in holder.dao_wen:
+            return False
+        if holder.entity_type == "怪物" and source in MONSTER_DAOWEN:
+            holder._had_monster_daowen = True
+        old = holder.dao_wen[source]
+        if dest not in holder.dao_wen:
+            holder.dao_wen[dest] = DaoWenInstance(DaoWen(
+                name=dest, formula=f"{dest}X",
+                cost_type=old.dao_wen.cost_type,
+                cost_formula=old.dao_wen.cost_formula,
+                effect_formula=old.dao_wen.effect_formula,
+            ), x_value=old.x_value)
+        if dest != source:
+            del holder.dao_wen[source]
+        return True
+
     def _grant_transformed_daowen(self, player: Entity, dest: str) -> bool:
-        """残韵获得变化后道纹。规则4：X不从原道纹拷贝；规则6：同名不重复。"""
+        """残韵获得变化后道纹。X不从原道纹拷贝；同名不重复。"""
         if dest in player.dao_wen:
+            return False
+        if dest in ORIGINAL_MONSTER_DAOWEN:
             return False
         player.dao_wen[dest] = DaoWenInstance(DaoWen(
             name=dest, formula=f"{dest}X", cost_type="消耗",
@@ -2332,24 +2466,11 @@ class GameEngine:
         self.state.resonance[rtype] -= 1
 
         dest = result["target"]
-        granted = False
-        # 如果是轮回者拥有的道纹，永久变化（规则3）
-        if caster_has and result.get("permanent_change"):
-            old_dw = player.dao_wen[source]
-            new_dw = DaoWen(
-                name=dest,
-                formula=f"{dest}X",
-                cost_type=old_dw.dao_wen.cost_type,
-                cost_formula=old_dw.dao_wen.cost_formula,
-                effect_formula=old_dw.dao_wen.effect_formula
-            )
-            player.dao_wen[dest] = DaoWenInstance(dao_wen=new_dw)
-            if dest != source:
-                del player.dao_wen[source]
-        else:
-            # 规则2：不改持有，只改下一次发动结算；施法者获得变化后道纹
-            self.combat.queue_resonance_rewrite(holder, source, dest)
-            granted = self._grant_transformed_daowen(player, dest)
+        holder_changed = self._permanently_convert_daowen(holder, source, dest)
+        granted = self._grant_transformed_daowen(player, dest)
+        redemption = None
+        if holder.entity_type == "怪物":
+            redemption = self.combat.check_redemption(holder)
 
         second = params.get("second_target_ref", "")
         second_source_daowen = params.get("second_source_daowen", "")
@@ -2367,26 +2488,31 @@ class GameEngine:
                     r2 = ResonanceEngine.apply_resonance(second_source_daowen, rtype,
                                                           caster_has_daowen=(second_source_daowen in player.dao_wen),
                                                           target_has_daowen=True)
-                    if r2.get("success") and r2.get("caster_gets_daowen"):
+                    if r2.get("success"):
                         new_name = r2["target"]
-                        # 残韵作用于非轮回者拥有的道纹时：不改变其拥有的道纹，施法者永久获得变化后的道纹
-                        self.combat.queue_resonance_rewrite(second_entity, second_source_daowen, new_name)
+                        self._permanently_convert_daowen(second_entity, second_source_daowen, new_name)
                         if self._grant_transformed_daowen(player, new_name):
-                            second_log = f"同魂笔：{second_entity.name}的{second_source_daowen}受{rtype}影响，施法者永久获得{new_name}"
+                            second_log = f"同魂笔：{second_entity.name}的{second_source_daowen}永久变为{new_name}，施法者同时永久获得{new_name}"
                         else:
-                            second_log = f"同魂笔：施法者已持有{new_name}，不重复获得"
+                            second_log = f"同魂笔：{second_entity.name}的{second_source_daowen}永久变为{new_name}；施法者已持有{new_name}"
+                        if second_entity.entity_type == "怪物" and not redemption:
+                            redemption = self.combat.check_redemption(second_entity)
                     else:
                         second_log = f"同魂笔：{r2.get('error', '未知原因')}，未生效"
-        return {
+        payload = {
             "success": True,
             "action": f"残韵【{rtype}】{source} → {result['target']}",
             "result": result,
             "holder": holder.name,
             "holder_is_player": caster_has,
+            "holder_changed": holder_changed,
             "granted_daowen": dest if granted else None,
             "second_target_log": second_log,
             "resonance_remaining": self.state.resonance
         }
+        if redemption:
+            payload["redemption"] = redemption
+        return payload
 
     def _action_prepare_attack(self, params: dict) -> dict:
         """第一阶段：绑定一次行动的逐击目标、闪避、血影和法术反应选项。"""
@@ -3363,7 +3489,7 @@ class GameEngine:
         # 提取多路径胜利结果（已由 combat.round_end 结算）
         alt_paths = [e for e in result.get("effects", [])
                      if isinstance(e, dict) and e.get("type") in
-                     ("sculpture", "proliferation", "cancer", "debt_bind")]
+                     ("sculpture", "proliferation", "cancer", "debt_bind", "redemption")]
 
         # 检查怪物困境
         difficulties = []
@@ -4161,7 +4287,6 @@ class GameEngine:
         relic_end = self.combat.process_relics(TriggerTiming.BATTLE_END)
         # 碎片奖励计算（被雕塑/癌变/还债/封印移出的怪物不视为击杀，不产碎片）
         # 奖励公式用的是[战始][血限]快照(battle_start_blood_limit)，不是当前血限(增殖等会改变当前血限)
-        has_money_bag = any(r.name == "钱袋" for r in self.state.relics)
         shard_reward = 0
         removed = []
         for monster in self.state.enemies:
@@ -4169,13 +4294,12 @@ class GameEngine:
                     or monster.is_proliferated or monster.is_debt_bound):
                 removed.append({"name": monster.name,
                                 "way": ("雕塑" if monster.is_sculptured else
+                                        "救赎" if getattr(monster, "_redeemed", False) else
                                         "封印" if monster.removed_without_kill else
                                         "癌变" if monster.is_proliferated else "还债")})
                 continue
             if not monster.is_alive:
                 reward = math.ceil(monster.battle_start_blood_limit * 0.02) + len(monster.dao_wen) * 5
-                if has_money_bag:
-                    reward += math.ceil(monster.battle_start_blood_limit * 0.02)  # 钱袋：额外+[战始][血限]2%
                 shard_reward += reward
 
         modifiers = self.state.event_modifiers

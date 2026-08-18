@@ -6,6 +6,7 @@
 import os
 import sys
 
+from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
@@ -44,6 +45,7 @@ def test_dungeon_selectable_region():
     e = GameEngine(db_path="/tmp/test_lz_region.db", rng_seed=1)
     e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 10,
                                           "speed_points": 8, "mana_points": 7})
+    finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     r = e.execute_action("setup_choose_region", {"region": "乱葬岗"})
     assert r["success"], r
@@ -66,6 +68,7 @@ def test_fusha_select_mode():
     e = GameEngine(db_path="/tmp/test_lz_fusha.db", rng_seed=1)
     e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 10,
                                           "speed_points": 8, "mana_points": 7})
+    finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": "乱葬岗"})
     e.execute_action("choose_discovered_relic", {"relic_name": setup["result"]["relic_choices"][0]})
@@ -82,6 +85,7 @@ def test_fusha_discover_mode_candidates():
     e = GameEngine(db_path="/tmp/test_lz_fusha2.db", rng_seed=1)
     e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 10,
                                           "speed_points": 8, "mana_points": 7})
+    finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": "乱葬岗"})
     e.execute_action("choose_discovered_relic", {"relic_name": setup["result"]["relic_choices"][0]})
@@ -103,6 +107,7 @@ def test_fusha_invalid_sha_qi_rejected():
     e = GameEngine(db_path="/tmp/test_lz_fusha3.db", rng_seed=1)
     e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 10,
                                           "speed_points": 8, "mana_points": 7})
+    finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": "乱葬岗"})
     e.execute_action("choose_discovered_relic", {"relic_name": setup["result"]["relic_choices"][0]})
@@ -117,6 +122,7 @@ def test_fusha_region_gate():
     e = GameEngine(db_path="/tmp/test_lz_fusha4.db", rng_seed=1)
     e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 10,
                                           "speed_points": 8, "mana_points": 7})
+    finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": "扭曲都市"})
     e.execute_action("choose_discovered_relic", {"relic_name": setup["result"]["relic_choices"][0]})

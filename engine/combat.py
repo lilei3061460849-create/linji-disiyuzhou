@@ -27,7 +27,7 @@ class CombatEngine:
     }
     
     # 原始怪物道纹（道纹归属规则：各组起点）——【原初X】可借用范围
-    ORIGINAL_MONSTER_DAOWEN = ("狂暴", "强化", "活力", "减速", "必中", "自愈", "飞行")
+    ORIGINAL_MONSTER_DAOWEN = ("狂暴", "强化", "疯狂", "减速", "必中", "自愈", "飞行")
     # 原始怪物道纹只在首次发动时支付异变5X；效果持续期间不再重复计费。
     # 必中为次数型（下X次选择[目标]无法闪避），余数记在 entity._bizhong_left。
     YUANCHU_COST_RATE = 5
@@ -172,9 +172,9 @@ class CombatEngine:
         if entity.entity_type == "怪物":
             n = 2
             act = self._monster_activated.get(id(entity), set())
-            # 活力(2026-08-17全局裁定)：状态盖到所有角色，怪物从自身状态读+X。
+            # 疯狂(2026-08-17全局裁定)：状态盖到所有角色，怪物从自身状态读+X。
             # 不再走激活集合分支，避免与全局状态双重计数。
-            n += entity.get_status_value("活力")
+            n += entity.get_status_value("疯狂")
             if "狂暴" in act or entity.has_status("狂暴"):
                 n += 1
             n -= entity.get_status_value("无力")
@@ -1338,12 +1338,75 @@ class CombatEngine:
         """任一角色恢复量达阈值即癌变。怪物仍吸收进书；轮回者/同伴直接命零。"""
         if entity is None or not entity.is_alive or entity.is_proliferated:
             return None
+        if self.state.side_has(entity, "钱袋"):
+            return None
         threshold = self.cancer_threshold_of(entity)
         if threshold <= 0 or entity.total_healed < threshold:
             return None
         if entity.entity_type == "怪物":
             return self._proliferate_monster(entity)
         return self._cancer_character(entity)
+
+    REDEMPTION_MUTATION_THRESHOLD = -30
+
+    def monster_has_monster_daowen(self, monster: Entity) -> bool:
+        from .gamedata import MONSTER_DAOWEN
+        return any(name in MONSTER_DAOWEN for name in monster.dao_wen)
+
+    def check_redemption(self, monster: Entity) -> Optional[dict]:
+        """救赎：曾持有的怪物道纹已全部失去，或【异变】≤-30层。"""
+        if monster is None or monster.entity_type != "怪物" or not monster.is_alive:
+            return None
+        if monster.is_sculptured or monster.is_proliferated or monster.is_debt_bound:
+            return None
+        if getattr(monster, "removed_without_kill", False):
+            return None
+        if self.state.pending_redemption:
+            return None
+        if self.monster_has_monster_daowen(monster):
+            monster._had_monster_daowen = True
+        no_monster_daowen = (
+            bool(getattr(monster, "_had_monster_daowen", False))
+            and not self.monster_has_monster_daowen(monster)
+        )
+        mutation_cleansed = monster.mutation_count <= self.REDEMPTION_MUTATION_THRESHOLD
+        if not (no_monster_daowen or mutation_cleansed):
+            return None
+        cause = "no_monster_daowen" if no_monster_daowen else "mutation"
+        return self._queue_redemption(monster, cause)
+
+    def check_all_redemption(self) -> list[dict]:
+        results = []
+        for entity in list(self.state.enemies):
+            hit = self.check_redemption(entity)
+            if hit:
+                results.append(hit)
+        return results
+
+    def _queue_redemption(self, monster: Entity, cause: str) -> dict:
+        """怪物融化离场，等待接纳/无视。不产碎片。"""
+        snapshot = {
+            "name": monster.name,
+            "attack_count": monster.attack_count,
+            "attack_power": monster.attack_power,
+            "blood_limit": monster.blood_limit,
+            "dao_wen": {name: inst.x_value for name, inst in monster.dao_wen.items()},
+            "cause": cause,
+            "mutation": monster.mutation_count,
+        }
+        monster.removed_without_kill = True
+        monster.is_alive = False
+        monster._redeemed = True
+        self.state.pending_redemption = snapshot
+        return {
+            "type": "redemption",
+            "monster": monster.name,
+            "cause": cause,
+            "note": (
+                f"随着最后一缕恶意消散，{monster.name}的身躯开始融化，"
+                "原地只剩下一个昏迷的微光者"
+            ),
+        }
 
     def check_all_cancer(self) -> list[dict]:
         results = []
@@ -1376,7 +1439,13 @@ class CombatEngine:
                 results.append(self._sculpture_monster(monster))
                 continue
 
-            # 2. 癌变：累计受到恢复量达阈值
+            # 2. 救赎：没有怪物道纹或异变≤-30
+            redemption = self.check_redemption(monster)
+            if redemption:
+                results.append(redemption)
+                continue
+
+            # 3. 癌变：累计受到恢复量达阈值
             cancer = self.check_cancer(monster)
             if cancer:
                 results.append(cancer)
@@ -1786,6 +1855,18 @@ class CombatEngine:
         if "heal_percent" in calc and name != "自愈" and not (target.has_status("坏死")):
             h = math.ceil(target.blood_limit * calc["heal_percent"] / 100)
             result["effects"].append({"type": "heal_pct", "target": target.name, **self.state.apply_heal(target, h)})
+        if "mutation_reduction" in calc:
+            reduced = int(calc["mutation_reduction"])
+            pay = target.add_mutation(-reduced)
+            result["effects"].append({
+                "type": "mutation_reduction", "target": target.name,
+                "reduced": reduced, "mutation_total": pay["mutation_total"],
+            })
+            if target.entity_type == "怪物":
+                redemption = self.check_redemption(target)
+                if redemption:
+                    result["effects"].append(redemption)
+
         if "target_heal" in calc or ("heal_percent" in calc and name != "自愈"):
             cancer = self.check_cancer(target)
             if cancer:
@@ -2080,14 +2161,14 @@ class CombatEngine:
             # 洗劫：状态应挂在施法者上——"造成伤害时夺取等量碎片"以施法者为触发主体（与 sim/balance_sim 口径一致）
             self_targeted = name in ("超频", "自食", "飞行", "滑翔", "狂暴", "自愈", "必中", "变形", "洗劫", "固执")
             et = caster if self_targeted else effect_target
-            if name == "活力":
-                # 2026-08-17 用户裁定：活力X改为【所有角色出手+X】（全局，变相平衡）。
-                # 状态盖到双方全部存活角色；出手口径各自读取自身活力状态：
+            if name == "疯狂":
+                # 2026-08-17 用户裁定：疯狂X改为【所有角色出手+X】（全局，变相平衡）。
+                # 状态盖到双方全部存活角色；出手口径各自读取自身疯狂状态：
                 # 轮回者/朋友/员工走 Entity.action_count，怪物攻击轮数走 _monster_attack_actions。
                 for et_all in self.state.get_all_player_side() + self.state.get_all_enemy_side():
                     if not et_all.is_alive:
                         continue
-                    et_all.add_status(StatusEffect(name="活力", remaining_rounds=duration,
+                    et_all.add_status(StatusEffect(name="疯狂", remaining_rounds=duration,
                                                    value=x, source=caster.name))
                     result["effects"].append({"type": "status_added", "target": et_all.name,
                                               "status": name, "duration": duration, "value": x})
@@ -2682,8 +2763,6 @@ class CombatEngine:
             for t in others:
                 self.state.resonance[t] = self.state.resonance.get(t, 0) + 1
             logs.append(f"三相残韵盘：战终获得{'、'.join(others)}残韵各1")
-        # 钱袋：改在 api.py 的 _action_battle_end 里随标准击杀奖励一并结算(用battle_start_blood_limit快照)，
-        # 不再用"on_monster_death"这个从未被调用过的触发点(此前是死代码)。
         return logs
 
     # ========== 怪物回合（两阶段显式决策） ==========
@@ -2711,15 +2790,15 @@ class CombatEngine:
         return dest
 
     def _monster_attack_actions(self, m: Entity, activated: set) -> int:
-        """怪物攻击出手数 = 1 + 活力X(自身状态) + 狂暴1(若激活)。
+        """怪物攻击出手数 = 1 + 疯狂X(自身状态) + 狂暴1(若激活)。
 
-        活力2026-08-17全局裁定：发动方把活力状态盖到所有角色，怪物从自身状态读+X；
+        疯狂2026-08-17全局裁定：发动方把疯狂状态盖到所有角色，怪物从自身状态读+X；
         激活集合口径仅保留给狂暴。发动当回合的状态在resolve阶段才落下，
-        prepare在本回合道纹结算前已快照出手数，因此活力自下回合生效的时序不变。
+        prepare在本回合道纹结算前已快照出手数，因此疯狂自下回合生效的时序不变。
         高爆手雷修改的是每轮攻击中的"攻击次数"，不再同时削减攻击出手数。
         """
         n = 1
-        n += m.get_status_value("活力")
+        n += m.get_status_value("疯狂")
         if "狂暴" in activated or m.has_status("狂暴"):
             n += 1
         return max(0, n)
@@ -3075,7 +3154,7 @@ class CombatEngine:
                 if not monster.is_alive:
                     continue
             activated = self._monster_activated.setdefault(id(monster), set())
-            # 攻击出手数以“道纹结算前”的已激活集合为准：狂暴/活力是[回始]持续效果，
+            # 攻击出手数以“道纹结算前”的已激活集合为准：狂暴/疯狂是[回始]持续效果，
             # 本回合刚发动时从下回合起生效，prepare列出的 base_attack_actions 也是按
             # 结算前状态给出的——两处必须一致，否则按 prepare 提交必然失败。
             activated_before = set(activated)
@@ -3106,7 +3185,7 @@ class CombatEngine:
                     continue
 
             attack_actions = choice.get("attack_actions")
-            # 出手数按prepare快照校验：2026-08-17活力全局裁定后，状态在本actor
+            # 出手数按prepare快照校验：2026-08-17疯狂全局裁定后，状态在本actor
             # 道纹结算中即盖到全场，若此处按当前状态重算会把"自下回合生效"提前到
             # 本回合，导致按prepare提交必然失败；快照即契约（两处必须一致）。
             expected_actions = expected[actor_ref]["base_attack_actions"]

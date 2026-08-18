@@ -12,6 +12,7 @@ pytest 风格测试 - 里程碑：真龙之心（龙心谷终音法器，龙性�
 import os
 import sys
 
+from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
@@ -28,6 +29,7 @@ def _new_engine(region="龙心谷", name="老张", speed=8, mana=7, dbsuffix="a"
     blood = 25 - speed - mana
     engine.execute_action("setup_attributes",
                            {"blood_points": blood, "speed_points": speed, "mana_points": mana, "name": name})
+    finish_initial_daowen(engine)
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
     setup = engine.execute_action("setup_choose_region", {"region": region})
     optional = {"折速法印", "三相残韵盘"}

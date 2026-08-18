@@ -30,6 +30,7 @@ import random
 import sys
 from collections import defaultdict
 
+from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
@@ -78,7 +79,7 @@ def _pick_monster_daowen(engine, actor):
 
     # 输出/自保/控制/机制 优先级分组
     OUTPUT = {"狂暴", "强化", "杀伐", "血债", "锐利", "冲击", "加害", "活血", "裂变", "洗劫", "赎金", "逼债", "清算", "假钞", "赌命"}
-    SELF = {"自愈", "庇护", "再生", "固执", "活力", "兴奋", "坚韧", "龙鳞"}
+    SELF = {"自愈", "庇护", "再生", "固执", "疯狂", "兴奋", "坚韧", "龙鳞"}
     CONTROL = {"减速", "束缚", "衰败", "勾魂", "镇尸", "僵化", "眩晕", "蒙蔽", "弱化", "退化", "冥气", "缄默", "瓦解", "招魂", "堕落", "坠落", "无力", "迟滞", "定型", "封印", "缓慢"}
     MECH = {"飞行", "必中", "贯穿", "滑翔", "洞察", "超频", "变形", "增殖", "寄生", "自残", "透支", "假钞", "无神", "借力", "自食"}
 
@@ -319,6 +320,7 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
     e = GameEngine(db_path="/tmp/learner.db", rng_seed=seed)
     e.execute_action("setup_attributes",
                      {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+    finish_initial_daowen(e)
     if starter != "杀伐":
         raise ValueError("现行开局只会自动获得杀伐；其他道纹须放入learn")
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})

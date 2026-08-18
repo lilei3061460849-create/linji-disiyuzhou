@@ -17,6 +17,7 @@ DM裁定记录：出怪数量公式采用 AI_EXPERIENCE.md 记录版"battle_numb
     python -m pytest tests/test_monster_draw.py -v
 """
 import os
+from tests.setup_support import finish_initial_daowen
 os.makedirs("/tmp/linji_tests", exist_ok=True)
 import os
 import sys
@@ -35,6 +36,7 @@ DUNGEON_INDEX_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspat
 def _new_engine(db_suffix: str, region: str) -> GameEngine:
     engine = GameEngine(db_path=f"data/test_draw_{db_suffix}.db", rng_seed=1)
     engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
+    finish_initial_daowen(engine)
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
     setup = engine.execute_action("setup_choose_region", {"region": region})
     optional = {"折速法印", "三相残韵盘"}
@@ -131,6 +133,7 @@ def test_unknown_region_draws_nothing_but_does_not_crash():
     """边界：current_region不在三个已知副本池中时，不应抛异常，只是不出怪"""
     engine = GameEngine(db_path="/tmp/linji_tests/test_draw_unknown.db", rng_seed=1)
     engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
+    finish_initial_daowen(engine)
     engine.state.current_region = "尚未实现的副本"
     engine.state.phase = "pre_battle"
     engine.state.energy = 0

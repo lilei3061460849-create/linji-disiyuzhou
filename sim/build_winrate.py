@@ -19,6 +19,7 @@ import random
 import sys
 from collections import Counter
 
+from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
@@ -48,6 +49,7 @@ def run_one(build: str, region: str, seed: int, battles: int = 7) -> dict:
     e = GameEngine(db_path="/tmp/winrate.db", rng_seed=seed)
     e.execute_action("setup_attributes",
                      {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+    finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": region})
     optional_relics = {"折速法印", "三相残韵盘"}

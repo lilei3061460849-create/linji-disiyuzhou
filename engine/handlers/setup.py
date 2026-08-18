@@ -4,8 +4,9 @@
 """
 from __future__ import annotations
 from typing import Any, Dict
-from ..models import Entity, DaoWen, DaoWenInstance
+from ..models import Entity
 from ..enums import EntityType
+from ..gamedata import SHAFA_LOOP_DAOWEN
 
 
 def handle_setup_attributes(engine: Any, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -42,14 +43,14 @@ def handle_setup_attributes(engine: Any, params: Dict[str, Any]) -> Dict[str, An
         attack_power=0,
     )
 
-    # 开局唯一初始道纹为【杀伐】
-    player.dao_wen["杀伐"] = DaoWenInstance(dao_wen=DaoWen(
-        name="杀伐", formula="杀伐X的公式", cost_type="消耗",
-        cost_formula="X", effect_formula="2X伤害"))
     engine.state.player = player
     engine.state.attribute_points = 0
     engine.state.allocated_blood = blood_limit
     engine.state.shards = 20
+
+    discovery = engine._offer_initial_daowen_discovery("开局发现")
+    if not discovery.get("success"):
+        return discovery
 
     return {
         "success": True,
@@ -63,10 +64,10 @@ def handle_setup_attributes(engine: Any, params: Dict[str, Any]) -> Dict[str, An
             "attack_power": player.attack_power,
             "action_count": player.action_count,
             "shards": 20,
-            "initial_daowen": "杀伐",
+            "daowen_choices": discovery["choices"],
         },
-        "next_actions": ["setup_choose_resonance", "setup_choose_region"],
-        "note": "已自动获得初始道纹【杀伐】；接下来选择残韵与副本。遗物发现需要随机数。"
+        "next_actions": ["setup_choose_initial_daowen"],
+        "note": "属性已分配；请从杀伐闭环的3个发现候选中显式选择1种作为初始道纹。",
     }
 
 
@@ -74,8 +75,8 @@ def handle_setup_choose_region(engine: Any, params: Dict[str, Any]) -> Dict[str,
     """选择副本，并生成开局遗物发现"""
     if engine.state.player is None:
         return {"success": False, "error": "请先分配初始属性"}
-    if "杀伐" not in engine.state.player.dao_wen or sum(engine.state.resonance.values()) != 1:
-        return {"success": False, "error": "选择副本前必须先获得初始杀伐并选择1种初始残韵"}
+    if not engine.state.player.dao_wen or sum(engine.state.resonance.values()) != 1:
+        return {"success": False, "error": "选择副本前必须先获得初始道纹并选择1种初始残韵"}
     region = params.get("region", "")
     valid = ["罪孽都市", "扭曲都市", "龙心谷", "乱葬岗"]
     if region not in valid:
@@ -95,10 +96,37 @@ def handle_setup_choose_region(engine: Any, params: Dict[str, Any]) -> Dict[str,
     }
 
 
+def handle_setup_choose_initial_daowen(engine: Any, params: Dict[str, Any]) -> Dict[str, Any]:
+    """从开局发现的3个杀伐闭环候选中显式选择1种作为初始道纹。"""
+    if engine.state.player is None:
+        return {"success": False, "error": "请先分配初始属性"}
+    choices = list(engine.state.pending_initial_daowen_choices)
+    if not choices:
+        return {"success": False, "error": "当前没有待选择的初始道纹发现"}
+    if engine.state.player.dao_wen:
+        return {"success": False, "error": "初始道纹已经选择，不能重复选择"}
+    name = params.get("daowen_name", "")
+    if name not in choices:
+        return {"success": False, "error": "只能选择本次发现列出的道纹", "choices": choices}
+    if name not in SHAFA_LOOP_DAOWEN:
+        return {"success": False, "error": f"【{name}】不属于杀伐闭环，不能作为初始道纹"}
+    engine._grant_named_daowen(engine.state.player, name)
+    engine.state.pending_initial_daowen_choices = []
+    engine.state.pending_initial_daowen_source = ""
+    return {
+        "success": True,
+        "action": "选择初始道纹",
+        "result": {"daowen": name, "player_daowen": list(engine.state.player.dao_wen)},
+        "next_actions": ["setup_choose_resonance"],
+    }
+
+
 def handle_setup_choose_resonance(engine: Any, params: Dict[str, Any]) -> Dict[str, Any]:
     """选择初始残韵"""
     if engine.state.player is None:
         return {"success": False, "error": "请先分配初始属性"}
+    if not engine.state.player.dao_wen:
+        return {"success": False, "error": "选择残韵前必须先发现初始道纹"}
     if sum(engine.state.resonance.values()) > 0:
         return {"success": False, "error": "初始残韵已经选择，不能重复选择"}
     rtype = params.get("resonance_type", "")

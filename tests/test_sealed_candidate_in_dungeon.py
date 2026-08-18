@@ -7,6 +7,7 @@ import json
 import os
 import sys
 
+from tests.setup_support import begin_battle, begin_round, finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
@@ -25,6 +26,7 @@ def _engine_with_snapshot(snapshot, seed=1):
     e = GameEngine(db_path="/tmp/test_sealed_dg.db", rng_seed=seed)
     e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 10,
                                           "speed_points": 8, "mana_points": 7})
+    finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": "乱葬岗"})
     e.execute_action("choose_discovered_relic", {"relic_name": setup["result"]["relic_choices"][0]})
@@ -49,6 +51,7 @@ def test_sealed_candidate_fights_in_dungeon():
     e0 = GameEngine(db_path="/tmp/test_seal_src.db", rng_seed=1)
     e0.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 11,
                                            "speed_points": 8, "mana_points": 6})
+    finish_initial_daowen(e0)
     e0.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e0.execute_action("setup_choose_region", {"region": "龙心谷"})
     e0.execute_action("choose_discovered_relic", {"relic_name": setup["result"]["relic_choices"][0]})
@@ -117,6 +120,7 @@ def test_sealed_candidate_dungeon_growth_applies():
     e0 = GameEngine(db_path="/tmp/test_seal_src2.db", rng_seed=1)
     e0.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 11,
                                            "speed_points": 8, "mana_points": 6})
+    finish_initial_daowen(e0)
     e0.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e0.execute_action("setup_choose_region", {"region": "龙心谷"})
     e0.execute_action("choose_discovered_relic", {"relic_name": setup["result"]["relic_choices"][0]})
@@ -127,11 +131,12 @@ def test_sealed_candidate_dungeon_growth_applies():
     e = _engine_with_snapshot(snapshot, seed=8)
     ally = e.state.friends[0]
     atk_before = ally.attack_count
-    e.state.energy = 0
     e.state.enemies.append(Entity("怪", "怪物", blood_limit=30, current_hp=30,
                                   attack_count=1, attack_power=1))
-    e.execute_action("battle_start", {})
-    e.execute_action("round_start", {"relic_choices": round_start_relic_choices(e)})
+    started = begin_battle(e)
+    assert started["success"], started
+    started_round = begin_round(e, relic_choices=round_start_relic_choices(e))
+    assert started_round["success"], started_round
     for m in list(e.state.enemies):
         m.is_alive = False
     be = e.execute_action("battle_end", {})

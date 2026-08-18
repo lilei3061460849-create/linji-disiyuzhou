@@ -3,6 +3,7 @@ from engine.api import GameEngine
 from engine.events import EVENT_NAMES
 
 
+from tests.setup_support import finish_initial_daowen
 def _engine(tmp_path, seed=5):
     engine = GameEngine(
         db_path=str(tmp_path / "rulings.db"), save_dir=str(tmp_path / "saves"),
@@ -12,6 +13,7 @@ def _engine(tmp_path, seed=5):
     engine.execute_action("setup_attributes", {
         "name": "探索者", "blood_points": 10, "speed_points": 8, "mana_points": 7,
     })
+    finish_initial_daowen(engine)
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
     setup = engine.execute_action("setup_choose_region", {"region": "罪孽都市"})
     engine.execute_action("choose_discovered_relic", {

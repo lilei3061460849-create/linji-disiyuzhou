@@ -5,6 +5,7 @@
 （玩家免伤+怪物自残双收益）。铁卫天然吸火当第二层肉盾，杀伐补刀。
 """
 import json, os, sys, tempfile
+from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from engine.api import GameEngine
 from engine.models import DaoWen, DaoWenInstance
@@ -76,6 +77,7 @@ def main():
             p0 = snap["player"]
             e.execute_action("setup_attributes", {"name": p0["name"], "blood_points": 10,
                                                   "speed_points": 8, "mana_points": 7})
+            finish_initial_daowen(e)
             e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
             setup = e.execute_action("setup_choose_region", {"region": "乱葬岗"})
             e.execute_action("choose_discovered_relic", {"relic_name": setup["result"]["relic_choices"][0]})

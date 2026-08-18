@@ -7,8 +7,8 @@ pytest 风格测试 - 里程碑8：修复5件坏掉/缺失的遗物（血誓戒/
 覆盖范围：
 1. 血誓戒：[回始]玩家首次主动支付流血代价获得等量格挡/低血量时改为等量生命，每回合限一次
 2. 买路财：新增retreat_via_toll真正执行撤退(扣碎片/生命、清空战场)，不再只是算个数字
-3. 同魂笔：真正让施法者永久获得"第二目标"道纹残韵变化后的新道纹，第二目标自身不受影响
-4. 钱袋：改为在battle_end随标准击杀奖励一并结算(用battle_start_blood_limit快照)，不再是死代码
+3. 同魂笔：第二目标的道纹也永久变为变化后的道纹，施法者同时永久获得
+4. 钱袋：持有者不再受到癌变事件影响；朋友/员工不继承
 5. 忘忧香：保持在当前12件遗物池中，并实现对应的"忘忧"局外行动
 
 运行方式：
@@ -17,6 +17,7 @@ pytest 风格测试 - 里程碑8：修复5件坏掉/缺失的遗物（血誓戒/
 import os
 import sys
 
+from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
@@ -28,6 +29,7 @@ from engine.models import Relic, DaoWen, DaoWenInstance, Entity
 def _new_engine(db_suffix: str, daowen="杀伐") -> GameEngine:
     engine = GameEngine(db_path=f"data/test_relicfix_{db_suffix}.db", rng_seed=1)
     engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
+    finish_initial_daowen(engine)
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
     setup = engine.execute_action("setup_choose_region", {"region": "罪孽都市"})
     optional = {"折速法印", "三相残韵盘"}
@@ -132,7 +134,7 @@ def test_buyaicai_toll_uses_life_to_cover_shortfall():
 
 
 def test_tonghunbi_grants_caster_real_daowen_from_second_target():
-    """同魂笔正常路径：施法者真正永久获得第二目标道纹残韵变化后的新道纹，第二目标自身不变"""
+    """同魂笔正常路径：第二目标道纹永久变化，施法者同时永久获得变化后道纹"""
     engine = _new_engine("tongtonbi_ok")
     engine.state.relics.append(Relic(name="同魂笔", effect=""))
     engine.state.resonance["反转"] = 1
@@ -151,40 +153,30 @@ def test_tonghunbi_grants_caster_real_daowen_from_second_target():
     })
     assert r["success"] is True
     assert "血债" in engine.state.player.dao_wen, "施法者应永久获得固执反转后的血债"
-    assert list(enemy.dao_wen.keys()) == ["固执"], "第二目标自身的道纹不应被改变"
+    assert "固执" not in enemy.dao_wen and "血债" in enemy.dao_wen
 
 
-def test_moneybag_adds_bonus_shards_at_battle_end():
-    """钱袋正常路径：战终结算击杀奖励时应包含钱袋的额外2%[战始][血限]碎片"""
+def test_moneybag_blocks_cancer():
+    """钱袋正常路径：持有者累计回复达阈值也不触发癌变"""
     engine = _new_engine("moneybag_ok")
     engine.state.relics.append(Relic(name="钱袋", effect=""))
-    engine.state.energy = 0
-    engine.execute_action("battle_start", {})
-    engine.state.enemies.clear()
-    monster = Entity(name="待宰怪", entity_type="怪物", blood_limit=100, current_hp=100)
-    engine.state.enemies.append(monster)
-    monster.current_hp = 0
-    monster.is_alive = False
-    engine.state.energy = 3
-    r = engine.execute_action("battle_end", {})
-    assert r["result"]["shard_reward"] == 4, "标准2%(=2) + 钱袋额外2%(=2) = 4"
+    player = engine.state.player
+    player.total_healed = engine.combat.cancer_threshold_of(player)
+    hit = engine.combat.check_cancer(player)
+    assert hit is None
+    assert player.is_alive and not player.is_proliferated
 
 
-def test_moneybag_uses_battle_start_snapshot_not_current_blood_limit():
-    """钱袋边界：即使战斗中血限发生变化(如增殖)，奖励也应按[战始]快照计算，不受影响"""
-    engine = _new_engine("moneybag_snapshot")
+def test_moneybag_does_not_protect_allies():
+    """钱袋边界：朋友/员工不继承免疫"""
+    engine = _new_engine("moneybag_ally")
     engine.state.relics.append(Relic(name="钱袋", effect=""))
-    engine.state.energy = 0
-    engine.execute_action("battle_start", {})
-    engine.state.enemies.clear()
-    monster = Entity(name="膨胀怪", entity_type="怪物", blood_limit=100, current_hp=100)
-    engine.state.enemies.append(monster)
-    monster.blood_limit = 500  # 战斗中被动态改变(如增殖)，但战始快照应保持100
-    monster.current_hp = 0
-    monster.is_alive = False
-    engine.state.energy = 3
-    r = engine.execute_action("battle_end", {})
-    assert r["result"]["shard_reward"] == 4, "应按战始快照100算(2%+2%=4)，不是当前500(会算出20)"
+    friend = Entity(name="同伴", entity_type="朋友", blood_limit=40, current_hp=40)
+    engine.state.friends.append(friend)
+    friend.total_healed = engine.combat.cancer_threshold_of(friend)
+    hit = engine.combat.check_cancer(friend)
+    assert hit is not None
+    assert not friend.is_alive and friend.is_proliferated
 
 
 def test_wangyouxiang_registered_in_revised_relic_pool():
@@ -221,6 +213,7 @@ def test_wangyouxiang_action_loses_daowen_and_gains_shards():
 def test_buyaicai_rejected_without_relic():
     """错误输入：没有买路财遗物不能使用此撤退方式"""
     engine = _new_engine("toll_no_relic")
+    engine.state.relics = [r for r in engine.state.relics if r.name != "买路财"]
     engine.state.shards = 100
     _start_with_enemy(engine, Entity(name="大怪", entity_type="怪物", blood_limit=100, current_hp=100))
     r = engine.execute_action("retreat_via_toll", {"target": "大怪"})
@@ -260,6 +253,20 @@ def test_wangyouxiang_rejected_when_daowen_count_mismatches_tier():
     r = engine.execute_action("pre_battle_action", {"sub_action": "忘忧", "tier": 2, "daowen_names": ["再生"]})
     assert r["success"] is False
     assert "再生" in engine.state.player.dao_wen, "拒绝的行动不应扣除道纹"
+
+
+def test_moneybag_does_not_add_kill_shards():
+    """错误对照：钱袋不再改写击杀碎片，标准奖励仍按血限2%+道纹×5"""
+    engine = _new_engine("moneybag_no_shard")
+    engine.state.relics.append(Relic(name="钱袋", effect=""))
+    engine.state.energy = 0
+    engine.execute_action("battle_start", {})
+    engine.state.enemies.clear()
+    monster = Entity(name="待宰怪", entity_type="怪物", blood_limit=100, current_hp=0)
+    monster.is_alive = False
+    engine.state.enemies.append(monster)
+    r = engine.execute_action("battle_end", {})
+    assert r["result"]["shard_reward"] == 2, "钱袋不得再额外加碎片，100血限×2%=2"
 
 
 def test_tonghunbi_rejected_when_second_target_lacks_daowen():

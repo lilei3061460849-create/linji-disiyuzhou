@@ -9,6 +9,7 @@
 import os
 import sys
 
+from tests.setup_support import begin_battle, begin_round, finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
@@ -20,6 +21,7 @@ def _engine(suffix: str) -> GameEngine:
     e.execute_action("setup_attributes", {
         "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7,
     })
+    finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
     setup = e.execute_action("setup_choose_region", {"region": "龙心谷"})
     e.execute_action("choose_discovered_relic", {"relic_name": setup["result"]["relic_choices"][0]})
@@ -28,7 +30,8 @@ def _engine(suffix: str) -> GameEngine:
 
 
 def _start_battle(e, ally_name="岩行者", ally_atk=2, ally_ap=4, enemy_hp=100):
-    e.execute_action("battle_start", {})
+    started = begin_battle(e)
+    assert started["success"], started
     # 清默认怪，放一个受控敌人
     e.state.enemies.clear()
     e.state.enemies.append(Entity("靶怪", "怪物", blood_limit=enemy_hp, current_hp=enemy_hp,
@@ -37,7 +40,8 @@ def _start_battle(e, ally_name="岩行者", ally_atk=2, ally_ap=4, enemy_hp=100)
     ally = Entity(ally_name, "朋友", blood_limit=54, current_hp=54,
                   attack_count=ally_atk, attack_power=ally_ap)
     e.state.friends.append(ally)
-    e.execute_action("round_start", {"relic_choices": {}})
+    started_round = begin_round(e)
+    assert started_round["success"], started_round
     return ally
 
 

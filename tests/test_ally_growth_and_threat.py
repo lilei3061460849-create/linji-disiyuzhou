@@ -7,6 +7,7 @@
 import os
 import sys
 
+from tests.setup_support import begin_battle, begin_round, finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
@@ -19,6 +20,7 @@ def _engine(suffix: str) -> GameEngine:
     e.execute_action("setup_attributes", {
         "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7,
     })
+    finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
     setup = e.execute_action("setup_choose_region", {"region": "龙心谷"})
     e.execute_action("choose_discovered_relic", {"relic_name": setup["result"]["relic_choices"][0]})
@@ -26,11 +28,12 @@ def _engine(suffix: str) -> GameEngine:
 
 
 def _end_battle_with_ally_alive(e, ally):
-    e.state.energy = 0
     e.state.enemies.append(Entity("怪", "怪物", blood_limit=30, current_hp=30,
                                   attack_count=1, attack_power=1))
-    e.execute_action("battle_start", {})
-    e.execute_action("round_start", {"relic_choices": {}})
+    started = begin_battle(e)
+    assert started["success"], started
+    started_round = begin_round(e)
+    assert started_round["success"], started_round
     for m in list(e.state.enemies):
         m.is_alive = False
     return e.execute_action("battle_end", {})
@@ -71,15 +74,17 @@ def test_boundary_dead_ally_does_not_grow():
     e = _engine("gdead")
     ally = Entity("岩行者", "朋友", blood_limit=54, current_hp=0, attack_count=2, attack_power=4)
     ally.is_alive = False
-    e.state.energy = 0
     e.state.enemies.append(Entity("怪", "怪物", blood_limit=30, current_hp=30,
                                   attack_count=1, attack_power=1))
     e.state.friends.append(ally)
-    e.execute_action("battle_start", {})
-    e.execute_action("round_start", {"relic_choices": {}})
+    started = begin_battle(e)
+    assert started["success"], started
+    started_round = begin_round(e)
+    assert started_round["success"], started_round
     for m in list(e.state.enemies):
         m.is_alive = False
-    e.execute_action("battle_end", {})
+    ended = e.execute_action("battle_end", {})
+    assert ended["success"], ended
     assert ally.attack_count == 2, "死亡朋友不成长"
 
 

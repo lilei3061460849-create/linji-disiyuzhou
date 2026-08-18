@@ -64,7 +64,7 @@ def test_three_region_loops_present():
 
 def test_monster_daowen_now_transformable():
     """正常路径：怪物面板常见道纹必须有可用残韵路径"""
-    for dw in ("必中", "狂暴", "飞行", "自愈", "强化", "活力", "减速"):
+    for dw in ("必中", "狂暴", "飞行", "自愈", "强化", "疯狂", "减速"):
         paths = R.get_available_resonance(dw)
         assert paths, f"{dw} 仍无残韵路径"
 

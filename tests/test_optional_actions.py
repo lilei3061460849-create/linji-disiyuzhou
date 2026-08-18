@@ -18,6 +18,7 @@ import sys
 
 import pytest
 
+from tests.setup_support import finish_initial_daowen
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
@@ -36,6 +37,7 @@ def engine(tmp_path):
     e = GameEngine(db_path=str(tmp_path / "optional.db"), rng_seed=7)
     e.execute_action("setup_attributes",
                      {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+    finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": "乱葬岗"})
     e.execute_action("choose_discovered_relic",
