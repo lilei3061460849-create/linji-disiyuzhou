@@ -17,7 +17,7 @@ import os
 import random
 import sys
 
-from tests.setup_support import finish_initial_daowen
+from tests.setup_support import choose_discovered_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
@@ -37,16 +37,19 @@ def run(region: str = "龙心谷", seed: int = 7, battles: int = 3) -> list[str]
     rng = random.Random(seed)
     # rng_seed 交给引擎自身的随机源，保证同一 seed 产出完全一致的战报（可复现）
     engine = GameEngine(db_path="/tmp/format_trace.db", rng_seed=seed)
-    engine.execute_action("setup_attributes",
+    setup_attr = engine.execute_action("setup_attributes",
                           {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
-    finish_initial_daowen(engine)
+    daowen_options = list(setup_attr["result"]["daowen_choices"])
+    daowen_pick = choose_discovered_initial_daowen(engine)["picked"]
     engine.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     r = engine.execute_action("setup_choose_region", {"region": region})
     optional = {"折速法印", "三相残韵盘"}
-    starter = next((name for name in r["result"]["relic_choices"] if name not in optional),
-                   r["result"]["relic_choices"][0])
+    relic_options = list(r["result"]["relic_choices"])
+    starter = next((name for name in relic_options if name not in optional),
+                   relic_options[0])
     engine.execute_action("choose_discovered_relic", {"relic_name": starter})
     ai = TacticalAI(engine)
+    player = engine.state.player
 
     # 局外：学习道纹与法术，让 AI 有牌可打（否则只能发初始道纹）
     for dw in ("庇护", "再生", "冲击"):
@@ -58,9 +61,16 @@ def run(region: str = "龙心谷", seed: int = 7, battles: int = 3) -> list[str]
 
     out = [f"# 战报（{region}，种子{seed}）· 按 README《六、战斗推演格式》",
            "",
-           f"【开局】25点属性→{engine.state.player.blood_limit}[血限]/"
-           f"{engine.state.player.mana_limit}[法限]/{engine.state.player.speed_limit}[速限]"
-           f"｜20[碎片]｜发现遗物·{starter}｜残韵·反转｜初始道纹·杀伐｜副本·{region}"]
+           ]
+    out.extend(BR.format_setup_discovery(
+        blood_points=10, speed_points=8, mana_points=7,
+        blood_limit=player.blood_limit, mana_limit=player.mana_limit,
+        speed_limit=player.speed_limit, action_count=player.action_count,
+        shards=engine.state.shards,
+        daowen_options=daowen_options, daowen_pick=daowen_pick,
+        resonance="反转", relic_options=relic_options, relic_pick=starter,
+        region=region,
+    ))
 
     for battle_no in range(1, battles + 1):
         engine.state.energy = 0

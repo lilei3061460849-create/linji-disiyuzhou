@@ -79,6 +79,47 @@ def resource_line(entity: Any) -> str:
             + (f" 持续[{_status_str(entity)}]" if entity.status_effects else ""))
 
 
+def format_setup_discovery(
+    *,
+    blood_points: int,
+    speed_points: int,
+    mana_points: int,
+    blood_limit: int,
+    mana_limit: int,
+    speed_limit: int,
+    action_count: int,
+    shards: int,
+    daowen_options: list[str],
+    daowen_pick: str,
+    resonance: str,
+    relic_options: list[str],
+    relic_pick: str,
+    region: str = "",
+) -> list[str]:
+    """渲染 [开局]：必须先列出发现候选，再写选择。缺候选直接拒绝。"""
+    dao_opts = [str(name) for name in (daowen_options or []) if name]
+    relic_opts = [str(name) for name in (relic_options or []) if name]
+    if not dao_opts:
+        raise ValueError("开局战报必须列出初始道纹发现候选，不能只写选择结果")
+    if daowen_pick not in dao_opts:
+        raise ValueError("初始道纹选择必须落在本次发现候选中")
+    if not relic_opts:
+        raise ValueError("开局战报必须列出遗物发现候选，不能只写选择结果")
+    if relic_pick not in relic_opts:
+        raise ValueError("遗物选择必须落在本次发现候选中")
+    lines = [
+        "[开局]",
+        (f"属性：{blood_points}血/{speed_points}速/{mana_points}法"
+         f"＝{blood_limit}/{mana_limit}/{speed_limit}，出手{action_count}｜碎片{shards}"),
+        f"初始道纹发现：候选〔{'、'.join(dao_opts)}〕→选择【{daowen_pick}】",
+        f"残韵：{resonance}",
+        f"遗物发现：候选〔{'、'.join(relic_opts)}〕→选择【{relic_pick}】",
+    ]
+    if region:
+        lines.append(f"副本：{region}")
+    return lines
+
+
 def format_battle_start(
     *,
     battle_no: int,
@@ -486,4 +527,30 @@ def validate_battle_report_actions(report_text: str) -> dict:
         raise ValueError("战报出手合规性校验失败：\n" + "\n".join(errors))
 
     return {"total_actions_validated": total_actions, "status": "compliant"}
+
+
+def validate_setup_discovery_text(report_text: str) -> dict:
+    """开局段必须同时写出道纹/遗物的候选与选择，缺候选即违规。"""
+    import re
+    if "[开局]" not in report_text:
+        raise ValueError("战报缺少[开局]段")
+    dao = re.search(r"初始道纹发现：候选〔(.+?)〕→选择【(.+?)】", report_text)
+    relic = re.search(r"遗物发现：候选〔(.+?)〕→选择【(.+?)】", report_text)
+    if not dao:
+        raise ValueError("开局必须先列出初始道纹发现候选，再写选择")
+    if not relic:
+        raise ValueError("开局必须先列出遗物发现候选，再写选择")
+    dao_opts = [part.strip() for part in dao.group(1).split("、") if part.strip()]
+    relic_opts = [part.strip() for part in relic.group(1).split("、") if part.strip()]
+    if dao.group(2) not in dao_opts:
+        raise ValueError("初始道纹选择不在本次候选中")
+    if relic.group(2) not in relic_opts:
+        raise ValueError("遗物选择不在本次候选中")
+    return {
+        "status": "compliant",
+        "daowen_options": dao_opts,
+        "daowen_pick": dao.group(2),
+        "relic_options": relic_opts,
+        "relic_pick": relic.group(2),
+    }
 
