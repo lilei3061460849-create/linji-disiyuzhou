@@ -13,6 +13,7 @@ import sys
 
 import pytest
 
+from tests.setup_support import finish_initial_daowen
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
@@ -46,6 +47,70 @@ def _start_battle(engine, relic):
 
 # ---------- 正常路径 ----------
 
+def test_starters_are_shafa_loop_not_forced_shaifa():
+    """正常：可偏好的起手是整个杀伐闭环，不再写死只开杀伐。"""
+    from engine.gamedata import SHAFA_LOOP_DAOWEN
+    assert bl.STARTERS == list(SHAFA_LOOP_DAOWEN)
+    assert "冲击" in bl.STARTERS and "再生" in bl.STARTERS
+
+
+def test_play_does_not_inject_shaifa_when_not_discovered():
+    """边界：发现列表没有杀伐时，模拟不得把杀伐塞进玩家。"""
+    from engine.api import GameEngine
+    from tests.setup_support import choose_discovered_initial_daowen
+
+    found = None
+    for seed in range(1, 80):
+        engine = GameEngine(db_path=f"/tmp/disc{seed}.db", rng_seed=seed)
+        engine.execute_action("setup_attributes", {
+            "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7,
+        })
+        offered = list(engine.state.pending_initial_daowen_choices)
+        if "杀伐" not in offered:
+            found = (engine, offered)
+            break
+    assert found, "80 个种子里应能抽到不含杀伐的发现"
+    engine, offered = found
+    chosen = choose_discovered_initial_daowen(engine, prefer="杀伐")
+    assert chosen["success"]
+    assert chosen["picked"] in offered
+    assert chosen["picked"] != "杀伐"
+    assert "杀伐" not in engine.state.player.dao_wen
+
+
+def test_choose_discovered_honors_prefer_only_when_offered():
+    """正常：prefer 在候选中才选它。"""
+    from engine.api import GameEngine
+    from tests.setup_support import choose_discovered_initial_daowen
+
+    engine = GameEngine(db_path="/tmp/disc_pref.db", rng_seed=1)
+    engine.execute_action("setup_attributes", {
+        "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7,
+    })
+    offered = list(engine.state.pending_initial_daowen_choices)
+    prefer = offered[1]
+    chosen = choose_discovered_initial_daowen(engine, prefer=prefer)
+    assert chosen["picked"] == prefer
+    assert list(engine.state.player.dao_wen) == [prefer]
+
+
+def test_choose_discovered_rejects_missing_pending():
+    """错误输入：没有待选发现时必须拒绝，不能凭空发道纹。"""
+    from engine.api import GameEngine
+    from tests.setup_support import choose_discovered_initial_daowen
+
+    engine = GameEngine(db_path="/tmp/disc_bad.db", rng_seed=1)
+    engine.execute_action("setup_attributes", {
+        "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7,
+    })
+    engine.execute_action("setup_choose_initial_daowen", {
+        "daowen_name": engine.state.pending_initial_daowen_choices[0],
+    })
+    bad = choose_discovered_initial_daowen(engine, prefer="杀伐")
+    assert not bad["success"]
+    assert "没有待选择" in bad["error"]
+
+
 def test_play_returns_wellformed_result():
     """正常路径：跑一局应返回通关场数与胜负"""
     r = bl.play("杀伐", ["庇护", "再生"], "龙心谷", seed=1)
@@ -66,6 +131,7 @@ def test_pending_event_requiring_dm_stops_instead_of_looping(tmp_path):
     engine.execute_action("setup_attributes", {
         "blood_points": 10, "speed_points": 8, "mana_points": 7,
     })
+    finish_initial_daowen(engine)
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
     setup = engine.execute_action("setup_choose_region", {"region": "罪孽都市"})
     engine.execute_action("choose_discovered_relic", {
@@ -114,9 +180,9 @@ def test_best_only_improves():
     """边界：best 只应在更高分时被替换"""
     k = {"generation": 0, "trials": {}, "pair_scores": {}, "history": [], "best": None}
     bl.update(k, "杀伐", ["庇护"], 7.0)
-    bl.update(k, "锐利", ["束缚"], 3.0)
+    bl.update(k, "切割", ["束缚"], 3.0)
     assert k["best"]["score"] == 7.0
-    bl.update(k, "锐利", ["封印"], 9.0)
+    bl.update(k, "切割", ["封印"], 9.0)
     assert k["best"]["score"] == 9.0
 
 
@@ -246,6 +312,7 @@ def test_choose_pre_battle_respects_region_exclusive():
     e = GameEngine(db_path="/tmp/tele.db", rng_seed=1)
     e.execute_action("setup_attributes",
                      {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+    finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     e.execute_action("setup_choose_region", {"region": "龙心谷"})
     picked = {bl.choose_pre_battle(e, [], 1, _r.Random(i), bl.DEFAULT_POLICY)[0]
@@ -260,6 +327,7 @@ def test_region_exclusive_enforced_by_engine():
     e = GameEngine(db_path="/tmp/tele2.db", rng_seed=1)
     e.execute_action("setup_attributes",
                      {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+    finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     _finish_region_setup(e, "龙心谷")
     r = e.execute_action("pre_battle_action", {"sub_action": "维修", "tier": 1})
@@ -321,6 +389,7 @@ def test_cooldown_cost_is_applied():
     e = GameEngine(db_path="/tmp/cdtest.db", rng_seed=1)
     e.execute_action("setup_attributes",
                      {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+    finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     relic = _finish_region_setup(e, "龙心谷")
     e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "daowen", "name": "束缚"})
@@ -338,6 +407,7 @@ def test_cooldown_blocks_reuse_in_same_battle():
     e = GameEngine(db_path="/tmp/cdtest2.db", rng_seed=1)
     e.execute_action("setup_attributes",
                      {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+    finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     relic = _finish_region_setup(e, "龙心谷")
     e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "daowen", "name": "束缚"})
@@ -357,6 +427,7 @@ def test_cooldown_decrements_at_battle_end():
     e = GameEngine(db_path="/tmp/cdtest3.db", rng_seed=1)
     e.execute_action("setup_attributes",
                      {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+    finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     _finish_region_setup(e, "龙心谷")
     inst = DaoWenInstance(DaoWen(name="束缚", formula="", cost_type="代价",

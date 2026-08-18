@@ -19,6 +19,7 @@ pytest 风格测试 - 里程碑5：撤退机制
 import os
 import sys
 
+from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
@@ -32,6 +33,7 @@ from engine.dice import DiceEngine
 def _setup(db_suffix: str):
     engine = GameEngine(db_path=f"data/test_retreat_{db_suffix}.db", rng_seed=1)
     engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
+    finish_initial_daowen(engine)
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
     setup = engine.execute_action("setup_choose_region", {"region": "罪孽都市"})
     engine.execute_action("choose_discovered_relic", {"relic_name": setup["result"]["relic_choices"][0]})

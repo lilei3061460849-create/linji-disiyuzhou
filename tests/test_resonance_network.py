@@ -1,7 +1,7 @@
 """
 pytest - 残韵闭环完整性（引擎 CLOSED_LOOPS 必须与 README 声明一致）
 
-背景：现行将原杀伐/锐利两轨首尾接成一个14节点【杀伐闭环】；
+背景：现行将原杀伐/切割两轨首尾接成一个14节点【杀伐闭环】；
 README 声明的三条副本闭环与怪物原始道纹转化也必须完整登记，
 导致对怪物面板道纹发动残韵必然失败。
 
@@ -45,13 +45,13 @@ def test_all_readme_monster_transforms_registered():
 
 
 def test_single_fourteen_node_core_loop():
-    """正常路径：杀伐与原锐利闭环必须首尾接成唯一14节点核心闭环。"""
+    """正常路径：杀伐与原切割闭环必须首尾接成唯一14节点核心闭环。"""
     assert "杀伐闭环" in R.CLOSED_LOOPS
-    assert "锐利闭环" not in R.CLOSED_LOOPS
+    assert "切割闭环" not in R.CLOSED_LOOPS
     edges = R.CLOSED_LOOPS["杀伐闭环"]
     assert len(edges) == 14
     assert sorted(source for source, _, _ in edges) == sorted(target for _, _, target in edges)
-    assert R.find_transformation("慈悲", "反转") == "锐利"
+    assert R.find_transformation("慈悲", "反转") == "切割"
     assert R.find_transformation("封印", "反转") == "杀伐"
 
 
@@ -64,7 +64,7 @@ def test_three_region_loops_present():
 
 def test_monster_daowen_now_transformable():
     """正常路径：怪物面板常见道纹必须有可用残韵路径"""
-    for dw in ("必中", "狂暴", "飞行", "自愈", "强化", "活力", "减速"):
+    for dw in ("必中", "狂暴", "飞行", "自愈", "强化", "疯狂", "减速"):
         paths = R.get_available_resonance(dw)
         assert paths, f"{dw} 仍无残韵路径"
 

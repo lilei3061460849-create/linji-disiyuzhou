@@ -172,7 +172,8 @@ SYSTEM_PROMPT = """你是第四宇宙游戏的AI玩家。你的任务是根据�
 - 优先使用能改变局势的道纹，不要无脑输出
 
 可选的action_type包括：
-- setup_attributes: 开局分配属性（params: name, blood_points, speed_points, mana_points，总和必须25；成功后自动获得初始道纹"杀伐"）
+- setup_attributes: 开局分配属性（params: name, blood_points, speed_points, mana_points，总和必须25；成功后从杀伐闭环发现3种初始道纹）
+- setup_choose_initial_daowen: 从发现候选中显式选1种作为初始道纹（params: daowen_name）
 - setup_choose_resonance: 选择残韵（params: resonance_type，可选"转换"/"反转"/"曲解"）
 - setup_choose_region: 选择副本（params: region，可选"罪孽都市"/"扭曲都市"/"龙心谷"），返回3件开局遗物候选
 - choose_discovered_relic: 从当前遗物发现候选中显式选1件（params: relic_name）
@@ -382,13 +383,31 @@ class PlaceholderBackend(AIBackend):
     def decide(self, state: dict, available_actions: dict, context: str = "") -> AIDecision:
         phase = state.get("state", {}).get("phase", "unknown")
         
+        inner = state.get("state", {})
+        if inner.get("pending_redemption"):
+            return AIDecision("resolve_redemption", {"option": 2}, "默认无视救赎")
         if phase == "setup":
-            return AIDecision("setup_attributes", {
-                "name": "AI轮回者",
-                "blood_points": 10,
-                "speed_points": 8,
-                "mana_points": 7
-            }, "默认开局分配")
+            choices = inner.get("pending_initial_daowen_choices") or []
+            if choices:
+                return AIDecision("setup_choose_initial_daowen", {
+                    "daowen_name": choices[0],
+                }, "从发现候选中选择初始道纹")
+            if inner.get("player") is None:
+                return AIDecision("setup_attributes", {
+                    "name": "AI轮回者",
+                    "blood_points": 10,
+                    "speed_points": 8,
+                    "mana_points": 7
+                }, "默认开局分配")
+            if not inner.get("resonance"):
+                return AIDecision("setup_choose_resonance", {
+                    "resonance_type": "转换",
+                }, "选择初始残韵")
+            if not inner.get("current_region"):
+                return AIDecision("setup_choose_region", {
+                    "region": "罪孽都市",
+                }, "选择初始副本")
+            return AIDecision("noop", {}, "开局步骤已完成")
         
         elif phase == "pre_battle":
             engine = getattr(self, "engine", None)
@@ -461,7 +480,7 @@ class PlaceholderBackend(AIBackend):
                             dao["dodge_targets"] = [{"target_ref": t["ref"], "dodge": False,
                                                      "blood_shadow": False}
                                                     for t in option["dodge_target_options"]]
-                        if option["resolves_as"] == "活力": action_count += option["x"]
+                        if option["resolves_as"] == "疯狂": action_count += option["x"]
                         if option["resolves_as"] == "狂暴": action_count += 1
                     target = actor["attack_target_options"][0]
                     spell_choices = {timing: {spell["spell_name"]: {"use": False}

@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
@@ -26,6 +27,7 @@ def _new_engine(tmp_path, region="龙心谷"):
     e = GameEngine(db_path=str(tmp_path / "rep.db"), rng_seed=1)
     e.execute_action("setup_attributes",
                      {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+    finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": region})
     optional = {"折速法印", "三相残韵盘"}
@@ -50,6 +52,80 @@ def _resolve_monster_phase(e):
     return e.execute_action("resolve_monster_phase", {
         "token": prepared["result"]["token"], "choices": choices,
     })
+
+
+# ---------- 开局发现必须写出候选 ----------
+
+def test_setup_discovery_lists_options_then_pick():
+    """正常：开局段先列3个候选，再写选择。"""
+    lines = BR.format_setup_discovery(
+        blood_points=7, speed_points=8, mana_points=10,
+        blood_limit=42, mana_limit=20, speed_limit=8, action_count=3, shards=20,
+        daowen_options=["冲击", "再生", "缓慢"], daowen_pick="冲击",
+        resonance="反转",
+        relic_options=["避风铃", "回锋刀", "折速法印"], relic_pick="避风铃",
+        region="罪孽都市",
+    )
+    text = "\n".join(lines)
+    assert text.startswith("[开局]")
+    assert "初始道纹发现：候选〔冲击、再生、缓慢〕→选择【冲击】" in text
+    assert "遗物发现：候选〔避风铃、回锋刀、折速法印〕→选择【避风铃】" in text
+    assert "副本：罪孽都市" in text
+
+
+def test_setup_discovery_allows_last_candidate():
+    """边界：选择可以是候选最后一项。"""
+    lines = BR.format_setup_discovery(
+        blood_points=10, speed_points=8, mana_points=7,
+        blood_limit=60, mana_limit=14, speed_limit=8, action_count=3, shards=20,
+        daowen_options=["杀伐", "庇护", "封印"], daowen_pick="封印",
+        resonance="转换",
+        relic_options=["钱袋", "守夜灯", "忘忧香"], relic_pick="忘忧香",
+    )
+    text = "\n".join(lines)
+    assert "选择【封印】" in text and "选择【忘忧香】" in text
+
+
+def test_setup_discovery_rejects_result_only():
+    """错误输入：只给选择、不给候选，必须拒绝。"""
+    with pytest.raises(ValueError, match="初始道纹发现候选"):
+        BR.format_setup_discovery(
+            blood_points=10, speed_points=8, mana_points=7,
+            blood_limit=60, mana_limit=14, speed_limit=8, action_count=3, shards=20,
+            daowen_options=[], daowen_pick="杀伐",
+            resonance="反转",
+            relic_options=["避风铃", "回锋刀", "折速法印"], relic_pick="避风铃",
+        )
+    with pytest.raises(ValueError, match="遗物发现候选"):
+        BR.format_setup_discovery(
+            blood_points=10, speed_points=8, mana_points=7,
+            blood_limit=60, mana_limit=14, speed_limit=8, action_count=3, shards=20,
+            daowen_options=["冲击", "再生", "缓慢"], daowen_pick="冲击",
+            resonance="反转",
+            relic_options=[], relic_pick="避风铃",
+        )
+    with pytest.raises(ValueError, match="必须落在本次发现候选中"):
+        BR.format_setup_discovery(
+            blood_points=10, speed_points=8, mana_points=7,
+            blood_limit=60, mana_limit=14, speed_limit=8, action_count=3, shards=20,
+            daowen_options=["冲击", "再生", "缓慢"], daowen_pick="杀伐",
+            resonance="反转",
+            relic_options=["避风铃", "回锋刀", "折速法印"], relic_pick="避风铃",
+        )
+
+
+def test_current_zhanbao_lists_setup_options():
+    """正常：现行战报开局必须能通过候选校验。"""
+    text = Path(__file__).resolve().parents[1].joinpath("战报.md").read_text(encoding="utf-8")
+    checked = BR.validate_setup_discovery_text(text)
+    assert checked["daowen_pick"] in checked["daowen_options"]
+    assert checked["relic_pick"] in checked["relic_options"]
+
+
+def test_setup_linter_rejects_pick_only_report():
+    """错误输入：只写选了什么、不写候选的开局段必须被拒。"""
+    with pytest.raises(ValueError, match="初始道纹发现候选"):
+        BR.validate_setup_discovery_text("[开局]\n初始道纹·杀伐\n遗物·避风铃\n")
 
 
 # ---------- 正常路径 ----------
@@ -227,9 +303,11 @@ def test_generated_report_is_spec_compliant(tmp_path):
     lines = format_trace.run(region="龙心谷", seed=4, battles=1)
     text = "\n".join(lines)
 
-    for field in ["[战始]", "出怪：", "战斗背景：", "敌方面板：", "我方面板：",
+    for field in ["[开局]", "初始道纹发现：候选", "遗物发现：候选",
+                  "[战始]", "出怪：", "战斗背景：", "敌方面板：", "我方面板：",
                   "[战始]效果结算：", "[回始]：", "[回终]："]:
         assert field in text, f"产物缺少规范字段 {field}"
+    BR.validate_setup_discovery_text(text)
 
     # 禁止概括式写法（旧 engine_trace 的违规形态）
     assert not re.search(r"怪物出手\d+次", text), "出现被禁止的概括式结算"

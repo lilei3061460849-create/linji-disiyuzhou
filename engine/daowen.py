@@ -146,22 +146,19 @@ class DaoWenEngine:
             "summary": f"流血{x}，为{target_name}回复{x}点生命"
         }
     
-    # ---- 杀伐14节点闭环后半（锐利至封印）----
+    # ---- 杀伐14节点闭环后半（切割至封印）----
     
     @staticmethod
-    def calculate_ruili(x: int, target: Entity = None) -> dict:
-        """锐利X：消耗3X。[目标]血限及当前生命同时-5X"""
-        target_name = target.name if target is not None else "未选定目标"
+    def calculate_qiege(x: int) -> dict:
+        """切割X：消耗3X。你使其他角色失去生命的同时扣除其等量血限，持续X"""
         cost = 3 * x
-        reduction = 5 * x
         return {
-            "dao_wen": "锐利",
+            "dao_wen": "切割",
             "x": x,
             "cost_type": CostType.MANA.value,
             "cost": cost,
-            "blood_limit_reduction": reduction,
-            "hp_reduction": reduction,
-            "summary": f"消耗{cost}法力，{target_name}血限与当前生命各-{reduction}"
+            "duration": x,
+            "summary": f"消耗{cost}法力，使其他角色失去生命时扣除等量血限，持续{x}回合"
         }
     
     @staticmethod
@@ -279,15 +276,28 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_huoli(x: int) -> dict:
-        """活力X：代价：异变5X。所有角色出手次数+X，持续∞（2026-08-17裁定：全局生效，变相平衡）"""
+        """疯狂X：代价：异变5X。所有角色出手次数+X，持续∞（2026-08-17裁定：全局生效，变相平衡）"""
         return {
-            "dao_wen": "活力",
+            "dao_wen": "疯狂",
             "x": x,
             "cost_type": CostType.MUTATION.value,
             "cost_mutation": 5 * x,
             "action_boost": x,
             "duration": -1,
             "summary": f"异变+{5*x}，所有角色出手次数+{x}，永久"
+        }
+
+    @staticmethod
+    def calculate_jinghua(x: int, target: Entity = None) -> dict:
+        """净化X：消耗5X。使[目标]【异变】-X层"""
+        target_name = target.name if target is not None else "未选定目标"
+        return {
+            "dao_wen": "净化",
+            "x": x,
+            "cost_type": CostType.MANA.value,
+            "cost": 5 * x,
+            "mutation_reduction": x,
+            "summary": f"消耗{5*x}法力，使{target_name}【异变】-{x}层",
         }
     
     @staticmethod
@@ -999,7 +1009,7 @@ class DaoWenEngine:
             "血债": cls.calculate_xuezhai,
             "冲击": cls.calculate_chongji,
             "慈悲": cls.calculate_cibei,
-            "锐利": cls.calculate_ruili,
+            "切割": cls.calculate_qiege,
             "增殖": cls.calculate_zengzhi,
             "束缚": cls.calculate_shufu,
             "透支": cls.calculate_touzhi,
@@ -1009,7 +1019,8 @@ class DaoWenEngine:
             # 怪物原始
             "狂暴": cls.calculate_kuangbao,
             "强化": cls.calculate_qianghua,
-            "活力": cls.calculate_huoli,
+            "疯狂": cls.calculate_huoli,
+            "净化": cls.calculate_jinghua,
             "减速": cls.calculate_jiansu,
             "必中": cls.calculate_bizhong,
             "自愈": cls.calculate_ziyu,
@@ -1079,7 +1090,7 @@ class DaoWenEngine:
             return 0
         if getattr(entity, "entity_type", "") == "怪物":
             n = 2  # 1 攻 + 1 纹
-            n += entity.get_status_value("活力")
+            n += entity.get_status_value("疯狂")
             if entity.has_status("狂暴"):
                 n += 1
             n -= entity.get_status_value("无力")
@@ -1163,8 +1174,8 @@ class ResonanceEngine:
             ("固执", "反转", "血债"),
             ("血债", "转换", "冲击"),
             ("冲击", "曲解", "慈悲"),
-            ("慈悲", "反转", "锐利"),
-            ("锐利", "反转", "增殖"),
+            ("慈悲", "反转", "切割"),
+            ("切割", "反转", "增殖"),
             ("增殖", "曲解", "透支"),
             ("透支", "转换", "贯穿"),
             ("贯穿", "曲解", "缓慢"),
@@ -1223,9 +1234,9 @@ class ResonanceEngine:
             ("强化", "转换", "借力"),
             ("强化", "反转", "弱化"),
             ("强化", "曲解", "自食"),
-            ("活力", "转换", "兴奋"),
-            ("活力", "反转", "无力"),
-            ("活力", "曲解", "迟滞"),
+            ("疯狂", "转换", "兴奋"),
+            ("疯狂", "反转", "无力"),
+            ("疯狂", "曲解", "迟滞"),
             ("减速", "转换", "急速"),
             ("减速", "反转", "加速"),
             ("减速", "曲解", "眩晕"),
@@ -1279,8 +1290,8 @@ class ResonanceEngine:
         """
         应用残韵变化
         规则：
-        1. 残韵作用于非轮回者拥有的道纹时，仅改变本次发动的道纹结算
-        2. 残韵作用于轮回者拥有的道纹时，该轮回者拥有的对应道纹永久变为变化后的道纹
+        1. 残韵作用于任意角色拥有的道纹时，将其永久变为变化后的道纹
+        2. 施法者同时永久获得变化后的道纹
         3. 通过残韵获得的道纹，X值按施法者自由控X规则自定义
         """
         # 检查路径是否存在
@@ -1305,8 +1316,8 @@ class ResonanceEngine:
             "source": source_daowen,
             "resonance_type": resonance_type,
             "target": target,
-            "permanent_change": caster_has_daowen,
-            "caster_gets_daowen": not caster_has_daowen and target_has_daowen,
+            "permanent_change": True,
+            "caster_gets_daowen": True,
             "summary": f"【{resonance_type}】{source_daowen} → {target}"
         }
 

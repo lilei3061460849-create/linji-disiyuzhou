@@ -7,6 +7,7 @@ invalid_damage_hits，从未挂状态。
 import os
 import sys
 
+from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
@@ -20,6 +21,7 @@ def _engine(suffix):
     engine.execute_action("setup_attributes", {
         "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7,
     })
+    finish_initial_daowen(engine)
     engine.state.current_region = "龙心谷"
     engine.state.phase = "in_combat"
     p = engine.state.player

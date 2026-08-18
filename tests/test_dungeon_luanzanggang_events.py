@@ -6,6 +6,7 @@
 import os
 import sys
 
+from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
@@ -16,6 +17,7 @@ def _engine(suffix: str, with_ally=True) -> GameEngine:
     e = GameEngine(db_path=f"/tmp/test_lz_ev_{suffix}.db", rng_seed=1)
     e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 11,
                                           "speed_points": 8, "mana_points": 6})
+    finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": "乱葬岗"})
     e.execute_action("choose_discovered_relic", {"relic_name": setup["result"]["relic_choices"][0]})

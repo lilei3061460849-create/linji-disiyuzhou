@@ -56,7 +56,7 @@ engine/
 └── api.py               # GameEngine 主类 — AI 唯一交互入口（含 TWISTED_TOOL_LIBRARY、TERMINAL_ARTIFACTS、FIRST_EMBRACE_OPTIONS 等）
 ```
 
-> **2026-08-11 F7 订正**：五章「全程自动触发」已与「特殊事件（全局触发）」13 项对齐（补 凡庸/癌变/崩解/还债/雕塑）；「增生」全量更名为「癌变」（旧名 增生 保留为兼容字段 `is_proliferated`/`PROLIFERATION_THRESHOLD`/`proliferation`），「增殖」为独立道纹（血限+2X）二者无关。
+> **2026-08-11 F7 订正**：五章「全程自动触发」已与「特殊事件（全局触发）」14 项对齐（补 凡庸/癌变/崩解/还债/雕塑/救赎）；「增生」全量更名为「癌变」（旧名 增生 保留为兼容字段 `is_proliferated`/`PROLIFERATION_THRESHOLD`/`proliferation`），「增殖」为独立道纹（血限+2X）二者无关。
 
 ## AI交互流程
 
@@ -133,7 +133,9 @@ engine = GameEngine(rng_seed=12345)
 
 | 行动类型 | 说明 |
 |---------|------|
-| `setup_attributes` | 分配初始25属性点，并自动获得初始道纹【杀伐】 |
+| `setup_attributes` | 分配初始25属性点，并从杀伐闭环发现3种初始道纹候选 |
+| `setup_choose_initial_daowen` | 从发现候选中显式选择1种作为初始道纹 |
+| `resolve_redemption` | 救赎触发后选择接纳（自定义朋友名）或无视 |
 | `setup_choose_resonance` | 选择初始残韵 |
 | `setup_choose_region` | 选择副本 |
 | `pre_battle_action` | 局外行动（领悟/休整/修行/学习/共鸣/探索/忘忧(需持有忘忧香)/献祭(需持有红头绳)） |

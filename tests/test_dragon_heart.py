@@ -13,6 +13,7 @@ pytest 风格测试 - 里程碑9a：龙心谷"炼心"/【××龙心】消耗品�
 import os
 import sys
 
+from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
@@ -24,6 +25,7 @@ from engine.models import DaoWen, DaoWenInstance, Entity
 def _new_engine(db_suffix: str) -> GameEngine:
     engine = GameEngine(db_path=f"data/test_dragonheart_{db_suffix}.db", rng_seed=1)
     engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
+    finish_initial_daowen(engine)
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
     setup = engine.execute_action("setup_choose_region", {"region": "龙心谷"})
     optional = {"折速法印", "三相残韵盘"}

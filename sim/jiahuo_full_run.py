@@ -11,6 +11,7 @@ import os
 import sys
 import tempfile
 
+from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
@@ -98,6 +99,7 @@ def main():
             p0 = snap["player"]
             e.execute_action("setup_attributes", {"name": p0["name"],
                                                   "blood_points": 10, "speed_points": 8, "mana_points": 7})
+            finish_initial_daowen(e)
             e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
             setup = e.execute_action("setup_choose_region", {"region": "乱葬岗"})
             e.execute_action("choose_discovered_relic",

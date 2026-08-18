@@ -1,4 +1,5 @@
 import sys, os, tempfile, json
+from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from engine.api import GameEngine
 from sim.handplay_dungeon_with_winner import load_winner
@@ -11,6 +12,7 @@ def handplay(winner, seed=7, battles=1, verbose=True, spell_plan=None):
     e = GameEngine(db_path=tempfile.mktemp(suffix='.db'), rng_seed=seed, sealed_candidate_path='/tmp/hm.json')
     p0 = snap['player']
     e.execute_action('setup_attributes', {'name':p0['name'],'blood_points':10,'speed_points':8,'mana_points':7})
+    finish_initial_daowen(e)
     e.execute_action('setup_choose_resonance', {'resonance_type':'反转'})
     setup = e.execute_action('setup_choose_region', {'region':'乱葬岗'})
     e.execute_action('choose_discovered_relic', {'relic_name': setup['result']['relic_choices'][0]})

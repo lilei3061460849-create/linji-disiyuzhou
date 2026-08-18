@@ -12,6 +12,7 @@ import sys
 
 import pytest
 
+from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
@@ -23,6 +24,7 @@ def _engine(tmp_path, seed=4, learn=("庇护", "再生", "冲击")):
     e = GameEngine(db_path=str(tmp_path / "ai.db"), rng_seed=seed)
     e.execute_action("setup_attributes",
                      {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+    finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": "龙心谷"})
     e.execute_action("choose_discovered_relic", {"relic_name": setup["result"]["relic_choices"][0]})
@@ -43,6 +45,10 @@ def _engine(tmp_path, seed=4, learn=("庇护", "再生", "冲击")):
 def test_ai_uses_full_action_budget(tmp_path):
     """正常路径：AI 应打满本回合出手次数，而不是一发杀伐烧光法力就收手"""
     e = _engine(tmp_path)
+    for monster in e.state.enemies:
+        if "强化" not in monster.dao_wen:
+            monster.dao_wen["强化"] = DaoWenInstance(
+                DaoWen("强化", "", "异变", "5X", ""), x_value=1)
     ai = TacticalAI(e)
     results = ai.take_turn()
     expected = max(1, math.ceil(e.state.player.speed_limit / 3))
@@ -141,10 +147,68 @@ def test_ai_does_not_crash_without_any_daowen(tmp_path):
     assert ai.take_action() is None
 
 
+def test_tactical_roles_match_readme_costs():
+    """正常：战术表消耗必须跟正文现行公式一致，禁止沿用杀伐3X或缓慢10法力。"""
+    from engine.ai_tactics import TACTICAL_ROLES
+    assert TACTICAL_ROLES["杀伐"]["cost"] == 1
+    assert TACTICAL_ROLES["杀伐"]["dmg_per_x"] == 2
+    assert TACTICAL_ROLES["冲击"]["cost"] == 3
+    assert TACTICAL_ROLES["冲击"]["dmg_per_x"] == 5
+    assert TACTICAL_ROLES["切割"]["cost"] == 3
+    assert TACTICAL_ROLES["切割"]["role"] == "buff"
+    assert TACTICAL_ROLES["缓慢"]["cost"] == 0
+    assert TACTICAL_ROLES["缓慢"]["pay"] == "冷却"
+    assert TACTICAL_ROLES["增殖"]["cost"] == 1
+
+
+def test_ai_uses_chongji_when_two_enemies_outscore_single(tmp_path):
+    """正常：两名敌人时冲击总伤高于单体，必须提交闪避并真正发动冲击。"""
+    from engine.models import Entity
+    e = _engine(tmp_path, learn=("冲击",))
+    extra = Entity(name="木桩乙", entity_type="怪物", blood_limit=80, current_hp=80,
+                   attack_count=1, attack_power=4)
+    e.state.enemies.append(extra)
+    for monster in e.state.enemies:
+        monster.current_hp = max(monster.current_hp, 80)
+        monster.blood_limit = max(monster.blood_limit, 80)
+    e.state.player.current_mana = 12
+    ai = TacticalAI(e)
+    r = ai.try_aoe()
+    assert r is not None and r.get("success"), f"双怪场面应发动冲击：{r}"
+    assert ai.used.get("冲击", 0) == 1
+
+
+def test_ai_keeps_shaifa_on_single_target(tmp_path):
+    """边界：单怪时冲击总伤不如杀伐，不得为了用冲击而浪费法力。"""
+    e = _engine(tmp_path, learn=("冲击",))
+    assert len(e.state.enemies) == 1
+    e.state.player.current_mana = 12
+    ai = TacticalAI(e)
+    assert ai.try_aoe() is None
+    r = ai.try_pressure()
+    assert r is not None and "杀伐" in r.get("action", "")
+
+
+def test_manqian_can_cast_with_zero_mana(tmp_path):
+    """错误输入对照：缓慢是冷却代价，法力为0时仍应能发动，不得按旧10法力表拒绝。"""
+    from engine.models import DaoWen, DaoWenInstance
+    e = _engine(tmp_path, learn=())
+    e.state.player.dao_wen["缓慢"] = DaoWenInstance(
+        DaoWen(name="缓慢", formula="", cost_type="冷却", cost_formula="X", effect_formula=""))
+    e.state.player.current_mana = 0
+    e.state.player.current_hp = 20
+    e.state.enemies[0].attack_count = 1
+    e.state.enemies[0].attack_power = 8
+    ai = TacticalAI(e)
+    r = ai.try_control()
+    assert r is not None and r.get("success"), f"零法力应能发动缓慢：{r}"
+    assert ai.used.get("缓慢", 0) == 1
+
+
 def test_ai_can_use_resonance_on_monster_daowen(tmp_path):
     """
     正常路径：残韵闭环补齐后，AI 必须能对怪物原始道纹发动残韵。
-    修复前 CLOSED_LOOPS 只有杀伐/锐利两轨，对必中/狂暴/飞行发动必然失败。
+    修复前 CLOSED_LOOPS 只有杀伐/切割两轨，对必中/狂暴/飞行发动必然失败。
     """
     e = _engine(tmp_path, learn=())
     e.state.player.dao_wen.clear()

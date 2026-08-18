@@ -3,6 +3,7 @@ from engine.api import GameEngine
 from engine.models import Consumable, Entity
 
 
+from tests.setup_support import finish_initial_daowen
 def _engine(tmp_path, region="扭曲都市", seed=31):
     engine = GameEngine(
         db_path=str(tmp_path / "rulings.db"), save_dir=str(tmp_path / "saves"),
@@ -12,6 +13,7 @@ def _engine(tmp_path, region="扭曲都市", seed=31):
     engine.execute_action("setup_attributes", {
         "name": "局外测试", "blood_points": 10, "speed_points": 8, "mana_points": 7,
     })
+    finish_initial_daowen(engine)
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
     setup = engine.execute_action("setup_choose_region", {"region": region})
     engine.execute_action("choose_discovered_relic", {
@@ -51,10 +53,10 @@ def test_learning_three_spells_and_two_daowen_applies_all_names(tmp_path):
     engine.state.energy = 3
     daowen = engine.execute_action("pre_battle_action", {
         "sub_action": "学习", "sub": "daowen", "tier": 2,
-        "names": ["锐利", "庇护"],
+        "names": ["切割", "庇护"],
     })
     assert daowen["success"]
-    assert {"杀伐", "锐利", "庇护"} <= set(engine.state.player.dao_wen)
+    assert {"杀伐", "切割", "庇护"} <= set(engine.state.player.dao_wen)
     assert engine.state.shards == 65
 
 
@@ -71,7 +73,7 @@ def test_learning_wrong_count_duplicate_and_daowen_tier_three_are_atomic(tmp_pat
 
     invalid_tier = engine.execute_action("pre_battle_action", {
         "sub_action": "学习", "sub": "daowen", "tier": 3,
-        "names": ["锐利", "庇护", "再生"],
+        "names": ["切割", "庇护", "再生"],
     })
     assert not invalid_tier["success"]
     assert (engine.state.energy, engine.state.shards, set(engine.state.player.dao_wen)) == before

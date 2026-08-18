@@ -8,6 +8,7 @@ import sys
 
 import pytest
 
+from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
@@ -281,7 +282,7 @@ def test_r43_all_implemented_event_options_have_a_runtime_route(tmp_path):
             engine = _engine(root, seed=event_index * 10 + option["id"])
             player = Entity("P", "轮回者", blood_limit=100, current_hp=100,
                             mana_limit=100, current_mana=100, speed_limit=100, current_speed=100)
-            for name in set(engine.SPELL_REGISTRY) | {"杀伐", "锐利", "庇护", "再生", "血债"}:
+            for name in set(engine.SPELL_REGISTRY) | {"杀伐", "切割", "庇护", "再生", "血债"}:
                 player.dao_wen[name] = DaoWenInstance(DaoWen(name, "", "消耗", "X", ""))
             engine.state.player = player; engine.state.phase = "pre_battle"
             engine.state.current_region = event["region"] if event["region"] != "通用" else "罪孽都市"

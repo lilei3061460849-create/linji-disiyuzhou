@@ -8,6 +8,7 @@ import os
 import sys
 import pytest
 
+from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine, TWISTED_TOOL_LIBRARY
@@ -17,6 +18,7 @@ from engine.monsters import make_monster_entity
 def _setup_engine(region="扭曲都市", seed=42):
     engine = GameEngine(rng_seed=seed)
     engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 7, "mana_points": 8})
+    finish_initial_daowen(engine)
     engine.state.current_region = region
     engine.state.phase = "in_combat"
     # Ensure player exists
@@ -111,15 +113,15 @@ def test_normal_water_gun():
     engine = _setup_engine()
     m = engine.state.enemies[0]
     m.add_status(StatusEffect(name="爆裂", value=1, remaining_rounds=2, source="test"))
-    m.add_status(StatusEffect(name="活力", value=1, remaining_rounds=-1, source="test"))
+    m.add_status(StatusEffect(name="疯狂", value=1, remaining_rounds=-1, source="test"))
     assert len(m.status_effects) == 2
     _grant_tool(engine, "高压水枪")
     r = engine.execute_action("consume_item", {"name": "高压水枪"})
     assert r["success"]
     assert r["result"]["cleared_enemies"] == [m.name]
-    # 爆裂 should be cleared (remaining 2 >0), 活力 permanent (-1) should remain
+    # 爆裂 should be cleared (remaining 2 >0), 疯狂 permanent (-1) should remain
     assert not any(s.name == "爆裂" for s in m.status_effects)
-    assert any(s.name == "活力" for s in m.status_effects)
+    assert any(s.name == "疯狂" for s in m.status_effects)
 
 def test_normal_battery():
     engine = _setup_engine()
@@ -147,7 +149,7 @@ def test_normal_medkit():
 def test_normal_jammer():
     engine = _setup_engine()
     m = engine.state.enemies[0]
-    m.dao_wen["活力"] = DaoWenInstance(DaoWen(name="活力", formula="", cost_type="", cost_formula="", effect_formula=""), x_value=2)
+    m.dao_wen["疯狂"] = DaoWenInstance(DaoWen(name="疯狂", formula="", cost_type="", cost_formula="", effect_formula=""), x_value=2)
     engine.combat._monster_activated = {id(m): set()}
     _grant_tool(engine, "干扰仪")
     r = engine.execute_action("consume_item", {"name": "干扰仪"})
@@ -192,7 +194,7 @@ def test_boundary_water_gun_no_continuous():
     engine = _setup_engine()
     m = engine.state.enemies[0]
     # No continuous effects
-    m.status_effects = [StatusEffect(name="活力", value=1, remaining_rounds=-1, source="test")]
+    m.status_effects = [StatusEffect(name="疯狂", value=1, remaining_rounds=-1, source="test")]
     _grant_tool(engine, "高压水枪")
     r = engine.execute_action("consume_item", {"name": "高压水枪"})
     assert r["success"]

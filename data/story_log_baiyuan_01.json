@@ -1,0 +1,3730 @@
+{
+ "seed": 20260818,
+ "character": "白予安",
+ "entries": [
+  {
+   "action": "setup_attributes",
+   "params": {
+    "name": "白予安",
+    "blood_points": 7,
+    "speed_points": 8,
+    "mana_points": 10
+   },
+   "result": {
+    "success": true,
+    "action": "分配属性点",
+    "result": {
+     "name": "白予安",
+     "blood_limit": 42,
+     "mana_limit": 20,
+     "speed_limit": 8,
+     "attack_count": 0,
+     "attack_power": 0,
+     "action_count": 3,
+     "shards": 20,
+     "daowen_choices": [
+      "冲击",
+      "再生",
+      "缓慢"
+     ]
+    },
+    "next_actions": [
+     "setup_choose_initial_daowen"
+    ],
+    "note": "属性已分配；请从杀伐闭环的3个发现候选中显式选择1种作为初始道纹。"
+   }
+  },
+  {
+   "action": "setup_choose_initial_daowen",
+   "params": {
+    "daowen_name": "冲击"
+   },
+   "result": {
+    "success": true,
+    "action": "选择初始道纹",
+    "result": {
+     "daowen": "冲击",
+     "player_daowen": [
+      "冲击"
+     ]
+    },
+    "next_actions": [
+     "setup_choose_resonance"
+    ]
+   }
+  },
+  {
+   "action": "setup_choose_resonance",
+   "params": {
+    "resonance_type": "反转"
+   },
+   "result": {
+    "success": true,
+    "action": "选择残韵",
+    "result": {
+     "resonance_type": "反转",
+     "count": 1
+    },
+    "next_actions": [
+     "setup_choose_region"
+    ]
+   }
+  },
+  {
+   "action": "setup_choose_region",
+   "params": {
+    "region": "罪孽都市"
+   },
+   "result": {
+    "success": true,
+    "action": "选择副本",
+    "result": {
+     "region": "罪孽都市",
+     "relic_choices": [
+      "避风铃",
+      "回锋刀",
+      "折速法印"
+     ]
+    },
+    "next_actions": [
+     "choose_discovered_relic"
+    ],
+    "note": "开局发现已随机列出3件遗物；必须显式选择1件后进入局外行动。"
+   }
+  },
+  {
+   "action": "choose_discovered_relic",
+   "params": {
+    "relic_name": "避风铃"
+   },
+   "result": {
+    "success": true,
+    "action": "选择发现遗物",
+    "result": {
+     "relic": "避风铃",
+     "source": "开局发现"
+    }
+   }
+  },
+  {
+   "action": "pre_battle_action",
+   "params": {
+    "sub_action": "学习",
+    "sub": "daowen",
+    "name": "杀伐"
+   },
+   "result": {
+    "success": true,
+    "action": "学习·道纹",
+    "result": {
+     "learned": "daowen",
+     "names": [
+      "杀伐"
+     ],
+     "shard_cost": 0,
+     "player_daowen": [
+      "冲击",
+      "杀伐"
+     ]
+    }
+   }
+  },
+  {
+   "action": "pre_battle_action",
+   "params": {
+    "sub_action": "学习",
+    "sub": "daowen",
+    "name": "庇护"
+   },
+   "result": {
+    "success": true,
+    "action": "学习·道纹",
+    "result": {
+     "learned": "daowen",
+     "names": [
+      "庇护"
+     ],
+     "shard_cost": 0,
+     "player_daowen": [
+      "冲击",
+      "杀伐",
+      "庇护"
+     ]
+    }
+   }
+  },
+  {
+   "action": "pre_battle_action",
+   "params": {
+    "sub_action": "领悟",
+    "resonance_type": "转换"
+   },
+   "result": {
+    "success": true,
+    "action": "领悟",
+    "result": {
+     "gained_resonance": "转换",
+     "total": 1
+    },
+    "energy_remaining": 0
+   }
+  },
+  {
+   "action": "battle_start",
+   "params": {
+    "relic_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "战始",
+    "battle_number": 1,
+    "region": "罪孽都市",
+    "draw_count": 1,
+    "enemies": [
+     "暗哨"
+    ],
+    "full_information": null,
+    "relic_logs": [],
+    "artifact_logs": [],
+    "instruction": "怪物已抽取完毕；请补充选择本场战斗背景(纯叙事，不影响数值)并结算其余[战始]效果"
+   }
+  },
+  {
+   "action": "round_start",
+   "params": {
+    "relic_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "回始",
+    "result": {
+     "round": 1,
+     "phase": "回始",
+     "effects": [
+      {
+       "type": "mana_refill",
+       "entity": "白予安",
+       "from": 0,
+       "to": 20,
+       "gained": 20
+      }
+     ],
+     "state": {
+      "round": 1,
+      "player_side": [
+       {
+        "name": "白予安",
+        "entity_type": "轮回者",
+        "runtime_id": "55946a27d9a04b56af52283415f1fb5c",
+        "blood_limit": 42,
+        "current_hp": 42,
+        "mana_limit": 20,
+        "current_mana": 20,
+        "speed_limit": 8,
+        "current_speed": 8,
+        "attack_count": 0,
+        "attack_power": 0,
+        "action_count": 3,
+        "shield": 0,
+        "is_flying": false,
+        "is_alive": true,
+        "removed_without_kill": false,
+        "is_deployed": true,
+        "has_retreated": false,
+        "battle_start_blood_limit": 42,
+        "deployed_at_round": 0,
+        "shards": 0,
+        "fake_shards": 0,
+        "total_healed": 0,
+        "hp_ratio": 1.0,
+        "dao_wen": {
+         "冲击": "冲击",
+         "杀伐": "杀伐",
+         "庇护": "庇护"
+        },
+        "spells": [],
+        "relics": [],
+        "status_effects": []
+       }
+      ],
+      "enemy_side": [
+       {
+        "name": "暗哨",
+        "entity_type": "怪物",
+        "runtime_id": "e024738a0743433ab69da89eff741168",
+        "blood_limit": 198,
+        "current_hp": 198,
+        "mana_limit": 0,
+        "current_mana": 0,
+        "speed_limit": 0,
+        "current_speed": 0,
+        "attack_count": 1,
+        "attack_power": 13,
+        "action_count": 0,
+        "shield": 0,
+        "is_flying": false,
+        "is_alive": true,
+        "removed_without_kill": false,
+        "is_deployed": true,
+        "has_retreated": false,
+        "battle_start_blood_limit": 198,
+        "deployed_at_round": 0,
+        "shards": 4,
+        "fake_shards": 0,
+        "total_healed": 0,
+        "hp_ratio": 1.0,
+        "dao_wen": {
+         "赎金": "赎金",
+         "缓慢": "缓慢",
+         "蒙蔽": "蒙蔽"
+        },
+        "spells": [],
+        "relics": [],
+        "status_effects": []
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "action": "use_resonance",
+   "params": {
+    "source_daowen": "赎金",
+    "resonance_type": "转换",
+    "target_ref": "enemy:0"
+   },
+   "result": {
+    "success": true,
+    "action": "残韵【转换】赎金 → 假钞",
+    "result": {
+     "success": true,
+     "source": "赎金",
+     "resonance_type": "转换",
+     "target": "假钞",
+     "permanent_change": true,
+     "caster_gets_daowen": true,
+     "summary": "【转换】赎金 → 假钞"
+    },
+    "holder": "暗哨",
+    "holder_is_player": false,
+    "holder_changed": true,
+    "granted_daowen": "假钞",
+    "second_target_log": null,
+    "resonance_remaining": {
+     "反转": 1,
+     "转换": 0
+    }
+   }
+  },
+  {
+   "action": "use_daowen",
+   "params": {
+    "daowen_name": "杀伐",
+    "x": 6,
+    "target_ref": "enemy:0",
+    "dodge": false,
+    "blood_shadow": false,
+    "trigger_spell_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "发动道纹【杀伐X=6】",
+    "calculation": {
+     "dao_wen": "杀伐",
+     "x": 6,
+     "cost_type": "消耗",
+     "cost": 6,
+     "target_damage": 12,
+     "damage_type": "普通",
+     "summary": "消耗6法力，对暗哨造成12点伤害"
+    },
+    "execution": {
+     "daowen": "杀伐",
+     "effects": [
+      {
+       "type": "damage",
+       "target": "暗哨",
+       "raw_damage": 12,
+       "shield_absorbed": 0,
+       "actual_damage": 12,
+       "hp_before": 198,
+       "hp_after": 186,
+       "blood_limit_before": 198,
+       "died": false,
+       "damage_type": "普通"
+      }
+     ]
+    },
+    "dodge": {
+     "must_hit": false,
+     "dodged_names": [],
+     "fully_dodged": false
+    },
+    "trigger_spell_logs": [],
+    "state": {
+     "round": 1,
+     "player_side": [
+      {
+       "name": "白予安",
+       "entity_type": "轮回者",
+       "runtime_id": "55946a27d9a04b56af52283415f1fb5c",
+       "blood_limit": 42,
+       "current_hp": 42,
+       "mana_limit": 20,
+       "current_mana": 14,
+       "speed_limit": 8,
+       "current_speed": 8,
+       "attack_count": 0,
+       "attack_power": 0,
+       "action_count": 3,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 42,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 1.0,
+       "dao_wen": {
+        "冲击": "冲击",
+        "杀伐": "杀伐",
+        "庇护": "庇护",
+        "假钞": "假钞"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ],
+     "enemy_side": [
+      {
+       "name": "暗哨",
+       "entity_type": "怪物",
+       "runtime_id": "e024738a0743433ab69da89eff741168",
+       "blood_limit": 198,
+       "current_hp": 186,
+       "mana_limit": 0,
+       "current_mana": 0,
+       "speed_limit": 0,
+       "current_speed": 0,
+       "attack_count": 1,
+       "attack_power": 13,
+       "action_count": 0,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 198,
+       "deployed_at_round": 0,
+       "shards": 4,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 0.94,
+       "dao_wen": {
+        "缓慢": "缓慢",
+        "蒙蔽": "蒙蔽",
+        "假钞": "假钞"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "use_daowen",
+   "params": {
+    "daowen_name": "杀伐",
+    "x": 7,
+    "target_ref": "enemy:0",
+    "dodge": false,
+    "blood_shadow": false,
+    "trigger_spell_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "发动道纹【杀伐X=7】",
+    "calculation": {
+     "dao_wen": "杀伐",
+     "x": 7,
+     "cost_type": "消耗",
+     "cost": 7,
+     "target_damage": 14,
+     "damage_type": "普通",
+     "summary": "消耗7法力，对暗哨造成14点伤害"
+    },
+    "execution": {
+     "daowen": "杀伐",
+     "effects": [
+      {
+       "type": "damage",
+       "target": "暗哨",
+       "raw_damage": 14,
+       "shield_absorbed": 0,
+       "actual_damage": 14,
+       "hp_before": 186,
+       "hp_after": 172,
+       "blood_limit_before": 198,
+       "died": false,
+       "damage_type": "普通"
+      }
+     ]
+    },
+    "dodge": {
+     "must_hit": false,
+     "dodged_names": [],
+     "fully_dodged": false
+    },
+    "trigger_spell_logs": [],
+    "state": {
+     "round": 1,
+     "player_side": [
+      {
+       "name": "白予安",
+       "entity_type": "轮回者",
+       "runtime_id": "55946a27d9a04b56af52283415f1fb5c",
+       "blood_limit": 42,
+       "current_hp": 42,
+       "mana_limit": 20,
+       "current_mana": 7,
+       "speed_limit": 8,
+       "current_speed": 8,
+       "attack_count": 0,
+       "attack_power": 0,
+       "action_count": 3,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 42,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 1.0,
+       "dao_wen": {
+        "冲击": "冲击",
+        "杀伐": "杀伐",
+        "庇护": "庇护",
+        "假钞": "假钞"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ],
+     "enemy_side": [
+      {
+       "name": "暗哨",
+       "entity_type": "怪物",
+       "runtime_id": "e024738a0743433ab69da89eff741168",
+       "blood_limit": 198,
+       "current_hp": 172,
+       "mana_limit": 0,
+       "current_mana": 0,
+       "speed_limit": 0,
+       "current_speed": 0,
+       "attack_count": 1,
+       "attack_power": 13,
+       "action_count": 0,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 198,
+       "deployed_at_round": 0,
+       "shards": 4,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 0.87,
+       "dao_wen": {
+        "缓慢": "缓慢",
+        "蒙蔽": "蒙蔽",
+        "假钞": "假钞"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "use_daowen",
+   "params": {
+    "daowen_name": "杀伐",
+    "x": 7,
+    "target_ref": "enemy:0",
+    "dodge": false,
+    "blood_shadow": false,
+    "trigger_spell_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "发动道纹【杀伐X=7】",
+    "calculation": {
+     "dao_wen": "杀伐",
+     "x": 7,
+     "cost_type": "消耗",
+     "cost": 7,
+     "target_damage": 14,
+     "damage_type": "普通",
+     "summary": "消耗7法力，对暗哨造成14点伤害"
+    },
+    "execution": {
+     "daowen": "杀伐",
+     "effects": [
+      {
+       "type": "damage",
+       "target": "暗哨",
+       "raw_damage": 14,
+       "shield_absorbed": 0,
+       "actual_damage": 14,
+       "hp_before": 172,
+       "hp_after": 158,
+       "blood_limit_before": 198,
+       "died": false,
+       "damage_type": "普通"
+      }
+     ]
+    },
+    "dodge": {
+     "must_hit": false,
+     "dodged_names": [],
+     "fully_dodged": false
+    },
+    "trigger_spell_logs": [],
+    "state": {
+     "round": 1,
+     "player_side": [
+      {
+       "name": "白予安",
+       "entity_type": "轮回者",
+       "runtime_id": "55946a27d9a04b56af52283415f1fb5c",
+       "blood_limit": 42,
+       "current_hp": 42,
+       "mana_limit": 20,
+       "current_mana": 0,
+       "speed_limit": 8,
+       "current_speed": 8,
+       "attack_count": 0,
+       "attack_power": 0,
+       "action_count": 3,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 42,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 1.0,
+       "dao_wen": {
+        "冲击": "冲击",
+        "杀伐": "杀伐",
+        "庇护": "庇护",
+        "假钞": "假钞"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ],
+     "enemy_side": [
+      {
+       "name": "暗哨",
+       "entity_type": "怪物",
+       "runtime_id": "e024738a0743433ab69da89eff741168",
+       "blood_limit": 198,
+       "current_hp": 158,
+       "mana_limit": 0,
+       "current_mana": 0,
+       "speed_limit": 0,
+       "current_speed": 0,
+       "attack_count": 1,
+       "attack_power": 13,
+       "action_count": 0,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 198,
+       "deployed_at_round": 0,
+       "shards": 4,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 0.8,
+       "dao_wen": {
+        "缓慢": "缓慢",
+        "蒙蔽": "蒙蔽",
+        "假钞": "假钞"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "prepare_monster_phase",
+   "params": {},
+   "result": {
+    "success": true,
+    "action": "准备怪物阶段",
+    "result": {
+     "token": "fe9565afcac54a4c9acb4370e07e9cdd",
+     "round": 1,
+     "actors": [
+      {
+       "actor_ref": "enemy:0",
+       "monster": "暗哨",
+       "daowen_required": false,
+       "daowen_options": [],
+       "attack_target_options": [
+        {
+         "ref": "player:0",
+         "name": "白予安",
+         "can_blood_shadow": false,
+         "blood_shadow_cost_share_target_options": [],
+         "spell_options": {
+          "before": [],
+          "after": []
+         },
+         "dodge_relic_target_options": []
+        }
+       ],
+       "base_attack_actions": 1,
+       "base_hits_per_attack": 1,
+       "dodge_must_be_explicit": true
+      }
+     ],
+     "skipped": []
+    },
+    "instruction": "请为每个actors条目提交完整选择后调用resolve_monster_phase"
+   }
+  },
+  {
+   "action": "resolve_monster_phase",
+   "params": {
+    "token": "fe9565afcac54a4c9acb4370e07e9cdd",
+    "choices": [
+     {
+      "actor_ref": "enemy:0",
+      "daowen": null,
+      "attack_actions": [
+       {
+        "hits": [
+         {
+          "target_ref": "player:0",
+          "dodge": true,
+          "blood_shadow": false,
+          "spell_choices": {
+           "before": {},
+           "after": {}
+          }
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "result": {
+    "success": true,
+    "action": "结算怪物阶段",
+    "result": {
+     "entries": 1,
+     "player_dead": false,
+     "player_hp": 42,
+     "details": [
+      {
+       "attacker": "暗哨",
+       "target": "白予安",
+       "hit_index": 1,
+       "dodge_attempted": true,
+       "dodge_success": true,
+       "damage_dealt": 0,
+       "shield_absorbed": 0,
+       "hp_lost": 0,
+       "target_died": false,
+       "speed_after_dodge": 7,
+       "dodge_extra": {
+        "avoid_wind_shield": 3
+       },
+       "hit_total": 1,
+       "attack_action_index": 1,
+       "new_action": true
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "round_end",
+   "params": {},
+   "result": {
+    "success": true,
+    "action": "回终",
+    "result": {
+     "round": 1,
+     "phase": "回终",
+     "effects": [
+      {
+       "type": "shield_clear",
+       "entity": "白予安",
+       "cleared": 3
+      }
+     ],
+     "state": {
+      "round": 1,
+      "player_side": [
+       {
+        "name": "白予安",
+        "entity_type": "轮回者",
+        "runtime_id": "55946a27d9a04b56af52283415f1fb5c",
+        "blood_limit": 42,
+        "current_hp": 42,
+        "mana_limit": 20,
+        "current_mana": 0,
+        "speed_limit": 8,
+        "current_speed": 7,
+        "attack_count": 0,
+        "attack_power": 0,
+        "action_count": 3,
+        "shield": 0,
+        "is_flying": false,
+        "is_alive": true,
+        "removed_without_kill": false,
+        "is_deployed": true,
+        "has_retreated": false,
+        "battle_start_blood_limit": 42,
+        "deployed_at_round": 0,
+        "shards": 0,
+        "fake_shards": 0,
+        "total_healed": 0,
+        "hp_ratio": 1.0,
+        "dao_wen": {
+         "冲击": "冲击",
+         "杀伐": "杀伐",
+         "庇护": "庇护",
+         "假钞": "假钞"
+        },
+        "spells": [],
+        "relics": [],
+        "status_effects": []
+       }
+      ],
+      "enemy_side": [
+       {
+        "name": "暗哨",
+        "entity_type": "怪物",
+        "runtime_id": "e024738a0743433ab69da89eff741168",
+        "blood_limit": 198,
+        "current_hp": 158,
+        "mana_limit": 0,
+        "current_mana": 0,
+        "speed_limit": 0,
+        "current_speed": 0,
+        "attack_count": 1,
+        "attack_power": 13,
+        "action_count": 0,
+        "shield": 0,
+        "is_flying": false,
+        "is_alive": true,
+        "removed_without_kill": false,
+        "is_deployed": true,
+        "has_retreated": false,
+        "battle_start_blood_limit": 198,
+        "deployed_at_round": 0,
+        "shards": 4,
+        "fake_shards": 0,
+        "total_healed": 0,
+        "hp_ratio": 0.8,
+        "dao_wen": {
+         "缓慢": "缓慢",
+         "蒙蔽": "蒙蔽",
+         "假钞": "假钞"
+        },
+        "spells": [],
+        "relics": [],
+        "status_effects": []
+       }
+      ]
+     }
+    },
+    "victory_paths": [],
+    "monster_difficulties": [],
+    "note": "多路径胜利（雕塑/癌变/还债）已结算；消耗品可在后续回合使用"
+   }
+  },
+  {
+   "action": "round_start",
+   "params": {
+    "relic_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "回始",
+    "result": {
+     "round": 2,
+     "phase": "回始",
+     "effects": [
+      {
+       "type": "mana_refill",
+       "entity": "白予安",
+       "from": 0,
+       "to": 20,
+       "gained": 20
+      }
+     ],
+     "state": {
+      "round": 2,
+      "player_side": [
+       {
+        "name": "白予安",
+        "entity_type": "轮回者",
+        "runtime_id": "55946a27d9a04b56af52283415f1fb5c",
+        "blood_limit": 42,
+        "current_hp": 42,
+        "mana_limit": 20,
+        "current_mana": 20,
+        "speed_limit": 8,
+        "current_speed": 7,
+        "attack_count": 0,
+        "attack_power": 0,
+        "action_count": 3,
+        "shield": 0,
+        "is_flying": false,
+        "is_alive": true,
+        "removed_without_kill": false,
+        "is_deployed": true,
+        "has_retreated": false,
+        "battle_start_blood_limit": 42,
+        "deployed_at_round": 0,
+        "shards": 0,
+        "fake_shards": 0,
+        "total_healed": 0,
+        "hp_ratio": 1.0,
+        "dao_wen": {
+         "冲击": "冲击",
+         "杀伐": "杀伐",
+         "庇护": "庇护",
+         "假钞": "假钞"
+        },
+        "spells": [],
+        "relics": [],
+        "status_effects": []
+       }
+      ],
+      "enemy_side": [
+       {
+        "name": "暗哨",
+        "entity_type": "怪物",
+        "runtime_id": "e024738a0743433ab69da89eff741168",
+        "blood_limit": 198,
+        "current_hp": 158,
+        "mana_limit": 0,
+        "current_mana": 0,
+        "speed_limit": 0,
+        "current_speed": 0,
+        "attack_count": 1,
+        "attack_power": 13,
+        "action_count": 0,
+        "shield": 0,
+        "is_flying": false,
+        "is_alive": true,
+        "removed_without_kill": false,
+        "is_deployed": true,
+        "has_retreated": false,
+        "battle_start_blood_limit": 198,
+        "deployed_at_round": 0,
+        "shards": 4,
+        "fake_shards": 0,
+        "total_healed": 0,
+        "hp_ratio": 0.8,
+        "dao_wen": {
+         "缓慢": "缓慢",
+         "蒙蔽": "蒙蔽",
+         "假钞": "假钞"
+        },
+        "spells": [],
+        "relics": [],
+        "status_effects": []
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "action": "use_daowen",
+   "params": {
+    "daowen_name": "杀伐",
+    "x": 6,
+    "target_ref": "enemy:0",
+    "dodge": false,
+    "blood_shadow": false,
+    "trigger_spell_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "发动道纹【杀伐X=6】",
+    "calculation": {
+     "dao_wen": "杀伐",
+     "x": 6,
+     "cost_type": "消耗",
+     "cost": 6,
+     "target_damage": 12,
+     "damage_type": "普通",
+     "summary": "消耗6法力，对暗哨造成12点伤害"
+    },
+    "execution": {
+     "daowen": "杀伐",
+     "effects": [
+      {
+       "type": "damage",
+       "target": "暗哨",
+       "raw_damage": 12,
+       "shield_absorbed": 0,
+       "actual_damage": 12,
+       "hp_before": 158,
+       "hp_after": 146,
+       "blood_limit_before": 198,
+       "died": false,
+       "damage_type": "普通"
+      }
+     ]
+    },
+    "dodge": {
+     "must_hit": false,
+     "dodged_names": [],
+     "fully_dodged": false
+    },
+    "trigger_spell_logs": [],
+    "state": {
+     "round": 2,
+     "player_side": [
+      {
+       "name": "白予安",
+       "entity_type": "轮回者",
+       "runtime_id": "55946a27d9a04b56af52283415f1fb5c",
+       "blood_limit": 42,
+       "current_hp": 42,
+       "mana_limit": 20,
+       "current_mana": 14,
+       "speed_limit": 8,
+       "current_speed": 7,
+       "attack_count": 0,
+       "attack_power": 0,
+       "action_count": 3,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 42,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 1.0,
+       "dao_wen": {
+        "冲击": "冲击",
+        "杀伐": "杀伐",
+        "庇护": "庇护",
+        "假钞": "假钞"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ],
+     "enemy_side": [
+      {
+       "name": "暗哨",
+       "entity_type": "怪物",
+       "runtime_id": "e024738a0743433ab69da89eff741168",
+       "blood_limit": 198,
+       "current_hp": 146,
+       "mana_limit": 0,
+       "current_mana": 0,
+       "speed_limit": 0,
+       "current_speed": 0,
+       "attack_count": 1,
+       "attack_power": 13,
+       "action_count": 0,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 198,
+       "deployed_at_round": 0,
+       "shards": 4,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 0.74,
+       "dao_wen": {
+        "缓慢": "缓慢",
+        "蒙蔽": "蒙蔽",
+        "假钞": "假钞"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "use_daowen",
+   "params": {
+    "daowen_name": "杀伐",
+    "x": 7,
+    "target_ref": "enemy:0",
+    "dodge": false,
+    "blood_shadow": false,
+    "trigger_spell_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "发动道纹【杀伐X=7】",
+    "calculation": {
+     "dao_wen": "杀伐",
+     "x": 7,
+     "cost_type": "消耗",
+     "cost": 7,
+     "target_damage": 14,
+     "damage_type": "普通",
+     "summary": "消耗7法力，对暗哨造成14点伤害"
+    },
+    "execution": {
+     "daowen": "杀伐",
+     "effects": [
+      {
+       "type": "damage",
+       "target": "暗哨",
+       "raw_damage": 14,
+       "shield_absorbed": 0,
+       "actual_damage": 14,
+       "hp_before": 146,
+       "hp_after": 132,
+       "blood_limit_before": 198,
+       "died": false,
+       "damage_type": "普通"
+      }
+     ]
+    },
+    "dodge": {
+     "must_hit": false,
+     "dodged_names": [],
+     "fully_dodged": false
+    },
+    "trigger_spell_logs": [],
+    "state": {
+     "round": 2,
+     "player_side": [
+      {
+       "name": "白予安",
+       "entity_type": "轮回者",
+       "runtime_id": "55946a27d9a04b56af52283415f1fb5c",
+       "blood_limit": 42,
+       "current_hp": 42,
+       "mana_limit": 20,
+       "current_mana": 7,
+       "speed_limit": 8,
+       "current_speed": 7,
+       "attack_count": 0,
+       "attack_power": 0,
+       "action_count": 3,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 42,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 1.0,
+       "dao_wen": {
+        "冲击": "冲击",
+        "杀伐": "杀伐",
+        "庇护": "庇护",
+        "假钞": "假钞"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ],
+     "enemy_side": [
+      {
+       "name": "暗哨",
+       "entity_type": "怪物",
+       "runtime_id": "e024738a0743433ab69da89eff741168",
+       "blood_limit": 198,
+       "current_hp": 132,
+       "mana_limit": 0,
+       "current_mana": 0,
+       "speed_limit": 0,
+       "current_speed": 0,
+       "attack_count": 1,
+       "attack_power": 13,
+       "action_count": 0,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 198,
+       "deployed_at_round": 0,
+       "shards": 4,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 0.67,
+       "dao_wen": {
+        "缓慢": "缓慢",
+        "蒙蔽": "蒙蔽",
+        "假钞": "假钞"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "use_daowen",
+   "params": {
+    "daowen_name": "杀伐",
+    "x": 7,
+    "target_ref": "enemy:0",
+    "dodge": false,
+    "blood_shadow": false,
+    "trigger_spell_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "发动道纹【杀伐X=7】",
+    "calculation": {
+     "dao_wen": "杀伐",
+     "x": 7,
+     "cost_type": "消耗",
+     "cost": 7,
+     "target_damage": 14,
+     "damage_type": "普通",
+     "summary": "消耗7法力，对暗哨造成14点伤害"
+    },
+    "execution": {
+     "daowen": "杀伐",
+     "effects": [
+      {
+       "type": "damage",
+       "target": "暗哨",
+       "raw_damage": 14,
+       "shield_absorbed": 0,
+       "actual_damage": 14,
+       "hp_before": 132,
+       "hp_after": 118,
+       "blood_limit_before": 198,
+       "died": false,
+       "damage_type": "普通"
+      }
+     ]
+    },
+    "dodge": {
+     "must_hit": false,
+     "dodged_names": [],
+     "fully_dodged": false
+    },
+    "trigger_spell_logs": [],
+    "state": {
+     "round": 2,
+     "player_side": [
+      {
+       "name": "白予安",
+       "entity_type": "轮回者",
+       "runtime_id": "55946a27d9a04b56af52283415f1fb5c",
+       "blood_limit": 42,
+       "current_hp": 42,
+       "mana_limit": 20,
+       "current_mana": 0,
+       "speed_limit": 8,
+       "current_speed": 7,
+       "attack_count": 0,
+       "attack_power": 0,
+       "action_count": 3,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 42,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 1.0,
+       "dao_wen": {
+        "冲击": "冲击",
+        "杀伐": "杀伐",
+        "庇护": "庇护",
+        "假钞": "假钞"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ],
+     "enemy_side": [
+      {
+       "name": "暗哨",
+       "entity_type": "怪物",
+       "runtime_id": "e024738a0743433ab69da89eff741168",
+       "blood_limit": 198,
+       "current_hp": 118,
+       "mana_limit": 0,
+       "current_mana": 0,
+       "speed_limit": 0,
+       "current_speed": 0,
+       "attack_count": 1,
+       "attack_power": 13,
+       "action_count": 0,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 198,
+       "deployed_at_round": 0,
+       "shards": 4,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 0.6,
+       "dao_wen": {
+        "缓慢": "缓慢",
+        "蒙蔽": "蒙蔽",
+        "假钞": "假钞"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "prepare_monster_phase",
+   "params": {},
+   "result": {
+    "success": true,
+    "action": "准备怪物阶段",
+    "result": {
+     "token": "a0f67e4fd2c74d4189dabe9b0dd236fa",
+     "round": 2,
+     "actors": [
+      {
+       "actor_ref": "enemy:0",
+       "monster": "暗哨",
+       "daowen_required": true,
+       "daowen_options": [
+        {
+         "name": "缓慢",
+         "resolves_as": "缓慢",
+         "x": 3,
+         "requires_target": true,
+         "target_options": [
+          {
+           "ref": "player:0",
+           "name": "白予安"
+          },
+          {
+           "ref": "enemy:0",
+           "name": "暗哨"
+          }
+         ],
+         "dodge_submission": "single_if_hostile",
+         "dodge_target_options": [],
+         "trigger_spell_options": {}
+        },
+        {
+         "name": "蒙蔽",
+         "resolves_as": "蒙蔽",
+         "x": 3,
+         "requires_target": true,
+         "target_options": [
+          {
+           "ref": "player:0",
+           "name": "白予安"
+          },
+          {
+           "ref": "enemy:0",
+           "name": "暗哨"
+          }
+         ],
+         "dodge_submission": "single_if_hostile",
+         "dodge_target_options": [],
+         "trigger_spell_options": {}
+        },
+        {
+         "name": "假钞",
+         "resolves_as": "假钞",
+         "x": 2,
+         "requires_target": false,
+         "target_options": [],
+         "dodge_submission": "none",
+         "dodge_target_options": [],
+         "trigger_spell_options": {}
+        }
+       ],
+       "attack_target_options": [
+        {
+         "ref": "player:0",
+         "name": "白予安",
+         "can_blood_shadow": false,
+         "blood_shadow_cost_share_target_options": [],
+         "spell_options": {
+          "before": [],
+          "after": []
+         },
+         "dodge_relic_target_options": []
+        }
+       ],
+       "base_attack_actions": 1,
+       "base_hits_per_attack": 1,
+       "dodge_must_be_explicit": true
+      }
+     ],
+     "skipped": []
+    },
+    "instruction": "请为每个actors条目提交完整选择后调用resolve_monster_phase"
+   }
+  },
+  {
+   "action": "resolve_monster_phase",
+   "params": {
+    "token": "a0f67e4fd2c74d4189dabe9b0dd236fa",
+    "choices": [
+     {
+      "actor_ref": "enemy:0",
+      "daowen": {
+       "name": "蒙蔽",
+       "dodge": false,
+       "blood_shadow": false,
+       "target_ref": "player:0",
+       "trigger_spell_choices": {}
+      },
+      "attack_actions": [
+       {
+        "hits": [
+         {
+          "target_ref": "player:0",
+          "dodge": true,
+          "blood_shadow": false,
+          "spell_choices": {
+           "before": {},
+           "after": {}
+          }
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "result": {
+    "success": true,
+    "action": "结算怪物阶段",
+    "result": {
+     "entries": 2,
+     "player_dead": false,
+     "player_hp": 42,
+     "details": [
+      {
+       "monster": "暗哨",
+       "daowen_activated": "蒙蔽",
+       "x": 3,
+       "resolves_as": "蒙蔽",
+       "resonance_rewrite": false,
+       "target": "白予安",
+       "execution": {
+        "daowen": "蒙蔽",
+        "effects": [
+         {
+          "type": "mengbi",
+          "target": "白予安",
+          "count": 3,
+          "remaining": 3
+         }
+        ]
+       },
+       "trigger_spell_logs": []
+      },
+      {
+       "attacker": "暗哨",
+       "target": "白予安",
+       "hit_index": 1,
+       "dodge_attempted": true,
+       "dodge_success": true,
+       "damage_dealt": 0,
+       "shield_absorbed": 0,
+       "hp_lost": 0,
+       "target_died": false,
+       "speed_after_dodge": 6,
+       "dodge_extra": {
+        "avoid_wind_shield": 3
+       },
+       "hit_total": 1,
+       "attack_action_index": 1,
+       "new_action": true
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "round_end",
+   "params": {},
+   "result": {
+    "success": true,
+    "action": "回终",
+    "result": {
+     "round": 2,
+     "phase": "回终",
+     "effects": [
+      {
+       "type": "shield_clear",
+       "entity": "白予安",
+       "cleared": 3
+      }
+     ],
+     "state": {
+      "round": 2,
+      "player_side": [
+       {
+        "name": "白予安",
+        "entity_type": "轮回者",
+        "runtime_id": "55946a27d9a04b56af52283415f1fb5c",
+        "blood_limit": 42,
+        "current_hp": 42,
+        "mana_limit": 20,
+        "current_mana": 0,
+        "speed_limit": 8,
+        "current_speed": 6,
+        "attack_count": 0,
+        "attack_power": 0,
+        "action_count": 3,
+        "shield": 0,
+        "is_flying": false,
+        "is_alive": true,
+        "removed_without_kill": false,
+        "is_deployed": true,
+        "has_retreated": false,
+        "battle_start_blood_limit": 42,
+        "deployed_at_round": 0,
+        "shards": 0,
+        "fake_shards": 0,
+        "total_healed": 0,
+        "hp_ratio": 1.0,
+        "dao_wen": {
+         "冲击": "冲击",
+         "杀伐": "杀伐",
+         "庇护": "庇护",
+         "假钞": "假钞"
+        },
+        "spells": [],
+        "relics": [],
+        "status_effects": [
+         {
+          "name": "蒙蔽",
+          "value": 3,
+          "rounds": -1,
+          "source": "暗哨",
+          "scope": "battle",
+          "polarity": "debuff"
+         }
+        ]
+       }
+      ],
+      "enemy_side": [
+       {
+        "name": "暗哨",
+        "entity_type": "怪物",
+        "runtime_id": "e024738a0743433ab69da89eff741168",
+        "blood_limit": 198,
+        "current_hp": 118,
+        "mana_limit": 0,
+        "current_mana": 0,
+        "speed_limit": 0,
+        "current_speed": 0,
+        "attack_count": 1,
+        "attack_power": 13,
+        "action_count": 0,
+        "shield": 0,
+        "is_flying": false,
+        "is_alive": true,
+        "removed_without_kill": false,
+        "is_deployed": true,
+        "has_retreated": false,
+        "battle_start_blood_limit": 198,
+        "deployed_at_round": 0,
+        "shards": 4,
+        "fake_shards": 0,
+        "total_healed": 0,
+        "hp_ratio": 0.6,
+        "dao_wen": {
+         "缓慢": "缓慢",
+         "蒙蔽": "蒙蔽",
+         "假钞": "假钞"
+        },
+        "spells": [],
+        "relics": [],
+        "status_effects": []
+       }
+      ]
+     }
+    },
+    "victory_paths": [],
+    "monster_difficulties": [],
+    "note": "多路径胜利（雕塑/癌变/还债）已结算；消耗品可在后续回合使用"
+   }
+  },
+  {
+   "action": "round_start",
+   "params": {
+    "relic_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "回始",
+    "result": {
+     "round": 3,
+     "phase": "回始",
+     "effects": [
+      {
+       "type": "mana_refill",
+       "entity": "白予安",
+       "from": 0,
+       "to": 20,
+       "gained": 20
+      }
+     ],
+     "state": {
+      "round": 3,
+      "player_side": [
+       {
+        "name": "白予安",
+        "entity_type": "轮回者",
+        "runtime_id": "55946a27d9a04b56af52283415f1fb5c",
+        "blood_limit": 42,
+        "current_hp": 42,
+        "mana_limit": 20,
+        "current_mana": 20,
+        "speed_limit": 8,
+        "current_speed": 6,
+        "attack_count": 0,
+        "attack_power": 0,
+        "action_count": 3,
+        "shield": 0,
+        "is_flying": false,
+        "is_alive": true,
+        "removed_without_kill": false,
+        "is_deployed": true,
+        "has_retreated": false,
+        "battle_start_blood_limit": 42,
+        "deployed_at_round": 0,
+        "shards": 0,
+        "fake_shards": 0,
+        "total_healed": 0,
+        "hp_ratio": 1.0,
+        "dao_wen": {
+         "冲击": "冲击",
+         "杀伐": "杀伐",
+         "庇护": "庇护",
+         "假钞": "假钞"
+        },
+        "spells": [],
+        "relics": [],
+        "status_effects": [
+         {
+          "name": "蒙蔽",
+          "value": 3,
+          "rounds": -1,
+          "source": "暗哨",
+          "scope": "battle",
+          "polarity": "debuff"
+         }
+        ]
+       }
+      ],
+      "enemy_side": [
+       {
+        "name": "暗哨",
+        "entity_type": "怪物",
+        "runtime_id": "e024738a0743433ab69da89eff741168",
+        "blood_limit": 198,
+        "current_hp": 118,
+        "mana_limit": 0,
+        "current_mana": 0,
+        "speed_limit": 0,
+        "current_speed": 0,
+        "attack_count": 1,
+        "attack_power": 13,
+        "action_count": 0,
+        "shield": 0,
+        "is_flying": false,
+        "is_alive": true,
+        "removed_without_kill": false,
+        "is_deployed": true,
+        "has_retreated": false,
+        "battle_start_blood_limit": 198,
+        "deployed_at_round": 0,
+        "shards": 4,
+        "fake_shards": 0,
+        "total_healed": 0,
+        "hp_ratio": 0.6,
+        "dao_wen": {
+         "缓慢": "缓慢",
+         "蒙蔽": "蒙蔽",
+         "假钞": "假钞"
+        },
+        "spells": [],
+        "relics": [],
+        "status_effects": []
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "action": "use_daowen",
+   "params": {
+    "daowen_name": "杀伐",
+    "x": 1,
+    "target_ref": "enemy:0",
+    "dodge": false,
+    "blood_shadow": false,
+    "trigger_spell_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "发动道纹【杀伐X=1】",
+    "calculation": {
+     "dao_wen": "杀伐",
+     "x": 1,
+     "cost_type": "消耗",
+     "cost": 1,
+     "target_damage": 2,
+     "damage_type": "普通",
+     "summary": "消耗1法力，对暗哨造成2点伤害"
+    },
+    "execution": {
+     "daowen": "杀伐",
+     "effects": [
+      {
+       "type": "damage",
+       "target": "暗哨",
+       "raw_damage": 0,
+       "shield_absorbed": 0,
+       "actual_damage": 0,
+       "hp_before": 118,
+       "hp_after": 118,
+       "blood_limit_before": 198,
+       "died": false,
+       "damage_type": "普通"
+      }
+     ],
+     "mengbi_blocked": true
+    },
+    "dodge": {
+     "must_hit": false,
+     "dodged_names": [],
+     "fully_dodged": false
+    },
+    "trigger_spell_logs": [],
+    "state": {
+     "round": 3,
+     "player_side": [
+      {
+       "name": "白予安",
+       "entity_type": "轮回者",
+       "runtime_id": "55946a27d9a04b56af52283415f1fb5c",
+       "blood_limit": 42,
+       "current_hp": 42,
+       "mana_limit": 20,
+       "current_mana": 19,
+       "speed_limit": 8,
+       "current_speed": 6,
+       "attack_count": 0,
+       "attack_power": 0,
+       "action_count": 3,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 42,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 1.0,
+       "dao_wen": {
+        "冲击": "冲击",
+        "杀伐": "杀伐",
+        "庇护": "庇护",
+        "假钞": "假钞"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": [
+        {
+         "name": "蒙蔽",
+         "value": 2,
+         "rounds": -1,
+         "source": "暗哨",
+         "scope": "battle",
+         "polarity": "debuff"
+        }
+       ]
+      }
+     ],
+     "enemy_side": [
+      {
+       "name": "暗哨",
+       "entity_type": "怪物",
+       "runtime_id": "e024738a0743433ab69da89eff741168",
+       "blood_limit": 198,
+       "current_hp": 118,
+       "mana_limit": 0,
+       "current_mana": 0,
+       "speed_limit": 0,
+       "current_speed": 0,
+       "attack_count": 1,
+       "attack_power": 13,
+       "action_count": 0,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 198,
+       "deployed_at_round": 0,
+       "shards": 4,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 0.6,
+       "dao_wen": {
+        "缓慢": "缓慢",
+        "蒙蔽": "蒙蔽",
+        "假钞": "假钞"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "use_daowen",
+   "params": {
+    "daowen_name": "杀伐",
+    "x": 1,
+    "target_ref": "enemy:0",
+    "dodge": false,
+    "blood_shadow": false,
+    "trigger_spell_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "发动道纹【杀伐X=1】",
+    "calculation": {
+     "dao_wen": "杀伐",
+     "x": 1,
+     "cost_type": "消耗",
+     "cost": 1,
+     "target_damage": 2,
+     "damage_type": "普通",
+     "summary": "消耗1法力，对暗哨造成2点伤害"
+    },
+    "execution": {
+     "daowen": "杀伐",
+     "effects": [
+      {
+       "type": "damage",
+       "target": "暗哨",
+       "raw_damage": 0,
+       "shield_absorbed": 0,
+       "actual_damage": 0,
+       "hp_before": 118,
+       "hp_after": 118,
+       "blood_limit_before": 198,
+       "died": false,
+       "damage_type": "普通"
+      }
+     ],
+     "mengbi_blocked": true
+    },
+    "dodge": {
+     "must_hit": false,
+     "dodged_names": [],
+     "fully_dodged": false
+    },
+    "trigger_spell_logs": [],
+    "state": {
+     "round": 3,
+     "player_side": [
+      {
+       "name": "白予安",
+       "entity_type": "轮回者",
+       "runtime_id": "55946a27d9a04b56af52283415f1fb5c",
+       "blood_limit": 42,
+       "current_hp": 42,
+       "mana_limit": 20,
+       "current_mana": 18,
+       "speed_limit": 8,
+       "current_speed": 6,
+       "attack_count": 0,
+       "attack_power": 0,
+       "action_count": 3,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 42,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 1.0,
+       "dao_wen": {
+        "冲击": "冲击",
+        "杀伐": "杀伐",
+        "庇护": "庇护",
+        "假钞": "假钞"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": [
+        {
+         "name": "蒙蔽",
+         "value": 1,
+         "rounds": -1,
+         "source": "暗哨",
+         "scope": "battle",
+         "polarity": "debuff"
+        }
+       ]
+      }
+     ],
+     "enemy_side": [
+      {
+       "name": "暗哨",
+       "entity_type": "怪物",
+       "runtime_id": "e024738a0743433ab69da89eff741168",
+       "blood_limit": 198,
+       "current_hp": 118,
+       "mana_limit": 0,
+       "current_mana": 0,
+       "speed_limit": 0,
+       "current_speed": 0,
+       "attack_count": 1,
+       "attack_power": 13,
+       "action_count": 0,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 198,
+       "deployed_at_round": 0,
+       "shards": 4,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 0.6,
+       "dao_wen": {
+        "缓慢": "缓慢",
+        "蒙蔽": "蒙蔽",
+        "假钞": "假钞"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "use_daowen",
+   "params": {
+    "daowen_name": "杀伐",
+    "x": 1,
+    "target_ref": "enemy:0",
+    "dodge": false,
+    "blood_shadow": false,
+    "trigger_spell_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "发动道纹【杀伐X=1】",
+    "calculation": {
+     "dao_wen": "杀伐",
+     "x": 1,
+     "cost_type": "消耗",
+     "cost": 1,
+     "target_damage": 2,
+     "damage_type": "普通",
+     "summary": "消耗1法力，对暗哨造成2点伤害"
+    },
+    "execution": {
+     "daowen": "杀伐",
+     "effects": [
+      {
+       "type": "damage",
+       "target": "暗哨",
+       "raw_damage": 0,
+       "shield_absorbed": 0,
+       "actual_damage": 0,
+       "hp_before": 118,
+       "hp_after": 118,
+       "blood_limit_before": 198,
+       "died": false,
+       "damage_type": "普通"
+      }
+     ],
+     "mengbi_blocked": true
+    },
+    "dodge": {
+     "must_hit": false,
+     "dodged_names": [],
+     "fully_dodged": false
+    },
+    "trigger_spell_logs": [],
+    "state": {
+     "round": 3,
+     "player_side": [
+      {
+       "name": "白予安",
+       "entity_type": "轮回者",
+       "runtime_id": "55946a27d9a04b56af52283415f1fb5c",
+       "blood_limit": 42,
+       "current_hp": 42,
+       "mana_limit": 20,
+       "current_mana": 17,
+       "speed_limit": 8,
+       "current_speed": 6,
+       "attack_count": 0,
+       "attack_power": 0,
+       "action_count": 3,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 42,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 1.0,
+       "dao_wen": {
+        "冲击": "冲击",
+        "杀伐": "杀伐",
+        "庇护": "庇护",
+        "假钞": "假钞"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ],
+     "enemy_side": [
+      {
+       "name": "暗哨",
+       "entity_type": "怪物",
+       "runtime_id": "e024738a0743433ab69da89eff741168",
+       "blood_limit": 198,
+       "current_hp": 118,
+       "mana_limit": 0,
+       "current_mana": 0,
+       "speed_limit": 0,
+       "current_speed": 0,
+       "attack_count": 1,
+       "attack_power": 13,
+       "action_count": 0,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 198,
+       "deployed_at_round": 0,
+       "shards": 4,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 0.6,
+       "dao_wen": {
+        "缓慢": "缓慢",
+        "蒙蔽": "蒙蔽",
+        "假钞": "假钞"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "prepare_monster_phase",
+   "params": {},
+   "result": {
+    "success": true,
+    "action": "准备怪物阶段",
+    "result": {
+     "token": "a9fc39c2fe3840ada5fd9e92d33af547",
+     "round": 3,
+     "actors": [
+      {
+       "actor_ref": "enemy:0",
+       "monster": "暗哨",
+       "daowen_required": true,
+       "daowen_options": [
+        {
+         "name": "缓慢",
+         "resolves_as": "缓慢",
+         "x": 3,
+         "requires_target": true,
+         "target_options": [
+          {
+           "ref": "player:0",
+           "name": "白予安"
+          },
+          {
+           "ref": "enemy:0",
+           "name": "暗哨"
+          }
+         ],
+         "dodge_submission": "single_if_hostile",
+         "dodge_target_options": [],
+         "trigger_spell_options": {}
+        },
+        {
+         "name": "假钞",
+         "resolves_as": "假钞",
+         "x": 2,
+         "requires_target": false,
+         "target_options": [],
+         "dodge_submission": "none",
+         "dodge_target_options": [],
+         "trigger_spell_options": {}
+        }
+       ],
+       "attack_target_options": [
+        {
+         "ref": "player:0",
+         "name": "白予安",
+         "can_blood_shadow": false,
+         "blood_shadow_cost_share_target_options": [],
+         "spell_options": {
+          "before": [],
+          "after": []
+         },
+         "dodge_relic_target_options": []
+        }
+       ],
+       "base_attack_actions": 1,
+       "base_hits_per_attack": 1,
+       "dodge_must_be_explicit": true
+      }
+     ],
+     "skipped": []
+    },
+    "instruction": "请为每个actors条目提交完整选择后调用resolve_monster_phase"
+   }
+  },
+  {
+   "action": "resolve_monster_phase",
+   "params": {
+    "token": "a9fc39c2fe3840ada5fd9e92d33af547",
+    "choices": [
+     {
+      "actor_ref": "enemy:0",
+      "daowen": {
+       "name": "缓慢",
+       "dodge": false,
+       "blood_shadow": false,
+       "trigger_spell_choices": {},
+       "target_ref": "player:0"
+      },
+      "attack_actions": [
+       {
+        "hits": [
+         {
+          "target_ref": "player:0",
+          "dodge": true,
+          "blood_shadow": false,
+          "spell_choices": {
+           "before": {},
+           "after": {}
+          }
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "result": {
+    "success": true,
+    "action": "结算怪物阶段",
+    "result": {
+     "entries": 2,
+     "player_dead": false,
+     "player_hp": 42,
+     "details": [
+      {
+       "monster": "暗哨",
+       "daowen_activated": "缓慢",
+       "x": 3,
+       "resolves_as": "缓慢",
+       "resonance_rewrite": false,
+       "target": "白予安",
+       "execution": {
+        "daowen": "缓慢",
+        "effects": [
+         {
+          "type": "manqian",
+          "target": "白予安",
+          "effective": false,
+          "action_count": 3
+         }
+        ],
+        "cooldown_set": 3
+       },
+       "trigger_spell_logs": []
+      },
+      {
+       "attacker": "暗哨",
+       "target": "白予安",
+       "hit_index": 1,
+       "dodge_attempted": true,
+       "dodge_success": true,
+       "damage_dealt": 0,
+       "shield_absorbed": 0,
+       "hp_lost": 0,
+       "target_died": false,
+       "speed_after_dodge": 5,
+       "dodge_extra": {
+        "avoid_wind_shield": 3
+       },
+       "hit_total": 1,
+       "attack_action_index": 1,
+       "new_action": true
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "round_end",
+   "params": {},
+   "result": {
+    "success": true,
+    "action": "回终",
+    "result": {
+     "round": 3,
+     "phase": "回终",
+     "effects": [
+      {
+       "type": "shield_clear",
+       "entity": "白予安",
+       "cleared": 3
+      },
+      {
+       "type": "mana_clear",
+       "entity": "白予安",
+       "cleared": 17
+      }
+     ],
+     "state": {
+      "round": 3,
+      "player_side": [
+       {
+        "name": "白予安",
+        "entity_type": "轮回者",
+        "runtime_id": "55946a27d9a04b56af52283415f1fb5c",
+        "blood_limit": 42,
+        "current_hp": 42,
+        "mana_limit": 20,
+        "current_mana": 0,
+        "speed_limit": 8,
+        "current_speed": 5,
+        "attack_count": 0,
+        "attack_power": 0,
+        "action_count": 3,
+        "shield": 0,
+        "is_flying": false,
+        "is_alive": true,
+        "removed_without_kill": false,
+        "is_deployed": true,
+        "has_retreated": false,
+        "battle_start_blood_limit": 42,
+        "deployed_at_round": 0,
+        "shards": 0,
+        "fake_shards": 0,
+        "total_healed": 0,
+        "hp_ratio": 1.0,
+        "dao_wen": {
+         "冲击": "冲击",
+         "杀伐": "杀伐",
+         "庇护": "庇护",
+         "假钞": "假钞"
+        },
+        "spells": [],
+        "relics": [],
+        "status_effects": []
+       }
+      ],
+      "enemy_side": [
+       {
+        "name": "暗哨",
+        "entity_type": "怪物",
+        "runtime_id": "e024738a0743433ab69da89eff741168",
+        "blood_limit": 198,
+        "current_hp": 118,
+        "mana_limit": 0,
+        "current_mana": 0,
+        "speed_limit": 0,
+        "current_speed": 0,
+        "attack_count": 1,
+        "attack_power": 13,
+        "action_count": 0,
+        "shield": 0,
+        "is_flying": false,
+        "is_alive": true,
+        "removed_without_kill": false,
+        "is_deployed": true,
+        "has_retreated": false,
+        "battle_start_blood_limit": 198,
+        "deployed_at_round": 0,
+        "shards": 4,
+        "fake_shards": 0,
+        "total_healed": 0,
+        "hp_ratio": 0.6,
+        "dao_wen": {
+         "缓慢": "缓慢",
+         "蒙蔽": "蒙蔽",
+         "假钞": "假钞"
+        },
+        "spells": [],
+        "relics": [],
+        "status_effects": []
+       }
+      ]
+     }
+    },
+    "victory_paths": [],
+    "monster_difficulties": [],
+    "note": "多路径胜利（雕塑/癌变/还债）已结算；消耗品可在后续回合使用"
+   }
+  },
+  {
+   "action": "round_start",
+   "params": {
+    "relic_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "回始",
+    "result": {
+     "round": 4,
+     "phase": "回始",
+     "effects": [
+      {
+       "type": "mana_refill",
+       "entity": "白予安",
+       "from": 0,
+       "to": 20,
+       "gained": 20
+      }
+     ],
+     "state": {
+      "round": 4,
+      "player_side": [
+       {
+        "name": "白予安",
+        "entity_type": "轮回者",
+        "runtime_id": "55946a27d9a04b56af52283415f1fb5c",
+        "blood_limit": 42,
+        "current_hp": 42,
+        "mana_limit": 20,
+        "current_mana": 20,
+        "speed_limit": 8,
+        "current_speed": 5,
+        "attack_count": 0,
+        "attack_power": 0,
+        "action_count": 3,
+        "shield": 0,
+        "is_flying": false,
+        "is_alive": true,
+        "removed_without_kill": false,
+        "is_deployed": true,
+        "has_retreated": false,
+        "battle_start_blood_limit": 42,
+        "deployed_at_round": 0,
+        "shards": 0,
+        "fake_shards": 0,
+        "total_healed": 0,
+        "hp_ratio": 1.0,
+        "dao_wen": {
+         "冲击": "冲击",
+         "杀伐": "杀伐",
+         "庇护": "庇护",
+         "假钞": "假钞"
+        },
+        "spells": [],
+        "relics": [],
+        "status_effects": []
+       }
+      ],
+      "enemy_side": [
+       {
+        "name": "暗哨",
+        "entity_type": "怪物",
+        "runtime_id": "e024738a0743433ab69da89eff741168",
+        "blood_limit": 198,
+        "current_hp": 118,
+        "mana_limit": 0,
+        "current_mana": 0,
+        "speed_limit": 0,
+        "current_speed": 0,
+        "attack_count": 1,
+        "attack_power": 13,
+        "action_count": 0,
+        "shield": 0,
+        "is_flying": false,
+        "is_alive": true,
+        "removed_without_kill": false,
+        "is_deployed": true,
+        "has_retreated": false,
+        "battle_start_blood_limit": 198,
+        "deployed_at_round": 0,
+        "shards": 4,
+        "fake_shards": 0,
+        "total_healed": 0,
+        "hp_ratio": 0.6,
+        "dao_wen": {
+         "缓慢": "缓慢",
+         "蒙蔽": "蒙蔽",
+         "假钞": "假钞"
+        },
+        "spells": [],
+        "relics": [],
+        "status_effects": []
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "action": "use_daowen",
+   "params": {
+    "daowen_name": "杀伐",
+    "x": 6,
+    "target_ref": "enemy:0",
+    "dodge": false,
+    "blood_shadow": false,
+    "trigger_spell_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "发动道纹【杀伐X=6】",
+    "calculation": {
+     "dao_wen": "杀伐",
+     "x": 6,
+     "cost_type": "消耗",
+     "cost": 6,
+     "target_damage": 12,
+     "damage_type": "普通",
+     "summary": "消耗6法力，对暗哨造成12点伤害"
+    },
+    "execution": {
+     "daowen": "杀伐",
+     "effects": [
+      {
+       "type": "damage",
+       "target": "暗哨",
+       "raw_damage": 12,
+       "shield_absorbed": 0,
+       "actual_damage": 12,
+       "hp_before": 118,
+       "hp_after": 106,
+       "blood_limit_before": 198,
+       "died": false,
+       "damage_type": "普通"
+      }
+     ]
+    },
+    "dodge": {
+     "must_hit": false,
+     "dodged_names": [],
+     "fully_dodged": false
+    },
+    "trigger_spell_logs": [],
+    "state": {
+     "round": 4,
+     "player_side": [
+      {
+       "name": "白予安",
+       "entity_type": "轮回者",
+       "runtime_id": "55946a27d9a04b56af52283415f1fb5c",
+       "blood_limit": 42,
+       "current_hp": 42,
+       "mana_limit": 20,
+       "current_mana": 14,
+       "speed_limit": 8,
+       "current_speed": 5,
+       "attack_count": 0,
+       "attack_power": 0,
+       "action_count": 3,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 42,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 1.0,
+       "dao_wen": {
+        "冲击": "冲击",
+        "杀伐": "杀伐",
+        "庇护": "庇护",
+        "假钞": "假钞"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ],
+     "enemy_side": [
+      {
+       "name": "暗哨",
+       "entity_type": "怪物",
+       "runtime_id": "e024738a0743433ab69da89eff741168",
+       "blood_limit": 198,
+       "current_hp": 106,
+       "mana_limit": 0,
+       "current_mana": 0,
+       "speed_limit": 0,
+       "current_speed": 0,
+       "attack_count": 1,
+       "attack_power": 13,
+       "action_count": 0,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 198,
+       "deployed_at_round": 0,
+       "shards": 4,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 0.54,
+       "dao_wen": {
+        "缓慢": "缓慢",
+        "蒙蔽": "蒙蔽",
+        "假钞": "假钞"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "use_daowen",
+   "params": {
+    "daowen_name": "杀伐",
+    "x": 7,
+    "target_ref": "enemy:0",
+    "dodge": false,
+    "blood_shadow": false,
+    "trigger_spell_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "发动道纹【杀伐X=7】",
+    "calculation": {
+     "dao_wen": "杀伐",
+     "x": 7,
+     "cost_type": "消耗",
+     "cost": 7,
+     "target_damage": 14,
+     "damage_type": "普通",
+     "summary": "消耗7法力，对暗哨造成14点伤害"
+    },
+    "execution": {
+     "daowen": "杀伐",
+     "effects": [
+      {
+       "type": "damage",
+       "target": "暗哨",
+       "raw_damage": 14,
+       "shield_absorbed": 0,
+       "actual_damage": 14,
+       "hp_before": 106,
+       "hp_after": 92,
+       "blood_limit_before": 198,
+       "died": false,
+       "damage_type": "普通"
+      }
+     ]
+    },
+    "dodge": {
+     "must_hit": false,
+     "dodged_names": [],
+     "fully_dodged": false
+    },
+    "trigger_spell_logs": [],
+    "state": {
+     "round": 4,
+     "player_side": [
+      {
+       "name": "白予安",
+       "entity_type": "轮回者",
+       "runtime_id": "55946a27d9a04b56af52283415f1fb5c",
+       "blood_limit": 42,
+       "current_hp": 42,
+       "mana_limit": 20,
+       "current_mana": 7,
+       "speed_limit": 8,
+       "current_speed": 5,
+       "attack_count": 0,
+       "attack_power": 0,
+       "action_count": 3,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 42,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 1.0,
+       "dao_wen": {
+        "冲击": "冲击",
+        "杀伐": "杀伐",
+        "庇护": "庇护",
+        "假钞": "假钞"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ],
+     "enemy_side": [
+      {
+       "name": "暗哨",
+       "entity_type": "怪物",
+       "runtime_id": "e024738a0743433ab69da89eff741168",
+       "blood_limit": 198,
+       "current_hp": 92,
+       "mana_limit": 0,
+       "current_mana": 0,
+       "speed_limit": 0,
+       "current_speed": 0,
+       "attack_count": 1,
+       "attack_power": 13,
+       "action_count": 0,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 198,
+       "deployed_at_round": 0,
+       "shards": 4,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 0.46,
+       "dao_wen": {
+        "缓慢": "缓慢",
+        "蒙蔽": "蒙蔽",
+        "假钞": "假钞"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "use_daowen",
+   "params": {
+    "daowen_name": "杀伐",
+    "x": 7,
+    "target_ref": "enemy:0",
+    "dodge": false,
+    "blood_shadow": false,
+    "trigger_spell_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "发动道纹【杀伐X=7】",
+    "calculation": {
+     "dao_wen": "杀伐",
+     "x": 7,
+     "cost_type": "消耗",
+     "cost": 7,
+     "target_damage": 14,
+     "damage_type": "普通",
+     "summary": "消耗7法力，对暗哨造成14点伤害"
+    },
+    "execution": {
+     "daowen": "杀伐",
+     "effects": [
+      {
+       "type": "damage",
+       "target": "暗哨",
+       "raw_damage": 14,
+       "shield_absorbed": 0,
+       "actual_damage": 14,
+       "hp_before": 92,
+       "hp_after": 78,
+       "blood_limit_before": 198,
+       "died": false,
+       "damage_type": "普通"
+      }
+     ]
+    },
+    "dodge": {
+     "must_hit": false,
+     "dodged_names": [],
+     "fully_dodged": false
+    },
+    "trigger_spell_logs": [],
+    "state": {
+     "round": 4,
+     "player_side": [
+      {
+       "name": "白予安",
+       "entity_type": "轮回者",
+       "runtime_id": "55946a27d9a04b56af52283415f1fb5c",
+       "blood_limit": 42,
+       "current_hp": 42,
+       "mana_limit": 20,
+       "current_mana": 0,
+       "speed_limit": 8,
+       "current_speed": 5,
+       "attack_count": 0,
+       "attack_power": 0,
+       "action_count": 3,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 42,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 1.0,
+       "dao_wen": {
+        "冲击": "冲击",
+        "杀伐": "杀伐",
+        "庇护": "庇护",
+        "假钞": "假钞"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ],
+     "enemy_side": [
+      {
+       "name": "暗哨",
+       "entity_type": "怪物",
+       "runtime_id": "e024738a0743433ab69da89eff741168",
+       "blood_limit": 198,
+       "current_hp": 78,
+       "mana_limit": 0,
+       "current_mana": 0,
+       "speed_limit": 0,
+       "current_speed": 0,
+       "attack_count": 1,
+       "attack_power": 13,
+       "action_count": 0,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 198,
+       "deployed_at_round": 0,
+       "shards": 4,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 0.39,
+       "dao_wen": {
+        "缓慢": "缓慢",
+        "蒙蔽": "蒙蔽",
+        "假钞": "假钞"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "prepare_monster_phase",
+   "params": {},
+   "result": {
+    "success": true,
+    "action": "准备怪物阶段",
+    "result": {
+     "token": "f41758fd5f9a49a69bb6e9a171336bd4",
+     "round": 4,
+     "actors": [
+      {
+       "actor_ref": "enemy:0",
+       "monster": "暗哨",
+       "daowen_required": true,
+       "daowen_options": [
+        {
+         "name": "假钞",
+         "resolves_as": "假钞",
+         "x": 2,
+         "requires_target": false,
+         "target_options": [],
+         "dodge_submission": "none",
+         "dodge_target_options": [],
+         "trigger_spell_options": {}
+        }
+       ],
+       "attack_target_options": [
+        {
+         "ref": "player:0",
+         "name": "白予安",
+         "can_blood_shadow": false,
+         "blood_shadow_cost_share_target_options": [],
+         "spell_options": {
+          "before": [],
+          "after": []
+         },
+         "dodge_relic_target_options": []
+        }
+       ],
+       "base_attack_actions": 1,
+       "base_hits_per_attack": 1,
+       "dodge_must_be_explicit": true
+      }
+     ],
+     "skipped": []
+    },
+    "instruction": "请为每个actors条目提交完整选择后调用resolve_monster_phase"
+   }
+  },
+  {
+   "action": "resolve_monster_phase",
+   "params": {
+    "token": "f41758fd5f9a49a69bb6e9a171336bd4",
+    "choices": [
+     {
+      "actor_ref": "enemy:0",
+      "daowen": {
+       "name": "假钞",
+       "dodge": false,
+       "blood_shadow": false,
+       "trigger_spell_choices": {}
+      },
+      "attack_actions": [
+       {
+        "hits": [
+         {
+          "target_ref": "player:0",
+          "dodge": true,
+          "blood_shadow": false,
+          "spell_choices": {
+           "before": {},
+           "after": {}
+          }
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "result": {
+    "success": true,
+    "action": "结算怪物阶段",
+    "result": {
+     "entries": 2,
+     "player_dead": false,
+     "player_hp": 42,
+     "details": [
+      {
+       "monster": "暗哨",
+       "daowen_activated": "假钞",
+       "x": 2,
+       "resolves_as": "假钞",
+       "resonance_rewrite": false,
+       "target": "暗哨",
+       "execution": {
+        "daowen": "假钞",
+        "effects": [
+         {
+          "type": "fake_shards",
+          "gained": 20
+         }
+        ]
+       },
+       "trigger_spell_logs": []
+      },
+      {
+       "attacker": "暗哨",
+       "target": "白予安",
+       "hit_index": 1,
+       "dodge_attempted": true,
+       "dodge_success": true,
+       "damage_dealt": 0,
+       "shield_absorbed": 0,
+       "hp_lost": 0,
+       "target_died": false,
+       "speed_after_dodge": 4,
+       "dodge_extra": {
+        "avoid_wind_shield": 3
+       },
+       "hit_total": 1,
+       "attack_action_index": 1,
+       "new_action": true
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "round_end",
+   "params": {},
+   "result": {
+    "success": true,
+    "action": "回终",
+    "result": {
+     "round": 4,
+     "phase": "回终",
+     "effects": [
+      {
+       "type": "shield_clear",
+       "entity": "白予安",
+       "cleared": 3
+      }
+     ],
+     "state": {
+      "round": 4,
+      "player_side": [
+       {
+        "name": "白予安",
+        "entity_type": "轮回者",
+        "runtime_id": "55946a27d9a04b56af52283415f1fb5c",
+        "blood_limit": 42,
+        "current_hp": 42,
+        "mana_limit": 20,
+        "current_mana": 0,
+        "speed_limit": 8,
+        "current_speed": 4,
+        "attack_count": 0,
+        "attack_power": 0,
+        "action_count": 3,
+        "shield": 0,
+        "is_flying": false,
+        "is_alive": true,
+        "removed_without_kill": false,
+        "is_deployed": true,
+        "has_retreated": false,
+        "battle_start_blood_limit": 42,
+        "deployed_at_round": 0,
+        "shards": 0,
+        "fake_shards": 0,
+        "total_healed": 0,
+        "hp_ratio": 1.0,
+        "dao_wen": {
+         "冲击": "冲击",
+         "杀伐": "杀伐",
+         "庇护": "庇护",
+         "假钞": "假钞"
+        },
+        "spells": [],
+        "relics": [],
+        "status_effects": []
+       }
+      ],
+      "enemy_side": [
+       {
+        "name": "暗哨",
+        "entity_type": "怪物",
+        "runtime_id": "e024738a0743433ab69da89eff741168",
+        "blood_limit": 198,
+        "current_hp": 78,
+        "mana_limit": 0,
+        "current_mana": 0,
+        "speed_limit": 0,
+        "current_speed": 0,
+        "attack_count": 1,
+        "attack_power": 13,
+        "action_count": 0,
+        "shield": 0,
+        "is_flying": false,
+        "is_alive": true,
+        "removed_without_kill": false,
+        "is_deployed": true,
+        "has_retreated": false,
+        "battle_start_blood_limit": 198,
+        "deployed_at_round": 0,
+        "shards": 4,
+        "fake_shards": 20,
+        "total_healed": 0,
+        "hp_ratio": 0.39,
+        "dao_wen": {
+         "缓慢": "缓慢",
+         "蒙蔽": "蒙蔽",
+         "假钞": "假钞"
+        },
+        "spells": [],
+        "relics": [],
+        "status_effects": []
+       }
+      ]
+     }
+    },
+    "victory_paths": [],
+    "monster_difficulties": [],
+    "note": "多路径胜利（雕塑/癌变/还债）已结算；消耗品可在后续回合使用"
+   }
+  },
+  {
+   "action": "round_start",
+   "params": {
+    "relic_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "回始",
+    "result": {
+     "round": 5,
+     "phase": "回始",
+     "effects": [
+      {
+       "type": "mana_refill",
+       "entity": "白予安",
+       "from": 0,
+       "to": 20,
+       "gained": 20
+      }
+     ],
+     "state": {
+      "round": 5,
+      "player_side": [
+       {
+        "name": "白予安",
+        "entity_type": "轮回者",
+        "runtime_id": "55946a27d9a04b56af52283415f1fb5c",
+        "blood_limit": 42,
+        "current_hp": 42,
+        "mana_limit": 20,
+        "current_mana": 20,
+        "speed_limit": 8,
+        "current_speed": 4,
+        "attack_count": 0,
+        "attack_power": 0,
+        "action_count": 3,
+        "shield": 0,
+        "is_flying": false,
+        "is_alive": true,
+        "removed_without_kill": false,
+        "is_deployed": true,
+        "has_retreated": false,
+        "battle_start_blood_limit": 42,
+        "deployed_at_round": 0,
+        "shards": 0,
+        "fake_shards": 0,
+        "total_healed": 0,
+        "hp_ratio": 1.0,
+        "dao_wen": {
+         "冲击": "冲击",
+         "杀伐": "杀伐",
+         "庇护": "庇护",
+         "假钞": "假钞"
+        },
+        "spells": [],
+        "relics": [],
+        "status_effects": []
+       }
+      ],
+      "enemy_side": [
+       {
+        "name": "暗哨",
+        "entity_type": "怪物",
+        "runtime_id": "e024738a0743433ab69da89eff741168",
+        "blood_limit": 198,
+        "current_hp": 78,
+        "mana_limit": 0,
+        "current_mana": 0,
+        "speed_limit": 0,
+        "current_speed": 0,
+        "attack_count": 1,
+        "attack_power": 13,
+        "action_count": 0,
+        "shield": 0,
+        "is_flying": false,
+        "is_alive": true,
+        "removed_without_kill": false,
+        "is_deployed": true,
+        "has_retreated": false,
+        "battle_start_blood_limit": 198,
+        "deployed_at_round": 0,
+        "shards": 4,
+        "fake_shards": 20,
+        "total_healed": 0,
+        "hp_ratio": 0.39,
+        "dao_wen": {
+         "缓慢": "缓慢",
+         "蒙蔽": "蒙蔽",
+         "假钞": "假钞"
+        },
+        "spells": [],
+        "relics": [],
+        "status_effects": []
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "action": "use_daowen",
+   "params": {
+    "daowen_name": "杀伐",
+    "x": 6,
+    "target_ref": "enemy:0",
+    "dodge": false,
+    "blood_shadow": false,
+    "trigger_spell_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "发动道纹【杀伐X=6】",
+    "calculation": {
+     "dao_wen": "杀伐",
+     "x": 6,
+     "cost_type": "消耗",
+     "cost": 6,
+     "target_damage": 12,
+     "damage_type": "普通",
+     "summary": "消耗6法力，对暗哨造成12点伤害"
+    },
+    "execution": {
+     "daowen": "杀伐",
+     "effects": [
+      {
+       "type": "damage",
+       "target": "暗哨",
+       "raw_damage": 12,
+       "shield_absorbed": 0,
+       "actual_damage": 12,
+       "hp_before": 78,
+       "hp_after": 66,
+       "blood_limit_before": 198,
+       "died": false,
+       "damage_type": "普通"
+      }
+     ]
+    },
+    "dodge": {
+     "must_hit": false,
+     "dodged_names": [],
+     "fully_dodged": false
+    },
+    "trigger_spell_logs": [],
+    "state": {
+     "round": 5,
+     "player_side": [
+      {
+       "name": "白予安",
+       "entity_type": "轮回者",
+       "runtime_id": "55946a27d9a04b56af52283415f1fb5c",
+       "blood_limit": 42,
+       "current_hp": 42,
+       "mana_limit": 20,
+       "current_mana": 14,
+       "speed_limit": 8,
+       "current_speed": 4,
+       "attack_count": 0,
+       "attack_power": 0,
+       "action_count": 3,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 42,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 1.0,
+       "dao_wen": {
+        "冲击": "冲击",
+        "杀伐": "杀伐",
+        "庇护": "庇护",
+        "假钞": "假钞"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ],
+     "enemy_side": [
+      {
+       "name": "暗哨",
+       "entity_type": "怪物",
+       "runtime_id": "e024738a0743433ab69da89eff741168",
+       "blood_limit": 198,
+       "current_hp": 66,
+       "mana_limit": 0,
+       "current_mana": 0,
+       "speed_limit": 0,
+       "current_speed": 0,
+       "attack_count": 1,
+       "attack_power": 13,
+       "action_count": 0,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 198,
+       "deployed_at_round": 0,
+       "shards": 4,
+       "fake_shards": 20,
+       "total_healed": 0,
+       "hp_ratio": 0.33,
+       "dao_wen": {
+        "缓慢": "缓慢",
+        "蒙蔽": "蒙蔽",
+        "假钞": "假钞"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "use_daowen",
+   "params": {
+    "daowen_name": "杀伐",
+    "x": 7,
+    "target_ref": "enemy:0",
+    "dodge": false,
+    "blood_shadow": false,
+    "trigger_spell_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "发动道纹【杀伐X=7】",
+    "calculation": {
+     "dao_wen": "杀伐",
+     "x": 7,
+     "cost_type": "消耗",
+     "cost": 7,
+     "target_damage": 14,
+     "damage_type": "普通",
+     "summary": "消耗7法力，对暗哨造成14点伤害"
+    },
+    "execution": {
+     "daowen": "杀伐",
+     "effects": [
+      {
+       "type": "damage",
+       "target": "暗哨",
+       "raw_damage": 14,
+       "shield_absorbed": 0,
+       "actual_damage": 14,
+       "hp_before": 66,
+       "hp_after": 52,
+       "blood_limit_before": 198,
+       "died": false,
+       "damage_type": "普通"
+      }
+     ]
+    },
+    "dodge": {
+     "must_hit": false,
+     "dodged_names": [],
+     "fully_dodged": false
+    },
+    "trigger_spell_logs": [],
+    "state": {
+     "round": 5,
+     "player_side": [
+      {
+       "name": "白予安",
+       "entity_type": "轮回者",
+       "runtime_id": "55946a27d9a04b56af52283415f1fb5c",
+       "blood_limit": 42,
+       "current_hp": 42,
+       "mana_limit": 20,
+       "current_mana": 7,
+       "speed_limit": 8,
+       "current_speed": 4,
+       "attack_count": 0,
+       "attack_power": 0,
+       "action_count": 3,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 42,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 1.0,
+       "dao_wen": {
+        "冲击": "冲击",
+        "杀伐": "杀伐",
+        "庇护": "庇护",
+        "假钞": "假钞"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ],
+     "enemy_side": [
+      {
+       "name": "暗哨",
+       "entity_type": "怪物",
+       "runtime_id": "e024738a0743433ab69da89eff741168",
+       "blood_limit": 198,
+       "current_hp": 52,
+       "mana_limit": 0,
+       "current_mana": 0,
+       "speed_limit": 0,
+       "current_speed": 0,
+       "attack_count": 1,
+       "attack_power": 13,
+       "action_count": 0,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 198,
+       "deployed_at_round": 0,
+       "shards": 4,
+       "fake_shards": 20,
+       "total_healed": 0,
+       "hp_ratio": 0.26,
+       "dao_wen": {
+        "缓慢": "缓慢",
+        "蒙蔽": "蒙蔽",
+        "假钞": "假钞"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "use_daowen",
+   "params": {
+    "daowen_name": "杀伐",
+    "x": 7,
+    "target_ref": "enemy:0",
+    "dodge": false,
+    "blood_shadow": false,
+    "trigger_spell_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "发动道纹【杀伐X=7】",
+    "calculation": {
+     "dao_wen": "杀伐",
+     "x": 7,
+     "cost_type": "消耗",
+     "cost": 7,
+     "target_damage": 14,
+     "damage_type": "普通",
+     "summary": "消耗7法力，对暗哨造成14点伤害"
+    },
+    "execution": {
+     "daowen": "杀伐",
+     "effects": [
+      {
+       "type": "damage",
+       "target": "暗哨",
+       "raw_damage": 14,
+       "shield_absorbed": 0,
+       "actual_damage": 14,
+       "hp_before": 52,
+       "hp_after": 38,
+       "blood_limit_before": 198,
+       "died": false,
+       "damage_type": "普通"
+      }
+     ]
+    },
+    "dodge": {
+     "must_hit": false,
+     "dodged_names": [],
+     "fully_dodged": false
+    },
+    "trigger_spell_logs": [],
+    "state": {
+     "round": 5,
+     "player_side": [
+      {
+       "name": "白予安",
+       "entity_type": "轮回者",
+       "runtime_id": "55946a27d9a04b56af52283415f1fb5c",
+       "blood_limit": 42,
+       "current_hp": 42,
+       "mana_limit": 20,
+       "current_mana": 0,
+       "speed_limit": 8,
+       "current_speed": 4,
+       "attack_count": 0,
+       "attack_power": 0,
+       "action_count": 3,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 42,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 1.0,
+       "dao_wen": {
+        "冲击": "冲击",
+        "杀伐": "杀伐",
+        "庇护": "庇护",
+        "假钞": "假钞"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ],
+     "enemy_side": [
+      {
+       "name": "暗哨",
+       "entity_type": "怪物",
+       "runtime_id": "e024738a0743433ab69da89eff741168",
+       "blood_limit": 198,
+       "current_hp": 38,
+       "mana_limit": 0,
+       "current_mana": 0,
+       "speed_limit": 0,
+       "current_speed": 0,
+       "attack_count": 1,
+       "attack_power": 13,
+       "action_count": 0,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 198,
+       "deployed_at_round": 0,
+       "shards": 4,
+       "fake_shards": 20,
+       "total_healed": 0,
+       "hp_ratio": 0.19,
+       "dao_wen": {
+        "缓慢": "缓慢",
+        "蒙蔽": "蒙蔽",
+        "假钞": "假钞"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "prepare_monster_phase",
+   "params": {},
+   "result": {
+    "success": true,
+    "action": "准备怪物阶段",
+    "result": {
+     "token": "2ef86433de21468eb11bf83ddd10aa9c",
+     "round": 5,
+     "actors": [
+      {
+       "actor_ref": "enemy:0",
+       "monster": "暗哨",
+       "daowen_required": false,
+       "daowen_options": [],
+       "attack_target_options": [
+        {
+         "ref": "player:0",
+         "name": "白予安",
+         "can_blood_shadow": false,
+         "blood_shadow_cost_share_target_options": [],
+         "spell_options": {
+          "before": [],
+          "after": []
+         },
+         "dodge_relic_target_options": []
+        }
+       ],
+       "base_attack_actions": 1,
+       "base_hits_per_attack": 1,
+       "dodge_must_be_explicit": true
+      }
+     ],
+     "skipped": []
+    },
+    "instruction": "请为每个actors条目提交完整选择后调用resolve_monster_phase"
+   }
+  },
+  {
+   "action": "resolve_monster_phase",
+   "params": {
+    "token": "2ef86433de21468eb11bf83ddd10aa9c",
+    "choices": [
+     {
+      "actor_ref": "enemy:0",
+      "daowen": null,
+      "attack_actions": [
+       {
+        "hits": [
+         {
+          "target_ref": "player:0",
+          "dodge": true,
+          "blood_shadow": false,
+          "spell_choices": {
+           "before": {},
+           "after": {}
+          }
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "result": {
+    "success": true,
+    "action": "结算怪物阶段",
+    "result": {
+     "entries": 1,
+     "player_dead": false,
+     "player_hp": 42,
+     "details": [
+      {
+       "attacker": "暗哨",
+       "target": "白予安",
+       "hit_index": 1,
+       "dodge_attempted": true,
+       "dodge_success": true,
+       "damage_dealt": 0,
+       "shield_absorbed": 0,
+       "hp_lost": 0,
+       "target_died": false,
+       "speed_after_dodge": 3,
+       "dodge_extra": {
+        "avoid_wind_shield": 3
+       },
+       "hit_total": 1,
+       "attack_action_index": 1,
+       "new_action": true
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "round_end",
+   "params": {},
+   "result": {
+    "success": true,
+    "action": "回终",
+    "result": {
+     "round": 5,
+     "phase": "回终",
+     "effects": [
+      {
+       "type": "mediocrity",
+       "entity": "暗哨",
+       "note": "连续五回合未能使敌对角色生命减少，触发【凡庸】：凭空全身炸裂，[命零]"
+      },
+      {
+       "type": "mediocrity_loot",
+       "entity": "暗哨",
+       "note": "轮回者获得消耗品【残骸】(1/1)"
+      },
+      {
+       "type": "shield_clear",
+       "entity": "白予安",
+       "cleared": 3
+      }
+     ],
+     "state": {
+      "round": 5,
+      "player_side": [
+       {
+        "name": "白予安",
+        "entity_type": "轮回者",
+        "runtime_id": "55946a27d9a04b56af52283415f1fb5c",
+        "blood_limit": 42,
+        "current_hp": 42,
+        "mana_limit": 20,
+        "current_mana": 0,
+        "speed_limit": 8,
+        "current_speed": 3,
+        "attack_count": 0,
+        "attack_power": 0,
+        "action_count": 3,
+        "shield": 0,
+        "is_flying": false,
+        "is_alive": true,
+        "removed_without_kill": false,
+        "is_deployed": true,
+        "has_retreated": false,
+        "battle_start_blood_limit": 42,
+        "deployed_at_round": 0,
+        "shards": 0,
+        "fake_shards": 0,
+        "total_healed": 0,
+        "hp_ratio": 1.0,
+        "dao_wen": {
+         "冲击": "冲击",
+         "杀伐": "杀伐",
+         "庇护": "庇护",
+         "假钞": "假钞"
+        },
+        "spells": [],
+        "relics": [],
+        "status_effects": []
+       }
+      ],
+      "enemy_side": []
+     }
+    },
+    "victory_paths": [],
+    "monster_difficulties": [],
+    "note": "多路径胜利（雕塑/癌变/还债）已结算；消耗品可在后续回合使用"
+   }
+  },
+  {
+   "action": "battle_end",
+   "params": {},
+   "result": {
+    "success": true,
+    "action": "战终",
+    "result": {
+     "shard_reward": 19,
+     "total_shards": 39,
+     "energy_restored": 3,
+     "cleared_temp_friends": true,
+     "ally_growth": [],
+     "removed_via_alt_path": [],
+     "relic_end_logs": [],
+     "scoped_effects_rolled_back": [],
+     "employee_rebellion": {
+      "rebellion": false,
+      "reason": "无员工"
+     },
+     "player_dead": false
+    }
+   }
+  }
+ ]
+}

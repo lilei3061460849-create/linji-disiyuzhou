@@ -17,7 +17,7 @@ def test_project_rules_are_extracted_from_their_authoritative_documents():
     """正常路径：法术、物品、副本和怪物分别来自裁定后的事实源。"""
     sync = _sync()
     facts = sync.extract_project_rules()
-    assert len(facts["common_daowen"]) == 40
+    assert len(facts["common_daowen"]) == 41
     assert len(facts["dungeon_daowen"]) == 64
     assert len(facts["spells"]) == 9
     assert len(facts["dungeons"]) == 8

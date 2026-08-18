@@ -6,6 +6,7 @@ from engine.enums import CombatSubphase
 from engine.models import Entity
 
 
+from tests.setup_support import finish_initial_daowen
 def _engine(tmp_path) -> GameEngine:
     return GameEngine(
         db_path=str(tmp_path / "rulings.db"),
@@ -20,6 +21,7 @@ def _setup_player(engine: GameEngine) -> Entity:
     result = engine.execute_action("setup_attributes", {
         "name": "测试者", "blood_points": 10, "speed_points": 8, "mana_points": 7,
     })
+    finish_initial_daowen(engine)
     assert result["success"]
     return engine.state.player
 

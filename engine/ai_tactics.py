@@ -2,8 +2,8 @@
 战术AI：为轮回者在战斗中选择行动。
 
 设计目标：**数据驱动，不写死道纹名**。
-早前版本把"杀伐/庇护/再生/冲击/锐利"硬编码在 if 分支里，导致无法测试
-锐利系与各副本专属道纹。现在改为：每个道纹在 TACTICAL_ROLES 里声明它的
+早前版本把"杀伐/庇护/再生/冲击/切割"硬编码在 if 分支里，导致无法测试
+切割系与各副本专属道纹。现在改为：每个道纹在 TACTICAL_ROLES 里声明它的
 战术角色与取值方式，AI 只按"角色"决策，因此
 **新增或更换道纹无需改动决策代码**——这也让不同流派的实战胜率可被对比。
 
@@ -32,21 +32,21 @@ from typing import Any, Optional
 # 未列出的道纹 AI 不会主动发动（例如需要复杂声明的），但引擎仍支持手动调用。
 # ---------------------------------------------------------------------------
 TACTICAL_ROLES: dict[str, dict] = {
-    # ---- 杀伐闭环 ----
-    "杀伐": {"role": "nuke", "cost": 1, "pri": 1, "dmg_per_x": 2},
+    # ---- 杀伐闭环（cost/dmg 必须跟 README 现行公式一致，禁止沿用旧 3X/自动起手）----
+    "杀伐": {"role": "nuke", "cost": 1, "pri": 2, "dmg_per_x": 2},
     "冲击": {"role": "aoe", "cost": 3, "pri": 1, "dmg_per_x": 5},
     "血债": {"role": "nuke", "cost": 0, "pay": "流血", "pri": 3, "dmg_per_x": 1},
     "庇护": {"role": "shield", "cost": 1, "pri": 1, "shield_per_x": 2},
     "再生": {"role": "heal", "cost": 1, "pri": 1, "heal_per_x": 3},
     "慈悲": {"role": "heal", "cost": 0, "pay": "流血", "pri": 3, "heal_per_x": 1},
     "固执": {"role": "buff", "cost": 0, "pay": "冷却", "pri": 2},
-    # ---- 杀伐14节点闭环后半（锐利至封印）----
-    "锐利": {"role": "nuke", "cost": 3, "pri": 2, "dmg_per_x": 5},   # 血限与生命同时-5X
-    "增殖": {"role": "buff", "cost": 5, "pri": 3},
+    # ---- 杀伐14节点闭环后半（切割至封印）----
+    "切割": {"role": "buff", "cost": 3, "pri": 1},
+    "增殖": {"role": "buff", "cost": 1, "pri": 3},
     "透支": {"role": "ramp", "cost": 0, "pay": "衰老", "pri": 1, "mana_per_x": 4},
     "贯穿": {"role": "buff", "cost": 5, "pri": 1},                    # 伤害无视格挡
     "封印": {"role": "remove", "cost": 10, "pri": 1},                 # 直接移出战斗
-    "缓慢": {"role": "control", "cost": 10, "pri": 2},
+    "缓慢": {"role": "control", "cost": 0, "pay": "冷却", "pri": 2},
     "束缚": {"role": "control", "cost": 0, "pay": "冷却", "pri": 1},
     # ---- 龙心谷 ----
     "加害": {"role": "debuff", "cost": 3, "pri": 1},
@@ -91,9 +91,9 @@ TACTICAL_ROLES: dict[str, dict] = {
 
 # 敌方身上值得用残韵改写的高价值道纹，按威胁度排序。
 HIGH_VALUE_ENEMY_DAOWEN = [
-    "必中", "狂暴", "自愈", "强化", "活力", "飞行", "减速",
+    "必中", "狂暴", "自愈", "强化", "疯狂", "飞行", "减速",
     "贯穿", "血债", "冲击", "杀伐", "增殖", "透支",
-    "固执", "庇护", "再生", "锐利", "缓慢", "束缚",
+    "固执", "庇护", "再生", "切割", "缓慢", "束缚",
 ]
 
 
@@ -150,9 +150,21 @@ class TacticalAI:
     def _cast(self, name: str, x: int, target: Optional[str] = None) -> Optional[dict]:
         if x < 1:
             return None
-        p = {"daowen_name": name, "x": x}
+        p = {"daowen_name": name, "x": x, "dodge": False, "blood_shadow": False}
         if target:
             p["target"] = target
+        if name == "冲击":
+            refs = self.engine.combat._combat_entity_refs()
+            actor = self.player
+            p["dodge_targets"] = [
+                {"target_ref": ref, "dodge": False, "blood_shadow": False}
+                for ref, entity in refs.items()
+                if (self.engine.state.on_player_side(entity)
+                    != self.engine.state.on_player_side(actor)
+                    and entity.is_alive)
+            ]
+            if not p["dodge_targets"]:
+                return None
         r = self.engine.execute_action("use_daowen", p)
         if r.get("success"):
             self.used[name] = self.used.get(name, 0) + 1
@@ -208,6 +220,33 @@ class TacticalAI:
             self.used["固执"] = 1
         return r
 
+    def resolve_pending_redemption(self, option: str = "无视") -> Optional[dict]:
+        """救赎是强制待选：未结算前任何其它行动都会被引擎拒绝。"""
+        pending = self.engine.state.pending_redemption
+        if not pending:
+            return None
+        params: dict = {"option": option}
+        if option in (1, "1", "接纳"):
+            base = f"微光·{pending.get('name', '友')}"
+            existing = {self.player.name} if self.player else set()
+            for group in (self.engine.state.friends, self.engine.state.employees,
+                          self.engine.state.temp_friends):
+                existing.update(entity.name for entity in group)
+            existing.update(entity.name for entity in self.engine.state.enemies if entity.is_alive)
+            name = base
+            suffix = 2
+            while name in existing:
+                name = f"{base}{suffix}"
+                suffix += 1
+            params["name"] = name
+        r = self.engine.execute_action("resolve_redemption", params)
+        if r.get("success"):
+            self.used["救赎"] = self.used.get("救赎", 0) + 1
+            return r
+        if self.verbose:
+            self.log.append(f"[跳过] 救赎: {r.get('error')}")
+        return None
+
     def try_resonance(self) -> Optional[dict]:
         """2. 残韵插队：只对**存在变化路径**的敌方道纹发动。"""
         from engine.daowen import ResonanceEngine
@@ -228,6 +267,7 @@ class TacticalAI:
                         {"source_daowen": dw, "resonance_type": rtype, "target": enemy.name})
                     if r.get("success"):
                         self.used[f"残韵·{rtype}"] = self.used.get(f"残韵·{rtype}", 0) + 1
+                        self.resolve_pending_redemption()
                         return r
         return None
 
@@ -290,12 +330,21 @@ class TacticalAI:
         return None
 
     def try_aoe(self) -> Optional[dict]:
-        """6. AOE：敌数≥3 时群伤。"""
+        """6. AOE：按群体总伤与当次单体比较，敌数≥2 且总伤不低于单体时用群伤。"""
         enemies = self.alive_enemies()
-        if len(enemies) < 3:
+        n = len(enemies)
+        if n < 2:
             return None
+        budget = self.mana_budget()
+        ranked = self._nuke_ranked(budget)
+        best_single = ranked[0][2] if ranked else 0
         for name in self.owned("aoe"):
-            x = self._x_for(name, self.mana_budget())
+            x = self._x_for(name, budget)
+            if x < 1:
+                continue
+            total = x * TACTICAL_ROLES[name].get("dmg_per_x", 0) * n
+            if total < best_single:
+                continue
             r = self._cast(name, x)
             if r:
                 return r
@@ -325,7 +374,7 @@ class TacticalAI:
         """
         按"本次出手实际能打出的伤害"排序候选输出道纹。
 
-        不能只看静态优先级：锐利每点X伤害更高(4)但每点X耗法也更高(3)，
+        不能只看静态优先级：切割每点X伤害更高(4)但每点X耗法也更高(3)，
         在小预算下反而不如杀伐(2伤害/1法力)。故按 预算内可达伤害 降序，
         同伤害时取更省法力者。
         """
@@ -336,9 +385,10 @@ class TacticalAI:
             if x < 1:
                 continue
             dmg = x * info.get("dmg_per_x", 2)
-            out.append((name, x, dmg))
-        out.sort(key=lambda t: (-t[2], TACTICAL_ROLES[t[0]].get("cost", 1)))
-        return out
+            score = dmg + x * info.get("limit_per_x", 0)
+            out.append((name, x, dmg, score))
+        out.sort(key=lambda t: (-t[3], TACTICAL_ROLES[t[0]].get("cost", 1)))
+        return [(name, x, dmg) for name, x, dmg, _score in out]
 
     def try_pressure(self) -> Optional[dict]:
         """8. 输出：按预算选性价比最高的输出道纹，焦点打击血最少的目标。"""
@@ -402,9 +452,13 @@ class TacticalAI:
 
     def take_action(self) -> Optional[dict]:
         """执行一次出手。返回引擎结果；无可行动作时返回 None。"""
+        self.resolve_pending_redemption()
+        if not self.alive_enemies() or not self.player.is_alive:
+            return None
         for fn in self.STRATEGIES:
             r = getattr(self, fn)()
             if r:
+                self.resolve_pending_redemption()
                 return r
         return None
 

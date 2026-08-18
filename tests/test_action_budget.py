@@ -15,6 +15,7 @@ DM裁定记录：
 import os
 import sys
 
+from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
@@ -35,6 +36,7 @@ def _new_engine(db_suffix: str, speed_points: int = 8) -> GameEngine:
     blood_points = 25 - speed_points - mana_points  # 属性点总和必须=25
     engine.execute_action("setup_attributes",
                            {"blood_points": blood_points, "speed_points": speed_points, "mana_points": mana_points})
+    finish_initial_daowen(engine)
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
     setup = engine.execute_action("setup_choose_region", {"region": "罪孽都市"})  # 雇佣为罪孽都市专属
     choices = setup["result"]["relic_choices"]

@@ -60,6 +60,9 @@ def make_monster_entity(monster_def: dict):
         m.dao_wen[dw_name] = DaoWenInstance(
             dao_wen=DaoWen(name=dw_name, formula="", cost_type="", cost_formula="", effect_formula=""),
             x_value=x)
+    from .gamedata import ORIGINAL_MONSTER_DAOWEN
+    if any(name in ORIGINAL_MONSTER_DAOWEN for name in m.dao_wen):
+        m._had_monster_daowen = True
     # 注意：不在此设 is_flying——README 358 白板开局：怪物第1回合非飞行，
     # 须在出手轮主动发动"飞行"道纹后才生效（combat 发动道纹时设 is_flying）。
     return m

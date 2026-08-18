@@ -8,6 +8,7 @@
 import os
 import sys
 
+from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.models import Entity  # noqa: E402
@@ -27,6 +28,7 @@ def _engine(seed=7):
     e = GameEngine(db_path=f"{DB_DIR}/mediocrity.db", rng_seed=seed)
     e.execute_action("setup_attributes",
                      {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+    finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     e.execute_action("setup_choose_region", {"region": "罪孽都市"})
     return e
@@ -101,6 +103,79 @@ def test_idle_counter_resets_on_any_action():
     # 第4回合打断后重新计数，到第8回合只积累了4个空转回合，仍不触发
     assert m.is_alive, "打断后重新计数，第8回合仍不该触发"
     assert m.no_action_rounds == 4
+
+
+def test_mediocrity_non_reincarnator_fires_first():
+    """正常：轮回者与怪物同时达阈值时，非轮回者先结算，残骸先落入轮回者再轮到其炸裂"""
+    e = _engine()
+    cm = e.combat
+    cm.state.enemies = [_monster()]
+    m = cm.state.enemies[0]
+    p = cm.state.player
+    friend = Entity(name="陪葬者", entity_type="朋友", blood_limit=30, current_hp=30,
+                    attack_count=1, attack_power=1)
+    cm.state.friends = [friend]
+
+    fired = None
+    for r in range(1, 6):
+        for ent in (p, m, friend):
+            ent.damage_dealt_this_round = 0
+            ent.actions_used_this_round = 0
+        res = cm.round_end()
+        names = [ef.get("entity") for ef in res.get("effects", [])
+                 if ef.get("type") == "mediocrity"]
+        if names:
+            fired = (r, names)
+
+    assert fired == (5, ["陪葬者", "木桩", "贾凡"]), f"凡庸结算顺序应为非轮回者优先，实际={fired}"
+    assert not m.is_alive and not friend.is_alive and not p.is_alive
+    wrecks = [c for c in cm.state.consumables if c.name == "残骸"]
+    assert len(wrecks) == 1, "怪物凡庸仍应产出残骸，即使轮回者随后也炸裂"
+    assert e.state.last_death_cause == "mediocrity"
+
+
+def test_mediocrity_reincarnator_still_fires_when_alone():
+    """边界：只有轮回者达阈值时，没有非轮回者也不阻挡其凡庸"""
+    e = _engine()
+    cm = e.combat
+    cm.state.enemies = [_monster()]
+    m = cm.state.enemies[0]
+    p = cm.state.player
+
+    for _ in range(5):
+        p.damage_dealt_this_round = 0
+        p.actions_used_this_round = 0
+        m.damage_dealt_this_round = 3
+        m.actions_used_this_round = 1
+        cm.round_end()
+
+    assert not p.is_alive, "单独达阈值的轮回者仍应凡庸"
+    assert m.is_alive, "有作为的怪物不应被波及"
+
+
+def test_mediocrity_priority_does_not_pull_unready_reincarnator():
+    """错误输入：非轮回者优先不得把未满五回合的轮回者一并炸裂"""
+    e = _engine()
+    cm = e.combat
+    cm.state.enemies = [_monster()]
+    m = cm.state.enemies[0]
+    p = cm.state.player
+    for _ in range(4):
+        m.damage_dealt_this_round = 0
+        m.actions_used_this_round = 0
+        p.damage_dealt_this_round = 1
+        p.actions_used_this_round = 1
+        cm.round_end()
+    m.damage_dealt_this_round = 0
+    m.actions_used_this_round = 0
+    p.damage_dealt_this_round = 0
+    p.actions_used_this_round = 0
+    res = cm.round_end()
+    names = [ef.get("entity") for ef in res.get("effects", [])
+             if ef.get("type") == "mediocrity"]
+    assert names == ["木桩"], f"只有满五回合的非轮回者应触发，实际={names}"
+    assert not m.is_alive
+    assert p.is_alive, "轮回者本拍才开始空转，不得被优先规则拖死"
 
 
 def test_no_action_branch_triggers_even_if_damage_dealt():
@@ -205,47 +280,47 @@ def test_battle_end_heal_revert_never_kills():
     assert p.is_alive, "[战终]吐出回复不应直接致死"
 
 
-# ---------- 锐利：血限与当前生命同时扣减（README 第460行） ----------
+# ---------- 切割：失血同时扣除等量血限 ----------
 
-def test_ruili_reduces_hp_independently_of_blood_limit():
-    """正常路径：锐利对残血目标仍应扣当前生命（不是只做血限压顶）"""
-    e = _engine()
-    cm = e.combat
-    m = _monster(hp=200)
-    m.current_hp = 10          # 残血：血限压顶对它毫无作用
-    cm.state.enemies = [m]
-
-    calc = {"blood_limit_reduction": 20, "hp_reduction": 20}
-    cm.apply_daowen_effect("锐利", calc, cm.state.player, m)
-
-    assert m.blood_limit == 180, f"血限应-20，实际={m.blood_limit}"
-    assert m.current_hp == 0, f"当前生命应独立-20并被判定[命零]，实际={m.current_hp}"
-    assert not m.is_alive
-
-
-def test_ruili_hp_cut_counts_as_damage_dealt():
-    """边界：锐利造成的生命减少要计入本回合伤害，否则会被【凡庸】误判为无所作为"""
+def test_qiege_cuts_blood_limit_with_life_loss():
+    """正常路径：持切割时对其他角色造成失血，血限同步扣除等量。"""
+    from engine.models import StatusEffect
     e = _engine()
     cm = e.combat
     m = _monster(hp=200)
     cm.state.enemies = [m]
     p = cm.state.player
-    p.damage_dealt_this_round = 0
+    p.add_status(StatusEffect(name="切割", remaining_rounds=3, value=1))
 
-    cm.apply_daowen_effect("锐利", {"blood_limit_reduction": 20, "hp_reduction": 20}, p, m)
+    cm._apply_hostile_damage(m, 20, source=p)
 
-    assert p.damage_dealt_this_round > 0, "锐利削减的生命必须计入伤害统计"
+    assert m.current_hp == 180
+    assert m.blood_limit == 180
 
 
-def test_ruili_hp_cut_never_below_zero():
-    """错误输入/边界：扣减不得使生命变为负数，且不重复致死"""
+def test_qiege_does_not_cut_own_blood_limit():
+    """边界：自己失去生命不触发切割。"""
+    from engine.models import StatusEffect
     e = _engine()
     cm = e.combat
-    m = _monster(hp=200)
-    m.current_hp = 3
-    cm.state.enemies = [m]
+    p = cm.state.player
+    before = p.blood_limit
+    p.add_status(StatusEffect(name="切割", remaining_rounds=3, value=1))
+    p.take_damage(10, "代价")
+    assert p.blood_limit == before
 
-    cm.apply_daowen_effect("锐利", {"blood_limit_reduction": 40, "hp_reduction": 40}, cm.state.player, m)
 
-    assert m.current_hp <= 0
-    assert not m.is_alive
+def test_qiege_rejects_zero_x():
+    """错误输入：切割X必须为正整数。"""
+    e = _engine()
+    from engine.models import DaoWen, DaoWenInstance
+    e.state.player.dao_wen["切割"] = DaoWenInstance(
+        DaoWen(name="切割", formula="", cost_type="消耗", cost_formula="3X", effect_formula=""))
+    e.state.player.current_mana = 20
+    e.state.phase = "in_combat"
+    e.state.combat_subphase = "player_actions"
+    r = e.execute_action("use_daowen", {
+        "daowen_name": "切割", "x": 0,
+        "dodge": False, "blood_shadow": False, "trigger_spell_choices": {},
+    })
+    assert not r["success"]

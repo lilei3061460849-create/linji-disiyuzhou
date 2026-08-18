@@ -27,7 +27,7 @@ class CombatEngine:
     }
     
     # 原始怪物道纹（道纹归属规则：各组起点）——【原初X】可借用范围
-    ORIGINAL_MONSTER_DAOWEN = ("狂暴", "强化", "活力", "减速", "必中", "自愈", "飞行")
+    ORIGINAL_MONSTER_DAOWEN = ("狂暴", "强化", "疯狂", "减速", "必中", "自愈", "飞行")
     # 原始怪物道纹只在首次发动时支付异变5X；效果持续期间不再重复计费。
     # 必中为次数型（下X次选择[目标]无法闪避），余数记在 entity._bizhong_left。
     YUANCHU_COST_RATE = 5
@@ -172,9 +172,9 @@ class CombatEngine:
         if entity.entity_type == "怪物":
             n = 2
             act = self._monster_activated.get(id(entity), set())
-            # 活力(2026-08-17全局裁定)：状态盖到所有角色，怪物从自身状态读+X。
+            # 疯狂(2026-08-17全局裁定)：状态盖到所有角色，怪物从自身状态读+X。
             # 不再走激活集合分支，避免与全局状态双重计数。
-            n += entity.get_status_value("活力")
+            n += entity.get_status_value("疯狂")
             if "狂暴" in act or entity.has_status("狂暴"):
                 n += 1
             n -= entity.get_status_value("无力")
@@ -214,8 +214,12 @@ class CombatEngine:
         detail = target.take_damage(amount, damage_type)
         actual = detail.get("actual_damage", 0)
 
-        # 5. 落地后效果 (逆鳞 / 伤痕 / 寄生 / 负岳索 / 龙族血脉斩杀)
+        # 5. 落地后效果 (逆鳞 / 伤痕 / 切割 / 寄生 / 负岳索 / 龙族血脉斩杀)
         self.hook_manager.apply_after_damage_pipeline(target, actual, detail.get("shield_absorbed", 0), detail, source, self)
+        if target.entity_type == "怪物" and target.is_alive:
+            redemption = self.check_redemption(target)
+            if redemption:
+                detail["redemption"] = redemption
 
         return detail
 
@@ -946,7 +950,8 @@ class CombatEngine:
         3. 持续X剩余回合-1
         """
         effects = []
-        
+        mediocrity_ready: list[tuple[Entity, str]] = []
+
         for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
             # 畸变结算：正文是失去[血限]，不是受到等量伤害；按回终时的当前攻击面板动态计算。
             if entity.has_status("畸变") and entity.is_alive:
@@ -968,38 +973,18 @@ class CombatEngine:
                     "died": not entity.is_alive,
                 })
 
-            # 特殊事件【凡庸】（README 第500行）：任一角色连续五回合未出手／
-            # 五回合未能使敌对角色生命减少时触发；轮回者直接死亡，怪物命零死亡，
-            # 轮回者获得消耗品【残骸】(1/1)。此前从未实装，导致长期僵持局面不会终结。
+            # 凡庸只在此拍更新计数；达阈值者稍后按「非轮回者优先」结算。
             if entity.is_alive:
-                # 两个条件互相独立，任一连续满 5 回合即触发（README 用"/"表示或）
-                if entity.actions_used_this_round <= 0:
-                    entity.no_action_rounds += 1
-                else:
-                    entity.no_action_rounds = 0
-                if entity.damage_dealt_this_round <= 0:
-                    entity.no_damage_rounds += 1
-                else:
-                    entity.no_damage_rounds = 0
-                if entity.no_action_rounds >= 5 or entity.no_damage_rounds >= 5:
-                    _why = ("连续五回合未出手" if entity.no_action_rounds >= 5
-                            else "连续五回合未能使敌对角色生命减少")
-                    entity.current_hp = 0
-                    entity.is_alive = False
-                    self._on_entity_death(entity)
-                    entity.no_action_rounds = 0
-                    entity.no_damage_rounds = 0
-                    if entity is self.state.player:
-                        self.state.last_death_cause = "mediocrity"
-                    effects.append({"type": "mediocrity", "entity": entity.name,
-                                    "note": f"{_why}，触发【凡庸】：凭空全身炸裂，[命零]"})
-                    if entity.entity_type == "怪物":
-                        self.state.consumables.append(
-                            Consumable(name="残骸", effect="局内使用恢复20生命并获得异变10",
-                                       current_uses=1, max_uses=1))
-                        effects.append({"type": "mediocrity_loot", "entity": entity.name,
-                                        "note": "轮回者获得消耗品【残骸】(1/1)"})
+                why = self._tick_mediocrity_counters(entity)
+                if why:
+                    mediocrity_ready.append((entity, why))
 
+        # 多个角色同时触发凡庸时，非轮回者优先；同档保持原遍历顺序。
+        mediocrity_ready.sort(key=lambda item: item[0].entity_type == "轮回者")
+        for entity, why in mediocrity_ready:
+            effects.extend(self._apply_mediocrity(entity, why))
+
+        for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
             # 血族血脉：持有者这一侧各自结算（死斗两边各一份）
             if entity.entity_type == "轮回者" and self.state.side_has(entity, "血族血脉"):
                 if entity.damage_dealt_this_round > 0:
@@ -1338,12 +1323,74 @@ class CombatEngine:
         """任一角色恢复量达阈值即癌变。怪物仍吸收进书；轮回者/同伴直接命零。"""
         if entity is None or not entity.is_alive or entity.is_proliferated:
             return None
+        if self.state.side_has(entity, "钱袋"):
+            return None
         threshold = self.cancer_threshold_of(entity)
         if threshold <= 0 or entity.total_healed < threshold:
             return None
         if entity.entity_type == "怪物":
             return self._proliferate_monster(entity)
         return self._cancer_character(entity)
+
+    REDEMPTION_HP_RATIO = 0.10
+
+    def monster_has_original_daowen(self, monster: Entity) -> bool:
+        from .gamedata import ORIGINAL_MONSTER_DAOWEN
+        return any(name in ORIGINAL_MONSTER_DAOWEN for name in monster.dao_wen)
+
+    def redemption_hp_threshold(self, monster: Entity) -> int:
+        if monster is None or monster.blood_limit <= 0:
+            return 0
+        return math.ceil(monster.blood_limit * self.REDEMPTION_HP_RATIO)
+
+    def check_redemption(self, monster: Entity) -> Optional[dict]:
+        """救赎：当前生命≤血限10%，且没有七种原始怪物道纹。"""
+        if monster is None or monster.entity_type != "怪物" or not monster.is_alive:
+            return None
+        if monster.is_sculptured or monster.is_proliferated or monster.is_debt_bound:
+            return None
+        if getattr(monster, "removed_without_kill", False):
+            return None
+        if self.state.pending_redemption:
+            return None
+        if self.monster_has_original_daowen(monster):
+            return None
+        if monster.current_hp > self.redemption_hp_threshold(monster):
+            return None
+        return self._queue_redemption(monster, "low_hp_no_original")
+
+    def check_all_redemption(self) -> list[dict]:
+        results = []
+        for entity in list(self.state.enemies):
+            hit = self.check_redemption(entity)
+            if hit:
+                results.append(hit)
+        return results
+
+    def _queue_redemption(self, monster: Entity, cause: str) -> dict:
+        """怪物融化离场，等待接纳/无视。不产碎片。"""
+        snapshot = {
+            "name": monster.name,
+            "attack_count": monster.attack_count,
+            "attack_power": monster.attack_power,
+            "blood_limit": monster.blood_limit,
+            "dao_wen": {name: inst.x_value for name, inst in monster.dao_wen.items()},
+            "cause": cause,
+            "mutation": monster.mutation_count,
+        }
+        monster.removed_without_kill = True
+        monster.is_alive = False
+        monster._redeemed = True
+        self.state.pending_redemption = snapshot
+        return {
+            "type": "redemption",
+            "monster": monster.name,
+            "cause": cause,
+            "note": (
+                f"随着最后一缕恶意消散，{monster.name}的身躯开始融化，"
+                "原地只剩下一个昏迷的微光者"
+            ),
+        }
 
     def check_all_cancer(self) -> list[dict]:
         results = []
@@ -1376,7 +1423,13 @@ class CombatEngine:
                 results.append(self._sculpture_monster(monster))
                 continue
 
-            # 2. 癌变：累计受到恢复量达阈值
+            # 2. 救赎：残血且没有七种原始怪物道纹
+            redemption = self.check_redemption(monster)
+            if redemption:
+                results.append(redemption)
+                continue
+
+            # 3. 癌变：累计受到恢复量达阈值
             cancer = self.check_cancer(monster)
             if cancer:
                 results.append(cancer)
@@ -1786,6 +1839,18 @@ class CombatEngine:
         if "heal_percent" in calc and name != "自愈" and not (target.has_status("坏死")):
             h = math.ceil(target.blood_limit * calc["heal_percent"] / 100)
             result["effects"].append({"type": "heal_pct", "target": target.name, **self.state.apply_heal(target, h)})
+        if "mutation_reduction" in calc:
+            reduced = int(calc["mutation_reduction"])
+            pay = target.add_mutation(-reduced)
+            result["effects"].append({
+                "type": "mutation_reduction", "target": target.name,
+                "reduced": reduced, "mutation_total": pay["mutation_total"],
+            })
+            if target.entity_type == "怪物":
+                redemption = self.check_redemption(target)
+                if redemption:
+                    result["effects"].append(redemption)
+
         if "target_heal" in calc or ("heal_percent" in calc and name != "自愈"):
             cancer = self.check_cancer(target)
             if cancer:
@@ -1805,13 +1870,13 @@ class CombatEngine:
                 name, EffectPolarity.DEBUFF.value)
             # README 第460行"[血限]及当前生命同时 -4X"：两者是各自独立的扣减。
             # 此前实现只做 current_hp=min(current_hp, blood_limit)（血限压顶），
-            # 对残血目标等于毫无效果——锐利打 10/200 的怪一点血都掉不了。
+            # 对残血目标等于毫无效果——切割打 10/200 的怪一点血都掉不了。
             if "hp_reduction" in calc:
                 target.current_hp -= calc["hp_reduction"]
             target.current_hp = max(0, min(target.current_hp, target.blood_limit))
             if target.current_hp <= 0: target.is_alive = False
             # 血限压迫导致的当前生命减少，同样属于"使敌对角色生命减少"，
-            # 必须计入本回合伤害统计，否则纯锐利流派会被【凡庸】判定为无所作为而自爆。
+            # 必须计入本回合伤害统计，否则纯切割流派会被【凡庸】判定为无所作为而自爆。
             _hp_cut = _hp_before - target.current_hp
             if _hp_cut > 0 and target is not caster:
                 caster.damage_dealt_this_round += _hp_cut
@@ -2078,16 +2143,16 @@ class CombatEngine:
             effect_target = target if target else caster
             # 自身作用型道纹(变形/超频/自食等)作用于施法者
             # 洗劫：状态应挂在施法者上——"造成伤害时夺取等量碎片"以施法者为触发主体（与 sim/balance_sim 口径一致）
-            self_targeted = name in ("超频", "自食", "飞行", "滑翔", "狂暴", "自愈", "必中", "变形", "洗劫", "固执")
+            self_targeted = name in ("超频", "自食", "飞行", "滑翔", "狂暴", "自愈", "必中", "变形", "洗劫", "固执", "切割", "贯穿")
             et = caster if self_targeted else effect_target
-            if name == "活力":
-                # 2026-08-17 用户裁定：活力X改为【所有角色出手+X】（全局，变相平衡）。
-                # 状态盖到双方全部存活角色；出手口径各自读取自身活力状态：
+            if name == "疯狂":
+                # 2026-08-17 用户裁定：疯狂X改为【所有角色出手+X】（全局，变相平衡）。
+                # 状态盖到双方全部存活角色；出手口径各自读取自身疯狂状态：
                 # 轮回者/朋友/员工走 Entity.action_count，怪物攻击轮数走 _monster_attack_actions。
                 for et_all in self.state.get_all_player_side() + self.state.get_all_enemy_side():
                     if not et_all.is_alive:
                         continue
-                    et_all.add_status(StatusEffect(name="活力", remaining_rounds=duration,
+                    et_all.add_status(StatusEffect(name="疯狂", remaining_rounds=duration,
                                                    value=x, source=caster.name))
                     result["effects"].append({"type": "status_added", "target": et_all.name,
                                               "status": name, "duration": duration, "value": x})
@@ -2153,7 +2218,7 @@ class CombatEngine:
     # 法术流程注册表；计算层只描述步骤，不再替持有者选择X、目标或闪避。
     SPELL_FLOWS = {
         "先发制人": {"trigger": ActionPhase.BEFORE_DAMAGE_TAKEN.value, "steps": [("杀伐", "attacker")]},
-        "临界泄压": {"trigger": ActionPhase.BEFORE_DAMAGE_TAKEN.value, "steps": [("锐利", "attacker")]},
+        "临界泄压": {"trigger": ActionPhase.BEFORE_DAMAGE_TAKEN.value, "steps": [("切割", "attacker")]},
         "后发制人": {"trigger": ActionPhase.BEFORE_DAMAGE_TAKEN.value, "steps": [("庇护", "self")]},
         "生生不息": {"trigger": ActionPhase.AFTER_LIFE_LOST.value, "steps": [("再生", "self")]},
         "以牙还牙": {"trigger": ActionPhase.AFTER_LIFE_LOST.value, "steps": [("再生", "self"), ("杀伐", "attacker")]},
@@ -2166,7 +2231,7 @@ class CombatEngine:
     # 自创法术文本→执行：解析 trigger_condition / effect_flow 为 SPELL_FLOWS 同构结构。
     # 格式（与死者之书一致）：trigger如"受到伤害前"/"失去生命后"；flow如"发动杀伐X→发动再生X"。
     # 目标推断：攻击/削弱/控制类道纹打attacker，自保/增益/回复类打self，坠落打target（若飞行）。
-    _SPELL_SELF_DAOWEN = {"庇护", "再生", "固执", "活血", "龙鳞", "自食", "透支", "假钞", "超频", "变形"}
+    _SPELL_SELF_DAOWEN = {"庇护", "再生", "固执", "活血", "龙鳞", "自食", "透支", "假钞", "超频", "变形", "切割", "贯穿"}
     _SPELL_TRIGGER_MAP = {
         "受到伤害前": ActionPhase.BEFORE_DAMAGE_TAKEN.value,
         "失去生命后": ActionPhase.AFTER_LIFE_LOST.value,
@@ -2682,8 +2747,6 @@ class CombatEngine:
             for t in others:
                 self.state.resonance[t] = self.state.resonance.get(t, 0) + 1
             logs.append(f"三相残韵盘：战终获得{'、'.join(others)}残韵各1")
-        # 钱袋：改在 api.py 的 _action_battle_end 里随标准击杀奖励一并结算(用battle_start_blood_limit快照)，
-        # 不再用"on_monster_death"这个从未被调用过的触发点(此前是死代码)。
         return logs
 
     # ========== 怪物回合（两阶段显式决策） ==========
@@ -2711,15 +2774,15 @@ class CombatEngine:
         return dest
 
     def _monster_attack_actions(self, m: Entity, activated: set) -> int:
-        """怪物攻击出手数 = 1 + 活力X(自身状态) + 狂暴1(若激活)。
+        """怪物攻击出手数 = 1 + 疯狂X(自身状态) + 狂暴1(若激活)。
 
-        活力2026-08-17全局裁定：发动方把活力状态盖到所有角色，怪物从自身状态读+X；
+        疯狂2026-08-17全局裁定：发动方把疯狂状态盖到所有角色，怪物从自身状态读+X；
         激活集合口径仅保留给狂暴。发动当回合的状态在resolve阶段才落下，
-        prepare在本回合道纹结算前已快照出手数，因此活力自下回合生效的时序不变。
+        prepare在本回合道纹结算前已快照出手数，因此疯狂自下回合生效的时序不变。
         高爆手雷修改的是每轮攻击中的"攻击次数"，不再同时削减攻击出手数。
         """
         n = 1
-        n += m.get_status_value("活力")
+        n += m.get_status_value("疯狂")
         if "狂暴" in activated or m.has_status("狂暴"):
             n += 1
         return max(0, n)
@@ -3075,7 +3138,7 @@ class CombatEngine:
                 if not monster.is_alive:
                     continue
             activated = self._monster_activated.setdefault(id(monster), set())
-            # 攻击出手数以“道纹结算前”的已激活集合为准：狂暴/活力是[回始]持续效果，
+            # 攻击出手数以“道纹结算前”的已激活集合为准：狂暴/疯狂是[回始]持续效果，
             # 本回合刚发动时从下回合起生效，prepare列出的 base_attack_actions 也是按
             # 结算前状态给出的——两处必须一致，否则按 prepare 提交必然失败。
             activated_before = set(activated)
@@ -3106,7 +3169,7 @@ class CombatEngine:
                     continue
 
             attack_actions = choice.get("attack_actions")
-            # 出手数按prepare快照校验：2026-08-17活力全局裁定后，状态在本actor
+            # 出手数按prepare快照校验：2026-08-17疯狂全局裁定后，状态在本actor
             # 道纹结算中即盖到全场，若此处按当前状态重算会把"自下回合生效"提前到
             # 本回合，导致按prepare提交必然失败；快照即契约（两处必须一致）。
             expected_actions = expected[actor_ref]["base_attack_actions"]
@@ -3197,6 +3260,42 @@ class CombatEngine:
         detail = self._apply_hostile_damage(actor, dmg, "必中", source)
         detail["dragon_breath"] = dmg
         return detail
+
+    def _tick_mediocrity_counters(self, entity: Entity) -> Optional[str]:
+        """更新凡庸连续计数；达阈值返回原因，不立刻结算。"""
+        if entity.actions_used_this_round <= 0:
+            entity.no_action_rounds += 1
+        else:
+            entity.no_action_rounds = 0
+        if entity.damage_dealt_this_round <= 0:
+            entity.no_damage_rounds += 1
+        else:
+            entity.no_damage_rounds = 0
+        if entity.no_action_rounds >= 5 or entity.no_damage_rounds >= 5:
+            return ("连续五回合未出手" if entity.no_action_rounds >= 5
+                    else "连续五回合未能使敌对角色生命减少")
+        return None
+
+    def _apply_mediocrity(self, entity: Entity, why: str) -> list[dict]:
+        """结算一名角色的凡庸。调用方必须已按非轮回者优先排好序。"""
+        if not entity.is_alive:
+            return []
+        entity.current_hp = 0
+        entity.is_alive = False
+        self._on_entity_death(entity)
+        entity.no_action_rounds = 0
+        entity.no_damage_rounds = 0
+        if entity is self.state.player:
+            self.state.last_death_cause = "mediocrity"
+        effects = [{"type": "mediocrity", "entity": entity.name,
+                    "note": f"{why}，触发【凡庸】：凭空全身炸裂，[命零]"}]
+        if entity.entity_type == "怪物":
+            self.state.consumables.append(
+                Consumable(name="残骸", effect="局内使用恢复20生命并获得异变10",
+                           current_uses=1, max_uses=1))
+            effects.append({"type": "mediocrity_loot", "entity": entity.name,
+                            "note": "轮回者获得消耗品【残骸】(1/1)"})
+        return effects
 
     def can_act(self, entity: Entity) -> bool:
         """是否可出手（眩晕/束缚/缓慢下不可）"""

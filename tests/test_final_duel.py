@@ -22,6 +22,7 @@ pytest 风格测试 - 里程碑7：最终的冠冕 / 第8场最终死斗
     python -m pytest tests/test_final_duel.py -v
 """
 import os
+from tests.setup_support import finish_initial_daowen
 os.makedirs("/tmp/linji_tests", exist_ok=True)
 import os
 import sys
@@ -59,6 +60,7 @@ def _new_candidate(db_suffix, sealed_path, speed_points=8, region="龙心谷", n
     if name:
         params["name"] = name
     engine.execute_action("setup_attributes", params)
+    finish_initial_daowen(engine)
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
     setup = engine.execute_action("setup_choose_region", {"region": region})
     engine.execute_action("choose_discovered_relic", {"relic_name": setup["result"]["relic_choices"][0]})
@@ -275,6 +277,7 @@ def test_resolve_final_duel_rejected_without_active_duel():
     engine = GameEngine(db_path="/tmp/linji_tests/test_duel_noactive.db", rng_seed=1,
                          sealed_candidate_path="data/test_duel_noactive.json")
     engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
+    finish_initial_daowen(engine)
     r = engine.execute_action("resolve_final_duel", {"outcome": "victory"})
     assert r["success"] is False
 
@@ -451,6 +454,7 @@ def test_duel_activate_relic_rejected_without_duel():
     engine = GameEngine(db_path="/tmp/linji_tests/test_duel_nrelic.db", rng_seed=1,
                          sealed_candidate_path="data/test_duel_nrelic.json")
     engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
+    finish_initial_daowen(engine)
     r = engine.execute_action("activate_duel_relic", {
         "side": "player_side", "relic": "折速法印", "use": True, "x": 1,
     })

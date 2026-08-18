@@ -22,6 +22,7 @@ import math
 import os
 import sys
 
+from tests.setup_support import finish_initial_daowen
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
@@ -70,8 +71,8 @@ def _pick_monster_daowen(engine, actor):
     cands = [o for o in opts if o["name"] not in activated]
     if not cands:
         return opts[0]
-    OUTPUT = {"狂暴", "强化", "杀伐", "血债", "锐利", "冲击", "加害", "活血", "裂变", "洗劫", "赎金", "逼债", "清算", "赌命"}
-    SELF = {"自愈", "庇护", "再生", "固执", "活力", "龙鳞"}
+    OUTPUT = {"狂暴", "强化", "杀伐", "血债", "切割", "冲击", "加害", "活血", "裂变", "洗劫", "赎金", "逼债", "清算", "赌命"}
+    SELF = {"自愈", "庇护", "再生", "固执", "疯狂", "龙鳞"}
     CONTROL = {"减速", "束缚", "衰败", "勾魂", "镇尸", "僵化", "眩晕", "蒙蔽", "弱化", "退化", "冥气", "缄默", "瓦解", "招魂", "无力", "迟滞", "定型", "封印", "缓慢"}
     p = engine.state.player
     player_low = p is not None and p.is_alive and p.current_hp <= p.blood_limit * 0.5
@@ -195,6 +196,7 @@ def play_and_record(region: str, seed: int, battles: int = 7):
         engine.execute_action("setup_attributes",
                               {"name": "贾凡", "blood_points": 10,
                                "speed_points": 8, "mana_points": 7})
+        finish_initial_daowen(engine)
         engine.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
         r = engine.execute_action("setup_choose_region", {"region": region})
         optional_relics = {"折速法印", "三相残韵盘"}
@@ -277,6 +279,7 @@ def play_and_record(region: str, seed: int, battles: int = 7):
                     lines.extend(BR.format_player_action(
                         idx, engine.state.player.name, res))
                     idx += 1
+                ai.resolve_pending_redemption()
                 # [朋友]/[员工]自主出手
                 ap = engine.execute_action("resolve_ally_phases", {})
                 for entry in (ap.get("result", {}).get("allies") or []):
@@ -299,6 +302,9 @@ def play_and_record(region: str, seed: int, battles: int = 7):
                     return {"invalid": True, "reason": f"monster_phase:{mp.get('error')}"}
                 lines.extend(BR.format_monster_hits(idx, mp["result"].get("details", [])))
                 re_ = engine.execute_action("round_end", {})
+                if not re_.get("success"):
+                    return {"invalid": True, "reason": f"round_end:{re_.get('error')}"}
+                ai.resolve_pending_redemption()
                 lines.extend(BR.format_round_end(re_.get("result", {}),
                                                  engine.state.player,
                                                  engine.state.enemies))

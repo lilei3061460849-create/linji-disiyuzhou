@@ -282,7 +282,7 @@ class Entity:
 
     # 血誓戒：本回合是否已经触发过"首次主动支付流血代价"奖励（回始归零）
     blood_oath_used_this_round: bool = False
-    # 钱袋：[战始]时的血限快照，用于按"[战始][血限]×2%"结算额外碎片（增殖等战斗中改变血限不影响此值）
+    # [战始]时的血限快照，用于击杀碎片按战始血限结算（增殖等战斗中改变血限不影响此值）
     battle_start_blood_limit: int = 0
 
     # 寒冰法力（初拥之夜遗物）：本回合内，持有该遗物者对我方发动道纹累计消耗的法力（含对自己发动）
@@ -291,8 +291,8 @@ class Entity:
 
     # 血族血脉（初拥之夜遗物）：本回合是否已造成过伤害（[回终]判定：造成过则回复等量，否则流血20）
     damage_dealt_this_round: int = 0
-    # 特殊事件【凡庸】（README 第500行）：连续五回合未出手 / 五回合未能使敌对
-    # 角色生命减少时触发。两个条件是"或"关系，故分别计数。
+    # 特殊事件【凡庸】：连续五回合未出手 / 五回合未能使敌对角色生命减少时触发。
+    # 两个条件是"或"关系，故分别计数。多个角色同时达阈值时，非轮回者优先结算。
     no_action_rounds: int = 0   # 连续未出手回合数
     no_damage_rounds: int = 0   # 连续未使敌方生命减少的回合数
     # 本场战斗内累计获得的[回复]量。README第304行：[战终]清除局内增益(包括回复)，
@@ -312,12 +312,12 @@ class Entity:
     def action_count(self) -> int:
         """出手次数：轮回者=速限/3向上取整；[朋友]/[员工](微光者，面板无速限)=攻击次数/3向上取整。
         怪物行动由CombatEngine的prepare/resolve两阶段接口独立计算，不使用本属性。
-        活力+X、无力-X 对本属性的两种口径均生效。"""
+        疯狂+X、无力-X 对本属性的两种口径均生效。"""
         if self.entity_type in ("朋友", "员工"):
             base = math.ceil(self.attack_count / 3) if self.attack_count > 0 else 0
         else:
             base = math.ceil(self.speed_limit / 3) if self.speed_limit > 0 else 0
-        base += self.get_status_value("活力")
+        base += self.get_status_value("疯狂")
         base -= self.get_status_value("无力")
         return max(0, base)
     
@@ -382,11 +382,13 @@ class Entity:
 
     def add_mutation(self, layers: int) -> dict:
         """
-        累加异变层数。
+        增减异变层数。正值累加，负值削减，可降到负数。
         特殊事件【崩解】：任一角色异变达到阈值（当前50层）时直接[命零]死亡；
         正在结算的效果是否中断由调用方判定（与中断规则同精神：代价先付）。
         """
-        if layers > 0:
+        if not isinstance(layers, int) or isinstance(layers, bool):
+            raise ValueError("异变层数必须是整数")
+        if layers != 0:
             self.mutation_count += layers
         collapsed = self.mutation_count >= self.MUTATION_COLLAPSE_THRESHOLD
         if collapsed and self.is_alive:
@@ -469,7 +471,7 @@ class Entity:
         if effect.polarity == EffectPolarity.NEUTRAL.value:
             buffs = {
                 "固执", "贯穿", "急速", "洞察", "兴奋", "飞行", "滑翔", "狂暴",
-                "强化", "活力", "必中", "自愈", "洗劫", "逆鳞", "嫁祸", "背负",
+                "强化", "疯狂", "必中", "自愈", "洗劫", "逆鳞", "嫁祸", "背负",
                 "负岳索", "加速", "愤怒",
             }
             debuffs = {
@@ -590,6 +592,11 @@ class GameState:
     # 【发现】：随机列出3个未持有候选后，必须由角色显式选1件。
     pending_relic_choices: list[str] = field(default_factory=list)
     pending_relic_source: str = ""
+    # 开局从杀伐闭环【发现】初始道纹。
+    pending_initial_daowen_choices: list[str] = field(default_factory=list)
+    pending_initial_daowen_source: str = ""
+    # 救赎：怪物融化后等待接纳/无视。
+    pending_redemption: dict = field(default_factory=dict)
     # 消耗品【发现】候选（如扭曲都市完成事件后的工具发现）。
     pending_item_choices: list[str] = field(default_factory=list)
     pending_item_source: str = ""
@@ -970,6 +977,9 @@ class GameState:
             "pending_daowen_choices": self.pending_daowen_choices,
             "pending_relic_choices": list(self.pending_relic_choices),
             "pending_relic_source": self.pending_relic_source,
+            "pending_initial_daowen_choices": list(self.pending_initial_daowen_choices),
+            "pending_initial_daowen_source": self.pending_initial_daowen_source,
+            "pending_redemption": dict(self.pending_redemption),
             "pending_item_choices": list(self.pending_item_choices),
             "pending_item_source": self.pending_item_source,
             "pending_monster_phase": self.pending_monster_phase,

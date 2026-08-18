@@ -14,6 +14,7 @@ import sys
 import json
 import tempfile
 
+from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
@@ -32,6 +33,7 @@ def run_twisted_playthrough():
         print("Creating baseline sealed candidate 林渊...")
         e_init = GameEngine(db_path=tempfile.mktemp(suffix=".db"), sealed_candidate_path=sealed_file)
         e_init.execute_action("setup_attributes", {"name": "林渊", "blood_points": 7, "speed_points": 8, "mana_points": 10})
+        finish_initial_daowen(e_init)
         e_init.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
         e_init.execute_action("setup_choose_region", {"region": "龙心谷"})
         e_init.execute_action("choose_discovered_relic", {"relic_name": "无所求"})
@@ -55,6 +57,7 @@ def run_twisted_playthrough():
     e.execute_action("setup_attributes", {
         "name": "莫非", "blood_points": 7, "speed_points": 8, "mana_points": 10
     })
+    finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "曲解"})
     s = e.execute_action("setup_choose_region", {"region": "扭曲都市"})
     e.execute_action("choose_discovered_relic", {"relic_name": "避风铃"})

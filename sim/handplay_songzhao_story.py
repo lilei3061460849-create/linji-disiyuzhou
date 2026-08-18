@@ -7,6 +7,7 @@ import json
 import os
 import sys
 
+from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
@@ -25,6 +26,7 @@ def main():
     e = GameEngine(db_path="/tmp/story_dm.db", rng_seed=20260817,
                    sealed_candidate_path="/tmp/story_sealed.json")
     act(e, "setup_attributes", {"name": "宋昭", "blood_points": 7, "speed_points": 8, "mana_points": 10})
+Nonefinish_initial_daowen(e)
     act(e, "setup_choose_resonance", {"resonance_type": "曲解"})
     s = act(e, "setup_choose_region", {"region": "罪孽都市"})
     choices = s["result"]["relic_choices"]

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-流派胜率对比：测试不同道纹组合（杀伐系 / 锐利系 / 各副本专属）的实战表现。
+流派胜率对比：测试不同道纹组合（杀伐系 / 切割系 / 各副本专属）的实战表现。
 
 用法：
     python3 sim/build_winrate.py                    # 全部流派 × 三副本，各50局
     python3 sim/build_winrate.py --runs 200         # 每组200局
     python3 sim/build_winrate.py --region 龙心谷     # 只测一个副本
-    python3 sim/build_winrate.py --build 锐利系      # 只测一个流派
+    python3 sim/build_winrate.py --build 切割系      # 只测一个流派
     python3 sim/build_winrate.py --list             # 列出可用流派
 
 新增流派：直接在 BUILDS 里加一行即可，无需改动 AI 代码
@@ -19,6 +19,7 @@ import random
 import sys
 from collections import Counter
 
+from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
@@ -29,10 +30,10 @@ from sim.build_learner import _resolve_monster_turn
 # 学习受精力限制，最多3个/场，列表可跨场累积。
 BUILDS: dict[str, dict] = {
     "杀伐系":   {"learn": ["庇护", "再生", "冲击", "血债", "慈悲"]},
-    "锐利系":   {"learn": ["锐利", "贯穿", "透支", "束缚", "封印", "缓慢", "增殖"]},
-    # 锐利已从起手移入杀伐的14节点闭环；该组测试“学到锐利后的边际价值”，
-    # 不再伪造一个规则中不存在的纯锐利起手。
-    "锐利纯控": {"learn": ["锐利", "束缚", "缓慢", "封印", "贯穿"]},
+    "切割系":   {"learn": ["切割", "贯穿", "透支", "束缚", "封印", "缓慢", "增殖"]},
+    # 切割已从起手移入杀伐的14节点闭环；该组测试“学到切割后的边际价值”，
+    # 不再伪造一个规则中不存在的纯切割起手。
+    "切割纯控": {"learn": ["切割", "束缚", "缓慢", "封印", "贯穿"]},
     "龙心谷系": {"learn": ["加害", "裂变", "伤痕", "龙鳞", "活血"]},
     "扭曲都市系": {"learn": ["僵化", "坏死", "退化", "定型", "爆裂"]},
     "罪孽都市系": {"learn": ["逼债", "洗劫", "清算", "假钞"]},
@@ -48,6 +49,7 @@ def run_one(build: str, region: str, seed: int, battles: int = 7) -> dict:
     e = GameEngine(db_path="/tmp/winrate.db", rng_seed=seed)
     e.execute_action("setup_attributes",
                      {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+    finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": region})
     optional_relics = {"折速法印", "三相残韵盘"}
