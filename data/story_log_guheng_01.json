@@ -1,0 +1,4039 @@
+{
+ "seed": 202608182,
+ "character": "顾衡",
+ "daowen_options": [
+  "冲击",
+  "再生",
+  "透支"
+ ],
+ "daowen_pick": "再生",
+ "relic_options": [
+  "守夜灯",
+  "回锋刀",
+  "血誓戒"
+ ],
+ "relic_pick": "守夜灯",
+ "region": "扭曲都市",
+ "entries": [
+  {
+   "action": "setup_attributes",
+   "params": {
+    "name": "顾衡",
+    "blood_points": 7,
+    "speed_points": 8,
+    "mana_points": 10
+   },
+   "result": {
+    "success": true,
+    "action": "分配属性点",
+    "result": {
+     "name": "顾衡",
+     "blood_limit": 42,
+     "mana_limit": 20,
+     "speed_limit": 8,
+     "attack_count": 0,
+     "attack_power": 0,
+     "action_count": 3,
+     "shards": 20,
+     "daowen_choices": [
+      "冲击",
+      "再生",
+      "透支"
+     ]
+    },
+    "next_actions": [
+     "setup_choose_initial_daowen"
+    ],
+    "note": "属性已分配；请从杀伐闭环的3个发现候选中显式选择1种作为初始道纹。"
+   }
+  },
+  {
+   "action": "setup_choose_initial_daowen",
+   "params": {
+    "daowen_name": "再生"
+   },
+   "result": {
+    "success": true,
+    "action": "选择初始道纹",
+    "result": {
+     "daowen": "再生",
+     "player_daowen": [
+      "再生"
+     ]
+    },
+    "next_actions": [
+     "setup_choose_resonance"
+    ]
+   }
+  },
+  {
+   "action": "setup_choose_resonance",
+   "params": {
+    "resonance_type": "反转"
+   },
+   "result": {
+    "success": true,
+    "action": "选择残韵",
+    "result": {
+     "resonance_type": "反转",
+     "count": 1
+    },
+    "next_actions": [
+     "setup_choose_region"
+    ]
+   }
+  },
+  {
+   "action": "setup_choose_region",
+   "params": {
+    "region": "扭曲都市"
+   },
+   "result": {
+    "success": true,
+    "action": "选择副本",
+    "result": {
+     "region": "扭曲都市",
+     "relic_choices": [
+      "守夜灯",
+      "回锋刀",
+      "血誓戒"
+     ]
+    },
+    "next_actions": [
+     "choose_discovered_relic"
+    ],
+    "note": "开局发现已随机列出3件遗物；必须显式选择1件后进入局外行动。"
+   }
+  },
+  {
+   "action": "choose_discovered_relic",
+   "params": {
+    "relic_name": "守夜灯"
+   },
+   "result": {
+    "success": true,
+    "action": "选择发现遗物",
+    "result": {
+     "relic": "守夜灯",
+     "source": "开局发现"
+    }
+   }
+  },
+  {
+   "action": "pre_battle_action",
+   "params": {
+    "sub_action": "学习",
+    "sub": "daowen",
+    "name": "杀伐"
+   },
+   "result": {
+    "success": true,
+    "action": "学习·道纹",
+    "result": {
+     "learned": "daowen",
+     "names": [
+      "杀伐"
+     ],
+     "shard_cost": 0,
+     "player_daowen": [
+      "再生",
+      "杀伐"
+     ]
+    }
+   }
+  },
+  {
+   "action": "pre_battle_action",
+   "params": {
+    "sub_action": "学习",
+    "sub": "daowen",
+    "name": "庇护"
+   },
+   "result": {
+    "success": true,
+    "action": "学习·道纹",
+    "result": {
+     "learned": "daowen",
+     "names": [
+      "庇护"
+     ],
+     "shard_cost": 0,
+     "player_daowen": [
+      "再生",
+      "杀伐",
+      "庇护"
+     ]
+    }
+   }
+  },
+  {
+   "action": "pre_battle_action",
+   "params": {
+    "sub_action": "领悟",
+    "resonance_type": "转换"
+   },
+   "result": {
+    "success": true,
+    "action": "领悟",
+    "result": {
+     "gained_resonance": "转换",
+     "total": 1
+    },
+    "energy_remaining": 0
+   }
+  },
+  {
+   "action": "battle_start",
+   "params": {
+    "relic_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "战始",
+    "battle_number": 1,
+    "region": "扭曲都市",
+    "draw_count": 1,
+    "enemies": [
+     "脑蜘蛛"
+    ],
+    "full_information": null,
+    "relic_logs": [],
+    "artifact_logs": [],
+    "instruction": "怪物已抽取完毕；请补充选择本场战斗背景(纯叙事，不影响数值)并结算其余[战始]效果"
+   }
+  },
+  {
+   "action": "round_start",
+   "params": {
+    "relic_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "回始",
+    "result": {
+     "round": 1,
+     "phase": "回始",
+     "effects": [
+      {
+       "type": "mana_refill",
+       "entity": "顾衡",
+       "from": 0,
+       "to": 20,
+       "gained": 20
+      },
+      {
+       "type": "relic",
+       "log": "守夜灯：+10法力"
+      }
+     ],
+     "state": {
+      "round": 1,
+      "player_side": [
+       {
+        "name": "顾衡",
+        "entity_type": "轮回者",
+        "runtime_id": "2cd951d5232943b88248b5f193cfaf71",
+        "blood_limit": 42,
+        "current_hp": 42,
+        "mana_limit": 20,
+        "current_mana": 30,
+        "speed_limit": 8,
+        "current_speed": 8,
+        "attack_count": 0,
+        "attack_power": 0,
+        "action_count": 3,
+        "shield": 0,
+        "is_flying": false,
+        "is_alive": true,
+        "removed_without_kill": false,
+        "is_deployed": true,
+        "has_retreated": false,
+        "battle_start_blood_limit": 42,
+        "deployed_at_round": 0,
+        "shards": 0,
+        "fake_shards": 0,
+        "total_healed": 0,
+        "hp_ratio": 1.0,
+        "dao_wen": {
+         "再生": "再生",
+         "杀伐": "杀伐",
+         "庇护": "庇护"
+        },
+        "spells": [],
+        "relics": [],
+        "status_effects": []
+       }
+      ],
+      "enemy_side": [
+       {
+        "name": "脑蜘蛛",
+        "entity_type": "怪物",
+        "runtime_id": "e4e5889c0e1143b5b38868e140048a81",
+        "blood_limit": 204,
+        "current_hp": 204,
+        "mana_limit": 0,
+        "current_mana": 0,
+        "speed_limit": 0,
+        "current_speed": 0,
+        "attack_count": 2,
+        "attack_power": 11,
+        "action_count": 0,
+        "shield": 0,
+        "is_flying": false,
+        "is_alive": true,
+        "removed_without_kill": false,
+        "is_deployed": true,
+        "has_retreated": false,
+        "battle_start_blood_limit": 204,
+        "deployed_at_round": 0,
+        "shards": 0,
+        "fake_shards": 0,
+        "total_healed": 0,
+        "hp_ratio": 1.0,
+        "dao_wen": {
+         "坏死": "坏死",
+         "强化": "强化",
+         "减速": "减速"
+        },
+        "spells": [],
+        "relics": [],
+        "status_effects": []
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "action": "use_resonance",
+   "params": {
+    "source_daowen": "强化",
+    "resonance_type": "转换",
+    "target_ref": "enemy:0"
+   },
+   "result": {
+    "success": true,
+    "action": "残韵【转换】强化 → 借力",
+    "result": {
+     "success": true,
+     "source": "强化",
+     "resonance_type": "转换",
+     "target": "借力",
+     "permanent_change": true,
+     "caster_gets_daowen": true,
+     "summary": "【转换】强化 → 借力"
+    },
+    "holder": "脑蜘蛛",
+    "holder_is_player": false,
+    "holder_changed": true,
+    "granted_daowen": "借力",
+    "second_target_log": null,
+    "resonance_remaining": {
+     "反转": 0,
+     "转换": 0
+    }
+   }
+  },
+  {
+   "action": "use_daowen",
+   "params": {
+    "daowen_name": "庇护",
+    "x": 11,
+    "target_ref": "player:0",
+    "dodge": false,
+    "blood_shadow": false,
+    "trigger_spell_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "发动道纹【庇护X=11】",
+    "calculation": {
+     "dao_wen": "庇护",
+     "x": 11,
+     "cost_type": "消耗",
+     "cost": 11,
+     "target_shield": 22,
+     "duration": 1,
+     "summary": "消耗11法力，使顾衡获得22点格挡（可抵消等量伤害），持续1回合"
+    },
+    "execution": {
+     "daowen": "庇护",
+     "effects": [
+      {
+       "type": "shield",
+       "target": "顾衡",
+       "amount": 22
+      },
+      {
+       "type": "status_added",
+       "target": "顾衡",
+       "status": "庇护",
+       "duration": 1,
+       "value": 11
+      }
+     ]
+    },
+    "dodge": {
+     "must_hit": false,
+     "dodged_names": [],
+     "fully_dodged": false
+    },
+    "trigger_spell_logs": [],
+    "state": {
+     "round": 1,
+     "player_side": [
+      {
+       "name": "顾衡",
+       "entity_type": "轮回者",
+       "runtime_id": "2cd951d5232943b88248b5f193cfaf71",
+       "blood_limit": 42,
+       "current_hp": 42,
+       "mana_limit": 20,
+       "current_mana": 19,
+       "speed_limit": 8,
+       "current_speed": 8,
+       "attack_count": 0,
+       "attack_power": 0,
+       "action_count": 3,
+       "shield": 22,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 42,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 1.0,
+       "dao_wen": {
+        "再生": "再生",
+        "杀伐": "杀伐",
+        "庇护": "庇护",
+        "借力": "借力"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": [
+        {
+         "name": "庇护",
+         "value": 11,
+         "rounds": 1,
+         "source": "顾衡",
+         "scope": "battle",
+         "polarity": "neutral"
+        }
+       ]
+      }
+     ],
+     "enemy_side": [
+      {
+       "name": "脑蜘蛛",
+       "entity_type": "怪物",
+       "runtime_id": "e4e5889c0e1143b5b38868e140048a81",
+       "blood_limit": 204,
+       "current_hp": 204,
+       "mana_limit": 0,
+       "current_mana": 0,
+       "speed_limit": 0,
+       "current_speed": 0,
+       "attack_count": 2,
+       "attack_power": 11,
+       "action_count": 0,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 204,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 1.0,
+       "dao_wen": {
+        "坏死": "坏死",
+        "减速": "减速",
+        "借力": "借力"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "use_daowen",
+   "params": {
+    "daowen_name": "杀伐",
+    "x": 9,
+    "target_ref": "enemy:0",
+    "dodge": false,
+    "blood_shadow": false,
+    "trigger_spell_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "发动道纹【杀伐X=9】",
+    "calculation": {
+     "dao_wen": "杀伐",
+     "x": 9,
+     "cost_type": "消耗",
+     "cost": 9,
+     "target_damage": 18,
+     "damage_type": "普通",
+     "summary": "消耗9法力，对脑蜘蛛造成18点伤害"
+    },
+    "execution": {
+     "daowen": "杀伐",
+     "effects": [
+      {
+       "type": "damage",
+       "target": "脑蜘蛛",
+       "raw_damage": 18,
+       "shield_absorbed": 0,
+       "actual_damage": 18,
+       "hp_before": 204,
+       "hp_after": 186,
+       "blood_limit_before": 204,
+       "died": false,
+       "damage_type": "普通"
+      }
+     ]
+    },
+    "dodge": {
+     "must_hit": false,
+     "dodged_names": [],
+     "fully_dodged": false
+    },
+    "trigger_spell_logs": [],
+    "state": {
+     "round": 1,
+     "player_side": [
+      {
+       "name": "顾衡",
+       "entity_type": "轮回者",
+       "runtime_id": "2cd951d5232943b88248b5f193cfaf71",
+       "blood_limit": 42,
+       "current_hp": 42,
+       "mana_limit": 20,
+       "current_mana": 10,
+       "speed_limit": 8,
+       "current_speed": 8,
+       "attack_count": 0,
+       "attack_power": 0,
+       "action_count": 3,
+       "shield": 22,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 42,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 1.0,
+       "dao_wen": {
+        "再生": "再生",
+        "杀伐": "杀伐",
+        "庇护": "庇护",
+        "借力": "借力"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": [
+        {
+         "name": "庇护",
+         "value": 11,
+         "rounds": 1,
+         "source": "顾衡",
+         "scope": "battle",
+         "polarity": "neutral"
+        }
+       ]
+      }
+     ],
+     "enemy_side": [
+      {
+       "name": "脑蜘蛛",
+       "entity_type": "怪物",
+       "runtime_id": "e4e5889c0e1143b5b38868e140048a81",
+       "blood_limit": 204,
+       "current_hp": 186,
+       "mana_limit": 0,
+       "current_mana": 0,
+       "speed_limit": 0,
+       "current_speed": 0,
+       "attack_count": 2,
+       "attack_power": 11,
+       "action_count": 0,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 204,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 0.91,
+       "dao_wen": {
+        "坏死": "坏死",
+        "减速": "减速",
+        "借力": "借力"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "use_daowen",
+   "params": {
+    "daowen_name": "杀伐",
+    "x": 10,
+    "target_ref": "enemy:0",
+    "dodge": false,
+    "blood_shadow": false,
+    "trigger_spell_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "发动道纹【杀伐X=10】",
+    "calculation": {
+     "dao_wen": "杀伐",
+     "x": 10,
+     "cost_type": "消耗",
+     "cost": 10,
+     "target_damage": 20,
+     "damage_type": "普通",
+     "summary": "消耗10法力，对脑蜘蛛造成20点伤害"
+    },
+    "execution": {
+     "daowen": "杀伐",
+     "effects": [
+      {
+       "type": "damage",
+       "target": "脑蜘蛛",
+       "raw_damage": 20,
+       "shield_absorbed": 0,
+       "actual_damage": 20,
+       "hp_before": 186,
+       "hp_after": 166,
+       "blood_limit_before": 204,
+       "died": false,
+       "damage_type": "普通"
+      }
+     ]
+    },
+    "dodge": {
+     "must_hit": false,
+     "dodged_names": [],
+     "fully_dodged": false
+    },
+    "trigger_spell_logs": [],
+    "state": {
+     "round": 1,
+     "player_side": [
+      {
+       "name": "顾衡",
+       "entity_type": "轮回者",
+       "runtime_id": "2cd951d5232943b88248b5f193cfaf71",
+       "blood_limit": 42,
+       "current_hp": 42,
+       "mana_limit": 20,
+       "current_mana": 0,
+       "speed_limit": 8,
+       "current_speed": 8,
+       "attack_count": 0,
+       "attack_power": 0,
+       "action_count": 3,
+       "shield": 22,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 42,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 1.0,
+       "dao_wen": {
+        "再生": "再生",
+        "杀伐": "杀伐",
+        "庇护": "庇护",
+        "借力": "借力"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": [
+        {
+         "name": "庇护",
+         "value": 11,
+         "rounds": 1,
+         "source": "顾衡",
+         "scope": "battle",
+         "polarity": "neutral"
+        }
+       ]
+      }
+     ],
+     "enemy_side": [
+      {
+       "name": "脑蜘蛛",
+       "entity_type": "怪物",
+       "runtime_id": "e4e5889c0e1143b5b38868e140048a81",
+       "blood_limit": 204,
+       "current_hp": 166,
+       "mana_limit": 0,
+       "current_mana": 0,
+       "speed_limit": 0,
+       "current_speed": 0,
+       "attack_count": 2,
+       "attack_power": 11,
+       "action_count": 0,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 204,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 0.81,
+       "dao_wen": {
+        "坏死": "坏死",
+        "减速": "减速",
+        "借力": "借力"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "resolve_ally_phases",
+   "params": {},
+   "result": {
+    "success": true,
+    "action": "朋友/员工自主行动",
+    "result": {
+     "acted_count": 0,
+     "allies": []
+    }
+   }
+  },
+  {
+   "action": "prepare_monster_phase",
+   "params": {},
+   "result": {
+    "success": true,
+    "action": "准备怪物阶段",
+    "result": {
+     "token": "9fa46f0344754fc8a3404eba7bea6e1f",
+     "round": 1,
+     "actors": [
+      {
+       "actor_ref": "enemy:0",
+       "monster": "脑蜘蛛",
+       "daowen_required": false,
+       "daowen_options": [],
+       "attack_target_options": [
+        {
+         "ref": "player:0",
+         "name": "顾衡",
+         "can_blood_shadow": false,
+         "blood_shadow_cost_share_target_options": [],
+         "spell_options": {
+          "before": [],
+          "after": []
+         },
+         "dodge_relic_target_options": []
+        }
+       ],
+       "base_attack_actions": 1,
+       "base_hits_per_attack": 2,
+       "dodge_must_be_explicit": true
+      }
+     ],
+     "skipped": []
+    },
+    "instruction": "请为每个actors条目提交完整选择后调用resolve_monster_phase"
+   }
+  },
+  {
+   "action": "resolve_monster_phase",
+   "params": {
+    "token": "9fa46f0344754fc8a3404eba7bea6e1f",
+    "choices": [
+     {
+      "actor_ref": "enemy:0",
+      "daowen": null,
+      "attack_actions": [
+       {
+        "hits": [
+         {
+          "target_ref": "player:0",
+          "dodge": true,
+          "blood_shadow": false,
+          "spell_choices": {
+           "before": {},
+           "after": {}
+          }
+         },
+         {
+          "target_ref": "player:0",
+          "dodge": true,
+          "blood_shadow": false,
+          "spell_choices": {
+           "before": {},
+           "after": {}
+          }
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "result": {
+    "success": true,
+    "action": "结算怪物阶段",
+    "result": {
+     "entries": 2,
+     "player_dead": false,
+     "player_hp": 42,
+     "details": [
+      {
+       "attacker": "脑蜘蛛",
+       "target": "顾衡",
+       "hit_index": 1,
+       "dodge_attempted": true,
+       "dodge_success": true,
+       "damage_dealt": 0,
+       "shield_absorbed": 0,
+       "hp_lost": 0,
+       "target_died": false,
+       "speed_after_dodge": 7,
+       "hit_total": 2,
+       "attack_action_index": 1,
+       "new_action": true
+      },
+      {
+       "attacker": "脑蜘蛛",
+       "target": "顾衡",
+       "hit_index": 2,
+       "dodge_attempted": true,
+       "dodge_success": true,
+       "damage_dealt": 0,
+       "shield_absorbed": 0,
+       "hp_lost": 0,
+       "target_died": false,
+       "speed_after_dodge": 6,
+       "hit_total": 2,
+       "attack_action_index": 1,
+       "new_action": false
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "round_end",
+   "params": {},
+   "result": {
+    "success": true,
+    "action": "回终",
+    "result": {
+     "round": 1,
+     "phase": "回终",
+     "effects": [
+      {
+       "type": "shield_clear",
+       "entity": "顾衡",
+       "cleared": 22
+      },
+      {
+       "type": "status_expired",
+       "entity": "顾衡",
+       "expired_effects": [
+        "庇护"
+       ],
+       "rolled_back_deltas": []
+      }
+     ],
+     "state": {
+      "round": 1,
+      "player_side": [
+       {
+        "name": "顾衡",
+        "entity_type": "轮回者",
+        "runtime_id": "2cd951d5232943b88248b5f193cfaf71",
+        "blood_limit": 42,
+        "current_hp": 42,
+        "mana_limit": 20,
+        "current_mana": 0,
+        "speed_limit": 8,
+        "current_speed": 6,
+        "attack_count": 0,
+        "attack_power": 0,
+        "action_count": 3,
+        "shield": 0,
+        "is_flying": false,
+        "is_alive": true,
+        "removed_without_kill": false,
+        "is_deployed": true,
+        "has_retreated": false,
+        "battle_start_blood_limit": 42,
+        "deployed_at_round": 0,
+        "shards": 0,
+        "fake_shards": 0,
+        "total_healed": 0,
+        "hp_ratio": 1.0,
+        "dao_wen": {
+         "再生": "再生",
+         "杀伐": "杀伐",
+         "庇护": "庇护",
+         "借力": "借力"
+        },
+        "spells": [],
+        "relics": [],
+        "status_effects": []
+       }
+      ],
+      "enemy_side": [
+       {
+        "name": "脑蜘蛛",
+        "entity_type": "怪物",
+        "runtime_id": "e4e5889c0e1143b5b38868e140048a81",
+        "blood_limit": 204,
+        "current_hp": 166,
+        "mana_limit": 0,
+        "current_mana": 0,
+        "speed_limit": 0,
+        "current_speed": 0,
+        "attack_count": 2,
+        "attack_power": 11,
+        "action_count": 0,
+        "shield": 0,
+        "is_flying": false,
+        "is_alive": true,
+        "removed_without_kill": false,
+        "is_deployed": true,
+        "has_retreated": false,
+        "battle_start_blood_limit": 204,
+        "deployed_at_round": 0,
+        "shards": 0,
+        "fake_shards": 0,
+        "total_healed": 0,
+        "hp_ratio": 0.81,
+        "dao_wen": {
+         "坏死": "坏死",
+         "减速": "减速",
+         "借力": "借力"
+        },
+        "spells": [],
+        "relics": [],
+        "status_effects": []
+       }
+      ]
+     }
+    },
+    "victory_paths": [],
+    "monster_difficulties": [],
+    "note": "多路径胜利（雕塑/癌变/还债）已结算；消耗品可在后续回合使用"
+   }
+  },
+  {
+   "action": "round_start",
+   "params": {
+    "relic_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "回始",
+    "result": {
+     "round": 2,
+     "phase": "回始",
+     "effects": [
+      {
+       "type": "mana_refill",
+       "entity": "顾衡",
+       "from": 0,
+       "to": 20,
+       "gained": 20
+      },
+      {
+       "type": "relic",
+       "log": "守夜灯：+10法力"
+      }
+     ],
+     "state": {
+      "round": 2,
+      "player_side": [
+       {
+        "name": "顾衡",
+        "entity_type": "轮回者",
+        "runtime_id": "2cd951d5232943b88248b5f193cfaf71",
+        "blood_limit": 42,
+        "current_hp": 42,
+        "mana_limit": 20,
+        "current_mana": 30,
+        "speed_limit": 8,
+        "current_speed": 6,
+        "attack_count": 0,
+        "attack_power": 0,
+        "action_count": 3,
+        "shield": 0,
+        "is_flying": false,
+        "is_alive": true,
+        "removed_without_kill": false,
+        "is_deployed": true,
+        "has_retreated": false,
+        "battle_start_blood_limit": 42,
+        "deployed_at_round": 0,
+        "shards": 0,
+        "fake_shards": 0,
+        "total_healed": 0,
+        "hp_ratio": 1.0,
+        "dao_wen": {
+         "再生": "再生",
+         "杀伐": "杀伐",
+         "庇护": "庇护",
+         "借力": "借力"
+        },
+        "spells": [],
+        "relics": [],
+        "status_effects": []
+       }
+      ],
+      "enemy_side": [
+       {
+        "name": "脑蜘蛛",
+        "entity_type": "怪物",
+        "runtime_id": "e4e5889c0e1143b5b38868e140048a81",
+        "blood_limit": 204,
+        "current_hp": 166,
+        "mana_limit": 0,
+        "current_mana": 0,
+        "speed_limit": 0,
+        "current_speed": 0,
+        "attack_count": 2,
+        "attack_power": 11,
+        "action_count": 0,
+        "shield": 0,
+        "is_flying": false,
+        "is_alive": true,
+        "removed_without_kill": false,
+        "is_deployed": true,
+        "has_retreated": false,
+        "battle_start_blood_limit": 204,
+        "deployed_at_round": 0,
+        "shards": 0,
+        "fake_shards": 0,
+        "total_healed": 0,
+        "hp_ratio": 0.81,
+        "dao_wen": {
+         "坏死": "坏死",
+         "减速": "减速",
+         "借力": "借力"
+        },
+        "spells": [],
+        "relics": [],
+        "status_effects": []
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "action": "use_resonance",
+   "params": {
+    "source_daowen": "减速",
+    "resonance_type": "反转",
+    "target_ref": "enemy:0"
+   },
+   "result": {
+    "success": true,
+    "action": "残韵【反转】减速 → 加速",
+    "result": {
+     "success": true,
+     "source": "减速",
+     "resonance_type": "反转",
+     "target": "加速",
+     "permanent_change": true,
+     "caster_gets_daowen": true,
+     "summary": "【反转】减速 → 加速"
+    },
+    "holder": "脑蜘蛛",
+    "holder_is_player": false,
+    "holder_changed": true,
+    "granted_daowen": "加速",
+    "second_target_log": null,
+    "resonance_remaining": {
+     "反转": 0,
+     "转换": 0
+    }
+   }
+  },
+  {
+   "action": "use_daowen",
+   "params": {
+    "daowen_name": "庇护",
+    "x": 11,
+    "target_ref": "player:0",
+    "dodge": false,
+    "blood_shadow": false,
+    "trigger_spell_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "发动道纹【庇护X=11】",
+    "calculation": {
+     "dao_wen": "庇护",
+     "x": 11,
+     "cost_type": "消耗",
+     "cost": 11,
+     "target_shield": 22,
+     "duration": 1,
+     "summary": "消耗11法力，使顾衡获得22点格挡（可抵消等量伤害），持续1回合"
+    },
+    "execution": {
+     "daowen": "庇护",
+     "effects": [
+      {
+       "type": "shield",
+       "target": "顾衡",
+       "amount": 22
+      },
+      {
+       "type": "status_added",
+       "target": "顾衡",
+       "status": "庇护",
+       "duration": 1,
+       "value": 11
+      }
+     ]
+    },
+    "dodge": {
+     "must_hit": false,
+     "dodged_names": [],
+     "fully_dodged": false
+    },
+    "trigger_spell_logs": [],
+    "state": {
+     "round": 2,
+     "player_side": [
+      {
+       "name": "顾衡",
+       "entity_type": "轮回者",
+       "runtime_id": "2cd951d5232943b88248b5f193cfaf71",
+       "blood_limit": 42,
+       "current_hp": 42,
+       "mana_limit": 20,
+       "current_mana": 19,
+       "speed_limit": 8,
+       "current_speed": 6,
+       "attack_count": 0,
+       "attack_power": 0,
+       "action_count": 3,
+       "shield": 22,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 42,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 1.0,
+       "dao_wen": {
+        "再生": "再生",
+        "杀伐": "杀伐",
+        "庇护": "庇护",
+        "借力": "借力",
+        "加速": "加速"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": [
+        {
+         "name": "庇护",
+         "value": 11,
+         "rounds": 1,
+         "source": "顾衡",
+         "scope": "battle",
+         "polarity": "neutral"
+        }
+       ]
+      }
+     ],
+     "enemy_side": [
+      {
+       "name": "脑蜘蛛",
+       "entity_type": "怪物",
+       "runtime_id": "e4e5889c0e1143b5b38868e140048a81",
+       "blood_limit": 204,
+       "current_hp": 166,
+       "mana_limit": 0,
+       "current_mana": 0,
+       "speed_limit": 0,
+       "current_speed": 0,
+       "attack_count": 2,
+       "attack_power": 11,
+       "action_count": 0,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 204,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 0.81,
+       "dao_wen": {
+        "坏死": "坏死",
+        "借力": "借力",
+        "加速": "加速"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "use_daowen",
+   "params": {
+    "daowen_name": "杀伐",
+    "x": 9,
+    "target_ref": "enemy:0",
+    "dodge": false,
+    "blood_shadow": false,
+    "trigger_spell_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "发动道纹【杀伐X=9】",
+    "calculation": {
+     "dao_wen": "杀伐",
+     "x": 9,
+     "cost_type": "消耗",
+     "cost": 9,
+     "target_damage": 18,
+     "damage_type": "普通",
+     "summary": "消耗9法力，对脑蜘蛛造成18点伤害"
+    },
+    "execution": {
+     "daowen": "杀伐",
+     "effects": [
+      {
+       "type": "damage",
+       "target": "脑蜘蛛",
+       "raw_damage": 18,
+       "shield_absorbed": 0,
+       "actual_damage": 18,
+       "hp_before": 166,
+       "hp_after": 148,
+       "blood_limit_before": 204,
+       "died": false,
+       "damage_type": "普通"
+      }
+     ]
+    },
+    "dodge": {
+     "must_hit": false,
+     "dodged_names": [],
+     "fully_dodged": false
+    },
+    "trigger_spell_logs": [],
+    "state": {
+     "round": 2,
+     "player_side": [
+      {
+       "name": "顾衡",
+       "entity_type": "轮回者",
+       "runtime_id": "2cd951d5232943b88248b5f193cfaf71",
+       "blood_limit": 42,
+       "current_hp": 42,
+       "mana_limit": 20,
+       "current_mana": 10,
+       "speed_limit": 8,
+       "current_speed": 6,
+       "attack_count": 0,
+       "attack_power": 0,
+       "action_count": 3,
+       "shield": 22,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 42,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 1.0,
+       "dao_wen": {
+        "再生": "再生",
+        "杀伐": "杀伐",
+        "庇护": "庇护",
+        "借力": "借力",
+        "加速": "加速"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": [
+        {
+         "name": "庇护",
+         "value": 11,
+         "rounds": 1,
+         "source": "顾衡",
+         "scope": "battle",
+         "polarity": "neutral"
+        }
+       ]
+      }
+     ],
+     "enemy_side": [
+      {
+       "name": "脑蜘蛛",
+       "entity_type": "怪物",
+       "runtime_id": "e4e5889c0e1143b5b38868e140048a81",
+       "blood_limit": 204,
+       "current_hp": 148,
+       "mana_limit": 0,
+       "current_mana": 0,
+       "speed_limit": 0,
+       "current_speed": 0,
+       "attack_count": 2,
+       "attack_power": 11,
+       "action_count": 0,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 204,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 0.73,
+       "dao_wen": {
+        "坏死": "坏死",
+        "借力": "借力",
+        "加速": "加速"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "use_daowen",
+   "params": {
+    "daowen_name": "杀伐",
+    "x": 10,
+    "target_ref": "enemy:0",
+    "dodge": false,
+    "blood_shadow": false,
+    "trigger_spell_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "发动道纹【杀伐X=10】",
+    "calculation": {
+     "dao_wen": "杀伐",
+     "x": 10,
+     "cost_type": "消耗",
+     "cost": 10,
+     "target_damage": 20,
+     "damage_type": "普通",
+     "summary": "消耗10法力，对脑蜘蛛造成20点伤害"
+    },
+    "execution": {
+     "daowen": "杀伐",
+     "effects": [
+      {
+       "type": "damage",
+       "target": "脑蜘蛛",
+       "raw_damage": 20,
+       "shield_absorbed": 0,
+       "actual_damage": 20,
+       "hp_before": 148,
+       "hp_after": 128,
+       "blood_limit_before": 204,
+       "died": false,
+       "damage_type": "普通"
+      }
+     ]
+    },
+    "dodge": {
+     "must_hit": false,
+     "dodged_names": [],
+     "fully_dodged": false
+    },
+    "trigger_spell_logs": [],
+    "state": {
+     "round": 2,
+     "player_side": [
+      {
+       "name": "顾衡",
+       "entity_type": "轮回者",
+       "runtime_id": "2cd951d5232943b88248b5f193cfaf71",
+       "blood_limit": 42,
+       "current_hp": 42,
+       "mana_limit": 20,
+       "current_mana": 0,
+       "speed_limit": 8,
+       "current_speed": 6,
+       "attack_count": 0,
+       "attack_power": 0,
+       "action_count": 3,
+       "shield": 22,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 42,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 1.0,
+       "dao_wen": {
+        "再生": "再生",
+        "杀伐": "杀伐",
+        "庇护": "庇护",
+        "借力": "借力",
+        "加速": "加速"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": [
+        {
+         "name": "庇护",
+         "value": 11,
+         "rounds": 1,
+         "source": "顾衡",
+         "scope": "battle",
+         "polarity": "neutral"
+        }
+       ]
+      }
+     ],
+     "enemy_side": [
+      {
+       "name": "脑蜘蛛",
+       "entity_type": "怪物",
+       "runtime_id": "e4e5889c0e1143b5b38868e140048a81",
+       "blood_limit": 204,
+       "current_hp": 128,
+       "mana_limit": 0,
+       "current_mana": 0,
+       "speed_limit": 0,
+       "current_speed": 0,
+       "attack_count": 2,
+       "attack_power": 11,
+       "action_count": 0,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 204,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 0.63,
+       "dao_wen": {
+        "坏死": "坏死",
+        "借力": "借力",
+        "加速": "加速"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "resolve_ally_phases",
+   "params": {},
+   "result": {
+    "success": true,
+    "action": "朋友/员工自主行动",
+    "result": {
+     "acted_count": 0,
+     "allies": []
+    }
+   }
+  },
+  {
+   "action": "prepare_monster_phase",
+   "params": {},
+   "result": {
+    "success": true,
+    "action": "准备怪物阶段",
+    "result": {
+     "token": "9b14c011ddb84d8e8193bb793e65006d",
+     "round": 2,
+     "actors": [
+      {
+       "actor_ref": "enemy:0",
+       "monster": "脑蜘蛛",
+       "daowen_required": true,
+       "daowen_options": [
+        {
+         "name": "坏死",
+         "resolves_as": "坏死",
+         "x": 1,
+         "requires_target": true,
+         "target_options": [
+          {
+           "ref": "player:0",
+           "name": "顾衡"
+          },
+          {
+           "ref": "enemy:0",
+           "name": "脑蜘蛛"
+          }
+         ],
+         "dodge_submission": "single_if_hostile",
+         "dodge_target_options": [],
+         "trigger_spell_options": {}
+        },
+        {
+         "name": "借力",
+         "resolves_as": "借力",
+         "x": 2,
+         "requires_target": true,
+         "target_options": [
+          {
+           "ref": "player:0",
+           "name": "顾衡"
+          },
+          {
+           "ref": "enemy:0",
+           "name": "脑蜘蛛"
+          }
+         ],
+         "dodge_submission": "single_if_hostile",
+         "dodge_target_options": [],
+         "trigger_spell_options": {}
+        },
+        {
+         "name": "加速",
+         "resolves_as": "加速",
+         "x": 5,
+         "requires_target": true,
+         "target_options": [
+          {
+           "ref": "player:0",
+           "name": "顾衡"
+          },
+          {
+           "ref": "enemy:0",
+           "name": "脑蜘蛛"
+          }
+         ],
+         "dodge_submission": "single_if_hostile",
+         "dodge_target_options": [],
+         "trigger_spell_options": {}
+        }
+       ],
+       "attack_target_options": [
+        {
+         "ref": "player:0",
+         "name": "顾衡",
+         "can_blood_shadow": false,
+         "blood_shadow_cost_share_target_options": [],
+         "spell_options": {
+          "before": [],
+          "after": []
+         },
+         "dodge_relic_target_options": []
+        }
+       ],
+       "base_attack_actions": 1,
+       "base_hits_per_attack": 2,
+       "dodge_must_be_explicit": true
+      }
+     ],
+     "skipped": []
+    },
+    "instruction": "请为每个actors条目提交完整选择后调用resolve_monster_phase"
+   }
+  },
+  {
+   "action": "resolve_monster_phase",
+   "params": {
+    "token": "9b14c011ddb84d8e8193bb793e65006d",
+    "choices": [
+     {
+      "actor_ref": "enemy:0",
+      "daowen": {
+       "name": "坏死",
+       "dodge": false,
+       "blood_shadow": false,
+       "trigger_spell_choices": {},
+       "target_ref": "player:0"
+      },
+      "attack_actions": [
+       {
+        "hits": [
+         {
+          "target_ref": "player:0",
+          "dodge": true,
+          "blood_shadow": false,
+          "spell_choices": {
+           "before": {},
+           "after": {}
+          }
+         },
+         {
+          "target_ref": "player:0",
+          "dodge": true,
+          "blood_shadow": false,
+          "spell_choices": {
+           "before": {},
+           "after": {}
+          }
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "result": {
+    "success": true,
+    "action": "结算怪物阶段",
+    "result": {
+     "entries": 3,
+     "player_dead": false,
+     "player_hp": 42,
+     "details": [
+      {
+       "monster": "脑蜘蛛",
+       "daowen_activated": "坏死",
+       "x": 1,
+       "resolves_as": "坏死",
+       "resonance_rewrite": false,
+       "target": "顾衡",
+       "execution": {
+        "daowen": "坏死",
+        "effects": [
+         {
+          "type": "status_added",
+          "target": "顾衡",
+          "status": "坏死",
+          "duration": 1,
+          "value": 1
+         }
+        ]
+       },
+       "trigger_spell_logs": []
+      },
+      {
+       "attacker": "脑蜘蛛",
+       "target": "顾衡",
+       "hit_index": 1,
+       "dodge_attempted": true,
+       "dodge_success": true,
+       "damage_dealt": 0,
+       "shield_absorbed": 0,
+       "hp_lost": 0,
+       "target_died": false,
+       "speed_after_dodge": 5,
+       "hit_total": 2,
+       "attack_action_index": 1,
+       "new_action": true
+      },
+      {
+       "attacker": "脑蜘蛛",
+       "target": "顾衡",
+       "hit_index": 2,
+       "dodge_attempted": true,
+       "dodge_success": true,
+       "damage_dealt": 0,
+       "shield_absorbed": 0,
+       "hp_lost": 0,
+       "target_died": false,
+       "speed_after_dodge": 4,
+       "hit_total": 2,
+       "attack_action_index": 1,
+       "new_action": false
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "round_end",
+   "params": {},
+   "result": {
+    "success": true,
+    "action": "回终",
+    "result": {
+     "round": 2,
+     "phase": "回终",
+     "effects": [
+      {
+       "type": "shield_clear",
+       "entity": "顾衡",
+       "cleared": 22
+      },
+      {
+       "type": "status_expired",
+       "entity": "顾衡",
+       "expired_effects": [
+        "庇护",
+        "坏死"
+       ],
+       "rolled_back_deltas": []
+      }
+     ],
+     "state": {
+      "round": 2,
+      "player_side": [
+       {
+        "name": "顾衡",
+        "entity_type": "轮回者",
+        "runtime_id": "2cd951d5232943b88248b5f193cfaf71",
+        "blood_limit": 42,
+        "current_hp": 42,
+        "mana_limit": 20,
+        "current_mana": 0,
+        "speed_limit": 8,
+        "current_speed": 4,
+        "attack_count": 0,
+        "attack_power": 0,
+        "action_count": 3,
+        "shield": 0,
+        "is_flying": false,
+        "is_alive": true,
+        "removed_without_kill": false,
+        "is_deployed": true,
+        "has_retreated": false,
+        "battle_start_blood_limit": 42,
+        "deployed_at_round": 0,
+        "shards": 0,
+        "fake_shards": 0,
+        "total_healed": 0,
+        "hp_ratio": 1.0,
+        "dao_wen": {
+         "再生": "再生",
+         "杀伐": "杀伐",
+         "庇护": "庇护",
+         "借力": "借力",
+         "加速": "加速"
+        },
+        "spells": [],
+        "relics": [],
+        "status_effects": []
+       }
+      ],
+      "enemy_side": [
+       {
+        "name": "脑蜘蛛",
+        "entity_type": "怪物",
+        "runtime_id": "e4e5889c0e1143b5b38868e140048a81",
+        "blood_limit": 204,
+        "current_hp": 128,
+        "mana_limit": 0,
+        "current_mana": 0,
+        "speed_limit": 0,
+        "current_speed": 0,
+        "attack_count": 2,
+        "attack_power": 11,
+        "action_count": 0,
+        "shield": 0,
+        "is_flying": false,
+        "is_alive": true,
+        "removed_without_kill": false,
+        "is_deployed": true,
+        "has_retreated": false,
+        "battle_start_blood_limit": 204,
+        "deployed_at_round": 0,
+        "shards": 0,
+        "fake_shards": 0,
+        "total_healed": 0,
+        "hp_ratio": 0.63,
+        "dao_wen": {
+         "坏死": "坏死",
+         "借力": "借力",
+         "加速": "加速"
+        },
+        "spells": [],
+        "relics": [],
+        "status_effects": []
+       }
+      ]
+     }
+    },
+    "victory_paths": [],
+    "monster_difficulties": [],
+    "note": "多路径胜利（雕塑/癌变/还债）已结算；消耗品可在后续回合使用"
+   }
+  },
+  {
+   "action": "round_start",
+   "params": {
+    "relic_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "回始",
+    "result": {
+     "round": 3,
+     "phase": "回始",
+     "effects": [
+      {
+       "type": "mana_refill",
+       "entity": "顾衡",
+       "from": 0,
+       "to": 20,
+       "gained": 20
+      },
+      {
+       "type": "relic",
+       "log": "守夜灯：+10法力"
+      }
+     ],
+     "state": {
+      "round": 3,
+      "player_side": [
+       {
+        "name": "顾衡",
+        "entity_type": "轮回者",
+        "runtime_id": "2cd951d5232943b88248b5f193cfaf71",
+        "blood_limit": 42,
+        "current_hp": 42,
+        "mana_limit": 20,
+        "current_mana": 30,
+        "speed_limit": 8,
+        "current_speed": 4,
+        "attack_count": 0,
+        "attack_power": 0,
+        "action_count": 3,
+        "shield": 0,
+        "is_flying": false,
+        "is_alive": true,
+        "removed_without_kill": false,
+        "is_deployed": true,
+        "has_retreated": false,
+        "battle_start_blood_limit": 42,
+        "deployed_at_round": 0,
+        "shards": 0,
+        "fake_shards": 0,
+        "total_healed": 0,
+        "hp_ratio": 1.0,
+        "dao_wen": {
+         "再生": "再生",
+         "杀伐": "杀伐",
+         "庇护": "庇护",
+         "借力": "借力",
+         "加速": "加速"
+        },
+        "spells": [],
+        "relics": [],
+        "status_effects": []
+       }
+      ],
+      "enemy_side": [
+       {
+        "name": "脑蜘蛛",
+        "entity_type": "怪物",
+        "runtime_id": "e4e5889c0e1143b5b38868e140048a81",
+        "blood_limit": 204,
+        "current_hp": 128,
+        "mana_limit": 0,
+        "current_mana": 0,
+        "speed_limit": 0,
+        "current_speed": 0,
+        "attack_count": 2,
+        "attack_power": 11,
+        "action_count": 0,
+        "shield": 0,
+        "is_flying": false,
+        "is_alive": true,
+        "removed_without_kill": false,
+        "is_deployed": true,
+        "has_retreated": false,
+        "battle_start_blood_limit": 204,
+        "deployed_at_round": 0,
+        "shards": 0,
+        "fake_shards": 0,
+        "total_healed": 0,
+        "hp_ratio": 0.63,
+        "dao_wen": {
+         "坏死": "坏死",
+         "借力": "借力",
+         "加速": "加速"
+        },
+        "spells": [],
+        "relics": [],
+        "status_effects": []
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "action": "use_daowen",
+   "params": {
+    "daowen_name": "庇护",
+    "x": 11,
+    "target_ref": "player:0",
+    "dodge": false,
+    "blood_shadow": false,
+    "trigger_spell_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "发动道纹【庇护X=11】",
+    "calculation": {
+     "dao_wen": "庇护",
+     "x": 11,
+     "cost_type": "消耗",
+     "cost": 11,
+     "target_shield": 22,
+     "duration": 1,
+     "summary": "消耗11法力，使顾衡获得22点格挡（可抵消等量伤害），持续1回合"
+    },
+    "execution": {
+     "daowen": "庇护",
+     "effects": [
+      {
+       "type": "shield",
+       "target": "顾衡",
+       "amount": 22
+      },
+      {
+       "type": "status_added",
+       "target": "顾衡",
+       "status": "庇护",
+       "duration": 1,
+       "value": 11
+      }
+     ]
+    },
+    "dodge": {
+     "must_hit": false,
+     "dodged_names": [],
+     "fully_dodged": false
+    },
+    "trigger_spell_logs": [],
+    "state": {
+     "round": 3,
+     "player_side": [
+      {
+       "name": "顾衡",
+       "entity_type": "轮回者",
+       "runtime_id": "2cd951d5232943b88248b5f193cfaf71",
+       "blood_limit": 42,
+       "current_hp": 42,
+       "mana_limit": 20,
+       "current_mana": 19,
+       "speed_limit": 8,
+       "current_speed": 4,
+       "attack_count": 0,
+       "attack_power": 0,
+       "action_count": 3,
+       "shield": 22,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 42,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 1.0,
+       "dao_wen": {
+        "再生": "再生",
+        "杀伐": "杀伐",
+        "庇护": "庇护",
+        "借力": "借力",
+        "加速": "加速"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": [
+        {
+         "name": "庇护",
+         "value": 11,
+         "rounds": 1,
+         "source": "顾衡",
+         "scope": "battle",
+         "polarity": "neutral"
+        }
+       ]
+      }
+     ],
+     "enemy_side": [
+      {
+       "name": "脑蜘蛛",
+       "entity_type": "怪物",
+       "runtime_id": "e4e5889c0e1143b5b38868e140048a81",
+       "blood_limit": 204,
+       "current_hp": 128,
+       "mana_limit": 0,
+       "current_mana": 0,
+       "speed_limit": 0,
+       "current_speed": 0,
+       "attack_count": 2,
+       "attack_power": 11,
+       "action_count": 0,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 204,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 0.63,
+       "dao_wen": {
+        "坏死": "坏死",
+        "借力": "借力",
+        "加速": "加速"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "use_daowen",
+   "params": {
+    "daowen_name": "杀伐",
+    "x": 9,
+    "target_ref": "enemy:0",
+    "dodge": false,
+    "blood_shadow": false,
+    "trigger_spell_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "发动道纹【杀伐X=9】",
+    "calculation": {
+     "dao_wen": "杀伐",
+     "x": 9,
+     "cost_type": "消耗",
+     "cost": 9,
+     "target_damage": 18,
+     "damage_type": "普通",
+     "summary": "消耗9法力，对脑蜘蛛造成18点伤害"
+    },
+    "execution": {
+     "daowen": "杀伐",
+     "effects": [
+      {
+       "type": "damage",
+       "target": "脑蜘蛛",
+       "raw_damage": 18,
+       "shield_absorbed": 0,
+       "actual_damage": 18,
+       "hp_before": 128,
+       "hp_after": 110,
+       "blood_limit_before": 204,
+       "died": false,
+       "damage_type": "普通"
+      }
+     ]
+    },
+    "dodge": {
+     "must_hit": false,
+     "dodged_names": [],
+     "fully_dodged": false
+    },
+    "trigger_spell_logs": [],
+    "state": {
+     "round": 3,
+     "player_side": [
+      {
+       "name": "顾衡",
+       "entity_type": "轮回者",
+       "runtime_id": "2cd951d5232943b88248b5f193cfaf71",
+       "blood_limit": 42,
+       "current_hp": 42,
+       "mana_limit": 20,
+       "current_mana": 10,
+       "speed_limit": 8,
+       "current_speed": 4,
+       "attack_count": 0,
+       "attack_power": 0,
+       "action_count": 3,
+       "shield": 22,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 42,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 1.0,
+       "dao_wen": {
+        "再生": "再生",
+        "杀伐": "杀伐",
+        "庇护": "庇护",
+        "借力": "借力",
+        "加速": "加速"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": [
+        {
+         "name": "庇护",
+         "value": 11,
+         "rounds": 1,
+         "source": "顾衡",
+         "scope": "battle",
+         "polarity": "neutral"
+        }
+       ]
+      }
+     ],
+     "enemy_side": [
+      {
+       "name": "脑蜘蛛",
+       "entity_type": "怪物",
+       "runtime_id": "e4e5889c0e1143b5b38868e140048a81",
+       "blood_limit": 204,
+       "current_hp": 110,
+       "mana_limit": 0,
+       "current_mana": 0,
+       "speed_limit": 0,
+       "current_speed": 0,
+       "attack_count": 2,
+       "attack_power": 11,
+       "action_count": 0,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 204,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 0.54,
+       "dao_wen": {
+        "坏死": "坏死",
+        "借力": "借力",
+        "加速": "加速"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "use_daowen",
+   "params": {
+    "daowen_name": "杀伐",
+    "x": 10,
+    "target_ref": "enemy:0",
+    "dodge": false,
+    "blood_shadow": false,
+    "trigger_spell_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "发动道纹【杀伐X=10】",
+    "calculation": {
+     "dao_wen": "杀伐",
+     "x": 10,
+     "cost_type": "消耗",
+     "cost": 10,
+     "target_damage": 20,
+     "damage_type": "普通",
+     "summary": "消耗10法力，对脑蜘蛛造成20点伤害"
+    },
+    "execution": {
+     "daowen": "杀伐",
+     "effects": [
+      {
+       "type": "damage",
+       "target": "脑蜘蛛",
+       "raw_damage": 20,
+       "shield_absorbed": 0,
+       "actual_damage": 20,
+       "hp_before": 110,
+       "hp_after": 90,
+       "blood_limit_before": 204,
+       "died": false,
+       "damage_type": "普通"
+      }
+     ]
+    },
+    "dodge": {
+     "must_hit": false,
+     "dodged_names": [],
+     "fully_dodged": false
+    },
+    "trigger_spell_logs": [],
+    "state": {
+     "round": 3,
+     "player_side": [
+      {
+       "name": "顾衡",
+       "entity_type": "轮回者",
+       "runtime_id": "2cd951d5232943b88248b5f193cfaf71",
+       "blood_limit": 42,
+       "current_hp": 42,
+       "mana_limit": 20,
+       "current_mana": 0,
+       "speed_limit": 8,
+       "current_speed": 4,
+       "attack_count": 0,
+       "attack_power": 0,
+       "action_count": 3,
+       "shield": 22,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 42,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 1.0,
+       "dao_wen": {
+        "再生": "再生",
+        "杀伐": "杀伐",
+        "庇护": "庇护",
+        "借力": "借力",
+        "加速": "加速"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": [
+        {
+         "name": "庇护",
+         "value": 11,
+         "rounds": 1,
+         "source": "顾衡",
+         "scope": "battle",
+         "polarity": "neutral"
+        }
+       ]
+      }
+     ],
+     "enemy_side": [
+      {
+       "name": "脑蜘蛛",
+       "entity_type": "怪物",
+       "runtime_id": "e4e5889c0e1143b5b38868e140048a81",
+       "blood_limit": 204,
+       "current_hp": 90,
+       "mana_limit": 0,
+       "current_mana": 0,
+       "speed_limit": 0,
+       "current_speed": 0,
+       "attack_count": 2,
+       "attack_power": 11,
+       "action_count": 0,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 204,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 0.44,
+       "dao_wen": {
+        "坏死": "坏死",
+        "借力": "借力",
+        "加速": "加速"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "resolve_ally_phases",
+   "params": {},
+   "result": {
+    "success": true,
+    "action": "朋友/员工自主行动",
+    "result": {
+     "acted_count": 0,
+     "allies": []
+    }
+   }
+  },
+  {
+   "action": "prepare_monster_phase",
+   "params": {},
+   "result": {
+    "success": true,
+    "action": "准备怪物阶段",
+    "result": {
+     "token": "d5889f3ea9d040bd8bd894d9c3acae63",
+     "round": 3,
+     "actors": [
+      {
+       "actor_ref": "enemy:0",
+       "monster": "脑蜘蛛",
+       "daowen_required": true,
+       "daowen_options": [
+        {
+         "name": "借力",
+         "resolves_as": "借力",
+         "x": 2,
+         "requires_target": true,
+         "target_options": [
+          {
+           "ref": "player:0",
+           "name": "顾衡"
+          },
+          {
+           "ref": "enemy:0",
+           "name": "脑蜘蛛"
+          }
+         ],
+         "dodge_submission": "single_if_hostile",
+         "dodge_target_options": [],
+         "trigger_spell_options": {}
+        },
+        {
+         "name": "加速",
+         "resolves_as": "加速",
+         "x": 5,
+         "requires_target": true,
+         "target_options": [
+          {
+           "ref": "player:0",
+           "name": "顾衡"
+          },
+          {
+           "ref": "enemy:0",
+           "name": "脑蜘蛛"
+          }
+         ],
+         "dodge_submission": "single_if_hostile",
+         "dodge_target_options": [],
+         "trigger_spell_options": {}
+        }
+       ],
+       "attack_target_options": [
+        {
+         "ref": "player:0",
+         "name": "顾衡",
+         "can_blood_shadow": false,
+         "blood_shadow_cost_share_target_options": [],
+         "spell_options": {
+          "before": [],
+          "after": []
+         },
+         "dodge_relic_target_options": []
+        }
+       ],
+       "base_attack_actions": 1,
+       "base_hits_per_attack": 2,
+       "dodge_must_be_explicit": true
+      }
+     ],
+     "skipped": []
+    },
+    "instruction": "请为每个actors条目提交完整选择后调用resolve_monster_phase"
+   }
+  },
+  {
+   "action": "resolve_monster_phase",
+   "params": {
+    "token": "d5889f3ea9d040bd8bd894d9c3acae63",
+    "choices": [
+     {
+      "actor_ref": "enemy:0",
+      "daowen": {
+       "name": "借力",
+       "dodge": false,
+       "blood_shadow": false,
+       "trigger_spell_choices": {},
+       "target_ref": "player:0"
+      },
+      "attack_actions": [
+       {
+        "hits": [
+         {
+          "target_ref": "player:0",
+          "dodge": true,
+          "blood_shadow": false,
+          "spell_choices": {
+           "before": {},
+           "after": {}
+          }
+         },
+         {
+          "target_ref": "player:0",
+          "dodge": true,
+          "blood_shadow": false,
+          "spell_choices": {
+           "before": {},
+           "after": {}
+          }
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "result": {
+    "success": true,
+    "action": "结算怪物阶段",
+    "result": {
+     "entries": 3,
+     "player_dead": false,
+     "player_hp": 42,
+     "details": [
+      {
+       "monster": "脑蜘蛛",
+       "daowen_activated": "借力",
+       "x": 2,
+       "resolves_as": "借力",
+       "resonance_rewrite": false,
+       "target": "顾衡",
+       "execution": {
+        "daowen": "借力",
+        "effects": [
+         {
+          "type": "status_added",
+          "target": "顾衡",
+          "status": "借力",
+          "duration": -1,
+          "value": 2
+         }
+        ]
+       },
+       "trigger_spell_logs": []
+      },
+      {
+       "attacker": "脑蜘蛛",
+       "target": "顾衡",
+       "hit_index": 1,
+       "dodge_attempted": true,
+       "dodge_success": true,
+       "damage_dealt": 0,
+       "shield_absorbed": 0,
+       "hp_lost": 0,
+       "target_died": false,
+       "speed_after_dodge": 3,
+       "hit_total": 2,
+       "attack_action_index": 1,
+       "new_action": true
+      },
+      {
+       "attacker": "脑蜘蛛",
+       "target": "顾衡",
+       "hit_index": 2,
+       "dodge_attempted": true,
+       "dodge_success": true,
+       "damage_dealt": 0,
+       "shield_absorbed": 0,
+       "hp_lost": 0,
+       "target_died": false,
+       "speed_after_dodge": 2,
+       "hit_total": 2,
+       "attack_action_index": 1,
+       "new_action": false
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "round_end",
+   "params": {},
+   "result": {
+    "success": true,
+    "action": "回终",
+    "result": {
+     "round": 3,
+     "phase": "回终",
+     "effects": [
+      {
+       "type": "shield_clear",
+       "entity": "顾衡",
+       "cleared": 22
+      },
+      {
+       "type": "status_expired",
+       "entity": "顾衡",
+       "expired_effects": [
+        "庇护"
+       ],
+       "rolled_back_deltas": []
+      }
+     ],
+     "state": {
+      "round": 3,
+      "player_side": [
+       {
+        "name": "顾衡",
+        "entity_type": "轮回者",
+        "runtime_id": "2cd951d5232943b88248b5f193cfaf71",
+        "blood_limit": 42,
+        "current_hp": 42,
+        "mana_limit": 20,
+        "current_mana": 0,
+        "speed_limit": 8,
+        "current_speed": 2,
+        "attack_count": 0,
+        "attack_power": 0,
+        "action_count": 3,
+        "shield": 0,
+        "is_flying": false,
+        "is_alive": true,
+        "removed_without_kill": false,
+        "is_deployed": true,
+        "has_retreated": false,
+        "battle_start_blood_limit": 42,
+        "deployed_at_round": 0,
+        "shards": 0,
+        "fake_shards": 0,
+        "total_healed": 0,
+        "hp_ratio": 1.0,
+        "dao_wen": {
+         "再生": "再生",
+         "杀伐": "杀伐",
+         "庇护": "庇护",
+         "借力": "借力",
+         "加速": "加速"
+        },
+        "spells": [],
+        "relics": [],
+        "status_effects": [
+         {
+          "name": "借力",
+          "value": 2,
+          "rounds": -1,
+          "source": "脑蜘蛛",
+          "scope": "battle",
+          "polarity": "neutral"
+         }
+        ]
+       }
+      ],
+      "enemy_side": [
+       {
+        "name": "脑蜘蛛",
+        "entity_type": "怪物",
+        "runtime_id": "e4e5889c0e1143b5b38868e140048a81",
+        "blood_limit": 204,
+        "current_hp": 90,
+        "mana_limit": 0,
+        "current_mana": 0,
+        "speed_limit": 0,
+        "current_speed": 0,
+        "attack_count": 2,
+        "attack_power": 11,
+        "action_count": 0,
+        "shield": 0,
+        "is_flying": false,
+        "is_alive": true,
+        "removed_without_kill": false,
+        "is_deployed": true,
+        "has_retreated": false,
+        "battle_start_blood_limit": 204,
+        "deployed_at_round": 0,
+        "shards": 0,
+        "fake_shards": 0,
+        "total_healed": 0,
+        "hp_ratio": 0.44,
+        "dao_wen": {
+         "坏死": "坏死",
+         "借力": "借力",
+         "加速": "加速"
+        },
+        "spells": [],
+        "relics": [],
+        "status_effects": []
+       }
+      ]
+     }
+    },
+    "victory_paths": [],
+    "monster_difficulties": [],
+    "note": "多路径胜利（雕塑/癌变/还债）已结算；消耗品可在后续回合使用"
+   }
+  },
+  {
+   "action": "round_start",
+   "params": {
+    "relic_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "回始",
+    "result": {
+     "round": 4,
+     "phase": "回始",
+     "effects": [
+      {
+       "type": "mana_refill",
+       "entity": "顾衡",
+       "from": 0,
+       "to": 20,
+       "gained": 20
+      },
+      {
+       "type": "relic",
+       "log": "守夜灯：+10法力"
+      }
+     ],
+     "state": {
+      "round": 4,
+      "player_side": [
+       {
+        "name": "顾衡",
+        "entity_type": "轮回者",
+        "runtime_id": "2cd951d5232943b88248b5f193cfaf71",
+        "blood_limit": 42,
+        "current_hp": 42,
+        "mana_limit": 20,
+        "current_mana": 30,
+        "speed_limit": 8,
+        "current_speed": 2,
+        "attack_count": 0,
+        "attack_power": 0,
+        "action_count": 3,
+        "shield": 0,
+        "is_flying": false,
+        "is_alive": true,
+        "removed_without_kill": false,
+        "is_deployed": true,
+        "has_retreated": false,
+        "battle_start_blood_limit": 42,
+        "deployed_at_round": 0,
+        "shards": 0,
+        "fake_shards": 0,
+        "total_healed": 0,
+        "hp_ratio": 1.0,
+        "dao_wen": {
+         "再生": "再生",
+         "杀伐": "杀伐",
+         "庇护": "庇护",
+         "借力": "借力",
+         "加速": "加速"
+        },
+        "spells": [],
+        "relics": [],
+        "status_effects": [
+         {
+          "name": "借力",
+          "value": 2,
+          "rounds": -1,
+          "source": "脑蜘蛛",
+          "scope": "battle",
+          "polarity": "neutral"
+         }
+        ]
+       }
+      ],
+      "enemy_side": [
+       {
+        "name": "脑蜘蛛",
+        "entity_type": "怪物",
+        "runtime_id": "e4e5889c0e1143b5b38868e140048a81",
+        "blood_limit": 204,
+        "current_hp": 90,
+        "mana_limit": 0,
+        "current_mana": 0,
+        "speed_limit": 0,
+        "current_speed": 0,
+        "attack_count": 2,
+        "attack_power": 11,
+        "action_count": 0,
+        "shield": 0,
+        "is_flying": false,
+        "is_alive": true,
+        "removed_without_kill": false,
+        "is_deployed": true,
+        "has_retreated": false,
+        "battle_start_blood_limit": 204,
+        "deployed_at_round": 0,
+        "shards": 0,
+        "fake_shards": 0,
+        "total_healed": 0,
+        "hp_ratio": 0.44,
+        "dao_wen": {
+         "坏死": "坏死",
+         "借力": "借力",
+         "加速": "加速"
+        },
+        "spells": [],
+        "relics": [],
+        "status_effects": []
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "action": "use_daowen",
+   "params": {
+    "daowen_name": "庇护",
+    "x": 11,
+    "target_ref": "player:0",
+    "dodge": false,
+    "blood_shadow": false,
+    "trigger_spell_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "发动道纹【庇护X=11】",
+    "calculation": {
+     "dao_wen": "庇护",
+     "x": 11,
+     "cost_type": "消耗",
+     "cost": 11,
+     "target_shield": 22,
+     "duration": 1,
+     "summary": "消耗11法力，使顾衡获得22点格挡（可抵消等量伤害），持续1回合"
+    },
+    "execution": {
+     "daowen": "庇护",
+     "effects": [
+      {
+       "type": "shield",
+       "target": "顾衡",
+       "amount": 22
+      },
+      {
+       "type": "status_added",
+       "target": "顾衡",
+       "status": "庇护",
+       "duration": 1,
+       "value": 11
+      }
+     ]
+    },
+    "dodge": {
+     "must_hit": false,
+     "dodged_names": [],
+     "fully_dodged": false
+    },
+    "trigger_spell_logs": [],
+    "state": {
+     "round": 4,
+     "player_side": [
+      {
+       "name": "顾衡",
+       "entity_type": "轮回者",
+       "runtime_id": "2cd951d5232943b88248b5f193cfaf71",
+       "blood_limit": 42,
+       "current_hp": 42,
+       "mana_limit": 20,
+       "current_mana": 19,
+       "speed_limit": 8,
+       "current_speed": 2,
+       "attack_count": 0,
+       "attack_power": 0,
+       "action_count": 3,
+       "shield": 22,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 42,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 1.0,
+       "dao_wen": {
+        "再生": "再生",
+        "杀伐": "杀伐",
+        "庇护": "庇护",
+        "借力": "借力",
+        "加速": "加速"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": [
+        {
+         "name": "借力",
+         "value": 2,
+         "rounds": -1,
+         "source": "脑蜘蛛",
+         "scope": "battle",
+         "polarity": "neutral"
+        },
+        {
+         "name": "庇护",
+         "value": 11,
+         "rounds": 1,
+         "source": "顾衡",
+         "scope": "battle",
+         "polarity": "neutral"
+        }
+       ]
+      }
+     ],
+     "enemy_side": [
+      {
+       "name": "脑蜘蛛",
+       "entity_type": "怪物",
+       "runtime_id": "e4e5889c0e1143b5b38868e140048a81",
+       "blood_limit": 204,
+       "current_hp": 90,
+       "mana_limit": 0,
+       "current_mana": 0,
+       "speed_limit": 0,
+       "current_speed": 0,
+       "attack_count": 2,
+       "attack_power": 11,
+       "action_count": 0,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 204,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 0.44,
+       "dao_wen": {
+        "坏死": "坏死",
+        "借力": "借力",
+        "加速": "加速"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "use_daowen",
+   "params": {
+    "daowen_name": "杀伐",
+    "x": 9,
+    "target_ref": "enemy:0",
+    "dodge": false,
+    "blood_shadow": false,
+    "trigger_spell_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "发动道纹【杀伐X=9】",
+    "calculation": {
+     "dao_wen": "杀伐",
+     "x": 9,
+     "cost_type": "消耗",
+     "cost": 9,
+     "target_damage": 18,
+     "damage_type": "普通",
+     "summary": "消耗9法力，对脑蜘蛛造成18点伤害"
+    },
+    "execution": {
+     "daowen": "杀伐",
+     "effects": [
+      {
+       "type": "damage",
+       "target": "脑蜘蛛",
+       "raw_damage": 22,
+       "shield_absorbed": 0,
+       "actual_damage": 22,
+       "hp_before": 90,
+       "hp_after": 68,
+       "blood_limit_before": 204,
+       "died": false,
+       "damage_type": "普通"
+      }
+     ]
+    },
+    "dodge": {
+     "must_hit": false,
+     "dodged_names": [],
+     "fully_dodged": false
+    },
+    "trigger_spell_logs": [],
+    "state": {
+     "round": 4,
+     "player_side": [
+      {
+       "name": "顾衡",
+       "entity_type": "轮回者",
+       "runtime_id": "2cd951d5232943b88248b5f193cfaf71",
+       "blood_limit": 42,
+       "current_hp": 42,
+       "mana_limit": 20,
+       "current_mana": 10,
+       "speed_limit": 8,
+       "current_speed": 2,
+       "attack_count": 0,
+       "attack_power": 0,
+       "action_count": 3,
+       "shield": 22,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 42,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 1.0,
+       "dao_wen": {
+        "再生": "再生",
+        "杀伐": "杀伐",
+        "庇护": "庇护",
+        "借力": "借力",
+        "加速": "加速"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": [
+        {
+         "name": "借力",
+         "value": 2,
+         "rounds": -1,
+         "source": "脑蜘蛛",
+         "scope": "battle",
+         "polarity": "neutral"
+        },
+        {
+         "name": "庇护",
+         "value": 11,
+         "rounds": 1,
+         "source": "顾衡",
+         "scope": "battle",
+         "polarity": "neutral"
+        }
+       ]
+      }
+     ],
+     "enemy_side": [
+      {
+       "name": "脑蜘蛛",
+       "entity_type": "怪物",
+       "runtime_id": "e4e5889c0e1143b5b38868e140048a81",
+       "blood_limit": 204,
+       "current_hp": 68,
+       "mana_limit": 0,
+       "current_mana": 0,
+       "speed_limit": 0,
+       "current_speed": 0,
+       "attack_count": 2,
+       "attack_power": 11,
+       "action_count": 0,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 204,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 0.33,
+       "dao_wen": {
+        "坏死": "坏死",
+        "借力": "借力",
+        "加速": "加速"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "use_daowen",
+   "params": {
+    "daowen_name": "杀伐",
+    "x": 10,
+    "target_ref": "enemy:0",
+    "dodge": false,
+    "blood_shadow": false,
+    "trigger_spell_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "发动道纹【杀伐X=10】",
+    "calculation": {
+     "dao_wen": "杀伐",
+     "x": 10,
+     "cost_type": "消耗",
+     "cost": 10,
+     "target_damage": 20,
+     "damage_type": "普通",
+     "summary": "消耗10法力，对脑蜘蛛造成20点伤害"
+    },
+    "execution": {
+     "daowen": "杀伐",
+     "effects": [
+      {
+       "type": "damage",
+       "target": "脑蜘蛛",
+       "raw_damage": 24,
+       "shield_absorbed": 0,
+       "actual_damage": 24,
+       "hp_before": 68,
+       "hp_after": 44,
+       "blood_limit_before": 204,
+       "died": false,
+       "damage_type": "普通"
+      }
+     ]
+    },
+    "dodge": {
+     "must_hit": false,
+     "dodged_names": [],
+     "fully_dodged": false
+    },
+    "trigger_spell_logs": [],
+    "state": {
+     "round": 4,
+     "player_side": [
+      {
+       "name": "顾衡",
+       "entity_type": "轮回者",
+       "runtime_id": "2cd951d5232943b88248b5f193cfaf71",
+       "blood_limit": 42,
+       "current_hp": 42,
+       "mana_limit": 20,
+       "current_mana": 0,
+       "speed_limit": 8,
+       "current_speed": 2,
+       "attack_count": 0,
+       "attack_power": 0,
+       "action_count": 3,
+       "shield": 22,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 42,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 1.0,
+       "dao_wen": {
+        "再生": "再生",
+        "杀伐": "杀伐",
+        "庇护": "庇护",
+        "借力": "借力",
+        "加速": "加速"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": [
+        {
+         "name": "借力",
+         "value": 2,
+         "rounds": -1,
+         "source": "脑蜘蛛",
+         "scope": "battle",
+         "polarity": "neutral"
+        },
+        {
+         "name": "庇护",
+         "value": 11,
+         "rounds": 1,
+         "source": "顾衡",
+         "scope": "battle",
+         "polarity": "neutral"
+        }
+       ]
+      }
+     ],
+     "enemy_side": [
+      {
+       "name": "脑蜘蛛",
+       "entity_type": "怪物",
+       "runtime_id": "e4e5889c0e1143b5b38868e140048a81",
+       "blood_limit": 204,
+       "current_hp": 44,
+       "mana_limit": 0,
+       "current_mana": 0,
+       "speed_limit": 0,
+       "current_speed": 0,
+       "attack_count": 2,
+       "attack_power": 11,
+       "action_count": 0,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 204,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 0.22,
+       "dao_wen": {
+        "坏死": "坏死",
+        "借力": "借力",
+        "加速": "加速"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "resolve_ally_phases",
+   "params": {},
+   "result": {
+    "success": true,
+    "action": "朋友/员工自主行动",
+    "result": {
+     "acted_count": 0,
+     "allies": []
+    }
+   }
+  },
+  {
+   "action": "prepare_monster_phase",
+   "params": {},
+   "result": {
+    "success": true,
+    "action": "准备怪物阶段",
+    "result": {
+     "token": "c9eedb3c7ae04c448b4897604cee2718",
+     "round": 4,
+     "actors": [
+      {
+       "actor_ref": "enemy:0",
+       "monster": "脑蜘蛛",
+       "daowen_required": true,
+       "daowen_options": [
+        {
+         "name": "加速",
+         "resolves_as": "加速",
+         "x": 5,
+         "requires_target": true,
+         "target_options": [
+          {
+           "ref": "player:0",
+           "name": "顾衡"
+          },
+          {
+           "ref": "enemy:0",
+           "name": "脑蜘蛛"
+          }
+         ],
+         "dodge_submission": "single_if_hostile",
+         "dodge_target_options": [],
+         "trigger_spell_options": {}
+        }
+       ],
+       "attack_target_options": [
+        {
+         "ref": "player:0",
+         "name": "顾衡",
+         "can_blood_shadow": false,
+         "blood_shadow_cost_share_target_options": [],
+         "spell_options": {
+          "before": [],
+          "after": []
+         },
+         "dodge_relic_target_options": []
+        }
+       ],
+       "base_attack_actions": 1,
+       "base_hits_per_attack": 2,
+       "dodge_must_be_explicit": true
+      }
+     ],
+     "skipped": []
+    },
+    "instruction": "请为每个actors条目提交完整选择后调用resolve_monster_phase"
+   }
+  },
+  {
+   "action": "resolve_monster_phase",
+   "params": {
+    "token": "c9eedb3c7ae04c448b4897604cee2718",
+    "choices": [
+     {
+      "actor_ref": "enemy:0",
+      "daowen": {
+       "name": "加速",
+       "dodge": false,
+       "blood_shadow": false,
+       "trigger_spell_choices": {},
+       "target_ref": "player:0"
+      },
+      "attack_actions": [
+       {
+        "hits": [
+         {
+          "target_ref": "player:0",
+          "dodge": true,
+          "blood_shadow": false,
+          "spell_choices": {
+           "before": {},
+           "after": {}
+          }
+         },
+         {
+          "target_ref": "player:0",
+          "dodge": true,
+          "blood_shadow": false,
+          "spell_choices": {
+           "before": {},
+           "after": {}
+          }
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "result": {
+    "success": true,
+    "action": "结算怪物阶段",
+    "result": {
+     "entries": 3,
+     "player_dead": false,
+     "player_hp": 42,
+     "details": [
+      {
+       "monster": "脑蜘蛛",
+       "daowen_activated": "加速",
+       "x": 5,
+       "resolves_as": "加速",
+       "resonance_rewrite": false,
+       "target": "顾衡",
+       "execution": {
+        "daowen": "加速",
+        "effects": [
+         {
+          "type": "status_added",
+          "target": "顾衡",
+          "status": "加速",
+          "duration": 5,
+          "value": 5
+         }
+        ]
+       },
+       "trigger_spell_logs": []
+      },
+      {
+       "attacker": "脑蜘蛛",
+       "target": "顾衡",
+       "hit_index": 1,
+       "dodge_attempted": true,
+       "dodge_success": true,
+       "damage_dealt": 0,
+       "shield_absorbed": 0,
+       "hp_lost": 0,
+       "target_died": false,
+       "speed_after_dodge": 1,
+       "hit_total": 2,
+       "attack_action_index": 1,
+       "new_action": true
+      },
+      {
+       "attacker": "脑蜘蛛",
+       "target": "顾衡",
+       "hit_index": 2,
+       "dodge_attempted": true,
+       "dodge_success": true,
+       "damage_dealt": 0,
+       "shield_absorbed": 0,
+       "hp_lost": 0,
+       "target_died": false,
+       "speed_after_dodge": 0,
+       "hit_total": 2,
+       "attack_action_index": 1,
+       "new_action": false
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "round_end",
+   "params": {},
+   "result": {
+    "success": true,
+    "action": "回终",
+    "result": {
+     "round": 4,
+     "phase": "回终",
+     "effects": [
+      {
+       "type": "shield_clear",
+       "entity": "顾衡",
+       "cleared": 22
+      },
+      {
+       "type": "status_expired",
+       "entity": "顾衡",
+       "expired_effects": [
+        "庇护"
+       ],
+       "rolled_back_deltas": []
+      }
+     ],
+     "state": {
+      "round": 4,
+      "player_side": [
+       {
+        "name": "顾衡",
+        "entity_type": "轮回者",
+        "runtime_id": "2cd951d5232943b88248b5f193cfaf71",
+        "blood_limit": 42,
+        "current_hp": 42,
+        "mana_limit": 20,
+        "current_mana": 0,
+        "speed_limit": 8,
+        "current_speed": 0,
+        "attack_count": 0,
+        "attack_power": 0,
+        "action_count": 3,
+        "shield": 0,
+        "is_flying": false,
+        "is_alive": true,
+        "removed_without_kill": false,
+        "is_deployed": true,
+        "has_retreated": false,
+        "battle_start_blood_limit": 42,
+        "deployed_at_round": 0,
+        "shards": 0,
+        "fake_shards": 0,
+        "total_healed": 0,
+        "hp_ratio": 1.0,
+        "dao_wen": {
+         "再生": "再生",
+         "杀伐": "杀伐",
+         "庇护": "庇护",
+         "借力": "借力",
+         "加速": "加速"
+        },
+        "spells": [],
+        "relics": [],
+        "status_effects": [
+         {
+          "name": "借力",
+          "value": 2,
+          "rounds": -1,
+          "source": "脑蜘蛛",
+          "scope": "battle",
+          "polarity": "neutral"
+         },
+         {
+          "name": "加速",
+          "value": 5,
+          "rounds": 4,
+          "source": "脑蜘蛛",
+          "scope": "battle",
+          "polarity": "buff"
+         }
+        ]
+       }
+      ],
+      "enemy_side": [
+       {
+        "name": "脑蜘蛛",
+        "entity_type": "怪物",
+        "runtime_id": "e4e5889c0e1143b5b38868e140048a81",
+        "blood_limit": 204,
+        "current_hp": 44,
+        "mana_limit": 0,
+        "current_mana": 0,
+        "speed_limit": 0,
+        "current_speed": 0,
+        "attack_count": 2,
+        "attack_power": 11,
+        "action_count": 0,
+        "shield": 0,
+        "is_flying": false,
+        "is_alive": true,
+        "removed_without_kill": false,
+        "is_deployed": true,
+        "has_retreated": false,
+        "battle_start_blood_limit": 204,
+        "deployed_at_round": 0,
+        "shards": 0,
+        "fake_shards": 0,
+        "total_healed": 0,
+        "hp_ratio": 0.22,
+        "dao_wen": {
+         "坏死": "坏死",
+         "借力": "借力",
+         "加速": "加速"
+        },
+        "spells": [],
+        "relics": [],
+        "status_effects": []
+       }
+      ]
+     }
+    },
+    "victory_paths": [],
+    "monster_difficulties": [
+     {
+      "monster": "脑蜘蛛",
+      "hp_ratio": 0.22,
+      "signals": [
+       "生命低于30%"
+      ],
+      "action_required": "进化或逃跑（二选一，本场战斗限一次）",
+      "note": "困境检查以当前胜率为依据，而非当前生命"
+     }
+    ],
+    "note": "多路径胜利（雕塑/癌变/还债）已结算；消耗品可在后续回合使用"
+   }
+  },
+  {
+   "action": "round_start",
+   "params": {
+    "relic_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "回始",
+    "result": {
+     "round": 5,
+     "phase": "回始",
+     "effects": [
+      {
+       "type": "mana_refill",
+       "entity": "顾衡",
+       "from": 0,
+       "to": 20,
+       "gained": 20
+      },
+      {
+       "type": "relic",
+       "log": "守夜灯：+10法力"
+      }
+     ],
+     "state": {
+      "round": 5,
+      "player_side": [
+       {
+        "name": "顾衡",
+        "entity_type": "轮回者",
+        "runtime_id": "2cd951d5232943b88248b5f193cfaf71",
+        "blood_limit": 42,
+        "current_hp": 42,
+        "mana_limit": 20,
+        "current_mana": 30,
+        "speed_limit": 8,
+        "current_speed": 0,
+        "attack_count": 0,
+        "attack_power": 0,
+        "action_count": 3,
+        "shield": 0,
+        "is_flying": false,
+        "is_alive": true,
+        "removed_without_kill": false,
+        "is_deployed": true,
+        "has_retreated": false,
+        "battle_start_blood_limit": 42,
+        "deployed_at_round": 0,
+        "shards": 0,
+        "fake_shards": 0,
+        "total_healed": 0,
+        "hp_ratio": 1.0,
+        "dao_wen": {
+         "再生": "再生",
+         "杀伐": "杀伐",
+         "庇护": "庇护",
+         "借力": "借力",
+         "加速": "加速"
+        },
+        "spells": [],
+        "relics": [],
+        "status_effects": [
+         {
+          "name": "借力",
+          "value": 2,
+          "rounds": -1,
+          "source": "脑蜘蛛",
+          "scope": "battle",
+          "polarity": "neutral"
+         },
+         {
+          "name": "加速",
+          "value": 5,
+          "rounds": 4,
+          "source": "脑蜘蛛",
+          "scope": "battle",
+          "polarity": "buff"
+         }
+        ]
+       }
+      ],
+      "enemy_side": [
+       {
+        "name": "脑蜘蛛",
+        "entity_type": "怪物",
+        "runtime_id": "e4e5889c0e1143b5b38868e140048a81",
+        "blood_limit": 204,
+        "current_hp": 44,
+        "mana_limit": 0,
+        "current_mana": 0,
+        "speed_limit": 0,
+        "current_speed": 0,
+        "attack_count": 2,
+        "attack_power": 11,
+        "action_count": 0,
+        "shield": 0,
+        "is_flying": false,
+        "is_alive": true,
+        "removed_without_kill": false,
+        "is_deployed": true,
+        "has_retreated": false,
+        "battle_start_blood_limit": 204,
+        "deployed_at_round": 0,
+        "shards": 0,
+        "fake_shards": 0,
+        "total_healed": 0,
+        "hp_ratio": 0.22,
+        "dao_wen": {
+         "坏死": "坏死",
+         "借力": "借力",
+         "加速": "加速"
+        },
+        "spells": [],
+        "relics": [],
+        "status_effects": []
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "action": "use_daowen",
+   "params": {
+    "daowen_name": "庇护",
+    "x": 11,
+    "target_ref": "player:0",
+    "dodge": false,
+    "blood_shadow": false,
+    "trigger_spell_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "发动道纹【庇护X=11】",
+    "calculation": {
+     "dao_wen": "庇护",
+     "x": 11,
+     "cost_type": "消耗",
+     "cost": 11,
+     "target_shield": 22,
+     "duration": 1,
+     "summary": "消耗11法力，使顾衡获得22点格挡（可抵消等量伤害），持续1回合"
+    },
+    "execution": {
+     "daowen": "庇护",
+     "effects": [
+      {
+       "type": "shield",
+       "target": "顾衡",
+       "amount": 22
+      },
+      {
+       "type": "status_added",
+       "target": "顾衡",
+       "status": "庇护",
+       "duration": 1,
+       "value": 11
+      }
+     ]
+    },
+    "dodge": {
+     "must_hit": false,
+     "dodged_names": [],
+     "fully_dodged": false
+    },
+    "trigger_spell_logs": [],
+    "state": {
+     "round": 5,
+     "player_side": [
+      {
+       "name": "顾衡",
+       "entity_type": "轮回者",
+       "runtime_id": "2cd951d5232943b88248b5f193cfaf71",
+       "blood_limit": 42,
+       "current_hp": 42,
+       "mana_limit": 20,
+       "current_mana": 19,
+       "speed_limit": 8,
+       "current_speed": 0,
+       "attack_count": 0,
+       "attack_power": 0,
+       "action_count": 3,
+       "shield": 22,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 42,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 1.0,
+       "dao_wen": {
+        "再生": "再生",
+        "杀伐": "杀伐",
+        "庇护": "庇护",
+        "借力": "借力",
+        "加速": "加速"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": [
+        {
+         "name": "借力",
+         "value": 2,
+         "rounds": -1,
+         "source": "脑蜘蛛",
+         "scope": "battle",
+         "polarity": "neutral"
+        },
+        {
+         "name": "加速",
+         "value": 5,
+         "rounds": 4,
+         "source": "脑蜘蛛",
+         "scope": "battle",
+         "polarity": "buff"
+        },
+        {
+         "name": "庇护",
+         "value": 11,
+         "rounds": 1,
+         "source": "顾衡",
+         "scope": "battle",
+         "polarity": "neutral"
+        }
+       ]
+      }
+     ],
+     "enemy_side": [
+      {
+       "name": "脑蜘蛛",
+       "entity_type": "怪物",
+       "runtime_id": "e4e5889c0e1143b5b38868e140048a81",
+       "blood_limit": 204,
+       "current_hp": 44,
+       "mana_limit": 0,
+       "current_mana": 0,
+       "speed_limit": 0,
+       "current_speed": 0,
+       "attack_count": 2,
+       "attack_power": 11,
+       "action_count": 0,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 204,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 0.22,
+       "dao_wen": {
+        "坏死": "坏死",
+        "借力": "借力",
+        "加速": "加速"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "use_daowen",
+   "params": {
+    "daowen_name": "杀伐",
+    "x": 9,
+    "target_ref": "enemy:0",
+    "dodge": false,
+    "blood_shadow": false,
+    "trigger_spell_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "发动道纹【杀伐X=9】",
+    "calculation": {
+     "dao_wen": "杀伐",
+     "x": 9,
+     "cost_type": "消耗",
+     "cost": 9,
+     "target_damage": 18,
+     "damage_type": "普通",
+     "summary": "消耗9法力，对脑蜘蛛造成18点伤害"
+    },
+    "execution": {
+     "daowen": "杀伐",
+     "effects": [
+      {
+       "type": "damage",
+       "target": "脑蜘蛛",
+       "raw_damage": 22,
+       "shield_absorbed": 0,
+       "actual_damage": 22,
+       "hp_before": 44,
+       "hp_after": 22,
+       "blood_limit_before": 204,
+       "died": false,
+       "damage_type": "普通"
+      }
+     ]
+    },
+    "dodge": {
+     "must_hit": false,
+     "dodged_names": [],
+     "fully_dodged": false
+    },
+    "trigger_spell_logs": [],
+    "state": {
+     "round": 5,
+     "player_side": [
+      {
+       "name": "顾衡",
+       "entity_type": "轮回者",
+       "runtime_id": "2cd951d5232943b88248b5f193cfaf71",
+       "blood_limit": 42,
+       "current_hp": 42,
+       "mana_limit": 20,
+       "current_mana": 10,
+       "speed_limit": 8,
+       "current_speed": 0,
+       "attack_count": 0,
+       "attack_power": 0,
+       "action_count": 3,
+       "shield": 22,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 42,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 1.0,
+       "dao_wen": {
+        "再生": "再生",
+        "杀伐": "杀伐",
+        "庇护": "庇护",
+        "借力": "借力",
+        "加速": "加速"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": [
+        {
+         "name": "借力",
+         "value": 2,
+         "rounds": -1,
+         "source": "脑蜘蛛",
+         "scope": "battle",
+         "polarity": "neutral"
+        },
+        {
+         "name": "加速",
+         "value": 5,
+         "rounds": 4,
+         "source": "脑蜘蛛",
+         "scope": "battle",
+         "polarity": "buff"
+        },
+        {
+         "name": "庇护",
+         "value": 11,
+         "rounds": 1,
+         "source": "顾衡",
+         "scope": "battle",
+         "polarity": "neutral"
+        }
+       ]
+      }
+     ],
+     "enemy_side": [
+      {
+       "name": "脑蜘蛛",
+       "entity_type": "怪物",
+       "runtime_id": "e4e5889c0e1143b5b38868e140048a81",
+       "blood_limit": 204,
+       "current_hp": 22,
+       "mana_limit": 0,
+       "current_mana": 0,
+       "speed_limit": 0,
+       "current_speed": 0,
+       "attack_count": 2,
+       "attack_power": 11,
+       "action_count": 0,
+       "shield": 0,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 204,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 0.11,
+       "dao_wen": {
+        "坏死": "坏死",
+        "借力": "借力",
+        "加速": "加速"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "action": "use_daowen",
+   "params": {
+    "daowen_name": "杀伐",
+    "x": 10,
+    "target_ref": "enemy:0",
+    "dodge": false,
+    "blood_shadow": false,
+    "trigger_spell_choices": {}
+   },
+   "result": {
+    "success": true,
+    "action": "发动道纹【杀伐X=10】",
+    "calculation": {
+     "dao_wen": "杀伐",
+     "x": 10,
+     "cost_type": "消耗",
+     "cost": 10,
+     "target_damage": 20,
+     "damage_type": "普通",
+     "summary": "消耗10法力，对脑蜘蛛造成20点伤害"
+    },
+    "execution": {
+     "daowen": "杀伐",
+     "effects": [
+      {
+       "type": "damage",
+       "target": "脑蜘蛛",
+       "raw_damage": 24,
+       "shield_absorbed": 0,
+       "actual_damage": 24,
+       "hp_before": 22,
+       "hp_after": 0,
+       "blood_limit_before": 204,
+       "died": true,
+       "damage_type": "普通"
+      }
+     ]
+    },
+    "dodge": {
+     "must_hit": false,
+     "dodged_names": [],
+     "fully_dodged": false
+    },
+    "trigger_spell_logs": [],
+    "state": {
+     "round": 5,
+     "player_side": [
+      {
+       "name": "顾衡",
+       "entity_type": "轮回者",
+       "runtime_id": "2cd951d5232943b88248b5f193cfaf71",
+       "blood_limit": 42,
+       "current_hp": 42,
+       "mana_limit": 20,
+       "current_mana": 0,
+       "speed_limit": 8,
+       "current_speed": 0,
+       "attack_count": 0,
+       "attack_power": 0,
+       "action_count": 3,
+       "shield": 22,
+       "is_flying": false,
+       "is_alive": true,
+       "removed_without_kill": false,
+       "is_deployed": true,
+       "has_retreated": false,
+       "battle_start_blood_limit": 42,
+       "deployed_at_round": 0,
+       "shards": 0,
+       "fake_shards": 0,
+       "total_healed": 0,
+       "hp_ratio": 1.0,
+       "dao_wen": {
+        "再生": "再生",
+        "杀伐": "杀伐",
+        "庇护": "庇护",
+        "借力": "借力",
+        "加速": "加速"
+       },
+       "spells": [],
+       "relics": [],
+       "status_effects": [
+        {
+         "name": "借力",
+         "value": 2,
+         "rounds": -1,
+         "source": "脑蜘蛛",
+         "scope": "battle",
+         "polarity": "neutral"
+        },
+        {
+         "name": "加速",
+         "value": 5,
+         "rounds": 4,
+         "source": "脑蜘蛛",
+         "scope": "battle",
+         "polarity": "buff"
+        },
+        {
+         "name": "庇护",
+         "value": 11,
+         "rounds": 1,
+         "source": "顾衡",
+         "scope": "battle",
+         "polarity": "neutral"
+        }
+       ]
+      }
+     ],
+     "enemy_side": []
+    }
+   }
+  },
+  {
+   "action": "round_end",
+   "params": {},
+   "result": {
+    "success": false,
+    "error": "【round_end】要求战斗子阶段await_round_end，当前为player_actions"
+   }
+  },
+  {
+   "action": "battle_end",
+   "params": {},
+   "result": {
+    "success": true,
+    "action": "战终",
+    "result": {
+     "shard_reward": 20,
+     "total_shards": 40,
+     "energy_restored": 3,
+     "cleared_temp_friends": true,
+     "ally_growth": [],
+     "removed_via_alt_path": [],
+     "relic_end_logs": [],
+     "scoped_effects_rolled_back": [],
+     "employee_rebellion": {
+      "rebellion": false,
+      "reason": "无员工"
+     },
+     "player_dead": false
+    }
+   }
+  }
+ ]
+}
