@@ -118,6 +118,30 @@ def _directed_hunt(e, ai):
                     ai.resolve_pending_redemption()
 
 
+def _monster_evolution_step(e, rng) -> int:
+    """怪物方困境响应（README 怪物准则#3：陷入困境强制进化/逃跑二选一）。
+
+    修复（2026-08-18）：旧穷举驱动器从不调用 declare_evolution，怪物困境
+    窗口全部被浪费（单次扫描实测扭曲都市 214 个困境回合 0 触发），数据系统性
+    偏乐观。现按 pick_best_report 同一口径接线：异变预算内优先进化。
+    """
+    fired = 0
+    try:
+        opts = e.combat.get_plight_evolution_options()
+    except Exception:
+        return 0
+    for o in opts:
+        pool = o.get("borrowable_daowen") or []
+        max_x = o.get("max_x_by_mutation", 0)
+        if pool and max_x >= 1:
+            r = e.execute_action("declare_evolution", {
+                "monster": o["monster"], "daowen": rng.choice(pool),
+                "x": min(max_x, 2)})
+            if r.get("success"):
+                fired += 1
+    return fired
+
+
 def run_one(attr_key: str, resonance: str, build: str, region: str,
             seed: int, battles: int = 7) -> dict:
     from engine.api import GameEngine
@@ -126,6 +150,8 @@ def run_one(attr_key: str, resonance: str, build: str, region: str,
     from sim.optional_actions import battle_start_relic_choices, round_start_relic_choices
     from sim.alt_win_paths_probe import (
         player_round_stall, player_round_cancer, player_round_hybrid)
+    import random
+    _rng = random.Random(seed * 7919 + 13)  # 进化借用道纹的选取独立于引擎随机源
 
     strategy = STRATEGIES[build]
     policy_fns = {"stall": player_round_stall, "cancer": player_round_cancer,
@@ -208,6 +234,10 @@ def run_one(attr_key: str, resonance: str, build: str, region: str,
             else:
                 policy(e)
             if e.state.battle_won():
+                break
+            # 怪物困境响应：进化接线（异变预算内借用轮回者道纹）
+            _monster_evolution_step(e, _rng)
+            if e.state.battle_over():
                 break
             mp = _resolve_monster_turn(e)
             if not mp.get("success") or mp["result"].get("player_dead"):
