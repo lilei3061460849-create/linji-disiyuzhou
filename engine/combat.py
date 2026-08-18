@@ -214,8 +214,12 @@ class CombatEngine:
         detail = target.take_damage(amount, damage_type)
         actual = detail.get("actual_damage", 0)
 
-        # 5. 落地后效果 (逆鳞 / 伤痕 / 寄生 / 负岳索 / 龙族血脉斩杀)
+        # 5. 落地后效果 (逆鳞 / 伤痕 / 切割 / 寄生 / 负岳索 / 龙族血脉斩杀)
         self.hook_manager.apply_after_damage_pipeline(target, actual, detail.get("shield_absorbed", 0), detail, source, self)
+        if target.entity_type == "怪物" and target.is_alive:
+            redemption = self.check_redemption(target)
+            if redemption:
+                detail["redemption"] = redemption
 
         return detail
 
@@ -1328,14 +1332,19 @@ class CombatEngine:
             return self._proliferate_monster(entity)
         return self._cancer_character(entity)
 
-    REDEMPTION_MUTATION_THRESHOLD = -30
+    REDEMPTION_HP_RATIO = 0.10
 
     def monster_has_original_daowen(self, monster: Entity) -> bool:
         from .gamedata import ORIGINAL_MONSTER_DAOWEN
         return any(name in ORIGINAL_MONSTER_DAOWEN for name in monster.dao_wen)
 
+    def redemption_hp_threshold(self, monster: Entity) -> int:
+        if monster is None or monster.blood_limit <= 0:
+            return 0
+        return math.ceil(monster.blood_limit * self.REDEMPTION_HP_RATIO)
+
     def check_redemption(self, monster: Entity) -> Optional[dict]:
-        """救赎：曾持有的七种原始怪物道纹已全部失去，或【异变】≤-30层。"""
+        """救赎：当前生命≤血限10%，且没有七种原始怪物道纹。"""
         if monster is None or monster.entity_type != "怪物" or not monster.is_alive:
             return None
         if monster.is_sculptured or monster.is_proliferated or monster.is_debt_bound:
@@ -1345,16 +1354,10 @@ class CombatEngine:
         if self.state.pending_redemption:
             return None
         if self.monster_has_original_daowen(monster):
-            monster._had_monster_daowen = True
-        no_monster_daowen = (
-            bool(getattr(monster, "_had_monster_daowen", False))
-            and not self.monster_has_original_daowen(monster)
-        )
-        mutation_cleansed = monster.mutation_count <= self.REDEMPTION_MUTATION_THRESHOLD
-        if not (no_monster_daowen or mutation_cleansed):
             return None
-        cause = "no_monster_daowen" if no_monster_daowen else "mutation"
-        return self._queue_redemption(monster, cause)
+        if monster.current_hp > self.redemption_hp_threshold(monster):
+            return None
+        return self._queue_redemption(monster, "low_hp_no_original")
 
     def check_all_redemption(self) -> list[dict]:
         results = []
@@ -1420,7 +1423,7 @@ class CombatEngine:
                 results.append(self._sculpture_monster(monster))
                 continue
 
-            # 2. 救赎：没有七种原始怪物道纹或异变≤-30
+            # 2. 救赎：残血且没有七种原始怪物道纹
             redemption = self.check_redemption(monster)
             if redemption:
                 results.append(redemption)
@@ -1867,13 +1870,13 @@ class CombatEngine:
                 name, EffectPolarity.DEBUFF.value)
             # README 第460行"[血限]及当前生命同时 -4X"：两者是各自独立的扣减。
             # 此前实现只做 current_hp=min(current_hp, blood_limit)（血限压顶），
-            # 对残血目标等于毫无效果——锐利打 10/200 的怪一点血都掉不了。
+            # 对残血目标等于毫无效果——切割打 10/200 的怪一点血都掉不了。
             if "hp_reduction" in calc:
                 target.current_hp -= calc["hp_reduction"]
             target.current_hp = max(0, min(target.current_hp, target.blood_limit))
             if target.current_hp <= 0: target.is_alive = False
             # 血限压迫导致的当前生命减少，同样属于"使敌对角色生命减少"，
-            # 必须计入本回合伤害统计，否则纯锐利流派会被【凡庸】判定为无所作为而自爆。
+            # 必须计入本回合伤害统计，否则纯切割流派会被【凡庸】判定为无所作为而自爆。
             _hp_cut = _hp_before - target.current_hp
             if _hp_cut > 0 and target is not caster:
                 caster.damage_dealt_this_round += _hp_cut
@@ -2140,7 +2143,7 @@ class CombatEngine:
             effect_target = target if target else caster
             # 自身作用型道纹(变形/超频/自食等)作用于施法者
             # 洗劫：状态应挂在施法者上——"造成伤害时夺取等量碎片"以施法者为触发主体（与 sim/balance_sim 口径一致）
-            self_targeted = name in ("超频", "自食", "飞行", "滑翔", "狂暴", "自愈", "必中", "变形", "洗劫", "固执")
+            self_targeted = name in ("超频", "自食", "飞行", "滑翔", "狂暴", "自愈", "必中", "变形", "洗劫", "固执", "切割", "贯穿")
             et = caster if self_targeted else effect_target
             if name == "疯狂":
                 # 2026-08-17 用户裁定：疯狂X改为【所有角色出手+X】（全局，变相平衡）。
@@ -2215,7 +2218,7 @@ class CombatEngine:
     # 法术流程注册表；计算层只描述步骤，不再替持有者选择X、目标或闪避。
     SPELL_FLOWS = {
         "先发制人": {"trigger": ActionPhase.BEFORE_DAMAGE_TAKEN.value, "steps": [("杀伐", "attacker")]},
-        "临界泄压": {"trigger": ActionPhase.BEFORE_DAMAGE_TAKEN.value, "steps": [("锐利", "attacker")]},
+        "临界泄压": {"trigger": ActionPhase.BEFORE_DAMAGE_TAKEN.value, "steps": [("切割", "attacker")]},
         "后发制人": {"trigger": ActionPhase.BEFORE_DAMAGE_TAKEN.value, "steps": [("庇护", "self")]},
         "生生不息": {"trigger": ActionPhase.AFTER_LIFE_LOST.value, "steps": [("再生", "self")]},
         "以牙还牙": {"trigger": ActionPhase.AFTER_LIFE_LOST.value, "steps": [("再生", "self"), ("杀伐", "attacker")]},
@@ -2228,7 +2231,7 @@ class CombatEngine:
     # 自创法术文本→执行：解析 trigger_condition / effect_flow 为 SPELL_FLOWS 同构结构。
     # 格式（与死者之书一致）：trigger如"受到伤害前"/"失去生命后"；flow如"发动杀伐X→发动再生X"。
     # 目标推断：攻击/削弱/控制类道纹打attacker，自保/增益/回复类打self，坠落打target（若飞行）。
-    _SPELL_SELF_DAOWEN = {"庇护", "再生", "固执", "活血", "龙鳞", "自食", "透支", "假钞", "超频", "变形"}
+    _SPELL_SELF_DAOWEN = {"庇护", "再生", "固执", "活血", "龙鳞", "自食", "透支", "假钞", "超频", "变形", "切割", "贯穿"}
     _SPELL_TRIGGER_MAP = {
         "受到伤害前": ActionPhase.BEFORE_DAMAGE_TAKEN.value,
         "失去生命后": ActionPhase.AFTER_LIFE_LOST.value,

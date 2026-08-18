@@ -210,6 +210,18 @@ class AfterDamageEffectsHook:
                 detail["hp_after"] = 0
             detail["shanghen_blood_loss"] = xv
 
+        # 切割：你使其他角色失去生命的同时扣除其等量血限
+        if (attacker is not None and attacker is not target
+                and hasattr(attacker, "has_status") and attacker.has_status("切割")
+                and getattr(target, "is_alive", False)):
+            combat._battle_delta(target, "blood_limit", -actual_damage, "切割", "debuff")
+            target.current_hp = min(target.current_hp, target.blood_limit)
+            if target.current_hp <= 0:
+                target.is_alive = False
+                detail["died"] = True
+                detail["hp_after"] = 0
+            detail["qiege_blood_loss"] = actual_damage
+
         # 寄生吸血
         if hasattr(target, "has_status") and target.has_status("寄生"):
             xv = target.get_status_value("寄生") or 0

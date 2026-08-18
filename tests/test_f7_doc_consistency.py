@@ -30,7 +30,7 @@ def test_normal_readme_auto_trigger_list():
     assert "癌变（任一角色在本场战斗内累计受到回复" in readme
     assert "累计回复属于局内减益追踪，[战终]清零" in readme
     assert "崩解（任一角色【异变】达到" in readme
-    assert "救赎（怪物没有七种原始怪物道纹" in readme
+    assert "救赎（怪物当前生命≤其[血限]10%" in readme
 
 def test_boundary_no_zengsheng_in_active_code():
     """边界：活跃代码层不再出现中文“增生”（旧名），已统一为癌变；增殖道纹不受影响"""

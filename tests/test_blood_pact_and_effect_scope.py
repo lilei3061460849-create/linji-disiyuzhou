@@ -232,7 +232,8 @@ def test_scoped_ledger_rolls_back_battle_effects_but_keeps_costs(tmp_path):
 
 
 def test_blood_limit_debuff_rolls_back_without_erasing_life_loss():
-    """关键边界：锐利的局内血限减少会清除，但其独立造成的当前生命减少不是增减益。"""
+    """关键边界：切割造成的局内血限减少会清除，当前生命损失不能被回滚顺带治疗。"""
+    from engine.models import StatusEffect
     state = GameState(phase="in_combat")
     player = Entity("轮回者", "轮回者", blood_limit=100, current_hp=100,
                     current_mana=10)
@@ -240,14 +241,13 @@ def test_blood_limit_debuff_rolls_back_without_erasing_life_loss():
     state.player = player
     state.enemies = [target]
     combat = CombatEngine(state, DiceEngine())
-    calc = DaoWenEngine.resolve("锐利", 1, target=target)
-
-    combat.apply_daowen_effect("锐利", calc, player, target)
+    player.add_status(StatusEffect(name="切割", remaining_rounds=3, value=1))
+    combat._apply_hostile_damage(target, 5, source=player)
     assert target.blood_limit == 95 and target.current_hp == 95
     state.rollback_scoped_effects(EffectScope.BATTLE.value)
 
     assert target.blood_limit == 100
-    assert target.current_hp == 95  # 生命损失不是局内面板减益，不能被回滚顺带治疗
+    assert target.current_hp == 95
 
 
 def test_duration_expiry_rolls_back_matching_scoped_delta():

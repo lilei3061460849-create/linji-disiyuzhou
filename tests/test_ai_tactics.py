@@ -154,9 +154,8 @@ def test_tactical_roles_match_readme_costs():
     assert TACTICAL_ROLES["杀伐"]["dmg_per_x"] == 2
     assert TACTICAL_ROLES["冲击"]["cost"] == 3
     assert TACTICAL_ROLES["冲击"]["dmg_per_x"] == 5
-    assert TACTICAL_ROLES["锐利"]["cost"] == 3
-    assert TACTICAL_ROLES["锐利"]["dmg_per_x"] == 5
-    assert TACTICAL_ROLES["锐利"]["limit_per_x"] == 5
+    assert TACTICAL_ROLES["切割"]["cost"] == 3
+    assert TACTICAL_ROLES["切割"]["role"] == "buff"
     assert TACTICAL_ROLES["缓慢"]["cost"] == 0
     assert TACTICAL_ROLES["缓慢"]["pay"] == "冷却"
     assert TACTICAL_ROLES["增殖"]["cost"] == 1
@@ -209,7 +208,7 @@ def test_manqian_can_cast_with_zero_mana(tmp_path):
 def test_ai_can_use_resonance_on_monster_daowen(tmp_path):
     """
     正常路径：残韵闭环补齐后，AI 必须能对怪物原始道纹发动残韵。
-    修复前 CLOSED_LOOPS 只有杀伐/锐利两轨，对必中/狂暴/飞行发动必然失败。
+    修复前 CLOSED_LOOPS 只有杀伐/切割两轨，对必中/狂暴/飞行发动必然失败。
     """
     e = _engine(tmp_path, learn=())
     e.state.player.dao_wen.clear()

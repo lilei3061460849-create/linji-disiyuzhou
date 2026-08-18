@@ -73,7 +73,7 @@ def test_setup():
     assert set(engine.state.player.dao_wen) == {choices[0]}
     repeat = engine.execute_action("setup_choose_initial_daowen", {"daowen_name": choices[0]})
     assert not repeat["success"]
-    removed = engine.execute_action("setup_choose_daowen", {"daowen": "锐利"})
+    removed = engine.execute_action("setup_choose_daowen", {"daowen": "切割"})
     assert not removed["success"]
     print(f"  ✓ 显式选择初始道纹【{choices[0]}】，旧接口不能改写")
 
@@ -118,11 +118,11 @@ def test_daowen_calculations():
     assert result["aoe_damage"] == 10
     print("  ✓ 冲击X=2: 消耗6，AOE伤害10")
     
-    # 测试锐利
-    result = DaoWenEngine.resolve("锐利", 3, target=target)
+    # 测试切割
+    result = DaoWenEngine.resolve("切割", 3)
     assert result["cost"] == 9
-    assert result["blood_limit_reduction"] == 15
-    print("  ✓ 锐利X=3: 消耗9，血限-15，生命-15")
+    assert result["duration"] == 3
+    print("  ✓ 切割X=3: 消耗9，持续3")
     
     # 测试飞行
     result = DaoWenEngine.resolve("飞行", 2)
@@ -148,11 +148,11 @@ def test_resonance():
     assert result["target"] == "庇护"
     print("  ✓ 再生 --曲解--> 庇护")
     
-    # 锐利 → 反转 → 增殖
-    result = ResonanceEngine.apply_resonance("锐利", "反转", False, True)
+    # 切割 → 反转 → 增殖
+    result = ResonanceEngine.apply_resonance("切割", "反转", False, True)
     assert result["success"]
     assert result["target"] == "增殖"
-    print("  ✓ 锐利 --反转--> 增殖")
+    print("  ✓ 切割 --反转--> 增殖")
     
     # 查看可用残韵
     available = ResonanceEngine.get_available_resonance("杀伐")

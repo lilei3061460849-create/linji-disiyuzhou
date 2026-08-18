@@ -1,8 +1,8 @@
 """
 pytest - AI 道纹多样性（数据驱动，不写死道纹名）
 
-背景：早前 AI 把"杀伐/庇护/再生/冲击/锐利"硬编码在 if 分支里，
-无法测试锐利系与副本专属道纹。现改为 TACTICAL_ROLES 数据驱动。
+背景：早前 AI 把"杀伐/庇护/再生/冲击/切割"硬编码在 if 分支里，
+无法测试切割系与副本专属道纹。现改为 TACTICAL_ROLES 数据驱动。
 
 覆盖：正常路径 / 边界条件 / 错误输入
 """
@@ -41,17 +41,16 @@ def _engine(starter="杀伐", learn=(), region="龙心谷", seed=1, tmp="/tmp/bv
 
 # ---------- 正常路径 ----------
 
-def test_ruili_remains_learnable_after_auto_kill_start():
-    """正常路径：锐利不再作为起手，但仍可经局外学习获得并真实发动。"""
-    e = _engine(starter="锐利")
-    assert set(e.state.player.dao_wen) >= {"杀伐", "锐利"}
-    target = next(enemy for enemy in e.state.enemies if enemy.is_alive)
+def test_qiege_remains_learnable_after_auto_kill_start():
+    """正常路径：切割不再作为起手，但仍可经局外学习获得并真实发动。"""
+    e = _engine(starter="切割")
+    assert set(e.state.player.dao_wen) >= {"杀伐", "切割"}
     result = e.execute_action("use_daowen", {
-        "daowen_name": "锐利", "x": 1,
-        "target_ref": f"enemy:{e.state.enemies.index(target)}",
-        "dodge": False, "blood_shadow": False,
+        "daowen_name": "切割", "x": 1,
+        "dodge": False, "blood_shadow": False, "trigger_spell_choices": {},
     })
     assert result["success"]
+    assert e.state.player.has_status("切割")
 
 
 # 专属道纹 → 其所属副本（学习受门禁限制，须在对应副本内）
@@ -108,24 +107,26 @@ def test_every_tactical_role_is_reachable():
 # ---------- 边界条件 ----------
 
 def test_nuke_ranked_prefers_higher_damage_per_budget():
-    """边界：锐利 3 法力才能发动时，小预算只能打杀伐。"""
-    e = _engine(starter="锐利", learn=["杀伐"])
+    """边界：切割是持续增益，不进输出排序；小预算只能打杀伐。"""
+    e = _engine(starter="切割", learn=["杀伐"])
     ai = TacticalAI(e)
     ranked = ai._nuke_ranked(2)
     assert ranked[0][0] == "杀伐", f"预算2时应只能发动杀伐，实际 {ranked}"
+    assert all(name != "切割" for name, *_ in ranked)
 
 
-def test_nuke_ranked_counts_ruili_blood_limit():
-    """正常：预算够发动锐利时，血限削减计入压力，不得只看法力效率把杀伐排第一。"""
-    e = _engine(starter="锐利", learn=["杀伐"])
+def test_qiege_is_buff_not_nuke():
+    """正常：切割不再按单体削血排序，杀伐仍是输出首选。"""
+    e = _engine(starter="切割", learn=["杀伐"])
     ai = TacticalAI(e)
     ranked = ai._nuke_ranked(6)
-    assert ranked[0][0] == "锐利", f"预算6时应因血限削减优先锐利，实际 {ranked}"
+    assert ranked[0][0] == "杀伐", f"预算6时输出首选应是杀伐，实际 {ranked}"
+    assert "切割" not in ai.owned("nuke")
 
 
 def test_control_not_repeated_on_same_target_in_one_round():
     """边界：同一回合不得对同一目标重复施加控制（控制不叠加，重复即浪费）"""
-    e = _engine(starter="锐利", learn=["束缚"])
+    e = _engine(starter="切割", learn=["束缚"])
     e.state.player.current_mana = 99
     ai = TacticalAI(e)
     ai.new_round()
@@ -268,10 +269,10 @@ def test_evolution_pool_tracks_player_build():
     """
     e1, _ = _plight_engine(("杀伐", "庇护", "僵化"))
     opts1 = e1.combat.get_plight_evolution_options()[0]["borrowable_daowen"]
-    e2, _ = _plight_engine(("锐利", "贯穿"))
+    e2, _ = _plight_engine(("切割", "贯穿"))
     opts2 = e2.combat.get_plight_evolution_options()[0]["borrowable_daowen"]
     assert set(opts1) == {"杀伐", "庇护", "僵化"}
-    assert set(opts2) == {"杀伐", "锐利", "贯穿"}
+    assert set(opts2) == {"杀伐", "切割", "贯穿"}
     assert opts1 != opts2, "借用池必须随玩家构筑变化"
 
 

@@ -280,47 +280,47 @@ def test_battle_end_heal_revert_never_kills():
     assert p.is_alive, "[战终]吐出回复不应直接致死"
 
 
-# ---------- 锐利：血限与当前生命同时扣减（README 第460行） ----------
+# ---------- 切割：失血同时扣除等量血限 ----------
 
-def test_ruili_reduces_hp_independently_of_blood_limit():
-    """正常路径：锐利对残血目标仍应扣当前生命（不是只做血限压顶）"""
-    e = _engine()
-    cm = e.combat
-    m = _monster(hp=200)
-    m.current_hp = 10          # 残血：血限压顶对它毫无作用
-    cm.state.enemies = [m]
-
-    calc = {"blood_limit_reduction": 20, "hp_reduction": 20}
-    cm.apply_daowen_effect("锐利", calc, cm.state.player, m)
-
-    assert m.blood_limit == 180, f"血限应-20，实际={m.blood_limit}"
-    assert m.current_hp == 0, f"当前生命应独立-20并被判定[命零]，实际={m.current_hp}"
-    assert not m.is_alive
-
-
-def test_ruili_hp_cut_counts_as_damage_dealt():
-    """边界：锐利造成的生命减少要计入本回合伤害，否则会被【凡庸】误判为无所作为"""
+def test_qiege_cuts_blood_limit_with_life_loss():
+    """正常路径：持切割时对其他角色造成失血，血限同步扣除等量。"""
+    from engine.models import StatusEffect
     e = _engine()
     cm = e.combat
     m = _monster(hp=200)
     cm.state.enemies = [m]
     p = cm.state.player
-    p.damage_dealt_this_round = 0
+    p.add_status(StatusEffect(name="切割", remaining_rounds=3, value=1))
 
-    cm.apply_daowen_effect("锐利", {"blood_limit_reduction": 20, "hp_reduction": 20}, p, m)
+    cm._apply_hostile_damage(m, 20, source=p)
 
-    assert p.damage_dealt_this_round > 0, "锐利削减的生命必须计入伤害统计"
+    assert m.current_hp == 180
+    assert m.blood_limit == 180
 
 
-def test_ruili_hp_cut_never_below_zero():
-    """错误输入/边界：扣减不得使生命变为负数，且不重复致死"""
+def test_qiege_does_not_cut_own_blood_limit():
+    """边界：自己失去生命不触发切割。"""
+    from engine.models import StatusEffect
     e = _engine()
     cm = e.combat
-    m = _monster(hp=200)
-    m.current_hp = 3
-    cm.state.enemies = [m]
+    p = cm.state.player
+    before = p.blood_limit
+    p.add_status(StatusEffect(name="切割", remaining_rounds=3, value=1))
+    p.take_damage(10, "代价")
+    assert p.blood_limit == before
 
-    cm.apply_daowen_effect("锐利", {"blood_limit_reduction": 40, "hp_reduction": 40}, cm.state.player, m)
 
-    assert m.current_hp <= 0
-    assert not m.is_alive
+def test_qiege_rejects_zero_x():
+    """错误输入：切割X必须为正整数。"""
+    e = _engine()
+    from engine.models import DaoWen, DaoWenInstance
+    e.state.player.dao_wen["切割"] = DaoWenInstance(
+        DaoWen(name="切割", formula="", cost_type="消耗", cost_formula="3X", effect_formula=""))
+    e.state.player.current_mana = 20
+    e.state.phase = "in_combat"
+    e.state.combat_subphase = "player_actions"
+    r = e.execute_action("use_daowen", {
+        "daowen_name": "切割", "x": 0,
+        "dodge": False, "blood_shadow": False, "trigger_spell_choices": {},
+    })
+    assert not r["success"]

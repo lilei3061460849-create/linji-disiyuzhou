@@ -146,22 +146,19 @@ class DaoWenEngine:
             "summary": f"流血{x}，为{target_name}回复{x}点生命"
         }
     
-    # ---- 杀伐14节点闭环后半（锐利至封印）----
+    # ---- 杀伐14节点闭环后半（切割至封印）----
     
     @staticmethod
-    def calculate_ruili(x: int, target: Entity = None) -> dict:
-        """锐利X：消耗3X。[目标]血限及当前生命同时-5X"""
-        target_name = target.name if target is not None else "未选定目标"
+    def calculate_qiege(x: int) -> dict:
+        """切割X：消耗3X。你使其他角色失去生命的同时扣除其等量血限，持续X"""
         cost = 3 * x
-        reduction = 5 * x
         return {
-            "dao_wen": "锐利",
+            "dao_wen": "切割",
             "x": x,
             "cost_type": CostType.MANA.value,
             "cost": cost,
-            "blood_limit_reduction": reduction,
-            "hp_reduction": reduction,
-            "summary": f"消耗{cost}法力，{target_name}血限与当前生命各-{reduction}"
+            "duration": x,
+            "summary": f"消耗{cost}法力，使其他角色失去生命时扣除等量血限，持续{x}回合"
         }
     
     @staticmethod
@@ -1012,7 +1009,7 @@ class DaoWenEngine:
             "血债": cls.calculate_xuezhai,
             "冲击": cls.calculate_chongji,
             "慈悲": cls.calculate_cibei,
-            "锐利": cls.calculate_ruili,
+            "切割": cls.calculate_qiege,
             "增殖": cls.calculate_zengzhi,
             "束缚": cls.calculate_shufu,
             "透支": cls.calculate_touzhi,
@@ -1177,8 +1174,8 @@ class ResonanceEngine:
             ("固执", "反转", "血债"),
             ("血债", "转换", "冲击"),
             ("冲击", "曲解", "慈悲"),
-            ("慈悲", "反转", "锐利"),
-            ("锐利", "反转", "增殖"),
+            ("慈悲", "反转", "切割"),
+            ("切割", "反转", "增殖"),
             ("增殖", "曲解", "透支"),
             ("透支", "转换", "贯穿"),
             ("贯穿", "曲解", "缓慢"),

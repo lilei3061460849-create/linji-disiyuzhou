@@ -6,7 +6,7 @@
 找出使该道纹**回归均衡带**（既不垫底也不支配）的取值区间。
 
 被测对象（来自 3000 局实测强度排行）：
-  补弱：锐利 1.79（垫底，却是起手道纹）、冲击 2.19（唯一AOE）
+  补弱：切割 1.79（垫底，却是起手道纹）、冲击 2.19（唯一AOE）
   削强：僵化 3.79、庇护 3.59（公式化三件套中的两件）
 
 方法：monkeypatch 对应的 calculate_* 函数，不改引擎源码即可扫描，
@@ -17,7 +17,7 @@
 
 用法：
     python3 sim/balance_sweep.py --games 60
-    python3 sim/balance_sweep.py --games 60 --only 锐利
+    python3 sim/balance_sweep.py --games 60 --only 切割
 """
 import argparse
 import importlib.util
@@ -43,10 +43,10 @@ from engine.ai_tactics import TACTICAL_ROLES
 
 def sync_ai_table(name: str, lv) -> None:
     """把被扫描的数值同步进 AI 的战术表，使 AI 按新数值权衡性价比。"""
-    if name == "锐利":
+    if name == "切割":
         cost_k, dmg_k = lv
-        TACTICAL_ROLES["锐利"]["cost"] = cost_k
-        TACTICAL_ROLES["锐利"]["dmg_per_x"] = dmg_k
+        TACTICAL_ROLES["切割"]["cost"] = cost_k
+        TACTICAL_ROLES["切割"]["dmg_per_x"] = dmg_k
     elif name == "冲击":
         TACTICAL_ROLES["冲击"]["dmg_per_x"] = lv
     elif name == "僵化":
@@ -59,7 +59,7 @@ def sync_ai_table(name: str, lv) -> None:
 
 def make_ruili(cost_k: int, dmg_k: int):
     def f(x: int, target: Entity) -> dict:
-        return {"dao_wen": "锐利", "x": x, "cost_type": "消耗", "cost": cost_k * x,
+        return {"dao_wen": "切割", "x": x, "cost_type": "消耗", "cost": cost_k * x,
                 "blood_limit_reduction": dmg_k * x, "hp_reduction": dmg_k * x,
                 "summary": f"消耗{cost_k*x}法力，{target.name}血限与当前生命各-{dmg_k*x}"}
     return f
@@ -92,7 +92,7 @@ def make_bihu(shield_k: int):
 
 # 扫描计划：(道纹, 参数标签, 构造器, 档位列表, 原始档)
 PLANS = {
-    "锐利": ("消耗系数×伤害系数", lambda p: make_ruili(*p),
+    "切割": ("消耗系数×伤害系数", lambda p: make_ruili(*p),
              [(3, 4), (2, 4), (2, 5), (1, 4), (3, 6), (2, 6)], (3, 4)),
     "冲击": ("每点X伤害", lambda p: make_chongji(p), [1, 2, 3], 1),
     "僵化": ("消耗系数", lambda p: make_jianghua(p), [5, 8, 12, 15], 5),
@@ -101,7 +101,7 @@ PLANS = {
 
 # 每个被测道纹配一套"必然会用到它"的 build
 PROBE_BUILDS = {
-    "锐利": ("杀伐", ["锐利", "庇护", "再生", "贯穿"]),
+    "切割": ("杀伐", ["切割", "庇护", "再生", "贯穿"]),
     "冲击": ("杀伐", ["冲击", "庇护", "再生", "加害"]),
     "僵化": ("杀伐", ["僵化", "庇护", "再生", "加害"]),
     "庇护": ("杀伐", ["庇护", "再生", "僵化", "加害"]),

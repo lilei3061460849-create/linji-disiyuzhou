@@ -196,7 +196,7 @@ def test_jinghua_reduces_mutation():
     assert r["calculation"]["cost"] == 25
 
 
-def test_jinghua_can_go_negative_and_trigger_redemption():
+def test_jinghua_can_go_negative_without_redemption():
     engine = _ready_combat(_engine("jh_neg"))
     player = engine.state.player
     _give(player, "净化")
@@ -213,8 +213,8 @@ def test_jinghua_can_go_negative_and_trigger_redemption():
     })
     assert r["success"]
     assert monster.mutation_count == -30
-    assert engine.state.pending_redemption
-    assert not monster.is_alive
+    assert not engine.state.pending_redemption
+    assert monster.is_alive
 
 
 def test_jinghua_rejects_non_positive_x():
@@ -233,11 +233,11 @@ def test_jinghua_rejects_non_positive_x():
 
 # ---------- 救赎 ----------
 
-def test_redemption_fires_after_last_original_even_with_transform_left():
-    """正常：残韵卸掉最后一张原始道纹，转化道纹留下也触发救赎。"""
+def test_redemption_fires_at_low_hp_even_with_transform_left():
+    """正常：残血且卸掉最后一张原始道纹，转化道纹留下也触发救赎。"""
     engine = _ready_combat(_engine("rd_path"))
     engine.state.resonance["转换"] = 1
-    monster = Entity(name="脑蜘蛛", entity_type="怪物", blood_limit=204, current_hp=204,
+    monster = Entity(name="脑蜘蛛", entity_type="怪物", blood_limit=204, current_hp=20,
                      attack_count=2, attack_power=11)
     _give(monster, "强化")
     _give(monster, "坏死")
@@ -258,8 +258,8 @@ def test_redemption_fires_after_last_original_even_with_transform_left():
     assert friend.blood_limit == math.ceil(204 / 2)
 
 
-def test_redemption_skips_never_had_original():
-    """边界：从未持有七种原始道纹的白板/专属怪不立刻救赎。"""
+def test_redemption_skips_full_hp_or_remaining_original():
+    """边界：满血无原始道纹不救赎；残血仍持有原始道纹也不救赎。"""
     engine = _ready_combat(_engine("rd_blank"))
     exclusive = Entity(name="血肉巨囊", entity_type="怪物", blood_limit=258, current_hp=258,
                        attack_count=1, attack_power=8)
@@ -267,19 +267,17 @@ def test_redemption_skips_never_had_original():
     _give(exclusive, "增殖")
     engine.state.enemies[:] = [exclusive]
     assert engine.combat.check_redemption(exclusive) is None
-    transform_only = Entity(name="孢子母体", entity_type="怪物", blood_limit=252, current_hp=252,
-                            attack_count=2, attack_power=7)
-    _give(transform_only, "衰败")
-    _give(transform_only, "寄生")
-    engine.state.enemies[:] = [transform_only]
-    assert engine.combat.check_redemption(transform_only) is None
+    wounded = Entity(name="脑蜘蛛", entity_type="怪物", blood_limit=204, current_hp=20,
+                     attack_count=2, attack_power=11)
+    _give(wounded, "强化")
+    engine.state.enemies[:] = [wounded]
+    assert engine.combat.check_redemption(wounded) is None
 
 
 def test_redemption_accept_creates_halved_friend():
     engine = _ready_combat(_engine("rd_ok"))
-    monster = Entity(name="悔怪", entity_type="怪物", blood_limit=81, current_hp=81,
+    monster = Entity(name="悔怪", entity_type="怪物", blood_limit=81, current_hp=8,
                      attack_count=3, attack_power=5)
-    monster._had_monster_daowen = True
     engine.state.enemies[:] = [monster]
     engine.combat.check_redemption(monster)
     assert engine.state.pending_redemption
@@ -302,7 +300,7 @@ def test_redemption_ignore_and_no_false_positive():
     _give(exclusive, "杀伐")
     engine.state.enemies[:] = [exclusive]
     assert engine.combat.check_redemption(exclusive) is None
-    exclusive.mutation_count = -30
+    exclusive.current_hp = 6
     hit = engine.combat.check_redemption(exclusive)
     assert hit is not None
     r = engine.execute_action("resolve_redemption", {"option": "无视"})
@@ -313,9 +311,8 @@ def test_redemption_ignore_and_no_false_positive():
 
 def test_redemption_rejects_bad_accept():
     engine = _ready_combat(_engine("rd_bad"))
-    monster = Entity(name="悔怪", entity_type="怪物", blood_limit=40, current_hp=40,
+    monster = Entity(name="悔怪", entity_type="怪物", blood_limit=40, current_hp=4,
                      attack_count=2, attack_power=2)
-    monster._had_monster_daowen = True
     engine.state.enemies[:] = [monster]
     engine.combat.check_redemption(monster)
     missing = engine.execute_action("resolve_redemption", {"option": 1})

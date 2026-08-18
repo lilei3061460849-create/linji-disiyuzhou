@@ -180,9 +180,9 @@ def test_best_only_improves():
     """边界：best 只应在更高分时被替换"""
     k = {"generation": 0, "trials": {}, "pair_scores": {}, "history": [], "best": None}
     bl.update(k, "杀伐", ["庇护"], 7.0)
-    bl.update(k, "锐利", ["束缚"], 3.0)
+    bl.update(k, "切割", ["束缚"], 3.0)
     assert k["best"]["score"] == 7.0
-    bl.update(k, "锐利", ["封印"], 9.0)
+    bl.update(k, "切割", ["封印"], 9.0)
     assert k["best"]["score"] == 9.0
 
 
