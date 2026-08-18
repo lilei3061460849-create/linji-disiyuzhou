@@ -57,7 +57,7 @@ TACTICAL_ROLES: dict[str, dict] = {
     "伤痕": {"role": "debuff", "cost": 5, "pri": 2},
     # ---- 乱葬岗（二阶）----
     "分裂": {"role": "buff", "cost": 0, "pay": "冷却", "pri": 3},
-    "尸爆": {"role": "aoe", "cost": 10, "pri": 3},
+    "尸爆": {"role": "buff", "cost": 10, "pri": 3},   # [命零]死亡触发爆炸，按濒死保险挂
     "缄默": {"role": "control", "cost": 2, "pri": 2},
     "瓦解": {"role": "debuff", "cost": 10, "pri": 2},
     "冥气": {"role": "debuff", "cost": 5, "pri": 2},
@@ -83,7 +83,7 @@ TACTICAL_ROLES: dict[str, dict] = {
     "眩晕": {"role": "control", "cost": 20, "pri": 3},
     "弱化": {"role": "debuff", "cost": 3, "pri": 1},
     "无力": {"role": "control", "cost": 10, "pri": 2},
-    "衰败": {"role": "nuke", "cost": 15, "pri": 4},
+    "衰败": {"role": "debuff", "cost": 15, "pri": 1, "min_x": 1},  # 回始扣20%当前生命(持续∞)，X=1即满效
     "滋养": {"role": "heal", "cost": 5, "pri": 2},
     "坠落": {"role": "debuff", "cost": 1, "pri": 1},
     "滑翔": {"role": "buff", "cost": 5, "pri": 3},
@@ -197,28 +197,86 @@ class TacticalAI:
         return None
 
     def try_buff(self) -> Optional[dict]:
-        """1.5 防御性buff：开局挂【固执】（冷却3，单次失去生命最高为1）。
+        """1.5 增益：固执优先（防爆发），其余 role=buff 按条件表逐张评估。
 
-        固执以冷却为代价、不耗法力，是克制爆裂反伤/高攻连击的关键；
-        每场战斗只能发动一次（冷却3），在首回合尽早挂上。
+        修复（2026-08-18）：旧版只硬编码固执，导致切割/贯穿/增殖/活血/爆裂/
+        超频/龙鳞/滑翔/分裂/招魂 等 10 张 buff 永不发动（死码）。
+        现按每张牌的战术条件评估；每张每场至多一次，一回合至多打出一张增益。
         """
         p = self.player
-        if self.used.get("固执"):
-            return None
-        if "固执" not in p.dao_wen:
-            return None
-        inst = p.dao_wen.get("固执")
-        if inst is not None and not inst.can_use():
-            return None
         enemies = self.alive_enemies()
         if not enemies:
             return None
-        if self.incoming_damage() <= 0:
-            return None
-        r = self._cast("固执", 3, p.name)
-        if r:
-            self.used["固执"] = 1
-        return r
+        battle = self.engine.state.current_battle
+        # 固执特判：冷却代价、克制爆发，首回合尽早挂（按场计，跨场可重挂）
+        if ("固执" in p.dao_wen and not self.used.get(f"buff:固执:{battle}")
+                and self.incoming_damage() > 0):
+            inst = p.dao_wen.get("固执")
+            if inst is None or inst.can_use():
+                r = self._cast("固执", 3, p.name)
+                if r:
+                    self.used[f"buff:固执:{battle}"] = 1
+                    self.used["固执"] = self.used.get("固执", 0) + 1
+                    return r
+        for name in self.owned("buff"):
+            if name == "固执" or self.used.get(f"buff:{name}:{battle}"):
+                continue
+            plan = self._buff_plan(name)
+            if not plan:
+                continue
+            x, target = plan
+            r = self._cast(name, x, target)
+            if r:
+                self.used[f"buff:{name}:{battle}"] = 1
+                return r
+        return None
+
+    def _buff_plan(self, name: str) -> Optional[tuple[int, Optional[str]]]:
+        """返回 (x, target) 或 None（条件不满足）。条件保守：不透支保命法力。"""
+        p = self.player
+        enemies = self.alive_enemies()
+        info = TACTICAL_ROLES.get(name, {})
+        per = max(0, info.get("cost", 1))
+        mana = self.mana()
+        threat = self.incoming_damage()
+        hp_ratio = p.current_hp / max(1, p.blood_limit)
+        if name == "贯穿":       # 伤害无视格挡：敌方有格挡才值得
+            if any(e.shield > 0 for e in enemies) and mana >= per:
+                return (1, p.name)
+        elif name == "切割":     # 失去生命附带扣血限：法力充裕时挂
+            if mana >= max(per * 2, p.mana_limit * 0.6):
+                return (1, p.name)
+        elif name == "增殖":     # 廉价加血限：法力将溢出时倾倒
+            if mana >= p.mana_limit * 0.8:
+                x = min(self._x_for(name, mana - per), 3)
+                if x >= 1:
+                    return (x, p.name)
+        elif name == "活血":     # 掉血回复：血线中低位挂
+            if hp_ratio <= 0.7 and mana >= per * 2:
+                return (2, p.name)
+        elif name == "爆裂":     # 受伤反弹：威胁大时挂
+            if threat >= 8 and mana >= per * 2:
+                return (2, p.name)
+        elif name == "超频":     # 补速度（闪避资源）
+            if p.current_speed < p.speed_limit and mana >= per and threat > 0:
+                return (1, p.name)
+        elif name == "龙鳞":     # 永久减伤：尽早挂高X
+            x = min(self._x_for(name, mana), 2)
+            if x >= 1 and mana >= per:
+                return (x, p.name)
+        elif name == "滑翔":     # 获得飞行：致命威胁下脱离目标选择
+            if threat >= p.current_hp * 0.4 and mana >= per:
+                return (1, p.name)
+        elif name == "分裂":     # 命零保险（冷却代价）：血线危险时挂
+            if hp_ratio <= 0.35:
+                return (1, p.name)
+        elif name == "尸爆":     # 命零时对全体敌爆炸：濒死且敌多才值
+            if hp_ratio <= 0.35 and len(enemies) >= 2 and mana >= per:
+                return (1, p.name)
+        elif name == "招魂":     # 唤回尸体作临时朋友：法力充裕时尝试（无尸体会被引擎拒绝）
+            if mana >= max(per, p.mana_limit * 0.8):
+                return (1, None)
+        return None
 
     def resolve_pending_redemption(self, option: str = "无视") -> Optional[dict]:
         """救赎是强制待选：未结算前任何其它行动都会被引擎拒绝。"""
@@ -356,13 +414,20 @@ class TacticalAI:
         if not enemies:
             return None
         tank = max(enemies, key=lambda e: e.current_hp)
-        # 只有当这一击的债务能换来足够长的收益期时才值得占用出手：
-        # 战斗预计还会持续多回合，且 X 至少为2（X=1 的削弱幅度通常不值一次出手）。
+        # X≥2 门槛只适用于按X线性放大的法力消耗型削弱；
+        # 代价型（cost≤0，_x_for恒为1，如畸变/逆鳞）与声明min_x=1的强效
+        # 削弱（如衰败：X=1已是回始扣20%当前生命）按min_x=1放行。
         for name in self.owned("debuff"):
             if self.used.get(f"debuff:{name}:{tank.name}"):
                 continue
+            info = TACTICAL_ROLES.get(name, {})
+            min_x = info.get("min_x", 1 if info.get("cost", 1) <= 0 else 2)
             x = min(self._x_for(name, self.mana_budget()), 3)
-            if x < 2:
+            if x < min_x:
+                # 重锤型削弱（min_x=1，如衰败15法力/X）：均分预算付不起时
+                # 允许动用全部法力——一次打残主坦换整场收益是划算的。
+                x = min(self._x_for(name, self.mana()), 3)
+            if x < min_x:
                 continue
             r = self._cast(name, x, tank.name)
             if r:
