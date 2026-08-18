@@ -980,8 +980,21 @@ class CombatEngine:
                     mediocrity_ready.append((entity, why))
 
         # 多个角色同时触发凡庸时，非轮回者优先；同档保持原遍历顺序。
+        # DM裁定（2026-08-18）：「非轮回者优先」的意义在于——按优先序逐个结算，
+        # 一旦先炸裂的角色清空了某一方战场（战斗胜负因此已定），立即中断剩余凡庸结算；
+        # 幸存侧尚未结算的待爆者不再炸裂（其计数随战斗结束清零）。
+        # 注意：只有本拍凡庸「炸出来」的清空才中断；战场在结算开始前就已空置
+        # （如战斗尚未开始的空场脚手架）不援引此裁定。
         mediocrity_ready.sort(key=lambda item: item[0].entity_type == "轮回者")
+        decided_before_tick = self._mediocrity_battle_decided()
         for entity, why in mediocrity_ready:
+            if not decided_before_tick and self._mediocrity_battle_decided():
+                entity.no_action_rounds = 0
+                entity.no_damage_rounds = 0
+                effects.append({
+                    "type": "mediocrity_interrupted", "entity": entity.name,
+                    "note": f"{why}，但战场已因先前的【凡庸】清空、战斗结束：剩余凡庸中断结算"})
+                continue
             effects.extend(self._apply_mediocrity(entity, why))
 
         for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
@@ -3257,6 +3270,16 @@ class CombatEngine:
         detail = self._apply_hostile_damage(actor, dmg, "必中", source)
         detail["dragon_breath"] = dmg
         return detail
+
+    def _mediocrity_battle_decided(self) -> bool:
+        """凡庸中断判定：任一方战场已无存活角色，即战斗胜负已定。
+
+        DM裁定（2026-08-18）：非轮回者优先炸裂后若清空其所在一方，
+        另一方尚未结算的凡庸不再触发。
+        """
+        player_side_alive = any(x.is_alive for x in self.state.get_all_player_side())
+        enemy_side_alive = any(x.is_alive for x in self.state.get_all_enemy_side())
+        return not player_side_alive or not enemy_side_alive
 
     def _tick_mediocrity_counters(self, entity: Entity) -> Optional[str]:
         """更新凡庸连续计数；达阈值返回原因，不立刻结算。"""

@@ -86,14 +86,26 @@ def _alive_idx(e):
 
 
 def player_round_stall(e):
-    """凡庸盾守流：先戳(防己方凡庸)，再全力庇护。"""
+    """凡庸盾守流：先戳(防己方计数脱同步)，再全力庇护。"""
     p = e.state.player
     idx, m = _alive_idx(e)
     if m is None:
         return
-    # 己方凡庸计数≥2时就戳（留冗余），杀伐X=1只花1法力
+    # 己方凡庸计数≥2时就戳（保险：怪一旦蹭到伤害其计数重置，己方就会单独达阈值）
     if p.no_damage_rounds >= 2 and "杀伐" in p.dao_wen:
         _cast(e, "杀伐", 1, f"enemy:{idx}")
+    need = (_expected_enemy_output(e) - p.shield + 1) // 2 + 1
+    x = min(max(need, 1), p.current_mana)
+    if x > 0:
+        _cast(e, "庇护", x, "player:0")
+
+
+def player_round_pure_stall(e):
+    """纯盾守流（不戳）：只叠盾。依赖DM裁定——同拍双爆时怪先炸、
+    战场清空则我方凡庸中断结算。风险：怪蹭到1点伤害即计数脱同步。"""
+    p = e.state.player
+    if _alive_idx(e)[1] is None:
+        return
     need = (_expected_enemy_output(e) - p.shield + 1) // 2 + 1
     x = min(max(need, 1), p.current_mana)
     if x > 0:
@@ -191,7 +203,9 @@ def main():
     args = ap.parse_args()
     seeds = list(range(1, args.seeds + 1))
     regions = ["罪孽都市", "扭曲都市", "龙心谷"]
-    bench(player_round_stall, "A) 凡庸盾守流（庇护挡满5回合→怪自爆）", seeds, regions)
+    bench(player_round_stall, "A) 凡庸盾守流（庇护挡满5回合→怪自爆；带保险戳）", seeds, regions)
+    bench(player_round_pure_stall,
+          "A2) 纯盾守流（不戳；依赖DM裁定：怪炸完战场清空则我方凡庸中断）", seeds, regions)
     bench(player_round_cancer, "B) 癌变奶怪流（再生奶怪到2×血限→吸入死者之书）", seeds, regions)
 
 

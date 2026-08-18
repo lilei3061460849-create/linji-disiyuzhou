@@ -106,7 +106,8 @@ def test_idle_counter_resets_on_any_action():
 
 
 def test_mediocrity_non_reincarnator_fires_first():
-    """正常：轮回者与怪物同时达阈值时，非轮回者先结算，残骸先落入轮回者再轮到其炸裂"""
+    """正常：轮回者与怪物同时达阈值时，非轮回者先结算；怪物炸完战场清空，
+    战斗胜负已定，轮回者的凡庸中断结算（DM裁定 2026-08-18）"""
     e = _engine()
     cm = e.combat
     cm.state.enemies = [_monster()]
@@ -117,6 +118,7 @@ def test_mediocrity_non_reincarnator_fires_first():
     cm.state.friends = [friend]
 
     fired = None
+    interrupted = None
     for r in range(1, 6):
         for ent in (p, m, friend):
             ent.damage_dealt_this_round = 0
@@ -124,14 +126,72 @@ def test_mediocrity_non_reincarnator_fires_first():
         res = cm.round_end()
         names = [ef.get("entity") for ef in res.get("effects", [])
                  if ef.get("type") == "mediocrity"]
+        skips = [ef.get("entity") for ef in res.get("effects", [])
+                 if ef.get("type") == "mediocrity_interrupted"]
         if names:
             fired = (r, names)
+        if skips:
+            interrupted = (r, skips)
 
-    assert fired == (5, ["陪葬者", "木桩", "贾凡"]), f"凡庸结算顺序应为非轮回者优先，实际={fired}"
-    assert not m.is_alive and not friend.is_alive and not p.is_alive
+    assert fired == (5, ["陪葬者", "木桩"]), \
+        f"非轮回者优先结算；怪物炸完战场清空后轮回者不再炸裂，实际={fired}"
+    assert interrupted == (5, ["贾凡"]), f"轮回者的凡庸应记为中断结算，实际={interrupted}"
+    assert not m.is_alive and not friend.is_alive
+    assert p.is_alive, "战场已清空，轮回者的凡庸应被中断，不得死亡"
+    assert p.no_damage_rounds == 0 and p.no_action_rounds == 0, "中断者计数应清零"
     wrecks = [c for c in cm.state.consumables if c.name == "残骸"]
-    assert len(wrecks) == 1, "怪物凡庸仍应产出残骸，即使轮回者随后也炸裂"
+    assert len(wrecks) == 1, "怪物凡庸仍应产出残骸"
+    assert e.state.last_death_cause != "mediocrity"
+
+
+def test_mediocrity_interrupt_requires_cleared_battlefield():
+    """边界：两只怪物只有一只达阈值时，剩余怪物仍存活（战斗未定），
+    同拍达阈值的轮回者照常炸裂，不得援引中断裁定"""
+    e = _engine()
+    cm = e.combat
+    cm.state.enemies = [_monster("空转怪"), _monster("勤快怪")]
+    idle_m, busy_m = cm.state.enemies
+    p = cm.state.player
+
+    for _ in range(5):
+        idle_m.damage_dealt_this_round = 0
+        idle_m.actions_used_this_round = 0
+        busy_m.damage_dealt_this_round = 3
+        busy_m.actions_used_this_round = 1
+        p.damage_dealt_this_round = 0
+        p.actions_used_this_round = 0
+        cm.round_end()
+
+    assert not idle_m.is_alive, "空转怪应凡庸炸裂"
+    assert busy_m.is_alive, "有作为的怪物不受波及"
+    assert not p.is_alive, "战场未清空时，同拍达阈值的轮回者仍应炸裂"
     assert e.state.last_death_cause == "mediocrity"
+
+
+def test_mediocrity_interrupt_covers_multiple_monsters():
+    """边界：多只怪物同拍全部凡庸、战场清空后，轮回者与朋友都被中断豁免"""
+    e = _engine()
+    cm = e.combat
+    cm.state.enemies = [_monster("怪甲"), _monster("怪乙")]
+    p = cm.state.player
+    friend = Entity(name="同伴", entity_type="朋友", blood_limit=30, current_hp=30,
+                    attack_count=1, attack_power=1)
+    cm.state.friends = [friend]
+
+    for _ in range(5):
+        for m in cm.state.enemies:
+            m.damage_dealt_this_round = 0
+            m.actions_used_this_round = 0
+        p.damage_dealt_this_round = 0
+        p.actions_used_this_round = 0
+        # 朋友有出手且有伤害，不参与凡庸
+        friend.damage_dealt_this_round = 1
+        friend.actions_used_this_round = 1
+        cm.round_end()
+
+    assert all(not m.is_alive for m in cm.state.enemies), "两只怪都应凡庸炸裂"
+    assert p.is_alive and friend.is_alive, "战场清空后我方无人炸裂"
+    assert e.state.last_death_cause != "mediocrity"
 
 
 def test_mediocrity_reincarnator_still_fires_when_alone():
