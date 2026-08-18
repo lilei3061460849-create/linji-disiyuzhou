@@ -31,7 +31,7 @@ def _choose_region(engine, region):
 
 
 def test_setup():
-    """测试开局流程：属性分配后必须从杀伐闭环发现3选1。"""
+    """测试开局流程：属性分配后先发现遗物3选1，再从杀伐闭环发现初始道纹3选1。"""
     print("\n=== 测试：开局 ===")
     engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db", rng_seed=7)
 
@@ -47,11 +47,27 @@ def test_setup():
     assert engine.state.player.mana_limit == 14, f"法限错误: {engine.state.player.mana_limit}"
     assert engine.state.player.action_count == math.ceil(8 / 3), "出手次数错误"
     assert engine.state.shards == 20, "初始碎片错误"
+    relic_choices = list(engine.state.pending_relic_choices)
+    assert result["result"]["relic_choices"] == relic_choices
+    assert len(relic_choices) == 3 and len(set(relic_choices)) == 3
+    assert engine.state.pending_initial_daowen_choices == []
+    assert engine.state.player.dao_wen == {}
+    print("  ✓ 属性分配正确，先列出3件遗物发现候选")
+
+    blocked = engine.execute_action("setup_choose_initial_daowen", {"daowen_name": "杀伐"})
+    assert not blocked["success"], "遗物未选择时不能选初始道纹"
+    print("  ✓ 未选择开局遗物时不能选初始道纹")
+
+    picked_relic = engine.execute_action("choose_discovered_relic",
+                                         {"relic_name": relic_choices[0]})
+    assert picked_relic["success"], f"遗物选择失败: {picked_relic}"
+    assert engine.state.relics and engine.state.relics[0].name == relic_choices[0]
     choices = list(engine.state.pending_initial_daowen_choices)
+    assert picked_relic["result"]["daowen_choices"] == choices
     assert len(choices) == 3 and len(set(choices)) == 3
     assert set(choices) <= set(SHAFA_LOOP_DAOWEN)
     assert engine.state.player.dao_wen == {}
-    print("  ✓ 属性分配正确，并列出3个杀伐闭环发现候选")
+    print(f"  ✓ 显式选择开局遗物【{relic_choices[0]}】后，列出3个杀伐闭环发现候选")
 
     blocked = engine.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     assert not blocked["success"] and "初始道纹" in blocked["error"]
@@ -544,7 +560,7 @@ def test_out_of_combat_actions():
 
 
 def test_relic_effects():
-    """测试遗物效果触发（避风铃/钱袋/回锋刀）"""
+    """测试遗物效果触发（避风铃/第一杯/回锋刀）"""
     print("\n=== 测试：遗物效果 ===")
     from engine.models import Relic, GameState
     from engine.combat import CombatEngine
@@ -570,17 +586,17 @@ def test_relic_effects():
     assert m2.current_hp < 120, f"回锋刀应造伤，实HP{m2.current_hp}"
     print(f"  ✓ 回锋刀：回始造伤(失速3→9伤)，靶HP120→{m2.current_hp}")
 
-    # 钱袋：免疫癌变（不再额外加碎片）
+    # 第一杯：免疫癌变（原钱袋效果，钱袋已删除）
     engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
     engine.execute_action("setup_attributes", {"name":"测试","blood_points":10,"speed_points":8,"mana_points":7})
     finish_initial_daowen(engine)
     _choose_region(engine, "罪孽都市")
-    engine.state.relics = [Relic(name="钱袋", effect="")]
+    engine.state.relics = [Relic(name="第一杯", effect="")]
     player = engine.state.player
     player.total_healed = engine.combat.cancer_threshold_of(player)
     hit = engine.combat.check_cancer(player)
-    assert hit is None and player.is_alive, "持有钱袋的轮回者应免疫癌变"
-    print("  ✓ 钱袋：累计回复达阈值也不触发癌变")
+    assert hit is None and player.is_alive, "持有第一杯的轮回者应免疫癌变"
+    print("  ✓ 第一杯：累计回复达阈值也不触发癌变")
     print("  ✓ 遗物效果测试通过")
 
 

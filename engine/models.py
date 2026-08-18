@@ -45,7 +45,7 @@ class DaoWenInstance:
     x_value: int = 0            # 当前X值（自由控X规则）
     cooldown_remaining: int = 0 # 冷却剩余
     is_frozen: bool = False     # 是否被封印
-    sha_qi: str = ""            # 乱葬岗附煞：法煞/魂煞/冥煞/血煞/锁煞/蚀煞/心煞
+    sha_qi: str = ""            # 乱葬岗附煞：法煞/魂煞/冥煞/血煞/锁煞/心煞
     
     def can_use(self) -> bool:
         return not self.is_frozen and self.cooldown_remaining <= 0

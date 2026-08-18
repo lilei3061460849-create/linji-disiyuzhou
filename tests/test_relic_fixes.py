@@ -1,14 +1,14 @@
 """
-pytest 风格测试 - 里程碑8：修复5件坏掉/缺失的遗物（血誓戒/买路财/同魂笔/钱袋/忘忧香）
+pytest 风格测试 - 里程碑8：修复5件坏掉/缺失的遗物（血誓戒/买路财/同魂笔/第一杯(原钱袋)/忘忧香）
 
 历史背景：早期遗物池中只有7件真正在战斗中生效，血誓戒完全没做、买路财只有计算没有执行动作、同魂笔只生成
-一条虚假日志不改任何状态、钱袋的触发点从未被调用过是死代码、忘忧香曾未注册。当前遗物池经契约类合并后为12件。
+一条虚假日志不改任何状态、钱袋的触发点从未被调用过是死代码、忘忧香曾未注册。钱袋已删除，其免疫癌变效果并入【第一杯】，当前遗物池为11件。
 
 覆盖范围：
 1. 血誓戒：[回始]玩家首次主动支付流血代价获得等量格挡/低血量时改为等量生命，每回合限一次
 2. 买路财：新增retreat_via_toll真正执行撤退(扣碎片/生命、清空战场)，不再只是算个数字
 3. 同魂笔：第二目标的道纹也永久变为变化后的道纹，施法者同时永久获得
-4. 钱袋：持有者不再受到癌变事件影响；朋友/员工不继承
+4. 第一杯：持有者不再受到癌变事件影响（承接原钱袋效果）；朋友/员工不继承
 5. 忘忧香：保持在当前12件遗物池中，并实现对应的"忘忧"局外行动
 
 运行方式：
@@ -157,9 +157,9 @@ def test_tonghunbi_grants_caster_real_daowen_from_second_target():
 
 
 def test_moneybag_blocks_cancer():
-    """钱袋正常路径：持有者累计回复达阈值也不触发癌变"""
+    """第一杯正常路径：持有者累计回复达阈值也不触发癌变（原钱袋效果已并入第一杯）"""
     engine = _new_engine("moneybag_ok")
-    engine.state.relics.append(Relic(name="钱袋", effect=""))
+    engine.state.relics.append(Relic(name="第一杯", effect=""))
     player = engine.state.player
     player.total_healed = engine.combat.cancer_threshold_of(player)
     hit = engine.combat.check_cancer(player)
@@ -168,9 +168,9 @@ def test_moneybag_blocks_cancer():
 
 
 def test_moneybag_does_not_protect_allies():
-    """钱袋边界：朋友/员工不继承免疫"""
+    """第一杯边界：朋友/员工不继承免疫"""
     engine = _new_engine("moneybag_ally")
-    engine.state.relics.append(Relic(name="钱袋", effect=""))
+    engine.state.relics.append(Relic(name="第一杯", effect=""))
     friend = Entity(name="同伴", entity_type="朋友", blood_limit=40, current_hp=40)
     engine.state.friends.append(friend)
     friend.total_healed = engine.combat.cancer_threshold_of(friend)
@@ -180,13 +180,13 @@ def test_moneybag_does_not_protect_allies():
 
 
 def test_wangyouxiang_registered_in_revised_relic_pool():
-    """删除两件旧契约、新增血契后，忘忧香仍在12件遗物池中。"""
+    """删除两件旧契约与钱袋（免疫癌变并入第一杯）后，忘忧香仍在11件遗物池中。"""
     engine = _new_engine("wangyou_registered")
-    engine._init_relic_pool()
-    names = {r.name for r in engine.state.relics_pool}
+    names = {n for n, _ in engine.RELIC_DEFS}
     assert "忘忧香" in names
-    assert len(engine.RELIC_DEFS) == 12
+    assert len(engine.RELIC_DEFS) == 11
     assert "血契" in names
+    assert "钱袋" not in names
 
 
 def test_wangyouxiang_action_loses_daowen_and_gains_shards():
@@ -256,9 +256,9 @@ def test_wangyouxiang_rejected_when_daowen_count_mismatches_tier():
 
 
 def test_moneybag_does_not_add_kill_shards():
-    """错误对照：钱袋不再改写击杀碎片，标准奖励仍按血限2%+道纹×5"""
+    """错误对照：第一杯不改写击杀碎片，标准奖励仍按血限2%+道纹×5"""
     engine = _new_engine("moneybag_no_shard")
-    engine.state.relics.append(Relic(name="钱袋", effect=""))
+    engine.state.relics.append(Relic(name="第一杯", effect=""))
     engine.state.energy = 0
     engine.execute_action("battle_start", {})
     engine.state.enemies.clear()
@@ -266,7 +266,7 @@ def test_moneybag_does_not_add_kill_shards():
     monster.is_alive = False
     engine.state.enemies.append(monster)
     r = engine.execute_action("battle_end", {})
-    assert r["result"]["shard_reward"] == 2, "钱袋不得再额外加碎片，100血限×2%=2"
+    assert r["result"]["shard_reward"] == 2, "第一杯不得额外加碎片，100血限×2%=2"
 
 
 def test_tonghunbi_rejected_when_second_target_lacks_daowen():

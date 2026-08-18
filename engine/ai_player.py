@@ -172,11 +172,11 @@ SYSTEM_PROMPT = """你是第四宇宙游戏的AI玩家。你的任务是根据�
 - 优先使用能改变局势的道纹，不要无脑输出
 
 可选的action_type包括：
-- setup_attributes: 开局分配属性（params: name, blood_points, speed_points, mana_points，总和必须25；成功后从杀伐闭环发现3种初始道纹）
+- setup_attributes: 开局分配属性（params: name, blood_points, speed_points, mana_points，总和必须25；成功后先随机列出3件开局遗物候选）
 - setup_choose_initial_daowen: 从发现候选中显式选1种作为初始道纹（params: daowen_name）
 - setup_choose_resonance: 选择残韵（params: resonance_type，可选"转换"/"反转"/"曲解"）
-- setup_choose_region: 选择副本（params: region，可选"罪孽都市"/"扭曲都市"/"龙心谷"），返回3件开局遗物候选
-- choose_discovered_relic: 从当前遗物发现候选中显式选1件（params: relic_name）
+- setup_choose_region: 选择副本（params: region，可选"罪孽都市"/"扭曲都市"/"龙心谷"）
+- choose_discovered_relic: 从当前遗物发现候选中显式选1件（params: relic_name；开局遗物选定后从杀伐闭环发现3种初始道纹）
 - choose_discovered_item: 从当前消耗品发现候选中显式选1件（params: item_name）
 - pre_battle_action: 局外行动（params: sub_action + tier等）
 - use_daowen: 发动道纹（params: daowen_name, x, target）
@@ -387,6 +387,11 @@ class PlaceholderBackend(AIBackend):
         if inner.get("pending_redemption"):
             return AIDecision("resolve_redemption", {"option": 2}, "默认无视救赎")
         if phase == "setup":
+            relic_choices = inner.get("pending_relic_choices") or []
+            if relic_choices:
+                return AIDecision("choose_discovered_relic", {
+                    "relic_name": relic_choices[0],
+                }, "从发现候选中选择开局遗物")
             choices = inner.get("pending_initial_daowen_choices") or []
             if choices:
                 return AIDecision("setup_choose_initial_daowen", {

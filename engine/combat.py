@@ -1323,7 +1323,7 @@ class CombatEngine:
         """任一角色恢复量达阈值即癌变。怪物仍吸收进书；轮回者/同伴直接命零。"""
         if entity is None or not entity.is_alive or entity.is_proliferated:
             return None
-        if self.state.side_has(entity, "钱袋"):
+        if self.state.side_has(entity, "第一杯"):
             return None
         threshold = self.cancer_threshold_of(entity)
         if threshold <= 0 or entity.total_healed < threshold:
@@ -1779,20 +1779,17 @@ class CombatEngine:
             if dmg.get("actual_damage", 0) > 0:
                 caster.damage_dealt_this_round += dmg["actual_damage"]
                 self._xijie_steal(caster, target, dmg["actual_damage"])
-        # ---- 乱葬岗·附煞后置：锁煞/蚀煞（造成伤害后触发） ----
-        if sha in ("锁煞", "蚀煞"):
+        # ---- 乱葬岗·附煞后置：锁煞（造成伤害后触发） ----
+        if sha == "锁煞":
             dealt = 0
             for ef in result.get("effects", []):
                 if ef.get("type") == "damage":
                     dealt += ef.get("actual_damage", 0) or 0
             if dealt > 0 and target.is_alive:
-                if sha == "锁煞" and target.entity_type == "轮回者":
+                if target.entity_type == "轮回者":
                     drain = min(target.current_mana, dealt)
                     target.current_mana -= drain
                     result["sha_qi_lock_mana"] = drain
-                elif sha == "蚀煞" and target.entity_type != "轮回者":
-                    target.attack_power = max(0, target.attack_power - 1)
-                    result["sha_qi_erode_atk"] = -1
 
         if "aoe_damage" in calc:
             a = 0 if mengbi_blocked else self._jieli_boost(caster, calc["aoe_damage"])

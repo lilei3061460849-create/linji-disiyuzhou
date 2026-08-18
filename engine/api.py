@@ -373,7 +373,7 @@ class GameEngine:
             return [{"id": "炼心", "params_schema": {}}]
         if self.state.current_region == "乱葬岗":
             return [{"id": "附煞", "params_schema": {
-                "mode": ["发现", "选择"], "sha_qi": "选择模式必填：法煞/魂煞/冥煞/血煞/锁煞/蚀煞/心煞",
+                "mode": ["发现", "选择"], "sha_qi": "选择模式必填：法煞/魂煞/冥煞/血煞/锁煞/心煞",
                 "daowen_name": "要附煞的道纹名"}}]
         return []
 
@@ -1335,7 +1335,7 @@ class GameEngine:
         9: ("封存血脉", "保留触发权，随时再次触发初拥之夜"),
     }
 
-    # 遗物池定义（13件；【发现】只列候选，效果在对应触发时点应用）
+    # 遗物池定义（11件；【发现】只列候选，效果在对应触发时点应用）
     RELIC_DEFS = [
         ("血誓戒", "[回始]首次主动支付流血代价时，获得等同于本次流血的格挡；若支付后生命≤30%，改为获得等量生命"),
         ("买路财", "战斗中可失去等同于怪物20%[血限]的[碎片]安全撤退"),
@@ -1346,7 +1346,6 @@ class GameEngine:
         ("血契", "数值型【代价】可与一名存活朋友/员工共同承担（通用规则见README《基础定义·数值型代价》）；[回始]可流血4X获得X法力，本次流血也可共同承担"),
         ("避风铃", "每次闪避后获得3格挡；当前速度归零时获得15格挡"),
         ("守夜灯", "[敌回始]获得[法限]50%法力，[敌回终]清空，每回合一次"),
-        ("钱袋", "你不再受到“癌变”事件的影响"),
         ("无所求", "每当在事件中选拒绝类选项，永久获得1属性点"),
         ("忘忧香", "局外行动你可以选择\"忘忧\"（失忆1/2/3，获得30/55/80[碎片]）"),
     ]
@@ -1394,11 +1393,22 @@ class GameEngine:
         source = self.state.pending_relic_source
         self.state.pending_relic_choices = []
         self.state.pending_relic_source = ""
-        return {
+        result: dict = {
             "success": True,
             "action": "选择发现遗物",
             "result": {"relic": choice, "source": source},
         }
+        # 开局流程：先发现遗物，再发现初始道纹。
+        if (source == "开局发现" and self.state.player is not None
+                and not self.state.player.dao_wen
+                and not self.state.pending_initial_daowen_choices):
+            discovery = self._offer_initial_daowen_discovery("开局发现")
+            if not discovery.get("success"):
+                return discovery
+            result["result"]["daowen_choices"] = discovery["choices"]
+            result["next_actions"] = ["setup_choose_initial_daowen"]
+            result["note"] = "开局遗物已选择；请从杀伐闭环的3个发现候选中显式选择1种作为初始道纹。"
+        return result
 
     def _offer_item_discovery(self, pool: list[str], source: str) -> dict:
         if self.state.pending_item_choices:
@@ -1821,14 +1831,13 @@ class GameEngine:
             }
         }
 
-    # 乱葬岗·附煞：煞气库（7种）
+    # 乱葬岗·附煞：煞气库（6种）
     SHA_QI_LIBRARY = {
         "法煞": "该道纹消耗-X（最低为X）",
         "魂煞": "该道纹的持续X+X（例如持续X变成2X）",
         "冥煞": "该道纹造成的伤害+100%",
         "血煞": "该道纹[回复]+100%",
         "锁煞": "该道纹造成伤害后使[目标]失去等量法力",
-        "蚀煞": "该道纹造成伤害后使[目标]本回合攻击力-1",
         "心煞": "该道纹[战终]冷却已完成战斗场数额外+1",
     }
 

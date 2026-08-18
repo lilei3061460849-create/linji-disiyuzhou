@@ -7,11 +7,33 @@ OPTIONAL_BATTLE_START = ("折速法印", "三相残韵盘", "猩红果实", "苍
 OPTIONAL_ROUND_START = ("血契", "余火印")
 
 
+def resolve_opening_relic(engine, prefer: Optional[str] = None) -> Optional[str]:
+    """新开局流程：属性分配后先发现遗物。若有待选遗物则显式选择1件并返回其名。
+
+    prefer 在候选中才选它；否则优先选不需要额外战始/回始显式提交的遗物。
+    """
+    choices = list(engine.state.pending_relic_choices)
+    if not choices:
+        return None
+    optional = set(OPTIONAL_BATTLE_START) | set(OPTIONAL_ROUND_START) | {"回锋刀", "无所求"}
+    if prefer in choices:
+        pick = prefer
+    else:
+        pick = next((n for n in choices if n not in optional),
+                    next((n for n in choices if n != "无所求"), choices[0]))
+    result = engine.execute_action("choose_discovered_relic", {"relic_name": pick})
+    if not result.get("success"):
+        return None
+    return pick
+
+
 def choose_discovered_initial_daowen(engine, prefer: Optional[str] = None) -> dict:
     """只走公开 action：prefer 在候选中才选它，否则选本次发现的第一项。
 
     生产与平衡模拟必须用这个入口。禁止把未出现在发现列表里的道纹直接塞进玩家。
+    新流程下若开局遗物尚未选择，会先显式选择1件遗物再选初始道纹。
     """
+    resolve_opening_relic(engine)
     choices = list(engine.state.pending_initial_daowen_choices)
     if not choices:
         return {"success": False, "error": "当前没有待选择的初始道纹发现", "choices": []}
@@ -33,6 +55,7 @@ def finish_initial_daowen(engine, prefer: str = "杀伐", only_prefer: bool = Tr
     player = engine.state.player
     if player is None:
         return {"success": False, "error": "没有玩家"}
+    resolve_opening_relic(engine)
     choices = list(engine.state.pending_initial_daowen_choices)
     if choices:
         pick = prefer if prefer in choices else choices[0]

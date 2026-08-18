@@ -1,4 +1,4 @@
-"""开局发现 / 新残韵 / 钱袋免疫癌变 / 净化 / 救赎。
+"""开局发现 / 新残韵 / 第一杯免疫癌变 / 净化 / 救赎。
 
 每项覆盖正常、边界、非法三类。
 """
@@ -56,7 +56,13 @@ def test_initial_daowen_discovery_normal():
         "name": "试者", "blood_points": 10, "speed_points": 8, "mana_points": 7,
     })
     assert r["success"]
-    choices = r["result"]["daowen_choices"]
+    # 新开局流程：先发现遗物3选1，再发现初始道纹。
+    relic_choices = r["result"]["relic_choices"]
+    assert len(relic_choices) == 3 and len(set(relic_choices)) == 3
+    picked_relic = engine.execute_action("choose_discovered_relic",
+                                         {"relic_name": relic_choices[0]})
+    assert picked_relic["success"]
+    choices = picked_relic["result"]["daowen_choices"]
     assert len(choices) == 3 and len(set(choices)) == 3
     assert set(choices) <= set(SHAFA_LOOP_DAOWEN)
     assert engine.state.player.dao_wen == {}
@@ -71,6 +77,8 @@ def test_initial_daowen_discovery_boundary_three_unique_from_loop():
     engine.execute_action("setup_attributes", {
         "name": "试者", "blood_points": 10, "speed_points": 8, "mana_points": 7,
     })
+    engine.execute_action("choose_discovered_relic",
+                          {"relic_name": engine.state.pending_relic_choices[0]})
     choices = engine.state.pending_initial_daowen_choices
     assert all(name in SHAFA_LOOP_DAOWEN for name in choices)
     rolls = [h for h in engine.dice.get_history()
@@ -83,6 +91,11 @@ def test_initial_daowen_discovery_rejects_illegal():
     engine.execute_action("setup_attributes", {
         "name": "试者", "blood_points": 10, "speed_points": 8, "mana_points": 7,
     })
+    # 遗物未选择前，初始道纹与残韵均被拒绝
+    early = engine.execute_action("setup_choose_initial_daowen", {"daowen_name": "杀伐"})
+    assert not early["success"]
+    engine.execute_action("choose_discovered_relic",
+                          {"relic_name": engine.state.pending_relic_choices[0]})
     choices = list(engine.state.pending_initial_daowen_choices)
     bad = engine.execute_action("setup_choose_initial_daowen", {"daowen_name": "净化"})
     assert not bad["success"]
@@ -142,11 +155,11 @@ def test_resonance_refuses_missing_stock_and_original_grant():
     assert "疯狂" not in engine.state.player.dao_wen
 
 
-# ---------- 钱袋免疫癌变 ----------
+# ---------- 第一杯免疫癌变（原钱袋效果） ----------
 
 def test_moneybag_blocks_player_cancer():
     engine = _ready_combat(_engine("bag_ok"))
-    engine.state.relics.append(Relic(name="钱袋", effect=""))
+    engine.state.relics.append(Relic(name="第一杯", effect=""))
     player = engine.state.player
     player.total_healed = engine.combat.cancer_threshold_of(player)
     assert engine.combat.check_cancer(player) is None
@@ -166,7 +179,7 @@ def test_moneybag_threshold_exactly_two_times_blood_limit():
 
 def test_moneybag_does_not_protect_friends():
     engine = _ready_combat(_engine("bag_ally"))
-    engine.state.relics.append(Relic(name="钱袋", effect=""))
+    engine.state.relics.append(Relic(name="第一杯", effect=""))
     friend = Entity(name="同伴", entity_type="朋友", blood_limit=30, current_hp=30)
     engine.state.friends.append(friend)
     friend.total_healed = engine.combat.cancer_threshold_of(friend)

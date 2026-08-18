@@ -39,15 +39,16 @@ def run(region: str = "龙心谷", seed: int = 7, battles: int = 3) -> list[str]
     engine = GameEngine(db_path="/tmp/format_trace.db", rng_seed=seed)
     setup_attr = engine.execute_action("setup_attributes",
                           {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
-    daowen_options = list(setup_attr["result"]["daowen_choices"])
-    daowen_pick = choose_discovered_initial_daowen(engine)["picked"]
-    engine.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
-    r = engine.execute_action("setup_choose_region", {"region": region})
+    # 新开局流程：先发现遗物3选1，再发现初始道纹3选1
+    relic_options = list(setup_attr["result"]["relic_choices"])
     optional = {"折速法印", "三相残韵盘"}
-    relic_options = list(r["result"]["relic_choices"])
     starter = next((name for name in relic_options if name not in optional),
                    relic_options[0])
-    engine.execute_action("choose_discovered_relic", {"relic_name": starter})
+    picked_relic = engine.execute_action("choose_discovered_relic", {"relic_name": starter})
+    daowen_options = list(picked_relic["result"]["daowen_choices"])
+    daowen_pick = choose_discovered_initial_daowen(engine)["picked"]
+    engine.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
+    engine.execute_action("setup_choose_region", {"region": region})
     ai = TacticalAI(engine)
     player = engine.state.player
 

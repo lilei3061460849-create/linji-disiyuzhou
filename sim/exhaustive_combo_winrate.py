@@ -1,0 +1,325 @@
+#!/usr/bin/env python3
+"""
+穷举组合胜率测试（brute force sweep）
+
+按穷举法枚举开局组合的全笛卡尔积：
+  属性分配 × 初始残韵 × 道纹流派（局外学习清单） × 副本
+每个组合跑 N 个种子（每局走完整 7 场通关流程，全部走公开 action，
+遵循新开局流程：属性 → 发现遗物3选1 → 发现初始道纹3选1 → 残韵 → 副本）。
+
+两阶段：
+  1) 粗扫：全部组合 × --seeds 个种子；
+  2) 精扫：粗扫胜率前 --top 名组合 × --refine-seeds 个种子复核。
+
+输出：
+  data/exhaustive_combo_results.json   全量数据
+  终端打印胜率排名（含开局遗物相关性统计）
+
+用法：
+  PYTHONPATH=. python3 sim/exhaustive_combo_winrate.py                # 默认 8+30 种子
+  PYTHONPATH=. python3 sim/exhaustive_combo_winrate.py --seeds 4      # 快速粗扫
+  PYTHONPATH=. python3 sim/exhaustive_combo_winrate.py --jobs 2       # 并行进程数
+"""
+from __future__ import annotations
+
+import argparse
+import itertools
+import json
+import os
+import sys
+import time
+from collections import Counter, defaultdict
+from concurrent.futures import ProcessPoolExecutor, as_completed
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
+
+# ---------------- 穷举维度 ----------------
+
+# 25点属性分配（血/速/法），1点=6血限=1速限=2法限
+ATTR_SPLITS: dict[str, tuple[int, int, int]] = {
+    "均衡10-8-7":  (10, 8, 7),
+    "厚血13-5-7":  (13, 5, 7),
+    "高法7-8-10":  (7, 8, 10),
+    "法爆6-8-11":  (6, 8, 11),
+    "疾速7-11-7":  (7, 11, 7),
+}
+
+RESONANCES = ["转换", "反转", "曲解"]
+
+# 流派 = 局外学习清单（与 sim/build_winrate.py 保持同一口径）
+BUILDS: dict[str, list[str]] = {
+    "杀伐系":     ["庇护", "再生", "冲击", "血债", "慈悲"],
+    "切割系":     ["切割", "贯穿", "透支", "束缚", "封印", "缓慢", "增殖"],
+    "切割纯控":   ["切割", "束缚", "缓慢", "封印", "贯穿"],
+    "龙心谷系":   ["加害", "裂变", "伤痕", "龙鳞", "活血"],
+    "扭曲都市系": ["僵化", "坏死", "退化", "定型", "爆裂"],
+    "罪孽都市系": ["逼债", "洗劫", "清算", "假钞"],
+    "纯杀伐对照": [],
+}
+
+REGIONS = ["罪孽都市", "扭曲都市", "龙心谷"]
+
+# 需要额外显式提交/交互的遗物：默认发现时避开（可以不用但不能不让用）
+INTERACTIVE_RELICS = {"折速法印", "三相残韵盘", "回锋刀", "血契", "无所求"}
+
+# 各流派的初始道纹偏好（发现候选里按序取第一个命中的；都没有则取第一项）
+STARTER_PREF: dict[str, list[str]] = {
+    "杀伐系":     ["杀伐", "血债", "冲击", "庇护"],
+    "切割系":     ["切割", "贯穿", "杀伐", "血债"],
+    "切割纯控":   ["切割", "束缚", "缓慢", "杀伐"],
+    "龙心谷系":   ["杀伐", "血债", "冲击", "切割"],
+    "扭曲都市系": ["杀伐", "血债", "冲击", "切割"],
+    "罪孽都市系": ["杀伐", "血债", "冲击", "切割"],
+    "纯杀伐对照": ["杀伐", "血债", "冲击", "切割"],
+}
+
+
+# ---------------- 单局模拟（全公开 action） ----------------
+
+def run_one(attr_key: str, resonance: str, build: str, region: str,
+            seed: int, battles: int = 7) -> dict:
+    from engine.api import GameEngine
+    from engine.ai_tactics import TacticalAI
+    from sim.build_learner import _resolve_monster_turn
+    from sim.optional_actions import battle_start_relic_choices, round_start_relic_choices
+
+    blood, speed, mana = ATTR_SPLITS[attr_key]
+    e = GameEngine(db_path=f"/tmp/exhaustive_{os.getpid()}.db", rng_seed=seed)
+    e.execute_action("setup_attributes", {
+        "name": "贾凡", "blood_points": blood, "speed_points": speed, "mana_points": mana})
+
+    # 新开局流程：先发现遗物3选1
+    relic_choices = list(e.state.pending_relic_choices)
+    relic_pick = next((n for n in relic_choices if n not in INTERACTIVE_RELICS),
+                      next((n for n in relic_choices if n != "无所求"), relic_choices[0]))
+    e.execute_action("choose_discovered_relic", {"relic_name": relic_pick})
+
+    # 再发现初始道纹3选1（按流派偏好；候选没有偏好项则取第一项）
+    daowen_choices = list(e.state.pending_initial_daowen_choices)
+    daowen_pick = next((n for n in STARTER_PREF[build] if n in daowen_choices),
+                       daowen_choices[0])
+    e.execute_action("setup_choose_initial_daowen", {"daowen_name": daowen_pick})
+
+    e.execute_action("setup_choose_resonance", {"resonance_type": resonance})
+    e.execute_action("setup_choose_region", {"region": region})
+
+    ai = TacticalAI(e)
+    to_learn = list(BUILDS[build])
+    cleared = 0
+
+    def _fail(battle_no: int) -> dict:
+        return {"cleared": cleared, "won": False, "died_at": battle_no,
+                "relic": relic_pick, "daowen": daowen_pick}
+
+    for battle_no in range(1, battles + 1):
+        while e.state.energy > 0:
+            if to_learn:
+                name = to_learn.pop(0)
+                r = e.execute_action("pre_battle_action",
+                                     {"sub_action": "学习", "sub": "daowen", "name": name})
+                if not r.get("success"):
+                    err = str(r.get("error", ""))
+                    if "已经掌握" in err:
+                        continue  # 初始道纹已覆盖，跳过且不耗精力
+                    to_learn.insert(0, name)
+                    e.execute_action("pre_battle_action",
+                                     {"sub_action": "修行", "tier": 1, "to": "mana"})
+            else:
+                e.execute_action("pre_battle_action",
+                                 {"sub_action": "修行", "tier": 1,
+                                  "to": "mana" if battle_no % 2 else "speed"})
+
+        started = e.execute_action("battle_start",
+                                   {"relic_choices": battle_start_relic_choices(e)})
+        if not started.get("success"):
+            return _fail(battle_no)
+
+        for _ in range(30):
+            if not e.state.player.is_alive:
+                break
+            if not [x for x in e.state.enemies if x.is_alive]:
+                break
+            e.execute_action("round_start", {"relic_choices": round_start_relic_choices(e)})
+            ai.new_round()
+            ai.take_turn()
+            if not [x for x in e.state.enemies if x.is_alive]:
+                break
+            mp = _resolve_monster_turn(e)
+            if not mp.get("success") or mp["result"].get("player_dead"):
+                break
+            e.execute_action("round_end", {})
+
+        if not e.state.player.is_alive:
+            return _fail(battle_no)
+        if [x for x in e.state.enemies if x.is_alive]:
+            return _fail(battle_no)
+        if not e.execute_action("battle_end", {}).get("success"):
+            return _fail(battle_no)
+        cleared += 1
+
+    return {"cleared": cleared, "won": True, "died_at": None,
+            "relic": relic_pick, "daowen": daowen_pick}
+
+
+def bench_combo(combo: tuple[str, str, str, str], seeds: list[int]) -> dict:
+    attr_key, resonance, build, region = combo
+    wins, total_cleared, errors = 0, 0, 0
+    relic_stats: Counter = Counter()
+    relic_wins: Counter = Counter()
+    daowen_stats: Counter = Counter()
+    daowen_wins: Counter = Counter()
+    deaths: Counter = Counter()
+    for s in seeds:
+        try:
+            r = run_one(attr_key, resonance, build, region, seed=s)
+        except Exception:
+            errors += 1
+            continue
+        total_cleared += r["cleared"]
+        relic_stats[r["relic"]] += 1
+        daowen_stats[r["daowen"]] += 1
+        if r["won"]:
+            wins += 1
+            relic_wins[r["relic"]] += 1
+            daowen_wins[r["daowen"]] += 1
+        else:
+            deaths[r["died_at"]] += 1
+    n = len(seeds) - errors
+    return {
+        "combo": {"attrs": attr_key, "resonance": resonance,
+                  "build": build, "region": region},
+        "runs": n, "wins": wins, "errors": errors,
+        "win_rate": (wins / n) if n else 0.0,
+        "avg_cleared": (total_cleared / n) if n else 0.0,
+        "deaths": {str(k): v for k, v in deaths.items()},
+        "relic_picked": dict(relic_stats),
+        "relic_won": dict(relic_wins),
+        "daowen_picked": dict(daowen_stats),
+        "daowen_won": dict(daowen_wins),
+    }
+
+
+def _worker(args):
+    combo, seeds = args
+    return bench_combo(combo, seeds)
+
+
+def sweep(combos: list[tuple], seeds: list[int], jobs: int, label: str) -> list[dict]:
+    t0 = time.time()
+    results: list[dict] = []
+    total = len(combos)
+    tasks = [(c, seeds) for c in combos]
+    if jobs <= 1:
+        for i, task in enumerate(tasks, 1):
+            results.append(_worker(task))
+            if i % 20 == 0 or i == total:
+                print(f"  [{label}] {i}/{total} ({time.time() - t0:.0f}s)", flush=True)
+    else:
+        with ProcessPoolExecutor(max_workers=jobs) as pool:
+            futures = {pool.submit(_worker, t): t for t in tasks}
+            for i, f in enumerate(as_completed(futures), 1):
+                results.append(f.result())
+                if i % 20 == 0 or i == total:
+                    print(f"  [{label}] {i}/{total} ({time.time() - t0:.0f}s)", flush=True)
+    return results
+
+
+def print_ranking(results: list[dict], top: int, title: str):
+    ranked = sorted(results, key=lambda r: (-r["win_rate"], -r["avg_cleared"]))
+    print(f"\n=== {title}（前{top}名） ===")
+    print(f"{'#':<3}{'属性':<12}{'残韵':<5}{'流派':<8}{'副本':<7}"
+          f"{'胜率':>7}{'平均通关':>9}{'局数':>5}")
+    print("-" * 66)
+    for i, r in enumerate(ranked[:top], 1):
+        c = r["combo"]
+        print(f"{i:<3}{c['attrs']:<12}{c['resonance']:<5}{c['build']:<8}{c['region']:<7}"
+              f"{r['win_rate']*100:>6.1f}%{r['avg_cleared']:>9.2f}{r['runs']:>5}")
+    return ranked
+
+
+def aggregate_key(results: list[dict], picked_key: str, won_key: str) -> list[tuple[str, int, int, float]]:
+    picked: Counter = Counter()
+    won: Counter = Counter()
+    for r in results:
+        picked.update(r[picked_key])
+        won.update(r[won_key])
+    rows = []
+    for name, n in picked.most_common():
+        w = won.get(name, 0)
+        rows.append((name, n, w, w / n if n else 0.0))
+    rows.sort(key=lambda x: -x[3])
+    return rows
+
+
+def aggregate_relics(results: list[dict]) -> list[tuple[str, int, int, float]]:
+    return aggregate_key(results, "relic_picked", "relic_won")
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--seeds", type=int, default=8, help="粗扫每组种子数")
+    ap.add_argument("--refine-seeds", type=int, default=30, help="精扫每组种子数")
+    ap.add_argument("--top", type=int, default=20, help="进入精扫的组合数")
+    ap.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2)),
+                    help="并行进程数")
+    ap.add_argument("--out", default=os.path.join(ROOT, "data", "exhaustive_combo_results.json"))
+    args = ap.parse_args()
+
+    combos = list(itertools.product(ATTR_SPLITS, RESONANCES, BUILDS, REGIONS))
+    print(f"穷举组合总数：{len(ATTR_SPLITS)}属性 × {len(RESONANCES)}残韵 × "
+          f"{len(BUILDS)}流派 × {len(REGIONS)}副本 = {len(combos)}组，"
+          f"每组{args.seeds}局 → 共{len(combos) * args.seeds}局（粗扫）")
+
+    coarse = sweep(combos, list(range(1, args.seeds + 1)), args.jobs, "粗扫")
+    ranked = print_ranking(coarse, args.top, f"粗扫排名（每组{args.seeds}局）")
+
+    top_combos = [(r["combo"]["attrs"], r["combo"]["resonance"],
+                   r["combo"]["build"], r["combo"]["region"])
+                  for r in ranked[:args.top]]
+    print(f"\n精扫：前{args.top}名组合 × {args.refine_seeds}种子 "
+          f"= {args.top * args.refine_seeds}局")
+    refined = sweep(top_combos, list(range(1001, 1001 + args.refine_seeds)),
+                    args.jobs, "精扫")
+    refined_ranked = print_ranking(refined, args.top, f"精扫复核（每组{args.refine_seeds}局）")
+
+    print("\n=== 开局遗物 → 胜率相关性（全部粗扫局） ===")
+    print(f"{'遗物':<8}{'被选局数':>8}{'获胜':>6}{'胜率':>8}")
+    print("-" * 32)
+    for name, n, w, rate in aggregate_relics(coarse):
+        print(f"{name:<8}{n:>8}{w:>6}{rate*100:>7.1f}%")
+
+    print("\n=== 初始道纹 → 胜率相关性（全部粗扫局） ===")
+    print(f"{'道纹':<8}{'被选局数':>8}{'获胜':>6}{'胜率':>8}")
+    print("-" * 32)
+    for name, n, w, rate in aggregate_key(coarse, "daowen_picked", "daowen_won"):
+        print(f"{name:<8}{n:>8}{w:>6}{rate*100:>7.1f}%")
+
+    os.makedirs(os.path.dirname(args.out), exist_ok=True)
+    with open(args.out, "w", encoding="utf-8") as f:
+        json.dump({
+            "meta": {
+                "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "coarse_seeds": args.seeds, "refine_seeds": args.refine_seeds,
+                "dimensions": {
+                    "attrs": list(ATTR_SPLITS), "resonances": RESONANCES,
+                    "builds": {k: v for k, v in BUILDS.items()}, "regions": REGIONS,
+                },
+            },
+            "coarse": coarse,
+            "refined": refined,
+            "relic_correlation": [
+                {"relic": n, "picked": p, "won": w, "win_rate": r}
+                for n, p, w, r in aggregate_relics(coarse)
+            ],
+            "daowen_correlation": [
+                {"daowen": n, "picked": p, "won": w, "win_rate": r}
+                for n, p, w, r in aggregate_key(coarse, "daowen_picked", "daowen_won")
+            ],
+        }, f, ensure_ascii=False, indent=1)
+    print(f"\n完整数据已写入 {args.out}")
+    return refined_ranked
+
+
+if __name__ == "__main__":
+    main()
