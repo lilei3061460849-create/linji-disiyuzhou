@@ -980,8 +980,21 @@ class CombatEngine:
                     mediocrity_ready.append((entity, why))
 
         # 多个角色同时触发凡庸时，非轮回者优先；同档保持原遍历顺序。
+        # DM裁定（2026-08-18）：「非轮回者优先」的意义在于——按优先序逐个结算，
+        # 一旦先炸裂的角色清空了某一方战场（战斗胜负因此已定），立即中断剩余凡庸结算；
+        # 幸存侧尚未结算的待爆者不再炸裂（其计数随战斗结束清零）。
+        # 注意：只有本拍凡庸「炸出来」的清空才中断；战场在结算开始前就已空置
+        # （如战斗尚未开始的空场脚手架）不援引此裁定。
         mediocrity_ready.sort(key=lambda item: item[0].entity_type == "轮回者")
+        decided_before_tick = self._mediocrity_battle_decided()
         for entity, why in mediocrity_ready:
+            if not decided_before_tick and self._mediocrity_battle_decided():
+                entity.no_action_rounds = 0
+                entity.no_damage_rounds = 0
+                effects.append({
+                    "type": "mediocrity_interrupted", "entity": entity.name,
+                    "note": f"{why}，但战场已因先前的【凡庸】清空、战斗结束：剩余凡庸中断结算"})
+                continue
             effects.extend(self._apply_mediocrity(entity, why))
 
         for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
@@ -1307,14 +1320,14 @@ class CombatEngine:
     # ========== 多路径胜利系统 ==========
     # 所有阈值数值均为占位初值，需经测试调整（见 AI_EXPERIENCE.md）
 
-    PROLIFERATION_THRESHOLD = 2.0  # 癌变：README「累计恢复量达血限×2」；超出血限的恢复按双倍计
+    PROLIFERATION_THRESHOLD = 2.0  # 癌变：README「累计恢复量达血限×2」；过量回复按原值计（双倍机制已删，DM裁定2026-08-18）
     CANCER_THRESHOLD = PROLIFERATION_THRESHOLD  # 别名：增生旧名已统一为癌变，二者同阈值
     DEBT_THRESHOLD = 10           # 还债：怪物负债达到10碎片时触发（已裁定固定值）
     SCULPTURE_DAMAGE = 15         # 雕塑：每点耐久可造成的伤害
     SCULPTURE_SHIELD = 20         # 雕塑：每点耐久可获得的格挡
 
     def cancer_threshold_of(self, entity: Entity) -> int:
-        """README：累计恢复量达到血限×2（过量按双倍已计入 total_healed）。"""
+        """README：累计恢复量达到血限×2（过量按原值计入 total_healed，双倍机制已删）。"""
         if entity.blood_limit <= 0:
             return 0
         return math.ceil(entity.blood_limit * self.PROLIFERATION_THRESHOLD)
@@ -1323,7 +1336,7 @@ class CombatEngine:
         """任一角色恢复量达阈值即癌变。怪物仍吸收进书；轮回者/同伴直接命零。"""
         if entity is None or not entity.is_alive or entity.is_proliferated:
             return None
-        if self.state.side_has(entity, "钱袋"):
+        if self.state.side_has(entity, "第一杯"):
             return None
         threshold = self.cancer_threshold_of(entity)
         if threshold <= 0 or entity.total_healed < threshold:
@@ -1378,8 +1391,7 @@ class CombatEngine:
             "cause": cause,
             "mutation": monster.mutation_count,
         }
-        monster.removed_without_kill = True
-        monster.is_alive = False
+        monster.depart_battle("救赎")
         monster._redeemed = True
         self.state.pending_redemption = snapshot
         return {
@@ -1455,9 +1467,9 @@ class CombatEngine:
                 results.append(cancer)
         return results
 
-    def _remove_from_combat(self, monster: Entity):
-        """将怪物移出战斗（不视为击杀）"""
-        monster.is_alive = False
+    def _remove_from_combat(self, monster: Entity, reason: str = "离场"):
+        """将怪物移出战斗（不视为击杀）——统一走【离场】。"""
+        monster.depart_battle(reason)
 
     def _cancer_character(self, entity: Entity) -> dict:
         """轮回者/同伴癌变：累计恢复达血限×2 → 直接命零。不吸收进书、不加休整+8。"""
@@ -1482,7 +1494,7 @@ class CombatEngine:
         durability = max(1, math.ceil(monster.blood_limit * 0.05))
         reason = "攻击次数归0" if monster.attack_count <= 0 else "攻击力归0"
         monster.is_sculptured = True
-        self._remove_from_combat(monster)
+        self._remove_from_combat(monster, "雕塑")
         consumable = Consumable(
             name=f"{monster.name}雕塑",
             effect=(f"每消耗1点耐久，对1个目标造成{self.SCULPTURE_DAMAGE}点伤害，"
@@ -1506,7 +1518,7 @@ class CombatEngine:
         monster.is_proliferated = True
         # 兼容：同时写入癌变别名，便于外部以新名读取
         monster.is_cancer = True  # type: ignore[attr-defined]
-        self._remove_from_combat(monster)
+        self._remove_from_combat(monster, "癌变")
         absorbed = monster.total_healed
         # 正文：每只被吸收的癌变怪物使局外【休整】永久额外产生8点恢复量，可叠加。
         boost = 8
@@ -1526,7 +1538,11 @@ class CombatEngine:
     def _debt_bind_monster(self, monster: Entity) -> dict:
         """还债：负债达阈值→视为员工；负债还清后离开（走独立的负债经济轨道，不受出战支援/工资/黑名单约束）"""
         monster.is_debt_bound = True
-        # 转为员工（保留当前面板），其待还负债记录于 shards（负值）
+        monster.is_departed = True
+        monster.departure_reason = "还债"
+        # 转为员工（保留当前面板），其待还负债记录于 shards（负值）。
+        # 注意：还债者以员工身份继续参战，不置 is_alive=False，故不走 depart_battle，
+        # 仅记录 is_departed/departure_reason 供战报分类；其已从 enemies 列表移除。
         monster.entity_type = "员工"
         monster.is_deployed = True  # "视为其参战"：立即出战，不需要玩家消耗出手派遣
         self.state.employees.append(monster)
@@ -1779,20 +1795,17 @@ class CombatEngine:
             if dmg.get("actual_damage", 0) > 0:
                 caster.damage_dealt_this_round += dmg["actual_damage"]
                 self._xijie_steal(caster, target, dmg["actual_damage"])
-        # ---- 乱葬岗·附煞后置：锁煞/蚀煞（造成伤害后触发） ----
-        if sha in ("锁煞", "蚀煞"):
+        # ---- 乱葬岗·附煞后置：锁煞（造成伤害后触发） ----
+        if sha == "锁煞":
             dealt = 0
             for ef in result.get("effects", []):
                 if ef.get("type") == "damage":
                     dealt += ef.get("actual_damage", 0) or 0
             if dealt > 0 and target.is_alive:
-                if sha == "锁煞" and target.entity_type == "轮回者":
+                if target.entity_type == "轮回者":
                     drain = min(target.current_mana, dealt)
                     target.current_mana -= drain
                     result["sha_qi_lock_mana"] = drain
-                elif sha == "蚀煞" and target.entity_type != "轮回者":
-                    target.attack_power = max(0, target.attack_power - 1)
-                    result["sha_qi_erode_atk"] = -1
 
         if "aoe_damage" in calc:
             a = 0 if mengbi_blocked else self._jieli_boost(caster, calc["aoe_damage"])
@@ -2079,8 +2092,7 @@ class CombatEngine:
             for e in list(self.state.enemies):
                 if (e.is_alive and e.entity_type == "怪物"
                         and removed < calc["targets_removed"]):
-                    e.is_alive = False
-                    e.removed_without_kill = True
+                    e.depart_battle("封印")
                     removed += 1
                     removed_names.append(e.name)
             result["effects"].append({
@@ -2753,13 +2765,29 @@ class CombatEngine:
     # 怪物已激活的道纹 / 已进化的怪物（均按战斗重置）
     _monster_activated: dict = {}
     _monster_evolved: set = set()  # 进化（原初X）：本场已进化的怪物 id 集合
+    _monster_daowen_round_used: dict = {}  # 本回合已发动的道纹（DM裁定2026-08-18：跨回合可重复发动）
 
     def reset_monster_activation(self):
         """战始重置怪物激活状态与战斗遗物状态"""
         self._monster_activated = {}
         self._monster_evolved = set()  # 进化（原初X）：每场战斗限一次
+        self._monster_daowen_round_used = {}
         self._sanxiang_consumed = ""
         self._resonance_rewrites = {}
+
+    def _monster_round_used(self, monster: Entity) -> set:
+        """该怪物本回合已发动的道纹集合（换回合自动清空）。
+
+        DM裁定（2026-08-18，README怪物准则9）：怪物可在不同回合重复发动同一
+        道纹（冷却类由 can_use 管辖），每回合每道纹至多一次；重复使用的代价
+        由道纹递增机制承担（每次实际发动 X+2×副本阶级）。
+        _monster_activated 保留为持续激活口径（狂暴出手加成等），不再作发动门禁。
+        """
+        rec = self._monster_daowen_round_used.get(id(monster))
+        if rec is None or rec[0] != self.state.current_round:
+            rec = (self.state.current_round, set())
+            self._monster_daowen_round_used[id(monster)] = rec
+        return rec[1]
 
     def queue_resonance_rewrite(self, entity: Entity, source: str, dest: str) -> None:
         """残韵作用于他人道纹：登记其下一次发动该源道纹时按 dest 结算。"""
@@ -2834,10 +2862,12 @@ class CombatEngine:
                 skipped.append({"actor_ref": actor_ref, "monster": monster.name, "reason": "无法行动"})
                 continue
             activated = self._monster_activated.get(id(monster), set())
+            round_used = self._monster_round_used(monster)
             daowen_options = []
             if not whiteboard and not monster.has_status("干扰"):
                 for name, inst in monster.dao_wen.items():
-                    if name in activated or not inst.can_use() or name not in DaoWenEngine.list_all():
+                    if (name in round_used or not inst.can_use()
+                            or name not in DaoWenEngine.list_all()):
                         continue
                     if name == "赌命" and getattr(monster, "fake_shards", 0) < inst.x_value:
                         continue
@@ -2929,7 +2959,8 @@ class CombatEngine:
     ) -> dict:
         name = choice.get("name", "")
         inst = monster.dao_wen.get(name)
-        if inst is None or name in activated or not inst.can_use():
+        if (inst is None or name in self._monster_round_used(monster)
+                or not inst.can_use()):
             raise ValueError(f"{monster.name}不能发动道纹【{name}】")
         if name not in DaoWenEngine.list_all():
             raise ValueError(f"未知道纹【{name}】")
@@ -3058,6 +3089,13 @@ class CombatEngine:
 
         if not rewritten_as:
             activated.add(name)
+            self._monster_round_used(monster).add(name)
+            # 怪物道纹递增（DM裁定2026-08-18，README怪物准则9）：每实际发动一次，
+            # 该道纹X本场累加+2×副本阶级。只在真正完成发动时累加（无法支付代价、
+            # 崩解中断、被控跳过的回合均不计）；残韵改写的一次性结算不递增源道纹。
+            # 怪物无法力概念，递增只放大效果数值与真实代价；实例随战斗结束消散。
+            from .gamedata import REGION_TIERS
+            inst.x_value += 2 * REGION_TIERS.get(self.state.current_region, 1)
         monster.actions_used_this_round += 1
 
         aoe_targets_override = None
@@ -3260,6 +3298,14 @@ class CombatEngine:
         detail = self._apply_hostile_damage(actor, dmg, "必中", source)
         detail["dragon_breath"] = dmg
         return detail
+
+    def _mediocrity_battle_decided(self) -> bool:
+        """凡庸中断判定：战斗胜负已定（统一判定 GameState.battle_over）。
+
+        DM裁定（2026-08-18）：非轮回者优先炸裂后若战斗胜负已定，
+        另一方尚未结算的凡庸不再触发。
+        """
+        return self.state.battle_over()
 
     def _tick_mediocrity_counters(self, entity: Entity) -> Optional[str]:
         """更新凡庸连续计数；达阈值返回原因，不立刻结算。"""

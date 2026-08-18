@@ -48,7 +48,8 @@ def handle_setup_attributes(engine: Any, params: Dict[str, Any]) -> Dict[str, An
     engine.state.allocated_blood = blood_limit
     engine.state.shards = 20
 
-    discovery = engine._offer_initial_daowen_discovery("开局发现")
+    engine._init_relic_pool()
+    discovery = engine._offer_relic_discovery("开局发现")
     if not discovery.get("success"):
         return discovery
 
@@ -64,17 +65,19 @@ def handle_setup_attributes(engine: Any, params: Dict[str, Any]) -> Dict[str, An
             "attack_power": player.attack_power,
             "action_count": player.action_count,
             "shards": 20,
-            "daowen_choices": discovery["choices"],
+            "relic_choices": discovery["choices"],
         },
-        "next_actions": ["setup_choose_initial_daowen"],
-        "note": "属性已分配；请从杀伐闭环的3个发现候选中显式选择1种作为初始道纹。",
+        "next_actions": ["choose_discovered_relic"],
+        "note": "属性已分配；开局先发现遗物：请从随机列出的3件遗物候选中显式选择1件，随后再发现初始道纹。",
     }
 
 
 def handle_setup_choose_region(engine: Any, params: Dict[str, Any]) -> Dict[str, Any]:
-    """选择副本，并生成开局遗物发现"""
+    """选择副本（开局遗物与初始道纹均已在此前发现完毕）"""
     if engine.state.player is None:
         return {"success": False, "error": "请先分配初始属性"}
+    if not engine.state.relics:
+        return {"success": False, "error": "选择副本前必须先完成开局遗物发现"}
     if not engine.state.player.dao_wen or sum(engine.state.resonance.values()) != 1:
         return {"success": False, "error": "选择副本前必须先获得初始道纹并选择1种初始残韵"}
     region = params.get("region", "")
@@ -83,16 +86,14 @@ def handle_setup_choose_region(engine: Any, params: Dict[str, Any]) -> Dict[str,
         return {"success": False, "error": f"只能从{valid}中选择"}
     engine.state.current_region = region
     engine.state.phase = "pre_battle"
-    engine._init_relic_pool()
-    discovery = engine._offer_relic_discovery("开局发现")
-    if not discovery.get("success"):
-        return discovery
+    owned = [r.name for r in engine.state.relics]
     return {
         "success": True,
         "action": "选择副本",
-        "result": {"region": region, "relic_choices": discovery["choices"]},
-        "next_actions": ["choose_discovered_relic"],
-        "note": "开局发现已随机列出3件遗物；必须显式选择1件后进入局外行动。",
+        # relic_choices 为兼容回显：开局遗物已在属性分配后发现并选定（新流程：先遗物后道纹）。
+        "result": {"region": region, "relic_choices": owned, "relics_owned": owned},
+        "next_actions": ["pre_battle_action"],
+        "note": "副本已选择；开局配置完成（遗物与初始道纹均已在此前发现），进入局外行动。",
     }
 
 

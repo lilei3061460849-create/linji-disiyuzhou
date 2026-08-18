@@ -45,7 +45,7 @@ class DaoWenInstance:
     x_value: int = 0            # 当前X值（自由控X规则）
     cooldown_remaining: int = 0 # 冷却剩余
     is_frozen: bool = False     # 是否被封印
-    sha_qi: str = ""            # 乱葬岗附煞：法煞/魂煞/冥煞/血煞/锁煞/蚀煞/心煞
+    sha_qi: str = ""            # 乱葬岗附煞：法煞/魂煞/冥煞/血煞/锁煞/心煞
     
     def can_use(self) -> bool:
         return not self.is_frozen and self.cooldown_remaining <= 0
@@ -227,13 +227,18 @@ class Entity:
 
     # 非击杀移出战斗标记（封印等；不产碎片）
     removed_without_kill: bool = False
+    # 统一【离场】标记（DM裁定 2026-08-18）：一切使角色脱离本场战斗的特殊事件
+    # （雕塑/癌变/还债/救赎/封印/逃跑及未来新增）一律经 depart_battle() 置位。
+    # 战斗胜利判定只看 命零(is_alive=False) 或 离场(is_departed)，新事件无须再改判定。
+    is_departed: bool = False
+    departure_reason: str = ""   # 离场原因（雕塑/癌变/还债/救赎/封印/逃跑/...）
     hp_lost_this_round: int = 0   # 本回合累计失去的生命（活血用，回始归零）
     actions_used_this_round: int = 0  # 本回合已消耗的出手次数（回始归零，用于出手预算校验）
 
     # 多路径胜利追踪
     shards: int = 0              # 怪物自带碎片（罪孽都市）/ 负值表示负债（还债）
     fake_shards: int = 0         # 假碎片（罪孽都市：假钞产出；战斗中失去碎片时优先失去假碎片）
-    total_healed: int = 0        # 累计受到的恢复量（癌变；超出血限部分按双倍计）
+    total_healed: int = 0        # 累计受到的恢复量（癌变；含过量部分，按原值计，双倍机制已删）
     is_sculptured: bool = False  # 已化为雕塑（攻击次数或攻击力归0）
     is_proliferated: bool = False  # 已被癌变吸收进死者之书（旧名 增生，已统一为 癌变；保留字段名兼容）
     is_debt_bound: bool = False  # 已因还债成为员工
@@ -253,6 +258,18 @@ class Entity:
         real = amount - use_fake
         self.shards -= real
         return real
+
+    def depart_battle(self, reason: str):
+        """统一【离场】入口：任何使角色脱离本场战斗的特殊事件都必须调用此方法。
+
+        离场不是击杀：is_alive 置 False 仅表示脱离战场，不产生[碎片]奖励；
+        奖励与分类逻辑可读取 departure_reason。新增特殊事件只需调用本方法，
+        无须改动任何战斗胜利判定。
+        """
+        self.is_departed = True
+        self.departure_reason = reason
+        self.is_alive = False
+        self.removed_without_kill = True  # 兼容旧字段：离场一律不视为击杀
 
     # 兼容：is_proliferated 旧名（增生）→ 现名 癌变，is_cancer 为别名
     @property
@@ -406,8 +423,9 @@ class Entity:
         self.current_hp = min(self.blood_limit, self.current_hp + amount)
         actual = self.current_hp - before
         overheal = amount - actual
-        # 癌变追踪：超出血限的恢复按双倍计入累计恢复量
-        self.total_healed += actual + overheal * 2
+        # 癌变追踪：DM裁定（2026-08-18）删除过量回复双倍计入机制，
+        # 受到的全部回复（含过量部分）一律按原值计入累计恢复量。
+        self.total_healed += amount
         self.healed_this_battle += actual
         return {
             "heal_amount": amount,
@@ -506,6 +524,8 @@ class Entity:
             "is_flying": self.is_flying,
             "is_alive": self.is_alive,
             "removed_without_kill": self.removed_without_kill,
+            "is_departed": self.is_departed,
+            "departure_reason": self.departure_reason,
             "is_deployed": self.is_deployed,
             "has_retreated": self.has_retreated,
             "battle_start_blood_limit": self.battle_start_blood_limit,
@@ -1025,3 +1045,32 @@ class GameState:
     def get_all_enemy_side(self) -> list[Entity]:
         """获取敌方所有存活实体"""
         return [e for e in self.enemies if e.is_alive]
+
+    # ==================== 战斗结束与胜利·统一判定（DM裁定 2026-08-18） ====================
+    # 引擎内一切"战斗是否结束/能否战终"的判断必须走以下四个方法，禁止再散落写 is_alive 组合。
+
+    def enemy_combat_active(self, enemy: Entity) -> bool:
+        """该敌人是否仍构成战斗障碍（阻塞战终）。
+
+        DM裁定（2026-08-18）：战斗胜利＝敌方全部角色【命零】或【离场】。
+        一切特殊事件（雕塑/癌变/还债/救赎/封印/逃跑及未来新增）一律经
+        Entity.depart_battle() 记为离场——新增事件无须改动本判定。
+        离场不视为击杀、不产碎片（分类见 battle_end 读取 departure_reason）。
+        """
+        return enemy.is_alive and not enemy.is_departed
+
+    def active_enemies(self) -> list[Entity]:
+        """仍构成战斗障碍的敌人列表。"""
+        return [e for e in self.enemies if self.enemy_combat_active(e)]
+
+    def battle_won(self) -> bool:
+        """战斗胜利＝敌方全部角色均已经由任一合法路径移出战场。"""
+        return not self.active_enemies()
+
+    def battle_lost(self) -> bool:
+        """战斗失败＝轮回者非存活（无论死因：伤害/凡庸/癌变/崩解/代价）。"""
+        return self.player is None or not self.player.is_alive
+
+    def battle_over(self) -> bool:
+        """战斗胜负已定（胜或负任一成立）。"""
+        return self.battle_lost() or self.battle_won()

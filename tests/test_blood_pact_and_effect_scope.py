@@ -191,7 +191,8 @@ def test_regeneration_is_three_x_and_old_contracts_are_removed():
     assert "血契" in names
     assert "鲜血契约" not in names
     assert "卖身契" not in names
-    assert len(names) == 12
+    assert "钱袋" not in names  # 钱袋已删除，免疫癌变并入【第一杯】
+    assert len(names) == 11
 
 
 def test_scoped_ledger_rolls_back_battle_effects_but_keeps_costs(tmp_path):

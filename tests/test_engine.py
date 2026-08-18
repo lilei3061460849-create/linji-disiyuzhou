@@ -31,7 +31,7 @@ def _choose_region(engine, region):
 
 
 def test_setup():
-    """测试开局流程：属性分配后必须从杀伐闭环发现3选1。"""
+    """测试开局流程：属性分配后先发现遗物3选1，再从杀伐闭环发现初始道纹3选1。"""
     print("\n=== 测试：开局 ===")
     engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db", rng_seed=7)
 
@@ -47,11 +47,27 @@ def test_setup():
     assert engine.state.player.mana_limit == 14, f"法限错误: {engine.state.player.mana_limit}"
     assert engine.state.player.action_count == math.ceil(8 / 3), "出手次数错误"
     assert engine.state.shards == 20, "初始碎片错误"
+    relic_choices = list(engine.state.pending_relic_choices)
+    assert result["result"]["relic_choices"] == relic_choices
+    assert len(relic_choices) == 3 and len(set(relic_choices)) == 3
+    assert engine.state.pending_initial_daowen_choices == []
+    assert engine.state.player.dao_wen == {}
+    print("  ✓ 属性分配正确，先列出3件遗物发现候选")
+
+    blocked = engine.execute_action("setup_choose_initial_daowen", {"daowen_name": "杀伐"})
+    assert not blocked["success"], "遗物未选择时不能选初始道纹"
+    print("  ✓ 未选择开局遗物时不能选初始道纹")
+
+    picked_relic = engine.execute_action("choose_discovered_relic",
+                                         {"relic_name": relic_choices[0]})
+    assert picked_relic["success"], f"遗物选择失败: {picked_relic}"
+    assert engine.state.relics and engine.state.relics[0].name == relic_choices[0]
     choices = list(engine.state.pending_initial_daowen_choices)
+    assert picked_relic["result"]["daowen_choices"] == choices
     assert len(choices) == 3 and len(set(choices)) == 3
     assert set(choices) <= set(SHAFA_LOOP_DAOWEN)
     assert engine.state.player.dao_wen == {}
-    print("  ✓ 属性分配正确，并列出3个杀伐闭环发现候选")
+    print(f"  ✓ 显式选择开局遗物【{relic_choices[0]}】后，列出3个杀伐闭环发现候选")
 
     blocked = engine.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     assert not blocked["success"] and "初始道纹" in blocked["error"]
@@ -425,7 +441,7 @@ def test_sculpture_and_proliferation():
                 attack_count=1, attack_power=5)
     state2.enemies.append(m2)
     combat2 = CombatEngine(state2, DiceEngine())
-    # 对怪物过量恢复：实恢40 + 过量160按双倍=320 → total_healed=360 ≥ 80
+    # 对怪物过量恢复：实恢40 + 过量160按原值计 → total_healed=200 ≥ 80（双倍机制已删）
     m2.heal(200)
     assert m2.total_healed >= 80
     paths2 = combat2.settle_victory_paths()
@@ -544,7 +560,7 @@ def test_out_of_combat_actions():
 
 
 def test_relic_effects():
-    """测试遗物效果触发（避风铃/钱袋/回锋刀）"""
+    """测试遗物效果触发（避风铃/第一杯/回锋刀）"""
     print("\n=== 测试：遗物效果 ===")
     from engine.models import Relic, GameState
     from engine.combat import CombatEngine
@@ -570,17 +586,17 @@ def test_relic_effects():
     assert m2.current_hp < 120, f"回锋刀应造伤，实HP{m2.current_hp}"
     print(f"  ✓ 回锋刀：回始造伤(失速3→9伤)，靶HP120→{m2.current_hp}")
 
-    # 钱袋：免疫癌变（不再额外加碎片）
+    # 第一杯：免疫癌变（原钱袋效果，钱袋已删除）
     engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
     engine.execute_action("setup_attributes", {"name":"测试","blood_points":10,"speed_points":8,"mana_points":7})
     finish_initial_daowen(engine)
     _choose_region(engine, "罪孽都市")
-    engine.state.relics = [Relic(name="钱袋", effect="")]
+    engine.state.relics = [Relic(name="第一杯", effect="")]
     player = engine.state.player
     player.total_healed = engine.combat.cancer_threshold_of(player)
     hit = engine.combat.check_cancer(player)
-    assert hit is None and player.is_alive, "持有钱袋的轮回者应免疫癌变"
-    print("  ✓ 钱袋：累计回复达阈值也不触发癌变")
+    assert hit is None and player.is_alive, "持有第一杯的轮回者应免疫癌变"
+    print("  ✓ 第一杯：累计回复达阈值也不触发癌变")
     print("  ✓ 遗物效果测试通过")
 
 
@@ -973,11 +989,14 @@ def test_evolution_yuanchu():
     total1 = m_b.mutation_count
     assert total1 == 20, f"借用自愈2激活应付异变5×2=10（门票10+激活10=20），实{total1}"
     assert m_b.is_alive, "20层应存活"
+    # 准则9（DM裁定2026-08-18）：跨回合可重复发动，X已递增至4，重复发动按新X计费
+    assert m_b.dao_wen["自愈"].x_value == 4, "发动一次后X应+2（一阶）"
     combat3.round_start()
-    resolve_monster_phase(combat3, {"借用怪": None})
+    resolve_monster_phase(combat3, {"借用怪": "自愈"})
     total2 = m_b.mutation_count
-    assert total2 == 20 and m_b.is_alive, f"借用道纹持续期间不应重复计费，实{total2}"
-    print("  ✓ 借用道纹门票10+首次发动10=20层；后续维持自愈不再增加异变")
+    assert total2 == 40 and m_b.is_alive, f"重复发动按递增X计费：20+5×4=40，实{total2}"
+    assert m_b.dao_wen["自愈"].x_value == 6
+    print("  ✓ 借用道纹门票10+首次发动10=20层；准则9重复发动按X=4再付20 → 40层")
     print("  ✓ 进化（原初X）与崩解测试通过")
 
 
@@ -1098,25 +1117,32 @@ def test_original_daowen_only_charges_mutation_on_activation():
         c = CombatEngine(st, DiceEngine()); c.reset_monster_activation()
         return st, c
 
-    # 正常：自愈2激活只付10；后续回合维持自愈但异变保持10。
+    # 正常：自愈2激活只付10；持续期间不重复计费（后续回合改发免费的庇护，
+    # 准则9下怪物有合法道纹选项时必须出招，故给填充道纹而非空过）。
     m1 = mk("持续怪", [("自愈", 2)])
+    m1.dao_wen["庇护"] = DaoWenInstance(
+        dao_wen=DaoWen(name="庇护", formula="", cost_type="消耗", cost_formula="X",
+                       effect_formula=""), x_value=1)
     _, c1 = mkbed(m1)
     c1.round_start(); resolve_monster_phase(c1, {"持续怪": None})
     c1.round_start(); resolve_monster_phase(c1, {"持续怪": "自愈"})
     assert m1.mutation_count == 10 and m1.is_alive
     for _ in range(3):
-        c1.round_start(); resolve_monster_phase(c1, {"持续怪": None})
+        c1.round_start(); resolve_monster_phase(c1, {"持续怪": "庇护"})
         assert m1.mutation_count == 10 and m1.is_alive
-    print("  ✓ 自愈2首次支付异变10，后续三回合维持效果但不再计费")
+    print("  ✓ 自愈2首次支付异变10，持续期间（改发庇护）不再计费")
 
     # 边界：次数型必中同样只在激活时付一次，不存在额外豁免分支。
     m2 = mk("次数怪", [("必中", 3)])
+    m2.dao_wen["庇护"] = DaoWenInstance(
+        dao_wen=DaoWen(name="庇护", formula="", cost_type="消耗", cost_formula="X",
+                       effect_formula=""), x_value=1)
     _, c2 = mkbed(m2)
     c2.round_start(); resolve_monster_phase(c2, {"次数怪": None})
     c2.round_start(); resolve_monster_phase(c2, {"次数怪": "必中"})
-    c2.round_start(); resolve_monster_phase(c2, {"次数怪": None})
+    c2.round_start(); resolve_monster_phase(c2, {"次数怪": "庇护"})
     assert m2.mutation_count == 15 and m2.is_alive
-    print("  ✓ 必中3首次支付异变15，后续不再计费")
+    print("  ✓ 必中3首次支付异变15，未再发动则不再计费")
 
     # 崩解仍保留：若首次发动本身使异变达到阈值，效果中断并命零。
     m3 = mk("临界怪", [("自愈", 2)])

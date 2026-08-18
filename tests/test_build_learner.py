@@ -59,12 +59,15 @@ def test_play_does_not_inject_shaifa_when_not_discovered():
     from engine.api import GameEngine
     from tests.setup_support import choose_discovered_initial_daowen
 
+    from tests.setup_support import resolve_opening_relic
+
     found = None
     for seed in range(1, 80):
         engine = GameEngine(db_path=f"/tmp/disc{seed}.db", rng_seed=seed)
         engine.execute_action("setup_attributes", {
             "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7,
         })
+        resolve_opening_relic(engine)  # 新流程：先发现遗物再发现道纹
         offered = list(engine.state.pending_initial_daowen_choices)
         if "杀伐" not in offered:
             found = (engine, offered)
@@ -83,10 +86,13 @@ def test_choose_discovered_honors_prefer_only_when_offered():
     from engine.api import GameEngine
     from tests.setup_support import choose_discovered_initial_daowen
 
+    from tests.setup_support import resolve_opening_relic
+
     engine = GameEngine(db_path="/tmp/disc_pref.db", rng_seed=1)
     engine.execute_action("setup_attributes", {
         "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7,
     })
+    resolve_opening_relic(engine)  # 新流程：先发现遗物再发现道纹
     offered = list(engine.state.pending_initial_daowen_choices)
     prefer = offered[1]
     chosen = choose_discovered_initial_daowen(engine, prefer=prefer)
@@ -99,10 +105,13 @@ def test_choose_discovered_rejects_missing_pending():
     from engine.api import GameEngine
     from tests.setup_support import choose_discovered_initial_daowen
 
+    from tests.setup_support import resolve_opening_relic
+
     engine = GameEngine(db_path="/tmp/disc_bad.db", rng_seed=1)
     engine.execute_action("setup_attributes", {
         "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7,
     })
+    resolve_opening_relic(engine)  # 新流程：先发现遗物再发现道纹
     engine.execute_action("setup_choose_initial_daowen", {
         "daowen_name": engine.state.pending_initial_daowen_choices[0],
     })

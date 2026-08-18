@@ -80,7 +80,7 @@ def test_setup_discovery_allows_last_candidate():
         blood_limit=60, mana_limit=14, speed_limit=8, action_count=3, shards=20,
         daowen_options=["杀伐", "庇护", "封印"], daowen_pick="封印",
         resonance="转换",
-        relic_options=["钱袋", "守夜灯", "忘忧香"], relic_pick="忘忧香",
+        relic_options=["避风铃", "守夜灯", "忘忧香"], relic_pick="忘忧香",
     )
     text = "\n".join(lines)
     assert "选择【封印】" in text and "选择【忘忧香】" in text

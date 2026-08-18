@@ -152,14 +152,14 @@ def _choose_region(engine, region, finish_discovery=False):
 
 
 def test_setup_choose_region_uses_engine_auto_roll_not_bare_random():
-    """集成：开局选择副本后自动发现的初始遗物，必须来自 engine.dice 的可复现随机源"""
+    """集成：开局属性分配后自动发现的初始遗物，必须来自 engine.dice 的可复现随机源"""
     engine = GameEngine(db_path="/tmp/linji_tests/test_rng_1.db", rng_seed=999)
-    engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
+    r_attr = engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
+    assert len(r_attr["result"]["relic_choices"]) == 3
     finish_initial_daowen(engine)
     r = _choose_region(engine, "扭曲都市")
 
     assert r["success"] is True
-    assert len(r["result"]["relic_choices"]) == 3
     history = engine.dice.get_history()
     setup_rolls = [h for h in history if h.get("auto") is True
                    and h["pool_name"].startswith("relic_discovery_开局发现_")]
@@ -169,14 +169,10 @@ def test_setup_choose_region_uses_engine_auto_roll_not_bare_random():
 def test_setup_choose_region_reproducible_across_two_engines_same_seed():
     """集成 + 可复现性：相同 rng_seed 的两个独立 GameEngine 实例，开局摇到的初始遗物必须完全一致"""
     e1 = GameEngine(db_path="/tmp/linji_tests/test_rng_2a.db", rng_seed=555)
-    e1.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
-    finish_initial_daowen(e1)
-    r1 = _choose_region(e1, "龙心谷")
+    r1 = e1.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
 
     e2 = GameEngine(db_path="/tmp/linji_tests/test_rng_2b.db", rng_seed=555)
-    e2.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
-    finish_initial_daowen(e2)
-    r2 = _choose_region(e2, "龙心谷")
+    r2 = e2.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
 
     assert r1["result"]["relic_choices"] == r2["result"]["relic_choices"], \
         "同种子的两局必须列出完全一致的3件开局候选"

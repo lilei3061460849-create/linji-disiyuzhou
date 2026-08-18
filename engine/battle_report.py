@@ -111,9 +111,9 @@ def format_setup_discovery(
         "[开局]",
         (f"属性：{blood_points}血/{speed_points}速/{mana_points}法"
          f"＝{blood_limit}/{mana_limit}/{speed_limit}，出手{action_count}｜碎片{shards}"),
+        f"遗物发现：候选〔{'、'.join(relic_opts)}〕→选择【{relic_pick}】",
         f"初始道纹发现：候选〔{'、'.join(dao_opts)}〕→选择【{daowen_pick}】",
         f"残韵：{resonance}",
-        f"遗物发现：候选〔{'、'.join(relic_opts)}〕→选择【{relic_pick}】",
     ]
     if region:
         lines.append(f"副本：{region}")

@@ -196,10 +196,13 @@ def test_monster_activates_exclusive():
     })
     assert resolved["success"]
     assert m.has_status("逆鳞")
+    # 准则9（DM裁定2026-08-18）：跨回合可重复发动，X递增+2（一阶）
+    assert m.dao_wen["逆鳞"].x_value == 4
     engine.execute_action("round_end", {})
     engine.execute_action("round_start", {})
     prepared2 = engine.execute_action("prepare_monster_phase", {})
-    assert "逆鳞" not in [o["name"] for o in prepared2["result"]["actors"][0]["daowen_options"]]
+    opts2 = [o["name"] for o in prepared2["result"]["actors"][0]["daowen_options"]]
+    assert "逆鳞" in opts2, "新裁定：怪物道纹跨回合可重复发动（每回合一次）"
 
 def test_custom_extensibility():
     """可自定义：不改引擎代码，仅改配置即可新增专属道纹实例（演示 2 示例）"""

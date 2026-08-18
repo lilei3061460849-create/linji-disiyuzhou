@@ -196,15 +196,15 @@ def play_and_record(region: str, seed: int, battles: int = 7):
         engine.execute_action("setup_attributes",
                               {"name": "贾凡", "blood_points": 10,
                                "speed_points": 8, "mana_points": 7})
+        # 新开局流程：先发现遗物再发现道纹；finish_initial_daowen 会自动完成两次选择。
         finish_initial_daowen(engine)
+        if not engine.state.relics:
+            return {"invalid": True, "reason": "starter_relic:开局遗物未选择"}
+        starter = engine.state.relics[0].name
         engine.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
         r = engine.execute_action("setup_choose_region", {"region": region})
-        optional_relics = {"折速法印", "三相残韵盘"}
-        starter = next((n for n in r["result"]["relic_choices"] if n not in optional_relics),
-                       r["result"]["relic_choices"][0])
-        chosen = engine.execute_action("choose_discovered_relic", {"relic_name": starter})
-        if not chosen.get("success"):
-            return {"invalid": True, "reason": f"starter_relic:{chosen.get('error')}"}
+        if not r.get("success"):
+            return {"invalid": True, "reason": f"choose_region:{r.get('error')}"}
         ai = TacticalAI(engine)
 
         lines.append(f"## 轮回记录（{region}，种子 {seed}）")

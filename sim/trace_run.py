@@ -131,8 +131,8 @@ def run_one(seed):
     rng = random.Random(seed)
     p = make_player()
     shards = 20
-    relics = ["钱袋"]  # 开局发现遗物·钱袋（敌方命零额外+战始血限2%碎片）
-    log.append("【开局】分配25点→10血/7速/8法(60血/14法/8速，出手3)；获20碎片；发现遗物·钱袋；")
+    relics = ["守夜灯"]  # 开局发现遗物·守夜灯（钱袋已删除，免疫癌变并入第一杯）
+    log.append("【开局】分配25点→10血/7速/8法(60血/14法/8速，出手3)；获20碎片；发现遗物·守夜灯；")
     log.append("        自动获得初始道纹·杀伐；自选残韵·反转；进入一阶副本·罪孽都市。\n")
     for n in range(1, 8):
         count = CombatEngine.monster_spawn_count(n, REGION)
@@ -175,14 +175,13 @@ def run_one(seed):
         if not won:
             log.append(f"\n【结局】贾凡于第{n}场阵亡。最远：第{n}场。遗物：{relics}，碎片{shards}")
             return log, False, n
-        # 战终：碎片（击杀怪）+ 钱袋
+        # 战终：碎片（击杀怪）
         reward = 0; killn = 0
         for d in defs:
             killn += 1  # 简化：本场怪均视为击杀计碎片（雕塑等移出路径不产）
             reward += math.ceil(d["hp"]*0.02) + len(d["dw"])*5
-        bag = sum(math.ceil(d["hp"]*0.02) for d in defs) if "钱袋" in relics else 0
-        shards += reward + bag
-        log.append(f"  [战终] 碎片+{reward}(基础)+{bag}(钱袋)→共{shards}；速度复原；精力回3；临时朋友消散。贾凡HP{p.current_hp}/{p.blood_limit}\n")
+        shards += reward
+        log.append(f"  [战终] 碎片+{reward}(基础)→共{shards}；速度复原；精力回3；临时朋友消散。贾凡HP{p.current_hp}/{p.blood_limit}\n")
     log.append(f"【通关】贾凡历经7场，完成一阶罪孽都市！遗物：{relics}，结余碎片{shards}，终态HP{p.current_hp}/{p.blood_limit}")
     return log, True, 8
 

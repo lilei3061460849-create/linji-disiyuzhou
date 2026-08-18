@@ -29,14 +29,13 @@ def _full_setup(engine: GameEngine, region: str = "罪孽都市") -> GameEngine:
     assert engine.execute_action("setup_attributes", {
         "blood_points": 10, "speed_points": 8, "mana_points": 7,
     })["success"]
+    # 新开局流程：finish_initial_daowen 会先显式选择开局遗物，再选初始道纹
     assert finish_initial_daowen(engine)["success"]
     assert "杀伐" in engine.state.player.dao_wen
+    assert len(engine.state.relics) == 1
     assert engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})["success"]
     result = engine.execute_action("setup_choose_region", {"region": region})
     assert result["success"]
-    assert len(result["result"]["relic_choices"]) == 3
-    choice = result["result"]["relic_choices"][0]
-    assert engine.execute_action("choose_discovered_relic", {"relic_name": choice})["success"]
     return engine
 
 
