@@ -946,7 +946,8 @@ class CombatEngine:
         3. 持续X剩余回合-1
         """
         effects = []
-        
+        mediocrity_ready: list[tuple[Entity, str]] = []
+
         for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
             # 畸变结算：正文是失去[血限]，不是受到等量伤害；按回终时的当前攻击面板动态计算。
             if entity.has_status("畸变") and entity.is_alive:
@@ -968,38 +969,18 @@ class CombatEngine:
                     "died": not entity.is_alive,
                 })
 
-            # 特殊事件【凡庸】（README 第500行）：任一角色连续五回合未出手／
-            # 五回合未能使敌对角色生命减少时触发；轮回者直接死亡，怪物命零死亡，
-            # 轮回者获得消耗品【残骸】(1/1)。此前从未实装，导致长期僵持局面不会终结。
+            # 凡庸只在此拍更新计数；达阈值者稍后按「非轮回者优先」结算。
             if entity.is_alive:
-                # 两个条件互相独立，任一连续满 5 回合即触发（README 用"/"表示或）
-                if entity.actions_used_this_round <= 0:
-                    entity.no_action_rounds += 1
-                else:
-                    entity.no_action_rounds = 0
-                if entity.damage_dealt_this_round <= 0:
-                    entity.no_damage_rounds += 1
-                else:
-                    entity.no_damage_rounds = 0
-                if entity.no_action_rounds >= 5 or entity.no_damage_rounds >= 5:
-                    _why = ("连续五回合未出手" if entity.no_action_rounds >= 5
-                            else "连续五回合未能使敌对角色生命减少")
-                    entity.current_hp = 0
-                    entity.is_alive = False
-                    self._on_entity_death(entity)
-                    entity.no_action_rounds = 0
-                    entity.no_damage_rounds = 0
-                    if entity is self.state.player:
-                        self.state.last_death_cause = "mediocrity"
-                    effects.append({"type": "mediocrity", "entity": entity.name,
-                                    "note": f"{_why}，触发【凡庸】：凭空全身炸裂，[命零]"})
-                    if entity.entity_type == "怪物":
-                        self.state.consumables.append(
-                            Consumable(name="残骸", effect="局内使用恢复20生命并获得异变10",
-                                       current_uses=1, max_uses=1))
-                        effects.append({"type": "mediocrity_loot", "entity": entity.name,
-                                        "note": "轮回者获得消耗品【残骸】(1/1)"})
+                why = self._tick_mediocrity_counters(entity)
+                if why:
+                    mediocrity_ready.append((entity, why))
 
+        # 多个角色同时触发凡庸时，非轮回者优先；同档保持原遍历顺序。
+        mediocrity_ready.sort(key=lambda item: item[0].entity_type == "轮回者")
+        for entity, why in mediocrity_ready:
+            effects.extend(self._apply_mediocrity(entity, why))
+
+        for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
             # 血族血脉：持有者这一侧各自结算（死斗两边各一份）
             if entity.entity_type == "轮回者" and self.state.side_has(entity, "血族血脉"):
                 if entity.damage_dealt_this_round > 0:
@@ -3276,6 +3257,42 @@ class CombatEngine:
         detail = self._apply_hostile_damage(actor, dmg, "必中", source)
         detail["dragon_breath"] = dmg
         return detail
+
+    def _tick_mediocrity_counters(self, entity: Entity) -> Optional[str]:
+        """更新凡庸连续计数；达阈值返回原因，不立刻结算。"""
+        if entity.actions_used_this_round <= 0:
+            entity.no_action_rounds += 1
+        else:
+            entity.no_action_rounds = 0
+        if entity.damage_dealt_this_round <= 0:
+            entity.no_damage_rounds += 1
+        else:
+            entity.no_damage_rounds = 0
+        if entity.no_action_rounds >= 5 or entity.no_damage_rounds >= 5:
+            return ("连续五回合未出手" if entity.no_action_rounds >= 5
+                    else "连续五回合未能使敌对角色生命减少")
+        return None
+
+    def _apply_mediocrity(self, entity: Entity, why: str) -> list[dict]:
+        """结算一名角色的凡庸。调用方必须已按非轮回者优先排好序。"""
+        if not entity.is_alive:
+            return []
+        entity.current_hp = 0
+        entity.is_alive = False
+        self._on_entity_death(entity)
+        entity.no_action_rounds = 0
+        entity.no_damage_rounds = 0
+        if entity is self.state.player:
+            self.state.last_death_cause = "mediocrity"
+        effects = [{"type": "mediocrity", "entity": entity.name,
+                    "note": f"{why}，触发【凡庸】：凭空全身炸裂，[命零]"}]
+        if entity.entity_type == "怪物":
+            self.state.consumables.append(
+                Consumable(name="残骸", effect="局内使用恢复20生命并获得异变10",
+                           current_uses=1, max_uses=1))
+            effects.append({"type": "mediocrity_loot", "entity": entity.name,
+                            "note": "轮回者获得消耗品【残骸】(1/1)"})
+        return effects
 
     def can_act(self, entity: Entity) -> bool:
         """是否可出手（眩晕/束缚/缓慢下不可）"""

@@ -105,6 +105,79 @@ def test_idle_counter_resets_on_any_action():
     assert m.no_action_rounds == 4
 
 
+def test_mediocrity_non_reincarnator_fires_first():
+    """正常：轮回者与怪物同时达阈值时，非轮回者先结算，残骸先落入轮回者再轮到其炸裂"""
+    e = _engine()
+    cm = e.combat
+    cm.state.enemies = [_monster()]
+    m = cm.state.enemies[0]
+    p = cm.state.player
+    friend = Entity(name="陪葬者", entity_type="朋友", blood_limit=30, current_hp=30,
+                    attack_count=1, attack_power=1)
+    cm.state.friends = [friend]
+
+    fired = None
+    for r in range(1, 6):
+        for ent in (p, m, friend):
+            ent.damage_dealt_this_round = 0
+            ent.actions_used_this_round = 0
+        res = cm.round_end()
+        names = [ef.get("entity") for ef in res.get("effects", [])
+                 if ef.get("type") == "mediocrity"]
+        if names:
+            fired = (r, names)
+
+    assert fired == (5, ["陪葬者", "木桩", "贾凡"]), f"凡庸结算顺序应为非轮回者优先，实际={fired}"
+    assert not m.is_alive and not friend.is_alive and not p.is_alive
+    wrecks = [c for c in cm.state.consumables if c.name == "残骸"]
+    assert len(wrecks) == 1, "怪物凡庸仍应产出残骸，即使轮回者随后也炸裂"
+    assert e.state.last_death_cause == "mediocrity"
+
+
+def test_mediocrity_reincarnator_still_fires_when_alone():
+    """边界：只有轮回者达阈值时，没有非轮回者也不阻挡其凡庸"""
+    e = _engine()
+    cm = e.combat
+    cm.state.enemies = [_monster()]
+    m = cm.state.enemies[0]
+    p = cm.state.player
+
+    for _ in range(5):
+        p.damage_dealt_this_round = 0
+        p.actions_used_this_round = 0
+        m.damage_dealt_this_round = 3
+        m.actions_used_this_round = 1
+        cm.round_end()
+
+    assert not p.is_alive, "单独达阈值的轮回者仍应凡庸"
+    assert m.is_alive, "有作为的怪物不应被波及"
+
+
+def test_mediocrity_priority_does_not_pull_unready_reincarnator():
+    """错误输入：非轮回者优先不得把未满五回合的轮回者一并炸裂"""
+    e = _engine()
+    cm = e.combat
+    cm.state.enemies = [_monster()]
+    m = cm.state.enemies[0]
+    p = cm.state.player
+    for _ in range(4):
+        m.damage_dealt_this_round = 0
+        m.actions_used_this_round = 0
+        p.damage_dealt_this_round = 1
+        p.actions_used_this_round = 1
+        cm.round_end()
+    m.damage_dealt_this_round = 0
+    m.actions_used_this_round = 0
+    p.damage_dealt_this_round = 0
+    p.actions_used_this_round = 0
+    res = cm.round_end()
+    names = [ef.get("entity") for ef in res.get("effects", [])
+             if ef.get("type") == "mediocrity"]
+    assert names == ["木桩"], f"只有满五回合的非轮回者应触发，实际={names}"
+    assert not m.is_alive
+    assert p.is_alive, "轮回者本拍才开始空转，不得被优先规则拖死"
+
+
 def test_no_action_branch_triggers_even_if_damage_dealt():
     """边界：README 用"/"表示或——即便回回造成伤害，连续五回合未出手仍触发"""
     e = _engine()
