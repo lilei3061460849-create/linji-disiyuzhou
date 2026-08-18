@@ -238,7 +238,7 @@ class Entity:
     # 多路径胜利追踪
     shards: int = 0              # 怪物自带碎片（罪孽都市）/ 负值表示负债（还债）
     fake_shards: int = 0         # 假碎片（罪孽都市：假钞产出；战斗中失去碎片时优先失去假碎片）
-    total_healed: int = 0        # 累计受到的恢复量（癌变；超出血限部分按双倍计）
+    total_healed: int = 0        # 累计受到的恢复量（癌变；含过量部分，按原值计，双倍机制已删）
     is_sculptured: bool = False  # 已化为雕塑（攻击次数或攻击力归0）
     is_proliferated: bool = False  # 已被癌变吸收进死者之书（旧名 增生，已统一为 癌变；保留字段名兼容）
     is_debt_bound: bool = False  # 已因还债成为员工
@@ -423,8 +423,9 @@ class Entity:
         self.current_hp = min(self.blood_limit, self.current_hp + amount)
         actual = self.current_hp - before
         overheal = amount - actual
-        # 癌变追踪：超出血限的恢复按双倍计入累计恢复量
-        self.total_healed += actual + overheal * 2
+        # 癌变追踪：DM裁定（2026-08-18）删除过量回复双倍计入机制，
+        # 受到的全部回复（含过量部分）一律按原值计入累计恢复量。
+        self.total_healed += amount
         self.healed_this_battle += actual
         return {
             "heal_amount": amount,

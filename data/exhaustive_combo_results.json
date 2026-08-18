@@ -1,6 +1,6 @@
 {
  "meta": {
-  "generated_at": "2026-08-18 11:47:30",
+  "generated_at": "2026-08-18 12:17:03",
   "coarse_seeds": 10,
   "refine_seeds": 30,
   "dimensions": {
@@ -573,45 +573,6 @@
     "attrs": "均衡10-8-7",
     "resonance": "转换",
     "build": "凡庸盾守",
-    "region": "龙心谷"
-   },
-   "runs": 10,
-   "wins": 0,
-   "errors": 0,
-   "win_rate": 0.0,
-   "avg_cleared": 0.7,
-   "deaths": {
-    "3": 1,
-    "1": 7,
-    "2": 1,
-    "5": 1
-   },
-   "relic_picked": {
-    "同魂笔": 2,
-    "血誓戒": 2,
-    "忘忧香": 1,
-    "买路财": 2,
-    "折速法印": 1,
-    "守夜灯": 1,
-    "避风铃": 1
-   },
-   "relic_won": {},
-   "daowen_picked": {
-    "再生": 1,
-    "庇护": 5,
-    "缓慢": 1,
-    "束缚": 1,
-    "杀伐": 2
-   },
-   "daowen_won": {},
-   "acquired_daowen": {},
-   "resonance_used": 0
-  },
-  {
-   "combo": {
-    "attrs": "均衡10-8-7",
-    "resonance": "转换",
-    "build": "凡庸盾守",
     "region": "扭曲都市"
    },
    "runs": 10,
@@ -651,22 +612,19 @@
    "combo": {
     "attrs": "均衡10-8-7",
     "resonance": "转换",
-    "build": "癌变奶怪",
-    "region": "罪孽都市"
+    "build": "凡庸盾守",
+    "region": "龙心谷"
    },
    "runs": 10,
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.4,
+   "avg_cleared": 0.7,
    "deaths": {
-    "4": 2,
-    "2": 1,
-    "1": 3,
     "3": 1,
-    "5": 1,
-    "6": 1,
-    "7": 1
+    "1": 7,
+    "2": 1,
+    "5": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -681,7 +639,7 @@
    "daowen_picked": {
     "再生": 1,
     "庇护": 5,
-    "慈悲": 1,
+    "缓慢": 1,
     "束缚": 1,
     "杀伐": 2
    },
@@ -694,20 +652,19 @@
     "attrs": "均衡10-8-7",
     "resonance": "转换",
     "build": "癌变奶怪",
-    "region": "扭曲都市"
+    "region": "罪孽都市"
    },
    "runs": 10,
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 3.0,
+   "avg_cleared": 1.6,
    "deaths": {
-    "7": 2,
     "4": 2,
-    "3": 3,
-    "1": 1,
-    "6": 1,
-    "2": 1
+    "2": 2,
+    "1": 4,
+    "3": 1,
+    "7": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -741,12 +698,10 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.4,
+   "avg_cleared": 0.4,
    "deaths": {
-    "6": 2,
-    "5": 3,
-    "1": 3,
-    "2": 2
+    "1": 9,
+    "5": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -773,91 +728,8 @@
    "combo": {
     "attrs": "均衡10-8-7",
     "resonance": "转换",
-    "build": "奶大砍小·混合",
-    "region": "罪孽都市"
-   },
-   "runs": 10,
-   "wins": 0,
-   "errors": 0,
-   "win_rate": 0.0,
-   "avg_cleared": 2.4,
-   "deaths": {
-    "4": 2,
-    "2": 1,
-    "1": 3,
-    "3": 1,
-    "5": 1,
-    "6": 1,
-    "7": 1
-   },
-   "relic_picked": {
-    "同魂笔": 2,
-    "血誓戒": 2,
-    "忘忧香": 1,
-    "买路财": 2,
-    "折速法印": 1,
-    "守夜灯": 1,
-    "避风铃": 1
-   },
-   "relic_won": {},
-   "daowen_picked": {
-    "再生": 1,
-    "庇护": 4,
-    "缓慢": 1,
-    "束缚": 1,
-    "杀伐": 3
-   },
-   "daowen_won": {},
-   "acquired_daowen": {},
-   "resonance_used": 0
-  },
-  {
-   "combo": {
-    "attrs": "均衡10-8-7",
-    "resonance": "转换",
-    "build": "奶大砍小·混合",
+    "build": "癌变奶怪",
     "region": "扭曲都市"
-   },
-   "runs": 10,
-   "wins": 0,
-   "errors": 0,
-   "win_rate": 0.0,
-   "avg_cleared": 3.0,
-   "deaths": {
-    "7": 2,
-    "4": 2,
-    "3": 3,
-    "1": 1,
-    "6": 1,
-    "2": 1
-   },
-   "relic_picked": {
-    "同魂笔": 2,
-    "血誓戒": 2,
-    "忘忧香": 1,
-    "买路财": 2,
-    "折速法印": 1,
-    "守夜灯": 1,
-    "避风铃": 1
-   },
-   "relic_won": {},
-   "daowen_picked": {
-    "再生": 1,
-    "庇护": 4,
-    "缓慢": 1,
-    "束缚": 1,
-    "杀伐": 3
-   },
-   "daowen_won": {},
-   "acquired_daowen": {},
-   "resonance_used": 0
-  },
-  {
-   "combo": {
-    "attrs": "均衡10-8-7",
-    "resonance": "转换",
-    "build": "奶大砍小·混合",
-    "region": "龙心谷"
    },
    "runs": 10,
    "wins": 0,
@@ -865,10 +737,128 @@
    "win_rate": 0.0,
    "avg_cleared": 2.3,
    "deaths": {
-    "6": 1,
-    "5": 4,
-    "1": 3,
-    "2": 2
+    "7": 2,
+    "4": 1,
+    "3": 3,
+    "2": 2,
+    "1": 2
+   },
+   "relic_picked": {
+    "同魂笔": 2,
+    "血誓戒": 2,
+    "忘忧香": 1,
+    "买路财": 2,
+    "折速法印": 1,
+    "守夜灯": 1,
+    "避风铃": 1
+   },
+   "relic_won": {},
+   "daowen_picked": {
+    "再生": 1,
+    "庇护": 5,
+    "慈悲": 1,
+    "束缚": 1,
+    "杀伐": 2
+   },
+   "daowen_won": {},
+   "acquired_daowen": {},
+   "resonance_used": 0
+  },
+  {
+   "combo": {
+    "attrs": "均衡10-8-7",
+    "resonance": "转换",
+    "build": "奶大砍小·混合",
+    "region": "罪孽都市"
+   },
+   "runs": 10,
+   "wins": 0,
+   "errors": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 1.6,
+   "deaths": {
+    "4": 2,
+    "2": 2,
+    "1": 4,
+    "3": 1,
+    "7": 1
+   },
+   "relic_picked": {
+    "同魂笔": 2,
+    "血誓戒": 2,
+    "忘忧香": 1,
+    "买路财": 2,
+    "折速法印": 1,
+    "守夜灯": 1,
+    "避风铃": 1
+   },
+   "relic_won": {},
+   "daowen_picked": {
+    "再生": 1,
+    "庇护": 4,
+    "缓慢": 1,
+    "束缚": 1,
+    "杀伐": 3
+   },
+   "daowen_won": {},
+   "acquired_daowen": {},
+   "resonance_used": 0
+  },
+  {
+   "combo": {
+    "attrs": "均衡10-8-7",
+    "resonance": "转换",
+    "build": "奶大砍小·混合",
+    "region": "扭曲都市"
+   },
+   "runs": 10,
+   "wins": 0,
+   "errors": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 2.5,
+   "deaths": {
+    "7": 2,
+    "4": 2,
+    "3": 3,
+    "1": 2,
+    "2": 1
+   },
+   "relic_picked": {
+    "同魂笔": 2,
+    "血誓戒": 2,
+    "忘忧香": 1,
+    "买路财": 2,
+    "折速法印": 1,
+    "守夜灯": 1,
+    "避风铃": 1
+   },
+   "relic_won": {},
+   "daowen_picked": {
+    "再生": 1,
+    "庇护": 4,
+    "缓慢": 1,
+    "束缚": 1,
+    "杀伐": 3
+   },
+   "daowen_won": {},
+   "acquired_daowen": {},
+   "resonance_used": 0
+  },
+  {
+   "combo": {
+    "attrs": "均衡10-8-7",
+    "resonance": "转换",
+    "build": "奶大砍小·混合",
+    "region": "龙心谷"
+   },
+   "runs": 10,
+   "wins": 0,
+   "errors": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 0.4,
+   "deaths": {
+    "1": 9,
+    "5": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -902,12 +892,11 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 1.8,
+   "avg_cleared": 1.6,
    "deaths": {
-    "4": 3,
+    "4": 4,
     "1": 5,
-    "5": 1,
-    "6": 1
+    "5": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -1030,6 +1019,51 @@
     "attrs": "均衡10-8-7",
     "resonance": "反转",
     "build": "击杀·切割系",
+    "region": "扭曲都市"
+   },
+   "runs": 10,
+   "wins": 0,
+   "errors": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 0.2,
+   "deaths": {
+    "1": 8,
+    "2": 2
+   },
+   "relic_picked": {
+    "同魂笔": 2,
+    "血誓戒": 2,
+    "忘忧香": 1,
+    "买路财": 2,
+    "折速法印": 1,
+    "守夜灯": 1,
+    "避风铃": 1
+   },
+   "relic_won": {},
+   "daowen_picked": {
+    "血债": 3,
+    "冲击": 1,
+    "庇护": 1,
+    "缓慢": 1,
+    "束缚": 1,
+    "杀伐": 1,
+    "贯穿": 1,
+    "切割": 1
+   },
+   "daowen_won": {},
+   "acquired_daowen": {
+    "弱化": 3,
+    "衰败": 1,
+    "自残": 2,
+    "坠落": 1
+   },
+   "resonance_used": 7
+  },
+  {
+   "combo": {
+    "attrs": "均衡10-8-7",
+    "resonance": "反转",
+    "build": "击杀·切割系",
     "region": "罪孽都市"
    },
    "runs": 10,
@@ -1068,51 +1102,6 @@
     "蒙蔽": 3,
     "自残": 2,
     "无力": 2
-   },
-   "resonance_used": 7
-  },
-  {
-   "combo": {
-    "attrs": "均衡10-8-7",
-    "resonance": "反转",
-    "build": "击杀·切割系",
-    "region": "扭曲都市"
-   },
-   "runs": 10,
-   "wins": 0,
-   "errors": 0,
-   "win_rate": 0.0,
-   "avg_cleared": 0.2,
-   "deaths": {
-    "1": 8,
-    "2": 2
-   },
-   "relic_picked": {
-    "同魂笔": 2,
-    "血誓戒": 2,
-    "忘忧香": 1,
-    "买路财": 2,
-    "折速法印": 1,
-    "守夜灯": 1,
-    "避风铃": 1
-   },
-   "relic_won": {},
-   "daowen_picked": {
-    "血债": 3,
-    "冲击": 1,
-    "庇护": 1,
-    "缓慢": 1,
-    "束缚": 1,
-    "杀伐": 1,
-    "贯穿": 1,
-    "切割": 1
-   },
-   "daowen_won": {},
-   "acquired_daowen": {
-    "弱化": 3,
-    "衰败": 1,
-    "自残": 2,
-    "坠落": 1
    },
    "resonance_used": 7
   },
@@ -1444,56 +1433,13 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.4,
+   "avg_cleared": 1.6,
    "deaths": {
     "4": 2,
-    "2": 1,
-    "1": 3,
+    "2": 2,
+    "1": 4,
     "3": 1,
-    "5": 1,
-    "6": 1,
     "7": 1
-   },
-   "relic_picked": {
-    "同魂笔": 2,
-    "血誓戒": 2,
-    "忘忧香": 1,
-    "买路财": 2,
-    "折速法印": 1,
-    "守夜灯": 1,
-    "避风铃": 1
-   },
-   "relic_won": {},
-   "daowen_picked": {
-    "再生": 1,
-    "庇护": 5,
-    "慈悲": 1,
-    "束缚": 1,
-    "杀伐": 2
-   },
-   "daowen_won": {},
-   "acquired_daowen": {},
-   "resonance_used": 0
-  },
-  {
-   "combo": {
-    "attrs": "均衡10-8-7",
-    "resonance": "反转",
-    "build": "癌变奶怪",
-    "region": "扭曲都市"
-   },
-   "runs": 10,
-   "wins": 0,
-   "errors": 0,
-   "win_rate": 0.0,
-   "avg_cleared": 3.0,
-   "deaths": {
-    "7": 2,
-    "4": 2,
-    "3": 3,
-    "1": 1,
-    "6": 1,
-    "2": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -1527,12 +1473,50 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.4,
+   "avg_cleared": 0.4,
    "deaths": {
-    "6": 2,
-    "5": 3,
-    "1": 3,
-    "2": 2
+    "1": 9,
+    "5": 1
+   },
+   "relic_picked": {
+    "同魂笔": 2,
+    "血誓戒": 2,
+    "忘忧香": 1,
+    "买路财": 2,
+    "折速法印": 1,
+    "守夜灯": 1,
+    "避风铃": 1
+   },
+   "relic_won": {},
+   "daowen_picked": {
+    "再生": 1,
+    "庇护": 5,
+    "慈悲": 1,
+    "束缚": 1,
+    "杀伐": 2
+   },
+   "daowen_won": {},
+   "acquired_daowen": {},
+   "resonance_used": 0
+  },
+  {
+   "combo": {
+    "attrs": "均衡10-8-7",
+    "resonance": "反转",
+    "build": "癌变奶怪",
+    "region": "扭曲都市"
+   },
+   "runs": 10,
+   "wins": 0,
+   "errors": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 2.3,
+   "deaths": {
+    "7": 2,
+    "4": 1,
+    "3": 3,
+    "2": 2,
+    "1": 2
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -1566,14 +1550,12 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.4,
+   "avg_cleared": 1.6,
    "deaths": {
     "4": 2,
-    "2": 1,
-    "1": 3,
+    "2": 2,
+    "1": 4,
     "3": 1,
-    "5": 1,
-    "6": 1,
     "7": 1
    },
    "relic_picked": {
@@ -1608,13 +1590,12 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 3.0,
+   "avg_cleared": 2.5,
    "deaths": {
     "7": 2,
     "4": 2,
     "3": 3,
-    "1": 1,
-    "6": 1,
+    "1": 2,
     "2": 1
    },
    "relic_picked": {
@@ -1649,12 +1630,10 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.3,
+   "avg_cleared": 0.4,
    "deaths": {
-    "6": 1,
-    "5": 4,
-    "1": 3,
-    "2": 2
+    "1": 9,
+    "5": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -2223,14 +2202,12 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.4,
+   "avg_cleared": 1.6,
    "deaths": {
     "4": 2,
-    "2": 1,
-    "1": 3,
+    "2": 2,
+    "1": 4,
     "3": 1,
-    "5": 1,
-    "6": 1,
     "7": 1
    },
    "relic_picked": {
@@ -2265,14 +2242,13 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 3.0,
+   "avg_cleared": 2.3,
    "deaths": {
     "7": 2,
-    "4": 2,
+    "4": 1,
     "3": 3,
-    "1": 1,
-    "6": 1,
-    "2": 1
+    "2": 2,
+    "1": 2
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -2306,12 +2282,10 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.4,
+   "avg_cleared": 0.4,
    "deaths": {
-    "6": 2,
-    "5": 3,
-    "1": 3,
-    "2": 2
+    "1": 9,
+    "5": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -2345,14 +2319,12 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.4,
+   "avg_cleared": 1.6,
    "deaths": {
     "4": 2,
-    "2": 1,
-    "1": 3,
+    "2": 2,
+    "1": 4,
     "3": 1,
-    "5": 1,
-    "6": 1,
     "7": 1
    },
    "relic_picked": {
@@ -2387,13 +2359,12 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 3.0,
+   "avg_cleared": 2.5,
    "deaths": {
     "7": 2,
     "4": 2,
     "3": 3,
-    "1": 1,
-    "6": 1,
+    "1": 2,
     "2": 1
    },
    "relic_picked": {
@@ -2428,12 +2399,10 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.3,
+   "avg_cleared": 0.4,
    "deaths": {
-    "6": 1,
-    "5": 4,
-    "1": 3,
-    "2": 2
+    "1": 9,
+    "5": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -2550,6 +2519,48 @@
    "combo": {
     "attrs": "厚血13-5-7",
     "resonance": "转换",
+    "build": "击杀·杀伐系",
+    "region": "龙心谷"
+   },
+   "runs": 10,
+   "wins": 0,
+   "errors": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 0.6,
+   "deaths": {
+    "2": 2,
+    "1": 7,
+    "5": 1
+   },
+   "relic_picked": {
+    "同魂笔": 2,
+    "血誓戒": 2,
+    "忘忧香": 1,
+    "买路财": 2,
+    "折速法印": 1,
+    "守夜灯": 1,
+    "避风铃": 1
+   },
+   "relic_won": {},
+   "daowen_picked": {
+    "血债": 3,
+    "冲击": 1,
+    "庇护": 1,
+    "缓慢": 1,
+    "束缚": 1,
+    "杀伐": 3
+   },
+   "daowen_won": {},
+   "acquired_daowen": {
+    "洞察": 3,
+    "愤怒": 4
+   },
+   "resonance_used": 7
+  },
+  {
+   "combo": {
+    "attrs": "厚血13-5-7",
+    "resonance": "转换",
     "build": "击杀·切割系",
     "region": "罪孽都市"
    },
@@ -2587,48 +2598,6 @@
     "洞察": 3,
     "愤怒": 2,
     "兴奋": 2
-   },
-   "resonance_used": 7
-  },
-  {
-   "combo": {
-    "attrs": "厚血13-5-7",
-    "resonance": "转换",
-    "build": "击杀·杀伐系",
-    "region": "龙心谷"
-   },
-   "runs": 10,
-   "wins": 0,
-   "errors": 0,
-   "win_rate": 0.0,
-   "avg_cleared": 0.6,
-   "deaths": {
-    "2": 2,
-    "1": 7,
-    "5": 1
-   },
-   "relic_picked": {
-    "同魂笔": 2,
-    "血誓戒": 2,
-    "忘忧香": 1,
-    "买路财": 2,
-    "折速法印": 1,
-    "守夜灯": 1,
-    "避风铃": 1
-   },
-   "relic_won": {},
-   "daowen_picked": {
-    "血债": 3,
-    "冲击": 1,
-    "庇护": 1,
-    "缓慢": 1,
-    "束缚": 1,
-    "杀伐": 3
-   },
-   "daowen_won": {},
-   "acquired_daowen": {
-    "洞察": 3,
-    "愤怒": 4
    },
    "resonance_used": 7
   },
@@ -2814,7 +2783,7 @@
     "自残": 2,
     "滋养": 1
    },
-   "resonance_used": 40
+   "resonance_used": 41
   },
   {
    "combo": {
@@ -2992,14 +2961,12 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.5,
+   "avg_cleared": 1.6,
    "deaths": {
-    "5": 2,
-    "2": 1,
-    "4": 1,
-    "1": 3,
+    "4": 2,
+    "2": 2,
+    "1": 4,
     "3": 1,
-    "6": 1,
     "7": 1
    },
    "relic_picked": {
@@ -3034,13 +3001,13 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.9,
+   "avg_cleared": 2.2,
    "deaths": {
-    "6": 2,
-    "4": 2,
+    "6": 1,
+    "4": 1,
     "3": 3,
-    "1": 1,
-    "2": 1,
+    "2": 2,
+    "1": 2,
     "7": 1
    },
    "relic_picked": {
@@ -3075,13 +3042,10 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 1.7,
+   "avg_cleared": 0.4,
    "deaths": {
-    "6": 1,
-    "5": 2,
-    "3": 1,
-    "1": 4,
-    "2": 2
+    "1": 9,
+    "5": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -3115,14 +3079,12 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.5,
+   "avg_cleared": 1.6,
    "deaths": {
-    "5": 2,
-    "2": 1,
-    "4": 1,
-    "1": 3,
+    "4": 2,
+    "2": 2,
+    "1": 4,
     "3": 1,
-    "6": 1,
     "7": 1
    },
    "relic_picked": {
@@ -3157,12 +3119,12 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.9,
+   "avg_cleared": 2.4,
    "deaths": {
-    "6": 2,
+    "6": 1,
     "4": 2,
     "3": 3,
-    "1": 1,
+    "1": 2,
     "2": 1,
     "7": 1
    },
@@ -3198,13 +3160,10 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 1.7,
+   "avg_cleared": 0.4,
    "deaths": {
-    "6": 1,
-    "5": 2,
-    "3": 1,
-    "1": 4,
-    "2": 2
+    "1": 9,
+    "5": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -3238,12 +3197,11 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 1.5,
+   "avg_cleared": 1.4,
    "deaths": {
     "4": 2,
     "1": 6,
-    "5": 1,
-    "6": 1
+    "5": 2
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -3773,55 +3731,12 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.5,
+   "avg_cleared": 1.6,
    "deaths": {
-    "5": 2,
-    "2": 1,
-    "4": 1,
-    "1": 3,
-    "3": 1,
-    "6": 1,
-    "7": 1
-   },
-   "relic_picked": {
-    "同魂笔": 2,
-    "血誓戒": 2,
-    "忘忧香": 1,
-    "买路财": 2,
-    "折速法印": 1,
-    "守夜灯": 1,
-    "避风铃": 1
-   },
-   "relic_won": {},
-   "daowen_picked": {
-    "再生": 1,
-    "庇护": 5,
-    "慈悲": 1,
-    "束缚": 1,
-    "杀伐": 2
-   },
-   "daowen_won": {},
-   "acquired_daowen": {},
-   "resonance_used": 0
-  },
-  {
-   "combo": {
-    "attrs": "厚血13-5-7",
-    "resonance": "反转",
-    "build": "癌变奶怪",
-    "region": "扭曲都市"
-   },
-   "runs": 10,
-   "wins": 0,
-   "errors": 0,
-   "win_rate": 0.0,
-   "avg_cleared": 2.9,
-   "deaths": {
-    "6": 2,
     "4": 2,
-    "3": 3,
-    "1": 1,
-    "2": 1,
+    "2": 2,
+    "1": 4,
+    "3": 1,
     "7": 1
    },
    "relic_picked": {
@@ -3856,13 +3771,51 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 1.7,
+   "avg_cleared": 0.4,
+   "deaths": {
+    "1": 9,
+    "5": 1
+   },
+   "relic_picked": {
+    "同魂笔": 2,
+    "血誓戒": 2,
+    "忘忧香": 1,
+    "买路财": 2,
+    "折速法印": 1,
+    "守夜灯": 1,
+    "避风铃": 1
+   },
+   "relic_won": {},
+   "daowen_picked": {
+    "再生": 1,
+    "庇护": 5,
+    "慈悲": 1,
+    "束缚": 1,
+    "杀伐": 2
+   },
+   "daowen_won": {},
+   "acquired_daowen": {},
+   "resonance_used": 0
+  },
+  {
+   "combo": {
+    "attrs": "厚血13-5-7",
+    "resonance": "反转",
+    "build": "癌变奶怪",
+    "region": "扭曲都市"
+   },
+   "runs": 10,
+   "wins": 0,
+   "errors": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 2.2,
    "deaths": {
     "6": 1,
-    "5": 2,
-    "3": 1,
-    "1": 4,
-    "2": 2
+    "4": 1,
+    "3": 3,
+    "2": 2,
+    "1": 2,
+    "7": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -3896,14 +3849,12 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.5,
+   "avg_cleared": 1.6,
    "deaths": {
-    "5": 2,
-    "2": 1,
-    "4": 1,
-    "1": 3,
+    "4": 2,
+    "2": 2,
+    "1": 4,
     "3": 1,
-    "6": 1,
     "7": 1
    },
    "relic_picked": {
@@ -3938,12 +3889,12 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.9,
+   "avg_cleared": 2.4,
    "deaths": {
-    "6": 2,
+    "6": 1,
     "4": 2,
     "3": 3,
-    "1": 1,
+    "1": 2,
     "2": 1,
     "7": 1
    },
@@ -3979,13 +3930,10 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 1.7,
+   "avg_cleared": 0.4,
    "deaths": {
-    "6": 1,
-    "5": 2,
-    "3": 1,
-    "1": 4,
-    "2": 2
+    "1": 9,
+    "5": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -4100,6 +4048,49 @@
    "combo": {
     "attrs": "厚血13-5-7",
     "resonance": "曲解",
+    "build": "击杀·切割系",
+    "region": "罪孽都市"
+   },
+   "runs": 10,
+   "wins": 0,
+   "errors": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 0.0,
+   "deaths": {
+    "1": 10
+   },
+   "relic_picked": {
+    "同魂笔": 2,
+    "血誓戒": 2,
+    "忘忧香": 1,
+    "买路财": 2,
+    "折速法印": 1,
+    "守夜灯": 1,
+    "避风铃": 1
+   },
+   "relic_won": {},
+   "daowen_picked": {
+    "血债": 3,
+    "冲击": 1,
+    "庇护": 1,
+    "缓慢": 1,
+    "束缚": 1,
+    "杀伐": 1,
+    "贯穿": 1,
+    "切割": 1
+   },
+   "daowen_won": {},
+   "acquired_daowen": {
+    "眩晕": 3,
+    "无神": 2,
+    "迟滞": 2
+   },
+   "resonance_used": 7
+  },
+  {
+   "combo": {
+    "attrs": "厚血13-5-7",
+    "resonance": "曲解",
     "build": "击杀·杀伐系",
     "region": "龙心谷"
    },
@@ -4142,7 +4133,7 @@
     "attrs": "厚血13-5-7",
     "resonance": "曲解",
     "build": "击杀·切割系",
-    "region": "罪孽都市"
+    "region": "龙心谷"
    },
    "runs": 10,
    "wins": 0,
@@ -4174,11 +4165,9 @@
    },
    "daowen_won": {},
    "acquired_daowen": {
-    "眩晕": 3,
-    "无神": 2,
-    "迟滞": 2
+    "无神": 4
    },
-   "resonance_used": 7
+   "resonance_used": 4
   },
   {
    "combo": {
@@ -4223,47 +4212,6 @@
     "无神": 2
    },
    "resonance_used": 7
-  },
-  {
-   "combo": {
-    "attrs": "厚血13-5-7",
-    "resonance": "曲解",
-    "build": "击杀·切割系",
-    "region": "龙心谷"
-   },
-   "runs": 10,
-   "wins": 0,
-   "errors": 0,
-   "win_rate": 0.0,
-   "avg_cleared": 0.0,
-   "deaths": {
-    "1": 10
-   },
-   "relic_picked": {
-    "同魂笔": 2,
-    "血誓戒": 2,
-    "忘忧香": 1,
-    "买路财": 2,
-    "折速法印": 1,
-    "守夜灯": 1,
-    "避风铃": 1
-   },
-   "relic_won": {},
-   "daowen_picked": {
-    "血债": 3,
-    "冲击": 1,
-    "庇护": 1,
-    "缓慢": 1,
-    "束缚": 1,
-    "杀伐": 1,
-    "贯穿": 1,
-    "切割": 1
-   },
-   "daowen_won": {},
-   "acquired_daowen": {
-    "无神": 4
-   },
-   "resonance_used": 4
   },
   {
    "combo": {
@@ -4367,7 +4315,7 @@
     "兴奋": 1,
     "加速": 1
    },
-   "resonance_used": 38
+   "resonance_used": 37
   },
   {
    "combo": {
@@ -4545,14 +4493,12 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.5,
+   "avg_cleared": 1.6,
    "deaths": {
-    "5": 2,
-    "2": 1,
-    "4": 1,
-    "1": 3,
+    "4": 2,
+    "2": 2,
+    "1": 4,
     "3": 1,
-    "6": 1,
     "7": 1
    },
    "relic_picked": {
@@ -4587,13 +4533,13 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.9,
+   "avg_cleared": 2.2,
    "deaths": {
-    "6": 2,
-    "4": 2,
+    "6": 1,
+    "4": 1,
     "3": 3,
-    "1": 1,
-    "2": 1,
+    "2": 2,
+    "1": 2,
     "7": 1
    },
    "relic_picked": {
@@ -4628,13 +4574,10 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 1.7,
+   "avg_cleared": 0.4,
    "deaths": {
-    "6": 1,
-    "5": 2,
-    "3": 1,
-    "1": 4,
-    "2": 2
+    "1": 9,
+    "5": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -4668,14 +4611,12 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.5,
+   "avg_cleared": 1.6,
    "deaths": {
-    "5": 2,
-    "2": 1,
-    "4": 1,
-    "1": 3,
+    "4": 2,
+    "2": 2,
+    "1": 4,
     "3": 1,
-    "6": 1,
     "7": 1
    },
    "relic_picked": {
@@ -4710,12 +4651,12 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.9,
+   "avg_cleared": 2.4,
    "deaths": {
-    "6": 2,
+    "6": 1,
     "4": 2,
     "3": 3,
-    "1": 1,
+    "1": 2,
     "2": 1,
     "7": 1
    },
@@ -4751,13 +4692,10 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 1.7,
+   "avg_cleared": 0.4,
    "deaths": {
-    "6": 1,
-    "5": 2,
-    "3": 1,
-    "1": 4,
-    "2": 2
+    "1": 9,
+    "5": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -4791,13 +4729,14 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.0,
+   "avg_cleared": 2.3,
    "deaths": {
-    "4": 4,
+    "4": 3,
     "1": 2,
     "2": 2,
     "5": 1,
-    "3": 1
+    "3": 1,
+    "7": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -4837,10 +4776,11 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.8,
+   "avg_cleared": 3.8,
    "deaths": {
-    "4": 4,
-    "3": 5,
+    "6": 4,
+    "4": 2,
+    "3": 3,
     "7": 1
    },
    "relic_picked": {
@@ -5156,7 +5096,7 @@
     "借力": 1,
     "衰败": 1
    },
-   "resonance_used": 88
+   "resonance_used": 91
   },
   {
    "combo": {
@@ -5334,13 +5274,13 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 4.2,
+   "avg_cleared": 1.6,
    "deaths": {
-    "6": 3,
-    "5": 3,
-    "4": 1,
-    "1": 1,
-    "7": 2
+    "4": 2,
+    "2": 2,
+    "1": 4,
+    "3": 1,
+    "7": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -5371,17 +5311,15 @@
     "region": "扭曲都市"
    },
    "runs": 10,
-   "wins": 1,
+   "wins": 0,
    "errors": 0,
-   "win_rate": 0.1,
-   "avg_cleared": 3.6,
+   "win_rate": 0.0,
+   "avg_cleared": 2.5,
    "deaths": {
     "7": 2,
-    "4": 1,
-    "3": 2,
-    "6": 1,
-    "1": 1,
-    "5": 1,
+    "4": 2,
+    "3": 3,
+    "1": 2,
     "2": 1
    },
    "relic_picked": {
@@ -5393,9 +5331,7 @@
     "守夜灯": 1,
     "避风铃": 1
    },
-   "relic_won": {
-    "守夜灯": 1
-   },
+   "relic_won": {},
    "daowen_picked": {
     "再生": 1,
     "庇护": 5,
@@ -5403,9 +5339,7 @@
     "束缚": 1,
     "杀伐": 2
    },
-   "daowen_won": {
-    "庇护": 1
-   },
+   "daowen_won": {},
    "acquired_daowen": {},
    "resonance_used": 0
   },
@@ -5420,12 +5354,10 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.4,
+   "avg_cleared": 0.4,
    "deaths": {
-    "6": 2,
-    "5": 3,
-    "1": 3,
-    "2": 2
+    "1": 9,
+    "5": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -5459,55 +5391,13 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 4.2,
+   "avg_cleared": 1.6,
    "deaths": {
-    "6": 3,
-    "5": 3,
-    "4": 1,
-    "1": 1,
-    "7": 2
-   },
-   "relic_picked": {
-    "同魂笔": 2,
-    "血誓戒": 2,
-    "忘忧香": 1,
-    "买路财": 2,
-    "折速法印": 1,
-    "守夜灯": 1,
-    "避风铃": 1
-   },
-   "relic_won": {},
-   "daowen_picked": {
-    "再生": 1,
-    "庇护": 4,
-    "缓慢": 1,
-    "束缚": 1,
-    "杀伐": 3
-   },
-   "daowen_won": {},
-   "acquired_daowen": {},
-   "resonance_used": 0
-  },
-  {
-   "combo": {
-    "attrs": "高法7-8-10",
-    "resonance": "转换",
-    "build": "奶大砍小·混合",
-    "region": "扭曲都市"
-   },
-   "runs": 10,
-   "wins": 0,
-   "errors": 0,
-   "win_rate": 0.0,
-   "avg_cleared": 3.4,
-   "deaths": {
-    "7": 2,
-    "4": 1,
-    "3": 2,
-    "6": 2,
-    "1": 1,
-    "5": 1,
-    "2": 1
+    "4": 2,
+    "2": 2,
+    "1": 4,
+    "3": 1,
+    "7": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -5541,12 +5431,50 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.4,
+   "avg_cleared": 0.4,
    "deaths": {
-    "6": 2,
-    "5": 3,
-    "1": 3,
-    "2": 2
+    "1": 9,
+    "5": 1
+   },
+   "relic_picked": {
+    "同魂笔": 2,
+    "血誓戒": 2,
+    "忘忧香": 1,
+    "买路财": 2,
+    "折速法印": 1,
+    "守夜灯": 1,
+    "避风铃": 1
+   },
+   "relic_won": {},
+   "daowen_picked": {
+    "再生": 1,
+    "庇护": 4,
+    "缓慢": 1,
+    "束缚": 1,
+    "杀伐": 3
+   },
+   "daowen_won": {},
+   "acquired_daowen": {},
+   "resonance_used": 0
+  },
+  {
+   "combo": {
+    "attrs": "高法7-8-10",
+    "resonance": "转换",
+    "build": "奶大砍小·混合",
+    "region": "扭曲都市"
+   },
+   "runs": 10,
+   "wins": 0,
+   "errors": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 2.5,
+   "deaths": {
+    "7": 2,
+    "4": 2,
+    "3": 3,
+    "1": 2,
+    "2": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -5580,12 +5508,12 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.7,
+   "avg_cleared": 3.0,
    "deaths": {
     "6": 3,
-    "4": 2,
+    "4": 1,
     "1": 4,
-    "7": 1
+    "7": 2
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -5625,11 +5553,12 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 3.0,
+   "avg_cleared": 3.9,
    "deaths": {
-    "4": 4,
+    "6": 4,
     "5": 1,
-    "3": 4,
+    "3": 3,
+    "4": 1,
     "7": 1
    },
    "relic_picked": {
@@ -5659,6 +5588,50 @@
     "坠落": 1
    },
    "resonance_used": 10
+  },
+  {
+   "combo": {
+    "attrs": "高法7-8-10",
+    "resonance": "反转",
+    "build": "击杀·杀伐系",
+    "region": "龙心谷"
+   },
+   "runs": 10,
+   "wins": 0,
+   "errors": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 1.6,
+   "deaths": {
+    "6": 1,
+    "1": 5,
+    "5": 2,
+    "2": 1,
+    "3": 1
+   },
+   "relic_picked": {
+    "同魂笔": 2,
+    "血誓戒": 2,
+    "忘忧香": 1,
+    "买路财": 2,
+    "折速法印": 1,
+    "守夜灯": 1,
+    "避风铃": 1
+   },
+   "relic_won": {},
+   "daowen_picked": {
+    "血债": 3,
+    "冲击": 1,
+    "庇护": 1,
+    "缓慢": 1,
+    "束缚": 1,
+    "杀伐": 3
+   },
+   "daowen_won": {},
+   "acquired_daowen": {
+    "蒙蔽": 3,
+    "自残": 4
+   },
+   "resonance_used": 7
   },
   {
    "combo": {
@@ -5703,50 +5676,6 @@
     "蒙蔽": 3,
     "自残": 2,
     "无力": 2
-   },
-   "resonance_used": 7
-  },
-  {
-   "combo": {
-    "attrs": "高法7-8-10",
-    "resonance": "反转",
-    "build": "击杀·杀伐系",
-    "region": "龙心谷"
-   },
-   "runs": 10,
-   "wins": 0,
-   "errors": 0,
-   "win_rate": 0.0,
-   "avg_cleared": 1.6,
-   "deaths": {
-    "6": 1,
-    "1": 5,
-    "5": 2,
-    "2": 1,
-    "3": 1
-   },
-   "relic_picked": {
-    "同魂笔": 2,
-    "血誓戒": 2,
-    "忘忧香": 1,
-    "买路财": 2,
-    "折速法印": 1,
-    "守夜灯": 1,
-    "避风铃": 1
-   },
-   "relic_won": {},
-   "daowen_picked": {
-    "血债": 3,
-    "冲击": 1,
-    "庇护": 1,
-    "缓慢": 1,
-    "束缚": 1,
-    "杀伐": 3
-   },
-   "daowen_won": {},
-   "acquired_daowen": {
-    "蒙蔽": 3,
-    "自残": 4
    },
    "resonance_used": 7
   },
@@ -5882,16 +5811,16 @@
     "血债": 1
    },
    "acquired_daowen": {
-    "蒙蔽": 3,
-    "眩晕": 2,
-    "洞察": 4,
-    "加速": 3,
-    "愤怒": 3,
-    "兴奋": 3,
+    "蒙蔽": 2,
+    "加速": 2,
+    "兴奋": 2,
+    "洞察": 3,
     "急速": 1,
+    "愤怒": 2,
     "自残": 3,
     "自食": 2,
     "无力": 2,
+    "眩晕": 1,
     "滋养": 3,
     "弱化": 3,
     "衰败": 1
@@ -5956,46 +5885,6 @@
    "combo": {
     "attrs": "高法7-8-10",
     "resonance": "反转",
-    "build": "凡庸盾守",
-    "region": "罪孽都市"
-   },
-   "runs": 10,
-   "wins": 0,
-   "errors": 0,
-   "win_rate": 0.0,
-   "avg_cleared": 1.6,
-   "deaths": {
-    "4": 2,
-    "2": 2,
-    "1": 4,
-    "3": 1,
-    "7": 1
-   },
-   "relic_picked": {
-    "同魂笔": 2,
-    "血誓戒": 2,
-    "忘忧香": 1,
-    "买路财": 2,
-    "折速法印": 1,
-    "守夜灯": 1,
-    "避风铃": 1
-   },
-   "relic_won": {},
-   "daowen_picked": {
-    "再生": 1,
-    "庇护": 5,
-    "缓慢": 1,
-    "束缚": 1,
-    "杀伐": 2
-   },
-   "daowen_won": {},
-   "acquired_daowen": {},
-   "resonance_used": 0
-  },
-  {
-   "combo": {
-    "attrs": "高法7-8-10",
-    "resonance": "反转",
     "build": "转化猎道",
     "region": "龙心谷"
    },
@@ -6047,18 +5936,19 @@
     "attrs": "高法7-8-10",
     "resonance": "反转",
     "build": "凡庸盾守",
-    "region": "龙心谷"
+    "region": "罪孽都市"
    },
    "runs": 10,
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 0.7,
+   "avg_cleared": 1.6,
    "deaths": {
+    "4": 2,
+    "2": 2,
+    "1": 4,
     "3": 1,
-    "1": 7,
-    "2": 1,
-    "5": 1
+    "7": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -6125,6 +6015,45 @@
    "combo": {
     "attrs": "高法7-8-10",
     "resonance": "反转",
+    "build": "凡庸盾守",
+    "region": "龙心谷"
+   },
+   "runs": 10,
+   "wins": 0,
+   "errors": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 0.7,
+   "deaths": {
+    "3": 1,
+    "1": 7,
+    "2": 1,
+    "5": 1
+   },
+   "relic_picked": {
+    "同魂笔": 2,
+    "血誓戒": 2,
+    "忘忧香": 1,
+    "买路财": 2,
+    "折速法印": 1,
+    "守夜灯": 1,
+    "避风铃": 1
+   },
+   "relic_won": {},
+   "daowen_picked": {
+    "再生": 1,
+    "庇护": 5,
+    "缓慢": 1,
+    "束缚": 1,
+    "杀伐": 2
+   },
+   "daowen_won": {},
+   "acquired_daowen": {},
+   "resonance_used": 0
+  },
+  {
+   "combo": {
+    "attrs": "高法7-8-10",
+    "resonance": "反转",
     "build": "癌变奶怪",
     "region": "罪孽都市"
    },
@@ -6132,13 +6061,13 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 4.2,
+   "avg_cleared": 1.6,
    "deaths": {
-    "6": 3,
-    "5": 3,
-    "4": 1,
-    "1": 1,
-    "7": 2
+    "4": 2,
+    "2": 2,
+    "1": 4,
+    "3": 1,
+    "7": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -6169,17 +6098,15 @@
     "region": "扭曲都市"
    },
    "runs": 10,
-   "wins": 1,
+   "wins": 0,
    "errors": 0,
-   "win_rate": 0.1,
-   "avg_cleared": 3.6,
+   "win_rate": 0.0,
+   "avg_cleared": 2.5,
    "deaths": {
     "7": 2,
-    "4": 1,
-    "3": 2,
-    "6": 1,
-    "1": 1,
-    "5": 1,
+    "4": 2,
+    "3": 3,
+    "1": 2,
     "2": 1
    },
    "relic_picked": {
@@ -6191,9 +6118,7 @@
     "守夜灯": 1,
     "避风铃": 1
    },
-   "relic_won": {
-    "守夜灯": 1
-   },
+   "relic_won": {},
    "daowen_picked": {
     "再生": 1,
     "庇护": 5,
@@ -6201,9 +6126,7 @@
     "束缚": 1,
     "杀伐": 2
    },
-   "daowen_won": {
-    "庇护": 1
-   },
+   "daowen_won": {},
    "acquired_daowen": {},
    "resonance_used": 0
   },
@@ -6218,12 +6141,10 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.4,
+   "avg_cleared": 0.4,
    "deaths": {
-    "6": 2,
-    "5": 3,
-    "1": 3,
-    "2": 2
+    "1": 9,
+    "5": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -6257,55 +6178,13 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 4.2,
+   "avg_cleared": 1.6,
    "deaths": {
-    "6": 3,
-    "5": 3,
-    "4": 1,
-    "1": 1,
-    "7": 2
-   },
-   "relic_picked": {
-    "同魂笔": 2,
-    "血誓戒": 2,
-    "忘忧香": 1,
-    "买路财": 2,
-    "折速法印": 1,
-    "守夜灯": 1,
-    "避风铃": 1
-   },
-   "relic_won": {},
-   "daowen_picked": {
-    "再生": 1,
-    "庇护": 4,
-    "缓慢": 1,
-    "束缚": 1,
-    "杀伐": 3
-   },
-   "daowen_won": {},
-   "acquired_daowen": {},
-   "resonance_used": 0
-  },
-  {
-   "combo": {
-    "attrs": "高法7-8-10",
-    "resonance": "反转",
-    "build": "奶大砍小·混合",
-    "region": "扭曲都市"
-   },
-   "runs": 10,
-   "wins": 0,
-   "errors": 0,
-   "win_rate": 0.0,
-   "avg_cleared": 3.4,
-   "deaths": {
-    "7": 2,
-    "4": 1,
-    "3": 2,
-    "6": 2,
-    "1": 1,
-    "5": 1,
-    "2": 1
+    "4": 2,
+    "2": 2,
+    "1": 4,
+    "3": 1,
+    "7": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -6339,12 +6218,50 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.4,
+   "avg_cleared": 0.4,
    "deaths": {
-    "6": 2,
-    "5": 3,
-    "1": 3,
-    "2": 2
+    "1": 9,
+    "5": 1
+   },
+   "relic_picked": {
+    "同魂笔": 2,
+    "血誓戒": 2,
+    "忘忧香": 1,
+    "买路财": 2,
+    "折速法印": 1,
+    "守夜灯": 1,
+    "避风铃": 1
+   },
+   "relic_won": {},
+   "daowen_picked": {
+    "再生": 1,
+    "庇护": 4,
+    "缓慢": 1,
+    "束缚": 1,
+    "杀伐": 3
+   },
+   "daowen_won": {},
+   "acquired_daowen": {},
+   "resonance_used": 0
+  },
+  {
+   "combo": {
+    "attrs": "高法7-8-10",
+    "resonance": "反转",
+    "build": "奶大砍小·混合",
+    "region": "扭曲都市"
+   },
+   "runs": 10,
+   "wins": 0,
+   "errors": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 2.5,
+   "deaths": {
+    "7": 2,
+    "4": 2,
+    "3": 3,
+    "1": 2,
+    "2": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -6423,9 +6340,10 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.5,
+   "avg_cleared": 2.9,
    "deaths": {
-    "4": 4,
+    "6": 2,
+    "4": 2,
     "3": 3,
     "1": 1,
     "2": 1,
@@ -6739,7 +6657,7 @@
     "无力": 1,
     "衰败": 1
    },
-   "resonance_used": 77
+   "resonance_used": 80
   },
   {
    "combo": {
@@ -6918,13 +6836,13 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 4.2,
+   "avg_cleared": 1.6,
    "deaths": {
-    "6": 3,
-    "5": 3,
-    "4": 1,
-    "1": 1,
-    "7": 2
+    "4": 2,
+    "2": 2,
+    "1": 4,
+    "3": 1,
+    "7": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -6955,17 +6873,15 @@
     "region": "扭曲都市"
    },
    "runs": 10,
-   "wins": 1,
+   "wins": 0,
    "errors": 0,
-   "win_rate": 0.1,
-   "avg_cleared": 3.6,
+   "win_rate": 0.0,
+   "avg_cleared": 2.5,
    "deaths": {
     "7": 2,
-    "4": 1,
-    "3": 2,
-    "6": 1,
-    "1": 1,
-    "5": 1,
+    "4": 2,
+    "3": 3,
+    "1": 2,
     "2": 1
    },
    "relic_picked": {
@@ -6977,9 +6893,7 @@
     "守夜灯": 1,
     "避风铃": 1
    },
-   "relic_won": {
-    "守夜灯": 1
-   },
+   "relic_won": {},
    "daowen_picked": {
     "再生": 1,
     "庇护": 5,
@@ -6987,9 +6901,7 @@
     "束缚": 1,
     "杀伐": 2
    },
-   "daowen_won": {
-    "庇护": 1
-   },
+   "daowen_won": {},
    "acquired_daowen": {},
    "resonance_used": 0
   },
@@ -7004,12 +6916,10 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.4,
+   "avg_cleared": 0.4,
    "deaths": {
-    "6": 2,
-    "5": 3,
-    "1": 3,
-    "2": 2
+    "1": 9,
+    "5": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -7043,13 +6953,13 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 4.2,
+   "avg_cleared": 1.6,
    "deaths": {
-    "6": 3,
-    "5": 3,
-    "4": 1,
-    "1": 1,
-    "7": 2
+    "4": 2,
+    "2": 2,
+    "1": 4,
+    "3": 1,
+    "7": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -7083,14 +6993,12 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 3.4,
+   "avg_cleared": 2.5,
    "deaths": {
     "7": 2,
-    "4": 1,
-    "3": 2,
-    "6": 2,
-    "1": 1,
-    "5": 1,
+    "4": 2,
+    "3": 3,
+    "1": 2,
     "2": 1
    },
    "relic_picked": {
@@ -7125,12 +7033,10 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.4,
+   "avg_cleared": 0.4,
    "deaths": {
-    "6": 2,
-    "5": 3,
-    "1": 3,
-    "2": 2
+    "1": 9,
+    "5": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -7211,13 +7117,12 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 3.0,
+   "avg_cleared": 3.1,
    "deaths": {
     "6": 2,
     "4": 3,
-    "3": 3,
-    "5": 1,
-    "2": 1
+    "3": 4,
+    "5": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -7437,13 +7342,13 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 3.0,
+   "avg_cleared": 3.1,
    "deaths": {
     "6": 3,
-    "2": 2,
+    "2": 1,
     "1": 1,
     "5": 2,
-    "3": 1,
+    "3": 2,
     "4": 1
    },
    "relic_picked": {
@@ -7478,7 +7383,7 @@
     "急速": 1,
     "蒙蔽": 1
    },
-   "resonance_used": 67
+   "resonance_used": 68
   },
   {
    "combo": {
@@ -7522,58 +7427,19 @@
    "acquired_daowen": {
     "洞察": 7,
     "眩晕": 3,
-    "加速": 4,
+    "加速": 5,
     "兴奋": 4,
     "愤怒": 5,
     "自食": 2,
     "急速": 1,
     "弱化": 5,
+    "蒙蔽": 1,
     "自残": 3,
     "滋养": 3,
     "借力": 1,
     "衰败": 1
    },
-   "resonance_used": 82
-  },
-  {
-   "combo": {
-    "attrs": "法爆6-8-11",
-    "resonance": "转换",
-    "build": "凡庸盾守",
-    "region": "罪孽都市"
-   },
-   "runs": 10,
-   "wins": 0,
-   "errors": 0,
-   "win_rate": 0.0,
-   "avg_cleared": 1.6,
-   "deaths": {
-    "4": 2,
-    "2": 2,
-    "1": 4,
-    "3": 1,
-    "7": 1
-   },
-   "relic_picked": {
-    "同魂笔": 2,
-    "血誓戒": 2,
-    "忘忧香": 1,
-    "买路财": 2,
-    "折速法印": 1,
-    "守夜灯": 1,
-    "避风铃": 1
-   },
-   "relic_won": {},
-   "daowen_picked": {
-    "再生": 1,
-    "庇护": 5,
-    "缓慢": 1,
-    "束缚": 1,
-    "杀伐": 2
-   },
-   "daowen_won": {},
-   "acquired_daowen": {},
-   "resonance_used": 0
+   "resonance_used": 86
   },
   {
    "combo": {
@@ -7620,6 +7486,46 @@
     "加速": 1
    },
    "resonance_used": 39
+  },
+  {
+   "combo": {
+    "attrs": "法爆6-8-11",
+    "resonance": "转换",
+    "build": "凡庸盾守",
+    "region": "罪孽都市"
+   },
+   "runs": 10,
+   "wins": 0,
+   "errors": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 1.6,
+   "deaths": {
+    "4": 2,
+    "2": 2,
+    "1": 4,
+    "3": 1,
+    "7": 1
+   },
+   "relic_picked": {
+    "同魂笔": 2,
+    "血誓戒": 2,
+    "忘忧香": 1,
+    "买路财": 2,
+    "折速法印": 1,
+    "守夜灯": 1,
+    "避风铃": 1
+   },
+   "relic_won": {},
+   "daowen_picked": {
+    "再生": 1,
+    "庇护": 5,
+    "缓慢": 1,
+    "束缚": 1,
+    "杀伐": 2
+   },
+   "daowen_won": {},
+   "acquired_daowen": {},
+   "resonance_used": 0
   },
   {
    "combo": {
@@ -7711,12 +7617,14 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 4.7,
+   "avg_cleared": 1.7,
    "deaths": {
-    "6": 5,
-    "5": 2,
+    "5": 1,
+    "2": 2,
+    "4": 1,
+    "1": 4,
     "3": 1,
-    "7": 2
+    "7": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -7747,15 +7655,16 @@
     "region": "扭曲都市"
    },
    "runs": 10,
-   "wins": 1,
+   "wins": 0,
    "errors": 0,
-   "win_rate": 0.1,
-   "avg_cleared": 4.7,
+   "win_rate": 0.0,
+   "avg_cleared": 2.6,
    "deaths": {
     "7": 1,
-    "5": 4,
-    "6": 3,
-    "4": 1
+    "4": 3,
+    "3": 3,
+    "1": 2,
+    "6": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -7766,9 +7675,7 @@
     "守夜灯": 1,
     "避风铃": 1
    },
-   "relic_won": {
-    "守夜灯": 1
-   },
+   "relic_won": {},
    "daowen_picked": {
     "再生": 1,
     "庇护": 5,
@@ -7776,9 +7683,7 @@
     "束缚": 1,
     "杀伐": 2
    },
-   "daowen_won": {
-    "庇护": 1
-   },
+   "daowen_won": {},
    "acquired_daowen": {},
    "resonance_used": 0
   },
@@ -7790,15 +7695,14 @@
     "region": "龙心谷"
    },
    "runs": 10,
-   "wins": 1,
+   "wins": 0,
    "errors": 0,
-   "win_rate": 0.1,
-   "avg_cleared": 3.2,
+   "win_rate": 0.0,
+   "avg_cleared": 0.9,
    "deaths": {
-    "6": 3,
+    "1": 7,
     "5": 2,
-    "1": 2,
-    "2": 2
+    "2": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -7809,9 +7713,7 @@
     "守夜灯": 1,
     "避风铃": 1
    },
-   "relic_won": {
-    "避风铃": 1
-   },
+   "relic_won": {},
    "daowen_picked": {
     "再生": 1,
     "庇护": 5,
@@ -7819,9 +7721,7 @@
     "束缚": 1,
     "杀伐": 2
    },
-   "daowen_won": {
-    "庇护": 1
-   },
+   "daowen_won": {},
    "acquired_daowen": {},
    "resonance_used": 0
   },
@@ -7836,12 +7736,14 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 4.7,
+   "avg_cleared": 1.7,
    "deaths": {
-    "6": 5,
-    "5": 2,
+    "5": 1,
+    "2": 2,
+    "4": 1,
+    "1": 4,
     "3": 1,
-    "7": 2
+    "7": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -7875,12 +7777,13 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 4.5,
+   "avg_cleared": 2.6,
    "deaths": {
     "7": 1,
-    "5": 4,
-    "6": 4,
-    "4": 1
+    "4": 3,
+    "3": 3,
+    "1": 2,
+    "6": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -7911,15 +7814,14 @@
     "region": "龙心谷"
    },
    "runs": 10,
-   "wins": 1,
+   "wins": 0,
    "errors": 0,
-   "win_rate": 0.1,
-   "avg_cleared": 3.3,
+   "win_rate": 0.0,
+   "avg_cleared": 0.9,
    "deaths": {
-    "6": 4,
-    "1": 2,
-    "2": 2,
-    "5": 1
+    "1": 7,
+    "5": 2,
+    "2": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -7930,9 +7832,7 @@
     "守夜灯": 1,
     "避风铃": 1
    },
-   "relic_won": {
-    "避风铃": 1
-   },
+   "relic_won": {},
    "daowen_picked": {
     "再生": 1,
     "庇护": 4,
@@ -7940,9 +7840,7 @@
     "束缚": 1,
     "杀伐": 3
    },
-   "daowen_won": {
-    "庇护": 1
-   },
+   "daowen_won": {},
    "acquired_daowen": {},
    "resonance_used": 0
   },
@@ -8002,13 +7900,12 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 3.2,
+   "avg_cleared": 3.3,
    "deaths": {
     "6": 3,
-    "3": 3,
+    "3": 4,
     "4": 2,
-    "5": 1,
-    "2": 1
+    "5": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -8290,13 +8187,13 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.5,
+   "avg_cleared": 2.6,
    "deaths": {
     "1": 2,
     "6": 2,
-    "2": 2,
+    "2": 1,
     "5": 2,
-    "3": 1,
+    "3": 2,
     "4": 1
    },
    "relic_picked": {
@@ -8333,7 +8230,47 @@
     "蒙蔽": 1,
     "滑翔": 2
    },
-   "resonance_used": 59
+   "resonance_used": 60
+  },
+  {
+   "combo": {
+    "attrs": "法爆6-8-11",
+    "resonance": "反转",
+    "build": "凡庸盾守",
+    "region": "罪孽都市"
+   },
+   "runs": 10,
+   "wins": 0,
+   "errors": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 1.6,
+   "deaths": {
+    "4": 2,
+    "2": 2,
+    "1": 4,
+    "3": 1,
+    "7": 1
+   },
+   "relic_picked": {
+    "同魂笔": 2,
+    "血誓戒": 2,
+    "忘忧香": 1,
+    "买路财": 2,
+    "折速法印": 1,
+    "守夜灯": 1,
+    "避风铃": 1
+   },
+   "relic_won": {},
+   "daowen_picked": {
+    "再生": 1,
+    "庇护": 5,
+    "缓慢": 1,
+    "束缚": 1,
+    "杀伐": 2
+   },
+   "daowen_won": {},
+   "acquired_daowen": {},
+   "resonance_used": 0
   },
   {
    "combo": {
@@ -8391,19 +8328,18 @@
     "attrs": "法爆6-8-11",
     "resonance": "反转",
     "build": "凡庸盾守",
-    "region": "罪孽都市"
+    "region": "龙心谷"
    },
    "runs": 10,
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 1.6,
+   "avg_cleared": 1.8,
    "deaths": {
-    "4": 2,
-    "2": 2,
-    "1": 4,
-    "3": 1,
-    "7": 1
+    "6": 1,
+    "5": 3,
+    "1": 5,
+    "2": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -8470,18 +8406,98 @@
    "combo": {
     "attrs": "法爆6-8-11",
     "resonance": "反转",
-    "build": "凡庸盾守",
+    "build": "癌变奶怪",
+    "region": "罪孽都市"
+   },
+   "runs": 10,
+   "wins": 0,
+   "errors": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 1.7,
+   "deaths": {
+    "5": 1,
+    "2": 2,
+    "4": 1,
+    "1": 4,
+    "3": 1,
+    "7": 1
+   },
+   "relic_picked": {
+    "同魂笔": 2,
+    "血誓戒": 2,
+    "忘忧香": 1,
+    "买路财": 2,
+    "折速法印": 1,
+    "守夜灯": 1,
+    "避风铃": 1
+   },
+   "relic_won": {},
+   "daowen_picked": {
+    "再生": 1,
+    "庇护": 5,
+    "慈悲": 1,
+    "束缚": 1,
+    "杀伐": 2
+   },
+   "daowen_won": {},
+   "acquired_daowen": {},
+   "resonance_used": 0
+  },
+  {
+   "combo": {
+    "attrs": "法爆6-8-11",
+    "resonance": "反转",
+    "build": "癌变奶怪",
+    "region": "扭曲都市"
+   },
+   "runs": 10,
+   "wins": 0,
+   "errors": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 2.6,
+   "deaths": {
+    "7": 1,
+    "4": 3,
+    "3": 3,
+    "1": 2,
+    "6": 1
+   },
+   "relic_picked": {
+    "同魂笔": 2,
+    "血誓戒": 2,
+    "忘忧香": 1,
+    "买路财": 2,
+    "折速法印": 1,
+    "守夜灯": 1,
+    "避风铃": 1
+   },
+   "relic_won": {},
+   "daowen_picked": {
+    "再生": 1,
+    "庇护": 5,
+    "慈悲": 1,
+    "束缚": 1,
+    "杀伐": 2
+   },
+   "daowen_won": {},
+   "acquired_daowen": {},
+   "resonance_used": 0
+  },
+  {
+   "combo": {
+    "attrs": "法爆6-8-11",
+    "resonance": "反转",
+    "build": "癌变奶怪",
     "region": "龙心谷"
    },
    "runs": 10,
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 1.8,
+   "avg_cleared": 0.9,
    "deaths": {
-    "6": 1,
-    "5": 3,
-    "1": 5,
+    "1": 7,
+    "5": 2,
     "2": 1
    },
    "relic_picked": {
@@ -8497,136 +8513,11 @@
    "daowen_picked": {
     "再生": 1,
     "庇护": 5,
-    "缓慢": 1,
-    "束缚": 1,
-    "杀伐": 2
-   },
-   "daowen_won": {},
-   "acquired_daowen": {},
-   "resonance_used": 0
-  },
-  {
-   "combo": {
-    "attrs": "法爆6-8-11",
-    "resonance": "反转",
-    "build": "癌变奶怪",
-    "region": "罪孽都市"
-   },
-   "runs": 10,
-   "wins": 0,
-   "errors": 0,
-   "win_rate": 0.0,
-   "avg_cleared": 4.7,
-   "deaths": {
-    "6": 5,
-    "5": 2,
-    "3": 1,
-    "7": 2
-   },
-   "relic_picked": {
-    "同魂笔": 2,
-    "血誓戒": 2,
-    "忘忧香": 1,
-    "买路财": 2,
-    "折速法印": 1,
-    "守夜灯": 1,
-    "避风铃": 1
-   },
-   "relic_won": {},
-   "daowen_picked": {
-    "再生": 1,
-    "庇护": 5,
     "慈悲": 1,
     "束缚": 1,
     "杀伐": 2
    },
    "daowen_won": {},
-   "acquired_daowen": {},
-   "resonance_used": 0
-  },
-  {
-   "combo": {
-    "attrs": "法爆6-8-11",
-    "resonance": "反转",
-    "build": "癌变奶怪",
-    "region": "扭曲都市"
-   },
-   "runs": 10,
-   "wins": 1,
-   "errors": 0,
-   "win_rate": 0.1,
-   "avg_cleared": 4.7,
-   "deaths": {
-    "7": 1,
-    "5": 4,
-    "6": 3,
-    "4": 1
-   },
-   "relic_picked": {
-    "同魂笔": 2,
-    "血誓戒": 2,
-    "忘忧香": 1,
-    "买路财": 2,
-    "折速法印": 1,
-    "守夜灯": 1,
-    "避风铃": 1
-   },
-   "relic_won": {
-    "守夜灯": 1
-   },
-   "daowen_picked": {
-    "再生": 1,
-    "庇护": 5,
-    "慈悲": 1,
-    "束缚": 1,
-    "杀伐": 2
-   },
-   "daowen_won": {
-    "庇护": 1
-   },
-   "acquired_daowen": {},
-   "resonance_used": 0
-  },
-  {
-   "combo": {
-    "attrs": "法爆6-8-11",
-    "resonance": "反转",
-    "build": "癌变奶怪",
-    "region": "龙心谷"
-   },
-   "runs": 10,
-   "wins": 1,
-   "errors": 0,
-   "win_rate": 0.1,
-   "avg_cleared": 3.2,
-   "deaths": {
-    "6": 3,
-    "5": 2,
-    "1": 2,
-    "2": 2
-   },
-   "relic_picked": {
-    "同魂笔": 2,
-    "血誓戒": 2,
-    "忘忧香": 1,
-    "买路财": 2,
-    "折速法印": 1,
-    "守夜灯": 1,
-    "避风铃": 1
-   },
-   "relic_won": {
-    "避风铃": 1
-   },
-   "daowen_picked": {
-    "再生": 1,
-    "庇护": 5,
-    "慈悲": 1,
-    "束缚": 1,
-    "杀伐": 2
-   },
-   "daowen_won": {
-    "庇护": 1
-   },
    "acquired_daowen": {},
    "resonance_used": 0
   },
@@ -8641,90 +8532,14 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 4.7,
+   "avg_cleared": 1.7,
    "deaths": {
-    "6": 5,
-    "5": 2,
-    "3": 1,
-    "7": 2
-   },
-   "relic_picked": {
-    "同魂笔": 2,
-    "血誓戒": 2,
-    "忘忧香": 1,
-    "买路财": 2,
-    "折速法印": 1,
-    "守夜灯": 1,
-    "避风铃": 1
-   },
-   "relic_won": {},
-   "daowen_picked": {
-    "再生": 1,
-    "庇护": 4,
-    "缓慢": 1,
-    "束缚": 1,
-    "杀伐": 3
-   },
-   "daowen_won": {},
-   "acquired_daowen": {},
-   "resonance_used": 0
-  },
-  {
-   "combo": {
-    "attrs": "法爆6-8-11",
-    "resonance": "反转",
-    "build": "奶大砍小·混合",
-    "region": "扭曲都市"
-   },
-   "runs": 10,
-   "wins": 0,
-   "errors": 0,
-   "win_rate": 0.0,
-   "avg_cleared": 4.5,
-   "deaths": {
-    "7": 1,
-    "5": 4,
-    "6": 4,
-    "4": 1
-   },
-   "relic_picked": {
-    "同魂笔": 2,
-    "血誓戒": 2,
-    "忘忧香": 1,
-    "买路财": 2,
-    "折速法印": 1,
-    "守夜灯": 1,
-    "避风铃": 1
-   },
-   "relic_won": {},
-   "daowen_picked": {
-    "再生": 1,
-    "庇护": 4,
-    "缓慢": 1,
-    "束缚": 1,
-    "杀伐": 3
-   },
-   "daowen_won": {},
-   "acquired_daowen": {},
-   "resonance_used": 0
-  },
-  {
-   "combo": {
-    "attrs": "法爆6-8-11",
-    "resonance": "反转",
-    "build": "奶大砍小·混合",
-    "region": "龙心谷"
-   },
-   "runs": 10,
-   "wins": 1,
-   "errors": 0,
-   "win_rate": 0.1,
-   "avg_cleared": 3.3,
-   "deaths": {
-    "6": 4,
-    "1": 2,
+    "5": 1,
     "2": 2,
-    "5": 1
+    "4": 1,
+    "1": 4,
+    "3": 1,
+    "7": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -8735,9 +8550,7 @@
     "守夜灯": 1,
     "避风铃": 1
    },
-   "relic_won": {
-    "避风铃": 1
-   },
+   "relic_won": {},
    "daowen_picked": {
     "再生": 1,
     "庇护": 4,
@@ -8745,9 +8558,85 @@
     "束缚": 1,
     "杀伐": 3
    },
-   "daowen_won": {
-    "庇护": 1
+   "daowen_won": {},
+   "acquired_daowen": {},
+   "resonance_used": 0
+  },
+  {
+   "combo": {
+    "attrs": "法爆6-8-11",
+    "resonance": "反转",
+    "build": "奶大砍小·混合",
+    "region": "扭曲都市"
    },
+   "runs": 10,
+   "wins": 0,
+   "errors": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 2.6,
+   "deaths": {
+    "7": 1,
+    "4": 3,
+    "3": 3,
+    "1": 2,
+    "6": 1
+   },
+   "relic_picked": {
+    "同魂笔": 2,
+    "血誓戒": 2,
+    "忘忧香": 1,
+    "买路财": 2,
+    "折速法印": 1,
+    "守夜灯": 1,
+    "避风铃": 1
+   },
+   "relic_won": {},
+   "daowen_picked": {
+    "再生": 1,
+    "庇护": 4,
+    "缓慢": 1,
+    "束缚": 1,
+    "杀伐": 3
+   },
+   "daowen_won": {},
+   "acquired_daowen": {},
+   "resonance_used": 0
+  },
+  {
+   "combo": {
+    "attrs": "法爆6-8-11",
+    "resonance": "反转",
+    "build": "奶大砍小·混合",
+    "region": "龙心谷"
+   },
+   "runs": 10,
+   "wins": 0,
+   "errors": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 0.9,
+   "deaths": {
+    "1": 7,
+    "5": 2,
+    "2": 1
+   },
+   "relic_picked": {
+    "同魂笔": 2,
+    "血誓戒": 2,
+    "忘忧香": 1,
+    "买路财": 2,
+    "折速法印": 1,
+    "守夜灯": 1,
+    "避风铃": 1
+   },
+   "relic_won": {},
+   "daowen_picked": {
+    "再生": 1,
+    "庇护": 4,
+    "缓慢": 1,
+    "束缚": 1,
+    "杀伐": 3
+   },
+   "daowen_won": {},
    "acquired_daowen": {},
    "resonance_used": 0
   },
@@ -8807,13 +8696,12 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 3.0,
+   "avg_cleared": 3.1,
    "deaths": {
     "6": 2,
     "4": 3,
-    "3": 3,
-    "5": 1,
-    "2": 1
+    "3": 4,
+    "5": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -9027,13 +8915,13 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.5,
+   "avg_cleared": 2.6,
    "deaths": {
     "6": 2,
-    "2": 2,
+    "2": 1,
     "1": 2,
     "5": 2,
-    "3": 1,
+    "3": 2,
     "4": 1
    },
    "relic_picked": {
@@ -9071,7 +8959,7 @@
     "急速": 1,
     "蒙蔽": 1
    },
-   "resonance_used": 59
+   "resonance_used": 60
   },
   {
    "combo": {
@@ -9116,9 +9004,9 @@
    "acquired_daowen": {
     "眩晕": 3,
     "洞察": 6,
-    "加速": 4,
+    "加速": 5,
     "愤怒": 6,
-    "蒙蔽": 1,
+    "蒙蔽": 2,
     "兴奋": 3,
     "急速": 1,
     "无神": 2,
@@ -9129,7 +9017,7 @@
     "滋养": 3,
     "衰败": 1
    },
-   "resonance_used": 78
+   "resonance_used": 82
   },
   {
    "combo": {
@@ -9309,12 +9197,52 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 4.7,
+   "avg_cleared": 1.7,
    "deaths": {
-    "6": 5,
-    "5": 2,
+    "5": 1,
+    "2": 2,
+    "4": 1,
+    "1": 4,
     "3": 1,
-    "7": 2
+    "7": 1
+   },
+   "relic_picked": {
+    "同魂笔": 2,
+    "血誓戒": 2,
+    "忘忧香": 1,
+    "买路财": 2,
+    "折速法印": 1,
+    "守夜灯": 1,
+    "避风铃": 1
+   },
+   "relic_won": {},
+   "daowen_picked": {
+    "再生": 1,
+    "庇护": 5,
+    "慈悲": 1,
+    "束缚": 1,
+    "杀伐": 2
+   },
+   "daowen_won": {},
+   "acquired_daowen": {},
+   "resonance_used": 0
+  },
+  {
+   "combo": {
+    "attrs": "法爆6-8-11",
+    "resonance": "曲解",
+    "build": "癌变奶怪",
+    "region": "龙心谷"
+   },
+   "runs": 10,
+   "wins": 0,
+   "errors": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 0.9,
+   "deaths": {
+    "1": 7,
+    "5": 2,
+    "2": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -9345,58 +9273,16 @@
     "region": "扭曲都市"
    },
    "runs": 10,
-   "wins": 1,
+   "wins": 0,
    "errors": 0,
-   "win_rate": 0.1,
-   "avg_cleared": 4.7,
+   "win_rate": 0.0,
+   "avg_cleared": 2.6,
    "deaths": {
     "7": 1,
-    "5": 4,
-    "6": 3,
-    "4": 1
-   },
-   "relic_picked": {
-    "同魂笔": 2,
-    "血誓戒": 2,
-    "忘忧香": 1,
-    "买路财": 2,
-    "折速法印": 1,
-    "守夜灯": 1,
-    "避风铃": 1
-   },
-   "relic_won": {
-    "守夜灯": 1
-   },
-   "daowen_picked": {
-    "再生": 1,
-    "庇护": 5,
-    "慈悲": 1,
-    "束缚": 1,
-    "杀伐": 2
-   },
-   "daowen_won": {
-    "庇护": 1
-   },
-   "acquired_daowen": {},
-   "resonance_used": 0
-  },
-  {
-   "combo": {
-    "attrs": "法爆6-8-11",
-    "resonance": "曲解",
-    "build": "癌变奶怪",
-    "region": "龙心谷"
-   },
-   "runs": 10,
-   "wins": 1,
-   "errors": 0,
-   "win_rate": 0.1,
-   "avg_cleared": 3.2,
-   "deaths": {
-    "6": 3,
-    "5": 2,
+    "4": 3,
+    "3": 3,
     "1": 2,
-    "2": 2
+    "6": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -9407,9 +9293,7 @@
     "守夜灯": 1,
     "避风铃": 1
    },
-   "relic_won": {
-    "避风铃": 1
-   },
+   "relic_won": {},
    "daowen_picked": {
     "再生": 1,
     "庇护": 5,
@@ -9417,9 +9301,7 @@
     "束缚": 1,
     "杀伐": 2
    },
-   "daowen_won": {
-    "庇护": 1
-   },
+   "daowen_won": {},
    "acquired_daowen": {},
    "resonance_used": 0
   },
@@ -9434,12 +9316,14 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 4.7,
+   "avg_cleared": 1.7,
    "deaths": {
-    "6": 5,
-    "5": 2,
+    "5": 1,
+    "2": 2,
+    "4": 1,
+    "1": 4,
     "3": 1,
-    "7": 2
+    "7": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -9473,12 +9357,13 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 4.5,
+   "avg_cleared": 2.6,
    "deaths": {
     "7": 1,
-    "5": 4,
-    "6": 4,
-    "4": 1
+    "4": 3,
+    "3": 3,
+    "1": 2,
+    "6": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -9509,15 +9394,14 @@
     "region": "龙心谷"
    },
    "runs": 10,
-   "wins": 1,
+   "wins": 0,
    "errors": 0,
-   "win_rate": 0.1,
-   "avg_cleared": 3.3,
+   "win_rate": 0.0,
+   "avg_cleared": 0.9,
    "deaths": {
-    "6": 4,
-    "1": 2,
-    "2": 2,
-    "5": 1
+    "1": 7,
+    "5": 2,
+    "2": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -9528,9 +9412,7 @@
     "守夜灯": 1,
     "避风铃": 1
    },
-   "relic_won": {
-    "避风铃": 1
-   },
+   "relic_won": {},
    "daowen_picked": {
     "再生": 1,
     "庇护": 4,
@@ -9538,9 +9420,7 @@
     "束缚": 1,
     "杀伐": 3
    },
-   "daowen_won": {
-    "庇护": 1
-   },
+   "daowen_won": {},
    "acquired_daowen": {},
    "resonance_used": 0
   },
@@ -9555,11 +9435,11 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 1.9,
+   "avg_cleared": 2.0,
    "deaths": {
-    "4": 4,
+    "4": 5,
     "1": 1,
-    "3": 2,
+    "3": 1,
     "2": 3
    },
    "relic_picked": {
@@ -9600,11 +9480,11 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.8,
+   "avg_cleared": 3.4,
    "deaths": {
-    "3": 6,
-    "4": 2,
-    "6": 2
+    "6": 4,
+    "3": 4,
+    "4": 2
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -9682,53 +9562,6 @@
     "attrs": "疾速7-11-7",
     "resonance": "转换",
     "build": "击杀·切割系",
-    "region": "罪孽都市"
-   },
-   "runs": 10,
-   "wins": 0,
-   "errors": 0,
-   "win_rate": 0.0,
-   "avg_cleared": 1.2,
-   "deaths": {
-    "2": 5,
-    "4": 1,
-    "1": 2,
-    "3": 2
-   },
-   "relic_picked": {
-    "同魂笔": 2,
-    "血誓戒": 2,
-    "忘忧香": 1,
-    "买路财": 2,
-    "折速法印": 1,
-    "守夜灯": 1,
-    "避风铃": 1
-   },
-   "relic_won": {},
-   "daowen_picked": {
-    "血债": 3,
-    "冲击": 1,
-    "庇护": 1,
-    "缓慢": 1,
-    "束缚": 1,
-    "杀伐": 1,
-    "贯穿": 1,
-    "切割": 1
-   },
-   "daowen_won": {},
-   "acquired_daowen": {
-    "洞察": 4,
-    "愤怒": 3,
-    "兴奋": 2,
-    "滋养": 1
-   },
-   "resonance_used": 10
-  },
-  {
-   "combo": {
-    "attrs": "疾速7-11-7",
-    "resonance": "转换",
-    "build": "击杀·切割系",
     "region": "扭曲都市"
    },
    "runs": 10,
@@ -9768,6 +9601,53 @@
     "滋养": 1,
     "愤怒": 4,
     "滑翔": 1
+   },
+   "resonance_used": 10
+  },
+  {
+   "combo": {
+    "attrs": "疾速7-11-7",
+    "resonance": "转换",
+    "build": "击杀·切割系",
+    "region": "罪孽都市"
+   },
+   "runs": 10,
+   "wins": 0,
+   "errors": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 1.2,
+   "deaths": {
+    "2": 5,
+    "4": 1,
+    "1": 2,
+    "3": 2
+   },
+   "relic_picked": {
+    "同魂笔": 2,
+    "血誓戒": 2,
+    "忘忧香": 1,
+    "买路财": 2,
+    "折速法印": 1,
+    "守夜灯": 1,
+    "避风铃": 1
+   },
+   "relic_won": {},
+   "daowen_picked": {
+    "血债": 3,
+    "冲击": 1,
+    "庇护": 1,
+    "缓慢": 1,
+    "束缚": 1,
+    "杀伐": 1,
+    "贯穿": 1,
+    "切割": 1
+   },
+   "daowen_won": {},
+   "acquired_daowen": {
+    "洞察": 4,
+    "愤怒": 3,
+    "兴奋": 2,
+    "滋养": 1
    },
    "resonance_used": 10
   },
@@ -10012,45 +9892,6 @@
     "attrs": "疾速7-11-7",
     "resonance": "转换",
     "build": "凡庸盾守",
-    "region": "龙心谷"
-   },
-   "runs": 10,
-   "wins": 0,
-   "errors": 0,
-   "win_rate": 0.0,
-   "avg_cleared": 0.7,
-   "deaths": {
-    "3": 1,
-    "1": 7,
-    "2": 1,
-    "5": 1
-   },
-   "relic_picked": {
-    "同魂笔": 2,
-    "血誓戒": 2,
-    "忘忧香": 1,
-    "买路财": 2,
-    "折速法印": 1,
-    "守夜灯": 1,
-    "避风铃": 1
-   },
-   "relic_won": {},
-   "daowen_picked": {
-    "再生": 1,
-    "庇护": 5,
-    "缓慢": 1,
-    "束缚": 1,
-    "杀伐": 2
-   },
-   "daowen_won": {},
-   "acquired_daowen": {},
-   "resonance_used": 0
-  },
-  {
-   "combo": {
-    "attrs": "疾速7-11-7",
-    "resonance": "转换",
-    "build": "凡庸盾守",
     "region": "扭曲都市"
    },
    "runs": 10,
@@ -10090,6 +9931,45 @@
    "combo": {
     "attrs": "疾速7-11-7",
     "resonance": "转换",
+    "build": "凡庸盾守",
+    "region": "龙心谷"
+   },
+   "runs": 10,
+   "wins": 0,
+   "errors": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 0.7,
+   "deaths": {
+    "3": 1,
+    "1": 7,
+    "2": 1,
+    "5": 1
+   },
+   "relic_picked": {
+    "同魂笔": 2,
+    "血誓戒": 2,
+    "忘忧香": 1,
+    "买路财": 2,
+    "折速法印": 1,
+    "守夜灯": 1,
+    "避风铃": 1
+   },
+   "relic_won": {},
+   "daowen_picked": {
+    "再生": 1,
+    "庇护": 5,
+    "缓慢": 1,
+    "束缚": 1,
+    "杀伐": 2
+   },
+   "daowen_won": {},
+   "acquired_daowen": {},
+   "resonance_used": 0
+  },
+  {
+   "combo": {
+    "attrs": "疾速7-11-7",
+    "resonance": "转换",
     "build": "癌变奶怪",
     "region": "罪孽都市"
    },
@@ -10097,13 +9977,12 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.3,
+   "avg_cleared": 1.6,
    "deaths": {
-    "5": 1,
-    "2": 2,
     "4": 2,
-    "1": 3,
-    "6": 1,
+    "2": 2,
+    "1": 4,
+    "3": 1,
     "7": 1
    },
    "relic_picked": {
@@ -10138,11 +10017,11 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.6,
+   "avg_cleared": 2.5,
    "deaths": {
     "7": 2,
-    "4": 3,
-    "3": 2,
+    "4": 2,
+    "3": 3,
     "1": 2,
     "2": 1
    },
@@ -10178,11 +10057,9 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 1.0,
+   "avg_cleared": 0.4,
    "deaths": {
-    "6": 1,
-    "1": 7,
-    "2": 1,
+    "1": 9,
     "5": 1
    },
    "relic_picked": {
@@ -10217,13 +10094,12 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.3,
+   "avg_cleared": 1.6,
    "deaths": {
-    "5": 1,
-    "2": 2,
     "4": 2,
-    "1": 3,
-    "6": 1,
+    "2": 2,
+    "1": 4,
+    "3": 1,
     "7": 1
    },
    "relic_picked": {
@@ -10258,11 +10134,11 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.6,
+   "avg_cleared": 2.5,
    "deaths": {
     "7": 2,
-    "4": 3,
-    "3": 2,
+    "4": 2,
+    "3": 3,
     "1": 2,
     "2": 1
    },
@@ -10298,11 +10174,9 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 1.0,
+   "avg_cleared": 0.4,
    "deaths": {
-    "6": 1,
-    "1": 7,
-    "2": 1,
+    "1": 9,
     "5": 1
    },
    "relic_picked": {
@@ -10337,14 +10211,13 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.8,
+   "avg_cleared": 2.7,
    "deaths": {
-    "6": 2,
-    "4": 2,
-    "5": 2,
+    "6": 1,
+    "4": 4,
     "1": 1,
-    "2": 2,
-    "3": 1
+    "5": 2,
+    "2": 2
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -10384,11 +10257,11 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.9,
+   "avg_cleared": 3.5,
    "deaths": {
-    "3": 5,
+    "6": 4,
     "4": 3,
-    "6": 2
+    "3": 3
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -10665,13 +10538,13 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 4.1,
+   "avg_cleared": 4.2,
    "deaths": {
-    "6": 5,
+    "6": 4,
     "1": 1,
     "4": 2,
-    "5": 1,
-    "7": 1
+    "7": 2,
+    "5": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -10693,8 +10566,8 @@
    },
    "daowen_won": {},
    "acquired_daowen": {
-    "蒙蔽": 3,
-    "眩晕": 3,
+    "蒙蔽": 4,
+    "眩晕": 4,
     "洞察": 7,
     "加速": 5,
     "愤怒": 7,
@@ -10706,47 +10579,7 @@
     "弱化": 5,
     "滋养": 3
    },
-   "resonance_used": 112
-  },
-  {
-   "combo": {
-    "attrs": "疾速7-11-7",
-    "resonance": "反转",
-    "build": "凡庸盾守",
-    "region": "罪孽都市"
-   },
-   "runs": 10,
-   "wins": 0,
-   "errors": 0,
-   "win_rate": 0.0,
-   "avg_cleared": 1.6,
-   "deaths": {
-    "4": 2,
-    "2": 2,
-    "1": 4,
-    "3": 1,
-    "7": 1
-   },
-   "relic_picked": {
-    "同魂笔": 2,
-    "血誓戒": 2,
-    "忘忧香": 1,
-    "买路财": 2,
-    "折速法印": 1,
-    "守夜灯": 1,
-    "避风铃": 1
-   },
-   "relic_won": {},
-   "daowen_picked": {
-    "再生": 1,
-    "庇护": 5,
-    "缓慢": 1,
-    "束缚": 1,
-    "杀伐": 2
-   },
-   "daowen_won": {},
-   "acquired_daowen": {},
-   "resonance_used": 0
+   "resonance_used": 114
   },
   {
    "combo": {
@@ -10803,19 +10636,19 @@
     "attrs": "疾速7-11-7",
     "resonance": "反转",
     "build": "凡庸盾守",
-    "region": "扭曲都市"
+    "region": "罪孽都市"
    },
    "runs": 10,
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.5,
+   "avg_cleared": 1.6,
    "deaths": {
-    "7": 2,
     "4": 2,
-    "3": 3,
-    "1": 2,
-    "2": 1
+    "2": 2,
+    "1": 4,
+    "3": 1,
+    "7": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -10881,6 +10714,46 @@
    "combo": {
     "attrs": "疾速7-11-7",
     "resonance": "反转",
+    "build": "凡庸盾守",
+    "region": "扭曲都市"
+   },
+   "runs": 10,
+   "wins": 0,
+   "errors": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 2.5,
+   "deaths": {
+    "7": 2,
+    "4": 2,
+    "3": 3,
+    "1": 2,
+    "2": 1
+   },
+   "relic_picked": {
+    "同魂笔": 2,
+    "血誓戒": 2,
+    "忘忧香": 1,
+    "买路财": 2,
+    "折速法印": 1,
+    "守夜灯": 1,
+    "避风铃": 1
+   },
+   "relic_won": {},
+   "daowen_picked": {
+    "再生": 1,
+    "庇护": 5,
+    "缓慢": 1,
+    "束缚": 1,
+    "杀伐": 2
+   },
+   "daowen_won": {},
+   "acquired_daowen": {},
+   "resonance_used": 0
+  },
+  {
+   "combo": {
+    "attrs": "疾速7-11-7",
+    "resonance": "反转",
     "build": "癌变奶怪",
     "region": "罪孽都市"
    },
@@ -10888,13 +10761,12 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.3,
+   "avg_cleared": 1.6,
    "deaths": {
-    "5": 1,
-    "2": 2,
     "4": 2,
-    "1": 3,
-    "6": 1,
+    "2": 2,
+    "1": 4,
+    "3": 1,
     "7": 1
    },
    "relic_picked": {
@@ -10929,11 +10801,11 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.6,
+   "avg_cleared": 2.5,
    "deaths": {
     "7": 2,
-    "4": 3,
-    "3": 2,
+    "4": 2,
+    "3": 3,
     "1": 2,
     "2": 1
    },
@@ -10969,11 +10841,9 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 1.0,
+   "avg_cleared": 0.4,
    "deaths": {
-    "6": 1,
-    "1": 7,
-    "2": 1,
+    "1": 9,
     "5": 1
    },
    "relic_picked": {
@@ -11008,13 +10878,12 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.3,
+   "avg_cleared": 1.6,
    "deaths": {
-    "5": 1,
-    "2": 2,
     "4": 2,
-    "1": 3,
-    "6": 1,
+    "2": 2,
+    "1": 4,
+    "3": 1,
     "7": 1
    },
    "relic_picked": {
@@ -11049,11 +10918,11 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.6,
+   "avg_cleared": 2.5,
    "deaths": {
     "7": 2,
-    "4": 3,
-    "3": 2,
+    "4": 2,
+    "3": 3,
     "1": 2,
     "2": 1
    },
@@ -11089,11 +10958,9 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 1.0,
+   "avg_cleared": 0.4,
    "deaths": {
-    "6": 1,
-    "1": 7,
-    "2": 1,
+    "1": 9,
     "5": 1
    },
    "relic_picked": {
@@ -11128,12 +10995,12 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 1.7,
+   "avg_cleared": 1.8,
    "deaths": {
     "2": 4,
-    "4": 3,
+    "4": 4,
     "1": 1,
-    "3": 2
+    "3": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -11173,10 +11040,11 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.4,
+   "avg_cleared": 2.7,
    "deaths": {
-    "3": 4,
+    "6": 1,
     "4": 3,
+    "3": 3,
     "1": 1,
     "2": 1,
     "7": 1
@@ -11671,13 +11539,12 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.3,
+   "avg_cleared": 1.6,
    "deaths": {
-    "5": 1,
-    "2": 2,
     "4": 2,
-    "1": 3,
-    "6": 1,
+    "2": 2,
+    "1": 4,
+    "3": 1,
     "7": 1
    },
    "relic_picked": {
@@ -11712,11 +11579,11 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.6,
+   "avg_cleared": 2.5,
    "deaths": {
     "7": 2,
-    "4": 3,
-    "3": 2,
+    "4": 2,
+    "3": 3,
     "1": 2,
     "2": 1
    },
@@ -11752,11 +11619,9 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 1.0,
+   "avg_cleared": 0.4,
    "deaths": {
-    "6": 1,
-    "1": 7,
-    "2": 1,
+    "1": 9,
     "5": 1
    },
    "relic_picked": {
@@ -11791,13 +11656,12 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.3,
+   "avg_cleared": 1.6,
    "deaths": {
-    "5": 1,
-    "2": 2,
     "4": 2,
-    "1": 3,
-    "6": 1,
+    "2": 2,
+    "1": 4,
+    "3": 1,
     "7": 1
    },
    "relic_picked": {
@@ -11826,18 +11690,19 @@
     "attrs": "疾速7-11-7",
     "resonance": "曲解",
     "build": "奶大砍小·混合",
-    "region": "龙心谷"
+    "region": "扭曲都市"
    },
    "runs": 10,
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 1.0,
+   "avg_cleared": 2.5,
    "deaths": {
-    "6": 1,
-    "1": 7,
-    "2": 1,
-    "5": 1
+    "7": 2,
+    "4": 2,
+    "3": 3,
+    "1": 2,
+    "2": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -11865,19 +11730,16 @@
     "attrs": "疾速7-11-7",
     "resonance": "曲解",
     "build": "奶大砍小·混合",
-    "region": "扭曲都市"
+    "region": "龙心谷"
    },
    "runs": 10,
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.6,
+   "avg_cleared": 0.4,
    "deaths": {
-    "7": 2,
-    "4": 3,
-    "3": 2,
-    "1": 2,
-    "2": 1
+    "1": 9,
+    "5": 1
    },
    "relic_picked": {
     "同魂笔": 2,
@@ -11902,474 +11764,6 @@
   }
  ],
  "refined": [
-  {
-   "combo": {
-    "attrs": "法爆6-8-11",
-    "resonance": "反转",
-    "build": "癌变奶怪",
-    "region": "扭曲都市"
-   },
-   "runs": 30,
-   "wins": 3,
-   "errors": 0,
-   "win_rate": 0.1,
-   "avg_cleared": 4.433333333333334,
-   "deaths": {
-    "6": 8,
-    "5": 8,
-    "2": 4,
-    "7": 5,
-    "4": 2
-   },
-   "relic_picked": {
-    "血誓戒": 10,
-    "守夜灯": 4,
-    "避风铃": 8,
-    "买路财": 3,
-    "同魂笔": 3,
-    "忘忧香": 2
-   },
-   "relic_won": {
-    "守夜灯": 2,
-    "血誓戒": 1
-   },
-   "daowen_picked": {
-    "庇护": 5,
-    "固执": 1,
-    "缓慢": 1,
-    "慈悲": 5,
-    "杀伐": 3,
-    "血债": 1,
-    "再生": 6,
-    "增殖": 2,
-    "冲击": 2,
-    "贯穿": 2,
-    "透支": 1,
-    "封印": 1
-   },
-   "daowen_won": {
-    "杀伐": 1,
-    "再生": 1,
-    "透支": 1
-   },
-   "acquired_daowen": {},
-   "resonance_used": 0
-  },
-  {
-   "combo": {
-    "attrs": "法爆6-8-11",
-    "resonance": "转换",
-    "build": "癌变奶怪",
-    "region": "扭曲都市"
-   },
-   "runs": 30,
-   "wins": 3,
-   "errors": 0,
-   "win_rate": 0.1,
-   "avg_cleared": 4.433333333333334,
-   "deaths": {
-    "6": 8,
-    "5": 8,
-    "2": 4,
-    "7": 5,
-    "4": 2
-   },
-   "relic_picked": {
-    "血誓戒": 10,
-    "守夜灯": 4,
-    "避风铃": 8,
-    "买路财": 3,
-    "同魂笔": 3,
-    "忘忧香": 2
-   },
-   "relic_won": {
-    "守夜灯": 2,
-    "血誓戒": 1
-   },
-   "daowen_picked": {
-    "庇护": 5,
-    "固执": 1,
-    "缓慢": 1,
-    "慈悲": 5,
-    "杀伐": 3,
-    "血债": 1,
-    "再生": 6,
-    "增殖": 2,
-    "冲击": 2,
-    "贯穿": 2,
-    "透支": 1,
-    "封印": 1
-   },
-   "daowen_won": {
-    "杀伐": 1,
-    "再生": 1,
-    "透支": 1
-   },
-   "acquired_daowen": {},
-   "resonance_used": 0
-  },
-  {
-   "combo": {
-    "attrs": "法爆6-8-11",
-    "resonance": "曲解",
-    "build": "癌变奶怪",
-    "region": "扭曲都市"
-   },
-   "runs": 30,
-   "wins": 3,
-   "errors": 0,
-   "win_rate": 0.1,
-   "avg_cleared": 4.433333333333334,
-   "deaths": {
-    "6": 8,
-    "5": 8,
-    "2": 4,
-    "7": 5,
-    "4": 2
-   },
-   "relic_picked": {
-    "血誓戒": 10,
-    "守夜灯": 4,
-    "避风铃": 8,
-    "买路财": 3,
-    "同魂笔": 3,
-    "忘忧香": 2
-   },
-   "relic_won": {
-    "守夜灯": 2,
-    "血誓戒": 1
-   },
-   "daowen_picked": {
-    "庇护": 5,
-    "固执": 1,
-    "缓慢": 1,
-    "慈悲": 5,
-    "杀伐": 3,
-    "血债": 1,
-    "再生": 6,
-    "增殖": 2,
-    "冲击": 2,
-    "贯穿": 2,
-    "透支": 1,
-    "封印": 1
-   },
-   "daowen_won": {
-    "杀伐": 1,
-    "再生": 1,
-    "透支": 1
-   },
-   "acquired_daowen": {},
-   "resonance_used": 0
-  },
-  {
-   "combo": {
-    "attrs": "高法7-8-10",
-    "resonance": "转换",
-    "build": "癌变奶怪",
-    "region": "扭曲都市"
-   },
-   "runs": 30,
-   "wins": 2,
-   "errors": 0,
-   "win_rate": 0.06666666666666667,
-   "avg_cleared": 3.933333333333333,
-   "deaths": {
-    "4": 3,
-    "7": 6,
-    "5": 9,
-    "6": 4,
-    "2": 3,
-    "1": 3
-   },
-   "relic_picked": {
-    "血誓戒": 10,
-    "守夜灯": 4,
-    "避风铃": 8,
-    "买路财": 3,
-    "同魂笔": 3,
-    "忘忧香": 2
-   },
-   "relic_won": {
-    "守夜灯": 1,
-    "血誓戒": 1
-   },
-   "daowen_picked": {
-    "庇护": 5,
-    "固执": 1,
-    "缓慢": 1,
-    "慈悲": 5,
-    "杀伐": 3,
-    "血债": 1,
-    "再生": 6,
-    "增殖": 2,
-    "冲击": 2,
-    "贯穿": 2,
-    "透支": 1,
-    "封印": 1
-   },
-   "daowen_won": {
-    "杀伐": 1,
-    "再生": 1
-   },
-   "acquired_daowen": {},
-   "resonance_used": 0
-  },
-  {
-   "combo": {
-    "attrs": "高法7-8-10",
-    "resonance": "反转",
-    "build": "癌变奶怪",
-    "region": "扭曲都市"
-   },
-   "runs": 30,
-   "wins": 2,
-   "errors": 0,
-   "win_rate": 0.06666666666666667,
-   "avg_cleared": 3.933333333333333,
-   "deaths": {
-    "4": 3,
-    "7": 6,
-    "5": 9,
-    "6": 4,
-    "2": 3,
-    "1": 3
-   },
-   "relic_picked": {
-    "血誓戒": 10,
-    "守夜灯": 4,
-    "避风铃": 8,
-    "买路财": 3,
-    "同魂笔": 3,
-    "忘忧香": 2
-   },
-   "relic_won": {
-    "守夜灯": 1,
-    "血誓戒": 1
-   },
-   "daowen_picked": {
-    "庇护": 5,
-    "固执": 1,
-    "缓慢": 1,
-    "慈悲": 5,
-    "杀伐": 3,
-    "血债": 1,
-    "再生": 6,
-    "增殖": 2,
-    "冲击": 2,
-    "贯穿": 2,
-    "透支": 1,
-    "封印": 1
-   },
-   "daowen_won": {
-    "杀伐": 1,
-    "再生": 1
-   },
-   "acquired_daowen": {},
-   "resonance_used": 0
-  },
-  {
-   "combo": {
-    "attrs": "高法7-8-10",
-    "resonance": "曲解",
-    "build": "癌变奶怪",
-    "region": "扭曲都市"
-   },
-   "runs": 30,
-   "wins": 2,
-   "errors": 0,
-   "win_rate": 0.06666666666666667,
-   "avg_cleared": 3.933333333333333,
-   "deaths": {
-    "4": 3,
-    "7": 6,
-    "5": 9,
-    "6": 4,
-    "2": 3,
-    "1": 3
-   },
-   "relic_picked": {
-    "血誓戒": 10,
-    "守夜灯": 4,
-    "避风铃": 8,
-    "买路财": 3,
-    "同魂笔": 3,
-    "忘忧香": 2
-   },
-   "relic_won": {
-    "守夜灯": 1,
-    "血誓戒": 1
-   },
-   "daowen_picked": {
-    "庇护": 5,
-    "固执": 1,
-    "缓慢": 1,
-    "慈悲": 5,
-    "杀伐": 3,
-    "血债": 1,
-    "再生": 6,
-    "增殖": 2,
-    "冲击": 2,
-    "贯穿": 2,
-    "透支": 1,
-    "封印": 1
-   },
-   "daowen_won": {
-    "杀伐": 1,
-    "再生": 1
-   },
-   "acquired_daowen": {},
-   "resonance_used": 0
-  },
-  {
-   "combo": {
-    "attrs": "法爆6-8-11",
-    "resonance": "转换",
-    "build": "奶大砍小·混合",
-    "region": "龙心谷"
-   },
-   "runs": 30,
-   "wins": 1,
-   "errors": 0,
-   "win_rate": 0.03333333333333333,
-   "avg_cleared": 3.8,
-   "deaths": {
-    "6": 7,
-    "7": 6,
-    "5": 8,
-    "3": 2,
-    "1": 6
-   },
-   "relic_picked": {
-    "血誓戒": 10,
-    "守夜灯": 4,
-    "避风铃": 8,
-    "买路财": 3,
-    "同魂笔": 3,
-    "忘忧香": 2
-   },
-   "relic_won": {
-    "血誓戒": 1
-   },
-   "daowen_picked": {
-    "庇护": 5,
-    "固执": 1,
-    "缓慢": 1,
-    "慈悲": 2,
-    "杀伐": 3,
-    "血债": 4,
-    "再生": 6,
-    "增殖": 2,
-    "冲击": 2,
-    "贯穿": 2,
-    "束缚": 1,
-    "透支": 1
-   },
-   "daowen_won": {
-    "再生": 1
-   },
-   "acquired_daowen": {},
-   "resonance_used": 0
-  },
-  {
-   "combo": {
-    "attrs": "法爆6-8-11",
-    "resonance": "反转",
-    "build": "奶大砍小·混合",
-    "region": "龙心谷"
-   },
-   "runs": 30,
-   "wins": 1,
-   "errors": 0,
-   "win_rate": 0.03333333333333333,
-   "avg_cleared": 3.8,
-   "deaths": {
-    "6": 7,
-    "7": 6,
-    "5": 8,
-    "3": 2,
-    "1": 6
-   },
-   "relic_picked": {
-    "血誓戒": 10,
-    "守夜灯": 4,
-    "避风铃": 8,
-    "买路财": 3,
-    "同魂笔": 3,
-    "忘忧香": 2
-   },
-   "relic_won": {
-    "血誓戒": 1
-   },
-   "daowen_picked": {
-    "庇护": 5,
-    "固执": 1,
-    "缓慢": 1,
-    "慈悲": 2,
-    "杀伐": 3,
-    "血债": 4,
-    "再生": 6,
-    "增殖": 2,
-    "冲击": 2,
-    "贯穿": 2,
-    "束缚": 1,
-    "透支": 1
-   },
-   "daowen_won": {
-    "再生": 1
-   },
-   "acquired_daowen": {},
-   "resonance_used": 0
-  },
-  {
-   "combo": {
-    "attrs": "法爆6-8-11",
-    "resonance": "曲解",
-    "build": "奶大砍小·混合",
-    "region": "龙心谷"
-   },
-   "runs": 30,
-   "wins": 1,
-   "errors": 0,
-   "win_rate": 0.03333333333333333,
-   "avg_cleared": 3.8,
-   "deaths": {
-    "6": 7,
-    "7": 6,
-    "5": 8,
-    "3": 2,
-    "1": 6
-   },
-   "relic_picked": {
-    "血誓戒": 10,
-    "守夜灯": 4,
-    "避风铃": 8,
-    "买路财": 3,
-    "同魂笔": 3,
-    "忘忧香": 2
-   },
-   "relic_won": {
-    "血誓戒": 1
-   },
-   "daowen_picked": {
-    "庇护": 5,
-    "固执": 1,
-    "缓慢": 1,
-    "慈悲": 2,
-    "杀伐": 3,
-    "血债": 4,
-    "再生": 6,
-    "增殖": 2,
-    "冲击": 2,
-    "贯穿": 2,
-    "束缚": 1,
-    "透支": 1
-   },
-   "daowen_won": {
-    "再生": 1
-   },
-   "acquired_daowen": {},
-   "resonance_used": 0
-  },
   {
    "combo": {
     "attrs": "高法7-8-10",
@@ -12436,162 +11830,6 @@
   {
    "combo": {
     "attrs": "法爆6-8-11",
-    "resonance": "转换",
-    "build": "癌变奶怪",
-    "region": "龙心谷"
-   },
-   "runs": 30,
-   "wins": 2,
-   "errors": 0,
-   "win_rate": 0.06666666666666667,
-   "avg_cleared": 3.933333333333333,
-   "deaths": {
-    "6": 8,
-    "7": 6,
-    "5": 6,
-    "3": 2,
-    "1": 6
-   },
-   "relic_picked": {
-    "血誓戒": 10,
-    "守夜灯": 4,
-    "避风铃": 8,
-    "买路财": 3,
-    "同魂笔": 3,
-    "忘忧香": 2
-   },
-   "relic_won": {
-    "避风铃": 1,
-    "血誓戒": 1
-   },
-   "daowen_picked": {
-    "庇护": 5,
-    "固执": 1,
-    "缓慢": 1,
-    "慈悲": 5,
-    "杀伐": 3,
-    "血债": 1,
-    "再生": 6,
-    "增殖": 2,
-    "冲击": 2,
-    "贯穿": 2,
-    "透支": 1,
-    "封印": 1
-   },
-   "daowen_won": {
-    "贯穿": 1,
-    "再生": 1
-   },
-   "acquired_daowen": {},
-   "resonance_used": 0
-  },
-  {
-   "combo": {
-    "attrs": "法爆6-8-11",
-    "resonance": "反转",
-    "build": "癌变奶怪",
-    "region": "龙心谷"
-   },
-   "runs": 30,
-   "wins": 2,
-   "errors": 0,
-   "win_rate": 0.06666666666666667,
-   "avg_cleared": 3.933333333333333,
-   "deaths": {
-    "6": 8,
-    "7": 6,
-    "5": 6,
-    "3": 2,
-    "1": 6
-   },
-   "relic_picked": {
-    "血誓戒": 10,
-    "守夜灯": 4,
-    "避风铃": 8,
-    "买路财": 3,
-    "同魂笔": 3,
-    "忘忧香": 2
-   },
-   "relic_won": {
-    "避风铃": 1,
-    "血誓戒": 1
-   },
-   "daowen_picked": {
-    "庇护": 5,
-    "固执": 1,
-    "缓慢": 1,
-    "慈悲": 5,
-    "杀伐": 3,
-    "血债": 1,
-    "再生": 6,
-    "增殖": 2,
-    "冲击": 2,
-    "贯穿": 2,
-    "透支": 1,
-    "封印": 1
-   },
-   "daowen_won": {
-    "贯穿": 1,
-    "再生": 1
-   },
-   "acquired_daowen": {},
-   "resonance_used": 0
-  },
-  {
-   "combo": {
-    "attrs": "法爆6-8-11",
-    "resonance": "曲解",
-    "build": "癌变奶怪",
-    "region": "龙心谷"
-   },
-   "runs": 30,
-   "wins": 2,
-   "errors": 0,
-   "win_rate": 0.06666666666666667,
-   "avg_cleared": 3.933333333333333,
-   "deaths": {
-    "6": 8,
-    "7": 6,
-    "5": 6,
-    "3": 2,
-    "1": 6
-   },
-   "relic_picked": {
-    "血誓戒": 10,
-    "守夜灯": 4,
-    "避风铃": 8,
-    "买路财": 3,
-    "同魂笔": 3,
-    "忘忧香": 2
-   },
-   "relic_won": {
-    "避风铃": 1,
-    "血誓戒": 1
-   },
-   "daowen_picked": {
-    "庇护": 5,
-    "固执": 1,
-    "缓慢": 1,
-    "慈悲": 5,
-    "杀伐": 3,
-    "血债": 1,
-    "再生": 6,
-    "增殖": 2,
-    "冲击": 2,
-    "贯穿": 2,
-    "透支": 1,
-    "封印": 1
-   },
-   "daowen_won": {
-    "贯穿": 1,
-    "再生": 1
-   },
-   "acquired_daowen": {},
-   "resonance_used": 0
-  },
-  {
-   "combo": {
-    "attrs": "法爆6-8-11",
     "resonance": "反转",
     "build": "转化猎道",
     "region": "罪孽都市"
@@ -12606,9 +11844,9 @@
     "3": 4,
     "1": 7,
     "7": 5,
-    "6": 5,
     "4": 2,
-    "5": 3
+    "5": 3,
+    "6": 5
    },
    "relic_picked": {
     "血誓戒": 10,
@@ -12636,7 +11874,7 @@
    "acquired_daowen": {
     "愤怒": 17,
     "自残": 12,
-    "洞察": 16,
+    "洞察": 15,
     "加速": 11,
     "弱化": 14,
     "蒙蔽": 9,
@@ -12651,7 +11889,7 @@
     "无神": 2,
     "寄生": 1
    },
-   "resonance_used": 217
+   "resonance_used": 214
   },
   {
    "combo": {
@@ -12664,13 +11902,13 @@
    "wins": 0,
    "errors": 0,
    "win_rate": 0.0,
-   "avg_cleared": 2.033333333333333,
+   "avg_cleared": 2.1,
    "deaths": {
     "1": 12,
     "3": 4,
     "2": 4,
-    "5": 4,
-    "7": 3,
+    "7": 4,
+    "5": 3,
     "6": 3
    },
    "relic_picked": {
@@ -12714,22 +11952,704 @@
     "无神": 2,
     "寄生": 1
    },
-   "resonance_used": 164
+   "resonance_used": 168
+  },
+  {
+   "combo": {
+    "attrs": "疾速7-11-7",
+    "resonance": "反转",
+    "build": "转化猎道",
+    "region": "罪孽都市"
+   },
+   "runs": 30,
+   "wins": 0,
+   "errors": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 3.3,
+   "deaths": {
+    "2": 4,
+    "3": 5,
+    "6": 9,
+    "7": 4,
+    "5": 4,
+    "1": 4
+   },
+   "relic_picked": {
+    "血誓戒": 10,
+    "守夜灯": 4,
+    "避风铃": 8,
+    "买路财": 3,
+    "同魂笔": 3,
+    "忘忧香": 2
+   },
+   "relic_won": {},
+   "daowen_picked": {
+    "庇护": 4,
+    "血债": 6,
+    "固执": 1,
+    "缓慢": 1,
+    "慈悲": 2,
+    "杀伐": 3,
+    "再生": 2,
+    "增殖": 3,
+    "冲击": 4,
+    "束缚": 2,
+    "贯穿": 2
+   },
+   "daowen_won": {},
+   "acquired_daowen": {
+    "愤怒": 20,
+    "自残": 11,
+    "洞察": 14,
+    "加速": 11,
+    "弱化": 16,
+    "蒙蔽": 10,
+    "眩晕": 4,
+    "兴奋": 4,
+    "滋养": 12,
+    "无神": 4,
+    "急速": 7,
+    "无力": 8,
+    "自食": 5,
+    "借力": 3,
+    "衰败": 2
+   },
+   "resonance_used": 247
+  },
+  {
+   "combo": {
+    "attrs": "疾速7-11-7",
+    "resonance": "曲解",
+    "build": "转化猎道",
+    "region": "罪孽都市"
+   },
+   "runs": 30,
+   "wins": 0,
+   "errors": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 2.8333333333333335,
+   "deaths": {
+    "2": 4,
+    "3": 5,
+    "1": 7,
+    "7": 4,
+    "5": 3,
+    "6": 7
+   },
+   "relic_picked": {
+    "血誓戒": 10,
+    "守夜灯": 4,
+    "避风铃": 8,
+    "买路财": 3,
+    "同魂笔": 3,
+    "忘忧香": 2
+   },
+   "relic_won": {},
+   "daowen_picked": {
+    "庇护": 4,
+    "血债": 6,
+    "固执": 1,
+    "缓慢": 1,
+    "慈悲": 2,
+    "杀伐": 3,
+    "再生": 2,
+    "增殖": 3,
+    "冲击": 4,
+    "束缚": 2,
+    "贯穿": 2
+   },
+   "daowen_won": {},
+   "acquired_daowen": {
+    "愤怒": 18,
+    "无神": 9,
+    "洞察": 11,
+    "加速": 6,
+    "弱化": 12,
+    "眩晕": 7,
+    "滋养": 9,
+    "急速": 7,
+    "无力": 5,
+    "自食": 5,
+    "借力": 3,
+    "自残": 3,
+    "蒙蔽": 5,
+    "迟滞": 3,
+    "兴奋": 2,
+    "寄生": 1,
+    "衰败": 1
+   },
+   "resonance_used": 202
+  },
+  {
+   "combo": {
+    "attrs": "高法7-8-10",
+    "resonance": "反转",
+    "build": "击杀·杀伐系",
+    "region": "扭曲都市"
+   },
+   "runs": 30,
+   "wins": 0,
+   "errors": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 3.3,
+   "deaths": {
+    "3": 3,
+    "5": 5,
+    "4": 4,
+    "6": 9,
+    "2": 4,
+    "7": 2,
+    "1": 3
+   },
+   "relic_picked": {
+    "血誓戒": 10,
+    "守夜灯": 4,
+    "避风铃": 8,
+    "买路财": 3,
+    "同魂笔": 3,
+    "忘忧香": 2
+   },
+   "relic_won": {},
+   "daowen_picked": {
+    "庇护": 4,
+    "血债": 6,
+    "固执": 1,
+    "缓慢": 1,
+    "慈悲": 2,
+    "杀伐": 3,
+    "再生": 2,
+    "增殖": 3,
+    "冲击": 4,
+    "束缚": 2,
+    "贯穿": 2
+   },
+   "daowen_won": {},
+   "acquired_daowen": {
+    "蒙蔽": 11,
+    "弱化": 8,
+    "自残": 6,
+    "衰败": 3,
+    "坠落": 2
+   },
+   "resonance_used": 30
+  },
+  {
+   "combo": {
+    "attrs": "疾速7-11-7",
+    "resonance": "转换",
+    "build": "转化猎道",
+    "region": "罪孽都市"
+   },
+   "runs": 30,
+   "wins": 0,
+   "errors": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 3.1333333333333333,
+   "deaths": {
+    "2": 4,
+    "3": 5,
+    "1": 5,
+    "7": 5,
+    "6": 7,
+    "5": 3,
+    "4": 1
+   },
+   "relic_picked": {
+    "血誓戒": 10,
+    "守夜灯": 4,
+    "避风铃": 8,
+    "买路财": 3,
+    "同魂笔": 3,
+    "忘忧香": 2
+   },
+   "relic_won": {},
+   "daowen_picked": {
+    "庇护": 4,
+    "血债": 6,
+    "固执": 1,
+    "缓慢": 1,
+    "慈悲": 2,
+    "杀伐": 3,
+    "再生": 2,
+    "增殖": 3,
+    "冲击": 4,
+    "束缚": 2,
+    "贯穿": 2
+   },
+   "daowen_won": {},
+   "acquired_daowen": {
+    "愤怒": 22,
+    "洞察": 17,
+    "加速": 11,
+    "弱化": 14,
+    "眩晕": 4,
+    "滋养": 11,
+    "急速": 7,
+    "无力": 4,
+    "借力": 4,
+    "自残": 5,
+    "自食": 5,
+    "兴奋": 7,
+    "蒙蔽": 2,
+    "无神": 2,
+    "衰败": 1
+   },
+   "resonance_used": 241
+  },
+  {
+   "combo": {
+    "attrs": "高法7-8-10",
+    "resonance": "转换",
+    "build": "击杀·杀伐系",
+    "region": "扭曲都市"
+   },
+   "runs": 30,
+   "wins": 1,
+   "errors": 0,
+   "win_rate": 0.03333333333333333,
+   "avg_cleared": 2.966666666666667,
+   "deaths": {
+    "3": 3,
+    "5": 5,
+    "4": 7,
+    "2": 5,
+    "6": 6,
+    "1": 3
+   },
+   "relic_picked": {
+    "血誓戒": 10,
+    "守夜灯": 4,
+    "避风铃": 8,
+    "买路财": 3,
+    "同魂笔": 3,
+    "忘忧香": 2
+   },
+   "relic_won": {
+    "守夜灯": 1
+   },
+   "daowen_picked": {
+    "庇护": 4,
+    "血债": 6,
+    "固执": 1,
+    "缓慢": 1,
+    "慈悲": 2,
+    "杀伐": 3,
+    "再生": 2,
+    "增殖": 3,
+    "冲击": 4,
+    "束缚": 2,
+    "贯穿": 2
+   },
+   "daowen_won": {
+    "杀伐": 1
+   },
+   "acquired_daowen": {
+    "洞察": 10,
+    "借力": 8,
+    "愤怒": 6,
+    "滋养": 3,
+    "滑翔": 2
+   },
+   "resonance_used": 30
+  },
+  {
+   "combo": {
+    "attrs": "疾速7-11-7",
+    "resonance": "反转",
+    "build": "击杀·杀伐系",
+    "region": "扭曲都市"
+   },
+   "runs": 30,
+   "wins": 0,
+   "errors": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 3.1,
+   "deaths": {
+    "3": 3,
+    "5": 6,
+    "4": 6,
+    "2": 5,
+    "6": 8,
+    "1": 2
+   },
+   "relic_picked": {
+    "血誓戒": 10,
+    "守夜灯": 4,
+    "避风铃": 8,
+    "买路财": 3,
+    "同魂笔": 3,
+    "忘忧香": 2
+   },
+   "relic_won": {},
+   "daowen_picked": {
+    "庇护": 4,
+    "血债": 6,
+    "固执": 1,
+    "缓慢": 1,
+    "慈悲": 2,
+    "杀伐": 3,
+    "再生": 2,
+    "增殖": 3,
+    "冲击": 4,
+    "束缚": 2,
+    "贯穿": 2
+   },
+   "daowen_won": {},
+   "acquired_daowen": {
+    "蒙蔽": 11,
+    "弱化": 8,
+    "自残": 6,
+    "衰败": 3,
+    "坠落": 2
+   },
+   "resonance_used": 30
+  },
+  {
+   "combo": {
+    "attrs": "疾速7-11-7",
+    "resonance": "转换",
+    "build": "击杀·杀伐系",
+    "region": "扭曲都市"
+   },
+   "runs": 30,
+   "wins": 0,
+   "errors": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 2.966666666666667,
+   "deaths": {
+    "3": 3,
+    "4": 9,
+    "5": 5,
+    "2": 5,
+    "6": 5,
+    "1": 2,
+    "7": 1
+   },
+   "relic_picked": {
+    "血誓戒": 10,
+    "守夜灯": 4,
+    "避风铃": 8,
+    "买路财": 3,
+    "同魂笔": 3,
+    "忘忧香": 2
+   },
+   "relic_won": {},
+   "daowen_picked": {
+    "庇护": 4,
+    "血债": 6,
+    "固执": 1,
+    "缓慢": 1,
+    "慈悲": 2,
+    "杀伐": 3,
+    "再生": 2,
+    "增殖": 3,
+    "冲击": 4,
+    "束缚": 2,
+    "贯穿": 2
+   },
+   "daowen_won": {},
+   "acquired_daowen": {
+    "洞察": 11,
+    "借力": 8,
+    "愤怒": 6,
+    "滋养": 3,
+    "滑翔": 2
+   },
+   "resonance_used": 30
+  },
+  {
+   "combo": {
+    "attrs": "疾速7-11-7",
+    "resonance": "转换",
+    "build": "转化猎道",
+    "region": "扭曲都市"
+   },
+   "runs": 30,
+   "wins": 0,
+   "errors": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 2.9,
+   "deaths": {
+    "3": 3,
+    "5": 9,
+    "1": 7,
+    "6": 7,
+    "2": 1,
+    "4": 3
+   },
+   "relic_picked": {
+    "血誓戒": 10,
+    "守夜灯": 4,
+    "避风铃": 8,
+    "买路财": 3,
+    "同魂笔": 3,
+    "忘忧香": 2
+   },
+   "relic_won": {},
+   "daowen_picked": {
+    "庇护": 4,
+    "血债": 6,
+    "固执": 1,
+    "缓慢": 1,
+    "慈悲": 2,
+    "杀伐": 3,
+    "再生": 2,
+    "增殖": 3,
+    "冲击": 4,
+    "束缚": 2,
+    "贯穿": 2
+   },
+   "daowen_won": {},
+   "acquired_daowen": {
+    "洞察": 17,
+    "坠落": 13,
+    "愤怒": 18,
+    "借力": 16,
+    "加速": 9,
+    "滋养": 10,
+    "眩晕": 2,
+    "滑翔": 10,
+    "弱化": 3,
+    "急速": 1,
+    "蒙蔽": 4,
+    "无神": 1,
+    "自残": 2
+   },
+   "resonance_used": 222
+  },
+  {
+   "combo": {
+    "attrs": "疾速7-11-7",
+    "resonance": "反转",
+    "build": "转化猎道",
+    "region": "扭曲都市"
+   },
+   "runs": 30,
+   "wins": 0,
+   "errors": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 3.2333333333333334,
+   "deaths": {
+    "6": 10,
+    "5": 9,
+    "2": 1,
+    "1": 6,
+    "4": 2,
+    "3": 2
+   },
+   "relic_picked": {
+    "血誓戒": 10,
+    "守夜灯": 4,
+    "避风铃": 8,
+    "买路财": 3,
+    "同魂笔": 3,
+    "忘忧香": 2
+   },
+   "relic_won": {},
+   "daowen_picked": {
+    "庇护": 4,
+    "血债": 6,
+    "固执": 1,
+    "缓慢": 1,
+    "慈悲": 2,
+    "杀伐": 3,
+    "再生": 2,
+    "增殖": 3,
+    "冲击": 4,
+    "束缚": 2,
+    "贯穿": 2
+   },
+   "daowen_won": {},
+   "acquired_daowen": {
+    "蒙蔽": 13,
+    "坠落": 17,
+    "洞察": 15,
+    "愤怒": 14,
+    "借力": 16,
+    "加速": 10,
+    "滋养": 7,
+    "弱化": 8,
+    "眩晕": 2,
+    "自残": 8,
+    "滑翔": 8,
+    "衰败": 3,
+    "急速": 1,
+    "无神": 1
+   },
+   "resonance_used": 241
+  },
+  {
+   "combo": {
+    "attrs": "法爆6-8-11",
+    "resonance": "反转",
+    "build": "击杀·杀伐系",
+    "region": "扭曲都市"
+   },
+   "runs": 30,
+   "wins": 0,
+   "errors": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 3.3,
+   "deaths": {
+    "3": 2,
+    "5": 5,
+    "4": 5,
+    "2": 4,
+    "6": 10,
+    "7": 1,
+    "1": 3
+   },
+   "relic_picked": {
+    "血誓戒": 10,
+    "守夜灯": 4,
+    "避风铃": 8,
+    "买路财": 3,
+    "同魂笔": 3,
+    "忘忧香": 2
+   },
+   "relic_won": {},
+   "daowen_picked": {
+    "庇护": 4,
+    "血债": 6,
+    "固执": 1,
+    "缓慢": 1,
+    "慈悲": 2,
+    "杀伐": 3,
+    "再生": 2,
+    "增殖": 3,
+    "冲击": 4,
+    "束缚": 2,
+    "贯穿": 2
+   },
+   "daowen_won": {},
+   "acquired_daowen": {
+    "蒙蔽": 11,
+    "弱化": 8,
+    "自残": 6,
+    "衰败": 3,
+    "坠落": 2
+   },
+   "resonance_used": 30
+  },
+  {
+   "combo": {
+    "attrs": "法爆6-8-11",
+    "resonance": "反转",
+    "build": "击杀·杀伐系",
+    "region": "罪孽都市"
+   },
+   "runs": 30,
+   "wins": 0,
+   "errors": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 2.9,
+   "deaths": {
+    "6": 7,
+    "3": 3,
+    "5": 6,
+    "2": 4,
+    "1": 5,
+    "4": 4,
+    "7": 1
+   },
+   "relic_picked": {
+    "血誓戒": 10,
+    "守夜灯": 4,
+    "避风铃": 8,
+    "买路财": 3,
+    "同魂笔": 3,
+    "忘忧香": 2
+   },
+   "relic_won": {},
+   "daowen_picked": {
+    "庇护": 4,
+    "血债": 6,
+    "固执": 1,
+    "缓慢": 1,
+    "慈悲": 2,
+    "杀伐": 3,
+    "再生": 2,
+    "增殖": 3,
+    "冲击": 4,
+    "束缚": 2,
+    "贯穿": 2
+   },
+   "daowen_won": {},
+   "acquired_daowen": {
+    "自残": 14,
+    "蒙蔽": 9,
+    "无力": 5,
+    "衰败": 1
+   },
+   "resonance_used": 30
+  },
+  {
+   "combo": {
+    "attrs": "法爆6-8-11",
+    "resonance": "曲解",
+    "build": "转化猎道",
+    "region": "罪孽都市"
+   },
+   "runs": 30,
+   "wins": 0,
+   "errors": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 2.8,
+   "deaths": {
+    "2": 5,
+    "3": 4,
+    "6": 6,
+    "7": 4,
+    "1": 6,
+    "4": 3,
+    "5": 2
+   },
+   "relic_picked": {
+    "血誓戒": 10,
+    "守夜灯": 4,
+    "避风铃": 8,
+    "买路财": 3,
+    "同魂笔": 3,
+    "忘忧香": 2
+   },
+   "relic_won": {},
+   "daowen_picked": {
+    "庇护": 4,
+    "血债": 6,
+    "固执": 1,
+    "缓慢": 1,
+    "慈悲": 2,
+    "杀伐": 3,
+    "再生": 2,
+    "增殖": 3,
+    "冲击": 4,
+    "束缚": 2,
+    "贯穿": 2
+   },
+   "daowen_won": {},
+   "acquired_daowen": {
+    "愤怒": 17,
+    "无神": 10,
+    "洞察": 13,
+    "加速": 10,
+    "弱化": 14,
+    "眩晕": 7,
+    "兴奋": 3,
+    "滋养": 11,
+    "自残": 4,
+    "自食": 5,
+    "无力": 4,
+    "蒙蔽": 4,
+    "借力": 4,
+    "急速": 4,
+    "迟滞": 3,
+    "寄生": 2,
+    "衰败": 2
+   },
+   "resonance_used": 205
   }
  ],
  "relic_correlation": [
-  {
-   "relic": "守夜灯",
-   "picked": 270,
-   "won": 6,
-   "win_rate": 0.022222222222222223
-  },
-  {
-   "relic": "避风铃",
-   "picked": 270,
-   "won": 6,
-   "win_rate": 0.022222222222222223
-  },
   {
    "relic": "同魂笔",
    "picked": 540,
@@ -12759,20 +12679,32 @@
    "picked": 270,
    "won": 0,
    "win_rate": 0.0
+  },
+  {
+   "relic": "守夜灯",
+   "picked": 270,
+   "won": 0,
+   "win_rate": 0.0
+  },
+  {
+   "relic": "避风铃",
+   "picked": 270,
+   "won": 0,
+   "win_rate": 0.0
   }
  ],
  "daowen_correlation": [
-  {
-   "daowen": "庇护",
-   "picked": 765,
-   "won": 12,
-   "win_rate": 0.01568627450980392
-  },
   {
    "daowen": "血债",
    "picked": 405,
    "won": 3,
    "win_rate": 0.007407407407407408
+  },
+  {
+   "daowen": "庇护",
+   "picked": 765,
+   "won": 0,
+   "win_rate": 0.0
   },
   {
    "daowen": "杀伐",

@@ -57,11 +57,12 @@ _ALL_EXCLUSIVE = {d for v in REGION_EXCLUSIVE_DAOWEN.values() for d in v}
 def _pick_monster_daowen(engine, actor):
     """怪物按当前情形择优选道纹（README：怪物为胜利和生存作最优决策）。
 
-    优先规则（按情形，非轮换）：
-      1. 输出型（狂暴/强化/杀伐/血债/切割等）——怪物活着就要打输出，优先
-      2. 自保型（自愈/庇护/再生/固执）——自己血低时优先
-      3. 控制/削弱型（减速/束缚/衰败/勾魂/镇尸等）——对手血低/快赢时压制
-      4. 机制型（飞行/必中/贯穿/蒙蔽）——需要时开启（如对非飞行者飞行）
+    DM裁定（2026-08-18）优先级固定为：
+      1. 自保型（自愈/庇护/再生/固执等）——先保住自己
+      2. 输出型（狂暴/强化/杀伐/血债/切割等）
+      3. 控制/削弱型（减速/束缚/衰败/勾魂/镇尸等）
+      4. 机制型（飞行/必中/贯穿/蒙蔽等）——只有在完全无法对轮回者造成
+         任何影响（没有任何自保/输出/控制候选可选）时才允许选择。
     """
     opts = actor["daowen_options"]
     if not opts:
@@ -77,34 +78,21 @@ def _pick_monster_daowen(engine, actor):
     if not cands:
         return opts[0]
 
-    # 输出/自保/控制/机制 优先级分组
+    # 自保/输出/控制/机制 优先级分组
     OUTPUT = {"狂暴", "强化", "杀伐", "血债", "切割", "冲击", "加害", "活血", "裂变", "洗劫", "赎金", "逼债", "清算", "假钞", "赌命"}
     SELF = {"自愈", "庇护", "再生", "固执", "疯狂", "兴奋", "坚韧", "龙鳞"}
     CONTROL = {"减速", "束缚", "衰败", "勾魂", "镇尸", "僵化", "眩晕", "蒙蔽", "弱化", "退化", "冥气", "缄默", "瓦解", "招魂", "堕落", "坠落", "无力", "迟滞", "定型", "封印", "缓慢"}
-    MECH = {"飞行", "必中", "贯穿", "滑翔", "洞察", "超频", "变形", "增殖", "寄生", "自残", "透支", "假钞", "无神", "借力", "自食"}
-
-    p = engine.state.player
-    player_low = p is not None and p.is_alive and p.current_hp <= p.blood_limit * 0.5
-    monster_low = monster is not None and monster.current_hp <= monster.blood_limit * 0.5
 
     def group(o):
         n = o["name"]
-        if n in OUTPUT: return 0
-        if n in SELF: return 1
+        if n in SELF: return 0
+        if n in OUTPUT: return 1
         if n in CONTROL: return 2
         return 3
 
-    # 情形调整：血低自保优先；玩家血低→控制/输出收割
-    if monster_low:
-        self_cands = [o for o in cands if o["name"] in SELF]
-        if self_cands:
-            return self_cands[0]
-    if player_low:
-        kill_cands = [o for o in cands if o["name"] in OUTPUT or o["name"] in CONTROL]
-        if kill_cands:
-            return kill_cands[0]
-    # 默认按组优先级（输出>自保>控制>机制）
-    return min(cands, key=group)
+    # 机制组是最后手段：存在任何自保/输出/控制候选时一律不选机制。
+    effective = [o for o in cands if group(o) < 3]
+    return min(effective or cands, key=group)
 
 def _decline_spells(option):
     return {timing: {spell["spell_name"]: {"use": False}

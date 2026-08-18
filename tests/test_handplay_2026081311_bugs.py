@@ -191,7 +191,7 @@ def test_blood_pump_goes_through_heal():
 
 
 def test_medkit_overheal_counts_double_for_cancer():
-    """边界：满血急救箱实回复0，过量25按双倍计入累计恢复。"""
+    """边界：满血急救箱实回复0，过量25按原值计入累计恢复（双倍机制已删，DM裁定2026-08-18）。"""
     engine = _engine("kit_bound")
     p = engine.state.player
     assert p.current_hp == p.blood_limit == 60
@@ -201,7 +201,7 @@ def test_medkit_overheal_counts_double_for_cancer():
     assert r["success"]
     assert p.current_hp == 60
     assert r["result"]["healed"] == 0
-    assert p.total_healed == 50  # 25*2
+    assert p.total_healed == 25  # 过量按原值计入（双倍机制已删）
 
 
 def test_missing_pump_does_not_heal():

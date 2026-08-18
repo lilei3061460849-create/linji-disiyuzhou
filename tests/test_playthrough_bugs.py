@@ -357,7 +357,7 @@ def test_canhai_heals_twenty_and_adds_mutation_ten():
 
 
 def test_canhai_at_full_hp_tracks_overheal():
-    """边界：满血残骸实回复0，过量20按双倍计入累计恢复量。"""
+    """边界：满血残骸实回复0，过量20按原值计入累计恢复量（双倍机制已删）。"""
     engine = _engine("canhai_bound")
     p = engine.state.player
     assert p.current_hp == p.blood_limit == 60
@@ -368,7 +368,7 @@ def test_canhai_at_full_hp_tracks_overheal():
     assert p.current_hp == 60
     assert r["result"]["heal"]["actual_heal"] == 0
     assert r["result"]["heal"]["overheal"] == 20
-    assert p.total_healed == 40
+    assert p.total_healed == 20
     assert p.mutation_count == 10
     assert p.is_alive
 

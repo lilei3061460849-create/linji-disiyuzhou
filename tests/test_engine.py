@@ -441,7 +441,7 @@ def test_sculpture_and_proliferation():
                 attack_count=1, attack_power=5)
     state2.enemies.append(m2)
     combat2 = CombatEngine(state2, DiceEngine())
-    # 对怪物过量恢复：实恢40 + 过量160按双倍=320 → total_healed=360 ≥ 80
+    # 对怪物过量恢复：实恢40 + 过量160按原值计 → total_healed=200 ≥ 80（双倍机制已删）
     m2.heal(200)
     assert m2.total_healed >= 80
     paths2 = combat2.settle_victory_paths()

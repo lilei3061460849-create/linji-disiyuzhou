@@ -1320,14 +1320,14 @@ class CombatEngine:
     # ========== 多路径胜利系统 ==========
     # 所有阈值数值均为占位初值，需经测试调整（见 AI_EXPERIENCE.md）
 
-    PROLIFERATION_THRESHOLD = 2.0  # 癌变：README「累计恢复量达血限×2」；超出血限的恢复按双倍计
+    PROLIFERATION_THRESHOLD = 2.0  # 癌变：README「累计恢复量达血限×2」；过量回复按原值计（双倍机制已删，DM裁定2026-08-18）
     CANCER_THRESHOLD = PROLIFERATION_THRESHOLD  # 别名：增生旧名已统一为癌变，二者同阈值
     DEBT_THRESHOLD = 10           # 还债：怪物负债达到10碎片时触发（已裁定固定值）
     SCULPTURE_DAMAGE = 15         # 雕塑：每点耐久可造成的伤害
     SCULPTURE_SHIELD = 20         # 雕塑：每点耐久可获得的格挡
 
     def cancer_threshold_of(self, entity: Entity) -> int:
-        """README：累计恢复量达到血限×2（过量按双倍已计入 total_healed）。"""
+        """README：累计恢复量达到血限×2（过量按原值计入 total_healed，双倍机制已删）。"""
         if entity.blood_limit <= 0:
             return 0
         return math.ceil(entity.blood_limit * self.PROLIFERATION_THRESHOLD)
