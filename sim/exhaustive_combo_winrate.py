@@ -64,6 +64,15 @@ STRATEGIES: dict[str, dict] = {
     "转化猎道":     {"kind": "tactical", "lingwu": True,
                     "learn": ["庇护", "再生"],
                     "starter": ["杀伐", "血债", "冲击", "庇护"]},
+    # 定向猎道·控制链：从零合法成型的控制 combo——
+    #   局外学习 缓慢/束缚（杀伐闭环），领悟囤 反转/曲解 残韵；
+    #   战斗中定向转化怪物道纹：反转必中→蒙蔽、反转疯狂→无力、
+    #   曲解减速→眩晕、反转强化→弱化（施法者永久获得转化产物）。
+    #   获取难度真实计价：遇不到对应怪物就猎不到，绝不凭空授予。
+    "定向猎道·控制链": {"kind": "hunter", "lingwu": True,
+                    "lingwu_cycle": ["反转", "曲解", "反转"],
+                    "learn": ["庇护", "再生", "缓慢", "束缚"],
+                    "starter": ["杀伐", "血债", "冲击", "庇护"]},
     "凡庸盾守":     {"kind": "policy", "policy": "stall",
                     "learn": ["庇护", "杀伐"],
                     "starter": ["庇护", "杀伐", "再生", "血债"]},
@@ -82,6 +91,32 @@ INTERACTIVE_RELICS = {"折速法印", "三相残韵盘", "回锋刀", "血契", 
 
 
 # ---------------- 单局模拟（全公开 action） ----------------
+
+# 定向猎道转化图：怪物道纹 →（残韵，转化产物）
+HUNT_MAP = {
+    "必中": ("反转", "蒙蔽"),
+    "疯狂": ("反转", "无力"),
+    "减速": ("曲解", "眩晕"),
+    "强化": ("反转", "弱化"),
+    "自愈": ("反转", "衰败"),
+}
+
+
+def _directed_hunt(e, ai):
+    """残韵插队（不占出手）：按 HUNT_MAP 定向转化在场怪物道纹。"""
+    p = e.state.player
+    for m in e.state.enemies:
+        if not m.is_alive:
+            continue
+        for src, (rtype, product) in HUNT_MAP.items():
+            if (src in m.dao_wen and product not in p.dao_wen
+                    and e.state.resonance.get(rtype, 0) > 0):
+                r = e.execute_action("use_resonance", {
+                    "source_daowen": src, "resonance_type": rtype, "target": m.name})
+                if r.get("success"):
+                    ai.used[f"猎道·{product}"] = ai.used.get(f"猎道·{product}", 0) + 1
+                    ai.resolve_pending_redemption()
+
 
 def run_one(attr_key: str, resonance: str, build: str, region: str,
             seed: int, battles: int = 7) -> dict:
@@ -116,7 +151,8 @@ def run_one(attr_key: str, resonance: str, build: str, region: str,
     e.execute_action("setup_choose_resonance", {"resonance_type": resonance})
     e.execute_action("setup_choose_region", {"region": region})
 
-    ai = TacticalAI(e) if strategy["kind"] == "tactical" else None
+    ai = TacticalAI(e) if strategy["kind"] in ("tactical", "hunter") else None
+    hunter = strategy["kind"] == "hunter"
     policy = policy_fns.get(strategy.get("policy", ""))
     to_learn = list(strategy["learn"])
     cleared = 0
@@ -129,7 +165,6 @@ def run_one(attr_key: str, resonance: str, build: str, region: str,
                                       if k.startswith("残韵·"))}
 
     for battle_no in range(1, battles + 1):
-        lingwu_cycle = ["反转", "转换", "曲解"]
         while e.state.energy > 0:
             if to_learn:
                 name = to_learn.pop(0)
@@ -143,8 +178,9 @@ def run_one(attr_key: str, resonance: str, build: str, region: str,
                     e.execute_action("pre_battle_action",
                                      {"sub_action": "修行", "tier": 1, "to": "mana"})
             elif strategy.get("lingwu"):
-                # 转化猎道：富余精力全部用于领悟补残韵
-                rtype = lingwu_cycle[(e.state.energy + battle_no) % 3]
+                # 猎道/转化族：富余精力用于领悟补残韵（可指定残韵配比）
+                cycle = strategy.get("lingwu_cycle", ["反转", "转换", "曲解"])
+                rtype = cycle[(e.state.energy + battle_no) % len(cycle)]
                 r = e.execute_action("pre_battle_action",
                                      {"sub_action": "领悟", "resonance_type": rtype})
                 if not r.get("success"):
@@ -165,6 +201,8 @@ def run_one(attr_key: str, resonance: str, build: str, region: str,
                 break
             e.execute_action("round_start", {"relic_choices": round_start_relic_choices(e)})
             if ai is not None:
+                if hunter:
+                    _directed_hunt(e, ai)
                 ai.new_round()
                 ai.take_turn()
             else:
