@@ -34,23 +34,32 @@ def _state_with_player():
 # ---------- 正常路径 ----------
 
 def test_each_removal_path_deactivates_enemy():
-    """七条移出路径任一命中，敌人即不再阻塞战终"""
+    """特殊事件一律经 depart_battle 记为【离场】，命零/离场即不再阻塞战终"""
     st = _state_with_player()
-    cases = {
-        "命零": dict(is_alive=False),
-        "雕塑": dict(is_sculptured=True),
-        "癌变": dict(is_proliferated=True),
-        "还债": dict(is_debt_bound=True),
-        "封印/逃跑/离场": dict(removed_without_kill=True),
-    }
-    for path, flags in cases.items():
-        m = _monster(f"怪·{path}")
-        for k, v in flags.items():
-            setattr(m, k, v)
+    # 命零
+    dead = _monster("怪·命零")
+    dead.is_alive = False
+    st.enemies = [dead]
+    assert not st.enemy_combat_active(dead) and st.battle_won()
+    # 各特殊事件 → 统一离场
+    for reason in ("雕塑", "癌变", "还债", "救赎", "封印", "逃跑"):
+        m = _monster(f"怪·{reason}")
+        m.depart_battle(reason)
         st.enemies = [m]
-        assert not st.enemy_combat_active(m), f"{path} 后仍被判为战斗障碍"
-        assert st.battle_won(), f"{path} 后 battle_won 应为 True"
-        assert st.battle_over()
+        assert not st.enemy_combat_active(m), f"{reason} 离场后仍被判为战斗障碍"
+        assert m.departure_reason == reason
+        assert st.battle_won() and st.battle_over()
+
+
+def test_future_special_event_needs_no_predicate_change():
+    """扩展性：未来新增特殊事件只需调用 depart_battle，无须改动任何判定"""
+    st = _state_with_player()
+    m = _monster("怪·未来事件")
+    m.depart_battle("某个尚未发明的特殊事件")
+    st.enemies = [m]
+    assert not st.enemy_combat_active(m)
+    assert st.battle_won()
+    assert m.removed_without_kill, "离场必须兼容旧字段：不视为击杀、不产碎片"
 
 
 def test_active_enemy_blocks_victory_and_battle_end():
@@ -89,11 +98,14 @@ def test_battle_lost_on_player_death_any_cause():
 # ---------- 边界条件 ----------
 
 def test_flagged_but_alive_enemy_does_not_block():
-    """边界：标志已置但 is_alive 尚为 True（如还债转员工瞬间）也不阻塞战终"""
+    """边界：还债瞬间（is_alive 仍为 True、以员工身份继续参战）也不阻塞战终"""
     st = _state_with_player()
     m = _monster("过渡怪")
-    m.is_debt_bound = True  # is_alive 仍为 True
+    m.is_debt_bound = True
+    m.is_departed = True          # 还债路径只置离场标记，不置 is_alive=False
+    m.departure_reason = "还债"
     st.enemies = [m]
+    assert m.is_alive, "还债者以员工身份继续参战"
     assert not st.enemy_combat_active(m)
     assert st.battle_won()
 

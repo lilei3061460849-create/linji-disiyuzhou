@@ -57,6 +57,13 @@ STRATEGIES: dict[str, dict] = {
     "击杀·切割系": {"kind": "tactical",
                     "learn": ["切割", "贯穿", "透支", "束缚", "封印", "缓慢", "增殖"],
                     "starter": ["切割", "贯穿", "杀伐", "血债"]},
+    # 转化猎道：专属/转化道纹无法局外学习，只能在战斗中用残韵改写怪物道纹获得
+    # （施法者永久获得转化产物）。该族局外精力优先「领悟」补残韵（1精力=+1残韵），
+    # 由 TacticalAI 的残韵插队在每场战斗中转化高价值怪物道纹，跨场滚雪球——
+    # 这是穷举中唯一系统性测试残韵消耗与专属道纹 combo 的策略族。
+    "转化猎道":     {"kind": "tactical", "lingwu": True,
+                    "learn": ["庇护", "再生"],
+                    "starter": ["杀伐", "血债", "冲击", "庇护"]},
     "凡庸盾守":     {"kind": "policy", "policy": "stall",
                     "learn": ["庇护", "杀伐"],
                     "starter": ["庇护", "杀伐", "再生", "血债"]},
@@ -116,9 +123,13 @@ def run_one(attr_key: str, resonance: str, build: str, region: str,
 
     def _fail(battle_no: int) -> dict:
         return {"cleared": cleared, "won": False, "died_at": battle_no,
-                "relic": relic_pick, "daowen": daowen_pick}
+                "relic": relic_pick, "daowen": daowen_pick,
+                "final_daowen": list(e.state.player.dao_wen) if e.state.player else [],
+                "resonance_used": sum(v for k, v in (ai.used if ai else {}).items()
+                                      if k.startswith("残韵·"))}
 
     for battle_no in range(1, battles + 1):
+        lingwu_cycle = ["反转", "转换", "曲解"]
         while e.state.energy > 0:
             if to_learn:
                 name = to_learn.pop(0)
@@ -129,6 +140,14 @@ def run_one(attr_key: str, resonance: str, build: str, region: str,
                     if "已经掌握" in err:
                         continue  # 初始道纹已覆盖，跳过且不耗精力
                     to_learn.insert(0, name)
+                    e.execute_action("pre_battle_action",
+                                     {"sub_action": "修行", "tier": 1, "to": "mana"})
+            elif strategy.get("lingwu"):
+                # 转化猎道：富余精力全部用于领悟补残韵
+                rtype = lingwu_cycle[(e.state.energy + battle_no) % 3]
+                r = e.execute_action("pre_battle_action",
+                                     {"sub_action": "领悟", "resonance_type": rtype})
+                if not r.get("success"):
                     e.execute_action("pre_battle_action",
                                      {"sub_action": "修行", "tier": 1, "to": "mana"})
             else:
@@ -164,7 +183,10 @@ def run_one(attr_key: str, resonance: str, build: str, region: str,
         cleared += 1
 
     return {"cleared": cleared, "won": True, "died_at": None,
-            "relic": relic_pick, "daowen": daowen_pick}
+            "relic": relic_pick, "daowen": daowen_pick,
+            "final_daowen": list(e.state.player.dao_wen) if e.state.player else [],
+            "resonance_used": sum(v for k, v in (ai.used if ai else {}).items()
+                                  if k.startswith("残韵·"))}
 
 
 def bench_combo(combo: tuple[str, str, str, str], seeds: list[int]) -> dict:
@@ -174,7 +196,10 @@ def bench_combo(combo: tuple[str, str, str, str], seeds: list[int]) -> dict:
     relic_wins: Counter = Counter()
     daowen_stats: Counter = Counter()
     daowen_wins: Counter = Counter()
+    acquired: Counter = Counter()   # 经残韵转化获得的道纹（不在杀伐闭环、非局外可学）
+    resonance_used = 0
     deaths: Counter = Counter()
+    from engine.gamedata import SHAFA_LOOP_DAOWEN
     for s in seeds:
         try:
             r = run_one(attr_key, resonance, build, region, seed=s)
@@ -184,6 +209,10 @@ def bench_combo(combo: tuple[str, str, str, str], seeds: list[int]) -> dict:
         total_cleared += r["cleared"]
         relic_stats[r["relic"]] += 1
         daowen_stats[r["daowen"]] += 1
+        resonance_used += r.get("resonance_used", 0)
+        for name in r.get("final_daowen", []):
+            if name not in SHAFA_LOOP_DAOWEN:
+                acquired[name] += 1
         if r["won"]:
             wins += 1
             relic_wins[r["relic"]] += 1
@@ -202,6 +231,8 @@ def bench_combo(combo: tuple[str, str, str, str], seeds: list[int]) -> dict:
         "relic_won": dict(relic_wins),
         "daowen_picked": dict(daowen_stats),
         "daowen_won": dict(daowen_wins),
+        "acquired_daowen": dict(acquired),
+        "resonance_used": resonance_used,
     }
 
 
@@ -299,6 +330,14 @@ def main():
     print("-" * 32)
     for name, n, w, rate in aggregate_key(coarse, "daowen_picked", "daowen_won"):
         print(f"{name:<8}{n:>8}{w:>6}{rate*100:>7.1f}%")
+
+    total_res = sum(r.get("resonance_used", 0) for r in coarse)
+    acquired_total: Counter = Counter()
+    for r in coarse:
+        acquired_total.update(r.get("acquired_daowen", {}))
+    print(f"\n=== 残韵消耗与转化/专属道纹获得（全部粗扫局，共消耗残韵{total_res}次） ===")
+    for name, n in acquired_total.most_common(12):
+        print(f"  {name}: 持有局数{n}")
 
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     with open(args.out, "w", encoding="utf-8") as f:

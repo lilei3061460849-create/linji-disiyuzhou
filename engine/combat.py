@@ -1391,8 +1391,7 @@ class CombatEngine:
             "cause": cause,
             "mutation": monster.mutation_count,
         }
-        monster.removed_without_kill = True
-        monster.is_alive = False
+        monster.depart_battle("救赎")
         monster._redeemed = True
         self.state.pending_redemption = snapshot
         return {
@@ -1468,9 +1467,9 @@ class CombatEngine:
                 results.append(cancer)
         return results
 
-    def _remove_from_combat(self, monster: Entity):
-        """将怪物移出战斗（不视为击杀）"""
-        monster.is_alive = False
+    def _remove_from_combat(self, monster: Entity, reason: str = "离场"):
+        """将怪物移出战斗（不视为击杀）——统一走【离场】。"""
+        monster.depart_battle(reason)
 
     def _cancer_character(self, entity: Entity) -> dict:
         """轮回者/同伴癌变：累计恢复达血限×2 → 直接命零。不吸收进书、不加休整+8。"""
@@ -1495,7 +1494,7 @@ class CombatEngine:
         durability = max(1, math.ceil(monster.blood_limit * 0.05))
         reason = "攻击次数归0" if monster.attack_count <= 0 else "攻击力归0"
         monster.is_sculptured = True
-        self._remove_from_combat(monster)
+        self._remove_from_combat(monster, "雕塑")
         consumable = Consumable(
             name=f"{monster.name}雕塑",
             effect=(f"每消耗1点耐久，对1个目标造成{self.SCULPTURE_DAMAGE}点伤害，"
@@ -1519,7 +1518,7 @@ class CombatEngine:
         monster.is_proliferated = True
         # 兼容：同时写入癌变别名，便于外部以新名读取
         monster.is_cancer = True  # type: ignore[attr-defined]
-        self._remove_from_combat(monster)
+        self._remove_from_combat(monster, "癌变")
         absorbed = monster.total_healed
         # 正文：每只被吸收的癌变怪物使局外【休整】永久额外产生8点恢复量，可叠加。
         boost = 8
@@ -1539,7 +1538,11 @@ class CombatEngine:
     def _debt_bind_monster(self, monster: Entity) -> dict:
         """还债：负债达阈值→视为员工；负债还清后离开（走独立的负债经济轨道，不受出战支援/工资/黑名单约束）"""
         monster.is_debt_bound = True
-        # 转为员工（保留当前面板），其待还负债记录于 shards（负值）
+        monster.is_departed = True
+        monster.departure_reason = "还债"
+        # 转为员工（保留当前面板），其待还负债记录于 shards（负值）。
+        # 注意：还债者以员工身份继续参战，不置 is_alive=False，故不走 depart_battle，
+        # 仅记录 is_departed/departure_reason 供战报分类；其已从 enemies 列表移除。
         monster.entity_type = "员工"
         monster.is_deployed = True  # "视为其参战"：立即出战，不需要玩家消耗出手派遣
         self.state.employees.append(monster)
@@ -2089,8 +2092,7 @@ class CombatEngine:
             for e in list(self.state.enemies):
                 if (e.is_alive and e.entity_type == "怪物"
                         and removed < calc["targets_removed"]):
-                    e.is_alive = False
-                    e.removed_without_kill = True
+                    e.depart_battle("封印")
                     removed += 1
                     removed_names.append(e.name)
             result["effects"].append({

@@ -227,6 +227,11 @@ class Entity:
 
     # 非击杀移出战斗标记（封印等；不产碎片）
     removed_without_kill: bool = False
+    # 统一【离场】标记（DM裁定 2026-08-18）：一切使角色脱离本场战斗的特殊事件
+    # （雕塑/癌变/还债/救赎/封印/逃跑及未来新增）一律经 depart_battle() 置位。
+    # 战斗胜利判定只看 命零(is_alive=False) 或 离场(is_departed)，新事件无须再改判定。
+    is_departed: bool = False
+    departure_reason: str = ""   # 离场原因（雕塑/癌变/还债/救赎/封印/逃跑/...）
     hp_lost_this_round: int = 0   # 本回合累计失去的生命（活血用，回始归零）
     actions_used_this_round: int = 0  # 本回合已消耗的出手次数（回始归零，用于出手预算校验）
 
@@ -253,6 +258,18 @@ class Entity:
         real = amount - use_fake
         self.shards -= real
         return real
+
+    def depart_battle(self, reason: str):
+        """统一【离场】入口：任何使角色脱离本场战斗的特殊事件都必须调用此方法。
+
+        离场不是击杀：is_alive 置 False 仅表示脱离战场，不产生[碎片]奖励；
+        奖励与分类逻辑可读取 departure_reason。新增特殊事件只需调用本方法，
+        无须改动任何战斗胜利判定。
+        """
+        self.is_departed = True
+        self.departure_reason = reason
+        self.is_alive = False
+        self.removed_without_kill = True  # 兼容旧字段：离场一律不视为击杀
 
     # 兼容：is_proliferated 旧名（增生）→ 现名 癌变，is_cancer 为别名
     @property
@@ -506,6 +523,8 @@ class Entity:
             "is_flying": self.is_flying,
             "is_alive": self.is_alive,
             "removed_without_kill": self.removed_without_kill,
+            "is_departed": self.is_departed,
+            "departure_reason": self.departure_reason,
             "is_deployed": self.is_deployed,
             "has_retreated": self.has_retreated,
             "battle_start_blood_limit": self.battle_start_blood_limit,
@@ -1032,14 +1051,12 @@ class GameState:
     def enemy_combat_active(self, enemy: Entity) -> bool:
         """该敌人是否仍构成战斗障碍（阻塞战终）。
 
-        七条移出路径任一命中即不再阻塞：
-        ①命零（击杀/凡庸自爆） ②救赎离场 ③雕塑 ④癌变（吸收进死者之书）
-        ⑤还债（转为员工，已移出enemies） ⑥封印移出 ⑦事件裁定的逃跑/离场。
-        （①之外均不视为击杀、不产碎片；见 battle_end 的奖励结算。）
+        DM裁定（2026-08-18）：战斗胜利＝敌方全部角色【命零】或【离场】。
+        一切特殊事件（雕塑/癌变/还债/救赎/封印/逃跑及未来新增）一律经
+        Entity.depart_battle() 记为离场——新增事件无须改动本判定。
+        离场不视为击杀、不产碎片（分类见 battle_end 读取 departure_reason）。
         """
-        return (enemy.is_alive and not enemy.removed_without_kill
-                and not enemy.is_sculptured and not enemy.is_proliferated
-                and not enemy.is_debt_bound)
+        return enemy.is_alive and not enemy.is_departed
 
     def active_enemies(self) -> list[Entity]:
         """仍构成战斗障碍的敌人列表。"""

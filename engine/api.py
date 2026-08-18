@@ -4272,8 +4272,7 @@ class GameEngine:
         if escaping:
             for enemy in self.state.enemies:
                 if enemy.is_alive:
-                    enemy.removed_without_kill = True
-                    enemy.is_alive = False
+                    enemy.depart_battle("逃跑")
         # 员工经济系统·工资结算门槛：先按"存活+已部署+非还债"员工计算工资写入待决列表；
         # 任何一名待决(值不为None，代表尚未pay/refuse)即阻塞后续战终结算。
         self._compute_pending_wages()
@@ -4297,13 +4296,14 @@ class GameEngine:
         shard_reward = 0
         removed = []
         for monster in self.state.enemies:
-            if (monster.is_sculptured or monster.removed_without_kill
-                    or monster.is_proliferated or monster.is_debt_bound):
+            if monster.is_departed or monster.is_sculptured or monster.removed_without_kill \
+                    or monster.is_proliferated or monster.is_debt_bound:
                 removed.append({"name": monster.name,
-                                "way": ("雕塑" if monster.is_sculptured else
-                                        "救赎" if getattr(monster, "_redeemed", False) else
-                                        "封印" if monster.removed_without_kill else
-                                        "癌变" if monster.is_proliferated else "还债")})
+                                "way": (monster.departure_reason or
+                                        ("雕塑" if monster.is_sculptured else
+                                         "救赎" if getattr(monster, "_redeemed", False) else
+                                         "癌变" if monster.is_proliferated else
+                                         "还债" if monster.is_debt_bound else "封印"))})
                 continue
             if not monster.is_alive:
                 reward = math.ceil(monster.battle_start_blood_limit * 0.02) + len(monster.dao_wen) * 5
