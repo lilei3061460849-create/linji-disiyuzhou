@@ -279,6 +279,7 @@ def play_and_record(region: str, seed: int, battles: int = 7):
                     lines.extend(BR.format_player_action(
                         idx, engine.state.player.name, res))
                     idx += 1
+                ai.resolve_pending_redemption()
                 # [朋友]/[员工]自主出手
                 ap = engine.execute_action("resolve_ally_phases", {})
                 for entry in (ap.get("result", {}).get("allies") or []):
@@ -301,6 +302,9 @@ def play_and_record(region: str, seed: int, battles: int = 7):
                     return {"invalid": True, "reason": f"monster_phase:{mp.get('error')}"}
                 lines.extend(BR.format_monster_hits(idx, mp["result"].get("details", [])))
                 re_ = engine.execute_action("round_end", {})
+                if not re_.get("success"):
+                    return {"invalid": True, "reason": f"round_end:{re_.get('error')}"}
+                ai.resolve_pending_redemption()
                 lines.extend(BR.format_round_end(re_.get("result", {}),
                                                  engine.state.player,
                                                  engine.state.enemies))

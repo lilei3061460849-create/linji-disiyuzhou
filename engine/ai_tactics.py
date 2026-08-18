@@ -220,6 +220,33 @@ class TacticalAI:
             self.used["固执"] = 1
         return r
 
+    def resolve_pending_redemption(self, option: str = "无视") -> Optional[dict]:
+        """救赎是强制待选：未结算前任何其它行动都会被引擎拒绝。"""
+        pending = self.engine.state.pending_redemption
+        if not pending:
+            return None
+        params: dict = {"option": option}
+        if option in (1, "1", "接纳"):
+            base = f"微光·{pending.get('name', '友')}"
+            existing = {self.player.name} if self.player else set()
+            for group in (self.engine.state.friends, self.engine.state.employees,
+                          self.engine.state.temp_friends):
+                existing.update(entity.name for entity in group)
+            existing.update(entity.name for entity in self.engine.state.enemies if entity.is_alive)
+            name = base
+            suffix = 2
+            while name in existing:
+                name = f"{base}{suffix}"
+                suffix += 1
+            params["name"] = name
+        r = self.engine.execute_action("resolve_redemption", params)
+        if r.get("success"):
+            self.used["救赎"] = self.used.get("救赎", 0) + 1
+            return r
+        if self.verbose:
+            self.log.append(f"[跳过] 救赎: {r.get('error')}")
+        return None
+
     def try_resonance(self) -> Optional[dict]:
         """2. 残韵插队：只对**存在变化路径**的敌方道纹发动。"""
         from engine.daowen import ResonanceEngine
@@ -240,6 +267,7 @@ class TacticalAI:
                         {"source_daowen": dw, "resonance_type": rtype, "target": enemy.name})
                     if r.get("success"):
                         self.used[f"残韵·{rtype}"] = self.used.get(f"残韵·{rtype}", 0) + 1
+                        self.resolve_pending_redemption()
                         return r
         return None
 
@@ -424,9 +452,13 @@ class TacticalAI:
 
     def take_action(self) -> Optional[dict]:
         """执行一次出手。返回引擎结果；无可行动作时返回 None。"""
+        self.resolve_pending_redemption()
+        if not self.alive_enemies() or not self.player.is_alive:
+            return None
         for fn in self.STRATEGIES:
             r = getattr(self, fn)()
             if r:
+                self.resolve_pending_redemption()
                 return r
         return None
 

@@ -45,6 +45,10 @@ def _engine(tmp_path, seed=4, learn=("庇护", "再生", "冲击")):
 def test_ai_uses_full_action_budget(tmp_path):
     """正常路径：AI 应打满本回合出手次数，而不是一发杀伐烧光法力就收手"""
     e = _engine(tmp_path)
+    for monster in e.state.enemies:
+        if "强化" not in monster.dao_wen:
+            monster.dao_wen["强化"] = DaoWenInstance(
+                DaoWen("强化", "", "异变", "5X", ""), x_value=1)
     ai = TacticalAI(e)
     results = ai.take_turn()
     expected = max(1, math.ceil(e.state.player.speed_limit / 3))

@@ -94,6 +94,7 @@ def test_resonance_on_enemy_grants_dest_and_rewrites_next_activation():
     monster = Entity(name="通缉犯", entity_type="怪物", blood_limit=80, current_hp=80,
                      attack_count=1, attack_power=5)
     _give_daowen(monster, "狂暴", x=2)
+    _give_daowen(monster, "强化", x=1)
     monster._had_monster_daowen = True
     _put_enemy(engine, monster)
     engine.execute_action("round_start", {})
@@ -140,6 +141,7 @@ def test_resonance_no_duplicate_when_caster_already_owns_dest():
     monster = Entity(name="唯一狂暴", entity_type="怪物", blood_limit=80, current_hp=80,
                      attack_count=1, attack_power=4)
     _give_daowen(monster, "狂暴", x=1)
+    _give_daowen(monster, "强化", x=1)
     monster._had_monster_daowen = True
     _put_enemy(engine, monster)
     engine.execute_action("round_start", {})

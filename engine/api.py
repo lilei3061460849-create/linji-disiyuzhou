@@ -31,7 +31,7 @@ from .events import EventPool, parse_events
 from .dungeons import DEFAULT_INDEX
 from .gamedata import (REGION_EXCLUSIVE_DAOWEN, ORIGINAL_MONSTER_DAOWEN,
                        MONSTER_TRANSFORM_DAOWEN, SHAFA_LOOP_DAOWEN,
-                       MONSTER_DAOWEN, UNIMPLEMENTED_REGION_EXCLUSIVE_DAOWEN)
+                       UNIMPLEMENTED_REGION_EXCLUSIVE_DAOWEN)
 from .dm_rulings import DMRulingsDB, DMRuling, Interrupt
 from .death_book import DeathBookStore, draft_legacy, validate_legacy
 from .handlers.setup import (
@@ -2408,7 +2408,7 @@ class GameEngine:
         """将持有者的源道纹永久变为变化后的道纹；同名只保留一份。"""
         if source not in holder.dao_wen:
             return False
-        if holder.entity_type == "怪物" and source in MONSTER_DAOWEN:
+        if holder.entity_type == "怪物" and source in ORIGINAL_MONSTER_DAOWEN:
             holder._had_monster_daowen = True
         old = holder.dao_wen[source]
         if dest not in holder.dao_wen:

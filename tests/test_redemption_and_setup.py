@@ -101,6 +101,7 @@ def test_resonance_permanently_converts_and_grants():
     monster = Entity(name="狂怪", entity_type="怪物", blood_limit=80, current_hp=80,
                      attack_count=2, attack_power=4)
     _give(monster, "狂暴")
+    _give(monster, "强化")
     monster._had_monster_daowen = True
     engine.state.enemies[:] = [monster]
     r = engine.execute_action("use_resonance", {
@@ -108,8 +109,10 @@ def test_resonance_permanently_converts_and_grants():
     })
     assert r["success"]
     assert "狂暴" not in monster.dao_wen and "自残" in monster.dao_wen
+    assert "强化" in monster.dao_wen
     assert "自残" in engine.state.player.dao_wen
     assert "自残" not in ORIGINAL_MONSTER_DAOWEN
+    assert not engine.state.pending_redemption
 
 
 def test_resonance_does_not_duplicate_same_name():
@@ -229,6 +232,48 @@ def test_jinghua_rejects_non_positive_x():
 
 
 # ---------- 救赎 ----------
+
+def test_redemption_fires_after_last_original_even_with_transform_left():
+    """正常：残韵卸掉最后一张原始道纹，转化道纹留下也触发救赎。"""
+    engine = _ready_combat(_engine("rd_path"))
+    engine.state.resonance["转换"] = 1
+    monster = Entity(name="脑蜘蛛", entity_type="怪物", blood_limit=204, current_hp=204,
+                     attack_count=2, attack_power=11)
+    _give(monster, "强化")
+    _give(monster, "坏死")
+    engine.state.enemies[:] = [monster]
+    r = engine.execute_action("use_resonance", {
+        "source_daowen": "强化", "resonance_type": "转换", "target_ref": "enemy:0",
+    })
+    assert r["success"]
+    assert r.get("redemption")
+    assert engine.state.pending_redemption
+    assert "借力" in engine.state.pending_redemption["dao_wen"]
+    assert "强化" not in engine.state.pending_redemption["dao_wen"]
+    assert not monster.is_alive
+    accept = engine.execute_action("resolve_redemption", {"option": "接纳", "name": "微光蛛"})
+    assert accept["success"]
+    friend = next(f for f in engine.state.friends if f.name == "微光蛛")
+    assert friend.dao_wen == {}
+    assert friend.blood_limit == math.ceil(204 / 2)
+
+
+def test_redemption_skips_never_had_original():
+    """边界：从未持有七种原始道纹的白板/专属怪不立刻救赎。"""
+    engine = _ready_combat(_engine("rd_blank"))
+    exclusive = Entity(name="血肉巨囊", entity_type="怪物", blood_limit=258, current_hp=258,
+                       attack_count=1, attack_power=8)
+    _give(exclusive, "爆裂")
+    _give(exclusive, "增殖")
+    engine.state.enemies[:] = [exclusive]
+    assert engine.combat.check_redemption(exclusive) is None
+    transform_only = Entity(name="孢子母体", entity_type="怪物", blood_limit=252, current_hp=252,
+                            attack_count=2, attack_power=7)
+    _give(transform_only, "衰败")
+    _give(transform_only, "寄生")
+    engine.state.enemies[:] = [transform_only]
+    assert engine.combat.check_redemption(transform_only) is None
+
 
 def test_redemption_accept_creates_halved_friend():
     engine = _ready_combat(_engine("rd_ok"))

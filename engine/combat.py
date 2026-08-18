@@ -1330,12 +1330,12 @@ class CombatEngine:
 
     REDEMPTION_MUTATION_THRESHOLD = -30
 
-    def monster_has_monster_daowen(self, monster: Entity) -> bool:
-        from .gamedata import MONSTER_DAOWEN
-        return any(name in MONSTER_DAOWEN for name in monster.dao_wen)
+    def monster_has_original_daowen(self, monster: Entity) -> bool:
+        from .gamedata import ORIGINAL_MONSTER_DAOWEN
+        return any(name in ORIGINAL_MONSTER_DAOWEN for name in monster.dao_wen)
 
     def check_redemption(self, monster: Entity) -> Optional[dict]:
-        """救赎：曾持有的怪物道纹已全部失去，或【异变】≤-30层。"""
+        """救赎：曾持有的七种原始怪物道纹已全部失去，或【异变】≤-30层。"""
         if monster is None or monster.entity_type != "怪物" or not monster.is_alive:
             return None
         if monster.is_sculptured or monster.is_proliferated or monster.is_debt_bound:
@@ -1344,11 +1344,11 @@ class CombatEngine:
             return None
         if self.state.pending_redemption:
             return None
-        if self.monster_has_monster_daowen(monster):
+        if self.monster_has_original_daowen(monster):
             monster._had_monster_daowen = True
         no_monster_daowen = (
             bool(getattr(monster, "_had_monster_daowen", False))
-            and not self.monster_has_monster_daowen(monster)
+            and not self.monster_has_original_daowen(monster)
         )
         mutation_cleansed = monster.mutation_count <= self.REDEMPTION_MUTATION_THRESHOLD
         if not (no_monster_daowen or mutation_cleansed):
@@ -1420,7 +1420,7 @@ class CombatEngine:
                 results.append(self._sculpture_monster(monster))
                 continue
 
-            # 2. 救赎：没有怪物道纹或异变≤-30
+            # 2. 救赎：没有七种原始怪物道纹或异变≤-30
             redemption = self.check_redemption(monster)
             if redemption:
                 results.append(redemption)

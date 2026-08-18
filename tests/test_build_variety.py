@@ -83,6 +83,10 @@ def test_ai_uses_region_specific_daowen(dw):
     for _m in e.state.enemies:
         _m.blood_limit = max(_m.blood_limit, 300)
         _m.current_hp = _m.blood_limit
+        if "强化" not in _m.dao_wen:
+            _m.dao_wen["强化"] = DaoWenInstance(
+                DaoWen(name="强化", formula="", cost_type="异变",
+                       cost_formula="5X", effect_formula=""), x_value=1)
         if dw == "僵化":
             _m.attack_power = max(_m.attack_power, 20)  # 满足控场策略的威胁阈值
     ai = TacticalAI(e)
