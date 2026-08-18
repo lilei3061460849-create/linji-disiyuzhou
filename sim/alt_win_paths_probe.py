@@ -113,7 +113,7 @@ def player_round_pure_stall(e):
 
 
 def player_round_cancer(e):
-    """癌变奶怪流：戳防凡庸→小盾自保→余量全部再生奶怪。"""
+    """癌变奶怪流：戳防凡庸→小盾自保→余量法力全部再生奶怪。"""
     p = e.state.player
     idx, m = _alive_idx(e)
     if m is None:
@@ -127,6 +127,30 @@ def player_round_cancer(e):
     x = p.current_mana
     if x > 0:
         _cast(e, "再生", x, f"enemy:{idx}")
+
+
+def player_round_hybrid(e):
+    """奶大砍小（混合）：血限≤80的小怪直接杀伐收割；大怪用再生奶到癌变。
+    小怪被砍时顺带重置己方凡庸计数；血线危险先起盾。"""
+    p = e.state.player
+    alive = [(i, m) for i, m in enumerate(e.state.enemies) if m.is_alive]
+    if not alive:
+        return
+    if p.current_hp - _expected_enemy_output(e) < p.blood_limit * 0.35:
+        need = (_expected_enemy_output(e) - p.shield + 1) // 2 + 1
+        _cast(e, "庇护", min(max(need, 1), max(0, p.current_mana - 4)), "player:0")
+    small = [(i, m) for i, m in alive if m.blood_limit <= 80]
+    if small:
+        i, m = min(small, key=lambda t: t[1].current_hp)
+        x = min(p.current_mana, max(1, (m.current_hp + 1) // 2))
+        _cast(e, "杀伐", x, f"enemy:{i}")
+    elif p.no_damage_rounds >= 2 and "杀伐" in p.dao_wen:
+        i, m = min(alive, key=lambda t: t[1].current_hp)
+        _cast(e, "杀伐", 1, f"enemy:{i}")
+    big = [(i, m) for i, m in alive if m.is_alive and m.blood_limit > 80]
+    if big and p.current_mana > 0:
+        i, m = max(big, key=lambda t: t[1].blood_limit)
+        _cast(e, "再生", p.current_mana, f"enemy:{i}")
 
 
 def run_one(policy, seed: int, region: str, learn: list[str], battles: int = 7) -> dict:

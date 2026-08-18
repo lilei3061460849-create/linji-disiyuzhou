@@ -3272,14 +3272,12 @@ class CombatEngine:
         return detail
 
     def _mediocrity_battle_decided(self) -> bool:
-        """凡庸中断判定：任一方战场已无存活角色，即战斗胜负已定。
+        """凡庸中断判定：战斗胜负已定（统一判定 GameState.battle_over）。
 
-        DM裁定（2026-08-18）：非轮回者优先炸裂后若清空其所在一方，
+        DM裁定（2026-08-18）：非轮回者优先炸裂后若战斗胜负已定，
         另一方尚未结算的凡庸不再触发。
         """
-        player_side_alive = any(x.is_alive for x in self.state.get_all_player_side())
-        enemy_side_alive = any(x.is_alive for x in self.state.get_all_enemy_side())
-        return not player_side_alive or not enemy_side_alive
+        return self.state.battle_over()
 
     def _tick_mediocrity_counters(self, entity: Entity) -> Optional[str]:
         """更新凡庸连续计数；达阈值返回原因，不立刻结算。"""

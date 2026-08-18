@@ -3,7 +3,7 @@
 穷举组合胜率测试（brute force sweep）
 
 按穷举法枚举开局组合的全笛卡尔积：
-  属性分配 × 初始残韵 × 道纹流派（局外学习清单） × 副本
+  属性分配 × 初始残韵 × 策略族（胜利路径×构筑，见 STRATEGIES） × 副本
 每个组合跑 N 个种子（每局走完整 7 场通关流程，全部走公开 action，
 遵循新开局流程：属性 → 发现遗物3选1 → 发现初始道纹3选1 → 残韵 → 副本）。
 
@@ -47,32 +47,31 @@ ATTR_SPLITS: dict[str, tuple[int, int, int]] = {
 
 RESONANCES = ["转换", "反转", "曲解"]
 
-# 流派 = 局外学习清单（与 sim/build_winrate.py 保持同一口径）
-BUILDS: dict[str, list[str]] = {
-    "杀伐系":     ["庇护", "再生", "冲击", "血债", "慈悲"],
-    "切割系":     ["切割", "贯穿", "透支", "束缚", "封印", "缓慢", "增殖"],
-    "切割纯控":   ["切割", "束缚", "缓慢", "封印", "贯穿"],
-    "龙心谷系":   ["加害", "裂变", "伤痕", "龙鳞", "活血"],
-    "扭曲都市系": ["僵化", "坏死", "退化", "定型", "爆裂"],
-    "罪孽都市系": ["逼债", "洗劫", "清算", "假钞"],
-    "纯杀伐对照": [],
+# 策略族 = 胜利路径 × 对应构筑（配置×策略族的笛卡尔积才是完整的组合穷举）。
+#   kind=tactical → 由 TacticalAI 按"保命→收割→输出"打击杀路径
+#   kind=policy   → 专用策略函数（见 sim/alt_win_paths_probe.py）
+STRATEGIES: dict[str, dict] = {
+    "击杀·杀伐系": {"kind": "tactical",
+                    "learn": ["庇护", "再生", "冲击", "血债", "慈悲"],
+                    "starter": ["杀伐", "血债", "冲击", "庇护"]},
+    "击杀·切割系": {"kind": "tactical",
+                    "learn": ["切割", "贯穿", "透支", "束缚", "封印", "缓慢", "增殖"],
+                    "starter": ["切割", "贯穿", "杀伐", "血债"]},
+    "凡庸盾守":     {"kind": "policy", "policy": "stall",
+                    "learn": ["庇护", "杀伐"],
+                    "starter": ["庇护", "杀伐", "再生", "血债"]},
+    "癌变奶怪":     {"kind": "policy", "policy": "cancer",
+                    "learn": ["再生", "庇护", "杀伐"],
+                    "starter": ["再生", "庇护", "杀伐", "慈悲"]},
+    "奶大砍小·混合": {"kind": "policy", "policy": "hybrid",
+                    "learn": ["再生", "庇护", "杀伐"],
+                    "starter": ["再生", "杀伐", "庇护", "血债"]},
 }
 
 REGIONS = ["罪孽都市", "扭曲都市", "龙心谷"]
 
 # 需要额外显式提交/交互的遗物：默认发现时避开（可以不用但不能不让用）
 INTERACTIVE_RELICS = {"折速法印", "三相残韵盘", "回锋刀", "血契", "无所求"}
-
-# 各流派的初始道纹偏好（发现候选里按序取第一个命中的；都没有则取第一项）
-STARTER_PREF: dict[str, list[str]] = {
-    "杀伐系":     ["杀伐", "血债", "冲击", "庇护"],
-    "切割系":     ["切割", "贯穿", "杀伐", "血债"],
-    "切割纯控":   ["切割", "束缚", "缓慢", "杀伐"],
-    "龙心谷系":   ["杀伐", "血债", "冲击", "切割"],
-    "扭曲都市系": ["杀伐", "血债", "冲击", "切割"],
-    "罪孽都市系": ["杀伐", "血债", "冲击", "切割"],
-    "纯杀伐对照": ["杀伐", "血债", "冲击", "切割"],
-}
 
 
 # ---------------- 单局模拟（全公开 action） ----------------
@@ -83,6 +82,12 @@ def run_one(attr_key: str, resonance: str, build: str, region: str,
     from engine.ai_tactics import TacticalAI
     from sim.build_learner import _resolve_monster_turn
     from sim.optional_actions import battle_start_relic_choices, round_start_relic_choices
+    from sim.alt_win_paths_probe import (
+        player_round_stall, player_round_cancer, player_round_hybrid)
+
+    strategy = STRATEGIES[build]
+    policy_fns = {"stall": player_round_stall, "cancer": player_round_cancer,
+                  "hybrid": player_round_hybrid}
 
     blood, speed, mana = ATTR_SPLITS[attr_key]
     e = GameEngine(db_path=f"/tmp/exhaustive_{os.getpid()}.db", rng_seed=seed)
@@ -95,17 +100,18 @@ def run_one(attr_key: str, resonance: str, build: str, region: str,
                       next((n for n in relic_choices if n != "无所求"), relic_choices[0]))
     e.execute_action("choose_discovered_relic", {"relic_name": relic_pick})
 
-    # 再发现初始道纹3选1（按流派偏好；候选没有偏好项则取第一项）
+    # 再发现初始道纹3选1（按策略族偏好；候选没有偏好项则取第一项）
     daowen_choices = list(e.state.pending_initial_daowen_choices)
-    daowen_pick = next((n for n in STARTER_PREF[build] if n in daowen_choices),
+    daowen_pick = next((n for n in strategy["starter"] if n in daowen_choices),
                        daowen_choices[0])
     e.execute_action("setup_choose_initial_daowen", {"daowen_name": daowen_pick})
 
     e.execute_action("setup_choose_resonance", {"resonance_type": resonance})
     e.execute_action("setup_choose_region", {"region": region})
 
-    ai = TacticalAI(e)
-    to_learn = list(BUILDS[build])
+    ai = TacticalAI(e) if strategy["kind"] == "tactical" else None
+    policy = policy_fns.get(strategy.get("policy", ""))
+    to_learn = list(strategy["learn"])
     cleared = 0
 
     def _fail(battle_no: int) -> dict:
@@ -135,24 +141,23 @@ def run_one(attr_key: str, resonance: str, build: str, region: str,
         if not started.get("success"):
             return _fail(battle_no)
 
-        for _ in range(30):
-            if not e.state.player.is_alive:
-                break
-            if not [x for x in e.state.enemies if x.is_alive]:
+        for _ in range(40):
+            if e.state.battle_over():
                 break
             e.execute_action("round_start", {"relic_choices": round_start_relic_choices(e)})
-            ai.new_round()
-            ai.take_turn()
-            if not [x for x in e.state.enemies if x.is_alive]:
+            if ai is not None:
+                ai.new_round()
+                ai.take_turn()
+            else:
+                policy(e)
+            if e.state.battle_won():
                 break
             mp = _resolve_monster_turn(e)
             if not mp.get("success") or mp["result"].get("player_dead"):
                 break
             e.execute_action("round_end", {})
 
-        if not e.state.player.is_alive:
-            return _fail(battle_no)
-        if [x for x in e.state.enemies if x.is_alive]:
+        if e.state.battle_lost() or not e.state.battle_won():
             return _fail(battle_no)
         if not e.execute_action("battle_end", {}).get("success"):
             return _fail(battle_no)
@@ -228,12 +233,12 @@ def sweep(combos: list[tuple], seeds: list[int], jobs: int, label: str) -> list[
 def print_ranking(results: list[dict], top: int, title: str):
     ranked = sorted(results, key=lambda r: (-r["win_rate"], -r["avg_cleared"]))
     print(f"\n=== {title}（前{top}名） ===")
-    print(f"{'#':<3}{'属性':<12}{'残韵':<5}{'流派':<8}{'副本':<7}"
+    print(f"{'#':<3}{'属性':<12}{'残韵':<5}{'策略族':<10}{'副本':<7}"
           f"{'胜率':>7}{'平均通关':>9}{'局数':>5}")
     print("-" * 66)
     for i, r in enumerate(ranked[:top], 1):
         c = r["combo"]
-        print(f"{i:<3}{c['attrs']:<12}{c['resonance']:<5}{c['build']:<8}{c['region']:<7}"
+        print(f"{i:<3}{c['attrs']:<12}{c['resonance']:<5}{c['build']:<10}{c['region']:<7}"
               f"{r['win_rate']*100:>6.1f}%{r['avg_cleared']:>9.2f}{r['runs']:>5}")
     return ranked
 
@@ -266,9 +271,9 @@ def main():
     ap.add_argument("--out", default=os.path.join(ROOT, "data", "exhaustive_combo_results.json"))
     args = ap.parse_args()
 
-    combos = list(itertools.product(ATTR_SPLITS, RESONANCES, BUILDS, REGIONS))
+    combos = list(itertools.product(ATTR_SPLITS, RESONANCES, STRATEGIES, REGIONS))
     print(f"穷举组合总数：{len(ATTR_SPLITS)}属性 × {len(RESONANCES)}残韵 × "
-          f"{len(BUILDS)}流派 × {len(REGIONS)}副本 = {len(combos)}组，"
+          f"{len(STRATEGIES)}策略族 × {len(REGIONS)}副本 = {len(combos)}组，"
           f"每组{args.seeds}局 → 共{len(combos) * args.seeds}局（粗扫）")
 
     coarse = sweep(combos, list(range(1, args.seeds + 1)), args.jobs, "粗扫")
@@ -303,7 +308,9 @@ def main():
                 "coarse_seeds": args.seeds, "refine_seeds": args.refine_seeds,
                 "dimensions": {
                     "attrs": list(ATTR_SPLITS), "resonances": RESONANCES,
-                    "builds": {k: v for k, v in BUILDS.items()}, "regions": REGIONS,
+                    "strategies": {k: {kk: vv for kk, vv in v.items() if kk != "policy"}
+                                   for k, v in STRATEGIES.items()},
+                    "regions": REGIONS,
                 },
             },
             "coarse": coarse,

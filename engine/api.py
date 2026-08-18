@@ -601,7 +601,7 @@ class GameEngine:
                 for ref, entity in self.combat.blood_pact_targets().items()
             ]
         actions = [{"action_type": "round_end", "params_schema": round_end_schema}]
-        if not any(enemy.is_alive for enemy in self.state.enemies):
+        if self.state.battle_won():
             actions.append({"action_type": "battle_end", "params_schema": {}})
         return {"phase": CombatSubphase.AWAIT_ROUND_END.value, "actions": actions}
 
@@ -2778,7 +2778,7 @@ class GameEngine:
         # 同名重复抽 + 封印尸体仍留在 state.enemies：必须跳过已命零/已移出的，
         # 否则会命中第一具尸体并报「已命零」，活着的同名困境怪永远进化不了。
         monster = next((e for e in self.state.enemies
-                        if e.name == monster_name and e.is_alive and not e.removed_without_kill), None)
+                        if e.name == monster_name and self.state.enemy_combat_active(e)), None)
 
         if not monster:
             return {"success": False, "error": f"找不到存活的怪物: {monster_name}"}
@@ -4264,10 +4264,8 @@ class GameEngine:
                 "result": {"flying_rounds": x, "dragon_nature": self.state.dragon_nature}}
 
     def _action_battle_end(self, params: dict) -> dict:
-        """战终；仍有未移出的存活敌人时不得跳过战斗直接结算。"""
-        living = [e.name for e in self.state.enemies
-                  if e.is_alive and not e.removed_without_kill and not e.is_sculptured
-                  and not e.is_proliferated and not e.is_debt_bound]
+        """战终；仍有未移出的存活敌人时不得跳过战斗直接结算（统一判定见 GameState.battle_won）。"""
+        living = [e.name for e in self.state.active_enemies()]
         escaping = self.state.event_modifiers.pop("escape_at_battle_end", False)
         if living and not escaping:
             return {"success": False, "error": f"仍有存活敌人，不能结算战终: {living}"}

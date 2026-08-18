@@ -1025,3 +1025,34 @@ class GameState:
     def get_all_enemy_side(self) -> list[Entity]:
         """获取敌方所有存活实体"""
         return [e for e in self.enemies if e.is_alive]
+
+    # ==================== 战斗结束与胜利·统一判定（DM裁定 2026-08-18） ====================
+    # 引擎内一切"战斗是否结束/能否战终"的判断必须走以下四个方法，禁止再散落写 is_alive 组合。
+
+    def enemy_combat_active(self, enemy: Entity) -> bool:
+        """该敌人是否仍构成战斗障碍（阻塞战终）。
+
+        七条移出路径任一命中即不再阻塞：
+        ①命零（击杀/凡庸自爆） ②救赎离场 ③雕塑 ④癌变（吸收进死者之书）
+        ⑤还债（转为员工，已移出enemies） ⑥封印移出 ⑦事件裁定的逃跑/离场。
+        （①之外均不视为击杀、不产碎片；见 battle_end 的奖励结算。）
+        """
+        return (enemy.is_alive and not enemy.removed_without_kill
+                and not enemy.is_sculptured and not enemy.is_proliferated
+                and not enemy.is_debt_bound)
+
+    def active_enemies(self) -> list[Entity]:
+        """仍构成战斗障碍的敌人列表。"""
+        return [e for e in self.enemies if self.enemy_combat_active(e)]
+
+    def battle_won(self) -> bool:
+        """战斗胜利＝敌方全部角色均已经由任一合法路径移出战场。"""
+        return not self.active_enemies()
+
+    def battle_lost(self) -> bool:
+        """战斗失败＝轮回者非存活（无论死因：伤害/凡庸/癌变/崩解/代价）。"""
+        return self.player is None or not self.player.is_alive
+
+    def battle_over(self) -> bool:
+        """战斗胜负已定（胜或负任一成立）。"""
+        return self.battle_lost() or self.battle_won()
