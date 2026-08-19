@@ -1,11 +1,12 @@
-"""已迁移到声明层的机制（当前：加害、龙鳞、自愈、帮派令）。
+"""已迁移到声明层的机制（当前：加害、龙鳞、自愈、帮派令、衰败）。
 
 迁移协议（迁移前后必须同时满足）：
   1. 规则语义与旧实现完全一致（加害：amount+状态值；龙鳞：max(0, amount-状态值)；
-     自愈：无坏死时回复 ceil(血限×10X/100)；帮派令：[战始]获得【洗劫3】，
-     持有效遗物且未封印才触发）；
+     自愈：无坏死时回复 ceil(血限×10X/100)；帮派令：[战始]获得【洗劫3】；
+     衰败：[回始]对自己造成 ceil(当前生命×10X/100) 点伤害，走完整伤害管线）；
   2. priority 保持原值或按旧代码位置固化：加害=20、龙鳞=30（伤害加减区）；
-     自愈=10（回始效果循环第一位）；帮派令=10（战始遗物段：缄默面具之后、负岳索之前）；
+     自愈=10、衰败=20（回始效果循环：自愈→衰败→洞察→勾魂→狂暴→畸变标记，
+     后续回始机制按 30/40/... 递增）；帮派令=10（战始遗物段）；
   3. 执行路径唯一：伤害相位经 CombatHookManager 上的 MechanismHookAdapter，
      回合/战始相位经 CombatEngine._dispatch_phase——旧类/旧 if 已删除。
 """
@@ -14,7 +15,8 @@ from __future__ import annotations
 import math
 
 from .conditions import (
-    all_, amount_positive, damage_type_not, has_status, not_, relic_active,
+    all_, amount_positive, damage_type_not, has_status, is_alive, not_,
+    relic_active,
 )
 from .registry import MECHANISMS, Mechanism
 from .targets import SELF, TARGET
@@ -118,6 +120,36 @@ ZIYU = Mechanism(
     priority=10,    # 旧代码位置=回始效果循环第一位；后续回始机制按 20/30/... 递增
 )
 
+def _shuaibai_effect(ctx: TriggerContext, targets: list) -> dict | None:
+    """旧 round_start 衰败块语义（逐字复刻）：
+
+    对自己造成 dmg = ceil(当前生命 × 10X / 100) 点伤害，走**完整伤害管线**
+    （damage 动词 → _apply_hostile_damage：格挡/加减区/濒死保护/死后效果原样生效）；
+    dmg<=0 时不产生报告条目。来源按状态 source 名字解析（可能为 None）。
+    """
+    entity = ctx.target
+    xv = entity.get_status_value("衰败")
+    dmg_n = math.ceil(entity.current_hp * 10 * xv / 100)
+    if dmg_n > 0:
+        source_name = next((status.source for status in entity.status_effects
+                            if status.name == "衰败"), "")
+        source_entity = ctx.combat._find_named(source_name)
+        rd = apply_verb(ctx.combat, "damage", {
+            "target": entity,
+            "amount": dmg_n,
+            "source": source_entity,
+            "ctx": {
+                "timing": "round_start", "source": "衰败", "source_type": "daowen",
+                "actor": source_entity, "target": entity, "mechanic": "damage",
+                "subtype": "dot", "amount": dmg_n,
+                "tags": {"daowen", "round_start"},
+            },
+        })
+        return {"type": "shuaibai_tick", "entity": entity.name,
+                "damage": rd["actual_damage"], "died": rd["died"]}
+    return None
+
+
 GANGPAILING = Mechanism(
     name="帮派令",
     when=Trigger.phase(Phase.BATTLE_START),
@@ -128,8 +160,22 @@ GANGPAILING = Mechanism(
     priority=10,
 )
 
+SHUAIBAI = Mechanism(
+    name="衰败",
+    when=Trigger.phase(Phase.ROUND_START),
+    effect=_shuaibai_effect,
+    target=SELF,
+    condition=all_(
+        has_status("衰败", of="self"),
+        is_alive(of="self"),
+    ),
+    # 旧位置=回始效果循环第二位（自愈=10 之后、洞察之前）；后续回始机制按 30/40/... 递增
+    priority=20,
+)
+
 MECHANISMS.register(JIAHAI)
 MECHANISMS.register(LONGLIN)
 MECHANISMS.register(ZIYU)
 MECHANISMS.register(GANGPAILING)
+MECHANISMS.register(SHUAIBAI)
 

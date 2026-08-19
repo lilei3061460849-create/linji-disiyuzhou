@@ -100,7 +100,8 @@ def test_ziyu_is_registered_mechanism():
     assert mech.when.matches_phase(Phase.ROUND_START)
     assert mech.priority == 10, "旧位置=回始效果循环第一位 → priority 10（钉死）"
     from engine.mechanisms.registry import MECHANISMS as REG
-    assert [m.name for m in REG.phase_mechanisms(Phase.ROUND_START)] == ["自愈"]
+    # 回始相位机制按 priority：自愈(10) → 衰败(20)；后续机制按 30/40/... 递增
+    assert [m.name for m in REG.phase_mechanisms(Phase.ROUND_START)] == ["自愈", "衰败"]
 
 
 def test_old_ziyu_if_removed_from_combat_pipeline():

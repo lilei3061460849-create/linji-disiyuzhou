@@ -1481,19 +1481,6 @@ class CombatEngine:
             # round_start 只负责宣布时点，具体机制由声明层按 priority 执行；
             # 机制的报告条目并入 effects，战报格式与迁移前一致。
             effects.extend(self._dispatch_phase(Phase.ROUND_START, target=entity))
-            if entity.has_status("衰败") and entity.is_alive:
-                xv = entity.get_status_value("衰败")
-                dmg_n = math.ceil(entity.current_hp * 10 * xv / 100)
-                if dmg_n > 0:
-                    source_name = next((status.source for status in entity.status_effects if status.name == "衰败"), "")
-                    source_entity = self._find_named(source_name)
-                    rd = self._apply_hostile_damage(entity, dmg_n, source=source_entity, ctx={
-                        "timing": "round_start", "source": "衰败", "source_type": "daowen",
-                        "actor": source_entity, "target": entity, "mechanic": "damage", "subtype": "dot",
-                        "amount": dmg_n, "tags": {"daowen", "round_start"},
-                    })
-                    effects.append({"type": "shuaibai_tick", "entity": entity.name,
-                                    "damage": rd["actual_damage"], "died": rd["died"]})
             pending = getattr(entity, "_dongcha_pending", 0)
             if pending and entity.entity_type == "轮回者" and entity.is_alive:
                 entity.current_mana += pending
