@@ -10,6 +10,7 @@ import uuid
 
 from .enums import EffectScope, EffectPolarity
 from .effect_context import EffectContext, make_context, normalize_context
+from .combat_events import CombatEvent, CombatEventType
 
 
 @dataclass
@@ -387,6 +388,8 @@ class Entity:
         self.hp_lost_this_round += remaining  # 活血追踪
         
         if self.current_hp <= 0:
+            # 模型层只翻标记，不知道战斗上下文。命零的“通知 + 死后效果”必须由调用方
+            # 交给 CombatEngine._check_hp_zero_death()（唯一统一死亡入口）。
             detail["died"] = True
             self.is_alive = False
         elif remaining > 0 and self.has_status("眩晕"):
@@ -410,6 +413,9 @@ class Entity:
             self.mutation_count += layers
         collapsed = self.mutation_count >= self.MUTATION_COLLAPSE_THRESHOLD
         if collapsed and self.is_alive:
+            # 同 take_damage：调用方必须在拿到 collapsed=True 后走
+            # CombatEngine._on_entity_death(..., ctx=_collapse_context(...))，
+            # 否则崩解死者不会触发任何[命零]效果。
             self.current_hp = 0
             self.is_alive = False
         return {
@@ -697,6 +703,10 @@ class GameState:
     pending_lianxin: bool = False
     pending_sha_qi_choices: list = field(default_factory=list)
     dead_monsters: list = field(default_factory=list)  # 乱葬岗招魂：本场已命零的怪物尸体
+    # 战斗事件流（唯一事实源，只增不改）。CombatEngine.event_stream 是它的别名视图。
+    # 只登记“发生了什么”，每条事件的 ctx 字段挂 EffectContext 快照回答“为什么发生”。
+    # 纯观测用：任何战斗规则都不得依赖本列表做判定。
+    combat_events: list = field(default_factory=list)
     pending_sha_qi_mode: str = ""
     # 炼心在战斗中发动时不消耗出手，改为"下次局外行动多消耗1点精力"，此处累计待结算的额外精力消耗
     pending_energy_penalty: int = 0
@@ -813,7 +823,43 @@ class GameState:
                     mechanic="heal_storage", subtype="overheal", amount=overheal,
                     tags={"overheal", "storage"}, parent_event_id=heal_ctx.event_id,
                 ).to_dict()
+        self.emit_combat_event(
+            CombatEventType.HEAL_APPLIED,
+            actor=heal_ctx.actor, target=entity, ctx=detail["heal_ctx"],
+            heal_amount=amount,
+            actual_heal=detail.get("actual_heal", 0),
+            overheal=detail.get("overheal", 0),
+            hp_before=detail.get("hp_before"),
+            hp_after=detail.get("hp_after"),
+        )
         return detail
+
+    def emit_combat_event(
+        self, event_type: CombatEventType, *,
+        actor: Any = None, target: Any = None,
+        ctx: Optional[dict] = None, **data: Any,
+    ) -> CombatEvent:
+        """向战斗事件流登记一条“发生了什么”。纯观测，不参与任何规则判定。"""
+        def _name(ref: Any) -> str:
+            # ref 可能是实体，也可能已经是 EffectContext.to_dict() 降级后的名字字符串
+            # （例如 Hook 用 normalize_context(detail["ctx"]) 还原出来的上下文）。
+            if ref is None:
+                return ""
+            if isinstance(ref, str):
+                return ref
+            return getattr(ref, "name", "")
+
+        event = CombatEvent(
+            event_type=event_type,
+            battle_no=self.current_battle,
+            round_no=self.current_round,
+            actor_name=_name(actor),
+            target_name=_name(target),
+            data=data,
+            ctx=ctx,
+        )
+        self.combat_events.append(event)
+        return event
 
     def on_player_side(self, entity: Entity) -> bool:
         """必须用 is，不能用 dataclass 相等。"""

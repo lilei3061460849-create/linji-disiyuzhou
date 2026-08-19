@@ -11,7 +11,19 @@ from .effect_context import make_context, normalize_context
 
 @runtime_checkable
 class CombatHook(Protocol):
-    """战斗生命周期钩子协议"""
+    """战斗生命周期钩子协议。
+
+    priority：**执行优先级，数字小的先执行**。
+
+    警告：本项目里 Hook 的执行顺序**本身就是规则的一部分**，不是实现细节。
+    例：`加害`(+X) 必须先于 `龙鳞`(-X，且 max(0,...) 下限截断) 结算——
+    伤害8/加害2/龙鳞8 时，现顺序得 max(0, (8+2)-8) = 2；
+    反过来龙鳞先把 8 削成 0，加害的 `amount > 0` 前置条件不再成立，结果是 0。
+    因此下面这些 priority 数值是对「重构前字面注册顺序」的**如实固化**，
+    不得在没有 DM 裁定的情况下调整。
+    """
+
+    priority: int = 100
 
     def on_multiplier_adjust(self, target: Any, amount: int, damage_type: str, source: Optional[Any], state: Any) -> int:
         return amount
@@ -34,6 +46,8 @@ class CombatHook(Protocol):
 
 class DragonBloodlineMultiplierHook:
     """龙族血脉：对非怪物造成伤害翻倍"""
+    priority = 10
+
     def on_multiplier_adjust(self, target: Any, amount: int, damage_type: str, source: Optional[Any], state: Any) -> int:
         if (source is not None and hasattr(state, "side_has") and state.side_has(source, "龙族血脉")
                 and getattr(target, "entity_type", "") != "怪物" and damage_type != "代价"):
@@ -42,7 +56,12 @@ class DragonBloodlineMultiplierHook:
 
 
 class JiahaiHook:
-    """加害：每次受到伤害+X（持续∞）"""
+    """加害：每次受到伤害+X（持续∞）
+
+    必须先于 LonglinHook（见 CombatHook.priority 说明）。
+    """
+    priority = 20
+
     def on_incoming_adjust(self, target: Any, amount: int, damage_type: str, source: Optional[Any], state: Any) -> int:
         if amount > 0 and damage_type != "代价" and hasattr(target, "has_status") and target.has_status("加害"):
             return amount + (target.get_status_value("加害") or 0)
@@ -50,7 +69,12 @@ class JiahaiHook:
 
 
 class LonglinHook:
-    """龙鳞：每次受到伤害-X，最低为0（持续∞）"""
+    """龙鳞：每次受到伤害-X，最低为0（持续∞）
+
+    必须后于 JiahaiHook（见 CombatHook.priority 说明）。
+    """
+    priority = 30
+
     def on_incoming_adjust(self, target: Any, amount: int, damage_type: str, source: Optional[Any], state: Any) -> int:
         if amount > 0 and damage_type != "代价" and hasattr(target, "has_status") and target.has_status("龙鳞"):
             val = target.get_status_value("龙鳞") or 0
@@ -59,13 +83,28 @@ class LonglinHook:
 
 
 class BaolieHook:
-    """爆裂：受到伤害前，攻击者失去等量生命，持续X（敌回终递减）"""
+    """爆裂：受到伤害前，攻击者失去等量生命，持续X（敌回终递减）
+
+    架构说明：这里直接改 attacker.current_hp 并翻 is_alive，不走
+    CombatEngine._raw_hp_loss（Hook 只拿得到 state，拿不到 combat）。
+    死亡通知与来源上下文由 CombatEngine._apply_hostile_damage_inner 的
+    reflected/suppressed 分支统一补齐。
+    反噬失血本身**不再触发一次爆裂**，避免 A→B→A 无限反弹（现有规则，勿改）。
+
+    失血统计（DM 裁定 2026-08-19）：【活血】只看角色本回合有没有实际掉过 HP，
+    不区分掉血来源，因此爆裂反噬造成的 HP 损失必须计入 hp_lost_this_round。
+    """
+    priority = 40
+
     def on_before_damage(self, target: Any, amount: int, damage_type: str, attacker: Optional[Any], state: Any) -> Dict[str, Any]:
         if (target and hasattr(target, "has_status") and target.has_status("爆裂")
                 and attacker is not None and attacker is not target and amount > 0 and damage_type != "代价"):
             prev_hp = attacker.current_hp
             attacker.current_hp = max(0, attacker.current_hp - amount)
             reflect_amt = prev_hp - attacker.current_hp
+            # 与 Entity.take_damage / CombatEngine._raw_hp_loss 同口径：
+            # 只要实际掉了 HP，就计入本回合失血（【活血】等效果据此结算）。
+            attacker.hp_lost_this_round += reflect_amt
             suppressed = (attacker.current_hp <= 0)
             if suppressed:
                 attacker.is_alive = False
@@ -78,7 +117,15 @@ class BaolieHook:
 
 
 class BifenglingHook:
-    """避风铃闪避句：每次闪避后获得3点格挡。归零+15走失速总线。"""
+    """避风铃闪避句：每次闪避后获得3点格挡。归零+15走失速总线。
+
+    ⚠️ 双实现登记（P1）：引擎真实分发路径是
+    `CombatEngine._note_dodge()`（闪避 +3）与 `CombatEngine._trigger_bifengling_zero()`（归零 +15）。
+    `CombatHookManager.apply_dodge()` **没有任何引擎调用点**，只有单元测试直接调用它。
+    在把闪避真正迁到 Hook 总线之前，禁止在 combat.py 里接线 apply_dodge()，否则会 +3 两次。
+    """
+    priority = 50
+
     def on_dodge(self, entity: Any, state: Any) -> Dict[str, Any]:
         if not entity or not hasattr(state, "side_has") or not state.side_has(entity, "避风铃"):
             return {}
@@ -87,7 +134,16 @@ class BifenglingHook:
 
 
 class ShouyedengHook:
-    """守夜灯：[敌回始]获得等同于[法限]50%的法力，该法力[敌回终]清空"""
+    """守夜灯：[敌回始]获得等同于[法限]50%的法力，该法力[敌回终]清空
+
+    ⚠️ 双实现登记（P1）：引擎真实分发路径是 `CombatEngine._grant_shouyedeng()`
+    （额外校验 存活/轮回者/遗物封印，并调用 clamp_immortal_body）。
+    `CombatHookManager.apply_round_start()` **没有任何引擎调用点**，只有单元测试直接调用它。
+    两侧都以 `entity._shouyedeng_granted` 做每回合幂等，因此即便误接也不会重复授予法力，
+    但校验条件不同，迁移前不得接线。
+    """
+    priority = 60
+
     def on_round_start(self, entity: Any, is_enemy_turn: bool, state: Any) -> Dict[str, Any]:
         if not entity or not hasattr(state, "side_has") or not state.side_has(entity, "守夜灯"):
             return {}
@@ -103,6 +159,10 @@ class ShouyedengHook:
 
 class DamageRedirectionHook:
     """嫁祸与背负：伤害重定向逻辑"""
+    priority = 70
+    # 由 CombatEngine 通过 apply_redirection() 显式分发，不参与通用遍历。
+    explicit_dispatch = True
+
     def find_redirection_target(self, target: Any, damage_type: str, state: Any) -> Optional[Any]:
         if damage_type == "代价" or not target:
             return None
@@ -135,6 +195,10 @@ class DamageRedirectionHook:
 
 class LethalMitigationHook:
     """撤退、负岳碑与断尾求生：濒死保护与伤害吸收"""
+    priority = 80
+    # 由 CombatEngine 通过 apply_mitigation() 显式分发，不参与通用遍历。
+    explicit_dispatch = True
+
     def check_mitigation(self, target: Any, amount: int, damage_type: str, combat: Any) -> Optional[Dict[str, Any]]:
         if damage_type == "代价" or not target or not getattr(target, "is_alive", False):
             return None
@@ -187,6 +251,12 @@ class LethalMitigationHook:
 
 class AfterDamageEffectsHook:
     """逆鳞、伤痕、寄生、负岳索与龙族血脉斩杀：伤害落地后综合处理"""
+    priority = 90
+    # 由 CombatEngine 通过 apply_after_damage_pipeline() 显式分发。
+    # 通用的 apply_after_damage() 会跳过本 Hook —— 否则两条分发路径会让
+    # 伤痕/切割/寄生/负岳索/龙族血脉斩杀各触发两次。
+    explicit_dispatch = True
+
     def on_after_damage(self, target: Any, actual_damage: int, shield_absorbed: int, detail: Dict[str, Any], attacker: Optional[Any], combat: Any) -> Dict[str, Any]:
         if actual_damage <= 0 or not target:
             return {}
@@ -194,6 +264,10 @@ class AfterDamageEffectsHook:
         res = {}
         damage_ctx = normalize_context(detail.get("ctx"))
         damage_event_id = damage_ctx.event_id if damage_ctx else None
+        # 致死时挂在死亡上下文下的父事件。默认是本次伤害；
+        # 若死因其实是血限被压（伤痕/切割），则改挂那次血限变化，形成
+        # 伤害 → 血限下降 → 命零 的三层链。
+        lethal_ctx = damage_ctx
         # 逆鳞层数
         if hasattr(target, "has_status") and target.has_status("逆鳞"):
             target._nilin = getattr(target, "_nilin", 0) + actual_damage
@@ -204,32 +278,38 @@ class AfterDamageEffectsHook:
         if hasattr(target, "has_status") and target.has_status("伤痕"):
             xv = target.get_status_value("伤痕") or 0
             delta = max(1, target.blood_limit - xv) - target.blood_limit
-            combat._battle_delta(target, "blood_limit", delta, "伤痕", "debuff")
-            target.current_hp = min(target.current_hp, target.blood_limit)
+            # lethal=False：命零判定仍统一留到本方法末尾，保持原有触发次序。
+            shanghen = combat._apply_blood_limit_change(
+                target, delta, "伤痕", "debuff", ctx=damage_ctx,
+                source_type="daowen", subtype="scar", actor=attacker,
+                tags={"daowen", "after_damage", "blood_limit_loss"},
+                lethal=False)
+            detail["shanghen_ctx"] = shanghen["ctx"]
             if target.current_hp <= 0:
+                # 保持原次序：此处先置 is_alive（切割的 is_alive 前置条件依赖它），
+                # 真正的死亡通知统一留到本方法末尾的 _check_hp_zero_death。
                 target.is_alive = False
                 detail["died"] = True
                 detail["hp_after"] = 0
+                lethal_ctx = normalize_context(shanghen["ctx"]) or lethal_ctx
             detail["shanghen_blood_loss"] = xv
 
         # 切割：你使其他角色失去生命的同时扣除其等量血限
         if (attacker is not None and attacker is not target
                 and hasattr(attacker, "has_status") and attacker.has_status("切割")
                 and getattr(target, "is_alive", False)):
-            combat._battle_delta(target, "blood_limit", -actual_damage, "切割", "debuff")
-            target.current_hp = min(target.current_hp, target.blood_limit)
+            qiege = combat._apply_blood_limit_change(
+                target, -actual_damage, "切割", "debuff", ctx=damage_ctx,
+                source_type="daowen", subtype="cut", actor=attacker, owner=attacker,
+                tags={"daowen", "blood_limit_loss"},
+                lethal=False)
             if target.current_hp <= 0:
                 target.is_alive = False
                 detail["died"] = True
                 detail["hp_after"] = 0
+                lethal_ctx = normalize_context(qiege["ctx"]) or lethal_ctx
             detail["qiege_blood_loss"] = actual_damage
-            detail["qiege_ctx"] = make_context(
-                timing=damage_ctx.timing if damage_ctx else "",
-                source="切割", source_type="daowen", actor=attacker, target=target,
-                owner=attacker, mechanic="blood_limit_change", subtype="cut",
-                amount=-actual_damage, tags={"daowen", "blood_limit_loss"},
-                parent_event_id=damage_event_id,
-            ).to_dict()
+            detail["qiege_ctx"] = qiege["ctx"]
 
         # 寄生吸血
         if hasattr(target, "has_status") and target.has_status("寄生"):
@@ -269,35 +349,73 @@ class AfterDamageEffectsHook:
             target.current_hp = 0
             target.is_alive = False
             detail.update({"died": True, "hp_after": 0, "dragon_bloodline_kill": True})
+            lethal_ctx = make_context(
+                timing=damage_ctx.timing if damage_ctx else "",
+                source="龙族血脉", source_type="relic", actor=attacker, target=target,
+                owner=attacker, mechanic="execute", subtype="dragon_bloodline_kill",
+                amount=0, tags={"relic", "after_damage", "execute"},
+                parent_event_id=damage_event_id,
+            )
+            detail["dragon_bloodline_kill_ctx"] = lethal_ctx.to_dict()
 
         if detail.get("died"):
-            combat._on_entity_death(target, ctx=damage_ctx)
+            combat._check_hp_zero_death(target, ctx=lethal_ctx)
 
         return res
 
 
 class CombatHookManager:
-    """钩子管理器：集中注册与生命周期分发"""
+    """钩子管理器：集中注册与生命周期分发。
+
+    两类分发：
+      * 通用遍历（apply_multiplier_adjust / apply_incoming_adjust / apply_before_damage /
+        apply_after_damage / apply_dodge / apply_round_start）——按 priority 升序执行。
+      * 显式分发（apply_redirection / apply_mitigation / apply_after_damage_pipeline）——
+        由 CombatEngine 在伤害管线的固定位置调用。被显式分发的 Hook 标记
+        `explicit_dispatch = True`，通用遍历会跳过它们，杜绝“同一效果触发两次”。
+    """
 
     def __init__(self):
-        self._hooks: List[Any] = [
+        # 顺序即规则：这里的相对次序是重构前字面注册顺序的如实固化，
+        # 现在由 priority 显式表达（见 CombatHook.priority）。
+        self.redirection_hook = DamageRedirectionHook()
+        self.mitigation_hook = LethalMitigationHook()
+        self.after_damage_hook = AfterDamageEffectsHook()
+        # 注意：必须复用上面这三个**同一实例**，不能再 new 一份，
+        # 否则注册表与显式分发路径持有的是两个对象，状态与去重都会失真。
+        self._hooks: List[Any] = self._sorted([
             DragonBloodlineMultiplierHook(),
             JiahaiHook(),
             LonglinHook(),
             BaolieHook(),
             BifenglingHook(),
             ShouyedengHook(),
-            DamageRedirectionHook(),
-            LethalMitigationHook(),
-            AfterDamageEffectsHook(),
-        ]
-        self.redirection_hook = DamageRedirectionHook()
-        self.mitigation_hook = LethalMitigationHook()
-        self.after_damage_hook = AfterDamageEffectsHook()
+            self.redirection_hook,
+            self.mitigation_hook,
+            self.after_damage_hook,
+        ])
+
+    @staticmethod
+    def _priority_of(hook: Any) -> int:
+        return getattr(hook, "priority", 100)
+
+    @classmethod
+    def _sorted(cls, hooks: List[Any]) -> List[Any]:
+        # 稳定排序：同 priority 保持注册先后，行为与重构前一致。
+        return sorted(hooks, key=cls._priority_of)
+
+    @classmethod
+    def _is_explicit(cls, hook: Any) -> bool:
+        return bool(getattr(hook, "explicit_dispatch", False))
+
+    def hooks(self) -> List[Any]:
+        """按实际执行顺序返回全部已注册 Hook（供审计/测试断言顺序）。"""
+        return list(self._hooks)
 
     def register_hook(self, hook: Any) -> None:
         if hook not in self._hooks:
             self._hooks.append(hook)
+            self._hooks = self._sorted(self._hooks)
 
     def apply_redirection(self, target: Any, damage_type: str, state: Any) -> Optional[Any]:
         return self.redirection_hook.find_redirection_target(target, damage_type, state)
@@ -310,12 +428,16 @@ class CombatHookManager:
 
     def apply_multiplier_adjust(self, target: Any, amount: int, damage_type: str, source: Optional[Any], state: Any) -> int:
         for hook in self._hooks:
+            if self._is_explicit(hook):
+                continue
             if hasattr(hook, "on_multiplier_adjust"):
                 amount = hook.on_multiplier_adjust(target, amount, damage_type, source, state)
         return amount
 
     def apply_incoming_adjust(self, target: Any, amount: int, damage_type: str, source: Optional[Any], state: Any) -> int:
         for hook in self._hooks:
+            if self._is_explicit(hook):
+                continue
             if hasattr(hook, "on_incoming_adjust"):
                 amount = hook.on_incoming_adjust(target, amount, damage_type, source, state)
         return amount
@@ -323,6 +445,8 @@ class CombatHookManager:
     def apply_before_damage(self, target: Any, amount: int, damage_type: str, attacker: Optional[Any], state: Any) -> Dict[str, Any]:
         result = {}
         for hook in self._hooks:
+            if self._is_explicit(hook):
+                continue
             if hasattr(hook, "on_before_damage"):
                 res = hook.on_before_damage(target, amount, damage_type, attacker, state)
                 if res:
@@ -330,8 +454,15 @@ class CombatHookManager:
         return result
 
     def apply_after_damage(self, target: Any, actual_damage: int, shield_absorbed: int, detail: Dict[str, Any], attacker: Optional[Any], state: Any) -> Dict[str, Any]:
+        """通用 after-damage 遍历。
+
+        AfterDamageEffectsHook 标了 explicit_dispatch，会被跳过——
+        它由 apply_after_damage_pipeline() 负责，绝不能在这里再跑一遍。
+        """
         result = {}
         for hook in self._hooks:
+            if self._is_explicit(hook):
+                continue
             if hasattr(hook, "on_after_damage"):
                 res = hook.on_after_damage(target, actual_damage, shield_absorbed, detail, attacker, state)
                 if res:
@@ -341,6 +472,8 @@ class CombatHookManager:
     def apply_dodge(self, entity: Any, state: Any) -> Dict[str, Any]:
         result = {}
         for hook in self._hooks:
+            if self._is_explicit(hook):
+                continue
             if hasattr(hook, "on_dodge"):
                 res = hook.on_dodge(entity, state)
                 if res:
@@ -350,6 +483,8 @@ class CombatHookManager:
     def apply_round_start(self, entity: Any, is_enemy_turn: bool, state: Any) -> Dict[str, Any]:
         result = {}
         for hook in self._hooks:
+            if self._is_explicit(hook):
+                continue
             if hasattr(hook, "on_round_start"):
                 res = hook.on_round_start(entity, is_enemy_turn, state)
                 if res:

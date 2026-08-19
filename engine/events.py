@@ -300,8 +300,16 @@ def resolve_option_effect(text: str, engine, event_name: str = "", params=None) 
         if text.startswith("替新郎交拜"):
             _pay_numeric("流血", 15)
             applied.append("流血15")
-            player.add_mutation(3)
+            _mut = player.add_mutation(3)
             applied.append("获得异变3")
+            if _mut.get("collapsed"):
+                # 崩解也是命零，必须交回统一死亡管线（局外事件同样适用）。
+                engine.combat._on_entity_death(
+                    player, ctx=engine.combat._collapse_context(player, {
+                        "timing": "pre_battle_event", "source": "纸人冥婚", "source_type": "event",
+                        "actor": player, "target": player, "mechanic": "cost",
+                        "subtype": "mutation", "amount": 3, "tags": {"event"}}))
+                applied.append("异变达阈值，触发【崩解】：直接命零")
             _grant_item("冥婚契约", "[战始]选择一名[目标]，自身与其共享受到的伤害")
             return {"applied": applied, "instructions": instructions}
         if text.startswith("抢撒殡钱"):

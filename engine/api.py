@@ -2756,7 +2756,17 @@ class GameEngine:
 
         self.state.shards -= shard_pay
         if life_cost > 0:
+            # 刻意不改走 pay_numeric_cost：那会额外触发血誓戒/烙痕钉/血契，属于改规则。
+            # 前面的校验保证 current_hp > life_cost，因此这里不会致死；只补来源记账。
             player.take_damage(life_cost, "代价")
+            _toll_ctx = normalize_context({
+                "timing": self.state.combat_subphase or self.state.phase, "source": "买路财",
+                "source_type": "relic", "actor": player, "target": player, "owner": player,
+                "mechanic": "cost", "subtype": "bleed", "amount": life_cost,
+                "tags": {"relic", "active_payment", "escape"}})
+            _toll_loss = self.combat._record_hp_loss_event(
+                player, life_cost, _toll_ctx, subtype="cost")
+            self.combat._check_hp_zero_death(player, ctx=_toll_loss or _toll_ctx)
 
         # 安全撤退：直接结束本场战斗，不结算击杀碎片奖励
         self.state.enemies.clear()
@@ -2867,6 +2877,15 @@ class GameEngine:
                 "collapsed": mut["collapsed"],
             }
             if mut["collapsed"]:
+                # 修复：崩解同样是命零，必须交回统一死亡管线。
+                self.combat._on_entity_death(
+                    self.state.player,
+                    ctx=self.combat._collapse_context(self.state.player, {
+                        "timing": self.state.combat_subphase or self.state.phase,
+                        "source": "消耗品", "source_type": "consumable",
+                        "actor": self.state.player, "target": self.state.player,
+                        "mechanic": "cost", "subtype": "mutation", "amount": layers,
+                        "tags": {"consumable", "active_payment"}}))
                 self.state.last_death_cause = "collapse"
                 mutation_info["note"] = (
                     f"异变达{mut['mutation_total']}层触发【崩解】，"
@@ -3618,6 +3637,8 @@ class GameEngine:
             entity.no_action_rounds = 0
             entity.no_damage_rounds = 0
         self.state.scoped_effect_ledger = []
+        # 事件流按场重置：只在本场战斗内可观测，避免长模拟无界增长。
+        self.state.combat_events = []
         self.state.current_round = 0
         self.combat.reset_monster_activation()
         self.state.shared_dragon_heart_type = ""  # 共心环：每场需重新选定
@@ -4083,8 +4104,15 @@ class GameEngine:
                 or chizu.entity_type != "赤族" or not chizu.is_alive):
             return {"success": False, "error": "target_ref不是存活赤族"}
         amount = chizu.current_hp
+        feast_ctx = {
+            "timing": self.state.combat_subphase or self.state.phase, "source": "血食",
+            "source_type": "relic", "actor": player, "target": chizu, "owner": player,
+            "mechanic": "death", "subtype": "blood_feast", "amount": amount,
+            "tags": {"relic", "sacrifice"},
+        }
         chizu.current_hp = 0
-        chizu.is_alive = False
+        # 修复：此前直接写 is_alive=False，赤族之死不产生 _death_ctx、不触发任何[命零]效果。
+        self.combat._check_hp_zero_death(chizu, ctx=feast_ctx)
         heal_detail = self.state.apply_heal(player, amount, ctx={
             "timing": self.state.combat_subphase or self.state.phase, "source": "血食", "source_type": "relic",
             "actor": player, "target": player, "mechanic": "heal", "subtype": "blood_feast",
