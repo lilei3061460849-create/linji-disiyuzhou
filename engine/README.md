@@ -52,11 +52,40 @@ engine/
 ├── rule_sync.py         # 多事实源同步（README/死者之书/物品索引/副本索引）
 ├── document_validation.py # Markdown标题、文件链接与锚点校验
 ├── death_book.py        # 《死者之书》遗言节读写（文件是事实源；审核后只改 ## 遗言）
-├── validator.py         # 规则校验器（20 条内置检查，违规入库）
+├── validator.py         # 规则校验器（20 条内置检查，违规入库 + 已迁移机制护栏）
+├── mechanisms/          # 最小可行机制系统（MVP）：Verb/Mechanism/Trigger/Condition/Target
+│                        #   已迁移机制：加害（原 JiahaiHook）、龙鳞（原 LonglinHook）、自愈/衰败/洞察·结算/勾魂/狂暴·标记/畸变·标记（原 round_start 内嵌块，回始循环已全部声明化）、畸变·结算（原 round_end 内嵌块）、焦黑发丝（原 _on_entity_death 内嵌块）、洗劫·夺碎片（原伤害管线内嵌块）、帮派令/缄默面具（原 process_relics 战始 if）。新机制优先写声明层，勿回核心管线加 if。
 └── api.py               # GameEngine 主类 — AI 唯一交互入口（含 TWISTED_TOOL_LIBRARY、TERMINAL_ARTIFACTS、FIRST_EMBRACE_OPTIONS 等）
 ```
 
 > **2026-08-11 F7 订正**：五章「全程自动触发」已与「特殊事件（全局触发）」14 项对齐（补 凡庸/癌变/崩解/还债/雕塑/救赎）；「增生」全量更名为「癌变」（旧名 增生 保留为兼容字段 `is_proliferated`/`PROLIFERATION_THRESHOLD`/`proliferation`），「增殖」为独立道纹（血限+2X）二者无关。
+
+## 机制系统（MVP，2026-08-19）
+
+`engine/mechanisms/` 提供最小可行机制声明层，验证 Effect / Trigger / Condition / Target / Verb 思路：
+
+- **Mechanism** = 【什么时候】when + 【对谁】target + 【满足什么条件】condition + 【做什么】effect + priority。
+  定义全局唯一（`MECHANISMS`），机制自身状态按实体存放（`entity._mechanism_states[机制名]`）。
+- **Trigger**：复用 `CombatEventType`（事件路径，经 `CombatEngine._emit` 分发）与 `Phase`（管线相位路径，
+  经 `CombatHookManager` 既有分发路径执行）。不新建第二套事件枚举。
+- **Condition**：`has_status / side_has / is_alive / entity_type / hp_at_least / events_this_round /
+  all_ / any_ / not_` 等最小组合子。
+- **Target**：`SELF / TARGET / SOURCE / ALL / ALL_ALLIES / ALL_ENEMIES / RANDOM_ENEMY / DEAD_ENTITY`。
+- **Verb**：damage / heal / hp_loss / blood_limit / cost / status / speed / shield / mutation /
+  depart / execute——实现体全部是现有统一结算入口，不新增游戏逻辑。
+
+当前已迁移机制：【加害】（原 `JiahaiHook`，priority=20）、【龙鳞】（原 `LonglinHook`，
+priority=30）——经 `MechanismHookAdapter` 在 Hook 分发路径原位执行；回始循环已全部声明化：
+【自愈】(10)、【衰败】(20)、【洞察·结算】(30)、【勾魂】(40)、【狂暴·标记】(50)、
+【畸变·标记】(60)——经 `_dispatch_phase(Phase.ROUND_START)` 回始原位分发（洞察/勾魂
+经 2026-08-19 新增的通用 `mana` 动词：获得含不朽之躯钳制、失去下限 0）；
+【畸变·结算】（priority=10，血限走统一入口，lethal=True）——经
+`_dispatch_phase(Phase.ROUND_END)` 回终第一循环顶部、凡庸 tick 之前原位分发（锚定语义，
+见机制迁移台账）；【焦黑发丝】（priority=10，怪物命零→玩家速度+2）——第一个生产事件
+机制：经 `TriggerBus` 订阅 `ENTITY_DIED`，`_emit` 显式传实体对象；【帮派令】（priority=10）
+——经 `_dispatch_phase(Phase.BATTLE_START)` 战始原位分发，条件复用通用
+`relic_active("帮派令")`。旧类/旧 if 均已删除。护栏：`validator.check_migrated_mechanism_guards()` 禁止已迁移机制
+在核心管线重新出现同名硬编码分支。批量迁移见审计报告《机制系统化可扩展性审计》。
 
 ## AI交互流程
 

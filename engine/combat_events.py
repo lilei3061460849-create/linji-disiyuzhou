@@ -66,3 +66,53 @@ class CombatEvent:
             "ctx": self.ctx,
             "timestamp": self.timestamp,
         }
+
+
+# ========== 事件观察者（通用事件基础设施，2026-08-19） ==========
+# CombatEngine 把"事件 → 机制分发"注册为观察者，使**所有**经
+# GameState.emit_combat_event 发出的事件（含 models.apply_heal 直发的
+# HEAL_APPLIED）进入同一条分发路径。观察者是可 pickle 的模块级类实例
+# （只存引擎 id 整数），而非闭包/绑定方法：
+# - 不进入 GameState.to_dict（动态属性，显式字段列表不序列化）；
+# - 存档路径 pickle.dumps(state) 可正常工作（引擎不会被带进存档）；
+# - deepcopy 快照复制为"同一 engine_id 的新实例"，仍解析回原引擎；
+# - 引擎被回收后分发静默 no-op（弱引用失效）；全新引擎构造时重新绑定。
+#   已知边界：引擎对象被回收且 id 被新引擎复用，极旧的残留观察者可能
+#   误指向新引擎——需"旧 state 在旧引擎死后仍发事件"才会触发，实际不会发生。
+
+import weakref as _weakref
+
+_ENGINE_REFS: "dict[int, Any]" = {}  # engine_id → weakref.ref(engine)
+
+
+def _bind_engine_ref(engine) -> int:
+    engine_id = id(engine)
+    _ENGINE_REFS[engine_id] = _weakref.ref(engine)
+    # 惰性清理已死引用，防止长期运行积累
+    dead = [eid for eid, ref in _ENGINE_REFS.items() if ref() is None]
+    for eid in dead:
+        _ENGINE_REFS.pop(eid, None)
+    return engine_id
+
+
+class _StateEventObserver:
+    """可 pickle 的事件观察者：observer(event, *, raw_actor, raw_target)。"""
+
+    def __init__(self, engine_id: int):
+        self._engine_id = engine_id
+
+    def __call__(self, event, *, raw_actor=None, raw_target=None):
+        ref = _ENGINE_REFS.get(self._engine_id)
+        engine = ref() if ref is not None else None
+        if engine is not None:
+            engine.mechanism_bus.dispatch(event, engine,
+                                          target=raw_target, actor=raw_actor)
+
+
+def register_combat_event_observer(state, engine) -> None:
+    """为 GameState 注册事件观察者（持有引擎 id，经弱引用表解析引擎）。"""
+    state._mechanism_event_observer = _StateEventObserver(_bind_engine_ref(engine))
+
+
+def get_combat_event_observer(state):
+    return getattr(state, "_mechanism_event_observer", None)

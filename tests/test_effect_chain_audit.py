@@ -23,13 +23,12 @@ from engine.combat_events import CombatEventType
 from engine.combat_hooks import (
     CombatHookManager,
     DragonBloodlineMultiplierHook,
-    JiahaiHook,
-    LonglinHook,
     BaolieHook,
     AfterDamageEffectsHook,
 )
 from engine.dice import DiceEngine
 from engine.enums import EffectPolarity
+from engine.mechanisms import MECHANISMS, MechanismHookAdapter
 from engine.models import Entity, GameState, Relic, StatusEffect
 
 
@@ -321,13 +320,17 @@ def test_e_collapse_goes_through_unified_death():
 # ==================== F. Hook 顺序显式化 ====================
 
 def test_f_hook_order_is_explicit_and_unchanged():
-    """priority 只是把重构前的字面顺序固化，绝不允许改动相对次序。"""
+    """priority 只是把重构前的字面顺序固化，绝不允许改动相对次序。
+
+    【加害】【龙鳞】均已迁移为声明式 Mechanism（priority 20/30），经
+    MechanismHookAdapter 挂在原位置执行——本测试同时钉死"迁移不改变顺序"。
+    """
     manager = CombatHookManager()
     order = [type(h).__name__ for h in manager.hooks()]
     assert order == [
         "DragonBloodlineMultiplierHook",
-        "JiahaiHook",
-        "LonglinHook",
+        "MechanismHookAdapter",  # 【加害】迁移后：原 JiahaiHook 位置（priority 20）
+        "MechanismHookAdapter",  # 【龙鳞】迁移后：原 LonglinHook 位置（priority 30）
         "BaolieHook",
         "BifenglingHook",
         "ShouyedengHook",
@@ -337,8 +340,9 @@ def test_f_hook_order_is_explicit_and_unchanged():
     ]
     priorities = [getattr(h, "priority", 100) for h in manager.hooks()]
     assert priorities == sorted(priorities)
-    assert JiahaiHook.priority < LonglinHook.priority, "加害必须先于龙鳞（下限截断敏感）"
-    assert DragonBloodlineMultiplierHook.priority < BaolieHook.priority
+    adapter_priorities = [h.priority for h in manager.hooks()
+                          if isinstance(h, MechanismHookAdapter)]
+    assert adapter_priorities == [20, 30], "加害(20)必须先于龙鳞(30)，顺序即规则"
 
 
 def test_f_jiahai_before_longlin_is_rule_relevant():
@@ -353,12 +357,16 @@ def test_f_jiahai_before_longlin_is_rule_relevant():
     target.add_status(StatusEffect("加害", value=2, remaining_rounds=-1, source="x"))
     target.add_status(StatusEffect("龙鳞", value=8, remaining_rounds=-1, source="x"))
 
+    adapters = [h for h in manager.hooks() if isinstance(h, MechanismHookAdapter)]
+    jiahai_adapter = next(a for a in adapters if a.mechanism.name == "加害")
+    longlin_adapter = next(a for a in adapters if a.mechanism.name == "龙鳞")
+
     # 现行顺序：max(0, (8 + 2) - 8) = 2
     assert manager.apply_incoming_adjust(target, 8, "普通", None, _State()) == 2
     # 反过来：龙鳞先把 8 削成 0，加害的 `amount > 0` 前置条件不再成立 → 0。
     # 两者结果不同，证明 Hook 顺序确实是规则的一部分，priority 只能固化不能调整。
-    reversed_result = JiahaiHook().on_incoming_adjust(
-        target, LonglinHook().on_incoming_adjust(target, 8, "普通", None, _State()),
+    reversed_result = jiahai_adapter.on_incoming_adjust(
+        target, longlin_adapter.on_incoming_adjust(target, 8, "普通", None, _State()),
         "普通", None, _State())
     assert reversed_result == 0
 

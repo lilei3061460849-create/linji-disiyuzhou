@@ -12,9 +12,10 @@ from .dice import DiceEngine
 from .enums import (ActionPhase, TriggerTiming, InterruptType, DamageType,
                     EffectScope, EffectPolarity, CostType)
 from .dm_rulings import Interrupt
-from .combat_events import CombatEvent, CombatEventType
+from .combat_events import CombatEvent, CombatEventType, register_combat_event_observer
 from .combat_hooks import CombatHookManager
 from .effect_context import EffectContext, make_context, normalize_context
+from .mechanisms import MECHANISMS, Phase, TriggerBus, TriggerContext
 
 
 class CombatEngine:
@@ -38,6 +39,15 @@ class CombatEngine:
         self.dice = dice
         self.combat_log: list[dict] = []  # 完整战斗日志
         self.hook_manager = CombatHookManager()
+        self.mechanism_bus = TriggerBus()
+        for mechanism in MECHANISMS.event_mechanisms():
+            self.mechanism_bus.register(mechanism)
+        # 唯一事件分发点：本引擎作为 GameState 的事件观察者，所有经
+        # state.emit_combat_event 发出的事件（_emit 的三种 + apply_heal 的
+        # HEAL_APPLIED）统一进入 TriggerBus，杜绝双发路径。
+        # 观察者是可 pickle 的模块级类实例（持引擎 id，经弱引用表解析），
+        # 不会把引擎带进存档/快照（见 combat_events.py 注释）。
+        register_combat_event_observer(self.state, self)
         # 三相残韵盘本场消耗的残韵
         self._sanxiang_consumed = ""
         # 残韵改写：entity_id → {源道纹: 变化后道纹}，只改下一次发动结算，不改持有
@@ -58,11 +68,40 @@ class CombatEngine:
 
     def _emit(self, event_type: CombatEventType, *, actor=None, target=None,
               ctx: Optional[EffectContext | dict] = None, **data) -> CombatEvent:
-        """登记一条 CombatEvent。ctx 只作为来源快照附带，不参与任何判定。"""
+        """登记一条 CombatEvent。ctx 只作为来源快照附带，不参与任何判定。
+
+        机制分发由 GameState.emit_combat_event 内的事件观察者统一完成
+        （见 __init__ 的 register_combat_event_observer）——本方法不再单独分发，
+        避免同一事件被分发两次。
+        """
         if isinstance(ctx, EffectContext):
             ctx = ctx.to_dict()
         return self.state.emit_combat_event(
             event_type, actor=actor, target=target, ctx=ctx, **data)
+
+    def _dispatch_phase(self, phase: str, *, target=None, source=None,
+                        amount: int = 0, damage_type: str = "") -> list:
+        """宣布一个管线相位时点（机制系统，通用分发，不含任何机制判断）。
+
+        已注册的相位机制按 priority 升序执行；返回值是各机制的报告条目
+        （由调用点并入 effects/战报，保证报告与迁移前一致）。
+
+        调用约定：管线只负责"在既有语义位置上宣布时点"，具体机制逻辑
+        全部在声明层（engine/mechanisms/）。当前接线相位：
+        INCOMING_ADJUST（Hook 路径）与 ROUND_START（本方法）。
+        """
+        results = []
+        for mechanism in MECHANISMS.phase_mechanisms(phase):
+            ctx = TriggerContext(combat=self, state=self.state, phase=phase,
+                                 target=target, source=source,
+                                 amount=amount, damage_type=damage_type)
+            if mechanism.condition is not None and not mechanism.condition(ctx):
+                continue
+            targets = mechanism.target.select(ctx) if mechanism.target is not None else []
+            result = mechanism.effect(ctx, targets)
+            if result is not None:
+                results.append(result)
+        return results
 
     def _battle_delta(self, entity: Entity, field_name: str, delta: int,
                       source: str, polarity: str) -> int:
@@ -655,10 +694,6 @@ class CombatEngine:
             shield_absorbed=detail.get("shield_absorbed", 0),
             hp_after=detail.get("hp_after"), damage_type=damage_type,
         )
-        if actual > 0 and source is not None:
-            stolen = self._xijie_steal(source, target, actual)
-            if stolen:
-                detail["xijie_stolen"] = stolen
 
         # 5. 落地后效果 (逆鳞 / 伤痕 / 切割 / 寄生 / 负岳索 / 龙族血脉斩杀)
         self.hook_manager.apply_after_damage_pipeline(target, actual, detail.get("shield_absorbed", 0), detail, source, self)
@@ -700,13 +735,6 @@ class CombatEngine:
             cause=death_ctx.subtype,
         )
         if entity.entity_type == "怪物":
-            if self.state.player and self._relic_active(self.state.player, "焦黑发丝"):
-                self._gain_speed(self.state.player, 2, ctx={
-                    "timing": death_ctx.timing, "source": "焦黑发丝", "source_type": "relic",
-                    "actor": self.state.player, "target": self.state.player, "owner": self.state.player,
-                    "mechanic": "speed_change", "subtype": "current_speed", "amount": 2,
-                    "tags": {"relic", "death_trigger"}, "parent_event_id": death_ctx.event_id,
-                })
             # 乱葬岗·招魂：记录本场已命零怪物尸体
             if not getattr(self.state, "dead_monsters", None):
                 self.state.dead_monsters = []
@@ -1310,8 +1338,6 @@ class CombatEngine:
         # 撤退：朋友/员工即将命零时自动撤退（伤害清零、保留生命、退出本场），透传给战报渲染
         if damage_result.get("retreated"):
             result["retreated"] = True
-        if damage_result.get("xijie_stolen"):
-            result["xijie_stolen"] = damage_result["xijie_stolen"]
         if damage_result["actual_damage"] > 0:
             attacker.damage_dealt_this_round += damage_result["actual_damage"]
         if "split" in damage_result:
@@ -1445,68 +1471,10 @@ class CombatEngine:
         
         # 结算回始效果
         for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
-            # 自愈：回始获得血限10X%的回复（坏死禁疗）
-            if entity.has_status("自愈") and not entity.has_status("坏死"):
-                x = entity.get_status_value("自愈")
-                heal_pct = 10 * x
-                heal_amount = math.ceil(entity.blood_limit * heal_pct / 100)
-                heal_result = self.state.apply_heal(entity, heal_amount, ctx={
-                    "timing": "round_start", "source": "自愈", "source_type": "daowen",
-                    "actor": entity, "target": entity, "owner": entity,
-                    "mechanic": "heal", "subtype": "self_heal", "amount": heal_amount,
-                    "tags": {"daowen", "round_start"},
-                })
-                effects.append({
-                    "type": "self_heal",
-                    "entity": entity.name,
-                    "heal": heal_amount,
-                    "actual": heal_result["actual_heal"],
-                    "heal_ctx": heal_result.get("heal_ctx"),
-                })
-            if entity.has_status("衰败") and entity.is_alive:
-                xv = entity.get_status_value("衰败")
-                dmg_n = math.ceil(entity.current_hp * 10 * xv / 100)
-                if dmg_n > 0:
-                    source_name = next((status.source for status in entity.status_effects if status.name == "衰败"), "")
-                    source_entity = self._find_named(source_name)
-                    rd = self._apply_hostile_damage(entity, dmg_n, source=source_entity, ctx={
-                        "timing": "round_start", "source": "衰败", "source_type": "daowen",
-                        "actor": source_entity, "target": entity, "mechanic": "damage", "subtype": "dot",
-                        "amount": dmg_n, "tags": {"daowen", "round_start"},
-                    })
-                    effects.append({"type": "shuaibai_tick", "entity": entity.name,
-                                    "damage": rd["actual_damage"], "died": rd["died"]})
-            pending = getattr(entity, "_dongcha_pending", 0)
-            if pending and entity.entity_type == "轮回者" and entity.is_alive:
-                entity.current_mana += pending
-                self.clamp_immortal_body(entity)
-                effects.append({"type": "dongcha_mana", "entity": entity.name, "gained": pending})
-                entity._dongcha_pending = 0
-            # 乱葬岗·勾魂：[回始]使目标失去2X点当前法力（持续∞）
-            if entity.has_status("勾魂") and entity.entity_type == "轮回者" and entity.is_alive:
-                drain = entity.get_status_value("勾魂")
-                lost = min(entity.current_mana, drain)
-                entity.current_mana -= lost
-                effects.append({"type": "gouhun_mana", "entity": entity.name, "lost": lost})
-            
-            # 狂暴：回始发动一轮额外攻击（标记）
-            if entity.has_status("狂暴"):
-                effects.append({
-                    "type": "extra_attack_ready",
-                    "entity": entity.name,
-                    "note": "该实体本回合有一次额外攻击机会"
-                })
-            
-            # 畸变：回终结算，此处标记
-            if entity.has_status("畸变"):
-                x = entity.get_status_value("畸变")
-                blood_loss = entity.attack_count * entity.attack_power
-                effects.append({
-                    "type": "deform_pending",
-                    "entity": entity.name,
-                    "blood_loss": blood_loss,
-                    "note": "回终结算"
-                })
+            # 机制系统：ROUND_START 相位分发。位置即原【自愈】结算位置（本循环第一项）。
+            # round_start 只负责宣布时点，具体机制由声明层按 priority 执行；
+            # 机制的报告条目并入 effects，战报格式与迁移前一致。
+            effects.extend(self._dispatch_phase(Phase.ROUND_START, target=entity))
 
         # ---- F2：罪孽专属道纹 [回始] 结算（逼债/清算/赌命） ----
         # 逼债X：目标失去X碎片，否则失去2X血限（二选一；与 sim/balance_sim exclusive_round_start 同口径）
@@ -1577,30 +1545,10 @@ class CombatEngine:
         mediocrity_ready: list[tuple[Entity, str]] = []
 
         for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
-            # 畸变结算：正文是失去[血限]，不是受到等量伤害；按回终时的当前攻击面板动态计算。
-            if entity.has_status("畸变") and entity.is_alive:
-                blood_loss = max(0, entity.attack_count * entity.attack_power)
-                before_limit = entity.blood_limit
-                delta = max(0, entity.blood_limit - blood_loss) - entity.blood_limit
-                # 血限压到 0 与生命被压到 0 在旧代码里是同一条判定（clamp 后 blood_limit<=0 ⇒ current_hp<=0），
-                # 统一入口保持完全等价。
-                self._apply_blood_limit_change(
-                    entity, delta, "畸变", EffectPolarity.DEBUFF.value,
-                    source_type="daowen", subtype="deform",
-                    ctx={"timing": "round_end", "source": "畸变", "source_type": "daowen",
-                         "actor": entity, "target": entity,
-                         "mechanic": "blood_limit_change", "subtype": "deform",
-                         "amount": delta, "tags": {"daowen", "round_end"}},
-                    tags={"daowen", "round_end", "blood_limit_loss"})
-                effects.append({
-                    "type": "deform_blood_limit_loss",
-                    "entity": entity.name,
-                    "blood_loss": before_limit - entity.blood_limit,
-                    "blood_limit_after": entity.blood_limit,
-                    "hp_after": entity.current_hp,
-                    "died": not entity.is_alive,
-                })
-
+            # 机制系统：ROUND_END 相位分发。锚定语义：回终第一循环顶部、凡庸 tick 之前
+            # （原畸变·结算位置）。凡庸之后的回终机制禁止注册到 ROUND_END
+            # （会改变既有顺序），详见机制迁移台账。
+            effects.extend(self._dispatch_phase(Phase.ROUND_END, target=entity))
             # 凡庸只在此拍更新计数；达阈值者稍后按「非轮回者优先」结算。
             if entity.is_alive:
                 why = self._tick_mediocrity_counters(entity)
@@ -3554,14 +3502,11 @@ class CombatEngine:
                     cost_context={"timing": "battle_start", "source": "苍白之花", "source_type": "relic", "tags": {"active_payment"}})
                 self.state.event_modifiers["pale_flower_active"] = True
                 logs.append("苍白之花：疲惫5；战终精力+1")
-            if "缄默面具" in relics:
-                x = self.state.event_modifiers.get("silent_mask_x", 0)
-                player.current_mana += 20 * x
-                self.clamp_immortal_body(player)
-                logs.append(f"缄默面具：+{20*x}法力")
-            if "帮派令" in relics:
-                player.add_status(StatusEffect("洗劫", 3, 3, "帮派令"))
-                logs.append("帮派令：获得洗劫3")
+            # 机制系统：BATTLE_START 相位分发。位置即原缄默面具/帮派令结算位置
+            # （缄默面具=5、帮派令=10 同相位按 priority 保持原序；负岳索之前）——顺序与迁移前一致。
+            # 帮派令已迁移为声明层 Mechanism（engine/mechanisms/builtins.py）；
+            # process_relics 只宣布时点，具体机制条件/效果都在声明层。
+            logs.extend(self._dispatch_phase(Phase.BATTLE_START, target=player))
             refs = self._combat_entity_refs()
             if "负岳索" in relics:
                 target = refs[choices["负岳索"]["target_ref"]]

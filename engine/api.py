@@ -27,6 +27,7 @@ from .enums import (GamePhase, CombatSubphase, ActionPhase, TriggerTiming,
 from .dice import DiceEngine
 from .daowen import DaoWenEngine, ResonanceEngine
 from .combat import CombatEngine
+from .combat_events import register_combat_event_observer
 from .events import EventPool, parse_events
 from .dungeons import DEFAULT_INDEX
 from .gamedata import (REGION_EXCLUSIVE_DAOWEN, ORIGINAL_MONSTER_DAOWEN,
@@ -4808,6 +4809,10 @@ class GameEngine:
         self.dice = restored["dice"]
         self.combat.state = self.state
         self.combat.dice = self.dice
+        # 机制系统（2026-08-19 修复）：事件观察者必须重新绑定到当前引擎。
+        # 跨进程读档时，pickle 恢复的观察者仍持旧引擎 id，会静默失效
+        # （事件机制如焦黑发丝/洗劫·夺碎片不触发）。
+        register_combat_event_observer(self.state, self.combat)
         self.event_pool.triggered = set(restored["event_triggered"])
         self.event_pool.current = restored["event_current"]
         self._pending_interrupts = restored["pending_interrupts"]
