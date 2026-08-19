@@ -9,6 +9,7 @@ command_ally 支持「发动背负 打 轮回者/我」——道纹指令目标�
 import json
 import os
 import sys
+import tempfile
 
 from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -222,3 +223,54 @@ def test_custom_spell_rejects_unknown_daowen_in_flow():
                   "trigger_condition": "受到伤害前", "effect_flow": "受到伤害前→发动回复X"}
     r = e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "custom_spell", "spell": definition})
     assert not r["success"], "不存在道纹'回复'必须拒绝"
+
+
+# ==================== sim 怪物 AI 决策路径回归（2026-08-19 修复） ====================
+
+def test_alt_path_resolve_monster_turn_with_daowen_monster_no_nameerror():
+    """回归：sim/alt_path_test.resolve_monster_turn 在“带道纹怪物”上不再 NameError。
+
+    此前 sim/handplay_dungeon_with_winner.py:129/181 的
+    `_pick_monster_daowen(engine, actor)` 使用未定义变量 engine（参数实际是 e），
+    任何怪物在第 2 回合起（白板回合之后）持有可用道纹时，该决策路径必然崩溃。
+    本测试：扭曲都市第一场脑蜘蛛（坏死/强化/减速）打到第 2 回合，
+    经公共 API 走完整 resolve_monster_turn，断言不再 NameError 且怪物阶段正常结算。
+    """
+    from sim.alt_path_test import resolve_monster_turn
+
+    save_dir = tempfile.mkdtemp(prefix="altpath")
+    e = GameEngine(db_path=os.path.join(save_dir, "g.db"), rng_seed=1,
+                   save_dir=save_dir)
+    e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 10,
+                                          "speed_points": 8, "mana_points": 7})
+    finish_initial_daowen(e)
+    e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
+    setup = e.execute_action("setup_choose_region", {"region": "扭曲都市"})
+    e.execute_action("choose_discovered_relic",
+                     {"relic_name": setup["result"]["relic_choices"][0]})
+    e.state.energy = 0
+    bs = e.execute_action("battle_start", {"relic_choices": {}})
+    assert bs.get("success"), bs
+    assert bs.get("enemies"), "必须出怪"
+
+    # 第 1 回合（白板：怪物只普攻不出道纹）
+    assert e.execute_action("round_start", {"relic_choices": {}})["success"]
+    mp1 = resolve_monster_turn(e, [])
+    assert mp1.get("success"), f"第1回合怪物阶段失败: {mp1.get('error')}"
+    assert e.execute_action("round_end", {})["success"]
+
+    # 第 2 回合：怪物可发动道纹（脑蜘蛛 坏死/强化/减速）
+    assert e.execute_action("round_start", {"relic_choices": {}})["success"]
+    assert e.state.current_round == 2, "必须已进入第2回合"
+    # 可见性断言用 combat.prepare_monster_phase（纯枚举、不写状态、不消耗资源），
+    # 避免与 resolve_monster_turn 内部 prepare 的 API 级 pending 冲突。
+    options = [o["name"] for a in e.combat.prepare_monster_phase()["actors"]
+               for o in (a.get("daowen_options") or [])]
+    assert options, "第2回合怪物必须暴露道纹选项（白板回合已过）"
+
+    mp2 = resolve_monster_turn(e, [])   # 修复前此处 NameError
+    assert mp2.get("success"), f"第2回合怪物阶段失败: {mp2.get('error')}"
+    assert not e.state.pending_monster_phase, "怪物阶段必须已结算完成"
+    # 怪物道纹分支实际走到：结算条目存在
+    details = (mp2.get("result") or {}).get("details") or []
+    assert details, "第2回合怪物必须实际行动（普攻或道纹）"

@@ -126,7 +126,7 @@ def _resolve_monster_turn_hand(e, log):
         action_count = actor["base_attack_actions"]
         hit_count = actor["base_hits_per_attack"]
         if actor["daowen_options"]:
-            option = _pick_monster_daowen(engine, actor)
+            option = _pick_monster_daowen(e, actor)
             dao = {"name": option["name"], "dodge": False, "blood_shadow": False,
                    "trigger_spell_choices": {holder: {sp["spell_name"]: {"use": False}
                                                       for sp in spells}
@@ -178,7 +178,7 @@ def _resolve_monster_turn_hand(e, log):
             dao = None
             hit_count_fb = actor["base_hits_per_attack"]
             if actor["daowen_options"]:
-                option = _pick_monster_daowen(engine, actor)
+                option = _pick_monster_daowen(e, actor)
                 dao = {"name": option["name"], "dodge": False, "blood_shadow": False,
                        "trigger_spell_choices": {holder: {sp["spell_name"]: {"use": False}
                                                           for sp in spells}

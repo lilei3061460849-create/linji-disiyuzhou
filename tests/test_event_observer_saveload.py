@@ -111,3 +111,103 @@ def test_same_engine_load_still_works(tmp_path):
     assert e.load_game("z")["success"]
     obs = get_combat_event_observer(e.state)
     assert obs is not None and obs._engine_id == id(e.combat)
+
+
+# ==================== 跨进程存档后继续战斗（最终行为验证阶段新增） ====================
+
+def test_cross_engine_load_continue_battle_full_round(tmp_path):
+    """跨进程读档后继续完整战斗循环：回始机制、伤害、死亡、回终机制全部照常。
+
+    场景：回合 1 回始阶段存档 -> 新引擎加载 -> 继续 round_start/round_end -> 回合 2 回始。
+    """
+    save_dir = str(tmp_path)
+    e1 = _setup_engine(os.path.join(save_dir, "r1.db"), save_dir, seed=11)
+    p1 = e1.state.player
+    m1 = e1.state.enemies[0]
+    m1.current_hp = 20
+    m1.blood_limit = 20
+    m1.shards = 8
+    p1.add_status(StatusEffect("洗劫", -1, 2, "e"))
+    p1.add_status(StatusEffect("自愈", -1, 1, "e"))
+    m1.add_status(StatusEffect("衰败", -1, 2, "e"))
+    e1.state.relics = [Relic("焦黑发丝", "")]
+    e1.state.current_round = 1
+    assert e1.save_game("mid")["success"]
+
+    # 新实例加载同一存档（模拟下次启动/跨进程）
+    e2 = _setup_engine(os.path.join(save_dir, "r2.db"), save_dir, seed=12)
+    assert e2.load_game("mid")["success"]
+    p2 = e2.state.player
+    m2 = e2.state.enemies[0]
+
+    hp_before = m2.current_hp
+    sp_before = p2.current_speed
+    shards_before = e2.state.shards
+
+    # 回合 1 回始：自愈+衰败+洞察/勾魂等 ROUND_START 机制在加载后的引擎中照常结算
+    res = e2.combat.round_start()
+    assert m2.current_hp < hp_before, f"衰败必须在读档后继续造成伤害 {hp_before}->{m2.current_hp}"
+
+    # 玩家行动造成伤害 -> 洗劫夺碎片（DAMAGE_APPLIED 事件机制）
+    m2.shards = 8
+    e2.combat._apply_hostile_damage(m2, 5, source=p2)
+    assert m2.shards == 3, "读档后洗劫·夺碎片必须继续生效"
+    assert e2.state.shards == shards_before + 5
+
+    # 击杀 -> 焦黑发丝（ENTITY_DIED 事件机制）：按当前 hp 补足致死伤害
+    kill_dmg = m2.current_hp + 10
+    e2.combat._apply_hostile_damage(m2, kill_dmg, source=p2)
+    assert m2.is_alive is False
+    assert p2.current_speed == sp_before + 2, "读档后焦黑发丝必须继续生效"
+
+    # 回终：加载后事件机制 + 回终相位照常
+    e2.combat.round_end()
+
+    # 回合 2 回始仍正常
+    e2.state.current_round = 2
+    e2.combat.round_start()
+    assert e2.combat is not None
+
+
+def test_cross_engine_load_rng_continuity(tmp_path):
+    """跨进程读档后 RNG 序列连续：存档后下一次随机数 = 不存档时同一位置的随机数。"""
+    save_dir = str(tmp_path)
+
+    # 路径 A：不存档，直接消耗两次随机数
+    eA = _setup_engine(os.path.join(save_dir, "a.db"), save_dir, seed=42)
+    rollA1 = eA.dice.auto_roll("rA1", ["a", "b"])
+    rollA2 = eA.dice.auto_roll("rA2", ["a", "b"])
+
+    # 路径 B：第一次随机后存档 -> 新引擎加载 -> 再取第二次
+    eB = _setup_engine(os.path.join(save_dir, "b1.db"), save_dir, seed=42)
+    rollB1 = eB.dice.auto_roll("rB1", ["a", "b"])
+    assert rollB1["player_number"] == rollA1["player_number"], "同 seed 同标签必须先对齐"
+    assert eB.save_game("rng")["success"]
+
+    eC = _setup_engine(os.path.join(save_dir, "b2.db"), save_dir, seed=43)
+    assert eC.load_game("rng")["success"]
+    rollB2 = eC.dice.auto_roll("rB2", ["a", "b"])
+
+    # 存档把 dice 状态一并恢复：rB2 的结果必须等于不存档路径的 rollA2
+    assert rollB2["player_number"] == rollA2["player_number"], \
+        f"读档后 RNG 序列必须连续: {rollA2} vs {rollB2}"
+
+
+def test_cross_engine_load_pending_dongcha_round_start(tmp_path):
+    """读档时带洞察 pending：新引擎回始必须把 pending 结算为法力（mana 动词路径）。"""
+    save_dir = str(tmp_path)
+    e1 = _setup_engine(os.path.join(save_dir, "r1.db"), save_dir, seed=21)
+    p1 = e1.state.player
+    p1._dongcha_pending = 7
+    p1.current_mana = 10
+    assert e1.save_game("pending")["success"]
+
+    e2 = _setup_engine(os.path.join(save_dir, "r2.db"), save_dir, seed=22)
+    assert e2.load_game("pending")["success"]
+    p2 = e2.state.player
+    assert getattr(p2, "_dongcha_pending", 0) == 7, "pending 必须随存档恢复"
+
+    e2.combat.round_start()
+    assert getattr(p2, "_dongcha_pending", 0) == 0, "读档后回始必须结算 pending"
+    assert p2.current_mana == 10 + 7 + p2.mana_limit, \
+        f"法力=回填+洞察结算 {p2.current_mana}"
