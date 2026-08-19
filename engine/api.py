@@ -34,6 +34,7 @@ from .gamedata import (REGION_EXCLUSIVE_DAOWEN, ORIGINAL_MONSTER_DAOWEN,
                        UNIMPLEMENTED_REGION_EXCLUSIVE_DAOWEN)
 from .dm_rulings import DMRulingsDB, DMRuling, Interrupt
 from .death_book import DeathBookStore, draft_legacy, validate_legacy
+from .effect_context import make_context, normalize_context
 from .handlers.setup import (
     handle_setup_attributes,
     handle_setup_choose_region,
@@ -1246,7 +1247,11 @@ class GameEngine:
             target = refs[entry["target_ref"]]
             total_healed_before = target.total_healed
             healed_this_battle_before = target.healed_this_battle
-            detail = self.state.apply_heal(target, entry["amount"])
+            detail = self.state.apply_heal(target, entry["amount"], ctx={
+                "timing": "pre_battle_action", "source": "休整", "source_type": "action",
+                "actor": self.state.player, "target": target, "mechanic": "heal", "subtype": "rest",
+                "amount": entry["amount"], "tags": {"pre_battle"},
+            })
             # 局外恢复不计入“本场战斗内”的癌变/战终回复追踪。
             target.total_healed = total_healed_before
             target.healed_this_battle = healed_this_battle_before
@@ -1949,7 +1954,8 @@ class GameEngine:
             return {"success": False, "error": "没有玩家"}
         payment = self.combat.pay_numeric_cost(
             player, "衰老", 3,
-            cost_share_target_ref=params.get("cost_share_target_ref", ""))
+            cost_share_target_ref=params.get("cost_share_target_ref", ""),
+            cost_context={"timing": "pre_battle_action", "source": "红头绳", "source_type": "artifact", "tags": {"active_payment"}})
         self.state.energy += 2
         return {"success": True, "action": "献祭",
                 "result": {"cost": payment, "blood_limit": player.blood_limit,
@@ -1987,7 +1993,11 @@ class GameEngine:
                     "error": f"{entity.name}本回合出手已用完({entity.actions_used_this_round}/{entity.action_count})"}
         entity.actions_used_this_round += 1
         if entity.has_status("兴奋"):
-            self.combat._gain_speed(entity, 1)
+            self.combat._gain_speed(entity, 1, ctx={
+                "timing": "player_action", "source": "兴奋", "source_type": "daowen",
+                "actor": entity, "target": entity, "mechanic": "speed_change", "subtype": "current_speed",
+                "amount": 1, "tags": {"daowen", "action_followup"},
+            })
         return None
 
     def _apply_dragon_claw_growth(self, entity: "Entity") -> None:
@@ -2074,7 +2084,8 @@ class GameEngine:
                 raise ValueError("当前判定不能使用血影")
             self.combat.pay_numeric_cost(
                 target, "流血", 10,
-                cost_share_target_ref=blood_shadow_cost_share_target_ref)
+                cost_share_target_ref=blood_shadow_cost_share_target_ref,
+                cost_context={"timing": "reaction", "source": "血影", "source_type": "relic", "tags": {"active_payment"}})
             log["blood_shadow"] = True
             log["fully_dodged"] = True
             return log, None
@@ -2106,7 +2117,8 @@ class GameEngine:
                         raise ValueError(f"{ent.name}不能使用血影")
                     self.combat.pay_numeric_cost(
                         ent, "流血", 10,
-                        cost_share_target_ref=entry.get("cost_share_target_ref", ""))
+                        cost_share_target_ref=entry.get("cost_share_target_ref", ""),
+                        cost_context={"timing": "reaction", "source": "血影", "source_type": "relic", "tags": {"active_payment"}})
                     log["dodged_names"].append({"name": ent.name, "blood_shadow": True})
                 elif entry["dodge"]:
                     if ent.current_speed < 1:
@@ -2835,7 +2847,11 @@ class GameEngine:
         if self.state.player:
             if heal_match:
                 amount = int(heal_match.group(1))
-                heal_info = self.state.apply_heal(self.state.player, amount)
+                heal_info = self.state.apply_heal(self.state.player, amount, ctx={
+                    "timing": self.state.phase, "source": item.name, "source_type": "consumable",
+                    "actor": self.state.player, "target": self.state.player, "mechanic": "heal",
+                    "subtype": "consumable", "amount": amount, "tags": {"consumable"},
+                })
                 cancer = self.combat.check_cancer(self.state.player)
                 if cancer:
                     cancer_info = cancer
@@ -2921,7 +2937,11 @@ class GameEngine:
             if target is None or self.state.on_player_side(target) == self.state.on_player_side(player):
                 return {"success": False, "error": "穿甲弹必须显式指定合法敌方target_ref"}
             item.use()
-            detail = self.combat._apply_hostile_damage(target, 15, "无视格挡", player)
+            detail = self.combat._apply_hostile_damage(target, 15, "无视格挡", player, ctx={
+                "timing": self.state.combat_subphase or self.state.phase, "source": "穿甲弹", "source_type": "consumable",
+                "actor": player, "target": target, "mechanic": "damage", "subtype": "consumable",
+                "amount": 15, "tags": {"consumable", "ignore_shield"},
+            })
             result.update({"target": target.name, "damage": detail})
         elif name == "洗劫面具":
             item.use(); self.combat.grant_bizhong(player, 2)
@@ -2941,8 +2961,13 @@ class GameEngine:
             item.use()
             heals = []
             for entry in allocations:
-                heals.append({"target": outside_refs[entry["target_ref"]].name,
-                              **self.state.apply_heal(outside_refs[entry["target_ref"]], entry["amount"])})
+                heal_target = outside_refs[entry["target_ref"]]
+                heals.append({"target": heal_target.name,
+                              **self.state.apply_heal(heal_target, entry["amount"], ctx={
+                                  "timing": "pre_battle", "source": "赤泉囊", "source_type": "consumable",
+                                  "actor": player, "target": heal_target, "mechanic": "heal",
+                                  "subtype": "consumable", "amount": entry["amount"], "tags": {"consumable", "pre_battle"},
+                              })})
             self.state.event_modifiers["red_spring_battle_losses"] = 2
             result.update({"heals": heals, "future_battle_start_losses": 2})
         elif name == "龙血瓶":
@@ -2953,7 +2978,13 @@ class GameEngine:
                 return {"success": False, "error": "龙血瓶需要合法amount和玩家侧target_ref"}
             item.current_uses -= amount
             result.update({"target": target.name, "extracted": amount,
-                           "heal": self.state.apply_heal(target, amount)})
+                           "heal": self.state.apply_heal(target, amount, ctx={
+                               "timing": self.state.combat_subphase or self.state.phase,
+                               "source": "龙血瓶", "source_type": "consumable",
+                               "actor": self.state.player, "target": target, "owner": self.state.player,
+                               "mechanic": "heal", "subtype": "dragon_blood_bottle_extract", "amount": amount,
+                               "tags": {"consumable", "stored_heal"},
+                           })})
         result.update({"uses_remaining": item.current_uses, "is_depleted": item.is_depleted})
         return {"success": True, "action": f"使用消耗品【{name}】", "result": result}
 
@@ -2996,13 +3027,21 @@ class GameEngine:
             # 只有当前飞行/滑翔状态算飞行；仅“持有”飞行道纹不算已经飞行。
             flying = target.is_flying or target.has_status("飞行") or target.has_status("滑翔")
             dmg = 25 + (15 if flying else 0)
-            detail = self.combat._apply_hostile_damage(target, dmg, source=player)
+            detail = self.combat._apply_hostile_damage(target, dmg, source=player, ctx={
+                "timing": self.state.combat_subphase or self.state.phase, "source": "反怪物电击枪", "source_type": "consumable",
+                "actor": player, "target": target, "mechanic": "damage", "subtype": "consumable",
+                "amount": dmg, "tags": {"consumable"},
+            })
             if flying:
                 target.add_status(StatusEffect(name="坠落", value=1, remaining_rounds=1, source="反怪物电击枪"))
             result.update({"target": target.name, "damage": dmg, "flying_bonus": 15 if flying else 0, "hp_after": target.current_hp, "detail": detail})
         # 2. 备用血泵：回复20（走 heal，计入癌变/战终回吐），≤30% 额外30格挡
         elif name == "备用血泵":
-            heal_detail = self.state.apply_heal(player, 20)
+            heal_detail = self.state.apply_heal(player, 20, ctx={
+                "timing": self.state.combat_subphase or self.state.phase, "source": "备用血泵", "source_type": "consumable",
+                "actor": player, "target": player, "mechanic": "heal", "subtype": "consumable",
+                "amount": 20, "tags": {"consumable"},
+            })
             healed = heal_detail["actual_heal"]
             shield_gained = 0
             if player.current_hp <= player.blood_limit * 0.3:
@@ -3036,7 +3075,11 @@ class GameEngine:
             result.update({"mana_gained": 12, "mana_after": player.current_mana})
         # 6. 急救箱：回复25（走 heal）并清一种负面持续
         elif name == "急救箱":
-            heal_detail = self.state.apply_heal(player, 25)
+            heal_detail = self.state.apply_heal(player, 25, ctx={
+                "timing": self.state.combat_subphase or self.state.phase, "source": "急救箱", "source_type": "consumable",
+                "actor": player, "target": player, "mechanic": "heal", "subtype": "consumable",
+                "amount": 25, "tags": {"consumable"},
+            })
             healed = heal_detail["actual_heal"]
             removed = None
             if aid_status is not None:
@@ -3058,7 +3101,11 @@ class GameEngine:
             if target is None:
                 item.current_uses += 1
                 return {"success": False, "error": "找不到敌方target_ref"}
-            detail = self.combat._apply_hostile_damage(target, 15, source=player)
+            detail = self.combat._apply_hostile_damage(target, 15, source=player, ctx={
+                "timing": self.state.combat_subphase or self.state.phase, "source": "高爆手雷", "source_type": "consumable",
+                "actor": player, "target": target, "mechanic": "damage", "subtype": "consumable",
+                "amount": 15, "tags": {"consumable"},
+            })
             # 攻击次数-1：用状态标记，本回合内 _monster_attack_actions 会读取
             target.add_status(StatusEffect(name="手雷减攻", value=1, remaining_rounds=1, source="高爆手雷"))
             result.update({"target": target.name, "damage": 15, "detail": detail, "nade_minus": 1})
@@ -3537,7 +3584,11 @@ class GameEngine:
         def _lamb_tear():
             for e in self.state.get_all_player_side() + self.state.get_all_enemy_side():
                 loss = math.ceil(e.current_hp * 0.5)
-                self.combat._apply_hostile_damage(e, loss)
+                self.combat._apply_hostile_damage(e, loss, ctx={
+                    "timing": "battle_start", "source": "羔羊之泪", "source_type": "artifact",
+                    "target": e, "mechanic": "damage", "subtype": "artifact",
+                    "amount": loss, "tags": {"artifact", "battle_start"},
+                })
 
         if "羔羊之泪" in self.state.artifacts_owned:
             _lamb_tear()
@@ -3614,7 +3665,11 @@ class GameEngine:
                 self.state.player.current_hp = min(self.state.player.current_hp, self.state.player.blood_limit)
         red_spring = modifiers.get("red_spring_battle_losses", 0)
         if red_spring > 0 and self.state.player:
-            self.combat._raw_hp_loss(self.state.player, 4)
+            self.combat._raw_hp_loss(self.state.player, 4, ctx={
+                "timing": "battle_start", "source": "赤泉囊", "source_type": "consumable",
+                "actor": self.state.player, "target": self.state.player, "mechanic": "hp_loss",
+                "subtype": "battle_start_loss", "amount": 4, "tags": {"consumable", "battle_start"},
+            })
             modifiers["red_spring_battle_losses"] = red_spring - 1
 
         # 事件登记的"下一场额外出现的怪物"（如龙心谷"追求者·拿走口粮"）
@@ -3936,7 +3991,11 @@ class GameEngine:
             pass  # 封存血脉：不清空pending_first_embrace，保留触发权
 
         heal_amount = math.ceil(player.blood_limit * 0.3)
-        heal_detail = self.state.apply_heal(player, heal_amount)
+        heal_detail = self.state.apply_heal(player, heal_amount, ctx={
+            "timing": "pre_battle_event", "source": "初拥之夜", "source_type": "event",
+            "actor": player, "target": player, "mechanic": "heal", "subtype": "first_embrace",
+            "amount": heal_amount, "tags": {"event"},
+        })
 
         result = {"success": True, "action": "初拥之夜",
                   "result": {"choice": choice, "trait": name, "effect": effect,
@@ -3959,7 +4018,8 @@ class GameEngine:
             return {"success": False, "error": "X必须是正整数"}
         payment = self.combat.pay_numeric_cost(
             player, "流血", 5 * x,
-            cost_share_target_ref=params.get("cost_share_target_ref", ""))
+            cost_share_target_ref=params.get("cost_share_target_ref", ""),
+            cost_context={"timing": "player_action", "source": "鲜血之翼", "source_type": "relic", "tags": {"active_payment"}})
         player.add_status(StatusEffect(name="飞行", value=x, remaining_rounds=x, source="鲜血之翼"))
         return {"success": True, "action": "鲜血之翼",
                 "result": {"cost": payment, "bled": 5 * x,
@@ -3977,7 +4037,8 @@ class GameEngine:
             return {"success": False, "error": "目标当前生命必须低于自身才能被转化"}
         payment = self.combat.pay_numeric_cost(
             player, "衰老", 20,
-            cost_share_target_ref=params.get("cost_share_target_ref", ""))
+            cost_share_target_ref=params.get("cost_share_target_ref", ""),
+            cost_context={"timing": "player_action", "source": "血族尖牙", "source_type": "relic", "tags": {"active_payment"}})
         target.entity_type = "赤族"
         target.is_chizu_of = player.name
         target.is_deployed = True
@@ -4024,7 +4085,11 @@ class GameEngine:
         amount = chizu.current_hp
         chizu.current_hp = 0
         chizu.is_alive = False
-        heal_detail = self.state.apply_heal(player, amount)
+        heal_detail = self.state.apply_heal(player, amount, ctx={
+            "timing": self.state.combat_subphase or self.state.phase, "source": "血食", "source_type": "relic",
+            "actor": player, "target": player, "mechanic": "heal", "subtype": "blood_feast",
+            "amount": amount, "tags": {"relic"},
+        })
         return {"success": True, "action": "血食",
                 "result": {"sacrificed": chizu.name, "healed": heal_detail["actual_heal"], "player_hp": player.current_hp}}
 
@@ -4091,7 +4156,11 @@ class GameEngine:
         self.state.godfather_revolver_uses += 1
         gun.current_uses -= 1
         damage = math.ceil(player.blood_limit * 0.3) * self.state.godfather_revolver_uses
-        dmg = self.combat._apply_hostile_damage(target, damage, "必中", player)
+        dmg = self.combat._apply_hostile_damage(target, damage, "必中", player, ctx={
+            "timing": self.state.combat_subphase or self.state.phase, "source": "教父左轮", "source_type": "artifact",
+            "actor": player, "target": target, "mechanic": "damage", "subtype": "artifact",
+            "amount": damage, "tags": {"artifact", "must_hit"},
+        })
         return {"success": True, "action": "教父左轮",
                 "result": {"target": target.name, "damage": damage,
                            "uses_this_battle": self.state.godfather_revolver_uses,
@@ -4159,7 +4228,8 @@ class GameEngine:
             return {"success": False, "error": "没有玩家"}
         payment = self.combat.pay_numeric_cost(
             player, cost_type, x,
-            cost_share_target_ref=params.get("cost_share_target_ref", ""))
+            cost_share_target_ref=params.get("cost_share_target_ref", ""),
+            cost_context={"timing": "pre_battle_action", "source": "真龙之心", "source_type": "artifact", "tags": {"active_payment"}})
         gained = x * self.DRAGON_NATURE_RATE[cost_type]
         self.state.dragon_nature += gained
         return {"success": True, "action": "真龙之心·换取龙性",
@@ -4217,7 +4287,11 @@ class GameEngine:
         if monster is None or monster.is_alive:
             return {"success": False, "error": "monster_ref不是已命零怪物"}
         player = self.state.player
-        heal_detail = self.state.apply_heal(player, 12)
+        heal_detail = self.state.apply_heal(player, 12, ctx={
+            "timing": self.state.combat_subphase or self.state.phase, "source": "吞骸龙胃", "source_type": "relic",
+            "actor": player, "target": player, "mechanic": "heal", "subtype": "devour_monster",
+            "amount": 12, "tags": {"relic"},
+        })
         heart_name = params.get("dragon_heart", "")
         heart = next((c for c in self.state.consumables if c.name == heart_name and c.kind == "dragon_heart"), None)
         if heart is not None:
@@ -4267,6 +4341,12 @@ class GameEngine:
         if escaping:
             for enemy in self.state.enemies:
                 if enemy.is_alive:
+                    leave_ctx = make_context(
+                        timing="battle_end", source="绝息淤泥", source_type="consumable",
+                        target=enemy, mechanic="leave", subtype="escape",
+                        amount=0, tags={"leave", "no_shards"},
+                    )
+                    enemy._leave_ctx = leave_ctx.to_dict()
                     enemy.depart_battle("逃跑")
         # 员工经济系统·工资结算门槛：先按"存活+已部署+非还债"员工计算工资写入待决列表；
         # 任何一名待决(值不为None，代表尚未pay/refuse)即阻塞后续战终结算。
@@ -4290,19 +4370,35 @@ class GameEngine:
         # 奖励公式用的是[战始][血限]快照(battle_start_blood_limit)，不是当前血限(增殖等会改变当前血限)
         shard_reward = 0
         removed = []
+        death_rewards = []
         for monster in self.state.enemies:
             if monster.is_departed or monster.is_sculptured or monster.removed_without_kill \
                     or monster.is_proliferated or monster.is_debt_bound:
-                removed.append({"name": monster.name,
-                                "way": (monster.departure_reason or
-                                        ("雕塑" if monster.is_sculptured else
-                                         "救赎" if getattr(monster, "_redeemed", False) else
-                                         "癌变" if monster.is_proliferated else
-                                         "还债" if monster.is_debt_bound else "封印"))})
+                way = (monster.departure_reason or
+                       ("雕塑" if monster.is_sculptured else
+                        "救赎" if getattr(monster, "_redeemed", False) else
+                        "癌变" if monster.is_proliferated else
+                        "还债" if monster.is_debt_bound else "封印"))
+                leave_parent = normalize_context(getattr(monster, "_leave_ctx", None))
+                leave_ctx = make_context(
+                    timing="battle_end", source=way, source_type="system",
+                    target=monster, mechanic="combat_resolution", subtype="leave_no_shards",
+                    amount=0, tags={"leave", "no_shards"},
+                    parent_event_id=leave_parent.event_id if leave_parent else None,
+                )
+                removed.append({"name": monster.name, "way": way, "ctx": leave_ctx.to_dict()})
                 continue
             if not monster.is_alive:
                 reward = math.ceil(monster.battle_start_blood_limit * 0.02) + len(monster.dao_wen) * 5
                 shard_reward += reward
+                death_parent = normalize_context(getattr(monster, "_death_ctx", None))
+                reward_ctx = make_context(
+                    timing="battle_end", source="命零碎片奖励", source_type="system",
+                    target=monster, mechanic="combat_resolution", subtype="death_shard_reward",
+                    amount=reward, tags={"death", "shards"},
+                    parent_event_id=death_parent.event_id if death_parent else None,
+                )
+                death_rewards.append({"name": monster.name, "reward": reward, "ctx": reward_ctx.to_dict()})
 
         modifiers = self.state.event_modifiers
         if modifiers.pop("arena_double_loot", False):
@@ -4436,6 +4532,7 @@ class GameEngine:
             "cleared_temp_friends": True,
             "ally_growth": grown,
             "removed_via_alt_path": removed,
+            "death_shard_rewards": death_rewards,
             "relic_end_logs": relic_end,
             "scoped_effects_rolled_back": scoped_rollbacks,
             "employee_rebellion": rebellion_check,

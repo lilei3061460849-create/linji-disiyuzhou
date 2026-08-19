@@ -6,6 +6,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
 from .combat_events import CombatEvent, CombatEventType
+from .effect_context import make_context, normalize_context
 
 
 @runtime_checkable
@@ -150,7 +151,8 @@ class LethalMitigationHook:
                     share_map = combat.state.event_modifiers.get("fuyuebei_cost_share_refs", {})
                     payment = combat.pay_numeric_cost(
                         player, "流血", 20,
-                        cost_share_target_ref=share_map.pop(target_ref, ""))
+                        cost_share_target_ref=share_map.pop(target_ref, ""),
+                        cost_context={"timing": "reaction", "source": "负岳碑", "source_type": "artifact", "tags": {"active_payment"}})
                     return {
                         "raw_damage": amount, "shield_absorbed": 0, "actual_damage": 0,
                         "hp_before": target.current_hp, "hp_after": target.current_hp,
@@ -190,6 +192,8 @@ class AfterDamageEffectsHook:
             return {}
 
         res = {}
+        damage_ctx = normalize_context(detail.get("ctx"))
+        damage_event_id = damage_ctx.event_id if damage_ctx else None
         # 逆鳞层数
         if hasattr(target, "has_status") and target.has_status("逆鳞"):
             target._nilin = getattr(target, "_nilin", 0) + actual_damage
@@ -219,6 +223,13 @@ class AfterDamageEffectsHook:
                 detail["died"] = True
                 detail["hp_after"] = 0
             detail["qiege_blood_loss"] = actual_damage
+            detail["qiege_ctx"] = make_context(
+                timing=damage_ctx.timing if damage_ctx else "",
+                source="切割", source_type="daowen", actor=attacker, target=target,
+                owner=attacker, mechanic="blood_limit_change", subtype="cut",
+                amount=-actual_damage, tags={"daowen", "blood_limit_loss"},
+                parent_event_id=damage_event_id,
+            ).to_dict()
 
         # 寄生吸血
         if hasattr(target, "has_status") and target.has_status("寄生"):
@@ -227,17 +238,30 @@ class AfterDamageEffectsHook:
             src_name = next((s.source for s in getattr(target, "status_effects", []) if s.name == "寄生" and not getattr(s, "is_expired", False)), "")
             healer = combat._find_named(src_name)
             if healer is not None and getattr(healer, "is_alive", False) and drain > 0 and not healer.has_status("坏死"):
-                h = combat.state.apply_heal(healer, drain)
+                h = combat.state.apply_heal(healer, drain, ctx={
+                    "timing": damage_ctx.timing if damage_ctx else "",
+                    "source": "寄生", "source_type": "daowen", "actor": healer, "target": healer,
+                    "owner": healer, "mechanic": "heal", "subtype": "parasite", "amount": drain,
+                    "tags": {"daowen", "after_damage"}, "parent_event_id": damage_event_id,
+                })
                 detail["jisheng_heal"] = {"healer": healer.name, **h}
                 cancer = combat.check_cancer(healer)
                 if cancer:
                     detail["jisheng_cancer"] = cancer
 
-        # 负岳索首击自愈
+        # 负岳索：[战始]选择一名朋友/员工；其首次受到伤害时，你[回复]等量生命。
+        # 状态挂在被保护者身上，但回复对象是遗物持有者（玩家），不是受伤目标本人。
         if hasattr(target, "has_status") and target.has_status("负岳索"):
             target.status_effects = [s for s in target.status_effects if s.name != "负岳索"]
-            healed = combat.state.apply_heal(target, actual_damage)
-            detail["fuyuesuo_heal"] = healed
+            healer = getattr(combat.state, "player", None)
+            if healer is not None and getattr(healer, "is_alive", False):
+                healed = combat.state.apply_heal(healer, actual_damage, ctx={
+                    "timing": damage_ctx.timing if damage_ctx else "",
+                    "source": "负岳索", "source_type": "relic", "actor": healer, "target": healer,
+                    "owner": healer, "mechanic": "heal", "subtype": "fuyuesuo", "amount": actual_damage,
+                    "tags": {"relic", "after_damage"}, "parent_event_id": damage_event_id,
+                })
+                detail["fuyuesuo_heal"] = {"healer": healer.name, **healed}
 
         # 龙族血脉攻击怪物直接命零
         if (attacker is not None and hasattr(combat.state, "side_has") and combat.state.side_has(attacker, "龙族血脉")
@@ -247,7 +271,7 @@ class AfterDamageEffectsHook:
             detail.update({"died": True, "hp_after": 0, "dragon_bloodline_kill": True})
 
         if detail.get("died"):
-            combat._on_entity_death(target)
+            combat._on_entity_death(target, ctx=damage_ctx)
 
         return res
 

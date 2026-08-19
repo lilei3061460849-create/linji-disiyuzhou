@@ -40,7 +40,8 @@ def handle_activate_duel_relic(engine: Any, params: Dict[str, Any]) -> Dict[str,
             engine.combat._remember_huifeng_target(holder, ref)
         payment = engine.combat.pay_numeric_cost(
             holder, "疲惫", x,
-            cost_share_target_ref=params.get("cost_share_target_ref", ""))
+            cost_share_target_ref=params.get("cost_share_target_ref", ""),
+            cost_context={"timing": "battle_start", "source": name, "source_type": "relic", "tags": {"active_payment"}})
         holder.current_mana += 6 * x
         engine.combat.clamp_immortal_body(holder)
         return {"success": True, "action": f"{holder.name}发动【折速法印】",
