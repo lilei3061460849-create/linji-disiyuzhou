@@ -302,25 +302,26 @@ def run_battle(engine, battle_idx, ai, rng):
         if not [e for e in engine.state.enemies if e.is_alive]:
             won = True
             break
-        active_rs = {r.name for r in engine.state.relics
-                     if engine.state.sealed_relics.get(r.name, 0) <= 0}
-        rs_c = {}
-        for n in OPTIONAL_ROUND_START:
-            if n in active_rs:
-                rs_c[n] = {"use": False}
-        rs = engine.execute_action("round_start", {"relic_choices": rs_c})
+        from sim.optional_actions import round_start_relic_choices as _rsrc
+        rs = engine.execute_action("round_start", {"relic_choices": _rsrc(engine)})
         if not rs.get("success"):
             report(ctx, "round %d round_start fail: %s" % (rnd, str(rs.get("error"))))
             rec["outcome"] = "round_start_failed"
             break
         rrec["before"] = player_state(engine)
         rrec["enemies_before"] = enemy_state(engine)
+        if not p.is_alive:
+            rrec["death"] = "died_on_round_start_effects"
+            rec["outcome"] = "defeat_player_dead"
+            resolve_all_pending(engine, ctx)
+            break
 
         player_turn(engine, ai, rec, rnd)
         if not p.is_alive:
             rrec["death"] = "died_on_player_action"
             rec["outcome"] = "defeat_player_dead"
             report(ctx, "round %d player died on own action" % rnd)
+            resolve_all_pending(engine, ctx)   # 清理死之传承等中断，避免流程卡死
             break
         if not [e for e in engine.state.enemies if e.is_alive]:
             won = True
@@ -336,12 +337,16 @@ def run_battle(engine, battle_idx, ai, rng):
                 rrec["death"] = "died_on_monster_phase"
                 rec["outcome"] = "defeat_player_dead"
                 report(ctx, "round %d monster killed player" % rnd)
+                resolve_all_pending(engine, ctx)
                 break
         re_ = engine.execute_action("round_end", {})
         if not re_.get("success"):
-            report(ctx, "round %d round_end fail: %s" % (rnd, str(re_.get("error"))))
-            rec["outcome"] = "round_end_failed"
-            break
+            if resolve_all_pending(engine, ctx):
+                re_ = engine.execute_action("round_end", {})
+            if not re_.get("success"):
+                report(ctx, "round %d round_end fail: %s" % (rnd, str(re_.get("error"))))
+                rec["outcome"] = "round_end_failed"
+                break
         rrec["after"] = player_state(engine)
         rrec["enemies_after"] = enemy_state(engine)
 
@@ -401,9 +406,10 @@ def resolve_all_pending(engine, ctx):
             itype = it.interrupt_type
             if hasattr(itype, "value"):
                 itype = itype.value
-            if "death" in str(itype):
+            if "death" in str(itype) or "\u6b7b" in str(itype):
                 r = engine.submit_ruling(interrupt_type="death_inheritance",
-                                         ruling_text="run: record", ruling_data={})
+                                         ruling_text="run: record",
+                                         ruling_data={"action": "reject"})
                 check(r.get("success"), ctx, "death ruling: " + str(r.get("error", "")))
                 did = True
                 continue

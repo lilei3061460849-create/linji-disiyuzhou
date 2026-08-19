@@ -1,0 +1,52 @@
+{
+ "stats": {
+  "seeds": 500,
+  "runs": 500,
+  "battles": 1058,
+  "rounds": 5868,
+  "wins": 560,
+  "losses": 498,
+  "engine_exceptions": 0,
+  "ai_illegal_actions": 5,
+  "ai_suicides": 0,
+  "preview_inconsistencies": 0,
+  "preview_leaks": 0,
+  "entity_ref_drift": 0,
+  "resource_anomalies": 0,
+  "rule_anomalies": 0,
+  "rest_unreasonable": 0,
+  "normal_losses": 499
+ },
+ "issues": [
+  {
+   "kind": "ai_illegal_actions",
+   "seed": 2150,
+   "ctx": "B5",
+   "detail": "round 4 round_end fail: 【round_end】只能在战斗中执行"
+  },
+  {
+   "kind": "ai_illegal_actions",
+   "seed": 2249,
+   "ctx": "B7",
+   "detail": "round 6 player died on own action"
+  },
+  {
+   "kind": "ai_illegal_actions",
+   "seed": 2276,
+   "ctx": "B6",
+   "detail": "round 3 player died on own action"
+  },
+  {
+   "kind": "ai_illegal_actions",
+   "seed": 2445,
+   "ctx": "B7",
+   "detail": "round 4 player died on own action"
+  },
+  {
+   "kind": "ai_illegal_actions",
+   "seed": 2496,
+   "ctx": "B6",
+   "detail": "round 2 player died on own action"
+  }
+ ]
+}
