@@ -27,7 +27,7 @@ class Phase:
     INCOMING_ADJUST = "damage_incoming_adjust"       # 伤害加减区（加害→龙鳞）——已接线
     BEFORE_DAMAGE = "before_damage"                  # 受到伤害前（爆裂反噬）——未接线
     AFTER_DAMAGE = "after_damage"                    # 伤害落地后——未接线
-    ROUND_START = "round_start"                      # 回始——未接线
+    ROUND_START = "round_start"                      # 回始——已接线（combat.round_start 回始效果循环顶部）
     ROUND_END = "round_end"                          # 回终——未接线
 
 

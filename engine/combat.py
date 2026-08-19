@@ -15,7 +15,7 @@ from .dm_rulings import Interrupt
 from .combat_events import CombatEvent, CombatEventType
 from .combat_hooks import CombatHookManager
 from .effect_context import EffectContext, make_context, normalize_context
-from .mechanisms import TriggerBus
+from .mechanisms import MECHANISMS, Phase, TriggerBus, TriggerContext
 
 
 class CombatEngine:
@@ -71,6 +71,30 @@ class CombatEngine:
         # 无订阅者时 dispatch 立即返回——事件记录与既有行为零变化。
         self.mechanism_bus.dispatch(event, self)
         return event
+
+    def _dispatch_phase(self, phase: str, *, target=None, source=None,
+                        amount: int = 0, damage_type: str = "") -> list:
+        """宣布一个管线相位时点（机制系统，通用分发，不含任何机制判断）。
+
+        已注册的相位机制按 priority 升序执行；返回值是各机制的报告条目
+        （由调用点并入 effects/战报，保证报告与迁移前一致）。
+
+        调用约定：管线只负责"在既有语义位置上宣布时点"，具体机制逻辑
+        全部在声明层（engine/mechanisms/）。当前接线相位：
+        INCOMING_ADJUST（Hook 路径）与 ROUND_START（本方法）。
+        """
+        results = []
+        for mechanism in MECHANISMS.phase_mechanisms(phase):
+            ctx = TriggerContext(combat=self, state=self.state, phase=phase,
+                                 target=target, source=source,
+                                 amount=amount, damage_type=damage_type)
+            if mechanism.condition is not None and not mechanism.condition(ctx):
+                continue
+            targets = mechanism.target.select(ctx) if mechanism.target is not None else []
+            result = mechanism.effect(ctx, targets)
+            if result is not None:
+                results.append(result)
+        return results
 
     def _battle_delta(self, entity: Entity, field_name: str, delta: int,
                       source: str, polarity: str) -> int:
@@ -1453,24 +1477,10 @@ class CombatEngine:
         
         # 结算回始效果
         for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
-            # 自愈：回始获得血限10X%的回复（坏死禁疗）
-            if entity.has_status("自愈") and not entity.has_status("坏死"):
-                x = entity.get_status_value("自愈")
-                heal_pct = 10 * x
-                heal_amount = math.ceil(entity.blood_limit * heal_pct / 100)
-                heal_result = self.state.apply_heal(entity, heal_amount, ctx={
-                    "timing": "round_start", "source": "自愈", "source_type": "daowen",
-                    "actor": entity, "target": entity, "owner": entity,
-                    "mechanic": "heal", "subtype": "self_heal", "amount": heal_amount,
-                    "tags": {"daowen", "round_start"},
-                })
-                effects.append({
-                    "type": "self_heal",
-                    "entity": entity.name,
-                    "heal": heal_amount,
-                    "actual": heal_result["actual_heal"],
-                    "heal_ctx": heal_result.get("heal_ctx"),
-                })
+            # 机制系统：ROUND_START 相位分发。位置即原【自愈】结算位置（本循环第一项）。
+            # round_start 只负责宣布时点，具体机制由声明层按 priority 执行；
+            # 机制的报告条目并入 effects，战报格式与迁移前一致。
+            effects.extend(self._dispatch_phase(Phase.ROUND_START, target=entity))
             if entity.has_status("衰败") and entity.is_alive:
                 xv = entity.get_status_value("衰败")
                 dmg_n = math.ceil(entity.current_hp * 10 * xv / 100)

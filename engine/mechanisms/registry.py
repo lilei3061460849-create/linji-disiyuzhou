@@ -69,6 +69,10 @@ class MechanismRegistry:
     def all(self) -> list[Mechanism]:
         return [self._mechanisms[n] for n in sorted(self._mechanisms)]
 
+    def unregister(self, name: str) -> Optional[Mechanism]:
+        """从登记处移除一个机制定义（返回被移除的机制；不存在返回 None）。"""
+        return self._mechanisms.pop(name, None)
+
     def phase_mechanisms(self, phase: str) -> list[Mechanism]:
         """某相位的全部机制，按 priority 升序（同 priority 保持注册顺序）。"""
         return sorted(

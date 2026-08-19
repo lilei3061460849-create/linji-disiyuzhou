@@ -70,6 +70,16 @@ def test_mechanism_requires_effect():
         Mechanism(name="缺效果", when=Trigger.event(CombatEventType.DAMAGE_APPLIED))
 
 
+def test_mechanism_registry_unregister():
+    reg = MechanismRegistry()
+    mech = Mechanism(name="临时机制", when=Trigger.event(CombatEventType.DAMAGE_APPLIED),
+                     effect=lambda ctx, targets: None)
+    reg.register(mech)
+    assert reg.unregister("临时机制") is mech
+    assert reg.get("临时机制") is None
+    assert reg.unregister("不存在的机制") is None
+
+
 def test_mechanism_state_is_per_entity_not_global():
     """机制定义全局化；机制状态按实体存放，不进全局 Mechanism 实例。"""
     mech = Mechanism(name="计数机制", when=Trigger.event(CombatEventType.DAMAGE_APPLIED),
