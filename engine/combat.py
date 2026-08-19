@@ -1582,30 +1582,10 @@ class CombatEngine:
         mediocrity_ready: list[tuple[Entity, str]] = []
 
         for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
-            # 畸变结算：正文是失去[血限]，不是受到等量伤害；按回终时的当前攻击面板动态计算。
-            if entity.has_status("畸变") and entity.is_alive:
-                blood_loss = max(0, entity.attack_count * entity.attack_power)
-                before_limit = entity.blood_limit
-                delta = max(0, entity.blood_limit - blood_loss) - entity.blood_limit
-                # 血限压到 0 与生命被压到 0 在旧代码里是同一条判定（clamp 后 blood_limit<=0 ⇒ current_hp<=0），
-                # 统一入口保持完全等价。
-                self._apply_blood_limit_change(
-                    entity, delta, "畸变", EffectPolarity.DEBUFF.value,
-                    source_type="daowen", subtype="deform",
-                    ctx={"timing": "round_end", "source": "畸变", "source_type": "daowen",
-                         "actor": entity, "target": entity,
-                         "mechanic": "blood_limit_change", "subtype": "deform",
-                         "amount": delta, "tags": {"daowen", "round_end"}},
-                    tags={"daowen", "round_end", "blood_limit_loss"})
-                effects.append({
-                    "type": "deform_blood_limit_loss",
-                    "entity": entity.name,
-                    "blood_loss": before_limit - entity.blood_limit,
-                    "blood_limit_after": entity.blood_limit,
-                    "hp_after": entity.current_hp,
-                    "died": not entity.is_alive,
-                })
-
+            # 机制系统：ROUND_END 相位分发。锚定语义：回终第一循环顶部、凡庸 tick 之前
+            # （原畸变·结算位置）。凡庸之后的回终机制禁止注册到 ROUND_END
+            # （会改变既有顺序），详见机制迁移台账。
+            effects.extend(self._dispatch_phase(Phase.ROUND_END, target=entity))
             # 凡庸只在此拍更新计数；达阈值者稍后按「非轮回者优先」结算。
             if entity.is_alive:
                 why = self._tick_mediocrity_counters(entity)

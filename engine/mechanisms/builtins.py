@@ -1,14 +1,18 @@
-"""已迁移到声明层的机制（当前：加害、龙鳞、自愈、帮派令、衰败）。
+"""已迁移到声明层的机制（当前：加害、龙鳞、自愈、帮派令、衰败、畸变·结算）。
 
 迁移协议（迁移前后必须同时满足）：
   1. 规则语义与旧实现完全一致（加害：amount+状态值；龙鳞：max(0, amount-状态值)；
      自愈：无坏死时回复 ceil(血限×10X/100)；帮派令：[战始]获得【洗劫3】；
-     衰败：[回始]对自己造成 ceil(当前生命×10X/100) 点伤害，走完整伤害管线）；
+     衰败：[回始]对自己造成 ceil(当前生命×10X/100) 点伤害，走完整伤害管线；
+     畸变·结算：[回终]失去(攻击力×攻击次数)点血限，血限压 0 连带命零统一判定）；
   2. priority 保持原值或按旧代码位置固化：加害=20、龙鳞=30（伤害加减区）；
      自愈=10、衰败=20（回始效果循环：自愈→衰败→洞察→勾魂→狂暴→畸变标记，
      后续回始机制按 30/40/... 递增）；帮派令=10（战始遗物段）；
+     畸变·结算=10（回终第一循环顶部、凡庸 tick 之前，后续回终机制按 20/30/... 递增）；
   3. 执行路径唯一：伤害相位经 CombatHookManager 上的 MechanismHookAdapter，
-     回合/战始相位经 CombatEngine._dispatch_phase——旧类/旧 if 已删除。
+     回合/战始/回终相位经 CombatEngine._dispatch_phase——旧类/旧 if 已删除。
+     注意：回始的【畸变标记】块与【畸变·结算】是同一道纹的两处字面规则，
+     本文件只迁移了结算部分（标记块仍为回始循环内的既有报告逻辑）。
 """
 from __future__ import annotations
 
@@ -150,6 +154,42 @@ def _shuaibai_effect(ctx: TriggerContext, targets: list) -> dict | None:
     return None
 
 
+def _jibian_settle_effect(ctx: TriggerContext, targets: list) -> dict:
+    """旧 round_end 畸变·结算块语义（逐字复刻）：
+
+    失去 blood_loss = max(0, 攻击力×攻击次数) 点血限（不是伤害）；
+    经 blood_limit 动词（统一血限入口：clamp_hp/lethal 默认 True=旧调用同参）；
+    即使 blood_loss=0（攻击面板为 0）也照常产生报告条目。
+    """
+    entity = ctx.target
+    blood_loss = max(0, entity.attack_count * entity.attack_power)
+    before_limit = entity.blood_limit
+    delta = max(0, entity.blood_limit - blood_loss) - entity.blood_limit
+    apply_verb(ctx.combat, "blood_limit", {
+        "target": entity,
+        "delta": delta,
+        "source": "畸变",
+        "polarity": "debuff",
+        "ctx": {
+            "timing": "round_end", "source": "畸变", "source_type": "daowen",
+            "actor": entity, "target": entity,
+            "mechanic": "blood_limit_change", "subtype": "deform",
+            "amount": delta, "tags": {"daowen", "round_end"},
+        },
+        "source_type": "daowen",
+        "subtype": "deform",
+        "tags": {"daowen", "round_end", "blood_limit_loss"},
+    })
+    return {
+        "type": "deform_blood_limit_loss",
+        "entity": entity.name,
+        "blood_loss": before_limit - entity.blood_limit,
+        "blood_limit_after": entity.blood_limit,
+        "hp_after": entity.current_hp,
+        "died": not entity.is_alive,
+    }
+
+
 GANGPAILING = Mechanism(
     name="帮派令",
     when=Trigger.phase(Phase.BATTLE_START),
@@ -173,9 +213,23 @@ SHUAIBAI = Mechanism(
     priority=20,
 )
 
+JIBIAN_SETTLE = Mechanism(
+    name="畸变·结算",
+    when=Trigger.phase(Phase.ROUND_END),
+    effect=_jibian_settle_effect,
+    target=SELF,
+    condition=all_(
+        has_status("畸变", of="self"),
+        is_alive(of="self"),
+    ),
+    # 旧位置=回终第一逐实体循环顶部（凡庸 tick 之前）；后续回终机制按 20/30/... 递增
+    priority=10,
+)
+
 MECHANISMS.register(JIAHAI)
 MECHANISMS.register(LONGLIN)
 MECHANISMS.register(ZIYU)
 MECHANISMS.register(GANGPAILING)
 MECHANISMS.register(SHUAIBAI)
+MECHANISMS.register(JIBIAN_SETTLE)
 

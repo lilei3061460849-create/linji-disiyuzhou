@@ -29,7 +29,9 @@ class Phase:
     AFTER_DAMAGE = "after_damage"                    # 伤害落地后——未接线
     BATTLE_START = "battle_start"                    # 战始——已接线（process_relics 战始段）
     ROUND_START = "round_start"                      # 回始——已接线（combat.round_start 回始效果循环顶部）
-    ROUND_END = "round_end"                          # 回终——未接线
+    ROUND_END = "round_end"                          # 回终——已接线（round_end 第一逐实体循环顶部、
+                                                     # 凡庸 tick 之前）。锚定语义：凡庸之后的回终机制
+                                                     # 禁止注册本相位（会改变既有顺序），见机制迁移台账。
 
 
 @dataclass(frozen=True)
