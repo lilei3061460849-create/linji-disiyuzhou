@@ -36,14 +36,20 @@ STATS = {
     "engine_exceptions": 0,
     "ai_illegal_actions": 0,
     "ai_suicides": 0,
+    "known_consumable_suicide": 0,
     "preview_inconsistencies": 0,
     "preview_leaks": 0,
     "entity_ref_drift": 0,
     "resource_anomalies": 0,
     "rule_anomalies": 0,
     "rest_unreasonable": 0,
+    "battle_end_anomaly": 0,
+    "save_load_anomaly": 0,
+    "hire_redeem_anomaly": 0,
+    "test_script_issues": 0,
     "normal_losses": 0,
 }
+KNOWN_CONSUMABLE_SEEDS = set()
 ISSUES = []          # 疑似 bug 明细
 LAST_PREVIEW = {}    # 最近一次预演 diff（供 _cast 一致性对比）
 
@@ -79,8 +85,30 @@ def light_snapshot(state):
 
 
 # ---------------- monkeypatch 校验钩子 ----------------
+_orig_exec = GameEngine.execute_action
 _orig_preview = ActionPreview.preview
 _orig_cast = TacticalAI._cast
+
+
+def _checked_exec(self, action_type, params=None):
+    r = _orig_exec(self, action_type, params)
+    p = self.state.player
+    # consume_item 后玩家命零 = 已知残骸/消耗品崩解类（try_consumable 未走预演）
+    if action_type == "consume_item" and p is not None and not p.is_alive:
+        STATS["known_consumable_suicide"] += 1
+        KNOWN_CONSUMABLE_SEEDS.add(rt.current_seed)
+        rec_issue("known_consumable", rt.current_seed,
+                  f"consume_item {params.get('name') if isinstance(params, dict) else '?'}",
+                  "消耗品未走预演，命零（已知残骸崩解类）")
+    # 资源异常：HP/mana/speed 越界
+    if p is not None:
+        if p.current_hp < 0 or p.current_mana < 0 or p.current_speed < 0:
+            rec_issue("resource_anomalies", rt.current_seed, action_type,
+                      {"hp": p.current_hp, "mana": p.current_mana, "speed": p.current_speed})
+        if p.is_alive != (p.current_hp > 0) and p.is_alive:
+            rec_issue("rule_anomalies", rt.current_seed, action_type,
+                      "is_alive=True 但 hp<=0")
+    return r
 
 
 def _checked_preview(self, action_type, params=None):
@@ -111,11 +139,13 @@ def _checked_cast(self, name, x, target=None, *, allow_sacrifice=False):
 def install_hooks():
     ActionPreview.preview = _checked_preview
     TacticalAI._cast = _checked_cast
+    GameEngine.execute_action = _checked_exec
 
 
 def uninstall_hooks():
     ActionPreview.preview = _orig_preview
     TacticalAI._cast = _orig_cast
+    GameEngine.execute_action = _orig_exec
 
 
 # ---------------- 单 seed 完整轮回 ----------------
@@ -161,7 +191,10 @@ def run_one_seed(seed):
 
     # 存档续战
     if eng.state.player and eng.state.player.is_alive:
-        eng.save_game("stress")
+        sr = eng.save_game("stress")
+        if not sr.get("success"):
+            STATS["save_load_anomaly"] += 1
+            rec_issue("save_load_anomaly", seed, "save", sr.get("error"))
         eng2 = GameEngine(db_path=os.path.join(save_dir, "g2.db"), rng_seed=seed + 1,
                           save_dir=save_dir)
         if eng2.load_game("stress").get("success"):
@@ -187,10 +220,26 @@ def run_one_seed(seed):
     for i in rt.issues:
         if "合理战败" in i["msg"] or "monster killed" in i["msg"]:
             continue
+        if "died on own" in i["msg"] and seed in KNOWN_CONSUMABLE_SEEDS:
+            STATS["known_consumable_suicide"] += 1   # 已知残骸类，不计新发现
+            continue
         if "died on own" in i["msg"] and not has_dmg:
             STATS["normal_losses"] += 1
             continue
-        rec_issue("ai_illegal_actions", seed, i["ctx"], i["msg"])
+        if "round_end fail" in i["msg"] or "battle_start fail" in i["msg"]:
+            STATS["battle_end_anomaly"] += 1
+            rec_issue("battle_end_anomaly", seed, i["ctx"], i["msg"])
+            continue
+        if "save" in i["msg"] or "load" in i["msg"]:
+            STATS["save_load_anomaly"] += 1
+            rec_issue("save_load_anomaly", seed, i["ctx"], i["msg"])
+            continue
+        if "hire" in i["msg"] or "redemption" in i["msg"] or "救赎" in i["msg"]:
+            STATS["hire_redeem_anomaly"] += 1
+            rec_issue("hire_redeem_anomaly", seed, i["ctx"], i["msg"])
+            continue
+        STATS["test_script_issues"] += 1
+        rec_issue("test_script_issues", seed, i["ctx"], i["msg"])
     return {"seed": seed, "battles": rt.battle_count, "wins": wins}
 
 
