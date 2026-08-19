@@ -3577,9 +3577,11 @@ class CombatEngine:
                 player.current_mana += 20 * x
                 self.clamp_immortal_body(player)
                 logs.append(f"缄默面具：+{20*x}法力")
-            if "帮派令" in relics:
-                player.add_status(StatusEffect("洗劫", 3, 3, "帮派令"))
-                logs.append("帮派令：获得洗劫3")
+            # 机制系统：BATTLE_START 相位分发。位置即原帮派令结算位置
+            # （缄默面具之后、负岳索之前）——顺序保持与迁移前一致。
+            # 帮派令已迁移为声明层 Mechanism（engine/mechanisms/builtins.py）；
+            # process_relics 只宣布时点，具体机制条件/效果都在声明层。
+            logs.extend(self._dispatch_phase(Phase.BATTLE_START, target=player))
             refs = self._combat_entity_refs()
             if "负岳索" in relics:
                 target = refs[choices["负岳索"]["target_ref"]]

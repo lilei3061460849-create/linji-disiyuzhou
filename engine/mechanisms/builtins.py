@@ -1,18 +1,21 @@
-"""已迁移到声明层的机制（当前：加害、龙鳞、自愈）。
+"""已迁移到声明层的机制（当前：加害、龙鳞、自愈、帮派令）。
 
 迁移协议（迁移前后必须同时满足）：
   1. 规则语义与旧实现完全一致（加害：amount+状态值；龙鳞：max(0, amount-状态值)；
-     自愈：无坏死时回复 ceil(血限×10X/100)，X=状态层数）；
+     自愈：无坏死时回复 ceil(血限×10X/100)；帮派令：[战始]获得【洗劫3】，
+     持有效遗物且未封印才触发）；
   2. priority 保持原值或按旧代码位置固化：加害=20、龙鳞=30（伤害加减区）；
-     自愈=10（回始效果循环第一位；衰败等后续迁移按 20/30/... 递增）；
+     自愈=10（回始效果循环第一位）；帮派令=10（战始遗物段：缄默面具之后、负岳索之前）；
   3. 执行路径唯一：伤害相位经 CombatHookManager 上的 MechanismHookAdapter，
-     回合相位经 CombatEngine._dispatch_phase——旧类/旧 if 已删除，不存在两条路径。
+     回合/战始相位经 CombatEngine._dispatch_phase——旧类/旧 if 已删除。
 """
 from __future__ import annotations
 
 import math
 
-from .conditions import all_, amount_positive, damage_type_not, has_status, not_
+from .conditions import (
+    all_, amount_positive, damage_type_not, has_status, not_, relic_active,
+)
 from .registry import MECHANISMS, Mechanism
 from .targets import SELF, TARGET
 from .triggers import Phase, Trigger, TriggerContext
@@ -86,6 +89,23 @@ LONGLIN = Mechanism(
     priority=30,                    # 原 LonglinHook.priority = 30，不得调整（须后于加害）
 )
 
+def _gangpailing_effect(ctx: TriggerContext, targets: list) -> str:
+    """旧 process_relics 帮派令块语义（逐字复刻）：
+
+    player.add_status(StatusEffect("洗劫", 3, 3, "帮派令")) → 洗劫 value=3、
+    remaining_rounds=3、source=帮派令；经统一 status 动词（统一状态授予入口），
+    返回与旧代码完全相同的日志串。
+    """
+    apply_verb(ctx.combat, "status", {
+        "target": ctx.target,
+        "name": "洗劫",
+        "duration": 3,   # 旧实现 StatusEffect("洗劫", 3, 3, "帮派令")：回合数=3
+        "value": 3,      # 层数=3
+        "source": "帮派令",
+    })
+    return "帮派令：获得洗劫3"
+
+
 ZIYU = Mechanism(
     name="自愈",
     when=Trigger.phase(Phase.ROUND_START),
@@ -98,7 +118,18 @@ ZIYU = Mechanism(
     priority=10,    # 旧代码位置=回始效果循环第一位；后续回始机制按 20/30/... 递增
 )
 
+GANGPAILING = Mechanism(
+    name="帮派令",
+    when=Trigger.phase(Phase.BATTLE_START),
+    effect=_gangpailing_effect,
+    target=SELF,
+    condition=relic_active("帮派令", of="target"),
+    # 旧位置=战始遗物段（缄默面具之后、负岳索之前）；后续战始遗物机制按 20/30/... 递增
+    priority=10,
+)
+
 MECHANISMS.register(JIAHAI)
 MECHANISMS.register(LONGLIN)
 MECHANISMS.register(ZIYU)
+MECHANISMS.register(GANGPAILING)
 

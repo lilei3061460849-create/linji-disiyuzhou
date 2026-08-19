@@ -87,6 +87,26 @@ def events_this_round(event_type: CombatEventType, *, of: str = "target") -> Con
     return cond
 
 
+def relic_active(name: str, *, of: str = "target") -> Condition:
+    """实体所属轮回者实际持有指定遗物，且该遗物未被封印（抵扣X）。
+
+    语义严格委托 CombatEngine._relic_active（持有检查 + sealed_relics 检查），
+    **不复制、不重新解释** sealed_relics 规则——单一事实源在引擎。
+    仅在触发器上下文携带 combat 时可用；无 combat 的上下文返回 False
+    （绝不在 Condition 层另写一套封印判断）。
+    """
+    def cond(ctx: TriggerContext) -> bool:
+        entity = ctx.resolve(of)
+        combat = ctx.combat
+        if entity is None or combat is None:
+            return False
+        checker = getattr(combat, "_relic_active", None)
+        if checker is None:
+            return False
+        return bool(checker(entity, name))
+    return cond
+
+
 def amount_positive() -> Condition:
     """数值修正相位的 amount > 0 前置（迁移【加害】所需，与旧 JiahaiHook 同义）。"""
     return lambda ctx: ctx.amount > 0

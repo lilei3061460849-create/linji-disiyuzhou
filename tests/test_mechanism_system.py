@@ -17,10 +17,10 @@ from engine.combat_events import CombatEvent, CombatEventType
 from engine.dice import DiceEngine
 from engine.mechanisms import (
     ALL, ALL_ALLIES, ALL_ENEMIES, DEAD_ENTITY, MECHANISMS, RANDOM_ENEMY, SELF,
-    SOURCE, TARGET, Mechanism, MechanismRegistry, Trigger, TriggerBus,
+    SOURCE, TARGET, Mechanism, MechanismRegistry, Phase, Trigger, TriggerBus,
     TriggerContext, all_, any_, apply_verb, damage_type_not, entity_type,
     events_this_round, get_verb, has_status, hp_at_least, is_alive, not_,
-    side_has, verb_names,
+    relic_active, side_has, verb_names,
 )
 from engine.models import Entity, GameState, Relic, StatusEffect
 from engine.validator import check_migrated_mechanism_guards, RuleValidator
@@ -207,6 +207,82 @@ def test_condition_events_this_round_respects_round_window():
     assert events_this_round(CombatEventType.DAMAGE_APPLIED)(ctx) is False
     state.current_round = 2
     assert events_this_round(CombatEventType.DAMAGE_APPLIED)(ctx) is True
+
+
+# ==================== 4b. 通用 Condition：relic_active ====================
+
+def test_condition_relic_active_matches_engine_semantics():
+    """持有+未封印→True；持有+封印→False；不持有→False；
+    与 CombatEngine._relic_active 逐场景一致（单一事实源在引擎）。"""
+    state, combat, player, enemy = _arena()
+    state.relics = [Relic("帮派令", "")]
+    ctx = TriggerContext(combat=combat, state=state, target=player)
+    cond = relic_active("帮派令", of="target")
+
+    assert cond(ctx) is True and combat._relic_active(player, "帮派令") is True
+
+    state.sealed_relics["帮派令"] = 2
+    assert cond(ctx) is False and combat._relic_active(player, "帮派令") is False
+
+    state.sealed_relics.clear()
+    state.relics = []
+    assert cond(ctx) is False and combat._relic_active(player, "帮派令") is False
+
+    # 非持有实体（敌方怪物不属于玩家侧）→ False
+    enemy_ctx = TriggerContext(combat=combat, state=state, target=enemy)
+    assert cond(enemy_ctx) is False
+
+    # 无 combat 上下文 → False：Condition 层绝不自行解释 sealed_relics
+    bare = TriggerContext(combat=None, state=state, target=player)
+    assert cond(bare) is False
+
+
+def test_condition_relic_active_sweep_matches_engine():
+    state, combat, player, _ = _arena()
+    scenarios = []
+    for held in (False, True):
+        for sealed in (0, 1, 2):
+            for relic_name in ("帮派令", "皮衣"):
+                scenarios.append((held, sealed, relic_name))
+    for held, sealed, relic_name in scenarios:
+        state.relics = [Relic(relic_name, "")] if held else []
+        state.sealed_relics = {relic_name: sealed} if sealed else {}
+        ctx = TriggerContext(combat=combat, state=state, target=player)
+        expected = combat._relic_active(player, relic_name)
+        assert relic_active(relic_name, of="target")(ctx) is expected, \
+            f"held={held} sealed={sealed} name={relic_name}"
+    assert len(scenarios) == 12, "sweep 场景数变化时请同步更新断言"
+
+
+# ==================== 4c. 通用 Phase 分发：BATTLE_START ====================
+
+def test_battle_start_phase_dispatch_generic():
+    """BATTLE_START 与 ROUND_START 同模式：多机制按 priority、每机制一次、
+    unregister 后不再触发。"""
+    state, combat, player, _ = _arena()
+    records = []
+    dummies = [
+        Mechanism(name="战始测试·前", when=Trigger.phase(Phase.BATTLE_START),
+                  effect=lambda ctx, ts: records.append("前"), priority=5),
+        Mechanism(name="战始测试·后", when=Trigger.phase(Phase.BATTLE_START),
+                  effect=lambda ctx, ts: records.append("后"), priority=20),
+    ]
+    for d in dummies:
+        MECHANISMS.register(d)
+    try:
+        results = combat._dispatch_phase(Phase.BATTLE_START, target=player)
+        assert records == ["前", "后"], "priority 顺序错误"
+        assert results == [], "返回 None 的机制不产生条目"
+        records.clear()
+        combat._dispatch_phase(Phase.BATTLE_START, target=player)
+        assert records == ["前", "后"], "每次宣布时点各机制恰好执行一次"
+    finally:
+        for d in dummies:
+            MECHANISMS.unregister(d.name)
+
+    # unregister 后：不再触发
+    assert combat._dispatch_phase(Phase.BATTLE_START, target=player) == []
+    assert MECHANISMS.get("战始测试·前") is None and MECHANISMS.get("战始测试·后") is None
 
 
 # ==================== 4. Target ====================
