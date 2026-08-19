@@ -461,8 +461,7 @@ def test_r46_boundary_death_dodge_dragon_and_might_triggers(tmp_path):
     engine.state.friends = [friend]
     engine.state.relics = [Relic("避风铃", ""), Relic("回锋刀", ""),
                            Relic("焦黑发丝", ""), Relic("龙威", "", tags=["龙族"])]
-    player.current_speed -= 1
-    engine.combat._note_dodge(player, "enemy:0")
+    engine.combat._spend_dodge_speed(player, "enemy:0")
     assert player.shield == 3 and enemy.current_hp == 97
     engine.state.relics.append(Relic("龙族血脉", "", tags=["龙族"]))
     before_speed = player.current_speed

@@ -2111,8 +2111,7 @@ class GameEngine:
                 elif entry["dodge"]:
                     if ent.current_speed < 1:
                         raise ValueError(f"{ent.name}速度不足")
-                    ent.current_speed -= 1
-                    extra = self.combat._note_dodge(ent, entry.get("dodge_relic_target_ref"))
+                    extra = self.combat._spend_dodge_speed(ent, entry.get("dodge_relic_target_ref"))
                     log["dodged_names"].append({"name": ent.name, "speed_after": ent.current_speed, **extra})
                 else:
                     aoe_targets.append(ent)
@@ -2123,8 +2122,7 @@ class GameEngine:
         if target.current_speed < 1:
             log["dodge_fail_reason"] = "速度不足"
             return log, None
-        target.current_speed -= 1
-        extra = self.combat._note_dodge(target, dodge_relic_target_ref)
+        extra = self.combat._spend_dodge_speed(target, dodge_relic_target_ref)
         entry = {"name": target.name, "speed_after": target.current_speed}
         if extra:
             entry.update(extra)
@@ -2275,13 +2273,7 @@ class GameEngine:
             if not actor.spend_mana(cost):
                 return {"success": False, "error": f"法力不足，需要{cost}，当前{actor.current_mana}"}
             # 寒冰法力：持有者每消耗法力发动道纹，无论目标是谁(含自己)都累计"施加法力"
-            if self.state.side_has(actor, "寒冰法力"):
-                before_tier = target.mana_inflicted_this_round // 10
-                target.mana_inflicted_this_round += cost
-                after_tier = target.mana_inflicted_this_round // 10
-                new_stacks = after_tier - before_tier
-                if new_stacks > 0:
-                    target.add_status(StatusEffect(name="无力", value=new_stacks, remaining_rounds=1, source="寒冰法力"))
+            self.combat.note_mana_inflicted(actor, target, cost)
 
         # F2：赌命X/消灾X 的碎片类代价预检与支付（代价类型非"消耗"，不走法力制）
         # 赌命X：消耗X假碎片

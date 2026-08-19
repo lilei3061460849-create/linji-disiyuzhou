@@ -117,8 +117,8 @@ def lab_jisu_dodge_loop():
         start_hp_m = m.current_hp
         extras = []
         for i in range(6):
-            p.current_speed -= 1
-            extra = e.combat._note_dodge(p, "enemy:0" if any(r.name == "回锋刀" for r in e.state.relics) else None)
+            extra = e.combat._spend_dodge_speed(
+                p, "enemy:0" if any(r.name == "回锋刀" for r in e.state.relics) else None)
             extras.append({"i": i + 1, "speed": p.current_speed, "shield": p.shield, "extra": extra})
         rows.append({
             "label": label,

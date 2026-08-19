@@ -84,8 +84,8 @@ def test_hooks_boundary_conditions():
     zero_speed_entity = Entity(name="零速者", blood_limit=30, current_hp=30, speed_limit=0, entity_type="轮回者")
     zero_speed_entity.current_speed = 0
     d_res = manager.apply_dodge(zero_speed_entity, state)
-    assert d_res["zero_speed_shield"] == 15
-    assert zero_speed_entity.shield == 18  # 3 + 15
+    assert d_res["shield_gained"] == 3
+    assert zero_speed_entity.shield == 3  # 闪避句只+3；归零+15走失速总线
 
     # 龙鳞减免边界
     dragon_target = Entity(name="龙族", blood_limit=40, current_hp=40, entity_type="怪物")
