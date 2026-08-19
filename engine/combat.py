@@ -38,12 +38,32 @@ class CombatEngine:
         self.dice = dice
         self.combat_log: list[dict] = []  # 完整战斗日志
         self.hook_manager = CombatHookManager()
-        self.event_stream: list[CombatEvent] = []
         # 三相残韵盘本场消耗的残韵
         self._sanxiang_consumed = ""
         # 残韵改写：entity_id → {源道纹: 变化后道纹}，只改下一次发动结算，不改持有
         self._resonance_rewrites: dict[int, dict[str, str]] = {}
-    
+        # 效果链深度保险丝（见 MAX_EFFECT_CHAIN_DEPTH）。
+        self._effect_chain_depth = 0
+
+    # 效果链深度上限。这是**防御性保险丝**，不是游戏规则：
+    # 任何合法的 嫁祸/背负 重定向链都远低于此值（重定向每跳都会递减 _jiahuo_left/_beifu_left，
+    # 本身就收敛）。设成这么大是为了保证它永远不会改变任何现有战斗结果，
+    # 只在真的出现 A→B→A→B 死循环时把它截断成一次可诊断的异常。
+    MAX_EFFECT_CHAIN_DEPTH = 64
+
+    @property
+    def event_stream(self) -> list[CombatEvent]:
+        """战斗事件流（“发生了什么”）。事实源在 state 上，随存档一起走。"""
+        return self.state.combat_events
+
+    def _emit(self, event_type: CombatEventType, *, actor=None, target=None,
+              ctx: Optional[EffectContext | dict] = None, **data) -> CombatEvent:
+        """登记一条 CombatEvent。ctx 只作为来源快照附带，不参与任何判定。"""
+        if isinstance(ctx, EffectContext):
+            ctx = ctx.to_dict()
+        return self.state.emit_combat_event(
+            event_type, actor=actor, target=target, ctx=ctx, **data)
+
     def _battle_delta(self, entity: Entity, field_name: str, delta: int,
                       source: str, polarity: str) -> int:
         """战斗中未注明永久且不是代价/伤害的面板变化统一登记为局内效果。"""
@@ -454,6 +474,102 @@ class CombatEngine:
         events.append(record)
         return record
 
+    # ========== 统一死亡判定 / 统一血限变化 ==========
+
+    def _check_hp_zero_death(
+        self, entity: Optional[Entity],
+        ctx: Optional[EffectContext | dict] = None,
+    ) -> bool:
+        """统一“生命归零 → 命零”判定。
+
+        任何使生命可能归零的状态变化（伤害 / 代价 / 血限压迫 / 崩解 / 特殊事件）
+        都必须用这一个入口收口，禁止再写 `entity.is_alive = False`。
+        返回本次调用是否判定了死亡（已死者返回 False，保持幂等）。
+
+        注意：本方法只负责“判定 + 通知”，不做任何濒死保护——
+        濒死/保护（撤退、负岳碑、断尾求生）在伤害管线更早的 mitigation 阶段完成，
+        走到这里说明保护已经没有拦住。
+        """
+        if entity is None or entity.current_hp > 0:
+            return False
+        # 离场（雕塑/癌变/还债/救赎/封印/逃跑）不是命零，绝不在此处宣布死亡。
+        if getattr(entity, "is_departed", False):
+            return False
+        # 已经走过统一死亡管线（含 Entity.take_damage 先翻了 is_alive 的情况）就不重复触发。
+        if getattr(entity, "_death_triggers_emitted", False):
+            return False
+        entity.current_hp = 0
+        entity.is_alive = False
+        self._on_entity_death(entity, ctx=ctx)
+        return True
+
+    def _record_blood_limit_event(
+        self, entity: Entity, delta: int,
+        parent_ctx: Optional[EffectContext] = None,
+        *, source: str = "", source_type: str = "", subtype: str = "",
+        actor: Optional[Entity] = None, owner: Optional[Entity] = None,
+        tags: Optional[set[str]] = None,
+    ) -> Optional[dict]:
+        """记录一次血限变化的来源上下文，并发出 BLOOD_LIMIT_CHANGED 事件。
+
+        血限变化是因果链的中间跳（伤害 → 血限下降 → 依赖血限的效果），
+        没有它，“血限为什么掉”只能靠 Hook 自己猜。
+        """
+        if entity is None or delta == 0:
+            return None
+        if tags is None:
+            base = set(parent_ctx.tags) if parent_ctx else {"legacy_context"}
+            tags = base | {"blood_limit_loss" if delta < 0 else "blood_limit_gain"}
+        ctx = make_context(
+            timing=parent_ctx.timing if parent_ctx else self._current_context_timing(),
+            source=source or (parent_ctx.source if parent_ctx else "legacy_blood_limit"),
+            source_type=source_type or (parent_ctx.source_type if parent_ctx else "legacy"),
+            actor=actor if actor is not None else (parent_ctx.actor if parent_ctx else None),
+            target=entity,
+            owner=owner if owner is not None else (parent_ctx.owner if parent_ctx else None),
+            mechanic="blood_limit_change",
+            subtype=subtype or ("cut" if delta < 0 else "gain"),
+            amount=delta,
+            tags=tags,
+            parent_event_id=parent_ctx.event_id if parent_ctx else None,
+        )
+        record = ctx.to_dict()
+        events = getattr(entity, "_blood_limit_events", None)
+        if events is None:
+            entity._blood_limit_events = []
+            events = entity._blood_limit_events
+        events.append(record)
+        self._emit(
+            CombatEventType.BLOOD_LIMIT_CHANGED,
+            actor=ctx.actor, target=entity, ctx=record,
+            delta=delta, blood_limit_after=entity.blood_limit,
+        )
+        return record
+
+    def _apply_blood_limit_change(
+        self, entity: Entity, delta: int, source: str, polarity: str,
+        *, ctx: Optional[EffectContext | dict] = None,
+        source_type: str = "", subtype: str = "",
+        actor: Optional[Entity] = None, owner: Optional[Entity] = None,
+        tags: Optional[set[str]] = None,
+        clamp_hp: bool = True, lethal: bool = True,
+    ) -> dict:
+        """血限变化的统一入口：登记账本 → 记录来源 → 生命封顶 → 统一命零判定。
+
+        数值行为与原来散落的 `_battle_delta + current_hp=min(...) + 手写命零` 完全一致，
+        只是把“来源上下文”和“命零判定”固定下来，防止再出现
+        “血限压到 0 生命却仍然 is_alive=True”的非法状态。
+        """
+        parent = normalize_context(ctx)
+        applied = self._battle_delta(entity, "blood_limit", delta, source, polarity)
+        bl_ctx = self._record_blood_limit_event(
+            entity, applied, parent, source=source, source_type=source_type,
+            subtype=subtype, actor=actor, owner=owner, tags=tags)
+        if clamp_hp:
+            entity.current_hp = min(entity.current_hp, entity.blood_limit)
+        died = self._check_hp_zero_death(entity, ctx=bl_ctx or parent) if lethal else False
+        return {"applied": applied, "ctx": bl_ctx, "died": died}
+
     def _apply_hostile_damage(self, target: Entity, amount: int,
                               damage_type: str = DamageType.NORMAL.value,
                               source: Optional[Entity] = None,
@@ -463,6 +579,22 @@ class CombatEngine:
         ctx 为兼容层来源上下文，不改变既有伤害结算顺序和返回核心字段。
         """
         damage_ctx, legacy_ctx = self._damage_context(target, amount, damage_type, source, ctx)
+        if self._effect_chain_depth >= self.MAX_EFFECT_CHAIN_DEPTH:
+            # 保险丝：正常规则下不可能走到这里（重定向每跳都会递减计数，本身收敛）。
+            raise RecursionError(
+                f"效果链深度超过{self.MAX_EFFECT_CHAIN_DEPTH}层，疑似 A→B→A 循环触发："
+                f"{damage_ctx.source}→{getattr(target, 'name', '?')}")
+        self._effect_chain_depth += 1
+        try:
+            return self._apply_hostile_damage_inner(
+                target, amount, damage_type, source, damage_ctx, legacy_ctx)
+        finally:
+            self._effect_chain_depth -= 1
+
+    def _apply_hostile_damage_inner(
+        self, target: Entity, amount: int, damage_type: str,
+        source: Optional[Entity], damage_ctx: EffectContext, legacy_ctx: bool,
+    ) -> dict:
         amount = self.hook_manager.apply_multiplier_adjust(target, amount, damage_type, source, self.state)
         amount = self._incoming_adjust(target, amount, damage_type)
 
@@ -481,9 +613,20 @@ class CombatEngine:
 
         # 2. 受到伤害前反噬 (爆裂 Hook)
         before_res = self.hook_manager.apply_before_damage(target, amount, damage_type, source, self.state)
+        if before_res.get("reflected"):
+            # 爆裂在 Hook 内直接扣了攻击者的生命；此处补记来源，保证反噬也能追溯。
+            # 数值不动（含 hp_lost_this_round 口径），只补上下文。
+            reflect_ctx = self._record_hp_loss_event(
+                source, before_res["reflected"], damage_ctx, subtype="baolie_reflect")
+            if reflect_ctx:
+                before_res["reflect_ctx"] = reflect_ctx
         if before_res.get("suppressed"):
             if source is not None and not source.is_alive:
-                self._on_entity_death(source)
+                self._on_entity_death(source, ctx=before_res.get("reflect_ctx") or make_context(
+                    timing=damage_ctx.timing, source="爆裂", source_type="daowen",
+                    actor=target, target=source, owner=target, mechanic="death",
+                    subtype="baolie_reflect", tags={"daowen", "reflect"},
+                    parent_event_id=damage_ctx.event_id))
             return self._attach_damage_context({
                 "raw_damage": amount, "shield_absorbed": 0, "actual_damage": 0,
                 "hp_before": target.current_hp, "hp_after": target.current_hp,
@@ -507,6 +650,12 @@ class CombatEngine:
         hp_loss_ctx = self._record_hp_loss_event(target, actual, damage_ctx, subtype="damage")
         if hp_loss_ctx:
             detail["hp_loss_ctx"] = hp_loss_ctx
+        self._emit(
+            CombatEventType.DAMAGE_APPLIED, actor=source, target=target, ctx=detail["ctx"],
+            raw_damage=amount, actual_damage=actual,
+            shield_absorbed=detail.get("shield_absorbed", 0),
+            hp_after=detail.get("hp_after"), damage_type=damage_type,
+        )
         if actual > 0 and source is not None:
             stolen = self._xijie_steal(source, target, actual)
             if stolen:
@@ -526,6 +675,11 @@ class CombatEngine:
         if getattr(entity, "_death_triggers_emitted", False):
             return
         parent = normalize_context(ctx)
+        # 死因优先级：离场原因 > 调用方显式给出的死亡上下文 subtype > 兜底 hp_zero。
+        # （【崩解】【凡庸】【尸爆】等特殊死因靠这一步才能留在 _death_ctx 里。）
+        subtype = getattr(entity, "departure_reason", "")
+        if not subtype and parent is not None and parent.mechanic == "death" and parent.subtype:
+            subtype = parent.subtype
         death_ctx = make_context(
             timing=parent.timing if parent else self._current_context_timing(),
             source=parent.source if parent else "legacy_death",
@@ -534,13 +688,18 @@ class CombatEngine:
             target=entity,
             owner=parent.owner if parent else None,
             mechanic="death",
-            subtype=getattr(entity, "departure_reason", "") or "hp_zero",
+            subtype=subtype or "hp_zero",
             amount=0,
             tags=(set(parent.tags) if parent else {"legacy_context"}),
             parent_event_id=parent.event_id if parent else None,
         )
         entity._death_ctx = death_ctx.to_dict()
         entity._death_triggers_emitted = True
+        self._emit(
+            CombatEventType.ENTITY_DIED, actor=death_ctx.actor, target=entity,
+            ctx=entity._death_ctx, entity_type=entity.entity_type,
+            cause=death_ctx.subtype,
+        )
         if entity.entity_type == "怪物":
             if self.state.player and self._relic_active(self.state.player, "焦黑发丝"):
                 self._gain_speed(self.state.player, 2, ctx={
@@ -600,11 +759,11 @@ class CombatEngine:
         entity.hp_lost_this_round += lost
         parent = normalize_context(ctx)
         hp_loss_ctx = self._record_hp_loss_event(entity, lost, parent, subtype="raw")
-        died = False
-        if entity.current_hp <= 0:
-            entity.is_alive = False
-            died = True
-            self._on_entity_death(entity, ctx=hp_loss_ctx or parent)
+        # died 的口径与重构前保持一致：只看生命是否归零（已命零者仍报 True）；
+        # 真正的死亡通知交给统一入口，重复通知由 _on_entity_death 幂等吸收。
+        died = entity.current_hp <= 0
+        if died:
+            self._check_hp_zero_death(entity, ctx=hp_loss_ctx or parent)
         result = {"hp_before": before, "hp_after": entity.current_hp, "lost": lost, "died": died}
         if hp_loss_ctx:
             result["hp_loss_ctx"] = hp_loss_ctx
@@ -790,11 +949,14 @@ class CombatEngine:
         if cost_type == "衰老":
             if self.state.side_has(payer, "不朽之躯"):
                 return {"payer": payer.name, "cost_type": cost_type, "paid": 0, "immune": True}
+            # 衰老是代价，不进局内可回滚账本；但血限变化的来源仍要可追溯。
             payer.blood_limit = max(0, payer.blood_limit - amount)
+            self._record_blood_limit_event(
+                payer, -amount, cost_context, source=(cost_context.source if cost_context else "衰老"),
+                source_type=(cost_context.source_type if cost_context else "cost"),
+                subtype="aging", tags=(set(cost_context.tags) if cost_context else set()) | {"cost", "blood_limit_loss"})
             payer.current_hp = min(payer.current_hp, payer.blood_limit)
-            if payer.current_hp <= 0:
-                payer.is_alive = False
-                self._on_entity_death(payer)
+            self._check_hp_zero_death(payer, ctx=cost_context)
         elif cost_type == "枯竭":
             payer.mana_limit = max(0, payer.mana_limit - amount)
             payer.current_mana = min(payer.current_mana, payer.mana_limit)
@@ -810,7 +972,7 @@ class CombatEngine:
         elif cost_type == "异变":
             mutation = payer.add_mutation(amount)
             if mutation.get("collapsed"):
-                self._on_entity_death(payer)
+                self._on_entity_death(payer, ctx=self._collapse_context(payer, cost_context))
             self._bank_lianxin(payer, cost_type, amount)
             nail = self._on_cost_paid(payer, cost_context)
             return {"payer": payer.name, "cost_type": cost_type, "paid": amount,
@@ -819,6 +981,26 @@ class CombatEngine:
         nail = self._on_cost_paid(payer, cost_context)
         return {"payer": payer.name, "cost_type": cost_type, "paid": amount,
                 "brand_nail": nail}
+
+    def _collapse_context(
+        self, entity: Entity, parent: Optional[EffectContext | dict] = None,
+    ) -> EffectContext:
+        """【崩解】（异变达阈值直接命零）的统一死亡上下文。
+
+        Entity.add_mutation 出于模型层职责只翻 is_alive，不知道战斗上下文；
+        所有调用点都必须用本上下文把死亡交回 _on_entity_death，否则崩解死者
+        不会触发任何[命零]效果（焦黑发丝/招魂尸体/分裂）。
+        """
+        norm = normalize_context(parent)
+        return make_context(
+            timing=norm.timing if norm else self._current_context_timing(),
+            source="崩解", source_type="system",
+            actor=norm.actor if norm else None, target=entity,
+            owner=norm.owner if norm else None,
+            mechanic="death", subtype="collapse", amount=0,
+            tags=(set(norm.tags) if norm else set()) | {"mutation", "collapse"},
+            parent_event_id=norm.event_id if norm else None,
+        )
 
     def pay_numeric_cost(
         self,
@@ -925,7 +1107,7 @@ class CombatEngine:
                 and self._relic_active(payer, "血誓戒")):
             detail["context_warning"] = "流血代价缺少EffectContext；需要来源上下文的监听不会触发"
         if detail.get("died"):
-            self._on_entity_death(payer, ctx=cost_context)
+            self._check_hp_zero_death(payer, ctx=hp_loss_ctx or cost_context)
         if (payer is self.state.player and actual > 0 and not payer.blood_oath_used_this_round
                 and self._relic_active(payer, "血誓戒")
                 and self._blood_oath_context_allows(cost_context)):
@@ -1229,6 +1411,8 @@ class CombatEngine:
                 e._hp_loss_events = []
             if hasattr(e, "_speed_change_events"):
                 e._speed_change_events = []
+            if hasattr(e, "_blood_limit_events"):
+                e._blood_limit_events = []
             e.actions_used_this_round = 0
             e.blood_oath_used_this_round = False
             e.mana_inflicted_this_round = 0
@@ -1335,12 +1519,15 @@ class CombatEngine:
                     effects.append({"type": "bizhai", "entity": entity.name, "lost_shards": x})
                 else:
                     delta = max(1, entity.blood_limit - 2 * x) - entity.blood_limit
-                    self._battle_delta(
-                        entity, "blood_limit", delta, "逼债", EffectPolarity.DEBUFF.value)
-                    entity.current_hp = min(entity.current_hp, entity.blood_limit)
-                    if entity.current_hp <= 0:
-                        entity.is_alive = False
-                        self._on_entity_death(entity)
+                    self._apply_blood_limit_change(
+                        entity, delta, "逼债", EffectPolarity.DEBUFF.value,
+                        source_type="daowen", subtype="debt_penalty",
+                        actor=entry.get("caster"),
+                        ctx={"timing": "round_start", "source": "逼债", "source_type": "daowen",
+                             "actor": entry.get("caster"), "target": entity,
+                             "mechanic": "blood_limit_change", "subtype": "debt_penalty",
+                             "amount": delta, "tags": {"daowen", "round_start"}},
+                        tags={"daowen", "round_start", "blood_limit_loss"})
                     effects.append({"type": "bizhai_blood", "entity": entity.name,
                                     "lost_blood_limit": 2 * x, "blood_limit": entity.blood_limit})
         # 清算X：目标失去[你碎片]点格挡（你=施法者当前碎片，每回始读取）
@@ -1396,13 +1583,16 @@ class CombatEngine:
                 blood_loss = max(0, entity.attack_count * entity.attack_power)
                 before_limit = entity.blood_limit
                 delta = max(0, entity.blood_limit - blood_loss) - entity.blood_limit
-                self._battle_delta(
-                    entity, "blood_limit", delta, "畸变", EffectPolarity.DEBUFF.value)
-                entity.current_hp = min(entity.current_hp, entity.blood_limit)
-                if entity.blood_limit <= 0 or entity.current_hp <= 0:
-                    entity.current_hp = 0
-                    entity.is_alive = False
-                    self._on_entity_death(entity)
+                # 血限压到 0 与生命被压到 0 在旧代码里是同一条判定（clamp 后 blood_limit<=0 ⇒ current_hp<=0），
+                # 统一入口保持完全等价。
+                self._apply_blood_limit_change(
+                    entity, delta, "畸变", EffectPolarity.DEBUFF.value,
+                    source_type="daowen", subtype="deform",
+                    ctx={"timing": "round_end", "source": "畸变", "source_type": "daowen",
+                         "actor": entity, "target": entity,
+                         "mechanic": "blood_limit_change", "subtype": "deform",
+                         "amount": delta, "tags": {"daowen", "round_end"}},
+                    tags={"daowen", "round_end", "blood_limit_loss"})
                 effects.append({
                     "type": "deform_blood_limit_loss",
                     "entity": entity.name,
@@ -1459,10 +1649,19 @@ class CombatEngine:
                                      "cost": payment, "amount": payment["actual_paid"]})
 
             # 赤族诅咒：[回终]固定流血20
+            # 注意：这里刻意**不**改走 pay_numeric_cost——那会额外触发血誓戒/烙痕钉/血契，属于改规则。
+            # 本次只补齐来源上下文与统一死亡判定，数值口径不动。
             if entity.entity_type == "赤族" and entity.is_alive:
+                curse_ctx = make_context(
+                    timing="round_end", source="赤族诅咒", source_type="bloodline",
+                    actor=entity, target=entity, owner=entity,
+                    mechanic="cost", subtype="bleed", amount=20,
+                    tags={"bloodline", "round_end", "automatic"})
                 bleed_detail = entity.take_damage(20, "代价")
+                loss_ctx = self._record_hp_loss_event(
+                    entity, bleed_detail.get("actual_damage", 0), curse_ctx, subtype="cost")
                 if bleed_detail.get("died"):
-                    self._on_entity_death(entity)
+                    self._check_hp_zero_death(entity, ctx=loss_ctx or curse_ctx)
                 effects.append({"type": "chizu_curse_bleed", "entity": entity.name,
                                  "amount": bleed_detail["actual_damage"], "died": bleed_detail["died"]})
 
@@ -1576,6 +1775,8 @@ class CombatEngine:
                 entity._hp_loss_events = []
             if hasattr(entity, "_speed_change_events"):
                 entity._speed_change_events = []
+            if hasattr(entity, "_blood_limit_events"):
+                entity._blood_limit_events = []
 
         # 手术·强制移植：本场第三回终仍保持原移植道纹时转为怪物。
         if self.state.current_round >= 3:
@@ -1728,7 +1929,11 @@ class CombatEngine:
         log = [f"{monster.name}发动【原初{x}】：异变+{cost}（当前{pay['mutation_total']}层）"]
         
         if pay["collapsed"]:
-            self._on_entity_death(monster)
+            self._on_entity_death(monster, ctx=self._collapse_context(monster, {
+                "timing": self._current_context_timing(), "source": f"原初{x}",
+                "source_type": "evolution", "actor": monster, "target": monster,
+                "mechanic": "cost", "subtype": "mutation", "amount": cost,
+                "tags": {"evolution", "active_payment"}}))
             log.append(f"异变达到{pay['mutation_total']}层，触发【崩解】：{monster.name}直接命零，进化效果中断")
             return {"success": True, "action": "进化·原初X", "collapsed": True,
                     "log": log, "mutation": pay,
@@ -1967,10 +2172,9 @@ class CombatEngine:
         entity.is_proliferated = True
         entity.is_cancer = True
         entity.current_hp = 0
-        entity.is_alive = False
         if entity is self.state.player:
             self.state.last_death_cause = "cancer"
-        self._on_entity_death(entity, ctx=cancer_ctx)
+        self._check_hp_zero_death(entity, ctx=cancer_ctx)
         return {
             "type": "cancer",
             "type_alias": "proliferation",
@@ -2210,6 +2414,16 @@ class CombatEngine:
         x = calc.get("x", 0)
         if name in ("自食", "固执"):
             target = caster
+        # 本次道纹结算的根上下文。由它派生的血限/生命/命零变化都以此为父事件，
+        # 这样「杀伐 → 伤害 → 血限下降 → 命零」在链上是连续的。
+        daowen_ctx = make_context(
+            timing=self._current_context_timing(),
+            source=name, source_type="daowen",
+            actor=caster, target=target, owner=caster,
+            mechanic="daowen_resolution", subtype=name, amount=x,
+            tags={"daowen"},
+        )
+        result["daowen_ctx"] = daowen_ctx.to_dict()
 
         # ---- 乱葬岗·附煞（sha_qi）效果修正 ----
         # 施法者持有的道纹实例可能带煞气；对消耗/持续/伤害/回复做代数修正。
@@ -2411,18 +2625,18 @@ class CombatEngine:
             result["effects"].append({"type": "shield_drain", "target": target.name, "lost": lost})
         if "blood_limit_reduction" in calc:
             _hp_before = target.current_hp
-            self._battle_delta(
-                target, "blood_limit", -calc["blood_limit_reduction"],
-                name, EffectPolarity.DEBUFF.value)
+            # clamp_hp/lethal 关掉：本效果的生命封顶要在 hp_reduction 之后统一做一次。
+            _blr = self._apply_blood_limit_change(
+                target, -calc["blood_limit_reduction"], name, EffectPolarity.DEBUFF.value,
+                ctx=daowen_ctx, source_type="daowen", subtype="blood_limit_reduction",
+                actor=caster, owner=caster, clamp_hp=False, lethal=False)
             # README 第460行"[血限]及当前生命同时 -4X"：两者是各自独立的扣减。
             # 此前实现只做 current_hp=min(current_hp, blood_limit)（血限压顶），
             # 对残血目标等于毫无效果——切割打 10/200 的怪一点血都掉不了。
             if "hp_reduction" in calc:
                 target.current_hp -= calc["hp_reduction"]
             target.current_hp = max(0, min(target.current_hp, target.blood_limit))
-            if target.current_hp <= 0:
-                target.is_alive = False
-                self._on_entity_death(target)
+            self._check_hp_zero_death(target, ctx=_blr["ctx"] or daowen_ctx)
             # 血限压迫导致的当前生命减少，同样属于"使敌对角色生命减少"，
             # 必须计入本回合伤害统计，否则纯切割流派会被【凡庸】判定为无所作为而自爆。
             _hp_cut = _hp_before - target.current_hp
@@ -2437,17 +2651,18 @@ class CombatEngine:
                 result["effects"].append({"type": "blood_limit_increase", "target": target.name,
                                            "increase": 0, "blocked_by": "不朽之躯"})
             else:
-                increase = self._battle_delta(
-                    target, "blood_limit", calc["blood_limit_increase"],
-                    name, EffectPolarity.BUFF.value)
+                increase = self._apply_blood_limit_change(
+                    target, calc["blood_limit_increase"], name, EffectPolarity.BUFF.value,
+                    ctx=daowen_ctx, source_type="daowen", subtype="blood_limit_increase",
+                    actor=caster, owner=caster, clamp_hp=False, lethal=False)["applied"]
                 result["effects"].append({"type": "blood_limit_increase", "target": target.name,
                                           "increase": increase})
         if "blood_limit_penalty" in calc and target.shards < (calc.get("shard_drain", 0) or 0):
             # 逼债：碎片不足则失血限；不是代价，按局内减益登记。
-            lost = -self._battle_delta(
-                target, "blood_limit", -calc["blood_limit_penalty"],
-                name, EffectPolarity.DEBUFF.value)
-            target.current_hp = min(target.current_hp, target.blood_limit)
+            lost = -self._apply_blood_limit_change(
+                target, -calc["blood_limit_penalty"], name, EffectPolarity.DEBUFF.value,
+                ctx=daowen_ctx, source_type="daowen", subtype="debt_penalty",
+                actor=caster, owner=caster)["applied"]
             result["effects"].append({"type": "bizhai_blood", "target": target.name, "lost": lost})
 
         # ---- 攻击面板修改 ----
@@ -2573,8 +2788,10 @@ class CombatEngine:
         if name == "瓦解" and calc.get("blood_limit_pct"):
             pct = calc["blood_limit_pct"]
             cut = math.ceil(target.blood_limit * pct / 100)
-            self._battle_delta(target, "blood_limit", -cut, "瓦解", EffectPolarity.DEBUFF.value)
-            target.current_hp = min(target.current_hp, target.blood_limit)
+            self._apply_blood_limit_change(
+                target, -cut, "瓦解", EffectPolarity.DEBUFF.value,
+                ctx=daowen_ctx, source_type="daowen", subtype="disintegrate",
+                actor=caster, owner=caster)
             result["effects"].append({"type": "wajie", "target": target.name,
                                       "blood_limit_pct": pct, "blood_limit_cut": cut,
                                       "blood_limit_after": target.blood_limit})
@@ -2615,8 +2832,8 @@ class CombatEngine:
                         "tags": {"daowen", "aoe", "self_destruct"},
                     })
                     result["effects"].append({"type": "aoe_damage", "target": enemy.name, **rd})
-                caster.is_alive = False
-                self._on_entity_death(caster, ctx={
+                caster.current_hp = 0
+                self._check_hp_zero_death(caster, ctx={
                     "timing": "player_action" if caster is self.state.player else "monster_action",
                     "source": "尸爆", "source_type": "daowen", "actor": caster, "target": caster,
                     "mechanic": "death", "subtype": "self_destruct", "tags": {"daowen", "self_destruct"},
@@ -3678,6 +3895,13 @@ class CombatEngine:
         elif name in self.ORIGINAL_MONSTER_DAOWEN:
             paid = monster.add_mutation(self.YUANCHU_COST_RATE * inst.x_value)
             if paid["collapsed"]:
+                # 修复：此前直接 return，崩解死者从不进入统一死亡管线
+                # （不产生 _death_ctx、不进 dead_monsters、不触发焦黑发丝/分裂）。
+                self._on_entity_death(monster, ctx=self._collapse_context(monster, {
+                    "timing": "monster_action", "source": name, "source_type": "daowen",
+                    "actor": monster, "target": monster, "mechanic": "cost",
+                    "subtype": "mutation", "amount": self.YUANCHU_COST_RATE * inst.x_value,
+                    "tags": {"daowen", "active_payment"}}))
                 return {"monster": monster.name, "collapsed": name,
                         "note": "支付异变后触发【崩解】，道纹效果中断"}
         elif name == "赌命":
@@ -3951,8 +4175,10 @@ class CombatEngine:
         if not entity.is_alive:
             return []
         entity.current_hp = 0
-        entity.is_alive = False
-        self._on_entity_death(entity)
+        self._check_hp_zero_death(entity, ctx={
+            "timing": "round_end", "source": "凡庸", "source_type": "system",
+            "actor": entity, "target": entity, "mechanic": "death", "subtype": "mediocrity",
+            "amount": 0, "tags": {"system", "round_end", "mediocrity"}})
         entity.no_action_rounds = 0
         entity.no_damage_rounds = 0
         if entity is self.state.player:
