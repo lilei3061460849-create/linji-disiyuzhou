@@ -1,626 +1,290 @@
 {
  "stats": {
-  "seeds": 5000,
-  "runs": 5000,
-  "battles": 10600,
-  "rounds": 58698,
-  "wins": 5624,
-  "losses": 4976,
+  "seeds": 500,
+  "runs": 500,
+  "battles": 1059,
+  "rounds": 5882,
+  "wins": 563,
+  "losses": 496,
   "engine_exceptions": 0,
   "ai_illegal_actions": 0,
   "ai_suicides": 0,
-  "known_consumable_suicide": 112,
+  "known_consumable_suicide": 43,
   "preview_inconsistencies": 0,
   "preview_leaks": 0,
   "entity_ref_drift": 0,
   "resource_anomalies": 0,
   "rule_anomalies": 0,
   "rest_unreasonable": 0,
-  "battle_end_anomaly": 70,
+  "battle_end_anomaly": 2,
   "save_load_anomaly": 0,
   "hire_redeem_anomaly": 0,
-  "test_script_issues": 18,
-  "normal_losses": 4964,
-  "known_consumable": 56
+  "test_script_issues": 0,
+  "normal_losses": 496,
+  "known_consumable": 43
  },
  "issues": [
   {
-   "kind": "known_consumable",
-   "seed": 7091,
-   "ctx": "consume_item 残骸",
-   "detail": "消耗品未走预演，命零（已知残骸崩解类）"
-  },
-  {
-   "kind": "known_consumable",
-   "seed": 7158,
-   "ctx": "consume_item 残骸",
-   "detail": "消耗品未走预演，命零（已知残骸崩解类）"
-  },
-  {
-   "kind": "known_consumable",
-   "seed": 7161,
-   "ctx": "consume_item 残骸",
-   "detail": "消耗品未走预演，命零（已知残骸崩解类）"
-  },
-  {
    "kind": "battle_end_anomaly",
-   "seed": 7178,
-   "ctx": "B6",
-   "detail": "battle_start fail: 只有局外阶段可以进入战始"
-  },
-  {
-   "kind": "battle_end_anomaly",
-   "seed": 7199,
-   "ctx": "B6",
-   "detail": "round 4 round_end fail: 【round_end】只能在战斗中执行"
-  },
-  {
-   "kind": "known_consumable",
-   "seed": 7218,
-   "ctx": "consume_item 残骸",
-   "detail": "消耗品未走预演，命零（已知残骸崩解类）"
-  },
-  {
-   "kind": "battle_end_anomaly",
-   "seed": 7351,
+   "seed": 2150,
    "ctx": "B5",
    "detail": "round 4 round_end fail: 【round_end】只能在战斗中执行"
   },
   {
    "kind": "known_consumable",
-   "seed": 7353,
-   "ctx": "consume_item 残骸",
-   "detail": "消耗品未走预演，命零（已知残骸崩解类）"
-  },
-  {
-   "kind": "battle_end_anomaly",
-   "seed": 7457,
-   "ctx": "B2",
-   "detail": "round 5 round_end fail: 【round_end】只能在战斗中执行"
-  },
-  {
-   "kind": "known_consumable",
-   "seed": 7467,
-   "ctx": "consume_item 残骸",
-   "detail": "消耗品未走预演，命零（已知残骸崩解类）"
-  },
-  {
-   "kind": "battle_end_anomaly",
-   "seed": 7642,
-   "ctx": "B5",
-   "detail": "round 4 round_end fail: 【round_end】只能在战斗中执行"
-  },
-  {
-   "kind": "known_consumable",
-   "seed": 7744,
+   "seed": 2187,
    "ctx": "consume_item 残骸",
    "detail": "消耗品未走预演，命零（已知残骸崩解类）"
   },
   {
    "kind": "known_consumable",
-   "seed": 7775,
-   "ctx": "consume_item 残骸",
-   "detail": "消耗品未走预演，命零（已知残骸崩解类）"
-  },
-  {
-   "kind": "battle_end_anomaly",
-   "seed": 7785,
-   "ctx": "B5",
-   "detail": "round 3 round_end fail: 【round_end】只能在战斗中执行"
-  },
-  {
-   "kind": "known_consumable",
-   "seed": 7837,
-   "ctx": "consume_item 残骸",
-   "detail": "消耗品未走预演，命零（已知残骸崩解类）"
-  },
-  {
-   "kind": "battle_end_anomaly",
-   "seed": 7842,
-   "ctx": "B6",
-   "detail": "round 4 round_end fail: 【round_end】只能在战斗中执行"
-  },
-  {
-   "kind": "test_script_issues",
-   "seed": 7876,
-   "ctx": "PREBATTLE",
-   "detail": "energy stuck: 有待处理的中断等待DM裁定"
-  },
-  {
-   "kind": "battle_end_anomaly",
-   "seed": 7876,
-   "ctx": "B4",
-   "detail": "battle_start fail: 只有局外阶段可以进入战始"
-  },
-  {
-   "kind": "known_consumable",
-   "seed": 7878,
-   "ctx": "consume_item 残骸",
-   "detail": "消耗品未走预演，命零（已知残骸崩解类）"
-  },
-  {
-   "kind": "battle_end_anomaly",
-   "seed": 7987,
-   "ctx": "B6",
-   "detail": "round 5 round_end fail: 【round_end】只能在战斗中执行"
-  },
-  {
-   "kind": "battle_end_anomaly",
-   "seed": 8163,
-   "ctx": "B2",
-   "detail": "round 3 round_end fail: 【round_end】只能在战斗中执行"
-  },
-  {
-   "kind": "known_consumable",
-   "seed": 8215,
+   "seed": 2187,
    "ctx": "consume_item 残骸",
    "detail": "消耗品未走预演，命零（已知残骸崩解类）"
   },
   {
    "kind": "known_consumable",
-   "seed": 8224,
-   "ctx": "consume_item 残骸",
-   "detail": "消耗品未走预演，命零（已知残骸崩解类）"
-  },
-  {
-   "kind": "battle_end_anomaly",
-   "seed": 8245,
-   "ctx": "B5",
-   "detail": "round 4 round_end fail: 【round_end】只能在战斗中执行"
-  },
-  {
-   "kind": "test_script_issues",
-   "seed": 8248,
-   "ctx": "PREBATTLE",
-   "detail": "energy stuck: 有待处理的中断等待DM裁定"
-  },
-  {
-   "kind": "battle_end_anomaly",
-   "seed": 8248,
-   "ctx": "B5",
-   "detail": "battle_start fail: 只有局外阶段可以进入战始"
-  },
-  {
-   "kind": "known_consumable",
-   "seed": 8488,
+   "seed": 2187,
    "ctx": "consume_item 残骸",
    "detail": "消耗品未走预演，命零（已知残骸崩解类）"
   },
   {
    "kind": "known_consumable",
-   "seed": 8511,
+   "seed": 2187,
    "ctx": "consume_item 残骸",
    "detail": "消耗品未走预演，命零（已知残骸崩解类）"
   },
   {
    "kind": "known_consumable",
-   "seed": 8529,
+   "seed": 2187,
    "ctx": "consume_item 残骸",
    "detail": "消耗品未走预演，命零（已知残骸崩解类）"
   },
   {
    "kind": "known_consumable",
-   "seed": 8732,
+   "seed": 2187,
    "ctx": "consume_item 残骸",
    "detail": "消耗品未走预演，命零（已知残骸崩解类）"
   },
   {
    "kind": "known_consumable",
-   "seed": 8736,
+   "seed": 2187,
    "ctx": "consume_item 残骸",
    "detail": "消耗品未走预演，命零（已知残骸崩解类）"
   },
   {
    "kind": "known_consumable",
-   "seed": 8853,
+   "seed": 2187,
    "ctx": "consume_item 残骸",
    "detail": "消耗品未走预演，命零（已知残骸崩解类）"
   },
   {
    "kind": "known_consumable",
-   "seed": 8860,
+   "seed": 2187,
    "ctx": "consume_item 残骸",
    "detail": "消耗品未走预演，命零（已知残骸崩解类）"
   },
   {
    "kind": "known_consumable",
-   "seed": 8901,
+   "seed": 2187,
    "ctx": "consume_item 残骸",
    "detail": "消耗品未走预演，命零（已知残骸崩解类）"
   },
   {
    "kind": "known_consumable",
-   "seed": 8988,
-   "ctx": "consume_item 残骸",
-   "detail": "消耗品未走预演，命零（已知残骸崩解类）"
-  },
-  {
-   "kind": "battle_end_anomaly",
-   "seed": 9018,
-   "ctx": "B5",
-   "detail": "battle_start fail: 只有局外阶段可以进入战始"
-  },
-  {
-   "kind": "known_consumable",
-   "seed": 9145,
-   "ctx": "consume_item 残骸",
-   "detail": "消耗品未走预演，命零（已知残骸崩解类）"
-  },
-  {
-   "kind": "battle_end_anomaly",
-   "seed": 9160,
-   "ctx": "B3",
-   "detail": "round 4 round_end fail: 【round_end】只能在战斗中执行"
-  },
-  {
-   "kind": "test_script_issues",
-   "seed": 9211,
-   "ctx": "PREBATTLE",
-   "detail": "energy stuck: 有待处理的中断等待DM裁定"
-  },
-  {
-   "kind": "battle_end_anomaly",
-   "seed": 9211,
-   "ctx": "B4",
-   "detail": "battle_start fail: 只有局外阶段可以进入战始"
-  },
-  {
-   "kind": "known_consumable",
-   "seed": 9279,
+   "seed": 2187,
    "ctx": "consume_item 残骸",
    "detail": "消耗品未走预演，命零（已知残骸崩解类）"
   },
   {
    "kind": "known_consumable",
-   "seed": 9301,
-   "ctx": "consume_item 残骸",
-   "detail": "消耗品未走预演，命零（已知残骸崩解类）"
-  },
-  {
-   "kind": "battle_end_anomaly",
-   "seed": 9304,
-   "ctx": "B6",
-   "detail": "round 4 round_end fail: 【round_end】只能在战斗中执行"
-  },
-  {
-   "kind": "known_consumable",
-   "seed": 9330,
+   "seed": 2187,
    "ctx": "consume_item 残骸",
    "detail": "消耗品未走预演，命零（已知残骸崩解类）"
   },
   {
    "kind": "known_consumable",
-   "seed": 9345,
-   "ctx": "consume_item 残骸",
-   "detail": "消耗品未走预演，命零（已知残骸崩解类）"
-  },
-  {
-   "kind": "test_script_issues",
-   "seed": 9437,
-   "ctx": "PREBATTLE",
-   "detail": "energy stuck: 有待处理的中断等待DM裁定"
-  },
-  {
-   "kind": "battle_end_anomaly",
-   "seed": 9437,
-   "ctx": "B5",
-   "detail": "battle_start fail: 只有局外阶段可以进入战始"
-  },
-  {
-   "kind": "known_consumable",
-   "seed": 9464,
+   "seed": 2187,
    "ctx": "consume_item 残骸",
    "detail": "消耗品未走预演，命零（已知残骸崩解类）"
   },
   {
    "kind": "known_consumable",
-   "seed": 9495,
+   "seed": 2187,
    "ctx": "consume_item 残骸",
    "detail": "消耗品未走预演，命零（已知残骸崩解类）"
   },
   {
    "kind": "known_consumable",
-   "seed": 9557,
+   "seed": 2187,
    "ctx": "consume_item 残骸",
    "detail": "消耗品未走预演，命零（已知残骸崩解类）"
   },
   {
    "kind": "known_consumable",
-   "seed": 9561,
+   "seed": 2187,
    "ctx": "consume_item 残骸",
    "detail": "消耗品未走预演，命零（已知残骸崩解类）"
   },
   {
    "kind": "known_consumable",
-   "seed": 9582,
+   "seed": 2187,
    "ctx": "consume_item 残骸",
    "detail": "消耗品未走预演，命零（已知残骸崩解类）"
   },
   {
    "kind": "known_consumable",
-   "seed": 9622,
+   "seed": 2187,
    "ctx": "consume_item 残骸",
    "detail": "消耗品未走预演，命零（已知残骸崩解类）"
   },
   {
    "kind": "known_consumable",
-   "seed": 9647,
-   "ctx": "consume_item 残骸",
-   "detail": "消耗品未走预演，命零（已知残骸崩解类）"
-  },
-  {
-   "kind": "battle_end_anomaly",
-   "seed": 9656,
-   "ctx": "B5",
-   "detail": "round 4 round_end fail: 【round_end】只能在战斗中执行"
-  },
-  {
-   "kind": "test_script_issues",
-   "seed": 9746,
-   "ctx": "PREBATTLE",
-   "detail": "energy stuck: 有待处理的中断等待DM裁定"
-  },
-  {
-   "kind": "battle_end_anomaly",
-   "seed": 9746,
-   "ctx": "B4",
-   "detail": "battle_start fail: 只有局外阶段可以进入战始"
-  },
-  {
-   "kind": "battle_end_anomaly",
-   "seed": 9756,
-   "ctx": "B2",
-   "detail": "round 4 round_end fail: 【round_end】只能在战斗中执行"
-  },
-  {
-   "kind": "known_consumable",
-   "seed": 9897,
+   "seed": 2187,
    "ctx": "consume_item 残骸",
    "detail": "消耗品未走预演，命零（已知残骸崩解类）"
   },
   {
    "kind": "known_consumable",
-   "seed": 9902,
-   "ctx": "consume_item 残骸",
-   "detail": "消耗品未走预演，命零（已知残骸崩解类）"
-  },
-  {
-   "kind": "battle_end_anomaly",
-   "seed": 10011,
-   "ctx": "B6",
-   "detail": "round 4 round_end fail: 【round_end】只能在战斗中执行"
-  },
-  {
-   "kind": "known_consumable",
-   "seed": 10097,
+   "seed": 2187,
    "ctx": "consume_item 残骸",
    "detail": "消耗品未走预演，命零（已知残骸崩解类）"
   },
   {
    "kind": "known_consumable",
-   "seed": 10367,
-   "ctx": "consume_item 残骸",
-   "detail": "消耗品未走预演，命零（已知残骸崩解类）"
-  },
-  {
-   "kind": "test_script_issues",
-   "seed": 10410,
-   "ctx": "PREBATTLE",
-   "detail": "energy stuck: 有待处理的中断等待DM裁定"
-  },
-  {
-   "kind": "battle_end_anomaly",
-   "seed": 10410,
-   "ctx": "B3",
-   "detail": "battle_start fail: 只有局外阶段可以进入战始"
-  },
-  {
-   "kind": "battle_end_anomaly",
-   "seed": 10430,
-   "ctx": "B6",
-   "detail": "round 4 round_end fail: 【round_end】只能在战斗中执行"
-  },
-  {
-   "kind": "known_consumable",
-   "seed": 10477,
-   "ctx": "consume_item 残骸",
-   "detail": "消耗品未走预演，命零（已知残骸崩解类）"
-  },
-  {
-   "kind": "battle_end_anomaly",
-   "seed": 10512,
-   "ctx": "B4",
-   "detail": "battle_start fail: 只有局外阶段可以进入战始"
-  },
-  {
-   "kind": "known_consumable",
-   "seed": 10531,
+   "seed": 2187,
    "ctx": "consume_item 残骸",
    "detail": "消耗品未走预演，命零（已知残骸崩解类）"
   },
   {
    "kind": "known_consumable",
-   "seed": 10547,
+   "seed": 2187,
    "ctx": "consume_item 残骸",
    "detail": "消耗品未走预演，命零（已知残骸崩解类）"
   },
   {
    "kind": "known_consumable",
-   "seed": 10632,
+   "seed": 2187,
    "ctx": "consume_item 残骸",
    "detail": "消耗品未走预演，命零（已知残骸崩解类）"
   },
   {
    "kind": "known_consumable",
-   "seed": 10674,
+   "seed": 2187,
    "ctx": "consume_item 残骸",
    "detail": "消耗品未走预演，命零（已知残骸崩解类）"
   },
   {
    "kind": "known_consumable",
-   "seed": 10743,
+   "seed": 2187,
    "ctx": "consume_item 残骸",
    "detail": "消耗品未走预演，命零（已知残骸崩解类）"
   },
   {
    "kind": "known_consumable",
-   "seed": 10930,
-   "ctx": "consume_item 残骸",
-   "detail": "消耗品未走预演，命零（已知残骸崩解类）"
-  },
-  {
-   "kind": "battle_end_anomaly",
-   "seed": 11000,
-   "ctx": "B6",
-   "detail": "round 4 round_end fail: 【round_end】只能在战斗中执行"
-  },
-  {
-   "kind": "known_consumable",
-   "seed": 11049,
+   "seed": 2187,
    "ctx": "consume_item 残骸",
    "detail": "消耗品未走预演，命零（已知残骸崩解类）"
   },
   {
    "kind": "known_consumable",
-   "seed": 11051,
+   "seed": 2187,
    "ctx": "consume_item 残骸",
    "detail": "消耗品未走预演，命零（已知残骸崩解类）"
   },
   {
    "kind": "known_consumable",
-   "seed": 11105,
+   "seed": 2187,
    "ctx": "consume_item 残骸",
    "detail": "消耗品未走预演，命零（已知残骸崩解类）"
   },
   {
    "kind": "known_consumable",
-   "seed": 11113,
-   "ctx": "consume_item 残骸",
-   "detail": "消耗品未走预演，命零（已知残骸崩解类）"
-  },
-  {
-   "kind": "test_script_issues",
-   "seed": 11150,
-   "ctx": "PREBATTLE",
-   "detail": "energy stuck: 有待处理的中断等待DM裁定"
-  },
-  {
-   "kind": "battle_end_anomaly",
-   "seed": 11150,
-   "ctx": "B6",
-   "detail": "battle_start fail: 只有局外阶段可以进入战始"
-  },
-  {
-   "kind": "battle_end_anomaly",
-   "seed": 11291,
-   "ctx": "B6",
-   "detail": "round 4 round_end fail: 【round_end】只能在战斗中执行"
-  },
-  {
-   "kind": "known_consumable",
-   "seed": 11315,
-   "ctx": "consume_item 残骸",
-   "detail": "消耗品未走预演，命零（已知残骸崩解类）"
-  },
-  {
-   "kind": "battle_end_anomaly",
-   "seed": 11412,
-   "ctx": "B3",
-   "detail": "round 4 round_end fail: 【round_end】只能在战斗中执行"
-  },
-  {
-   "kind": "known_consumable",
-   "seed": 11454,
+   "seed": 2187,
    "ctx": "consume_item 残骸",
    "detail": "消耗品未走预演，命零（已知残骸崩解类）"
   },
   {
    "kind": "known_consumable",
-   "seed": 11468,
+   "seed": 2187,
    "ctx": "consume_item 残骸",
    "detail": "消耗品未走预演，命零（已知残骸崩解类）"
   },
   {
    "kind": "known_consumable",
-   "seed": 11503,
-   "ctx": "consume_item 残骸",
-   "detail": "消耗品未走预演，命零（已知残骸崩解类）"
-  },
-  {
-   "kind": "battle_end_anomaly",
-   "seed": 11592,
-   "ctx": "B5",
-   "detail": "round 4 round_end fail: 【round_end】只能在战斗中执行"
-  },
-  {
-   "kind": "battle_end_anomaly",
-   "seed": 11613,
-   "ctx": "B7",
-   "detail": "round 3 round_end fail: 【round_end】只能在战斗中执行"
-  },
-  {
-   "kind": "battle_end_anomaly",
-   "seed": 11641,
-   "ctx": "B5",
-   "detail": "round 4 round_end fail: 【round_end】只能在战斗中执行"
-  },
-  {
-   "kind": "battle_end_anomaly",
-   "seed": 11650,
-   "ctx": "B6",
-   "detail": "round 3 round_end fail: 【round_end】只能在战斗中执行"
-  },
-  {
-   "kind": "known_consumable",
-   "seed": 11684,
-   "ctx": "consume_item 残骸",
-   "detail": "消耗品未走预演，命零（已知残骸崩解类）"
-  },
-  {
-   "kind": "battle_end_anomaly",
-   "seed": 11685,
-   "ctx": "B2",
-   "detail": "round 4 round_end fail: 【round_end】只能在战斗中执行"
-  },
-  {
-   "kind": "known_consumable",
-   "seed": 11773,
+   "seed": 2187,
    "ctx": "consume_item 残骸",
    "detail": "消耗品未走预演，命零（已知残骸崩解类）"
   },
   {
    "kind": "known_consumable",
-   "seed": 11901,
+   "seed": 2187,
    "ctx": "consume_item 残骸",
    "detail": "消耗品未走预演，命零（已知残骸崩解类）"
   },
   {
-   "kind": "test_script_issues",
-   "seed": 11986,
-   "ctx": "PREBATTLE",
-   "detail": "energy stuck: 有待处理的中断等待DM裁定"
-  },
-  {
-   "kind": "battle_end_anomaly",
-   "seed": 11986,
-   "ctx": "B5",
-   "detail": "battle_start fail: 只有局外阶段可以进入战始"
-  },
-  {
-   "kind": "test_script_issues",
-   "seed": 11989,
-   "ctx": "PREBATTLE",
-   "detail": "energy stuck: 有待处理的中断等待DM裁定"
-  },
-  {
-   "kind": "battle_end_anomaly",
-   "seed": 11989,
-   "ctx": "B2",
-   "detail": "battle_start fail: 只有局外阶段可以进入战始"
+   "kind": "known_consumable",
+   "seed": 2187,
+   "ctx": "consume_item 残骸",
+   "detail": "消耗品未走预演，命零（已知残骸崩解类）"
   },
   {
    "kind": "known_consumable",
-   "seed": 11992,
+   "seed": 2249,
+   "ctx": "consume_item 残骸",
+   "detail": "消耗品未走预演，命零（已知残骸崩解类）"
+  },
+  {
+   "kind": "known_consumable",
+   "seed": 2249,
+   "ctx": "consume_item 残骸",
+   "detail": "消耗品未走预演，命零（已知残骸崩解类）"
+  },
+  {
+   "kind": "known_consumable",
+   "seed": 2249,
+   "ctx": "consume_item 残骸",
+   "detail": "消耗品未走预演，命零（已知残骸崩解类）"
+  },
+  {
+   "kind": "known_consumable",
+   "seed": 2249,
+   "ctx": "consume_item 残骸",
+   "detail": "消耗品未走预演，命零（已知残骸崩解类）"
+  },
+  {
+   "kind": "known_consumable",
+   "seed": 2276,
+   "ctx": "consume_item 残骸",
+   "detail": "消耗品未走预演，命零（已知残骸崩解类）"
+  },
+  {
+   "kind": "known_consumable",
+   "seed": 2445,
+   "ctx": "consume_item 残骸",
+   "detail": "消耗品未走预演，命零（已知残骸崩解类）"
+  },
+  {
+   "kind": "known_consumable",
+   "seed": 2445,
+   "ctx": "consume_item 残骸",
+   "detail": "消耗品未走预演，命零（已知残骸崩解类）"
+  },
+  {
+   "kind": "known_consumable",
+   "seed": 2445,
+   "ctx": "consume_item 残骸",
+   "detail": "消耗品未走预演，命零（已知残骸崩解类）"
+  },
+  {
+   "kind": "known_consumable",
+   "seed": 2496,
+   "ctx": "consume_item 残骸",
+   "detail": "消耗品未走预演，命零（已知残骸崩解类）"
+  },
+  {
+   "kind": "known_consumable",
+   "seed": 2496,
    "ctx": "consume_item 残骸",
    "detail": "消耗品未走预演，命零（已知残骸崩解类）"
   }

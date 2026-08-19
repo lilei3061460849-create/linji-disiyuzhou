@@ -182,6 +182,8 @@ class ActionPreview:
                 "mana_before": pb.current_mana, "mana_after": pa.current_mana,
                 "speed_before": pb.current_speed, "speed_after": pa.current_speed,
                 "shield_before": pb.shield, "shield_after": pa.shield,
+                "mutation_delta": getattr(pa, "mutation_count", 0) - getattr(pb, "mutation_count", 0),
+                "mutation_after": getattr(pa, "mutation_count", 0),
                 "status_before": sorted(s.name for s in pb.status_effects),
                 "status_after": sorted(s.name for s in pa.status_effects),
                 "dead": not pa.is_alive,
@@ -244,3 +246,91 @@ class ActionPreview:
         if not diff:
             return False
         return bool(diff.get("player_dead"))
+    @staticmethod
+    def risk_classify(diff: dict, player) -> tuple:
+        """通用风险分类（非特判，不依赖道纹/消耗品名）。
+
+        基于预演 diff 和当前玩家状态，输出风险等级与具体原因。
+        等级：LETHAL > CRITICAL > HIGH > MEDIUM > LOW > SAFE
+
+        LETHAL  — 动作直接导致轮回者命零（最高优先级禁止，等同于 would_kill_player）
+        CRITICAL — 动作将玩家推入明确的危险阈值（异变 45+、HP ≤ 10%、必死链条触发）
+        HIGH    — 动作导致显著资源损失或状态恶化（法力/速度归零、异变 +20+、格挡清零且受致命伤）
+        MEDIUM  — 可管理的风险（小资源损失、可控负面状态）
+        LOW     — 轻微风险
+        SAFE    — 无明显风险
+
+        这些分类**不依赖任何道纹/消耗品具体名称**，全部基于 diff 中的数值变化
+        和玩家当前状态的定量关系——因此不会出现"只有残骸被标记但别的消耗品漏了"
+        的问题。新增加的伤害/回复/异变/状态效果只要走引擎管线，预演 diff 就会包含，
+        风险分类器自动覆盖。
+        """
+        if not diff:
+            return "SAFE", []
+
+        reasons = []
+        p = player
+
+        # LETHAL（最高优先级，与 would_kill_player 同含义）
+        if diff.get("player_dead"):
+            return "LETHAL", ["完整效果链导致轮回者命零"]
+
+        # CRITICAL：异变达危险阈值（≥45 时动作可能触发崩解）
+        mut = getattr(p, "mutation_count", 0)
+        mut_delta = diff.get("player", {}).get("mutation_delta", 0)
+        if mut + mut_delta >= _MUT_THRESHOLD - 5:   # 离阈值5以内
+            reasons.append("异变即将达到崩解阈值（当前 %d，动作后 %d）" % (mut, mut + mut_delta))
+            return "CRITICAL", reasons
+
+        # CRITICAL：HP 已极低且动作会进一步降低（不含治疗方向）
+        hp = p.current_hp
+        hp_delta = diff.get("player", {}).get("hp_after", hp) - hp
+        if hp <= p.blood_limit * 0.15 and hp_delta < 0:
+            reasons.append("HP 极低（%d/%d）且动作继续扣血" % (hp, p.blood_limit))
+            return "CRITICAL", reasons
+
+        # HIGH：异变显著增加（+10 以上，无论当前等级）
+        if mut_delta >= 10:
+            reasons.append("异变增加 %d（当前 %d，动作后 %d）" % (mut_delta, mut, mut + mut_delta))
+
+        # HIGH：法力/速度归零
+        mana_after = diff.get("player", {}).get("mana_after", 0)
+        speed_after = diff.get("player", {}).get("speed_after", -1)
+        if mana_after == 0 and p.current_mana > 0:
+            reasons.append("法力耗尽（%d → 0）" % p.current_mana)
+        if speed_after == 0 and p.current_speed > 0:
+            reasons.append("速度耗尽（%d → 0）" % p.current_speed)
+
+        # HIGH：触发负面效果链（diff 事件中含死亡/血限/崩解类事件）
+        events = diff.get("events") or []
+        event_types = {e.get("type") for e in events}
+        if "entity_died" in event_types and any(e.get("actor") == p.name or e.get("target") == p.name
+                                                  for e in events if e.get("type") == "entity_died"):
+            reasons.append("效果链含自身死亡事件")
+            return "HIGH", reasons
+        if "blood_limit_changed" in event_types:
+            bl_delta = sum(e.get("data", {}).get("delta", 0) for e in events
+                           if e.get("type") == "blood_limit_changed" and e.get("target") == p.name)
+            if bl_delta < 0:
+                reasons.append("血限下降 %d" % (-bl_delta))
+
+        if reasons:
+            return "HIGH", reasons
+
+        # MEDIUM：小资源损失或可控状态
+        if hp_delta < 0 and -hp_delta > p.blood_limit * 0.15:
+            reasons.append("HP 损失 >%.0f%% 血限" % (100 * (-hp_delta) / max(1, p.blood_limit)))
+            return "MEDIUM", reasons
+        if mana_after < p.mana_limit * 0.3:
+            reasons.append("法余量低（%d/%d）" % (mana_after, p.mana_limit))
+            return "MEDIUM", reasons
+
+        return "LOW", reasons
+
+# 异变崩解阈值（与 Entity 一致，保持单一事实源）
+try:
+    from engine.models import Entity
+    _MUT_THRESHOLD = Entity.MUTATION_COLLAPSE_THRESHOLD
+except Exception:
+    _MUT_THRESHOLD = 50
+
