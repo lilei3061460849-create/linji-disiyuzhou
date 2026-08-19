@@ -345,6 +345,8 @@ def run_battle(engine, battle_idx, ai, rng):
         rrec["after"] = player_state(engine)
         rrec["enemies_after"] = enemy_state(engine)
 
+    rec["preview_rejected"] = list(ai.preview_rejected)
+    ai.preview_rejected.clear()
     if won:
         print("  victory!")
         rec["outcome"] = "victory"
@@ -531,6 +533,14 @@ def main():
     print("\n" + "=" * 50)
     print("FINAL REPORT")
     print("Total battles: %d  total rounds: %d" % (battle_count, round_count))
+    total_rejected = sum(len(b.get("preview_rejected") or []) for b in battle_log)
+    print("安全过滤淘汰候选总数: %d" % total_rejected)
+    for b in battle_log:
+        rej = b.get("preview_rejected") or []
+        if rej:
+            print("  battle %d (%s): %d 次安全过滤" % (b["battle"], b["outcome"], len(rej)))
+            for r in rej[:5]:
+                print("      - " + r)
     print("Issues: %d" % len(issues))
     for i in issues:
         print("  [%s] %s" % (i["ctx"], i["msg"]))
