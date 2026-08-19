@@ -553,7 +553,7 @@ def run_inter_dungeon_playthrough():
     battle_blocks.append("\n".join(d_lines))
 
     # =========================================================================
-    # 第四阶段：写入最新权威《战报.md》并正式封存
+    # 第四阶段：写入最新权威《报告.md》并正式封存
     # =========================================================================
     header = """# 战报
 
@@ -568,11 +568,11 @@ def run_inter_dungeon_playthrough():
 【开局】叶清弦（42[血限]/20[法限]/8[速限]，出手3次）｜20[碎片]｜遗物·忘忧香｜残韵·反转｜道纹·杀伐｜副本·扭曲都市
 """
     final_md = header + "\n" + "\n".join(battle_blocks)
-    with open("战报.md", "w", encoding="utf-8") as f:
+    with open("报告.md", "w", encoding="utf-8") as f:
         f.write(final_md)
 
     e2._finalize_victory_seal()
-    print(f"\nAuthoritative 战报.md written successfully! Total lines: {len(final_md.splitlines())}")
+    print(f"\nAuthoritative 报告.md written successfully! Total lines: {len(final_md.splitlines())}")
 
 
 if __name__ == "__main__":

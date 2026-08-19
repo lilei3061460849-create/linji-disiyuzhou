@@ -2,7 +2,7 @@
 真实手操推演引擎与战报生成器：
 1. 贾希希（冠冕候选人1）：通过【残韵】战内窃取怪物专属道纹（活血、加害、裂变、逆鳞等），构建【加害+裂变+杀伐/血债】与【逆鳞+活血】专属Combo，通关7场并封存入库。
 2. 林渊（挑战者2）：同样通过战内残韵窃取、专属道纹构建、法术反应联动通关7场，触发【最终的冠冕】死斗。
-3. 第8场死斗：双雄携带专属道纹（加害/裂变/逆鳞/龙鳞/杀伐/庇护/再生）与法术交替对决，精准闪避，生成完整合规的《战报.md》。
+3. 第8场死斗：双雄携带专属道纹（加害/裂变/逆鳞/龙鳞/杀伐/庇护/再生）与法术交替对决，精准闪避，生成完整合规的《报告.md》。
 """
 import math
 import os
@@ -678,7 +678,7 @@ def run_full_handplay_session(seed=42):
     battle_blocks.append("\n".join(b8_lines))
 
     # =========================================================================
-    # 生成正式权威《战报.md》
+    # 生成正式权威《报告.md》
     # =========================================================================
     header = """# 战报
 
@@ -693,10 +693,10 @@ def run_full_handplay_session(seed=42):
 【开局】林渊（42[血限]/20[法限]/8[速限]，出手3次）｜20[碎片]｜遗物·无所求｜残韵·反转｜道纹·杀伐｜副本·龙心谷
 """
     full_report = header + "\n" + "\n".join(battle_blocks)
-    with open("战报.md", "w", encoding="utf-8") as f:
+    with open("报告.md", "w", encoding="utf-8") as f:
         f.write(full_report)
 
-    print("战报.md successfully generated with full genuine handplay!")
+    print("报告.md successfully generated with full genuine handplay!")
 
 
 if __name__ == "__main__":

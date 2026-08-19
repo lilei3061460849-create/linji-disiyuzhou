@@ -590,7 +590,7 @@ def run_high_iq_duel_playthrough(seed=42):
     battle_blocks.append("\n".join(d_lines))
 
     # -------------------------------------------------------------
-    # 步骤 4：生成正式权威战报《战报.md》
+    # 步骤 4：生成正式权威战报《报告.md》
     # -------------------------------------------------------------
     header = """# 战报
 
@@ -605,11 +605,11 @@ def run_high_iq_duel_playthrough(seed=42):
 【开局】林渊（42[血限]/20[法限]/8[速限]，出手3次）｜20[碎片]｜遗物·无所求｜残韵·反转｜道纹·杀伐｜副本·龙心谷
 """
     final_md = header + "\n" + "\n".join(battle_blocks)
-    with open("战报.md", "w", encoding="utf-8") as f:
+    with open("报告.md", "w", encoding="utf-8") as f:
         f.write(final_md)
 
     e._finalize_victory_seal()
-    print(f"Authoritative 战报.md written successfully! Total lines: {len(final_md.splitlines())}")
+    print(f"Authoritative 报告.md written successfully! Total lines: {len(final_md.splitlines())}")
 
 
 if __name__ == "__main__":

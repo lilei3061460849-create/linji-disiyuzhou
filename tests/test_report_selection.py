@@ -1,7 +1,7 @@
 """
 pytest - 战报政策与批量选取脚本
 
-正式 `战报.md` 只保留最新一次轮回记录，由 GameEngine 手操写入。
+正式 `报告.md` 只保留最新一次轮回记录，由 GameEngine 手操写入。
 `sim/pick_best_report.py` 仍是平衡工具：通关、冠冕前血量、无效局标记。
 
 覆盖：正常路径 / 边界条件 / 错误输入
@@ -20,7 +20,7 @@ _s = importlib.util.spec_from_file_location(
 pb = importlib.util.module_from_spec(_s)
 _s.loader.exec_module(pb)
 
-REPORT = os.path.join(ROOT, "战报.md")
+REPORT = os.path.join(ROOT, "报告.md")
 
 
 # ---------- 正常路径 ----------

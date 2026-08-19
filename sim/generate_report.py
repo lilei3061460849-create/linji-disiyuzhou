@@ -225,6 +225,6 @@ def run_playthrough(seed=42):
 
 if __name__ == "__main__":
     text = run_playthrough(seed=42)
-    with open("战报.md", "w", encoding="utf-8") as f:
+    with open("报告.md", "w", encoding="utf-8") as f:
         f.write(text)
-    print("Successfully generated 战报.md, total lines:", len(text.splitlines()))
+    print("Successfully generated 报告.md, total lines:", len(text.splitlines()))

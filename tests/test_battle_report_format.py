@@ -116,7 +116,7 @@ def test_setup_discovery_rejects_result_only():
 
 def test_current_zhanbao_lists_setup_options():
     """正常：现行战报开局必须能通过候选校验。"""
-    text = Path(__file__).resolve().parents[1].joinpath("战报.md").read_text(encoding="utf-8")
+    text = Path(__file__).resolve().parents[1].joinpath("报告.md").read_text(encoding="utf-8")
     checked = BR.validate_setup_discovery_text(text)
     assert checked["daowen_pick"] in checked["daowen_options"]
     assert checked["relic_pick"] in checked["relic_options"]
@@ -332,9 +332,9 @@ def test_report_is_reproducible_with_same_seed():
 # ---------- 出手合规性程序校验器（新增三类测试） ----------
 
 def test_current_zhanbao_passes_action_linter():
-    """正常路径：当前权威《战报.md》必须通过出手合规性程序化校验（无打包施法、死斗严格交替）"""
-    zhanbao_path = Path(__file__).resolve().parents[1] / "战报.md"
-    assert zhanbao_path.exists(), "战报.md 必须存在"
+    """正常路径：当前权威《报告.md》必须通过出手合规性程序化校验（无打包施法、死斗严格交替）"""
+    zhanbao_path = Path(__file__).resolve().parents[1] / "报告.md"
+    assert zhanbao_path.exists(), "报告.md 必须存在"
     text = zhanbao_path.read_text(encoding="utf-8")
     res = BR.validate_battle_report_actions(text)
     assert res["status"] == "compliant"

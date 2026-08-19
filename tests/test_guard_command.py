@@ -274,3 +274,60 @@ def test_alt_path_resolve_monster_turn_with_daowen_monster_no_nameerror():
     # 怪物道纹分支实际走到：结算条目存在
     details = (mp2.get("result") or {}).get("details") or []
     assert details, "第2回合怪物必须实际行动（普攻或道纹）"
+
+
+# ==================== P1: 怪物道纹选择按 round_used 过滤（2026-08-19） ====================
+
+def _pick_engine(suffix):
+    e = _engine(suffix)
+    m = Entity("测试怪", "怪物", blood_limit=100, current_hp=100,
+               attack_count=1, attack_power=5)
+    e.state.enemies.append(m)
+    return e, m
+
+
+def _pick_actor():
+    return {"actor_ref": "enemy:0", "daowen_options": [
+        {"name": "赎金", "requires_target": True, "target_options": [{"ref": "player:0"}]},
+        {"name": "减速", "requires_target": True, "target_options": [{"ref": "player:0"}]},
+        {"name": "蒙蔽", "requires_target": True, "target_options": [{"ref": "player:0"}]},
+    ]}
+
+
+def test_pick_monster_daowen_uses_round_used_not_activated():
+    """候选过滤必须依据本回合已使用集合 round_used，而不是跨回合 activated。
+
+    同一道纹即使已在 activated（此前回合激活过）也可在本回合再次选择；
+    一旦进入本回合 round_used 就必须排除。
+    """
+    from sim.handplay_dungeon_with_winner import _pick_monster_daowen
+    e, m = _pick_engine("pick_ru")
+    actor = _pick_actor()
+
+    # activated 含全部候选（跨回合持续激活），但 round_used 为空 → 仍可正常选择
+    e.combat._monster_activated[id(m)] = {"赎金", "减速", "蒙蔽"}
+    pick = _pick_monster_daowen(e, actor)
+    assert pick is not None, "activated 不应阻止跨回合再次选择"
+
+    # 本回合用过 赎金 → 只排除 赎金（多道纹混合时仅排除 round_used）
+    e.combat._monster_round_used(m).add("赎金")
+    pick = _pick_monster_daowen(e, actor)
+    assert pick is not None and pick["name"] != "赎金", "同回合不得重复选择已用道纹"
+
+    # 全部候选本回合已用 → 返回 None（纯攻击，绝不退回 opts[0]）
+    e.combat._monster_round_used(m).update({"减速", "蒙蔽"})
+    assert _pick_monster_daowen(e, actor) is None, "候选耗尽必须选择不发动道纹"
+
+
+def test_pick_monster_daowen_cross_round_reuse():
+    """同一道纹跨回合可再次选择：round_used 随回合重置后重新可选。"""
+    from sim.handplay_dungeon_with_winner import _pick_monster_daowen
+    e, m = _pick_engine("pick_cross")
+    actor = _pick_actor()
+    # 本回合已用 赎金 → 排除
+    e.combat._monster_round_used(m).add("赎金")
+    pick1 = _pick_monster_daowen(e, actor)
+    assert pick1 is not None and pick1["name"] != "赎金"
+    # 跨回合：current_round 变化后 round_used 自动清空 → 赎金重新可选
+    e.state.current_round += 1
+    assert _pick_monster_daowen(e, actor) is not None

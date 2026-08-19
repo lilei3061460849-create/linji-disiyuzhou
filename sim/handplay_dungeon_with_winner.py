@@ -30,20 +30,26 @@ from sim.produce_real_winners import build_spell_choices
 
 def _pick_monster_daowen(engine, actor):
     """怪物按当前情形择优选道纹（README：怪物为胜利和生存作最优决策）。
-    输出优先，血低自保，玩家血低收割，机制型按需。"""
+    输出优先，血低自保，玩家血低收割，机制型按需。
+
+    候选过滤依据**本回合已使用道纹**（round_used，与引擎结算门禁一致），
+    而非跨回合持续激活集合（activated）：同回合不得重复发动同一道纹，
+    跨回合可再次发动。本回合全部候选道纹都已用过时返回 None（不发动道纹、
+    纯攻击），绝不退回 opts[0]（那必然触发引擎"不能发动道纹"门禁）。
+    """
     opts = actor["daowen_options"]
     if not opts:
         return None
     m_idx = int(actor["actor_ref"].split(":", 1)[1]) if ":" in actor["actor_ref"] else 0
-    activated = set()
     enemies = engine.state.enemies
     monster = None
     if 0 <= m_idx < len(enemies):
         monster = enemies[m_idx]
-        activated = engine.combat._monster_activated.get(id(monster), set())
-    cands = [o for o in opts if o["name"] not in activated]
+    round_used = (engine.combat._monster_round_used(monster)
+                  if monster is not None else set())
+    cands = [o for o in opts if o["name"] not in round_used]
     if not cands:
-        return opts[0]
+        return None
     OUTPUT = {"狂暴", "强化", "杀伐", "血债", "切割", "冲击", "加害", "活血", "裂变", "洗劫", "赎金", "逼债", "清算", "赌命"}
     SELF = {"自愈", "庇护", "再生", "固执", "疯狂", "龙鳞"}
     CONTROL = {"减速", "束缚", "衰败", "勾魂", "镇尸", "僵化", "眩晕", "蒙蔽", "弱化", "退化", "冥气", "缄默", "瓦解", "招魂", "无力", "迟滞", "定型", "封印", "缓慢"}
@@ -127,19 +133,20 @@ def _resolve_monster_turn_hand(e, log):
         hit_count = actor["base_hits_per_attack"]
         if actor["daowen_options"]:
             option = _pick_monster_daowen(e, actor)
-            dao = {"name": option["name"], "dodge": False, "blood_shadow": False,
-                   "trigger_spell_choices": {holder: {sp["spell_name"]: {"use": False}
-                                                      for sp in spells}
-                                             for holder, spells in option.get("trigger_spell_options", {}).items()}}
-            if option["requires_target"]:
-                dao["target_ref"] = option["target_options"][0]["ref"]
-            if option["dodge_submission"] == "per_target":
-                dao["dodge_targets"] = [
-                    {"target_ref": t["ref"], "dodge": False, "blood_shadow": False}
-                    for t in option["dodge_target_options"]]
-            if option["resolves_as"] == "变形":
-                enemy_index = int(actor["actor_ref"].split(":", 1)[1])
-                hit_count = e.state.enemies[enemy_index].attack_power
+            if option is not None:
+                dao = {"name": option["name"], "dodge": False, "blood_shadow": False,
+                       "trigger_spell_choices": {holder: {sp["spell_name"]: {"use": False}
+                                                          for sp in spells}
+                                                 for holder, spells in option.get("trigger_spell_options", {}).items()}}
+                if option["requires_target"]:
+                    dao["target_ref"] = option["target_options"][0]["ref"]
+                if option["dodge_submission"] == "per_target":
+                    dao["dodge_targets"] = [
+                        {"target_ref": t["ref"], "dodge": False, "blood_shadow": False}
+                        for t in option["dodge_target_options"]]
+                if option["resolves_as"] == "变形":
+                    enemy_index = int(actor["actor_ref"].split(":", 1)[1])
+                    hit_count = e.state.enemies[enemy_index].attack_power
         monster = refs.get(actor["actor_ref"])
         per_hit = monster.attack_power if monster is not None else 0
         target_ref = choose_attack_target(actor["attack_target_options"], refs)
@@ -179,15 +186,16 @@ def _resolve_monster_turn_hand(e, log):
             hit_count_fb = actor["base_hits_per_attack"]
             if actor["daowen_options"]:
                 option = _pick_monster_daowen(e, actor)
-                dao = {"name": option["name"], "dodge": False, "blood_shadow": False,
-                       "trigger_spell_choices": {holder: {sp["spell_name"]: {"use": False}
-                                                          for sp in spells}
-                                                 for holder, spells in option.get("trigger_spell_options", {}).items()}}
-                if option["requires_target"]:
-                    dao["target_ref"] = option["target_options"][0]["ref"]
-                if option["resolves_as"] == "变形":
-                    enemy_index = int(actor["actor_ref"].split(":", 1)[1])
-                    hit_count_fb = e.state.enemies[enemy_index].attack_power
+                if option is not None:
+                    dao = {"name": option["name"], "dodge": False, "blood_shadow": False,
+                           "trigger_spell_choices": {holder: {sp["spell_name"]: {"use": False}
+                                                              for sp in spells}
+                                                     for holder, spells in option.get("trigger_spell_options", {}).items()}}
+                    if option["requires_target"]:
+                        dao["target_ref"] = option["target_options"][0]["ref"]
+                    if option["resolves_as"] == "变形":
+                        enemy_index = int(actor["actor_ref"].split(":", 1)[1])
+                        hit_count_fb = e.state.enemies[enemy_index].attack_power
             target_ref = choose_attack_target(actor["attack_target_options"], refs)
             target_option = next(o for o in actor["attack_target_options"] if o["ref"] == target_ref)
             attacks = [{"hits": [{

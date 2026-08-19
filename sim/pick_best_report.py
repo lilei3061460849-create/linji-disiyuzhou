@@ -2,7 +2,7 @@
 """
 批量平衡工具：按既定标准从多次轮回中挑出一份写入指定文件。
 
-正式 `战报.md` 只保留最新一次手操轮回，本脚本默认不得覆盖它。
+正式 `报告.md` 只保留最新一次手操轮回，本脚本默认不得覆盖它。
 用户说「测试」时走 GameEngine 手操，不跑本脚本。
 
 选取标准（平衡批次内部）
@@ -340,7 +340,7 @@ def play_and_record(region: str, seed: int, battles: int = 7):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--candidates", type=int, default=40)
-    ap.add_argument("--out", default="战报.md")
+    ap.add_argument("--out", default="报告.md")
     ap.add_argument("--region", default=None)
     a = ap.parse_args()
 
