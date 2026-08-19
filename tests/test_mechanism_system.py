@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import itertools
 import os
 import sys
 
@@ -285,6 +286,93 @@ def test_battle_start_phase_dispatch_generic():
     assert MECHANISMS.get("战始测试·前") is None and MECHANISMS.get("战始测试·后") is None
 
 
+# ==================== 5b. mana Verb（统一入口，含不朽之躯钳制与下限0） ====================
+
+def _arena_mana(player_mana=50, mana_limit=50, relic_names=()):
+    state = GameState(phase="in_combat", combat_subphase="player_actions")
+    player = Entity("P", "轮回者", blood_limit=100, current_hp=100,
+                    mana_limit=mana_limit, current_mana=player_mana,
+                    speed_limit=10, current_speed=5)
+    state.player = player
+    state.enemies = [Entity("M", "怪物", blood_limit=50, current_hp=50)]
+    state.relics = [Relic(n, "") for n in relic_names]
+    return state, CombatEngine(state, DiceEngine()), player
+
+
+def test_verb_mana_gain_and_immortal_clamp():
+    # 无不朽之躯：获得可以超过法限（与既有获取点一致）
+    state, combat, player = _arena_mana(player_mana=40, mana_limit=50)
+    res = apply_verb(combat, "mana", {"target": player, "delta": 30})
+    assert res["gained"] == 30 and player.current_mana == 70
+
+    # 持有不朽之躯：获得被钳制到法限
+    state, combat, player = _arena_mana(player_mana=40, mana_limit=50,
+                                        relic_names=("不朽之躯",))
+    res = apply_verb(combat, "mana", {"target": player, "delta": 30})
+    assert res["gained"] == 30 and player.current_mana == 50, "不朽之躯钳制"
+
+
+def test_verb_mana_loss_floor_zero():
+    state, combat, player = _arena_mana(player_mana=10)
+    res = apply_verb(combat, "mana", {"target": player, "delta": -7})
+    assert res["lost"] == 7 and res["delta"] == -7 and player.current_mana == 3
+
+    res = apply_verb(combat, "mana", {"target": player, "delta": -50})
+    assert res["lost"] == 3 and res["delta"] == -3 and player.current_mana == 0, "下限0"
+
+    res = apply_verb(combat, "mana", {"target": player, "delta": 0})
+    assert res == {"delta": 0, "gained": 0, "lost": 0, "current_mana": 0}
+
+
+def test_verb_mana_matches_dongcha_site_semantics():
+    """现场验证①洞察：旧块  +=pending + clamp 与动词逐场景一致。"""
+    for pending, mana, limit, immortal in itertools.product(
+            [5, 15], [20, 70], [50], [False, True]):
+        relics = ("不朽之躯",) if immortal else ()
+        state_a, combat_a, player_a = _arena_mana(player_mana=mana,
+                                                  mana_limit=limit, relic_names=relics)
+        state_b, combat_b, player_b = _arena_mana(player_mana=mana,
+                                                  mana_limit=limit, relic_names=relics)
+        # 旧块
+        player_a.current_mana += pending
+        combat_a.clamp_immortal_body(player_a)
+        # 新动词
+        apply_verb(combat_b, "mana", {"target": player_b, "delta": pending})
+        assert player_a.current_mana == player_b.current_mana, \
+            f"pending={pending} mana={mana} immortal={immortal}"
+
+
+def test_verb_mana_matches_gouhun_site_semantics():
+    """现场验证②勾魂：旧块  lost=min(当前, drain) 与动词逐场景一致。"""
+    for mana, drain in itertools.product([0, 3, 10, 50], [0, 5, 20]):
+        state_a, combat_a, player_a = _arena_mana(player_mana=mana)
+        state_b, combat_b, player_b = _arena_mana(player_mana=mana)
+        # 旧块
+        lost_a = min(player_a.current_mana, drain)
+        player_a.current_mana -= lost_a
+        # 新动词
+        res = apply_verb(combat_b, "mana", {"target": player_b, "delta": -drain})
+        assert res["lost"] == lost_a and player_a.current_mana == player_b.current_mana, \
+            f"mana={mana} drain={drain}"
+
+
+def test_verb_mana_matches_silent_mask_site_semantics():
+    """现场验证③缄默面具：旧块  +=20*x + clamp 与动词逐场景一致。"""
+    for x, mana, immortal in itertools.product([0, 1, 2], [0, 45], [False, True]):
+        relics = ("不朽之躯",) if immortal else ()
+        state_a, combat_a, player_a = _arena_mana(player_mana=mana,
+                                                  mana_limit=50, relic_names=relics)
+        state_b, combat_b, player_b = _arena_mana(player_mana=mana,
+                                                  mana_limit=50, relic_names=relics)
+        # 旧块
+        player_a.current_mana += 20 * x
+        combat_a.clamp_immortal_body(player_a)
+        # 新动词
+        apply_verb(combat_b, "mana", {"target": player_b, "delta": 20 * x})
+        assert player_a.current_mana == player_b.current_mana, \
+            f"x={x} mana={mana} immortal={immortal}"
+
+
 # ==================== 4. Target ====================
 
 def test_target_selectors():
@@ -315,9 +403,8 @@ def test_target_selectors():
 def test_verb_registry_names_and_unknown():
     names = verb_names()
     for expected in ("damage", "heal", "hp_loss", "blood_limit", "cost", "status",
-                     "speed", "shield", "mutation", "depart", "execute"):
+                     "speed", "shield", "mutation", "mana", "depart", "execute"):
         assert expected in names, f"基础动词 {expected} 应已注册"
-    assert "mana" not in names, "法力无统一入口，MVP 不强行注册"
     with pytest.raises(ValueError):
         get_verb("不存在的动词")
 

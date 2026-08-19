@@ -317,5 +317,7 @@ def test_jibian_single_registration_and_no_special_api():
     from engine.mechanisms import verb_names
     assert not any("jibian" in v or "deform" in v for v in verb_names())
     assert "def _jibian" not in COMBAT_SOURCE
-    # 回始的畸变标记块（deform_pending）属于未迁移的另一处字面规则，允许继续存在
-    assert "deform_pending" in COMBAT_SOURCE, "round_start 畸变标记块不在本次迁移范围"
+    # 回始的【畸变·标记】块已随本批迁移到声明层（"畸变·标记"机制），
+    # 核心管线不再有 deform_pending 报告代码。
+    from engine.mechanisms import MECHANISMS as REG
+    assert REG.get("畸变·标记") is not None

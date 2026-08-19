@@ -98,7 +98,9 @@ def test_shuaibai_is_registered_mechanism():
     assert mech.when.matches_phase(Phase.ROUND_START)
     assert mech.priority == 20, "旧位置=回始效果循环第二位（自愈10之后、洞察之前）"
     from engine.mechanisms.registry import MECHANISMS as REG
-    assert [m.name for m in REG.phase_mechanisms(Phase.ROUND_START)] == ["自愈", "衰败"]
+    # 回始相位机制按 priority：自愈(10) → 衰败(20) → 洞察(30) → 后续按 40/50/60 递增
+    assert [m.name for m in REG.phase_mechanisms(Phase.ROUND_START)] == \
+        ["自愈", "衰败", "洞察·结算", "勾魂", "狂暴·标记", "畸变·标记"]
 
 
 def test_old_shuaibai_if_removed_from_pipeline():

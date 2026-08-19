@@ -1477,37 +1477,6 @@ class CombatEngine:
             # round_start 只负责宣布时点，具体机制由声明层按 priority 执行；
             # 机制的报告条目并入 effects，战报格式与迁移前一致。
             effects.extend(self._dispatch_phase(Phase.ROUND_START, target=entity))
-            pending = getattr(entity, "_dongcha_pending", 0)
-            if pending and entity.entity_type == "轮回者" and entity.is_alive:
-                entity.current_mana += pending
-                self.clamp_immortal_body(entity)
-                effects.append({"type": "dongcha_mana", "entity": entity.name, "gained": pending})
-                entity._dongcha_pending = 0
-            # 乱葬岗·勾魂：[回始]使目标失去2X点当前法力（持续∞）
-            if entity.has_status("勾魂") and entity.entity_type == "轮回者" and entity.is_alive:
-                drain = entity.get_status_value("勾魂")
-                lost = min(entity.current_mana, drain)
-                entity.current_mana -= lost
-                effects.append({"type": "gouhun_mana", "entity": entity.name, "lost": lost})
-            
-            # 狂暴：回始发动一轮额外攻击（标记）
-            if entity.has_status("狂暴"):
-                effects.append({
-                    "type": "extra_attack_ready",
-                    "entity": entity.name,
-                    "note": "该实体本回合有一次额外攻击机会"
-                })
-            
-            # 畸变：回终结算，此处标记
-            if entity.has_status("畸变"):
-                x = entity.get_status_value("畸变")
-                blood_loss = entity.attack_count * entity.attack_power
-                effects.append({
-                    "type": "deform_pending",
-                    "entity": entity.name,
-                    "blood_loss": blood_loss,
-                    "note": "回终结算"
-                })
 
         # ---- F2：罪孽专属道纹 [回始] 结算（逼债/清算/赌命） ----
         # 逼债X：目标失去X碎片，否则失去2X血限（二选一；与 sim/balance_sim exclusive_round_start 同口径）

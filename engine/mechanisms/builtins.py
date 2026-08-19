@@ -1,19 +1,24 @@
-"""已迁移到声明层的机制（当前：加害、龙鳞、自愈、帮派令、衰败、畸变·结算、焦黑发丝）。
+"""已迁移到声明层的机制（当前 11 个：加害、龙鳞、自愈、帮派令、衰败、畸变·结算、
+焦黑发丝、洞察·结算、勾魂、狂暴·标记、畸变·标记）。
 
 迁移协议（迁移前后必须同时满足）：
   1. 规则语义与旧实现完全一致（加害：amount+状态值；龙鳞：max(0, amount-状态值)；
      自愈：无坏死时回复 ceil(血限×10X/100)；帮派令：[战始]获得【洗劫3】；
      衰败：[回始]对自己造成 ceil(当前生命×10X/100) 点伤害，走完整伤害管线；
      畸变·结算：[回终]失去(攻击力×攻击次数)点血限，血限压 0 连带命零统一判定；
-     焦黑发丝：怪物命零 → 玩家速度+2（经统一速度入口））；
+     焦黑发丝：怪物命零 → 玩家速度+2（经统一速度入口）；
+     洞察·结算：[回始]待结算法力经 mana 动词获得（含不朽之躯钳制）；
+     勾魂：[回始]失去 min(当前法力, 层数) 点法力（下限0，经 mana 动词）；
+     狂暴·标记/畸变·标记：纯报告条目，无动词）；
   2. priority 保持原值或按旧代码位置固化：加害=20、龙鳞=30（伤害加减区）；
-     自愈=10、衰败=20（回始效果循环）；帮派令=10（战始遗物段）；
+     自愈=10、衰败=20、洞察·结算=30、勾魂=40、狂暴·标记=50、畸变·标记=60
+     （回始效果循环，现已全部声明化）；帮派令=10（战始遗物段）；
      畸变·结算=10（回终第一循环顶部、凡庸前）；焦黑发丝=10（命零反应第一位）；
   3. 执行路径唯一：伤害相位经 CombatHookManager 上的 MechanismHookAdapter，
      回合/战始/回终相位经 CombatEngine._dispatch_phase，事件机制经 TriggerBus
      （订阅于战斗实例构造时）——旧类/旧 if 已删除。
-     注意：回始的【畸变标记】块与【畸变·结算】是同一道纹的两处字面规则，
-     本文件只迁移了结算部分（标记块仍为回始循环内的既有报告逻辑）。
+     注意：洞察状态的【闪避→pending+10】站点（_note_dodge）与狂暴的怪物行动逻辑
+     属于其它字面规则，不在迁移范围（机制名带后缀以示区分）。
 """
 from __future__ import annotations
 
@@ -192,6 +197,110 @@ def _jibian_settle_effect(ctx: TriggerContext, targets: list) -> dict:
     }
 
 
+def _has_dongcha_pending(ctx: TriggerContext) -> bool:
+    return getattr(ctx.target, "_dongcha_pending", 0) > 0
+
+
+def _dongcha_effect(ctx: TriggerContext, targets: list) -> dict:
+    """旧 round_start 洞察块语义（逐字复刻）：
+
+    待结算法力 pending 经 mana 动词获得（含不朽之躯钳制），随后清零；
+    只有 轮回者 且 存活 且有 pending 才触发（与旧条件逐字同义）。
+    """
+    entity = ctx.target
+    pending = getattr(entity, "_dongcha_pending", 0)
+    apply_verb(ctx.combat, "mana", {"target": entity, "delta": pending})
+    entry = {"type": "dongcha_mana", "entity": entity.name, "gained": pending}
+    entity._dongcha_pending = 0
+    return entry
+
+
+DONGCHA = Mechanism(
+    name="洞察·结算",
+    when=Trigger.phase(Phase.ROUND_START),
+    effect=_dongcha_effect,
+    target=SELF,
+    condition=all_(
+        _has_dongcha_pending,
+        entity_type("轮回者", of="self"),
+        is_alive(of="self"),
+    ),
+    # 旧位置=回始效果循环第三位（自愈10、衰败20 之后；勾魂之前）。
+    # 注：洞察状态另有【闪避→pending+10】的独立字面规则站点（_note_dodge），
+    # 不在本次迁移范围（本机制只迁移回始结算部分，故名为"洞察·结算"）。
+    priority=30,
+)
+
+def _gouhun_effect(ctx: TriggerContext, targets: list) -> dict:
+    """旧 round_start 勾魂块语义（逐字复刻）：
+
+    失去 min(当前法力, 勾魂层数) 点法力（下限 0），经 mana 动词；
+    即使实际失去 0 也照常产生报告条目（与旧块一致）。
+    """
+    entity = ctx.target
+    drain = entity.get_status_value("勾魂")
+    result = apply_verb(ctx.combat, "mana", {"target": entity, "delta": -drain})
+    return {"type": "gouhun_mana", "entity": entity.name, "lost": result["lost"]}
+
+
+GOULUN = Mechanism(
+    name="勾魂",
+    when=Trigger.phase(Phase.ROUND_START),
+    effect=_gouhun_effect,
+    target=SELF,
+    condition=all_(
+        has_status("勾魂", of="self"),
+        entity_type("轮回者", of="self"),
+        is_alive(of="self"),
+    ),
+    # 旧位置=回始效果循环第四位（自愈10、衰败20、洞察·结算30 之后；狂暴·标记之前）
+    priority=40,
+)
+
+def _kuangbao_marker_effect(ctx: TriggerContext, targets: list) -> dict:
+    """旧 round_start 狂暴标记块语义（逐字复刻）：纯报告条目，无动词。"""
+    return {
+        "type": "extra_attack_ready",
+        "entity": ctx.target.name,
+        "note": "该实体本回合有一次额外攻击机会",
+    }
+
+
+def _jibian_marker_effect(ctx: TriggerContext, targets: list) -> dict:
+    """旧 round_start 畸变标记块语义（逐字复刻）：纯报告条目，无动词。
+
+    注意与【畸变·结算】的区别：此处 blood_loss 是原始乘积
+    （无 max(0, ...) 封底——旧块原文如此），仅作回终结算预告展示。
+    """
+    entity = ctx.target
+    return {
+        "type": "deform_pending",
+        "entity": entity.name,
+        "blood_loss": entity.attack_count * entity.attack_power,
+        "note": "回终结算",
+    }
+
+
+KUANGBAO_MARKER = Mechanism(
+    name="狂暴·标记",
+    when=Trigger.phase(Phase.ROUND_START),
+    effect=_kuangbao_marker_effect,
+    target=SELF,
+    condition=has_status("狂暴", of="self"),
+    # 旧位置=回始效果循环第五位（勾魂之后、畸变标记之前）
+    priority=50,
+)
+
+JIBIAN_MARKER = Mechanism(
+    name="畸变·标记",
+    when=Trigger.phase(Phase.ROUND_START),
+    effect=_jibian_marker_effect,
+    target=SELF,
+    condition=has_status("畸变", of="self"),
+    # 旧位置=回始效果循环第六位（最后一位）
+    priority=60,
+)
+
 GANGPAILING = Mechanism(
     name="帮派令",
     when=Trigger.phase(Phase.BATTLE_START),
@@ -271,4 +380,8 @@ MECHANISMS.register(GANGPAILING)
 MECHANISMS.register(SHUAIBAI)
 MECHANISMS.register(JIBIAN_SETTLE)
 MECHANISMS.register(JIAOHHEIFASI)
+MECHANISMS.register(DONGCHA)
+MECHANISMS.register(GOULUN)
+MECHANISMS.register(KUANGBAO_MARKER)
+MECHANISMS.register(JIBIAN_MARKER)
 

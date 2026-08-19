@@ -5,7 +5,7 @@
 current_hp / current_mana / is_alive。
 
 没有真正统一入口的行为不强行注册：
-- mana：current_mana += 仍散布多处，等入口收敛后再登记（不注册）。
+- mana：2026-08-19 起已注册（三个现存站点语义可被逐字覆盖：洞察/勾魂/缄默面具）。
 - redirect / mitigate / reflect / split / spawn：特殊控制流，MVP 不迁移
   （审计报告 §3.3 的"命名动词"清单，后续阶段处理）。
 """
@@ -121,6 +121,32 @@ def _verb_mutation(combat, spec, ctx):
     return spec["target"].add_mutation(spec.get("layers", spec.get("amount", 0)))
 
 
+def _verb_mana(combat, spec, ctx):
+    """当前法力的统一增减动词（2026-08-19 起成为统一入口）。
+
+    语义 = 现有全部法力站点的字面约定：
+      - 获得（delta>0）：current_mana += delta，随后 clamp_immortal_body
+        （不朽之躯钳制——所有既有获取点均如此，如洞察/缄默面具/回始法力/血契）；
+      - 失去（delta<0）：实际失去 = min(当前法力, -delta)，下限 0
+        （勾魂语义；失去不受不朽之躯钳制——该遗物只限制"获得"）；
+      - delta==0：无操作。
+    返回 {delta: 实际带符号变化, gained, lost, current_mana}。
+    """
+    target = spec["target"]
+    delta = int(spec.get("delta", spec.get("amount", 0)))
+    if delta > 0:
+        target.current_mana += delta
+        combat.clamp_immortal_body(target)
+        return {"delta": delta, "gained": delta, "lost": 0,
+                "current_mana": target.current_mana}
+    if delta < 0:
+        lost = min(target.current_mana, -delta)
+        target.current_mana -= lost
+        return {"delta": -lost, "gained": 0, "lost": lost,
+                "current_mana": target.current_mana}
+    return {"delta": 0, "gained": 0, "lost": 0, "current_mana": target.current_mana}
+
+
 def _verb_depart(combat, spec, ctx):
     reason = spec.get("reason", "mechanism")
     spec["target"].depart_battle(reason)
@@ -141,6 +167,6 @@ register_verb("status", _verb_status)
 register_verb("speed", _verb_speed)
 register_verb("shield", _verb_shield)
 register_verb("mutation", _verb_mutation)
+register_verb("mana", _verb_mana)
 register_verb("depart", _verb_depart)
 register_verb("execute", _verb_execute)
-# mana：无统一底层入口，MVP 不注册（见模块 docstring）。
