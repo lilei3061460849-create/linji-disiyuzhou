@@ -39,9 +39,11 @@ class CombatEngine:
         self.dice = dice
         self.combat_log: list[dict] = []  # 完整战斗日志
         self.hook_manager = CombatHookManager()
-        # 机制系统（MVP）：事件 → 机制订阅分发。生产代码暂无事件订阅者
-        # （【加害】走相位路径），无订阅者的事件类型在 dispatch 中零行为变化。
+        # 机制系统：事件 → 机制订阅分发。生产事件机制（当前：焦黑发丝）在
+        # 战斗实例构造时订阅；无订阅者的事件类型 dispatch 零行为变化（既有设计）。
         self.mechanism_bus = TriggerBus()
+        for mechanism in MECHANISMS.event_mechanisms():
+            self.mechanism_bus.register(mechanism)
         # 三相残韵盘本场消耗的残韵
         self._sanxiang_consumed = ""
         # 残韵改写：entity_id → {源道纹: 变化后道纹}，只改下一次发动结算，不改持有
@@ -67,9 +69,10 @@ class CombatEngine:
             ctx = ctx.to_dict()
         event = self.state.emit_combat_event(
             event_type, actor=actor, target=target, ctx=ctx, **data)
-        # 机制系统（MVP）：只有存在订阅者的事件类型才会进入分发，
+        # 机制系统：只有存在订阅者的事件类型才会进入分发，
         # 无订阅者时 dispatch 立即返回——事件记录与既有行为零变化。
-        self.mechanism_bus.dispatch(event, self)
+        # 显式传入实体对象：事件只存名字，死者无法从存活池按名解析。
+        self.mechanism_bus.dispatch(event, self, target=target, actor=actor)
         return event
 
     def _dispatch_phase(self, phase: str, *, target=None, source=None,
@@ -732,13 +735,6 @@ class CombatEngine:
             cause=death_ctx.subtype,
         )
         if entity.entity_type == "怪物":
-            if self.state.player and self._relic_active(self.state.player, "焦黑发丝"):
-                self._gain_speed(self.state.player, 2, ctx={
-                    "timing": death_ctx.timing, "source": "焦黑发丝", "source_type": "relic",
-                    "actor": self.state.player, "target": self.state.player, "owner": self.state.player,
-                    "mechanic": "speed_change", "subtype": "current_speed", "amount": 2,
-                    "tags": {"relic", "death_trigger"}, "parent_event_id": death_ctx.event_id,
-                })
             # 乱葬岗·招魂：记录本场已命零怪物尸体
             if not getattr(self.state, "dead_monsters", None):
                 self.state.dead_monsters = []

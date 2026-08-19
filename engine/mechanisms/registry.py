@@ -69,6 +69,13 @@ class MechanismRegistry:
     def all(self) -> list[Mechanism]:
         return [self._mechanisms[n] for n in sorted(self._mechanisms)]
 
+    def event_mechanisms(self) -> list[Mechanism]:
+        """全部事件型机制定义，按 priority 升序（供战斗引擎订阅事件总线）。"""
+        return sorted(
+            (m for m in self._mechanisms.values() if m.when.kind == "event"),
+            key=lambda m: m.priority,
+        )
+
     def unregister(self, name: str) -> Optional[Mechanism]:
         """从登记处移除一个机制定义（返回被移除的机制；不存在返回 None）。"""
         return self._mechanisms.pop(name, None)

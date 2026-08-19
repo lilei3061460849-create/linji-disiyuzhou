@@ -1,16 +1,17 @@
-"""已迁移到声明层的机制（当前：加害、龙鳞、自愈、帮派令、衰败、畸变·结算）。
+"""已迁移到声明层的机制（当前：加害、龙鳞、自愈、帮派令、衰败、畸变·结算、焦黑发丝）。
 
 迁移协议（迁移前后必须同时满足）：
   1. 规则语义与旧实现完全一致（加害：amount+状态值；龙鳞：max(0, amount-状态值)；
      自愈：无坏死时回复 ceil(血限×10X/100)；帮派令：[战始]获得【洗劫3】；
      衰败：[回始]对自己造成 ceil(当前生命×10X/100) 点伤害，走完整伤害管线；
-     畸变·结算：[回终]失去(攻击力×攻击次数)点血限，血限压 0 连带命零统一判定）；
+     畸变·结算：[回终]失去(攻击力×攻击次数)点血限，血限压 0 连带命零统一判定；
+     焦黑发丝：怪物命零 → 玩家速度+2（经统一速度入口））；
   2. priority 保持原值或按旧代码位置固化：加害=20、龙鳞=30（伤害加减区）；
-     自愈=10、衰败=20（回始效果循环：自愈→衰败→洞察→勾魂→狂暴→畸变标记，
-     后续回始机制按 30/40/... 递增）；帮派令=10（战始遗物段）；
-     畸变·结算=10（回终第一循环顶部、凡庸 tick 之前，后续回终机制按 20/30/... 递增）；
+     自愈=10、衰败=20（回始效果循环）；帮派令=10（战始遗物段）；
+     畸变·结算=10（回终第一循环顶部、凡庸前）；焦黑发丝=10（命零反应第一位）；
   3. 执行路径唯一：伤害相位经 CombatHookManager 上的 MechanismHookAdapter，
-     回合/战始/回终相位经 CombatEngine._dispatch_phase——旧类/旧 if 已删除。
+     回合/战始/回终相位经 CombatEngine._dispatch_phase，事件机制经 TriggerBus
+     （订阅于战斗实例构造时）——旧类/旧 if 已删除。
      注意：回始的【畸变标记】块与【畸变·结算】是同一道纹的两处字面规则，
      本文件只迁移了结算部分（标记块仍为回始循环内的既有报告逻辑）。
 """
@@ -18,9 +19,10 @@ from __future__ import annotations
 
 import math
 
+from ..combat_events import CombatEventType
 from .conditions import (
-    all_, amount_positive, damage_type_not, has_status, is_alive, not_,
-    relic_active,
+    all_, amount_positive, damage_type_not, entity_type, has_status, is_alive,
+    not_, relic_active,
 )
 from .registry import MECHANISMS, Mechanism
 from .targets import SELF, TARGET
@@ -213,6 +215,29 @@ SHUAIBAI = Mechanism(
     priority=20,
 )
 
+def _jiaohheifasi_effect(ctx: TriggerContext, targets: list) -> None:
+    """旧 _on_entity_death 焦黑发丝块语义（逐字复刻）：
+
+    怪物命零 → 玩家速度 +2，经 speed 动词 → _gain_speed（加速等既有语义原样）；
+    速度事件 ctx 挂在死亡事件下（timing/parent_event_id 取自死亡事件 ctx）。
+    """
+    death_ctx = (ctx.event.ctx or {}) if ctx.event is not None else {}
+    player = ctx.resolve("player")
+    apply_verb(ctx.combat, "speed", {
+        "target": player,
+        "delta": 2,
+        "ctx": {
+            "timing": death_ctx.get("timing", ""),
+            "source": "焦黑发丝", "source_type": "relic",
+            "actor": player, "target": player, "owner": player,
+            "mechanic": "speed_change", "subtype": "current_speed", "amount": 2,
+            "tags": {"relic", "death_trigger"},
+            "parent_event_id": death_ctx.get("event_id"),
+        },
+    })
+    return None
+
+
 JIBIAN_SETTLE = Mechanism(
     name="畸变·结算",
     when=Trigger.phase(Phase.ROUND_END),
@@ -226,10 +251,24 @@ JIBIAN_SETTLE = Mechanism(
     priority=10,
 )
 
+JIAOHHEIFASI = Mechanism(
+    name="焦黑发丝",
+    when=Trigger.event(CombatEventType.ENTITY_DIED),
+    effect=_jiaohheifasi_effect,
+    target=None,   # 无目标列表：效果对象是玩家，经 ctx.resolve("player") 获取
+    condition=all_(
+        entity_type("怪物", of="target"),
+        relic_active("焦黑发丝", of="player"),   # 玩家持有且未封印（抵扣X）
+    ),
+    # 旧位置=_on_entity_death 内 ENTITY_DIED 发出点（招魂/分裂之前）；命零反应第一位
+    priority=10,
+)
+
 MECHANISMS.register(JIAHAI)
 MECHANISMS.register(LONGLIN)
 MECHANISMS.register(ZIYU)
 MECHANISMS.register(GANGPAILING)
 MECHANISMS.register(SHUAIBAI)
 MECHANISMS.register(JIBIAN_SETTLE)
+MECHANISMS.register(JIAOHHEIFASI)
 

@@ -75,6 +75,10 @@ class TriggerContext:
             return self.target
         if of in ("source", "actor"):
             return self.source
+        if of == "player":
+            # 通用"玩家"词汇：供"事件/相位 → 玩家获益"类机制复用（如焦黑发丝）。
+            state = self.state or getattr(self.combat, "state", None)
+            return getattr(state, "player", None) if state is not None else None
         return None
 
 
@@ -110,14 +114,18 @@ class TriggerBus:
     def listeners_for(self, event_type: CombatEventType) -> list:
         return list(self._listeners.get(event_type, ()))
 
-    def dispatch(self, event: CombatEvent, combat) -> list:
-        """对一条已登记事件做机制分发；无订阅者时零开销返回。"""
+    def dispatch(self, event: CombatEvent, combat, *, target=None, actor=None) -> list:
+        """对一条已登记事件做机制分发；无订阅者时零开销返回。
+
+        target/actor 由调用方（CombatEngine._emit）在持有实体对象时显式传入——
+        事件只存名字，而死者（is_alive=False）无法从存活池按名解析回来。
+        """
         listeners = self._listeners.get(event.event_type)
         if not listeners:
             return []
         results = []
         for mechanism in list(listeners):
-            ctx = self._context_for(event, combat)
+            ctx = self._context_for(event, combat, target=target, actor=actor)
             if mechanism.condition is not None and not mechanism.condition(ctx):
                 continue
             targets = mechanism.target.select(ctx) if mechanism.target is not None else []
@@ -125,24 +133,24 @@ class TriggerBus:
         return results
 
     @staticmethod
-    def _context_for(event: CombatEvent, combat) -> TriggerContext:
+    def _context_for(event: CombatEvent, combat, *, target=None, actor=None) -> TriggerContext:
         state = getattr(combat, "state", None)
-        target = None
-        source = None
-        if combat is not None:
+        # 显式实体优先；缺失时退回按名解析（仅对仍在存活池中的实体可靠）。
+        if target is None and combat is not None:
             finder = getattr(combat, "_find_named", None)
-            if finder is not None:
-                if event.target_name:
-                    target = finder(event.target_name)
-                if event.actor_name:
-                    source = finder(event.actor_name)
+            if finder is not None and event.target_name:
+                target = finder(event.target_name)
+        if actor is None and combat is not None:
+            finder = getattr(combat, "_find_named", None)
+            if finder is not None and event.actor_name:
+                actor = finder(event.actor_name)
         data = event.data or {}
         return TriggerContext(
             combat=combat,
             state=state,
             event=event,
             target=target,
-            source=source,
+            source=actor,
             amount=int(data.get("amount", 0) or 0),
             damage_type=str(data.get("damage_type", "") or ""),
         )
