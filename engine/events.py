@@ -22,7 +22,7 @@ EVENT_RELICS = {
     "皮衣": "上回合失去生命时，下回合获得等量格挡",
     "帮派令": "[战始]获得【洗劫3】",
     "防弹插板": "[血限]+10，且[战始]获得15格挡",
-    "负岳索": "[战始]选择一名[朋友]或[员工]；其首次受到伤害时，自身[回复]等量生命",
+    "负岳索": "[战始]选择一名[朋友]或[员工]；其首次受到伤害时，你[回复]等量生命",
     "炉心坠": "[战始]选择一枚自身拥有的龙心，使其当前耐久+10",
     "烙痕钉": "[战始]必中，选择一个[目标]；你每付出一次代价，其失去10生命",
     "余火印": "[回始]可消耗一枚龙心X点耐久，获得2X点法力",
@@ -236,7 +236,8 @@ def resolve_option_effect(text: str, engine, event_name: str = "", params=None) 
     def _pay_numeric(cost_type: str, amount: int) -> dict:
         return engine.combat.pay_numeric_cost(
             player, cost_type, amount,
-            cost_share_target_ref=params.get("cost_share_target_ref", ""))
+            cost_share_target_ref=params.get("cost_share_target_ref", ""),
+            cost_context={"timing": "pre_battle_event", "source": event_name or "事件", "source_type": "event", "tags": {"active_payment"}})
 
     # ---- 罪孽都市·遗落的赌局：正式随机只走DiceEngine，结果不可由调用方注入 ----
     if event_name == "遗落的赌局" and text.startswith("下注"):
@@ -568,8 +569,13 @@ def resolve_option_effect(text: str, engine, event_name: str = "", params=None) 
                        or entry["amount"] < 0 for entry in allocations)):
             return {"applied": [], "instructions": [], "error": "必须用heal_allocations完整分配48点恢复量"}
         for entry in allocations:
-            detail = engine.state.apply_heal(refs[entry["target_ref"]], entry["amount"])
-            applied.append(f"{refs[entry['target_ref']].name}获得回复{detail['actual_heal']}")
+            heal_target = refs[entry["target_ref"]]
+            detail = engine.state.apply_heal(heal_target, entry["amount"], ctx={
+                "timing": "pre_battle_event", "source": event_name, "source_type": "event",
+                "actor": engine.state.player, "target": heal_target, "mechanic": "heal",
+                "subtype": "event", "amount": entry["amount"], "tags": {"event", "pre_battle"},
+            })
+            applied.append(f"{heal_target.name}获得回复{detail['actual_heal']}")
         engine.state.pending_energy_penalty += 1
         return {"applied": applied, "instructions": instructions}
     elif event_name == "回忆当铺" and text.startswith("典当"):

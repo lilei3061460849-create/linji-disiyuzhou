@@ -14,6 +14,7 @@ from .enums import (ActionPhase, TriggerTiming, InterruptType, DamageType,
 from .dm_rulings import Interrupt
 from .combat_events import CombatEvent, CombatEventType
 from .combat_hooks import CombatHookManager
+from .effect_context import EffectContext, make_context, normalize_context
 
 
 class CombatEngine:
@@ -108,14 +109,52 @@ class CombatEngine:
             return amount
         return self.hook_manager.apply_incoming_adjust(target, amount, damage_type, None, self.state)
 
-    def _gain_speed(self, entity: Entity, amount: int) -> int:
+    def _record_speed_change_event(
+        self, entity: Entity, amount: int,
+        ctx: Optional[EffectContext | dict] = None,
+        *, field: str = "current_speed",
+    ) -> Optional[dict]:
+        if entity is None or amount == 0:
+            return None
+        parent = normalize_context(ctx)
+        if parent is not None and parent.mechanic == "speed_change":
+            speed_ctx = parent
+        else:
+            speed_ctx = make_context(
+                timing=parent.timing if parent else self._current_context_timing(),
+                source=parent.source if parent else "legacy_speed_change",
+                source_type=parent.source_type if parent else "legacy",
+                actor=parent.actor if parent else entity,
+                target=entity,
+                owner=parent.owner if parent else None,
+                mechanic="speed_change",
+                subtype=field,
+                amount=amount,
+                tags=(set(parent.tags) if parent else {"legacy_context"}),
+                parent_event_id=parent.event_id if parent else None,
+            )
+        record = speed_ctx.to_dict()
+        events = getattr(entity, "_speed_change_events", None)
+        if events is None:
+            entity._speed_change_events = []
+            events = entity._speed_change_events
+        events.append(record)
+        return record
+
+    def _gain_speed(
+        self, entity: Entity, amount: int,
+        ctx: Optional[EffectContext | dict] = None,
+    ) -> int:
         if amount <= 0:
             return 0
         if entity.has_status("加速"):
             amount *= 2
+        before = entity.current_speed
         entity.current_speed += amount
         self.clamp_immortal_body(entity)
-        return amount
+        gained = entity.current_speed - before
+        self._record_speed_change_event(entity, gained, ctx, field="current_speed")
+        return gained
 
     def clamp_immortal_body(self, entity: Entity) -> None:
         """不朽之躯：获得的[法力]/[速度]无法超过[法限]/[速限]。
@@ -145,7 +184,11 @@ class CombatEngine:
             entity._jisu_dodges = getattr(entity, "_jisu_dodges", 0) + 1
             if entity._jisu_dodges >= 2:
                 entity._jisu_dodges -= 2
-                extra["jisu_speed"] = self._gain_speed(entity, 1)
+                extra["jisu_speed"] = self._gain_speed(entity, 1, ctx={
+                    "timing": self._current_context_timing(), "source": "急速", "source_type": "daowen",
+                    "actor": entity, "target": entity, "mechanic": "speed_change", "subtype": "current_speed",
+                    "amount": 1, "tags": {"daowen", "dodge_followup"},
+                })
         if entity.has_status("洞察"):
             entity._dongcha_pending = getattr(entity, "_dongcha_pending", 0) + 10
             extra["dongcha_pending"] = entity._dongcha_pending
@@ -155,7 +198,10 @@ class CombatEngine:
         """闪避：先走失速总线，再结算闪避专属句。"""
         extra = {}
         extra["lost_speed"] = self._lose_current_speed(
-            entity, 1, relic_target_ref, require_huifeng=self._huifeng_active(entity))
+            entity, 1, relic_target_ref, require_huifeng=self._huifeng_active(entity),
+            ctx={"timing": self._current_context_timing(), "source": "闪避", "source_type": "action",
+                 "actor": entity, "target": entity, "mechanic": "speed_change", "subtype": "current_speed",
+                 "amount": -1, "tags": {"dodge", "active_payment"}})
         extra.update(self._note_dodge(entity))
         return extra
 
@@ -207,6 +253,7 @@ class CombatEngine:
     def _trigger_huifeng_on_speed_loss(
         self, holder: Entity, lost: int, explicit_ref: Optional[str] = None,
         *, require_target: bool = False,
+        speed_ctx: Optional[dict] = None,
     ) -> Optional[dict]:
         """回锋刀：每失去1点当前速度后，对已显式提交的[目标]造成3点伤害。不自动选目标。"""
         if lost <= 0 or not self._huifeng_active(holder):
@@ -217,7 +264,13 @@ class CombatEngine:
                 raise ValueError("回锋刀触发必须显式提交合法敌方目标引用")
             return None
         self._remember_huifeng_target(holder, ref)
-        detail = self._apply_hostile_damage(target, 3 * lost, source=holder)
+        detail = self._apply_hostile_damage(target, 3 * lost, source=holder, ctx={
+            "timing": (speed_ctx or {}).get("timing") or self._current_context_timing(),
+            "source": "回锋刀", "source_type": "relic", "actor": holder, "target": target,
+            "owner": holder, "mechanic": "damage", "subtype": "relic", "amount": 3 * lost,
+            "tags": {"relic", "speed_loss_followup"},
+            "parent_event_id": (speed_ctx or {}).get("event_id"),
+        })
         if holder is not None and detail.get("actual_damage", 0) > 0:
             holder.damage_dealt_this_round += detail["actual_damage"]
         return {"target": target.name, "lost_speed": lost, **detail}
@@ -225,6 +278,7 @@ class CombatEngine:
     def _lose_current_speed(
         self, entity: Entity, amount: int, relic_target_ref: Optional[str] = None,
         *, require_huifeng: bool = False,
+        ctx: Optional[EffectContext | dict] = None,
     ) -> int:
         """失去当前速度的唯一入口。回锋刀按失去点数造伤；避风铃在归零时+15。"""
         if entity is None or amount <= 0:
@@ -232,10 +286,12 @@ class CombatEngine:
         before = entity.current_speed
         entity.current_speed = max(0, entity.current_speed - amount)
         lost = before - entity.current_speed
+        speed_ctx = self._record_speed_change_event(entity, -lost, ctx, field="current_speed")
         if lost and before > 0 and entity.current_speed == 0:
             self._trigger_bifengling_zero(entity)
         self._trigger_huifeng_on_speed_loss(
-            entity, lost, relic_target_ref, require_target=require_huifeng)
+            entity, lost, relic_target_ref, require_target=require_huifeng,
+            speed_ctx=speed_ctx)
         return lost
 
     def _trigger_bifengling_zero(self, entity: Entity) -> None:
@@ -314,36 +370,131 @@ class CombatEngine:
             return max(0, n)
         return DaoWenEngine.single_round_action_count(entity)
 
+    def _current_context_timing(self) -> str:
+        if getattr(self.state, "phase", "") == "pre_battle":
+            return "pre_battle"
+        sub = getattr(self.state, "combat_subphase", "") or ""
+        return sub or getattr(self.state, "phase", "") or "unknown"
+
+    @staticmethod
+    def _damage_context_subtype(damage_type: str) -> str:
+        return {
+            DamageType.NORMAL.value: "normal",
+            DamageType.IGNORE_SHIELD.value: "ignore_shield",
+            DamageType.IGNORE_DODGE.value: "ignore_dodge",
+            DamageType.MUST_HIT.value: "must_hit",
+            DamageType.REFLECT.value: "reflect",
+            DamageType.COST.value: "cost",
+            "无视格挡": "ignore_shield",
+            "无视闪避": "ignore_dodge",
+            "必中": "must_hit",
+            "普通": "normal",
+            "代价": "cost",
+        }.get(damage_type, damage_type or "normal")
+
+    def _damage_context(
+        self, target: Entity, amount: int, damage_type: str,
+        source: Optional[Entity], ctx: Optional[EffectContext | dict],
+    ) -> tuple[EffectContext, bool]:
+        normalized = normalize_context(ctx)
+        if normalized is None:
+            # 兼容旧调用：生成可追踪上下文并显式标记 legacy，避免后续迁移时静默漏源。
+            return make_context(
+                timing=self._current_context_timing(),
+                source=getattr(source, "name", "legacy_damage"),
+                source_type="legacy",
+                actor=source, target=target,
+                mechanic="damage", subtype=self._damage_context_subtype(damage_type),
+                amount=amount, tags={"legacy_context"},
+            ), True
+        if normalized.mechanic == "damage":
+            return normalized, False
+        return make_context(
+            timing=normalized.timing, source=normalized.source,
+            source_type=normalized.source_type, actor=normalized.actor or source,
+            target=normalized.target or target, owner=normalized.owner,
+            mechanic="damage", subtype=normalized.subtype or self._damage_context_subtype(damage_type),
+            amount=normalized.amount if normalized.amount is not None else amount,
+            tags=normalized.tags, event_id=normalized.event_id,
+            parent_event_id=normalized.parent_event_id,
+        ), False
+
+    def _attach_damage_context(self, detail: dict, ctx: EffectContext, legacy_warning: bool) -> dict:
+        detail["ctx"] = ctx.to_dict()
+        if legacy_warning:
+            detail["context_warning"] = "伤害缺少EffectContext；已按legacy来源兼容记录"
+        return detail
+
+    def _record_hp_loss_event(
+        self, entity: Entity, amount: int,
+        parent_ctx: Optional[EffectContext] = None,
+        *, subtype: str = "damage",
+    ) -> Optional[dict]:
+        """记录“实际失去生命”事件；不改变既有 hp_lost_this_round 数值来源。"""
+        if entity is None or amount <= 0:
+            return None
+        ctx = make_context(
+            timing=parent_ctx.timing if parent_ctx else self._current_context_timing(),
+            source=parent_ctx.source if parent_ctx else "legacy_hp_loss",
+            source_type=parent_ctx.source_type if parent_ctx else "legacy",
+            actor=parent_ctx.actor if parent_ctx else None,
+            target=entity,
+            owner=parent_ctx.owner if parent_ctx else None,
+            mechanic="hp_loss",
+            subtype=subtype,
+            amount=amount,
+            tags=(set(parent_ctx.tags) if parent_ctx else {"legacy_context"}),
+            parent_event_id=parent_ctx.event_id if parent_ctx else None,
+        )
+        record = ctx.to_dict()
+        events = getattr(entity, "_hp_loss_events", None)
+        if events is None:
+            entity._hp_loss_events = []
+            events = entity._hp_loss_events
+        events.append(record)
+        return record
+
     def _apply_hostile_damage(self, target: Entity, amount: int,
                               damage_type: str = DamageType.NORMAL.value,
-                              source: Optional[Entity] = None) -> dict:
+                              source: Optional[Entity] = None,
+                              ctx: Optional[EffectContext | dict] = None) -> dict:
         """
         对target造成外部/敌对伤害的统一入口（通过 HookManager 全生命周期调度）。
+        ctx 为兼容层来源上下文，不改变既有伤害结算顺序和返回核心字段。
         """
+        damage_ctx, legacy_ctx = self._damage_context(target, amount, damage_type, source, ctx)
         amount = self.hook_manager.apply_multiplier_adjust(target, amount, damage_type, source, self.state)
         amount = self._incoming_adjust(target, amount, damage_type)
 
         # 1. 伤害重定向 (嫁祸 / 背负)
         redirected_target = self.hook_manager.apply_redirection(target, damage_type, self.state)
         if redirected_target is not None:
-            return self._apply_hostile_damage(redirected_target, amount, damage_type, source)
+            redirected_ctx = make_context(
+                timing=damage_ctx.timing, source=damage_ctx.source,
+                source_type=damage_ctx.source_type, actor=damage_ctx.actor,
+                target=redirected_target, owner=damage_ctx.owner,
+                mechanic="damage", subtype=damage_ctx.subtype, amount=amount,
+                tags=set(damage_ctx.tags) | {"redirected"},
+                parent_event_id=damage_ctx.event_id,
+            )
+            return self._apply_hostile_damage(redirected_target, amount, damage_type, source, ctx=redirected_ctx)
 
         # 2. 受到伤害前反噬 (爆裂 Hook)
         before_res = self.hook_manager.apply_before_damage(target, amount, damage_type, source, self.state)
         if before_res.get("suppressed"):
             if source is not None and not source.is_alive:
                 self._on_entity_death(source)
-            return {
+            return self._attach_damage_context({
                 "raw_damage": amount, "shield_absorbed": 0, "actual_damage": 0,
                 "hp_before": target.current_hp, "hp_after": target.current_hp,
                 "blood_limit_before": target.blood_limit, "died": False,
                 "damage_type": damage_type, "baolie_suppress": True,
-            }
+            }, damage_ctx, legacy_ctx)
 
         # 3. 濒死伤害拦截与保护 (撤退 / 负岳碑 / 断尾求生)
         mitigation = self.hook_manager.apply_mitigation(target, amount, damage_type, self)
         if mitigation is not None:
-            return mitigation
+            return self._attach_damage_context(mitigation, damage_ctx, legacy_ctx)
 
         # 4. 基础扣血。贯穿：你造成的伤害（任意通道）无视格挡；代价仍按代价结算。
         apply_type = damage_type
@@ -351,7 +502,11 @@ class CombatEngine:
                 and hasattr(source, "has_status") and source.has_status("贯穿")):
             apply_type = "无视格挡"
         detail = target.take_damage(amount, apply_type)
+        self._attach_damage_context(detail, damage_ctx, legacy_ctx)
         actual = detail.get("actual_damage", 0)
+        hp_loss_ctx = self._record_hp_loss_event(target, actual, damage_ctx, subtype="damage")
+        if hp_loss_ctx:
+            detail["hp_loss_ctx"] = hp_loss_ctx
         if actual > 0 and source is not None:
             stolen = self._xijie_steal(source, target, actual)
             if stolen:
@@ -366,14 +521,34 @@ class CombatEngine:
 
         return detail
 
-    def _on_entity_death(self, entity: Entity) -> None:
+    def _on_entity_death(self, entity: Entity, ctx: Optional[EffectContext | dict] = None) -> None:
         """统一死亡触发；重复通知通过实体标记幂等。"""
         if getattr(entity, "_death_triggers_emitted", False):
             return
+        parent = normalize_context(ctx)
+        death_ctx = make_context(
+            timing=parent.timing if parent else self._current_context_timing(),
+            source=parent.source if parent else "legacy_death",
+            source_type=parent.source_type if parent else "legacy",
+            actor=parent.actor if parent else None,
+            target=entity,
+            owner=parent.owner if parent else None,
+            mechanic="death",
+            subtype=getattr(entity, "departure_reason", "") or "hp_zero",
+            amount=0,
+            tags=(set(parent.tags) if parent else {"legacy_context"}),
+            parent_event_id=parent.event_id if parent else None,
+        )
+        entity._death_ctx = death_ctx.to_dict()
         entity._death_triggers_emitted = True
         if entity.entity_type == "怪物":
             if self.state.player and self._relic_active(self.state.player, "焦黑发丝"):
-                self._gain_speed(self.state.player, 2)
+                self._gain_speed(self.state.player, 2, ctx={
+                    "timing": death_ctx.timing, "source": "焦黑发丝", "source_type": "relic",
+                    "actor": self.state.player, "target": self.state.player, "owner": self.state.player,
+                    "mechanic": "speed_change", "subtype": "current_speed", "amount": 2,
+                    "tags": {"relic", "death_trigger"}, "parent_event_id": death_ctx.event_id,
+                })
             # 乱葬岗·招魂：记录本场已命零怪物尸体
             if not getattr(self.state, "dead_monsters", None):
                 self.state.dead_monsters = []
@@ -414,18 +589,28 @@ class CombatEngine:
             return self.state.lose_shards(amount)
         return entity.lose_shards(amount)
 
-    def _raw_hp_loss(self, entity: Entity, amount: int) -> dict:
-        """直接生命损失（绕过格挡；爆裂反射/赌命用），计入失血追踪，含命零判定"""
+    def _raw_hp_loss(
+        self, entity: Entity, amount: int,
+        ctx: Optional[EffectContext | dict] = None,
+    ) -> dict:
+        """直接生命损失（绕过格挡；爆裂反射/赌命用），计入失血追踪，含命零判定。"""
         before = entity.current_hp
         entity.current_hp = max(0, entity.current_hp - max(0, amount))
         lost = before - entity.current_hp
         entity.hp_lost_this_round += lost
+        parent = normalize_context(ctx)
+        hp_loss_ctx = self._record_hp_loss_event(entity, lost, parent, subtype="raw")
         died = False
         if entity.current_hp <= 0:
             entity.is_alive = False
             died = True
-            self._on_entity_death(entity)
-        return {"hp_before": before, "hp_after": entity.current_hp, "lost": lost, "died": died}
+            self._on_entity_death(entity, ctx=hp_loss_ctx or parent)
+        result = {"hp_before": before, "hp_after": entity.current_hp, "lost": lost, "died": died}
+        if hp_loss_ctx:
+            result["hp_loss_ctx"] = hp_loss_ctx
+        if ctx is None and lost > 0:
+            result["context_warning"] = "直接失去生命缺少EffectContext；已按legacy来源兼容记录"
+        return result
 
     def _seal_one_relic(self, target: Entity, rounds: int) -> str:
         """抵扣X：封印目标拥有的一件遗物，持续X回合。返回被封印的遗物名；目标无遗物返回\"\"。"""
@@ -491,7 +676,7 @@ class CombatEngine:
                     s.value = entity._bizhong_left
         return True
 
-    def _on_cost_paid(self, payer: Entity) -> Optional[dict]:
+    def _on_cost_paid(self, payer: Entity, cost_ctx: Optional[EffectContext] = None) -> Optional[dict]:
         """烙痕钉等“每付出一次代价”效果的统一触发点。"""
         if payer is not self.state.player:
             return None
@@ -499,7 +684,13 @@ class CombatEngine:
         target = self._combat_entity_refs().get(ref or "")
         if target is None or not target.is_alive:
             return None
-        detail = self._apply_hostile_damage(target, 10, "必中", payer)
+        detail = self._apply_hostile_damage(
+            target, 10, "必中", payer,
+            ctx={"timing": (cost_ctx.timing if cost_ctx else self._current_context_timing()),
+                 "source": "烙痕钉", "source_type": "relic", "actor": payer,
+                 "target": target, "owner": payer, "mechanic": "damage", "subtype": "relic",
+                 "amount": 10, "tags": {"relic", "must_hit"},
+                 "parent_event_id": cost_ctx.event_id if cost_ctx else None})
         return {"target": target.name, **detail}
 
     SHAREABLE_NUMERIC_COSTS = {"流血", "衰老", "枯竭", "萎缩", "疲惫", "异变"}
@@ -585,12 +776,15 @@ class CombatEngine:
                     f"{entity.name}无法完整承担{cost_type}{part}（可支付{capacity}）")
         return payer, owner_amount, ally, ally_amount
 
-    def _apply_numeric_cost_part(self, payer: Entity, cost_type: str, amount: int) -> dict:
+    def _apply_numeric_cost_part(
+        self, payer: Entity, cost_type: str, amount: int,
+        cost_context: Optional[EffectContext] = None,
+    ) -> dict:
         """支付一方的已拆分数值代价；不再进行血契递归。"""
         if amount <= 0:
             return {"payer": payer.name, "cost_type": cost_type, "paid": 0}
         if cost_type == "流血":
-            detail = self._pay_bleed_cost(payer, amount)
+            detail = self._pay_bleed_cost(payer, amount, cost_context=cost_context)
             return {"payer": payer.name, "cost_type": cost_type,
                     "paid": detail.get("actual_damage", 0), "detail": detail}
         if cost_type == "衰老":
@@ -608,21 +802,21 @@ class CombatEngine:
             payer.speed_limit = max(0, payer.speed_limit - amount)
             overflow = max(0, payer.current_speed - payer.speed_limit)
             if overflow:
-                self._lose_current_speed(payer, overflow)
+                self._lose_current_speed(payer, overflow, ctx=cost_context)
             else:
                 payer.current_speed = min(payer.current_speed, payer.speed_limit)
         elif cost_type == "疲惫":
-            self._lose_current_speed(payer, amount)
+            self._lose_current_speed(payer, amount, ctx=cost_context)
         elif cost_type == "异变":
             mutation = payer.add_mutation(amount)
             if mutation.get("collapsed"):
                 self._on_entity_death(payer)
             self._bank_lianxin(payer, cost_type, amount)
-            nail = self._on_cost_paid(payer)
+            nail = self._on_cost_paid(payer, cost_context)
             return {"payer": payer.name, "cost_type": cost_type, "paid": amount,
                     "mutation": mutation, "brand_nail": nail}
         self._bank_lianxin(payer, cost_type, amount)
-        nail = self._on_cost_paid(payer)
+        nail = self._on_cost_paid(payer, cost_context)
         return {"payer": payer.name, "cost_type": cost_type, "paid": amount,
                 "brand_nail": nail}
 
@@ -634,8 +828,15 @@ class CombatEngine:
         *,
         cost_share_target_ref: str = "",
         dragon_heart_use: int = 0,
+        ctx: Optional[EffectContext | dict] = None,
+        cost_context: Optional[EffectContext | dict] = None,
     ) -> dict:
-        """统一支付可分担的数值代价：龙心先抵消，血契再拆分剩余后果。"""
+        """统一支付可分担的数值代价：龙心先抵消，血契再拆分剩余后果。
+
+        ctx 为统一 EffectContext 兼容层；cost_context 是阶段性旧名，保留兼容。
+        未迁移调用点仍可不传 ctx，但若存在需要上下文的监听，会在返回明细中给出
+        context_warning，避免开发/测试时静默漏掉来源。
+        """
         if not isinstance(dragon_heart_use, int) or isinstance(dragon_heart_use, bool) or dragon_heart_use < 0:
             raise ValueError("dragon_heart_use必须是非负整数")
         if payer is not self.state.player:
@@ -658,8 +859,17 @@ class CombatEngine:
             payer, cost_type, remaining, cost_share_target_ref)
         if heart is not None and offset > 0:
             heart.current_uses -= offset
-        owner_detail = self._apply_numeric_cost_part(payer, cost_type, owner_amount)
-        ally_detail = (self._apply_numeric_cost_part(ally, cost_type, ally_amount)
+        normalized_ctx = normalize_context(ctx if ctx is not None else cost_context)
+        if normalized_ctx is not None and normalized_ctx.mechanic != "cost":
+            normalized_ctx = make_context(
+                timing=normalized_ctx.timing, source=normalized_ctx.source,
+                source_type=normalized_ctx.source_type, actor=normalized_ctx.actor or payer,
+                target=normalized_ctx.target or payer, owner=normalized_ctx.owner,
+                mechanic="cost", subtype=self._cost_context_subtype(cost_type), amount=remaining,
+                tags=normalized_ctx.tags, event_id=normalized_ctx.event_id,
+                parent_event_id=normalized_ctx.parent_event_id)
+        owner_detail = self._apply_numeric_cost_part(payer, cost_type, owner_amount, normalized_ctx)
+        ally_detail = (self._apply_numeric_cost_part(ally, cost_type, ally_amount, normalized_ctx)
                        if ally is not None else None)
         return {
             "cost_type": cost_type,
@@ -670,32 +880,70 @@ class CombatEngine:
             "shared_with": ally_detail,
             "cost_share_target_ref": cost_share_target_ref or None,
             "actual_paid": owner_detail.get("paid", 0) + (ally_detail or {}).get("paid", 0),
+            "ctx": normalized_ctx.to_dict() if normalized_ctx is not None else None,
         }
 
-    def _pay_bleed_cost(self, payer: Entity, amount: int, dragon_heart_use: int = 0) -> dict:
+    @staticmethod
+    def _cost_context_subtype(cost_type: str) -> str:
+        return {
+            "流血": "bleed", "衰老": "aging", "枯竭": "exhaust",
+            "萎缩": "shrink", "疲惫": "fatigue", "异变": "mutation",
+            "冷却": "cooldown", "失忆": "amnesia", "唯一": "unique",
+        }.get(cost_type, cost_type)
+
+    @staticmethod
+    def _blood_oath_context_allows(ctx: Optional[EffectContext]) -> bool:
+        """血誓戒只认明确主动流血代价来源；战始/局外/回终自动流血均不触发。"""
+        if ctx is None:
+            return False
+        if ctx.mechanic != "cost" or ctx.subtype != "bleed":
+            return False
+        if "active_payment" not in ctx.tags:
+            return False
+        return ctx.timing in {"round_start", "player_action", "reaction"}
+
+    def _pay_bleed_cost(
+        self, payer: Entity, amount: int, dragon_heart_use: int = 0,
+        *, cost_context: Optional[EffectContext] = None,
+    ) -> dict:
         """
         支付单个承担者的"流血X"代价；血契拆分由 pay_numeric_cost 在外层完成。
-        血誓戒：[回始]玩家首次主动支付流血代价时，获得等同于本次流血的格挡；
-        若支付后生命≤30%[血限]，改为获得等量生命。血契分担时只按玩家本人实际承担的部分触发。
+        血誓戒：玩家在明确主动时点（回始/玩家行动/反应）首次主动支付流血代价时，
+        获得等同于本次流血的格挡；若支付后生命≤30%[血限]，改为获得等量生命。
+        血契分担时只按玩家本人实际承担的部分触发。
         dragon_heart_use：本次希望消耗"流血龙心"抵消的点数(龙心谷"炼心"产出)，抵消后剩余部分才真正支付。
+        cost_context：代价来源上下文，未显式传入则不触发“主动/时点”监听。
         """
+        cost_context = normalize_context(cost_context)
         actual, offset = self._offset_with_dragon_heart(payer, "流血", amount, dragon_heart_use)
         detail = payer.take_damage(actual, "代价")
         detail["dragon_heart_offset"] = offset
-        if detail.get("died"):
-            self._on_entity_death(payer)
-        if (payer is self.state.player and actual > 0 and not payer.blood_oath_used_this_round
+        hp_loss_ctx = self._record_hp_loss_event(payer, actual, cost_context, subtype="cost")
+        if hp_loss_ctx:
+            detail["hp_loss_ctx"] = hp_loss_ctx
+        if (cost_context is None and actual > 0 and payer is self.state.player
                 and self._relic_active(payer, "血誓戒")):
+            detail["context_warning"] = "流血代价缺少EffectContext；需要来源上下文的监听不会触发"
+        if detail.get("died"):
+            self._on_entity_death(payer, ctx=cost_context)
+        if (payer is self.state.player and actual > 0 and not payer.blood_oath_used_this_round
+                and self._relic_active(payer, "血誓戒")
+                and self._blood_oath_context_allows(cost_context)):
             payer.blood_oath_used_this_round = True
             if payer.blood_limit > 0 and payer.current_hp / payer.blood_limit <= 0.3:
-                heal_detail = self.state.apply_heal(payer, actual)
-                detail["blood_oath"] = {"type": "life", "amount": heal_detail["actual_heal"]}
+                heal_detail = self.state.apply_heal(payer, actual, ctx={
+                    "timing": cost_context.timing, "source": "血誓戒", "source_type": "relic",
+                    "actor": payer, "target": payer, "owner": payer,
+                    "mechanic": "heal", "subtype": "blood_oath", "amount": actual,
+                    "tags": {"relic"}, "parent_event_id": cost_context.event_id,
+                })
+                detail["blood_oath"] = {"type": "life", "amount": heal_detail["actual_heal"], "heal_ctx": heal_detail.get("heal_ctx")}
             else:
                 payer.gain_shield(actual)
                 detail["blood_oath"] = {"type": "shield", "amount": actual}
         self._bank_lianxin(payer, "流血", actual)
         if actual > 0:
-            nail = self._on_cost_paid(payer)
+            nail = self._on_cost_paid(payer, cost_context)
             if nail:
                 detail["brand_nail"] = nail
         return detail
@@ -783,7 +1031,8 @@ class CombatEngine:
         if (blood_shadow and not must_hit and self.state.side_has(target, "血影")):
             self.pay_numeric_cost(
                 target, "流血", 10,
-                cost_share_target_ref=cost_share_target_ref)
+                cost_share_target_ref=cost_share_target_ref,
+                cost_context={"timing": "reaction", "source": "血影", "source_type": "relic", "tags": {"active_payment"}})
             result["blood_shadow_success"] = True
             result["note"] = "血影：流血10，本次判定被取消"
             return result
@@ -853,13 +1102,25 @@ class CombatEngine:
                 per = math.ceil(damage / xv)
                 ta = ts = 0; died = False
                 for _ in range(xv):
-                    dr = self._apply_hostile_damage(target, per, "普通" if not ignore_shield else "无视格挡", attacker)
+                    dr = self._apply_hostile_damage(
+                        target, per, "普通" if not ignore_shield else "无视格挡", attacker,
+                        ctx={"timing": self._current_context_timing(), "source": "普通攻击", "source_type": "attack",
+                             "actor": attacker, "target": target, "mechanic": "damage", "subtype": "attack",
+                             "amount": per, "tags": {"attack", "split_hit"}})
                     ta += dr["actual_damage"]; ts += dr["shield_absorbed"]; died = died or dr["died"]
                 damage_result = {"actual_damage": ta, "shield_absorbed": ts, "hp_after": target.current_hp, "died": died, "split": xv}
             else:
-                damage_result = self._apply_hostile_damage(target, damage, "普通" if not ignore_shield else "无视格挡", attacker)
+                damage_result = self._apply_hostile_damage(
+                    target, damage, "普通" if not ignore_shield else "无视格挡", attacker,
+                    ctx={"timing": self._current_context_timing(), "source": "普通攻击", "source_type": "attack",
+                         "actor": attacker, "target": target, "mechanic": "damage", "subtype": "attack",
+                         "amount": damage, "tags": {"attack"}})
         else:
-            damage_result = self._apply_hostile_damage(target, damage, "普通" if not ignore_shield else "无视格挡", attacker)
+            damage_result = self._apply_hostile_damage(
+                target, damage, "普通" if not ignore_shield else "无视格挡", attacker,
+                ctx={"timing": self._current_context_timing(), "source": "普通攻击", "source_type": "attack",
+                     "actor": attacker, "target": target, "mechanic": "damage", "subtype": "attack",
+                     "amount": damage, "tags": {"attack"}})
         result["damage_dealt"] = damage_result["actual_damage"]
         result["shield_absorbed"] = damage_result["shield_absorbed"]
         result["hp_lost"] = damage_result["actual_damage"]
@@ -885,7 +1146,11 @@ class CombatEngine:
         # 结算后效果
         # 兴奋：每次出手后速度+1（X 只管持续）
         if attacker.has_status("兴奋"):
-            result["speed_boost_from_excitement"] = self._gain_speed(attacker, 1)
+            result["speed_boost_from_excitement"] = self._gain_speed(attacker, 1, ctx={
+                "timing": self._current_context_timing(), "source": "兴奋", "source_type": "daowen",
+                "actor": attacker, "target": attacker, "mechanic": "speed_change", "subtype": "current_speed",
+                "amount": 1, "tags": {"daowen", "action_followup"},
+            })
 
         return result
     
@@ -960,6 +1225,10 @@ class CombatEngine:
         # 活血追踪归零 + 出手预算归零（回始重置本回合已用出手次数）+ 血誓戒每回合限一次归零 + 血族血脉判定归零
         for e in self.state.get_all_player_side() + self.state.get_all_enemy_side():
             e.hp_lost_this_round = 0
+            if hasattr(e, "_hp_loss_events"):
+                e._hp_loss_events = []
+            if hasattr(e, "_speed_change_events"):
+                e._speed_change_events = []
             e.actions_used_this_round = 0
             e.blood_oath_used_this_round = False
             e.mana_inflicted_this_round = 0
@@ -998,19 +1267,30 @@ class CombatEngine:
                 x = entity.get_status_value("自愈")
                 heal_pct = 10 * x
                 heal_amount = math.ceil(entity.blood_limit * heal_pct / 100)
-                heal_result = self.state.apply_heal(entity, heal_amount)
+                heal_result = self.state.apply_heal(entity, heal_amount, ctx={
+                    "timing": "round_start", "source": "自愈", "source_type": "daowen",
+                    "actor": entity, "target": entity, "owner": entity,
+                    "mechanic": "heal", "subtype": "self_heal", "amount": heal_amount,
+                    "tags": {"daowen", "round_start"},
+                })
                 effects.append({
                     "type": "self_heal",
                     "entity": entity.name,
                     "heal": heal_amount,
-                    "actual": heal_result["actual_heal"]
+                    "actual": heal_result["actual_heal"],
+                    "heal_ctx": heal_result.get("heal_ctx"),
                 })
             if entity.has_status("衰败") and entity.is_alive:
                 xv = entity.get_status_value("衰败")
                 dmg_n = math.ceil(entity.current_hp * 10 * xv / 100)
                 if dmg_n > 0:
                     source_name = next((status.source for status in entity.status_effects if status.name == "衰败"), "")
-                    rd = self._apply_hostile_damage(entity, dmg_n, source=self._find_named(source_name))
+                    source_entity = self._find_named(source_name)
+                    rd = self._apply_hostile_damage(entity, dmg_n, source=source_entity, ctx={
+                        "timing": "round_start", "source": "衰败", "source_type": "daowen",
+                        "actor": source_entity, "target": entity, "mechanic": "damage", "subtype": "dot",
+                        "amount": dmg_n, "tags": {"daowen", "round_start"},
+                    })
                     effects.append({"type": "shuaibai_tick", "entity": entity.name,
                                     "damage": rd["actual_damage"], "died": rd["died"]})
             pending = getattr(entity, "_dongcha_pending", 0)
@@ -1083,7 +1363,11 @@ class CombatEngine:
             idx = int(roll["player_number"]) - 1
             tgt = alive[min(max(idx, 0), len(alive) - 1)]
             d = math.ceil(tgt.blood_limit * 30 / 100)  # 用户裁定口径：血限30%
-            rd = self._raw_hp_loss(tgt, d)
+            rd = self._raw_hp_loss(tgt, d, ctx={
+                "timing": "round_start", "source": "赌命", "source_type": "daowen",
+                "actor": holder, "target": tgt, "mechanic": "hp_loss", "subtype": "percent",
+                "amount": d, "tags": {"daowen", "round_start"},
+            })
             effects.append({"type": "duming", "caster": holder.name, "target": tgt.name,
                             "roll": idx + 1, "of": len(alive), "damage": rd["lost"], **rd})
 
@@ -1156,14 +1440,21 @@ class CombatEngine:
             # 血族血脉：持有者这一侧各自结算（死斗两边各一份）
             if entity.entity_type == "轮回者" and self.state.side_has(entity, "血族血脉"):
                 if entity.damage_dealt_this_round > 0:
-                    heal_detail = self.state.apply_heal(entity, entity.damage_dealt_this_round)
+                    heal_detail = self.state.apply_heal(entity, entity.damage_dealt_this_round, ctx={
+                        "timing": "round_end", "source": "血族血脉", "source_type": "relic",
+                        "actor": entity, "target": entity, "owner": entity,
+                        "mechanic": "heal", "subtype": "blood_lineage", "amount": entity.damage_dealt_this_round,
+                        "tags": {"relic", "round_end"},
+                    })
                     effects.append({"type": "blood_lineage_heal", "entity": entity.name,
-                                     "amount": heal_detail["actual_heal"]})
+                                     "amount": heal_detail["actual_heal"],
+                                     "heal_ctx": heal_detail.get("heal_ctx")})
                 else:
                     payment = self.pay_numeric_cost(
                         entity, "流血", 20,
                         cost_share_target_ref=(blood_lineage_cost_share_target_ref
-                                               if entity is self.state.player else ""))
+                                               if entity is self.state.player else ""),
+                        cost_context={"timing": "round_end", "source": "血族血脉", "source_type": "relic", "tags": {"automatic"}})
                     effects.append({"type": "blood_lineage_bleed", "entity": entity.name,
                                      "cost": payment, "amount": payment["actual_paid"]})
 
@@ -1259,19 +1550,32 @@ class CombatEngine:
             effects.append({"type": "dragon_body_tick", "side": "opponent",
                             "remaining": self.state.opponent_dragon_body_shield_rounds})
 
-        # 皮衣记录本回合失血，下一回始获得等量格挡。
-        if (self.state.player and self.state.side_has(self.state.player, "皮衣")
-                and self.state.player.hp_lost_this_round > 0):
-            self.state.event_modifiers["leather_shield_next"] = self.state.player.hp_lost_this_round
+        # 皮衣记录本回合实际失去生命；优先使用 HP loss 事件，兼容未迁移旧路径。
+        if self.state.player and self.state.side_has(self.state.player, "皮衣"):
+            hp_loss_events = getattr(self.state.player, "_hp_loss_events", []) or []
+            event_loss = sum(int(e.get("amount") or 0) for e in hp_loss_events)
+            leather_loss = event_loss if event_loss > 0 else self.state.player.hp_lost_this_round
+            if leather_loss > 0:
+                self.state.event_modifiers["leather_shield_next"] = leather_loss
 
         # 活血：有活血状态的实体，回终按本回合累计失血÷2回复
         for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
             if entity.has_status("活血") and entity.hp_lost_this_round >= 2:
                 heal_n = entity.hp_lost_this_round // 2
-                h = self.state.apply_heal(entity, heal_n)
+                h = self.state.apply_heal(entity, heal_n, ctx={
+                    "timing": "round_end", "source": "活血", "source_type": "daowen",
+                    "actor": entity, "target": entity, "owner": entity,
+                    "mechanic": "heal", "subtype": "huoxue", "amount": heal_n,
+                    "tags": {"daowen", "round_end"},
+                })
                 effects.append({"type": "huoxue_heal", "entity": entity.name,
-                                "heal": heal_n, "actual": h["actual_heal"]})
+                                "heal": heal_n, "actual": h["actual_heal"],
+                                "heal_ctx": h.get("heal_ctx")})
             entity.hp_lost_this_round = 0
+            if hasattr(entity, "_hp_loss_events"):
+                entity._hp_loss_events = []
+            if hasattr(entity, "_speed_change_events"):
+                entity._speed_change_events = []
 
         # 手术·强制移植：本场第三回终仍保持原移植道纹时转为怪物。
         if self.state.current_round >= 3:
@@ -1499,9 +1803,20 @@ class CombatEngine:
         threshold = self.cancer_threshold_of(entity)
         if threshold <= 0 or entity.total_healed < threshold:
             return None
+        parent_heal = None
+        heal_events = getattr(entity, "_heal_events", []) or []
+        if heal_events:
+            parent_heal = normalize_context(heal_events[-1])
+        cancer_ctx = make_context(
+            timing=parent_heal.timing if parent_heal else self._current_context_timing(),
+            source="癌变", source_type="system", actor=None, target=entity, owner=None,
+            mechanic="cancer", subtype="heal_threshold", amount=entity.total_healed,
+            tags={"threshold", "heal_listener"},
+            parent_event_id=parent_heal.event_id if parent_heal else None,
+        )
         if entity.entity_type == "怪物":
-            return self._proliferate_monster(entity)
-        return self._cancer_character(entity)
+            return self._proliferate_monster(entity, ctx=cancer_ctx)
+        return self._cancer_character(entity, ctx=cancer_ctx)
 
     REDEMPTION_HP_RATIO = 0.10
 
@@ -1549,7 +1864,11 @@ class CombatEngine:
             "cause": cause,
             "mutation": monster.mutation_count,
         }
-        monster.depart_battle("救赎")
+        self._remove_from_combat(monster, "救赎", ctx={
+            "timing": self._current_context_timing(), "source": "救赎", "source_type": "system",
+            "target": monster, "mechanic": "leave", "subtype": "redemption",
+            "tags": {"leave", "no_shards"},
+        })
         monster._redeemed = True
         self.state.pending_redemption = snapshot
         return {
@@ -1625,18 +1944,33 @@ class CombatEngine:
                 results.append(cancer)
         return results
 
-    def _remove_from_combat(self, monster: Entity, reason: str = "离场"):
+    def _remove_from_combat(
+        self, monster: Entity, reason: str = "离场",
+        ctx: Optional[EffectContext | dict] = None,
+    ):
         """将怪物移出战斗（不视为击杀）——统一走【离场】。"""
+        parent = normalize_context(ctx)
+        leave_ctx = make_context(
+            timing=parent.timing if parent else self._current_context_timing(),
+            source=reason, source_type="system", actor=parent.actor if parent else None,
+            target=monster, owner=parent.owner if parent else None,
+            mechanic="leave", subtype=reason, amount=0,
+            tags=(set(parent.tags) if parent else set()) | {"leave", "no_shards"},
+            parent_event_id=parent.event_id if parent else None,
+        )
+        monster._leave_ctx = leave_ctx.to_dict()
         monster.depart_battle(reason)
 
-    def _cancer_character(self, entity: Entity) -> dict:
+    def _cancer_character(self, entity: Entity, ctx: Optional[EffectContext | dict] = None) -> dict:
         """轮回者/同伴癌变：累计恢复达血限×2 → 直接命零。不吸收进书、不加休整+8。"""
+        cancer_ctx = normalize_context(ctx)
         entity.is_proliferated = True
         entity.is_cancer = True
         entity.current_hp = 0
         entity.is_alive = False
         if entity is self.state.player:
             self.state.last_death_cause = "cancer"
+        self._on_entity_death(entity, ctx=cancer_ctx)
         return {
             "type": "cancer",
             "type_alias": "proliferation",
@@ -1644,6 +1978,7 @@ class CombatEngine:
             "entity_type": entity.entity_type,
             "absorbed_heal": entity.total_healed,
             "threshold": self.cancer_threshold_of(entity),
+            "ctx": cancer_ctx.to_dict() if cancer_ctx else None,
             "note": f"{entity.name}累计承受{entity.total_healed}点恢复，触发【癌变】：直接[命零]",
         }
 
@@ -1652,7 +1987,10 @@ class CombatEngine:
         durability = max(1, math.ceil(monster.blood_limit * 0.05))
         reason = "攻击次数归0" if monster.attack_count <= 0 else "攻击力归0"
         monster.is_sculptured = True
-        self._remove_from_combat(monster, "雕塑")
+        self._remove_from_combat(monster, "雕塑", ctx={
+            "timing": self._current_context_timing(), "source": "雕塑", "source_type": "system",
+            "target": monster, "mechanic": "leave", "subtype": "sculpture", "tags": {"leave", "no_shards"},
+        })
         consumable = Consumable(
             name=f"{monster.name}雕塑",
             effect=(f"每消耗1点耐久，对1个目标造成{self.SCULPTURE_DAMAGE}点伤害，"
@@ -1671,12 +2009,13 @@ class CombatEngine:
             "note": (f"{monster.name}{reason}，化为雕塑【{consumable.name}】（{durability}/{durability}）"),
         }
 
-    def _proliferate_monster(self, monster: Entity) -> dict:
+    def _proliferate_monster(self, monster: Entity, ctx: Optional[EffectContext | dict] = None) -> dict:
         """癌变：累计受到恢复量达阈值→吸收进死者之书，强化休整（旧名 增生）"""
+        cancer_ctx = normalize_context(ctx)
         monster.is_proliferated = True
         # 兼容：同时写入癌变别名，便于外部以新名读取
         monster.is_cancer = True  # type: ignore[attr-defined]
-        self._remove_from_combat(monster, "癌变")
+        self._remove_from_combat(monster, "癌变", ctx=cancer_ctx)
         absorbed = monster.total_healed
         # 正文：每只被吸收的癌变怪物使局外【休整】永久额外产生8点恢复量，可叠加。
         boost = 8
@@ -1689,6 +2028,7 @@ class CombatEngine:
             "absorbed_heal": absorbed,
             "rest_boost": boost,
             "rest_heal_bonus_total": self.state.rest_heal_bonus,
+            "ctx": cancer_ctx.to_dict() if cancer_ctx else None,
             "note": (f"{monster.name}累计承受{absorbed}点恢复被癌变吸收进《死者之书》，"
                      f"局外【休整】恢复量永久+{boost}（累计+{self.state.rest_heal_bonus}）"),
         }
@@ -1741,7 +2081,11 @@ class CombatEngine:
                 "note": f"雕塑赋能：获得{self.SCULPTURE_SHIELD}点格挡",
             }
         else:
-            dmg = self._apply_hostile_damage(target, self.SCULPTURE_DAMAGE, source=self.state.player)
+            dmg = self._apply_hostile_damage(target, self.SCULPTURE_DAMAGE, source=self.state.player, ctx={
+                "timing": self._current_context_timing(), "source": "雕塑", "source_type": "consumable",
+                "actor": self.state.player, "target": target, "mechanic": "damage", "subtype": "sculpture",
+                "amount": self.SCULPTURE_DAMAGE, "tags": {"consumable", "sculpture"},
+            })
             return {
                 "success": True,
                 "type": "sculpture_damage",
@@ -1920,7 +2264,13 @@ class CombatEngine:
             base = self._jieli_boost(caster, base)
             if caster.has_status("坠落") and base > 0:
                 base = math.ceil(base / 2)
-            dmg = self._apply_hostile_damage(target, 0 if mengbi_blocked else base, source=caster)
+            dmg_amount = 0 if mengbi_blocked else base
+            dmg = self._apply_hostile_damage(
+                target, dmg_amount, source=caster,
+                ctx={"timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
+                     "source": name, "source_type": "daowen", "actor": caster, "target": target,
+                     "mechanic": "damage", "subtype": "daowen", "amount": dmg_amount,
+                     "tags": {"daowen"}})
             result["effects"].append({"type": "damage", "target": target.name, **dmg})
             if dmg.get("actual_damage", 0) > 0:
                 caster.damage_dealt_this_round += dmg["actual_damage"]
@@ -1931,7 +2281,13 @@ class CombatEngine:
             for _ in range(hits):
                 if not target.is_alive:
                     break
-                dmg_i = self._apply_hostile_damage(target, 0 if mengbi_blocked else 1, source=caster)
+                hit_amount = 0 if mengbi_blocked else 1
+                dmg_i = self._apply_hostile_damage(
+                    target, hit_amount, source=caster,
+                    ctx={"timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
+                         "source": name, "source_type": "daowen", "actor": caster, "target": target,
+                         "mechanic": "damage", "subtype": "daowen_hit", "amount": hit_amount,
+                         "tags": {"daowen", "multi_hit"}})
                 total_act += dmg_i.get("actual_damage", 0)
                 total_abs += dmg_i.get("shield_absorbed", 0)
             dmg = {"raw_damage": hits, "actual_damage": total_act, "shield_absorbed": total_abs, "hp_after": target.current_hp, "died": not target.is_alive}
@@ -1944,7 +2300,12 @@ class CombatEngine:
             chunk = self._jieli_boost(caster, calc["total_damage"] + add)
             if caster.has_status("坠落") and chunk > 0:
                 chunk = math.ceil(chunk / 2)
-            dmg = self._apply_hostile_damage(target, 0 if mengbi_blocked else chunk, source=caster)
+            dmg_amount = 0 if mengbi_blocked else chunk
+            dmg = self._apply_hostile_damage(target, dmg_amount, source=caster, ctx={
+                "timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
+                "source": name, "source_type": "daowen", "actor": caster, "target": target,
+                "mechanic": "damage", "subtype": "daowen", "amount": dmg_amount, "tags": {"daowen"},
+            })
             if add:
                 dmg["nilin_bonus"] = add
             result["effects"].append({"type": "damage", "target": target.name, **dmg})
@@ -1984,7 +2345,11 @@ class CombatEngine:
                 if nilin_bonus and enemy is aoe_targets[0]:
                     dmg_a += nilin_bonus
                     nilin_bonus = 0
-                dmg = self._apply_hostile_damage(enemy, dmg_a, source=caster)
+                dmg = self._apply_hostile_damage(enemy, dmg_a, source=caster, ctx={
+                    "timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
+                    "source": name, "source_type": "daowen", "actor": caster, "target": enemy,
+                    "mechanic": "damage", "subtype": "aoe_daowen", "amount": dmg_a, "tags": {"daowen", "aoe"},
+                })
                 result["effects"].append({"type": "aoe_damage", "target": enemy.name, **dmg})
                 if dmg.get("actual_damage", 0) > 0:
                     caster.damage_dealt_this_round += dmg["actual_damage"]
@@ -1993,18 +2358,33 @@ class CombatEngine:
             if nilin_bonus:
                 result["nilin_bonus"] = nilin_bonus
                 nilin_bonus = 0
-            dmg = self._apply_hostile_damage(target, d, source=caster)
+            dmg = self._apply_hostile_damage(target, d, source=caster, ctx={
+                "timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
+                "source": name, "source_type": "daowen", "actor": caster, "target": target,
+                "mechanic": "damage", "subtype": "percent", "amount": d, "tags": {"daowen", "percent"},
+            })
             result["effects"].append({"type": "pct_damage", "target": target.name, **dmg})
             if dmg.get("actual_damage", 0) > 0:
                 caster.damage_dealt_this_round += dmg["actual_damage"]
 
         # ---- 回复类 ----
         if "target_heal" in calc and not huaisi_block:
-            result["effects"].append({"type": "heal", "target": target.name, **self.state.apply_heal(target, calc["target_heal"])})
+            heal_amount = calc["target_heal"]
+            result["effects"].append({"type": "heal", "target": target.name, **self.state.apply_heal(target, heal_amount, ctx={
+                "timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
+                "source": name, "source_type": "daowen", "actor": caster, "target": target,
+                "owner": caster, "mechanic": "heal", "subtype": "daowen", "amount": heal_amount,
+                "tags": {"daowen"},
+            })})
         # 自愈的 heal_percent 只在[回始]结算，发动当下不奶。
         if "heal_percent" in calc and name != "自愈" and not (target.has_status("坏死")):
             h = math.ceil(target.blood_limit * calc["heal_percent"] / 100)
-            result["effects"].append({"type": "heal_pct", "target": target.name, **self.state.apply_heal(target, h)})
+            result["effects"].append({"type": "heal_pct", "target": target.name, **self.state.apply_heal(target, h, ctx={
+                "timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
+                "source": name, "source_type": "daowen", "actor": caster, "target": target,
+                "owner": caster, "mechanic": "heal", "subtype": "daowen_pct", "amount": h,
+                "tags": {"daowen"},
+            })})
         if "mutation_reduction" in calc:
             reduced = int(calc["mutation_reduction"])
             pay = target.add_mutation(-reduced)
@@ -2110,14 +2490,29 @@ class CombatEngine:
 
         # ---- 速度修改 ----
         if "speed_boost" in calc:
-            gained = self._gain_speed(target, calc["speed_boost"])
+            gained = self._gain_speed(target, calc["speed_boost"], ctx={
+                "timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
+                "source": name, "source_type": "daowen", "actor": caster, "target": target,
+                "owner": caster, "mechanic": "speed_change", "subtype": "current_speed",
+                "amount": calc["speed_boost"], "tags": {"daowen"},
+            })
             result["effects"].append({"type": "speed_boost", "target": target.name, "speed": target.current_speed, "gained": gained})
         if "speed_halved" in calc:
             lost = target.current_speed - math.ceil(target.current_speed / 2)
-            self._lose_current_speed(target, lost)
+            self._lose_current_speed(target, lost, ctx={
+                "timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
+                "source": name, "source_type": "daowen", "actor": caster, "target": target,
+                "owner": caster, "mechanic": "speed_change", "subtype": "current_speed",
+                "amount": -lost, "tags": {"daowen"},
+            })
             result["effects"].append({"type": "speed_halved", "target": target.name, "speed": target.current_speed})
         if "speed_penalty" in calc and (name != "赎金" or self._shards_of(target) <= 0):
-            self._lose_current_speed(target, calc["speed_penalty"])
+            self._lose_current_speed(target, calc["speed_penalty"], ctx={
+                "timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
+                "source": name, "source_type": "daowen", "actor": caster, "target": target,
+                "owner": caster, "mechanic": "speed_change", "subtype": "current_speed",
+                "amount": -calc["speed_penalty"], "tags": {"daowen"},
+            })
             result["effects"].append({"type": "speed_penalty", "target": target.name,
                                       "lost": calc["speed_penalty"], "speed": target.current_speed})
 
@@ -2154,10 +2549,12 @@ class CombatEngine:
             cost_spec = ("异变", calc["cost_mutation"], "mutation_cost")
         if cost_spec is not None:
             cost_type, amount, effect_type = cost_spec
+            timing = "monster_action" if caster.entity_type == "怪物" else "player_action"
             payment = self.pay_numeric_cost(
                 caster, cost_type, amount,
                 cost_share_target_ref=cost_share_target_ref,
                 dragon_heart_use=dragon_heart_use,
+                cost_context={"timing": timing, "source": name, "source_type": "daowen", "tags": {"active_payment"}},
             )
             cost_effect = {"type": effect_type, **payment}
             if cost_type == "流血":
@@ -2211,10 +2608,19 @@ class CombatEngine:
                 pct = calc["aoe_pct"]
                 dmg = math.ceil(caster.blood_limit * pct / 100)
                 for enemy in [e for e in self.state.get_all_enemy_side() if e.is_alive]:
-                    rd = self._apply_hostile_damage(enemy, dmg, source=caster)
+                    rd = self._apply_hostile_damage(enemy, dmg, source=caster, ctx={
+                        "timing": "player_action" if caster is self.state.player else "monster_action",
+                        "source": "尸爆", "source_type": "daowen", "actor": caster, "target": enemy,
+                        "mechanic": "damage", "subtype": "self_destruct_aoe", "amount": dmg,
+                        "tags": {"daowen", "aoe", "self_destruct"},
+                    })
                     result["effects"].append({"type": "aoe_damage", "target": enemy.name, **rd})
                 caster.is_alive = False
-                self._on_entity_death(caster)
+                self._on_entity_death(caster, ctx={
+                    "timing": "player_action" if caster is self.state.player else "monster_action",
+                    "source": "尸爆", "source_type": "daowen", "actor": caster, "target": caster,
+                    "mechanic": "death", "subtype": "self_destruct", "tags": {"daowen", "self_destruct"},
+                })
                 result["self_destructed"] = True
         if name == "分裂" and calc.get("split_clones"):
             # [命零]时创造X个复制体（血限20%）
@@ -2242,14 +2648,23 @@ class CombatEngine:
         # ---- 特殊 ----
         if "self_attack_count" in calc:  # 自残：目标自打X次
             for _ in range(calc["self_attack_count"]):
-                result["effects"].append({"type": "self_attack", "target": target.name, **self._apply_hostile_damage(target, target.attack_power, source=target)})
+                result["effects"].append({"type": "self_attack", "target": target.name, **self._apply_hostile_damage(target, target.attack_power, source=target, ctx={
+                    "timing": "player_action" if caster is self.state.player else "monster_action",
+                    "source": name, "source_type": "daowen", "actor": target, "target": target,
+                    "mechanic": "damage", "subtype": "self_attack", "amount": target.attack_power,
+                    "tags": {"daowen", "self_damage"},
+                })})
         if "targets_removed" in calc:  # 封印：仅移出怪物（README：X个[目标]怪物）
             removed = 0
             removed_names = []
             for e in list(self.state.enemies):
                 if (e.is_alive and e.entity_type == "怪物"
                         and removed < calc["targets_removed"]):
-                    e.depart_battle("封印")
+                    self._remove_from_combat(e, "封印", ctx={
+                        "timing": "player_action" if caster is self.state.player else "monster_action",
+                        "source": name, "source_type": "daowen", "actor": caster, "target": e,
+                        "mechanic": "leave", "subtype": "seal", "tags": {"leave", "no_shards"},
+                    })
                     removed += 1
                     removed_names.append(e.name)
             result["effects"].append({
@@ -2733,7 +3148,16 @@ class CombatEngine:
         if "烙痕钉" in active:
             decision = choices.get("烙痕钉")
             legal = {ref for ref, entity in refs.items() if self.state.on_enemy_side(entity)}
-            if not isinstance(decision, dict) or decision.get("target_ref") not in legal:
+            target_ref = decision.get("target_ref") if isinstance(decision, dict) else None
+            # 普通战斗的第一次战始静态校验发生在抽怪前，此时敌方引用尚未生成。
+            # 允许形如 enemy:0 的稳定引用先通过语法校验；抽怪后 process_relics 会再次
+            # 调用本校验，并按真实 enemies 集合完成存在性/存活性校验。
+            deferred_enemy_ref = (
+                not legal and isinstance(target_ref, str)
+                and target_ref.startswith("enemy:") and target_ref[6:].isdigit()
+            )
+            if (not isinstance(decision, dict)
+                    or (target_ref not in legal and not deferred_enemy_ref)):
                 raise ValueError(f"烙痕钉必须显式选择敌方target_ref，可选{sorted(legal)}")
         using_fatigue = (
             ("折速法印" in active and isinstance(choices.get("折速法印"), dict)
@@ -2820,7 +3244,12 @@ class CombatEngine:
                 if d > 0:
                     enemy = self.state.enemies[choices["回锋刀"]["enemy_index"]]
                     self._remember_huifeng_target(player, f"enemy:{choices['回锋刀']['enemy_index']}")
-                    self._apply_hostile_damage(enemy, d, source=player)
+                    self._apply_hostile_damage(enemy, d, source=player, ctx={
+                        "timing": "round_start", "source": "回锋刀", "source_type": "relic",
+                        "actor": player, "target": enemy, "owner": player,
+                        "mechanic": "damage", "subtype": "round_start_gap", "amount": d,
+                        "tags": {"relic", "round_start"},
+                    })
                     logs.append(f"回锋刀：对{enemy.name}造{d}伤")
             if "血契" in relics and choices["血契"]["use"]:
                 decision = choices["血契"]
@@ -2829,6 +3258,7 @@ class CombatEngine:
                     player, "流血", 4 * x,
                     cost_share_target_ref=decision.get("cost_share_target_ref", ""),
                     dragon_heart_use=decision.get("dragon_heart_use", 0),
+                    cost_context={"timing": "round_start", "source": "血契", "source_type": "relic", "tags": {"active_payment"}},
                 )
                 player.current_mana += x
                 self.clamp_immortal_body(player)
@@ -2843,7 +3273,8 @@ class CombatEngine:
                 x = decision["x"]
                 payment = self.pay_numeric_cost(
                     opponent, "流血", 4 * x,
-                    cost_share_target_ref=decision.get("cost_share_target_ref", ""))
+                    cost_share_target_ref=decision.get("cost_share_target_ref", ""),
+                    cost_context={"timing": "round_start", "source": "血契", "source_type": "relic", "tags": {"active_payment"}})
                 opponent.current_mana += x
                 self.clamp_immortal_body(opponent)
                 shared = payment.get("shared_with")
@@ -2878,7 +3309,8 @@ class CombatEngine:
                 x = decision["x"]
                 self.pay_numeric_cost(
                     player, "疲惫", x,
-                    cost_share_target_ref=decision.get("cost_share_target_ref", ""))
+                    cost_share_target_ref=decision.get("cost_share_target_ref", ""),
+                    cost_context={"timing": "battle_start", "source": "折速法印", "source_type": "relic", "tags": {"active_payment"}})
                 player.current_mana += 6 * x
                 self.clamp_immortal_body(player)
                 logs.append(f"折速法印：疲惫{x}，+{6*x}法力")
@@ -2891,14 +3323,16 @@ class CombatEngine:
                 decision = choices["猩红果实"]
                 self.pay_numeric_cost(
                     player, "流血", 10,
-                    cost_share_target_ref=decision.get("cost_share_target_ref", ""))
+                    cost_share_target_ref=decision.get("cost_share_target_ref", ""),
+                    cost_context={"timing": "battle_start", "source": "猩红果实", "source_type": "relic", "tags": {"active_payment"}})
                 self.state.event_modifiers["scarlet_fruit_active"] = True
                 logs.append("猩红果实：流血10；战终血限+2")
             if "苍白之花" in relics and choices["苍白之花"]["use"]:
                 decision = choices["苍白之花"]
                 self.pay_numeric_cost(
                     player, "疲惫", 5,
-                    cost_share_target_ref=decision.get("cost_share_target_ref", ""))
+                    cost_share_target_ref=decision.get("cost_share_target_ref", ""),
+                    cost_context={"timing": "battle_start", "source": "苍白之花", "source_type": "relic", "tags": {"active_payment"}})
                 self.state.event_modifiers["pale_flower_active"] = True
                 logs.append("苍白之花：疲惫5；战终精力+1")
             if "缄默面具" in relics:
@@ -3281,7 +3715,8 @@ class CombatEngine:
                     if entry["blood_shadow"]:
                         self.pay_numeric_cost(
                             entity, "流血", 10,
-                            cost_share_target_ref=entry.get("cost_share_target_ref", ""))
+                            cost_share_target_ref=entry.get("cost_share_target_ref", ""),
+                            cost_context={"timing": "reaction", "source": "血影", "source_type": "relic", "tags": {"active_payment"}})
                     elif want_dodge:
                         self._spend_dodge_speed(entity, entry.get("dodge_relic_target_ref"))
                     else:
@@ -3292,7 +3727,8 @@ class CombatEngine:
             elif blood_shadow:
                 self.pay_numeric_cost(
                     target, "流血", 10,
-                    cost_share_target_ref=choice.get("cost_share_target_ref", ""))
+                    cost_share_target_ref=choice.get("cost_share_target_ref", ""),
+                    cost_context={"timing": "reaction", "source": "血影", "source_type": "relic", "tags": {"active_payment"}})
                 return {"monster": monster.name, "daowen_activated": name,
                         "resolves_as": effective_name, "target": target.name, "blood_shadow": True,
                         "trigger_spell_logs": trigger_logs}
@@ -3479,7 +3915,11 @@ class CombatEngine:
         dmg = 10 * max(1, self.state.current_round)
         source = (self.state.player if self.state.on_enemy_side(actor)
                   else next((e for e in self.state.enemies if e.entity_type == "轮回者"), None))
-        detail = self._apply_hostile_damage(actor, dmg, "必中", source)
+        detail = self._apply_hostile_damage(actor, dmg, "必中", source, ctx={
+            "timing": self._current_context_timing(), "source": "龙息", "source_type": "relic",
+            "actor": source, "target": actor, "mechanic": "damage", "subtype": "dragon_breath",
+            "amount": dmg, "tags": {"relic", "must_hit"},
+        })
         detail["dragon_breath"] = dmg
         return detail
 

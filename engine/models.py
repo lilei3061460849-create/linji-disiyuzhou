@@ -9,6 +9,7 @@ import json
 import uuid
 
 from .enums import EffectScope, EffectPolarity
+from .effect_context import EffectContext, make_context, normalize_context
 
 
 @dataclass
@@ -763,9 +764,42 @@ class GameState:
         """死斗对手的血族遗物名单（对 opponent_relics 的只读视图）。"""
         return [r.name for r in self.opponent_relics if "血族" in r.tags]
 
-    def apply_heal(self, entity: Entity, amount: int) -> dict:
-        """统一回复入口；玩家侧溢出回复会被【龙血瓶】转为可提取耐久。"""
+    def apply_heal(
+        self, entity: Entity, amount: int,
+        ctx: Optional[EffectContext | dict] = None,
+    ) -> dict:
+        """统一回复入口；玩家侧溢出回复会被【龙血瓶】转为可提取耐久。
+
+        ctx 为兼容层来源上下文；未传时保持原回复行为，并在返回明细中给出 warning。
+        """
+        heal_ctx = normalize_context(ctx)
+        if heal_ctx is None:
+            heal_ctx = make_context(
+                timing=self.phase or "unknown", source="legacy_heal", source_type="legacy",
+                target=entity, mechanic="heal", subtype="legacy", amount=amount,
+                tags={"legacy_context"},
+            )
+            legacy = True
+        else:
+            legacy = False
+            if heal_ctx.mechanic != "heal":
+                heal_ctx = make_context(
+                    timing=heal_ctx.timing, source=heal_ctx.source,
+                    source_type=heal_ctx.source_type, actor=heal_ctx.actor,
+                    target=heal_ctx.target or entity, owner=heal_ctx.owner,
+                    mechanic="heal", subtype=heal_ctx.subtype, amount=heal_ctx.amount or amount,
+                    tags=heal_ctx.tags, event_id=heal_ctx.event_id,
+                    parent_event_id=heal_ctx.parent_event_id,
+                )
         detail = entity.heal(amount)
+        detail["heal_ctx"] = heal_ctx.to_dict()
+        heal_events = getattr(entity, "_heal_events", None)
+        if heal_events is None:
+            entity._heal_events = []
+            heal_events = entity._heal_events
+        heal_events.append(detail["heal_ctx"])
+        if legacy:
+            detail["context_warning"] = "回复缺少EffectContext；已按legacy来源兼容记录"
         overheal = detail.get("overheal", 0)
         if overheal > 0 and self.on_player_side(entity):
             bottle = next((item for item in self.consumables if item.name == "龙血瓶"), None)
@@ -773,6 +807,12 @@ class GameState:
                 bottle.current_uses += overheal
                 bottle.max_uses += overheal
                 detail["dragon_blood_bottle_stored"] = overheal
+                detail["dragon_blood_bottle_ctx"] = make_context(
+                    timing=heal_ctx.timing, source="龙血瓶", source_type="consumable",
+                    actor=entity, target=entity, owner=entity,
+                    mechanic="heal_storage", subtype="overheal", amount=overheal,
+                    tags={"overheal", "storage"}, parent_event_id=heal_ctx.event_id,
+                ).to_dict()
         return detail
 
     def on_player_side(self, entity: Entity) -> bool:

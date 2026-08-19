@@ -423,7 +423,7 @@ def test_r46_normal_event_relic_battle_start_matrix(tmp_path):
     assert enemy.current_hp == enemy_hp - 10  # 烙痕钉
     friend.current_hp = 20; friend.shield = 0
     engine.combat._apply_hostile_damage(friend, 5, source=enemy)
-    assert friend.current_hp == 20 and not friend.has_status("负岳索")
+    assert friend.current_hp == 15 and player.current_hp == 95 and not friend.has_status("负岳索")
     player.dao_wen["血债"] = DaoWenInstance(DaoWen("血债", "", "流血", "X", ""))
     blocked = engine.execute_action("use_daowen", {
         "daowen_name": "血债", "x": 1, "target_ref": "enemy:0",
