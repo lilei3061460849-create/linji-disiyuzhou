@@ -694,10 +694,6 @@ class CombatEngine:
             shield_absorbed=detail.get("shield_absorbed", 0),
             hp_after=detail.get("hp_after"), damage_type=damage_type,
         )
-        if actual > 0 and source is not None:
-            stolen = self._xijie_steal(source, target, actual)
-            if stolen:
-                detail["xijie_stolen"] = stolen
 
         # 5. 落地后效果 (逆鳞 / 伤痕 / 切割 / 寄生 / 负岳索 / 龙族血脉斩杀)
         self.hook_manager.apply_after_damage_pipeline(target, actual, detail.get("shield_absorbed", 0), detail, source, self)
@@ -1342,8 +1338,6 @@ class CombatEngine:
         # 撤退：朋友/员工即将命零时自动撤退（伤害清零、保留生命、退出本场），透传给战报渲染
         if damage_result.get("retreated"):
             result["retreated"] = True
-        if damage_result.get("xijie_stolen"):
-            result["xijie_stolen"] = damage_result["xijie_stolen"]
         if damage_result["actual_damage"] > 0:
             attacker.damage_dealt_this_round += damage_result["actual_damage"]
         if "split" in damage_result:
@@ -3508,13 +3502,8 @@ class CombatEngine:
                     cost_context={"timing": "battle_start", "source": "苍白之花", "source_type": "relic", "tags": {"active_payment"}})
                 self.state.event_modifiers["pale_flower_active"] = True
                 logs.append("苍白之花：疲惫5；战终精力+1")
-            if "缄默面具" in relics:
-                x = self.state.event_modifiers.get("silent_mask_x", 0)
-                player.current_mana += 20 * x
-                self.clamp_immortal_body(player)
-                logs.append(f"缄默面具：+{20*x}法力")
-            # 机制系统：BATTLE_START 相位分发。位置即原帮派令结算位置
-            # （缄默面具之后、负岳索之前）——顺序保持与迁移前一致。
+            # 机制系统：BATTLE_START 相位分发。位置即原缄默面具/帮派令结算位置
+            # （缄默面具=5、帮派令=10 同相位按 priority 保持原序；负岳索之前）——顺序与迁移前一致。
             # 帮派令已迁移为声明层 Mechanism（engine/mechanisms/builtins.py）；
             # process_relics 只宣布时点，具体机制条件/效果都在声明层。
             logs.extend(self._dispatch_phase(Phase.BATTLE_START, target=player))

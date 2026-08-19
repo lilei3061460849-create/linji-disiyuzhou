@@ -54,7 +54,7 @@ engine/
 ├── death_book.py        # 《死者之书》遗言节读写（文件是事实源；审核后只改 ## 遗言）
 ├── validator.py         # 规则校验器（20 条内置检查，违规入库 + 已迁移机制护栏）
 ├── mechanisms/          # 最小可行机制系统（MVP）：Verb/Mechanism/Trigger/Condition/Target
-│                        #   已迁移机制：加害（原 JiahaiHook）、龙鳞（原 LonglinHook）、自愈/衰败/洞察·结算/勾魂/狂暴·标记/畸变·标记（原 round_start 内嵌块，回始循环已全部声明化）、畸变·结算（原 round_end 内嵌块）、焦黑发丝（原 _on_entity_death 内嵌块）、帮派令（原 process_relics 战始 if）。新机制优先写声明层，勿回核心管线加 if。
+│                        #   已迁移机制：加害（原 JiahaiHook）、龙鳞（原 LonglinHook）、自愈/衰败/洞察·结算/勾魂/狂暴·标记/畸变·标记（原 round_start 内嵌块，回始循环已全部声明化）、畸变·结算（原 round_end 内嵌块）、焦黑发丝（原 _on_entity_death 内嵌块）、洗劫·夺碎片（原伤害管线内嵌块）、帮派令/缄默面具（原 process_relics 战始 if）。新机制优先写声明层，勿回核心管线加 if。
 └── api.py               # GameEngine 主类 — AI 唯一交互入口（含 TWISTED_TOOL_LIBRARY、TERMINAL_ARTIFACTS、FIRST_EMBRACE_OPTIONS 等）
 ```
 

@@ -96,7 +96,7 @@ def test_jiaohhei_is_registered_event_mechanism():
     assert mech.when.matches_event(CombatEventType.ENTITY_DIED)
     assert mech.priority == 10
     from engine.mechanisms.registry import MECHANISMS as REG
-    assert [m.name for m in REG.event_mechanisms()] == ["焦黑发丝"]
+    assert [m.name for m in REG.event_mechanisms()] == ["焦黑发丝", "洗劫·夺碎片"]
 
 
 def test_bus_has_exactly_one_production_subscription():

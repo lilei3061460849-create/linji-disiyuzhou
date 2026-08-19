@@ -152,7 +152,9 @@ def test_engine_event_without_subscriber_unchanged():
     state, combat, player, enemy = _arena()
     combat._apply_hostile_damage(enemy, 5, source=player)
     assert [e.event_type for e in state.combat_events] == [CombatEventType.DAMAGE_APPLIED]
-    assert combat.mechanism_bus.listeners_for(CombatEventType.DAMAGE_APPLIED) == []
+    # 无订阅者的事件类型：零行为变化（DAMAGE_APPLIED 现由洗劫·夺碎片订阅，
+    # 故本断言改用无生产订阅者的类型）
+    assert combat.mechanism_bus.listeners_for(CombatEventType.BATTLE_START) == []
 
 
 # ==================== 3. Condition ====================

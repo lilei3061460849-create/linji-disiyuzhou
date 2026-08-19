@@ -301,6 +301,61 @@ JIBIAN_MARKER = Mechanism(
     priority=60,
 )
 
+def _xijie_passive_effect(ctx: TriggerContext, targets: list) -> None:
+    """旧 _apply_hostile_damage_inner 洗劫被动块语义（逐字复刻，承载方式迁移）：
+
+    造成伤害的实体（事件 actor）经 _xijie_steal 夺取受伤目标等量碎片；
+    _xijie_steal 内部保留全部既有门闩（damage<=0 / 自伤 / 无洗劫状态 /
+    目标无碎片 → 无操作），是夺碎片的唯一实现。
+
+    旧代码写回 detail["xijie_stolen"] 并在 resolve_attack 透传的孤儿诊断
+    字段随迁移正式废弃（全仓零消费方，2026-08-19 审计确认）。
+    """
+    if ctx.source is None or ctx.target is None or ctx.event is None:
+        return None
+    actual = (ctx.event.data or {}).get("actual_damage", 0)
+    ctx.combat._xijie_steal(ctx.source, ctx.target, actual)
+    return None
+
+
+XIJIE_PASSIVE = Mechanism(
+    name="洗劫·夺碎片",
+    when=Trigger.event(CombatEventType.DAMAGE_APPLIED),
+    effect=_xijie_passive_effect,
+    target=None,
+    condition=has_status("洗劫", of="source"),
+    # 旧位置=DAMAGE_APPLIED 发出点（伤害管线 emit 之后），事件机制在此同步执行
+    priority=10,
+)
+
+def _silent_mask_effect(ctx: TriggerContext, targets: list) -> str:
+    """旧 process_relics 缄默面具块语义（逐字复刻）：
+
+    获得 20×X 点法力（X=event_modifiers.silent_mask_x），经 mana 动词
+    （获得含不朽之躯钳制）；X=0 时旧块仍会执行钳制（+=0 后无条件 clamp），
+    故此处显式补一次钳制以保持逐字等价。返回旧日志串。
+
+    注意：缄默面具的【无法发动附带代价的道纹】是 api.py 的静态校验规则
+    （另一字面规则），不在本机制范围。
+    """
+    x = ctx.state.event_modifiers.get("silent_mask_x", 0)
+    player = ctx.target
+    apply_verb(ctx.combat, "mana", {"target": player, "delta": 20 * x})
+    if x == 0:
+        ctx.combat.clamp_immortal_body(player)
+    return f"缄默面具：+{20*x}法力"
+
+
+SILENT_MASK = Mechanism(
+    name="缄默面具",
+    when=Trigger.phase(Phase.BATTLE_START),
+    effect=_silent_mask_effect,
+    target=SELF,
+    condition=relic_active("缄默面具", of="target"),
+    # 旧位置=战始遗物段缄默面具块（帮派令=10 之前）；同相位按 priority 保持原序
+    priority=5,
+)
+
 GANGPAILING = Mechanism(
     name="帮派令",
     when=Trigger.phase(Phase.BATTLE_START),
@@ -384,4 +439,6 @@ MECHANISMS.register(DONGCHA)
 MECHANISMS.register(GOULUN)
 MECHANISMS.register(KUANGBAO_MARKER)
 MECHANISMS.register(JIBIAN_MARKER)
+MECHANISMS.register(XIJIE_PASSIVE)
+MECHANISMS.register(SILENT_MASK)
 

@@ -6,8 +6,11 @@
 【自愈】【衰败】【洞察·结算】【勾魂】【狂暴·标记】【畸变·标记】（ROUND_START 相位，
 priority 10/20/30/40/50/60——回始循环已全部声明化；洞察/勾魂经统一 mana 动词）、
 【畸变·结算】（ROUND_END 相位，priority 10，锚定凡庸 tick 之前）、【焦黑发丝】
-（ENTITY_DIED 事件，首个生产事件订阅者）、【帮派令】（BATTLE_START 相位 +
-relic_active 条件——证明 Relic 可以成为普通 Mechanism 声明）。
+（ENTITY_DIED 事件，首个生产事件订阅者）、【洗劫·夺碎片】（DAMAGE_APPLIED 事件，
+孤儿诊断字段 xijie_stolen 已正式废弃）、【帮派令】（BATTLE_START 相位 +
+relic_active 条件——证明 Relic 可以成为普通 Mechanism 声明）、【缄默面具】
+（BATTLE_START 相位 priority 5，经统一 mana 动词；其【禁代价】静态校验规则
+保留在 api.py，属另一字面规则）。
 
 刻意边界（不要做成框架）：无 DSL、无 JSON 配置、无脚本系统、无 Action Queue、
 无通用推理引擎、无冲突自动解决、无反射。机制声明就是 Python 数据结构。
@@ -30,5 +33,5 @@ from .targets import (  # noqa: F401
 from .triggers import Phase, Trigger, TriggerBus, TriggerContext  # noqa: F401
 from .verbs import apply_verb, get_verb, register_verb, verb_names  # noqa: F401
 
-# 导入即注册已迁移机制（当前 11 个，见 builtins.py）。
+# 导入即注册已迁移机制（当前 13 个，见 builtins.py）。
 from . import builtins  # noqa: E402,F401
