@@ -7,6 +7,8 @@ import math
 from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
 from .combat_events import CombatEvent, CombatEventType
 from .effect_context import make_context, normalize_context
+from .mechanisms.registry import MECHANISMS, MechanismHookAdapter
+from .mechanisms.triggers import Phase
 
 
 @runtime_checkable
@@ -21,6 +23,8 @@ class CombatHook(Protocol):
     反过来龙鳞先把 8 削成 0，加害的 `amount > 0` 前置条件不再成立，结果是 0。
     因此下面这些 priority 数值是对「重构前字面注册顺序」的**如实固化**，
     不得在没有 DM 裁定的情况下调整。
+    已迁移到声明层的机制（当前仅【加害】，priority=20）经 MechanismHookAdapter
+    挂在本列表的原位置，priority 语义与数值完全不变。
     """
 
     priority: int = 100
@@ -55,23 +59,11 @@ class DragonBloodlineMultiplierHook:
         return amount
 
 
-class JiahaiHook:
-    """加害：每次受到伤害+X（持续∞）
-
-    必须先于 LonglinHook（见 CombatHook.priority 说明）。
-    """
-    priority = 20
-
-    def on_incoming_adjust(self, target: Any, amount: int, damage_type: str, source: Optional[Any], state: Any) -> int:
-        if amount > 0 and damage_type != "代价" and hasattr(target, "has_status") and target.has_status("加害"):
-            return amount + (target.get_status_value("加害") or 0)
-        return amount
-
-
 class LonglinHook:
     """龙鳞：每次受到伤害-X，最低为0（持续∞）
 
-    必须后于 JiahaiHook（见 CombatHook.priority 说明）。
+    必须后于【加害】（已迁移为声明式 Mechanism，见 engine/mechanisms/builtins.py；
+    经 MechanismHookAdapter 执行，priority=20 不变）。
     """
     priority = 30
 
@@ -381,11 +373,17 @@ class CombatHookManager:
         self.redirection_hook = DamageRedirectionHook()
         self.mitigation_hook = LethalMitigationHook()
         self.after_damage_hook = AfterDamageEffectsHook()
+        # 已迁移到声明层的机制（当前仅【加害】）经适配器挂到同一条 Hook 分发路径，
+        # 执行顺序与迁移前完全一致（加害 priority=20，位于龙鳞之前）。
+        mechanism_hooks: List[Any] = [
+            MechanismHookAdapter(mechanism)
+            for mechanism in MECHANISMS.phase_mechanisms(Phase.INCOMING_ADJUST)
+        ]
         # 注意：必须复用上面这三个**同一实例**，不能再 new 一份，
         # 否则注册表与显式分发路径持有的是两个对象，状态与去重都会失真。
         self._hooks: List[Any] = self._sorted([
             DragonBloodlineMultiplierHook(),
-            JiahaiHook(),
+            *mechanism_hooks,
             LonglinHook(),
             BaolieHook(),
             BifenglingHook(),

@@ -11,9 +11,60 @@ import json
 import time
 import os
 import hashlib
+from functools import lru_cache
+from pathlib import Path
 from typing import Optional, Any, Callable
 from .models import Entity, GameState, StatusEffect
 from .enums import InterruptType
+
+
+# ========== 机制系统护栏（MVP，见审计报告 Phase 0） ==========
+# 只针对"已经迁移到 Mechanism Registry 的机制"：核心管线文件里禁止再次出现
+# 同名机制的硬编码 has_status 分支。不扫描/不禁止历史代码，机制声明层
+# （engine/mechanisms/）自身也不在护栏范围内。
+
+_MIGRATION_GUARD_PROTECTED_FILES = (
+    "engine/combat.py",
+    "engine/combat_hooks.py",
+    "engine/api.py",
+)
+
+
+def _mechanism_guard_scan(protected_files: tuple) -> list[dict]:
+    from .mechanisms import MECHANISMS
+
+    root = Path(__file__).resolve().parent.parent
+    violations: list[dict] = []
+    names = MECHANISMS.names()
+    for rel in protected_files:
+        text = (root / rel).read_text(encoding="utf-8")
+        for line_no, line in enumerate(text.splitlines(), 1):
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            for name in names:
+                if f'has_status("{name}")' in line or f"has_status('{name}')" in line:
+                    violations.append({
+                        "severity": "error",
+                        "rule_name": "已迁移机制护栏",
+                        "rule_text": f"【{name}】已迁移到机制声明层，核心管线禁止新增同名硬编码分支",
+                        "violation_description": f"{rel}:{line_no}: {stripped}",
+                        "context": {"file": rel, "line": line_no, "mechanism": name},
+                    })
+    return violations
+
+
+@lru_cache(maxsize=4)
+def _mechanism_guard_scan_cached(protected_files: tuple) -> tuple:
+    return tuple(_mechanism_guard_scan(protected_files))
+
+
+def check_migrated_mechanism_guards(
+    protected_files: Optional[list[str]] = None,
+) -> list[dict]:
+    """检查核心管线是否重新引入了已迁移机制的硬编码分支。返回违规列表（不抛异常）。"""
+    files = tuple(protected_files) if protected_files else _MIGRATION_GUARD_PROTECTED_FILES
+    return list(_mechanism_guard_scan_cached(files))
 
 
 class ViolationSeverity:
@@ -84,6 +135,9 @@ class RuleValidator:
         self._init_db()
         self._checks: list[Callable] = []
         self._register_builtin_checks()
+        # 机制系统护栏（静态检查，只报告不改行为）：已迁移机制不得在核心管线里
+        # 重新出现同名硬编码 has_status 分支。结果供测试/审计读取。
+        self.migration_guard_violations = check_migrated_mechanism_guards()
     
     def _init_db(self):
         conn = sqlite3.connect(self.db_path)

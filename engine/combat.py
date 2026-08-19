@@ -15,6 +15,7 @@ from .dm_rulings import Interrupt
 from .combat_events import CombatEvent, CombatEventType
 from .combat_hooks import CombatHookManager
 from .effect_context import EffectContext, make_context, normalize_context
+from .mechanisms import TriggerBus
 
 
 class CombatEngine:
@@ -38,6 +39,9 @@ class CombatEngine:
         self.dice = dice
         self.combat_log: list[dict] = []  # 完整战斗日志
         self.hook_manager = CombatHookManager()
+        # 机制系统（MVP）：事件 → 机制订阅分发。生产代码暂无事件订阅者
+        # （【加害】走相位路径），无订阅者的事件类型在 dispatch 中零行为变化。
+        self.mechanism_bus = TriggerBus()
         # 三相残韵盘本场消耗的残韵
         self._sanxiang_consumed = ""
         # 残韵改写：entity_id → {源道纹: 变化后道纹}，只改下一次发动结算，不改持有
@@ -61,8 +65,12 @@ class CombatEngine:
         """登记一条 CombatEvent。ctx 只作为来源快照附带，不参与任何判定。"""
         if isinstance(ctx, EffectContext):
             ctx = ctx.to_dict()
-        return self.state.emit_combat_event(
+        event = self.state.emit_combat_event(
             event_type, actor=actor, target=target, ctx=ctx, **data)
+        # 机制系统（MVP）：只有存在订阅者的事件类型才会进入分发，
+        # 无订阅者时 dispatch 立即返回——事件记录与既有行为零变化。
+        self.mechanism_bus.dispatch(event, self)
+        return event
 
     def _battle_delta(self, entity: Entity, field_name: str, delta: int,
                       source: str, polarity: str) -> int:
