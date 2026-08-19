@@ -133,17 +133,30 @@ class TriggerBus:
         return results
 
     @staticmethod
+    def _resolve_ref(ref, combat):
+        """把实体对象/名字字符串统一解析成实体：实体原样返回；名字按名查找。
+
+        事件路径下 raw refs 可能因 ctx 序列化退化为名字字符串（如 heal 的
+        ctx.actor 来自 dict 时），这里与既有"死者按名解析"逻辑同族——
+        按名查找对已离场实体返回 None（安全降级）。
+        """
+        if ref is None or combat is None or not isinstance(ref, str):
+            return ref
+        finder = getattr(combat, "_find_named", None)
+        if finder is None:
+            return None
+        return finder(ref)
+
+    @staticmethod
     def _context_for(event: CombatEvent, combat, *, target=None, actor=None) -> TriggerContext:
         state = getattr(combat, "state", None)
         # 显式实体优先；缺失时退回按名解析（仅对仍在存活池中的实体可靠）。
-        if target is None and combat is not None:
-            finder = getattr(combat, "_find_named", None)
-            if finder is not None and event.target_name:
-                target = finder(event.target_name)
-        if actor is None and combat is not None:
-            finder = getattr(combat, "_find_named", None)
-            if finder is not None and event.actor_name:
-                actor = finder(event.actor_name)
+        target = TriggerBus._resolve_ref(target, combat)
+        if target is None and event.target_name:
+            target = TriggerBus._resolve_ref(event.target_name, combat)
+        actor = TriggerBus._resolve_ref(actor, combat)
+        if actor is None and event.actor_name:
+            actor = TriggerBus._resolve_ref(event.actor_name, combat)
         data = event.data or {}
         return TriggerContext(
             combat=combat,

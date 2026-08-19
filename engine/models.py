@@ -10,7 +10,7 @@ import uuid
 
 from .enums import EffectScope, EffectPolarity
 from .effect_context import EffectContext, make_context, normalize_context
-from .combat_events import CombatEvent, CombatEventType
+from .combat_events import CombatEvent, CombatEventType, get_combat_event_observer
 
 
 @dataclass
@@ -859,6 +859,11 @@ class GameState:
             ctx=ctx,
         )
         self.combat_events.append(event)
+        # 通用事件分发观察者（CombatEngine 在战斗实例构造时注册）：
+        # 所有事件类型经此进入机制系统；无观察者（局外/无战斗上下文）时零行为变化。
+        observer = get_combat_event_observer(self)
+        if observer is not None:
+            observer(event, raw_actor=actor, raw_target=target)
         return event
 
     def on_player_side(self, entity: Entity) -> bool:

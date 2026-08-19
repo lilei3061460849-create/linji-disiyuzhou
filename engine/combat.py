@@ -12,7 +12,7 @@ from .dice import DiceEngine
 from .enums import (ActionPhase, TriggerTiming, InterruptType, DamageType,
                     EffectScope, EffectPolarity, CostType)
 from .dm_rulings import Interrupt
-from .combat_events import CombatEvent, CombatEventType
+from .combat_events import CombatEvent, CombatEventType, register_combat_event_observer
 from .combat_hooks import CombatHookManager
 from .effect_context import EffectContext, make_context, normalize_context
 from .mechanisms import MECHANISMS, Phase, TriggerBus, TriggerContext
@@ -39,11 +39,15 @@ class CombatEngine:
         self.dice = dice
         self.combat_log: list[dict] = []  # 完整战斗日志
         self.hook_manager = CombatHookManager()
-        # 机制系统：事件 → 机制订阅分发。生产事件机制（当前：焦黑发丝）在
-        # 战斗实例构造时订阅；无订阅者的事件类型 dispatch 零行为变化（既有设计）。
         self.mechanism_bus = TriggerBus()
         for mechanism in MECHANISMS.event_mechanisms():
             self.mechanism_bus.register(mechanism)
+        # 唯一事件分发点：本引擎作为 GameState 的事件观察者，所有经
+        # state.emit_combat_event 发出的事件（_emit 的三种 + apply_heal 的
+        # HEAL_APPLIED）统一进入 TriggerBus，杜绝双发路径。
+        # 观察者是可 pickle 的模块级类实例（持引擎 id，经弱引用表解析），
+        # 不会把引擎带进存档/快照（见 combat_events.py 注释）。
+        register_combat_event_observer(self.state, self)
         # 三相残韵盘本场消耗的残韵
         self._sanxiang_consumed = ""
         # 残韵改写：entity_id → {源道纹: 变化后道纹}，只改下一次发动结算，不改持有
@@ -64,16 +68,16 @@ class CombatEngine:
 
     def _emit(self, event_type: CombatEventType, *, actor=None, target=None,
               ctx: Optional[EffectContext | dict] = None, **data) -> CombatEvent:
-        """登记一条 CombatEvent。ctx 只作为来源快照附带，不参与任何判定。"""
+        """登记一条 CombatEvent。ctx 只作为来源快照附带，不参与任何判定。
+
+        机制分发由 GameState.emit_combat_event 内的事件观察者统一完成
+        （见 __init__ 的 register_combat_event_observer）——本方法不再单独分发，
+        避免同一事件被分发两次。
+        """
         if isinstance(ctx, EffectContext):
             ctx = ctx.to_dict()
-        event = self.state.emit_combat_event(
+        return self.state.emit_combat_event(
             event_type, actor=actor, target=target, ctx=ctx, **data)
-        # 机制系统：只有存在订阅者的事件类型才会进入分发，
-        # 无订阅者时 dispatch 立即返回——事件记录与既有行为零变化。
-        # 显式传入实体对象：事件只存名字，死者无法从存活池按名解析。
-        self.mechanism_bus.dispatch(event, self, target=target, actor=actor)
-        return event
 
     def _dispatch_phase(self, phase: str, *, target=None, source=None,
                         amount: int = 0, damage_type: str = "") -> list:
