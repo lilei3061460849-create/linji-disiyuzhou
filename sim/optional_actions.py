@@ -53,6 +53,10 @@ def battle_start_relic_choices(engine) -> dict:
         out["猩红果实"] = {"use": affordable}
     if "苍白之花" in active and p is not None:
         out["苍白之花"] = {"use": p.current_speed >= 7}
+    using_fatigue = bool(out.get("折速法印", {}).get("use") or out.get("苍白之花", {}).get("use"))
+    if using_fatigue and "回锋刀" in active:
+        alive = [i for i, enemy in enumerate(engine.state.enemies) if enemy.is_alive]
+        out["回锋刀"] = {"enemy_index": alive[0] if alive else 0}
     return out
 
 

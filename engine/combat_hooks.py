@@ -77,17 +77,12 @@ class BaolieHook:
 
 
 class BifenglingHook:
-    """避风铃：每次闪避后获得3点格挡，当前速度归零时获得15点格挡"""
+    """避风铃闪避句：每次闪避后获得3点格挡。归零+15走失速总线。"""
     def on_dodge(self, entity: Any, state: Any) -> Dict[str, Any]:
         if not entity or not hasattr(state, "side_has") or not state.side_has(entity, "避风铃"):
             return {}
-        gained = 3
         entity.shield += 3
-        zero_gained = 0
-        if getattr(entity, "current_speed", 1) == 0:
-            entity.shield += 15
-            zero_gained = 15
-        return {"shield_gained": gained, "zero_speed_shield": zero_gained, "total_shield": entity.shield}
+        return {"shield_gained": 3, "total_shield": entity.shield}
 
 
 class ShouyedengHook:
@@ -96,8 +91,11 @@ class ShouyedengHook:
         if not entity or not hasattr(state, "side_has") or not state.side_has(entity, "守夜灯"):
             return {}
         if is_enemy_turn:
+            if getattr(entity, "_shouyedeng_granted", 0):
+                return {}
             mana_to_gain = math.ceil(entity.mana_limit * 0.5)
             entity.current_mana += mana_to_gain
+            entity._shouyedeng_granted = mana_to_gain
             return {"mana_gained": mana_to_gain, "for_reaction": True}
         return {}
 

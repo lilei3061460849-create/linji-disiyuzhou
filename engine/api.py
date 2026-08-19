@@ -2111,8 +2111,7 @@ class GameEngine:
                 elif entry["dodge"]:
                     if ent.current_speed < 1:
                         raise ValueError(f"{ent.name}速度不足")
-                    ent.current_speed -= 1
-                    extra = self.combat._note_dodge(ent, entry.get("dodge_relic_target_ref"))
+                    extra = self.combat._spend_dodge_speed(ent, entry.get("dodge_relic_target_ref"))
                     log["dodged_names"].append({"name": ent.name, "speed_after": ent.current_speed, **extra})
                 else:
                     aoe_targets.append(ent)
@@ -2123,8 +2122,7 @@ class GameEngine:
         if target.current_speed < 1:
             log["dodge_fail_reason"] = "速度不足"
             return log, None
-        target.current_speed -= 1
-        extra = self.combat._note_dodge(target, dodge_relic_target_ref)
+        extra = self.combat._spend_dodge_speed(target, dodge_relic_target_ref)
         entry = {"name": target.name, "speed_after": target.current_speed}
         if extra:
             entry.update(extra)
@@ -2275,13 +2273,7 @@ class GameEngine:
             if not actor.spend_mana(cost):
                 return {"success": False, "error": f"法力不足，需要{cost}，当前{actor.current_mana}"}
             # 寒冰法力：持有者每消耗法力发动道纹，无论目标是谁(含自己)都累计"施加法力"
-            if self.state.side_has(actor, "寒冰法力"):
-                before_tier = target.mana_inflicted_this_round // 10
-                target.mana_inflicted_this_round += cost
-                after_tier = target.mana_inflicted_this_round // 10
-                new_stacks = after_tier - before_tier
-                if new_stacks > 0:
-                    target.add_status(StatusEffect(name="无力", value=new_stacks, remaining_rounds=1, source="寒冰法力"))
+            self.combat.note_mana_inflicted(actor, target, cost)
 
         # F2：赌命X/消灾X 的碎片类代价预检与支付（代价类型非"消耗"，不走法力制）
         # 赌命X：消耗X假碎片
@@ -3458,6 +3450,9 @@ class GameEngine:
             self._advance_duel_turn()
         else:
             self.state.combat_subphase = CombatSubphase.AWAIT_ROUND_END.value
+        if (self.state.in_final_duel
+                and self.state.combat_subphase == CombatSubphase.AWAIT_ROUND_END.value):
+            self.combat._clear_shouyedeng(self.state.player)
         player_dead = (self.state.player is None) or (not self.state.player.is_alive)
         return {
             "success": True,
@@ -4320,6 +4315,8 @@ class GameEngine:
             self.state.player.blood_limit += 2
         pale_flower_bonus = 1 if modifiers.pop("pale_flower_active", False) else 0
         modifiers.pop("brand_nail_target_ref", None)
+        modifiers.pop("huifeng_target_ref", None)
+        modifiers.pop("huifeng_target_ref_opponent", None)
 
         # [战终]对所有角色统一清除局内回复、格挡与状态；不得只清轮回者。
         all_characters = (([self.state.player] if self.state.player else [])
@@ -4331,7 +4328,7 @@ class GameEngine:
         runtime_counter_attrs = (
             "_jisu_dodges", "_dongcha_pending", "_bizhong_left", "_nilin",
             "_jiahuo_left", "_jiahuo_target", "_beifu_left", "_beifu_target",
-            "_death_triggers_emitted",
+            "_death_triggers_emitted", "_shouyedeng_granted", "_huifeng_target_ref",
         )
         for entity in all_characters:
             entity.clear_shield()
