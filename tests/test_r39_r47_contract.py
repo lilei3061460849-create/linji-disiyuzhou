@@ -423,7 +423,9 @@ def test_r46_normal_event_relic_battle_start_matrix(tmp_path):
     assert enemy.current_hp == enemy_hp - 10  # 烙痕钉
     friend.current_hp = 20; friend.shield = 0
     engine.combat._apply_hostile_damage(friend, 5, source=enemy)
-    assert friend.current_hp == 15 and player.current_hp == 95 and not friend.has_status("负岳索")
+    # DM裁定（2026-08-19）：90 −1(上一步的流血代价，同时触发了烙痕钉) +5(负岳索等量回复) = 94。
+    # 原期望 95 相当于假设流血代价不扣血，与本测试上一行"烙痕钉已触发"的断言自相矛盾。
+    assert friend.current_hp == 15 and player.current_hp == 94 and not friend.has_status("负岳索")
     player.dao_wen["血债"] = DaoWenInstance(DaoWen("血债", "", "流血", "X", ""))
     blocked = engine.execute_action("use_daowen", {
         "daowen_name": "血债", "x": 1, "target_ref": "enemy:0",

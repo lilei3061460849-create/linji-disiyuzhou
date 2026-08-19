@@ -840,12 +840,21 @@ class GameState:
         ctx: Optional[dict] = None, **data: Any,
     ) -> CombatEvent:
         """向战斗事件流登记一条“发生了什么”。纯观测，不参与任何规则判定。"""
+        def _name(ref: Any) -> str:
+            # ref 可能是实体，也可能已经是 EffectContext.to_dict() 降级后的名字字符串
+            # （例如 Hook 用 normalize_context(detail["ctx"]) 还原出来的上下文）。
+            if ref is None:
+                return ""
+            if isinstance(ref, str):
+                return ref
+            return getattr(ref, "name", "")
+
         event = CombatEvent(
             event_type=event_type,
             battle_no=self.current_battle,
             round_no=self.current_round,
-            actor_name=getattr(actor, "name", "") if actor is not None else "",
-            target_name=getattr(target, "name", "") if target is not None else "",
+            actor_name=_name(actor),
+            target_name=_name(target),
             data=data,
             ctx=ctx,
         )

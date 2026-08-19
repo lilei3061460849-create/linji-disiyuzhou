@@ -614,8 +614,7 @@ class CombatEngine:
         # 2. 受到伤害前反噬 (爆裂 Hook)
         before_res = self.hook_manager.apply_before_damage(target, amount, damage_type, source, self.state)
         if before_res.get("reflected"):
-            # 爆裂在 Hook 内直接扣了攻击者的生命；此处补记来源，保证反噬也能追溯。
-            # 数值不动（含 hp_lost_this_round 口径），只补上下文。
+            # 爆裂在 Hook 内直接扣了攻击者的生命并计入其本回合失血；此处补记来源上下文。
             reflect_ctx = self._record_hp_loss_event(
                 source, before_res["reflected"], damage_ctx, subtype="baolie_reflect")
             if reflect_ctx:
@@ -2832,8 +2831,11 @@ class CombatEngine:
                         "tags": {"daowen", "aoe", "self_destruct"},
                     })
                     result["effects"].append({"type": "aoe_damage", "target": enemy.name, **rd})
-                caster.current_hp = 0
-                self._check_hp_zero_death(caster, ctx={
+                # 尸爆是「自毁式[命零]」，不是生命归零致死：正文未规定清零当前生命，
+                # 因此这里刻意不走 _check_hp_zero_death（它会把 current_hp 抹成 0），
+                # 而是直接置命零标记 + 统一死亡通知（带完整 ctx）。
+                caster.is_alive = False
+                self._on_entity_death(caster, ctx={
                     "timing": "player_action" if caster is self.state.player else "monster_action",
                     "source": "尸爆", "source_type": "daowen", "actor": caster, "target": caster,
                     "mechanic": "death", "subtype": "self_destruct", "tags": {"daowen", "self_destruct"},

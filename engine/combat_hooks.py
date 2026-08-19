@@ -85,11 +85,14 @@ class LonglinHook:
 class BaolieHook:
     """爆裂：受到伤害前，攻击者失去等量生命，持续X（敌回终递减）
 
-    已知架构债（本次登记，未改数值）：这里直接改 attacker.current_hp 并翻 is_alive，
-    既没有走 CombatEngine._raw_hp_loss，也不计入 attacker.hp_lost_this_round
-    （【活血】按本回合失血回复，补上会改战斗数值，需 DM 裁定）。
-    死亡通知与来源记账由 CombatEngine._apply_hostile_damage_inner 的 suppressed 分支统一补齐；
+    架构说明：这里直接改 attacker.current_hp 并翻 is_alive，不走
+    CombatEngine._raw_hp_loss（Hook 只拿得到 state，拿不到 combat）。
+    死亡通知与来源上下文由 CombatEngine._apply_hostile_damage_inner 的
+    reflected/suppressed 分支统一补齐。
     反噬失血本身**不再触发一次爆裂**，避免 A→B→A 无限反弹（现有规则，勿改）。
+
+    失血统计（DM 裁定 2026-08-19）：【活血】只看角色本回合有没有实际掉过 HP，
+    不区分掉血来源，因此爆裂反噬造成的 HP 损失必须计入 hp_lost_this_round。
     """
     priority = 40
 
@@ -99,6 +102,9 @@ class BaolieHook:
             prev_hp = attacker.current_hp
             attacker.current_hp = max(0, attacker.current_hp - amount)
             reflect_amt = prev_hp - attacker.current_hp
+            # 与 Entity.take_damage / CombatEngine._raw_hp_loss 同口径：
+            # 只要实际掉了 HP，就计入本回合失血（【活血】等效果据此结算）。
+            attacker.hp_lost_this_round += reflect_amt
             suppressed = (attacker.current_hp <= 0)
             if suppressed:
                 attacker.is_alive = False

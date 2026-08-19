@@ -1,0 +1,1303 @@
+{
+ "lab": {
+  "急速闪避": [
+   {
+    "label": "无急速",
+    "speed_start": 8,
+    "speed_after_6_dodges": 2,
+    "net_speed": -6,
+    "shield": 0,
+    "huifeng_damage": 0,
+    "has_jisu": false,
+    "trace": [
+     {
+      "i": 1,
+      "speed": 7,
+      "shield": 0,
+      "extra": {
+       "lost_speed": 1
+      }
+     },
+     {
+      "i": 2,
+      "speed": 6,
+      "shield": 0,
+      "extra": {
+       "lost_speed": 1
+      }
+     },
+     {
+      "i": 3,
+      "speed": 5,
+      "shield": 0,
+      "extra": {
+       "lost_speed": 1
+      }
+     },
+     {
+      "i": 4,
+      "speed": 4,
+      "shield": 0,
+      "extra": {
+       "lost_speed": 1
+      }
+     },
+     {
+      "i": 5,
+      "speed": 3,
+      "shield": 0,
+      "extra": {
+       "lost_speed": 1
+      }
+     },
+     {
+      "i": 6,
+      "speed": 2,
+      "shield": 0,
+      "extra": {
+       "lost_speed": 1
+      }
+     }
+    ]
+   },
+   {
+    "label": "急速",
+    "speed_start": 8,
+    "speed_after_6_dodges": 5,
+    "net_speed": -3,
+    "shield": 0,
+    "huifeng_damage": 0,
+    "has_jisu": true,
+    "trace": [
+     {
+      "i": 1,
+      "speed": 7,
+      "shield": 0,
+      "extra": {
+       "lost_speed": 1
+      }
+     },
+     {
+      "i": 2,
+      "speed": 7,
+      "shield": 0,
+      "extra": {
+       "lost_speed": 1,
+       "jisu_speed": 1
+      }
+     },
+     {
+      "i": 3,
+      "speed": 6,
+      "shield": 0,
+      "extra": {
+       "lost_speed": 1
+      }
+     },
+     {
+      "i": 4,
+      "speed": 6,
+      "shield": 0,
+      "extra": {
+       "lost_speed": 1,
+       "jisu_speed": 1
+      }
+     },
+     {
+      "i": 5,
+      "speed": 5,
+      "shield": 0,
+      "extra": {
+       "lost_speed": 1
+      }
+     },
+     {
+      "i": 6,
+      "speed": 5,
+      "shield": 0,
+      "extra": {
+       "lost_speed": 1,
+       "jisu_speed": 1
+      }
+     }
+    ]
+   },
+   {
+    "label": "急速+避风铃",
+    "speed_start": 8,
+    "speed_after_6_dodges": 5,
+    "net_speed": -3,
+    "shield": 18,
+    "huifeng_damage": 0,
+    "has_jisu": true,
+    "trace": [
+     {
+      "i": 1,
+      "speed": 7,
+      "shield": 3,
+      "extra": {
+       "lost_speed": 1,
+       "avoid_wind_shield": 3
+      }
+     },
+     {
+      "i": 2,
+      "speed": 7,
+      "shield": 6,
+      "extra": {
+       "lost_speed": 1,
+       "avoid_wind_shield": 3,
+       "jisu_speed": 1
+      }
+     },
+     {
+      "i": 3,
+      "speed": 6,
+      "shield": 9,
+      "extra": {
+       "lost_speed": 1,
+       "avoid_wind_shield": 3
+      }
+     },
+     {
+      "i": 4,
+      "speed": 6,
+      "shield": 12,
+      "extra": {
+       "lost_speed": 1,
+       "avoid_wind_shield": 3,
+       "jisu_speed": 1
+      }
+     },
+     {
+      "i": 5,
+      "speed": 5,
+      "shield": 15,
+      "extra": {
+       "lost_speed": 1,
+       "avoid_wind_shield": 3
+      }
+     },
+     {
+      "i": 6,
+      "speed": 5,
+      "shield": 18,
+      "extra": {
+       "lost_speed": 1,
+       "avoid_wind_shield": 3,
+       "jisu_speed": 1
+      }
+     }
+    ]
+   },
+   {
+    "label": "急速+避风铃+回锋刀",
+    "speed_start": 8,
+    "speed_after_6_dodges": 5,
+    "net_speed": -3,
+    "shield": 18,
+    "huifeng_damage": 18,
+    "has_jisu": true,
+    "trace": [
+     {
+      "i": 1,
+      "speed": 7,
+      "shield": 3,
+      "extra": {
+       "lost_speed": 1,
+       "avoid_wind_shield": 3
+      }
+     },
+     {
+      "i": 2,
+      "speed": 7,
+      "shield": 6,
+      "extra": {
+       "lost_speed": 1,
+       "avoid_wind_shield": 3,
+       "jisu_speed": 1
+      }
+     },
+     {
+      "i": 3,
+      "speed": 6,
+      "shield": 9,
+      "extra": {
+       "lost_speed": 1,
+       "avoid_wind_shield": 3
+      }
+     },
+     {
+      "i": 4,
+      "speed": 6,
+      "shield": 12,
+      "extra": {
+       "lost_speed": 1,
+       "avoid_wind_shield": 3,
+       "jisu_speed": 1
+      }
+     },
+     {
+      "i": 5,
+      "speed": 5,
+      "shield": 15,
+      "extra": {
+       "lost_speed": 1,
+       "avoid_wind_shield": 3
+      }
+     },
+     {
+      "i": 6,
+      "speed": 5,
+      "shield": 18,
+      "extra": {
+       "lost_speed": 1,
+       "avoid_wind_shield": 3,
+       "jisu_speed": 1
+      }
+     }
+    ]
+   }
+  ],
+  "折速回锋": {
+   "speed_before": 8,
+   "battle_start": {
+    "speed": 4,
+    "mana": 24,
+    "monster_hp": 188,
+    "折速扣速触发回锋刀即时伤": true,
+    "即时伤": 12
+   },
+   "round_start_monster_hp": 176,
+   "total_damage": 24,
+   "expected_instant": 12,
+   "expected_round_start_if_gap4": 12,
+   "折速疲惫走代价总线": true,
+   "折速触发每失速3伤": true
+  },
+  "血契千刀万剐": {
+   "player_hp": "40→40 (Δ0)",
+   "friend_hp": "80→79 (Δ-1)",
+   "mana": "12→10 (Δ-2)",
+   "player_total_healed": "0→6",
+   "monster_hp": 196,
+   "cancer_threshold": 84,
+   "cycles_submitted": 3,
+   "logs": [
+    {
+     "spell": "千刀万剐",
+     "cycle": 1,
+     "daowen": "再生",
+     "x": 2,
+     "target": "贾凡",
+     "execution": {
+      "daowen": "再生",
+      "effects": [
+       {
+        "type": "heal",
+        "target": "贾凡",
+        "heal_amount": 6,
+        "actual_heal": 3,
+        "hp_before": 39,
+        "hp_after": 42,
+        "overheal": 3,
+        "heal_ctx": {
+         "timing": "player_action",
+         "source": "再生",
+         "source_type": "daowen",
+         "actor": "贾凡",
+         "target": "贾凡",
+         "owner": "贾凡",
+         "mechanic": "heal",
+         "subtype": "daowen",
+         "amount": 6,
+         "tags": [
+          "daowen"
+         ],
+         "event_id": "evt-64",
+         "parent_event_id": null
+        }
+       }
+      ],
+      "daowen_ctx": {
+       "timing": "player_actions",
+       "source": "再生",
+       "source_type": "daowen",
+       "actor": "贾凡",
+       "target": "贾凡",
+       "owner": "贾凡",
+       "mechanic": "daowen_resolution",
+       "subtype": "再生",
+       "amount": 2,
+       "tags": [
+        "daowen"
+       ],
+       "event_id": "evt-63",
+       "parent_event_id": null
+      }
+     }
+    },
+    {
+     "spell": "千刀万剐",
+     "cycle": 1,
+     "daowen": "血债",
+     "x": 2,
+     "target": "靶怪",
+     "execution": {
+      "daowen": "血债",
+      "effects": [
+       {
+        "type": "damage",
+        "target": "靶怪",
+        "raw_damage": 2,
+        "actual_damage": 2,
+        "shield_absorbed": 0,
+        "hp_after": 196,
+        "died": false
+       },
+       {
+        "type": "bleed_cost",
+        "cost_type": "流血",
+        "requested": 2,
+        "dragon_heart_offset": 0,
+        "remaining": 2,
+        "owner": {
+         "payer": "贾凡",
+         "cost_type": "流血",
+         "paid": 2,
+         "detail": {
+          "raw_damage": 2,
+          "shield_absorbed": 0,
+          "actual_damage": 2,
+          "hp_before": 42,
+          "hp_after": 40,
+          "blood_limit_before": 42,
+          "died": false,
+          "damage_type": "代价",
+          "dragon_heart_offset": 0,
+          "hp_loss_ctx": {
+           "timing": "player_action",
+           "source": "血债",
+           "source_type": "daowen",
+           "actor": "贾凡",
+           "target": "贾凡",
+           "owner": null,
+           "mechanic": "hp_loss",
+           "subtype": "cost",
+           "amount": 2,
+           "tags": [
+            "active_payment"
+           ],
+           "event_id": "evt-71",
+           "parent_event_id": "evt-70"
+          }
+         }
+        },
+        "shared_with": null,
+        "cost_share_target_ref": null,
+        "actual_paid": 2,
+        "ctx": {
+         "timing": "player_action",
+         "source": "血债",
+         "source_type": "daowen",
+         "actor": "贾凡",
+         "target": "贾凡",
+         "owner": null,
+         "mechanic": "cost",
+         "subtype": "bleed",
+         "amount": 2,
+         "tags": [
+          "active_payment"
+         ],
+         "event_id": "evt-70",
+         "parent_event_id": null
+        },
+        "actual_damage": 2,
+        "hp_after": 40
+       }
+      ],
+      "daowen_ctx": {
+       "timing": "player_actions",
+       "source": "血债",
+       "source_type": "daowen",
+       "actor": "贾凡",
+       "target": "靶怪",
+       "owner": "贾凡",
+       "mechanic": "daowen_resolution",
+       "subtype": "血债",
+       "amount": 2,
+       "tags": [
+        "daowen"
+       ],
+       "event_id": "evt-65",
+       "parent_event_id": null
+      }
+     }
+    }
+   ],
+   "player_still_lost_hp_so_trigger_ok": true,
+   "daowen_share_ok": true,
+   "spell_cycle_share_seen": false,
+   "infinite": false,
+   "stop_reason": "法力耗尽或癌变阈值；法术循环当前不转发血契分担"
+  },
+  "寄生滋养癌变": {
+   "寄生挂上": true,
+   "打20回复": 4,
+   "期望回复": 4,
+   "第二目标也可寄生": true,
+   "滋养打满血仍计入累计": [
+    {
+     "i": 1,
+     "hp": 40,
+     "total_healed": 4,
+     "cancer": false,
+     "ok": true
+    },
+    {
+     "i": 2,
+     "hp": 40,
+     "total_healed": 4,
+     "cancer": false,
+     "ok": false
+    },
+    {
+     "i": 3,
+     "hp": 40,
+     "total_healed": 4,
+     "cancer": false,
+     "ok": false
+    },
+    {
+     "i": 4,
+     "hp": 40,
+     "total_healed": 4,
+     "cancer": false,
+     "ok": false
+    },
+    {
+     "i": 5,
+     "hp": 40,
+     "total_healed": 4,
+     "cancer": false,
+     "ok": false
+    },
+    {
+     "i": 6,
+     "hp": 40,
+     "total_healed": 4,
+     "cancer": false,
+     "ok": false
+    },
+    {
+     "i": 7,
+     "hp": 40,
+     "total_healed": 4,
+     "cancer": false,
+     "ok": false
+    },
+    {
+     "i": 8,
+     "hp": 40,
+     "total_healed": 4,
+     "cancer": false,
+     "ok": false
+    }
+   ],
+   "癌变阈值": 80,
+   "癌变触发": false
+  },
+  "无神自残": {
+   "无神挂上": true,
+   "无神攻击打自己": true,
+   "无神后生命": "222→182",
+   "自残2次20攻": 40,
+   "期望40": 40,
+   "自残成功": true,
+   "无神持续": 1,
+   "无神法力": 20,
+   "自残法力": 20
+  },
+  "冲击切割贯穿": {
+   "冲击切割": {
+    "A": {
+     "hp": "120→120",
+     "blood_limit": "120→120",
+     "shield": "15→5",
+     "qiege": false
+    },
+    "B": {
+     "hp": 110,
+     "blood_limit": 110
+    },
+    "ok": true,
+    "cost": 6,
+    "raw_aoe": 10
+   },
+   "贯穿切割": {
+    "shield_before": 40,
+    "shield_after": 40,
+    "hp": "200→180",
+    "blood_limit": "200→180",
+    "贯穿无视格挡": true,
+    "切割同步扣血限": true
+   }
+  },
+  "同魂三相": {
+   "同魂笔成功": true,
+   "甲变自残": true,
+   "乙变自残": true,
+   "玩家获得自残": true,
+   "残韵消耗": 1,
+   "三相战始后": {
+    "转换": 0,
+    "反转": 0,
+    "曲解": 0
+   },
+   "三相战终后": {
+    "转换": 0,
+    "反转": 1,
+    "曲解": 1
+   },
+   "三相净残韵": 1
+  },
+  "守夜灯透支": {
+   "守夜灯回始法力": 20,
+   "期望法限+50%": 30,
+   "回终清空": 0,
+   "透支成功": true,
+   "透支血限": "42→39",
+   "透支法力": "20→32",
+   "透支永久衰老": true
+  },
+  "负岳索插板": {
+   "战始格挡": 15,
+   "伤害明细": {
+    "raw_damage": 25,
+    "shield_absorbed": 15,
+    "actual_damage": 10,
+    "hp_before": 40,
+    "hp_after": 30,
+    "blood_limit_before": 40,
+    "died": false,
+    "damage_type": "普通",
+    "ctx": {
+     "timing": "player_actions",
+     "source": "legacy_damage",
+     "source_type": "legacy",
+     "actor": null,
+     "target": "缓冲",
+     "owner": null,
+     "mechanic": "damage",
+     "subtype": "normal",
+     "amount": 25,
+     "tags": [
+      "legacy_context"
+     ],
+     "event_id": "evt-102",
+     "parent_event_id": null
+    },
+    "context_warning": "伤害缺少EffectContext；已按legacy来源兼容记录",
+    "hp_loss_ctx": {
+     "timing": "player_actions",
+     "source": "legacy_damage",
+     "source_type": "legacy",
+     "actor": null,
+     "target": "缓冲",
+     "owner": null,
+     "mechanic": "hp_loss",
+     "subtype": "damage",
+     "amount": 10,
+     "tags": [
+      "legacy_context"
+     ],
+     "event_id": "evt-103",
+     "parent_event_id": "evt-102"
+    },
+    "fuyuesuo_heal": {
+     "healer": "贾凡",
+     "heal_amount": 10,
+     "actual_heal": 0,
+     "hp_before": 42,
+     "hp_after": 42,
+     "overheal": 10,
+     "heal_ctx": {
+      "timing": "player_actions",
+      "source": "负岳索",
+      "source_type": "relic",
+      "actor": "贾凡",
+      "target": "贾凡",
+      "owner": "贾凡",
+      "mechanic": "heal",
+      "subtype": "fuyuesuo",
+      "amount": 10,
+      "tags": [
+       "after_damage",
+       "relic"
+      ],
+      "event_id": "evt-104",
+      "parent_event_id": "evt-102"
+     }
+    }
+   },
+   "朋友生命": "40→30",
+   "按实际失血回复": true,
+   "跨副本不可同场": "防弹插板=罪孽都市事件，负岳索=龙心谷事件"
+  },
+  "进化残韵": {
+   "进化成功": true,
+   "借用杀伐": true,
+   "残韵改写成功": true,
+   "怪物现道纹": [
+    "狂暴",
+    "杀伐"
+   ],
+   "玩家现道纹": [
+    "再生"
+   ],
+   "人类不能永久拿原始道纹": true
+  }
+ },
+ "acquisition": {
+  "monsters": {
+   "扭曲都市": {
+    "狂暴": [
+     [
+      "千手蜈蚣",
+      4
+     ],
+     [
+      "缝合鱼",
+      3
+     ],
+     [
+      "爬行者",
+      4
+     ]
+    ],
+    "高攻次≥4": [
+     [
+      "千手蜈蚣",
+      4
+     ],
+     [
+      "爬行者",
+      4
+     ]
+    ],
+    "自愈": [
+     [
+      "肠水母",
+      1
+     ]
+    ],
+    "强化": [
+     [
+      "奇美拉",
+      2
+     ],
+     [
+      "脑蜘蛛",
+      2
+     ]
+    ],
+    "减速": [
+     [
+      "脑蜘蛛",
+      2
+     ]
+    ],
+    "池大小": 12
+   },
+   "罪孽都市": {
+    "狂暴": [
+     [
+      "窃贼",
+      2
+     ],
+     [
+      "打手",
+      4
+     ],
+     [
+      "看门犬",
+      3
+     ],
+     [
+      "狂徒",
+      3
+     ],
+     [
+      "通缉犯",
+      3
+     ]
+    ],
+    "强化": [
+     [
+      "打手",
+      4
+     ],
+     [
+      "打手头目",
+      3
+     ]
+    ],
+    "高攻次≥4": [
+     [
+      "打手",
+      4
+     ]
+    ],
+    "自愈": [
+     [
+      "打手头目",
+      3
+     ]
+    ],
+    "减速": [
+     [
+      "狙击手",
+      1
+     ],
+     [
+      "杀手",
+      1
+     ]
+    ],
+    "池大小": 12
+   },
+   "龙心谷": {
+    "狂暴": [
+     [
+      "熔岩蜥",
+      3
+     ],
+     [
+      "断角羊",
+      4
+     ],
+     [
+      "火山猿",
+      3
+     ]
+    ],
+    "高攻次≥4": [
+     [
+      "断角羊",
+      4
+     ]
+    ],
+    "减速": [
+     [
+      "碎岩鸮",
+      2
+     ]
+    ],
+    "强化": [
+     [
+      "墓门卫",
+      3
+     ]
+    ],
+    "自愈": [
+     [
+      "背碑人",
+      1
+     ]
+    ],
+    "池大小": 12
+   }
+  },
+  "event_pool_size": {
+   "扭曲都市": 17,
+   "罪孽都市": 17,
+   "龙心谷": 16
+  },
+  "key_events": {
+   "活性土壤": [
+    "扭曲都市",
+    "血肉温室"
+   ],
+   "防弹插板": [
+    "罪孽都市",
+    "黑市军火贩"
+   ],
+   "负岳索": [
+    "龙心谷",
+    "断桥余烬"
+   ]
+  }
+ },
+ "relic_discovery": {
+  "血誓戒": {
+   "listed": 25,
+   "rate": 0.20833333333333334
+  },
+  "买路财": {
+   "listed": 40,
+   "rate": 0.3333333333333333
+  },
+  "同魂笔": {
+   "listed": 29,
+   "rate": 0.24166666666666667
+  },
+  "回锋刀": {
+   "listed": 35,
+   "rate": 0.2916666666666667
+  },
+  "折速法印": {
+   "listed": 33,
+   "rate": 0.275
+  },
+  "三相残韵盘": {
+   "listed": 29,
+   "rate": 0.24166666666666667
+  },
+  "血契": {
+   "listed": 26,
+   "rate": 0.21666666666666667
+  },
+  "避风铃": {
+   "listed": 28,
+   "rate": 0.23333333333333334
+  },
+  "守夜灯": {
+   "listed": 37,
+   "rate": 0.30833333333333335
+  },
+  "无所求": {
+   "listed": 35,
+   "rate": 0.2916666666666667
+  },
+  "忘忧香": {
+   "listed": 43,
+   "rate": 0.35833333333333334
+  }
+ },
+ "seven": [
+  {
+   "name": "基准·杀伐庇护再生",
+   "region": "扭曲都市",
+   "runs": 8,
+   "errors": 0,
+   "wins": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 1.5,
+   "formed": 8,
+   "formed_rate": 1.0,
+   "formed_win_rate": 0.0,
+   "avg_formed_battle": 1.0,
+   "avg_hp": 3.75,
+   "avg_mana": 31.5,
+   "avg_speed": 8.0,
+   "avg_shards": 50.25,
+   "avg_costs": {
+    "精力": 7.5,
+    "碎片": 0.0,
+    "共鸣": 0.0,
+    "领悟": 0.0,
+    "残韵消耗": 0.0,
+    "学习": 1.75,
+    "修行": 5.75
+   },
+   "deaths": {
+    "第2场失败": 1,
+    "第5场失败": 1,
+    "第1场失败": 3,
+    "第4场失败": 1,
+    "第3场失败": 2
+   }
+  },
+  {
+   "name": "冲击+切割",
+   "region": "扭曲都市",
+   "runs": 7,
+   "errors": 1,
+   "wins": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 1.2857142857142858,
+   "formed": 7,
+   "formed_rate": 1.0,
+   "formed_win_rate": 0.0,
+   "avg_formed_battle": 1.0,
+   "avg_hp": 3.5714285714285716,
+   "avg_mana": 28.571428571428573,
+   "avg_speed": 8.0,
+   "avg_shards": 46.0,
+   "avg_costs": {
+    "精力": 6.857142857142857,
+    "碎片": 0.0,
+    "共鸣": 0.0,
+    "领悟": 0.0,
+    "残韵消耗": 0.0,
+    "学习": 2.5714285714285716,
+    "修行": 4.285714285714286
+   },
+   "deaths": {
+    "第2场失败": 2,
+    "第3场失败": 2,
+    "第4场失败": 1,
+    "第1场失败": 2,
+    "ERR:StopIteration": 1
+   }
+  },
+  {
+   "name": "贯穿+切割",
+   "region": "扭曲都市",
+   "runs": 7,
+   "errors": 1,
+   "wins": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 1.2857142857142858,
+   "formed": 7,
+   "formed_rate": 1.0,
+   "formed_win_rate": 0.0,
+   "avg_formed_battle": 1.0,
+   "avg_hp": 3.5714285714285716,
+   "avg_mana": 28.285714285714285,
+   "avg_speed": 8.0,
+   "avg_shards": 46.0,
+   "avg_costs": {
+    "精力": 6.857142857142857,
+    "碎片": 0.0,
+    "共鸣": 0.0,
+    "领悟": 0.0,
+    "残韵消耗": 0.0,
+    "学习": 2.7142857142857144,
+    "修行": 4.142857142857143
+   },
+   "deaths": {
+    "第2场失败": 2,
+    "第3场失败": 2,
+    "第4场失败": 1,
+    "第1场失败": 2,
+    "ERR:StopIteration": 1
+   }
+  },
+  {
+   "name": "急速+避风铃+回锋刀(从零)",
+   "region": "龙心谷",
+   "runs": 8,
+   "errors": 0,
+   "wins": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 2.5,
+   "formed": 0,
+   "formed_rate": 0.0,
+   "formed_win_rate": 0,
+   "avg_formed_battle": null,
+   "avg_hp": 2.5,
+   "avg_mana": 20.0,
+   "avg_speed": 8.0,
+   "avg_shards": 47.5,
+   "avg_costs": {
+    "精力": 10.5,
+    "碎片": 18.75,
+    "共鸣": 2.25,
+    "领悟": 5.375,
+    "残韵消耗": 0.0,
+    "学习": 1.625,
+    "残韵获得": 5.375
+   },
+   "deaths": {
+    "第5场失败": 2,
+    "第1场失败": 2,
+    "第2场失败": 1,
+    "第4场失败": 1,
+    "第3场失败": 1,
+    "第7场失败": 1
+   }
+  },
+  {
+   "name": "无神+狂暴猎取",
+   "region": "罪孽都市",
+   "runs": 8,
+   "errors": 0,
+   "wins": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 3.375,
+   "formed": 8,
+   "formed_rate": 1.0,
+   "formed_win_rate": 0.0,
+   "avg_formed_battle": 3.8333333333333335,
+   "avg_hp": 2.625,
+   "avg_mana": 20.0,
+   "avg_speed": 8.0,
+   "avg_shards": 43.5,
+   "avg_costs": {
+    "精力": 13.125,
+    "碎片": 0.0,
+    "共鸣": 0.0,
+    "领悟": 11.625,
+    "残韵消耗": 1.0,
+    "学习": 1.5,
+    "残韵获得": 11.625
+   },
+   "deaths": {
+    "第5场失败": 2,
+    "第7场失败": 1,
+    "第1场失败": 1,
+    "第6场失败": 2,
+    "第2场失败": 1,
+    "第3场失败": 1
+   }
+  },
+  {
+   "name": "自残猎取",
+   "region": "罪孽都市",
+   "runs": 8,
+   "errors": 0,
+   "wins": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 3.125,
+   "formed": 5,
+   "formed_rate": 0.625,
+   "formed_win_rate": 0.0,
+   "avg_formed_battle": 4.0,
+   "avg_hp": 5.25,
+   "avg_mana": 20.0,
+   "avg_speed": 8.0,
+   "avg_shards": 16.125,
+   "avg_costs": {
+    "精力": 12.375,
+    "碎片": 0.0,
+    "共鸣": 0.0,
+    "领悟": 10.875,
+    "残韵消耗": 0.625,
+    "学习": 1.5,
+    "残韵获得": 10.875
+   },
+   "deaths": {
+    "第7场失败": 1,
+    "第5场失败": 1,
+    "第6场失败": 3,
+    "第1场失败": 3
+   }
+  },
+  {
+   "name": "寄生猎取",
+   "region": "龙心谷",
+   "runs": 8,
+   "errors": 0,
+   "wins": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 1.375,
+   "formed": 2,
+   "formed_rate": 0.25,
+   "formed_win_rate": 0.0,
+   "avg_formed_battle": 5.0,
+   "avg_hp": 0.0,
+   "avg_mana": 20.0,
+   "avg_speed": 8.0,
+   "avg_shards": 43.625,
+   "avg_costs": {
+    "精力": 7.125,
+    "碎片": 0.0,
+    "共鸣": 0.0,
+    "领悟": 5.25,
+    "残韵消耗": 0.25,
+    "学习": 1.875,
+    "残韵获得": 5.25
+   },
+   "deaths": {
+    "第6场失败": 1,
+    "第1场失败": 4,
+    "第2场失败": 2,
+    "第5场失败": 1
+   }
+  },
+  {
+   "name": "滋养+癌变猎取",
+   "region": "龙心谷",
+   "runs": 8,
+   "errors": 0,
+   "wins": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 0.375,
+   "formed": 0,
+   "formed_rate": 0.0,
+   "formed_win_rate": 0,
+   "avg_formed_battle": null,
+   "avg_hp": 0.0,
+   "avg_mana": 20.0,
+   "avg_speed": 8.0,
+   "avg_shards": 27.5,
+   "avg_costs": {
+    "精力": 4.125,
+    "碎片": 0.0,
+    "共鸣": 0.0,
+    "领悟": 2.75,
+    "残韵消耗": 0.0,
+    "学习": 1.375,
+    "残韵获得": 2.75
+   },
+   "deaths": {
+    "第3场失败": 1,
+    "第1场失败": 6,
+    "第2场失败": 1
+   }
+  },
+  {
+   "name": "守夜灯高法",
+   "region": "扭曲都市",
+   "runs": 8,
+   "errors": 0,
+   "wins": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 2.125,
+   "formed": 3,
+   "formed_rate": 0.375,
+   "formed_win_rate": 0.0,
+   "avg_formed_battle": 1.0,
+   "avg_hp": 7.5,
+   "avg_mana": 33.75,
+   "avg_speed": 8.0,
+   "avg_shards": 67.75,
+   "avg_costs": {
+    "精力": 9.375,
+    "碎片": 0.0,
+    "共鸣": 0.0,
+    "领悟": 0.0,
+    "残韵消耗": 0.0,
+    "学习": 2.5,
+    "修行": 6.875
+   },
+   "deaths": {
+    "第2场失败": 2,
+    "第6场失败": 2,
+    "第4场失败": 1,
+    "第1场失败": 2,
+    "第3场失败": 1
+   }
+  },
+  {
+   "name": "透支+守夜灯",
+   "region": "扭曲都市",
+   "runs": 8,
+   "errors": 0,
+   "wins": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 1.75,
+   "formed": 3,
+   "formed_rate": 0.375,
+   "formed_win_rate": 0.0,
+   "avg_formed_battle": 1.0,
+   "avg_hp": 2.25,
+   "avg_mana": 31.75,
+   "avg_speed": 8.0,
+   "avg_shards": 57.75,
+   "avg_costs": {
+    "精力": 8.25,
+    "碎片": 0.0,
+    "共鸣": 0.0,
+    "领悟": 0.0,
+    "残韵消耗": 0.0,
+    "学习": 2.375,
+    "修行": 5.875
+   },
+   "deaths": {
+    "第2场失败": 2,
+    "第6场失败": 1,
+    "第3场失败": 2,
+    "第4场失败": 1,
+    "第1场失败": 2
+   }
+  },
+  {
+   "name": "无所求+高探索",
+   "region": "扭曲都市",
+   "runs": 8,
+   "errors": 0,
+   "wins": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 1.75,
+   "formed": 3,
+   "formed_rate": 0.375,
+   "formed_win_rate": 0.0,
+   "avg_formed_battle": 1.0,
+   "avg_hp": 1.875,
+   "avg_mana": 26.5,
+   "avg_speed": 8.0,
+   "avg_shards": 57.25,
+   "avg_costs": {
+    "精力": 7.625,
+    "碎片": 0.0,
+    "共鸣": 0.0,
+    "领悟": 0.0,
+    "残韵消耗": 0.0,
+    "探索": 7.625
+   },
+   "deaths": {
+    "第3场失败": 2,
+    "第2场失败": 1,
+    "第4场失败": 3,
+    "第1场失败": 2
+   }
+  },
+  {
+   "name": "三相残韵盘残韵循环",
+   "region": "扭曲都市",
+   "runs": 3,
+   "errors": 5,
+   "wins": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 1.6666666666666667,
+   "formed": 0,
+   "formed_rate": 0.0,
+   "formed_win_rate": 0,
+   "avg_formed_battle": null,
+   "avg_hp": 0.0,
+   "avg_mana": 20.0,
+   "avg_speed": 8.0,
+   "avg_shards": 61.0,
+   "avg_costs": {
+    "精力": 8.0,
+    "碎片": 0.0,
+    "共鸣": 0.0,
+    "领悟": 6.666666666666667,
+    "残韵消耗": 0.3333333333333333,
+    "学习": 1.3333333333333333,
+    "残韵获得": 6.666666666666667
+   },
+   "deaths": {
+    "ERR:StopIteration": 5,
+    "第6场失败": 1,
+    "第1场失败": 2
+   }
+  },
+  {
+   "name": "同魂笔+残韵",
+   "region": "罪孽都市",
+   "runs": 8,
+   "errors": 0,
+   "wins": 0,
+   "win_rate": 0.0,
+   "avg_cleared": 3.125,
+   "formed": 3,
+   "formed_rate": 0.375,
+   "formed_win_rate": 0.0,
+   "avg_formed_battle": 1.0,
+   "avg_hp": 5.25,
+   "avg_mana": 20.0,
+   "avg_speed": 8.0,
+   "avg_shards": 16.125,
+   "avg_costs": {
+    "精力": 12.375,
+    "碎片": 0.0,
+    "共鸣": 0.0,
+    "领悟": 10.875,
+    "残韵消耗": 0.625,
+    "学习": 1.5,
+    "残韵获得": 10.875
+   },
+   "deaths": {
+    "第7场失败": 1,
+    "第5场失败": 1,
+    "第6场失败": 3,
+    "第1场失败": 3
+   }
+  }
+ ],
+ "seeds": 8,
+ "note": "七场数据来自 GameEngine 公开 action；转化道纹与遗物均按发现/残韵真实获取。"
+}
