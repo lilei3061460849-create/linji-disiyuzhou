@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from engine import combat_hooks
 from engine.combat import CombatEngine
 from engine.combat_events import CombatEventType
-from engine.combat_hooks import CombatHookManager, LonglinHook
+from engine.combat_hooks import CombatHookManager
 from engine.dice import DiceEngine
 from engine.mechanisms import MECHANISMS, MechanismHookAdapter, Phase
 from engine.models import Entity, GameState, StatusEffect
@@ -128,10 +128,11 @@ def test_jiahai_once_even_when_hook_manager_reused():
 def test_jiahai_priority_position_unchanged():
     manager = CombatHookManager()
     hooks = manager.hooks()
-    adapter = next(h for h in hooks if isinstance(h, MechanismHookAdapter))
+    adapter = next(h for h in hooks
+                   if isinstance(h, MechanismHookAdapter) and h.mechanism.name == "加害")
     assert adapter.priority == 20
     assert hooks.index(adapter) == 1, "加害必须位于龙族血脉(10)之后、龙鳞(30)之前"
-    assert MECHANISMS.get("加害").priority < LonglinHook.priority
+    assert MECHANISMS.get("加害").priority < MECHANISMS.get("龙鳞").priority
 
 
 def test_jiahai_before_longlin_still_rule_relevant():
@@ -140,11 +141,13 @@ def test_jiahai_before_longlin_still_rule_relevant():
     target = _target(("加害", 2), ("龙鳞", 8))
     adapter = next(h for h in manager.hooks()
                    if isinstance(h, MechanismHookAdapter) and h.mechanism.name == "加害")
+    longlin_adapter = next(h for h in manager.hooks()
+                           if isinstance(h, MechanismHookAdapter) and h.mechanism.name == "龙鳞")
 
     assert manager.apply_incoming_adjust(target, 8, "普通", None, _State()) == 2
     reversed_result = adapter.on_incoming_adjust(
         target,
-        LonglinHook().on_incoming_adjust(target, 8, "普通", None, _State()),
+        longlin_adapter.on_incoming_adjust(target, 8, "普通", None, _State()),
         "普通", None, _State())
     assert reversed_result == 0, "反过来先削到0，加害的 amount>0 前置不成立 → 0"
 

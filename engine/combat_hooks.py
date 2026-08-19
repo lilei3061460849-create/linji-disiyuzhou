@@ -59,21 +59,6 @@ class DragonBloodlineMultiplierHook:
         return amount
 
 
-class LonglinHook:
-    """龙鳞：每次受到伤害-X，最低为0（持续∞）
-
-    必须后于【加害】（已迁移为声明式 Mechanism，见 engine/mechanisms/builtins.py；
-    经 MechanismHookAdapter 执行，priority=20 不变）。
-    """
-    priority = 30
-
-    def on_incoming_adjust(self, target: Any, amount: int, damage_type: str, source: Optional[Any], state: Any) -> int:
-        if amount > 0 and damage_type != "代价" and hasattr(target, "has_status") and target.has_status("龙鳞"):
-            val = target.get_status_value("龙鳞") or 0
-            return max(0, amount - val)
-        return amount
-
-
 class BaolieHook:
     """爆裂：受到伤害前，攻击者失去等量生命，持续X（敌回终递减）
 
@@ -373,8 +358,8 @@ class CombatHookManager:
         self.redirection_hook = DamageRedirectionHook()
         self.mitigation_hook = LethalMitigationHook()
         self.after_damage_hook = AfterDamageEffectsHook()
-        # 已迁移到声明层的机制（当前仅【加害】）经适配器挂到同一条 Hook 分发路径，
-        # 执行顺序与迁移前完全一致（加害 priority=20，位于龙鳞之前）。
+        # 已迁移到声明层的机制（当前：加害=20、龙鳞=30）经适配器挂到同一条 Hook
+        # 分发路径，执行顺序与迁移前完全一致（加害先于龙鳞，顺序即规则）。
         mechanism_hooks: List[Any] = [
             MechanismHookAdapter(mechanism)
             for mechanism in MECHANISMS.phase_mechanisms(Phase.INCOMING_ADJUST)
@@ -384,7 +369,6 @@ class CombatHookManager:
         self._hooks: List[Any] = self._sorted([
             DragonBloodlineMultiplierHook(),
             *mechanism_hooks,
-            LonglinHook(),
             BaolieHook(),
             BifenglingHook(),
             ShouyedengHook(),

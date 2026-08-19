@@ -13,7 +13,6 @@ from engine.models import Entity, GameState, StatusEffect
 from engine.combat_events import CombatEvent, CombatEventType
 from engine.combat_hooks import (
     CombatHookManager,
-    LonglinHook,
     BaolieHook,
     BifenglingHook,
     ShouyedengHook,

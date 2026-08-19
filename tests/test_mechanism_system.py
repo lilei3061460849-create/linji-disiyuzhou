@@ -311,8 +311,8 @@ def test_migration_guard_detects_planted_hardcode(tmp_path):
 def test_migration_guard_ignores_unmigrated_and_comments(tmp_path):
     planted = tmp_path / "combat.py"
     planted.write_text(
-        'if e.has_status("龙鳞"): pass\n'           # 未迁移机制：不管
-        '# 注释里的 has_status("加害") 不算\n',     # 注释：不管
+        'if e.has_status("裂变"): pass\n'            # 未迁移机制（不在注册表）：不管
+        '# 注释里的 has_status("龙鳞") 不算\n',     # 注释：不管
         encoding="utf-8")
     assert check_migrated_mechanism_guards([str(planted)]) == []
 

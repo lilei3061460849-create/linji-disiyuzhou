@@ -2,7 +2,8 @@
 
 五个基础抽象：Verb / Mechanism / Trigger / Condition / Target。
 目标：普通新机制尽量只描述【什么时候 / 对谁 / 满足什么条件 / 做什么】，
-而不是给核心管线加新的 if。MVP 只迁移【加害】一个机制，验证架构可行性。
+而不是给核心管线加新的 if。当前已迁移：【加害】【龙鳞】（伤害加减区，
+同一相位共存、priority 决定顺序）。
 
 刻意边界（不要做成框架）：无 DSL、无 JSON 配置、无脚本系统、无 Action Queue、
 无通用推理引擎、无冲突自动解决、无反射。机制声明就是 Python 数据结构。
@@ -24,5 +25,5 @@ from .targets import (  # noqa: F401
 from .triggers import Phase, Trigger, TriggerBus, TriggerContext  # noqa: F401
 from .verbs import apply_verb, get_verb, register_verb, verb_names  # noqa: F401
 
-# 导入即注册已迁移机制（当前仅【加害】）。
+# 导入即注册已迁移机制（当前：加害、龙鳞）。
 from . import builtins  # noqa: E402,F401
