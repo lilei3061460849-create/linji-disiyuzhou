@@ -608,9 +608,27 @@ def choose_pre_battle(e, todo, battle_no, rng, policy):
     if act == "修行":
         return act, {"tier": 1, "to": "mana" if battle_no % 2 else "speed"}
     if act == "休整":
-        return act, {"tier": 1, "heal_allocations": [
-            {"target_ref": "player:0", "amount": 8 + e.state.rest_heal_bonus},
-        ]}
+        # 休整分级（2026-08-19 P2）：按 HP 缺口 + 可支付碎片 + 下一场关键资源选择档位。
+        # 档位：tier1=8血/0碎片，tier2=24血/10碎片，tier3=48血/25碎片（engine/api.py）。
+        # - 缺口足够大且碎片足够 → 高档位（不机械用 1 级）；
+        # - 付不起高档位才退回低级；
+        # - 保留关键资源：每名已部署员工的战终工资上限(12) + 应急缓冲(5)，
+        #   后期战斗（第 5 场起出怪增多）再额外保留 5，避免为回血耗尽下一场必需碎片。
+        p = e.state.player
+        gap = max(0, p.blood_limit - p.current_hp) if p else 0
+        bonus = e.state.rest_heal_bonus
+        shards = e.state.shards
+        deployed = sum(1 for emp in e.state.employees
+                       if emp.is_alive and emp.is_deployed and not emp.is_debt_bound)
+        reserve = 12 * deployed + 5 + (5 if battle_no >= 5 else 0)
+        tier = 1
+        if gap >= 40 and shards >= 25 + reserve:
+            tier = 3
+        elif gap >= 24 and shards >= 10 + reserve:
+            tier = 2
+        heal = {1: 8, 2: 24, 3: 48}[tier] + bonus
+        return act, {"tier": tier, "heal_allocations": [
+            {"target_ref": "player:0", "amount": heal}]}
     if act == "领悟":
         return act, {"resonance_type": rng.choice(["转换", "反转", "曲解"])}
     if act == "维修":

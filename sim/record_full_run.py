@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""跑一场护卫命令流完整乱葬岗轮回，输出逐回合结构化数据（供战报.md撰写）。"""
+"""跑一场护卫命令流完整乱葬岗轮回，输出逐回合结构化数据（供报告.md撰写）。"""
 import json, os, sys, tempfile
 from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

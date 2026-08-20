@@ -1756,7 +1756,7 @@ class CombatEngine:
         怪物困境检查
         规则：困境是指怪物的主要优势被针对、原有取胜路线被稳定限制
         核心道纹被变化或失效、连续无法有效攻击、对方建立稳定压制循环、
-        急中生智成功破解主要优势时，均应立即进行困境检查
+        被特殊手段破解主要优势时，均应立即进行困境检查
         
         返回None表示未陷入困境，返回dict表示需要DM裁定（进化/逃跑）
         """
@@ -1812,8 +1812,8 @@ class CombatEngine:
         发起逃跑
         规则：
         1. 战斗无缝继续
-        2. 逃跑方必须消耗自身出手发动急中生智
-        3. 追击方破解急中生智后逃跑失败
+        2. 逃跑方必须消耗自身出手企图拖延时间逃跑
+        3. 追击方阻截成功后逃跑失败
         """
         return Interrupt(
             interrupt_type=InterruptType.ESCAPE_AND_PURSUIT,
@@ -1826,13 +1826,13 @@ class CombatEngine:
             },
             description=(
                 f"{escaper.name}试图逃跑！\n"
-                f"规则：{escaper.name}必须消耗出手发动【急中生智】企图拖延时间逃跑。\n"
-                f"追击方在正常回合内破解急中生智，全部破解后逃跑失败继续战斗，否则逃脱成功。\n"
-                f"请DM裁定{escaper.name}的急中生智方案是否合理。"
+                f"规则：{escaper.name}必须消耗自身出手企图拖延时间逃跑。\n"
+                f"追击方在正常回合内一边抵御其余敌对角色攻击，一边阻截逃跑方；阻截成功后逃跑失败继续战斗，否则逃脱成功。\n"
+                f"请DM裁定{escaper.name}的拖延阻截是否成功。"
             ),
             options=[
-                {"id": "escape_success", "label": "逃脱成功", "description": "急中生智合理，逃脱成功"},
-                {"id": "escape_fail", "label": "逃脱失败", "description": "急中生智被破解，继续战斗"},
+                {"id": "escape_success", "label": "逃脱成功", "description": "拖延有效，逃脱成功"},
+                {"id": "escape_fail", "label": "逃脱失败", "description": "被阻截，继续战斗"},
             ],
             state_snapshot=self.state.to_dict()
         )
@@ -2283,51 +2283,46 @@ class CombatEngine:
             return max(1, battle_number - 3)
         return max(1, battle_number)
 
-    # ========== 急中生智 ==========
-    
-    def initiate_wit(self, declarer: Entity, target: Entity) -> Interrupt:
+    # ========== 许愿（2026-08-19 新增，替代急中生智） ==========
+
+    def initiate_wish(self, wisher: Entity, wish_text: str, target: Optional[Entity] = None) -> Interrupt:
+        """特殊事件【许愿】：轮回者向"某人"祈求时触发。
+
+        规则（2026-08-19）：
+        1. 轮回者许下一个愿望；愿望本身没有固定的可行范围，也不存在"无法实现"的愿望；
+        2. "某人"会以能够实现愿望、但最符合其扭曲本质的方式实现愿望；
+        3. 愿望的代价与扭曲方式由愿望本身决定，不预先公开；
+        4. 引擎只负责抛出中断并提交现场状态，实现方式与代价完全由 DM 裁定。
         """
-        急中生智声明
-        规则：
-        1. 无法以任何形式造成伤害，同种解法第二次失效
-        2. 公式：知识+环境元素+道纹=干扰目标
-        3. 严禁进行纯数值买卖
-        4. 只允许利用现实存在的概念
-        5. 严禁以任何形式中断、解除、削弱或篡改已生效的道纹、法术与遗物
-        6. 必须写明期望达成的明确效果
-        """
+        ctx = {
+            "wisher": wisher.name,
+            "wish_text": wish_text,
+            "target": target.name if target is not None else None,
+            "wisher_hp": wisher.current_hp,
+            "wisher_daowen": list(wisher.dao_wen.keys()),
+            "current_round": self.state.current_round,
+        }
         return Interrupt(
-            interrupt_type=InterruptType.WIT_OF_DESPERATION,
-            context={
-                "declarer": declarer.name,
-                "target": target.name,
-                "declarer_hp": declarer.current_hp,
-                "target_hp": target.current_hp,
-                "declarer_daowen": list(declarer.dao_wen.keys()),
-                "target_daowen": list(target.dao_wen.keys()),
-                "current_round": self.state.current_round,
-            },
+            interrupt_type=InterruptType.WISH,
+            context=ctx,
             description=(
-                f"{declarer.name}声明【急中生智】！\n\n"
+                f"{wisher.name}向「某人」许下一个愿望：「{wish_text}」\n\n"
                 f"规则：\n"
-                f"1. 无法以任何形式造成伤害\n"
-                f"2. 同种解法第二次失效\n"
-                f"3. 公式：知识+环境元素+道纹=干扰目标\n"
-                f"4. 严禁纯数值买卖\n"
-                f"5. 只允许利用现实存在的概念\n"
-                f"6. 必须写明期望达成的明确效果\n\n"
-                f"请DM裁定方案是否合理。"
+                f"1. 愿望没有固定的可行范围，不存在「无法实现」的愿望；\n"
+                f"2. 「某人」会以能够实现愿望、但最符合其扭曲本质的方式实现；\n"
+                f"3. 愿望的代价与扭曲方式由愿望本身决定，不预先公开。\n\n"
+                f"请DM裁定「某人」以何种扭曲方式实现该愿望、以及轮回者付出的代价。"
             ),
             options=[
-                {"id": "wit_success", "label": "急中生智成功", "description": "方案合理，获得DM裁定的效果"},
-                {"id": "wit_fail", "label": "急中生智失败", "description": "方案不合理，消耗出手但无效果"},
+                {"id": "wish_resolved", "label": "实现愿望（扭曲方式）",
+                 "description": "「某人」以最符合其扭曲本质的方式实现愿望，代价由愿望本身决定"},
             ],
             state_snapshot=self.state.to_dict()
         )
-    
+
     def initiate_negotiation(self, proposal: str) -> Interrupt:
         """
-        员工叛变·急中生智谈判声明：给出合理的谈判方案破解叛乱，需要DM裁定方案是否成立。
+        员工叛变·谈判声明：给出合理的谈判方案破解叛乱，需要DM裁定方案是否成立。
         """
         return Interrupt(
             interrupt_type=InterruptType.STAFF_MUTINY,
@@ -3236,7 +3231,7 @@ class CombatEngine:
         if emp_atk >= threshold:
             return {"rebellion": True, "rebels": [e.name for e in emps],
                     "employee_attack_total": emp_atk, "threshold": threshold,
-                    "options": ["镇压（与所有叛变员工开战）", "让利（本场每名员工工资+5碎片）", "急中生智（谈判）"]}
+                    "options": ["镇压（与所有叛变员工开战）", "让利（本场每名员工工资+5碎片）", "谈判（给出合理方案）"]}
         return {"rebellion": False, "employee_attack_total": emp_atk, "threshold": threshold}
 
     def trigger_death_legacy(self, legacy: dict[str, str]) -> dict:
@@ -3918,6 +3913,196 @@ class CombatEngine:
                 "target": target.name, "execution": execution,
                 "trigger_spell_logs": trigger_logs}
 
+    def _validate_monster_daowen_schema(
+        self, monster: Entity, choice: dict, refs: dict[str, Entity],
+        prepared_option: dict,
+    ) -> None:
+        """道纹选择的静态 schema 校验（零副作用）。
+
+        只校验与执行状态无关的结构/引用/布尔提交；依赖执行后状态的数值
+        （目标当前速度、血影所需生命、本回合已使用集合）留给执行阶段动态
+        校验 + 快照回滚兜底，避免把"道纹执行会改变的状态"提前固化。
+        """
+        name = choice.get("name", "")
+        inst = monster.dao_wen.get(name)
+        if (inst is None or name in self._monster_round_used(monster)
+                or not inst.can_use()):
+            raise ValueError(f"{monster.name}不能发动道纹【{name}】")
+        if name not in DaoWenEngine.list_all():
+            raise ValueError(f"未知道纹【{name}】")
+        rewritten_as = (self._resonance_rewrites.get(id(monster)) or {}).get(name)
+        effective_name = rewritten_as or name
+        requires_target = self._daowen_requires_target(effective_name)
+        target_ref = choice.get("target_ref", "")
+        if requires_target:
+            target = refs.get(target_ref)
+            if target is None:
+                raise ValueError(f"道纹【{effective_name}】必须提交合法target_ref")
+            if target is not monster and not self.is_targetable(monster, target):
+                raise ValueError(f"目标{target.name}当前不可被{monster.name}选中")
+        else:
+            if target_ref:
+                raise ValueError(f"道纹【{effective_name}】不接受target_ref")
+            target = monster
+
+        hostile = self.state.on_player_side(target) != self.state.on_player_side(monster)
+        dodge = choice.get("dodge")
+        blood_shadow = choice.get("blood_shadow", False)
+        if effective_name == "冲击":
+            submitted_dodges = choice.get("dodge_targets")
+            if not isinstance(submitted_dodges, list):
+                raise ValueError("道纹【冲击】必须为全部敌对目标显式提交dodge_targets")
+            expected_ref_list = [
+                target.get("ref") for target in prepared_option.get("dodge_target_options", [])
+            ]
+            if (any(not isinstance(ref, str) for ref in expected_ref_list)
+                    or len(expected_ref_list) != len(set(expected_ref_list))):
+                raise ValueError("prepare返回的冲击闪避目标快照无效")
+            expected_refs = set(expected_ref_list)
+            received: dict[str, dict] = {}
+            for entry in submitted_dodges:
+                if (not isinstance(entry, dict) or not isinstance(entry.get("dodge"), bool)
+                        or not isinstance(entry.get("blood_shadow"), bool)
+                        or not isinstance(entry.get("target_ref"), str)
+                        or entry["dodge"] and entry["blood_shadow"]):
+                    raise ValueError("dodge_targets每项必须包含target_ref与布尔值dodge/blood_shadow")
+                ref = entry["target_ref"]
+                if ref in received:
+                    raise ValueError(f"重复提交闪避目标: {ref}")
+                received[ref] = entry
+            if set(received) != expected_refs:
+                raise ValueError(f"冲击必须覆盖全部敌对目标；需要{sorted(expected_refs)}")
+            for ref in expected_ref_list:
+                entity = refs.get(ref)
+                if entity is None or not self.state.on_player_side(entity):
+                    raise ValueError("prepare中的冲击目标已失效，请重新prepare_monster_phase")
+            if dodge not in (None, False):
+                raise ValueError("冲击使用dodge_targets，不接受dodge=true")
+        elif requires_target and hostile:
+            if not isinstance(dodge, bool) or not isinstance(blood_shadow, bool):
+                raise ValueError(f"道纹【{effective_name}】必须显式提交布尔值dodge/blood_shadow")
+            if dodge and blood_shadow:
+                raise ValueError("不能同时闪避并使用血影")
+            if choice.get("dodge_targets") not in (None, []):
+                raise ValueError(f"道纹【{effective_name}】不接受dodge_targets")
+        else:
+            if (dodge not in (None, False) or blood_shadow not in (None, False)
+                    or choice.get("dodge_targets") not in (None, [])):
+                raise ValueError(f"道纹【{effective_name}】当前结算不接受闪避提交")
+
+        trigger_choices = choice.get("trigger_spell_choices", {})
+        self.validate_daowen_trigger_spells(monster, trigger_choices, refs)
+
+    def _validate_monster_phase_static(
+        self, submitted: dict[str, dict], prepared: dict,
+    ) -> None:
+        """怪物阶段全部输入的静态 schema 校验（零副作用）。
+
+        在任何执行（龙息/守夜灯/道纹/攻击）之前拦截与执行状态无关的非法输入：
+          - 道纹选择/目标引用/闪避提交结构（_validate_monster_daowen_schema）
+          - attack_actions 数量（vs prepare 快照）
+          - 每次命中的 target_ref/dodge/blood_shadow 布尔/血影资格/回锋刀目标/法术提交
+
+        依赖执行后状态的数量校验（hits 命中数、目标当前速度、目标存活性）不在此
+        判定——它们必须按执行时的真实状态校验（如【变形】会改变命中数），失败由
+        resolve_monster_phase 的快照回滚保证零副作用。
+        """
+        expected = {actor["actor_ref"]: actor for actor in prepared["actors"]}
+        refs = self._combat_entity_refs()
+        for actor_ref, choice in submitted.items():
+            monster = refs.get(actor_ref)
+            if monster is None or not monster.is_alive:
+                continue  # 与执行循环一致：死斗部分提交/已死者跳过
+            expected_actor = expected[actor_ref]
+
+            dao_choice = choice.get("daowen")
+            options = {o["name"] for o in expected_actor["daowen_options"]}
+            if options and not isinstance(dao_choice, dict):
+                raise ValueError(f"{monster.name}必须从合法选项中提交一个daowen对象")
+            if not options and dao_choice is not None:
+                raise ValueError(f"{monster.name}本次没有合法道纹选项，daowen必须为null")
+            if isinstance(dao_choice, dict):
+                if dao_choice.get("name") not in options:
+                    raise ValueError(f"{monster.name}提交的道纹不在prepare合法选项中")
+                prepared_option = next(
+                    option for option in expected_actor["daowen_options"]
+                    if option["name"] == dao_choice["name"]
+                )
+                if (prepared_option["requires_target"]
+                        and dao_choice.get("target_ref") not in {
+                            target["ref"] for target in prepared_option["target_options"]
+                        }):
+                    raise ValueError(f"{monster.name}提交的道纹目标不在prepare合法选项中")
+                self._validate_monster_daowen_schema(
+                    monster, dao_choice, refs, prepared_option,
+                )
+
+            attack_actions = choice.get("attack_actions")
+            expected_actions = expected_actor["base_attack_actions"]
+            if not isinstance(attack_actions, list) or len(attack_actions) != expected_actions:
+                raise ValueError(f"{monster.name}必须提交{expected_actions}个attack_actions")
+            legal_attack_options = {
+                target["ref"]: target for target in expected_actor["attack_target_options"]
+            }
+            for attack_action in attack_actions:
+                if (not isinstance(attack_action, dict)
+                        or not isinstance(attack_action.get("hits"), list)):
+                    raise ValueError("每个attack_action必须包含hits列表")
+                for hit in attack_action["hits"]:
+                    if (not isinstance(hit, dict) or not isinstance(hit.get("dodge"), bool)
+                            or not isinstance(hit.get("blood_shadow"), bool)):
+                        raise ValueError("每次攻击必须显式提交target_ref、dodge与blood_shadow")
+                    if hit["dodge"] and hit["blood_shadow"]:
+                        raise ValueError("同一次判定不能同时闪避并使用血影")
+                    if hit.get("target_ref") not in legal_attack_options:
+                        raise ValueError("怪物攻击目标不在prepare合法选项中")
+                    target = refs.get(hit.get("target_ref", ""))
+                    if target is None or not self.state.on_player_side(target):
+                        raise ValueError("怪物攻击target_ref必须是prepare列出的己方目标")
+                    if not self.is_targetable(monster, target):
+                        raise ValueError(f"{target.name}当前不可被{monster.name}选中")
+                    option = legal_attack_options[hit["target_ref"]]
+                    if hit["blood_shadow"] and not option.get("can_blood_shadow"):
+                        raise ValueError(f"{target.name}不能使用血影")
+                    if hit["dodge"] and self.state.side_has(target, "回锋刀"):
+                        allowed = {entry["ref"] for entry in option["dodge_relic_target_options"]}
+                        if hit.get("dodge_relic_target_ref") not in allowed:
+                            raise ValueError("回锋刀触发必须显式提交合法目标")
+                    self.validate_spell_reaction_submission(
+                        target, monster, hit.get("spell_choices"), refs,
+                    )
+
+    def _monster_phase_snapshot(self) -> dict:
+        """怪物阶段执行前快照：state（含实体/事件流/碎片/消耗品）+ 引擎侧怪物状态。"""
+        import copy
+        return {
+            "state": copy.deepcopy(self.state),
+            "activated": copy.deepcopy(self._monster_activated),
+            "round_used": copy.deepcopy(self._monster_daowen_round_used),
+            "rewrites": copy.deepcopy(self._resonance_rewrites),
+            "sanxiang": self._sanxiang_consumed,
+            "dice": copy.deepcopy(self.dice),
+            "split_spawned": getattr(self, "_split_clones_spawned", 0),
+        }
+
+    def _monster_phase_restore(self, snap: dict) -> None:
+        """恢复执行前快照：任何非法 resolve 输入/执行中异常都不得留下战斗副作用。
+
+        原地恢复 self.state 的内容（保持 combat.state 与 api 层 engine.state 是
+        同一对象引用），并把实体/列表替换为快照副本——外部代码在失败后应重新
+        从 state 读取实体，不得继续使用失败前的旧引用。
+        """
+        state = self.state
+        restored = snap["state"]
+        state.__dict__.clear()
+        state.__dict__.update(restored.__dict__)
+        self._monster_activated = snap["activated"]
+        self._monster_daowen_round_used = snap["round_used"]
+        self._resonance_rewrites = snap["rewrites"]
+        self._sanxiang_consumed = snap["sanxiang"]
+        self.dice = snap["dice"]
+        self._split_clones_spawned = snap["split_spawned"]
+
     def resolve_monster_phase(self, choices: list[dict], prepared: dict) -> list[dict]:
         """严格按传入的prepare快照验证并结算；任何非法输入由API事务整体回滚。"""
         if not isinstance(choices, list):
@@ -3937,7 +4122,22 @@ class CombatEngine:
         # （逐出手交替与挑战者侧一致，修复守擂方机制性必胜）。
         if not self.state.in_final_duel and set(submitted) != set(expected):
             raise ValueError(f"必须为全部可行动怪物各提交一次选择；需要{sorted(expected)}，收到{sorted(submitted)}")
+        # 事务一致性（2026-08-19）：先完成全部静态 schema 校验（零副作用），
+        # 再执行任何龙息/守夜灯/道纹/攻击。依赖执行后状态的动态校验
+        # （hits 命中数、目标速度/存活）在执行阶段进行，失败即快照回滚，
+        # 保证"任何非法 resolve 输入不得留下任何战斗副作用"。
+        self._validate_monster_phase_static(submitted, prepared)
+        snapshot = self._monster_phase_snapshot()
+        try:
+            return self._execute_monster_phase(submitted, prepared, expected)
+        except Exception:
+            self._monster_phase_restore(snapshot)
+            raise
 
+    def _execute_monster_phase(
+        self, submitted: dict[str, dict], prepared: dict, expected: dict[str, dict],
+    ) -> list[dict]:
+        """校验全部通过后的怪物阶段执行（原 resolve_monster_phase 执行体，语义不变）。"""
         refs = self._combat_entity_refs()
         results: list[dict] = []
         enemy_turn = bool(prepared.get("actors") or prepared.get("skipped"))

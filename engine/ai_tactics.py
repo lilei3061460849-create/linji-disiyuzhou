@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import math
 from typing import Any, Optional
+from engine.ai_preview import ActionPreview
 
 # ---------------------------------------------------------------------------
 # 道纹战术表：AI 的唯一知识来源。
@@ -106,6 +107,18 @@ class TacticalAI:
         self.log: list[str] = []
         self.used: dict[str, int] = {}   # 统计各道纹发动次数，便于流派对比
         self._controlled_this_round: set = set()   # 本回合已被控制的目标，避免重复浪费法力
+        self._previewer = None           # 行动后果预演器（惰性创建）
+        self.preview_rejected: list[str] = []   # 被安全过滤淘汰的候选（供测试/报告）
+        self._sacrifice_actions: set = set()    # 项目明确允许的主动牺牲策略（默认空）
+        self._last_risk: tuple = ("SAFE", [])   # 最近一次 _cast 的风险等级（供策略层参考）
+
+    @property
+    def previewer(self):
+        """行动后果预演器（惰性创建）。"""
+        if self._previewer is None:
+            from engine.ai_preview import ActionPreview
+            self._previewer = ActionPreview(self.engine)
+        return self._previewer
 
     # ---------- 基础工具 ----------
 
@@ -147,7 +160,15 @@ class TacticalAI:
         b = self.mana() if budget is None else budget
         return max(0, b // per)
 
-    def _cast(self, name: str, x: int, target: Optional[str] = None) -> Optional[dict]:
+    def _cast(self, name: str, x: int, target: Optional[str] = None,
+              *, allow_sacrifice: bool = False) -> Optional[dict]:
+        """统一候选执行入口：候选动作 → CombatEngine 预演 → 安全过滤 → 正式执行。
+
+        预演由 CombatEngine 真实管线完成数值计算（含爆裂反噬/触发法术/癌变等一切
+        监听链），TacticalAI 不复制任何伤害/反伤规则。第一阶段只做安全性过滤：
+        预演导致轮回者本人命零的候选直接拒绝（除非 allow_sacrifice 显式放行），
+        不允许"收益很高"覆盖必死结果。所有策略（保命/输出/控制）共用本入口。
+        """
         if x < 1:
             return None
         p = {"daowen_name": name, "x": x, "dodge": False, "blood_shadow": False}
@@ -165,6 +186,34 @@ class TacticalAI:
             ]
             if not p["dodge_targets"]:
                 return None
+        if not allow_sacrifice:
+            # 预演安全过滤：候选导致轮回者命零则拒绝。通用降 X 搜索（非道纹特判）：
+            # 大 X 可能触发癌变/反噬/嫁祸转伤等完整效果链，小 X 可能安全
+            # （如慈悲 X=14 治愈癌变阈值，X=1 则安全）；自动降 X 找最小安全档。
+            # 同时用风险分类器记录非致命风险等级（CRITICAL / HIGH 等，供策略层参考）。
+            probe_x = x
+            reason = None
+            self._last_risk = ("SAFE", [])
+            while probe_x >= 1:
+                pv = self.previewer.preview("use_daowen", dict(p, x=probe_x))
+                diff = pv.get("diff", {})
+                self._last_risk = ActionPreview.risk_classify(diff, self.player)
+                if not ActionPreview.would_kill_player(diff):
+                    break
+                reason = "预演致轮回者命零"
+                probe_x -= 1
+            if probe_x < 1:
+                self.preview_rejected.append(f"{name}X={x}->{target or 'all'}（{reason}）")
+                if self.verbose:
+                    self.log.append(f"[安全过滤] 拒绝 {name}X={x}: {reason}")
+                return None
+            if probe_x != x:
+                self.preview_rejected.append(
+                    f"{name}X={x}->{target or 'all'}（预演致轮回者命零，降档到X={probe_x}）")
+                if self.verbose:
+                    self.log.append(f"[安全过滤] {name}X={x}→{probe_x}（降低到安全档）")
+            x = probe_x
+            p["x"] = x   # 正式执行必须用降档后的 X
         r = self.engine.execute_action("use_daowen", p)
         if r.get("success"):
             self.used[name] = self.used.get(name, 0) + 1
@@ -479,13 +528,30 @@ class TacticalAI:
         return None
 
     def try_consumable(self) -> Optional[dict]:
-        """消耗品：使用不消耗出手，故在出手循环外单独尝试。"""
+        """消耗品：使用不消耗出手，故在出手循环外单独尝试。
+
+        完整后果评估（非特判）：经 ActionPreview 预演完整效果链（含异变/崩解/
+        血限/连锁触发等一切引擎管线效果），由通用风险分类器评估，LETHAL 和
+        CRITICAL 等级的消耗品被拒绝。不检查消耗品具体名称，全靠 diff 数值说话。
+        """
         p = self.player
         if p.current_hp > p.blood_limit * 0.4:
             return None
         for item in list(self.engine.state.consumables):
             if getattr(item, "current_uses", 0) <= 0:
                 continue
+            # 预演完整后果（不消耗真实次数、不改真实 state）
+            pv = self.previewer.preview("consume_item", {"name": item.name})
+            if not pv.get("result") or not pv["result"].get("success"):
+                continue   # 引擎拒绝（如条件不满足）
+            risk_level, reasons = ActionPreview.risk_classify(pv.get("diff", {}), p)
+            if risk_level in ("LETHAL", "CRITICAL"):
+                self.preview_rejected.append(
+                    f"消耗品{item.name}（{risk_level}：{'；'.join(reasons) or '通用风险'})")
+                if self.verbose:
+                    self.log.append(f"[安全过滤] 拒绝 消耗品{item.name}: {risk_level} {' '.join(reasons)}")
+                continue
+            # 正式执行
             r = self.engine.execute_action("consume_item", {"name": item.name})
             if r.get("success"):
                 return r

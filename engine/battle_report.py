@@ -129,8 +129,8 @@ def format_battle_start(
     player: Any,
     allies: Optional[list] = None,
     background: str = "",
-    # 战斗背景仅作为【急中生智】的场景素材，本身不带数值影响。
-    # 未实际触发急中生智时不再逐场重复"纯叙事，不影响数值"这句注解。
+    # 战斗背景仅作为【许愿】等特殊事件的场景素材，本身不带数值影响。
+    # 未实际触发特殊事件时不再逐场重复"纯叙事，不影响数值"这句注解。
     background_effect: str = "",
     start_effects: Optional[list] = None,
 ) -> list[str]:

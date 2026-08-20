@@ -539,7 +539,7 @@ class GameEngine:
                        if refs[a["ref"]].actions_used_this_round < refs[a["ref"]].action_count]
         actions.extend([
             {"action_type": "prepare_attack", "params_schema": {"actor_ref": actor_options}},
-            {"action_type": "declare_wit", "params_schema": {"target_ref": target_options}},
+            {"action_type": "declare_wish", "params_schema": {"wish_text": "string", "target_ref": target_options}},
             {"action_type": "declare_escape", "params_schema": {}},
             {"action_type": "command_ally", "params_schema": {
                 "ally_ref": ally_options, "instruction": "语言命令，如：攻击 余烬侍者 / 发动 背负",
@@ -614,7 +614,7 @@ class GameEngine:
     # ==================== 核心行动接口 ====================
 
     _COMBAT_ONLY_ACTIONS = {
-        "prepare_attack", "resolve_attack", "attack", "declare_wit", "declare_escape",
+        "prepare_attack", "resolve_attack", "attack", "declare_wish", "declare_escape",
         "retreat_via_toll", "deploy_employee", "lianxin_in_battle", "declare_evolution",
         "prepare_monster_phase", "resolve_monster_phase", "monster_phase",
         "round_start", "round_end", "resolve_rebellion_battle",
@@ -742,7 +742,7 @@ class GameEngine:
             }.get(action_type)
             player_actions = {
                 "use_daowen", "use_spell", "use_resonance", "consume_item",
-                "declare_wit", "declare_escape", "retreat_via_toll", "deploy_employee",
+                "declare_wish", "declare_escape", "retreat_via_toll", "deploy_employee",
                 "lianxin_in_battle", "declare_evolution", "activate_duel_relic",
                 "use_black_card", "use_crime_vault", "fire_godfather_revolver",
                 "select_shared_dragon_heart", "declare_fuyuebei_toll", "activate_dragon_body",
@@ -888,8 +888,8 @@ class GameEngine:
                 result = {"success": False, "error": "旧attack已移除；请使用prepare_attack/resolve_attack"}
             elif action_type == "consume_item":
                 result = self._action_consume_item(params)
-            elif action_type == "declare_wit":
-                result = self._action_declare_wit(params)
+            elif action_type == "declare_wish":
+                result = self._action_declare_wish(params)
             elif action_type == "declare_escape":
                 result = self._action_declare_escape(params)
             elif action_type == "retreat_via_toll":
@@ -1974,7 +1974,7 @@ class GameEngine:
             self.state.is_blacklisted = True
 
     # ==================== 出手预算校验 ====================
-    # 覆盖：attack/use_daowen/deploy_employee/declare_wit/declare_escape 消耗1出手；
+    # 覆盖：attack/use_daowen/deploy_employee/declare_wish/declare_escape 消耗1出手；
     # consume_item(明确不消耗出手)、use_resonance(可任意时刻插队)不受此约束。
 
     def _consume_action_or_error(self, entity: "Entity") -> Optional[dict]:
@@ -2681,13 +2681,22 @@ class GameEngine:
         return {"success": True, "action": f"{attacker.name}结算一轮攻击",
                 "result": {"attacker": attacker.name, "hits": results}}
 
-    def _action_declare_wit(self, params: dict) -> dict:
-        """声明急中生智（消耗玩家1出手）"""
+    def _action_declare_wish(self, params: dict) -> dict:
+        """声明许愿（消耗玩家1出手）：轮回者向"某人"祈求。
+
+        愿望没有固定的可行范围，也不存在"无法实现"的愿望；"某人"会以能够
+        实现愿望、但最符合其扭曲本质的方式实现；代价与扭曲方式由愿望本身
+        决定，不预先公开。引擎只提交现场状态，实现方式与代价由 DM 裁定。
+        """
         player = self.state.player
         if not player:
             return {"success": False, "error": "没有玩家"}
+        wish_text = params.get("wish_text", "")
+        if not isinstance(wish_text, str) or not wish_text.strip():
+            return {"success": False, "error": "必须写明许下的愿望（wish_text）"}
+        wish_text = wish_text.strip()
         target = self.combat._combat_entity_refs().get(params.get("target_ref", ""))
-        if not target:
+        if params.get("target_ref") and not target:
             return {"success": False, "error": "target_ref不是当前合法目标"}
 
         budget_error = self._consume_action_or_error(player)
@@ -2695,14 +2704,14 @@ class GameEngine:
             return budget_error
         self._apply_dragon_claw_growth(player)
 
-        interrupt = self.combat.initiate_wit(player, target)
+        interrupt = self.combat.initiate_wish(player, wish_text, target)
         self._pending_interrupts.append(interrupt)
 
         return {
             "success": True,
-            "action": "声明急中生智",
+            "action": "声明许愿",
             "interrupt": interrupt.to_dict(),
-            "instruction": "需要DM裁定急中生智方案"
+            "instruction": "需要DM裁定「某人」以何种扭曲方式实现愿望及轮回者付出的代价"
         }
 
     def _action_declare_escape(self, params: dict) -> dict:

@@ -9,6 +9,7 @@ command_ally 支持「发动背负 打 轮回者/我」——道纹指令目标�
 import json
 import os
 import sys
+import tempfile
 
 from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -222,3 +223,111 @@ def test_custom_spell_rejects_unknown_daowen_in_flow():
                   "trigger_condition": "受到伤害前", "effect_flow": "受到伤害前→发动回复X"}
     r = e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "custom_spell", "spell": definition})
     assert not r["success"], "不存在道纹'回复'必须拒绝"
+
+
+# ==================== sim 怪物 AI 决策路径回归（2026-08-19 修复） ====================
+
+def test_alt_path_resolve_monster_turn_with_daowen_monster_no_nameerror():
+    """回归：sim/alt_path_test.resolve_monster_turn 在“带道纹怪物”上不再 NameError。
+
+    此前 sim/handplay_dungeon_with_winner.py:129/181 的
+    `_pick_monster_daowen(engine, actor)` 使用未定义变量 engine（参数实际是 e），
+    任何怪物在第 2 回合起（白板回合之后）持有可用道纹时，该决策路径必然崩溃。
+    本测试：扭曲都市第一场脑蜘蛛（坏死/强化/减速）打到第 2 回合，
+    经公共 API 走完整 resolve_monster_turn，断言不再 NameError 且怪物阶段正常结算。
+    """
+    from sim.alt_path_test import resolve_monster_turn
+
+    save_dir = tempfile.mkdtemp(prefix="altpath")
+    e = GameEngine(db_path=os.path.join(save_dir, "g.db"), rng_seed=1,
+                   save_dir=save_dir)
+    e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 10,
+                                          "speed_points": 8, "mana_points": 7})
+    finish_initial_daowen(e)
+    e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
+    setup = e.execute_action("setup_choose_region", {"region": "扭曲都市"})
+    e.execute_action("choose_discovered_relic",
+                     {"relic_name": setup["result"]["relic_choices"][0]})
+    e.state.energy = 0
+    bs = e.execute_action("battle_start", {"relic_choices": {}})
+    assert bs.get("success"), bs
+    assert bs.get("enemies"), "必须出怪"
+
+    # 第 1 回合（白板：怪物只普攻不出道纹）
+    assert e.execute_action("round_start", {"relic_choices": {}})["success"]
+    mp1 = resolve_monster_turn(e, [])
+    assert mp1.get("success"), f"第1回合怪物阶段失败: {mp1.get('error')}"
+    assert e.execute_action("round_end", {})["success"]
+
+    # 第 2 回合：怪物可发动道纹（脑蜘蛛 坏死/强化/减速）
+    assert e.execute_action("round_start", {"relic_choices": {}})["success"]
+    assert e.state.current_round == 2, "必须已进入第2回合"
+    # 可见性断言用 combat.prepare_monster_phase（纯枚举、不写状态、不消耗资源），
+    # 避免与 resolve_monster_turn 内部 prepare 的 API 级 pending 冲突。
+    options = [o["name"] for a in e.combat.prepare_monster_phase()["actors"]
+               for o in (a.get("daowen_options") or [])]
+    assert options, "第2回合怪物必须暴露道纹选项（白板回合已过）"
+
+    mp2 = resolve_monster_turn(e, [])   # 修复前此处 NameError
+    assert mp2.get("success"), f"第2回合怪物阶段失败: {mp2.get('error')}"
+    assert not e.state.pending_monster_phase, "怪物阶段必须已结算完成"
+    # 怪物道纹分支实际走到：结算条目存在
+    details = (mp2.get("result") or {}).get("details") or []
+    assert details, "第2回合怪物必须实际行动（普攻或道纹）"
+
+
+# ==================== P1: 怪物道纹选择按 round_used 过滤（2026-08-19） ====================
+
+def _pick_engine(suffix):
+    e = _engine(suffix)
+    m = Entity("测试怪", "怪物", blood_limit=100, current_hp=100,
+               attack_count=1, attack_power=5)
+    e.state.enemies.append(m)
+    return e, m
+
+
+def _pick_actor():
+    return {"actor_ref": "enemy:0", "daowen_options": [
+        {"name": "赎金", "requires_target": True, "target_options": [{"ref": "player:0"}]},
+        {"name": "减速", "requires_target": True, "target_options": [{"ref": "player:0"}]},
+        {"name": "蒙蔽", "requires_target": True, "target_options": [{"ref": "player:0"}]},
+    ]}
+
+
+def test_pick_monster_daowen_uses_round_used_not_activated():
+    """候选过滤必须依据本回合已使用集合 round_used，而不是跨回合 activated。
+
+    同一道纹即使已在 activated（此前回合激活过）也可在本回合再次选择；
+    一旦进入本回合 round_used 就必须排除。
+    """
+    from sim.handplay_dungeon_with_winner import _pick_monster_daowen
+    e, m = _pick_engine("pick_ru")
+    actor = _pick_actor()
+
+    # activated 含全部候选（跨回合持续激活），但 round_used 为空 → 仍可正常选择
+    e.combat._monster_activated[id(m)] = {"赎金", "减速", "蒙蔽"}
+    pick = _pick_monster_daowen(e, actor)
+    assert pick is not None, "activated 不应阻止跨回合再次选择"
+
+    # 本回合用过 赎金 → 只排除 赎金（多道纹混合时仅排除 round_used）
+    e.combat._monster_round_used(m).add("赎金")
+    pick = _pick_monster_daowen(e, actor)
+    assert pick is not None and pick["name"] != "赎金", "同回合不得重复选择已用道纹"
+
+    # 全部候选本回合已用 → 返回 None（纯攻击，绝不退回 opts[0]）
+    e.combat._monster_round_used(m).update({"减速", "蒙蔽"})
+    assert _pick_monster_daowen(e, actor) is None, "候选耗尽必须选择不发动道纹"
+
+
+def test_pick_monster_daowen_cross_round_reuse():
+    """同一道纹跨回合可再次选择：round_used 随回合重置后重新可选。"""
+    from sim.handplay_dungeon_with_winner import _pick_monster_daowen
+    e, m = _pick_engine("pick_cross")
+    actor = _pick_actor()
+    # 本回合已用 赎金 → 排除
+    e.combat._monster_round_used(m).add("赎金")
+    pick1 = _pick_monster_daowen(e, actor)
+    assert pick1 is not None and pick1["name"] != "赎金"
+    # 跨回合：current_round 变化后 round_used 自动清空 → 赎金重新可选
+    e.state.current_round += 1
+    assert _pick_monster_daowen(e, actor) is not None

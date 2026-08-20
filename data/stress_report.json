@@ -1,0 +1,297 @@
+{
+ "stats": {
+  "seeds": 5000,
+  "runs": 5000,
+  "battles": 10608,
+  "rounds": 58768,
+  "wins": 5636,
+  "losses": 4972,
+  "engine_exceptions": 0,
+  "ai_illegal_actions": 0,
+  "ai_suicides": 0,
+  "known_consumable_suicide": 0,
+  "preview_inconsistencies": 0,
+  "preview_leaks": 0,
+  "entity_ref_drift": 0,
+  "resource_anomalies": 0,
+  "rule_anomalies": 0,
+  "rest_unreasonable": 0,
+  "battle_end_anomaly": 72,
+  "save_load_anomaly": 0,
+  "hire_redeem_anomaly": 0,
+  "test_script_issues": 18,
+  "normal_losses": 4960
+ },
+ "issues": [
+  {
+   "kind": "battle_end_anomaly",
+   "seed": 7178,
+   "ctx": "B6",
+   "detail": "battle_start fail: 只有局外阶段可以进入战始"
+  },
+  {
+   "kind": "battle_end_anomaly",
+   "seed": 7199,
+   "ctx": "B6",
+   "detail": "round 4 round_end fail: 【round_end】只能在战斗中执行"
+  },
+  {
+   "kind": "battle_end_anomaly",
+   "seed": 7351,
+   "ctx": "B5",
+   "detail": "round 4 round_end fail: 【round_end】只能在战斗中执行"
+  },
+  {
+   "kind": "battle_end_anomaly",
+   "seed": 7457,
+   "ctx": "B2",
+   "detail": "round 5 round_end fail: 【round_end】只能在战斗中执行"
+  },
+  {
+   "kind": "battle_end_anomaly",
+   "seed": 7467,
+   "ctx": "B6",
+   "detail": "round 4 round_end fail: 【round_end】只能在战斗中执行"
+  },
+  {
+   "kind": "battle_end_anomaly",
+   "seed": 7642,
+   "ctx": "B5",
+   "detail": "round 4 round_end fail: 【round_end】只能在战斗中执行"
+  },
+  {
+   "kind": "battle_end_anomaly",
+   "seed": 7785,
+   "ctx": "B5",
+   "detail": "round 3 round_end fail: 【round_end】只能在战斗中执行"
+  },
+  {
+   "kind": "battle_end_anomaly",
+   "seed": 7842,
+   "ctx": "B6",
+   "detail": "round 4 round_end fail: 【round_end】只能在战斗中执行"
+  },
+  {
+   "kind": "test_script_issues",
+   "seed": 7876,
+   "ctx": "PREBATTLE",
+   "detail": "energy stuck: 有待处理的中断等待DM裁定"
+  },
+  {
+   "kind": "battle_end_anomaly",
+   "seed": 7876,
+   "ctx": "B4",
+   "detail": "battle_start fail: 只有局外阶段可以进入战始"
+  },
+  {
+   "kind": "battle_end_anomaly",
+   "seed": 7987,
+   "ctx": "B6",
+   "detail": "round 5 round_end fail: 【round_end】只能在战斗中执行"
+  },
+  {
+   "kind": "battle_end_anomaly",
+   "seed": 8163,
+   "ctx": "B2",
+   "detail": "round 3 round_end fail: 【round_end】只能在战斗中执行"
+  },
+  {
+   "kind": "battle_end_anomaly",
+   "seed": 8245,
+   "ctx": "B5",
+   "detail": "round 4 round_end fail: 【round_end】只能在战斗中执行"
+  },
+  {
+   "kind": "test_script_issues",
+   "seed": 8248,
+   "ctx": "PREBATTLE",
+   "detail": "energy stuck: 有待处理的中断等待DM裁定"
+  },
+  {
+   "kind": "battle_end_anomaly",
+   "seed": 8248,
+   "ctx": "B5",
+   "detail": "battle_start fail: 只有局外阶段可以进入战始"
+  },
+  {
+   "kind": "battle_end_anomaly",
+   "seed": 9018,
+   "ctx": "B5",
+   "detail": "battle_start fail: 只有局外阶段可以进入战始"
+  },
+  {
+   "kind": "battle_end_anomaly",
+   "seed": 9160,
+   "ctx": "B3",
+   "detail": "round 4 round_end fail: 【round_end】只能在战斗中执行"
+  },
+  {
+   "kind": "test_script_issues",
+   "seed": 9211,
+   "ctx": "PREBATTLE",
+   "detail": "energy stuck: 有待处理的中断等待DM裁定"
+  },
+  {
+   "kind": "battle_end_anomaly",
+   "seed": 9211,
+   "ctx": "B4",
+   "detail": "battle_start fail: 只有局外阶段可以进入战始"
+  },
+  {
+   "kind": "battle_end_anomaly",
+   "seed": 9304,
+   "ctx": "B6",
+   "detail": "round 4 round_end fail: 【round_end】只能在战斗中执行"
+  },
+  {
+   "kind": "test_script_issues",
+   "seed": 9437,
+   "ctx": "PREBATTLE",
+   "detail": "energy stuck: 有待处理的中断等待DM裁定"
+  },
+  {
+   "kind": "battle_end_anomaly",
+   "seed": 9437,
+   "ctx": "B5",
+   "detail": "battle_start fail: 只有局外阶段可以进入战始"
+  },
+  {
+   "kind": "battle_end_anomaly",
+   "seed": 9656,
+   "ctx": "B5",
+   "detail": "round 4 round_end fail: 【round_end】只能在战斗中执行"
+  },
+  {
+   "kind": "test_script_issues",
+   "seed": 9746,
+   "ctx": "PREBATTLE",
+   "detail": "energy stuck: 有待处理的中断等待DM裁定"
+  },
+  {
+   "kind": "battle_end_anomaly",
+   "seed": 9746,
+   "ctx": "B4",
+   "detail": "battle_start fail: 只有局外阶段可以进入战始"
+  },
+  {
+   "kind": "battle_end_anomaly",
+   "seed": 9756,
+   "ctx": "B2",
+   "detail": "round 4 round_end fail: 【round_end】只能在战斗中执行"
+  },
+  {
+   "kind": "battle_end_anomaly",
+   "seed": 10011,
+   "ctx": "B6",
+   "detail": "round 4 round_end fail: 【round_end】只能在战斗中执行"
+  },
+  {
+   "kind": "test_script_issues",
+   "seed": 10410,
+   "ctx": "PREBATTLE",
+   "detail": "energy stuck: 有待处理的中断等待DM裁定"
+  },
+  {
+   "kind": "battle_end_anomaly",
+   "seed": 10410,
+   "ctx": "B3",
+   "detail": "battle_start fail: 只有局外阶段可以进入战始"
+  },
+  {
+   "kind": "battle_end_anomaly",
+   "seed": 10430,
+   "ctx": "B6",
+   "detail": "round 4 round_end fail: 【round_end】只能在战斗中执行"
+  },
+  {
+   "kind": "battle_end_anomaly",
+   "seed": 10512,
+   "ctx": "B4",
+   "detail": "battle_start fail: 只有局外阶段可以进入战始"
+  },
+  {
+   "kind": "battle_end_anomaly",
+   "seed": 11000,
+   "ctx": "B6",
+   "detail": "round 4 round_end fail: 【round_end】只能在战斗中执行"
+  },
+  {
+   "kind": "test_script_issues",
+   "seed": 11150,
+   "ctx": "PREBATTLE",
+   "detail": "energy stuck: 有待处理的中断等待DM裁定"
+  },
+  {
+   "kind": "battle_end_anomaly",
+   "seed": 11150,
+   "ctx": "B6",
+   "detail": "battle_start fail: 只有局外阶段可以进入战始"
+  },
+  {
+   "kind": "battle_end_anomaly",
+   "seed": 11291,
+   "ctx": "B6",
+   "detail": "round 4 round_end fail: 【round_end】只能在战斗中执行"
+  },
+  {
+   "kind": "battle_end_anomaly",
+   "seed": 11412,
+   "ctx": "B3",
+   "detail": "round 4 round_end fail: 【round_end】只能在战斗中执行"
+  },
+  {
+   "kind": "battle_end_anomaly",
+   "seed": 11592,
+   "ctx": "B5",
+   "detail": "round 4 round_end fail: 【round_end】只能在战斗中执行"
+  },
+  {
+   "kind": "battle_end_anomaly",
+   "seed": 11613,
+   "ctx": "B7",
+   "detail": "round 3 round_end fail: 【round_end】只能在战斗中执行"
+  },
+  {
+   "kind": "battle_end_anomaly",
+   "seed": 11641,
+   "ctx": "B5",
+   "detail": "round 4 round_end fail: 【round_end】只能在战斗中执行"
+  },
+  {
+   "kind": "battle_end_anomaly",
+   "seed": 11650,
+   "ctx": "B6",
+   "detail": "round 3 round_end fail: 【round_end】只能在战斗中执行"
+  },
+  {
+   "kind": "battle_end_anomaly",
+   "seed": 11685,
+   "ctx": "B2",
+   "detail": "round 4 round_end fail: 【round_end】只能在战斗中执行"
+  },
+  {
+   "kind": "test_script_issues",
+   "seed": 11986,
+   "ctx": "PREBATTLE",
+   "detail": "energy stuck: 有待处理的中断等待DM裁定"
+  },
+  {
+   "kind": "battle_end_anomaly",
+   "seed": 11986,
+   "ctx": "B5",
+   "detail": "battle_start fail: 只有局外阶段可以进入战始"
+  },
+  {
+   "kind": "test_script_issues",
+   "seed": 11989,
+   "ctx": "PREBATTLE",
+   "detail": "energy stuck: 有待处理的中断等待DM裁定"
+  },
+  {
+   "kind": "battle_end_anomaly",
+   "seed": 11989,
+   "ctx": "B2",
+   "detail": "battle_start fail: 只有局外阶段可以进入战始"
+  }
+ ]
+}

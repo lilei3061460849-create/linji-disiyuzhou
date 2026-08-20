@@ -465,3 +465,96 @@ def test_all_cooldown_daowen_covered():
             found.append(n)
             assert r.get("cost", 0) > 0, f"{n} 冷却代价为0，等于没有代价"
     assert found, "未找到任何冷却型道纹，检测逻辑可能失效"
+
+
+# ==================== P2: 战前休整分级策略（2026-08-19） ====================
+
+def _rest_engine(region="罪孽都市"):
+    """构造一个已开局、可调用 choose_pre_battle 的引擎。"""
+    import tempfile
+    from engine.api import GameEngine
+    save_dir = tempfile.mkdtemp(prefix="rest")
+    e = GameEngine(db_path=os.path.join(save_dir, "g.db"), rng_seed=1,
+                   save_dir=save_dir)
+    e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 10,
+                                          "speed_points": 8, "mana_points": 7})
+    finish_initial_daowen(e)
+    e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
+    _finish_region_setup(e, region)
+    e.state.phase = "pre_battle"
+    e.state.energy = 1
+    return e
+
+
+def _pick_rest(e, battle_no=1, policy=None):
+    """强制 AI 只考虑休整（policy 全权重给休整），返回 (tier, heal_alloc)。"""
+    import random
+    rng = random.Random(1)
+    act, params = bl.choose_pre_battle(
+        e, [], battle_no, rng, policy or {"休整": 100})
+    assert act == "休整", f"策略应选休整，实际 {act}"
+    return params["tier"], params["heal_allocations"][0]["amount"]
+
+
+def test_rest_large_gap_with_enough_shards_uses_tier3():
+    """HP 缺口大且碎片足够：不得机械使用 1 级休整，应选 3 级（48+加成）。"""
+    e = _rest_engine()
+    p = e.state.player
+    p.current_hp = 15
+    p.blood_limit = 60
+    e.state.shards = 60
+    tier, heal = _pick_rest(e)
+    assert tier == 3, f"缺口45+碎片60 应休整3级，实际 {tier}"
+    assert heal == 48 + e.state.rest_heal_bonus
+
+
+def test_rest_medium_gap_falls_back_to_tier2():
+    """碎片不足以付 3 级但够 2 级：退回 2 级（24+加成），不硬上 3 级。"""
+    e = _rest_engine()
+    p = e.state.player
+    p.current_hp = 15
+    p.blood_limit = 60
+    e.state.shards = 20
+    tier, heal = _pick_rest(e)
+    assert tier == 2, f"碎片20 应休整2级，实际 {tier}"
+    assert heal == 24 + e.state.rest_heal_bonus
+
+
+def test_rest_small_shards_uses_tier1():
+    """碎片只够 1 级：退回 1 级（8+加成）。"""
+    e = _rest_engine()
+    p = e.state.player
+    p.current_hp = 15
+    p.blood_limit = 60
+    e.state.shards = 5
+    tier, heal = _pick_rest(e)
+    assert tier == 1
+    assert heal == 8 + e.state.rest_heal_bonus
+
+
+def test_rest_small_gap_does_not_waste_shards():
+    """缺口小：即使碎片充足也不上高档位（避免为小缺口消耗关键碎片）。"""
+    e = _rest_engine()
+    p = e.state.player
+    p.current_hp = 55
+    p.blood_limit = 60
+    e.state.shards = 100
+    tier, _ = _pick_rest(e)
+    assert tier == 1, f"缺口5 应休整1级，实际 {tier}"
+
+
+def test_rest_reserves_wage_for_deployed_employees():
+    """已部署员工存在时保留工资预算：碎片只够 tier3 门槛时不上 3 级。"""
+    e = _rest_engine()
+    p = e.state.player
+    p.current_hp = 15
+    p.blood_limit = 60
+    e.state.shards = 30
+    from engine.models import Entity
+    emp = Entity("铁卫", "员工", blood_limit=60, current_hp=60,
+                 attack_count=2, attack_power=4, is_deployed=True)
+    e.state.employees.append(emp)
+    tier, _ = _pick_rest(e)
+    # reserve = 12×1 + 5 = 17；tier3 需 25+17=42 碎片，30 不够 → tier2（需 10+17=27 ✓）
+    assert tier == 2, f"保留工资预算时应休整2级，实际 {tier}"
+    assert e.state.shards >= 12, "休整后必须仍能支付已部署员工工资"

@@ -1,5 +1,5 @@
 """
-pytest 风格测试 - 里程碑6：员工叛变三选一处理分支（镇压/让利/急中生智）
+pytest 风格测试 - 里程碑6：员工叛变三选一处理分支（镇压/让利/谈判）
 
 原文：
 "员工叛变（[战终]检查，或被效果强制触发）：所有[员工]攻击总值≥轮回者当前生命+所有[朋友]攻击总值时，
@@ -7,7 +7,7 @@ pytest 风格测试 - 里程碑6：员工叛变三选一处理分支（镇压/�
 -镇压：与所有叛变[员工]开启战斗！若战斗失败或选择【撤退】，失去所有[碎片]，随后所有叛变[员工]携财逃跑；
 若战斗胜利，肃清叛徒并保留财产。
 -让利：本次轮回所有[员工]每场工资+5，叛变平息。
--急中生智：给出合理的谈判方案破解叛乱。"
+-谈判：给出合理的谈判方案破解叛乱。"
 
 设计要点(用户已确认思路：直接复用现有战斗体系，把叛变员工的面板"当出怪"塞进state.enemies)：
 1. suppress_rebellion：把state.employees整体搬进state.enemies(保留其完整面板与道纹)，
@@ -160,7 +160,7 @@ def test_appease_wage_bonus_applies_on_top_of_cap_in_next_wage_calc():
 
 
 def test_negotiate_raises_interrupt_for_dm_not_auto_resolved():
-    """正常路径：急中生智谈判必须走Interrupt交DM裁定，引擎不得自行编造判定结果"""
+    """正常路径：谈判必须走Interrupt交DM裁定，引擎不得自行编造判定结果"""
     engine = _setup_with_rebellion("negotiate_ok")
     r = engine.execute_action("negotiate_rebellion", {"proposal": "承诺提高工资并优先偿还历史欠薪"})
     assert r["success"] is True

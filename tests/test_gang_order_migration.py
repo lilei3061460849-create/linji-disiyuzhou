@@ -225,3 +225,39 @@ def test_gangpailing_reference_sweep_via_full_process_relics():
 
         assert old_result == new_result, f"held={held} sealed={sealed}"
         assert _wash_statuses(player_a) == _wash_statuses(player_b)
+
+
+# ==================== 8. BATTLE_START 全管线（最终行为验证阶段新增） ====================
+
+def test_battle_start_pipeline_silent_mask_then_gangpailing():
+    """战始相位双机制管线：缄默面具(5) -> 帮派令(10) 在同一次 process_relics 中依次生效。
+
+    旧代码行为：process_relics 战始段先缄默面具块、后帮派令块；新机制同相位按 priority 保序。
+    """
+    state, combat, player, enemy = _arena()
+    state.relics = [Relic("缄默面具", ""), Relic("帮派令", "")]
+    state.event_modifiers["silent_mask_x"] = 2   # 缄默面具 X=2 -> +40 法力
+
+    logs = combat.process_relics("battle_start", {"relic_choices": {}})
+
+    # 日志顺序必须与旧实现一致：缄默面具在前，帮派令在后
+    assert logs[0] == "缄默面具：+40法力"
+    assert logs[1] == "帮派令：获得洗劫3"
+    assert player.current_mana == 40, f"实际法力={player.current_mana}"
+    assert _wash_statuses(player) == [("洗劫", 3, 3, "帮派令")]
+
+    # 只触发一次：重复调用不再叠加
+    mana_after_first = player.current_mana
+    combat.process_relics("battle_start", {"relic_choices": {}})
+    assert player.current_mana == mana_after_first + 40, "重复战始仍可触发（与旧实现一致：每次战始触发）"
+    assert len([s for s in player.status_effects if s.name == "洗劫"]) == 1
+
+
+def test_battle_start_pipeline_gangpailing_only():
+    """只有帮派令时，管线照常只产出帮派令条目（缄默面具无触发）。"""
+    state, combat, player, enemy = _arena()
+    state.relics = [Relic("帮派令", "")]
+    logs = combat.process_relics("battle_start", {"relic_choices": {}})
+    assert logs == ["帮派令：获得洗劫3"]
+    assert player.current_mana == 0, "无缄默面具时不得加减法力"
+    assert _wash_statuses(player) == [("洗劫", 3, 3, "帮派令")]

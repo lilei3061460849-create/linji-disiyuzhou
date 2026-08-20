@@ -16,7 +16,7 @@ AI（决策者）──→ GameEngine API ──→ 计算/随机数
 ## 核心原则
 
 1. **AI是决策者，程序是事实源** — 所有数值计算、随机数必须通过引擎
-2. **中断机制** — 程序无法判定时（急中生智/逃跑等），抛出Interrupt等待DM
+2. **中断机制** — 程序无法判定时（许愿/逃跑等），抛出Interrupt等待DM
 3. **先例数据库** — DM裁定存入SQLite，下次类似场景自动匹配
 4. **自由控X** — 道纹的X值由AI在合法范围内自由指定
 
@@ -110,7 +110,7 @@ result = engine.execute_action("use_daowen", {
 if result.get("interrupt"):
     # 提交DM裁定
     engine.submit_ruling(
-        interrupt_type="急中生智",
+        interrupt_type="许愿",
         ruling_text="利用蒸汽遮蔽视线",
         ruling_data={"effect": "怪物下回合无法选中目标"}
     )
@@ -119,7 +119,7 @@ if result.get("interrupt"):
 ### 4. 查询先例
 ```python
 # AI可以在触发特殊事件前查询是否有先例
-precedent = engine.check_precedent("急中生智", {"target": "千手蜈蚣"})
+precedent = engine.check_precedent("许愿", {"target": "千手蜈蚣"})
 if precedent["found"]:
     # 直接应用先例
     ...
@@ -179,7 +179,7 @@ engine = GameEngine(rng_seed=12345)
 | `suppress_rebellion` | 员工叛变·镇压：叛变员工搬入state.enemies开战 |
 | `resolve_rebellion_battle` | 镇压结算(outcome=victory/defeat) |
 | `appease_rebellion` | 员工叛变·让利：全局工资+5，平息叛乱 |
-| `negotiate_rebellion` | 员工叛变·急中生智谈判：抛Interrupt交DM裁定 |
+| `negotiate_rebellion` | 员工叛变·谈判：抛Interrupt交DM裁定 |
 | `resolve_final_duel` | 第8场死斗结算；失败时触发【死之传承】中断，可选带`death_book_entry`作草稿 |
 | `submit_ruling`（死之传承） | 轮回者命零后审核遗言：`action=approve/edit/reject`；通过或修改后写入`死者之书.md`的「## 遗言」节 |
 | `choose_terminal_artifact` | 死斗胜利后按副本领取终音法器(choice=序号) |
@@ -202,7 +202,7 @@ engine = GameEngine(rng_seed=12345)
 | `retreat_via_toll` | 买路财：真正执行安全撤退(需持有该遗物) |
 | `prepare_attack` / `resolve_attack` | 两阶段攻击：逐击绑定目标、闪避、血影和法术反应 |
 | `consume_item` | 使用消耗品 |
-| `declare_wit` | 声明急中生智 |
+| `declare_wish` | 声明许愿：轮回者向"某人"祈求（消耗1出手） |
 | `declare_escape` | 声明逃跑 |
 | `declare_evolution` | 怪物进化：发动【原初X】借用原始怪物道纹（引擎直接结算） |
 | `round_start` | 回始结算 |
@@ -224,4 +224,4 @@ python tests/test_engine.py
 python -m pytest tests -q
 ```
 
-用户说「测试」时，默认由 AI 通过 `GameEngine.execute_action` 逐步点选手操并按 README《六、战斗推演格式》写战报。禁止把 `TacticalAI`、`sim/pick_best_report.py`、`test_with_ai.py`、sim 批量通关当作默认测试。`pytest` 只锁定回归。`战报.md` 只保留最新一次轮回记录。
+用户说「测试」时，默认由 AI 通过 `GameEngine.execute_action` 逐步点选手操并按 README《六、战斗推演格式》写战报。禁止把 `TacticalAI`、`sim/pick_best_report.py`、`test_with_ai.py`、sim 批量通关当作默认测试。`pytest` 只锁定回归。`报告.md` 只保留最新一次轮回记录。

@@ -2,7 +2,7 @@
 多世代真实手操推演与死斗胜者经验沉淀系统：
 - 第1世代：龙心谷「贾希希」（加害+裂变+血债），通关7场封存为初代冠冕胜者。
 - 第2世代：龙心谷「苏星河」（加害+裂变+血债+高法限），通关7场后在第8场击败贾希希，成为二代冠冕胜者。
-- 第3世代：龙心谷「林渊」（吸取前两代经验：激进修行法限至50+、精准闪避狂暴逆鳞连击、加害裂变极致穿透），通关7场后在第8场巅峰死斗决战二代胜者苏星河，登顶并生成最新权威《战报.md》。
+- 第3世代：龙心谷「林渊」（吸取前两代经验：激进修行法限至50+、精准闪避狂暴逆鳞连击、加害裂变极致穿透），通关7场后在第8场巅峰死斗决战二代胜者苏星河，登顶并生成最新权威《报告.md》。
 """
 import json
 import math
@@ -659,7 +659,7 @@ def run_three_generations():
     battle_blocks.append("\n".join(d_lines))
 
     # -------------------------------------------------------------
-    # 步骤 4：生成正式 8 场战斗战报《战报.md》
+    # 步骤 4：生成正式 8 场战斗战报《报告.md》
     # -------------------------------------------------------------
     header = """# 战报
 
@@ -674,11 +674,11 @@ def run_three_generations():
 【开局】林渊（42[血限]/20[法限]/8[速限]，出手3次）｜20[碎片]｜遗物·无所求｜残韵·反转｜道纹·杀伐｜副本·龙心谷
 """
     final_md = header + "\n" + "\n".join(battle_blocks)
-    with open("战报.md", "w", encoding="utf-8") as f:
+    with open("报告.md", "w", encoding="utf-8") as f:
         f.write(final_md)
 
     e3._finalize_victory_seal()
-    print(f"\nAuthoritative 战报.md written successfully! Total lines: {len(final_md.splitlines())}")
+    print(f"\nAuthoritative 报告.md written successfully! Total lines: {len(final_md.splitlines())}")
 
 
 if __name__ == "__main__":

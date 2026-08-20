@@ -212,3 +212,84 @@ def test_xijie_single_steal_implementation_and_no_special_api():
     assert not any("xijie" in v or "steal" in v for v in verb_names())
     from engine.mechanisms.registry import MECHANISMS as REG
     assert len([m for m in REG.all() if m.name == "洗劫·夺碎片"]) == 1
+
+
+# ==================== 8. 组合链 / 多实体边界（最终行为验证阶段新增） ====================
+
+def test_xijie_steal_then_kill_death_chain():
+    """完整链路：伤害夺取碎片 -> 目标死亡 -> ENTITY_DIED -> 焦黑发丝（玩家持有时）。
+
+    验证 DAMAGE_APPLIED 与 ENTITY_DIED 两个事件机制在同一次伤害中依次生效。
+    """
+    from engine.models import Relic
+    state = GameState(phase="in_combat", combat_subphase="player_actions")
+    player = Entity("P", "轮回者", blood_limit=100, current_hp=100,
+                    mana_limit=50, current_mana=50, speed_limit=20, current_speed=5)
+    enemy = Entity("M", "怪物", blood_limit=10, current_hp=10, shards=8, fake_shards=0)
+    player.add_status(StatusEffect(name="洗劫", remaining_rounds=-1, value=2, source="x"))
+    state.player = player
+    state.shards = 0
+    state.enemies = [enemy]
+    state.relics = [Relic(name="焦黑发丝", effect="")]
+    combat = CombatEngine(state, DiceEngine())
+    sp_before = player.current_speed
+
+    _damage(combat, player, enemy, 15)
+
+    # 洗劫·夺碎片：8 碎片全夺（伤害 15 > 碎片 8）
+    assert enemy.shards == 0 and state.shards == 8
+    # 死亡：ENTITY_DIED
+    assert enemy.is_alive is False
+    # 焦黑发丝：速度 +2
+    assert player.current_speed == sp_before + 2
+
+    # 事件流：DAMAGE_APPLIED 必须先于 ENTITY_DIED
+    types = [e.event_type for e in combat.event_stream]
+    assert types.index(CombatEventType.DAMAGE_APPLIED) < types.index(CombatEventType.ENTITY_DIED), \
+        f"事件顺序异常: {types}"
+
+    # 死亡事件的 parent_event_id 指向伤害事件
+    damage_ev = next(e for e in combat.event_stream
+                     if e.event_type == CombatEventType.DAMAGE_APPLIED)
+    died_ev = next(e for e in combat.event_stream
+                   if e.event_type == CombatEventType.ENTITY_DIED)
+    assert died_ev.ctx.get("parent_event_id") == damage_ev.ctx.get("event_id")
+
+
+def test_xijie_multi_enemies_each_steals_independently():
+    """多个敌人各自持碎片：对每个目标造成伤害时，夺取量独立计算。"""
+    state = GameState(phase="in_combat", combat_subphase="player_actions")
+    player = Entity("P", "轮回者", blood_limit=100, current_hp=100,
+                    mana_limit=50, current_mana=50, speed_limit=10, current_speed=5)
+    e1 = Entity("E1", "怪物", blood_limit=50, current_hp=50, shards=10)
+    e2 = Entity("E2", "怪物", blood_limit=50, current_hp=50, shards=3)
+    e3 = Entity("E3", "怪物", blood_limit=50, current_hp=50, shards=0)
+    player.add_status(StatusEffect(name="洗劫", remaining_rounds=-1, value=2, source="x"))
+    state.player = player
+    state.shards = 0
+    state.enemies = [e1, e2, e3]
+    combat = CombatEngine(state, DiceEngine())
+
+    _damage(combat, player, e1, 6)
+    _damage(combat, player, e2, 6)
+    _damage(combat, player, e3, 6)
+
+    assert e1.shards == 4                            # 第一次夺 6（10-6）
+    assert e2.shards == 0                            # 第二次夺 3（碎片不足封底）
+    assert e3.shards == 0                            # 第三次无碎片可夺
+    assert state.shards == 9, f"玩家碎片={state.shards}（6+3+0）"
+    assert len([e for e in combat.event_stream
+                if e.event_type == CombatEventType.DAMAGE_APPLIED]) == 3
+
+
+def test_xijie_zero_attack_power_damage_still_steals_when_overkill():
+    """攻击力 0 但伤害来自道纹/法术时：只要实伤>0 就按实伤夺碎片。"""
+    state, combat, player, enemy = _arena()
+    enemy.shards = 12
+    player.attack_power = 0
+    player.attack_count = 0
+    player.add_status(StatusEffect(name="洗劫", remaining_rounds=-1, value=2, source="x"))
+    detail = _damage(combat, player, enemy, 7)   # 非普攻路径，7 点实伤
+    assert detail["actual_damage"] == 7
+    assert enemy.shards == 5, "实伤 7 -> 夺 7"
+    assert state.shards == 7

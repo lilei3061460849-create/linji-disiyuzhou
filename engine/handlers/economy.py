@@ -184,7 +184,7 @@ def handle_appease_rebellion(engine: Any, params: Dict[str, Any]) -> Dict[str, A
 
 
 def handle_negotiate_rebellion(engine: Any, params: Dict[str, Any]) -> Dict[str, Any]:
-    """急中生智谈判"""
+    """谈判"""
     force = params.get("force", False)
     err = engine._pending_rebellion_error(force)
     if err:
@@ -195,7 +195,7 @@ def handle_negotiate_rebellion(engine: Any, params: Dict[str, Any]) -> Dict[str,
     interrupt = engine.combat.initiate_negotiation(proposal)
     engine._pending_interrupts.append(interrupt)
     return {
-        "success": True, "action": "员工叛变·急中生智谈判",
+        "success": True, "action": "员工叛变·谈判",
         "interrupt": interrupt.to_dict(),
         "instruction": "需要DM裁定谈判方案是否合理；裁定后请调用 appease_rebellion(force=True) 平息叛乱"
                        "或改用 suppress_rebellion(force=True) 镇压",
