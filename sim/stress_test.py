@@ -88,10 +88,13 @@ def light_snapshot(state):
 _orig_exec = GameEngine.execute_action
 _orig_preview = ActionPreview.preview
 _orig_cast = TacticalAI._cast
+_IN_PREVIEW = [False]   # preview 副本执行期间置 True，不计入真实行为统计
 
 
 def _checked_exec(self, action_type, params=None):
     r = _orig_exec(self, action_type, params)
+    if _IN_PREVIEW[0]:
+        return r   # preview 副本执行：探测后果用，不计入真实行为统计
     p = self.state.player
     # consume_item 后玩家命零 = 已知残骸/消耗品崩解类（try_consumable 未走预演）
     if action_type == "consume_item" and p is not None and not p.is_alive:
@@ -114,7 +117,11 @@ def _checked_exec(self, action_type, params=None):
 def _checked_preview(self, action_type, params=None):
     global LAST_PREVIEW
     before = light_snapshot(self.engine.state)
-    r = _orig_preview(self, action_type, params)
+    _IN_PREVIEW[0] = True
+    try:
+        r = _orig_preview(self, action_type, params)
+    finally:
+        _IN_PREVIEW[0] = False
     after = light_snapshot(self.engine.state)
     if before != after:
         rec_issue("preview_leaks", rt.current_seed, action_type,
