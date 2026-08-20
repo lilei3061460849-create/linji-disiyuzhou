@@ -307,24 +307,24 @@ def test_dm_rulings():
                      attack_count=2, attack_power=5)
     engine.state.enemies.append(monster)
     
-    # 声明急中生智
-    result = engine.execute_action("declare_wit", {"target_ref": "enemy:0"})
+    # 声明许愿（轮回者向"某人"祈求）
+    result = engine.execute_action("declare_wish", {"wish_text": "让这只怪物消失", "target_ref": "enemy:0"})
     assert result["success"]
-    assert result["interrupt"]["interrupt_type"] == "急中生智"
-    print("  ✓ 急中生智中断触发")
+    assert result["interrupt"]["interrupt_type"] == "许愿"
+    print("  ✓ 许愿中断触发")
     
-    # DM裁定
+    # DM裁定（"某人"以扭曲方式实现愿望，代价不公开）
     result = engine.submit_ruling(
-        "急中生智",
-        "利用废弃管道释放蒸汽，遮蔽怪物视线，趁机移动到有利位置",
-        {"effect": "怪物下回合无法选中轮回者", "duration": 1}
+        "许愿",
+        "愿望实现：怪物消失，但轮回者失去全部法力并本场无法恢复",
+        {}
     )
     assert result["success"]
     assert result["ruling_id"] > 0
     print(f"  ✓ DM裁定保存，ID={result['ruling_id']}")
     
     # 查询先例
-    precedent = engine.check_precedent("急中生智", {"target_ref": "enemy:0"})
+    precedent = engine.check_precedent("许愿", {"target_ref": "enemy:0"})
     assert precedent["found"]
     print(f"  ✓ 查询到{precedent['count']}个先例")
     

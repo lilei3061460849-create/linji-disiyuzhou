@@ -1756,7 +1756,7 @@ class CombatEngine:
         怪物困境检查
         规则：困境是指怪物的主要优势被针对、原有取胜路线被稳定限制
         核心道纹被变化或失效、连续无法有效攻击、对方建立稳定压制循环、
-        急中生智成功破解主要优势时，均应立即进行困境检查
+        被特殊手段破解主要优势时，均应立即进行困境检查
         
         返回None表示未陷入困境，返回dict表示需要DM裁定（进化/逃跑）
         """
@@ -1812,8 +1812,8 @@ class CombatEngine:
         发起逃跑
         规则：
         1. 战斗无缝继续
-        2. 逃跑方必须消耗自身出手发动急中生智
-        3. 追击方破解急中生智后逃跑失败
+        2. 逃跑方必须消耗自身出手企图拖延时间逃跑
+        3. 追击方阻截成功后逃跑失败
         """
         return Interrupt(
             interrupt_type=InterruptType.ESCAPE_AND_PURSUIT,
@@ -1826,13 +1826,13 @@ class CombatEngine:
             },
             description=(
                 f"{escaper.name}试图逃跑！\n"
-                f"规则：{escaper.name}必须消耗出手发动【急中生智】企图拖延时间逃跑。\n"
-                f"追击方在正常回合内破解急中生智，全部破解后逃跑失败继续战斗，否则逃脱成功。\n"
-                f"请DM裁定{escaper.name}的急中生智方案是否合理。"
+                f"规则：{escaper.name}必须消耗自身出手企图拖延时间逃跑。\n"
+                f"追击方在正常回合内一边抵御其余敌对角色攻击，一边阻截逃跑方；阻截成功后逃跑失败继续战斗，否则逃脱成功。\n"
+                f"请DM裁定{escaper.name}的拖延阻截是否成功。"
             ),
             options=[
-                {"id": "escape_success", "label": "逃脱成功", "description": "急中生智合理，逃脱成功"},
-                {"id": "escape_fail", "label": "逃脱失败", "description": "急中生智被破解，继续战斗"},
+                {"id": "escape_success", "label": "逃脱成功", "description": "拖延有效，逃脱成功"},
+                {"id": "escape_fail", "label": "逃脱失败", "description": "被阻截，继续战斗"},
             ],
             state_snapshot=self.state.to_dict()
         )
@@ -2283,51 +2283,46 @@ class CombatEngine:
             return max(1, battle_number - 3)
         return max(1, battle_number)
 
-    # ========== 急中生智 ==========
-    
-    def initiate_wit(self, declarer: Entity, target: Entity) -> Interrupt:
+    # ========== 许愿（2026-08-19 新增，替代急中生智） ==========
+
+    def initiate_wish(self, wisher: Entity, wish_text: str, target: Optional[Entity] = None) -> Interrupt:
+        """特殊事件【许愿】：轮回者向"某人"祈求时触发。
+
+        规则（2026-08-19）：
+        1. 轮回者许下一个愿望；愿望本身没有固定的可行范围，也不存在"无法实现"的愿望；
+        2. "某人"会以能够实现愿望、但最符合其扭曲本质的方式实现愿望；
+        3. 愿望的代价与扭曲方式由愿望本身决定，不预先公开；
+        4. 引擎只负责抛出中断并提交现场状态，实现方式与代价完全由 DM 裁定。
         """
-        急中生智声明
-        规则：
-        1. 无法以任何形式造成伤害，同种解法第二次失效
-        2. 公式：知识+环境元素+道纹=干扰目标
-        3. 严禁进行纯数值买卖
-        4. 只允许利用现实存在的概念
-        5. 严禁以任何形式中断、解除、削弱或篡改已生效的道纹、法术与遗物
-        6. 必须写明期望达成的明确效果
-        """
+        ctx = {
+            "wisher": wisher.name,
+            "wish_text": wish_text,
+            "target": target.name if target is not None else None,
+            "wisher_hp": wisher.current_hp,
+            "wisher_daowen": list(wisher.dao_wen.keys()),
+            "current_round": self.state.current_round,
+        }
         return Interrupt(
-            interrupt_type=InterruptType.WIT_OF_DESPERATION,
-            context={
-                "declarer": declarer.name,
-                "target": target.name,
-                "declarer_hp": declarer.current_hp,
-                "target_hp": target.current_hp,
-                "declarer_daowen": list(declarer.dao_wen.keys()),
-                "target_daowen": list(target.dao_wen.keys()),
-                "current_round": self.state.current_round,
-            },
+            interrupt_type=InterruptType.WISH,
+            context=ctx,
             description=(
-                f"{declarer.name}声明【急中生智】！\n\n"
+                f"{wisher.name}向「某人」许下一个愿望：「{wish_text}」\n\n"
                 f"规则：\n"
-                f"1. 无法以任何形式造成伤害\n"
-                f"2. 同种解法第二次失效\n"
-                f"3. 公式：知识+环境元素+道纹=干扰目标\n"
-                f"4. 严禁纯数值买卖\n"
-                f"5. 只允许利用现实存在的概念\n"
-                f"6. 必须写明期望达成的明确效果\n\n"
-                f"请DM裁定方案是否合理。"
+                f"1. 愿望没有固定的可行范围，不存在「无法实现」的愿望；\n"
+                f"2. 「某人」会以能够实现愿望、但最符合其扭曲本质的方式实现；\n"
+                f"3. 愿望的代价与扭曲方式由愿望本身决定，不预先公开。\n\n"
+                f"请DM裁定「某人」以何种扭曲方式实现该愿望、以及轮回者付出的代价。"
             ),
             options=[
-                {"id": "wit_success", "label": "急中生智成功", "description": "方案合理，获得DM裁定的效果"},
-                {"id": "wit_fail", "label": "急中生智失败", "description": "方案不合理，消耗出手但无效果"},
+                {"id": "wish_resolved", "label": "实现愿望（扭曲方式）",
+                 "description": "「某人」以最符合其扭曲本质的方式实现愿望，代价由愿望本身决定"},
             ],
             state_snapshot=self.state.to_dict()
         )
-    
+
     def initiate_negotiation(self, proposal: str) -> Interrupt:
         """
-        员工叛变·急中生智谈判声明：给出合理的谈判方案破解叛乱，需要DM裁定方案是否成立。
+        员工叛变·谈判声明：给出合理的谈判方案破解叛乱，需要DM裁定方案是否成立。
         """
         return Interrupt(
             interrupt_type=InterruptType.STAFF_MUTINY,
@@ -3236,7 +3231,7 @@ class CombatEngine:
         if emp_atk >= threshold:
             return {"rebellion": True, "rebels": [e.name for e in emps],
                     "employee_attack_total": emp_atk, "threshold": threshold,
-                    "options": ["镇压（与所有叛变员工开战）", "让利（本场每名员工工资+5碎片）", "急中生智（谈判）"]}
+                    "options": ["镇压（与所有叛变员工开战）", "让利（本场每名员工工资+5碎片）", "谈判（给出合理方案）"]}
         return {"rebellion": False, "employee_attack_total": emp_atk, "threshold": threshold}
 
     def trigger_death_legacy(self, legacy: dict[str, str]) -> dict:

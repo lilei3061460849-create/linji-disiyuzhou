@@ -5,7 +5,7 @@ DM裁定记录：
 - 出手次数公式按entity_type分流：轮回者=速限/3(向上取整)；[朋友]/[员工](微光者)=攻击次数/3(向上取整)；
   怪物走独立的run_monster_phase固定规则，不受此约束。
 - 消耗1出手的动作：attack、use_daowen(含指挥朋友/员工)、deploy_employee(消耗玩家的出手)、
-  declare_wit、declare_escape。
+  declare_wish、declare_escape。
 - 不消耗出手：consume_item(原文明确)、use_resonance(可任意时刻插队)。
 - 预算按回合重置(round_start时归零本回合已用出手数)。
 
@@ -160,12 +160,12 @@ def test_failed_target_lookup_does_not_consume_budget():
 # 错误输入 / 非法配置
 # ========================================================================
 
-def test_declare_wit_and_escape_consume_budget_and_reject_when_exhausted():
-    """错误输入：出手耗尽后声明急中生智/逃跑必须被拒绝"""
+def test_declare_wish_and_escape_consume_budget_and_reject_when_exhausted():
+    """错误输入：出手耗尽后声明许愿/逃跑必须被拒绝"""
     engine = _new_engine("wit_escape_budget", speed_points=3)  # action_count=1
     player = engine.state.player
     resolve_player_attack(engine, player.name, [])  # 用掉唯一1次出手
-    r_wit = engine.execute_action("declare_wit", {"target_ref": "enemy:0"})
+    r_wit = engine.execute_action("declare_wish", {"wish_text": "愿望测试", "target_ref": "enemy:0"})
     assert r_wit["success"] is False
     assert "出手已用完" in r_wit["error"]
 
