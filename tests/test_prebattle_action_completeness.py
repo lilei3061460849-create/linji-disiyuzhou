@@ -41,22 +41,24 @@ def test_available_prebattle_schemas_use_real_executable_parameter_names(tmp_pat
 
 def test_learning_three_spells_and_two_daowen_applies_all_names(tmp_path):
     engine = _engine(tmp_path)
-    spell_names = list(engine.SPELL_REGISTRY)[:3]
+    # 法术必须完全由已有道纹组成（2026-08-21 修复：缺少前置道纹会拒绝学习）。
+    # 开局仅持【杀伐】，先学习 再生/庇护 两个前置道纹，再一次性学习三个法术：
+    # 先发制人(杀伐) + 生生不息(再生) + 后发制人(庇护)。
+    daowen = engine.execute_action("pre_battle_action", {
+        "sub_action": "学习", "sub": "daowen", "tier": 2,
+        "names": ["再生", "庇护"],
+    })
+    assert daowen["success"]
+    assert {"杀伐", "再生", "庇护"} <= set(engine.state.player.dao_wen)
+    assert engine.state.shards == 90
 
+    engine.state.energy = 3
+    spell_names = ["先发制人", "生生不息", "后发制人"]
     spells = engine.execute_action("pre_battle_action", {
         "sub_action": "学习", "sub": "spell", "tier": 3, "names": spell_names,
     })
     assert spells["success"]
     assert {spell.name for spell in engine.state.player.spells} == set(spell_names)
-    assert engine.state.shards == 75
-
-    engine.state.energy = 3
-    daowen = engine.execute_action("pre_battle_action", {
-        "sub_action": "学习", "sub": "daowen", "tier": 2,
-        "names": ["束缚", "庇护"],
-    })
-    assert daowen["success"]
-    assert {"杀伐", "束缚", "庇护"} <= set(engine.state.player.dao_wen)
     assert engine.state.shards == 65
 
 

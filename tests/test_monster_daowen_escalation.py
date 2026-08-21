@@ -79,7 +79,13 @@ def test_escalation_tier2_plus4():
 
 
 def test_original_daowen_escalates_and_pays_scaled_mutation():
-    """原始道纹（强化）递增后，下次发动按新X支付异变5X"""
+    """原始道纹（强化）递增后，下次发动按新X支付异变5X。
+
+    异变支付口径（README 怪物准则9，2026-08-21 统一）：原始怪物道纹
+    每次【实际发动】都支付异变5X，且按该次发动时递增后的 X 计算——
+    首次按原X、重复发动按递增后X；"持续期间不再重复支付"仅指效果
+    持续而未被再次发动的回合。
+    """
     e, m = _engine("罪孽都市")
     _cast(e, "强化")
     assert m.dao_wen["强化"].x_value == 4

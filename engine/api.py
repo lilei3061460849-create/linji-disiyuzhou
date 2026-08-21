@@ -1539,6 +1539,20 @@ class GameEngine:
                 self.state.energy += 1
                 return {"success": False,
                         "error": f"未知法术{invalid}；已掌握不可重复学习{duplicate}"}
+            # 前置道纹校验：法术必须完全由已有道纹组成（README「法术设计原则」）。
+            # 缺少前置道纹时拒绝学习、不扣碎片/精力，并明确列出缺失道纹
+            # （2026-08-21 实战：无庇护学借力打力、无再升学千刀万剐→整局死条目）。
+            missing = [
+                (name, sorted(set(self.SPELL_REGISTRY[name]) - set(player.dao_wen)))
+                for name in names
+                if not set(self.SPELL_REGISTRY[name]) <= set(player.dao_wen)
+            ]
+            if missing:
+                self.state.energy += 1
+                detail = "；".join(
+                    f"【{name}】缺少前置道纹{missing_dw}" for name, missing_dw in missing)
+                return {"success": False,
+                        "error": f"法术必须完全由已有道纹组成：{detail}"}
             learned = []
             for name in names:
                 required = self.SPELL_REGISTRY[name]

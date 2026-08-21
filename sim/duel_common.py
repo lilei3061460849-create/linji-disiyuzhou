@@ -20,6 +20,13 @@ from sim.build_learner import _decline_spells, round_start_relic_choices
 
 
 
+from sim.monster_targets import (  # noqa: E402
+    MONSTER_HOSTILE_DAOWEN,
+    MONSTER_SELF_DAOWEN,
+    pick_monster_daowen_target,
+)
+
+
 def _pick_monster_daowen(engine, actor):
     """怪物按当前情形择优选道纹（README：怪物为胜利和生存作最优决策）。
     输出优先，血低自保，玩家血低收割，机制型按需。"""
@@ -79,7 +86,7 @@ def _resolve_monster_turn_one(e, skip_refs: set):
                                                   for sp in spells}
                                          for holder, spells in option.get("trigger_spell_options", {}).items()}}
         if option["requires_target"]:
-            dao["target_ref"] = option["target_options"][0]["ref"]
+            dao["target_ref"] = pick_monster_daowen_target(e, actor["actor_ref"], option)
         if option["dodge_submission"] == "per_target":
             dao["dodge_targets"] = [
                 {"target_ref": t["ref"], "dodge": False, "blood_shadow": False}

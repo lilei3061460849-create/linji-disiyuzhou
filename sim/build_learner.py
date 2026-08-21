@@ -54,6 +54,7 @@ _ALL_EXCLUSIVE = {d for v in REGION_EXCLUSIVE_DAOWEN.values() for d in v}
 
 
 
+from sim.monster_targets import pick_monster_daowen_target  # noqa: E402
 def _pick_monster_daowen(engine, actor):
     """怪物按当前情形择优选道纹（README：怪物为胜利和生存作最优决策）。
 
@@ -174,7 +175,7 @@ def _resolve_monster_turn(engine):
                    "trigger_spell_choices": {holder: {sp["spell_name"]: {"use": False} for sp in spells}
                                                for holder, spells in option.get("trigger_spell_options", {}).items()}}
             if option["requires_target"]:
-                dao["target_ref"] = option["target_options"][0]["ref"]
+                dao["target_ref"] = pick_monster_daowen_target(engine, actor["actor_ref"], option)
             if option["dodge_submission"] == "per_target":
                 dao["dodge_targets"] = [
                     {"target_ref": target["ref"], "dodge": False, "blood_shadow": False}
@@ -225,7 +226,7 @@ def _resolve_monster_turn(engine):
                    "trigger_spell_choices": {holder: {sp["spell_name"]: {"use": False} for sp in spells}
                                                for holder, spells in option.get("trigger_spell_options", {}).items()}}
             if option["requires_target"]:
-                dao["target_ref"] = option["target_options"][0]["ref"]
+                dao["target_ref"] = pick_monster_daowen_target(engine, actor["actor_ref"], option)
             if option["dodge_submission"] == "per_target":
                 dao["dodge_targets"] = [
                     {"target_ref": target["ref"], "dodge": False, "blood_shadow": False}

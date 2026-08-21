@@ -26,6 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
 from engine.ai_tactics import TacticalAI, choose_dodge, choose_attack_target
+from sim.monster_targets import pick_monster_daowen_target  # noqa: E402
 from sim.build_learner import _decline_spells, _resolve_pending_event, round_start_relic_choices
 
 REGIONS = ["罪孽都市", "扭曲都市", "龙心谷"]
@@ -157,7 +158,7 @@ def _resolve_monster_turn_with_spells(engine):
                                                       for sp in spells}
                                              for holder, spells in option.get("trigger_spell_options", {}).items()}}
             if option["requires_target"]:
-                dao["target_ref"] = option["target_options"][0]["ref"]
+                dao["target_ref"] = pick_monster_daowen_target(engine, actor["actor_ref"], option)
             if option["dodge_submission"] == "per_target":
                 dao["dodge_targets"] = [
                     {"target_ref": t["ref"], "dodge": False, "blood_shadow": False}
@@ -211,7 +212,7 @@ def _resolve_monster_turn_with_spells(engine):
                                                       for sp in spells}
                                              for holder, spells in option.get("trigger_spell_options", {}).items()}}
             if option["requires_target"]:
-                dao["target_ref"] = option["target_options"][0]["ref"]
+                dao["target_ref"] = pick_monster_daowen_target(engine, actor["actor_ref"], option)
             if option["dodge_submission"] == "per_target":
                 dao["dodge_targets"] = [
                     {"target_ref": t["ref"], "dodge": False, "blood_shadow": False}
