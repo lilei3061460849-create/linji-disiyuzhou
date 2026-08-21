@@ -199,7 +199,7 @@ def test_r11_r17_aoe_and_control_dodge_are_explicit(tmp_path):
     friend = Entity("友军", "朋友", blood_limit=40, current_hp=40,
                     speed_limit=2, current_speed=2, attack_count=1, attack_power=1)
     engine.state.friends.append(friend)
-    _dw(monster, "冲击", 1)
+    _dw(monster, "波及", 2)
     engine.state.current_round = 2
     prepared = engine.execute_action("prepare_monster_phase", {})
     actor = prepared["result"]["actors"][0]
@@ -210,16 +210,17 @@ def test_r11_r17_aoe_and_control_dodge_are_explicit(tmp_path):
         {"target_ref": "player:0", "dodge": False, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}},
     ]}]
     incomplete = [{"actor_ref": "enemy:0",
-                   "daowen": {"name": "冲击", "dodge": False, "blood_shadow": False},
+                   "daowen": {"name": "波及", "dodge": False, "blood_shadow": False},
                    "attack_actions": attacks}]
     hp_before = player.current_hp
     bad = engine.execute_action("resolve_monster_phase", {
         "token": prepared["result"]["token"], "choices": incomplete,
     })
     assert not bad["success"] and player.current_hp == hp_before
+    assert not player.has_status("波及")
 
     duplicated = [{"actor_ref": "enemy:0",
-                   "daowen": {"name": "冲击", "dodge": False, "dodge_targets": [
+                   "daowen": {"name": "波及", "dodge": False, "dodge_targets": [
                        {"target_ref": "player:0", "dodge": False, "blood_shadow": False},
                        {"target_ref": "player:0", "dodge": True, "blood_shadow": False},
                    ]},
@@ -230,7 +231,7 @@ def test_r11_r17_aoe_and_control_dodge_are_explicit(tmp_path):
     assert not duplicate_result["success"] and player.current_hp == hp_before
 
     complete = [{"actor_ref": "enemy:0",
-                 "daowen": {"name": "冲击", "dodge": False, "dodge_targets": [
+                 "daowen": {"name": "波及", "dodge": False, "dodge_targets": [
                      {"target_ref": "player:0", "dodge": False, "blood_shadow": False},
                      {"target_ref": "friend:0", "dodge": True, "blood_shadow": False},
                  ]},
@@ -239,21 +240,24 @@ def test_r11_r17_aoe_and_control_dodge_are_explicit(tmp_path):
         "token": prepared["result"]["token"], "choices": complete,
     })
     assert ok["success"]
+    # 未闪避者被标记；闪避者速度-1且不被标记
+    assert player.has_status("波及")
     assert friend.current_hp == 40 and friend.current_speed == 1
+    assert not friend.has_status("波及")
 
 
 def test_r11_r17_impact_dodge_targets_are_bound_to_prepare_snapshot(tmp_path):
     engine = _engine(tmp_path)
     player, monster = _controlled_combat(engine)
     monster.attack_count = 0
-    _dw(monster, "冲击", 1)
+    _dw(monster, "波及", 1)
     engine.state.current_round = 2
     prepared = engine.execute_action("prepare_monster_phase", {})
     token = prepared["result"]["token"]
     option = prepared["result"]["actors"][0]["daowen_options"][0]
     assert [target["ref"] for target in option["dodge_target_options"]] == ["player:0"]
 
-    # prepare后新增的实体不是本次快照目标：既不能额外提交，也不能被本次冲击命中。
+    # prepare后新增的实体不是本次快照目标：不能额外提交为波及目标。
     late_friend = Entity("迟到友军", "朋友", blood_limit=40, current_hp=40,
                          speed_limit=2, current_speed=2, attack_count=1, attack_power=1)
     engine.state.friends.append(late_friend)
@@ -261,8 +265,7 @@ def test_r11_r17_impact_dodge_targets_are_bound_to_prepare_snapshot(tmp_path):
         "token": token,
         "choices": [{
             "actor_ref": "enemy:0",
-            "daowen": {"name": "冲击", "dodge": False, "dodge_targets": [
-                {"target_ref": "player:0", "dodge": False, "blood_shadow": False},
+            "daowen": {"name": "波及", "dodge": False, "dodge_targets": [
                 {"target_ref": "friend:0", "dodge": False, "blood_shadow": False},
             ]},
             "attack_actions": [{"hits": []}],
@@ -270,21 +273,22 @@ def test_r11_r17_impact_dodge_targets_are_bound_to_prepare_snapshot(tmp_path):
     })
     assert not illegal["success"]
     assert (player.current_hp, late_friend.current_hp) == (100, 40)
+    assert not late_friend.has_status("波及")
     assert engine.state.pending_monster_phase["token"] == token
 
     resolved = engine.execute_action("resolve_monster_phase", {
         "token": token,
         "choices": [{
             "actor_ref": "enemy:0",
-            "daowen": {"name": "冲击", "dodge": False, "dodge_targets": [
+            "daowen": {"name": "波及", "dodge": False, "dodge_targets": [
                 {"target_ref": "player:0", "dodge": False, "blood_shadow": False},
             ]},
             "attack_actions": [{"hits": []}],
         }],
     })
     assert resolved["success"]
-    assert player.current_hp == 95
-    assert late_friend.current_hp == 40
+    assert player.has_status("波及")
+    assert not late_friend.has_status("波及")
 
 
 def test_r11_r17_aoe_dodge_does_not_leak_into_next_resolution(tmp_path):
@@ -295,26 +299,35 @@ def test_r11_r17_aoe_dodge_does_not_leak_into_next_resolution(tmp_path):
     first.speed_limit = first.current_speed = 2
     engine.state.enemies.append(second)
     player.attack_count = 2
-    _dw(player, "冲击", 1)
+    _dw(player, "波及", 1)
+    _dw(player, "杀伐", 1)
 
+    # 第一次：甲怪闪避不被标记，乙怪被标记
     one = engine.execute_action("use_daowen", {
-        "daowen_name": "冲击", "x": 1, "dodge_targets": [
+        "daowen_name": "波及", "x": 1, "dodge_targets": [
             {"target_ref": "enemy:0", "dodge": True, "blood_shadow": False},
-            {"target_ref": "enemy:1", "dodge": False, "blood_shadow": False},
         ],
     })
     assert one["success"]
-    assert (first.current_hp, second.current_hp) == (100, 95)
+    assert not first.has_status("波及") and first.current_speed == 1
 
     two = engine.execute_action("use_daowen", {
-        "daowen_name": "冲击", "x": 1, "dodge_targets": [
+        "daowen_name": "波及", "x": 1, "dodge_targets": [
             {"target_ref": "enemy:0", "dodge": False, "blood_shadow": False},
-            {"target_ref": "enemy:1", "dodge": False, "blood_shadow": False},
         ],
     })
     assert two["success"]
-    assert (first.current_hp, second.current_hp) == (95, 90)
+    assert first.has_status("波及")
+
+    # 三次结算互相独立：本回合各行动不残留旧闪避状态
     assert "_skip_aoe_names" not in vars(engine.combat)
+    # 杀伐打乙怪：甲怪有波及标记 → 数值平分（杀伐1X=2伤 → 1+1）
+    three = engine.execute_action("use_daowen", {
+        "daowen_name": "杀伐", "x": 1, "target_ref": "enemy:1",
+        "dodge": False, "blood_shadow": False,
+    })
+    assert three["success"], three
+    assert (first.current_hp, second.current_hp) == (99, 99)
 
 
 def test_r11_r17_targets_must_come_from_prepare_and_fail_atomically(tmp_path):

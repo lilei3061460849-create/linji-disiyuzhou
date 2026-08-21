@@ -231,7 +231,7 @@ class AfterDamageEffectsHook:
     priority = 90
     # 由 CombatEngine 通过 apply_after_damage_pipeline() 显式分发。
     # 通用的 apply_after_damage() 会跳过本 Hook —— 否则两条分发路径会让
-    # 伤痕/切割/寄生/负岳索/龙族血脉斩杀各触发两次。
+    # 伤痕/寄生/负岳索/龙族血脉斩杀各触发两次。
     explicit_dispatch = True
 
     def on_after_damage(self, target: Any, actual_damage: int, shield_absorbed: int, detail: Dict[str, Any], attacker: Optional[Any], combat: Any) -> Dict[str, Any]:
@@ -242,7 +242,7 @@ class AfterDamageEffectsHook:
         damage_ctx = normalize_context(detail.get("ctx"))
         damage_event_id = damage_ctx.event_id if damage_ctx else None
         # 致死时挂在死亡上下文下的父事件。默认是本次伤害；
-        # 若死因其实是血限被压（伤痕/切割），则改挂那次血限变化，形成
+        # 若死因其实是血限被压（伤痕），则改挂那次血限变化，形成
         # 伤害 → 血限下降 → 命零 的三层链。
         lethal_ctx = damage_ctx
         # 逆鳞层数
@@ -263,30 +263,13 @@ class AfterDamageEffectsHook:
                 lethal=False)
             detail["shanghen_ctx"] = shanghen["ctx"]
             if target.current_hp <= 0:
-                # 保持原次序：此处先置 is_alive（切割的 is_alive 前置条件依赖它），
+                # 保持原次序：此处先置 is_alive，
                 # 真正的死亡通知统一留到本方法末尾的 _check_hp_zero_death。
                 target.is_alive = False
                 detail["died"] = True
                 detail["hp_after"] = 0
                 lethal_ctx = normalize_context(shanghen["ctx"]) or lethal_ctx
             detail["shanghen_blood_loss"] = xv
-
-        # 切割：你使其他角色失去生命的同时扣除其等量血限
-        if (attacker is not None and attacker is not target
-                and hasattr(attacker, "has_status") and attacker.has_status("切割")
-                and getattr(target, "is_alive", False)):
-            qiege = combat._apply_blood_limit_change(
-                target, -actual_damage, "切割", "debuff", ctx=damage_ctx,
-                source_type="daowen", subtype="cut", actor=attacker, owner=attacker,
-                tags={"daowen", "blood_limit_loss"},
-                lethal=False)
-            if target.current_hp <= 0:
-                target.is_alive = False
-                detail["died"] = True
-                detail["hp_after"] = 0
-                lethal_ctx = normalize_context(qiege["ctx"]) or lethal_ctx
-            detail["qiege_blood_loss"] = actual_damage
-            detail["qiege_ctx"] = qiege["ctx"]
 
         # 寄生吸血
         if hasattr(target, "has_status") and target.has_status("寄生"):

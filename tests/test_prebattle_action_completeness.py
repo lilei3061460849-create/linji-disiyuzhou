@@ -53,10 +53,10 @@ def test_learning_three_spells_and_two_daowen_applies_all_names(tmp_path):
     engine.state.energy = 3
     daowen = engine.execute_action("pre_battle_action", {
         "sub_action": "学习", "sub": "daowen", "tier": 2,
-        "names": ["切割", "庇护"],
+        "names": ["束缚", "庇护"],
     })
     assert daowen["success"]
-    assert {"杀伐", "切割", "庇护"} <= set(engine.state.player.dao_wen)
+    assert {"杀伐", "束缚", "庇护"} <= set(engine.state.player.dao_wen)
     assert engine.state.shards == 65
 
 

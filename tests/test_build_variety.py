@@ -41,16 +41,18 @@ def _engine(starter="杀伐", learn=(), region="龙心谷", seed=1, tmp="/tmp/bv
 
 # ---------- 正常路径 ----------
 
-def test_qiege_remains_learnable_after_auto_kill_start():
-    """正常路径：切割不再作为起手，但仍可经局外学习获得并真实发动。"""
-    e = _engine(starter="切割")
-    assert set(e.state.player.dao_wen) >= {"杀伐", "切割"}
+def test_boba_marks_targets_after_start():
+    """正常路径：波及开局后可真实发动并标记目标。"""
+    e = _engine(starter="波及")
+    assert set(e.state.player.dao_wen) >= {"杀伐", "波及"}
+    enemy = e.state.enemies[0]
     result = e.execute_action("use_daowen", {
-        "daowen_name": "切割", "x": 1,
-        "dodge": False, "blood_shadow": False, "trigger_spell_choices": {},
+        "daowen_name": "波及", "x": 1,
+        "dodge_targets": [{"target_ref": "enemy:0", "dodge": False, "blood_shadow": False}],
+        "trigger_spell_choices": {},
     })
-    assert result["success"]
-    assert e.state.player.has_status("切割")
+    assert result["success"], result
+    assert enemy.has_status("波及")
 
 
 # 专属道纹 → 其所属副本（学习受门禁限制，须在对应副本内）
@@ -157,7 +159,7 @@ def test_all_tactical_roles_reference_registered_daowen():
 
 def test_tactical_table_entries_wellformed():
     """非法配置：每条战术表项必须有合法 role 与非负 cost"""
-    valid = {"nuke", "aoe", "shield", "heal", "control", "debuff", "buff", "ramp", "remove"}
+    valid = {"nuke", "aoe", "mark", "shield", "heal", "control", "debuff", "buff", "ramp", "remove"}
     for name, info in TACTICAL_ROLES.items():
         assert info.get("role") in valid, f"{name} 的 role 非法：{info.get('role')}"
         assert info.get("cost", 0) >= 0, f"{name} 的 cost 为负"

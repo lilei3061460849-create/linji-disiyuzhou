@@ -71,9 +71,9 @@ def _pick_monster_daowen(engine, actor):
     cands = [o for o in opts if o["name"] not in activated]
     if not cands:
         return opts[0]
-    OUTPUT = {"狂暴", "强化", "杀伐", "血债", "切割", "冲击", "加害", "活血", "裂变", "洗劫", "赎金", "逼债", "清算", "赌命"}
+    OUTPUT = {"狂暴", "强化", "杀伐", "血债", "波及", "加害", "活血", "裂变", "洗劫", "赎金", "逼债", "清算", "赌命"}
     SELF = {"自愈", "庇护", "再生", "固执", "疯狂", "龙鳞"}
-    CONTROL = {"减速", "束缚", "衰败", "勾魂", "镇尸", "僵化", "眩晕", "蒙蔽", "弱化", "退化", "冥气", "缄默", "瓦解", "招魂", "无力", "迟滞", "定型", "封印", "缓慢"}
+    CONTROL = {"减速", "束缚", "衰败", "勾魂", "镇尸", "僵化", "眩晕", "蒙蔽", "弱化", "退化", "冥气", "缄默", "瓦解", "招魂", "无力", "迟滞", "定型", "封印"}
     p = engine.state.player
     player_low = p is not None and p.is_alive and p.current_hp <= p.blood_limit * 0.5
     monster_low = monster is not None and monster.current_hp <= monster.blood_limit * 0.5
@@ -152,10 +152,15 @@ def _resolve_monster_turn(engine):
             if option["requires_target"]:
                 dao["target_ref"] = option["target_options"][0]["ref"]
             if option["dodge_submission"] == "per_target":
-                dao["dodge_targets"] = [
+                wave_x = option.get("x", 1) if option["name"] == "波及" else None
+                dodge_targets = [
                     {"target_ref": target["ref"], "dodge": False, "blood_shadow": False}
                     for target in option["dodge_target_options"]
                 ]
+                if wave_x is not None:
+                    # 波及X：只提交X个目标（建立/解除波及标记）
+                    dodge_targets = dodge_targets[:max(0, int(wave_x))]
+                dao["dodge_targets"] = dodge_targets
             if option["resolves_as"] == "变形":
                 enemy_index = int(actor["actor_ref"].split(":", 1)[1])
                 hit_count = engine.state.enemies[enemy_index].attack_power
@@ -217,7 +222,7 @@ def play_and_record(region: str, seed: int, battles: int = 7):
 
         # 只学通用道纹与怪物转化道纹：副本专属道纹须先经残韵从本副本怪物身上
         # 转化获得，不能在局外直接学习（门禁见 api._pre_battle_xuexi）。
-        todo = ["庇护", "再生", "冲击", "血债", "慈悲"]
+        todo = ["庇护", "再生", "波及", "血债", "束缚"]
 
         for battle_no in range(1, battles + 1):
             prep = []
@@ -303,6 +308,11 @@ def play_and_record(region: str, seed: int, battles: int = 7):
                 lines.extend(BR.format_monster_hits(idx, mp["result"].get("details", [])))
                 re_ = engine.execute_action("round_end", {})
                 if not re_.get("success"):
+                    # 怪物阶段致轮回者命零：死之传承中断挡住 round_end 属正常结局，
+                    # 交由外层死亡分支处理，不得误报 invalid。
+                    if mp["result"].get("player_dead") or (
+                            engine.state.player and not engine.state.player.is_alive):
+                        break
                     return {"invalid": True, "reason": f"round_end:{re_.get('error')}"}
                 ai.resolve_pending_redemption()
                 lines.extend(BR.format_round_end(re_.get("result", {}),

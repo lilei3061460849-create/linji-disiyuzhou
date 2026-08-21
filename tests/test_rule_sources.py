@@ -17,9 +17,9 @@ def test_project_rules_are_extracted_from_their_authoritative_documents():
     """正常路径：法术、物品、副本和怪物分别来自裁定后的事实源。"""
     sync = _sync()
     facts = sync.extract_project_rules()
-    assert len(facts["common_daowen"]) == 41
+    assert len(facts["common_daowen"]) == 38  # 2026-08-21：冲击改名波及；删除缓慢/慈悲/切割
     assert len(facts["dungeon_daowen"]) == 64
-    assert len(facts["spells"]) == 9
+    assert len(facts["spells"]) == 8  # 2026-08-21：删除「临界泄压」（所需道纹·切割已删除）
     assert len(facts["dungeons"]) == 8
     assert len(facts["monsters"]) == 48  # 36 + 乱葬岗12(已实现)
     assert sync.diff_project_daowen()["in_file_only"] == []

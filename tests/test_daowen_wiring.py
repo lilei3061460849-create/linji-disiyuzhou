@@ -1,7 +1,7 @@
 """算出了但没人消费的道纹：统一接线回归。
 
 同类洞：calculate 出了键 / duration 挂了状态，apply 或战斗钩子不读。
-缓慢是原型（effective 从未消费）。本文件覆盖同批接线。
+波及是原型（mark_targets 从未消费）。本文件覆盖同批接线。
 """
 import os
 import sys
@@ -47,74 +47,114 @@ def _monster(engine, name="靶怪", hp=100, atk=3, ap=6):
     return m
 
 
-def test_manqian_happy_blocks_when_budget_le_x():
-    """正常：目标出手 <=2，缓慢生效，挂上持续X回合状态，本回合无法出手。"""
-    engine = _engine("manqian_ok")
+def test_boba_marks_and_unmarks_targets():
+    """正常：波及X选择X个目标建立波及标记（持续∞）；再次选择解除标记。"""
+    engine = _engine("boba_ok")
     p = engine.state.player
-    _give(p, "缓慢")
+    _give(p, "波及")
     foe = Entity(name="对手", entity_type="轮回者", blood_limit=80, current_hp=80,
                  mana_limit=20, current_mana=20, speed_limit=6, current_speed=6)
-    foe.dao_wen["杀伐"] = DaoWenInstance(
-        DaoWen(name="杀伐", formula="", cost_type="消耗", cost_formula="X", effect_formula=""))
     engine.state.enemies.append(foe)
+    _monster(engine, "靶怪", hp=100, atk=3, ap=6)
     engine.execute_action("round_start", {})
-    assert foe.action_count == 2
     mana = p.current_mana
-    r = engine.execute_action("use_daowen", {"daowen_name": "缓慢", "x": 2, "target": foe.name})
+    refs = engine.combat._combat_entity_refs()
+    targets = [{"target_ref": "enemy:0", "dodge": False, "blood_shadow": False},
+               {"target_ref": "enemy:1", "dodge": False, "blood_shadow": False}]
+    r = engine.execute_action("use_daowen",
+                              {"daowen_name": "波及", "x": 2, "dodge_targets": targets})
     assert r["success"], r
-    assert r["calculation"]["effective"] is True
-    assert foe.has_status("缓慢")
-    assert p.current_mana == mana  # 缓慢改冷却后不消耗法力
-    assert engine.combat.can_act(foe) is False
-    blocked = engine._consume_action_or_error(foe)
-    assert blocked is not None
-    assert "无法出手" in blocked["error"]
+    assert r["calculation"]["mark_targets"] == 2
+    assert p.current_mana == mana - 6  # 波及消耗3X
+    for ref in ("enemy:0", "enemy:1"):
+        assert refs[ref].has_status("波及")
+    assert r["dodge"]["wave_marked"] == [refs["enemy:0"].name, refs["enemy:1"].name]
+
+    # 再次选择同一目标：解除标记（toggle）
+    r2 = engine.execute_action("use_daowen",
+                               {"daowen_name": "波及", "x": 2, "dodge_targets": targets})
+    assert r2["success"], r2
+    assert not refs["enemy:0"].has_status("波及")
+    assert not refs["enemy:1"].has_status("波及")
+    assert r2["dodge"]["wave_unmarked"] == [refs["enemy:0"].name, refs["enemy:1"].name]
 
 
-def test_manqian_boundary_not_effective_and_monster_budget():
-    """边界：出手 3 (>2) 缓慢不生效；怪物按 2 手 (<=2) 缓慢生效。"""
-    engine = _engine("manqian_bound")
+def test_boba_spreads_damage_equally_with_random_remainder():
+    """平分规则：你发动的道纹同时作用于波及目标；总数值平分，余数随机分配。"""
+    engine = _engine("boba_spread")
     p = engine.state.player
-    _give(p, "缓慢")
-    foe = Entity(name="对手", entity_type="轮回者", blood_limit=80, current_hp=80,
-                 speed_limit=8, current_speed=8)
-    engine.state.enemies.append(foe)
+    _give(p, "波及")
+    _give(p, "杀伐")
+    foe_a = _monster(engine, "靶怪甲", hp=100, atk=3, ap=6)
+    foe_b = _monster(engine, "靶怪乙", hp=100, atk=3, ap=6)
     engine.execute_action("round_start", {})
-    assert foe.action_count == 3
-    r = engine.execute_action("use_daowen", {"daowen_name": "缓慢", "x": 2, "target": foe.name})
-    assert r["success"]
-    assert r["calculation"]["effective"] is False
-    assert not foe.has_status("缓慢")
-    assert engine.combat.can_act(foe)
+    refs = engine.combat._combat_entity_refs()
+    r = engine.execute_action("use_daowen", {
+        "daowen_name": "波及", "x": 1,
+        "dodge_targets": [{"target_ref": "enemy:1", "dodge": False, "blood_shadow": False}],
+    })
+    assert r["success"], r
+    assert refs["enemy:1"].has_status("波及")
 
-    fish = _monster(engine, "缝合鱼", hp=234, atk=3, ap=6)
-    assert DaoWenEngine.single_round_action_count(fish) == 2
-    calc = DaoWenEngine.resolve("缓慢", 1, target=fish)
-    assert calc["target_action_count"] == 2
-    assert calc["effective"] is True
+    # 杀伐2X=4点总伤害作用于[目标]敌0+波及目标敌1：2+2。
+    r2 = engine.execute_action("use_daowen", {
+        "daowen_name": "杀伐", "x": 2, "target_ref": "enemy:0",
+        "dodge": False, "blood_shadow": False,
+    })
+    assert r2["success"], r2
+    spread = r2["execution"].get("wave_spread")
+    assert spread and spread["targets"] == [foe_a.name, foe_b.name]
+    dealt = sum(e.get("actual_damage", 0) for e in r2["execution"]["effects"]
+                if e.get("type") == "damage")
+    assert dealt == 4, "总数值不变：4点伤害平分给两个目标"
+    assert foe_a.current_hp == 98 and foe_b.current_hp == 98
 
 
-def test_manqian_invalid_and_ziyang_zishi_shuaibai():
-    """错误：法力不足 / X<1；滋养回血；自食打自己；衰败扣当前生命%。"""
-    engine = _engine("keys")
+def test_boba_boundary_and_invalid_submissions():
+    """边界/错误：X<1 非法；目标不足X个/重复/数量不符时被拒；波及不作用于自身。"""
+    engine = _engine("boba_keys")
     p = engine.state.player
-    for n in ("缓慢", "滋养", "自食", "衰败"):
-        _give(p, n)
+    _give(p, "波及")
     m = _monster(engine)
     engine.execute_action("round_start", {})
 
-    # 缓慢已改为代价：冷却X，不耗法力；X=0 仍非法
-    r0 = engine.execute_action("use_daowen", {"daowen_name": "缓慢", "x": 0, "target": m.name})
+    # X=0 非法
+    r0 = engine.execute_action("use_daowen", {"daowen_name": "波及", "x": 0, "target": m.name})
     assert r0["success"] is False
-    # 怪物出手2，缓慢X=2才生效
-    r1 = engine.execute_action("use_daowen", {"daowen_name": "缓慢", "x": 2, "target": m.name})
-    assert r1["success"] is True
-    assert m.has_status("缓慢")
-    # 冷却X=2：本场已用，再次发动被拒
-    r2 = engine.execute_action("use_daowen", {"daowen_name": "缓慢", "x": 2, "target": m.name})
+
+    # dodge_targets 数量必须等于 X
+    r1 = engine.execute_action("use_daowen", {
+        "daowen_name": "波及", "x": 2,
+        "dodge_targets": [{"target_ref": "enemy:0", "dodge": False, "blood_shadow": False}],
+    })
+    assert r1["success"] is False
+    assert "dodge_targets" in r1.get("error", "")
+
+    # 不能标记自身
+    p_ref = next(ref for ref, e in engine.combat._combat_entity_refs().items() if e is p)
+    r2 = engine.execute_action("use_daowen", {
+        "daowen_name": "波及", "x": 1,
+        "dodge_targets": [{"target_ref": p_ref, "dodge": False, "blood_shadow": False}],
+    })
     assert r2["success"] is False
-    assert "冷却" in r2["error"] or "不可用" in r2["error"]
-    assert "X必须≥1" in r0["error"]
+
+    # 正常发动一次：标记目标
+    r3 = engine.execute_action("use_daowen", {
+        "daowen_name": "波及", "x": 1,
+        "dodge_targets": [{"target_ref": "enemy:0", "dodge": False, "blood_shadow": False}],
+    })
+    assert r3["success"], r3
+    assert m.has_status("波及")
+
+
+def test_ziyang_zishi_shuaibai():
+    """接线：滋养回血；自食打自己；衰败扣当前生命%。"""
+    engine = _engine("keys2")
+    p = engine.state.player
+    for n in ("滋养", "自食", "衰败"):
+        _give(p, n)
+    m = _monster(engine)
+    engine.execute_action("round_start", {})
 
     m.current_hp = 50
     r2 = engine.execute_action("use_daowen", {"daowen_name": "滋养", "x": 1, "target": m.name})

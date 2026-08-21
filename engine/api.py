@@ -1303,8 +1303,9 @@ class GameEngine:
                            "mana_limit": player.mana_limit, "action_count": player.action_count}}
 
     # 可学法术注册表（名 → 所需道纹）
+    # 2026-08-21：删除「临界泄压」（所需道纹·切割已删除）。
     SPELL_REGISTRY = {
-        "先发制人": ["杀伐"], "临界泄压": ["切割"], "生生不息": ["再生"],
+        "先发制人": ["杀伐"], "生生不息": ["再生"],
         "后发制人": ["庇护"], "以牙还牙": ["杀伐", "再生"], "借力打力": ["杀伐", "庇护"],
         "不死不休": ["血债"], "千刀万剐": ["血债", "再生"], "咎由自取": ["坠落", "杀伐", "血债"],
     }
@@ -1349,7 +1350,7 @@ class GameEngine:
         ("回锋刀", "每失去1点速度后对[目标]造成3伤害；[回始]对[目标]造成3×([速限]-当前速度)伤害"),
         ("折速法印", "[战始]可疲惫X获得6X法力"),
         ("三相残韵盘", "[战始]消耗一种残韵；[战终]获得另两种残韵各1"),
-        ("血契", "数值型【代价】可与一名存活朋友/员工共同承担（通用规则见README《基础定义·数值型代价》）；[回始]可流血4X获得X法力，本次流血也可共同承担"),
+        ("血契", "数值型【代价】可与一名存活的朋友或员工平分，余数按随机数分配（通用规则见README《基础定义·平分规则》）；[回始]可流血4X获得X法力，本次流血也可平分"),
         ("避风铃", "每次闪避后获得3格挡；当前速度归零时获得15格挡"),
         ("守夜灯", "[敌回始]获得[法限]50%法力，[敌回终]清空，每回合一次"),
         ("无所求", "每当在事件中选拒绝类选项，永久获得1属性点"),
@@ -1984,7 +1985,7 @@ class GameEngine:
             return None
         if not self.combat.can_act(entity):
             return {"success": False,
-                    "error": f"{entity.name}无法出手（眩晕/束缚/缓慢）"}
+                    "error": f"{entity.name}无法出手（眩晕/束缚）"}
         breath = self.combat.apply_opposing_longxi(entity)
         if breath and not entity.is_alive:
             return {"success": False, "error": f"{entity.name}被龙息命零",
@@ -2071,16 +2072,18 @@ class GameEngine:
                               dodge: bool, dodge_targets: list,
                               blood_shadow: bool = False,
                               blood_shadow_cost_share_target_ref: str = "",
-                              dodge_relic_target_ref: str = "") -> tuple[dict, Optional[list[Entity]]]:
-        """结算显式闪避，并直接返回本次AOE目标，避免跨行动保存临时跳过状态。"""
+                              dodge_relic_target_ref: str = "",
+                              wave_count: int = 0) -> tuple[dict, Optional[list[Entity]]]:
+        """结算显式闪避，并直接返回本次AOE目标，避免跨行动保存临时跳过状态。
+        波及X：按显式提交逐目标建立/解除波及标记，日志返回 wave_marked/wave_unmarked。"""
         log = {"must_hit": False, "dodged_names": [], "fully_dodged": False}
-        hostile_possible = name == "冲击" or (target is not None and self._hostile_to(actor, target))
+        hostile_possible = (target is not None and self._hostile_to(actor, target))
         if hostile_possible and self.combat.bizhong_remaining(actor) > 0:
             log["must_hit"] = self.combat.consume_bizhong(actor)
-            if log["must_hit"] and name != "冲击":
+            if log["must_hit"]:
                 return log, None
         if blood_shadow:
-            if (name == "冲击" or target is None or not self._hostile_to(actor, target)
+            if (target is None or not self._hostile_to(actor, target)
                     or not self.state.side_has(target, "血影") or target.current_hp <= 10):
                 raise ValueError("当前判定不能使用血影")
             self.combat.pay_numeric_cost(
@@ -2090,29 +2093,30 @@ class GameEngine:
             log["blood_shadow"] = True
             log["fully_dodged"] = True
             return log, None
-        if name == "冲击":
+        if name == "波及":
             refs = self.combat._combat_entity_refs()
-            expected = {ref: entity for ref, entity in refs.items()
-                        if self.state.on_player_side(entity) != self.state.on_player_side(actor)}
-            if not isinstance(dodge_targets, list):
-                raise ValueError("冲击必须显式提交dodge_targets")
+            if not isinstance(dodge_targets, list) or len(dodge_targets) != wave_count:
+                raise ValueError(f"波及必须为{wave_count}个目标显式提交dodge_targets")
             received = {}
             for entry in dodge_targets:
-                if (not isinstance(entry, dict) or entry.get("target_ref") not in expected
+                if (not isinstance(entry, dict) or not isinstance(entry.get("target_ref"), str)
                         or not isinstance(entry.get("dodge"), bool)
                         or not isinstance(entry.get("blood_shadow"), bool)
                         or entry["dodge"] and entry["blood_shadow"]):
-                    raise ValueError("冲击每个目标必须提交合法target_ref/dodge/blood_shadow")
+                    raise ValueError("波及每个目标必须提交合法target_ref/dodge/blood_shadow")
                 if entry["target_ref"] in received:
-                    raise ValueError("冲击dodge_targets不能重复")
+                    raise ValueError("波及dodge_targets不能重复")
                 received[entry["target_ref"]] = entry
-            if set(received) != set(expected):
-                raise ValueError("冲击dodge_targets必须覆盖全部敌对目标")
-            aoe_targets = []
-            for ref, ent in expected.items():
-                entry = received[ref]
+            wave_marked: list[str] = []
+            wave_unmarked: list[str] = []
+            for entry in dodge_targets:
+                ent = refs.get(entry["target_ref"])
+                if ent is None or not ent.is_alive or ent is actor:
+                    raise ValueError("波及目标必须为当前存活的非自身角色")
                 if log["must_hit"]:
-                    aoe_targets.append(ent); continue
+                    marked = self.combat._toggle_wave_mark(ent, actor)
+                    (wave_marked if marked else wave_unmarked).append(ent.name)
+                    continue
                 if entry["blood_shadow"]:
                     if not self.state.side_has(ent, "血影") or ent.current_hp <= 10:
                         raise ValueError(f"{ent.name}不能使用血影")
@@ -2127,9 +2131,12 @@ class GameEngine:
                     extra = self.combat._spend_dodge_speed(ent, entry.get("dodge_relic_target_ref"))
                     log["dodged_names"].append({"name": ent.name, "speed_after": ent.current_speed, **extra})
                 else:
-                    aoe_targets.append(ent)
-            log["fully_dodged"] = bool(expected) and not aoe_targets
-            return log, aoe_targets
+                    marked = self.combat._toggle_wave_mark(ent, actor)
+                    (wave_marked if marked else wave_unmarked).append(ent.name)
+            log["wave_marked"] = wave_marked
+            log["wave_unmarked"] = wave_unmarked
+            log["fully_dodged"] = False
+            return log, None
         if not dodge or target is None or not self._hostile_to(actor, target):
             return log, None
         if target.current_speed < 1:
@@ -2222,6 +2229,11 @@ class GameEngine:
         import inspect
         DaoWenEngine.register_all()
         requires_target = "target" in inspect.signature(DaoWenEngine._registry[name]).parameters
+        if name == "波及" and not (target_ref or target_name):
+            # 波及X：目标由dodge_targets显式提交X个；主引用取首个已提交目标。
+            submitted = list(params.get("dodge_targets") or [])
+            if submitted and isinstance(submitted[0], dict) and submitted[0].get("target_ref"):
+                target_ref = submitted[0]["target_ref"]
         if requires_target and not (target_ref or target_name):
             return {"success": False, "error": f"【{name}】需要显式指定目标target_ref；缺少[目标]时失效"}
 
@@ -2261,8 +2273,6 @@ class GameEngine:
         # 调用道纹引擎计算
         try:
             resolve_kw = {"target": target, "caster": actor}
-            if name == "缓慢":
-                resolve_kw["target_action_count"] = self.combat.single_round_action_count(target)
             calc = DaoWenEngine.resolve(name, x, **resolve_kw)
         except Exception as e:
             return {"success": False, "error": f"道纹计算失败: {str(e)}"}
@@ -2348,6 +2358,7 @@ class GameEngine:
             blood_shadow_cost_share_target_ref=params.get(
                 "blood_shadow_cost_share_target_ref", ""),
             dodge_relic_target_ref=params.get("dodge_relic_target_ref", ""),
+            wave_count=int(calc.get("mark_targets", 0)),
         )
         if dodge_log.get("fully_dodged"):
             self._advance_duel_turn()
@@ -3848,25 +3859,69 @@ class GameEngine:
         """先手顺序：速限→法限→血限→当前生命，数值越大越先手"""
         return (e.speed_limit, e.mana_limit, e.blood_limit, e.current_hp)
 
+    def _load_seal_slots(self) -> dict:
+        """读取阶级封存槽文件 {阶级: [候选快照, ...]}（先来后到队列）。
+
+        兼容旧版单候选格式（直接是快照 dict）——视为一阶槽队首，
+        保证升级前后已有的候选人文件不丢失。
+        """
+        slots: dict = {}
+        if os.path.exists(self.sealed_candidate_path):
+            with open(self.sealed_candidate_path, encoding="utf-8") as f:
+                try:
+                    data = json.load(f)
+                except (ValueError, OSError):
+                    return slots
+            if isinstance(data, dict) and isinstance(data.get("candidates"), dict):
+                for tier_str, queue in data["candidates"].items():
+                    try:
+                        tier = int(tier_str)
+                    except (TypeError, ValueError):
+                        continue
+                    slots[tier] = [q for q in (queue or []) if isinstance(q, dict)]
+            elif isinstance(data, dict) and isinstance(data.get("player"), dict):
+                slots[1] = [data]
+        return slots
+
+    def _save_seal_slots(self, slots: dict) -> None:
+        """写回阶级封存槽文件；空阶级槽不落盘；全部槽为空时删除文件。"""
+        payload = {"candidates": {str(t): q for t, q in sorted(slots.items()) if q}}
+        if not payload["candidates"]:
+            if os.path.exists(self.sealed_candidate_path):
+                os.remove(self.sealed_candidate_path)
+            return
+        os.makedirs(os.path.dirname(self.sealed_candidate_path) or ".", exist_ok=True)
+        with open(self.sealed_candidate_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+
     def _trigger_final_crown(self) -> dict:
-        """完成第7场后自动触发【最终的冠冕】"""
-        if not os.path.exists(self.sealed_candidate_path):
-            sealed_name = self.state.player.name if self.state.player else "轮回者"
-            snapshot = self._serialize_full_character()
-            os.makedirs(os.path.dirname(self.sealed_candidate_path) or ".", exist_ok=True)
-            with open(self.sealed_candidate_path, "w", encoding="utf-8") as f:
-                json.dump(snapshot, f, ensure_ascii=False, indent=2)
+        """完成第7场后自动触发【最终的冠冕】。
+
+        死斗规则（2026-08-21）：封存按阶级分槽，每个阶级槽是一份候选队列。
+        挑战者只能与自身副本阶级的队首候选死斗；通过死斗者进入下一阶级封存槽
+        （进阶封存），不得再与原阶级角色死斗。
+        """
+        from .gamedata import REGION_TIERS
+        tier = REGION_TIERS.get(self.state.current_region, 1)
+        sealed_name = self.state.player.name if self.state.player else "轮回者"
+        slots = self._load_seal_slots()
+        queue = [q for q in slots.get(tier, []) if q]
+        if not queue:
+            slots[tier] = [self._serialize_full_character()]
+            self._save_seal_slots(slots)
             self._replace_state_preserving_death_book_progress()
             return {
                 "outcome": "sealed",
                 "sealed_name": sealed_name,
-                "instruction": f"无封存候选，{sealed_name}已连同队伍完整封存；"
+                "tier": tier,
+                "instruction": f"无{tier}阶封存候选，{sealed_name}已连同队伍完整封存入{tier}阶封存槽；"
                                "请调用 setup_attributes 开始新的轮回者",
             }
-        with open(self.sealed_candidate_path, encoding="utf-8") as f:
-            candidate_snapshot = json.load(f)
-        os.remove(self.sealed_candidate_path)  # 候选人已被取用，槽位清空
+        candidate_snapshot = queue.pop(0)
+        slots[tier] = queue
+        self._save_seal_slots(slots)  # 队首候选已被取用；同槽剩余候选继续排队
 
+        self.state.duel_tier = tier
         challenger_player = self.state.player
         opponent_side = self._restore_side_from_snapshot(candidate_snapshot)
         opponent_leader = next((e for e in opponent_side if e.entity_type == "轮回者"), None)
@@ -3935,13 +3990,14 @@ class GameEngine:
 
         return {
             "outcome": "duel_start",
+            "tier": tier,
             "opponent_name": opponent_leader.name if opponent_leader else "未知对手",
             "opponent_side": [e.name for e in opponent_side],
             "first_mover": first_mover,
             "complete_tie_alternating": complete_tie,
             "optional_relics": optional,
             "artifact_logs": artifact_logs,
-            "instruction": "第8场最终死斗开始：双方交替出手，残韵可任意时刻插队，无法逃跑。"
+            "instruction": f"第8场最终死斗（{tier}阶）开始：双方交替出手，残韵可任意时刻插队，无法逃跑。"
                            "可选遗物由持有者自己决定是否发动（activate_duel_relic）；"
                            "请调用 resolve_final_duel(outcome=victory/defeat) 结算胜负",
         }
@@ -3952,16 +4008,25 @@ class GameEngine:
     def _action_resolve_final_duel(self, params: dict) -> dict:
         return handle_resolve_final_duel(self, params)
 
-    def _finalize_victory_seal(self) -> dict:
-        """完整封存当前(胜利的)角色，写入候选人槽位，重置引擎状态等待新轮回者"""
+    def _finalize_victory_seal(self, advance_tier: Optional[int] = None) -> dict:
+        """完整封存当前(胜利的)角色，写入阶级封存槽，重置引擎状态等待新轮回者。
+
+        advance_tier：死斗胜者传入其死斗阶级——胜者进入下一阶级的进阶封存，
+        不得再与原阶级角色死斗。未传入时按当前副本阶级封存。
+        """
+        from .gamedata import REGION_TIERS
         sealed_name = self.state.player.name if self.state.player else "轮回者"
-        snapshot = self._serialize_full_character()
-        os.makedirs(os.path.dirname(self.sealed_candidate_path) or ".", exist_ok=True)
-        with open(self.sealed_candidate_path, "w", encoding="utf-8") as f:
-            json.dump(snapshot, f, ensure_ascii=False, indent=2)
+        if advance_tier:
+            tier = advance_tier + 1
+        else:
+            tier = REGION_TIERS.get(self.state.current_region, 1)
+        slots = self._load_seal_slots()
+        slots.setdefault(tier, []).append(self._serialize_full_character())
+        self._save_seal_slots(slots)
         self._replace_state_preserving_death_book_progress()
-        return {"sealed_name": sealed_name,
-                "instruction": f"{sealed_name}获胜并连同队伍完整封存，成为下一位挑战者的候选人；"
+        return {"sealed_name": sealed_name, "tier": tier,
+                "instruction": f"{sealed_name}获胜并连同队伍完整封存入{tier}阶封存槽"
+                               f"（进阶封存：不再与原阶级角色死斗）；"
                                "请调用 setup_attributes 开始新的轮回者"}
 
     def _action_choose_terminal_artifact(self, params: dict) -> dict:
@@ -3989,7 +4054,7 @@ class GameEngine:
                     "result": {"artifact": name, "effect": effect, "first_embrace_pending": True,
                                "instruction": "已强制触发【初拥之夜】，请调用 choose_first_embrace(choice=1~9) 选择"}}
 
-        seal = self._finalize_victory_seal()
+        seal = self._finalize_victory_seal(advance_tier=self.state.duel_tier or None)
         return {"success": True, "action": "领取终音法器",
                 "result": {"artifact": name, "effect": effect, "seal": seal}}
 
@@ -4034,7 +4099,7 @@ class GameEngine:
 
         if self.state.seal_pending_after_embrace:
             self.state.seal_pending_after_embrace = False
-            result["result"]["seal"] = self._finalize_victory_seal()
+            result["result"]["seal"] = self._finalize_victory_seal(advance_tier=self.state.duel_tier or None)
         return result
 
     # ==================== 初拥之夜：可主动发动的具体能力 ====================

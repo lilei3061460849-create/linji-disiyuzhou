@@ -162,7 +162,7 @@ def test_crimson_fang_triggers_first_embrace_then_seals():
 
     import json
     with open(sealed, encoding="utf-8") as f:
-        snapshot = json.load(f)
+        snapshot = json.load(f)["candidates"]["2"][0]  # 一阶死斗胜者进入二阶进阶封存
     assert snapshot["pending_first_embrace"] is True, "封存快照应保留9号的再次触发权"
     assert "猩红尖牙" in snapshot["artifacts_owned"]
     _cleanup(sealed)

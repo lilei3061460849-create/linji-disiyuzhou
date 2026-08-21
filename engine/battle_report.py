@@ -259,9 +259,8 @@ def _render_effect(eff: dict) -> str:
         return f"{eff.get('target')} 获得【必中】{eff.get('count')}次"
     if t == "mengbi":
         return f"{eff.get('target')} 获得【蒙蔽】{eff.get('count')}次"
-    if t == "manqian":
-        eff_txt = "生效（本回合无法出手）" if eff.get("effective") else "未生效"
-        return f"【缓慢】结算：目标{eff.get('target')}（出手{eff.get('action_count')}次）{eff_txt}"
+    if t == "boba_register":
+        return f"【波及X={eff.get('x')}】结算登记：目标 {eff.get('target')}"
     if t == "zhuiluo":
         targets = "、".join(eff.get("targets", []))
         return f"【坠落】生效：击落飞行目标 {targets}"

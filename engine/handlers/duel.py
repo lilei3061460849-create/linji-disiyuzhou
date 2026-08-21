@@ -63,18 +63,20 @@ def handle_resolve_final_duel(engine: Any, params: Dict[str, Any]) -> Dict[str, 
         engine.state.in_final_duel = False
         region = engine.state.current_region
         options = engine.TERMINAL_ARTIFACTS.get(region, [])
+        next_tier = (engine.state.duel_tier or 0) + 1
         if not options:
-            seal = engine._finalize_victory_seal()
+            seal = engine._finalize_victory_seal(advance_tier=engine.state.duel_tier or None)
             return {"success": True, "action": "死斗结算",
                     "result": {"outcome": "victory", "seal": seal,
-                               "instruction": f"{region}没有已定义的终音法器，已直接完整封存"}}
+                               "instruction": f"{region}没有已定义的终音法器，已直接封存入{next_tier}阶进阶封存槽"}}
         engine.state.pending_terminal_region = region
         return {
             "success": True, "action": "死斗结算",
             "result": {
                 "outcome": "victory", "pending_terminal_choice": region,
                 "options": [{"id": i + 1, "name": n, "effect": e} for i, (n, e) in enumerate(options)],
-                "instruction": "请调用 choose_terminal_artifact(choice=序号) 领取终音法器后才会完整封存",
+                "instruction": "请调用 choose_terminal_artifact(choice=序号) 领取终音法器后才会完整封存"
+                               f"（胜者进入{next_tier}阶进阶封存，不再与原阶级角色死斗）",
             }}
     else:
         player = engine.state.player

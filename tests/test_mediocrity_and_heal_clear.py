@@ -342,36 +342,38 @@ def test_battle_end_heal_revert_never_kills():
 
 # ---------- 切割：失血同时扣除等量血限 ----------
 
-def test_qiege_cuts_blood_limit_with_life_loss():
-    """正常路径：持切割时对其他角色造成失血，血限同步扣除等量。"""
+def test_scar_cuts_blood_limit_with_life_loss():
+    """正常路径：目标带伤痕时失去生命，血限同步扣除X（切割已删除，2026-08-21，伤痕保留同类机制）。"""
     from engine.models import StatusEffect
     e = _engine()
     cm = e.combat
     m = _monster(hp=200)
     cm.state.enemies = [m]
     p = cm.state.player
-    p.add_status(StatusEffect(name="切割", remaining_rounds=3, value=1))
+    m.add_status(StatusEffect(name="伤痕", remaining_rounds=-1, value=6))
 
     cm._apply_hostile_damage(m, 20, source=p)
 
     assert m.current_hp == 180
-    assert m.blood_limit == 180
+    assert m.blood_limit == 194
 
 
-def test_qiege_does_not_cut_own_blood_limit():
-    """边界：自己失去生命不触发切割。"""
+def test_removed_qiege_status_has_no_effect():
+    """边界：切割道纹已删除（2026-08-21），残留切割状态不再触发任何血限扣除。"""
     from engine.models import StatusEffect
     e = _engine()
     cm = e.combat
     p = cm.state.player
     before = p.blood_limit
-    p.add_status(StatusEffect(name="切割", remaining_rounds=3, value=1))
-    p.take_damage(10, "代价")
-    assert p.blood_limit == before
+    m = _monster(hp=200)
+    cm.state.enemies = [m]
+    m.add_status(StatusEffect(name="切割", remaining_rounds=3, value=1))
+    cm._apply_hostile_damage(m, 10, source=p)
+    assert m.blood_limit == 200, "切割已删除：失血不扣除等量血限"
 
 
-def test_qiege_rejects_zero_x():
-    """错误输入：切割X必须为正整数。"""
+def test_removed_qiege_cannot_be_cast():
+    """错误输入：切割已删除，无法持有或发动。"""
     e = _engine()
     from engine.models import DaoWen, DaoWenInstance
     e.state.player.dao_wen["切割"] = DaoWenInstance(
@@ -380,7 +382,7 @@ def test_qiege_rejects_zero_x():
     e.state.phase = "in_combat"
     e.state.combat_subphase = "player_actions"
     r = e.execute_action("use_daowen", {
-        "daowen_name": "切割", "x": 0,
+        "daowen_name": "切割", "x": 1,
         "dodge": False, "blood_shadow": False, "trigger_spell_choices": {},
     })
     assert not r["success"]

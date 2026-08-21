@@ -44,7 +44,7 @@ def _monster(name, hp=80, atk=4, power=6):
 # ========================================================================
 
 def test_seal_removes_x_monsters():
-    """正常路径：封印X=1 移出一只活怪，另一只留下，不产击杀标记。"""
+    """正常路径：封印X=1（代价：异变8X）移出一只活怪，另一只留下，不产击杀标记。"""
     engine = _engine("seal_happy")
     a = _monster("怪甲")
     b = _monster("怪乙")
@@ -53,7 +53,8 @@ def test_seal_removes_x_monsters():
     mana = engine.state.player.current_mana
     r = engine.execute_action("use_daowen", {"daowen_name": "封印", "x": 1, "target": "怪甲"})
     assert r["success"], r
-    assert engine.state.player.current_mana == mana - 10
+    assert engine.state.player.current_mana == mana  # 封印改为代价：异变8X，不消耗法力
+    assert engine.state.player.mutation_count == 8
     seal = next(e for e in r["execution"]["effects"] if e["type"] == "seal")
     assert seal["removed"] == 1
     assert seal["targets"] == ["怪甲"]
@@ -82,7 +83,7 @@ def test_seal_skips_reincarnator_and_weiguang_then_takes_monster():
 
 
 def test_seal_on_duel_reincarnator_only_removes_zero():
-    """错误输入/对照：场上没有怪物时封印仍扣法力，移出 0，轮回者留下。"""
+    """错误输入/对照：场上没有怪物时封印仍支付异变8X，移出 0，轮回者留下。"""
     engine = _engine("seal_invalid")
     foe = Entity(name="敌对轮回者", entity_type="轮回者", blood_limit=70, current_hp=70,
                  attack_count=1, attack_power=1)
@@ -93,7 +94,8 @@ def test_seal_on_duel_reincarnator_only_removes_zero():
     mana = engine.state.player.current_mana
     r = engine.execute_action("use_daowen", {"daowen_name": "封印", "x": 1, "target": foe.name})
     assert r["success"], r
-    assert engine.state.player.current_mana == mana - 10
+    assert engine.state.player.current_mana == mana  # 异变8X代价，不消耗法力
+    assert engine.state.player.mutation_count == 8
     seal = next(e for e in r["execution"]["effects"] if e["type"] == "seal")
     assert seal["removed"] == 0
     assert seal["targets"] == []

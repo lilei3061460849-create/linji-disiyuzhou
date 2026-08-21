@@ -152,35 +152,35 @@ def test_tactical_roles_match_readme_costs():
     from engine.ai_tactics import TACTICAL_ROLES
     assert TACTICAL_ROLES["杀伐"]["cost"] == 1
     assert TACTICAL_ROLES["杀伐"]["dmg_per_x"] == 2
-    assert TACTICAL_ROLES["冲击"]["cost"] == 3
-    assert TACTICAL_ROLES["冲击"]["dmg_per_x"] == 5
-    assert TACTICAL_ROLES["切割"]["cost"] == 3
-    assert TACTICAL_ROLES["切割"]["role"] == "buff"
-    assert TACTICAL_ROLES["缓慢"]["cost"] == 0
-    assert TACTICAL_ROLES["缓慢"]["pay"] == "冷却"
+    assert TACTICAL_ROLES["波及"]["cost"] == 3
+    assert TACTICAL_ROLES["波及"]["role"] == "mark"
+    assert TACTICAL_ROLES["封印"]["cost"] == 0
+    assert TACTICAL_ROLES["封印"]["pay"] == "异变"
     assert TACTICAL_ROLES["增殖"]["cost"] == 1
+    # 已删除道纹不得残留
+    for removed in ("冲击", "切割", "缓慢", "慈悲"):
+        assert removed not in TACTICAL_ROLES
 
 
-def test_ai_uses_chongji_when_two_enemies_outscore_single(tmp_path):
-    """正常：两名敌人时冲击总伤高于单体，必须提交闪避并真正发动冲击。"""
+def test_ai_can_mark_wave_targets(tmp_path):
+    """正常：双怪场面AI能发动波及并显式提交X个目标的闪避选择。"""
     from engine.models import Entity
-    e = _engine(tmp_path, learn=("冲击",))
+    e = _engine(tmp_path, learn=("波及",))
     extra = Entity(name="木桩乙", entity_type="怪物", blood_limit=80, current_hp=80,
                    attack_count=1, attack_power=4)
     e.state.enemies.append(extra)
-    for monster in e.state.enemies:
-        monster.current_hp = max(monster.current_hp, 80)
-        monster.blood_limit = max(monster.blood_limit, 80)
     e.state.player.current_mana = 12
     ai = TacticalAI(e)
-    r = ai.try_aoe()
-    assert r is not None and r.get("success"), f"双怪场面应发动冲击：{r}"
-    assert ai.used.get("冲击", 0) == 1
+    r = ai._cast("波及", 2)
+    assert r is not None and r.get("success"), f"双怪场面应能发动波及：{r}"
+    assert ai.used.get("波及", 0) == 1
+    assert e.state.enemies[0].has_status("波及")
+    assert e.state.enemies[1].has_status("波及")
 
 
 def test_ai_keeps_shaifa_on_single_target(tmp_path):
-    """边界：单怪时冲击总伤不如杀伐，不得为了用冲击而浪费法力。"""
-    e = _engine(tmp_path, learn=("冲击",))
+    """边界：没有群伤道纹时单怪场面仍走杀伐，不得因无AOE而空过。"""
+    e = _engine(tmp_path, learn=("波及",))
     assert len(e.state.enemies) == 1
     e.state.player.current_mana = 12
     ai = TacticalAI(e)
@@ -190,19 +190,19 @@ def test_ai_keeps_shaifa_on_single_target(tmp_path):
 
 
 def test_manqian_can_cast_with_zero_mana(tmp_path):
-    """错误输入对照：缓慢是冷却代价，法力为0时仍应能发动，不得按旧10法力表拒绝。"""
+    """错误输入对照：束缚是冷却代价，法力为0时仍应能发动，不得按旧消耗表拒绝。"""
     from engine.models import DaoWen, DaoWenInstance
     e = _engine(tmp_path, learn=())
-    e.state.player.dao_wen["缓慢"] = DaoWenInstance(
-        DaoWen(name="缓慢", formula="", cost_type="冷却", cost_formula="X", effect_formula=""))
+    e.state.player.dao_wen["束缚"] = DaoWenInstance(
+        DaoWen(name="束缚", formula="", cost_type="冷却", cost_formula="X", effect_formula=""))
     e.state.player.current_mana = 0
     e.state.player.current_hp = 20
     e.state.enemies[0].attack_count = 1
     e.state.enemies[0].attack_power = 8
     ai = TacticalAI(e)
     r = ai.try_control()
-    assert r is not None and r.get("success"), f"零法力应能发动缓慢：{r}"
-    assert ai.used.get("缓慢", 0) == 1
+    assert r is not None and r.get("success"), f"零法力应能发动束缚：{r}"
+    assert ai.used.get("束缚", 0) == 1
 
 
 def test_ai_can_use_resonance_on_monster_daowen(tmp_path):
