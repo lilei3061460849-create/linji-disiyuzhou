@@ -361,8 +361,8 @@ def resolve_option_effect(text: str, engine, event_name: str = "", params=None) 
         if text.startswith("割血点唇"):
             _pay_numeric("流血", 18)
             applied.append("流血18")
-            # 使杀伐或切割获得红煞（对格挡造成双倍伤害）
-            target_dw = next((n for n in ("杀伐", "切割") if n in player.dao_wen), None)
+            # 使杀伐获得红煞（对格挡造成双倍伤害）
+            target_dw = next((n for n in ("杀伐",) if n in player.dao_wen), None)
             if target_dw:
                 inst = player.dao_wen[target_dw]
                 inst.sha_qi = "红煞"

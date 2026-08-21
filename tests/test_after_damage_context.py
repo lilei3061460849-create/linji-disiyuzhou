@@ -38,8 +38,9 @@ def test_parasite_heal_records_parent_damage_context():
 
 
 def test_cut_blood_limit_change_records_parent_damage_context():
+    """伤害后血限变化的 ctx 链（切割道纹已删除，2026-08-21；伤痕保留同类链路）。"""
     _, combat, player, enemy = _state()
-    player.add_status(StatusEffect("切割", value=1, remaining_rounds=3, source="test"))
+    enemy.add_status(StatusEffect("伤痕", value=5, remaining_rounds=3, source="test"))
 
     detail = combat._apply_hostile_damage(enemy, 7, source=player, ctx={
         "timing": "player_action", "source": "杀伐", "source_type": "daowen",
@@ -47,11 +48,11 @@ def test_cut_blood_limit_change_records_parent_damage_context():
         "amount": 7, "tags": {"daowen"}, "event_id": "damage-2",
     })
 
-    assert detail["qiege_blood_loss"] == 7
-    assert enemy.blood_limit == 93
-    assert detail["qiege_ctx"]["mechanic"] == "blood_limit_change"
-    assert detail["qiege_ctx"]["subtype"] == "cut"
-    assert detail["qiege_ctx"]["parent_event_id"] == "damage-2"
+    assert detail["shanghen_blood_loss"] == 5
+    assert enemy.blood_limit == 95  # 伤痕X=5：每次掉血后血限-5
+    assert detail["shanghen_ctx"]["mechanic"] == "blood_limit_change"
+    assert detail["shanghen_ctx"]["subtype"] == "scar"
+    assert detail["shanghen_ctx"]["parent_event_id"] == "damage-2"
 
 
 def test_fuyuesuo_heal_records_parent_damage_context_and_heals_player():

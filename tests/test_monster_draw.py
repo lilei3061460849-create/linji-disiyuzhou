@@ -80,7 +80,7 @@ def test_drawn_monster_panel_matches_readme_exactly():
     pools = parse_monster_pool(DUNGEON_INDEX_PATH)
     known = next(m for m in pools["龙心谷"] if m["name"] == "熔岩蜥")
     assert (known["attack_count"], known["attack_power"], known["blood_limit"]) == (3, 6, 234)
-    assert known["dao_wen"] == {"加害": 2, "狂暴": 3, "冲击": 3}
+    assert known["dao_wen"] == {"加害": 2, "狂暴": 3, "波及": 3}
 
 
 def test_repetition_allowed_across_many_draws():

@@ -40,7 +40,7 @@ def test_monster_cancer_context_uses_last_heal_event_without_death():
     combat = CombatEngine(state, DiceEngine())
 
     heal = state.apply_heal(monster, 20, ctx={
-        "timing": "player_action", "source": "慈悲", "source_type": "daowen",
+        "timing": "player_action", "source": "再生", "source_type": "daowen",
         "actor": player, "target": monster, "mechanic": "heal", "subtype": "daowen",
         "amount": 20, "tags": {"daowen"}, "event_id": "heal-cancer-2",
     })

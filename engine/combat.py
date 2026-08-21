@@ -33,6 +33,19 @@ class CombatEngine:
     # 原始怪物道纹只在首次发动时支付异变5X；效果持续期间不再重复计费。
     # 必中为次数型（下X次选择[目标]无法闪避），余数记在 entity._bizhong_left。
     YUANCHU_COST_RATE = 5
+    # 波及X（2026-08-21）：你发动的道纹同时作用于所有拥有波及效果的目标。
+    # 数值键：效果的总数值在所有目标（本次[目标]+波及目标，均排除施法者自身）
+    # 之间平均分配；无法整除时余数按随机数分配。多目标不会复制或增加总数值。
+    # 状态类效果（减速减半/固定面板/持续状态等）对波及目标原样生效，不入下表。
+    WAVE_NUMERIC_KEYS = (
+        "target_damage", "total_damage", "hits", "aoe_damage", "hp_percent_loss",
+        "target_heal", "heal_percent", "mutation_reduction",
+        "target_shield", "shield_drain",
+        "blood_limit_reduction", "hp_reduction", "blood_limit_increase", "blood_limit_penalty",
+        "attack_boost", "attack_reduction",
+        "speed_boost", "speed_penalty",
+        "targets_removed", "self_attack_count", "invalid_damage_hits",
+    )
     
     def __init__(self, state: GameState, dice: DiceEngine):
         self.state = state
@@ -695,7 +708,7 @@ class CombatEngine:
             hp_after=detail.get("hp_after"), damage_type=damage_type,
         )
 
-        # 5. 落地后效果 (逆鳞 / 伤痕 / 切割 / 寄生 / 负岳索 / 龙族血脉斩杀)
+        # 5. 落地后效果 (逆鳞 / 伤痕 / 寄生 / 负岳索 / 龙族血脉斩杀)
         self.hook_manager.apply_after_damage_pipeline(target, actual, detail.get("shield_absorbed", 0), detail, source, self)
         if target.entity_type == "怪物" and target.is_alive:
             redemption = self.check_redemption(target)
@@ -936,7 +949,7 @@ class CombatEngine:
         amount: int,
         cost_share_target_ref: str = "",
     ) -> tuple[Entity, int, Optional[Entity], int]:
-        """纯校验并计算血契拆分；奇数由原支付者承担向上取整的一半。"""
+        """纯校验并计算血契拆分；无法整除的余数按随机数分配（平分规则，2026-08-21）。"""
         if cost_type not in self.SHAREABLE_NUMERIC_COSTS:
             raise ValueError(f"{cost_type}不是可共同承担的数值代价")
         if not isinstance(amount, int) or isinstance(amount, bool) or amount < 0:
@@ -950,8 +963,8 @@ class CombatEngine:
             ally = self.blood_pact_targets(payer).get(cost_share_target_ref)
             if ally is None:
                 raise ValueError("cost_share_target_ref必须指向一名存活朋友/员工")
-            owner_amount = math.ceil(amount / 2)
-            ally_amount = amount // 2
+            # 血契：数值型代价可与一名存活的朋友或员工平分；无法整除时余数按随机数分配。
+            owner_amount, ally_amount = self._divide_flat(amount, 2)
         for entity, part in ((payer, owner_amount), (ally, ally_amount)):
             if entity is None or part <= 0:
                 continue
@@ -1028,6 +1041,43 @@ class CombatEngine:
             tags=(set(norm.tags) if norm else set()) | {"mutation", "collapse"},
             parent_event_id=norm.event_id if norm else None,
         )
+
+    def _divide_flat(self, total: int, count: int) -> list[int]:
+        """平分规则（2026-08-21）：总数值在 count 个目标间平均分配；
+        无法整除时余数按随机数分配（引擎随机源，可复现）。"""
+        if count <= 0:
+            return []
+        neg = total < 0
+        total = abs(total)
+        base, rem = divmod(total, count)
+        pieces = [base] * count
+        if rem:
+            pool = list(range(count))
+            for _ in range(rem):
+                idx = pool.pop(self.dice.randrange(len(pool)))
+                pieces[idx] += 1
+        return [-p for p in pieces] if neg else pieces
+
+    def _wave_targets(self, caster: Entity) -> list[Entity]:
+        """拥有施法者建立的波及效果的存活角色（不含施法者自身）。"""
+        out: list[Entity] = []
+        for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
+            if entity is caster or not entity.is_alive:
+                continue
+            if any(s.name == "波及" and s.source == caster.name and not s.is_expired
+                   for s in entity.status_effects):
+                out.append(entity)
+        return out
+
+    def _toggle_wave_mark(self, entity: Entity, caster: Entity) -> bool:
+        """建立/解除波及效果：已带施法者波及标记则解除，否则建立。返回是否建立。"""
+        for s in list(entity.status_effects):
+            if s.name == "波及" and s.source == caster.name:
+                entity.status_effects.remove(s)
+                return False
+        entity.add_status(StatusEffect(name="波及", value=1, remaining_rounds=-1,
+                                       source=caster.name))
+        return True
 
     def pay_numeric_cost(
         self,
@@ -2367,6 +2417,32 @@ class CombatEngine:
         )
         result["daowen_ctx"] = daowen_ctx.to_dict()
 
+        # ---- 波及X（2026-08-21）：你发动的道纹同时作用于所有拥有波及效果的目标 ----
+        # 数值型效果的总数值在所有目标（本次[目标]+波及目标，均排除施法者自身）间平分，
+        # 余数随机分配；状态类效果对波及目标原样生效。多目标不复制或增加总数值。
+        wave_status_targets: list[Entity] = [target]
+        wave_pieces: dict[str, list[int]] = {}
+        if name != "波及":
+            wave_targets = self._wave_targets(caster)
+            if wave_targets:
+                effective: list[Entity] = []
+                for wt in ([target] if target is not caster and target.is_alive else []) + wave_targets:
+                    if wt.is_alive and wt not in effective:
+                        effective.append(wt)
+                if effective:
+                    wave_status_targets = effective
+                    numeric_keys = [k for k in self.WAVE_NUMERIC_KEYS if k in calc]
+                    if numeric_keys and len(effective) >= 2:
+                        wave_pieces = {k: self._divide_flat(calc[k], len(effective))
+                                       for k in numeric_keys}
+                        result["wave_spread"] = {
+                            "targets": [e.name for e in effective],
+                            "pieces": {k: list(v) for k, v in wave_pieces.items()},
+                        }
+                    elif len(effective) >= 2:
+                        result["wave_spread"] = {
+                            "targets": [e.name for e in effective], "status_only": True}
+
         # ---- 乱葬岗·附煞（sha_qi）效果修正 ----
         # 施法者持有的道纹实例可能带煞气；对消耗/持续/伤害/回复做代数修正。
         inst = caster.dao_wen.get(name)
@@ -2421,35 +2497,76 @@ class CombatEngine:
             if caster.has_status("坠落") and base > 0:
                 base = math.ceil(base / 2)
             dmg_amount = 0 if mengbi_blocked else base
-            dmg = self._apply_hostile_damage(
-                target, dmg_amount, source=caster,
-                ctx={"timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
-                     "source": name, "source_type": "daowen", "actor": caster, "target": target,
-                     "mechanic": "damage", "subtype": "daowen", "amount": dmg_amount,
-                     "tags": {"daowen"}})
-            result["effects"].append({"type": "damage", "target": target.name, **dmg})
-            if dmg.get("actual_damage", 0) > 0:
-                caster.damage_dealt_this_round += dmg["actual_damage"]
-        if name == "血债" or ("hits" in calc and calc.get("damage_per_hit") == 1 and "target_damage" not in calc):
-            hits = calc.get("hits", 1)
-            total_act = 0
-            total_abs = 0
-            for _ in range(hits):
-                if not target.is_alive:
-                    break
-                hit_amount = 0 if mengbi_blocked else 1
-                dmg_i = self._apply_hostile_damage(
-                    target, hit_amount, source=caster,
+            if "target_damage" in wave_pieces:
+                # 波及：修正后总数值平分（余数随机分配），逆鳞已计入首段总值。
+                pieces = self._divide_flat(dmg_amount, len(wave_status_targets))
+                wave_pieces["target_damage"] = pieces
+                for wt, piece in zip(wave_status_targets, pieces):
+                    piece = 0 if mengbi_blocked else piece
+                    dmg = self._apply_hostile_damage(
+                        wt, piece, source=caster,
+                        ctx={"timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
+                             "source": name, "source_type": "daowen", "actor": caster, "target": wt,
+                             "mechanic": "damage", "subtype": "daowen", "amount": piece,
+                             "tags": {"daowen", "wave"}})
+                    result["effects"].append({"type": "damage", "target": wt.name, **dmg})
+                    if dmg.get("actual_damage", 0) > 0:
+                        caster.damage_dealt_this_round += dmg["actual_damage"]
+                nilin_bonus = 0
+            else:
+                dmg = self._apply_hostile_damage(
+                    target, dmg_amount, source=caster,
                     ctx={"timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
                          "source": name, "source_type": "daowen", "actor": caster, "target": target,
-                         "mechanic": "damage", "subtype": "daowen_hit", "amount": hit_amount,
-                         "tags": {"daowen", "multi_hit"}})
-                total_act += dmg_i.get("actual_damage", 0)
-                total_abs += dmg_i.get("shield_absorbed", 0)
-            dmg = {"raw_damage": hits, "actual_damage": total_act, "shield_absorbed": total_abs, "hp_after": target.current_hp, "died": not target.is_alive}
-            result["effects"].append({"type": "damage", "target": target.name, **dmg})
-            if total_act > 0:
-                caster.damage_dealt_this_round += total_act
+                         "mechanic": "damage", "subtype": "daowen", "amount": dmg_amount,
+                         "tags": {"daowen"}})
+                result["effects"].append({"type": "damage", "target": target.name, **dmg})
+                if dmg.get("actual_damage", 0) > 0:
+                    caster.damage_dealt_this_round += dmg["actual_damage"]
+        if name == "血债" or ("hits" in calc and calc.get("damage_per_hit") == 1 and "target_damage" not in calc):
+            hits = calc.get("hits", 1)
+            if "hits" in wave_pieces:
+                # 波及：总命中次数平分，每个目标的份额每次1点伤害。
+                for wt, piece in zip(wave_status_targets, wave_pieces["hits"]):
+                    total_act = 0
+                    total_abs = 0
+                    for _ in range(piece):
+                        if not wt.is_alive:
+                            break
+                        hit_amount = 0 if mengbi_blocked else 1
+                        dmg_i = self._apply_hostile_damage(
+                            wt, hit_amount, source=caster,
+                            ctx={"timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
+                                 "source": name, "source_type": "daowen", "actor": caster, "target": wt,
+                                 "mechanic": "damage", "subtype": "daowen_hit", "amount": hit_amount,
+                                 "tags": {"daowen", "multi_hit", "wave"}})
+                        total_act += dmg_i.get("actual_damage", 0)
+                        total_abs += dmg_i.get("shield_absorbed", 0)
+                    dmg = {"raw_damage": piece, "actual_damage": total_act, "shield_absorbed": total_abs,
+                           "hp_after": wt.current_hp, "died": not wt.is_alive}
+                    result["effects"].append({"type": "damage", "target": wt.name, **dmg})
+                    if total_act > 0:
+                        caster.damage_dealt_this_round += total_act
+            else:
+                total_act = 0
+                total_abs = 0
+                for _ in range(hits):
+                    if not target.is_alive:
+                        break
+                    hit_amount = 0 if mengbi_blocked else 1
+                    dmg_i = self._apply_hostile_damage(
+                        target, hit_amount, source=caster,
+                        ctx={"timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
+                             "source": name, "source_type": "daowen", "actor": caster, "target": target,
+                             "mechanic": "damage", "subtype": "daowen_hit", "amount": hit_amount,
+                             "tags": {"daowen", "multi_hit"}})
+                    total_act += dmg_i.get("actual_damage", 0)
+                    total_abs += dmg_i.get("shield_absorbed", 0)
+                dmg = {"raw_damage": hits, "actual_damage": total_act, "shield_absorbed": total_abs,
+                       "hp_after": target.current_hp, "died": not target.is_alive}
+                result["effects"].append({"type": "damage", "target": target.name, **dmg})
+                if total_act > 0:
+                    caster.damage_dealt_this_round += total_act
         elif "total_damage" in calc and "target_damage" not in calc:  # 其他多段
             add = nilin_bonus
             nilin_bonus = 0
@@ -2457,16 +2574,35 @@ class CombatEngine:
             if caster.has_status("坠落") and chunk > 0:
                 chunk = math.ceil(chunk / 2)
             dmg_amount = 0 if mengbi_blocked else chunk
-            dmg = self._apply_hostile_damage(target, dmg_amount, source=caster, ctx={
-                "timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
-                "source": name, "source_type": "daowen", "actor": caster, "target": target,
-                "mechanic": "damage", "subtype": "daowen", "amount": dmg_amount, "tags": {"daowen"},
-            })
-            if add:
-                dmg["nilin_bonus"] = add
-            result["effects"].append({"type": "damage", "target": target.name, **dmg})
-            if dmg.get("actual_damage", 0) > 0:
-                caster.damage_dealt_this_round += dmg["actual_damage"]
+            if "total_damage" in wave_pieces:
+                pieces = self._divide_flat(dmg_amount, len(wave_status_targets))
+                wave_pieces["total_damage"] = pieces
+                for wt, piece in zip(wave_status_targets, pieces):
+                    piece = 0 if mengbi_blocked else piece
+                    dmg = self._apply_hostile_damage(wt, piece, source=caster, ctx={
+                        "timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
+                        "source": name, "source_type": "daowen", "actor": caster, "target": wt,
+                        "mechanic": "damage", "subtype": "daowen", "amount": piece,
+                        "tags": {"daowen", "wave"},
+                    })
+                    if add:
+                        dmg["nilin_bonus"] = add
+                        add = 0
+                    result["effects"].append({"type": "damage", "target": wt.name, **dmg})
+                    if dmg.get("actual_damage", 0) > 0:
+                        caster.damage_dealt_this_round += dmg["actual_damage"]
+            else:
+                dmg = self._apply_hostile_damage(target, dmg_amount, source=caster, ctx={
+                    "timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
+                    "source": name, "source_type": "daowen", "actor": caster, "target": target,
+                    "mechanic": "damage", "subtype": "daowen", "amount": dmg_amount, "tags": {"daowen"},
+                })
+                if add:
+                    dmg["nilin_bonus"] = add
+                result["effects"].append({"type": "damage", "target": target.name, **dmg})
+                if dmg.get("actual_damage", 0) > 0:
+                    caster.damage_dealt_this_round += dmg["actual_damage"]
+
         # ---- 乱葬岗·附煞后置：锁煞（造成伤害后触发） ----
         if sha == "锁煞":
             dealt = 0
@@ -2510,58 +2646,133 @@ class CombatEngine:
                 if dmg.get("actual_damage", 0) > 0:
                     caster.damage_dealt_this_round += dmg["actual_damage"]
         if "hp_percent_loss" in calc and name != "赌命":  # 赌命已改为[回始]随机结算（F2），此处仅保留其他百分比道纹
-            d = math.ceil(target.current_hp * calc["hp_percent_loss"] / 100) + (nilin_bonus if nilin_bonus else 0)
-            if nilin_bonus:
-                result["nilin_bonus"] = nilin_bonus
-                nilin_bonus = 0
-            dmg = self._apply_hostile_damage(target, d, source=caster, ctx={
-                "timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
-                "source": name, "source_type": "daowen", "actor": caster, "target": target,
-                "mechanic": "damage", "subtype": "percent", "amount": d, "tags": {"daowen", "percent"},
-            })
-            result["effects"].append({"type": "pct_damage", "target": target.name, **dmg})
-            if dmg.get("actual_damage", 0) > 0:
-                caster.damage_dealt_this_round += dmg["actual_damage"]
+            if "hp_percent_loss" in wave_pieces:
+                # 波及：总数值=各目标按当前生命×百分比之和，再平分。
+                total = sum(math.ceil(wt.current_hp * calc["hp_percent_loss"] / 100)
+                            for wt in wave_status_targets) + (nilin_bonus if nilin_bonus else 0)
+                if nilin_bonus:
+                    result["nilin_bonus"] = nilin_bonus
+                    nilin_bonus = 0
+                pieces = self._divide_flat(total, len(wave_status_targets))
+                wave_pieces["hp_percent_loss"] = pieces
+                for wt, piece in zip(wave_status_targets, pieces):
+                    dmg = self._apply_hostile_damage(wt, piece, source=caster, ctx={
+                        "timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
+                        "source": name, "source_type": "daowen", "actor": caster, "target": wt,
+                        "mechanic": "damage", "subtype": "percent", "amount": piece,
+                        "tags": {"daowen", "percent", "wave"},
+                    })
+                    result["effects"].append({"type": "pct_damage", "target": wt.name, **dmg})
+                    if dmg.get("actual_damage", 0) > 0:
+                        caster.damage_dealt_this_round += dmg["actual_damage"]
+            else:
+                d = math.ceil(target.current_hp * calc["hp_percent_loss"] / 100) + (nilin_bonus if nilin_bonus else 0)
+                if nilin_bonus:
+                    result["nilin_bonus"] = nilin_bonus
+                    nilin_bonus = 0
+                dmg = self._apply_hostile_damage(target, d, source=caster, ctx={
+                    "timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
+                    "source": name, "source_type": "daowen", "actor": caster, "target": target,
+                    "mechanic": "damage", "subtype": "percent", "amount": d, "tags": {"daowen", "percent"},
+                })
+                result["effects"].append({"type": "pct_damage", "target": target.name, **dmg})
+                if dmg.get("actual_damage", 0) > 0:
+                    caster.damage_dealt_this_round += dmg["actual_damage"]
 
         # ---- 回复类 ----
-        if "target_heal" in calc and not huaisi_block:
-            heal_amount = calc["target_heal"]
-            result["effects"].append({"type": "heal", "target": target.name, **self.state.apply_heal(target, heal_amount, ctx={
-                "timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
-                "source": name, "source_type": "daowen", "actor": caster, "target": target,
-                "owner": caster, "mechanic": "heal", "subtype": "daowen", "amount": heal_amount,
-                "tags": {"daowen"},
-            })})
+        if "target_heal" in calc:
+            if "target_heal" in wave_pieces:
+                pieces = self._divide_flat(calc["target_heal"], len(wave_status_targets))
+                wave_pieces["target_heal"] = pieces
+                for wt, piece in zip(wave_status_targets, pieces):
+                    if wt.has_status("坏死"):
+                        result["effects"].append(
+                            {"type": "heal", "target": wt.name, "blocked_by": "坏死"})
+                        continue
+                    result["effects"].append({"type": "heal", "target": wt.name, **self.state.apply_heal(wt, piece, ctx={
+                        "timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
+                        "source": name, "source_type": "daowen", "actor": caster, "target": wt,
+                        "owner": caster, "mechanic": "heal", "subtype": "daowen", "amount": piece,
+                        "tags": {"daowen", "wave"},
+                    })})
+            elif not huaisi_block:
+                heal_amount = calc["target_heal"]
+                result["effects"].append({"type": "heal", "target": target.name, **self.state.apply_heal(target, heal_amount, ctx={
+                    "timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
+                    "source": name, "source_type": "daowen", "actor": caster, "target": target,
+                    "owner": caster, "mechanic": "heal", "subtype": "daowen", "amount": heal_amount,
+                    "tags": {"daowen"},
+                })})
         # 自愈的 heal_percent 只在[回始]结算，发动当下不奶。
-        if "heal_percent" in calc and name != "自愈" and not (target.has_status("坏死")):
-            h = math.ceil(target.blood_limit * calc["heal_percent"] / 100)
-            result["effects"].append({"type": "heal_pct", "target": target.name, **self.state.apply_heal(target, h, ctx={
-                "timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
-                "source": name, "source_type": "daowen", "actor": caster, "target": target,
-                "owner": caster, "mechanic": "heal", "subtype": "daowen_pct", "amount": h,
-                "tags": {"daowen"},
-            })})
+        if "heal_percent" in calc and name != "自愈":
+            if "heal_percent" in wave_pieces:
+                # 波及：总数值=各目标按血限×百分比之和，再平分。
+                total = sum(math.ceil(wt.blood_limit * calc["heal_percent"] / 100)
+                            for wt in wave_status_targets)
+                pieces = self._divide_flat(total, len(wave_status_targets))
+                wave_pieces["heal_percent"] = pieces
+                for wt, piece in zip(wave_status_targets, pieces):
+                    if wt.has_status("坏死"):
+                        result["effects"].append(
+                            {"type": "heal_pct", "target": wt.name, "blocked_by": "坏死"})
+                        continue
+                    result["effects"].append({"type": "heal_pct", "target": wt.name, **self.state.apply_heal(wt, piece, ctx={
+                        "timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
+                        "source": name, "source_type": "daowen", "actor": caster, "target": wt,
+                        "owner": caster, "mechanic": "heal", "subtype": "daowen_pct", "amount": piece,
+                        "tags": {"daowen", "wave"},
+                    })})
+            elif not target.has_status("坏死"):
+                h = math.ceil(target.blood_limit * calc["heal_percent"] / 100)
+                result["effects"].append({"type": "heal_pct", "target": target.name, **self.state.apply_heal(target, h, ctx={
+                    "timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
+                    "source": name, "source_type": "daowen", "actor": caster, "target": target,
+                    "owner": caster, "mechanic": "heal", "subtype": "daowen_pct", "amount": h,
+                    "tags": {"daowen"},
+                })})
         if "mutation_reduction" in calc:
-            reduced = int(calc["mutation_reduction"])
-            pay = target.add_mutation(-reduced)
-            result["effects"].append({
-                "type": "mutation_reduction", "target": target.name,
-                "reduced": reduced, "mutation_total": pay["mutation_total"],
-            })
-            if target.entity_type == "怪物":
-                redemption = self.check_redemption(target)
-                if redemption:
-                    result["effects"].append(redemption)
+            if "mutation_reduction" in wave_pieces:
+                pieces = self._divide_flat(calc["mutation_reduction"], len(wave_status_targets))
+                wave_pieces["mutation_reduction"] = pieces
+                for wt, piece in zip(wave_status_targets, pieces):
+                    pay = wt.add_mutation(-piece)
+                    result["effects"].append({
+                        "type": "mutation_reduction", "target": wt.name,
+                        "reduced": piece, "mutation_total": pay["mutation_total"],
+                    })
+                    if wt.entity_type == "怪物":
+                        redemption = self.check_redemption(wt)
+                        if redemption:
+                            result["effects"].append(redemption)
+            else:
+                reduced = int(calc["mutation_reduction"])
+                pay = target.add_mutation(-reduced)
+                result["effects"].append({
+                    "type": "mutation_reduction", "target": target.name,
+                    "reduced": reduced, "mutation_total": pay["mutation_total"],
+                })
+                if target.entity_type == "怪物":
+                    redemption = self.check_redemption(target)
+                    if redemption:
+                        result["effects"].append(redemption)
 
         if "target_heal" in calc or ("heal_percent" in calc and name != "自愈"):
-            cancer = self.check_cancer(target)
-            if cancer:
-                result["effects"].append(cancer)
+            for cancer_target in wave_status_targets:
+                cancer = self.check_cancer(cancer_target)
+                if cancer:
+                    result["effects"].append(cancer)
 
         # ---- 格挡/血限 ----
         if "target_shield" in calc:
-            s = calc["target_shield"]; target.gain_shield(s)
-            result["effects"].append({"type": "shield", "target": target.name, "amount": s})
+            if "target_shield" in wave_pieces:
+                pieces = self._divide_flat(calc["target_shield"], len(wave_status_targets))
+                wave_pieces["target_shield"] = pieces
+                for wt, piece in zip(wave_status_targets, pieces):
+                    wt.gain_shield(piece)
+                    result["effects"].append({"type": "shield", "target": wt.name, "amount": piece})
+            else:
+                s = calc["target_shield"]; target.gain_shield(s)
+                result["effects"].append({"type": "shield", "target": target.name, "amount": s})
         if "shield_drain" in calc:  # 清算：目标失格挡
             lost = min(target.shield, calc["shield_drain"]); target.shield -= lost
             result["effects"].append({"type": "shield_drain", "target": target.name, "lost": lost})
@@ -2574,13 +2785,13 @@ class CombatEngine:
                 actor=caster, owner=caster, clamp_hp=False, lethal=False)
             # README 第460行"[血限]及当前生命同时 -4X"：两者是各自独立的扣减。
             # 此前实现只做 current_hp=min(current_hp, blood_limit)（血限压顶），
-            # 对残血目标等于毫无效果——切割打 10/200 的怪一点血都掉不了。
+            # 对残血目标等于毫无效果。
             if "hp_reduction" in calc:
                 target.current_hp -= calc["hp_reduction"]
             target.current_hp = max(0, min(target.current_hp, target.blood_limit))
             self._check_hp_zero_death(target, ctx=_blr["ctx"] or daowen_ctx)
             # 血限压迫导致的当前生命减少，同样属于"使敌对角色生命减少"，
-            # 必须计入本回合伤害统计，否则纯切割流派会被【凡庸】判定为无所作为而自爆。
+            # 必须计入本回合伤害统计，否则纯压血限流派会被【凡庸】判定为无所作为而自爆。
             _hp_cut = _hp_before - target.current_hp
             if _hp_cut > 0 and target is not caster:
                 caster.damage_dealt_this_round += _hp_cut
@@ -2588,17 +2799,33 @@ class CombatEngine:
                                       "new_blood_limit": target.blood_limit,
                                       "hp_reduced": _hp_cut})
         if "blood_limit_increase" in calc:
-            # 不朽之躯（初拥之夜遗物）：血限无法增加，对该实体的增殖等血限增长一律归零
-            if self.state.side_has(target, "不朽之躯"):
-                result["effects"].append({"type": "blood_limit_increase", "target": target.name,
-                                           "increase": 0, "blocked_by": "不朽之躯"})
+            if "blood_limit_increase" in wave_pieces:
+                pieces = self._divide_flat(calc["blood_limit_increase"], len(wave_status_targets))
+                wave_pieces["blood_limit_increase"] = pieces
+                for wt, piece in zip(wave_status_targets, pieces):
+                    # 不朽之躯（初拥之夜遗物）：血限无法增加，对该实体的增殖等血限增长一律归零
+                    if self.state.side_has(wt, "不朽之躯"):
+                        result["effects"].append({"type": "blood_limit_increase", "target": wt.name,
+                                                   "increase": 0, "blocked_by": "不朽之躯"})
+                        continue
+                    increase = self._apply_blood_limit_change(
+                        wt, piece, name, EffectPolarity.BUFF.value,
+                        ctx=daowen_ctx, source_type="daowen", subtype="blood_limit_increase",
+                        actor=caster, owner=caster, clamp_hp=False, lethal=False)["applied"]
+                    result["effects"].append({"type": "blood_limit_increase", "target": wt.name,
+                                              "increase": increase})
             else:
-                increase = self._apply_blood_limit_change(
-                    target, calc["blood_limit_increase"], name, EffectPolarity.BUFF.value,
-                    ctx=daowen_ctx, source_type="daowen", subtype="blood_limit_increase",
-                    actor=caster, owner=caster, clamp_hp=False, lethal=False)["applied"]
-                result["effects"].append({"type": "blood_limit_increase", "target": target.name,
-                                          "increase": increase})
+                # 不朽之躯（初拥之夜遗物）：血限无法增加，对该实体的增殖等血限增长一律归零
+                if self.state.side_has(target, "不朽之躯"):
+                    result["effects"].append({"type": "blood_limit_increase", "target": target.name,
+                                               "increase": 0, "blocked_by": "不朽之躯"})
+                else:
+                    increase = self._apply_blood_limit_change(
+                        target, calc["blood_limit_increase"], name, EffectPolarity.BUFF.value,
+                        ctx=daowen_ctx, source_type="daowen", subtype="blood_limit_increase",
+                        actor=caster, owner=caster, clamp_hp=False, lethal=False)["applied"]
+                    result["effects"].append({"type": "blood_limit_increase", "target": target.name,
+                                              "increase": increase})
         if "blood_limit_penalty" in calc and target.shards < (calc.get("shard_drain", 0) or 0):
             # 逼债：碎片不足则失血限；不是代价，按局内减益登记。
             lost = -self._apply_blood_limit_change(
@@ -2609,29 +2836,42 @@ class CombatEngine:
 
         # ---- 攻击面板修改 ----
         _panel_keys = ("attack_boost", "attack_reduction", "attack_fixed", "attack_count_fixed")
-        panel_locked = target.has_status("定型") and any(k in calc for k in _panel_keys)
-        if panel_locked:
-            result["effects"].append({"type": "dingxing_block", "target": target.name})
-        if (not panel_locked) and "attack_boost" in calc:
-            self._battle_delta(
-                target, "attack_power", calc["attack_boost"],
-                name, EffectPolarity.BUFF.value)
-            result["effects"].append({"type": "attack_boost", "target": target.name, "attack_power": target.attack_power})
-        if (not panel_locked) and "attack_reduction" in calc:
-            delta = max(0, target.attack_power - calc["attack_reduction"]) - target.attack_power
-            self._battle_delta(
-                target, "attack_power", delta, name, EffectPolarity.DEBUFF.value)
-            result["effects"].append({"type": "attack_reduction", "target": target.name, "attack_power": target.attack_power})
-        if (not panel_locked) and "attack_fixed" in calc:
-            self._battle_delta(
-                target, "attack_power", calc["attack_fixed"] - target.attack_power,
-                name, EffectPolarity.NEUTRAL.value)
-            result["effects"].append({"type": "attack_fixed", "target": target.name, "attack_power": target.attack_power})
-        if (not panel_locked) and "attack_count_fixed" in calc:
-            self._battle_delta(
-                target, "attack_count", calc["attack_count_fixed"] - target.attack_count,
-                name, EffectPolarity.NEUTRAL.value)
-            result["effects"].append({"type": "attack_count_fixed", "target": target.name, "attack_count": target.attack_count})
+        # 波及扩散：attack_boost/reduction 数值平分；attack_fixed/attack_count_fixed
+        # （固定面板为状态类）对波及目标原样生效。
+        panel_targets = wave_status_targets if (
+            any(k in wave_pieces for k in ("attack_boost", "attack_reduction"))
+            or (any(k in calc for k in ("attack_fixed", "attack_count_fixed"))
+                and len(wave_status_targets) > 1)) else [target]
+        for panel_idx, panel_target in enumerate(panel_targets):
+            panel_locked = panel_target.has_status("定型") and any(k in calc for k in _panel_keys)
+            if panel_locked:
+                result["effects"].append({"type": "dingxing_block", "target": panel_target.name})
+            if (not panel_locked) and "attack_boost" in calc:
+                piece = (wave_pieces.get("attack_boost") or [calc["attack_boost"]])[panel_idx]
+                self._battle_delta(
+                    panel_target, "attack_power", piece,
+                    name, EffectPolarity.BUFF.value)
+                result["effects"].append({"type": "attack_boost", "target": panel_target.name,
+                                          "attack_power": panel_target.attack_power})
+            if (not panel_locked) and "attack_reduction" in calc:
+                amount = (wave_pieces.get("attack_reduction") or [calc["attack_reduction"]])[panel_idx]
+                delta = max(0, panel_target.attack_power - amount) - panel_target.attack_power
+                self._battle_delta(
+                    panel_target, "attack_power", delta, name, EffectPolarity.DEBUFF.value)
+                result["effects"].append({"type": "attack_reduction", "target": panel_target.name,
+                                          "attack_power": panel_target.attack_power})
+            if (not panel_locked) and "attack_fixed" in calc:
+                self._battle_delta(
+                    panel_target, "attack_power", calc["attack_fixed"] - panel_target.attack_power,
+                    name, EffectPolarity.NEUTRAL.value)
+                result["effects"].append({"type": "attack_fixed", "target": panel_target.name,
+                                          "attack_power": panel_target.attack_power})
+            if (not panel_locked) and "attack_count_fixed" in calc:
+                self._battle_delta(
+                    panel_target, "attack_count", calc["attack_count_fixed"] - panel_target.attack_count,
+                    name, EffectPolarity.NEUTRAL.value)
+                result["effects"].append({"type": "attack_count_fixed", "target": panel_target.name,
+                                          "attack_count": panel_target.attack_count})
         bianxing_blocked = False
         if name == "变形":  # 自身攻击力与攻击次数互换；持续结束后还原首次变形前面板
             if caster.has_status("定型"):
@@ -2647,22 +2887,39 @@ class CombatEngine:
 
         # ---- 速度修改 ----
         if "speed_boost" in calc:
-            gained = self._gain_speed(target, calc["speed_boost"], ctx={
-                "timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
-                "source": name, "source_type": "daowen", "actor": caster, "target": target,
-                "owner": caster, "mechanic": "speed_change", "subtype": "current_speed",
-                "amount": calc["speed_boost"], "tags": {"daowen"},
-            })
-            result["effects"].append({"type": "speed_boost", "target": target.name, "speed": target.current_speed, "gained": gained})
+            if "speed_boost" in wave_pieces:
+                pieces = self._divide_flat(calc["speed_boost"], len(wave_status_targets))
+                wave_pieces["speed_boost"] = pieces
+                for wt, piece in zip(wave_status_targets, pieces):
+                    gained = self._gain_speed(wt, piece, ctx={
+                        "timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
+                        "source": name, "source_type": "daowen", "actor": caster, "target": wt,
+                        "owner": caster, "mechanic": "speed_change", "subtype": "current_speed",
+                        "amount": piece, "tags": {"daowen", "wave"},
+                    })
+                    result["effects"].append({"type": "speed_boost", "target": wt.name,
+                                              "speed": wt.current_speed, "gained": gained})
+            else:
+                gained = self._gain_speed(target, calc["speed_boost"], ctx={
+                    "timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
+                    "source": name, "source_type": "daowen", "actor": caster, "target": target,
+                    "owner": caster, "mechanic": "speed_change", "subtype": "current_speed",
+                    "amount": calc["speed_boost"], "tags": {"daowen"},
+                })
+                result["effects"].append({"type": "speed_boost", "target": target.name,
+                                          "speed": target.current_speed, "gained": gained})
         if "speed_halved" in calc:
-            lost = target.current_speed - math.ceil(target.current_speed / 2)
-            self._lose_current_speed(target, lost, ctx={
-                "timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
-                "source": name, "source_type": "daowen", "actor": caster, "target": target,
-                "owner": caster, "mechanic": "speed_change", "subtype": "current_speed",
-                "amount": -lost, "tags": {"daowen"},
-            })
-            result["effects"].append({"type": "speed_halved", "target": target.name, "speed": target.current_speed})
+            # 减速X：速度减半为状态类效果（非数值平分），对波及目标原样生效。
+            for wt in wave_status_targets:
+                lost = wt.current_speed - math.ceil(wt.current_speed / 2)
+                self._lose_current_speed(wt, lost, ctx={
+                    "timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
+                    "source": name, "source_type": "daowen", "actor": caster, "target": wt,
+                    "owner": caster, "mechanic": "speed_change", "subtype": "current_speed",
+                    "amount": -lost, "tags": {"daowen"},
+                })
+                result["effects"].append({"type": "speed_halved", "target": wt.name,
+                                          "speed": wt.current_speed})
         if "speed_penalty" in calc and (name != "赎金" or self._shards_of(target) <= 0):
             self._lose_current_speed(target, calc["speed_penalty"], ctx={
                 "timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
@@ -2729,38 +2986,55 @@ class CombatEngine:
         # ---- 乱葬岗（二阶）专属道纹效果 ----
         if name == "瓦解" and calc.get("blood_limit_pct"):
             pct = calc["blood_limit_pct"]
-            cut = math.ceil(target.blood_limit * pct / 100)
-            self._apply_blood_limit_change(
-                target, -cut, "瓦解", EffectPolarity.DEBUFF.value,
-                ctx=daowen_ctx, source_type="daowen", subtype="disintegrate",
-                actor=caster, owner=caster)
-            result["effects"].append({"type": "wajie", "target": target.name,
-                                      "blood_limit_pct": pct, "blood_limit_cut": cut,
-                                      "blood_limit_after": target.blood_limit})
+            if len(wave_status_targets) > 1:
+                # 波及：总数值=各目标血限×百分比之和，再平分。
+                total = sum(math.ceil(wt.blood_limit * pct / 100) for wt in wave_status_targets)
+                pieces = self._divide_flat(total, len(wave_status_targets))
+                for wt, piece in zip(wave_status_targets, pieces):
+                    self._apply_blood_limit_change(
+                        wt, -piece, "瓦解", EffectPolarity.DEBUFF.value,
+                        ctx=daowen_ctx, source_type="daowen", subtype="disintegrate",
+                        actor=caster, owner=caster)
+                    result["effects"].append({"type": "wajie", "target": wt.name,
+                                              "blood_limit_pct": pct, "blood_limit_cut": piece,
+                                              "blood_limit_after": wt.blood_limit})
+            else:
+                cut = math.ceil(target.blood_limit * pct / 100)
+                self._apply_blood_limit_change(
+                    target, -cut, "瓦解", EffectPolarity.DEBUFF.value,
+                    ctx=daowen_ctx, source_type="daowen", subtype="disintegrate",
+                    actor=caster, owner=caster)
+                result["effects"].append({"type": "wajie", "target": target.name,
+                                          "blood_limit_pct": pct, "blood_limit_cut": cut,
+                                          "blood_limit_after": target.blood_limit})
         if name == "镇尸" and calc.get("no_heal"):
-            target.add_status(StatusEffect(name="镇尸", value=1,
-                                           remaining_rounds=calc.get("duration", 1),
-                                           source=caster.name))
-            result["effects"].append({"type": "zhenshi", "target": target.name,
-                                      "duration": calc.get("duration", 1)})
+            for st_target in wave_status_targets:
+                st_target.add_status(StatusEffect(name="镇尸", value=1,
+                                                  remaining_rounds=calc.get("duration", 1),
+                                                  source=caster.name))
+                result["effects"].append({"type": "zhenshi", "target": st_target.name,
+                                          "duration": calc.get("duration", 1)})
         if name == "勾魂" and calc.get("round_start_mana_drain"):
-            target.add_status(StatusEffect(name="勾魂", value=calc["round_start_mana_drain"],
-                                           remaining_rounds=-1, source=caster.name))
-            result["effects"].append({"type": "gouhun", "target": target.name,
-                                      "mana_drain": calc["round_start_mana_drain"]})
+            for st_target in wave_status_targets:
+                st_target.add_status(StatusEffect(name="勾魂", value=calc["round_start_mana_drain"],
+                                                  remaining_rounds=-1, source=caster.name))
+                result["effects"].append({"type": "gouhun", "target": st_target.name,
+                                          "mana_drain": calc["round_start_mana_drain"]})
         if name == "冥气" and calc.get("speed_loss_speed_limit"):
-            target.add_status(StatusEffect(name="冥气", value=calc["speed_loss_speed_limit"],
-                                           remaining_rounds=calc.get("duration", 1),
-                                           source=caster.name))
-            result["effects"].append({"type": "mingqi", "target": target.name,
-                                      "speed_loss_speed_limit": calc["speed_loss_speed_limit"],
-                                      "duration": calc.get("duration", 1)})
+            for st_target in wave_status_targets:
+                st_target.add_status(StatusEffect(name="冥气", value=calc["speed_loss_speed_limit"],
+                                                  remaining_rounds=calc.get("duration", 1),
+                                                  source=caster.name))
+                result["effects"].append({"type": "mingqi", "target": st_target.name,
+                                          "speed_loss_speed_limit": calc["speed_loss_speed_limit"],
+                                          "duration": calc.get("duration", 1)})
         if name == "缄默" and calc.get("silence_death_triggers"):
-            target.add_status(StatusEffect(name="缄默", value=1,
-                                           remaining_rounds=calc.get("duration", 1),
-                                           source=caster.name))
-            result["effects"].append({"type": "qianmo", "target": target.name,
-                                      "duration": calc.get("duration", 1)})
+            for st_target in wave_status_targets:
+                st_target.add_status(StatusEffect(name="缄默", value=1,
+                                                  remaining_rounds=calc.get("duration", 1),
+                                                  source=caster.name))
+                result["effects"].append({"type": "qianmo", "target": st_target.name,
+                                          "duration": calc.get("duration", 1)})
         if name == "尸爆" and calc.get("self_destruct"):
             # [命零]对全体敌方打出自身血限10X%伤害
             if caster.is_alive and caster.current_hp > 0:
@@ -2809,26 +3083,68 @@ class CombatEngine:
 
         # ---- 特殊 ----
         if "self_attack_count" in calc:  # 自残：目标自打X次
-            for _ in range(calc["self_attack_count"]):
-                result["effects"].append({"type": "self_attack", "target": target.name, **self._apply_hostile_damage(target, target.attack_power, source=target, ctx={
-                    "timing": "player_action" if caster is self.state.player else "monster_action",
-                    "source": name, "source_type": "daowen", "actor": target, "target": target,
-                    "mechanic": "damage", "subtype": "self_attack", "amount": target.attack_power,
-                    "tags": {"daowen", "self_damage"},
-                })})
+            if "self_attack_count" in wave_pieces:
+                pieces = self._divide_flat(calc["self_attack_count"], len(wave_status_targets))
+                wave_pieces["self_attack_count"] = pieces
+                for wt, piece in zip(wave_status_targets, pieces):
+                    for _ in range(piece):
+                        result["effects"].append({"type": "self_attack", "target": wt.name,
+                            **self._apply_hostile_damage(wt, wt.attack_power, source=wt, ctx={
+                                "timing": "player_action" if caster is self.state.player else "monster_action",
+                                "source": name, "source_type": "daowen", "actor": wt, "target": wt,
+                                "mechanic": "damage", "subtype": "self_attack", "amount": wt.attack_power,
+                                "tags": {"daowen", "self_damage", "wave"},
+                            })})
+            else:
+                for _ in range(calc["self_attack_count"]):
+                    result["effects"].append({"type": "self_attack", "target": target.name,
+                        **self._apply_hostile_damage(target, target.attack_power, source=target, ctx={
+                            "timing": "player_action" if caster is self.state.player else "monster_action",
+                            "source": name, "source_type": "daowen", "actor": target, "target": target,
+                            "mechanic": "damage", "subtype": "self_attack", "amount": target.attack_power,
+                            "tags": {"daowen", "self_damage"},
+                        })})
         if "targets_removed" in calc:  # 封印：仅移出怪物（README：X个[目标]怪物）
             removed = 0
             removed_names = []
-            for e in list(self.state.enemies):
-                if (e.is_alive and e.entity_type == "怪物"
-                        and removed < calc["targets_removed"]):
-                    self._remove_from_combat(e, "封印", ctx={
-                        "timing": "player_action" if caster is self.state.player else "monster_action",
-                        "source": name, "source_type": "daowen", "actor": caster, "target": e,
-                        "mechanic": "leave", "subtype": "seal", "tags": {"leave", "no_shards"},
-                    })
-                    removed += 1
-                    removed_names.append(e.name)
+            if "targets_removed" in wave_pieces:
+                # 波及：总名额平分（余数随机分配），优先作用于被标记的怪物。
+                quota = dict(zip(wave_status_targets, wave_pieces["targets_removed"]))
+                for e in list(self.state.enemies):
+                    if removed >= calc["targets_removed"]:
+                        break
+                    if e.is_alive and e.entity_type == "怪物" and quota.get(e, 0) > 0:
+                        quota[e] -= 1
+                        self._remove_from_combat(e, "封印", ctx={
+                            "timing": "player_action" if caster is self.state.player else "monster_action",
+                            "source": name, "source_type": "daowen", "actor": caster, "target": e,
+                            "mechanic": "leave", "subtype": "seal", "tags": {"leave", "no_shards"},
+                        })
+                        removed += 1
+                        removed_names.append(e.name)
+                # 剩余名额兜底：按原规则从敌人列表补足。
+                for e in list(self.state.enemies):
+                    if removed >= calc["targets_removed"]:
+                        break
+                    if e.is_alive and e.entity_type == "怪物":
+                        self._remove_from_combat(e, "封印", ctx={
+                            "timing": "player_action" if caster is self.state.player else "monster_action",
+                            "source": name, "source_type": "daowen", "actor": caster, "target": e,
+                            "mechanic": "leave", "subtype": "seal", "tags": {"leave", "no_shards"},
+                        })
+                        removed += 1
+                        removed_names.append(e.name)
+            else:
+                for e in list(self.state.enemies):
+                    if (e.is_alive and e.entity_type == "怪物"
+                            and removed < calc["targets_removed"]):
+                        self._remove_from_combat(e, "封印", ctx={
+                            "timing": "player_action" if caster is self.state.player else "monster_action",
+                            "source": name, "source_type": "daowen", "actor": caster, "target": e,
+                            "mechanic": "leave", "subtype": "seal", "tags": {"leave", "no_shards"},
+                        })
+                        removed += 1
+                        removed_names.append(e.name)
             result["effects"].append({
                 "type": "seal", "removed": removed, "targets": removed_names,
             })
@@ -2844,30 +3160,30 @@ class CombatEngine:
         # 此前只算出 invalid_damage_hits，apply 不消费，轮回者 use_daowen 等于白扣 5X 法力。
         # 怪物侧走 _apply_control_to_player，探照灯走 add_status，所以旧测试都绿。
         if "invalid_damage_hits" in calc:
-            hits = int(calc["invalid_damage_hits"])
-            if hits > 0:
-                target.add_status(StatusEffect(
-                    name="蒙蔽", remaining_rounds=-1, value=hits, source=caster.name))
-                result["effects"].append({
-                    "type": "mengbi",
-                    "target": target.name,
-                    "count": hits,
-                    "remaining": target.get_status_value("蒙蔽"),
-                })
-
-        if name == "缓慢":
-            if calc.get("effective"):
-                target.add_status(StatusEffect(
-                    name="缓慢", remaining_rounds=x, value=x, source=caster.name))
-                result["effects"].append({
-                    "type": "manqian", "target": target.name, "effective": True,
-                    "action_count": calc.get("target_action_count"),
-                })
+            if "invalid_damage_hits" in wave_pieces:
+                pieces = self._divide_flat(calc["invalid_damage_hits"], len(wave_status_targets))
+                wave_pieces["invalid_damage_hits"] = pieces
+                for wt, piece in zip(wave_status_targets, pieces):
+                    if piece > 0:
+                        wt.add_status(StatusEffect(
+                            name="蒙蔽", remaining_rounds=-1, value=piece, source=caster.name))
+                        result["effects"].append({
+                            "type": "mengbi",
+                            "target": wt.name,
+                            "count": piece,
+                            "remaining": wt.get_status_value("蒙蔽"),
+                        })
             else:
-                result["effects"].append({
-                    "type": "manqian", "target": target.name, "effective": False,
-                    "action_count": calc.get("target_action_count"),
-                })
+                hits = int(calc["invalid_damage_hits"])
+                if hits > 0:
+                    target.add_status(StatusEffect(
+                        name="蒙蔽", remaining_rounds=-1, value=hits, source=caster.name))
+                    result["effects"].append({
+                        "type": "mengbi",
+                        "target": target.name,
+                        "count": hits,
+                        "remaining": target.get_status_value("蒙蔽"),
+                    })
 
         if name == "坠落":
             duration = x if calc.get("duration") in (None, 0) else calc["duration"]
@@ -2883,14 +3199,14 @@ class CombatEngine:
             result["effects"].append({"type": "zhuiluo", "targets": grounded, "duration": duration})
         elif ("duration" in calc and calc.get("duration") is not None
               and not (name == "变形" and bianxing_blocked)
+              # 波及标记由 use_daowen/怪物结算逐目标处理，不走通用状态块
               # 乱葬岗道纹已在上方乱葬岗段自行 add_status，跳过通用状态处理避免重复叠加
-              and name not in ("勾魂", "冥气", "缄默", "镇尸", "瓦解", "缓慢")):
+              and name not in ("勾魂", "冥气", "缄默", "镇尸", "瓦解", "波及")):
             duration = calc["duration"] if calc["duration"] != 0 else -1
             effect_target = target if target else caster
             # 自身作用型道纹(变形/超频/自食等)作用于施法者
             # 洗劫：状态应挂在施法者上——"造成伤害时夺取等量碎片"以施法者为触发主体（与 sim/balance_sim 口径一致）
-            self_targeted = name in ("超频", "自食", "飞行", "滑翔", "狂暴", "自愈", "必中", "变形", "洗劫", "固执", "切割", "贯穿")
-            et = caster if self_targeted else effect_target
+            self_targeted = name in ("超频", "自食", "飞行", "滑翔", "狂暴", "自愈", "必中", "变形", "洗劫", "固执", "贯穿")
             if name == "疯狂":
                 # 2026-08-17 用户裁定：疯狂X改为【所有角色出手+X】（全局，变相平衡）。
                 # 状态盖到双方全部存活角色；出手口径各自读取自身疯狂状态：
@@ -2902,20 +3218,32 @@ class CombatEngine:
                                                    value=x, source=caster.name))
                     result["effects"].append({"type": "status_added", "target": et_all.name,
                                               "status": name, "duration": duration, "value": x})
-            elif name in ("飞行", "滑翔") and self._field_has_zhuiluo():
-                et.is_flying = False
-                et.add_status(StatusEffect(name="坠落", remaining_rounds=1, value=x, source=caster.name))
-                result["effects"].append({"type": "zhuiluo_block_flight", "target": et.name})
+            elif self_targeted:
+                et = caster
+                if name in ("飞行", "滑翔") and self._field_has_zhuiluo():
+                    et.is_flying = False
+                    et.add_status(StatusEffect(name="坠落", remaining_rounds=1, value=x, source=caster.name))
+                    result["effects"].append({"type": "zhuiluo_block_flight", "target": et.name})
+                else:
+                    et.add_status(StatusEffect(name=name, remaining_rounds=duration, value=x, source=caster.name))
+                    result["effects"].append({"type": "status_added", "target": et.name,
+                                              "status": name, "duration": duration, "value": x})
             else:
-                et.add_status(StatusEffect(name=name, remaining_rounds=duration, value=x, source=caster.name))
-                result["effects"].append({"type": "status_added", "target": et.name, "status": name, "duration": duration, "value": x})
+                # 波及：状态类效果对每个拥有波及效果的目标（含本次[目标]）原样生效。
+                for et in wave_status_targets:
+                    if not et.is_alive:
+                        continue
+                    et.add_status(StatusEffect(name=name, remaining_rounds=duration, value=x, source=caster.name))
+                    result["effects"].append({"type": "status_added", "target": et.name,
+                                              "status": name, "duration": duration, "value": x})
 
         # ---- 龙心谷专属 4 件（F2）：逆鳞/嫁祸/背负/伤痕 的 combat 侧实装 ----
         # 逆鳞X：目标每失去1HP积1层，下次伤害+全部层后清空，持续X（已通过 duration 加状态，此处初始化计数）
         if name == "逆鳞":
-            if not hasattr(target, "_nilin"):
-                target._nilin = 0
-            result["effects"].append({"type": "nilin_setup", "target": target.name, "x": x})
+            for st_target in wave_status_targets:
+                if not hasattr(st_target, "_nilin"):
+                    st_target._nilin = 0
+                result["effects"].append({"type": "nilin_setup", "target": st_target.name, "x": x})
         # 嫁祸X：自身下X次受伤由目标承担（无持续，仅计数）
         elif name == "嫁祸":
             caster._jiahuo_left = x
@@ -2927,22 +3255,26 @@ class CombatEngine:
             caster._beifu_left = x
             caster._beifu_target = target
             # 在目标侧加标记便于查询
-            target.add_status(StatusEffect(name="被背负", value=x, remaining_rounds=-1, source=caster.name))
-            result["effects"].append({"type": "beifu", "caster": caster.name, "target": target.name, "count": x})
+            for st_target in wave_status_targets:
+                st_target.add_status(StatusEffect(name="被背负", value=x, remaining_rounds=-1, source=caster.name))
+                result["effects"].append({"type": "beifu", "caster": caster.name, "target": st_target.name, "count": x})
         # 伤痕X：目标每次掉血后血限-X，永久（已通过 duration 加伤痕状态，此处仅补日志）
         elif name == "伤痕":
-            result["effects"].append({"type": "shanghen", "target": target.name, "x": x})
+            for st_target in wave_status_targets:
+                result["effects"].append({"type": "shanghen", "target": st_target.name, "x": x})
 
         # ---- F2 全量：罪孽都市（逼债/清算/赌命/消灾/抵扣）的注册与即时结算 ----
         # 逼债X：[回始]使[目标]失去X碎片，否则失去2X血限（二选一）。此处仅挂账，[回始]在 round_start 结算。
         if name == "逼债":
-            target._bizhai.append({"x": x, "caster": caster})
-            target.add_status(StatusEffect(name="逼债", value=x, remaining_rounds=-1, source=caster.name))
-            result["effects"].append({"type": "bizhai_register", "target": target.name, "x": x})
+            for st_target in wave_status_targets:
+                st_target._bizhai.append({"x": x, "caster": caster})
+                st_target.add_status(StatusEffect(name="逼债", value=x, remaining_rounds=-1, source=caster.name))
+                result["effects"].append({"type": "bizhai_register", "target": st_target.name, "x": x})
         # 清算X：[回始]使[目标]失去你[碎片]点格挡，持续X。此处仅挂账。
         elif name == "清算":
-            target._qingsuan.append({"x": x, "caster": caster})
-            result["effects"].append({"type": "qingsuan_register", "target": target.name, "x": x})
+            for st_target in wave_status_targets:
+                st_target._qingsuan.append({"x": x, "caster": caster})
+                result["effects"].append({"type": "qingsuan_register", "target": st_target.name, "x": x})
         # 赌命X：玩家侧在_action_use_daowen预检付费；怪物侧由两阶段决策结算器付费。
         # 状态经 duration 挂在施法者上，[回始]在 round_start 按存活角色随机结算。
         elif name == "赌命":
@@ -2953,9 +3285,15 @@ class CombatEngine:
             result["effects"].append({"type": "xiaozai_rerolls", "added": x, "total": self.dice.rerolls_pending})
         # 抵扣X：封印[目标]拥有的一件遗物，持续X（目标无遗物则无效果）
         elif name == "抵扣":
-            sealed = self._seal_one_relic(target, x)
-            result["effects"].append({"type": "dikou", "target": target.name,
-                                      "sealed": sealed or None, "rounds": x})
+            for st_target in wave_status_targets:
+                sealed = self._seal_one_relic(st_target, x)
+                result["effects"].append({"type": "dikou", "target": st_target.name,
+                                          "sealed": sealed or None, "rounds": x})
+
+        # 波及X：标记建立/解除由 use_daowen 与怪物两阶段结算按显式提交逐目标处理，
+        # 此处仅登记结算信息（通用状态块已排除波及，避免重复挂状态）。
+        if name == "波及":
+            result["effects"].append({"type": "boba_register", "target": target.name, "x": x})
 
         return result
 
@@ -2964,7 +3302,6 @@ class CombatEngine:
     # 法术流程注册表；计算层只描述步骤，不再替持有者选择X、目标或闪避。
     SPELL_FLOWS = {
         "先发制人": {"trigger": ActionPhase.BEFORE_DAMAGE_TAKEN.value, "steps": [("杀伐", "attacker")]},
-        "临界泄压": {"trigger": ActionPhase.BEFORE_DAMAGE_TAKEN.value, "steps": [("切割", "attacker")]},
         "后发制人": {"trigger": ActionPhase.BEFORE_DAMAGE_TAKEN.value, "steps": [("庇护", "self")]},
         "生生不息": {"trigger": ActionPhase.AFTER_LIFE_LOST.value, "steps": [("再生", "self")]},
         "以牙还牙": {"trigger": ActionPhase.AFTER_LIFE_LOST.value, "steps": [("再生", "self"), ("杀伐", "attacker")]},
@@ -2977,7 +3314,7 @@ class CombatEngine:
     # 自创法术文本→执行：解析 trigger_condition / effect_flow 为 SPELL_FLOWS 同构结构。
     # 格式（与死者之书一致）：trigger如"受到伤害前"/"失去生命后"；flow如"发动杀伐X→发动再生X"。
     # 目标推断：攻击/削弱/控制类道纹打attacker，自保/增益/回复类打self，坠落打target（若飞行）。
-    _SPELL_SELF_DAOWEN = {"庇护", "再生", "固执", "活血", "龙鳞", "自食", "透支", "假钞", "超频", "变形", "切割", "贯穿"}
+    _SPELL_SELF_DAOWEN = {"庇护", "再生", "固执", "活血", "龙鳞", "自食", "透支", "假钞", "超频", "变形", "贯穿"}
     _SPELL_TRIGGER_MAP = {
         "受到伤害前": ActionPhase.BEFORE_DAMAGE_TAKEN.value,
         "失去生命后": ActionPhase.AFTER_LIFE_LOST.value,
@@ -3663,9 +4000,13 @@ class CombatEngine:
                         "x": inst.x_value,
                         "requires_target": requires_target,
                         "target_options": legal_targets,
-                        "dodge_submission": ("per_target" if effective_name == "冲击"
+                        "dodge_submission": ("per_target" if effective_name == "波及"
                                              else ("single_if_hostile" if requires_target else "none")),
-                        "dodge_target_options": player_refs if effective_name == "冲击" else [],
+                        "dodge_target_options": (
+                            [target for target in all_targets
+                             if target["ref"] != actor_ref
+                             and self.is_targetable(monster, refs[target["ref"]])]
+                            if effective_name == "波及" else []),
                         "trigger_spell_options": self.prepare_daowen_trigger_spells(monster),
                     })
             attack_targets = [
@@ -3756,16 +4097,15 @@ class CombatEngine:
         blood_shadow = choice.get("blood_shadow", False)
         aoe_dodge_choices: list[tuple[Entity, bool, dict]] = []
         must_hit_preview = self.bizhong_remaining(monster) > 0
-        if effective_name == "冲击":
+        if effective_name == "波及":
+            # 波及X：选择X个[目标]建立/解除波及效果（持续∞）。每个目标显式提交闪避。
             submitted_dodges = choice.get("dodge_targets")
-            if not isinstance(submitted_dodges, list):
-                raise ValueError("道纹【冲击】必须为全部敌对目标显式提交dodge_targets")
+            mark_count = int(calc.get("mark_targets", inst.x_value))
+            if not isinstance(submitted_dodges, list) or len(submitted_dodges) != mark_count:
+                raise ValueError(f"道纹【波及】必须为{mark_count}个目标显式提交dodge_targets")
             expected_ref_list = [
                 target.get("ref") for target in prepared_option.get("dodge_target_options", [])
             ]
-            if (any(not isinstance(ref, str) for ref in expected_ref_list)
-                    or len(expected_ref_list) != len(set(expected_ref_list))):
-                raise ValueError("prepare返回的冲击闪避目标快照无效")
             expected_refs = set(expected_ref_list)
             received: dict[str, dict] = {}
             for entry in submitted_dodges:
@@ -3775,16 +4115,14 @@ class CombatEngine:
                         or entry["dodge"] and entry["blood_shadow"]):
                     raise ValueError("dodge_targets每项必须包含target_ref与布尔值dodge/blood_shadow")
                 ref = entry["target_ref"]
-                if ref in received:
-                    raise ValueError(f"重复提交闪避目标: {ref}")
+                if ref in received or ref not in expected_refs:
+                    raise ValueError("波及dodge_targets必须覆盖X个不重复的合法目标")
                 received[ref] = entry
-            if set(received) != expected_refs:
-                raise ValueError(f"冲击必须覆盖全部敌对目标；需要{sorted(expected_refs)}")
-            for ref in expected_ref_list:
+            for entry in submitted_dodges:
+                ref = entry["target_ref"]
                 entity = refs.get(ref)
-                if entity is None or not self.state.on_player_side(entity):
-                    raise ValueError("prepare中的冲击目标已失效，请重新prepare_monster_phase")
-                entry = received[ref]
+                if entity is None or not entity.is_alive or entity is monster:
+                    raise ValueError("prepare中的波及目标已失效，请重新prepare_monster_phase")
                 want_dodge = entry["dodge"]
                 if want_dodge and not must_hit_preview and entity.current_speed < 1:
                     raise ValueError(f"{entity.name}速度不足，不能选择闪避")
@@ -3792,13 +4130,13 @@ class CombatEngine:
                                                 or entity.current_hp <= 10):
                     raise ValueError(f"{entity.name}不能使用血影")
                 if want_dodge and not must_hit_preview and self.state.side_has(entity, "回锋刀"):
-                    allowed = {target["ref"] for target in prepared_option["target_options"]
-                               if not self.state.on_player_side(refs[target["ref"]])}
+                    allowed = {t_opt["ref"] for t_opt in prepared_option["target_options"]
+                               if not self.state.on_player_side(refs[t_opt["ref"]])}
                     if entry.get("dodge_relic_target_ref") not in allowed:
                         raise ValueError("回锋刀触发必须显式提交合法目标")
                 aoe_dodge_choices.append((entity, want_dodge, entry))
             if dodge not in (None, False):
-                raise ValueError("冲击使用dodge_targets，不接受dodge=true")
+                raise ValueError("波及使用dodge_targets，不接受dodge=true")
         elif requires_target and hostile:
             if not isinstance(dodge, bool) or not isinstance(blood_shadow, bool):
                 raise ValueError(f"道纹【{effective_name}】必须显式提交布尔值dodge/blood_shadow")
@@ -3846,6 +4184,17 @@ class CombatEngine:
                     "tags": {"daowen", "active_payment"}}))
                 return {"monster": monster.name, "collapsed": name,
                         "note": "支付异变后触发【崩解】，道纹效果中断"}
+        elif name == "封印":
+            # 封印X：代价：异变8X（2026-08-21）；支付后崩解仍按统一死亡管线结算。
+            paid = monster.add_mutation(8 * inst.x_value)
+            if paid["collapsed"]:
+                self._on_entity_death(monster, ctx=self._collapse_context(monster, {
+                    "timing": "monster_action", "source": name, "source_type": "daowen",
+                    "actor": monster, "target": monster, "mechanic": "cost",
+                    "subtype": "mutation", "amount": 8 * inst.x_value,
+                    "tags": {"daowen", "active_payment"}}))
+                return {"monster": monster.name, "collapsed": name,
+                        "note": "支付异变后触发【崩解】，道纹效果中断"}
         elif name == "赌命":
             if monster.fake_shards < inst.x_value:
                 raise ValueError(f"{monster.name}假碎片不足，不能发动【赌命】")
@@ -3871,22 +4220,32 @@ class CombatEngine:
         monster.actions_used_this_round += 1
 
         aoe_targets_override = None
-        if effective_name == "冲击":
-            if must_hit_preview:
-                self.consume_bizhong(monster)
-                aoe_targets_override = [entity for entity, _, _ in aoe_dodge_choices]
-            else:
-                aoe_targets_override = []
-                for entity, want_dodge, entry in aoe_dodge_choices:
-                    if entry["blood_shadow"]:
-                        self.pay_numeric_cost(
-                            entity, "流血", 10,
-                            cost_share_target_ref=entry.get("cost_share_target_ref", ""),
-                            cost_context={"timing": "reaction", "source": "血影", "source_type": "relic", "tags": {"active_payment"}})
-                    elif want_dodge:
-                        self._spend_dodge_speed(entity, entry.get("dodge_relic_target_ref"))
-                    else:
-                        aoe_targets_override.append(entity)
+        if effective_name == "波及":
+            # 波及X：按显式提交逐目标建立/解除波及标记（持续∞，[战终]清除）。
+            wave_marked: list[str] = []
+            wave_unmarked: list[str] = []
+            for entity, want_dodge, entry in aoe_dodge_choices:
+                if must_hit_preview:
+                    self.consume_bizhong(monster)
+                    marked = self._toggle_wave_mark(entity, monster)
+                    (wave_marked if marked else wave_unmarked).append(entity.name)
+                elif entry["blood_shadow"]:
+                    self.pay_numeric_cost(
+                        entity, "流血", 10,
+                        cost_share_target_ref=entry.get("cost_share_target_ref", ""),
+                        cost_context={"timing": "reaction", "source": "血影", "source_type": "relic", "tags": {"active_payment"}})
+                elif want_dodge:
+                    self._spend_dodge_speed(entity, entry.get("dodge_relic_target_ref"))
+                else:
+                    marked = self._toggle_wave_mark(entity, monster)
+                    (wave_marked if marked else wave_unmarked).append(entity.name)
+            execution = self.apply_daowen_effect(effective_name, calc, monster, target)
+            execution["wave_marked"] = wave_marked
+            execution["wave_unmarked"] = wave_unmarked
+            return {"monster": monster.name, "daowen_activated": name, "x": inst.x_value,
+                    "resolves_as": effective_name, "resonance_rewrite": bool(rewritten_as),
+                    "target": target.name, "execution": execution,
+                    "trigger_spell_logs": trigger_logs}
         elif requires_target and hostile:
             if must_hit_preview:
                 self.consume_bizhong(monster)
@@ -3948,17 +4307,14 @@ class CombatEngine:
         hostile = self.state.on_player_side(target) != self.state.on_player_side(monster)
         dodge = choice.get("dodge")
         blood_shadow = choice.get("blood_shadow", False)
-        if effective_name == "冲击":
+        if effective_name == "波及":
             submitted_dodges = choice.get("dodge_targets")
-            if not isinstance(submitted_dodges, list):
-                raise ValueError("道纹【冲击】必须为全部敌对目标显式提交dodge_targets")
-            expected_ref_list = [
-                target.get("ref") for target in prepared_option.get("dodge_target_options", [])
-            ]
-            if (any(not isinstance(ref, str) for ref in expected_ref_list)
-                    or len(expected_ref_list) != len(set(expected_ref_list))):
-                raise ValueError("prepare返回的冲击闪避目标快照无效")
-            expected_refs = set(expected_ref_list)
+            mark_count = inst.x_value
+            if not isinstance(submitted_dodges, list) or len(submitted_dodges) != mark_count:
+                raise ValueError(f"道纹【波及】必须为{mark_count}个目标显式提交dodge_targets")
+            expected_refs = {
+                t_opt.get("ref") for t_opt in prepared_option.get("dodge_target_options", [])
+            }
             received: dict[str, dict] = {}
             for entry in submitted_dodges:
                 if (not isinstance(entry, dict) or not isinstance(entry.get("dodge"), bool)
@@ -3967,17 +4323,11 @@ class CombatEngine:
                         or entry["dodge"] and entry["blood_shadow"]):
                     raise ValueError("dodge_targets每项必须包含target_ref与布尔值dodge/blood_shadow")
                 ref = entry["target_ref"]
-                if ref in received:
-                    raise ValueError(f"重复提交闪避目标: {ref}")
+                if ref in received or ref not in expected_refs:
+                    raise ValueError("波及dodge_targets必须提交X个不重复的合法目标")
                 received[ref] = entry
-            if set(received) != expected_refs:
-                raise ValueError(f"冲击必须覆盖全部敌对目标；需要{sorted(expected_refs)}")
-            for ref in expected_ref_list:
-                entity = refs.get(ref)
-                if entity is None or not self.state.on_player_side(entity):
-                    raise ValueError("prepare中的冲击目标已失效，请重新prepare_monster_phase")
             if dodge not in (None, False):
-                raise ValueError("冲击使用dodge_targets，不接受dodge=true")
+                raise ValueError("波及使用dodge_targets，不接受dodge=true")
         elif requires_target and hostile:
             if not isinstance(dodge, bool) or not isinstance(blood_shadow, bool):
                 raise ValueError(f"道纹【{effective_name}】必须显式提交布尔值dodge/blood_shadow")
@@ -4341,11 +4691,10 @@ class CombatEngine:
         return effects
 
     def can_act(self, entity: Entity) -> bool:
-        """是否可出手（眩晕/束缚/缓慢下不可）"""
+        """是否可出手（眩晕/束缚下不可）"""
         return (entity.is_alive
                 and not entity.has_status("眩晕")
-                and not entity.has_status("束缚")
-                and not entity.has_status("缓慢"))
+                and not entity.has_status("束缚"))
 
     def is_targetable(self, attacker: Entity, target: Entity) -> bool:
         """目标是否可被选中。滑翔视同飞行；坠落压住全场飞行。"""

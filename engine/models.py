@@ -500,7 +500,7 @@ class Entity:
                 "负岳索", "加速", "愤怒",
             }
             debuffs = {
-                "弱化", "无力", "减速", "迟滞", "束缚", "封印", "缓慢", "坠落",
+                "弱化", "无力", "减速", "迟滞", "束缚", "封印", "坠落",
                 "坏死", "爆裂", "退化", "定型", "畸变", "僵化", "加害", "伤痕",
                 "寄生", "蒙蔽", "眩晕", "手雷减攻", "衰败", "被背负",
             }
@@ -670,6 +670,11 @@ class GameState:
     
     # 封存候选人（最终的冠冕）
     sealed_candidate: Optional[dict] = None
+    # 死斗规则（2026-08-21）：通过死斗的角色进入"进阶封存"，封存按阶级分槽存放。
+    # 每个阶级封存槽是一份先来后到的候选队列；该阶级的挑战者依次与队首死斗。
+    # 当前正在进行的死斗所属阶级（1=一阶挑战者/胜者死斗，2=二阶…；0=非死斗）。
+    sealed_candidates: dict = field(default_factory=dict)  # {阶级: [候选快照, ...]}
+    duel_tier: int = 0
     
     # 员工相关
     blacklist_level: int = 0     # 黑名单计数（每累计3名员工因拒付工资/解雇/死亡离队+1，≥3触发is_blacklisted）
@@ -1106,6 +1111,8 @@ class GameState:
             "duel_turn": self.duel_turn,
             "duel_tie_alternating": self.duel_tie_alternating,
             "duel_round_first": self.duel_round_first,
+            "sealed_candidates": self.sealed_candidates,
+            "duel_tier": self.duel_tier,
             "attribute_points": self.attribute_points,
             "player": self.player.to_dict() if self.player else None,
             "friends": [f.to_dict() for f in self.friends],

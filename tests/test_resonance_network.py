@@ -45,14 +45,17 @@ def test_all_readme_monster_transforms_registered():
 
 
 def test_single_fourteen_node_core_loop():
-    """正常路径：杀伐与原切割闭环必须首尾接成唯一14节点核心闭环。"""
+    """正常路径：杀伐闭环为唯一11节点核心闭环（2026-08-21：冲击改名波及；删除缓慢、慈悲、切割）。"""
     assert "杀伐闭环" in R.CLOSED_LOOPS
     assert "切割闭环" not in R.CLOSED_LOOPS
     edges = R.CLOSED_LOOPS["杀伐闭环"]
-    assert len(edges) == 14
+    assert len(edges) == 11
     assert sorted(source for source, _, _ in edges) == sorted(target for _, _, target in edges)
-    assert R.find_transformation("慈悲", "反转") == "切割"
+    assert R.find_transformation("血债", "转换") == "波及"
+    assert R.find_transformation("波及", "反转") == "增殖"
     assert R.find_transformation("封印", "反转") == "杀伐"
+    for removed in ("冲击", "慈悲", "切割", "缓慢"):
+        assert not any(src == removed or tgt == removed for src, _, tgt in edges)
 
 
 def test_three_region_loops_present():

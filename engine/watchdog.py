@@ -148,7 +148,7 @@ class CombatWatchdog:
             # 5. 格挡阻隔判定
             if m.shield >= 20:
                 findings.append(f"敌方【{m.name}】持有高额格挡（{m.shield}点），低额攻击无法破防。")
-                recommendations.append(f"对策方案：使用【贯穿】（无视格挡）或高代数【冲击】/【杀伐】破盾！")
+                recommendations.append(f"对策方案：使用【贯穿】（无视格挡）或高代数【杀伐】破盾！")
 
             # 6. 龙鳞减伤判定
             if m.has_status("龙鳞"):

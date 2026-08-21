@@ -119,22 +119,18 @@ def learn(p, n):
     p.dao_wen[n] = bs.DaoWenInstance(
         dao_wen=DaoWen(name=n,formula="",cost_type="消耗",cost_formula="X",effect_formula=""))
 
-def cast_chongji(player, monsters, x):
-    """冲击X：消耗X法力，对所有存活怪造成X伤害（蒙蔽下无效；退化减数值；走专属漏斗）"""
-    if player.current_mana < x: return 0
-    player.current_mana -= x
-    if player.has_status("蒙蔽"):
-        for st in player.status_effects:
-            if st.name == "蒙蔽" and st.value > 0:
-                st.value -= 1
-                if st.value <= 0: player.status_effects.remove(st)
-                break
-        return 0
-    tot = 0
+def cast_boba(player, monsters, x):
+    """波及X：消耗3X法力，标记前X个存活怪（2026-08-21：冲击改名波及，无直接伤害）"""
+    if player.current_mana < 3 * x: return 0
+    player.current_mana -= 3 * x
+    marked = 0
     for m in monsters:
+        if marked >= x: break
         if m.is_alive and not (m.is_sculptured or m.is_proliferated or m.is_debt_bound):
-            tot += bs.hit_monster(player, m, bs.eff_x(player, x), monsters)
-    return tot
+            from engine.models import StatusEffect
+            m.add_status(StatusEffect(name="波及", remaining_rounds=-1, value=1, source=player.name))
+            marked += 1
+    return marked
 
 
 # 修行档：(属性点, 碎片消耗)，按性价比降序
@@ -147,7 +143,7 @@ def pre_battle_prep(player, shards, energy=3, battle_n=1, region=None, rng=None)
         got = tools_grant(player, rng)
         if got: energy -= 1
     if battle_n == 1:
-        for dw in ["庇护", "再生", "冲击"]:
+        for dw in ["庇护", "再生", "波及"]:
             if not has_dw(player, dw) and energy > 0:
                 learn(player, dw); energy -= 1
     while energy > 0:
@@ -178,7 +174,7 @@ def alive_monsters(monsters):
 
 
 def player_turn_multi(player, monsters, combat, rng):
-    """多怪玩家回合：≥3怪用冲击AOE，否则焦点最低血怪；低血再生、大伤害庇护"""
+    """多怪玩家回合：先标记波及再焦点最低血怪；低血再生、大伤害庇护"""
     mana = player.current_mana
     actions = max(1, math.ceil(player.speed_limit / 3))
     alive = alive_monsters(monsters)
@@ -188,12 +184,14 @@ def player_turn_multi(player, monsters, combat, rng):
         bs.cast_zaisheng(player, player, min(mana, 5)); mana = player.current_mana
     if incoming > 0 and has_dw(player,"庇护") and incoming >= player.current_hp * 0.3:
         bs.cast_bihu(player, min(mana, math.ceil(incoming/4))); mana = player.current_mana
-    use_aoe = len(alive) >= 3 and has_dw(player,"冲击")
+    use_boba = len(alive) >= 2 and has_dw(player, "波及")
+    boba_done = False
     while actions > 0 and mana > 0:
         alive = alive_monsters(monsters)
         if not alive: break
-        if use_aoe and len(alive_monsters(monsters)) >= 2:
-            cast_chongji(player, monsters, min(mana, 7)); mana = player.current_mana; actions -= 1
+        if use_boba and not boba_done and len(alive) >= 2:
+            cast_boba(player, monsters, min(len(alive), max(1, mana // 3)))
+            mana = player.current_mana; actions -= 1; boba_done = True
         else:
             target = min(alive_monsters(monsters), key=lambda m: m.current_hp)
             x = min(mana, max(1, math.ceil(target.current_hp/2)))

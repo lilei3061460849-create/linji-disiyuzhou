@@ -44,7 +44,7 @@ def _state_with_blood_pact() -> tuple[GameState, CombatEngine, Entity, Entity]:
 def test_blood_pact_shares_every_supported_numeric_cost(
     cost_type: str, player_field: str, ally_field: str,
 ):
-    """正常路径：代价5由玩家承担3、同伴承担2，六种数值代价使用同一总线。"""
+    """正常路径：代价5与同伴平分（2/3，余数随机分配），六种数值代价使用同一总线。"""
     _, combat, player, ally = _state_with_blood_pact()
     player_before = getattr(player, player_field)
     ally_before = getattr(ally, ally_field)
@@ -53,23 +53,23 @@ def test_blood_pact_shares_every_supported_numeric_cost(
         player, cost_type, 5, cost_share_target_ref="friend:0")
 
     if cost_type == "异变":
-        assert getattr(player, player_field) == player_before + 3
-        assert getattr(ally, ally_field) == ally_before + 2
+        gains = [getattr(player, player_field) - player_before,
+                 getattr(ally, ally_field) - ally_before]
     else:
-        assert getattr(player, player_field) == player_before - 3
-        assert getattr(ally, ally_field) == ally_before - 2
-    assert result["owner"]["paid"] == 3
-    assert result["shared_with"]["paid"] == 2
+        gains = [player_before - getattr(player, player_field),
+                 ally_before - getattr(ally, ally_field)]
+    assert sorted(gains) == [2, 3], "平分规则：总代价5平分，余数1随机分配"
+    assert result["owner"]["paid"] + result["shared_with"]["paid"] == 5
     assert result["actual_paid"] == 5
 
 
 def test_blood_pact_cost_one_and_dragon_heart_order():
-    """边界：代价1由玩家承担1/同伴0；龙心先抵消，再拆分剩余后果。"""
+    """边界：代价1平分（一方1/一方0，余数随机）；龙心先抵消，再拆分剩余后果。"""
     state, combat, player, ally = _state_with_blood_pact()
     one = combat.pay_numeric_cost(
         player, "流血", 1, cost_share_target_ref="friend:0")
-    assert player.current_hp == 99 and ally.current_hp == 80
-    assert one["owner"]["paid"] == 1 and one["shared_with"]["paid"] == 0
+    assert sorted([100 - player.current_hp, 80 - ally.current_hp]) == [0, 1]
+    assert one["owner"]["paid"] + one["shared_with"]["paid"] == 1
 
     heart = Consumable(
         "流血龙心", "抵消流血", current_uses=3, max_uses=3,
@@ -79,7 +79,8 @@ def test_blood_pact_cost_one_and_dragon_heart_order():
         player, "流血", 9, cost_share_target_ref="friend:0", dragon_heart_use=3)
     assert result["dragon_heart_offset"] == 3
     assert result["remaining"] == 6
-    assert player.current_hp == 96 and ally.current_hp == 77
+    # 总流血7（1随机分+6平分3/3）：双方合计7，各3或4。
+    assert sorted([100 - player.current_hp, 80 - ally.current_hp]) == [3, 4]
     assert heart.current_uses == 0
 
 
@@ -172,7 +173,8 @@ def test_event_and_daowen_costs_use_blood_pact_bus(tmp_path):
     event = resolve_option_effect(
         "流血15。", engine, params={"cost_share_target_ref": "friend:0"})
     assert "error" not in event
-    assert player.current_hp == 92 and ally.current_hp == 73  # 8/7
+    # 平分规则（2026-08-21）：15平分 → 7/8（余数随机）
+    assert sorted([100 - player.current_hp, 80 - ally.current_hp]) == [7, 8]
 
     target = Entity("敌人", "怪物", blood_limit=100, current_hp=100)
     state.enemies.append(target)
@@ -180,7 +182,10 @@ def test_event_and_daowen_costs_use_blood_pact_bus(tmp_path):
     combat.apply_daowen_effect(
         "血债", calc, player, target,
         cost_share_target_ref="friend:0")
-    assert player.current_hp == 89 and ally.current_hp == 71  # 再分3/2
+    # 血债再流5平分 → 2/3（余数随机）；两次合计 = 15+5 = 20，双方各承担9~11。
+    losses = sorted([100 - player.current_hp, 80 - ally.current_hp])
+    assert sum(losses) == 20
+    assert losses[0] in (9, 10) and losses[1] in (10, 11)
 
 
 def test_regeneration_is_three_x_and_old_contracts_are_removed():
@@ -233,7 +238,7 @@ def test_scoped_ledger_rolls_back_battle_effects_but_keeps_costs(tmp_path):
 
 
 def test_blood_limit_debuff_rolls_back_without_erasing_life_loss():
-    """关键边界：切割造成的局内血限减少会清除，当前生命损失不能被回滚顺带治疗。"""
+    """关键边界：伤痕造成的局内血限减少战终清除，当前生命损失不能被回滚顺带治疗。"""
     from engine.models import StatusEffect
     state = GameState(phase="in_combat")
     player = Entity("轮回者", "轮回者", blood_limit=100, current_hp=100,
@@ -242,7 +247,8 @@ def test_blood_limit_debuff_rolls_back_without_erasing_life_loss():
     state.player = player
     state.enemies = [target]
     combat = CombatEngine(state, DiceEngine())
-    player.add_status(StatusEffect(name="切割", remaining_rounds=3, value=1))
+    # 伤痕X=5：目标每次掉血后血限-5（切割道纹已删除，2026-08-21）
+    target.add_status(StatusEffect(name="伤痕", remaining_rounds=3, value=5))
     combat._apply_hostile_damage(target, 5, source=player)
     assert target.blood_limit == 95 and target.current_hp == 95
     state.rollback_scoped_effects(EffectScope.BATTLE.value)

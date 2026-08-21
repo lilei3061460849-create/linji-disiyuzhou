@@ -10,7 +10,7 @@ from engine.api import GameEngine
 from engine.models import Entity, StatusEffect
 from engine.daowen import DaoWenEngine, ResonanceEngine
 from engine.dice import DiceEngine
-from engine.enums import EntityType
+from engine.enums import CostType, EntityType
 from engine.gamedata import SHAFA_LOOP_DAOWEN
 from tests.monster_phase_support import resolve_monster_phase
 from tests.setup_support import finish_initial_daowen
@@ -89,7 +89,7 @@ def test_setup():
     assert set(engine.state.player.dao_wen) == {choices[0]}
     repeat = engine.execute_action("setup_choose_initial_daowen", {"daowen_name": choices[0]})
     assert not repeat["success"]
-    removed = engine.execute_action("setup_choose_daowen", {"daowen": "切割"})
+    removed = engine.execute_action("setup_choose_daowen", {"daowen": "波及"})
     assert not removed["success"]
     print(f"  ✓ 显式选择初始道纹【{choices[0]}】，旧接口不能改写")
 
@@ -128,17 +128,18 @@ def test_daowen_calculations():
     assert result["target_heal"] == 12
     print("  ✓ 再生X=4: 消耗4，回复12")
     
-    # 测试冲击
-    result = DaoWenEngine.resolve("冲击", 2)
+    # 测试波及
+    result = DaoWenEngine.resolve("波及", 2)
     assert result["cost"] == 6
-    assert result["aoe_damage"] == 10
-    print("  ✓ 冲击X=2: 消耗6，AOE伤害10")
+    assert result["mark_targets"] == 2
+    assert result["duration"] == -1
+    print("  ✓ 波及X=2: 消耗6，选择2个目标建立/解除波及（持续∞）")
     
-    # 测试切割
-    result = DaoWenEngine.resolve("切割", 3)
-    assert result["cost"] == 9
-    assert result["duration"] == 3
-    print("  ✓ 切割X=3: 消耗9，持续3")
+    # 测试封印（代价：异变8X）
+    result = DaoWenEngine.resolve("封印", 1)
+    assert result["cost_type"] == CostType.MUTATION.value
+    assert result["cost_mutation"] == 8
+    print("  ✓ 封印X=1: 异变+8，移出1个目标怪物")
     
     # 测试飞行
     result = DaoWenEngine.resolve("飞行", 2)
@@ -164,11 +165,11 @@ def test_resonance():
     assert result["target"] == "庇护"
     print("  ✓ 再生 --曲解--> 庇护")
     
-    # 切割 → 反转 → 增殖
-    result = ResonanceEngine.apply_resonance("切割", "反转", False, True)
+    # 波及 → 反转 → 增殖
+    result = ResonanceEngine.apply_resonance("波及", "反转", False, True)
     assert result["success"]
     assert result["target"] == "增殖"
-    print("  ✓ 切割 --反转--> 增殖")
+    print("  ✓ 波及 --反转--> 增殖")
     
     # 查看可用残韵
     available = ResonanceEngine.get_available_resonance("杀伐")
@@ -530,8 +531,8 @@ def test_out_of_combat_actions():
     assert player.current_hp == expected_hp, f"休整2档应回{heal_amt2}→{expected_hp}，实{player.current_hp}"
     print(f"  ✓ 休整2档：HP20→{player.current_hp}")
 
-    # 学习道纹：若开局已发现庇护则改学冲击
-    learn_name = "庇护" if "庇护" not in player.dao_wen else "冲击"
+    # 学习道纹：若开局已发现庇护则改学波及
+    learn_name = "庇护" if "庇护" not in player.dao_wen else "波及"
     r = engine.execute_action("pre_battle_action", {"sub_action":"学习","sub":"daowen","name": learn_name})
     assert r["success"], f"学习失败: {r}"
     assert learn_name in player.dao_wen, f"{learn_name}应已加入玩家道纹"

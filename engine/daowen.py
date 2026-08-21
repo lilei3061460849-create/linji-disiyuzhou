@@ -121,45 +121,19 @@ class DaoWenEngine:
         }
     
     @staticmethod
-    def calculate_chongji(x: int) -> dict:
-        """冲击X：消耗3X。对所有敌对[目标]造成5X点伤害"""
+    def calculate_boba(x: int) -> dict:
+        """波及X：消耗3X。选择X个[目标]建立/解除波及效果，持续∞。你发动的道纹同时作用于所有拥有波及效果的目标；数值平分。"""
         return {
-            "dao_wen": "冲击",
+            "dao_wen": "波及",
             "x": x,
             "cost_type": CostType.MANA.value,
             "cost": 3 * x,
-            "aoe_damage": 5 * x,
-            "target": "all_enemies",
-            "summary": f"消耗{3 * x}法力，对所有敌方造成{5 * x}点伤害"
+            "mark_targets": x,
+            "duration": -1,  # ∞
+            "summary": f"消耗{3 * x}法力，选择{x}个目标建立/解除波及效果（持续∞）"
         }
     
-    @staticmethod
-    def calculate_cibei(x: int, target: Entity = None) -> dict:
-        """慈悲X：代价：流血X。为[目标]回复X点生命"""
-        target_name = target.name if target is not None else "未选定目标"
-        return {
-            "dao_wen": "慈悲",
-            "x": x,
-            "cost_type": CostType.BLEED.value,
-            "cost_hp": x,
-            "target_heal": x,
-            "summary": f"流血{x}，为{target_name}回复{x}点生命"
-        }
-    
-    # ---- 杀伐14节点闭环后半（切割至封印）----
-    
-    @staticmethod
-    def calculate_qiege(x: int) -> dict:
-        """切割X：消耗3X。你使其他角色失去生命的同时扣除其等量血限，持续X"""
-        cost = 3 * x
-        return {
-            "dao_wen": "切割",
-            "x": x,
-            "cost_type": CostType.MANA.value,
-            "cost": cost,
-            "duration": x,
-            "summary": f"消耗{cost}法力，使其他角色失去生命时扣除等量血限，持续{x}回合"
-        }
+    # ---- 杀伐11节点闭环后半（增殖至封印）----
     
     @staticmethod
     def calculate_zengzhi(x: int, target: Entity = None) -> dict:
@@ -217,32 +191,15 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_fengyin(x: int) -> dict:
-        """封印X：消耗10X。使X个[目标]怪物移出本场战斗。轮回者/微光者不在移出范围内。"""
+        """封印X：代价：异变8X。使X个[目标]怪物移出本场战斗。轮回者/微光者不在移出范围内。"""
         return {
             "dao_wen": "封印",
             "x": x,
-            "cost_type": CostType.MANA.value,
-            "cost": 10 * x,
+            "cost_type": CostType.MUTATION.value,
+            "cost_mutation": 8 * x,
             "targets_removed": x,
             "note": "被移出的怪物不提供任何碎片收益",
-            "summary": f"消耗{10*x}法力，使{x}个目标怪物移出本场战斗"
-        }
-    
-    @staticmethod
-    def calculate_manqian(x: int, target: Entity = None, target_action_count: int = 0) -> dict:
-        """缓慢X：代价：冷却X。若[目标]出手次数≤2，则其无法出手，持续X"""
-        target_name = target.name if target is not None else "未选定目标"
-        cost = x
-        effective = target_action_count <= 2
-        return {
-            "dao_wen": "缓慢",
-            "x": x,
-            "cost_type": CostType.COOLDOWN.value,
-            "cost": cost,
-            "target_action_count": target_action_count,
-            "effective": effective,
-            "duration": x,
-            "summary": f"冷却{cost}，{'生效' if effective else '未生效'}（{target_name}出手{target_action_count}次，<=2判定，持续{x}回合）"
+            "summary": f"异变+{8*x}，使{x}个目标怪物移出本场战斗"
         }
     
     # ---- 怪物原始道纹 ----
@@ -1007,15 +964,12 @@ class DaoWenEngine:
             "庇护": cls.calculate_bihu,
             "固执": cls.calculate_guzhi,
             "血债": cls.calculate_xuezhai,
-            "冲击": cls.calculate_chongji,
-            "慈悲": cls.calculate_cibei,
-            "切割": cls.calculate_qiege,
+            "波及": cls.calculate_boba,
             "增殖": cls.calculate_zengzhi,
             "束缚": cls.calculate_shufu,
             "透支": cls.calculate_touzhi,
             "贯穿": cls.calculate_guanchuan,
             "封印": cls.calculate_fengyin,
-            "缓慢": cls.calculate_manqian,
             # 怪物原始
             "狂暴": cls.calculate_kuangbao,
             "强化": cls.calculate_qianghua,
@@ -1085,7 +1039,7 @@ class DaoWenEngine:
     
     @staticmethod
     def single_round_action_count(entity: Entity) -> int:
-        """本回合单轮出手预算。缓慢判定用这个，禁止用攻击次数冒充。"""
+        """本回合单轮出手预算（供判定类效果使用），禁止用攻击次数冒充。"""
         if entity is None:
             return 0
         if getattr(entity, "entity_type", "") == "怪物":
@@ -1127,11 +1081,6 @@ class DaoWenEngine:
                 params[param_name] = kwargs[param_name]
             elif param_name == 'x':
                 params['x'] = x
-            elif param_name == 'target_action_count':
-                # 【缓慢X】要的是本回合单轮出手次数，不是攻击次数。
-                tgt = kwargs.get('target')
-                if tgt is not None:
-                    params[param_name] = cls.single_round_action_count(tgt)
         
         result = func(**params)
         
@@ -1172,14 +1121,13 @@ class ResonanceEngine:
             ("再生", "曲解", "庇护"),
             ("庇护", "曲解", "固执"),
             ("固执", "反转", "血债"),
-            ("血债", "转换", "冲击"),
-            ("冲击", "曲解", "慈悲"),
-            ("慈悲", "反转", "切割"),
-            ("切割", "反转", "增殖"),
+            ("血债", "转换", "波及"),
+            # 删除慈悲/切割/缓慢后直连（2026-08-21）：
+            # 波及→(反转)增殖：扩散伤害与成长的极性对冲；贯穿→(曲解)束缚：概念腐化。
+            ("波及", "反转", "增殖"),
             ("增殖", "曲解", "透支"),
             ("透支", "转换", "贯穿"),
-            ("贯穿", "曲解", "缓慢"),
-            ("缓慢", "反转", "束缚"),
+            ("贯穿", "曲解", "束缚"),
             ("束缚", "曲解", "封印"),
             ("封印", "反转", "杀伐"),
         ],

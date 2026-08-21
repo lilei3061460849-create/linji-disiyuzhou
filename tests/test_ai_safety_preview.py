@@ -70,40 +70,34 @@ def _ai_ready(e, player_hp, player_mana, daowen, enemies):
     return TacticalAI(e)
 
 
-# ==================== 顾衡案例：AOE 冲击触发双爆裂反噬 ====================
+# ==================== 顾衡案例：借力+杀伐触发爆裂反噬 ====================
 
 def test_guheng_case_preview_reports_48_reflect_death():
-    """预演必须明确判定：冲击4 + 借力2 对双爆裂目标各反噬24，轮回者受48点反噬命零。"""
+    """预演必须明确判定：杀伐24 + 借力2 对爆裂目标造成58伤，反噬58，轮回者命零。"""
     e = _arena()
     ai = _ai_ready(
         e, player_hp=39, player_mana=36,
-        daowen={"冲击": 4, "借力": 2},
+        daowen={"杀伐": 24, "借力": 2},
         enemies=[
             _baolie_enemy("脑蜘蛛", 204, atk=2, ap=11),
             _baolie_enemy("人头气球", 222, baolie=False),
             _baolie_enemy("血肉巨囊", 258, atk=1, ap=8),
         ],
     )
-    # 借力2：伤害 +20%（20 × 1.2 = 24/目标）；脑蜘蛛+血肉巨囊两个爆裂目标各反噬24
+    # 借力2：伤害 +20%（48 × 1.2 = 58 向上取整）；脑蜘蛛爆裂全额反噬 → 39HP 直接命零
     p = e.state.player
     p.add_status(StatusEffect(name="借力", remaining_rounds=-1, value=2, source="x"))
     before_hp = p.current_hp
 
-    # 冲击是 AOE：use_daowen 必须显式提交覆盖全部敌对目标的 dodge_targets
-    dodge_targets = [
-        {"target_ref": f"enemy:{i}", "dodge": False, "blood_shadow": False}
-        for i in range(len(e.state.enemies))
-    ]
     pv = ai.previewer.preview("use_daowen", {
-        "daowen_name": "冲击", "x": 4, "dodge": False, "blood_shadow": False,
-        "dodge_targets": dodge_targets, "trigger_spell_choices": {},
+        "daowen_name": "杀伐", "x": 24, "dodge": False, "blood_shadow": False,
+        "target_ref": "enemy:0", "trigger_spell_choices": {},
     })
     diff = pv["diff"]
     assert pv["result"] is not None
     assert diff["player_dead"] is True, "预演必须判定轮回者命零"
     assert diff["player"]["hp_after"] == 0
     assert diff["player"]["hp_before"] == 39
-    # 反噬总量 = 两个爆裂目标各 24 → 39HP 扣到 0（diff 直接给出 hp 变化）
     # 效果链必须包含爆裂反噬相关的伤害/死亡事件
     reflect_events = [ev for ev in diff["events"]
                       if ev["type"] in ("damage_applied", "entity_died")]
@@ -113,11 +107,11 @@ def test_guheng_case_preview_reports_48_reflect_death():
 
 
 def test_guheng_case_tactical_ai_rejects_baolie_aoe():
-    """TacticalAI 不得选择该行动：try_aoe / _cast 对预演致死的冲击返回 None。"""
+    """TacticalAI 不得选择致死行动：_cast 对预演致死的杀伐X=24 降档到安全X。"""
     e = _arena()
     ai = _ai_ready(
         e, player_hp=39, player_mana=36,
-        daowen={"冲击": 4, "借力": 2},
+        daowen={"杀伐": 24, "借力": 2},
         enemies=[
             _baolie_enemy("脑蜘蛛", 204, atk=2, ap=11),
             _baolie_enemy("人头气球", 222, baolie=False),
@@ -126,16 +120,16 @@ def test_guheng_case_tactical_ai_rejects_baolie_aoe():
     )
     e.state.player.add_status(StatusEffect(name="借力", remaining_rounds=-1,
                                            value=2, source="x"))
-    # try_aoe：原候选 冲击X=4（48 反噬致死）必须被拒绝并记录；
-    # 若降 X 到安全档（X=1：5伤×2爆裂=10反噬，39-10=29 不死）则只允许执行安全档。
-    r = ai.try_aoe()
+    # 原候选 杀伐X=24（58 反噬致死）必须被拒绝并记录；自动降 X 找最小安全档。
+    r = ai._cast("杀伐", 24, "脑蜘蛛")
     assert ai.preview_rejected, "安全过滤应记录被淘汰候选"
-    assert any("冲击X=4" in entry for entry in ai.preview_rejected), ai.preview_rejected
+    assert any("杀伐X=24" in entry for entry in ai.preview_rejected), ai.preview_rejected
     if r is not None:
-        # 降 X 执行安全档：正式执行的动作必须是降档后的冲击（x<4）
+        # 降 X 执行安全档：正式执行的动作必须是降档后的杀伐（x<24）
         exec_x = r.get("calculation", {}).get("x")
-        assert exec_x is not None and exec_x < 4, f"只允许降档执行安全冲击: {r}"
-        assert e.state.player.current_hp == 39 or e.state.player.current_hp > 0,             "降档执行不得致死"
+        assert exec_x is not None and exec_x < 24, f"只允许降档执行安全杀伐: {r}"
+        assert e.state.player.current_hp == 39 or e.state.player.current_hp > 0, \
+            "降档执行不得致死"
     else:
         assert e.state.player.current_hp == 39
     # 玩家状态未被改动（预演+过滤全程零副作用）

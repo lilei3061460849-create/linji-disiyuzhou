@@ -61,14 +61,14 @@ def test_setup_discovery_lists_options_then_pick():
     lines = BR.format_setup_discovery(
         blood_points=7, speed_points=8, mana_points=10,
         blood_limit=42, mana_limit=20, speed_limit=8, action_count=3, shards=20,
-        daowen_options=["冲击", "再生", "缓慢"], daowen_pick="冲击",
+        daowen_options=["波及", "再生", "束缚"], daowen_pick="波及",
         resonance="反转",
         relic_options=["避风铃", "回锋刀", "折速法印"], relic_pick="避风铃",
         region="罪孽都市",
     )
     text = "\n".join(lines)
     assert text.startswith("[开局]")
-    assert "初始道纹发现：候选〔冲击、再生、缓慢〕→选择【冲击】" in text
+    assert "初始道纹发现：候选〔波及、再生、束缚〕→选择【波及】" in text
     assert "遗物发现：候选〔避风铃、回锋刀、折速法印〕→选择【避风铃】" in text
     assert "副本：罪孽都市" in text
 
@@ -100,7 +100,7 @@ def test_setup_discovery_rejects_result_only():
         BR.format_setup_discovery(
             blood_points=10, speed_points=8, mana_points=7,
             blood_limit=60, mana_limit=14, speed_limit=8, action_count=3, shards=20,
-            daowen_options=["冲击", "再生", "缓慢"], daowen_pick="冲击",
+            daowen_options=["波及", "再生", "束缚"], daowen_pick="波及",
             resonance="反转",
             relic_options=[], relic_pick="避风铃",
         )
@@ -108,7 +108,7 @@ def test_setup_discovery_rejects_result_only():
         BR.format_setup_discovery(
             blood_points=10, speed_points=8, mana_points=7,
             blood_limit=60, mana_limit=14, speed_limit=8, action_count=3, shards=20,
-            daowen_options=["冲击", "再生", "缓慢"], daowen_pick="杀伐",
+            daowen_options=["波及", "再生", "束缚"], daowen_pick="杀伐",
             resonance="反转",
             relic_options=["避风铃", "回锋刀", "折速法印"], relic_pick="避风铃",
         )

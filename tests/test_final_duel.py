@@ -188,14 +188,17 @@ def test_victory_seals_winner_forming_arena_cycle():
     r2 = winner.execute_action("choose_terminal_artifact", {"choice": 2})  # 2号=负岳碑，不涉及初拥之夜
     assert r2["success"] is True
     assert r2["result"]["seal"]["sealed_name"] == "常胜者"
+    assert r2["result"]["seal"]["tier"] == 2, "一阶死斗胜者应进入二阶进阶封存"
     assert winner.state.player is None, "领取终音法器后应重置状态，等待下一次以新角色开始"
-    assert os.path.exists(path), "胜者应被封存，形成擂台循环供下一位挑战者对战"
+    assert os.path.exists(path), "胜者应进入进阶封存槽，等待对应阶级挑战者"
 
     import json
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
-    assert data["player"]["name"] == "常胜者"
-    assert data["artifacts_owned"] == ["负岳碑"]
+    queue = data["candidates"]["2"]
+    assert len(queue) == 1
+    assert queue[0]["player"]["name"] == "常胜者"
+    assert queue[0]["artifacts_owned"] == ["负岳碑"]
     _cleanup(path)
 
 
@@ -345,15 +348,19 @@ def test_duel_opponent_reincarnator_can_cast_and_both_gain_mana():
     _cleanup(path)
 
 
-def test_duel_opponent_impact_hits_player_side_not_self():
-    """边界：对手发动冲击必须打挑战者一侧，不能打到自己"""
-    path = "data/test_duel_oppaoe.json"
+def test_duel_opponent_wave_hits_player_side_not_self():
+    """边界：对手发动波及标记挑战者一侧后，其道纹同时作用于标记者（数值平分），不能打到自己"""
+    path = "data/test_duel_oppwave.json"
     _cleanup(path)
-    sealed = _new_candidate("oppaoe_sealed", path, speed_points=5, name="封存贾凡")
-    sealed.state.player.dao_wen["冲击"] = DaoWenInstance(
-        DaoWen(name="冲击", formula="", cost_type="消耗", cost_formula="X", effect_formula=""))
+    sealed = _new_candidate("oppwave_sealed", path, speed_points=5, name="封存贾凡")
+    sealed.state.player.dao_wen["波及"] = DaoWenInstance(
+        DaoWen(name="波及", formula="", cost_type="消耗", cost_formula="X", effect_formula=""))
+    sealed.state.player.dao_wen["杀伐"] = DaoWenInstance(
+        DaoWen(name="杀伐", formula="", cost_type="消耗", cost_formula="X", effect_formula=""))
     _finish_battle_7(sealed)
-    challenger = _new_candidate("oppaoe_challenger", path, speed_points=13, name="挑战贾凡")
+    challenger = _new_candidate("oppwave_challenger", path, speed_points=13, name="挑战贾凡")
+    challenger.state.friends.append(Entity(name="队友乙", entity_type="朋友",
+                                           blood_limit=60, current_hp=60))
     _finish_battle_7(challenger)
     opp = next(e for e in challenger.state.enemies if e.entity_type == "轮回者")
     challenger.execute_action("round_start", {})
@@ -361,15 +368,35 @@ def test_duel_opponent_impact_hits_player_side_not_self():
         "daowen_name": "杀伐", "x": 1, "target": opp.name,
     })
     assert skip["success"] is True, skip
-    hp_self = opp.current_hp
-    hp_player = challenger.state.player.current_hp
+    player = challenger.state.player
+    friend = challenger.state.friends[0]
+    refs = challenger.combat._combat_entity_refs()
+    friend_ref = next(ref for ref, e in refs.items() if e is friend)
+    # 对手标记挑战者与队友乙
     r = challenger.execute_action("use_daowen", {
-        "actor": opp.name, "daowen_name": "冲击", "x": 4,
-        "dodge_targets": [{"target_ref": "player:0", "dodge": False, "blood_shadow": False}],
+        "actor": opp.name, "daowen_name": "波及", "x": 2,
+        "dodge_targets": [
+            {"target_ref": "player:0", "dodge": False, "blood_shadow": False},
+            {"target_ref": friend_ref, "dodge": False, "blood_shadow": False},
+        ],
     })
     assert r["success"] is True, r
+    assert player.has_status("波及") and friend.has_status("波及")
+    hp_self = opp.current_hp
+    hp_player = player.current_hp
+    hp_friend = friend.current_hp
+    # 死斗交替出手：测试单元直接切回对手行动侧（跳过中间一次玩家出手）。
+    challenger.state.duel_turn = "opponent_side"
+    # 对手发动杀伐4X=8伤打挑战者：波及平分 → 挑战者4 + 队友4，对手自己不掉血
+    r2 = challenger.execute_action("use_daowen", {
+        "actor": opp.name, "daowen_name": "杀伐", "x": 4, "target_ref": "player:0",
+        "dodge": False, "blood_shadow": False,
+    })
+    assert r2["success"] is True, r2
+    assert r2["execution"].get("wave_spread")
     assert opp.current_hp == hp_self
-    assert challenger.state.player.current_hp == hp_player - 20
+    assert player.current_hp == hp_player - 4
+    assert friend.current_hp == hp_friend - 4
     _cleanup(path)
 
 

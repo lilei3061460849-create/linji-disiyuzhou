@@ -153,7 +153,7 @@ def test_c_three_layer_chain_daowen_blood_limit_death():
 
 
 def test_c_cut_blood_limit_change_parents_the_damage():
-    """切割：伤害 → 血限变化，第二跳的父事件是那次伤害。"""
+    """切割道纹已删除（2026-08-21）：残留切割状态不再产生血限扣除；伤痕同构 ctx 链见下条。"""
     _, combat, player, enemy = _arena(enemy_hp=100)
     player.add_status(StatusEffect("切割", value=1, remaining_rounds=3, source="test"))
 
@@ -163,11 +163,8 @@ def test_c_cut_blood_limit_change_parents_the_damage():
         "amount": 7, "tags": {"daowen"}, "event_id": "C-2",
     })
 
-    assert enemy.blood_limit == 93, "切割数值口径不得改变"
-    assert detail["qiege_ctx"]["mechanic"] == "blood_limit_change"
-    assert detail["qiege_ctx"]["subtype"] == "cut"
-    assert detail["qiege_ctx"]["parent_event_id"] == "C-2"
-    assert enemy._blood_limit_events[-1]["event_id"] == detail["qiege_ctx"]["event_id"]
+    assert enemy.blood_limit == 100, "切割已删除，失血不再扣除等量血限"
+    assert "qiege_ctx" not in detail and "qiege_blood_loss" not in detail
 
 
 def test_c_scar_blood_limit_change_now_has_context_too():
@@ -190,9 +187,9 @@ def test_c_scar_blood_limit_change_now_has_context_too():
 # ==================== D. 防双触发 ====================
 
 def test_d_after_damage_effects_run_exactly_once():
-    """一次伤害 = 一次落地后结算。切割只扣一次血限，不是两次。"""
+    """一次伤害 = 一次落地后结算。伤痕只扣一次血限，不是两次。"""
     _, combat, player, enemy = _arena(enemy_hp=100)
-    player.add_status(StatusEffect("切割", value=1, remaining_rounds=3, source="test"))
+    enemy.add_status(StatusEffect("伤痕", value=9, remaining_rounds=-1, source="test"))
 
     combat._apply_hostile_damage(enemy, 9, source=player, ctx={
         "timing": "player_action", "source": "杀伐", "source_type": "daowen",

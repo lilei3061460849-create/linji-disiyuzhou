@@ -2,8 +2,8 @@
 战术AI：为轮回者在战斗中选择行动。
 
 设计目标：**数据驱动，不写死道纹名**。
-早前版本把"杀伐/庇护/再生/冲击/切割"硬编码在 if 分支里，导致无法测试
-切割系与各副本专属道纹。现在改为：每个道纹在 TACTICAL_ROLES 里声明它的
+早前版本把"杀伐/庇护/再生"等硬编码在 if 分支里，导致无法测试
+各副本专属道纹。现在改为：每个道纹在 TACTICAL_ROLES 里声明它的
 战术角色与取值方式，AI 只按"角色"决策，因此
 **新增或更换道纹无需改动决策代码**——这也让不同流派的实战胜率可被对比。
 
@@ -35,19 +35,16 @@ from engine.ai_preview import ActionPreview
 TACTICAL_ROLES: dict[str, dict] = {
     # ---- 杀伐闭环（cost/dmg 必须跟 README 现行公式一致，禁止沿用旧 3X/自动起手）----
     "杀伐": {"role": "nuke", "cost": 1, "pri": 2, "dmg_per_x": 2},
-    "冲击": {"role": "aoe", "cost": 3, "pri": 1, "dmg_per_x": 5},
+    "波及": {"role": "mark", "cost": 3, "pri": 1},
     "血债": {"role": "nuke", "cost": 0, "pay": "流血", "pri": 3, "dmg_per_x": 1},
     "庇护": {"role": "shield", "cost": 1, "pri": 1, "shield_per_x": 2},
     "再生": {"role": "heal", "cost": 1, "pri": 1, "heal_per_x": 3},
-    "慈悲": {"role": "heal", "cost": 0, "pay": "流血", "pri": 3, "heal_per_x": 1},
     "固执": {"role": "buff", "cost": 0, "pay": "冷却", "pri": 2},
-    # ---- 杀伐14节点闭环后半（切割至封印）----
-    "切割": {"role": "buff", "cost": 3, "pri": 1},
+    # ---- 杀伐11节点闭环后半（增殖至封印）----
     "增殖": {"role": "buff", "cost": 1, "pri": 3},
     "透支": {"role": "ramp", "cost": 0, "pay": "衰老", "pri": 1, "mana_per_x": 4},
     "贯穿": {"role": "buff", "cost": 5, "pri": 1},                    # 伤害无视格挡
-    "封印": {"role": "remove", "cost": 10, "pri": 1},                 # 直接移出战斗
-    "缓慢": {"role": "control", "cost": 0, "pay": "冷却", "pri": 2},
+    "封印": {"role": "remove", "cost": 0, "pay": "异变", "pri": 1},   # 移出战斗（异变8X）
     "束缚": {"role": "control", "cost": 0, "pay": "冷却", "pri": 1},
     # ---- 龙心谷 ----
     "加害": {"role": "debuff", "cost": 3, "pri": 1},
@@ -93,8 +90,8 @@ TACTICAL_ROLES: dict[str, dict] = {
 # 敌方身上值得用残韵改写的高价值道纹，按威胁度排序。
 HIGH_VALUE_ENEMY_DAOWEN = [
     "必中", "狂暴", "自愈", "强化", "疯狂", "飞行", "减速",
-    "贯穿", "血债", "冲击", "杀伐", "增殖", "透支",
-    "固执", "庇护", "再生", "切割", "缓慢", "束缚",
+    "贯穿", "血债", "波及", "杀伐", "增殖", "透支",
+    "固执", "庇护", "再生", "束缚",
 ]
 
 
@@ -174,22 +171,26 @@ class TacticalAI:
         p = {"daowen_name": name, "x": x, "dodge": False, "blood_shadow": False}
         if target:
             p["target"] = target
-        if name == "冲击":
+        if name == "波及":
+            # 波及X：选择X个[目标]建立/解除波及标记（默认标记敌方存活目标）。
             refs = self.engine.combat._combat_entity_refs()
             actor = self.player
-            p["dodge_targets"] = [
+            candidates = [
                 {"target_ref": ref, "dodge": False, "blood_shadow": False}
                 for ref, entity in refs.items()
                 if (self.engine.state.on_player_side(entity)
                     != self.engine.state.on_player_side(actor)
                     and entity.is_alive)
             ]
-            if not p["dodge_targets"]:
+            if len(candidates) < x:
                 return None
+            p["dodge_targets"] = candidates[:x]
+            if target is None:
+                p["target_ref"] = candidates[0]["target_ref"]
         if not allow_sacrifice:
             # 预演安全过滤：候选导致轮回者命零则拒绝。通用降 X 搜索（非道纹特判）：
             # 大 X 可能触发癌变/反噬/嫁祸转伤等完整效果链，小 X 可能安全
-            # （如慈悲 X=14 治愈癌变阈值，X=1 则安全）；自动降 X 找最小安全档。
+            # （如再生 X=14 治愈癌变阈值，X=1 则安全）；自动降 X 找最小安全档。
             # 同时用风险分类器记录非致命风险等级（CRITICAL / HIGH 等，供策略层参考）。
             probe_x = x
             reason = None
@@ -248,7 +249,7 @@ class TacticalAI:
     def try_buff(self) -> Optional[dict]:
         """1.5 增益：固执优先（防爆发），其余 role=buff 按条件表逐张评估。
 
-        修复（2026-08-18）：旧版只硬编码固执，导致切割/贯穿/增殖/活血/爆裂/
+        修复（2026-08-18）：旧版只硬编码固执，导致贯穿/增殖/活血/爆裂/
         超频/龙鳞/滑翔/分裂/招魂 等 10 张 buff 永不发动（死码）。
         现按每张牌的战术条件评估；每张每场至多一次，一回合至多打出一张增益。
         """
@@ -291,9 +292,6 @@ class TacticalAI:
         hp_ratio = p.current_hp / max(1, p.blood_limit)
         if name == "贯穿":       # 伤害无视格挡：敌方有格挡才值得
             if any(e.shield > 0 for e in enemies) and mana >= per:
-                return (1, p.name)
-        elif name == "切割":     # 失去生命附带扣血限：法力充裕时挂
-            if mana >= max(per * 2, p.mana_limit * 0.6):
                 return (1, p.name)
         elif name == "增殖":     # 廉价加血限：法力将溢出时倾倒
             if mana >= p.mana_limit * 0.8:
@@ -488,7 +486,7 @@ class TacticalAI:
         """
         按"本次出手实际能打出的伤害"排序候选输出道纹。
 
-        不能只看静态优先级：切割每点X伤害更高(4)但每点X耗法也更高(3)，
+        不能只看静态优先级：高费道纹每点X伤害更高但每点X耗法也更高，
         在小预算下反而不如杀伐(2伤害/1法力)。故按 预算内可达伤害 降序，
         同伤害时取更省法力者。
         """
