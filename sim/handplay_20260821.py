@@ -33,43 +33,11 @@ from engine.models import Entity
 TRACE_PATH = os.environ.get("HP_TRACE", "data/handplay_20260821_trace.jsonl")
 
 
-# 怪物道纹目标类别（测试驱动侧裁定：怪物按最优策略行动，README 怪物准则4/推演铁律2）
-# SELF：增益/自愈/自强化类 → 目标是自身（引擎允许任意目标，但怪物奶玩家/给玩家上盾
-#       是反最优行为；标准解析器把 target_options[0](=玩家) 直接提交，已在实测中发现
-#       眼树用【再生】奶了玩家。本驱动修正为理性目标选择并记录）。
-# HOSTILE：输出/控制/削弱类 → 目标是玩家（最高威胁）。
-MONSTER_SELF_DAOWEN = {
-    "再生", "庇护", "自愈", "固执", "疯狂", "强化", "借力", "兴奋", "滋养", "龙鳞",
-    "狂暴", "必中", "超频", "急速", "加速", "滑翔", "飞行", "自食", "招魂", "变形",
-    "净化", "消灾",
-}
-MONSTER_HOSTILE_DAOWEN = {
-    "杀伐", "血债", "衰败", "减速", "束缚", "眩晕", "僵化", "蒙蔽", "弱化", "无神",
-    "愤怒", "迟滞", "无力", "洗劫", "逼债", "清算", "赎金", "假钞", "赌命", "波及",
-    "定型", "畸变", "坏死", "爆裂", "退化", "加害", "裂变", "嫁祸", "伤痕", "冥气",
-    "勾魂", "镇尸", "缄默", "瓦解", "尸爆", "坠落", "自残", "寄生", "封印", "贯穿",
-    "增殖", "枯竭", "洞察", "蒙蔽",
-}
-
-
-def pick_monster_daowen_target(engine, monster_ref, option) -> str:
-    """怪物道纹目标：SELF 类打自身；HOSTILE 类打玩家；波及打玩家。"""
-    name = option.get("resolves_as") or option["name"]
-    targets = option["target_options"]
-    if not targets:
-        return ""
-    if name in MONSTER_SELF_DAOWEN:
-        # 自身优先；若自身不可选（飞行/死亡）选第一个合法目标
-        for t in targets:
-            if t["ref"] == monster_ref:
-                return t["ref"]
-        return targets[0]["ref"]
-    # 敌对：玩家优先（威胁最高）
-    for t in targets:
-        if t["ref"] == "player:0":
-            return t["ref"]
-    return targets[0]["ref"]
-
+from sim.monster_targets import (  # noqa: E402
+    MONSTER_HOSTILE_DAOWEN,
+    MONSTER_SELF_DAOWEN,
+    pick_monster_daowen_target,
+)
 
 # ---------------------------------------------------------------------------
 # 工具：事件轨迹
@@ -344,6 +312,8 @@ def decide_ally_actions(engine, strat: Strategy):
                 TRACE.text(f"  决策[队友] {ally.name} 攻击 {target.name}")
 
 
+
+
 def decide_dodge(engine, per_hit: int, budget_used: int, strat: Strategy,
                  hits_left: int = 1, incoming_total: int = 0) -> bool:
     """闪避决策：单发大伤害必闪；多段小伤害若本回合总入伤威胁大也闪（保留速度）。"""
@@ -374,6 +344,10 @@ def build_spell_choices(engine, target_option, player_ref: str, mana_budget: int
     """
     spell_options = target_option.get("spell_options", {}) or {}
     out = {}
+    # 预算跨法术共享递减：每个法术的 cycle 都从同一 remaining_budget 扣减，
+    # 否则多法术（先发制人+后发制人+生生不息）各自从 mana_budget 全额计算，
+    # 会提交超出实际法力的组合 → 执行阶段「法力不足」整段回滚（2026-08-21 实测）。
+    remaining_budget = mana_budget
     for timing in ("before", "after"):
         out[timing] = {}
         for spell in spell_options.get(timing, []) or []:
@@ -394,19 +368,32 @@ def build_spell_choices(engine, target_option, player_ref: str, mana_budget: int
             else:
                 # 掉血后回血总是值得（法力够才触发）
                 use = True
-            if use and mana_budget >= 1:
-                remaining = mana_budget
+            if use and remaining_budget >= 1:
+                remaining = remaining_budget
                 cycle = []
                 ok = True
                 for st in steps:
                     target_ref = st.get("target_ref", player_ref)
                     hostile = target_ref != player_ref
-                    # 攻击步尽量多打，自保/回复步留1；血债是流血代价（HP型），
-                    # X 取2（不死不休/千刀万剐的可持续值），否则按法力扣减
+                    # 攻击步的 X 受全回合预算约束：必须为同 timing 的其余法术
+                    # 与 after timing 的法术保留最小法力（每步至少1），否则先发制人
+                    # 一次抽干预算会导致后发制人/生生不息执行时法力不足被拒
+                    # （2026-08-21 实测驱动 bug：先发制人X=25吃光26法力）。
                     if st.get("daowen") == "血债":
                         x = 2
+                    elif hostile:
+                        reserve = 0
+                        if timing == "before":
+                            reserve = sum(
+                                len(s2.get("steps") or [])
+                                for s2 in spell_options.get("before", []) or []
+                                if s2["spell_name"] != name)
+                            reserve += sum(
+                                len(s2.get("steps") or [])
+                                for s2 in spell_options.get("after", []) or [])
+                        x = max(1, remaining - reserve - 1)
                     else:
-                        x = max(1, remaining - 1) if hostile else 1
+                        x = 1
                     entry = {"x": x, "target_ref": target_ref}
                     if hostile:
                         entry["dodge"] = False  # 反打步骤：对手不闪避（测试者代怪物决策）
@@ -419,6 +406,8 @@ def build_spell_choices(engine, target_option, player_ref: str, mana_budget: int
                 if ok and cycle:
                     cycles = [cycle]
                     use = True
+                    remaining_budget = max(0, remaining_budget - sum(
+                        e.get("x", 1) for cy in cycles for e in cy))
                 else:
                     use = False
             else:
@@ -470,38 +459,44 @@ def resolve_monster_turn_hand(engine, strat: Strategy):
         target_ref = choose_attack_target(actor["attack_target_options"], refs)
         target_option = next(o for o in actor["attack_target_options"] if o["ref"] == target_ref)
         if engine.state.player is not None:
-            # 注意：引擎对怪物阶段的法术提交做静态校验（先于守夜灯[敌回始]授予），
-            # 因此守夜灯法力无法用于反应法术——预算只按当前法力（实战中已确认）。
-            spell_mana_left = engine.state.player.current_mana
+            # 2026-08-21 修复后：怪物阶段静态校验已计入[敌回始]守夜灯法力，
+            # 因此反应法术预算 = 当前法力 + 本回合守夜灯将授予的法力。
+            spell_mana_left = (engine.state.player.current_mana
+                               + engine.combat._shouyedeng_pending_grant(
+                                   engine.state.player))
         else:
             spell_mana_left = 0
         attacks = []
         for _ in range(action_count):
             hits = []
             for _ in range(hit_count):
-                incoming_total = max(0, (hit_count - len(hits)) * per_hit)
-                want_dodge = decide_dodge(engine, per_hit, budget_used=dodge_budget, strat=strat,
-                                          hits_left=hit_count - len(hits),
-                                          incoming_total=incoming_total)
-                if want_dodge:
-                    dodge_budget += 1
-                    TRACE.text(f"  决策[闪避] 闪避{per_hit}伤（速度-1，剩余预算{dodge_budget}）")
+                # 闪避决策只对轮回者受击生效：[朋友]/[员工]（微光者）速度=0，
+                # 提交 dodge=True 会被引擎拒绝（速度不足）→ 整段回退为全不闪避。
+                want_dodge = False
+                if target_ref == player_ref:
+                    incoming_total = max(0, (hit_count - len(hits)) * per_hit)
+                    want_dodge = decide_dodge(engine, per_hit, budget_used=dodge_budget, strat=strat,
+                                              hits_left=hit_count - len(hits),
+                                              incoming_total=incoming_total)
+                    if want_dodge:
+                        dodge_budget += 1
+                        TRACE.text(f"  决策[闪避] 闪避{per_hit}伤（速度-1，剩余预算{dodge_budget}）")
+                # 只有命中且受击者是玩家才会触发反应法术（dodge 时 damage=0 不触发）。
+                # 预算必须在每击后统一递减（无论攻击目标是谁），否则打[朋友]/[员工]
+                # 的命中不会消耗预算，后续命中会重复提交满额法术 → 执行时法力不足
+                # 被拒 → 整段回退为全不闪避（2026-08-21 实测驱动 bug）。
+                sc = {timing: {sp["spell_name"]: {"use": False}
+                               for sp in target_option.get("spell_options", {}).get(timing, [])}
+                      for timing in ("before", "after")}
                 if not want_dodge and target_ref == player_ref:
-                    # 只有命中才会触发反应法术（dodge 时 damage=0，法术不触发），
-                    # 因此法术法力预算只在未闪避的命中上扣除。
                     sc = build_spell_choices(engine, target_option, player_ref,
                                              mana_budget=spell_mana_left)
-                    eligible = target_option.get("spell_options", {}) or {}
-                    for timing in ("before", "after"):
-                        for sp in eligible.get(timing, []) or []:
-                            dec = sc.get(timing, {}).get(sp["spell_name"], {})
-                            if dec.get("use"):
-                                cost = sum(e.get("x", 1) for cy in dec.get("cycles", []) for e in cy)
-                                spell_mana_left = max(0, spell_mana_left - cost)
-                else:
-                    sc = {timing: {sp["spell_name"]: {"use": False}
-                                   for sp in target_option.get("spell_options", {}).get(timing, [])}
-                          for timing in ("before", "after")}
+                for timing in ("before", "after"):
+                    for sp in target_option.get("spell_options", {}).get(timing, []) or []:
+                        dec = sc.get(timing, {}).get(sp["spell_name"], {})
+                        if dec.get("use"):
+                            cost = sum(e.get("x", 1) for cy in dec.get("cycles", []) for e in cy)
+                            spell_mana_left = max(0, spell_mana_left - cost)
                 hit = {"target_ref": target_ref, "dodge": want_dodge,
                        "blood_shadow": False, "spell_choices": sc}
                 if want_dodge and target_option.get("dodge_relic_target_options"):
@@ -639,8 +634,18 @@ def run_setup(engine, cfg: dict) -> bool:
             snap = _json.load(f)
         from sim.handplay_dungeon_with_winner import load_winner
         load_winner(engine, snap)
+        # 测试工具侧降强度：压低法力，模拟真实二阶压力（否则继承胜者两回合秒怪，
+        # 怪物控制道纹（勾魂/镇尸/冥气）在实战中永远没有发动机会——2026-08-21 实测）。
+        nerf = cfg.get("nerf_mana")
+        if nerf:
+            p0 = engine.state.player
+            p0.mana_limit = nerf
+            p0.current_mana = nerf
+            # 仅保留先发制人（需杀伐）与生生不息（需再生），删掉依赖未持道纹的死法术
+            keep = [s for s in p0.spells if set(s.required_daowen) <= set(p0.dao_wen)]
+            p0.spells[:] = keep
         TRACE.text(f"  [继承] 胜者快照：{cfg['winner_snapshot']}（道纹{sorted(engine.state.player.dao_wen)}，"
-                   f"碎片{engine.state.shards}）")
+                   f"碎片{engine.state.shards}，法力{engine.state.player.mana_limit}）")
     TRACE.log(kind="setup", name=name, blood_points=cfg.get("blood_points", 10),
               speed_points=cfg.get("speed_points", 8), mana_points=cfg.get("mana_points", 7),
               relic=pick, daowen=pick_dw, resonance=res, region=region)

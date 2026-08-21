@@ -912,33 +912,51 @@ class DaoWenEngine:
         }
 
     @staticmethod
-    def calculate_mingqi(x: int) -> dict:
-        """冥气X：消耗5X。[目标]每失去一次速度[速限]-2，持续X。"""
+    def calculate_mingqi(x: int, target: Entity = None) -> dict:
+        """冥气X：消耗5X。[目标]每失去一次速度[速限]-2，持续X。
+
+        修复（2026-08-21）：补上 target 参数使该道纹正确声明需要[目标]，
+        否则 requires_target=False 导致怪物只能自施（实战：红嫁衣鬼冥气自施）。
+        效果数值与消耗不变。
+        """
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "冥气", "x": x,
             "cost_type": CostType.MANA.value, "cost": 5 * x,
             "speed_loss_speed_limit": 2, "duration": x,
-            "summary": f"消耗{5*x}法力，{x}回合内目标每失去速度速限-2"
+            "summary": f"消耗{5*x}法力，{x}回合内{target_name}每失去速度速限-2"
         }
 
     @staticmethod
-    def calculate_gouhun(x: int) -> dict:
-        """勾魂X：消耗X。[回始]使[目标]失去2X点当前法力，持续∞。"""
+    def calculate_gouhun(x: int, target: Entity = None) -> dict:
+        """勾魂X：消耗X。[回始]使[目标]失去2X点当前法力，持续∞。
+
+        修复（2026-08-21）：补上 target 参数使该道纹正确声明需要[目标]，
+        否则 requires_target=False 导致怪物只能自施（实战：寄骨蝇勾魂自吸
+        无法力=空放）。效果数值与消耗不变。
+        """
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "勾魂", "x": x,
             "cost_type": CostType.MANA.value, "cost": x,
             "round_start_mana_drain": 2 * x, "duration": -1,
-            "summary": f"消耗{x}法力，[回始]目标失去{2*x}法力，永久"
+            "summary": f"消耗{x}法力，[回始]{target_name}失去{2*x}法力，永久"
         }
 
     @staticmethod
-    def calculate_zhenshi(x: int) -> dict:
-        """镇尸X：消耗5X。使一个[目标]无法获得[回复]，持续X。"""
+    def calculate_zhenshi(x: int, target: Entity = None) -> dict:
+        """镇尸X：消耗5X。使一个[目标]无法获得[回复]，持续X。
+
+        修复（2026-08-21）：补上 target 参数使该道纹正确声明需要[目标]，
+        否则 requires_target=False 导致怪物只能自施（实战：血僵镇尸自禁回复）。
+        效果数值与消耗不变。
+        """
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "镇尸", "x": x,
             "cost_type": CostType.MANA.value, "cost": 5 * x,
             "duration": x, "no_heal": True,
-            "summary": f"消耗{5*x}法力，目标无法获得回复，持续{x}回合"
+            "summary": f"消耗{5*x}法力，{target_name}无法获得回复，持续{x}回合"
         }
 
     @staticmethod

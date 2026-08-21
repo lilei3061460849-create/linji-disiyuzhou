@@ -30,7 +30,8 @@ class CombatEngine:
     
     # 原始怪物道纹（道纹归属规则：各组起点）——【原初X】可借用范围
     ORIGINAL_MONSTER_DAOWEN = ("狂暴", "强化", "疯狂", "减速", "必中", "自愈", "飞行")
-    # 原始怪物道纹只在首次发动时支付异变5X；效果持续期间不再重复计费。
+    # 原始怪物道纹每次实际发动时支付异变5X（X按该次发动时递增后的数值计算，
+    # 见 README 怪物准则9·道纹递增）；效果持续期间（未再次发动）不再重复计费。
     # 必中为次数型（下X次选择[目标]无法闪避），余数记在 entity._bizhong_left。
     YUANCHU_COST_RATE = 5
     # 波及X（2026-08-21）：你发动的道纹同时作用于所有拥有波及效果的目标。
@@ -364,6 +365,14 @@ class CombatEngine:
         self._trigger_huifeng_on_speed_loss(
             entity, lost, relic_target_ref, require_target=require_huifeng,
             speed_ctx=speed_ctx)
+        # 冥气X：[目标]每失去一次速度[速限]-2，持续X。
+        # 累计局内后果（同畸变/伤痕），经 BATTLE 账本登记，[战终]逆向清除。
+        if lost and entity.has_status("冥气"):
+            penalty = entity.get_status_value("冥气") or 0
+            if penalty:
+                self._battle_delta(entity, "speed_limit", -penalty, "冥气",
+                                   EffectPolarity.DEBUFF.value)
+                entity.current_speed = min(entity.current_speed, entity.speed_limit)
         return lost
 
     def _trigger_bifengling_zero(self, entity: Entity) -> None:
@@ -385,17 +394,27 @@ class CombatEngine:
             target.add_status(StatusEffect(
                 name="无力", value=new_stacks, remaining_rounds=1, source="寒冰法力"))
 
+    def _shouyedeng_pending_grant(self, entity: Optional[Entity]) -> int:
+        """守夜灯：[敌回始]将授予的法力量（0=本次不会授予）。
+
+        判定条件与 _grant_shouyedeng 完全一致但不实际发放。怪物阶段的法术
+        静态校验发生在[敌回始]守夜灯发放之前（执行阶段才授予），因此校验
+        反应法术预算时必须预计算这笔法力，否则当前法力=0 时先发制人等
+        合法反应法术会被误判为「法力不足」（2026-08-21 实战确认）。
+        """
+        if entity is None or not entity.is_alive or entity.entity_type != "轮回者":
+            return 0
+        if not self.state.side_has(entity, "守夜灯"):
+            return 0
+        if entity is self.state.player and self.state.sealed_relics.get("守夜灯", 0) > 0:
+            return 0
+        if getattr(entity, "_shouyedeng_granted", 0):
+            return 0
+        return math.ceil(entity.mana_limit / 2)
+
     def _grant_shouyedeng(self, entity: Optional[Entity]) -> Optional[dict]:
         """守夜灯：[敌回始]获得法限50%法力，每回合一次。"""
-        if entity is None or not entity.is_alive or entity.entity_type != "轮回者":
-            return None
-        if not self.state.side_has(entity, "守夜灯"):
-            return None
-        if entity is self.state.player and self.state.sealed_relics.get("守夜灯", 0) > 0:
-            return None
-        if getattr(entity, "_shouyedeng_granted", 0):
-            return None
-        gained = math.ceil(entity.mana_limit / 2)
+        gained = self._shouyedeng_pending_grant(entity)
         if gained <= 0:
             return None
         entity.current_mana += gained
@@ -597,6 +616,13 @@ class CombatEngine:
             delta=delta, blood_limit_after=entity.blood_limit,
         )
         return record
+
+    def _heal_blocked(self, entity: Entity) -> bool:
+        """目标是否被禁疗：坏死 / 镇尸 均为「无法获得[回复]」的效果。
+
+        两个道纹各自独立（不做合并），只在同一消费点上共同判定。
+        """
+        return entity is not None and (entity.has_status("坏死") or entity.has_status("镇尸"))
 
     def _apply_blood_limit_change(
         self, entity: Entity, delta: int, source: str, polarity: str,
@@ -2471,7 +2497,7 @@ class CombatEngine:
                                               int(calc.get("cost", 0)))
                 result["cooldown_set"] = inst.cooldown_remaining
 
-        # 蒙蔽(施法者伤害类道纹归零) / 坏死(目标禁疗)
+        # 蒙蔽(施法者伤害类道纹归零) / 坏死/镇尸(目标禁疗)
         mengbi_blocked = caster.has_status("蒙蔽") and ("target_damage" in calc or "aoe_damage" in calc)
         if mengbi_blocked:
             for s in caster.status_effects:
@@ -2480,7 +2506,7 @@ class CombatEngine:
                     if s.value <= 0: caster.status_effects.remove(s)
                     break
             result["mengbi_blocked"] = True
-        huaisi_block = target.has_status("坏死") and "target_heal" in calc
+        huaisi_block = self._heal_blocked(target) and "target_heal" in calc
 
         # ---- 逆鳞加成（F2）：施法者若有层数，下次伤害+层数后清空 ----
         nilin_bonus = 0
@@ -2685,7 +2711,7 @@ class CombatEngine:
                 pieces = self._divide_flat(calc["target_heal"], len(wave_status_targets))
                 wave_pieces["target_heal"] = pieces
                 for wt, piece in zip(wave_status_targets, pieces):
-                    if wt.has_status("坏死"):
+                    if self._heal_blocked(wt):
                         result["effects"].append(
                             {"type": "heal", "target": wt.name, "blocked_by": "坏死"})
                         continue
@@ -2712,7 +2738,7 @@ class CombatEngine:
                 pieces = self._divide_flat(total, len(wave_status_targets))
                 wave_pieces["heal_percent"] = pieces
                 for wt, piece in zip(wave_status_targets, pieces):
-                    if wt.has_status("坏死"):
+                    if self._heal_blocked(wt):
                         result["effects"].append(
                             {"type": "heal_pct", "target": wt.name, "blocked_by": "坏死"})
                         continue
@@ -2722,7 +2748,7 @@ class CombatEngine:
                         "owner": caster, "mechanic": "heal", "subtype": "daowen_pct", "amount": piece,
                         "tags": {"daowen", "wave"},
                     })})
-            elif not target.has_status("坏死"):
+            elif not self._heal_blocked(target):
                 h = math.ceil(target.blood_limit * calc["heal_percent"] / 100)
                 result["effects"].append({"type": "heal_pct", "target": target.name, **self.state.apply_heal(target, h, ctx={
                     "timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
@@ -3388,7 +3414,14 @@ class CombatEngine:
         return result
 
     def validate_spell_reaction_submission(self, holder: Entity, attacker: Entity,
-                                           submitted: Any, refs: dict[str, Entity]) -> None:
+                                           submitted: Any, refs: dict[str, Entity],
+                                           extra_mana: int = 0) -> None:
+        """校验受击方反应法术提交。
+
+        extra_mana：静态校验阶段预计算的[敌回始]守夜灯法力（见
+        _shouyedeng_pending_grant）；执行阶段不传（实际法力已含授予值），
+        避免重复计算。
+        """
         if not isinstance(submitted, dict):
             raise ValueError("每次攻击必须显式提交spell_choices对象")
         reverse = {id(entity): ref for ref, entity in refs.items()}
@@ -3398,7 +3431,7 @@ class CombatEngine:
             choices = submitted.get(key)
             if not isinstance(choices, dict) or set(choices) != set(eligible):
                 raise ValueError(f"spell_choices.{key}必须逐一覆盖{sorted(eligible)}")
-            mana = holder.current_mana
+            mana = holder.current_mana + max(0, extra_mana)
             speed_budget = {ref: entity.current_speed for ref, entity in refs.items()}
             for spell_name, flow in eligible.items():
                 decision = choices[spell_name]
@@ -3452,7 +3485,13 @@ class CombatEngine:
         return result
 
     def validate_daowen_trigger_spells(self, actor: Entity, submitted: Any,
-                                       refs: dict[str, Entity]) -> None:
+                                       refs: dict[str, Entity],
+                                       extra_mana: int = 0) -> None:
+        """校验「目标发动道纹前」反应法术（如咎由自取）。
+
+        extra_mana：静态校验阶段预计算的[敌回始]守夜灯法力（见
+        _shouyedeng_pending_grant）；执行阶段不传，避免重复计算。
+        """
         expected = self.prepare_daowen_trigger_spells(actor)
         if not isinstance(submitted, dict) or set(submitted) != set(expected):
             raise ValueError(f"trigger_spell_choices必须覆盖{sorted(expected)}")
@@ -3463,7 +3502,7 @@ class CombatEngine:
             choices = submitted[holder_ref]
             if not isinstance(choices, dict) or set(choices) != set(flows):
                 raise ValueError("目标发动道纹前的法术提交不完整")
-            mana = holder.current_mana
+            mana = holder.current_mana + max(0, extra_mana)
             for spell_name, flow in flows.items():
                 decision = choices[spell_name]
                 if not isinstance(decision, dict) or not isinstance(decision.get("use"), bool):
@@ -4160,6 +4199,7 @@ class CombatEngine:
                 raise ValueError(f"道纹【{effective_name}】当前结算不接受闪避提交")
 
         trigger_choices = choice.get("trigger_spell_choices", {})
+        # 执行阶段：守夜灯法力已在[敌回始]实际授予，无需预计算（extra_mana 默认0）。
         self.validate_daowen_trigger_spells(monster, trigger_choices, refs)
         trigger_logs = self.resolve_daowen_trigger_spells(monster, trigger_choices, refs)
         if not monster.is_alive:
@@ -4274,7 +4314,7 @@ class CombatEngine:
 
     def _validate_monster_daowen_schema(
         self, monster: Entity, choice: dict, refs: dict[str, Entity],
-        prepared_option: dict,
+        prepared_option: dict, pending_shouyedeng: int = 0,
     ) -> None:
         """道纹选择的静态 schema 校验（零副作用）。
 
@@ -4341,7 +4381,8 @@ class CombatEngine:
                 raise ValueError(f"道纹【{effective_name}】当前结算不接受闪避提交")
 
         trigger_choices = choice.get("trigger_spell_choices", {})
-        self.validate_daowen_trigger_spells(monster, trigger_choices, refs)
+        self.validate_daowen_trigger_spells(
+            monster, trigger_choices, refs, extra_mana=pending_shouyedeng)
 
     def _validate_monster_phase_static(
         self, submitted: dict[str, dict], prepared: dict,
@@ -4359,6 +4400,12 @@ class CombatEngine:
         """
         expected = {actor["actor_ref"]: actor for actor in prepared["actors"]}
         refs = self._combat_entity_refs()
+        # 守夜灯：[敌回始]在怪物阶段执行时才授予。静态校验先于执行，因此
+        # 预计算本次将授予的法力，纳入反应法术预算（否则当前法力=0时
+        # 先发制人等合法反应法术会被误判「法力不足」，2026-08-21 实战确认）。
+        pending_shouyedeng = 0
+        if bool(prepared.get("actors") or prepared.get("skipped")):
+            pending_shouyedeng = self._shouyedeng_pending_grant(self.state.player)
         for actor_ref, choice in submitted.items():
             monster = refs.get(actor_ref)
             if monster is None or not monster.is_alive:
@@ -4385,6 +4432,7 @@ class CombatEngine:
                     raise ValueError(f"{monster.name}提交的道纹目标不在prepare合法选项中")
                 self._validate_monster_daowen_schema(
                     monster, dao_choice, refs, prepared_option,
+                    pending_shouyedeng=pending_shouyedeng,
                 )
 
             attack_actions = choice.get("attack_actions")
@@ -4420,6 +4468,7 @@ class CombatEngine:
                             raise ValueError("回锋刀触发必须显式提交合法目标")
                     self.validate_spell_reaction_submission(
                         target, monster, hit.get("spell_choices"), refs,
+                        extra_mana=pending_shouyedeng,
                     )
 
     def _monster_phase_snapshot(self) -> dict:

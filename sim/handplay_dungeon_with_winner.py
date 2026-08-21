@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
 from engine.ai_tactics import choose_dodge, choose_attack_target
+from sim.monster_targets import pick_monster_daowen_target  # noqa: E402
 from sim.build_learner import _decline_spells, round_start_relic_choices
 from sim.produce_real_winners import build_spell_choices
 
@@ -139,7 +140,7 @@ def _resolve_monster_turn_hand(e, log):
                                                           for sp in spells}
                                                  for holder, spells in option.get("trigger_spell_options", {}).items()}}
                 if option["requires_target"]:
-                    dao["target_ref"] = option["target_options"][0]["ref"]
+                    dao["target_ref"] = pick_monster_daowen_target(e, actor["actor_ref"], option)
                 if option["dodge_submission"] == "per_target":
                     dao["dodge_targets"] = [
                         {"target_ref": t["ref"], "dodge": False, "blood_shadow": False}
@@ -192,7 +193,7 @@ def _resolve_monster_turn_hand(e, log):
                                                               for sp in spells}
                                                      for holder, spells in option.get("trigger_spell_options", {}).items()}}
                     if option["requires_target"]:
-                        dao["target_ref"] = option["target_options"][0]["ref"]
+                        dao["target_ref"] = pick_monster_daowen_target(e, actor["actor_ref"], option)
                     if option["resolves_as"] == "变形":
                         enemy_index = int(actor["actor_ref"].split(":", 1)[1])
                         hit_count_fb = e.state.enemies[enemy_index].attack_power

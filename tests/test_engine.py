@@ -1095,7 +1095,13 @@ def test_evolution_plight_listing():
 
 
 def test_original_daowen_only_charges_mutation_on_activation():
-    """原始怪物道纹首次发动支付异变5X，持续期间不再重复计费。"""
+    """原始怪物道纹支付异变5X的时机口径（README 怪物准则9，2026-08-21 统一）：
+
+    - 每次【实际发动】该道纹时支付一次异变5X（X=该次发动时递增后的数值）；
+    - 效果持续期间（该回合及后续回合未再次发动该道纹）不再重复计费；
+    - 若再次发动（重施），按递增后的新X再付一次（见
+      test_monster_daowen_escalation.py::test_original_daowen_escalates_and_pays_scaled_mutation）。
+    """
     print("\n=== 测试：原始怪物道纹仅首次发动计费 ===")
     from engine.models import GameState, DaoWen, DaoWenInstance
     from engine.combat import CombatEngine
