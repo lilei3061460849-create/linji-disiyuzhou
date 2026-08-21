@@ -1,0 +1,40 @@
+{
+ "name": "洛音",
+ "region": "扭曲都市",
+ "seed": 5,
+ "trace": "data/hp_trace_twisted_5.jsonl",
+ "blood_points": 10,
+ "speed_points": 8,
+ "mana_points": 7,
+ "prefer_relic": "折速法印",
+ "prefer_daowen": "杀伐",
+ "resonance": "反转",
+ "strategy": {
+  "offense_mode": "max",
+  "max_dodges": 2,
+  "dodge_min_damage": 5,
+  "resonance_targets": {
+   "强化": "弱化",
+   "必中": "蒙蔽",
+   "自愈": "衰败",
+   "狂暴": "自残(打自己)"
+  },
+  "pre_battle_plan": [
+   [
+    "学习法术",
+    [
+     "先发制人"
+    ]
+   ],
+   [
+    "修行",
+    1
+   ],
+   [
+    "修行",
+    1
+   ]
+  ],
+  "event_choices": {}
+ }
+}

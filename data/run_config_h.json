@@ -1,0 +1,40 @@
+{
+ "name": "贾凡",
+ "region": "乱葬岗",
+ "seed": 20260821,
+ "trace": "data/hp_trace_luanzanggang.jsonl",
+ "blood_points": 10,
+ "speed_points": 8,
+ "mana_points": 7,
+ "prefer_relic": "守夜灯",
+ "prefer_daowen": "杀伐",
+ "resonance": "反转",
+ "strategy": {
+  "offense_mode": "max",
+  "max_dodges": 2,
+  "dodge_min_damage": 5,
+  "resonance_targets": {
+   "强化": "弱化",
+   "必中": "蒙蔽",
+   "自愈": "衰败",
+   "狂暴": "自残(打自己)"
+  },
+  "pre_battle_plan": [
+   [
+    "附煞",
+    "冥煞",
+    "杀伐"
+   ],
+   [
+    "修行",
+    1
+   ],
+   [
+    "修行",
+    1
+   ]
+  ],
+  "event_choices": {}
+ },
+ "winner_snapshot": "data/real_winners/winner_01.json"
+}
