@@ -158,17 +158,6 @@ class ActionPreview:
 
     # ---------------- 后果提取 ----------------
 
-    @staticmethod
-    def _entity_panel(e) -> dict:
-        return {
-            "hp": e.current_hp, "bl": e.blood_limit,
-            "mana": getattr(e, "current_mana", 0),
-            "speed": getattr(e, "current_speed", 0),
-            "shield": getattr(e, "shield", 0),
-            "alive": bool(e.is_alive),
-            "status": sorted(s.name for s in e.status_effects),
-        }
-
     def _diff(self, before, after) -> dict:
         """对比执行前后两个 state，输出完整后果。"""
         diff: dict = {"player": {}, "allies": [], "enemies": [],

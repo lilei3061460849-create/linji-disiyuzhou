@@ -60,10 +60,8 @@ def _resolve_monster_turn_smart(engine):
             if option["requires_target"]:
                 dao["target_ref"] = option["target_options"][0]["ref"]
             if option["dodge_submission"] == "per_target":
-                dao["dodge_targets"] = [
-                    {"target_ref": target["ref"], "dodge": False, "blood_shadow": False}
-                    for target in option["dodge_target_options"]
-                ]
+                from sim.monster_targets import pick_wave_dodge_targets
+                dao["dodge_targets"] = pick_wave_dodge_targets(option)
 
         refs = engine.combat._combat_entity_refs()
         monster = refs.get(actor["actor_ref"])
@@ -73,7 +71,7 @@ def _resolve_monster_turn_smart(engine):
         nilin_bonus = (monster.get_status_value("逆鳞") or 0) if (monster is not None and monster.has_status("逆鳞")) else 0
         from engine.ai_tactics import choose_attack_target
         target_ref = choose_attack_target(actor["attack_target_options"], refs)
-        target_option = next(o for o in actor["attack_target_options"] if o["ref"] == target_ref)
+        target_option = next((o for o in actor["attack_target_options"] if o["ref"] == target_ref), None)   # 无合法攻击目标时为None（引擎prepare已置base_attack_actions=0）
         attacks = []
         for _ in range(action_count):
             hits = []
@@ -500,10 +498,8 @@ def run_full_handplay_session(seed=42):
                     if option["requires_target"]:
                         dao["target_ref"] = option["target_options"][0]["ref"]
                     if option["dodge_submission"] == "per_target":
-                        dao["dodge_targets"] = [
-                            {"target_ref": target["ref"], "dodge": False, "blood_shadow": False}
-                            for target in option["dodge_target_options"]
-                        ]
+                        from sim.monster_targets import pick_wave_dodge_targets
+                        dao["dodge_targets"] = pick_wave_dodge_targets(option)
                     b_lines.append(f"出手{action_idx}（{actor['actor_name']}）：发动【{option['name']}X={option.get('x_value', 2)}】")
 
                 refs = e.combat._combat_entity_refs()
@@ -514,7 +510,7 @@ def run_full_handplay_session(seed=42):
                 nilin_bonus = (monster.get_status_value("逆鳞") or 0) if (monster is not None and monster.has_status("逆鳞")) else 0
                 from engine.ai_tactics import choose_attack_target
                 target_ref = choose_attack_target(actor["attack_target_options"], refs)
-                target_option = next(o for o in actor["attack_target_options"] if o["ref"] == target_ref)
+                target_option = next((o for o in actor["attack_target_options"] if o["ref"] == target_ref), None)   # 无合法攻击目标时为None（引擎prepare已置base_attack_actions=0）
                 attacks = []
                 for a_i in range(action_count):
                     action_idx += 1

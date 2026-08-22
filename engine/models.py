@@ -339,11 +339,7 @@ class Entity:
         base += self.get_status_value("疯狂")
         base -= self.get_status_value("无力")
         return max(0, base)
-    
-    @property
-    def is_full_hp(self) -> bool:
-        return self.current_hp >= self.blood_limit
-    
+
     @property
     def hp_ratio(self) -> float:
         return self.current_hp / self.blood_limit if self.blood_limit > 0 else 0
@@ -459,14 +455,7 @@ class Entity:
             return False
         self.current_mana -= amount
         return True
-    
-    def spend_speed(self, amount: int) -> bool:
-        """消耗当前速度"""
-        if self.current_speed < amount:
-            return False
-        self.current_speed -= amount
-        return True
-    
+
     def get_status_effects(self, name: str) -> list[StatusEffect]:
         return [s for s in self.status_effects if s.name == name]
     
@@ -954,24 +943,6 @@ class GameState:
                 if candidate is entity:
                     return f"{prefix}:{index}"
         raise ValueError(f"实体{entity.name}不在当前GameState中")
-
-    def entity_by_ref(self, entity_ref: str) -> Optional[Entity]:
-        if entity_ref == "player:0":
-            return self.player
-        try:
-            prefix, raw_index = entity_ref.split(":", 1)
-            index = int(raw_index)
-        except (ValueError, AttributeError):
-            return None
-        groups = {
-            "friend": self.friends, "employee": self.employees,
-            "temp_friend": self.temp_friends, "enemy": self.enemies,
-        }
-        entities = groups.get(prefix)
-        if entities is None or index < 0 or index >= len(entities):
-            return None
-        return entities[index]
-
     def entity_by_runtime_id(self, runtime_id: str) -> Optional[Entity]:
         entities = (([self.player] if self.player else []) + self.friends + self.employees
                     + self.temp_friends + self.enemies)

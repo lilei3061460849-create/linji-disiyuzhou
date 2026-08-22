@@ -115,9 +115,3 @@ def normalize_context(ctx: EffectContext | Mapping[str, Any] | None) -> Optional
         )
     raise TypeError(f"ctx must be EffectContext, mapping, or None; got {type(ctx)!r}")
 
-
-def child_context(parent: EffectContext | Mapping[str, Any] | None, **kwargs: Any) -> EffectContext:
-    normalized = normalize_context(parent)
-    if normalized is not None and "parent_event_id" not in kwargs:
-        kwargs["parent_event_id"] = normalized.event_id
-    return make_context(**kwargs)

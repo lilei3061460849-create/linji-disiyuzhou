@@ -159,7 +159,7 @@ def test_all_tactical_roles_reference_registered_daowen():
 
 def test_tactical_table_entries_wellformed():
     """非法配置：每条战术表项必须有合法 role 与非负 cost"""
-    valid = {"nuke", "aoe", "mark", "shield", "heal", "control", "debuff", "buff", "ramp", "remove"}
+    valid = {"nuke", "aoe", "mark", "shield", "heal", "control", "debuff", "buff", "ramp", "remove", "reroll"}
     for name, info in TACTICAL_ROLES.items():
         assert info.get("role") in valid, f"{name} 的 role 非法：{info.get('role')}"
         assert info.get("cost", 0) >= 0, f"{name} 的 cost 为负"

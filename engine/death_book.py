@@ -234,14 +234,6 @@ class DeathBookStore:
         self.write_all(entries)
         return validated
 
-    def remove_last(self) -> Optional[dict[str, str]]:
-        entries = self.load()
-        if not entries:
-            return None
-        removed = entries.pop()
-        self.write_all(entries)
-        return removed
-
     def remove_at(self, index: int) -> Optional[dict[str, str]]:
         """按 0-based 下标删除一页。越界返回 None，文件不变。"""
         entries = self.load()

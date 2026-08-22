@@ -259,12 +259,13 @@ def hit_monster(player, m, dmg, monsters, _redirected=False):
         # 嫁祸X：该怪物下X次受到的伤害由所选[目标]承担
         if getattr(m, "_jiahuo_left", 0) > 0:
             m._jiahuo_left -= 1
-            t = m._jiahuo_target if (m._jiahuo_target and m._jiahuo_target.is_alive) else player
+            j_id = getattr(m, "_jiahuo_target", None)   # 存runtime_id（2026-08-22：引用环修复）
+            t = next((e for e in monsters if getattr(e, "runtime_id", None) == j_id and e.is_alive), None) or player
             return hit_monster(player, t, dmg, monsters, _redirected=True) if t is not player \
                 else _raw_hit_player(t, dmg)
         # 背负X：其他怪物声明替m承担其下X次伤害
         for b in _alive_monsters(monsters):
-            if b is not m and getattr(b, "_beifu_left", 0) > 0 and getattr(b, "_beifu_target", None) is m:
+            if b is not m and getattr(b, "_beifu_left", 0) > 0 and getattr(b, "_beifu_target", None) == m.runtime_id:
                 b._beifu_left -= 1
                 return hit_monster(player, b, dmg, monsters, _redirected=True)
     # 裂变X：分X次结算，每次=原伤害÷X向下取整
@@ -430,15 +431,15 @@ def apply_exclusive(act, m, player, monsters, rng):
     elif act == "嫁祸":
         if JIAHUO_POLICY == "ally_first":
             others = [b for b in _alive_monsters(monsters) if b is not m]
-            m._jiahuo_target = rng.choice(others) if others else player
+            m._jiahuo_target = (rng.choice(others).runtime_id if others else player.runtime_id)
         else:  # player_first：无道德底线，直接转嫁轮回者
-            m._jiahuo_target = player
+            m._jiahuo_target = player.runtime_id
         m._jiahuo_left = x
     elif act == "背负":
         others = [b for b in _alive_monsters(monsters) if b is not m]
         if not others:
             return False  # 无同伴可守护：本道纹当前无合法目标，视为不出手此道纹
-        m._beifu_target = min(others, key=lambda b: b.current_hp)  # 守护最濒危同伴
+        m._beifu_target = min(others, key=lambda b: b.current_hp).runtime_id  # 守护最濒危同伴
         m._beifu_left = x
     elif act in ("超频", "定型", "抵扣"):
         m.add_status(StatusEffect(act, remaining_rounds=-1, value=x))  # 结构性空转（见模块注释）

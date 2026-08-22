@@ -143,9 +143,12 @@ class DamageRedirectionHook:
     def find_redirection_target(self, target: Any, damage_type: str, state: Any) -> Optional[Any]:
         if damage_type == "代价" or not target:
             return None
-        # 嫁祸：自身下X次受伤由目标承担
+        all_entities = (state.get_all_player_side() + state.get_all_enemy_side()) if hasattr(state, "get_all_player_side") else []
+        # 嫁祸：自身下X次受伤由目标承担（_jiahuo_target 存 runtime_id，按 id 解析实体）
         if hasattr(target, "_jiahuo_left") and getattr(target, "_jiahuo_left", 0) > 0:
-            j_target = getattr(target, "_jiahuo_target", None)
+            j_id = getattr(target, "_jiahuo_target", None)
+            j_target = next((e for e in all_entities
+                             if getattr(e, "runtime_id", None) == j_id), None)
             target._jiahuo_left -= 1
             if target._jiahuo_left <= 0:
                 target.status_effects = [s for s in target.status_effects if s.name != "嫁祸"]
@@ -154,13 +157,12 @@ class DamageRedirectionHook:
             if j_target and getattr(j_target, "is_alive", False):
                 return j_target
 
-        # 背负：目标的伤害由背负者承担
-        all_entities = (state.get_all_player_side() + state.get_all_enemy_side()) if hasattr(state, "get_all_player_side") else []
+        # 背负：目标的伤害由背负者承担（_beifu_target 同样存 runtime_id）
         for ent in all_entities:
             if ent is target:
                 continue
             if hasattr(ent, "_beifu_left") and getattr(ent, "_beifu_left", 0) > 0:
-                if getattr(ent, "_beifu_target", None) is target:
+                if getattr(ent, "_beifu_target", None) == getattr(target, "runtime_id", None):
                     ent._beifu_left -= 1
                     if ent._beifu_left <= 0:
                         target.status_effects = [s for s in target.status_effects if s.name != "被背负"]

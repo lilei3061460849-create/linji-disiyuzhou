@@ -146,7 +146,7 @@ def test_step5_beifu_redirection_and_retreat(tmp_path):
     p = e.state.player
     friend = Entity(name="岩行者", blood_limit=54, current_hp=54, entity_type="朋友")
     friend._beifu_left = 1
-    friend._beifu_target = p
+    friend._beifu_target = p.runtime_id
     p.add_status(StatusEffect(name="被背负", value=1, remaining_rounds=-1, source="岩行者"))
     e.state.friends.append(friend)
 

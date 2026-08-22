@@ -68,10 +68,8 @@ def _resolve_prepared_monsters(engine: GameEngine, daowen_name: str | None = Non
             if option["requires_target"]:
                 dao["target_ref"] = "player:0"
             if option["dodge_submission"] == "per_target":
-                dao["dodge_targets"] = [
-                    {"target_ref": target["ref"], "dodge": False, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}}
-                    for target in option["dodge_target_options"]
-                ]
+                from sim.monster_targets import pick_wave_dodge_targets
+                dao["dodge_targets"] = pick_wave_dodge_targets(option)
         attacks = [{"hits": [{"target_ref": "player:0", "dodge": False, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}}
                               for _ in range(actor["base_hits_per_attack"])]}
                    for _ in range(actor["base_attack_actions"])]

@@ -56,52 +56,33 @@ _ALL_EXCLUSIVE = {d for v in REGION_EXCLUSIVE_DAOWEN.values() for d in v}
 
 from sim.monster_targets import pick_monster_daowen_target  # noqa: E402
 def _pick_monster_daowen(engine, actor):
-    """怪物按当前情形择优选道纹（README：怪物为胜利和生存作最优决策）。
+    """怪物按当前情形择优选道纹——委托 sim.monster_targets 统一入口（2026-08-22）。
 
-    DM裁定（2026-08-18）优先级固定为：
-      1. 自保型（自愈/庇护/再生/固执等）——先保住自己
-      2. 输出型（狂暴/强化/杀伐/血债等）
-      3. 控制/削弱型（减速/束缚/衰败/勾魂/镇尸等）
-      4. 机制型（飞行/必中/贯穿/蒙蔽等）——只有在完全无法对轮回者造成
-         任何影响（没有任何自保/输出/控制候选可选）时才允许选择。
+    优先级分组表不再在本文件复制（此前多处各抄一份、版本变更后三处仍引用
+    已删除的切割/冲击/缓慢）；统一口径见 sim.monster_targets.MONSTER_DAOWEN_*
+    （DM裁定2026-08-18：自保→输出→控制→机制，含半血/收割/连续压制修正）。
+    本文件仅保留候选过滤与空候选回退的原有语义。
     """
+    from sim.monster_targets import pick_monster_daowen_option
     opts = actor["daowen_options"]
     if not opts:
         return None
     m_idx = int(actor["actor_ref"].split(":", 1)[1]) if ":" in actor["actor_ref"] else 0
-    activated = set()
     enemies = engine.state.enemies
     monster = None
     if 0 <= m_idx < len(enemies):
         monster = enemies[m_idx]
-        activated = engine.combat._monster_activated.get(id(monster), set())
+    activated = engine.combat._monster_activated.get(id(monster), set()) if monster is not None else set()
     cands = [o for o in opts if o["name"] not in activated]
     if not cands:
         return opts[0]
-
-    # 自保/输出/控制/机制 优先级分组
-    OUTPUT = {"狂暴", "强化", "杀伐", "血债", "波及", "加害", "活血", "裂变", "洗劫", "赎金", "逼债", "清算", "假钞", "赌命"}
-    SELF = {"自愈", "庇护", "再生", "固执", "疯狂", "兴奋", "坚韧", "龙鳞"}
-    CONTROL = {"减速", "束缚", "衰败", "勾魂", "镇尸", "僵化", "眩晕", "蒙蔽", "弱化", "退化", "冥气", "缄默", "瓦解", "招魂", "堕落", "坠落", "无力", "迟滞", "定型", "封印"}
-
-    def group(o):
-        n = o["name"]
-        if n in SELF: return 0
-        if n in OUTPUT: return 1
-        if n in CONTROL: return 2
-        return 3
-
-    # 机制组是最后手段：存在任何自保/输出/控制候选时一律不选机制。
-    # 例外（裁定原文"完全无法对轮回者造成任何影响"的字面情形）：怪物已连续
-    # ≥2回合未能使敌方生命减少（如伤害被格挡完全吸收），说明常规手段已失效，
-    # 允许动用机制组（必中破盾/飞行脱离等）。
+    p = engine.state.player
+    player_low = p is not None and p.is_alive and p.current_hp <= p.blood_limit * 0.5
+    monster_low = monster is not None and monster.current_hp <= monster.blood_limit * 0.5
     blocked = monster is not None and getattr(monster, "no_damage_rounds", 0) >= 2
-    if blocked:
-        mech_cands = [o for o in cands if group(o) == 3]
-        if mech_cands:
-            return mech_cands[0]
-    effective = [o for o in cands if group(o) < 3]
-    return min(effective or cands, key=group)
+    return pick_monster_daowen_option(cands, player_low=player_low,
+                                      monster_low=monster_low,
+                                      blocked=blocked)
 
 def _decline_spells(option):
     return {timing: {spell["spell_name"]: {"use": False}
@@ -177,10 +158,8 @@ def _resolve_monster_turn(engine):
             if option["requires_target"]:
                 dao["target_ref"] = pick_monster_daowen_target(engine, actor["actor_ref"], option)
             if option["dodge_submission"] == "per_target":
-                dao["dodge_targets"] = [
-                    {"target_ref": target["ref"], "dodge": False, "blood_shadow": False}
-                    for target in option["dodge_target_options"]
-                ]
+                from sim.monster_targets import pick_wave_dodge_targets
+                dao["dodge_targets"] = pick_wave_dodge_targets(option)
             if option["resolves_as"] == "变形":
                 enemy_index = int(actor["actor_ref"].split(":", 1)[1])
                 hit_count = engine.state.enemies[enemy_index].attack_power
@@ -188,7 +167,7 @@ def _resolve_monster_turn(engine):
         monster = refs.get(actor["actor_ref"])
         per_hit = monster.attack_power if monster is not None else 0
         target_ref = choose_attack_target(actor["attack_target_options"], refs)
-        target_option = next(option for option in actor["attack_target_options"] if option["ref"] == target_ref)
+        target_option = next((option for option in actor["attack_target_options"] if option["ref"] == target_ref), None)   # 无合法攻击目标时为None（引擎prepare已置base_attack_actions=0）
         attacks = []
         for _ in range(action_count):
             hits = []
@@ -228,13 +207,11 @@ def _resolve_monster_turn(engine):
             if option["requires_target"]:
                 dao["target_ref"] = pick_monster_daowen_target(engine, actor["actor_ref"], option)
             if option["dodge_submission"] == "per_target":
-                dao["dodge_targets"] = [
-                    {"target_ref": target["ref"], "dodge": False, "blood_shadow": False}
-                    for target in option["dodge_target_options"]
-                ]
+                from sim.monster_targets import pick_wave_dodge_targets
+                dao["dodge_targets"] = pick_wave_dodge_targets(option)
         target_ref = choose_attack_target(actor["attack_target_options"], refs_fb)
-        target_option = next(option for option in actor["attack_target_options"]
-                             if option["ref"] == target_ref)
+        target_option = next((option for option in actor["attack_target_options"]
+                             if option["ref"] == target_ref), None)   # 无合法攻击目标时为None（引擎prepare已置base_attack_actions=0）
         attacks = [{"hits": [{
             "target_ref": target_ref, "dodge": False, "blood_shadow": False,
             "spell_choices": _decline_spells(target_option),
@@ -967,10 +944,6 @@ def main():
     save(k)
 
 
-if __name__ == "__main__":
-    main()
-
-
 def round_start_relic_choices(e) -> dict:
     """构建 [回始] 显式遗物选择：回锋刀需显式敌方目标；血契/余火印按情形主动使用。
 
@@ -990,3 +963,6 @@ def start_round_with_artifacts(e):
     """回始窗口法器（罪业金库/烬翼）+ round_start。返回 (round_start结果, 法器结果列表)。"""
     from sim.optional_actions import start_round
     return start_round(e)
+
+if __name__ == "__main__":
+    main()
