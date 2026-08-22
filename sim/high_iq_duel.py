@@ -80,7 +80,7 @@ def _resolve_monster_turn_smart(engine):
         nilin_bonus = (monster.get_status_value("逆鳞") or 0) if (monster is not None and monster.has_status("逆鳞")) else 0
         from engine.ai_tactics import choose_attack_target
         target_ref = choose_attack_target(actor["attack_target_options"], refs)
-        target_option = next(o for o in actor["attack_target_options"] if o["ref"] == target_ref)
+        target_option = next((o for o in actor["attack_target_options"] if o["ref"] == target_ref), None)   # 无合法攻击目标时为None（引擎prepare已置base_attack_actions=0）
         attacks = []
         for _ in range(action_count):
             hits = []

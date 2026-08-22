@@ -418,6 +418,38 @@ def test_placeholder_ai_casts_wave_without_rejection(tmp_path):
     assert len(marked) == 2, f"波及必须标记恰好X=2个目标: {marked}"
 
 
+# ============ 怪物阶段义务可满足性：无攻击目标不卡死 ============
+
+def test_monster_without_attack_targets_phase_still_settles(tmp_path):
+    """solo对手飞行而怪物不飞：怪物无任何合法攻击目标。
+
+    prepare必须把base_attack_actions置0（否则每击都需引用合法目标，
+    提交永远失败——与【波及】目标数限制同族的"无法满足的义务"）。
+    """
+    e = _engine(tmp_path)
+    _full_setup(e)
+    player = _controlled_combat(e, [_magma_lizard()])
+    player.is_flying = True  # 怪物不飞行 → 选不中玩家 → 无合法攻击目标
+
+    prep = e.execute_action("prepare_monster_phase", {})
+    assert prep["success"], prep
+    actor = next(a for a in prep["result"]["actors"] if a["actor_ref"] == "enemy:0")
+    assert actor["attack_target_options"] == [], actor["attack_target_options"]
+    assert actor["base_attack_actions"] == 0, actor["base_attack_actions"]
+    # 不变量：给出的每个需[目标]道纹都必须有合法目标（飞行solo时只剩自身，
+    # 自指向合法——与强化/自愈等自用道纹同一口径，只是无战术意义）
+    for o in actor["daowen_options"]:
+        if o["requires_target"]:
+            assert o["target_options"], f"{o['name']} 无合法目标却仍被给出: {o}"
+
+    choice = {"actor_ref": "enemy:0", "daowen": _legal_daowen(actor),
+              "attack_actions": []}
+    r = e.execute_action("resolve_monster_phase",
+                         {"token": prep["result"]["token"], "choices": [choice]})
+    assert r["success"], r
+    assert e.execute_action("round_end", {})["success"]
+
+
 # ============ pick_wave_dodge_targets：恰好X个、对侧优先 ============
 
 def test_pick_wave_dodge_targets_exactly_x_hostiles_first():

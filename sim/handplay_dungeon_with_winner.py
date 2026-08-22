@@ -30,14 +30,14 @@ from sim.produce_real_winners import build_spell_choices
 # 满法输出：杀伐X尽量大；庇护保命：仅在受到致命威胁且盾不足时上盾
 
 def _pick_monster_daowen(engine, actor):
-    """怪物按当前情形择优选道纹（README：怪物为胜利和生存作最优决策）。
-    输出优先，血低自保，玩家血低收割，机制型按需。
+    """怪物按当前情形择优选道纹——委托 sim.monster_targets 统一入口（2026-08-22）。
 
-    候选过滤依据**本回合已使用道纹**（round_used，与引擎结算门禁一致），
-    而非跨回合持续激活集合（activated）：同回合不得重复发动同一道纹，
-    跨回合可再次发动。本回合全部候选道纹都已用过时返回 None（不发动道纹、
-    纯攻击），绝不退回 opts[0]（那必然触发引擎"不能发动道纹"门禁）。
+    优先级分组表不再在本文件复制（此前多处各抄一份、版本变更后三处仍引用
+    已删除的切割/冲击/缓慢）；统一口径见 sim.monster_targets.MONSTER_DAOWEN_*
+    （DM裁定2026-08-18：自保→输出→控制→机制，含半血/收割/连续压制修正）。
+    本文件仅保留候选过滤与空候选回退的原有语义。
     """
+    from sim.monster_targets import pick_monster_daowen_option
     opts = actor["daowen_options"]
     if not opts:
         return None
@@ -51,27 +51,12 @@ def _pick_monster_daowen(engine, actor):
     cands = [o for o in opts if o["name"] not in round_used]
     if not cands:
         return None
-    OUTPUT = {"狂暴", "强化", "杀伐", "血债", "切割", "冲击", "加害", "活血", "裂变", "洗劫", "赎金", "逼债", "清算", "赌命"}
-    SELF = {"自愈", "庇护", "再生", "固执", "疯狂", "龙鳞"}
-    CONTROL = {"减速", "束缚", "衰败", "勾魂", "镇尸", "僵化", "眩晕", "蒙蔽", "弱化", "退化", "冥气", "缄默", "瓦解", "招魂", "无力", "迟滞", "定型", "封印", "缓慢"}
     p = engine.state.player
     player_low = p is not None and p.is_alive and p.current_hp <= p.blood_limit * 0.5
     monster_low = monster is not None and monster.current_hp <= monster.blood_limit * 0.5
-    def group(o):
-        n = o["name"]
-        if n in OUTPUT: return 0
-        if n in SELF: return 1
-        if n in CONTROL: return 2
-        return 3
-    if monster_low:
-        self_cands = [o for o in cands if o["name"] in SELF]
-        if self_cands:
-            return self_cands[0]
-    if player_low:
-        kill_cands = [o for o in cands if o["name"] in OUTPUT or o["name"] in CONTROL]
-        if kill_cands:
-            return kill_cands[0]
-    return min(cands, key=group)
+    
+    return pick_monster_daowen_option(cands, player_low=player_low,
+                                      monster_low=monster_low)
 
 def manual_player_turn(e, log):
     """满法输出+理智闪避+庇护保命（玩家回合）。返回出手列表。"""
@@ -150,7 +135,7 @@ def _resolve_monster_turn_hand(e, log):
         monster = refs.get(actor["actor_ref"])
         per_hit = monster.attack_power if monster is not None else 0
         target_ref = choose_attack_target(actor["attack_target_options"], refs)
-        target_option = next(o for o in actor["attack_target_options"] if o["ref"] == target_ref)
+        target_option = next((o for o in actor["attack_target_options"] if o["ref"] == target_ref), None)   # 无合法攻击目标时为None（引擎prepare已置base_attack_actions=0）
         spell_mana_left = e.state.player.current_mana if e.state.player else 0
         attacks = []
         for _ in range(action_count):
@@ -197,7 +182,7 @@ def _resolve_monster_turn_hand(e, log):
                         enemy_index = int(actor["actor_ref"].split(":", 1)[1])
                         hit_count_fb = e.state.enemies[enemy_index].attack_power
             target_ref = choose_attack_target(actor["attack_target_options"], refs)
-            target_option = next(o for o in actor["attack_target_options"] if o["ref"] == target_ref)
+            target_option = next((o for o in actor["attack_target_options"] if o["ref"] == target_ref), None)   # 无合法攻击目标时为None（引擎prepare已置base_attack_actions=0）
             attacks = [{"hits": [{
                 "target_ref": target_ref, "dodge": False, "blood_shadow": False,
                 "spell_choices": _decline_spells(target_option),

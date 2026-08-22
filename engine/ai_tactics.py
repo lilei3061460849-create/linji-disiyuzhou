@@ -85,6 +85,28 @@ TACTICAL_ROLES: dict[str, dict] = {
     "滋养": {"role": "heal", "cost": 5, "pri": 2},
     "坠落": {"role": "debuff", "cost": 1, "pri": 1},
     "滑翔": {"role": "buff", "cost": 5, "pri": 3},
+    "愤怒": {"role": "buff", "cost": 5, "pri": 3},    # 目标法力消耗减半
+    "兴奋": {"role": "buff", "cost": 5, "pri": 3},    # 目标每次出手后速度+1
+    "借力": {"role": "buff", "cost": 10, "pri": 3},   # 目标造成伤害+10X%（∞）
+    "迟滞": {"role": "control", "cost": 0, "pay": "冷却", "pri": 2},  # 目标攻击次数固定为1
+    "加速": {"role": "buff", "cost": 20, "pri": 3},   # 目标获得的速度翻倍
+    "急速": {"role": "buff", "cost": 20, "pri": 3},   # 目标每闪避两次速度+1
+    "洞察": {"role": "ramp", "cost": 0, "pay": "疲惫", "pri": 2},  # 自身每次闪避后下回合法力+10
+    "无神": {"role": "control", "cost": 20, "pri": 1},  # 目标选择目标时强制改为自身
+    "自残": {"role": "nuke", "cost": 10, "pri": 3,
+             "dmg_per_x": "target_attack_power"},        # 目标对其自身打出X次攻击
+    "自食": {"role": "heal", "cost": 1, "pri": 3,
+             "heal_per_x": "attack_power"},              # 自身X点攻击力转等量回复
+    "寄生": {"role": "buff", "cost": 10, "pri": 2},     # 目标受伤20X%转自身回复（∞）
+    # ---- 罪孽都市（补齐：此前缺失，AI 永不主动发动）----
+    "抵扣": {"role": "control", "cost": 10, "pri": 3},  # 封印目标一件遗物（目标无遗物时引擎拒绝）
+    "赌命": {"role": "debuff", "cost": 0, "pay": "假碎片", "pri": 2},  # 回始随机存活角色-30%当前生命
+    "消灾": {"role": "reroll", "cost": 0, "pay": "碎片", "pri": 1},    # 重置随机数X次（唯一可局外发动）
+    # ---- 龙心谷（补齐）----
+    "嫁祸": {"role": "buff", "cost": 15, "pri": 3},     # 自身下X次受击由目标承担
+    "背负": {"role": "buff", "cost": 5, "pri": 3},      # 目标下X次受击由自身承担（护友）
+    # ---- 扭曲都市（补齐）----
+    "变形": {"role": "buff", "cost": 1, "pri": 3},      # 自身攻击力与攻击次数互换
 }
 
 # 敌方身上值得用残韵改写的高价值道纹，按威胁度排序。
@@ -239,7 +261,10 @@ class TacticalAI:
                     return r
         if p.current_hp <= p.blood_limit * 0.35 and not p.has_status("坏死"):
             for name in self.owned("heal"):
-                per = TACTICAL_ROLES[name].get("heal_per_x", 3)
+                per_raw = TACTICAL_ROLES[name].get("heal_per_x", 3)
+                per = p.attack_power if per_raw == "attack_power" else per_raw
+                if per <= 0:                       # 自食：攻击力为0时无回复量
+                    continue
                 x = min(self._x_for(name), max(1, math.ceil((p.blood_limit - p.current_hp) / per)))
                 r = self._cast(name, x, p.name)
                 if r:
@@ -323,7 +348,64 @@ class TacticalAI:
         elif name == "招魂":     # 唤回尸体作临时朋友：法力充裕时尝试（无尸体会被引擎拒绝）
             if mana >= max(per, p.mana_limit * 0.8):
                 return (1, None)
+        elif name == "借力":     # 目标造成伤害+10X%：给攻击力最高的友军（自身0攻时给友）
+            ally = self._best_attack_ally()
+            if ally is not None and ally.attack_power > 0 and mana >= per:
+                return (1, ally.name)
+        elif name == "兴奋":     # 每次出手后速度+1：闪避资源，威胁下挂自身
+            if p.current_speed < p.speed_limit and threat > 0 and mana >= per:
+                return (1, p.name)
+        elif name == "加速":     # 获得的速度翻倍：高威胁且已投入速度时放大
+            if (p.current_speed < p.speed_limit and threat >= p.current_hp * 0.4
+                    and mana >= per * 2):
+                return (1, p.name)
+        elif name == "急速":     # 每闪避两次速度+1：给持续闪避的友军（或自身）
+            if mana >= per * 2:
+                ally = self._best_attack_ally()
+                target = ally if (ally is not None and ally.current_speed > 0) else p
+                if target.current_speed > 0:
+                    return (1, target.name)
+        elif name == "愤怒":     # 法力消耗减半：自身持消耗型道纹且法力吃紧时
+            if (any(TACTICAL_ROLES.get(n, {}).get("cost", 0) > 0
+                    for n in p.dao_wen) and mana >= per * 2):
+                return (1, p.name)
+        elif name == "寄生":     # 受伤20X%转自身回复：威胁越大越值
+            if threat >= 8 and mana >= per:
+                return (1, p.name)
+        elif name == "嫁祸":     # 自身受击转给目标：需要肉友承接
+            ally = self._tankiest_ally()
+            if ally is not None and ally.current_hp >= 30 and threat > 0 and mana >= per:
+                return (1, ally.name)
+        elif name == "背负":     # 目标受击由自身承担：护脆友（自身比友军肉才值）
+            ally = self._weakest_ally()
+            if (ally is not None and threat > 0 and mana >= per
+                    and p.current_hp >= ally.current_hp * 0.8):
+                return (1, ally.name)
+        elif name == "变形":     # 攻次×攻力互换：高攻次低攻力时换成低攻次高攻力
+            if (p.attack_count >= 2 and p.attack_power < p.attack_count
+                    and mana >= per):
+                return (1, p.name)
         return None
+
+    def _allies(self) -> list:
+        """存活的[朋友]/[员工]（可被指向的友军）。"""
+        out = [e for e in self.engine.state.friends
+               if e.is_alive and not e.has_retreated]
+        out += [e for e in self.engine.state.employees
+                if e.is_alive and not e.has_retreated and e.is_deployed]
+        return out
+
+    def _best_attack_ally(self):
+        allies = self._allies()
+        return max(allies, key=lambda e: e.attack_power or 0) if allies else None
+
+    def _tankiest_ally(self):
+        allies = self._allies()
+        return max(allies, key=lambda e: e.current_hp) if allies else None
+
+    def _weakest_ally(self):
+        allies = self._allies()
+        return min(allies, key=lambda e: e.current_hp) if allies else None
 
     def resolve_pending_redemption(self, option: str = "无视") -> Optional[dict]:
         """救赎是强制待选：未结算前任何其它行动都会被引擎拒绝。"""
@@ -383,6 +465,10 @@ class TacticalAI:
             for name in self.owned("nuke"):
                 info = TACTICAL_ROLES[name]
                 per = info.get("dmg_per_x", 2)
+                if per == "target_attack_power":      # 自残：每次自攻=目标攻击力
+                    per = e.attack_power or 0
+                if per <= 0:
+                    continue
                 need_x = math.ceil(e.current_hp / per)
                 if 1 <= need_x <= self._x_for(name):
                     cands.append((name, need_x, need_x * info.get("cost", 1)))
@@ -496,7 +582,13 @@ class TacticalAI:
             x = self._x_for(name, budget)
             if x < 1:
                 continue
-            dmg = x * info.get("dmg_per_x", 2)
+            per = info.get("dmg_per_x", 2)
+            if per == "target_attack_power":   # 自残：按敌方最高攻力评估（对0攻目标无效）
+                powers = [e.attack_power or 0 for e in self.alive_enemies()]
+                per = max(powers) if powers else 0
+            if per <= 0:
+                continue
+            dmg = x * per
             score = dmg + x * info.get("limit_per_x", 0)
             out.append((name, x, dmg, score))
         out.sort(key=lambda t: (-t[3], TACTICAL_ROLES[t[0]].get("cost", 1)))
@@ -520,10 +612,28 @@ class TacticalAI:
         if self.mana() >= 3:
             return None
         for name in self.owned("ramp"):
-            r = self._cast(name, 2)
+            # 洞察是疲惫型（X点速限）：只买X=1，不为了2点法力赔2点速限
+            x = 1 if TACTICAL_ROLES[name].get("pay") == "疲惫" else 2
+            r = self._cast(name, x)
             if r:
                 return r
         return None
+
+    def try_reroll(self) -> Optional[dict]:
+        """10. 消灾（reroll）：局内唯一重置随机数的道纹。
+
+        纯情境牌：只在血线告急（<50%）且碎片富余时买一次 X=1 的重掷，
+        稳定局面不动用（不花碎片赌顺风）。代价 5碎片/50假碎片（局外×2）。
+        """
+        p = self.player
+        if p.current_hp > p.blood_limit * 0.5:
+            return None
+        state = self.engine.state
+        if not (state.shards >= 5 or state.fake_shards >= 50):
+            return None
+        if "消灾" not in p.dao_wen:
+            return None
+        return self._cast("消灾", 1)
 
     def try_consumable(self) -> Optional[dict]:
         """消耗品：使用不消耗出手，故在出手循环外单独尝试。
@@ -577,7 +687,7 @@ class TacticalAI:
 
     STRATEGIES = ("try_artifact", "try_survive", "try_buff", "try_resonance", "try_finish",
                   "try_remove", "try_control", "try_aoe", "try_debuff", "try_pressure",
-                  "try_ramp")
+                  "try_ramp", "try_reroll")
 
     def take_action(self) -> Optional[dict]:
         """执行一次出手。返回引擎结果；无可行动作时返回 None。"""

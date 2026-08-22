@@ -28,42 +28,32 @@ from sim.monster_targets import (  # noqa: E402
 
 
 def _pick_monster_daowen(engine, actor):
-    """怪物按当前情形择优选道纹（README：怪物为胜利和生存作最优决策）。
-    输出优先，血低自保，玩家血低收割，机制型按需。"""
+    """怪物按当前情形择优选道纹——委托 sim.monster_targets 统一入口（2026-08-22）。
+
+    优先级分组表不再在本文件复制（此前多处各抄一份、版本变更后三处仍引用
+    已删除的切割/冲击/缓慢）；统一口径见 sim.monster_targets.MONSTER_DAOWEN_*
+    （DM裁定2026-08-18：自保→输出→控制→机制，含半血/收割/连续压制修正）。
+    本文件仅保留候选过滤与空候选回退的原有语义。
+    """
+    from sim.monster_targets import pick_monster_daowen_option
     opts = actor["daowen_options"]
     if not opts:
         return None
     m_idx = int(actor["actor_ref"].split(":", 1)[1]) if ":" in actor["actor_ref"] else 0
-    activated = set()
     enemies = engine.state.enemies
     monster = None
     if 0 <= m_idx < len(enemies):
         monster = enemies[m_idx]
-        activated = engine.combat._monster_activated.get(id(monster), set())
+    activated = engine.combat._monster_activated.get(id(monster), set()) if monster is not None else set()
     cands = [o for o in opts if o["name"] not in activated]
     if not cands:
         return opts[0]
-    OUTPUT = {"狂暴", "强化", "杀伐", "血债", "切割", "冲击", "加害", "活血", "裂变", "洗劫", "赎金", "逼债", "清算", "赌命"}
-    SELF = {"自愈", "庇护", "再生", "固执", "疯狂", "龙鳞"}
-    CONTROL = {"减速", "束缚", "衰败", "勾魂", "镇尸", "僵化", "眩晕", "蒙蔽", "弱化", "退化", "冥气", "缄默", "瓦解", "招魂", "无力", "迟滞", "定型", "封印", "缓慢"}
     p = engine.state.player
     player_low = p is not None and p.is_alive and p.current_hp <= p.blood_limit * 0.5
     monster_low = monster is not None and monster.current_hp <= monster.blood_limit * 0.5
-    def group(o):
-        n = o["name"]
-        if n in OUTPUT: return 0
-        if n in SELF: return 1
-        if n in CONTROL: return 2
-        return 3
-    if monster_low:
-        self_cands = [o for o in cands if o["name"] in SELF]
-        if self_cands:
-            return self_cands[0]
-    if player_low:
-        kill_cands = [o for o in cands if o["name"] in OUTPUT or o["name"] in CONTROL]
-        if kill_cands:
-            return kill_cands[0]
-    return min(cands, key=group)
+    
+    return pick_monster_daowen_option(cands, player_low=player_low,
+                                      monster_low=monster_low)
 
 def _resolve_monster_turn_one(e, skip_refs: set):
     """守擂一步：prepare 后只结算1个尚未行动过的 actor，其余本步不动。
@@ -93,7 +83,7 @@ def _resolve_monster_turn_one(e, skip_refs: set):
     from engine.ai_tactics import choose_attack_target
     refs = e.combat._combat_entity_refs()
     target_ref = choose_attack_target(actor["attack_target_options"], refs)
-    target_option = next(o for o in actor["attack_target_options"] if o["ref"] == target_ref)
+    target_option = next((o for o in actor["attack_target_options"] if o["ref"] == target_ref), None)   # 无合法攻击目标时为None（引擎prepare已置base_attack_actions=0）
     attacks = []
     for _ in range(actor["base_attack_actions"]):
         hits = [{"target_ref": target_ref, "dodge": False, "blood_shadow": False,

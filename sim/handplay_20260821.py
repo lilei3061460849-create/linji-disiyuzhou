@@ -456,7 +456,7 @@ def resolve_monster_turn_hand(engine, strat: Strategy):
             per_hit = monster.attack_count  # 变形后攻击力=原攻击次数
         from engine.ai_tactics import choose_attack_target
         target_ref = choose_attack_target(actor["attack_target_options"], refs)
-        target_option = next(o for o in actor["attack_target_options"] if o["ref"] == target_ref)
+        target_option = next((o for o in actor["attack_target_options"] if o["ref"] == target_ref), None)   # 无合法攻击目标时为None（引擎prepare已置base_attack_actions=0）
         if engine.state.player is not None:
             # 2026-08-21 修复后：怪物阶段静态校验已计入[敌回始]守夜灯法力，
             # 因此反应法术预算 = 当前法力 + 本回合守夜灯将授予的法力。
@@ -527,7 +527,7 @@ def resolve_monster_turn_hand(engine, strat: Strategy):
                         enemy_index = int(actor["actor_ref"].split(":", 1)[1])
                         hit_count_fb = engine.state.enemies[enemy_index].attack_power
             target_ref = choose_attack_target(actor["attack_target_options"], refs)
-            target_option = next(o for o in actor["attack_target_options"] if o["ref"] == target_ref)
+            target_option = next((o for o in actor["attack_target_options"] if o["ref"] == target_ref), None)   # 无合法攻击目标时为None（引擎prepare已置base_attack_actions=0）
             attacks = [{"hits": [{
                 "target_ref": target_ref, "dodge": False, "blood_shadow": False,
                 "spell_choices": {timing: {sp["spell_name"]: {"use": False}

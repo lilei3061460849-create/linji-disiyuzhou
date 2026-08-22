@@ -483,13 +483,19 @@ class PlaceholderBackend(AIBackend):
                             dao["dodge_targets"] = pick_wave_dodge_targets(option)
                         if option["resolves_as"] == "疯狂": action_count += option["x"]
                         if option["resolves_as"] == "狂暴": action_count += 1
-                    target = actor["attack_target_options"][0]
-                    spell_choices = {timing: {spell["spell_name"]: {"use": False}
-                                               for spell in target.get("spell_options", {}).get(timing, [])}
-                                     for timing in ("before", "after")}
-                    attacks = [{"hits": [{"target_ref": target["ref"], "dodge": False,
-                                            "blood_shadow": False, "spell_choices": spell_choices}
-                                           for _ in range(hit_count)]} for _ in range(action_count)]
+                    target = (actor["attack_target_options"][0]
+                              if actor["attack_target_options"] else None)
+                    if target is None:
+                        # 无合法攻击目标：本回合不出手（引擎prepare已置base_attack_actions=0）
+                        attacks = []
+                    else:
+                        spell_choices = {timing: {spell["spell_name"]: {"use": False}
+                                                  for spell in target.get("spell_options", {}).get(timing, [])}
+                                         for timing in ("before", "after")}
+                        attacks = [{"hits": [{"target_ref": target["ref"], "dodge": False,
+                                               "blood_shadow": False, "spell_choices": spell_choices}
+                                              for _ in range(hit_count)]}
+                                   for _ in range(action_count)]
                     choices.append({"actor_ref": actor["actor_ref"], "daowen": dao,
                                     "attack_actions": attacks})
                 return AIDecision("resolve_monster_phase",

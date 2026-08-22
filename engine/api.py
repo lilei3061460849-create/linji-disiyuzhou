@@ -3399,8 +3399,9 @@ class GameEngine:
                 if player is None or not player.is_alive:
                     return {"success": False, "error": "轮回者不在场，无法护卫"}
                 # 强制施加背负：盟友下X次替轮回者承担伤害（无消耗，不占盟友出手）
+                # 存 runtime_id 而非实体引用（引用环会炸事务回滚递归，2026-08-22）
                 ally._beifu_left = max(getattr(ally, "_beifu_left", 0) or 0, x)
-                ally._beifu_target = player
+                ally._beifu_target = player.runtime_id
                 ally.add_status(StatusEffect(name="背负", value=x, remaining_rounds=-1,
                                             source=player.name))
                 player.add_status(StatusEffect(name="被背负", value=x, remaining_rounds=-1,

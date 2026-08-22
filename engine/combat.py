@@ -3198,15 +3198,17 @@ class CombatEngine:
                     st_target._nilin = 0
                 result["effects"].append({"type": "nilin_setup", "target": st_target.name, "x": x})
         # 嫁祸X：自身下X次受伤由目标承担（无持续，仅计数）
+        # 存 runtime_id 而非实体引用：自施/互指会形成实体引用环，
+        # 事务回滚 _restore_state_in_place 的递归会无限深入（2026-08-22 学习遥测 RecursionError）。
         elif name == "嫁祸":
             caster._jiahuo_left = x
-            caster._jiahuo_target = target
+            caster._jiahuo_target = target.runtime_id
             caster.add_status(StatusEffect(name="嫁祸", value=x, remaining_rounds=x, source=caster.name))
             result["effects"].append({"type": "jiahuo", "caster": caster.name, "target": target.name, "count": x})
-        # 背负X：目标下X次受伤由自身承担
+        # 背负X：目标下X次受伤由自身承担（同样只存 runtime_id）
         elif name == "背负":
             caster._beifu_left = x
-            caster._beifu_target = target
+            caster._beifu_target = target.runtime_id
             # 在目标侧加标记便于查询
             for st_target in wave_status_targets:
                 st_target.add_status(StatusEffect(name="被背负", value=x, remaining_rounds=-1, source=caster.name))
@@ -3995,13 +3997,18 @@ class CombatEngine:
                     candidate for candidate in all_targets
                     if self.state.on_player_side(refs[candidate["ref"]]) != self.state.on_player_side(entity)
                 ] if self.state.side_has(entity, "回锋刀") else []
+            # 没有任何合法攻击目标（如solo对手飞行而怪物不飞）→ 本回合不出手。
+            # 否则怪物阶段无法被满足：每击都必须引用合法目标，提交永远失败
+            # （与【波及】目标数限制同族：prepare不得给出无法满足的义务）。
+            base_actions = (0 if not attack_targets
+                            else self._monster_attack_actions(monster, activated))
             actors.append({
                 "actor_ref": actor_ref,
                 "monster": monster.name,
                 "daowen_required": bool(daowen_options),
                 "daowen_options": daowen_options,
                 "attack_target_options": attack_targets,
-                "base_attack_actions": self._monster_attack_actions(monster, activated),
+                "base_attack_actions": base_actions,
                 "base_hits_per_attack": max(0, monster.attack_count - monster.get_status_value("手雷减攻")),
                 "dodge_must_be_explicit": True,
             })

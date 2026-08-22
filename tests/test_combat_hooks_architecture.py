@@ -129,10 +129,17 @@ def test_damage_redirection_and_mitigation_hooks():
     victim = Entity(name="受害者", blood_limit=30, current_hp=30, entity_type="轮回者")
     scapegoat = Entity(name="替罪羊", blood_limit=30, current_hp=30, entity_type="轮回者")
     victim._jiahuo_left = 1
-    victim._jiahuo_target = scapegoat
+    victim._jiahuo_target = scapegoat.runtime_id
     victim.add_status(StatusEffect(name="嫁祸", value=1, remaining_rounds=-1, source="test"))
 
-    target_redirected = manager.apply_redirection(victim, "普通", None)
+    # 重定向目标存runtime_id（2026-08-22：实体引用环会炸事务回滚递归），
+    # 按id解析需要state提供实体集合（生产路径 combat.py 恒传真实state）
+    class _RedirectState:
+        def get_all_player_side(self):
+            return [victim, scapegoat]
+        def get_all_enemy_side(self):
+            return []
+    target_redirected = manager.apply_redirection(victim, "普通", _RedirectState())
     assert target_redirected is scapegoat
     assert victim._jiahuo_left == 0
     assert not victim.has_status("嫁祸")

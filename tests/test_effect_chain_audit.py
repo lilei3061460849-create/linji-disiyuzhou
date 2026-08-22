@@ -440,7 +440,7 @@ def test_redirection_chain_terminates_and_keeps_parent():
     friend = Entity("F", "朋友", blood_limit=50, current_hp=50)
     state.friends = [friend]
     player._jiahuo_left = 1
-    player._jiahuo_target = friend
+    player._jiahuo_target = friend.runtime_id
     player.add_status(StatusEffect("嫁祸", value=1, remaining_rounds=1, source="P"))
 
     detail = combat._apply_hostile_damage(player, 10, source=enemy, ctx={
@@ -704,7 +704,7 @@ def test_j_redirected_damage_emits_exactly_one_damage_event():
     friend = Entity("F", "朋友", blood_limit=50, current_hp=50)
     state.friends = [friend]
     player._jiahuo_left = 1
-    player._jiahuo_target = friend
+    player._jiahuo_target = friend.runtime_id
     player.add_status(StatusEffect("嫁祸", value=1, remaining_rounds=1, source="P"))
 
     combat._apply_hostile_damage(player, 10, source=enemy, ctx={

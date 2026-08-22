@@ -72,7 +72,7 @@ def test_command_guard_with_beifu_redirects_damage():
     assert r["success"], r
     # 背负注册：岩行者._beifu_left >= 1 且目标=玩家
     assert getattr(fr, "_beifu_left", 0) >= 1
-    assert getattr(fr, "_beifu_target", None) is p
+    assert getattr(fr, "_beifu_target", None) == p.runtime_id
 
     # 怪物阶段：血僵打玩家，伤害应转给岩行者
     mp = _resolve_monster_phase(e)
@@ -96,7 +96,7 @@ def test_command_guard_alias_me():
     r = e.execute_action("command_ally", {
         "ally_ref": "friend:0", "instruction": "发动背负 打 我"})
     assert r["success"], r
-    assert getattr(fr, "_beifu_target", None) is e.state.player
+    assert getattr(fr, "_beifu_target", None) == e.state.player.runtime_id
 
 
 def test_command_guard_unknown_target_rejected():
@@ -145,7 +145,7 @@ def test_guard_command_forces_redirect_without_cost():
         "ally_ref": "friend:0", "instruction": "护卫 4"})
     assert r["success"], r
     assert getattr(fr, "_beifu_left", 0) == 4
-    assert getattr(fr, "_beifu_target", None) is p
+    assert getattr(fr, "_beifu_target", None) == p.runtime_id
     # 无消耗：盟友出手次数不变
     assert fr.actions_used_this_round == actions_before
 
