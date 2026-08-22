@@ -469,6 +469,18 @@ class GameEngine:
                 if not instance.can_use():
                     continue
                 fixed_x = instance.x_value if instance.x_value > 0 else 1
+                # 波及X（固定X）：合法目标不足X时该指令永远无法发动——
+                # 与玩家侧同一规则（2026-08-22 BUG-01 指令侧）。
+                if name == "波及":
+                    wave_candidates = [e for e in refs.values()
+                                       if e.is_alive and e is not actor]
+                    if len(wave_candidates) < fixed_x:
+                        actions.append({"action_type": "use_daowen", "available": False,
+                                        "params_schema": {"actor_ref": actor_ref,
+                                                          "daowen_name": name, "x": fixed_x},
+                                        "reason": f"波及{fixed_x}需要{fixed_x}个目标，"
+                                                  f"当前仅{len(wave_candidates)}个存活非自身角色"})
+                        continue
                 actions.append({"action_type": "use_daowen", "available": True,
                                 "params_schema": {"actor_ref": actor_ref, "daowen_name": name,
                                                   "x": fixed_x, "target_ref": target_options,
@@ -590,6 +602,12 @@ class GameEngine:
             if name == "赌命" and self.state.fake_shards < calc.get("fake_cost", x):
                 continue
             legal = x
+        # 波及X：X还不得超过合法目标数（全部存活非自身角色）——否则schema会给出
+        # 永远无法发动的X（AI按schema选X后提交必被拒，2026-08-22 BUG-01 玩家侧）。
+        if name == "波及":
+            wave_candidates = [e for e in self.combat._combat_entity_refs().values()
+                               if e.is_alive and e is not actor]
+            legal = min(legal, len(wave_candidates))
         return legal
 
     def _get_battle_end_actions(self) -> dict:
@@ -702,6 +720,19 @@ class GameEngine:
         }
         self.combat._sanxiang_consumed = snapshot["sanxiang"]
 
+    def _roll_back_monster_phase_pending(self) -> None:
+        """回滚怪物阶段pending token（仅当prepare快照已失效时调用，2026-08-22 BUG-02）。
+
+        普通提交失败（非法选择等）保持pending有效——战斗状态已整体回滚，
+        prepare快照仍然成立，AI用同一token修正后重交即可（既有契约，见
+        test_r11_r17_aoe_and_control_dodge_are_explicit 的同token重提）。
+        只有快照本身失效（回合变化等）时才清除token并还原子阶段，
+        使错误提示里的"重新prepare_monster_phase"真正可执行。
+        """
+        self.state.pending_monster_phase = {}
+        if self.state.phase == "in_combat":
+            self.state.combat_subphase = CombatSubphase.PLAYER_ACTIONS.value
+
     def _phase_error(self, action_type: str, params: dict) -> Optional[dict]:
         """执行入口的阶段门禁；【消灾】是唯一允许在局外发动的道纹。"""
         phase = self.state.phase
@@ -813,12 +844,19 @@ class GameEngine:
                 "success": False,
                 "error": "已有待提交的攻击决策，请先调用resolve_attack",
                 "token": self.state.pending_attack.get("token"),
+                "recoverable": True,
+                "instruction": "攻击pending仍有效（上次提交失败已被整体回滚）；"
+                               "用上方token重新调用resolve_attack提交完整选择",
             }
         if self.state.pending_monster_phase and action_type != "resolve_monster_phase":
             return {
                 "success": False,
                 "error": "已有待提交的怪物阶段决策，请先调用resolve_monster_phase",
                 "token": self.state.pending_monster_phase.get("token"),
+                "recoverable": True,
+                "instruction": "怪物阶段pending仍有效（上次提交失败已被整体回滚，"
+                               "prepare快照未变）；用上方token重新调用"
+                               "resolve_monster_phase提交完整选择",
             }
         # 检查是否有待处理的中断
         # 豁免：自创法术 dm_approved 重提是"结算中断"的动作，不该被自己挡住
@@ -991,6 +1029,20 @@ class GameEngine:
                 self.dice = dice_before
                 self.combat.dice = self.dice
                 self._pending_interrupts = interrupts_before
+                # 两阶段提交失败：状态已整体回滚，pending保持有效——
+                # 失败提交不得把战斗锁死（2026-08-22 BUG-02）。
+                if action_type == "resolve_monster_phase" and self.state.pending_monster_phase:
+                    result.setdefault("recoverable", True)
+                    result.setdefault("token", self.state.pending_monster_phase.get("token"))
+                    result.setdefault("instruction",
+                                      "提交被拒绝且已整体回滚（零副作用），token仍有效；"
+                                      "请修正选择后用同一token重新调用resolve_monster_phase")
+                elif action_type == "resolve_attack" and self.state.pending_attack:
+                    result.setdefault("recoverable", True)
+                    result.setdefault("token", self.state.pending_attack.get("token"))
+                    result.setdefault("instruction",
+                                      "提交被拒绝且已整体回滚（零副作用），token仍有效；"
+                                      "请修正选择后用同一token重新调用resolve_attack")
 
             # 记录行动历史
             self._action_history.append({
@@ -1035,12 +1087,22 @@ class GameEngine:
             self.dice = dice_before
             self.combat.dice = self.dice
             self._pending_interrupts = interrupts_before
+            # 引擎异常：状态已整体回滚，pending保持有效（与success=False路径一致），
+            # 失败提交不得把战斗锁死——保留token供修正后重交（2026-08-22 BUG-02）。
             error_result = {
                 "success": False,
                 "error": str(e),
                 "action": action_type,
-                "instruction": "引擎计算出错，请检查参数"
+                "instruction": "引擎计算出错，请检查参数；"
+                               "若发生在两阶段提交中，token仍有效，"
+                               "修正后用同一token重新提交"
             }
+            if action_type == "resolve_monster_phase" and self.state.pending_monster_phase:
+                error_result["recoverable"] = True
+                error_result["token"] = self.state.pending_monster_phase.get("token")
+            elif action_type == "resolve_attack" and self.state.pending_attack:
+                error_result["recoverable"] = True
+                error_result["token"] = self.state.pending_attack.get("token")
             self._last_result = error_result
             return error_result
 
@@ -3524,20 +3586,37 @@ class GameEngine:
                 "instruction": "请为每个actors条目提交完整选择后调用resolve_monster_phase"}
 
     def _action_resolve_monster_phase(self, params: dict) -> dict:
-        """第二阶段：验证完整选择与一次性token，通过后统一结算。"""
+        """第二阶段：验证完整选择与一次性token，通过后统一结算。
+
+        提交失败时战斗状态由事务整体回滚（零副作用），pending保持有效：
+        AI用同一token修正后重交即可，失败提交不得把战斗锁死在怪物阶段
+        （2026-08-22 BUG-02）。仅当prepare快照本身失效（回合变化）时
+        回滚pending并还原子阶段，让"重新prepare"成为可执行的恢复路径。
+        """
         pending = self.state.pending_monster_phase
         if not pending:
             return {"success": False, "error": "请先调用prepare_monster_phase"}
         if params.get("token") != pending.get("token"):
-            return {"success": False, "error": "怪物阶段token无效或已过期"}
+            return {"success": False, "error": "怪物阶段token无效或已过期",
+                    "recoverable": True, "token": pending.get("token"),
+                    "instruction": "请使用上方当前有效token重新调用resolve_monster_phase"}
         if pending.get("round") != self.state.current_round:
-            return {"success": False, "error": "回合已变化，请重新prepare_monster_phase"}
+            # 快照已跨回合失效：普通重提无意义，回滚pending让重新prepare可执行
+            self._roll_back_monster_phase_pending()
+            return {"success": False, "error": "回合已变化，请重新prepare_monster_phase",
+                    "recoverable": True,
+                    "instruction": "回合已变化，怪物阶段pending已回滚；"
+                                   "请重新调用prepare_monster_phase获取最新token与合法选项"}
         try:
             results = self.combat.resolve_monster_phase(
                 params.get("choices"), prepared=pending["options"],
             )
-        except (TypeError, ValueError) as exc:
-            return {"success": False, "error": str(exc)}
+        except Exception as exc:
+            # 状态已回滚、pending保持有效：同token修正后重交即可（不要重新prepare）
+            return {"success": False, "error": str(exc), "recoverable": True,
+                    "token": pending.get("token"),
+                    "instruction": "提交被拒绝且已整体回滚（零副作用），token仍有效；"
+                                   "请修正选择后用同一token重新调用resolve_monster_phase"}
         self.state.pending_monster_phase = {}
         # 死斗交替（对称）：守擂方结算完后换回挑战者侧（若还有余手），
         # 与挑战者每次行动后 _advance_duel_turn 的行为一致。

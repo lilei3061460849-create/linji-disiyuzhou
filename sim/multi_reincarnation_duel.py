@@ -61,10 +61,8 @@ def _resolve_monster_turn_smart(engine):
             if option["requires_target"]:
                 dao["target_ref"] = option["target_options"][0]["ref"]
             if option["dodge_submission"] == "per_target":
-                dao["dodge_targets"] = [
-                    {"target_ref": target["ref"], "dodge": False, "blood_shadow": False}
-                    for target in option["dodge_target_options"]
-                ]
+                from sim.monster_targets import pick_wave_dodge_targets
+                dao["dodge_targets"] = pick_wave_dodge_targets(option)
         refs = engine.combat._combat_entity_refs()
         monster = refs.get(actor["actor_ref"])
         per_hit = monster.attack_power if monster is not None else 0

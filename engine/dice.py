@@ -133,24 +133,7 @@ class DiceEngine:
             "count": len(pool),
             "range": f"1~{len(pool)}" if pool else "空池"
         }
-    
-    def remove_from_pool(self, pool_name: str, predicate) -> int:
-        """按条件从池中移除不满足条件的选项，返回移除数量"""
-        if pool_name not in self._pools:
-            return 0
-        before = len(self._pools[pool_name])
-        self._pools[pool_name] = [x for x in self._pools[pool_name] if not predicate(x)]
-        return before - len(self._pools[pool_name])
-    
+
     def get_history(self) -> list[dict]:
         """获取所有历史记录"""
         return list(self._history)
-    
-    def clear_pool(self, pool_name: str):
-        """清除指定池"""
-        self._pools.pop(pool_name, None)
-    
-    def clear_all(self):
-        """清除所有池和历史"""
-        self._pools.clear()
-        self._history.clear()

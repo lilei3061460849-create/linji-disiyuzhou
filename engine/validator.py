@@ -625,19 +625,7 @@ class RuleValidator:
         except sqlite3.IntegrityError:
             conn.close()
             return -1
-    
-    def remove_exception(self, rule_name: str, key: str) -> bool:
-        """移除特例"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.execute(
-            "DELETE FROM rule_exceptions WHERE rule_name = ? AND exception_key = ?",
-            (rule_name, key)
-        )
-        removed = cursor.rowcount > 0
-        conn.commit()
-        conn.close()
-        return removed
-    
+
     def get_exceptions(self, rule_name: str = None) -> list[dict]:
         """获取所有特例"""
         conn = sqlite3.connect(self.db_path)

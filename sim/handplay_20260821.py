@@ -445,9 +445,8 @@ def resolve_monster_turn_hand(engine, strat: Strategy):
                     dao["target_ref"] = pick_monster_daowen_target(
                         engine, actor["actor_ref"], option)
                 if option["dodge_submission"] == "per_target":
-                    dao["dodge_targets"] = [
-                        {"target_ref": t["ref"], "dodge": False, "blood_shadow": False}
-                        for t in option["dodge_target_options"]]
+                    from sim.monster_targets import pick_wave_dodge_targets
+                    dao["dodge_targets"] = pick_wave_dodge_targets(option)
                 if option["resolves_as"] == "变形":
                     enemy_index = int(actor["actor_ref"].split(":", 1)[1])
                     hit_count = engine.state.enemies[enemy_index].attack_power
@@ -522,9 +521,8 @@ def resolve_monster_turn_hand(engine, strat: Strategy):
                         dao["target_ref"] = pick_monster_daowen_target(
                             engine, actor["actor_ref"], option)
                     if option["dodge_submission"] == "per_target":
-                        dao["dodge_targets"] = [
-                            {"target_ref": t["ref"], "dodge": False, "blood_shadow": False}
-                            for t in option["dodge_target_options"]]
+                        from sim.monster_targets import pick_wave_dodge_targets
+                        dao["dodge_targets"] = pick_wave_dodge_targets(option)
                     if option["resolves_as"] == "变形":
                         enemy_index = int(actor["actor_ref"].split(":", 1)[1])
                         hit_count_fb = engine.state.enemies[enemy_index].attack_power

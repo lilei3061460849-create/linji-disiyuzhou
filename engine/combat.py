@@ -1436,55 +1436,9 @@ class CombatEngine:
             })
 
         return result
-    
-    def calculate_round_attack(
-        self, 
-        attacker: Entity, 
-        targets: list[Entity],
-        target_selections: list[int]  # 每次攻击选定的目标索引
-    ) -> dict:
-        """
-        一轮攻击（仅限怪物与微光者）
-        规则：连续发动N次攻击（N=自身攻击次数），每次独立选定目标
-        """
-        attack_count = attacker.attack_count
-        
-        if len(target_selections) < attack_count:
-            return {
-                "error": f"需要{attack_count}个目标选择，只提供了{len(target_selections)}个",
-                "required": attack_count
-            }
-        
-        results = []
-        for i in range(attack_count):
-            target_idx = target_selections[i]
-            if target_idx < 0 or target_idx >= len(targets):
-                results.append({"error": f"目标索引{target_idx}无效"})
-                continue
-            
-            target = targets[target_idx]
-            if not target.is_alive:
-                results.append({"error": f"目标{target.name}已死亡"})
-                continue
-            
-            # 计算本次攻击
-            calc = self.calculate_attack_damage(attacker, target, i)
-            results.append({
-                "hit_index": i,
-                "target": target.name,
-                "damage": attacker.attack_power,
-                "can_dodge": calc["can_dodge"],
-                "instruction": f"第{i+1}次攻击 → {target.name}，是否闪避？(闪避消耗1点速度)"
-            })
-        
-        return {
-            "attacker": attacker.name,
-            "attack_count": attack_count,
-            "hits": results
-        }
-    
+
     # ========== 回合管理 ==========
-    
+
     def round_start(self, relic_choices: Optional[dict] = None) -> dict:
         """
         回始结算
@@ -2073,14 +2027,6 @@ class CombatEngine:
             return None
         return self._queue_redemption(monster, "low_hp_no_original")
 
-    def check_all_redemption(self) -> list[dict]:
-        results = []
-        for entity in list(self.state.enemies):
-            hit = self.check_redemption(entity)
-            if hit:
-                results.append(hit)
-        return results
-
     def _queue_redemption(self, monster: Entity, cause: str) -> dict:
         """怪物融化离场，等待接纳/无视。不产碎片。"""
         snapshot = {
@@ -2108,15 +2054,6 @@ class CombatEngine:
                 "原地只剩下一个昏迷的微光者"
             ),
         }
-
-    def check_all_cancer(self) -> list[dict]:
-        results = []
-        for entity in list(self.state.get_all_player_side()) + list(self.state.get_all_enemy_side()):
-            hit = self.check_cancer(entity)
-            if hit:
-                results.append(hit)
-        return results
-
     def _can_be_sculptured(self, entity: Entity) -> bool:
         """雕塑对任何非轮回者生效。轮回者攻次/攻力归0不触发。"""
         return entity.entity_type != "轮回者"
@@ -2325,9 +2262,6 @@ class CombatEngine:
             }
 
     # 兼容旧接口名（降服已删，改为指代多路径胜利结算）
-    def settle_taming(self) -> list[dict]:
-        return self.settle_victory_paths()
-
     def init_monster_shards(self, monster: Entity) -> int:
         """
         罪孽都市怪物[战始]自带碎片=其全部专属道纹数值之和×2
@@ -2342,13 +2276,6 @@ class CombatEngine:
                 total += getattr(inst, "x_value", 0) or 0
         monster.shards = total * 2
         return monster.shards
-
-    def drain_monster_shards(self, monster: Entity, amount: int) -> int:
-        """夺取/逼债使怪物失去碎片（可降至负值即负债），返回夺得的碎片数（≥0部分）"""
-        gained = max(0, monster.shards)  # 仅正值部分可被夺得
-        monster.shards -= amount
-        return min(gained, amount)
-
     # 一阶副本集合
     TIER1_REGIONS = {"罪孽都市", "扭曲都市", "龙心谷"}
 
@@ -3929,12 +3856,6 @@ class CombatEngine:
             rec = (self.state.current_round, set())
             self._monster_daowen_round_used[id(monster)] = rec
         return rec[1]
-
-    def queue_resonance_rewrite(self, entity: Entity, source: str, dest: str) -> None:
-        """残韵作用于他人道纹：登记其下一次发动该源道纹时按 dest 结算。"""
-        bucket = self._resonance_rewrites.setdefault(id(entity), {})
-        bucket[source] = dest
-
     def consume_resonance_rewrite(self, entity: Entity, source: str) -> Optional[str]:
         bucket = self._resonance_rewrites.get(id(entity)) or {}
         dest = bucket.pop(source, None)
@@ -4033,6 +3954,17 @@ class CombatEngine:
                         effective_name, inst.x_value, target=preview_target, caster=monster)
                     if not self._monster_can_pay_calc_cost(monster, preview_calc):
                         continue
+                    # 波及X：必须显式提交X个互不重复的合法目标。当前合法目标数不足X时
+                    # 本道纹无法合法发动——prepare直接过滤，引擎不得给出永远无法
+                    # 结算的选项（2026-08-22 BUG-01：solo场上【波及3】仅1个合法目标，
+                    # 任何提交都被拒，配合BUG-02使战斗永久卡死在怪物阶段）。
+                    dodge_target_options: list[dict] = []
+                    if effective_name == "波及":
+                        dodge_target_options = [target for target in all_targets
+                                                if target["ref"] != actor_ref
+                                                and self.is_targetable(monster, refs[target["ref"]])]
+                        if len(dodge_target_options) < inst.x_value:
+                            continue
                     daowen_options.append({
                         "name": name,
                         "resolves_as": effective_name,
@@ -4041,11 +3973,7 @@ class CombatEngine:
                         "target_options": legal_targets,
                         "dodge_submission": ("per_target" if effective_name == "波及"
                                              else ("single_if_hostile" if requires_target else "none")),
-                        "dodge_target_options": (
-                            [target for target in all_targets
-                             if target["ref"] != actor_ref
-                             and self.is_targetable(monster, refs[target["ref"]])]
-                            if effective_name == "波及" else []),
+                        "dodge_target_options": dodge_target_options,
                         "trigger_spell_options": self.prepare_daowen_trigger_spells(monster),
                     })
             attack_targets = [
@@ -4760,41 +4688,3 @@ class CombatEngine:
             "player_side": [e.to_dict() for e in self.state.get_all_player_side()],
             "enemy_side": [e.to_dict() for e in self.state.get_all_enemy_side()],
         }
-    
-    def get_damage_preview(
-        self, 
-        attacker: Entity, 
-        target: Entity, 
-        daowen_name: str = None,
-        x: int = 0
-    ) -> dict:
-        """
-        伤害预览（不实际执行，只计算结果供AI参考）
-        AI在决策前可以调用此方法预览道纹效果
-        """
-        if daowen_name:
-            try:
-                calc = DaoWenEngine.resolve(daowen_name, x, target=target, caster=attacker)
-                return {
-                    "type": "daowen_preview",
-                    "daowen": daowen_name,
-                    "x": x,
-                    "calculation": calc,
-                    "attacker": attacker.name,
-                    "target": target.name
-                }
-            except Exception as e:
-                return {"error": str(e)}
-        else:
-            # 普通攻击预览
-            return {
-                "type": "attack_preview",
-                "attacker": attacker.name,
-                "attack_power": attacker.attack_power,
-                "attack_count": attacker.attack_count,
-                "total_damage": attacker.attack_power * attacker.attack_count,
-                "target": target.name,
-                "target_hp": target.current_hp,
-                "target_shield": target.shield,
-                "can_kill": (target.current_hp - attacker.attack_power) <= 0
-            }

@@ -88,9 +88,8 @@ def _resolve_monster_turn_one(e, skip_refs: set):
         if option["requires_target"]:
             dao["target_ref"] = pick_monster_daowen_target(e, actor["actor_ref"], option)
         if option["dodge_submission"] == "per_target":
-            dao["dodge_targets"] = [
-                {"target_ref": t["ref"], "dodge": False, "blood_shadow": False}
-                for t in option["dodge_target_options"]]
+            from sim.monster_targets import pick_wave_dodge_targets
+            dao["dodge_targets"] = pick_wave_dodge_targets(option)
     from engine.ai_tactics import choose_attack_target
     refs = e.combat._combat_entity_refs()
     target_ref = choose_attack_target(actor["attack_target_options"], refs)

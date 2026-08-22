@@ -73,10 +73,8 @@ def _resolve_monster_turn_smart(engine):
             if option["requires_target"]:
                 dao["target_ref"] = option["target_options"][0]["ref"]
             if option["dodge_submission"] == "per_target":
-                dao["dodge_targets"] = [
-                    {"target_ref": target["ref"], "dodge": False, "blood_shadow": False}
-                    for target in option["dodge_target_options"]
-                ]
+                from sim.monster_targets import pick_wave_dodge_targets
+                dao["dodge_targets"] = pick_wave_dodge_targets(option)
         if monster is not None and (monster.has_status("贯穿") or has_guanchuan):
             has_guanchuan = True
         nilin_bonus = (monster.get_status_value("逆鳞") or 0) if (monster is not None and monster.has_status("逆鳞")) else 0

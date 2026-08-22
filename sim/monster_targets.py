@@ -35,6 +35,24 @@ MONSTER_HOSTILE_DAOWEN = {
 }
 
 
+def pick_wave_dodge_targets(option: dict) -> list[dict]:
+    """波及X：从prepare的dodge_target_options中恰好选X个目标（对侧优先）。
+
+    规则要求显式提交恰好X个不重复目标：此前各解析器把dodge_target_options全量
+    提交，候选数大于X时必然被resolve拒收（2026-08-22 BUG-01配套修复）。引擎
+    prepare侧已保证候选数≥X（不足X时该道纹不会出现在选项里）。
+    优先选怪物对侧（玩家方）目标——把后续道纹扩散打到敌方才符合怪物意图；
+    对侧不足X时以其余合法目标补齐。
+    """
+    need = int(option.get("x", 0) or 0)
+    candidates = list(option.get("dodge_target_options") or [])
+    hostiles = [t for t in candidates if not str(t.get("ref", "")).startswith("enemy:")]
+    others = [t for t in candidates if str(t.get("ref", "")).startswith("enemy:")]
+    picked = (hostiles + others)[:need]
+    return [{"target_ref": t["ref"], "dodge": False, "blood_shadow": False}
+            for t in picked]
+
+
 def pick_monster_daowen_target(engine, actor_ref: str, option: dict) -> str:
     """按道纹目标类型为怪物选择道纹目标（最优策略，不依赖 target_options[0]）。
 

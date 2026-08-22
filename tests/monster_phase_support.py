@@ -39,10 +39,9 @@ def resolve_monster_phase(combat, daowen_choices=None, *, dodge=False, target_re
                 dao["target_ref"] = target_refs.get(
                     key, target_refs.get(monster, option["target_options"][0]["ref"]))
             if option["dodge_submission"] == "per_target":
-                dao["dodge_targets"] = [
-                    {"target_ref": target["ref"], "dodge": False, "blood_shadow": False}
-                    for target in option["dodge_target_options"]
-                ]
+                # 波及X：恰好提交X个目标（候选全量提交会在候选>X时被拒，2026-08-22）
+                from sim.monster_targets import pick_wave_dodge_targets
+                dao["dodge_targets"] = pick_wave_dodge_targets(option)
             elif option["resolves_as"] == "变形":
                 enemy_index = int(key.split(":", 1)[1])
                 hit_count = combat.state.enemies[enemy_index].attack_power

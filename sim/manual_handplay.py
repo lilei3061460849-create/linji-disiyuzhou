@@ -60,10 +60,8 @@ def _resolve_monster_turn_smart(engine):
             if option["requires_target"]:
                 dao["target_ref"] = option["target_options"][0]["ref"]
             if option["dodge_submission"] == "per_target":
-                dao["dodge_targets"] = [
-                    {"target_ref": target["ref"], "dodge": False, "blood_shadow": False}
-                    for target in option["dodge_target_options"]
-                ]
+                from sim.monster_targets import pick_wave_dodge_targets
+                dao["dodge_targets"] = pick_wave_dodge_targets(option)
 
         refs = engine.combat._combat_entity_refs()
         monster = refs.get(actor["actor_ref"])
@@ -500,10 +498,8 @@ def run_full_handplay_session(seed=42):
                     if option["requires_target"]:
                         dao["target_ref"] = option["target_options"][0]["ref"]
                     if option["dodge_submission"] == "per_target":
-                        dao["dodge_targets"] = [
-                            {"target_ref": target["ref"], "dodge": False, "blood_shadow": False}
-                            for target in option["dodge_target_options"]
-                        ]
+                        from sim.monster_targets import pick_wave_dodge_targets
+                        dao["dodge_targets"] = pick_wave_dodge_targets(option)
                     b_lines.append(f"出手{action_idx}（{actor['actor_name']}）：发动【{option['name']}X={option.get('x_value', 2)}】")
 
                 refs = e.combat._combat_entity_refs()

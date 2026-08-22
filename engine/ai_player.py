@@ -48,10 +48,6 @@ class AIBackend:
     
     def decide(self, state: dict, available_actions: dict, context: str = "") -> AIDecision:
         raise NotImplementedError
-    
-    def validate_result(self, action: dict, result: dict) -> dict:
-        return {"valid": True, "concerns": [], "suggestions": []}
-
 
 # ========== 通用OpenAI兼容调用器 ==========
 
@@ -482,9 +478,9 @@ class PlaceholderBackend(AIBackend):
                                    for holder, spells in option.get("trigger_spell_options", {}).items()}}
                         if option["requires_target"]: dao["target_ref"] = option["target_options"][0]["ref"]
                         if option["dodge_submission"] == "per_target":
-                            dao["dodge_targets"] = [{"target_ref": t["ref"], "dodge": False,
-                                                     "blood_shadow": False}
-                                                    for t in option["dodge_target_options"]]
+                            # 波及X：必须恰好提交X个目标（候选全量提交会在候选>X时被拒）。
+                            from sim.monster_targets import pick_wave_dodge_targets
+                            dao["dodge_targets"] = pick_wave_dodge_targets(option)
                         if option["resolves_as"] == "疯狂": action_count += option["x"]
                         if option["resolves_as"] == "狂暴": action_count += 1
                     target = actor["attack_target_options"][0]
@@ -520,11 +516,27 @@ class PlaceholderBackend(AIBackend):
                     schema = action["params_schema"]
                     enemies = [target for target in schema.get("target_ref", [])
                                if str(target.get("ref", "")).startswith("enemy:")]
-                    params = {"daowen_name": schema["daowen_name"],
-                              "x": max(1, min(5, schema["x"]["maximum"])),
+                    x_schema = schema.get("x", {})
+                    # 指令道纹的x是固定整数；玩家道纹的x是{minimum,maximum}范围
+                    if isinstance(x_schema, dict):
+                        x = max(1, min(5, x_schema["maximum"]))
+                    else:
+                        x = int(x_schema)
+                    params = {"daowen_name": schema["daowen_name"], "x": x,
                               "dodge": False, "blood_shadow": False,
                               "trigger_spell_choices": {}}
-                    if enemies: params["target_ref"] = enemies[0]["ref"]
+                    if "actor_ref" in schema: params["actor_ref"] = schema["actor_ref"]
+                    if schema["daowen_name"] == "波及" and engine is not None:
+                        # 波及X：必须恰好提交X个存活非自身目标（schema上限已按目标数封顶）
+                        refs = engine.combat._combat_entity_refs()
+                        actor = refs.get(schema.get("actor_ref", "")) or engine.state.player
+                        candidates = [r for r, e in refs.items()
+                                      if e.is_alive and e is not actor]
+                        params["dodge_targets"] = [{"target_ref": r, "dodge": False,
+                                                    "blood_shadow": False}
+                                                   for r in candidates[:x]]
+                    elif enemies:
+                        params["target_ref"] = enemies[0]["ref"]
                     return AIDecision("use_daowen", params, "使用合法道纹选项")
                 if action_type == "prepare_attack":
                     actor_schema = action["params_schema"]["actor_ref"]
@@ -655,36 +667,7 @@ class AIPlayer:
             "sync_report": sync_report,
             "interrupt": result.get("interrupt"),
         }
-    
-    def play_until_interrupt(self, max_turns: int = 100, context: str = "") -> dict:
-        """持续执行直到遇到中断或游戏结束"""
-        turns_played = 0
-        all_results = []
-        
-        while turns_played < max_turns:
-            result = self.play_turn(context)
-            all_results.append(result)
-            turns_played += 1
-            
-            if result.get("interrupt"):
-                return {
-                    "status": "interrupted",
-                    "turns_played": turns_played,
-                    "results": all_results,
-                    "interrupt": result["interrupt"],
-                }
-            
-            if not result.get("result", {}).get("success"):
-                error = result.get("result", {}).get("error", "")
-                if "精力已耗尽" in error:
-                    context = "精力耗尽，进入战斗阶段"
-        
-        return {
-            "status": "max_turns_reached",
-            "turns_played": turns_played,
-            "results": all_results
-        }
-    
+
     def get_history(self) -> list[dict]:
         return self._decision_history
     

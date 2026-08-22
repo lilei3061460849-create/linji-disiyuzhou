@@ -32,7 +32,7 @@ def main():
     e = GameEngine(db_path="/tmp/story2_dm.db", rng_seed=20260817,
                    sealed_candidate_path="/tmp/story2_sealed.json")
     act(e, "setup_attributes", {"name": "秦无衣", "blood_points": 7, "speed_points": 8, "mana_points": 10})
-Nonefinish_initial_daowen(e)
+    finish_initial_daowen(e)
     act(e, "setup_choose_resonance", {"resonance_type": "反转"})
     s = act(e, "setup_choose_region", {"region": "罪孽都市"})
     act(e, "choose_discovered_relic", {"relic_name": s["result"]["relic_choices"][0]})
@@ -119,8 +119,8 @@ Nonefinish_initial_daowen(e)
                 if option.get("requires_target"):
                     dao["target_ref"] = option["target_options"][0]["ref"]
                 if option.get("dodge_submission") == "per_target":
-                    dao["dodge_targets"] = [{"target_ref": t["ref"], "dodge": False, "blood_shadow": False}
-                                            for t in option.get("dodge_target_options", [])]
+                    from sim.monster_targets import pick_wave_dodge_targets
+                    dao["dodge_targets"] = pick_wave_dodge_targets(option)
             attacks = []
             shield_sim = p.shield
             for _ in range(actor["base_attack_actions"]):

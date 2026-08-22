@@ -191,9 +191,8 @@ def run_battle(e, battle_no, p):
                 if option.get("requires_target"):
                     dao["target_ref"] = option["target_options"][0]["ref"]
                 if option.get("dodge_submission") == "per_target":
-                    dao["dodge_targets"] = [{"target_ref": t["ref"], "dodge": False,
-                                             "blood_shadow": False}
-                                            for t in option.get("dodge_target_options", [])]
+                    from sim.monster_targets import pick_wave_dodge_targets
+                    dao["dodge_targets"] = pick_wave_dodge_targets(option)
             attacks = []
             dodge_budget = p.current_speed   # 模拟闪避消耗，避免"速度不足"非法提交
             for _ in range(actor["base_attack_actions"]):
