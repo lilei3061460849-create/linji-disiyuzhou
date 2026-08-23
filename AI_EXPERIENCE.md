@@ -841,3 +841,11 @@ AI 的"知识"分三处，版本变更（增删道纹/改公式/改机制）后�
    - 进化/逃跑 360 局尝试 0：动作经 api:504 挂进可用列表（困境阈值已是≥1信号，曾修过），但**模拟器怪物阶段驱动从不调用 declare_evolution**——怪物准则#3的"强制二选一"当前无人执行。
 3. **排除项**：救赎触发/离场 2:1 差额=我方探针把事务回滚重放的 queue 重复计数（api.py:1025/1083），非引擎问题；真实率以扫描器旗标为准。员工叛变(2/11/0 per区)、赎金减速兜底、员工自主出手(build_learner:869)均确认可达。
 4. **顺手修复**：`_alt_victory_scan` 败场盲区——玩家阵亡的战斗此前直接 return，该场已发生的移除不进统计；现扫描先于判负（扭曲40局验证救赎离场统计口径恢复）。
+
+第十四批（2026-08-23 设计审计三裁定实装 + 驱动层三处无效局根因治理）：
+1. **裁定①波及自适应降X（取代2026-08-22"不足X即过滤"方案）**：怪物面板波及X与玩家侧 _max_legal_daowen_x 同口径——有效X=min(面板X, 合法目标数)，仅目标数=0才不提供。落点：prepare 新增 wave_effective_x 快照键，_validate_monster_daowen_schema 与 _resolve_monster_daowen_choice 的 mark_count 均改读快照（三处同一口径，杜绝"提交N≠结算M"），sim/monster_targets.pick_wave_dodge_targets 按有效X取目标。tests/test_wave_target_limit_and_phase_recovery 两条过滤语义测试改写为降X语义（solo波及3→有效X1可结算且永不卡死回归锚定原用户流程3回合），README:467 补裁定注记。
+2. **裁定②消灾不动**：假钞-消灾组合怪=钱包型定位成立，负债全靠玩家逼债推（裁定D已在打）。
+3. **裁定③困境驱动**：sim/build_learner._drive_plight_monsters——怪物阶段开始前对困境怪强制二选一：进化优先（借轮回者X最高且自身未持有的纹，X=min(异变预算,3)，走引擎原生 declare_evolution），无票/必崩解则 _remove_from_combat("逃跑")（统一【离场】不视为击杀）。门禁：死斗不驱动、entity_type≠怪物绝不驱动（决斗对手是轮回者）。**顺手挖出引擎级bug**：_monster_evolved/_monster_activated/_monster_daowen_round_used 原为类属性、仅靠战始 reset 降级实例属性——绕过战始的引擎会把 add() 写进跨实例共享集合，id() 复用后后建怪物"被已进化"（全量测试顺序运行时才现形）。已在 CombatEngine.__init__ 实例化。
+4. **冒烟实测（3×~119局配对）**：plight.evolve 148 次/296 局（≈0.5/局）、escape 0 次——准则#3从"设计在场零触发"变日常机制。法力类无效局治理：_live_spell_choices 两bug——①朴素"1步=1法力"模型对消耗2X类（杀伐）必超支（2×先发制人提交不足）；②多法术各自按满额法力预算合计超支（先发制人before抽干→生生不息after结算不足）。修复=逐步精确记账（给后续步骤预留x=1基线）+钱包制共享池+重试链 ban 该法术。修后 120 局法力类无效 0 新增。[回终]晚到救赎门禁 round_start（+1局）已用战后 _resolve_pending_choices 清理。
+5. **测试**：新增 tests/test_plight_drive.py（进化优先/无票逃/必崩解逃/非怪物门禁/无信号不动 5条）；全量 1181 绿。
+6. **KB按协议重置重学（80代×6局=479局）**：无效仅1局（已知存量类 pre_battle 精力枯竭死锁）——法力类/救赎门禁类无效清零。plight.evolve 155/479局（≈0.32/局）、escape 0。**难度信号（向DM备案）**：均通关 1.20（上次同规模重学 1.89）——波及开得出火+困境进化借纹两条裁定让怪物侧压力实质上升，最优构筑分 3.33（封印/定型/透支/增殖）探索中；死斗样本2场0胜（低通关率下终局样本稀缺，待后续批次）。lessons 保留19条（reapply 脚本新增第0步：从 git HEAD 合并基线，修复 --reset 连 lessons 一起删的丢课风险，幂等）。

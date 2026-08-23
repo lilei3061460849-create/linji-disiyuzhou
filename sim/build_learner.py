@@ -139,7 +139,18 @@ def _trigger_spells(option, player_mana):
     return out
 
 
-def _live_spell_choices(engine, actor_ref, target_ref, use):
+def _spell_step_mana_cost(engine, daowen_name: str, x: int, holder, target) -> int:
+    """单步法术在某X下的真实法力消耗（与 combat.py:3396 校验口径一致；
+    非"消耗"类代价记0）。异常时按0处理（交给引擎校验终裁）。"""
+    from engine.daowen import DaoWenEngine
+    try:
+        calc = DaoWenEngine.resolve(daowen_name, x, target=target, caster=holder)
+    except Exception:
+        return 0
+    return int(calc.get("cost", 0) or 0) if calc.get("cost_type") == "消耗" else 0
+
+
+def _live_spell_choices(engine, actor_ref, target_ref, use, banned=()):
     """现场重算受击方反应法术提交（2026-08-22 防漂移主路径）。
 
     combat.py:3362 校验的是结算时**实时**资格集，而 prepare 快照可能已被
@@ -147,6 +158,11 @@ def _live_spell_choices(engine, actor_ref, target_ref, use):
     use=True 只在持有者本阶段**最后一击**传入（早击一律弃权），于是同阶段永不
     发生中途消耗，资格集与提交时刻恒一致（此前的"镜像引擎消耗"方案对闪避
     概率分支无解，已放弃）。
+    banned：重试链判定的"提交法力不足"法术名集合——该法术直接弃权。
+
+    步骤X记账（2026-08-23 修复"提交的法力不足"无效局）：X不再按1法力/步的
+    朴素模型分配，而是按引擎同口径逐步精确核算——给后续步骤预留其x=1成本，
+    本步X取不超支的最大值（杀伐类 消耗2X 的旧模型必超支，冒烟批2/60踩中）。
     """
     refs = engine.combat._combat_entity_refs()
     holder = refs.get(target_ref)
@@ -155,23 +171,51 @@ def _live_spell_choices(engine, actor_ref, target_ref, use):
         return {"before": {}, "after": {}}
     live = engine.combat.prepare_spell_reactions(holder, attacker)
     out = {}
-    mana = holder.current_mana
+    # 钱包制（2026-08-23 second fix）：同一击可同时声明多个法术（before/after
+    # 各自资格集），每个法术若都按满额法力预算会合计超支——提交/结算校验按
+    # 共享法力池逐步扣减（combat.py:3379+/3515）。此处与引擎同口径：法术按
+    # 声明顺序共用一只钱包，扣完即止，付不起基线(x=1)的法术直接弃权。
+    wallet = holder.current_mana
     for timing in ("before", "after"):
         out[timing] = {}
         for spell in live.get(timing, []) or []:
             name = spell["spell_name"]
-            if use and mana >= 1:
+            steps = spell.get("steps", []) or []
+            if use and wallet >= 1 and name not in banned and steps:
+                # 各步骤x=1的基线成本（用于给后续步骤预留）
+                base_costs = [
+                    _spell_step_mana_cost(engine, st.get("daowen", ""), 1, holder,
+                                          refs.get(st.get("target_ref", "")) or holder)
+                    for st in steps]
+                if sum(base_costs) > wallet:
+                    # 全部基线(x=1)都付不起的法术直接弃权，不给提交校验留死路
+                    out[timing][name] = {"use": False}
+                    continue
                 cycle = []
-                remaining = mana
-                for st in spell.get("steps", []):
+                remaining = wallet
+                for index, st in enumerate(steps):
+                    reserve = sum(base_costs[index + 1:])       # 后续步骤x=1的预留
+                    budget = max(0, remaining - reserve)
                     is_self = st.get("target_ref") == target_ref
-                    x = max(1, remaining - 1) if not is_self else 1
+                    target_ent = refs.get(st.get("target_ref", "")) or holder
+                    x = 1
+                    if not is_self:
+                        # 取不透支预算的最大X（成本随X单调不减，超支即停）
+                        for cand in range(2, budget + 1):
+                            if _spell_step_mana_cost(engine, st.get("daowen", ""),
+                                                     cand, holder, target_ent) <= budget:
+                                x = cand
+                            else:
+                                break
+                    step_cost = _spell_step_mana_cost(engine, st.get("daowen", ""),
+                                                      x, holder, target_ent)
                     entry = {"x": x, "target_ref": st.get("target_ref")}
-                    if st.get("target_ref") != target_ref:
+                    if not is_self:
                         entry["dodge"] = False
                     cycle.append(entry)
-                    remaining -= x
+                    remaining -= step_cost
                 out[timing][name] = {"use": True, "cycles": [cycle]}
+                wallet = remaining   # 钱包流转给下一个法术（与引擎共享池同口径）
             else:
                 out[timing][name] = {"use": False}
     return out
@@ -244,6 +288,49 @@ def _resolve_pending_choices(e) -> None:
 # 一局轮回
 # --------------------------------------------------------------------------
 
+def _drive_plight_monsters(engine, telemetry: dict = None) -> None:
+    """困境驱动（DM裁定2026-08-23③：模拟器怪物执行准则#3强制二选一）。
+
+    每回合怪物阶段开始前：对所有处于困境的**怪物**——
+      1. 进化优先：有借用票（轮回者持有且自身未持有的道纹）且门票异变5X不
+         必触发崩解（max_x_by_mutation≥1）→ declare_evolution 发动【原初X】，
+         借轮回者X值最高的道纹，X=min(异变预算, 3)；
+      2. 否则逃跑（无票/必崩解）：统一【离场】depart_battle("逃跑")，不视为
+         击杀、不产生碎片奖励，alt_victory 扫描自动记为「逃跑」类离场。
+    死斗不驱动（道规禁逃）；决斗对手是轮回者不是怪物（entity_type 门禁）。
+    """
+    from engine.combat import CombatEngine  # noqa: F401  (类型提示用)
+    combat = engine.combat
+    if getattr(engine.state, "in_final_duel", False):
+        return
+    stats = telemetry.setdefault("plight", {}) if telemetry is not None else None
+    for opt in combat.get_plight_evolution_options():
+        monster = next((e for e in engine.state.enemies
+                        if e.name == opt.get("monster") and e.is_alive), None)
+        if monster is None or monster.entity_type != "怪物":
+            continue
+        if id(monster) in combat._monster_evolved:
+            continue
+        borrowable = list(opt.get("borrowable_daowen") or [])
+        max_x = int(opt.get("max_x_by_mutation") or 0)
+        if borrowable and max_x >= 1:
+            player = engine.state.player
+            pick = max(borrowable,
+                       key=lambda d: (player.dao_wen[d].x_value
+                                      if player is not None and d in player.dao_wen else 0, d))
+            res = engine.execute_action("declare_evolution", {
+                "monster": monster.name, "daowen": pick,
+                "x": max(1, min(max_x, 3))})
+            key = "evolve" if res.get("success") else "evolve_failed"
+            if stats is not None:
+                stats[key] = stats.get(key, 0) + 1
+        else:
+            combat._monster_evolved.add(id(monster))
+            combat._remove_from_combat(monster, "逃跑")
+            if stats is not None:
+                stats["escape"] = stats.get("escape", 0) + 1
+
+
 def _resolve_monster_turn(engine):
     """怪物阶段驱动（2026-08-22 重建：现场资格集 + 有界重试链）。
 
@@ -266,6 +353,7 @@ def _resolve_monster_turn(engine):
     hit_overrides = {}     # actor_ref → 强制命中数/出手
     spell_overrides = {}   # 阶段内资格漂移：报错给出的精确资格名表（timing → [spell]）
     no_dodge_refs = set()  # 报错"速度不足不能闪避"的受击 ref：重交一律不闪避
+    banned_spells = set()  # 报错"提交的法力不足"的法术：后续一律弃权
     wave_retry = False
     attempts = 0
     max_attempts = len(prepared["result"]["actors"]) + 2
@@ -319,7 +407,8 @@ def _resolve_monster_turn(engine):
                         spell_choices = {"before": {}, "after": {}}
                     elif hold_counts[target_ref] >= 0:
                         spell_choices = _live_spell_choices(
-                            engine, actor["actor_ref"], target_ref, use=is_last_hit)
+                            engine, actor["actor_ref"], target_ref, use=is_last_hit,
+                            banned=banned_spells)
                         # 资格漂移重试：按报错给出的精确名表整体覆盖对应 timing
                         # （早击弃权/末击声明策略与漂移解耦——override 一律弃权）
                         if spell_overrides and refs_all.get(target_ref) is engine.state.player:
@@ -369,6 +458,12 @@ def _resolve_monster_turn(engine):
             if spell_overrides.get(key) != names:
                 spell_overrides[key] = names
                 continue
+        # 法术提交/结算法力不足（阶段内法力被同阶段早前结算抽干/多法术共享池
+        # 超支）：该法术本场后续一律弃权（use=False 是合法提交），立即重试。
+        m = _re.search(r"法术(?:【)?([^】提交结算]+?)(?:】)?(?:提交|结算)时?的?法力不足", err)
+        if m and m.group(1) not in banned_spells:
+            banned_spells.add(m.group(1))
+            continue
         # 闪避预算漂移：结算时刻速度被同阶段早前结算压到 0，该目标重交一律不闪避
         m = _re.search(r"(.+?)速度不足，不能选择闪避", err)
         if m:
@@ -869,6 +964,10 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
             e.execute_action("resolve_ally_phases", {})
             if not [x for x in e.state.enemies if x.is_alive]:
                 break
+            # 困境驱动（DM裁定2026-08-23③）：强制困境怪进化/逃跑二选一
+            _drive_plight_monsters(e, telemetry)
+            if not [x for x in e.state.enemies if x.is_alive]:
+                break   # 困境怪全逃跑=清场（不视为击杀）
             mp = _resolve_monster_turn(e)
             if not mp.get("success"):
                 return {"cleared": cleared, "won": False, "invalid": True,
@@ -876,6 +975,9 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
             if mp["result"].get("player_dead"):
                 break
             e.execute_action("round_end", {})
+            # [回终]结算可能把残血怪压入救赎等待队列——不清理会门禁下一回合
+            # round_start（"必须先结算【救赎】"按无效局回收，2026-08-23 冒烟）。
+            _resolve_pending_choices(e)
 
         # 先扫描再判负：阵亡/败北的战斗同样有移除产出（2026-08-23 审计发现
         # 救赎触发→离场有2倍差距，根因=败场提前 return 跳过扫描、把突围战绩丢了）。

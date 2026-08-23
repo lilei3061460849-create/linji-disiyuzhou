@@ -132,13 +132,17 @@ def pick_wave_dodge_targets(option: dict) -> list[dict]:
     """波及X：从prepare的dodge_target_options中恰好选X个目标（对侧优先）。
 
     规则要求显式提交恰好X个不重复目标：此前各解析器把dodge_target_options全量
-    提交，候选数大于X时必然被resolve拒收（2026-08-22 BUG-01配套修复）。引擎
-    prepare侧已保证候选数≥X（不足X时该道纹不会出现在选项里）。
+    提交，候选数大于X时必然被resolve拒收（2026-08-22 BUG-01配套修复）。
+    DM裁定2026-08-23自适应降X：prepare在面板X>合法目标数时把有效X降到
+    wave_effective_x=min(面板X, 候选数)，此处必须按有效X取目标，否则提交数≠
+    结算侧mark_count必被拒。
     优先选怪物对侧（玩家方）目标——把后续道纹扩散打到敌方才符合怪物意图；
     对侧不足X时以其余合法目标补齐。
     """
-    need = int(option.get("x", 0) or 0)
     candidates = list(option.get("dodge_target_options") or [])
+    need = int(option.get("wave_effective_x") or 0)
+    if not need:
+        need = min(int(option.get("x", 0) or 0), len(candidates))
     hostiles = [t for t in candidates if not str(t.get("ref", "")).startswith("enemy:")]
     others = [t for t in candidates if str(t.get("ref", "")).startswith("enemy:")]
     picked = (hostiles + others)[:need]

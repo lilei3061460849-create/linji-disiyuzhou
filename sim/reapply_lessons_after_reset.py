@@ -1,10 +1,27 @@
 """批量重学完成后执行：恢复/修订 lessons（批次进程在内存里持有旧知识副本，
-其回写会覆盖磁盘上的 lesson 修订——故固化为脚本在批后幂等重放）。"""
+其回写会覆盖磁盘上的 lesson 修订——故固化为脚本在批后幂等重放）。
+
+2026-08-23 起新增第0步：--reset 会连 lessons 一起删掉，先按文本去重从
+git HEAD 版 KB 合并回全部基线 lessons（机制裁定/技巧记录不属于 fitness
+样本，按KB协议在重置后保留），再做下方的修订与新增。全程幂等可重复执行。"""
 import json
+import subprocess
 
 p = "data/build_knowledge.json"
 k = json.load(open(p, encoding="utf-8"))
 ls = k.setdefault("lessons", [])
+
+# 第0步：从 git HEAD 合并基线 lessons（按 text 前40字去重，幂等）
+try:
+    _head = json.loads(subprocess.check_output(
+        ["git", "show", "HEAD:data/build_knowledge.json"]))
+    _have = {l.get("text", "")[:40] for l in ls}
+    for _l in _head.get("lessons", []):
+        if _l.get("text", "")[:40] not in _have:
+            ls.append(_l)
+            _have.add(_l.get("text", "")[:40])
+except Exception as _ex:  # git不可用时不阻塞后续修订
+    print("baseline restore skipped:", _ex)
 
 NEW_DEBT_LESSON = ("还债路径曾'玩家不可驱动'的判决已随DM裁定（2026-08-22）废止并重估："
     "①修复引擎余额门禁——怪物碎片类代价允许透支成负债（此前永不可达、20万+局零触发）；"
@@ -42,6 +59,20 @@ add_once("陷阱", "推债节奏",
     "推债节奏：逼债寄存每回始才欠X，触发线负债20——X≤5需要4-5回始（实测119局仅6次触发，"
     "怪早死了），X≥11两回始即达线（113局37次）。小额逼债=白给；推债要用当前法力上限附近的X。",
     "裁定D实装后配对实测 A(X≤5):6/119局 vs B(X≤12):37/113局 2026-08-22")
+add_once("陷阱", "法术提交的成本记账必须与引擎同口径",
+    "法术提交的成本记账必须与引擎同口径：①步骤X不能按'1步=1法力'朴素模型分配"
+    "（杀伐类消耗2X必超支→'提交的法力不足'无效局），要逐步 costs 精确核算并给后续"
+    "步骤预留x=1基线；②同一击可同时声明多个法术，校验/结算按共享法力池逐步扣减——"
+    "每个法术都按满额预算会合计超支（before先发制人抽干后after生生不息结算超支），"
+    "必须钱包制按声明顺序扣。修复后法力类无效局 60局×2批 = 0新增。",
+    "冒烟批配对 /tmp/bl_smoke14.log（2先发制人+1生生不息） vs smoke15（法力类0新增） 2026-08-23")
+add_once("心得", "困境驱动落地：进化≈0.5次/局、逃跑为稀有兜底",
+    "困境驱动落地：进化≈0.5次/局、逃跑为稀有兜底（DM裁定2026-08-23③）。"
+    "怪物困境强制二选一后进化≈0.5次/局（借玩家X最高纹、门票异变X=min(预算,3)），"
+    "逃跑≈0（借用池几乎从不空）——'无票/必崩解'是稀有兜底路径，日常主线是进化；"
+    "玩家构筑越强怪借得越好，攻略方向=别让单一高X纹成为唯一胜点"
+    "（或保证有处理借纹后的plan B）。",
+    "telemetry plight 计数：smoke1 24/58局 + smoke2 52/119局 2026-08-23")
 
 json.dump(k, open(p, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
 print("lessons now:", len(k["lessons"]))

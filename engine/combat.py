@@ -68,6 +68,13 @@ class CombatEngine:
         self._resonance_rewrites: dict[int, dict[str, str]] = {}
         # 效果链深度保险丝（见 MAX_EFFECT_CHAIN_DEPTH）。
         self._effect_chain_depth = 0
+        # 怪物战斗记述的实例化（2026-08-23）：这三个集合原本是类属性，
+        # 仅靠 reset_monster_activation 在战始降级为实例属性——绕过战始的引擎
+        # （测试夹具/模拟器直驱）会把 add() 写进跨实例共享的类集合，且 id()
+        # 复用会让后建的怪物“被已进化”，发生跨用例/跨局串扰。
+        self._monster_activated: dict = {}
+        self._monster_evolved: set = set()
+        self._monster_daowen_round_used: dict = {}
 
     # 效果链深度上限。这是**防御性保险丝**，不是游戏规则：
     # 任何合法的 嫁祸/背负 重定向链都远低于此值（重定向每跳都会递减 _jiahuo_left/_beifu_left，
@@ -3955,21 +3962,27 @@ class CombatEngine:
                         effective_name, inst.x_value, target=preview_target, caster=monster)
                     if not self._monster_can_pay_calc_cost(monster, preview_calc):
                         continue
-                    # 波及X：必须显式提交X个互不重复的合法目标。当前合法目标数不足X时
-                    # 本道纹无法合法发动——prepare直接过滤，引擎不得给出永远无法
-                    # 结算的选项（2026-08-22 BUG-01：solo场上【波及3】仅1个合法目标，
-                    # 任何提交都被拒，配合BUG-02使战斗永久卡死在怪物阶段）。
+                    # 波及X：必须显式提交X个互不重复的合法目标。DM裁定2026-08-23：
+                    # 面板X超过当前合法目标数时按目标数**自适应降X**（有效X=
+                    # min(面板X, 合法目标数)），与玩家侧 _max_legal_daowen_x 的
+                    # 目标数封顶口径一致——永不因目标不足而不可结算/死锁；仅当
+                    # 合法目标数为0时本道纹才真正无法发动，prepare才过滤。
+                    # （取代2026-08-22 BUG-01的"不足X即过滤"方案：过滤让面板波及
+                    # 怪在solo场上1/111场才开得出火，属于非符合预期效果。）
                     dodge_target_options: list[dict] = []
+                    wave_effective_x = 0
                     if effective_name == "波及":
                         dodge_target_options = [target for target in all_targets
                                                 if target["ref"] != actor_ref
                                                 and self.is_targetable(monster, refs[target["ref"]])]
-                        if len(dodge_target_options) < inst.x_value:
+                        if not dodge_target_options:
                             continue
+                        wave_effective_x = min(inst.x_value, len(dodge_target_options))
                     daowen_options.append({
                         "name": name,
                         "resolves_as": effective_name,
                         "x": inst.x_value,
+                        "wave_effective_x": wave_effective_x,
                         "requires_target": requires_target,
                         "target_options": legal_targets,
                         "dodge_submission": ("per_target" if effective_name == "波及"
@@ -4073,7 +4086,10 @@ class CombatEngine:
         if effective_name == "波及":
             # 波及X：选择X个[目标]建立/解除波及效果（持续∞）。每个目标显式提交闪避。
             submitted_dodges = choice.get("dodge_targets")
-            mark_count = int(calc.get("mark_targets", inst.x_value))
+            # DM裁定2026-08-23自适应降X：以prepare快照的wave_effective_x为准
+            # （min(面板X, 合法目标数)），驱动与校验始终同一口径。
+            mark_count = int(prepared_option.get("wave_effective_x")
+                             or calc.get("mark_targets", inst.x_value))
             if not isinstance(submitted_dodges, list) or len(submitted_dodges) != mark_count:
                 raise ValueError(f"道纹【波及】必须为{mark_count}个目标显式提交dodge_targets")
             expected_ref_list = [
@@ -4286,7 +4302,8 @@ class CombatEngine:
         blood_shadow = choice.get("blood_shadow", False)
         if effective_name == "波及":
             submitted_dodges = choice.get("dodge_targets")
-            mark_count = inst.x_value
+            # DM裁定2026-08-23自适应降X：与执行阶段同一口径（prepare快照）。
+            mark_count = int(prepared_option.get("wave_effective_x") or inst.x_value)
             if not isinstance(submitted_dodges, list) or len(submitted_dodges) != mark_count:
                 raise ValueError(f"道纹【波及】必须为{mark_count}个目标显式提交dodge_targets")
             expected_refs = {
