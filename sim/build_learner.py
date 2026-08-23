@@ -1328,6 +1328,22 @@ def update(k: dict, starter: str, learn: list, score: float) -> None:
     k["history"].append({"gen": k["generation"], "starter": starter,
                          "learn": list(learn), "score": round(score, 3)})
     k["total_games"] = k.get("total_games", 0) + k.get("_last_runs", 0)
+    # best_confirmed（2026-08-23 排名噪声治理）：fitness 单次=6局，方差大，
+    # 单次评估的"最高分"常是运气样本（实测 KB分4.83 复测场均仅1.50）。
+    # '已确认最优'只在同一构筑被累计评估≥2次后按其历次**均值**排序——
+    # 供汇报/决策使用；best 字段（单次最高分）保持原口径不动。
+    counts: dict = {}
+    sums: dict = {}
+    for h in k["history"]:
+        key = (h["starter"], tuple(h["learn"]))
+        counts[key] = counts.get(key, 0) + 1
+        sums[key] = sums.get(key, 0.0) + h["score"]
+    confirmed = [(sums[key] / c, key) for key, c in counts.items() if c >= 2]
+    if confirmed:
+        mean_score, key = max(confirmed)
+        k["best_confirmed"] = {"starter": key[0], "learn": list(key[1]),
+                               "score": round(mean_score, 3),
+                               "evals": counts[key]}
 
 
 # ============ 战术知识区（战报驱动） ============
@@ -1516,6 +1532,10 @@ def report(k: dict) -> None:
     if k.get("best"):
         b = k["best"]
         print(f"\n★ 目前最优：初始【{b['starter']}】+ {b['learn']}   适应度 {b['score']:.2f}/10")
+    bc = k.get("best_confirmed")
+    if bc:
+        print(f"★ 确认最优（≥2次评估均值）：初始【{bc['starter']}】+ {bc['learn']}   "
+              f"均分 {bc['score']:.2f}（{bc['evals']}次评估）")
     if k.get("lessons"):
         print("\n【心得与陷阱】（规则定义不入库，只记经验级结论；详见 README）")
         for l in k["lessons"][-8:]:
