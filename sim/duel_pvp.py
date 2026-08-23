@@ -83,15 +83,41 @@ def _resolve_opponent_one(e, log=None):
     return False
 
 
-def run_duel_pvp(e, player_act, max_rounds=60, max_steps=400, log=None):
+def _duel_state_sizes(e, top=6):
+    """诊断：按字段统计 deepcopy 成本（ms），用于超时样本归因。"""
+    import copy, dataclasses, time
+    rows = []
+    st = e.state
+    for f in dataclasses.fields(st):
+        try:
+            t = time.perf_counter()
+            copy.deepcopy(getattr(st, f.name))
+            rows.append(((time.perf_counter() - t) * 1000, f.name))
+        except Exception:
+            pass
+    rows.sort(reverse=True)
+    return [(nm, round(ms, 2)) for ms, nm in rows[:top]]
+
+
+def run_duel_pvp(e, player_act, max_rounds=60, max_steps=400, log=None,
+                 max_wall_seconds=30.0):
     """PvP 对称交替死斗：双方都按轮回者规则行动。
 
     player_act(): 挑战者侧行动1次（成功返回 True，引擎已换边；无行动返回 False）。
     守擂侧由本驱动用玩家侧接口行动（法力制/出手次数/自由控X）。
+    max_wall_seconds: 墙钟守护（2026-08-22）。死斗在战斗7之后进行，实体/遗物/
+        事件累积使 ai_preview 的整状态 deepcopy 预演成本暴涨，实测单场死斗
+        100% CPU 空转 >5 分钟（批次13 gen1619 卡死事件）。超时判擂主卫冕
+        —— 与“回合上限=攻擂失败”语义一致（挑战者未在限时内完成击杀）。
     返回 dict: {'winner': 'challenger'|'defender', 'rounds': n, 'reason': str}
     """
+    import time as _time
     from sim.build_learner import round_start_relic_choices
     log = log or []
+    deadline = _time.monotonic() + max_wall_seconds
+
+    def _over_time():
+        return _time.monotonic() > deadline
 
     def _lord_alive():
         return any(x.is_alive for x in e.state.enemies if x.entity_type == "轮回者")
@@ -107,6 +133,11 @@ def run_duel_pvp(e, player_act, max_rounds=60, max_steps=400, log=None):
         from sim.optional_actions import start_round
         rs, _rsart = start_round(e)
         for _ in range(max_steps):
+            if _over_time():
+                return {"winner": "defender", "rounds": rnd,
+                        "reason": f"超时卫冕(>{max_wall_seconds:g}s)",
+                        "timeout": True,
+                        "diag_state_sizes": _duel_state_sizes(e)}
             if not _challenger_alive():
                 return {"winner": "defender", "rounds": rnd, "reason": "挑战者阵亡"}
             if not _lord_alive():

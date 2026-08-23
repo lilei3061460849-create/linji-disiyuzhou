@@ -6,8 +6,8 @@
 → 命令盟友攻击（护卫不占出手，照常输出）→ 玩家杀伐秒怪。
 """
 import json, os, sys, tempfile
-from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from tests.setup_support import finish_initial_daowen
 from engine.api import GameEngine
 from sim.build_learner import round_start_relic_choices
 from sim.handplay_dungeon_with_winner import load_winner

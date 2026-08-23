@@ -388,7 +388,7 @@ def test_f_register_hook_respects_priority():
 
 @pytest.mark.parametrize("daowen,calc", [
     ("瓦解", {"x": 10, "blood_limit_pct": 100}),
-    ("逼债", {"x": 5, "blood_limit_penalty": 30, "shard_drain": 5}),
+    # 逼债血限分支已按 DM裁定D（2026-08-22）废止：无力支付记为负债，不再是血限压迫
 ])
 def test_g_blood_limit_pressure_never_leaves_alive_at_zero_hp(daowen, calc):
     _, combat, player, enemy = _arena(enemy_hp=20, enemy_bl=20)
@@ -402,18 +402,43 @@ def test_g_blood_limit_pressure_never_leaves_alive_at_zero_hp(daowen, calc):
         assert enemy._death_ctx["mechanic"] == "death"
 
 
-def test_g_round_start_debt_and_round_end_deform_still_kill():
-    """回始逼债 / 回终畸变的既有致死行为不得因为改走统一入口而变化。"""
+def test_g_round_start_debt_records_liabilities_not_blood_limit():
+    """DM裁定D 2026-08-22：回始逼债无力支付部分记为负债（碎片扣负），
+    旧"否则失去2X血限"废止。负债≥20由 settle_victory_paths 触发【还债】。"""
     state, combat, player, enemy = _arena(enemy_hp=4, enemy_bl=4)
+    enemy.attack_count = enemy.attack_count or 1   # 防雕塑先行（攻次0会在回终先被判雕塑）
+    enemy.attack_power = enemy.attack_power or 1
     enemy.shards = 0
     enemy._bizhai = [{"x": 10, "caster": player}]
     state.combat_subphase = "await_round_start"
 
     combat.round_start()
 
-    assert enemy.blood_limit == 1
-    assert enemy.current_hp == 1 and enemy.is_alive is True
-    assert enemy._blood_limit_events[-1]["source"] == "逼债"
+    assert enemy.shards == -10, f"无力支付10碎片应全额计负债，实际 {enemy.shards}"
+    assert enemy.blood_limit == 4 and enemy.current_hp == 4 and enemy.is_alive
+
+    # 第二轮 X=10 再计负债 → 负债20 达到触发线
+    enemy._bizhai = [{"x": 10, "caster": player}]
+    state.combat_subphase = "await_round_start"
+    combat.round_start()
+    assert enemy.shards == -20
+    results = combat.settle_victory_paths()
+    assert any(r.get("type") == "debt_bind" for r in results)
+    assert enemy.is_debt_bound and enemy.entity_type == "员工"
+
+
+def test_g_round_start_debt_partial_payment_shortfall_only():
+    """边界：有部分余额时先清零、仅差额计负债（假碎片优先）。"""
+    state, combat, player, enemy = _arena(enemy_hp=4, enemy_bl=4)
+    enemy.shards = 3
+    enemy.fake_shards = 5
+    enemy._bizhai = [{"x": 10, "caster": player}]
+    state.combat_subphase = "await_round_start"
+
+    combat.round_start()
+
+    assert enemy.fake_shards == 0 and enemy.shards == -2, \
+        f"假5+真3 抵 10 后负债应 2，实际 fake={enemy.fake_shards} shards={enemy.shards}"
 
 
 # ==================== 递归保险丝 ====================

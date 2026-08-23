@@ -310,7 +310,7 @@ def _hurt_player_track(player, lost):
 
 
 def exclusive_round_start(player, monsters, activated_map, rng):
-    """回始：逼债（失血限分支）/清算（失格挡）/赌命（随机数+消灾重投）"""
+    """回始：逼债（负债分支）/清算（失格挡）/赌命（随机数+消灾重投）"""
     if not USE_EXCLUSIVE:
         return
     for m in _alive_monsters(monsters):
@@ -318,13 +318,8 @@ def exclusive_round_start(player, monsters, activated_map, rng):
         x_of = lambda g: m.dao_wen[g].x_value if g in m.dao_wen else 1
         if "逼债" in act:
             x = x_of("逼债")
-            if player.shards >= x:
-                player.shards -= x
-            else:  # 否则失去2X血限
-                player.blood_limit -= 2 * x
-                player.current_hp = min(player.current_hp, player.blood_limit)
-                if player.current_hp <= 0:
-                    player.is_alive = False
+            # DM裁定D 2026-08-22：无力支付部分记为负债（与 engine/combat.py F2 同口径）
+            player.shards -= x
         if m.has_status("清算"):
             drain = max(0, getattr(m, "shards", 0))
             player.shield = max(0, player.shield - drain)

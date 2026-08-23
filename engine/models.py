@@ -664,6 +664,9 @@ class GameState:
     # 当前正在进行的死斗所属阶级（1=一阶挑战者/胜者死斗，2=二阶…；0=非死斗）。
     sealed_candidates: dict = field(default_factory=dict)  # {阶级: [候选快照, ...]}
     duel_tier: int = 0
+    # 当前死斗中被挑战的擂主原始快照（触发时从队列取出后暂存）：
+    # 挑战者落败（擂主卫冕成功）时须按 README 550 规则放回队首重新封存。
+    duel_defending_snapshot: dict = field(default_factory=dict)
     
     # 员工相关
     blacklist_level: int = 0     # 黑名单计数（每累计3名员工因拒付工资/解雇/死亡离队+1，≥3触发is_blacklisted）

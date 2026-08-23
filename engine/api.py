@@ -4014,6 +4014,9 @@ class GameEngine:
         candidate_snapshot = queue.pop(0)
         slots[tier] = queue
         self._save_seal_slots(slots)  # 队首候选已被取用；同槽剩余候选继续排队
+        # 暂存擂主快照：挑战者落败时放回队首（README 550"封存…直到下一名同阶级
+        # 轮回者完成第7场战斗"——卫冕成功则封存依旧有效，此前擂主被无声吞掉）。
+        self.state.duel_defending_snapshot = candidate_snapshot
 
         self.state.duel_tier = tier
         challenger_player = self.state.player
