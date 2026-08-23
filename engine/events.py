@@ -174,7 +174,10 @@ def _event_preflight(text: str, engine, params: dict) -> Optional[str]:
         allow_debt = event_name == "遗落的赌局"
     else:
         allow_debt = False
-    if shard_cost > engine.state.shards and not allow_debt:
+    # 负债口径（DM裁定2026-08-22）：冻结的是碎片**支出**(shard_cost>0)；
+    # 0费选项不属于支出，不得因负债被误拒——否则负债玩家遇到全收费选项事件
+    # 时事件永不可结算，而待结算事件门禁一切其它行动（api.py:742）=全死锁。
+    if shard_cost > 0 and shard_cost > engine.state.shards and not allow_debt:
         return f"碎片不足，无法支付{shard_cost}（当前{engine.state.shards}）"
 
     if ("销毁一件当前遗物" in text or "失去一件当前遗物" in text):

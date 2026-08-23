@@ -353,6 +353,7 @@ def _resolve_monster_turn(engine):
     hit_overrides = {}     # actor_ref → 强制命中数/出手
     spell_overrides = {}   # 阶段内资格漂移：报错给出的精确资格名表（timing → [spell]）
     no_dodge_refs = set()  # 报错"速度不足不能闪避"的受击 ref：重交一律不闪避
+    no_dodge_all = False   # 报错"回锋刀…提交目标"：快照目标阶段内失效，全场弃闪一次
     banned_spells = set()  # 报错"提交的法力不足"的法术：后续一律弃权
     wave_retry = False
     attempts = 0
@@ -396,7 +397,7 @@ def _resolve_monster_turn(engine):
             for _ in range(actor["base_attack_actions"]):
                 hits = []
                 for _ in range(hits_n):
-                    want_dodge = (target_ref not in no_dodge_refs
+                    want_dodge = (not no_dodge_all and target_ref not in no_dodge_refs
                                   and choose_dodge(engine, per_hit, budget_used=dodge_budget))
                     if want_dodge:
                         dodge_budget += 1
@@ -458,6 +459,11 @@ def _resolve_monster_turn(engine):
             if spell_overrides.get(key) != names:
                 spell_overrides[key] = names
                 continue
+        # 回锋刀：prepare 快照的回避反击目标在阶段内失效（怪死/离场），
+        # 无法定位具体持有者——全场弃闪重交一次（弃闪则不触发回锋刀）。
+        if "回锋刀" in err and not no_dodge_all:
+            no_dodge_all = True
+            continue
         # 法术提交/结算法力不足（阶段内法力被同阶段早前结算抽干/多法术共享池
         # 超支）：该法术本场后续一律弃权（use=False 是合法提交），立即重试。
         m = _re.search(r"法术(?:【)?([^】提交结算]+?)(?:】)?(?:提交|结算)时?的?法力不足", err)
@@ -974,8 +980,17 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                         "reason": f"monster_phase: {mp.get('error')}"}
             if mp["result"].get("player_dead"):
                 break
-            e.execute_action("round_end", {})
-            # [回终]结算可能把残血怪压入救赎等待队列——不清理会门禁下一回合
+            re_ = e.execute_action("round_end", {})
+            if not re_.get("success"):
+                # 救赎等待队列就门禁 round_end 本身——先清再重交，否则子阶段
+                # 停在 await_round_end，下一回合 round_start 以阶段不符被判无效局
+                # （2026-08-23 复扫 1/800 命中此链）。
+                _resolve_pending_choices(e)
+                re_ = e.execute_action("round_end", {})
+            if not re_.get("success"):
+                return {"cleared": cleared, "won": False, "invalid": True,
+                        "reason": f"round_end: {re_.get('error')}"}
+            # [回终]结算也可能把残血怪压入救赎等待队列——不清理会门禁下一回合
             # round_start（"必须先结算【救赎】"按无效局回收，2026-08-23 冒烟）。
             _resolve_pending_choices(e)
 

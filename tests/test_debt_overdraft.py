@@ -76,3 +76,108 @@ def test_fake_shards_still_preferred_no_debt_when_fake_sufficient():
         monster, {"name": "消灾", "dodge": False, "blood_shadow": False}, {}, set(), {})
     assert monster.fake_shards == 50 and monster.shards == 3
     assert all(r.get("type") != "debt_bind" for r in combat.settle_victory_paths())
+
+
+# ============ 玩家负债期的局外 0 费行动（2026-08-23 死锁修复） ============
+
+from engine.api import GameEngine
+from tests.setup_support import finish_initial_daowen
+
+
+def _debt_engine(tmp_path, debt: int = -76) -> GameEngine:
+    """构造：完整开局 + pre_battle 阶段 + 玩家负债（裁定D逼真负债场景）。
+
+    冒烟批实测：罪孽都市逼债寄存把玩家 shards 打到 -15/-76 后，局外所有
+    0费行动被 'shards < cost' 误拒（-76 < 0），pre_battle 精力耗尽不了=死锁。
+    裁定D口径：负债冻结的是碎片**支出**(cost>0)，0费行动不属于支出。
+    """
+    e = GameEngine(
+        db_path=str(tmp_path / "d.db"),
+        save_dir=str(tmp_path / "saves"),
+        sealed_candidate_path=str(tmp_path / "sealed.json"),
+        death_book_path=str(tmp_path / "death.md"),
+        rng_seed=20260823,
+    )
+    assert e.execute_action("setup_attributes", {
+        "name": "测试", "blood_points": 10, "speed_points": 8, "mana_points": 7})["success"]
+    assert finish_initial_daowen(e)["success"]
+    assert e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})["success"]
+    assert e.execute_action("setup_choose_region", {"region": "罪孽都市"})["success"]
+    e.state.shards = debt
+    e.state.energy = 3
+    e.state.phase = "pre_battle"
+    return e
+
+
+def test_debt_zero_cost_xiuxing_allowed(tmp_path):
+    """负债下 0费修行(tier1) 不再被误拒；正费档(tier2=15) 仍被冻结。"""
+    e = _debt_engine(tmp_path)
+    ok = e.execute_action("pre_battle_action", {"sub_action": "修行", "tier": 1, "to": "mana"})
+    assert ok["success"], ok
+    blocked = e.execute_action("pre_battle_action", {"sub_action": "修行", "tier": 2, "to": "mana"})
+    assert not blocked["success"] and "碎片不足" in blocked["error"]
+    assert e.state.shards == -76, "被拒的正费行动不得扣碎片"
+
+
+def test_debt_zero_cost_xiuzheng_and_tansuo_allowed(tmp_path):
+    """负债下 0费休整(tier1)/0费探索(tier1) 可执行（死锁链的另两段）。"""
+    e = _debt_engine(tmp_path)
+    e.state.player.current_hp = 30
+    ok = e.execute_action("pre_battle_action", {
+        "sub_action": "休整", "tier": 1,
+        "heal_allocations": [{"target_ref": "player:0", "amount": 8}]})
+    assert ok["success"], ok
+    ok2 = e.execute_action("pre_battle_action", {"sub_action": "探索", "tier": 1})
+    assert ok2["success"], ok2
+    # 探索2档(30碎片)=支出，负债仍拒
+    if e.event_pool.current is None:   # 首个事件结算完才能再探索（门禁）
+        pass
+    e.event_pool.current = None
+    e.state.pending_event_queue.clear()
+    e.state.energy += 1
+    blocked = e.execute_action("pre_battle_action", {"sub_action": "探索", "tier": 2})
+    assert not blocked["success"] and "碎片" in blocked["error"]
+
+
+def test_debt_zero_cost_learn_and_repair_allowed(tmp_path):
+    """负债下 0费学习(tier1)/0费维修(tier1) 可执行。"""
+    e = _debt_engine(tmp_path)
+    ok = e.execute_action("pre_battle_action", {
+        "sub_action": "学习", "tier": 1, "name": "封印"})
+    assert ok["success"], ok
+    from engine.models import Consumable
+    e.state.current_region = "扭曲都市"   # 维修是扭曲都市专属行动
+    e.state.consumables.append(Consumable(
+        name="绷带", effect="", max_uses=3, current_uses=1))
+    ok2 = e.execute_action("pre_battle_action", {
+        "sub_action": "维修", "tier": 1,
+        "allocations": [{"item_ref": "consumable:0", "amount": 1}]})
+    assert ok2["success"], ok2
+
+
+def test_choose_sha_qi_gate_matches_charge_10(tmp_path):
+    """附煞·发现选择：门禁与收费统一10（旧门禁50会误拒持10~49碎片的玩家）。"""
+    e = _debt_engine(tmp_path, debt=30)   # 持30：旧门禁50必误拒，新门禁10应放行
+    e.state.pending_sha_qi_choices = ["冥煞"]
+    held = next(iter(e.state.player.dao_wen))
+    ok = e.execute_action("choose_sha_qi", {"sha_qi": "冥煞", "daowen_name": held})
+    assert ok["success"], ok
+    assert e.state.shards == 20, f"应实扣10，实际剩 {e.state.shards}"
+
+
+def test_event_option_zero_cost_not_blocked_by_debt(tmp_path):
+    """事件选项 0 碎片选项不被负债误拒（events.py 与 api 局外行动同口径修复）。
+
+    未修复前：'失去0碎片'/无碎片文本的选项在 shards<0 时被
+    `shard_cost > shards`(0 > -1) 误拒；负债玩家遇全收费事件（库中不存在，
+    已枚举36事件复核）之外的任何事件都可能拒不出去——待结算事件门禁一切
+    其它行动（api.py:742）= pre_battle 死锁。冒烟配对：修复前 event/死锁
+    各1局，修复后复扫0。"""
+    from engine.events import resolve_option_effect
+    e = _debt_engine(tmp_path, debt=-1)
+    ok = resolve_option_effect("离开，离开此地", e, "通用事件", {})
+    assert not ok.get("error"), ok
+    # 正碎片选项负债仍拒（支出冻结语义不变）
+    blocked = resolve_option_effect("失去10碎片，获得力量", e, "通用事件", {})
+    assert "碎片不足" in str(blocked.get("error")), blocked
+    assert e.state.shards == -1, "被拒选项不得扣碎片"
