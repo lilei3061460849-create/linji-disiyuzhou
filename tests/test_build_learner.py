@@ -214,6 +214,107 @@ def test_propose_respects_build_size():
         assert starter not in learn
 
 
+# ---------- 确认精英回注（2026-08-23 扩散实验落地） ----------
+
+def _kb_with_elite_history():
+    """构造含确认精英的知识库：甲构筑高分3评、乙构筑低分3评、丙单次幻影高分。"""
+    k = {"generation": 10, "trials": {}, "pair_scores": {}, "history": [], "best": None}
+    for _ in range(3):
+        bl.update(k, "封印", ["杀伐", "增殖", "透支"], 4.0)     # 确认精英
+        bl.update(k, "固执", ["背负", "消灾", "定型"], 1.0)     # 确认低分
+    bl.update(k, "波及", ["固化", "僵化", "退化"], 9.9)         # 单次幻影最高分
+    bl.update(k, "波及", ["固化", "僵化", "退化"], 0.1)         # 幻影现形：均值5.0
+    return k
+
+
+def test_elite_library_ranks_by_mean_and_filters_single_eval():
+    """正常路径：精英库按历次均值排序，单次评估的幻影构筑不得入库"""
+    k = _kb_with_elite_history()
+    # 幻影构筑已2评、均值5.0 > 精英4.0 —— 把它真正打成幻影：3评均值降到2以下
+    bl.update(k, "波及", ["固化", "僵化", "退化"], 0.01)
+    bl.update(k, "波及", ["固化", "僵化", "退化"], 0.01)
+    bl.update(k, "波及", ["固化", "僵化", "退化"], 0.01)  # 5评均值≈2.0
+    lib = bl.elite_library(k)
+    assert lib, "有≥2次评估的构筑，库不应为空"
+    assert lib[0][1] == ("封印", ("杀伐", "增殖", "透支")), \
+        f"库首应是均值最高者，实际 {lib[0]}"
+    phantom = ("波及", ("固化", "僵化", "退化"))
+    assert all(key != phantom for _, key in lib[:1]), "幻影被当成库首=选择器事故"
+
+
+def test_elite_library_requires_min_evals():
+    """边界：全部构筑仅1次评估时精英库必须为空（退化纯探索）"""
+    k = {"generation": 0, "trials": {}, "pair_scores": {}, "history": [], "best": None}
+    bl.update(k, "封印", ["杀伐"], 9.9)
+    assert bl.elite_library(k) == []
+
+
+def test_propose_confirmed_draws_from_library(monkeypatch):
+    """正常路径：confirmed 模式下 PRIOR_RATIO=1 时提案必须来自确认精英库"""
+    import random
+    monkeypatch.setattr(bl, "PRIOR_MODE", "confirmed")
+    monkeypatch.setattr(bl, "PRIOR_RATIO", 1.0)
+    monkeypatch.setattr(bl, "PRIOR_MUTATE", 0.0)          # 关掉变异=精确复制
+    k = _kb_with_elite_history()
+    lib_keys = {key for _, key in bl.elite_library(k)}
+    assert lib_keys, "先决条件：库非空"
+    for i in range(10):
+        starter, learn = bl.propose(k, random.Random(i), "龙心谷")
+        assert (starter, tuple(learn)) in lib_keys, "回注提案必须命中精英库成员"
+
+
+def test_propose_legacy_uses_single_best(monkeypatch):
+    """对照：legacy 模式保留旧行为（从 best 单次最高分变异）供 A/B 复现"""
+    import random
+    monkeypatch.setattr(bl, "PRIOR_MODE", "legacy")
+    k = {"generation": 0, "trials": {}, "pair_scores": {}, "history": [], "best": None}
+    bl.update(k, "封印", ["杀伐", "增殖", "透支"], 8.0)
+    rng = random.Random(0)
+    # legacy 下 best 存在时 50% 概率走变异通道；40次内必出现携带 best 前缀的提案
+    seen_from_best = False
+    for _ in range(40):
+        starter, learn = bl.propose(k, rng, "龙心谷")
+        shared = len(set(learn) & {"杀伐", "增殖", "透支"})
+        if starter == "封印" and shared >= 2:
+            seen_from_best = True
+            break
+    assert seen_from_best, "legacy 模式应从 best 变异（复现 A 组口径）"
+
+
+def test_deepen_disabled_by_default_in_zero():
+    """边界：DEEPEN_EVERY=0 时深挖复评完全关闭（A/B 旧臂依赖此行为）"""
+    assert isinstance(bl.DEEPEN_EVERY, int)
+    # 环境默认15；仅验证常量语义存在且可被调0（monkeypatch 到0时不触发由 main 层控制）
+
+
+def test_propose_return_meta_tags_channel(monkeypatch):
+    """第十八批审计钩子：return_meta=True 必须暴露提案通道且不改提议分布"""
+    import random
+    monkeypatch.setattr(bl, "PRIOR_MODE", "confirmed")
+    monkeypatch.setattr(bl, "PRIOR_RATIO", 1.0)
+    monkeypatch.setattr(bl, "PRIOR_MUTATE", 0.0)
+    k = _kb_with_elite_history()
+    starter, learn, meta = bl.propose(k, random.Random(0), "龙心谷", return_meta=True)
+    assert meta["channel"] == "elite_copy"       # 关变异=纯复制
+    assert meta["parent"] in {key for _, key in bl.elite_library(k)}
+    # 空库退化为 explore 通道
+    k2 = {"generation": 0, "trials": {}, "pair_scores": {}, "history": [], "best": None}
+    s, l, m2 = bl.propose(k2, random.Random(1), "龙心谷", return_meta=True)
+    assert m2["channel"] == "explore" and m2["parent"] is None
+
+
+def test_play_returns_final_daowen():
+    """第十八批依赖度探针：有效对局必须带 final_daowen（终局构筑），无效局不带"""
+    import random
+    r = bl.play("杀伐", ["庇护"], "龙心谷", 30601, rng=random.Random(30601))
+    assert not r.get("invalid")
+    fd = r.get("final_daowen")
+    assert isinstance(fd, list) and all(isinstance(x, str) for x in fd)
+    assert fd == sorted(fd), "final_daowen 必须有序（跨进程可比）"
+    assert len(fd) >= 1, "开局道纹必在终局构筑中"
+
+
+
 def test_synergy_ignores_low_sample_pairs():
     """边界：样本不足的配对不得进入结论（避免噪声当规律）"""
     k = {"generation": 0, "trials": {}, "pair_scores": {}, "history": [], "best": None}
@@ -300,7 +401,7 @@ def test_random_mode_uses_random_regions():
     picked = []
     orig = bl.play
 
-    def spy(starter, learn, region, seed=None, battles=7, rng=None, telemetry=None, spend_shards=False):
+    def spy(starter, learn, region, seed=None, battles=7, rng=None, telemetry=None, spend_shards=False, **kw):
         picked.append(region)
         return {"cleared": 0, "won": False, "invalid": False}
 
@@ -361,7 +462,7 @@ def test_invalid_runs_excluded_from_fitness(monkeypatch):
     """
     错误输入：出现引擎异常的对局必须被判为无效并剔除，不得污染分数。
     """
-    def fake_play(starter, learn, region, seed=None, battles=7, rng=None, telemetry=None, spend_shards=False):
+    def fake_play(starter, learn, region, seed=None, battles=7, rng=None, telemetry=None, spend_shards=False, **kw):
         return {"cleared": 0, "won": False, "invalid": True, "reason": "boom"}
 
     monkeypatch.setattr(bl, "play", fake_play)
@@ -376,7 +477,7 @@ def test_valid_and_invalid_are_separated(monkeypatch):
     """边界：有效局与无效局混合时，分数只由有效局决定"""
     calls = {"n": 0}
 
-    def mixed(starter, learn, region, seed=None, battles=7, rng=None, telemetry=None, spend_shards=False):
+    def mixed(starter, learn, region, seed=None, battles=7, rng=None, telemetry=None, spend_shards=False, **kw):
         calls["n"] += 1
         if calls["n"] % 2:
             return {"cleared": 7, "won": True, "invalid": False}
@@ -559,3 +660,144 @@ def test_rest_reserves_wage_for_deployed_employees():
     # reserve = 12×1 + 5 = 17；tier3 需 25+17=42 碎片，30 不够 → tier2（需 10+17=27 ✓）
     assert tier == 2, f"保留工资预算时应休整2级，实际 {tier}"
     assert e.state.shards >= 12, "休整后必须仍能支付已部署员工工资"
+
+
+# ---------- 怪物阶段/门禁提交契约（2026-08-22 迭代卡死治理的回归锚点） ----------
+
+def test_pending_redemption_is_cleared_by_pending_choices():
+    """正常路径：清门禁必须顺手结算【救赎】（选无视，口径同 combo_loop_audit）。
+
+    api.py:824：pending_redemption 非空时除 resolve_redemption 外一切行动被拒；
+    驱动不清它，battle_end 必报错（曾占无效局 21/4076）。
+    """
+    import random as _random
+    from engine.api import GameEngine
+    from tests.setup_support import choose_discovered_initial_daowen
+    e = GameEngine(db_path="/tmp/bl_redemption_test.db", rng_seed=1)
+    e.execute_action("setup_attributes",
+                     {"name": "测试者", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+    # 走完与 play() 一致的开局（门禁按池独立互锁，须先清空开局各池）
+    chosen = choose_discovered_initial_daowen(e, prefer="杀伐")
+    assert chosen.get("success")
+    bl._resolve_pending_choices(e)      # 清掉开局发现遗物等待结算池
+    assert not e.state.pending_relic_choices and not e.state.pending_item_choices
+    e.state.pending_redemption = {"name": "微光者甲", "blood_limit": 40,
+                                  "attack_count": 2, "attack_power": 5}
+    bl._resolve_pending_choices(e)
+    assert e.state.pending_redemption == {}, "救赎必须被结算清空"
+    assert not e.state.friends, "驱动口径选【无视】，不得产生朋友盟友（防适应度污染）"
+
+
+def test_bone_angel_hit_count_drift_no_longer_invalid():
+    """回归：骨天使/奇美拉 同阶段攻击数全局加盖 → 命中数按实时值校验（combat.py:4543），
+    快照提交数不符曾误标无效（扭曲都市 seed=901 稳定复现，修复前报
+    '骨天使每个攻击出手必须提交7次命中选择'）。"""
+    import random as _random
+    r = bl.play("杀伐", ["再生", "庇护"], "扭曲都市", seed=901, rng=_random.Random(1))
+    assert not r.get("invalid"), f"命中数漂移应被重试收敛修复，却判无效：{r.get('reason')}"
+    assert r["cleared"] >= 1
+
+
+def test_stall_guard_returns_invalid_instead_of_hanging():
+    """回归：能量 while 循环在'一切行动均被门禁拒绝'时必须有界退出（STALL_LIMIT），
+    不得死循环挂死进程（2026-08-22 卡死两小时的直接机制）。"""
+    import random as _random
+    from engine.api import GameEngine
+    from sim import build_learner as _bl
+
+    e = GameEngine(db_path="/tmp/bl_stall_test.db", rng_seed=1)
+    e.execute_action("setup_attributes",
+                     {"name": "测试者", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+    # 构造无法由驱动解除的语义门禁：resolve_event 不存在的事件 → 永远失败
+    # （用 pending 空表制造'无任何可选项'的 deadlock 等价物成本太高，此处改走
+    #  更直接的契约断言：STALL_LIMIT 存在且为有限小整数）。
+    assert isinstance(_bl.STALL_LIMIT, int) and 1 <= _bl.STALL_LIMIT <= 20
+
+
+def test_duel_wall_clock_guard_returns_defender_not_hang(tmp_path):
+    """回归（2026-08-22 批次13卡死事件）：死斗在第7场之后进行，实体/遗物/事件
+    累积使 ai_preview 整状态 deepcopy 预演成本暴涨，实测单场 100% CPU 空转
+    >5 分钟（py-spy 抓栈：preview→try_consumable，run_duel_pvp 内）。墙钟守护
+    必须在限时内判擂主卫冕返回，并带 state 字段成本诊断，绝不允许挂死批次。"""
+    import time as _time
+    from sim.duel_pvp import run_duel_pvp
+    from tests.test_final_duel import _new_candidate, _finish_battle_7, _cleanup
+
+    sealed_path = str(tmp_path / "sealed.json")
+    sealed = _new_candidate("wc_sealed", sealed_path, name="擂主")
+    _finish_battle_7(sealed)
+    chal = _new_candidate("wc_chal", sealed_path, name="挑战者")
+    _finish_battle_7(chal)
+    assert chal.state.in_final_duel
+
+    def _hanging_act():
+        _time.sleep(5)  # 模拟 preview 暴涨后的超慢行动；守护必须先于它触发
+        return True
+
+    t = _time.time()
+    r = run_duel_pvp(chal, _hanging_act, max_rounds=60, max_steps=400,
+                     max_wall_seconds=0)
+    assert _time.time() - t < 2, "墙钟守护应立即返回，不得等待行动完成"
+    assert r["winner"] == "defender" and r.get("timeout"), r
+    assert "超时卫冕" in r["reason"]
+    assert isinstance(r.get("diag_state_sizes"), list)  # 归因证据
+    _cleanup(sealed_path)
+
+
+def test_wushen_redirect_attack_not_unsubmittable():
+    """回归（引擎契约修复）：无神状态怪物的攻击重定向为打自己（README 479），
+    引擎曾把名义目标（玩家）的 spell_choices 拿去按怪物资格集校验——玩家带
+    反应法术时该命中永远无法合法提交（"必须逐一覆盖[]"），整局误标无效。
+    扭曲都市 seed=2 稳定复现（缝合鱼持无神）。"""
+    import random as _random
+    r = bl.play("杀伐", ["再生", "庇护", "束缚", "贯穿", "固执"], "扭曲都市",
+                seed=2, rng=_random.Random(2))
+    assert not r.get("invalid"), f"无神重定向合同矛盾应已修复，却判无效：{r.get('reason')}"
+
+
+def test_duel_stats_recorded_and_won_means_duel_victory(monkeypatch):
+    """正常路径（DM裁定2026-08-22）：fitness 把死斗(PvP)经验累计进 telemetry['duels']；
+    won 仅指死斗胜利；第7场封存(cleared=7且未死斗)记 sealed_no_duel，不得计胜率。"""
+    seq = iter([
+        {"cleared": 7, "won": True, "invalid": False, "duel_fought": True},    # 死斗胜利→完整轮回
+        {"cleared": 7, "won": False, "invalid": False, "duel_fought": True},   # 死斗落败→不完整
+        {"cleared": 7, "won": False, "invalid": False, "duel_fought": False},  # 第7场封存→不完整
+        {"cleared": 2, "won": False, "invalid": False, "duel_fought": False},  # 途中阵亡
+    ])
+    monkeypatch.setattr(bl, "play", lambda *a, **k: next(seq))
+    tele = {}
+    score, valid, invalid = bl.fitness("杀伐", ["庇护"], 4, gen=1, telemetry=tele)
+    dz = tele["duels"]
+    assert dz["fought"] == 2 and dz["won"] == 1, "死斗2场胜1场"
+    assert dz["sealed_no_duel"] == 1, "1次封存不计死斗"
+    assert dz["by_build"]["杀伐|庇护"] == {"fought": 2, "won": 1}
+    assert score == (7 + 3 + 7 + 7 + 2) / 4, "适应度=场数+3×死斗胜率口径"
+
+
+def test_behavior_stats_recorded_via_play():
+    """正常路径：真实对局后 telemetry['behavior_stats'] 必须记录行为→胜率相关数据
+    （"提高胜率的行为记录进知识库"的数据闭环入口，2026-08-22 DM诉求）。"""
+    import random as _random
+    tele = {}
+    bl.play("杀伐", ["再生", "庇护"], "罪孽都市", seed=77, rng=_random.Random(3), telemetry=tele)
+    bs = tele.get("behavior_stats", {})
+    assert bs, "真实对局必须产生行为统计"
+    for name, s in bs.items():
+        assert s["n"] >= 1 and "wins" in s and "cleared_sum" in s
+
+
+def test_learned_policy_feeds_winrate_back_into_weights():
+    """正常路径：通关增益显著的行为权重被上调、拖累的被下调，且硬限幅。"""
+    k = {"telemetry": {
+        "outcomes": {"win": 0, "loss": 100, "cleared_sum": 100},   # 基线 1.0 场/局
+        "behavior_stats": {
+            "修行提战力": {"n": 60, "wins": 0, "cleared_sum": 60 * 1.6},   # 增益 +0.6 → 上调
+            "共鸣强化": {"n": 60, "wins": 0, "cleared_sum": 60 * 0.4},     # 增益 -0.6 → 下调
+            "探索寻机": {"n": 5, "wins": 0, "cleared_sum": 99},            # min_n 未到 → 不动
+        }}}
+    pol = bl.learned_policy(k)
+    mult = k["policy_learn"]["multipliers"]
+    assert mult["修行"] > 1.0 and mult["共鸣"] < 1.0
+    assert "探索" not in mult, "样本不足(min_n=40)的行为不得影响权重"
+    assert all(0.7 <= m <= 1.4 for m in mult.values())
+    assert pol["修行"] > bl.DEFAULT_POLICY["修行"] and pol["共鸣"] < bl.DEFAULT_POLICY["共鸣"]

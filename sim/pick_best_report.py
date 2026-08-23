@@ -22,9 +22,10 @@ import math
 import os
 import sys
 
-from tests.setup_support import finish_initial_daowen
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
+
+from tests.setup_support import finish_initial_daowen  # noqa: E402
 
 from engine.api import GameEngine
 from engine.ai_tactics import TacticalAI
