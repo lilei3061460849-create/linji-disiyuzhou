@@ -1,7 +1,7 @@
 {
  "batch": "prompt-slim-2026-08-24",
  "title": "提示词瘦身审计第二阶段（DM 批准边界执行）",
- "commit": null,
+ "commit": "c04e88f",
  "parent_commit": "44d73db",
  "snapshot": "git tag pre-slim-2026-08-24（修改前完整快照）",
  "kb_generation": 490,
@@ -28,9 +28,9 @@
  "test_count": "1197 passed, 5 skipped",
  "test_status": "PASS",
  "git_remote": "origin arena/01a028dc-linji-disiyuzhou",
- "remote_commit": null,
- "timestamp_utc": "2026-08-24 11:28:47",
- "timestamp_local": "2026-08-24 19:28:47",
+ "remote_commit": "c04e88f（ls-remote 已验证==本地HEAD）",
+ "timestamp_utc": "2026-08-24 11:35:28",
+ "timestamp_local": "2026-08-24 19:35:28",
  "metrics": {
   "AI_EXPERIENCE": "923->525行/234->172子条目",
   "报告.md": "441->20行",
