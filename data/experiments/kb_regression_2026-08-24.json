@@ -1,0 +1,760 @@
+{
+ "tag": "pre-slim-2026-08-24",
+ "head": "965ac1f",
+ "probes": 43,
+ "aggregate": {
+  "EQUIV-SHARED": 6,
+  "EQUIV": 24,
+  "LACUNA": 1,
+  "IMPROVED": 6,
+  "EQUIV-KB": 1,
+  "CLEANED": 3,
+  "CLEAN-BOTH": 2,
+  "MACHINE-CONTRACT": 1
+ },
+ "results": [
+  {
+   "id": "C1-01",
+   "cat": 1,
+   "q": "第四宇宙/轮回的本质",
+   "layers": {
+    "PRE_FULL": true,
+    "PRE_ACTIVE": false,
+    "POST_ACTIVE": false,
+    "SHARED": true,
+    "ARCHIVE": false,
+    "PRE_KB": false,
+    "POST_KB": false,
+    "POST_FULL": true
+   },
+   "verdict": "EQUIV-SHARED"
+  },
+  {
+   "id": "C1-02",
+   "cat": 1,
+   "q": "死者之书=灵魂契约交易承载体",
+   "layers": {
+    "PRE_FULL": true,
+    "PRE_ACTIVE": false,
+    "POST_ACTIVE": false,
+    "SHARED": true,
+    "ARCHIVE": false,
+    "PRE_KB": false,
+    "POST_KB": false,
+    "POST_FULL": true
+   },
+   "verdict": "EQUIV-SHARED"
+  },
+  {
+   "id": "C1-03",
+   "cat": 1,
+   "q": "灵魂碎片与微光者",
+   "layers": {
+    "PRE_FULL": true,
+    "PRE_ACTIVE": false,
+    "POST_ACTIVE": false,
+    "SHARED": true,
+    "ARCHIVE": false,
+    "PRE_KB": false,
+    "POST_KB": false,
+    "POST_FULL": true
+   },
+   "verdict": "EQUIV-SHARED"
+  },
+  {
+   "id": "C1-04",
+   "cat": 1,
+   "q": "死者之书不可交接/偷走",
+   "layers": {
+    "PRE_FULL": true,
+    "PRE_ACTIVE": false,
+    "POST_ACTIVE": false,
+    "SHARED": true,
+    "ARCHIVE": false,
+    "PRE_KB": false,
+    "POST_KB": false,
+    "POST_FULL": true
+   },
+   "verdict": "EQUIV-SHARED"
+  },
+  {
+   "id": "C1-05",
+   "cat": 1,
+   "q": "残韵定义存在性",
+   "layers": {
+    "PRE_FULL": true,
+    "PRE_ACTIVE": true,
+    "POST_ACTIVE": true,
+    "SHARED": true,
+    "ARCHIVE": true,
+    "PRE_KB": true,
+    "POST_KB": true,
+    "POST_FULL": true
+   },
+   "verdict": "EQUIV"
+  },
+  {
+   "id": "C1-06",
+   "cat": 1,
+   "q": "道纹定义存在性（全道纹索引）",
+   "layers": {
+    "PRE_FULL": true,
+    "PRE_ACTIVE": true,
+    "POST_ACTIVE": true,
+    "SHARED": true,
+    "ARCHIVE": true,
+    "PRE_KB": true,
+    "POST_KB": true,
+    "POST_FULL": true
+   },
+   "verdict": "EQUIV"
+  },
+  {
+   "id": "C1-07",
+   "cat": 1,
+   "q": "能量/精力资源锚点",
+   "layers": {
+    "PRE_FULL": true,
+    "PRE_ACTIVE": true,
+    "POST_ACTIVE": true,
+    "SHARED": true,
+    "ARCHIVE": true,
+    "PRE_KB": false,
+    "POST_KB": false,
+    "POST_FULL": true
+   },
+   "verdict": "EQUIV"
+  },
+  {
+   "id": "C1-08",
+   "cat": 1,
+   "q": "三层世界结构",
+   "layers": {
+    "PRE_FULL": false,
+    "PRE_ACTIVE": false,
+    "POST_ACTIVE": false,
+    "SHARED": false,
+    "ARCHIVE": false,
+    "PRE_KB": false,
+    "POST_KB": false,
+    "POST_FULL": false
+   },
+   "verdict": "LACUNA"
+  },
+  {
+   "id": "C2-01",
+   "cat": 2,
+   "q": "残韵转化规则（永久改写+施法者同获+人类不得原始怪物道纹）",
+   "layers": {
+    "PRE_FULL": true,
+    "PRE_ACTIVE": true,
+    "POST_ACTIVE": true,
+    "SHARED": false,
+    "ARCHIVE": false,
+    "PRE_KB": false,
+    "POST_KB": false,
+    "POST_FULL": true
+   },
+   "verdict": "EQUIV"
+  },
+  {
+   "id": "C2-02",
+   "cat": 2,
+   "q": "道纹学习=开局发现流程",
+   "layers": {
+    "PRE_FULL": true,
+    "PRE_ACTIVE": true,
+    "POST_ACTIVE": true,
+    "SHARED": false,
+    "ARCHIVE": false,
+    "PRE_KB": false,
+    "POST_KB": false,
+    "POST_FULL": true
+   },
+   "verdict": "EQUIV"
+  },
+  {
+   "id": "C2-03",
+   "cat": 2,
+   "q": "怪物专属道纹首次发动代价",
+   "layers": {
+    "PRE_FULL": true,
+    "PRE_ACTIVE": true,
+    "POST_ACTIVE": true,
+    "SHARED": false,
+    "ARCHIVE": false,
+    "PRE_KB": false,
+    "POST_KB": false,
+    "POST_FULL": true
+   },
+   "verdict": "EQUIV"
+  },
+  {
+   "id": "C2-04",
+   "cat": 2,
+   "q": "怪物道纹递增（+2×阶级，README准则9 单一事实源）",
+   "layers": {
+    "PRE_FULL": true,
+    "PRE_ACTIVE": true,
+    "POST_ACTIVE": false,
+    "SHARED": true,
+    "ARCHIVE": false,
+    "PRE_KB": false,
+    "POST_KB": false,
+    "POST_FULL": true
+   },
+   "verdict": "EQUIV-SHARED"
+  },
+  {
+   "id": "C2-05",
+   "cat": 2,
+   "q": "道纹变化（退化降X实战注意）",
+   "layers": {
+    "PRE_FULL": true,
+    "PRE_ACTIVE": true,
+    "POST_ACTIVE": true,
+    "SHARED": true,
+    "ARCHIVE": true,
+    "PRE_KB": true,
+    "POST_KB": true,
+    "POST_FULL": true
+   },
+   "verdict": "EQUIV"
+  },
+  {
+   "id": "C2-06",
+   "cat": 2,
+   "q": "资源限制：法力支付/冷却锚点",
+   "layers": {
+    "PRE_FULL": true,
+    "PRE_ACTIVE": true,
+    "POST_ACTIVE": true,
+    "SHARED": true,
+    "ARCHIVE": true,
+    "PRE_KB": false,
+    "POST_KB": false,
+    "POST_FULL": true
+   },
+   "verdict": "EQUIV"
+  },
+  {
+   "id": "C2-07",
+   "cat": 2,
+   "q": "波及自适应降X（CF-2 现行裁定，README:467）",
+   "layers": {
+    "PRE_FULL": true,
+    "PRE_ACTIVE": true,
+    "POST_ACTIVE": false,
+    "SHARED": true,
+    "ARCHIVE": true,
+    "PRE_KB": false,
+    "POST_KB": false,
+    "POST_FULL": true
+   },
+   "verdict": "EQUIV-SHARED"
+  },
+  {
+   "id": "C3-01",
+   "cat": 3,
+   "q": "救赎触发条件",
+   "layers": {
+    "PRE_FULL": true,
+    "PRE_ACTIVE": true,
+    "POST_ACTIVE": true,
+    "SHARED": true,
+    "ARCHIVE": false,
+    "PRE_KB": false,
+    "POST_KB": false,
+    "POST_FULL": true
+   },
+   "verdict": "EQUIV"
+  },
+  {
+   "id": "C3-02",
+   "cat": 3,
+   "q": "癌变阈值=本场累计回复2×血限",
+   "layers": {
+    "PRE_FULL": true,
+    "PRE_ACTIVE": true,
+    "POST_ACTIVE": true,
+    "SHARED": false,
+    "ARCHIVE": false,
+    "PRE_KB": false,
+    "POST_KB": false,
+    "POST_FULL": true
+   },
+   "verdict": "EQUIV"
+  },
+  {
+   "id": "C3-03",
+   "cat": 3,
+   "q": "凡庸（5回合未掉血自炸）",
+   "layers": {
+    "PRE_FULL": false,
+    "PRE_ACTIVE": false,
+    "POST_ACTIVE": true,
+    "SHARED": false,
+    "ARCHIVE": false,
+    "PRE_KB": false,
+    "POST_KB": false,
+    "POST_FULL": true
+   },
+   "verdict": "IMPROVED"
+  },
+  {
+   "id": "C3-04",
+   "cat": 3,
+   "q": "怪物困境强制二选一",
+   "layers": {
+    "PRE_FULL": true,
+    "PRE_ACTIVE": true,
+    "POST_ACTIVE": true,
+    "SHARED": false,
+    "ARCHIVE": true,
+    "PRE_KB": true,
+    "POST_KB": true,
+    "POST_FULL": true
+   },
+   "verdict": "EQUIV"
+  },
+  {
+   "id": "C3-05",
+   "cat": 3,
+   "q": "强化怪池占比报告纪律（2/12 条目）",
+   "layers": {
+    "PRE_FULL": true,
+    "PRE_ACTIVE": true,
+    "POST_ACTIVE": true,
+    "SHARED": false,
+    "ARCHIVE": false,
+    "PRE_KB": false,
+    "POST_KB": false,
+    "POST_FULL": true
+   },
+   "verdict": "EQUIV"
+  },
+  {
+   "id": "C3-06",
+   "cat": 3,
+   "q": "死斗封存规则存在性",
+   "layers": {
+    "PRE_FULL": true,
+    "PRE_ACTIVE": true,
+    "POST_ACTIVE": true,
+    "SHARED": true,
+    "ARCHIVE": true,
+    "PRE_KB": true,
+    "POST_KB": true,
+    "POST_FULL": true
+   },
+   "verdict": "EQUIV"
+  },
+  {
+   "id": "C3-07",
+   "cat": 3,
+   "q": "净化X 机制",
+   "layers": {
+    "PRE_FULL": true,
+    "PRE_ACTIVE": true,
+    "POST_ACTIVE": true,
+    "SHARED": false,
+    "ARCHIVE": false,
+    "PRE_KB": false,
+    "POST_KB": false,
+    "POST_FULL": true
+   },
+   "verdict": "EQUIV"
+  },
+  {
+   "id": "C4-01",
+   "cat": 4,
+   "q": "确认精英回注剂量 75/25",
+   "layers": {
+    "PRE_FULL": true,
+    "PRE_ACTIVE": true,
+    "POST_ACTIVE": true,
+    "SHARED": false,
+    "ARCHIVE": true,
+    "PRE_KB": false,
+    "POST_KB": true,
+    "POST_FULL": true
+   },
+   "verdict": "EQUIV"
+  },
+  {
+   "id": "C4-02",
+   "cat": 4,
+   "q": "双种子同序最优 2.62>2.02>1.78",
+   "layers": {
+    "PRE_FULL": false,
+    "PRE_ACTIVE": false,
+    "POST_ACTIVE": true,
+    "SHARED": false,
+    "ARCHIVE": false,
+    "PRE_KB": false,
+    "POST_KB": true,
+    "POST_FULL": true
+   },
+   "verdict": "IMPROVED"
+  },
+  {
+   "id": "C4-03",
+   "cat": 4,
+   "q": "每15代 top3 深挖2评",
+   "layers": {
+    "PRE_FULL": true,
+    "PRE_ACTIVE": true,
+    "POST_ACTIVE": true,
+    "SHARED": false,
+    "ARCHIVE": true,
+    "PRE_KB": true,
+    "POST_KB": true,
+    "POST_FULL": true
+   },
+   "verdict": "EQUIV"
+  },
+  {
+   "id": "C4-04",
+   "cat": 4,
+   "q": "best_confirmed ≥2 次评估均值确认",
+   "layers": {
+    "PRE_FULL": true,
+    "PRE_ACTIVE": true,
+    "POST_ACTIVE": true,
+    "SHARED": false,
+    "ARCHIVE": true,
+    "PRE_KB": false,
+    "POST_KB": false,
+    "POST_FULL": true
+   },
+   "verdict": "EQUIV"
+  },
+  {
+   "id": "C4-05",
+   "cat": 4,
+   "q": "凡庸才是主输出（清场路径实测）",
+   "layers": {
+    "PRE_FULL": true,
+    "PRE_ACTIVE": false,
+    "POST_ACTIVE": false,
+    "SHARED": false,
+    "ARCHIVE": false,
+    "PRE_KB": true,
+    "POST_KB": true,
+    "POST_FULL": true
+   },
+   "verdict": "EQUIV-KB"
+  },
+  {
+   "id": "C4-06",
+   "cat": 4,
+   "q": "学习位≥4 幻影维度",
+   "layers": {
+    "PRE_FULL": true,
+    "PRE_ACTIVE": true,
+    "POST_ACTIVE": true,
+    "SHARED": false,
+    "ARCHIVE": true,
+    "PRE_KB": true,
+    "POST_KB": true,
+    "POST_FULL": true
+   },
+   "verdict": "EQUIV"
+  },
+  {
+   "id": "S5-01",
+   "cat": 5,
+   "q": "波及过滤旧语义",
+   "stale": {
+    "不进入 daowen_options": {
+     "pre_active_ctx": 1,
+     "post_active_ctx": 0,
+     "post_sample": [],
+     "pre_sample": [
+      "- 怪物侧：`prepare_monster_phase` 中【波及X】的合法目标（存活、可被选中、非自身）不足 X 时，该道纹**不进入 daowen_options**——prepare 不得给出永远无法结算的选项。"
+     ]
+    }
+   },
+   "layers": {
+    "PRE_FULL": true,
+    "PRE_ACTIVE": true,
+    "POST_ACTIVE": false,
+    "SHARED": true,
+    "ARCHIVE": true,
+    "PRE_KB": false,
+    "POST_KB": false,
+    "POST_FULL": true
+   },
+   "verdict": "CLEANED(stale已隔离)"
+  },
+  {
+   "id": "S5-02",
+   "cat": 5,
+   "q": "过期会话分支名",
+   "stale": {
+    "arena/01a01970-linji-disiyuzhou": {
+     "pre_active_ctx": 1,
+     "post_active_ctx": 0,
+     "post_sample": [],
+     "pre_sample": [
+      "- **每次修改/新增文件都必须提交并推送到 GitHub 分支（DM 可检视）**（2026-08-19 起强制执行）：任何一轮工作结束后，工作区中的全部修改与新增文件（含测试、脚本、报告、验证产物）一律 `git add` + `git commit` + `git push` 到当前会话分支 `arena/01a01970-linji-disiyuzhou`，方便 DM 后续查看检验；禁止把改动留在未提交状态进入下一轮工作。"
+     ]
+    }
+   },
+   "layers": {
+    "PRE_FULL": false,
+    "PRE_ACTIVE": false,
+    "POST_ACTIVE": true,
+    "SHARED": false,
+    "ARCHIVE": false,
+    "PRE_KB": false,
+    "POST_KB": false,
+    "POST_FULL": true
+   },
+   "verdict": "CLEANED(stale已隔离)"
+  },
+  {
+   "id": "S5-03",
+   "cat": 5,
+   "q": "已删遗物钱袋（仅允许历史注明）",
+   "stale": {
+    "钱袋": {
+     "pre_active_ctx": 0,
+     "post_active_ctx": 0,
+     "post_sample": [],
+     "pre_sample": []
+    }
+   },
+   "layers": {
+    "PRE_FULL": null,
+    "PRE_ACTIVE": null,
+    "POST_ACTIVE": null,
+    "SHARED": null,
+    "ARCHIVE": null,
+    "PRE_KB": null,
+    "POST_KB": null,
+    "POST_FULL": null
+   },
+   "verdict": "CLEAN-BOTH"
+  },
+  {
+   "id": "S5-04",
+   "cat": 5,
+   "q": "癌变双倍计入（已删除机制）",
+   "stale": {
+    "双倍计入": {
+     "pre_active_ctx": 0,
+     "post_active_ctx": 0,
+     "post_sample": [],
+     "pre_sample": []
+    }
+   },
+   "layers": {
+    "PRE_FULL": null,
+    "PRE_ACTIVE": null,
+    "POST_ACTIVE": null,
+    "SHARED": null,
+    "ARCHIVE": null,
+    "PRE_KB": null,
+    "POST_KB": null,
+    "POST_FULL": null
+   },
+   "verdict": "CLEAN-BOTH"
+  },
+  {
+   "id": "S5-05",
+   "cat": 5,
+   "q": "KB-L03 贯穿结论=未证实假设",
+   "layers": {
+    "PRE_FULL": false,
+    "PRE_ACTIVE": false,
+    "POST_ACTIVE": false,
+    "SHARED": false,
+    "ARCHIVE": false,
+    "PRE_KB": false,
+    "POST_KB": true,
+    "POST_FULL": true
+   },
+   "verdict": "CLEANED(假设降级)",
+   "l03_pre_kind": "陷阱",
+   "l03_post_kind": "假设"
+  },
+  {
+   "id": "S5-06",
+   "cat": 5,
+   "q": "报告.md 已瘦身（历史进archive）",
+   "layers": {
+    "PRE_FULL": false,
+    "PRE_ACTIVE": false,
+    "POST_ACTIVE": true,
+    "SHARED": false,
+    "ARCHIVE": false,
+    "PRE_KB": false,
+    "POST_KB": false,
+    "POST_FULL": true
+   },
+   "verdict": "IMPROVED"
+  },
+  {
+   "id": "M6-01",
+   "cat": 6,
+   "q": "H1 与映射句（校验器硬契约）",
+   "layers": {
+    "PRE_FULL": true,
+    "PRE_ACTIVE": true,
+    "POST_ACTIVE": true,
+    "SHARED": false,
+    "ARCHIVE": false,
+    "PRE_KB": false,
+    "POST_KB": false,
+    "POST_FULL": true
+   },
+   "verdict": "EQUIV"
+  },
+  {
+   "id": "M6-02",
+   "cat": 6,
+   "q": "职责划分锚点标题",
+   "layers": {
+    "PRE_FULL": true,
+    "PRE_ACTIVE": true,
+    "POST_ACTIVE": true,
+    "SHARED": false,
+    "ARCHIVE": false,
+    "PRE_KB": false,
+    "POST_KB": false,
+    "POST_FULL": true
+   },
+   "verdict": "EQUIV"
+  },
+  {
+   "id": "M6-03",
+   "cat": 6,
+   "q": "推演铁律锚点标题",
+   "layers": {
+    "PRE_FULL": true,
+    "PRE_ACTIVE": true,
+    "POST_ACTIVE": true,
+    "SHARED": false,
+    "ARCHIVE": false,
+    "PRE_KB": false,
+    "POST_KB": false,
+    "POST_FULL": true
+   },
+   "verdict": "EQUIV"
+  },
+  {
+   "id": "M6-04",
+   "cat": 6,
+   "q": "战斗推演原子流水线 + 六场景",
+   "layers": {
+    "PRE_FULL": true,
+    "PRE_ACTIVE": true,
+    "POST_ACTIVE": true,
+    "SHARED": false,
+    "ARCHIVE": false,
+    "PRE_KB": false,
+    "POST_KB": false,
+    "POST_FULL": true
+   },
+   "verdict": "EQUIV"
+  },
+  {
+   "id": "E7-01",
+   "cat": 7,
+   "q": "每轮工作必须提交并推送（现行口径）",
+   "layers": {
+    "PRE_FULL": false,
+    "PRE_ACTIVE": false,
+    "POST_ACTIVE": true,
+    "SHARED": false,
+    "ARCHIVE": false,
+    "PRE_KB": false,
+    "POST_KB": false,
+    "POST_FULL": true
+   },
+   "verdict": "IMPROVED"
+  },
+  {
+   "id": "E7-02",
+   "cat": 7,
+   "q": "实验灾备协议在场（REMOTE VERIFIED）",
+   "layers": {
+    "PRE_FULL": true,
+    "PRE_ACTIVE": true,
+    "POST_ACTIVE": true,
+    "SHARED": false,
+    "ARCHIVE": false,
+    "PRE_KB": false,
+    "POST_KB": false,
+    "POST_FULL": true
+   },
+   "verdict": "EQUIV"
+  },
+  {
+   "id": "E7-03",
+   "cat": 7,
+   "q": "实验库/生产KB分离+幂等重放",
+   "layers": {
+    "PRE_FULL": true,
+    "PRE_ACTIVE": true,
+    "POST_ACTIVE": true,
+    "SHARED": false,
+    "ARCHIVE": true,
+    "PRE_KB": false,
+    "POST_KB": false,
+    "POST_FULL": true
+   },
+   "verdict": "EQUIV"
+  },
+  {
+   "id": "E7-04",
+   "cat": 7,
+   "q": "实验档案指针（experiment_log）",
+   "layers": {
+    "PRE_FULL": false,
+    "PRE_ACTIVE": false,
+    "POST_ACTIVE": true,
+    "SHARED": false,
+    "ARCHIVE": true,
+    "PRE_KB": false,
+    "POST_KB": false,
+    "POST_FULL": true
+   },
+   "verdict": "IMPROVED"
+  },
+  {
+   "id": "E7-05",
+   "cat": 7,
+   "q": "旧知识只进 archive/hypotheses（D 类流程）",
+   "layers": {
+    "PRE_FULL": false,
+    "PRE_ACTIVE": false,
+    "POST_ACTIVE": true,
+    "SHARED": false,
+    "ARCHIVE": false,
+    "PRE_KB": false,
+    "POST_KB": false,
+    "POST_FULL": true
+   },
+   "verdict": "IMPROVED"
+  },
+  {
+   "id": "M6-00",
+   "cat": 6,
+   "q": "document_validation 校验器机器消费 + 策略测试",
+   "validator_post": {
+    "rules": 12,
+    "delivery_sections": 7,
+    "stale_headings": 0
+   },
+   "validator_pre": {
+    "rules": 12,
+    "delivery_sections": 7,
+    "stale_headings": 0
+   },
+   "policy_tests_tail": "13 passed in 0.08s",
+   "verdict": "MACHINE-CONTRACT"
+  }
+ ]
+}
