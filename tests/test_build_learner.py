@@ -862,3 +862,19 @@ def test_death_trace_payload_classification():
     snaps[-1]["hp_pct"] = 0.25
     t2 = bl._death_trace_payload(e, 6, snaps)
     assert t2["primary"] == "sustained", t2             # 70→45→25 单调降且<40%
+
+
+def test_death_trace_uses_snapshot_blood_limit():
+    """分母回归钉：死后血限被衰老压低时，进场血线必须按快照当时口径——
+    不得把 0.26 虚增成 0.87 误判 rng_suscept/burst（b20 发现的遥测缺陷）。"""
+    snaps = [{"battle": 7, "round": i, "hp": h, "hp_pct": h / 100, "mana": 9, "speed": 8,
+              "consumables": {}, "enemies": [{"name": "怪", "hp": 50, "speed": 5,
+                                              "daowen": ["衰老"]}],
+              "player_daowen": ["封印", "杀伐"]} for i, h in enumerate((30, 28, 26))]
+    e = type("E", (), {})()
+    e.state = type("S", (), {})()
+    e.state.player = type("P", (), {"blood_limit": 30, "current_mana": 9})()  # 死前被压到30
+    e.state.consumables = []
+    t = bl._death_trace_payload(e, 6, snaps)
+    assert t["hp_pct_at_last_round"] == 0.26, t         # 必须=快照口径，不得 26/30
+    assert t["primary"] == "sustained", t               # 旧实现会虚增成 rng_suspect

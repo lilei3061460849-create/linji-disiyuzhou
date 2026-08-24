@@ -774,9 +774,11 @@ def _death_trace_payload(e, cleared: int, snaps: list) -> dict:
     p = e.state.player
     tail = [s for s in snaps if s["battle"] == cleared + 1][-4:]
     last = tail[-1] if tail else {}
-    lim = (p.blood_limit if p else 0) or 1
+    # 进场血线必须用快照时刻的血限（快照内 hp_pct 已是当时口径）：
+    # 末态玩家血限可能已被衰老/血限下降事件压低（死后读数），用后值当分母会
+    # 把低进场血线虚增成"高血线暴毙"（b20 归因发现的遥测缺陷，2026-08-24 修）。
     hp_start = last.get("hp", 0)
-    hp_pct = hp_start / lim
+    hp_pct = last.get("hp_pct", 0 if not (p and p.blood_limit) else hp_start / p.blood_limit)
     enemies = last.get("enemies", [])
     enemy_top_speed = max((x["speed"] for x in enemies), default=0)
     p_speed = last.get("speed", 0)
