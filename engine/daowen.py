@@ -728,12 +728,12 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_bizhai(x: int, target: Entity = None) -> dict:
-        """逼债X：消耗X。[回始]使目标失去X点碎片，否则失去2X点血限，持续∞（二选一，不叠加）"""
+        """逼债X：消耗X。[回始]使目标失去X点碎片，无力支付的部分记为负债（碎片扣负），持续∞（DM裁定D 2026-08-22：旧"否则失去2X点血限"废止）"""
         target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "逼债", "x": x, "cost_type": CostType.MANA.value, "cost": x,
             "bizhai_register": x, "duration": -1,
-            "summary": f"消耗{x}法力，[回始]使{target_name}失去{x}碎片，否则失去{2*x}血限，永久"
+            "summary": f"消耗{x}法力，[回始]使{target_name}失去{x}碎片（无力支付部分记为负债），持续∞"
         }
     
     @staticmethod

@@ -1,9 +1,11 @@
 """BUG-01/BUG-02 回归（2026-08-22）：怪物【波及】目标数限制 + 怪物阶段失败恢复。
 
-BUG-01：【波及X】的X必须受合法目标数量限制——合法目标数不足X时，
-        prepare_monster_phase 不得给出该道纹；引擎不得给出永远无法结算的选项
+BUG-01：【波及X】的X必须受合法目标数量限制——引擎不得给出永远无法结算的选项
         （原故障：龙心谷 熔岩蜥【波及3】solo场上只有1个合法目标，
         任何提交都被拒"必须为3个目标显式提交dodge_targets"）。
+DM裁定2026-08-23（取代2026-08-22"不足X即过滤"方案）：面板X超过合法目标数时
+        自适应降X（有效X=min(面板X,合法目标数)，见 prepare 的 wave_effective_x），
+        与玩家侧 _max_legal_daowen_x 口径一致；仅合法目标数为0时才不提供。
 BUG-02：resolve_monster_phase 提交失败后战斗不得卡在怪物阶段——
         失败时状态整体回滚（零副作用），pending保持有效且同token可修正重交；
         所有失败/拦截路径都返回 recoverable/token/instruction，恢复路径明确可执行。
@@ -132,41 +134,54 @@ def _snapshot(e: GameEngine) -> dict:
 
 # ============ BUG-01：【波及】合法目标数限制 ============
 
-def test_wave_filtered_when_targets_insufficient_solo(tmp_path):
-    """用户原故障：solo场上【波及3】只有1个合法目标——prepare不得给出该道纹。"""
+def test_wave_adaptive_clamp_solo(tmp_path):
+    """DM裁定2026-08-23（取代2026-08-22过滤方案）：solo场上【波及3】只有1个
+    合法目标——prepare不再过滤，而是自适应降X为1（wave_effective_x=1），
+    可正常结算标记1个目标，永不死锁。面板x仍为3（递增/展示口径）。"""
     e = _engine(tmp_path)
     _full_setup(e)
     _controlled_combat(e, [_magma_lizard()])
     prepared, actor = _prepared_monster_option(e)
-    names = [o["name"] for o in actor["daowen_options"]]
-    assert "波及" not in names, f"合法目标不足3，prepare不应给出【波及3】: {names}"
-    # 其余道纹不受影响，且怪物阶段可正常结算
-    assert set(names) == {"加害", "狂暴"}
+    option = next((o for o in actor["daowen_options"] if o["name"] == "波及"), None)
+    assert option is not None, f"solo场上波及3必须按降X给出: {[o['name'] for o in actor['daowen_options']]}"
+    assert option["x"] == 3
+    assert option["wave_effective_x"] == 1
+    assert len(option["dodge_target_options"]) == 1
+    # 按有效X提交即可结算：波及标记打在唯一合法目标（玩家）身上
+    dao = {"name": "波及", "dodge": False, "blood_shadow": False,
+           "trigger_spell_choices": {h: {sp["spell_name"]: {"use": False} for sp in ss}
+                                     for h, ss in option.get("trigger_spell_options", {}).items()},
+           "dodge_targets": pick_wave_dodge_targets(option)}
+    assert len(dao["dodge_targets"]) == 1
     ok = e.execute_action("resolve_monster_phase", {
         "token": prepared["result"]["token"],
-        "choices": [{"actor_ref": actor["actor_ref"], "daowen": _legal_daowen(actor),
+        "choices": [{"actor_ref": actor["actor_ref"], "daowen": dao,
                      "attack_actions": _attack_block(actor)}]})
     assert ok["success"], ok
+    assert e.state.player.has_status("波及")
 
 
-def test_wave_offered_only_when_enough_targets(tmp_path):
-    """【波及3】：2个合法目标时仍过滤；3个合法目标时给出且候选=3。"""
+def test_wave_adaptive_clamp_scales_with_targets(tmp_path):
+    """【波及3】：2个合法目标时降X为2；3个合法目标时全额X=3。"""
     e = _engine(tmp_path)
     _full_setup(e)
     _controlled_combat(e, [_magma_lizard()])
     e.state.friends.append(_friend("友军A"))
     actor = _combat_prepared_actor(e)
-    names = [o["name"] for o in actor["daowen_options"]]
-    assert "波及" not in names, f"合法目标仅2<3，仍不应给出【波及3】: {names}"
+    option = next(o for o in actor["daowen_options"] if o["name"] == "波及")
+    assert option["x"] == 3 and option["wave_effective_x"] == 2
 
     e.state.friends.append(_friend("友军B"))
     actor = _combat_prepared_actor(e)
     option = next(o for o in actor["daowen_options"] if o["name"] == "波及")
-    assert option["x"] == 3
+    assert option["x"] == 3 and option["wave_effective_x"] == 3
     assert len(option["dodge_target_options"]) == 3
     refs = {t["ref"] for t in option["dodge_target_options"]}
     assert refs == {"player:0", "friend:0", "friend:1"}
     assert option["dodge_submission"] == "per_target"
+    # 降X口径下多交/少交仍被拒（恰好=有效X）
+    pick = pick_wave_dodge_targets(option)
+    assert len(pick) == 3
 
 
 def test_wave_marks_exactly_x_targets(tmp_path):
@@ -298,7 +313,8 @@ def test_stale_token_replay_returns_valid_token(tmp_path):
 
 
 def test_user_original_playthrough_no_longer_stucks(tmp_path):
-    """用户原流程回归：龙心谷 seed=20260822 熔岩蜥 solo，连续3回合不卡死。"""
+    """用户原流程回归：龙心谷 seed=20260822 熔岩蜥 solo，连续3回合不卡死。
+    DM裁定2026-08-23后：波及3降X为1持续可选——每回合都专门发动波及验证可解算。"""
     e = _engine(tmp_path, seed=20260822)
     _full_setup(e)
     _controlled_combat(e, [_magma_lizard()])
@@ -307,10 +323,15 @@ def test_user_original_playthrough_no_longer_stucks(tmp_path):
         e.state.player.current_hp = e.state.player.blood_limit  # 夹具：避免死之传承中断干扰
         assert e.execute_action("round_start", {"relic_choices": {}})["success"]
         prepared, actor = _prepared_monster_option(e)
-        assert "波及" not in [o["name"] for o in actor["daowen_options"]]
+        option = next((o for o in actor["daowen_options"] if o["name"] == "波及"), None)
+        assert option is not None and option["wave_effective_x"] == 1
+        dao = {"name": "波及", "dodge": False, "blood_shadow": False,
+               "trigger_spell_choices": {h: {sp["spell_name"]: {"use": False} for sp in ss}
+                                         for h, ss in option.get("trigger_spell_options", {}).items()},
+               "dodge_targets": pick_wave_dodge_targets(option)}
         ok = e.execute_action("resolve_monster_phase", {
             "token": prepared["result"]["token"],
-            "choices": [{"actor_ref": actor["actor_ref"], "daowen": _legal_daowen(actor),
+            "choices": [{"actor_ref": actor["actor_ref"], "daowen": dao,
                          "attack_actions": _attack_block(actor)}]})
         assert ok["success"], ok
         assert e.execute_action("round_end", {})["success"]

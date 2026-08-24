@@ -19,8 +19,8 @@ import random
 import sys
 from collections import Counter
 
-from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from tests.setup_support import finish_initial_daowen
 
 from engine.api import GameEngine
 from engine.ai_tactics import TacticalAI

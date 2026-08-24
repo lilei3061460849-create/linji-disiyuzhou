@@ -1300,7 +1300,9 @@ class GameEngine:
             self.state.energy += 1
             return {"success": False,
                     "error": f"休整必须用heal_allocations把{heal}点恢复量完整分配给合法目标"}
-        if self.state.shards < cost:
+        # 负债口径（DM裁定2026-08-22）：冻结的是碎片**支出**（cost>0）；
+        # 0费行动不属于支出，不得因负债被误拒（否则负债局pre_battle无法消耗精力=死锁）。
+        if cost > 0 and self.state.shards < cost:
             self.state.energy += 1
             return {"success": False, "error": f"碎片不足，需要{cost}，当前{self.state.shards}"}
 
@@ -1334,7 +1336,7 @@ class GameEngine:
             self.state.energy += 1
             return {"success": False, "error": "修行档位必须是1~6"}
         points, cost = tier_map[tier]
-        if self.state.shards < cost:
+        if cost > 0 and self.state.shards < cost:  # 负债口径同休整：0费不属于支出
             self.state.energy += 1
             return {"success": False, "error": f"碎片不足，需要{cost}"}
         allocations = params.get("allocations")
@@ -1590,7 +1592,7 @@ class GameEngine:
                 or any(not isinstance(name, str) or not name for name in names)):
             self.state.energy += 1
             return {"success": False, "error": f"学习{tier}档必须用names提交{tier}个不同名称"}
-        if self.state.shards < cost:
+        if cost > 0 and self.state.shards < cost:  # 负债口径：0费学习不属于支出
             self.state.energy += 1
             return {"success": False, "error": f"碎片不足，需要{cost}"}
 
@@ -1718,7 +1720,7 @@ class GameEngine:
             self.state.energy += 1
             return {"success": False,
                     "error": f"当前事件池只剩{len(pool)}个未遇事件，无法执行发现{draw_count}次"}
-        if self.state.shards < shard_cost:
+        if shard_cost > 0 and self.state.shards < shard_cost:  # 负债口径：0费探索不属于支出
             self.state.energy += 1
             return {"success": False,
                     "error": f"探索{tier}档需要{shard_cost}碎片，当前{self.state.shards}"}
@@ -1794,7 +1796,7 @@ class GameEngine:
                 self.state.energy += 1
                 return {"success": False,
                         "error": f"【{item.name}】维修后将超过耐久上限{item.max_uses}"}
-        if self.state.shards < cost:
+        if cost > 0 and self.state.shards < cost:  # 负债口径：0费维修不属于支出
             self.state.energy += 1
             return {"success": False, "error": f"碎片不足，需要{cost}"}
 
@@ -1974,7 +1976,9 @@ class GameEngine:
         daowen = params.get("daowen_name", "")
         if daowen not in player.dao_wen:
             return {"success": False, "error": f"未持有道纹「{daowen}」"}
-        if self.state.shards < 50:
+        # 门禁与收费统一为10（发现接口明示{"cost": 10}；旧门禁50是复制残留，
+        # 持10~49碎片会被错误拒之门外）。
+        if self.state.shards < 10:
             return {"success": False, "error": "碎片不足，需要10"}
         self.state.shards -= 10
         inst = player.dao_wen[daowen]
@@ -4014,6 +4018,9 @@ class GameEngine:
         candidate_snapshot = queue.pop(0)
         slots[tier] = queue
         self._save_seal_slots(slots)  # 队首候选已被取用；同槽剩余候选继续排队
+        # 暂存擂主快照：挑战者落败时放回队首（README 550"封存…直到下一名同阶级
+        # 轮回者完成第7场战斗"——卫冕成功则封存依旧有效，此前擂主被无声吞掉）。
+        self.state.duel_defending_snapshot = candidate_snapshot
 
         self.state.duel_tier = tier
         challenger_player = self.state.player

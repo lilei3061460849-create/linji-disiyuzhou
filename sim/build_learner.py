@@ -27,12 +27,15 @@ import json
 import math
 import os
 import random
+import re
 import sys
-from collections import defaultdict
+from collections import defaultdict, Counter
 
-from tests.setup_support import choose_discovered_initial_daowen
+# sys.path 必须先于 tests/engine 导入设置：直接 `python3 sim/build_learner.py`
+# 运行时 CWD 未必含仓库根，否则 ModuleNotFoundError（2026-08-22 入口地雷治理）。
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from tests.setup_support import choose_discovered_initial_daowen
 from engine.api import GameEngine
 from engine.ai_tactics import TacticalAI, TACTICAL_ROLES
 
@@ -84,6 +87,23 @@ def _pick_monster_daowen(engine, actor):
                                       monster_low=monster_low,
                                       blocked=blocked)
 
+
+def _pick_monster_daowen_avoiding_wave(engine, actor):
+    """波及重试专用（2026-08-22）：波及的X个闪避目标冻结在 prepare 快照
+    （combat.py:4081），阶段内任一目标死亡则该道纹同 token 下永远无法结算；
+    报错文案"请重新prepare_monster_phase"具误导性（pending 有效期内 prepare
+    会被拒，api.py:854）——正确路径是按 api.py:3598 契约注释用同 token 换选
+    非波及备选道纹重交（dodge_submission=="per_target" 的才排除）。"""
+    opts = actor["daowen_options"]
+    kept = actor["daowen_options"]
+    actor["daowen_options"] = [o for o in opts if o.get("dodge_submission") != "per_target"]
+    try:
+        picked = _pick_monster_daowen(engine, actor)
+    finally:
+        actor["daowen_options"] = kept
+    return picked
+
+
 def _decline_spells(option):
     return {timing: {spell["spell_name"]: {"use": False}
                      for spell in option.get("spell_options", {}).get(timing, [])}
@@ -118,6 +138,89 @@ def _trigger_spells(option, player_mana):
             out[timing][name] = {"use": use, "cycles": cycles} if use else {"use": False}
     return out
 
+
+def _spell_step_mana_cost(engine, daowen_name: str, x: int, holder, target) -> int:
+    """单步法术在某X下的真实法力消耗（与 combat.py:3396 校验口径一致；
+    非"消耗"类代价记0）。异常时按0处理（交给引擎校验终裁）。"""
+    from engine.daowen import DaoWenEngine
+    try:
+        calc = DaoWenEngine.resolve(daowen_name, x, target=target, caster=holder)
+    except Exception:
+        return 0
+    return int(calc.get("cost", 0) or 0) if calc.get("cost_type") == "消耗" else 0
+
+
+def _live_spell_choices(engine, actor_ref, target_ref, use, banned=()):
+    """现场重算受击方反应法术提交（2026-08-22 防漂移主路径）。
+
+    combat.py:3362 校验的是结算时**实时**资格集，而 prepare 快照可能已被
+    同阶段早前命中消耗——不再按快照提交，改为 prepare_spell_reactions 现场重算。
+    use=True 只在持有者本阶段**最后一击**传入（早击一律弃权），于是同阶段永不
+    发生中途消耗，资格集与提交时刻恒一致（此前的"镜像引擎消耗"方案对闪避
+    概率分支无解，已放弃）。
+    banned：重试链判定的"提交法力不足"法术名集合——该法术直接弃权。
+
+    步骤X记账（2026-08-23 修复"提交的法力不足"无效局）：X不再按1法力/步的
+    朴素模型分配，而是按引擎同口径逐步精确核算——给后续步骤预留其x=1成本，
+    本步X取不超支的最大值（杀伐类 消耗2X 的旧模型必超支，冒烟批2/60踩中）。
+    """
+    refs = engine.combat._combat_entity_refs()
+    holder = refs.get(target_ref)
+    attacker = refs.get(actor_ref)
+    if holder is None or attacker is None:
+        return {"before": {}, "after": {}}
+    live = engine.combat.prepare_spell_reactions(holder, attacker)
+    out = {}
+    # 钱包制（2026-08-23 second fix）：同一击可同时声明多个法术（before/after
+    # 各自资格集），每个法术若都按满额法力预算会合计超支——提交/结算校验按
+    # 共享法力池逐步扣减（combat.py:3379+/3515）。此处与引擎同口径：法术按
+    # 声明顺序共用一只钱包，扣完即止，付不起基线(x=1)的法术直接弃权。
+    wallet = holder.current_mana
+    for timing in ("before", "after"):
+        out[timing] = {}
+        for spell in live.get(timing, []) or []:
+            name = spell["spell_name"]
+            steps = spell.get("steps", []) or []
+            if use and wallet >= 1 and name not in banned and steps:
+                # 各步骤x=1的基线成本（用于给后续步骤预留）
+                base_costs = [
+                    _spell_step_mana_cost(engine, st.get("daowen", ""), 1, holder,
+                                          refs.get(st.get("target_ref", "")) or holder)
+                    for st in steps]
+                if sum(base_costs) > wallet:
+                    # 全部基线(x=1)都付不起的法术直接弃权，不给提交校验留死路
+                    out[timing][name] = {"use": False}
+                    continue
+                cycle = []
+                remaining = wallet
+                for index, st in enumerate(steps):
+                    reserve = sum(base_costs[index + 1:])       # 后续步骤x=1的预留
+                    budget = max(0, remaining - reserve)
+                    is_self = st.get("target_ref") == target_ref
+                    target_ent = refs.get(st.get("target_ref", "")) or holder
+                    x = 1
+                    if not is_self:
+                        # 取不透支预算的最大X（成本随X单调不减，超支即停）
+                        for cand in range(2, budget + 1):
+                            if _spell_step_mana_cost(engine, st.get("daowen", ""),
+                                                     cand, holder, target_ent) <= budget:
+                                x = cand
+                            else:
+                                break
+                    step_cost = _spell_step_mana_cost(engine, st.get("daowen", ""),
+                                                      x, holder, target_ent)
+                    entry = {"x": x, "target_ref": st.get("target_ref")}
+                    if not is_self:
+                        entry["dodge"] = False
+                    cycle.append(entry)
+                    remaining -= step_cost
+                out[timing][name] = {"use": True, "cycles": [cycle]}
+                wallet = remaining   # 钱包流转给下一个法术（与引擎共享池同口径）
+            else:
+                out[timing][name] = {"use": False}
+    return out
+
+
 def learnable_candidates(region: str = None) -> list:
     """当前副本下可通过局外【学习】直接获得的道纹（不含需残韵转化的）。"""
     out = []
@@ -131,97 +234,255 @@ def learnable_candidates(region: str = None) -> list:
 # 开局从杀伐闭环【发现】3选1；STARTERS 只表示可被偏好的闭环节点，不能绕过发现。
 STARTERS = list(SHAFA_LOOP_DAOWEN)
 REGIONS = ["罪孽都市", "扭曲都市", "龙心谷"]
-BUILD_SIZE = 5          # 每套 build 学习的道纹数量
+# 2026-08-22 学习顺序实验裁定：第4~5学习位在平均2.8场通关的局里永远学不到
+# （同种子配对全系列0/200），UCB曾在该幻影维度空耗约1.1万局。且学习顺序本身
+# 显著影响生存（杀伐优先 vs 再生优先 配对38/86）。故提案压缩为3纹，
+# 并按UCB强度排序学习（强者先学），探索只在候选池内做选择。
+BUILD_SIZE = 3          # 每套 build 学习的道纹数量（有效维度；第4位以后学不到）
+
+# 卡死哨兵（2026-08-22 假死两小时根因治理）：局外 while 精力循环在"一切行动均被
+# 门禁拒绝且兜底也被拒"时精力不退=原地死循环（实测20万步）。连续 STALL_LIMIT 步
+# 精力不退即回收为无效局，绝不允许挂死进程。
+STALL_LIMIT = 5
+
+
+def _resolve_pending_choices(e) -> None:
+    """清一切等待结算池（2026-08-22 门禁治理）。
+
+    各 pending 池相互门禁：非空时绝大多数行动被 api.py:824-845 拒绝并退还精力，
+    驱动不清理=原地死循环/战斗无法结算。处理：遗物/道具/雇员道纹/煞气取首项；
+    【救赎】固定选【无视】（确定性口径同 combo_loop_audit.py:819——接纳会产生
+    朋友盟友，污染适应度横向比较）。事件链单趟上限20，防无限嵌套。
+    """
+    for _ in range(20):
+        acted = False
+        st = e.state
+        if st.pending_redemption:
+            e.execute_action("resolve_redemption", {"option": "无视"})
+            acted = True
+        if st.pending_relic_choices:
+            e.execute_action("choose_discovered_relic",
+                             {"relic_name": st.pending_relic_choices[0]})
+            acted = True
+        if st.pending_item_choices:
+            e.execute_action("choose_discovered_item",
+                             {"item_name": st.pending_item_choices[0]})
+            acted = True
+        if st.pending_daowen_choices:
+            for emp_name, choices in list(st.pending_daowen_choices.items()):
+                e.execute_action("choose_hired_daowen",
+                                 {"name": emp_name, "daowen": choices[0]})
+            acted = True
+        if getattr(st, "pending_sha_qi_choices", None):
+            held = next(iter(st.player.dao_wen), None) if st.player else None
+            if held:
+                e.execute_action("choose_sha_qi", {
+                    "sha_qi": st.pending_sha_qi_choices[0],
+                    "daowen_name": held})
+            acted = True
+        if not acted:
+            return
 
 
 # --------------------------------------------------------------------------
 # 一局轮回
 # --------------------------------------------------------------------------
 
+def _drive_plight_monsters(engine, telemetry: dict = None) -> None:
+    """困境驱动（DM裁定2026-08-23③：模拟器怪物执行准则#3强制二选一）。
+
+    每回合怪物阶段开始前：对所有处于困境的**怪物**——
+      1. 进化优先：有借用票（轮回者持有且自身未持有的道纹）且门票异变5X不
+         必触发崩解（max_x_by_mutation≥1）→ declare_evolution 发动【原初X】，
+         借轮回者X值最高的道纹，X=min(异变预算, 3)；
+      2. 否则逃跑（无票/必崩解）：统一【离场】depart_battle("逃跑")，不视为
+         击杀、不产生碎片奖励，alt_victory 扫描自动记为「逃跑」类离场。
+    死斗不驱动（道规禁逃）；决斗对手是轮回者不是怪物（entity_type 门禁）。
+    """
+    from engine.combat import CombatEngine  # noqa: F401  (类型提示用)
+    combat = engine.combat
+    if getattr(engine.state, "in_final_duel", False):
+        return
+    stats = telemetry.setdefault("plight", {}) if telemetry is not None else None
+    for opt in combat.get_plight_evolution_options():
+        monster = next((e for e in engine.state.enemies
+                        if e.name == opt.get("monster") and e.is_alive), None)
+        if monster is None or monster.entity_type != "怪物":
+            continue
+        if id(monster) in combat._monster_evolved:
+            continue
+        borrowable = list(opt.get("borrowable_daowen") or [])
+        max_x = int(opt.get("max_x_by_mutation") or 0)
+        if borrowable and max_x >= 1:
+            player = engine.state.player
+            pick = max(borrowable,
+                       key=lambda d: (player.dao_wen[d].x_value
+                                      if player is not None and d in player.dao_wen else 0, d))
+            res = engine.execute_action("declare_evolution", {
+                "monster": monster.name, "daowen": pick,
+                "x": max(1, min(max_x, 3))})
+            key = "evolve" if res.get("success") else "evolve_failed"
+            if stats is not None:
+                stats[key] = stats.get(key, 0) + 1
+        else:
+            combat._monster_evolved.add(id(monster))
+            combat._remove_from_combat(monster, "逃跑")
+            if stats is not None:
+                stats["escape"] = stats.get("escape", 0) + 1
+
+
 def _resolve_monster_turn(engine):
+    """怪物阶段驱动（2026-08-22 重建：现场资格集 + 有界重试链）。
+
+      1. 反应法术按 prepare_spell_reactions 现场重算提交，且只在持有者本阶段
+         最后一击声明 use=true（早击弃权 → 阶段内零消耗零漂移）；
+      2. 命中数漂移（combat.py:4543 按实时 attack_count 校验；同阶段怪道纹全局
+         加盖可改命中数——2026-08-17疯狂裁定）：解析报错 `(名)每个攻击出手必须
+         提交N次命中选择` 按 actor 定向覆盖重试（重试必须保留道纹选择，
+         combat.py:4353/4508 有候选时道纹提交是强制的）；
+      3. 波及目标阶段内失效：同 token 换非波及道纹重交一次；
+      4. 全部重试有界（len(actors)+2），不收敛才把失败交上层（判无效局）。
+    """
+    import re as _re
     prepared = engine.execute_action("prepare_monster_phase", {})
     if not prepared.get("success"):
         return prepared
     from engine.ai_tactics import choose_dodge, choose_attack_target
-    choices = []
-    # 闪避预算跨整个怪物阶段共享（多怪时每只各算会超支当前速度）
-    dodge_budget = 0
-    for actor in prepared["result"]["actors"]:
-        dao = None
-        action_count = actor["base_attack_actions"]
-        hit_count = actor["base_hits_per_attack"]
-        if actor["daowen_options"]:
-            option = _pick_monster_daowen(engine, actor)
-            dao = {"name": option["name"], "dodge": False, "blood_shadow": False,
-                   "trigger_spell_choices": {holder: {sp["spell_name"]: {"use": False} for sp in spells}
-                                               for holder, spells in option.get("trigger_spell_options", {}).items()}}
-            if option["requires_target"]:
-                dao["target_ref"] = pick_monster_daowen_target(engine, actor["actor_ref"], option)
-            if option["dodge_submission"] == "per_target":
-                from sim.monster_targets import pick_wave_dodge_targets
-                dao["dodge_targets"] = pick_wave_dodge_targets(option)
-            if option["resolves_as"] == "变形":
-                enemy_index = int(actor["actor_ref"].split(":", 1)[1])
-                hit_count = engine.state.enemies[enemy_index].attack_power
-        refs = engine.combat._combat_entity_refs()
-        monster = refs.get(actor["actor_ref"])
-        per_hit = monster.attack_power if monster is not None else 0
-        target_ref = choose_attack_target(actor["attack_target_options"], refs)
-        target_option = next((option for option in actor["attack_target_options"] if option["ref"] == target_ref), None)   # 无合法攻击目标时为None（引擎prepare已置base_attack_actions=0）
-        attacks = []
-        for _ in range(action_count):
-            hits = []
-            for _ in range(hit_count):
-                want_dodge = choose_dodge(engine, per_hit,
-                                          budget_used=dodge_budget)
-                if want_dodge:
-                    dodge_budget += 1
-                spell_choices = (_trigger_spells(target_option, engine.state.player.current_mana if engine.state.player else 0)
-                                 if target_ref == "player:0" else _decline_spells(target_option))
-                hit = {"target_ref": target_ref, "dodge": want_dodge,
-                       "blood_shadow": False, "spell_choices": spell_choices}
-                # 回锋刀：闪避触发反击必须显式提交合法敌方目标
-                if want_dodge and target_option.get("dodge_relic_target_options"):
-                    hit["dodge_relic_target_ref"] = target_option["dodge_relic_target_options"][0]["ref"]
-                hits.append(hit)
-            attacks.append({"hits": hits})
-        choices.append({"actor_ref": actor["actor_ref"], "daowen": dao,
-                        "attack_actions": attacks})
-    result = engine.execute_action("resolve_monster_phase", {
-        "token": prepared["result"]["token"], "choices": choices,
-    })
-    if result.get("success"):
-        return result
 
-    # prepare 的首个候选可能在结算时因动态支付能力失效；原子失败后以同一快照
-    # 显式提交合法决策（保留首个道纹选项），避免把可继续的模拟误记为引擎异常。
-    fallback = []
-    refs_fb = engine.combat._combat_entity_refs()
-    for actor in prepared["result"]["actors"]:
-        dao = None
-        if actor["daowen_options"]:
-            option = _pick_monster_daowen(engine, actor)
-            dao = {"name": option["name"], "dodge": False, "blood_shadow": False,
-                   "trigger_spell_choices": {holder: {sp["spell_name"]: {"use": False} for sp in spells}
-                                               for holder, spells in option.get("trigger_spell_options", {}).items()}}
-            if option["requires_target"]:
-                dao["target_ref"] = pick_monster_daowen_target(engine, actor["actor_ref"], option)
-            if option["dodge_submission"] == "per_target":
-                from sim.monster_targets import pick_wave_dodge_targets
-                dao["dodge_targets"] = pick_wave_dodge_targets(option)
-        target_ref = choose_attack_target(actor["attack_target_options"], refs_fb)
-        target_option = next((option for option in actor["attack_target_options"]
-                             if option["ref"] == target_ref), None)   # 无合法攻击目标时为None（引擎prepare已置base_attack_actions=0）
-        attacks = [{"hits": [{
-            "target_ref": target_ref, "dodge": False, "blood_shadow": False,
-            "spell_choices": _decline_spells(target_option),
-        } for _ in range(actor["base_hits_per_attack"])]}
-                   for _ in range(actor["base_attack_actions"])]
-        fallback.append({"actor_ref": actor["actor_ref"], "daowen": dao,
-                         "attack_actions": attacks})
-    return engine.execute_action("resolve_monster_phase", {
-        "token": prepared["result"]["token"], "choices": fallback,
-    })
+    refs_all = engine.combat._combat_entity_refs()
+    hit_overrides = {}     # actor_ref → 强制命中数/出手
+    spell_overrides = {}   # 阶段内资格漂移：报错给出的精确资格名表（timing → [spell]）
+    no_dodge_refs = set()  # 报错"速度不足不能闪避"的受击 ref：重交一律不闪避
+    no_dodge_all = False   # 报错"回锋刀…提交目标"：快照目标阶段内失效，全场弃闪一次
+    banned_spells = set()  # 报错"提交的法力不足"的法术：后续一律弃权
+    wave_retry = False
+    attempts = 0
+    max_attempts = len(prepared["result"]["actors"]) + 2
+
+    while True:
+        actors = prepared["result"]["actors"]
+        # 第一遍：决定每 actor 的目标与命中数，并统计每名受击持有者的总命中数
+        per_actor = []
+        hold_counts = Counter()
+        for actor in actors:
+            hits_n = hit_overrides.get(actor["actor_ref"], actor["base_hits_per_attack"])
+            target_ref = choose_attack_target(actor["attack_target_options"], refs_all)
+            per_actor.append((actor, hits_n, target_ref))
+            hold_counts[target_ref] += actor["base_attack_actions"] * hits_n
+
+        choices = []
+        dodge_budget = 0
+        for actor, hits_n, target_ref in per_actor:
+            dao = None
+            if actor["daowen_options"]:
+                option = (_pick_monster_daowen_avoiding_wave(engine, actor)
+                          if wave_retry else _pick_monster_daowen(engine, actor))
+                dao = {"name": option["name"], "dodge": False, "blood_shadow": False,
+                       "trigger_spell_choices": {holder: {sp["spell_name"]: {"use": False} for sp in spells}
+                                                 for holder, spells in option.get("trigger_spell_options", {}).items()}}
+                if option["requires_target"]:
+                    dao["target_ref"] = pick_monster_daowen_target(engine, actor["actor_ref"], option)
+                if option["dodge_submission"] == "per_target":
+                    from sim.monster_targets import pick_wave_dodge_targets
+                    dao["dodge_targets"] = pick_wave_dodge_targets(option)
+                if option["resolves_as"] == "变形":
+                    enemy_index = int(actor["actor_ref"].split(":", 1)[1])
+                    hits_n = hit_overrides.get(actor["actor_ref"],
+                                               engine.state.enemies[enemy_index].attack_power)
+            monster = refs_all.get(actor["actor_ref"])
+            per_hit = monster.attack_power if monster is not None else 0
+            target_option = next((o for o in actor["attack_target_options"]
+                                  if o["ref"] == target_ref), None)   # 无合法攻击目标时为None
+            attacks = []
+            for _ in range(actor["base_attack_actions"]):
+                hits = []
+                for _ in range(hits_n):
+                    want_dodge = (not no_dodge_all and target_ref not in no_dodge_refs
+                                  and choose_dodge(engine, per_hit, budget_used=dodge_budget))
+                    if want_dodge:
+                        dodge_budget += 1
+                    # 持有者本阶段最后一击才声明发动；其余现场弃权
+                    hold_counts[target_ref] -= 1
+                    is_last_hit = hold_counts[target_ref] == 0
+                    if target_option is None:
+                        spell_choices = {"before": {}, "after": {}}
+                    elif hold_counts[target_ref] >= 0:
+                        spell_choices = _live_spell_choices(
+                            engine, actor["actor_ref"], target_ref, use=is_last_hit,
+                            banned=banned_spells)
+                        # 资格漂移重试：按报错给出的精确名表整体覆盖对应 timing
+                        # （早击弃权/末击声明策略与漂移解耦——override 一律弃权）
+                        if spell_overrides and refs_all.get(target_ref) is engine.state.player:
+                            for _tk, _names in spell_overrides.items():
+                                spell_choices[_tk] = {nm: {"use": False} for nm in _names}
+                    else:
+                        spell_choices = _decline_spells(target_option)
+                    hit = {"target_ref": target_ref, "dodge": want_dodge,
+                           "blood_shadow": False, "spell_choices": spell_choices}
+                    # 回锋刀：闪避触发反击必须显式提交合法敌方目标
+                    if want_dodge and target_option and target_option.get("dodge_relic_target_options"):
+                        hit["dodge_relic_target_ref"] = target_option["dodge_relic_target_options"][0]["ref"]
+                    hits.append(hit)
+                attacks.append({"hits": hits})
+            choices.append({"actor_ref": actor["actor_ref"], "daowen": dao,
+                            "attack_actions": attacks})
+
+        result = engine.execute_action("resolve_monster_phase", {
+            "token": prepared["result"]["token"], "choices": choices,
+        })
+        if result.get("success"):
+            return result
+        attempts += 1
+        if attempts > max_attempts:
+            return result
+        err = str(result.get("error", ""))
+        # 命中数/出手数漂移：按报错给出的实时 N 定向覆盖该 actor 后重试
+        m = _re.search(r"(.+?)每个攻击出手必须提交(\d+)次命中选择", err)
+        if m:
+            name, n = m.group(1), int(m.group(2))
+            ref = next((a["actor_ref"] for a in actors
+                        if refs_all.get(a["actor_ref"]) is not None
+                        and refs_all[a["actor_ref"]].name == name), None)
+            if ref:
+                hit_overrides[ref] = n
+                continue
+        # 波及目标阶段内失效：同 token 换非波及道纹重交一次（re-prepare 会被门禁拒）
+        if "波及" in err and not wave_retry:
+            wave_retry = True
+            continue
+        # 反应法术资格集阶段内漂移（同阶段早前命中消耗了持有者法力/冷却道纹）：
+        # 报错自带结算时刻的精确资格名表，按名表整体覆盖该 timing 后重试。
+        m = _re.search(r"spell_choices\.(before|after)必须逐一覆盖\[(.*?)\]", err)
+        if m:
+            key = m.group(1)
+            names = [s.strip().strip("'\"「」【】") for s in m.group(2).split(",") if s.strip()]
+            if spell_overrides.get(key) != names:
+                spell_overrides[key] = names
+                continue
+        # 回锋刀：prepare 快照的回避反击目标在阶段内失效（怪死/离场），
+        # 无法定位具体持有者——全场弃闪重交一次（弃闪则不触发回锋刀）。
+        if "回锋刀" in err and not no_dodge_all:
+            no_dodge_all = True
+            continue
+        # 法术提交/结算法力不足（阶段内法力被同阶段早前结算抽干/多法术共享池
+        # 超支）：该法术本场后续一律弃权（use=False 是合法提交），立即重试。
+        m = _re.search(r"法术(?:【)?([^】提交结算]+?)(?:】)?(?:提交|结算)时?的?法力不足", err)
+        if m and m.group(1) not in banned_spells:
+            banned_spells.add(m.group(1))
+            continue
+        # 闪避预算漂移：结算时刻速度被同阶段早前结算压到 0，该目标重交一律不闪避
+        m = _re.search(r"(.+?)速度不足，不能选择闪避", err)
+        if m:
+            tref = next((r for r, ent in refs_all.items()
+                         if getattr(ent, "name", None) == m.group(1)), None)
+            if tref and tref not in no_dodge_refs:
+                no_dodge_refs.add(tref)
+                continue
+        # spell_choices 资格集漂移等其余失败：主路径已是现场重算，重试意义有限，
+        # 再走一轮（live 重算会带上结算后的最新资格集）
+        if attempts < max_attempts:
+            continue
+        return result
 
 
 def _resolve_pending_event(engine):
@@ -229,9 +490,13 @@ def _resolve_pending_event(engine):
 
     优先级：拒绝/离开类选项 → 其余选项按原顺序逐项尝试，取第一个能通过
     引擎代价校验的（失败选项不改状态，可安全重试）；全部失败才报错，
-    避免"只有付不起代价的选项"被误记为引擎异常。
+    避免"只有付不起代价的选项"被误记为引擎异常。事件链单趟上限20。
     """
+    chain = 0
     while engine.event_pool.current is not None:
+        chain += 1
+        if chain > 20:
+            return {"success": False, "error": "事件链超过20层，按异常回收防挂死"}
         name = engine.event_pool.current
         event = engine.event_pool.events[name]
         reject_words = ("无事发生", "拒绝", "离开", "观棋", "视而不见", "绕桥")
@@ -270,17 +535,327 @@ def _resolve_pending_event(engine):
     return {"success": True}
 
 
+# --------------------------------------------------------------------------
+# 行为探针（2026-08-22 DM诉求「提高胜率的行为记录进知识库进步」）
+# --------------------------------------------------------------------------
+
+# 行为标签 → 可反哺的局外行动（备齐反应法术等不对应权重表行动）
+BEHAVIOR_TO_POLICY = {
+    "修行提战力": "修行", "修行提战力·高档": "修行", "先学后打": "学习",
+    "休整保血": "休整", "残血休整": "休整", "共鸣强化": "共鸣",
+    "附煞强化": "附煞", "探索寻机": "探索", "领悟残韵": "领悟",
+    "雇佣支援": "雇佣", "炼心固本": "炼心", "维修续用": "维修",
+}
+BEHAVIOR_RULES = {
+    "修行提战力": "局外修行把精力换属性点", "修行提战力·高档": "高档修行(tier≥2)加速成长",
+    "先学后打": "第1~2场前学道纹早成型", "休整保血": "休整回血防暴毙",
+    "残血休整": "血线≤30%时休整保命", "共鸣强化": "共鸣提升道纹配合",
+    "附煞强化": "乱葬岗附煞加效", "探索寻机": "探索事件换资源",
+    "领悟残韵": "领悟新残韵", "雇佣支援": "雇佣帮手分压", "炼心固本": "龙心谷炼心",
+    "备齐反应法术": "学习先发制人/生生不息/后发制人", "维修续用": "维修回复消耗品耐久",
+}
+
+
+def _tag_behavior(behaviors, act, params, e, battle_no):
+    """局外行动成功时打行为标签（统一由 play() 包装层收口进知识库）。"""
+    if behaviors is None:
+        return
+    if act == "修行":
+        behaviors.append("修行提战力")
+        if (params or {}).get("tier", 1) >= 2:
+            behaviors.append("修行提战力·高档")
+    elif act == "学习":
+        if battle_no <= 2:
+            behaviors.append("先学后打")
+    elif act == "休整":
+        behaviors.append("休整保血")
+        p = e.state.player
+        if p and p.current_hp <= p.blood_limit * 0.3:
+            behaviors.append("残血休整")
+    elif act == "共鸣":
+        behaviors.append("共鸣强化")
+    elif act == "附煞":
+        behaviors.append("附煞强化")
+    elif act == "探索":
+        behaviors.append("探索寻机")
+    elif act == "领悟":
+        behaviors.append("领悟残韵")
+    elif act == "雇佣":
+        behaviors.append("雇佣支援")
+    elif act == "炼心":
+        behaviors.append("炼心固本")
+    elif act == "维修":
+        behaviors.append("维修续用")
+
+
+def _record_behaviors(telemetry: dict, behaviors: list, r: dict) -> None:
+    """把本局用上的行为按"使用该行为的局的胜负/通关"累计（幸存者偏差注意：
+    走得远的局才有机会休整/共鸣——只作温和权重纠偏，不作因果结论）。"""
+    stats = telemetry.setdefault("behavior_stats", {})
+    for name in sorted(set(behaviors)):
+        s = stats.setdefault(name, {"n": 0, "wins": 0, "cleared_sum": 0})
+        s["n"] += 1
+        s["wins"] += 1 if r.get("won") else 0
+        s["cleared_sum"] += r.get("cleared", 0)
+
+
+def learned_policy(k: dict) -> dict:
+    """用 behavior_stats 反哺局外行动权重（闭环：记录→胜率相关→改变后续采样）。
+
+    乘数 = clamp(0.7, 1.4, 1 + 0.25×(行为局均通关 − 全体基线均通关))，min_n=40；
+    同一行动被多个行为映射时取样本量最大者。结果存 k["policy_learn"]。
+    数据不足返回 None（上层退回 DEFAULT_POLICY）。
+    """
+    t = k.get("telemetry") or {}
+    oc = t.get("outcomes") or {}
+    bs = t.get("behavior_stats") or {}
+    total = oc.get("win", 0) + oc.get("loss", 0)
+    if not total or not bs:
+        return None
+    base = oc.get("cleared_sum", 0) / total
+    best_for_act = {}
+    for name, s in bs.items():
+        act = BEHAVIOR_TO_POLICY.get(name)
+        n = s.get("n", 0)
+        if not act or n < 40:
+            continue
+        avg = s.get("cleared_sum", 0) / n
+        m = max(0.7, min(1.4, 1 + 0.25 * (avg - base)))
+        if act not in best_for_act or n > best_for_act[act][1]:
+            best_for_act[act] = (m, n)
+    if not best_for_act:
+        return None
+    multipliers = {act: round(m, 3) for act, (m, _) in best_for_act.items()}
+    k["policy_learn"] = {"base_cleared": round(base, 3), "multipliers": multipliers}
+    policy = dict(DEFAULT_POLICY)
+    for act, m in multipliers.items():
+        if act in policy:
+            policy[act] = max(1, round(policy[act] * m))
+    return policy
+
+
+def _postmortem(e, cleared: int, todo: list, killer_hint: str = "") -> dict:
+    """战败复盘（2026-08-22 应DM要求新增）：败局不再只留 cleared/won 两个数，
+    从引擎事件流（combat_events）里还原"死在谁手里、手里还剩什么"。
+    产出：{杀手, 带药, 剩余碎片, 未学纹, 满蓝} —— 全部喂回知识库。"""
+    st = e.state
+    p = st.player
+    pname = p.name if p else ""
+    killer = killer_hint
+    if not killer:
+        # 从事件流反向找玩家死亡前最近一次对其造成伤害的来源
+        for ev in reversed(st.combat_events):
+            if ev.target_name == pname and getattr(ev, "event_type", None) is not None \
+                    and "damage" in str(getattr(ev, "event_type", "")).lower():
+                killer = ev.actor_name
+                break
+        if not killer:
+            alive = [x.name for x in st.enemies if getattr(x, "is_alive", False)]
+            killer = alive[0] if alive else ""
+    unused_items = [c.name for c in st.consumables if c.current_uses > 0]
+    max_mana = getattr(p, "max_mana", 0) if p else 0
+    return {
+        "battle": cleared + 1,                       # 阵亡场次（第几战）
+        "killer": killer or "未知",
+        "unused_items": unused_items,                # 带药阵亡：消耗品一次没用
+        "shards": st.shards,                         # 碎片未花
+        "todo_left": list(todo),                     # 没学完的死前欠账
+        "full_mana": bool(p and max_mana and p.current_mana >= max_mana * 0.8),
+    }
+
+
+def _record_postmortem(telemetry: dict, pm: dict) -> None:
+    pm_all = telemetry.setdefault("postmortem", {
+        "deaths": 0, "death_battle": {}, "killers": {},
+        "带药阵亡": 0, "碎片未花": 0, "满蓝阵亡": 0})
+    pm_all["deaths"] += 1
+    b = str(pm["battle"])
+    pm_all["death_battle"][b] = pm_all["death_battle"].get(b, 0) + 1
+    k = pm["killer"]
+    pm_all["killers"][k] = pm_all["killers"].get(k, 0) + 1
+    if pm["unused_items"]:
+        pm_all["带药阵亡"] += 1
+    if pm["shards"] >= 15:
+        pm_all["碎片未花"] += 1
+    if pm["full_mana"]:
+        pm_all["满蓝阵亡"] += 1
+
+
+# 非伤害清场路径（凡庸/癌变/雕塑/封印/还债/救赎/逃跑）——应DM 2026-08-22质疑
+# "为什么只学杀伐"新增的全局统计：胜利≠打死，离场与被动命零同样算赢。
+# 离场不发 CombatEvent（models.depart_battle 只打标）——必须由"实体旗标差集"统计；
+# 命零类（凡庸/癌变）才有 ENTITY_DIED 事件（subtype 分别为 mediocrity/heal_threshold）。
+_DEATH_SUBTYPES = {"mediocrity": "凡庸", "heal_threshold": "癌变"}
+
+
+def _alt_victory_scan(e, ev_mark: int, prev_gone: set, telemetry: dict) -> set:
+    """扫描本场战斗：命零类走事件流；离场类走实体旗标差集。返回新的 prev_gone。"""
+    if telemetry is None:
+        return prev_gone
+    from engine.combat_events import CombatEventType
+    av = telemetry.setdefault("alt_victory", {})
+    pname = e.state.player.name if e.state.player else ""
+    # 1) 命零类（凡庸/癌变在事件流里有 ctx.subtype；其余死亡=伤害击杀）
+    for ev in e.state.combat_events[ev_mark:]:
+        if ev.event_type != CombatEventType.ENTITY_DIED or ev.target_name == pname:
+            continue
+        sub = (ev.ctx or {}).get("subtype", "")
+        cause = _DEATH_SUBTYPES.get(sub, "伤害击杀")
+        av[cause] = av.get(cause, 0) + 1
+    # 2) 离场类（depart_battle 只打标不发事件）：差集统计本战新离场
+    monsters = list(e.state.enemies) + list(getattr(e.state, "dead_monsters", []))
+    now_gone = set()
+    for m in monsters:
+        if getattr(m, "is_alive", True):
+            continue
+        key = id(m)
+        if getattr(m, "is_proliferated", False):
+            now_gone.add((key, "癌变"))
+        elif getattr(m, "is_sculptured", False):
+            now_gone.add((key, "雕塑"))
+        elif getattr(m, "is_debt_bound", False):
+            now_gone.add((key, "还债"))
+        elif getattr(m, "is_departed", False):
+            now_gone.add((key, getattr(m, "departure_reason", "") or "离场"))
+    for _key, cause in now_gone - prev_gone:
+        if cause and cause != "凡庸":  # 凡庸命零已在事件流计数
+            av[cause] = av.get(cause, 0) + 1
+    return now_gone
+
+
+# --------------------------------------------------------------------------
+# 第十九批实验钩子（默认全部=现行生产行为；不允许的：规则/怪物/奖励/裁定改动）
+# --------------------------------------------------------------------------
+
+def _make_consumable_gate(name: str):
+    """消耗品血线门（接管 TacticalAI.try_consumable 的开局判断；预演风险过滤
+    在门之后始终保留）。
+    current/hp40: None=现行 ≤40%血线门（协议B臂与现行同义，如实记录）；
+    hp60:     ≤60%血线即尝试；
+    predict:  预测下回合同级承伤即死→提前用（上回合净掉血≥当前HP时触发），
+              首回合无承伤样本时回落现行≤40%门。"""
+    if name in (None, "current", "hp40"):
+        return None
+
+    if name == "hp60":
+        def gate60(ai):
+            p = ai.player
+            return p is not None and p.is_alive and p.current_hp <= p.blood_limit * 0.6
+        return gate60
+
+    if name == "predict":
+        def gate_predict(ai):
+            p = ai.player
+            if p is None or not p.is_alive or p.current_hp >= p.blood_limit:
+                return False
+            hist = getattr(ai, "_hp_trace", [])
+            if len(hist) < 2:
+                return p.current_hp <= p.blood_limit * 0.4
+            loss = hist[-2] - hist[-1]          # 上回合净掉血（回始快照差）
+            if loss <= 0:
+                return p.current_hp <= p.blood_limit * 0.4
+            return p.current_hp <= loss           # 同级承伤再来一回即死→提前用
+        return gate_predict
+    raise ValueError(f"未知消耗品策略: {name}")
+
+
+def _death_trace_payload(e, cleared: int, snaps: list) -> dict:
+    """死亡归因载荷：终态 + 本场最后≤4个回始快照 + 启发式主因/旗标分类。
+
+    主因优先级（文档化启发式，非因果证明）：
+      burst      末回始 HP≥40%血限（当回合内从高血线被打死=爆发伤害）
+      sustained  死亡场近3回始 HP% 单调下降且末回始<40%（持续消耗/缺血线）
+      rng_suspect 末回始 HP≥60% 且玩家速度≥敌方最高速（无速度劣势的高血线暴毙）
+      mana_exhaust 死亡时法力=0 且末回始HP<40%（蓝尽后无法行动被磨死）
+      build_disadv 兜底：敌方存活道纹总数 > 玩家道纹数×1.5
+      other      以上皆不命中
+    旗标（可叠加）：unused_consumables 带药阵亡 / mana_zero / speed_disadv。
+    """
+    p = e.state.player
+    tail = [s for s in snaps if s["battle"] == cleared + 1][-4:]
+    last = tail[-1] if tail else {}
+    # 进场血线必须用快照时刻的血限（快照内 hp_pct 已是当时口径）：
+    # 末态玩家血限可能已被衰老/血限下降事件压低（死后读数），用后值当分母会
+    # 把低进场血线虚增成"高血线暴毙"（b20 归因发现的遥测缺陷，2026-08-24 修）。
+    hp_start = last.get("hp", 0)
+    hp_pct = last.get("hp_pct", 0 if not (p and p.blood_limit) else hp_start / p.blood_limit)
+    enemies = last.get("enemies", [])
+    enemy_top_speed = max((x["speed"] for x in enemies), default=0)
+    p_speed = last.get("speed", 0)
+    mana_end = p.current_mana if p else 0
+    unused = [c.name for c in e.state.consumables if c.current_uses > 0]
+    hps = [s["hp_pct"] for s in tail]
+    sustained = (len(hps) >= 3 and hps[-1] < 0.4
+                 and hps[-1] < hps[-2] <= hps[0])
+    if hp_pct >= 0.4:
+        primary = "burst"
+        if hp_pct >= 0.6 and p_speed >= enemy_top_speed:
+            primary = "rng_suspect"
+    elif sustained:
+        primary = "sustained"
+    elif mana_end == 0:
+        primary = "mana_exhaust"
+    elif (sum(len(x["daowen"]) for x in enemies)
+              > 1.5 * len(last.get("player_daowen", []))):
+        primary = "build_disadv"
+    else:
+        primary = "other"
+    dctx = (getattr(p, "_death_ctx", None) or {}) if p else {}
+    return {"battle": cleared + 1, "primary": primary,
+            "flags": {"unused_consumables": bool(unused),
+                      "mana_zero": mana_end == 0,
+                      "speed_disadv": p_speed < enemy_top_speed},
+            "hp_pct_at_last_round": round(hp_pct, 3),
+            "unused_items": unused,
+            "death_subtype": dctx.get("subtype", ""),
+            "death_source": dctx.get("source", ""),
+            "mutation_total": getattr(p, "mutation_count", 0) if p else 0,
+            "enemies": enemies, "player_daowen": last.get("player_daowen", []),
+            "rounds": tail}
+
+
 def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
          rng: random.Random = None, policy: dict = None, telemetry: dict = None,
-         spend_shards: bool = False, spell_plan: list = None) -> dict:
-    """
-    跑一局轮回。seed=None 时引擎使用真随机源。
+         spend_shards: bool = False, spell_plan: list = None,
+         behaviors: list = None, attrs: dict = None,
+         resonance: str = "反转", relic_policy: str = "skip_optional",
+         ai_cls=None, consumable_policy: str = "current",
+         death_trace: bool = False, lab_paths: dict = None) -> dict:
+    """跑一局轮回（行为探针包装：本局用到了哪些行为，统一收口进知识库）。
+
+    consumable_policy/death_trace/lab_paths：第十九批实验钩子（默认=现行生产行为）。"""
+    behaviors = behaviors if behaviors is not None else []
+    r = _play(starter, learn, region, seed, battles=battles, rng=rng, policy=policy,
+              telemetry=telemetry, spend_shards=spend_shards, spell_plan=spell_plan,
+              behaviors=behaviors, attrs=attrs, resonance=resonance,
+              relic_policy=relic_policy, ai_cls=ai_cls,
+              consumable_policy=consumable_policy, death_trace=death_trace,
+              lab_paths=lab_paths)
+    if telemetry is not None and not r.get("invalid"):
+        _record_behaviors(telemetry, behaviors, r)
+        if r.get("pm"):
+            _record_postmortem(telemetry, r["pm"])
+    return r
+
+
+def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
+          rng: random.Random = None, policy: dict = None, telemetry: dict = None,
+          spend_shards: bool = False, spell_plan: list = None,
+          behaviors: list = None, attrs: dict = None,
+          resonance: str = "反转", relic_policy: str = "skip_optional",
+          ai_cls=None, consumable_policy: str = "current",
+          death_trace: bool = False, lab_paths: dict = None) -> dict:
+    """跑一局轮回。seed=None 时引擎使用真随机源。
 
     policy: 局外行动权重 {行动名: 权重}，AI 按权重随机挑选可用行动。
             这样"选择率"是 AI 自己选出来的，而不是脚本写死的。
     telemetry: 传入则累计真实统计（行动选择/成功/失败原因/异常）。
     spend_shards: 七场局外把碎片尽量花成战力（高阶修行/附煞/共鸣）——用户裁定
             "不花碎片怎么快速提高战力"。False=旧行为，True=新玩法。
+    behaviors: 传入 list 则把本局用到的行为标签追加进去（上层统一记 knowledge）。
+    attrs: 初始属性分配 {blood_points, speed_points, mana_points}（2026-08-22 加点
+            扫描后默认 6/8/11；此前 10/8/7 硬编码、1.7万局从未被探索）。
+    resonance/relic_policy/ai_cls: 开局维度清扫与战术实验的注入点（默认=历史行为）。
 
     返回含 invalid 标记：本局若出现引擎异常，视为无效数据（不计入统计）。
     """
@@ -291,21 +866,40 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
     from sim.build_learner import round_start_relic_choices as _rsrc
     global round_start_relic_choices
     round_start_relic_choices = _rsrc
-    e = GameEngine(db_path="/tmp/learner.db", rng_seed=seed)
-    e.execute_action("setup_attributes",
-                     {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+    # 第十九批：死斗实验室可注入隔离存储（默认=生产路径，行为不变）
+    _lab = lab_paths or {}
+    e = GameEngine(db_path=_lab.get("db_path", "/tmp/learner.db"), rng_seed=seed,
+                   sealed_candidate_path=_lab.get("sealed_path",
+                                                  "data/sealed_candidate.json"),
+                   death_book_path=_lab.get("death_book_path", "死者之书.md"))
+    # 默认初始加点（2026-08-22 加点扫描实验结论，三副本同种子配对验证：
+    # 扭曲都市 优87/差21、罪孽都市 92/14、龙心谷 62/5；均通关×1.6~1.9、
+    # 第1战死亡率减半）。机制：自由控X下法限=每轮道纹出手次数上限，蓝是稀缺
+    # 资源；血限对早期生存几乎无贡献（血牛15/5/5 反降38%）。4/8/13 不更优。
+    attrs = attrs or {"blood_points": 6, "speed_points": 8, "mana_points": 11}
+    e.execute_action("setup_attributes", {"name": "贾凡", **attrs})
     chosen = choose_discovered_initial_daowen(e, prefer=starter)
     if not chosen.get("success"):
         raise ValueError(chosen.get("error", "开局发现选择失败"))
     actual_starter = chosen["picked"]
-    e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
+    e.execute_action("setup_choose_resonance", {"resonance_type": resonance})
     setup = e.execute_action("setup_choose_region", {"region": region})
     optional_relics = {"折速法印", "三相残韵盘"}
-    starter_relic = next((n for n in setup["result"]["relic_choices"] if n not in optional_relics),
-                         setup["result"]["relic_choices"][0])
+    relic_choices = setup["result"]["relic_choices"]
+    if relic_policy == "prefer_optional":  # 扫描实验：主动选可选遗物
+        starter_relic = next((n for n in relic_choices if n in optional_relics),
+                             relic_choices[0])
+    else:
+        starter_relic = next((n for n in relic_choices if n not in optional_relics),
+                             relic_choices[0])
     e.execute_action("choose_discovered_relic", {"relic_name": starter_relic})
 
-    ai = TacticalAI(e)
+    ai_cls = ai_cls or TacticalAI
+    ai = ai_cls(e)
+    gate = _make_consumable_gate(consumable_policy)
+    if gate is not None:
+        ai.consumable_gate = gate
+    round_snapshots: list = [] if death_trace else None
     todo = [name for name in learn if name != actual_starter]
     # 法术按当前持有道纹解锁，不再默认杀伐起手。
     SPELL_PLAN = spell_plan or [("先发制人", ["杀伐"]), ("生生不息", ["再生"]), ("后发制人", ["庇护"])]
@@ -319,12 +913,15 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
         key = name if not detail else f"{name}｜{detail}"
         telemetry[kind][key] = telemetry[kind].get(key, 0) + 1
 
+    prev_gone = set()  # 离场旗标差集：跨战斗滚动（dead_monsters 跨战累积）
     for b in range(1, battles + 1):
+        stalls = 0
+        ev_mark = 0  # 战斗事件水位线（用于战后统计非伤害胜利路径）
         while e.state.energy > 0:
+            _resolve_pending_choices(e)   # 先清门禁，否则一切行动被拒=原地死循环
             before = e.state.energy
             # 花碎片→战力（spend_shards）：与学习并行——每场优先修行1次保证法限成长，
-            # 其余精力学道纹（此前"学完todo才花碎片"导致5道纹build学5场碎片花晚了，
-            # 法限没提上去，更强build反而更弱）。
+            # 其余精力学道纹。
             if spend_shards:
                 p = e.state.player
                 if p and e.state.shards >= 35:
@@ -332,22 +929,23 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                         "sub_action": "修行", "tier": 3,
                         "allocations": {"speed_points": 0, "mana_points": 3}})
                     if r.get("success"):
+                        _tag_behavior(behaviors, "修行", {"tier": 3}, e, b)
                         continue
                 if p and e.state.shards >= 25 and e.state.current_region == "乱葬岗":
                     held = next(iter(p.dao_wen), actual_starter)
                     r = e.execute_action("pre_battle_action", {
                         "sub_action": "附煞", "mode": "选择", "sha_qi": "冥煞", "daowen_name": held})
                     if r.get("success"):
+                        _tag_behavior(behaviors, "附煞", {}, e, b)
                         continue
                 if p and e.state.shards >= 15 and todo:
                     r = e.execute_action("pre_battle_action", {
                         "sub_action": "修行", "tier": 2,
                         "allocations": {"speed_points": 0, "mana_points": 2}})
                     if r.get("success"):
+                        _tag_behavior(behaviors, "修行", {"tier": 2}, e, b)
                         continue
             # 学法术：已有对应道纹且没学过的先学（免费1精力）。
-            # spell_plan 元素可为 ("名", [道纹]) 或 {"name","required_daowen","trigger_condition",
-            # "effect_flow"}（自创法术，走 dm_approved 自动通过）。
             spell_next = None
             spell_definition = None
             for item in SPELL_PLAN:
@@ -379,6 +977,8 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                         "sub_action": "学习", "sub": "spell", "tier": 1, "names": [spell_next]})
                 if r.get("success"):
                     learned_spells.add(spell_next)
+                    if behaviors is not None:
+                        behaviors.append("备齐反应法术")
                     continue
             act, params = choose_pre_battle(e, todo, b, rng, policy)
             record("attempted", act)
@@ -390,6 +990,7 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                         "reason": f"pre_battle {act}: {ex}"}
             if r.get("success"):
                 record("succeeded", act)
+                _tag_behavior(behaviors, act, params, e, b)
                 if act == "学习" and params.get("name") in todo:
                     todo.remove(params["name"])
                 # 附煞·发现模式：显式选择候选煞气
@@ -419,16 +1020,30 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                 # 事件选项的代价可能恰好致死（如流血6且仅剩6血）——死之传承中断入队，
                 # 之后的任何行动都会被门禁挡住；直接按阵亡结束本局，不误标 invalid。
                 if not e.state.player or not e.state.player.is_alive:
-                    return {"cleared": cleared, "won": False, "invalid": False}
+                    return {"cleared": cleared, "won": False, "invalid": False, "final_daowen": sorted(e.state.player.dao_wen) if getattr(e.state, "player", None) else [],
+                                        "consumable_uses": sum(v for k2, v in getattr(ai, "used", {}).items() if str(k2).startswith("消耗品")),
+                            "pm": _postmortem(e, cleared, todo), "death_trace": (_death_trace_payload(e, cleared, round_snapshots) if death_trace else None)}
             else:
                 record("failed", act, str(r.get("error"))[:60])
                 # 失败必须退还精力，否则会死循环；引擎已退还，这里兜底防死锁
                 if e.state.energy >= before:
                     e.execute_action("pre_battle_action",
                                      {"sub_action": "修行", "tier": 1, "to": "mana"})
+            # 卡死哨兵：连续 STALL_LIMIT 步精力不退（门禁未清/兜底被拒），说明
+            # 存在驱动解不开的语义门禁——回收为无效局，绝不挂死进程。
+            if e.state.energy >= before:
+                stalls += 1
+                if stalls >= STALL_LIMIT:
+                    return {"cleared": cleared, "won": False, "invalid": True,
+                            "reason": f"pre_battle死锁：连续{stalls}步精力不退"
+                                      f"（能量{e.state.energy}，按无效局回收）"}
+            else:
+                stalls = 0
 
         # 共鸣/事件可能在开局后继续获得可选战始遗物；按当前持有列表逐件显式决策
         # （可以不用但不能不让用：折速法印换法力/三相残韵盘/猩红果实/苍白之花按情形发动）。
+        _resolve_pending_choices(e)   # 上一场遗留门禁（含战后救赎）先清，再开战
+        ev_mark = len(e.state.combat_events)
         bs, bs_artifact_logs = start_battle_with_artifacts(e)
         if not bs.get("success"):
             return {"cleared": cleared, "won": False, "invalid": True,
@@ -446,6 +1061,22 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                 return {"cleared": cleared, "won": False, "invalid": True,
                         "reason": f"round_start: {rs.get('error')}"}
             ai.new_round()
+            if death_trace:
+                _p = e.state.player
+                round_snapshots.append({
+                    "battle": b,
+                    "round": sum(1 for s in round_snapshots if s["battle"] == b) + 1,
+                    "hp": _p.current_hp if _p else 0,
+                    "hp_pct": round((_p.current_hp / _p.blood_limit) if _p and _p.blood_limit else 0, 3),
+                    "mana": _p.current_mana if _p else 0,
+                    "speed": _p.current_speed if _p else 0,
+                    "consumables": {c.name: c.current_uses
+                                    for c in e.state.consumables if c.current_uses > 0},
+                    "enemies": [{"name": x.name, "hp": x.current_hp,
+                                 "speed": x.current_speed, "daowen": sorted(x.dao_wen)}
+                                for x in e.state.enemies if x.is_alive],
+                    "player_daowen": sorted(_p.dao_wen) if _p else [],
+                })
             try:
                 ai.take_turn()
             except Exception as ex:
@@ -462,26 +1093,57 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
             e.execute_action("resolve_ally_phases", {})
             if not [x for x in e.state.enemies if x.is_alive]:
                 break
+            # 困境驱动（DM裁定2026-08-23③）：强制困境怪进化/逃跑二选一
+            _drive_plight_monsters(e, telemetry)
+            if not [x for x in e.state.enemies if x.is_alive]:
+                break   # 困境怪全逃跑=清场（不视为击杀）
             mp = _resolve_monster_turn(e)
             if not mp.get("success"):
                 return {"cleared": cleared, "won": False, "invalid": True,
                         "reason": f"monster_phase: {mp.get('error')}"}
             if mp["result"].get("player_dead"):
                 break
-            e.execute_action("round_end", {})
+            re_ = e.execute_action("round_end", {})
+            if not re_.get("success"):
+                # 救赎等待队列就门禁 round_end 本身——先清再重交，否则子阶段
+                # 停在 await_round_end，下一回合 round_start 以阶段不符被判无效局
+                # （2026-08-23 复扫 1/800 命中此链）。
+                _resolve_pending_choices(e)
+                re_ = e.execute_action("round_end", {})
+            if not re_.get("success"):
+                return {"cleared": cleared, "won": False, "invalid": True,
+                        "reason": f"round_end: {re_.get('error')}"}
+            # [回终]结算也可能把残血怪压入救赎等待队列——不清理会门禁下一回合
+            # round_start（"必须先结算【救赎】"按无效局回收，2026-08-23 冒烟）。
+            _resolve_pending_choices(e)
 
+        # 先扫描再判负：阵亡/败北的战斗同样有移除产出（2026-08-23 审计发现
+        # 救赎触发→离场有2倍差距，根因=败场提前 return 跳过扫描、把突围战绩丢了）。
+        prev_gone = _alt_victory_scan(e, ev_mark, prev_gone, telemetry)
         if not e.state.player or not e.state.player.is_alive:
-            return {"cleared": cleared, "won": False, "invalid": False}
+            return {"cleared": cleared, "won": False, "invalid": False, "final_daowen": sorted(e.state.player.dao_wen) if getattr(e.state, "player", None) else [],
+                                "consumable_uses": sum(v for k2, v in getattr(ai, "used", {}).items() if str(k2).startswith("消耗品")),
+                    "pm": _postmortem(e, cleared, todo), "death_trace": (_death_trace_payload(e, cleared, round_snapshots) if death_trace else None)}
         if [x for x in e.state.enemies if x.is_alive]:
-            return {"cleared": cleared, "won": False, "invalid": False}
+            return {"cleared": cleared, "won": False, "invalid": False, "final_daowen": sorted(e.state.player.dao_wen) if getattr(e.state, "player", None) else [],
+                                "consumable_uses": sum(v for k2, v in getattr(ai, "used", {}).items() if str(k2).startswith("消耗品")),
+                    "pm": _postmortem(e, cleared, todo), "death_trace": (_death_trace_payload(e, cleared, round_snapshots) if death_trace else None)}
+        _resolve_pending_choices(e)   # 战后【救赎】等待结算门禁（api.py:824）会挡住 battle_end
         ended = e.execute_action("battle_end", {})
+        if not ended.get("success") and "救赎" in str(ended.get("error", "")):
+            # 救赎可能由 battle_end 自身的前置结算队列（战终凡庸结算把残血无原
+            # 始道纹怪压入救赎队列）在清场之后才出现——清一次再交。
+            _resolve_pending_choices(e)
+            ended = e.execute_action("battle_end", {})
         if not ended.get("success"):
             return {"cleared": cleared, "won": False, "invalid": True,
                     "reason": f"battle_end: {ended.get('error')}"}
         # 战终结算可能触发癌变/凡庸等命零（回复过量/未造成伤害），死之传承中断
         # 会入队阻塞后续行动；此时本场仍算通关（cleared+1），但轮回到此结束。
         if not e.state.player or not e.state.player.is_alive:
-            return {"cleared": cleared + 1, "won": False, "invalid": False}
+            return {"cleared": cleared + 1, "won": False, "invalid": False, "final_daowen": sorted(e.state.player.dao_wen) if getattr(e.state, "player", None) else [],
+                                "consumable_uses": sum(v for k2, v in getattr(ai, "used", {}).items() if str(k2).startswith("消耗品")),
+                    "pm": _postmortem(e, cleared, todo), "death_trace": (_death_trace_payload(e, cleared, round_snapshots) if death_trace else None)}
         cleared += 1
 
         # 第7场战终触发【最终的冠冕】：第一名封存；第二名进入第8场死斗。
@@ -489,12 +1151,14 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
         crown = ended.get("result", {}).get("final_crown", {})
         outcome = crown.get("outcome")
         if outcome == "sealed":
-            return {"cleared": cleared, "won": True, "invalid": False,
-                    "sealed": True, "sealed_name": crown.get("sealed_name")}
+            # DM裁定（2026-08-22）：第7场封存≠完整轮回——只有打过死斗（PvP）
+            # 才算完成一次完整轮回；封存只是"进队当擂主"，won 只认死斗胜利。
+            return {"cleared": cleared, "won": False, "invalid": False, "final_daowen": sorted(e.state.player.dao_wen) if getattr(e.state, "player", None) else [],
+                                "consumable_uses": sum(v for k2, v in getattr(ai, "used", {}).items() if str(k2).startswith("消耗品")),
+                    "duel_fought": False, "sealed": True,
+                    "sealed_name": crown.get("sealed_name")}
         if outcome == "duel_start" or e.state.in_final_duel:
             # 第8场死斗：用新的对称PvP驱动（守擂方走玩家侧接口，逐出手交替）。
-            # 旧循环用 _resolve_monster_turn 每回合全量驱动守擂方，与死斗交替门禁
-            # （player_side回合守擂不行动）冲突，且守擂被当怪物处理（无PvP规则）。
             from sim.duel_pvp import run_duel_pvp
             log_buf = []
             def _act():
@@ -506,17 +1170,34 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                 except Exception:
                     return False
                 return True
-            dr = run_duel_pvp(e, _act, max_rounds=60, max_steps=400, log=log_buf)
+            dr = run_duel_pvp(e, _act, max_rounds=60, max_steps=400, log=log_buf,
+                              max_wall_seconds=30)
             duel_won = dr.get("winner") == "challenger"
+            duel_rounds = dr.get("rounds")
+            if dr.get("timeout"):
+                # 卡死守护命中（2026-08-22 批次13教训）：打印证据，便于归因而非无声挂起
+                print(f"    [死斗超时] 回合{dr.get('rounds')} 判擂主卫冕｜state字段deepcopy成本(ms): "
+                      f"{dr.get('diag_state_sizes')}", flush=True)
+            opp = next((x.name for x in e.state.enemies
+                        if x.entity_type == "轮回者"), "")  # 守擂擂主名（供PvP经验记录）
             if not duel_won or not e.state.player or not e.state.player.is_alive:
-                return {"cleared": cleared, "won": False, "invalid": False}
+                # 打过死斗但落败：轮回不完整（DM裁定2026-08-22），继续只留下 PV数据。
+                out = {"cleared": cleared, "won": False, "invalid": False, "final_daowen": sorted(e.state.player.dao_wen) if getattr(e.state, "player", None) else [],
+                                    "consumable_uses": sum(v for k2, v in getattr(ai, "used", {}).items() if str(k2).startswith("消耗品")),
+                       "duel_fought": True, "duel_won": False,
+                       "duel_opponent": opp,
+                       "duel_rounds": duel_rounds,
+                       "pm": _postmortem(e, cleared, todo, killer_hint=opp)}
+                if dr.get("timeout"):
+                    out["duel_timeout"] = True
+                return out
             # 死斗胜利：领取终音法器
             dr = e.execute_action("resolve_final_duel", {"outcome": "victory"})
             if not dr.get("success"):
                 return {"cleared": cleared, "won": False, "invalid": True,
                         "reason": f"resolve_final_duel: {dr.get('error')}"}
             if dr.get("result", {}).get("pending_terminal_choice"):
-                region = dr["result"]["pending_terminal_choice"]
+                region2 = dr["result"]["pending_terminal_choice"]
                 options = dr["result"].get("options") or []
                 if options:
                     ca = e.execute_action("choose_terminal_artifact", {"choice": 1})
@@ -526,10 +1207,15 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                     # 若选了猩红尖牙会触发初拥之夜，需继续选择
                     if e.state.pending_first_embrace:
                         e.execute_action("choose_first_embrace", {"choice": 1})
-            return {"cleared": cleared, "won": True, "invalid": False,
-                    "duel_won": True, "terminal_artifact": True}
+            return {"cleared": cleared, "won": True, "invalid": False, "final_daowen": sorted(e.state.player.dao_wen) if getattr(e.state, "player", None) else [],
+                                "consumable_uses": sum(v for k2, v in getattr(ai, "used", {}).items() if str(k2).startswith("消耗品")),
+                    "duel_fought": True, "duel_won": True, "duel_opponent": opp,
+                    "duel_rounds": duel_rounds, "terminal_artifact": True}
 
-    return {"cleared": cleared, "won": True, "invalid": False}
+    # 循环走满 7 场却未见冠冕（理论上不应到达）：按裁定同样不算完整轮回。
+    return {"cleared": cleared, "won": False, "invalid": False, "final_daowen": sorted(e.state.player.dao_wen) if getattr(e.state, "player", None) else [],
+                        "consumable_uses": sum(v for k2, v in getattr(ai, "used", {}).items() if str(k2).startswith("消耗品")),
+            "duel_fought": False, "note": "未见最终的冠冕"}
 
 
 # 局外行动权重：AI 按此概率挑选。7项为引擎当前可用行动
@@ -622,13 +1308,17 @@ def choose_pre_battle(e, todo, battle_no, rng, policy):
 
 def fitness(starter: str, learn: list, runs: int, gen: int,
             random_seeds: bool = False, rng: random.Random = None,
-            telemetry: dict = None, spend_shards: bool = False) -> tuple:
+            telemetry: dict = None, spend_shards: bool = False,
+            region: str = None, policy: dict = None) -> tuple:
     """
     适应度 = 平均通关场数 + 3×胜率（0~10）。
 
     random_seeds=False（默认）：种子由代数推导，同一代可复现，便于排查。
     random_seeds=True：每局用真随机种子与随机副本，样本不重复，
       能避免"只在某几局上表现好"的过拟合，代价是结果不可逐局复现。
+    region 指定时：全部局都打该副本（learn 列表是该副本实际可学的组合，
+      2026-08-22 起按代轮换避免采样退化到固定子池）。
+    policy: learned_policy 反哺后的局外行动权重（None=DEFAULT_POLICY）。
 
     返回 (score, valid_runs, invalid_runs)。
     出现引擎异常的对局视为**无效数据**，不计入分数与统计。
@@ -641,14 +1331,17 @@ def fitness(starter: str, learn: list, runs: int, gen: int,
     valid = 0
     invalid = 0
     for i in range(runs):
-        if random_seeds:
+        if region is not None:
+            run_region = region
+            seed = rng.randrange(1, 2 ** 31 - 1) if random_seeds else gen * 1000 + i * 7 + 1
+        elif random_seeds:
             seed = rng.randrange(1, 2 ** 31 - 1)
-            region = rng.choice(REGIONS)
+            run_region = rng.choice(REGIONS)
         else:
             seed = gen * 1000 + i * 7 + 1
-            region = REGIONS[i % len(REGIONS)]
-        r = play(starter, learn, region, seed, rng=rng, telemetry=telemetry,
-                spend_shards=spend_shards)
+            run_region = REGIONS[i % len(REGIONS)]
+        r = play(starter, learn, run_region, seed, rng=rng, telemetry=telemetry,
+                spend_shards=spend_shards, policy=policy)
         if r.get("invalid"):
             invalid += 1
             if telemetry is not None:
@@ -662,8 +1355,24 @@ def fitness(starter: str, learn: list, runs: int, gen: int,
             telemetry.setdefault("outcomes", {"win": 0, "loss": 0, "cleared_sum": 0})
             telemetry["outcomes"]["win" if r["won"] else "loss"] += 1
             telemetry["outcomes"]["cleared_sum"] += r["cleared"]
+            # PvP 死斗经验（含未达死斗的封存记录，DM裁定2026-08-22）
+            du = telemetry.setdefault("duels", {"fought": 0, "won": 0,
+                                                "sealed_no_duel": 0, "by_build": {}})
+            bkey = f"{starter}|{'+'.join(learn)}"
+            bk = du["by_build"].setdefault(bkey, {"fought": 0, "won": 0})
+            if r.get("duel_fought"):
+                du["fought"] += 1
+                bk["fought"] += 1
+                if r["won"]:
+                    du["won"] += 1
+                    bk["won"] += 1
+                if r.get("duel_timeout"):
+                    du["timeouts"] = du.get("timeouts", 0) + 1
+                    bk["timeouts"] = bk.get("timeouts", 0) + 1
+            elif r["cleared"] >= 7:
+                du["sealed_no_duel"] += 1
             telemetry.setdefault("region_runs", {})
-            telemetry["region_runs"][region] = telemetry["region_runs"].get(region, 0) + 1
+            telemetry["region_runs"][run_region] = telemetry["region_runs"].get(run_region, 0) + 1
     return (total / valid if valid else 0.0), valid, invalid
 
 
@@ -698,33 +1407,109 @@ def ucb(k: dict, name: str, total_n: int) -> float:
     return mean + 1.4 * math.sqrt(math.log(max(total_n, 2)) / t["n"])
 
 
-def propose(k: dict, rng: random.Random, region: str = None) -> tuple:
-    """生成下一套待测 build：50% 探索，50% 在精英基础上变异。
-    region 给定时只从该副本实际可学的道纹中取（门禁修复后必需）。"""
+# --------------------------------------------------------------------------
+# 确认精英先验回注 + 深挖复评（2026-08-23 精英扩散实验落地，DM实验协议）
+# 证据链：冻结实验（sim/elite_freeze_test.py）证明精英构筑=可迁移真知识
+# （F1 精英构筑 2.56 vs F4 幻影构筑 1.46，同行为同种子）；瓶颈在选择器噪声
+# 与构筑传播精度。扩散实验（sim/elite_diffusion_experiment.py）双种子三比例：
+# 75%回注+每15代深挖复评（top3×2次）holdout 1.89/1.84，双种子均超原学习器
+# （1.79/1.54），跨种子方差 [1.03..2.54]→[1.84..1.89]；100%强制复制（C诊断组）
+# 2.43 < B75 ⇒ 必须保留 ≥25% UCB 探索通道；宽松回注不加深挖会在坏种子上把
+# 均值1.47的平庸精英放大成灾难（s4242：1.03 < A 1.54）。
+# 弃用：原 50% 从 best（单次评估最高分）变异——best 实测为幻影样本
+# （KB best 4.83 独立复测场均仅 1.50），50%预算长期喂给噪声倍增器。
+# legacy 模式仅供 A/B 对照复现（BL_PRIOR_MODE=legacy）。
+PRIOR_MODE = os.environ.get("BL_PRIOR_MODE", "confirmed")   # confirmed|legacy
+PRIOR_RATIO = float(os.environ.get("BL_PRIOR_RATIO", "0.75"))
+PRIOR_TOP = int(os.environ.get("BL_PRIOR_TOP", "3"))
+PRIOR_MIN_EVALS = int(os.environ.get("BL_PRIOR_MIN_EVALS", "2"))
+PRIOR_MUTATE = float(os.environ.get("BL_PRIOR_MUTATE", "0.5"))
+DEEPEN_EVERY = int(os.environ.get("BL_DEEPEN_EVERY", "15"))
+DEEPEN_TOP = int(os.environ.get("BL_DEEPEN_TOP", "3"))
+DEEPEN_RUNS = int(os.environ.get("BL_DEEPEN_RUNS", "2"))
+
+
+def build_scoreboard(k: dict, min_evals: int = 0) -> list:
+    """历史按构筑聚合 → [(历次均值, (starter, learn元组))] 按均值降序。"""
+    counts: dict = {}
+    sums: dict = {}
+    for h in k.get("history", []):
+        key = (h["starter"], tuple(h["learn"]))
+        counts[key] = counts.get(key, 0) + 1
+        sums[key] = sums.get(key, 0.0) + h["score"]
+    return sorted(((sums[key] / c, key) for key, c in counts.items()
+                   if c >= min_evals), reverse=True)
+
+
+def elite_library(k: dict, top: int = None) -> list:
+    """确认精英库（DM协议§⑦）：≥PRIOR_MIN_EVALS 次独立评估，按历次均值降序前 top。"""
+    return build_scoreboard(k, PRIOR_MIN_EVALS)[: (PRIOR_TOP if top is None else top)]
+
+
+def propose(k: dict, rng: random.Random, region: str = None,
+            return_meta: bool = False) -> tuple:
+    """生成下一套待测 build。
+    region 给定时只从该副本实际可学的道纹中取（门禁修复后必需）。
+    2026-08-22：build 压缩为 BUILD_SIZE=3 有效位，学习顺序=UCB强度序。
+    2026-08-23 确认精英回注（confirmed，默认）：PRIOR_RATIO 概率从确认精英库
+    复制（70% 库首 / 30% 库内随机一员；50% 再作1点均匀变异），其余走 UCB
+    探索通道；库为空时退化为纯探索。
+    legacy：50% 在 best（单次最高分）基础上变异，50% 探索（仅 A/B 对照用）。
+    return_meta=True 时返回 (starter, learn, meta)：meta 记提案通道
+    （elite_copy/elite_mutate/explore/legacy_best）与父构筑——供第十八批
+    知识产量审计用；默认 False，原有调用方与返回值完全不变。"""
     total_n = sum(t["n"] for t in k["trials"].values()) or 1
     CAND = learnable_candidates(region)
-    best = k.get("best")
-    if best and rng.random() < 0.5:
-        learn = list(best["learn"])
-        starter = best["starter"]
-        # 变异：替换1~2个位置
-        for _ in range(rng.randint(1, 2)):
-            if learn:
-                i = rng.randrange(len(learn))
+    if PRIOR_MODE == "confirmed":
+        lib = elite_library(k)
+        if lib and rng.random() < PRIOR_RATIO:
+            if len(lib) > 1 and rng.random() < 0.3:
+                _, (starter, learn) = rng.choice(lib)
+            else:
+                _, (starter, learn) = lib[0]
+            parent = (starter, tuple(learn))
+            learn = list(learn)[:BUILD_SIZE]      # 旧精英5纹遗产截断为有效3纹
+            channel = "elite_copy"
+            if rng.random() < PRIOR_MUTATE and learn:
                 pool = [c for c in CAND if c not in learn and c != starter]
                 if pool:
-                    ranked = sorted(pool, key=lambda c: -ucb(k, c, total_n))
-                    learn[i] = rng.choice(ranked[:8])
-        if rng.random() < 0.25:
-            starter = rng.choice(STARTERS)
-        return starter, learn
+                    learn[rng.randrange(len(learn))] = rng.choice(pool)
+                    channel = "elite_mutate"
+            if return_meta:
+                return starter, learn, {"channel": channel, "parent": parent}
+            return starter, learn
+    else:
+        best = k.get("best")
+        if best and rng.random() < 0.5:
+            learn = list(best["learn"])[:BUILD_SIZE]  # 旧精英5纹遗产截断为有效3纹
+            starter = best["starter"]
+            # 变异：替换1~2个位置
+            for _ in range(rng.randint(1, 2)):
+                if learn:
+                    i = rng.randrange(len(learn))
+                    pool = [c for c in CAND if c not in learn and c != starter]
+                    if pool:
+                        ranked = sorted(pool, key=lambda c: -ucb(k, c, total_n))
+                        learn[i] = rng.choice(ranked[:8])
+            if rng.random() < 0.25:
+                starter = rng.choice(STARTERS)
+            if return_meta:
+                return starter, learn, {"channel": "legacy_best",
+                                        "parent": (best["starter"], tuple(best["learn"]))}
+            return starter, learn
 
     starter = rng.choice(STARTERS)
     pool = [c for c in CAND if c != starter]
     ranked = sorted(pool, key=lambda c: -ucb(k, c, total_n))
     head = ranked[:12]
     rng.shuffle(head)
-    return starter, head[:BUILD_SIZE]
+    picked = head[:BUILD_SIZE]
+    # 学习顺序=UCB强度序（杀伐类输出优先于生存/功能纹——2026-08-22 实验证明
+    # "再生优先"配对 38/86 显著更差：出手先要能杀，防/奶其次）。
+    picked.sort(key=lambda c: -ucb(k, c, total_n))
+    if return_meta:
+        return starter, picked, {"channel": "explore", "parent": None}
+    return starter, picked
 
 
 def update(k: dict, starter: str, learn: list, score: float) -> None:
@@ -744,6 +1529,22 @@ def update(k: dict, starter: str, learn: list, score: float) -> None:
     k["history"].append({"gen": k["generation"], "starter": starter,
                          "learn": list(learn), "score": round(score, 3)})
     k["total_games"] = k.get("total_games", 0) + k.get("_last_runs", 0)
+    # best_confirmed（2026-08-23 排名噪声治理）：fitness 单次=6局，方差大，
+    # 单次评估的"最高分"常是运气样本（实测 KB分4.83 复测场均仅1.50）。
+    # '已确认最优'只在同一构筑被累计评估≥2次后按其历次**均值**排序——
+    # 供汇报/决策使用；best 字段（单次最高分）保持原口径不动。
+    counts: dict = {}
+    sums: dict = {}
+    for h in k["history"]:
+        key = (h["starter"], tuple(h["learn"]))
+        counts[key] = counts.get(key, 0) + 1
+        sums[key] = sums.get(key, 0.0) + h["score"]
+    confirmed = [(sums[key] / c, key) for key, c in counts.items() if c >= 2]
+    if confirmed:
+        mean_score, key = max(confirmed)
+        k["best_confirmed"] = {"starter": key[0], "learn": list(key[1]),
+                               "score": round(mean_score, 3),
+                               "evals": counts[key]}
 
 
 # ============ 战术知识区（战报驱动） ============
@@ -846,10 +1647,69 @@ def report_telemetry(k: dict) -> None:
         tot = oc["win"] + oc["loss"]
         if tot:
             print(f"\n【对局结果】有效 {tot} 局｜通关 {oc['win']}｜阵亡 {oc['loss']}"
-                  f"｜总胜率 {oc['win']/tot*100:.1f}%｜平均通关 {oc['cleared_sum']/tot:.2f} 场")
+                  f"｜总胜率 {oc['win']/tot*100:.1f}%｜平均通关 {oc['cleared_sum']/tot:.2f} 场"
+                  f"（胜率口径：仅死斗胜利，DM2026-08-22）")
+    dz = t.get("duels")
+    if dz and (dz.get("fought") or dz.get("sealed_no_duel")):
+        fought, won = dz.get("fought", 0), dz.get("won", 0)
+        timeouts = dz.get("timeouts", 0)
+        # 超时=我方算力打不完（死斗AI预演成本随尸体库线性增长），不是"打不过"——
+        # 真实 PvP 胜率分母剔除超时场；但 won 口径不变（未完成死斗≠完整轮回）。
+        real = fought - timeouts
+        print(f"\n【最终死斗 PvP 经验】死斗 {fought} 场｜胜 {won}"
+              f"｜真实胜率 {won/real*100 if real else 0:.0f}%（剔除超时 {timeouts} 场）"
+              f"｜第7场封存(未达成完整轮回) {dz.get('sealed_no_duel', 0)} 次")
+        rows = sorted((b for b in dz.get("by_build", {}).items() if b[1]["fought"]),
+                      key=lambda kv: (-kv[1]["won"], -kv[1]["fought"]))[:6]
+        if rows:
+            print("  按build（死斗实战记录）：")
+            for key, rec in rows:
+                print(f"    {key}  死斗{rec['fought']}场 胜{rec['won']}")
     rr = t.get("region_runs")
     if rr:
         print("  副本分布：" + "、".join(f"{a}{b}局" for a, b in sorted(rr.items())))
+
+    av = t.get("alt_victory")
+    if av:
+        tot2 = sum(av.values()) or 1
+        parts = "、".join(f"{k2}×{v}({v/tot2*100:.0f}%)" for k2, v in
+                          sorted(av.items(), key=lambda kv: -kv[1]))
+        print(f"\n【清场路径构成】（胜利≠打死：凡庸=被动命零有碎片；雕塑/封印=离场无碎片）\n  {parts}")
+    pm = t.get("postmortem")
+    if pm and pm.get("deaths"):
+        d = pm["deaths"]
+        db = pm.get("death_battle", {})
+        top_die = sorted(db.items(), key=lambda kv: -kv[1])[:3]
+        top_killers = sorted(pm.get("killers", {}).items(), key=lambda kv: -kv[1])[:5]
+        print(f"\n【战败复盘】{d} 次阵亡解剖（从引擎事件流还原死因，非统计猜测）")
+        print("  阵亡场次分布：" + "、".join(f"第{k2}战×{v}" for k2, v in top_die))
+        print(f"  资源课：带药阵亡 {pm['带药阵亡']}（{pm['带药阵亡']/d*100:.0f}%）"
+              f"｜碎片≥15未花 {pm['碎片未花']}（{pm['碎片未花']/d*100:.0f}%）"
+              f"｜满蓝阵亡 {pm['满蓝阵亡']}（{pm['满蓝阵亡']/d*100:.0f}%）")
+        print("  杀手Top5：" + "、".join(f"{k2}×{v}" for k2, v in top_killers))
+
+    # 行为→胜率相关 + 策略反哺（2026-08-22 DM诉求）
+    bs = t.get("behavior_stats")
+    if bs and oc and (oc["win"] + oc["loss"]):
+        tot3 = oc["win"] + oc["loss"]
+        base = oc["cleared_sum"] / tot3
+        rows = []
+        for name, s in bs.items():
+            if not s.get("n"):
+                continue
+            avg = s["cleared_sum"] / s["n"]
+            rows.append((avg - base, name, s, avg))
+        rows.sort(reverse=True)
+        print(f"\n【行为胜率相关】基线均通关 {base:.2f} 场/局（提高胜率的行为已按此反哺策略权重）")
+        for delta, name, s, avg in rows[:8]:
+            print(f"  {name:<12} {s['n']:>5}局  胜率 {s['wins']/s['n']*100:>4.1f}%  "
+                  f"均通关 {avg:>5.2f}  增益{delta:+.2f}｜{BEHAVIOR_RULES.get(name, '')}")
+        if len(rows) > 8:
+            print("  …拖累最大2个：" + "、".join(
+                f"{name}{delta:+.2f}" for delta, name, s, avg in rows[-2:]))
+    pl = k.get("policy_learn")
+    if pl:
+        print(f"  策略反哺（权重乘数）：{pl['multipliers']}")
 
     err = t.get("engine_error", {})
     inv = t.get("invalid_reasons", {})
@@ -873,6 +1733,14 @@ def report(k: dict) -> None:
     if k.get("best"):
         b = k["best"]
         print(f"\n★ 目前最优：初始【{b['starter']}】+ {b['learn']}   适应度 {b['score']:.2f}/10")
+    bc = k.get("best_confirmed")
+    if bc:
+        print(f"★ 确认最优（≥2次评估均值）：初始【{bc['starter']}】+ {bc['learn']}   "
+              f"均分 {bc['score']:.2f}（{bc['evals']}次评估）")
+    if k.get("lessons"):
+        print("\n【心得与陷阱】（规则定义不入库，只记经验级结论；详见 README）")
+        for l in k["lessons"][-8:]:
+            print(f"  [{l['kind']}] {l['text']}（{l['date']}）")
 
     ranked = sorted(((t["sum"] / t["n"], n, t["n"])
                      for n, t in k["trials"].items() if t["n"] > 0), reverse=True)
@@ -926,17 +1794,44 @@ def main():
     tele = k.setdefault("telemetry", {})
     for g in range(a.generations):
         k["generation"] += 1
-        starter, learn = propose(k, rng)
+        # 按代轮换副本（2026-08-22 采样退化治理：不带 region 的 propose 会把候选池
+        # 过滤到固定11/62的常数子集——propose 与 fitness 必须同 region）。
+        region = REGIONS[k["generation"] % len(REGIONS)]
+        pol = learned_policy(k)   # 行为反哺闭环：提高胜率的行为改变后续采样
+        starter, learn = propose(k, rng, region)
         score, valid, invalid = fitness(starter, learn, a.runs, k["generation"],
                                         random_seeds=a.random_seeds, rng=rng,
-                                        telemetry=tele, spend_shards=a.spend)
+                                        telemetry=tele, spend_shards=a.spend,
+                                        region=region, policy=pol)
         k["total_games"] = k.get("total_games", 0) + valid
         k["invalid_games"] = k.get("invalid_games", 0) + invalid
         if valid:                      # 全部无效的代不计入学习，避免污染权重
             update(k, starter, learn, score)
+        # 深挖复评（2026-08-23 扩散实验落地）：每 DEEPEN_EVERY 代对当前头部候选
+        # （均值序，不限评估次数）追加 DEEPEN_RUNS 次评估——幻影在放大前先被
+        # 复评杀死，真精英更快达到确认；双种子稳健性来源（s4242 崩溃=缺此环节）。
+        if DEEPEN_EVERY and k["generation"] % DEEPEN_EVERY == 0:
+            deep = build_scoreboard(k)[:DEEPEN_TOP]
+            for _, (d_starter, d_learn) in deep:
+                for _ in range(DEEPEN_RUNS):
+                    ds, dv, di = fitness(d_starter, list(d_learn), a.runs,
+                                         k["generation"], random_seeds=a.random_seeds,
+                                         rng=rng, telemetry=tele,
+                                         spend_shards=a.spend, region=region,
+                                         policy=pol)
+                    k["total_games"] = k.get("total_games", 0) + dv
+                    k["invalid_games"] = k.get("invalid_games", 0) + di
+                    if dv:
+                        update(k, d_starter, list(d_learn), ds)
+            if deep:
+                print(f"  ↳ 深挖复评 {len(deep)} 构筑 ×{DEEPEN_RUNS} 次"
+                      f"（头名 {deep[0][1][0]}+{'/'.join(deep[0][1][1])} "
+                      f"均值{deep[0][0]:.2f}）", flush=True)
         star = " ★新最优" if k.get("best") and k["best"]["score"] == score else ""
         bad = f"  [无效{invalid}]" if invalid else ""
-        print(f"第{k['generation']:>3}代  【{starter}】{'+'.join(learn):<28} → {score:5.2f}{star}{bad}")
+        # flush=True：管道下 Python 块缓冲会吞掉进度（曾致"两小时零输出"假象）
+        print(f"第{k['generation']:>4}代｜{region}  【{starter}】{'+'.join(learn):<28} "
+              f"→ {score:5.2f}{star}{bad}", flush=True)
         save(k)
 
     print()

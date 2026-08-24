@@ -5,8 +5,8 @@
 （玩家免伤+怪物自残双收益）。铁卫天然吸火当第二层肉盾，杀伐补刀。
 """
 import json, os, sys, tempfile
-from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from tests.setup_support import finish_initial_daowen
 from engine.api import GameEngine
 from engine.models import DaoWen, DaoWenInstance
 from sim.build_learner import round_start_relic_choices

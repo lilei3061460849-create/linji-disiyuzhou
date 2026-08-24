@@ -1,0 +1,288 @@
+{
+  "candidates": {
+    "1": [
+      {
+        "player": {
+          "name": "贾凡",
+          "entity_type": "轮回者",
+          "blood_limit": 36,
+          "current_hp": 36,
+          "mana_limit": 56,
+          "current_mana": 0,
+          "speed_limit": 11,
+          "current_speed": 11,
+          "attack_count": 0,
+          "attack_power": 0,
+          "shield": 0,
+          "is_flying": false,
+          "is_alive": true,
+          "shards": 0,
+          "is_debt_bound": false,
+          "dao_wen": {
+            "封印": 0,
+            "杀伐": 0,
+            "自残": 0,
+            "寄生": 0,
+            "再生": 0,
+            "庇护": 0
+          },
+          "spells": [
+            {
+              "name": "先发制人",
+              "required_daowen": [
+                "杀伐"
+              ],
+              "trigger_condition": "",
+              "effect_flow": "",
+              "rank": 1,
+              "custom_conditions": []
+            },
+            {
+              "name": "生生不息",
+              "required_daowen": [
+                "再生"
+              ],
+              "trigger_condition": "",
+              "effect_flow": "",
+              "rank": 1,
+              "custom_conditions": []
+            },
+            {
+              "name": "后发制人",
+              "required_daowen": [
+                "庇护"
+              ],
+              "trigger_condition": "",
+              "effect_flow": "",
+              "rank": 1,
+              "custom_conditions": []
+            }
+          ],
+          "relics": [],
+          "status_effects": []
+        },
+        "friends": [],
+        "employees": [],
+        "relics": [
+          {
+            "name": "避风铃",
+            "effect": "每次闪避后获得3格挡；当前速度归零时获得15格挡",
+            "tags": []
+          },
+          {
+            "name": "同魂笔",
+            "effect": "对[目标]发动残韵时，可另选一[目标]使其一种道纹受同种残韵影响",
+            "tags": []
+          }
+        ],
+        "resonance": {
+          "反转": 0,
+          "曲解": 0
+        },
+        "shards": 44,
+        "death_book_wisdom": [],
+        "rest_heal_bonus": 0,
+        "death_book_legacies": [],
+        "attribute_points": 0,
+        "current_region": "罪孽都市",
+        "artifacts_owned": [],
+        "first_embrace_traits": [],
+        "pending_first_embrace": false,
+        "chizu_names": [],
+        "dragon_nature": 0,
+        "dragon_traits": [],
+        "has_sacrifice_action": false
+      }
+    ],
+    "2": [
+      {
+        "player": {
+          "name": "贾凡",
+          "entity_type": "轮回者",
+          "blood_limit": 31,
+          "current_hp": 1,
+          "mana_limit": 54,
+          "current_mana": 43,
+          "speed_limit": 9,
+          "current_speed": 9,
+          "attack_count": 0,
+          "attack_power": 0,
+          "shield": 0,
+          "is_flying": false,
+          "is_alive": true,
+          "shards": 0,
+          "is_debt_bound": false,
+          "dao_wen": {
+            "封印": 0,
+            "杀伐": 0,
+            "无神": 0,
+            "透支": 0,
+            "自残": 0,
+            "增殖": 0,
+            "滑翔": 0,
+            "固执": 0
+          },
+          "spells": [
+            {
+              "name": "先发制人",
+              "required_daowen": [
+                "杀伐"
+              ],
+              "trigger_condition": "",
+              "effect_flow": "",
+              "rank": 1,
+              "custom_conditions": []
+            },
+            {
+              "name": "生生不息",
+              "required_daowen": [
+                "再生"
+              ],
+              "trigger_condition": "",
+              "effect_flow": "",
+              "rank": 1,
+              "custom_conditions": []
+            },
+            {
+              "name": "后发制人",
+              "required_daowen": [
+                "庇护"
+              ],
+              "trigger_condition": "",
+              "effect_flow": "",
+              "rank": 1,
+              "custom_conditions": []
+            }
+          ],
+          "relics": [],
+          "status_effects": []
+        },
+        "friends": [],
+        "employees": [],
+        "relics": [
+          {
+            "name": "同魂笔",
+            "effect": "对[目标]发动残韵时，可另选一[目标]使其一种道纹受同种残韵影响",
+            "tags": []
+          },
+          {
+            "name": "三相残韵盘",
+            "effect": "[战始]消耗一种残韵；[战终]获得另两种残韵各1",
+            "tags": []
+          },
+          {
+            "name": "守夜灯",
+            "effect": "[敌回始]获得[法限]50%法力，[敌回终]清空，每回合一次",
+            "tags": []
+          }
+        ],
+        "resonance": {
+          "反转": 1,
+          "转换": 0,
+          "曲解": 0
+        },
+        "shards": 80,
+        "death_book_wisdom": [],
+        "rest_heal_bonus": 0,
+        "death_book_legacies": [],
+        "attribute_points": 0,
+        "current_region": "扭曲都市",
+        "artifacts_owned": [
+          "体外心脏"
+        ],
+        "first_embrace_traits": [],
+        "pending_first_embrace": false,
+        "chizu_names": [],
+        "dragon_nature": 0,
+        "dragon_traits": [],
+        "has_sacrifice_action": false
+      },
+      {
+        "player": {
+          "name": "贾凡",
+          "entity_type": "轮回者",
+          "blood_limit": 36,
+          "current_hp": 36,
+          "mana_limit": 76,
+          "current_mana": 64,
+          "speed_limit": 10,
+          "current_speed": 10,
+          "attack_count": 0,
+          "attack_power": 0,
+          "shield": 0,
+          "is_flying": false,
+          "is_alive": true,
+          "shards": 0,
+          "is_debt_bound": false,
+          "dao_wen": {
+            "庇护": 0,
+            "杀伐": 0,
+            "蒙蔽": 0,
+            "再生": 0
+          },
+          "spells": [
+            {
+              "name": "后发制人",
+              "required_daowen": [
+                "庇护"
+              ],
+              "trigger_condition": "",
+              "effect_flow": "",
+              "rank": 1,
+              "custom_conditions": []
+            },
+            {
+              "name": "先发制人",
+              "required_daowen": [
+                "杀伐"
+              ],
+              "trigger_condition": "",
+              "effect_flow": "",
+              "rank": 1,
+              "custom_conditions": []
+            },
+            {
+              "name": "生生不息",
+              "required_daowen": [
+                "再生"
+              ],
+              "trigger_condition": "",
+              "effect_flow": "",
+              "rank": 1,
+              "custom_conditions": []
+            }
+          ],
+          "relics": [],
+          "status_effects": []
+        },
+        "friends": [],
+        "employees": [],
+        "relics": [
+          {
+            "name": "守夜灯",
+            "effect": "[敌回始]获得[法限]50%法力，[敌回终]清空，每回合一次",
+            "tags": []
+          }
+        ],
+        "resonance": {
+          "反转": 0
+        },
+        "shards": 92,
+        "death_book_wisdom": [],
+        "rest_heal_bonus": 0,
+        "death_book_legacies": [],
+        "attribute_points": 0,
+        "current_region": "龙心谷",
+        "artifacts_owned": [
+          "共心环"
+        ],
+        "first_embrace_traits": [],
+        "pending_first_embrace": false,
+        "chizu_names": [],
+        "dragon_nature": 0,
+        "dragon_traits": [],
+        "has_sacrifice_action": false
+      }
+    ]
+  }
+}

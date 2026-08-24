@@ -15,8 +15,9 @@ pytest 风格测试 - 里程碑7：最终的冠冕 / 第8场最终死斗
 4. 二阶及以上副本未实现：胜者同样被完整封存(而非接入不存在的下一阶内容)，
    成为下一位挑战者的候选人，形成擂台循环。
 
-注：一旦第二位候选人到达触发死斗，引擎会立即消耗(删除)候选人文件——无论死斗最终结果如何，
-该文件都不会在死斗流程中段残留，因此本文件内的清理代码统一用 _cleanup() 做存在性检查再删除。
+注：第二位候选人到达触发死斗时，引擎先从队列取出擂主快照（候选文件可能暂时为空）；
+死斗结算后：胜者进入下一阶级封存槽；守擂成功（挑战者落败）的擂主按 README 550 放回队首
+重新封存（2026-08-22 修复：此前擂主被无声吞掉）。因此清理代码统一用 _cleanup() 做存在性检查再删除。
 
 运行方式：
     python -m pytest tests/test_final_duel.py -v
@@ -227,7 +228,14 @@ def test_defeat_triggers_reset_without_resealing():
     assert ruling["success"] is True
     assert ruling["death_book"]["legacy"] == legacy
     assert loser.state.player is None
-    assert not os.path.exists(path), "败者不应被封存，槽位保持空缺"
+    # 败者（挑战者）不应被封存；但擂主卫冕成功须按 README 550 回到队首重新封存——
+    # 此前的实现把擂主无声吞掉，封存队列越打越空（2026-08-22 修复）。
+    assert os.path.exists(path), "擂主卫冕成功后必须回到封存队列"
+    import json as _json
+    slots = _json.loads(Path(path).read_text(encoding="utf-8"))["candidates"]
+    heads = [q[0]["player"]["name"] for q in slots.values() if q]
+    assert "对手" in heads, f"卫冕擂主应回到队首（队首列表：{heads}）"
+    assert "失败者" not in [p["player"]["name"] for q in slots.values() for p in q]
     assert "最终死斗落败" in Path(book_path).read_text(encoding="utf-8")
     _cleanup(book_path)
 
