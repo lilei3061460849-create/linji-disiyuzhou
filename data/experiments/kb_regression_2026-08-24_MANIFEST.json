@@ -1,0 +1,40 @@
+{
+ "batch": "kb-regression-2026-08-24",
+ "title": "HP阈值裁定执行(第一阶段)+pre/post行为回归+最小恢复+冻结定案(第二~五阶段)",
+ "commits": [
+  "965ac1f(HP≤10%裁定)",
+  "bd71702(回归+恢复+冻结)"
+ ],
+ "parent_commit": "1108d9d",
+ "kb_generation": 490,
+ "kb_size": null,
+ "kb_lessons": 25,
+ "kb_best_confirmed": 3.141,
+ "experiment_files": [
+  "data/experiments/kb_regression_2026-08-24.json",
+  "audit/kb_regression_2026-08-24.md"
+ ],
+ "code_files": [
+  "engine/ai_preview.py",
+  "tests/test_ai_risk_eval.py",
+  "sim/kb_regression.py",
+  "AI_EXPERIENCE.md",
+  "ACTIVE_MINIMAL_DIFF.md"
+ ],
+ "test_count": "1199 passed, 5 skipped",
+ "test_status": "PASS",
+ "git_remote": "origin arena/01a028dc-linji-disiyuzhou",
+ "remote_commit": "bd71702（ls-remote 已验证==本地HEAD）",
+ "timestamp_utc": "2026-08-24 12:07:04",
+ "timestamp_local": "2026-08-24 20:07:04",
+ "metrics": {
+  "probes": 43,
+  "DEGRADED": 0,
+  "POLLUTED": 0,
+  "IMPROVED": 6,
+  "CLEANED": 3,
+  "LACUNA": 1,
+  "hp_ruling": "HP≤10% 文档/代码/测试统一（0.15→0.10+2边界测试）",
+  "baseline": "AI_EXPERIENCE 527行=525+最小恢复1+冻结策略1"
+ }
+}
