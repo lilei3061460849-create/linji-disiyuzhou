@@ -69,6 +69,35 @@ def test_risk_classify_critical_on_low_hp():
     assert level == "CRITICAL", f"expected CRITICAL got {level}: {reasons}"
 
 
+def test_risk_classify_critical_hp_at_10pct_boundary():
+    """CRITICAL 边界：HP 恰为血限 10%（生产规则 HP≤10%，DM 裁定 2026-08-24）且继续扣血。"""
+    e = _engine()
+    p = e.state.player
+    p.current_hp = 6
+    p.blood_limit = 60
+    diff = {"player": {"hp_after": 5, "hp_before": 6,
+                       "mana_after": p.current_mana, "speed_after": p.current_speed,
+                       "mutation_delta": 0, "mutation_after": 0},
+            "player_dead": False, "events": []}
+    level, reasons = ActionPreview.risk_classify(diff, p)
+    assert level == "CRITICAL", f"expected CRITICAL got {level}: {reasons}"
+
+
+def test_risk_classify_hp_above_10pct_not_critical():
+    """HP > 血限10%（7/60≈11.7%）即使继续小扣血也不得 CRITICAL——旧 15% 实现下此断言失败。"""
+    e = _engine()
+    p = e.state.player
+    p.current_hp = 7
+    p.blood_limit = 60
+    diff = {"player": {"hp_after": 6, "hp_before": 7,
+                       "mana_after": p.current_mana, "speed_after": p.current_speed,
+                       "mutation_delta": 0, "mutation_after": 0},
+            "player_dead": False, "events": []}
+    level, reasons = ActionPreview.risk_classify(diff, p)
+    assert level != "CRITICAL", f"HP 11.7% 不应 CRITICAL: {reasons}"
+    assert level in ("LOW", "MEDIUM"), f"expected LOW/MEDIUM got {level}: {reasons}"
+
+
 def test_risk_classify_high_on_big_mutation():
     """HIGH：异变大幅增加（≥10）。"""
     e = _engine()

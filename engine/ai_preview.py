@@ -274,8 +274,9 @@ class ActionPreview:
         # CRITICAL：HP 已极低且动作会进一步降低（不含治疗方向）
         hp = p.current_hp
         hp_delta = diff.get("player", {}).get("hp_after", hp) - hp
-        if hp <= p.blood_limit * 0.15 and hp_delta < 0:
-            reasons.append("HP 极低（%d/%d）且动作继续扣血" % (hp, p.blood_limit))
+        # CRITICAL：HP ≤ 血限10%（生产规则，DM 裁定 2026-08-24；文档=AI_EXPERIENCE.md 风险口径）且动作继续扣血（不含治疗方向）
+        if hp <= p.blood_limit * 0.10 and hp_delta < 0:
+            reasons.append("HP 极低（%d/%d，≤血限10%%）且动作继续扣血" % (hp, p.blood_limit))
             return "CRITICAL", reasons
 
         # HIGH：异变显著增加（+10 以上，无论当前等级）
