@@ -1,0 +1,587 @@
+{
+ "batch": 19,
+ "date": "2026-08-23",
+ "seed": 77001,
+ "part1_b7_death_attribution": {
+  "games": 1998,
+  "avg": 2.861,
+  "full_clear": 141,
+  "reached_b7": 330,
+  "b7_cond_death": 0.5727,
+  "reach_rate_b7": 0.1652,
+  "cond_death_by_battle": {
+   "1": 0.3243,
+   "2": 0.1578,
+   "3": 0.095,
+   "4": 0.0437,
+   "5": 0.2429,
+   "6": 0.557,
+   "7": 0.5727
+  },
+  "b7_deaths": 189,
+  "entry_hp_bands": {
+   "<0.1": 41,
+   "0.1-0.4": 26,
+   "0.4-0.6": 35,
+   ">=0.6": 87
+  },
+  "pareto_primary": {
+   "rng_suspect": 54,
+   "burst": 51,
+   "mana_exhaust": 40,
+   "sustained": 22,
+   "build_disadv": 20,
+   "other": 2
+  },
+  "high_entry_classes": {
+   "rng_suspect": 47,
+   "burst": 45,
+   "sustained": 22,
+   "mana_exhaust": 4,
+   "other": 2,
+   "build_disadv": 2
+  },
+  "flags": {
+   "unused_consumables": 153,
+   "mana_zero": 134,
+   "speed_disadv": 11
+  },
+  "killers_top": [
+   [
+    "毒枭",
+    14
+   ],
+   [
+    "缝合鱼",
+    14
+   ],
+   [
+    "爬行者",
+    14
+   ],
+   [
+    "灰甲骑士",
+    9
+   ],
+   [
+    "断角羊",
+    8
+   ],
+   [
+    "畸变行者",
+    8
+   ]
+  ],
+  "distinct_killers": 36,
+  "rounds_survived": {
+   "4": 70,
+   "1": 59,
+   "3": 41,
+   "2": 19
+  },
+  "enemy_wave_size": {
+   "4": 159,
+   "3": 20,
+   "1": 5,
+   "2": 5
+  },
+  "enemy_daowen_mean": 11.38,
+  "player_daowen_mean": 5.17
+ },
+ "part1b_death_source_probe": {
+  "b5plus_deaths": 218,
+  "by_battle": {
+   "6": 116,
+   "5": 61,
+   "7": 41
+  },
+  "death_subtype": {
+   "hp_zero": 215,
+   "mediocrity": 3
+  },
+  "mutation_at_death": {
+   "mean": 21.4,
+   "median": 20.0,
+   "max": 42,
+   "band40_45_share": 0.372
+  },
+  "unused_canxie": {
+   "n": 79,
+   "mut>=35_blocked": 32,
+   "entry>=40_gate_closed": 40,
+   "true_timing_suspect": 7
+  }
+ },
+ "part2_consumable_shadow": {
+  "A": {
+   "avg": 2.861,
+   "full_clear": 141,
+   "death_rate": 0.929,
+   "b7_death_rate": 0.0946,
+   "use_rate_games": 0.262,
+   "dead_with_items_share": 0.31
+  },
+  "C_hp60": {
+   "avg": 2.912,
+   "full_clear": 47,
+   "b7_death_rate": 0.085,
+   "use_rate_games": 0.313,
+   "dead_with_items_share": 0.246
+  },
+  "D_predict": {
+   "avg": 2.907,
+   "full_clear": 41,
+   "b7_death_rate": 0.0917,
+   "use_rate_games": 0.255,
+   "dead_with_items_share": 0.299
+  },
+  "items_per_game": {
+   "A": 0.568,
+   "C": 0.727,
+   "D": 0.523
+  },
+  "z_tests": {
+   "b7death_A_vs_C": 0.71,
+   "b7death_A_vs_D": 0.22,
+   "fc_A_vs_C": -0.64,
+   "fc_A_vs_D": 0.19,
+   "use_rate_A_vs_C": -2.48,
+   "dead_with_items_A_vs_C": 2.88
+  },
+  "note": "B(hp40)≡A(current)，机制等价（不占出手+回合首检+≤40%门），审计结论不重跑"
+ },
+ "part3_duel_lab": {
+  "ecoA_champions": [
+   [
+    "庇护",
+    "杀伐",
+    "蒙蔽"
+   ]
+  ],
+  "ecoB_champions": [
+   [
+    "再生",
+    "封印",
+    "庇护",
+    "杀伐",
+    "束缚",
+    "自残",
+    "迟滞"
+   ]
+  ],
+  "ecoA": {
+   "pool": {
+    "duels": 52,
+    "won": 5,
+    "wr": 0.096,
+    "lost_timeout": 0,
+    "lost_kill": 47
+   },
+   "rows": [
+    {
+     "build": [
+      "封印",
+      [
+       "杀伐",
+       "透支",
+       "固执"
+      ]
+     ],
+     "games": 400,
+     "duels": 2,
+     "won": 1,
+     "wr": 0.5,
+     "wilson": [
+      0.095,
+      0.905
+     ],
+     "lost_timeout": 0,
+     "lost_kill": 1,
+     "rounds_avg": 1.0,
+     "opp_hist": {
+      "贾凡（对手）": 2
+     }
+    },
+    {
+     "build": [
+      "封印",
+      [
+       "杀伐",
+       "再生",
+       "庇护"
+      ]
+     ],
+     "games": 205,
+     "duels": 25,
+     "won": 2,
+     "wr": 0.08,
+     "wilson": [
+      0.022,
+      0.25
+     ],
+     "lost_timeout": 0,
+     "lost_kill": 23,
+     "rounds_avg": 1.0,
+     "opp_hist": {
+      "贾凡（对手）": 25
+     }
+    },
+    {
+     "build": [
+      "封印",
+      [
+       "杀伐",
+       "再生",
+       "定型"
+      ]
+     ],
+     "games": 400,
+     "duels": 5,
+     "won": 0,
+     "wr": 0.0,
+     "wilson": [
+      0.0,
+      0.434
+     ],
+     "lost_timeout": 0,
+     "lost_kill": 5,
+     "rounds_avg": 1.0,
+     "opp_hist": {
+      "贾凡（对手）": 5
+     }
+    },
+    {
+     "build": [
+      "封印",
+      [
+       "杀伐",
+       "再生",
+       "增殖"
+      ]
+     ],
+     "games": 400,
+     "duels": 3,
+     "won": 0,
+     "wr": 0.0,
+     "wilson": [
+      0.0,
+      0.562
+     ],
+     "lost_timeout": 0,
+     "lost_kill": 3,
+     "rounds_avg": 1.0,
+     "opp_hist": {
+      "贾凡（对手）": 3
+     }
+    },
+    {
+     "build": [
+      "封印",
+      [
+       "杀伐",
+       "透支",
+       "超频"
+      ]
+     ],
+     "games": 399,
+     "duels": 3,
+     "won": 1,
+     "wr": 0.333,
+     "wilson": [
+      0.061,
+      0.792
+     ],
+     "lost_timeout": 0,
+     "lost_kill": 2,
+     "rounds_avg": 1.0,
+     "opp_hist": {
+      "贾凡（对手）": 3
+     }
+    },
+    {
+     "build": [
+      "封印",
+      [
+       "杀伐",
+       "贯穿",
+       "增殖"
+      ]
+     ],
+     "games": 399,
+     "duels": 4,
+     "won": 1,
+     "wr": 0.25,
+     "wilson": [
+      0.046,
+      0.699
+     ],
+     "lost_timeout": 0,
+     "lost_kill": 3,
+     "rounds_avg": 1.0,
+     "opp_hist": {
+      "贾凡（对手）": 4
+     }
+    },
+    {
+     "build": [
+      "封印",
+      [
+       "杀伐",
+       "再生",
+       "超频"
+      ]
+     ],
+     "games": 400,
+     "duels": 5,
+     "won": 0,
+     "wr": 0.0,
+     "wilson": [
+      0.0,
+      0.434
+     ],
+     "lost_timeout": 0,
+     "lost_kill": 5,
+     "rounds_avg": 1.0,
+     "opp_hist": {
+      "贾凡（对手）": 5
+     }
+    },
+    {
+     "build": [
+      "固执",
+      [
+       "杀伐",
+       "再生",
+       "定型"
+      ]
+     ],
+     "games": 400,
+     "duels": 5,
+     "won": 0,
+     "wr": 0.0,
+     "wilson": [
+      0.0,
+      0.434
+     ],
+     "lost_timeout": 0,
+     "lost_kill": 5,
+     "rounds_avg": 1.0,
+     "opp_hist": {
+      "贾凡（对手）": 5
+     }
+    }
+   ]
+  },
+  "ecoB": {
+   "pool": {
+    "duels": 79,
+    "won": 9,
+    "wr": 0.114,
+    "lost_timeout": 19,
+    "lost_kill": 51
+   },
+   "rows": [
+    {
+     "build": [
+      "封印",
+      [
+       "杀伐",
+       "透支",
+       "固执"
+      ]
+     ],
+     "games": 398,
+     "duels": 5,
+     "won": 2,
+     "wr": 0.4,
+     "wilson": [
+      0.118,
+      0.769
+     ],
+     "lost_timeout": 0,
+     "lost_kill": 3,
+     "rounds_avg": 1.0,
+     "opp_hist": {
+      "贾凡（对手）": 5
+     }
+    },
+    {
+     "build": [
+      "封印",
+      [
+       "杀伐",
+       "再生",
+       "定型"
+      ]
+     ],
+     "games": 398,
+     "duels": 8,
+     "won": 2,
+     "wr": 0.25,
+     "wilson": [
+      0.071,
+      0.591
+     ],
+     "lost_timeout": 1,
+     "lost_kill": 5,
+     "rounds_avg": 1.25,
+     "opp_hist": {
+      "贾凡（对手）": 8
+     }
+    },
+    {
+     "build": [
+      "封印",
+      [
+       "杀伐",
+       "再生",
+       "增殖"
+      ]
+     ],
+     "games": 397,
+     "duels": 6,
+     "won": 1,
+     "wr": 0.167,
+     "wilson": [
+      0.03,
+      0.564
+     ],
+     "lost_timeout": 1,
+     "lost_kill": 4,
+     "rounds_avg": 1.33,
+     "opp_hist": {
+      "贾凡（对手）": 6
+     }
+    },
+    {
+     "build": [
+      "封印",
+      [
+       "杀伐",
+       "再生",
+       "庇护"
+      ]
+     ],
+     "games": 205,
+     "duels": 34,
+     "won": 1,
+     "wr": 0.029,
+     "wilson": [
+      0.005,
+      0.149
+     ],
+     "lost_timeout": 14,
+     "lost_kill": 19,
+     "rounds_avg": 1.53,
+     "opp_hist": {
+      "贾凡（对手）": 34
+     }
+    },
+    {
+     "build": [
+      "封印",
+      [
+       "杀伐",
+       "再生",
+       "超频"
+      ]
+     ],
+     "games": 398,
+     "duels": 8,
+     "won": 2,
+     "wr": 0.25,
+     "wilson": [
+      0.071,
+      0.591
+     ],
+     "lost_timeout": 1,
+     "lost_kill": 5,
+     "rounds_avg": 1.25,
+     "opp_hist": {
+      "贾凡（对手）": 8
+     }
+    },
+    {
+     "build": [
+      "封印",
+      [
+       "杀伐",
+       "透支",
+       "超频"
+      ]
+     ],
+     "games": 397,
+     "duels": 7,
+     "won": 1,
+     "wr": 0.143,
+     "wilson": [
+      0.026,
+      0.513
+     ],
+     "lost_timeout": 0,
+     "lost_kill": 6,
+     "rounds_avg": 1.0,
+     "opp_hist": {
+      "贾凡（对手）": 7
+     }
+    },
+    {
+     "build": [
+      "固执",
+      [
+       "杀伐",
+       "再生",
+       "定型"
+      ]
+     ],
+     "games": 398,
+     "duels": 7,
+     "won": 0,
+     "wr": 0.0,
+     "wilson": [
+      0.0,
+      0.354
+     ],
+     "lost_timeout": 2,
+     "lost_kill": 5,
+     "rounds_avg": 1.86,
+     "opp_hist": {
+      "贾凡（对手）": 7
+     }
+    },
+    {
+     "build": [
+      "封印",
+      [
+       "杀伐",
+       "贯穿",
+       "增殖"
+      ]
+     ],
+     "games": 397,
+     "duels": 4,
+     "won": 0,
+     "wr": 0.0,
+     "wilson": [
+      0.0,
+      0.49
+     ],
+     "lost_timeout": 0,
+     "lost_kill": 4,
+     "rounds_avg": 1.0,
+     "opp_hist": {
+      "贾凡（对手）": 4
+     }
+    }
+   ]
+  },
+  "duel_rounds_note": "avg回合1.0-1.9+超时=卫冕；挑战者恒为先手",
+  "promote_gate": "Wilson下界≥0.35",
+  "promoted": [],
+  "pve1_duel": {
+   "ecoA": "2/25",
+   "ecoB": "1/34",
+   "total_wr": 0.051
+  }
+ }
+}

@@ -130,6 +130,11 @@ class TacticalAI:
         self.preview_rejected: list[str] = []   # 被安全过滤淘汰的候选（供测试/报告）
         self._sacrifice_actions: set = set()    # 项目明确允许的主动牺牲策略（默认空）
         self._last_risk: tuple = ("SAFE", [])   # 最近一次 _cast 的风险等级（供策略层参考）
+        # 第十九批实验钩子（默认 None = 现行≤40%血线门，行为完全不变）：
+        # consumable_gate: callable(ai)->bool，接管 try_consumable 的血线门（预演
+        # 风险过滤器始终保留）；_hp_trace: 每回合开始时 HP，供"预测致死"门差分。
+        self.consumable_gate = None
+        self._hp_trace: list = []
 
     @property
     def previewer(self):
@@ -479,15 +484,58 @@ class TacticalAI:
                     return r
         return None
 
-    def try_remove(self) -> Optional[dict]:
-        """4. 移除：封印等直接把怪物移出战斗（注意不产碎片）。"""
-        enemies = self.alive_enemies()
-        if len(enemies) < 2:
+    SEAL_MUTATION_BUDGET = 34   # 崩解阈50（命零）；凡庸残骸再+10异变，留16余量
+
+    def _mark_wave(self, threat) -> Optional[dict]:
+        """波及标记指定威胁（_cast 的波及分支只会标敌人列表首个，手术移除需要指定）。"""
+        refs = self.engine.combat._combat_entity_refs()
+        ref = next((r for r, ent in refs.items() if ent is threat), None)
+        if ref is None:
             return None
-        for name in self.owned("remove"):
+        p = {"daowen_name": "波及", "x": 1, "dodge": False, "blood_shadow": False,
+             "dodge_targets": [{"target_ref": ref, "dodge": False, "blood_shadow": False}],
+             "target_ref": ref, "target": threat.name}
+        r = self.engine.execute_action("use_daowen", p)
+        return r if r.get("success") else None
+
+    def try_remove(self) -> Optional[dict]:
+        """4. 移除：封印直接把怪物移出战斗（不产碎片，代价=异变8X）。
+
+        2026-08-22 手术化升级（同 build「庇护+封印+波及+再生」同种子配对 A/B 80局：
+        旧乱封 1.51通关/53.8%第1战死 → 手术封 3.95/15.2%；逃脱演练同步清零）：
+        - 异变预算守门：mutation 超阈值不再封（崩解50层=命零，凡庸残骸还+10）；
+        - 致命单怪也封（旧逻辑≥2敌才放——对致命单怪白挨打）；
+        - 持波及且威胁致命时先标记头号威胁再封（无标记时封印按敌人列表顺序
+          移除，target 参数对移除顺位无效，combat.py:3065 起）。
+        """
+        p = self.player
+        if p is None:
+            return None
+        held_removals = self.owned("remove")
+        if not held_removals:
+            return None
+        enemies = [en for en in self.alive_enemies() if en.entity_type == "怪物"]
+        if not enemies:
+            return None
+        budget_blown = p.mutation_count > self.SEAL_MUTATION_BUDGET
+        threat = max(enemies, key=monster_threat)
+        lethal = (self.incoming_damage() > p.current_hp * 0.6
+                  or threat.attack_power * max(1, threat.attack_count) >= p.blood_limit * 0.5)
+        for name in held_removals:
+            if budget_blown:
+                continue
+            if len(enemies) < 2 and not lethal:
+                continue              # 单怪不致命不值得烧异变
+            if (name == "封印" and lethal and "波及" in (p.dao_wen or {})
+                    and self.mana() >= 3
+                    and not any(s.name == "波及" and s.source == p.name and not s.is_expired
+                                for s in threat.status_effects)):
+                marked = self._mark_wave(threat)
+                if marked:
+                    return marked
             x = self._x_for(name, self.mana())
             if x >= 1:
-                r = self._cast(name, 1, enemies[0].name)
+                r = self._cast(name, 1, threat.name if lethal else enemies[0].name)
                 if r:
                     return r
         return None
@@ -643,7 +691,13 @@ class TacticalAI:
         CRITICAL 等级的消耗品被拒绝。不检查消耗品具体名称，全靠 diff 数值说话。
         """
         p = self.player
-        if p.current_hp > p.blood_limit * 0.4:
+        if self.consumable_gate is not None:
+            try:
+                if not self.consumable_gate(self):
+                    return None
+            except Exception:
+                return None   # 实验门异常时按不使用处理，绝不把局搞炸
+        elif p.current_hp > p.blood_limit * 0.4:
             return None
         for item in list(self.engine.state.consumables):
             if getattr(item, "current_uses", 0) <= 0:
@@ -662,6 +716,7 @@ class TacticalAI:
             # 正式执行
             r = self.engine.execute_action("consume_item", {"name": item.name})
             if r.get("success"):
+                self.used[f"消耗品·{item.name}"] = self.used.get(f"消耗品·{item.name}", 0) + 1
                 return r
         return None
 
@@ -704,6 +759,9 @@ class TacticalAI:
     def new_round(self) -> None:
         """[回始]调用：清空"本回合已控制"记账。"""
         self._controlled_this_round.clear()
+        p = self.player
+        if p is not None:
+            self._hp_trace.append(p.current_hp)
 
     def take_turn(self) -> list[dict]:
         """执行本回合全部出手（出手次数 = [速限]/3，向上取整）。"""

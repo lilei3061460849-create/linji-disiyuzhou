@@ -60,6 +60,8 @@ def handle_resolve_final_duel(engine: Any, params: Dict[str, Any]) -> Dict[str, 
     legacy = params.get("death_book_entry")
 
     if outcome == "victory":
+        # 挑战者胜利：擂主（死斗败方）失去轮回者身份，不再回到封存队列。
+        engine.state.duel_defending_snapshot = {}
         engine.state.in_final_duel = False
         region = engine.state.current_region
         options = engine.TERMINAL_ARTIFACTS.get(region, [])
@@ -79,6 +81,17 @@ def handle_resolve_final_duel(engine: Any, params: Dict[str, Any]) -> Dict[str, 
                                f"（胜者进入{next_tier}阶进阶封存，不再与原阶级角色死斗）",
             }}
     else:
+        # 擂主卫冕成功：挑战者落败不影响擂主封存。按 README 550（封存"直到下一名
+        # 同阶级轮回者完成第7场战斗"+队列先来后到语义）把原始快照放回队首——
+        # 此前擂主在挑战者落败时被无声吞掉，封存队列越打越空、死斗不可持续。
+        snap = getattr(engine.state, "duel_defending_snapshot", None) or {}
+        if isinstance(snap, dict) and snap.get("player"):
+            tier = engine.state.duel_tier or 1
+            slots = engine._load_seal_slots()
+            slots.setdefault(tier, [])
+            slots[tier].insert(0, snap)
+            engine._save_seal_slots(slots)
+        engine.state.duel_defending_snapshot = {}
         player = engine.state.player
         if player is not None:
             # 死斗败者：这是**战斗已经结束后**的结算落幕，不是战斗内命零，

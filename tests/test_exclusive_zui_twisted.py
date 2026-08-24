@@ -106,13 +106,14 @@ def test_normal_bizhai_drains_shards_each_round_start():
     assert m.shards == 7, "回始应扣3碎片"
 
 
-def test_boundary_bizhai_blood_limit_fallback():
+def test_boundary_bizhai_shortfall_becomes_debt():
+    """DM裁定D 2026-08-22：无力支付部分记为负债（旧"否则失去2X血限"废止）。"""
     engine = _setup(); _grant(engine, ["逼债"])
     m = _add_monster(engine, shards=2)  # 碎片 < X=3
     engine.execute_action("use_daowen", {"daowen_name": "逼债", "x": 3, "target": m.name})
     engine.combat.round_start()
-    assert m.shards == 2, "二选一：碎片不足则不动碎片"
-    assert m.blood_limit == 100 - 6, f"应失2X=6血限，实{m.blood_limit}"
+    assert m.shards == -1, f"余额2抵3，差额1应计负债（shards=-1），实{m.shards}"
+    assert m.blood_limit == 100, "裁定D后逼债不再触碰血限"
 
 
 def test_monster_bizhai_on_player():

@@ -68,6 +68,13 @@ class CombatEngine:
         self._resonance_rewrites: dict[int, dict[str, str]] = {}
         # 效果链深度保险丝（见 MAX_EFFECT_CHAIN_DEPTH）。
         self._effect_chain_depth = 0
+        # 怪物战斗记述的实例化（2026-08-23）：这三个集合原本是类属性，
+        # 仅靠 reset_monster_activation 在战始降级为实例属性——绕过战始的引擎
+        # （测试夹具/模拟器直驱）会把 add() 写进跨实例共享的类集合，且 id()
+        # 复用会让后建的怪物“被已进化”，发生跨用例/跨局串扰。
+        self._monster_activated: dict = {}
+        self._monster_evolved: set = set()
+        self._monster_daowen_round_used: dict = {}
 
     # 效果链深度上限。这是**防御性保险丝**，不是游戏规则：
     # 任何合法的 嫁祸/背负 重定向链都远低于此值（重定向每跳都会递减 _jiahuo_left/_beifu_left，
@@ -1507,7 +1514,10 @@ class CombatEngine:
             effects.extend(self._dispatch_phase(Phase.ROUND_START, target=entity))
 
         # ---- F2：罪孽专属道纹 [回始] 结算（逼债/清算/赌命） ----
-        # 逼债X：目标失去X碎片，否则失去2X血限（二选一；与 sim/balance_sim exclusive_round_start 同口径）
+        # 逼债X：目标失去X碎片，无力支付的部分记为负债（碎片扣负，DM裁定D 2026-08-22，
+        # 旧"否则失去2X血限"废止）。负债≥20触发【还债】（仅怪物，见 settle_victory_paths）；
+        # 玩家被挂逼债无力支付时同样计负债——玩家负债不触发还债，但冻结一切
+        # 碎片支出（假碎片仍可花，见 _shards_of 口径）。
         for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
             for entry in list(getattr(entity, "_bizhai", [])):
                 x = entry["x"]
@@ -1515,18 +1525,19 @@ class CombatEngine:
                     self._lose_shards_of(entity, x)
                     effects.append({"type": "bizhai", "entity": entity.name, "lost_shards": x})
                 else:
-                    delta = max(1, entity.blood_limit - 2 * x) - entity.blood_limit
-                    self._apply_blood_limit_change(
-                        entity, delta, "逼债", EffectPolarity.DEBUFF.value,
-                        source_type="daowen", subtype="debt_penalty",
-                        actor=entry.get("caster"),
-                        ctx={"timing": "round_start", "source": "逼债", "source_type": "daowen",
-                             "actor": entry.get("caster"), "target": entity,
-                             "mechanic": "blood_limit_change", "subtype": "debt_penalty",
-                             "amount": delta, "tags": {"daowen", "round_start"}},
-                        tags={"daowen", "round_start", "blood_limit_loss"})
-                    effects.append({"type": "bizhai_blood", "entity": entity.name,
-                                    "lost_blood_limit": 2 * x, "blood_limit": entity.blood_limit})
+                    if entity is self.state.player:
+                        use_fake = min(self.state.fake_shards, x)
+                        self.state.fake_shards -= use_fake
+                        self.state.shards -= (x - use_fake)
+                        now = self.state.shards
+                    else:
+                        use_fake = min(entity.fake_shards, x)
+                        entity.fake_shards -= use_fake
+                        entity.shards -= (x - use_fake)
+                        now = entity.shards
+                    effects.append({"type": "bizhai_debt", "entity": entity.name,
+                                    "obligation": x, "shards_now": now,
+                                    "debt_now": max(0, -now)})
         # 清算X：目标失去[你碎片]点格挡（你=施法者当前碎片，每回始读取）
         for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
             for entry in list(getattr(entity, "_qingsuan", [])):
@@ -1966,7 +1977,7 @@ class CombatEngine:
 
     PROLIFERATION_THRESHOLD = 2.0  # 癌变：README「累计恢复量达血限×2」；过量回复按原值计（双倍机制已删，DM裁定2026-08-18）
     CANCER_THRESHOLD = PROLIFERATION_THRESHOLD  # 别名：增生旧名已统一为癌变，二者同阈值
-    DEBT_THRESHOLD = 10           # 还债：怪物负债达到10碎片时触发（已裁定固定值）
+    DEBT_THRESHOLD = 20           # 还债：怪物负债达到20碎片时触发（DM裁定2026-08-22 由10上调）
     SCULPTURE_DAMAGE = 15         # 雕塑：每点耐久可造成的伤害
     SCULPTURE_SHIELD = 20         # 雕塑：每点耐久可获得的格挡
 
@@ -2779,13 +2790,8 @@ class CombatEngine:
                         actor=caster, owner=caster, clamp_hp=False, lethal=False)["applied"]
                     result["effects"].append({"type": "blood_limit_increase", "target": target.name,
                                               "increase": increase})
-        if "blood_limit_penalty" in calc and target.shards < (calc.get("shard_drain", 0) or 0):
-            # 逼债：碎片不足则失血限；不是代价，按局内减益登记。
-            lost = -self._apply_blood_limit_change(
-                target, -calc["blood_limit_penalty"], name, EffectPolarity.DEBUFF.value,
-                ctx=daowen_ctx, source_type="daowen", subtype="debt_penalty",
-                actor=caster, owner=caster)["applied"]
-            result["effects"].append({"type": "bizhai_blood", "target": target.name, "lost": lost})
+        # 【逼债】旧"碎片不足则失血限"路径已按 DM裁定D（2026-08-22）废止并移除：
+        # 无力支付统一记为负债（见 round_start 的 F2 结算），唯一血限语义不再存在。
 
         # ---- 攻击面板修改 ----
         _panel_keys = ("attack_boost", "attack_reduction", "attack_fixed", "attack_count_fixed")
@@ -3956,21 +3962,27 @@ class CombatEngine:
                         effective_name, inst.x_value, target=preview_target, caster=monster)
                     if not self._monster_can_pay_calc_cost(monster, preview_calc):
                         continue
-                    # 波及X：必须显式提交X个互不重复的合法目标。当前合法目标数不足X时
-                    # 本道纹无法合法发动——prepare直接过滤，引擎不得给出永远无法
-                    # 结算的选项（2026-08-22 BUG-01：solo场上【波及3】仅1个合法目标，
-                    # 任何提交都被拒，配合BUG-02使战斗永久卡死在怪物阶段）。
+                    # 波及X：必须显式提交X个互不重复的合法目标。DM裁定2026-08-23：
+                    # 面板X超过当前合法目标数时按目标数**自适应降X**（有效X=
+                    # min(面板X, 合法目标数)），与玩家侧 _max_legal_daowen_x 的
+                    # 目标数封顶口径一致——永不因目标不足而不可结算/死锁；仅当
+                    # 合法目标数为0时本道纹才真正无法发动，prepare才过滤。
+                    # （取代2026-08-22 BUG-01的"不足X即过滤"方案：过滤让面板波及
+                    # 怪在solo场上1/111场才开得出火，属于非符合预期效果。）
                     dodge_target_options: list[dict] = []
+                    wave_effective_x = 0
                     if effective_name == "波及":
                         dodge_target_options = [target for target in all_targets
                                                 if target["ref"] != actor_ref
                                                 and self.is_targetable(monster, refs[target["ref"]])]
-                        if len(dodge_target_options) < inst.x_value:
+                        if not dodge_target_options:
                             continue
+                        wave_effective_x = min(inst.x_value, len(dodge_target_options))
                     daowen_options.append({
                         "name": name,
                         "resolves_as": effective_name,
                         "x": inst.x_value,
+                        "wave_effective_x": wave_effective_x,
                         "requires_target": requires_target,
                         "target_options": legal_targets,
                         "dodge_submission": ("per_target" if effective_name == "波及"
@@ -4074,7 +4086,10 @@ class CombatEngine:
         if effective_name == "波及":
             # 波及X：选择X个[目标]建立/解除波及效果（持续∞）。每个目标显式提交闪避。
             submitted_dodges = choice.get("dodge_targets")
-            mark_count = int(calc.get("mark_targets", inst.x_value))
+            # DM裁定2026-08-23自适应降X：以prepare快照的wave_effective_x为准
+            # （min(面板X, 合法目标数)），驱动与校验始终同一口径。
+            mark_count = int(prepared_option.get("wave_effective_x")
+                             or calc.get("mark_targets", inst.x_value))
             if not isinstance(submitted_dodges, list) or len(submitted_dodges) != mark_count:
                 raise ValueError(f"道纹【波及】必须为{mark_count}个目标显式提交dodge_targets")
             expected_ref_list = [
@@ -4178,10 +4193,13 @@ class CombatEngine:
             fake_cost, real_cost = 50 * inst.x_value, 5 * inst.x_value
             if monster.fake_shards >= fake_cost:
                 monster.fake_shards -= fake_cost
-            elif monster.shards >= real_cost:
-                monster.shards -= real_cost
             else:
-                raise ValueError(f"{monster.name}碎片不足，不能发动【消灾】")
+                # DM裁定2026-08-22（方案A）：怪物的真碎片类代价允许**透支成负债**——
+                # 余额不足不再拒绝发动，而是把 shards 扣成负数。负债是【还债】路径的
+                # 唯一产生入口；此前余额门禁让怪物碎片守恒≥0，还债在20万+局中零触发
+                # （_shards_of 早已设计"负债不抵消假碎片"语义，缺的就是产生入口）。
+                # 仅怪物适用：玩家/朋友/员工/api 侧维持余额不足拒绝发动。
+                monster.shards -= real_cost
 
         if not rewritten_as:
             activated.add(name)
@@ -4284,7 +4302,8 @@ class CombatEngine:
         blood_shadow = choice.get("blood_shadow", False)
         if effective_name == "波及":
             submitted_dodges = choice.get("dodge_targets")
-            mark_count = inst.x_value
+            # DM裁定2026-08-23自适应降X：与执行阶段同一口径（prepare快照）。
+            mark_count = int(prepared_option.get("wave_effective_x") or inst.x_value)
             if not isinstance(submitted_dodges, list) or len(submitted_dodges) != mark_count:
                 raise ValueError(f"道纹【波及】必须为{mark_count}个目标显式提交dodge_targets")
             expected_refs = {
@@ -4576,9 +4595,19 @@ class CombatEngine:
                         target, monster, hit.get("spell_choices"), refs,
                     )
                     attack_target = monster if monster.has_status("无神") else target
+                    # 无神重定向（README 479：目标强制选自身）：受击方已变为怪物自身，
+                    # 但 hit["spell_choices"] 描述的是名义目标（玩家侧）的反应法术——
+                    # resolve_attack 会按受击方资格集校验（见 1294 行），键集错配
+                    # 必然报"必须逐一覆盖[]"，且此矛盾无法由提交方调和（同一字典需
+                    # 同时匹配玩家与怪物的资格集）——引擎契约缺陷，曾占平衡模拟
+                    # 无效局 46+/8000（2026-08-22 定位修复）。
+                    # 重定向时受击反应按空提交校验（怪物无 spells，资格集恒空）；
+                    # 若将来怪物可持反应法术，应新增 hit["self_spell_choices"] 契约字段。
+                    reaction_choices = (hit.get("spell_choices")
+                                        if attack_target is target else {"before": {}, "after": {}})
                     resolved = self.resolve_attack(
                         monster, attack_target, dodge=hit["dodge"], blood_shadow=hit["blood_shadow"],
-                        spell_choices=hit.get("spell_choices"), entity_refs=refs,
+                        spell_choices=reaction_choices, entity_refs=refs,
                         dodge_relic_target_ref=hit.get("dodge_relic_target_ref"),
                         cost_share_target_ref=hit.get("cost_share_target_ref", ""),
                     )

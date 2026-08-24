@@ -1,0 +1,4241 @@
+{
+ "run": {
+  "games": 500,
+  "invalid": 0
+ },
+ "builds": [
+  [
+   "封印",
+   [
+    "杀伐",
+    "再生",
+    "庇护"
+   ],
+   3.141
+  ],
+  [
+   "封印",
+   [
+    "杀伐",
+    "再生",
+    "定型"
+   ],
+   3.0
+  ]
+ ],
+ "deaths": [
+  {
+   "battle": 6,
+   "primary": "other",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "坠落",
+    "封印",
+    "愤怒",
+    "杀伐",
+    "洞察"
+   ],
+   "unused_items": [],
+   "final_mana": 44,
+   "mutation": 42,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "sustained",
+   "entry_hp": 0.889,
+   "killer": null,
+   "player_daowen": [
+    "封印",
+    "无神",
+    "杀伐",
+    "蒙蔽",
+    "迟滞"
+   ],
+   "unused_items": [
+    "残骸",
+    "残骸"
+   ],
+   "final_mana": 38,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "burst",
+   "entry_hp": 0.556,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "固执",
+    "庇护",
+    "杀伐",
+    "衰败"
+   ],
+   "unused_items": [
+    "高爆手雷"
+   ],
+   "final_mana": 46,
+   "mutation": 0,
+   "death_subtype": "mediocrity",
+   "death_source": "凡庸"
+  },
+  {
+   "battle": 5,
+   "primary": "burst",
+   "entry_hp": 0.944,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印"
+   ],
+   "unused_items": [
+    "残骸"
+   ],
+   "final_mana": 36,
+   "mutation": 24,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "sustained",
+   "entry_hp": 0.583,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "庇护",
+    "弱化",
+    "杀伐",
+    "血债"
+   ],
+   "unused_items": [
+    "高爆手雷",
+    "残骸"
+   ],
+   "final_mana": 54,
+   "mutation": 10,
+   "death_subtype": "hp_zero",
+   "death_source": "衰败"
+  },
+  {
+   "battle": 6,
+   "primary": "rng_suspect",
+   "entry_hp": 1.0,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "杀伐",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "残骸",
+    "高压水枪",
+    "残骸"
+   ],
+   "final_mana": 44,
+   "mutation": 32,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 7,
+   "primary": "build_disadv",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "增殖",
+    "封印",
+    "愤怒",
+    "无神",
+    "杀伐"
+   ],
+   "unused_items": [
+    "残骸"
+   ],
+   "final_mana": 48,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 7,
+   "primary": "build_disadv",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "增殖",
+    "杀伐",
+    "滋养",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "残骸"
+   ],
+   "final_mana": 68,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "愤怒",
+    "杀伐",
+    "眩晕",
+    "蒙蔽",
+    "贯穿"
+   ],
+   "unused_items": [],
+   "final_mana": 56,
+   "mutation": 20,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "burst",
+   "entry_hp": 0.778,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "庇护",
+    "无神",
+    "杀伐",
+    "自残"
+   ],
+   "unused_items": [
+    "残骸",
+    "残骸"
+   ],
+   "final_mana": 32,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "伤痕"
+  },
+  {
+   "battle": 7,
+   "primary": "sustained",
+   "entry_hp": 1.0,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "杀伐",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "残骸",
+    "残骸",
+    "残骸"
+   ],
+   "final_mana": 60,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "build_disadv",
+   "entry_hp": 0.25,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "弱化",
+    "杀伐"
+   ],
+   "unused_items": [
+    "反怪物电击枪"
+   ],
+   "final_mana": 38,
+   "mutation": 32,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "rng_suspect",
+   "entry_hp": 0.056,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "波及",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "残骸"
+   ],
+   "final_mana": 56,
+   "mutation": 10,
+   "death_subtype": "hp_zero",
+   "death_source": "伤痕"
+  },
+  {
+   "battle": 6,
+   "primary": "burst",
+   "entry_hp": 1.0,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "杀伐",
+    "眩晕",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "残骸",
+    "残骸"
+   ],
+   "final_mana": 40,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 7,
+   "primary": "sustained",
+   "entry_hp": 0.917,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "加速",
+    "坠落",
+    "封印",
+    "庇护",
+    "弱化",
+    "杀伐",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "残骸"
+   ],
+   "final_mana": 46,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "rng_suspect",
+   "entry_hp": 0.444,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "增殖",
+    "庇护",
+    "杀伐",
+    "洞察",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "残骸",
+    "残骸",
+    "残骸",
+    "残骸",
+    "残骸",
+    "残骸",
+    "流血龙心",
+    "残骸",
+    "残骸"
+   ],
+   "final_mana": 46,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "伤痕"
+  },
+  {
+   "battle": 6,
+   "primary": "sustained",
+   "entry_hp": 0.556,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "庇护",
+    "弱化",
+    "杀伐"
+   ],
+   "unused_items": [
+    "残骸"
+   ],
+   "final_mana": 52,
+   "mutation": 10,
+   "death_subtype": "hp_zero",
+   "death_source": "杀伐"
+  },
+  {
+   "battle": 6,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "无力",
+    "杀伐"
+   ],
+   "unused_items": [],
+   "final_mana": 46,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 7,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "增殖",
+    "杀伐",
+    "自残",
+    "自食",
+    "蒙蔽"
+   ],
+   "unused_items": [],
+   "final_mana": 72,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 7,
+   "primary": "rng_suspect",
+   "entry_hp": 1.0,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "杀伐",
+    "滑翔",
+    "衰败"
+   ],
+   "unused_items": [
+    "残骸",
+    "残骸"
+   ],
+   "final_mana": 48,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.194,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "波及",
+    "自残",
+    "蒙蔽"
+   ],
+   "unused_items": [],
+   "final_mana": 58,
+   "mutation": 30,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "sustained",
+   "entry_hp": 1.0,
+   "killer": null,
+   "player_daowen": [
+    "兴奋",
+    "再生",
+    "无神",
+    "杀伐",
+    "自残"
+   ],
+   "unused_items": [],
+   "final_mana": 52,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "build_disadv",
+   "entry_hp": 0.389,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "坠落",
+    "封印",
+    "愤怒",
+    "杀伐"
+   ],
+   "unused_items": [
+    "异变龙心"
+   ],
+   "final_mana": 40,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 7,
+   "primary": "rng_suspect",
+   "entry_hp": 1.0,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "庇护",
+    "杀伐",
+    "束缚",
+    "滋养",
+    "自食",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "残骸",
+    "残骸",
+    "残骸"
+   ],
+   "final_mana": 56,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "burst",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "蒙蔽",
+    "透支"
+   ],
+   "unused_items": [
+    "高爆手雷"
+   ],
+   "final_mana": 60,
+   "mutation": 30,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "sustained",
+   "entry_hp": 0.389,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "庇护",
+    "愤怒",
+    "杀伐",
+    "自残",
+    "衰败",
+    "透支"
+   ],
+   "unused_items": [],
+   "final_mana": 42,
+   "mutation": 10,
+   "death_subtype": "hp_zero",
+   "death_source": "衰败"
+  },
+  {
+   "battle": 6,
+   "primary": "rng_suspect",
+   "entry_hp": 0.917,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "固执",
+    "杀伐",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "残骸",
+    "残骸",
+    "残骸",
+    "残骸"
+   ],
+   "final_mana": 58,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "伤痕"
+  },
+  {
+   "battle": 6,
+   "primary": "build_disadv",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "束缚",
+    "蒙蔽"
+   ],
+   "unused_items": [],
+   "final_mana": 64,
+   "mutation": 10,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "burst",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "弱化",
+    "杀伐"
+   ],
+   "unused_items": [],
+   "final_mana": 48,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "build_disadv",
+   "entry_hp": 0.25,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "弱化",
+    "无神",
+    "杀伐"
+   ],
+   "unused_items": [],
+   "final_mana": 52,
+   "mutation": 34,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 7,
+   "primary": "rng_suspect",
+   "entry_hp": 1.0,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "庇护",
+    "杀伐",
+    "蒙蔽",
+    "血债",
+    "衰败"
+   ],
+   "unused_items": [
+    "残骸",
+    "残骸",
+    "残骸",
+    "残骸",
+    "残骸",
+    "残骸"
+   ],
+   "final_mana": 58,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 7,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.25,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "滋养",
+    "自残"
+   ],
+   "unused_items": [],
+   "final_mana": 78,
+   "mutation": 10,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.25,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "杀伐",
+    "自残"
+   ],
+   "unused_items": [],
+   "final_mana": 38,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "sustained",
+   "entry_hp": 0.389,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "束缚",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "强光探照灯"
+   ],
+   "final_mana": 60,
+   "mutation": 10,
+   "death_subtype": "hp_zero",
+   "death_source": "杀伐"
+  },
+  {
+   "battle": 5,
+   "primary": "rng_suspect",
+   "entry_hp": 0.972,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "庇护",
+    "杀伐",
+    "波及"
+   ],
+   "unused_items": [
+    "残骸"
+   ],
+   "final_mana": 40,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "burst",
+   "entry_hp": 0.694,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "坠落",
+    "庇护",
+    "杀伐"
+   ],
+   "unused_items": [],
+   "final_mana": 56,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "burst",
+   "entry_hp": 0.778,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "波及",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "残骸"
+   ],
+   "final_mana": 50,
+   "mutation": 10,
+   "death_subtype": "hp_zero",
+   "death_source": "伤痕"
+  },
+  {
+   "battle": 5,
+   "primary": "burst",
+   "entry_hp": 0.472,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "庇护",
+    "杀伐",
+    "衰败"
+   ],
+   "unused_items": [
+    "异变龙心"
+   ],
+   "final_mana": 44,
+   "mutation": 36,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 7,
+   "primary": "burst",
+   "entry_hp": 0.472,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "残骸"
+   ],
+   "final_mana": 68,
+   "mutation": 20,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 7,
+   "primary": "rng_suspect",
+   "entry_hp": 0.833,
+   "killer": null,
+   "player_daowen": [
+    "寄生",
+    "庇护",
+    "杀伐",
+    "束缚",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "残骸",
+    "残骸",
+    "残骸",
+    "残骸",
+    "残骸",
+    "残骸",
+    "残骸"
+   ],
+   "final_mana": 66,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "伤痕"
+  },
+  {
+   "battle": 7,
+   "primary": "burst",
+   "entry_hp": 0.583,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "庇护",
+    "杀伐",
+    "蒙蔽",
+    "透支"
+   ],
+   "unused_items": [
+    "高爆手雷",
+    "残骸"
+   ],
+   "final_mana": 66,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "rng_suspect",
+   "entry_hp": 0.333,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "庇护",
+    "杀伐",
+    "洞察",
+    "血债"
+   ],
+   "unused_items": [],
+   "final_mana": 36,
+   "mutation": 20,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.25,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "自残",
+    "血债"
+   ],
+   "unused_items": [],
+   "final_mana": 56,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.278,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "弱化",
+    "杀伐",
+    "蒙蔽"
+   ],
+   "unused_items": [],
+   "final_mana": 44,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "burst",
+   "entry_hp": 0.889,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "波及",
+    "自残"
+   ],
+   "unused_items": [
+    "高压水枪"
+   ],
+   "final_mana": 50,
+   "mutation": 10,
+   "death_subtype": "hp_zero",
+   "death_source": "杀伐"
+  },
+  {
+   "battle": 6,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.889,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "杀伐",
+    "衰败"
+   ],
+   "unused_items": [],
+   "final_mana": 34,
+   "mutation": 32,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "build_disadv",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "束缚",
+    "自残"
+   ],
+   "unused_items": [],
+   "final_mana": 50,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 7,
+   "primary": "rng_suspect",
+   "entry_hp": 0.194,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "杀伐",
+    "束缚",
+    "洞察",
+    "自残",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "残骸"
+   ],
+   "final_mana": 50,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "伤痕"
+  },
+  {
+   "battle": 5,
+   "primary": "sustained",
+   "entry_hp": 0.722,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "坠落",
+    "封印",
+    "愤怒",
+    "杀伐"
+   ],
+   "unused_items": [
+    "干扰仪"
+   ],
+   "final_mana": 30,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "other",
+   "entry_hp": 0.806,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "固执",
+    "庇护",
+    "杀伐",
+    "衰败",
+    "贯穿"
+   ],
+   "unused_items": [
+    "高爆手雷"
+   ],
+   "final_mana": 54,
+   "mutation": 20,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "build_disadv",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "增殖",
+    "愤怒",
+    "杀伐",
+    "自残"
+   ],
+   "unused_items": [],
+   "final_mana": 55,
+   "mutation": 10,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 7,
+   "primary": "rng_suspect",
+   "entry_hp": 1.0,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "增殖",
+    "庇护",
+    "杀伐",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "残骸",
+    "残骸",
+    "残骸",
+    "残骸",
+    "残骸",
+    "残骸",
+    "残骸"
+   ],
+   "final_mana": 74,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "sustained",
+   "entry_hp": 0.417,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "坠落",
+    "庇护",
+    "杀伐",
+    "贯穿"
+   ],
+   "unused_items": [
+    "强光探照灯",
+    "干扰仪",
+    "反怪物电击枪",
+    "残骸",
+    "残骸",
+    "残骸",
+    "残骸"
+   ],
+   "final_mana": 35,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "衰败"
+  },
+  {
+   "battle": 6,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.944,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "杀伐",
+    "自残"
+   ],
+   "unused_items": [
+    "异变龙心"
+   ],
+   "final_mana": 42,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "癌变"
+  },
+  {
+   "battle": 5,
+   "primary": "sustained",
+   "entry_hp": 0.778,
+   "killer": null,
+   "player_daowen": [
+    "借力",
+    "再生",
+    "封印",
+    "愤怒",
+    "杀伐",
+    "眩晕",
+    "自食"
+   ],
+   "unused_items": [
+    "高爆手雷"
+   ],
+   "final_mana": 34,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "衰败"
+  },
+  {
+   "battle": 6,
+   "primary": "burst",
+   "entry_hp": 0.444,
+   "killer": null,
+   "player_daowen": [
+    "庇护",
+    "杀伐",
+    "自残"
+   ],
+   "unused_items": [],
+   "final_mana": 58,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "rng_suspect",
+   "entry_hp": 0.667,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "自残"
+   ],
+   "unused_items": [
+    "残骸"
+   ],
+   "final_mana": 56,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "rng_suspect",
+   "entry_hp": 1.0,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "庇护",
+    "杀伐",
+    "衰败"
+   ],
+   "unused_items": [],
+   "final_mana": 50,
+   "mutation": 10,
+   "death_subtype": "hp_zero",
+   "death_source": "伤痕"
+  },
+  {
+   "battle": 7,
+   "primary": "burst",
+   "entry_hp": 0.722,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "庇护",
+    "弱化",
+    "杀伐",
+    "自食",
+    "衰败"
+   ],
+   "unused_items": [
+    "残骸",
+    "急救箱",
+    "反怪物电击枪",
+    "储能电池",
+    "干扰仪",
+    "残骸",
+    "残骸"
+   ],
+   "final_mana": 48,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "杀伐"
+  },
+  {
+   "battle": 6,
+   "primary": "rng_suspect",
+   "entry_hp": 0.472,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "寄生",
+    "封印",
+    "杀伐",
+    "自残"
+   ],
+   "unused_items": [],
+   "final_mana": 42,
+   "mutation": 42,
+   "death_subtype": "hp_zero",
+   "death_source": "伤痕"
+  },
+  {
+   "battle": 5,
+   "primary": "rng_suspect",
+   "entry_hp": 0.778,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "寄生",
+    "封印",
+    "庇护",
+    "无神",
+    "杀伐",
+    "滋养",
+    "自残"
+   ],
+   "unused_items": [],
+   "final_mana": 28,
+   "mutation": 40,
+   "death_subtype": "mediocrity",
+   "death_source": "凡庸"
+  },
+  {
+   "battle": 6,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.25,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "自残",
+    "透支"
+   ],
+   "unused_items": [],
+   "final_mana": 58,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "rng_suspect",
+   "entry_hp": 0.556,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "固执",
+    "庇护",
+    "杀伐",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "残骸",
+    "残骸",
+    "残骸"
+   ],
+   "final_mana": 46,
+   "mutation": 10,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "蒙蔽",
+    "血债"
+   ],
+   "unused_items": [
+    "强光探照灯"
+   ],
+   "final_mana": 51,
+   "mutation": 30,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "other",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "增殖",
+    "弱化",
+    "愤怒",
+    "杀伐",
+    "蒙蔽"
+   ],
+   "unused_items": [],
+   "final_mana": 54,
+   "mutation": 20,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "rng_suspect",
+   "entry_hp": 0.639,
+   "killer": null,
+   "player_daowen": [
+    "借力",
+    "再生",
+    "加速",
+    "杀伐",
+    "波及"
+   ],
+   "unused_items": [
+    "强光探照灯"
+   ],
+   "final_mana": 52,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "杀伐",
+    "束缚",
+    "蒙蔽"
+   ],
+   "unused_items": [],
+   "final_mana": 68,
+   "mutation": 30,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "burst",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "增殖",
+    "无神",
+    "杀伐",
+    "蒙蔽"
+   ],
+   "unused_items": [],
+   "final_mana": 38,
+   "mutation": 10,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "sustained",
+   "entry_hp": 1.0,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "庇护",
+    "杀伐",
+    "波及",
+    "自残"
+   ],
+   "unused_items": [
+    "强光探照灯",
+    "高爆手雷",
+    "残骸",
+    "残骸",
+    "反怪物电击枪"
+   ],
+   "final_mana": 42,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "杀伐"
+  },
+  {
+   "battle": 5,
+   "primary": "burst",
+   "entry_hp": 0.25,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "坠落",
+    "杀伐"
+   ],
+   "unused_items": [],
+   "final_mana": 52,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.167,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "寄生",
+    "封印",
+    "杀伐",
+    "自残",
+    "蒙蔽"
+   ],
+   "unused_items": [],
+   "final_mana": 40,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "癌变"
+  },
+  {
+   "battle": 6,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "增殖",
+    "杀伐",
+    "洞察",
+    "自残",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "强光探照灯",
+    "备用血泵"
+   ],
+   "final_mana": 68,
+   "mutation": 30,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 7,
+   "primary": "rng_suspect",
+   "entry_hp": 1.0,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "杀伐",
+    "自残"
+   ],
+   "unused_items": [
+    "异变龙心",
+    "残骸",
+    "疲惫龙心"
+   ],
+   "final_mana": 64,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "rng_suspect",
+   "entry_hp": 0.778,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "坠落",
+    "封印",
+    "愤怒",
+    "杀伐"
+   ],
+   "unused_items": [
+    "高爆手雷"
+   ],
+   "final_mana": 40,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 7,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "杀伐",
+    "自残"
+   ],
+   "unused_items": [
+    "反怪物电击枪"
+   ],
+   "final_mana": 54,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "burst",
+   "entry_hp": 0.472,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "庇护",
+    "杀伐",
+    "波及",
+    "衰败"
+   ],
+   "unused_items": [],
+   "final_mana": 54,
+   "mutation": 20,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "other",
+   "entry_hp": 0.139,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "增殖",
+    "庇护",
+    "杀伐",
+    "滑翔",
+    "衰败"
+   ],
+   "unused_items": [
+    "反怪物电击枪"
+   ],
+   "final_mana": 40,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "衰败"
+  },
+  {
+   "battle": 6,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "自残",
+    "透支"
+   ],
+   "unused_items": [],
+   "final_mana": 60,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "rng_suspect",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "借力",
+    "再生",
+    "庇护",
+    "杀伐",
+    "波及"
+   ],
+   "unused_items": [],
+   "final_mana": 42,
+   "mutation": 10,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "sustained",
+   "entry_hp": 0.667,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "庇护",
+    "杀伐",
+    "自残"
+   ],
+   "unused_items": [],
+   "final_mana": 50,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.25,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "眩晕",
+    "自残"
+   ],
+   "unused_items": [],
+   "final_mana": 48,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "sustained",
+   "entry_hp": 0.639,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "固执",
+    "无神",
+    "杀伐",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "强光探照灯",
+    "残骸"
+   ],
+   "final_mana": 50,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "衰败"
+  },
+  {
+   "battle": 6,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "坠落",
+    "杀伐",
+    "贯穿"
+   ],
+   "unused_items": [],
+   "final_mana": 66,
+   "mutation": 20,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 7,
+   "primary": "rng_suspect",
+   "entry_hp": 0.889,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "庇护",
+    "愤怒",
+    "杀伐",
+    "眩晕",
+    "自残"
+   ],
+   "unused_items": [],
+   "final_mana": 44,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "伤痕"
+  },
+  {
+   "battle": 6,
+   "primary": "burst",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "杀伐",
+    "自残"
+   ],
+   "unused_items": [],
+   "final_mana": 44,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "burst",
+   "entry_hp": 0.889,
+   "killer": null,
+   "player_daowen": [
+    "借力",
+    "再生",
+    "封印",
+    "庇护",
+    "杀伐",
+    "自残"
+   ],
+   "unused_items": [],
+   "final_mana": 40,
+   "mutation": 32,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "burst",
+   "entry_hp": 0.472,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "杀伐",
+    "自残"
+   ],
+   "unused_items": [
+    "急救箱",
+    "残骸",
+    "强光探照灯"
+   ],
+   "final_mana": 46,
+   "mutation": 32,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "rng_suspect",
+   "entry_hp": 0.361,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "坠落",
+    "杀伐",
+    "洞察",
+    "衰败"
+   ],
+   "unused_items": [],
+   "final_mana": 52,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 7,
+   "primary": "sustained",
+   "entry_hp": 1.0,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "增殖",
+    "封印",
+    "庇护",
+    "杀伐"
+   ],
+   "unused_items": [],
+   "final_mana": 40,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "burst",
+   "entry_hp": 0.417,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "无力",
+    "杀伐"
+   ],
+   "unused_items": [
+    "残骸"
+   ],
+   "final_mana": 38,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.389,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "坠落",
+    "寄生",
+    "庇护",
+    "杀伐"
+   ],
+   "unused_items": [],
+   "final_mana": 50,
+   "mutation": 30,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "增殖",
+    "杀伐",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "反怪物电击枪"
+   ],
+   "final_mana": 58,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "rng_suspect",
+   "entry_hp": 1.0,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "杀伐",
+    "自残"
+   ],
+   "unused_items": [
+    "疲惫龙心"
+   ],
+   "final_mana": 56,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "rng_suspect",
+   "entry_hp": 0.833,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "庇护",
+    "杀伐",
+    "蒙蔽",
+    "血债"
+   ],
+   "unused_items": [
+    "残骸"
+   ],
+   "final_mana": 52,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "build_disadv",
+   "entry_hp": 0.25,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "自残",
+    "贯穿"
+   ],
+   "unused_items": [],
+   "final_mana": 60,
+   "mutation": 10,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "rng_suspect",
+   "entry_hp": 0.611,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "无力",
+    "杀伐",
+    "束缚",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "残骸",
+    "残骸"
+   ],
+   "final_mana": 62,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 7,
+   "primary": "rng_suspect",
+   "entry_hp": 1.0,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "坠落",
+    "封印",
+    "杀伐",
+    "自残",
+    "蒙蔽"
+   ],
+   "unused_items": [],
+   "final_mana": 50,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "sustained",
+   "entry_hp": 0.556,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "庇护",
+    "杀伐",
+    "自残"
+   ],
+   "unused_items": [],
+   "final_mana": 36,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "衰败"
+  },
+  {
+   "battle": 6,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.194,
+   "killer": null,
+   "player_daowen": [
+    "借力",
+    "再生",
+    "封印",
+    "杀伐",
+    "自残"
+   ],
+   "unused_items": [
+    "强光探照灯"
+   ],
+   "final_mana": 36,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "束缚",
+    "自残"
+   ],
+   "unused_items": [],
+   "final_mana": 60,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "rng_suspect",
+   "entry_hp": 1.0,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "庇护",
+    "杀伐",
+    "滋养",
+    "自残",
+    "自食"
+   ],
+   "unused_items": [
+    "残骸",
+    "残骸"
+   ],
+   "final_mana": 40,
+   "mutation": 32,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.265,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "蒙蔽",
+    "透支"
+   ],
+   "unused_items": [],
+   "final_mana": 56,
+   "mutation": 20,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 7,
+   "primary": "rng_suspect",
+   "entry_hp": 0.611,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "坠落",
+    "封印",
+    "杀伐"
+   ],
+   "unused_items": [
+    "残骸",
+    "残骸"
+   ],
+   "final_mana": 58,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "自残"
+   ],
+   "unused_items": [],
+   "final_mana": 42,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "other",
+   "entry_hp": 0.778,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "庇护",
+    "杀伐",
+    "自残",
+    "贯穿"
+   ],
+   "unused_items": [],
+   "final_mana": 38,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "burst",
+   "entry_hp": 1.0,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "庇护",
+    "愤怒",
+    "杀伐",
+    "自残"
+   ],
+   "unused_items": [
+    "异变龙心",
+    "残骸",
+    "残骸"
+   ],
+   "final_mana": 40,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.222,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "自残",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "急救箱",
+    "残骸",
+    "强光探照灯",
+    "残骸",
+    "残骸",
+    "干扰仪",
+    "残骸"
+   ],
+   "final_mana": 57,
+   "mutation": 10,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "sustained",
+   "entry_hp": 1.0,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "杀伐",
+    "自残",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "残骸",
+    "储能电池"
+   ],
+   "final_mana": 38,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "burst",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "庇护",
+    "杀伐",
+    "束缚",
+    "自残"
+   ],
+   "unused_items": [
+    "残骸"
+   ],
+   "final_mana": 44,
+   "mutation": 10,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "sustained",
+   "entry_hp": 0.472,
+   "killer": null,
+   "player_daowen": [
+    "借力",
+    "再生",
+    "庇护",
+    "杀伐",
+    "衰败"
+   ],
+   "unused_items": [
+    "残骸"
+   ],
+   "final_mana": 52,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "衰败"
+  },
+  {
+   "battle": 5,
+   "primary": "burst",
+   "entry_hp": 0.472,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "自残"
+   ],
+   "unused_items": [],
+   "final_mana": 42,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "sustained",
+   "entry_hp": 0.611,
+   "killer": null,
+   "player_daowen": [
+    "杀伐",
+    "蒙蔽",
+    "血债",
+    "衰败"
+   ],
+   "unused_items": [],
+   "final_mana": 50,
+   "mutation": 10,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "庇护",
+    "杀伐",
+    "自残",
+    "贯穿"
+   ],
+   "unused_items": [],
+   "final_mana": 40,
+   "mutation": 20,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "burst",
+   "entry_hp": 0.111,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "增殖",
+    "杀伐"
+   ],
+   "unused_items": [],
+   "final_mana": 56,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "burst",
+   "entry_hp": 0.139,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "坠落",
+    "封印",
+    "愤怒",
+    "无神",
+    "杀伐",
+    "波及",
+    "滋养"
+   ],
+   "unused_items": [],
+   "final_mana": 32,
+   "mutation": 42,
+   "death_subtype": "hp_zero",
+   "death_source": "癌变"
+  },
+  {
+   "battle": 6,
+   "primary": "rng_suspect",
+   "entry_hp": 1.0,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "庇护",
+    "杀伐",
+    "自残"
+   ],
+   "unused_items": [],
+   "final_mana": 32,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.056,
+   "killer": null,
+   "player_daowen": [
+    "弱化",
+    "杀伐",
+    "束缚",
+    "洞察"
+   ],
+   "unused_items": [],
+   "final_mana": 60,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "rng_suspect",
+   "entry_hp": 0.778,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "愤怒",
+    "杀伐",
+    "洞察",
+    "眩晕",
+    "自残"
+   ],
+   "unused_items": [
+    "残骸"
+   ],
+   "final_mana": 38,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 7,
+   "primary": "sustained",
+   "entry_hp": 1.0,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "无神",
+    "杀伐",
+    "自残",
+    "蒙蔽"
+   ],
+   "unused_items": [],
+   "final_mana": 54,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "伤痕"
+  },
+  {
+   "battle": 5,
+   "primary": "sustained",
+   "entry_hp": 0.528,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "固执",
+    "无神",
+    "杀伐",
+    "蒙蔽"
+   ],
+   "unused_items": [],
+   "final_mana": 52,
+   "mutation": 20,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "rng_suspect",
+   "entry_hp": 0.583,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "愤怒"
+   ],
+   "unused_items": [
+    "干扰仪"
+   ],
+   "final_mana": 32,
+   "mutation": 32,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "sustained",
+   "entry_hp": 0.861,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "坠落",
+    "封印",
+    "杀伐",
+    "自残"
+   ],
+   "unused_items": [],
+   "final_mana": 46,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "回锋刀"
+  },
+  {
+   "battle": 6,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.389,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "坠落",
+    "封印",
+    "杀伐"
+   ],
+   "unused_items": [],
+   "final_mana": 44,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.278,
+   "killer": null,
+   "player_daowen": [
+    "庇护",
+    "弱化",
+    "杀伐"
+   ],
+   "unused_items": [
+    "强光探照灯"
+   ],
+   "final_mana": 48,
+   "mutation": 10,
+   "death_subtype": "hp_zero",
+   "death_source": "杀伐"
+  },
+  {
+   "battle": 6,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.056,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "增殖",
+    "杀伐"
+   ],
+   "unused_items": [],
+   "final_mana": 66,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "burst",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "庇护",
+    "弱化",
+    "杀伐"
+   ],
+   "unused_items": [
+    "储能电池"
+   ],
+   "final_mana": 58,
+   "mutation": 10,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "波及",
+    "蒙蔽"
+   ],
+   "unused_items": [],
+   "final_mana": 58,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.25,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "蒙蔽",
+    "贯穿"
+   ],
+   "unused_items": [],
+   "final_mana": 54,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 7,
+   "primary": "build_disadv",
+   "entry_hp": 0.031,
+   "killer": null,
+   "player_daowen": [
+    "杀伐",
+    "洞察",
+    "蒙蔽",
+    "透支"
+   ],
+   "unused_items": [
+    "残骸"
+   ],
+   "final_mana": 72,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "burst",
+   "entry_hp": 0.472,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "蒙蔽",
+    "透支"
+   ],
+   "unused_items": [
+    "残骸",
+    "残骸"
+   ],
+   "final_mana": 64,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 7,
+   "primary": "burst",
+   "entry_hp": 0.444,
+   "killer": null,
+   "player_daowen": [
+    "庇护",
+    "杀伐",
+    "血债"
+   ],
+   "unused_items": [
+    "残骸",
+    "残骸",
+    "残骸"
+   ],
+   "final_mana": 68,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "伤痕"
+  },
+  {
+   "battle": 6,
+   "primary": "sustained",
+   "entry_hp": 0.472,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "增殖",
+    "封印",
+    "庇护",
+    "杀伐"
+   ],
+   "unused_items": [],
+   "final_mana": 26,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "赌命"
+  },
+  {
+   "battle": 7,
+   "primary": "burst",
+   "entry_hp": 0.75,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "坠落",
+    "庇护",
+    "杀伐",
+    "洞察",
+    "滋养",
+    "透支"
+   ],
+   "unused_items": [
+    "残骸",
+    "残骸",
+    "残骸",
+    "流血龙心"
+   ],
+   "final_mana": 58,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 7,
+   "primary": "burst",
+   "entry_hp": 0.556,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "庇护",
+    "杀伐",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "残骸",
+    "强光探照灯",
+    "残骸",
+    "备用血泵",
+    "残骸",
+    "高爆手雷",
+    "储能电池"
+   ],
+   "final_mana": 42,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "rng_suspect",
+   "entry_hp": 1.0,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "加速",
+    "庇护",
+    "杀伐",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "残骸",
+    "残骸",
+    "残骸",
+    "残骸"
+   ],
+   "final_mana": 52,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "burst",
+   "entry_hp": 0.25,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "自残"
+   ],
+   "unused_items": [],
+   "final_mana": 54,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "rng_suspect",
+   "entry_hp": 0.333,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "波及",
+    "滑翔",
+    "眩晕",
+    "蒙蔽"
+   ],
+   "unused_items": [],
+   "final_mana": 36,
+   "mutation": 20,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "sustained",
+   "entry_hp": 0.5,
+   "killer": null,
+   "player_daowen": [
+    "借力",
+    "再生",
+    "庇护",
+    "愤怒",
+    "无神",
+    "杀伐",
+    "眩晕",
+    "自食"
+   ],
+   "unused_items": [
+    "残骸",
+    "强光探照灯",
+    "急救箱"
+   ],
+   "final_mana": 56,
+   "mutation": 10,
+   "death_subtype": "hp_zero",
+   "death_source": "衰败"
+  },
+  {
+   "battle": 7,
+   "primary": "rng_suspect",
+   "entry_hp": 0.778,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "弱化",
+    "杀伐"
+   ],
+   "unused_items": [],
+   "final_mana": 60,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "burst",
+   "entry_hp": 0.806,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "庇护",
+    "无神",
+    "杀伐",
+    "衰败"
+   ],
+   "unused_items": [],
+   "final_mana": 38,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "rng_suspect",
+   "entry_hp": 0.167,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "蒙蔽",
+    "透支"
+   ],
+   "unused_items": [],
+   "final_mana": 64,
+   "mutation": 10,
+   "death_subtype": "hp_zero",
+   "death_source": "伤痕"
+  },
+  {
+   "battle": 7,
+   "primary": "rng_suspect",
+   "entry_hp": 0.861,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "庇护",
+    "杀伐",
+    "束缚",
+    "衰败"
+   ],
+   "unused_items": [
+    "残骸",
+    "残骸"
+   ],
+   "final_mana": 52,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "兴奋",
+    "再生",
+    "增殖",
+    "杀伐",
+    "透支"
+   ],
+   "unused_items": [],
+   "final_mana": 42,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "rng_suspect",
+   "entry_hp": 0.917,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印"
+   ],
+   "unused_items": [
+    "异变龙心"
+   ],
+   "final_mana": 34,
+   "mutation": 40,
+   "death_subtype": "mediocrity",
+   "death_source": "凡庸"
+  },
+  {
+   "battle": 5,
+   "primary": "burst",
+   "entry_hp": 0.611,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "束缚",
+    "自残"
+   ],
+   "unused_items": [],
+   "final_mana": 54,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 7,
+   "primary": "sustained",
+   "entry_hp": 0.694,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "庇护",
+    "杀伐",
+    "蒙蔽",
+    "贯穿"
+   ],
+   "unused_items": [
+    "残骸",
+    "残骸",
+    "残骸",
+    "残骸",
+    "残骸"
+   ],
+   "final_mana": 76,
+   "mutation": 10,
+   "death_subtype": "hp_zero",
+   "death_source": "衰败"
+  },
+  {
+   "battle": 5,
+   "primary": "sustained",
+   "entry_hp": 1.0,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "无神",
+    "杀伐",
+    "蒙蔽",
+    "贯穿"
+   ],
+   "unused_items": [
+    "残骸"
+   ],
+   "final_mana": 46,
+   "mutation": 20,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "other",
+   "entry_hp": 0.222,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "无神",
+    "杀伐",
+    "蒙蔽",
+    "血债"
+   ],
+   "unused_items": [],
+   "final_mana": 44,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "sustained",
+   "entry_hp": 0.611,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "杀伐",
+    "自残"
+   ],
+   "unused_items": [],
+   "final_mana": 32,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "rng_suspect",
+   "entry_hp": 0.778,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "弱化",
+    "杀伐"
+   ],
+   "unused_items": [],
+   "final_mana": 32,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 7,
+   "primary": "mana_exhaust",
+   "entry_hp": 1.0,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "杀伐",
+    "自食",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "残骸"
+   ],
+   "final_mana": 52,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "rng_suspect",
+   "entry_hp": 0.639,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "衰败"
+   ],
+   "unused_items": [],
+   "final_mana": 68,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "sustained",
+   "entry_hp": 1.0,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "无神",
+    "杀伐",
+    "波及",
+    "自残",
+    "自食"
+   ],
+   "unused_items": [
+    "反怪物电击枪"
+   ],
+   "final_mana": 46,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 7,
+   "primary": "burst",
+   "entry_hp": 1.0,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "杀伐",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "残骸"
+   ],
+   "final_mana": 66,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "burst",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "滑翔",
+    "蒙蔽",
+    "血债"
+   ],
+   "unused_items": [
+    "强光探照灯",
+    "高压水枪",
+    "残骸"
+   ],
+   "final_mana": 60,
+   "mutation": 10,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "build_disadv",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "波及",
+    "自残"
+   ],
+   "unused_items": [],
+   "final_mana": 56,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "rng_suspect",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "庇护",
+    "杀伐",
+    "自残"
+   ],
+   "unused_items": [],
+   "final_mana": 44,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "伤痕"
+  },
+  {
+   "battle": 6,
+   "primary": "rng_suspect",
+   "entry_hp": 1.0,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "庇护",
+    "杀伐",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "残骸",
+    "残骸",
+    "残骸",
+    "残骸"
+   ],
+   "final_mana": 62,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 7,
+   "primary": "rng_suspect",
+   "entry_hp": 0.889,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "庇护",
+    "杀伐",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "残骸",
+    "残骸",
+    "残骸",
+    "残骸",
+    "残骸",
+    "残骸"
+   ],
+   "final_mana": 74,
+   "mutation": 20,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "build_disadv",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "弱化",
+    "杀伐",
+    "自残",
+    "透支"
+   ],
+   "unused_items": [],
+   "final_mana": 50,
+   "mutation": 10,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "加速",
+    "固执",
+    "愤怒",
+    "杀伐",
+    "自残"
+   ],
+   "unused_items": [],
+   "final_mana": 52,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 7,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.25,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "蒙蔽",
+    "血债"
+   ],
+   "unused_items": [
+    "流血龙心",
+    "残骸",
+    "残骸",
+    "残骸"
+   ],
+   "final_mana": 66,
+   "mutation": 30,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 7,
+   "primary": "burst",
+   "entry_hp": 0.806,
+   "killer": null,
+   "player_daowen": [
+    "借力",
+    "再生",
+    "增殖",
+    "封印",
+    "庇护",
+    "无神",
+    "杀伐"
+   ],
+   "unused_items": [
+    "残骸",
+    "残骸",
+    "残骸"
+   ],
+   "final_mana": 36,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "burst",
+   "entry_hp": 0.167,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "蒙蔽",
+    "透支"
+   ],
+   "unused_items": [],
+   "final_mana": 58,
+   "mutation": 10,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "burst",
+   "entry_hp": 1.0,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "杀伐",
+    "自残",
+    "蒙蔽"
+   ],
+   "unused_items": [],
+   "final_mana": 44,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 7,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.333,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "坠落",
+    "封印",
+    "杀伐"
+   ],
+   "unused_items": [],
+   "final_mana": 50,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "burst",
+   "entry_hp": 0.667,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "弱化",
+    "无神",
+    "杀伐",
+    "自残"
+   ],
+   "unused_items": [
+    "异变龙心"
+   ],
+   "final_mana": 42,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "癌变"
+  },
+  {
+   "battle": 7,
+   "primary": "burst",
+   "entry_hp": 0.778,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "庇护",
+    "杀伐",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "残骸",
+    "残骸",
+    "残骸",
+    "残骸"
+   ],
+   "final_mana": 40,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "burst",
+   "entry_hp": 0.5,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "杀伐",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "残骸"
+   ],
+   "final_mana": 38,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "rng_suspect",
+   "entry_hp": 1.0,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "庇护",
+    "杀伐",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "残骸",
+    "残骸",
+    "残骸"
+   ],
+   "final_mana": 48,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "rng_suspect",
+   "entry_hp": 0.889,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "杀伐",
+    "自残"
+   ],
+   "unused_items": [],
+   "final_mana": 40,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.25,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "坠落",
+    "杀伐",
+    "透支"
+   ],
+   "unused_items": [],
+   "final_mana": 50,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "burst",
+   "entry_hp": 1.0,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "蒙蔽",
+    "贯穿"
+   ],
+   "unused_items": [
+    "残骸",
+    "残骸",
+    "残骸"
+   ],
+   "final_mana": 47,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "other",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "弱化",
+    "杀伐",
+    "自残",
+    "贯穿"
+   ],
+   "unused_items": [],
+   "final_mana": 60,
+   "mutation": 10,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "sustained",
+   "entry_hp": 0.278,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "束缚",
+    "自残",
+    "自食",
+    "血债"
+   ],
+   "unused_items": [],
+   "final_mana": 46,
+   "mutation": 20,
+   "death_subtype": "hp_zero",
+   "death_source": "衰败"
+  },
+  {
+   "battle": 6,
+   "primary": "burst",
+   "entry_hp": 1.0,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "无神",
+    "杀伐",
+    "自残"
+   ],
+   "unused_items": [],
+   "final_mana": 42,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.5,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "无神",
+    "杀伐",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "残骸"
+   ],
+   "final_mana": 30,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "burst",
+   "entry_hp": 0.5,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "愤怒",
+    "杀伐",
+    "蒙蔽",
+    "透支"
+   ],
+   "unused_items": [
+    "残骸",
+    "残骸"
+   ],
+   "final_mana": 54,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.667,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "无力",
+    "杀伐"
+   ],
+   "unused_items": [],
+   "final_mana": 34,
+   "mutation": 32,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "rng_suspect",
+   "entry_hp": 0.778,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "杀伐",
+    "衰败"
+   ],
+   "unused_items": [
+    "残骸"
+   ],
+   "final_mana": 50,
+   "mutation": 24,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "sustained",
+   "entry_hp": 0.361,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "增殖",
+    "杀伐",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "反怪物电击枪"
+   ],
+   "final_mana": 58,
+   "mutation": 30,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "rng_suspect",
+   "entry_hp": 0.583,
+   "killer": null,
+   "player_daowen": [
+    "兴奋",
+    "再生",
+    "封印",
+    "无神",
+    "杀伐",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "残骸"
+   ],
+   "final_mana": 37,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 7,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.389,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "庇护",
+    "弱化",
+    "杀伐",
+    "衰败",
+    "透支"
+   ],
+   "unused_items": [],
+   "final_mana": 54,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "杀伐"
+  },
+  {
+   "battle": 5,
+   "primary": "burst",
+   "entry_hp": 0.667,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "庇护",
+    "无力",
+    "杀伐",
+    "自残"
+   ],
+   "unused_items": [],
+   "final_mana": 38,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.222,
+   "killer": null,
+   "player_daowen": [
+    "兴奋",
+    "再生",
+    "固执",
+    "杀伐",
+    "蒙蔽"
+   ],
+   "unused_items": [],
+   "final_mana": 42,
+   "mutation": 30,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "rng_suspect",
+   "entry_hp": 1.0,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "庇护",
+    "无神",
+    "杀伐",
+    "自残"
+   ],
+   "unused_items": [],
+   "final_mana": 32,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "burst",
+   "entry_hp": 0.167,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "庇护",
+    "杀伐",
+    "自残",
+    "衰败"
+   ],
+   "unused_items": [
+    "残骸"
+   ],
+   "final_mana": 38,
+   "mutation": 32,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "burst",
+   "entry_hp": 1.0,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "庇护",
+    "杀伐",
+    "蒙蔽",
+    "贯穿"
+   ],
+   "unused_items": [
+    "残骸"
+   ],
+   "final_mana": 40,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "burst",
+   "entry_hp": 0.222,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "增殖",
+    "杀伐"
+   ],
+   "unused_items": [],
+   "final_mana": 52,
+   "mutation": 10,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 7,
+   "primary": "burst",
+   "entry_hp": 0.444,
+   "killer": null,
+   "player_daowen": [
+    "封印",
+    "杀伐",
+    "自残"
+   ],
+   "unused_items": [
+    "残骸"
+   ],
+   "final_mana": 51,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 7,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.744,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "增殖",
+    "封印",
+    "愤怒",
+    "杀伐",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "残骸",
+    "反怪物电击枪"
+   ],
+   "final_mana": 45,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "杀伐",
+    "自残"
+   ],
+   "unused_items": [],
+   "final_mana": 46,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "build_disadv",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "杀伐",
+    "自残"
+   ],
+   "unused_items": [],
+   "final_mana": 42,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.472,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "坠落",
+    "杀伐",
+    "波及"
+   ],
+   "unused_items": [],
+   "final_mana": 60,
+   "mutation": 10,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "burst",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "弱化",
+    "杀伐",
+    "透支"
+   ],
+   "unused_items": [],
+   "final_mana": 54,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "burst",
+   "entry_hp": 0.556,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "杀伐",
+    "自残"
+   ],
+   "unused_items": [],
+   "final_mana": 38,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 7,
+   "primary": "build_disadv",
+   "entry_hp": 0.278,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "加速",
+    "庇护",
+    "弱化",
+    "杀伐",
+    "束缚"
+   ],
+   "unused_items": [],
+   "final_mana": 58,
+   "mutation": 30,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.389,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "杀伐",
+    "自残",
+    "自食"
+   ],
+   "unused_items": [],
+   "final_mana": 46,
+   "mutation": 42,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "other",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "坠落",
+    "增殖",
+    "杀伐"
+   ],
+   "unused_items": [
+    "强光探照灯",
+    "反怪物电击枪"
+   ],
+   "final_mana": 50,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "rng_suspect",
+   "entry_hp": 0.139,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "波及",
+    "蒙蔽"
+   ],
+   "unused_items": [],
+   "final_mana": 54,
+   "mutation": 10,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "sustained",
+   "entry_hp": 0.583,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "庇护",
+    "杀伐",
+    "血债",
+    "衰败"
+   ],
+   "unused_items": [],
+   "final_mana": 54,
+   "mutation": 10,
+   "death_subtype": "hp_zero",
+   "death_source": "杀伐"
+  },
+  {
+   "battle": 5,
+   "primary": "build_disadv",
+   "entry_hp": 0.25,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "蒙蔽"
+   ],
+   "unused_items": [],
+   "final_mana": 54,
+   "mutation": 30,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "sustained",
+   "entry_hp": 0.611,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "庇护",
+    "愤怒",
+    "杀伐",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "残骸",
+    "残骸",
+    "残骸",
+    "残骸"
+   ],
+   "final_mana": 44,
+   "mutation": 36,
+   "death_subtype": "hp_zero",
+   "death_source": "衰败"
+  },
+  {
+   "battle": 5,
+   "primary": "rng_suspect",
+   "entry_hp": 0.139,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "衰败"
+   ],
+   "unused_items": [],
+   "final_mana": 52,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "build_disadv",
+   "entry_hp": 0.056,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "坠落",
+    "封印",
+    "杀伐"
+   ],
+   "unused_items": [],
+   "final_mana": 44,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "弱化",
+    "杀伐",
+    "波及",
+    "眩晕",
+    "自食"
+   ],
+   "unused_items": [
+    "奇美拉雕塑",
+    "千手蜈蚣雕塑",
+    "残骸"
+   ],
+   "final_mana": 54,
+   "mutation": 10,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "rng_suspect",
+   "entry_hp": 1.0,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "庇护",
+    "杀伐",
+    "波及",
+    "衰败"
+   ],
+   "unused_items": [],
+   "final_mana": 38,
+   "mutation": 10,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "rng_suspect",
+   "entry_hp": 1.0,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "波及",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "残骸",
+    "残骸",
+    "残骸"
+   ],
+   "final_mana": 60,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "sustained",
+   "entry_hp": 1.0,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "庇护",
+    "无神",
+    "杀伐",
+    "束缚",
+    "蒙蔽"
+   ],
+   "unused_items": [],
+   "final_mana": 50,
+   "mutation": 10,
+   "death_subtype": "hp_zero",
+   "death_source": "衰败"
+  },
+  {
+   "battle": 6,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "杀伐",
+    "波及",
+    "蒙蔽"
+   ],
+   "unused_items": [],
+   "final_mana": 60,
+   "mutation": 30,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "burst",
+   "entry_hp": 0.028,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "增殖",
+    "杀伐"
+   ],
+   "unused_items": [],
+   "final_mana": 56,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "burst",
+   "entry_hp": 0.556,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "愤怒",
+    "杀伐",
+    "自残"
+   ],
+   "unused_items": [],
+   "final_mana": 48,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "sustained",
+   "entry_hp": 0.778,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "无神",
+    "杀伐",
+    "滑翔",
+    "自残"
+   ],
+   "unused_items": [
+    "强光探照灯",
+    "残骸"
+   ],
+   "final_mana": 42,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 6,
+   "primary": "burst",
+   "entry_hp": 0.528,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "增殖",
+    "封印",
+    "庇护",
+    "杀伐"
+   ],
+   "unused_items": [],
+   "final_mana": 31,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "burst",
+   "entry_hp": 0.917,
+   "killer": null,
+   "player_daowen": [
+    "杀伐",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "残骸",
+    "残骸"
+   ],
+   "final_mana": 48,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 5,
+   "primary": "rng_suspect",
+   "entry_hp": 0.722,
+   "killer": null,
+   "player_daowen": [
+    "坠落",
+    "杀伐",
+    "束缚",
+    "自残"
+   ],
+   "unused_items": [
+    "残骸"
+   ],
+   "final_mana": 54,
+   "mutation": 0,
+   "death_subtype": "hp_zero",
+   "death_source": "杀伐"
+  },
+  {
+   "battle": 6,
+   "primary": "mana_exhaust",
+   "entry_hp": 0.389,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "封印",
+    "庇护",
+    "愤怒",
+    "杀伐",
+    "自残",
+    "自食"
+   ],
+   "unused_items": [],
+   "final_mana": 38,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  },
+  {
+   "battle": 7,
+   "primary": "burst",
+   "entry_hp": 0.444,
+   "killer": null,
+   "player_daowen": [
+    "再生",
+    "坠落",
+    "封印",
+    "杀伐",
+    "蒙蔽"
+   ],
+   "unused_items": [
+    "残骸",
+    "急救箱",
+    "残骸",
+    "高爆手雷",
+    "残骸"
+   ],
+   "final_mana": 52,
+   "mutation": 40,
+   "death_subtype": "hp_zero",
+   "death_source": "普通攻击"
+  }
+ ]
+}

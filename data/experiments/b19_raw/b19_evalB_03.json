@@ -1,0 +1,113 @@
+{
+ "eco": "/tmp/b19_eco_B.json",
+ "eco_builds": [
+  [
+   "再生",
+   "封印",
+   "庇护",
+   "杀伐",
+   "束缚",
+   "自残",
+   "迟滞"
+  ]
+ ],
+ "seed": 88123,
+ "rows": [
+  {
+   "build": [
+    "封印",
+    [
+     "杀伐",
+     "透支",
+     "固执"
+    ]
+   ],
+   "games": 398,
+   "duels": 5,
+   "won": 2,
+   "wr": 0.4,
+   "wilson": [
+    0.118,
+    0.769
+   ],
+   "lost_timeout": 0,
+   "lost_kill": 3,
+   "rounds_avg": 1.0,
+   "opp_hist": {
+    "贾凡（对手）": 5
+   }
+  },
+  {
+   "build": [
+    "封印",
+    [
+     "杀伐",
+     "再生",
+     "定型"
+    ]
+   ],
+   "games": 398,
+   "duels": 8,
+   "won": 2,
+   "wr": 0.25,
+   "wilson": [
+    0.071,
+    0.591
+   ],
+   "lost_timeout": 1,
+   "lost_kill": 5,
+   "rounds_avg": 1.25,
+   "opp_hist": {
+    "贾凡（对手）": 8
+   }
+  },
+  {
+   "build": [
+    "封印",
+    [
+     "杀伐",
+     "再生",
+     "增殖"
+    ]
+   ],
+   "games": 397,
+   "duels": 6,
+   "won": 1,
+   "wr": 0.167,
+   "wilson": [
+    0.03,
+    0.564
+   ],
+   "lost_timeout": 1,
+   "lost_kill": 4,
+   "rounds_avg": 1.33,
+   "opp_hist": {
+    "贾凡（对手）": 6
+   }
+  },
+  {
+   "build": [
+    "封印",
+    [
+     "杀伐",
+     "再生",
+     "庇护"
+    ]
+   ],
+   "games": 205,
+   "duels": 34,
+   "won": 1,
+   "wr": 0.029,
+   "wilson": [
+    0.005,
+    0.149
+   ],
+   "lost_timeout": 14,
+   "lost_kill": 19,
+   "rounds_avg": 1.53,
+   "opp_hist": {
+    "贾凡（对手）": 34
+   }
+  }
+ ]
+}
