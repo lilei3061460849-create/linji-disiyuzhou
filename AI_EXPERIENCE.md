@@ -904,3 +904,20 @@ AI 的"知识"分三处，版本变更（增删道纹/改公式/改机制）后�
 6. **DM五问逐条**：①最主要死因=终局波次正面爆发（64.6%高血线入场≤4回合被打穿，无集中杀手=系统性难度）+拖尸入场（35.4%前序消耗，异变毒化让残骸不可用加剧此型）。②消耗品时机**不是**实质瓶颈（结局z全<0.8；真时机错误≈持药死亡的9%子集且属近死局）。③死斗最优构筑**不**是PVE最优（top8池9.6-11.4%、库首5.1%，双生态同向复现）。④差异来自赛制形态（7局均值奖励续航 vs 1-2回合一击/守方三重优势：擂主=全清幸存者快照选拔 + 超时判卫冕 + 庇护/蒙蔽吸收首轮）与异变经济在终局对封印系的双重钳制（输出次数与救治共用同一预算）。⑤下一阶段排序：**死斗专属学习器**（可行性已被台架证明、独立证据充足）+ **环境规则审视**（b5+条件死亡悬崖4.4%→24%→56%→57%；封印8X+CRITICAL45使主力构筑在b6+自带debuff）在前，**决策时机最后（已实测≈0）**——环境改不改归DM裁定。
 7. **合规与隔离**：规则/怪物/裁定/奖励/副本难度/PVE学习器/PVE构筑搜索 全零改动；新增代码全部为只读取证（gate注入式旁路默认None=现行行为、死亡轨迹载荷、lab_paths实验台隔离）；生产KB(gen490/3297局/bc 3.141@39）零构筑晋升、仅按协议入库3条心得/陷阱（死斗通约性/带药死亡误诊/影子实验判据）；reapply脚本修复add_once非前缀head重复追加慢性bug并加同头去重（清掉3条历史近重复，幂等二次运行稳定32条）。数据归档 data/experiments/b19_2026-08-23.json + b19_raw/（A/C/D/探针/双生态全量）。
 8. **诚实边界**：①b7归因分类器是文档化启发式（非因果证明），rng_suspect仅指"高速高血线暴毙"形态标签；②死斗单构筑n=2-34，除库首(n=59双生态）外单构筑结论一律未证实，本批只下池级判决；③b7轨迹(189,A臂）与探针（218,b5+）为同种子不同深度样本，交叉吻合但非同一群体；④生态A的tier2另有三席擂主、eval轮换副本使对手混tier，已如实记录擂主构成、按池统计；⑤透支系>再生系为方向性观察（Wilson区间大幅重叠）；⑥持药死亡9%"真时机"桶中或含"死于自身出手阶段前"（敌先动）情形，n=7不展开。
+
+## 实验灾备协议（2026-08-24 DM强制执行，全批次适用）
+1. **沙箱不是持久化介质**：/tmp、临时脚本/JSON/日志、未提交工作区、未推送commit 一律视为临时空间；重要结果不得只存在于上述位置。
+2. **每批次分段持久化**：实验→数据归档→文档归档→Git commit→GitHub push→远端验证，缺一不可。
+3. **数据先落仓内再提交**：/tmp/result.json 生成后立即复制到 data/experiments/<batch>_<name>.json，确认可读才继续。
+4. **每批完成立即commit**：一个实验批次=至少一个可恢复commit；commit后记录 SHA/批次/数据文件/代码文件/测试结果/当前KB-gen/当前生产状态。
+5. **未push不算完成**：区分 local commit 与 remote durable commit；仅GitHub远端验证成功才算已持久化。
+6. **push前先同步**：git fetch origin → git status → git log --oneline --decorate -n 10；遇 non-fast-forward 禁止直接 force push，优先 merge（确需线性时 pull --rebase）。
+7. **push后反向验证**：重新 fetch，git rev-parse HEAD 与远端一致，且 git log 确认本批commit位于远端历史中。
+8. **每批建立恢复清单** data/experiments/<batch>_MANIFEST.json：batch/commit/parent_commit/kb_generation/kb_size/experiment_files/code_files/test_count/test_status/git_remote/remote_commit/timestamp_utc/timestamp_local——目标：沙箱下一秒消失也能仅凭GitHub恢复这一批。
+9. **push失败立即停止继续实验**（token失效/认证失败/网络失败/被远端拒绝）：先解决持久化；实在无法push时至少整理成一个明确本地commit并在报告中标记 **NOT REMOTE-BACKED-UP**。
+10. **每次开工先做重建检测**：git status / rev-parse HEAD / 远端rev / log -n 20；检查实验档案、KB、AI_EXPERIENCE、最近批次commit、工作区干净度；若 /tmp 清空+mtime全部一致+最近commit不在 → 判定可能发生沙箱重建，禁止直接继续，先走恢复流程。
+11. **恢复流程**：查GitHub远端→找最后完整commit→clone/fetch→恢复代码/数据/KB/文档→跑完整测试→验证commit链→确认工作区后才允许继续。
+12. **/tmp 只作中间计算空间**，不作唯一结果存储。
+13. **报告三种状态**：LOCAL ONLY（仅本地commit）/ REMOTE BACKED（已push验证存在）/ REMOTE VERIFIED（重新fetch确认commit+数据+报告全部可恢复）——只有第三种才算本批正式结题。
+14. **禁止改写远端历史**：禁止 git push --force（除非明确确认远端历史本身错误）；分叉时 merge 优先。
+**最终完成判定**：实验数据/文档/代码均在仓内 + commit已生成 + 已push + HEAD==远端 + 新沙箱可经GitHub恢复 + 测试通过，才能报告"本批完成"，否则必须报告"本批未完成持久化"。（教训源头：2026-08-23 十七批提交6d9535a沙箱重建丢失git ref、十九批提交342eb38重建丢失后于次日以563466a重落，两次均被灾备要求追认为事故。）

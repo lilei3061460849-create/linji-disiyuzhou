@@ -1,0 +1,41 @@
+{
+ "batch": 19,
+ "title": "DM环境侧瓶颈定位（b7死亡归因/消耗品影子/死斗专项）",
+ "commit": "563466a",
+ "merge_commit": "f72fb46",
+ "parent_commit": "d68042e（远端批次链）",
+ "kb_generation": 490,
+ "kb_size": 154753,
+ "kb_lessons": 32,
+ "kb_best_confirmed": 3.141,
+ "experiment_files": [
+  "data/experiments/b19_2026-08-23.json",
+  "data/experiments/b19_raw/b19_A.json",
+  "data/experiments/b19_raw/b19_C.json",
+  "data/experiments/b19_raw/b19_D.json",
+  "data/experiments/b19_raw/b19_eco_A.json",
+  "data/experiments/b19_raw/b19_eco_B.json",
+  "data/experiments/b19_raw/b19_evalA_03.json",
+  "data/experiments/b19_raw/b19_evalA_47.json",
+  "data/experiments/b19_raw/b19_evalB_03.json",
+  "data/experiments/b19_raw/b19_evalB_47.json",
+  "data/experiments/b19_raw/b19_probe.json"
+ ],
+ "code_files": [
+  "engine/ai_tactics.py",
+  "sim/build_learner.py",
+  "sim/b19_consumable_shadow.py",
+  "sim/b19_death_source_probe.py",
+  "sim/b19_duel_lab.py",
+  "sim/reapply_lessons_after_reset.py",
+  "tests/test_build_learner.py"
+ ],
+ "test_count": "1197 passed, 5 skipped",
+ "test_status": "PASS（重落盘后复跑 2026-08-24 10:32 UTC）",
+ "git_remote": "origin arena/01a028dc-linji-disiyuzhou",
+ "remote_commit": "f72fb46（ls-remote 已验证==本地HEAD 2026-08-24 10:35 UTC）",
+ "state": "REMOTE VERIFIED",
+ "timestamp_utc": "2026-08-24 10:44:06",
+ "timestamp_local": "2026-08-24 18:44:06",
+ "incident_note": "原提交342eb38因沙箱重建丢失（旧token失效未推送），灾备恢复后以563466a重落、f72fb46合并远端批次链推送并反向验证。"
+}
