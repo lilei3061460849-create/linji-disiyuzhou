@@ -35,43 +35,6 @@ def test_play_and_record_reports_hp_before_crown():
         assert 0 < r["hp_before_crown"] <= 60
 
 
-@pytest.mark.skip(reason="报告.md 改为只保留最新压测报告，旧战报格式校验废弃")
-def test_report_states_selection_standard():
-    """正常路径：正式战报声明只保留最新手操轮回，批量工具不得覆盖。"""
-    txt = open(REPORT, encoding="utf-8").read()
-    for key in ["最新一次轮回", "六、战斗推演格式", "pick_best_report", "不得"]:
-        assert key in txt, f"战报开头缺少现行政策说明：{key}"
-
-
-@pytest.mark.skip(reason="报告.md 改为只保留最新压测报告，旧战报格式校验废弃")
-def test_report_follows_spec_format():
-    """正常路径：战报必须符合 README§六 的字段要求"""
-    txt = open(REPORT, encoding="utf-8").read()
-    for field in ["[战始]", "出怪：", "战斗背景：", "敌方面板：",
-                  "我方面板：", "[回始]：", "[回终]：", "[战终]"]:
-        assert field in txt, f"战报缺少规范字段 {field}"
-    # 禁止概括式写法
-    import re
-    assert not re.search(r"怪物出手\d+次", txt), "出现被禁止的概括式结算"
-
-
-@pytest.mark.skip(reason="报告.md 改为只保留最新压测报告，旧战报格式校验废弃")
-def test_report_records_full_run_with_declared_battles():
-    """正常路径：正式战报必须逐场结算到战报顶部声明的战斗场数。
-
-    通关7场或中途阵亡都算完整轮回记录；战报顶部必须声明「共N场」，
-    正文的 [战终]/[死亡结算] 数量不得少于声明场数，不允许缩写成摘要。
-    """
-    txt = open(REPORT, encoding="utf-8").read()
-    import re
-    declared = re.search(r"共\s*(\d+)\s*场", txt)
-    assert declared, "战报顶部必须声明本轮战斗场数（共N场）"
-    battles = int(declared.group(1))
-    endings = txt.count("[战终]") + txt.count("[死亡结算]")
-    assert endings >= battles, f"应结算{battles}场，实际结算{endings}场"
-    assert "本文件只保留最新一次轮回记录" in txt
-
-
 # ---------- 边界条件 ----------
 
 def test_highest_hp_wins():
