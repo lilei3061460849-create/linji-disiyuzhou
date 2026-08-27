@@ -16,6 +16,7 @@ from .combat_events import CombatEvent, CombatEventType, register_combat_event_o
 from .combat_hooks import CombatHookManager
 from .effect_context import EffectContext, make_context, normalize_context
 from .mechanisms import MECHANISMS, Phase, TriggerBus, TriggerContext
+from .personality import remove_personality
 
 
 class CombatEngine:
@@ -775,6 +776,10 @@ class CombatEngine:
         )
         entity._death_ctx = death_ctx.to_dict()
         entity._death_triggers_emitted = True
+        # 性格特征生命周期（2026-08-26）：命零即随实例清除（幂等）。
+        # 挂在统一死亡管线里，AI/事件系统/查询接口此后都读不到该角色性格；
+        # 不写模板、不跨实例继承、不留永久人格历史。
+        remove_personality(self.state, entity)
         self._emit(
             CombatEventType.ENTITY_DIED, actor=death_ctx.actor, target=entity,
             ctx=entity._death_ctx, entity_type=entity.entity_type,

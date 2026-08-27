@@ -36,6 +36,13 @@ from .gamedata import (REGION_EXCLUSIVE_DAOWEN, ORIGINAL_MONSTER_DAOWEN,
 from .dm_rulings import DMRulingsDB, DMRuling, Interrupt
 from .death_book import DeathBookStore, draft_legacy, validate_legacy
 from .effect_context import make_context, normalize_context
+from .personality import (
+    get_personality as personality_get,
+    record_behavior as personality_record,
+    remove_personality as personality_remove,
+    format_personality_for_ai as personality_format,
+    resolve_entity as personality_resolve,
+)
 from .handlers.setup import (
     handle_setup_attributes,
     handle_setup_choose_region,
@@ -155,6 +162,52 @@ class GameEngine:
             "last_result": self._last_result,
             "available_actions": self.get_available_actions(),
         }
+
+    # ==================== 角色性格特征（Personality Traits，2026-08-26） ====================
+    # 原则"先射箭，后画靶"：创建时不预设人格，只由实际行为逐渐推断；命零即清除。
+    # 详见 engine/personality.py。性格只是行为倾向参考，绝不构成对决策的强制规则。
+
+    def get_personality(self, character) -> dict:
+        """读取存活角色性格：{success, runtime_id, name, traits}。
+
+        character 接受 Entity 实例 / runtime_id / 角色名；
+        死亡或未知角色一律 success=False——死亡角色的性格不得再被读取。
+        """
+        personality = personality_get(self.state, character)
+        if personality is None:
+            return {"success": False, "error": "角色不存在或已命零，无性格数据"}
+        return {"success": True, **personality}
+
+    def update_personality(self, character, dimension: str, direction: float,
+                           evidence: str, weight: float = 1.0) -> dict:
+        """以一条行为证据更新性格推断（不入模板、不跨实例、单次不贴死标签）。
+
+        dimension 见 engine.personality.TRAIT_DIMENSIONS；direction ±1；
+        evidence 必填（形成该判断的行为依据）；weight (0,1]。
+        """
+        entity = personality_resolve(self.state, character)
+        if entity is None:
+            return {"success": False, "error": "角色不存在或已命零，无法累积性格证据"}
+        try:
+            entry = personality_record(self.state, entity, dimension, direction,
+                                       evidence, weight=weight)
+        except ValueError as exc:
+            return {"success": False, "error": str(exc)}
+        return {"success": True, "runtime_id": entity.runtime_id,
+                "name": entity.name, "updated": entry}
+
+    def remove_personality(self, character) -> dict:
+        """手工清除角色性格数据（与死亡管线共用入口，幂等）。"""
+        removed = personality_remove(self.state, character)
+        return {"success": True, "removed": removed}
+
+    def format_personality_for_ai(self, character) -> dict:
+        """渲染供 AI 使用的人格摘要（含置信度、依据次数与'倾向非强制'提示）。"""
+        summary = personality_format(self.state, character)
+        if summary is None:
+            return {"success": False, "error": "角色不存在或已命零，无性格数据"}
+        return {"success": True, "summary": summary}
+
 
     def get_available_actions(self) -> dict:
         """
