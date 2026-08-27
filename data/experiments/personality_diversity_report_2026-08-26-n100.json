@@ -2609,5 +2609,172 @@
    "decisions": 15,
    "retries": 0
   }
- ]
+ ],
+ "survival_correlation": {
+  "per_dimension": {
+   "risk_preference": {
+    "label": "风险偏好(-求稳/+冒险)",
+    "n": 32,
+    "corr": -0.4981,
+    "buckets": {
+     "负向": {
+      "n": 30,
+      "cleared_mean": 3.833
+     },
+     "中间": {
+      "n": 1,
+      "cleared_mean": 1.0
+     },
+     "正向": {
+      "n": 1,
+      "cleared_mean": 2.0
+     }
+    }
+   },
+   "resource_view": {
+    "label": "资源观(-挥霍/+节约)",
+    "n": 18,
+    "corr": 0.2847,
+    "buckets": {
+     "负向": {
+      "n": 3,
+      "cleared_mean": 3.0
+     },
+     "中间": {
+      "n": 1,
+      "cleared_mean": 2.0
+     },
+     "正向": {
+      "n": 14,
+      "cleared_mean": 3.429
+     }
+    }
+   },
+   "exploration_desire": {
+    "label": "探索欲(-路径依赖/+求新)",
+    "n": 58,
+    "corr": -0.5088,
+    "buckets": {
+     "负向": {
+      "n": 42,
+      "cleared_mean": 3.167
+     },
+     "中间": {
+      "n": 12,
+      "cleared_mean": 2.25
+     },
+     "正向": {
+      "n": 4,
+      "cleared_mean": 1.0
+     }
+    }
+   },
+   "decision_habit": {
+    "label": "决策习惯(-冲动/+先观察)",
+    "n": 23,
+    "corr": 0.0152,
+    "buckets": {
+     "负向": {
+      "n": 13,
+      "cleared_mean": 3.077
+     },
+     "正向": {
+      "n": 10,
+      "cleared_mean": 3.4
+     }
+    }
+   },
+   "expression_style": {
+    "label": "表达方式(-迂回/+直球)",
+    "n": 57,
+    "corr": -0.0505,
+    "buckets": {
+     "负向": {
+      "n": 32,
+      "cleared_mean": 3.0
+     },
+     "中间": {
+      "n": 1,
+      "cleared_mean": 2.0
+     },
+     "正向": {
+      "n": 24,
+      "cleared_mean": 2.708
+     }
+    }
+   }
+  },
+  "far_vs_early": {
+   "far_n": 25,
+   "early_n": 68,
+   "portrait": {
+    "risk_preference": {
+     "label": "风险偏好(-求稳/+冒险)",
+     "far_mean": -0.758,
+     "far_n": 20,
+     "early_mean": -0.548,
+     "early_n": 8
+    },
+    "resource_view": {
+     "label": "资源观(-挥霍/+节约)",
+     "far_mean": 0.493,
+     "far_n": 8,
+     "early_mean": 0.242,
+     "early_n": 5
+    },
+    "exploration_desire": {
+     "label": "探索欲(-路径依赖/+求新)",
+     "far_mean": -0.714,
+     "far_n": 25,
+     "early_mean": -0.112,
+     "early_n": 26
+    },
+    "decision_habit": {
+     "label": "决策习惯(-冲动/+先观察)",
+     "far_mean": -0.385,
+     "far_n": 13,
+     "early_mean": -0.178,
+     "early_n": 7
+    },
+    "expression_style": {
+     "label": "表达方式(-迂回/+直球)",
+     "far_mean": -0.053,
+     "far_n": 25,
+     "early_mean": -0.044,
+     "early_n": 25
+    }
+   }
+  },
+  "behavior_vs_cleared": {
+   "high_pressure_defense_rate": {
+    "label": "高压窗口防御率",
+    "corr": 0.6471
+   },
+   "risky_rate": {
+    "label": "自伤冒险率",
+    "corr": -0.0842
+   },
+   "explore_rate": {
+    "label": "战斗内新牌尝试率",
+    "corr": -0.3353
+   },
+   "avg_mana_spend": {
+    "label": "均法力消耗",
+    "corr": 0.1481
+   },
+   "avg_x": {
+    "label": "平均X档位",
+    "corr": 0.3469
+   },
+   "attack_rate": {
+    "label": "攻击率",
+    "corr": -0.0309
+   }
+  },
+  "caveats": [
+   "相关≠因果:低探索欲与走得远的负相关含幸存者偏差(活得久→打法收敛→被记为路径依赖;早死者手里牌多为首试)",
+   "风险偏好只出现求稳侧成型(32人中30人),无冒险型对照,'求稳最远'是求稳者内部比较",
+   "战斗内'新牌尝试率'(-0.335)与局外'探索事件行动'是两个不同行为;后者经因果对照证实与通关≈0(见事件探索收益审计)"
+  ]
+ }
 }
