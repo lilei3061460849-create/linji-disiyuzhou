@@ -1,0 +1,85 @@
+{
+ "date": "2026-08-26",
+ "battles": {
+  "血僵": {
+   "n": 12,
+   "valid": 12,
+   "wins": 0,
+   "win_rate": 0.0,
+   "avg_rounds": 1.0,
+   "invalid_errs": []
+  },
+  "尸霸": {
+   "n": 12,
+   "valid": 12,
+   "wins": 0,
+   "win_rate": 0.0,
+   "avg_rounds": 1.0,
+   "invalid_errs": []
+  },
+  "执念": {
+   "n": 8,
+   "valid": 8,
+   "wins": 0,
+   "win_rate": 0.0,
+   "avg_rounds": 1.0,
+   "invalid_errs": []
+  },
+  "纸人": {
+   "n": 8,
+   "valid": 8,
+   "wins": 0,
+   "win_rate": 0.0,
+   "avg_rounds": 1.0,
+   "invalid_errs": []
+  },
+  "哀嚎者": {
+   "n": 8,
+   "valid": 8,
+   "wins": 0,
+   "win_rate": 0.0,
+   "avg_rounds": 1.0,
+   "invalid_errs": []
+  },
+  "腐疫鼠": {
+   "n": 8,
+   "valid": 8,
+   "wins": 0,
+   "win_rate": 0.0,
+   "avg_rounds": 1.0,
+   "invalid_errs": []
+  }
+ },
+ "player_casts": {
+  "勾魂": {
+   "success": true,
+   "error": "",
+   "summary": "消耗2法力，[回始]血僵失去4法力，永久",
+   "enemy_delta": {
+    "mana_limit": 0,
+    "speed_limit": 0,
+    "atk_cnt": 0
+   }
+  },
+  "冥气": {
+   "success": true,
+   "error": "",
+   "summary": "消耗15法力，3回合内血僵每失去速度速限-2",
+   "enemy_delta": {
+    "mana_limit": 0,
+    "speed_limit": 0,
+    "atk_cnt": 0
+   }
+  },
+  "镇尸": {
+   "success": false,
+   "error": "法力不足，需要10，当前5",
+   "summary": "",
+   "enemy_delta": {
+    "mana_limit": 0,
+    "speed_limit": 0,
+    "atk_cnt": 0
+   }
+  }
+ }
+}

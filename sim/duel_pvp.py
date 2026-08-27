@@ -110,23 +110,41 @@ def _resolve_opponent_one(e, log=None):
                     if best is None or score > best[0]:
                         best = (score, params, desc)
         if best is not None and best[0] > 0:
-            r = e.execute_action("use_daowen", best[1])
+            params = dict(best[1])
+            # 闪避中继(2026-08-26):攻方提交时代目标声明闪避(与怪物阶段解析器同构)。
+            # 挑战者是否闪避由 choose_dodge 按伤害阈值/速度预算决定——修复 PvP 双方
+            # 从不闪避的问题(用户指出:把把死斗第一回合结束)。
+            from engine.ai_tactics import choose_dodge
+            pv_check = previewer.preview("use_daowen", params)
+            exp_dmg = max(0, ((pv_check.get("diff", {}).get("player", {}) or {})
+                              .get("hp_before", 0))
+                          - ((pv_check.get("diff", {}).get("player", {}) or {})
+                             .get("hp_after", 0)))
+            params["dodge"] = choose_dodge(e, exp_dmg) if params.get("target_ref") == "player:0" else False
+            r = e.execute_action("use_daowen", params)
             if r.get("success"):
-                log.append(f"  {best[2]}")
+                dodge_note = "(挑战者闪避)" if params.get("dodge") else ""
+                log.append(f"  {best[2]}{dodge_note}")
                 return True
-    # 普攻兜底（prepare_attack/resolve_attack，走玩家侧攻击接口）
+    # 普攻兜底（prepare_attack/resolve_attack，走玩家侧攻击接口；逐击闪避由
+    # choose_dodge 按每击伤害与速度预算决定——挑战者侧的闪避终于存在）
     prep = e.execute_action("prepare_attack", {"actor_ref": ref})
     if not prep.get("success"):
         return False
     target_ref = "player:0"
     option = next((o for o in prep["result"]["target_options"] if o["ref"] == target_ref),
                   prep["result"]["target_options"][0])
-    hits = [{"target_ref": option["ref"], "dodge": False, "blood_shadow": False,
+    from engine.ai_tactics import choose_dodge
+    hits = [{"target_ref": option["ref"],
+             "dodge": choose_dodge(e, ent.attack_power or 1),
+             "blood_shadow": False,
              "spell_choices": _decline_spells(option)}
             for _ in range(prep["result"]["hit_count"])]
     res = e.execute_action("resolve_attack", {"token": prep["result"]["token"], "hits": hits})
     if res.get("success"):
-        log.append(f"  守擂{ent.name} 普攻（{prep['result']['hit_count']}击）")
+        n_dodge = sum(1 for h in hits if h["dodge"])
+        log.append(f"  守擂{ent.name} 普攻（{prep['result']['hit_count']}击"
+                   + (f",{n_dodge}击被闪避" if n_dodge else "") + "）")
         return True
     return False
 
@@ -181,6 +199,14 @@ def run_duel_pvp(e, player_act, max_rounds=60, max_steps=400, log=None,
             return {"winner": "challenger", "rounds": rnd, "reason": "守擂主将阵亡"}
         from sim.optional_actions import start_round
         rs, _rsart = start_round(e)
+        if not rs.get("success"):
+            # 回始失败不允许吞掉:法力不会回填,双方将永久空转(2026-08-26 死斗三
+            # "对手血契"校验事故)。显式判卫冕并留因,绝不无声挂死。
+            return {"winner": "defender", "rounds": rnd,
+                    "reason": f"回始失败判卫冕: {str(rs.get('error', ''))[:80]}"}
+        # 死锁防护:连续 STALL_GUARD_STEPS 步双方面板零变化 → 判卫冕(双有效行动
+        # 枯竭的残局,如 1 血 0 法互瞪;不做 400 步 × 60 回合的无意义空转)。
+        last_panel, panel_stall = None, 0
         for _ in range(max_steps):
             if _over_time():
                 return {"winner": "defender", "rounds": rnd,
@@ -191,6 +217,17 @@ def run_duel_pvp(e, player_act, max_rounds=60, max_steps=400, log=None,
                 return {"winner": "defender", "rounds": rnd, "reason": "挑战者阵亡"}
             if not _lord_alive():
                 return {"winner": "challenger", "rounds": rnd, "reason": "守擂主将阵亡"}
+            panel = (
+                (e.state.player.current_hp, e.state.player.shield, e.state.player.current_mana,
+                 e.state.player.current_speed, e.state.current_round) if e.state.player else None,
+                tuple((x.current_hp, x.shield, x.current_mana, x.current_speed)
+                      for x in e.state.enemies if x.entity_type == "轮回者"),
+            )
+            panel_stall = panel_stall + 1 if panel == last_panel else 0
+            last_panel = panel
+            if panel_stall >= 60:
+                return {"winner": "defender", "rounds": rnd,
+                        "reason": "死斗死锁判卫冕(双方面板连续60步零变化)"}
             if e.state.duel_turn == "player_side":
                 acted = player_act()
                 if not acted:

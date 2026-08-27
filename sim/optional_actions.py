@@ -92,6 +92,18 @@ def round_start_relic_choices(engine) -> dict:
             x = min(2, heart.current_uses)
         choices["余火印"] = {"use": x >= 1, "x": max(1, x),
                              "heart_name": heart.name if heart is not None else ""}
+    # 死斗:守擂方(敌方轮回者)持激活【血契】时,引擎校验要求玩家每回始显式提交
+    # "对手血契"决策(combat.validate_round_start_relic_choices:3698-3700)。
+    # 修复前 sim 从不构建该键 → round_start 每回合 ValueError → 法力永不回填
+    # → 双 0 法力空转到超时(2026-08-26 死斗三事故根因)。
+    if getattr(engine.state, "in_final_duel", False):
+        opp = next((e for e in engine.state.enemies
+                    if e.entity_type == "轮回者" and e.is_alive), None)
+        if opp is not None and any(r.name == "血契" for r in engine.state.opponent_relics):
+            x = 0
+            if opp.current_hp >= 25 and opp.current_mana < opp.mana_limit:
+                x = min(2, (opp.current_hp - 15) // 4)
+            choices["对手血契"] = {"use": x >= 1, "x": max(1, x)}
     return choices
 
 
