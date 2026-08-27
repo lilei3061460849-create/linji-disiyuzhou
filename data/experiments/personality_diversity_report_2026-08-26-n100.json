@@ -2776,5 +2776,91 @@
    "风险偏好只出现求稳侧成型(32人中30人),无冒险型对照,'求稳最远'是求稳者内部比较",
    "战斗内'新牌尝试率'(-0.335)与局外'探索事件行动'是两个不同行为;后者经因果对照证实与通关≈0(见事件探索收益审计)"
   ]
+ },
+ "death_learning_curve": {
+  "curve": [
+   {
+    "battle": 1,
+    "n": 100,
+    "first_try_rate": 0.2579,
+    "high_pressure_defense_rate": 0.1473,
+    "avg_trait_strength": 0.0,
+    "avg_formed_dims": 0.0
+   },
+   {
+    "battle": 2,
+    "n": 58,
+    "first_try_rate": 0.0543,
+    "high_pressure_defense_rate": 0.1171,
+    "avg_trait_strength": 0.2408,
+    "avg_formed_dims": 2.78
+   },
+   {
+    "battle": 3,
+    "n": 32,
+    "first_try_rate": 0.0212,
+    "high_pressure_defense_rate": 0.181,
+    "avg_trait_strength": 0.4002,
+    "avg_formed_dims": 3.03
+   },
+   {
+    "battle": 4,
+    "n": 28,
+    "first_try_rate": 0.0129,
+    "high_pressure_defense_rate": 0.2295,
+    "avg_trait_strength": 0.5543,
+    "avg_formed_dims": 2.93
+   },
+   {
+    "battle": 5,
+    "n": 25,
+    "first_try_rate": 0.0921,
+    "high_pressure_defense_rate": 0.4327,
+    "avg_trait_strength": 0.5707,
+    "avg_formed_dims": 3.04
+   },
+   {
+    "battle": 6,
+    "n": 13,
+    "first_try_rate": 0.0271,
+    "high_pressure_defense_rate": 0.7518,
+    "avg_trait_strength": 0.4648,
+    "avg_formed_dims": 3.77
+   },
+   {
+    "battle": 7,
+    "n": 7,
+    "first_try_rate": 0.0238,
+    "high_pressure_defense_rate": 0.7897,
+    "avg_trait_strength": 0.5981,
+    "avg_formed_dims": 4.29
+   }
+  ],
+  "battle1_predicts_survival": {
+   "早死(≤1场)": {
+    "n": 68,
+    "battle1_first_try_rate": 0.1825,
+    "battle1_avg_decisions": 14.01,
+    "battle1_high_pressure_defense": 0.1146
+   },
+   "中期(2-3场)": {
+    "n": 7,
+    "battle1_first_try_rate": 0.2015,
+    "battle1_avg_decisions": 14.71,
+    "battle1_high_pressure_defense": 0.4833
+   },
+   "长寿(≥4场)": {
+    "n": 25,
+    "battle1_first_try_rate": 0.4787,
+    "battle1_avg_decisions": 9.88,
+    "battle1_high_pressure_defense": 0.1655
+   }
+  },
+  "mechanism": "引擎无跨场记忆(probe cache 按场清空);变聪明的唯一载体=行为→personality_traits→后续行为闭环",
+  "caveats": [
+   "第5-7场防御率上升含幸存者选择效应(防御好者才活到后期)",
+   "干净的学习证据=性格强度单调上升(0→0.60)与首试率单调下降(25.8%→2%),逐场独立计量不受偏差污染",
+   "本构筑自伤手段极少,低血自伤率恒0;'避免重复犯错'体现为首试率骤降而非自伤下降"
+  ]
  }
 }
