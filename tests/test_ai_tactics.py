@@ -112,15 +112,21 @@ def test_ai_handles_no_enemies(tmp_path):
 
 def test_resonance_only_targets_existing_paths(tmp_path):
     """
-    错误输入：残韵只能对**存在变化路径**的道纹发动。
-    怪物原始道纹(必中/狂暴/飞行)无路径，AI 不得把残韵浪费在上面。
+    错误输入：残韵只能对**存在变化路径**的道纹发动（2026-08-26 起无固定目标表，
+    候选由引擎 ResonanceEngine 实时枚举，本测试锁定该不变量）。
     """
     from engine.daowen import ResonanceEngine
-    from engine.ai_tactics import HIGH_VALUE_ENEMY_DAOWEN
 
-    for dw in HIGH_VALUE_ENEMY_DAOWEN:
-        paths = ResonanceEngine.get_available_resonance(dw)
-        assert paths, f"{dw} 无残韵路径，不应出现在 AI 的残韵目标表中"
+    e = _engine(tmp_path)
+    ai = TacticalAI(e)
+    stock = {k: v for k, v in e.state.resonance.items() if v > 0}
+    for _score, cand in ai._resonance_candidates():
+        params = cand["params"]
+        assert stock.get(params["resonance_type"], 0) > 0, "候选必须消耗实存残韵库存"
+        paths = ResonanceEngine.get_available_resonance(params["source_daowen"])
+        assert paths, f"{params['source_daowen']} 无残韵路径，不得成为候选"
+        enemy_names = [en.name for en in e.state.enemies if en.is_alive]
+        assert params["target"] in enemy_names, "残韵目标必须是存活敌人"
 
 
 def test_ai_never_bypasses_engine_validation(tmp_path):
@@ -147,19 +153,28 @@ def test_ai_does_not_crash_without_any_daowen(tmp_path):
     assert ai.take_action() is None
 
 
-def test_tactical_roles_match_readme_costs():
-    """正常：战术表消耗必须跟正文现行公式一致，禁止沿用杀伐3X或缓慢10法力。"""
-    from engine.ai_tactics import TACTICAL_ROLES
-    assert TACTICAL_ROLES["杀伐"]["cost"] == 1
-    assert TACTICAL_ROLES["杀伐"]["dmg_per_x"] == 2
-    assert TACTICAL_ROLES["波及"]["cost"] == 3
-    assert TACTICAL_ROLES["波及"]["role"] == "mark"
-    assert TACTICAL_ROLES["封印"]["cost"] == 0
-    assert TACTICAL_ROLES["封印"]["pay"] == "异变"
-    assert TACTICAL_ROLES["增殖"]["cost"] == 1
-    # 已删除道纹不得残留
-    for removed in ("冲击", "切割", "缓慢", "慈悲"):
-        assert removed not in TACTICAL_ROLES
+def test_no_fixed_tactic_tables_remain():
+    """2026-08-26 防公式化改造：固定战术表/固定残韵目标表/基类固定顺序必须不存在。
+
+    战术知识不得以查表形式回填——AI 只能经 ActionPreview 预演实时决策。
+    """
+    import engine.ai_tactics as mod
+    assert not hasattr(mod, "TACTICAL_ROLES"), "固定战术表不得回填"
+    assert not hasattr(mod, "HIGH_VALUE_ENEMY_DAOWEN"), "固定残韵目标表不得回填"
+    assert TacticalAI.STRATEGIES is None, "基类不得有固定策略顺序（仅实验子类可覆写）"
+
+
+def test_ai_cost_facts_come_from_preview_not_tables(tmp_path):
+    """正常：法力单价等事实来自预演归纳（引擎事实源），而非硬编码表。"""
+    e = _engine(tmp_path)
+    ai = TacticalAI(e)
+    probe = ai._probe("杀伐")
+    assert probe is not None and probe["kind"] == "damage"
+    assert probe["cost_per_x"] == 1          # 与正文现行公式一致（消耗X、2X伤害）
+    assert probe["dmg"] == 2
+    shield = ai._probe("庇护")
+    assert shield is not None and shield["kind"] == "shield"
+    assert shield["target_name"] == e.state.player.name, "庇护必须朝向自身（方向由预演判定）"
 
 
 def test_ai_can_mark_wave_targets(tmp_path):

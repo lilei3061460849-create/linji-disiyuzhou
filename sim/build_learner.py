@@ -37,13 +37,18 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from tests.setup_support import choose_discovered_initial_daowen
 from engine.api import GameEngine
-from engine.ai_tactics import TacticalAI, TACTICAL_ROLES
+from engine.ai_tactics import TacticalAI
+from engine.daowen import DaoWenEngine
 
 KNOWLEDGE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                          "data", "build_knowledge.json")
 
-# 候选池：所有 AI 会主动使用的道纹（数据驱动，跟着 TACTICAL_ROLES 走）
-CANDIDATES = sorted(TACTICAL_ROLES.keys())
+# 候选池：引擎注册表派生（2026-08-26 防公式化清理后战术表已删；
+# AI 实时预演决策,任何注册道纹持有即可发动,故池=玩家可获得的注册道纹全集）
+DaoWenEngine.register_all()
+CANDIDATES = sorted(n for n, fn in DaoWenEngine._registry.items()
+                    if getattr(fn, "is_player_daowen", True) or True
+                    and n not in ORIGINAL_MONSTER_DAOWEN)
 
 # 门禁修复后，并非所有道纹都能通过局外【学习】获得：
 #   - 怪物转化道纹：须以自身已持有的道纹为起点经残韵变化获得（README 211/248）
@@ -1387,6 +1392,13 @@ def load() -> dict:
         # 战术知识区（战报驱动：根据对局结果持续更新优化，淘汰过时打法）
         if "tactics" not in k:
             k["tactics"] = {}
+        # 2026-08-26 防公式化清理后，best/trials/pair_scores 可能已从文件中删除
+        # （知识从零重学）；结构键缺失时按空库归一化，禁止代码层回填旧最优解。
+        k.setdefault("trials", {})
+        k.setdefault("pair_scores", {})
+        k.setdefault("history", [])
+        k.setdefault("best", None)
+        k.setdefault("lessons", [])
         return k
     return {"generation": 0, "trials": {}, "pair_scores": {}, "history": [], "best": None,
             "tactics": {}}

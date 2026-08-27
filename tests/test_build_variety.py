@@ -2,7 +2,8 @@
 pytest - AI 道纹多样性（数据驱动，不写死道纹名）
 
 背景：早前 AI 把"杀伐/庇护/再生/冲击/切割"硬编码在 if 分支里，
-无法测试切割系与副本专属道纹。现改为 TACTICAL_ROLES 数据驱动。
+无法测试切割系与副本专属道纹。2026-08-26 起战术表已删（防公式化），
+AI 改为预演实时决策——本文件验证"持有即可能被发动"的多样性不变量。
 
 覆盖：正常路径 / 边界条件 / 错误输入
 """
@@ -15,7 +16,7 @@ from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
-from engine.ai_tactics import TacticalAI, TACTICAL_ROLES
+from engine.ai_tactics import TacticalAI
 
 
 def _engine(starter="杀伐", learn=(), region="龙心谷", seed=1, tmp="/tmp/bv.db"):
@@ -79,7 +80,9 @@ def test_ai_uses_region_specific_daowen(dw):
                cost_formula="X", effect_formula=""))
     # 法力需满足：单次出手预算(总法力÷出手次数) 足以让该 debuff 达到 X≥2，
     # 同时怪物血量要高到不会被一击收割（否则 AI 直接击杀，debuff 轮不到）。
-    _cost = TACTICAL_ROLES[dw].get("cost", 1)
+    _ai0 = TacticalAI(e)
+    _probe = _ai0._probe(dw)
+    _cost = (_probe or {}).get("cost_per_x", 1)
     e.state.player.current_mana = max(12, _cost * 2 * 3)
     for _m in e.state.enemies:
         _m.blood_limit = max(_m.blood_limit, 300)
@@ -97,33 +100,31 @@ def test_ai_uses_region_specific_daowen(dw):
     assert ai.used.get(dw, 0) > 0, f"{dw} 从未被使用，实际使用：{ai.used}"
 
 
-def test_every_tactical_role_is_reachable():
-    """正常路径：表中每个 role 都有对应的 owned() 查询路径"""
-    roles = {v["role"] for v in TACTICAL_ROLES.values()}
+def test_every_role_query_is_reachable():
+    """正常路径：每个旧角色名都有对应的 owned() 查询路径（兼容壳）"""
     e = _engine()
     ai = TacticalAI(e)
-    for r in roles:
+    for r in ("nuke", "aoe", "finisher", "mark", "shield", "heal",
+              "control", "debuff", "buff", "remove", "ramp", "reroll"):
         ai.owned(r)  # 不应抛异常
 
 
 # ---------- 边界条件 ----------
 
-def test_nuke_ranked_prefers_higher_damage_per_budget():
-    """边界：切割是持续增益，不进输出排序；小预算只能打杀伐。"""
-    e = _engine(starter="切割", learn=["杀伐"])
+def test_damage_ranking_comes_from_probe_facts():
+    """边界：输出牌按预演事实（每X伤害/法力单价）排序，不查表。"""
+    e = _engine(learn=["杀伐"])
     ai = TacticalAI(e)
-    ranked = ai._nuke_ranked(2)
-    assert ranked[0][0] == "杀伐", f"预算2时应只能发动杀伐，实际 {ranked}"
-    assert all(name != "切割" for name, *_ in ranked)
+    probe = ai._probe("杀伐")
+    assert probe["kind"] == "damage"
+    assert probe["dmg"] == 2 and probe["cost_per_x"] == 1   # 引擎事实：2伤害/1法力
 
 
-def test_qiege_is_buff_not_nuke():
-    """正常：切割不再按单体削血排序，杀伐仍是输出首选。"""
-    e = _engine(starter="切割", learn=["杀伐"])
+def test_owned_nuke_only_contains_damage_kind():
+    """正常：owned('nuke') 只含预演/文本归纳为输出的道纹。"""
+    e = _engine(learn=["杀伐"])
     ai = TacticalAI(e)
-    ranked = ai._nuke_ranked(6)
-    assert ranked[0][0] == "杀伐", f"预算6时输出首选应是杀伐，实际 {ranked}"
-    assert "切割" not in ai.owned("nuke")
+    assert "杀伐" in ai.owned("nuke")
 
 
 def test_control_not_repeated_on_same_target_in_one_round():
@@ -149,20 +150,17 @@ def test_new_round_resets_control_bookkeeping():
 
 # ---------- 错误输入 ----------
 
-def test_all_tactical_roles_reference_registered_daowen():
-    """错误输入检出：战术表里不得出现引擎未注册的道纹（否则AI必然空转）"""
+def test_ai_candidate_pool_matches_engine_registry():
+    """错误输入检出：AI 可主动发动的道纹池必须由引擎注册表派生（非人工表）。
+
+    防公式化清理后构筑候选池=注册表非怪物原始道纹；注册表外不得有任何
+    AI 侧道纹名单（否则又是第二张表）。
+    """
     from engine.daowen import DaoWenEngine
     DaoWenEngine.register_all()
-    unknown = [n for n in TACTICAL_ROLES if n not in DaoWenEngine._registry]
-    assert not unknown, f"战术表引用了未注册的道纹：{unknown}"
-
-
-def test_tactical_table_entries_wellformed():
-    """非法配置：每条战术表项必须有合法 role 与非负 cost"""
-    valid = {"nuke", "aoe", "mark", "shield", "heal", "control", "debuff", "buff", "ramp", "remove", "reroll"}
-    for name, info in TACTICAL_ROLES.items():
-        assert info.get("role") in valid, f"{name} 的 role 非法：{info.get('role')}"
-        assert info.get("cost", 0) >= 0, f"{name} 的 cost 为负"
+    import engine.ai_tactics as mod
+    for attr in dir(mod):
+        assert "TACTICAL_ROLES" not in attr and "HIGH_VALUE" not in attr
 
 
 def test_ai_skips_daowen_it_does_not_own():
