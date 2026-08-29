@@ -237,6 +237,6 @@ effect_flow: 发动杀伐X于攻击者→循环
   `_condition_resolver`、`_resolve_entry_target`、`validate_spell_reaction_submission`
 - `engine/api.py` —— 学习/使用两个动作里的 `wired`/`warning`/`loop` 诚实标注
 - `sim/probe_custom_spell_triggers.py` —— 本报告全部数据的可重复运行来源
-- `自创法术语法.md` —— 完整语法参考手册（触发时机表/效果流程语法/条件表达式文法/完整示例）
+- `法术索引.md` —— 完整语法参考手册（触发时机表/效果流程语法/条件表达式文法/完整示例）
 - `tests/test_spell_dsl.py` —— DSL 单元测试（52 passed）
 - 全量回归：`pytest tests/ -q` → 1320 passed

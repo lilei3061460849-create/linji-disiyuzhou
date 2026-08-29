@@ -43,7 +43,7 @@ def load_corpora():
            + "\n" + sh("git", "show", f"{TAG}:报告.md"))
     post = ((ROOT / "AI_EXPERIENCE.md").read_text(encoding="utf-8")
             + "\n" + (ROOT / "报告.md").read_text(encoding="utf-8"))
-    shared_files = ["README.md", "死者之书.md", "全道纹索引.md", "副本索引.md", "物品索引.md"]
+    shared_files = ["README.md", "死者之书.md", "全道纹索引.md", "副本索引.md", "物品索引.md", "法术索引.md"]
     shared = "\n".join((ROOT / f).read_text(encoding="utf-8") for f in shared_files
                        if (ROOT / f).exists())
     arch = "\n".join(p.read_text(encoding="utf-8")
