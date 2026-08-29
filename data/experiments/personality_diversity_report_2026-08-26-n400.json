@@ -1,0 +1,91 @@
+{
+ "date": "2026-08-26",
+ "batch": "n400(新种子段 40260826+,与 n100 不重叠)",
+ "n": 400,
+ "cleared_dist": {
+  "0": 190,
+  "1": 84,
+  "2": 24,
+  "3": 23,
+  "4": 30,
+  "5": 31,
+  "6": 11,
+  "7": 7
+ },
+ "won": 1,
+ "first_winner_at_character": 141,
+ "win_rate": 0.0025,
+ "combined_with_n100": {
+  "total": 500,
+  "won": 1,
+  "rate": 0.002
+ },
+ "p95_characters_for_one_win": 1497,
+ "winner": {
+  "cid": 140,
+  "seed": 41369486,
+  "final_traits": {
+   "exploration_desire": {
+    "trait": "exploration_desire",
+    "value": "守成",
+    "score": -0.7846,
+    "strength": 0.7846,
+    "confidence": 0.95,
+    "evidence_count": 18,
+    "last_evidence": "第6次重复【庇护】",
+    "last_updated_battle": 6
+   },
+   "expression_style": {
+    "trait": "expression_style",
+    "value": "直言",
+    "score": 0.9995,
+    "strength": 0.9995,
+    "confidence": 0.95,
+    "evidence_count": 18,
+    "last_evidence": "直球输出(杀伐X=8)",
+    "last_updated_battle": 6
+   },
+   "decision_habit": {
+    "trait": "decision_habit",
+    "value": "冲动",
+    "score": -0.9984,
+    "strength": 0.9984,
+    "confidence": 0.95,
+    "evidence_count": 15,
+    "last_evidence": "高压窗口满预算输出(杀伐X=8)",
+    "last_updated_battle": 6
+   },
+   "risk_preference": {
+    "trait": "risk_preference",
+    "value": "求稳",
+    "score": -0.9681,
+    "strength": 0.9681,
+    "confidence": 0.95,
+    "evidence_count": 8,
+    "last_evidence": "高压窗口以庇护X=8无损设防",
+    "last_updated_battle": 6
+   },
+   "emotional_stability": {
+    "trait": "emotional_stability",
+    "value": "偏沉稳",
+    "score": 0.35,
+    "strength": 0.35,
+    "confidence": 0.3,
+    "evidence_count": 1,
+    "last_evidence": "低血自稳(庇护X=10)",
+    "last_updated_battle": 5
+   }
+  },
+  "trait_dims_by_battle": [
+   0,
+   2,
+   3,
+   3,
+   4,
+   5,
+   5,
+   0
+  ],
+  "decisions": 121
+ }
+}

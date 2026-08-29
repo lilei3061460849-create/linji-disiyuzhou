@@ -114,15 +114,6 @@ def test_setup_discovery_rejects_result_only():
         )
 
 
-@pytest.mark.skip(reason="报告.md 改为只保留最新压测报告，旧战报格式校验废弃")
-def test_current_zhanbao_lists_setup_options():
-    """正常：现行战报开局必须能通过候选校验。"""
-    text = Path(__file__).resolve().parents[1].joinpath("报告.md").read_text(encoding="utf-8")
-    checked = BR.validate_setup_discovery_text(text)
-    assert checked["daowen_pick"] in checked["daowen_options"]
-    assert checked["relic_pick"] in checked["relic_options"]
-
-
 def test_setup_linter_rejects_pick_only_report():
     """错误输入：只写选了什么、不写候选的开局段必须被拒。"""
     with pytest.raises(ValueError, match="初始道纹发现候选"):
@@ -331,17 +322,6 @@ def test_report_is_reproducible_with_same_seed():
 
 
 # ---------- 出手合规性程序校验器（新增三类测试） ----------
-
-@pytest.mark.skip(reason="报告.md 改为只保留最新压测报告，旧战报格式校验废弃")
-def test_current_zhanbao_passes_action_linter():
-    """正常路径：当前权威《报告.md》必须通过出手合规性程序化校验（无打包施法、死斗严格交替）"""
-    zhanbao_path = Path(__file__).resolve().parents[1] / "报告.md"
-    assert zhanbao_path.exists(), "报告.md 必须存在"
-    text = zhanbao_path.read_text(encoding="utf-8")
-    res = BR.validate_battle_report_actions(text)
-    assert res["status"] == "compliant"
-    assert res["total_actions_validated"] > 0
-
 
 def test_action_linter_allows_single_daowen_per_action():
     """边界条件：单回合内每动仅发动1个道纹的合法战报片段必须通过校验"""

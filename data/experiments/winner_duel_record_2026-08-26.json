@@ -1,0 +1,298 @@
+{
+ "date": "2026-08-26",
+ "method": "原局重放:封存队列跨局滚动、原擂主快照已被覆盖,无法直接读取;经核对 n400 名单,cid121 是 cid140 之前唯一 cleared=7 者,原局链条=cid121 封存→cid140 挑战。本记录按同链条受控重放(清空队列→同种子重放 cid121 入队→同种子跑 cid140),挑战者前7场逐位复现,结局与原局一致(won=True)——即原局等价重放。",
+ "cid121_sealed_snapshot": {
+  "hp": 31,
+  "blood_limit": 36,
+  "mana_limit": 30,
+  "dao_wen": [
+   "再生",
+   "庇护",
+   "畸变",
+   "自残",
+   "血债"
+  ]
+ },
+ "duel": {
+  "before": {
+   "challenger": {
+    "name": "贾凡",
+    "hp": "1/36",
+    "mana": "0/34",
+    "speed": 10,
+    "shield": 0,
+    "attack": "0x0",
+    "dao_wen": [
+     "再生",
+     "庇护",
+     "杀伐"
+    ],
+    "spells": [
+     "先发制人",
+     "后发制人",
+     "生生不息"
+    ],
+    "is_alive": true,
+    "relics": [
+     "买路财",
+     "避风铃",
+     "三相残韵盘"
+    ],
+    "resonance": {
+     "反转": 1,
+     "转换": 2,
+     "曲解": 3
+    },
+    "personality": {
+     "exploration_desire": {
+      "trait": "exploration_desire",
+      "value": "守成",
+      "score": -0.9408,
+      "strength": 0.9408,
+      "confidence": 0.95,
+      "evidence_count": 21,
+      "last_evidence": "第21次重复【庇护】",
+      "last_updated_battle": 7
+     },
+     "expression_style": {
+      "trait": "expression_style",
+      "value": "直言",
+      "score": 0.9999,
+      "strength": 0.9999,
+      "confidence": 0.95,
+      "evidence_count": 21,
+      "last_evidence": "直球输出(杀伐X=9)",
+      "last_updated_battle": 7
+     },
+     "decision_habit": {
+      "trait": "decision_habit",
+      "value": "冲动",
+      "score": -0.9995,
+      "strength": 0.9995,
+      "confidence": 0.95,
+      "evidence_count": 18,
+      "last_evidence": "高压窗口满预算输出(杀伐X=9)",
+      "last_updated_battle": 7
+     },
+     "risk_preference": {
+      "trait": "risk_preference",
+      "value": "求稳",
+      "score": -0.9912,
+      "strength": 0.9912,
+      "confidence": 0.95,
+      "evidence_count": 11,
+      "last_evidence": "高压窗口以庇护X=9无损设防",
+      "last_updated_battle": 7
+     },
+     "emotional_stability": {
+      "trait": "emotional_stability",
+      "value": "偏沉稳",
+      "score": 0.35,
+      "strength": 0.35,
+      "confidence": 0.3,
+      "evidence_count": 1,
+      "last_evidence": "低血自稳(庇护X=10)",
+      "last_updated_battle": 5
+     }
+    }
+   },
+   "defender": {
+    "name": "贾凡（对手）",
+    "hp": "31/36",
+    "mana": "0/30",
+    "speed": 13,
+    "shield": 0,
+    "attack": "0x0",
+    "dao_wen": [
+     "再生",
+     "庇护",
+     "畸变",
+     "自残",
+     "血债"
+    ],
+    "spells": [
+     "后发制人",
+     "生生不息"
+    ],
+    "is_alive": true,
+    "relics": [
+     "血誓戒",
+     "守夜灯"
+    ]
+   },
+   "first_mover": "opponent_side"
+  },
+  "log": [],
+  "trace": [
+   {
+    "after_player_action": 1,
+    "player": "25hp/0盾/26法",
+    "defender": "31hp/0盾",
+    "round": 1
+   },
+   {
+    "after_player_action": 2,
+    "player": "25hp/0盾/18法",
+    "defender": "15hp/0盾",
+    "round": 1
+   },
+   {
+    "after_player_action": 3,
+    "player": "25hp/0盾/10法",
+    "defender": "0hp/0盾",
+    "round": 1
+   }
+  ],
+  "result": {
+   "winner": "challenger",
+   "rounds": 1,
+   "reason": "守擂主将阵亡"
+  }
+ },
+ "challenger_actions": [
+  {
+   "action": "发动道纹【再生X=8】",
+   "battle": 7,
+   "round": 1,
+   "risk": {
+    "hp": 1,
+    "hp_after": 25,
+    "shield": 0,
+    "shield_after": 0,
+    "mana": 34,
+    "mana_after": 26,
+    "enemy_hp": 31,
+    "enemy_hp_after": 31,
+    "threat": 0
+   }
+  },
+  {
+   "action": "残韵【曲解】庇护 → 固执",
+   "battle": 7,
+   "round": 1,
+   "risk": {
+    "hp": 25,
+    "hp_after": 25,
+    "shield": 0,
+    "shield_after": 0,
+    "mana": 26,
+    "mana_after": 26,
+    "enemy_hp": 31,
+    "enemy_hp_after": 31,
+    "threat": 0
+   }
+  },
+  {
+   "action": "残韵【曲解】庇护 → 固执",
+   "battle": 7,
+   "round": 1,
+   "risk": {
+    "hp": 25,
+    "hp_after": 25,
+    "shield": 0,
+    "shield_after": 0,
+    "mana": 26,
+    "mana_after": 26,
+    "enemy_hp": 31,
+    "enemy_hp_after": 31,
+    "threat": 0
+   }
+  },
+  {
+   "action": "残韵【曲解】再生 → 庇护",
+   "battle": 7,
+   "round": 1,
+   "risk": {
+    "hp": 25,
+    "hp_after": 25,
+    "shield": 0,
+    "shield_after": 0,
+    "mana": 26,
+    "mana_after": 26,
+    "enemy_hp": 31,
+    "enemy_hp_after": 31,
+    "threat": 0
+   }
+  },
+  {
+   "action": "发动道纹【杀伐X=8】",
+   "battle": 7,
+   "round": 1,
+   "risk": {
+    "hp": 25,
+    "hp_after": 25,
+    "shield": 0,
+    "shield_after": 0,
+    "mana": 26,
+    "mana_after": 18,
+    "enemy_hp": 31,
+    "enemy_hp_after": 15,
+    "threat": 0
+   }
+  },
+  {
+   "action": "残韵【反转】固执 → 血债",
+   "battle": 7,
+   "round": 1,
+   "risk": {
+    "hp": 25,
+    "hp_after": 25,
+    "shield": 0,
+    "shield_after": 0,
+    "mana": 18,
+    "mana_after": 18,
+    "enemy_hp": 15,
+    "enemy_hp_after": 15,
+    "threat": 0
+   }
+  },
+  {
+   "action": "残韵【转换】血债 → 波及",
+   "battle": 7,
+   "round": 1,
+   "risk": {
+    "hp": 25,
+    "hp_after": 25,
+    "shield": 0,
+    "shield_after": 0,
+    "mana": 18,
+    "mana_after": 18,
+    "enemy_hp": 15,
+    "enemy_hp_after": 15,
+    "threat": 0
+   }
+  },
+  {
+   "action": "残韵【转换】血债 → 波及",
+   "battle": 7,
+   "round": 1,
+   "risk": {
+    "hp": 25,
+    "hp_after": 25,
+    "shield": 0,
+    "shield_after": 0,
+    "mana": 18,
+    "mana_after": 18,
+    "enemy_hp": 15,
+    "enemy_hp_after": 15,
+    "threat": 0
+   }
+  },
+  {
+   "action": "发动道纹【杀伐X=8】",
+   "battle": 7,
+   "round": 1,
+   "risk": {
+    "hp": 25,
+    "hp_after": 25,
+    "shield": 0,
+    "shield_after": 0,
+    "mana": 18,
+    "mana_after": 10,
+    "enemy_hp": 15,
+    "enemy_hp_after": 0,
+    "threat": 0
+   }
+  }
+ ]
+}

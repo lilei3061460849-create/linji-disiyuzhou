@@ -1,0 +1,9260 @@
+{
+ "dist": {
+  "0": 190,
+  "1": 84,
+  "2": 24,
+  "3": 23,
+  "4": 30,
+  "5": 31,
+  "6": 11,
+  "7": 7
+ },
+ "wins": 0,
+ "duels": [
+  {
+   "first_mover": "opponent_side",
+   "challenger_panel": {
+    "hp": "1/36",
+    "mana": 0,
+    "mana_limit": 34,
+    "speed": 10,
+    "dao_wen": [
+     "再生",
+     "庇护",
+     "杀伐"
+    ],
+    "relics": [
+     "买路财",
+     "避风铃",
+     "三相残韵盘"
+    ],
+    "resonance": {
+     "反转": 1,
+     "转换": 2,
+     "曲解": 3
+    }
+   },
+   "defender_panel": {
+    "hp": "31/36",
+    "mana": 0,
+    "mana_limit": 30,
+    "speed": 13,
+    "dao_wen": [
+     "再生",
+     "庇护",
+     "畸变",
+     "自残",
+     "血债"
+    ],
+    "relics": [
+     "血誓戒",
+     "守夜灯"
+    ]
+   },
+   "log": [
+    "  守擂贾凡（对手） 血债X=1→挑战者"
+   ],
+   "steps": [
+    {
+     "side": "defender",
+     "ok": true,
+     "P": {
+      "hp": 0,
+      "shield": 0,
+      "mana": 34
+     },
+     "L": {
+      "hp": 30,
+      "shield": 0,
+      "mana": 45
+     },
+     "round": 1
+    }
+   ],
+   "result": {
+    "winner": "defender",
+    "rounds": 1,
+    "reason": "挑战者阵亡"
+   },
+   "challenger_actions": []
+  },
+  {
+   "first_mover": "player_side",
+   "challenger_panel": {
+    "hp": "33/36",
+    "mana": 0,
+    "mana_limit": 30,
+    "speed": 15,
+    "dao_wen": [
+     "再生",
+     "固执",
+     "庇护",
+     "衰败"
+    ],
+    "relics": [
+     "回锋刀",
+     "避风铃",
+     "无所求"
+    ],
+    "resonance": {
+     "反转": 0
+    }
+   },
+   "defender_panel": {
+    "hp": "23/36",
+    "mana": 0,
+    "mana_limit": 30,
+    "speed": 13,
+    "dao_wen": [
+     "再生",
+     "封印",
+     "庇护",
+     "无神",
+     "自残"
+    ],
+    "relics": [
+     "忘忧香",
+     "买路财",
+     "无所求",
+     "同魂笔",
+     "回锋刀"
+    ]
+   },
+   "log": [
+    "  守擂贾凡（对手） 再生X=30→挑战者"
+   ],
+   "steps": [
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 33,
+      "shield": 2,
+      "mana": 29
+     },
+     "L": {
+      "hp": 23,
+      "shield": 0,
+      "mana": 30
+     },
+     "round": 1
+    },
+    {
+     "side": "defender",
+     "ok": true,
+     "P": {
+      "hp": 0,
+      "shield": 2,
+      "mana": 29
+     },
+     "L": {
+      "hp": 23,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 1
+    }
+   ],
+   "result": {
+    "winner": "defender",
+    "rounds": 1,
+    "reason": "挑战者阵亡"
+   },
+   "challenger_actions": [
+    {
+     "i": 165,
+     "battle": 7,
+     "round": 1,
+     "action": "发动道纹【庇护X=1】",
+     "category": "daowen",
+     "daowen": "庇护",
+     "x": 1,
+     "target": "",
+     "risk": {
+      "hp": 33,
+      "hp_after": 33,
+      "shield": 0,
+      "shield_after": 2,
+      "mana": 30,
+      "mana_after": 29,
+      "enemy_hp": 23,
+      "enemy_hp_after": 23,
+      "threat": 0,
+      "shards": 287,
+      "shards_after": 287,
+      "daowen_usable": [
+       "再生",
+       "固执",
+       "庇护",
+       "衰败"
+      ]
+     },
+     "behavior": {
+      "attack": false,
+      "defense": true,
+      "finish": false,
+      "risky": false,
+      "exploratory": false,
+      "mana_spent": 1,
+      "shards_spent": 0,
+      "high_pressure": false
+     },
+     "evidence": [],
+     "_in_duel": true
+    }
+   ]
+  },
+  {
+   "first_mover": "player_side",
+   "challenger_panel": {
+    "hp": "1/36",
+    "mana": 0,
+    "mana_limit": 28,
+    "speed": 14,
+    "dao_wen": [
+     "再生",
+     "封印",
+     "庇护",
+     "蒙蔽",
+     "退化"
+    ],
+    "relics": [
+     "忘忧香",
+     "折速法印",
+     "同魂笔",
+     "买路财",
+     "回锋刀",
+     "无所求",
+     "避风铃"
+    ],
+    "resonance": {
+     "反转": 0,
+     "曲解": 0
+    }
+   },
+   "defender_panel": {
+    "hp": "1/36",
+    "mana": 0,
+    "mana_limit": 30,
+    "speed": 12,
+    "dao_wen": [
+     "再生",
+     "封印",
+     "庇护"
+    ],
+    "relics": [
+     "忘忧香",
+     "折速法印",
+     "避风铃",
+     "血契"
+    ]
+   },
+   "log": [],
+   "steps": [
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    },
+    {
+     "side": "challenger",
+     "ok": true,
+     "P": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "L": {
+      "hp": 1,
+      "shield": 0,
+      "mana": 0
+     },
+     "round": 0
+    }
+   ],
+   "result": {
+    "winner": "defender",
+    "rounds": 2,
+    "reason": "超时卫冕(>30s)",
+    "timeout": true,
+    "diag_state_sizes": [
+     [
+      "combat_events",
+      1.57
+     ],
+     [
+      "dead_monsters",
+      1.02
+     ],
+     [
+      "player",
+      0.16
+     ],
+     [
+      "enemies",
+      0.09
+     ],
+     [
+      "duel_defending_snapshot",
+      0.05
+     ],
+     [
+      "consumables",
+      0.05
+     ]
+    ]
+   },
+   "challenger_actions": []
+  }
+ ]
+}

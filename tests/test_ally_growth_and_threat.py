@@ -108,13 +108,16 @@ def test_boundary_undeployed_employee_does_not_grow():
 # ---------- 正常路径：怪物威胁目标 ----------
 
 def test_monster_threat_scores():
-    """正常路径：威胁分 = 攻击力×攻击次数 + 输出道纹加成。"""
+    """正常路径：威胁分 = 攻击力×攻击次数 + 施法型道纹加成（cost_type 可见事实）。"""
+    from engine.models import DaoWen, DaoWenInstance
     player = Entity("P", "轮回者", blood_limit=60, current_hp=60,
                     attack_count=0, attack_power=0)
-    player.dao_wen["杀伐"] = object()  # 输出道纹
+    player.dao_wen["杀伐"] = DaoWenInstance(DaoWen(  # 施法型（消耗）主动手段
+        name="杀伐", formula="", cost_type="消耗", cost_formula="X", effect_formula=""))
     ally = Entity("岩行者", "朋友", blood_limit=54, current_hp=54,
                   attack_count=5, attack_power=6)
-    ally.dao_wen["背负"] = object()  # 非输出道纹
+    ally.dao_wen["背负"] = DaoWenInstance(DaoWen(  # 空代价型（触发/被动）不加成
+        name="背负", formula="", cost_type="", cost_formula="", effect_formula=""))
     assert monster_threat(ally) == 30, f"5×6=30，实{monster_threat(ally)}"
     assert monster_threat(player) == 10, f"0×0+杀伐=10，实{monster_threat(player)}"
 

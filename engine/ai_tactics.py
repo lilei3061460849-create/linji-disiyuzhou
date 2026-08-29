@@ -1,22 +1,25 @@
 """
 战术AI：为轮回者在战斗中选择行动。
 
-设计目标：**数据驱动，不写死道纹名**。
-早前版本把"杀伐/庇护/再生"等硬编码在 if 分支里，导致无法测试
-各副本专属道纹。现在改为：每个道纹在 TACTICAL_ROLES 里声明它的
-战术角色与取值方式，AI 只按"角色"决策，因此
-**新增或更换道纹无需改动决策代码**——这也让不同流派的实战胜率可被对比。
+2026-08-26 防公式化改造（DM裁决）：固定战术表（TACTICAL_ROLES）、固定残韵
+目标表（HIGH_VALUE_ENEMY_DAOWEN）与固定策略顺序（STRATEGIES 串）已删除——
+所有角色按同一张表出牌必然公式化。
 
-战术角色（role）：
-  nuke      单体伤害        finisher 收割（能一击致死时优先）
-  aoe       群体伤害        shield   获得格挡
-  heal      回复生命        control  使目标无法行动/削弱出手
-  debuff    削弱目标        buff     强化自身
-  ramp      资源循环（换法力等）
-  remove    直接移出战斗
+现行决策方式（实时、状态驱动）：
+  1. 候选生成：只看玩家**实际持有**的道纹 × 若干X × 合法目标（含残韵候选）；
+  2. 逐候选经 ActionPreview 在**真实引擎管线**副本上预演，得到完整后果 diff；
+  3. 按「当前局势（威胁/血线/法力/凡庸压力）+ 角色性格（personality_traits，
+     实例级、行为推断而来）+ 可见信息（diff 数值）」实时打分；
+  4. 最高分执行；预演致轮回者命零（LETHAL）的候选一律拒绝。
+AI 不复制任何引擎公式；新增/修改道纹零维护（预演即事实源）。
 
-决策优先级：保命 → 收割 → 移除 → 控场 → AOE → 削弱 → 输出 → 资源。
-每一步都在**玩家实际持有的道纹**中挑选，持有什么就打什么。
+性格只调制**倾向**（风险代价容忍度/节俭/求新/先观察后行动……），
+不是强制规则——同一性格在不同局面可以打出不同牌。
+
+兼容层：旧 try_* 策略名保留为「类别策略」薄封装（类别由预演 diff 归纳，
+非历史经验表），供 tests 与 archive 实验（sim/victory_path_tournament 等
+子类化 TacticalAI 的脚本）继续运行；基类 STRATEGIES=None，主入口
+take_action 走实时评估，不再有固定顺序。
 """
 from __future__ import annotations
 
@@ -24,117 +27,80 @@ import math
 from typing import Any, Optional
 from engine.ai_preview import ActionPreview
 
-# ---------------------------------------------------------------------------
-# 道纹战术表：AI 的唯一知识来源。
-#   role     战术角色
-#   cost     每点X的法力消耗（用于预算推导；代价型道纹填0）
-#   pay      代价类型（非"消耗"者，AI 会额外权衡）
-#   pri      同角色内的优先级，数字越小越先用
-# 未列出的道纹 AI 不会主动发动（例如需要复杂声明的），但引擎仍支持手动调用。
-# ---------------------------------------------------------------------------
-TACTICAL_ROLES: dict[str, dict] = {
-    # ---- 杀伐闭环（cost/dmg 必须跟 README 现行公式一致，禁止沿用旧 3X/自动起手）----
-    "杀伐": {"role": "nuke", "cost": 1, "pri": 2, "dmg_per_x": 2},
-    "波及": {"role": "mark", "cost": 3, "pri": 1},
-    "血债": {"role": "nuke", "cost": 0, "pay": "流血", "pri": 3, "dmg_per_x": 1},
-    "庇护": {"role": "shield", "cost": 1, "pri": 1, "shield_per_x": 2},
-    "再生": {"role": "heal", "cost": 1, "pri": 1, "heal_per_x": 3},
-    "固执": {"role": "buff", "cost": 0, "pay": "冷却", "pri": 2},
-    # ---- 杀伐11节点闭环后半（增殖至封印）----
-    "增殖": {"role": "buff", "cost": 1, "pri": 3},
-    "透支": {"role": "ramp", "cost": 0, "pay": "衰老", "pri": 1, "mana_per_x": 4},
-    "贯穿": {"role": "buff", "cost": 5, "pri": 1},                    # 伤害无视格挡
-    "封印": {"role": "remove", "cost": 0, "pay": "异变", "pri": 1},   # 移出战斗（异变8X）
-    "束缚": {"role": "control", "cost": 0, "pay": "冷却", "pri": 1},
-    # ---- 龙心谷 ----
-    "加害": {"role": "debuff", "cost": 3, "pri": 1},
-    "龙鳞": {"role": "buff", "cost": 5, "pri": 2},
-    "逆鳞": {"role": "debuff", "cost": 0, "pay": "流血", "pri": 3},
-    "活血": {"role": "buff", "cost": 2, "pri": 3},
-    "裂变": {"role": "debuff", "cost": 3, "pri": 2},
-    "伤痕": {"role": "debuff", "cost": 5, "pri": 2},
-    # ---- 乱葬岗（二阶）----
-    "分裂": {"role": "buff", "cost": 0, "pay": "冷却", "pri": 3},
-    "尸爆": {"role": "buff", "cost": 10, "pri": 3},   # [命零]死亡触发爆炸，按濒死保险挂
-    "缄默": {"role": "control", "cost": 2, "pri": 2},
-    "瓦解": {"role": "debuff", "cost": 10, "pri": 2},
-    "冥气": {"role": "debuff", "cost": 5, "pri": 2},
-    "勾魂": {"role": "debuff", "cost": 1, "pri": 2},
-    "镇尸": {"role": "debuff", "cost": 5, "pri": 1},
-    "招魂": {"role": "buff", "cost": 10, "pri": 3},
-    # ---- 扭曲都市 ----
-    "僵化": {"role": "control", "cost": 5, "pri": 1},
-    "坏死": {"role": "debuff", "cost": 5, "pri": 1},
-    "退化": {"role": "debuff", "cost": 5, "pri": 1},
-    "定型": {"role": "debuff", "cost": 3, "pri": 2},
-    "畸变": {"role": "debuff", "cost": 0, "pay": "冷却", "pri": 3},
-    "爆裂": {"role": "buff", "cost": 3, "pri": 2},
-    "超频": {"role": "buff", "cost": 2, "pri": 3},
-    # ---- 罪孽都市 ----
-    "洗劫": {"role": "debuff", "cost": 3, "pri": 2},
-    "逼债": {"role": "debuff", "cost": 1, "pri": 1},
-    "清算": {"role": "debuff", "cost": 5, "pri": 2},
-    "赎金": {"role": "debuff", "cost": 10, "pri": 3},
-    "假钞": {"role": "ramp", "cost": 1, "pri": 2},
-    # ---- 怪物转化道纹（玩家可经残韵获得）----
-    "蒙蔽": {"role": "control", "cost": 5, "pri": 2},
-    "眩晕": {"role": "control", "cost": 20, "pri": 3},
-    "弱化": {"role": "debuff", "cost": 3, "pri": 1},
-    "无力": {"role": "control", "cost": 10, "pri": 2},
-    "衰败": {"role": "debuff", "cost": 15, "pri": 1, "min_x": 1},  # 回始扣20%当前生命(持续∞)，X=1即满效
-    "滋养": {"role": "heal", "cost": 5, "pri": 2},
-    "坠落": {"role": "debuff", "cost": 1, "pri": 1},
-    "滑翔": {"role": "buff", "cost": 5, "pri": 3},
-    "愤怒": {"role": "buff", "cost": 5, "pri": 3},    # 目标法力消耗减半
-    "兴奋": {"role": "buff", "cost": 5, "pri": 3},    # 目标每次出手后速度+1
-    "借力": {"role": "buff", "cost": 10, "pri": 3},   # 目标造成伤害+10X%（∞）
-    "迟滞": {"role": "control", "cost": 0, "pay": "冷却", "pri": 2},  # 目标攻击次数固定为1
-    "加速": {"role": "buff", "cost": 20, "pri": 3},   # 目标获得的速度翻倍
-    "急速": {"role": "buff", "cost": 20, "pri": 3},   # 目标每闪避两次速度+1
-    "洞察": {"role": "ramp", "cost": 0, "pay": "疲惫", "pri": 2},  # 自身每次闪避后下回合法力+10
-    "无神": {"role": "control", "cost": 20, "pri": 1},  # 目标选择目标时强制改为自身
-    "自残": {"role": "nuke", "cost": 10, "pri": 3,
-             "dmg_per_x": "target_attack_power"},        # 目标对其自身打出X次攻击
-    "自食": {"role": "heal", "cost": 1, "pri": 3,
-             "heal_per_x": "attack_power"},              # 自身X点攻击力转等量回复
-    "寄生": {"role": "buff", "cost": 10, "pri": 2},     # 目标受伤20X%转自身回复（∞）
-    # ---- 罪孽都市（补齐：此前缺失，AI 永不主动发动）----
-    "抵扣": {"role": "control", "cost": 10, "pri": 3},  # 封印目标一件遗物（目标无遗物时引擎拒绝）
-    "赌命": {"role": "debuff", "cost": 0, "pay": "假碎片", "pri": 2},  # 回始随机存活角色-30%当前生命
-    "消灾": {"role": "reroll", "cost": 0, "pay": "碎片", "pri": 1},    # 重置随机数X次（唯一可局外发动）
-    # ---- 龙心谷（补齐）----
-    "嫁祸": {"role": "buff", "cost": 15, "pri": 3},     # 自身下X次受击由目标承担
-    "背负": {"role": "buff", "cost": 5, "pri": 3},      # 目标下X次受击由自身承担（护友）
-    # ---- 扭曲都市（补齐）----
-    "变形": {"role": "buff", "cost": 1, "pri": 3},      # 自身攻击力与攻击次数互换
-}
+# 单次出手最多预演的候选数（性能护栏；候选按新鲜度与威胁优先）
+MAX_CANDIDATE_PREVIEWS = 26
 
-# 敌方身上值得用残韵改写的高价值道纹，按威胁度排序。
-HIGH_VALUE_ENEMY_DAOWEN = [
-    "必中", "狂暴", "自愈", "强化", "疯狂", "飞行", "减速",
-    "贯穿", "血债", "波及", "杀伐", "增殖", "透支",
-    "固执", "庇护", "再生", "束缚",
-]
+
+# ---------------------------------------------------------------------------
+# 道纹效果分类：不查表，从「可见文本」做弱分类（仅用于威胁评估与兼容壳；
+# 真正的候选评估一律以预演 diff 数值为准）。
+# ---------------------------------------------------------------------------
+_KIND_HINTS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("remove",   ("移出战斗", "移出", "封印")),
+    ("heal",     ("回复", "恢复", "治疗")),
+    ("shield",   ("格挡",)),
+    ("control",  ("无法行动", "眩晕", "束缚", "蒙蔽", "无法出手", "攻击次数固定",
+                  "强制目标", "缄默", "沉默")),
+    ("debuff",   ("削弱", "受到伤害+", "失去生命", "衰老", "弱化", "退化", "衰减")),
+    ("ramp",     ("重置随机", "获得法力", "法力+")),
+    ("buff",     ("获得", "提升", "免疫", "翻倍", "速度+", "血限+")),
+    ("damage",   ("伤害",)),
+)
+
+
+def daowen_text_kind(inst) -> str:
+    """按道纹可见文本给出弱分类（引擎事实，非经验）。无法判断返回 'other'。"""
+    if inst is None:
+        return "other"
+    dw = getattr(inst, "dao_wen", inst)
+    text = " ".join(filter(None, (
+        getattr(dw, "formula", ""), getattr(dw, "effect_formula", ""),
+        getattr(dw, "trigger_timing", ""), getattr(dw, "cost_type", ""),
+    )))
+    for kind, keys in _KIND_HINTS:
+        if any(k in text for k in keys):
+            return kind
+    return "other"
+
+
+# 兼容壳的旧角色名 → 弱分类集合（owned() 用）
+_ROLE_KINDS = {
+    "nuke": ("damage",), "aoe": ("damage",), "finisher": ("damage",),
+    "mark": ("damage",), "shield": ("shield",), "heal": ("heal",),
+    "control": ("control", "tactician"), "debuff": ("debuff", "tactician"),
+    "buff": ("buff",), "remove": ("remove",), "ramp": ("ramp",),
+    "reroll": ("ramp",),
+}
 
 
 class TacticalAI:
-    """轮回者战斗AI。engine 为 GameEngine 实例。"""
+    """轮回者战斗AI。engine 为 GameEngine 实例。
+
+    基类无固定策略顺序（STRAGIES=None）：take_action 实时评估候选。
+    实验子类可自定义 STRATEGIES 串走旧级联（仅为兼容 archive 实验）。
+    """
+
+    # 基类不再有固定顺序；子类（archive 实验脚本）可覆写为方法名元组。
+    STRATEGIES: Optional[tuple] = None
 
     def __init__(self, engine: Any, verbose: bool = False):
         self.engine = engine
         self.verbose = verbose
         self.log: list[str] = []
         self.used: dict[str, int] = {}   # 统计各道纹发动次数，便于流派对比
-        self._controlled_this_round: set = set()   # 本回合已被控制的目标，避免重复浪费法力
+        self._controlled_this_round: set = set()   # 本回合已被控制的目标
         self._previewer = None           # 行动后果预演器（惰性创建）
-        self.preview_rejected: list[str] = []   # 被安全过滤淘汰的候选（供测试/报告）
-        self._sacrifice_actions: set = set()    # 项目明确允许的主动牺牲策略（默认空）
-        self._last_risk: tuple = ("SAFE", [])   # 最近一次 _cast 的风险等级（供策略层参考）
-        # 第十九批实验钩子（默认 None = 现行≤40%血线门，行为完全不变）：
-        # consumable_gate: callable(ai)->bool，接管 try_consumable 的血线门（预演
-        # 风险过滤器始终保留）；_hp_trace: 每回合开始时 HP，供"预测致死"门差分。
+        self.preview_rejected: list[str] = []   # 被安全过滤淘汰的候选
+        self._sacrifice_actions: set = set()    # 显式允许的主动牺牲策略（默认空）
+        self._last_risk: tuple = ("SAFE", [])   # 最近一次候选的风险等级
+        # 第十九批实验钩子（默认 None = 现行≤40%血线门，行为不变）
         self.consumable_gate = None
         self._hp_trace: list = []
+        # 实时决策记账
+        self._probe_cache: dict = {}     # (name, target, battle) → 预演归纳的分类/单价
+        self._ptraits: dict = {}         # 本回合的性格权重缓存（score×confidence）
+        self._damage_done_battle = False # 本回合是否已使敌方掉血（凡庸压力）
+        self._rounds_since_damage = 0    # 连续未使敌方掉血的回合数
 
     @property
     def previewer(self):
@@ -157,9 +123,18 @@ class TacticalAI:
         return self.player.current_mana
 
     def owned(self, role: str) -> list[str]:
-        """玩家实际持有、且属于该战术角色的道纹，按 pri 排序。"""
-        out = [n for n in self.player.dao_wen if TACTICAL_ROLES.get(n, {}).get("role") == role]
-        return sorted(out, key=lambda n: TACTICAL_ROLES[n].get("pri", 9))
+        """兼容壳：持有道纹中属于该旧角色者（文本弱分类，空文本回退预演归纳）。"""
+        kinds = _ROLE_KINDS.get(role, ())
+        out = []
+        for n, inst in sorted(self.player.dao_wen.items()):
+            if inst is None or not inst.can_use():
+                continue
+            kind = daowen_text_kind(inst)
+            if kind == "other":
+                kind = (self._probe(n) or {}).get("kind", "other")
+            if kind in kinds:
+                out.append(n)
+        return out
 
     def incoming_damage(self) -> int:
         return sum(e.attack_count * e.attack_power for e in self.alive_enemies())
@@ -175,56 +150,423 @@ class TacticalAI:
             return self.mana()
         return max(1, self.mana() // left)
 
-    def _x_for(self, name: str, budget: Optional[int] = None) -> int:
-        """在预算内为该道纹推导可用的最大X。代价型道纹不吃法力预算。"""
-        info = TACTICAL_ROLES.get(name, {})
-        per = info.get("cost", 1)
-        if per <= 0:                      # 代价型（流血/衰老/冷却）
-            return 1
-        b = self.mana() if budget is None else budget
-        return max(0, b // per)
+    def _refresh_personality(self) -> None:
+        """拉取当前性格权重（实例级；无性格=全 0，退化为纯局势效用）。"""
+        from engine.personality import get_personality
+        data = get_personality(self.engine.state, self.player) or {}
+        self._ptraits = {
+            dim: entry["score"] * entry.get("confidence", 0.0)
+            for dim, entry in (data.get("traits") or {}).items()
+        }
 
-    def _cast(self, name: str, x: int, target: Optional[str] = None,
-              *, allow_sacrifice: bool = False) -> Optional[dict]:
-        """统一候选执行入口：候选动作 → CombatEngine 预演 → 安全过滤 → 正式执行。
+    def _w(self, dim: str) -> float:
+        """性格维度权重 ∈ [-1,1]（score×confidence，证据不足自然影响小）。"""
+        return self._ptraits.get(dim, 0.0) or 0.0
 
-        预演由 CombatEngine 真实管线完成数值计算（含爆裂反噬/触发法术/癌变等一切
-        监听链），TacticalAI 不复制任何伤害/反伤规则。第一阶段只做安全性过滤：
-        预演导致轮回者本人命零的候选直接拒绝（除非 allow_sacrifice 显式放行），
-        不允许"收益很高"覆盖必死结果。所有策略（保命/输出/控制）共用本入口。
+    # ---------- 预演与归纳 ----------
+
+    def _probe(self, name: str) -> Optional[dict]:
+        """对道纹做多目标 X=1 预演，按实际效果方向归纳其事实特征（缓存至本场）。
+
+        引擎会"默许"部分指向错误的目标（如庇护打向敌人=空效果），因此必须
+        对 self / 敌方 等变体各预演一次，取**效果方向最优**的成功变体：
+        敌方掉血 → damage；自身获益 → shield/heal/buff；敌方被移除 → remove；
+        无面板位移 → tactician（控场/削弱/标记类，目标取该变体目标）。
+        返回 {kind, cost_per_x, dmg, shield, heal, target_name}；全拒绝返回 None。
         """
-        if x < 1:
+        battle = self.engine.state.current_battle
+        cache_key = (name, "*", battle)
+        cached = self._probe_cache.get(cache_key)
+        if cached is not None:
+            return cached if cached.get("target") == "ok" else None
+
+        best: Optional[dict] = None
+        best_score = -1.0
+        seen_targets = set()
+        for target in (self._top_enemy_name(), self.player.name, None,
+                       self._ally_name()):
+            if target in seen_targets or target is None and None in seen_targets:
+                continue
+            seen_targets.add(target)
+            key = (name, target, battle)
+            per_key = self._probe_cache.get(key)
+            if per_key is not None and per_key.get("target") == "reject":
+                continue
+            params: dict = {"daowen_name": name, "x": 1, "dodge": False,
+                            "blood_shadow": False}
+            if target:
+                params["target"] = target
+            pv = self.previewer.preview("use_daowen", params)
+            res = pv.get("result") or {}
+            if not res.get("success"):
+                self._probe_cache[key] = {"target": "reject"}
+                continue
+            info = self._digest_diff(pv.get("diff", {}))
+            info["target"] = "ok"
+            info["target_name"] = target
+            self._probe_cache[key] = info
+            # 效果方向分：敌方掉血 > 自身获益 > 空效果
+            orientation = (2.0 * info["dmg"] + info["shield"] + info["heal"]
+                           + 0.5 * info.get("mana_gain", 0)
+                           + 0.5 * info.get("bl_gain", 0)
+                           + (6.0 if info["kind"] == "remove" else 0.0))
+            if orientation > best_score:
+                best_score = orientation
+                best = info
+        self._probe_cache[cache_key] = best if best is not None else {"target": "reject"}
+        return best
+
+    def _top_enemy_name(self) -> Optional[str]:
+        enemies = self.alive_enemies()
+        if not enemies:
             return None
-        p = {"daowen_name": name, "x": x, "dodge": False, "blood_shadow": False}
+        return max(enemies, key=lambda e: e.attack_count * e.attack_power).name
+
+    def _ally_name(self) -> Optional[str]:
+        allies = self._allies()
+        return allies[0].name if allies else None
+
+    def _digest_diff(self, diff: dict) -> dict:
+        """把 X=1 预演 diff 归纳为 {kind, cost_per_x, dmg, shield, heal, ...}。
+
+        kind 判定以**事件流**为准（面板位移会被格挡吸收等遮蔽）：
+        damage_applied 命中敌方 = 输出（即使被格挡挡光）；status_applied 落在
+        敌方 = 战术牌（控场/削弱），落在自身 = 增益；敌方无伤消失 = 移除。
+        """
+        p = diff.get("player", {})
+        enemies = diff.get("enemies", [])
+        enemy_names = {e.get("name") for e in enemies}
+        player_name = self.player.name if self.player else ""
+        enemy_hp_loss = sum(max(0, e.get("hp_before", 0) - e.get("hp_after", 0))
+                            for e in enemies)
+        enemy_gone = any(e.get("dead") for e in enemies)
+        shield = max(0, p.get("shield_after", 0) - p.get("shield_before", 0))
+        heal = max(0, p.get("hp_after", 0) - p.get("hp_before", 0))
+        cost = max(0, p.get("mana_before", 0) - p.get("mana_after", 0))
+        mana_gain = max(0, p.get("mana_after", 0) - p.get("mana_before", 0))
+        bl_gain = max(0, p.get("bl_after", 0) - p.get("bl_before", 0))
+        speed_gain = max(0, p.get("speed_after", 0) - p.get("speed_before", 0))
+
+        hit_enemy = False        # 伤害类事件命中敌方（含被格挡吸收）
+        status_on_enemy = False  # 状态/控制落在敌方
+        status_on_self = False   # 状态落在自身
+        for ev in diff.get("events", []):
+            etype = ev.get("type", "")
+            target = ev.get("target", "")
+            if etype == "damage_applied" and target in enemy_names:
+                hit_enemy = True
+            elif etype == "status_applied":
+                if target in enemy_names:
+                    status_on_enemy = True
+                elif target == player_name:
+                    status_on_self = True
+
+        if enemy_gone and enemy_hp_loss <= 0 and not hit_enemy:
+            kind = "remove"
+        elif enemy_hp_loss > 0 or hit_enemy:
+            kind = "damage"
+        elif status_on_enemy and not status_on_self:
+            kind = "tactician"
+        elif shield > 0:
+            kind = "shield"
+        elif heal > 0:
+            kind = "heal"
+        elif mana_gain > 0:
+            kind = "ramp"
+        elif bl_gain > 0 or speed_gain > 0 or status_on_self:
+            kind = "buff"
+        else:
+            kind = "tactician"   # 其余无面板位移的战术牌
+        return {"kind": kind, "cost_per_x": cost, "dmg": enemy_hp_loss,
+                "shield": shield, "heal": heal, "mana_gain": mana_gain,
+                "bl_gain": bl_gain}
+
+    # ---------- 候选生成与实时评分 ----------
+
+    def _daowen_candidates(self) -> list[dict]:
+        """玩家实持道纹 → 聚焦候选（X 按预算/需求取 2~3 档）。"""
+        out = []
+        budget = self.mana_budget()
+        for name, inst in sorted(self.player.dao_wen.items()):
+            if inst is None or not inst.can_use():
+                continue
+            probe = self._probe(name)
+            if probe is None:
+                continue
+            cost = probe["cost_per_x"]
+            if cost > 0:
+                budget_x = max(1, budget // cost)
+                # 最后一手允许用尽全部法力；否则按预算档，防一发梭哈
+                cap = budget_x if self.remaining_actions() > 1 else max(1, self.mana() // cost)
+            else:                        # 代价型：不受法力限制，X 保守取小
+                cap = 3
+                budget_x = 1
+            xs = {1, budget_x, cap}
+            target = probe.get("target_name")
+            kind = probe["kind"]
+            if kind == "damage":         # 输出牌给血最少敌人（收割/推进）
+                foes = sorted(self.alive_enemies(), key=lambda e: e.current_hp)
+                targets = [foes[0].name] if foes else []
+                if foes and probe["dmg"] > 0:   # 收割档：恰好打死血最少者
+                    xs.add(math.ceil(foes[0].current_hp / probe["dmg"]))
+            elif kind in ("shield", "heal", "buff", "ramp"):
+                targets = [self.player.name]
+            else:
+                targets = ([t for t in (self._top_enemy_name(),) if t]
+                           if probe.get("target_name") in (None, self._top_enemy_name())
+                           else [probe.get("target_name")])
+            xs = sorted((x for x in xs if 1 <= x <= max(cap, 1)), reverse=True)[:4]
+            for t in targets or [None]:
+                for x in xs:
+                    out.append({"action": "use_daowen",
+                                "label": f"{name}X={x}",
+                                "kind": kind, "target": t,
+                                "params": self._params(name, x, t)})
+        return out
+
+    def _params(self, name: str, x: int, target: Optional[str]) -> dict:
+        p: dict = {"daowen_name": name, "x": x, "dodge": False, "blood_shadow": False}
         if target:
             p["target"] = target
         if name == "波及":
-            # 波及X：选择X个[目标]建立/解除波及标记（默认标记敌方存活目标）。
             refs = self.engine.combat._combat_entity_refs()
-            actor = self.player
             candidates = [
                 {"target_ref": ref, "dodge": False, "blood_shadow": False}
                 for ref, entity in refs.items()
-                if (self.engine.state.on_player_side(entity)
-                    != self.engine.state.on_player_side(actor)
-                    and entity.is_alive)
+                if entity.is_alive and not self.engine.state.on_player_side(entity)
             ]
-            if len(candidates) < x:
-                return None
-            p["dodge_targets"] = candidates[:x]
-            if target is None:
+            if len(candidates) >= x:
+                p["dodge_targets"] = candidates[:x]
                 p["target_ref"] = candidates[0]["target_ref"]
+        return p
+
+    def _resonance_candidates(self) -> list[tuple[float, dict]]:
+        """残韵候选：对**存在变化路径**的敌方道纹，按威胁动态打分（无固定表）。"""
+        from engine.daowen import ResonanceEngine
+        stock = {k: v for k, v in self.engine.state.resonance.items() if v > 0}
+        if not stock:
+            return []
+        out = []
+        enemies = sorted(self.alive_enemies(),
+                         key=lambda e: -e.attack_count * e.attack_power)
+        for enemy in enemies:
+            threat_share = (enemy.attack_count * enemy.attack_power
+                            / max(1, self.incoming_damage()))
+            for dw in enemy.dao_wen:
+                # 威胁构成可见信息：输出类文本权重高，其余次之
+                text_kind = daowen_text_kind(enemy.dao_wen[dw])
+                weight = {"damage": 1.0, "control": 0.7, "debuff": 0.6}.get(text_kind, 0.4)
+                for path in ResonanceEngine.get_available_resonance(dw):
+                    rtype = path.get("resonance_type")
+                    if not rtype or stock.get(rtype, 0) <= 0:
+                        continue
+                    score = 4.0 * (0.5 + threat_share) * weight
+                    out.append((score, {
+                        "action": "use_resonance",
+                        "label": f"残韵·{rtype}→{dw}@{enemy.name}",
+                        "params": {"source_daowen": dw, "resonance_type": rtype,
+                                   "target": enemy.name}}))
+        out.sort(key=lambda t: -t[0])
+        return out[:3]
+
+    def _score_candidate(self, diff: dict, label: str,
+                         kind: Optional[str] = None,
+                         target: Optional[str] = None) -> Optional[float]:
+        """实时评分：局势效用 + 性格调制。返回 None 表示必须拒绝（LETHAL）。"""
+        if ActionPreview.would_kill_player(diff):
+            self.preview_rejected.append(f"{label}（预演致轮回者命零）")
+            return None
+        risk, reasons = ActionPreview.risk_classify(diff, self.player)
+        self._last_risk = (risk, reasons)
+
+        p = diff.get("player", {})
+        enemies = diff.get("enemies", [])
+        hp = p.get("hp_before", 0), p.get("hp_after", 0)
+        own_hp_loss = max(0, hp[0] - hp[1])
+        heal = max(0, hp[1] - hp[0])
+        bl_loss = max(0, p.get("bl_before", 0) - p.get("bl_after", 0))
+        speed_loss = max(0, p.get("speed_before", 0) - p.get("speed_after", 0))
+        mana_spent = max(0, p.get("mana_before", 0) - p.get("mana_after", 0))
+        shield_gain = max(0, p.get("shield_after", 0) - p.get("shield_before", 0))
+        mutation = max(0, p.get("mutation_delta", 0))
+        shards_spent = max(0, diff.get("shards_before", 0) - diff.get("shards_after", 0))
+
+        enemy_hp_loss = sum(max(0, e.get("hp_before", 0) - e.get("hp_after", 0))
+                            for e in enemies)
+        enemy_heal = sum(max(0, e.get("hp_after", 0) - e.get("hp_before", 0))
+                         for e in enemies)
+        kills = sum(1 for e in enemies if e.get("dead"))
+        all_gone = bool(enemies) and all(
+            e.get("dead") or e.get("hp_after", 1) == 0 or e.get("departed", False)
+            for e in enemies)
+
+        # ---- 局势效用（状态驱动，无任何道纹名特判） ----
+        score = 0.0
+        if all_gone:
+            score += 100.0                        # 直接终结战斗
+        score += 1.4 * enemy_hp_loss              # 推进敌方血量（与防御对称,倾斜交给局势与性格）
+        score += 8.0 * kills                      # 击杀/移除
+        # 战术牌价值：对敌方施加压制（状态事件可见，或引擎已受理的敌方指向
+        # 战术牌——部分潜在规则型道纹零事件足迹，但引擎 result.calculation 证实生效）。
+        # 价值来自可见信息：目标威胁占比（压制谁）、目标血量比（肥怪先上战术
+        # 更划算）、本场是否首次使用（每张至少探索一次，防只打伤害的单调收敛）。
+        enemy_by_name = {en.name: en for en in self.alive_enemies()}
+        pressed: set = set()
+        for ev in diff.get("events", []):
+            if ev.get("type") == "status_applied" and ev.get("target", "") in enemy_by_name:
+                pressed.add(ev.get("target", ""))
+        if kind == "tactician" and target in enemy_by_name:
+            pressed.add(target)
+        for tname in pressed:
+            ent = enemy_by_name[tname]
+            share = (ent.attack_count * ent.attack_power
+                     / max(1, self.incoming_damage()))
+            ratio = ent.current_hp / max(1, ent.blood_limit)
+            score += 2.0 + 4.0 * min(1.0, ratio) + 2.0 * min(1.0, share)
+            score += 0.8 * ent.attack_count * ent.attack_power  # 压制其行动的期权
+            if label.split("X=")[0].split("→")[0] not in self.used:
+                score += 4.0             # 首次探索加成（每张一次）
+        self_status = any(
+            ev.get("type") == "status_applied"
+            and ev.get("target", "") == (self.player.name if self.player else "")
+            for ev in diff.get("events", []))
+        if self_status or kind == "buff":
+            score += 1.5                 # 自身增益的期权价值（小额，防无脑挂buff）
+        score -= 1.2 * enemy_heal                 # 喂养敌方（癌变风险由 CRITICAL 兜底）
+        threat = self.incoming_damage()
+        shield_useful = min(shield_gain, max(0, threat - self.player.shield))
+        score += 1.1 * shield_useful + 0.15 * max(0, shield_gain - shield_useful)
+        missing = max(0, self.player.blood_limit - self.player.current_hp)
+        score += 1.4 * min(heal, missing)
+        # 凡庸压力：连续未使敌方掉血越久，输出候选越紧迫
+        if enemy_hp_loss > 0 and self._rounds_since_damage >= 2:
+            score += 1.2 * self._rounds_since_damage
+        score -= 0.12 * mana_spent
+        score -= 0.4 * shards_spent
+        score -= 0.35 * mutation
+        score -= 0.8 * speed_loss
+
+        # ---- 性格调制（倾向而非规则；权重=score×confidence，无性格=0） ----
+        w_risk = self._w("risk_preference")          # +冒险 / -求稳
+        w_res = self._w("resource_view")             # +节约 / -挥霍
+        w_explore = self._w("exploration_desire")    # +求新
+        w_habit = self._w("decision_habit")          # +先观察后行动 / -冲动
+        w_stable = self._w("emotional_stability")    # +沉稳 / -易波动
+        w_trust = self._w("interpersonal_tendency")  # +信任（护友）
+        w_moral = self._w("moral_baseline")          # +守义（不伤友）
+        w_expr = self._w("expression_style")         # +直言（进攻） / -内敛（防守）
+        w_react = self._w("reaction_pattern")        # +从容
+
+        tol = 1.0 - 0.85 * w_risk                   # 风险容忍 → 自伤/血限惩罚系数
+        tol = min(2.0, max(0.3, tol))
+        score -= (2.2 * tol) * own_hp_loss
+        score -= (3.0 * tol) * bl_loss
+        if w_risk < 0:                              # 求稳：受威胁时防回手段显著加值
+            score += 0.8 * abs(w_risk) * (shield_useful + min(heal, missing))
+        score -= 0.12 * (1.0 + 1.5 * max(0.0, w_res)) * mana_spent   # 节约：更疼法力
+        score -= 0.4 * (1.0 + 1.5 * max(0.0, w_res)) * shards_spent
+        if w_explore > 0:                           # 求新：没打过的牌加分
+            base = label.split("X=")[0]
+            if base not in self.used:
+                score += 0.5 * w_explore
+        if w_habit > 0 and self._first_contact():   # 先观察后行动：开局忌梭哈
+            if mana_spent > 3:
+                score -= 2.0 * w_habit * mana_spent / 6.0
+        if w_habit < 0 and enemy_hp_loss > 0:       # 冲动：立打立伤偏好
+            score += 0.3 * abs(w_habit)
+        hp_ratio = self.player.current_hp / max(1, self.player.blood_limit)
+        if hp_ratio < 0.35:                         # 低血：易波动者更重自伤
+            score -= 0.9 * max(0.0, -w_stable) * own_hp_loss
+        if threat > 0 and w_react > 0 and enemy_hp_loss == 0 and own_hp_loss == 0:
+            score += 0.1 * w_react                  # 从容：高压下偏好稳妥手段
+        if w_expr > 0 and enemy_hp_loss > 0:
+            score += 0.15 * w_expr                  # 直言：进攻倾向
+        if w_expr < 0 and enemy_hp_loss == 0:
+            score += 0.15 * abs(w_expr)             # 内敛：防守/布局倾向
+        for ally in diff.get("allies", []):         # 友军后果
+            a_loss = max(0, (ally.get("hp_before") or 0) - (ally.get("hp_after") or 0))
+            a_heal = max(0, (ally.get("hp_after") or 0) - (ally.get("hp_before") or 0))
+            score -= (0.8 + 0.8 * w_moral) * a_loss
+            score += 0.5 * w_trust * a_heal
+
+        # ---- 风险等级惩罚（引擎口径分级） ----
+        if risk == "LETHAL":
+            return None
+        score -= {"CRITICAL": 30.0, "HIGH": 6.0, "MEDIUM": 1.2}.get(risk, 0.0)
+        return score
+
+    def _first_contact(self) -> bool:
+        """开局首轮/刚遇新敌（先观察型性格用；可见信息：本场出手与回合数）。"""
+        return (not self.used and self.engine.state.current_round <= 1)
+
+    def _dynamic_action(self) -> Optional[dict]:
+        """实时决策主路径：生成候选 → 预演评分 → 执行最高分。"""
+        self._refresh_personality()
+        scored: list[tuple[float, str, dict]] = []
+        candidates = self._daowen_candidates()
+        for bonus, cand in self._resonance_candidates():
+            candidates.append(cand)   # 残韵候选已按威胁预筛，附带基础分
+        for cand in candidates[:MAX_CANDIDATE_PREVIEWS]:
+            pv = self.previewer.preview(cand["action"], cand["params"])
+            res = pv.get("result") or {}
+            if not res.get("success"):
+                continue               # 引擎拒绝=非法候选，跳过
+            s = self._score_candidate(pv.get("diff", {}), cand["label"],
+                                      cand.get("kind"), cand.get("target"))
+            if s is None:
+                continue
+            if cand["action"] == "use_resonance":
+                s += bonus
+            # 首试配额：安全窗口（当前威胁低于自身生命）下，每张非输出牌每场
+            # 至少真实试打一次——预演看不到潜在规则型道纹的延迟价值，
+            # 用一次真实发动校准后续估值（先射箭后画靶；也保证持有即会发动）。
+            base = cand["label"].split("X=")[0].split("→")[0]
+            if (cand.get("kind") in ("tactician", "buff", "ramp")
+                    and base not in self.used
+                    and self.incoming_damage() < self.player.current_hp):
+                s += 40.0
+            scored.append((s, cand["label"], cand))
+        if not scored:
+            return None
+        scored.sort(key=lambda t: (-t[0], t[1]))
+        best = scored[0][2]
+        hp_before = sum(e.current_hp for e in self.alive_enemies())
+        r = self.engine.execute_action(best["action"], best["params"])
+        if r.get("success"):
+            label = best["label"]
+            base = label.split("X=")[0].split("→")[0]
+            self.used[base] = self.used.get(base, 0) + 1
+            # 记账：本回合是否推进了敌方血量（凡庸压力用）
+            hp_after = sum(e.current_hp for e in self.engine.state.enemies if e.is_alive)
+            if hp_after < hp_before:
+                self._damage_done_battle = True
+            if self.verbose:
+                self.log.append(f"[实时决策] {label}（得分 {scored[0][0]:.2f}）")
+            return r
+        if self.verbose:
+            self.log.append(f"[跳过] {best['label']}: {r.get('error')}")
+        return None
+
+    # ---------- 统一执行入口（安全过滤保留） ----------
+
+    def _cast(self, name: str, x: int, target: Optional[str] = None,
+              *, allow_sacrifice: bool = False) -> Optional[dict]:
+        """候选动作 → 预演 → LETHAL 降X搜索 → 正式执行（兼容壳与测试共用）。"""
+        if x < 1:
+            return None
+        p = self._params(name, x, target)
         if not allow_sacrifice:
-            # 预演安全过滤：候选导致轮回者命零则拒绝。通用降 X 搜索（非道纹特判）：
-            # 大 X 可能触发癌变/反噬/嫁祸转伤等完整效果链，小 X 可能安全
-            # （如再生 X=14 治愈癌变阈值，X=1 则安全）；自动降 X 找最小安全档。
-            # 同时用风险分类器记录非致命风险等级（CRITICAL / HIGH 等，供策略层参考）。
             probe_x = x
             reason = None
             self._last_risk = ("SAFE", [])
             while probe_x >= 1:
                 pv = self.previewer.preview("use_daowen", dict(p, x=probe_x))
                 diff = pv.get("diff", {})
+                res = pv.get("result") or {}
+                if not res.get("success"):
+                    # 大X可能因法力/代价不足非法：降档重试，全部非法才放弃
+                    probe_x -= 1
+                    continue
                 self._last_risk = ActionPreview.risk_classify(diff, self.player)
                 if not ActionPreview.would_kill_player(diff):
                     break
@@ -241,7 +583,7 @@ class TacticalAI:
                 if self.verbose:
                     self.log.append(f"[安全过滤] {name}X={x}→{probe_x}（降低到安全档）")
             x = probe_x
-            p["x"] = x   # 正式执行必须用降档后的 X
+            p["x"] = x
         r = self.engine.execute_action("use_daowen", p)
         if r.get("success"):
             self.used[name] = self.used.get(name, 0) + 1
@@ -250,150 +592,65 @@ class TacticalAI:
             self.log.append(f"[跳过] {name}X={x}: {r.get('error')}")
         return None
 
-    # ---------- 各优先级策略 ----------
+    # ---------- 兼容壳：类别策略（供 tests 与 archive 实验子类） ----------
+
+    def _sized_x(self, name: str, need_units: int, unit: str = "dmg") -> int:
+        """按需求量与法力推导 X（每X产量来自 X=1 预演，缓存本场）。"""
+        probe = self._probe(name)
+        if probe is None:
+            return 0
+        per = probe.get(unit) or 1
+        cost = probe["cost_per_x"]
+        x = max(1, math.ceil(need_units / max(1, per)))
+        if cost > 0:
+            x = min(x, max(1, self.mana() // cost))
+        return min(x, 9)
 
     def try_survive(self) -> Optional[dict]:
-        """1. 保命：致死威胁 → 格挡；血线过低 → 回复。"""
+        """保命：致死威胁 → 格挡；血线过低 → 回复（类别由预演归纳）。"""
         p = self.player
         threat = self.incoming_damage()
-        if threat > 0 and (threat >= p.current_hp or threat >= p.current_hp * 0.5):
-            for name in self.owned("shield"):
-                per = TACTICAL_ROLES[name].get("shield_per_x", 4)
-                need = max(0, threat - p.shield)
-                x = min(self._x_for(name), math.ceil(need / per))
-                r = self._cast(name, x, p.name)
+        if threat > 0 and threat >= p.current_hp * 0.5:
+            names = list(dict.fromkeys(
+                self.owned("shield") + [n for n, inst in sorted(self.player.dao_wen.items())
+                                        if inst is not None and inst.can_use()
+                                        and (self._probe(n) or {}).get("kind") == "shield"]))
+            for name in names:
+                need = max(1, threat - p.shield)
+                r = self._cast(name, self._sized_x(name, need, "shield"), p.name)
                 if r:
                     return r
-        if p.current_hp <= p.blood_limit * 0.35 and not p.has_status("坏死"):
-            for name in self.owned("heal"):
-                per_raw = TACTICAL_ROLES[name].get("heal_per_x", 3)
-                per = p.attack_power if per_raw == "attack_power" else per_raw
-                if per <= 0:                       # 自食：攻击力为0时无回复量
-                    continue
-                x = min(self._x_for(name), max(1, math.ceil((p.blood_limit - p.current_hp) / per)))
-                r = self._cast(name, x, p.name)
+        if p.current_hp <= p.blood_limit * 0.35:
+            names = list(dict.fromkeys(
+                self.owned("heal") + [n for n, inst in sorted(self.player.dao_wen.items())
+                                      if inst is not None and inst.can_use()
+                                      and (self._probe(n) or {}).get("kind") == "heal"]))
+            for name in names:
+                need = p.blood_limit - p.current_hp
+                r = self._cast(name, self._sized_x(name, need, "heal"), p.name)
                 if r:
                     return r
         return None
 
     def try_buff(self) -> Optional[dict]:
-        """1.5 增益：固执优先（防爆发），其余 role=buff 按条件表逐张评估。
-
-        修复（2026-08-18）：旧版只硬编码固执，导致贯穿/增殖/活血/爆裂/
-        超频/龙鳞/滑翔/分裂/招魂 等 10 张 buff 永不发动（死码）。
-        现按每张牌的战术条件评估；每张每场至多一次，一回合至多打出一张增益。
-        """
-        p = self.player
-        enemies = self.alive_enemies()
-        if not enemies:
-            return None
+        """增益：每张每场至多一次（引擎/自身状态自然拒绝重复）。"""
         battle = self.engine.state.current_battle
-        # 固执特判：冷却代价、克制爆发，首回合尽早挂（按场计，跨场可重挂）
-        if ("固执" in p.dao_wen and not self.used.get(f"buff:固执:{battle}")
-                and self.incoming_damage() > 0):
-            inst = p.dao_wen.get("固执")
-            if inst is None or inst.can_use():
-                r = self._cast("固执", 3, p.name)
-                if r:
-                    self.used[f"buff:固执:{battle}"] = 1
-                    self.used["固执"] = self.used.get("固执", 0) + 1
-                    return r
-        for name in self.owned("buff"):
-            if name == "固执" or self.used.get(f"buff:{name}:{battle}"):
+        for name, inst in sorted(self.player.dao_wen.items()):
+            if inst is None or not inst.can_use():
                 continue
-            plan = self._buff_plan(name)
-            if not plan:
+            if self.used.get(f"buff:{name}:{battle}"):
                 continue
-            x, target = plan
-            r = self._cast(name, x, target)
+            probe = self._probe(name)
+            if probe is None or probe["kind"] not in ("buff", "tactician"):
+                continue
+            target = probe.get("target_name")
+            r = self._cast(name, 2 if probe["cost_per_x"] > 0 else 1, target)
             if r:
                 self.used[f"buff:{name}:{battle}"] = 1
                 return r
         return None
 
-    def _buff_plan(self, name: str) -> Optional[tuple[int, Optional[str]]]:
-        """返回 (x, target) 或 None（条件不满足）。条件保守：不透支保命法力。"""
-        p = self.player
-        enemies = self.alive_enemies()
-        info = TACTICAL_ROLES.get(name, {})
-        per = max(0, info.get("cost", 1))
-        mana = self.mana()
-        threat = self.incoming_damage()
-        hp_ratio = p.current_hp / max(1, p.blood_limit)
-        if name == "贯穿":       # 伤害无视格挡：敌方有格挡才值得
-            if any(e.shield > 0 for e in enemies) and mana >= per:
-                return (1, p.name)
-        elif name == "增殖":     # 廉价加血限：法力将溢出时倾倒
-            if mana >= p.mana_limit * 0.8:
-                x = min(self._x_for(name, mana - per), 3)
-                if x >= 1:
-                    return (x, p.name)
-        elif name == "活血":     # 掉血回复：血线中低位挂
-            if hp_ratio <= 0.7 and mana >= per * 2:
-                return (2, p.name)
-        elif name == "爆裂":     # 受伤反弹：威胁大时挂
-            if threat >= 8 and mana >= per * 2:
-                return (2, p.name)
-        elif name == "超频":     # 补速度（闪避资源）
-            if p.current_speed < p.speed_limit and mana >= per and threat > 0:
-                return (1, p.name)
-        elif name == "龙鳞":     # 永久减伤：尽早挂高X
-            x = min(self._x_for(name, mana), 2)
-            if x >= 1 and mana >= per:
-                return (x, p.name)
-        elif name == "滑翔":     # 获得飞行：致命威胁下脱离目标选择
-            if threat >= p.current_hp * 0.4 and mana >= per:
-                return (1, p.name)
-        elif name == "分裂":     # 命零保险（冷却代价）：血线危险时挂
-            if hp_ratio <= 0.35:
-                return (1, p.name)
-        elif name == "尸爆":     # 命零时对全体敌爆炸：濒死且敌多才值
-            if hp_ratio <= 0.35 and len(enemies) >= 2 and mana >= per:
-                return (1, p.name)
-        elif name == "招魂":     # 唤回尸体作临时朋友：法力充裕时尝试（无尸体会被引擎拒绝）
-            if mana >= max(per, p.mana_limit * 0.8):
-                return (1, None)
-        elif name == "借力":     # 目标造成伤害+10X%：给攻击力最高的友军（自身0攻时给友）
-            ally = self._best_attack_ally()
-            if ally is not None and ally.attack_power > 0 and mana >= per:
-                return (1, ally.name)
-        elif name == "兴奋":     # 每次出手后速度+1：闪避资源，威胁下挂自身
-            if p.current_speed < p.speed_limit and threat > 0 and mana >= per:
-                return (1, p.name)
-        elif name == "加速":     # 获得的速度翻倍：高威胁且已投入速度时放大
-            if (p.current_speed < p.speed_limit and threat >= p.current_hp * 0.4
-                    and mana >= per * 2):
-                return (1, p.name)
-        elif name == "急速":     # 每闪避两次速度+1：给持续闪避的友军（或自身）
-            if mana >= per * 2:
-                ally = self._best_attack_ally()
-                target = ally if (ally is not None and ally.current_speed > 0) else p
-                if target.current_speed > 0:
-                    return (1, target.name)
-        elif name == "愤怒":     # 法力消耗减半：自身持消耗型道纹且法力吃紧时
-            if (any(TACTICAL_ROLES.get(n, {}).get("cost", 0) > 0
-                    for n in p.dao_wen) and mana >= per * 2):
-                return (1, p.name)
-        elif name == "寄生":     # 受伤20X%转自身回复：威胁越大越值
-            if threat >= 8 and mana >= per:
-                return (1, p.name)
-        elif name == "嫁祸":     # 自身受击转给目标：需要肉友承接
-            ally = self._tankiest_ally()
-            if ally is not None and ally.current_hp >= 30 and threat > 0 and mana >= per:
-                return (1, ally.name)
-        elif name == "背负":     # 目标受击由自身承担：护脆友（自身比友军肉才值）
-            ally = self._weakest_ally()
-            if (ally is not None and threat > 0 and mana >= per
-                    and p.current_hp >= ally.current_hp * 0.8):
-                return (1, ally.name)
-        elif name == "变形":     # 攻次×攻力互换：高攻次低攻力时换成低攻次高攻力
-            if (p.attack_count >= 2 and p.attack_power < p.attack_count
-                    and mana >= per):
-                return (1, p.name)
-        return None
-
     def _allies(self) -> list:
-        """存活的[朋友]/[员工]（可被指向的友军）。"""
         out = [e for e in self.engine.state.friends
                if e.is_alive and not e.has_retreated]
         out += [e for e in self.engine.state.employees
@@ -439,273 +696,173 @@ class TacticalAI:
             self.log.append(f"[跳过] 救赎: {r.get('error')}")
         return None
 
-    def try_resonance(self) -> Optional[dict]:
-        """2. 残韵插队：只对**存在变化路径**的敌方道纹发动。"""
-        from engine.daowen import ResonanceEngine
+    def _best_resonance(self, min_score: float) -> Optional[dict]:
+        for bonus, cand in self._resonance_candidates():
+            if bonus < min_score:
+                break
+            r = self.engine.execute_action(cand["action"], cand["params"])
+            if r.get("success"):
+                rtype = cand["params"]["resonance_type"]
+                self.used[f"残韵·{rtype}"] = self.used.get(f"残韵·{rtype}", 0) + 1
+                self.resolve_pending_redemption()
+                return r
+        return None
 
-        stock = {k: v for k, v in self.engine.state.resonance.items() if v > 0}
-        if not stock:
-            return None
-        for enemy in self.alive_enemies():
-            for dw in HIGH_VALUE_ENEMY_DAOWEN:
-                if dw not in enemy.dao_wen:
+    def try_resonance(self) -> Optional[dict]:
+        """残韵：对存在变化路径的敌方道纹按威胁动态发动（无固定目标表）。"""
+        return self._best_resonance(min_score=2.0)
+
+    def try_finish(self) -> Optional[dict]:
+        """收割：能一击打死就打死（每点X伤害来自预演归纳，非查表）。"""
+        for e in sorted(self.alive_enemies(), key=lambda x: x.current_hp):
+            for name in sorted(self.player.dao_wen):
+                inst = self.player.dao_wen[name]
+                if inst is None or not inst.can_use():
                     continue
-                for path in ResonanceEngine.get_available_resonance(dw):
-                    rtype = path.get("resonance_type")
-                    if not rtype or stock.get(rtype, 0) <= 0:
-                        continue
-                    r = self.engine.execute_action(
-                        "use_resonance",
-                        {"source_daowen": dw, "resonance_type": rtype, "target": enemy.name})
-                    if r.get("success"):
-                        self.used[f"残韵·{rtype}"] = self.used.get(f"残韵·{rtype}", 0) + 1
-                        self.resolve_pending_redemption()
+                probe = self._probe(name)
+                if probe is None or probe["kind"] != "damage" or probe["dmg"] <= 0:
+                    continue
+                need_x = math.ceil(e.current_hp / probe["dmg"])
+                cost = probe["cost_per_x"]
+                if cost > 0 and need_x * cost > self.mana():
+                    continue
+                if need_x >= 1:
+                    r = self._cast(name, need_x, e.name)
+                    if r:
                         return r
         return None
 
-    def try_finish(self) -> Optional[dict]:
-        """3. 收割：能一击打死就打死（按每点X伤害推导所需X）。"""
-        for e in sorted(self.alive_enemies(), key=lambda x: x.current_hp):
-            cands = []
-            for name in self.owned("nuke"):
-                info = TACTICAL_ROLES[name]
-                per = info.get("dmg_per_x", 2)
-                if per == "target_attack_power":      # 自残：每次自攻=目标攻击力
-                    per = e.attack_power or 0
-                if per <= 0:
-                    continue
-                need_x = math.ceil(e.current_hp / per)
-                if 1 <= need_x <= self._x_for(name):
-                    cands.append((name, need_x, need_x * info.get("cost", 1)))
-            # 能击杀的手段里选最省法力的
-            for name, need_x, _c in sorted(cands, key=lambda t: t[2]):
-                r = self._cast(name, need_x, e.name)
-                if r:
-                    return r
-        return None
-
-    SEAL_MUTATION_BUDGET = 34   # 崩解阈50（命零）；凡庸残骸再+10异变，留16余量
-
-    def _mark_wave(self, threat) -> Optional[dict]:
-        """波及标记指定威胁（_cast 的波及分支只会标敌人列表首个，手术移除需要指定）。"""
-        refs = self.engine.combat._combat_entity_refs()
-        ref = next((r for r, ent in refs.items() if ent is threat), None)
-        if ref is None:
-            return None
-        p = {"daowen_name": "波及", "x": 1, "dodge": False, "blood_shadow": False,
-             "dodge_targets": [{"target_ref": ref, "dodge": False, "blood_shadow": False}],
-             "target_ref": ref, "target": threat.name}
-        r = self.engine.execute_action("use_daowen", p)
-        return r if r.get("success") else None
-
     def try_remove(self) -> Optional[dict]:
-        """4. 移除：封印直接把怪物移出战斗（不产碎片，代价=异变8X）。
-
-        2026-08-22 手术化升级（同 build「庇护+封印+波及+再生」同种子配对 A/B 80局：
-        旧乱封 1.51通关/53.8%第1战死 → 手术封 3.95/15.2%；逃脱演练同步清零）：
-        - 异变预算守门：mutation 超阈值不再封（崩解50层=命零，凡庸残骸还+10）；
-        - 致命单怪也封（旧逻辑≥2敌才放——对致命单怪白挨打）；
-        - 持波及且威胁致命时先标记头号威胁再封（无标记时封印按敌人列表顺序
-          移除，target 参数对移除顺位无效，combat.py:3065 起）。
-        """
-        p = self.player
-        if p is None:
-            return None
-        held_removals = self.owned("remove")
-        if not held_removals:
-            return None
+        """移除：把怪物移出战斗（X=1；异变代价由安全过滤与风险分级把关）。"""
         enemies = [en for en in self.alive_enemies() if en.entity_type == "怪物"]
         if not enemies:
             return None
-        budget_blown = p.mutation_count > self.SEAL_MUTATION_BUDGET
         threat = max(enemies, key=monster_threat)
-        lethal = (self.incoming_damage() > p.current_hp * 0.6
-                  or threat.attack_power * max(1, threat.attack_count) >= p.blood_limit * 0.5)
-        for name in held_removals:
-            if budget_blown:
+        for name in sorted(self.player.dao_wen):
+            inst = self.player.dao_wen[name]
+            if inst is None or not inst.can_use():
                 continue
-            if len(enemies) < 2 and not lethal:
-                continue              # 单怪不致命不值得烧异变
-            if (name == "封印" and lethal and "波及" in (p.dao_wen or {})
-                    and self.mana() >= 3
-                    and not any(s.name == "波及" and s.source == p.name and not s.is_expired
-                                for s in threat.status_effects)):
-                marked = self._mark_wave(threat)
-                if marked:
-                    return marked
-            x = self._x_for(name, self.mana())
-            if x >= 1:
-                r = self._cast(name, 1, threat.name if lethal else enemies[0].name)
+            if self._probe(name) and self._probe(name)["kind"] == "remove":
+                r = self._cast(name, 1, threat.name)
                 if r:
                     return r
         return None
 
     def try_control(self) -> Optional[dict]:
-        """
-        5. 控场：对威胁最大的敌人上控制。
-
-        血线越低越该控：没有格挡/回复手段的流派（如纯debuff流派），
-        控制是唯一的保命方式，此时应放宽触发阈值。
-        """
+        """控场：对威胁最大的敌人上控制（目标本回合已控则不重复）。"""
         enemies = self.alive_enemies()
         if not enemies:
             return None
         p = self.player
-        desperate = (not self.owned("shield") and not self.owned("heal")
-                     and p.current_hp <= p.blood_limit * 0.5)
-        threshold = 0.05 if desperate else 0.25
-        if self.incoming_damage() < p.current_hp * threshold:
-            return None
         top = max(enemies, key=lambda e: e.attack_count * e.attack_power)
-        # 同一目标本回合已被控制过就不再重复施加（控制不叠加，重复施加纯属浪费）
         if top.name in self._controlled_this_round:
             return None
-        for name in self.owned("control"):
-            x = max(1, min(self._x_for(name, self.mana()), 3))
-            r = self._cast(name, x, top.name)
+        for name in sorted(self.player.dao_wen):
+            inst = self.player.dao_wen[name]
+            if inst is None or not inst.can_use():
+                continue
+            probe = self._probe(name)
+            if probe is None or probe["kind"] != "tactician":
+                continue
+            x = 2 if probe["cost_per_x"] > 0 else 1
+            r = self._cast(name, min(x, 3), top.name)
             if r:
                 self._controlled_this_round.add(top.name)
                 return r
         return None
 
     def try_aoe(self) -> Optional[dict]:
-        """6. AOE：按群体总伤与当次单体比较，敌数≥2 且总伤不低于单体时用群伤。"""
-        enemies = self.alive_enemies()
-        n = len(enemies)
-        if n < 2:
+        """群伤：敌数≥2 时输出牌默认已覆盖（预演 diff 天然含全体敌方掉血）。"""
+        if len(self.alive_enemies()) < 2:
             return None
-        budget = self.mana_budget()
-        ranked = self._nuke_ranked(budget)
-        best_single = ranked[0][2] if ranked else 0
-        for name in self.owned("aoe"):
-            x = self._x_for(name, budget)
-            if x < 1:
-                continue
-            total = x * TACTICAL_ROLES[name].get("dmg_per_x", 0) * n
-            if total < best_single:
-                continue
-            r = self._cast(name, x)
-            if r:
-                return r
-        return None
+        return None   # 实时评分已按敌方总掉血比较单体/群体，无需单独策略
 
     def try_debuff(self) -> Optional[dict]:
-        """7. 削弱：对最肥的目标叠加受伤加成/削减。每种每场只上一次。"""
+        """削弱：对最肥目标上战术牌（每张每目标每场一次）。"""
         enemies = self.alive_enemies()
         if not enemies:
             return None
         tank = max(enemies, key=lambda e: e.current_hp)
-        # X≥2 门槛只适用于按X线性放大的法力消耗型削弱；
-        # 代价型（cost≤0，_x_for恒为1，如畸变/逆鳞）与声明min_x=1的强效
-        # 削弱（如衰败：X=1已是回始扣20%当前生命）按min_x=1放行。
-        for name in self.owned("debuff"):
+        for name in sorted(self.player.dao_wen):
+            inst = self.player.dao_wen[name]
+            if inst is None or not inst.can_use():
+                continue
             if self.used.get(f"debuff:{name}:{tank.name}"):
                 continue
-            info = TACTICAL_ROLES.get(name, {})
-            min_x = info.get("min_x", 1 if info.get("cost", 1) <= 0 else 2)
-            x = min(self._x_for(name, self.mana_budget()), 3)
-            if x < min_x:
-                # 重锤型削弱（min_x=1，如衰败15法力/X）：均分预算付不起时
-                # 允许动用全部法力——一次打残主坦换整场收益是划算的。
-                x = min(self._x_for(name, self.mana()), 3)
-            if x < min_x:
+            probe = self._probe(name)
+            if probe is None or probe["kind"] != "tactician":
                 continue
-            r = self._cast(name, x, tank.name)
+            x = 2 if probe["cost_per_x"] > 0 else 1
+            r = self._cast(name, min(x, 3), tank.name)
             if r:
                 self.used[f"debuff:{name}:{tank.name}"] = 1
                 return r
         return None
 
-    def _nuke_ranked(self, budget: int) -> list[tuple[str, int, int]]:
-        """
-        按"本次出手实际能打出的伤害"排序候选输出道纹。
-
-        不能只看静态优先级：高费道纹每点X伤害更高但每点X耗法也更高，
-        在小预算下反而不如杀伐(2伤害/1法力)。故按 预算内可达伤害 降序，
-        同伤害时取更省法力者。
-        """
-        out = []
-        for name in self.owned("nuke"):
-            info = TACTICAL_ROLES[name]
-            x = self._x_for(name, budget)
-            if x < 1:
-                continue
-            per = info.get("dmg_per_x", 2)
-            if per == "target_attack_power":   # 自残：按敌方最高攻力评估（对0攻目标无效）
-                powers = [e.attack_power or 0 for e in self.alive_enemies()]
-                per = max(powers) if powers else 0
-            if per <= 0:
-                continue
-            dmg = x * per
-            score = dmg + x * info.get("limit_per_x", 0)
-            out.append((name, x, dmg, score))
-        out.sort(key=lambda t: (-t[3], TACTICAL_ROLES[t[0]].get("cost", 1)))
-        return [(name, x, dmg) for name, x, dmg, _score in out]
-
     def try_pressure(self) -> Optional[dict]:
-        """8. 输出：按预算选性价比最高的输出道纹，焦点打击血最少的目标。"""
+        """输出：预算内性价比最高（单价来自预演），焦点血最少目标。"""
         enemies = self.alive_enemies()
         if not enemies:
             return None
         target = min(enemies, key=lambda e: e.current_hp)
         budget = self.mana_budget()
-        for name, x, _dmg in self._nuke_ranked(budget):
+        ranked = []
+        for name in sorted(self.player.dao_wen):
+            inst = self.player.dao_wen[name]
+            if inst is None or not inst.can_use():
+                continue
+            probe = self._probe(name)
+            if probe is None or probe["kind"] != "damage" or probe["dmg"] <= 0:
+                continue
+            cost = probe["cost_per_x"]
+            x = max(1, budget // cost) if cost > 0 else 2
+            ranked.append((-(x * probe["dmg"]), name, min(x, 9)))
+        for _, name, x in sorted(ranked):
             r = self._cast(name, x, target.name)
             if r:
                 return r
         return None
 
     def try_ramp(self) -> Optional[dict]:
-        """9. 资源：法力见底且有换取手段时补充。"""
+        """资源：法力见底且有换取手段时补充。"""
         if self.mana() >= 3:
             return None
         for name in self.owned("ramp"):
-            # 洞察是疲惫型（X点速限）：只买X=1，不为了2点法力赔2点速限
-            x = 1 if TACTICAL_ROLES[name].get("pay") == "疲惫" else 2
-            r = self._cast(name, x)
+            r = self._cast(name, 2)
             if r:
                 return r
         return None
 
     def try_reroll(self) -> Optional[dict]:
-        """10. 消灾（reroll）：局内唯一重置随机数的道纹。
-
-        纯情境牌：只在血线告急（<50%）且碎片富余时买一次 X=1 的重掷，
-        稳定局面不动用（不花碎片赌顺风）。代价 5碎片/50假碎片（局外×2）。
-        """
+        """消灾类：血线告急且碎片富余时买一次重掷（文本『重置随机』归纳）。"""
         p = self.player
         if p.current_hp > p.blood_limit * 0.5:
             return None
         state = self.engine.state
         if not (state.shards >= 5 or state.fake_shards >= 50):
             return None
-        if "消灾" not in p.dao_wen:
-            return None
-        return self._cast("消灾", 1)
+        for name in sorted(p.dao_wen):
+            if daowen_text_kind(p.dao_wen[name]) == "ramp" and "重置" in _full_text(p.dao_wen[name]):
+                return self._cast(name, 1)
+        return None
 
     def try_consumable(self) -> Optional[dict]:
-        """消耗品：使用不消耗出手，故在出手循环外单独尝试。
-
-        完整后果评估（非特判）：经 ActionPreview 预演完整效果链（含异变/崩解/
-        血限/连锁触发等一切引擎管线效果），由通用风险分类器评估，LETHAL 和
-        CRITICAL 等级的消耗品被拒绝。不检查消耗品具体名称，全靠 diff 数值说话。
-        """
+        """消耗品：不消耗出手；完整后果预演 + 通用风险分级（不查物品名）。"""
         p = self.player
         if self.consumable_gate is not None:
             try:
                 if not self.consumable_gate(self):
                     return None
             except Exception:
-                return None   # 实验门异常时按不使用处理，绝不把局搞炸
+                return None
         elif p.current_hp > p.blood_limit * 0.4:
             return None
         for item in list(self.engine.state.consumables):
             if getattr(item, "current_uses", 0) <= 0:
                 continue
-            # 预演完整后果（不消耗真实次数、不改真实 state）
             pv = self.previewer.preview("consume_item", {"name": item.name})
             if not pv.get("result") or not pv["result"].get("success"):
-                continue   # 引擎拒绝（如条件不满足）
+                continue
             risk_level, reasons = ActionPreview.risk_classify(pv.get("diff", {}), p)
             if risk_level in ("LETHAL", "CRITICAL"):
                 self.preview_rejected.append(
@@ -713,7 +870,6 @@ class TacticalAI:
                 if self.verbose:
                     self.log.append(f"[安全过滤] 拒绝 消耗品{item.name}: {risk_level} {' '.join(reasons)}")
                 continue
-            # 正式执行
             r = self.engine.execute_action("consume_item", {"name": item.name})
             if r.get("success"):
                 self.used[f"消耗品·{item.name}"] = self.used.get(f"消耗品·{item.name}", 0) + 1
@@ -721,12 +877,7 @@ class TacticalAI:
         return None
 
     def try_artifact(self) -> Optional[dict]:
-        """可选法器（教父左轮/鲜血之翼等战斗内行动）：不占出手，能发动就发动。
-
-        此前 AI 从不发动任何可选法器（黑金名片/罪业金库/烬翼/左轮/血翼/共心环），
-        玩家战力被系统性低估。战始/回始窗口法器由 sim.optional_actions.start_battle/
-        start_round 在对应子阶段驱动；本策略处理 PLAYER_ACTIONS 阶段的法器。
-        """
+        """可选法器（不占出手）：由 sim.optional_actions 驱动，引擎校验把关。"""
         from sim.optional_actions import (
             try_fire_godfather_revolver, try_use_blood_wings,
         )
@@ -740,32 +891,39 @@ class TacticalAI:
 
     # ---------- 主入口 ----------
 
-    STRATEGIES = ("try_artifact", "try_survive", "try_buff", "try_resonance", "try_finish",
-                  "try_remove", "try_control", "try_aoe", "try_debuff", "try_pressure",
-                  "try_ramp", "try_reroll")
-
     def take_action(self) -> Optional[dict]:
-        """执行一次出手。返回引擎结果；无可行动作时返回 None。"""
+        """执行一次出手：实时评估候选；子类固定串（archive 实验）走旧级联。"""
         self.resolve_pending_redemption()
         if not self.alive_enemies() or not self.player.is_alive:
             return None
-        for fn in self.STRATEGIES:
-            r = getattr(self, fn)()
-            if r:
-                self.resolve_pending_redemption()
-                return r
-        return None
+        if self.STRATEGIES:            # 仅实验子类定义了固定顺序
+            for fn in self.STRATEGIES:
+                r = getattr(self, fn)()
+                if r:
+                    self.resolve_pending_redemption()
+                    return r
+            return None
+        r = self._dynamic_action()
+        if r:
+            self.resolve_pending_redemption()
+        return r
 
     def new_round(self) -> None:
-        """[回始]调用：清空"本回合已控制"记账。"""
+        """[回始]调用：清回合记账，更新凡庸压力。"""
         self._controlled_this_round.clear()
         p = self.player
         if p is not None:
             self._hp_trace.append(p.current_hp)
+        if self._damage_done_battle:
+            self._rounds_since_damage = 0
+        else:
+            self._rounds_since_damage += 1
+        self._damage_done_battle = False
 
     def take_turn(self) -> list[dict]:
         """执行本回合全部出手（出手次数 = [速限]/3，向上取整）。"""
         results = []
+        self._refresh_personality()
         c = self.try_consumable()
         if c:
             results.append(c)
@@ -777,6 +935,14 @@ class TacticalAI:
                 break
             results.append(r)
         return results
+
+
+def _full_text(inst) -> str:
+    dw = getattr(inst, "dao_wen", inst)
+    return " ".join(filter(None, (
+        getattr(dw, "formula", ""), getattr(dw, "effect_formula", ""),
+        getattr(dw, "trigger_timing", ""), getattr(dw, "cost_type", ""),
+    )))
 
 
 def choose_dodge(engine, per_hit_damage: int, *, budget_used: int = 0,
@@ -803,17 +969,21 @@ def choose_dodge(engine, per_hit_damage: int, *, budget_used: int = 0,
 
 
 def monster_threat(entity) -> int:
-    """怪物视角的目标威胁分：物理输出（攻击力×攻击次数）+ 输出类道纹加成。
+    """怪物视角的目标威胁分：物理输出 + 道纹持有加成（引擎可见事实，不查表）。
 
-    玩家面板 0×0 但靠道纹输出，需额外加成；朋友/员工高攻会被优先打。
+    施法型道纹（cost_type=消耗，如杀伐/庇护/再生）是可反复发动的主动手段，
+    威胁 +10；代价型（异变/冷却/流血等）+4；空 cost_type（纯被动/触发）+0。
     """
     if entity is None:
         return 0
     score = (entity.attack_power or 0) * (entity.attack_count or 0)
-    for name in entity.dao_wen:
-        info = TACTICAL_ROLES.get(name, {})
-        if info.get("role") in ("nuke", "aoe", "finisher", "debuff", "remove", "control"):
+    for inst in (entity.dao_wen or {}).values():
+        dw = getattr(inst, "dao_wen", inst)
+        cost_type = getattr(dw, "cost_type", "") or ""
+        if cost_type == "消耗":
             score += 10
+        elif cost_type:
+            score += 4
     return score
 
 
@@ -827,6 +997,5 @@ def choose_attack_target(attack_target_options: list[dict], refs: dict) -> str:
         score = monster_threat(entity)
         hp = entity.current_hp if entity is not None else 10 ** 9
         scored.append((score, hp, option["ref"]))
-    # 威胁分高优先；同威胁血低优先（hp 升序）
     scored.sort(key=lambda x: (-x[0], x[1]))
     return scored[0][2]

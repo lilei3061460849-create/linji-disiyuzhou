@@ -47,11 +47,12 @@ engine/
 ├── combat.py            # 战斗计算引擎（伤害/回合/闪避/多路径 癌变/雕塑/还债，PROLIFERATION_THRESHOLD 为癌变阈值，CANCER_THRESHOLD 别名）
 ├── battle_report.py     # 战报渲染（推演格式逐回合输出）
 ├── ai_player.py         # AI 玩家封装（TacticalAI 等）
-├── ai_tactics.py        # AI 战术表（TACTICAL_ROLES、各类道纹优先级）
+├── ai_tactics.py        # 战斗AI实时决策器（2026-08-26 起无固定战术表：ActionPreview 逐候选预演，按局势+性格+可见信息打分；旧 try_* 策略名保留为类别薄封装）
 ├── dm_rulings.py        # DM 裁定库（SQLite + FTS，先例匹配）
 ├── rule_sync.py         # 多事实源同步（README/死者之书/物品索引/副本索引）
 ├── document_validation.py # Markdown标题、文件链接与锚点校验
 ├── death_book.py        # 《死者之书》遗言节读写（文件是事实源；审核后只改 ## 遗言）
+├── personality.py       # 角色性格特征（实例级，行为推断"先射箭后画靶"，命零即清除；不写模板不跨实例继承）
 ├── validator.py         # 规则校验器（20 条内置检查，违规入库 + 已迁移机制护栏）
 ├── mechanisms/          # 最小可行机制系统（MVP）：Verb/Mechanism/Trigger/Condition/Target
 │                        #   已迁移机制：加害（原 JiahaiHook）、龙鳞（原 LonglinHook）、自愈/衰败/洞察·结算/勾魂/狂暴·标记/畸变·标记（原 round_start 内嵌块，回始循环已全部声明化）、畸变·结算（原 round_end 内嵌块）、焦黑发丝（原 _on_entity_death 内嵌块）、洗劫·夺碎片（原伤害管线内嵌块）、帮派令/缄默面具（原 process_relics 战始 if）。新机制优先写声明层，勿回核心管线加 if。
@@ -93,6 +94,7 @@ priority=30）——经 `MechanismHookAdapter` 在 Hook 分发路径原位执行
 ```python
 state = engine.get_state()
 # 返回：当前状态、可用行动、待处理中断、上次结果
+# state["state"]["personality_traits"] 含存活角色的性格特征（结构化，实例级）
 ```
 
 ### 2. 执行行动
@@ -135,6 +137,25 @@ result = engine.execute_action("pre_battle_action", {"sub_action": "探索"})
 # 需要可复现的随机结果时（例如回归测试），在构造引擎时传入固定种子：
 engine = GameEngine(rng_seed=12345)
 ```
+
+## 角色性格特征（Personality Traits，2026-08-26）
+
+原则"先射箭，后画靶"：创建角色不预设人格；性格只能由实际发生的行为逐渐推断
+（`update_personality`，每条证据=维度+方向±1+行为依据）；单次行为不贴死标签
+（首条置信度封顶 0.30、强度减半），后续行为可持续修正（反向证据削置信度）。
+
+```python
+engine.update_personality(entity, "risk_preference", +1, evidence="第1场主动选择死斗")
+engine.get_personality(entity)          # 结构化条目（value/strength/confidence/evidence_count/last_evidence）
+engine.format_personality_for_ai(entity)  # 供 AI 使用的文字摘要（含"倾向非强制"提示）
+engine.remove_personality(entity)       # 手工清除（幂等）
+```
+
+数据归属：`GameState.personality_traits`，键为 `Entity.runtime_id`（实例级，
+同名不同实例互不共享）；不写入角色模板，不跨副本/轮回/实例继承。随 GameState
+的 deepcopy 事务快照与 pickle 存档自然往返。命零时由统一死亡管线
+`CombatEngine._on_entity_death` 自动清除——死亡角色的性格对 AI 与一切查询接口
+均不可读。性格只是行为倾向参考，绝不构成对角色决策的强制规则。
 
 ## 撤退机制
 

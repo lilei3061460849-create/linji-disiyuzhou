@@ -27,10 +27,19 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def _resolve_opponent_one(e, log=None):
-    """守擂方一步：选一个未行动的守擂实体（轮回者主将优先），按轮回者规则行动。
-    返回 True=已行动（引擎已换边）；False=守擂方本回合无行动可出。"""
+    """守擂方一步：通用预演决策（2026-08-26 修复"木桩守擂"）。
+
+    旧版硬编码 杀伐/低血庇护/普攻 三板斧——不持有杀伐的封存构筑（如
+    畸变/自残/血债流）会整场一动不动,死斗沦为打木桩(用户判定为无效数据)。
+    现改为与挑战者 TacticalAI 同一哲学:枚举守擂主将**实际持有**的可用道纹
+    × X 档 × 目标,经 ActionPreview 在引擎副本上真实预演,按后果打分:
+    挑战者掉血/阵亡 > 自身回血 > 压制挑战者(状态事件) > 法力节约;
+    全部被引擎拒绝才退回普攻,普攻也不行才让行。
+    每次仍只行动一步,保持"逐出手交替"的 PvP 语义。
+    """
     from sim.build_learner import _decline_spells
-    log = log or []
+    if log is None:            # 不得用 `log = log or []`:空列表是 falsy,会静默丢弃调用方的日志缓冲(2026-08-26 修复守擂日志丢失)
+        log = []
     refs = e.combat._combat_entity_refs()
     candidates = []
     for ref, ent in refs.items():
@@ -43,42 +52,99 @@ def _resolve_opponent_one(e, log=None):
         candidates.append((ref, ent))
     if not candidates:
         return False
-    # 优先主将（轮回者），否则按列表顺序
     lord = next(((r, x) for r, x in candidates if x.entity_type == "轮回者"), None)
     ref, ent = lord or candidates[0]
     p = e.state.player
-    # 1) 主将有法力 → 杀伐打挑战者主将（与挑战者同策略）
-    if ent.entity_type == "轮回者" and ent.current_mana >= 2 and p and p.is_alive:
-        x = max(1, ent.current_mana - 3)
-        r = e.execute_action("use_daowen", {
-            "actor_ref": ref, "daowen_name": "杀伐", "x": x,
-            "target_ref": "player:0", "trigger_spell_choices": {}})
-        if r.get("success"):
-            dmg = sum(ef.get("actual_damage", 0) for ef in (r.get("execution", {}).get("effects") or []))
-            log.append(f"  守擂{ent.name} 杀伐X={x} 打挑战者 → {dmg}伤")
-            return True
-    # 2) 主将血低且有庇护 → 上盾
-    if (ent.entity_type == "轮回者" and "庇护" in ent.dao_wen
-            and ent.current_hp <= ent.blood_limit * 0.4 and ent.current_mana >= 2):
-        r = e.execute_action("use_daowen", {
-            "actor_ref": ref, "daowen_name": "庇护", "x": 2,
-            "target_ref": ref, "trigger_spell_choices": {}})
-        if r.get("success"):
-            log.append(f"  守擂{ent.name} 庇护X=2（盾{ent.shield}）")
-            return True
-    # 3) 普攻（prepare_attack/resolve_attack，走玩家侧攻击接口）
+
+    best = None   # (score, params, desc)
+    if ent.entity_type == "轮回者" and p and p.is_alive:
+        from engine.ai_preview import ActionPreview
+        previewer = ActionPreview(e)
+        actions_left = max(1, ent.action_count - ent.actions_used_this_round)
+        mana_budget = max(1, ent.current_mana // actions_left)
+        cache = getattr(e, "_duel_probe_cache", None)
+        if cache is None:
+            cache = {}
+            e._duel_probe_cache = cache
+        for name, inst in sorted(ent.dao_wen.items()):
+            if inst is None or not inst.can_use():
+                continue
+            probe = cache.get(name)
+            if probe is None:   # X=1 探针:法力单价 + 方向(自身/敌向)
+                pv = previewer.preview("use_daowen", {
+                    "actor_ref": ref, "daowen_name": name, "x": 1,
+                    "target_ref": "player:0", "dodge": False, "blood_shadow": False})
+                cost = ((pv.get("result") or {}).get("calculation") or {}).get("cost")
+                ok = bool((pv.get("result") or {}).get("success"))
+                probe = {"cost": cost if isinstance(cost, int) else 1, "ok_on_player": ok}
+                cache[name] = probe
+            cost = probe["cost"]
+            cap = max(1, ent.current_mana // cost) if cost > 0 else 2
+            xs = sorted({1, min(cap, max(1, mana_budget // cost)) if cost > 0 else 1, cap})[-3:]
+            for target_ref in ("player:0", ref):
+                for x in xs:
+                    params = {"actor_ref": ref, "daowen_name": name, "x": x,
+                              "target_ref": target_ref, "dodge": False,
+                              "blood_shadow": False, "trigger_spell_choices": {}}
+                    pv = previewer.preview("use_daowen", params)
+                    res = pv.get("result") or {}
+                    if not res.get("success"):
+                        continue
+                    diff = pv.get("diff", {})
+                    dp = diff.get("player", {})
+                    score = 0.0
+                    dmg = max(0, dp.get("hp_before", 0) - dp.get("hp_after", 0))
+                    score += 2.2 * dmg
+                    if dp.get("dead"):
+                        score += 100.0
+                    score -= 0.5 * max(0, dp.get("shield_after", 0) - dp.get("shield_before", 0))
+                    lord_name = ent.name
+                    for ev_row in diff.get("enemies", []):
+                        if ev_row.get("name") == lord_name:
+                            score += 1.4 * max(0, ev_row.get("hp_after", 0) - ev_row.get("hp_before", 0))
+                    for ev in diff.get("events", []):
+                        if ev.get("type") == "status_applied" and ev.get("target") == (p.name if p else ""):
+                            score += 2.5   # 压制挑战者
+                    score -= 0.12 * (res.get("calculation", {}).get("cost") or 0)
+                    desc = f"守擂{ent.name} {name}X={x}" + ("(自身)" if target_ref == ref else "→挑战者")
+                    if best is None or score > best[0]:
+                        best = (score, params, desc)
+        if best is not None and best[0] > 0:
+            params = dict(best[1])
+            # 闪避中继(2026-08-26):攻方提交时代目标声明闪避(与怪物阶段解析器同构)。
+            # 挑战者是否闪避由 choose_dodge 按伤害阈值/速度预算决定——修复 PvP 双方
+            # 从不闪避的问题(用户指出:把把死斗第一回合结束)。
+            from engine.ai_tactics import choose_dodge
+            pv_check = previewer.preview("use_daowen", params)
+            exp_dmg = max(0, ((pv_check.get("diff", {}).get("player", {}) or {})
+                              .get("hp_before", 0))
+                          - ((pv_check.get("diff", {}).get("player", {}) or {})
+                             .get("hp_after", 0)))
+            params["dodge"] = choose_dodge(e, exp_dmg) if params.get("target_ref") == "player:0" else False
+            r = e.execute_action("use_daowen", params)
+            if r.get("success"):
+                dodge_note = "(挑战者闪避)" if params.get("dodge") else ""
+                log.append(f"  {best[2]}{dodge_note}")
+                return True
+    # 普攻兜底（prepare_attack/resolve_attack，走玩家侧攻击接口；逐击闪避由
+    # choose_dodge 按每击伤害与速度预算决定——挑战者侧的闪避终于存在）
     prep = e.execute_action("prepare_attack", {"actor_ref": ref})
     if not prep.get("success"):
         return False
     target_ref = "player:0"
     option = next((o for o in prep["result"]["target_options"] if o["ref"] == target_ref),
                   prep["result"]["target_options"][0])
-    hits = [{"target_ref": option["ref"], "dodge": False, "blood_shadow": False,
+    from engine.ai_tactics import choose_dodge
+    hits = [{"target_ref": option["ref"],
+             "dodge": choose_dodge(e, ent.attack_power or 1),
+             "blood_shadow": False,
              "spell_choices": _decline_spells(option)}
             for _ in range(prep["result"]["hit_count"])]
     res = e.execute_action("resolve_attack", {"token": prep["result"]["token"], "hits": hits})
     if res.get("success"):
-        log.append(f"  守擂{ent.name} 普攻（{prep['result']['hit_count']}击）")
+        n_dodge = sum(1 for h in hits if h["dodge"])
+        log.append(f"  守擂{ent.name} 普攻（{prep['result']['hit_count']}击"
+                   + (f",{n_dodge}击被闪避" if n_dodge else "") + "）")
         return True
     return False
 
@@ -113,7 +179,8 @@ def run_duel_pvp(e, player_act, max_rounds=60, max_steps=400, log=None,
     """
     import time as _time
     from sim.build_learner import round_start_relic_choices
-    log = log or []
+    if log is None:   # 空列表是 falsy,`log or []` 会静默丢弃调用方缓冲(2026-08-26 同源修复)
+        log = []
     deadline = _time.monotonic() + max_wall_seconds
 
     def _over_time():
@@ -132,6 +199,14 @@ def run_duel_pvp(e, player_act, max_rounds=60, max_steps=400, log=None,
             return {"winner": "challenger", "rounds": rnd, "reason": "守擂主将阵亡"}
         from sim.optional_actions import start_round
         rs, _rsart = start_round(e)
+        if not rs.get("success"):
+            # 回始失败不允许吞掉:法力不会回填,双方将永久空转(2026-08-26 死斗三
+            # "对手血契"校验事故)。显式判卫冕并留因,绝不无声挂死。
+            return {"winner": "defender", "rounds": rnd,
+                    "reason": f"回始失败判卫冕: {str(rs.get('error', ''))[:80]}"}
+        # 死锁防护:连续 STALL_GUARD_STEPS 步双方面板零变化 → 判卫冕(双有效行动
+        # 枯竭的残局,如 1 血 0 法互瞪;不做 400 步 × 60 回合的无意义空转)。
+        last_panel, panel_stall = None, 0
         for _ in range(max_steps):
             if _over_time():
                 return {"winner": "defender", "rounds": rnd,
@@ -142,6 +217,17 @@ def run_duel_pvp(e, player_act, max_rounds=60, max_steps=400, log=None,
                 return {"winner": "defender", "rounds": rnd, "reason": "挑战者阵亡"}
             if not _lord_alive():
                 return {"winner": "challenger", "rounds": rnd, "reason": "守擂主将阵亡"}
+            panel = (
+                (e.state.player.current_hp, e.state.player.shield, e.state.player.current_mana,
+                 e.state.player.current_speed, e.state.current_round) if e.state.player else None,
+                tuple((x.current_hp, x.shield, x.current_mana, x.current_speed)
+                      for x in e.state.enemies if x.entity_type == "轮回者"),
+            )
+            panel_stall = panel_stall + 1 if panel == last_panel else 0
+            last_panel = panel
+            if panel_stall >= 60:
+                return {"winner": "defender", "rounds": rnd,
+                        "reason": "死斗死锁判卫冕(双方面板连续60步零变化)"}
             if e.state.duel_turn == "player_side":
                 acted = player_act()
                 if not acted:

@@ -28,7 +28,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from engine.api import GameEngine
-from engine.ai_tactics import TacticalAI, TACTICAL_ROLES
+from engine.ai_tactics import TacticalAI
+from engine.daowen import DaoWenEngine
 from engine.gamedata import ORIGINAL_MONSTER_DAOWEN, SHAFA_LOOP_DAOWEN
 from sim.build_learner import _resolve_monster_turn
 from sim.optional_actions import battle_start_relic_choices, round_start_relic_choices
@@ -39,7 +40,8 @@ CORE = ["杀伐", "庇护", "再生"]
 
 # 候选池：AI 战术表内、玩家可持有（排除原始怪物道纹与核心已含）
 def candidate_pool() -> list[str]:
-    return sorted(n for n in TACTICAL_ROLES
+    DaoWenEngine.register_all()
+    return sorted(n for n in DaoWenEngine._registry
                   if n not in ORIGINAL_MONSTER_DAOWEN and n not in CORE)
 
 

@@ -11,6 +11,7 @@ import uuid
 from .enums import EffectScope, EffectPolarity
 from .effect_context import EffectContext, make_context, normalize_context
 from .combat_events import CombatEvent, CombatEventType, get_combat_event_observer
+from .personality import export_for_ai as personality_export_for_ai
 
 
 @dataclass
@@ -587,6 +588,12 @@ class GameState:
     
     # 敌方
     enemies: list[Entity] = field(default_factory=list)
+
+    # 角色性格特征（2026-08-26）：{runtime_id: {name, traits:{dimension: entry}}}
+    # 实例级数据（键=Entity.runtime_id，同名不同实例互不共享）；
+    # 只由 engine/personality.py 读写：行为推断写入、命零时经统一死亡管线删除；
+    # 纯 dict 结构，随本类 deepcopy 快照 / pickle 存档自然往返，不写入任何角色模板。
+    personality_traits: dict[str, dict] = field(default_factory=dict)
     
     # 资源
     shards: int = 20            # 碎片
@@ -1102,6 +1109,8 @@ class GameState:
             "rest_heal_bonus": self.rest_heal_bonus,
             "death_book_legacies": self.death_book_legacies,
             "sealed_candidate": self.sealed_candidate,
+            # 角色性格特征（只导出仍被追踪的存活角色，见 engine/personality.py）
+            "personality_traits": personality_export_for_ai(self),
         }
     
     def get_all_player_side(self) -> list[Entity]:

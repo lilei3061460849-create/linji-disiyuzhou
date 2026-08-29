@@ -16,7 +16,7 @@ from collections import Counter
 
 sys.path.insert(0, ".")
 import sim.build_learner as bl
-from engine.ai_tactics import TACTICAL_ROLES
+from engine.daowen import DaoWenEngine
 
 SEEDS = list(range(101, 141))          # 40 个种子
 REGIONS = ["扭曲都市", "罪孽都市", "龙心谷"]
@@ -26,7 +26,8 @@ BUILD_B = ("杀伐", ["束缚", "血债", "再生", "庇护"])            # 旧�
 BUILD_C = ("杀伐", [])                                            # 无学习基线
 _rng = random.Random(20260822)
 STARTS = ["杀伐", "再生", "庇护", "固执", "血债", "波及", "增殖", "透支", "贯穿", "束缚", "封印"]
-POOL = sorted(TACTICAL_ROLES.keys())
+DaoWenEngine.register_all()
+POOL = sorted(DaoWenEngine._registry.keys())
 BUILD_D = (_rng.choice(STARTS), _rng.sample(POOL, 5))             # 随机对照
 
 LABELS = {

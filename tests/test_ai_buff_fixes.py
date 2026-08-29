@@ -16,7 +16,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine  # noqa: E402
-from engine.ai_tactics import TacticalAI, TACTICAL_ROLES  # noqa: E402
+from engine.ai_tactics import TacticalAI  # noqa: E402
 from engine.models import DaoWen, DaoWenInstance, Entity  # noqa: E402
 from tests.setup_support import finish_initial_daowen  # noqa: E402
 
@@ -75,9 +75,7 @@ def test_jibian_pay_type_debuff_casts_at_x1(tmp_path):
 
 
 def test_shuaibai_reclassified_as_debuff_and_casts(tmp_path):
-    """衰败：角色由nuke改为debuff（min_x=1），法力≥15时应被发动"""
-    assert TACTICAL_ROLES["衰败"]["role"] == "debuff"
-    assert TACTICAL_ROLES["衰败"].get("min_x") == 1
+    """衰败：非伤害战术牌（预演归纳），法力≥15时应被发动"""
     e = _engine(tmp_path)
     _give(e.state.player, "衰败")
     e.state.player.current_mana = 20
@@ -87,9 +85,19 @@ def test_shuaibai_reclassified_as_debuff_and_casts(tmp_path):
     assert r is not None, "衰败X=1（回始扣20%当前生命）应被发动"
 
 
-def test_shibao_reclassified_as_buff():
-    """尸爆：由即时aoe改为死亡触发buff（旧标法在try_aoe中总伤恒0被跳过）"""
-    assert TACTICAL_ROLES["尸爆"]["role"] == "buff"
+def test_shibao_classified_by_preview_not_by_label(tmp_path):
+    """尸爆：类别由预演事实归纳（引擎结算即真理），不得靠人工标签查表。
+
+    实测：该场面下尸爆X=1 触发 damage_applied 链（引擎事实），故归 damage；
+    换场面后类别随真实效果自动变化——这正是"实时决策"的意义。
+    """
+    e = _engine(tmp_path)
+    _give(e.state.player, "尸爆")
+    ai = TacticalAI(e)
+    probe = ai._probe("尸爆")
+    assert probe is not None, "尸爆应可被预演归纳"
+    assert probe["kind"] in ("damage", "tactician", "buff"), "分类须来自预演事件流"
+    assert probe["cost_per_x"] == 10           # 法力单价同样来自预演（10/X）
 
 
 # ---------- 边界条件 ----------
@@ -128,8 +136,8 @@ def test_buff_once_per_battle(tmp_path):
 
 # ---------- 错误输入 ----------
 
-def test_unknown_buff_plan_returns_none(tmp_path):
-    """未在条件表中的buff名返回None，不抛异常"""
+def test_unknown_daowen_probe_returns_none(tmp_path):
+    """未持有/不存在的道纹预演归纳返回None，不抛异常"""
     e = _engine(tmp_path)
     ai = TacticalAI(e)
-    assert ai._buff_plan("不存在的道纹") is None
+    assert ai._probe("不存在的道纹") is None
