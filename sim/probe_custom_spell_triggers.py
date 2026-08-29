@@ -57,7 +57,7 @@ def _learn(e, definition):
 
 def _decline_all_spell_choices(target_option):
     return {k: {sp["spell_name"]: {"use": False} for sp in target_option.get("spell_options", {}).get(k, [])}
-            for k in ("before", "after")}
+            for k in ("before", "after", "damage_after", "life_before")}
 
 
 def _pure_attack_round(e):
@@ -416,18 +416,25 @@ def probe_learn_time_rejection():
 
 
 def probe_unwired(trigger_text, label):
+    """2026-08-30 更新：11种触发时机现已全部接线，本函数改名保留但语义
+    变为"验证全局时点DSL层的目标身份边界"——用【于攻击者】写法在全局
+    时点上应该被学习阶段直接拒绝（全局时点没有攻击者/目标这个对手身份，
+    见 engine/spell_dsl.py._check_global_trigger_targets），而不是像
+    历史版本那样"能学会但不会触发"。真正的六个全局时点真实触发验证见
+    sim/probe_global_trigger_spells.py；受到伤害后/失去生命前的真实
+    触发验证见 sim/probe_damage_pipeline_triggers.py。
+    """
     e = _fresh_engine(f"unwired_{label}")
     _give_daowen(e.state.player, "杀伐")
-    definition = {"name": f"未接线测试_{label}", "required_daowen": ["杀伐"],
+    definition = {"name": f"边界测试_{label}", "required_daowen": ["杀伐"],
                   "trigger_condition": trigger_text,
                   "effect_flow": "发动杀伐X于攻击者"}
     learned = _learn(e, definition)
-    if not learned["success"]:
-        record(label, None, False, f"学习被拒绝：{learned.get('error')}")
-        return
-    wired = learned["result"].get("wired")
-    warning = learned["result"].get("warning", "")
-    record(label, wired, "N/A（无对应结算点，见warning）", f"warning={warning!r}")
+    rejected = not learned["success"]
+    record(f"{label}(于攻击者写法应被拒绝)", None, rejected,
+           f"学习是否被拒绝={rejected}；error={learned.get('error')!r}"
+           f"（全局时点没有攻击者身份，写“于攻击者”必须在学习阶段就报错，"
+           f"不能像旧版本那样静默学会摆设）")
 
 
 def main():
@@ -439,8 +446,6 @@ def main():
     probe_loop()
     probe_learn_time_rejection()
     for trigger_text, label in [
-        ("受到伤害后", "受到伤害后"),
-        ("失去生命前", "失去生命前"),
         ("战斗开始时", "战始"),
         ("战斗结束时", "战终"),
         ("回合开始时", "回始"),
@@ -451,18 +456,22 @@ def main():
         probe_unwired(trigger_text, label)
 
     print("=" * 78)
-    print("自创法术触发时机 —— 真实引擎实测结果（2026-08-29 修订版）")
+    print("自创法术触发时机 —— 真实引擎实测结果（2026-08-30 更新：11种全部接线）")
     print("=" * 78)
     for row in REPORT:
         print(f"[{row['trigger']}] learn阶段wired={row['learn_wired']} "
               f"实际触发={row['actually_fired']}")
         print(f"    {row['detail']}")
     print("=" * 78)
-    wired_triggers = [r for r in REPORT if r["learn_wired"] is True]
-    fired_count = sum(1 for r in wired_triggers if r["actually_fired"] is True)
-    print(f"已接线的{len(wired_triggers)}种时机中，真实触发成功：{fired_count}/{len(wired_triggers)}")
+    print("说明：本文件只覆盖【受到伤害前/失去生命后/目标发动道纹前】三个历史时机"
+          "的真实触发验证，以及全局时点的DSL边界校验（不含真实触发）。")
+    print("六个全局时点（战始/战终/回始/回终/敌回始/敌回终）的真实触发验证见"
+          " sim/probe_global_trigger_spells.py。")
+    print("受到伤害后/失去生命前两个伤害管线内时点的真实触发验证见"
+          " sim/probe_damage_pipeline_triggers.py。")
     return REPORT
 
 
 if __name__ == "__main__":
     main()
+

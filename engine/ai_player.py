@@ -460,7 +460,7 @@ class PlaceholderBackend(AIBackend):
                     "target_ref": target["ref"], "dodge": False, "blood_shadow": False,
                     "spell_choices": {timing: {spell["spell_name"]: {"use": False}
                                                for spell in target.get("spell_options", {}).get(timing, [])}
-                                      for timing in ("before", "after")},
+                                      for timing in ("before", "after", "damage_after", "life_before")},
                 } for _ in range(available_actions.get("hit_count", 0))]
                 return AIDecision("resolve_attack", {"token": available_actions["token"], "hits": hits},
                                   "提交完整攻击选择")
@@ -491,7 +491,7 @@ class PlaceholderBackend(AIBackend):
                     else:
                         spell_choices = {timing: {spell["spell_name"]: {"use": False}
                                                   for spell in target.get("spell_options", {}).get(timing, [])}
-                                         for timing in ("before", "after")}
+                                         for timing in ("before", "after", "damage_after", "life_before")}
                         attacks = [{"hits": [{"target_ref": target["ref"], "dodge": False,
                                                "blood_shadow": False, "spell_choices": spell_choices}
                                               for _ in range(hit_count)]}

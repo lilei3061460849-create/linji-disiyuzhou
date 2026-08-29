@@ -404,8 +404,15 @@ class GameEngine:
             actions.append({"action_type": "choose_first_embrace",
                             "params_schema": {"choice": "1..9"}})
         if self.state.energy <= 0:
-            actions.append({"action_type": "battle_start",
-                            "params_schema": {"relic_choices": "逐件显式提交可选战始遗物"}})
+            battle_start_schema: dict[str, Any] = {"relic_choices": "逐件显式提交可选战始遗物"}
+            global_spells_start = self.combat.prepare_global_trigger_spells(TriggerTiming.BATTLE_START.value)
+            if global_spells_start:
+                battle_start_schema["spell_choices"] = {
+                    "_instruction": "存在【战始】全局法术候选，须逐一显式提交use/cycles"
+                                    "（实际结算发生在战始遗物与法力重置之后，届时可能因法力变化而改变可承担的X）",
+                    "candidates": global_spells_start,
+                }
+            actions.append({"action_type": "battle_start", "params_schema": battle_start_schema})
         return {"phase": GamePhase.PRE_BATTLE.value, "energy": self.state.energy, "actions": actions}
 
     def _get_region_actions(self) -> list[dict]:
@@ -457,8 +464,14 @@ class GameEngine:
                     for ref, entity in self.combat.blood_pact_targets(opponent).items()
                 ],
             }
-        actions = [{"action_type": "round_start",
-                    "params_schema": {"relic_choices": relic_choices_schema}}]
+        round_start_schema: dict[str, Any] = {"relic_choices": relic_choices_schema}
+        global_spells = self.combat.prepare_global_trigger_spells(TriggerTiming.ROUND_START.value)
+        if global_spells:
+            round_start_schema["spell_choices"] = {
+                "_instruction": "存在【回始】全局法术候选，须逐一显式提交use/cycles",
+                "candidates": global_spells,
+            }
+        actions = [{"action_type": "round_start", "params_schema": round_start_schema}]
         if "黑金名片" in self.state.artifacts_owned:
             actions.insert(0, {"action_type": "use_black_card", "params_schema": {}})
         if "共心环" in self.state.artifacts_owned:
@@ -483,7 +496,7 @@ class GameEngine:
         if subphase == CombatSubphase.MONSTER_ACTIONS.value:
             return {"phase": subphase, "actions": [
                 {"action_type": "prepare_monster_phase", "params_schema": {}}
-            ]}
+            ], "note": "已进入怪物阶段，本步无需spell_choices（敌回始已在上一步prepare_monster_phase里结算过）"}
         if subphase == CombatSubphase.AWAIT_ROUND_END.value:
             return self._get_battle_end_actions()
 
@@ -674,9 +687,22 @@ class GameEngine:
                 {"ref": ref, "name": entity.name}
                 for ref, entity in self.combat.blood_pact_targets().items()
             ]
+        global_spells_end = self.combat.prepare_global_trigger_spells(TriggerTiming.ROUND_END.value)
+        if global_spells_end:
+            round_end_schema["spell_choices"] = {
+                "_instruction": "存在【回终】全局法术候选，须逐一显式提交use/cycles",
+                "candidates": global_spells_end,
+            }
         actions = [{"action_type": "round_end", "params_schema": round_end_schema}]
         if self.state.battle_won():
-            actions.append({"action_type": "battle_end", "params_schema": {}})
+            battle_end_schema: dict[str, Any] = {}
+            global_spells_battle_end = self.combat.prepare_global_trigger_spells(TriggerTiming.BATTLE_END.value)
+            if global_spells_battle_end:
+                battle_end_schema["spell_choices"] = {
+                    "_instruction": "存在【战终】全局法术候选，须逐一显式提交use/cycles",
+                    "candidates": global_spells_battle_end,
+                }
+            actions.append({"action_type": "battle_end", "params_schema": battle_end_schema})
         return {"phase": CombatSubphase.AWAIT_ROUND_END.value, "actions": actions}
 
     def _get_dead_duel_actions(self) -> dict:
@@ -1633,16 +1659,16 @@ class GameEngine:
                           trigger_condition=trigger.strip(), effect_flow=flow.strip(),
                           rank=len(required), custom_conditions=list(definition.get("custom_conditions") or []))
             player.spells.append(spell)
-            # 触发时机词汇表已扩展到战始/战终/回始/回终/敌回始/敌回终等，句式能
-            # 被正确解析、允许学会；但这些时机在战斗管线里尚未接入真实触发点，
-            # 如实提醒，而不是让玩家误以为学完就一定会生效。
+            # 2026-08-30：全部11种触发时机均已接入真实战斗结算管线，wired
+            # 恒为True；_WIRED_TRIGGERS判断保留，作为未来若扩展新触发时机
+            # 时的显式安全阀（新时机默认wired=False，直到真正接线为止），
+            # 不再有当前已知的"合法但不会触发"的时机。
             wired = parsed.trigger in self.combat._WIRED_TRIGGERS
             result = {"learned": "custom_spell", "spell": spell.to_dict(), "shard_cost": 0, "wired": wired}
             if not wired:
                 result["warning"] = (
                     f"触发时机【{parsed.trigger}】已通过句式校验并学会，"
-                    "但该时机暂未接入战斗结算管线，本法术目前不会实际触发"
-                    "（当前已接线：受到伤害前/失去生命后/目标发动道纹前）")
+                    "但该时机暂未接入战斗结算管线，本法术目前不会实际触发")
             return {"success": True, "action": "学习·自创法术", "result": result}
 
         tier = params.get("tier", 1)
@@ -3324,8 +3350,9 @@ class GameEngine:
         parsed = flow if flow is not None else self.combat._parse_custom_spell(spell)
         armed = all(d in player.dao_wen and player.dao_wen[d].can_use() for d in spell.required_daowen)
         # wired：该触发时机在战斗管线里是否已经真正接线（能被结算触发）。
-        # 未接线的时机（如战始/战终/回始/回终/敌回始/敌回终）目前只能被解析、
-        # 不会被结算——如实标注，不能让玩家误以为"学会了就一定会生效"。
+        # 2026-08-30：11种触发时机（受到伤害前/后、失去生命前/后、目标发动
+        # 道纹前、战始/战终/回始/回终/敌回始/敌回终）均已接线，此判断保留
+        # 作为未来新增时机时的显式安全阀。
         wired = bool(parsed) and parsed.get("trigger") in self.combat._WIRED_TRIGGERS
         return {
             "success": True, "action": f"装配法术【{spell_name}】",
@@ -3335,7 +3362,9 @@ class GameEngine:
                        "loop": bool(parsed.get("loop")) if parsed else False,
                        "armed": armed,
                        "wired": wired,
-                       "note": ("反应型法术在触发时点(受伤害前/失血后/目标发动道纹前)由引擎自动结算"
+                       "note": ("反应型法术在触发时点由引擎自动结算（受到伤害前/后、失去生命前/后、"
+                                "目标发动道纹前，或战始/战终/回始/回终/敌回始/敌回终由对应action的"
+                                "spell_choices参数提交决策）"
                                 if wired else
                                 "触发时机已被正确解析，但该时机尚未接入战斗结算管线，本法术暂不会实际触发")},
         }
@@ -3538,7 +3567,7 @@ class GameEngine:
                 hits = [{"target_ref": option["ref"], "dodge": False, "blood_shadow": False,
                          "spell_choices": {timing: {sp["spell_name"]: {"use": False}
                                                     for sp in option.get("spell_options", {}).get(timing, [])}
-                                           for timing in ("before", "after")}}
+                                           for timing in ("before", "after", "damage_after", "life_before")}}
                         for _ in range(prepared["result"]["hit_count"])]
                 resolved = self.execute_action("resolve_attack", {
                     "token": prepared["result"]["token"], "hits": hits})
@@ -3640,7 +3669,7 @@ class GameEngine:
                         hits = [{"target_ref": option["ref"], "dodge": False, "blood_shadow": False,
                                  "spell_choices": {timing: {sp["spell_name"]: {"use": False}
                                                             for sp in option.get("spell_options", {}).get(timing, [])}
-                                                   for timing in ("before", "after")}}
+                                                   for timing in ("before", "after", "damage_after", "life_before")}}
                                 for _ in range(prepared["result"]["hit_count"])]
                         resolved = self.execute_action("resolve_attack", {
                             "token": prepared["result"]["token"], "hits": hits})
@@ -3656,7 +3685,15 @@ class GameEngine:
                 "result": {"acted_count": acted, "allies": results}}
 
     def _action_prepare_monster_phase(self, params: dict) -> dict:
-        """第一阶段：只返回合法选项，绝不替AI选择道纹、目标或闪避。"""
+        """第一阶段：只返回合法选项，绝不替AI选择道纹、目标或闪避。
+
+        全局法术【敌回始】：普通战斗里怪物没有独立的"回合开始"动作，
+        最接近的真实执行点就是"即将进入怪物阶段"这一刻——对玩家侧持有者
+        而言，这就是敌方（怪物）即将开始行动的时点。若存在候选，须先通过
+        params.spell_choices 提交完整决策，才能真正进入怪物阶段。死斗中
+        双方都是轮回者、各自有独立的 round_start/round_end，敌回始/敌回终
+        不走这条路径（round_start/round_end 本身已覆盖对方视角）。
+        """
         if self.state.pending_monster_phase:
             return {"success": False, "error": "已有待提交的怪物阶段决策"}
         # 死斗交替（对称）：守擂方（opponent_side）仅在轮到己方时行动。
@@ -3668,13 +3705,18 @@ class GameEngine:
                                "note": f"死斗交替：当前轮到{self.state.duel_turn}，"
                                        f"守擂方(opponent_side)本阶段不行动"},
                     "instruction": "请调用resolve_monster_phase(choices=[])结束本阶段"}
+        if not self.state.in_final_duel:
+            spell_logs = self._resolve_global_trigger_spells_for_action(
+                TriggerTiming.ENEMY_ROUND_START.value, params)
+        else:
+            spell_logs = []
         options = self.combat.prepare_monster_phase()
         token = uuid.uuid4().hex
         self.state.pending_monster_phase = {"token": token, "round": self.state.current_round,
                                             "options": options}
         self.state.combat_subphase = CombatSubphase.MONSTER_ACTIONS.value
         return {"success": True, "action": "准备怪物阶段",
-                "result": {"token": token, **options},
+                "result": {"token": token, "spell_logs": spell_logs, **options},
                 "instruction": "请为每个actors条目提交完整选择后调用resolve_monster_phase"}
 
     def _action_resolve_monster_phase(self, params: dict) -> dict:
@@ -3710,6 +3752,15 @@ class GameEngine:
                     "instruction": "提交被拒绝且已整体回滚（零副作用），token仍有效；"
                                    "请修正选择后用同一token重新调用resolve_monster_phase"}
         self.state.pending_monster_phase = {}
+        # 全局法术【敌回终】：怪物阶段真正结算完毕的这一刻，是普通战斗里
+        # "敌方回合结束"最接近的真实执行点。必须在怪物阶段结果已经落地
+        # （道纹/攻击/死亡判定均已完成）之后才检查，不能提前，否则法术
+        # 依赖的"怪物是否存活/已造成多少伤害"等条件会读到旧状态。
+        if not self.state.in_final_duel:
+            enemy_round_end_spells = self._resolve_global_trigger_spells_for_action(
+                TriggerTiming.ENEMY_ROUND_END.value, params)
+        else:
+            enemy_round_end_spells = []
         # 死斗交替（对称）：守擂方结算完后换回挑战者侧（若还有余手），
         # 与挑战者每次行动后 _advance_duel_turn 的行为一致。
         # 死斗中若任一侧仍有余手，子阶段回到 player_actions 允许继续交替；
@@ -3731,7 +3782,7 @@ class GameEngine:
             "action": "结算怪物阶段",
             "result": {"entries": len(results), "player_dead": player_dead,
                        "player_hp": self.state.player.current_hp if self.state.player else 0,
-                       "details": results},
+                       "details": results, "spell_logs": enemy_round_end_spells},
         }
 
     def _action_monster_phase(self, params: dict) -> dict:
@@ -3739,11 +3790,33 @@ class GameEngine:
         return {"success": False,
                 "error": "monster_phase已停用；请依次调用prepare_monster_phase与resolve_monster_phase"}
 
+    def _resolve_global_trigger_spells_for_action(self, trigger: str, params: dict) -> list[dict]:
+        """battle_start/battle_end/round_start/round_end 四个action共用：
+
+        若当前场上有持有者在该时机存在可发动的全局法术，params.spell_choices
+        必须显式逐一覆盖（与 relic_choices 同一套"可选但存在候选就必须显式提交"
+        的契约）；没有候选时不强制要求该字段。校验失败直接抛异常，
+        由execute_action的统一原子回滚接住（不改变游戏状态）。
+        """
+        refs = self.combat._combat_entity_refs()
+        expected = self.combat.prepare_global_trigger_spells(trigger)
+        if not expected:
+            return []
+        submitted = params.get("spell_choices", {})
+        self.combat.validate_global_trigger_spells(trigger, submitted, refs)
+        return self.combat.resolve_global_trigger_spells(trigger, submitted, refs)
+
     def _action_round_start(self, params: dict) -> dict:
         """回始；完全平局死斗在每个新回合交换该回合首手方。"""
         relic_choices = params.get("relic_choices", {})
         self.combat.validate_round_start_relic_choices(relic_choices)
         result = self.combat.round_start(relic_choices)
+        # 全局法术【回始】：普通战斗与死斗双方共用同一个回始，因此持有者扫描
+        # 覆盖玩家侧与死斗对手侧；死斗对手视角下这就是其"敌回始"，见下方
+        # _action_prepare_monster_phase/_action_resolve_monster_phase 的普通
+        # 战斗敌回始接线，以及 round_start 本身对死斗对手来说是"己方回始"。
+        result["spell_logs"] = self._resolve_global_trigger_spells_for_action(
+            TriggerTiming.ROUND_START.value, params)
         self.state.combat_subphase = CombatSubphase.PLAYER_ACTIONS.value
         if self.state.in_final_duel and self.state.duel_tie_alternating:
             if self.state.duel_rounds_started > 0:
@@ -3758,8 +3831,17 @@ class GameEngine:
 
     def _action_round_end(self, params: dict) -> dict:
         """回终"""
+        # 全局法术【回终】必须在 combat.round_end() 真正清空法力/格挡之前结算——
+        # "回终"是"回合即将结束"的那一刻，法术若挂在这个时点，理应还能花费
+        # 本回合剩余的法力（否则「回终」这个时机会因为法力恒为0而变成实质上
+        # 的伪接线，等同于没有真正实现）。这与"受到伤害前"必须在伤害落地前
+        # 触发是同一个道理：时点名字里的"终/前"表示的是决策窗口的位置，
+        # 不是"所有清算都做完之后才轮到法术"。
+        spell_logs = self._resolve_global_trigger_spells_for_action(
+            TriggerTiming.ROUND_END.value, params)
         result = self.combat.round_end(
             params.get("blood_lineage_cost_share_target_ref", ""))
+        result["spell_logs"] = spell_logs
         self.state.combat_subphase = CombatSubphase.AWAIT_ROUND_START.value
 
         # 提取多路径胜利结果（已由 combat.round_end 结算）
@@ -3925,6 +4007,13 @@ class GameEngine:
 
         artifact_logs = self._apply_terminal_artifacts_on_battle_start()
 
+        # 全局法术【战始】：必须在战始遗物（如折速法印）结算之后才检查，
+        # 否则法力已被本action开头清零、任何消耗法力的战始法术都会法力不足——
+        # 与"折速法印在0上叠加"的既有顺序一致，法术同样吃得到本场战始的
+        # 法力加成。
+        spell_logs = self._resolve_global_trigger_spells_for_action(
+            TriggerTiming.BATTLE_START.value, params)
+
         return {
             "success": True, "action": "战始",
             "battle_number": self.state.current_battle,
@@ -3934,6 +4023,7 @@ class GameEngine:
             "full_information": ([enemy.to_dict() for enemy in self.state.enemies]
                                  if reveal_full_information else None),
             "relic_logs": relic_logs,
+            "spell_logs": spell_logs,
             "artifact_logs": artifact_logs,
             "instruction": "怪物已抽取完毕；请补充选择本场战斗背景(纯叙事，不影响数值)并结算其余[战始]效果",
         }
@@ -4657,6 +4747,11 @@ class GameEngine:
                               if not e.is_alive and not e.is_debt_bound]
 
         relic_end = self.combat.process_relics(TriggerTiming.BATTLE_END)
+        # 全局法术【战终】：必须在本函数下方"清除局内状态/法力相关计数"之前
+        # 结算，否则法术依赖的道纹/法力/状态在校验时已经被清空，永远无法
+        # 满足条件（与遗物战终结算 relic_end 同一时序原则：先结算再清理）。
+        spell_logs = self._resolve_global_trigger_spells_for_action(
+            TriggerTiming.BATTLE_END.value, params)
         # 碎片奖励计算（被雕塑/癌变/还债/封印移出的怪物不视为击杀，不产碎片）
         # 奖励公式用的是[战始][血限]快照(battle_start_blood_limit)，不是当前血限(增殖等会改变当前血限)
         shard_reward = 0
@@ -4825,6 +4920,7 @@ class GameEngine:
             "removed_via_alt_path": removed,
             "death_shard_rewards": death_rewards,
             "relic_end_logs": relic_end,
+            "spell_logs": spell_logs,
             "scoped_effects_rolled_back": scoped_rollbacks,
             "employee_rebellion": rebellion_check,
             "player_dead": (not self.state.player.is_alive) if self.state.player else False,

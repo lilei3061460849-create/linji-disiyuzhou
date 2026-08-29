@@ -61,6 +61,17 @@ ALL_TRIGGERS = (
     TRIGGER_ENEMY_ROUND_START, TRIGGER_ENEMY_ROUND_END,
 )
 
+# 全局时点（战始/战终/回始/回终/敌回始/敌回终）没有"当次触发的对手"这个
+# 天然身份——不像受到伤害前/失去生命后/目标发动道纹前那样，事件本身自带一个
+# 明确的"攻击者/发动方"。因此效果步骤的目标声明在这六个时点里只能是
+# 自身/施法者/任意目标；写"于攻击者"或"于目标"在【学习】阶段就直接拒绝，
+# 不允许学会一个语义不成立的写法（避免结算时随便指定一个"攻击者"）。
+GLOBAL_TRIGGERS = (
+    TRIGGER_BATTLE_START, TRIGGER_BATTLE_END,
+    TRIGGER_ROUND_START, TRIGGER_ROUND_END,
+    TRIGGER_ENEMY_ROUND_START, TRIGGER_ENEMY_ROUND_END,
+)
+
 # 去除掉不影响判定的主语/助词修饰词，只留核心时机描述。
 _TRIGGER_STRIP_TOKENS = ("我方", "自身", "对方", "己方", "自己的", "时", "的", "（循环）", "(循环)")
 
@@ -472,6 +483,42 @@ class ParsedSpell:
     loop: bool
 
 
+def _check_condition_subjects_no_attacker(trigger: str, node) -> None:
+    """条件表达式的主语同样不能在全局时点里引用 attacker/target。"""
+    if isinstance(node, Cmp):
+        if node.subject in ("attacker", "target"):
+            raise SpellDslError(
+                f"触发时机【{trigger}】没有“攻击者/目标”这个对手身份，"
+                f"条件表达式【{node.raw}】不能以攻击者/敌方/对方/目标为主语，"
+                f"请改用自身/施法者")
+    elif isinstance(node, Not):
+        _check_condition_subjects_no_attacker(trigger, node.inner)
+    elif isinstance(node, BoolOp):
+        for part in node.parts:
+            _check_condition_subjects_no_attacker(trigger, part)
+
+
+def _check_global_trigger_targets(trigger: str, steps) -> None:
+    """全局时点（战始/战终/回始/回终/敌回始/敌回终）没有攻击者/目标身份，
+    效果步骤只能声明 self/caster/any；写"于攻击者"/"于目标"直接拒绝；
+    条件分支的条件表达式同理不能以攻击者/目标为主语。
+    """
+    if trigger not in GLOBAL_TRIGGERS:
+        return
+    for step in steps:
+        if isinstance(step, ActionStep):
+            if step.target not in ("self", "caster", "any"):
+                raise SpellDslError(
+                    f"触发时机【{trigger}】没有“攻击者/目标”这个对手身份"
+                    f"（不像受到伤害前/失去生命后那样天然存在一个触发对方），"
+                    f"效果步骤【发动{step.daowen}X于...】只能声明"
+                    f"“于自身”“于施法者”或“于任意目标”")
+        elif isinstance(step, IfStep):
+            _check_condition_subjects_no_attacker(trigger, step.condition)
+            _check_global_trigger_targets(trigger, step.then_steps)
+            _check_global_trigger_targets(trigger, step.else_steps)
+
+
 def parse_spell_definition(trigger_condition: str, effect_flow: str,
                             known_daowen: set[str]) -> ParsedSpell:
     """自创法术提交时的完整语法校验入口：解析失败抛出 SpellDslError，
@@ -480,6 +527,7 @@ def parse_spell_definition(trigger_condition: str, effect_flow: str,
     """
     trigger = parse_trigger(trigger_condition)
     steps, loop = parse_effect_flow(effect_flow, known_daowen)
+    _check_global_trigger_targets(trigger, steps)
     return ParsedSpell(trigger=trigger, steps=steps, loop=loop)
 
 
