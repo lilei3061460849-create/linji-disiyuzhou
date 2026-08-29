@@ -87,7 +87,7 @@ def test_custom_spell_interrupt_then_approved_creation(tmp_path):
         "name": "杀意回响",
         "required_daowen": ["杀伐"],
         "trigger_condition": "受到伤害前",
-        "effect_flow": "发动杀伐X",
+        "effect_flow": "发动杀伐X于攻击者",
     }
     before_energy = engine.state.energy
     pending = engine.execute_action("pre_battle_action", {
