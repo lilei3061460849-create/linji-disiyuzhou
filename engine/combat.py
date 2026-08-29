@@ -3278,42 +3278,36 @@ class CombatEngine:
     }
 
     # 自创法术文本→执行：解析 trigger_condition / effect_flow 为 SPELL_FLOWS 同构结构。
-    # 格式（与死者之书一致）：trigger如"受到伤害前"/"失去生命后"；flow如"发动杀伐X→发动再生X"。
-    # 目标推断：攻击/削弱/控制类道纹打attacker，自保/增益/回复类打self，坠落打target（若飞行）。
-    _SPELL_SELF_DAOWEN = {"庇护", "再生", "固执", "活血", "龙鳞", "自食", "透支", "假钞", "超频", "变形", "贯穿"}
-    _SPELL_TRIGGER_MAP = {
-        "受到伤害前": ActionPhase.BEFORE_DAMAGE_TAKEN.value,
-        "失去生命后": ActionPhase.AFTER_LIFE_LOST.value,
-        "失去生命后（循环）": ActionPhase.AFTER_LIFE_LOST.value,
-        "目标发动道纹前": "目标发动道纹前",
-    }
+    # 2026-08-29 重写：接入 engine.spell_dsl（触发时机词汇表扩展、显式目标声明、
+    # 条件分支、真循环）。学习环节（engine/api.py._pre_battle_xuexi）已经用同一
+    # 个解析器做过强校验，这里理论上不会再遇到解析失败；仍保留 try/except 兜底，
+    # 解析失败时返回 None（不触发），而不是让战斗结算抛出未处理异常。
+    #
+    # 目前只有以下触发时机在战斗管线里存在真实的"停下来问一遍要不要发动法术"
+    # 的挂接点，因此只有这些时机可以进反应型法术的合法候选：
+    #   受到伤害前 / 失去生命后 / 目标发动道纹前
+    # 战始/战终/回始/回终/敌回始/敌回终 已经在 spell_dsl 的词汇表里能被正确解析
+    # （不会再被误判为"格式错误"），但触发执行点尚待接入回合管线，因此
+    # _eligible_spell_flows 会如实过滤掉它们、不会假装触发——避免"学会了但因为
+    # 没接线而在战斗里默默不生效"的新版本哑火（该状态会在 use_spell 查询接口
+    # 里显式标注 wired=False，见 _action_use_spell）。
+    _WIRED_TRIGGERS = (
+        ActionPhase.BEFORE_DAMAGE_TAKEN.value,
+        ActionPhase.AFTER_LIFE_LOST.value,
+        "目标发动道纹前",
+    )
 
     def _parse_custom_spell(self, spell) -> Optional[dict]:
         """把自创法术的文本解析为 SPELL_FLOWS 同构结构；解析失败返回None。"""
-        from engine.daowen import DaoWenEngine
-        trigger = (spell.trigger_condition or "").strip()
-        trigger = trigger.replace("（循环）", "（循环）")
-        ph = self._SPELL_TRIGGER_MAP.get(trigger)
-        if ph is None:
+        from .spell_dsl import parse_spell_definition, SpellDslError
+        try:
+            parsed = parse_spell_definition(
+                spell.trigger_condition or "", spell.effect_flow or "",
+                set(DaoWenEngine.list_all()))
+        except SpellDslError:
             return None
-        flow = (spell.effect_flow or "").strip()
-        # 提取所有"发动<道纹>X"步骤（跳过"付出代价/若...否则跳过"等条件语）
-        import re
-        steps = []
-        for m in re.finditer(r"发动\s*([\u4e00-\u9fa5]{2,4})\s*X", flow):
-            daowen = m.group(1)
-            if daowen not in DaoWenEngine.list_all():
-                return None  # 非已有道纹=违规
-            if daowen in self._SPELL_SELF_DAOWEN:
-                role = "self"
-            elif daowen == "坠落":
-                role = "target"
-            else:
-                role = "attacker"
-            steps.append((daowen, role))
-        if not steps:
-            return None
-        return {"trigger": ph, "steps": steps}
+        return {"trigger": parsed.trigger, "steps": parsed.steps, "loop": parsed.loop,
+                "dsl": True}
 
     def _eligible_spell_flows(self, holder: Entity, trigger: str) -> dict[str, dict]:
         flows = {}
@@ -3335,8 +3329,85 @@ class CombatEngine:
                 flows[spell.name] = flow
         return flows
 
+    # ---- DSL 步骤展开辅助：ActionStep/IfStep(spell_dsl) 与旧 (daowen, role) 元组同构处理 ----
+
+    @staticmethod
+    def _step_role(step) -> str:
+        """统一取出一个步骤声明的目标身份：self/attacker/target/caster/any。"""
+        from .spell_dsl import ActionStep
+        if isinstance(step, ActionStep):
+            return step.target
+        # 旧内置 SPELL_FLOWS 用 (daowen, role) 元组，role 取值 self/attacker/target。
+        return step[1]
+
+    @staticmethod
+    def _step_daowen(step) -> str:
+        from .spell_dsl import ActionStep
+        if isinstance(step, ActionStep):
+            return step.daowen
+        return step[0]
+
+    def _resolve_step_subject(self, role: str, holder: Entity, attacker: Entity,
+                              caster: Optional[Entity] = None) -> Optional[Entity]:
+        """把 self/attacker/target/caster 映射为具体实体（"any" 由调用方另行处理，
+        因为它需要在结算时由发动方从候选目标中显式挑选，不能静态确定）。"""
+        if role in ("self", "target"):
+            return holder
+        if role == "attacker":
+            return attacker
+        if role == "caster":
+            return caster if caster is not None else holder
+        return None
+
+    def _condition_resolver(self, holder: Entity, attacker: Entity):
+        """构造 spell_dsl.evaluate_condition 需要的 resolver 闭包。"""
+        subjects = {"self": holder, "attacker": attacker, "target": holder, "caster": holder}
+
+        def _resolve(subject: str, field):
+            entity = subjects.get(subject)
+            if entity is None:
+                raise ValueError(f"条件里的主语{subject}在当前场景下不存在")
+            if isinstance(field, tuple) and field[0] == "status":
+                return entity.has_status(field[1])
+            if isinstance(field, tuple) and field[0] == "daowen_stacks":
+                inst = entity.dao_wen.get(field[1])
+                return inst.x_value if inst else 0
+            mapping = {
+                "hp": entity.current_hp, "blood_limit": entity.blood_limit,
+                "mana": entity.current_mana, "mana_limit": entity.mana_limit,
+                "speed": entity.current_speed, "speed_limit": entity.speed_limit,
+                "shield": entity.shield,
+            }
+            return mapping[field]
+        return _resolve
+
+    def _flatten_flow_steps(self, steps, holder: Entity, attacker: Entity) -> list:
+        """把条件分支(IfStep)在当前局面下求值展开成一串确定性的 ActionStep 列表。
+
+        条件分支在“列出可以怎么发动”阶段就求值展开（而不是留到执行阶段才判断），
+        这样 prepare/validate/resolve 三阶段看到的步骤数量与内容完全一致，
+        不会出现"校验时以为有N步，结算时条件变了变成M步"的不一致。
+        对应现实语义：条件是在法术即将触发的那一刻判定的，触发之后局面
+        （生命/法力/状态）在同一次 resolve 内部不会因为分支选择前置判断而变化。
+        """
+        from .spell_dsl import IfStep, evaluate_condition
+        resolver = self._condition_resolver(holder, attacker)
+        flat = []
+        for step in steps:
+            if isinstance(step, IfStep):
+                branch = step.then_steps if evaluate_condition(step.condition, resolver) else step.else_steps
+                flat.extend(branch)
+            else:
+                flat.append(step)
+        return flat
+
     def prepare_spell_reactions(self, holder: Entity, attacker: Entity) -> dict:
-        """列出一次受击前/失血后可能触发的法术，供攻击prepare嵌入。"""
+        """列出一次受击前/失血后可能触发的法术，供攻击prepare嵌入。
+
+        条件分支（若...则...否则...）在此处已按当前局面求值展开；
+        目标声明为"任意目标"(any)的步骤，在这里列出全部合法候选供发动方
+        在提交时二选一，合法性判定复用 is_targetable（与"发动道纹"一致）。
+        """
         refs = self._combat_entity_refs()
         reverse = {id(entity): ref for ref, entity in refs.items()}
         result = {}
@@ -3344,14 +3415,49 @@ class CombatEngine:
                              ("after", ActionPhase.AFTER_LIFE_LOST.value)):
             result[key] = []
             for name, flow in self._eligible_spell_flows(holder, trigger).items():
+                flat_steps = self._flatten_flow_steps(flow["steps"], holder, attacker)
                 steps = []
-                for daowen, role in flow["steps"]:
-                    target = holder if role == "self" else attacker
-                    steps.append({"daowen": daowen, "target_ref": reverse.get(id(target)),
-                                  "x": "positive integer", "dodge": "boolean if hostile"})
+                for step in flat_steps:
+                    daowen = self._step_daowen(step)
+                    role = self._step_role(step)
+                    if role == "any":
+                        candidates = [ref for ref, entity in refs.items()
+                                     if self.is_targetable(holder, entity)]
+                        steps.append({"daowen": daowen, "target_ref": None,
+                                      "target_options": candidates,
+                                      "x": "positive integer", "dodge": "boolean if hostile"})
+                    else:
+                        target = self._resolve_step_subject(role, holder, attacker)
+                        steps.append({"daowen": daowen, "target_ref": reverse.get(id(target)),
+                                      "x": "positive integer", "dodge": "boolean if hostile"})
                 result[key].append({"spell_name": name, "steps": steps,
                                     "loop": bool(flow.get("loop"))})
         return result
+
+    # 循环法术的工程安全阀：不是游戏规则上限（游戏规则=法力耗尽/流程中断才停），
+    # 只是防止异常输入（例如误传几十万个cycle）在校验/结算阶段耗尽内存或卡死。
+    # 任何真实法力池在此上限内必然早已耗尽（个位数到三位数消耗的道纹绝不可能
+    # 循环这么多次），因此正常游戏流程永远不会触达这个值。
+    MAX_SPELL_LOOP_CYCLES = 10_000
+
+    def _resolve_entry_target(self, step, entry, holder: Entity, attacker: Entity,
+                              refs: dict[str, Entity], reverse: dict[int, str]):
+        """按步骤声明的目标身份，从提交里取出/校验实际目标实体，返回(entity, ref)。
+
+        role == "any" 时目标由提交方在 entry["target_ref"] 里显式指定，
+        合法性复用 is_targetable（与"发动道纹"选择目标同一套规则）。
+        """
+        role = self._step_role(step)
+        if role == "any":
+            target_ref = entry.get("target_ref")
+            target = refs.get(target_ref)
+            if target is None:
+                raise ValueError("法术步骤的任意目标target_ref不是当前合法实体")
+            if not self.is_targetable(holder, target):
+                raise ValueError(f"{target.name}处于飞行，无法被选中为法术目标")
+            return target, target_ref
+        target = self._resolve_step_subject(role, holder, attacker)
+        return target, reverse.get(id(target))
 
     def validate_spell_reaction_submission(self, holder: Entity, attacker: Entity,
                                            submitted: Any, refs: dict[str, Entity],
@@ -3379,20 +3485,24 @@ class CombatEngine:
                     raise ValueError(f"法术{spell_name}必须显式提交use布尔值")
                 if not decision["use"]:
                     continue
+                flat_steps = self._flatten_flow_steps(flow["steps"], holder, attacker)
                 cycles = decision.get("cycles")
                 if not isinstance(cycles, list) or not cycles:
                     raise ValueError(f"法术{spell_name}发动时必须提交至少一个cycles")
                 if not flow.get("loop") and len(cycles) != 1:
                     raise ValueError(f"法术{spell_name}不是循环法术，只能提交一个cycle")
+                if len(cycles) > self.MAX_SPELL_LOOP_CYCLES:
+                    raise ValueError(f"法术{spell_name}提交的循环次数超过工程安全上限")
                 for cycle in cycles:
-                    if not isinstance(cycle, list) or len(cycle) != len(flow["steps"]):
-                        raise ValueError(f"法术{spell_name}每个cycle必须完整提交{len(flow['steps'])}步")
-                    for entry, (daowen, role) in zip(cycle, flow["steps"]):
+                    if not isinstance(cycle, list) or len(cycle) != len(flat_steps):
+                        raise ValueError(f"法术{spell_name}每个cycle必须完整提交{len(flat_steps)}步")
+                    for entry, step in zip(cycle, flat_steps):
                         if not isinstance(entry, dict):
                             raise ValueError("法术步骤必须是对象")
                         x = entry.get("x")
-                        expected_target = holder if role == "self" else attacker
-                        expected_ref = reverse.get(id(expected_target))
+                        daowen = self._step_daowen(step)
+                        expected_target, expected_ref = self._resolve_entry_target(
+                            step, entry, holder, attacker, refs, reverse)
                         if (not isinstance(x, int) or isinstance(x, bool) or x < 1
                                 or entry.get("target_ref") != expected_ref):
                             raise ValueError(f"法术{spell_name}步骤必须提交合法x与target_ref")
@@ -3410,18 +3520,51 @@ class CombatEngine:
                                 if speed_budget[expected_ref] < 0:
                                     raise ValueError("法术目标速度不足以闪避")
 
+    def _trigger_spell_subject(self, role: str, holder: Entity, actor: Entity) -> Optional[str]:
+        """「目标发动道纹前」触发语境下的身份映射：
+
+        本触发点人话语义是"当[actor]即将发动道纹时，[holder]的反应法术触发"。
+        这里 actor 相当于其它触发点里的"attacker"（对 holder 而言的外部行动方），
+        因此 attacker/target 两种写法都指向 actor（沿用【咎由自取】原本"target"
+        写法的含义），self/caster 指向 holder 自己。
+        """
+        if role in ("attacker", "target"):
+            return "actor"
+        if role in ("self", "caster"):
+            return "holder"
+        if role == "any":
+            return "any"
+        return None
+
     def prepare_daowen_trigger_spells(self, actor: Entity) -> dict:
         refs = self._combat_entity_refs()
+        reverse = {id(entity): ref for ref, entity in refs.items()}
+        actor_ref = reverse.get(id(actor))
         result = {}
         for ref, holder in refs.items():
             if self.state.on_player_side(holder) == self.state.on_player_side(actor):
                 continue
             flows = self._eligible_spell_flows(holder, "目标发动道纹前")
-            if flows:
-                result[ref] = [{"spell_name": name, "steps": [
-                    {"daowen": daowen, "target_ref": next((r for r, e in refs.items() if e is actor), None),
-                     "x": "positive integer", "dodge": "boolean"}
-                    for daowen, _ in flow["steps"]]} for name, flow in flows.items()]
+            if not flows:
+                continue
+            entries = []
+            for name, flow in flows.items():
+                flat_steps = self._flatten_flow_steps(flow["steps"], holder, actor)
+                steps = []
+                for step in flat_steps:
+                    daowen = self._step_daowen(step)
+                    subject = self._trigger_spell_subject(self._step_role(step), holder, actor)
+                    if subject == "any":
+                        candidates = [r for r, e in refs.items() if self.is_targetable(holder, e)]
+                        steps.append({"daowen": daowen, "target_ref": None,
+                                      "target_options": candidates,
+                                      "x": "positive integer", "dodge": "boolean"})
+                    else:
+                        target_ref = actor_ref if subject == "actor" else reverse.get(id(holder))
+                        steps.append({"daowen": daowen, "target_ref": target_ref,
+                                      "x": "positive integer", "dodge": "boolean"})
+                entries.append({"spell_name": name, "steps": steps, "loop": bool(flow.get("loop"))})
+            result[ref] = entries
         return result
 
     def validate_daowen_trigger_spells(self, actor: Entity, submitted: Any,
@@ -3436,6 +3579,7 @@ class CombatEngine:
         if not isinstance(submitted, dict) or set(submitted) != set(expected):
             raise ValueError(f"trigger_spell_choices必须覆盖{sorted(expected)}")
         actor_ref = next((ref for ref, entity in refs.items() if entity is actor), None)
+        reverse = {id(entity): ref for ref, entity in refs.items()}
         for holder_ref in expected:
             holder = refs[holder_ref]
             flows = self._eligible_spell_flows(holder, "目标发动道纹前")
@@ -3449,15 +3593,29 @@ class CombatEngine:
                     raise ValueError(f"法术{spell_name}必须显式提交use")
                 if not decision["use"]:
                     continue
+                flat_steps = self._flatten_flow_steps(flow["steps"], holder, actor)
                 steps = decision.get("steps")
-                if not isinstance(steps, list) or len(steps) != len(flow["steps"]):
+                if not isinstance(steps, list) or len(steps) != len(flat_steps):
                     raise ValueError(f"法术{spell_name}必须完整提交steps")
-                for entry, (daowen, _) in zip(steps, flow["steps"]):
+                for entry, step in zip(steps, flat_steps):
+                    daowen = self._step_daowen(step)
+                    subject = self._trigger_spell_subject(self._step_role(step), holder, actor)
+                    if subject == "any":
+                        target_ref = entry.get("target_ref") if isinstance(entry, dict) else None
+                        target = refs.get(target_ref)
+                        if target is None or not self.is_targetable(holder, target):
+                            raise ValueError(f"法术{spell_name}的任意目标target_ref非法")
+                    else:
+                        expected_ref = actor_ref if subject == "actor" else reverse.get(id(holder))
+                        target = actor if subject == "actor" else holder
+                        x_check_ref = entry.get("target_ref") if isinstance(entry, dict) else None
+                        if x_check_ref != expected_ref:
+                            raise ValueError(f"法术{spell_name}步骤的target_ref非法")
                     x = entry.get("x") if isinstance(entry, dict) else None
                     if (not isinstance(x, int) or isinstance(x, bool) or x < 1
-                            or entry.get("target_ref") != actor_ref or not isinstance(entry.get("dodge"), bool)):
+                            or not isinstance(entry.get("dodge"), bool)):
                         raise ValueError("法术步骤的x/target_ref/dodge非法")
-                    calc = DaoWenEngine.resolve(daowen, x, target=actor, caster=holder)
+                    calc = DaoWenEngine.resolve(daowen, x, target=target, caster=holder)
                     if calc.get("cost_type") == "消耗":
                         mana -= calc.get("cost", 0)
                         if mana < 0:
@@ -3472,32 +3630,40 @@ class CombatEngine:
                 decision = choices[spell_name]
                 if not decision["use"]:
                     continue
+                flat_steps = self._flatten_flow_steps(flow["steps"], holder, actor)
                 previous_damage = 0
-                for entry, (daowen, _) in zip(decision["steps"], flow["steps"]):
-                    if daowen == "坠落" and not (actor.is_flying or actor.has_status("飞行") or actor.has_status("滑翔")):
+                for entry, step in zip(decision["steps"], flat_steps):
+                    daowen = self._step_daowen(step)
+                    subject = self._trigger_spell_subject(self._step_role(step), holder, actor)
+                    if subject == "any":
+                        target = refs.get(entry.get("target_ref"))
+                    else:
+                        target = actor if subject == "actor" else holder
+                    if daowen == "坠落" and not (target.is_flying or target.has_status("飞行") or target.has_status("滑翔")):
                         continue
                     if daowen == "血债" and previous_damage > 0:
                         continue
-                    calc = DaoWenEngine.resolve(daowen, entry["x"], target=actor, caster=holder)
+                    calc = DaoWenEngine.resolve(daowen, entry["x"], target=target, caster=holder)
                     if calc.get("cost_type") == "消耗":
                         cost = calc.get("cost", 0)
                         if not holder.spend_mana(cost):
                             raise ValueError("法术结算法力不足")
-                        self.note_mana_inflicted(holder, actor, cost)
+                        self.note_mana_inflicted(holder, target, cost)
                     if entry["dodge"]:
-                        if actor.current_speed < 1:
+                        if target.current_speed < 1:
                             raise ValueError("道纹行动者速度不足以闪避反应法术")
-                        self._spend_dodge_speed(actor, entry.get("dodge_relic_target_ref"))
+                        self._spend_dodge_speed(target, entry.get("dodge_relic_target_ref"))
                         logs.append({"spell": spell_name, "daowen": daowen, "dodged": True})
                         previous_damage = 0
                         continue
-                    execution = self.apply_daowen_effect(daowen, calc, holder, actor)
+                    execution = self.apply_daowen_effect(daowen, calc, holder, target)
                     previous_damage = sum(effect.get("actual_damage", 0) for effect in execution.get("effects", []))
                     logs.append({"spell": spell_name, "daowen": daowen, "execution": execution})
         return logs
 
     def _resolve_spell_reactions(self, trigger: str, holder: Entity, attacker: Entity,
                                  submitted: dict, refs: dict[str, Entity]) -> list[dict]:
+        reverse = {id(entity): ref for ref, entity in refs.items()}
         flows = self._eligible_spell_flows(holder, trigger)
         logs = []
         for spell_name, flow in flows.items():
@@ -3505,9 +3671,11 @@ class CombatEngine:
             if not decision["use"]:
                 logs.append({"spell": spell_name, "used": False})
                 continue
+            flat_steps = self._flatten_flow_steps(flow["steps"], holder, attacker)
             for cycle_index, cycle in enumerate(decision["cycles"], 1):
-                for entry, (daowen, role) in zip(cycle, flow["steps"]):
-                    target = holder if role == "self" else attacker
+                for entry, step in zip(cycle, flat_steps):
+                    daowen = self._step_daowen(step)
+                    target, _ = self._resolve_entry_target(step, entry, holder, attacker, refs, reverse)
                     if target is None or not target.is_alive:
                         logs.append({"spell": spell_name, "cycle": cycle_index,
                                      "daowen": daowen, "skipped": "目标已失效"})

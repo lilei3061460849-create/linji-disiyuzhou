@@ -201,11 +201,15 @@ def _engine_custom(db_suffix, daowen_list):
 
 
 def test_custom_spell_learn_requires_dm_then_approve():
-    """正常路径：自创法术先提交→未见场景中断→dm_approved后学会。"""
+    """正常路径：自创法术先提交→未见场景中断→dm_approved后学会。
+
+    2026-08-29：效果流程语法升级为显式目标声明（于自身/于攻击者/...），
+    "发动杀伐X"这种靠道纹类型自动猜测目标的旧写法已废弃。
+    """
     e = _engine_custom("custom_learn", ["杀伐", "再生"])
     definition = {"name": "以杀养伤", "required_daowen": ["杀伐", "再生"],
                   "trigger_condition": "受到伤害前",
-                  "effect_flow": "受到伤害前→发动杀伐X→发动再生X"}
+                  "effect_flow": "发动杀伐X于攻击者→发动再生X于自身"}
     r = e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "custom_spell", "spell": definition})
     assert r["success"] and r.get("completed") is False
     assert e._pending_interrupts, "应生成未见场景中断等DM裁定"
@@ -220,9 +224,29 @@ def test_custom_spell_rejects_unknown_daowen_in_flow():
     """错误输入：effect_flow含非已有道纹（凭空回复X）→ 校验拦截。"""
     e = _engine_custom("custom_bad", ["杀伐"])
     definition = {"name": "假回复", "required_daowen": ["回复"],  # 无此道纹
-                  "trigger_condition": "受到伤害前", "effect_flow": "受到伤害前→发动回复X"}
+                  "trigger_condition": "受到伤害前", "effect_flow": "发动回复X于自身"}
     r = e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "custom_spell", "spell": definition})
     assert not r["success"], "不存在道纹'回复'必须拒绝"
+
+
+def test_custom_spell_rejects_missing_target_declaration():
+    """句式错误提醒（2026-08-29新增）：缺少显式目标声明必须报错，不能静默学会成摆设。"""
+    e = _engine_custom("custom_notarget", ["杀伐"])
+    definition = {"name": "缺目标法术", "required_daowen": ["杀伐"],
+                  "trigger_condition": "受到伤害前", "effect_flow": "发动杀伐X"}
+    r = e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "custom_spell", "spell": definition})
+    assert not r["success"]
+    assert "句式错误" in r["error"] and "目标" in r["error"]
+
+
+def test_custom_spell_rejects_unknown_trigger_wording():
+    """句式错误提醒：完全无法识别的触发时机必须报错并给出可用词汇表。"""
+    e = _engine_custom("custom_badtrigger", ["杀伐"])
+    definition = {"name": "怪触发法术", "required_daowen": ["杀伐"],
+                  "trigger_condition": "月圆之夜", "effect_flow": "发动杀伐X于攻击者"}
+    r = e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "custom_spell", "spell": definition})
+    assert not r["success"]
+    assert "句式错误" in r["error"]
 
 
 # ==================== sim 怪物 AI 决策路径回归（2026-08-19 修复） ====================

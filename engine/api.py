@@ -27,6 +27,7 @@ from .enums import (GamePhase, CombatSubphase, ActionPhase, TriggerTiming,
 from .dice import DiceEngine
 from .daowen import DaoWenEngine, ResonanceEngine
 from .combat import CombatEngine
+from .spell_dsl import parse_spell_definition, SpellDslError
 from .combat_events import register_combat_event_observer
 from .events import EventPool, parse_events
 from .dungeons import DEFAULT_INDEX
@@ -1596,6 +1597,21 @@ class GameEngine:
                 self.state.energy += 1
                 return {"success": False,
                         "error": "自创法术需唯一名称、至少一种自身已持有道纹、触发条件和效果流程"}
+            # 句式校验（2026-08-29修复）：提交时就必须能被完整解析，解析失败
+            # 直接拒绝并附带具体原因，禁止"学会了但因文本对不上而永远不触发"
+            # 的静默哑火。已持有道纹之外引用的道纹同样在此处一并拒绝。
+            try:
+                parsed = parse_spell_definition(trigger, flow, set(DaoWenEngine.list_all()))
+            except SpellDslError as exc:
+                self.state.energy += 1
+                return {"success": False, "error": f"自创法术句式错误：{exc}"}
+            from .spell_dsl import collect_step_daowen
+            referenced = collect_step_daowen(parsed.steps)
+            missing = referenced - set(required)
+            if missing:
+                self.state.energy += 1
+                return {"success": False,
+                        "error": f"自创法术句式错误：效果流程引用了未列入required_daowen的道纹{sorted(missing)}"}
             if not params.get("dm_approved"):
                 interrupt = Interrupt(
                     interrupt_type=InterruptType.UNSEEN_SCENE,
@@ -1617,8 +1633,17 @@ class GameEngine:
                           trigger_condition=trigger.strip(), effect_flow=flow.strip(),
                           rank=len(required), custom_conditions=list(definition.get("custom_conditions") or []))
             player.spells.append(spell)
-            return {"success": True, "action": "学习·自创法术",
-                    "result": {"learned": "custom_spell", "spell": spell.to_dict(), "shard_cost": 0}}
+            # 触发时机词汇表已扩展到战始/战终/回始/回终/敌回始/敌回终等，句式能
+            # 被正确解析、允许学会；但这些时机在战斗管线里尚未接入真实触发点，
+            # 如实提醒，而不是让玩家误以为学完就一定会生效。
+            wired = parsed.trigger in self.combat._WIRED_TRIGGERS
+            result = {"learned": "custom_spell", "spell": spell.to_dict(), "shard_cost": 0, "wired": wired}
+            if not wired:
+                result["warning"] = (
+                    f"触发时机【{parsed.trigger}】已通过句式校验并学会，"
+                    "但该时机暂未接入战斗结算管线，本法术目前不会实际触发"
+                    "（当前已接线：受到伤害前/失去生命后/目标发动道纹前）")
+            return {"success": True, "action": "学习·自创法术", "result": result}
 
         tier = params.get("tier", 1)
         if not isinstance(tier, int) or isinstance(tier, bool):
@@ -3296,14 +3321,23 @@ class GameEngine:
         if spell is None:
             return {"success": False, "error": f"未掌握法术: {spell_name}"}
         flow = self.combat.SPELL_FLOWS.get(spell_name)
+        parsed = flow if flow is not None else self.combat._parse_custom_spell(spell)
         armed = all(d in player.dao_wen and player.dao_wen[d].can_use() for d in spell.required_daowen)
+        # wired：该触发时机在战斗管线里是否已经真正接线（能被结算触发）。
+        # 未接线的时机（如战始/战终/回始/回终/敌回始/敌回终）目前只能被解析、
+        # 不会被结算——如实标注，不能让玩家误以为"学会了就一定会生效"。
+        wired = bool(parsed) and parsed.get("trigger") in self.combat._WIRED_TRIGGERS
         return {
             "success": True, "action": f"装配法术【{spell_name}】",
             "result": {"required_daowen": spell.required_daowen, "rank": spell.rank,
-                       "trigger": flow["trigger"] if flow else spell.trigger_condition,
-                       "steps": flow["steps"] if flow else spell.effect_flow,
+                       "trigger": parsed["trigger"] if parsed else spell.trigger_condition,
+                       "steps": parsed["steps"] if parsed else spell.effect_flow,
+                       "loop": bool(parsed.get("loop")) if parsed else False,
                        "armed": armed,
-                       "note": "反应型法术在触发时点(受伤害前/失血后/目标发动道纹前)由引擎自动结算"},
+                       "wired": wired,
+                       "note": ("反应型法术在触发时点(受伤害前/失血后/目标发动道纹前)由引擎自动结算"
+                                if wired else
+                                "触发时机已被正确解析，但该时机尚未接入战斗结算管线，本法术暂不会实际触发")},
         }
 
     # ==================== 事件结算 ====================
