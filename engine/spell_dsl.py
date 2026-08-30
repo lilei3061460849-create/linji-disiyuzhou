@@ -61,6 +61,41 @@ ALL_TRIGGERS = (
     TRIGGER_ENEMY_ROUND_START, TRIGGER_ENEMY_ROUND_END,
 )
 
+
+# ---------------------------------------------------------------------------
+# 开放可扩展：自定义事件触发条件（“新增时点 = 注册一条事件挂钩”）
+#
+# 原则：**凡是这里能让 parse_trigger 识别出的触发条件，引擎端都必须真的在
+# 对应事件点调用一次 `_fire_auto_reaction(holder, "<name>", ctx)`**。二者必须
+# 同步出现，否则会出现“语法接受却永不触发”的死时点（这正是用户明确否定的）。
+#
+# 新增一个可触发时点只需两步：
+#   1) 在 EXTRA_TRIGGERS 注册一条：name（规范触发器名）+ keywords（命中规则）+
+#      roles（允许的目标身份；无对手身份的用 ("self","caster","any")）。
+#   2) 在引擎真正发生该事件的代码路径调用
+#      self._fire_auto_reaction(holder, "<name>", ctx)。
+# 注册后该时点即被 DSL 语法接受（学习/解析阶段不再拒绝），并在事件点时真正触发。
+# ---------------------------------------------------------------------------
+EXTRA_TRIGGERS: list[dict] = [
+    # 闪避时：持有者成功闪避一次攻击后触发（引擎在 resolve_attack 的闪避成功分支接线）。
+    {
+        "name": "闪避时",
+        "keywords": (("闪避", "避开", "躲避", "躲开"), ("时", "后", "成功")),
+        "roles": ("self", "caster", "any", "target", "attacker"),
+    },
+]
+
+
+def extra_trigger_names() -> tuple[str, ...]:
+    return tuple(spec["name"] for spec in EXTRA_TRIGGERS)
+
+
+def extra_trigger_roles(name: str) -> tuple[str, ...]:
+    for spec in EXTRA_TRIGGERS:
+        if spec["name"] == name:
+            return tuple(spec["roles"])
+    return ()
+
 # 全局时点（战始/战终/回始/回终/敌回始/敌回终）没有"当次触发的对手"这个
 # 天然身份——不像受到伤害前/失去生命后/目标发动道纹前那样，事件本身自带一个
 # 明确的"攻击者/发动方"。因此效果步骤的目标声明在这六个时点里只能是
@@ -123,9 +158,16 @@ def parse_trigger(text: str) -> str:
             continue
         if all(any(kw in cleaned for kw in group) for group in groups):
             return canonical
+    # 开放可扩展：命中已注册的自定义事件触发条件也返回其规范名。
+    # 这里对原始文本 raw 匹配（保留“时/后”等被 _TRIGGER_STRIP_TOKENS 剥离的措辞），
+    # 与 _TRIGGER_RULES 对 cleaned 匹配不同，避免“闪避时”被剥成“闪避”而漏配。
+    for spec in EXTRA_TRIGGERS:
+        groups = spec["keywords"]
+        if all(any(kw in raw for kw in group) for group in groups):
+            return spec["name"]
     raise SpellDslError(
         f"无法识别触发条件【{raw}】。可用时机（支持常见同义写法，如“我方受到伤害前”“战斗开始时”）："
-        f"{'/'.join(ALL_TRIGGERS)}"
+        f"{'/'.join(ALL_TRIGGERS + extra_trigger_names())}"
     )
 
 
@@ -499,24 +541,36 @@ def _check_condition_subjects_no_attacker(trigger: str, node) -> None:
 
 
 def _check_global_trigger_targets(trigger: str, steps) -> None:
-    """全局时点（战始/战终/回始/回终/敌回始/敌回终）没有攻击者/目标身份，
-    效果步骤只能声明 self/caster/any；写"于攻击者"/"于目标"直接拒绝；
-    条件分支的条件表达式同理不能以攻击者/目标为主语。
+    """按触发时点允许的目标身份校验效果步骤。
+
+    - 全局时点（战始/战终/回始/回终/敌回始/敌回终）没有攻击者/目标身份，
+      只能声明 self/caster/any；写于攻击者/于目标直接拒绝，条件表达式同理不能以
+      攻击者/目标为主语。
+    - 开放可扩展时点（EXTRA_TRIGGERS）按注册时的 roles 约束；未注册 roles 则不
+      额外限制（等同伤害类，允许全部身份）。
     """
-    if trigger not in GLOBAL_TRIGGERS:
-        return
+    if trigger in GLOBAL_TRIGGERS:
+        allowed = ("self", "caster", "any")
+    else:
+        roles = extra_trigger_roles(trigger)
+        if not roles:
+            return  # 非全局、非注册时点：保持原有行为（由 combat 侧结算）
+        allowed = roles
+
     for step in steps:
         if isinstance(step, ActionStep):
-            if step.target not in ("self", "caster", "any"):
+            if step.target not in allowed:
                 raise SpellDslError(
                     f"触发时机【{trigger}】没有“攻击者/目标”这个对手身份"
                     f"（不像受到伤害前/失去生命后那样天然存在一个触发对方），"
                     f"效果步骤【发动{step.daowen}X于...】只能声明"
                     f"“于自身”“于施法者”或“于任意目标”")
         elif isinstance(step, IfStep):
-            _check_condition_subjects_no_attacker(trigger, step.condition)
+            if "self" in allowed or "caster" in allowed:
+                _check_condition_subjects_no_attacker(trigger, step.condition)
             _check_global_trigger_targets(trigger, step.then_steps)
             _check_global_trigger_targets(trigger, step.else_steps)
+
 
 
 def parse_spell_definition(trigger_condition: str, effect_flow: str,

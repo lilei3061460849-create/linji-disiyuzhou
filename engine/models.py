@@ -327,6 +327,43 @@ class Entity:
         if self.battle_start_blood_limit == 0:
             self.battle_start_blood_limit = self.blood_limit
 
+    # ---- 「失去生命后」统一拦截 (2026-08-30) ---- 
+    # 用户要求：不要再逐个效果开窗调 _fire_after_life_lost，只要当前生命
+    # 下降就统一触发。因此 current_hp 的每次写入都经 __setattr__ 捕获：
+    # 若数值变小，则把 (old, new) 报给所属战斗引擎（若有绑定）。
+    # 引擎侧以 _hp_loss_recording 计数器表示“这段降血正由既有入口
+    # （_record_hp_loss_event / _apply_blood_limit_change 等）接管”，
+    # 期间本钩子被抑制，避免双发；未被接管、或未来全新效果的直接
+    # current_hp-= 写法则由本钩子兜底自动触发，无需再手工接线。
+    # _hp_engine_ref 为可选弱引用（非字段，不参与序列化/深拷贝判定）。
+    def __setattr__(self, name, value):
+        old = self.__dict__.get(name, None)
+        object.__setattr__(self, name, value)
+        if name == "current_hp" and old is not None and value < old:
+            self._fire_hp_loss(old, value)
+
+    def _fire_hp_loss(self, old: int, new: int) -> None:
+        eng = getattr(self, "_hp_engine_ref", None)
+        if eng is None:
+            return  # 未绑定引擎（模型层/局外/深拷贝快照）→ 纯数据，不触发战斗反应
+        owner = eng()
+        if owner is None:
+            return
+        # _resolving_life_lost_reactions>0 表示正结算反应自身 → 不再连锁。
+        if getattr(owner, "_resolving_life_lost_reactions", 0) > 0:
+            return
+        owner._on_entity_hp_fallen(self, old, new)
+
+    def __getstate__(self):
+        """存档/快照序列化时剔除战斗期引擎弱引用（不可 pickle）。"""
+        state = self.__dict__.copy()
+        state.pop("_hp_engine_ref", None)
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self.__dict__["_hp_engine_ref"] = None
+
     
     @property
     def action_count(self) -> int:
@@ -413,8 +450,9 @@ class Entity:
             # 同 take_damage：调用方必须在拿到 collapsed=True 后走
             # CombatEngine._on_entity_death(..., ctx=_collapse_context(...))，
             # 否则崩解死者不会触发任何[命零]效果。
-            self.current_hp = 0
+            # 先翻 is_alive 再置 0：崩解=命零死因，不触发「失去生命后」反应。
             self.is_alive = False
+            self.current_hp = 0
         return {
             "mutation_added": layers,
             "mutation_total": self.mutation_count,

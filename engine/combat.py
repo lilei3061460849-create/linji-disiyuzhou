@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 import math
+import weakref
 from typing import Optional, Any
 from .models import Entity, StatusEffect, GameState, DaoWenInstance, DaoWen, Spell, Consumable
 from .daowen import DaoWenEngine, ResonanceEngine
@@ -69,6 +70,23 @@ class CombatEngine:
         self._resonance_rewrites: dict[int, dict[str, str]] = {}
         # 效果链深度保险丝（见 MAX_EFFECT_CHAIN_DEPTH）。
         self._effect_chain_depth = 0
+        # AFTER_LIFE_LOST(失去生命后) 反应法术在“非攻击失血”路径的自动触发状态：
+        #   _resolving_life_lost_reactions > 0 表示正在结算某次反应法术——反应
+        #     自身引发的失血不得再次触发反应（否则以牙还牙/血债会互相连锁死循环）。
+        #   _attack_after_window_target 是当前攻击中、其失血由 resolve_attack 的
+        #     反应窗口结算的目标；该目标失血不再重复走 hook（避免与窗口双发）。
+        self._resolving_life_lost_reactions = 0
+        self._attack_after_window_target = None
+        # 「失去生命后」统一拦截（2026-08-30）：
+        #   _hp_loss_recording>0 表示当前正由既有降血入口（_record_hp_loss_event /
+        #     _apply_blood_limit_change / _apply_numeric_cost_part / 血限压迫等）接管，
+        #     Entity.__setattr__ 的兜底钩子被抑制，避免与既有触发点双发。
+        #   _hp_loss_ctx 是当前一次降血的来源上下文，供兜底钩子还原 attacker。
+        self._hp_loss_recording = 0
+        self._hp_loss_ctx = None
+        # 把本引擎绑定到已有战斗实体上：之后任何 current_hp 下降都会经
+        # Entity._fire_hp_loss → _on_entity_hp_fallen 上报（仅对引擎自有的实体生效）。
+        self._bind_existing_hp_hooks()
         # 怪物战斗记述的实例化（2026-08-23）：这三个集合原本是类属性，
         # 仅靠 reset_monster_activation 在战始降级为实例属性——绕过战始的引擎
         # （测试夹具/模拟器直驱）会把 add() 写进跨实例共享的类集合，且 id()
@@ -524,14 +542,21 @@ class CombatEngine:
             detail["context_warning"] = "伤害缺少EffectContext；已按legacy来源兼容记录"
         return detail
 
-    def _record_hp_loss_event(
-        self, entity: Entity, amount: int,
-        parent_ctx: Optional[EffectContext] = None,
-        *, subtype: str = "damage",
-    ) -> Optional[dict]:
-        """记录“实际失去生命”事件；不改变既有 hp_lost_this_round 数值来源。"""
-        if entity is None or amount <= 0:
-            return None
+    def _write_hp_loss_record(self, entity: Entity, amount: int,
+                              parent_ctx: Optional[EffectContext | dict],
+                              subtype: str, reaction_logs: Optional[list]) -> dict:
+        """构造一条“实际失去生命”事件并登记到 entity._hp_loss_events。
+
+        仅负责记账，不触发任何反应。触发统一由调用方决定：
+          - 既有 ctx-rich 入口（_apply_hostile_damage / _raw_hp_loss / 流血代价……
+            已置 _hp_loss_recording>0 抑制兜底）：在 _record_hp_loss_event 里触发；
+          - 其余一切降血（血限压顶/衰老/道纹直接减血/直写 current_hp）经
+            Entity.__setattr__ 兜底钩子 _on_entity_hp_fallen 触发，再把结果写回本账。
+
+        parent_ctx 既可能是 EffectContext 也可能是 legacy dict（兜底钩子从
+        _hp_loss_ctx 取到），统一经 normalize_context 归一，避免 .timing 直接崩溃。
+        """
+        parent_ctx = normalize_context(parent_ctx) if parent_ctx is not None else None
         ctx = make_context(
             timing=parent_ctx.timing if parent_ctx else self._current_context_timing(),
             source=parent_ctx.source if parent_ctx else "legacy_hp_loss",
@@ -551,7 +576,90 @@ class CombatEngine:
             entity._hp_loss_events = []
             events = entity._hp_loss_events
         events.append(record)
+        if reaction_logs:
+            record["reaction_logs"] = reaction_logs
         return record
+
+    def _record_hp_loss_event(
+        self, entity: Entity, amount: int,
+        parent_ctx: Optional[EffectContext] = None,
+        *, subtype: str = "damage",
+    ) -> Optional[dict]:
+        """记录“实际失去生命”事件；不改变既有 hp_lost_this_round 数值来源。
+
+        「失去生命后」反应法术：无论因何失血（攻击/道纹/代价/血限压迫/爆裂反噬……）
+        一律触发。攻击路径的失血由 resolve_attack 的反应窗口结算，此处跳过以免双发；
+        反应法术自身的结算会把 _resolving_life_lost_reactions 置 >0，避免连锁死循环。
+        """
+        if entity is None or amount <= 0:
+            return None
+        # 先触发（沿用既有语义），再把结果写回同一笔失血账。
+        if (self._attack_after_window_target is not entity
+                and self._resolving_life_lost_reactions == 0):
+            logs = self._fire_after_life_lost(entity, parent_ctx)
+        else:
+            logs = None
+        record = self._write_hp_loss_record(entity, amount, parent_ctx, subtype, logs)
+        return record
+
+    # ---- 「失去生命后」统一拦截：绑定与兜底触发 (2026-08-30) ----
+    def _hp_record_entities(self) -> list[Entity]:
+        ents: list[Entity] = []
+        if self.state.player is not None:
+            ents.append(self.state.player)
+        ents.extend(self.state.enemies)
+        ents.extend(self.state.friends)
+        ents.extend(self.state.employees)
+        ents.extend(self.state.temp_friends)
+        return ents
+
+    def _bind_existing_hp_hooks(self) -> None:
+        for entity in self._hp_record_entities():
+            self._bind_hp_hook(entity)
+
+    def _bind_hp_hook(self, entity: Optional[Entity]) -> None:
+        if entity is None:
+            return
+        try:
+            entity._hp_engine_ref = weakref.ref(self)
+        except TypeError:
+            pass  # 兜底：非可弱引用对象不绑定（正常 CombatEngine 均可弱引用）
+
+    def _engine_owns(self, entity: Entity) -> bool:
+        if entity is None:
+            return False
+        if entity is self.state.player:
+            return True
+        for lst in (self.state.enemies, self.state.friends,
+                    self.state.employees, self.state.temp_friends):
+            for e in lst:
+                if e is entity:
+                    return True
+        return False
+
+    def _on_entity_hp_fallen(self, entity: Entity, old: int, new: int) -> None:
+        """Entity.__setattr__ 兜底钩子：任何未被既有入口接管的生命下降都走这里。
+
+        被接管（_hp_loss_recording>0）或攻击失血（_attack_after_window_target）或
+        反应自身失血（_resolving_life_lost_reactions>0）时提前返回，避免双发。
+        未来新增道纹/遗物只要让 current_hp 变小，无需再手工接线。
+        """
+        if entity is None or not entity.is_alive:
+            return
+        if self._hp_loss_recording > 0:
+            return
+        if self._attack_after_window_target is entity:
+            return
+        if not self._engine_owns(entity):
+            return  # 深拷贝快照/外部实体不越界触发
+        ctx = self._hp_loss_ctx
+        self._hp_loss_ctx = None  # 用完即清，避免残留上下文污染后续未接线的降血
+        # 只检测“生命下降就触发”，不关心具体成因。触发后把结果登记到同一笔失血账，
+        # 使血限压顶/衰老/道纹直减等“由兜底钩子接管”的降血也可见、可追踪，
+        # 与 ctx-rich 路径（_record_hp_loss_event）保持一致。
+        logs = self._fire_after_life_lost(entity, ctx)
+        if logs:
+            self._write_hp_loss_record(entity, old - new, ctx, "fallback_hp_loss", logs)
 
     # ========== 统一死亡判定 / 统一血限变化 ==========
 
@@ -577,8 +685,12 @@ class CombatEngine:
         # 已经走过统一死亡管线（含 Entity.take_damage 先翻了 is_alive 的情况）就不重复触发。
         if getattr(entity, "_death_triggers_emitted", False):
             return False
-        entity.current_hp = 0
-        entity.is_alive = False
+        self._hp_loss_recording += 1  # 命零置血=死亡收尾，不触发「失去生命后」
+        try:
+            entity.current_hp = 0
+            entity.is_alive = False
+        finally:
+            self._hp_loss_recording -= 1
         self._on_entity_death(entity, ctx=ctx)
         return True
 
@@ -652,6 +764,12 @@ class CombatEngine:
             entity, applied, parent, source=source, source_type=source_type,
             subtype=subtype, actor=actor, owner=owner, tags=tags)
         if clamp_hp:
+            # 血限压降导致的当前生命下降同样是失血；统一交给
+            # Entity.__setattr__ 的「失去生命后」钩子触发，不再手工接线。
+            # 「失去生命前」：血限压迫即将把当前生命压下来。
+            if entity.current_hp > entity.blood_limit and self._attack_after_window_target is not entity:
+                self._fire_before_life_lost(entity, bl_ctx or parent)
+            self._hp_loss_ctx = bl_ctx or parent
             entity.current_hp = min(entity.current_hp, entity.blood_limit)
         died = self._check_hp_zero_death(entity, ctx=bl_ctx or parent) if lethal else False
         return {"applied": applied, "ctx": bl_ctx, "died": died}
@@ -671,10 +789,12 @@ class CombatEngine:
                 f"效果链深度超过{self.MAX_EFFECT_CHAIN_DEPTH}层，疑似 A→B→A 循环触发："
                 f"{damage_ctx.source}→{getattr(target, 'name', '?')}")
         self._effect_chain_depth += 1
+        self._hp_loss_recording += 1  # 伤害失血由 _record_hp_loss_event 接管，抑制兜底钩子
         try:
             return self._apply_hostile_damage_inner(
                 target, amount, damage_type, source, damage_ctx, legacy_ctx)
         finally:
+            self._hp_loss_recording -= 1
             self._effect_chain_depth -= 1
 
     def _apply_hostile_damage_inner(
@@ -729,9 +849,39 @@ class CombatEngine:
         if (source is not None and damage_type != "代价"
                 and hasattr(source, "has_status") and source.has_status("贯穿")):
             apply_type = "无视格挡"
+        # ---- 「受到伤害前 / 失去生命前」自动反应窗口（非攻击伤害） ----
+        # 攻击路径（resolve_attack）由显式反应窗口结算，此处跳过以免双发；只有
+        # 非攻击伤害（道纹/反噬等）才在这里自动触发，且无需逐个效果开窗。
+        reaction_logs: list = []
+        if (self._attack_after_window_target is not target
+                and amount > 0 and target.is_alive):
+            before = self._fire_auto_reaction(
+                target, ActionPhase.BEFORE_DAMAGE_TAKEN.value, damage_ctx)
+            if before:
+                reaction_logs.extend(before)
+            if source is not None and not source.is_alive:
+                amount = 0
+            # 失去生命前：受到伤害前反应已结算、伤害数值已确定，但生命尚未扣减。
+            if amount > 0 and target.is_alive:
+                life_before = self._fire_auto_reaction(
+                    target, ActionPhase.BEFORE_LIFE_LOST.value, damage_ctx)
+                if life_before:
+                    reaction_logs.extend(life_before)
+                if source is not None and not source.is_alive:
+                    amount = 0
         detail = target.take_damage(amount, apply_type)
         self._attach_damage_context(detail, damage_ctx, legacy_ctx)
         actual = detail.get("actual_damage", 0)
+        # 「受到伤害后」自动反应窗口：这一击已完整落地（即使被格挡全部吸收也算
+        # "受到了伤害"，与"失去生命后"要求 actual_damage>0 严格区分）。
+        if (self._attack_after_window_target is not target
+                and amount > 0 and target.is_alive):
+            damage_after = self._fire_auto_reaction(
+                target, ActionPhase.AFTER_DAMAGE_TAKEN.value, damage_ctx)
+            if damage_after:
+                reaction_logs.extend(damage_after)
+        if reaction_logs:
+            detail["reaction_logs"] = reaction_logs
         hp_loss_ctx = self._record_hp_loss_event(target, actual, damage_ctx, subtype="damage")
         if hp_loss_ctx:
             detail["hp_loss_ctx"] = hp_loss_ctx
@@ -807,6 +957,7 @@ class CombatEngine:
                         if dw_name == "分裂":
                             continue  # 复制体无分裂道纹
                         clone.dao_wen[dw_name] = dw_inst
+                    self._bind_hp_hook(clone)
                     self.state.temp_friends.append(clone)
                 self.state._pending_split_clones = 0
                 self._split_clones_spawned = clones
@@ -832,7 +983,15 @@ class CombatEngine:
     ) -> dict:
         """直接生命损失（绕过格挡；爆裂反射/赌命用），计入失血追踪，含命零判定。"""
         before = entity.current_hp
-        entity.current_hp = max(0, entity.current_hp - max(0, amount))
+        reaction_logs: list = []
+        # 「失去生命前」自动反应窗口：非攻击直接失血（爆裂/赌命等），生命尚未扣减。
+        if amount > 0 and entity.is_alive and self._attack_after_window_target is not entity:
+            reaction_logs = self._fire_before_life_lost(entity, ctx) or []
+        self._hp_loss_recording += 1  # 直接失血由 _record_hp_loss_event 接管，抑制兜底钩子
+        try:
+            entity.current_hp = max(0, entity.current_hp - max(0, amount))
+        finally:
+            self._hp_loss_recording -= 1
         lost = before - entity.current_hp
         entity.hp_lost_this_round += lost
         parent = normalize_context(ctx)
@@ -845,6 +1004,8 @@ class CombatEngine:
         result = {"hp_before": before, "hp_after": entity.current_hp, "lost": lost, "died": died}
         if hp_loss_ctx:
             result["hp_loss_ctx"] = hp_loss_ctx
+        if reaction_logs:
+            result["reaction_logs"] = reaction_logs
         if ctx is None and lost > 0:
             result["context_warning"] = "直接失去生命缺少EffectContext；已按legacy来源兼容记录"
         return result
@@ -1033,6 +1194,12 @@ class CombatEngine:
                 payer, -amount, cost_context, source=(cost_context.source if cost_context else "衰老"),
                 source_type=(cost_context.source_type if cost_context else "cost"),
                 subtype="aging", tags=(set(cost_context.tags) if cost_context else set()) | {"cost", "blood_limit_loss"})
+            # 血限压迫导致的当前生命下降同样是失血；统一交给
+            # Entity.__setattr__ 的「失去生命后」钩子触发，不再手工接线。
+            # 「失去生命前」：血限压迫即将把当前生命压下来。
+            if payer.current_hp > payer.blood_limit and self._attack_after_window_target is not payer:
+                self._fire_before_life_lost(payer, cost_context)
+            self._hp_loss_ctx = cost_context
             payer.current_hp = min(payer.current_hp, payer.blood_limit)
             self._check_hp_zero_death(payer, ctx=cost_context)
         elif cost_type == "枯竭":
@@ -1213,8 +1380,18 @@ class CombatEngine:
         """
         cost_context = normalize_context(cost_context)
         actual, offset = self._offset_with_dragon_heart(payer, "流血", amount, dragon_heart_use)
-        detail = payer.take_damage(actual, "代价")
+        # 「失去生命前」自动反应窗口：非攻击流血代价，生命尚未扣减。
+        life_before_logs: list = []
+        if actual > 0 and payer.is_alive and self._attack_after_window_target is not payer:
+            life_before_logs = self._fire_before_life_lost(payer, cost_context) or []
+        self._hp_loss_recording += 1  # 代价失血由 _record_hp_loss_event 接管，抑制兜底钩子
+        try:
+            detail = payer.take_damage(actual, "代价")
+        finally:
+            self._hp_loss_recording -= 1
         detail["dragon_heart_offset"] = offset
+        if life_before_logs:
+            detail["reaction_logs"] = life_before_logs
         hp_loss_ctx = self._record_hp_loss_event(payer, actual, cost_context, subtype="cost")
         if hp_loss_ctx:
             detail["hp_loss_ctx"] = hp_loss_ctx
@@ -1303,6 +1480,9 @@ class CombatEngine:
         """
         entity_refs = entity_refs or self._combat_entity_refs()
         spell_choices = spell_choices if spell_choices is not None else {"before": {}, "after": {}}
+        # 攻击失血由本方法的反应窗口结算，标记在下方置位。先清掉可能残留的旧标记，
+        # 避免异常中断后误伤后续失血的自动触发。
+        self._attack_after_window_target = None
         self.validate_spell_reaction_submission(target, attacker, spell_choices, entity_refs)
         result = {
             "attacker": attacker.name,
@@ -1345,6 +1525,15 @@ class CombatEngine:
                 result["speed_after_dodge"] = target.current_speed
                 if extra:
                     result["dodge_extra"] = extra
+                # 「闪避时」开放可扩展触发：持有者成功闪避后触发（注册/接线见
+                # spell_dsl.EXTRA_TRIGGERS 与 _fire_auto_reaction）。此分支位于
+                # _attack_after_window_target 置位之前，不会与普攻伤害窗口冲突。
+                result["spell_logs"] = self._fire_auto_reaction(
+                    target, "闪避时", make_context(
+                        timing=self._current_context_timing(), source="普通攻击",
+                        source_type="attack", actor=attacker, target=target,
+                        mechanic="dodge", subtype="dodge_success", amount=0,
+                        tags={"attack", "dodge"}, parent_event_id=None))
                 return result
             else:
                 result["dodge_success"] = False
@@ -1382,6 +1571,9 @@ class CombatEngine:
         # 震岳龙躯（真龙之心遗物）：激活期间，自身受到超出15点的伤害无效
         if self.state.side_body_shield(target) > 0:
             damage = min(damage, 15)
+        # 本次攻击造成的失血由 resolve_attack 的既有反应窗口结算；标记该目标，
+        # 使失血后 hook 不再对同一目标重复触发。
+        self._attack_after_window_target = target
         # 反应法术由攻击prepare列出、resolve显式提交；计算层不再自动选择X或目标。
         if damage > 0:
             slogs = self._resolve_spell_reactions(
@@ -1462,6 +1654,7 @@ class CombatEngine:
             )
             if slogs2:
                 result.setdefault("spell_logs", []).extend(slogs2)
+        self._attack_after_window_target = None
         
         # 结算后效果
         # 兴奋：每次出手后速度+1（X 只管持续）
@@ -2172,7 +2365,11 @@ class CombatEngine:
         cancer_ctx = normalize_context(ctx)
         entity.is_proliferated = True
         entity.is_cancer = True
-        entity.current_hp = 0
+        self._hp_loss_recording += 1  # 癌变直接命零=特殊死因，不触发「失去生命后」
+        try:
+            entity.current_hp = 0
+        finally:
+            self._hp_loss_recording -= 1
         if entity is self.state.player:
             self.state.last_death_cause = "cancer"
         self._check_hp_zero_death(entity, ctx=cancer_ctx)
@@ -2779,11 +2976,16 @@ class CombatEngine:
                 actor=caster, owner=caster, clamp_hp=False, lethal=False)
             # README 第460行"[血限]及当前生命同时 -4X"：两者是各自独立的扣减。
             # 此前实现只做 current_hp=min(current_hp, blood_limit)（血限压顶），
-            # 对残血目标等于毫无效果。
+            # 对残血目标等于毫无效果。合并成一次写入：既保持与两步扣减相同的终值，
+            # 又让 Entity.__setattr__ 的「失去生命后」钩子恰好触发一次。
             if "hp_reduction" in calc:
-                target.current_hp -= calc["hp_reduction"]
-            target.current_hp = max(0, min(target.current_hp, target.blood_limit))
+                _target_hp = target.current_hp - calc["hp_reduction"]
+            else:
+                _target_hp = target.current_hp
+            self._hp_loss_ctx = daowen_ctx
+            target.current_hp = max(0, min(_target_hp, target.blood_limit))
             self._check_hp_zero_death(target, ctx=_blr["ctx"] or daowen_ctx)
+            _hp_cut_tmp = _hp_before - target.current_hp
             # 血限压迫导致的当前生命减少，同样属于"使敌对角色生命减少"，
             # 必须计入本回合伤害统计，否则纯压血限流派会被【凡庸】判定为无所作为而自爆。
             _hp_cut = _hp_before - target.current_hp
@@ -3877,42 +4079,164 @@ class CombatEngine:
                                     "daowen": daowen, "x": x, "target": target.name, "execution": execution})
         return logs
 
+    def _max_auto_life_lost_x(self, daowen: str, target: Entity, caster: Entity,
+                              budget: int) -> Optional[int]:
+        """自动装配「失去生命后」反应法术时，为单步挑选一个可支付的 X。
+
+        代价型道纹（杀死/再生/庇护等）消耗法力，X 越大效果越强；这里从预算上限
+        向下取最大可支付 X（至少 1），使触发真正生效而非空转。非法力代价
+        （血债=流血等）先付血，与法力无关，直接取 1（最小代价、真实触发）。
+        """
+        upper = max(1, budget)
+        # 遍历上限：防御性封顶，避免极端预算下做无谓的 O(budget) 扫描。
+        upper = min(upper, 10_000)
+        for x in range(upper, 0, -1):
+            calc = DaoWenEngine.resolve(daowen, x, target=target, caster=caster)
+            if calc.get("cost_type") != "消耗":
+                return 1
+            if calc.get("cost", 0) <= budget:
+                return x
+        return None
+
+    def _auto_after_life_lost_decision(self, name: str, flow: dict, holder: Entity,
+                                       attacker: Optional[Entity], refs: dict[str, Entity],
+                                       reverse: dict[int, str], budget: Optional[int] = None) -> dict:
+        """为一次非攻击失血自动生成「失去生命后」的单法术提交决策。
+
+        没有 AI 决策窗口，因此按“可支付且效果方向合理”自动装配：
+          - self/target 步骤命中持有者自身；attacker 步骤命中失血来源（有对位实体才结算），
+            无对位实体则该步跳过（不会因此使整个法术不触发）。
+          - step 目标为 any（任意目标）时无法静态定目标 → 本法术放弃自动触发。
+          - 任一法力步骤付不起（X=1 都超出预算）→ 本法术放弃自动触发。
+          - budget 为“本次共用法力预算”（跨同一次失血的多个反应法术共享），传入后
+            依剩余预算选 X，避免多个法术各自吃满预算导致逐个结算时法力不足而崩溃；
+            _cost 反馈该法术实际消耗的法力，供上层扣减共享预算。
+        """
+        flow_target = attacker if attacker is not None else holder
+        flat_steps = self._flatten_flow_steps(flow["steps"], holder, flow_target)
+        budget = holder.current_mana if budget is None else budget
+        cycle = []
+        consumed = 0
+        for step in flat_steps:
+            daowen = self._step_daowen(step)
+            role = self._step_role(step)
+            if role == "any":
+                return {"use": False}
+            target = self._resolve_step_subject(role, holder, attacker)
+            if role == "attacker":
+                # 没有可对位的失血来源（如自伤/代价/legacy），跳过该反击步，不判失败。
+                if target is None or not target.is_alive or target is holder:
+                    continue
+            elif target is None or not target.is_alive:
+                continue
+            x = self._max_auto_life_lost_x(daowen, target, holder, budget)
+            if x is None:
+                return {"use": False}
+            calc = DaoWenEngine.resolve(daowen, x, target=target, caster=holder)
+            if calc.get("cost_type") == "消耗":
+                cost = calc.get("cost", 0)
+                if cost > budget:
+                    return {"use": False}
+                budget -= cost
+                consumed += cost
+            cycle.append({"x": x, "target_ref": reverse.get(id(target)), "dodge": False})
+        if not cycle:
+            return {"use": False}
+        return {"use": True, "cycles": [cycle], "_cost": consumed}
+
+    def _fire_auto_reaction(self, holder: Entity, trigger: str,
+                            loss_ctx: Optional[EffectContext | dict]) -> list[dict]:
+        """非攻击路径 → 自动触发任意反应型时点（受到伤害前/后、失去生命前/后）。
+
+        攻击路径（resolve_attack）由显式反应窗口按 AI 提交结算，不经过本方法；
+        这里处理其余一切导致"伤害/失血"的通道（道纹伤害/流血代价/血限压迫/
+        爆裂反射/赌命/直接失血/未来新增效果……），对持有者而言"触发时机一到就
+        触发"——不关心具体成因，完全满足"只检测事件、不逐个开窗"的需求。
+        """
+        if holder is None or not holder.is_alive:
+            return []
+        # 攻击失血由 resolve_attack 的反应窗口结算，本 hook 不重复触发；
+        # 反应法术自身的结算会置 _resolving_life_lost_reactions>0，避免连锁死循环。
+        if self._attack_after_window_target is holder or self._resolving_life_lost_reactions > 0:
+            return []
+        eligible = self._eligible_spell_flows(holder, trigger)
+        if not eligible:
+            return []
+        refs = self._combat_entity_refs()
+        reverse = {id(entity): ref for ref, entity in refs.items()}
+        parent = normalize_context(loss_ctx) if loss_ctx is not None else None
+        attacker: Optional[Entity] = None
+        if parent is not None and parent.actor is not None and parent.actor is not holder:
+            if any(parent.actor is e for e in refs.values()):
+                attacker = parent.actor
+        after: dict[str, dict] = {}
+        # 共享法力预算：同一次失血可能同时有多个反应法术可触发（如“受到伤害前”同时
+        # 装备先发制人/后发制人/借力打力），各自吃满预算会逐个结算时法力不足而崩溃。
+        # 这里按“挨个触发、扣减剩余预算”的顺序装配，保证每个都被正确结算而不是半途报错。
+        shared_budget = holder.current_mana
+        for name, flow in eligible.items():
+            dec = self._auto_after_life_lost_decision(
+                name, flow, holder, attacker, refs, reverse, shared_budget)
+            after[name] = dec
+            if dec.get("use"):
+                shared_budget = max(0, shared_budget - dec.get("_cost", 0))
+        return self._resolve_spell_reactions(trigger, holder, attacker, after, refs)
+
+    def _fire_after_life_lost(self, holder: Entity,
+                              loss_ctx: Optional[EffectContext | dict]) -> list[dict]:
+        """非攻击失血 → 触发「失去生命后」(AFTER_LIFE_LOST) 反应法术。"""
+        return self._fire_auto_reaction(holder, ActionPhase.AFTER_LIFE_LOST.value, loss_ctx)
+
+    def _fire_before_life_lost(self, holder: Entity,
+                               loss_ctx: Optional[EffectContext | dict]) -> list[dict]:
+        """生命即将下降 → 触发「失去生命前」(BEFORE_LIFE_LOST) 反应法术。
+
+        与 AFTER_LIFE_LOST 语义区分：本窗口在生命真正扣减之前触发，攻击路径由
+        resolve_attack 的显式窗口结算，此处只服务道纹伤害/流血代价/直接失血/
+        血限压迫等非攻击生命下降。无符合条件法术时返回空列表，是纯 no-op。
+        """
+        return self._fire_auto_reaction(holder, ActionPhase.BEFORE_LIFE_LOST.value, loss_ctx)
+
     def _resolve_spell_reactions(self, trigger: str, holder: Entity, attacker: Entity,
                                  submitted: dict, refs: dict[str, Entity]) -> list[dict]:
-        reverse = {id(entity): ref for ref, entity in refs.items()}
-        flows = self._eligible_spell_flows(holder, trigger)
-        logs = []
-        for spell_name, flow in flows.items():
-            decision = submitted[spell_name]
-            if not decision["use"]:
-                logs.append({"spell": spell_name, "used": False})
-                continue
-            flat_steps = self._flatten_flow_steps(flow["steps"], holder, attacker)
-            for cycle_index, cycle in enumerate(decision["cycles"], 1):
-                for entry, step in zip(cycle, flat_steps):
-                    daowen = self._step_daowen(step)
-                    target, _ = self._resolve_entry_target(step, entry, holder, attacker, refs, reverse)
-                    if target is None or not target.is_alive:
-                        logs.append({"spell": spell_name, "cycle": cycle_index,
-                                     "daowen": daowen, "skipped": "目标已失效"})
-                        continue
-                    x = entry["x"]
-                    calc = DaoWenEngine.resolve(daowen, x, target=target, caster=holder)
-                    if calc.get("cost_type") == "消耗":
-                        cost = calc.get("cost", 0)
-                        if not holder.spend_mana(cost):
-                            raise ValueError(f"法术{spell_name}结算时法力不足")
-                        self.note_mana_inflicted(holder, target, cost)
-                    hostile = self.state.on_player_side(holder) != self.state.on_player_side(target)
-                    if hostile and entry.get("dodge"):
-                        self._spend_dodge_speed(target, entry.get("dodge_relic_target_ref"))
-                        logs.append({"spell": spell_name, "cycle": cycle_index,
-                                     "daowen": daowen, "target": target.name, "dodged": True})
-                        continue
-                    execution = self.apply_daowen_effect(daowen, calc, holder, target)
-                    logs.append({"spell": spell_name, "cycle": cycle_index, "daowen": daowen,
-                                 "x": x, "target": target.name, "execution": execution})
-        return logs
+        self._resolving_life_lost_reactions += 1
+        try:
+            reverse = {id(entity): ref for ref, entity in refs.items()}
+            flows = self._eligible_spell_flows(holder, trigger)
+            logs = []
+            for spell_name, flow in flows.items():
+                decision = submitted[spell_name]
+                if not decision["use"]:
+                    logs.append({"spell": spell_name, "used": False})
+                    continue
+                flat_steps = self._flatten_flow_steps(flow["steps"], holder, attacker)
+                for cycle_index, cycle in enumerate(decision["cycles"], 1):
+                    for entry, step in zip(cycle, flat_steps):
+                        daowen = self._step_daowen(step)
+                        target, _ = self._resolve_entry_target(step, entry, holder, attacker, refs, reverse)
+                        if target is None or not target.is_alive:
+                            logs.append({"spell": spell_name, "cycle": cycle_index,
+                                         "daowen": daowen, "skipped": "目标已失效"})
+                            continue
+                        x = entry["x"]
+                        calc = DaoWenEngine.resolve(daowen, x, target=target, caster=holder)
+                        if calc.get("cost_type") == "消耗":
+                            cost = calc.get("cost", 0)
+                            if not holder.spend_mana(cost):
+                                raise ValueError(f"法术{spell_name}结算时法力不足")
+                            self.note_mana_inflicted(holder, target, cost)
+                        hostile = self.state.on_player_side(holder) != self.state.on_player_side(target)
+                        if hostile and entry.get("dodge"):
+                            self._spend_dodge_speed(target, entry.get("dodge_relic_target_ref"))
+                            logs.append({"spell": spell_name, "cycle": cycle_index,
+                                         "daowen": daowen, "target": target.name, "dodged": True})
+                            continue
+                        execution = self.apply_daowen_effect(daowen, calc, holder, target)
+                        logs.append({"spell": spell_name, "cycle": cycle_index, "daowen": daowen,
+                                     "x": x, "target": target.name, "execution": execution})
+            return logs
+        finally:
+            self._resolving_life_lost_reactions -= 1
 
     # ========== 大流程：员工叛变 / 死之传承 ==========
 
@@ -4290,6 +4614,7 @@ class CombatEngine:
                     continue
                 if prefix == "employee" and not entity.is_deployed:
                     continue
+                self._bind_hp_hook(entity)  # 确认战斗实体已绑定「失去生命后」兜底钩子（幂等）
                 refs[f"{prefix}:{i}"] = entity
         return refs
 
@@ -5073,7 +5398,11 @@ class CombatEngine:
         """结算一名角色的凡庸。调用方必须已按非轮回者优先排好序。"""
         if not entity.is_alive:
             return []
-        entity.current_hp = 0
+        self._hp_loss_recording += 1  # 凡庸直接命零=特殊死因，不触发「失去生命后」
+        try:
+            entity.current_hp = 0
+        finally:
+            self._hp_loss_recording -= 1
         self._check_hp_zero_death(entity, ctx={
             "timing": "round_end", "source": "凡庸", "source_type": "system",
             "actor": entity, "target": entity, "mechanic": "death", "subtype": "mediocrity",

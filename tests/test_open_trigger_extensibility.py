@@ -1,0 +1,82 @@
+"""开放可扩展触发时点：新增时点=注册一条事件挂钩，注册后即被 DSL 接受并真实触发。
+
+用户约定：**凡是语法能接受的触发时必须真能触发**，不许出现“被识别却不触发”的死时点。
+因此 EXTRA_TRIGGERS 里只登记**确实在引擎接了线的时点**；本测试锁定该契约。
+
+验证点：
+  1. 既有 11 个时点全部仍被 DSL 接受（防止后续把它改成不可识别/死时点）。
+  2. 新注册时点「闪避时」被 DSL 接受（含同义写法「闪避后」「被躲避后」）。
+  3. 「闪避时」在持有者成功闪避一次攻击后**真实触发**（走 _fire_auto_reaction）。
+  4. 未注册的写法（如「对方施法前」）仍被拒绝，保持词汇表封闭可预期。
+"""
+from __future__ import annotations
+
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import pytest
+
+from engine.combat import CombatEngine
+from engine.dice import DiceEngine
+from engine.spell_dsl import parse_spell_definition, SpellDslError
+from engine.daowen import DaoWenEngine
+from engine.models import Entity, GameState, DaoWen, DaoWenInstance, Spell
+
+
+def _known() -> set[str]:
+    DaoWenEngine.register_all()
+    return set(DaoWenEngine.list_all())
+
+
+# 各时点一条能通过校验的效果流：伤害类用“攻击者”，全局/开放类用“自身”。
+_VALID_FLOW = {
+    "受到伤害前": "发动杀伐 X于攻击者", "受到伤害后": "发动杀伐 X于攻击者",
+    "失去生命前": "发动杀伐 X于攻击者", "失去生命后": "发动杀伐 X于攻击者",
+    "目标发动道纹前": "发动杀伐 X于攻击者",
+    "战始": "发动庇护 X于自身", "战终": "发动庇护 X于自身", "回始": "发动庇护 X于自身",
+    "回终": "发动庇护 X于自身", "敌回始": "发动庇护 X于自身", "敌回终": "发动庇护 X于自身",
+    "闪避时": "发动庇护 X于自身",
+}
+
+
+def test_all_existing_triggers_still_parse():
+    """既有 11 个时点 + 新注册「闪避时」全部仍可被 DSL 接受。"""
+    for trig, flow in _VALID_FLOW.items():
+        assert parse_spell_definition(trig, flow, _known()) is not None, trig
+
+
+def test_new_trigger_synonyms_parse():
+    """新注册「闪避时」的合法写法（含同义）可被接受。"""
+    assert parse_spell_definition("闪避时", "发动庇护 X于自身", _known()) is not None
+    assert parse_spell_definition("闪避后", "发动庇护 X于自身", _known()) is not None
+    assert parse_spell_definition("被躲避后", "发动庇护 X于自身", _known()) is not None
+
+
+def test_unregistered_trigger_rejected():
+    """未注册写法仍被拒绝（词汇表封闭，不会随意放行新时点）。"""
+    with pytest.raises(SpellDslError):
+        parse_spell_definition("对方施法前", "发动庇护 X于自身", _known())
+
+
+def test_dodge_trigger_fires_on_successful_dodge():
+    """持有者成功闪避一次攻击 → 「闪避时」反应法术真实触发（护佑·庇护加盾）。"""
+    state = GameState(phase="in_combat", combat_subphase="player_actions", current_round=1)
+    player = Entity("玄夜", "轮回者", blood_limit=100, current_hp=100,
+                    mana_limit=20, current_mana=20, speed_limit=3, current_speed=3)
+    enemy = Entity("靶怪", "怪物", blood_limit=100, current_hp=100, attack_power=3)
+    state.player = player
+    state.enemies = [enemy]
+    player.dao_wen["庇护"] = DaoWenInstance(
+        DaoWen(name="庇护", formula="", cost_type="消耗", cost_formula="X", effect_formula=""),
+        x_value=0)
+    player.spells.append(Spell(
+        name="护佑", required_daowen=["庇护"], trigger_condition="闪避时",
+        effect_flow="发动庇护 X于自身"))
+    combat = CombatEngine(state, DiceEngine())
+
+    refs = combat._combat_entity_refs()
+    before_shield = player.shield
+    combat.resolve_attack(enemy, player, dodge=True, entity_refs=refs)
+    assert player.shield > before_shield, "成功闪避后「闪避时」反应应触发并加盾"
