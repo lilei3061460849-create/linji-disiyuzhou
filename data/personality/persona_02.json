@@ -1,0 +1,55 @@
+{
+  "name": "青梧",
+  "traits": {
+    "exploration_desire": {
+      "trait": "exploration_desire",
+      "value": "守成",
+      "score": -0.9899,
+      "strength": 0.9899,
+      "confidence": 0.95,
+      "evidence_count": 21,
+      "last_evidence": "第9次重复【加速】",
+      "last_updated_battle": 7
+    },
+    "expression_style": {
+      "trait": "expression_style",
+      "value": "内敛",
+      "score": -0.7496,
+      "strength": 0.7496,
+      "confidence": 0.95,
+      "evidence_count": 15,
+      "last_evidence": "迂回战术(加速X=1)",
+      "last_updated_battle": 7
+    },
+    "risk_preference": {
+      "trait": "risk_preference",
+      "value": "求稳",
+      "score": -0.9943,
+      "strength": 0.9943,
+      "confidence": 0.95,
+      "evidence_count": 12,
+      "last_evidence": "高压窗口以庇护X=22无损设防",
+      "last_updated_battle": 7
+    },
+    "decision_habit": {
+      "trait": "decision_habit",
+      "value": "先观察后行动",
+      "score": 0.884,
+      "strength": 0.884,
+      "confidence": 0.82,
+      "evidence_count": 5,
+      "last_evidence": "高压窗口小X试探(血债X=1)",
+      "last_updated_battle": 5
+    },
+    "resource_view": {
+      "trait": "resource_view",
+      "value": "节约",
+      "score": 0.9246,
+      "strength": 0.9246,
+      "confidence": 0.95,
+      "evidence_count": 6,
+      "last_evidence": "法力14时低费庇护X=1",
+      "last_updated_battle": 5
+    }
+  }
+}

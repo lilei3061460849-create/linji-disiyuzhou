@@ -1,0 +1,55 @@
+{
+  "name": "玄夜",
+  "traits": {
+    "exploration_desire": {
+      "trait": "exploration_desire",
+      "value": "偏守成",
+      "score": -0.2565,
+      "strength": 0.2565,
+      "confidence": 0.85,
+      "evidence_count": 12,
+      "last_evidence": "首次使用【坠落】",
+      "last_updated_battle": 7
+    },
+    "expression_style": {
+      "trait": "expression_style",
+      "value": "内敛",
+      "score": -0.6248,
+      "strength": 0.6248,
+      "confidence": 0.81,
+      "evidence_count": 12,
+      "last_evidence": "迂回战术(坠落X=1)",
+      "last_updated_battle": 7
+    },
+    "risk_preference": {
+      "trait": "risk_preference",
+      "value": "求稳",
+      "score": -0.9865,
+      "strength": 0.9865,
+      "confidence": 0.95,
+      "evidence_count": 10,
+      "last_evidence": "高压窗口以庇护X=11无损设防",
+      "last_updated_battle": 7
+    },
+    "resource_view": {
+      "trait": "resource_view",
+      "value": "偏节约",
+      "score": 0.5775,
+      "strength": 0.5775,
+      "confidence": 0.43,
+      "evidence_count": 2,
+      "last_evidence": "法力12时低费坠落X=1",
+      "last_updated_battle": 7
+    },
+    "decision_habit": {
+      "trait": "decision_habit",
+      "value": "先观察后行动",
+      "score": 0.7254,
+      "strength": 0.7254,
+      "confidence": 0.56,
+      "evidence_count": 3,
+      "last_evidence": "高压窗口小X试探(血债X=1)",
+      "last_updated_battle": 7
+    }
+  }
+}

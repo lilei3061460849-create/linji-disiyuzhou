@@ -1,1 +1,95 @@
-{"player": {"name": "贾凡", "entity_type": "轮回者", "blood_limit": 36, "current_hp": 27, "mana_limit": 68, "current_mana": 0, "speed_limit": 9, "current_speed": 9, "attack_count": 0, "attack_power": 0, "shield": 0, "is_flying": false, "is_alive": true, "shards": 0, "is_debt_bound": false, "dao_wen": {"再生": 0, "庇护": 0, "血债": 0, "加速": 0}, "spells": [{"name": "生生不息", "required_daowen": ["再生"], "trigger_condition": "", "effect_flow": "", "rank": 1, "custom_conditions": []}, {"name": "后发制人", "required_daowen": ["庇护"], "trigger_condition": "", "effect_flow": "", "rank": 1, "custom_conditions": []}], "relics": [], "status_effects": []}, "friends": [], "employees": [], "relics": [{"name": "买路财", "effect": "战斗中可失去等同于怪物20%[血限]的[碎片]安全撤退", "tags": []}, {"name": "血誓戒", "effect": "[回始]首次主动支付流血代价时，获得等同于本次流血的格挡；若支付后生命≤30%，改为获得等量生命", "tags": []}, {"name": "同魂笔", "effect": "对[目标]发动残韵时，可另选一[目标]使其一种道纹受同种残韵影响", "tags": []}, {"name": "守夜灯", "effect": "[敌回始]获得[法限]50%法力，[敌回终]清空，每回合一次", "tags": []}], "resonance": {"反转": 0}, "shards": 91, "death_book_wisdom": [], "rest_heal_bonus": 0, "death_book_legacies": [], "attribute_points": 0, "current_region": "扭曲都市", "artifacts_owned": [], "first_embrace_traits": [], "pending_first_embrace": false, "chizu_names": [], "dragon_nature": 0, "dragon_traits": [], "has_sacrifice_action": false}
+{
+  "candidates": {
+    "1": [
+      {
+        "player": {
+          "name": "青梧",
+          "entity_type": "轮回者",
+          "blood_limit": 36,
+          "current_hp": 27,
+          "mana_limit": 68,
+          "current_mana": 0,
+          "speed_limit": 9,
+          "current_speed": 9,
+          "attack_count": 0,
+          "attack_power": 0,
+          "shield": 0,
+          "is_flying": false,
+          "is_alive": true,
+          "shards": 0,
+          "is_debt_bound": false,
+          "dao_wen": {
+            "再生": 0,
+            "庇护": 0,
+            "血债": 0,
+            "加速": 0
+          },
+          "spells": [
+            {
+              "name": "生生不息",
+              "required_daowen": [
+                "再生"
+              ],
+              "trigger_condition": "",
+              "effect_flow": "",
+              "rank": 1,
+              "custom_conditions": []
+            },
+            {
+              "name": "后发制人",
+              "required_daowen": [
+                "庇护"
+              ],
+              "trigger_condition": "",
+              "effect_flow": "",
+              "rank": 1,
+              "custom_conditions": []
+            }
+          ],
+          "relics": [],
+          "status_effects": []
+        },
+        "friends": [],
+        "employees": [],
+        "relics": [
+          {
+            "name": "买路财",
+            "effect": "战斗中可失去等同于怪物20%[血限]的[碎片]安全撤退",
+            "tags": []
+          },
+          {
+            "name": "血誓戒",
+            "effect": "[回始]首次主动支付流血代价时，获得等同于本次流血的格挡；若支付后生命≤30%，改为获得等量生命",
+            "tags": []
+          },
+          {
+            "name": "同魂笔",
+            "effect": "对[目标]发动残韵时，可另选一[目标]使其一种道纹受同种残韵影响",
+            "tags": []
+          },
+          {
+            "name": "守夜灯",
+            "effect": "[敌回始]获得[法限]50%法力，[敌回终]清空，每回合一次",
+            "tags": []
+          }
+        ],
+        "resonance": {
+          "反转": 0
+        },
+        "shards": 91,
+        "death_book_wisdom": [],
+        "rest_heal_bonus": 0,
+        "death_book_legacies": [],
+        "attribute_points": 0,
+        "current_region": "扭曲都市",
+        "artifacts_owned": [],
+        "first_embrace_traits": [],
+        "pending_first_embrace": false,
+        "chizu_names": [],
+        "dragon_nature": 0,
+        "dragon_traits": [],
+        "has_sacrifice_action": false
+      }
+    ]
+  }
+}
