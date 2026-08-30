@@ -21,6 +21,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from engine.enums import CombatSubphase
+
 # 注意：不在模块顶层导入 build_learner（循环导入——build_learner 在死斗时局部
 # import 本模块，若本模块顶部又导入 build_learner 会拿到半加载的模块，
 # round_start_relic_choices 尚未定义 → NameError）。改为函数内延迟导入。
@@ -192,12 +194,19 @@ def run_duel_pvp(e, player_act, max_rounds=60, max_steps=400, log=None,
     def _challenger_alive():
         return bool(e.state.player and e.state.player.is_alive)
 
+    # 「连续 N 回合双方面板零净变化」= 真死锁(互瞪):法力每回合已回填,仍无任何
+    # 可造成伤害/回血的动作(如 1 血 0 牌对峙)。这与「法力枯竭、回填后还能打」
+    # 的 PvP 对耗区分开——后者该继续,而非判死锁。
+    hp_frozen_rounds = 0
     for rnd in range(1, max_rounds + 1):
         if not _challenger_alive():
             return {"winner": "defender", "rounds": rnd, "reason": "挑战者阵亡"}
         if not _lord_alive():
             return {"winner": "challenger", "rounds": rnd, "reason": "守擂主将阵亡"}
         from sim.optional_actions import start_round
+        # 记录本回合开局双方 hp，用于回合末判「真死锁」。
+        hp_before = (e.state.player.current_hp if e.state.player else None,
+                     tuple(x.current_hp for x in e.state.enemies if x.entity_type == "轮回者"))
         rs, _rsart = start_round(e)
         if not rs.get("success"):
             # 回始失败不允许吞掉:法力不会回填,双方将永久空转(2026-08-26 死斗三
@@ -225,9 +234,11 @@ def run_duel_pvp(e, player_act, max_rounds=60, max_steps=400, log=None,
             )
             panel_stall = panel_stall + 1 if panel == last_panel else 0
             last_panel = panel
-            if panel_stall >= 60:
-                return {"winner": "defender", "rounds": rnd,
-                        "reason": "死斗死锁判卫冕(双方面板连续60步零变化)"}
+            if panel_stall >= 50:
+                # 本回合双方已无有效动作（法力/出手/可打出的牌耗尽）。这通常是
+                # 「法力枯竭」而非死斗终局——先结束本回合让回始回填法力，下一回合
+                # 继续对耗。真正的死锁（回填后仍无净变化）由回合末 hp_frozen_rounds 判定。
+                break
             if e.state.duel_turn == "player_side":
                 acted = player_act()
                 if not acted:
@@ -238,5 +249,23 @@ def run_duel_pvp(e, player_act, max_rounds=60, max_steps=400, log=None,
                 acted = _resolve_opponent_one(e, log)
                 if not acted:
                     e.state.duel_turn = "player_side"  # 守擂无行动 → 让回挑战者
-        e.execute_action("round_end", {})
+        # 本回合双方在死斗里都经"玩家侧接口"驱动（use_daowen/resolve_attack/普攻），
+        # 这些 action 只在双方都不能行动时才把 subphase 推到 await_round_end；但守擂侧
+        # 由 _resolve_opponent_one 驱动、不触发该收尾，subphase 会停在 player_actions，
+        # 使次回合 round_start 撞 guard 失败 → 法力永不回填 → 死锁卫冕。
+        # 这里显式收尾到 await_round_end，再调 round_end。
+        e.state.combat_subphase = CombatSubphase.AWAIT_ROUND_END.value
+        re = e.execute_action("round_end", {})
+        if not re.get("success"):
+            return {"winner": "defender", "rounds": rnd,
+                    "reason": f"round_end判卫冕: {str(re.get('error',''))[:80]}"}
+        # 真死锁判定:回始已回满法力、双方仍无任何净变化(伤害/回血),连续两回合零
+        # 净变化即互瞪死锁——法力回填都救不了,判卫冕而非空转满 max_rounds。
+        hp_after = (e.state.player.current_hp if e.state.player else None,
+                    tuple(x.current_hp for x in e.state.enemies if x.entity_type == "轮回者"))
+        frozen = hp_before == hp_after
+        hp_frozen_rounds = hp_frozen_rounds + 1 if frozen else 0
+        if hp_frozen_rounds >= 2:
+            return {"winner": "defender", "rounds": rnd,
+                    "reason": "死斗死锁判卫冕(回始回填后双方面板仍连续零净变化)"}
     return {"winner": "defender", "rounds": max_rounds, "reason": "回合上限"}
