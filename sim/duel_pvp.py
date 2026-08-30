@@ -265,29 +265,6 @@ def _defender_line(e, 对话, ent) -> None:
         对话.buf.append(line)
 
 
-def _charge_duelist_resonance(e, entity) -> None:
-    """给一名轮回者充能残韵（转换/反转/曲解各+若干，确定且双方不同）。
-
-    死斗双方都是轮回者、共用残韵机制；若一方 stock 为 0，残韵就永远无法发动。
-    本函数按角色名哈希给每人分配可用残韵，使双方的残韵真实可用（>=1）。
-    玩家侧同时写回 State.resonance（兼容 engine 大量读取该字段的路径）。
-    """
-    if entity is None or not getattr(entity, "is_alive", False):
-        return
-    import hashlib
-    digest = hashlib.sha256(entity.name.encode("utf-8")).hexdigest()
-    for i, rtype in enumerate(("反转", "转换", "曲解")):
-        amount = 1 + (int(digest[i * 2:i * 2 + 2], 16) % 3)  # 1~3
-        if entity is e.state.player:
-            e.state.resonance[rtype] = e.state.resonance.get(rtype, 0) + amount
-        else:
-            stock = getattr(entity, "resonance", None)
-            if stock is None:
-                stock = {}
-                entity.resonance = stock
-            stock[rtype] = stock.get(rtype, 0) + amount
-
-
 def _duel_state_sizes(e, top=6):
     """诊断：按字段统计 deepcopy 成本（ms），用于超时样本归因。"""
     import copy, dataclasses, time
@@ -329,13 +306,9 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
     for foe in e.state.enemies:
         if foe.entity_type == "轮回者":
             _seed_duelist_personality(e, foe)
-    # 双方共用残韵机制：给挑战者(玩家)与守擂者(轮回者敌人)各自充能残韵，
-    # 使其 stock>0，才能在死斗里真实发动残韵、带来战局变数。
-    # （挑战者沿用 State.resonance，守擂者用实体级 resonance。）
-    _charge_duelist_resonance(e, e.state.player)
-    for foe in e.state.enemies:
-        if foe.entity_type == "轮回者":
-            _charge_duelist_resonance(e, foe)
+    # 残韵：挑战者沿用 State.resonance（load_winner 已从快照还原其真实准备量）；
+    # 守擂者在 _trigger_final_crown 也已从快照还原其真实准备量（无则 0）。
+    # 一律**只使用真实准备的残韵**，绝不凭空充能——没有就是没有。
     # 挑战者用 TacticalAI 驱动（残韵+性格+变数）
     _def_tai = None
     if use_tactical:
@@ -365,7 +338,9 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
             foes = [e.state.player] + [f for f in e.state.friends if f.is_alive] \
                    + [emp for emp in e.state.employees if emp.is_alive and emp.is_deployed]
             foes = [f for f in foes if f is not None and f.is_alive]
-            _def_tai = TacticalAI(e, verbose=False, actor=lord, enemies=foes, actor_ref=lord_ref)
+            # verbose=True：让守擂者动作（含残韵）写入 _def_tai.log，报告才能如实呈现。
+            # 否则守擂者一切行动（含残韵）都静默执行、对客席不可见，报告会误判"守擂无残韵"。
+            _def_tai = TacticalAI(e, verbose=True, actor=lord, enemies=foes, actor_ref=lord_ref)
     deadline = _time.monotonic() + max_wall_seconds
 
     def _over_time():

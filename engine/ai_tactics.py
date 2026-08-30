@@ -369,9 +369,11 @@ class TacticalAI:
         """残韵候选：对**存在变化路径**的敌方道纹，按威胁动态打分（无固定表）。"""
         from engine.daowen import ResonanceEngine
         # 施法者残韵库存：挑战者经 State.resonance，守擂者经实体级 resonance（共用机制）。
-        src_stock = getattr(self.player, "resonance", None) or self.engine.state.resonance
-        if isinstance(src_stock, dict) and not src_stock:
+        # 只读施法者**真实准备**的库存，绝不借他人——没有就是没有（不给没准备的塞残韵）。
+        if self.player is self.engine.state.player:
             src_stock = self.engine.state.resonance
+        else:
+            src_stock = getattr(self.player, "resonance", None) or {}
         stock = {k: v for k, v in (src_stock or {}).items() if v > 0}
         if not stock:
             return []

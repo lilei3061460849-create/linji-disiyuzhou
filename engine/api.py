@@ -2652,10 +2652,13 @@ class GameEngine:
         actor = refs.get(actor_ref)
         if actor is None:
             return {"success": False, "error": f"找不到actor_ref: {actor_ref}"}
-        # 施法者残韵库存：玩家侧兼容 State.resonance；任何轮回者均有实体级 resonance。
-        stock = actor.resonance if getattr(actor, "resonance", None) else self.state.resonance
-        if not stock:
-            stock = actor.resonance = dict(self.state.resonance) if actor_ref == "player:0" else {}
+        # 施法者残韵库存：玩家侧兼容 State.resonance；守擂者等非玩家轮回者严格用
+        # 自己实体级的 resonance（真实准备量，无则 0）。绝不回落借他人的库存——
+        # 「有就有，没有就没有」，不给没准备的对手塞残韵。
+        if actor is self.state.player:
+            stock = self.state.resonance
+        else:
+            stock = getattr(actor, "resonance", None) or {}
         if not isinstance(stock, dict) or stock.get(rtype, 0) <= 0:
             return {"success": False, "error": f"没有可用的{rtype}残韵（当前：{stock}）"}
 
@@ -4212,6 +4215,11 @@ class GameEngine:
         challenger_player = self.state.player
         opponent_side = self._restore_side_from_snapshot(candidate_snapshot)
         opponent_leader = next((e for e in opponent_side if e.entity_type == "轮回者"), None)
+        # 残韵是轮回者**局外准备**的资源；封存快照顶层把主人的残韵完整记载。
+        # 守擂者同为轮回者，应带上自己真实准备的残韵（哪怕为 0），而非清空或凭空充能——
+        # 这样「有就有，没有就没有」，才不会给没准备的对手塞残韵。
+        if opponent_leader is not None:
+            opponent_leader.resonance = dict(candidate_snapshot.get("resonance") or {})
 
         self.state.enemies = opponent_side
         self.state.current_round = 0
