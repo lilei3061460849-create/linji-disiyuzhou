@@ -221,6 +221,10 @@ class Entity:
     # 道纹与法术
     dao_wen: dict[str, DaoWenInstance] = field(default_factory=dict)
     spells: list[Spell] = field(default_factory=list)
+    # 残韵库存：每个轮回者实体独立持有（{转换: n, 反转: n, 曲解: n}）。
+    # 早期版本残韵只挂在 State（仅玩家侧），导致守擂者同为轮回者却无残韵可用。
+    # 现下放为实体级，使挑战者/守擂者共用同一套残韵机制（玩家侧仍经 State.resonance 兼容）。
+    resonance: dict[str, int] = field(default_factory=dict)
     relics: list[Relic] = field(default_factory=list)  # 由正文明确授予该角色的随身物品（如防弹插板）
     
     # 状态

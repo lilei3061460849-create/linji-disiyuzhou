@@ -3,8 +3,8 @@
     "name": "贾凡",
     "entity_type": "轮回者",
     "blood_limit": 36,
-    "current_hp": 14,
-    "mana_limit": 34,
+    "current_hp": 1,
+    "mana_limit": 25,
     "current_mana": 0,
     "speed_limit": 13,
     "current_speed": 13,
@@ -17,16 +17,17 @@
     "is_debt_bound": false,
     "dao_wen": {
       "封印": 0,
-      "杀伐": 0,
-      "再生": 0,
       "庇护": 0,
-      "僵化": 0
+      "再生": 0,
+      "弱化": 0,
+      "定型": 0,
+      "无神": 0
     },
     "spells": [
       {
-        "name": "先发制人",
+        "name": "后发制人",
         "required_daowen": [
-          "杀伐"
+          "庇护"
         ],
         "trigger_condition": "",
         "effect_flow": "",
@@ -42,16 +43,6 @@
         "effect_flow": "",
         "rank": 1,
         "custom_conditions": []
-      },
-      {
-        "name": "后发制人",
-        "required_daowen": [
-          "庇护"
-        ],
-        "trigger_condition": "",
-        "effect_flow": "",
-        "rank": 1,
-        "custom_conditions": []
       }
     ],
     "relics": [],
@@ -61,17 +52,32 @@
   "employees": [],
   "relics": [
     {
+      "name": "守夜灯",
+      "effect": "[敌回始]获得[法限]50%法力，[敌回终]清空，每回合一次",
+      "tags": []
+    },
+    {
       "name": "回锋刀",
       "effect": "每失去1点速度后对[目标]造成3伤害；[回始]对[目标]造成3×([速限]-当前速度)伤害",
+      "tags": []
+    },
+    {
+      "name": "买路财",
+      "effect": "战斗中可失去等同于怪物20%[血限]的[碎片]安全撤退",
+      "tags": []
+    },
+    {
+      "name": "三相残韵盘",
+      "effect": "[战始]消耗一种残韵；[战终]获得另两种残韵各1",
       "tags": []
     }
   ],
   "resonance": {
     "反转": 0,
-    "转换": 0,
-    "曲解": 0
+    "曲解": 1,
+    "转换": 1
   },
-  "shards": 160,
+  "shards": 144,
   "death_book_wisdom": [],
   "rest_heal_bonus": 0,
   "death_book_legacies": [],
@@ -85,8 +91,8 @@
   "dragon_traits": [],
   "has_sacrifice_action": false,
   "origin": {
-    "build": "封印控制",
-    "seed": 58,
+    "build": "杀伐法攻",
+    "seed": 56,
     "cleared": 7
   }
 }

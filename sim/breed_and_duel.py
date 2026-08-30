@@ -204,7 +204,25 @@ def run_breeder_duel(challenger_path, defender_path, seed, cn, dn, db):
     from sim.handplay_dungeon_with_winner import load_winner
     from sim.optional_actions import start_battle
     from sim.guard_full_run import settle_wages
-    e = GameEngine(db_path=db, rng_seed=seed, sealed_candidate_path=defender_path)
+    # 守擂快照复制到临时封存槽：final_crown 会弹出/消耗该槽文件，直接复用源文件
+    # 批次多次死斗会把 data/breed_winners 里的胜者慢慢删光。这里用临时副本，
+    # 既保留「守擂=真实胜者快照」的语义，又不破坏胜者数据。
+    _tmp_sealed = tempfile.mktemp(suffix=".json")
+    shutil.copy(defender_path, _tmp_sealed)
+    e = GameEngine(db_path=db, rng_seed=seed, sealed_candidate_path=_tmp_sealed)
+    try:
+        return _run_breeder_duel_inner(e, challenger_path, defender_path, seed, cn, dn, db)
+    finally:
+        if os.path.exists(_tmp_sealed):
+            os.remove(_tmp_sealed)
+
+
+def _run_breeder_duel_inner(e, challenger_path, defender_path, seed, cn, dn, db):
+    """run_breeder_duel 的实际死斗主体（守擂快照已复制到临时封存槽）。"""
+    from tests.setup_support import finish_initial_daowen
+    from sim.handplay_dungeon_with_winner import load_winner
+    from sim.optional_actions import start_battle
+    from sim.guard_full_run import settle_wages
     with open(challenger_path, encoding="utf-8") as f:
         snap = json.load(f)
     p0 = snap["player"]
@@ -239,9 +257,16 @@ def run_breeder_duel(challenger_path, defender_path, seed, cn, dn, db):
     logs.append(f"  守擂方：{[(x.name, f'{x.current_hp}/{x.blood_limit}') for x in e.state.enemies]}")
     logs.append(f"  挑战方：{e.state.player.name}({e.state.player.current_hp}/{e.state.player.blood_limit})")
     log_buf = []
-    act = _make_breeder_act(e, log_buf)
-    result = run_duel_pvp(e, act, max_rounds=30, max_steps=400, log=log_buf)
-    for line in log_buf[:6]:
+    # 对白收集器：双方经性格系统渲染台词（角色不再哑火）
+    import types
+    对话 = types.SimpleNamespace(buf=[], events=0, next_line_round=1)
+    # 挑战者/守擂者都是轮回者，共用 TacticalAI（残韵+性格+变数）+ 对白渲染
+    result = run_duel_pvp(e, None, max_rounds=30, max_steps=400, log=log_buf,
+                          use_tactical=True, 对话=对话)
+    # 把对白（按下限保留）插入实录，与动作日志混排
+    for line in 对话.buf:
+        logs.append(f"  💬 {line}")
+    for line in log_buf[:18]:
         logs.append(f"  {line}")
     p2 = e.state.player
     logs.append(f"  最终：挑战者 hp={p2.current_hp if p2 else 0}/{p2.blood_limit if p2 else 0} "
