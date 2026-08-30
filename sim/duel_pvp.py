@@ -254,6 +254,47 @@ def _clean_ai_label(line: str) -> str:
     return label
 
 
+# 死斗角色名池：给两名轮回者随机分配**互不相同**的名字（显示层）。养蛊胜者快照里
+# 的名字是生成时统一写死的「贾凡」，直接拿来死斗就会出现两个一模一样的人名。
+# 每次死斗从池里**确定性**抽两枚（同 seed 可复现），保证「各有其名、绝不相同」。
+_DUELIST_NAME_POOL = [
+    "玄夜", "青梧", "林渊", "凌霜", "萧晨", "君墨", "苏挽", "沈孤",
+    "裴青", "顾昭", "白芷", "闻人", "祝融", "洛璃", "祁连", "段云",
+    "秦九", "阮烟", "南宫", "花袭", "司空", "雪榭", "江晚", "寒彻",
+]
+
+
+def _assign_duelist_names(e, seed: int) -> None:
+    """给挑战者与守擂主将各分配一个互不相同的名字（确定性，同 seed 可复现）。
+
+    只改显示层名字（Entity.name），不碰数值/道纹/机制。人格 seed 以名字为输入，
+    故名字先定，再 seed 性格，避免「两人同名导致性格恰好相同」。若一方没有存活
+    的轮回者主将（如守擂全灭），则只给挑战者改。
+    """
+    import random as _random
+    rng = _random.Random(seed)
+    pool = list(_DUELIST_NAME_POOL)
+    rng.shuffle(pool)
+    names = iter(pool)
+    taken = set()
+    if e.state.player is not None:
+        name = next(names)
+        e.state.player.name = name
+        taken.add(name)
+    lord = next((x for x in e.state.enemies
+                 if x.entity_type == "轮回者" and x.is_alive), None)
+    if lord is not None:
+        name = next(names)
+        while name in taken:
+            name = next(names)
+        lord.name = name
+        # 与玩家侧同名的其他实体（朋友/员工）此前已被 _uniquify 加「（对手）」，
+        # 改名后再兜底一次避免冲突。
+        for other in e.state.get_all_player_side():
+            if other is not e.state.player and other.name == lord.name:
+                other.name = f"{other.name}（对手）"
+
+
 def _defender_line(e, 对话, ent) -> None:
     """守擂者动作后触发一句性格对白（不阻塞死斗）。"""
     if 对话 is None:
@@ -301,6 +342,8 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
     from sim.build_learner import round_start_relic_choices
     if log is None:   # 空列表是 falsy,`log or []` 会静默丢弃调用方缓冲(2026-08-26 同源修复)
         log = []
+    # 双轮回者各有其名（随机生成、互不相同）：先定名，再 seed 性格（性格按名字哈希）。
+    _assign_duelist_names(e, seed=getattr(e.dice, "_seed", 0) or 0)
     # 双方都是轮回者：各自 seed 一套确定、可区分的性格画像 → 性格调制 + 对白差异。
     _seed_duelist_personality(e, e.state.player)
     for foe in e.state.enemies:

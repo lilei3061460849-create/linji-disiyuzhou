@@ -207,6 +207,8 @@ class TacticalAI:
                 continue
             params: dict = {"daowen_name": name, "x": 1, "dodge": False,
                             "blood_shadow": False}
+            if self._actor_ref:
+                params["actor_ref"] = self._actor_ref   # 守擂者视角：预演也须指定施法者，否则引擎当玩家动作
             if target:
                 params["target"] = target
             pv = self.previewer.preview("use_daowen", params)

@@ -252,6 +252,10 @@ def _run_breeder_duel_inner(e, challenger_path, defender_path, seed, cn, dn, db)
     crown = (be.get("result") or {}).get("final_crown", {})
     if crown.get("outcome") != "duel_start":
         return None, 0, [f"未进入死斗: {crown.get('outcome')} {str(be.get('error',''))[:80]}"]
+    # 双轮回者各有其名（随机、互不相同）：在实录头部前先分配，使标题/对白/最终面板都用新名字。
+    # run_duel_pvp 内部也会执行（幂等，同 seed 同结果）；这里先跑，让头部即刻反映角色名。
+    from sim.duel_pvp import _assign_duelist_names
+    _assign_duelist_names(e, seed=getattr(e.dice, "_seed", 0) or 0)
     logs = [f"⚔ 第8场死斗：{cn}(挑战者) vs {dn}(守擂)"]
     # 死斗继承第7场战终真实损耗：打印 当前血/血限，而非只看 blood_limit（更直观）
     logs.append(f"  守擂方：{[(x.name, f'{x.current_hp}/{x.blood_limit}') for x in e.state.enemies]}")
