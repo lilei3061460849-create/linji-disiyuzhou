@@ -21,12 +21,60 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from engine.enums import CombatSubphase
+from engine.ai_tactics import daowen_text_kind
+# 对白渲染（角色=轮回者，共用 personality）：让 PvP 有台词、有性格差异
+try:
+    from sim.duel_dialogue import render_line, peek_personality
+except Exception:  # 兜底：对白渲染失败不阻塞死斗
+    render_line = lambda actor, event, personality=None, rng=None: f"{getattr(actor,'name','??')}: …"
+    peek_personality = lambda engine, entity: None
+
 # 注意：不在模块顶层导入 build_learner（循环导入——build_learner 在死斗时局部
 # import 本模块，若本模块顶部又导入 build_learner 会拿到半加载的模块，
 # round_start_relic_choices 尚未定义 → NameError）。改为函数内延迟导入。
 
 
-def _resolve_opponent_one(e, log=None):
+def _defender_resonance_candidates(e, ref, ent, previewer, cache):
+    """守擂者（同为轮回者）的残韵候选：用自己的残韵库存转化**挑战者**的道纹，
+    并让自己获得转化后的道纹。与挑战者侧 TacticalAI._resonance_candidates 同一
+    哲学（对存在变化路径的敌方道纹打分，无固定表）。返回 [(score, params, desc)]。"""
+    from engine.daowen import ResonanceEngine
+    stock = getattr(ent, "resonance", None) or {}
+    if not any(v > 0 for v in stock.values()):
+        return []
+    p = e.state.player
+    if not p or not p.is_alive:
+        return []
+    out = []
+    # 挑战者威胁构成（可见信息）：越强的道纹越值得转化
+    for dw, inst in sorted(p.dao_wen.items()):
+        if inst is None:
+            continue
+        text_kind = daowen_text_kind(inst)
+        weight = {"damage": 1.0, "control": 0.7, "debuff": 0.6}.get(text_kind, 0.4)
+        for path in ResonanceEngine.get_available_resonance(dw):
+            rtype = path.get("resonance_type")
+            if not rtype or stock.get(rtype, 0) <= 0:
+                continue
+            params = {"actor_ref": ref, "source_daowen": dw, "resonance_type": rtype,
+                      "target_ref": "player:0"}
+            pv = previewer.preview("use_resonance", params)
+            res = pv.get("result") or {}
+            if not res.get("success"):
+                continue
+            diff = pv.get("diff", {})
+            dp = diff.get("player", {})
+            # 转化挑战者强道纹即可观收益：夺其威胁 + 施法者获得新道纹的期权
+            score = 4.0 * (0.5 + weight)
+            score -= 0.5 * max(0, dp.get("hp_before", 0) - dp.get("hp_after", 0))  # 不产生直接伤害，避免与输出竞争时被压制
+            out.append((score, params,
+                        f"残韵·{rtype}→{dw}@{p.name}（守擂{ent.name}转化）"))
+    out.sort(key=lambda t: -t[0])
+    return out[:3]
+
+
+def _resolve_opponent_one(e, log=None, 对话=None):
     """守擂方一步：通用预演决策（2026-08-26 修复"木桩守擂"）。
 
     旧版硬编码 杀伐/低血庇护/普攻 三板斧——不持有杀伐的封存构筑（如
@@ -109,6 +157,10 @@ def _resolve_opponent_one(e, log=None):
                     desc = f"守擂{ent.name} {name}X={x}" + ("(自身)" if target_ref == ref else "→挑战者")
                     if best is None or score > best[0]:
                         best = (score, params, desc)
+        # 守擂残韵：与挑战者共用一套残韵机制（本步骤不消耗出手，可任意时刻插队）
+        for score, rparams, rdesc in _defender_resonance_candidates(e, ref, ent, previewer, cache):
+            if best is None or score > best[0]:
+                best = (score, rparams, rdesc)
         if best is not None and best[0] > 0:
             params = dict(best[1])
             # 闪避中继(2026-08-26):攻方提交时代目标声明闪避(与怪物阶段解析器同构)。
@@ -121,10 +173,11 @@ def _resolve_opponent_one(e, log=None):
                           - ((pv_check.get("diff", {}).get("player", {}) or {})
                              .get("hp_after", 0)))
             params["dodge"] = choose_dodge(e, exp_dmg) if params.get("target_ref") == "player:0" else False
-            r = e.execute_action("use_daowen", params)
+            r = e.execute_action("use_daowen" if best[1].get("daowen_name") else "use_resonance", params)
             if r.get("success"):
                 dodge_note = "(挑战者闪避)" if params.get("dodge") else ""
                 log.append(f"  {best[2]}{dodge_note}")
+                _defender_line(e, 对话, ent)
                 return True
     # 普攻兜底（prepare_attack/resolve_attack，走玩家侧攻击接口；逐击闪避由
     # choose_dodge 按每击伤害与速度预算决定——挑战者侧的闪避终于存在）
@@ -145,8 +198,112 @@ def _resolve_opponent_one(e, log=None):
         n_dodge = sum(1 for h in hits if h["dodge"])
         log.append(f"  守擂{ent.name} 普攻（{prep['result']['hit_count']}击"
                    + (f",{n_dodge}击被闪避" if n_dodge else "") + "）")
+        _defender_line(e, 对话, ent)
         return True
     return False
+
+
+# 性格维度：给死斗双方各seed一个**确定、彼此不同**的人格画像（由名字哈希导出）。
+# 这使「挑战者 vs 守擂者」的性格差异真实可观察（TacticalAI 性格调制 + 对白渲染），
+# 而不是两人都退化为无性格的纯局势效用。人格由 engine.personality 权威记录，
+# _refresh_personality/_w 与 render_line 均读同一份数据。
+_TRAIT_DIMS = [
+    "risk_preference",     # +冒险 / -求稳
+    "exploration_desire",  # +探索 / -守成
+    "expression_style",    # +直言 / -内敛
+    "reaction_pattern",    # +从容 / -慌乱
+    "emotional_stability", # +沉稳 / -易波动
+    "decision_habit",      # +先观察后行动 / -冲动
+    "moral_baseline",      # +守义 / -利己
+    "resource_view",       # +节约 / -挥霍
+]
+
+
+def _seed_duelist_personality(e, entity) -> None:
+    """给一名轮回者写入一套确定性人格（名字哈希决定各维方向与强度）。
+
+    每条维度记 4 次同向证据（weight=1），使 EMA 收敛到方向、置信度累积到可读阈值，
+    score×confidence 足够让 _w() 产生真实调制，也让 render_line 能挑到性格台词。
+    """
+    if entity is None or not getattr(entity, "is_alive", False):
+        return
+    import hashlib
+    digest = hashlib.sha256(entity.name.encode("utf-8")).hexdigest()
+    for i, dim in enumerate(_TRAIT_DIMS):
+        byte = int(digest[i % len(digest):i % len(digest) + 2], 16)
+        direction = 1 if byte % 2 == 0 else -1
+        strength = 0.55 + (byte % 5) / 10.0  # 0.55~0.95，避免所有角色一致
+        for _ in range(4):
+            try:
+                e.update_personality(
+                    entity, dim, direction,
+                    evidence=f"死斗性格映射：{entity.name}在{_TRAIT_DIMS[i]}维度"
+                             f"表现出{'积极' if direction>0 else '消极'}倾向",
+                    weight=strength,
+                )
+            except Exception:
+                break  # 实体中途离场等偶发情况：跳过即可，不阻塞死斗
+
+
+def _clean_ai_label(line: str) -> str:
+    """把 TacticalAI 日志行压缩为可读动作标签，如
+    '[实时决策] 残韵·曲解→再生@贾凡（对手）（得分 1.83）' → '残韵·曲解→再生@贾凡（对手）'。"""
+    label = line.strip()
+    label = label.split("[实时决策]", 1)[-1].strip()
+    label = label.split("（得分", 1)[0].strip()
+    return label
+
+
+# 死斗角色名池：给两名轮回者随机分配**互不相同**的名字（显示层）。养蛊胜者快照里
+# 的名字是生成时统一写死的「贾凡」，直接拿来死斗就会出现两个一模一样的人名。
+# 每次死斗从池里**确定性**抽两枚（同 seed 可复现），保证「各有其名、绝不相同」。
+_DUELIST_NAME_POOL = [
+    "玄夜", "青梧", "林渊", "凌霜", "萧晨", "君墨", "苏挽", "沈孤",
+    "裴青", "顾昭", "白芷", "闻人", "祝融", "洛璃", "祁连", "段云",
+    "秦九", "阮烟", "南宫", "花袭", "司空", "雪榭", "江晚", "寒彻",
+]
+
+
+def _assign_duelist_names(e, seed: int) -> None:
+    """给挑战者与守擂主将各分配一个互不相同的名字（确定性，同 seed 可复现）。
+
+    只改显示层名字（Entity.name），不碰数值/道纹/机制。人格 seed 以名字为输入，
+    故名字先定，再 seed 性格，避免「两人同名导致性格恰好相同」。若一方没有存活
+    的轮回者主将（如守擂全灭），则只给挑战者改。
+    """
+    import random as _random
+    rng = _random.Random(seed)
+    pool = list(_DUELIST_NAME_POOL)
+    rng.shuffle(pool)
+    names = iter(pool)
+    taken = set()
+    if e.state.player is not None:
+        name = next(names)
+        e.state.player.name = name
+        taken.add(name)
+    lord = next((x for x in e.state.enemies
+                 if x.entity_type == "轮回者" and x.is_alive), None)
+    if lord is not None:
+        name = next(names)
+        while name in taken:
+            name = next(names)
+        lord.name = name
+        # 与玩家侧同名的其他实体（朋友/员工）此前已被 _uniquify 加「（对手）」，
+        # 改名后再兜底一次避免冲突。
+        for other in e.state.get_all_player_side():
+            if other is not e.state.player and other.name == lord.name:
+                other.name = f"{other.name}（对手）"
+
+
+def _defender_line(e, 对话, ent) -> None:
+    """守擂者动作后触发一句性格对白（不阻塞死斗）。"""
+    if 对话 is None:
+        return
+    对话.events += 1
+    if 对话.events in (3, 10, 18, 26):
+        pers = peek_personality(e, ent)
+        line = render_line(ent, "damage_out" if 对话.events % 2 else "damage_in", pers)
+        对话.buf.append(line)
 
 
 def _duel_state_sizes(e, top=6):
@@ -165,12 +322,16 @@ def _duel_state_sizes(e, top=6):
     return [(nm, round(ms, 2)) for ms, nm in rows[:top]]
 
 
-def run_duel_pvp(e, player_act, max_rounds=60, max_steps=400, log=None,
-                 max_wall_seconds=30.0):
+def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
+                 max_wall_seconds=30.0, use_tactical=True, 对话=None):
     """PvP 对称交替死斗：双方都按轮回者规则行动。
 
     player_act(): 挑战者侧行动1次（成功返回 True，引擎已换边；无行动返回 False）。
-    守擂侧由本驱动用玩家侧接口行动（法力制/出手次数/自由控X）。
+        当 use_tactical=True 时忽略 player_act，改由 TacticalAI（含残韵候选 +
+        性格调制 + 变数决策）驱动挑战者；player_act 保留为向后兼容的落后路径。
+    守擂侧由本驱动用玩家侧接口行动（法力制/出手次数/自由控X + 残韵候选 + 对白）。
+    对话: 可选 SimpleNamespace(buf, events, next_line_round)，用于收集死斗对白。
+
     max_wall_seconds: 墙钟守护（2026-08-22）。死斗在战斗7之后进行，实体/遗物/
         事件累积使 ai_preview 的整状态 deepcopy 预演成本暴涨，实测单场死斗
         100% CPU 空转 >5 分钟（批次13 gen1619 卡死事件）。超时判擂主卫冕
@@ -181,6 +342,48 @@ def run_duel_pvp(e, player_act, max_rounds=60, max_steps=400, log=None,
     from sim.build_learner import round_start_relic_choices
     if log is None:   # 空列表是 falsy,`log or []` 会静默丢弃调用方缓冲(2026-08-26 同源修复)
         log = []
+    # 双轮回者各有其名（随机生成、互不相同）：先定名，再 seed 性格（性格按名字哈希）。
+    _assign_duelist_names(e, seed=getattr(e.dice, "_seed", 0) or 0)
+    # 双方都是轮回者：各自 seed 一套确定、可区分的性格画像 → 性格调制 + 对白差异。
+    _seed_duelist_personality(e, e.state.player)
+    for foe in e.state.enemies:
+        if foe.entity_type == "轮回者":
+            _seed_duelist_personality(e, foe)
+    # 残韵：挑战者沿用 State.resonance（load_winner 已从快照还原其真实准备量）；
+    # 守擂者在 _trigger_final_crown 也已从快照还原其真实准备量（无则 0）。
+    # 一律**只使用真实准备的残韵**，绝不凭空充能——没有就是没有。
+    # 挑战者用 TacticalAI 驱动（残韵+性格+变数）
+    _def_tai = None
+    if use_tactical:
+        from engine.ai_tactics import TacticalAI
+        _tai = TacticalAI(e, verbose=True)
+        def player_act():
+            acted = _tai.take_action()
+            if acted:
+                # 动作实录：挑战者侧执行的动作（含残韵/道纹）→ 报告可见
+                if _tai.log:
+                    log.append(f"  挑战者 {_clean_ai_label(_tai.log[-1])}")
+                # 对白：挑战者侧动作事件（首句开场后按节奏插台词）
+                if 对话 is not None:
+                    对话.events += 1
+                    pers = peek_personality(e, e.state.player)
+                    line = render_line(e.state.player, "opening", pers)
+                    if 对话.events in (1, 2, 8, 15):
+                        对话.buf.append(line)
+                return True
+            return False
+        # 守擂者用同一套 TacticalAI，视角重定向为守擂（双方共享机制）
+        lord = next((x for x in e.state.enemies
+                     if x.entity_type == "轮回者" and x.is_alive), None)
+        if lord is not None:
+            refs = e.combat._combat_entity_refs()
+            lord_ref = next((r for r, ent in refs.items() if ent is lord), "player:0")
+            foes = [e.state.player] + [f for f in e.state.friends if f.is_alive] \
+                   + [emp for emp in e.state.employees if emp.is_alive and emp.is_deployed]
+            foes = [f for f in foes if f is not None and f.is_alive]
+            # verbose=True：让守擂者动作（含残韵）写入 _def_tai.log，报告才能如实呈现。
+            # 否则守擂者一切行动（含残韵）都静默执行、对客席不可见，报告会误判"守擂无残韵"。
+            _def_tai = TacticalAI(e, verbose=True, actor=lord, enemies=foes, actor_ref=lord_ref)
     deadline = _time.monotonic() + max_wall_seconds
 
     def _over_time():
@@ -192,12 +395,19 @@ def run_duel_pvp(e, player_act, max_rounds=60, max_steps=400, log=None,
     def _challenger_alive():
         return bool(e.state.player and e.state.player.is_alive)
 
+    # 「连续 N 回合双方面板零净变化」= 真死锁(互瞪):法力每回合已回填,仍无任何
+    # 可造成伤害/回血的动作(如 1 血 0 牌对峙)。这与「法力枯竭、回填后还能打」
+    # 的 PvP 对耗区分开——后者该继续,而非判死锁。
+    hp_frozen_rounds = 0
     for rnd in range(1, max_rounds + 1):
         if not _challenger_alive():
             return {"winner": "defender", "rounds": rnd, "reason": "挑战者阵亡"}
         if not _lord_alive():
             return {"winner": "challenger", "rounds": rnd, "reason": "守擂主将阵亡"}
         from sim.optional_actions import start_round
+        # 记录本回合开局双方 hp，用于回合末判「真死锁」。
+        hp_before = (e.state.player.current_hp if e.state.player else None,
+                     tuple(x.current_hp for x in e.state.enemies if x.entity_type == "轮回者"))
         rs, _rsart = start_round(e)
         if not rs.get("success"):
             # 回始失败不允许吞掉:法力不会回填,双方将永久空转(2026-08-26 死斗三
@@ -225,9 +435,11 @@ def run_duel_pvp(e, player_act, max_rounds=60, max_steps=400, log=None,
             )
             panel_stall = panel_stall + 1 if panel == last_panel else 0
             last_panel = panel
-            if panel_stall >= 60:
-                return {"winner": "defender", "rounds": rnd,
-                        "reason": "死斗死锁判卫冕(双方面板连续60步零变化)"}
+            if panel_stall >= 50:
+                # 本回合双方已无有效动作（法力/出手/可打出的牌耗尽）。这通常是
+                # 「法力枯竭」而非死斗终局——先结束本回合让回始回填法力，下一回合
+                # 继续对耗。真正的死锁（回填后仍无净变化）由回合末 hp_frozen_rounds 判定。
+                break
             if e.state.duel_turn == "player_side":
                 acted = player_act()
                 if not acted:
@@ -235,8 +447,46 @@ def run_duel_pvp(e, player_act, max_rounds=60, max_steps=400, log=None,
                     if not (ra.get("result", {}) or {}).get("acted_count", 0):
                         e.state.duel_turn = "opponent_side"  # 挑战者无行动 → 让守擂
             else:
-                acted = _resolve_opponent_one(e, log)
+                if _def_tai is not None:
+                    acted = _def_tai.take_action()
+                    if acted:
+                        if _def_tai.log:
+                            log.append(f"  守擂 {_clean_ai_label(_def_tai.log[-1])}")
+                        if 对话 is not None:
+                            对话.events += 1
+                            pers = peek_personality(e, _def_tai.player)
+                            line = render_line(_def_tai.player, "damage_out", pers)
+                            if 对话.events in (4, 12, 20, 28):
+                                对话.buf.append(line)
+                else:
+                    acted = _resolve_opponent_one(e, log, 对话)
                 if not acted:
                     e.state.duel_turn = "player_side"  # 守擂无行动 → 让回挑战者
-        e.execute_action("round_end", {})
+        # 本回合双方在死斗里都经"玩家侧接口"驱动（use_daowen/resolve_attack/普攻），
+        # 这些 action 只在双方都不能行动时才把 subphase 推到 await_round_end；但守擂侧
+        # 由 _resolve_opponent_one 驱动、不触发该收尾，subphase 会停在 player_actions，
+        # 使次回合 round_start 撞 guard 失败 → 法力永不回填 → 死锁卫冕。
+        # 这里显式收尾到 await_round_end，再调 round_end。
+        e.state.combat_subphase = CombatSubphase.AWAIT_ROUND_END.value
+        re = e.execute_action("round_end", {})
+        if not re.get("success"):
+            return {"winner": "defender", "rounds": rnd,
+                    "reason": f"round_end判卫冕: {str(re.get('error',''))[:80]}"}
+        # 回始：重置双方 AI 的回合记账（凡庸压力/本回合伤害标记/已控制目标）
+        if use_tactical:
+            _tai.new_round()
+            if _def_tai is not None:
+                _def_tai.new_round()
+        # 回合进度记录（供诊断/报告展示战局推进）
+        log.append(f"  ─ 第{rnd}回合结束：挑战者hp={e.state.player.current_hp if e.state.player else 0}"
+                   f" 守擂hp={[(x.name, x.current_hp) for x in e.state.enemies if x.entity_type=='轮回者']}")
+        # 真死锁判定:回始已回满法力、双方仍无任何净变化(伤害/回血),连续两回合零
+        # 净变化即互瞪死锁——法力回填都救不了,判卫冕而非空转满 max_rounds。
+        hp_after = (e.state.player.current_hp if e.state.player else None,
+                    tuple(x.current_hp for x in e.state.enemies if x.entity_type == "轮回者"))
+        frozen = hp_before == hp_after
+        hp_frozen_rounds = hp_frozen_rounds + 1 if frozen else 0
+        if hp_frozen_rounds >= 2:
+            return {"winner": "defender", "rounds": rnd,
+                    "reason": "死斗死锁判卫冕(回始回填后双方面板仍连续零净变化)"}
     return {"winner": "defender", "rounds": max_rounds, "reason": "回合上限"}

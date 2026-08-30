@@ -83,9 +83,18 @@ class TacticalAI:
     # 基类不再有固定顺序；子类（archive 实验脚本）可覆写为方法名元组。
     STRATEGIES: Optional[tuple] = None
 
-    def __init__(self, engine: Any, verbose: bool = False):
+    def __init__(self, engine: Any, verbose: bool = False, actor: Any = None,
+                 enemies: Optional[list] = None, actor_ref: Optional[str] = None):
         self.engine = engine
         self.verbose = verbose
+        # 视角重定向（2026-08-30）：PvP 死斗里挑战者与守擂者都是「轮回者」，共用同一套
+        # TacticalAI（残韵候选 + 性格调制 + 变数决策），双方本应走完全相同的决策逻辑。
+        # 早期 TacticalAI 硬绑定 player=state.player、enemies=state.enemies，只适用于
+        # 挑战者视角；守擂者必须能指定自己的 actor/enemies 才能共享这套机制。
+        # actor/enemies 为空时保持原行为（普通战斗/挑战者视角）。
+        self._actor = actor
+        self._enemies = enemies
+        self._actor_ref = actor_ref
         self.log: list[str] = []
         self.used: dict[str, int] = {}   # 统计各道纹发动次数，便于流派对比
         self._controlled_this_round: set = set()   # 本回合已被控制的目标
@@ -114,9 +123,13 @@ class TacticalAI:
 
     @property
     def player(self):
+        if self._actor is not None:
+            return self._actor
         return self.engine.state.player
 
     def alive_enemies(self) -> list:
+        if self._enemies is not None:
+            return [e for e in self._enemies if e.is_alive]
         return [e for e in self.engine.state.enemies if e.is_alive]
 
     def mana(self) -> int:
@@ -194,6 +207,8 @@ class TacticalAI:
                 continue
             params: dict = {"daowen_name": name, "x": 1, "dodge": False,
                             "blood_shadow": False}
+            if self._actor_ref:
+                params["actor_ref"] = self._actor_ref   # 守擂者视角：预演也须指定施法者，否则引擎当玩家动作
             if target:
                 params["target"] = target
             pv = self.previewer.preview("use_daowen", params)
@@ -215,6 +230,14 @@ class TacticalAI:
                 best = info
         self._probe_cache[cache_key] = best if best is not None else {"target": "reject"}
         return best
+
+    def _target_ref_for(self, entity) -> str:
+        """按实体找其稳定战斗引用（player:0 / enemy:N）。用于 use_resonance 的 target_ref。"""
+        refs = self.engine.combat._combat_entity_refs()
+        for ref, ent in refs.items():
+            if ent is entity:
+                return ref
+        return getattr(entity, "name", "")
 
     def _top_enemy_name(self) -> Optional[str]:
         enemies = self.alive_enemies()
@@ -326,14 +349,18 @@ class TacticalAI:
 
     def _params(self, name: str, x: int, target: Optional[str]) -> dict:
         p: dict = {"daowen_name": name, "x": x, "dodge": False, "blood_shadow": False}
+        if self._actor_ref:
+            p["actor_ref"] = self._actor_ref   # 守擂者视角：所有道纹都指定施法者
         if target:
             p["target"] = target
         if name == "波及":
             refs = self.engine.combat._combat_entity_refs()
+            # 视角重定向：波及目标是「本 AI 视角的敌人」；普通视角取非玩家侧，守擂视角取挑战者侧。
+            enemy_ids = {id(e) for e in self.alive_enemies()}
             candidates = [
                 {"target_ref": ref, "dodge": False, "blood_shadow": False}
                 for ref, entity in refs.items()
-                if entity.is_alive and not self.engine.state.on_player_side(entity)
+                if entity.is_alive and id(entity) in enemy_ids
             ]
             if len(candidates) >= x:
                 p["dodge_targets"] = candidates[:x]
@@ -343,7 +370,13 @@ class TacticalAI:
     def _resonance_candidates(self) -> list[tuple[float, dict]]:
         """残韵候选：对**存在变化路径**的敌方道纹，按威胁动态打分（无固定表）。"""
         from engine.daowen import ResonanceEngine
-        stock = {k: v for k, v in self.engine.state.resonance.items() if v > 0}
+        # 施法者残韵库存：挑战者经 State.resonance，守擂者经实体级 resonance（共用机制）。
+        # 只读施法者**真实准备**的库存，绝不借他人——没有就是没有（不给没准备的塞残韵）。
+        if self.player is self.engine.state.player:
+            src_stock = self.engine.state.resonance
+        else:
+            src_stock = getattr(self.player, "resonance", None) or {}
+        stock = {k: v for k, v in (src_stock or {}).items() if v > 0}
         if not stock:
             return []
         out = []
@@ -361,11 +394,15 @@ class TacticalAI:
                     if not rtype or stock.get(rtype, 0) <= 0:
                         continue
                     score = 4.0 * (0.5 + threat_share) * weight
+                    params = {"source_daowen": dw, "resonance_type": rtype,
+                              "target": enemy.name,             # 兼容测试/旧解析：按名字找目标
+                              "target_ref": self._target_ref_for(enemy)}  # use_resonance 需要稳定引用
+                    if self._actor_ref:
+                        params["actor_ref"] = self._actor_ref
                     out.append((score, {
                         "action": "use_resonance",
                         "label": f"残韵·{rtype}→{dw}@{enemy.name}",
-                        "params": {"source_daowen": dw, "resonance_type": rtype,
-                                   "target": enemy.name}}))
+                        "params": params}))
         out.sort(key=lambda t: -t[0])
         return out[:3]
 
@@ -537,7 +574,7 @@ class TacticalAI:
             base = label.split("X=")[0].split("→")[0]
             self.used[base] = self.used.get(base, 0) + 1
             # 记账：本回合是否推进了敌方血量（凡庸压力用）
-            hp_after = sum(e.current_hp for e in self.engine.state.enemies if e.is_alive)
+            hp_after = sum(e.current_hp for e in self.alive_enemies())
             if hp_after < hp_before:
                 self._damage_done_battle = True
             if self.verbose:
@@ -681,7 +718,7 @@ class TacticalAI:
             for group in (self.engine.state.friends, self.engine.state.employees,
                           self.engine.state.temp_friends):
                 existing.update(entity.name for entity in group)
-            existing.update(entity.name for entity in self.engine.state.enemies if entity.is_alive)
+            existing.update(entity.name for entity in self.alive_enemies())
             name = base
             suffix = 2
             while name in existing:

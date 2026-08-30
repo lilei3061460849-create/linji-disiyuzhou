@@ -2643,13 +2643,24 @@ class GameEngine:
         return True
 
     def _action_use_resonance(self, params: dict) -> dict:
-        """使用残韵"""
+        """使用残韵。actor_ref 指定施法者（默认 player:0），使守擂者等轮回者也能用自己
+        的残韵转化敌人道纹并让自己获得转化后道纹——与挑战者共用同一套机制。"""
         source = params.get("source_daowen", "")
         rtype = params.get("resonance_type", "")
-
-        # 检查玩家是否拥有该类型残韵
-        if rtype not in self.state.resonance or self.state.resonance[rtype] <= 0:
-            return {"success": False, "error": f"没有可用的{rtype}残韵（当前：{self.state.resonance}）"}
+        actor_ref = params.get("actor_ref", "player:0")
+        refs = self.combat._combat_entity_refs()
+        actor = refs.get(actor_ref)
+        if actor is None:
+            return {"success": False, "error": f"找不到actor_ref: {actor_ref}"}
+        # 施法者残韵库存：玩家侧兼容 State.resonance；守擂者等非玩家轮回者严格用
+        # 自己实体级的 resonance（真实准备量，无则 0）。绝不回落借他人的库存——
+        # 「有就有，没有就没有」，不给没准备的对手塞残韵。
+        if actor is self.state.player:
+            stock = self.state.resonance
+        else:
+            stock = getattr(actor, "resonance", None) or {}
+        if not isinstance(stock, dict) or stock.get(rtype, 0) <= 0:
+            return {"success": False, "error": f"没有可用的{rtype}残韵（当前：{stock}）"}
 
         player = self.state.player
         if not player:
@@ -2659,24 +2670,24 @@ class GameEngine:
         if holder_err:
             return {"success": False, "error": holder_err}
 
-        caster_has = holder is player
+        caster_has = holder is actor
 
         result = ResonanceEngine.apply_resonance(
             source, rtype,
             caster_has_daowen=caster_has,
             target_has_daowen=True,
-            resonance_stock=self.state.resonance  # 传入残韵库存用于校验
+            resonance_stock=stock  # 传入施法者残韵库存用于校验
         )
 
         if not result["success"]:
             return {"success": False, "error": result["error"]}
 
         # 路径与持有者均已确认，此时才消耗（规则1：未生效不消耗）
-        self.state.resonance[rtype] -= 1
+        stock[rtype] = stock[rtype] - 1
 
         dest = result["target"]
         holder_changed = self._permanently_convert_daowen(holder, source, dest)
-        granted = self._grant_transformed_daowen(player, dest)
+        granted = self._grant_transformed_daowen(actor, dest)
         redemption = None
         if holder.entity_type == "怪物":
             redemption = self.combat.check_redemption(holder)
@@ -2716,8 +2727,9 @@ class GameEngine:
             "holder_is_player": caster_has,
             "holder_changed": holder_changed,
             "granted_daowen": dest if granted else None,
+            "actor": actor.name,
             "second_target_log": second_log,
-            "resonance_remaining": self.state.resonance
+            "resonance_remaining": dict(stock)
         }
         if redemption:
             payload["redemption"] = redemption
@@ -4203,6 +4215,11 @@ class GameEngine:
         challenger_player = self.state.player
         opponent_side = self._restore_side_from_snapshot(candidate_snapshot)
         opponent_leader = next((e for e in opponent_side if e.entity_type == "轮回者"), None)
+        # 残韵是轮回者**局外准备**的资源；封存快照顶层把主人的残韵完整记载。
+        # 守擂者同为轮回者，应带上自己真实准备的残韵（哪怕为 0），而非清空或凭空充能——
+        # 这样「有就有，没有就没有」，才不会给没准备的对手塞残韵。
+        if opponent_leader is not None:
+            opponent_leader.resonance = dict(candidate_snapshot.get("resonance") or {})
 
         self.state.enemies = opponent_side
         self.state.current_round = 0

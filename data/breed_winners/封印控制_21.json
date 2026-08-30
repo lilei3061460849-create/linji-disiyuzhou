@@ -1,0 +1,95 @@
+{
+  "player": {
+    "name": "贾凡",
+    "entity_type": "轮回者",
+    "blood_limit": 36,
+    "current_hp": 36,
+    "mana_limit": 36,
+    "current_mana": 0,
+    "speed_limit": 12,
+    "current_speed": 12,
+    "attack_count": 0,
+    "attack_power": 0,
+    "shield": 0,
+    "is_flying": false,
+    "is_alive": true,
+    "shards": 0,
+    "is_debt_bound": false,
+    "dao_wen": {
+      "封印": 0,
+      "杀伐": 0,
+      "再生": 0,
+      "庇护": 0,
+      "衰败": 0
+    },
+    "spells": [
+      {
+        "name": "先发制人",
+        "required_daowen": [
+          "杀伐"
+        ],
+        "trigger_condition": "",
+        "effect_flow": "",
+        "rank": 1,
+        "custom_conditions": []
+      },
+      {
+        "name": "生生不息",
+        "required_daowen": [
+          "再生"
+        ],
+        "trigger_condition": "",
+        "effect_flow": "",
+        "rank": 1,
+        "custom_conditions": []
+      },
+      {
+        "name": "后发制人",
+        "required_daowen": [
+          "庇护"
+        ],
+        "trigger_condition": "",
+        "effect_flow": "",
+        "rank": 1,
+        "custom_conditions": []
+      }
+    ],
+    "relics": [],
+    "status_effects": []
+  },
+  "friends": [],
+  "employees": [],
+  "relics": [
+    {
+      "name": "同魂笔",
+      "effect": "对[目标]发动残韵时，可另选一[目标]使其一种道纹受同种残韵影响",
+      "tags": []
+    },
+    {
+      "name": "折速法印",
+      "effect": "[战始]可疲惫X获得6X法力",
+      "tags": []
+    }
+  ],
+  "resonance": {
+    "反转": 0
+  },
+  "shards": 162,
+  "death_book_wisdom": [],
+  "rest_heal_bonus": 0,
+  "death_book_legacies": [],
+  "attribute_points": 0,
+  "current_region": "扭曲都市",
+  "artifacts_owned": [],
+  "first_embrace_traits": [],
+  "pending_first_embrace": false,
+  "chizu_names": [],
+  "dragon_nature": 0,
+  "dragon_traits": [],
+  "has_sacrifice_action": false,
+  "origin": {
+    "build": "封印控制",
+    "seed": 21,
+    "cleared": 7
+  }
+}

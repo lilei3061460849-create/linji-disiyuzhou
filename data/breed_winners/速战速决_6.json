@@ -1,0 +1,119 @@
+{
+  "player": {
+    "name": "贾凡",
+    "entity_type": "轮回者",
+    "blood_limit": 36,
+    "current_hp": 1,
+    "mana_limit": 22,
+    "current_mana": 0,
+    "speed_limit": 15,
+    "current_speed": 15,
+    "attack_count": 0,
+    "attack_power": 0,
+    "shield": 0,
+    "is_flying": false,
+    "is_alive": true,
+    "shards": 0,
+    "is_debt_bound": false,
+    "dao_wen": {
+      "杀伐": 0,
+      "庇护": 0,
+      "弱化": 0,
+      "再生": 0
+    },
+    "spells": [
+      {
+        "name": "先发制人",
+        "required_daowen": [
+          "杀伐"
+        ],
+        "trigger_condition": "",
+        "effect_flow": "",
+        "rank": 1,
+        "custom_conditions": []
+      },
+      {
+        "name": "后发制人",
+        "required_daowen": [
+          "庇护"
+        ],
+        "trigger_condition": "",
+        "effect_flow": "",
+        "rank": 1,
+        "custom_conditions": []
+      },
+      {
+        "name": "生生不息",
+        "required_daowen": [
+          "再生"
+        ],
+        "trigger_condition": "",
+        "effect_flow": "",
+        "rank": 1,
+        "custom_conditions": []
+      }
+    ],
+    "relics": [],
+    "status_effects": []
+  },
+  "friends": [],
+  "employees": [],
+  "relics": [
+    {
+      "name": "买路财",
+      "effect": "战斗中可失去等同于怪物20%[血限]的[碎片]安全撤退",
+      "tags": []
+    },
+    {
+      "name": "回锋刀",
+      "effect": "每失去1点速度后对[目标]造成3伤害；[回始]对[目标]造成3×([速限]-当前速度)伤害",
+      "tags": []
+    },
+    {
+      "name": "避风铃",
+      "effect": "每次闪避后获得3格挡；当前速度归零时获得15格挡",
+      "tags": []
+    },
+    {
+      "name": "无所求",
+      "effect": "每当在事件中选拒绝类选项，永久获得1属性点",
+      "tags": []
+    },
+    {
+      "name": "血誓戒",
+      "effect": "[回始]首次主动支付流血代价时，获得等同于本次流血的格挡；若支付后生命≤30%，改为获得等量生命",
+      "tags": []
+    },
+    {
+      "name": "三相残韵盘",
+      "effect": "[战始]消耗一种残韵；[战终]获得另两种残韵各1",
+      "tags": []
+    },
+    {
+      "name": "折速法印",
+      "effect": "[战始]可疲惫X获得6X法力",
+      "tags": []
+    }
+  ],
+  "resonance": {
+    "反转": 0
+  },
+  "shards": 211,
+  "death_book_wisdom": [],
+  "rest_heal_bonus": 0,
+  "death_book_legacies": [],
+  "attribute_points": 0,
+  "current_region": "扭曲都市",
+  "artifacts_owned": [],
+  "first_embrace_traits": [],
+  "pending_first_embrace": false,
+  "chizu_names": [],
+  "dragon_nature": 0,
+  "dragon_traits": [],
+  "has_sacrifice_action": false,
+  "origin": {
+    "build": "速战速决",
+    "seed": 6,
+    "cleared": 7
+  }
+}
