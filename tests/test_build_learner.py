@@ -714,11 +714,15 @@ def test_stall_guard_returns_invalid_instead_of_hanging():
     assert isinstance(_bl.STALL_LIMIT, int) and 1 <= _bl.STALL_LIMIT <= 20
 
 
-def test_duel_wall_clock_guard_returns_defender_not_hang(tmp_path):
+def test_duel_wall_clock_guard_errors_not_hang(tmp_path):
     """回归（2026-08-22 批次13卡死事件）：死斗在第7场之后进行，实体/遗物/事件
     累积使 ai_preview 整状态 deepcopy 预演成本暴涨，实测单场 100% CPU 空转
     >5 分钟（py-spy 抓栈：preview→try_consumable，run_duel_pvp 内）。墙钟守护
-    必须在限时内判擂主卫冕返回，并带 state 字段成本诊断，绝不允许挂死批次。"""
+    必须在限时内报错返回，并带 state 字段成本诊断，绝不允许挂死批次。
+
+    2026-08-31 DM 裁定：墙钟/死锁都是**程序兜底**，不得判胜负。故此处不再断言
+    winner == "defender"，改为断言报错契约（winner 为 None + error + timeout）。
+    """
     import time as _time
     from sim.duel_pvp import run_duel_pvp
     from tests.test_final_duel import _new_candidate, _finish_battle_7, _cleanup
@@ -738,8 +742,10 @@ def test_duel_wall_clock_guard_returns_defender_not_hang(tmp_path):
     r = run_duel_pvp(chal, _hanging_act, max_rounds=60, max_steps=400,
                      max_wall_seconds=0)
     assert _time.time() - t < 2, "墙钟守护应立即返回，不得等待行动完成"
-    assert r["winner"] == "defender" and r.get("timeout"), r
-    assert "超时卫冕" in r["reason"]
+    # 程序兜底只报错，不判胜负（2026-08-31 DM 裁定）
+    assert r.get("winner") is None, f"墙钟超时不得判擂主卫冕: {r}"
+    assert r.get("error") is True and r.get("timeout") is True, r
+    assert "超时" in r["reason"]
     assert isinstance(r.get("diag_state_sizes"), list)  # 归因证据
     _cleanup(sealed_path)
 

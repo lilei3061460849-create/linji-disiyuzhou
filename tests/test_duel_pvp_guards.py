@@ -67,20 +67,51 @@ def test_round_start_choices_no_opponent_pact_in_pve(tmp_path):
     assert "对手血契" not in choices
 
 
-def test_duel_stall_guard_breaks_deadlock(tmp_path):
-    """双 1 血 0 手段残局:死锁防护应在数秒内判卫冕并给出死锁原因,而非超时/空转。"""
-    from sim.duel_pvp import run_duel_pvp
+def test_mediocrity_fires_before_deadlock_guard(tmp_path):
+    """双 1 血 0 手段残局:应由规则层【凡庸】终结,而非 sim 死锁兜底判卫冕。
+
+    2026-08-31 DM 裁定:凡庸是规则,死锁防护只是防卡死的程序兜底,兜底必须排在
+    凡庸之后。故 max_rounds 必须给够凡庸所需的回合数,否则测不到「凡庸先炸」。
+    """
+    from sim.duel_pvp import (run_duel_pvp, MEDIOCRITY_ROUNDS,
+                              DEADLOCK_MIN_ROUNDS)
+    assert DEADLOCK_MIN_ROUNDS > MEDIOCRITY_ROUNDS, (
+        "死锁兜底阈值必须严格大于凡庸阈值,否则兜底会抢在规则之前结束战斗")
     e = _duel_engine(tmp_path, lord_relics=(), lord_daowen=())   # 守擂无牌
     e.state.player.dao_wen.clear()                               # 挑战者无牌
     calls = []
     def act():                    # 模拟 build_learner 闭包恒 True 的最坏情形
         calls.append(1)
         return True
-    r = run_duel_pvp(e, act, max_rounds=3, max_steps=200,
+    r = run_duel_pvp(e, act, max_rounds=MEDIOCRITY_ROUNDS + 3, max_steps=200,
                      max_wall_seconds=25.0, log=[])
-    assert r["winner"] == "defender"
-    assert "死锁" in r["reason"] or "回始失败" in r["reason"], r
-    assert len(calls) < 200, "死锁防护应提前终止,不允许整段空转"
+    assert "凡庸" in r["reason"], (
+        f"残局应由规则层【凡庸】终结,而非程序兜底擅定胜负: {r}")
+    assert "死锁" not in r["reason"], f"死锁兜底不应抢在凡庸之前: {r}"
+    assert len(calls) < 200, "应提前终止,不允许整段空转"
+
+
+def test_deadlock_guard_reports_error_without_verdict(tmp_path):
+    """死锁兜底命中时**不判胜负**,只报错(2026-08-31 DM 裁定)。
+
+    正常路径下凡庸会先终结战斗,兜底几乎不可达;这里下调兜底阈值强行走一次兜底
+    分支,专门验证返回契约:winner 为 None 且带 error,绝不宣布擂主卫冕。
+    """
+    import sim.duel_pvp as dp
+    from sim.duel_pvp import run_duel_pvp
+    e = _duel_engine(tmp_path, lord_relics=(), lord_daowen=())
+    e.state.player.dao_wen.clear()
+    orig = dp.DEADLOCK_MIN_ROUNDS
+    dp.DEADLOCK_MIN_ROUNDS = 1      # 强制兜底早于凡庸触发
+    try:
+        r = run_duel_pvp(e, lambda: True, max_rounds=3, max_steps=200,
+                         max_wall_seconds=25.0, log=[])
+    finally:
+        dp.DEADLOCK_MIN_ROUNDS = orig
+    assert r.get("winner") is None, (
+        f"死锁兜底不得判胜负(不得宣布擂主卫冕): {r}")
+    assert r.get("error") is True, f"死锁兜底必须报错: {r}"
+    assert "死锁" in r["reason"], r
 
 
 def test_duel_round_start_failure_is_explicit(tmp_path):

@@ -19,6 +19,12 @@ from .effect_context import EffectContext, make_context, normalize_context
 from .mechanisms import MECHANISMS, Phase, TriggerBus, TriggerContext
 from .personality import remove_personality
 
+# 【凡庸】连续无所作为的回合阈值：连续 N 回合未出手、或连续 N 回合未能使敌对角色
+# 生命减少 → 凭空全身炸裂。这是**规则层**的反乌龟机制，必须优先于 sim 层的死锁
+# 防护（后者只是防卡死的程序兜底，不得抢在规则之前结束战斗，更不得擅定胜负）。
+# sim/duel_pvp.py 直接导入本常量推导兜底阈值，避免两处硬编码各自漂移。
+MEDIOCRITY_ROUNDS = 5
+
 
 class CombatEngine:
     """战斗计算引擎"""
@@ -5466,8 +5472,9 @@ class CombatEngine:
             entity.no_damage_rounds += 1
         else:
             entity.no_damage_rounds = 0
-        if entity.no_action_rounds >= 5 or entity.no_damage_rounds >= 5:
-            return ("连续五回合未出手" if entity.no_action_rounds >= 5
+        if (entity.no_action_rounds >= MEDIOCRITY_ROUNDS
+                or entity.no_damage_rounds >= MEDIOCRITY_ROUNDS):
+            return ("连续五回合未出手" if entity.no_action_rounds >= MEDIOCRITY_ROUNDS
                     else "连续五回合未能使敌对角色生命减少")
         return None
 

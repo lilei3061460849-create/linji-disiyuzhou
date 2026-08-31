@@ -24,6 +24,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.enums import CombatSubphase
 from engine.ai_tactics import daowen_text_kind
+from engine.combat import MEDIOCRITY_ROUNDS
+
+# 顺序与定性（2026-08-31 DM 裁定）：【凡庸】是**规则**层的反乌龟机制，
+# 死锁防护只是 sim 层防卡死的**程序兜底**。兜底必须让凡庸先走满它所需的连续
+# 回合数；且兜底命中时**不判胜负**，只报错。
+# 阈值 = 凡庸阈值 + 1：保证凡庸先拿满 MEDIOCRITY_ROUNDS 个回合-end tick
+# 仍未能终结战斗，才轮到兜底说话。
+DEADLOCK_MIN_ROUNDS = MEDIOCRITY_ROUNDS + 1
 # 对白渲染（角色=轮回者，共用 personality）：让 PvP 有台词、有性格差异
 try:
     from sim.duel_dialogue import render_line, peek_personality
@@ -540,6 +548,10 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
     # 「连续 N 回合双方面板零净变化」= 真死锁(互瞪):法力每回合已回填,仍无任何
     # 可造成伤害/回血的动作(如 1 血 0 牌对峙)。这与「法力枯竭、回填后还能打」
     # 的 PvP 对耗区分开——后者该继续,而非判死锁。
+    #
+    # 但判定时机受两条约束(2026-08-31 DM 裁定):
+    #   1) 阈值必须 > MEDIOCRITY_ROUNDS,让【凡庸】先炸;
+    #   2) 命中时不判胜负,只报错(兜底不得擅定擂主卫冕)。
     hp_frozen_rounds = 0
     for rnd in range(1, max_rounds + 1):
         if not _challenger_alive():
@@ -561,8 +573,10 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
         last_panel, panel_stall = None, 0
         for _ in range(max_steps):
             if _over_time():
-                return {"winner": "defender", "rounds": rnd,
-                        "reason": f"超时卫冕(>{max_wall_seconds:g}s)",
+                # 同死锁：墙钟超时是程序兜底，不得判胜负。
+                return {"winner": None, "rounds": rnd, "error": True,
+                        "reason": (f"死斗超时(>{max_wall_seconds:g}s)："
+                                   "程序兜底报错，不作胜负判定"),
                         "timeout": True,
                         "diag_state_sizes": _duel_state_sizes(e)}
             if not _challenger_alive():
@@ -627,7 +641,13 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
                     tuple(x.current_hp for x in e.state.enemies if x.entity_type == "轮回者"))
         frozen = hp_before == hp_after
         hp_frozen_rounds = hp_frozen_rounds + 1 if frozen else 0
-        if hp_frozen_rounds >= 2:
-            return {"winner": "defender", "rounds": rnd,
-                    "reason": "死斗死锁判卫冕(回始回填后双方面板仍连续零净变化)"}
+        if hp_frozen_rounds >= DEADLOCK_MIN_ROUNDS:
+            # 不判胜负：凡庸已让满 MEDIOCRITY_ROUNDS 回合仍僵持，属程序级异常，
+            # 只报错交由上层处置，不得替规则宣布擂主卫冕。
+            return {"winner": None, "rounds": rnd, "error": True, "timeout": True,
+                    "reason": (f"死斗死锁：回始回填后双方面板连续 {hp_frozen_rounds} 回合"
+                               f"零净变化，达兜底阈值 {DEADLOCK_MIN_ROUNDS} 回合"
+                               f"（须大于规则层反僵持的 {MEDIOCRITY_ROUNDS} 回合，"
+                               "以保证凡庸先有机会结算）。"
+                               "此为程序兜底报错，不作胜负判定。")}
     return {"winner": "defender", "rounds": max_rounds, "reason": "回合上限"}
