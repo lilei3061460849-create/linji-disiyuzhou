@@ -1056,15 +1056,25 @@ def _full_text(inst) -> str:
 
 
 def choose_dodge(engine, per_hit_damage: int, *, budget_used: int = 0,
-                 max_dodges: int = 2, min_hit_pct: float = 0.10) -> bool:
+                 max_dodges: int = 2, min_hit_pct: float = 0.10,
+                 entity=None) -> bool:
     """AI 闪避决策（供 sim 怪物阶段解析器调用，处理轮回者受到的攻击）。
 
     规则依据（README 基础定义）：被选为[目标]后可消耗 1 点当前速度完全闪避。
     - 速度不足/必中已由引擎拒绝，这里只做预算与收益判断；
     - 每回合最多闪避 max_dodges 次（留速度应对残韵/回锋刀等）；
     - 只闪避会伤 ≥ min_hit_pct×[血限] 的命中，低伤不浪费速度。
+
+    entity：被选定方实体。缺省时取 engine.state.player（历史行为，调用方不变）。
+    2026-08-31 新增该参数，供引擎「道纹伤害 → 自动反应法术」路径指定任意被选定方
+    （死斗里被反打的一方未必是 state.player），使闪避判定不再被跳过
+    （DM 裁定：法术只是自定义触发条件的道纹，道纹要遵守的规则法术一样要遵守；
+    README:423 禁止跳过闪避判定）。
     """
-    p = engine.state.player
+    p = entity
+    if p is None:
+        _state = getattr(engine, "state", None)
+        p = getattr(_state, "player", None) if _state is not None else None
     if p is None or not p.is_alive:
         return False
     if p.current_speed <= budget_used:

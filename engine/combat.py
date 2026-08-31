@@ -4113,6 +4113,55 @@ class CombatEngine:
                 return x
         return None
 
+    def _dodge_budget_reset(self) -> None:
+        """换回合则清空自动反应路径的闪避计数（每回合最多 2 次，与 choose_dodge 同口径）。"""
+        rnd = getattr(self.state, "current_round", None)
+        if getattr(self, "_dodge_round", None) != rnd:
+            self._dodge_round = rnd
+            self._dodge_counts = {}
+
+    def _auto_reaction_dodge_decision(self, daowen: str, calc: dict,
+                                      holder: Entity, target: Entity) -> bool:
+        """自动反应法术路径：被选定方是否消耗 1 点速度闪避本次道纹。
+
+        DM 裁定（2026-08-31）：法术说到底只是自定义了触发条件的道纹，
+        **道纹要遵守的规则，法术一样要遵守**。README:161「凡带 [目标] 道纹，
+        目标被选定时均可消耗 1 点当前速度进行闪避」、README:423「禁止跳过闪避判定」。
+
+        原先 `_auto_after_life_lost_decision` 把 dodge 写死 False，导致**道纹伤害**
+        （区别于基础攻击的显式反应窗口）触发的反应法术不给目标任何声明机会——
+        例如【先发制人】的杀伐反打变成无法闪避的必杀。本方法把它换成统一闪避策略。
+        """
+        if holder is None or target is None or not target.is_alive:
+            return False
+        # 非敌对步骤（自身增益 / 队友）不走闪避
+        if self.state.on_player_side(holder) == self.state.on_player_side(target):
+            return False
+        # 无[目标]伤害的道纹（自身增益、纯控制等）不可闪避
+        dmg = calc.get("target_damage") or calc.get("total_damage") or 0
+        if not dmg:
+            return False
+        # 必中：无法闪避。此处**只读不消耗**——自动路径不替施法方花掉必中余数
+        # （显式攻击路径的 consume_bizhong 才负责消耗），避免改变既有必中结算。
+        if self.bizhong_remaining(holder) > 0:
+            return False
+        # 速度不足以支付闪避
+        if target.current_speed < 1:
+            return False
+        # 飞行：非飞行者无法选中飞行目标（与显式路径同口径）
+        if not self.is_targetable(holder, target):
+            return False
+        self._dodge_budget_reset()
+        used = self._dodge_counts.get(id(target), 0)
+        try:
+            from engine.ai_tactics import choose_dodge
+            want = bool(choose_dodge(None, int(dmg), budget_used=used, entity=target))
+        except Exception:
+            return False
+        if want:
+            self._dodge_counts[id(target)] = used + 1
+        return want
+
     def _auto_after_life_lost_decision(self, name: str, flow: dict, holder: Entity,
                                        attacker: Optional[Entity], refs: dict[str, Entity],
                                        reverse: dict[int, str], budget: Optional[int] = None) -> dict:
@@ -4154,7 +4203,9 @@ class CombatEngine:
                     return {"use": False}
                 budget -= cost
                 consumed += cost
-            cycle.append({"x": x, "target_ref": reverse.get(id(target)), "dodge": False})
+            cycle.append({"x": x, "target_ref": reverse.get(id(target)),
+                          "dodge": self._auto_reaction_dodge_decision(
+                              daowen, calc, holder, target)})
         if not cycle:
             return {"use": False}
         return {"use": True, "cycles": [cycle], "_cost": consumed}
