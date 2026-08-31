@@ -271,3 +271,26 @@ def test_mana_may_exceed_mana_limit_without_immortal_body():
     engine.state.relics = [type("R", (), {"name": "不朽之躯", "effect": "", "tags": []})()]
     engine.combat.clamp_immortal_body(p)
     assert p.current_mana == p.mana_limit, "有【不朽之躯】时才 clamp 到法限"
+
+
+def test_death_attribution_names_cancer():
+    """DM 要求（2026-08-31）：癌变致死必须写明，不得兜底成含糊的「自伤命零」。
+
+    实测死斗里守擂者是被对手用【再生】喂过阈值、触发癌变而命零的；归因却只写
+    「自伤命零，非对手击杀」，读日志的人看不出是癌变（我上一轮就是这么看走眼的）。
+    """
+    from sim.duel_pvp import death_attribution_note
+
+    class _E:
+        name = "阮烟"
+
+    e = _E()
+    e._death_ctx = {"actor": None, "source": "癌变", "tags": [], "subtype": "cancer"}
+    note = death_attribution_note(e, "守擂主将")
+    assert "癌变" in note, note
+    assert "自伤命零" not in note, note
+    assert "非对手击杀" in note, note
+
+    # 无具名死因时仍走原口径（不为改而改）
+    e._death_ctx = {"actor": None, "source": "崩解", "tags": []}
+    assert "自伤命零" in death_attribution_note(e, "守擂主将")

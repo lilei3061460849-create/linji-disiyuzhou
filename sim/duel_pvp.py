@@ -285,11 +285,18 @@ def death_attribution_note(entity, side_label: str) -> str:
     ctx = getattr(entity, "_death_ctx", None) or {}
     if not ctx:
         return f"{side_label}阵亡"
+    # 具名死因优先：DM 要求死因必须写明，不许把【癌变】这类特殊死因
+    # 兜底成含糊的「自伤命零」（2026-08-31：癌变就是这样被吞掉的）。
+    cause = ctx.get("subtype") or ""
+    if cause == "cancer":
+        return f"{side_label}阵亡（累计恢复量达血限×2 → 因【癌变】命零，非对手击杀）"
     actor = ctx.get("actor")
     if actor in (None, "", getattr(entity, "name", None)):
         source = ctx.get("source") or "代价"
         if "active_payment" in (ctx.get("tags") or []):
             return f"{side_label}阵亡（自付【{source}】代价命零，非对手击杀）"
+        if cause and cause != "hp_zero":
+            return f"{side_label}阵亡（{cause}，非对手击杀）"
         return f"{side_label}阵亡（自伤命零，非对手击杀）"
     return f"{side_label}阵亡"
 

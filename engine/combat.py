@@ -909,8 +909,11 @@ class CombatEngine:
         # 死因优先级：离场原因 > 调用方显式给出的死亡上下文 subtype > 兜底 hp_zero。
         # （【崩解】【凡庸】【尸爆】等特殊死因靠这一步才能留在 _death_ctx 里。）
         subtype = getattr(entity, "departure_reason", "")
-        if not subtype and parent is not None and parent.mechanic == "death" and parent.subtype:
-            subtype = parent.subtype
+        if not subtype and parent is not None and parent.subtype:
+            if parent.mechanic == "death":
+                subtype = parent.subtype
+            elif parent.mechanic in self.NAMED_DEATH_MECHANICS:
+                subtype = self.NAMED_DEATH_MECHANICS[parent.mechanic]
         death_ctx = make_context(
             timing=parent.timing if parent else self._current_context_timing(),
             source=parent.source if parent else "legacy_death",
@@ -3702,6 +3705,14 @@ class CombatEngine:
     # 任何真实法力池在此上限内必然早已耗尽（个位数到三位数消耗的道纹绝不可能
     # 循环这么多次），因此正常游戏流程永远不会触达这个值。
     MAX_SPELL_LOOP_CYCLES = 10_000
+
+    # 具名死因：这些 mechanic 的 ctx 虽不是 mechanic="death"，但同样是调用方
+    # **显式**给出的死因，必须原样留在 _death_ctx 里，而不是被兜底成 "hp_zero"。
+    # （【癌变】即因此被吞掉：预演/事件里只能看到 hp_zero，看不出是癌变。）
+    NAMED_DEATH_MECHANICS = {
+        "cancer": "cancer",
+        "proliferation": "cancer",
+    }
 
     def _resolve_entry_target(self, step, entry, holder: Entity, attacker: Entity,
                               refs: dict[str, Entity], reverse: dict[int, str]):
