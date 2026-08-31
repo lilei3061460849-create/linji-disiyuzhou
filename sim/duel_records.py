@@ -98,8 +98,14 @@ def _book(engine) -> dict:
     return out
 
 
-def run_and_record(challenger: str, defender: str, seed: int) -> dict:
-    """跑一局并解析成结构化记录。"""
+def resolve(name: str) -> str:
+    """档位名 → 快照路径；带分隔符的按路径原样用（淘汰赛的临时带伤快照）。"""
+    return name if os.path.sep in name else os.path.join(WINNER_DIR, name)
+
+
+def run_and_record(challenger: str, defender: str, seed: int,
+                   return_engine: bool = False) -> dict:
+    """跑一局并解析成结构化记录。`return_engine=True` 时附带引擎对象（仅供赛后序列化，勿落盘）。"""
     random.seed(seed)
     _LIVE.clear()  # 上一局的实体 id 可能被复用，必须逐局清空
     captured: dict = {}
@@ -113,8 +119,7 @@ def run_and_record(challenger: str, defender: str, seed: int) -> dict:
     buf = io.StringIO()
     try:
         with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
-            verdict = ddt.traced_duel(os.path.join(WINNER_DIR, challenger),
-                                      os.path.join(WINNER_DIR, defender), seed)
+            verdict = ddt.traced_duel(resolve(challenger), resolve(defender), seed)
     finally:
         ddt.run_duel_pvp = orig
     engine = captured.get("e")
@@ -169,8 +174,12 @@ def run_and_record(challenger: str, defender: str, seed: int) -> dict:
             rounds.append([])
         rounds[-1].append(f"{seat}{label}{delta}{mine}")
         prev = after or prev
-    return {"challenger": challenger, "defender": defender, "seed": seed,
-            "开局": opening, "回合": rounds, "终局账面": _book(engine), "判定": verdict}
+    rec = {"challenger": challenger, "defender": defender, "seed": seed,
+           "挑战档名": os.path.basename(challenger), "守擂档名": os.path.basename(defender),
+           "开局": opening, "回合": rounds, "终局账面": _book(engine), "判定": verdict}
+    if return_engine:
+        rec["_engine"] = engine
+    return rec
 
 
 def render(rec: dict, index: int, batch_label: str) -> str:
@@ -186,8 +195,10 @@ def render(rec: dict, index: int, batch_label: str) -> str:
                 f"盾{p.get('shield', 0)} 法{p.get('mana', '?')}/{p.get('ml', '?')} "
                 f"速{p.get('speed', '?')}/{p.get('sl', '?')} 出手{p.get('acts', '?')}")
 
-    lines = [f"#### {batch_label}-{index:02d} ｜ {rec['challenger'][:-5]}（挑战席）"
-             f" vs {rec['defender'][:-5]}（守擂席）｜ seed={rec['seed']}",
+    ch = rec.get("挑战档名", rec["challenger"])[:-5]
+    df = rec.get("守擂档名", rec["defender"])[:-5]
+    lines = [f"#### {batch_label}-{index:02d} ｜ {ch}（挑战席）"
+             f" vs {df}（守擂席）｜ seed={rec['seed']}",
              f"- 开局：{_fmt('挑战')} ｜ {_fmt('守擂')}"]
     for i, acts in enumerate(rec["回合"], 1):
         if not acts:
