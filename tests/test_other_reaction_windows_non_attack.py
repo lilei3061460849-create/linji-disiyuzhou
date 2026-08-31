@@ -144,3 +144,47 @@ def test_windows_do_not_double_fire_on_attack():
     # 从而避免同一事件双发。
     hlc = getattr(player, "_hp_loss_events", [])[-1] if getattr(player, "_hp_loss_events", []) else {}
     assert "reaction_logs" not in hlc
+
+
+def _duel_state(enemy_speed: int):
+    """先发制人反打场景：玩家持【受到伤害前→杀伐于攻击者】，敌方有速度可闪避。"""
+    state = GameState(phase="in_combat", combat_subphase="player_actions", current_round=1)
+    player = Entity("玄夜", "轮回者", blood_limit=100, current_hp=100,
+                    mana_limit=20, current_mana=20)
+    enemy = Entity("靶怪", "怪物", blood_limit=100, current_hp=100,
+                   attack_power=3, speed_limit=enemy_speed, current_speed=enemy_speed)
+    state.player = player
+    state.enemies = [enemy]
+    return state, CombatEngine(state, DiceEngine()), player, enemy
+
+
+def test_reaction_spell_counter_can_be_dodged():
+    """DM 裁定（2026-08-31）：法术只是自定义触发条件的道纹，道纹要遵守的规则法术一样要遵守。
+
+    README:161「凡带 [目标] 道纹，目标被选定时均可消耗 1 点当前速度进行闪避」、
+    README:423「禁止跳过闪避判定」。【杀伐】带 [目标] 且不带必中，因此【先发制人】
+    的杀伐反打**必须**给被选定方闪避窗口。
+
+    修复前 `_auto_after_life_lost_decision` 把 dodge 写死 False，道纹伤害触发的反打
+    无法闪避（死斗里表现为「先出手者必死」）。本用例锁定反打现在可被闪避。
+    """
+    _, combat, player, enemy = _duel_state(enemy_speed=5)
+    _add_spell(player, "杀伐", "受到伤害前", "发动杀伐 X于攻击者")
+    speed_before, hp_before = enemy.current_speed, enemy.current_hp
+
+    combat._apply_hostile_damage(player, 8, source=enemy, ctx=_daowen_ctx(enemy, player))
+
+    assert enemy.current_speed == speed_before - 1, "高伤反打应被闪避，消耗 1 点速度"
+    assert enemy.current_hp == hp_before, "闪避成功后反打结算完全失效"
+
+
+def test_reaction_spell_counter_lands_when_target_has_no_speed():
+    """对照：无速度则不得闪避，反打照常落地（防止修成「一律闪避」）。"""
+    _, combat, player, enemy = _duel_state(enemy_speed=0)
+    _add_spell(player, "杀伐", "受到伤害前", "发动杀伐 X于攻击者")
+    hp_before = enemy.current_hp
+
+    combat._apply_hostile_damage(player, 8, source=enemy, ctx=_daowen_ctx(enemy, player))
+
+    assert enemy.current_speed == 0, "速度为 0 不得闪避"
+    assert enemy.current_hp < hp_before, "未闪避则反打应当造成伤害"

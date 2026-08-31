@@ -19,6 +19,12 @@ from .effect_context import EffectContext, make_context, normalize_context
 from .mechanisms import MECHANISMS, Phase, TriggerBus, TriggerContext
 from .personality import remove_personality
 
+# 【凡庸】连续无所作为的回合阈值：连续 N 回合未出手、或连续 N 回合未能使敌对角色
+# 生命减少 → 凭空全身炸裂。这是**规则层**的反乌龟机制，必须优先于 sim 层的死锁
+# 防护（后者只是防卡死的程序兜底，不得抢在规则之前结束战斗，更不得擅定胜负）。
+# sim/duel_pvp.py 直接导入本常量推导兜底阈值，避免两处硬编码各自漂移。
+MEDIOCRITY_ROUNDS = 5
+
 
 class CombatEngine:
     """战斗计算引擎"""
@@ -909,8 +915,11 @@ class CombatEngine:
         # 死因优先级：离场原因 > 调用方显式给出的死亡上下文 subtype > 兜底 hp_zero。
         # （【崩解】【凡庸】【尸爆】等特殊死因靠这一步才能留在 _death_ctx 里。）
         subtype = getattr(entity, "departure_reason", "")
-        if not subtype and parent is not None and parent.mechanic == "death" and parent.subtype:
-            subtype = parent.subtype
+        if not subtype and parent is not None and parent.subtype:
+            if parent.mechanic == "death":
+                subtype = parent.subtype
+            elif parent.mechanic in self.NAMED_DEATH_MECHANICS:
+                subtype = self.NAMED_DEATH_MECHANICS[parent.mechanic]
         death_ctx = make_context(
             timing=parent.timing if parent else self._current_context_timing(),
             source=parent.source if parent else "legacy_death",
@@ -1709,6 +1718,17 @@ class CombatEngine:
             if entity.entity_type != "轮回者" or not entity.is_alive:
                 continue
             old_mana = entity.current_mana
+            # 勾魂（持续X）：[回始]不获得法力（不扣已有法力，只是回填被压制）。
+            if entity.has_status("勾魂"):
+                effects.append({
+                    "type": "mana_refill_blocked",
+                    "entity": entity.name,
+                    "by": "勾魂",
+                    "from": old_mana,
+                    "to": old_mana,
+                    "gained": 0,
+                })
+                continue
             gained = entity.mana_limit
             entity.current_mana += gained
             self.clamp_immortal_body(entity)
@@ -3205,12 +3225,16 @@ class CombatEngine:
                                                   source=caster.name))
                 result["effects"].append({"type": "zhenshi", "target": st_target.name,
                                           "duration": calc.get("duration", 1)})
-        if name == "勾魂" and calc.get("round_start_mana_drain"):
+        if name == "勾魂" and calc.get("no_mana_gain"):
+            # 勾魂X（2026-08-30 改版，报告.md 硬伤2-C）：持续X回合[回始]无法获得法力。
+            # 旧版为「[回始]失去2X法力，持续∞」（永久扣蓝），已废止。
             for st_target in wave_status_targets:
-                st_target.add_status(StatusEffect(name="勾魂", value=calc["round_start_mana_drain"],
-                                                  remaining_rounds=-1, source=caster.name))
+                st_target.add_status(StatusEffect(name="勾魂", value=1,
+                                                  remaining_rounds=calc.get("duration", x),
+                                                  source=caster.name))
                 result["effects"].append({"type": "gouhun", "target": st_target.name,
-                                          "mana_drain": calc["round_start_mana_drain"]})
+                                          "no_mana_gain": True,
+                                          "duration": calc.get("duration", x)})
         if name == "冥气" and calc.get("speed_loss_speed_limit"):
             for st_target in wave_status_targets:
                 st_target.add_status(StatusEffect(name="冥气", value=calc["speed_loss_speed_limit"],
@@ -3688,6 +3712,14 @@ class CombatEngine:
     # 循环这么多次），因此正常游戏流程永远不会触达这个值。
     MAX_SPELL_LOOP_CYCLES = 10_000
 
+    # 具名死因：这些 mechanic 的 ctx 虽不是 mechanic="death"，但同样是调用方
+    # **显式**给出的死因，必须原样留在 _death_ctx 里，而不是被兜底成 "hp_zero"。
+    # （【癌变】即因此被吞掉：预演/事件里只能看到 hp_zero，看不出是癌变。）
+    NAMED_DEATH_MECHANICS = {
+        "cancer": "cancer",
+        "proliferation": "cancer",
+    }
+
     def _resolve_entry_target(self, step, entry, holder: Entity, attacker: Entity,
                               refs: dict[str, Entity], reverse: dict[int, str]):
         """按步骤声明的目标身份，从提交里取出/校验实际目标实体，返回(entity, ref)。
@@ -4098,6 +4130,55 @@ class CombatEngine:
                 return x
         return None
 
+    def _dodge_budget_reset(self) -> None:
+        """换回合则清空自动反应路径的闪避计数（每回合最多 2 次，与 choose_dodge 同口径）。"""
+        rnd = getattr(self.state, "current_round", None)
+        if getattr(self, "_dodge_round", None) != rnd:
+            self._dodge_round = rnd
+            self._dodge_counts = {}
+
+    def _auto_reaction_dodge_decision(self, daowen: str, calc: dict,
+                                      holder: Entity, target: Entity) -> bool:
+        """自动反应法术路径：被选定方是否消耗 1 点速度闪避本次道纹。
+
+        DM 裁定（2026-08-31）：法术说到底只是自定义了触发条件的道纹，
+        **道纹要遵守的规则，法术一样要遵守**。README:161「凡带 [目标] 道纹，
+        目标被选定时均可消耗 1 点当前速度进行闪避」、README:423「禁止跳过闪避判定」。
+
+        原先 `_auto_after_life_lost_decision` 把 dodge 写死 False，导致**道纹伤害**
+        （区别于基础攻击的显式反应窗口）触发的反应法术不给目标任何声明机会——
+        例如【先发制人】的杀伐反打变成无法闪避的必杀。本方法把它换成统一闪避策略。
+        """
+        if holder is None or target is None or not target.is_alive:
+            return False
+        # 非敌对步骤（自身增益 / 队友）不走闪避
+        if self.state.on_player_side(holder) == self.state.on_player_side(target):
+            return False
+        # 无[目标]伤害的道纹（自身增益、纯控制等）不可闪避
+        dmg = calc.get("target_damage") or calc.get("total_damage") or 0
+        if not dmg:
+            return False
+        # 必中：无法闪避。此处**只读不消耗**——自动路径不替施法方花掉必中余数
+        # （显式攻击路径的 consume_bizhong 才负责消耗），避免改变既有必中结算。
+        if self.bizhong_remaining(holder) > 0:
+            return False
+        # 速度不足以支付闪避
+        if target.current_speed < 1:
+            return False
+        # 飞行：非飞行者无法选中飞行目标（与显式路径同口径）
+        if not self.is_targetable(holder, target):
+            return False
+        self._dodge_budget_reset()
+        used = self._dodge_counts.get(id(target), 0)
+        try:
+            from engine.ai_tactics import choose_dodge
+            want = bool(choose_dodge(None, int(dmg), budget_used=used, entity=target))
+        except Exception:
+            return False
+        if want:
+            self._dodge_counts[id(target)] = used + 1
+        return want
+
     def _auto_after_life_lost_decision(self, name: str, flow: dict, holder: Entity,
                                        attacker: Optional[Entity], refs: dict[str, Entity],
                                        reverse: dict[int, str], budget: Optional[int] = None) -> dict:
@@ -4139,7 +4220,9 @@ class CombatEngine:
                     return {"use": False}
                 budget -= cost
                 consumed += cost
-            cycle.append({"x": x, "target_ref": reverse.get(id(target)), "dodge": False})
+            cycle.append({"x": x, "target_ref": reverse.get(id(target)),
+                          "dodge": self._auto_reaction_dodge_decision(
+                              daowen, calc, holder, target)})
         if not cycle:
             return {"use": False}
         return {"use": True, "cycles": [cycle], "_cost": consumed}
@@ -5389,8 +5472,9 @@ class CombatEngine:
             entity.no_damage_rounds += 1
         else:
             entity.no_damage_rounds = 0
-        if entity.no_action_rounds >= 5 or entity.no_damage_rounds >= 5:
-            return ("连续五回合未出手" if entity.no_action_rounds >= 5
+        if (entity.no_action_rounds >= MEDIOCRITY_ROUNDS
+                or entity.no_damage_rounds >= MEDIOCRITY_ROUNDS):
+            return ("连续五回合未出手" if entity.no_action_rounds >= MEDIOCRITY_ROUNDS
                     else "连续五回合未能使敌对角色生命减少")
         return None
 

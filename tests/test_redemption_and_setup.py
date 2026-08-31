@@ -231,6 +231,10 @@ def test_jinghua_can_go_negative_without_redemption():
 
 
 def test_jinghua_rejects_non_positive_x():
+    """X=0 是合法的"拒绝发动"（DM裁定2026-08-30）：成功但跳过，不改异变。
+
+    仍然被拒的只有负数/非整数 X。
+    """
     engine = _ready_combat(_engine("jh_bad"))
     _give(engine.state.player, "净化")
     engine.state.player.current_mana = 20
@@ -240,7 +244,9 @@ def test_jinghua_rejects_non_positive_x():
         "daowen_name": "净化", "x": 0, "target_ref": "enemy:0",
         "dodge": False, "blood_shadow": False, "trigger_spell_choices": {},
     })
-    assert not r["success"]
+    assert r["success"] is True
+    assert r.get("skipped") is True
+    assert engine.state.player.current_mana == 20
     assert monster.mutation_count == 0
 
 

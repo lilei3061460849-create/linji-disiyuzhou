@@ -71,3 +71,27 @@ def test_dragon_blood_bottle_extract_heal_has_context(tmp_path):
     assert heal["heal_ctx"]["source"] == "龙血瓶"
     assert heal["heal_ctx"]["subtype"] == "dragon_blood_bottle_extract"
     assert bottle.current_uses == 6
+
+
+def test_cancer_death_ctx_subtype_is_cancer_not_hp_zero():
+    """DM 要求（2026-08-31）：死因必须写明，不许兜底成含糊的 hp_zero。
+
+    【癌变】的 ctx 是 mechanic="cancer" 而非 "death"，修复前 `_on_entity_death`
+    只在 parent.mechanic == "death" 时才取 subtype，癌变因此被吞掉——死亡事件与
+    死斗归因都只显示「自伤命零」，读日志的人（包括我）看不出是癌变。
+    """
+    state = GameState(phase="in_combat", combat_subphase="player_actions")
+    player = Entity("P", "轮回者", blood_limit=10, current_hp=5)
+    state.player = player
+    combat = CombatEngine(state, DiceEngine())
+
+    state.apply_heal(player, 20, ctx={
+        "timing": "player_action", "source": "再生", "source_type": "daowen",
+        "actor": player, "target": player, "mechanic": "heal", "subtype": "daowen",
+        "amount": 20, "tags": {"daowen"},
+    })
+    combat.check_cancer(player)
+
+    assert player.is_alive is False
+    assert player._death_ctx["subtype"] == "cancer", "癌变死因必须写明，不得兜底为 hp_zero"
+    assert player._death_ctx["source"] == "癌变"

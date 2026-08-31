@@ -17,18 +17,53 @@ resolve_attack），引擎对 in_final_duel 的 opponent 侧已放行，且自�
   - 每次行动后 _advance_duel_turn 对称换边
 """
 import os
+import random
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.enums import CombatSubphase
 from engine.ai_tactics import daowen_text_kind
+from engine.combat import MEDIOCRITY_ROUNDS
+
+# 顺序与定性（2026-08-31 DM 裁定）：【凡庸】是**规则**层的反乌龟机制，
+# 死锁防护只是 sim 层防卡死的**程序兜底**。兜底必须让凡庸先走满它所需的连续
+# 回合数；且兜底命中时**不判胜负**，只报错。
+# 阈值 = 凡庸阈值 + 1：保证凡庸先拿满 MEDIOCRITY_ROUNDS 个回合-end tick
+# 仍未能终结战斗，才轮到兜底说话。
+DEADLOCK_MIN_ROUNDS = MEDIOCRITY_ROUNDS + 1
 # 对白渲染（角色=轮回者，共用 personality）：让 PvP 有台词、有性格差异
 try:
     from sim.duel_dialogue import render_line, peek_personality
 except Exception:  # 兜底：对白渲染失败不阻塞死斗
     render_line = lambda actor, event, personality=None, rng=None: f"{getattr(actor,'name','??')}: …"
     peek_personality = lambda engine, entity: None
+
+# 战场公开频道（报告.md 硬伤3）：台词发布到 state.battle_channel，双方+观战者可见。
+# 独立随机源：绝**不**消耗全局 random / 引擎 RNG，避免台词影响 AI 与结算
+# （红线 E：不碰 AI —— 连随机数消耗都不能串味）。
+try:
+    from engine.dialogue import utter as _utter
+    _DIALOGUE_RNG = random.Random(20260830)
+except Exception:      # 兜底：频道不可用不阻塞死斗
+    _utter = None
+    _DIALOGUE_RNG = None
+
+
+def _publish_line(engine, actor, personality=None, log: list = None) -> None:
+    """把一句话发布到战场公开频道（时机自由：出手前后、任何时候都能说）。
+
+    只写字符串、不碰任何数值、不进 AI 决策链。发布失败一律静默——台词
+    永远不该让死斗跑不下去。
+    """
+    if _utter is None or actor is None:
+        return
+    try:
+        entry = _utter(engine.state, actor, rng=_DIALOGUE_RNG, personality=personality)
+        if log is not None:      # 实录：把这句话按发生顺序并进动作日志
+            log.append(f"  [{actor.name}] 说（{entry['posture']}）：{entry['text']}")
+    except Exception:
+        pass
 
 # 注意：不在模块顶层导入 build_learner（循环导入——build_learner 在死斗时局部
 # import 本模块，若本模块顶部又导入 build_learner 会拿到半加载的模块，
@@ -245,6 +280,58 @@ def _seed_duelist_personality(e, entity) -> None:
                 break  # 实体中途离场等偶发情况：跳过即可，不阻塞死斗
 
 
+# 引擎内部死因 subtype → 读得懂的名字。缺的按原样显示，宁可露内部名也不要静默吞掉。
+_DEATH_CAUSE_LABELS = {
+    "mediocrity": "凡庸",
+    "collapse": "崩解",
+    "cancer": "癌变",
+    "proliferation": "癌变",
+}
+
+
+def death_attribution_note(entity, side_label: str) -> str:
+    """命零归因（报告.md 硬伤1 改法2，DM 裁定 2026-08-30）。
+
+    「守擂主将阵亡」这句话默认暗示是对手打死的。实测守擂者靠【血债X】的
+    「流血X」代价把自己流到 0——没人打它，是它自己付的代价（死亡上下文里
+    actor == 死者本人且带 active_payment 标签）。胜负仍按「主将命零＝守擂
+    失守」判定（挑战者胜），但归因必须如实写清楚，不让挑战者白捡一个击杀。
+    """
+    if entity is None:
+        return f"{side_label}阵亡"
+    ctx = getattr(entity, "_death_ctx", None) or {}
+    if not ctx:
+        return f"{side_label}阵亡"
+    # 具名死因优先：DM 要求死因必须写明，不许把【癌变】这类特殊死因
+    # 兜底成含糊的「自伤命零」（2026-08-31：癌变就是这样被吞掉的）。
+    cause = ctx.get("subtype") or ""
+    if cause == "cancer":
+        return f"{side_label}阵亡（累计恢复量达血限×2 → 因【癌变】命零，非对手击杀）"
+    actor = ctx.get("actor")
+    if actor in (None, "", getattr(entity, "name", None)):
+        source = ctx.get("source") or "代价"
+        if "active_payment" in (ctx.get("tags") or []):
+            return f"{side_label}阵亡（自付【{source}】代价命零，非对手击杀）"
+        if cause and cause != "hp_zero":
+            # 内部 subtype 是英文名，直接吐出来读不懂（实测出现过 "mediocrity"）
+            label = _DEATH_CAUSE_LABELS.get(cause, cause)
+            return f"{side_label}阵亡（{label}，非对手击杀）"
+        return f"{side_label}阵亡（自伤命零，非对手击杀）"
+    return f"{side_label}阵亡"
+
+
+def _drain_ai_log(ai, prefix: str, log: list, seen: dict) -> None:
+    """把 AI 自 `seen` 之后新增的日志行全部追加进 log（保序）。
+
+    原先只取 `ai.log[-1]`，verbose 下每次出手可能有多条（[读到…] + [实时决策]…），
+    只取最后一条会把"读到对手台词后的判断"整条丢掉，对白的影响就看不见了。
+    """
+    start = seen.get(id(ai), 0)
+    for line in ai.log[start:]:
+        log.append(f"  {prefix} {line}")
+    seen[id(ai)] = len(ai.log)
+
+
 def _clean_ai_label(line: str) -> str:
     """把 TacticalAI 日志行压缩为可读动作标签，如
     '[实时决策] 残韵·曲解→再生@贾凡（对手）（得分 1.83）' → '残韵·曲解→再生@贾凡（对手）'。"""
@@ -270,22 +357,35 @@ def _assign_duelist_names(e, seed: int) -> None:
     只改显示层名字（Entity.name），不碰数值/道纹/机制。人格 seed 以名字为输入，
     故名字先定，再 seed 性格，避免「两人同名导致性格恰好相同」。若一方没有存活
     的轮回者主将（如守擂全灭），则只给挑战者改。
+
+    **配对改为挑"性格反差最大的一对"**（2026-08-30）：人格由名字哈希决定，
+    纯随机抽名经常抽到两个信念都接近 0 的木头（实测 seed=1 的「司空/闻人」
+    信念各约 +0.06 / −0.29），双方谁也不信谁也不疑，对白就退化成垃圾话。
+    这里在名字池里**穷举**所有两两组合，挑「对同一句示弱的判断差距最大」的一对
+    ——名字是显示层，数值/道纹/机制一个都不动，但心理博弈立刻看得见了。
+    seed 相同仍可复现；池内无有效组合时回退到原随机抽法。
     """
     import random as _random
-    rng = _random.Random(seed)
     pool = list(_DUELIST_NAME_POOL)
-    rng.shuffle(pool)
-    names = iter(pool)
+    chosen = _pick_contrasting_names(pool, seed)
+    rng = _random.Random(seed)
+    if chosen is None:                     # 回退：原随机抽法
+        rng.shuffle(pool)
+        names = iter(pool)
+        challenger_name = next(names)
+        lord_name = next(names)
+    else:
+        challenger_name, lord_name = chosen
     taken = set()
     if e.state.player is not None:
-        name = next(names)
-        e.state.player.name = name
-        taken.add(name)
+        e.state.player.name = challenger_name
+        taken.add(challenger_name)
     lord = next((x for x in e.state.enemies
                  if x.entity_type == "轮回者" and x.is_alive), None)
     if lord is not None:
-        name = next(names)
-        while name in taken:
+        name = lord_name if lord_name not in taken else None
+        if name is None:
+            names = iter([n for n in pool if n not in taken])
             name = next(names)
         lord.name = name
         # 与玩家侧同名的其他实体（朋友/员工）此前已被 _uniquify 加「（对手）」，
@@ -293,6 +393,42 @@ def _assign_duelist_names(e, seed: int) -> None:
         for other in e.state.get_all_player_side():
             if other is not e.state.player and other.name == lord.name:
                 other.name = f"{other.name}（对手）"
+
+
+def _pick_contrasting_names(pool: list, seed: int):
+    """在名字池里挑「对同一句示弱的判断反差最大」的一对（确定性，同 seed 可复现）。
+
+    人格由名字哈希决定，纯随机抽名常常抽到两个"谁也不信谁也不疑"的木头。
+    返回 (挑战者名, 守擂名)；算不出来返回 None（调用方回退到随机抽法）。
+    """
+    try:
+        import hashlib
+        from engine.dialogue import belief_from_traits
+        dims = list(_TRAIT_DIMS)
+
+        def traits(name: str) -> dict:
+            d = hashlib.sha256(name.encode("utf-8")).hexdigest()
+            return {dim: (1 if int(d[i % len(d):i % len(d) + 2], 16) % 2 == 0 else -1)
+                    * (0.55 + (int(d[i % len(d):i % len(d) + 2], 16) % 5) / 10.0)
+                    for i, dim in enumerate(dims)}
+
+        prof = {n: traits(n) for n in pool}
+        best, best_gap = None, 0.0
+        for i, a in enumerate(pool):
+            for b in pool[i + 1:]:
+                ga = belief_from_traits(prof[a], "weak")
+                gb = belief_from_traits(prof[b], "weak")
+                gap = abs(ga - gb)
+                if gap > best_gap + 1e-9:
+                    best, best_gap = (a, b) if ga >= gb else (b, a), gap
+        if best is None:
+            return None
+        import random as _r
+        if _r.Random(seed).random() < 0.5:      # 谁当挑战者由 seed 定，仍可复现
+            best = (best[1], best[0])
+        return best
+    except Exception:
+        return None
 
 
 def _defender_line(e, 对话, ent) -> None:
@@ -304,6 +440,7 @@ def _defender_line(e, 对话, ent) -> None:
         pers = peek_personality(e, ent)
         line = render_line(ent, "damage_out" if 对话.events % 2 else "damage_in", pers)
         对话.buf.append(line)
+        _publish_line(e, ent, pers)
 
 
 def _duel_state_sizes(e, top=6):
@@ -357,21 +494,25 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
     if use_tactical:
         from engine.ai_tactics import TacticalAI
         _tai = TacticalAI(e, verbose=True)
+        _seen: dict = {}
         def player_act():
             acted = _tai.take_action()
-            if acted:
-                # 动作实录：挑战者侧执行的动作（含残韵/道纹）→ 报告可见
-                if _tai.log:
-                    log.append(f"  挑战者 {_clean_ai_label(_tai.log[-1])}")
-                # 对白：挑战者侧动作事件（首句开场后按节奏插台词）
-                if 对话 is not None:
-                    对话.events += 1
-                    pers = peek_personality(e, e.state.player)
-                    line = render_line(e.state.player, "opening", pers)
-                    if 对话.events in (1, 2, 8, 15):
-                        对话.buf.append(line)
-                return True
-            return False
+            # 动作实录：挑战者侧执行的动作（含残韵/道纹）→ 报告可见。
+            # 排空而非只取最后一条：verbose 下的"[读到…]"自述也要留住；
+            # 且**未出手时也要排空**，否则日志顺序会失真（攒到下次一起倒出来）。
+            _drain_ai_log(_tai, "挑战者", log, _seen)
+            if not acted:
+                return False
+            # 对白：挑战者侧动作事件（首句开场后按节奏插台词）。
+            # 注意：**只在真的出手之后**才说——AI 空转一次就说一句会刷屏。
+            if 对话 is not None:
+                对话.events += 1
+                pers = peek_personality(e, e.state.player)
+                line = render_line(e.state.player, "opening", pers)
+                if 对话.events in (1, 2, 8, 15):
+                    对话.buf.append(line)
+                _publish_line(e, e.state.player, pers, log)
+            return True
         # 守擂者用同一套 TacticalAI，视角重定向为守擂（双方共享机制）
         lord = next((x for x in e.state.enemies
                      if x.entity_type == "轮回者" and x.is_alive), None)
@@ -389,21 +530,34 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
     def _over_time():
         return _time.monotonic() > deadline
 
+    def _lord():
+        return next((x for x in e.state.enemies if x.entity_type == "轮回者"), None)
+
     def _lord_alive():
         return any(x.is_alive for x in e.state.enemies if x.entity_type == "轮回者")
 
     def _challenger_alive():
         return bool(e.state.player and e.state.player.is_alive)
 
+    def challenger_death_reason() -> str:
+        return death_attribution_note(e.state.player, "挑战者")
+
+    def lord_death_reason() -> str:
+        return death_attribution_note(_lord(), "守擂主将")
+
     # 「连续 N 回合双方面板零净变化」= 真死锁(互瞪):法力每回合已回填,仍无任何
     # 可造成伤害/回血的动作(如 1 血 0 牌对峙)。这与「法力枯竭、回填后还能打」
     # 的 PvP 对耗区分开——后者该继续,而非判死锁。
+    #
+    # 但判定时机受两条约束(2026-08-31 DM 裁定):
+    #   1) 阈值必须 > MEDIOCRITY_ROUNDS,让【凡庸】先炸;
+    #   2) 命中时不判胜负,只报错(兜底不得擅定擂主卫冕)。
     hp_frozen_rounds = 0
     for rnd in range(1, max_rounds + 1):
         if not _challenger_alive():
-            return {"winner": "defender", "rounds": rnd, "reason": "挑战者阵亡"}
+            return {"winner": "defender", "rounds": rnd, "reason": challenger_death_reason()}
         if not _lord_alive():
-            return {"winner": "challenger", "rounds": rnd, "reason": "守擂主将阵亡"}
+            return {"winner": "challenger", "rounds": rnd, "reason": lord_death_reason()}
         from sim.optional_actions import start_round
         # 记录本回合开局双方 hp，用于回合末判「真死锁」。
         hp_before = (e.state.player.current_hp if e.state.player else None,
@@ -419,14 +573,16 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
         last_panel, panel_stall = None, 0
         for _ in range(max_steps):
             if _over_time():
-                return {"winner": "defender", "rounds": rnd,
-                        "reason": f"超时卫冕(>{max_wall_seconds:g}s)",
+                # 同死锁：墙钟超时是程序兜底，不得判胜负。
+                return {"winner": None, "rounds": rnd, "error": True,
+                        "reason": (f"死斗超时(>{max_wall_seconds:g}s)："
+                                   "程序兜底报错，不作胜负判定"),
                         "timeout": True,
                         "diag_state_sizes": _duel_state_sizes(e)}
             if not _challenger_alive():
-                return {"winner": "defender", "rounds": rnd, "reason": "挑战者阵亡"}
+                return {"winner": "defender", "rounds": rnd, "reason": challenger_death_reason()}
             if not _lord_alive():
-                return {"winner": "challenger", "rounds": rnd, "reason": "守擂主将阵亡"}
+                return {"winner": "challenger", "rounds": rnd, "reason": lord_death_reason()}
             panel = (
                 (e.state.player.current_hp, e.state.player.shield, e.state.player.current_mana,
                  e.state.player.current_speed, e.state.current_round) if e.state.player else None,
@@ -449,15 +605,14 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
             else:
                 if _def_tai is not None:
                     acted = _def_tai.take_action()
-                    if acted:
-                        if _def_tai.log:
-                            log.append(f"  守擂 {_clean_ai_label(_def_tai.log[-1])}")
-                        if 对话 is not None:
-                            对话.events += 1
-                            pers = peek_personality(e, _def_tai.player)
-                            line = render_line(_def_tai.player, "damage_out", pers)
-                            if 对话.events in (4, 12, 20, 28):
-                                对话.buf.append(line)
+                    _drain_ai_log(_def_tai, "守擂", log, _seen)
+                    if acted and 对话 is not None:
+                        对话.events += 1
+                        pers = peek_personality(e, _def_tai.player)
+                        line = render_line(_def_tai.player, "damage_out", pers)
+                        if 对话.events in (4, 12, 20, 28):
+                            对话.buf.append(line)
+                        _publish_line(e, _def_tai.player, pers, log)
                 else:
                     acted = _resolve_opponent_one(e, log, 对话)
                 if not acted:
@@ -486,7 +641,13 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
                     tuple(x.current_hp for x in e.state.enemies if x.entity_type == "轮回者"))
         frozen = hp_before == hp_after
         hp_frozen_rounds = hp_frozen_rounds + 1 if frozen else 0
-        if hp_frozen_rounds >= 2:
-            return {"winner": "defender", "rounds": rnd,
-                    "reason": "死斗死锁判卫冕(回始回填后双方面板仍连续零净变化)"}
+        if hp_frozen_rounds >= DEADLOCK_MIN_ROUNDS:
+            # 不判胜负：凡庸已让满 MEDIOCRITY_ROUNDS 回合仍僵持，属程序级异常，
+            # 只报错交由上层处置，不得替规则宣布擂主卫冕。
+            return {"winner": None, "rounds": rnd, "error": True, "timeout": True,
+                    "reason": (f"死斗死锁：回始回填后双方面板连续 {hp_frozen_rounds} 回合"
+                               f"零净变化，达兜底阈值 {DEADLOCK_MIN_ROUNDS} 回合"
+                               f"（须大于规则层反僵持的 {MEDIOCRITY_ROUNDS} 回合，"
+                               "以保证凡庸先有机会结算）。"
+                               "此为程序兜底报错，不作胜负判定。")}
     return {"winner": "defender", "rounds": max_rounds, "reason": "回合上限"}

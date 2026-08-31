@@ -110,6 +110,10 @@ class TacticalAI:
         self._ptraits: dict = {}         # 本回合的性格权重缓存（score×confidence）
         self._damage_done_battle = False # 本回合是否已使敌方掉血（凡庸压力）
         self._rounds_since_damage = 0    # 连续未使敌方掉血的回合数
+        # 硬伤3（红线 E 已解除 2026-08-30）：对手台词在**我**心里的可信度。
+        # 只由我自己的性格算出，不查对手真实状态；None=没听到有实质主张的话。
+        self._opponent_read: Optional[dict] = None
+        self._last_logged_read = None    # 已记录过的读数（防同一句刷屏）
 
     @property
     def previewer(self):
@@ -175,6 +179,54 @@ class TacticalAI:
     def _w(self, dim: str) -> float:
         """性格维度权重 ∈ [-1,1]（score×confidence，证据不足自然影响小）。"""
         return self._ptraits.get(dim, 0.0) or 0.0
+
+    # ---------- 硬伤3：读对手的台词（红线 E 已解除） ----------
+
+    def _refresh_opponent_read(self) -> None:
+        """读战场公开频道里对手最后一句有实质主张的话，按**我自己的性格**判可信度。
+
+        说话没有数值作用，但**让敌人忌惮**就是最大的作用：A 说自己没法力了，
+        我得自己判断那是真的弹尽粮绝，还是在骗我全力压上然后收割。
+        信不信只取决于我的性格——引擎绝不代我去查 A 的法力。
+        """
+        try:
+            from engine.dialogue import read_opponent
+            self._opponent_read = read_opponent(self.engine.state, self.player,
+                                                traits=self._ptraits)
+        except Exception:
+            self._opponent_read = None
+
+    DIALOGUE_BIAS_CAP = 10.0
+
+    def _dialogue_bias(self, *, enemy_hp_loss: float, shield_useful: float,
+                       heal: float, mana_spent: float) -> float:
+        """按"我有多信对手那句话"微调本候选的分数（**不产生任何数值效果**）。
+
+        含义（belief>0 = 信以为真；belief<0 = 认为是反话）：
+          · 对手喊虚(weak)：信 → 趁势压上收割（进攻加值、龟缩减值）；
+                           不信 → 怀疑是引我全力出击再收割（进攻减值、防御加值）。
+          · 对手威胁(strong)：信 → 忌惮，加防、少冒进（这就是"让敌人忌惮"）；
+                            不信 → 当它是虚张，照打。
+          · 对手试探(probe)：不下断言，只是不轻易把法力梭哈在一手上。
+
+        这是倾向而非规则：上限 DIALOGUE_BIAS_CAP=10，压不过 CRITICAL(-30)/
+        LETHAL 等安全护栏，只在"压上"与"收手"之间替我把天平拨一点。
+        """
+        read = self._opponent_read
+        if not read:
+            return 0.0
+        claim = read.get("claim")
+        belief = float(read.get("belief") or 0.0)
+        if claim not in ("weak", "strong", "probe") or abs(belief) < 0.05:
+            return 0.0
+        guard = shield_useful + heal
+        if claim == "weak":
+            bias = 0.9 * belief * enemy_hp_loss - 0.9 * belief * guard
+        elif claim == "strong":
+            bias = -0.9 * belief * enemy_hp_loss + 1.5 * belief * guard
+        else:                                   # probe：不梭哈
+            bias = -0.25 * abs(belief) * mana_spent
+        return max(-self.DIALOGUE_BIAS_CAP, min(self.DIALOGUE_BIAS_CAP, bias))
 
     # ---------- 预演与归纳 ----------
 
@@ -526,6 +578,13 @@ class TacticalAI:
             score -= (0.8 + 0.8 * w_moral) * a_loss
             score += 0.5 * w_trust * a_heal
 
+        # ---- 台词影响（硬伤3；红线 E 已于 2026-08-30 由 DM 解除）----
+        # 语言没有实质数值作用，但"让敌人忌惮"就是最大的作用。信不信由我的性格定。
+        if self._opponent_read:
+            score += self._dialogue_bias(
+                enemy_hp_loss=enemy_hp_loss, shield_useful=shield_useful,
+                heal=min(heal, missing), mana_spent=mana_spent)
+
         # ---- 风险等级惩罚（引擎口径分级） ----
         if risk == "LETHAL":
             return None
@@ -539,6 +598,20 @@ class TacticalAI:
     def _dynamic_action(self) -> Optional[dict]:
         """实时决策主路径：生成候选 → 预演评分 → 执行最高分。"""
         self._refresh_personality()
+        self._refresh_opponent_read()
+        # 只在**读到新的一句**时记录：对手不说话时每手都重读同一句会把日志刷爆
+        # （信念本身不变，重复记录没有信息量）。
+        r = self._opponent_read
+        stamp = (r["speaker"], r["posture"], round(r["belief"], 4),
+                 r["repeats"]) if r else None
+        if self.verbose and r and stamp != self._last_logged_read:
+            self._last_logged_read = stamp
+            verdict = "信" if r["belief"] >= 0 else "疑"
+            effect = ("趁势压上" if r["claim"] == "weak" and r["belief"] > 0
+                      else "防被收割" if r["claim"] == "weak"
+                      else "忌惮加防" if r["belief"] > 0 else "当它虚张")
+            self.log.append(f"[读到] {r['speaker']}「{r['posture']}」"
+                            f"→ 我{verdict}{abs(r['belief']):.2f}（{effect}）")
         scored: list[tuple[float, str, dict]] = []
         candidates = self._daowen_candidates()
         for bonus, cand in self._resonance_candidates():
@@ -983,15 +1056,25 @@ def _full_text(inst) -> str:
 
 
 def choose_dodge(engine, per_hit_damage: int, *, budget_used: int = 0,
-                 max_dodges: int = 2, min_hit_pct: float = 0.10) -> bool:
+                 max_dodges: int = 2, min_hit_pct: float = 0.10,
+                 entity=None) -> bool:
     """AI 闪避决策（供 sim 怪物阶段解析器调用，处理轮回者受到的攻击）。
 
     规则依据（README 基础定义）：被选为[目标]后可消耗 1 点当前速度完全闪避。
     - 速度不足/必中已由引擎拒绝，这里只做预算与收益判断；
     - 每回合最多闪避 max_dodges 次（留速度应对残韵/回锋刀等）；
     - 只闪避会伤 ≥ min_hit_pct×[血限] 的命中，低伤不浪费速度。
+
+    entity：被选定方实体。缺省时取 engine.state.player（历史行为，调用方不变）。
+    2026-08-31 新增该参数，供引擎「道纹伤害 → 自动反应法术」路径指定任意被选定方
+    （死斗里被反打的一方未必是 state.player），使闪避判定不再被跳过
+    （DM 裁定：法术只是自定义触发条件的道纹，道纹要遵守的规则法术一样要遵守；
+    README:423 禁止跳过闪避判定）。
     """
-    p = engine.state.player
+    p = entity
+    if p is None:
+        _state = getattr(engine, "state", None)
+        p = getattr(_state, "player", None) if _state is not None else None
     if p is None or not p.is_alive:
         return False
     if p.current_speed <= budget_used:

@@ -102,7 +102,7 @@ def test_ziyu_is_registered_mechanism():
     from engine.mechanisms.registry import MECHANISMS as REG
     # 回始相位机制按 priority：自愈(10) → 衰败(20) → 洞察(30) → 后续按 40/50/60 递增
     assert [m.name for m in REG.phase_mechanisms(Phase.ROUND_START)] == \
-        ["自愈", "衰败", "洞察·结算", "勾魂", "狂暴·标记", "畸变·标记"]
+        ["自愈", "衰败", "洞察·结算", "狂暴·标记", "畸变·标记"]
 
 
 def test_old_ziyu_if_removed_from_combat_pipeline():

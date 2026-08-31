@@ -116,12 +116,25 @@ def test_mengbi_stacks_and_rejects_bad_input():
     assert "法力不足" in r1["error"]
     assert not foe.has_status("蒙蔽")
 
+    # X=0 = 拒绝发动（DM裁定2026-08-30，报告.md 硬伤1b）：合法"放弃"，
+    # 不报错、不付法力、不消耗出手、不挂状态。X<1 中的"非法"只剩负数/非整数。
     engine.state.player.current_mana = 40
+    mana_before = engine.state.player.current_mana
+    used_before = engine.state.player.actions_used_this_round
     r2 = engine.execute_action("use_daowen", {
         "daowen_name": "蒙蔽", "x": 0, "target": foe.name,
     })
-    assert r2["success"] is False
-    assert "X必须≥1" in r2["error"]
+    assert r2["success"] is True
+    assert r2.get("skipped") is True
+    assert engine.state.player.current_mana == mana_before
+    assert engine.state.player.actions_used_this_round == used_before
+    assert not foe.has_status("蒙蔽")
+
+    r2b = engine.execute_action("use_daowen", {
+        "daowen_name": "蒙蔽", "x": -1, "target": foe.name,
+    })
+    assert r2b["success"] is False
+    assert "X必须≥1" in r2b["error"]
 
     r3 = engine.execute_action("use_daowen", {
         "daowen_name": "蒙蔽", "x": 1, "target": foe.name,
