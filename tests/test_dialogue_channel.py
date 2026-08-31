@@ -522,3 +522,33 @@ def test_the_plea_scenario_trusting_presses_suspicious_holds():
     assert s_said[1] > s_said[0], \
         f"多疑型应更不敢动: 进攻{s_said[0]:.1f} vs 防御{s_said[1]:.1f}"
     assert s_said[0] < s_silent[0], "多疑型听到示弱后，压上这一手应当被扣分"
+
+
+def test_duelist_names_are_picked_for_personality_contrast():
+    """死斗双方的性格由**名字哈希**决定，纯随机抽名会抽到两个"谁也不信谁也不疑"
+    的木头（实测 seed=1 原名「司空/闻人」信念各约 +0.06 / −0.29），对白就退化成
+    垃圾话。故 `_pick_contrasting_names` 必须挑**反差最大**的一对，且可复现。
+    """
+    import hashlib
+    from engine.dialogue import belief_from_traits
+    from sim.duel_pvp import _DUELIST_NAME_POOL, _TRAIT_DIMS, _pick_contrasting_names
+
+    def traits(name):
+        d = hashlib.sha256(name.encode("utf-8")).hexdigest()
+        out = {}
+        for i, dim in enumerate(_TRAIT_DIMS):
+            byte = int(d[i % len(d):i % len(d) + 2], 16)
+            out[dim] = (1 if byte % 2 == 0 else -1) * (0.55 + (byte % 5) / 10.0)
+        return out
+
+    pool = list(_DUELIST_NAME_POOL)
+    a, b = _pick_contrasting_names(pool, 1)
+    assert a and b and a != b, (a, b)
+    gap = abs(belief_from_traits(traits(a), "weak")
+              - belief_from_traits(traits(b), "weak"))
+    assert gap > 1.0, f"反差太小（{gap:.2f}），对白仍会是垃圾话: {a} vs {b}"
+    # 确定性：同 seed 必须同结果；且两者一信一疑
+    assert _pick_contrasting_names(pool, 1) == (a, b), "同 seed 必须可复现"
+    ba = belief_from_traits(traits(a), "weak")
+    bb = belief_from_traits(traits(b), "weak")
+    assert ba * bb <= 0, f"必须一信一疑，实 {ba:+.2f} / {bb:+.2f}"

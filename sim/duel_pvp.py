@@ -331,22 +331,35 @@ def _assign_duelist_names(e, seed: int) -> None:
     只改显示层名字（Entity.name），不碰数值/道纹/机制。人格 seed 以名字为输入，
     故名字先定，再 seed 性格，避免「两人同名导致性格恰好相同」。若一方没有存活
     的轮回者主将（如守擂全灭），则只给挑战者改。
+
+    **配对改为挑"性格反差最大的一对"**（2026-08-30）：人格由名字哈希决定，
+    纯随机抽名经常抽到两个信念都接近 0 的木头（实测 seed=1 的「司空/闻人」
+    信念各约 +0.06 / −0.29），双方谁也不信谁也不疑，对白就退化成垃圾话。
+    这里在名字池里**穷举**所有两两组合，挑「对同一句示弱的判断差距最大」的一对
+    ——名字是显示层，数值/道纹/机制一个都不动，但心理博弈立刻看得见了。
+    seed 相同仍可复现；池内无有效组合时回退到原随机抽法。
     """
     import random as _random
-    rng = _random.Random(seed)
     pool = list(_DUELIST_NAME_POOL)
-    rng.shuffle(pool)
-    names = iter(pool)
+    chosen = _pick_contrasting_names(pool, seed)
+    rng = _random.Random(seed)
+    if chosen is None:                     # 回退：原随机抽法
+        rng.shuffle(pool)
+        names = iter(pool)
+        challenger_name = next(names)
+        lord_name = next(names)
+    else:
+        challenger_name, lord_name = chosen
     taken = set()
     if e.state.player is not None:
-        name = next(names)
-        e.state.player.name = name
-        taken.add(name)
+        e.state.player.name = challenger_name
+        taken.add(challenger_name)
     lord = next((x for x in e.state.enemies
                  if x.entity_type == "轮回者" and x.is_alive), None)
     if lord is not None:
-        name = next(names)
-        while name in taken:
+        name = lord_name if lord_name not in taken else None
+        if name is None:
+            names = iter([n for n in pool if n not in taken])
             name = next(names)
         lord.name = name
         # 与玩家侧同名的其他实体（朋友/员工）此前已被 _uniquify 加「（对手）」，
@@ -354,6 +367,42 @@ def _assign_duelist_names(e, seed: int) -> None:
         for other in e.state.get_all_player_side():
             if other is not e.state.player and other.name == lord.name:
                 other.name = f"{other.name}（对手）"
+
+
+def _pick_contrasting_names(pool: list, seed: int):
+    """在名字池里挑「对同一句示弱的判断反差最大」的一对（确定性，同 seed 可复现）。
+
+    人格由名字哈希决定，纯随机抽名常常抽到两个"谁也不信谁也不疑"的木头。
+    返回 (挑战者名, 守擂名)；算不出来返回 None（调用方回退到随机抽法）。
+    """
+    try:
+        import hashlib
+        from engine.dialogue import belief_from_traits
+        dims = list(_TRAIT_DIMS)
+
+        def traits(name: str) -> dict:
+            d = hashlib.sha256(name.encode("utf-8")).hexdigest()
+            return {dim: (1 if int(d[i % len(d):i % len(d) + 2], 16) % 2 == 0 else -1)
+                    * (0.55 + (int(d[i % len(d):i % len(d) + 2], 16) % 5) / 10.0)
+                    for i, dim in enumerate(dims)}
+
+        prof = {n: traits(n) for n in pool}
+        best, best_gap = None, 0.0
+        for i, a in enumerate(pool):
+            for b in pool[i + 1:]:
+                ga = belief_from_traits(prof[a], "weak")
+                gb = belief_from_traits(prof[b], "weak")
+                gap = abs(ga - gb)
+                if gap > best_gap + 1e-9:
+                    best, best_gap = (a, b) if ga >= gb else (b, a), gap
+        if best is None:
+            return None
+        import random as _r
+        if _r.Random(seed).random() < 0.5:      # 谁当挑战者由 seed 定，仍可复现
+            best = (best[1], best[0])
+        return best
+    except Exception:
+        return None
 
 
 def _defender_line(e, 对话, ent) -> None:
