@@ -78,8 +78,12 @@ def test_requires_target_flag_now_true(tmp_path):
         assert "target" in inspect.signature(DaoWenEngine._registry[name]).parameters, name
 
 
-def test_monster_gouhun_drains_player_mana(tmp_path):
-    """怪物勾魂 → 玩家获得勾魂状态，[回始]失去2X点当前法力。"""
+def test_monster_gouhun_blocks_player_mana_gain(tmp_path):
+    """怪物勾魂 → 玩家获得勾魂状态，持续X回合[回始]不获得法力（2026-08-30 改版）。
+
+    旧版为「[回始]失去2X法力，持续∞」；新版不扣已有法力，只压制回始回填，
+    持续 X 回合后自然恢复。
+    """
     e = _mk_engine(tmp_path)
     p = e.state.player
     p.current_mana = 30
@@ -89,13 +93,13 @@ def test_monster_gouhun_drains_player_mana(tmp_path):
     r = _monster_cast(e, m, "勾魂", "player:0")
     assert r, r
     assert p.has_status("勾魂"), "勾魂应挂在玩家身上"
-    assert p.get_status_value("勾魂") == 4, "勾魂X=2 → 每回始失去4法力"
-    # 回始结算：法力先回满法限，再被勾魂扣 2X=4
-    p.current_mana = 0
+
+    # 回始：法力回填被压制（不扣已有法力）
+    p.current_mana = 9
     rs = e.combat.round_start({"relic_choices": {}})
-    gouhun = next((x for x in rs.get("effects", []) if x.get("type") == "gouhun_mana"), None)
-    assert gouhun is not None, "回始应有勾魂扣法力条目"
-    assert gouhun["lost"] == 4, f"勾魂2应扣4，实{gouhun['lost']}"
+    blocked = [x for x in rs.get("effects", []) if x.get("type") == "mana_refill_blocked"]
+    assert blocked, "回始应有法力回填被压制条目"
+    assert p.current_mana == 9, f"勾魂期间不得获得法力，实{p.current_mana}"
 
 
 def test_monster_mingqi_cuts_player_speed_limit_on_speed_loss(tmp_path):

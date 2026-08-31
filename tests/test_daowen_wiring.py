@@ -111,16 +111,23 @@ def test_boba_spreads_damage_equally_with_random_remainder():
 
 
 def test_boba_boundary_and_invalid_submissions():
-    """边界/错误：X<1 非法；目标不足X个/重复/数量不符时被拒；波及不作用于自身。"""
+    """边界/错误：X 为负数/非整数非法（X=0 自 2026-08-30 起合法＝拒绝发动）；
+    目标不足X个/重复/数量不符时被拒；波及不作用于自身。"""
     engine = _engine("boba_keys")
     p = engine.state.player
     _give(p, "波及")
     m = _monster(engine)
     engine.execute_action("round_start", {})
 
-    # X=0 非法
+    # X=0 = 拒绝发动（DM裁定2026-08-30，报告.md 硬伤1b）：合法跳过、不挂波及标记
     r0 = engine.execute_action("use_daowen", {"daowen_name": "波及", "x": 0, "target": m.name})
-    assert r0["success"] is False
+    assert r0["success"] is True
+    assert r0.get("skipped") is True
+    assert not getattr(m, "_wave_marks", None)
+    # X<1 中真正非法的只剩负数/非整数
+    r0b = engine.execute_action("use_daowen", {"daowen_name": "波及", "x": -1, "target": m.name})
+    assert r0b["success"] is False
+    assert "X必须≥1" in r0b["error"]
 
     # dodge_targets 数量必须等于 X
     r1 = engine.execute_action("use_daowen", {
@@ -295,12 +302,17 @@ def test_ziyu_cast_does_not_heal_until_round_start():
 
 
 def test_ziyu_necrosis_blocks_and_invalid_x():
-    """边界：坏死回始不奶；错误：X<1 拒绝。"""
+    """边界：坏死回始不奶；X=0 合法（拒绝发动，不回血）；负数/非整数仍被拒。"""
     engine = _engine("ziyu_bound")
     p = engine.state.player
     _give(p, "自愈")
     engine.execute_action("round_start", {})
-    bad = engine.execute_action("use_daowen", {"daowen_name": "自愈", "x": 0})
+    hp_before = p.current_hp
+    zero = engine.execute_action("use_daowen", {"daowen_name": "自愈", "x": 0})
+    assert zero["success"] is True
+    assert zero.get("skipped") is True
+    assert p.current_hp == hp_before      # 拒绝发动 = 没有回血
+    bad = engine.execute_action("use_daowen", {"daowen_name": "自愈", "x": -1})
     assert bad["success"] is False
     assert "X必须≥1" in bad["error"]
     engine.execute_action("use_daowen", {"daowen_name": "自愈", "x": 1})

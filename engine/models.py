@@ -482,8 +482,14 @@ class Entity:
         }
     
     def gain_shield(self, amount: int) -> int:
-        """获得格挡"""
-        self.shield += amount
+        """获得格挡。
+
+        格挡**没有**上限（DM 裁定 2026-08-30 撤销早前的血限压帽）：格挡只写
+        「可抵消等量伤害」，正文从未规定它不得超过[血限]，血限 36 的角色叠到
+        68 盾是合法面板，不是假账。曾误以为这是"永远消耗不完的堆积"而擅自压帽，
+        属自造规则，已撤销。负 amount（扣盾）只做下限 0 保护。
+        """
+        self.shield = max(0, self.shield + amount)
         return self.shield
     
     def clear_shield(self):
@@ -685,6 +691,13 @@ class GameState:
     # 抵扣X封印的玩家遗物 {遗物名: 剩余回合}，[回终]-1，归零解封（封印期间不触发 process_relics）
     sealed_relics: dict = field(default_factory=dict)
     
+    # 战场公开频道（硬伤3，2026-08-30）：双方与观战者共享的台词记录。
+    # 条目只含 {round, battle, speaker, posture, text}——**禁止**任何真伪字段
+    # （"你都标出来了，还猜什么"）。纯 dict 结构，随 deepcopy 快照 / pickle 存档往返。
+    # 只有 sim/duel_pvp.py 之类的表现层调用 engine.dialogue.utter() 写入；
+    # TacticalAI 一律不读（红线 E：不碰 AI 判断）。
+    battle_channel: list[dict] = field(default_factory=list)
+
     # 残韵
     resonance: dict[str, int] = field(default_factory=dict)  # {转换: 1, 反转: 2, ...}
     

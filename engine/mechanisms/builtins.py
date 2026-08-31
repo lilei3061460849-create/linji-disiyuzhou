@@ -1,5 +1,5 @@
-"""已迁移到声明层的机制（当前 11 个：加害、龙鳞、自愈、帮派令、衰败、畸变·结算、
-焦黑发丝、洞察·结算、勾魂、狂暴·标记、畸变·标记）。
+"""已迁移到声明层的机制（当前 10 个：加害、龙鳞、自愈、帮派令、衰败、畸变·结算、
+焦黑发丝、洞察·结算、狂暴·标记、畸变·标记）。
 
 迁移协议（迁移前后必须同时满足）：
   1. 规则语义与旧实现完全一致（加害：amount+状态值；龙鳞：max(0, amount-状态值)；
@@ -8,10 +8,10 @@
      畸变·结算：[回终]失去(攻击力×攻击次数)点血限，血限压 0 连带命零统一判定；
      焦黑发丝：怪物命零 → 玩家速度+2（经统一速度入口）；
      洞察·结算：[回始]待结算法力经 mana 动词获得（含不朽之躯钳制）；
-     勾魂：[回始]失去 min(当前法力, 层数) 点法力（下限0，经 mana 动词）；
      狂暴·标记/畸变·标记：纯报告条目，无动词）；
   2. priority 保持原值或按旧代码位置固化：加害=20、龙鳞=30（伤害加减区）；
-     自愈=10、衰败=20、洞察·结算=30、勾魂=40、狂暴·标记=50、畸变·标记=60
+     自愈=10、衰败=20、洞察·结算=30、狂暴·标记=50、畸变·标记=60
+     （勾魂=40 已于 2026-08-30 随【勾魂】改版移除：不再回始扣法力）
      （回始效果循环，现已全部声明化）；帮派令=10（战始遗物段）；
      畸变·结算=10（回终第一循环顶部、凡庸前）；焦黑发丝=10（命零反应第一位）；
   3. 执行路径唯一：伤害相位经 CombatHookManager 上的 MechanismHookAdapter，
@@ -235,32 +235,6 @@ DONGCHA = Mechanism(
     priority=30,
 )
 
-def _gouhun_effect(ctx: TriggerContext, targets: list) -> dict:
-    """旧 round_start 勾魂块语义（逐字复刻）：
-
-    失去 min(当前法力, 勾魂层数) 点法力（下限 0），经 mana 动词；
-    即使实际失去 0 也照常产生报告条目（与旧块一致）。
-    """
-    entity = ctx.target
-    drain = entity.get_status_value("勾魂")
-    result = apply_verb(ctx.combat, "mana", {"target": entity, "delta": -drain})
-    return {"type": "gouhun_mana", "entity": entity.name, "lost": result["lost"]}
-
-
-GOULUN = Mechanism(
-    name="勾魂",
-    when=Trigger.phase(Phase.ROUND_START),
-    effect=_gouhun_effect,
-    target=SELF,
-    condition=all_(
-        has_status("勾魂", of="self"),
-        entity_type("轮回者", of="self"),
-        is_alive(of="self"),
-    ),
-    # 旧位置=回始效果循环第四位（自愈10、衰败20、洞察·结算30 之后；狂暴·标记之前）
-    priority=40,
-)
-
 def _kuangbao_marker_effect(ctx: TriggerContext, targets: list) -> dict:
     """旧 round_start 狂暴标记块语义（逐字复刻）：纯报告条目，无动词。"""
     return {
@@ -291,7 +265,7 @@ KUANGBAO_MARKER = Mechanism(
     effect=_kuangbao_marker_effect,
     target=SELF,
     condition=has_status("狂暴", of="self"),
-    # 旧位置=回始效果循环第五位（勾魂之后、畸变标记之前）
+    # 旧位置=回始效果循环第五位（原勾魂之后、畸变标记之前；勾魂已移除）
     priority=50,
 )
 
@@ -440,7 +414,6 @@ MECHANISMS.register(SHUAIBAI)
 MECHANISMS.register(JIBIAN_SETTLE)
 MECHANISMS.register(JIAOHHEIFASI)
 MECHANISMS.register(DONGCHA)
-MECHANISMS.register(GOULUN)
 MECHANISMS.register(KUANGBAO_MARKER)
 MECHANISMS.register(JIBIAN_MARKER)
 MECHANISMS.register(XIJIE_PASSIVE)

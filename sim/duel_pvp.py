@@ -17,6 +17,7 @@ resolve_attack），引擎对 in_final_duel 的 opponent 侧已放行，且自�
   - 每次行动后 _advance_duel_turn 对称换边
 """
 import os
+import random
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -29,6 +30,30 @@ try:
 except Exception:  # 兜底：对白渲染失败不阻塞死斗
     render_line = lambda actor, event, personality=None, rng=None: f"{getattr(actor,'name','??')}: …"
     peek_personality = lambda engine, entity: None
+
+# 战场公开频道（报告.md 硬伤3）：台词发布到 state.battle_channel，双方+观战者可见。
+# 独立随机源：绝**不**消耗全局 random / 引擎 RNG，避免台词影响 AI 与结算
+# （红线 E：不碰 AI —— 连随机数消耗都不能串味）。
+try:
+    from engine.dialogue import utter as _utter
+    _DIALOGUE_RNG = random.Random(20260830)
+except Exception:      # 兜底：频道不可用不阻塞死斗
+    _utter = None
+    _DIALOGUE_RNG = None
+
+
+def _publish_line(engine, actor, personality=None) -> None:
+    """把一句话发布到战场公开频道（时机自由：出手前后、任何时候都能说）。
+
+    只写字符串、不碰任何数值、不进 AI 决策链。发布失败一律静默——台词
+    永远不该让死斗跑不下去。
+    """
+    if _utter is None or actor is None:
+        return
+    try:
+        _utter(engine.state, actor, rng=_DIALOGUE_RNG, personality=personality)
+    except Exception:
+        pass
 
 # 注意：不在模块顶层导入 build_learner（循环导入——build_learner 在死斗时局部
 # import 本模块，若本模块顶部又导入 build_learner 会拿到半加载的模块，
@@ -245,6 +270,28 @@ def _seed_duelist_personality(e, entity) -> None:
                 break  # 实体中途离场等偶发情况：跳过即可，不阻塞死斗
 
 
+def death_attribution_note(entity, side_label: str) -> str:
+    """命零归因（报告.md 硬伤1 改法2，DM 裁定 2026-08-30）。
+
+    「守擂主将阵亡」这句话默认暗示是对手打死的。实测守擂者靠【血债X】的
+    「流血X」代价把自己流到 0——没人打它，是它自己付的代价（死亡上下文里
+    actor == 死者本人且带 active_payment 标签）。胜负仍按「主将命零＝守擂
+    失守」判定（挑战者胜），但归因必须如实写清楚，不让挑战者白捡一个击杀。
+    """
+    if entity is None:
+        return f"{side_label}阵亡"
+    ctx = getattr(entity, "_death_ctx", None) or {}
+    if not ctx:
+        return f"{side_label}阵亡"
+    actor = ctx.get("actor")
+    if actor in (None, "", getattr(entity, "name", None)):
+        source = ctx.get("source") or "代价"
+        if "active_payment" in (ctx.get("tags") or []):
+            return f"{side_label}阵亡（自付【{source}】代价命零，非对手击杀）"
+        return f"{side_label}阵亡（自伤命零，非对手击杀）"
+    return f"{side_label}阵亡"
+
+
 def _clean_ai_label(line: str) -> str:
     """把 TacticalAI 日志行压缩为可读动作标签，如
     '[实时决策] 残韵·曲解→再生@贾凡（对手）（得分 1.83）' → '残韵·曲解→再生@贾凡（对手）'。"""
@@ -304,6 +351,7 @@ def _defender_line(e, 对话, ent) -> None:
         pers = peek_personality(e, ent)
         line = render_line(ent, "damage_out" if 对话.events % 2 else "damage_in", pers)
         对话.buf.append(line)
+        _publish_line(e, ent, pers)
 
 
 def _duel_state_sizes(e, top=6):
@@ -370,6 +418,7 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
                     line = render_line(e.state.player, "opening", pers)
                     if 对话.events in (1, 2, 8, 15):
                         对话.buf.append(line)
+                    _publish_line(e, e.state.player, pers)
                 return True
             return False
         # 守擂者用同一套 TacticalAI，视角重定向为守擂（双方共享机制）
@@ -389,11 +438,20 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
     def _over_time():
         return _time.monotonic() > deadline
 
+    def _lord():
+        return next((x for x in e.state.enemies if x.entity_type == "轮回者"), None)
+
     def _lord_alive():
         return any(x.is_alive for x in e.state.enemies if x.entity_type == "轮回者")
 
     def _challenger_alive():
         return bool(e.state.player and e.state.player.is_alive)
+
+    def challenger_death_reason() -> str:
+        return death_attribution_note(e.state.player, "挑战者")
+
+    def lord_death_reason() -> str:
+        return death_attribution_note(_lord(), "守擂主将")
 
     # 「连续 N 回合双方面板零净变化」= 真死锁(互瞪):法力每回合已回填,仍无任何
     # 可造成伤害/回血的动作(如 1 血 0 牌对峙)。这与「法力枯竭、回填后还能打」
@@ -401,9 +459,9 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
     hp_frozen_rounds = 0
     for rnd in range(1, max_rounds + 1):
         if not _challenger_alive():
-            return {"winner": "defender", "rounds": rnd, "reason": "挑战者阵亡"}
+            return {"winner": "defender", "rounds": rnd, "reason": challenger_death_reason()}
         if not _lord_alive():
-            return {"winner": "challenger", "rounds": rnd, "reason": "守擂主将阵亡"}
+            return {"winner": "challenger", "rounds": rnd, "reason": lord_death_reason()}
         from sim.optional_actions import start_round
         # 记录本回合开局双方 hp，用于回合末判「真死锁」。
         hp_before = (e.state.player.current_hp if e.state.player else None,
@@ -424,9 +482,9 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
                         "timeout": True,
                         "diag_state_sizes": _duel_state_sizes(e)}
             if not _challenger_alive():
-                return {"winner": "defender", "rounds": rnd, "reason": "挑战者阵亡"}
+                return {"winner": "defender", "rounds": rnd, "reason": challenger_death_reason()}
             if not _lord_alive():
-                return {"winner": "challenger", "rounds": rnd, "reason": "守擂主将阵亡"}
+                return {"winner": "challenger", "rounds": rnd, "reason": lord_death_reason()}
             panel = (
                 (e.state.player.current_hp, e.state.player.shield, e.state.player.current_mana,
                  e.state.player.current_speed, e.state.current_round) if e.state.player else None,
@@ -458,6 +516,7 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
                             line = render_line(_def_tai.player, "damage_out", pers)
                             if 对话.events in (4, 12, 20, 28):
                                 对话.buf.append(line)
+                            _publish_line(e, _def_tai.player, pers)
                 else:
                     acted = _resolve_opponent_one(e, log, 对话)
                 if not acted:

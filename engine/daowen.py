@@ -273,14 +273,14 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_bizhong(x: int) -> dict:
-        """必中X：代价：异变5X。自身下X次攻击附带必中"""
+        """必中X：代价：异变5X。自身下X次选择[目标]（攻击与道纹通用，共用层数）时其无法闪避"""
         return {
             "dao_wen": "必中",
             "x": x,
             "cost_type": CostType.MUTATION.value,
             "cost_mutation": 5 * x,
             "guaranteed_hits": x,
-            "summary": f"异变+{5*x}，自身下{x}次攻击附带必中"
+            "summary": f"异变+{5*x}，自身下{x}次选择[目标]（攻击/道纹共用层数）时其无法闪避"
         }
     
     @staticmethod
@@ -929,18 +929,23 @@ class DaoWenEngine:
 
     @staticmethod
     def calculate_gouhun(x: int, target: Entity = None) -> dict:
-        """勾魂X：消耗X。[回始]使[目标]失去2X点当前法力，持续∞。
+        """勾魂X：消耗X。使[目标]无法获得[法力]，持续X。
+
+        改版（2026-08-30，DM 裁定见 报告.md 硬伤2-C）：
+        旧版为「[回始]使[目标]失去2X点当前法力，持续∞」——永久扣法力对输出决策
+        是单向碾压，且玩家只能靠残韵改掉怪物道纹来止损。新版改为**持续X回合
+        无法获得法力**：[回始]法力回填被压制（不扣已有法力），X 回合后自然恢复。
+        这样威胁是"暂时断蓝"而非"永久死刑"，且期限明确（与【镇尸】禁回复同构）。
 
         修复（2026-08-21）：补上 target 参数使该道纹正确声明需要[目标]，
-        否则 requires_target=False 导致怪物只能自施（实战：寄骨蝇勾魂自吸
-        无法力=空放）。效果数值与消耗不变。
+        否则 requires_target=False 导致怪物只能自施（寄骨蝇勾魂自吸无法力=空放）。
         """
         target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "勾魂", "x": x,
             "cost_type": CostType.MANA.value, "cost": x,
-            "round_start_mana_drain": 2 * x, "duration": -1,
-            "summary": f"消耗{x}法力，[回始]{target_name}失去{2*x}法力，永久"
+            "no_mana_gain": True, "duration": x,
+            "summary": f"消耗{x}法力，{target_name}无法获得法力，持续{x}回合"
         }
 
     @staticmethod

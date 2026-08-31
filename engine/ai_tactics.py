@@ -110,6 +110,9 @@ class TacticalAI:
         self._ptraits: dict = {}         # 本回合的性格权重缓存（score×confidence）
         self._damage_done_battle = False # 本回合是否已使敌方掉血（凡庸压力）
         self._rounds_since_damage = 0    # 连续未使敌方掉血的回合数
+        # 硬伤3（红线 E 已解除 2026-08-30）：对手台词在**我**心里的可信度。
+        # 只由我自己的性格算出，不查对手真实状态；None=没听到有实质主张的话。
+        self._opponent_read: Optional[dict] = None
 
     @property
     def previewer(self):
@@ -175,6 +178,54 @@ class TacticalAI:
     def _w(self, dim: str) -> float:
         """性格维度权重 ∈ [-1,1]（score×confidence，证据不足自然影响小）。"""
         return self._ptraits.get(dim, 0.0) or 0.0
+
+    # ---------- 硬伤3：读对手的台词（红线 E 已解除） ----------
+
+    def _refresh_opponent_read(self) -> None:
+        """读战场公开频道里对手最后一句有实质主张的话，按**我自己的性格**判可信度。
+
+        说话没有数值作用，但**让敌人忌惮**就是最大的作用：A 说自己没法力了，
+        我得自己判断那是真的弹尽粮绝，还是在骗我全力压上然后收割。
+        信不信只取决于我的性格——引擎绝不代我去查 A 的法力。
+        """
+        try:
+            from engine.dialogue import read_opponent
+            self._opponent_read = read_opponent(self.engine.state, self.player,
+                                                traits=self._ptraits)
+        except Exception:
+            self._opponent_read = None
+
+    DIALOGUE_BIAS_CAP = 10.0
+
+    def _dialogue_bias(self, *, enemy_hp_loss: float, shield_useful: float,
+                       heal: float, mana_spent: float) -> float:
+        """按"我有多信对手那句话"微调本候选的分数（**不产生任何数值效果**）。
+
+        含义（belief>0 = 信以为真；belief<0 = 认为是反话）：
+          · 对手喊虚(weak)：信 → 趁势压上收割（进攻加值、龟缩减值）；
+                           不信 → 怀疑是引我全力出击再收割（进攻减值、防御加值）。
+          · 对手威胁(strong)：信 → 忌惮，加防、少冒进（这就是"让敌人忌惮"）；
+                            不信 → 当它是虚张，照打。
+          · 对手试探(probe)：不下断言，只是不轻易把法力梭哈在一手上。
+
+        这是倾向而非规则：上限 DIALOGUE_BIAS_CAP=10，压不过 CRITICAL(-30)/
+        LETHAL 等安全护栏，只在"压上"与"收手"之间替我把天平拨一点。
+        """
+        read = self._opponent_read
+        if not read:
+            return 0.0
+        claim = read.get("claim")
+        belief = float(read.get("belief") or 0.0)
+        if claim not in ("weak", "strong", "probe") or abs(belief) < 0.05:
+            return 0.0
+        guard = shield_useful + heal
+        if claim == "weak":
+            bias = 0.9 * belief * enemy_hp_loss - 0.9 * belief * guard
+        elif claim == "strong":
+            bias = -0.9 * belief * enemy_hp_loss + 1.5 * belief * guard
+        else:                                   # probe：不梭哈
+            bias = -0.25 * abs(belief) * mana_spent
+        return max(-self.DIALOGUE_BIAS_CAP, min(self.DIALOGUE_BIAS_CAP, bias))
 
     # ---------- 预演与归纳 ----------
 
@@ -526,6 +577,13 @@ class TacticalAI:
             score -= (0.8 + 0.8 * w_moral) * a_loss
             score += 0.5 * w_trust * a_heal
 
+        # ---- 台词影响（硬伤3；红线 E 已于 2026-08-30 由 DM 解除）----
+        # 语言没有实质数值作用，但"让敌人忌惮"就是最大的作用。信不信由我的性格定。
+        if self._opponent_read:
+            score += self._dialogue_bias(
+                enemy_hp_loss=enemy_hp_loss, shield_useful=shield_useful,
+                heal=min(heal, missing), mana_spent=mana_spent)
+
         # ---- 风险等级惩罚（引擎口径分级） ----
         if risk == "LETHAL":
             return None
@@ -539,6 +597,7 @@ class TacticalAI:
     def _dynamic_action(self) -> Optional[dict]:
         """实时决策主路径：生成候选 → 预演评分 → 执行最高分。"""
         self._refresh_personality()
+        self._refresh_opponent_read()
         scored: list[tuple[float, str, dict]] = []
         candidates = self._daowen_candidates()
         for bonus, cand in self._resonance_candidates():

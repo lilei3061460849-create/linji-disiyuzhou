@@ -69,7 +69,7 @@ def test_dongcha_is_registered():
     assert mech.priority == 30
     from engine.mechanisms.registry import MECHANISMS as REG
     assert [m.name for m in REG.phase_mechanisms(Phase.ROUND_START)] == \
-        ["自愈", "衰败", "洞察·结算", "勾魂", "狂暴·标记", "畸变·标记"]
+        ["自愈", "衰败", "洞察·结算", "狂暴·标记", "畸变·标记"]
 
 
 def test_old_dongcha_block_removed():
@@ -129,15 +129,18 @@ def test_dongcha_skips_dead():
 
 # ==================== 3. 顺序 ====================
 
-def test_dongcha_order_between_shuaibai_and_gouhun():
-    """条目顺序：衰败(20) → 洞察(30)；勾魂为尚未迁移的硬编码块（在其后）。"""
+def test_dongcha_order_between_shuaibai_and_dongcha():
+    """条目顺序：衰败(20) → 洞察(30)。
+
+    （原「洞察 → 勾魂」顺序断言于 2026-08-30 移除：【勾魂】改版为
+    「持续X回合无法获得法力」，不再有回始扣法力机制条目。）
+    """
     from engine.models import StatusEffect
     state = GameState(phase="in_combat", combat_subphase="player_actions")
     player = Entity("P", "轮回者", blood_limit=100, current_hp=100,
                     mana_limit=50, current_mana=30, speed_limit=10, current_speed=5)
     player._dongcha_pending = 10
     player.add_status(StatusEffect(name="衰败", remaining_rounds=-1, value=1, source="x"))
-    player.add_status(StatusEffect(name="勾魂", remaining_rounds=-1, value=5, source="x"))
     state.player = player
     state.enemies = []
     combat = CombatEngine(state, DiceEngine())
@@ -145,8 +148,6 @@ def test_dongcha_order_between_shuaibai_and_gouhun():
     types = [e.get("type") for e in res["effects"] if e.get("entity") == "P"]
     assert types.index("shuaibai_tick") < types.index("dongcha_mana"), \
         "衰败(20) 必须先于 洞察(30)"
-    assert types.index("dongcha_mana") < types.index("gouhun_mana"), \
-        "洞察 必须先于 勾魂（旧循环顺序）"
 
 
 def test_dongcha_executes_exactly_once():

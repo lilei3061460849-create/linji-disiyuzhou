@@ -2399,6 +2399,19 @@ class GameEngine:
         if name not in actor.dao_wen:
             return {"success": False, "error": f"{actor.name}未持有道纹: {name}"}
 
+        # X=0 = 拒绝发动（DM 裁定 2026-08-30，见 报告.md 硬伤1b）。
+        # 轮到发动却不想发动的道纹，用 X=0 显式放弃：视为无效，不支付代价、
+        # 不消耗出手、不进入任何结算，也不报错。与「轮空/让行」同一语义：
+        # 是一次合法的"我放弃这次机会"，而不是一次失败的尝试。
+        # 位置在 can_use() 之前：正在冷却/被封印的道纹同样有权被拒绝。
+        if x == 0 and not isinstance(x, bool):
+            return {
+                "success": True, "action": "use_daowen", "skipped": True,
+                "result": {"daowen": name, "x": 0, "skipped": True, "actor": actor.name,
+                           "note": f"X=0：【{name}】视为无效，{actor.name}放弃本次发动"
+                                   f"（不消耗出手、不支付代价）"},
+            }
+
         dw_instance = actor.dao_wen[name]
 
         if not dw_instance.can_use():

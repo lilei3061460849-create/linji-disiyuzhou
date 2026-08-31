@@ -162,8 +162,11 @@ def test_zhenshi_blocks_heal():
     assert any(e["type"] == "zhenshi" for e in r["effects"])
 
 
-def test_gouhun_drains_mana_round_start():
-    """正常路径：勾魂X挂到目标身上，[回始]使目标失去2X点当前法力。"""
+def test_gouhun_blocks_mana_gain_for_x_rounds():
+    """正常路径（2026-08-30 改版）：勾魂X挂到目标身上，持续X回合[回始]不获得法力。
+
+    旧版为「[回始]失去2X法力，持续∞」，已废止；新版**不扣已有法力**，只压制回填。
+    """
     st = GameState()
     st.player = Entity("P", "轮回者", blood_limit=60, current_hp=60,
                        mana_limit=20, current_mana=20)
@@ -175,10 +178,30 @@ def test_gouhun_drains_mana_round_start():
     calc = DaoWenEngine.resolve("勾魂", 2, target=foe, caster=st.player)
     c.apply_daowen_effect("勾魂", calc, st.player, foe)
     assert foe.has_status("勾魂"), "勾魂应挂在目标身上"
-    # 回始结算：目标(敌轮回者)获得法限20→40，勾魂再扣2X=4（实测勾魂2=6？见下）
-    # 勾魂X=2 → 每回始失去2X=4法力
-    foe.current_mana = 20
+    # 持续回合 = X = 2（不是永久）
+    dur = next(s.remaining_rounds for s in foe.status_effects if s.name == "勾魂")
+    assert dur == 2, f"勾魂X=2 应持续2回合，实{dur}"
+
+    # 第1回合：法力回填被压制，已有法力不动
+    foe.current_mana = 7
     rs = c.round_start({"relic_choices": {}})
-    gouhun_effect = next((e for e in rs.get("effects", []) if e.get("type") == "gouhun_mana"), None)
-    assert gouhun_effect, "回始应有勾魂扣法力效果"
-    assert gouhun_effect["lost"] == 4, f"勾魂2应扣4，实{gouhun_effect['lost']}"
+    blocked = [e for e in rs.get("effects", []) if e.get("type") == "mana_refill_blocked"]
+    assert blocked, "回始应有法力回填被压制的条目"
+    assert foe.current_mana == 7, f"勾魂期间不得获得法力，实{foe.current_mana}"
+
+    # 第2回合：仍被压制（持续X=2，[回终]才递减）
+    c.round_start({"relic_choices": {}})
+    assert foe.current_mana == 7, f"第2回合仍应在持续期内，实{foe.current_mana}"
+
+    # 持续走完后恢复回填
+    from engine.enums import CombatSubphase
+    st.combat_subphase = CombatSubphase.AWAIT_ROUND_END.value
+    c.round_end()
+    st.combat_subphase = CombatSubphase.AWAIT_ROUND_END.value
+    c.round_end()
+    assert not foe.has_status("勾魂"), "持续X走完后勾魂应自然到期"
+    # 注：当前法力在[敌回终]清空，故到期后回填 = 0 + 法限20
+    rs2 = c.round_start({"relic_choices": {}})
+    refill = [e for e in rs2.get("effects", []) if e.get("type") == "mana_refill"]
+    assert refill and refill[0]["gained"] == 20, f"到期后应恢复回填: {refill}"
+    assert foe.current_mana == 20, f"到期后应恢复回填，实{foe.current_mana}"

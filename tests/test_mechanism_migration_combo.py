@@ -66,9 +66,9 @@ def _add(entity, name, value=1, rounds=-1, source="x"):
 # ==================== 1. 完整回合一（跨相位组合） ====================
 
 def test_full_battle_cycle_all_mechanism_types_fire():
-    """同场战斗中：回始6机制 + 伤害加减区 + 两个事件机制 + 回终结算全部生效。
+    """同场战斗中：回始5机制 + 伤害加减区 + 两个事件机制 + 回终结算全部生效。
 
-    覆盖机制：自愈/衰败/洞察·结算/勾魂/狂暴·标记/畸变·标记（ROUND_START）、
+    覆盖机制：自愈/衰败/洞察·结算/狂暴·标记/畸变·标记（ROUND_START）、
     加害/龙鳞（INCOMING_ADJUST）、洗劫·夺碎片/焦黑发丝（事件）、畸变·结算（ROUND_END）。
     """
     state, combat = _arena(shards=0, relics=[Relic("焦黑发丝", "")])
@@ -77,7 +77,6 @@ def test_full_battle_cycle_all_mechanism_types_fire():
     _add(player, "自愈", 1)
     _add(player, "衰败", 1)
     player._dongcha_pending = 4
-    _add(player, "勾魂", 3)
     _add(player, "狂暴", 1)
     _add(player, "洗劫", 2)
     # 敌人：伤害加减区 + 回终畸变
@@ -89,16 +88,16 @@ def test_full_battle_cycle_all_mechanism_types_fire():
     enemy.attack_count = 2
     enemy.attack_power = 3
 
-    # 回始：mana_refill -> 自愈 -> 衰败 -> 洞察 -> 勾魂 -> 狂暴标记 -> 畸变标记
+    # 回始：mana_refill -> 自愈 -> 衰败 -> 洞察 -> 狂暴标记 -> 畸变标记
     res = combat.round_start()
     p_types = [e.get("type") for e in res["effects"] if e.get("entity") == "P"]
     assert p_types == ["mana_refill", "self_heal", "shuaibai_tick", "dongcha_mana",
-                       "gouhun_mana", "extra_attack_ready"], f"回始顺序: {p_types}"
+                       "extra_attack_ready"], f"回始顺序: {p_types}"
 
     # 回始数值链（P: hp100 满血 -> 自愈 +10 封顶 100 -> 衰败 ceil(100*10/100)=10 -> 90）
     assert player.current_hp == 90, f"P hp={player.current_hp}"
-    # mana: 50(初始) + 50(回填) + 4(洞察) - 3(勾魂) = 101（无不朽之躯 -> 不钳制）
-    assert player.current_mana == 101, f"P mana={player.current_mana}"
+    # mana: 50(初始) + 50(回填) + 4(洞察) = 104（无不朽之躯 -> 不钳制）
+    assert player.current_mana == 104, f"P mana={player.current_mana}"
 
     # 玩家打敌人 8 点：加害 +2 -> 10，龙鳞 -8 -> 实伤 2；洗劫按实伤 2 夺碎片
     dmg = combat._apply_hostile_damage(enemy, 8, source=player)
@@ -220,16 +219,15 @@ def test_friend_and_employee_round_start_mechanisms_fire():
 
 
 def test_monster_type_only_for_entity_type_conditions():
-    """entity_type 条件：勾魂/洞察只认轮回者；焦黑发丝只认怪物死亡。"""
+    """entity_type 条件：洞察只认轮回者；焦黑发丝只认怪物死亡。"""
     state, combat = _arena()
     player = state.player
-    # 怪物挂着勾魂 + 洞察 pending：不能触发（entity_type 门闩）
+    # 怪物挂着洞察 pending：不能触发（entity_type 门闩）
     enemy = state.enemies[0]
-    _add(enemy, "勾魂", 5)
     enemy._dongcha_pending = 9
     res = combat.round_start()
     m_types = [e.get("type") for e in res["effects"] if e.get("entity") == "M"]
-    assert "gouhun_mana" not in m_types and "dongcha_mana" not in m_types, m_types
+    assert "dongcha_mana" not in m_types, m_types
     assert enemy.current_mana == 0 and getattr(enemy, "_dongcha_pending", 0) == 9, \
         "怪物不得结算轮回者机制"
 
@@ -365,16 +363,14 @@ def test_extreme_blood_limit_one_and_mana_bounds():
     assert enemy.current_hp == 0, f"hp={enemy.current_hp}"
     assert enemy.is_alive is False
 
-    # 法力 0 的勾魂：lost=min(0, X)=0，仍产生条目（与旧实现一致）
+    # 勾魂（2026-08-30 改版）：挂勾魂的轮回者[回始]不获得法力，已有法力不动
     state2, combat2 = _arena()
     p2 = state2.player
-    p2.current_mana = 0
-    _add(p2, "勾魂", 5)
-    res2 = combat2._dispatch_phase(Phase.ROUND_START, target=p2)
-    gouhun = next((r for r in res2 if isinstance(r, dict)
-                   and r.get("type") == "gouhun_mana"), None)
-    assert gouhun is not None and gouhun["lost"] == 0, f"法力0勾魂: {gouhun}"
-    assert p2.current_mana == 0
+    p2.current_mana = 7
+    _add(p2, "勾魂", 1, rounds=2)
+    res2 = combat2.round_start()
+    blocked = [e for e in res2["effects"] if e.get("type") == "mana_refill_blocked"]
+    assert blocked and p2.current_mana == 7, f"勾魂期间不得获得法力: {p2.current_mana}"
 
     # 法力满 + 洞察 pending：
     #   无不朽之躯 -> 法力可超限（50+20=70，与旧实现一致）

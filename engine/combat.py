@@ -1709,6 +1709,17 @@ class CombatEngine:
             if entity.entity_type != "轮回者" or not entity.is_alive:
                 continue
             old_mana = entity.current_mana
+            # 勾魂（持续X）：[回始]不获得法力（不扣已有法力，只是回填被压制）。
+            if entity.has_status("勾魂"):
+                effects.append({
+                    "type": "mana_refill_blocked",
+                    "entity": entity.name,
+                    "by": "勾魂",
+                    "from": old_mana,
+                    "to": old_mana,
+                    "gained": 0,
+                })
+                continue
             gained = entity.mana_limit
             entity.current_mana += gained
             self.clamp_immortal_body(entity)
@@ -3205,12 +3216,16 @@ class CombatEngine:
                                                   source=caster.name))
                 result["effects"].append({"type": "zhenshi", "target": st_target.name,
                                           "duration": calc.get("duration", 1)})
-        if name == "勾魂" and calc.get("round_start_mana_drain"):
+        if name == "勾魂" and calc.get("no_mana_gain"):
+            # 勾魂X（2026-08-30 改版，报告.md 硬伤2-C）：持续X回合[回始]无法获得法力。
+            # 旧版为「[回始]失去2X法力，持续∞」（永久扣蓝），已废止。
             for st_target in wave_status_targets:
-                st_target.add_status(StatusEffect(name="勾魂", value=calc["round_start_mana_drain"],
-                                                  remaining_rounds=-1, source=caster.name))
+                st_target.add_status(StatusEffect(name="勾魂", value=1,
+                                                  remaining_rounds=calc.get("duration", x),
+                                                  source=caster.name))
                 result["effects"].append({"type": "gouhun", "target": st_target.name,
-                                          "mana_drain": calc["round_start_mana_drain"]})
+                                          "no_mana_gain": True,
+                                          "duration": calc.get("duration", x)})
         if name == "冥气" and calc.get("speed_loss_speed_limit"):
             for st_target in wave_status_targets:
                 st_target.add_status(StatusEffect(name="冥气", value=calc["speed_loss_speed_limit"],

@@ -111,7 +111,7 @@ def test_shuaibai_is_registered_mechanism():
     from engine.mechanisms.registry import MECHANISMS as REG
     # 回始相位机制按 priority：自愈(10) → 衰败(20) → 洞察(30) → 后续按 40/50/60 递增
     assert [m.name for m in REG.phase_mechanisms(Phase.ROUND_START)] == \
-        ["自愈", "衰败", "洞察·结算", "勾魂", "狂暴·标记", "畸变·标记"]
+        ["自愈", "衰败", "洞察·结算", "狂暴·标记", "畸变·标记"]
 
 
 def test_old_shuaibai_if_removed_from_pipeline():
@@ -264,16 +264,19 @@ def test_ziyu_then_shuaibai_order():
         "事件顺序必须与迁移前一致（先治疗事件后伤害事件）"
 
 
-def test_shuaibai_before_dongcha_gouhun():
-    """衰败之后仍有洞察/勾魂硬编码块：条目顺序不变。"""
+def test_shuaibai_before_dongcha():
+    """衰败(20) → 洞察·结算(30)：条目顺序不变。
+
+    （原「洞察 → 勾魂(40)」一段于 2026-08-30 移除：【勾魂】改版为
+    「持续X回合无法获得法力」，不再产生回始扣法力条目。）
+    """
     state, combat, player, enemy = _arena(enemy_hp=100)
     _give_shuaibai(player, 1)
     player._dongcha_pending = 5
-    player.add_status(StatusEffect(name="勾魂", remaining_rounds=-1, value=3, source="x"))
     res = combat.round_start()
     types = [e.get("type") for e in res["effects"] if e.get("entity") == "P"]
-    assert "shuaibai_tick" in types and "dongcha_mana" in types and "gouhun_mana" in types
-    assert types.index("shuaibai_tick") < types.index("dongcha_mana") < types.index("gouhun_mana"), \
+    assert "shuaibai_tick" in types and "dongcha_mana" in types
+    assert types.index("shuaibai_tick") < types.index("dongcha_mana"), \
         f"顺序异常: {types}"
 
 
@@ -417,10 +420,10 @@ def test_shuaibai_kill_triggers_jiaohheifasi_chain():
 
 
 def test_shuaibai_full_round_start_pipeline():
-    """全 ROUND_START 管线 6 个机制在同实体上依次触发（顺序即规则）。
+    """全 ROUND_START 管线 5 个机制在同实体上依次触发（顺序即规则）。
 
-    旧代码行为：round_start 逐实体循环依次执行 自愈->衰败->洞察->勾魂->狂暴标记->畸变标记。
-    新机制行为必须完全对齐。
+    旧代码行为：round_start 逐实体循环依次执行 自愈->衰败->洞察->狂暴标记->畸变标记。
+    新机制行为必须完全对齐。（勾魂 已于 2026-08-30 改版为非机制，见下）
     """
     state = GameState(phase="in_combat", combat_subphase="player_actions")
     player = Entity("P", "轮回者", blood_limit=100, current_hp=100,
@@ -431,7 +434,6 @@ def test_shuaibai_full_round_start_pipeline():
     state.enemies = [entity]
     entity.add_status(StatusEffect(name="自愈", remaining_rounds=-1, value=1, source="x"))
     entity.add_status(StatusEffect(name="衰败", remaining_rounds=-1, value=1, source="x"))
-    entity.add_status(StatusEffect(name="勾魂", remaining_rounds=-1, value=3, source="x"))
     entity._dongcha_pending = 5
     entity.add_status(StatusEffect(name="狂暴", remaining_rounds=-1, value=1, source="x"))
     entity.add_status(StatusEffect(name="畸变", remaining_rounds=-1, value=1, source="x"))
@@ -443,21 +445,21 @@ def test_shuaibai_full_round_start_pipeline():
     res = combat.round_start()
     types = [e.get("type") for e in res["effects"] if e.get("entity") == "E"]
 
-    # 六机制条目按旧 cycle 顺序出现（mana_refill 是回始法力回填，在其之前）
+    # 五机制条目按旧 cycle 顺序出现（mana_refill 是回始法力回填，在其之前）
     expected = ["mana_refill", "self_heal", "shuaibai_tick", "dongcha_mana",
-                "gouhun_mana", "extra_attack_ready", "deform_pending"]
+                "extra_attack_ready", "deform_pending"]
     assert types == expected, f"管道类型顺序: {types}"
 
     # 数值链：hp 80->+10(自愈)=90->-ceil(90*10/100)=9 -> 81
     assert entity.current_hp == 81, f"实际 hp={entity.current_hp}"
 
-    # mana: 20->+30(回填)=50->+5(洞察)=55->-3(勾魂)=52
-    assert entity.current_mana == 52, f"实际 mana={entity.current_mana}"
+    # mana: 20->+30(回填)=50->+5(洞察)=55（无勾魂扣减）
+    assert entity.current_mana == 55, f"实际 mana={entity.current_mana}"
 
     # 洞察 pending 清零
     assert getattr(entity, "_dongcha_pending", 0) == 0, "洞察 pending 必须在结算后清零"
 
-    # 只触发一次：再次 round_start 不出现第二次六机制条目（状态仍在但数值不同）
+    # 只触发一次：再次 round_start 不出现第二次五机制条目（状态仍在但数值不同）
     types2 = [e.get("type") for e in combat.round_start()["effects"] if e.get("entity") == "E"]
     assert types2.count("self_heal") == 1 and types2.count("shuaibai_tick") == 1
 

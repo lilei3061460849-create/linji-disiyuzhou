@@ -4,7 +4,8 @@
 验证点：
   - 条目形状逐字一致（extra_attack_ready / deform_pending）；
   - 畸变标记的 blood_loss 是原始乘积（与结算块的 max(0,...) 不同，旧块原文如此）；
-  - 顺序：…勾魂(40) → 狂暴·标记(50) → 畸变·标记(60)，即旧循环末尾两位；
+  - 顺序：狂暴·标记(50) → 畸变·标记(60)，即旧循环末尾两位
+    （勾魂(40) 已于 2026-08-30 随【勾魂】改版移除）；
   - 与【畸变·结算】（ROUND_END）互不干扰。
 """
 from __future__ import annotations
@@ -61,7 +62,7 @@ def test_markers_registered_and_ordered():
     assert mech_k.priority == 50 and mech_j.priority == 60
     from engine.mechanisms.registry import MECHANISMS as REG
     assert [m.name for m in REG.phase_mechanisms(Phase.ROUND_START)] == \
-        ["自愈", "衰败", "洞察·结算", "勾魂", "狂暴·标记", "畸变·标记"]
+        ["自愈", "衰败", "洞察·结算", "狂暴·标记", "畸变·标记"]
 
 
 def test_old_marker_blocks_removed():
@@ -129,11 +130,10 @@ def test_jibian_marker_does_not_change_blood_limit():
 # ==================== 4. 顺序 / 只触发一次 ====================
 
 def test_markers_order_in_round_start():
-    """勾魂(40) → 狂暴·标记(50) → 畸变·标记(60)：旧循环末尾顺序不变。"""
+    """狂暴·标记(50) → 畸变·标记(60)：旧循环末尾两位顺序不变。"""
     state = GameState(phase="in_combat", combat_subphase="player_actions")
     player = Entity("P", "轮回者", blood_limit=100, current_hp=100,
                     mana_limit=50, current_mana=30, speed_limit=10, current_speed=5)
-    player.add_status(StatusEffect(name="勾魂", remaining_rounds=-1, value=2, source="x"))
     player.add_status(StatusEffect(name="狂暴", remaining_rounds=-1, value=1, source="x"))
     player.add_status(StatusEffect(name="畸变", remaining_rounds=-1, value=1, source="x"))
     player.attack_count, player.attack_power = 1, 4
@@ -142,8 +142,7 @@ def test_markers_order_in_round_start():
     combat = CombatEngine(state, DiceEngine())
     res = combat.round_start()
     types = [e.get("type") for e in res["effects"] if e.get("entity") == "P"]
-    assert types.index("gouhun_mana") < types.index("extra_attack_ready") < \
-        types.index("deform_pending"), f"顺序异常: {types}"
+    assert types.index("extra_attack_ready") < types.index("deform_pending"), f"顺序异常: {types}"
 
 
 def test_markers_execute_exactly_once():
