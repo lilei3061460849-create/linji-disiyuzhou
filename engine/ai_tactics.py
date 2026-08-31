@@ -113,6 +113,7 @@ class TacticalAI:
         # 硬伤3（红线 E 已解除 2026-08-30）：对手台词在**我**心里的可信度。
         # 只由我自己的性格算出，不查对手真实状态；None=没听到有实质主张的话。
         self._opponent_read: Optional[dict] = None
+        self._last_logged_read = None    # 已记录过的读数（防同一句刷屏）
 
     @property
     def previewer(self):
@@ -598,6 +599,19 @@ class TacticalAI:
         """实时决策主路径：生成候选 → 预演评分 → 执行最高分。"""
         self._refresh_personality()
         self._refresh_opponent_read()
+        # 只在**读到新的一句**时记录：对手不说话时每手都重读同一句会把日志刷爆
+        # （信念本身不变，重复记录没有信息量）。
+        r = self._opponent_read
+        stamp = (r["speaker"], r["posture"], round(r["belief"], 4),
+                 r["repeats"]) if r else None
+        if self.verbose and r and stamp != self._last_logged_read:
+            self._last_logged_read = stamp
+            verdict = "信" if r["belief"] >= 0 else "疑"
+            effect = ("趁势压上" if r["claim"] == "weak" and r["belief"] > 0
+                      else "防被收割" if r["claim"] == "weak"
+                      else "忌惮加防" if r["belief"] > 0 else "当它虚张")
+            self.log.append(f"[读到] {r['speaker']}「{r['posture']}」"
+                            f"→ 我{verdict}{abs(r['belief']):.2f}（{effect}）")
         scored: list[tuple[float, str, dict]] = []
         candidates = self._daowen_candidates()
         for bonus, cand in self._resonance_candidates():

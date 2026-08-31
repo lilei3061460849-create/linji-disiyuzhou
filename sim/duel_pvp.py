@@ -42,7 +42,7 @@ except Exception:      # 兜底：频道不可用不阻塞死斗
     _DIALOGUE_RNG = None
 
 
-def _publish_line(engine, actor, personality=None) -> None:
+def _publish_line(engine, actor, personality=None, log: list = None) -> None:
     """把一句话发布到战场公开频道（时机自由：出手前后、任何时候都能说）。
 
     只写字符串、不碰任何数值、不进 AI 决策链。发布失败一律静默——台词
@@ -51,7 +51,9 @@ def _publish_line(engine, actor, personality=None) -> None:
     if _utter is None or actor is None:
         return
     try:
-        _utter(engine.state, actor, rng=_DIALOGUE_RNG, personality=personality)
+        entry = _utter(engine.state, actor, rng=_DIALOGUE_RNG, personality=personality)
+        if log is not None:      # 实录：把这句话按发生顺序并进动作日志
+            log.append(f"  [{actor.name}] 说（{entry['posture']}）：{entry['text']}")
     except Exception:
         pass
 
@@ -292,6 +294,18 @@ def death_attribution_note(entity, side_label: str) -> str:
     return f"{side_label}阵亡"
 
 
+def _drain_ai_log(ai, prefix: str, log: list, seen: dict) -> None:
+    """把 AI 自 `seen` 之后新增的日志行全部追加进 log（保序）。
+
+    原先只取 `ai.log[-1]`，verbose 下每次出手可能有多条（[读到…] + [实时决策]…），
+    只取最后一条会把"读到对手台词后的判断"整条丢掉，对白的影响就看不见了。
+    """
+    start = seen.get(id(ai), 0)
+    for line in ai.log[start:]:
+        log.append(f"  {prefix} {line}")
+    seen[id(ai)] = len(ai.log)
+
+
 def _clean_ai_label(line: str) -> str:
     """把 TacticalAI 日志行压缩为可读动作标签，如
     '[实时决策] 残韵·曲解→再生@贾凡（对手）（得分 1.83）' → '残韵·曲解→再生@贾凡（对手）'。"""
@@ -405,22 +419,25 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
     if use_tactical:
         from engine.ai_tactics import TacticalAI
         _tai = TacticalAI(e, verbose=True)
+        _seen: dict = {}
         def player_act():
             acted = _tai.take_action()
-            if acted:
-                # 动作实录：挑战者侧执行的动作（含残韵/道纹）→ 报告可见
-                if _tai.log:
-                    log.append(f"  挑战者 {_clean_ai_label(_tai.log[-1])}")
-                # 对白：挑战者侧动作事件（首句开场后按节奏插台词）
-                if 对话 is not None:
-                    对话.events += 1
-                    pers = peek_personality(e, e.state.player)
-                    line = render_line(e.state.player, "opening", pers)
-                    if 对话.events in (1, 2, 8, 15):
-                        对话.buf.append(line)
-                    _publish_line(e, e.state.player, pers)
-                return True
-            return False
+            # 动作实录：挑战者侧执行的动作（含残韵/道纹）→ 报告可见。
+            # 排空而非只取最后一条：verbose 下的"[读到…]"自述也要留住；
+            # 且**未出手时也要排空**，否则日志顺序会失真（攒到下次一起倒出来）。
+            _drain_ai_log(_tai, "挑战者", log, _seen)
+            if not acted:
+                return False
+            # 对白：挑战者侧动作事件（首句开场后按节奏插台词）。
+            # 注意：**只在真的出手之后**才说——AI 空转一次就说一句会刷屏。
+            if 对话 is not None:
+                对话.events += 1
+                pers = peek_personality(e, e.state.player)
+                line = render_line(e.state.player, "opening", pers)
+                if 对话.events in (1, 2, 8, 15):
+                    对话.buf.append(line)
+                _publish_line(e, e.state.player, pers, log)
+            return True
         # 守擂者用同一套 TacticalAI，视角重定向为守擂（双方共享机制）
         lord = next((x for x in e.state.enemies
                      if x.entity_type == "轮回者" and x.is_alive), None)
@@ -507,16 +524,14 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
             else:
                 if _def_tai is not None:
                     acted = _def_tai.take_action()
-                    if acted:
-                        if _def_tai.log:
-                            log.append(f"  守擂 {_clean_ai_label(_def_tai.log[-1])}")
-                        if 对话 is not None:
-                            对话.events += 1
-                            pers = peek_personality(e, _def_tai.player)
-                            line = render_line(_def_tai.player, "damage_out", pers)
-                            if 对话.events in (4, 12, 20, 28):
-                                对话.buf.append(line)
-                            _publish_line(e, _def_tai.player, pers)
+                    _drain_ai_log(_def_tai, "守擂", log, _seen)
+                    if acted and 对话 is not None:
+                        对话.events += 1
+                        pers = peek_personality(e, _def_tai.player)
+                        line = render_line(_def_tai.player, "damage_out", pers)
+                        if 对话.events in (4, 12, 20, 28):
+                            对话.buf.append(line)
+                        _publish_line(e, _def_tai.player, pers, log)
                 else:
                     acted = _resolve_opponent_one(e, log, 对话)
                 if not acted:
