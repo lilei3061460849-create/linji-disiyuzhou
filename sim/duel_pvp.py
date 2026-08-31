@@ -272,6 +272,15 @@ def _seed_duelist_personality(e, entity) -> None:
                 break  # 实体中途离场等偶发情况：跳过即可，不阻塞死斗
 
 
+# 引擎内部死因 subtype → 读得懂的名字。缺的按原样显示，宁可露内部名也不要静默吞掉。
+_DEATH_CAUSE_LABELS = {
+    "mediocrity": "凡庸",
+    "collapse": "崩解",
+    "cancer": "癌变",
+    "proliferation": "癌变",
+}
+
+
 def death_attribution_note(entity, side_label: str) -> str:
     """命零归因（报告.md 硬伤1 改法2，DM 裁定 2026-08-30）。
 
@@ -296,7 +305,9 @@ def death_attribution_note(entity, side_label: str) -> str:
         if "active_payment" in (ctx.get("tags") or []):
             return f"{side_label}阵亡（自付【{source}】代价命零，非对手击杀）"
         if cause and cause != "hp_zero":
-            return f"{side_label}阵亡（{cause}，非对手击杀）"
+            # 内部 subtype 是英文名，直接吐出来读不懂（实测出现过 "mediocrity"）
+            label = _DEATH_CAUSE_LABELS.get(cause, cause)
+            return f"{side_label}阵亡（{label}，非对手击杀）"
         return f"{side_label}阵亡（自伤命零，非对手击杀）"
     return f"{side_label}阵亡"
 
