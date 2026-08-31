@@ -304,9 +304,11 @@ class TacticalAI:
     def _digest_diff(self, diff: dict) -> dict:
         """把 X=1 预演 diff 归纳为 {kind, cost_per_x, dmg, shield, heal, ...}。
 
-        kind 判定以**事件流**为准（面板位移会被格挡吸收等遮蔽）：
+        kind 与 dmg 一律以**事件流**为准（面板位移会被格挡吸收等遮蔽）：
         damage_applied 命中敌方 = 输出（即使被格挡挡光）；status_applied 落在
         敌方 = 战术牌（控场/削弱），落在自身 = 增益；敌方无伤消失 = 移除。
+        dmg 取事件流的 raw_damage（未扣盾）：面板净位移在被格挡全吸收时归零，
+        会让下游「收割档」条件 dmg>0 整行短路（只剩 X=1 一档 → AI 永不出手）。
         """
         p = diff.get("player", {})
         enemies = diff.get("enemies", [])
@@ -323,6 +325,7 @@ class TacticalAI:
         speed_gain = max(0, p.get("speed_after", 0) - p.get("speed_before", 0))
 
         hit_enemy = False        # 伤害类事件命中敌方（含被格挡吸收）
+        enemy_raw_damage = 0     # 事件流原始伤害合计（未扣盾，见 dmg 口径注释）
         status_on_enemy = False  # 状态/控制落在敌方
         status_on_self = False   # 状态落在自身
         for ev in diff.get("events", []):
@@ -330,6 +333,7 @@ class TacticalAI:
             target = ev.get("target", "")
             if etype == "damage_applied" and target in enemy_names:
                 hit_enemy = True
+                enemy_raw_damage += max(0, (ev.get("data") or {}).get("raw_damage") or 0)
             elif etype == "status_applied":
                 if target in enemy_names:
                     status_on_enemy = True
@@ -352,7 +356,11 @@ class TacticalAI:
             kind = "buff"
         else:
             kind = "tactician"   # 其余无面板位移的战术牌
-        return {"kind": kind, "cost_per_x": cost, "dmg": enemy_hp_loss,
+        # dmg 口径：事件流 raw_damage（未扣盾），与上面的 kind 判定同源同口径。
+        # 取 max 而非直接替换：撤退/断尾求生/爆裂压制等路径不发 damage_applied
+        # 事件（面板位移亦为 0），保持这些情形 dmg=0 的旧行为不变。
+        return {"kind": kind, "cost_per_x": cost,
+                "dmg": max(enemy_hp_loss, enemy_raw_damage),
                 "shield": shield, "heal": heal, "mana_gain": mana_gain,
                 "bl_gain": bl_gain}
 
