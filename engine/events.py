@@ -604,7 +604,7 @@ def resolve_option_effect(text: str, engine, event_name: str = "", params=None) 
                 from .death_book import CAUSE_DRAFTS, validate_legacy
                 written = store.append(validate_legacy(CAUSE_DRAFTS["echo_error"]))
                 engine.state.death_book_legacies = store.load()
-                applied.append(f"写入错误遗言：{written['trigger_point']}")
+                applied.append(f"写入错误遗言：{written['text']}")
             return {"applied": applied, "instructions": instructions}
         if "清除" in text and "遗言" in text:
             params = params or {}
@@ -617,9 +617,7 @@ def resolve_option_effect(text: str, engine, event_name: str = "", params=None) 
                 return {"applied": applied, "instructions": instructions}
             listed = [{"index": i + 1,
                        "title": p.get("title") or f"遗言{i+1}",
-                       "trigger_point": p.get("trigger_point", ""),
-                       "fork": p.get("fork", ""),
-                       "cost_budget": p.get("cost_budget", "")}
+                       "text": p.get("text", "")}
                       for i, p in enumerate(pages)]
             idx = params.get("legacy_index")
             title = params.get("legacy_title")
@@ -647,7 +645,7 @@ def resolve_option_effect(text: str, engine, event_name: str = "", params=None) 
                 _pay_numeric("流血", 5)
                 applied.append("流血5")
             engine.state.death_book_legacies = store.load()
-            applied.append(f"清除遗言：{removed.get('title') or removed.get('trigger_point')}")
+            applied.append(f"清除遗言：{removed.get('title') or removed.get('text')}")
             return {"applied": applied, "instructions": instructions}
 
     def hurt(hp):

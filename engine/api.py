@@ -5028,13 +5028,12 @@ class GameEngine:
             },
             description=(
                 f"{player.name}已[命零]，触发【死之传承】。\n"
-                f"草稿：触发点「{draft['trigger_point']}」／"
-                f"岔路「{draft['fork']}」／代价预算「{draft['cost_budget']}」\n"
+                f"草稿：「{draft['text']}」（上限{self.state.death_book_capacity}字）\n"
                 "请审核：通过、修改后写入、或驳回（驳回不写入死者之书）。"
             ),
             options=[
                 {"id": "approve", "label": "通过", "description": "按草稿写入《死者之书》"},
-                {"id": "edit", "label": "修改后写入", "description": "提交修改后的三段式再写入"},
+                {"id": "edit", "label": "修改后写入", "description": "提交修改后的遗言再写入"},
                 {"id": "reject", "label": "驳回", "description": "不写入《死者之书》，本轮回结束"},
             ],
             state_snapshot=self.state.to_dict(),
@@ -5054,7 +5053,7 @@ class GameEngine:
             return {"action": "reject"}
         if action == "approve":
             source = (ruling_data or {})
-            if all(source.get(field) for field in ("trigger_point", "fork", "cost_budget")):
+            if source.get("text"):
                 legacy = validate_legacy(source, self.state.death_book_capacity)
             else:
                 legacy = validate_legacy(
@@ -5062,9 +5061,7 @@ class GameEngine:
                     self.state.death_book_capacity)
             return {"action": "approve", "legacy": legacy}
         legacy = validate_legacy({
-            "trigger_point": (ruling_data or {}).get("trigger_point"),
-            "fork": (ruling_data or {}).get("fork"),
-            "cost_budget": (ruling_data or {}).get("cost_budget"),
+            "text": (ruling_data or {}).get("text"),
             **({"title": ruling_data["title"]} if (ruling_data or {}).get("title") else {}),
         }, self.state.death_book_capacity)
         return {"action": "edit", "legacy": legacy}
@@ -5078,7 +5075,7 @@ class GameEngine:
         self._reset_after_death()
         return {
             "written": True,
-            "legacy": {k: written[k] for k in ("trigger_point", "fork", "cost_budget")},
+            "legacy": {"text": written["text"]},
             "total_legacies": len(self.state.death_book_legacies),
             "path": str(self.death_book.path),
             "instruction": "遗言已写入死者之书；请调用 setup_attributes 开始新的轮回者",
@@ -5132,7 +5129,7 @@ class GameEngine:
                 prepared = self._prepare_death_ruling(interrupt, ruling_data or {})
             except ValueError as exc:
                 return {"success": False, "error": str(exc),
-                        "instruction": "非法遗言未写入；中断仍在，请改提交合法三段式"}
+                        "instruction": "非法遗言未写入；中断仍在，请改提交合法遗言（一句话，≤20字）"}
 
         interrupt = self._pending_interrupts.pop(0)
 

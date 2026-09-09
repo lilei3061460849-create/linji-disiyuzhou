@@ -215,11 +215,7 @@ def test_defeat_triggers_reset_without_resealing():
     loser = _new_candidate("defeat_loser", path, name="失败者", death_book_path=book_path)
     _finish_battle_7(loser)
 
-    legacy = {
-        "trigger_point": "最终死斗落败",
-        "fork": "最后一次出手选择错误",
-        "cost_budget": "愿以速度换取机会",
-    }
+    legacy = {"text": "最终死斗落败"}  # DM裁定 2026-08-31：遗言改单句（≤20字）
     r = loser.execute_action("resolve_final_duel", {"outcome": "defeat", "death_book_entry": legacy})
     assert r["success"] is True
     interrupt = r.get("interrupt") or {}

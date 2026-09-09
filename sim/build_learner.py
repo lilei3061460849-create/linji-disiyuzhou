@@ -887,8 +887,7 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
     # 纯读取（read_death_book 不消耗精力、不改数值），读不到也不影响养成流程。
     _book = e.execute_action("read_death_book", {})
     for _l in (_book.get("legacies") or []):
-        print(f"    [死者之书] {_l.get('title', '')}｜触发点：{_l.get('trigger_point', '')}"
-              f"｜岔路：{_l.get('fork', '')}｜代价预算：{_l.get('cost_budget', '')}")
+        print(f"    [死者之书] {_l.get('title', '')}｜{_l.get('text', '')}")
     chosen = choose_discovered_initial_daowen(e, prefer=starter)
     if not chosen.get("success"):
         raise ValueError(chosen.get("error", "开局发现选择失败"))

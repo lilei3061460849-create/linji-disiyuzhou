@@ -488,8 +488,7 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
     except Exception:  # 读取失败不得影响死斗本身
         _book = {}
     for _l in (_book.get("legacies") or []):
-        log.append(f"  [死者之书] {_l.get('title', '')}｜{_l.get('trigger_point', '')}"
-                   f"／{_l.get('fork', '')}／{_l.get('cost_budget', '')}")
+        log.append(f"  [死者之书] {_l.get('title', '')}｜{_l.get('text', '')}")
     # 双方都是轮回者：各自 seed 一套确定、可区分的性格画像 → 性格调制 + 对白差异。
     _seed_duelist_personality(e, e.state.player)
     for foe in e.state.enemies:

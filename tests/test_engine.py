@@ -790,13 +790,11 @@ def test_rebellion_and_legacy():
     # 死之传承
     st.player.is_alive = False; st.player.current_hp = 0
     legacy = {
-        "trigger_point": "速度归零后受到致死攻击",
-        "fork": "最后一次闪避耗尽速度",
-        "cost_budget": "愿以法力换取保命",
+        "text": "速度归零后受到致死攻击",
     }
     r3 = combat.trigger_death_legacy(legacy)
     assert r3["triggered"] and st.death_book_legacies == [legacy]
-    print(f"  ✓ 死之传承：命零留三段式遗言'{r3['legacy']['trigger_point'][:12]}...'")
+    print(f"  ✓ 死之传承：命零留单句遗言'{r3['legacy']['text'][:12]}...'")
     print("  ✓ 员工叛变/死之传承测试通过")
 
 

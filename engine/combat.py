@@ -4341,25 +4341,15 @@ class CombatEngine:
                     "options": ["镇压（与所有叛变员工开战）", "让利（本场每名员工工资+5碎片）", "谈判（给出合理方案）"]}
         return {"rebellion": False, "employee_attack_total": emp_atk, "threshold": threshold}
 
-    def trigger_death_legacy(self, legacy: dict[str, str]) -> dict:
-        """新增一页三段式遗言；每段必填且不得超过20字。"""
-        required = ("trigger_point", "fork", "cost_budget")
-        if not isinstance(legacy, dict):
-            raise ValueError("遗言必须是包含 trigger_point/fork/cost_budget 的对象")
-        if set(legacy) != set(required):
-            raise ValueError("遗言字段必须且只能是 trigger_point/fork/cost_budget")
+    def trigger_death_legacy(self, legacy: dict[str, str] | str) -> dict:
+        """新增一页遗言；一句话，上限=`state.death_book_capacity`（默认20字）。
 
-        normalized = {}
-        for field_name in required:
-            value = legacy[field_name]
-            if not isinstance(value, str) or not value.strip():
-                raise ValueError(f"遗言字段 {field_name} 必须是非空字符串")
-            value = value.strip()
-            if len(value) > self.state.death_book_capacity:
-                raise ValueError(
-                    f"遗言字段 {field_name} 超过{self.state.death_book_capacity}字上限")
-            normalized[field_name] = value
+        DM裁定 2026-08-31：遗言废止三段式，只留一句话。校验统一委托
+        `engine/death_book.py::validate_legacy`（一个效果只有一个正式执行入口）。
+        """
+        from .death_book import validate_legacy
 
+        normalized = validate_legacy(legacy, self.state.death_book_capacity)
         self.state.death_book_legacies.append(normalized)
         return {
             "triggered": True,

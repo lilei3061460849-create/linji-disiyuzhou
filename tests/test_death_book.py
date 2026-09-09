@@ -1,4 +1,4 @@
-"""《死者之书》三段式遗言：校验、命零中断、审核落盘、回音长廊改文件。"""
+"""《死者之书》单句遗言（≤20字）：校验、命零中断、审核落盘、回音长廊改文件。"""
 import os
 import sys
 from pathlib import Path
@@ -60,40 +60,39 @@ def _current_event(engine, name="回音长廊"):
     engine.event_pool.current = name
 
 
-def test_three_part_legacy_normal_path_is_recorded_without_mutation():
-    """正常路径：三个字段完整保存，不混入系统记录列表。"""
+def test_single_sentence_legacy_normal_path_is_recorded_without_mutation():
+    """正常路径：一句话原样保存，不混入系统记录列表（DM裁定 2026-08-31：单句格式）。"""
     combat = _combat()
-    legacy = {
-        "trigger_point": "法力归零后受到致死攻击",
-        "fork": "放弃格挡并继续输出",
-        "cost_budget": "愿以碎片换取法力",
-    }
+    legacy = {"text": "法力归零后受到致死攻击"}
     result = combat.trigger_death_legacy(legacy)
     assert result["legacy"] == legacy
     assert combat.state.death_book_legacies == [legacy]
     assert combat.state.death_book_wisdom == []
+    # 纯字符串入参也接受（同一句话的两种写法）
+    combat2 = _combat()
+    assert combat2.trigger_death_legacy("法力归零后受到致死攻击")["legacy"] == legacy
 
 
-def test_each_legacy_field_accepts_exactly_twenty_characters():
-    """边界：每段恰好20字合法，且不被静默截断。"""
+def test_legacy_accepts_exactly_twenty_characters():
+    """边界：恰好20字合法，且不被静默截断。"""
     combat = _combat()
-    legacy = {
-        "trigger_point": "触" * 20,
-        "fork": "岔" * 20,
-        "cost_budget": "代" * 20,
-    }
+    legacy = {"text": "遗" * 20}
     result = combat.trigger_death_legacy(legacy)
     assert result["legacy"] == legacy
-    assert all(len(value) == 20 for value in result["legacy"].values())
+    assert len(result["legacy"]["text"]) == 20
 
 
-def test_legacy_rejects_old_string_missing_fields_and_overlong_values():
-    """错误输入：旧字符串、缺字段和超长字段均由校验器拒绝。"""
+def test_legacy_rejects_empty_overlong_and_unknown_fields():
+    """错误输入：空句、超长句、未知字段均由校验器拒绝（单句格式，DM裁定 2026-08-31）。"""
     combat = _combat()
     invalid_values = [
-        "旧格式遗言",
-        {"trigger_point": "触发", "fork": "岔路"},
-        {"trigger_point": "触" * 21, "fork": "岔路", "cost_budget": "代价"},
+        "",
+        "   ",
+        {"text": ""},
+        {"text": "遗" * 21},
+        {"text": "一句话", "trigger_point": "多余字段"},
+        {"text": "一句话", "unknown": "x"},
+        123,
     ]
     for invalid in invalid_values:
         try:
@@ -122,8 +121,8 @@ def test_player_mingling_queues_interrupt_and_approve_writes_file(tmp_path):
     assert r["result"]["player_dead"] is True
     assert r.get("interrupt", {}).get("interrupt_type") == "死之传承"
     draft = r["interrupt"]["context"]["draft"]
-    assert set(draft) >= {"trigger_point", "fork", "cost_budget"}
-    assert all(1 <= len(draft[k]) <= 20 for k in ("trigger_point", "fork", "cost_budget"))
+    assert set(draft) >= {"text"}
+    assert 1 <= len(draft["text"]) <= 20
 
     spells_before = book.read_text(encoding="utf-8").split("## 遗言")[0]
     approved = engine.submit_ruling(
@@ -134,9 +133,9 @@ def test_player_mingling_queues_interrupt_and_approve_writes_file(tmp_path):
     text = book.read_text(encoding="utf-8")
     assert text.split("## 遗言")[0] == spells_before
     assert "所需道纹：杀伐" in text
-    assert draft["trigger_point"] in text
+    assert draft["text"] in text
     assert "当前没有遗言" not in text
-    assert engine.state.death_book_legacies[0]["trigger_point"] == draft["trigger_point"]
+    assert engine.state.death_book_legacies[0]["text"] == draft["text"]
 
 
 def test_two_config_examples_append_without_code_change(tmp_path):
@@ -146,11 +145,10 @@ def test_two_config_examples_append_without_code_change(tmp_path):
     first = store.append(CAUSE_DRAFTS["attack"])
     second = store.append(CAUSE_DRAFTS["collapse"])
     loaded = store.load()
-    assert loaded[0]["trigger_point"] == first["trigger_point"] == "受到致死攻击命零"
-    assert loaded[1]["trigger_point"] == second["trigger_point"] == "异变叠满崩解命零"
-    assert loaded[0]["cost_budget"] != loaded[1]["cost_budget"]
+    assert loaded[0]["text"] == first["text"] == "受到致死攻击命零"
+    assert loaded[1]["text"] == second["text"] == "异变叠满崩解命零"
     parsed = parse_legacies(book.read_text(encoding="utf-8"))
-    assert [item["fork"] for item in parsed] == [first["fork"], second["fork"]]
+    assert [item["text"] for item in parsed] == [first["text"], second["text"]]
 
 
 def test_boundary_twenty_char_edit_is_written_verbatim(tmp_path):
@@ -162,13 +160,13 @@ def test_boundary_twenty_char_edit_is_written_verbatim(tmp_path):
     blocked = engine.execute_action("round_start", {})
     assert blocked["success"] is False
     assert blocked.get("interrupt", {}).get("interrupt_type") == "死之传承"
-    legacy = {"trigger_point": "触" * 20, "fork": "岔" * 20, "cost_budget": "代" * 20}
+    legacy = {"text": "遗" * 20}
     r = engine.submit_ruling("死之传承", "改", {"action": "edit", **legacy})
     assert r["success"] is True
     written = r["death_book"]["legacy"]
     assert written == legacy
     text = book.read_text(encoding="utf-8")
-    assert "触" * 20 in text and "代" * 20 in text
+    assert "遗" * 20 in text
 
 
 def test_reject_does_not_write_and_invalid_edit_keeps_interrupt(tmp_path):
@@ -182,9 +180,7 @@ def test_reject_does_not_write_and_invalid_edit_keeps_interrupt(tmp_path):
 
     bad = engine.submit_ruling("死之传承", "改", {
         "action": "edit",
-        "trigger_point": "触" * 21,
-        "fork": "岔路",
-        "cost_budget": "代价",
+        "text": "遗" * 21,
     })
     assert bad["success"] is False
     assert "超过" in bad["error"]
@@ -239,7 +235,7 @@ def test_echo_corridor_writes_and_clears_chosen_page(tmp_path):
     assert r2["success"] is True
     remaining = store.load()
     assert len(remaining) == 1
-    assert remaining[0]["trigger_point"] == CAUSE_DRAFTS["collapse"]["trigger_point"]
+    assert remaining[0]["text"] == CAUSE_DRAFTS["collapse"]["text"]
     assert engine.state.player.current_hp == hp_before - 5
 
 
@@ -353,7 +349,7 @@ def test_new_engine_reloads_file_as_source_of_truth(tmp_path):
         sealed_candidate_path=str(tmp_path / "reload_sealed.json"),
     )
     assert len(engine.state.death_book_legacies) == 1
-    assert engine.state.death_book_legacies[0]["fork"] == CAUSE_DRAFTS["attack"]["fork"]
+    assert engine.state.death_book_legacies[0]["text"] == CAUSE_DRAFTS["attack"]["text"]
 
 
 def test_draft_legacy_never_exceeds_capacity():
@@ -362,8 +358,16 @@ def test_draft_legacy_never_exceeds_capacity():
     state.current_battle = 999
     state.player = Entity(name="轮回者", entity_type="轮回者", current_speed=0, current_mana=0)
     draft = draft_legacy(state, "attack", {"action": "use_daowen", "params": {"daowen_name": "杀伐"}})
-    assert all(len(draft[k]) <= 20 for k in ("trigger_point", "fork", "cost_budget"))
+    assert set(draft) >= {"text"}
+    assert 1 <= len(draft["text"]) <= 20
     validate_legacy(draft)
+    # 写入端只认单句：旧三段式对象被明确拒绝（存量旧书页的兼容在读取端，见下条测试）
+    try:
+        validate_legacy({"trigger_point": "旧页触发点", "fork": "岔路", "cost_budget": "代价预算"})
+    except ValueError as exc:
+        assert "单句" in str(exc)
+    else:
+        raise AssertionError("旧三段式遗言未被拒绝")
 
 
 # ---- 翻阅《死者之书》：遗言此前只写不读，轮回者/AI 一条也看不到（2026-08-31 补读取） ----
@@ -374,12 +378,7 @@ HINT = "不伤害他人，一味治疗，异变缠身都会死亡哦"
 def test_read_death_book_returns_legacies_without_cost(tmp_path):
     """翻阅动作读回全部遗言，且不消耗精力、不改任何数值。"""
     engine, book = _engine(tmp_path, "read")
-    DeathBookStore(book).append({
-        "title": "某人·罪孽都市·留训",
-        "trigger_point": HINT,
-        "fork": "只顾上盾与回复，五回合没让对手掉一滴血",
-        "cost_budget": "愿以碎片换伤害，别再满血把自己奶死",
-    })
+    DeathBookStore(book).append({"title": "某人·罪孽都市·留训", "text": HINT})
     engine._reload_death_book()  # 文件刚被写入，重新装回缓存
     before = (engine.state.energy, engine.state.shards, engine.state.player.current_hp,
               engine.state.player.current_mana)
@@ -388,11 +387,29 @@ def test_read_death_book_returns_legacies_without_cost(tmp_path):
 
     assert r["success"] is True and r["action"] == "翻阅死者之书"
     assert r["total_legacies"] == 1
-    assert r["legacies"][0]["trigger_point"] == HINT
+    assert r["legacies"][0]["text"] == HINT
     assert r["legacies"][0]["title"] == "某人·罪孽都市·留训"
     after = (engine.state.energy, engine.state.shards, engine.state.player.current_hp,
              engine.state.player.current_mana)
     assert after == before  # 纯查询：精力/碎片/血/法一律不动
+
+
+def test_old_three_part_pages_still_parse_and_rewrite_as_single_sentence(tmp_path):
+    """存量兼容：旧三段式书页读得出来（折叠成第一句），重写后变成单句格式。"""
+    book = tmp_path / "旧书.md"
+    book.write_text(
+        "# 死者之书\n\n## 遗言\n\n### 贾希希·龙心谷·第5场\n\n"
+        "- 触发点：双熊战纯叠盾五回合未扣敌血凡庸命零\n"
+        "- 岔路：贪图全格挡免伤未投入杀伐推进伤害\n"
+        "- 代价预算：愿以法力换输出破除凡庸与固执\n", encoding="utf-8")
+    store = DeathBookStore(book)
+    loaded = store.load()
+    assert loaded == [{"title": "贾希希·龙心谷·第5场",
+                       "text": "双熊战纯叠盾五回合未扣敌血凡庸命零"}]
+    store.write_all(loaded)
+    text = book.read_text(encoding="utf-8")
+    assert "- 遗言：双熊战纯叠盾五回合未扣敌血凡庸命零" in text
+    assert "岔路" not in text and "代价预算" not in text
 
 
 def test_read_death_book_on_empty_book_is_still_success(tmp_path):
@@ -406,4 +423,4 @@ def test_committed_book_carries_the_self_destruction_hint():
     """仓库自带的 死者之书.md 必须留着那条自爆警示——轮回者靠它当前车之鉴。"""
     book = Path(__file__).resolve().parent.parent / "死者之书.md"
     entries = parse_legacies(book.read_text(encoding="utf-8"))
-    assert any(e.get("trigger_point") == HINT for e in entries)
+    assert any(e.get("text") == HINT for e in entries)

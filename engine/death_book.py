@@ -1,7 +1,11 @@
 """《死者之书》遗言：文件是唯一事实源。
 
 只读写 `死者之书.md` 的「## 遗言」节，不得改动「## 可学法术」。
-新增遗言只需往该节追加三段式数据，不必改引擎代码。
+新增遗言只需往该节追加一页，不必改引擎代码。
+
+**DM裁定 2026-08-31：遗言不再三段式**——每页只有一句话，上限 20 字，除此之外没有其他
+限制（旧「触发点／岔路／代价预算」三段式废止）。旧格式的书页在**读取**时按「触发点」
+那一句折叠载入（存量书不至于读不出来），**写入**一律走新的单句格式。
 """
 from __future__ import annotations
 
@@ -10,55 +14,26 @@ from pathlib import Path
 from typing import Any, Optional
 
 
-LEGACY_FIELDS = ("trigger_point", "fork", "cost_budget")
-FIELD_LABELS = {
-    "trigger_point": "触发点",
-    "fork": "岔路",
-    "cost_budget": "代价预算",
-}
+LEGACY_FIELD = "text"
+LEGACY_FIELDS = (LEGACY_FIELD,)
+FIELD_LABELS = {LEGACY_FIELD: "遗言"}
+LEGACY_LABEL = "遗言"
+# 旧三段式字段（DM裁定 2026-08-31 废止）：只用于读取旧书页／兼容旧调用方，不再写出。
+DEPRECATED_FIELDS = ("trigger_point", "fork", "cost_budget")
+DEPRECATED_LABELS = {"trigger_point": "触发点", "fork": "岔路", "cost_budget": "代价预算"}
 DEFAULT_CAPACITY = 20
 SECTION_HEADER = "## 遗言"
 EMPTY_MARK = "当前没有遗言。"
 
 # 可扩展草稿表：新增死因只需加一条，流程代码不用改。
-# 两个现成实例：attack（战斗致死）与 collapse（崩解）。
 CAUSE_DRAFTS: dict[str, dict[str, str]] = {
-    "attack": {
-        "trigger_point": "受到致死攻击命零",
-        "fork": "未闪避承受攻击",
-        "cost_budget": "愿以碎片换保命",
-    },
-    "collapse": {
-        "trigger_point": "异变叠满崩解命零",
-        "fork": "继续叠异变未停手",
-        "cost_budget": "愿以失忆换清异变",
-    },
-    "mediocrity": {
-        "trigger_point": "连续五回合触发凡庸",
-        "fork": "未出手也未破僵局",
-        "cost_budget": "愿以法力换一击",
-    },
-    "duel": {
-        "trigger_point": "最终死斗落败",
-        "fork": "死斗最后一手选错",
-        "cost_budget": "愿以速度换先手",
-    },
-    "bleed": {
-        "trigger_point": "代价流血导致命零",
-        "fork": "支付流血未留血",
-        "cost_budget": "愿以碎片换血",
-    },
-    "cancer": {
-        "trigger_point": "回复过量触发癌变",
-        "fork": "继续堆回复未停手",
-        "cost_budget": "愿以失忆换停手",
-    },
-    "echo_error": {
-        "trigger_point": "回音长廊安魂曲",
-        "fork": "选择聆听而非打碎",
-        "cost_budget": "以碎片换虚假记忆",
-        "title": "错误遗言",
-    },
+    "attack": {"text": "受到致死攻击命零"},
+    "collapse": {"text": "异变叠满崩解命零"},
+    "mediocrity": {"text": "连续五回合触发凡庸"},
+    "duel": {"text": "最终死斗落败"},
+    "bleed": {"text": "代价流血导致命零"},
+    "cancer": {"text": "回复过量触发癌变"},
+    "echo_error": {"text": "回音长廊安魂曲", "title": "错误遗言"},
 }
 
 
@@ -69,27 +44,48 @@ def clip_text(value: str, limit: int = DEFAULT_CAPACITY) -> str:
     return text[:limit]
 
 
-def validate_legacy(legacy: Any, capacity: int = DEFAULT_CAPACITY) -> dict[str, str]:
-    """三段式校验：字段必须恰好为三键，每段非空且不超过字数上限。"""
+def _collapse_legacy(legacy: Any) -> str:
+    """从旧三段式对象里取出可当单句遗言的那一句（优先触发点）。"""
+    if isinstance(legacy, str):
+        return legacy
     if not isinstance(legacy, dict):
-        raise ValueError("遗言必须是包含 trigger_point/fork/cost_budget 的对象")
-    allowed = set(LEGACY_FIELDS) | {"title", "action", "option"}
-    if not set(LEGACY_FIELDS).issubset(legacy):
-        raise ValueError("遗言字段必须且只能是 trigger_point/fork/cost_budget")
-    extra = set(legacy) - allowed
-    if extra:
-        raise ValueError("遗言字段必须且只能是 trigger_point/fork/cost_budget")
+        return ""
+    if isinstance(legacy.get(LEGACY_FIELD), str):
+        return legacy[LEGACY_FIELD]
+    for field_name in DEPRECATED_FIELDS:
+        value = legacy.get(field_name)
+        if isinstance(value, str) and value.strip():
+            return value
+    return ""
 
-    normalized: dict[str, str] = {}
-    for field_name in LEGACY_FIELDS:
-        value = legacy[field_name]
-        if not isinstance(value, str) or not value.strip():
-            raise ValueError(f"遗言字段 {field_name} 必须是非空字符串")
-        value = value.strip()
-        if len(value) > capacity:
-            raise ValueError(f"遗言字段 {field_name} 超过{capacity}字上限")
-        normalized[field_name] = value
-    title = legacy.get("title")
+
+def validate_legacy(legacy: Any, capacity: int = DEFAULT_CAPACITY) -> dict[str, str]:
+    """单句校验：一句话，非空，不超过字数上限（DM裁定 2026-08-31：无其他限制）。
+
+    入参可以是纯字符串，也可以是 `{"text": ...}`（+可选 title）。旧三段式字段一律拒绝——
+    格式只有一种；存量旧书页的兼容放在**读取端**（`parse_legacies` 按第一句折叠）。
+    """
+    allowed_extra = {"title", "action", "option"}
+    if isinstance(legacy, dict):
+        if set(legacy) & set(DEPRECATED_FIELDS):
+            raise ValueError(
+                "遗言已改为单句（DM裁定 2026-08-31）：只提交 text（≤"
+                f"{capacity}字），旧三段式 trigger_point/fork/cost_budget 已废止")
+        extra = set(legacy) - {LEGACY_FIELD} - allowed_extra
+        if extra:
+            raise ValueError(f"遗言只能包含 {LEGACY_FIELD}(+title)，收到多余字段: {sorted(extra)}")
+    elif not isinstance(legacy, str):
+        raise ValueError("遗言必须是一句话（字符串）或包含 text 的对象")
+
+    text = _collapse_legacy(legacy)
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError("遗言必须是非空字符串")
+    text = text.strip()
+    if len(text) > capacity:
+        raise ValueError(f"遗言超过{capacity}字上限")
+
+    normalized: dict[str, str] = {LEGACY_FIELD: text}
+    title = legacy.get("title") if isinstance(legacy, dict) else None
     if isinstance(title, str) and title.strip():
         normalized["title"] = title.strip()
     return normalized
@@ -101,50 +97,31 @@ def draft_legacy(
     last_action: Optional[dict] = None,
     capacity: int = DEFAULT_CAPACITY,
 ) -> dict[str, str]:
-    """按死因模板生成不超过字数上限的三段式草稿，再用本局事实覆盖岔路。"""
+    """按死因模板生成一句不超过字数上限的遗言草稿。
+
+    DM裁定 2026-08-31 后每页只有一句话，所以草稿只保留「第N场 + 死因短句」；
+    旧三段式里的岔路/代价预算（含按资源状态改写的那套）随格式一起废止。
+    `last_action` 仅用于在字数允许时补一句最后动作，不再单独成段。
+    """
     template = dict(CAUSE_DRAFTS.get(cause) or CAUSE_DRAFTS["attack"])
     battle = int(getattr(state, "current_battle", 0) or 0)
-    trigger = template["trigger_point"]
+    text = template[LEGACY_FIELD]
     if battle > 0:
         prefix = f"第{battle}场"
-        if len(prefix + trigger) <= capacity:
-            trigger = prefix + trigger
-    template["trigger_point"] = clip_text(trigger, capacity)
-
-    fork = template["fork"]
+        if len(prefix + text) <= capacity:
+            text = prefix + text
     if last_action:
-        act = last_action.get("action", "")
         params = last_action.get("params") or {}
-        if act == "use_daowen":
-            fork = f"最后出手发动{params.get('daowen_name', '道纹')}"
-        elif act == "attack":
-            fork = "选择攻击而非防御"
-        elif act == "monster_phase":
-            fork = "未闪避承受攻击"
-        elif act == "declare_escape":
-            fork = "试图逃跑未能脱身"
-        elif act == "consume_item":
-            fork = f"使用{params.get('name', '消耗品')}"
-        elif act == "resolve_final_duel":
-            fork = "死斗最后一手选错"
-        elif act == "round_end":
-            fork = "回终前未打破僵局"
-    template["fork"] = clip_text(fork, capacity)
+        hint = ""
+        if last_action.get("action") == "use_daowen":
+            hint = f"末手{params.get('daowen_name', '道纹')}"
+        elif last_action.get("action") == "declare_escape":
+            hint = "试图逃跑"
+        if hint and len(text) + len(hint) <= capacity:
+            text = f"{text}{hint}"
+    template[LEGACY_FIELD] = clip_text(text, capacity)
 
     player = getattr(state, "player", None)
-    shards = int(getattr(state, "shards", 0) or 0)
-    if player is not None and getattr(player, "current_speed", 1) <= 0:
-        budget = "愿以碎片换速度"
-    elif player is not None and getattr(player, "current_mana", 1) <= 0:
-        budget = "愿以血换法力"
-    elif player is not None and getattr(player, "shield", 1) <= 0:
-        budget = "愿以法力换格挡"
-    elif shards <= 5:
-        budget = "愿以失忆换碎片"
-    else:
-        budget = template["cost_budget"]
-    template["cost_budget"] = clip_text(budget, capacity)
-
     player_name = getattr(player, "name", "") if player is not None else ""
     region = getattr(state, "current_region", "") or ""
     title_bits = [bit for bit in (player_name, region, f"第{battle}场" if battle else "") if bit]
@@ -163,8 +140,7 @@ def render_legacy_section(entries: list[dict[str, str]]) -> str:
         title = entry.get("title") or f"遗言{index}"
         lines.append(f"### {title}")
         lines.append("")
-        for field_name in LEGACY_FIELDS:
-            lines.append(f"- {FIELD_LABELS[field_name]}：{entry[field_name]}")
+        lines.append(f"- {LEGACY_LABEL}：{entry[LEGACY_FIELD]}")
         lines.append("")
     return "\n".join(lines)
 
@@ -183,23 +159,33 @@ def _split_legacy_section(text: str) -> tuple[str, str, str]:
 
 
 def parse_legacies(text: str) -> list[dict[str, str]]:
+    """读回全部遗言页。新格式读「- 遗言：」；旧三段式书页按「- 触发点：」折叠读入。"""
     _, section, _ = _split_legacy_section(text)
     if not section.strip() or (EMPTY_MARK in section and "### " not in section):
         return []
+    labels = [(LEGACY_LABEL, LEGACY_FIELD),
+              *[(label, field) for field, label in DEPRECATED_LABELS.items()]]
     entries: list[dict[str, str]] = []
     current: dict[str, str] = {}
+
+    def flush() -> None:
+        if current.get(LEGACY_FIELD):
+            entries.append(dict(current))
+
     for raw in section.splitlines():
         line = raw.strip()
         if line.startswith("### "):
-            if all(field in current for field in LEGACY_FIELDS):
-                entries.append(current)
+            flush()
             current = {"title": line[4:].strip()}
             continue
-        for field_name, label in FIELD_LABELS.items():
+        for label, field in labels:
             if line.startswith(f"- {label}：") or line.startswith(f"- {label}:"):
-                current[field_name] = line.split("：", 1)[-1].split(":", 1)[-1].strip()
-    if all(field in current for field in LEGACY_FIELDS):
-        entries.append(current)
+                value = line.split("：", 1)[-1].split(":", 1)[-1].strip()
+                # 旧书页的三段按顺序读到，只保留第一句（触发点优先）
+                if field == LEGACY_FIELD or LEGACY_FIELD not in current:
+                    current[LEGACY_FIELD] = value
+                break
+    flush()
     return entries
 
 
@@ -227,7 +213,7 @@ class DeathBookStore:
                              encoding="utf-8")
         return self.load()
 
-    def append(self, legacy: dict[str, str]) -> dict[str, str]:
+    def append(self, legacy: dict[str, str] | str) -> dict[str, str]:
         validated = validate_legacy(legacy)
         entries = self.load()
         entries.append(validated)
