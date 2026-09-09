@@ -209,5 +209,5 @@ def test_cross_engine_load_pending_dongcha_round_start(tmp_path):
 
     e2.combat.round_start()
     assert getattr(p2, "_dongcha_pending", 0) == 0, "读档后回始必须结算 pending"
-    assert p2.current_mana == 10 + 7 + p2.mana_limit, \
+    assert p2.current_mana == 10 + 7, \
         f"法力=回填+洞察结算 {p2.current_mana}"

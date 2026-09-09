@@ -85,7 +85,7 @@ def test_dongcha_normal():
     res = combat.round_start()
     entries = [e for e in res["effects"] if e.get("type") == "dongcha_mana"]
     assert entries == [{"type": "dongcha_mana", "entity": "E", "gained": 15}]
-    assert ent.current_mana == 85, "20 + 50(回始补法) + 15(洞察)"
+    assert ent.current_mana == 35, "一池制：20 + 15(洞察)，回始不再补法限50"
     assert getattr(ent, "_dongcha_pending", None) is None or ent._dongcha_pending == 0
 
 

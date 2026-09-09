@@ -162,7 +162,7 @@ def test_zhenshi_blocks_heal():
     assert any(e["type"] == "zhenshi" for e in r["effects"])
 
 
-def test_gouhun_blocks_mana_gain_for_x_rounds():
+def test_gouhun_doubles_mana_cost_for_x_rounds():
     """正常路径（2026-08-30 改版）：勾魂X挂到目标身上，持续X回合[回始]不获得法力。
 
     旧版为「[回始]失去2X法力，持续∞」，已废止；新版**不扣已有法力**，只压制回填。
@@ -184,26 +184,24 @@ def test_gouhun_blocks_mana_gain_for_x_rounds():
     dur = next(s.remaining_rounds for s in foe.status_effects if s.name == "勾魂")
     assert dur == 2, f"勾魂X=2 应持续2回合，实{dur}"
 
-    # 第1回合：法力回填被压制，已有法力不动
-    foe.current_mana = 7
-    rs = c.round_start({"relic_choices": {}})
-    blocked = [e for e in rs.get("effects", []) if e.get("type") == "mana_refill_blocked"]
-    assert blocked, "回始应有法力回填被压制的条目"
-    assert foe.current_mana == 7, f"勾魂期间不得获得法力，实{foe.current_mana}"
+    # DM裁定 2026-09-09：勾魂改为「目标消耗法力翻倍」（法力已改一池制，
+    # 旧的「[回始]不获得法力」失去作用对象）
+    foe.current_mana = 20
+    assert foe.spend_mana(4) is True
+    assert foe.current_mana == 12, f"勾魂期间 4 点消耗应翻倍扣 8，实剩 {foe.current_mana}"
 
-    # 第2回合：仍被压制（持续X=2，[回终]才递减）
+    # 第2回合仍在持续期内（持续X=2，[回终]才递减）
     c.round_start({"relic_choices": {}})
-    assert foe.current_mana == 7, f"第2回合仍应在持续期内，实{foe.current_mana}"
+    assert foe.has_status("勾魂")
+    assert foe.spend_mana(2) is True
+    assert foe.current_mana == 8, f"仍应翻倍，实剩 {foe.current_mana}"
 
-    # 持续走完后恢复回填
+    # 持续走完后恢复正常消耗
     from engine.enums import CombatSubphase
     st.combat_subphase = CombatSubphase.AWAIT_ROUND_END.value
     c.round_end()
     st.combat_subphase = CombatSubphase.AWAIT_ROUND_END.value
     c.round_end()
     assert not foe.has_status("勾魂"), "持续X走完后勾魂应自然到期"
-    # 注：当前法力在[敌回终]清空，故到期后回填 = 0 + 法限20
-    rs2 = c.round_start({"relic_choices": {}})
-    refill = [e for e in rs2.get("effects", []) if e.get("type") == "mana_refill"]
-    assert refill and refill[0]["gained"] == 20, f"到期后应恢复回填: {refill}"
-    assert foe.current_mana == 20, f"到期后应恢复回填，实{foe.current_mana}"
+    assert foe.spend_mana(4) is True
+    assert foe.current_mana == 4, f"到期后按原值扣费，实剩 {foe.current_mana}"

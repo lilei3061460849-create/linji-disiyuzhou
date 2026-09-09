@@ -1711,34 +1711,10 @@ class CombatEngine:
             e.blood_oath_used_this_round = False
             e.mana_inflicted_this_round = 0
             e.damage_dealt_this_round = 0
-        # 回始：每个轮回者获得等同当前法限的法力。战始已清零；折速法印在战始+=；血契在本段之后+=。
-        # 守夜灯按[敌回始]授予，不在回始叠加。
-        # 死斗里封存对手也是轮回者，必须同样获得法力，否则只能普攻1点。
-        for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
-            if entity.entity_type != "轮回者" or not entity.is_alive:
-                continue
-            old_mana = entity.current_mana
-            # 勾魂（持续X）：[回始]不获得法力（不扣已有法力，只是回填被压制）。
-            if entity.has_status("勾魂"):
-                effects.append({
-                    "type": "mana_refill_blocked",
-                    "entity": entity.name,
-                    "by": "勾魂",
-                    "from": old_mana,
-                    "to": old_mana,
-                    "gained": 0,
-                })
-                continue
-            gained = entity.mana_limit
-            entity.current_mana += gained
-            self.clamp_immortal_body(entity)
-            effects.append({
-                "type": "mana_refill",
-                "entity": entity.name,
-                "from": old_mana,
-                "to": entity.current_mana,
-                "gained": gained,
-            })
+        # DM裁定 2026-09-09：[回始]不再回填法力。法力改为**一池制**——[战始]给满
+        # 等同[法限]的一池，整场只出不进，[战终]复原（与[速度]同口径）。
+        # 原「勾魂：[回始]不获得法力」随本段一起取消，【勾魂】改为消耗法力翻倍
+        # （见 models.py::spend_mana）。
 
         # 遗物：回始触发（回锋刀按速限缺口造伤）。守夜灯改走[敌回始]。
         relic_logs = self.process_relics(TriggerTiming.ROUND_START, {"relic_choices": relic_choices or {}})
@@ -1909,16 +1885,7 @@ class CombatEngine:
         # 规则：[法限]用于发动道纹与法术，法力[敌回终]清空。
         # 死斗双方都是轮回者，必须与回始同一套循环：每个存活轮回者各自清空。
         # 朋友/员工/怪物没有法限，不走这条。
-        for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
-            if entity.entity_type != "轮回者" or not entity.is_alive:
-                continue
-            if entity.current_mana > 0:
-                effects.append({
-                    "type": "mana_clear",
-                    "entity": entity.name,
-                    "cleared": entity.current_mana
-                })
-                entity.current_mana = 0
+        # DM裁定 2026-09-09：[敌回终]不再清空法力（法力一池制，只在[战终]复原）。
         
         # 持续效果递减。爆裂按[敌回终]：己方身上在此拍；敌方身上改在怪物回合开始时减。
         player_side_ids = {id(e) for e in self.state.get_all_player_side()}
@@ -3230,16 +3197,18 @@ class CombatEngine:
                                                   source=caster.name))
                 result["effects"].append({"type": "zhenshi", "target": st_target.name,
                                           "duration": calc.get("duration", 1)})
-        if name == "勾魂" and calc.get("no_mana_gain"):
-            # 勾魂X（2026-08-30 改版，报告.md 硬伤2-C）：持续X回合[回始]无法获得法力。
-            # 旧版为「[回始]失去2X法力，持续∞」（永久扣蓝），已废止。
+        if name == "勾魂" and calc.get("mana_cost_multiplier"):
+            # 勾魂X（DM裁定 2026-09-09 再改版）：持续X回合**法力消耗翻倍**
+            # （实现在 models.py::spend_mana）。历史：旧版「[回始]失去2X法力，持续∞」
+            # 已废止；2026-08-30 版「[回始]无法获得法力」随法力一池制一起失去作用对象。
             for st_target in wave_status_targets:
                 st_target.add_status(StatusEffect(name="勾魂", value=1,
                                                   remaining_rounds=calc.get("duration", x),
                                                   source=caster.name))
-                result["effects"].append({"type": "gouhun", "target": st_target.name,
-                                          "no_mana_gain": True,
-                                          "duration": calc.get("duration", x)})
+                result["effects"].append({
+                    "type": "gouhun", "target": st_target.name,
+                    "mana_cost_multiplier": calc.get("mana_cost_multiplier"),
+                    "duration": calc.get("duration", x)})
         if name == "冥气" and calc.get("speed_loss_speed_limit"):
             for st_target in wave_status_targets:
                 st_target.add_status(StatusEffect(name="冥气", value=calc["speed_loss_speed_limit"],

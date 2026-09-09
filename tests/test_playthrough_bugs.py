@@ -180,7 +180,9 @@ def test_resonance_fails_without_holder_or_stock():
 
 
 # ========================================================================
-# 2. 回始获得等同当前法限的法力（加法）；战始先清零再结算遗物
+# 2. 法力一池制（DM裁定 2026-09-09）：[战始]直接给满法限（先给满再结算遗物），
+#    [回始]不回填，[回终]/[敌回终]不清空，[战终]复原。守夜灯仍走自己的[敌回始]加
+#    / [敌回终]只清自己那一份。
 # ========================================================================
 
 def test_zhesu_and_blood_pact_overflow_survives_first_round_start():
@@ -193,70 +195,71 @@ def test_zhesu_and_blood_pact_overflow_survives_first_round_start():
     if any(r.name == "回锋刀" for r in engine.state.relics):
         zhesu["回锋刀"] = {"enemy_index": 0}
     engine.execute_action("battle_start", {"relic_choices": zhesu})
-    assert p.current_mana == 24, f"战始清零后显式折速4，+24法力，应24，实{p.current_mana}"
+    assert p.current_mana == 38, f"战始给满14，再折速4 +24，应38，实{p.current_mana}"
     assert p.current_speed == 4
     engine.execute_action("round_start", {})
-    assert p.current_mana == 38, f"回始获得法限14：24+14=38，实{p.current_mana}"
+    assert p.current_mana == 38, f"一池制：回始不回填，应仍38，实{p.current_mana}"
 
     engine2 = _engine("mana_pact")
     p2 = engine2.state.player
     engine2.state.relics.append(Relic(name="血契", effect="[回始]可流血4X获得X法力"))
     hp_before = p2.current_hp
     engine2.execute_action("battle_start", {"relic_choices": {}})
-    assert p2.current_mana == 0
+    assert p2.current_mana == 14, f"战始给满法限，实{p2.current_mana}"
     engine2.execute_action("round_start", {"relic_choices": {
         "血契": {"use": True, "x": 3},
     }})
-    assert p2.current_mana == 17, f"回始先+法限14，再由血契+3，应17，实{p2.current_mana}"
+    assert p2.current_mana == 17, f"回始不回填，只有血契+3：14+3=17，实{p2.current_mana}"
     assert p2.current_hp == hp_before - 12
 
 
-def test_round_start_adds_mana_limit_even_with_leftover():
-    """边界：回始始终 += 法限，残量不被赋值冲掉，也不被压到法限。"""
+def test_round_start_does_not_refill_mana():
+    """边界（DM裁定 2026-09-09）：一池制下[回始]不回填，残量原样保留、跨回合不被清。"""
     engine = _engine("mana_bound")
     p = engine.state.player
     engine.execute_action("battle_start", {})
-    assert p.current_mana == 0
+    assert p.current_mana == p.mana_limit == 14, "战始给满一池"
     p.current_mana = 3
     engine.execute_action("round_start", {})
-    assert p.current_mana == 17, f"残量3+法限14应17，实{p.current_mana}"
+    assert p.current_mana == 3, f"回始不得回填，实{p.current_mana}"
 
     finish_round(engine)
-    assert p.current_mana == 0
+    assert p.current_mana == 3, f"回终不得清空，实{p.current_mana}"
     engine.execute_action("round_start", {})
-    assert p.current_mana == p.mana_limit == 14
+    assert p.current_mana == 3, f"下一回始仍是3，实{p.current_mana}"
 
 
 def test_no_zhesu_means_no_bonus_mana():
-    """错误输入/对照：未持有折速法印时战始清零、不扣速度。"""
+    """错误输入/对照：未持有折速法印时战始只有满池、不额外加法力、不扣速度。"""
     engine = _engine("mana_invalid")
     p = engine.state.player
     engine.execute_action("battle_start", {})
-    assert p.current_mana == 0
+    assert p.current_mana == p.mana_limit == 14
     assert p.current_speed == 8
 
 
-def test_shouyedeng_bonus_survives_round_start_after_refill():
-    """正常路径：守夜灯不在回始叠加；[敌回始]加法限50%，[敌回终]只清该法力。"""
+def test_shouyedeng_bonus_is_its_own_slice():
+    """正常路径：守夜灯仍按自己的节奏走——[敌回始]+法限50%，[敌回终]只清它给的那7点；
+    一池制下其余法力一律不动。"""
     engine = _engine("lamp_happy")
     p = engine.state.player
     engine.state.relics.append(Relic(name="守夜灯", effect="[敌回始]获得等同于[法限]50%的法力"))
     engine.execute_action("battle_start", {})
     engine.execute_action("round_start", {})
-    assert p.current_mana == 14, f"回始只获得法限14，实{p.current_mana}"
+    assert p.current_mana == 14, f"回始不回填，仍是战始满池14，实{p.current_mana}"
     granted = engine.combat._grant_shouyedeng(p)
     assert granted and granted["gained"] == 7
     assert p.current_mana == 21
     cleared = engine.combat._clear_shouyedeng(p)
     assert cleared and p.current_mana == 14
     finish_round(engine)
-    assert p.current_mana == 0
+    assert p.current_mana == 14, f"回终不再清空，实{p.current_mana}"
     engine.execute_action("round_start", {})
-    assert p.current_mana == 14, f"回终清空后再回始仍只加法限，实{p.current_mana}"
+    assert p.current_mana == 14, f"回始不回填，实{p.current_mana}"
 
 
 def test_shouyedeng_stacks_on_zhesu_overflow():
-    """边界：折速战始+24，回始只加法限；守夜灯改到敌回始。"""
+    """边界：折速在满池上再加24；回始不回填；守夜灯走敌回始。"""
     engine = _engine("lamp_bound")
     p = engine.state.player
     engine.state.relics.append(Relic(name="折速法印", effect="[战始]可疲惫X获得6X法力"))
@@ -265,22 +268,22 @@ def test_shouyedeng_stacks_on_zhesu_overflow():
     if any(r.name == "回锋刀" for r in engine.state.relics):
         zhesu["回锋刀"] = {"enemy_index": 0}
     engine.execute_action("battle_start", {"relic_choices": zhesu})
-    assert p.current_mana == 24
+    assert p.current_mana == 38, f"满池14+折速24应38，实{p.current_mana}"
     engine.execute_action("round_start", {})
-    assert p.current_mana == 38, f"24+14应38，实{p.current_mana}"
+    assert p.current_mana == 38, f"回始不回填，应仍38，实{p.current_mana}"
     engine.combat._grant_shouyedeng(p)
     assert p.current_mana == 45, f"敌回始再+7应45，实{p.current_mana}"
 
 
 def test_no_shouyedeng_means_no_round_start_bonus():
-    """错误输入/对照：未持有守夜灯时回始只获得法限，回终仍清空。"""
+    """错误输入/对照：未持有守夜灯时法力全程只有战始那一池，回始不加、回终不清。"""
     engine = _engine("lamp_invalid")
     p = engine.state.player
     engine.execute_action("battle_start", {})
     engine.execute_action("round_start", {})
     assert p.current_mana == 14
     finish_round(engine)
-    assert p.current_mana == 0
+    assert p.current_mana == 14
 
 
 # ========================================================================

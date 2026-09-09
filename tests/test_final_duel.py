@@ -318,8 +318,9 @@ def test_action_from_non_duel_side_entity_rejected():
     _cleanup(path)
 
 
-def test_duel_opponent_reincarnator_can_cast_and_both_gain_mana():
-    """正常路径：死斗对手是轮回者，回始双方获得法力，对手可发动杀伐打到挑战者"""
+def test_duel_opponent_reincarnator_can_cast_with_full_pool():
+    """正常路径：死斗对手是轮回者，开场各得满一池法力（不再靠[回始]回填），
+    对手可发动杀伐打到挑战者。"""
     path = "data/test_duel_oppcast.json"
     _cleanup(path)
     sealed = _new_candidate("oppcast_sealed", path, speed_points=5, name="封存贾凡")
@@ -329,12 +330,13 @@ def test_duel_opponent_reincarnator_can_cast_and_both_gain_mana():
     assert r["result"]["final_crown"]["outcome"] == "duel_start"
     opp = next(e for e in challenger.state.enemies if e.entity_type == "轮回者")
 
-    rs = challenger.execute_action("round_start", {})
-    names = [e.get("entity") for e in rs["result"].get("effects", []) if e.get("type") == "mana_refill"]
-    assert "挑战贾凡" in names
-    assert opp.name in names
     assert challenger.state.player.current_mana == challenger.state.player.mana_limit
     assert opp.current_mana == opp.mana_limit
+    rs = challenger.execute_action("round_start", {})
+    assert rs["success"] is True
+    assert [e for e in rs["result"].get("effects", []) if e.get("type") == "mana_refill"] == [], \
+        "一池制：[回始]不再回填法力"
+    assert challenger.state.player.current_mana == challenger.state.player.mana_limit
 
     # 挑战者速限更高，先手让出一手后再由对手杀伐
     skip = challenger.execute_action("use_daowen", {
@@ -472,7 +474,8 @@ def test_duel_opponent_chooses_zhesu_relic():
     })
     assert use["success"] is True, use
     assert opp.current_speed == 4
-    assert opp.current_mana == 24
+    # DM裁定 2026-09-09：开场已是满池，折速的 6X 叠在其上（法力允许超过[法限]）
+    assert opp.current_mana == opp.mana_limit + 24
     bad = challenger.execute_action("activate_duel_relic", {
         "side": "opponent_side", "relic": "折速法印", "use": True, "x": 9,
     })
@@ -524,8 +527,8 @@ def test_duel_opponent_cast_rejected_on_wrong_turn_and_without_mana():
     _cleanup(path)
 
 
-def test_duel_round_end_clears_both_reincarnator_mana():
-    """正常路径：回终清空双方轮回者剩余法力，各记一条 mana_clear"""
+def test_duel_round_end_keeps_both_reincarnator_mana():
+    """DM裁定 2026-09-09：法力一池制——[敌回终]不再清空，剩余法力留到下一回合。"""
     path = "data/test_duel_manaclear.json"
     _cleanup(path)
     sealed = _new_candidate("manaclear_sealed", path, speed_points=5, name="封存贾凡")
@@ -545,12 +548,9 @@ def test_duel_round_end_clears_both_reincarnator_mana():
     re = finish_duel_round(challenger)
     assert re["success"] is True, re
     effects = re["result"].get("effects", [])
-    clears = [e for e in effects if e.get("type") == "mana_clear"]
-    names = {e["entity"] for e in clears}
-    assert player.name in names
-    assert opp.name in names
-    assert player.current_mana == 0
-    assert opp.current_mana == 0
+    assert [e for e in effects if e.get("type") == "mana_clear"] == [], "不得再有清空条目"
+    assert player.current_mana == 9, f"剩余法力应保留，实{player.current_mana}"
+    assert opp.current_mana == 11, f"剩余法力应保留，实{opp.current_mana}"
     _cleanup(path)
 
 
@@ -597,8 +597,10 @@ def test_duel_round_end_zero_mana_no_crash():
     _finish_battle_7(challenger)
     opp = next(e for e in challenger.state.enemies if e.entity_type == "轮回者")
     player = challenger.state.player
-    assert player.current_mana == 0
-    assert opp.current_mana == 0
+    # DM裁定 2026-09-09：死斗开场给满一池，故这里显式花光再造「0 法力」边界
+    assert player.current_mana == player.mana_limit and opp.current_mana == opp.mana_limit
+    player.current_mana = 0
+    opp.current_mana = 0
 
     re = finish_duel_round(challenger)
     assert re["success"] is True, re
@@ -668,8 +670,8 @@ def test_duel_still_rejects_wrong_side_while_other_has_actions():
     _cleanup(path)
 
 
-def test_duel_round_end_does_not_clear_non_reincarnator_mana():
-    """错误输入/对照：朋友不是轮回者，回终不清他的法力，也不记 mana_clear"""
+def test_duel_round_end_clears_nobody_mana():
+    """对照（DM裁定 2026-09-09）：一池制下回终谁的法力都不清——朋友、双方轮回者一律保留。"""
     path = "data/test_duel_friendmana.json"
     _cleanup(path)
     sealed = _new_candidate("friendmana_sealed", path, speed_points=5, name="封存贾凡")
@@ -685,12 +687,10 @@ def test_duel_round_end_does_not_clear_non_reincarnator_mana():
 
     re = finish_duel_round(challenger)
     assert re["success"] is True, re
-    clears = [e for e in re["result"].get("effects", []) if e.get("type") == "mana_clear"]
-    clear_names = {e["entity"] for e in clears}
-    assert "旁观朋友" not in clear_names
+    assert [e for e in re["result"].get("effects", []) if e.get("type") == "mana_clear"] == []
     assert friend.current_mana == 10
-    assert challenger.state.player.current_mana == 0
-    assert opp.current_mana == 0
+    assert challenger.state.player.current_mana == 6
+    assert opp.current_mana == 8
     _cleanup(path)
 
 

@@ -125,7 +125,8 @@ def test_zhesu_fatigue_triggers_huifeng(tmp_path):
     })
     p, m = e.state.player, e.state.enemies[0]
     assert p.current_speed == 4
-    assert p.current_mana == 24
+    # DM裁定 2026-09-09：战始给满一池，折速的 24 叠在其上
+    assert p.current_mana == p.mana_limit + 24
     assert m.current_hp == m.blood_limit - 12
 
 

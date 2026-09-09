@@ -4043,10 +4043,11 @@ class GameEngine:
                     source="地下角斗场")
                 monster.current_hp += gain
 
-        # 战始先清零当前法力，再结算战始遗物。回始再获得等同法限的法力。
-        # 折速法印因此叠在 0 上，首回合 = 遗物加成 + 法限，不会被赋值冲掉。
+        # DM裁定 2026-09-09：法力不再每[回始]回填，改为**一池制**——[战始]给满
+        # 等同[法限]的一池，整场只出不进，[战终]复原（与[速度]同口径）。
+        # 先赋值再结算战始遗物，折速法印因此叠在满池之上，不会被赋值冲掉。
         if self.state.player and self.state.player.is_alive:
-            self.state.player.current_mana = 0
+            self.state.player.current_mana = self.state.player.mana_limit
         relic_logs = self.combat.process_relics(TriggerTiming.BATTLE_START, {"relic_choices": relic_choices})
 
         artifact_logs = self._apply_terminal_artifacts_on_battle_start()
@@ -4280,10 +4281,11 @@ class GameEngine:
             if name not in existing:
                 self.state.opponent_relics.append(Relic(name=name, effect="", tags=["血族"]))
                 existing.add(name)
-        # 与战始相同：死斗开场先清零双方轮回者法力，回始再获得等同法限。
+        # 与战始相同（DM裁定 2026-09-09）：死斗开场给双方轮回者各一满池法力，
+        # 整场不再回填，[战终]复原。
         for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
             if entity.entity_type == "轮回者" and entity.is_alive:
-                entity.current_mana = 0
+                entity.current_mana = entity.mana_limit
                 entity.battle_start_hp = entity.current_hp
                 entity.healed_this_battle = 0
         artifact_logs = self._apply_terminal_artifacts_on_battle_start()
@@ -4874,6 +4876,9 @@ class GameEngine:
             entity._bizhai = []
             entity._qingsuan = []
             entity.current_speed = entity.speed_limit
+            # DM裁定 2026-09-09：法力与速度同口径——只在[战终]复原（[回始]不再回填）。
+            if entity.entity_type == "轮回者":
+                entity.current_mana = entity.mana_limit
             entity.is_flying = False
             entity.hp_lost_this_round = 0
             entity.actions_used_this_round = 0

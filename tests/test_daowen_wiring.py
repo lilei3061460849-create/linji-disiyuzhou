@@ -374,4 +374,5 @@ def test_jisu_jiasu_dongcha():
     engine.state.combat_subphase = "await_round_end"
     engine.execute_action("round_end", {})
     engine.execute_action("round_start", {})
-    assert p.current_mana == p.mana_limit + 10
+    # DM裁定 2026-09-09：一池制，[回始]不回填 → 只有洞察结算的那 10 点
+    assert p.current_mana == mana + 10, f"{p.current_mana} != {mana}+10"

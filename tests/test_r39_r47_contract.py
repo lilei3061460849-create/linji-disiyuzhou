@@ -318,10 +318,11 @@ def test_r44_normal_guard_lamp_ceil(tmp_path):
     player.mana_limit = 5; player.current_mana = 0
     engine.state.relics = [Relic("守夜灯", "")]
     engine.combat.round_start({})
-    assert player.current_mana == 5
+    # DM裁定 2026-09-09：一池制，[回始]不回填（法限5 也不再自动补满）
+    assert player.current_mana == 0
     granted = engine.combat._grant_shouyedeng(player)
     assert granted["gained"] == 3
-    assert player.current_mana == 8
+    assert player.current_mana == 3  # 一池制：少了 +法限5 的回填，只剩守夜灯的 ceil(5*0.5)=3
 
 
 def test_r44_boundary_slow_one_stays_one(tmp_path):
@@ -447,7 +448,8 @@ def test_r46_event_relic_round_and_battle_end_effects(tmp_path):
         "余火印": {"use": True, "heart_name": "衰老龙心", "x": 2},
     }})
     assert started["success"] and player.shield == 7
-    assert player.current_mana == player.mana_limit + 4 and heart.current_uses == 3
+    # 一池制：回始不回填 → 只剩事件遗物给的那 4 点
+    assert player.current_mana == 4 and heart.current_uses == 3
 
     engine.state.enemies = []
     engine.state.event_modifiers.update({"scarlet_fruit_active": True, "pale_flower_active": True})

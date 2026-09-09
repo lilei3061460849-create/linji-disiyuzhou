@@ -944,8 +944,10 @@ class DaoWenEngine:
         return {
             "dao_wen": "勾魂", "x": x,
             "cost_type": CostType.MANA.value, "cost": x,
-            "no_mana_gain": True, "duration": x,
-            "summary": f"消耗{x}法力，{target_name}无法获得法力，持续{x}回合"
+            # DM裁定 2026-09-09：法力改一池制（[战始]给满、[回始]不回填、[战终]复原）后，
+            # 「[回始]无法获得法力」失去作用对象，改为**目标消耗法力翻倍**。
+            "mana_cost_multiplier": 2, "duration": x,
+            "summary": f"消耗{x}法力，{target_name}法力消耗翻倍，持续{x}回合"
         }
 
     @staticmethod

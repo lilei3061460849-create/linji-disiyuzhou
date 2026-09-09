@@ -441,12 +441,13 @@ def test_shuaibai_full_round_start_pipeline():
 
     entity.current_hp = 80  # 让自愈效果可用
 
-    # 走生产 round_start() 完整路径：法力回填 -> 遗物 -> ROUND_START 相位分发 -> F2 块
+    # 走生产 round_start() 完整路径：遗物 -> ROUND_START 相位分发 -> F2 块
+    # （DM裁定 2026-09-09：法力一池制，回始不再有 mana_refill 回填）
     res = combat.round_start()
     types = [e.get("type") for e in res["effects"] if e.get("entity") == "E"]
 
-    # 五机制条目按旧 cycle 顺序出现（mana_refill 是回始法力回填，在其之前）
-    expected = ["mana_refill", "self_heal", "shuaibai_tick", "dongcha_mana",
+    # 五机制条目按旧 cycle 顺序出现
+    expected = ["self_heal", "shuaibai_tick", "dongcha_mana",
                 "extra_attack_ready", "deform_pending"]
     assert types == expected, f"管道类型顺序: {types}"
 
@@ -454,7 +455,8 @@ def test_shuaibai_full_round_start_pipeline():
     assert entity.current_hp == 81, f"实际 hp={entity.current_hp}"
 
     # mana: 20->+30(回填)=50->+5(洞察)=55（无勾魂扣减）
-    assert entity.current_mana == 55, f"实际 mana={entity.current_mana}"
+    # 一池制：回始少了 +法限30 的回填，故 55 → 25
+    assert entity.current_mana == 25, f"实际 mana={entity.current_mana}"
 
     # 洞察 pending 清零
     assert getattr(entity, "_dongcha_pending", 0) == 0, "洞察 pending 必须在结算后清零"

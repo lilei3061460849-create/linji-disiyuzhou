@@ -497,9 +497,15 @@ class Entity:
         self.shield = 0
     
     def spend_mana(self, amount: int) -> bool:
-        """消耗法力。愤怒：法力消耗减半（向上取整）。"""
+        """消耗法力。愤怒：法力消耗减半（向上取整）；勾魂：法力消耗翻倍。
+
+        DM裁定 2026-09-09：【勾魂】原效果是「[回始]不获得法力」，而法力已改为
+        只在[战终]恢复（不再每[回始]回填），旧效果失去作用对象，故改为消耗翻倍。
+        """
         if amount > 0 and self.has_status("愤怒"):
             amount = math.ceil(amount / 2)
+        if amount > 0 and self.has_status("勾魂"):
+            amount = amount * 2
         if self.current_mana < amount:
             return False
         self.current_mana -= amount
