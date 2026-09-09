@@ -486,7 +486,9 @@ def test_valid_and_invalid_are_separated(monkeypatch):
     monkeypatch.setattr(bl, "play", mixed)
     score, valid, invalid = bl.fitness("杀伐", ["庇护"], 4, gen=1)
     assert valid == 2 and invalid == 2
-    assert score == 10.0, "有效局全胜时分数应为满分，不应被无效局拉低"
+    # DM裁定 2026-09-09：适应度只数「经历的战斗场数」，胜负不再进分数
+    # （旧口径 cleared+3×胜率 → 有效局全胜为 (7+3)=10.0）
+    assert score == 7.0, "有效局分数应只由经历的战斗场数决定，不应被无效局拉低"
 
 
 # ---------- 冷却代价（回归：束缚等曾可无限刷）----------
@@ -777,7 +779,8 @@ def test_duel_stats_recorded_and_won_means_duel_victory(monkeypatch):
     assert dz["fought"] == 2 and dz["won"] == 1, "死斗2场胜1场"
     assert dz["sealed_no_duel"] == 1, "1次封存不计死斗"
     assert dz["by_build"]["杀伐|庇护"] == {"fought": 2, "won": 1}
-    assert score == (7 + 3 + 7 + 7 + 2) / 4, "适应度=场数+3×死斗胜率口径"
+    # DM裁定 2026-09-09：适应度=平均经历战斗场数；死斗胜负只进 telemetry，不进分数
+    assert score == (7 + 7 + 7 + 2) / 4, "适应度=平均经历战斗场数口径"
 
 
 def test_behavior_stats_recorded_via_play():

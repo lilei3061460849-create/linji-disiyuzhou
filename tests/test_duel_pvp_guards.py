@@ -29,7 +29,10 @@ def _duel_engine(tmp_path, *, lord_relics=("血契",), lord_hp=1, lord_daowen=("
     p = e.state.player
     p.current_hp = challenger_hp
     p.current_speed = challenger_speed
+    # DM裁定 2026-09-09：轮回者普攻面板初始 1×1（雕塑不再排除轮回者，
+    # 0×0 的守擂会在第2回合被雕塑化，凡庸就没机会先结算了）
     lord = Entity("守擂", "轮回者", blood_limit=36, current_hp=lord_hp,
+                  attack_count=1, attack_power=1,
                   mana_limit=30, current_mana=0, speed_limit=12, current_speed=12)
     for n in lord_daowen:
         lord.dao_wen[n] = DaoWenInstance(DaoWen(

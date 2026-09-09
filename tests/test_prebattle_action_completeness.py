@@ -222,7 +222,10 @@ def test_training_splits_tier_points_between_speed_and_mana(tmp_path):
     assert trained["success"]
     assert (player.speed_limit, player.mana_limit) == (before[0] + 1, before[1] + 6)
     assert (player.current_speed, player.current_mana) == (player.speed_limit, player.mana_limit)
-    assert trained["result"]["allocations"] == {"speed_points": 1, "mana_points": 3}
+    # DM裁定 2026-09-09：修行分配口径扩到四维（速/法/攻次/攻力），未分配的回报 0
+    assert trained["result"]["allocations"] == {
+        "speed_points": 1, "mana_points": 3,
+        "attack_count_points": 0, "attack_power_points": 0}
     assert engine.state.shards == 35
 
 

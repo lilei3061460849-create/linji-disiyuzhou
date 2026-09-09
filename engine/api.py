@@ -1410,7 +1410,10 @@ class GameEngine:
         return {"success": True, "action": "休整", "result": payload}
 
     def _pre_battle_xiuxing(self, params: dict) -> dict:
-        """修行：获得属性点并立即分配（to=speed/mana；血限只能开局获得）。
+        """修行：获得属性点并立即分配（血限只能开局获得）。
+
+        1属性点 = 1[速限] = 2[法限] = 1[攻击次数] = 1[攻击力]
+        （DM裁定 2026-09-09：修行同样可以提升攻次/攻力，口径与开局初始分配一致）。
         不朽之躯不阻止修行：其“无法超过上限”只限制获得的当前法力/速度，不限制属性点增长。"""
         tier = params.get("tier", 1)
         tier_map = {1: (1, 0), 2: (2, 15), 3: (3, 35), 4: (4, 65), 5: (5, 100), 6: (6, 150)}
@@ -1421,32 +1424,46 @@ class GameEngine:
         if cost > 0 and self.state.shards < cost:  # 负债口径同休整：0费不属于支出
             self.state.energy += 1
             return {"success": False, "error": f"碎片不足，需要{cost}"}
+        alloc_keys = ("speed_points", "mana_points",
+                      "attack_count_points", "attack_power_points")
         allocations = params.get("allocations")
-        if allocations is None and params.get("to") in ("speed", "mana"):
-            selected = params["to"]
-            allocations = {"speed_points": points if selected == "speed" else 0,
-                           "mana_points": points if selected == "mana" else 0}
-        speed_points = allocations.get("speed_points") if isinstance(allocations, dict) else None
-        mana_points = allocations.get("mana_points") if isinstance(allocations, dict) else None
-        if (not isinstance(speed_points, int) or isinstance(speed_points, bool) or speed_points < 0
-                or not isinstance(mana_points, int) or isinstance(mana_points, bool) or mana_points < 0
-                or speed_points + mana_points != points):
+        if allocations is None and params.get("to") in (
+                "speed", "mana", "attack_count", "attack_power"):
+            allocations = {f"{params['to']}_points": points}
+        if not isinstance(allocations, dict):
+            allocations = {}
+        vals: dict = {}
+        for key in alloc_keys:
+            v = allocations.get(key, 0)
+            if not isinstance(v, int) or isinstance(v, bool) or v < 0:
+                vals = None
+                break
+            vals[key] = v
+        if vals is None or sum(vals.values()) != points:
             self.state.energy += 1
             return {"success": False,
-                    "error": f"修行{tier}档必须用allocations把{points}属性点分配到speed_points/mana_points"}
+                    "error": f"修行{tier}档必须用allocations把{points}属性点分配到"
+                             f"{'/'.join(alloc_keys)}"}
 
         self.state.shards -= cost
         player = self.state.player
-        player.speed_limit += speed_points
-        player.mana_limit += 2 * mana_points
+        player.speed_limit += vals["speed_points"]
+        player.mana_limit += 2 * vals["mana_points"]
+        player.attack_count += vals["attack_count_points"]
+        player.attack_power += vals["attack_power_points"]
         player.current_speed = player.speed_limit
         player.current_mana = player.mana_limit
-        gained = {"speed": speed_points, "mana": 2 * mana_points}
+        gained = {"speed": vals["speed_points"], "mana": 2 * vals["mana_points"],
+                  "attack_count": vals["attack_count_points"],
+                  "attack_power": vals["attack_power_points"]}
         return {"success": True, "action": "修行",
                 "result": {"points_gained": points, "shard_cost": cost,
-                           "allocations": {"speed_points": speed_points, "mana_points": mana_points},
+                           "allocations": {k: vals[k] for k in alloc_keys},
                            "gained": gained, "speed_limit": player.speed_limit,
-                           "mana_limit": player.mana_limit, "action_count": player.action_count}}
+                           "mana_limit": player.mana_limit,
+                           "attack_count": player.attack_count,
+                           "attack_power": player.attack_power,
+                           "action_count": player.action_count}}
 
     # 可学法术注册表（名 → 所需道纹）
     # 2026-08-21：删除「临界泄压」（所需道纹·切割已删除）。

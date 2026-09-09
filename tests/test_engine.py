@@ -412,7 +412,10 @@ def test_sculpture_and_proliferation():
 
     # --- 雕塑：把攻击力打到0 ---
     state = GameState()
-    player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60)
+    # DM裁定 2026-09-09：轮回者有普攻面板（初始 1×1），且雕塑不再排除轮回者——
+    # 夹具必须给出合法面板，否则本条要测的「怪物雕塑」会被玩家自己的雕塑干扰。
+    player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60,
+                    attack_count=1, attack_power=1)
     state.player = player
     m = Entity(name="石像鬼", entity_type="怪物", blood_limit=100, current_hp=100,
                attack_count=2, attack_power=10)

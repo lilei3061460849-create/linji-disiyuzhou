@@ -70,3 +70,32 @@ def test_basic_attack_lands_for_attack_count_times_attack_power():
     assert r.get("success"), r
     assert m.current_hp == 40 - p.attack_count * p.attack_power, (
         f"普攻应按 攻击次数×攻击力 结算，实际敌血 {m.current_hp}")
+
+
+def test_training_can_raise_attack_count_and_power():
+    """DM裁定 2026-09-09：修行同样能提升攻次/攻力（1属性点=1攻次=1攻力）。"""
+    e = _engine("train", blood_points=10, speed_points=8, mana_points=7)
+    e.state.phase = "pre_battle"          # 修行是局外行动
+    p = e.state.player
+    before = (p.attack_count, p.attack_power, p.speed_limit, p.mana_limit)
+    assert before == (1, 1, 8, 14)
+    e.state.shards = 200
+    r = e.execute_action("pre_battle_action", {
+        "sub_action": "修行", "tier": 3,
+        "allocations": {"attack_count_points": 1, "attack_power_points": 2}})
+    assert r.get("success"), r
+    assert (p.attack_count, p.attack_power) == (2, 3)
+    assert (p.speed_limit, p.mana_limit) == before[2:]      # 未分配的维度不动
+    assert r["result"]["gained"] == {"speed": 0, "mana": 0,
+                                     "attack_count": 1, "attack_power": 2}
+
+
+def test_training_allocations_must_cover_exactly_the_tier_points():
+    e = _engine("train_bad", blood_points=10, speed_points=8, mana_points=7)
+    e.state.phase = "pre_battle"
+    e.state.shards = 200
+    r = e.execute_action("pre_battle_action", {
+        "sub_action": "修行", "tier": 3,
+        "allocations": {"attack_count_points": 1, "attack_power_points": 1}})   # 只用了2/3
+    assert r["success"] is False
+    assert "attack_count_points" in r["error"] and "attack_power_points" in r["error"]

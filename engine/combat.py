@@ -2309,8 +2309,13 @@ class CombatEngine:
             ),
         }
     def _can_be_sculptured(self, entity: Entity) -> bool:
-        """雕塑对任何非轮回者生效。轮回者攻次/攻力归0不触发。"""
-        return entity.entity_type != "轮回者"
+        """雕塑对任何角色生效（DM裁定 2026-09-09）。
+
+        旧口径排除轮回者，理由是轮回者攻次/攻力恒为 0×0、没有普攻面板，
+        「归 0」对他们没有意义。轮回者既有普攻（初始 1×1，属性点 1:1 追加），
+        攻次/攻力归 0 就是真的失去攻击手段，与怪物同理，故不再排除。
+        """
+        return True
 
     def settle_victory_paths(self) -> list[dict]:
         """

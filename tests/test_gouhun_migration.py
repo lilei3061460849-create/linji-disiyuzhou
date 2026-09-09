@@ -34,10 +34,13 @@ COMBAT_SOURCE = (ROOT / "engine" / "combat.py").read_text(encoding="utf-8")
 
 def _arena(mana=20, gouhun_rounds=None, entity_type="轮回者", alive=True):
     state = GameState(phase="in_combat", combat_subphase="player_actions")
+    # DM裁定 2026-09-09：轮回者普攻面板初始 1×1，雕塑不再排除轮回者。
+    # 只对轮回者补面板——怪物档仍按各自用例设定，避免顺手改掉雕塑相关断言。
+    atk = {"attack_count": 1, "attack_power": 1} if entity_type == "轮回者" else {}
     player = Entity("P", "轮回者", blood_limit=100, current_hp=100,
-                    mana_limit=50, current_mana=0, speed_limit=10, current_speed=5)
+                    mana_limit=50, current_mana=0, speed_limit=10, current_speed=5, **atk)
     ent = Entity("E", entity_type, blood_limit=50, current_hp=50,
-                 mana_limit=30, current_mana=mana)
+                 mana_limit=30, current_mana=mana, **atk)
     if gouhun_rounds is not None:
         ent.add_status(StatusEffect(name="勾魂", remaining_rounds=gouhun_rounds,
                                     value=1, source="x"))

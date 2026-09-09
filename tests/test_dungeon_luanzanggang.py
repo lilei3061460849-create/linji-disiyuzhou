@@ -168,10 +168,12 @@ def test_gouhun_blocks_mana_gain_for_x_rounds():
     旧版为「[回始]失去2X法力，持续∞」，已废止；新版**不扣已有法力**，只压制回填。
     """
     st = GameState()
+    # DM裁定 2026-09-09：轮回者普攻面板初始 1×1，且雕塑不再排除轮回者；
+    # 夹具不给面板会在回终被雕塑化，勾魂的持续X就走不到期。
     st.player = Entity("P", "轮回者", blood_limit=60, current_hp=60,
-                       mana_limit=20, current_mana=20)
+                       mana_limit=20, current_mana=20, attack_count=1, attack_power=1)
     foe = Entity("敌法", "轮回者", blood_limit=60, current_hp=60,
-                 mana_limit=20, current_mana=20)
+                 mana_limit=20, current_mana=20, attack_count=1, attack_power=1)
     st.enemies.append(foe)
     c = CombatEngine(st, DiceEngine(seed=1))
     c.reset_monster_activation()

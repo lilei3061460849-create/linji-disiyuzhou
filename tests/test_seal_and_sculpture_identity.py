@@ -109,22 +109,22 @@ def test_seal_on_duel_reincarnator_only_removes_zero():
 def test_setup_reincarnator_attack_panel_is_one_by_one():
     """DM裁定 2026-09-09：setup 后轮回者普攻面板为初始 1×1（不花属性点）。
 
-    原断言是 0×0——那是「轮回者没有普攻」时代的口径。本条同时钉住它真正的意图：
-    雕塑路径按 `_can_be_sculptured` 明确排除轮回者（攻次/攻力归 0 也不触发），
-    所以轮回者有了普攻面板也不会被雕塑化。
+    原断言是 0×0——那是「轮回者没有普攻」时代的口径，当时雕塑路径据此排除轮回者。
+    裁定后轮回者有攻击力，雕塑**不再**排除轮回者（见下两条）。
     """
     engine = _engine("one_atk")
     p = engine.state.player
     assert p.attack_count == 1
     assert p.attack_power == 1
-    assert engine.combat._can_be_sculptured(p) is False
+    # DM裁定 2026-09-09：轮回者既有攻击力，雕塑不再排除轮回者
+    assert engine.combat._can_be_sculptured(p) is True
 
 
 def test_sculpture_monster_and_weiguang_on_both_sides():
     """正常路径：怪物与己方微光者攻力归 0 都化为雕塑。"""
     state = GameState()
     state.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60,
-                          attack_count=0, attack_power=0)
+                          attack_count=1, attack_power=1)   # 新口径初始 1×1，不参与本条断言
     m = _monster("石像鬼", hp=100, atk=2, power=0)
     friend = Entity(name="岩行者", entity_type="朋友", blood_limit=40, current_hp=40,
                     attack_count=3, attack_power=0, is_deployed=True)
@@ -143,7 +143,8 @@ def test_sculpture_monster_and_weiguang_on_both_sides():
 def test_sculpture_employee_and_temp_friend_zero_count():
     """边界：员工攻次归 0、临时朋友攻力归 0 也触发；攻力仍为 1 的微光者不触发。"""
     state = GameState()
-    state.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60)
+    state.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60,
+                          attack_count=1, attack_power=1)   # 新口径初始 1×1，不参与本条断言
     emp = Entity(name="打手", entity_type="员工", blood_limit=48, current_hp=48,
                  attack_count=0, attack_power=6, is_deployed=True)
     temp = Entity(name="路人", entity_type="临时朋友", blood_limit=20, current_hp=20,
@@ -160,8 +161,12 @@ def test_sculpture_employee_and_temp_friend_zero_count():
     assert ok.is_alive and not ok.is_sculptured
 
 
-def test_sculpture_includes_chizu_skips_reincarnator():
-    """边界：赤族攻力归 0 雕塑；双方轮回者 0×0 不雕塑。"""
+def test_sculpture_includes_chizu_and_reincarnator():
+    """DM裁定 2026-09-09：赤族攻力归 0 雕塑；**双方轮回者 0×0 同样雕塑**。
+
+    旧口径下这条断言是「只 1 座雕塑、双方轮回者存活」；裁定后 0×0 的轮回者
+    与怪物同理，攻次/攻力归 0 即失去攻击手段 → 化为雕塑。
+    """
     state = GameState()
     player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60,
                     attack_count=0, attack_power=0)
@@ -174,15 +179,16 @@ def test_sculpture_includes_chizu_skips_reincarnator():
     state.friends.append(chizu)
     combat = CombatEngine(state, DiceEngine())
     paths = combat.settle_victory_paths()
-    assert sum(1 for p in paths if p["type"] == "sculpture") == 1
+    assert sum(1 for p in paths if p["type"] == "sculpture") == 3
     assert chizu.is_sculptured and not chizu.is_alive
-    assert player.is_alive and not player.is_sculptured
-    assert foe.is_alive and not foe.is_sculptured
-    assert any(c.name == "赤仆雕塑" for c in state.consumables)
+    assert player.is_sculptured and not player.is_alive
+    assert foe.is_sculptured and not foe.is_alive
+    names = {c.name for c in state.consumables if c.kind == "sculpture"}
+    assert names == {"赤仆雕塑", "贾凡雕塑", "敌对轮回者雕塑"}
 
 
-def test_sculpture_skips_reincarnator_even_if_forced_zero():
-    """错误输入/对照：只剩轮回者时，攻次/攻力 0 不产生雕塑。"""
+def test_sculpture_now_includes_zero_attack_reincarnator():
+    """DM裁定 2026-09-09：只剩轮回者时，攻次/攻力 0 同样产生雕塑（旧口径为不产生）。"""
     state = GameState()
     player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60,
                     attack_count=0, attack_power=0)
@@ -192,6 +198,7 @@ def test_sculpture_skips_reincarnator_even_if_forced_zero():
     state.enemies.append(foe)
     combat = CombatEngine(state, DiceEngine())
     paths = combat.settle_victory_paths()
-    assert not any(p["type"] == "sculpture" for p in paths)
-    assert player.is_alive and foe.is_alive
-    assert state.consumables == []
+    assert sum(1 for p in paths if p["type"] == "sculpture") == 2
+    assert player.is_sculptured and foe.is_sculptured
+    assert {c.name for c in state.consumables if c.kind == "sculpture"} == {
+        "贾凡雕塑", "敌对轮回者雕塑"}

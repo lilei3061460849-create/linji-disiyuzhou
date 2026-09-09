@@ -9,7 +9,7 @@
 
 方法（多臂老虎机 + 协同增益挖掘）：
   1. 每轮从候选道纹池按 UCB1 采样一套 build（初始道纹 + 学习序列）
-  2. 跑 N 局，得到 fitness（通关场数 + 胜负加权）
+  2. 跑 N 局，得到 fitness（**只数经历的战斗场数**，DM裁定 2026-09-09）
   3. 用 fitness 更新：
        - 单道纹价值   value[A]
        - 配对协同     synergy[A,B] = 含AB的平均分 - (含A平均 + 含B平均)/2
@@ -1321,7 +1321,10 @@ def fitness(starter: str, learn: list, runs: int, gen: int,
             telemetry: dict = None, spend_shards: bool = False,
             region: str = None, policy: dict = None) -> tuple:
     """
-    适应度 = 平均通关场数 + 3×胜率（0~10）。
+    适应度 = 平均**经历的战斗场数**（DM裁定 2026-09-09）。
+
+    旧口径是「平均通关场数 + 3×胜率（0~10）」；裁定后**只**看经历的战斗越多越好，
+    胜负不再进分数——胜率仍照旧记进 telemetry，只是不参与打分。
 
     random_seeds=False（默认）：种子由代数推导，同一代可复现，便于排查。
     random_seeds=True：每局用真随机种子与随机副本，样本不重复，
@@ -1360,7 +1363,7 @@ def fitness(starter: str, learn: list, runs: int, gen: int,
                 telemetry["invalid_reasons"][key] = telemetry["invalid_reasons"].get(key, 0) + 1
             continue
         valid += 1
-        total += r["cleared"] + (3.0 if r["won"] else 0.0)
+        total += r["cleared"]      # DM裁定 2026-09-09：只数经历的战斗，胜负不进分数
         if telemetry is not None:
             telemetry.setdefault("outcomes", {"win": 0, "loss": 0, "cleared_sum": 0})
             telemetry["outcomes"]["win" if r["won"] else "loss"] += 1
@@ -1749,7 +1752,10 @@ def report(k: dict) -> None:
           f"｜无效(bug) {k.get('invalid_games', 0)} 局")
     if k.get("best"):
         b = k["best"]
-        print(f"\n★ 目前最优：初始【{b['starter']}】+ {b['learn']}   适应度 {b['score']:.2f}/10")
+        # 适应度口径已改（DM裁定 2026-09-09）：平均经历战斗场数，上限=单局战斗数上限，
+        # 不再是旧的 0~10（通关+3×胜率），故不再印 /10。
+        print(f"\n★ 目前最优：初始【{b['starter']}】+ {b['learn']}"
+              f"   适应度（平均经历战斗场数）{b['score']:.2f}")
     bc = k.get("best_confirmed")
     if bc:
         print(f"★ 确认最优（≥2次评估均值）：初始【{bc['starter']}】+ {bc['learn']}   "
