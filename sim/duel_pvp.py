@@ -481,6 +481,15 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
         log = []
     # 双轮回者各有其名（随机生成、互不相同）：先定名，再 seed 性格（性格按名字哈希）。
     _assign_duelist_names(e, seed=getattr(e.dice, "_seed", 0) or 0)
+    # 死斗开始前，双方轮回者各自翻阅《死者之书》——前人怎么死的是唯一的历史教训。
+    # 纯读取：不消耗精力、不掷骰、不改任何数值（engine/api.py::_action_read_death_book）。
+    try:
+        _book = e.execute_action("read_death_book", {})
+    except Exception:  # 读取失败不得影响死斗本身
+        _book = {}
+    for _l in (_book.get("legacies") or []):
+        log.append(f"  [死者之书] {_l.get('title', '')}｜{_l.get('trigger_point', '')}"
+                   f"／{_l.get('fork', '')}／{_l.get('cost_budget', '')}")
     # 双方都是轮回者：各自 seed 一套确定、可区分的性格画像 → 性格调制 + 对白差异。
     _seed_duelist_personality(e, e.state.player)
     for foe in e.state.enemies:

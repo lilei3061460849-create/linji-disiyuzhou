@@ -364,3 +364,46 @@ def test_draft_legacy_never_exceeds_capacity():
     draft = draft_legacy(state, "attack", {"action": "use_daowen", "params": {"daowen_name": "杀伐"}})
     assert all(len(draft[k]) <= 20 for k in ("trigger_point", "fork", "cost_budget"))
     validate_legacy(draft)
+
+
+# ---- 翻阅《死者之书》：遗言此前只写不读，轮回者/AI 一条也看不到（2026-08-31 补读取） ----
+
+HINT = "不伤害他人，一味治疗，异变缠身都会死亡哦"
+
+
+def test_read_death_book_returns_legacies_without_cost(tmp_path):
+    """翻阅动作读回全部遗言，且不消耗精力、不改任何数值。"""
+    engine, book = _engine(tmp_path, "read")
+    DeathBookStore(book).append({
+        "title": "某人·罪孽都市·留训",
+        "trigger_point": HINT,
+        "fork": "只顾上盾与回复，五回合没让对手掉一滴血",
+        "cost_budget": "愿以碎片换伤害，别再满血把自己奶死",
+    })
+    engine._reload_death_book()  # 文件刚被写入，重新装回缓存
+    before = (engine.state.energy, engine.state.shards, engine.state.player.current_hp,
+              engine.state.player.current_mana)
+
+    r = engine.execute_action("read_death_book", {})
+
+    assert r["success"] is True and r["action"] == "翻阅死者之书"
+    assert r["total_legacies"] == 1
+    assert r["legacies"][0]["trigger_point"] == HINT
+    assert r["legacies"][0]["title"] == "某人·罪孽都市·留训"
+    after = (engine.state.energy, engine.state.shards, engine.state.player.current_hp,
+             engine.state.player.current_mana)
+    assert after == before  # 纯查询：精力/碎片/血/法一律不动
+
+
+def test_read_death_book_on_empty_book_is_still_success(tmp_path):
+    """空书也要正常返回（新档第一次翻阅时书里可能一条遗言都没有）。"""
+    engine, _book = _engine(tmp_path, "read_empty")
+    r = engine.execute_action("read_death_book", {})
+    assert r["success"] is True and r["legacies"] == [] and r["total_legacies"] == 0
+
+
+def test_committed_book_carries_the_self_destruction_hint():
+    """仓库自带的 死者之书.md 必须留着那条自爆警示——轮回者靠它当前车之鉴。"""
+    book = Path(__file__).resolve().parent.parent / "死者之书.md"
+    entries = parse_legacies(book.read_text(encoding="utf-8"))
+    assert any(e.get("trigger_point") == HINT for e in entries)

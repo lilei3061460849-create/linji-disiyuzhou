@@ -883,6 +883,12 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
     # 资源；血限对早期生存几乎无贡献（血牛15/5/5 反降38%）。4/8/13 不更优。
     attrs = attrs or {"blood_points": 6, "speed_points": 8, "mana_points": 11}
     e.execute_action("setup_attributes", {"name": "贾凡", **attrs})
+    # 新生的轮回者翻阅《死者之书》：前人的〖遗言〗是局外唯一的历史教训来源。
+    # 纯读取（read_death_book 不消耗精力、不改数值），读不到也不影响养成流程。
+    _book = e.execute_action("read_death_book", {})
+    for _l in (_book.get("legacies") or []):
+        print(f"    [死者之书] {_l.get('title', '')}｜触发点：{_l.get('trigger_point', '')}"
+              f"｜岔路：{_l.get('fork', '')}｜代价预算：{_l.get('cost_budget', '')}")
     chosen = choose_discovered_initial_daowen(e, prefer=starter)
     if not chosen.get("success"):
         raise ValueError(chosen.get("error", "开局发现选择失败"))

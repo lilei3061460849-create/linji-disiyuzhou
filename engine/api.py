@@ -1098,6 +1098,8 @@ class GameEngine:
                 result = self._action_battle_end(params)
             elif action_type == "resolve_event":
                 result = self._action_resolve_event(params)
+            elif action_type == "read_death_book":
+                result = self._action_read_death_book(params)
             else:
                 result = {"success": False, "error": f"未知行动类型: {action_type}"}
 
@@ -5080,6 +5082,25 @@ class GameEngine:
             "total_legacies": len(self.state.death_book_legacies),
             "path": str(self.death_book.path),
             "instruction": "遗言已写入死者之书；请调用 setup_attributes 开始新的轮回者",
+        }
+
+    def _action_read_death_book(self, params: dict) -> dict:
+        """翻阅《死者之书》：读回全部〖遗言〗与已积累的智慧条目。
+
+        纯查询：不消耗精力、不掷骰、不改任何数值——《死者之书》与轮回者灵魂绑定
+        （README「死者之书与微光者」），本就随身携带，翻阅不花代价。
+        在此之前遗言只有「写入」（死之传承 → `_commit_death_ruling`）没有「读取」：
+        `state.death_book_legacies` 只被序列化与计数，轮回者/AI 一条也看不到。
+        """
+        legacies = [dict(entry) for entry in self.state.death_book_legacies]
+        return {
+            "success": True,
+            "action": "翻阅死者之书",
+            "legacies": legacies,
+            "total_legacies": len(legacies),
+            "wisdom": list(self.state.death_book_wisdom),
+            "path": str(self.death_book.path),
+            "instruction": "已读回《死者之书》遗言，可作为本轮决策的前车之鉴",
         }
 
     # ==================== DM裁定接口 ====================

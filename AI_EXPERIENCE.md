@@ -608,3 +608,10 @@ AI 的"知识"分三处，版本变更（增删道纹/改公式/改机制）后�
 - 台词**零数值效果**；独立随机源 `_DIALOGUE_RNG`，绝不消耗全局 `random` / 引擎 RNG。
 - 实测性格表：同一句「我法力见底了」→ 轻信 +0.83 / 多疑 −0.42 / 冒险 +0.46 / 求稳 −0.17。`DIALOGUE_BIAS_CAP = 10.0`。
 - 台词素材取自说话方**此刻真实持有**的道纹/血量/法力，但**是否兑现不作保证**（示弱可以是真弹尽粮绝，也可以是满法力装穷）。
+
+### 《死者之书》遗言：此前只写不读（2026-08-31 补 `read_death_book`）
+- 事实源是 `死者之书.md`（`engine/models.py:712` 注明 `death_book_legacies` 只是启动/审核后装回的缓存）；写入只有一条路：死之传承 → `_commit_death_ruling` → `DeathBookStore.append`（`engine/death_book.py`，三段式、每段 ≤20 字）。
+- **改前没有任何读取路径**：`death_book_legacies` 只被 `_serialize_full_character`（`engine/api.py:4122`）序列化、被 `_commit_death_ruling`（`:5080`）计数；`engine/ai_tactics.py`、`engine/ai_preview.py`、`sim/build_learner.py`、`sim/duel_pvp.py` 全都不读——轮回者与 AI 一条遗言都看不到，「死之传承」对模拟侧等于空转（书里早就躺着「纯叠盾五回合未扣敌血凡庸命零」这条教训，没人读得到）。
+- 现在：`read_death_book` 动作（`engine/api.py::_action_read_death_book`）纯查询返回 `legacies/total_legacies/wisdom`，**不消耗精力、不掷骰、不改任何数值**；`sim/build_learner.py::_play`（新轮回者诞生处）与 `sim/duel_pvp.py::run_duel_pvp`（开战前）各读一次，死斗 log 里出现 `[死者之书] …` 行。
+- **实测：读到 ≠ 会照做。** 补完读取路径后重跑擂台车轮战 11 局（seed=1），逐局胜方/回合数/死因与改前**完全一致**（含 速战速决_5 满血 36/36 把自己奶到癌变那一局）。原因：`engine/ai_tactics.py` 是打分式 AI，不吃文本。要让遗言真的改变行为，必须把三条自爆时钟接进候选打分（报告 待办 ④）。
+- 书内新增一页遗言（走 `validate_legacy`）：「某人·罪孽都市·留训｜触发点：**不伤害他人，一味治疗，异变缠身都会死亡哦**｜岔路：只顾上盾与回复，五回合没让对手掉一滴血｜代价预算：愿以碎片换伤害，别再满血把自己奶死」。
