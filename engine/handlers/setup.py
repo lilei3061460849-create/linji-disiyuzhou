@@ -10,20 +10,28 @@ from ..gamedata import SHAFA_LOOP_DAOWEN
 
 
 def handle_setup_attributes(engine: Any, params: Dict[str, Any]) -> Dict[str, Any]:
-    """分配初始属性点：1属性点 = 6血限 = 1速限 = 2法限"""
+    """分配初始属性点：1属性点 = 6血限 = 1速限 = 2法限 = 1攻击次数 = 1攻击力
+
+    DM裁定 2026-09-09：轮回者获得普攻。攻击次数/攻击力**初始 1×1**（不花属性点），
+    属性点按 1点=1攻击次数、1点=1攻击力 追加；25 点总预算不变，
+    加点因此从三维（血/速/法）变五维。
+    """
     if engine.state.player is not None:
         return {"success": False, "error": "初始属性已经分配，不能重复开局"}
     blood_points = params.get("blood_points", 0)
     speed_points = params.get("speed_points", 0)
     mana_points = params.get("mana_points", 0)
+    attack_count_points = params.get("attack_count_points", 0)
+    attack_power_points = params.get("attack_power_points", 0)
 
-    total = blood_points + speed_points + mana_points
+    total = (blood_points + speed_points + mana_points
+             + attack_count_points + attack_power_points)
 
     if total != 25:
         return {
             "success": False,
             "error": f"属性点总和必须为25，当前为{total}",
-            "instruction": "1属性点=6血限=1速限=2法限，请重新分配"
+            "instruction": "1属性点=6血限=1速限=2法限=1攻击次数=1攻击力，请重新分配"
         }
 
     blood_limit = blood_points * 6
@@ -39,8 +47,9 @@ def handle_setup_attributes(engine: Any, params: Dict[str, Any]) -> Dict[str, An
         current_mana=mana_limit,
         speed_limit=speed_limit,
         current_speed=speed_limit,
-        attack_count=0,
-        attack_power=0,
+        # DM裁定 2026-09-09：普攻面板，初始 1×1，属性点 1:1 追加
+        attack_count=1 + attack_count_points,
+        attack_power=1 + attack_power_points,
     )
 
     engine.state.player = player

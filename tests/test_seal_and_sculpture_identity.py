@@ -106,12 +106,18 @@ def test_seal_on_duel_reincarnator_only_removes_zero():
 # 雕塑
 # ========================================================================
 
-def test_setup_reincarnator_attack_panel_is_zero():
-    """正常路径：setup 后轮回者攻击次数/攻击力为 0×0。"""
-    engine = _engine("zero_atk")
+def test_setup_reincarnator_attack_panel_is_one_by_one():
+    """DM裁定 2026-09-09：setup 后轮回者普攻面板为初始 1×1（不花属性点）。
+
+    原断言是 0×0——那是「轮回者没有普攻」时代的口径。本条同时钉住它真正的意图：
+    雕塑路径按 `_can_be_sculptured` 明确排除轮回者（攻次/攻力归 0 也不触发），
+    所以轮回者有了普攻面板也不会被雕塑化。
+    """
+    engine = _engine("one_atk")
     p = engine.state.player
-    assert p.attack_count == 0
-    assert p.attack_power == 0
+    assert p.attack_count == 1
+    assert p.attack_power == 1
+    assert engine.combat._can_be_sculptured(p) is False
 
 
 def test_sculpture_monster_and_weiguang_on_both_sides():
