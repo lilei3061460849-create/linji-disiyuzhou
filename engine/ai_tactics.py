@@ -24,11 +24,16 @@ take_action 走实时评估，不再有固定顺序。
 from __future__ import annotations
 
 import math
+import os
 from typing import Any, Optional
 from engine.ai_preview import ActionPreview
 
 # 单次出手最多预演的候选数（性能护栏；候选按新鲜度与威胁优先）
 MAX_CANDIDATE_PREVIEWS = 26
+
+# 自保时钟（实验开关，默认关闭）：把引擎自己的三条「自爆时钟」接进候选打分。
+# DM 裁定 2026-08-31 要求先做 132 局前后对照再决定是否常开；置 LJ_SELF_PRESERVE=1 打开。
+SELF_PRESERVE = os.environ.get("LJ_SELF_PRESERVE", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 # ---------------------------------------------------------------------------
@@ -593,11 +598,71 @@ class TacticalAI:
                 enemy_hp_loss=enemy_hp_loss, shield_useful=shield_useful,
                 heal=min(heal, missing), mana_spent=mana_spent)
 
+        # ---- 实验：自保时钟（默认关闭；只读引擎阈值，不改任何规则数值） ----
+        if SELF_PRESERVE:
+            bias, fatal = self._self_preserve_bias(diff, enemy_hp_loss=enemy_hp_loss)
+            if fatal:
+                self.preview_rejected.append(f"{label}（自保否决：{fatal}）")
+                return None
+            score += bias
+
         # ---- 风险等级惩罚（引擎口径分级） ----
         if risk == "LETHAL":
             return None
         score -= {"CRITICAL": 30.0, "HIGH": 6.0, "MEDIUM": 1.2}.get(risk, 0.0)
         return score
+
+    # ---------- 实验：自保时钟（DM裁定 2026-08-31 前先做前后对照） ----------
+    SELF_PRESERVE_MARGIN = 0.8   # 距线 20% 起线性扣分（越贴线越疼）
+
+    def _self_preserve_bias(self, diff: dict, *, enemy_hp_loss: float):
+        """把引擎自己的三条「自爆时钟」接进候选打分，返回 (加分调整, 致命原因)。
+
+        只读引擎阈值与实体字段（`cancer_threshold_of` / `MUTATION_COLLAPSE_THRESHOLD` /
+        连续未使敌掉血回合数），**不按道纹名特判、不改任何规则数值**：
+          ① 癌变：本手后 total_healed ≥ combat.cancer_threshold_of(自己)；
+          ② 崩解：本手后 mutation_count ≥ Entity.MUTATION_COLLAPSE_THRESHOLD；
+          ③ 凡庸：连续五回合未能使敌对角色掉血 → 越接近线，「能推进伤害」越值钱。
+        致命原因非空 = 这一手就是自己把自己送走，与 LETHAL 同档一票否决。
+        """
+        me = self.player
+        p = diff.get("player", {})
+        adj = 0.0
+        if me is None:
+            return adj, None
+
+        # ① 癌变线：累计恢复量达血限×2 即命零（过量回复按原值计入）
+        combat = getattr(self.engine, "combat", None)
+        if combat is not None:
+            line = combat.cancer_threshold_of(me)
+            after = getattr(me, "total_healed", 0) + max(0.0, p.get("healed_delta", 0) or 0)
+            if line > 0:
+                if after >= line:
+                    return adj, f"本手后累计回复{after:.0f}≥癌变线{line}"
+                soft = line * self.SELF_PRESERVE_MARGIN
+                if after >= soft:
+                    adj -= 25.0 * (after - soft) / max(1.0, line - soft)
+
+        # ② 崩解线：异变层数达阈值直接命零
+        collapse = getattr(type(me), "MUTATION_COLLAPSE_THRESHOLD", 0) or 0
+        mut_after = p.get("mutation_after")
+        if mut_after is None:
+            mut_after = getattr(me, "mutation_count", 0) + max(0.0, p.get("mutation_delta", 0) or 0)
+        if collapse > 0:
+            if mut_after >= collapse:
+                return adj, f"本手后异变{mut_after:.0f}≥崩解线{collapse}"
+            soft = collapse * self.SELF_PRESERVE_MARGIN
+            if mut_after >= soft:
+                adj -= 25.0 * (mut_after - soft) / max(1.0, collapse - soft)
+
+        # ③ 凡庸线：连续五回合未使敌掉血就命零 → 空转越久，输出越紧迫
+        idle = self._rounds_since_damage
+        if idle >= 3:
+            if enemy_hp_loss > 0:
+                adj += 10.0 * idle           # 能让对手掉血的手段显著加值
+            else:
+                adj -= 10.0 * (idle - 2)     # 继续空转 = 自己走向凡庸
+        return adj, None
 
     def _first_contact(self) -> bool:
         """开局首轮/刚遇新敌（先观察型性格用；可见信息：本场出手与回合数）。"""

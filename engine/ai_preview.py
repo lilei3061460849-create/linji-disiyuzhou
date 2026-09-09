@@ -173,6 +173,10 @@ class ActionPreview:
                 "shield_before": pb.shield, "shield_after": pa.shield,
                 "mutation_delta": getattr(pa, "mutation_count", 0) - getattr(pb, "mutation_count", 0),
                 "mutation_after": getattr(pa, "mutation_count", 0),
+                # 本手新增累计恢复量：引擎按 total_healed 原值累计（过量回复不缩水，
+                # 见 combat.py 癌变阈值口径）。净血量差看不出满血时的过量回复，
+                # 故单独给一项——AI 才可能在撞上【癌变】线之前看见它。
+                "healed_delta": getattr(pa, "total_healed", 0) - getattr(pb, "total_healed", 0),
                 "status_before": sorted(s.name for s in pb.status_effects),
                 "status_after": sorted(s.name for s in pa.status_effects),
                 "dead": not pa.is_alive,
