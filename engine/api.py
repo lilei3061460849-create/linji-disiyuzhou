@@ -3507,6 +3507,14 @@ class GameEngine:
         if res.get("error"):
             return {"success": False, "error": res["error"],
                     "pages": res.get("pages"), "instruction": res.get("instruction", "")}
+        if is_reject:
+            # DM 裁定 2026-09-10（用户）：事件选拒绝选项后随机获得一种残韵——
+            # 「用其他道纹解决」怪物墙：放弃事件收益换构筑深度，而非数值对撞。
+            # 口径复用 _is_reject_option_text（带代价的「拒绝改造」类不算）；
+            # 随机走引擎 dice（seed 可复现），入 State.resonance（局中插队可耗）。
+            _rtype = ("转换", "反转", "曲解")[self.dice.randrange(3)]
+            self.state.resonance[_rtype] = self.state.resonance.get(_rtype, 0) + 1
+            res["applied"].append(f"拒绝奖励：随机获得{_rtype}残韵")
         if wusuoqiu_allocation == "speed":
             self.state.player.speed_limit += 1
             self.state.player.current_speed = self.state.player.speed_limit
