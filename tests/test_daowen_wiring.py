@@ -18,7 +18,7 @@ def _engine(suffix):
     os.makedirs("/tmp/linji_tests", exist_ok=True)
     engine = GameEngine(db_path=f"/tmp/linji_tests/test_wiring_{suffix}.db", rng_seed=1)
     engine.execute_action("setup_attributes", {
-        "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7,
+        "name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6,
     })
     finish_initial_daowen(engine)
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
@@ -27,11 +27,15 @@ def _engine(suffix):
     # 本文件是道纹单元接线测试，直接构造合法战斗阶段，避免随机出怪干扰。
     engine.state.phase = "in_combat"
     p = engine.state.player
-    # 多道纹同回合连发：速限 24 → 出手 8，避免第 5 手被预算挡掉误报“没接线”。
-    p.speed_limit = 24
-    p.current_speed = 24
+    # 多道纹同回合连发需要 8 手预算。DM裁定 2026-09-10 后轮回者出手固定 2 次、
+    # 不再由速限换算，所以改用【疯狂】+6 把预算抬到 8——本文件测的是道纹接线，
+    # 不是出手预算（预算另有 tests/test_action_budget.py 专测）。
+    p.speed_limit = 4
+    p.current_speed = 4
     p.current_mana = 80
     p.mana_limit = 80
+    p.add_status(StatusEffect(name="疯狂", value=6, remaining_rounds=-1, source="test"))
+    assert p.action_count == 8, f"夹具应给出8手预算，实{p.action_count}"
     return engine
 
 
@@ -106,8 +110,8 @@ def test_boba_spreads_damage_equally_with_random_remainder():
     assert spread and spread["targets"] == [foe_a.name, foe_b.name]
     dealt = sum(e.get("actual_damage", 0) for e in r2["execution"]["effects"]
                 if e.get("type") == "damage")
-    assert dealt == 4, "总数值不变：4点伤害平分给两个目标"
-    assert foe_a.current_hp == 98 and foe_b.current_hp == 98
+    assert dealt == 10, "总数值不变：10点伤害平分给两个目标（杀伐2→5X=10）"
+    assert foe_a.current_hp == 95 and foe_b.current_hp == 95
 
 
 def test_boba_boundary_and_invalid_submissions():
@@ -273,7 +277,7 @@ def test_huaxiang_zhuiluo_dingxing_wushen_xuanyun():
         "actor": foe.name, "daowen_name": "杀伐", "x": 2, "target": p.name,
     })
     assert r["success"], r
-    assert foe.current_hp == hp_f - 4  # 无神改打自己(杀伐2X)
+    assert foe.current_hp == hp_f - 10  # 无神改打自己（杀伐2→5X=10，DM裁定 2026-09-10，原 2X=4）
 
     m.add_status(StatusEffect(name="眩晕", remaining_rounds=2, value=1, source="测"))
     assert engine.combat.can_act(m) is False

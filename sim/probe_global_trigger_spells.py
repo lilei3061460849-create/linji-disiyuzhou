@@ -28,7 +28,7 @@ def _fresh_engine(tag: str, region: str = "罪孽都市") -> GameEngine:
     e = GameEngine(db_path=os.path.join(d, "g.db"), rng_seed=7,
                    sealed_candidate_path=os.path.join(d, "s.json"))
     e.execute_action("setup_attributes", {
-        "name": "测试者", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+        "name": "测试者", "blood_points": 10, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": region})

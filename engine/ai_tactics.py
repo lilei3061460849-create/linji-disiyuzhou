@@ -162,7 +162,10 @@ class TacticalAI:
         return sum(e.attack_count * e.attack_power for e in self.alive_enemies())
 
     def remaining_actions(self) -> int:
-        total = max(1, math.ceil(self.player.speed_limit / 3))
+        # 2026-09-10：出手次数不再由速度换算，改读 action_count（轮回者固定2次，
+        # 朋友/员工按攻次算，怪物按速限算；疯狂/无力的修正已含在内）。
+        # 沿用 ceil(速限/3) 会让 AI 按旧口径估预算，法力分配跟着算错。
+        total = max(1, self.player.action_count)
         return max(0, total - getattr(self.player, "actions_used_this_round", 0))
 
     def mana_budget(self) -> int:
@@ -390,6 +393,14 @@ class TacticalAI:
                 cap = 3
                 budget_x = 1
             xs = {1, budget_x, cap}
+            # DM 2026-09-10 提问「AI 为什么不会在怪物达到斩杀线一次性打空法力」的答案：
+            # 不是幻觉，是均分预算把斩杀档在打分前就剪掉了——mana_budget = 法力 // 剩余
+            # 出手，法力8/剩2手 → cap=4，而斩杀常需要更多，于是这一档**从未进入候选集**，
+            # AI 根本没看见「打空法力收掉它」这个选项。开启本开关后，斩杀档只受**买得起**
+            # 约束（x*cost <= 当前法力），不再受均分预算约束。
+            harvest_cap = cap
+            if os.environ.get("LJ_AI_HARVEST_DUMP") == "1" and cost > 0:
+                harvest_cap = max(cap, max(1, self.mana() // cost))
             target = probe.get("target_name")
             kind = probe["kind"]
             if kind == "damage":         # 输出牌给血最少敌人（收割/推进）
@@ -403,7 +414,7 @@ class TacticalAI:
                 targets = ([t for t in (self._top_enemy_name(),) if t]
                            if probe.get("target_name") in (None, self._top_enemy_name())
                            else [probe.get("target_name")])
-            xs = sorted((x for x in xs if 1 <= x <= max(cap, 1)), reverse=True)[:4]
+            xs = sorted((x for x in xs if 1 <= x <= max(harvest_cap, 1)), reverse=True)[:4]
             for t in targets or [None]:
                 for x in xs:
                     out.append({"action": "use_daowen",
@@ -771,7 +782,7 @@ class TacticalAI:
         if os.environ.get("LJ_AI_BASIC_ATTACK") != "1":
             return []
         me = self.player
-        if me is None or not me.is_alive or getattr(me, "attack_count", 0) <= 0:
+        if me is None or not me.is_alive or me.effective_attack_count() <= 0:
             return []
         return [{"action": "prepare_attack", "params": {},
                  "steps": self._attack_steps(foe.name),

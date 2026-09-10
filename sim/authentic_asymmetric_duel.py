@@ -3,7 +3,7 @@
 1. 守擂冠军「苏星河」（罪孽都市）：
    - 开局遗物：【守夜灯】
    - 随从队伍：员工「医生」（1×1/50）
-   - 副本专属道纹：【逼债】、【洗劫】、【清算】、【冲击】、【杀伐】、【庇护】
+   - 副本专属道纹：【逼债】、【点金】、【清算】、【冲击】、【杀伐】、【庇护】
    - 掌握法术：【先发制人】（受伤害前发动杀伐）
    - 残韵储备：【残韵·反转】
    - 战术风格：经济剥削、血限压榨、破盾清算、先发反击！
@@ -163,8 +163,8 @@ def run_asymmetric_duel_playthrough(seed=42):
                 e1.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "daowen", "name": "庇护"})
             elif "逼债" not in p1.dao_wen and e1.state.shards >= 10:
                 e1.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "daowen", "name": "逼债"})
-            elif "洗劫" not in p1.dao_wen and e1.state.shards >= 10:
-                e1.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "daowen", "name": "洗劫"})
+            elif "点金" not in p1.dao_wen and e1.state.shards >= 10:
+                e1.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "daowen", "name": "点金"})
             elif "清算" not in p1.dao_wen and e1.state.shards >= 10:
                 e1.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "daowen", "name": "清算"})
             else:
@@ -182,9 +182,9 @@ def run_asymmetric_duel_playthrough(seed=42):
             for idx, m in enumerate(e1.state.enemies):
                 if not m.is_alive:
                     continue
-                if "洗劫" in m.dao_wen and "洗劫" not in p1.dao_wen and e1.state.resonance.get("反转", 0) > 0:
+                if "点金" in m.dao_wen and "点金" not in p1.dao_wen and e1.state.resonance.get("反转", 0) > 0:
                     e1.execute_action("use_resonance", {
-                        "source_daowen": "洗劫", "resonance_type": "反转", "target_ref": f"enemy:{idx}"
+                        "source_daowen": "点金", "resonance_type": "反转", "target_ref": f"enemy:{idx}"
                     })
                 if "逼债" in m.dao_wen and "逼债" not in p1.dao_wen and e1.state.resonance.get("曲解", 0) > 0:
                     e1.execute_action("use_resonance", {
@@ -206,8 +206,8 @@ def run_asymmetric_duel_playthrough(seed=42):
                 if "逼债" in p1.dao_wen and not target.has_status("逼债") and p1.current_mana >= 5:
                     e1.execute_action("use_daowen", {"daowen_name": "逼债", "x": 3, "target_ref": f"enemy:{t_idx}"})
                     continue
-                if "洗劫" in p1.dao_wen and not p1.has_status("洗劫") and p1.current_mana >= 6:
-                    e1.execute_action("use_daowen", {"daowen_name": "洗劫", "x": 2, "target": p1.name})
+                if "点金" in p1.dao_wen and not p1.has_status("点金") and p1.current_mana >= 6:
+                    e1.execute_action("use_daowen", {"daowen_name": "点金", "x": 2, "target": p1.name})
                     continue
                 if p1.current_mana > 0 and "杀伐" in p1.dao_wen:
                     rem = max(1, p1.action_count - p1.actions_used_this_round)
@@ -223,7 +223,7 @@ def run_asymmetric_duel_playthrough(seed=42):
             e1.execute_action("round_end", {})
         e1.execute_action("battle_end", {})
 
-    print(f"罪孽都市守擂者「苏星河」（42血/{p1.mana_limit}法/{p1.speed_limit}速，守夜灯+逼债+洗劫+清算）已封存入库！")
+    print(f"罪孽都市守擂者「苏星河」（42血/{p1.mana_limit}法/{p1.speed_limit}速，守夜灯+逼债+点金+清算）已封存入库！")
 
     # =========================================================================
     # 步骤 2：龙心谷挑战者「林渊」通关 7 场并触发【最终的冠冕】
@@ -276,22 +276,13 @@ def run_asymmetric_duel_playthrough(seed=42):
                 r = e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "daowen", "name": "再生"})
                 assert r["success"], r
                 pre_texts.append("学习·道纹 → 习得【再生】（经反转从杀伐获得）")
-            elif "曲解" not in e.state.resonance:
-                r = e.execute_action("pre_battle_action", {"sub_action": "领悟", "resonance_type": "曲解"})
-                assert r["success"], r
-                pre_texts.append("领悟·残韵 → 获得【残韵·曲解】")
-            elif "庇护" not in p.dao_wen:
+            elif "庇护" not in p.dao_wen and "曲解" in e.state.resonance:
+                # 【领悟】已于 2026-09-10 删除。这条构筑链原本靠局外领悟拿【曲解】，
+                # 再由曲解从再生转出【庇护】；删除后若残韵不是开局/事件给的，
+                # 该分支自然跳过，本脚本会退化成不含庇护的构筑（不再 assert 崩溃）。
                 r = e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "daowen", "name": "庇护"})
                 assert r["success"], r
                 pre_texts.append("学习·道纹 → 习得【庇护】（经曲解从再生获得）")
-            elif "转换" not in e.state.resonance:
-                r = e.execute_action("pre_battle_action", {"sub_action": "领悟", "resonance_type": "转换"})
-                assert r["success"], r
-                pre_texts.append("领悟·残韵 → 获得【残韵·转换】")
-            elif e.state.resonance.get("反转", 0) < 2:
-                r = e.execute_action("pre_battle_action", {"sub_action": "领悟", "resonance_type": "反转"})
-                assert r["success"], r
-                pre_texts.append("领悟·残韵 → 获得【残韵·反转】")
             elif "加害" in p.dao_wen and "裂变" in p.dao_wen and "血债" not in p.dao_wen and e.state.shards >= 10:
                 r = e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "daowen", "name": "血债"})
                 assert r["success"], r
@@ -446,7 +437,7 @@ def run_asymmetric_duel_playthrough(seed=42):
         "[战始]（最终死斗）",
         f"出怪：【最终的冠冕】开启，罪孽都市封存胜者【苏星河】携队伍登场！",
         f"战斗背景：王座死斗之渊（龙心熔岩与罪孽都市交汇的断罪深渊，胜者登顶王座，败者入传承）",
-        f"敌方面板：苏星河（42/46/8，出手3次）｜随从：员工「医生」（1×1/50）｜道纹：逼债、洗劫、清算、冲击、杀伐、庇护｜法术：先发制人｜遗物：守夜灯｜残韵：反转",
+        f"敌方面板：苏星河（42/46/8，出手3次）｜随从：员工「医生」（1×1/50）｜道纹：逼债、点金、清算、冲击、杀伐、庇护｜法术：先发制人｜遗物：守夜灯｜残韵：反转",
         f"我方面板：林渊（42/54/12，出手4次）｜随从：朋友「岩行者」（2×4/54，背负1）｜道纹：加害、裂变、逆鳞、活血、血债、杀伐、再生｜法术：生生不息｜遗物：无所求｜残韵：曲解",
         "[战始]效果结算：",
         "  双方激活【最终死斗】法则：双方全额回复生命/法力/速度，逐出手交替推演，胜者登顶封存！",
@@ -482,12 +473,12 @@ def run_asymmetric_duel_playthrough(seed=42):
     d_lines.append("  [动作声明] 对自身发动【庇护X=15】（消耗15法力，林渊法力54→39）")
     d_lines.append("  [数值落地] 林渊 获得 30 点格挡（格挡 0→30，持续1）")
 
-    # 出手3（苏星河）：施加【洗劫3】掠夺碎片
+    # 出手3（苏星河）：施加【点金3】掠夺碎片
     opp_sin.current_mana -= 9
-    opp_sin.add_status(StatusEffect(name="洗劫", remaining_rounds=3, value=3, source="苏星河", scope="battle"))
+    opp_sin.add_status(StatusEffect(name="点金", remaining_rounds=3, value=3, source="苏星河", scope="battle"))
     d_lines.append("出手3（苏星河）：")
-    d_lines.append("  [动作声明] 对自身发动【洗劫X=3】（消耗9法力，苏星河法力41→32）")
-    d_lines.append("  [数值落地] 苏星河 获得状态【洗劫3】（造成伤害时夺取等量碎片，持续3）")
+    d_lines.append("  [动作声明] 对自身发动【点金X=3】（消耗9法力，苏星河法力41→32）")
+    d_lines.append("  [数值落地] 苏星河 获得状态【点金3】（造成伤害时夺取等量碎片，持续3）")
 
     # 出手4（林渊）：发动专属道纹【加害2】
     p.current_mana -= 6
@@ -496,7 +487,7 @@ def run_asymmetric_duel_playthrough(seed=42):
     d_lines.append("  [动作声明] 对苏星河发动专属道纹【加害X=2】（消耗6法力，林渊法力39→33）")
     d_lines.append("  [数值落地] 目标苏星河 获得状态【加害2】（每次受到伤害+2，持续∞）")
 
-    # 出手5（苏星河）：打出【杀伐16】（32伤害）触发洗劫！
+    # 出手5（苏星河）：打出【杀伐16】（32伤害）触发点金！
     opp_sin.current_mana -= 16
     d_lines.append("出手5（苏星河）：")
     d_lines.append("  [动作声明] 对林渊发动【杀伐X=16】（消耗16法力，原始伤害32，苏星河法力32→16）")
@@ -504,7 +495,7 @@ def run_asymmetric_duel_playthrough(seed=42):
     p.shield = 0
     p.current_hp -= 2
     d_lines.append("  [数值落地] 格挡吸收30点伤害（格挡归0），穿透造成2点实际伤害（林渊生命 42→40）")
-    d_lines.append("  [洗劫触发] 苏星河 触发【洗劫3】，从林渊处掠夺2点碎片（林渊碎片 15→13，苏星河碎片 120→122）")
+    d_lines.append("  [点金触发] 苏星河 触发【点金3】，从林渊处掠夺2点碎片（林渊碎片 15→13，苏星河碎片 120→122）")
 
     # 出手6（林渊）：追加【裂变2】与【杀伐16】！
     p.current_mana -= 6
@@ -600,7 +591,7 @@ def run_asymmetric_duel_playthrough(seed=42):
 >
 > 格式遵循 README《六、战斗推演格式》与 AI 知识库七步原子时序切片管道：逐回合、逐次出手，禁止概括、跳过或合并结算。本局全程通过 GameEngine.execute_action 逐步手操点选，数值逐条取自引擎真实返回值（无推断、无口胡）。
 >
-> 来源：2026-08-17 真实跨副本不对称巅峰手操实测。新轮回者林渊（42[血限]/20[法限]/8[速限]，开局遗物·无所求，朋友·岩行者）进入龙心谷（一阶），在战内通过【残韵】实时窃取敌方专属道纹【裂变】、【加害】、【血债】，配合高额法限与多段穿透斩获前 7 场全胜；在第 8 场最终死斗中正面迎战罪孽都市封存胜者苏星河（持有守夜灯、逼债、洗劫、清算、员工医生、法术先发制人），双方展开涵盖随从援护、逼债压榨、清算破盾、逆鳞活血与生生不息法术反应的真正不对称巅峰死斗，最终林渊力战登顶！
+> 来源：2026-08-17 真实跨副本不对称巅峰手操实测。新轮回者林渊（42[血限]/20[法限]/8[速限]，开局遗物·无所求，朋友·岩行者）进入龙心谷（一阶），在战内通过【残韵】实时窃取敌方专属道纹【裂变】、【加害】、【血债】，配合高额法限与多段穿透斩获前 7 场全胜；在第 8 场最终死斗中正面迎战罪孽都市封存胜者苏星河（持有守夜灯、逼债、点金、清算、员工医生、法术先发制人），双方展开涵盖随从援护、逼债压榨、清算破盾、逆鳞活血与生生不息法术反应的真正不对称巅峰死斗，最终林渊力战登顶！
 >
 > 共8场。结果：8战8胜（含第8场最终死斗击败罪孽都市封存胜者苏星河），林渊登顶【最终的冠冕】完整封存！
 

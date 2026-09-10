@@ -44,7 +44,7 @@ def forced_battle(monster_name, seed, learn=("庇护", "再生", "封印", "再�
     md = next(m for m in POOL if m["name"] == monster_name)
     e = _forced_engine(seed, md, tmp=f"/tmp/zp_{monster_name}_{seed}.db")
     e.execute_action("setup_attributes", {
-        "name": "探测员", "blood_points": 6, "speed_points": 8, "mana_points": 11})
+        "name": "探测员", "blood_points": 6, "speed_points": 8, "mana_points": 10})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     e.execute_action("setup_choose_region", {"region": "乱葬岗"})
@@ -96,7 +96,7 @@ def player_cast_probe():
                    sealed_candidate_path="/tmp/zp_sealed.json",
                    death_book_path="/tmp/zp_book.md")
     e.execute_action("setup_attributes", {
-        "name": "探测员", "blood_points": 6, "speed_points": 8, "mana_points": 11})
+        "name": "探测员", "blood_points": 6, "speed_points": 8, "mana_points": 10})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     e.execute_action("setup_choose_region", {"region": "乱葬岗"})

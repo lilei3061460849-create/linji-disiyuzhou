@@ -77,8 +77,7 @@ def test_boundary_shield_absorbs_no_retreat():
 def test_boundary_retreat_resets_next_battle():
     """边界：战终后 has_retreated 重置，朋友可参加下一场。"""
     e = GameEngine(db_path="/tmp/test_retreat_reset.db", rng_seed=1)
-    e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 10,
-                                          "speed_points": 8, "mana_points": 7})
+    e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
     setup = e.execute_action("setup_choose_region", {"region": "龙心谷"})

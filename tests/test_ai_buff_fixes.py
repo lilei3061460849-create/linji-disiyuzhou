@@ -93,6 +93,11 @@ def test_shibao_classified_by_preview_not_by_label(tmp_path):
     """
     e = _engine(tmp_path)
     _give(e.state.player, "尸爆")
+    # DM裁定 2026-09-10 加点降价后（2属性点=1法限），夹具的 10 法点只换到法限5，
+    # 而尸爆 X=1 就要 10 法力——四个目标变体的预演会全被引擎拒掉，_probe 返回 None。
+    # 抬到法限10（修行后的合法值）才能测到"分类来自预演"这件事本身。
+    e.state.player.mana_limit = 10
+    e.state.player.current_mana = 10
     ai = TacticalAI(e)
     probe = ai._probe("尸爆")
     assert probe is not None, "尸爆应可被预演归纳"

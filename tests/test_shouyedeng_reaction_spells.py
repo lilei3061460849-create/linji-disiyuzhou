@@ -19,7 +19,7 @@ def _engine(tmp_path):
     e = GameEngine(db_path=str(tmp_path / "t.db"), rng_seed=7,
                    sealed_candidate_path=str(tmp_path / "s.json"))
     e.execute_action("setup_attributes", {
-        "name": "守夜者", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+        "name": "守夜者", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)  # 开局：杀伐
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     e.execute_action("setup_choose_region", {"region": "扭曲都市"})
@@ -87,7 +87,10 @@ def test_shouyedeng_mana_enables_reaction_spell(tmp_path):
     assert fired, "先发制人应使用守夜灯法力触发"
     # 执行后法力扣除正确：0 +10(守夜灯) -9(先发制人) = 1 → [敌回终]守夜灯法力清空 → 0
     assert p.current_mana == 0, f"敌回终守夜灯法力应清空，实{p.current_mana}"
-    assert p.current_hp <= 57, "守夜灯法力被用于反打，玩家仍受剩余伤害"
+    # 靶怪是[怪物]（读面板 1击×3伤），反打不抵消来袭：玩家应恰好掉 3 点。
+    # 旧写法 "<= 57" 是把当时血限60硬编进断言（60-3=57）；血限随加点定价变成66后失效。
+    assert p.current_hp == p.blood_limit - 3, \
+        f"守夜灯法力被用于反打，玩家仍应受靶怪那 3 点伤害，实{p.blood_limit - p.current_hp}"
 
 
 def test_shouyedeng_not_double_counted(tmp_path):

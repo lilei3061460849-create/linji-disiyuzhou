@@ -19,7 +19,7 @@ def _engine(tmp_path):
     e = GameEngine(db_path=str(tmp_path / "t.db"), rng_seed=7,
                    sealed_candidate_path=str(tmp_path / "s.json"))
     e.execute_action("setup_attributes", {
-        "name": "学者", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+        "name": "学者", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)  # 开局：仅持【杀伐】
     e.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
     e.execute_action("setup_choose_region", {"region": "扭曲都市"})

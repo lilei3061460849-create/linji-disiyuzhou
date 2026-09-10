@@ -35,7 +35,7 @@ BUILDS: dict[str, dict] = {
     "波及纯控": {"learn": ["波及", "束缚", "封印", "贯穿"]},
     "龙心谷系": {"learn": ["加害", "裂变", "伤痕", "龙鳞", "活血"]},
     "扭曲都市系": {"learn": ["僵化", "坏死", "退化", "定型", "爆裂"]},
-    "罪孽都市系": {"learn": ["逼债", "洗劫", "清算", "假钞"]},
+    "罪孽都市系": {"learn": ["逼债", "点金", "清算", "假钞"]},
     "纯杀伐对照": {"learn": []},
 }
 
@@ -47,7 +47,7 @@ def run_one(build: str, region: str, seed: int, battles: int = 7) -> dict:
     cfg = BUILDS[build]
     e = GameEngine(db_path="/tmp/winrate.db", rng_seed=seed)
     e.execute_action("setup_attributes",
-                     {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+                     {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": region})

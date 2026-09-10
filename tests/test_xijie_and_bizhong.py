@@ -16,7 +16,7 @@ from tests.monster_phase_support import resolve_monster_phase
 def _engine(region="罪孽都市"):
     engine = GameEngine(rng_seed=1)
     engine.execute_action("setup_attributes", {
-        "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7,
+        "name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6,
     })
     finish_initial_daowen(engine)
     engine.state.current_region = region
@@ -47,7 +47,8 @@ def test_shaifa_without_xijie_does_not_steal():
     before = engine.state.shards
     r = engine.execute_action("use_daowen", {"daowen_name": "杀伐", "x": 3, "target": m.name})
     assert r["success"] is True
-    assert m.current_hp == 80 - 6
+    dmg = 5 * 3                      # 杀伐X：5X 伤害（DM裁定 2026-09-10，原 2X）
+    assert m.current_hp == 80 - dmg
     assert m.shards == 20
     assert engine.state.shards == before
 
@@ -61,8 +62,9 @@ def test_shaifa_with_xijie_status_steals():
     before = engine.state.shards
     r = engine.execute_action("use_daowen", {"daowen_name": "杀伐", "x": 3, "target": m.name})
     assert r["success"] is True
-    assert m.shards == 14
-    assert engine.state.shards == before + 6
+    dmg = 5 * 3                      # 洗劫按实伤夺等量碎片：5X
+    assert m.shards == 20 - dmg
+    assert engine.state.shards == before + dmg
 
 
 def test_xijie_expired_no_longer_steals():

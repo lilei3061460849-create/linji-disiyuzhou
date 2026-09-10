@@ -20,7 +20,7 @@ from engine.events import parse_events
 def _engine(suffix: str, region: str = "龙心谷") -> GameEngine:
     engine = GameEngine(db_path=f"data/test_dragon_origin_{suffix}.db", rng_seed=1)
     engine.execute_action("setup_attributes", {
-        "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7,
+        "name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6,
     })
     finish_initial_daowen(engine)
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})

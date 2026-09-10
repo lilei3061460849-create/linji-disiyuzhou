@@ -43,8 +43,7 @@ def test_dungeon_resonance_loop_complete():
 def test_dungeon_selectable_region():
     """正常路径：乱葬岗可作为开局副本选择。"""
     e = GameEngine(db_path="/tmp/test_lz_region.db", rng_seed=1)
-    e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 10,
-                                          "speed_points": 8, "mana_points": 7})
+    e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     r = e.execute_action("setup_choose_region", {"region": "乱葬岗"})
@@ -66,8 +65,7 @@ def test_dungeon_monster_pool_parsed():
 def test_fusha_select_mode():
     """正常路径：附煞·选择模式（75碎片）给道纹附加煞气。"""
     e = GameEngine(db_path="/tmp/test_lz_fusha.db", rng_seed=1)
-    e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 10,
-                                          "speed_points": 8, "mana_points": 7})
+    e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": "乱葬岗"})
@@ -83,8 +81,7 @@ def test_fusha_select_mode():
 def test_fusha_discover_mode_candidates():
     """正常路径：附煞·发现模式（50碎片）随机列3件候选。"""
     e = GameEngine(db_path="/tmp/test_lz_fusha2.db", rng_seed=1)
-    e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 10,
-                                          "speed_points": 8, "mana_points": 7})
+    e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": "乱葬岗"})
@@ -105,8 +102,7 @@ def test_fusha_discover_mode_candidates():
 def test_fusha_invalid_sha_qi_rejected():
     """错误输入：未知煞气被拒绝。"""
     e = GameEngine(db_path="/tmp/test_lz_fusha3.db", rng_seed=1)
-    e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 10,
-                                          "speed_points": 8, "mana_points": 7})
+    e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": "乱葬岗"})
@@ -120,8 +116,7 @@ def test_fusha_invalid_sha_qi_rejected():
 def test_fusha_region_gate():
     """错误输入：非乱葬岗副本不能使用附煞。"""
     e = GameEngine(db_path="/tmp/test_lz_fusha4.db", rng_seed=1)
-    e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 10,
-                                          "speed_points": 8, "mana_points": 7})
+    e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": "扭曲都市"})

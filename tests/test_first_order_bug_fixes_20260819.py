@@ -38,7 +38,7 @@ def test_brand_nail_target_ref_validates_after_monster_draw(tmp_path):
     """烙痕钉战始选 enemy:0 时，抽怪前允许延迟校验，抽怪后锁定真实目标。"""
     engine = GameEngine(db_path=str(tmp_path / "brand_nail.db"), rng_seed=508)
     setup = engine.execute_action("setup_attributes", {
-        "name": "探针", "blood_points": 15, "speed_points": 5, "mana_points": 5,
+        "name": "探针", "blood_points": 17, "speed_points": 4, "mana_points": 4,
     })
     engine.execute_action("choose_discovered_relic", {
         "relic_name": setup["result"]["relic_choices"][0],
@@ -64,7 +64,7 @@ def test_brand_nail_bad_target_rolls_back_after_deferred_validation(tmp_path):
     """延迟校验不能放过不存在的 enemy:999；失败也应保持 action 原子性。"""
     engine = GameEngine(db_path=str(tmp_path / "brand_nail_bad.db"), rng_seed=508)
     setup = engine.execute_action("setup_attributes", {
-        "name": "探针", "blood_points": 15, "speed_points": 5, "mana_points": 5,
+        "name": "探针", "blood_points": 17, "speed_points": 4, "mana_points": 4,
     })
     engine.execute_action("choose_discovered_relic", {
         "relic_name": setup["result"]["relic_choices"][0],

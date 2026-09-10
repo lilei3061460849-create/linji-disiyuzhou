@@ -23,8 +23,8 @@ from sim import build_learner as bl
 
 SEEDS_MASTER = 90210
 N_PER_REGION = 120
-NEW_DEFAULTS = {"blood_points": 6, "speed_points": 8, "mana_points": 11}
-OLD_DEFAULTS = {"blood_points": 10, "speed_points": 8, "mana_points": 7}
+NEW_DEFAULTS = {"blood_points": 6, "speed_points": 8, "mana_points": 10}
+OLD_DEFAULTS = {"blood_points": 10, "speed_points": 8, "mana_points": 6}
 ELITE = ("封印", ["杀伐", "透支", "增殖"])
 PHANTOM = ("封印", ["背负", "透支", "增殖"])   # KB单次4.83，复测证伪的幻影
 

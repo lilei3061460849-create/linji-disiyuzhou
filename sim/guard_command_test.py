@@ -35,7 +35,7 @@ def main():
                    sealed_candidate_path="/tmp/guard.json")
     p0 = snap["player"]
     e.execute_action("setup_attributes", {"name": p0["name"],
-                                          "blood_points": 10, "speed_points": 8, "mana_points": 7})
+                                          "blood_points": 10, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": "乱葬岗"})
@@ -52,8 +52,7 @@ def main():
                 "heal_allocations": [{"target_ref": "player:0", "amount": 48}]})
             continue
         e.execute_action("pre_battle_action", {
-            "sub_action": "修行", "tier": 1,
-            "allocations": {"speed_points": 0, "mana_points": 1}})
+            "sub_action": "修行", "tier": 1})
     e.state.energy = 0
     from sim.optional_actions import start_battle
     bs, _art = start_battle(e)

@@ -548,7 +548,9 @@ def _resolve_pending_event(engine):
 BEHAVIOR_TO_POLICY = {
     "修行提战力": "修行", "修行提战力·高档": "修行", "先学后打": "学习",
     "休整保血": "休整", "残血休整": "休整", "共鸣强化": "共鸣",
-    "附煞强化": "附煞", "探索寻机": "探索", "领悟残韵": "领悟",
+    "附煞强化": "附煞", "探索寻机": "探索",
+    # "领悟残韵" 已随【领悟】删除（DM裁定 2026-09-10）；历史知识里的该标签由
+    # 下面 BEHAVIOR_TO_POLICY.get() 返回 None 安全忽略。
     "雇佣支援": "雇佣", "炼心固本": "炼心", "维修续用": "维修",
 }
 BEHAVIOR_RULES = {
@@ -556,7 +558,7 @@ BEHAVIOR_RULES = {
     "先学后打": "第1~2场前学道纹早成型", "休整保血": "休整回血防暴毙",
     "残血休整": "血线≤30%时休整保命", "共鸣强化": "共鸣提升道纹配合",
     "附煞强化": "乱葬岗附煞加效", "探索寻机": "探索事件换资源",
-    "领悟残韵": "领悟新残韵", "雇佣支援": "雇佣帮手分压", "炼心固本": "龙心谷炼心",
+    "雇佣支援": "雇佣帮手分压", "炼心固本": "龙心谷炼心",
     "备齐反应法术": "学习先发制人/生生不息/后发制人", "维修续用": "维修回复消耗品耐久",
 }
 
@@ -583,8 +585,6 @@ def _tag_behavior(behaviors, act, params, e, battle_no):
         behaviors.append("附煞强化")
     elif act == "探索":
         behaviors.append("探索寻机")
-    elif act == "领悟":
-        behaviors.append("领悟残韵")
     elif act == "雇佣":
         behaviors.append("雇佣支援")
     elif act == "炼心":
@@ -882,7 +882,8 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
     # 扭曲都市 优87/差21、罪孽都市 92/14、龙心谷 62/5；均通关×1.6~1.9、
     # 第1战死亡率减半）。机制：自由控X下法限=每轮道纹出手次数上限，蓝是稀缺
     # 资源；血限对早期生存几乎无贡献（血牛15/5/5 反降38%）。4/8/13 不更优。
-    attrs = attrs or {"blood_points": 6, "speed_points": 8, "mana_points": 11}
+    # DM裁定 2026-09-10：2属性点=1速限=1法限（速/法点数须为偶数），1点=6血限
+    attrs = attrs or {"blood_points": 7, "speed_points": 6, "mana_points": 12}
     e.execute_action("setup_attributes", {"name": "贾凡", **attrs})
     # 新生的轮回者翻阅《死者之书》：前人的〖遗言〗是局外唯一的历史教训来源。
     # 纯读取（read_death_book 不消耗精力、不改数值），读不到也不影响养成流程。
@@ -939,7 +940,7 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                     r = e.execute_action("pre_battle_action", {
                         "sub_action": "修行", "tier": 3,
                         "allocations": (xiuxing or {}).get(
-                            "tier3", {"speed_points": 0, "mana_points": 3})})
+                            "tier3", {"speed_points": 0, "mana_points": 2})})
                     if r.get("success"):
                         _tag_behavior(behaviors, "修行", {"tier": 3}, e, b)
                         continue
@@ -1231,11 +1232,12 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
             "duel_fought": False, "note": "未见最终的冠冕"}
 
 
-# 局外行动权重：AI 按此概率挑选。7项为引擎当前可用行动
+# 局外行动权重：AI 按此概率挑选（引擎当前可用行动）
 # （忘忧/献祭需道具，雇佣仅罪孽都市，维修仅扭曲都市，炼心仅龙心谷）
 DEFAULT_POLICY = {
     "修行": 30, "学习": 25, "休整": 15, "共鸣": 10,
-    "探索": 8, "领悟": 6, "炼心": 2, "维修": 2, "雇佣": 2, "附煞": 18,
+    "探索": 8, "炼心": 2, "维修": 2, "雇佣": 2, "附煞": 18,
+    # 【领悟】已删除（DM裁定 2026-09-10）：残韵不再能凭精力白拿。
 }
 
 REGION_ACTION = {"炼心": "龙心谷", "维修": "扭曲都市", "雇佣": "罪孽都市", "附煞": "乱葬岗"}
@@ -1306,8 +1308,6 @@ def choose_pre_battle(e, todo, battle_no, rng, policy):
         heal = {1: 8, 2: 24, 3: 48}[tier] + bonus
         return act, {"tier": tier, "heal_allocations": [
             {"target_ref": "player:0", "amount": heal}]}
-    if act == "领悟":
-        return act, {"resonance_type": rng.choice(["转换", "反转", "曲解"])}
     if act == "维修":
         index = next(index for index, item in enumerate(e.state.consumables)
                      if 0 < item.current_uses < item.max_uses)

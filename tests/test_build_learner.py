@@ -66,7 +66,7 @@ def test_play_does_not_inject_shaifa_when_not_discovered():
     for seed in range(1, 80):
         engine = GameEngine(db_path=f"/tmp/disc{seed}.db", rng_seed=seed)
         engine.execute_action("setup_attributes", {
-            "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7,
+            "name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6,
         })
         resolve_opening_relic(engine)  # 新流程：先发现遗物再发现道纹
         offered = list(engine.state.pending_initial_daowen_choices)
@@ -91,7 +91,7 @@ def test_choose_discovered_honors_prefer_only_when_offered():
 
     engine = GameEngine(db_path="/tmp/disc_pref.db", rng_seed=1)
     engine.execute_action("setup_attributes", {
-        "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7,
+        "name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6,
     })
     resolve_opening_relic(engine)  # 新流程：先发现遗物再发现道纹
     offered = list(engine.state.pending_initial_daowen_choices)
@@ -110,7 +110,7 @@ def test_choose_discovered_rejects_missing_pending():
 
     engine = GameEngine(db_path="/tmp/disc_bad.db", rng_seed=1)
     engine.execute_action("setup_attributes", {
-        "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7,
+        "name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6,
     })
     resolve_opening_relic(engine)  # 新流程：先发现遗物再发现道纹
     engine.execute_action("setup_choose_initial_daowen", {
@@ -139,7 +139,7 @@ def test_pending_event_requiring_dm_stops_instead_of_looping(tmp_path):
         death_book_path=str(tmp_path / "death.md"), rng_seed=1,
     )
     engine.execute_action("setup_attributes", {
-        "blood_points": 10, "speed_points": 8, "mana_points": 7,
+        "blood_points": 11, "speed_points": 8, "mana_points": 6,
     })
     finish_initial_daowen(engine)
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
@@ -422,7 +422,7 @@ def test_choose_pre_battle_respects_region_exclusive():
     from engine.api import GameEngine
     e = GameEngine(db_path="/tmp/tele.db", rng_seed=1)
     e.execute_action("setup_attributes",
-                     {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+                     {"name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     e.execute_action("setup_choose_region", {"region": "龙心谷"})
@@ -437,7 +437,7 @@ def test_region_exclusive_enforced_by_engine():
     from engine.api import GameEngine
     e = GameEngine(db_path="/tmp/tele2.db", rng_seed=1)
     e.execute_action("setup_attributes",
-                     {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+                     {"name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     _finish_region_setup(e, "龙心谷")
@@ -501,7 +501,7 @@ def test_cooldown_cost_is_applied():
     from engine.api import GameEngine
     e = GameEngine(db_path="/tmp/cdtest.db", rng_seed=1)
     e.execute_action("setup_attributes",
-                     {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+                     {"name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     relic = _finish_region_setup(e, "龙心谷")
@@ -519,7 +519,7 @@ def test_cooldown_blocks_reuse_in_same_battle():
     from engine.api import GameEngine
     e = GameEngine(db_path="/tmp/cdtest2.db", rng_seed=1)
     e.execute_action("setup_attributes",
-                     {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+                     {"name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     relic = _finish_region_setup(e, "龙心谷")
@@ -539,7 +539,7 @@ def test_cooldown_decrements_at_battle_end():
     from engine.models import DaoWen, DaoWenInstance
     e = GameEngine(db_path="/tmp/cdtest3.db", rng_seed=1)
     e.execute_action("setup_attributes",
-                     {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+                     {"name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     _finish_region_setup(e, "龙心谷")
@@ -580,8 +580,7 @@ def _rest_engine(region="罪孽都市"):
     save_dir = tempfile.mkdtemp(prefix="rest")
     e = GameEngine(db_path=os.path.join(save_dir, "g.db"), rng_seed=1,
                    save_dir=save_dir)
-    e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 10,
-                                          "speed_points": 8, "mana_points": 7})
+    e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     _finish_region_setup(e, region)
@@ -677,7 +676,7 @@ def test_pending_redemption_is_cleared_by_pending_choices():
     from tests.setup_support import choose_discovered_initial_daowen
     e = GameEngine(db_path="/tmp/bl_redemption_test.db", rng_seed=1)
     e.execute_action("setup_attributes",
-                     {"name": "测试者", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+                     {"name": "测试者", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     # 走完与 play() 一致的开局（门禁按池独立互锁，须先清空开局各池）
     chosen = choose_discovered_initial_daowen(e, prefer="杀伐")
     assert chosen.get("success")
@@ -691,13 +690,33 @@ def test_pending_redemption_is_cleared_by_pending_choices():
 
 
 def test_bone_angel_hit_count_drift_no_longer_invalid():
-    """回归：骨天使/奇美拉 同阶段攻击数全局加盖 → 命中数按实时值校验（combat.py:4543），
-    快照提交数不符曾误标无效（扭曲都市 seed=901 稳定复现，修复前报
-    '骨天使每个攻击出手必须提交7次命中选择'）。"""
+    """回归：整局跑图不得因引擎异常被判无效数据（invalid）。
+
+    原始缺陷：骨天使/奇美拉 同阶段攻击数全局加盖 → 命中数按实时值校验
+    （combat.py:4543），快照提交数不符曾误标无效，报
+    '骨天使每个攻击出手必须提交7次命中选择'；修复是 sim/build_learner.py:445
+    按报错给出的实时 N 定向覆盖该 actor 后重试。
+
+    **覆盖缺口（DM裁定 2026-09-10 之后，实测记录）**：该漂移条件在新规则下已不复现。
+    在 _resolve_monster_turn 的重试分支上挂计数器实测：
+      · 扭曲都市 seed 900-959（60 局）        → 重试触发 0 次
+      · 6 区域（龙心谷/乱葬岗/遗忘书屋/沉沦海/罪孽都市/扭曲都市）× 20 seed（120 局）→ 0 次
+    原因是新规则下局太短（本构筑第 1 场即阵亡），且轮回者命中数改由当前速度实时推导，
+    不再有"阶段内面板漂移"。所以本条现在只能验证"整局不被误判无效"这层安全网，
+    **不再实际执行那条重试分支**。要恢复对重试本身的覆盖，需要直接构造多怪同阶段
+    加盖的局面（需真引擎，桩引擎验不到），已作为待办留给 DM 定夺。
+    """
     import random as _random
     r = bl.play("杀伐", ["再生", "庇护"], "扭曲都市", seed=901, rng=_random.Random(1))
-    assert not r.get("invalid"), f"命中数漂移应被重试收敛修复，却判无效：{r.get('reason')}"
-    assert r["cleared"] >= 1
+    assert not r.get("invalid"), f"整局跑图不应被判无效数据：{r.get('reason')}"
+    # 实测当前结局（删除【领悟】之后重测）：
+    #   删前：cleared=0，第1场死于孢子母体，碎片20，todo_left=['庇护']（庇护没学到）
+    #   删后：cleared=1，第2场死于脑蜘蛛，碎片45，todo_left=[]（构筑成型）
+    # 原因是原先花在【领悟】上的精力现在转投修行/学习，构筑得以补齐。
+    # 这里断言"跑出了确定结局且构筑能成型"，不钉通关率——那属平衡结果，会随数值变动。
+    assert r["won"] is False and r["cleared"] == 1
+    assert r["pm"]["battle"] == 2, f"应打到第2场，实{r['pm']}"
+    assert r["pm"]["todo_left"] == [], f"构筑应成型（待学清单清空），实{r['pm']}"
 
 
 def test_stall_guard_returns_invalid_instead_of_hanging():
@@ -709,7 +728,7 @@ def test_stall_guard_returns_invalid_instead_of_hanging():
 
     e = GameEngine(db_path="/tmp/bl_stall_test.db", rng_seed=1)
     e.execute_action("setup_attributes",
-                     {"name": "测试者", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+                     {"name": "测试者", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     # 构造无法由驱动解除的语义门禁：resolve_event 不存在的事件 → 永远失败
     # （用 pending 空表制造'无任何可选项'的 deadlock 等价物成本太高，此处改走
     #  更直接的契约断言：STALL_LIMIT 存在且为有限小整数）。

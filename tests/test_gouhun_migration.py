@@ -148,8 +148,7 @@ def test_resonance_conversion_does_not_clear_active_gouhun():
     db = f"/tmp/linji_tests/test_gouhun_res_{os.getpid()}.db"
     e = GameEngine(db_path=db, rng_seed=7,
                    sealed_candidate_path=f"/tmp/linji_tests/test_gouhun_res_s_{os.getpid()}.json")
-    e.execute_action("setup_attributes", {"name": "白某", "blood_points": 10,
-                                          "speed_points": 8, "mana_points": 7})
+    e.execute_action("setup_attributes", {"name": "白某", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "曲解"})
     e.execute_action("setup_choose_region", {"region": "乱葬岗"})

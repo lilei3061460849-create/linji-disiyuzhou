@@ -72,7 +72,7 @@ def _setup_engine(seed: int):
     engine = GameEngine(db_path=tempfile.mktemp(suffix=".db"), rng_seed=seed,
                         sealed_candidate_path="/tmp/cycle_showcase_seal.json")
     engine.execute_action("setup_attributes", {"name": "玄夜", "blood_points": 10,
-                                                "speed_points": 8, "mana_points": 7})
+                                                "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(engine, prefer="杀伐")
     engine.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = engine.execute_action("setup_choose_region", {"region": "扭曲都市"})
@@ -86,8 +86,7 @@ def _setup_engine(seed: int):
     p.mana_limit = 80
     p.current_mana = 80
     while engine.state.energy > 0:
-        r = engine.execute_action("pre_battle_action", {"sub_action": "修行", "tier": 1,
-                                                        "allocations": {"speed_points": 0, "mana_points": 1}})
+        r = engine.execute_action("pre_battle_action", {"sub_action": "修行", "tier": 1})
         if not r.get("success"):
             break
     return engine, p

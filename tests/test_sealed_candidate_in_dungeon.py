@@ -24,8 +24,7 @@ def _seal_candidate(e):
 def _engine_with_snapshot(snapshot, seed=1):
     """用封存快照的玩家作为起始角色，进入乱葬岗。"""
     e = GameEngine(db_path="/tmp/test_sealed_dg.db", rng_seed=seed)
-    e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 10,
-                                          "speed_points": 8, "mana_points": 7})
+    e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": "乱葬岗"})
@@ -68,7 +67,9 @@ def test_sealed_candidate_fights_in_dungeon():
 
     e = _engine_with_snapshot(snapshot, seed=7)
     p = e.state.player
-    assert p.mana_limit >= 12 and p.speed_limit >= 8, "封存角色应带成长属性"
+    # 新定价（DM裁定 2026-09-10：2属性点=1速限/法限）下 8速点→速限4、6法点→法限3，
+    # 叠加本条的 +6 法限 / +3 速限后为 9 / 7。
+    assert p.mana_limit == 9 and p.speed_limit == 7, "封存角色应带成长属性"
     assert "庇护" in p.dao_wen and "再生" in p.dao_wen, "封存角色应带已学道纹"
     assert len(e.state.friends) == 1, "封存角色应带朋友"
 

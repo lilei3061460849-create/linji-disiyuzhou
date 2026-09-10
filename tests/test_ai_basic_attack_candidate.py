@@ -29,10 +29,9 @@ FLAG = "LJ_AI_BASIC_ATTACK"
 def engine(tmp_path):
     e = GameEngine(db_path=str(tmp_path / "ai_ba.db"), rng_seed=7,
                    sealed_candidate_path=str(tmp_path / "ai_ba.json"))
-    e.execute_action("setup_attributes", {"name": "白某", "blood_points": 6,
-                                          "speed_points": 8, "mana_points": 5,
-                                          "attack_count_points": 3,
-                                          "attack_power_points": 3})
+    # DM裁定 2026-09-10：攻次=当前速度、攻力=当前法力；加点只剩血/速/法三维（2点一档）
+    e.execute_action("setup_attributes", {"name": "白某", "blood_points": 1,
+                                          "speed_points": 8, "mana_points": 16})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "曲解"})
     e.execute_action("setup_choose_region", {"region": "乱葬岗"})
@@ -46,7 +45,9 @@ def test_flag_off_yields_no_basic_attack_candidate(engine, monkeypatch):
     monkeypatch.delenv(FLAG, raising=False)
     ai = TacticalAI(engine)
     assert ai._basic_attack_candidates() == []
-    assert engine.state.player.attack_count == 4   # 1 初始 + 3 加点
+    p = engine.state.player
+    assert (p.speed_limit, p.mana_limit) == (4, 8)
+    assert (p.effective_attack_count(), p.effective_attack_power()) == (4, 8)
 
 
 def test_flag_on_yields_one_candidate_per_live_enemy(engine, monkeypatch):
@@ -61,7 +62,7 @@ def test_flag_on_yields_one_candidate_per_live_enemy(engine, monkeypatch):
 
 
 def test_preview_sequence_sees_real_attack_damage(engine, monkeypatch):
-    """正常路径：预演整串跑完，打分看见真实伤害（攻次4×攻力4=16，未被闪避时）。"""
+    """正常路径：预演整串跑完，打分看见真实伤害（当前速度4×当前法力8=32，未被闪避时）。"""
     monkeypatch.setenv(FLAG, "1")
     ai = TacticalAI(engine)
     foe = ai.alive_enemies()[0]
@@ -69,23 +70,30 @@ def test_preview_sequence_sees_real_attack_damage(engine, monkeypatch):
     pv = ai.previewer.preview_sequence(ai._attack_steps(foe.name))
     assert all(r.get("success") for r in pv["results"]), pv["results"]
     hp = next(e for e in pv["diff"]["enemies"] if e["name"] == foe.name)
-    assert hp["hp_before"] - hp["hp_after"] == 16, hp
+    p = engine.state.player
+    assert hp["hp_before"] - hp["hp_after"] == \
+        p.effective_attack_count() * p.effective_attack_power() == 32, hp
     # 真实状态分毫不动（预演是副本执行）
     assert foe.current_hp == hp["hp_before"]
 
 
-def test_ai_falls_back_to_basic_attack_when_pool_is_dry(engine, monkeypatch):
-    """正常路径：法力花干后 AI 仍有输出手段——普攻兜住这一手。"""
+def test_empty_pool_means_zero_damage_output(engine, monkeypatch):
+    """**新公式的重要后果**（DM裁定 2026-09-10：攻击力=当前法力）。
+
+    法力归零 → 攻击力 0 → 普攻也打不出伤害。接普攻原本就是为了「法力花干还有输出」，
+    而攻力=当前法力把这条兜底取消了：一池制下把法力花光，本场就彻底失去输出手段
+    （若当前速度也归零，攻次和攻力都为 0，还要吃【雕塑】）。
+    这条测试钉住事实，不代表它是对的——是否要给普攻保底，等 DM 裁定。
+    """
     monkeypatch.setenv(FLAG, "1")
     ai = TacticalAI(engine, verbose=True)
     foe = ai.alive_enemies()[0]
     foe.current_speed = 0
-    engine.state.player.current_mana = 0          # 一池制下花干就是花干
     hp_before = foe.current_hp
-    results = ai.take_turn()
-    assert results, "法力为0时不应整回合空转"
-    assert foe.current_hp < hp_before, f"应打出普攻伤害：{foe.current_hp} vs {hp_before}"
-    assert any("普攻" in line for line in ai.log), ai.log
+    engine.state.player.current_mana = 0          # 一池花干
+    assert engine.state.player.effective_attack_power() == 0
+    ai.take_turn()
+    assert foe.current_hp == hp_before, f"攻力0时普攻应为0伤，实掉 {hp_before - foe.current_hp}"
 
 
 def test_at_one_by_one_daowen_still_wins(engine, monkeypatch):
@@ -95,23 +103,48 @@ def test_at_one_by_one_daowen_still_wins(engine, monkeypatch):
     """
     monkeypatch.setenv(FLAG, "1")
     p = engine.state.player
-    p.attack_count, p.attack_power = 1, 1
+    p.current_speed, p.current_mana = 1, 1     # 攻次/攻力随之变成 1×1
     ai = TacticalAI(engine, verbose=True)
     ai.take_turn()
     decisions = [line for line in ai.log if "实时决策" in line]
     assert decisions and all("普攻" not in line for line in decisions), decisions
 
 
-def test_invested_basic_attack_outscores_shaifa(engine, monkeypatch):
-    """记录新规则下的真实取舍（不是断言它「应该」如此）：攻次4×攻力4 的普攻
-    每手 16 伤且不耗法力，打分 22.40 压过杀伐（14 伤 / 7 法力），AI 会整回合普攻。
+def test_full_pool_shaifa_outscores_basic_attack(engine, monkeypatch):
+    """记录 DM裁定 2026-09-10（杀伐 2X→5X）后的真实取舍——结论已反转。
 
-    这是 DM 需要知道的平衡后果：投了攻次/攻力之后，法力池在纯输出上不再是必需品。
+    旧结论（已作废）：攻次4×攻力8 的普攻每手 32 伤且不耗法力，压过杀伐。
+    实测现行打分（夹具 攻次4/攻力8/法力8）：
+        普攻→尸霸 44.80   （一手 4 击 × 8 伤 = 32，不耗法力）
+        杀伐X=8   48.08   （5×8 = 40 伤，吃光整池）
+    杀伐单次出手伤害 40 > 普攻 32，所以满池时 AI 选择杀伐。
+
+    但普攻**没有**因此变成无用候选：它的价值在法力池见底之后——见下条。
     """
     monkeypatch.setenv(FLAG, "1")
     ai = TacticalAI(engine, verbose=True)
     ai.take_turn()
     decisions = [line for line in ai.log if "实时决策" in line]
-    assert decisions and all("普攻" in line for line in decisions), decisions
-    assert engine.state.player.current_mana == engine.state.player.mana_limit, \
-        "普攻不耗法力，池子应分毫未动"
+    assert decisions, decisions
+    assert any("杀伐" in line for line in decisions), decisions
+    assert engine.state.player.current_mana < engine.state.player.mana_limit, \
+        "满池时应选择杀伐并真的花掉法力"
+
+
+def test_spent_pool_leaves_no_damaging_candidate(engine, monkeypatch):
+    """DM 必须知道的后果：攻力=当前法力，池子花干后普攻也是 0 伤。
+
+    实测（法力 0/8）AI 的候选里**没有任何伤害手段**，只剩 固执/残韵 这类非伤害项：
+        残韵·曲解→庇护@尸霸 1.20 ；固执X=1 70.80
+    即「法力归零 = 本场彻底没有输出」。DM 已明确拒绝给普攻设保底伤害
+    （2026-09-10：「我觉得只是因为目前消耗法力的道纹数值不够」），故此处只记录不修改。
+    """
+    monkeypatch.setenv(FLAG, "1")
+    p = engine.state.player
+    p.current_mana = 0
+    assert p.effective_attack_power() == 0, "攻力=当前法力，池空即0"
+    ai = TacticalAI(engine, verbose=True)
+    # 候选仍会枚举（引擎不按伤害过滤），但打分为 0，AI 不会选它——过滤发生在打分环节。
+    ai.take_turn()
+    decisions = [line for line in ai.log if "实时决策" in line]
+    assert all("普攻" not in line for line in decisions), decisions

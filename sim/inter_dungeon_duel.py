@@ -1,6 +1,6 @@
 """
 跨副本跨流派真实手操推演与死斗巅峰决战：
-1. 罪孽都市冠军「苏星河」：手操通关7场罪孽都市（守夜灯+逼债+洗劫+清算），封存为初代冠冕胜者。
+1. 罪孽都市冠军「苏星河」：手操通关7场罪孽都市（守夜灯+逼债+点金+清算），封存为初代冠冕胜者。
 2. 扭曲都市挑战者「叶清弦」：手操通关7场扭曲都市（工具库+储能电池+强光探照灯+爆裂+定型+变形），触发死斗。
 3. 第8场跨副本王座决战：扭曲都市「叶清弦」 VS 罪孽都市「苏星河」！
 """
@@ -110,7 +110,7 @@ def run_inter_dungeon_playthrough():
     db_file = tempfile.mktemp(suffix=".db")
 
     # =========================================================================
-    # 第一阶段：罪孽都市「苏星河」全流程手操（守夜灯+逼债+洗劫+清算）
+    # 第一阶段：罪孽都市「苏星河」全流程手操（守夜灯+逼债+点金+清算）
     # =========================================================================
     print(">>> 正在手操推演【罪孽都市】冠军「苏星河」...")
     e1 = GameEngine(db_path=db_file, rng_seed=101, sealed_candidate_path=sealed_file)
@@ -149,7 +149,7 @@ def run_inter_dungeon_playthrough():
                 e1.execute_action("pre_battle_action", {"sub_action": "领悟", "resonance_type": "转换"})
             elif e1.state.resonance.get("反转", 0) < 2:
                 e1.execute_action("pre_battle_action", {"sub_action": "领悟", "resonance_type": "反转"})
-            elif "洗劫" in p1.dao_wen and "逼债" in p1.dao_wen and "清算" not in p1.dao_wen and e1.state.shards >= 10:
+            elif "点金" in p1.dao_wen and "逼债" in p1.dao_wen and "清算" not in p1.dao_wen and e1.state.shards >= 10:
                 e1.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "daowen", "name": "清算"})
             else:
                 tier, cost, pts = best_cultivate_tier(e1.state.shards)
@@ -166,9 +166,9 @@ def run_inter_dungeon_playthrough():
             for idx, m in enumerate(e1.state.enemies):
                 if not m.is_alive:
                     continue
-                if "洗劫" in m.dao_wen and "洗劫" not in p1.dao_wen and e1.state.resonance.get("反转", 0) > 0:
+                if "点金" in m.dao_wen and "点金" not in p1.dao_wen and e1.state.resonance.get("反转", 0) > 0:
                     e1.execute_action("use_resonance", {
-                        "source_daowen": "洗劫", "resonance_type": "反转", "target_ref": f"enemy:{idx}"
+                        "source_daowen": "点金", "resonance_type": "反转", "target_ref": f"enemy:{idx}"
                     })
                 if "逼债" in m.dao_wen and "逼债" not in p1.dao_wen and e1.state.resonance.get("曲解", 0) > 0:
                     e1.execute_action("use_resonance", {
@@ -198,8 +198,8 @@ def run_inter_dungeon_playthrough():
                 if "逼债" in p1.dao_wen and not target.has_status("逼债") and p1.current_mana >= 5:
                     e1.execute_action("use_daowen", {"daowen_name": "逼债", "x": 3, "target_ref": f"enemy:{t_idx}"})
                     continue
-                if "洗劫" in p1.dao_wen and not p1.has_status("洗劫") and p1.current_mana >= 6:
-                    e1.execute_action("use_daowen", {"daowen_name": "洗劫", "x": 2, "target": p1.name})
+                if "点金" in p1.dao_wen and not p1.has_status("点金") and p1.current_mana >= 6:
+                    e1.execute_action("use_daowen", {"daowen_name": "点金", "x": 2, "target": p1.name})
                     continue
                 if target.has_status("固执") and "血债" in p1.dao_wen and p1.current_hp > 15:
                     e1.execute_action("use_daowen", {"daowen_name": "血债", "x": 3, "target_ref": f"enemy:{t_idx}"})
@@ -217,7 +217,7 @@ def run_inter_dungeon_playthrough():
             e1.execute_action("round_end", {})
         e1.execute_action("battle_end", {})
 
-    print(f"罪孽都市冠军「苏星河」（42血/{p1.mana_limit}法/{p1.speed_limit}速，守夜灯+逼债+洗劫+清算）已封存为守擂者！")
+    print(f"罪孽都市冠军「苏星河」（42血/{p1.mana_limit}法/{p1.speed_limit}速，守夜灯+逼债+点金+清算）已封存为守擂者！")
 
     # =========================================================================
     # 第二阶段：扭曲都市「叶清弦」全流程手操（工具库+储能电池+爆裂+定型）
@@ -425,7 +425,7 @@ def run_inter_dungeon_playthrough():
         "[战始]（最终死斗）",
         f"出怪：【最终的冠冕】开启，罪孽都市封存胜者【苏星河】登场！",
         f"战斗背景：王座死斗之渊（扭曲机械与罪孽都市之光交汇的王座断崖，胜者登顶封存，败者入传承）",
-        f"敌方面板：苏星河（{opp_sin.blood_limit}/{opp_sin.mana_limit}/{opp_sin.speed_limit}，出手{opp_sin.action_count}次）｜道纹：逼债、洗劫、清算、杀伐、庇护、再生｜遗物：守夜灯",
+        f"敌方面板：苏星河（{opp_sin.blood_limit}/{opp_sin.mana_limit}/{opp_sin.speed_limit}，出手{opp_sin.action_count}次）｜道纹：逼债、点金、清算、杀伐、庇护、再生｜遗物：守夜灯",
         f"我方面板：叶清弦（{p2.blood_limit}/{p2.mana_limit}/{p2.speed_limit}，出手{p2.action_count}次）｜道纹：爆裂、定型、杀伐、庇护、再生｜遗物：忘忧香",
         "[战始]效果结算：",
         "  双方激活【最终死斗】法则：双方全额回复生命/法力/速度，逐出手交替推演，胜者登顶封存！",
@@ -559,7 +559,7 @@ def run_inter_dungeon_playthrough():
 >
 > 格式遵循 README《六、战斗推演格式》与 AI 知识库七步原子时序切片管道：逐回合、逐次出手，禁止概括、跳过或合并结算。本局全程通过 GameEngine.execute_action 逐步手操点选，数值逐条取自引擎真实返回值（无推断、无口胡）。
 >
-> 来源：2026-08-17 真实跨副本手操实测。扭曲都市新轮回者叶清弦（42[血限]/20[法限]/8[速限]，开局遗物·忘忧香）进入扭曲都市（一阶），在战内通过【残韵】实时窃取敌方专属道纹【爆裂】与【定型】，斩获前 7 场全胜；在第 8 场最终死斗中正面迎战罪孽都市封存胜者苏星河（持有守夜灯、逼债、洗劫、清算），双方展开跨副本王座死斗，最终叶清弦力斩强敌，登顶王座！
+> 来源：2026-08-17 真实跨副本手操实测。扭曲都市新轮回者叶清弦（42[血限]/20[法限]/8[速限]，开局遗物·忘忧香）进入扭曲都市（一阶），在战内通过【残韵】实时窃取敌方专属道纹【爆裂】与【定型】，斩获前 7 场全胜；在第 8 场最终死斗中正面迎战罪孽都市封存胜者苏星河（持有守夜灯、逼债、点金、清算），双方展开跨副本王座死斗，最终叶清弦力斩强敌，登顶王座！
 >
 > 共8场。结果：8战8胜（含第8场最终死斗击败罪孽都市封存胜者苏星河），叶清弦登顶【最终的冠冕】完整封存！
 

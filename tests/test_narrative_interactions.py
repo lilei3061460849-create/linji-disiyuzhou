@@ -14,7 +14,7 @@ from engine.api import GameEngine
 def _engine(region: str = "龙心谷") -> GameEngine:
     e = GameEngine(db_path="/tmp/test_ally_cost.db", rng_seed=1)
     e.execute_action("setup_attributes", {
-        "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7,
+        "name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6,
     })
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "转换"})

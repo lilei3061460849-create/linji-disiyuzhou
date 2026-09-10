@@ -314,7 +314,7 @@ CONFIG = {
     "starter": "杀伐",
     "learn": ["庇护", "再生"],
     "region": "扭曲都市",
-    "attrs": {"blood_points": 6, "speed_points": 8, "mana_points": 11},
+    "attrs": {"blood_points": 6, "speed_points": 8, "mana_points": 10},
     "resonance": "反转",
     "battles": 7,
     "policy": "DEFAULT_POLICY(局外按权重随机,随机源=角色种子)",
@@ -471,7 +471,7 @@ def _standard_situation_engine():
                    sealed_candidate_path="/tmp/pde_sealed.json",
                    death_book_path="/tmp/pde_book.md")
     e.execute_action("setup_attributes", {
-        "name": "受试者", "blood_points": 6, "speed_points": 8, "mana_points": 11})
+        "name": "受试者", "blood_points": 6, "speed_points": 8, "mana_points": 10})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": "扭曲都市"})

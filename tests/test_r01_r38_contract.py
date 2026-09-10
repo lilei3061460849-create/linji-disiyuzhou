@@ -27,7 +27,7 @@ def _engine(tmp_path, seed: int = 7) -> GameEngine:
 
 def _full_setup(engine: GameEngine, region: str = "罪孽都市") -> GameEngine:
     assert engine.execute_action("setup_attributes", {
-        "blood_points": 10, "speed_points": 8, "mana_points": 7,
+        "blood_points": 11, "speed_points": 8, "mana_points": 6,
     })["success"]
     # 新开局流程：finish_initial_daowen 会先显式选择开局遗物，再选初始道纹
     assert finish_initial_daowen(engine)["success"]
@@ -113,8 +113,9 @@ def test_r01_r10_illegal_phase_and_missing_target_are_atomic(tmp_path):
     assert engine.state.player.actions_used_this_round == used
 
     # R10：任意非轮回者均适用雕塑，轮回者不适用。
+    # DM裁定 2026-09-10：雕塑触发条件为攻次与攻力**都**为0
     friend = Entity("零攻朋友", "朋友", blood_limit=20, current_hp=20,
-                    attack_count=1, attack_power=0)
+                    attack_count=0, attack_power=0)
     engine.state.friends.append(friend)
     settled = engine.combat.settle_victory_paths()
     assert any(x.get("monster") == "零攻朋友" for x in settled)
@@ -321,13 +322,14 @@ def test_r11_r17_aoe_dodge_does_not_leak_into_next_resolution(tmp_path):
 
     # 三次结算互相独立：本回合各行动不残留旧闪避状态
     assert "_skip_aoe_names" not in vars(engine.combat)
-    # 杀伐打乙怪：甲怪有波及标记 → 数值平分（杀伐1X=2伤 → 1+1）
+    # 杀伐打乙怪：甲怪有波及标记 → 数值平分（杀伐1X=5伤 → 2+3）
+    engine.state.player.actions_used_this_round = 0   # 轮回者每回合固定2次，前序行动已用满
     three = engine.execute_action("use_daowen", {
         "daowen_name": "杀伐", "x": 1, "target_ref": "enemy:1",
         "dodge": False, "blood_shadow": False,
     })
     assert three["success"], three
-    assert (first.current_hp, second.current_hp) == (99, 99)
+    assert first.current_hp + second.current_hp == 100 + 95   # 合计承受5点（杀伐1→5X）
 
 
 def test_r11_r17_targets_must_come_from_prepare_and_fail_atomically(tmp_path):
@@ -459,11 +461,13 @@ def test_r25_r31_normal_tools_and_ceil(tmp_path):
     assert battery["success"] and player.current_mana == 12
 
     # 裂变：5÷2每段向上取整为3，共失去6生命。
+    # DM裁定 2026-09-10：轮回者攻力=当前法力，写 attack_power 无效——用 current_mana 设定攻击力。
     monster.add_status(StatusEffect("裂变", -1, 2))
+    player.current_mana = 2
     before = monster.current_hp
     engine.combat.resolve_attack(player, monster, dodge=False)
-    assert before - monster.current_hp == 2  # 普攻面板为2；2÷2仍为1×2
-    player.attack_power = 5
+    assert before - monster.current_hp == 2  # 攻力2；2÷2仍为1×2
+    player.current_mana = 5
     before = monster.current_hp
     engine.combat.resolve_attack(player, monster, dodge=False)
     assert before - monster.current_hp == 6

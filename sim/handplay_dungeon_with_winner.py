@@ -239,7 +239,7 @@ def play_dungeon(winner_path: str, battles: int, seed: int):
     e = GameEngine(db_path=f"/tmp/hp_{seed}_{os.getpid()}.db", rng_seed=seed,
                    sealed_candidate_path="/tmp/hp_seal.json")
     e.execute_action("setup_attributes", {"name": p0["name"],
-                                          "blood_points": 10, "speed_points": 8, "mana_points": 7})
+                                          "blood_points": 10, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": "乱葬岗"})
@@ -271,8 +271,7 @@ def play_dungeon(winner_path: str, battles: int, seed: int):
                     fusha_done = True
                     continue
             e.execute_action("pre_battle_action", {
-                "sub_action": "修行", "tier": 1,
-                "allocations": {"speed_points": 0, "mana_points": 1}})
+                "sub_action": "修行", "tier": 1})
             print("局外：修行1档 → 法限+2")
         print(f"\n──── 第{b}场 · 战始 ────")
         from sim.optional_actions import start_battle

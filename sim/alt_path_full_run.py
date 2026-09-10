@@ -160,8 +160,7 @@ def full_run_mixed(winner_path: str, seed: int, db: str):
                     logs.append("  学习·封印")
                     continue
             e.execute_action("pre_battle_action", {
-                "sub_action": "修行", "tier": 1,
-                "allocations": {"speed_points": 0, "mana_points": 1}})
+                "sub_action": "修行", "tier": 1})
         from sim.optional_actions import start_battle
         bs, _art = start_battle(e)
         names = list(bs.get("enemies") or [])

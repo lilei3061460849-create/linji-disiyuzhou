@@ -223,8 +223,12 @@ def _resolve_opponent_one(e, log=None, 对话=None):
     option = next((o for o in prep["result"]["target_options"] if o["ref"] == target_ref),
                   prep["result"]["target_options"][0])
     from engine.ai_tactics import choose_dodge
+    # DM裁定 2026-09-10：轮回者攻力=当前法力，面板 attack_power 恒为 0。
+    # 这里过去直读面板，守擂是轮回者时每击伤害被当成 1 点，永远够不到闪避阈值，
+    # PvP 的闪避中继等于失效。必须走 effective_attack_power()。
+    per_hit_damage = ent.effective_attack_power() or 1
     hits = [{"target_ref": option["ref"],
-             "dodge": choose_dodge(e, ent.attack_power or 1),
+             "dodge": choose_dodge(e, per_hit_damage),
              "blood_shadow": False,
              "spell_choices": _decline_spells(option)}
             for _ in range(prep["result"]["hit_count"])]

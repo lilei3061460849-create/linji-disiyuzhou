@@ -24,7 +24,7 @@ from engine.models import DaoWen, DaoWenInstance, Entity, Relic, StatusEffect
 def _engine(tmp_path, suffix="fix"):
     e = GameEngine(db_path=str(tmp_path / f"{suffix}.db"), rng_seed=3)
     e.execute_action("setup_attributes", {
-        "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7,
+        "name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6,
     })
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
@@ -78,7 +78,7 @@ def test_pierce_shaifa_ignores_shield(tmp_path):
     })
     assert r["success"], r
     assert m.shield == sh, "贯穿伤害不得消耗格挡"
-    assert m.current_hp == hp - 20
+    assert m.current_hp == hp - 5 * 10   # 杀伐X：5X 伤害（DM裁定 2026-09-10，原 2X）
 
 
 def test_pierce_does_not_rewrite_cost_damage(tmp_path):
@@ -108,8 +108,9 @@ def test_pierce_absent_still_blocked_by_shield(tmp_path):
         "dodge": False, "blood_shadow": False, "trigger_spell_choices": {},
     })
     assert r["success"], r
-    assert m.shield == 20
-    assert m.current_hp == 80
+    dmg = 5 * 10                     # 杀伐X：5X（DM裁定 2026-09-10）；格挡40吸收40，余10落到生命
+    assert m.shield == max(0, 40 - dmg)
+    assert m.current_hp == 80 - max(0, dmg - 40)
 
 
 # ---------- 回锋刀 + 折速 ----------
@@ -124,7 +125,7 @@ def test_zhesu_fatigue_triggers_huifeng(tmp_path):
         "回锋刀": {"enemy_index": 0},
     })
     p, m = e.state.player, e.state.enemies[0]
-    assert p.current_speed == 4
+    assert p.current_speed == max(0, p.speed_limit - 4)   # 折速4付疲惫4，新口径速限4→0
     # DM裁定 2026-09-09：战始给满一池，折速的 24 叠在其上
     assert p.current_mana == p.mana_limit + 24
     assert m.current_hp == m.blood_limit - 12

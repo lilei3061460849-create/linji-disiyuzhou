@@ -23,7 +23,7 @@ from engine.models import Entity, DaoWen, DaoWenInstance
 from tests.monster_phase_support import resolve_monster_phase
 
 
-def _new_engine(region="龙心谷", name="老张", speed=8, mana=7, dbsuffix="a"):
+def _new_engine(region="龙心谷", name="老张", speed=8, mana=6, dbsuffix="a"):
     engine = GameEngine(db_path=f"data/test_dragon_traits_{dbsuffix}.db", rng_seed=1,
                          sealed_candidate_path=f"data/test_dragon_traits_{dbsuffix}_sealed.json")
     blood = 25 - speed - mana
@@ -128,14 +128,15 @@ def test_dragon_bloodline_instakills_monsters_and_doubles_nonmonster_damage():
     monster = Entity(name="怪物", entity_type="怪物", blood_limit=999999, current_hp=999999)
     engine.state.enemies.append(monster)
     engine.execute_action("round_start", {})
-    player.attack_count = 1
-    player.attack_power = 5
+    # DM裁定 2026-09-10：轮回者攻次=当前速度、攻力=当前法力，写面板无效
+    player.current_speed = 1
+    player.current_mana = 5
     _resolve_full_attack(engine, player.name, monster)
     assert monster.is_alive is False, "怪物应被直接命零"
 
     non_monster = Entity(name="敌方轮回者", entity_type="轮回者", blood_limit=100, current_hp=100)
     dmg = engine.combat.resolve_attack(player, non_monster, is_must_hit=True)
-    assert dmg["damage_dealt"] == 10
+    assert dmg["damage_dealt"] == 10, "龙族血脉翻倍：攻力(当前法力)5×2"
 
 
 # ========================================================================

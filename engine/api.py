@@ -334,8 +334,8 @@ class GameEngine:
         heal_targets += [{"ref": f"employee:{index}", "name": entity.name}
                          for index, entity in enumerate(self.state.employees) if entity.is_alive]
         actions = [
-            {"action_type": "pre_battle_action", "params_schema": {
-                "sub_action": "领悟", "resonance_type": ["转换", "反转", "曲解"]}},
+            # 【领悟】已删除（DM裁定 2026-09-10）：残韵不再能凭精力白拿，
+            # 现存获取途径见 README「残韵来源」。
             {"action_type": "pre_battle_action", "params_schema": {
                 "sub_action": "休整", "tier": [1, 2, 3],
                 "heal_allocations": {"target_options": heal_targets,
@@ -998,6 +998,8 @@ class GameEngine:
                 result = self._action_use_spell(params)
             elif action_type == "use_resonance":
                 result = self._action_use_resonance(params)
+            elif action_type == "redeem_attribute_points":
+                result = self._action_redeem_attribute_points(params)
             elif action_type == "prepare_attack":
                 result = self._action_prepare_attack(params)
             elif action_type == "resolve_attack":
@@ -1310,7 +1312,6 @@ class GameEngine:
             self.state.pending_energy_penalty = 0
 
         result_map = {
-            "领悟": self._pre_battle_lingwu,
             "休整": self._pre_battle_xiuzheng,
             "修行": self._pre_battle_xiuxing,
             "学习": self._pre_battle_xuexi,
@@ -1339,23 +1340,6 @@ class GameEngine:
         else:
             self.state.energy += 1  # 恢复精力
             return {"success": False, "error": f"未知局外行动: {action}"}
-
-    def _pre_battle_lingwu(self, params: dict) -> dict:
-        """领悟：选择获得1种残韵"""
-        rtype = params.get("resonance_type", "")
-        valid = ["转换", "反转", "曲解"]
-        if rtype not in valid:
-            self.state.energy += 1
-            return {"success": False, "error": f"只能从{valid}中选择"}
-
-        self.state.resonance[rtype] = self.state.resonance.get(rtype, 0) + 1
-
-        return {
-            "success": True,
-            "action": "领悟",
-            "result": {"gained_resonance": rtype, "total": self.state.resonance[rtype]},
-            "energy_remaining": self.state.energy
-        }
 
     def _pre_battle_xiuzheng(self, params: dict) -> dict:
         """休整：产生恢复量，并按稳定引用在自己/朋友/员工间自由完整分配。"""
@@ -1412,8 +1396,8 @@ class GameEngine:
     def _pre_battle_xiuxing(self, params: dict) -> dict:
         """修行：获得属性点并立即分配（血限只能开局获得）。
 
-        1属性点 = 1[速限] = 2[法限] = 1[攻击次数] = 1[攻击力]
-        （DM裁定 2026-09-09：修行同样可以提升攻次/攻力，口径与开局初始分配一致）。
+        2属性点 = 1[速限] = 1[法限]（DM裁定 2026-09-10：与开局加点同口径；
+        攻次/攻力已改为由当前速度/当前法力换算，不再是可购买的独立面板）。
         不朽之躯不阻止修行：其“无法超过上限”只限制获得的当前法力/速度，不限制属性点增长。"""
         tier = params.get("tier", 1)
         tier_map = {1: (1, 0), 2: (2, 15), 3: (3, 35), 4: (4, 65), 5: (5, 100), 6: (6, 150)}
@@ -1424,11 +1408,9 @@ class GameEngine:
         if cost > 0 and self.state.shards < cost:  # 负债口径同休整：0费不属于支出
             self.state.energy += 1
             return {"success": False, "error": f"碎片不足，需要{cost}"}
-        alloc_keys = ("speed_points", "mana_points",
-                      "attack_count_points", "attack_power_points")
+        alloc_keys = ("speed_points", "mana_points")
         allocations = params.get("allocations")
-        if allocations is None and params.get("to") in (
-                "speed", "mana", "attack_count", "attack_power"):
+        if allocations is None and params.get("to") in ("speed", "mana"):
             allocations = {f"{params['to']}_points": points}
         if not isinstance(allocations, dict):
             allocations = {}
@@ -1439,30 +1421,32 @@ class GameEngine:
                 vals = None
                 break
             vals[key] = v
-        if vals is None or sum(vals.values()) != points:
+        if vals is None or sum(vals.values()) > points + self.state.attribute_points:
             self.state.energy += 1
             return {"success": False,
-                    "error": f"修行{tier}档必须用allocations把{points}属性点分配到"
-                             f"{'/'.join(alloc_keys)}"}
+                    "error": f"修行{tier}档给{points}属性点（池内现有{self.state.attribute_points}），"
+                             f"allocations 分配总数不能超过 {points + self.state.attribute_points}；"
+                             f"不传 allocations 则全部存进属性点池"}
 
         self.state.shards -= cost
+        # DM裁定 2026-09-10：修行给的属性点**先入池**，不强制当场花掉——
+        # 档位点数（1/3/5）与 2 点一档的比价不再互相卡死，余点攒着随时兑。
+        self.state.attribute_points += points
+        redeemed = self._redeem_attribute_points(vals) if allocations else None
+        if redeemed is not None and not redeemed.get("success"):
+            return redeemed
+        gained = ((redeemed or {}).get("result") or {}).get(
+            "gained", {"speed": 0, "mana": 0})
         player = self.state.player
-        player.speed_limit += vals["speed_points"]
-        player.mana_limit += 2 * vals["mana_points"]
-        player.attack_count += vals["attack_count_points"]
-        player.attack_power += vals["attack_power_points"]
-        player.current_speed = player.speed_limit
-        player.current_mana = player.mana_limit
-        gained = {"speed": vals["speed_points"], "mana": 2 * vals["mana_points"],
-                  "attack_count": vals["attack_count_points"],
-                  "attack_power": vals["attack_power_points"]}
         return {"success": True, "action": "修行",
                 "result": {"points_gained": points, "shard_cost": cost,
                            "allocations": {k: vals[k] for k in alloc_keys},
-                           "gained": gained, "speed_limit": player.speed_limit,
+                           "gained": gained,
+                           "attribute_points": self.state.attribute_points,
+                           "speed_limit": player.speed_limit,
                            "mana_limit": player.mana_limit,
-                           "attack_count": player.attack_count,
-                           "attack_power": player.attack_power,
+                           "attack_count": player.effective_attack_count(),
+                           "attack_power": player.effective_attack_power(),
                            "action_count": player.action_count}}
 
     # 可学法术注册表（名 → 所需道纹）
@@ -2767,6 +2751,62 @@ class GameEngine:
             payload["redemption"] = redemption
         return payload
 
+    def _redeem_attribute_points(self, allocations: dict) -> dict:
+        """把属性点池里的点兑成[速限]/[法限]（2属性点=1单位）。
+
+        DM裁定 2026-09-10：属性点可存储、随时兑换。[血限]仍只能开局获得
+        （沿用修行既有口径），所以这里只接受 speed_points / mana_points。
+        """
+        player = self.state.player
+        if player is None:
+            return {"success": False, "error": "尚未分配初始属性"}
+        alloc_keys = ("speed_points", "mana_points")
+        vals = {}
+        for key in alloc_keys:
+            v = allocations.get(key, 0)
+            if not isinstance(v, int) or isinstance(v, bool) or v < 0:
+                return {"success": False, "error": f"{key} 必须是非负整数"}
+            vals[key] = v
+        need = sum(vals.values())
+        if need == 0:
+            return {"success": True, "action": "兑换属性点",
+                    "result": {"gained": {"speed": 0, "mana": 0},
+                               "attribute_points": self.state.attribute_points}}
+        if need > self.state.attribute_points:
+            return {"success": False,
+                    "error": f"属性点不足：需要{need}，池内{self.state.attribute_points}"}
+        if vals["speed_points"] % 2 or vals["mana_points"] % 2:
+            return {"success": False,
+                    "error": "速限/法限按2属性点一档计价，兑换点数必须是偶数",
+                    "instruction": "余点会留在池里，攒够2点再兑"}
+        self.state.attribute_points -= need
+        gained = {"speed": vals["speed_points"] // 2, "mana": vals["mana_points"] // 2}
+        player.speed_limit += gained["speed"]
+        player.mana_limit += gained["mana"]
+        player.current_speed = player.speed_limit
+        player.current_mana = player.mana_limit
+        return {"success": True, "action": "兑换属性点",
+                "result": {"gained": gained,
+                           "attribute_points": self.state.attribute_points,
+                           "speed_limit": player.speed_limit,
+                           "mana_limit": player.mana_limit}}
+
+    def _action_redeem_attribute_points(self, params: dict) -> dict:
+        """自由动作：把存下的属性点兑成面板（不耗精力、不耗碎片）。
+
+        限局外：兑换会把当前速度/当前法力一并补到新的上限，战斗内兑换等于免费重置
+        法力一池（DM裁定 2026-09-09 的一池制），所以战斗中拒绝。
+        """
+        if self.state.phase != "pre_battle":
+            return {"success": False,
+                    "error": "属性点只能在局外兑换（战斗内兑换会连带补满当前速度/法力，等于重置一池）"}
+        allocations = params.get("allocations")
+        if not isinstance(allocations, dict):
+            return {"success": False,
+                    "error": "请用 allocations 指定兑换：{'speed_points': 偶数, 'mana_points': 偶数}",
+                    "attribute_points": self.state.attribute_points}
+        return self._redeem_attribute_points(allocations)
+
     def _action_prepare_attack(self, params: dict) -> dict:
         """第一阶段：绑定一次行动的逐击目标、闪避、血影和法术反应选项。"""
         if self.state.pending_attack:
@@ -2800,7 +2840,7 @@ class GameEngine:
                                  if entity.entity_type == "轮回者" and self.state.on_enemy_side(entity)), None)
             if opponent_ref:
                 target_refs = [opponent_ref]
-        if not target_refs and attacker.attack_count > 0:
+        if not target_refs and attacker.effective_attack_count() > 0:
             return {"success": False, "error": "没有合法攻击目标"}
 
         target_options = []
@@ -2822,14 +2862,15 @@ class GameEngine:
         options = {
             "actor_ref": actor_ref,
             "actor": attacker.name,
-            "hit_count": max(0, attacker.attack_count),
+            # DM裁定 2026-09-10：轮回者的击数=当前速度（换算仅限轮回者）
+            "hit_count": attacker.effective_attack_count(),
             "target_options": target_options,
             "hits_schema": [{
                 "target_ref": [o["ref"] for o in target_options],
                 "dodge": "boolean", "blood_shadow": "boolean",
                 "dodge_relic_target_ref": "持有回锋刀且闪避时必填",
                 "spell_choices": "按目标spell_options完整提交",
-            } for _ in range(max(0, attacker.attack_count))],
+            } for _ in range(attacker.effective_attack_count())],
         }
         token = uuid.uuid4().hex
         self.state.pending_attack = {"token": token, "round": self.state.current_round, "options": options}

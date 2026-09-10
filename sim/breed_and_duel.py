@@ -34,36 +34,32 @@ BREED_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file_
 
 # 养蛊构建集（starter / 学习序列 / 加点）。速度=关键属性(见实测)：由基准 8 起，
 # 用不同构建横向比较，而非都堆速度。
-# 修行分配（DM裁定 2026-09-09）：tier3=3点、tier2=2点，1点=1攻次=1攻力=1速限=2法限。
-# 「买攻」档把碎片换成普攻面板——法力一池制后这是唯一的稳定输出来源。
-XIUXING_MANA = {"tier3": {"speed_points": 0, "mana_points": 3},
+# 修行分配（DM裁定 2026-09-10）：2属性点=1[速限]=1[法限]。
+# 档位点数与新计价不匹配——tier3 是 3 点，只能买 1 档并浪费 1 点（如实回报 wasted_points）。
+# 兑换点数必须全偶数（2属性点一档）；档位多出来的奇数点留在池里，下次一起兑。
+XIUXING_MANA = {"tier3": {"speed_points": 0, "mana_points": 2},
                 "tier2": {"speed_points": 0, "mana_points": 2}}
-XIUXING_ATTACK = {"tier3": {"attack_count_points": 1, "attack_power_points": 2},
-                  "tier2": {"attack_power_points": 2}}
+XIUXING_SPEED = {"tier3": {"speed_points": 2, "mana_points": 0},
+                 "tier2": {"speed_points": 2, "mana_points": 0}}
 
 BUILDS = {
+    # DM裁定 2026-09-10：攻次=当前速度、攻力=当前法力（换算仅限轮回者），
+    # 攻次/攻力不再是可购买面板；2属性点=1速限=1法限，1点=6血限。
     "杀伐法攻": {"starter": "杀伐", "learn": ["庇护", "再生"],
-                   "attrs": {"blood_points": 6, "speed_points": 8, "mana_points": 11},
+                   "attrs": {"blood_points": 7, "speed_points": 6, "mana_points": 12},
                    "xiuxing": XIUXING_MANA},
     "普攻武斗": {"starter": "杀伐", "learn": ["庇护", "再生"],
-                   "attrs": {"blood_points": 6, "speed_points": 8, "mana_points": 5,
-                             "attack_count_points": 3, "attack_power_points": 3},
-                   "xiuxing": XIUXING_ATTACK},
-    # DM裁定 2026-09-09：法力一池制 + 普攻可打分后，纯法力/纯生存构筑通不了关
-    # （实测 0/100，平均只经历 0.94~1.81 场）。四个旧原型各让出一部分点数买攻次/攻力，
-    # 身份不变（封印控制仍以封印起手、速战速决仍堆速限、血厚耐打仍堆血限）。
+                   "attrs": {"blood_points": 3, "speed_points": 10, "mana_points": 12},
+                   "xiuxing": XIUXING_SPEED},
     "封印控制": {"starter": "封印", "learn": ["杀伐", "再生", "庇护"],
-                   "attrs": {"blood_points": 6, "speed_points": 9, "mana_points": 6,
-                             "attack_count_points": 2, "attack_power_points": 2},
-                   "xiuxing": XIUXING_ATTACK},
+                   "attrs": {"blood_points": 5, "speed_points": 8, "mana_points": 12},
+                   "xiuxing": XIUXING_MANA},
     "速战速决": {"starter": "杀伐", "learn": ["庇护", "再生"],
-                   "attrs": {"blood_points": 6, "speed_points": 11, "mana_points": 4,
-                             "attack_count_points": 2, "attack_power_points": 2},
-                   "xiuxing": XIUXING_ATTACK},
+                   "attrs": {"blood_points": 3, "speed_points": 14, "mana_points": 8},
+                   "xiuxing": XIUXING_SPEED},
     "血厚耐打": {"starter": "杀伐", "learn": ["庇护", "再生"],
-                   "attrs": {"blood_points": 9, "speed_points": 5, "mana_points": 5,
-                             "attack_count_points": 3, "attack_power_points": 3},
-                   "xiuxing": XIUXING_ATTACK},
+                   "attrs": {"blood_points": 13, "speed_points": 6, "mana_points": 6},
+                   "xiuxing": XIUXING_SPEED},
 }
 
 
@@ -251,7 +247,7 @@ def _run_breeder_duel_inner(e, challenger_path, defender_path, seed, cn, dn, db)
         snap = json.load(f)
     p0 = snap["player"]
     e.execute_action("setup_attributes", {"name": p0["name"], "blood_points": 10,
-                                          "speed_points": 8, "mana_points": 7})
+                                          "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": "扭曲都市"})

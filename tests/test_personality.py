@@ -31,7 +31,7 @@ def _engine(tmp_path, suffix="personality"):
         death_book_path=str(tmp_path / f"{suffix}_book.md"),
     )
     engine.execute_action("setup_attributes", {
-        "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7,
+        "name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6,
     })
     finish_initial_daowen(engine)
     return engine

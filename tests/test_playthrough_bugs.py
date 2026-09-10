@@ -22,10 +22,18 @@ def finish_round(engine):
     return engine.execute_action("round_end", {})
 
 
+# 加点 11/8/6 在 DM裁定 2026-09-10 口径下的面板：1属性点=6[血限]、2属性点=1[速限]=1[法限]。
+# 以下期望值一律由此推导，不再硬编码——旧口径（1点=1速限=2法限）下的 14/8 已作废。
+_BLOOD_P, _SPEED_P, _MANA_P = 11, 8, 6
+EXP_BLOOD = _BLOOD_P * 6        # 66
+EXP_SPEED = _SPEED_P // 2       # 4
+EXP_MANA = _MANA_P // 2         # 3
+
+
 def _engine(suffix: str) -> GameEngine:
     engine = GameEngine(db_path=f"data/test_playthrough_{suffix}.db", rng_seed=1)
     engine.execute_action("setup_attributes", {
-        "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7,
+        "name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6,
     })
     finish_initial_daowen(engine)
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
@@ -189,27 +197,27 @@ def test_zhesu_and_blood_pact_overflow_survives_first_round_start():
     """正常路径：折速在战始加法力；血契在回始流血4X并叠加X法力。"""
     engine = _engine("mana_happy")
     p = engine.state.player
-    assert p.mana_limit == 14 and p.speed_limit == 8
+    assert p.mana_limit == EXP_MANA and p.speed_limit == EXP_SPEED
     engine.state.relics.append(Relic(name="折速法印", effect="[战始]可疲惫X获得6X法力"))
     zhesu = {"折速法印": {"use": True, "x": 4}}
     if any(r.name == "回锋刀" for r in engine.state.relics):
         zhesu["回锋刀"] = {"enemy_index": 0}
     engine.execute_action("battle_start", {"relic_choices": zhesu})
-    assert p.current_mana == 38, f"战始给满14，再折速4 +24，应38，实{p.current_mana}"
-    assert p.current_speed == 4
+    assert p.current_mana == EXP_MANA + 24, f"战始给满{EXP_MANA}，再折速4 +24，应{EXP_MANA + 24}，实{p.current_mana}"
+    assert p.current_speed == max(0, EXP_SPEED - 4)   # 折速4付疲惫4，速限4被扣到0
     engine.execute_action("round_start", {})
-    assert p.current_mana == 38, f"一池制：回始不回填，应仍38，实{p.current_mana}"
+    assert p.current_mana == EXP_MANA + 24, f"一池制：回始不回填，应仍{EXP_MANA + 24}，实{p.current_mana}"
 
     engine2 = _engine("mana_pact")
     p2 = engine2.state.player
     engine2.state.relics.append(Relic(name="血契", effect="[回始]可流血4X获得X法力"))
     hp_before = p2.current_hp
     engine2.execute_action("battle_start", {"relic_choices": {}})
-    assert p2.current_mana == 14, f"战始给满法限，实{p2.current_mana}"
+    assert p2.current_mana == p2.mana_limit == EXP_MANA, f"战始给满法限，实{p2.current_mana}"
     engine2.execute_action("round_start", {"relic_choices": {
         "血契": {"use": True, "x": 3},
     }})
-    assert p2.current_mana == 17, f"回始不回填，只有血契+3：14+3=17，实{p2.current_mana}"
+    assert p2.current_mana == EXP_MANA + 3, f"回始不回填，只有血契+3：{EXP_MANA}+3={EXP_MANA + 3}，实{p2.current_mana}"
     assert p2.current_hp == hp_before - 12
 
 
@@ -218,7 +226,7 @@ def test_round_start_does_not_refill_mana():
     engine = _engine("mana_bound")
     p = engine.state.player
     engine.execute_action("battle_start", {})
-    assert p.current_mana == p.mana_limit == 14, "战始给满一池"
+    assert p.current_mana == p.mana_limit == EXP_MANA, "战始给满一池"
     p.current_mana = 3
     engine.execute_action("round_start", {})
     assert p.current_mana == 3, f"回始不得回填，实{p.current_mana}"
@@ -234,8 +242,8 @@ def test_no_zhesu_means_no_bonus_mana():
     engine = _engine("mana_invalid")
     p = engine.state.player
     engine.execute_action("battle_start", {})
-    assert p.current_mana == p.mana_limit == 14
-    assert p.current_speed == 8
+    assert p.current_mana == p.mana_limit == EXP_MANA
+    assert p.current_speed == EXP_SPEED
 
 
 def test_shouyedeng_bonus_is_its_own_slice():
@@ -246,16 +254,20 @@ def test_shouyedeng_bonus_is_its_own_slice():
     engine.state.relics.append(Relic(name="守夜灯", effect="[敌回始]获得等同于[法限]50%的法力"))
     engine.execute_action("battle_start", {})
     engine.execute_action("round_start", {})
-    assert p.current_mana == 14, f"回始不回填，仍是战始满池14，实{p.current_mana}"
+    assert p.current_mana == EXP_MANA, f"回始不回填，仍是战始满池{EXP_MANA}，实{p.current_mana}"
     granted = engine.combat._grant_shouyedeng(p)
-    assert granted and granted["gained"] == 7
-    assert p.current_mana == 21
+    # 授予量随法限变化（旧口径法限14→7），改为断言「确实授予且当前法力恰好增加授予量」，
+    # 这才是本用例真正要守的不变量，而不是某个面板下的具体数字。
+    assert granted and granted["gained"] > 0
+    assert p.current_mana == EXP_MANA + granted["gained"]
+    after_grant = p.current_mana
     cleared = engine.combat._clear_shouyedeng(p)
-    assert cleared and p.current_mana == 14
+    assert cleared and p.current_mana == after_grant - granted["gained"]
+    base = p.current_mana
     finish_round(engine)
-    assert p.current_mana == 14, f"回终不再清空，实{p.current_mana}"
+    assert p.current_mana == base, f"回终不再清空，实{p.current_mana}"
     engine.execute_action("round_start", {})
-    assert p.current_mana == 14, f"回始不回填，实{p.current_mana}"
+    assert p.current_mana == base, f"回始不回填，实{p.current_mana}"
 
 
 def test_shouyedeng_stacks_on_zhesu_overflow():
@@ -268,11 +280,14 @@ def test_shouyedeng_stacks_on_zhesu_overflow():
     if any(r.name == "回锋刀" for r in engine.state.relics):
         zhesu["回锋刀"] = {"enemy_index": 0}
     engine.execute_action("battle_start", {"relic_choices": zhesu})
-    assert p.current_mana == 38, f"满池14+折速24应38，实{p.current_mana}"
+    assert p.current_mana == EXP_MANA + 24, f"满池{EXP_MANA}+折速24应{EXP_MANA + 24}，实{p.current_mana}"
     engine.execute_action("round_start", {})
-    assert p.current_mana == 38, f"回始不回填，应仍38，实{p.current_mana}"
+    assert p.current_mana == EXP_MANA + 24, f"回始不回填，应仍{EXP_MANA + 24}，实{p.current_mana}"
+    # 守夜灯授予量=ceil(法限/2)（旧口径法限14→7，现法限3→2），按面板推导
+    grant = (EXP_MANA + 1) // 2
     engine.combat._grant_shouyedeng(p)
-    assert p.current_mana == 45, f"敌回始再+7应45，实{p.current_mana}"
+    assert p.current_mana == EXP_MANA + 24 + grant, (
+        f"敌回始再+{grant}应{EXP_MANA + 24 + grant}，实{p.current_mana}")
 
 
 def test_no_shouyedeng_means_no_round_start_bonus():
@@ -281,9 +296,9 @@ def test_no_shouyedeng_means_no_round_start_bonus():
     p = engine.state.player
     engine.execute_action("battle_start", {})
     engine.execute_action("round_start", {})
-    assert p.current_mana == 14
+    assert p.current_mana == EXP_MANA
     finish_round(engine)
-    assert p.current_mana == 14
+    assert p.current_mana == EXP_MANA
 
 
 # ========================================================================
@@ -311,8 +326,9 @@ def test_borrowed_shaifa_fires_in_monster_phase():
     borrowed = [d for d in details if d.get("resolves_as") == "杀伐"]
     assert borrowed, f"应发动借用杀伐: {details}"
     assert borrowed[0]["daowen_activated"] == "杀伐"
-    assert engine.state.player.current_hp == hp_before - 4, (
-        f"杀伐2→2X=4，HP应{hp_before}→{hp_before - 4}，实{engine.state.player.current_hp}")
+    assert engine.state.player.current_hp == hp_before - 10, (
+        f"杀伐2→5X=10（DM裁定 2026-09-10，原 2X=4），"
+        f"HP应{hp_before}→{hp_before - 10}，实{engine.state.player.current_hp}")
 
 
 def test_borrowed_shaifa_x1_deals_two():
@@ -329,7 +345,7 @@ def test_borrowed_shaifa_x1_deals_two():
     _advance_to_active_round(engine)
     hp_before = engine.state.player.current_hp
     _resolve_prepared_monsters(engine, "杀伐")
-    assert engine.state.player.current_hp == hp_before - 2
+    assert engine.state.player.current_hp == hp_before - 5   # 杀伐1→5X=5（原 2X=2）
 
 
 def test_unevolved_monster_does_not_cast_shaifa():
@@ -370,12 +386,12 @@ def test_canhai_at_full_hp_tracks_overheal():
     """边界：满血残骸实回复0，过量20按原值计入累计恢复量（双倍机制已删）。"""
     engine = _engine("canhai_bound")
     p = engine.state.player
-    assert p.current_hp == p.blood_limit == 60
+    assert p.current_hp == p.blood_limit == EXP_BLOOD
     engine.state.consumables.append(Consumable(
         name="残骸", effect="局内使用恢复20生命并获得异变10", current_uses=1, max_uses=1))
     r = engine.execute_action("consume_item", {"name": "残骸"})
     assert r["success"]
-    assert p.current_hp == 60
+    assert p.current_hp == EXP_BLOOD
     assert r["result"]["heal"]["actual_heal"] == 0
     assert r["result"]["heal"]["overheal"] == 20
     assert p.total_healed == 20

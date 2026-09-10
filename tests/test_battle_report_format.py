@@ -26,7 +26,7 @@ from engine import battle_report as BR
 def _new_engine(tmp_path, region="龙心谷"):
     e = GameEngine(db_path=str(tmp_path / "rep.db"), rng_seed=1)
     e.execute_action("setup_attributes",
-                     {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+                     {"name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": region})
@@ -76,7 +76,7 @@ def test_setup_discovery_lists_options_then_pick():
 def test_setup_discovery_allows_last_candidate():
     """边界：选择可以是候选最后一项。"""
     lines = BR.format_setup_discovery(
-        blood_points=10, speed_points=8, mana_points=7,
+        blood_points=11, speed_points=8, mana_points=6,
         blood_limit=60, mana_limit=14, speed_limit=8, action_count=3, shards=20,
         daowen_options=["杀伐", "庇护", "封印"], daowen_pick="封印",
         resonance="转换",
@@ -90,7 +90,7 @@ def test_setup_discovery_rejects_result_only():
     """错误输入：只给选择、不给候选，必须拒绝。"""
     with pytest.raises(ValueError, match="初始道纹发现候选"):
         BR.format_setup_discovery(
-            blood_points=10, speed_points=8, mana_points=7,
+            blood_points=11, speed_points=8, mana_points=6,
             blood_limit=60, mana_limit=14, speed_limit=8, action_count=3, shards=20,
             daowen_options=[], daowen_pick="杀伐",
             resonance="反转",
@@ -98,7 +98,7 @@ def test_setup_discovery_rejects_result_only():
         )
     with pytest.raises(ValueError, match="遗物发现候选"):
         BR.format_setup_discovery(
-            blood_points=10, speed_points=8, mana_points=7,
+            blood_points=11, speed_points=8, mana_points=6,
             blood_limit=60, mana_limit=14, speed_limit=8, action_count=3, shards=20,
             daowen_options=["波及", "再生", "束缚"], daowen_pick="波及",
             resonance="反转",
@@ -106,7 +106,7 @@ def test_setup_discovery_rejects_result_only():
         )
     with pytest.raises(ValueError, match="必须落在本次发现候选中"):
         BR.format_setup_discovery(
-            blood_points=10, speed_points=8, mana_points=7,
+            blood_points=11, speed_points=8, mana_points=6,
             blood_limit=60, mana_limit=14, speed_limit=8, action_count=3, shards=20,
             daowen_options=["波及", "再生", "束缚"], daowen_pick="杀伐",
             resonance="反转",

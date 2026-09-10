@@ -185,7 +185,7 @@ def play_and_record(region: str, seed: int, battles: int = 7):
     try:
         engine.execute_action("setup_attributes",
                               {"name": "贾凡", "blood_points": 10,
-                               "speed_points": 8, "mana_points": 7})
+                               "speed_points": 8, "mana_points": 6})
         # 新开局流程：先发现遗物再发现道纹；finish_initial_daowen 会自动完成两次选择。
         finish_initial_daowen(engine)
         if not engine.state.relics:

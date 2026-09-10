@@ -25,7 +25,7 @@ def act(e, action, params):
     return r
 
 
-MONSTER_DAO_PRIORITY = ["贯穿", "洗劫", "疯狂", "狂暴", "强化", "必中", "自愈", "飞行"]
+MONSTER_DAO_PRIORITY = ["贯穿", "点金", "疯狂", "狂暴", "强化", "必中", "自愈", "飞行"]
 
 
 def main():

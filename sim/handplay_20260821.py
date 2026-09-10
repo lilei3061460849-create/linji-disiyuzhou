@@ -113,7 +113,7 @@ def choose_attack_target(engine, enemies):
     def threat(e):
         t = (e.attack_count or 0) * (e.attack_power or 0)
         for name in e.dao_wen:
-            if name in ("狂暴", "强化", "血债", "杀伐", "波及", "加害", "洗劫", "赎金", "爆裂"):
+            if name in ("狂暴", "强化", "血债", "杀伐", "波及", "加害", "点金", "赎金", "爆裂"):
                 t += 6
             elif name in ("自愈", "再生", "活血", "滋养"):
                 t += 4
@@ -762,8 +762,7 @@ def decide_pre_battle(engine, strat: Strategy, shards_budget: int):
                     TRACE.text(f"  局外[休整{tier}] 恢复{base + state.rest_heal_bonus}")
                     continue
         r = engine.execute_action("pre_battle_action", {
-            "sub_action": "修行", "tier": 1,
-            "allocations": {"speed_points": 0, "mana_points": 1}})
+            "sub_action": "修行", "tier": 1})
         if r.get("success"):
             TRACE.text(f"  局外[修行1] 法力+2限（当前法限{p.mana_limit}）")
             continue

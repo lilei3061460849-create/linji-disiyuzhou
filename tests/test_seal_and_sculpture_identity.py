@@ -19,7 +19,7 @@ def _engine(suffix):
     os.makedirs("/tmp/linji_tests", exist_ok=True)
     engine = GameEngine(db_path=f"/tmp/linji_tests/test_seal_sculp_{suffix}.db", rng_seed=1)
     engine.execute_action("setup_attributes", {
-        "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7,
+        "name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6,
     })
     finish_initial_daowen(engine)
     engine.state.current_region = "龙心谷"
@@ -106,16 +106,16 @@ def test_seal_on_duel_reincarnator_only_removes_zero():
 # 雕塑
 # ========================================================================
 
-def test_setup_reincarnator_attack_panel_is_one_by_one():
-    """DM裁定 2026-09-09：setup 后轮回者普攻面板为初始 1×1（不花属性点）。
+def test_setup_reincarnator_attack_panel_derives_from_speed_and_mana():
+    """DM裁定 2026-09-10：轮回者攻次=当前速度、攻力=当前法力（原「初始1×1面板」口径废止）。
 
-    原断言是 0×0——那是「轮回者没有普攻」时代的口径，当时雕塑路径据此排除轮回者。
-    裁定后轮回者有攻击力，雕塑**不再**排除轮回者（见下两条）。
+    夹具把当前速度设为12、当前法力设为40，因此攻次/攻力应分别为 12/40。
+    雕塑**不再**排除轮回者（见下两条）。
     """
     engine = _engine("one_atk")
     p = engine.state.player
-    assert p.attack_count == 1
-    assert p.attack_power == 1
+    assert p.effective_attack_count() == p.current_speed == 12
+    assert p.effective_attack_power() == p.current_mana == 40
     # DM裁定 2026-09-09：轮回者既有攻击力，雕塑不再排除轮回者
     assert engine.combat._can_be_sculptured(p) is True
 
@@ -123,11 +123,14 @@ def test_setup_reincarnator_attack_panel_is_one_by_one():
 def test_sculpture_monster_and_weiguang_on_both_sides():
     """正常路径：怪物与己方微光者攻力归 0 都化为雕塑。"""
     state = GameState()
+    # DM裁定 2026-09-10：轮回者攻次=当前速度、攻力=当前法力，写 attack_count/attack_power
+    # 面板无效；不给当前速度/法力的话玩家自己就是 0×0，会先被雕塑、污染计数断言。
     state.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60,
-                          attack_count=1, attack_power=1)   # 新口径初始 1×1，不参与本条断言
-    m = _monster("石像鬼", hp=100, atk=2, power=0)
+                          speed_limit=1, current_speed=1, mana_limit=1, current_mana=1)
+    # DM裁定 2026-09-10：雕塑触发条件为攻次与攻力**都**为0（原「攻力归0即可」废止）
+    m = _monster("石像鬼", hp=100, atk=0, power=0)
     friend = Entity(name="岩行者", entity_type="朋友", blood_limit=40, current_hp=40,
-                    attack_count=3, attack_power=0, is_deployed=True)
+                    attack_count=0, attack_power=0, is_deployed=True)
     state.enemies.append(m)
     state.friends.append(friend)
     combat = CombatEngine(state, DiceEngine())
@@ -141,14 +144,16 @@ def test_sculpture_monster_and_weiguang_on_both_sides():
 
 
 def test_sculpture_employee_and_temp_friend_zero_count():
-    """边界：员工攻次归 0、临时朋友攻力归 0 也触发；攻力仍为 1 的微光者不触发。"""
+    """边界：攻次与攻力**都**归 0 才触发（DM裁定 2026-09-10）；仍留 3×1 的微光者不触发。"""
     state = GameState()
+    # DM裁定 2026-09-10：轮回者攻次=当前速度、攻力=当前法力，写 attack_count/attack_power
+    # 面板无效；不给当前速度/法力的话玩家自己就是 0×0，会先被雕塑、污染计数断言。
     state.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60,
-                          attack_count=1, attack_power=1)   # 新口径初始 1×1，不参与本条断言
+                          speed_limit=1, current_speed=1, mana_limit=1, current_mana=1)
     emp = Entity(name="打手", entity_type="员工", blood_limit=48, current_hp=48,
-                 attack_count=0, attack_power=6, is_deployed=True)
+                 attack_count=0, attack_power=0, is_deployed=True)
     temp = Entity(name="路人", entity_type="临时朋友", blood_limit=20, current_hp=20,
-                  attack_count=2, attack_power=0)
+                  attack_count=0, attack_power=0)
     ok = Entity(name="力士", entity_type="朋友", blood_limit=30, current_hp=30,
                 attack_count=3, attack_power=1, is_deployed=True)
     state.employees.append(emp)

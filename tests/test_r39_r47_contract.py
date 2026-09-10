@@ -27,8 +27,14 @@ def _engine(tmp_path, seed=17):
 
 
 def _combat(engine, *, attack_count=1, enemy_attack_count=0):
+    # DM裁定 2026-09-10：轮回者攻次=当前速度、攻力=当前法力，写 attack_count/attack_power
+    # 面板无效。把 attack_count 参数映射到当前速度，参数才能继续驱动攻次。
+    # 速限保留 6（疲惫/闪避要留余量），只把**当前速度**映射为攻次。
+    # 当前法力保持 20：多条断言依赖它（如缄默面具 +40 法力 → 60）；
+    # 代价是攻力=当前法力=20，普攻伤害断言按 20 计。
     player = Entity("P", "轮回者", blood_limit=100, current_hp=100,
-                    mana_limit=20, current_mana=20, speed_limit=6, current_speed=6,
+                    mana_limit=20, current_mana=20,
+                    speed_limit=6, current_speed=attack_count,
                     attack_count=attack_count, attack_power=5)
     enemy = Entity("M", "怪物", blood_limit=100, current_hp=100,
                    attack_count=enemy_attack_count, attack_power=3)
@@ -105,7 +111,7 @@ def test_r40_normal_attack_prepare_resolve(tmp_path):
             "spell_choices": _decline_spells(option),
         }],
     })
-    assert result["success"] and enemy.current_hp == 95
+    assert result["success"] and enemy.current_hp == 80   # 攻力=当前法力=20（原按 attack_power=5 计）
     assert player.actions_used_this_round == 1
 
 
@@ -144,7 +150,7 @@ def test_r41_normal_advertised_setup_action_executes(tmp_path):
     action = engine.get_available_actions()["actions"][0]
     assert action["action_type"] == "setup_attributes"
     result = engine.execute_action(action["action_type"], {
-        "name": "P", "blood_points": 10, "speed_points": 8, "mana_points": 7,
+        "name": "P", "blood_points": 11, "speed_points": 8, "mana_points": 6,
     })
     assert result["success"]
 
@@ -223,7 +229,7 @@ def test_r42_target_daowen_trigger_is_explicit(tmp_path):
         ]}}},
     })
     assert result["success"] and result["trigger_spell_logs"]
-    assert player.current_hp == 98 and opponent.current_hp == 98
+    assert player.current_hp == 95 and opponent.current_hp == 95   # 杀伐1→5X=5（DM裁定 2026-09-10，原 2X=2）
 
 
 # R43：确定性事件
@@ -400,7 +406,9 @@ def test_r45_all_current_named_consumable_handlers(tmp_path):
 # R46：事件遗物与统一触发
 
 def test_r46_normal_event_relic_battle_start_matrix(tmp_path):
-    engine = _engine(tmp_path); player, enemy = _combat(engine)
+    # 攻次=当前速度：本条要测闪避/避风铃（当前速度归零才+15格挡），
+    # 必须留出速度余量，否则第一击闪避就归零、把避风铃误触发进断言。
+    engine = _engine(tmp_path); player, enemy = _combat(engine, attack_count=6)
     friend = Entity("F", "朋友", blood_limit=30, current_hp=30)
     engine.state.friends = [friend]
     friend.relics = [Relic("防弹插板", "")]
@@ -460,7 +468,9 @@ def test_r46_event_relic_round_and_battle_end_effects(tmp_path):
 
 
 def test_r46_boundary_death_dodge_dragon_and_might_triggers(tmp_path):
-    engine = _engine(tmp_path); player, enemy = _combat(engine)
+    # 攻次=当前速度：本条要测闪避/避风铃（当前速度归零才+15格挡），
+    # 必须留出速度余量，否则第一击闪避就归零、把避风铃误触发进断言。
+    engine = _engine(tmp_path); player, enemy = _combat(engine, attack_count=6)
     friend = Entity("F", "朋友", blood_limit=30, current_hp=30)
     engine.state.friends = [friend]
     engine.state.relics = [Relic("避风铃", ""), Relic("回锋刀", ""),

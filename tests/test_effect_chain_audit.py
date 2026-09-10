@@ -496,7 +496,7 @@ def test_h_full_battle_path_produces_no_legacy_context(tmp_path):
 
     engine = GameEngine(db_path=str(tmp_path / "chain_e2e.db"), rng_seed=7)
     engine.execute_action("setup_attributes", {
-        "name": "审计者", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+        "name": "审计者", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(engine)
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
     setup = engine.execute_action("setup_choose_region", {"region": "罪孽都市"})
@@ -561,7 +561,7 @@ def test_h_battle_start_resets_event_stream(tmp_path):
 
     engine = GameEngine(db_path=str(tmp_path / "chain_reset.db"), rng_seed=3)
     engine.execute_action("setup_attributes", {
-        "name": "审计者", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+        "name": "审计者", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(engine)
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
     setup = engine.execute_action("setup_choose_region", {"region": "罪孽都市"})

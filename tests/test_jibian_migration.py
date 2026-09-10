@@ -248,13 +248,16 @@ def test_jibian_death_skips_mediocrity_tick():
 
 
 def test_jibian_effects_order_within_round_end():
-    """畸形结算条目位于凡庸/血族/格挡等后续回终块之前。"""
+    """畸形结算条目位于凡庸/血族等后续回终块之前。"""
     state, combat, player, enemy = _arena(enemy_hp=50, enemy_bl=50, enemy_ac=2, enemy_ap=3)
     _give_jibian(enemy)
     enemy.shield = 5
     res = combat.round_end()
     types = [e.get("type") for e in res["effects"] if e.get("entity") == "M"]
-    assert types.index("deform_blood_limit_loss") < types.index("shield_clear")
+    assert types.index("deform_blood_limit_loss") < types.index("status_expired")
+    # DM裁定 2026-09-10：格挡不再[敌回终]清除，只被打掉或[战终]统一清除。
+    assert enemy.shield == 5, "格挡应跨回合保留"
+    assert "shield_clear" not in types
 
 
 # ==================== 5. 只触发一次 ====================

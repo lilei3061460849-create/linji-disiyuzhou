@@ -66,7 +66,7 @@ def test_active_enemy_blocks_victory_and_battle_end():
     """存活且未移出的敌人阻塞胜利与战终 action"""
     e = GameEngine(db_path=f"{DB_DIR}/victory_pred.db", rng_seed=3)
     e.execute_action("setup_attributes",
-                     {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+                     {"name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     e.execute_action("setup_choose_region", {"region": "罪孽都市"})

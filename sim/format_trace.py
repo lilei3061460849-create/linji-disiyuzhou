@@ -38,7 +38,7 @@ def run(region: str = "龙心谷", seed: int = 7, battles: int = 3) -> list[str]
     # rng_seed 交给引擎自身的随机源，保证同一 seed 产出完全一致的战报（可复现）
     engine = GameEngine(db_path="/tmp/format_trace.db", rng_seed=seed)
     setup_attr = engine.execute_action("setup_attributes",
-                          {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+                          {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 6})
     # 新开局流程：先发现遗物3选1，再发现初始道纹3选1
     relic_options = list(setup_attr["result"]["relic_choices"])
     optional = {"折速法印", "三相残韵盘"}

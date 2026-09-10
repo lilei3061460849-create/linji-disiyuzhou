@@ -204,14 +204,10 @@ def run_one(attr_key: str, resonance: str, build: str, region: str,
                     e.execute_action("pre_battle_action",
                                      {"sub_action": "修行", "tier": 1, "to": "mana"})
             elif strategy.get("lingwu"):
-                # 猎道/转化族：富余精力用于领悟补残韵（可指定残韵配比）
-                cycle = strategy.get("lingwu_cycle", ["反转", "转换", "曲解"])
-                rtype = cycle[(e.state.energy + battle_no) % len(cycle)]
-                r = e.execute_action("pre_battle_action",
-                                     {"sub_action": "领悟", "resonance_type": rtype})
-                if not r.get("success"):
-                    e.execute_action("pre_battle_action",
-                                     {"sub_action": "修行", "tier": 1, "to": "mana"})
+                # 【领悟】已于 2026-09-10 删除：猎道/转化族原本用富余精力领悟补残韵，
+                # 现在残韵只能靠开局必选/【三相残韵盘】/副本事件，富余精力直接转修行。
+                e.execute_action("pre_battle_action",
+                                 {"sub_action": "修行", "tier": 1, "to": "mana"})
             else:
                 e.execute_action("pre_battle_action",
                                  {"sub_action": "修行", "tier": 1,

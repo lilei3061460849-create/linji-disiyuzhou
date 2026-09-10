@@ -33,7 +33,7 @@ def setup_engine(winner_path: str, seed: int, db: str):
     e = GameEngine(db_path=db, rng_seed=seed, sealed_candidate_path="/tmp/alt_seal.json")
     p0 = snapshot["player"]
     e.execute_action("setup_attributes", {"name": p0["name"],
-                                          "blood_points": 10, "speed_points": 8, "mana_points": 7})
+                                          "blood_points": 10, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": "乱葬岗"})
@@ -44,7 +44,7 @@ def setup_engine(winner_path: str, seed: int, db: str):
 
 
 def pre_battle(e, strategy: str, log):
-    """局外：休整回满 + 按策略附煞/领悟。返回(成功?, 说明)。"""
+    """局外：休整回满 + 按策略附煞（【领悟】已于2026-09-10删除）。返回(成功?, 说明)。"""
     notes = []
     fusha_done = False
     # 休整回满（用3档大回复）
@@ -73,11 +73,8 @@ def pre_battle(e, strategy: str, log):
                     notes.append("附煞·冥煞·杀伐（伤害+100%）")
                     fusha_done = True
                     continue
-        if strategy in ("石化",) and "反转" not in e.state.resonance:
-            r = e.execute_action("pre_battle_action", {"sub_action": "领悟", "resonance_type": "反转"})
-            if r.get("success"):
-                notes.append("领悟·反转")
-                continue
+        # 【领悟】已于 2026-09-10 删除：石化流原先靠局外领悟补【反转】残韵起步，
+        # 现在只能依赖开局必选/【三相残韵盘】/副本事件，缺残韵时本策略直接跳过。
         # 封印流：学封印（免费1档）
         if strategy == "封印" and "封印" not in p.dao_wen:
             r = e.execute_action("pre_battle_action", {
@@ -87,8 +84,7 @@ def pre_battle(e, strategy: str, log):
                 continue
         # 兜底修行
         e.execute_action("pre_battle_action", {
-            "sub_action": "修行", "tier": 1,
-            "allocations": {"speed_points": 0, "mana_points": 1}})
+            "sub_action": "修行", "tier": 1})
     for n in notes:
         log.append(f"  局外：{n}")
     return True

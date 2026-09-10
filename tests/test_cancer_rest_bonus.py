@@ -19,7 +19,7 @@ def _engine(tmp_path) -> GameEngine:
 
 def _setup_player(engine: GameEngine) -> Entity:
     result = engine.execute_action("setup_attributes", {
-        "name": "测试者", "blood_points": 10, "speed_points": 8, "mana_points": 7,
+        "name": "测试者", "blood_points": 11, "speed_points": 8, "mana_points": 6,
     })
     finish_initial_daowen(engine)
     assert result["success"]

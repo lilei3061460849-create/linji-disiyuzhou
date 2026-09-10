@@ -27,7 +27,7 @@ TUNING = {
 
 REGION_EXCLUSIVE = {
     "扭曲都市": {"变形","定型","畸变","僵化","超频","坏死","爆裂","退化"},
-    "罪孽都市": {"洗劫","逼债","抵扣","清算","赎金","假钞","赌命","消灾"},
+    "罪孽都市": {"点金","逼债","抵扣","清算","赎金","假钞","赌命","消灾"},
     "龙心谷":   {"加害","龙鳞","逆鳞","活血","裂变","嫁祸","背负","伤痕"},
 }
 
@@ -229,7 +229,7 @@ USE_EXCLUSIVE = True
 JIAHUO_POLICY = "player_first"   # 嫁祸目标策略：player_first(无道德底线)/ally_first(保怪)
 
 # 激活顺序（接在通用优先级之后；每回合至多激活1个，激活=出手）
-EXCLUSIVE_PRIORITY = ["变形", "逆鳞", "假钞", "赌命", "加害", "洗劫", "逼债", "赎金",
+EXCLUSIVE_PRIORITY = ["变形", "逆鳞", "假钞", "赌命", "加害", "点金", "逼债", "赎金",
                       "清算", "龙鳞", "爆裂", "裂变", "伤痕", "退化", "畸变", "活血",
                       "嫁祸", "背负", "超频", "定型", "抵扣", "消灾"]
 REDIRECT_ATTRS = ("_jiahuo_left", "_jiahuo_target", "_beifu_left", "_beifu_target", "_nilin")
@@ -398,8 +398,10 @@ def apply_exclusive(act, m, player, monsters, rng):
         m._xiaozai_left = x  # 本激活可重投X次
     elif act == "加害":    # 引擎口径（攻击者侧）：造成的伤害+X，持续∞
         m.add_status(StatusEffect("加害", remaining_rounds=-1, value=x))
-    elif act == "洗劫":    # 造成伤害时夺取等量碎片，持续X
-        m.add_status(StatusEffect("洗劫", remaining_rounds=x, value=x))
+    elif act == "点金":    # DM 2026-09-10：消耗8X法力直接换X真碎片，与伤害无关
+        if m.current_mana >= 8 * x:       # 前身【洗劫】按实伤夺碎片，已废止
+            m.current_mana -= 8 * x
+            m.shards += x
     elif act == "逼债":    # 回始目标失X碎片，否则失2X血限，持续∞（记账在怪物侧激活集）
         pass
     elif act == "赎金":    # 夺10X碎片；目标没有碎片则失X点当前速度（一次性）
@@ -503,7 +505,7 @@ def monster_attack_round(m, player, combat, rng, must_hit):
         got = dmg - absorbed
         player.current_hp = max(0, player.current_hp - got)
         player.hp_lost_this_round += got
-        if USE_EXCLUSIVE and got > 0 and m.has_status("洗劫"):  # 洗劫X：夺等量碎片
+        if USE_EXCLUSIVE and got > 0 and m.has_status("点金"):  # 点金X：夺等量碎片
             player.shards = max(0, player.shards - got)
         if player.current_hp <= 0:
             player.is_alive = False

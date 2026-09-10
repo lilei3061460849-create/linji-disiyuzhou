@@ -23,7 +23,7 @@ from engine.api import GameEngine
 from engine.models import Entity, DaoWen, DaoWenInstance, Relic
 
 
-def _new_engine(region="龙心谷", name="老张", speed=8, mana=7, dbsuffix="a"):
+def _new_engine(region="龙心谷", name="老张", speed=8, mana=6, dbsuffix="a"):
     engine = GameEngine(db_path=f"data/test_embrace_{dbsuffix}.db", rng_seed=1,
                          sealed_candidate_path=f"data/test_embrace_{dbsuffix}_sealed.json")
     blood = 25 - speed - mana
@@ -165,9 +165,11 @@ def test_option2_immortal_body_halves_blood_limit_and_blocks_growth():
     # 属性点增长与不朽之躯无关：修行照常提升速限（“无法超过上限”只限制获得的当前法力/速度）
     engine.state.energy = 3
     sp_before = player.speed_limit
+    # 2属性点=1速限：tier1 只给1点买不到面板，用 tier2（2点）才兑得到 1 速限
+    engine.state.shards = max(engine.state.shards, 15)
     r_xiuxing = engine.execute_action("pre_battle_action", {
-        "sub_action": "修行", "tier": 1,
-        "allocations": {"speed_points": 1, "mana_points": 0}})
+        "sub_action": "修行", "tier": 2,
+        "allocations": {"speed_points": 2, "mana_points": 0}})
     assert r_xiuxing["success"] is True, r_xiuxing
     assert player.speed_limit == sp_before + 1, "不朽之躯不阻止修行提升速限"
     engine.state.energy = 0
@@ -345,7 +347,8 @@ def test_option5_cooldown_blocks_reuse_and_decrements_per_battle_end():
 
 def test_option6_frost_mana_reduces_target_action_count_per_10_points():
     """正常路径：持有者对任意目标(含自身)累计施加满10点消耗法力，使其本回合出手次数-1"""
-    engine = _new_engine(dbsuffix="ice")
+    # 杀伐 x=10 要付 10 法力 → 法限须 ≥10（mana_points=20 → 法限10，速4 血1，共25）
+    engine = _new_engine(dbsuffix="ice", speed=4, mana=20)
     player = engine.state.player
     _grant(engine, 6)
     enemy = _start_battle_with_enemy(engine, hp=1000)
@@ -358,9 +361,13 @@ def test_option6_frost_mana_reduces_target_action_count_per_10_points():
 def test_option6_boundary_below_10_does_not_stack():
     """边界：不足10点时不叠加【无力】，跨越多个10的倍数一次性叠加对应层数"""
     # 提高法限分配，使单次施放能一次性跨越多个10点门槛
-    engine = _new_engine(dbsuffix="ice_bound", speed=2, mana=21)
+    # 法点必须偶数（向下取偶后 21 非法）：20 点 → 法限10
+    engine = _new_engine(dbsuffix="ice_bound", speed=2, mana=20)
     player = engine.state.player
     player.speed_limit = player.current_speed = 6  # 同回合允许两次施放
+    # 本条要在同回合花掉 5+25=30 法力；25 点开局预算最多给到法限12，
+    # 直接抬法限（本条测的是【无力】按累计法力叠层，与法限定价无关）。
+    player.mana_limit = player.current_mana = 40
     _grant(engine, 6)
     enemy = _start_battle_with_enemy(engine, hp=1000)
     engine.execute_action("use_daowen", {"daowen_name": "杀伐", "x": 5, "target": "怪物甲"})

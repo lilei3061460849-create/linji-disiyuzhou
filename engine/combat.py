@@ -32,7 +32,7 @@ class CombatEngine:
     # 副本专属道纹
     REGION_EXCLUSIVE_DAOWEN = {
         "扭曲都市": {"变形","定型","畸变","僵化","超频","坏死","爆裂","退化"},
-        "罪孽都市": {"洗劫","逼债","抵扣","清算","赎金","假钞","赌命","消灾"},
+        "罪孽都市": {"点金","逼债","抵扣","清算","赎金","假钞","赌命","消灾"},
         "龙心谷":   {"加害","龙鳞","逆鳞","活血","裂变","嫁祸","背负","伤痕"},
     }
     
@@ -1549,7 +1549,8 @@ class CombatEngine:
                 result["dodge_fail_reason"] = "速度不足"
         
         # 伤害结算
-        damage = attacker.attack_power
+        # DM裁定 2026-09-10：轮回者每击伤害=当前法力（换算仅限轮回者）
+        damage = attacker.effective_attack_power()
         # 逆鳞（F2）：下次伤害+全部层数后清空
         if hasattr(attacker, "_nilin") and getattr(attacker, "_nilin", 0) > 0:
             bonus = attacker._nilin
@@ -1872,14 +1873,10 @@ class CombatEngine:
                 effects.append({"type": "chizu_curse_bleed", "entity": entity.name,
                                  "amount": bleed_detail["actual_damage"], "died": bleed_detail["died"]})
 
-            # 格挡清空
-            if entity.shield > 0:
-                effects.append({
-                    "type": "shield_clear",
-                    "entity": entity.name,
-                    "cleared": entity.shield
-                })
-                entity.clear_shield()
+            # DM裁定 2026-09-10：格挡不再[敌回终]每回合清除。
+            # 原口径下 4 法力换 8 点格挡、一回合就被抹掉，等于没有价值；改为保留到
+            # 被打掉或[战终]统一清除（api.py 战终处理里仍会 clear_shield）。
+            # 注意：这使「庇护」的持续1回合失效为整场有效，是本次裁定的预期结果。
             
         # 法力清空（敌回终）
         # 规则：[法限]用于发动道纹与法术，法力[敌回终]清空。
@@ -2297,9 +2294,10 @@ class CombatEngine:
                     or monster.is_proliferated or monster.is_debt_bound:
                 continue
 
-            # 1. 雕塑：攻击次数或攻击力之一归0（任何非轮回者）
+            # 1. 雕塑：攻击次数**和**攻击力都归0（DM裁定 2026-09-10，原为「之一归0」）
             if self._can_be_sculptured(monster) and (
-                    monster.attack_count <= 0 or monster.attack_power <= 0):
+                    monster.effective_attack_count() <= 0
+                    and monster.effective_attack_power() <= 0):
                 results.append(self._sculpture_monster(monster))
                 continue
 
@@ -2327,7 +2325,8 @@ class CombatEngine:
             if (ally.is_alive and not ally.is_sculptured and not ally.is_proliferated
                     and not ally.is_debt_bound
                     and self._can_be_sculptured(ally)
-                    and (ally.attack_count <= 0 or ally.attack_power <= 0)):
+                    and ally.effective_attack_count() <= 0
+                    and ally.effective_attack_power() <= 0):
                 results.append(self._sculpture_monster(ally))
                 continue
             cancer = self.check_cancer(ally)
@@ -3123,6 +3122,12 @@ class CombatEngine:
             else:
                 caster.shards += gained
             result["effects"].append({"type": "shard_steal", "target": target.name, "gained": gained})
+        if "shard_gain" in calc:  # 点金：消耗10X法力直接换X真碎片（与伤害无关）
+            if caster is self.state.player:
+                self.state.shards += calc["shard_gain"]
+            else:
+                caster.shards += calc["shard_gain"]
+            result["effects"].append({"type": "shard_gain", "gained": calc["shard_gain"]})
         if "fake_shards" in calc:  # 假钞：获得10X假碎片（假碎片与真碎片分离存储）
             if caster is self.state.player:
                 self.state.fake_shards += calc["fake_shards"]
@@ -3394,8 +3399,9 @@ class CombatEngine:
             duration = calc["duration"] if calc["duration"] != 0 else -1
             effect_target = target if target else caster
             # 自身作用型道纹(变形/超频/自食等)作用于施法者
-            # 洗劫：状态应挂在施法者上——"造成伤害时夺取等量碎片"以施法者为触发主体（与 sim/balance_sim 口径一致）
-            self_targeted = name in ("超频", "自食", "飞行", "滑翔", "狂暴", "自愈", "必中", "变形", "洗劫", "固执", "贯穿")
+            # 2026-09-10：道纹【洗劫】已改名【点金】并改为即时结算（不再挂状态），
+            # 故从自身作用名单移除；状态【洗劫】本身保留，仍由【帮派令】发放。
+            self_targeted = name in ("超频", "自食", "飞行", "滑翔", "狂暴", "自愈", "必中", "变形", "固执", "贯穿")
             if name == "疯狂":
                 # 2026-08-17 用户裁定：疯狂X改为【所有角色出手+X】（全局，变相平衡）。
                 # 状态盖到双方全部存活角色；出手口径各自读取自身疯狂状态：

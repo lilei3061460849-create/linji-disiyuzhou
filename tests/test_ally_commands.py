@@ -34,7 +34,7 @@ from engine.models import Entity, DaoWen, DaoWenInstance
 
 def _new_engine_with_enemy(db_suffix: str, region: str = "龙心谷") -> GameEngine:
     engine = GameEngine(db_path=f"data/test_ally_{db_suffix}.db", rng_seed=1)
-    engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
+    engine.execute_action("setup_attributes", {"blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(engine)
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
     setup = engine.execute_action("setup_choose_region", {"region": region})
@@ -88,7 +88,7 @@ def test_deployed_employee_can_be_commanded_to_use_daowen_on_enemy():
     hp_before = enemy.current_hp
     r = engine.execute_action("use_daowen", {"actor": "工头", "daowen_name": "杀伐", "x": 5, "target": "测试怪"})
     assert r["success"] is True, r
-    assert enemy.current_hp == hp_before - 10, "杀伐5应造成2*5=10点伤害"
+    assert enemy.current_hp == hp_before - 25, "杀伐5应造成5*5=25点伤害（DM裁定 2026-09-10：5X）"
     assert emp.current_mana == 0, "员工不应被扣减法力(本就没有法力)"
 
 

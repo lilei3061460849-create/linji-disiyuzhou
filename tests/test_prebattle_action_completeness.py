@@ -11,7 +11,7 @@ def _engine(tmp_path, region="扭曲都市", seed=31):
         death_book_path=str(tmp_path / "death.md"), rng_seed=seed,
     )
     engine.execute_action("setup_attributes", {
-        "name": "局外测试", "blood_points": 10, "speed_points": 8, "mana_points": 7,
+        "name": "局外测试", "blood_points": 11, "speed_points": 8, "mana_points": 6,
     })
     finish_initial_daowen(engine)
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
@@ -214,19 +214,66 @@ def test_training_splits_tier_points_between_speed_and_mana(tmp_path):
     player = engine.state.player
     before = (player.speed_limit, player.mana_limit)
 
+    # DM裁定 2026-09-10：2属性点=1[速限]=1[法限]，兑换点数须为偶数
     trained = engine.execute_action("pre_battle_action", {
         "sub_action": "修行", "tier": 4,
-        "allocations": {"speed_points": 1, "mana_points": 3},
+        "allocations": {"speed_points": 2, "mana_points": 2},
     })
 
-    assert trained["success"]
-    assert (player.speed_limit, player.mana_limit) == (before[0] + 1, before[1] + 6)
+    assert trained["success"], trained
+    assert (player.speed_limit, player.mana_limit) == (before[0] + 1, before[1] + 1)
     assert (player.current_speed, player.current_mana) == (player.speed_limit, player.mana_limit)
-    # DM裁定 2026-09-09：修行分配口径扩到四维（速/法/攻次/攻力），未分配的回报 0
-    assert trained["result"]["allocations"] == {
-        "speed_points": 1, "mana_points": 3,
-        "attack_count_points": 0, "attack_power_points": 0}
+    assert trained["result"]["allocations"] == {"speed_points": 2, "mana_points": 2}
+    assert trained["result"]["gained"] == {"speed": 1, "mana": 1}
     assert engine.state.shards == 35
+
+
+def test_training_banks_points_when_no_allocations(tmp_path):
+    """DM裁定 2026-09-10：属性点可存储——不传 allocations 就全部入池，随时再兑。
+
+    这解掉了旧口径的死结：tier1 只给 1 点，而 2 点才买得到 1 单位，
+    旧写法要么强制花掉（买不到东西）要么被拒（精力回滚 → 调用方空转）。
+    """
+    engine = _engine(tmp_path)
+    player = engine.state.player
+    bank_before = engine.state.attribute_points
+    panel_before = (player.speed_limit, player.mana_limit)
+
+    for _ in range(2):      # tier1 每次只给 1 点，攒两次才够 2 点一档
+        r = engine.execute_action("pre_battle_action", {"sub_action": "修行", "tier": 1})
+        assert r["success"], r
+        assert (player.speed_limit, player.mana_limit) == panel_before, "存点不改面板"
+        assert r["result"]["gained"] == {"speed": 0, "mana": 0}
+    assert engine.state.attribute_points == bank_before + 2
+
+    # 攒到 2 点后随时兑换（自由动作，不耗精力/碎片）
+    energy_before, shards_before = engine.state.energy, engine.state.shards
+    d = engine.execute_action("redeem_attribute_points",
+                              {"allocations": {"speed_points": 2, "mana_points": 0}})
+    assert d["success"], d
+    assert player.speed_limit == panel_before[0] + 1
+    assert engine.state.attribute_points == bank_before
+    assert (engine.state.energy, engine.state.shards) == (energy_before, shards_before), \
+        "兑换不该消耗精力或碎片"
+
+
+def test_redeem_rejects_odd_and_overspend_and_in_combat(tmp_path):
+    """边界：奇数点数买不出半档；超额拒绝；战斗内拒绝（会连带补满当前资源=重置一池）。"""
+    engine = _engine(tmp_path)
+    engine.state.attribute_points = 3
+
+    odd = engine.execute_action("redeem_attribute_points",
+                                {"allocations": {"speed_points": 1, "mana_points": 0}})
+    assert not odd["success"] and "偶数" in odd["error"]
+
+    over = engine.execute_action("redeem_attribute_points",
+                                 {"allocations": {"speed_points": 4, "mana_points": 0}})
+    assert not over["success"] and "属性点不足" in over["error"]
+
+    engine.state.phase = "in_combat"
+    combat = engine.execute_action("redeem_attribute_points",
+                                   {"allocations": {"speed_points": 2, "mana_points": 0}})
+    assert not combat["success"] and "局外" in combat["error"]
 
 
 def test_training_rejects_invalid_split_atomically(tmp_path):

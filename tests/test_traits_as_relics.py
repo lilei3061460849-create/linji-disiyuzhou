@@ -22,7 +22,7 @@ from engine.models import GameState
 def _engine(tmp_path):
     e = GameEngine(db_path=str(tmp_path / "t.db"), rng_seed=1)
     e.execute_action("setup_attributes",
-                     {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+                     {"name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": "龙心谷"})

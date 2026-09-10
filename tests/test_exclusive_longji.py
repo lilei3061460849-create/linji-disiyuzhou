@@ -20,7 +20,7 @@ from engine.models import GameState
 
 def _setup_player_with_daowen(names):
     engine = GameEngine(rng_seed=42)
-    engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 7, "mana_points": 8})
+    engine.execute_action("setup_attributes", {"blood_points": 11, "speed_points": 6, "mana_points": 8})
     finish_initial_daowen(engine)
     engine.state.current_region = "龙心谷"
     engine.state.phase = "in_combat"
@@ -176,7 +176,7 @@ def test_boundary_jiahuo_dead_target():
 def test_monster_activates_exclusive():
     """怪物侧编排：龙心谷怪可激活逆鳞等专属"""
     engine = GameEngine(rng_seed=1)
-    engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 7, "mana_points": 8})
+    engine.execute_action("setup_attributes", {"blood_points": 11, "speed_points": 6, "mana_points": 8})
     finish_initial_daowen(engine)
     engine.state.current_region = "龙心谷"
     engine.state.phase = "in_combat"
