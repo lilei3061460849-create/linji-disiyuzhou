@@ -122,8 +122,17 @@ class ActionPreview:
         嫁祸/背负等重定向在后续真实战斗中漂移；副本内实体互引自洽，预演
         结果与真实执行逐位一致。
         """
+        return self.preview_sequence([(action_type, params or {})])
+
+    def preview_sequence(self, steps: list) -> dict:
+        """预演一串动作（普攻 prepare_attack → resolve_attack 两段就是这种）。
+
+        step = (action_type, params)，params 也可以是 callable——收前一步的返回，
+        用来串 token 这类只有运行时才知道的值。AI 不复制任何引擎公式，只转发引擎
+        自己给出的快照。任一步失败即停，result 为该失败步的返回。
+        返回 {result, diff, results}：result=最后执行步的返回，results=逐步返回。
+        """
         import copy
-        params = params or {}
         eng = self.engine
         combat = eng.combat
         real_state = eng.state
@@ -140,13 +149,20 @@ class ActionPreview:
         combat.state = snap_state
         eng.dice = snap_dice
         combat.dice = snap_dice
+        results: list = []
         try:
             try:
-                result = eng.execute_action(action_type, params)
+                for action_type, params in steps:
+                    p = params(results[-1]) if callable(params) else (params or {})
+                    result = eng.execute_action(action_type, p)
+                    results.append(result)
+                    if not result.get("success"):
+                        break
             except Exception as exc:
-                return {"result": None, "error": str(exc), "diff": {}}
+                return {"result": None, "error": str(exc), "diff": {}, "results": results}
             diff = self._diff(real_state, snap_state)
-            return {"result": result, "diff": diff}
+            return {"result": results[-1] if results else None, "diff": diff,
+                    "results": results}
         finally:
             eng.state = real_state
             combat.state = real_state

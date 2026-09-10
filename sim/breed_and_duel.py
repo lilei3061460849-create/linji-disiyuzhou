@@ -34,9 +34,21 @@ BREED_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file_
 
 # 养蛊构建集（starter / 学习序列 / 加点）。速度=关键属性(见实测)：由基准 8 起，
 # 用不同构建横向比较，而非都堆速度。
+# 修行分配（DM裁定 2026-09-09）：tier3=3点、tier2=2点，1点=1攻次=1攻力=1速限=2法限。
+# 「买攻」档把碎片换成普攻面板——法力一池制后这是唯一的稳定输出来源。
+XIUXING_MANA = {"tier3": {"speed_points": 0, "mana_points": 3},
+                "tier2": {"speed_points": 0, "mana_points": 2}}
+XIUXING_ATTACK = {"tier3": {"attack_count_points": 1, "attack_power_points": 2},
+                  "tier2": {"attack_power_points": 2}}
+
 BUILDS = {
     "杀伐法攻": {"starter": "杀伐", "learn": ["庇护", "再生"],
-                   "attrs": {"blood_points": 6, "speed_points": 8, "mana_points": 11}},
+                   "attrs": {"blood_points": 6, "speed_points": 8, "mana_points": 11},
+                   "xiuxing": XIUXING_MANA},
+    "普攻武斗": {"starter": "杀伐", "learn": ["庇护", "再生"],
+                   "attrs": {"blood_points": 6, "speed_points": 8, "mana_points": 5,
+                             "attack_count_points": 3, "attack_power_points": 3},
+                   "xiuxing": XIUXING_ATTACK},
     "封印控制": {"starter": "封印", "learn": ["杀伐", "再生", "庇护"],
                    "attrs": {"blood_points": 6, "speed_points": 9, "mana_points": 10}},
     "速战速决": {"starter": "杀伐", "learn": ["庇护", "再生"],
@@ -73,6 +85,9 @@ def _breed_one(build_name: str, cfg: dict, seed: int, out_dir: str) -> dict | No
     db = tempfile.mktemp(suffix=".db")
     r = _play(cfg["starter"], cfg["learn"], "扭曲都市", seed=seed, battles=7,
               attrs=cfg["attrs"],
+              # DM裁定 2026-09-09：打开养蛊期的碎片支出（含修行），角色才有机会
+              # 把碎片换成攻次/攻力——否则普攻恒为 1×1，法力一池制下没有稳定输出。
+              spend_shards=True, xiuxing=cfg.get("xiuxing"),
               lab_paths={"sealed_path": seal_path, "db_path": db,
                          "death_book_path": tempfile.mktemp(suffix=".md")})
     cleared = r.get("cleared") or 0

@@ -687,10 +687,13 @@ class TacticalAI:
                             f"→ 我{verdict}{abs(r['belief']):.2f}（{effect}）")
         scored: list[tuple[float, str, dict]] = []
         candidates = self._daowen_candidates()
+        candidates.extend(self._basic_attack_candidates())
         for bonus, cand in self._resonance_candidates():
             candidates.append(cand)   # 残韵候选已按威胁预筛，附带基础分
         for cand in candidates[:MAX_CANDIDATE_PREVIEWS]:
-            pv = self.previewer.preview(cand["action"], cand["params"])
+            # 普攻是两段动作，预演必须整串跑完才看得见伤害
+            pv = (self.previewer.preview_sequence(cand["steps"]) if cand.get("steps")
+                  else self.previewer.preview(cand["action"], cand["params"]))
             res = pv.get("result") or {}
             if not res.get("success"):
                 continue               # 引擎拒绝=非法候选，跳过
@@ -714,7 +717,8 @@ class TacticalAI:
         scored.sort(key=lambda t: (-t[0], t[1]))
         best = scored[0][2]
         hp_before = sum(e.current_hp for e in self.alive_enemies())
-        r = self.engine.execute_action(best["action"], best["params"])
+        r = (self._run_steps(best["steps"]) if best.get("steps")
+             else self.engine.execute_action(best["action"], best["params"]))
         if r.get("success"):
             label = best["label"]
             base = label.split("X=")[0].split("→")[0]
@@ -729,6 +733,60 @@ class TacticalAI:
         if self.verbose:
             self.log.append(f"[跳过] {best['label']}: {r.get('error')}")
         return None
+
+    # ---------- 普攻（DM裁定 2026-09-09，实验旗标 LJ_AI_BASIC_ATTACK=1） ----------
+
+    @staticmethod
+    def _decline_spell_choices(option: dict) -> dict:
+        """逐击法术反应全部不使用——接口要求按目标 spell_options 完整提交。"""
+        spell_options = option.get("spell_options", {}) or {}
+        return {timing: {spell["spell_name"]: {"use": False}
+                         for spell in spell_options.get(timing, [])}
+                for timing in ("before", "after")}
+
+    def _attack_steps(self, target_name: str) -> list:
+        """普攻两段动作；resolve 的 token/hits 由 prepare 的返回串联。"""
+        actor_ref = self._actor_ref or "player:0"
+
+        def _resolve(prev: dict) -> dict:
+            res = prev.get("result") or {}
+            opts = res.get("target_options") or []
+            option = next((o for o in opts if o.get("name") == target_name), None)
+            if option is None:
+                return {"token": res.get("token"), "hits": []}
+            hits = [{"target_ref": option["ref"], "dodge": False, "blood_shadow": False,
+                     "spell_choices": self._decline_spell_choices(option)}
+                    for _ in range(res.get("hit_count", 0))]
+            return {"token": res.get("token"), "hits": hits}
+
+        return [("prepare_attack", {"actor_ref": actor_ref}), ("resolve_attack", _resolve)]
+
+    def _basic_attack_candidates(self) -> list:
+        """普攻候选。
+
+        DM裁定 2026-09-09：法力改一池制（[战始]给满、[回始]不回填）后，只靠法力型
+        道纹会在池子花干后无事可做——实测同批种子通关率 3%→0%、平均经历场数
+        1.56→0.87。普攻因此必须是常驻候选，与道纹一起参与打分。
+        """
+        if os.environ.get("LJ_AI_BASIC_ATTACK") != "1":
+            return []
+        me = self.player
+        if me is None or not me.is_alive or getattr(me, "attack_count", 0) <= 0:
+            return []
+        return [{"action": "prepare_attack", "params": {},
+                 "steps": self._attack_steps(foe.name),
+                 "label": f"普攻→{foe.name}", "kind": "attack", "target": foe.name}
+                for foe in self.alive_enemies()]
+
+    def _run_steps(self, steps: list) -> dict:
+        """按序执行一串动作（params 可为 callable，收前一步返回）；失败即停。"""
+        prev: dict = {}
+        for action_type, params in steps:
+            p = params(prev) if callable(params) else params
+            prev = self.engine.execute_action(action_type, p)
+            if not prev.get("success"):
+                return prev
+        return prev
 
     # ---------- 统一执行入口（安全过滤保留） ----------
 

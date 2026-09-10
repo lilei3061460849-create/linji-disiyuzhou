@@ -849,7 +849,8 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
           behaviors: list = None, attrs: dict = None,
           resonance: str = "反转", relic_policy: str = "skip_optional",
           ai_cls=None, consumable_policy: str = "current",
-          death_trace: bool = False, lab_paths: dict = None) -> dict:
+          death_trace: bool = False, lab_paths: dict = None,
+          xiuxing: dict = None) -> dict:
     """跑一局轮回。seed=None 时引擎使用真随机源。
 
     policy: 局外行动权重 {行动名: 权重}，AI 按权重随机挑选可用行动。
@@ -937,7 +938,8 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                 if p and e.state.shards >= 35:
                     r = e.execute_action("pre_battle_action", {
                         "sub_action": "修行", "tier": 3,
-                        "allocations": {"speed_points": 0, "mana_points": 3}})
+                        "allocations": (xiuxing or {}).get(
+                            "tier3", {"speed_points": 0, "mana_points": 3})})
                     if r.get("success"):
                         _tag_behavior(behaviors, "修行", {"tier": 3}, e, b)
                         continue
@@ -951,7 +953,8 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                 if p and e.state.shards >= 15 and todo:
                     r = e.execute_action("pre_battle_action", {
                         "sub_action": "修行", "tier": 2,
-                        "allocations": {"speed_points": 0, "mana_points": 2}})
+                        "allocations": (xiuxing or {}).get(
+                            "tier2", {"speed_points": 0, "mana_points": 2})})
                     if r.get("success"):
                         _tag_behavior(behaviors, "修行", {"tier": 2}, e, b)
                         continue
