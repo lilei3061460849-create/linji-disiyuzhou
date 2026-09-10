@@ -465,11 +465,15 @@ def _duel_state_sizes(e, top=6):
 
 def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
                  max_wall_seconds=30.0, use_tactical=True, 对话=None,
-                 ai_cls=None):
+                 ai_cls=None, resume=False):
     """PvP 对称交替死斗：双方都按轮回者规则行动。
 
     ai_cls: 双方共用的战术 AI 类（默认 TacticalAI，行为不变）。sim 层实验注入点
         （2026-09-10 遗言桥 LegacyAwareAI 经此进入死斗，双方同班，对称不破坏）。
+
+    resume=True：从**进行中的死斗状态**续跑（供整局推演 WinOnlyAI 用）——跳过
+        设名/读书/性格播种与首个 round_start，直接从当前 duel_turn 接管。
+        常规调用（resume=False）行为完全不变。
 
     player_act(): 挑战者侧行动1次（成功返回 True，引擎已换边；无行动返回 False）。
         当 use_tactical=True 时忽略 player_act，改由 TacticalAI（含残韵候选 +
@@ -488,20 +492,21 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
     if log is None:   # 空列表是 falsy,`log or []` 会静默丢弃调用方缓冲(2026-08-26 同源修复)
         log = []
     # 双轮回者各有其名（随机生成、互不相同）：先定名，再 seed 性格（性格按名字哈希）。
-    _assign_duelist_names(e, seed=getattr(e.dice, "_seed", 0) or 0)
-    # 死斗开始前，双方轮回者各自翻阅《死者之书》——前人怎么死的是唯一的历史教训。
-    # 纯读取：不消耗精力、不掷骰、不改任何数值（engine/api.py::_action_read_death_book）。
-    try:
-        _book = e.execute_action("read_death_book", {})
-    except Exception:  # 读取失败不得影响死斗本身
-        _book = {}
-    for _l in (_book.get("legacies") or []):
-        log.append(f"  [死者之书] {_l.get('title', '')}｜{_l.get('text', '')}")
-    # 双方都是轮回者：各自 seed 一套确定、可区分的性格画像 → 性格调制 + 对白差异。
-    _seed_duelist_personality(e, e.state.player)
-    for foe in e.state.enemies:
-        if foe.entity_type == "轮回者":
-            _seed_duelist_personality(e, foe)
+    if not resume:
+        _assign_duelist_names(e, seed=getattr(e.dice, "_seed", 0) or 0)
+        # 死斗开始前，双方轮回者各自翻阅《死者之书》——前人怎么死的是唯一的历史教训。
+        # 纯读取：不消耗精力、不掷骰、不改任何数值（engine/api.py::_action_read_death_book）。
+        try:
+            _book = e.execute_action("read_death_book", {})
+        except Exception:  # 读取失败不得影响死斗本身
+            _book = {}
+        for _l in (_book.get("legacies") or []):
+            log.append(f"  [死者之书] {_l.get('title', '')}｜{_l.get('text', '')}")
+        # 双方都是轮回者：各自 seed 一套确定、可区分的性格画像 → 性格调制 + 对白差异。
+        _seed_duelist_personality(e, e.state.player)
+        for foe in e.state.enemies:
+            if foe.entity_type == "轮回者":
+                _seed_duelist_personality(e, foe)
     # 残韵：挑战者沿用 State.resonance（load_winner 已从快照还原其真实准备量）；
     # 守擂者在 _trigger_final_crown 也已从快照还原其真实准备量（无则 0）。
     # 一律**只使用真实准备的残韵**，绝不凭空充能——没有就是没有。
@@ -579,7 +584,11 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
         # 记录本回合开局双方 hp，用于回合末判「真死锁」。
         hp_before = (e.state.player.current_hp if e.state.player else None,
                      tuple(x.current_hp for x in e.state.enemies if x.entity_type == "轮回者"))
-        rs, _rsart = start_round(e)
+        if resume and rnd == 1:
+            # 续跑模式：第一轮跳过 round_start（状态本来就在回合中段），后续轮照常。
+            rs = {"success": True}
+        else:
+            rs, _rsart = start_round(e)
         if not rs.get("success"):
             # 回始失败不允许吞掉:法力不会回填,双方将永久空转(2026-08-26 死斗三
             # "对手血契"校验事故)。显式判卫冕并留因,绝不无声挂死。

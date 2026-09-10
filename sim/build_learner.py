@@ -936,14 +936,10 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
             # 其余精力学道纹。
             if spend_shards:
                 p = e.state.player
-                if p and e.state.shards >= 35:
-                    r = e.execute_action("pre_battle_action", {
-                        "sub_action": "修行", "tier": 3,
-                        "allocations": (xiuxing or {}).get(
-                            "tier3", {"speed_points": 0, "mana_points": 2})})
-                    if r.get("success"):
-                        _tag_behavior(behaviors, "修行", {"tier": 3}, e, b)
-                        continue
+                # 花光口径（用户指令 2026-09-10「局外为什么不把碎片花完」）：
+                # 旧逻辑只买 tier3/tier2 且 tier2 被 todo 门控——后期一窗收入可
+                # >100（怪物奖励=ceil(战始血限×2%)+5×道纹数），3 精力×35 的花费
+                # 容量必然攒钱。改为档位阶梯从高到低买，一 tick 最多吃下 150。
                 if p and e.state.shards >= 25 and e.state.current_region == "乱葬岗":
                     held = next(iter(p.dao_wen), actual_starter)
                     r = e.execute_action("pre_battle_action", {
@@ -951,13 +947,15 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                     if r.get("success"):
                         _tag_behavior(behaviors, "附煞", {}, e, b)
                         continue
-                if p and e.state.shards >= 15 and todo:
+                if p and e.state.shards >= 15:
+                    tier = max(t for t, c in ((6, 150), (5, 100), (4, 65), (3, 35), (2, 15))
+                               if e.state.shards >= c)
                     r = e.execute_action("pre_battle_action", {
-                        "sub_action": "修行", "tier": 2,
+                        "sub_action": "修行", "tier": tier,
                         "allocations": (xiuxing or {}).get(
-                            "tier2", {"speed_points": 0, "mana_points": 2})})
+                            f"tier{tier}", {"speed_points": tier, "mana_points": 0})})
                     if r.get("success"):
-                        _tag_behavior(behaviors, "修行", {"tier": 2}, e, b)
+                        _tag_behavior(behaviors, "修行", {"tier": tier}, e, b)
                         continue
             # 学法术：已有对应道纹且没学过的先学（免费1精力）。
             spell_next = None

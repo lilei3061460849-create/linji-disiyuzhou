@@ -41,7 +41,8 @@ class RecordingAI:            # 默认由 main 换成 LegacyAwareAI 子类注入
 
 
 def chronicle(challenger_path: str, defender_path: str, seed: int,
-              bridge: bool = True, duel_dodge: bool = True) -> dict:
+              bridge: bool = True, duel_dodge: bool = True,
+              ai_cls=None) -> dict:
     from sim.legacy_mentor import LegacyAwareAI
 
     class _Rec(LegacyAwareAI):
@@ -49,7 +50,9 @@ def chronicle(challenger_path: str, defender_path: str, seed: int,
             super().__init__(*a, **kw)
             _INSTANCES.append(self)
 
-    if not bridge:
+    if ai_cls is not None:
+        base = ai_cls          # 外部注入（如 WinOnlyAI）：无遗言桥
+    elif not bridge:
         from engine.ai_tactics import TacticalAI
         base = TacticalAI
     else:
