@@ -35,7 +35,7 @@ class WinOnlyAI(TacticalAI):
 
     PLAYOUT_TOP_N = 4          # 每手推演的候选上限（启发式排序取前 N）
     PLAYOUT_MAX_ROUNDS = 30    # 死斗推演回合上限（与死斗扫描同口径）
-    PLAYOUT_MAX_ROUNDS_PVE = 6 # PvE 推演回合上限（磨血局推不出胜负=0，省算力）
+    PLAYOUT_MAX_ROUNDS_PVE = 10 # PvE 推演回合上限（要装得下「爬梯5跳+透支爆发」的完整计划）
     PLAYOUT_ACTION_CAP = 40    # 推演内单轮玩家出手上限（防拒绝循环）
 
     # ---------- 世界切换（镜像 ai_preview 的换世界口径，整场推演后丢弃副本） ----------
@@ -91,6 +91,119 @@ class WinOnlyAI(TacticalAI):
                 del eng._action_history[real["hist_len"]:]
                 eng._last_result = real["last"]
         return _cm()
+
+    # ---------- 闭环爬梯（训练内容：改写自己的 kit 走设计好的技术树） ----------
+
+    # 闭环节点里的输出牌（按 engine/daowen.py 公式归读；爬梯不许把最后一张
+    # 输出牌改没——先有锤子，才谈得上 透支喂锤/封印清场）。
+    DAMAGE_NODES = {"杀伐", "血债", "波及", "贯穿"}
+    GOALS = ("透支", "封印")   # 透支=衰老换4X法力（破法力预算）；封印=异变换移怪（无视血墙）
+
+    @staticmethod
+    def _loop_graph() -> dict:
+        """杀伐闭环邻接表：{源: [(残韵类型, 目标)]}。事实源=引擎 CLOSED_LOOPS。"""
+        from engine.daowen import ResonanceEngine
+        nxt: dict = {}
+        for s, rtype, d in ResonanceEngine.CLOSED_LOOPS.get("杀伐闭环", []):
+            nxt.setdefault(s, []).append((rtype, d))
+        return nxt
+
+    def _loop_distances(self) -> dict:
+        """各节点到目标集 {透支, 封印} 的**有向**最短步数（BFS 反向边）。"""
+        from collections import deque
+        graph = self._loop_graph()
+        rev: dict = {}
+        for s, outs in graph.items():
+            for _rtype, d in outs:
+                rev.setdefault(d, []).append(s)
+        dist = {g: 0 for g in self.GOALS}
+        q = deque(self.GOALS)
+        while q:
+            n = q.popleft()
+            for p in rev.get(n, ()):
+                if p not in dist:
+                    dist[p] = dist[n] + 1
+                    q.append(p)
+        return dist
+
+    def _path_types_to_goal(self, start: str) -> list[str] | None:
+        """从 start 沿有向闭环走到最近目标的**完整路径**（残韵类型序列）。
+        返回 None = 无路可达。由 _loop_distances 的 BFS 性质：沿 dist 递减走。"""
+        graph = self._loop_graph()
+        dist = self._loop_distances()
+        if start not in dist:
+            return None
+        cur, types = start, []
+        seen = set()
+        while dist.get(cur, 99) > 0:
+            if cur in seen:
+                return None
+            seen.add(cur)
+            step = next(((rt, d) for rt, d in graph.get(cur, ())
+                         if dist.get(d, 99) == dist[cur] - 1), None)
+            if step is None:
+                return None
+            rtype, cur = step
+            types.append(rtype)
+        return types
+
+    def _ladder_candidates(self) -> list[dict]:
+        """爬梯候选：对自己发动残韵，沿闭环把 kit 向 透支/封印 推进。
+
+        训练点（2026-09-10 六审，用户「训练 AI」）：旧提案器只对敌方道纹用残韵
+        （_resonance_candidates 只枚举敌方持有），从不改写自己的 kit——设计好的
+        「用其他道纹解决」路径无人走过。这里补上自改写提案：
+          · 只走**贴向目标**的边（distance 严格递减，多回合逐跳爬）；
+          · 不把最后一张输出牌改没（DAMAGE_NODES 守卫）；
+          · 已持有目标牌则跳过（同名只留一份，白烧残韵）。
+        单跳在推演里通常看不出价值（0 分）——胜负同分时按「距目标更近」裁决，
+        即把多跳计划编码进平局裁决（跨回合逐跳执行）。
+        """
+        from engine.ai_tactics import daowen_text_kind
+        if self.player is self.engine.state.player:
+            src_stock = self.engine.state.resonance
+        else:
+            src_stock = getattr(self.player, "resonance", None) or {}
+        stock = {k: v for k, v in (src_stock or {}).items() if v > 0}
+        if not stock:
+            return []
+        dist = self._loop_distances()
+        graph = self._loop_graph()
+        held = set(self.player.dao_wen.keys())
+        dmg_held = [n for n, inst in self.player.dao_wen.items()
+                    if daowen_text_kind(inst) == "damage"]
+        out = []
+        for s in list(self.player.dao_wen.keys()):
+            for rtype, d in graph.get(s, ()):
+                if stock.get(rtype, 0) <= 0 or d in held:
+                    continue
+                sd, dd = dist.get(s, 99), dist.get(d, 99)
+                if dd >= sd:
+                    continue
+                if s in dmg_held and len(dmg_held) == 1 and d not in self.DAMAGE_NODES:
+                    continue   # 不把最后一张输出牌改没
+                # 可行性门（2026-09-10 六审迭代）：只有当**剩余全程**的残韵类型
+                # 库存都付得起时才爬——买不起全程的计划是纯亏节奏（实测爬梯
+                # 无门时 cleared 合计 38→32：浅局爬两步就死）。计划要承诺到底。
+                full_path = self._path_types_to_goal(d)
+                if full_path is None:
+                    continue
+                need: dict = {}
+                for rt in [rtype] + full_path:
+                    need[rt] = need.get(rt, 0) + 1
+                if any(stock.get(rt, 0) < n for rt, n in need.items()):
+                    continue
+                params = {"source_daowen": s, "resonance_type": rtype,
+                          "target": self.player.name,
+                          "target_ref": self._target_ref_for(self.player)}
+                if self._actor_ref:
+                    params["actor_ref"] = self._actor_ref
+                out.append((dd, {
+                    "action": "use_resonance", "kind": "tactician",
+                    "label": f"爬梯·{s}--{rtype}→{d}(距{self.GOALS[0]}/{self.GOALS[1]}{dd}步)",
+                    "params": params, "_ladder_dist": dd}))
+        out.sort(key=lambda t: t[0])
+        return [c for _, c in out[:2]]
 
     # ---------- 推演计分 ----------
 
@@ -206,14 +319,26 @@ class WinOnlyAI(TacticalAI):
             scored.append((s, cand))
         scored.sort(key=lambda t: (-t[0], t[1].get("label", "")))
         proposals = [c for _, c in scored[:self.PLAYOUT_TOP_N]]
+        # 爬梯候选直通推演席（不受启发式排序门槛限制）：改写自己的 kit 沿闭环
+        # 向 透支/封印 推进——「用其他道纹解决」的设计路径（用户裁定 2026-09-10）。
+        ladder = self._ladder_candidates()
+        have = {(c.get("action"), tuple(sorted((c.get("params") or {}).items())))
+                for c in proposals}
+        for c in ladder:
+            key = (c.get("action"), tuple(sorted((c.get("params") or {}).items())))
+            if key not in have:
+                proposals.append(c)
         if not proposals:
             return None
-        best, best_s = None, -2
+        best, best_s, best_ladder = None, -2, 99
         for cand in proposals:
             s = self._playout_score(cand)
-            if s > best_s:
-                best_s, best = s, cand
-        # 全部同分（含全 −1）：结果对胜负无差别，照提案器首选——等规则钟的变数。
+            ld = cand.get("_ladder_dist", 99)
+            # 先比 ±1；同分（胜负看不出差别）时按爬梯进度（距目标步数小者先）。
+            if s > best_s or (s == best_s and ld < best_ladder):
+                best_s, best, best_ladder = s, cand, ld
+        # 全部同分（含全 −1）：结果对胜负无差别——若爬梯有进展就爬一格
+        # （多跳计划跨回合逐跳执行），否则照提案器首选。
         r = (self._run_steps(best["steps"]) if best.get("steps")
              else self.engine.execute_action(best["action"], best["params"]))
         if r.get("success"):

@@ -964,6 +964,19 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                                         "invalid": True,
                                         "reason": f"event: {ev.get('error')}"}
                         continue
+                # 终点牌购置（训练 2026-09-10 六审）：透支=衰老换4X法力（破法力
+                # 预算）、封印=异变换移怪（无视血墙）——闭环终点直接可学，局外
+                # 白拿（每个学习行动第1种道纹0碎片），省掉 5 跳爬梯。各学一次。
+                for _tech in ("透支", "封印"):
+                    if (_tech not in p.dao_wen
+                            and _tech in learnable_candidates(e.state.current_region)):
+                        r = e.execute_action("pre_battle_action", {
+                            "sub_action": "学习", "sub": "daowen", "tier": 1,
+                            "names": [_tech]})
+                        if r.get("success"):
+                            _tag_behavior(behaviors, "学习", {"name": _tech}, e, b)
+                            todo = [t for t in todo if t != _tech]
+                            break
                 # 花光口径（用户指令 2026-09-10「局外为什么不把碎片花完」）：
                 # 旧逻辑只买 tier3/tier2 且 tier2 被 todo 门控——后期一窗收入可
                 # >100（怪物奖励=ceil(战始血限×2%)+5×道纹数），3 精力×35 的花费
