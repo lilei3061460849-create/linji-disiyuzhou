@@ -49,12 +49,21 @@ BUILDS = {
                    "attrs": {"blood_points": 6, "speed_points": 8, "mana_points": 5,
                              "attack_count_points": 3, "attack_power_points": 3},
                    "xiuxing": XIUXING_ATTACK},
+    # DM裁定 2026-09-09：法力一池制 + 普攻可打分后，纯法力/纯生存构筑通不了关
+    # （实测 0/100，平均只经历 0.94~1.81 场）。四个旧原型各让出一部分点数买攻次/攻力，
+    # 身份不变（封印控制仍以封印起手、速战速决仍堆速限、血厚耐打仍堆血限）。
     "封印控制": {"starter": "封印", "learn": ["杀伐", "再生", "庇护"],
-                   "attrs": {"blood_points": 6, "speed_points": 9, "mana_points": 10}},
+                   "attrs": {"blood_points": 6, "speed_points": 9, "mana_points": 6,
+                             "attack_count_points": 2, "attack_power_points": 2},
+                   "xiuxing": XIUXING_ATTACK},
     "速战速决": {"starter": "杀伐", "learn": ["庇护", "再生"],
-                   "attrs": {"blood_points": 6, "speed_points": 11, "mana_points": 8}},
+                   "attrs": {"blood_points": 6, "speed_points": 11, "mana_points": 4,
+                             "attack_count_points": 2, "attack_power_points": 2},
+                   "xiuxing": XIUXING_ATTACK},
     "血厚耐打": {"starter": "杀伐", "learn": ["庇护", "再生"],
-                   "attrs": {"blood_points": 9, "speed_points": 5, "mana_points": 11}},
+                   "attrs": {"blood_points": 9, "speed_points": 5, "mana_points": 5,
+                             "attack_count_points": 3, "attack_power_points": 3},
+                   "xiuxing": XIUXING_ATTACK},
 }
 
 
