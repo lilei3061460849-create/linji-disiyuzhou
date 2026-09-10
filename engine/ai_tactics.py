@@ -765,9 +765,42 @@ class TacticalAI:
             option = next((o for o in opts if o.get("name") == target_name), None)
             if option is None:
                 return {"token": res.get("token"), "hits": []}
-            hits = [{"target_ref": option["ref"], "dodge": False, "blood_shadow": False,
-                     "spell_choices": self._decline_spell_choices(option)}
-                    for _ in range(res.get("hit_count", 0))]
+            # 闪避中继（2026-09-10，用户指出"后手方站着让人打"）：2026-08-26 的 PvP
+            # 闪避中继修在旧驱动 _resolve_opponent_one（use_tactical=False 分支）里，
+            # 双方改由 TacticalAI 驱动后 _resolve 写死 dodge=False，中继成孤儿——
+            # 死斗双方从未行使 README:167 的闪避权。这里按**目标侧**口径逐击补齐：
+            #   · 只在最终死斗且目标是轮回者时启用（PvE 怪物闪避口径不变）；
+            #   · 必中覆盖的击不提交闪避（提交会被引擎整包拒绝）；
+            #   · 预算=目标当前速度（每闪1次-1，逐击递减；闪避=自己攻次-1，
+            #     因此只有"致命击"或"伤害>自己攻力（闪比反打划算）"才值得闪）；
+            #   · LJ_AI_DUEL_DODGE=0 关闸复现旧行为（全程 dodge=False）。
+            dodge_on = (os.environ.get("LJ_AI_DUEL_DODGE", "1") != "0"
+                        and self.engine.state.in_final_duel)
+            attacker = self.engine.combat._combat_entity_refs().get(actor_ref)
+            target = self.engine.combat._combat_entity_refs().get(option["ref"]) \
+                if dodge_on else None
+            dodgeable = bool(dodge_on and target is not None and attacker is not None
+                             and target.entity_type == "轮回者"
+                             and option.get("can_dodge"))
+            if dodgeable:
+                from engine.combat import CombatEngine as _CE
+                bizhong = _CE.bizhong_remaining(self.engine.combat, attacker)
+                per_hit = attacker.effective_attack_power()
+                my_power = target.effective_attack_power()
+                hp_left, budget = target.current_hp, target.current_speed
+            hits = []
+            for i in range(res.get("hit_count", 0)):
+                dodge = False
+                if dodgeable and budget > 0 and bizhong <= i:
+                    lethal = per_hit >= hp_left
+                    if lethal or per_hit > my_power:
+                        dodge = True
+                        budget -= 1
+                if dodgeable and not dodge:
+                    hp_left = max(0, hp_left - per_hit)
+                hits.append({"target_ref": option["ref"], "dodge": dodge,
+                             "blood_shadow": False,
+                             "spell_choices": self._decline_spell_choices(option)})
             return {"token": res.get("token"), "hits": hits}
 
         return [("prepare_attack", {"actor_ref": actor_ref}), ("resolve_attack", _resolve)]

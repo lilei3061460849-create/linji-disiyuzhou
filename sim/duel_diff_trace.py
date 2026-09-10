@@ -76,7 +76,8 @@ def _duelists(e):
 
 
 def traced_duel(challenger_path: str, defender_path: str, seed: int,
-                max_rounds: int = 30, verbose_all: bool = False) -> dict:
+                max_rounds: int = 30, verbose_all: bool = False,
+                ai_cls=None) -> dict:
     from tests.setup_support import finish_initial_daowen
     from sim.handplay_dungeon_with_winner import load_winner
     from sim.optional_actions import start_battle
@@ -160,7 +161,7 @@ def traced_duel(challenger_path: str, defender_path: str, seed: int,
     log_buf: list[str] = []
     对话 = types.SimpleNamespace(buf=[], events=0, next_line_round=1)
     res = run_duel_pvp(e, None, max_rounds=max_rounds, max_steps=400, log=log_buf,
-                       use_tactical=True, 对话=对话)
+                       use_tactical=True, 对话=对话, ai_cls=ai_cls)
     print("\n=== 面板不变量 ===")
     if violations:
         for v in violations[:40]:
