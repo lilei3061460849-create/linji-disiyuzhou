@@ -778,8 +778,10 @@ class TacticalAI:
         DM裁定 2026-09-09：法力改一池制（[战始]给满、[回始]不回填）后，只靠法力型
         道纹会在池子花干后无事可做——实测同批种子通关率 3%→0%、平均经历场数
         1.56→0.87。普攻因此必须是常驻候选，与道纹一起参与打分。
+        DM裁定 2026-09-10：普攻候选**默认开启**；如需复现旧行为（无普攻候选），
+        设 LJ_AI_BASIC_ATTACK=0 显式关闸。
         """
-        if os.environ.get("LJ_AI_BASIC_ATTACK") != "1":
+        if os.environ.get("LJ_AI_BASIC_ATTACK", "1") == "0":
             return []
         me = self.player
         if me is None or not me.is_alive or me.effective_attack_count() <= 0:

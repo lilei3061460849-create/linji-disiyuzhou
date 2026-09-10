@@ -40,14 +40,21 @@ def engine(tmp_path):
     return e
 
 
-def test_flag_off_yields_no_basic_attack_candidate(engine, monkeypatch):
-    """错误输入/对照：旗标关闭时行为与改动前一致——不产生普攻候选。"""
-    monkeypatch.delenv(FLAG, raising=False)
+def test_flag_zero_disables_basic_attack_candidate(engine, monkeypatch):
+    """错误输入/对照：LJ_AI_BASIC_ATTACK=0 显式关闸时与旧默认一致——不产生普攻候选。"""
+    monkeypatch.setenv(FLAG, "0")
     ai = TacticalAI(engine)
     assert ai._basic_attack_candidates() == []
     p = engine.state.player
     assert (p.speed_limit, p.mana_limit) == (4, 8)
     assert (p.effective_attack_count(), p.effective_attack_power()) == (4, 8)
+
+
+def test_flag_default_enabled(engine, monkeypatch):
+    """DM裁定 2026-09-10：普攻候选默认开启（不设旗标也在场）。"""
+    monkeypatch.delenv(FLAG, raising=False)
+    ai = TacticalAI(engine)
+    assert len(ai._basic_attack_candidates()) == len(ai.alive_enemies()) >= 1
 
 
 def test_flag_on_yields_one_candidate_per_live_enemy(engine, monkeypatch):

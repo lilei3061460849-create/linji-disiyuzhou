@@ -70,7 +70,7 @@ def test_round_start_choices_no_opponent_pact_in_pve(tmp_path):
     assert "对手血契" not in choices
 
 
-def test_mediocrity_fires_before_deadlock_guard(tmp_path):
+def test_mediocrity_fires_before_deadlock_guard(tmp_path, monkeypatch):
     """双 1 血 0 手段残局:应由规则层【凡庸】终结,而非 sim 死锁兜底判卫冕。
 
     2026-08-31 DM 裁定:凡庸是规则,死锁防护只是防卡死的程序兜底,兜底必须排在
@@ -78,6 +78,9 @@ def test_mediocrity_fires_before_deadlock_guard(tmp_path):
     """
     from sim.duel_pvp import (run_duel_pvp, MEDIOCRITY_ROUNDS,
                               DEADLOCK_MIN_ROUNDS)
+    # 被测对象是守卫顺序：关掉普攻候选（DM裁定 2026-09-10 默认在池），
+    # 还原「双方 0 手段」的残局场景，否则双方会互相普攻、凡庸/死锁都到不了。
+    monkeypatch.setenv("LJ_AI_BASIC_ATTACK", "0")
     assert DEADLOCK_MIN_ROUNDS > MEDIOCRITY_ROUNDS, (
         "死锁兜底阈值必须严格大于凡庸阈值,否则兜底会抢在规则之前结束战斗")
     e = _duel_engine(tmp_path, lord_relics=(), lord_daowen=())   # 守擂无牌
@@ -94,14 +97,16 @@ def test_mediocrity_fires_before_deadlock_guard(tmp_path):
     assert len(calls) < 200, "应提前终止,不允许整段空转"
 
 
-def test_deadlock_guard_reports_error_without_verdict(tmp_path):
+def test_deadlock_guard_reports_error_without_verdict(tmp_path, monkeypatch):
     """死锁兜底命中时**不判胜负**,只报错(2026-08-31 DM 裁定)。
 
     正常路径下凡庸会先终结战斗,兜底几乎不可达;这里下调兜底阈值强行走一次兜底
     分支,专门验证返回契约:winner 为 None 且带 error,绝不宣布擂主卫冕。
+    被测对象是守卫分支:关掉普攻候选(DM裁定 2026-09-10 默认在池),还原 0 手段残局。
     """
     import sim.duel_pvp as dp
     from sim.duel_pvp import run_duel_pvp
+    monkeypatch.setenv("LJ_AI_BASIC_ATTACK", "0")
     e = _duel_engine(tmp_path, lord_relics=(), lord_daowen=())
     e.state.player.dao_wen.clear()
     orig = dp.DEADLOCK_MIN_ROUNDS

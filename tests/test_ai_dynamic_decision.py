@@ -189,7 +189,11 @@ def test_ai_never_acts_beyond_visible_information(tmp_path):
     e.state.player.dao_wen.clear()
     e.state.resonance.clear()
     ai = TacticalAI(e)
-    assert ai.take_action() is None
+    # DM裁定 2026-09-10：普攻是常驻候选（非道纹，不违反「清单外道纹绝不出现」）。
+    # 无道纹无残韵时唯一合法动作是普攻；保护意图保留：结果要么无动作，要么是攻击
+    # 结算，绝不能出现清单外道纹（use_daowen）。
+    r = ai.take_action()
+    assert r is None or "攻击" in str(r.get("action", "")), r
 
 
 def test_full_battle_runs_legally_without_personality(tmp_path):
