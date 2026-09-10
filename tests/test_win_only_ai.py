@@ -35,3 +35,9 @@ def test_win_only_strutsural_verdicts_both_seats():
     assert v["winner"] == "challenger"
     v2 = dc.chronicle(DF_FULL, CH_FULL, 1, ai_cls=WinOnlyAI)["verdict"]
     assert v2["winner"] == "defender"
+
+
+def test_win_only_is_run_duel_pvp_default():
+    """用户裁定 2026-09-10：胜负唯一计分是死斗默认口径（不许悄悄改回去）。"""
+    from sim.duel_pvp import _default_ai_cls
+    assert _default_ai_cls() is WinOnlyAI

@@ -105,9 +105,11 @@ class WinOnlyAI(TacticalAI):
             if not r.get("success"):
                 return -1   # 非法提案=白给一手（提案器已预演过滤，理论少见）
             from sim.duel_pvp import run_duel_pvp
+            from engine.ai_tactics import TacticalAI
             verdict = run_duel_pvp(self.engine, None,
                                    max_rounds=self.PLAYOUT_MAX_ROUNDS,
                                    max_steps=400, log=[], use_tactical=True,
+                                   ai_cls=TacticalAI,   # 推演内环=基类：防递归推演
                                    resume=True)
             return self._my_sign(verdict.get("winner") or "")
 

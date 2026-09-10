@@ -39,6 +39,12 @@ except Exception:  # 兜底：对白渲染失败不阻塞死斗
     render_line = lambda actor, event, personality=None, rng=None: f"{getattr(actor,'name','??')}: …"
     peek_personality = lambda engine, entity: None
 
+def _default_ai_cls():
+    """死斗默认战术 AI（用户裁定 2026-09-10：胜负唯一计分）。延迟导入防循环。"""
+    from sim.win_only_ai import WinOnlyAI
+    return WinOnlyAI
+
+
 # 战场公开频道（报告.md 硬伤3）：台词发布到 state.battle_channel，双方+观战者可见。
 # 独立随机源：绝**不**消耗全局 random / 引擎 RNG，避免台词影响 AI 与结算
 # （红线 E：不碰 AI —— 连随机数消耗都不能串味）。
@@ -468,8 +474,9 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
                  ai_cls=None, resume=False):
     """PvP 对称交替死斗：双方都按轮回者规则行动。
 
-    ai_cls: 双方共用的战术 AI 类（默认 TacticalAI，行为不变）。sim 层实验注入点
-        （2026-09-10 遗言桥 LegacyAwareAI 经此进入死斗，双方同班，对称不破坏）。
+    ai_cls: 双方共用的战术 AI 类。**默认 WinOnlyAI（用户裁定 2026-09-10：
+        胜负唯一计分——胜+1/败-1，无论什么手段什么战术）**；显式传 TacticalAI
+        或 LegacyAwareAI 可回到启发式/遗言桥口径（旧报告实录均为该口径）。
 
     resume=True：从**进行中的死斗状态**续跑（供整局推演 WinOnlyAI 用）——跳过
         设名/读书/性格播种与首个 round_start，直接从当前 duel_turn 接管。
@@ -512,7 +519,10 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
     # 一律**只使用真实准备的残韵**，绝不凭空充能——没有就是没有。
     # 挑战者用 TacticalAI 驱动（残韵+性格+变数）
     from engine.ai_tactics import TacticalAI
-    _ai_cls = ai_cls if ai_cls is not None else TacticalAI
+    # 默认 = WinOnlyAI（用户裁定 2026-09-10：胜负唯一计分，死斗默认用它——
+    # 「不然出的再快看一群傻子打架有什么意思」）。启发式 TacticalAI 降级为
+    # 推演内环/显式指定时的实现。延迟导入防循环。
+    _ai_cls = ai_cls if ai_cls is not None else _default_ai_cls()
     _def_tai = None
     if use_tactical:
         _tai = _ai_cls(e, verbose=True)
