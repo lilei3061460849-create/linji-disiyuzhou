@@ -30,6 +30,14 @@ def _enabled() -> bool:
     return os.environ.get("LJ_WIN_ONLY", "1") != "0"
 
 
+_PLAYOUT_DEPTH = [0]          # 推演世界嵌套深度（_swap_world 维护，诊断工具读取）
+
+
+def playout_depth() -> int:
+    """当前是否处于推演世界（>0=是）。诊断工具据此过滤实录。"""
+    return _PLAYOUT_DEPTH[0]
+
+
 class WinOnlyAI(TacticalAI):
     """提案=基类候选生成；裁决=整局推演的胜负 ±1。"""
 
@@ -41,10 +49,16 @@ class WinOnlyAI(TacticalAI):
     # ---------- 世界切换（镜像 ai_preview 的换世界口径，整场推演后丢弃副本） ----------
 
     def _swap_world(self):
-        """context manager：把引擎换到深拷贝世界；退出时原样换回。"""
+        """context manager：把引擎换到深拷贝世界；退出时原样换回。
+
+        进入/退出维护模块级 `_PLAYOUT_DEPTH`（可重入）：诊断工具（duel_diff_trace
+        等）据此把推演世界的 execute_action 排除出「真实结算」实录——修复前
+        推演世界的出手被当 [真实] 打印，是「68 盾/法力 51」类假账证据的来源。
+        """
 
         @contextlib.contextmanager
         def _cm():
+            _PLAYOUT_DEPTH[0] += 1
             eng = self.engine
             combat = eng.combat
             real = {
@@ -90,6 +104,7 @@ class WinOnlyAI(TacticalAI):
                 eng._pending_interrupts = real["pending"]
                 del eng._action_history[real["hist_len"]:]
                 eng._last_result = real["last"]
+                _PLAYOUT_DEPTH[0] -= 1
         return _cm()
 
     # ---------- 闭环爬梯（训练内容：改写自己的 kit 走设计好的技术树） ----------

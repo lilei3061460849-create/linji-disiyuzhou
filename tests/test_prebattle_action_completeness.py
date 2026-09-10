@@ -176,14 +176,15 @@ def test_rest_freely_splits_full_amount_without_combat_heal_tracking(tmp_path):
     rested = engine.execute_action("pre_battle_action", {
         "sub_action": "休整", "tier": 2,
         "heal_allocations": [
-            {"target_ref": "player:0", "amount": 5},
-            {"target_ref": "friend:0", "amount": 7},
+            {"target_ref": "player:0", "amount": 20},
+            {"target_ref": "friend:0", "amount": 8},
             {"target_ref": "employee:0", "amount": 12},
         ],
     })
 
     assert rested["success"]
-    assert [player.current_hp, friend.current_hp, employee.current_hp] == [15, 8, 14]
+    # 2026-09-10 休整改制：tier2 额度=玩家血限×60%（ceil）=40，自由拆分、不计癌变追踪
+    assert [player.current_hp, friend.current_hp, employee.current_hp] == [30, 9, 14]
     assert [(entity.total_healed, entity.healed_this_battle)
             for entity in (player, friend, employee)] == before_tracking
     assert engine.state.shards == 90

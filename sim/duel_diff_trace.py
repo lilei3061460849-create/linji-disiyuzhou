@@ -129,19 +129,32 @@ def traced_duel(challenger_path: str, defender_path: str, seed: int,
     # 里「68 盾/法力 51」等假账证据的来源。这里用一个深度计数器把预演排除。
     from engine import ai_preview
     depth = {"n": 0}
-    _orig_preview = ai_preview.ActionPreview.preview
+    # ②修复（2026-09-10 用户裁定）：旧计数器只补 `preview`，而预演主入口与
+    # WinOnlyAI 全走 `preview_sequence`（preview 只是它的委托壳）——推演世界的
+    # 出手全部漏记成 [真实]，正是「68 盾/法力 51」假账证据的来源。改补
+    # preview_sequence（两个口径都经它），并叠加 WinOnlyAI._swap_world 的
+    # 整场推演深度（那条路径不经 ActionPreview，直接 execute_action）。
+    _orig_preview_seq = ai_preview.ActionPreview.preview_sequence
 
-    def _tracked_preview(self, action_type, params=None):
+    def _tracked_preview(self, steps):
         depth["n"] += 1
         try:
-            return _orig_preview(self, action_type, params)
+            return _orig_preview_seq(self, steps)
         finally:
             depth["n"] -= 1
 
-    ai_preview.ActionPreview.preview = _tracked_preview
+    ai_preview.ActionPreview.preview_sequence = _tracked_preview
+
+    try:
+        from sim.win_only_ai import playout_depth as _playout_depth
+    except Exception:
+        _playout_depth = None
+
+    def _in_preview_world():
+        return depth["n"] or (_playout_depth() if _playout_depth else 0)
 
     def traced(action, params=None):
-        if depth["n"]:            # 预演世界：不打印、不算真实结算
+        if _in_preview_world():   # 预演/推演世界：不打印、不算真实结算
             return orig(action, params)
         before = snap(e)
         r = orig(action, params)

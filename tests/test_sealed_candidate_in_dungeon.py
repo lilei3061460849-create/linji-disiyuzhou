@@ -143,3 +143,27 @@ def test_sealed_candidate_dungeon_growth_applies():
     be = e.execute_action("battle_end", {})
     assert be["success"], be
     assert ally.attack_count == atk_before + 1, f"乱葬岗战终朋友应成长，实{ally.attack_count}"
+
+
+def test_seal_roundtrip_preserves_mutation_count(tmp_path):
+    """④修复（2026-09-10 用户裁定）：异变是已实付的代价，封存→读回必须保真。
+
+    旧格式丢弃 mutation_count → 封存=免费洗白崩解进度，「带伤续战」是假的。
+    癌变 total_healed 不随封存走：DM 已裁定它是局内减益、每场归零。
+    """
+    import tempfile
+    e = GameEngine(db_path=str(tmp_path / "seal_mut.db"), rng_seed=1)
+    e.execute_action("setup_attributes", {"name": "测试者", "blood_points": 11,
+                                          "speed_points": 8, "mana_points": 6})
+    finish_initial_daowen(e)
+    player = e.state.player
+    player.mutation_count = 48
+    player.total_healed = 99
+    snap = e._serialize_entity_full(player)
+    assert snap["mutation_count"] == 48
+    reborn = e._deserialize_entity_full(snap)
+    assert reborn.mutation_count == 48, "封存→读回异变必须保真（带伤续战）"
+
+    # 旧档兼容：封存快照无 mutation_count 键 → 回退 0（不炸）
+    snap.pop("mutation_count")
+    assert e._deserialize_entity_full(snap).mutation_count == 0

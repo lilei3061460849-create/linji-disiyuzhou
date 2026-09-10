@@ -352,7 +352,12 @@ class TacticalAI:
         player_name = self.player.name if self.player else ""
         enemy_hp_loss = sum(max(0, e.get("hp_before", 0) - e.get("hp_after", 0))
                             for e in enemies)
-        enemy_gone = any(e.get("dead") for e in enemies)
+        # ③修复（2026-09-10 用户裁定）：只有「动作前还活着、动作后死亡/消失」
+        # 的敌人才算 remove。旧口径 any(dead) 把场上的尸体也算进去——多怪局首杀
+        # 之后，自指变体靠尸体白得 remove +6.0 向性分压过真输出（实测杀伐X=1
+        # 打自己）。alive_before 缺省回退 hp_before>0（兼容手工构造的 diff）。
+        enemy_gone = any(e.get("dead") for e in enemies
+                         if e.get("alive_before", (e.get("hp_before") or 0) > 0))
         shield = max(0, p.get("shield_after", 0) - p.get("shield_before", 0))
         heal = max(0, p.get("hp_after", 0) - p.get("hp_before", 0))
         cost = max(0, p.get("mana_before", 0) - p.get("mana_after", 0))
@@ -393,6 +398,9 @@ class TacticalAI:
             kind = "ramp"
         elif bl_gain > 0 or speed_gain > 0 or status_on_self:
             kind = "buff"
+        elif max(0, p.get("hp_before", 0) - p.get("hp_after", 0)) > 0:
+            kind = "harm"      # 自伤不是战术牌（③修复连带：无活敌时 杀伐 自指
+            #                    变体曾被兜底成 tactician → try_buff 拿它自残）
         else:
             kind = "tactician"   # 其余无面板位移的战术牌
         # dmg 口径：事件流 raw_damage（未扣盾），与上面的 kind 判定同源同口径。
@@ -980,8 +988,15 @@ class TacticalAI:
         return None
 
     def try_buff(self) -> Optional[dict]:
-        """增益：每张每场至多一次（引擎/自身状态自然拒绝重复）。"""
+        """增益：每张每场至多一次（引擎/自身状态自然拒绝重复）。
+
+        无活敌不出手（tests/test_ai_buff_fixes 钉死的口径：不浪费出手）。
+        ③修复连带说明：旧版该测试靠尸体误判（杀伐被归纳成 remove）与
+        龙鳞被归纳成 shield 的双重巧合才通过——修复后按原设计意图显式加门。
+        """
         battle = self.engine.state.current_battle
+        if not self.alive_enemies():
+            return None
         for name, inst in sorted(self.player.dao_wen.items()):
             if inst is None or not inst.can_use():
                 continue

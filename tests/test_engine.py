@@ -358,7 +358,7 @@ def test_full_flow():
     assert engine.state.player.speed_limit == speed_before + 1, "修行应+1速限"
     print(f"  ✓ 修行：速限{speed_before}→{engine.state.player.speed_limit}")
     
-    heal_amt = 8 + engine.state.rest_heal_bonus
+    heal_amt = math.ceil(engine.state.player.blood_limit * 0.2) + engine.state.rest_heal_bonus
     result = engine.execute_action("pre_battle_action", {
         "sub_action": "休整", "tier": 1,
         "heal_allocations": [{"target_ref": "player:0", "amount": heal_amt}],
@@ -374,7 +374,8 @@ def test_full_flow():
     result = engine.execute_action("pre_battle_action", {
         "sub_action": "休整", "tier": 1,
         "heal_allocations": [{"target_ref": "player:0",
-                              "amount": 8 + engine.state.rest_heal_bonus}],
+                              "amount": math.ceil(engine.state.player.blood_limit * 0.2)
+                              + engine.state.rest_heal_bonus}],
     })
     assert result["success"], result
     assert engine.state.energy == 0, f"精力应耗尽，实际{engine.state.energy}"
@@ -544,7 +545,7 @@ def test_out_of_combat_actions():
 
     # 休整：先扣血再休整，验证回血
     player.current_hp = 20
-    heal_amt2 = 24 + engine.state.rest_heal_bonus
+    heal_amt2 = math.ceil(player.blood_limit * 0.6) + engine.state.rest_heal_bonus
     r = engine.execute_action("pre_battle_action", {
         "sub_action": "休整", "tier": 2,
         "heal_allocations": [{"target_ref": "player:0", "amount": heal_amt2}],
