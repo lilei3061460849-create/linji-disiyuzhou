@@ -464,8 +464,12 @@ def _duel_state_sizes(e, top=6):
 
 
 def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
-                 max_wall_seconds=30.0, use_tactical=True, 对话=None):
+                 max_wall_seconds=30.0, use_tactical=True, 对话=None,
+                 ai_cls=None):
     """PvP 对称交替死斗：双方都按轮回者规则行动。
+
+    ai_cls: 双方共用的战术 AI 类（默认 TacticalAI，行为不变）。sim 层实验注入点
+        （2026-09-10 遗言桥 LegacyAwareAI 经此进入死斗，双方同班，对称不破坏）。
 
     player_act(): 挑战者侧行动1次（成功返回 True，引擎已换边；无行动返回 False）。
         当 use_tactical=True 时忽略 player_act，改由 TacticalAI（含残韵候选 +
@@ -502,10 +506,11 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
     # 守擂者在 _trigger_final_crown 也已从快照还原其真实准备量（无则 0）。
     # 一律**只使用真实准备的残韵**，绝不凭空充能——没有就是没有。
     # 挑战者用 TacticalAI 驱动（残韵+性格+变数）
+    from engine.ai_tactics import TacticalAI
+    _ai_cls = ai_cls if ai_cls is not None else TacticalAI
     _def_tai = None
     if use_tactical:
-        from engine.ai_tactics import TacticalAI
-        _tai = TacticalAI(e, verbose=True)
+        _tai = _ai_cls(e, verbose=True)
         _seen: dict = {}
         def player_act():
             acted = _tai.take_action()
@@ -536,7 +541,7 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
             foes = [f for f in foes if f is not None and f.is_alive]
             # verbose=True：让守擂者动作（含残韵）写入 _def_tai.log，报告才能如实呈现。
             # 否则守擂者一切行动（含残韵）都静默执行、对客席不可见，报告会误判"守擂无残韵"。
-            _def_tai = TacticalAI(e, verbose=True, actor=lord, enemies=foes, actor_ref=lord_ref)
+            _def_tai = _ai_cls(e, verbose=True, actor=lord, enemies=foes, actor_ref=lord_ref)
     deadline = _time.monotonic() + max_wall_seconds
 
     def _over_time():

@@ -88,13 +88,21 @@ def _snapshot_from_seal(seal_path: str) -> dict | None:
 def _breed_one(build_name: str, cfg: dict, seed: int, out_dir: str) -> dict | None:
     seal_path = tempfile.mktemp(suffix=".json")
     db = tempfile.mktemp(suffix=".db")
+    from sim.legacy_mentor import LegacyAwareAI
     r = _play(cfg["starter"], cfg["learn"], "扭曲都市", seed=seed, battles=7,
               attrs=cfg["attrs"],
               # DM裁定 2026-09-09：打开养蛊期的碎片支出（含修行），角色才有机会
               # 把碎片换成攻次/攻力——否则普攻恒为 1×1，法力一池制下没有稳定输出。
               spend_shards=True, xiuxing=cfg.get("xiuxing"),
+              # DM裁定 2026-09-10：角色可以参考《死者之书》遗言但不百分百照做——
+              # 战斗 AI 走遗言桥（评分偏见 ±35 上限 + 逐回合掷签信从度 0.35~0.85）。
+              ai_cls=LegacyAwareAI,
+              # 养蛊读**正典**《死者之书》：写入必须经 DM submit_ruling 审核，
+              # sim 管线不存在自动写路径（engine/api.py:966），只读安全。
               lab_paths={"sealed_path": seal_path, "db_path": db,
-                         "death_book_path": tempfile.mktemp(suffix=".md")})
+                         "death_book_path": os.path.join(
+                             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                             "死者之书.md")})
     cleared = r.get("cleared") or 0
     if cleared >= 7:
         snap = _snapshot_from_seal(seal_path)
@@ -243,6 +251,7 @@ def _run_breeder_duel_inner(e, challenger_path, defender_path, seed, cn, dn, db)
     from sim.handplay_dungeon_with_winner import load_winner
     from sim.optional_actions import start_battle
     from sim.guard_full_run import settle_wages
+    from sim.legacy_mentor import LegacyAwareAI  # DM裁定 2026-09-10：死斗双方参考遗言
     with open(challenger_path, encoding="utf-8") as f:
         snap = json.load(f)
     p0 = snap["player"]
@@ -286,7 +295,9 @@ def _run_breeder_duel_inner(e, challenger_path, defender_path, seed, cn, dn, db)
     对话 = types.SimpleNamespace(buf=[], events=0, next_line_round=1)
     # 挑战者/守擂者都是轮回者，共用 TacticalAI（残韵+性格+变数）+ 对白渲染
     result = run_duel_pvp(e, None, max_rounds=30, max_steps=400, log=log_buf,
-                          use_tactical=True, 对话=对话)
+                          use_tactical=True, 对话=对话,
+                          # DM裁定 2026-09-10：死斗双方同班遗言桥（对称，都可参考遗言）
+                          ai_cls=LegacyAwareAI)
     # 把对白（按下限保留）插入实录，与动作日志混排
     for line in 对话.buf:
         logs.append(f"  💬 {line}")
