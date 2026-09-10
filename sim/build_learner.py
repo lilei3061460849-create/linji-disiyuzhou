@@ -936,6 +936,7 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
     prev_gone = set()  # 离场旗标差集：跨战斗滚动（dead_monsters 跨战累积）
     for b in range(1, battles + 1):
         stalls = 0
+        explored_this_battle = False   # 本场是否已试过探索（每窗口一次机会）
         ev_mark = 0  # 战斗事件水位线（用于战后统计非伤害胜利路径）
         while e.state.energy > 0:
             _resolve_pending_choices(e)   # 先清门禁，否则一切行动被拒=原地死循环
@@ -944,6 +945,25 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
             # 其余精力学道纹。
             if spend_shards:
                 p = e.state.player
+                # 探索优先（用户指令 2026-09-10 五审「去试就知道了」）：事件是
+                # 残韵唯一获取渠道（拒绝→随机残韵已实装），每场第一个局外窗口
+                # 先免费摸一个事件再谈修行/学习；事件池枯竭则不再重试。
+                if not explored_this_battle:
+                    explored_this_battle = True   # 每场只试一次
+                    r = e.execute_action("pre_battle_action",
+                                         {"sub_action": "探索", "tier": 1})
+                    if r.get("success"):
+                        _tag_behavior(behaviors, "探索", {"tier": 1}, e, b)
+                        # 探索发现的事件必须当场结算——continue 会跳过循环尾的
+                        # 公共事件结算块，未决事件会门禁后续一切局外行动
+                        # （精力不退→死锁哨兵收局，实测 24/24 速死）。
+                        if e.event_pool.current is not None:
+                            ev = _resolve_pending_event(e)
+                            if not ev.get("success"):
+                                return {"cleared": cleared, "won": False,
+                                        "invalid": True,
+                                        "reason": f"event: {ev.get('error')}"}
+                        continue
                 # 花光口径（用户指令 2026-09-10「局外为什么不把碎片花完」）：
                 # 旧逻辑只买 tier3/tier2 且 tier2 被 todo 门控——后期一窗收入可
                 # >100（怪物奖励=ceil(战始血限×2%)+5×道纹数），3 精力×35 的花费
