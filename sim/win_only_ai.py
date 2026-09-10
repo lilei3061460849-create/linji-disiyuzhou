@@ -217,7 +217,11 @@ class WinOnlyAI(TacticalAI):
         return 0
 
     def _playout_score(self, cand: dict) -> int:
-        """在世界深拷贝上真实打出本手，再推演到底，返回 ±1/0（异常=0 未决）。"""
+        """在世界深拷贝上真实打出本手，再推演到底，返回 ±1/0（异常=0 未决）。
+
+        副作用：self._last_survival = 推演内自己存活的回合数（平局裁决用——
+        同样要输，选择死得晚的走法；自爆型候选（如异变线上封印）因此落选）。"""
+        self._last_survival = 0
         try:
             with self._swap_world():
                 if cand.get("steps"):
@@ -233,6 +237,7 @@ class WinOnlyAI(TacticalAI):
                     return self._playout_duel()
                 return self._playout_pve()
         except Exception:
+            self._last_survival = 0
             return 0            # 推演世界出意外=未决；不得波及真实世界
 
     def _playout_duel(self) -> int:
@@ -259,7 +264,10 @@ class WinOnlyAI(TacticalAI):
         e = self.engine
         base = _Base(e)
         rounds = self.PLAYOUT_MAX_ROUNDS_PVE
+        survived = 0
         for _ in range(rounds):
+            survived += 1
+            self._last_survival = survived
             # 本回合剩余玩家出手
             for _a in range(self.PLAYOUT_ACTION_CAP):
                 if not [x for x in e.state.enemies if x.is_alive]:
@@ -316,6 +324,16 @@ class WinOnlyAI(TacticalAI):
                                       cand.get("kind"), cand.get("target"))
             if s is None:
                 continue
+            # 崩解线否决（训练 2026-09-10 六审）：异变 ≥ 50 即血 0 自爆
+            # （seed5 实锤：异变 48 放封印 X=1 → 56 → 血 0）。推演视角看不到
+            # 跨回合崩解结算，故在提案层显式否决「 projected ≥ 50 且非终结本
+            # 场」的出手——纯 AI 知识，不碰引擎规则面。终结（all_gone）豁免：
+            # 封印清场结束战斗不再进入崩解回合。
+            p_diff = pv.get("diff", {}).get("player", {}) or {}
+            projected = (getattr(self.player, "mutation_count", 0)
+                         + (p_diff.get("mutation_delta") or 0))
+            if projected >= 50 and not pv.get("all_gone"):
+                continue
             scored.append((s, cand))
         scored.sort(key=lambda t: (-t[0], t[1].get("label", "")))
         proposals = [c for _, c in scored[:self.PLAYOUT_TOP_N]]
@@ -330,13 +348,16 @@ class WinOnlyAI(TacticalAI):
                 proposals.append(c)
         if not proposals:
             return None
-        best, best_s, best_ladder = None, -2, 99
+        best, best_s, best_ladder, best_surv = None, -2, 99, -1
         for cand in proposals:
             s = self._playout_score(cand)
             ld = cand.get("_ladder_dist", 99)
-            # 先比 ±1；同分（胜负看不出差别）时按爬梯进度（距目标步数小者先）。
-            if s > best_s or (s == best_s and ld < best_ladder):
-                best_s, best, best_ladder = s, cand, ld
+            surv = getattr(self, "_last_survival", 0)
+            # 裁决序：±1 → 死得晚（同败局多活=规则钟变数+不自爆）→ 爬梯进度。
+            if (s > best_s
+                    or (s == best_s and surv > best_surv)
+                    or (s == best_s and surv == best_surv and ld < best_ladder)):
+                best_s, best, best_ladder, best_surv = s, cand, ld, surv
         # 全部同分（含全 −1）：结果对胜负无差别——若爬梯有进展就爬一格
         # （多跳计划跨回合逐跳执行），否则照提案器首选。
         r = (self._run_steps(best["steps"]) if best.get("steps")

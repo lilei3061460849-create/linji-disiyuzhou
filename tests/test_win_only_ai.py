@@ -86,3 +86,82 @@ def test_win_only_pve_playout_signs():
     for m in e.state.enemies:
         m.current_hp = m.blood_limit          # 满血墙 → 推不出胜负/被磨死 ≠ +1
     assert ai._playout_score(cand) != 1
+
+
+class _VetoProbe(WinOnlyAI):
+    """最小桩：只喂一个候选，其余协作方全部替身（只测提案层否决与裁决序）。"""
+
+    def __init__(self, mutation, labels_scores):
+        self._actor = None
+        player = type("P", (), {"mutation_count": mutation, "name": "探针"})()
+        state = type("S", (), {"player": player})()
+        self.engine = type("E", (), {"state": state, "execute_action": staticmethod(
+            lambda a, p: {"success": True, "action": a})})()
+        self._pv = type("V", (), {
+            "preview": staticmethod(lambda a, p: {
+                "result": {"success": True},
+                "diff": {"player": {"mutation_delta": p.get("x", 0) * 8}},
+                "all_gone": False}),
+            "preview_sequence": staticmethod(lambda steps: {
+                "result": {"success": True},
+                "diff": {"player": {"mutation_delta": 0}},
+                "all_gone": False})})()
+        self.used = {}
+        self._labels_scores = labels_scores          # {label: 启发式分}
+
+    @property
+    def previewer(self):
+        return self._pv
+
+    def _daowen_candidates(self):
+        return [{"label": lb, "action": f"cast_{lb}", "params": {"x": 1}}
+                for lb in self._labels_scores]
+
+    def _basic_attack_candidates(self):
+        return []
+
+    def _resonance_candidates(self):
+        return []
+
+    def _ladder_candidates(self):
+        return []
+
+    def _score_candidate(self, diff, label, kind=None, target=None):
+        return self._labels_scores[label]
+
+    def _playout_score(self, cand):
+        return -1                                    # 推演全败：考验平局裁决序
+
+    def _run_steps(self, steps):
+        return {"success": True}
+
+
+def test_collapse_line_veto_rejects_mutation_suicide():
+    """崩解线否决（六审训练）：异变 48 时 封印X=1（+8→56≥50）非终结 → 整个提案被拒。
+
+    seed5 实锤：异变 48 放封印 X=1 → 异变 56 ≥ 崩解线 50 → 血 0 自爆。
+    纯 AI 层知识，不许碰引擎规则面；终结（all_gone）豁免不在本桩覆盖内。
+    """
+    ai = _VetoProbe(mutation=48, labels_scores={"封印X=1": 5.0})
+    assert ai._dynamic_action() is None              # 唯一候选 projected=56 → 否决
+
+
+def test_collapse_line_veto_allows_safe_cast():
+    """异变 30 时同一封印（30+8=38 < 50）→ 照常出手。"""
+    ai = _VetoProbe(mutation=30, labels_scores={"封印X=1": 5.0})
+    r = ai._dynamic_action()
+    assert r is not None and r.get("success")
+
+
+def test_survival_tiebreak_prefers_later_death():
+    """存活时长裁决（六审训练）：推演全败时，死得晚的候选胜出。"""
+    ai = _VetoProbe(mutation=10, labels_scores={"甲": 5.0, "乙": 5.0})
+
+    def fake_score(cand):
+        ai._last_survival = 5 if cand["label"] == "乙" else 2
+        return -1
+    ai._playout_score = fake_score
+    r = ai._dynamic_action()
+    assert r is not None
+    # 推演全败（同 -1）→ 死得晚的「乙」胜出（非提案序首选）
+    assert r["action"] == "cast_乙", f"存活裁决失效: {r}"
