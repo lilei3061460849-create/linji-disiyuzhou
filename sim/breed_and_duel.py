@@ -89,6 +89,10 @@ def _breed_one(build_name: str, cfg: dict, seed: int, out_dir: str) -> dict | No
     seal_path = tempfile.mktemp(suffix=".json")
     db = tempfile.mktemp(suffix=".db")
     from sim.legacy_mentor import LegacyAwareAI
+    from sim.win_only_ai import win_only_cls
+    # 用户裁定 2026-09-10：一切打分=胜负唯一计分。遗言桥降级为提案器——
+    # 遗言偏见仍影响「试什么」（候选裁剪），「选什么」只认整局推演的 ±1。
+    bridge = win_only_cls(LegacyAwareAI)
     r = _play(cfg["starter"], cfg["learn"], "扭曲都市", seed=seed, battles=7,
               attrs=cfg["attrs"],
               # DM裁定 2026-09-09：打开养蛊期的碎片支出（含修行），角色才有机会
@@ -96,7 +100,7 @@ def _breed_one(build_name: str, cfg: dict, seed: int, out_dir: str) -> dict | No
               spend_shards=True, xiuxing=cfg.get("xiuxing"),
               # DM裁定 2026-09-10：角色可以参考《死者之书》遗言但不百分百照做——
               # 战斗 AI 走遗言桥（评分偏见 ±35 上限 + 逐回合掷签信从度 0.35~0.85）。
-              ai_cls=LegacyAwareAI,
+              ai_cls=bridge,
               # 养蛊读**正典**《死者之书》：写入必须经 DM submit_ruling 审核，
               # sim 管线不存在自动写路径（engine/api.py:966），只读安全。
               lab_paths={"sealed_path": seal_path, "db_path": db,

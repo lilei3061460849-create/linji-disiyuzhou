@@ -40,7 +40,10 @@ except Exception:  # 兜底：对白渲染失败不阻塞死斗
     peek_personality = lambda engine, entity: None
 
 def _default_ai_cls():
-    """死斗默认战术 AI（用户裁定 2026-09-10：胜负唯一计分）。延迟导入防循环。"""
+    """死斗默认战术 AI（用户裁定 2026-09-10：胜负唯一计分）。延迟导入防循环。
+    LJ_WIN_ONLY=0 退回启发式 TacticalAI（千局级扫描用）。"""
+    if os.environ.get("LJ_WIN_ONLY", "1") == "0":
+        return TacticalAI
     from sim.win_only_ai import WinOnlyAI
     return WinOnlyAI
 

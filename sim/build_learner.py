@@ -906,7 +906,15 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                              relic_choices[0])
     e.execute_action("choose_discovered_relic", {"relic_name": starter_relic})
 
-    ai_cls = ai_cls or TacticalAI
+    if ai_cls is None:
+        # 用户裁定 2026-09-10 二审：**一切打分机制都用胜负唯一计分**——PvE 战斗
+        # 默认也走 WinOnlyAI（启发式只裁剪提案，出招权归整局推演的 ±1）。
+        # LJ_WIN_ONLY=0 或显式传 TacticalAI 可退回启发式口径（千局级扫描用）。
+        if os.environ.get("LJ_WIN_ONLY", "1") != "0":
+            from sim.win_only_ai import WinOnlyAI
+            ai_cls = WinOnlyAI
+        else:
+            ai_cls = TacticalAI
     ai = ai_cls(e)
     gate = _make_consumable_gate(consumable_policy)
     if gate is not None:
@@ -1183,7 +1191,7 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                     return False
                 return True
             dr = run_duel_pvp(e, _act, max_rounds=60, max_steps=400, log=log_buf,
-                              max_wall_seconds=30)
+                              max_wall_seconds=30, ai_cls=ai_cls)
             duel_won = dr.get("winner") == "challenger"
             duel_rounds = dr.get("rounds")
             if dr.get("timeout"):
