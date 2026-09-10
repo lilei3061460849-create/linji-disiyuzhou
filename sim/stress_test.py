@@ -173,7 +173,7 @@ def run_one_seed(seed):
 
     # setup
     r = eng.execute_action("setup_attributes", {
-        "name": "压测者", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+        "name": "压测者", "blood_points": 10, "speed_points": 8, "mana_points": 6})
     if not r.get("success"):
         return {"invalid": "setup_attributes"}
     freed = list(eng.state.pending_relic_choices or [])

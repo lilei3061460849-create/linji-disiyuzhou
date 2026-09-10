@@ -24,11 +24,16 @@ take_action 走实时评估，不再有固定顺序。
 from __future__ import annotations
 
 import math
+import os
 from typing import Any, Optional
 from engine.ai_preview import ActionPreview
 
 # 单次出手最多预演的候选数（性能护栏；候选按新鲜度与威胁优先）
 MAX_CANDIDATE_PREVIEWS = 26
+
+# 自保时钟（实验开关，默认关闭）：把引擎自己的三条「自爆时钟」接进候选打分。
+# DM 裁定 2026-08-31 要求先做 132 局前后对照再决定是否常开；置 LJ_SELF_PRESERVE=1 打开。
+SELF_PRESERVE = os.environ.get("LJ_SELF_PRESERVE", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 # ---------------------------------------------------------------------------
@@ -157,7 +162,10 @@ class TacticalAI:
         return sum(e.attack_count * e.attack_power for e in self.alive_enemies())
 
     def remaining_actions(self) -> int:
-        total = max(1, math.ceil(self.player.speed_limit / 3))
+        # 2026-09-10：出手次数不再由速度换算，改读 action_count（轮回者固定2次，
+        # 朋友/员工按攻次算，怪物按速限算；疯狂/无力的修正已含在内）。
+        # 沿用 ceil(速限/3) 会让 AI 按旧口径估预算，法力分配跟着算错。
+        total = max(1, self.player.action_count)
         return max(0, total - getattr(self.player, "actions_used_this_round", 0))
 
     def mana_budget(self) -> int:
@@ -304,9 +312,11 @@ class TacticalAI:
     def _digest_diff(self, diff: dict) -> dict:
         """把 X=1 预演 diff 归纳为 {kind, cost_per_x, dmg, shield, heal, ...}。
 
-        kind 判定以**事件流**为准（面板位移会被格挡吸收等遮蔽）：
+        kind 与 dmg 一律以**事件流**为准（面板位移会被格挡吸收等遮蔽）：
         damage_applied 命中敌方 = 输出（即使被格挡挡光）；status_applied 落在
         敌方 = 战术牌（控场/削弱），落在自身 = 增益；敌方无伤消失 = 移除。
+        dmg 取事件流的 raw_damage（未扣盾）：面板净位移在被格挡全吸收时归零，
+        会让下游「收割档」条件 dmg>0 整行短路（只剩 X=1 一档 → AI 永不出手）。
         """
         p = diff.get("player", {})
         enemies = diff.get("enemies", [])
@@ -323,6 +333,7 @@ class TacticalAI:
         speed_gain = max(0, p.get("speed_after", 0) - p.get("speed_before", 0))
 
         hit_enemy = False        # 伤害类事件命中敌方（含被格挡吸收）
+        enemy_raw_damage = 0     # 事件流原始伤害合计（未扣盾，见 dmg 口径注释）
         status_on_enemy = False  # 状态/控制落在敌方
         status_on_self = False   # 状态落在自身
         for ev in diff.get("events", []):
@@ -330,6 +341,7 @@ class TacticalAI:
             target = ev.get("target", "")
             if etype == "damage_applied" and target in enemy_names:
                 hit_enemy = True
+                enemy_raw_damage += max(0, (ev.get("data") or {}).get("raw_damage") or 0)
             elif etype == "status_applied":
                 if target in enemy_names:
                     status_on_enemy = True
@@ -352,7 +364,11 @@ class TacticalAI:
             kind = "buff"
         else:
             kind = "tactician"   # 其余无面板位移的战术牌
-        return {"kind": kind, "cost_per_x": cost, "dmg": enemy_hp_loss,
+        # dmg 口径：事件流 raw_damage（未扣盾），与上面的 kind 判定同源同口径。
+        # 取 max 而非直接替换：撤退/断尾求生/爆裂压制等路径不发 damage_applied
+        # 事件（面板位移亦为 0），保持这些情形 dmg=0 的旧行为不变。
+        return {"kind": kind, "cost_per_x": cost,
+                "dmg": max(enemy_hp_loss, enemy_raw_damage),
                 "shield": shield, "heal": heal, "mana_gain": mana_gain,
                 "bl_gain": bl_gain}
 
@@ -377,6 +393,14 @@ class TacticalAI:
                 cap = 3
                 budget_x = 1
             xs = {1, budget_x, cap}
+            # DM 2026-09-10 提问「AI 为什么不会在怪物达到斩杀线一次性打空法力」的答案：
+            # 不是幻觉，是均分预算把斩杀档在打分前就剪掉了——mana_budget = 法力 // 剩余
+            # 出手，法力8/剩2手 → cap=4，而斩杀常需要更多，于是这一档**从未进入候选集**，
+            # AI 根本没看见「打空法力收掉它」这个选项。开启本开关后，斩杀档只受**买得起**
+            # 约束（x*cost <= 当前法力），不再受均分预算约束。
+            harvest_cap = cap
+            if os.environ.get("LJ_AI_HARVEST_DUMP") == "1" and cost > 0:
+                harvest_cap = max(cap, max(1, self.mana() // cost))
             target = probe.get("target_name")
             kind = probe["kind"]
             if kind == "damage":         # 输出牌给血最少敌人（收割/推进）
@@ -390,7 +414,7 @@ class TacticalAI:
                 targets = ([t for t in (self._top_enemy_name(),) if t]
                            if probe.get("target_name") in (None, self._top_enemy_name())
                            else [probe.get("target_name")])
-            xs = sorted((x for x in xs if 1 <= x <= max(cap, 1)), reverse=True)[:4]
+            xs = sorted((x for x in xs if 1 <= x <= max(harvest_cap, 1)), reverse=True)[:4]
             for t in targets or [None]:
                 for x in xs:
                     out.append({"action": "use_daowen",
@@ -585,11 +609,71 @@ class TacticalAI:
                 enemy_hp_loss=enemy_hp_loss, shield_useful=shield_useful,
                 heal=min(heal, missing), mana_spent=mana_spent)
 
+        # ---- 实验：自保时钟（默认关闭；只读引擎阈值，不改任何规则数值） ----
+        if SELF_PRESERVE:
+            bias, fatal = self._self_preserve_bias(diff, enemy_hp_loss=enemy_hp_loss)
+            if fatal:
+                self.preview_rejected.append(f"{label}（自保否决：{fatal}）")
+                return None
+            score += bias
+
         # ---- 风险等级惩罚（引擎口径分级） ----
         if risk == "LETHAL":
             return None
         score -= {"CRITICAL": 30.0, "HIGH": 6.0, "MEDIUM": 1.2}.get(risk, 0.0)
         return score
+
+    # ---------- 实验：自保时钟（DM裁定 2026-08-31 前先做前后对照） ----------
+    SELF_PRESERVE_MARGIN = 0.8   # 距线 20% 起线性扣分（越贴线越疼）
+
+    def _self_preserve_bias(self, diff: dict, *, enemy_hp_loss: float):
+        """把引擎自己的三条「自爆时钟」接进候选打分，返回 (加分调整, 致命原因)。
+
+        只读引擎阈值与实体字段（`cancer_threshold_of` / `MUTATION_COLLAPSE_THRESHOLD` /
+        连续未使敌掉血回合数），**不按道纹名特判、不改任何规则数值**：
+          ① 癌变：本手后 total_healed ≥ combat.cancer_threshold_of(自己)；
+          ② 崩解：本手后 mutation_count ≥ Entity.MUTATION_COLLAPSE_THRESHOLD；
+          ③ 凡庸：连续五回合未能使敌对角色掉血 → 越接近线，「能推进伤害」越值钱。
+        致命原因非空 = 这一手就是自己把自己送走，与 LETHAL 同档一票否决。
+        """
+        me = self.player
+        p = diff.get("player", {})
+        adj = 0.0
+        if me is None:
+            return adj, None
+
+        # ① 癌变线：累计恢复量达血限×2 即命零（过量回复按原值计入）
+        combat = getattr(self.engine, "combat", None)
+        if combat is not None:
+            line = combat.cancer_threshold_of(me)
+            after = getattr(me, "total_healed", 0) + max(0.0, p.get("healed_delta", 0) or 0)
+            if line > 0:
+                if after >= line:
+                    return adj, f"本手后累计回复{after:.0f}≥癌变线{line}"
+                soft = line * self.SELF_PRESERVE_MARGIN
+                if after >= soft:
+                    adj -= 25.0 * (after - soft) / max(1.0, line - soft)
+
+        # ② 崩解线：异变层数达阈值直接命零
+        collapse = getattr(type(me), "MUTATION_COLLAPSE_THRESHOLD", 0) or 0
+        mut_after = p.get("mutation_after")
+        if mut_after is None:
+            mut_after = getattr(me, "mutation_count", 0) + max(0.0, p.get("mutation_delta", 0) or 0)
+        if collapse > 0:
+            if mut_after >= collapse:
+                return adj, f"本手后异变{mut_after:.0f}≥崩解线{collapse}"
+            soft = collapse * self.SELF_PRESERVE_MARGIN
+            if mut_after >= soft:
+                adj -= 25.0 * (mut_after - soft) / max(1.0, collapse - soft)
+
+        # ③ 凡庸线：连续五回合未使敌掉血就命零 → 空转越久，输出越紧迫
+        idle = self._rounds_since_damage
+        if idle >= 3:
+            if enemy_hp_loss > 0:
+                adj += 10.0 * idle           # 能让对手掉血的手段显著加值
+            else:
+                adj -= 10.0 * (idle - 2)     # 继续空转 = 自己走向凡庸
+        return adj, None
 
     def _first_contact(self) -> bool:
         """开局首轮/刚遇新敌（先观察型性格用；可见信息：本场出手与回合数）。"""
@@ -614,10 +698,13 @@ class TacticalAI:
                             f"→ 我{verdict}{abs(r['belief']):.2f}（{effect}）")
         scored: list[tuple[float, str, dict]] = []
         candidates = self._daowen_candidates()
+        candidates.extend(self._basic_attack_candidates())
         for bonus, cand in self._resonance_candidates():
             candidates.append(cand)   # 残韵候选已按威胁预筛，附带基础分
         for cand in candidates[:MAX_CANDIDATE_PREVIEWS]:
-            pv = self.previewer.preview(cand["action"], cand["params"])
+            # 普攻是两段动作，预演必须整串跑完才看得见伤害
+            pv = (self.previewer.preview_sequence(cand["steps"]) if cand.get("steps")
+                  else self.previewer.preview(cand["action"], cand["params"]))
             res = pv.get("result") or {}
             if not res.get("success"):
                 continue               # 引擎拒绝=非法候选，跳过
@@ -641,7 +728,8 @@ class TacticalAI:
         scored.sort(key=lambda t: (-t[0], t[1]))
         best = scored[0][2]
         hp_before = sum(e.current_hp for e in self.alive_enemies())
-        r = self.engine.execute_action(best["action"], best["params"])
+        r = (self._run_steps(best["steps"]) if best.get("steps")
+             else self.engine.execute_action(best["action"], best["params"]))
         if r.get("success"):
             label = best["label"]
             base = label.split("X=")[0].split("→")[0]
@@ -656,6 +744,60 @@ class TacticalAI:
         if self.verbose:
             self.log.append(f"[跳过] {best['label']}: {r.get('error')}")
         return None
+
+    # ---------- 普攻（DM裁定 2026-09-09，实验旗标 LJ_AI_BASIC_ATTACK=1） ----------
+
+    @staticmethod
+    def _decline_spell_choices(option: dict) -> dict:
+        """逐击法术反应全部不使用——接口要求按目标 spell_options 完整提交。"""
+        spell_options = option.get("spell_options", {}) or {}
+        return {timing: {spell["spell_name"]: {"use": False}
+                         for spell in spell_options.get(timing, [])}
+                for timing in ("before", "after")}
+
+    def _attack_steps(self, target_name: str) -> list:
+        """普攻两段动作；resolve 的 token/hits 由 prepare 的返回串联。"""
+        actor_ref = self._actor_ref or "player:0"
+
+        def _resolve(prev: dict) -> dict:
+            res = prev.get("result") or {}
+            opts = res.get("target_options") or []
+            option = next((o for o in opts if o.get("name") == target_name), None)
+            if option is None:
+                return {"token": res.get("token"), "hits": []}
+            hits = [{"target_ref": option["ref"], "dodge": False, "blood_shadow": False,
+                     "spell_choices": self._decline_spell_choices(option)}
+                    for _ in range(res.get("hit_count", 0))]
+            return {"token": res.get("token"), "hits": hits}
+
+        return [("prepare_attack", {"actor_ref": actor_ref}), ("resolve_attack", _resolve)]
+
+    def _basic_attack_candidates(self) -> list:
+        """普攻候选。
+
+        DM裁定 2026-09-09：法力改一池制（[战始]给满、[回始]不回填）后，只靠法力型
+        道纹会在池子花干后无事可做——实测同批种子通关率 3%→0%、平均经历场数
+        1.56→0.87。普攻因此必须是常驻候选，与道纹一起参与打分。
+        """
+        if os.environ.get("LJ_AI_BASIC_ATTACK") != "1":
+            return []
+        me = self.player
+        if me is None or not me.is_alive or me.effective_attack_count() <= 0:
+            return []
+        return [{"action": "prepare_attack", "params": {},
+                 "steps": self._attack_steps(foe.name),
+                 "label": f"普攻→{foe.name}", "kind": "attack", "target": foe.name}
+                for foe in self.alive_enemies()]
+
+    def _run_steps(self, steps: list) -> dict:
+        """按序执行一串动作（params 可为 callable，收前一步返回）；失败即停。"""
+        prev: dict = {}
+        for action_type, params in steps:
+            p = params(prev) if callable(params) else params
+            prev = self.engine.execute_action(action_type, p)
+            if not prev.get("success"):
+                return prev
+        return prev
 
     # ---------- 统一执行入口（安全过滤保留） ----------
 

@@ -24,14 +24,15 @@ def test_audit_engine_records_pre_battle_diff(tmp_path):
     from tests.setup_support import finish_initial_daowen
     e = _engine(tmp_path)
     e.execute_action("setup_attributes", {
-        "name": "甲", "blood_points": 6, "speed_points": 8, "mana_points": 11})
+        "name": "甲", "blood_points": 7, "speed_points": 8, "mana_points": 10})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": "扭曲都市"})
     e.execute_action("choose_discovered_relic",
                      {"relic_name": setup["result"]["relic_choices"][0]})
     shards_before = e.state.shards
-    r = e.execute_action("pre_battle_action", {"sub_action": "修行", "tier": 1, "to": "mana"})
+    # 2属性点=1法限：tier1 的 1 点兑不到面板，但仍应入池并留审计记录
+    r = e.execute_action("pre_battle_action", {"sub_action": "修行", "tier": 1})
     assert r.get("success")
     entries = [x for x in e.audit_log if x["action_type"] == "pre_battle_action"]
     assert entries, "局外行动必须被审计引擎记录"

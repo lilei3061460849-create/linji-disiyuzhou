@@ -9,7 +9,7 @@
 
 方法（多臂老虎机 + 协同增益挖掘）：
   1. 每轮从候选道纹池按 UCB1 采样一套 build（初始道纹 + 学习序列）
-  2. 跑 N 局，得到 fitness（通关场数 + 胜负加权）
+  2. 跑 N 局，得到 fitness（**只数经历的战斗场数**，DM裁定 2026-09-09）
   3. 用 fitness 更新：
        - 单道纹价值   value[A]
        - 配对协同     synergy[A,B] = 含AB的平均分 - (含A平均 + 含B平均)/2
@@ -548,7 +548,9 @@ def _resolve_pending_event(engine):
 BEHAVIOR_TO_POLICY = {
     "修行提战力": "修行", "修行提战力·高档": "修行", "先学后打": "学习",
     "休整保血": "休整", "残血休整": "休整", "共鸣强化": "共鸣",
-    "附煞强化": "附煞", "探索寻机": "探索", "领悟残韵": "领悟",
+    "附煞强化": "附煞", "探索寻机": "探索",
+    # "领悟残韵" 已随【领悟】删除（DM裁定 2026-09-10）；历史知识里的该标签由
+    # 下面 BEHAVIOR_TO_POLICY.get() 返回 None 安全忽略。
     "雇佣支援": "雇佣", "炼心固本": "炼心", "维修续用": "维修",
 }
 BEHAVIOR_RULES = {
@@ -556,7 +558,7 @@ BEHAVIOR_RULES = {
     "先学后打": "第1~2场前学道纹早成型", "休整保血": "休整回血防暴毙",
     "残血休整": "血线≤30%时休整保命", "共鸣强化": "共鸣提升道纹配合",
     "附煞强化": "乱葬岗附煞加效", "探索寻机": "探索事件换资源",
-    "领悟残韵": "领悟新残韵", "雇佣支援": "雇佣帮手分压", "炼心固本": "龙心谷炼心",
+    "雇佣支援": "雇佣帮手分压", "炼心固本": "龙心谷炼心",
     "备齐反应法术": "学习先发制人/生生不息/后发制人", "维修续用": "维修回复消耗品耐久",
 }
 
@@ -583,8 +585,6 @@ def _tag_behavior(behaviors, act, params, e, battle_no):
         behaviors.append("附煞强化")
     elif act == "探索":
         behaviors.append("探索寻机")
-    elif act == "领悟":
-        behaviors.append("领悟残韵")
     elif act == "雇佣":
         behaviors.append("雇佣支援")
     elif act == "炼心":
@@ -849,7 +849,8 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
           behaviors: list = None, attrs: dict = None,
           resonance: str = "反转", relic_policy: str = "skip_optional",
           ai_cls=None, consumable_policy: str = "current",
-          death_trace: bool = False, lab_paths: dict = None) -> dict:
+          death_trace: bool = False, lab_paths: dict = None,
+          xiuxing: dict = None) -> dict:
     """跑一局轮回。seed=None 时引擎使用真随机源。
 
     policy: 局外行动权重 {行动名: 权重}，AI 按权重随机挑选可用行动。
@@ -881,8 +882,14 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
     # 扭曲都市 优87/差21、罪孽都市 92/14、龙心谷 62/5；均通关×1.6~1.9、
     # 第1战死亡率减半）。机制：自由控X下法限=每轮道纹出手次数上限，蓝是稀缺
     # 资源；血限对早期生存几乎无贡献（血牛15/5/5 反降38%）。4/8/13 不更优。
-    attrs = attrs or {"blood_points": 6, "speed_points": 8, "mana_points": 11}
+    # DM裁定 2026-09-10：2属性点=1速限=1法限（速/法点数须为偶数），1点=6血限
+    attrs = attrs or {"blood_points": 7, "speed_points": 6, "mana_points": 12}
     e.execute_action("setup_attributes", {"name": "贾凡", **attrs})
+    # 新生的轮回者翻阅《死者之书》：前人的〖遗言〗是局外唯一的历史教训来源。
+    # 纯读取（read_death_book 不消耗精力、不改数值），读不到也不影响养成流程。
+    _book = e.execute_action("read_death_book", {})
+    for _l in (_book.get("legacies") or []):
+        print(f"    [死者之书] {_l.get('title', '')}｜{_l.get('text', '')}")
     chosen = choose_discovered_initial_daowen(e, prefer=starter)
     if not chosen.get("success"):
         raise ValueError(chosen.get("error", "开局发现选择失败"))
@@ -932,7 +939,8 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                 if p and e.state.shards >= 35:
                     r = e.execute_action("pre_battle_action", {
                         "sub_action": "修行", "tier": 3,
-                        "allocations": {"speed_points": 0, "mana_points": 3}})
+                        "allocations": (xiuxing or {}).get(
+                            "tier3", {"speed_points": 0, "mana_points": 2})})
                     if r.get("success"):
                         _tag_behavior(behaviors, "修行", {"tier": 3}, e, b)
                         continue
@@ -946,7 +954,8 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                 if p and e.state.shards >= 15 and todo:
                     r = e.execute_action("pre_battle_action", {
                         "sub_action": "修行", "tier": 2,
-                        "allocations": {"speed_points": 0, "mana_points": 2}})
+                        "allocations": (xiuxing or {}).get(
+                            "tier2", {"speed_points": 0, "mana_points": 2})})
                     if r.get("success"):
                         _tag_behavior(behaviors, "修行", {"tier": 2}, e, b)
                         continue
@@ -1223,11 +1232,12 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
             "duel_fought": False, "note": "未见最终的冠冕"}
 
 
-# 局外行动权重：AI 按此概率挑选。7项为引擎当前可用行动
+# 局外行动权重：AI 按此概率挑选（引擎当前可用行动）
 # （忘忧/献祭需道具，雇佣仅罪孽都市，维修仅扭曲都市，炼心仅龙心谷）
 DEFAULT_POLICY = {
     "修行": 30, "学习": 25, "休整": 15, "共鸣": 10,
-    "探索": 8, "领悟": 6, "炼心": 2, "维修": 2, "雇佣": 2, "附煞": 18,
+    "探索": 8, "炼心": 2, "维修": 2, "雇佣": 2, "附煞": 18,
+    # 【领悟】已删除（DM裁定 2026-09-10）：残韵不再能凭精力白拿。
 }
 
 REGION_ACTION = {"炼心": "龙心谷", "维修": "扭曲都市", "雇佣": "罪孽都市", "附煞": "乱葬岗"}
@@ -1298,8 +1308,6 @@ def choose_pre_battle(e, todo, battle_no, rng, policy):
         heal = {1: 8, 2: 24, 3: 48}[tier] + bonus
         return act, {"tier": tier, "heal_allocations": [
             {"target_ref": "player:0", "amount": heal}]}
-    if act == "领悟":
-        return act, {"resonance_type": rng.choice(["转换", "反转", "曲解"])}
     if act == "维修":
         index = next(index for index, item in enumerate(e.state.consumables)
                      if 0 < item.current_uses < item.max_uses)
@@ -1316,7 +1324,10 @@ def fitness(starter: str, learn: list, runs: int, gen: int,
             telemetry: dict = None, spend_shards: bool = False,
             region: str = None, policy: dict = None) -> tuple:
     """
-    适应度 = 平均通关场数 + 3×胜率（0~10）。
+    适应度 = 平均**经历的战斗场数**（DM裁定 2026-09-09）。
+
+    旧口径是「平均通关场数 + 3×胜率（0~10）」；裁定后**只**看经历的战斗越多越好，
+    胜负不再进分数——胜率仍照旧记进 telemetry，只是不参与打分。
 
     random_seeds=False（默认）：种子由代数推导，同一代可复现，便于排查。
     random_seeds=True：每局用真随机种子与随机副本，样本不重复，
@@ -1355,7 +1366,7 @@ def fitness(starter: str, learn: list, runs: int, gen: int,
                 telemetry["invalid_reasons"][key] = telemetry["invalid_reasons"].get(key, 0) + 1
             continue
         valid += 1
-        total += r["cleared"] + (3.0 if r["won"] else 0.0)
+        total += r["cleared"]      # DM裁定 2026-09-09：只数经历的战斗，胜负不进分数
         if telemetry is not None:
             telemetry.setdefault("outcomes", {"win": 0, "loss": 0, "cleared_sum": 0})
             telemetry["outcomes"]["win" if r["won"] else "loss"] += 1
@@ -1744,7 +1755,10 @@ def report(k: dict) -> None:
           f"｜无效(bug) {k.get('invalid_games', 0)} 局")
     if k.get("best"):
         b = k["best"]
-        print(f"\n★ 目前最优：初始【{b['starter']}】+ {b['learn']}   适应度 {b['score']:.2f}/10")
+        # 适应度口径已改（DM裁定 2026-09-09）：平均经历战斗场数，上限=单局战斗数上限，
+        # 不再是旧的 0~10（通关+3×胜率），故不再印 /10。
+        print(f"\n★ 目前最优：初始【{b['starter']}】+ {b['learn']}"
+              f"   适应度（平均经历战斗场数）{b['score']:.2f}")
     bc = k.get("best_confirmed")
     if bc:
         print(f"★ 确认最优（≥2次评估均值）：初始【{bc['starter']}】+ {bc['learn']}   "

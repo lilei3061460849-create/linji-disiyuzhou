@@ -94,8 +94,7 @@ def spend_energy(e, battle_no, p):
                                          "heal_allocations": [{"target_ref": "player:0",
                                                                "amount": heal + e.state.rest_heal_bonus}]})
         if not r.get("success"):
-            r = act(e, "pre_battle_action", {"sub_action": "修行", "tier": 1,
-                                             "allocations": {"speed_points": 0, "mana_points": 1}})
+            r = act(e, "pre_battle_action", {"sub_action": "修行", "tier": 1})
             if not r.get("success"):
                 break
 

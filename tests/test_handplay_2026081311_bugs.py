@@ -21,7 +21,7 @@ from tests.monster_phase_support import resolve_monster_phase
 def _engine(suffix: str, region: str = "扭曲都市") -> GameEngine:
     engine = GameEngine(db_path=f"data/test_hp1311_{suffix}.db", rng_seed=1)
     engine.execute_action("setup_attributes", {
-        "name": "探灯贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7,
+        "name": "探灯贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6,
     })
     finish_initial_daowen(engine)
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
@@ -194,12 +194,12 @@ def test_medkit_overheal_counts_double_for_cancer():
     """边界：满血急救箱实回复0，过量25按原值计入累计恢复（双倍机制已删，DM裁定2026-08-18）。"""
     engine = _engine("kit_bound")
     p = engine.state.player
-    assert p.current_hp == p.blood_limit == 60
+    assert p.current_hp == p.blood_limit == 66   # 11血点×6（DM裁定 2026-09-10）
     engine.state.consumables.append(Consumable(
         name="急救箱", effect="使自身获得[回复25]", current_uses=2, max_uses=2))
     r = engine.execute_action("consume_item", {"name": "急救箱"})
     assert r["success"]
-    assert p.current_hp == 60
+    assert p.current_hp == 66   # 满血时实回复0，当前生命仍等于血限66
     assert r["result"]["healed"] == 0
     assert p.total_healed == 25  # 过量按原值计入（双倍机制已删）
 

@@ -22,7 +22,7 @@ from engine.ai_tactics import TacticalAI
 def _engine(starter="杀伐", learn=(), region="龙心谷", seed=1, tmp="/tmp/bv.db"):
     e = GameEngine(db_path=tmp, rng_seed=seed)
     e.execute_action("setup_attributes",
-                     {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+                     {"name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": region})
@@ -59,10 +59,10 @@ def test_boba_marks_targets_after_start():
 # 专属道纹 → 其所属副本（学习受门禁限制，须在对应副本内）
 _REGION_OF = {"加害": "龙心谷", "裂变": "龙心谷", "伤痕": "龙心谷",
               "僵化": "扭曲都市", "坏死": "扭曲都市",
-              "逼债": "罪孽都市", "洗劫": "罪孽都市"}
+              "逼债": "罪孽都市", "点金": "罪孽都市"}
 
 
-@pytest.mark.parametrize("dw", ["加害", "裂变", "伤痕", "僵化", "坏死", "逼债", "洗劫"])
+@pytest.mark.parametrize("dw", ["加害", "裂变", "伤痕", "僵化", "坏死", "逼债", "点金"])
 def test_ai_uses_region_specific_daowen(dw):
     """
     正常路径：各副本专属道纹只要持有就应被实际发动。
@@ -117,7 +117,7 @@ def test_damage_ranking_comes_from_probe_facts():
     ai = TacticalAI(e)
     probe = ai._probe("杀伐")
     assert probe["kind"] == "damage"
-    assert probe["dmg"] == 2 and probe["cost_per_x"] == 1   # 引擎事实：2伤害/1法力
+    assert probe["dmg"] == 5 and probe["cost_per_x"] == 1   # 引擎事实：5伤害/1法力（DM裁定 2026-09-10，原 2X）
 
 
 def test_owned_nuke_only_contains_damage_kind():
@@ -232,7 +232,7 @@ def _plight_engine(player_daowen=("杀伐", "庇护", "僵化")):
     from engine.models import Entity, DaoWen, DaoWenInstance
     e = GameEngine(db_path="/tmp/evo.db", rng_seed=1)
     e.execute_action("setup_attributes",
-                     {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+                     {"name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     for n in player_daowen:
         e.state.player.dao_wen[n] = DaoWenInstance(

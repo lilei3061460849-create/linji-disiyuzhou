@@ -157,7 +157,7 @@ def run_batch(runs: int, policy: str, seed_base: int, battles: int = 7):
             bl.GameEngine = factory
             r = bl.play(starter="杀伐", learn=["庇护", "再生"], region="扭曲都市",
                         seed=seed_base + i * 7919, battles=battles,
-                        attrs={"blood_points": 6, "speed_points": 8, "mana_points": 11},
+                        attrs={"blood_points": 6, "speed_points": 8, "mana_points": 10},
                         resonance="反转")
             e = e_holder.get("e")
             chars.append({
@@ -187,7 +187,7 @@ def causal_contrast(runs: int, seed_base: int = 30303030) -> dict:
         for i in range(runs):
             r = bl.play(starter="杀伐", learn=["庇护", "再生"], region="扭曲都市",
                         seed=seed_base + i * 7919, battles=7, policy=policy,
-                        attrs={"blood_points": 6, "speed_points": 8, "mana_points": 11},
+                        attrs={"blood_points": 6, "speed_points": 8, "mana_points": 10},
                         resonance="反转")
             if not r.get("invalid"):
                 out.append(r.get("cleared", 0))

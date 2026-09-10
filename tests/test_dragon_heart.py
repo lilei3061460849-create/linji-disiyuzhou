@@ -24,7 +24,7 @@ from engine.models import DaoWen, DaoWenInstance, Entity
 
 def _new_engine(db_suffix: str) -> GameEngine:
     engine = GameEngine(db_path=f"data/test_dragonheart_{db_suffix}.db", rng_seed=1)
-    engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
+    engine.execute_action("setup_attributes", {"blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(engine)
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
     setup = engine.execute_action("setup_choose_region", {"region": "龙心谷"})
@@ -110,7 +110,14 @@ def test_lianxin_in_battle_does_not_cost_action_but_defers_energy():
 
     engine.state.phase = "pre_battle"  # 模拟该场战斗已合法结束
     engine.state.energy = 3
-    engine.execute_action("pre_battle_action", {"sub_action": "领悟", "resonance_type": "曲解"})
+    # 【领悟】已于 2026-09-10 删除；本条测的是"炼心追加扣精力挂在任意局外行动上"，
+    # 换用仍在的【休整】承载同一断言（不用探索：它会随机触发事件挡住后续行动）。
+    probe = engine.execute_action("pre_battle_action", {
+        "sub_action": "休整", "tier": 1,
+        "heal_allocations": [{"target_ref": "player:0",
+                              "amount": 8 + engine.state.rest_heal_bonus}],
+    })
+    assert probe["success"], probe
     assert engine.state.energy == 3 - 1 - 1, "应额外多扣1点精力(基础1点+炼心追加1点)"
     assert engine.state.pending_energy_penalty == 0, "结算后应清零，不能重复扣"
 

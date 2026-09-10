@@ -24,12 +24,15 @@ def _duel_engine(tmp_path, *, lord_relics=("血契",), lord_hp=1, lord_daowen=("
                    sealed_candidate_path=str(tmp_path / "s.json"),
                    death_book_path=str(tmp_path / "b.md"))
     e.execute_action("setup_attributes", {
-        "name": "挑战者", "blood_points": 6, "speed_points": 8, "mana_points": 11})
+        "name": "挑战者", "blood_points": 7, "speed_points": 8, "mana_points": 10})
     finish_initial_daowen(e)
     p = e.state.player
     p.current_hp = challenger_hp
     p.current_speed = challenger_speed
+    # DM裁定 2026-09-09：轮回者普攻面板初始 1×1（雕塑不再排除轮回者，
+    # 0×0 的守擂会在第2回合被雕塑化，凡庸就没机会先结算了）
     lord = Entity("守擂", "轮回者", blood_limit=36, current_hp=lord_hp,
+                  attack_count=1, attack_power=1,
                   mana_limit=30, current_mana=0, speed_limit=12, current_speed=12)
     for n in lord_daowen:
         lord.dao_wen[n] = DaoWenInstance(DaoWen(
@@ -131,7 +134,8 @@ def test_lord_attack_relays_challenger_dodge(tmp_path):
     from sim.duel_pvp import _resolve_opponent_one
     e = _duel_engine(tmp_path, lord_relics=(), lord_daowen=(), lord_hp=36)
     lord = e.state.enemies[0]
-    lord.attack_count, lord.attack_power = 4, 5      # 每击5伤 ≥ 闪避阈值(max(3,3.6)=4)
+    # 轮回者攻次=当前速度、攻力=当前法力：写面板无效
+    lord.current_speed, lord.current_mana = 4, 5     # 每击5伤 ≥ 闪避阈值(max(3,3.6)=4)
     e.execute_action("round_start", {"relic_choices": {}})
     e.state.duel_turn = "opponent_side"               # 出手权交守擂(引擎按轮次校验)
     e.state.player.current_speed = 8                 # 有速度可闪

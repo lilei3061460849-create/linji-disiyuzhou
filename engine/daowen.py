@@ -9,6 +9,8 @@ from .enums import CostType
 import math
 
 
+
+
 class DaoWenEngine:
     """道纹计算引擎"""
 
@@ -44,10 +46,15 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_shaifa(x: int, target: Entity = None) -> dict:
-        """杀伐X：消耗X。对[目标]造成2X点伤害"""
+        """杀伐X：消耗X。对[目标]造成5X点伤害
+
+        DM裁定 2026-09-10：法力改一池制后（战终才复原，不再每回合回填），道纹数值
+        的约束从「速率」变成「预算」，可以放开——目标是「用几回合普攻把目标压到
+        斩杀线，再一次性耗尽法力收掉」。系数定为 5（12 太夸张）。
+        """
         target_name = target.name if target is not None else "未选定目标"
         cost = x
-        damage = 2 * x
+        damage = 5 * x
         return {
             "dao_wen": "杀伐",
             "x": x,
@@ -86,7 +93,8 @@ class DaoWenEngine:
             "cost": cost,
             "target_shield": shield,
             "duration": 1,
-            "summary": f"消耗{x}法力，使{target_name}获得{shield}点格挡（可抵消等量伤害），持续1回合"
+            # DM裁定 2026-09-10：格挡不再[敌回终]清除，故文案不再声称"持续1回合"
+            "summary": f"消耗{x}法力，使{target_name}获得{shield}点格挡（可抵消等量伤害，保留到被打掉或战终）"
         }
     
     @staticmethod
@@ -388,7 +396,7 @@ class DaoWenEngine:
             "x": x,
             "cost_type": CostType.MANA.value,
             "cost": x,
-            "attack_reduction": x,
+            "attack_reduction": x,                       # 面板量纲，不放大
             "target_heal": x,
             "summary": f"消耗{x}法力，将自身{x}攻击力转化为{x}点回复"
         }
@@ -712,16 +720,24 @@ class DaoWenEngine:
         }
 
     @staticmethod
-    def calculate_xijie(x: int) -> dict:
-        """洗劫X：消耗3X。造成伤害时夺取目标等量碎片，持续X"""
+    def calculate_dianjin(x: int) -> dict:
+        """点金X：消耗8X法力，获得X个碎片
+
+        DM裁定 2026-09-10：前身【洗劫】是"造成伤害时夺取目标等量碎片"，挂在杀伐
+        伤害上，等于白送的经济水龙头。改为与伤害彻底脱钩——想要钱就得花法力，
+        而攻力=当前法力，花法力直接压低普攻输出，于是这是一笔明码标价的转换。
+        刻意不返回 duration 键：通用状态块以 "duration" in calc 为前提
+        （combat.py:3388），带上就会凭空长出一个【点金】状态。
+        注意：状态【洗劫】及其"夺碎片"机制**保留**，仍由【帮派令】在[战始]发放；
+        事件收益在 报告.md「当前禁区清单」内，不动。
+        """
         return {
-            "dao_wen": "洗劫",
+            "dao_wen": "点金",
             "x": x,
             "cost_type": CostType.MANA.value,
-            "cost": 3 * x,
-            "duration": x,
-            "effect": "造成伤害时夺取等量碎片",
-            "summary": f"消耗{3*x}法力，造成伤害时夺取受伤目标等量碎片，持续{x}回合"
+            "cost": 8 * x,
+            "shard_gain": x,
+            "summary": f"消耗{8*x}法力，获得{x}个碎片"
         }
     
     # ---- 罪孽都市专属道纹 ----
@@ -944,8 +960,10 @@ class DaoWenEngine:
         return {
             "dao_wen": "勾魂", "x": x,
             "cost_type": CostType.MANA.value, "cost": x,
-            "no_mana_gain": True, "duration": x,
-            "summary": f"消耗{x}法力，{target_name}无法获得法力，持续{x}回合"
+            # DM裁定 2026-09-09：法力改一池制（[战始]给满、[回始]不回填、[战终]复原）后，
+            # 「[回始]无法获得法力」失去作用对象，改为**目标消耗法力翻倍**。
+            "mana_cost_multiplier": 2, "duration": x,
+            "summary": f"消耗{x}法力，{target_name}法力消耗翻倍，持续{x}回合"
         }
 
     @staticmethod
@@ -1033,7 +1051,7 @@ class DaoWenEngine:
             "退化": cls.calculate_tuihua,
             # 罪孽都市
             "加害": cls.calculate_jiahai,
-            "洗劫": cls.calculate_xijie,
+            "点金": cls.calculate_dianjin,
             "逼债": cls.calculate_bizhai,
             "抵扣": cls.calculate_dikou,
             "清算": cls.calculate_qingsuan,
@@ -1166,14 +1184,14 @@ class ResonanceEngine:
             ("退化", "转换", "变形"),
         ],
         "罪孽都市闭环": [
-            ("洗劫", "转换", "逼债"),
+            ("点金", "转换", "逼债"),
             ("逼债", "反转", "抵扣"),
             ("抵扣", "曲解", "清算"),
             ("清算", "反转", "赎金"),
             ("赎金", "转换", "假钞"),
             ("假钞", "曲解", "赌命"),
             ("赌命", "反转", "消灾"),
-            ("消灾", "曲解", "洗劫"),
+            ("消灾", "曲解", "点金"),
         ],
         "龙心谷闭环": [
             ("加害", "反转", "龙鳞"),

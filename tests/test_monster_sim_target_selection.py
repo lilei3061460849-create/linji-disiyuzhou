@@ -25,7 +25,7 @@ def _engine(tmp_path):
     e = GameEngine(db_path=str(tmp_path / "t.db"), rng_seed=7,
                    sealed_candidate_path=str(tmp_path / "s.json"))
     e.execute_action("setup_attributes", {
-        "name": "模拟者", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+        "name": "模拟者", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     e.execute_action("setup_choose_region", {"region": "扭曲都市"})
@@ -123,7 +123,7 @@ def test_classification_sets_cover_all_dungeon_daowens():
     critical = {"再生", "增殖", "庇护", "强化", "杀伐", "勾魂", "冥气", "镇尸",
                 "衰败", "减速", "必中", "飞行", "狂暴", "自残", "弱化", "借力",
                 "坏死", "爆裂", "定型", "僵化", "变形", "退化", "加害", "龙鳞",
-                "逆鳞", "活血", "裂变", "嫁祸", "背负", "伤痕", "洗劫", "逼债",
+                "逆鳞", "活血", "裂变", "嫁祸", "背负", "伤痕", "点金", "逼债",
                 "抵扣", "清算", "赎金", "假钞", "赌命", "消灾", "封印", "波及",
                 "坠落", "寄生", "蒙蔽", "无神", "愤怒", "迟滞", "无力", "眩晕",
                 "洞察", "滋养", "急速", "加速", "滑翔", "自食", "兴奋", "招魂",

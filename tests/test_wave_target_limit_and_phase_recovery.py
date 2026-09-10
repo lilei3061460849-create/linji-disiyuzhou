@@ -35,7 +35,7 @@ def _engine(tmp_path, seed: int = 20260822) -> GameEngine:
 
 def _full_setup(engine: GameEngine, region: str = "龙心谷") -> None:
     assert engine.execute_action("setup_attributes", {
-        "name": "测试", "blood_points": 10, "speed_points": 8, "mana_points": 7,
+        "name": "测试", "blood_points": 11, "speed_points": 8, "mana_points": 6,
     })["success"]
     assert finish_initial_daowen(engine)["success"]
     assert engine.execute_action("setup_choose_resonance", {"resonance_type": "反转"})["success"]

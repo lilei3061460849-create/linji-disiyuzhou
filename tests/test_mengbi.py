@@ -19,7 +19,7 @@ def _engine(suffix):
     os.makedirs("/tmp/linji_tests", exist_ok=True)
     engine = GameEngine(db_path=f"/tmp/linji_tests/test_mengbi_{suffix}.db", rng_seed=1)
     engine.execute_action("setup_attributes", {
-        "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7,
+        "name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6,
     })
     finish_initial_daowen(engine)
     engine.state.current_region = "龙心谷"
@@ -77,7 +77,7 @@ def test_use_daowen_mengbi_blocks_next_hits():
 
     a3 = _shaifa()
     assert not a3.get("mengbi_blocked")
-    assert player.current_hp == hp - 6
+    assert player.current_hp == hp - 15   # 杀伐3→5X=15（原 2X=6）
 
 
 def test_mengbi_x1_blocks_one_attack_then_expires():
@@ -98,8 +98,9 @@ def test_mengbi_x1_blocks_one_attack_then_expires():
     assert not foe.has_status("蒙蔽")
     d2 = engine.combat.resolve_attack(foe, engine.state.player, dodge=False)
     assert d2.get("blocked_by") != "蒙蔽"
-    assert d2["damage_dealt"] == 8
-    assert engine.state.player.current_hp == hp - 8
+    # 轮回者攻力=当前法力=20（写 attack_power=8 对轮回者无效）
+    assert d2["damage_dealt"] == 20
+    assert engine.state.player.current_hp == hp - 20
 
 
 def test_mengbi_stacks_and_rejects_bad_input():

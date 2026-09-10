@@ -23,7 +23,7 @@ from engine.models import DaoWen, DaoWenInstance
 def _engine(tmp_path, seed=4, learn=("庇护", "再生", "冲击")):
     e = GameEngine(db_path=str(tmp_path / "ai.db"), rng_seed=seed)
     e.execute_action("setup_attributes",
-                     {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+                     {"name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": "龙心谷"})
@@ -170,11 +170,50 @@ def test_ai_cost_facts_come_from_preview_not_tables(tmp_path):
     ai = TacticalAI(e)
     probe = ai._probe("杀伐")
     assert probe is not None and probe["kind"] == "damage"
-    assert probe["cost_per_x"] == 1          # 与正文现行公式一致（消耗X、2X伤害）
-    assert probe["dmg"] == 2
+    assert probe["cost_per_x"] == 1          # 与正文现行公式一致（消耗X、5X伤害）
+    assert probe["dmg"] == 5                 # DM裁定 2026-09-10：杀伐 2X → 5X
     shield = ai._probe("庇护")
     assert shield is not None and shield["kind"] == "shield"
     assert shield["target_name"] == e.state.player.name, "庇护必须朝向自身（方向由预演判定）"
+
+
+def test_probe_dmg_not_masked_by_enemy_shield(tmp_path):
+    """
+    边界：敌方格挡把 X=1 伤害**全部吸收**时，dmg 仍须取自事件流（未扣盾）。
+
+    修复前 dmg 读面板净位移 → 被盾吸光即归零 → `_daowen_candidates` 收割档
+    条件 `dmg > 0` 整行短路，只剩 X=1 一档 → AI 永不出手（报告 ①，2026-08-31）。
+    """
+    e = _engine(tmp_path)
+    m = e.state.enemies[0]
+    m.current_hp = 4
+    m.shield = 2                      # 吸掉 杀伐X=1（5点）中的 2 点，剩 3 点落到生命
+    e.state.player.current_mana = 12
+    ai = TacticalAI(e)
+    probe = ai._probe("杀伐")
+    assert probe is not None and probe["kind"] == "damage"
+    assert probe["dmg"] == 5, f"dmg 被格挡遮蔽成 {probe['dmg']}：口径须取事件流 raw_damage"
+    xs = {int(c["label"].split("X=")[1]) for c in ai._daowen_candidates()
+          if c["label"].startswith("杀伐")}
+    assert math.ceil(m.current_hp / probe["dmg"]) in xs, f"收割档未生成（候选档={sorted(xs)}）"
+
+
+def test_ai_still_acts_when_shield_absorbs_all_probe_damage(tmp_path):
+    """正常路径：X=1 预演被格挡全吸收时，AI 须打出真正能穿盾的档位。
+
+    修复前 dmg=0 → 收割档整行短路，只剩 X=1（2 伤被 2 盾吃光）→ 一手打完零伤害。
+    """
+    from engine.models import Entity
+    e = _engine(tmp_path, learn=())   # 只留初始道纹杀伐：无可替代的保命牌
+    e.state.resonance.clear()         # 残韵另有一条不依赖 dmg 的路，清掉才是纯输出局
+    m = Entity(name="木桩", entity_type="怪物", blood_limit=40, current_hp=4,
+               attack_count=1, attack_power=0)
+    m.shield = 2                      # 吸掉 杀伐X=1（5点）中的 2 点
+    e.state.enemies = [m]             # 单一无机制木桩，排除怪物自身触发链干扰
+    ai = TacticalAI(e)
+    results = ai.take_turn()
+    assert results, "有格挡时 AI 整回合空过（dmg 口径回归）"
+    assert m.current_hp < 4, "只出被格挡吃掉一部分的 X=1 → 仍有伤害落地（dmg 口径回归）"
 
 
 def test_ai_can_mark_wave_targets(tmp_path):

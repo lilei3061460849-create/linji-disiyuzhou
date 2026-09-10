@@ -37,15 +37,14 @@ def test_setup():
 
     result = engine.execute_action("setup_attributes", {
         "name": "测试轮回者",
-        "blood_points": 10,
-        "speed_points": 8,
-        "mana_points": 7
+        "blood_points": 11, "speed_points": 8, "mana_points": 6
     })
     assert result["success"], f"属性分配失败: {result}"
-    assert engine.state.player.blood_limit == 60, f"血限错误: {engine.state.player.blood_limit}"
-    assert engine.state.player.speed_limit == 8, f"速限错误: {engine.state.player.speed_limit}"
-    assert engine.state.player.mana_limit == 14, f"法限错误: {engine.state.player.mana_limit}"
-    assert engine.state.player.action_count == math.ceil(8 / 3), "出手次数错误"
+    # DM裁定 2026-09-10：1属性点=6[血限]、2属性点=1[速限]=1[法限]；轮回者出手固定2次
+    assert engine.state.player.blood_limit == 66, f"血限错误: {engine.state.player.blood_limit}"
+    assert engine.state.player.speed_limit == 4, f"速限错误: {engine.state.player.speed_limit}"
+    assert engine.state.player.mana_limit == 3, f"法限错误: {engine.state.player.mana_limit}"
+    assert engine.state.player.action_count == 2, "出手次数错误：轮回者固定2次"
     assert engine.state.shards == 20, "初始碎片错误"
     relic_choices = list(engine.state.pending_relic_choices)
     assert result["result"]["relic_choices"] == relic_choices
@@ -113,8 +112,8 @@ def test_daowen_calculations():
     target = Entity(name="目标", entity_type=EntityType.MONSTER.value, blood_limit=100, current_hp=100)
     result = DaoWenEngine.resolve("杀伐", 3, target=target)
     assert result["cost"] == 3, f"杀伐消耗错误: {result['cost']}"
-    assert result["target_damage"] == 6, f"杀伐伤害错误: {result['target_damage']}"
-    print("  ✓ 杀伐X=3: 消耗3，伤害6")
+    assert result["target_damage"] == 15, f"杀伐伤害错误: {result['target_damage']}"
+    print("  ✓ 杀伐X=3: 消耗3，伤害15（DM裁定 2026-09-10：5X）")
     
     # 测试庇护
     result = DaoWenEngine.resolve("庇护", 5, target=target)
@@ -189,7 +188,7 @@ def test_combat():
     
     # 设置玩家
     engine.execute_action("setup_attributes", {
-        "name": "测试", "blood_points": 10, "speed_points": 8, "mana_points": 7
+        "name": "测试", "blood_points": 11, "speed_points": 8, "mana_points": 6
     })
     finish_initial_daowen(engine)
     
@@ -297,7 +296,7 @@ def test_dm_rulings():
     
     # 设置
     engine.execute_action("setup_attributes", {
-        "name": "测试", "blood_points": 10, "speed_points": 8, "mana_points": 7
+        "name": "测试", "blood_points": 11, "speed_points": 8, "mana_points": 6
     })
     finish_initial_daowen(engine)
     _choose_region(engine, "扭曲都市")
@@ -339,20 +338,22 @@ def test_full_flow():
     
     # 开局
     engine.execute_action("setup_attributes", {
-        "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7
+        "name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6
     })
     finish_initial_daowen(engine)
     engine.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     _choose_region(engine, "扭曲都市")
     print("  ✓ 开局完成")
     
-    # 局外行动
-    result = engine.execute_action("pre_battle_action", {"sub_action": "领悟", "resonance_type": "曲解"})
-    assert result["success"]
-    print(f"  ✓ 领悟：获得曲解残韵")
-    
+    # 局外行动（【领悟】已于 2026-09-10 删除，残韵不再能凭精力白拿）
+    gone = engine.execute_action("pre_battle_action", {"sub_action": "领悟", "resonance_type": "曲解"})
+    assert gone["success"] is False and "未知局外行动" in gone["error"], gone
+    print("  ✓ 领悟已删除：调用被拒且精力不泄漏")
+
     speed_before = engine.state.player.speed_limit
-    result = engine.execute_action("pre_battle_action", {"sub_action": "修行", "tier": 1, "to": "speed"})
+    # 2属性点=1速限：tier1 只给1点、买不到任何面板（余点入池），要用 tier2 才买得到
+    engine.state.shards = max(engine.state.shards, 15)
+    result = engine.execute_action("pre_battle_action", {"sub_action": "修行", "tier": 2, "to": "speed"})
     assert result["success"], f"修行失败: {result}"
     assert engine.state.player.speed_limit == speed_before + 1, "修行应+1速限"
     print(f"  ✓ 修行：速限{speed_before}→{engine.state.player.speed_limit}")
@@ -365,12 +366,23 @@ def test_full_flow():
     assert result["success"]
     print(f"  ✓ 休整：{heal_amt}点恢复量")
     
-    assert engine.state.energy == 0, f"精力应为0，实际{engine.state.energy}"
-    print(f"  ✓ 精力耗尽")
+    # 开局3点精力：修行1 + 休整1 = 2。【领悟】已于 2026-09-10 删除、被拒不扣精力，
+    # 故此处余 1；进战斗要求精力耗尽，用【探索】把最后一点花掉。
+    assert engine.state.energy == 1, f"精力应为1（修行+休整各1，领悟已删不再扣），实际{engine.state.energy}"
+    # 用【休整】而非【探索】收尾：探索会随机触发事件（本种子抽到【血肉温室】），
+    # 未结算的事件会挡住后续所有行动。休整不触发事件，可安全重复。
+    result = engine.execute_action("pre_battle_action", {
+        "sub_action": "休整", "tier": 1,
+        "heal_allocations": [{"target_ref": "player:0",
+                              "amount": 8 + engine.state.rest_heal_bonus}],
+    })
+    assert result["success"], result
+    assert engine.state.energy == 0, f"精力应耗尽，实际{engine.state.energy}"
+    print("  ✓ 精力耗尽")
     
     # 进入战斗
     result = engine.execute_action("battle_start", {})
-    assert result["success"]
+    assert result["success"], result
     assert engine.state.current_battle == 1
     print(f"  ✓ 进入第1场战斗")
     
@@ -391,14 +403,16 @@ def test_full_flow():
                      attack_count=6, attack_power=8)
     engine.state.enemies.append(monster)
     
+    engine.state.player.actions_used_this_round = 0   # 轮回者每回合固定2次，前序行动已用满
+    engine.state.player.current_mana = 20   # 新口径法限=加点//2 只有3，杀伐X=5 需5法力
     result = engine.execute_action("use_daowen", {
         "daowen_name": "杀伐",
         "x": 5,
         "target_ref": f"enemy:{len(engine.state.enemies) - 1}",
         "dodge": False, "blood_shadow": False, "trigger_spell_choices": {},
     })
-    assert result["success"]
-    print(f"  ✓ 发动杀伐X=5: 对千手蜈蚣造成10伤害")
+    assert result["success"], result
+    print(f"  ✓ 发动杀伐X=5: 对千手蜈蚣造成25伤害（5X）")
     
     print("  ✓ 完整流程测试通过")
 
@@ -412,13 +426,19 @@ def test_sculpture_and_proliferation():
 
     # --- 雕塑：把攻击力打到0 ---
     state = GameState()
-    player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60)
+    # DM裁定 2026-09-09：轮回者有普攻面板（初始 1×1），且雕塑不再排除轮回者——
+    # 夹具必须给出合法面板，否则本条要测的「怪物雕塑」会被玩家自己的雕塑干扰。
+    # DM裁定 2026-09-10：轮回者攻次=当前速度、攻力=当前法力，写 attack_count/attack_power
+    # 面板无效——必须给当前速度/当前法力，否则玩家自己先满足雕塑条件、干扰本条断言。
+    player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60,
+                    speed_limit=1, current_speed=1, mana_limit=1, current_mana=1)
     state.player = player
     m = Entity(name="石像鬼", entity_type="怪物", blood_limit=100, current_hp=100,
                attack_count=2, attack_power=10)
     state.enemies.append(m)
     combat = CombatEngine(state, DiceEngine())
     m.attack_power = 0  # 模拟被弱化/僵化到0
+    m.attack_count = 0  # DM裁定 2026-09-10：雕塑触发条件为攻次与攻力**都**为0
     paths = combat.settle_victory_paths()
     assert any(p["type"] == "sculpture" for p in paths), "应触发雕塑"
     assert m.is_sculptured and not m.is_alive
@@ -458,7 +478,7 @@ def test_daowen_effects_wired():
     print("\n=== 测试：道纹效果落地 ===")
     from engine.models import StatusEffect
     engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
-    engine.execute_action("setup_attributes", {"name":"测试","blood_points":10,"speed_points":8,"mana_points":7})
+    engine.execute_action("setup_attributes", {"name":"测试","blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(engine)
     engine.state.phase = "in_combat"
     player = engine.state.player
@@ -484,6 +504,7 @@ def test_daowen_effects_wired():
 
     # R35 赎金3：有碎片则最多夺取现有20，不再把不足额扩成负债。
     shards_before = engine.state.shards
+    engine.state.player.actions_used_this_round = 0   # 前序弱化/强化已用满2次出手
     r = engine.execute_action("use_daowen", {"daowen_name":"赎金","x":3,"target":"靶怪"})
     assert r["success"], f"赎金失败: {r}"
     assert m.shards == 0, f"赎金后靶怪现有20碎片应被夺尽，实{m.shards}"
@@ -496,7 +517,9 @@ def test_daowen_effects_wired():
     print("  ✓ 眩晕：靶怪 can_act=False")
 
     # 飞行2（自身）→ 玩家飞行，非飞行无法选中
+    engine.state.player.actions_used_this_round = 0   # 前序道纹已用满2次出手
     r = engine.execute_action("use_daowen", {"daowen_name":"飞行","x":2})
+    assert r["success"], f"飞行发动失败: {r}"
     m2 = Entity(name="地面怪", entity_type="怪物", blood_limit=50, current_hp=50)
     engine.state.enemies.append(m2)
     assert engine.combat.is_targetable(m2, player) is False, "非飞行怪不应能选中飞行玩家"
@@ -514,7 +537,7 @@ def test_out_of_combat_actions():
     """测试局外行动真实生效（休整回血/学习加道纹法术/共鸣给遗物）"""
     print("\n=== 测试：局外行动落地 ===")
     engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
-    engine.execute_action("setup_attributes", {"name":"测试","blood_points":10,"speed_points":8,"mana_points":7})
+    engine.execute_action("setup_attributes", {"name":"测试","blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(engine)
     _choose_region(engine, "罪孽都市")
     player = engine.state.player
@@ -589,7 +612,7 @@ def test_relic_effects():
 
     # 第一杯：免疫癌变（原钱袋效果，钱袋已删除）
     engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
-    engine.execute_action("setup_attributes", {"name":"测试","blood_points":10,"speed_points":8,"mana_points":7})
+    engine.execute_action("setup_attributes", {"name":"测试","blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(engine)
     _choose_region(engine, "罪孽都市")
     engine.state.relics = [Relic(name="第一杯", effect="")]
@@ -697,7 +720,8 @@ def test_flying_and_split():
     print("  ✓ 飞行：地面怪无法选中飞行玩家(HP不变)")
 
     # 裂变：怪受100伤分4次(每次25)
-    st2 = GameState(); st2.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60, speed_limit=8, current_speed=8, attack_count=1, attack_power=100)
+    # 轮回者攻次=当前速度、攻力=当前法力：要造出「单次100伤」须 1速×100法，写 attack_count/attack_power 无效
+    st2 = GameState(); st2.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60, speed_limit=1, current_speed=1, mana_limit=100, current_mana=100)
     m2 = Entity(name="靶", entity_type="怪物", blood_limit=200, current_hp=200, attack_count=1, attack_power=1)
     m2.add_status(StatusEffect(name="裂变", remaining_rounds=3, value=4))
     st2.enemies.append(m2); st2.player.is_flying = False; m2.is_flying = False
@@ -735,7 +759,7 @@ def test_events_system():
     """测试事件系统：解析/触发/结算"""
     print("\n=== 测试：事件系统 ===")
     engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
-    engine.execute_action("setup_attributes", {"name":"测试","blood_points":10,"speed_points":8,"mana_points":7})
+    engine.execute_action("setup_attributes", {"name":"测试","blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(engine)
     _choose_region(engine, "扭曲都市")
     # 解析数量
@@ -790,13 +814,11 @@ def test_rebellion_and_legacy():
     # 死之传承
     st.player.is_alive = False; st.player.current_hp = 0
     legacy = {
-        "trigger_point": "速度归零后受到致死攻击",
-        "fork": "最后一次闪避耗尽速度",
-        "cost_budget": "愿以法力换取保命",
+        "text": "速度归零后受到致死攻击",
     }
     r3 = combat.trigger_death_legacy(legacy)
     assert r3["triggered"] and st.death_book_legacies == [legacy]
-    print(f"  ✓ 死之传承：命零留三段式遗言'{r3['legacy']['trigger_point'][:12]}...'")
+    print(f"  ✓ 死之传承：命零留单句遗言'{r3['legacy']['text'][:12]}...'")
     print("  ✓ 员工叛变/死之传承测试通过")
 
 
@@ -831,7 +853,7 @@ def test_relics_five_more():
 
     # 无所求：resolve_event拒绝+1速限
     engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
-    engine.execute_action("setup_attributes", {"name":"t","blood_points":10,"speed_points":8,"mana_points":7})
+    engine.execute_action("setup_attributes", {"name":"t","blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(engine)
     _choose_region(engine, "扭曲都市")
     engine.state.relics = [Relic(name="无所求", effect="")]
@@ -856,7 +878,7 @@ def test_evolution_yuanchu():
     def mk_engine():
         engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
         engine.execute_action("setup_attributes", {
-            "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7
+            "name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6
         })
         finish_initial_daowen(engine)
         # 裁定：原初X 借用池 = 轮回者当前持有的道纹，故须先给轮回者道纹
@@ -1008,7 +1030,7 @@ def test_evolution_plight_listing():
 
     engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
     engine.execute_action("setup_attributes", {
-        "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7
+        "name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6
     })
     finish_initial_daowen(engine)
     engine.combat.reset_monster_activation()
@@ -1046,7 +1068,7 @@ def test_evolution_plight_listing():
                 attack_count=2, attack_power=1)  # 只有攻击力极低1个信号
     engine2 = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
     engine2.execute_action("setup_attributes", {
-        "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7
+        "name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6
     })
     finish_initial_daowen(engine2)
     engine2.combat.reset_monster_activation()
@@ -1061,7 +1083,7 @@ def test_evolution_plight_listing():
                  attack_count=2, attack_power=10)
     engine2b = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
     engine2b.execute_action("setup_attributes", {
-        "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7
+        "name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6
     })
     finish_initial_daowen(engine2b)
     engine2b.combat.reset_monster_activation()
@@ -1075,7 +1097,7 @@ def test_evolution_plight_listing():
     # ---- 3. 边界：已进化过的怪物不再列出；死亡怪物不列出 ----
     engine3 = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
     engine3.execute_action("setup_attributes", {
-        "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7
+        "name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6
     })
     finish_initial_daowen(engine3)
     engine3.combat.reset_monster_activation()
@@ -1175,7 +1197,7 @@ def test_consumable_mutation_wiring():
     def mk_engine(mut=0):
         engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
         engine.execute_action("setup_attributes", {
-            "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7
+            "name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6
         })
         finish_initial_daowen(engine)
         engine.state.player.mutation_count = mut
@@ -1229,7 +1251,7 @@ def test_twisted_tool_library():
     def mk(region="扭曲都市"):
         engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
         engine.execute_action("setup_attributes", {
-            "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7
+            "name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6
         })
         finish_initial_daowen(engine)
         _choose_region(engine, region)

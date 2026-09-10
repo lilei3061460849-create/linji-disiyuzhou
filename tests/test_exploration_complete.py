@@ -11,7 +11,7 @@ def _engine(tmp_path, seed=5):
         death_book_path=str(tmp_path / "death.md"), rng_seed=seed,
     )
     engine.execute_action("setup_attributes", {
-        "name": "探索者", "blood_points": 10, "speed_points": 8, "mana_points": 7,
+        "name": "探索者", "blood_points": 11, "speed_points": 8, "mana_points": 6,
     })
     finish_initial_daowen(engine)
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})

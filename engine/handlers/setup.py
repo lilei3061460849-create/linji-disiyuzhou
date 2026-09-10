@@ -10,25 +10,37 @@ from ..gamedata import SHAFA_LOOP_DAOWEN
 
 
 def handle_setup_attributes(engine: Any, params: Dict[str, Any]) -> Dict[str, Any]:
-    """分配初始属性点：1属性点 = 6血限 = 1速限 = 2法限"""
+    """分配初始属性点：2属性点 = 1速限 = 1法限；1属性点 = 6血限
+
+    DM裁定 2026-09-10：轮回者的攻击次数=当前速度、攻击力=当前法力（换算仅限轮回者），
+    攻次/攻力不再是可购买的独立面板，两个加点池随之撤销；速限/法限因为兼任攻次/攻力
+    而变贵（原 1点=1速限=2法限 → 现 2点=1速限=1法限）。25 点总预算不变。
+    """
     if engine.state.player is not None:
         return {"success": False, "error": "初始属性已经分配，不能重复开局"}
     blood_points = params.get("blood_points", 0)
     speed_points = params.get("speed_points", 0)
     mana_points = params.get("mana_points", 0)
-
     total = blood_points + speed_points + mana_points
 
-    if total != 25:
+    if total > 25:
         return {
             "success": False,
-            "error": f"属性点总和必须为25，当前为{total}",
-            "instruction": "1属性点=6血限=1速限=2法限，请重新分配"
+            "error": f"属性点总和不能超过25，当前为{total}",
+            "instruction": "2属性点=1速限=1法限；1属性点=6血限；没花完的点会存进属性点池，之后随时可兑"
+        }
+    # 速限/法限按 2 点一档计价，买不出半档 → 点数须为偶数。
+    # DM裁定 2026-09-10：余点不再强塞血限，允许留着（total<25 的部分进属性点池）。
+    if speed_points % 2 or mana_points % 2:
+        return {
+            "success": False,
+            "error": f"速限/法限按2属性点一档计价，点数必须是偶数（当前 速{speed_points}/法{mana_points}）",
+            "instruction": "改成偶数即可；剩下的点会存进属性点池，攒够2点随时再兑"
         }
 
     blood_limit = blood_points * 6
-    speed_limit = speed_points
-    mana_limit = mana_points * 2
+    speed_limit = speed_points // 2
+    mana_limit = mana_points // 2
 
     player = Entity(
         name=params.get("name", "轮回者"),
@@ -39,12 +51,15 @@ def handle_setup_attributes(engine: Any, params: Dict[str, Any]) -> Dict[str, An
         current_mana=mana_limit,
         speed_limit=speed_limit,
         current_speed=speed_limit,
+        # DM裁定 2026-09-10：轮回者的攻次/攻力由当前速度/当前法力换算，不再存面板值。
+        # 字段留 0 只是占位——所有取值一律走 effective_attack_count/power()。
         attack_count=0,
         attack_power=0,
     )
 
     engine.state.player = player
-    engine.state.attribute_points = 0
+    # DM裁定 2026-09-10：属性点可存储，随时兑换（2点=1速限=1法限）
+    engine.state.attribute_points = 25 - total
     engine.state.allocated_blood = blood_limit
     engine.state.shards = 20
 
@@ -61,9 +76,10 @@ def handle_setup_attributes(engine: Any, params: Dict[str, Any]) -> Dict[str, An
             "blood_limit": blood_limit,
             "mana_limit": mana_limit,
             "speed_limit": speed_limit,
-            "attack_count": player.attack_count,
-            "attack_power": player.attack_power,
+            "attack_count": player.effective_attack_count(),
+            "attack_power": player.effective_attack_power(),
             "action_count": player.action_count,
+            "attribute_points_banked": engine.state.attribute_points,
             "shards": 20,
             "relic_choices": discovery["choices"],
         },

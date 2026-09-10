@@ -118,7 +118,7 @@ def test_step3_cannot_dodge_without_speed(tmp_path):
     })
     assert res["success"] is True
     assert target.current_speed == 0
-    assert target.current_hp == hp_before - 10, "速度为0闪避失败，目标实打实扣除10点生命"
+    assert target.current_hp == hp_before - 25, "速度为0闪避失败，目标实打实扣除25点生命（杀伐5→5X）"
 
 
 # ==================== 4. 爆裂受到伤害前反噬测试 ====================
@@ -196,8 +196,10 @@ def test_step8_duel_alternation_and_exhaustion(tmp_path):
     e = _setup_engine(tmp_path)
     e.state.in_final_duel = True
     p = e.state.player
-    p.speed_limit = 12  # 4动
-    opp = Entity(name="对手", blood_limit=42, current_hp=42, speed_limit=6, entity_type="轮回者") # 2动
+    # DM裁定 2026-09-10：轮回者出手固定2次，速限不再换算出手数。
+    # 要造出「4动 vs 2动」的出手差，只能用【疯狂】+2。
+    p.add_status(StatusEffect(name="疯狂", value=2, remaining_rounds=-1, source="test"))
+    opp = Entity(name="对手", blood_limit=42, current_hp=42, speed_limit=6, entity_type="轮回者")  # 2动
     e.state.enemies = [opp]
 
     assert e.combat.single_round_action_count(p) == 4

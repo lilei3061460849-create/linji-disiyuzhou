@@ -222,7 +222,7 @@ def _resolve_monster_turn_with_spells(engine):
 
 
 def choose_pre_battle(e, battle_no, todo_spells, todo_daowen, rng=None):
-    """局外行动：优先学法术/道纹（免费），其余按真实策略权重选（修行/休整/探索/共鸣/领悟/雇佣）。
+    """局外行动：优先学法术/道纹（免费），其余按真实策略权重选（修行/休整/探索/共鸣/雇佣）。
 
     与 baseline 对齐的成长顺序：第1场先修行(+2法限)再学道纹（实测保证第1场能打）；
     法术从第2场起补学（先发制人=免费，需要杀伐=起手道纹）。
@@ -231,32 +231,23 @@ def choose_pre_battle(e, battle_no, todo_spells, todo_daowen, rng=None):
     p = e.state.player
     if battle_no == 1 and not getattr(p, "_b1_xiuxing", False):
         p._b1_xiuxing = True
-        return "修行", {"tier": 1, "allocations": {"speed_points": 0, "mana_points": 1}}
+        return "修行", {"tier": 1}
     # 罪孽都市：雇佣高攻员工当靶子（威胁分压过玩家 → 怪物集火员工替轮回者抗伤）
     if e.state.current_region == "罪孽都市" and len(e.state.employees) < 3:
         # 20点预算：5攻次10攻力(15点)+60血(5点) → 威胁50+转化道纹10=60 > 玩家30-40
         return "雇佣", {"name": f"铁卫{len(e.state.employees) + 1}",
                         "blood_alloc": 5, "atk_bundles": 5}
-    # 债务构建：需要 转换(洗劫→逼债) + 反转(TacticalAI用) 两个残韵，第1场前就攒
+    # 【领悟】已于 2026-09-10 删除（DM裁定）：残韵不再能凭精力白拿。
+    # 后果：债务流原先靠局外领悟在第1场前攒齐 转换+反转 来解锁罪孽都市专属【逼债】，
+    # 这条路已经断了——现在只能靠开局必选、【三相残韵盘】或副本事件获取残韵。
     from engine.gamedata import REGION_EXCLUSIVE_DAOWEN
-    if "逼债" in todo_daowen and not (REGION_EXCLUSIVE_DAOWEN["罪孽都市"] & set(p.dao_wen)):
-        have = sum(1 for k in ("转换", "反转") if e.state.resonance.get(k, 0) > 0)
-        if have < 2:
-            want = "转换" if e.state.resonance.get("转换", 0) <= 0 else "反转"
-            r = e.execute_action("pre_battle_action", {"sub_action": "领悟", "resonance_type": want})
-            if r.get("success"):
-                return "领悟", {"resonance_type": want}
     if todo_daowen:
         name = todo_daowen[0]
-        # 逼债是罪孽都市专属：未残韵解锁前不能学（学习门禁），先领悟攒残韵
+        # 逼债是罪孽都市专属：未残韵解锁前不能学（学习门禁）。
+        # 【领悟】已删除，无法再靠局外行动补残韵 → 直接放弃该目标改选其它行动。
         from engine.gamedata import REGION_EXCLUSIVE_DAOWEN
         if name in REGION_EXCLUSIVE_DAOWEN["罪孽都市"]:
             if not (REGION_EXCLUSIVE_DAOWEN["罪孽都市"] & set(p.dao_wen)):
-                r = e.execute_action("pre_battle_action", {"sub_action": "领悟", "resonance_type": "转换"})
-                if not r.get("success"):
-                    r = e.execute_action("pre_battle_action", {"sub_action": "领悟", "resonance_type": "反转"})
-                if r.get("success"):
-                    return "领悟", {"resonance_type": r.get("result", {}).get("gained_resonance", "转换")}
                 todo_daowen.pop(0)  # 学不了就放弃
                 return choose_pre_battle(e, battle_no, todo_spells, todo_daowen, rng)
         return "学习", {"sub": "daowen", "tier": 1, "names": [name]}
@@ -276,14 +267,14 @@ def choose_pre_battle(e, battle_no, todo_spells, todo_daowen, rng=None):
             {"target_ref": "player:0", "amount": 8 + e.state.rest_heal_bonus}]}
     # 碎片→战力（spend_shards 模式，由 play_first_tier 传入全局标记；这里保守：
     # 主循环在每次局外结束后额外尝试花碎片，见 play_first_tier）。
-    return "修行", {"tier": 1, "allocations": {"speed_points": 0, "mana_points": 1}}
+    return "修行", {"tier": 1}
 
 
 def unlock_sin_city_daowen(e, log=None):
     """罪孽都市一阶：用残韵对怪物的专属道纹转化，让玩家获得第一种罪孽都市道纹。
 
-    门禁：学习罪孽都市专属道纹须先经残韵获得一种（README）。优先 洗劫→转换→逼债
-    （逼债对乱葬岗0碎片怪=每回始削2X血限，是二阶可用武器）；无洗劫怪则用任意
+    门禁：学习罪孽都市专属道纹须先经残韵获得一种（README）。优先 点金→转换→逼债
+    （逼债对乱葬岗0碎片怪=每回始削2X血限，是二阶可用武器）；无点金怪则用任意
     专属道纹+存在的残韵路径解锁门禁。返回是否成功解锁。"""
     p = e.state.player
     if p is None or not p.is_alive:
@@ -297,16 +288,16 @@ def unlock_sin_city_daowen(e, log=None):
     if not stock:
         return False
 
-    # 第一优先：洗劫怪 → 转换 → 逼债（最想要的二阶武器）
+    # 第一优先：点金怪 → 转换 → 逼债（最想要的二阶武器）
     if "转换" in stock:
         for m in e.state.enemies:
-            if m.is_alive and "洗劫" in m.dao_wen:
+            if m.is_alive and "点金" in m.dao_wen:
                 r = e.execute_action("use_resonance", {
-                    "source_daowen": "洗劫", "resonance_type": "转换",
+                    "source_daowen": "点金", "resonance_type": "转换",
                     "target_ref": f"enemy:{e.state.enemies.index(m)}"})
                 if r.get("success"):
                     if log is not None:
-                        log.append(f"  残韵：转换 洗劫 → 逼债（现持有{list(p.dao_wen)}）")
+                        log.append(f"  残韵：转换 点金 → 逼债（现持有{list(p.dao_wen)}）")
                     return True
     # 兜底：任意专属道纹 × 存在路径的残韵类型
     for m in e.state.enemies:
@@ -345,7 +336,7 @@ def play_first_tier(seed: int, region: str, sealed_path: str,
     e = GameEngine(db_path=db_path, rng_seed=seed,
                    sealed_candidate_path=sealed_path)
     e.execute_action("setup_attributes",
-                     {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+                     {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": region})
@@ -397,8 +388,7 @@ def play_first_tier(seed: int, region: str, sealed_path: str,
                     continue
                 # 学习失败（门禁/碎片不足）：避免死循环，兜底修行1档
                 e.execute_action("pre_battle_action", {
-                    "sub_action": "修行", "tier": 1,
-                    "allocations": {"speed_points": 0, "mana_points": 1}})
+                    "sub_action": "修行", "tier": 1})
                 continue
             # 花碎片→战力：修行高阶（1点法限/档，越贵越省精力）> 附煞冥煞 > 共鸣2档遗物。
             if spend_shards and e.state.shards >= 35 and e.state.player:
@@ -457,8 +447,7 @@ def play_first_tier(seed: int, region: str, sealed_path: str,
             else:
                 if e.state.energy >= e.state.energy + 0:  # 失败已退精力，兜底修行
                     e.execute_action("pre_battle_action",
-                                     {"sub_action": "修行", "tier": 1,
-                                      "allocations": {"speed_points": 0, "mana_points": 1}})
+                                     {"sub_action": "修行", "tier": 1})
 
         active_relics = {relic.name for relic in e.state.relics}
         from sim.optional_actions import start_battle as _sb

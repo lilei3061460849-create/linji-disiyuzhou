@@ -39,7 +39,7 @@ from engine.models import Entity, DaoWen, DaoWenInstance
 def _setup_with_rebellion(db_suffix: str) -> GameEngine:
     """构造一个战终检查会判定叛变(员工攻击总值≥玩家生命)的局面，并推进到rebellion_active=True"""
     engine = GameEngine(db_path=f"data/test_rebellion_{db_suffix}.db", rng_seed=1)
-    engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
+    engine.execute_action("setup_attributes", {"blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(engine)
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
     setup = engine.execute_action("setup_choose_region", {"region": "罪孽都市"})
@@ -91,9 +91,10 @@ def test_suppress_battle_uses_existing_combat_flow_unmodified():
     rebel = engine.state.enemies[0]
 
     engine.execute_action("round_start", {})
-    r_atk = engine.execute_action("use_daowen", {"daowen_name": "杀伐", "x": 7, "target": "彪悍打手"})
-    assert r_atk["success"] is True
-    assert rebel.current_hp == 50 - 14
+    # 法点6 → 法限3：杀伐 x 最多3；3×5=15 伤害（DM裁定 2026-09-10：5X）
+    r_atk = engine.execute_action("use_daowen", {"daowen_name": "杀伐", "x": 3, "target": "彪悍打手"})
+    assert r_atk["success"] is True, r_atk
+    assert rebel.current_hp == 50 - 15
     prepared = engine.execute_action("prepare_monster_phase", {})
     actor = prepared["result"]["actors"][0]
     attacks = [{"hits": [{"target_ref": "player:0", "dodge": False, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}}
@@ -176,7 +177,7 @@ def test_negotiate_raises_interrupt_for_dm_not_auto_resolved():
 def test_force_bypasses_threshold_check():
     """边界：force=True时跳过数值门槛，即使rebellion_active=False也能直接处理(如"被效果强制触发")"""
     engine = GameEngine(db_path="/tmp/linji_tests/test_rebellion_force.db", rng_seed=1)
-    engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
+    engine.execute_action("setup_attributes", {"blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(engine)
     engine.execute_action("setup_choose_region", {"region": "罪孽都市"})
     emp = Entity(name="小虾米", entity_type="员工", blood_limit=10, current_hp=10,
@@ -192,7 +193,7 @@ def test_force_bypasses_threshold_check():
 def test_suppress_with_no_employees_rejected():
     """边界：没有任何员工时不能"镇压"，应报错而不是空手开战"""
     engine = GameEngine(db_path="/tmp/linji_tests/test_rebellion_empty.db", rng_seed=1)
-    engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
+    engine.execute_action("setup_attributes", {"blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(engine)
     engine.execute_action("setup_choose_region", {"region": "罪孽都市"})
     r = engine.execute_action("suppress_rebellion", {"force": True})
@@ -202,7 +203,7 @@ def test_suppress_with_no_employees_rejected():
 def test_multiple_employees_all_rebel_together():
     """边界：原文"所有[员工]共同叛变"——多名员工时应全部一起搬入state.enemies，不是只挑一个"""
     engine = GameEngine(db_path="/tmp/linji_tests/test_rebellion_multi.db", rng_seed=1)
-    engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
+    engine.execute_action("setup_attributes", {"blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(engine)
     engine.execute_action("setup_choose_region", {"region": "罪孽都市"})
     for i in range(3):
@@ -221,7 +222,7 @@ def test_multiple_employees_all_rebel_together():
 def test_resolve_rejected_without_active_rebellion_battle():
     """错误输入：没有进行中的镇压战斗时调用resolve_rebellion_battle必须报错"""
     engine = GameEngine(db_path="/tmp/linji_tests/test_rebellion_no_battle.db", rng_seed=1)
-    engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
+    engine.execute_action("setup_attributes", {"blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(engine)
     engine.execute_action("setup_choose_region", {"region": "罪孽都市"})
     r = engine.execute_action("resolve_rebellion_battle", {"outcome": "victory"})
@@ -240,7 +241,7 @@ def test_resolve_rejects_invalid_outcome_value():
 def test_branches_rejected_without_active_rebellion_and_without_force():
     """错误输入：没有待处理叛变且未传force时，三个分支都必须拒绝，不能平白无故触发"""
     engine = GameEngine(db_path="/tmp/linji_tests/test_rebellion_noactive.db", rng_seed=1)
-    engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
+    engine.execute_action("setup_attributes", {"blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(engine)
     engine.execute_action("setup_choose_region", {"region": "罪孽都市"})
     engine.state.employees.append(Entity(name="老实人", entity_type="员工", blood_limit=10,

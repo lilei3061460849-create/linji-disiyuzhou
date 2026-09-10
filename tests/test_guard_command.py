@@ -22,8 +22,7 @@ from sim.build_learner import round_start_relic_choices
 def _engine(suffix: str, region: str = "乱葬岗") -> GameEngine:
     e = GameEngine(db_path=f"data/test_guard_{suffix}.db", rng_seed=1,
                    sealed_candidate_path="/tmp/guard_test.json")
-    e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 10,
-                                          "speed_points": 8, "mana_points": 7})
+    e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": region})
@@ -265,8 +264,7 @@ def test_alt_path_resolve_monster_turn_with_daowen_monster_no_nameerror():
     save_dir = tempfile.mkdtemp(prefix="altpath")
     e = GameEngine(db_path=os.path.join(save_dir, "g.db"), rng_seed=1,
                    save_dir=save_dir)
-    e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 10,
-                                          "speed_points": 8, "mana_points": 7})
+    e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": "扭曲都市"})

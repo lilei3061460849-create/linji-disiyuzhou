@@ -91,7 +91,7 @@ def main():
                            sealed_candidate_path="/tmp/gc_full.json")
             p0 = snap["player"]
             e.execute_action("setup_attributes", {"name": p0["name"], "blood_points": 10,
-                                                  "speed_points": 8, "mana_points": 7})
+                                                  "speed_points": 8, "mana_points": 6})
             finish_initial_daowen(e)
             e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
             setup = e.execute_action("setup_choose_region", {"region": "乱葬岗"})

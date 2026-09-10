@@ -28,8 +28,7 @@ def _engine(suffix, region="乱葬岗"):
     os.makedirs("/tmp/linji_tests", exist_ok=True)
     e = GameEngine(db_path=f"/tmp/linji_tests/test_bizhong_{suffix}.db", rng_seed=7,
                    sealed_candidate_path=f"/tmp/linji_tests/test_bizhong_s_{suffix}.json")
-    e.execute_action("setup_attributes", {"name": "白某", "blood_points": 10,
-                                          "speed_points": 8, "mana_points": 7})
+    e.execute_action("setup_attributes", {"name": "白某", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "曲解"})
     e.execute_action("setup_choose_region", {"region": region})
@@ -141,7 +140,7 @@ def test_player_daowen_consumes_bizhong_layer():
                                         "trigger_spell_choices": {}})
     assert r.get("success") is True, r.get("error")
     assert e.combat.bizhong_remaining(p) == 1, "道纹判定应消耗 1 层"
-    assert m.current_hp == hp0 - 6, "必中压下目标无法闪避，伤害照常结算"
+    assert m.current_hp == hp0 - 15, "必中压下目标无法闪避，伤害照常结算（杀伐3→5X=15）"
 
 
 def test_attack_and_daowen_share_one_pool():
@@ -167,6 +166,7 @@ def test_attack_and_daowen_share_one_pool():
     assert e.combat.bizhong_remaining(p) == 1
     # ② 普攻判定从同一份里再扣 1
     p.actions_used_this_round = 0
+    p.current_speed = 1   # 攻次=当前速度：压到1，本条只提交1个hit
     prep = e.execute_action("prepare_attack", {})
     assert prep.get("success") is True, prep.get("error")
     tok = prep["result"]["token"]

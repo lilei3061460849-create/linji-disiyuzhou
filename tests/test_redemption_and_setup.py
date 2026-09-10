@@ -26,7 +26,7 @@ def _give(entity, name, cost_type="消耗"):
 
 def _ready_combat(engine, region="罪孽都市"):
     engine.execute_action("setup_attributes", {
-        "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7,
+        "name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6,
     })
     finish_initial_daowen(engine)
     engine.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
@@ -53,7 +53,7 @@ def _ready_combat(engine, region="罪孽都市"):
 def test_initial_daowen_discovery_normal():
     engine = _engine("init_ok")
     r = engine.execute_action("setup_attributes", {
-        "name": "试者", "blood_points": 10, "speed_points": 8, "mana_points": 7,
+        "name": "试者", "blood_points": 11, "speed_points": 8, "mana_points": 6,
     })
     assert r["success"]
     # 新开局流程：先发现遗物3选1，再发现初始道纹。
@@ -75,7 +75,7 @@ def test_initial_daowen_discovery_normal():
 def test_initial_daowen_discovery_boundary_three_unique_from_loop():
     engine = _engine("init_bound", seed=99)
     engine.execute_action("setup_attributes", {
-        "name": "试者", "blood_points": 10, "speed_points": 8, "mana_points": 7,
+        "name": "试者", "blood_points": 11, "speed_points": 8, "mana_points": 6,
     })
     engine.execute_action("choose_discovered_relic",
                           {"relic_name": engine.state.pending_relic_choices[0]})
@@ -89,7 +89,7 @@ def test_initial_daowen_discovery_boundary_three_unique_from_loop():
 def test_initial_daowen_discovery_rejects_illegal():
     engine = _engine("init_bad")
     engine.execute_action("setup_attributes", {
-        "name": "试者", "blood_points": 10, "speed_points": 8, "mana_points": 7,
+        "name": "试者", "blood_points": 11, "speed_points": 8, "mana_points": 6,
     })
     # 遗物未选择前，初始道纹与残韵均被拒绝
     early = engine.execute_action("setup_choose_initial_daowen", {"daowen_name": "杀伐"})

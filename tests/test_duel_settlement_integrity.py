@@ -34,7 +34,7 @@ def _engine(suffix):
     os.makedirs("/tmp/linji_tests", exist_ok=True)
     engine = GameEngine(db_path=f"/tmp/linji_tests/test_duel_settle_{suffix}.db", rng_seed=7)
     engine.execute_action("setup_attributes", {
-        "name": "试者", "blood_points": 10, "speed_points": 8, "mana_points": 7,
+        "name": "试者", "blood_points": 11, "speed_points": 8, "mana_points": 6,
     })
     finish_initial_daowen(engine)
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})

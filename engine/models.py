@@ -369,13 +369,35 @@ class Entity:
         self.__dict__["_hp_engine_ref"] = None
 
     
+    def effective_attack_count(self) -> int:
+        """攻击次数（DM裁定 2026-09-10，**换算仅限轮回者**）：轮回者 = 当前速度。
+
+        怪物/[朋友]/[员工]仍读面板值——怪物不持有法力（README:120），换算对它无意义。
+        这样输出随资源衰减：闪避花掉速度，普攻的击数就跟着掉。
+        """
+        if self.entity_type == "轮回者":
+            return max(0, self.current_speed)
+        return max(0, self.attack_count)
+
+    def effective_attack_power(self) -> int:
+        """攻击力（DM裁定 2026-09-10，**换算仅限轮回者**）：轮回者 = 当前法力。
+
+        法力一池制下池子只减不增，所以每击伤害也随战斗推进单调下降。
+        """
+        if self.entity_type == "轮回者":
+            return max(0, self.current_mana)
+        return max(0, self.attack_power)
+
     @property
     def action_count(self) -> int:
-        """出手次数：轮回者=速限/3向上取整；[朋友]/[员工](微光者，面板无速限)=攻击次数/3向上取整。
-        怪物行动由CombatEngine的prepare/resolve两阶段接口独立计算，不使用本属性。
+        """出手次数：轮回者**固定2次**（DM裁定 2026-09-10，不再由速限推导——速限已改作
+        攻击次数的来源，不能再重复记账）；[朋友]/[员工](微光者，面板无速限)=攻击次数/3
+        向上取整。怪物行动由CombatEngine的prepare/resolve两阶段接口独立计算。
         疯狂+X、无力-X 对本属性的两种口径均生效。"""
         if self.entity_type in ("朋友", "员工"):
             base = math.ceil(self.attack_count / 3) if self.attack_count > 0 else 0
+        elif self.entity_type == "轮回者":
+            base = 2
         else:
             base = math.ceil(self.speed_limit / 3) if self.speed_limit > 0 else 0
         base += self.get_status_value("疯狂")
@@ -497,9 +519,15 @@ class Entity:
         self.shield = 0
     
     def spend_mana(self, amount: int) -> bool:
-        """消耗法力。愤怒：法力消耗减半（向上取整）。"""
+        """消耗法力。愤怒：法力消耗减半（向上取整）；勾魂：法力消耗翻倍。
+
+        DM裁定 2026-09-09：【勾魂】原效果是「[回始]不获得法力」，而法力已改为
+        只在[战终]恢复（不再每[回始]回填），旧效果失去作用对象，故改为消耗翻倍。
+        """
         if amount > 0 and self.has_status("愤怒"):
             amount = math.ceil(amount / 2)
+        if amount > 0 and self.has_status("勾魂"):
+            amount = amount * 2
         if self.current_mana < amount:
             return False
         self.current_mana -= amount

@@ -23,7 +23,7 @@ from engine.gamedata import REGION_EXCLUSIVE_DAOWEN
 def _engine(region="龙心谷"):
     e = GameEngine(db_path="/tmp/linji_tests/gate.db", rng_seed=1)
     e.execute_action("setup_attributes",
-                     {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+                     {"name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": region})
@@ -122,7 +122,7 @@ def test_foreign_region_exclusive_always_rejected():
     e.state.player.dao_wen["裂变"] = DaoWenInstance(
         DaoWen(name="裂变", formula="", cost_type="消耗",
                cost_formula="X", effect_formula=""))
-    for foreign in ("僵化", "洗劫", "坏死", "逼债"):
+    for foreign in ("僵化", "点金", "坏死", "逼债"):
         r = _learn(e, foreign)
         assert not r["success"], f"{foreign}属于其他副本，不应可学"
         assert "专属道纹" in r["error"]

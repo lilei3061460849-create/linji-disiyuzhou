@@ -28,8 +28,7 @@ def _arena(seed: int = 1):
     save_dir = tempfile.mkdtemp(prefix="txn")
     e = GameEngine(db_path=os.path.join(save_dir, "g.db"), rng_seed=seed,
                    save_dir=save_dir)
-    e.execute_action("setup_attributes", {"name": "L", "blood_points": 10,
-                                          "speed_points": 8, "mana_points": 7})
+    e.execute_action("setup_attributes", {"name": "L", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": "罪孽都市"})

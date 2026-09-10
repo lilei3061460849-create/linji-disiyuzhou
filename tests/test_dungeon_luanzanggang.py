@@ -43,8 +43,7 @@ def test_dungeon_resonance_loop_complete():
 def test_dungeon_selectable_region():
     """正常路径：乱葬岗可作为开局副本选择。"""
     e = GameEngine(db_path="/tmp/test_lz_region.db", rng_seed=1)
-    e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 10,
-                                          "speed_points": 8, "mana_points": 7})
+    e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     r = e.execute_action("setup_choose_region", {"region": "乱葬岗"})
@@ -66,8 +65,7 @@ def test_dungeon_monster_pool_parsed():
 def test_fusha_select_mode():
     """正常路径：附煞·选择模式（75碎片）给道纹附加煞气。"""
     e = GameEngine(db_path="/tmp/test_lz_fusha.db", rng_seed=1)
-    e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 10,
-                                          "speed_points": 8, "mana_points": 7})
+    e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": "乱葬岗"})
@@ -83,8 +81,7 @@ def test_fusha_select_mode():
 def test_fusha_discover_mode_candidates():
     """正常路径：附煞·发现模式（50碎片）随机列3件候选。"""
     e = GameEngine(db_path="/tmp/test_lz_fusha2.db", rng_seed=1)
-    e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 10,
-                                          "speed_points": 8, "mana_points": 7})
+    e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": "乱葬岗"})
@@ -105,8 +102,7 @@ def test_fusha_discover_mode_candidates():
 def test_fusha_invalid_sha_qi_rejected():
     """错误输入：未知煞气被拒绝。"""
     e = GameEngine(db_path="/tmp/test_lz_fusha3.db", rng_seed=1)
-    e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 10,
-                                          "speed_points": 8, "mana_points": 7})
+    e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": "乱葬岗"})
@@ -120,8 +116,7 @@ def test_fusha_invalid_sha_qi_rejected():
 def test_fusha_region_gate():
     """错误输入：非乱葬岗副本不能使用附煞。"""
     e = GameEngine(db_path="/tmp/test_lz_fusha4.db", rng_seed=1)
-    e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 10,
-                                          "speed_points": 8, "mana_points": 7})
+    e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": "扭曲都市"})
@@ -162,16 +157,18 @@ def test_zhenshi_blocks_heal():
     assert any(e["type"] == "zhenshi" for e in r["effects"])
 
 
-def test_gouhun_blocks_mana_gain_for_x_rounds():
+def test_gouhun_doubles_mana_cost_for_x_rounds():
     """正常路径（2026-08-30 改版）：勾魂X挂到目标身上，持续X回合[回始]不获得法力。
 
     旧版为「[回始]失去2X法力，持续∞」，已废止；新版**不扣已有法力**，只压制回填。
     """
     st = GameState()
+    # DM裁定 2026-09-09：轮回者普攻面板初始 1×1，且雕塑不再排除轮回者；
+    # 夹具不给面板会在回终被雕塑化，勾魂的持续X就走不到期。
     st.player = Entity("P", "轮回者", blood_limit=60, current_hp=60,
-                       mana_limit=20, current_mana=20)
+                       mana_limit=20, current_mana=20, attack_count=1, attack_power=1)
     foe = Entity("敌法", "轮回者", blood_limit=60, current_hp=60,
-                 mana_limit=20, current_mana=20)
+                 mana_limit=20, current_mana=20, attack_count=1, attack_power=1)
     st.enemies.append(foe)
     c = CombatEngine(st, DiceEngine(seed=1))
     c.reset_monster_activation()
@@ -182,26 +179,24 @@ def test_gouhun_blocks_mana_gain_for_x_rounds():
     dur = next(s.remaining_rounds for s in foe.status_effects if s.name == "勾魂")
     assert dur == 2, f"勾魂X=2 应持续2回合，实{dur}"
 
-    # 第1回合：法力回填被压制，已有法力不动
-    foe.current_mana = 7
-    rs = c.round_start({"relic_choices": {}})
-    blocked = [e for e in rs.get("effects", []) if e.get("type") == "mana_refill_blocked"]
-    assert blocked, "回始应有法力回填被压制的条目"
-    assert foe.current_mana == 7, f"勾魂期间不得获得法力，实{foe.current_mana}"
+    # DM裁定 2026-09-09：勾魂改为「目标消耗法力翻倍」（法力已改一池制，
+    # 旧的「[回始]不获得法力」失去作用对象）
+    foe.current_mana = 20
+    assert foe.spend_mana(4) is True
+    assert foe.current_mana == 12, f"勾魂期间 4 点消耗应翻倍扣 8，实剩 {foe.current_mana}"
 
-    # 第2回合：仍被压制（持续X=2，[回终]才递减）
+    # 第2回合仍在持续期内（持续X=2，[回终]才递减）
     c.round_start({"relic_choices": {}})
-    assert foe.current_mana == 7, f"第2回合仍应在持续期内，实{foe.current_mana}"
+    assert foe.has_status("勾魂")
+    assert foe.spend_mana(2) is True
+    assert foe.current_mana == 8, f"仍应翻倍，实剩 {foe.current_mana}"
 
-    # 持续走完后恢复回填
+    # 持续走完后恢复正常消耗
     from engine.enums import CombatSubphase
     st.combat_subphase = CombatSubphase.AWAIT_ROUND_END.value
     c.round_end()
     st.combat_subphase = CombatSubphase.AWAIT_ROUND_END.value
     c.round_end()
     assert not foe.has_status("勾魂"), "持续X走完后勾魂应自然到期"
-    # 注：当前法力在[敌回终]清空，故到期后回填 = 0 + 法限20
-    rs2 = c.round_start({"relic_choices": {}})
-    refill = [e for e in rs2.get("effects", []) if e.get("type") == "mana_refill"]
-    assert refill and refill[0]["gained"] == 20, f"到期后应恢复回填: {refill}"
-    assert foe.current_mana == 20, f"到期后应恢复回填，实{foe.current_mana}"
+    assert foe.spend_mana(4) is True
+    assert foe.current_mana == 4, f"到期后按原值扣费，实剩 {foe.current_mana}"

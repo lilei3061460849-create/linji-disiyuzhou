@@ -121,7 +121,7 @@ def test_blood_pact_round_start_can_share_its_own_bleed(tmp_path):
 
     assert result["success"]
     assert player.current_hp == 96 and ally.current_hp == 76
-    assert player.current_mana == 32  # 法限30 + 血契2
+    assert player.current_mana == 2  # DM裁定 2026-09-09：一池制，回始不回填 → 只剩血契2
 
 
 def test_opponent_blood_pact_uses_its_own_allies_in_final_duel():
@@ -141,7 +141,7 @@ def test_opponent_blood_pact_uses_its_own_allies_in_final_duel():
     }})
 
     assert opponent.current_hp == 88 and opponent_ally.current_hp == 58
-    assert opponent.current_mana == 9  # 法限8 + 血契1
+    assert opponent.current_mana == 1  # 一池制：回始不回填 → 只剩血契1
     assert state.player.current_hp == 100
 
 

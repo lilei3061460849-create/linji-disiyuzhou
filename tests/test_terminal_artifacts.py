@@ -32,7 +32,7 @@ def _cleanup(path):
         os.remove(path)
 
 
-def _new_engine(region, name="老张", speed=8, mana=7, dbsuffix="a", sealed="data/test_artifact_sealed.json"):
+def _new_engine(region, name="老张", speed=8, mana=6, dbsuffix="a", sealed="data/test_artifact_sealed.json"):
     engine = GameEngine(db_path=f"data/test_artifact_{dbsuffix}.db", rng_seed=1, sealed_candidate_path=sealed)
     blood = 25 - speed - mana
     engine.execute_action("setup_attributes",
@@ -142,7 +142,7 @@ def test_crimson_fang_triggers_first_embrace_then_seals():
     engine.state.phase = "in_combat"
     engine.execute_action("battle_end", {})  # 无候选，直接封存
 
-    challenger = _new_engine("扭曲都市", name="挑战者", speed=13, dbsuffix="fang_challenger", sealed=sealed)
+    challenger = _new_engine("扭曲都市", name="挑战者", speed=12, dbsuffix="fang_challenger", sealed=sealed)  # 速点必须偶数
     challenger.state.current_battle = 7
     challenger.state.enemies.clear()
     challenger.state.phase = "in_combat"

@@ -35,8 +35,7 @@ def main():
     # ---- 局外(3精力):学习庇护 / 领悟转换 / 修行1档(法) ----
     act(e, "pre_battle_action", {"sub_action": "学习", "sub": "daowen", "name": "庇护"})
     act(e, "pre_battle_action", {"sub_action": "领悟", "resonance_type": "转换"})
-    act(e, "pre_battle_action", {"sub_action": "修行", "tier": 1,
-                                 "allocations": {"speed_points": 0, "mana_points": 1}})
+    act(e, "pre_battle_action", {"sub_action": "修行", "tier": 1})
 
     # ---- 战始 ----
     act(e, "battle_start", {"relic_choices": battle_start_relic_choices(e)})

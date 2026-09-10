@@ -19,7 +19,7 @@ def _engine(suffix):
     os.makedirs("/tmp/linji_tests", exist_ok=True)
     engine = GameEngine(db_path=f"/tmp/linji_tests/test_seal_sculp_{suffix}.db", rng_seed=1)
     engine.execute_action("setup_attributes", {
-        "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7,
+        "name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6,
     })
     finish_initial_daowen(engine)
     engine.state.current_region = "龙心谷"
@@ -106,22 +106,31 @@ def test_seal_on_duel_reincarnator_only_removes_zero():
 # 雕塑
 # ========================================================================
 
-def test_setup_reincarnator_attack_panel_is_zero():
-    """正常路径：setup 后轮回者攻击次数/攻击力为 0×0。"""
-    engine = _engine("zero_atk")
+def test_setup_reincarnator_attack_panel_derives_from_speed_and_mana():
+    """DM裁定 2026-09-10：轮回者攻次=当前速度、攻力=当前法力（原「初始1×1面板」口径废止）。
+
+    夹具把当前速度设为12、当前法力设为40，因此攻次/攻力应分别为 12/40。
+    雕塑**不再**排除轮回者（见下两条）。
+    """
+    engine = _engine("one_atk")
     p = engine.state.player
-    assert p.attack_count == 0
-    assert p.attack_power == 0
+    assert p.effective_attack_count() == p.current_speed == 12
+    assert p.effective_attack_power() == p.current_mana == 40
+    # DM裁定 2026-09-09：轮回者既有攻击力，雕塑不再排除轮回者
+    assert engine.combat._can_be_sculptured(p) is True
 
 
 def test_sculpture_monster_and_weiguang_on_both_sides():
     """正常路径：怪物与己方微光者攻力归 0 都化为雕塑。"""
     state = GameState()
+    # DM裁定 2026-09-10：轮回者攻次=当前速度、攻力=当前法力，写 attack_count/attack_power
+    # 面板无效；不给当前速度/法力的话玩家自己就是 0×0，会先被雕塑、污染计数断言。
     state.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60,
-                          attack_count=0, attack_power=0)
-    m = _monster("石像鬼", hp=100, atk=2, power=0)
+                          speed_limit=1, current_speed=1, mana_limit=1, current_mana=1)
+    # DM裁定 2026-09-10：雕塑触发条件为攻次与攻力**都**为0（原「攻力归0即可」废止）
+    m = _monster("石像鬼", hp=100, atk=0, power=0)
     friend = Entity(name="岩行者", entity_type="朋友", blood_limit=40, current_hp=40,
-                    attack_count=3, attack_power=0, is_deployed=True)
+                    attack_count=0, attack_power=0, is_deployed=True)
     state.enemies.append(m)
     state.friends.append(friend)
     combat = CombatEngine(state, DiceEngine())
@@ -135,13 +144,16 @@ def test_sculpture_monster_and_weiguang_on_both_sides():
 
 
 def test_sculpture_employee_and_temp_friend_zero_count():
-    """边界：员工攻次归 0、临时朋友攻力归 0 也触发；攻力仍为 1 的微光者不触发。"""
+    """边界：攻次与攻力**都**归 0 才触发（DM裁定 2026-09-10）；仍留 3×1 的微光者不触发。"""
     state = GameState()
-    state.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60)
+    # DM裁定 2026-09-10：轮回者攻次=当前速度、攻力=当前法力，写 attack_count/attack_power
+    # 面板无效；不给当前速度/法力的话玩家自己就是 0×0，会先被雕塑、污染计数断言。
+    state.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60,
+                          speed_limit=1, current_speed=1, mana_limit=1, current_mana=1)
     emp = Entity(name="打手", entity_type="员工", blood_limit=48, current_hp=48,
-                 attack_count=0, attack_power=6, is_deployed=True)
+                 attack_count=0, attack_power=0, is_deployed=True)
     temp = Entity(name="路人", entity_type="临时朋友", blood_limit=20, current_hp=20,
-                  attack_count=2, attack_power=0)
+                  attack_count=0, attack_power=0)
     ok = Entity(name="力士", entity_type="朋友", blood_limit=30, current_hp=30,
                 attack_count=3, attack_power=1, is_deployed=True)
     state.employees.append(emp)
@@ -154,8 +166,12 @@ def test_sculpture_employee_and_temp_friend_zero_count():
     assert ok.is_alive and not ok.is_sculptured
 
 
-def test_sculpture_includes_chizu_skips_reincarnator():
-    """边界：赤族攻力归 0 雕塑；双方轮回者 0×0 不雕塑。"""
+def test_sculpture_includes_chizu_and_reincarnator():
+    """DM裁定 2026-09-09：赤族攻力归 0 雕塑；**双方轮回者 0×0 同样雕塑**。
+
+    旧口径下这条断言是「只 1 座雕塑、双方轮回者存活」；裁定后 0×0 的轮回者
+    与怪物同理，攻次/攻力归 0 即失去攻击手段 → 化为雕塑。
+    """
     state = GameState()
     player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60,
                     attack_count=0, attack_power=0)
@@ -168,15 +184,16 @@ def test_sculpture_includes_chizu_skips_reincarnator():
     state.friends.append(chizu)
     combat = CombatEngine(state, DiceEngine())
     paths = combat.settle_victory_paths()
-    assert sum(1 for p in paths if p["type"] == "sculpture") == 1
+    assert sum(1 for p in paths if p["type"] == "sculpture") == 3
     assert chizu.is_sculptured and not chizu.is_alive
-    assert player.is_alive and not player.is_sculptured
-    assert foe.is_alive and not foe.is_sculptured
-    assert any(c.name == "赤仆雕塑" for c in state.consumables)
+    assert player.is_sculptured and not player.is_alive
+    assert foe.is_sculptured and not foe.is_alive
+    names = {c.name for c in state.consumables if c.kind == "sculpture"}
+    assert names == {"赤仆雕塑", "贾凡雕塑", "敌对轮回者雕塑"}
 
 
-def test_sculpture_skips_reincarnator_even_if_forced_zero():
-    """错误输入/对照：只剩轮回者时，攻次/攻力 0 不产生雕塑。"""
+def test_sculpture_now_includes_zero_attack_reincarnator():
+    """DM裁定 2026-09-09：只剩轮回者时，攻次/攻力 0 同样产生雕塑（旧口径为不产生）。"""
     state = GameState()
     player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60,
                     attack_count=0, attack_power=0)
@@ -186,6 +203,7 @@ def test_sculpture_skips_reincarnator_even_if_forced_zero():
     state.enemies.append(foe)
     combat = CombatEngine(state, DiceEngine())
     paths = combat.settle_victory_paths()
-    assert not any(p["type"] == "sculpture" for p in paths)
-    assert player.is_alive and foe.is_alive
-    assert state.consumables == []
+    assert sum(1 for p in paths if p["type"] == "sculpture") == 2
+    assert player.is_sculptured and foe.is_sculptured
+    assert {c.name for c in state.consumables if c.kind == "sculpture"} == {
+        "贾凡雕塑", "敌对轮回者雕塑"}

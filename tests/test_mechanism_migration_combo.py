@@ -88,16 +88,18 @@ def test_full_battle_cycle_all_mechanism_types_fire():
     enemy.attack_count = 2
     enemy.attack_power = 3
 
-    # 回始：mana_refill -> 自愈 -> 衰败 -> 洞察 -> 狂暴标记 -> 畸变标记
+    # 回始：自愈 -> 衰败 -> 洞察 -> 狂暴标记
+    # （DM裁定 2026-09-09：法力一池制，mana_refill 已不在回始管道里）
     res = combat.round_start()
     p_types = [e.get("type") for e in res["effects"] if e.get("entity") == "P"]
-    assert p_types == ["mana_refill", "self_heal", "shuaibai_tick", "dongcha_mana",
+    assert p_types == ["self_heal", "shuaibai_tick", "dongcha_mana",
                        "extra_attack_ready"], f"回始顺序: {p_types}"
 
     # 回始数值链（P: hp100 满血 -> 自愈 +10 封顶 100 -> 衰败 ceil(100*10/100)=10 -> 90）
     assert player.current_hp == 90, f"P hp={player.current_hp}"
     # mana: 50(初始) + 50(回填) + 4(洞察) = 104（无不朽之躯 -> 不钳制）
-    assert player.current_mana == 104, f"P mana={player.current_mana}"
+    # 一池制：回始少了 +法限50 的回填，故 104 → 54
+    assert player.current_mana == 54, f"P mana={player.current_mana}"
 
     # 玩家打敌人 8 点：加害 +2 -> 10，龙鳞 -8 -> 实伤 2；洗劫按实伤 2 夺碎片
     dmg = combat._apply_hostile_damage(enemy, 8, source=player)
@@ -363,14 +365,16 @@ def test_extreme_blood_limit_one_and_mana_bounds():
     assert enemy.current_hp == 0, f"hp={enemy.current_hp}"
     assert enemy.is_alive is False
 
-    # 勾魂（2026-08-30 改版）：挂勾魂的轮回者[回始]不获得法力，已有法力不动
+    # 勾魂（DM裁定 2026-09-09 再改版）：法力消耗翻倍；回始不动已有法力
     state2, combat2 = _arena()
     p2 = state2.player
     p2.current_mana = 7
     _add(p2, "勾魂", 1, rounds=2)
     res2 = combat2.round_start()
-    blocked = [e for e in res2["effects"] if e.get("type") == "mana_refill_blocked"]
-    assert blocked and p2.current_mana == 7, f"勾魂期间不得获得法力: {p2.current_mana}"
+    assert [e for e in res2["effects"] if e.get("type") == "mana_refill_blocked"] == []
+    assert p2.current_mana == 7, f"回始不动已有法力: {p2.current_mana}"
+    assert p2.spend_mana(2) is True
+    assert p2.current_mana == 3, f"勾魂期间 2 点应翻倍扣 4，实剩 {p2.current_mana}"
 
     # 法力满 + 洞察 pending：
     #   无不朽之躯 -> 法力可超限（50+20=70，与旧实现一致）

@@ -369,12 +369,12 @@ class RuleValidator:
         if action.get("action") == "setup_attributes":
             params = action.get("params", {})
             total = params.get("blood_points", 0) + params.get("speed_points", 0) + params.get("mana_points", 0)
-            if total != 25:
+            if total > 25:
                 return {
                     "severity": "error",
                     "rule_name": "属性点总和",
-                    "rule_text": "初始属性点总和必须为25",
-                    "violation_description": f"分配总和为{total}，应为25",
+                    "rule_text": "初始属性点总和不能超过25（余点存入属性点池）",
+                    "violation_description": f"分配总和为{total}，不得超过25",
                     "context": {"total": total}
                 }
         return None

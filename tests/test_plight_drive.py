@@ -136,7 +136,7 @@ def test_plight_no_drive_without_signals(tmp_path):
 
 def _full_ok(engine: GameEngine) -> None:
     assert engine.execute_action("setup_attributes", {
-        "name": "测试", "blood_points": 10, "speed_points": 8, "mana_points": 7})["success"]
+        "name": "测试", "blood_points": 11, "speed_points": 8, "mana_points": 6})["success"]
     assert finish_initial_daowen(engine)["success"]
     assert engine.execute_action("setup_choose_resonance", {"resonance_type": "反转"})["success"]
     assert engine.execute_action("setup_choose_region", {"region": "龙心谷"})["success"]

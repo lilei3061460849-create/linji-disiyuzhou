@@ -1,0 +1,150 @@
+"""普攻作为常驻 AI 候选（DM裁定 2026-09-09，实验旗标 LJ_AI_BASIC_ATTACK=1）。
+
+裁定背景：法力改一池制后不再每回合回填，只靠法力型道纹会在池子花干后无事可做。
+实测同批种子（0-99，扭曲都市 7 场）：
+  · 一池制、AI 无普攻：通关 0/100，平均经历 0.87 场
+  · 一池制、AI 有普攻：通关 0/100，平均经历 1.02 场（1×1 普攻只打 1 点，救不动）
+  · 再加攻次/攻力加点 + 修行买攻：普攻武斗通关 1/100，平均经历 4.26 场
+
+普攻是两段动作（prepare_attack → resolve_attack，resolve 需要 prepare 给的 token），
+所以预演器扩成能吃动作序列，AI 才能看见普攻的真实伤害并参与打分。
+"""
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import pytest  # noqa: E402
+
+from engine.ai_tactics import TacticalAI  # noqa: E402
+from engine.api import GameEngine  # noqa: E402
+from tests.setup_support import (  # noqa: E402
+    begin_battle, begin_round, finish_initial_daowen,
+)
+
+FLAG = "LJ_AI_BASIC_ATTACK"
+
+
+@pytest.fixture
+def engine(tmp_path):
+    e = GameEngine(db_path=str(tmp_path / "ai_ba.db"), rng_seed=7,
+                   sealed_candidate_path=str(tmp_path / "ai_ba.json"))
+    # DM裁定 2026-09-10：攻次=当前速度、攻力=当前法力；加点只剩血/速/法三维（2点一档）
+    e.execute_action("setup_attributes", {"name": "白某", "blood_points": 1,
+                                          "speed_points": 8, "mana_points": 16})
+    finish_initial_daowen(e)
+    e.execute_action("setup_choose_resonance", {"resonance_type": "曲解"})
+    e.execute_action("setup_choose_region", {"region": "乱葬岗"})
+    begin_battle(e)
+    begin_round(e)
+    return e
+
+
+def test_flag_off_yields_no_basic_attack_candidate(engine, monkeypatch):
+    """错误输入/对照：旗标关闭时行为与改动前一致——不产生普攻候选。"""
+    monkeypatch.delenv(FLAG, raising=False)
+    ai = TacticalAI(engine)
+    assert ai._basic_attack_candidates() == []
+    p = engine.state.player
+    assert (p.speed_limit, p.mana_limit) == (4, 8)
+    assert (p.effective_attack_count(), p.effective_attack_power()) == (4, 8)
+
+
+def test_flag_on_yields_one_candidate_per_live_enemy(engine, monkeypatch):
+    """正常路径：旗标开启后每个存活敌人各一个普攻候选。"""
+    monkeypatch.setenv(FLAG, "1")
+    ai = TacticalAI(engine)
+    cands = ai._basic_attack_candidates()
+    assert len(cands) == len(ai.alive_enemies()) >= 1
+    c = cands[0]
+    assert c["kind"] == "attack" and c["label"].startswith("普攻→")
+    assert [step[0] for step in c["steps"]] == ["prepare_attack", "resolve_attack"]
+
+
+def test_preview_sequence_sees_real_attack_damage(engine, monkeypatch):
+    """正常路径：预演整串跑完，打分看见真实伤害（当前速度4×当前法力8=32，未被闪避时）。"""
+    monkeypatch.setenv(FLAG, "1")
+    ai = TacticalAI(engine)
+    foe = ai.alive_enemies()[0]
+    foe.current_speed = 0                 # 速度0 → 不能闪避 → 伤害确定
+    pv = ai.previewer.preview_sequence(ai._attack_steps(foe.name))
+    assert all(r.get("success") for r in pv["results"]), pv["results"]
+    hp = next(e for e in pv["diff"]["enemies"] if e["name"] == foe.name)
+    p = engine.state.player
+    assert hp["hp_before"] - hp["hp_after"] == \
+        p.effective_attack_count() * p.effective_attack_power() == 32, hp
+    # 真实状态分毫不动（预演是副本执行）
+    assert foe.current_hp == hp["hp_before"]
+
+
+def test_empty_pool_means_zero_damage_output(engine, monkeypatch):
+    """**新公式的重要后果**（DM裁定 2026-09-10：攻击力=当前法力）。
+
+    法力归零 → 攻击力 0 → 普攻也打不出伤害。接普攻原本就是为了「法力花干还有输出」，
+    而攻力=当前法力把这条兜底取消了：一池制下把法力花光，本场就彻底失去输出手段
+    （若当前速度也归零，攻次和攻力都为 0，还要吃【雕塑】）。
+    这条测试钉住事实，不代表它是对的——是否要给普攻保底，等 DM 裁定。
+    """
+    monkeypatch.setenv(FLAG, "1")
+    ai = TacticalAI(engine, verbose=True)
+    foe = ai.alive_enemies()[0]
+    foe.current_speed = 0
+    hp_before = foe.current_hp
+    engine.state.player.current_mana = 0          # 一池花干
+    assert engine.state.player.effective_attack_power() == 0
+    ai.take_turn()
+    assert foe.current_hp == hp_before, f"攻力0时普攻应为0伤，实掉 {hp_before - foe.current_hp}"
+
+
+def test_at_one_by_one_daowen_still_wins(engine, monkeypatch):
+    """边界：普攻是候选不是覆盖——1×1 面板下（每手 1 伤）杀伐仍然优先。
+
+    实测打分：杀伐X=7 → 17.92，普攻（1伤）→ 1.40。
+    """
+    monkeypatch.setenv(FLAG, "1")
+    p = engine.state.player
+    p.current_speed, p.current_mana = 1, 1     # 攻次/攻力随之变成 1×1
+    ai = TacticalAI(engine, verbose=True)
+    ai.take_turn()
+    decisions = [line for line in ai.log if "实时决策" in line]
+    assert decisions and all("普攻" not in line for line in decisions), decisions
+
+
+def test_full_pool_shaifa_outscores_basic_attack(engine, monkeypatch):
+    """记录 DM裁定 2026-09-10（杀伐 2X→5X）后的真实取舍——结论已反转。
+
+    旧结论（已作废）：攻次4×攻力8 的普攻每手 32 伤且不耗法力，压过杀伐。
+    实测现行打分（夹具 攻次4/攻力8/法力8）：
+        普攻→尸霸 44.80   （一手 4 击 × 8 伤 = 32，不耗法力）
+        杀伐X=8   48.08   （5×8 = 40 伤，吃光整池）
+    杀伐单次出手伤害 40 > 普攻 32，所以满池时 AI 选择杀伐。
+
+    但普攻**没有**因此变成无用候选：它的价值在法力池见底之后——见下条。
+    """
+    monkeypatch.setenv(FLAG, "1")
+    ai = TacticalAI(engine, verbose=True)
+    ai.take_turn()
+    decisions = [line for line in ai.log if "实时决策" in line]
+    assert decisions, decisions
+    assert any("杀伐" in line for line in decisions), decisions
+    assert engine.state.player.current_mana < engine.state.player.mana_limit, \
+        "满池时应选择杀伐并真的花掉法力"
+
+
+def test_spent_pool_leaves_no_damaging_candidate(engine, monkeypatch):
+    """DM 必须知道的后果：攻力=当前法力，池子花干后普攻也是 0 伤。
+
+    实测（法力 0/8）AI 的候选里**没有任何伤害手段**，只剩 固执/残韵 这类非伤害项：
+        残韵·曲解→庇护@尸霸 1.20 ；固执X=1 70.80
+    即「法力归零 = 本场彻底没有输出」。DM 已明确拒绝给普攻设保底伤害
+    （2026-09-10：「我觉得只是因为目前消耗法力的道纹数值不够」），故此处只记录不修改。
+    """
+    monkeypatch.setenv(FLAG, "1")
+    p = engine.state.player
+    p.current_mana = 0
+    assert p.effective_attack_power() == 0, "攻力=当前法力，池空即0"
+    ai = TacticalAI(engine, verbose=True)
+    # 候选仍会枚举（引擎不按伤害过滤），但打分为 0，AI 不会选它——过滤发生在打分环节。
+    ai.take_turn()
+    decisions = [line for line in ai.log if "实时决策" in line]
+    assert all("普攻" not in line for line in decisions), decisions

@@ -25,8 +25,7 @@ from tests.setup_support import finish_initial_daowen
 def _engine():
     e = GameEngine(db_path=os.path.join(tempfile.mkdtemp(prefix="risk"), "g.db"),
                    rng_seed=1, save_dir=tempfile.mkdtemp(prefix="risk2"))
-    e.execute_action("setup_attributes", {"name": "T", "blood_points": 10,
-                                          "speed_points": 8, "mana_points": 7})
+    e.execute_action("setup_attributes", {"name": "T", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": "扭曲都市"})

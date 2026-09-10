@@ -31,8 +31,7 @@ def pre_battle(e, log):
             log.append("  附煞·冥煞·杀伐")
             continue
         e.execute_action("pre_battle_action", {
-            "sub_action": "修行", "tier": 1,
-            "allocations": {"speed_points": 0, "mana_points": 1}})
+            "sub_action": "修行", "tier": 1})
 
 
 def player_turn(e, log):

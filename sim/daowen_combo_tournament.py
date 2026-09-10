@@ -48,7 +48,7 @@ def candidate_pool() -> list[str]:
 def _setup(seed: int, region: str):
     e = GameEngine(db_path=f"/tmp/tourney_{os.getpid()}.db", rng_seed=seed)
     e.execute_action("setup_attributes", {
-        "name": "贾凡", "blood_points": 6, "speed_points": 8, "mana_points": 11})
+        "name": "贾凡", "blood_points": 6, "speed_points": 8, "mana_points": 10})
     rc = list(e.state.pending_relic_choices)
     pick = next((n for n in rc if n not in INTERACTIVE_RELICS),
                 next((n for n in rc if n != "无所求"), rc[0]))

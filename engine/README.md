@@ -189,7 +189,7 @@ engine.remove_personality(entity)       # 手工清除（幂等）
 | `resolve_redemption` | 救赎触发后选择接纳（自定义朋友名）或无视 |
 | `setup_choose_resonance` | 选择初始残韵 |
 | `setup_choose_region` | 选择副本 |
-| `pre_battle_action` | 局外行动（领悟/休整/修行/学习/共鸣/探索/忘忧(需持有忘忧香)/献祭(需持有红头绳)） |
+| `pre_battle_action` | 局外行动（休整/修行/学习/共鸣/探索/忘忧(需持有忘忧香)/献祭(需持有红头绳)；【领悟】已于2026-09-10删除） |
 | `use_daowen` | 发动道纹（可选actor：留空=玩家自身法力制发动；指定[朋友]/[员工]名=听从指令发动，免法力只消耗出手，且必须指定非自身目标） |
 | `use_spell` | 发动法术 |
 | `use_resonance` | 使用残韵 |

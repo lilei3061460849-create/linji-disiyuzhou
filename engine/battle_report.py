@@ -174,12 +174,8 @@ def format_round_start(round_no: int, rs_result: dict, player: Any, enemies: lis
 def _render_effect(eff: dict) -> str:
     """把引擎的 effect 字典转成文字，不添加引擎未给出的数值。"""
     t = eff.get("type", "")
-    if t == "mana_refill":
-        gained = eff.get("gained")
-        extra = f"（+{gained}）" if gained is not None else ""
-        return f"{eff.get('entity')} 获得法力：{eff.get('from')}→{eff.get('to')}{extra}"
-    if t == "mana_clear":
-        return f"{eff.get('entity')} 法力清空：清除{eff.get('cleared')}点"
+    # DM裁定 2026-09-09：法力改一池制（[战始]给满、[回始]不回填、[敌回终]不清空），
+    # mana_refill / mana_clear 两种条目已无产出，对应渲染分支一并删除（不留死接线）。
     if t == "shield_clear":
         return f"{eff.get('entity')} 格挡清空：清除{eff.get('cleared')}点"
     if t == "damage":

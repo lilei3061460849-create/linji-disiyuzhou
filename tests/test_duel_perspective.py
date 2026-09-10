@@ -41,7 +41,7 @@ def _duel_engine(tmp_path, *, lord_relics=("守夜灯",), lord_hp=40, lord_mana=
                    sealed_candidate_path=str(tmp_path / "s.json"),
                    death_book_path=str(tmp_path / "b.md"))
     e.execute_action("setup_attributes", {
-        "name": "挑战者甲", "blood_points": 6, "speed_points": 8, "mana_points": 11})
+        "name": "挑战者甲", "blood_points": 7, "speed_points": 8, "mana_points": 10})
     finish_initial_daowen(e)
     p = e.state.player
     p.current_hp = challenger_hp
@@ -211,22 +211,26 @@ def test_dodge_and_damage_results_are_shown(tmp_path):
     """6：闪避与伤害必须作为公开可观察结果正常出现。"""
     e = _duel_engine(tmp_path)
     e.execute_action("round_start", {"relic_choices": {}})
-    e.state.player.attack_power = 5
-    e.state.player.attack_count = 1
+    # DM裁定 2026-09-10：轮回者攻次=当前速度、攻力=当前法力，写 attack_power/count 无效。
+    # 夹具给了 速度9/法力20 → 一手 9击×20 = 180 伤，会把 40 血的守擂乙直接打死，
+    # 后面那条"守擂还手"就找不到存活行动者了。这里压到 1击×5伤，让它活着。
+    e.state.player.current_speed = 1
+    e.state.player.current_mana = 5
     r1 = do_attack(e, "挑战者甲", [], dodge=False)
-    assert r1["success"]
+    assert r1["success"], r1
     entries = []
     DP.record_attack(entries, e.state.current_round,
                      actor_side="player_side", actor_name="挑战者甲",
                      target_side="opponent_side", hits=r1["result"]["hits"])
     text = "\n".join(DP.render_report(entries))
-    assert "守擂乙 受到5点伤害" in text
+    assert "守擂乙 受到5点伤害" in text   # 攻力=当前法力=5
 
     e.state.duel_turn = "opponent_side"
-    e.state.enemies[0].attack_power = 6
-    e.state.enemies[0].attack_count = 1
+    # 轮回者攻力=当前法力、攻次=当前速度，写面板无效
+    e.state.enemies[0].current_mana = 6
+    e.state.enemies[0].current_speed = 1
     r2 = do_attack(e, "守擂乙", [], dodge=True)
-    assert r2["success"]
+    assert r2["success"], r2
     entries2 = []
     DP.record_attack(entries2, e.state.current_round,
                      actor_side="opponent_side", actor_name="守擂乙",
@@ -394,7 +398,7 @@ def test_non_duel_battle_report_format_untouched(tmp_path):
     """11：普通 PvE 战斗（非死斗）的战报格式化路径完全不受本次改动影响。"""
     e = GameEngine(db_path=str(tmp_path / "pve.db"), rng_seed=1)
     e.execute_action("setup_attributes",
-                     {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+                     {"name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": "龙心谷"})

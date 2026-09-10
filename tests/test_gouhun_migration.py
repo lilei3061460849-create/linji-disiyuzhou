@@ -34,10 +34,13 @@ COMBAT_SOURCE = (ROOT / "engine" / "combat.py").read_text(encoding="utf-8")
 
 def _arena(mana=20, gouhun_rounds=None, entity_type="轮回者", alive=True):
     state = GameState(phase="in_combat", combat_subphase="player_actions")
+    # DM裁定 2026-09-09：轮回者普攻面板初始 1×1，雕塑不再排除轮回者。
+    # 只对轮回者补面板——怪物档仍按各自用例设定，避免顺手改掉雕塑相关断言。
+    atk = {"attack_count": 1, "attack_power": 1} if entity_type == "轮回者" else {}
     player = Entity("P", "轮回者", blood_limit=100, current_hp=100,
-                    mana_limit=50, current_mana=0, speed_limit=10, current_speed=5)
+                    mana_limit=50, current_mana=0, speed_limit=10, current_speed=5, **atk)
     ent = Entity("E", entity_type, blood_limit=50, current_hp=50,
-                 mana_limit=30, current_mana=mana)
+                 mana_limit=30, current_mana=mana, **atk)
     if gouhun_rounds is not None:
         ent.add_status(StatusEffect(name="勾魂", remaining_rounds=gouhun_rounds,
                                     value=1, source="x"))
@@ -60,23 +63,24 @@ def test_no_round_start_mana_drain_anywhere():
     assert "gouhun_mana" not in COMBAT_SOURCE, "不得残留回始扣法力的效果条目"
     calc = DaoWenEngine.resolve("勾魂", 3)
     assert "round_start_mana_drain" not in calc
-    assert calc.get("no_mana_gain") is True
+    assert calc.get("no_mana_gain") is None, "旧「不获得法力」字段必须已移除"
+    assert calc.get("mana_cost_multiplier") == 2, "DM裁定 2026-09-09：勾魂=消耗法力翻倍"
     assert calc.get("duration") == 3, "持续 = X"
-    assert "无法获得法力" in calc["summary"], calc["summary"]
+    assert "法力消耗翻倍" in calc["summary"], calc["summary"]
 
 
-# ==================== 2. 新语义：回始不获得法力 ====================
+# ====== 2. 新语义（DM裁定 2026-09-09）：法力消耗翻倍 ======
+# 法力已改一池制（[战始]给满、[回始]不回填、[战终]复原），「[回始]不获得法力」
+# 失去作用对象，故【勾魂】改为目标消耗法力翻倍（实现见 models.py::spend_mana）。
 
-def test_gouhun_blocks_mana_refill_but_keeps_current_mana():
-    """正常路径：勾魂期间[回始]不获得法力，已有法力分毫不动。"""
-    state, combat, _player, ent = _arena(mana=9, gouhun_rounds=2)
-    res = combat.round_start({"relic_choices": {}})
-    blocked = [e for e in res["effects"] if e.get("type") == "mana_refill_blocked"]
-    assert blocked, f"应有回填被压制条目: {res['effects']}"
-    assert blocked[0]["entity"] == "E" and blocked[0]["gained"] == 0
-    assert ent.current_mana == 9, f"已有法力不得被扣，实{ent.current_mana}"
-    assert not any(e.get("type") == "mana_refill" and e.get("entity") == "E"
-                   for e in res["effects"])
+def test_gouhun_doubles_mana_cost():
+    """正常路径：勾魂期间消耗法力翻倍；不花法力时分毫不动。"""
+    state, combat, _player, ent = _arena(mana=20, gouhun_rounds=2)
+    assert ent.has_status("勾魂")
+    assert ent.spend_mana(5) is True
+    assert ent.current_mana == 10, f"5 点消耗应翻倍扣 10，实剩 {ent.current_mana}"
+    assert ent.spend_mana(6) is False, "翻倍后需 12，只剩 10 → 付不起"
+    assert ent.current_mana == 10, "付不起时不得扣费"
 
 
 def test_gouhun_expires_after_x_rounds():
@@ -90,26 +94,24 @@ def test_gouhun_expires_after_x_rounds():
     state.combat_subphase = CombatSubphase.AWAIT_ROUND_END.value
     combat.round_end()
     assert not ent.has_status("勾魂"), "持续X=2 走完应自然到期"
-    res = combat.round_start({"relic_choices": {}})
-    assert any(e.get("type") == "mana_refill" and e.get("entity") == "E"
-               for e in res["effects"]), "到期后应恢复回填"
+    ent.current_mana = 20
+    assert ent.spend_mana(5) is True
+    assert ent.current_mana == 15, "到期后恢复正常消耗（5 点就是 5 点）"
 
 
-def test_gouhun_only_applies_to_targets_that_gain_mana():
-    """边界：怪物没有法力概念，勾魂对其无意义（回始不回填法力，条目不出现）。"""
-    state, combat, _player, ent = _arena(mana=0, gouhun_rounds=2, entity_type="怪物")
-    res = combat.round_start({"relic_choices": {}})
-    types = [e.get("type") for e in res["effects"] if e.get("entity") == "E"]
-    assert "mana_refill_blocked" not in types, types
-    assert "mana_refill" not in types, types
+def test_gouhun_applies_to_monsters_too():
+    """边界：新语义下怪物同样适用——怪物持法力型道纹时也要付双倍。"""
+    state, combat, _player, ent = _arena(mana=20, gouhun_rounds=2, entity_type="怪物")
+    assert ent.has_status("勾魂")
+    assert ent.spend_mana(4) is True
+    assert ent.current_mana == 12, f"怪物同样翻倍，实剩 {ent.current_mana}"
 
 
-def test_gouhun_dead_entity_no_entry():
-    """边界：已命零的实体既无回填也无压制条目。"""
+def test_gouhun_on_dead_entity_costs_nothing():
+    """边界：已命零的实体不再行动，勾魂对其无任何消耗后果。"""
     state, combat, _player, ent = _arena(mana=10, gouhun_rounds=2, alive=False)
-    res = combat.round_start({"relic_choices": {}})
-    types = [e.get("type") for e in res["effects"] if e.get("entity") == "E"]
-    assert "mana_refill_blocked" not in types and "mana_refill" not in types, types
+    assert not ent.is_alive
+    assert ent.current_mana == 10, "命零实体的法力不因挂状态而变动"
 
 
 def test_gouhun_cast_sets_duration_equal_x():
@@ -121,17 +123,16 @@ def test_gouhun_cast_sets_duration_equal_x():
     dur = next(s.remaining_rounds for s in ent.status_effects if s.name == "勾魂")
     assert dur == 4, f"持续应为 X=4，实{dur}"
     gouhun_effect = next((e for e in res["effects"] if e.get("type") == "gouhun"), None)
-    assert gouhun_effect and gouhun_effect.get("no_mana_gain") is True
+    assert gouhun_effect and gouhun_effect.get("mana_cost_multiplier") == 2, gouhun_effect
     assert gouhun_effect.get("duration") == 4, gouhun_effect
 
 
-def test_no_gouhun_refills_normally():
-    """对照：没有勾魂时，回始照常回填法限（防止压制逻辑误伤）。"""
+def test_no_gouhun_pays_normal_mana_cost():
+    """对照：没有勾魂时按原值扣费（防止翻倍逻辑误伤）。"""
     state, combat, _player, ent = _arena(mana=10)
-    res = combat.round_start({"relic_choices": {}})
-    refill = next(e for e in res["effects"]
-                  if e.get("type") == "mana_refill" and e.get("entity") == "E")
-    assert refill["gained"] == 30 and ent.current_mana == 40, refill
+    assert not ent.has_status("勾魂")
+    assert ent.spend_mana(4) is True
+    assert ent.current_mana == 6, ent.current_mana
 
 
 # ==================== 3. 硬伤2-D：转化不清除已生效 debuff ====================
@@ -147,8 +148,7 @@ def test_resonance_conversion_does_not_clear_active_gouhun():
     db = f"/tmp/linji_tests/test_gouhun_res_{os.getpid()}.db"
     e = GameEngine(db_path=db, rng_seed=7,
                    sealed_candidate_path=f"/tmp/linji_tests/test_gouhun_res_s_{os.getpid()}.json")
-    e.execute_action("setup_attributes", {"name": "白某", "blood_points": 10,
-                                          "speed_points": 8, "mana_points": 7})
+    e.execute_action("setup_attributes", {"name": "白某", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "曲解"})
     e.execute_action("setup_choose_region", {"region": "乱葬岗"})
@@ -177,11 +177,9 @@ def test_resonance_conversion_does_not_clear_active_gouhun():
 
     # 裁定要点：玩家身上已生效的勾魂**不**被清除，继续按剩余持续压制
     assert p.has_status("勾魂"), "转化不得清除已生效的 debuff"
-    p.current_mana = 11
-    rs = e.combat.round_start({"relic_choices": {}})
-    assert any(x.get("type") == "mana_refill_blocked" and x.get("entity") == p.name
-               for x in rs["effects"]), "转化后勾魂仍应压制回始回填"
-    assert p.current_mana == 11
+    p.current_mana = 20
+    assert p.spend_mana(5) is True
+    assert p.current_mana == 10, "转化后勾魂仍应让玩家法力消耗翻倍"
 
     # 真实生效：怪物下回合用新道纹（镇尸）而不是已被转化的勾魂
     e.state.current_round = 3

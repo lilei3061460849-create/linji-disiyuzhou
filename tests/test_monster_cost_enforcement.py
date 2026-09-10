@@ -29,8 +29,7 @@ def test_monster_cooldown_daowen_sets_cooldown_and_cannot_repeat(tmp_path):
     p = e.state.player
     while e.state.energy > 0:
         e.execute_action("pre_battle_action", {
-            "sub_action": "修行", "tier": 1,
-            "allocations": {"speed_points": 0, "mana_points": 1}
+            "sub_action": "修行", "tier": 1
         })
     started = begin_battle(e)
     assert started["success"], started
@@ -93,8 +92,7 @@ def test_monster_bleed_cost_daowen_deducts_monster_hp(tmp_path):
     e = _setup_engine(tmp_path)
     while e.state.energy > 0:
         e.execute_action("pre_battle_action", {
-            "sub_action": "修行", "tier": 1,
-            "allocations": {"speed_points": 0, "mana_points": 1}
+            "sub_action": "修行", "tier": 1
         })
     started = begin_battle(e)
     assert started["success"], started
@@ -147,8 +145,7 @@ def test_monster_cannot_cast_when_hp_insufficient_for_cost(tmp_path):
     e = _setup_engine(tmp_path)
     while e.state.energy > 0:
         e.execute_action("pre_battle_action", {
-            "sub_action": "修行", "tier": 1,
-            "allocations": {"speed_points": 0, "mana_points": 1}
+            "sub_action": "修行", "tier": 1
         })
     started = begin_battle(e)
     assert started["success"], started

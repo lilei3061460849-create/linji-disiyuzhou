@@ -99,7 +99,7 @@ def _debt_engine(tmp_path, debt: int = -76) -> GameEngine:
         rng_seed=20260823,
     )
     assert e.execute_action("setup_attributes", {
-        "name": "测试", "blood_points": 10, "speed_points": 8, "mana_points": 7})["success"]
+        "name": "测试", "blood_points": 11, "speed_points": 8, "mana_points": 6})["success"]
     assert finish_initial_daowen(e)["success"]
     assert e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})["success"]
     assert e.execute_action("setup_choose_region", {"region": "罪孽都市"})["success"]
@@ -112,8 +112,10 @@ def _debt_engine(tmp_path, debt: int = -76) -> GameEngine:
 def test_debt_zero_cost_xiuxing_allowed(tmp_path):
     """负债下 0费修行(tier1) 不再被误拒；正费档(tier2=15) 仍被冻结。"""
     e = _debt_engine(tmp_path)
-    ok = e.execute_action("pre_battle_action", {"sub_action": "修行", "tier": 1, "to": "mana"})
+    # 2属性点=1法限：tier1 的 1 点兑不到面板，但**入池**是合法的，不该被误拒
+    ok = e.execute_action("pre_battle_action", {"sub_action": "修行", "tier": 1})
     assert ok["success"], ok
+    assert ok["result"]["attribute_points"] >= 1, "tier1 的 1 点应存进属性点池"
     blocked = e.execute_action("pre_battle_action", {"sub_action": "修行", "tier": 2, "to": "mana"})
     assert not blocked["success"] and "碎片不足" in blocked["error"]
     assert e.state.shards == -76, "被拒的正费行动不得扣碎片"

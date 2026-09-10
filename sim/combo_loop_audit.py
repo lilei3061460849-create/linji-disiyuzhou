@@ -4,7 +4,7 @@
 分两层：
   1) 机制实验室：用 GameEngine.execute_action 验证循环是否存在、净变化是多少。
      实验室可临时授予道纹/遗物，只测规则，不算七场通关率。
-  2) 从零七场：开局走发现，共鸣 1 精力，残韵靠领悟（1 精力）或三相残韵盘，
+  2) 从零七场：开局走发现，共鸣 1 精力，残韵靠开局必选或三相残韵盘（【领悟】已于2026-09-10删除），
      转化道纹必须打到对应怪物后残韵改写。遗物不得白送。
 
 用法：
@@ -733,17 +733,7 @@ def _prebattle(e, spec: ComboSpec, formed: dict):
             if "已经掌握" in str(r.get("error", "")):
                 todo.pop(0)
                 continue
-        if spec.lingwu_cycle:
-            rtype = spec.lingwu_cycle[lingwu_i % len(spec.lingwu_cycle)]
-            lingwu_i += 1
-            r = e.execute_action("pre_battle_action", {
-                "sub_action": "领悟", "resonance_type": rtype,
-            })
-            if r.get("success"):
-                costs["精力"] += 1
-                costs["领悟"] += 1
-                costs["残韵获得"] += 1
-                continue
+        # 【领悟】已于 2026-09-10 删除：lingwu_cycle 不再生效，富余精力直接转修行。
         r = e.execute_action("pre_battle_action", {
             "sub_action": "修行", "tier": 1, "to": "mana",
         })

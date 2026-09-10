@@ -35,7 +35,7 @@ import pytest
 
 from tests.attack_support import resolve_attack as resolve_player_attack
 from engine.api import GameEngine
-from engine.models import Entity, DaoWen, DaoWenInstance
+from engine.models import Entity, DaoWen, DaoWenInstance, StatusEffect
 
 
 def finish_duel_round(engine):
@@ -55,7 +55,8 @@ def _new_candidate(db_suffix, sealed_path, speed_points=8, region="龙心谷", n
     if death_book_path:
         kwargs["death_book_path"] = death_book_path
     engine = GameEngine(**kwargs)
-    mana_points = 7
+    # DM裁定 2026-09-10：2属性点=1速限=1法限 → 速/法点数须为偶数，奇数余点归血限
+    mana_points = 6
     blood_points = 25 - speed_points - mana_points
     params = {"blood_points": blood_points, "speed_points": speed_points, "mana_points": mana_points}
     if name:
@@ -100,10 +101,10 @@ def test_second_candidate_triggers_duel_with_correct_first_mover():
     """正常路径：已有候选时，第二位到达者立即进入死斗；先手按速限比较"""
     path = "data/test_duel_order.json"
     _cleanup(path)
-    slow = _new_candidate("order_slow", path, speed_points=5, name="慢速者")  # 速限5
+    slow = _new_candidate("order_slow", path, speed_points=4, name="慢速者")  # 速限5
     _finish_battle_7(slow)
 
-    fast = _new_candidate("order_fast", path, speed_points=13, name="快速者")  # 速限13
+    fast = _new_candidate("order_fast", path, speed_points=12, name="快速者")  # 速限13
     r = _finish_battle_7(fast)
     crown = r["result"]["final_crown"]
     assert crown["outcome"] == "duel_start"
@@ -137,9 +138,9 @@ def test_strict_turn_alternation_enforced():
     """正常路径：交替出手——同一方连续行动第二次必须被拒绝，轮到对方后才能行动"""
     path = "data/test_duel_alt.json"
     _cleanup(path)
-    sealed = _new_candidate("alt_sealed", path, speed_points=5, name="对手")
+    sealed = _new_candidate("alt_sealed", path, speed_points=4, name="对手")
     _finish_battle_7(sealed)
-    challenger = _new_candidate("alt_challenger", path, speed_points=13, name="挑战者")
+    challenger = _new_candidate("alt_challenger", path, speed_points=12, name="挑战者")
     _finish_battle_7(challenger)
     opp = challenger.state.enemies[0]
 
@@ -215,11 +216,7 @@ def test_defeat_triggers_reset_without_resealing():
     loser = _new_candidate("defeat_loser", path, name="失败者", death_book_path=book_path)
     _finish_battle_7(loser)
 
-    legacy = {
-        "trigger_point": "最终死斗落败",
-        "fork": "最后一次出手选择错误",
-        "cost_budget": "愿以速度换取机会",
-    }
+    legacy = {"text": "最终死斗落败"}  # DM裁定 2026-08-31：遗言改单句（≤20字）
     r = loser.execute_action("resolve_final_duel", {"outcome": "defeat", "death_book_entry": legacy})
     assert r["success"] is True
     interrupt = r.get("interrupt") or {}
@@ -264,7 +261,7 @@ def test_name_collision_between_challenger_and_opponent_is_resolved():
     _cleanup(path)
     sealed = _new_candidate("collision_sealed", path)  # 不传name，走默认"轮回者"
     _finish_battle_7(sealed)
-    challenger = _new_candidate("collision_challenger", path, speed_points=13)  # 同样默认"轮回者"
+    challenger = _new_candidate("collision_challenger", path, speed_points=12)  # 同样默认"轮回者"
     _finish_battle_7(challenger)
 
     opp = challenger.state.enemies[0]
@@ -274,7 +271,7 @@ def test_name_collision_between_challenger_and_opponent_is_resolved():
     hp_before = opp.current_hp
     r = challenger.execute_action("use_daowen", {"daowen_name": "杀伐", "x": 3, "target": opp.name})
     assert r["success"] is True, r
-    assert opp.current_hp == hp_before - 6, "伤害必须真正命中改名后的对手，而不是误伤自己"
+    assert opp.current_hp == hp_before - 15, "伤害必须真正命中改名后的对手，而不是误伤自己"  # 杀伐3→5X=15
     assert challenger.state.player.current_hp == challenger.state.player.blood_limit, "挑战者自己不应被误伤"
     _cleanup(path)
 
@@ -287,7 +284,7 @@ def test_resolve_final_duel_rejected_without_active_duel():
     """错误输入：没有进行中的死斗时调用resolve_final_duel必须报错"""
     engine = GameEngine(db_path="/tmp/linji_tests/test_duel_noactive.db", rng_seed=1,
                          sealed_candidate_path="data/test_duel_noactive.json")
-    engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
+    engine.execute_action("setup_attributes", {"blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(engine)
     r = engine.execute_action("resolve_final_duel", {"outcome": "victory"})
     assert r["success"] is False
@@ -322,23 +319,25 @@ def test_action_from_non_duel_side_entity_rejected():
     _cleanup(path)
 
 
-def test_duel_opponent_reincarnator_can_cast_and_both_gain_mana():
-    """正常路径：死斗对手是轮回者，回始双方获得法力，对手可发动杀伐打到挑战者"""
+def test_duel_opponent_reincarnator_can_cast_with_full_pool():
+    """正常路径：死斗对手是轮回者，开场各得满一池法力（不再靠[回始]回填），
+    对手可发动杀伐打到挑战者。"""
     path = "data/test_duel_oppcast.json"
     _cleanup(path)
-    sealed = _new_candidate("oppcast_sealed", path, speed_points=5, name="封存贾凡")
+    sealed = _new_candidate("oppcast_sealed", path, speed_points=4, name="封存贾凡")
     _finish_battle_7(sealed)
-    challenger = _new_candidate("oppcast_challenger", path, speed_points=13, name="挑战贾凡")
+    challenger = _new_candidate("oppcast_challenger", path, speed_points=12, name="挑战贾凡")
     r = _finish_battle_7(challenger)
     assert r["result"]["final_crown"]["outcome"] == "duel_start"
     opp = next(e for e in challenger.state.enemies if e.entity_type == "轮回者")
 
-    rs = challenger.execute_action("round_start", {})
-    names = [e.get("entity") for e in rs["result"].get("effects", []) if e.get("type") == "mana_refill"]
-    assert "挑战贾凡" in names
-    assert opp.name in names
     assert challenger.state.player.current_mana == challenger.state.player.mana_limit
     assert opp.current_mana == opp.mana_limit
+    rs = challenger.execute_action("round_start", {})
+    assert rs["success"] is True
+    assert [e for e in rs["result"].get("effects", []) if e.get("type") == "mana_refill"] == [], \
+        "一池制：[回始]不再回填法力"
+    assert challenger.state.player.current_mana == challenger.state.player.mana_limit
 
     # 挑战者速限更高，先手让出一手后再由对手杀伐
     skip = challenger.execute_action("use_daowen", {
@@ -350,7 +349,7 @@ def test_duel_opponent_reincarnator_can_cast_and_both_gain_mana():
         "actor": opp.name, "daowen_name": "杀伐", "x": 3, "target": "挑战贾凡",
     })
     assert cast["success"] is True, cast
-    assert challenger.state.player.current_hp == hp_before - 6
+    assert challenger.state.player.current_hp == hp_before - 15   # 杀伐3→5X=15（DM裁定 2026-09-10，原 2X=6）
     assert opp.current_mana == opp.mana_limit - 3
     assert challenger.state.duel_turn == "player_side"
     _cleanup(path)
@@ -360,13 +359,13 @@ def test_duel_opponent_wave_hits_player_side_not_self():
     """边界：对手发动波及标记挑战者一侧后，其道纹同时作用于标记者（数值平分），不能打到自己"""
     path = "data/test_duel_oppwave.json"
     _cleanup(path)
-    sealed = _new_candidate("oppwave_sealed", path, speed_points=5, name="封存贾凡")
+    sealed = _new_candidate("oppwave_sealed", path, speed_points=4, name="封存贾凡")
     sealed.state.player.dao_wen["波及"] = DaoWenInstance(
         DaoWen(name="波及", formula="", cost_type="消耗", cost_formula="X", effect_formula=""))
     sealed.state.player.dao_wen["杀伐"] = DaoWenInstance(
         DaoWen(name="杀伐", formula="", cost_type="消耗", cost_formula="X", effect_formula=""))
     _finish_battle_7(sealed)
-    challenger = _new_candidate("oppwave_challenger", path, speed_points=13, name="挑战贾凡")
+    challenger = _new_candidate("oppwave_challenger", path, speed_points=12, name="挑战贾凡")
     challenger.state.friends.append(Entity(name="队友乙", entity_type="朋友",
                                            blood_limit=60, current_hp=60))
     _finish_battle_7(challenger)
@@ -380,7 +379,8 @@ def test_duel_opponent_wave_hits_player_side_not_self():
     friend = challenger.state.friends[0]
     refs = challenger.combat._combat_entity_refs()
     friend_ref = next(ref for ref, e in refs.items() if e is friend)
-    # 对手标记挑战者与队友乙
+    # 对手标记挑战者与队友乙（波及X=2 消耗 3X=6 法力；新口径下对手法限只有 3，先补足）
+    opp.current_mana = 20
     r = challenger.execute_action("use_daowen", {
         "actor": opp.name, "daowen_name": "波及", "x": 2,
         "dodge_targets": [
@@ -403,8 +403,8 @@ def test_duel_opponent_wave_hits_player_side_not_self():
     assert r2["success"] is True, r2
     assert r2["execution"].get("wave_spread")
     assert opp.current_hp == hp_self
-    assert player.current_hp == hp_player - 4
-    assert friend.current_hp == hp_friend - 4
+    assert player.current_hp == hp_player - 10   # 杀伐4→5X=20，波及两目标各分摊10（原各4）
+    assert friend.current_hp == hp_friend - 10
     _cleanup(path)
 
 
@@ -414,7 +414,7 @@ def test_duel_target_daowen_can_be_dodged_with_speed():
     _cleanup(path)
     sealed = _new_candidate("dodge_sealed", path, speed_points=8, name="封存贾凡")
     _finish_battle_7(sealed)
-    challenger = _new_candidate("dodge_challenger", path, speed_points=13, name="挑战贾凡")
+    challenger = _new_candidate("dodge_challenger", path, speed_points=12, name="挑战贾凡")
     _finish_battle_7(challenger)
     opp = next(e for e in challenger.state.enemies if e.entity_type == "轮回者")
     challenger.execute_action("round_start", {})
@@ -438,7 +438,7 @@ def test_duel_target_daowen_no_speed_cannot_dodge():
     _cleanup(path)
     sealed = _new_candidate("nododge_sealed", path, speed_points=8, name="封存贾凡")
     _finish_battle_7(sealed)
-    challenger = _new_candidate("nododge_challenger", path, speed_points=13, name="挑战贾凡")
+    challenger = _new_candidate("nododge_challenger", path, speed_points=12, name="挑战贾凡")
     _finish_battle_7(challenger)
     opp = next(e for e in challenger.state.enemies if e.entity_type == "轮回者")
     challenger.execute_action("round_start", {})
@@ -449,7 +449,7 @@ def test_duel_target_daowen_no_speed_cannot_dodge():
     })
     assert r["success"] is True, r
     assert r["dodge"].get("fully_dodged") is False
-    assert opp.current_hp == hp - 6
+    assert opp.current_hp == hp - 15   # 杀伐3→5X=15
     _cleanup(path)
 
 
@@ -461,7 +461,7 @@ def test_duel_opponent_chooses_zhesu_relic():
     from engine.models import Relic
     sealed.state.relics.append(Relic(name="折速法印", effect="[战始]可疲惫X获得6X法力"))
     _finish_battle_7(sealed)
-    challenger = _new_candidate("zhesu_challenger", path, speed_points=13, name="挑战贾凡")
+    challenger = _new_candidate("zhesu_challenger", path, speed_points=12, name="挑战贾凡")
     r = _finish_battle_7(challenger)
     crown = r["result"]["final_crown"]
     assert any(o["name"] == "折速法印" and o["side"] == "opponent_side" for o in crown["optional_relics"])
@@ -470,13 +470,14 @@ def test_duel_opponent_chooses_zhesu_relic():
         "side": "opponent_side", "relic": "折速法印", "use": False,
     })
     assert refuse["success"] is True
-    assert opp.current_speed == 8
+    assert opp.current_speed == opp.speed_limit   # 新口径下速限=加点//2，不再硬编码 8
     use = challenger.execute_action("activate_duel_relic", {
         "side": "opponent_side", "relic": "折速法印", "use": True, "x": 4,
     })
     assert use["success"] is True, use
-    assert opp.current_speed == 4
-    assert opp.current_mana == 24
+    assert opp.current_speed == max(0, opp.speed_limit - 4)   # 折速4付疲惫4，新口径速限4→0
+    # DM裁定 2026-09-09：开场已是满池，折速的 6X 叠在其上（法力允许超过[法限]）
+    assert opp.current_mana == opp.mana_limit + 24
     bad = challenger.execute_action("activate_duel_relic", {
         "side": "opponent_side", "relic": "折速法印", "use": True, "x": 9,
     })
@@ -488,7 +489,7 @@ def test_duel_activate_relic_rejected_without_duel():
     """错误输入：没有死斗时不能发动死斗遗物"""
     engine = GameEngine(db_path="/tmp/linji_tests/test_duel_nrelic.db", rng_seed=1,
                          sealed_candidate_path="data/test_duel_nrelic.json")
-    engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 8, "mana_points": 7})
+    engine.execute_action("setup_attributes", {"blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(engine)
     r = engine.execute_action("activate_duel_relic", {
         "side": "player_side", "relic": "折速法印", "use": True, "x": 1,
@@ -500,9 +501,9 @@ def test_duel_opponent_cast_rejected_on_wrong_turn_and_without_mana():
     """错误输入：没轮到对手时不能发动；法力不足必须失败"""
     path = "data/test_duel_opperr.json"
     _cleanup(path)
-    sealed = _new_candidate("opperr_sealed", path, speed_points=5, name="封存贾凡")
+    sealed = _new_candidate("opperr_sealed", path, speed_points=4, name="封存贾凡")
     _finish_battle_7(sealed)
-    challenger = _new_candidate("opperr_challenger", path, speed_points=13, name="挑战贾凡")
+    challenger = _new_candidate("opperr_challenger", path, speed_points=12, name="挑战贾凡")
     _finish_battle_7(challenger)
     opp = next(e for e in challenger.state.enemies if e.entity_type == "轮回者")
     challenger.execute_action("round_start", {})
@@ -528,13 +529,13 @@ def test_duel_opponent_cast_rejected_on_wrong_turn_and_without_mana():
     _cleanup(path)
 
 
-def test_duel_round_end_clears_both_reincarnator_mana():
-    """正常路径：回终清空双方轮回者剩余法力，各记一条 mana_clear"""
+def test_duel_round_end_keeps_both_reincarnator_mana():
+    """DM裁定 2026-09-09：法力一池制——[敌回终]不再清空，剩余法力留到下一回合。"""
     path = "data/test_duel_manaclear.json"
     _cleanup(path)
-    sealed = _new_candidate("manaclear_sealed", path, speed_points=5, name="封存贾凡")
+    sealed = _new_candidate("manaclear_sealed", path, speed_points=4, name="封存贾凡")
     _finish_battle_7(sealed)
-    challenger = _new_candidate("manaclear_challenger", path, speed_points=13, name="挑战贾凡")
+    challenger = _new_candidate("manaclear_challenger", path, speed_points=12, name="挑战贾凡")
     _finish_battle_7(challenger)
     opp = next(e for e in challenger.state.enemies if e.entity_type == "轮回者")
     player = challenger.state.player
@@ -549,12 +550,9 @@ def test_duel_round_end_clears_both_reincarnator_mana():
     re = finish_duel_round(challenger)
     assert re["success"] is True, re
     effects = re["result"].get("effects", [])
-    clears = [e for e in effects if e.get("type") == "mana_clear"]
-    names = {e["entity"] for e in clears}
-    assert player.name in names
-    assert opp.name in names
-    assert player.current_mana == 0
-    assert opp.current_mana == 0
+    assert [e for e in effects if e.get("type") == "mana_clear"] == [], "不得再有清空条目"
+    assert player.current_mana == 9, f"剩余法力应保留，实{player.current_mana}"
+    assert opp.current_mana == 11, f"剩余法力应保留，实{opp.current_mana}"
     _cleanup(path)
 
 
@@ -562,14 +560,18 @@ def test_duel_leftover_actions_continue_when_other_exhausted():
     """正常路径：对手出手用尽后，挑战者余手连动，不换边、不作废"""
     path = "data/test_duel_leftover.json"
     _cleanup(path)
-    sealed = _new_candidate("leftover_sealed", path, speed_points=5, name="对手")  # ceil(5/3)=2
+    sealed = _new_candidate("leftover_sealed", path, speed_points=4, name="对手")  # ceil(5/3)=2
     _finish_battle_7(sealed)
-    challenger = _new_candidate("leftover_challenger", path, speed_points=13, name="挑战者")  # ceil(13/3)=5
+    challenger = _new_candidate("leftover_challenger", path, speed_points=12, name="挑战者")  # ceil(13/3)=5
     _finish_battle_7(challenger)
     opp = next(e for e in challenger.state.enemies if e.entity_type == "轮回者")
     player = challenger.state.player
     challenger.execute_action("round_start", {})
 
+    # DM裁定 2026-09-10：轮回者出手固定2次，不再由速限换算。本用例要验的是
+    # 「对手出手用尽后余手连动」，因此用【疯狂】+3 制造出手差（2+3=5），
+    # 而不是靠加点堆速限——那条路已经不存在了。
+    player.add_status(StatusEffect(name="疯狂", value=3, remaining_rounds=-1, source="test"))
     assert player.action_count == 5
     assert opp.action_count == 2
     assert challenger.state.duel_turn == "player_side"
@@ -595,14 +597,16 @@ def test_duel_round_end_zero_mana_no_crash():
     """边界：双方法力已是 0 时回终仍成功，不伪造清空"""
     path = "data/test_duel_zeromana.json"
     _cleanup(path)
-    sealed = _new_candidate("zeromana_sealed", path, speed_points=5, name="封存贾凡")
+    sealed = _new_candidate("zeromana_sealed", path, speed_points=4, name="封存贾凡")
     _finish_battle_7(sealed)
-    challenger = _new_candidate("zeromana_challenger", path, speed_points=13, name="挑战贾凡")
+    challenger = _new_candidate("zeromana_challenger", path, speed_points=12, name="挑战贾凡")
     _finish_battle_7(challenger)
     opp = next(e for e in challenger.state.enemies if e.entity_type == "轮回者")
     player = challenger.state.player
-    assert player.current_mana == 0
-    assert opp.current_mana == 0
+    # DM裁定 2026-09-09：死斗开场给满一池，故这里显式花光再造「0 法力」边界
+    assert player.current_mana == player.mana_limit and opp.current_mana == opp.mana_limit
+    player.current_mana = 0
+    opp.current_mana = 0
 
     re = finish_duel_round(challenger)
     assert re["success"] is True, re
@@ -618,14 +622,16 @@ def test_duel_last_leftover_then_both_exhausted_rejects():
     """边界：余手打完后双方都没预算，任一侧再出手失败，不抛异常"""
     path = "data/test_duel_bothexhaust.json"
     _cleanup(path)
-    sealed = _new_candidate("bothexhaust_sealed", path, speed_points=5, name="对手")
+    sealed = _new_candidate("bothexhaust_sealed", path, speed_points=4, name="对手")
     _finish_battle_7(sealed)
-    challenger = _new_candidate("bothexhaust_challenger", path, speed_points=13, name="挑战者")
+    challenger = _new_candidate("bothexhaust_challenger", path, speed_points=12, name="挑战者")
     _finish_battle_7(challenger)
     opp = next(e for e in challenger.state.enemies if e.entity_type == "轮回者")
     player = challenger.state.player
     challenger.execute_action("round_start", {})
 
+    # 轮回者出手固定2次（DM裁定 2026-09-10），用【疯狂】+3 让挑战者留有余手
+    player.add_status(StatusEffect(name="疯狂", value=3, remaining_rounds=-1, source="test"))
     for _ in range(2):
         assert resolve_player_attack(challenger, "挑战者", [])["success"]
         assert resolve_player_attack(challenger, opp.name, [])["success"]
@@ -650,9 +656,9 @@ def test_duel_still_rejects_wrong_side_while_other_has_actions():
     """错误输入：双方都有余手时，非当前边连出仍拒绝"""
     path = "data/test_duel_no_skip.json"
     _cleanup(path)
-    sealed = _new_candidate("noskip_sealed", path, speed_points=5, name="对手")
+    sealed = _new_candidate("noskip_sealed", path, speed_points=4, name="对手")
     _finish_battle_7(sealed)
-    challenger = _new_candidate("noskip_challenger", path, speed_points=13, name="挑战者")
+    challenger = _new_candidate("noskip_challenger", path, speed_points=12, name="挑战者")
     _finish_battle_7(challenger)
     opp = next(e for e in challenger.state.enemies if e.entity_type == "轮回者")
     challenger.execute_action("round_start", {})
@@ -672,13 +678,13 @@ def test_duel_still_rejects_wrong_side_while_other_has_actions():
     _cleanup(path)
 
 
-def test_duel_round_end_does_not_clear_non_reincarnator_mana():
-    """错误输入/对照：朋友不是轮回者，回终不清他的法力，也不记 mana_clear"""
+def test_duel_round_end_clears_nobody_mana():
+    """对照（DM裁定 2026-09-09）：一池制下回终谁的法力都不清——朋友、双方轮回者一律保留。"""
     path = "data/test_duel_friendmana.json"
     _cleanup(path)
-    sealed = _new_candidate("friendmana_sealed", path, speed_points=5, name="封存贾凡")
+    sealed = _new_candidate("friendmana_sealed", path, speed_points=4, name="封存贾凡")
     _finish_battle_7(sealed)
-    challenger = _new_candidate("friendmana_challenger", path, speed_points=13, name="挑战贾凡")
+    challenger = _new_candidate("friendmana_challenger", path, speed_points=12, name="挑战贾凡")
     _finish_battle_7(challenger)
     friend = Entity(name="旁观朋友", entity_type="朋友", blood_limit=20, current_hp=20,
                     mana_limit=10, current_mana=10)
@@ -689,12 +695,10 @@ def test_duel_round_end_does_not_clear_non_reincarnator_mana():
 
     re = finish_duel_round(challenger)
     assert re["success"] is True, re
-    clears = [e for e in re["result"].get("effects", []) if e.get("type") == "mana_clear"]
-    clear_names = {e["entity"] for e in clears}
-    assert "旁观朋友" not in clear_names
+    assert [e for e in re["result"].get("effects", []) if e.get("type") == "mana_clear"] == []
     assert friend.current_mana == 10
-    assert challenger.state.player.current_mana == 0
-    assert opp.current_mana == 0
+    assert challenger.state.player.current_mana == 6
+    assert opp.current_mana == 8
     _cleanup(path)
 
 
@@ -702,21 +706,23 @@ def test_duel_opponent_dragon_bloodline_doubles_vs_challenger():
     """正常：对手持龙族血脉，打挑战者（非怪物）伤害翻倍；挑战者自己没有则不翻。"""
     path = "data/test_duel_opp_bloodline.json"
     _cleanup(path)
-    sealed = _new_candidate("oppbl_sealed", path, speed_points=5, name="封存者")
+    sealed = _new_candidate("oppbl_sealed", path, speed_points=4, name="封存者")
     sealed.state.grant_relic("龙族血脉", "对非怪物翻倍", tag="龙族")
     _finish_battle_7(sealed)
-    challenger = _new_candidate("oppbl_challenger", path, speed_points=13, name="挑战者")
+    challenger = _new_candidate("oppbl_challenger", path, speed_points=12, name="挑战者")
     _finish_battle_7(challenger)
     opp = next(e for e in challenger.state.enemies if e.entity_type == "轮回者")
     player = challenger.state.player
     assert challenger.state.side_has(opp, "龙族血脉")
     assert not challenger.state.side_has(player, "龙族血脉")
-    opp.attack_power = 5
+    # DM裁定 2026-09-10：轮回者[攻击力]=当前法力，写 attack_power 面板对轮回者无效，
+    # 必须改 current_mana 才能真正设定其攻击力。
+    opp.current_mana = 5
     dmg = challenger.combat.resolve_attack(opp, player, is_must_hit=True)
-    assert dmg["damage_dealt"] == 10
-    player.attack_power = 5
+    assert dmg["damage_dealt"] == 10, "龙族血脉对轮回者翻倍：5×2"
+    player.current_mana = 5
     dmg2 = challenger.combat.resolve_attack(player, opp, is_must_hit=True)
-    assert dmg2["damage_dealt"] == 5
+    assert dmg2["damage_dealt"] == 5, "无龙族血脉不翻倍"
     _cleanup(path)
 
 
@@ -724,10 +730,10 @@ def test_duel_opponent_blood_lineage_heals_at_round_end():
     """正常：对手持血族血脉，回终按本回合伤害回血；没造成伤害则流血20。"""
     path = "data/test_duel_opp_lineage.json"
     _cleanup(path)
-    sealed = _new_candidate("opplin_sealed", path, speed_points=5, name="封存者")
+    sealed = _new_candidate("opplin_sealed", path, speed_points=4, name="封存者")
     sealed.state.grant_relic("血族血脉", "回终回血或流血20", tag="血族")
     _finish_battle_7(sealed)
-    challenger = _new_candidate("opplin_challenger", path, speed_points=13, name="挑战者")
+    challenger = _new_candidate("opplin_challenger", path, speed_points=12, name="挑战者")
     _finish_battle_7(challenger)
     opp = next(e for e in challenger.state.enemies if e.entity_type == "轮回者")
     challenger.execute_action("round_start", {})
@@ -752,10 +758,10 @@ def test_duel_opponent_longxi_hits_challenger_before_act():
     """正常：对手持龙息，挑战者行动前受 10×回合 必中伤害。"""
     path = "data/test_duel_opp_longxi.json"
     _cleanup(path)
-    sealed = _new_candidate("opplx_sealed", path, speed_points=5, name="封存者")
+    sealed = _new_candidate("opplx_sealed", path, speed_points=4, name="封存者")
     sealed.state.grant_relic("龙息", "敌方行动前受伤", tag="龙族")
     _finish_battle_7(sealed)
-    challenger = _new_candidate("opplx_challenger", path, speed_points=13, name="挑战者")
+    challenger = _new_candidate("opplx_challenger", path, speed_points=12, name="挑战者")
     _finish_battle_7(challenger)
     opp = next(e for e in challenger.state.enemies if e.entity_type == "轮回者")
     player = challenger.state.player
@@ -773,12 +779,12 @@ def test_duel_opponent_heart_and_tears_at_start():
     """正常：对手体外心脏翻自己；羔羊之泪开场打一轮全场50%。"""
     path = "data/test_duel_opp_art.json"
     _cleanup(path)
-    sealed = _new_candidate("oppart_sealed", path, speed_points=5, name="封存者")
+    sealed = _new_candidate("oppart_sealed", path, speed_points=4, name="封存者")
     sealed.state.artifacts_owned.extend(["体外心脏", "羔羊之泪"])
     base_bl = sealed.state.player.blood_limit
     base_hp = sealed.state.player.current_hp
     _finish_battle_7(sealed)
-    challenger = _new_candidate("oppart_challenger", path, speed_points=13, name="挑战者")
+    challenger = _new_candidate("oppart_challenger", path, speed_points=12, name="挑战者")
     player_hp = challenger.state.player.current_hp
     r = _finish_battle_7(challenger)
     crown = r["result"]["final_crown"]
@@ -794,10 +800,10 @@ def test_duel_side_has_rejects_friend_and_missing_trait():
     """错误：朋友不继承轮回者袋子；没持有的名字 side_has 为假。"""
     path = "data/test_duel_sidehas_err.json"
     _cleanup(path)
-    sealed = _new_candidate("sideerr_sealed", path, speed_points=5, name="封存者")
+    sealed = _new_candidate("sideerr_sealed", path, speed_points=4, name="封存者")
     sealed.state.grant_relic("龙族血脉", "", tag="龙族")
     _finish_battle_7(sealed)
-    challenger = _new_candidate("sideerr_challenger", path, speed_points=13, name="挑战者")
+    challenger = _new_candidate("sideerr_challenger", path, speed_points=12, name="挑战者")
     challenger.state.grant_relic("血影", "", tag="血族")
     challenger.state.friends.append(Entity(
         name="跟班", entity_type="朋友", blood_limit=20, current_hp=20))
@@ -814,9 +820,9 @@ def test_duel_deploy_employee_advances_turn():
     """正常：死斗派遣花 1 出手后换到对手。"""
     path = "data/test_duel_deploy_turn.json"
     _cleanup(path)
-    sealed = _new_candidate("deploy_sealed", path, speed_points=5, name="对手")
+    sealed = _new_candidate("deploy_sealed", path, speed_points=4, name="对手")
     _finish_battle_7(sealed)
-    challenger = _new_candidate("deploy_challenger", path, speed_points=13, name="挑战者")
+    challenger = _new_candidate("deploy_challenger", path, speed_points=12, name="挑战者")
     _finish_battle_7(challenger)
     challenger.state.employees.append(Entity(
         name="打手", entity_type="员工", blood_limit=24, current_hp=24,
@@ -838,15 +844,18 @@ def test_duel_deploy_stays_when_opponent_exhausted():
     """边界：对手出手用尽后派遣不换边，本侧余手连动。"""
     path = "data/test_duel_deploy_leftover.json"
     _cleanup(path)
-    sealed = _new_candidate("deployleft_sealed", path, speed_points=5, name="对手")
+    sealed = _new_candidate("deployleft_sealed", path, speed_points=4, name="对手")
     _finish_battle_7(sealed)
-    challenger = _new_candidate("deployleft_challenger", path, speed_points=13, name="挑战者")
+    challenger = _new_candidate("deployleft_challenger", path, speed_points=12, name="挑战者")
     _finish_battle_7(challenger)
     opp = next(e for e in challenger.state.enemies if e.entity_type == "轮回者")
     challenger.state.employees.append(Entity(
         name="后援", entity_type="员工", blood_limit=24, current_hp=24,
         attack_count=3, attack_power=6, is_deployed=False))
     challenger.execute_action("round_start", {})
+    # 同上：用【疯狂】+3 保证对手耗尽后挑战者仍有余手可派遣员工
+    challenger.state.player.add_status(
+        StatusEffect(name="疯狂", value=3, remaining_rounds=-1, source="test"))
     for _ in range(2):
         assert resolve_player_attack(challenger, "挑战者", [])["success"]
         assert resolve_player_attack(challenger, opp.name, [])["success"]
@@ -862,9 +871,9 @@ def test_duel_deploy_rejected_on_wrong_turn():
     """错误：没轮到挑战者时派遣必须拒绝，员工仍待命。"""
     path = "data/test_duel_deploy_wrong.json"
     _cleanup(path)
-    sealed = _new_candidate("deploywrong_sealed", path, speed_points=5, name="对手")
+    sealed = _new_candidate("deploywrong_sealed", path, speed_points=4, name="对手")
     _finish_battle_7(sealed)
-    challenger = _new_candidate("deploywrong_challenger", path, speed_points=13, name="挑战者")
+    challenger = _new_candidate("deploywrong_challenger", path, speed_points=12, name="挑战者")
     _finish_battle_7(challenger)
     challenger.state.employees.append(Entity(
         name="待命", entity_type="员工", blood_limit=24, current_hp=24,

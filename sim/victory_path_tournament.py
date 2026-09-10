@@ -161,9 +161,9 @@ class FeedAI(TacticalAI):
 
 
 class DebtAI(HarvestMixin, TacticalAI):
-    """还债流：收割逼债(洗劫+转换)/赎金(清算+反转)，给怪挂永久催缴逼到碎片≤-10。"""
+    """还债流：收割逼债(点金+转换)/赎金(清算+反转)，给怪挂永久催缴逼到碎片≤-10。"""
 
-    PLANS = [("洗劫", "转换", "逼债"), ("清算", "反转", "赎金")]
+    PLANS = [("点金", "转换", "逼债"), ("清算", "反转", "赎金")]
 
     def __init__(self, *a, **kw):
         super().__init__(*a, **kw)
@@ -289,10 +289,10 @@ ROWS = [
     ("癌变供养@扭曲",   "扭曲都市", "庇护", ["再生", "杀伐", "透支"], FeedAI,      {}),
     ("还债流@罪孽",     "罪孽都市", "庇护", ["束缚", "杀伐", "再生"], DebtAI,
      {"relic_policy": "prefer_optional", "resonance": "反转",
-      "policy": {**DEFAULT_POLICY, "领悟": 30}}),
+      "policy": {**DEFAULT_POLICY, "共鸣": 30}}),   # 原 "领悟":30，【领悟】已于2026-09-10删除
     ("雕塑流@罪孽",     "罪孽都市", "庇护", ["束缚", "杀伐", "再生"], SculptAI,
      {"relic_policy": "prefer_optional", "resonance": "反转",
-      "policy": {**DEFAULT_POLICY, "雇佣": 30, "领悟": 25}}),
+      "policy": {**DEFAULT_POLICY, "雇佣": 30, "共鸣": 25}}),   # 原含 "领悟":25，已删除
     ("救赎朋友流@扭曲", "扭曲都市", "庇护", ["杀伐", "再生", "束缚"], RedeemAI,    {}),
     ("伤害基准@罪孽",   "罪孽都市", "庇护", ["杀伐", "再生", "贯穿"], TacticalAI,  {}),
 ]

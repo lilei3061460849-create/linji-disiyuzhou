@@ -1,5 +1,5 @@
 """
-F2 全量验证：罪孽都市（洗劫/逼债/抵扣/清算/赌命/消灾/假钞）与扭曲都市（爆裂/退化）的引擎侧实装。
+F2 全量验证：罪孽都市（点金/逼债/抵扣/清算/赌命/消灾/假钞）与扭曲都市（爆裂/退化）的引擎侧实装。
 - 正常：按《副本/罪孽都市.md》《副本/扭曲都市.md》定义结算
 - 边界：碎片不足/无遗物/无碎片/反噬致死/退化归零等
 - 错误：假碎片不足/碎片不足被拒绝
@@ -22,7 +22,7 @@ from tests.monster_phase_support import resolve_monster_phase
 
 def _setup(region="罪孽都市", mana=100, speed_limit=99):
     engine = GameEngine(rng_seed=42)
-    engine.execute_action("setup_attributes", {"blood_points": 10, "speed_points": 7, "mana_points": 8})
+    engine.execute_action("setup_attributes", {"blood_points": 11, "speed_points": 6, "mana_points": 8})
     finish_initial_daowen(engine)
     engine.state.current_region = region
     engine.state.phase = "in_combat"
@@ -55,27 +55,55 @@ def _apply_monster_daowen(engine, caster, name, x, target=None):
     return engine.combat.apply_daowen_effect(name, calc, caster, target)
 
 
-# ==================== 洗劫 ====================
+# ==================== 点金（DM裁定 2026-09-10 由【洗劫】改名改制）====================
+# 道纹【点金】：消耗10X法力 → 直接获得X真碎片，与伤害彻底脱钩。
+# 状态【洗劫】及其"造成伤害时夺取等量碎片"机制**保留**，但已不由道纹发放，
+# 只剩【帮派令】在[战始]发放（事件收益在禁区清单内，不动）。
 
-def test_normal_xijie_steals_shards_on_damage():
-    engine = _setup(); _grant(engine, ["洗劫"])
+
+def test_normal_dianjin_converts_mana_to_shards():
+    """正常路径：点金X 消耗8X法力，直接换X真碎片，不碰目标、不挂状态。"""
+    engine = _setup(); _grant(engine, ["点金"])
     player = engine.state.player
     m = _add_monster(engine, shards=20)
-    r = engine.execute_action("use_daowen", {"daowen_name": "洗劫", "x": 2, "target": m.name})
+    mana0, shard0 = player.current_mana, engine.state.shards
+    r = engine.execute_action("use_daowen", {"daowen_name": "点金", "x": 2, "target": m.name})
     assert r["success"], r
-    assert player.has_status("洗劫")  # 状态挂施法者
-    # 玩家攻击怪物造成 5 伤害 → 夺取 min(20,5)=5
+    assert player.current_mana == mana0 - 16          # 8X = 16 法力（DM 2026-09-10 定为 8X）
+    assert engine.state.shards == shard0 + 2          # 换到 2 真碎片
+    assert m.shards == 20, "点金不再从目标身上夺取"
+    assert not player.has_status("点金"), "点金是即时结算，不得挂状态"
+
+
+def test_boundary_dianjin_insufficient_mana_rejected():
+    """边界：法力不够付 8X 时应当被拒绝，而不是半结算。"""
+    engine = _setup(mana=15); _grant(engine, ["点金"])
+    player = engine.state.player
+    _add_monster(engine, shards=20)
+    shard0 = engine.state.shards
+    r = engine.execute_action("use_daowen", {"daowen_name": "点金", "x": 2, "target": None})
+    assert r["success"] is False
+    assert engine.state.shards == shard0 and player.current_mana == 15
+
+
+def test_xijie_status_still_steals_shards_on_damage():
+    """状态【洗劫】机制保留：直接挂状态（帮派令口径）后，造成伤害仍夺等量碎片。"""
+    # 攻力=当前法力（2026-09-10），所以把法力压到 5 才能得到可断言的每手 5 点伤害
+    engine = _setup(mana=5)
+    player = engine.state.player
+    player.add_status(StatusEffect(name="洗劫", value=2, remaining_rounds=2, source=player.name))
+    m = _add_monster(engine, shards=20)
     res = engine.combat.resolve_attack(player, m, hit_index=0, is_must_hit=True, dodge=False)
     assert res["damage_dealt"] == 5
     assert m.shards == 15, f"应夺5碎片，实{m.shards}"
     assert engine.state.shards == 20 + 5
 
 
-def test_boundary_xijie_no_shards_no_steal():
-    engine = _setup(); _grant(engine, ["洗劫"])
+def test_boundary_xijie_status_no_shards_no_steal():
+    engine = _setup(mana=5)   # 同上：法力即攻力
     player = engine.state.player
+    player.add_status(StatusEffect(name="洗劫", value=1, remaining_rounds=2, source=player.name))
     m = _add_monster(engine, shards=0)
-    engine.execute_action("use_daowen", {"daowen_name": "洗劫", "x": 1, "target": m.name})
     res = engine.combat.resolve_attack(player, m, hit_index=0, is_must_hit=True, dodge=False)
     assert res["damage_dealt"] == 5
     assert m.shards == 0 and engine.state.shards == 20  # 无碎片则夺取无效
@@ -342,9 +370,9 @@ def test_normal_baolie_reflects_before_damage():
     hp_before = player.current_hp
     r = engine.execute_action("use_daowen", {"daowen_name": "杀伐", "x": 2, "target": m.name})
     assert r["success"], r
-    # 杀伐2 造成4伤害：玩家先被反噬4，怪物仍受4伤害
-    assert player.current_hp == hp_before - 4, f"攻击者应先失去等量生命，实差{hp_before - player.current_hp}"
-    assert m.current_hp == 100 - 4
+    # 杀伐2 造成10伤害（5X）：玩家先被反噬10，怪物仍受10伤害
+    assert player.current_hp == hp_before - 10, f"攻击者应先失去等量生命，实差{hp_before - player.current_hp}"
+    assert m.current_hp == 100 - 10
 
 
 def test_boundary_baolie_attacker_dies_damage_cancelled():
@@ -361,7 +389,7 @@ def test_boundary_baolie_attacker_dies_damage_cancelled():
 
 def test_boundary_baolie_attack_path():
     """物理攻击路径的反噬（怪物持爆裂，玩家攻击）"""
-    engine = _setup(region="扭曲都市")
+    engine = _setup(region="扭曲都市", mana=5)   # 攻力=当前法力：给5才有可断言的每手5点
     player = engine.state.player
     m = _add_monster(engine, hp=100)
     m.add_status(StatusEffect(name="爆裂", value=1, remaining_rounds=2, source=m.name))
@@ -380,6 +408,7 @@ def test_normal_monster_baolie1_survives_same_round_end():
     assert m.has_status("爆裂")
     engine.combat.round_end()
     assert m.has_status("爆裂"), "敌方爆裂1不应在同回终清掉"
+    player.current_mana = 5   # 攻力=当前法力：压到5才有可断言的每手5点
     hp_before = player.current_hp
     res = engine.combat.resolve_attack(player, m, is_must_hit=True, dodge=False)
     assert res["damage_dealt"] == 5
@@ -421,8 +450,8 @@ def test_normal_tuihua_reduces_daowen_x():
     hp_before = m.current_hp
     r = engine.execute_action("use_daowen", {"daowen_name": "杀伐", "x": 3, "target": m.name})
     assert r["success"], r
-    # 杀伐3 退化2 → 实际 X=1 → 伤害2
-    assert m.current_hp == hp_before - 2, f"退化2应使X=1(伤害2)，实减{hp_before - m.current_hp}"
+    # 杀伐3 退化2 → 实际 X=1 → 伤害5（5X）
+    assert m.current_hp == hp_before - 5, f"退化2应使X=1(伤害5)，实减{hp_before - m.current_hp}"
 
 
 def test_boundary_tuihua_zero_floor():

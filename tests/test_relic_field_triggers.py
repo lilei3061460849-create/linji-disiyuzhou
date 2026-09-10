@@ -18,7 +18,7 @@ from engine.models import DaoWen, DaoWenInstance, Entity, Relic, Spell, StatusEf
 def _engine(tmp_path, suffix="field"):
     e = GameEngine(db_path=str(tmp_path / f"{suffix}.db"), rng_seed=5)
     e.execute_action("setup_attributes", {
-        "name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 7,
+        "name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6,
     })
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
