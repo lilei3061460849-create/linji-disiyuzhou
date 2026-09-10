@@ -44,9 +44,11 @@ def test_mentor_matches_and_stays_under_one():
 
 def test_bias_clamped_and_zero_without_hints():
     """边界：有遗言时单候选调整幅度被 ±HINT_CLAMP 夹住；无遗言时与 TacticalAI 完全等分。"""
+    # mutation_delta=3（原 99）：自保时钟默认开后，越崩解线(50)的候选会被一票
+    # 否决返回 None——本测试测的是偏见夹逼，不是自爆拦截，diff 须在安全余量内。
     diff = {"player": {"hp_before": 30, "hp_after": 30, "mana_before": 12,
                        "mana_after": 0, "shield_before": 0, "shield_after": 0,
-                       "mutation_delta": 99},
+                       "mutation_delta": 3},
             "enemies": [{"hp_before": 36, "hp_after": 0, "dead": True}]}
     e = _engine()
     # 书里塞满全部关键词的遗言 → 所有建议键都会试图拉偏评分

@@ -118,24 +118,23 @@ def test_at_one_by_one_daowen_still_wins(engine, monkeypatch):
 
 
 def test_full_pool_shaifa_outscores_basic_attack(engine, monkeypatch):
-    """记录 DM裁定 2026-09-10（杀伐 2X→5X）后的真实取舍——结论已反转。
+    """③修复（2026-09-10 法力按攻力折价）后的真实取舍——结论再次反转。
 
-    旧结论（已作废）：攻次4×攻力8 的普攻每手 32 伤且不耗法力，压过杀伐。
-    实测现行打分（夹具 攻次4/攻力8/法力8）：
-        普攻→尸霸 44.80   （一手 4 击 × 8 伤 = 32，不耗法力）
-        杀伐X=8   48.08   （5×8 = 40 伤，吃光整池）
-    杀伐单次出手伤害 40 > 普攻 32，所以满池时 AI 选择杀伐。
-
-    但普攻**没有**因此变成无用候选：它的价值在法力池见底之后——见下条。
+    上一轮（杀伐5X）结论「满池必选杀伐(40伤)>普攻(32伤)」已作废：那次打分
+    没算「法力=攻力」的机会成本。③修复后花 8 法力 = 烧掉本场剩余全部攻力
+    （攻次4 → 折价 8×(0.12+0.5×4)≈17 分），实测：
+        普攻→尸霸 44.80（零耗 32 伤，且保住后续回合的攻力）
+        杀伐X=8   31.12 （40 伤 − 法力折价）
+    满池首选普攻；杀伐只在收割档（伤害恰好击杀，吃 +8 击杀分）时反超。
     """
     monkeypatch.setenv(FLAG, "1")
     ai = TacticalAI(engine, verbose=True)
     ai.take_turn()
     decisions = [line for line in ai.log if "实时决策" in line]
     assert decisions, decisions
-    assert any("杀伐" in line for line in decisions), decisions
-    assert engine.state.player.current_mana < engine.state.player.mana_limit, \
-        "满池时应选择杀伐并真的花掉法力"
+    assert any("普攻" in line for line in decisions), decisions
+    assert engine.state.player.current_mana == engine.state.player.mana_limit, \
+        "非收割满池局应选零耗普攻，法力不动"
 
 
 def test_spent_pool_leaves_no_damaging_candidate(engine, monkeypatch):

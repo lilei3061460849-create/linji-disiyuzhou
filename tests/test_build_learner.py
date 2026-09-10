@@ -609,7 +609,7 @@ def test_rest_large_gap_with_enough_shards_uses_tier3():
     e.state.shards = 60
     tier, heal = _pick_rest(e)
     assert tier == 3, f"缺口45+碎片60 应休整3级，实际 {tier}"
-    assert heal == math.ceil(60 * 1.2) + e.state.rest_heal_bonus   # 120% 血限
+    assert heal == math.ceil(60 * 0.6) + e.state.rest_heal_bonus   # 60% 血限
 
 
 def test_rest_medium_gap_falls_back_to_tier2():
@@ -621,7 +621,7 @@ def test_rest_medium_gap_falls_back_to_tier2():
     e.state.shards = 20
     tier, heal = _pick_rest(e)
     assert tier == 2, f"碎片20 应休整2级，实际 {tier}"
-    assert heal == math.ceil(60 * 0.6) + e.state.rest_heal_bonus   # 60% 血限
+    assert heal == math.ceil(60 * 0.4) + e.state.rest_heal_bonus   # 40% 血限
 
 
 def test_rest_small_shards_uses_tier1():

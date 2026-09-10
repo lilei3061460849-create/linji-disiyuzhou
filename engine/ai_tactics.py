@@ -31,9 +31,11 @@ from engine.ai_preview import ActionPreview
 # 单次出手最多预演的候选数（性能护栏；候选按新鲜度与威胁优先）
 MAX_CANDIDATE_PREVIEWS = 26
 
-# 自保时钟（实验开关，默认关闭）：把引擎自己的三条「自爆时钟」接进候选打分。
-# DM 裁定 2026-08-31 要求先做 132 局前后对照再决定是否常开；置 LJ_SELF_PRESERVE=1 打开。
-SELF_PRESERVE = os.environ.get("LJ_SELF_PRESERVE", "").strip().lower() in {"1", "true", "yes", "on"}
+# 自保时钟（**默认开启**，2026-09-10 用户裁定）：把引擎自己的三条「自爆时钟」接进
+# 候选打分。DM 裁定 2026-08-31 曾要求 132 局前后对照再定常开；因擂主农场 0/24 空转
+# 跑不出对照，改按 24 种子养蛊证据裁定（纯AI层 56 → 开 59，+3 零副作用；复验两次
+# 持平）。132 局对照留待擂主农场恢复后补。置 LJ_SELF_PRESERVE=0 可显式关闭复现旧行为。
+SELF_PRESERVE = os.environ.get("LJ_SELF_PRESERVE", "1").strip().lower() not in {"0", "false", "no", "off"}
 
 
 # ---------------------------------------------------------------------------
@@ -622,7 +624,13 @@ class TacticalAI:
         # 凡庸压力：连续未使敌方掉血越久，输出候选越紧迫
         if enemy_hp_loss > 0 and self._rounds_since_damage >= 2:
             score += 1.2 * self._rounds_since_damage
-        score -= 0.12 * mana_spent
+        # ③修复（2026-09-10 用户裁定批次）：法力=攻力（一池制换算）。每花 1 法力，
+        # 本场剩余每次普攻都少 1 攻力——按「攻次×0.5」的等价火力折价。旧固定
+        # -0.12/点下 盾+1.1/点 ≫ 法力-0.12/点，AI 愿意满法力一手全换盾 → 空手
+        # → 回终化雕塑（换席 seed 9/11/12 实锤）。速度 12 时折价 -6.12/点，
+        # 满池梭哈盾净分为负；正常输出牌（杀伐 5X 伤）仍远正向。
+        ap = self.player.effective_attack_count()
+        score -= mana_spent * (0.12 + 0.5 * ap)
         score -= 0.4 * shards_spent
         score -= 0.35 * mutation
         score -= 0.8 * speed_loss

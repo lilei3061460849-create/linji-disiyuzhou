@@ -1344,10 +1344,10 @@ class GameEngine:
     def _pre_battle_xiuzheng(self, params: dict) -> dict:
         """休整：产生恢复量，并按稳定引用在自己/朋友/员工间自由完整分配。"""
         tier = params.get("tier", 1)
-        # 休整改制（2026-09-10 用户裁定）：恢复额度按**轮回者血限百分比**提供，
-        # 不再是固定 8/24/48——血限40 时 20%/60%/120% 与旧固定值完全一致
-        # （平衡锚点不变），血限随养成抬升后恢复量同比例放大。向上取整。
-        tier_pct = {1: 20, 2: 60, 3: 120}
+        # 休整改制（2026-09-10 用户裁定；同日二次裁定改三档）：恢复额度按
+        # **轮回者血限百分比**提供——20%/40%/60%，向上取整。血限40 时 tier1=8
+        # 与旧固定值一致；高档位较旧 24/48 收敛（百分比随血限放大，固定值不随）。
+        tier_pct = {1: 20, 2: 40, 3: 60}
         tier_cost = {1: 0, 2: 10, 3: 25}
         if not isinstance(tier, int) or isinstance(tier, bool) or tier not in tier_pct:
             self.state.energy += 1

@@ -78,7 +78,7 @@ def test_cancer_rest_bonus_applies_to_every_rest_tier(tmp_path):
     # 2026-09-10 休整改制：基础额度=血限×20%/60%/120%（ceil），永久加成平加不倍增
     import math as _math
     expected = {t: _math.ceil(player.blood_limit * pct / 100) + 8
-                for t, pct in {1: 20, 2: 60, 3: 120}.items()}
+                for t, pct in {1: 20, 2: 40, 3: 60}.items()}
     for tier, total in expected.items():
         player.current_hp = 1
         engine.state.energy = 3

@@ -545,7 +545,7 @@ def test_out_of_combat_actions():
 
     # 休整：先扣血再休整，验证回血
     player.current_hp = 20
-    heal_amt2 = math.ceil(player.blood_limit * 0.6) + engine.state.rest_heal_bonus
+    heal_amt2 = math.ceil(player.blood_limit * 0.4) + engine.state.rest_heal_bonus
     r = engine.execute_action("pre_battle_action", {
         "sub_action": "休整", "tier": 2,
         "heal_allocations": [{"target_ref": "player:0", "amount": heal_amt2}],

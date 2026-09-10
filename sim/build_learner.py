@@ -1326,9 +1326,9 @@ def choose_pre_battle(e, todo, battle_no, rng, policy):
     if act == "修行":
         return act, {"tier": 1, "to": "mana" if battle_no % 2 else "speed"}
     if act == "休整":
-        # 休整分级（2026-08-19 P2；2026-09-10 随引擎改制更新）：恢复额度已改为
-        # 轮回者血限百分比（tier1/2/3 = 20%/60%/120%，向上取整，事实源=
-        # engine/api.py::_pre_battle_xiuzheng）。选择口径：
+        # 休整分级（2026-08-19 P2；2026-09-10 随引擎改制更新，同日二次裁定
+        # 改三档）：恢复额度=轮回者血限百分比（tier1/2/3 = 20%/40%/60%，
+        # 向上取整，事实源=engine/api.py::_pre_battle_xiuzheng）。选择口径：
         # - 选「最小够用档」（base_heal ≥ 缺口的最便宜档），不再机械用 1 级；
         # - 付不起（碎片+保留预算）就降档；
         # - 保留关键资源：每名已部署员工的战终工资上限(12) + 应急缓冲(5)，
@@ -1342,7 +1342,7 @@ def choose_pre_battle(e, todo, battle_no, rng, policy):
         deployed = sum(1 for emp in e.state.employees
                        if emp.is_alive and emp.is_deployed and not emp.is_debt_bound)
         reserve = 12 * deployed + 5 + (5 if battle_no >= 5 else 0)
-        tier_pct = {1: 20, 2: 60, 3: 120}
+        tier_pct = {1: 20, 2: 40, 3: 60}
         tier_cost = {1: 0, 2: 10, 3: 25}
         base = {t: _math.ceil(bl * pct / 100) for t, pct in tier_pct.items()}
         tier = 1

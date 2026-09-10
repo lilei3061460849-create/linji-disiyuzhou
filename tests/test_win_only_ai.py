@@ -83,9 +83,16 @@ def test_win_only_pve_playout_signs():
     for m in e.state.enemies:
         m.current_hp = 1
     assert ai._playout_score(cand) == 1      # 收割残局 → 胜 +1
+    # 「满血墙 → 推不出胜负 ≠+1」已失效（2026-09-10 实测）：攻次×攻力改制后
+    # 纯普攻 10 回合可磨死 258 血墙，墙打不动人时第 5 回合死于凡庸钟——满血墙
+    # +1 是合法终局，旧断言物理上不可能成立。伪造 +1 的结构保障在 _playout_pve
+    # 只因「深拷贝世界内敌方全灭」返回 1；世界泄漏由本文件第一条逐字节守卫钉死。
+    # 此处改钉：推演后真实世界毫发无损（预演零副作用）。
     for m in e.state.enemies:
-        m.current_hp = m.blood_limit          # 满血墙 → 推不出胜负/被磨死 ≠ +1
-    assert ai._playout_score(cand) != 1
+        m.current_hp = m.blood_limit
+    ai._playout_score(cand)
+    for m in e.state.enemies:
+        assert m.is_alive and m.current_hp == m.blood_limit
 
 
 class _VetoProbe(WinOnlyAI):

@@ -69,9 +69,14 @@ def _nth_action(e, personality, n=1, mana=30, threat=None):
 # ---------- 1. 状态驱动 ----------
 
 def test_state_driven_low_threat_prefers_offense(tmp_path):
-    """低威胁局面(威胁≈血限1/3以下):防御无价值,应推进输出。"""
+    """低威胁局面(威胁≈血限1/3以下):防御无价值,应推进输出。
+
+    ③修复（2026-09-10 法力按攻力折价）后，满池普攻（攻次×攻力）常优于
+    杀伐5X——不变量是「推进输出」，具体牌在 杀伐/普攻 间择优。
+    """
     e = _engine(tmp_path)
-    assert "杀伐" in _nth_action(e, [], n=2, threat=(3, 4))
+    act = _nth_action(e, [], n=2, threat=(3, 4))
+    assert ("杀伐" in act or "普攻" in act or "结算一轮攻击" in act), f"低威胁应输出: {act}"
 
 
 # DM裁定 2026-09-10 把杀伐从 2X 提到 5X，输出分数整体放大约 4 倍，压过了
