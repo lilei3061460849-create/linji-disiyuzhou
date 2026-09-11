@@ -471,6 +471,11 @@ def resolve_option_effect(text: str, engine, event_name: str = "", params=None) 
         entity.dao_wen[name] = DaoWenInstance(
             DaoWen(name=name, formula="", cost_type="", cost_formula="", effect_formula=""), x_value=x)
 
+    if event_name == "遗忘书屋" and text.startswith("阅读《禁忌法典》"):
+        # 文本“自选一件遗物与20[碎片]”中的“与20”不匹配通用“获得X碎片”正则，此处直补；
+        # 不return，失忆/自选遗物继续走下方通用分支。
+        engine.state.shards += 20
+        applied.append("获得20碎片")
     if event_name == "遗忘书屋" and text.startswith("阅读《自我剖析》"):
         resonance_type = params.get("resonance_type")
         if resonance_type not in ("转换", "反转", "曲解"):
