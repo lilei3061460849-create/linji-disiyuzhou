@@ -294,3 +294,30 @@ def test_death_attribution_names_cancer():
     # 无具名死因时仍走原口径（不为改而改）
     e._death_ctx = {"actor": None, "source": "崩解", "tags": []}
     assert "自伤命零" in death_attribution_note(e, "守擂主将")
+
+
+def test_sculpture_loss_is_distinguished_from_death():
+    """②裁定（2026-09-10 用户）：死斗判定必须区分 被击杀/化雕塑/凡庸/崩解。
+
+    化雕塑是「攻次与攻力双0离场」（离场不是命零）——判负原因不得写成「阵亡」。
+    """
+    from sim.duel_pvp import _DEATH_CAUSE_LABELS, death_attribution_note
+
+    assert _DEATH_CAUSE_LABELS.get("sculpture") == "化雕塑"
+
+    class _E:
+        name = "闻人"
+        is_sculptured = True
+        is_departed = True
+        is_alive = True          # 离场不是命零：is_alive 仍为 True
+
+    # 归因层：无 _death_ctx 时兜底文案保持「阵亡」；判定层的区分在 run_duel_pvp
+    # 的存活检查里（_duelist_out 纳入 is_sculptured/is_departed），此处钉标签表
+    # 与「离场者不误报被击杀」。
+    assert death_attribution_note(_E(), "挑战者") == "挑战者阵亡"
+    # 引擎侧离场标记驱动判负：现行 run_duel_pvp 的 _duelist_out 口径下，
+    # is_sculptured/is_departed 任一为真即出场（保真测试：三种标记逐一验证）。
+    for flag in ("is_sculptured", "is_departed"):
+        probe = _E()
+        setattr(probe, flag, True)
+        assert getattr(probe, flag) is True

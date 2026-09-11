@@ -299,6 +299,7 @@ _DEATH_CAUSE_LABELS = {
     "collapse": "崩解",
     "cancer": "癌变",
     "proliferation": "癌变",
+    "sculpture": "化雕塑",
 }
 
 
@@ -568,17 +569,34 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
     def _lord():
         return next((x for x in e.state.enemies if x.entity_type == "轮回者"), None)
 
+    def _duelist_out(ent) -> bool:
+        """判负出场=命零**或**化雕塑（is_sculptured/is_departed 离场不是命零，
+        但死斗只允许一名轮回者离开——化雕塑同样判负，2026-09-10 用户裁定：
+        判定须区分 被击杀/化雕塑/凡庸/崩解，不许一律写「阵亡」）。"""
+        return bool(ent is None or not ent.is_alive
+                    or getattr(ent, "is_sculptured", False)
+                    or getattr(ent, "is_departed", False))
+
     def _lord_alive():
-        return any(x.is_alive for x in e.state.enemies if x.entity_type == "轮回者")
+        return not any(_duelist_out(x) for x in e.state.enemies
+                       if x.entity_type == "轮回者")
 
     def _challenger_alive():
-        return bool(e.state.player and e.state.player.is_alive)
+        return not _duelist_out(e.state.player)
 
     def challenger_death_reason() -> str:
-        return death_attribution_note(e.state.player, "挑战者")
+        p = e.state.player
+        if p is not None and (getattr(p, "is_sculptured", False)
+                              or getattr(p, "is_departed", False)):
+            return "挑战者化雕塑（攻次与攻力双0离场，判负；非被击杀）"
+        return death_attribution_note(p, "挑战者")
 
     def lord_death_reason() -> str:
-        return death_attribution_note(_lord(), "守擂主将")
+        lord = _lord()
+        if lord is not None and (getattr(lord, "is_sculptured", False)
+                                 or getattr(lord, "is_departed", False)):
+            return "守擂主将化雕塑（攻次与攻力双0离场，判负；非被击杀）"
+        return death_attribution_note(lord, "守擂主将")
 
     # 「连续 N 回合双方面板零净变化」= 真死锁(互瞪):法力每回合已回填,仍无任何
     # 可造成伤害/回血的动作(如 1 血 0 牌对峙)。这与「法力枯竭、回填后还能打」
