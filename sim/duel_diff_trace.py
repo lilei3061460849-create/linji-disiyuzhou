@@ -105,6 +105,7 @@ def traced_duel(challenger_path: str, defender_path: str, seed: int,
         return {}
     for m in e.state.enemies:
         m.is_alive = False
+    e.state.monster_reinforcements = []  # 波次：仪式战脚手架直接清空增援队列
     be = e.execute_action("battle_end", {})
     guard = 0
     while be.get("success") and be.get("completed") is False and be.get("pending_wage_decisions"):

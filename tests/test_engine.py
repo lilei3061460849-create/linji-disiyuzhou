@@ -124,8 +124,8 @@ def test_daowen_calculations():
     # 测试再生
     result = DaoWenEngine.resolve("再生", 4, target=target)
     assert result["cost"] == 4
-    assert result["target_heal"] == 12
-    print("  ✓ 再生X=4: 消耗4，回复12")
+    assert result["target_heal"] == 16
+    print("  ✓ 再生X=4: 消耗4，回复16")
     
     # 测试波及
     result = DaoWenEngine.resolve("波及", 2)
@@ -1365,3 +1365,23 @@ if __name__ == "__main__":
     success = run_all_tests()
     sys.exit(0 if success else 1)
 
+
+
+def test_shuwu_codex_grants_20_shards():
+    """回归：遗忘书屋禁忌法典opt2（失忆1+自选遗物与20碎片）必须到账20碎片（r7实测漏发bug）。"""
+    engine = GameEngine(db_path="/tmp/linji_tests/test_shuwu.db", rng_seed=7)
+    engine.execute_action("setup_attributes", {"name": "t", "blood_points": 11, "speed_points": 8, "mana_points": 6})
+    finish_initial_daowen(engine)
+    _choose_region(engine, "扭曲都市")
+    held = list(engine.state.player.dao_wen.keys())
+    assert held, "玩家应持有初始道纹供失忆"
+    pool_name = engine.state.relics_pool[0].name
+    engine.state.energy = 3
+    engine.event_pool.current = "遗忘书屋"
+    before = engine.state.shards
+    r = engine.execute_action("resolve_event", {"event": "遗忘书屋", "option_id": 2,
+                                                "daowen_names": [held[0]], "relic_name": pool_name})
+    assert r["success"], r
+    assert engine.state.shards == before + 20, f"应+20碎片，实{engine.state.shards - before}"
+    assert held[0] not in engine.state.player.dao_wen, "失忆道纹应被移除"
+    assert any(x.name == pool_name for x in engine.state.relics), "自选遗物应到账"

@@ -771,6 +771,10 @@ class GameState:
     # 事件登记的"下一场战斗额外出现的怪物"（如龙心谷"追求者·拿走口粮"），[战始]出怪时读取并额外加入
     forced_monsters_next_battle: list[dict] = field(default_factory=list)
 
+    # 波次出怪（2026-09-11 用户令）：[战始]只出第1只，其余进此队列，
+    # R4/R7/R10…回始各增援1只直到上限。元素为怪物定义dict（见 monsters.make_monster_entity 入参）。
+    monster_reinforcements: list[dict] = field(default_factory=list)
+
     # 员工叛变：待处理标记（[战终]检查命中后置真，三个处理分支任一生效后清空）
     rebellion_active: bool = False
     # 员工叛变·镇压子战斗：进行中标记（employees已搬入enemies，需resolve_rebellion_battle结算）
@@ -1177,6 +1181,7 @@ class GameState:
             "duel_round_first": self.duel_round_first,
             "sealed_candidates": self.sealed_candidates,
             "duel_tier": self.duel_tier,
+            "duel_defending_snapshot": self.duel_defending_snapshot,
             "attribute_points": self.attribute_points,
             "player": self.player.to_dict() if self.player else None,
             "friends": [f.to_dict() for f in self.friends],
@@ -1229,6 +1234,8 @@ class GameState:
 
     def battle_won(self) -> bool:
         """战斗胜利＝敌方全部角色均已经由任一合法路径移出战场。"""
+        if getattr(self, "monster_reinforcements", None):
+            return False
         return not self.active_enemies()
 
     def battle_lost(self) -> bool:

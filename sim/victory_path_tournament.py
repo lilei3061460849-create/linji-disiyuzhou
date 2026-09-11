@@ -239,10 +239,10 @@ class SculptAI(HarvestMixin, TacticalAI):
 
 
 class RedeemAI(TacticalAI):
-    """救赎朋友流：先剥怪物原始道纹（残韵），残血压到≤血限10%触发救赎并接纳。"""
+    """救赎雇员流：先剥怪物原始道纹（残韵），残血压到≤血限10%触发救赎并接纳为员工。"""
 
     ORIGINALS = ("狂暴", "强化", "疯狂", "减速", "必中", "自愈", "飞行")
-    FRIEND_CAP = 2
+    ALLY_CAP = 2
 
     def try_strip(self):
         stock = {k: v for k, v in self.engine.state.resonance.items() if v > 0}
@@ -267,8 +267,8 @@ class RedeemAI(TacticalAI):
 
     def resolve_pending_redemption(self, option: str = "无视"):
         st = self.engine.state
-        n_friends = len([f for f in st.friends if f.is_alive])
-        if n_friends < self.FRIEND_CAP:
+        n_allies = len([f for f in st.friends + st.employees if f.is_alive])
+        if n_allies < self.ALLY_CAP:
             option = "接纳"
         return super().resolve_pending_redemption(option)
 

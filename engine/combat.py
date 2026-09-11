@@ -1787,7 +1787,23 @@ class CombatEngine:
                             "roll": idx + 1, "of": len(alive), "damage": rd["lost"], **rd})
 
         self.state.current_round += 1
-        
+
+        # 波次出怪（2026-09-11 用户令）：R4/R7/R10…回始增援1只直到上限。
+        # 死斗无增援；新怪本回合白板（见 prepare_monster_phase 的 spawned_round 口径）。
+        queue = list(getattr(self.state, "monster_reinforcements", []) or [])
+        if (queue and not self.state.in_final_duel
+                and self.state.current_round >= 4
+                and (self.state.current_round - 1) % 3 == 0):
+            from .monsters import make_monster_entity
+            monster_def = self.state.monster_reinforcements.pop(0)
+            m = make_monster_entity(monster_def)
+            m.spawned_round = self.state.current_round
+            self.init_monster_shards(m)
+            self.state.enemies.append(m)
+            effects.append({"type": "wave_spawn", "entity": m.name,
+                            "round": self.state.current_round,
+                            "queued_left": len(self.state.monster_reinforcements)})
+
         return {
             "round": self.state.current_round,
             "phase": "回始",
@@ -4701,7 +4717,11 @@ class CombatEngine:
             activated = self._monster_activated.get(id(monster), set())
             round_used = self._monster_round_used(monster)
             daowen_options = []
-            if not whiteboard and not monster.has_status("干扰"):
+            # 波次白板：增援怪进场当回合不出道纹（与R1怪同待遇）；旧实体缺字段回退1。
+            # 死斗不适用（守擂主将须R1就能发动道纹，与全局whiteboard同口径）。
+            monster_whiteboard = (whiteboard or (not self.state.in_final_duel
+                and getattr(monster, "spawned_round", 1) >= self.state.current_round))
+            if not monster_whiteboard and not monster.has_status("干扰"):
                 for name, inst in monster.dao_wen.items():
                     if (name in round_used or not inst.can_use()
                             or name not in DaoWenEngine.list_all()):

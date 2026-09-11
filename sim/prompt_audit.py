@@ -143,7 +143,7 @@ for i in range(1, 17):
 # ---- 当前有效的工程约束 19 ----
 _ec = [
     ("七场序列1/1/1/1/2/3/4", "F", "compute_draw_count+audit+test_monster_draw"),
-    ("怪物面板预算60+audit公式", "F", "audit_monsters.py 哨兵"),
+    ("怪物面板属性点60+audit公式", "F", "audit_monsters.py 哨兵"),
     ("困境信号≥1+进化借用", "F", "_drive_plight_monsters+test_plight_drive"),
     ("崩解50+add_mutation调用方义务", "F", "models.py+测试"),
     ("活血不区分掉血来源(DM08-19)", "F", "hp_lost_this_round口径+测试"),

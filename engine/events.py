@@ -30,7 +30,7 @@ EVENT_RELICS = {
 
 EVENT_CONSUMABLES = {
     "绝息淤泥": (1, "使用后屏蔽自身灵魂位置，使本次[战终]立刻逃脱"),
-    "活性土壤": (1, "[战始]可失去X法力，以X点基础预算打造一名[朋友]"),
+    "活性土壤": (1, "[战始]可失去X法力，以X点属性点打造一名[朋友]"),
     "假钞贴": (2, "使用后获得20[假碎片]"),
     "穿甲弹": (2, "对[目标]造成15点忽略格挡与闪避的伤害"),
     "洗劫面具": (2, "使自身下2次攻击附带【必中】"),
@@ -471,6 +471,11 @@ def resolve_option_effect(text: str, engine, event_name: str = "", params=None) 
         entity.dao_wen[name] = DaoWenInstance(
             DaoWen(name=name, formula="", cost_type="", cost_formula="", effect_formula=""), x_value=x)
 
+    if event_name == "遗忘书屋" and text.startswith("阅读《禁忌法典》"):
+        # 文本“自选一件遗物与20[碎片]”中的“与20”不匹配通用“获得X碎片”正则，此处直补；
+        # 不return，失忆/自选遗物继续走下方通用分支。
+        engine.state.shards += 20
+        applied.append("获得20碎片")
     if event_name == "遗忘书屋" and text.startswith("阅读《自我剖析》"):
         resonance_type = params.get("resonance_type")
         if resonance_type not in ("转换", "反转", "曲解"):

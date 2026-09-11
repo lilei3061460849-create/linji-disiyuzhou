@@ -1,7 +1,7 @@
 """二阶副本面板合规审计契约测试。
 
-口径（2026-08-14 裁定）：二阶（乱葬岗/沉沦海）可分配法力140，道纹5/总值15；
-面板成本=⌈血限/6⌉+2×攻击力+攻击次数² ≤140。永夜庭特殊预算（60×场次）豁免。
+口径（2026-08-14 裁定，2026-09-11 预算并入属性点）：二阶（乱葬岗/沉沦海）可分配属性点140，道纹5/总值15；
+面板成本=⌈血限/6⌉+攻击力+攻击次数² ≤140。永夜庭特殊属性点（60×场次）豁免。
 """
 import importlib.util
 import os
@@ -38,12 +38,12 @@ def test_boundary_special_monsters_exempted():
         for m in monsters:
             if m["name"] in ad.SPECIAL_MONSTERS:
                 assert True  # 豁免，不检查面板/道纹配额
-    # 永夜庭特殊预算豁免
+    # 永夜庭特殊属性点豁免
     assert ad.TARGETS["永夜庭"] is None
 
 
 def test_error_panel_cost_formula():
-    """错误输入：面板成本公式验证（⌈血限/6⌉+2×攻击力+攻击次数²）。"""
-    assert ad.panel_cost(216, 4, 4) == 60  # 千手蜈蚣 一阶满预算
-    assert ad.panel_cost(258, 28, 3) == 108  # 纸人: ⌈258/6⌉43+56+9
+    """错误输入：面板成本公式验证（⌈血限/6⌉+攻击力+攻击次数²）。"""
+    assert ad.panel_cost(216, 4, 4) == 56  # 千手蜈蚣：⌈216/6⌉36+4+16
+    assert ad.panel_cost(258, 28, 3) == 80  # 纸人: ⌈258/6⌉43+28+9
     assert ad.panel_cost(0, 0, 0) == 0

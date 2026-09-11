@@ -257,7 +257,7 @@ def _resolve_pending_choices(e) -> None:
     各 pending 池相互门禁：非空时绝大多数行动被 api.py:824-845 拒绝并退还精力，
     驱动不清理=原地死循环/战斗无法结算。处理：遗物/道具/雇员道纹/煞气取首项；
     【救赎】固定选【无视】（确定性口径同 combo_loop_audit.py:819——接纳会产生
-    朋友盟友，污染适应度横向比较）。事件链单趟上限20，防无限嵌套。
+    员工盟友，污染适应度横向比较）。事件链单趟上限20，防无限嵌套。
     """
     for _ in range(20):
         acted = False
@@ -1107,7 +1107,7 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
         for _ in range(40):
             if not e.state.player or not e.state.player.is_alive:
                 break
-            if not [x for x in e.state.enemies if x.is_alive]:
+            if not [x for x in e.state.enemies if x.is_alive] and not getattr(e.state, "monster_reinforcements", None):  # 波次：增援未到不算清场
                 break
             rs, _rs_logs = start_round_with_artifacts(e)
             if not rs.get("success"):
@@ -1136,7 +1136,7 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                 record("engine_error", "combat", f"{type(ex).__name__}: {ex}")
                 return {"cleared": cleared, "won": False, "invalid": True,
                         "reason": f"combat: {ex}"}
-            if not [x for x in e.state.enemies if x.is_alive]:
+            if not [x for x in e.state.enemies if x.is_alive] and not getattr(e.state, "monster_reinforcements", None):  # 波次：增援未到不算清场
                 break
             # 玩家可能在自己回合内命零（癌变/崩解/代价反噬）——此时死之传承中断已入队，
             # 不能再进怪物阶段（会被中断门禁挡成 invalid），直接按阵亡结算。
@@ -1144,11 +1144,11 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                 break
             # [朋友]/[员工]自主出手（无语言命令时，README：微光者会根据情况对敌方出手）
             e.execute_action("resolve_ally_phases", {})
-            if not [x for x in e.state.enemies if x.is_alive]:
+            if not [x for x in e.state.enemies if x.is_alive] and not getattr(e.state, "monster_reinforcements", None):  # 波次：增援未到不算清场
                 break
             # 困境驱动（DM裁定2026-08-23③）：强制困境怪进化/逃跑二选一
             _drive_plight_monsters(e, telemetry)
-            if not [x for x in e.state.enemies if x.is_alive]:
+            if not [x for x in e.state.enemies if x.is_alive] and not getattr(e.state, "monster_reinforcements", None):  # 波次：增援未到不算清场
                 break   # 困境怪全逃跑=清场（不视为击杀）
             mp = _resolve_monster_turn(e)
             if not mp.get("success"):

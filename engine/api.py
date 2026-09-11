@@ -716,7 +716,9 @@ class GameEngine:
         "retreat_via_toll", "deploy_employee", "lianxin_in_battle", "declare_evolution",
         "prepare_monster_phase", "resolve_monster_phase", "monster_phase",
         "round_start", "round_end", "resolve_rebellion_battle",
-        "activate_duel_relic", "resolve_final_duel", "use_black_card", "use_crime_vault",
+        # resolve_final_duel不在此列：死斗败者先过死之传承（reset进setup相）
+        # 再结算defeat，战斗限定会把它挡在setup外导致擂主永不回槽（r16实战复现）。
+        "activate_duel_relic", "use_black_card", "use_crime_vault",
         "fire_godfather_revolver", "select_shared_dragon_heart", "declare_fuyuebei_toll",
         "activate_dragon_body", "devour_monster", "declare_tail_sacrifice",
         "use_dragon_wings", "use_blood_wings", "enslave_as_chizu", "blood_feast",
@@ -1233,7 +1235,7 @@ class GameEngine:
             cost_formula="X", effect_formula=""))
 
     def _action_resolve_redemption(self, params: dict) -> dict:
-        """救赎：接纳昏迷微光者为朋友，或无视。"""
+        """救赎：接纳昏迷微光者为员工（待命，需派遣+战终工资，计入叛变），或无视。"""
         pending = self.state.pending_redemption
         if not pending:
             return {"success": False, "error": "当前没有待结算的救赎"}
@@ -1241,7 +1243,7 @@ class GameEngine:
         if option in (1, "1", "接纳"):
             name = params.get("name", "")
             if not isinstance(name, str) or not name.strip():
-                return {"success": False, "error": "接纳时必须自定义朋友名字"}
+                return {"success": False, "error": "接纳时必须自定义员工名字"}
             name = name.strip()
             existing = set()
             if self.state.player:
@@ -1251,20 +1253,21 @@ class GameEngine:
             existing.update(entity.name for entity in self.state.enemies if entity.is_alive)
             if name in existing:
                 return {"success": False, "error": f"名字【{name}】已被占用，请换一个"}
-            friend = Entity(
+            employee = Entity(
                 name=name,
-                entity_type="朋友",
+                entity_type="员工",
                 blood_limit=math.ceil(pending["blood_limit"] / 2),
                 current_hp=math.ceil(pending["blood_limit"] / 2),
                 attack_count=math.ceil(pending["attack_count"] / 2),
                 attack_power=math.ceil(pending["attack_power"] / 2),
+                is_deployed=False,
             )
-            self.state.friends.append(friend)
+            self.state.employees.append(employee)
             self.state.pending_redemption = {}
             return {
                 "success": True,
                 "action": "救赎·接纳",
-                "result": {"friend": friend.to_dict(), "from": pending["name"]},
+                "result": {"employee": employee.to_dict(), "from": pending["name"]},
             }
         if option in (2, "2", "无视"):
             self.state.pending_redemption = {}
@@ -3236,9 +3239,9 @@ class GameEngine:
                     or not isinstance(panel, dict)):
                 return {"success": False, "error": "活性土壤需要合法x、足够法力和DM确认的friend面板"}
             ac, ap, hp = panel.get("attack_count"), panel.get("attack_power"), panel.get("blood_limit")
-            budget = (ac * ac + 2 * ap + math.ceil(hp / 6)) if all(isinstance(v, int) and not isinstance(v, bool) and v >= 0 for v in (ac, ap, hp)) else -1
+            budget = (ac * ac + ap + math.ceil(hp / 6)) if all(isinstance(v, int) and not isinstance(v, bool) and v >= 0 for v in (ac, ap, hp)) else -1
             if budget > x or budget < 0 or not isinstance(panel.get("name"), str) or not panel["name"]:
-                return {"success": False, "error": f"朋友面板预算必须≤X={x}"}
+                return {"success": False, "error": f"朋友面板属性点成本必须≤X={x}"}
             player.current_mana -= x
             friend = Entity(panel["name"], "朋友", blood_limit=hp, current_hp=hp,
                             attack_count=ac, attack_power=ap)
@@ -4038,18 +4041,29 @@ class GameEngine:
         region = self.state.current_region
         pool = self.monster_pool.get(region, [])
         self.state.enemies.clear()
+        self.state.monster_reinforcements = []
         drawn_names = []
+        queued_names = []
         draw_count = 0
         if pool:
             draw_count = compute_draw_count(self.state.current_battle)
+            drawn_defs = []
             for i in range(draw_count):
                 roll = self.dice.auto_roll(f"monster_draw_{self.state.current_battle}_{i}", pool,
                                             context=f"出怪(第{self.state.current_battle}场,第{i + 1}只)")
-                monster_def = roll["selected"]
-                m = make_monster_entity(monster_def)
-                self.combat.init_monster_shards(m)  # 罪孽都市：[战始]自带碎片=专属道纹数值之和×2（洗劫/赎金/逼债的碎片来源）
-                self.state.enemies.append(m)
-                drawn_names.append(monster_def["name"])
+                drawn_defs.append(roll["selected"])
+            # 波次出怪（2026-09-11 用户令）：R1只出第1只，其余进增援队列，
+            # R4/R7/R10…回始各增援1只。抽怪随机流与旧版完全一致（全抽、仅延迟进场）。
+            for i, monster_def in enumerate(drawn_defs):
+                if i == 0:
+                    m = make_monster_entity(monster_def)
+                    m.spawned_round = 1
+                    self.combat.init_monster_shards(m)  # 罪孽都市：[战始]自带碎片=专属道纹数值之和×2（洗劫/赎金/逼债的碎片来源）
+                    self.state.enemies.append(m)
+                    drawn_names.append(monster_def["name"])
+                else:
+                    self.state.monster_reinforcements.append(monster_def)
+                    queued_names.append(monster_def["name"])
 
         # 事件登记的下一场修正全部在战始一次性消费。
         modifiers = self.state.event_modifiers
@@ -4121,12 +4135,14 @@ class GameEngine:
             "region": region,
             "draw_count": draw_count,
             "enemies": drawn_names,
+            "queued_reinforcements": queued_names,
             "full_information": ([enemy.to_dict() for enemy in self.state.enemies]
                                  if reveal_full_information else None),
             "relic_logs": relic_logs,
             "spell_logs": spell_logs,
             "artifact_logs": artifact_logs,
-            "instruction": "怪物已抽取完毕；请补充选择本场战斗背景(纯叙事，不影响数值)并结算其余[战始]效果",
+            "instruction": ("首只怪物已进场" + (f"；另有{len(queued_names)}只增援待命，R4/R7/R10…回始各进场1只" if queued_names else "（无增援）") +
+                            "；请补充选择本场战斗背景(纯叙事，不影响数值)并结算其余[战始]效果"),
         }
 
     # ==================== 最终的冠冕 / 第8场最终死斗 ====================
@@ -4831,6 +4847,9 @@ class GameEngine:
         escaping = self.state.event_modifiers.pop("escape_at_battle_end", False)
         if living and not escaping:
             return {"success": False, "error": f"仍有存活敌人，不能结算战终: {living}"}
+        queued = list(getattr(self.state, "monster_reinforcements", []) or [])
+        if queued and not escaping:
+            return {"success": False, "error": f"仍有{len(queued)}只怪物增援未进场，不能结算战终: {[m.get('name', '?') for m in queued]}"}
         if escaping:
             for enemy in self.state.enemies:
                 if enemy.is_alive:
@@ -4988,6 +5007,9 @@ class GameEngine:
         self.state.temp_friends.clear()
 
         # 出战支援：每场战斗单独部署，战终后存活员工回到"待命"状态，下一场需重新派遣
+        # （先记录本场参战者供成长判定；若重置后再判 is_deployed，则参战者全被误判为待命而永不成长）
+        _battled_ids = {id(emp) for emp in self.state.employees
+                        if emp.is_alive and not emp.is_debt_bound and emp.is_deployed}
         for emp in self.state.employees:
             if emp.is_alive and not emp.is_debt_bound:
                 emp.is_deployed = False
@@ -5003,8 +5025,8 @@ class GameEngine:
         for ally in self.state.friends + self.state.employees:
             if not ally.is_alive or ally.is_debt_bound:
                 continue
-            if ally.entity_type == "员工" and not ally.is_deployed and ally not in self.state.friends:
-                # 待命员工未上场，不累计战斗历练
+            if ally.entity_type == "员工" and id(ally) not in _battled_ids and ally not in self.state.friends:
+                # 待命员工未上场，不累计战斗历练（以重置前记录的参战集合为准）
                 continue
             if ally.attack_count < 9:
                 ally.attack_count += 1
@@ -5060,7 +5082,16 @@ class GameEngine:
         """开始新轮回者时保留《死者之书》的永久癌变强化。"""
         bonus = self.state.rest_heal_bonus
         wisdom = list(self.state.death_book_wisdom)
+        # 死斗败者先过死之传承（reset）再走resolve_final_duel(defeat)；
+        # reset若清空擂主快照，defeat就无声吞掉擂主（r14实战复现）。
+        was_duel = self.state.in_final_duel
+        duel_snap = dict(self.state.duel_defending_snapshot) if was_duel else {}
+        duel_tier = self.state.duel_tier if was_duel else 0
         self.state = GameState(rest_heal_bonus=bonus, death_book_wisdom=wisdom)
+        if was_duel:
+            self.state.in_final_duel = True
+            self.state.duel_tier = duel_tier
+            self.state.duel_defending_snapshot = duel_snap
         self.combat.state = self.state
         # 事件遭遇记录属于单次轮回；新轮回不得继承已触发事件或未结算队列。
         self.event_pool.triggered.clear()
