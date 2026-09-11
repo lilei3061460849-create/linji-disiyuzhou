@@ -4989,6 +4989,9 @@ class GameEngine:
         self.state.temp_friends.clear()
 
         # 出战支援：每场战斗单独部署，战终后存活员工回到"待命"状态，下一场需重新派遣
+        # （先记录本场参战者供成长判定；若重置后再判 is_deployed，则参战者全被误判为待命而永不成长）
+        _battled_ids = {id(emp) for emp in self.state.employees
+                        if emp.is_alive and not emp.is_debt_bound and emp.is_deployed}
         for emp in self.state.employees:
             if emp.is_alive and not emp.is_debt_bound:
                 emp.is_deployed = False
@@ -5004,8 +5007,8 @@ class GameEngine:
         for ally in self.state.friends + self.state.employees:
             if not ally.is_alive or ally.is_debt_bound:
                 continue
-            if ally.entity_type == "员工" and not ally.is_deployed and ally not in self.state.friends:
-                # 待命员工未上场，不累计战斗历练
+            if ally.entity_type == "员工" and id(ally) not in _battled_ids and ally not in self.state.friends:
+                # 待命员工未上场，不累计战斗历练（以重置前记录的参战集合为准）
                 continue
             if ally.attack_count < 9:
                 ally.attack_count += 1

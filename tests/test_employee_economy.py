@@ -341,3 +341,32 @@ def test_battle_end_blocked_until_all_pending_wages_resolved():
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
+
+
+def test_deployed_employee_grows_but_benched_does_not():
+    """回归：战终参战员工攻次+1，待命员工不成长（r8B5实测：重置顺序bug致参战者永不成长）。"""
+    engine = _new_engine("growth_fix")
+    engine.state.shards = 100
+    _hire(engine, {
+        "sub_action": "雇佣", "name": "参战者", "blood_alloc": 2, "atk_bundles": 6,
+    })
+    _hire(engine, {
+        "sub_action": "雇佣", "name": "板凳", "blood_alloc": 2, "atk_bundles": 6,
+    })
+    _start_battle(engine)
+    engine.execute_action("round_start", {})
+    d = engine.execute_action("deploy_employee", {"name": "参战者"})
+    assert d["success"] is True
+    battler = next(e for e in engine.state.employees if e.name == "参战者")
+    bencher = next(e for e in engine.state.employees if e.name == "板凳")
+    assert (battler.attack_count, bencher.attack_count) == (6, 6)
+    _finish_round_without_monster_actions(engine)
+    blocked = engine.execute_action("battle_end", {})
+    assert blocked["success"] is True and blocked["completed"] is False
+    paid = engine.execute_action("pay_employee_wage", {"name": "参战者", "decision": "pay"})
+    assert paid["success"] is True
+    finished = engine.execute_action("battle_end", {})
+    assert finished["success"] is True, finished
+    assert battler.attack_count == 7, f"参战者应+1攻次，实{battler.attack_count}"
+    assert bencher.attack_count == 6, f"板凳不应成长，实{bencher.attack_count}"
+    assert any("参战者" in g for g in finished["result"]["ally_growth"])
