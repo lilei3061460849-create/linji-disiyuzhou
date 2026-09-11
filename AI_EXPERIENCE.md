@@ -424,7 +424,7 @@ python sim/audit_monsters.py
 ## 当前有效的工程约束
 
 - 一阶副本出怪数 `max(1, 战斗场数-3)`，七场序列 `1/1/1/1/2/3/4`；事实实现 `engine/monsters.py::compute_draw_count` 与 `_action_battle_start`。
-- 一阶怪物面板预算 60，审计公式 `ceil(血限/6) + 2×攻击力 + 攻击次数²`；改面板后必须跑 `python sim/audit_monsters.py`。
+- 一阶怪物面板预算 60（2026-09-11 扭曲试点 40，见副本索引），审计公式 `ceil(血限/6) + 2×攻击力 + 攻击次数²`；改面板后必须跑 `python sim/audit_monsters.py`。
 - 怪物困境信号≥1 触发强制二选一：进化借轮回者当前持有且自身未持有的纹（每场逃跑/进化限一次）；可选项只能由引擎列出。
 - 异变 50 层触发【崩解】命零，累积统一走 `Entity.add_mutation`；调用方拿到 `collapsed=True` 必须交回 `_on_entity_death(..., ctx=_collapse_context(...))`。
 - 【活血】只看本回合是否实际掉过 HP，不区分来源（DM裁定 2026-08-19）。

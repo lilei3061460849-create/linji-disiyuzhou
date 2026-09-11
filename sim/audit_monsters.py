@@ -33,8 +33,8 @@ def panel_cost(hp, ap, ac, hp_div):
 def audit():
     monsters = [m for m in bs.parse_monsters() if m.get("region") in REGION_EXCLUSIVE]
     assert len(monsters) == 36, f"应解析36只一阶池怪，实{len(monsters)}"
-    BUDGET = 60
-    print(f"解析到36只一阶副本池怪，预算BUDGET={BUDGET}（⌈血限/6⌉+2×攻击力+攻击次数²）\n")
+    BUDGETS = {"扭曲都市": 40, "罪孽都市": 60, "龙心谷": 60}
+    print(f"解析到36只一阶副本池怪，分副本预算{BUDGETS}（⌈血限/6⌉+2×攻击力+攻击次数²）\n")
     print(f"{'怪物':<8}{'副本':<6}{'面板':<13}{'道纹(数量/总值)':<22}"
           f"{'成本':<6}{'判定':<8}{'道纹审查'}")
     all_viol = []
@@ -42,8 +42,9 @@ def audit():
         seen = {}
         for m in [x for x in monsters if x["region"] == region]:
             cost = panel_cost(m["hp"], m["ap"], m["ac"], 6)
-            verdict = "合规" if cost <= BUDGET else f"超{cost-BUDGET}"
-            if cost > BUDGET: all_viol.append(m["name"])
+            budget = BUDGETS[region]
+            verdict = "合规" if cost <= budget else f"超{cost-budget}"
+            if cost > budget: all_viol.append(m["name"])
             # 道纹审查
             dws = list(m["dw"].items())
             n, total = len(dws), sum(m["dw"].values())
