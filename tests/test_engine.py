@@ -124,8 +124,8 @@ def test_daowen_calculations():
     # 测试再生
     result = DaoWenEngine.resolve("再生", 4, target=target)
     assert result["cost"] == 4
-    assert result["target_heal"] == 12
-    print("  ✓ 再生X=4: 消耗4，回复12")
+    assert result["target_heal"] == 16
+    print("  ✓ 再生X=4: 消耗4，回复16")
     
     # 测试波及
     result = DaoWenEngine.resolve("波及", 2)

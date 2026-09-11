@@ -67,10 +67,10 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_zaisheng(x: int, target: Entity = None) -> dict:
-        """再生X：消耗X。为[目标]回复3X点生命"""
+        """再生X：消耗X。为[目标]回复4X点生命（2026-09-11 用户令：3X→4X，再生被庇护完爆）"""
         target_name = target.name if target is not None else "未选定目标"
         cost = x
-        heal = 3 * x
+        heal = 4 * x
         return {
             "dao_wen": "再生",
             "x": x,
