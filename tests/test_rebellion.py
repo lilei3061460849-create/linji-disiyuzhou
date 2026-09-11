@@ -77,7 +77,8 @@ def test_suppress_moves_employees_into_enemies_with_full_panel():
     assert len(engine.state.enemies) == 1
     rebel = engine.state.enemies[0]
     assert rebel.name == "彪悍打手"
-    assert rebel.attack_count == 5 and rebel.attack_power == 5 and rebel.current_hp == 50
+    # 该员工在前置battle_end中处于已部署参战状态，按文本规则战终攻次+1（5→6），镇压时保留成长后面板
+    assert rebel.attack_count == 6 and rebel.attack_power == 5 and rebel.current_hp == 50
     assert "弱化" in rebel.dao_wen
     assert engine.state.rebellion_in_progress is True
     assert engine.state.rebellion_active is False
