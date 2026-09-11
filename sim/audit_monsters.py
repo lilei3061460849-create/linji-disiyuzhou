@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
 怪物面板合规审计工具（只读，不修改任何文件）
-现行唯一口径（裁定④转正+裁定⑥预算60，README正文）：
-  X法力=6X血限，2X法力=X攻击力，X²法力=X攻击次数；一阶可分配法力60（面板三围），道纹单独配额。
-= panel_cost = ⌈血限/6⌉ + 2×攻击力 + 攻击次数² ≤ 60。
+现行唯一口径（2026-09-11：预算并入属性点，README正文）：
+  1属性点=6血限=1攻击力，X²属性点=X攻击次数；一阶可分配属性点60（面板三围），道纹单独配额。
+= panel_cost = ⌈血限/6⌉ + 攻击力 + 攻击次数² ≤ 60。
 （历史口径"÷8/预算60"经审计36/36不可能成立且已被裁定④作废；6处削弱目标值随之作废。
   裁定⑥将预算30→60并全量重算36面板 hp=6×(60-次数²-2×攻击)，道纹串不变。）
 道纹审查：数量=3 / 数量总值=8 / 同池组合唯一 / 池许可（通用核心+原始+转化+本副本专属）。
-事件/雇佣面板（追求者/医生等）经裁定⑤豁免预算约束，仅列参照数值。
+事件/雇佣面板（追求者/医生等）经裁定⑤豁免属性点约束，仅列参照数值。
 用法: python sim/audit_monsters.py
 """
 import sys, os, math, re
@@ -28,13 +28,13 @@ REGION_EXCLUSIVE = {
 }
 
 def panel_cost(hp, ap, ac, hp_div):
-    return math.ceil(hp / hp_div) + 2 * ap + ac * ac
+    return math.ceil(hp / hp_div) + ap + ac * ac
 
 def audit():
     monsters = [m for m in bs.parse_monsters() if m.get("region") in REGION_EXCLUSIVE]
     assert len(monsters) == 36, f"应解析36只一阶池怪，实{len(monsters)}"
-    BUDGET = 60
-    print(f"解析到36只一阶副本池怪，预算BUDGET={BUDGET}（⌈血限/6⌉+2×攻击力+攻击次数²）\n")
+    ATTR_CAP = 60
+    print(f"解析到36只一阶副本池怪，属性点上限={ATTR_CAP}（⌈血限/6⌉+攻击力+攻击次数²）\n")
     print(f"{'怪物':<8}{'副本':<6}{'面板':<13}{'道纹(数量/总值)':<22}"
           f"{'成本':<6}{'判定':<8}{'道纹审查'}")
     all_viol = []
@@ -42,8 +42,8 @@ def audit():
         seen = {}
         for m in [x for x in monsters if x["region"] == region]:
             cost = panel_cost(m["hp"], m["ap"], m["ac"], 6)
-            verdict = "合规" if cost <= BUDGET else f"超{cost-BUDGET}"
-            if cost > BUDGET: all_viol.append(m["name"])
+            verdict = "合规" if cost <= ATTR_CAP else f"超{cost-ATTR_CAP}"
+            if cost > ATTR_CAP: all_viol.append(m["name"])
             # 道纹审查
             dws = list(m["dw"].items())
             n, total = len(dws), sum(m["dw"].values())
@@ -67,8 +67,8 @@ def audit():
     print("===== 汇总 =====")
     print(f"面板违规 {len(all_viol)}/36：{all_viol if all_viol else '无，全部合规'}")
 
-    # 事件/雇佣面板（裁定⑤：豁免预算约束，仅列参照数值）
-    print("\n===== 事件/雇佣面板（裁定⑤豁免预算，仅参照） =====")
+    # 事件/雇佣面板（裁定⑤：豁免属性点约束，仅列参照数值）
+    print("\n===== 事件/雇佣面板（裁定⑤豁免属性点，仅参照） =====")
     extra = [
         ("追求者(事件怪/员工)", 8, 2, 96, "逆鳞2+活血3+固执3"),
         ("医生(员工)", 1, 1, 50, "无"),

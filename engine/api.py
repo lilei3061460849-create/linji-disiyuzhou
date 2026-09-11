@@ -3236,9 +3236,9 @@ class GameEngine:
                     or not isinstance(panel, dict)):
                 return {"success": False, "error": "活性土壤需要合法x、足够法力和DM确认的friend面板"}
             ac, ap, hp = panel.get("attack_count"), panel.get("attack_power"), panel.get("blood_limit")
-            budget = (ac * ac + 2 * ap + math.ceil(hp / 6)) if all(isinstance(v, int) and not isinstance(v, bool) and v >= 0 for v in (ac, ap, hp)) else -1
+            budget = (ac * ac + ap + math.ceil(hp / 6)) if all(isinstance(v, int) and not isinstance(v, bool) and v >= 0 for v in (ac, ap, hp)) else -1
             if budget > x or budget < 0 or not isinstance(panel.get("name"), str) or not panel["name"]:
-                return {"success": False, "error": f"朋友面板预算必须≤X={x}"}
+                return {"success": False, "error": f"朋友面板属性点成本必须≤X={x}"}
             player.current_mana -= x
             friend = Entity(panel["name"], "朋友", blood_limit=hp, current_hp=hp,
                             attack_count=ac, attack_power=ap)
