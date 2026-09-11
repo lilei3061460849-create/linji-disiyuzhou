@@ -39,6 +39,15 @@ except Exception:  # 兜底：对白渲染失败不阻塞死斗
     render_line = lambda actor, event, personality=None, rng=None: f"{getattr(actor,'name','??')}: …"
     peek_personality = lambda engine, entity: None
 
+def _default_ai_cls():
+    """死斗默认战术 AI（用户裁定 2026-09-10：胜负唯一计分）。延迟导入防循环。
+    LJ_WIN_ONLY=0 退回启发式 TacticalAI（千局级扫描用）。"""
+    if os.environ.get("LJ_WIN_ONLY", "1") == "0":
+        return TacticalAI
+    from sim.win_only_ai import WinOnlyAI
+    return WinOnlyAI
+
+
 # 战场公开频道（报告.md 硬伤3）：台词发布到 state.battle_channel，双方+观战者可见。
 # 独立随机源：绝**不**消耗全局 random / 引擎 RNG，避免台词影响 AI 与结算
 # （红线 E：不碰 AI —— 连随机数消耗都不能串味）。
@@ -290,6 +299,7 @@ _DEATH_CAUSE_LABELS = {
     "collapse": "崩解",
     "cancer": "癌变",
     "proliferation": "癌变",
+    "sculpture": "化雕塑",
 }
 
 
@@ -464,8 +474,17 @@ def _duel_state_sizes(e, top=6):
 
 
 def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
-                 max_wall_seconds=30.0, use_tactical=True, 对话=None):
+                 max_wall_seconds=30.0, use_tactical=True, 对话=None,
+                 ai_cls=None, resume=False):
     """PvP 对称交替死斗：双方都按轮回者规则行动。
+
+    ai_cls: 双方共用的战术 AI 类。**默认 WinOnlyAI（用户裁定 2026-09-10：
+        胜负唯一计分——胜+1/败-1，无论什么手段什么战术）**；显式传 TacticalAI
+        或 LegacyAwareAI 可回到启发式/遗言桥口径（旧报告实录均为该口径）。
+
+    resume=True：从**进行中的死斗状态**续跑（供整局推演 WinOnlyAI 用）——跳过
+        设名/读书/性格播种与首个 round_start，直接从当前 duel_turn 接管。
+        常规调用（resume=False）行为完全不变。
 
     player_act(): 挑战者侧行动1次（成功返回 True，引擎已换边；无行动返回 False）。
         当 use_tactical=True 时忽略 player_act，改由 TacticalAI（含残韵候选 +
@@ -484,28 +503,33 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
     if log is None:   # 空列表是 falsy,`log or []` 会静默丢弃调用方缓冲(2026-08-26 同源修复)
         log = []
     # 双轮回者各有其名（随机生成、互不相同）：先定名，再 seed 性格（性格按名字哈希）。
-    _assign_duelist_names(e, seed=getattr(e.dice, "_seed", 0) or 0)
-    # 死斗开始前，双方轮回者各自翻阅《死者之书》——前人怎么死的是唯一的历史教训。
-    # 纯读取：不消耗精力、不掷骰、不改任何数值（engine/api.py::_action_read_death_book）。
-    try:
-        _book = e.execute_action("read_death_book", {})
-    except Exception:  # 读取失败不得影响死斗本身
-        _book = {}
-    for _l in (_book.get("legacies") or []):
-        log.append(f"  [死者之书] {_l.get('title', '')}｜{_l.get('text', '')}")
-    # 双方都是轮回者：各自 seed 一套确定、可区分的性格画像 → 性格调制 + 对白差异。
-    _seed_duelist_personality(e, e.state.player)
-    for foe in e.state.enemies:
-        if foe.entity_type == "轮回者":
-            _seed_duelist_personality(e, foe)
+    if not resume:
+        _assign_duelist_names(e, seed=getattr(e.dice, "_seed", 0) or 0)
+        # 死斗开始前，双方轮回者各自翻阅《死者之书》——前人怎么死的是唯一的历史教训。
+        # 纯读取：不消耗精力、不掷骰、不改任何数值（engine/api.py::_action_read_death_book）。
+        try:
+            _book = e.execute_action("read_death_book", {})
+        except Exception:  # 读取失败不得影响死斗本身
+            _book = {}
+        for _l in (_book.get("legacies") or []):
+            log.append(f"  [死者之书] {_l.get('title', '')}｜{_l.get('text', '')}")
+        # 双方都是轮回者：各自 seed 一套确定、可区分的性格画像 → 性格调制 + 对白差异。
+        _seed_duelist_personality(e, e.state.player)
+        for foe in e.state.enemies:
+            if foe.entity_type == "轮回者":
+                _seed_duelist_personality(e, foe)
     # 残韵：挑战者沿用 State.resonance（load_winner 已从快照还原其真实准备量）；
     # 守擂者在 _trigger_final_crown 也已从快照还原其真实准备量（无则 0）。
     # 一律**只使用真实准备的残韵**，绝不凭空充能——没有就是没有。
     # 挑战者用 TacticalAI 驱动（残韵+性格+变数）
+    from engine.ai_tactics import TacticalAI
+    # 默认 = WinOnlyAI（用户裁定 2026-09-10：胜负唯一计分，死斗默认用它——
+    # 「不然出的再快看一群傻子打架有什么意思」）。启发式 TacticalAI 降级为
+    # 推演内环/显式指定时的实现。延迟导入防循环。
+    _ai_cls = ai_cls if ai_cls is not None else _default_ai_cls()
     _def_tai = None
     if use_tactical:
-        from engine.ai_tactics import TacticalAI
-        _tai = TacticalAI(e, verbose=True)
+        _tai = _ai_cls(e, verbose=True)
         _seen: dict = {}
         def player_act():
             acted = _tai.take_action()
@@ -536,7 +560,7 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
             foes = [f for f in foes if f is not None and f.is_alive]
             # verbose=True：让守擂者动作（含残韵）写入 _def_tai.log，报告才能如实呈现。
             # 否则守擂者一切行动（含残韵）都静默执行、对客席不可见，报告会误判"守擂无残韵"。
-            _def_tai = TacticalAI(e, verbose=True, actor=lord, enemies=foes, actor_ref=lord_ref)
+            _def_tai = _ai_cls(e, verbose=True, actor=lord, enemies=foes, actor_ref=lord_ref)
     deadline = _time.monotonic() + max_wall_seconds
 
     def _over_time():
@@ -545,17 +569,34 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
     def _lord():
         return next((x for x in e.state.enemies if x.entity_type == "轮回者"), None)
 
+    def _duelist_out(ent) -> bool:
+        """判负出场=命零**或**化雕塑（is_sculptured/is_departed 离场不是命零，
+        但死斗只允许一名轮回者离开——化雕塑同样判负，2026-09-10 用户裁定：
+        判定须区分 被击杀/化雕塑/凡庸/崩解，不许一律写「阵亡」）。"""
+        return bool(ent is None or not ent.is_alive
+                    or getattr(ent, "is_sculptured", False)
+                    or getattr(ent, "is_departed", False))
+
     def _lord_alive():
-        return any(x.is_alive for x in e.state.enemies if x.entity_type == "轮回者")
+        return not any(_duelist_out(x) for x in e.state.enemies
+                       if x.entity_type == "轮回者")
 
     def _challenger_alive():
-        return bool(e.state.player and e.state.player.is_alive)
+        return not _duelist_out(e.state.player)
 
     def challenger_death_reason() -> str:
-        return death_attribution_note(e.state.player, "挑战者")
+        p = e.state.player
+        if p is not None and (getattr(p, "is_sculptured", False)
+                              or getattr(p, "is_departed", False)):
+            return "挑战者化雕塑（攻次与攻力双0离场，判负；非被击杀）"
+        return death_attribution_note(p, "挑战者")
 
     def lord_death_reason() -> str:
-        return death_attribution_note(_lord(), "守擂主将")
+        lord = _lord()
+        if lord is not None and (getattr(lord, "is_sculptured", False)
+                                 or getattr(lord, "is_departed", False)):
+            return "守擂主将化雕塑（攻次与攻力双0离场，判负；非被击杀）"
+        return death_attribution_note(lord, "守擂主将")
 
     # 「连续 N 回合双方面板零净变化」= 真死锁(互瞪):法力每回合已回填,仍无任何
     # 可造成伤害/回血的动作(如 1 血 0 牌对峙)。这与「法力枯竭、回填后还能打」
@@ -574,7 +615,11 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
         # 记录本回合开局双方 hp，用于回合末判「真死锁」。
         hp_before = (e.state.player.current_hp if e.state.player else None,
                      tuple(x.current_hp for x in e.state.enemies if x.entity_type == "轮回者"))
-        rs, _rsart = start_round(e)
+        if resume and rnd == 1:
+            # 续跑模式：第一轮跳过 round_start（状态本来就在回合中段），后续轮照常。
+            rs = {"success": True}
+        else:
+            rs, _rsart = start_round(e)
         if not rs.get("success"):
             # 回始失败不允许吞掉:法力不会回填,双方将永久空转(2026-08-26 死斗三
             # "对手血契"校验事故)。显式判卫冕并留因,绝不无声挂死。

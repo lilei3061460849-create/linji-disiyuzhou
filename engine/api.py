@@ -1344,11 +1344,18 @@ class GameEngine:
     def _pre_battle_xiuzheng(self, params: dict) -> dict:
         """休整：产生恢复量，并按稳定引用在自己/朋友/员工间自由完整分配。"""
         tier = params.get("tier", 1)
-        heal_map = {1: (8, 0), 2: (24, 10), 3: (48, 25)}
-        if not isinstance(tier, int) or isinstance(tier, bool) or tier not in heal_map:
+        # 休整改制（2026-09-10 用户裁定；同日二次裁定改三档）：恢复额度按
+        # **轮回者血限百分比**提供——20%/40%/60%，向上取整。血限40 时 tier1=8
+        # 与旧固定值一致；高档位较旧 24/48 收敛（百分比随血限放大，固定值不随）。
+        tier_pct = {1: 20, 2: 40, 3: 60}
+        tier_cost = {1: 0, 2: 10, 3: 25}
+        if not isinstance(tier, int) or isinstance(tier, bool) or tier not in tier_pct:
             self.state.energy += 1
             return {"success": False, "error": "休整档位必须是1/2/3"}
-        base_heal, cost = heal_map[tier]
+        player = self.state.player
+        base_heal = (math.ceil(player.blood_limit * tier_pct[tier] / 100)
+                     if player is not None else 0)
+        cost = tier_cost[tier]
         bonus = self.state.rest_heal_bonus
         heal = base_heal + bonus
         refs = ({"player:0": self.state.player}
@@ -3507,6 +3514,14 @@ class GameEngine:
         if res.get("error"):
             return {"success": False, "error": res["error"],
                     "pages": res.get("pages"), "instruction": res.get("instruction", "")}
+        if is_reject:
+            # DM 裁定 2026-09-10（用户）：事件选拒绝选项后随机获得一种残韵——
+            # 「用其他道纹解决」怪物墙：放弃事件收益换构筑深度，而非数值对撞。
+            # 口径复用 _is_reject_option_text（带代价的「拒绝改造」类不算）；
+            # 随机走引擎 dice（seed 可复现），入 State.resonance（局中插队可耗）。
+            _rtype = ("转换", "反转", "曲解")[self.dice.randrange(3)]
+            self.state.resonance[_rtype] = self.state.resonance.get(_rtype, 0) + 1
+            res["applied"].append(f"拒绝奖励：随机获得{_rtype}残韵")
         if wusuoqiu_allocation == "speed":
             self.state.player.speed_limit += 1
             self.state.player.current_speed = self.state.player.speed_limit
@@ -4130,6 +4145,10 @@ class GameEngine:
             "attack_count": e.attack_count, "attack_power": e.attack_power,
             "shield": e.shield, "is_flying": e.is_flying, "is_alive": e.is_alive,
             "shards": e.shards, "is_debt_bound": e.is_debt_bound,
+            # ④修复（2026-09-10 用户裁定）：异变是代价资源、封存前已实付——
+            # 带伤续战必须带着异变续战，否则封存=免费洗白崩解进度。
+            # （癌变 total_healed 不随封存走：DM 已裁定它是局内减益、每场归零。）
+            "mutation_count": e.mutation_count,
             "dao_wen": {k: v.x_value for k, v in e.dao_wen.items()},
             "spells": [s.to_dict() for s in e.spells],
             "relics": [r.to_dict() for r in e.relics],
@@ -4149,6 +4168,7 @@ class GameEngine:
                    shield=d.get("shield", 0), is_flying=d.get("is_flying", False),
                    is_alive=d.get("is_alive", True), shards=d.get("shards", 0),
                    is_debt_bound=d.get("is_debt_bound", False))
+        e.mutation_count = d.get("mutation_count", 0)   # ④修复：旧档无此键回退0
         for name, x in d.get("dao_wen", {}).items():
             e.dao_wen[name] = DaoWenInstance(
                 DaoWen(name=name, formula="", cost_type="消耗", cost_formula="X", effect_formula=""), x_value=x)

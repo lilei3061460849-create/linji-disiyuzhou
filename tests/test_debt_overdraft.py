@@ -80,6 +80,8 @@ def test_fake_shards_still_preferred_no_debt_when_fake_sufficient():
 
 # ============ 玩家负债期的局外 0 费行动（2026-08-23 死锁修复） ============
 
+import math
+
 from engine.api import GameEngine
 from tests.setup_support import finish_initial_daowen
 
@@ -125,9 +127,11 @@ def test_debt_zero_cost_xiuzheng_and_tansuo_allowed(tmp_path):
     """负债下 0费休整(tier1)/0费探索(tier1) 可执行（死锁链的另两段）。"""
     e = _debt_engine(tmp_path)
     e.state.player.current_hp = 30
+    # 2026-09-10 休整改制：额度=血限×20%（ceil）
+    amt1 = math.ceil(e.state.player.blood_limit * 0.2)
     ok = e.execute_action("pre_battle_action", {
         "sub_action": "休整", "tier": 1,
-        "heal_allocations": [{"target_ref": "player:0", "amount": 8}]})
+        "heal_allocations": [{"target_ref": "player:0", "amount": amt1}]})
     assert ok["success"], ok
     ok2 = e.execute_action("pre_battle_action", {"sub_action": "探索", "tier": 1})
     assert ok2["success"], ok2

@@ -51,15 +51,19 @@ def test_monster_cancer_adds_real_stackable_rest_bonus(tmp_path):
     engine.state.phase = "pre_battle"
     player.current_hp = 1
     before_cancer = player.total_healed
+    # 2026-09-10 休整改制：恢复额度=血限百分比（tier1=20%，向上取整）
+    import math as _math
+    expected_base = _math.ceil(player.blood_limit * 0.2)
     rest = engine.execute_action("pre_battle_action", {
         "sub_action": "休整", "tier": 1,
-        "heal_allocations": [{"target_ref": "player:0", "amount": 24}],
+        "heal_allocations": [{"target_ref": "player:0",
+                              "amount": expected_base + 16}],
     })
     assert rest["success"]
-    assert rest["result"]["base_heal_amount"] == 8
+    assert rest["result"]["base_heal_amount"] == expected_base
     assert rest["result"]["rest_heal_bonus"] == 16
-    assert rest["result"]["heal_amount"] == 24
-    assert player.current_hp == 25
+    assert rest["result"]["heal_amount"] == expected_base + 16
+    assert player.current_hp == 1 + expected_base + 16   # 1+回复量（血限66→基础14）
     assert player.total_healed == before_cancer, "局外休整不得计入本场癌变累计"
 
 
@@ -71,7 +75,10 @@ def test_cancer_rest_bonus_applies_to_every_rest_tier(tmp_path):
     engine.state.rest_heal_bonus = 8
     engine.state.shards = 100
 
-    expected = {1: 16, 2: 32, 3: 56}
+    # 2026-09-10 休整改制：基础额度=血限×20%/60%/120%（ceil），永久加成平加不倍增
+    import math as _math
+    expected = {t: _math.ceil(player.blood_limit * pct / 100) + 8
+                for t, pct in {1: 20, 2: 40, 3: 60}.items()}
     for tier, total in expected.items():
         player.current_hp = 1
         engine.state.energy = 3

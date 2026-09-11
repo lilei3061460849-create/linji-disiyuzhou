@@ -31,9 +31,11 @@ from engine.ai_preview import ActionPreview
 # 单次出手最多预演的候选数（性能护栏；候选按新鲜度与威胁优先）
 MAX_CANDIDATE_PREVIEWS = 26
 
-# 自保时钟（实验开关，默认关闭）：把引擎自己的三条「自爆时钟」接进候选打分。
-# DM 裁定 2026-08-31 要求先做 132 局前后对照再决定是否常开；置 LJ_SELF_PRESERVE=1 打开。
-SELF_PRESERVE = os.environ.get("LJ_SELF_PRESERVE", "").strip().lower() in {"1", "true", "yes", "on"}
+# 自保时钟（**默认开启**，2026-09-10 用户裁定）：把引擎自己的三条「自爆时钟」接进
+# 候选打分。DM 裁定 2026-08-31 曾要求 132 局前后对照再定常开；因擂主农场 0/24 空转
+# 跑不出对照，改按 24 种子养蛊证据裁定（纯AI层 56 → 开 59，+3 零副作用；复验两次
+# 持平）。132 局对照留待擂主农场恢复后补。置 LJ_SELF_PRESERVE=0 可显式关闭复现旧行为。
+SELF_PRESERVE = os.environ.get("LJ_SELF_PRESERVE", "1").strip().lower() not in {"0", "false", "no", "off"}
 
 
 # ---------------------------------------------------------------------------
@@ -159,7 +161,8 @@ class TacticalAI:
         return out
 
     def incoming_damage(self) -> int:
-        return sum(e.attack_count * e.attack_power for e in self.alive_enemies())
+        return sum(e.effective_attack_count() * e.effective_attack_power()
+                   for e in self.alive_enemies())
 
     def remaining_actions(self) -> int:
         # 2026-09-10：出手次数不再由速度换算，改读 action_count（轮回者固定2次，
@@ -280,12 +283,21 @@ class TacticalAI:
             info["target"] = "ok"
             info["target_name"] = target
             self._probe_cache[key] = info
-            # 效果方向分：敌方掉血 > 自身获益 > 空效果
+            # 效果方向分：敌方掉血 > 自身获益 > 空效果。
+            # 敌方被上状态（控场/削弱）同样计正向价值：否则纯 debuff 牌的
+            # 「打敌人」「打自己」两个变体并列 0 分，探测会把真脸误锁到自指。
             orientation = (2.0 * info["dmg"] + info["shield"] + info["heal"]
                            + 0.5 * info.get("mana_gain", 0)
                            + 0.5 * info.get("bl_gain", 0)
-                           + (6.0 if info["kind"] == "remove" else 0.0))
-            if orientation > best_score:
+                           + (6.0 if info["kind"] == "remove" else 0.0)
+                           + (3.0 if info.get("status_on_enemy") else 0.0))
+            # 窄幅并列裁决：仅当现任真脸在「喂敌人」（敌方 HP 净增）而本变体
+            # 不喂时才翻转。不采用宽幅「并列优先自指」——满血自疗等无害并列
+            # 也被翻转会在地下城改变既有行为（骨天使回归 cleared 1→0 实测）。
+            if (orientation > best_score
+                    or (abs(orientation - best_score) <= 1e-9
+                        and info.get("foe_gain", 0) <= 0
+                        and best is not None and best.get("foe_gain", 0) > 0)):
                 best_score = orientation
                 best = info
         self._probe_cache[cache_key] = best if best is not None else {"target": "reject"}
@@ -303,11 +315,30 @@ class TacticalAI:
         enemies = self.alive_enemies()
         if not enemies:
             return None
-        return max(enemies, key=lambda e: e.attack_count * e.attack_power).name
+        return max(enemies,
+                   key=lambda e: e.effective_attack_count() * e.effective_attack_power()).name
 
     def _ally_name(self) -> Optional[str]:
         allies = self._allies()
         return allies[0].name if allies else None
+
+    def _split_diff(self, diff: dict) -> tuple[dict, list]:
+        """把引擎 diff 的键控翻到**行动者视角**，返回 (自己快照, 敌方快照列表)。
+
+        引擎 diff 永远以 state.player（挑战者）为 player 键、守擂方为 enemies。
+        挑战者侧 AI（actor=None）直接可用；守擂者视角若不翻转，会把挑战者的
+        掉血算成自己的自伤、把挑战者的回血/护盾当成自己的受益、把自己打出的
+        击杀读成 player_dead=LETHAL 而拒绝出手（换席实录 seed1 守擂自施坏死、
+        挑战者治疗送礼皆与此同源的视角错位相关）。
+        """
+        me = self.player.name if self.player else ""
+        p = diff.get("player", {}) or {}
+        enemies = diff.get("enemies", []) or []
+        own = next((x for x in enemies if x.get("name") == me), None)
+        if own is not None:   # 守擂者视角：镜像翻转
+            foes = ([p] if p else []) + [x for x in enemies if x.get("name") != me]
+            return own, foes
+        return p, enemies     # 挑战者视角：引擎键控即自身视角
 
     def _digest_diff(self, diff: dict) -> dict:
         """把 X=1 预演 diff 归纳为 {kind, cost_per_x, dmg, shield, heal, ...}。
@@ -318,13 +349,17 @@ class TacticalAI:
         dmg 取事件流的 raw_damage（未扣盾）：面板净位移在被格挡全吸收时归零，
         会让下游「收割档」条件 dmg>0 整行短路（只剩 X=1 一档 → AI 永不出手）。
         """
-        p = diff.get("player", {})
-        enemies = diff.get("enemies", [])
+        p, enemies = self._split_diff(diff)
         enemy_names = {e.get("name") for e in enemies}
         player_name = self.player.name if self.player else ""
         enemy_hp_loss = sum(max(0, e.get("hp_before", 0) - e.get("hp_after", 0))
                             for e in enemies)
-        enemy_gone = any(e.get("dead") for e in enemies)
+        # ③修复（2026-09-10 用户裁定）：只有「动作前还活着、动作后死亡/消失」
+        # 的敌人才算 remove。旧口径 any(dead) 把场上的尸体也算进去——多怪局首杀
+        # 之后，自指变体靠尸体白得 remove +6.0 向性分压过真输出（实测杀伐X=1
+        # 打自己）。alive_before 缺省回退 hp_before>0（兼容手工构造的 diff）。
+        enemy_gone = any(e.get("dead") for e in enemies
+                         if e.get("alive_before", (e.get("hp_before") or 0) > 0))
         shield = max(0, p.get("shield_after", 0) - p.get("shield_before", 0))
         heal = max(0, p.get("hp_after", 0) - p.get("hp_before", 0))
         cost = max(0, p.get("mana_before", 0) - p.get("mana_after", 0))
@@ -336,12 +371,15 @@ class TacticalAI:
         enemy_raw_damage = 0     # 事件流原始伤害合计（未扣盾，见 dmg 口径注释）
         status_on_enemy = False  # 状态/控制落在敌方
         status_on_self = False   # 状态落在自身
+        heal_intent = 0          # 治疗意图：heal_applied 事件声明的回复量（含过量/0 实效）
         for ev in diff.get("events", []):
             etype = ev.get("type", "")
             target = ev.get("target", "")
             if etype == "damage_applied" and target in enemy_names:
                 hit_enemy = True
                 enemy_raw_damage += max(0, (ev.get("data") or {}).get("raw_damage") or 0)
+            elif etype == "heal_applied" and target == player_name:
+                heal_intent += max(0, (ev.get("data") or {}).get("heal_amount") or 0)
             elif etype == "status_applied":
                 if target in enemy_names:
                     status_on_enemy = True
@@ -362,15 +400,31 @@ class TacticalAI:
             kind = "ramp"
         elif bl_gain > 0 or speed_gain > 0 or status_on_self:
             kind = "buff"
+        elif max(0, p.get("hp_before", 0) - p.get("hp_after", 0)) > 0:
+            kind = "harm"      # 自伤不是战术牌（③修复连带：无活敌时 杀伐 自指
+            #                    变体曾被兜底成 tactician → try_buff 拿它自残）
         else:
             kind = "tactician"   # 其余无面板位移的战术牌
         # dmg 口径：事件流 raw_damage（未扣盾），与上面的 kind 判定同源同口径。
         # 取 max 而非直接替换：撤退/断尾求生/爆裂压制等路径不发 damage_applied
         # 事件（面板位移亦为 0），保持这些情形 dmg=0 的旧行为不变。
+        # heal 同理带意图口径：满血时 hp 位移为 0，但引擎仍发 heal_applied
+        # 事件（含 actual_heal=0/overheal>0）——意图才是这张牌的「真脸」。
+        heal_final = max(heal, heal_intent)
+        if heal_final > 0 and kind == "tactician":
+            kind = "heal"
+        # 敌方获益（喂敌人）：探脸并列时用于窄幅裁决——两个变体同分时，
+        # 不喂敌人的那个才配代表这张牌的真脸（如被封疗的再生，打自己=空，
+        # 打敌人=白送 3 回复；前者才应锁定）。
+        foe_gain = sum(max(0, e.get("hp_after", 0) - e.get("hp_before", 0))
+                       for e in enemies)
         return {"kind": kind, "cost_per_x": cost,
                 "dmg": max(enemy_hp_loss, enemy_raw_damage),
-                "shield": shield, "heal": heal, "mana_gain": mana_gain,
-                "bl_gain": bl_gain}
+                "shield": shield, "heal": heal_final, "mana_gain": mana_gain,
+                "bl_gain": bl_gain,
+                "status_on_enemy": status_on_enemy,
+                "status_on_self": status_on_self,
+                "foe_gain": foe_gain}
 
     # ---------- 候选生成与实时评分 ----------
 
@@ -457,9 +511,9 @@ class TacticalAI:
             return []
         out = []
         enemies = sorted(self.alive_enemies(),
-                         key=lambda e: -e.attack_count * e.attack_power)
+                         key=lambda e: -e.effective_attack_count() * e.effective_attack_power())
         for enemy in enemies:
-            threat_share = (enemy.attack_count * enemy.attack_power
+            threat_share = (enemy.effective_attack_count() * enemy.effective_attack_power()
                             / max(1, self.incoming_damage()))
             for dw in enemy.dao_wen:
                 # 威胁构成可见信息：输出类文本权重高，其余次之
@@ -486,14 +540,23 @@ class TacticalAI:
                          kind: Optional[str] = None,
                          target: Optional[str] = None) -> Optional[float]:
         """实时评分：局势效用 + 性格调制。返回 None 表示必须拒绝（LETHAL）。"""
-        if ActionPreview.would_kill_player(diff):
+        # 先把 diff 翻到行动者视角：引擎 diff 永远以挑战者为 player 键。
+        # 不翻转则守擂者会拿挑战者的法力/速度/异变算自己的风险，甚至把
+        # 「自己打出的击杀」当 player_dead=LETHAL 而拒绝出手。
+        own, foes = self._split_diff(diff)
+        view = dict(diff)
+        view["player"] = own
+        view["enemies"] = foes
+        if own and own is not diff.get("player"):
+            view["player_dead"] = bool(own.get("dead"))   # 仅守擂视角改写；挑战者保留原口径
+        if ActionPreview.would_kill_player(view):
             self.preview_rejected.append(f"{label}（预演致轮回者命零）")
             return None
-        risk, reasons = ActionPreview.risk_classify(diff, self.player)
+        risk, reasons = ActionPreview.risk_classify(view, self.player)
         self._last_risk = (risk, reasons)
 
-        p = diff.get("player", {})
-        enemies = diff.get("enemies", [])
+        p = own
+        enemies = foes
         hp = p.get("hp_before", 0), p.get("hp_after", 0)
         own_hp_loss = max(0, hp[0] - hp[1])
         heal = max(0, hp[1] - hp[0])
@@ -532,11 +595,18 @@ class TacticalAI:
             pressed.add(target)
         for tname in pressed:
             ent = enemy_by_name[tname]
-            share = (ent.attack_count * ent.attack_power
+            share = (ent.effective_attack_count() * ent.effective_attack_power()
                      / max(1, self.incoming_damage()))
             ratio = ent.current_hp / max(1, ent.blood_limit)
             score += 2.0 + 4.0 * min(1.0, ratio) + 2.0 * min(1.0, share)
-            score += 0.8 * ent.attack_count * ent.attack_power  # 压制其行动的期权
+            # DM裁定 2026-09-10：压制期权按 effective 攻次×攻力（面板对轮回者只是 0 占位）。
+            # 期权价值按「本手后目标存活的血量比」折价（2026-09-10 用户质询实锤）：
+            # 压制一个本手就会被杀掉的目标毫无价值——不折价时，0 伤害 debuff 会凭
+            # +112~128 的虚额压过预演已验证的必杀（119.24 vs 107.6，seed=2 实测）。
+            after = next((e.get("hp_after", ent.current_hp) for e in enemies
+                          if e.get("name") == tname), ent.current_hp)
+            survive = max(0.0, after) / max(1, ent.blood_limit)
+            score += 0.8 * ent.effective_attack_count() * ent.effective_attack_power() * survive
             if label.split("X=")[0].split("→")[0] not in self.used:
                 score += 4.0             # 首次探索加成（每张一次）
         self_status = any(
@@ -554,7 +624,13 @@ class TacticalAI:
         # 凡庸压力：连续未使敌方掉血越久，输出候选越紧迫
         if enemy_hp_loss > 0 and self._rounds_since_damage >= 2:
             score += 1.2 * self._rounds_since_damage
-        score -= 0.12 * mana_spent
+        # ③修复（2026-09-10 用户裁定批次）：法力=攻力（一池制换算）。每花 1 法力，
+        # 本场剩余每次普攻都少 1 攻力——按「攻次×0.5」的等价火力折价。旧固定
+        # -0.12/点下 盾+1.1/点 ≫ 法力-0.12/点，AI 愿意满法力一手全换盾 → 空手
+        # → 回终化雕塑（换席 seed 9/11/12 实锤）。速度 12 时折价 -6.12/点，
+        # 满池梭哈盾净分为负；正常输出牌（杀伐 5X 伤）仍远正向。
+        ap = self.player.effective_attack_count()
+        score -= mana_spent * (0.12 + 0.5 * ap)
         score -= 0.4 * shards_spent
         score -= 0.35 * mutation
         score -= 0.8 * speed_loss
@@ -765,9 +841,42 @@ class TacticalAI:
             option = next((o for o in opts if o.get("name") == target_name), None)
             if option is None:
                 return {"token": res.get("token"), "hits": []}
-            hits = [{"target_ref": option["ref"], "dodge": False, "blood_shadow": False,
-                     "spell_choices": self._decline_spell_choices(option)}
-                    for _ in range(res.get("hit_count", 0))]
+            # 闪避中继（2026-09-10，用户指出"后手方站着让人打"）：2026-08-26 的 PvP
+            # 闪避中继修在旧驱动 _resolve_opponent_one（use_tactical=False 分支）里，
+            # 双方改由 TacticalAI 驱动后 _resolve 写死 dodge=False，中继成孤儿——
+            # 死斗双方从未行使 README:167 的闪避权。这里按**目标侧**口径逐击补齐：
+            #   · 只在最终死斗且目标是轮回者时启用（PvE 怪物闪避口径不变）；
+            #   · 必中覆盖的击不提交闪避（提交会被引擎整包拒绝）；
+            #   · 预算=目标当前速度（每闪1次-1，逐击递减；闪避=自己攻次-1，
+            #     因此只有"致命击"或"伤害>自己攻力（闪比反打划算）"才值得闪）；
+            #   · LJ_AI_DUEL_DODGE=0 关闸复现旧行为（全程 dodge=False）。
+            dodge_on = (os.environ.get("LJ_AI_DUEL_DODGE", "1") != "0"
+                        and self.engine.state.in_final_duel)
+            attacker = self.engine.combat._combat_entity_refs().get(actor_ref)
+            target = self.engine.combat._combat_entity_refs().get(option["ref"]) \
+                if dodge_on else None
+            dodgeable = bool(dodge_on and target is not None and attacker is not None
+                             and target.entity_type == "轮回者"
+                             and option.get("can_dodge"))
+            if dodgeable:
+                from engine.combat import CombatEngine as _CE
+                bizhong = _CE.bizhong_remaining(self.engine.combat, attacker)
+                per_hit = attacker.effective_attack_power()
+                my_power = target.effective_attack_power()
+                hp_left, budget = target.current_hp, target.current_speed
+            hits = []
+            for i in range(res.get("hit_count", 0)):
+                dodge = False
+                if dodgeable and budget > 0 and bizhong <= i:
+                    lethal = per_hit >= hp_left
+                    if lethal or per_hit > my_power:
+                        dodge = True
+                        budget -= 1
+                if dodgeable and not dodge:
+                    hp_left = max(0, hp_left - per_hit)
+                hits.append({"target_ref": option["ref"], "dodge": dodge,
+                             "blood_shadow": False,
+                             "spell_choices": self._decline_spell_choices(option)})
             return {"token": res.get("token"), "hits": hits}
 
         return [("prepare_attack", {"actor_ref": actor_ref}), ("resolve_attack", _resolve)]
@@ -778,8 +887,10 @@ class TacticalAI:
         DM裁定 2026-09-09：法力改一池制（[战始]给满、[回始]不回填）后，只靠法力型
         道纹会在池子花干后无事可做——实测同批种子通关率 3%→0%、平均经历场数
         1.56→0.87。普攻因此必须是常驻候选，与道纹一起参与打分。
+        DM裁定 2026-09-10：普攻候选**默认开启**；如需复现旧行为（无普攻候选），
+        设 LJ_AI_BASIC_ATTACK=0 显式关闸。
         """
-        if os.environ.get("LJ_AI_BASIC_ATTACK") != "1":
+        if os.environ.get("LJ_AI_BASIC_ATTACK", "1") == "0":
             return []
         me = self.player
         if me is None or not me.is_alive or me.effective_attack_count() <= 0:
@@ -885,8 +996,15 @@ class TacticalAI:
         return None
 
     def try_buff(self) -> Optional[dict]:
-        """增益：每张每场至多一次（引擎/自身状态自然拒绝重复）。"""
+        """增益：每张每场至多一次（引擎/自身状态自然拒绝重复）。
+
+        无活敌不出手（tests/test_ai_buff_fixes 钉死的口径：不浪费出手）。
+        ③修复连带说明：旧版该测试靠尸体误判（杀伐被归纳成 remove）与
+        龙鳞被归纳成 shield 的双重巧合才通过——修复后按原设计意图显式加门。
+        """
         battle = self.engine.state.current_battle
+        if not self.alive_enemies():
+            return None
         for name, inst in sorted(self.player.dao_wen.items()):
             if inst is None or not inst.can_use():
                 continue
@@ -911,7 +1029,7 @@ class TacticalAI:
 
     def _best_attack_ally(self):
         allies = self._allies()
-        return max(allies, key=lambda e: e.attack_power or 0) if allies else None
+        return max(allies, key=lambda e: e.effective_attack_power() or 0) if allies else None
 
     def _tankiest_ally(self):
         allies = self._allies()
@@ -1006,7 +1124,8 @@ class TacticalAI:
         if not enemies:
             return None
         p = self.player
-        top = max(enemies, key=lambda e: e.attack_count * e.attack_power)
+        top = max(enemies,
+                  key=lambda e: e.effective_attack_count() * e.effective_attack_power())
         if top.name in self._controlled_this_round:
             return None
         for name in sorted(self.player.dao_wen):
@@ -1238,7 +1357,9 @@ def monster_threat(entity) -> int:
     """
     if entity is None:
         return 0
-    score = (entity.attack_power or 0) * (entity.attack_count or 0)
+    # DM裁定 2026-09-10：威胁分按 effective 攻次×攻力（怪物回落面板，行为不变）
+    score = ((entity.effective_attack_power() or 0)
+             * (entity.effective_attack_count() or 0))
     for inst in (entity.dao_wen or {}).values():
         dw = getattr(inst, "dao_wen", inst)
         cost_type = getattr(dw, "cost_type", "") or ""

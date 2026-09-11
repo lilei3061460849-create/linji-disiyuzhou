@@ -63,13 +63,16 @@ _REGION_OF = {"加害": "龙心谷", "裂变": "龙心谷", "伤痕": "龙心谷
 
 
 @pytest.mark.parametrize("dw", ["加害", "裂变", "伤痕", "僵化", "坏死", "逼债", "点金"])
-def test_ai_uses_region_specific_daowen(dw):
+def test_ai_uses_region_specific_daowen(dw, monkeypatch):
     """
     正常路径：各副本专属道纹只要持有就应被实际发动。
 
     注：专属道纹不能直接学习（须先经残韵从本副本怪物身上转化获得），
     故此处在对应副本内直接注入到玩家身上，只验证"持有后AI会用"。
+    被测对象是「道纹使用」：用 LJ_AI_BASIC_ATTACK=0 关掉普攻竞争者以隔离变量
+    （DM裁定 2026-09-10：普攻默认在池，会按分数正常抢出手）。
     """
+    monkeypatch.setenv("LJ_AI_BASIC_ATTACK", "0")
     from engine.models import DaoWen, DaoWenInstance
     e = _engine(starter="杀伐", learn=[], region=_REGION_OF[dw])
     # 只保留被测道纹（外加基础输出），避免 AI 选了同角色的其他道纹而误判

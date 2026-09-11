@@ -906,7 +906,15 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                              relic_choices[0])
     e.execute_action("choose_discovered_relic", {"relic_name": starter_relic})
 
-    ai_cls = ai_cls or TacticalAI
+    if ai_cls is None:
+        # 用户裁定 2026-09-10 二审：**一切打分机制都用胜负唯一计分**——PvE 战斗
+        # 默认也走 WinOnlyAI（启发式只裁剪提案，出招权归整局推演的 ±1）。
+        # LJ_WIN_ONLY=0 或显式传 TacticalAI 可退回启发式口径（千局级扫描用）。
+        if os.environ.get("LJ_WIN_ONLY", "1") != "0":
+            from sim.win_only_ai import WinOnlyAI
+            ai_cls = WinOnlyAI
+        else:
+            ai_cls = TacticalAI
     ai = ai_cls(e)
     gate = _make_consumable_gate(consumable_policy)
     if gate is not None:
@@ -928,6 +936,7 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
     prev_gone = set()  # 离场旗标差集：跨战斗滚动（dead_monsters 跨战累积）
     for b in range(1, battles + 1):
         stalls = 0
+        explored_this_battle = False   # 本场是否已试过探索（每窗口一次机会）
         ev_mark = 0  # 战斗事件水位线（用于战后统计非伤害胜利路径）
         while e.state.energy > 0:
             _resolve_pending_choices(e)   # 先清门禁，否则一切行动被拒=原地死循环
@@ -936,14 +945,42 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
             # 其余精力学道纹。
             if spend_shards:
                 p = e.state.player
-                if p and e.state.shards >= 35:
-                    r = e.execute_action("pre_battle_action", {
-                        "sub_action": "修行", "tier": 3,
-                        "allocations": (xiuxing or {}).get(
-                            "tier3", {"speed_points": 0, "mana_points": 2})})
+                # 探索优先（用户指令 2026-09-10 五审「去试就知道了」）：事件是
+                # 残韵唯一获取渠道（拒绝→随机残韵已实装），每场第一个局外窗口
+                # 先免费摸一个事件再谈修行/学习；事件池枯竭则不再重试。
+                if not explored_this_battle:
+                    explored_this_battle = True   # 每场只试一次
+                    r = e.execute_action("pre_battle_action",
+                                         {"sub_action": "探索", "tier": 1})
                     if r.get("success"):
-                        _tag_behavior(behaviors, "修行", {"tier": 3}, e, b)
+                        _tag_behavior(behaviors, "探索", {"tier": 1}, e, b)
+                        # 探索发现的事件必须当场结算——continue 会跳过循环尾的
+                        # 公共事件结算块，未决事件会门禁后续一切局外行动
+                        # （精力不退→死锁哨兵收局，实测 24/24 速死）。
+                        if e.event_pool.current is not None:
+                            ev = _resolve_pending_event(e)
+                            if not ev.get("success"):
+                                return {"cleared": cleared, "won": False,
+                                        "invalid": True,
+                                        "reason": f"event: {ev.get('error')}"}
                         continue
+                # 终点牌购置（训练 2026-09-10 六审）：透支=衰老换4X法力（破法力
+                # 预算）、封印=异变换移怪（无视血墙）——闭环终点直接可学，局外
+                # 白拿（每个学习行动第1种道纹0碎片），省掉 5 跳爬梯。各学一次。
+                for _tech in ("透支", "封印"):
+                    if (_tech not in p.dao_wen
+                            and _tech in learnable_candidates(e.state.current_region)):
+                        r = e.execute_action("pre_battle_action", {
+                            "sub_action": "学习", "sub": "daowen", "tier": 1,
+                            "names": [_tech]})
+                        if r.get("success"):
+                            _tag_behavior(behaviors, "学习", {"name": _tech}, e, b)
+                            todo = [t for t in todo if t != _tech]
+                            break
+                # 花光口径（用户指令 2026-09-10「局外为什么不把碎片花完」）：
+                # 旧逻辑只买 tier3/tier2 且 tier2 被 todo 门控——后期一窗收入可
+                # >100（怪物奖励=ceil(战始血限×2%)+5×道纹数），3 精力×35 的花费
+                # 容量必然攒钱。改为档位阶梯从高到低买，一 tick 最多吃下 150。
                 if p and e.state.shards >= 25 and e.state.current_region == "乱葬岗":
                     held = next(iter(p.dao_wen), actual_starter)
                     r = e.execute_action("pre_battle_action", {
@@ -951,13 +988,15 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                     if r.get("success"):
                         _tag_behavior(behaviors, "附煞", {}, e, b)
                         continue
-                if p and e.state.shards >= 15 and todo:
+                if p and e.state.shards >= 15:
+                    tier = max(t for t, c in ((6, 150), (5, 100), (4, 65), (3, 35), (2, 15))
+                               if e.state.shards >= c)
                     r = e.execute_action("pre_battle_action", {
-                        "sub_action": "修行", "tier": 2,
+                        "sub_action": "修行", "tier": tier,
                         "allocations": (xiuxing or {}).get(
-                            "tier2", {"speed_points": 0, "mana_points": 2})})
+                            f"tier{tier}", {"speed_points": tier, "mana_points": 0})})
                     if r.get("success"):
-                        _tag_behavior(behaviors, "修行", {"tier": 2}, e, b)
+                        _tag_behavior(behaviors, "修行", {"tier": tier}, e, b)
                         continue
             # 学法术：已有对应道纹且没学过的先学（免费1精力）。
             spell_next = None
@@ -1185,7 +1224,7 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                     return False
                 return True
             dr = run_duel_pvp(e, _act, max_rounds=60, max_steps=400, log=log_buf,
-                              max_wall_seconds=30)
+                              max_wall_seconds=30, ai_cls=ai_cls)
             duel_won = dr.get("winner") == "challenger"
             duel_rounds = dr.get("rounds")
             if dr.get("timeout"):
@@ -1287,25 +1326,36 @@ def choose_pre_battle(e, todo, battle_no, rng, policy):
     if act == "修行":
         return act, {"tier": 1, "to": "mana" if battle_no % 2 else "speed"}
     if act == "休整":
-        # 休整分级（2026-08-19 P2）：按 HP 缺口 + 可支付碎片 + 下一场关键资源选择档位。
-        # 档位：tier1=8血/0碎片，tier2=24血/10碎片，tier3=48血/25碎片（engine/api.py）。
-        # - 缺口足够大且碎片足够 → 高档位（不机械用 1 级）；
-        # - 付不起高档位才退回低级；
+        # 休整分级（2026-08-19 P2；2026-09-10 随引擎改制更新，同日二次裁定
+        # 改三档）：恢复额度=轮回者血限百分比（tier1/2/3 = 20%/40%/60%，
+        # 向上取整，事实源=engine/api.py::_pre_battle_xiuzheng）。选择口径：
+        # - 选「最小够用档」（base_heal ≥ 缺口的最便宜档），不再机械用 1 级；
+        # - 付不起（碎片+保留预算）就降档；
         # - 保留关键资源：每名已部署员工的战终工资上限(12) + 应急缓冲(5)，
         #   后期战斗（第 5 场起出怪增多）再额外保留 5，避免为回血耗尽下一场必需碎片。
+        import math as _math
         p = e.state.player
-        gap = max(0, p.blood_limit - p.current_hp) if p else 0
+        bl = p.blood_limit if p else 0
+        gap = max(0, bl - p.current_hp) if p else 0
         bonus = e.state.rest_heal_bonus
         shards = e.state.shards
         deployed = sum(1 for emp in e.state.employees
                        if emp.is_alive and emp.is_deployed and not emp.is_debt_bound)
         reserve = 12 * deployed + 5 + (5 if battle_no >= 5 else 0)
+        tier_pct = {1: 20, 2: 40, 3: 60}
+        tier_cost = {1: 0, 2: 10, 3: 25}
+        base = {t: _math.ceil(bl * pct / 100) for t, pct in tier_pct.items()}
         tier = 1
-        if gap >= 40 and shards >= 25 + reserve:
-            tier = 3
-        elif gap >= 24 and shards >= 10 + reserve:
-            tier = 2
-        heal = {1: 8, 2: 24, 3: 48}[tier] + bonus
+        for t in (1, 2, 3):
+            if base[t] >= gap and shards >= tier_cost[t] + reserve:
+                tier = t
+                break
+        else:
+            for t in (3, 2):   # 没有够用档：买得起的最高档兜底
+                if shards >= tier_cost[t] + reserve:
+                    tier = t
+                    break
+        heal = base[tier] + bonus
         return act, {"tier": tier, "heal_allocations": [
             {"target_ref": "player:0", "amount": heal}]}
     if act == "维修":

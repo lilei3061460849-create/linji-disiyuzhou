@@ -104,11 +104,15 @@ def run_duel_alternating(e, player_act, max_rounds=60, max_steps=400):
     返回 dict: {'winner': 'challenger'|'defender', 'rounds': n, 'reason': str}
     """
     def _opponent_lord_alive():
-        """守擂方是否还有存活轮回者（死斗只允许一名轮回者离开：主将死即败）。"""
-        return any(x.is_alive for x in e.state.enemies if x.entity_type == "轮回者")
+        """守擂方是否还有存活轮回者（死斗只允许一名轮回者离开：主将死或化雕塑即败）。"""
+        return any(x.is_alive and not getattr(x, "is_sculptured", False)
+                   and not getattr(x, "is_departed", False)
+                   for x in e.state.enemies if x.entity_type == "轮回者")
 
     def _challenger_alive():
-        return bool(e.state.player and e.state.player.is_alive)
+        p = e.state.player
+        return bool(p and p.is_alive and not getattr(p, "is_sculptured", False)
+                    and not getattr(p, "is_departed", False))
 
     for rnd in range(1, max_rounds + 1):
         if not _challenger_alive():

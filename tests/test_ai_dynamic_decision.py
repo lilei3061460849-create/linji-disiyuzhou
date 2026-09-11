@@ -69,9 +69,14 @@ def _nth_action(e, personality, n=1, mana=30, threat=None):
 # ---------- 1. 状态驱动 ----------
 
 def test_state_driven_low_threat_prefers_offense(tmp_path):
-    """低威胁局面(威胁≈血限1/3以下):防御无价值,应推进输出。"""
+    """低威胁局面(威胁≈血限1/3以下):防御无价值,应推进输出。
+
+    ③修复（2026-09-10 法力按攻力折价）后，满池普攻（攻次×攻力）常优于
+    杀伐5X——不变量是「推进输出」，具体牌在 杀伐/普攻 间择优。
+    """
     e = _engine(tmp_path)
-    assert "杀伐" in _nth_action(e, [], n=2, threat=(3, 4))
+    act = _nth_action(e, [], n=2, threat=(3, 4))
+    assert ("杀伐" in act or "普攻" in act or "结算一轮攻击" in act), f"低威胁应输出: {act}"
 
 
 # DM裁定 2026-09-10 把杀伐从 2X 提到 5X，输出分数整体放大约 4 倍，压过了
@@ -189,7 +194,11 @@ def test_ai_never_acts_beyond_visible_information(tmp_path):
     e.state.player.dao_wen.clear()
     e.state.resonance.clear()
     ai = TacticalAI(e)
-    assert ai.take_action() is None
+    # DM裁定 2026-09-10：普攻是常驻候选（非道纹，不违反「清单外道纹绝不出现」）。
+    # 无道纹无残韵时唯一合法动作是普攻；保护意图保留：结果要么无动作，要么是攻击
+    # 结算，绝不能出现清单外道纹（use_daowen）。
+    r = ai.take_action()
+    assert r is None or "攻击" in str(r.get("action", "")), r
 
 
 def test_full_battle_runs_legally_without_personality(tmp_path):

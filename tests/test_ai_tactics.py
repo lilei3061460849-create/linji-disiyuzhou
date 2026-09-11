@@ -150,7 +150,10 @@ def test_ai_does_not_crash_without_any_daowen(tmp_path):
     e.state.player.dao_wen.clear()
     e.state.resonance.clear()          # 连残韵也清空，才是真正的"无牌可打"
     ai = TacticalAI(e)
-    assert ai.take_action() is None
+    # DM裁定 2026-09-10：普攻是常驻候选——无道纹但持有速度/法力时，合法动作是普攻；
+    # 本测试的保护意图是「不得崩溃、结果合法」，不再断言必须无动作。
+    r = ai.take_action()
+    assert r is None or r.get("success"), r
 
 
 def test_no_fixed_tactic_tables_remain():

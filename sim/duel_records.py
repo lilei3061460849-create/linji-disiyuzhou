@@ -104,8 +104,9 @@ def resolve(name: str) -> str:
 
 
 def run_and_record(challenger: str, defender: str, seed: int,
-                   return_engine: bool = False) -> dict:
-    """跑一局并解析成结构化记录。`return_engine=True` 时附带引擎对象（仅供赛后序列化，勿落盘）。"""
+                   return_engine: bool = False, ai_cls=None) -> dict:
+    """跑一局并解析成结构化记录。`return_engine=True` 时附带引擎对象（仅供赛后序列化，勿落盘）。
+    ai_cls：透传给死斗驱动的战术 AI 类（默认 None=引擎基类，历史口径不变）。"""
     random.seed(seed)
     _LIVE.clear()  # 上一局的实体 id 可能被复用，必须逐局清空
     captured: dict = {}
@@ -119,7 +120,8 @@ def run_and_record(challenger: str, defender: str, seed: int,
     buf = io.StringIO()
     try:
         with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
-            verdict = ddt.traced_duel(resolve(challenger), resolve(defender), seed)
+            verdict = ddt.traced_duel(resolve(challenger), resolve(defender), seed,
+                                      ai_cls=ai_cls)
     finally:
         ddt.run_duel_pvp = orig
     engine = captured.get("e")
@@ -227,7 +229,13 @@ def main() -> None:
     ap.add_argument("--reference", action="store_true", help="12 局参考死斗（seed=各自养成种子）")
     ap.add_argument("--batch-size", type=int, default=11, help="每批多少局（按挑战者分批）")
     ap.add_argument("--tag", default="B", help="批次标签前缀（矩阵=B，参考局=R）")
+    ap.add_argument("--bridge", action="store_true",
+                    help="双方用遗言桥 AI（sim.legacy_mentor.LegacyAwareAI，含死斗闪避中继的现行配置）")
     args = ap.parse_args()
+    ai_cls = None
+    if args.bridge:
+        from sim.legacy_mentor import LegacyAwareAI
+        ai_cls = LegacyAwareAI
 
     files = sorted(f for f in os.listdir(WINNER_DIR) if f.endswith(".json"))
     if args.challenger and args.defender:
@@ -251,7 +259,7 @@ def main() -> None:
         if in_batch == 0:
             batch_no += 1
             out.append(f"\n## 死斗实录 · {args.tag}{batch_no}批（第{i}–{min(i + args.batch_size - 1, len(pairs))}局）\n")
-        rec = run_and_record(a, b, seed)
+        rec = run_and_record(a, b, seed, ai_cls=ai_cls)
         out.append(render(rec, i, f"{args.tag}{batch_no}"))
         out.append("")
         in_batch = (in_batch + 1) % args.batch_size

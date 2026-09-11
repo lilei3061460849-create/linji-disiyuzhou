@@ -18,6 +18,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
 
+import math
+
 from engine.api import GameEngine
 from engine.models import DaoWen, DaoWenInstance, Entity
 
@@ -115,7 +117,8 @@ def test_lianxin_in_battle_does_not_cost_action_but_defers_energy():
     probe = engine.execute_action("pre_battle_action", {
         "sub_action": "休整", "tier": 1,
         "heal_allocations": [{"target_ref": "player:0",
-                              "amount": 8 + engine.state.rest_heal_bonus}],
+                              "amount": math.ceil(engine.state.player.blood_limit * 0.2)
+                              + engine.state.rest_heal_bonus}],
     })
     assert probe["success"], probe
     assert engine.state.energy == 3 - 1 - 1, "应额外多扣1点精力(基础1点+炼心追加1点)"
