@@ -1233,7 +1233,7 @@ class GameEngine:
             cost_formula="X", effect_formula=""))
 
     def _action_resolve_redemption(self, params: dict) -> dict:
-        """救赎：接纳昏迷微光者为朋友，或无视。"""
+        """救赎：接纳昏迷微光者为员工（待命，需派遣+战终工资，计入叛变），或无视。"""
         pending = self.state.pending_redemption
         if not pending:
             return {"success": False, "error": "当前没有待结算的救赎"}
@@ -1241,7 +1241,7 @@ class GameEngine:
         if option in (1, "1", "接纳"):
             name = params.get("name", "")
             if not isinstance(name, str) or not name.strip():
-                return {"success": False, "error": "接纳时必须自定义朋友名字"}
+                return {"success": False, "error": "接纳时必须自定义员工名字"}
             name = name.strip()
             existing = set()
             if self.state.player:
@@ -1251,20 +1251,21 @@ class GameEngine:
             existing.update(entity.name for entity in self.state.enemies if entity.is_alive)
             if name in existing:
                 return {"success": False, "error": f"名字【{name}】已被占用，请换一个"}
-            friend = Entity(
+            employee = Entity(
                 name=name,
-                entity_type="朋友",
+                entity_type="员工",
                 blood_limit=math.ceil(pending["blood_limit"] / 2),
                 current_hp=math.ceil(pending["blood_limit"] / 2),
                 attack_count=math.ceil(pending["attack_count"] / 2),
                 attack_power=math.ceil(pending["attack_power"] / 2),
+                is_deployed=False,
             )
-            self.state.friends.append(friend)
+            self.state.employees.append(employee)
             self.state.pending_redemption = {}
             return {
                 "success": True,
                 "action": "救赎·接纳",
-                "result": {"friend": friend.to_dict(), "from": pending["name"]},
+                "result": {"employee": employee.to_dict(), "from": pending["name"]},
             }
         if option in (2, "2", "无视"):
             self.state.pending_redemption = {}

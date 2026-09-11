@@ -272,9 +272,10 @@ def test_redemption_fires_at_low_hp_even_with_transform_left():
     assert not monster.is_alive
     accept = engine.execute_action("resolve_redemption", {"option": "接纳", "name": "微光蛛"})
     assert accept["success"]
-    friend = next(f for f in engine.state.friends if f.name == "微光蛛")
-    assert friend.dao_wen == {}
-    assert friend.blood_limit == math.ceil(204 / 2)
+    emp = next(e for e in engine.state.employees if e.name == "微光蛛")
+    assert emp.entity_type == "员工" and emp.is_deployed is False
+    assert emp.dao_wen == {}
+    assert emp.blood_limit == math.ceil(204 / 2)
 
 
 def test_redemption_skips_full_hp_or_remaining_original():
@@ -293,7 +294,7 @@ def test_redemption_skips_full_hp_or_remaining_original():
     assert engine.combat.check_redemption(wounded) is None
 
 
-def test_redemption_accept_creates_halved_friend():
+def test_redemption_accept_creates_halved_employee_on_standby():
     engine = _ready_combat(_engine("rd_ok"))
     monster = Entity(name="悔怪", entity_type="怪物", blood_limit=81, current_hp=8,
                      attack_count=3, attack_power=5)
@@ -304,12 +305,14 @@ def test_redemption_accept_creates_halved_friend():
     assert not blocked["success"] and "救赎" in blocked["error"]
     r = engine.execute_action("resolve_redemption", {"option": 1, "name": "微光阿清"})
     assert r["success"]
-    friend = next(f for f in engine.state.friends if f.name == "微光阿清")
-    assert friend.blood_limit == math.ceil(81 / 2)
-    assert friend.attack_count == math.ceil(3 / 2)
-    assert friend.attack_power == math.ceil(5 / 2)
-    assert friend.dao_wen == {}
+    emp = next(e for e in engine.state.employees if e.name == "微光阿清")
+    assert emp.entity_type == "员工" and emp.is_deployed is False
+    assert emp.blood_limit == math.ceil(81 / 2)
+    assert emp.attack_count == math.ceil(3 / 2)
+    assert emp.attack_power == math.ceil(5 / 2)
+    assert emp.dao_wen == {}
     assert not engine.state.pending_redemption
+    assert engine.state.friends == []
 
 
 def test_redemption_ignore_and_no_false_positive():
@@ -325,6 +328,7 @@ def test_redemption_ignore_and_no_false_positive():
     r = engine.execute_action("resolve_redemption", {"option": "无视"})
     assert r["success"]
     assert engine.state.friends == []
+    assert engine.state.employees == []
     assert not engine.state.pending_redemption
 
 
