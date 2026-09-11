@@ -4039,18 +4039,29 @@ class GameEngine:
         region = self.state.current_region
         pool = self.monster_pool.get(region, [])
         self.state.enemies.clear()
+        self.state.monster_reinforcements = []
         drawn_names = []
+        queued_names = []
         draw_count = 0
         if pool:
             draw_count = compute_draw_count(self.state.current_battle)
+            drawn_defs = []
             for i in range(draw_count):
                 roll = self.dice.auto_roll(f"monster_draw_{self.state.current_battle}_{i}", pool,
                                             context=f"出怪(第{self.state.current_battle}场,第{i + 1}只)")
-                monster_def = roll["selected"]
-                m = make_monster_entity(monster_def)
-                self.combat.init_monster_shards(m)  # 罪孽都市：[战始]自带碎片=专属道纹数值之和×2（洗劫/赎金/逼债的碎片来源）
-                self.state.enemies.append(m)
-                drawn_names.append(monster_def["name"])
+                drawn_defs.append(roll["selected"])
+            # 波次出怪（2026-09-11 用户令）：R1只出第1只，其余进增援队列，
+            # R4/R7/R10…回始各增援1只。抽怪随机流与旧版完全一致（全抽、仅延迟进场）。
+            for i, monster_def in enumerate(drawn_defs):
+                if i == 0:
+                    m = make_monster_entity(monster_def)
+                    m.spawned_round = 1
+                    self.combat.init_monster_shards(m)  # 罪孽都市：[战始]自带碎片=专属道纹数值之和×2（洗劫/赎金/逼债的碎片来源）
+                    self.state.enemies.append(m)
+                    drawn_names.append(monster_def["name"])
+                else:
+                    self.state.monster_reinforcements.append(monster_def)
+                    queued_names.append(monster_def["name"])
 
         # 事件登记的下一场修正全部在战始一次性消费。
         modifiers = self.state.event_modifiers
@@ -4122,12 +4133,14 @@ class GameEngine:
             "region": region,
             "draw_count": draw_count,
             "enemies": drawn_names,
+            "queued_reinforcements": queued_names,
             "full_information": ([enemy.to_dict() for enemy in self.state.enemies]
                                  if reveal_full_information else None),
             "relic_logs": relic_logs,
             "spell_logs": spell_logs,
             "artifact_logs": artifact_logs,
-            "instruction": "怪物已抽取完毕；请补充选择本场战斗背景(纯叙事，不影响数值)并结算其余[战始]效果",
+            "instruction": ("首只怪物已进场" + (f"；另有{len(queued_names)}只增援待命，R4/R7/R10…回始各进场1只" if queued_names else "（无增援）") +
+                            "；请补充选择本场战斗背景(纯叙事，不影响数值)并结算其余[战始]效果"),
         }
 
     # ==================== 最终的冠冕 / 第8场最终死斗 ====================
@@ -4832,6 +4845,9 @@ class GameEngine:
         escaping = self.state.event_modifiers.pop("escape_at_battle_end", False)
         if living and not escaping:
             return {"success": False, "error": f"仍有存活敌人，不能结算战终: {living}"}
+        queued = list(getattr(self.state, "monster_reinforcements", []) or [])
+        if queued and not escaping:
+            return {"success": False, "error": f"仍有{len(queued)}只怪物增援未进场，不能结算战终: {[m.get('name', '?') for m in queued]}"}
         if escaping:
             for enemy in self.state.enemies:
                 if enemy.is_alive:

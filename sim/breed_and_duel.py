@@ -274,6 +274,7 @@ def _run_breeder_duel_inner(e, challenger_path, defender_path, seed, cn, dn, db)
         return None, 0, [f"开始第7战失败: {str(bs.get('error',''))[:80]}"]
     for m in e.state.enemies:
         m.is_alive = False
+    e.state.monster_reinforcements = []  # 波次：仪式战脚手架直接清空增援队列
     be = e.execute_action("battle_end", {})
     guard = 0
     while be.get("success") and be.get("completed") is False and be.get("pending_wage_decisions"):

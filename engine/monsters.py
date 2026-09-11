@@ -46,7 +46,8 @@ def parse_monster_pool(index_path: str | Path) -> dict:
 def compute_draw_count(battle_number: int) -> int:
     """出怪数量公式（全部副本统一，DM裁定采用记录版"-3"）：
     数量 = 战斗场数 - 3，最低为1。（7场序列：1/1/1/1/2/3/4）
-    乱葬岗等二阶及以上副本与一阶共用同一公式。"""
+    乱葬岗等二阶及以上副本与一阶共用同一公式。
+    2026-09-11起此数量为上限：R1只进场第1只，R4/R7/R10…回始各增援1只（见 combat.round_start）。"""
     return max(1, battle_number - 3)
 
 

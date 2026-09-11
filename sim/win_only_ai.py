@@ -285,21 +285,21 @@ class WinOnlyAI(TacticalAI):
             self._last_survival = survived
             # 本回合剩余玩家出手
             for _a in range(self.PLAYOUT_ACTION_CAP):
-                if not [x for x in e.state.enemies if x.is_alive]:
+                if not [x for x in e.state.enemies if x.is_alive] and not getattr(e.state, "monster_reinforcements", None):  # 波次：增援未到不算清场
                     return 1
                 if not e.state.player or not e.state.player.is_alive:
                     return -1
                 if not base.take_action():
                     break
-            if not [x for x in e.state.enemies if x.is_alive]:
+            if not [x for x in e.state.enemies if x.is_alive] and not getattr(e.state, "monster_reinforcements", None):  # 波次：增援未到不算清场
                 return 1
             if not e.state.player or not e.state.player.is_alive:
                 return -1
             e.execute_action("resolve_ally_phases", {})
-            if not [x for x in e.state.enemies if x.is_alive]:
+            if not [x for x in e.state.enemies if x.is_alive] and not getattr(e.state, "monster_reinforcements", None):  # 波次：增援未到不算清场
                 return 1
             _drive_plight_monsters(e)
-            if not [x for x in e.state.enemies if x.is_alive]:
+            if not [x for x in e.state.enemies if x.is_alive] and not getattr(e.state, "monster_reinforcements", None):  # 波次：增援未到不算清场
                 return 1
             mp = _resolve_monster_turn(e)
             if not mp.get("success") or (mp.get("result") or {}).get("player_dead"):

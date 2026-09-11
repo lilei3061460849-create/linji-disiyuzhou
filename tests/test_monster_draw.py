@@ -90,7 +90,19 @@ def test_repetition_allowed_across_many_draws():
     for _ in range(7):
         engine.state.energy = 0
         r = engine.execute_action("battle_start", {})
-        all_names.extend(r["enemies"])
+        all_names.extend(r["enemies"] + r["queued_reinforcements"])
+        # 波次：逐轮放出增援并清掉，否则战终门禁拦
+        while engine.state.monster_reinforcements:
+            engine.execute_action("round_start", {})
+            for enemy in engine.state.enemies:
+                enemy.current_hp = 0
+                enemy.is_alive = False
+            prep = engine.execute_action("prepare_monster_phase", {})
+            engine.execute_action("resolve_monster_phase",
+                                  {"token": prep["result"]["token"], "choices": []})
+            engine.state.player.damage_dealt_this_round = 1
+            engine.state.player.actions_used_this_round = 1
+            engine.execute_action("round_end", {})
         for enemy in engine.state.enemies:
             enemy.current_hp = 0
             enemy.is_alive = False
