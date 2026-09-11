@@ -1181,6 +1181,7 @@ class GameState:
             "duel_round_first": self.duel_round_first,
             "sealed_candidates": self.sealed_candidates,
             "duel_tier": self.duel_tier,
+            "duel_defending_snapshot": self.duel_defending_snapshot,
             "attribute_points": self.attribute_points,
             "player": self.player.to_dict() if self.player else None,
             "friends": [f.to_dict() for f in self.friends],

@@ -92,6 +92,8 @@ def handle_resolve_final_duel(engine: Any, params: Dict[str, Any]) -> Dict[str, 
             slots[tier].insert(0, snap)
             engine._save_seal_slots(slots)
         engine.state.duel_defending_snapshot = {}
+        engine.state.in_final_duel = False
+        engine.state.duel_tier = 0
         player = engine.state.player
         if player is not None:
             # 死斗败者：这是**战斗已经结束后**的结算落幕，不是战斗内命零，

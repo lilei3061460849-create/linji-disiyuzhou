@@ -716,7 +716,9 @@ class GameEngine:
         "retreat_via_toll", "deploy_employee", "lianxin_in_battle", "declare_evolution",
         "prepare_monster_phase", "resolve_monster_phase", "monster_phase",
         "round_start", "round_end", "resolve_rebellion_battle",
-        "activate_duel_relic", "resolve_final_duel", "use_black_card", "use_crime_vault",
+        # resolve_final_duel不在此列：死斗败者先过死之传承（reset进setup相）
+        # 再结算defeat，战斗限定会把它挡在setup外导致擂主永不回槽（r16实战复现）。
+        "activate_duel_relic", "use_black_card", "use_crime_vault",
         "fire_godfather_revolver", "select_shared_dragon_heart", "declare_fuyuebei_toll",
         "activate_dragon_body", "devour_monster", "declare_tail_sacrifice",
         "use_dragon_wings", "use_blood_wings", "enslave_as_chizu", "blood_feast",
@@ -5080,7 +5082,16 @@ class GameEngine:
         """开始新轮回者时保留《死者之书》的永久癌变强化。"""
         bonus = self.state.rest_heal_bonus
         wisdom = list(self.state.death_book_wisdom)
+        # 死斗败者先过死之传承（reset）再走resolve_final_duel(defeat)；
+        # reset若清空擂主快照，defeat就无声吞掉擂主（r14实战复现）。
+        was_duel = self.state.in_final_duel
+        duel_snap = dict(self.state.duel_defending_snapshot) if was_duel else {}
+        duel_tier = self.state.duel_tier if was_duel else 0
         self.state = GameState(rest_heal_bonus=bonus, death_book_wisdom=wisdom)
+        if was_duel:
+            self.state.in_final_duel = True
+            self.state.duel_tier = duel_tier
+            self.state.duel_defending_snapshot = duel_snap
         self.combat.state = self.state
         # 事件遭遇记录属于单次轮回；新轮回不得继承已触发事件或未结算队列。
         self.event_pool.triggered.clear()
