@@ -125,14 +125,46 @@ def test_lianxin_in_battle_does_not_cost_action_but_defers_energy():
     assert engine.state.pending_energy_penalty == 0, "结算后应清零，不能重复扣"
 
 
-def test_different_cost_types_produce_different_named_hearts():
+
+def _register_aging_probe(engine, monkeypatch, name="衰老样本", amount_per_x=1):
+    """注册一个纯衰老代价的探针道纹。
+
+    2026-09-12 起【透支】改为流血5X→X法力，不再是衰老道纹；本测试关心的是
+    「衰老代价 × 龙心」这条通路，与具体哪个道纹无关，故用探针道纹解耦。
+    引擎每次 use_daowen 都会 register_all() 重建注册表，因此这里包一层，
+    让探针在每次重建后仍然存在。
+    """
+    from engine.daowen import DaoWenEngine
+    from engine.enums import CostType
+
+    calc = lambda x: {
+        "dao_wen": name, "x": x,
+        "cost_type": CostType.AGING.value,
+        "cost_blood_limit": amount_per_x * x,
+        "summary": f"衰老{amount_per_x * x}",
+    }
+    original = DaoWenEngine.register_all.__func__
+
+    def register_all_with_probe(cls):
+        original(cls)
+        cls._registry[name] = calc
+
+    monkeypatch.setattr(DaoWenEngine, "register_all",
+                        classmethod(register_all_with_probe))
+    DaoWenEngine.register_all()
+    engine.state.player.dao_wen[name] = DaoWenInstance(
+        DaoWen(name=name, formula="", cost_type="衰老",
+               cost_formula="X", effect_formula=""))
+    return name
+
+
+def test_different_cost_types_produce_different_named_hearts(monkeypatch):
     """正常路径：不同代价类型(流血/衰老/疲惫)炼心后应产生对应命名的独立龙心，互不混用"""
     engine = _new_engine("types_ok")
-    engine.state.player.dao_wen["透支"] = DaoWenInstance(
-        DaoWen(name="透支", formula="", cost_type="衰老", cost_formula="X", effect_formula=""))
+    probe = _register_aging_probe(engine, monkeypatch)
     engine.execute_action("pre_battle_action", {"sub_action": "炼心"})
     _start_with_enemy(engine)
-    engine.execute_action("use_daowen", {"daowen_name": "透支", "x": 3, "target": "轮回者"})
+    engine.execute_action("use_daowen", {"daowen_name": probe, "x": 3, "target": "轮回者"})
     names = {c.name for c in engine.state.consumables if c.kind == "dragon_heart"}
     assert names == {"衰老龙心"}
 
@@ -189,17 +221,16 @@ def test_fully_offset_cost_does_not_trigger_pending_lianxin_banking():
 # 错误输入 / 非法配置
 # ========================================================================
 
-def test_dragon_heart_use_wrong_type_does_nothing():
+def test_dragon_heart_use_wrong_type_does_nothing(monkeypatch):
     """错误输入：请求用[流血龙心]抵消[衰老]代价这种类型不匹配的情况，应完全不生效"""
     engine = _new_engine("wrong_type")
-    engine.state.player.dao_wen["透支"] = DaoWenInstance(
-        DaoWen(name="透支", formula="", cost_type="衰老", cost_formula="X", effect_formula=""))
+    probe = _register_aging_probe(engine, monkeypatch)
     engine.execute_action("pre_battle_action", {"sub_action": "炼心"})
     _start_with_enemy(engine)
     engine.execute_action("use_daowen", {"daowen_name": "血债", "x": 8, "target": "靶怪"})  # 流血龙心(8/8)
 
     blood_limit_before = engine.state.player.blood_limit
-    r = engine.execute_action("use_daowen", {"daowen_name": "透支", "x": 3, "target": "轮回者", "dragon_heart_use": 5})
+    r = engine.execute_action("use_daowen", {"daowen_name": probe, "x": 3, "target": "轮回者", "dragon_heart_use": 5})
     aging_effect = next(e for e in r["execution"]["effects"] if e["type"] == "aging_cost")
     assert aging_effect["dragon_heart_offset"] == 0, "流血龙心不能抵消衰老代价"
     assert engine.state.player.blood_limit == blood_limit_before - 3

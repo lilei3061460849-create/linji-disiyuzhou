@@ -174,14 +174,18 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_touzhi(x: int) -> dict:
-        """透支X：代价：衰老X。获得4X点法力"""
+        """透支X：代价：流血5X。你获得X点法力
+
+        用户裁定 2026-09-12：原「衰老X → 4X法力」使囤法力成为普攻的最优供能，
+        普攻吃掉八成输出。改为流血5X换X法力后，法力回归稀缺资源。
+        """
         return {
             "dao_wen": "透支",
             "x": x,
-            "cost_type": CostType.AGING.value,
-            "cost_blood_limit": x,
-            "mana_gain": 4 * x,
-            "summary": f"衰老{x}(血限-{x})，获得{4*x}点法力"
+            "cost_type": CostType.BLEED.value,
+            "cost_hp": 5 * x,
+            "mana_gain": x,
+            "summary": f"流血{5*x}，获得{x}点法力"
         }
     
     @staticmethod
