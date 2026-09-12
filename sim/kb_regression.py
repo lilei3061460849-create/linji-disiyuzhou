@@ -91,7 +91,7 @@ PROBES = [
          gold=["累加+2×副本阶级"], layer="SHARED+PRE_ACTIVE"),
     dict(id="C2-05", cat=2, q="道纹变化（退化降X实战注意）", gold=["退化"]),
     dict(id="C2-06", cat=2, q="资源限制：法力支付/冷却锚点", gold=["冷却"]),
-    dict(id="C2-07", cat=2, q="波及自适应降X（CF-2 现行裁定，README:467）",
+    dict(id="C2-07", cat=2, q="波及自适应降X（CF-2 现行裁定，规则正文）",
          gold=["自适应降X"], layer="SHARED"),
     # 三、副本规则
     dict(id="C3-01", cat=3, q="救赎触发条件", gold=["救赎", ["血限10%", "[血限]10%"], ["七种原始怪物道纹", "七种原始怪物道纹"]]),

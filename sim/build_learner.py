@@ -51,8 +51,8 @@ CANDIDATES = sorted(n for n, fn in DaoWenEngine._registry.items()
                     and n not in ORIGINAL_MONSTER_DAOWEN)
 
 # 门禁修复后，并非所有道纹都能通过局外【学习】获得：
-#   - 怪物转化道纹：须以自身已持有的道纹为起点经残韵变化获得（README 211/248）
-#   - 副本专属道纹：须先经残韵从本副本怪物身上转化获得一种，才能学其余（README 156）
+#   - 怪物转化道纹：须以自身已持有的道纹为起点经残韵变化获得（规则正文/248）
+#   - 副本专属道纹：须先经残韵从本副本怪物身上转化获得一种，才能学其余（规则正文）
 # 若仍按全池组 build，绝大多数 build 会因"学不上"而退化成同一套，数据失真。
 # 故按副本给出"实际可通过学习获得"的候选池。
 from engine.gamedata import (REGION_EXCLUSIVE_DAOWEN, ORIGINAL_MONSTER_DAOWEN,
@@ -1142,7 +1142,7 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
             # 不能再进怪物阶段（会被中断门禁挡成 invalid），直接按阵亡结算。
             if not e.state.player or not e.state.player.is_alive:
                 break
-            # [朋友]/[员工]自主出手（无语言命令时，README：微光者会根据情况对敌方出手）
+            # [朋友]/[员工]自主出手（无语言命令时，规则正文：微光者会根据情况对敌方出手）
             e.execute_action("resolve_ally_phases", {})
             if not [x for x in e.state.enemies if x.is_alive] and not getattr(e.state, "monster_reinforcements", None):  # 波次：增援未到不算清场
                 break

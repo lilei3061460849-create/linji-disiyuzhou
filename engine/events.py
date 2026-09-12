@@ -1,6 +1,6 @@
 """
 事件系统
-解析README中的通用事件池与各副本专属事件，构建事件池，触发与结算。
+解析规则正文（AI_EXPERIENCE.md）中的通用事件池与各副本专属事件，构建事件池，触发与结算。
 规则：当前事件池 = 所有未遇到的通用事件 + 当前区域中符合条件且未遇到的专属事件（通用在前）。
 """
 from __future__ import annotations
@@ -13,7 +13,7 @@ from typing import Optional
 from .dungeons import load_dungeon_documents
 
 
-# 各池事件名（与README一致）
+# 各池事件名（与规则正文一致）
 EVENT_RELICS = {
     "猩红果实": "每场[战始]可选择是否流血10；若选择，则[战终][血限]+2",
     "苍白之花": "每场[战始]可选择是否疲惫5；若选择，则[战终]精力+1",
@@ -48,10 +48,10 @@ EVENT_NAMES = {
 
 
 def parse_events(index_path: str | Path) -> dict:
-    """从全副本索引及副本文档解析事件。通用事件仍位于 README。"""
+    """从全副本索引及副本文档解析事件。通用事件位于 AI_EXPERIENCE.md 规则正文。"""
     index = Path(index_path)
     root = index.parent
-    content = (root / "README.md").read_text(encoding="utf-8")
+    content = (root / "AI_EXPERIENCE.md").read_text(encoding="utf-8")
     documents = load_dungeon_documents(index)
     lines = content.split("\n")
     # 每个专属副本独立文档追加到解析输入；事件名白名单阻止标题被误判。

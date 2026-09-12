@@ -66,7 +66,7 @@ from .handlers.duel import (
 )
 
 
-# 扭曲都市废墟设施工具库（README正文8件：名→(耐久, 效果文本逐字)）
+# 扭曲都市废墟设施工具库（规则正文8件：名→(耐久, 效果文本逐字)）
 TWISTED_TOOL_LIBRARY = {
     "反怪物电击枪": (3, "对一个[目标]造成25点伤害；若[目标]处于【飞行】，额外造成15点伤害并施加【坠落1】"),
     "备用血泵": (3, "使自身获得20点［回复］；若自身当前生命≤30%，额外获得30点格挡。"),
@@ -125,7 +125,7 @@ class GameEngine:
 
         # 事件系统
         self.event_pool = EventPool(parse_events(DEFAULT_INDEX) if DEFAULT_INDEX.exists() else {})
-        # 怪物池（出怪系统）：从全副本索引加载，不再解析 README。
+        # 怪物池（出怪系统）：从全副本索引加载，不再解析规则正文。
         from .monsters import parse_monster_pool
         self.monster_pool = parse_monster_pool(DEFAULT_INDEX) if DEFAULT_INDEX.exists() else {}
         # 行动历史（可追溯）
@@ -334,17 +334,16 @@ class GameEngine:
         heal_targets += [{"ref": f"employee:{index}", "name": entity.name}
                          for index, entity in enumerate(self.state.employees) if entity.is_alive]
         actions = [
-            # 【领悟】已删除（DM裁定 2026-09-10）：残韵不再能凭精力白拿，
-            # 现存获取途径见 README「残韵来源」。
             {"action_type": "pre_battle_action", "params_schema": {
                 "sub_action": "休整", "tier": [1, 2, 3],
                 "heal_allocations": {"target_options": heal_targets,
                                      "constraint": "amount总和=档位基础恢复量+永久休整加成"}}},
             {"action_type": "pre_battle_action", "params_schema": {
                 "sub_action": "修行", "tier": [1, 2, 3, 4, 5, 6],
-                "allocations": {"speed_points": "nonnegative integer",
+                "allocations": {"blood_points": "nonnegative integer",
+                                "speed_points": "nonnegative integer",
                                 "mana_points": "nonnegative integer",
-                                "constraint": "两者之和=档位属性点"}}},
+                                "constraint": "三者之和≤档位属性点+池内余点；1点=6血限，2点=1速限=1法限"}}},
             {"action_type": "pre_battle_action", "params_schema": {
                 "sub_action": "学习", "sub": ["spell", "daowen", "custom_spell"],
                 "tier": {"spell": [1, 2, 3], "daowen": [1, 2]},
@@ -1328,7 +1327,7 @@ class GameEngine:
             "献祭": self._pre_battle_sacrifice,
         }
 
-        # 副本专属行动门禁（README：维修=扭曲都市、雇佣=罪孽都市、炼心=龙心谷专属）。
+        # 副本专属行动门禁（规则正文：维修=扭曲都市、雇佣=罪孽都市、炼心=龙心谷专属）。
         # 缺少该校验会让任意副本都能用他人专属行动，统计与平衡数据将失真。
         REGION_EXCLUSIVE = {"维修": "扭曲都市", "雇佣": "罪孽都市", "炼心": "龙心谷", "附煞": "乱葬岗"}
         need_region = REGION_EXCLUSIVE.get(action)
@@ -1404,10 +1403,10 @@ class GameEngine:
         return {"success": True, "action": "休整", "result": payload}
 
     def _pre_battle_xiuxing(self, params: dict) -> dict:
-        """修行：获得属性点并立即分配（血限只能开局获得）。
+        """修行：获得属性点并立即分配。
 
-        2属性点 = 1[速限] = 1[法限]（DM裁定 2026-09-10：与开局加点同口径；
-        攻次/攻力已改为由当前速度/当前法力换算，不再是可购买的独立面板）。
+        计价与开局初始分配同口径：1属性点=6[血限]，2属性点=1[速限]=1[法限]
+        （用户裁定 2026-09-12：局外修行不再与初始分配区分，血限同样可以修上去）。
         不朽之躯不阻止修行：其“无法超过上限”只限制获得的当前法力/速度，不限制属性点增长。"""
         tier = params.get("tier", 1)
         tier_map = {1: (1, 0), 2: (2, 15), 3: (3, 35), 4: (4, 65), 5: (5, 100), 6: (6, 150)}
@@ -1418,9 +1417,9 @@ class GameEngine:
         if cost > 0 and self.state.shards < cost:  # 负债口径同休整：0费不属于支出
             self.state.energy += 1
             return {"success": False, "error": f"碎片不足，需要{cost}"}
-        alloc_keys = ("speed_points", "mana_points")
+        alloc_keys = ("blood_points", "speed_points", "mana_points")
         allocations = params.get("allocations")
-        if allocations is None and params.get("to") in ("speed", "mana"):
+        if allocations is None and params.get("to") in ("blood", "speed", "mana"):
             allocations = {f"{params['to']}_points": points}
         if not isinstance(allocations, dict):
             allocations = {}
@@ -1446,13 +1445,14 @@ class GameEngine:
         if redeemed is not None and not redeemed.get("success"):
             return redeemed
         gained = ((redeemed or {}).get("result") or {}).get(
-            "gained", {"speed": 0, "mana": 0})
+            "gained", {"blood": 0, "speed": 0, "mana": 0})
         player = self.state.player
         return {"success": True, "action": "修行",
                 "result": {"points_gained": points, "shard_cost": cost,
                            "allocations": {k: vals[k] for k in alloc_keys},
                            "gained": gained,
                            "attribute_points": self.state.attribute_points,
+                           "blood_limit": player.blood_limit,
                            "speed_limit": player.speed_limit,
                            "mana_limit": player.mana_limit,
                            "attack_count": player.effective_attack_count(),
@@ -1507,7 +1507,7 @@ class GameEngine:
         ("回锋刀", "每失去1点速度后对[目标]造成3伤害；[回始]对[目标]造成3×([速限]-当前速度)伤害"),
         ("折速法印", "[战始]可疲惫X获得6X法力"),
         ("三相残韵盘", "[战始]消耗一种残韵；[战终]获得另两种残韵各1"),
-        ("血契", "数值型【代价】可与一名存活的朋友或员工平分，余数按随机数分配（通用规则见README《基础定义·平分规则》）；[回始]可流血4X获得X法力，本次流血也可平分"),
+        ("血契", "数值型【代价】可与一名存活的朋友或员工平分，余数按随机数分配（通用规则见规则正文《基础定义·平分规则》）；[回始]可流血4X获得X法力，本次流血也可平分"),
         ("避风铃", "每次闪避后获得3格挡；当前速度归零时获得15格挡"),
         ("守夜灯", "[敌回始]获得[法限]50%法力，[敌回终]清空，每回合一次"),
         ("无所求", "每当在事件中选拒绝类选项，永久获得1属性点"),
@@ -1720,7 +1720,7 @@ class GameEngine:
                 self.state.energy += 1
                 return {"success": False,
                         "error": f"未知法术{invalid}；已掌握不可重复学习{duplicate}"}
-            # 前置道纹校验：法术必须完全由已有道纹组成（README「法术设计原则」）。
+            # 前置道纹校验：法术必须完全由已有道纹组成（《法术索引》法术设计原则）。
             # 缺少前置道纹时拒绝学习、不扣碎片/精力，并明确列出缺失道纹
             # （2026-08-21 实战：无庇护学借力打力、无再升学千刀万剐→整局死条目）。
             missing = [
@@ -2762,15 +2762,15 @@ class GameEngine:
         return payload
 
     def _redeem_attribute_points(self, allocations: dict) -> dict:
-        """把属性点池里的点兑成[速限]/[法限]（2属性点=1单位）。
+        """把属性点池里的点兑成[血限]/[速限]/[法限]。
 
-        DM裁定 2026-09-10：属性点可存储、随时兑换。[血限]仍只能开局获得
-        （沿用修行既有口径），所以这里只接受 speed_points / mana_points。
+        计价与开局初始分配同口径：1属性点=6[血限]，2属性点=1[速限]=1[法限]。
+        用户裁定 2026-09-12：局外修行不再与初始分配区分，[血限]同样可以后天提升。
         """
         player = self.state.player
         if player is None:
             return {"success": False, "error": "尚未分配初始属性"}
-        alloc_keys = ("speed_points", "mana_points")
+        alloc_keys = ("blood_points", "speed_points", "mana_points")
         vals = {}
         for key in alloc_keys:
             v = allocations.get(key, 0)
@@ -2780,7 +2780,7 @@ class GameEngine:
         need = sum(vals.values())
         if need == 0:
             return {"success": True, "action": "兑换属性点",
-                    "result": {"gained": {"speed": 0, "mana": 0},
+                    "result": {"gained": {"blood": 0, "speed": 0, "mana": 0},
                                "attribute_points": self.state.attribute_points}}
         if need > self.state.attribute_points:
             return {"success": False,
@@ -2788,9 +2788,20 @@ class GameEngine:
         if vals["speed_points"] % 2 or vals["mana_points"] % 2:
             return {"success": False,
                     "error": "速限/法限按2属性点一档计价，兑换点数必须是偶数",
-                    "instruction": "余点会留在池里，攒够2点再兑"}
+                    "instruction": "血限按1点一档不受此限；余点会留在池里，攒够2点再兑"}
+        blood_gain = vals["blood_points"] * 6
+        # 不朽之躯：[血限]无法增加，兑血限的点会白扔，直接拒绝而不是静默吞点。
+        if blood_gain and self.state.side_has(player, "不朽之躯"):
+            return {"success": False,
+                    "error": "【不朽之躯】使[血限]无法增加，不能把属性点兑成血限",
+                    "instruction": "改兑 speed_points / mana_points"}
         self.state.attribute_points -= need
-        gained = {"speed": vals["speed_points"] // 2, "mana": vals["mana_points"] // 2}
+        gained = {"blood": blood_gain,
+                  "speed": vals["speed_points"] // 2,
+                  "mana": vals["mana_points"] // 2}
+        if blood_gain:
+            player.blood_limit += blood_gain
+            player.current_hp += blood_gain
         player.speed_limit += gained["speed"]
         player.mana_limit += gained["mana"]
         player.current_speed = player.speed_limit
@@ -2798,6 +2809,7 @@ class GameEngine:
         return {"success": True, "action": "兑换属性点",
                 "result": {"gained": gained,
                            "attribute_points": self.state.attribute_points,
+                           "blood_limit": player.blood_limit,
                            "speed_limit": player.speed_limit,
                            "mana_limit": player.mana_limit}}
 
@@ -2813,7 +2825,8 @@ class GameEngine:
         allocations = params.get("allocations")
         if not isinstance(allocations, dict):
             return {"success": False,
-                    "error": "请用 allocations 指定兑换：{'speed_points': 偶数, 'mana_points': 偶数}",
+                    "error": "请用 allocations 指定兑换："
+                             "{'blood_points': 非负整数, 'speed_points': 偶数, 'mana_points': 偶数}",
                     "attribute_points": self.state.attribute_points}
         return self._redeem_attribute_points(allocations)
 
@@ -3711,7 +3724,7 @@ class GameEngine:
                 "error": "无法解析指令；合法格式：攻击 <目标名> 或 发动 <道纹名> [打 <目标名>]"}
 
     def _action_resolve_ally_phases(self, params: dict) -> dict:
-        """无命令时[朋友]/[员工]自主出手一次（README：微光者会根据情况对敌方出手）。
+        """无命令时[朋友]/[员工]自主出手一次（规则正文：微光者会根据情况对敌方出手）。
 
         每个未出手完毕的存活朋友/员工：优先发动自身道纹（若有可用），否则一轮攻击；
         只对存活敌人行动；用完各自 action_count 或行动一次即停。
@@ -4317,7 +4330,7 @@ class GameEngine:
         candidate_snapshot = queue.pop(0)
         slots[tier] = queue
         self._save_seal_slots(slots)  # 队首候选已被取用；同槽剩余候选继续排队
-        # 暂存擂主快照：挑战者落败时放回队首（README 550"封存…直到下一名同阶级
+        # 暂存擂主快照：挑战者落败时放回队首（规则正文「封存…直到下一名同阶级
         # 轮回者完成第7场战斗"——卫冕成功则封存依旧有效，此前擂主被无声吞掉）。
         self.state.duel_defending_snapshot = candidate_snapshot
 
@@ -4711,7 +4724,7 @@ class GameEngine:
 
     DRAGON_NATURE_RATE = {"衰老": 2, "枯竭": 6, "萎缩": 12}  # 1点该类型代价 = N点龙性
     DRAGON_TRAITS = ["龙族血脉", "龙威", "龙族利爪", "龙息", "震岳龙躯", "吞骸龙胃", "断尾求生", "烬翼"]
-    # 龙族项目以【遗物】形式授予，此表提供其效果文本（与 README/物品索引.md 一致）
+    # 龙族项目以【遗物】形式授予，此表提供其效果文本（与《物品索引》一致）
     DRAGON_TRAIT_EFFECTS = {
         "龙族血脉": "对怪物造成伤害后，直接使其［命零］；对非怪物造成伤害翻倍",
         "龙威": "所有敌方必须优先选择自身为[目标]",
@@ -4989,7 +5002,7 @@ class GameEngine:
         if self.state.truth_eye_cooldown > 0:
             self.state.truth_eye_cooldown -= 1
 
-        # 道纹【冷却X】：README「[战终]后已完成战斗场数+1，达到Y时才能再次使用」。
+        # 道纹【冷却X】：规则正文「[战终]后已完成战斗场数+1，达到Y时才能再次使用」。
         # 对所有持有道纹的角色统一递减，归零即恢复可用。
         for _ent in ([self.state.player] if self.state.player else []) \
                 + self.state.friends + self.state.employees:
@@ -5199,7 +5212,7 @@ class GameEngine:
         """翻阅《死者之书》：读回全部〖遗言〗与已积累的智慧条目。
 
         纯查询：不消耗精力、不掷骰、不改任何数值——《死者之书》与轮回者灵魂绑定
-        （README「死者之书与微光者」），本就随身携带，翻阅不花代价。
+        （《故事文档》世界观·死者之书与微光者），本就随身携带，翻阅不花代价。
         在此之前遗言只有「写入」（死之传承 → `_commit_death_ruling`）没有「读取」：
         `state.death_book_legacies` 只被序列化与计数，轮回者/AI 一条也看不到。
         """

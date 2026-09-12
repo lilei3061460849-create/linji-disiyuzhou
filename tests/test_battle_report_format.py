@@ -1,7 +1,7 @@
 """
 pytest - 战报格式化器（README《六、战斗推演格式》合规性）
 
-对应三项裁定中的第②项：战报必须严格符合 README 第318-337行定义的格式。
+对应三项裁定中的第②项：战报必须严格符合 规则正文定义的格式。
 
 覆盖：
 - 正常路径：完整一场战斗，产出含全部规范字段的战报
@@ -155,7 +155,7 @@ def test_enemy_panel_matches_spec_shape(tmp_path):
 def test_monster_hits_listed_one_per_line(tmp_path):
     """正常路径：怪物每一击单独成行，禁止合并结算。
     一轮攻击(attack_count 次)同属一个攻击出手，共用出手号并标注第N/M击，
-    但每击仍独立成行（每次攻击独立判定闪避，README:204）。"""
+    但每击仍独立成行（每次攻击独立判定闪避，规则正文）。"""
     e = _new_engine(tmp_path)
     e.execute_action("battle_start")
     e.execute_action("round_start", {})

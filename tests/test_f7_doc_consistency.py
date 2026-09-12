@@ -1,15 +1,17 @@
 """
 F7 验证：文档一致性（全程自动触发 + 命名漂移 + engine/README 复审）
-- 正常：README 五章列表与特殊事件节 14 项对齐，含凡庸/癌变/崩解/救赎
+- 正常：README 流程五章列表与规则正文（AI_EXPERIENCE.md）特殊事件节 14 项对齐
 - 边界：活跃代码层（engine/*.py, sim/*.py, tests/*.py）不再出现中文“增生”，仅允许在废弃别名注释中出现
 - 错误：对旧名“增生”的显式调用应被拒绝或不存在
-- 引擎README：文件结构已补全至当前19项且含F7订正注记
+- 引擎规则正文：文件结构已补全至当前19项且含F7订正注记
 """
 import pathlib
 import re
 
 def test_normal_readme_auto_trigger_list():
     readme = pathlib.Path("README.md").read_text(encoding="utf-8")
+    # 2026-09-12：规则条文迁入 AI_EXPERIENCE.md，README 只留流程。
+    rules = pathlib.Path("AI_EXPERIENCE.md").read_text(encoding="utf-8")
     # 找到 五、全程自动触发 段
     m = re.search(r"五、全程自动触发[^\n]*\n([^\n]+)", readme)
     assert m, "未找到 五、全程自动触发 段"
@@ -22,15 +24,15 @@ def test_normal_readme_auto_trigger_list():
     for kw in expected_14:
         assert kw in line, f"同步后五章应含 {kw}"
     # 验证特殊事件节的标题与五章一致（不校验数量，仅校验关键词存在）
-    assert "凡庸（任一角色连续五回合" in readme
-    assert "多个角色触发凡庸时，非轮回者优先触发" in readme
+    assert "凡庸（任一角色连续五回合" in rules
+    assert "多个角色触发凡庸时，非轮回者优先触发" in rules
     assert "初始道纹发现：候选〔甲、乙、丙〕→选择【所选】" in readme
     assert "遗物发现：候选〔甲、乙、丙〕→选择【所选】" in readme
     assert "禁止只写选择结果" in readme
-    assert "癌变（任一角色在本场战斗内累计受到回复" in readme
-    assert "累计回复属于局内减益追踪，[战终]清零" in readme
-    assert "崩解（任一角色【异变】达到" in readme
-    assert "救赎（怪物当前生命≤其[血限]10%" in readme
+    assert "癌变（任一角色在本场战斗内累计受到回复" in rules
+    assert "累计回复属于局内减益追踪，[战终]清零" in rules
+    assert "崩解（任一角色【异变】达到" in rules
+    assert "救赎（怪物当前生命≤其[血限]10%" in rules
 
 def test_boundary_no_zengsheng_in_active_code():
     """边界：活跃代码层不再出现中文“增生”（旧名），已统一为癌变；增殖道纹不受影响"""

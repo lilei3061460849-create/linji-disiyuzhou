@@ -1,6 +1,6 @@
 """【凡庸】特殊事件 与 [战终]清除回复 的回归测试
 
-对应 README：
+对应 规则正文：
   第500-501行 【凡庸】：任一角色连续五回合未出手／五回合未能使敌对角色生命减少，
                即触发；该角色全身炸裂[命零]，若为怪物则轮回者获得消耗品【残骸】(1/1)。
   第304行     [战终]：清除局内增益（包括回复、格挡、持续∞等）与减益（不包括代价）。
@@ -276,7 +276,7 @@ def test_battle_end_clears_infinite_duration_buffs():
 
 
 def test_battle_end_keeps_cost_status():
-    """边界：[代价]不随[战终]清除（README 第304行括注）"""
+    """边界：[代价]不随[战终]清除（规则正文括注）"""
     from engine.models import StatusEffect
     e = _engine()
     p = e.state.player

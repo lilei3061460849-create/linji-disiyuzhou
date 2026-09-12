@@ -225,8 +225,8 @@ def test_training_splits_tier_points_between_speed_and_mana(tmp_path):
     assert trained["success"], trained
     assert (player.speed_limit, player.mana_limit) == (before[0] + 1, before[1] + 1)
     assert (player.current_speed, player.current_mana) == (player.speed_limit, player.mana_limit)
-    assert trained["result"]["allocations"] == {"speed_points": 2, "mana_points": 2}
-    assert trained["result"]["gained"] == {"speed": 1, "mana": 1}
+    assert trained["result"]["allocations"] == {"blood_points": 0, "speed_points": 2, "mana_points": 2}
+    assert trained["result"]["gained"] == {"blood": 0, "speed": 1, "mana": 1}
     assert engine.state.shards == 35
 
 
@@ -245,7 +245,7 @@ def test_training_banks_points_when_no_allocations(tmp_path):
         r = engine.execute_action("pre_battle_action", {"sub_action": "修行", "tier": 1})
         assert r["success"], r
         assert (player.speed_limit, player.mana_limit) == panel_before, "存点不改面板"
-        assert r["result"]["gained"] == {"speed": 0, "mana": 0}
+        assert r["result"]["gained"] == {"blood": 0, "speed": 0, "mana": 0}
     assert engine.state.attribute_points == bank_before + 2
 
     # 攒到 2 点后随时兑换（自由动作，不耗精力/碎片）
@@ -299,3 +299,39 @@ def test_training_rejects_invalid_split_atomically(tmp_path):
     assert not boolean["success"]
     assert (player.speed_limit, player.mana_limit, player.current_speed,
             player.current_mana, engine.state.energy, engine.state.shards) == before
+
+
+def test_training_can_raise_blood_limit(tmp_path):
+    """用户裁定 2026-09-12：局外修行不再与开局初始分配区分，血限同样可以修上去。
+
+    正常：1属性点=6血限，当前生命同步抬高；
+    边界：存点后用自由动作 redeem_attribute_points 兑血限（血限按1点一档，不受偶数限制）；
+    错误：【不朽之躯】在场时拒绝兑血限，而不是静默吞掉属性点。
+    """
+    engine = _engine(tmp_path)
+    player = engine.state.player
+    bl_before, hp_before = player.blood_limit, player.current_hp
+
+    trained = engine.execute_action("pre_battle_action", {
+        "sub_action": "修行", "tier": 3, "allocations": {"blood_points": 3}})
+    assert trained["success"], trained
+    assert trained["result"]["gained"] == {"blood": 18, "speed": 0, "mana": 0}
+    assert player.blood_limit == bl_before + 18
+    assert player.current_hp == hp_before + 18
+
+    # 边界：奇数点也能兑血限（1点一档），速限/法限仍须偶数
+    engine.state.attribute_points += 1
+    redeemed = engine.execute_action("redeem_attribute_points",
+                                     {"allocations": {"blood_points": 1}})
+    assert redeemed["success"], redeemed
+    assert player.blood_limit == bl_before + 24
+
+    # 错误：不朽之躯使血限无法增加，兑血限必须被拒绝
+    from engine.models import Relic
+    engine.state.relics.append(Relic(name="不朽之躯", effect="[血限]无法增加"))
+    engine.state.attribute_points += 2
+    blocked = engine.execute_action("redeem_attribute_points",
+                                    {"allocations": {"blood_points": 2}})
+    assert blocked["success"] is False
+    assert "不朽之躯" in blocked["error"]
+    assert engine.state.attribute_points == 2, "被拒绝时属性点不得被扣掉"

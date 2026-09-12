@@ -16,7 +16,7 @@ pytest 风格测试 - 里程碑7：最终的冠冕 / 第8场最终死斗
    成为下一位挑战者的候选人，形成擂台循环。
 
 注：第二位候选人到达触发死斗时，引擎先从队列取出擂主快照（候选文件可能暂时为空）；
-死斗结算后：胜者进入下一阶级封存槽；守擂成功（挑战者落败）的擂主按 README 550 放回队首
+死斗结算后：胜者进入下一阶级封存槽；守擂成功（挑战者落败）的擂主按 规则正文放回队首
 重新封存（2026-08-22 修复：此前擂主被无声吞掉）。因此清理代码统一用 _cleanup() 做存在性检查再删除。
 
 运行方式：
@@ -225,7 +225,7 @@ def test_defeat_triggers_reset_without_resealing():
     assert ruling["success"] is True
     assert ruling["death_book"]["legacy"] == legacy
     assert loser.state.player is None
-    # 败者（挑战者）不应被封存；但擂主卫冕成功须按 README 550 回到队首重新封存——
+    # 败者（挑战者）不应被封存；但擂主卫冕成功须按 规则正文回到队首重新封存——
     # 此前的实现把擂主无声吞掉，封存队列越打越空（2026-08-22 修复）。
     assert os.path.exists(path), "擂主卫冕成功后必须回到封存队列"
     import json as _json

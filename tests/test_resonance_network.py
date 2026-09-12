@@ -1,8 +1,8 @@
 """
-pytest - 残韵闭环完整性（引擎 CLOSED_LOOPS 必须与 README 声明一致）
+pytest - 残韵闭环完整性（引擎 CLOSED_LOOPS 必须与规则正文声明一致）
 
 背景：现行将原杀伐/切割两轨首尾接成一个14节点【杀伐闭环】；
-README 声明的三条副本闭环与怪物原始道纹转化也必须完整登记，
+规则正文声明的三条副本闭环与怪物原始道纹转化也必须完整登记，
 导致对怪物面板道纹发动残韵必然失败。
 
 覆盖：正常路径 / 边界条件 / 错误输入
@@ -21,7 +21,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def readme() -> str:
-    with open(os.path.join(ROOT, "README.md"), encoding="utf-8") as f:
+    """规则正文事实源：2026-09-12 起道纹体系由 README 迁入 AI_EXPERIENCE.md。"""
+    with open(os.path.join(ROOT, "AI_EXPERIENCE.md"), encoding="utf-8") as f:
         return f.read()
 
 
@@ -32,16 +33,16 @@ def engine_edges() -> set:
 # ---------- 正常路径 ----------
 
 def test_all_readme_monster_transforms_registered():
-    """正常路径：README 声明的每一条怪物原始道纹转化都必须在引擎中登记"""
+    """正常路径：规则正文声明的每一条怪物原始道纹转化都必须在引擎中登记"""
     txt = readme()
     spec = set()
     for m in re.finditer(r"(\w+?)X→（(转换|反转|曲解)）(\w+?)X", txt):
         spec.add((m.group(1), m.group(2), m.group(3)))
     for m in re.finditer(r"(\w+?)X（代价[^）]*）→（(转换|反转|曲解)）(\w+?)X", txt):
         spec.add((m.group(1), m.group(2), m.group(3)))
-    assert spec, "未能从 README 解析出怪物转化关系"
+    assert spec, "未能从规则正文解析出怪物转化关系"
     missing = spec - engine_edges()
-    assert not missing, f"引擎缺失 README 声明的转化：{sorted(missing)}"
+    assert not missing, f"引擎缺失规则正文声明的转化：{sorted(missing)}"
 
 
 def test_single_fourteen_node_core_loop():

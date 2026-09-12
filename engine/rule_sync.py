@@ -1,6 +1,6 @@
 """规则自动同步系统。
 
-事实源分工：README.md 提供通用规则，死者之书.md 提供法术与遗言格式，
+事实源分工：AI_EXPERIENCE.md 提供通用规则正文，死者之书.md 提供法术与遗言格式，
 物品索引.md 提供物品，副本索引.md 与其链接文档提供副本内容。
 """
 from __future__ import annotations
@@ -51,7 +51,7 @@ class RuleFile:
 class RuleSync:
     """管理多份正文事实源与引擎之间的同步。"""
 
-    DEFAULT_RULE_FILES = ["README.md", "死者之书.md", "物品索引.md", "副本索引.md"]
+    DEFAULT_RULE_FILES = ["AI_EXPERIENCE.md", "死者之书.md", "物品索引.md", "副本索引.md"]
     
     def __init__(
         self, 
@@ -147,8 +147,8 @@ class RuleSync:
         content = full_path.read_text(encoding="utf-8")
 
         # 限定到道纹正文，避免把“冷却X/流血X”等代价定义误识别成道纹。
-        if full_path.name == "README.md" and "道纹体系\n" in content:
-            content = content.split("道纹体系\n", 1)[1].split("特殊事件（", 1)[0]
+        if full_path.name == "AI_EXPERIENCE.md" and "### 道纹体系\n" in content:
+            content = content.split("### 道纹体系\n", 1)[1].split("### 特殊事件", 1)[0]
         elif "道纹定义：" in content:
             content = content.split("道纹定义：", 1)[1].split("专属行动", 1)[0]
         elif "道纹网络】" in content and "专属行动" in content:
@@ -169,7 +169,7 @@ class RuleSync:
                     "line": line_number,
                 })
 
-            # README 的原始/转化道纹使用“名称X（消耗/代价与效果）”内联格式。
+            # 规则正文的原始/转化道纹使用“名称X（消耗/代价与效果）”内联格式。
             for name, description in re.findall(
                     r"([\u4e00-\u9fff]{2})X（([^（）]+)）", line):
                 if "消耗" not in description and "代价" not in description:
@@ -418,7 +418,7 @@ class RuleSync:
         index_path = Path(self.rules_dir) / "副本索引.md"
         manifest = load_dungeon_manifest(index_path)
         return {
-            "common_daowen": self.extract_daowen_from_file("README.md"),
+            "common_daowen": self.extract_daowen_from_file("AI_EXPERIENCE.md"),
             "dungeon_daowen": self.extract_dungeon_daowen(include_drafts=True),
             "spells": self.extract_spells_from_file("死者之书.md"),
             "items": self.extract_items_from_file("物品索引.md"),
@@ -448,7 +448,7 @@ class RuleSync:
 
     def diff_project_daowen(self) -> dict:
         """比较引擎与当前已实现正文中的通用及副本专属道纹。"""
-        file_daowen = self.extract_daowen_from_file("README.md")
+        file_daowen = self.extract_daowen_from_file("AI_EXPERIENCE.md")
         file_daowen += self.extract_dungeon_daowen(include_drafts=False)
         file_names = {item["name"] for item in file_daowen}
         registered = set(DaoWenEngine.list_all())
@@ -525,16 +525,16 @@ class RuleSync:
         changes = self.check_for_changes()
         report["changes_detected"] = changes
         
-        # 通用道纹只与 README 比较；其他 Markdown 各自使用专用提取器，
+        # 通用道纹只与规则正文（AI_EXPERIENCE.md）比较；其他 Markdown 各自使用专用提取器，
         # 避免把物品标题或法术字段误报成道纹。
-        if "README.md" in self._rule_files and "副本索引.md" in self._rule_files:
+        if "AI_EXPERIENCE.md" in self._rule_files and "副本索引.md" in self._rule_files:
             diff = self.diff_project_daowen()
-            report["daowen_diffs"]["README.md"] = {
+            report["daowen_diffs"]["AI_EXPERIENCE.md"] = {
                 "new": len(diff["in_file_only"]),
                 "missing": len(diff["in_engine_only"]),
                 "synced": len(diff["in_both"]),
                 "details": diff,
-                "scope": "README通用道纹+已实现副本专属道纹",
+                "scope": "规则正文通用道纹+已实现副本专属道纹",
             }
             report["suggestions"].extend(self.generate_project_patch_suggestions())
 

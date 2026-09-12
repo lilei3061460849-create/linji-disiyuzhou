@@ -773,7 +773,7 @@ def test_duel_wall_clock_guard_errors_not_hang(tmp_path):
 
 
 def test_wushen_redirect_attack_not_unsubmittable():
-    """回归（引擎契约修复）：无神状态怪物的攻击重定向为打自己（README 479），
+    """回归（引擎契约修复）：无神状态怪物的攻击重定向为打自己（规则正文），
     引擎曾把名义目标（玩家）的 spell_choices 拿去按怪物资格集校验——玩家带
     反应法术时该命中永远无法合法提交（"必须逐一覆盖[]"），整局误标无效。
     扭曲都市 seed=2 稳定复现（缝合鱼持无神）。"""

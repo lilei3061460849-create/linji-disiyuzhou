@@ -81,7 +81,7 @@ def handle_resolve_final_duel(engine: Any, params: Dict[str, Any]) -> Dict[str, 
                                f"（胜者进入{next_tier}阶进阶封存，不再与原阶级角色死斗）",
             }}
     else:
-        # 擂主卫冕成功：挑战者落败不影响擂主封存。按 README 550（封存"直到下一名
+        # 擂主卫冕成功：挑战者落败不影响擂主封存。按 规则正文（封存"直到下一名
         # 同阶级轮回者完成第7场战斗"+队列先来后到语义）把原始快照放回队首——
         # 此前擂主在挑战者落败时被无声吞掉，封存队列越打越空、死斗不可持续。
         snap = getattr(engine.state, "duel_defending_snapshot", None) or {}

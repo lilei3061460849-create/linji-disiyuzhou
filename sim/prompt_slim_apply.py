@@ -89,7 +89,7 @@ w1 = span(src, "### 1. 道纹的 X 必须受合法目标数限制", "### 2. 怪�
     "## D-01 波及「不足 X 即过滤」旧语义（已废止）\n\n"
     "- 来源：AI_EXPERIENCE.md《2026-08-22 版本变更》第 1 条（BUG-01 根因治理）。\n"
     "- 废止原因：第十四批 DM 裁定①「波及自适应降 X」正式替代（有效X=min(面板X, 合法目标数)）；"
-    "证据：tests/test_wave_target_limit_and_phase_recovery 已改写降 X 语义并锚定回归、README:467 裁定注记、"
+    "证据：tests/test_wave_target_limit_and_phase_recovery 已改写降 X 语义并锚定回归、规则正文 裁定注记、"
     "实验档案 archive/experiment_log.md 第十四批第 1 条。\n"
     "- 现行规则：以第十四批降 X 语义为准；本词条仅留历史证据，禁止据此实现或教学。\n\n"
     "### 原文（2026-08-22，已废止）\n\n" + w1 + "\n",

@@ -87,7 +87,7 @@ def test_conversion_applies_only_to_reincarnator():
                attack_count=5, attack_power=15, speed_limit=6, current_speed=6)
     e.state.enemies.append(m)
     assert (m.effective_attack_count(), m.effective_attack_power()) == (5, 15)
-    assert m.current_mana == 0, "怪物不持有法力（README:120）"
+    assert m.current_mana == 0, "怪物不持有法力（规则正文）"
 
 
 def test_action_count_is_fixed_two():
@@ -143,4 +143,4 @@ def test_training_banks_points_and_redemption_raises_attack_panel():
     assert r["success"], r
     assert (p.speed_limit, p.mana_limit) == (5, 6)
     assert (p.effective_attack_count(), p.effective_attack_power()) == (5, 6)
-    assert r["result"]["gained"] == {"speed": 1, "mana": 1}
+    assert r["result"]["gained"] == {"blood": 0, "speed": 1, "mana": 1}

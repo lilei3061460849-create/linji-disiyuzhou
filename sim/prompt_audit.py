@@ -254,7 +254,7 @@ add("AIE-RZ3", F, "残韵闭环·实战策略6条", "先解锁再学闭环等", 
 # ---- 2026-08-22 版本变更 ----
 add("AIE-W1", F, "08-22变更1", "波及X不足即过滤", "波及目标数过滤", "D",
     status="stale", valid=False, hist=True,
-    evidence="第十四批裁定①降X替代; tests/test_wave_target_limit 已改降X语义; README:467注记",
+    evidence="第十四批裁定①降X替代; tests/test_wave_target_limit 已改降X语义; 规则正文注记",
     note="CF-2冲突旧方;→archive/hypotheses 留痕", flags=["CF-2", "HISTORICAL_POLLUTION"])
 add("AIE-W2", F, "08-22变更2", "怪物阶段失败可恢复", "token回滚可恢复", "C",
     hist=True, code="引擎契约+测试", note="修复叙述→archive")

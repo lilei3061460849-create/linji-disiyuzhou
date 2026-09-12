@@ -3,7 +3,7 @@
 
 口径（2026-08-31）：
   · **不复制任何引擎公式**。面板/道纹/法术/遗物/残韵读 `data/breed_winners/*.json` 快照；
-    道纹正文由 `RuleSync` 从 README 与副本正文抽取；性格读引擎权威记录
+    道纹正文由 `RuleSync` 从规则正文与副本正文抽取；性格读引擎权威记录
     `state.personality_traits`；战术与战绩来自真实死斗逐局实录。
   · 死斗一律走仓库自带的 `sim/duel_diff_trace.py::traced_duel`（内含面板不变量自检），
     出牌统计只数 `[真实]` 行——预演世界的动作不计入。
@@ -41,9 +41,9 @@ _RESONANCE_RE = re.compile(r"'resonance_type': '([^']+)'")
 
 
 def daowen_texts() -> dict:
-    """道纹 → (正文, 出处)。README 通用道纹 + 各副本专属道纹，全部来自正文事实源。"""
-    out = {d["name"]: (d["description"], "README")
-           for d in RuleSync().extract_daowen_from_file(os.path.join(REPO, "README.md"))}
+    """道纹 → (正文, 出处)。规则正文通用道纹 + 各副本专属道纹，全部来自正文事实源。"""
+    out = {d["name"]: (d["description"], "规则正文")
+           for d in RuleSync().extract_daowen_from_file(os.path.join(REPO, "AI_EXPERIENCE.md"))}
     for d in RuleSync().extract_dungeon_daowen():
         out.setdefault(d["name"], (d["description"], os.path.basename(d.get("source", ""))))
     return out
@@ -204,7 +204,7 @@ def render_markdown(rows: list[dict]) -> str:
           f"| {'、'.join(r['道纹'])} | {spells} | {'、'.join(r['遗物']) or '—'} | {reso} | {r['碎片']} |")
 
     held = sorted({n for r in rows for n in r["道纹"]})
-    A("\n### 表2 · 上表道纹的正文（`RuleSync` 从 README／副本正文抽取，非手写）\n")
+    A("\n### 表2 · 上表道纹的正文（`RuleSync` 从规则正文／副本正文抽取，非手写）\n")
     A("| 道纹 | 正文 | 出处 |")
     A("|---|---|---|")
     for n in held:

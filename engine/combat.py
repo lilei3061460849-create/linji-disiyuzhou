@@ -39,7 +39,7 @@ class CombatEngine:
     # 原始怪物道纹（道纹归属规则：各组起点）——【原初X】可借用范围
     ORIGINAL_MONSTER_DAOWEN = ("狂暴", "强化", "疯狂", "减速", "必中", "自愈", "飞行")
     # 原始怪物道纹每次实际发动时支付异变5X（X按该次发动时递增后的数值计算，
-    # 见 README 怪物准则9·道纹递增）；效果持续期间（未再次发动）不再重复计费。
+    # 见规则正文·怪物准则9·道纹递增）；效果持续期间（未再次发动）不再重复计费。
     # 必中为次数型（下X次选择[目标]无法闪避），余数记在 entity._bizhong_left。
     YUANCHU_COST_RATE = 5
     # 波及X（2026-08-21）：你发动的道纹同时作用于所有拥有波及效果的目标。
@@ -2105,7 +2105,7 @@ class CombatEngine:
     
     def execute_evolution(self, monster: Entity, daowen_name: str, x: int) -> dict:
         """
-        特殊事件【进化】：怪物发动【原初X】（README·特殊事件）。
+        特殊事件【进化】：怪物发动【原初X】（规则正文·特殊事件）。
         原初X：代价：异变5X。选择一种**当前轮回者已持有**、且自身未持有的道纹，
         [战终]前视为持有该道纹（其数值固定为本次X），借用的道纹发动时照常支付其自身代价。
 
@@ -2198,14 +2198,14 @@ class CombatEngine:
     # ========== 多路径胜利系统 ==========
     # 所有阈值数值均为占位初值，需经测试调整（见 AI_EXPERIENCE.md）
 
-    PROLIFERATION_THRESHOLD = 2.0  # 癌变：README「累计恢复量达血限×2」；过量回复按原值计（双倍机制已删，DM裁定2026-08-18）
+    PROLIFERATION_THRESHOLD = 2.0  # 癌变：规则正文「累计恢复量达血限×2」；过量回复按原值计（双倍机制已删，DM裁定2026-08-18）
     CANCER_THRESHOLD = PROLIFERATION_THRESHOLD  # 别名：增生旧名已统一为癌变，二者同阈值
     DEBT_THRESHOLD = 20           # 还债：怪物负债达到20碎片时触发（DM裁定2026-08-22 由10上调）
     SCULPTURE_DAMAGE = 15         # 雕塑：每点耐久可造成的伤害
     SCULPTURE_SHIELD = 20         # 雕塑：每点耐久可获得的格挡
 
     def cancer_threshold_of(self, entity: Entity) -> int:
-        """README：累计恢复量达到血限×2（过量按原值计入 total_healed，双倍机制已删）。"""
+        """规则正文：累计恢复量达到血限×2（过量按原值计入 total_healed，双倍机制已删）。"""
         if entity.blood_limit <= 0:
             return 0
         return math.ceil(entity.blood_limit * self.PROLIFERATION_THRESHOLD)
@@ -2659,7 +2659,7 @@ class CombatEngine:
             if sha == "心煞":
                 result["sha_qi_cooldown_boost"] = True
 
-        # 【冷却X】代价：README「冷却X：使用后该道纹记为【X(0)/Y】，[战终]后已完成
+        # 【冷却X】代价：规则正文「冷却X：使用后该道纹记为【X(0)/Y】，[战终]后已完成
         # 战斗场数+1，达到Y时才能再次使用」。此前从未写入 cooldown_remaining，
         # 导致 固执/束缚/畸变/迟滞 可在同一场里无限重复发动（束缚因此支配全局）。
         if calc.get("cost_type") == "冷却":
@@ -2981,7 +2981,7 @@ class CombatEngine:
                 target, -calc["blood_limit_reduction"], name, EffectPolarity.DEBUFF.value,
                 ctx=daowen_ctx, source_type="daowen", subtype="blood_limit_reduction",
                 actor=caster, owner=caster, clamp_hp=False, lethal=False)
-            # README 第460行"[血限]及当前生命同时 -4X"：两者是各自独立的扣减。
+            # 规则正文"[血限]及当前生命同时 -4X"：两者是各自独立的扣减。
             # 此前实现只做 current_hp=min(current_hp, blood_limit)（血限压顶），
             # 对残血目标等于毫无效果。合并成一次写入：既保持与两步扣减相同的终值，
             # 又让 Entity.__setattr__ 的「失去生命后」钩子恰好触发一次。
@@ -3314,7 +3314,7 @@ class CombatEngine:
                             "mechanic": "damage", "subtype": "self_attack", "amount": target.attack_power,
                             "tags": {"daowen", "self_damage"},
                         })})
-        if "targets_removed" in calc:  # 封印：仅移出怪物（README：X个[目标]怪物）
+        if "targets_removed" in calc:  # 封印：仅移出怪物（规则正文：X个[目标]怪物）
             removed = 0
             removed_names = []
             if "targets_removed" in wave_pieces:
@@ -4138,8 +4138,8 @@ class CombatEngine:
         """自动反应法术路径：被选定方是否消耗 1 点速度闪避本次道纹。
 
         DM 裁定（2026-08-31）：法术说到底只是自定义了触发条件的道纹，
-        **道纹要遵守的规则，法术一样要遵守**。README:161「凡带 [目标] 道纹，
-        目标被选定时均可消耗 1 点当前速度进行闪避」、README:423「禁止跳过闪避判定」。
+        **道纹要遵守的规则，法术一样要遵守**。规则正文「凡带 [目标] 道纹，
+        目标被选定时均可消耗 1 点当前速度进行闪避」、规则正文「禁止跳过闪避判定」。
 
         原先 `_auto_after_life_lost_decision` 把 dodge 写死 False，导致**道纹伤害**
         （区别于基础攻击的显式反应窗口）触发的反应法术不给目标任何声明机会——
@@ -4636,7 +4636,7 @@ class CombatEngine:
     def _monster_round_used(self, monster: Entity) -> set:
         """该怪物本回合已发动的道纹集合（换回合自动清空）。
 
-        DM裁定（2026-08-18，README怪物准则9）：怪物可在不同回合重复发动同一
+        DM裁定（2026-08-18，规则正文·怪物准则9）：怪物可在不同回合重复发动同一
         道纹（冷却类由 can_use 管辖），每回合每道纹至多一次；重复使用的代价
         由道纹递增机制承担（每次实际发动 X+2×副本阶级）。
         _monster_activated 保留为持续激活口径（狂暴出手加成等），不再作发动门禁。
@@ -4991,7 +4991,7 @@ class CombatEngine:
         if not rewritten_as:
             activated.add(name)
             self._monster_round_used(monster).add(name)
-            # 怪物道纹递增（DM裁定2026-08-18，README怪物准则9）：每实际发动一次，
+            # 怪物道纹递增（DM裁定2026-08-18，规则正文·怪物准则9）：每实际发动一次，
             # 该道纹X本场累加+2×副本阶级。只在真正完成发动时累加（无法支付代价、
             # 崩解中断、被控跳过的回合均不计）；残韵改写的一次性结算不递增源道纹。
             # 怪物无法力概念，递增只放大效果数值与真实代价；实例随战斗结束消散。
@@ -5382,7 +5382,7 @@ class CombatEngine:
                         target, monster, hit.get("spell_choices"), refs,
                     )
                     attack_target = monster if monster.has_status("无神") else target
-                    # 无神重定向（README 479：目标强制选自身）：受击方已变为怪物自身，
+                    # 无神重定向（规则正文：目标强制选自身）：受击方已变为怪物自身，
                     # 但 hit["spell_choices"] 描述的是名义目标（玩家侧）的反应法术——
                     # resolve_attack 会按受击方资格集校验（见 1294 行），键集错配
                     # 必然报"必须逐一覆盖[]"，且此矛盾无法由提交方调和（同一字典需

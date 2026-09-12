@@ -319,7 +319,7 @@ class Entity:
     # 两个条件是"或"关系，故分别计数。多个角色同时达阈值时，非轮回者优先结算。
     no_action_rounds: int = 0   # 连续未出手回合数
     no_damage_rounds: int = 0   # 连续未使敌方生命减少的回合数
-    # 本场战斗内累计获得的[回复]量。README第304行：[战终]清除局内增益(包括回复)，
+    # 本场战斗内累计获得的[回复]量。规则正文：[战终]清除局内增益(包括回复)，
     # 故战终须把这部分回血扣除（不低于进场时的生命）。
     healed_this_battle: int = 0
     # 本场[战始]时的当前生命，作为回复清除后的生命下限
@@ -372,7 +372,7 @@ class Entity:
     def effective_attack_count(self) -> int:
         """攻击次数（DM裁定 2026-09-10，**换算仅限轮回者**）：轮回者 = 当前速度。
 
-        怪物/[朋友]/[员工]仍读面板值——怪物不持有法力（README:120），换算对它无意义。
+        怪物/[朋友]/[员工]仍读面板值——怪物不持有法力（规则正文），换算对它无意义。
         这样输出随资源衰减：闪避花掉速度，普攻的击数就跟着掉。
         """
         if self.entity_type == "轮回者":
@@ -755,7 +755,7 @@ class GameState:
     sealed_candidates: dict = field(default_factory=dict)  # {阶级: [候选快照, ...]}
     duel_tier: int = 0
     # 当前死斗中被挑战的擂主原始快照（触发时从队列取出后暂存）：
-    # 挑战者落败（擂主卫冕成功）时须按 README 550 规则放回队首重新封存。
+    # 挑战者落败（擂主卫冕成功）时须按 规则正文规则放回队首重新封存。
     duel_defending_snapshot: dict = field(default_factory=dict)
     
     # 员工相关
