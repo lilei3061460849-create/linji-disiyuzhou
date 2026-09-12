@@ -31,7 +31,7 @@ class CombatEngine:
     
     # 副本专属道纹
     REGION_EXCLUSIVE_DAOWEN = {
-        "扭曲都市": {"变形","定型","畸变","僵化","超频","坏死","爆裂","退化"},
+        "扭曲都市": {"变形","定型","畸变","搏命","超频","坏死","爆裂","退化"},
         "罪孽都市": {"点金","逼债","抵扣","清算","赎金","假钞","赌命","消灾"},
         "龙心谷":   {"加害","龙鳞","逆鳞","活血","裂变","嫁祸","背负","伤痕"},
     }
@@ -1908,7 +1908,7 @@ class CombatEngine:
             if expired:
                 # 只有“持续期间直接改写面板”的效果到期即还原；畸变/伤痕/逼债等
                 # 已经产生的累计局内后果保留到战终，再由battle作用域统一回滚。
-                panel_modifier_sources = {"强化", "弱化", "僵化"}
+                panel_modifier_sources = {"强化", "弱化"}
                 rolled_back = self.state.rollback_scoped_sources(
                     entity, set(expired) & panel_modifier_sources)
                 effects.append({

@@ -100,7 +100,7 @@ def test_energy_refunded_on_rejection():
     e = _engine("龙心谷")
     e.state.energy = 3
     e.execute_action("pre_battle_action",
-                     {"sub_action": "学习", "sub": "daowen", "name": "僵化"})
+                     {"sub_action": "学习", "sub": "daowen", "name": "退化"})
     assert e.state.energy == 3, "被拒绝时精力应退还"
 
 
@@ -122,7 +122,7 @@ def test_foreign_region_exclusive_always_rejected():
     e.state.player.dao_wen["裂变"] = DaoWenInstance(
         DaoWen(name="裂变", formula="", cost_type="消耗",
                cost_formula="X", effect_formula=""))
-    for foreign in ("僵化", "点金", "坏死", "逼债"):
+    for foreign in ("退化", "点金", "坏死", "逼债"):
         r = _learn(e, foreign)
         assert not r["success"], f"{foreign}属于其他副本，不应可学"
         assert "专属道纹" in r["error"]

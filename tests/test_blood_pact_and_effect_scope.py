@@ -266,14 +266,14 @@ def test_duration_expiry_rolls_back_matching_scoped_delta():
     state.apply_scoped_delta(
         player, "attack_power", -7,
         scope=EffectScope.BATTLE.value, polarity=EffectPolarity.DEBUFF.value,
-        source="僵化")
-    player.add_status(StatusEffect("僵化", 1, 1, "施法者"))
+        source="弱化")
+    player.add_status(StatusEffect("弱化", 1, 1, "施法者"))
     assert player.attack_power == 3
 
     CombatEngine(state, DiceEngine()).round_end()
 
     assert player.attack_power == 10
-    assert not player.has_status("僵化")
+    assert not player.has_status("弱化")
     assert state.scoped_effect_ledger == []
 
 

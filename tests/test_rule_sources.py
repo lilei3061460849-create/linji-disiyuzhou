@@ -19,7 +19,7 @@ def test_project_rules_are_extracted_from_their_authoritative_documents():
     facts = sync.extract_project_rules()
     assert len(facts["common_daowen"]) == 38  # 2026-08-21：冲击改名波及；删除缓慢/慈悲/切割
     assert len(facts["dungeon_daowen"]) == 64
-    assert len(facts["spells"]) == 9  # 2026-09-12：新增「血炼周天」（再生+透支自持循环）
+    assert len(facts["spells"]) == 10  # 2026-09-13：新增「血溅五步」（再生+搏命+杀伐循环）
     assert len(facts["dungeons"]) == 8
     assert len(facts["monsters"]) == 48  # 36 + 乱葬岗12(已实现)
     assert sync.diff_project_daowen()["in_file_only"] == []
@@ -27,7 +27,7 @@ def test_project_rules_are_extracted_from_their_authoritative_documents():
 
     spell_names = {spell["name"] for spell in facts["spells"]}
     item_names = {item["name"] for item in facts["items"]}
-    assert {"先发制人", "咎由自取", "血炼周天"} <= spell_names
+    assert {"先发制人", "咎由自取", "血炼周天", "血溅五步"} <= spell_names
     assert {"血誓戒", "冥婚契约", "归潮梭"} <= item_names
     assert "遗忘书屋" not in item_names, "事件不得再被误识别为遗物"
 

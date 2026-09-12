@@ -641,17 +641,23 @@ class DaoWenEngine:
         }
     
     @staticmethod
-    def calculate_jianghua(x: int, target: Entity = None) -> dict:
-        """僵化X：消耗5X。使[目标]攻击力固定为1，持续X"""
-        target_name = target.name if target is not None else "未选定目标"
+    def calculate_boming(x: int) -> dict:
+        """搏命X：代价：疲惫X。你获得X点法力
+
+        用户裁定 2026-09-13：放弃闪避换法力、拼死一搏。倍率被【超频】
+        (消耗2X法力→速度+X) 反向锁死——设倍率为k，卖X速度得kX法力可经
+        超频买回 kX/2 速度，净变化 X(k/2-1)：k≥2 即永动或速度无限暴涨。
+        故取 k=1，每卖1点速度净亏0.5点，循环必然收敛。
+        （遗物【折速法印】原为6X，因[战始]一次性且不可复发才安全；改为
+        可反复发动的道纹后必须砍到1X，该遗物同步删除，不再双份存在。）
+        """
         return {
-            "dao_wen": "僵化",
+            "dao_wen": "搏命",
             "x": x,
-            "cost_type": CostType.MANA.value,
-            "cost": 5 * x,
-            "attack_fixed": 1,
-            "duration": x,
-            "summary": f"消耗{5*x}法力，使{target_name}攻击力固定为1，持续{x}回合"
+            "cost_type": CostType.FATIGUE.value,
+            "cost_speed": x,
+            "mana_gain": x,
+            "summary": f"疲惫{x}，获得{x}点法力"
         }
     
     @staticmethod
@@ -1049,7 +1055,7 @@ class DaoWenEngine:
             "变形": cls.calculate_bianxing,
             "定型": cls.calculate_dingxing,
             "畸变": cls.calculate_jibian,
-            "僵化": cls.calculate_jianghua,
+            "搏命": cls.calculate_boming,
             "超频": cls.calculate_chaopin,
             "坏死": cls.calculate_huaisi,
             "爆裂": cls.calculate_baolie,
@@ -1181,9 +1187,9 @@ class ResonanceEngine:
         "扭曲都市闭环": [
             ("变形", "转换", "定型"),
             ("定型", "反转", "畸变"),
-            ("畸变", "曲解", "僵化"),
-            ("僵化", "转换", "超频"),
-            ("超频", "反转", "坏死"),
+            ("畸变", "曲解", "超频"),
+            ("超频", "反转", "搏命"),
+            ("搏命", "转换", "坏死"),
             ("坏死", "曲解", "爆裂"),
             ("爆裂", "曲解", "退化"),
             ("退化", "转换", "变形"),
