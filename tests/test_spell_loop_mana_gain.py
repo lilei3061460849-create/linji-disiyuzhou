@@ -22,22 +22,26 @@ import pytest
 from engine.models import DaoWen, DaoWenInstance
 from tests.test_dragon_heart import _new_engine, _start_with_enemy
 
+# 官方条目见 死者之书.md「## 可学法术 → 血炼周天」。先【再生】回血、再
+# 【透支】把血卖成法力，【透支】的流血同时满足「失去生命后」驱动下一轮，
+# 与【千刀万剐】靠代价自驱同构。故需 3 点法力垫付第一轮【再生】。
 SPELL = {
     "name": "血炼周天",
-    "required_daowen": ["透支", "再生"],
+    "required_daowen": ["再生", "透支"],
     "trigger_condition": "失去生命后",
-    "effect_flow": "发动透支X于自身→发动再生X于自身→循环",
+    "effect_flow": "发动再生X于自身→发动透支X于自身→循环",
 }
+SEED_MANA = 3
 
 
-def _engine_with_loop_spell(suffix, *, hp, mana, spells=(SPELL,)):
+def _engine_with_loop_spell(suffix, *, hp, mana, spells=None):
     engine = _new_engine(suffix)
     player = engine.state.player
     for name in ("透支", "再生"):
         player.dao_wen[name] = DaoWenInstance(
             DaoWen(name=name, formula="", cost_type="", cost_formula="X", effect_formula=""))
     # 自创法术只能在局外阶段学习，故所有法术都要赶在 _start_with_enemy 之前学完。
-    for spell in spells:
+    for spell in (spells if spells is not None else (SPELL,)):
         engine.state.energy = 3
         engine.execute_action("pre_battle_action",
                               {"sub_action": "学习", "sub": "custom_spell", "spell": spell})
@@ -83,36 +87,43 @@ def _fire(engine, cycles, x=3):
     return combat.resolve_monster_phase(choices, prepared=prepared)
 
 
-def test_zero_mana_loop_bootstraps_from_touzhi_output():
-    """0法力起步也能跑透支+再生循环——法力由循环内的透支现产现用。"""
-    engine = _engine_with_loop_spell("loop_zero", hp=40, mana=0)
+def test_single_cycle_is_mana_neutral():
+    """一轮循环法力净零：再生耗3、透支产3，法力回到起点，生命净+3。"""
+    engine = _engine_with_loop_spell("loop_one", hp=40, mana=SEED_MANA)
     player = engine.state.player
 
     _fire(engine, cycles=1)
 
-    # 挨打5点后触发：透支3(流血9、产3法力) → 再生3(耗3法力、回12生命)
-    assert player.current_hp == 38          # 40-5-9+12
-    assert player.current_mana == 0         # 法力净零：产3用3
+    # 挨打5点后触发：再生3(耗3法力、回12生命) → 透支3(流血9、产3法力)
+    assert player.current_hp == 38          # 40-5+12-9
+    assert player.current_mana == SEED_MANA  # 用3产3，回到起点
     assert player.total_healed == 12
+
+
+def test_loop_cannot_start_without_seed_mana():
+    """首步是【再生】，零法力起不来——循环自持但不自举。"""
+    engine = _engine_with_loop_spell("loop_noseed", hp=40, mana=0)
+    with pytest.raises(ValueError, match="法力不足"):
+        _fire(engine, cycles=1)
 
 
 def test_loop_is_mana_neutral_across_many_cycles():
     """多轮循环同样零法力自持，每轮净赚3生命。"""
-    engine = _engine_with_loop_spell("loop_many", hp=40, mana=0)
+    engine = _engine_with_loop_spell("loop_many", hp=40, mana=SEED_MANA)
     player = engine.state.player
 
     _fire(engine, cycles=10)
 
-    assert player.current_mana == 0
-    assert player.total_healed == 120       # 10轮 × 再生3回12
-    assert player.current_hp == 65          # 40-5 + 10×(12-9)
+    assert player.current_mana == SEED_MANA  # 10轮之后法力仍回到起点
+    assert player.total_healed == 120        # 10轮 × 再生3回12
+    assert player.current_hp == 57           # 40-5 + 10×(12-9)
     assert player.is_alive
 
 
 def test_cancer_still_caps_the_loop():
     """癌变是天然闸门：累计回复达2×血限即命零，提交再多循环也止步于此。"""
     for cycles in (11, 50):
-        engine = _engine_with_loop_spell(f"loop_cap_{cycles}", hp=40, mana=0)
+        engine = _engine_with_loop_spell(f"loop_cap_{cycles}", hp=40, mana=SEED_MANA)
         player = engine.state.player
         cap = 2 * player.blood_limit
 
