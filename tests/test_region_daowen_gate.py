@@ -59,7 +59,7 @@ def test_can_learn_same_region_after_owning_one():
 
 def test_transformed_monster_daowen_not_learnable_outside_battle():
     """正常路径：怪物转化道纹须以自身已持有的道纹为起点经残韵获得，
-    不可通过局外【学习】直接习得（规则正文/248行）"""
+    不可通过局外【学习】直接习得（规则正文·局外系统·学习门槛）"""
     e = _engine("龙心谷")
     for dw in ("蒙蔽", "坠落", "弱化"):
         r = _learn(e, dw)
