@@ -23,7 +23,7 @@ def test_fatigue_cost_records_speed_change_with_cost_parent():
     _, combat, player, _ = _state()
 
     payment = combat.pay_numeric_cost(player, "疲惫", 3, cost_context={
-        "timing": "battle_start", "source": "折速法印", "source_type": "relic",
+        "timing": "battle_start", "source": "苍白之花", "source_type": "relic",
         "actor": player, "target": player, "mechanic": "cost", "subtype": "fatigue",
         "amount": 3, "tags": {"active_payment"}, "event_id": "cost-speed-1",
     })
@@ -35,7 +35,7 @@ def test_fatigue_cost_records_speed_change_with_cost_parent():
     assert events[0]["mechanic"] == "speed_change"
     assert events[0]["amount"] == -3
     assert events[0]["parent_event_id"] == "cost-speed-1"
-    assert events[0]["source"] == "折速法印"
+    assert events[0]["source"] == "苍白之花"
 
 
 def test_huifeng_damage_records_speed_loss_parent_event():
@@ -43,7 +43,7 @@ def test_huifeng_damage_records_speed_loss_parent_event():
     state.relics = [Relic("回锋刀", "")]
 
     lost = combat._lose_current_speed(player, 2, "enemy:0", require_huifeng=True, ctx={
-        "timing": "battle_start", "source": "折速法印", "source_type": "relic",
+        "timing": "battle_start", "source": "苍白之花", "source_type": "relic",
         "actor": player, "target": player, "mechanic": "speed_change", "subtype": "current_speed",
         "amount": -2, "tags": {"active_payment"}, "event_id": "speed-1",
     })

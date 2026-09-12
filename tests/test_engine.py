@@ -23,7 +23,7 @@ def _choose_region(engine, region):
     result = engine.execute_action("setup_choose_region", {"region": region})
     if result.get("success") and engine.state.pending_relic_choices:
         # 通用流程测试不覆盖需要额外显式选择的遗物；相关遗物有独立测试。
-        optional = {"折速法印", "三相残韵盘", "回锋刀", "血契"}
+        optional = {"三相残韵盘", "回锋刀", "血契"}
         choice = next((n for n in engine.state.pending_relic_choices if n not in optional),
                       engine.state.pending_relic_choices[0])
         engine.execute_action("choose_discovered_relic", {"relic_name": choice})

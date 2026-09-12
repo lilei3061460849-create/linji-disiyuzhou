@@ -32,7 +32,7 @@ def _new_engine(db_suffix: str, daowen="杀伐") -> GameEngine:
     finish_initial_daowen(engine)
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
     setup = engine.execute_action("setup_choose_region", {"region": "罪孽都市"})
-    optional = {"折速法印", "三相残韵盘"}
+    optional = {"三相残韵盘"}
     choice = next((n for n in setup["result"]["relic_choices"] if n not in optional),
                   setup["result"]["relic_choices"][0])
     engine.execute_action("choose_discovered_relic", {"relic_name": choice})
@@ -51,7 +51,7 @@ def _start_with_enemy(engine, enemy):
     """battle_start会自动出怪，这里先start再替换为受控的测试怪物"""
     engine.state.energy = 0
     choices = {r.name: {"use": False} for r in engine.state.relics
-               if r.name in ("折速法印", "三相残韵盘")}
+               if r.name == "三相残韵盘"}
     engine.execute_action("battle_start", {"relic_choices": choices})
     engine.state.enemies.clear()
     engine.state.enemies.append(enemy)
@@ -180,11 +180,11 @@ def test_moneybag_does_not_protect_allies():
 
 
 def test_wangyouxiang_registered_in_revised_relic_pool():
-    """删除两件旧契约与钱袋（免疫癌变并入第一杯）后，忘忧香仍在11件遗物池中。"""
+    """删除两件旧契约、钱袋与折速法印后，忘忧香仍在10件遗物池中。"""
     engine = _new_engine("wangyou_registered")
     names = {n for n, _ in engine.RELIC_DEFS}
     assert "忘忧香" in names
-    assert len(engine.RELIC_DEFS) == 11
+    assert len(engine.RELIC_DEFS) == 10
     assert "血契" in names
     assert "钱袋" not in names
 

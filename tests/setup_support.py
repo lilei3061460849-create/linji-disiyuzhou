@@ -3,7 +3,7 @@ from typing import Optional
 
 from engine.models import DaoWen, DaoWenInstance
 
-OPTIONAL_BATTLE_START = ("折速法印", "三相残韵盘", "猩红果实", "苍白之花")
+OPTIONAL_BATTLE_START = ("三相残韵盘", "猩红果实", "苍白之花")
 OPTIONAL_ROUND_START = ("血契", "余火印")
 
 

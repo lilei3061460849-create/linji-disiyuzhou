@@ -35,7 +35,7 @@ from sim.build_learner import _resolve_monster_turn
 from sim.optional_actions import battle_start_relic_choices, round_start_relic_choices
 from sim.alt_win_paths_probe import player_round_cancer
 
-INTERACTIVE_RELICS = {"折速法印", "三相残韵盘", "回锋刀", "血契", "无所求"}
+INTERACTIVE_RELICS = {"三相残韵盘", "回锋刀", "血契", "无所求"}
 CORE = ["杀伐", "庇护", "再生"]
 
 # 候选池：AI 战术表内、玩家可持有（排除原始怪物道纹与核心已含）

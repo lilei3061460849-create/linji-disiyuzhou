@@ -2,12 +2,12 @@
 pytest - 可选遗物/法器策略（sim/optional_actions.py）
 
 背景（用户：可以不用 但是不能不让用，修）：
-此前所有脚本把可选战始遗物（折速法印/三相残韵盘/猩红果实/苍白之花）一律
+此前所有脚本把可选战始遗物（三相残韵盘/猩红果实/苍白之花）一律
 use:False 拒绝，回始遗物（血契/余火印）从不使用，终音法器（黑金名片/罪业金库/
 教父左轮/烬翼/鲜血之翼/共心环）没有任何发动策略——这些机制"存在但不可用"。
 
 本测试锁定：
-1. 战始遗物按情形主动发动（速度高→折速法印换法力；有残韵→三相残韵盘）
+1. 战始遗物按情形主动发动（有残韵→三相残韵盘；速度高→苍白之花）
 2. 回始遗物按情形主动发动（血契换法力）
 3. 终音法器可被实际发动（黑金名片减敌血限/罪业金库换格挡/教父左轮必中伤害/
    共心环共享龙心/鲜血之翼飞行）
@@ -47,19 +47,9 @@ def engine(tmp_path):
 
 # ---------- 战始遗物 ----------
 
-def test_zhe_su_fa_yin_used_when_speed_high(engine):
-    """速度高时折速法印应主动发动（疲惫X→+6X法力），且引擎真实结算。"""
-    engine.state.relics.append(Relic(name="折速法印", effect="[战始]可疲惫X获得6X法力"))
-    engine.state.energy = 0
-    choices = battle_start_relic_choices(engine)
-    assert choices.get("折速法印", {}).get("use") is True, "速度8应发动折速法印"
-    speed_before = engine.state.player.current_speed
-    bs = engine.execute_action("battle_start", {"relic_choices": choices})
-    assert bs.get("success"), bs
-    logs = bs.get("relic_logs") or []
-    assert any("折速法印" in str(l) for l in logs), logs
-    assert engine.state.player.current_speed < speed_before
-    assert engine.state.player.current_mana >= 6  # 折速法印法力叠加在战始清零之后
+# 【折速法印】的两条用例（速度高则发动、速度低则拒绝）随该遗物于
+# 2026-09-13 一并删除——其"疲惫换法力"效果已改为道纹【搏命】，
+# 回归见 tests/test_boming_daowen.py。
 
 
 def test_san_xiang_disc_consumes_abundant_resonance(engine):
@@ -74,15 +64,6 @@ def test_san_xiang_disc_consumes_abundant_resonance(engine):
     bs = engine.execute_action("battle_start", {"relic_choices": choices})
     assert bs.get("success"), bs
     assert any("三相残韵盘" in str(l) for l in (bs.get("relic_logs") or []))
-
-
-def test_zhe_su_declined_when_speed_low(engine):
-    """速度过低时折速法印应显式拒绝（use=False），不硬发动。"""
-    engine.state.relics.append(Relic(name="折速法印", effect="[战始]可疲惫X获得6X法力"))
-    engine.state.player.current_speed = 1
-    engine.state.energy = 0
-    choices = battle_start_relic_choices(engine)
-    assert choices.get("折速法印", {}).get("use") is False
 
 
 # ---------- 回始遗物 ----------

@@ -453,36 +453,9 @@ def test_duel_target_daowen_no_speed_cannot_dodge():
     _cleanup(path)
 
 
-def test_duel_opponent_chooses_zhesu_relic():
-    """正常路径：对手自己决定是否发动折速；发动则疲惫X换6X法力"""
-    path = "data/test_duel_zhesu.json"
-    _cleanup(path)
-    sealed = _new_candidate("zhesu_sealed", path, speed_points=8, name="封存贾凡")
-    from engine.models import Relic
-    sealed.state.relics.append(Relic(name="折速法印", effect="[战始]可疲惫X获得6X法力"))
-    _finish_battle_7(sealed)
-    challenger = _new_candidate("zhesu_challenger", path, speed_points=12, name="挑战贾凡")
-    r = _finish_battle_7(challenger)
-    crown = r["result"]["final_crown"]
-    assert any(o["name"] == "折速法印" and o["side"] == "opponent_side" for o in crown["optional_relics"])
-    opp = next(e for e in challenger.state.enemies if e.entity_type == "轮回者")
-    refuse = challenger.execute_action("activate_duel_relic", {
-        "side": "opponent_side", "relic": "折速法印", "use": False,
-    })
-    assert refuse["success"] is True
-    assert opp.current_speed == opp.speed_limit   # 新口径下速限=加点//2，不再硬编码 8
-    use = challenger.execute_action("activate_duel_relic", {
-        "side": "opponent_side", "relic": "折速法印", "use": True, "x": 4,
-    })
-    assert use["success"] is True, use
-    assert opp.current_speed == max(0, opp.speed_limit - 4)   # 折速4付疲惫4，新口径速限4→0
-    # DM裁定 2026-09-09：开场已是满池，折速的 6X 叠在其上（法力允许超过[法限]）
-    assert opp.current_mana == opp.mana_limit + 24
-    bad = challenger.execute_action("activate_duel_relic", {
-        "side": "opponent_side", "relic": "折速法印", "use": True, "x": 9,
-    })
-    assert bad["success"] is False
-    _cleanup(path)
+# 【折速法印】的死斗发动用例随该遗物于 2026-09-13 一并删除——其"疲惫换法力"
+# 效果已改为道纹【搏命】，回归见 tests/test_boming_daowen.py。
+# 死斗开场可选遗物目前只剩【三相残韵盘】。
 
 
 def test_duel_activate_relic_rejected_without_duel():
@@ -492,7 +465,7 @@ def test_duel_activate_relic_rejected_without_duel():
     engine.execute_action("setup_attributes", {"blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(engine)
     r = engine.execute_action("activate_duel_relic", {
-        "side": "player_side", "relic": "折速法印", "use": True, "x": 1,
+        "side": "player_side", "relic": "三相残韵盘", "use": True,
     })
     assert r["success"] is False
 

@@ -155,13 +155,13 @@ def test_r11_r17_normal_two_stage_monster_choices(tmp_path):
 
 def test_r11_r17_boundary_relic_and_first_aid_require_explicit_choices(tmp_path):
     engine = _full_setup(_engine(tmp_path))
-    engine.state.relics = [Relic("折速法印", "")]
+    engine.state.relics = [Relic("三相残韵盘", "")]
     engine.state.energy = 0
     missing = engine.execute_action("battle_start", {"relic_choices": {}})
     assert not missing["success"]
     assert engine.state.current_battle == 0
     ok = engine.execute_action("battle_start", {
-        "relic_choices": {"折速法印": {"use": True, "x": 1}},
+        "relic_choices": {"三相残韵盘": {"use": False}},
     })
     assert ok["success"]
     assert engine.execute_action("round_start", {"relic_choices": {}})["success"]

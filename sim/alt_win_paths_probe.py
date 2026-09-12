@@ -25,7 +25,7 @@ from engine.api import GameEngine
 from sim.build_learner import _resolve_monster_turn
 from sim.optional_actions import battle_start_relic_choices, round_start_relic_choices
 
-INTERACTIVE_RELICS = {"折速法印", "三相残韵盘", "回锋刀", "血契", "无所求"}
+INTERACTIVE_RELICS = {"三相残韵盘", "回锋刀", "血契", "无所求"}
 
 
 def _setup(seed: int, region: str, learn: list[str]):

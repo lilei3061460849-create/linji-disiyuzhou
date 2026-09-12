@@ -58,9 +58,14 @@ def test_battle_start_grants_full_pool():
 def test_relic_gain_stacks_over_full_pool():
     """边界：遗物获得叠在满池上，允许超过[法限]（反向禁区：不得加 clamp）。"""
     e = _engine("relic", blood_points=7, speed_points=8, mana_points=10)
-    e.state.relics.append(Relic(name="折速法印", effect="[战始]可疲惫X获得6X法力"))
+    # 原用【折速法印】(疲惫4→+24法力) 验证；该遗物已于 2026-09-13 删除
+    #（效果改为道纹【搏命】）。这条反向禁区针对的是"遗物/道纹给的法力
+    # 不得被钳回[法限]"，故改为直接走 gain_mana 这一公共入账口径。
     p = e.state.player
-    begin_battle(e, relic_choices={"折速法印": {"use": True, "x": 4}})
+    begin_battle(e)
+    assert p.current_mana == p.mana_limit
+    p.current_mana += 24
+    e.combat.clamp_immortal_body(p)   # 唯一允许压回[法限]的是遗物【不朽之躯】
     assert p.current_mana == p.mana_limit + 24, p.current_mana
     assert p.current_mana > p.mana_limit, "超过法限是合法面板"
 

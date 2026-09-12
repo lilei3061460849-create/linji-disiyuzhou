@@ -32,7 +32,7 @@ bl = _load()
 
 def _finish_region_setup(engine, region):
     result = engine.execute_action("setup_choose_region", {"region": region})
-    optional = {"折速法印", "三相残韵盘"}
+    optional = {"三相残韵盘"}
     choice = next((n for n in result["result"]["relic_choices"] if n not in optional),
                   result["result"]["relic_choices"][0])
     engine.execute_action("choose_discovered_relic", {"relic_name": choice})
@@ -42,7 +42,7 @@ def _finish_region_setup(engine, region):
 def _start_battle(engine, relic):
     engine.state.energy = 0
     choices = {relic: {"use": False}} if relic in {
-        "折速法印", "三相残韵盘"} else {}
+        "三相残韵盘"} else {}
     return engine.execute_action("battle_start", {"relic_choices": choices})
 
 
@@ -715,8 +715,10 @@ def test_bone_angel_hit_count_drift_no_longer_invalid():
     #   删后：cleared=1，第2场死于脑蜘蛛，碎片45，todo_left=[]（构筑成型）
     # 原因是原先花在【领悟】上的精力现在转投修行/学习，构筑得以补齐。
     # 这里断言"跑出了确定结局且构筑能成型"，不钉通关率——那属平衡结果，会随数值变动。
-    assert r["won"] is False and r["cleared"] == 1
-    assert r["pm"]["battle"] == 2, f"应打到第2场，实{r['pm']}"
+    # 2026-09-13：折速法印从遗物池删除，本 seed 的遗物抽取序列随之改变
+    #（cleared 1→2、第2场→第3场死于血肉巨囊）。按上述原则不再钉死具体场数。
+    assert r["won"] is False and r["cleared"] >= 1
+    assert r["pm"]["battle"] >= 2, f"应至少打到第2场，实{r['pm']}"
     assert r["pm"]["todo_left"] == [], f"构筑应成型（待学清单清空），实{r['pm']}"
 
 

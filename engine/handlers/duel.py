@@ -28,25 +28,6 @@ def handle_activate_duel_relic(engine: Any, params: Dict[str, Any]) -> Dict[str,
     if not use:
         return {"success": True, "action": f"{holder.name}放弃发动【{name}】",
                 "result": {"relic": name, "used": False}}
-    if name == "折速法印":
-        try:
-            x = int(params.get("x", 0))
-        except (TypeError, ValueError):
-            return {"success": False, "error": "X必须为整数"}
-        if x < 1 or x > holder.current_speed:
-            return {"success": False, "error": f"折速X须在1~当前速度{holder.current_speed}之间"}
-        ref = params.get("target_ref") or params.get("huifeng_target_ref") or ""
-        if ref:
-            engine.combat._remember_huifeng_target(holder, ref)
-        payment = engine.combat.pay_numeric_cost(
-            holder, "疲惫", x,
-            cost_share_target_ref=params.get("cost_share_target_ref", ""),
-            cost_context={"timing": "battle_start", "source": name, "source_type": "relic", "tags": {"active_payment"}})
-        holder.current_mana += 6 * x
-        engine.combat.clamp_immortal_body(holder)
-        return {"success": True, "action": f"{holder.name}发动【折速法印】",
-                "result": {"relic": name, "used": True, "x": x, "cost": payment,
-                           "speed": holder.current_speed, "mana": holder.current_mana}}
     return {"success": False, "error": f"【{name}】不是死斗开场可选遗物，或尚未接线"}
 
 

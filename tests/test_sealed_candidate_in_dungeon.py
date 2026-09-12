@@ -76,7 +76,7 @@ def test_sealed_candidate_fights_in_dungeon():
     # 打一场乱葬岗战斗（显式提交战始遗物）
     e.state.energy = 0
     active = {r.name for r in e.state.relics if e.state.sealed_relics.get(r.name, 0) <= 0}
-    bs_choices = {n: {"use": False} for n in ("三相残韵盘", "折速法印", "猩红果实", "苍白之花") if n in active}
+    bs_choices = {n: {"use": False} for n in ("三相残韵盘", "猩红果实", "苍白之花") if n in active}
     bs = e.execute_action("battle_start", {"relic_choices": bs_choices})
     assert bs["success"], bs
     assert len(e.state.enemies) >= 1, "乱葬岗应出怪"

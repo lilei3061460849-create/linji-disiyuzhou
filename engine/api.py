@@ -1499,13 +1499,12 @@ class GameEngine:
         9: ("封存血脉", "保留触发权，随时再次触发初拥之夜"),
     }
 
-    # 遗物池定义（11件；【发现】只列候选，效果在对应触发时点应用）
+    # 遗物池定义（10件；【发现】只列候选，效果在对应触发时点应用）
     RELIC_DEFS = [
         ("血誓戒", "[回始]首次主动支付流血代价时，获得等同于本次流血的格挡；若支付后生命≤30%，改为获得等量生命"),
         ("买路财", "战斗中可失去等同于怪物20%[血限]的[碎片]安全撤退"),
         ("同魂笔", "对[目标]发动残韵时，可另选一[目标]使其一种道纹受同种残韵影响"),
         ("回锋刀", "每失去1点速度后对[目标]造成3伤害；[回始]对[目标]造成3×([速限]-当前速度)伤害"),
-        ("折速法印", "[战始]可疲惫X获得6X法力"),
         ("三相残韵盘", "[战始]消耗一种残韵；[战终]获得另两种残韵各1"),
         ("血契", "数值型【代价】可与一名存活的朋友或员工平分，余数按随机数分配（通用规则见规则正文《基础定义·平分规则》）；[回始]可流血4X获得X法力，本次流血也可平分"),
         ("避风铃", "每次闪避后获得3格挡；当前速度归零时获得15格挡"),
@@ -4128,16 +4127,16 @@ class GameEngine:
 
         # DM裁定 2026-09-09：法力不再每[回始]回填，改为**一池制**——[战始]给满
         # 等同[法限]的一池，整场只出不进，[战终]复原（与[速度]同口径）。
-        # 先赋值再结算战始遗物，折速法印因此叠在满池之上，不会被赋值冲掉。
+        # 先赋值再结算战始遗物，遗物额外法力因此叠在满池之上，不会被赋值冲掉。
         if self.state.player and self.state.player.is_alive:
             self.state.player.current_mana = self.state.player.mana_limit
         relic_logs = self.combat.process_relics(TriggerTiming.BATTLE_START, {"relic_choices": relic_choices})
 
         artifact_logs = self._apply_terminal_artifacts_on_battle_start()
 
-        # 全局法术【战始】：必须在战始遗物（如折速法印）结算之后才检查，
+        # 全局法术【战始】：必须在战始遗物结算之后才检查，
         # 否则法力已被本action开头清零、任何消耗法力的战始法术都会法力不足——
-        # 与"折速法印在0上叠加"的既有顺序一致，法术同样吃得到本场战始的
+        # 与"战始遗物在0上叠加"的既有顺序一致，法术同样吃得到本场战始的
         # 法力加成。
         spell_logs = self._resolve_global_trigger_spells_for_action(
             TriggerTiming.BATTLE_START.value, params)
@@ -4401,10 +4400,10 @@ class GameEngine:
 
         optional = []
         for r in self.state.opponent_relics:
-            if r.name in ("折速法印", "三相残韵盘"):
+            if r.name == "三相残韵盘":
                 optional.append({"side": "opponent_side", "name": r.name, "effect": r.effect})
         for r in self.state.relics:
-            if r.name in ("折速法印", "三相残韵盘"):
+            if r.name == "三相残韵盘":
                 optional.append({"side": "player_side", "name": r.name, "effect": r.effect})
 
         return {

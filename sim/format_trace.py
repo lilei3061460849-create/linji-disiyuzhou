@@ -41,7 +41,7 @@ def run(region: str = "龙心谷", seed: int = 7, battles: int = 3) -> list[str]
                           {"name": "贾凡", "blood_points": 10, "speed_points": 8, "mana_points": 6})
     # 新开局流程：先发现遗物3选1，再发现初始道纹3选1
     relic_options = list(setup_attr["result"]["relic_choices"])
-    optional = {"折速法印", "三相残韵盘"}
+    optional = {"三相残韵盘"}
     starter = next((name for name in relic_options if name not in optional),
                    relic_options[0])
     picked_relic = engine.execute_action("choose_discovered_relic", {"relic_name": starter})

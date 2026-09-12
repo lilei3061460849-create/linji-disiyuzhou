@@ -31,13 +31,13 @@ def _ready_combat(engine, region="罪孽都市"):
     finish_initial_daowen(engine)
     engine.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = engine.execute_action("setup_choose_region", {"region": region})
-    optional = {"折速法印", "三相残韵盘", "回锋刀", "血契"}
+    optional = {"三相残韵盘", "回锋刀", "血契"}
     choice = next((n for n in setup["result"]["relic_choices"] if n not in optional),
                   setup["result"]["relic_choices"][0])
     engine.execute_action("choose_discovered_relic", {"relic_name": choice})
     engine.state.energy = 0
     relic_choices = {r.name: {"use": False} for r in engine.state.relics
-                     if r.name in ("折速法印", "三相残韵盘")}
+                     if r.name == "三相残韵盘"}
     engine.execute_action("battle_start", {"relic_choices": relic_choices})
     round_choices = {}
     if any(r.name == "回锋刀" for r in engine.state.relics):

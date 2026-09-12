@@ -99,16 +99,15 @@ def _spell_choices_for(candidates, spell_name, x, target_ref):
 
 
 def probe_battle_start():
-    """战始：法术在战始（法力已重置为0，靠【折速法印】遗物结算后获得法力）对自身发动再生回血。
+    """战始：法术在战始对自身发动再生回血。
 
-    战始本身会先把玩家法力清零、再结算战始遗物，全局法术紧随其后结算
-    （见 engine/api.py._action_battle_start 的顺序注释）——因此本探针
-    显式持有【折速法印】遗物，验证法术确实能吃到本场战始的法力加成，
-    而不是在法力恒为0的错误时点上被误判"接线失败"。
+    战始会先把法力重置为当前[法限]满池、再结算战始遗物，全局法术紧随其后
+    结算（见 engine/api.py._action_battle_start 的顺序注释）——法术因此
+    能吃到本场战始已经到账的法力，不会在法力恒为0的错误时点上被误判
+    "接线失败"。（原先靠已删除的遗物【折速法印】提供法力，现直接依赖满池。）
     """
     e = _fresh_engine("battle_start")
     _give_daowen(e.state.player, "再生")
-    e.state.relics.append(Relic(name="折速法印", effect="[战始]可以疲惫X，获得6X点法力。"))
     definition = {"name": "开局回春", "required_daowen": ["再生"],
                   "trigger_condition": "战始",
                   "effect_flow": "发动再生X于自身"}
@@ -120,14 +119,14 @@ def probe_battle_start():
     candidates = e.combat.prepare_global_trigger_spells("战始")
     listed = bool(candidates)
     r = e.execute_action("battle_start", {
-        "relic_choices": {"折速法印": {"use": True, "x": 3}},  # 获得18点法力
+        "relic_choices": {},
         "spell_choices": _spell_choices_for(candidates, "开局回春", 4, "player:0"),
     })
     hp_after = e.state.player.current_hp
     fired = r["success"] and hp_after > hp_before
     record("战始", wired, fired,
            f"学习前listed={listed}；resolve success={r['success']}；玩家hp {hp_before}→{hp_after}"
-           f"（应因【折速法印】x=3获得18法力后，再靠【再生4】回12血，法力足以支付8点消耗）")
+           f"（应在[战始]满池法力上靠【再生4】回12血，法力足以支付4点消耗）")
 
 
 def probe_battle_end():

@@ -38,7 +38,7 @@ def _engine(suffix: str) -> GameEngine:
     finish_initial_daowen(engine)
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
     setup = engine.execute_action("setup_choose_region", {"region": "罪孽都市"})
-    optional = {"折速法印", "三相残韵盘"}
+    optional = {"三相残韵盘"}
     choice = next((n for n in setup["result"]["relic_choices"] if n not in optional),
                   setup["result"]["relic_choices"][0])
     engine.execute_action("choose_discovered_relic", {"relic_name": choice})
@@ -194,17 +194,17 @@ def test_resonance_fails_without_holder_or_stock():
 # ========================================================================
 
 def test_zhesu_and_blood_pact_overflow_survives_first_round_start():
-    """正常路径：折速在战始加法力；血契在回始流血4X并叠加X法力。"""
+    """正常路径：超池法力在回始不被回填/钳制；血契在回始流血4X并叠加X法力。
+
+    原由【折速法印】(疲惫4→+24法力) 制造超池；该遗物已于 2026-09-13 删除
+    （效果改为道纹【搏命】），改为直接加满再溢出，验证的仍是同一条一池制规则。
+    """
     engine = _engine("mana_happy")
     p = engine.state.player
     assert p.mana_limit == EXP_MANA and p.speed_limit == EXP_SPEED
-    engine.state.relics.append(Relic(name="折速法印", effect="[战始]可疲惫X获得6X法力"))
-    zhesu = {"折速法印": {"use": True, "x": 4}}
-    if any(r.name == "回锋刀" for r in engine.state.relics):
-        zhesu["回锋刀"] = {"enemy_index": 0}
-    engine.execute_action("battle_start", {"relic_choices": zhesu})
-    assert p.current_mana == EXP_MANA + 24, f"战始给满{EXP_MANA}，再折速4 +24，应{EXP_MANA + 24}，实{p.current_mana}"
-    assert p.current_speed == max(0, EXP_SPEED - 4)   # 折速4付疲惫4，速限4被扣到0
+    engine.execute_action("battle_start", {"relic_choices": {}})
+    assert p.current_mana == EXP_MANA
+    p.current_mana += 24
     engine.execute_action("round_start", {})
     assert p.current_mana == EXP_MANA + 24, f"一池制：回始不回填，应仍{EXP_MANA + 24}，实{p.current_mana}"
 
@@ -238,7 +238,7 @@ def test_round_start_does_not_refill_mana():
 
 
 def test_no_zhesu_means_no_bonus_mana():
-    """错误输入/对照：未持有折速法印时战始只有满池、不额外加法力、不扣速度。"""
+    """错误输入/对照：无加法力遗物时战始只有满池、不额外加法力、不扣速度。"""
     engine = _engine("mana_invalid")
     p = engine.state.player
     engine.execute_action("battle_start", {})
@@ -271,16 +271,16 @@ def test_shouyedeng_bonus_is_its_own_slice():
 
 
 def test_shouyedeng_stacks_on_zhesu_overflow():
-    """边界：折速在满池上再加24；回始不回填；守夜灯走敌回始。"""
+    """边界：满池上再溢出24；回始不回填；守夜灯走敌回始仍叠加。
+
+    原用【折速法印】制造溢出，该遗物已删除（见 test_zhesu_and_blood_pact...）。
+    """
     engine = _engine("lamp_bound")
     p = engine.state.player
-    engine.state.relics.append(Relic(name="折速法印", effect="[战始]可疲惫X获得6X法力"))
     engine.state.relics.append(Relic(name="守夜灯", effect="[敌回始]获得等同于[法限]50%的法力"))
-    zhesu = {"折速法印": {"use": True, "x": 4}}
-    if any(r.name == "回锋刀" for r in engine.state.relics):
-        zhesu["回锋刀"] = {"enemy_index": 0}
-    engine.execute_action("battle_start", {"relic_choices": zhesu})
-    assert p.current_mana == EXP_MANA + 24, f"满池{EXP_MANA}+折速24应{EXP_MANA + 24}，实{p.current_mana}"
+    engine.execute_action("battle_start", {"relic_choices": {}})
+    p.current_mana += 24
+    assert p.current_mana == EXP_MANA + 24, f"满池{EXP_MANA}+24应{EXP_MANA + 24}，实{p.current_mana}"
     engine.execute_action("round_start", {})
     assert p.current_mana == EXP_MANA + 24, f"回始不回填，应仍{EXP_MANA + 24}，实{p.current_mana}"
     # 守夜灯授予量=ceil(法限/2)（旧口径法限14→7，现法限3→2），按面板推导

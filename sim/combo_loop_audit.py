@@ -38,10 +38,10 @@ from tests.setup_support import finish_initial_daowen
 
 
 RELIC_POOL = [
-    "血誓戒", "买路财", "同魂笔", "回锋刀", "折速法印", "三相残韵盘",
+    "血誓戒", "买路财", "同魂笔", "回锋刀", "三相残韵盘",
     "血契", "避风铃", "守夜灯", "无所求", "忘忧香",
 ]
-INTERACTIVE = {"折速法印", "三相残韵盘", "回锋刀", "血契", "无所求"}
+INTERACTIVE = {"三相残韵盘", "回锋刀", "血契", "无所求"}
 HUNT = {
     "急速": ("减速", "转换"),
     "加速": ("减速", "反转"),
@@ -134,17 +134,21 @@ def lab_jisu_dodge_loop():
 
 
 def lab_zhesu_huifeng():
-    """折速疲惫失去当前速度，触发回锋刀每失速3伤；回始再按缺口造伤。"""
+    """疲惫类战始遗物失去当前速度，触发回锋刀每失速3伤；回始再按缺口造伤。
+
+    原用【折速法印】(疲惫X→6X法力)，该遗物已于 2026-09-13 删除（其效果
+    改为道纹【搏命】），此处改用同为疲惫代价的【苍白之花】(疲惫5)。
+    """
     e = _lab_engine("zhesu")
     p = e.state.player
     m = _monster(e, hp=200)
-    e.state.relics.append(Relic("折速法印", ""))
+    e.state.relics.append(Relic("苍白之花", ""))
     e.state.relics.append(Relic("回锋刀", ""))
     p.current_speed = p.speed_limit
     p.current_mana = 0
     before_spd, before_hp = p.current_speed, m.current_hp
     e.combat.process_relics("battle_start", {"relic_choices": {
-        "折速法印": {"use": True, "x": 4},
+        "苍白之花": {"use": True},
         "回锋刀": {"enemy_index": 0},
     }})
     after_bs = {

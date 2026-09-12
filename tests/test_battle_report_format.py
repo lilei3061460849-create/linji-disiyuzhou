@@ -30,7 +30,7 @@ def _new_engine(tmp_path, region="龙心谷"):
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": region})
-    optional = {"折速法印", "三相残韵盘"}
+    optional = {"三相残韵盘"}
     choice = next((name for name in setup["result"]["relic_choices"] if name not in optional),
                   setup["result"]["relic_choices"][0])
     e.execute_action("choose_discovered_relic", {"relic_name": choice})
@@ -63,13 +63,13 @@ def test_setup_discovery_lists_options_then_pick():
         blood_limit=42, mana_limit=20, speed_limit=8, action_count=3, shards=20,
         daowen_options=["波及", "再生", "束缚"], daowen_pick="波及",
         resonance="反转",
-        relic_options=["避风铃", "回锋刀", "折速法印"], relic_pick="避风铃",
+        relic_options=["避风铃", "回锋刀", "守夜灯"], relic_pick="避风铃",
         region="罪孽都市",
     )
     text = "\n".join(lines)
     assert text.startswith("[开局]")
     assert "初始道纹发现：候选〔波及、再生、束缚〕→选择【波及】" in text
-    assert "遗物发现：候选〔避风铃、回锋刀、折速法印〕→选择【避风铃】" in text
+    assert "遗物发现：候选〔避风铃、回锋刀、守夜灯〕→选择【避风铃】" in text
     assert "副本：罪孽都市" in text
 
 
@@ -94,7 +94,7 @@ def test_setup_discovery_rejects_result_only():
             blood_limit=60, mana_limit=14, speed_limit=8, action_count=3, shards=20,
             daowen_options=[], daowen_pick="杀伐",
             resonance="反转",
-            relic_options=["避风铃", "回锋刀", "折速法印"], relic_pick="避风铃",
+            relic_options=["避风铃", "回锋刀", "守夜灯"], relic_pick="避风铃",
         )
     with pytest.raises(ValueError, match="遗物发现候选"):
         BR.format_setup_discovery(
@@ -110,7 +110,7 @@ def test_setup_discovery_rejects_result_only():
             blood_limit=60, mana_limit=14, speed_limit=8, action_count=3, shards=20,
             daowen_options=["波及", "再生", "束缚"], daowen_pick="杀伐",
             resonance="反转",
-            relic_options=["避风铃", "回锋刀", "折速法印"], relic_pick="避风铃",
+            relic_options=["避风铃", "回锋刀", "守夜灯"], relic_pick="避风铃",
         )
 
 

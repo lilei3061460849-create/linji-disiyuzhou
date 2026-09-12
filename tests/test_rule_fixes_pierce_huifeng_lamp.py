@@ -113,32 +113,39 @@ def test_pierce_absent_still_blocked_by_shield(tmp_path):
     assert m.current_hp == 80 - max(0, dmg - 40)
 
 
-# ---------- 回锋刀 + 折速 ----------
+# ---------- 回锋刀 + 疲惫类战始遗物 ----------
+# 原用【折速法印】(疲惫X→6X法力) 驱动失速；该遗物已于 2026-09-13 删除
+# （效果改为道纹【搏命】），改用同为疲惫代价的【苍白之花】(固定疲惫5)。
 
 def test_zhesu_fatigue_triggers_huifeng(tmp_path):
-    """正常路径：折速疲惫4失去4速，回锋刀立即对显式目标打12。"""
+    """正常路径：苍白之花疲惫5失去5速（速限不足则清零），回锋刀按实际失速打伤害。"""
     e = _engine(tmp_path, "hf_ok")
-    e.state.relics.append(Relic("折速法印", ""))
+    e.state.relics.append(Relic("苍白之花", ""))
     e.state.relics.append(Relic("回锋刀", ""))
+    p = e.state.player
+    # 苍白之花固定疲惫5：当前速度必须付得起（[战始]按速限给满，故两者同抬）
+    p.speed_limit = max(p.speed_limit, 8)
+    p.current_speed = p.speed_limit
+    limit = p.speed_limit
     begin_battle(e, relic_choices={
-        "折速法印": {"use": True, "x": 4},
+        "苍白之花": {"use": True},
         "回锋刀": {"enemy_index": 0},
     })
-    p, m = e.state.player, e.state.enemies[0]
-    assert p.current_speed == max(0, p.speed_limit - 4)   # 折速4付疲惫4，新口径速限4→0
-    # DM裁定 2026-09-09：战始给满一池，折速的 24 叠在其上
-    assert p.current_mana == p.mana_limit + 24
-    assert m.current_hp == m.blood_limit - 12
+    m = e.state.enemies[0]
+    assert p.current_speed == limit - 5
+    assert m.current_hp == m.blood_limit - 15   # 失速5 × 每点3伤
 
 
 def test_zhesu_without_target_is_atomic(tmp_path):
-    """非法：持回锋刀发动折速却不提交目标，战始失败且不扣速、不加力。"""
+    """非法：持回锋刀发动疲惫类遗物却不提交目标，战始失败且不扣速、不加力。"""
     e = _engine(tmp_path, "hf_illegal")
-    e.state.relics = [Relic("折速法印", ""), Relic("回锋刀", "")]
+    e.state.relics = [Relic("苍白之花", ""), Relic("回锋刀", "")]
     p = e.state.player
+    p.speed_limit = max(p.speed_limit, 8)
+    p.current_speed = p.speed_limit
     speed, mana, battle = p.current_speed, p.current_mana, e.state.current_battle
     bad = begin_battle(e, relic_choices={
-        "折速法印": {"use": True, "x": 4},
+        "苍白之花": {"use": True},
     })
     assert not bad["success"]
     assert "回锋刀" in bad["error"]
@@ -148,12 +155,12 @@ def test_zhesu_without_target_is_atomic(tmp_path):
 
 
 def test_zhesu_declined_does_not_need_huifeng_target(tmp_path):
-    """边界：折速显式拒绝时不必提交回锋刀目标，也不造伤。"""
+    """边界：疲惫类遗物显式拒绝时不必提交回锋刀目标，也不造伤。"""
     e = _engine(tmp_path, "hf_bound")
-    e.state.relics.append(Relic("折速法印", ""))
+    e.state.relics.append(Relic("苍白之花", ""))
     e.state.relics.append(Relic("回锋刀", ""))
     r = begin_battle(e, relic_choices={
-        "折速法印": {"use": False},
+        "苍白之花": {"use": False},
     })
     assert r["success"], r
     m = e.state.enemies[0]
@@ -162,19 +169,21 @@ def test_zhesu_declined_does_not_need_huifeng_target(tmp_path):
 
 
 def test_round_start_gap_damage_is_separate_from_zhesu(tmp_path):
-    """边界：折速即时伤与回始缺口伤是两条独立条款，不互相吞掉。"""
+    """边界：失速即时伤与回始缺口伤是两条独立条款，不互相吞掉。"""
     e = _engine(tmp_path, "hf_gap")
-    e.state.relics.append(Relic("折速法印", ""))
+    e.state.relics.append(Relic("苍白之花", ""))
     e.state.relics.append(Relic("回锋刀", ""))
+    e.state.player.speed_limit = max(e.state.player.speed_limit, 8)
+    e.state.player.current_speed = e.state.player.speed_limit
     begin_battle(e, relic_choices={
-        "折速法印": {"use": True, "x": 4},
+        "苍白之花": {"use": True},
         "回锋刀": {"enemy_index": 0},
     })
     m = e.state.enemies[0]
     after_bs = m.current_hp
     begin_round(e, relic_choices={"回锋刀": {"enemy_index": 0}})
-    assert after_bs == m.blood_limit - 12
-    assert m.current_hp == after_bs - 12
+    assert after_bs == m.blood_limit - 15      # 战始失速5 × 每点3伤
+    assert m.current_hp == after_bs - 15        # 回始按缺口(速限-当前速度)=5 再打15
 
 
 # ---------- 守夜灯 ----------

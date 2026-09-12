@@ -4375,7 +4375,7 @@ class CombatEngine:
             raise ValueError("relic_choices必须是对象")
         active = {r.name for r in self.state.relics if self.state.sealed_relics.get(r.name, 0) <= 0}
         player = self.state.player
-        for name in ("折速法印", "三相残韵盘"):
+        for name in ("三相残韵盘",):
             if name not in active:
                 continue
             decision = choices.get(name)
@@ -4383,13 +4383,7 @@ class CombatEngine:
                 raise ValueError(f"持有【{name}】时必须显式提交relic_choices.{name}.use布尔值")
             if not decision["use"]:
                 continue
-            if name == "折速法印":
-                x = decision.get("x")
-                if not isinstance(x, int) or isinstance(x, bool) or x < 1 or not player:
-                    raise ValueError("折速法印x必须是正整数")
-                self.validate_numeric_cost(
-                    player, "疲惫", x, decision.get("cost_share_target_ref", ""))
-            elif name == "三相残韵盘":
+            if name == "三相残韵盘":
                 resonance = decision.get("resonance_type", "")
                 if resonance not in ("转换", "反转", "曲解") or self.state.resonance.get(resonance, 0) < 1:
                     raise ValueError("三相残韵盘必须显式选择一种当前持有的resonance_type")
@@ -4431,10 +4425,8 @@ class CombatEngine:
                     or (target_ref not in legal and not deferred_enemy_ref)):
                 raise ValueError(f"烙痕钉必须显式选择敌方target_ref，可选{sorted(legal)}")
         using_fatigue = (
-            ("折速法印" in active and isinstance(choices.get("折速法印"), dict)
-             and choices["折速法印"].get("use"))
-            or ("苍白之花" in active and isinstance(choices.get("苍白之花"), dict)
-                and choices["苍白之花"].get("use"))
+            "苍白之花" in active and isinstance(choices.get("苍白之花"), dict)
+            and choices["苍白之花"].get("use")
         )
         if "回锋刀" in active and using_fatigue and not self._huifeng_ref_from_choice(choices.get("回锋刀")):
             raise ValueError("回锋刀触发必须显式提交合法敌方目标引用")
@@ -4563,10 +4555,8 @@ class CombatEngine:
             choices = ctx.get("relic_choices", {})
             self.validate_battle_start_relic_choices(choices)
             using_fatigue = (
-                ("折速法印" in relics and isinstance(choices.get("折速法印"), dict)
-                 and choices["折速法印"].get("use"))
-                or ("苍白之花" in relics and isinstance(choices.get("苍白之花"), dict)
-                    and choices["苍白之花"].get("use"))
+                "苍白之花" in relics and isinstance(choices.get("苍白之花"), dict)
+                and choices["苍白之花"].get("use")
             )
             if "回锋刀" in relics and using_fatigue:
                 ref = self._huifeng_ref_from_choice(choices.get("回锋刀"))
@@ -4575,16 +4565,6 @@ class CombatEngine:
                         or not self.state.on_enemy_side(target)):
                     raise ValueError("回锋刀触发必须显式提交合法敌方目标引用")
                 self._remember_huifeng_target(player, ref)
-            if "折速法印" in relics and choices["折速法印"]["use"]:
-                decision = choices["折速法印"]
-                x = decision["x"]
-                self.pay_numeric_cost(
-                    player, "疲惫", x,
-                    cost_share_target_ref=decision.get("cost_share_target_ref", ""),
-                    cost_context={"timing": "battle_start", "source": "折速法印", "source_type": "relic", "tags": {"active_payment"}})
-                player.current_mana += 6 * x
-                self.clamp_immortal_body(player)
-                logs.append(f"折速法印：疲惫{x}，+{6*x}法力")
             if "三相残韵盘" in relics and choices["三相残韵盘"]["use"]:
                 consume = choices["三相残韵盘"]["resonance_type"]
                 self.state.resonance[consume] -= 1
