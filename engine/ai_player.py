@@ -370,6 +370,88 @@ class DeepSeekBackend(AIBackend):
         return AIDecision("noop", {}, f"[DeepSeek解析失败] 原始回复: {content[:200] if content else 'None'}")
 
 
+# ---------------------------------------------------------------------------
+# 选区决策：按已持有遗物与副本专属道纹的代价类型协同打分
+# ---------------------------------------------------------------------------
+# 2026-09-13：此前 setup_choose_region 硬编码返回"罪孽都市"，不读任何状态——
+# 实测 29 个"开局拿到回锋刀/避风铃"的样本选扭曲都市 0 次（见
+# sim/probe_region_choice_synergy.py）。遗物在选区之前就已确定（见
+# engine/handlers/setup.py::handle_setup_choose_region 的前置校验），
+# 因此这个协同在时序上完全可判。
+#
+# 打分不写死任何副本名或道纹名：遗物按其效果文本关心的"代价类型/资源"归类，
+# 副本按其专属道纹实际使用的 cost_type 归类，两者求交集即为协同分。
+# 新增遗物或改动道纹代价后，本函数自动跟随，无需同步维护表。
+
+# 遗物 → 它能把哪类代价/资源转化为收益（读效果文本判定，不写死遗物名单）
+_RELIC_SYNERGY_KEYS = (
+    ("速度", ("失去1点速度", "失速", "速度归零", "当前速度")),
+    ("流血", ("流血",)),
+    ("碎片", ("碎片",)),
+    ("残韵", ("残韵",)),
+    ("异变", ("异变",)),
+)
+
+
+def _relic_synergy_tags(relics) -> set:
+    """从遗物效果文本提取它关心的资源类型。"""
+    tags = set()
+    for relic in relics or []:
+        text = ""
+        if isinstance(relic, dict):
+            text = f"{relic.get('name', '')}{relic.get('effect', '')}"
+        else:
+            text = f"{getattr(relic, 'name', '')}{getattr(relic, 'effect', '')}"
+        for tag, needles in _RELIC_SYNERGY_KEYS:
+            if any(n in text for n in needles):
+                tags.add(tag)
+    return tags
+
+
+# 道纹 cost_type → 对应的资源标签（与遗物标签同一命名空间）
+_COST_TO_TAG = {"疲惫": "速度", "流血": "流血", "碎片": "碎片",
+                "假碎片": "碎片", "异变": "异变"}
+
+
+def _region_cost_tags(region: str) -> set:
+    """副本专属道纹实际使用的代价类型 → 资源标签。"""
+    from .gamedata import REGION_EXCLUSIVE_DAOWEN
+    from .daowen import DaoWenEngine
+    DaoWenEngine.register_all()
+    tags = set()
+    for name in REGION_EXCLUSIVE_DAOWEN.get(region, ()):  # noqa: SIM118
+        try:
+            calc = DaoWenEngine.resolve(name, 2, target=None, caster=None)
+        except Exception:
+            continue
+        tag = _COST_TO_TAG.get(calc.get("cost_type"))
+        if tag:
+            tags.add(tag)
+        # 产出资源也算协同（如【搏命】疲惫换法力、【超频】买速度）
+        if calc.get("mana_gain") or calc.get("speed_boost"):
+            tags.add("速度")
+    return tags
+
+
+def pick_region_by_synergy(inner: dict, valid=("罪孽都市", "扭曲都市", "龙心谷", "乱葬岗")):
+    """按持有遗物与各副本专属道纹的代价协同选副本。
+
+    返回 (region, reasoning)。无任何协同时回落到既有默认"罪孽都市"，
+    保持旧行为不变（不给没依据的随机漂移）。
+    """
+    tags = _relic_synergy_tags(inner.get("relics"))
+    if not tags:
+        return valid[0], "无遗物协同信息，按默认选择初始副本"
+    best, best_score, best_hit = valid[0], 0, set()
+    for region in valid:
+        hit = tags & _region_cost_tags(region)
+        if len(hit) > best_score:
+            best, best_score, best_hit = region, len(hit), hit
+    if best_score <= 0:
+        return valid[0], "遗物与各副本专属道纹无代价协同，按默认选择初始副本"
+    return best, f"遗物关注{sorted(tags)}，与【{best}】专属道纹代价{sorted(best_hit)}协同"
+
+
 class PlaceholderBackend(AIBackend):
     """
     占位符后端（开发测试用，不需要API key）
@@ -405,9 +487,10 @@ class PlaceholderBackend(AIBackend):
                     "resonance_type": "转换",
                 }, "选择初始残韵")
             if not inner.get("current_region"):
+                region, why = pick_region_by_synergy(inner)
                 return AIDecision("setup_choose_region", {
-                    "region": "罪孽都市",
-                }, "选择初始副本")
+                    "region": region,
+                }, why)
             return AIDecision("noop", {}, "开局步骤已完成")
         
         elif phase == "pre_battle":

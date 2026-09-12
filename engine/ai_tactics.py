@@ -523,7 +523,14 @@ class TacticalAI:
                     rtype = path.get("resonance_type")
                     if not rtype or stock.get(rtype, 0) <= 0:
                         continue
+                    # 残韵是双向的：既削敌（敌人失去 dw），也补己
+                    # （api._grant_transformed_daowen 把转化结果白送给施法者）。
+                    # 2026-09-13 修正：此前只算"敌人少了什么"，漏掉"我多了什么"
+                    # ——等于半个算式。残韵极稀缺（开局仅1个、之后只靠事件补），
+                    # 且是副本专属道纹的唯一入口，收益项缺失导致实测 46 局里
+                    # 只拿到过 1 个专属道纹。
                     score = 4.0 * (0.5 + threat_share) * weight
+                    score += self._resonance_gain_bonus(path.get("target_daowen"))
                     params = {"source_daowen": dw, "resonance_type": rtype,
                               "target": enemy.name,             # 兼容测试/旧解析：按名字找目标
                               "target_ref": self._target_ref_for(enemy)}  # use_resonance 需要稳定引用
@@ -535,6 +542,35 @@ class TacticalAI:
                         "params": params}))
         out.sort(key=lambda t: -t[0])
         return out[:3]
+
+    def _resonance_gain_bonus(self, dest: Optional[str]) -> float:
+        """转化所得道纹对**自己**的价值（残韵算式里此前缺失的那一半）。
+
+        通用规则，不写死任何副本/道纹名：
+        - 已持有 → 0（重复获得无增量）
+        - 本副本专属道纹 → 高权重：残韵是其唯一入口，错过就没有第二次
+        - 能产出资源（法力/速度）或直接造成伤害 → 中权重
+        - 其余可用道纹 → 低权重
+        """
+        if not dest or self.player is None:
+            return 0.0
+        if dest in getattr(self.player, "dao_wen", {}) or {}:
+            return 0.0
+        from engine.daowen import DaoWenEngine
+        from engine.gamedata import REGION_EXCLUSIVE_DAOWEN
+        bonus = 1.0
+        region = getattr(self.engine.state, "current_region", "") or ""
+        if dest in REGION_EXCLUSIVE_DAOWEN.get(region, set()):
+            bonus += 4.0      # 专属道纹：残韵是唯一获取渠道
+        try:
+            calc = DaoWenEngine.resolve(dest, 2, target=None, caster=None)
+        except Exception:
+            return bonus
+        if calc.get("mana_gain") or calc.get("speed_boost"):
+            bonus += 2.0      # 产资源（如搏命换法力、超频买速度）
+        if calc.get("damage") or calc.get("target_damage"):
+            bonus += 1.5      # 直伤
+        return bonus
 
     def _score_candidate(self, diff: dict, label: str,
                          kind: Optional[str] = None,
