@@ -3793,6 +3793,14 @@ class CombatEngine:
                             mana -= calc.get("cost", 0)
                             if mana < 0:
                                 raise ValueError(f"法术{spell_name}提交的法力不足")
+                        # 2026-09-12：校验必须与结算(_apply_daowen_result)口径一致地
+                        # 计入产法力道纹的收益。此前只记消耗不记产出，导致【透支】等
+                        # "流血换法力"道纹在循环法术里被当成纯支出：一个法力净零的
+                        # 自持循环(透支X→再生X)反而要求预付 cost*循环次数 的法力，
+                        # 等于把"靠循环自己造法力"这一设计意图判死。产出在步骤结算后
+                        # 到账，故按步序累加，后续步骤即可支用前面步骤产出的法力。
+                        if "mana_gain" in calc:
+                            mana += calc["mana_gain"]
                         hostile = self.state.on_player_side(holder) != self.state.on_player_side(expected_target)
                         if hostile:
                             if not isinstance(entry.get("dodge"), bool):
@@ -4056,6 +4064,14 @@ class CombatEngine:
                             mana -= calc.get("cost", 0)
                             if mana < 0:
                                 raise ValueError(f"法术{spell_name}提交的法力不足")
+                        # 2026-09-12：校验必须与结算(_apply_daowen_result)口径一致地
+                        # 计入产法力道纹的收益。此前只记消耗不记产出，导致【透支】等
+                        # "流血换法力"道纹在循环法术里被当成纯支出：一个法力净零的
+                        # 自持循环(透支X→再生X)反而要求预付 cost*循环次数 的法力，
+                        # 等于把"靠循环自己造法力"这一设计意图判死。产出在步骤结算后
+                        # 到账，故按步序累加，后续步骤即可支用前面步骤产出的法力。
+                        if "mana_gain" in calc:
+                            mana += calc["mana_gain"]
                         hostile = self.state.on_player_side(holder) != self.state.on_player_side(expected_target)
                         if hostile:
                             if not isinstance(entry.get("dodge"), bool):
