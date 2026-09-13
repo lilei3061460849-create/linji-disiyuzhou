@@ -2446,9 +2446,18 @@ class CombatEngine:
         }
 
     def _sculpture_monster(self, monster: Entity) -> dict:
-        """雕塑：怪物/微光者攻击次数或攻击力归0→化为雕塑消耗品（耐久=血限5%）"""
+        """雕塑：任一角色攻击次数和攻击力同时归0→化为雕塑消耗品（耐久=血限5%）"""
         durability = max(1, math.ceil(monster.blood_limit * 0.05))
-        reason = "攻击次数归0" if monster.attack_count <= 0 else "攻击力归0"
+        count_zero = monster.effective_attack_count() <= 0
+        power_zero = monster.effective_attack_power() <= 0
+        if count_zero and power_zero:
+            reason = "攻击次数和攻击力归0"
+        elif count_zero:
+            reason = "攻击次数归0"
+        elif power_zero:
+            reason = "攻击力归0"
+        else:
+            reason = "攻击手段归0"
         monster.is_sculptured = True
         self._remove_from_combat(monster, "雕塑", ctx={
             "timing": self._current_context_timing(), "source": "雕塑", "source_type": "system",

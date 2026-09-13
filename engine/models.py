@@ -256,7 +256,7 @@ class Entity:
     shards: int = 0              # 怪物自带碎片（罪孽都市）/ 负值表示负债（还债）
     fake_shards: int = 0         # 假碎片（罪孽都市：假钞产出；战斗中失去碎片时优先失去假碎片）
     total_healed: int = 0        # 累计受到的恢复量（癌变；含过量部分，按原值计，双倍机制已删）
-    is_sculptured: bool = False  # 已化为雕塑（攻击次数或攻击力归0）
+    is_sculptured: bool = False  # 已化为雕塑（攻击次数和攻击力同时归0）
     is_proliferated: bool = False  # 已被癌变吸收进死者之书（旧名 增生，已统一为 癌变；保留字段名兼容）
     is_debt_bound: bool = False  # 已因还债成为员工
 
