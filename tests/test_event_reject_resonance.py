@@ -12,13 +12,13 @@ from engine.api import GameEngine
 from tests.setup_support import finish_initial_daowen
 
 
-def _engine(seed=5):
+def _engine(seed=5, region="扭曲都市"):
     e = GameEngine(db_path=tempfile.mktemp(suffix=".db"), rng_seed=seed)
     e.execute_action("setup_attributes", {
         "name": "甲", "blood_points": 7, "speed_points": 8, "mana_points": 10})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
-    setup = e.execute_action("setup_choose_region", {"region": "扭曲都市"})
+    setup = e.execute_action("setup_choose_region", {"region": region})
     e.execute_action("choose_discovered_relic",
                      {"relic_name": setup["result"]["relic_choices"][0]})
     return e
@@ -53,6 +53,28 @@ def test_reject_grant_deterministic_per_seed():
         r = e.execute_action("resolve_event", {"event": "测试事件", "option_id": 1})
         kinds.add(next(a for a in r["result"]["applied"] if "拒绝奖励" in a))
     assert len(kinds) == 1, f"同 seed 应抽到同一种：{kinds}"
+
+
+def test_region_events_share_the_same_reject_reward_rule():
+    """罪孽都市与龙心谷的专属事件也必须走全局拒绝→随机残韵规则。"""
+    cases = (
+        ("罪孽都市", "地下角斗场", 3),  # 拒绝下注：无事发生
+        ("龙心谷", "断桥余烬", 3),      # 绕桥而行：无事发生
+    )
+    for region, event_name, option_id in cases:
+        e = _engine(seed=17, region=region)
+        e.event_pool.current = event_name
+        before = dict(e.state.resonance)
+        r = e.execute_action("resolve_event", {
+            "event": event_name, "option_id": option_id,
+        })
+        assert r.get("success"), (region, event_name, r)
+        gained = sum(
+            e.state.resonance.get(k, 0) - before.get(k, 0)
+            for k in ("转换", "反转", "曲解")
+        )
+        assert gained == 1, (region, event_name, r)
+        assert any("拒绝奖励" in a for a in r["result"]["applied"])
 
 
 def test_costly_decline_is_not_reject():

@@ -66,6 +66,39 @@ def test_ai_shields_when_facing_lethal_damage(tmp_path):
     assert "庇护" in r.get("action", "") or "再生" in r.get("action", "")
 
 
+def test_ai_can_declare_parry_under_lethal_threat(tmp_path):
+    """正常路径：招架是 AI 可用的独立防御候选，不只存在于人工 action 表。"""
+    e = _engine(tmp_path, learn=())
+    e.state.player.dao_wen.clear()
+    e.state.resonance.clear()
+    e.state.player.current_hp = 10
+    e.state.enemies[0].attack_count = 1
+    e.state.enemies[0].attack_power = 12
+    ai = TacticalAI(e)
+
+    result = ai.take_action()
+
+    assert result is not None and result.get("success"), result
+    assert result.get("action") == "贾凡招架"
+    assert e.state.player.parrying_this_round is True
+
+
+def test_ai_does_not_waste_parry_in_a_safe_window(tmp_path):
+    """边界：安全血线下仍应允许输出，不能因招架存在而每回合白占动作。"""
+    e = _engine(tmp_path, learn=())
+    e.state.player.dao_wen.clear()
+    e.state.resonance.clear()
+    e.state.player.current_hp = e.state.player.blood_limit
+    e.state.enemies[0].attack_count = 1
+    e.state.enemies[0].attack_power = 1
+    ai = TacticalAI(e)
+
+    result = ai.take_action()
+
+    assert result is not None and result.get("success"), result
+    assert result.get("action") != "贾凡招架"
+
+
 def test_ai_finishes_killable_target(tmp_path):
     """正常路径：目标可被一击击杀时应当收割"""
     e = _engine(tmp_path)

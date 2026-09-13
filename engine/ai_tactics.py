@@ -476,6 +476,63 @@ class TacticalAI:
 
     # ---------- 候选生成与实时评分 ----------
 
+    def _parry_candidate(self) -> Optional[dict]:
+        """生成【招架】候选；招架是回合级防御姿态，不占用出手。"""
+        player = self.player
+        if player is None or not player.is_alive:
+            return None
+        if getattr(player, "parry_locked_this_round", False):
+            return None
+        if getattr(player, "parrying_this_round", False):
+            return None
+        if player.current_mana <= 0:
+            return None
+        enemies = self.alive_enemies()
+        if not enemies:
+            return None
+        # 招架按“每次受击”减当前法力；用敌方当前攻击次数×攻击力估算本轮
+        # 可减免量。这里只生成候选，最终是否合法仍由 declare_parry 引擎校验。
+        reduction = sum(
+            min(player.current_mana, max(0, enemy.effective_attack_power()))
+            * max(0, enemy.effective_attack_count())
+            for enemy in enemies
+        )
+        if reduction <= 0:
+            return None
+        # 若招架也无法把本轮预计伤害压回存活线，就不把它当作“保命”
+        # 候选；此时应继续寻找击杀/离场等能真正结束威胁的动作。
+        threat = self.incoming_damage()
+        if (threat > player.current_hp + player.shield
+                and threat - reduction > player.current_hp + player.shield):
+            return None
+        return {
+            "action": "declare_parry",
+            "label": f"招架（每次受击减免{player.current_mana}）",
+            "kind": "parry",
+            "params": {"actor_ref": self._actor_ref or "player:0"},
+            "expected_reduction": reduction,
+        }
+
+    def _score_parry_candidate(self, candidate: dict) -> float:
+        """按当前威胁给招架评分；高压/濒死时显著优先，安全时让出给输出。"""
+        player = self.player
+        threat = self.incoming_damage()
+        reduction = float(candidate.get("expected_reduction", 0))
+        score = 1.15 * reduction
+        effective_hp = player.current_hp + player.shield
+        if threat >= effective_hp:
+            score += 60.0
+        elif threat >= max(1, player.current_hp * 0.7):
+            score += 24.0
+        elif player.current_hp <= player.blood_limit * 0.35:
+            score += 16.0
+        else:
+            score -= 6.0
+        # 招架本身不花法力，但后续主动花蓝会降低其实际减免；
+        # 保守扣除少量“放弃输出”的机会成本，不阻止危急时刻使用。
+        score -= 0.12 * player.effective_attack_count() * player.current_mana
+        return score
+
     def _daowen_candidates(self) -> list[dict]:
         """玩家实持道纹 → 聚焦候选（X 按预算/需求取 2~3 档）。"""
         out = []
@@ -867,7 +924,12 @@ class TacticalAI:
         resonance_rows: list[int] = []   # scored 中残韵候选的下标（含收益项加成）
         _resonance_bonus_of: dict = {}   # 下标 → 已计入的收益项加成
         ends_battle = False              # 是否存在「本手即终结战斗」的候选
-        candidates = self._daowen_candidates()
+        candidates = []
+        parry = self._parry_candidate()
+        if parry is not None:
+            # 防御候选放在前面，避免大量道纹候选触发性能上限时把招架裁掉。
+            candidates.append(parry)
+        candidates.extend(self._daowen_candidates())
         candidates.extend(self._basic_attack_candidates())
         for bonus, cand in self._resonance_candidates():
             candidates.append(cand)   # 残韵候选已按威胁预筛，附带基础分
@@ -878,8 +940,13 @@ class TacticalAI:
             res = pv.get("result") or {}
             if not res.get("success"):
                 continue               # 引擎拒绝=非法候选，跳过
-            s = self._score_candidate(pv.get("diff", {}), cand["label"],
-                                      cand.get("kind"), cand.get("target"))
+            if cand["action"] == "declare_parry":
+                # 招架的姿态变化不在通用数值 diff 中；其收益由每击减免
+                # 与当前威胁现场计算，声明本身仍先经过 ActionPreview 校验。
+                s = self._score_parry_candidate(cand)
+            else:
+                s = self._score_candidate(pv.get("diff", {}), cand["label"],
+                                          cand.get("kind"), cand.get("target"))
             if s is None:
                 continue
             if cand["action"] == "use_resonance":
