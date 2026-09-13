@@ -870,6 +870,8 @@ class GameEngine:
                 "select_shared_dragon_heart", "declare_fuyuebei_toll", "activate_dragon_body",
                 "devour_monster", "declare_tail_sacrifice", "use_dragon_wings",
                 "use_blood_wings", "enslave_as_chizu", "blood_feast",
+                # 轮回者指挥与友方自主行动都属于己方行动阶段，不能在怪物阶段插队。
+                "command_ally", "resolve_ally_phases",
             }
             if action_type in player_actions:
                 required = CombatSubphase.PLAYER_ACTIONS.value

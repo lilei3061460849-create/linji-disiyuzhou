@@ -172,6 +172,23 @@ def test_guard_command_default_one():
     assert getattr(fr, "_beifu_left", 0) == 1
 
 
+def test_ally_commands_rejected_outside_player_action_subphase():
+    """回归：轮回者指挥不能在怪物阶段或回合结束阶段插队。"""
+    e = _engine("guard_cmd_phase")
+    fr = _friend_beifu()
+    e.state.friends.append(fr)
+    m = Entity("血僵", "怪物", blood_limit=270, current_hp=270,
+               attack_count=1, attack_power=1)
+    _start_battle_with(e, m)
+
+    mp = _resolve_monster_phase(e)
+    assert mp["success"], mp
+    r = e.execute_action("command_ally", {
+        "ally_ref": "friend:0", "instruction": "护卫 1"})
+    assert not r["success"], r
+    assert "子阶段" in r["error"]
+
+
 def test_guard_command_bad_x_rejected():
     """错误输入：护卫次数非1~9整数时拒绝且不施加。"""
     e = _engine("guard_cmd_bad")
