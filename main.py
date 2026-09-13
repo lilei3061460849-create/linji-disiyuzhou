@@ -259,15 +259,32 @@ def validate_demo():
     validator = RuleValidator(db_path="data/demo_violations.db")
     engine = GameEngine()
     
-    # 正常开局
-    engine.execute_action("setup_attributes", {
-        "name": "测试", "blood_points": 10, "speed_points": 8, "mana_points": 7
+    # 正常开局：速限/法限按2属性点一档计价，开局后按遗物→道纹→残韵→副本推进。
+    setup = engine.execute_action("setup_attributes", {
+        "name": "测试", "blood_points": 11, "speed_points": 8, "mana_points": 6
     })
+    if not setup.get("success"):
+        print(f"  ✗ 开局失败：{setup.get('error', '未知错误')}")
+        return
+    relic_choices = setup["result"]["relic_choices"]
+    relic_result = engine.execute_action("choose_discovered_relic", {
+        "relic_name": relic_choices[0],
+    })
+    if not relic_result.get("success"):
+        print(f"  ✗ 遗物选择失败：{relic_result.get('error', '未知错误')}")
+        return
+    daowen_choices = relic_result["result"].get("daowen_choices", [])
+    daowen_result = engine.execute_action("setup_choose_initial_daowen", {
+        "daowen_name": daowen_choices[0],
+    })
+    if not daowen_result.get("success"):
+        print(f"  ✗ 初始道纹选择失败：{daowen_result.get('error', '未知错误')}")
+        return
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
-    setup = engine.execute_action("setup_choose_region", {"region": "扭曲都市"})
-    engine.execute_action("choose_discovered_relic", {
-        "relic_name": setup["result"]["relic_choices"][0],
-    })
+    region_result = engine.execute_action("setup_choose_region", {"region": "扭曲都市"})
+    if not region_result.get("success"):
+        print(f"  ✗ 副本选择失败：{region_result.get('error', '未知错误')}")
+        return
     
     # 测试1：正常行动校验
     print("\n[测试1] 正常修行行动：")

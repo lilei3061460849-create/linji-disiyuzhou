@@ -111,8 +111,7 @@ def spend_energy(engine, battle_no, ai, rec, rng):
         resolve_discovery_pending(engine, "PREBATTLE")
         if not r.get("success"):
             r = engine.execute_action("pre_battle_action", {
-                "sub_action": "\u4fee\u884c", "tier": 1,
-                "allocations": {"speed_points": 0, "mana_points": 1}})
+                "sub_action": "\u4fee\u884c", "tier": 1})
             dlog(rec, "pre_battle:study_fallback", r.get("success"))
         if engine.state.energy >= before:
             # energy did not drop -> resolve gates, then force study
@@ -120,8 +119,7 @@ def spend_energy(engine, battle_no, ai, rec, rng):
             if engine.event_pool.current is not None:
                 try_resolve_events(engine, "PREBATTLE")
             r = engine.execute_action("pre_battle_action", {
-                "sub_action": "\u4fee\u884c", "tier": 1,
-                "allocations": {"speed_points": 0, "mana_points": 1}})
+                "sub_action": "\u4fee\u884c", "tier": 1})
             dlog(rec, "pre_battle:forced_study", r.get("success"))
             if not r.get("success") and engine.state.energy >= before:
                 report("PREBATTLE", "energy stuck: " + str(r.get("error", "")))
@@ -481,7 +479,7 @@ def main():
         rng = random.Random(seed)
 
         r = eng.execute_action("setup_attributes", {
-            "name": "Linji", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+            "name": "Linji", "blood_points": 11, "speed_points": 8, "mana_points": 6})
         check(r.get("success"), "SETUP", "attr: " + str(r.get("error", "")))
         freed = list(eng.state.pending_relic_choices or [])
         if freed:
