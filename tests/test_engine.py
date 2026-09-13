@@ -112,7 +112,7 @@ def test_daowen_calculations():
     target = Entity(name="目标", entity_type=EntityType.MONSTER.value, blood_limit=100, current_hp=100)
     result = DaoWenEngine.resolve("杀伐", 3, target=target)
     assert result["cost"] == 3, f"杀伐消耗错误: {result['cost']}"
-    assert result["target_damage"] == 15, f"杀伐伤害错误: {result['target_damage']}"
+    assert result["target_damage"] == 9, f"杀伐伤害错误: {result['target_damage']}"   # X²=3²
     print("  ✓ 杀伐X=3: 消耗3，伤害15（DM裁定 2026-09-10：5X）")
     
     # 测试庇护

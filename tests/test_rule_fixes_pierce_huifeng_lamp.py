@@ -78,7 +78,7 @@ def test_pierce_shaifa_ignores_shield(tmp_path):
     })
     assert r["success"], r
     assert m.shield == sh, "贯穿伤害不得消耗格挡"
-    assert m.current_hp == hp - 5 * 10   # 杀伐X：5X 伤害（DM裁定 2026-09-10，原 2X）
+    assert m.current_hp == max(0, hp - 10 * 10)   # 杀伐X：X²（2026-09-13，原 5X）
 
 
 def test_pierce_does_not_rewrite_cost_damage(tmp_path):
@@ -108,7 +108,7 @@ def test_pierce_absent_still_blocked_by_shield(tmp_path):
         "dodge": False, "blood_shadow": False, "trigger_spell_choices": {},
     })
     assert r["success"], r
-    dmg = 5 * 10                     # 杀伐X：5X（DM裁定 2026-09-10）；格挡40吸收40，余10落到生命
+    dmg = 10 * 10                    # 杀伐X：X²（2026-09-13）；格挡40吸收40，余60落到生命
     assert m.shield == max(0, 40 - dmg)
     assert m.current_hp == 80 - max(0, dmg - 40)
 

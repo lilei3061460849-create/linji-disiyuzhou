@@ -75,9 +75,11 @@ def test_ai_uses_region_specific_daowen(dw, monkeypatch):
     monkeypatch.setenv("LJ_AI_BASIC_ATTACK", "0")
     from engine.models import DaoWen, DaoWenInstance
     e = _engine(starter="杀伐", learn=[], region=_REGION_OF[dw])
-    # 只保留被测道纹（外加基础输出），避免 AI 选了同角色的其他道纹而误判
-    e.state.player.dao_wen = {
-        k: v for k, v in e.state.player.dao_wen.items() if k == "杀伐"}
+    # 只保留被测道纹，避免 AI 选了同角色的其他道纹而误判。
+    # 2026-09-13：连【杀伐】也一并清掉——改为 X² 伤害后它在任何局面都能靠高 X
+    # 档压过 debuff 的分数，并把法力一次抽干，被测牌再没有出手窗口。本例要验的
+    # 不变量是「持有专属道纹就会发动」，不是「debuff 能不能赢过主力输出」。
+    e.state.player.dao_wen = {}
     e.state.player.dao_wen[dw] = DaoWenInstance(
         DaoWen(name=dw, formula="", cost_type="消耗",
                cost_formula="X", effect_formula=""))
@@ -97,7 +99,9 @@ def test_ai_uses_region_specific_daowen(dw, monkeypatch):
         if dw == "退化":
             _m.attack_power = max(_m.attack_power, 20)  # 满足控场策略的威胁阈值
     ai = TacticalAI(e)
-    for _ in range(3):
+    # 6 回合而非 3：杀伐自 2026-09-13 改为 X² 后高 X 档分数陡增，会连吃前几手；
+    # 不变量仍是「持有即会发动」，给它把法力打空的时间，别把窗口卡在 3 手。
+    for _ in range(6):
         ai.new_round()
         ai.take_turn()
     assert ai.used.get(dw, 0) > 0, f"{dw} 从未被使用，实际使用：{ai.used}"
@@ -120,7 +124,7 @@ def test_damage_ranking_comes_from_probe_facts():
     ai = TacticalAI(e)
     probe = ai._probe("杀伐")
     assert probe["kind"] == "damage"
-    assert probe["dmg"] == 5 and probe["cost_per_x"] == 1   # 引擎事实：5伤害/1法力（DM裁定 2026-09-10，原 2X）
+    assert probe["dmg"] == 1 and probe["cost_per_x"] == 1   # 引擎事实：X=1→X²=1伤害/1法力（2026-09-13）
 
 
 def test_owned_nuke_only_contains_damage_kind():

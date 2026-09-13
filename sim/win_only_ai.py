@@ -324,8 +324,15 @@ class WinOnlyAI(TacticalAI):
     def _dynamic_action(self):
         candidates = self._daowen_candidates()
         candidates.extend(self._basic_attack_candidates())
-        for _bonus, cand in self._resonance_candidates():
-            candidates.append(cand)   # 残韵候选已按威胁预筛
+        # 残韵候选已按威胁预筛，并附带一个基础分：既含「我要压制什么」（威胁），
+        # 也含「我能拿到什么」（转化后收益，2026-09-13 补上的那一半）。
+        # 这个分只用于**提案裁剪的排序**，不进入最终裁决——最终裁决仍然只认
+        # 整局推演的 ±1 结局（「胜负唯一计分」裁定不变）。此前它被整个丢弃，
+        # 结果是残韵候选常常挤不进 PLAYOUT_TOP_N，推演席上根本看不到它们。
+        resonance_bonus: dict = {}
+        for bonus, cand in self._resonance_candidates():
+            candidates.append(cand)
+            resonance_bonus[id(cand)] = bonus
         # 提案阶段：预演只用来过滤非法与必死候选；启发式分只用于裁剪排序，
         # 不做最终裁决（最终裁决=整局结局 ±1）。
         scored = []
@@ -349,7 +356,7 @@ class WinOnlyAI(TacticalAI):
                          + (p_diff.get("mutation_delta") or 0))
             if projected >= 50 and not pv.get("all_gone"):
                 continue
-            scored.append((s, cand))
+            scored.append((s + resonance_bonus.get(id(cand), 0.0), cand))
         scored.sort(key=lambda t: (-t[0], t[1].get("label", "")))
         proposals = [c for _, c in scored[:self.PLAYOUT_TOP_N]]
         # 爬梯候选直通推演席（不受启发式排序门槛限制）：改写自己的 kit 沿闭环

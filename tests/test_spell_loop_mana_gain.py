@@ -94,8 +94,9 @@ def test_single_cycle_is_mana_neutral():
 
     _fire(engine, cycles=1)
 
-    # 挨打5点后触发：再生3(耗3法力、回12生命) → 透支3(流血9、产3法力)
-    assert player.current_hp == 38          # 40-5+12-9
+    # 挨打5点后触发：再生3(耗3法力、回12生命) → 透支3(流血12、产3法力)
+    # 2026-09-13 透支改 4X 后，与再生4X 构成严格 4:1 对称，每轮净 0 生命。
+    assert player.current_hp == 35          # 40-5+12-12
     assert player.current_mana == SEED_MANA  # 用3产3，回到起点
     assert player.total_healed == 12
 
@@ -108,7 +109,7 @@ def test_loop_cannot_start_without_seed_mana():
 
 
 def test_loop_is_mana_neutral_across_many_cycles():
-    """多轮循环同样零法力自持，每轮净赚3生命。"""
+    """多轮循环同样零法力自持，每轮净 0 生命（4:1 对称闭环）。"""
     engine = _engine_with_loop_spell("loop_many", hp=40, mana=SEED_MANA)
     player = engine.state.player
 
@@ -116,7 +117,7 @@ def test_loop_is_mana_neutral_across_many_cycles():
 
     assert player.current_mana == SEED_MANA  # 10轮之后法力仍回到起点
     assert player.total_healed == 120        # 10轮 × 再生3回12
-    assert player.current_hp == 57           # 40-5 + 10×(12-9)
+    assert player.current_hp == 35           # 40-5 + 10×(12-12)：闭环净零
     assert player.is_alive
 
 

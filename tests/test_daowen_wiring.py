@@ -110,8 +110,8 @@ def test_boba_spreads_damage_equally_with_random_remainder():
     assert spread and spread["targets"] == [foe_a.name, foe_b.name]
     dealt = sum(e.get("actual_damage", 0) for e in r2["execution"]["effects"]
                 if e.get("type") == "damage")
-    assert dealt == 10, "总数值不变：10点伤害平分给两个目标（杀伐2→5X=10）"
-    assert foe_a.current_hp == 95 and foe_b.current_hp == 95
+    assert dealt == 4, "总数值不变：4点伤害平分给两个目标（杀伐2→X²=4）"
+    assert foe_a.current_hp == 98 and foe_b.current_hp == 98
 
 
 def test_boba_boundary_and_invalid_submissions():
@@ -277,7 +277,7 @@ def test_huaxiang_zhuiluo_dingxing_wushen_xuanyun():
         "actor": foe.name, "daowen_name": "杀伐", "x": 2, "target": p.name,
     })
     assert r["success"], r
-    assert foe.current_hp == hp_f - 10  # 无神改打自己（杀伐2→5X=10，DM裁定 2026-09-10，原 2X=4）
+    assert foe.current_hp == hp_f - 4   # 无神改打自己（杀伐2→X²=4，2026-09-13）
 
     m.add_status(StatusEffect(name="眩晕", remaining_rounds=2, value=1, source="测"))
     assert engine.combat.can_act(m) is False

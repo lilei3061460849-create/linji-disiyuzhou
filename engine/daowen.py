@@ -46,15 +46,17 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_shaifa(x: int, target: Entity = None) -> dict:
-        """杀伐X：消耗X。对[目标]造成5X点伤害
+        """杀伐X：消耗X。对[目标]造成X²点伤害
 
         DM裁定 2026-09-10：法力改一池制后（战终才复原，不再每回合回填），道纹数值
-        的约束从「速率」变成「预算」，可以放开——目标是「用几回合普攻把目标压到
-        斩杀线，再一次性耗尽法力收掉」。系数定为 5（12 太夸张）。
+        的约束从「速率」变成「预算」，可以放开。
+        用户裁定 2026-09-13：由线性 5X 改为平方 X²——小X时弱于旧值（X≤4），
+        大X时远强（X=10 打 100），把「攒法力一次性爆发」从习惯变成硬性最优解，
+        与一池制预算的设计意图一致。
         """
         target_name = target.name if target is not None else "未选定目标"
         cost = x
-        damage = 5 * x
+        damage = x * x
         return {
             "dao_wen": "杀伐",
             "x": x,
@@ -174,19 +176,20 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_touzhi(x: int) -> dict:
-        """透支X：代价：流血3X。你获得X点法力
+        """透支X：代价：流血4X。你获得X点法力
 
-        用户裁定 2026-09-12：与【再生X】(消耗X法力，[回复]3X生命) 构成闭环兑换——
-        生命⇄法力按 3:1 双向流转，净值为零，不产生免费资源；
+        用户裁定 2026-09-12：与【再生X】构成生命⇄法力闭环，净值不产生免费资源；
         实际上限由【癌变】(本场累计回复=2×血限) 自然封死。
+        用户裁定 2026-09-13：3X→4X。与【再生X】(消耗X法力→回复4X生命) 对齐为
+        严格 4:1 双向汇率，闭环净值归零，不再每轮白赚生命。
         """
         return {
             "dao_wen": "透支",
             "x": x,
             "cost_type": CostType.BLEED.value,
-            "cost_hp": 3 * x,
+            "cost_hp": 4 * x,
             "mana_gain": x,
-            "summary": f"流血{3*x}，获得{x}点法力"
+            "summary": f"流血{4*x}，获得{x}点法力"
         }
     
     @staticmethod

@@ -140,7 +140,7 @@ def test_player_daowen_consumes_bizhong_layer():
                                         "trigger_spell_choices": {}})
     assert r.get("success") is True, r.get("error")
     assert e.combat.bizhong_remaining(p) == 1, "道纹判定应消耗 1 层"
-    assert m.current_hp == hp0 - 15, "必中压下目标无法闪避，伤害照常结算（杀伐3→5X=15）"
+    assert m.current_hp == hp0 - 9, "必中压下目标无法闪避，伤害照常结算（杀伐3→X²=9）"
 
 
 def test_attack_and_daowen_share_one_pool():

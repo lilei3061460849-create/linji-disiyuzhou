@@ -329,7 +329,7 @@ def test_r11_r17_aoe_dodge_does_not_leak_into_next_resolution(tmp_path):
         "dodge": False, "blood_shadow": False,
     })
     assert three["success"], three
-    assert first.current_hp + second.current_hp == 100 + 95   # 合计承受5点（杀伐1→5X）
+    assert first.current_hp + second.current_hp == 100 + 99   # 合计承受1点（杀伐1→X²=1）
 
 
 def test_r11_r17_targets_must_come_from_prepare_and_fail_atomically(tmp_path):

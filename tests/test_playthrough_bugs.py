@@ -306,7 +306,7 @@ def test_no_shouyedeng_means_no_round_start_bonus():
 # ========================================================================
 
 def test_borrowed_shaifa_fires_in_monster_phase():
-    """正常路径：困境怪借杀伐2后，怪物回合按原版2X=4打向轮回者。"""
+    """正常路径：困境怪借杀伐2后，怪物回合按 X²=4 打向轮回者。"""
     engine = _engine("evo_happy")
     engine.execute_action("battle_start", {})
     monster = Entity(name="困境怪", entity_type="怪物", blood_limit=120, current_hp=30,
@@ -326,13 +326,13 @@ def test_borrowed_shaifa_fires_in_monster_phase():
     borrowed = [d for d in details if d.get("resolves_as") == "杀伐"]
     assert borrowed, f"应发动借用杀伐: {details}"
     assert borrowed[0]["daowen_activated"] == "杀伐"
-    assert engine.state.player.current_hp == hp_before - 10, (
-        f"杀伐2→5X=10（DM裁定 2026-09-10，原 2X=4），"
-        f"HP应{hp_before}→{hp_before - 10}，实{engine.state.player.current_hp}")
+    assert engine.state.player.current_hp == hp_before - 4, (
+        f"杀伐2→X²=4（2026-09-13，原 5X=10），"
+        f"HP应{hp_before}→{hp_before - 4}，实{engine.state.player.current_hp}")
 
 
 def test_borrowed_shaifa_x1_deals_two():
-    """边界：借用杀伐X=1，伤害2X=2。"""
+    """边界：借用杀伐X=1，伤害 X²=1。"""
     engine = _engine("evo_bound")
     engine.execute_action("battle_start", {})
     monster = Entity(name="困境怪", entity_type="怪物", blood_limit=120, current_hp=30,
@@ -345,7 +345,7 @@ def test_borrowed_shaifa_x1_deals_two():
     _advance_to_active_round(engine)
     hp_before = engine.state.player.current_hp
     _resolve_prepared_monsters(engine, "杀伐")
-    assert engine.state.player.current_hp == hp_before - 5   # 杀伐1→5X=5（原 2X=2）
+    assert engine.state.player.current_hp == hp_before - 1   # 杀伐1→X²=1（原 5X=5）
 
 
 def test_unevolved_monster_does_not_cast_shaifa():

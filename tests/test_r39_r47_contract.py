@@ -229,7 +229,7 @@ def test_r42_target_daowen_trigger_is_explicit(tmp_path):
         ]}}},
     })
     assert result["success"] and result["trigger_spell_logs"]
-    assert player.current_hp == 95 and opponent.current_hp == 95   # 杀伐1→5X=5（DM裁定 2026-09-10，原 2X=2）
+    assert player.current_hp == 99 and opponent.current_hp == 99   # 杀伐1→X²=1（2026-09-13）
 
 
 # R43：确定性事件

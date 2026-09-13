@@ -303,6 +303,54 @@ class TacticalAI:
         self._probe_cache[cache_key] = best if best is not None else {"target": "reject"}
         return best
 
+    def _dmg_at(self, name: str, x: int, target: Optional[str]) -> int:
+        """预演指定 X 的实际伤害（事件流 raw_damage 口径），失败返回 0。
+
+        为什么不能用「X=1 单价 × X」外推：伤害公式未必线性。【杀伐】自
+        2026-09-13 起为 X² 点伤害，按 X=1（1 点）线性外推会把斩杀所需 X
+        算成实际值的平方倍 —— 收割档因此被「买不起」剪掉，AI 明明一发就能
+        打死也不出手。这里对具体 X 直接预演，让事实说话。
+        """
+        if x < 1:
+            return 0
+        battle = self.engine.state.current_battle
+        key = ("__dmg__", name, x, target, battle)
+        cached = self._probe_cache.get(key)
+        if cached is not None:
+            return cached
+        params: dict = {"daowen_name": name, "x": x, "dodge": False,
+                        "blood_shadow": False}
+        if self._actor_ref:
+            params["actor_ref"] = self._actor_ref
+        if target:
+            params["target"] = target
+        pv = self.previewer.preview("use_daowen", params)
+        if not (pv.get("result") or {}).get("success"):
+            self._probe_cache[key] = 0
+            return 0
+        dmg = self._digest_diff(pv.get("diff", {})).get("dmg", 0)
+        self._probe_cache[key] = dmg
+        return dmg
+
+    def _x_to_kill(self, name: str, need: int, target: Optional[str],
+                   cap: int = 9) -> int:
+        """求打出 >= need 伤害所需的最小 X（上限 cap），无解返回 0。
+
+        从小到大逐档真实预演，命中即返回 —— 不能用「单价 × X」外推：伤害
+        公式未必线性，且预演在法力不足时会直接失败（dmg=0），线性初猜那一
+        档常常根本不可行。上界同时受 cap 与「买得起」约束。
+        """
+        probe = self._probe(name)
+        per = (probe or {}).get("dmg", 0)
+        if per <= 0:
+            return 0
+        cost = probe.get("cost_per_x", 0) or 0
+        hi = min(cap, max(1, self.mana() // cost)) if cost > 0 else cap
+        for x in range(1, hi + 1):
+            if self._dmg_at(name, x, target) >= need:
+                return x
+        return 0
+
     def _target_ref_for(self, entity) -> str:
         """按实体找其稳定战斗引用（player:0 / enemy:N）。用于 use_resonance 的 target_ref。"""
         refs = self.engine.combat._combat_entity_refs()
@@ -460,8 +508,15 @@ class TacticalAI:
             if kind == "damage":         # 输出牌给血最少敌人（收割/推进）
                 foes = sorted(self.alive_enemies(), key=lambda e: e.current_hp)
                 targets = [foes[0].name] if foes else []
-                if foes and probe["dmg"] > 0:   # 收割档：恰好打死血最少者
-                    xs.add(math.ceil(foes[0].current_hp / probe["dmg"]))
+                if foes and probe["dmg"] > 0:   # 收割档：恰好打死血最少者（真实预演，非线性外推）
+                    _kx = self._x_to_kill(name, foes[0].current_hp, foes[0].name)
+                    if _kx >= 1:
+                        xs.add(_kx)
+                        # 收割档只受「买得起」约束，不受均分预算的 cap 裁剪：
+                        # 超线性伤害（杀伐 X²）下击杀所需 X 常高于 budget_x，
+                        # 被 cap 剪掉就等于 AI 根本看不见「这一发能打死它」。
+                        if cost <= 0 or _kx * cost <= self.mana():
+                            harvest_cap = max(harvest_cap, _kx)
             elif kind in ("shield", "heal", "buff", "ramp"):
                 targets = [self.player.name]
             else:
@@ -809,6 +864,9 @@ class TacticalAI:
             self.log.append(f"[读到] {r['speaker']}「{r['posture']}」"
                             f"→ 我{verdict}{abs(r['belief']):.2f}（{effect}）")
         scored: list[tuple[float, str, dict]] = []
+        resonance_rows: list[int] = []   # scored 中残韵候选的下标（含收益项加成）
+        _resonance_bonus_of: dict = {}   # 下标 → 已计入的收益项加成
+        ends_battle = False              # 是否存在「本手即终结战斗」的候选
         candidates = self._daowen_candidates()
         candidates.extend(self._basic_attack_candidates())
         for bonus, cand in self._resonance_candidates():
@@ -825,7 +883,13 @@ class TacticalAI:
             if s is None:
                 continue
             if cand["action"] == "use_resonance":
+                # 残韵收益项（"我能拿到什么"）只是**期权**：若本手已有候选能直接
+                # 终结战斗，期权不该把它挤下去。否则 2026-09-13 杀伐改 X² 后
+                # 低 X 输出变弱、分差收窄，收益项足以让 AI 放着必杀不打去转化
+                # 敌方道纹（实测 残韵 108.0+bonus 压过 普攻 110.4 的一击致命）。
                 s += bonus
+                resonance_rows.append(len(scored))
+                _resonance_bonus_of[len(scored)] = bonus
             # 首试配额：安全窗口（当前威胁低于自身生命）下，每张非输出牌每场
             # 至少真实试打一次——预演看不到潜在规则型道纹的延迟价值，
             # 用一次真实发动校准后续估值（先射箭后画靶；也保证持有即会发动）。
@@ -834,7 +898,16 @@ class TacticalAI:
                     and base not in self.used
                     and self.incoming_damage() < self.player.current_hp):
                 s += 40.0
+            _enemies = (pv.get("diff", {}) or {}).get("enemies", []) or []
+            if _enemies and all(en.get("dead") or en.get("hp_after", 1) == 0
+                                or en.get("departed", False) for en in _enemies):
+                ends_battle = True
             scored.append((s, cand["label"], cand))
+        if ends_battle:
+            # 撤回残韵收益项：有必杀在手时，"这一手能顺便学到什么"不算数。
+            for i in resonance_rows:
+                sc, lbl, cd = scored[i]
+                scored[i] = (sc - _resonance_bonus_of[i], lbl, cd)
         if not scored:
             return None
         scored.sort(key=lambda t: (-t[0], t[1]))
@@ -1000,6 +1073,11 @@ class TacticalAI:
             return 0
         per = probe.get(unit) or 1
         cost = probe["cost_per_x"]
+        if unit == "dmg" and per > 0:
+            kx = self._x_to_kill(name, need_units, probe.get("target_name"))
+            if kx >= 1:
+                return min(kx, 9) if cost <= 0 else min(
+                    kx, max(1, self.mana() // cost), 9)
         x = max(1, math.ceil(need_units / max(1, per)))
         if cost > 0:
             x = min(x, max(1, self.mana() // cost))
@@ -1128,8 +1206,10 @@ class TacticalAI:
                 probe = self._probe(name)
                 if probe is None or probe["kind"] != "damage" or probe["dmg"] <= 0:
                     continue
-                need_x = math.ceil(e.current_hp / probe["dmg"])
+                need_x = self._x_to_kill(name, e.current_hp, e.name)
                 cost = probe["cost_per_x"]
+                if need_x < 1:
+                    continue
                 if cost > 0 and need_x * cost > self.mana():
                     continue
                 if need_x >= 1:
@@ -1222,8 +1302,8 @@ class TacticalAI:
             if probe is None or probe["kind"] != "damage" or probe["dmg"] <= 0:
                 continue
             cost = probe["cost_per_x"]
-            x = max(1, budget // cost) if cost > 0 else 2
-            ranked.append((-(x * probe["dmg"]), name, min(x, 9)))
+            x = min(9, max(1, budget // cost) if cost > 0 else 2)
+            ranked.append((-self._dmg_at(name, x, target.name), name, x))
         for _, name, x in sorted(ranked):
             r = self._cast(name, x, target.name)
             if r:

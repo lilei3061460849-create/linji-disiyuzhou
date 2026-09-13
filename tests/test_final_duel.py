@@ -271,7 +271,7 @@ def test_name_collision_between_challenger_and_opponent_is_resolved():
     hp_before = opp.current_hp
     r = challenger.execute_action("use_daowen", {"daowen_name": "杀伐", "x": 3, "target": opp.name})
     assert r["success"] is True, r
-    assert opp.current_hp == hp_before - 15, "伤害必须真正命中改名后的对手，而不是误伤自己"  # 杀伐3→5X=15
+    assert opp.current_hp == hp_before - 9, "伤害必须真正命中改名后的对手，而不是误伤自己"  # 杀伐3→X²=9
     assert challenger.state.player.current_hp == challenger.state.player.blood_limit, "挑战者自己不应被误伤"
     _cleanup(path)
 
@@ -349,7 +349,7 @@ def test_duel_opponent_reincarnator_can_cast_with_full_pool():
         "actor": opp.name, "daowen_name": "杀伐", "x": 3, "target": "挑战贾凡",
     })
     assert cast["success"] is True, cast
-    assert challenger.state.player.current_hp == hp_before - 15   # 杀伐3→5X=15（DM裁定 2026-09-10，原 2X=6）
+    assert challenger.state.player.current_hp == hp_before - 9   # 杀伐3→X²=9（2026-09-13）
     assert opp.current_mana == opp.mana_limit - 3
     assert challenger.state.duel_turn == "player_side"
     _cleanup(path)
@@ -403,8 +403,8 @@ def test_duel_opponent_wave_hits_player_side_not_self():
     assert r2["success"] is True, r2
     assert r2["execution"].get("wave_spread")
     assert opp.current_hp == hp_self
-    assert player.current_hp == hp_player - 10   # 杀伐4→5X=20，波及两目标各分摊10（原各4）
-    assert friend.current_hp == hp_friend - 10
+    assert player.current_hp == hp_player - 8   # 杀伐4→X²=16，波及两目标各分摊8
+    assert friend.current_hp == hp_friend - 8
     _cleanup(path)
 
 
@@ -449,7 +449,7 @@ def test_duel_target_daowen_no_speed_cannot_dodge():
     })
     assert r["success"] is True, r
     assert r["dodge"].get("fully_dodged") is False
-    assert opp.current_hp == hp - 15   # 杀伐3→5X=15
+    assert opp.current_hp == hp - 9   # 杀伐3→X²=9
     _cleanup(path)
 
 

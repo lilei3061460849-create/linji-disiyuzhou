@@ -125,16 +125,19 @@ def test_full_pool_shaifa_outscores_basic_attack(engine, monkeypatch):
     （攻次4 → 折价 8×(0.12+0.5×4)≈17 分），实测：
         普攻→尸霸 44.80（零耗 32 伤，且保住后续回合的攻力）
         杀伐X=8   31.12 （40 伤 − 法力折价）
-    满池首选普攻；杀伐只在收割档（伤害恰好击杀，吃 +8 击杀分）时反超。
+    满池**第一手**首选普攻（零耗 32 伤，保住后续攻力）。
+
+    2026-09-13 杀伐改 X² 后的续集：第一手仍是普攻，但第二手不再是空过——
+    杀伐X=8 从 31.12 涨到 65.68（8 法力换 64 伤），压过法力折价后依然划算。
+    先零耗打一发、再把剩下的池子一次性兑成平方伤害，正是 X² 想要的节奏。
     """
     monkeypatch.setenv(FLAG, "1")
     ai = TacticalAI(engine, verbose=True)
     ai.take_turn()
     decisions = [line for line in ai.log if "实时决策" in line]
     assert decisions, decisions
-    assert any("普攻" in line for line in decisions), decisions
-    assert engine.state.player.current_mana == engine.state.player.mana_limit, \
-        "非收割满池局应选零耗普攻，法力不动"
+    assert "普攻" in decisions[0], decisions
+    assert any("杀伐" in line for line in decisions[1:]), decisions
 
 
 def test_spent_pool_leaves_no_damaging_candidate(engine, monkeypatch):
