@@ -147,6 +147,8 @@ def test_jiaohhei_on_bleed_death(tmp_path):
     begin_battle(e)
     p, m = e.state.player, e.state.enemies[0]
     e.state.relics.append(Relic("焦黑发丝", ""))
+    # 2026-09-13 全局上限：满速时 +2 会被吃掉，先腾空间再验"焦黑发丝触发了"
+    p.current_speed = max(0, p.speed_limit - 2)
     speed = p.current_speed
     m.current_hp = 3
     e.combat._pay_bleed_cost(m, 5)
@@ -161,6 +163,8 @@ def test_jiaohhei_sealed_does_not_trigger(tmp_path):
     p, m = e.state.player, e.state.enemies[0]
     e.state.relics.append(Relic("焦黑发丝", ""))
     e.state.sealed_relics["焦黑发丝"] = 2
+    # 2026-09-13 全局上限：满速时 +2 会被吃掉，先腾空间再验"焦黑发丝触发了"
+    p.current_speed = max(0, p.speed_limit - 2)
     speed = p.current_speed
     e.combat._apply_hostile_damage(m, m.current_hp + 10, source=p)
     assert not m.is_alive
@@ -173,6 +177,8 @@ def test_jiaohhei_on_collapse(tmp_path):
     begin_battle(e)
     p, m = e.state.player, e.state.enemies[0]
     e.state.relics.append(Relic("焦黑发丝", ""))
+    # 2026-09-13 全局上限：满速时 +2 会被吃掉，先腾空间再验"焦黑发丝触发了"
+    p.current_speed = max(0, p.speed_limit - 2)
     speed = p.current_speed
     m.mutation_count = 49
     e.combat.pay_numeric_cost(m, "异变", 1)
@@ -186,6 +192,8 @@ def test_jiaohhei_on_baolie_reflect(tmp_path):
     begin_battle(e)
     p, m = e.state.player, e.state.enemies[0]
     e.state.relics.append(Relic("焦黑发丝", ""))
+    # 2026-09-13 全局上限：满速时 +2 会被吃掉，先腾空间再验"焦黑发丝触发了"
+    p.current_speed = max(0, p.speed_limit - 2)
     speed = p.current_speed
     p.add_status(StatusEffect(name="爆裂", value=1, remaining_rounds=2, source=p.name))
     m.current_hp = 4

@@ -249,7 +249,9 @@ def test_battle_start_pipeline_silent_mask_then_gangpailing():
     # 只触发一次：重复调用不再叠加
     mana_after_first = player.current_mana
     combat.process_relics("battle_start", {"relic_choices": {}})
-    assert player.current_mana == mana_after_first + 40, "重复战始仍可触发（与旧实现一致：每次战始触发）"
+    # 2026-09-13 全局上限：第二次 +40 只能把池子填到[法限]50 为止（已有 40 → +10）。
+    # 本条要守的不变量是"重复战始仍会触发"，而不是"每次都真加满 40"。
+    assert player.current_mana == player.mana_limit, "重复战始仍可触发（增量被[法限]截断）"
     assert len([s for s in player.status_effects if s.name == "洗劫"]) == 1
 
 

@@ -1,9 +1,11 @@
-"""修复验证（2026-08-21）：守夜灯[敌回始]法力可用于本敌方回合的反应法术。
+"""守夜灯法力与反应法术。
 
-背景：怪物阶段的反应法术静态校验发生在[敌回始]守夜灯发放（执行阶段）之前，
-按「当前法力」校验 → 当前法力=0 时先发制人等合法反应法术被误判「法力不足」。
-修复：静态校验预计算本回合将授予的守夜灯法力（_shouyedeng_pending_grant），
-纳入法术预算；执行阶段仍按真实法力结算并扣除。
+2026-09-13 用户改版：守夜灯从「[敌回始]授予[法限]50%、[敌回终]清空」
+改为「[回始]授予[法限]10%、不清空」。授予因此发生在玩家回合开始，
+进入怪物阶段时法力已在池中，静态校验不再需要预付预算——
+原先 2026-08-21 那套「预计算 pending grant」的补丁随之作废。
+本文件现在验证：授予量为 ceil(法限*0.1)、法力留存不清空、
+以及不足时仍照常拒绝。
 """
 import sys
 import os
@@ -70,44 +72,59 @@ def _monster_phase_submit(e, spell_x=None, use_spell=True):
 
 
 def test_shouyedeng_mana_enables_reaction_spell(tmp_path):
-    """当前法力=0，但守夜灯本回合将授予法力 → 先发制人可以提交并实际生效。"""
+    """[回始]守夜灯授予的法力可用于随后的怪物阶段反应法术。"""
     e = _engine(tmp_path)
     e.state.relics.append(Relic(name="守夜灯", effect="", tags=[]))
     p = e.state.player
     p.current_mana = 0
-    p.mana_limit = 20  # 守夜灯授予 ceil(20/2)=10
+    p.mana_limit = 20  # 守夜灯授予 ceil(20*0.1)=2
     grant = e.combat._shouyedeng_pending_grant(p)
-    assert grant == 10, f"守夜灯应授予10法力，实{grant}"
-    prepared, choice = _monster_phase_submit(e, spell_x=9)  # 消耗9 ≤ 0+10
+    assert grant == 2, f"守夜灯应授予2法力，实{grant}"
+    e.combat._grant_shouyedeng(p)  # [回始]授予
+    assert p.current_mana == 2
+    prepared, choice = _monster_phase_submit(e, spell_x=2)  # 消耗2 ≤ 2
     res = e.combat.resolve_monster_phase([choice], prepared)
     # 先发制人应已触发（怪物受到反打伤害）
     fired = any(
         lg.get("spell") == "先发制人" and lg.get("execution")
         for hit in res for lg in (hit.get("spell_logs") or []))
     assert fired, "先发制人应使用守夜灯法力触发"
-    # 执行后法力扣除正确：0 +10(守夜灯) -9(先发制人) = 1 → [敌回终]守夜灯法力清空 → 0
-    assert p.current_mana == 0, f"敌回终守夜灯法力应清空，实{p.current_mana}"
+    # 执行后法力扣除正确：0 +2(守夜灯[回始]) -2(先发制人) = 0；不再有[敌回终]清空
+    assert p.current_mana == 0, f"法力应只被法术消耗扣光，实{p.current_mana}"
     # 靶怪是[怪物]（读面板 1击×3伤），反打不抵消来袭：玩家应恰好掉 3 点。
     # 旧写法 "<= 57" 是把当时血限60硬编进断言（60-3=57）；血限随加点定价变成66后失效。
     assert p.current_hp == p.blood_limit - 3, \
         f"守夜灯法力被用于反打，玩家仍应受靶怪那 3 点伤害，实{p.blood_limit - p.current_hp}"
 
 
-def test_shouyedeng_not_double_counted(tmp_path):
-    """守夜灯法力不会被重复计算：授予一次、清空一次。"""
+def test_shouyedeng_mana_persists_after_monster_phase(tmp_path):
+    """守夜灯法力不再被清空：怪物阶段结束后没花掉的部分留在池里。"""
     e = _engine(tmp_path)
     e.state.relics.append(Relic(name="守夜灯", effect="", tags=[]))
     p = e.state.player
     p.current_mana = 0
     p.mana_limit = 20
-    prepared, choice = _monster_phase_submit(e, spell_x=2)  # 只花2法力
+    e.combat._grant_shouyedeng(p)  # [回始]授予 ceil(20*0.1)=2
+    assert p.current_mana == 2
+    prepared, choice = _monster_phase_submit(e, spell_x=1)  # 只花1法力
     res = e.combat.resolve_monster_phase([choice], prepared)
-    granted = [x for x in res if x.get("type") == "shouyedeng_grant"]
-    assert len(granted) == 1, "守夜灯每回合只授予一次"
-    assert granted[0]["gained"] == 10
-    cleared = [x for x in res if x.get("type") == "shouyedeng_clear"]
-    assert len(cleared) == 1, "守夜灯[敌回终]清空一次"
-    assert p.current_mana == 0, "守夜灯法力清空后回到基础值"
+    assert not [x for x in res if x.get("type") == "shouyedeng_grant"], \
+        "授予发生在[回始]，怪物阶段不应再授予"
+    assert not [x for x in res if x.get("type") == "shouyedeng_clear"], \
+        "守夜灯法力不再清空"
+    assert p.current_mana == 1, f"2授予-1消耗=1应留存，实{p.current_mana}"
+
+
+def test_shouyedeng_grants_once_per_round(tmp_path):
+    """每回合只授予一次：同一回合重复调用不再发放。"""
+    e = _engine(tmp_path)
+    e.state.relics.append(Relic(name="守夜灯", effect="", tags=[]))
+    p = e.state.player
+    p.current_mana = 0
+    p.mana_limit = 20
+    assert e.combat._grant_shouyedeng(p) is not None
+    assert e.combat._grant_shouyedeng(p) is None, "同回合第二次不应授予"
+    assert p.current_mana == 2
 
 
 def test_insufficient_real_mana_still_rejected(tmp_path):
@@ -116,8 +133,9 @@ def test_insufficient_real_mana_still_rejected(tmp_path):
     e.state.relics.append(Relic(name="守夜灯", effect="", tags=[]))
     p = e.state.player
     p.current_mana = 0
-    p.mana_limit = 20  # 授予10；先发制人 X=11 需11 > 10
-    prepared, choice = _monster_phase_submit(e, spell_x=11)
+    p.mana_limit = 20
+    e.combat._grant_shouyedeng(p)  # 授予2；先发制人 X=3 需3 > 2
+    prepared, choice = _monster_phase_submit(e, spell_x=3)
     try:
         e.combat.resolve_monster_phase([choice], prepared)
         raise AssertionError("法力不足的提交应被拒绝")

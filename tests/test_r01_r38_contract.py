@@ -155,13 +155,13 @@ def test_r11_r17_normal_two_stage_monster_choices(tmp_path):
 
 def test_r11_r17_boundary_relic_and_first_aid_require_explicit_choices(tmp_path):
     engine = _full_setup(_engine(tmp_path))
-    engine.state.relics = [Relic("折速法印", "")]
+    engine.state.relics = [Relic("三相残韵盘", "")]
     engine.state.energy = 0
     missing = engine.execute_action("battle_start", {"relic_choices": {}})
     assert not missing["success"]
     assert engine.state.current_battle == 0
     ok = engine.execute_action("battle_start", {
-        "relic_choices": {"折速法印": {"use": True, "x": 1}},
+        "relic_choices": {"三相残韵盘": {"use": False}},
     })
     assert ok["success"]
     assert engine.execute_action("round_start", {"relic_choices": {}})["success"]
@@ -329,7 +329,7 @@ def test_r11_r17_aoe_dodge_does_not_leak_into_next_resolution(tmp_path):
         "dodge": False, "blood_shadow": False,
     })
     assert three["success"], three
-    assert first.current_hp + second.current_hp == 100 + 95   # 合计承受5点（杀伐1→5X）
+    assert first.current_hp + second.current_hp == 100 + 99   # 合计承受1点（杀伐1→X²=1）
 
 
 def test_r11_r17_targets_must_come_from_prepare_and_fail_atomically(tmp_path):

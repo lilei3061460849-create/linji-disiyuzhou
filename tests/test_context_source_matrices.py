@@ -134,11 +134,11 @@ def test_speed_source_matrix_contexts():
     enemy = state.enemies[0]
 
     combat.pay_numeric_cost(player, "疲惫", 2, cost_context={
-        "timing": "battle_start", "source": "折速法印", "source_type": "relic",
+        "timing": "battle_start", "source": "苍白之花", "source_type": "relic",
         "actor": player, "target": player, "mechanic": "cost", "subtype": "fatigue",
         "amount": 2, "tags": {"active_payment"}, "event_id": "cost-fatigue-matrix",
     })
-    assert player._speed_change_events[-1]["source"] == "折速法印"
+    assert player._speed_change_events[-1]["source"] == "苍白之花"
     assert player._speed_change_events[-1]["amount"] == -2
 
     combat._spend_dodge_speed(player, "enemy:0")
@@ -151,6 +151,9 @@ def test_speed_source_matrix_contexts():
 
     enemy.current_hp = 0
     enemy.is_alive = False
+    # 2026-09-13 全局上限：满速时焦黑发丝的 +2 会被吃掉而不记事件；
+    # 本例验的是"来源归因写对了"，先腾出上限空间。
+    player.current_speed = max(0, player.speed_limit - 2)
     combat._on_entity_death(enemy, ctx={
         "timing": "player_action", "source": "杀伐", "source_type": "daowen",
         "actor": player, "target": enemy, "mechanic": "death", "subtype": "hp_zero",

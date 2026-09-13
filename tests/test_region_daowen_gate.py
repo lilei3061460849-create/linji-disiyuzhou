@@ -59,7 +59,7 @@ def test_can_learn_same_region_after_owning_one():
 
 def test_transformed_monster_daowen_not_learnable_outside_battle():
     """正常路径：怪物转化道纹须以自身已持有的道纹为起点经残韵获得，
-    不可通过局外【学习】直接习得（README 第211/248行）"""
+    不可通过局外【学习】直接习得（规则正文·局外系统·学习门槛）"""
     e = _engine("龙心谷")
     for dw in ("蒙蔽", "坠落", "弱化"):
         r = _learn(e, dw)
@@ -68,7 +68,7 @@ def test_transformed_monster_daowen_not_learnable_outside_battle():
 
 
 def test_original_monster_daowen_never_learnable():
-    """边界：原始怪物道纹人类无法承受并获得（README 第250行）"""
+    """边界：原始怪物道纹人类无法承受并获得（规则正文）"""
     e = _engine("龙心谷")
     for dw in ("必中", "狂暴", "自愈", "飞行"):
         r = _learn(e, dw)
@@ -100,7 +100,7 @@ def test_energy_refunded_on_rejection():
     e = _engine("龙心谷")
     e.state.energy = 3
     e.execute_action("pre_battle_action",
-                     {"sub_action": "学习", "sub": "daowen", "name": "僵化"})
+                     {"sub_action": "学习", "sub": "daowen", "name": "退化"})
     assert e.state.energy == 3, "被拒绝时精力应退还"
 
 
@@ -122,7 +122,7 @@ def test_foreign_region_exclusive_always_rejected():
     e.state.player.dao_wen["裂变"] = DaoWenInstance(
         DaoWen(name="裂变", formula="", cost_type="消耗",
                cost_formula="X", effect_formula=""))
-    for foreign in ("僵化", "点金", "坏死", "逼债"):
+    for foreign in ("退化", "点金", "坏死", "逼债"):
         r = _learn(e, foreign)
         assert not r["success"], f"{foreign}属于其他副本，不应可学"
         assert "专属道纹" in r["error"]

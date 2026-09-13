@@ -31,7 +31,7 @@ class CombatEngine:
     
     # 副本专属道纹
     REGION_EXCLUSIVE_DAOWEN = {
-        "扭曲都市": {"变形","定型","畸变","僵化","超频","坏死","爆裂","退化"},
+        "扭曲都市": {"变形","定型","畸变","搏命","超频","坏死","爆裂","退化"},
         "罪孽都市": {"点金","逼债","抵扣","清算","赎金","假钞","赌命","消灾"},
         "龙心谷":   {"加害","龙鳞","逆鳞","活血","裂变","嫁祸","背负","伤痕"},
     }
@@ -39,7 +39,7 @@ class CombatEngine:
     # 原始怪物道纹（道纹归属规则：各组起点）——【原初X】可借用范围
     ORIGINAL_MONSTER_DAOWEN = ("狂暴", "强化", "疯狂", "减速", "必中", "自愈", "飞行")
     # 原始怪物道纹每次实际发动时支付异变5X（X按该次发动时递增后的数值计算，
-    # 见 README 怪物准则9·道纹递增）；效果持续期间（未再次发动）不再重复计费。
+    # 见规则正文·怪物准则9·道纹递增）；效果持续期间（未再次发动）不再重复计费。
     # 必中为次数型（下X次选择[目标]无法闪避），余数记在 entity._bizhong_left。
     YUANCHU_COST_RATE = 5
     # 波及X（2026-08-21）：你发动的道纹同时作用于所有拥有波及效果的目标。
@@ -212,7 +212,24 @@ class CombatEngine:
     def _incoming_adjust(self, target: Entity, amount: int, damage_type: str = "普通") -> int:
         if amount <= 0 or damage_type == "代价" or target is None:
             return amount
-        return self.hook_manager.apply_incoming_adjust(target, amount, damage_type, None, self.state)
+        amount = self.hook_manager.apply_incoming_adjust(target, amount, damage_type, None, self.state)
+        return self._apply_parry_reduction(target, amount, damage_type)
+
+    def _apply_parry_reduction(self, target: Entity, amount: int, damage_type: str) -> int:
+        """招架（2026-09-13）：本轮每次受到的伤害减去等同当前法力的数值。
+
+        接在 _incoming_adjust 末尾 = 所有伤害通道的公共咽喉（攻击、道纹、反噬
+        都经 _apply_hostile_damage → _incoming_adjust），不必逐路径接线。
+        减免在格挡之前结算：招架是"卸力"，格挡是"挨下来再吸收"，先卸后吸。
+        【代价】不在此列（上面已 return），与格挡口径一致——代价是自己付的，
+        不是"受到的伤害"，否则招架会顺带免掉透支的流血，卖血流直接变无代价。
+        """
+        if amount <= 0 or target is None or not getattr(target, "parrying_this_round", False):
+            return amount
+        reduction = max(0, target.current_mana)
+        if reduction <= 0:
+            return amount
+        return max(0, amount - reduction)
 
     def _record_speed_change_event(
         self, entity: Entity, amount: int,
@@ -262,15 +279,22 @@ class CombatEngine:
         return gained
 
     def clamp_immortal_body(self, entity: Entity) -> None:
-        """不朽之躯：获得的[法力]/[速度]无法超过[法限]/[速限]。
+        """任何属性都不得超过其上限（用户裁定 2026-09-13，全局化）。
 
-        只限制“获得”的当前法力/当前速度不得超过各自上限；属性点（修行/无所求）
-        提升的是上限本身，不受本限制。朋友/员工不继承（side_has 已排除）。
+        原先这条只在持有【不朽之躯】时生效，其余情况允许当前法力/速度超池。
+        现改为**无条件对所有角色生效**：当前生命≤[血限]、当前法力≤[法限]、
+        当前速度≤[速限]。理由是上限不再只是"初始值"，它同时定义了攻次(速度)
+        与攻力(法力)，超池等于凭空突破面板；【不朽之躯】的原文效果因此成为
+        通用规则的一部分（该遗物本身保留，不再独占此项）。
+
+        只限制"获得"的当前值，不动上限本身；属性点（修行/无所求）提升的是
+        上限，不受本限制。方法名保留兼容既有 12 处调用点与测试。
         """
-        if entity is None or not self.state.side_has(entity, "不朽之躯"):
+        if entity is None:
             return
         entity.current_mana = min(entity.current_mana, entity.mana_limit)
         entity.current_speed = min(entity.current_speed, entity.speed_limit)
+        entity.current_hp = min(entity.current_hp, entity.blood_limit)
 
     def _relic_active(self, entity: Entity, name: str) -> bool:
         if entity is None or not self.state.side_has(entity, name):
@@ -427,12 +451,14 @@ class CombatEngine:
                 name="无力", value=new_stacks, remaining_rounds=1, source="寒冰法力"))
 
     def _shouyedeng_pending_grant(self, entity: Optional[Entity]) -> int:
-        """守夜灯：[敌回始]将授予的法力量（0=本次不会授予）。
+        """守夜灯：[回始]将授予的法力量（0=本次不会授予）。
 
-        判定条件与 _grant_shouyedeng 完全一致但不实际发放。怪物阶段的法术
-        静态校验发生在[敌回始]守夜灯发放之前（执行阶段才授予），因此校验
-        反应法术预算时必须预计算这笔法力，否则当前法力=0 时先发制人等
-        合法反应法术会被误判为「法力不足」（2026-08-21 实战确认）。
+        判定条件与 _grant_shouyedeng 完全一致但不实际发放，供静态校验预计算
+        法力预算使用（当前法力=0 时先发制人等合法反应法术不应被误判「法力不足」）。
+
+        用户裁定 2026-09-13：改为 **[回始]获得[法限]10%的法力**（原为
+        [敌回始]获得50%、[敌回终]清空）。一池制下这是唯一的常规回血手段，
+        10% 只是让长局不至于彻底断供，不构成回填。
         """
         if entity is None or not entity.is_alive or entity.entity_type != "轮回者":
             return 0
@@ -442,30 +468,20 @@ class CombatEngine:
             return 0
         if getattr(entity, "_shouyedeng_granted", 0):
             return 0
-        return math.ceil(entity.mana_limit / 2)
+        return math.ceil(entity.mana_limit * 0.1)   # 全局整数规则：向上取整
 
     def _grant_shouyedeng(self, entity: Optional[Entity]) -> Optional[dict]:
-        """守夜灯：[敌回始]获得法限50%法力，每回合一次。"""
+        """守夜灯：[回始]获得[法限]10%法力，每回合一次，不再清空。"""
         gained = self._shouyedeng_pending_grant(entity)
         if gained <= 0:
             return None
+        before = entity.current_mana
         entity.current_mana += gained
         self.clamp_immortal_body(entity)
-        entity._shouyedeng_granted = gained
-        return {"type": "shouyedeng_grant", "entity": entity.name, "gained": gained}
-
-    def _clear_shouyedeng(self, entity: Optional[Entity]) -> Optional[dict]:
-        """守夜灯：该法力[敌回终]清空（只扣本回合授予量）。"""
-        if entity is None:
-            return None
-        granted = getattr(entity, "_shouyedeng_granted", 0) or 0
-        entity._shouyedeng_granted = 0
-        if granted <= 0:
-            return None
-        before = entity.current_mana
-        entity.current_mana = max(0, entity.current_mana - granted)
-        return {"type": "shouyedeng_clear", "entity": entity.name,
-                "cleared": before - entity.current_mana, "granted": granted}
+        # 记实际落地量（上限可能吃掉一部分），供战报如实呈现。
+        entity._shouyedeng_granted = entity.current_mana - before
+        return {"type": "shouyedeng_grant", "entity": entity.name,
+                "gained": entity._shouyedeng_granted, "declared": gained}
 
     def _jieli_boost(self, dealer: Entity, amount: int) -> int:
         if amount <= 0 or not dealer.has_status("借力"):
@@ -606,7 +622,40 @@ class CombatEngine:
         else:
             logs = None
         record = self._write_hp_loss_record(entity, amount, parent_ctx, subtype, logs)
+        toll = self._settle_chenglu(entity, amount, parent_ctx)
+        if toll:
+            record["chenglu"] = toll
         return record
+
+    def _settle_chenglu(self, entity: Entity, amount: int,
+                           parent_ctx: Optional[EffectContext | dict] = None) -> Optional[dict]:
+        """承露盏（遗物）：每累计失去10点生命，获得1点法力。本场累计，战始归零。
+
+        挂在 _record_hp_loss_event 这条**唯一失血总账**上，所以不区分来源：
+        透支的流血、血影的流血、挨打、爆裂反噬……一律计入。这正是它与卖血流
+        （血炼周天 = 再生⇄透支）配套的地方——透支每轮流血 4X 本来是纯支出，
+        现在每满 10 点返还 1 法力。
+
+        余数滚存（chenglu_paid 记已兑换过的总额），所以"失去 7 + 失去 5"
+        照样在第 10 点上结一次账，不会因为分笔挨打而永远凑不满。
+        不朽之躯的钳制照常生效：返还的法力仍然过 clamp，不能超过[法限]。
+        """
+        if entity is None or amount <= 0:
+            return None
+        if not self._relic_active(entity, "承露盏"):
+            return None
+        entity.hp_lost_this_battle = getattr(entity, "hp_lost_this_battle", 0) + amount
+        paid = getattr(entity, "chenglu_paid", 0)
+        gain = (entity.hp_lost_this_battle // 10) - (paid // 10)
+        if gain <= 0:
+            return None
+        entity.chenglu_paid = (entity.hp_lost_this_battle // 10) * 10
+        before = entity.current_mana
+        entity.current_mana += gain
+        self.clamp_immortal_body(entity)
+        actual = entity.current_mana - before
+        return {"relic": "承露盏", "hp_lost_total": entity.hp_lost_this_battle,
+                "mana_gained": actual, "capped": actual < gain}
 
     # ---- 「失去生命后」统一拦截：绑定与兜底触发 (2026-08-30) ----
     def _hp_record_entities(self) -> list[Entity]:
@@ -1702,6 +1751,10 @@ class CombatEngine:
         # 活血追踪归零 + 出手预算归零（回始重置本回合已用出手次数）+ 血誓戒每回合限一次归零 + 血族血脉判定归零
         for e in self.state.get_all_player_side() + self.state.get_all_enemy_side():
             e.hp_lost_this_round = 0
+            # 招架：上回合招架过 → 本回合禁用；本回合姿态清空等待重新声明。
+            # 顺序要紧：先用旧的 parrying 值算出本回合的锁，再清姿态。
+            e.parry_locked_this_round = bool(getattr(e, "parrying_this_round", False))
+            e.parrying_this_round = False
             if hasattr(e, "_hp_loss_events"):
                 e._hp_loss_events = []
             if hasattr(e, "_speed_change_events"):
@@ -1717,11 +1770,12 @@ class CombatEngine:
         # 原「勾魂：[回始]不获得法力」随本段一起取消，【勾魂】改为消耗法力翻倍
         # （见 models.py::spend_mana）。
 
-        # 遗物：回始触发（回锋刀按速限缺口造伤）。守夜灯改走[敌回始]。
+        # 遗物：回始触发（回锋刀按速限缺口造伤）。
         relic_logs = self.process_relics(TriggerTiming.ROUND_START, {"relic_choices": relic_choices or {}})
         effects.extend({"type": "relic", "log": l} for l in relic_logs)
-        # 死斗对手的[敌回始]≈玩家行动开始：在回始法力之后授予守夜灯。
-        for entity in self.state.enemies:
+        # 守夜灯（用户裁定 2026-09-13 改为[回始]授予[法限]10%，不再清空）：
+        # 玩家与死斗对手（同为轮回者）同口径，在回始遗物之后结算。
+        for entity in ([self.state.player] if self.state.player else []) + list(self.state.enemies):
             granted = self._grant_shouyedeng(entity) if entity.entity_type == "轮回者" else None
             if granted:
                 effects.append(granted)
@@ -1908,7 +1962,7 @@ class CombatEngine:
             if expired:
                 # 只有“持续期间直接改写面板”的效果到期即还原；畸变/伤痕/逼债等
                 # 已经产生的累计局内后果保留到战终，再由battle作用域统一回滚。
-                panel_modifier_sources = {"强化", "弱化", "僵化"}
+                panel_modifier_sources = {"强化", "弱化"}
                 rolled_back = self.state.rollback_scoped_sources(
                     entity, set(expired) & panel_modifier_sources)
                 effects.append({
@@ -2105,7 +2159,7 @@ class CombatEngine:
     
     def execute_evolution(self, monster: Entity, daowen_name: str, x: int) -> dict:
         """
-        特殊事件【进化】：怪物发动【原初X】（README·特殊事件）。
+        特殊事件【进化】：怪物发动【原初X】（规则正文·特殊事件）。
         原初X：代价：异变5X。选择一种**当前轮回者已持有**、且自身未持有的道纹，
         [战终]前视为持有该道纹（其数值固定为本次X），借用的道纹发动时照常支付其自身代价。
 
@@ -2198,14 +2252,14 @@ class CombatEngine:
     # ========== 多路径胜利系统 ==========
     # 所有阈值数值均为占位初值，需经测试调整（见 AI_EXPERIENCE.md）
 
-    PROLIFERATION_THRESHOLD = 2.0  # 癌变：README「累计恢复量达血限×2」；过量回复按原值计（双倍机制已删，DM裁定2026-08-18）
+    PROLIFERATION_THRESHOLD = 2.0  # 癌变：规则正文「累计恢复量达血限×2」；过量回复按原值计（双倍机制已删，DM裁定2026-08-18）
     CANCER_THRESHOLD = PROLIFERATION_THRESHOLD  # 别名：增生旧名已统一为癌变，二者同阈值
     DEBT_THRESHOLD = 20           # 还债：怪物负债达到20碎片时触发（DM裁定2026-08-22 由10上调）
     SCULPTURE_DAMAGE = 15         # 雕塑：每点耐久可造成的伤害
     SCULPTURE_SHIELD = 20         # 雕塑：每点耐久可获得的格挡
 
     def cancer_threshold_of(self, entity: Entity) -> int:
-        """README：累计恢复量达到血限×2（过量按原值计入 total_healed，双倍机制已删）。"""
+        """规则正文：累计恢复量达到血限×2（过量按原值计入 total_healed，双倍机制已删）。"""
         if entity.blood_limit <= 0:
             return 0
         return math.ceil(entity.blood_limit * self.PROLIFERATION_THRESHOLD)
@@ -2659,7 +2713,7 @@ class CombatEngine:
             if sha == "心煞":
                 result["sha_qi_cooldown_boost"] = True
 
-        # 【冷却X】代价：README「冷却X：使用后该道纹记为【X(0)/Y】，[战终]后已完成
+        # 【冷却X】代价：规则正文「冷却X：使用后该道纹记为【X(0)/Y】，[战终]后已完成
         # 战斗场数+1，达到Y时才能再次使用」。此前从未写入 cooldown_remaining，
         # 导致 固执/束缚/畸变/迟滞 可在同一场里无限重复发动（束缚因此支配全局）。
         if calc.get("cost_type") == "冷却":
@@ -2981,7 +3035,7 @@ class CombatEngine:
                 target, -calc["blood_limit_reduction"], name, EffectPolarity.DEBUFF.value,
                 ctx=daowen_ctx, source_type="daowen", subtype="blood_limit_reduction",
                 actor=caster, owner=caster, clamp_hp=False, lethal=False)
-            # README 第460行"[血限]及当前生命同时 -4X"：两者是各自独立的扣减。
+            # 规则正文"[血限]及当前生命同时 -4X"：两者是各自独立的扣减。
             # 此前实现只做 current_hp=min(current_hp, blood_limit)（血限压顶），
             # 对残血目标等于毫无效果。合并成一次写入：既保持与两步扣减相同的终值，
             # 又让 Entity.__setattr__ 的「失去生命后」钩子恰好触发一次。
@@ -3314,7 +3368,7 @@ class CombatEngine:
                             "mechanic": "damage", "subtype": "self_attack", "amount": target.attack_power,
                             "tags": {"daowen", "self_damage"},
                         })})
-        if "targets_removed" in calc:  # 封印：仅移出怪物（README：X个[目标]怪物）
+        if "targets_removed" in calc:  # 封印：仅移出怪物（规则正文：X个[目标]怪物）
             removed = 0
             removed_names = []
             if "targets_removed" in wave_pieces:
@@ -3740,9 +3794,8 @@ class CombatEngine:
                                            extra_mana: int = 0) -> None:
         """校验受击方反应法术提交。
 
-        extra_mana：静态校验阶段预计算的[敌回始]守夜灯法力（见
-        _shouyedeng_pending_grant）；执行阶段不传（实际法力已含授予值），
-        避免重复计算。
+        extra_mana：静态校验阶段可预付的额外法力预算（当前恒为 0；
+        守夜灯改为[回始]授予后已无需预付）。
         """
         if not isinstance(submitted, dict):
             raise ValueError("每次攻击必须显式提交spell_choices对象")
@@ -3793,6 +3846,14 @@ class CombatEngine:
                             mana -= calc.get("cost", 0)
                             if mana < 0:
                                 raise ValueError(f"法术{spell_name}提交的法力不足")
+                        # 2026-09-12：校验必须与结算(_apply_daowen_result)口径一致地
+                        # 计入产法力道纹的收益。此前只记消耗不记产出，导致【透支】等
+                        # "流血换法力"道纹在循环法术里被当成纯支出：一个法力净零的
+                        # 自持循环(透支X→再生X)反而要求预付 cost*循环次数 的法力，
+                        # 等于把"靠循环自己造法力"这一设计意图判死。产出在步骤结算后
+                        # 到账，故按步序累加，后续步骤即可支用前面步骤产出的法力。
+                        if "mana_gain" in calc:
+                            mana += calc["mana_gain"]
                         hostile = self.state.on_player_side(holder) != self.state.on_player_side(expected_target)
                         if hostile:
                             if not isinstance(entry.get("dodge"), bool):
@@ -3854,8 +3915,7 @@ class CombatEngine:
                                        extra_mana: int = 0) -> None:
         """校验「目标发动道纹前」反应法术（如咎由自取）。
 
-        extra_mana：静态校验阶段预计算的[敌回始]守夜灯法力（见
-        _shouyedeng_pending_grant）；执行阶段不传，避免重复计算。
+        extra_mana：静态校验阶段可预付的额外法力预算（当前恒为 0）。
         """
         expected = self.prepare_daowen_trigger_spells(actor)
         if not isinstance(submitted, dict) or set(submitted) != set(expected):
@@ -4056,6 +4116,14 @@ class CombatEngine:
                             mana -= calc.get("cost", 0)
                             if mana < 0:
                                 raise ValueError(f"法术{spell_name}提交的法力不足")
+                        # 2026-09-12：校验必须与结算(_apply_daowen_result)口径一致地
+                        # 计入产法力道纹的收益。此前只记消耗不记产出，导致【透支】等
+                        # "流血换法力"道纹在循环法术里被当成纯支出：一个法力净零的
+                        # 自持循环(透支X→再生X)反而要求预付 cost*循环次数 的法力，
+                        # 等于把"靠循环自己造法力"这一设计意图判死。产出在步骤结算后
+                        # 到账，故按步序累加，后续步骤即可支用前面步骤产出的法力。
+                        if "mana_gain" in calc:
+                            mana += calc["mana_gain"]
                         hostile = self.state.on_player_side(holder) != self.state.on_player_side(expected_target)
                         if hostile:
                             if not isinstance(entry.get("dodge"), bool):
@@ -4138,8 +4206,8 @@ class CombatEngine:
         """自动反应法术路径：被选定方是否消耗 1 点速度闪避本次道纹。
 
         DM 裁定（2026-08-31）：法术说到底只是自定义了触发条件的道纹，
-        **道纹要遵守的规则，法术一样要遵守**。README:161「凡带 [目标] 道纹，
-        目标被选定时均可消耗 1 点当前速度进行闪避」、README:423「禁止跳过闪避判定」。
+        **道纹要遵守的规则，法术一样要遵守**。规则正文「凡带 [目标] 道纹，
+        目标被选定时均可消耗 1 点当前速度进行闪避」、规则正文「禁止跳过闪避判定」。
 
         原先 `_auto_after_life_lost_decision` 把 dodge 写死 False，导致**道纹伤害**
         （区别于基础攻击的显式反应窗口）触发的反应法术不给目标任何声明机会——
@@ -4359,7 +4427,7 @@ class CombatEngine:
             raise ValueError("relic_choices必须是对象")
         active = {r.name for r in self.state.relics if self.state.sealed_relics.get(r.name, 0) <= 0}
         player = self.state.player
-        for name in ("折速法印", "三相残韵盘"):
+        for name in ("三相残韵盘",):
             if name not in active:
                 continue
             decision = choices.get(name)
@@ -4367,13 +4435,7 @@ class CombatEngine:
                 raise ValueError(f"持有【{name}】时必须显式提交relic_choices.{name}.use布尔值")
             if not decision["use"]:
                 continue
-            if name == "折速法印":
-                x = decision.get("x")
-                if not isinstance(x, int) or isinstance(x, bool) or x < 1 or not player:
-                    raise ValueError("折速法印x必须是正整数")
-                self.validate_numeric_cost(
-                    player, "疲惫", x, decision.get("cost_share_target_ref", ""))
-            elif name == "三相残韵盘":
+            if name == "三相残韵盘":
                 resonance = decision.get("resonance_type", "")
                 if resonance not in ("转换", "反转", "曲解") or self.state.resonance.get(resonance, 0) < 1:
                     raise ValueError("三相残韵盘必须显式选择一种当前持有的resonance_type")
@@ -4415,10 +4477,8 @@ class CombatEngine:
                     or (target_ref not in legal and not deferred_enemy_ref)):
                 raise ValueError(f"烙痕钉必须显式选择敌方target_ref，可选{sorted(legal)}")
         using_fatigue = (
-            ("折速法印" in active and isinstance(choices.get("折速法印"), dict)
-             and choices["折速法印"].get("use"))
-            or ("苍白之花" in active and isinstance(choices.get("苍白之花"), dict)
-                and choices["苍白之花"].get("use"))
+            "苍白之花" in active and isinstance(choices.get("苍白之花"), dict)
+            and choices["苍白之花"].get("use")
         )
         if "回锋刀" in active and using_fatigue and not self._huifeng_ref_from_choice(choices.get("回锋刀")):
             raise ValueError("回锋刀触发必须显式提交合法敌方目标引用")
@@ -4547,10 +4607,8 @@ class CombatEngine:
             choices = ctx.get("relic_choices", {})
             self.validate_battle_start_relic_choices(choices)
             using_fatigue = (
-                ("折速法印" in relics and isinstance(choices.get("折速法印"), dict)
-                 and choices["折速法印"].get("use"))
-                or ("苍白之花" in relics and isinstance(choices.get("苍白之花"), dict)
-                    and choices["苍白之花"].get("use"))
+                "苍白之花" in relics and isinstance(choices.get("苍白之花"), dict)
+                and choices["苍白之花"].get("use")
             )
             if "回锋刀" in relics and using_fatigue:
                 ref = self._huifeng_ref_from_choice(choices.get("回锋刀"))
@@ -4559,16 +4617,6 @@ class CombatEngine:
                         or not self.state.on_enemy_side(target)):
                     raise ValueError("回锋刀触发必须显式提交合法敌方目标引用")
                 self._remember_huifeng_target(player, ref)
-            if "折速法印" in relics and choices["折速法印"]["use"]:
-                decision = choices["折速法印"]
-                x = decision["x"]
-                self.pay_numeric_cost(
-                    player, "疲惫", x,
-                    cost_share_target_ref=decision.get("cost_share_target_ref", ""),
-                    cost_context={"timing": "battle_start", "source": "折速法印", "source_type": "relic", "tags": {"active_payment"}})
-                player.current_mana += 6 * x
-                self.clamp_immortal_body(player)
-                logs.append(f"折速法印：疲惫{x}，+{6*x}法力")
             if "三相残韵盘" in relics and choices["三相残韵盘"]["use"]:
                 consume = choices["三相残韵盘"]["resonance_type"]
                 self.state.resonance[consume] -= 1
@@ -4627,6 +4675,13 @@ class CombatEngine:
 
     def reset_monster_activation(self):
         """战始重置怪物激活状态与战斗遗物状态"""
+        # 招架姿态与承露盏记账都是**每场**口径，战始一并归零，
+        # 避免上一场的姿态/余数漏到新战斗（换场时不经 [回始]）。
+        for e in self.state.get_all_player_side() + self.state.get_all_enemy_side():
+            e.parrying_this_round = False
+            e.parry_locked_this_round = False
+            e.hp_lost_this_battle = 0
+            e.chenglu_paid = 0
         self._monster_activated = {}
         self._monster_evolved = set()  # 进化（原初X）：每场战斗限一次
         self._monster_daowen_round_used = {}
@@ -4636,7 +4691,7 @@ class CombatEngine:
     def _monster_round_used(self, monster: Entity) -> set:
         """该怪物本回合已发动的道纹集合（换回合自动清空）。
 
-        DM裁定（2026-08-18，README怪物准则9）：怪物可在不同回合重复发动同一
+        DM裁定（2026-08-18，规则正文·怪物准则9）：怪物可在不同回合重复发动同一
         道纹（冷却类由 can_use 管辖），每回合每道纹至多一次；重复使用的代价
         由道纹递增机制承担（每次实际发动 X+2×副本阶级）。
         _monster_activated 保留为持续激活口径（狂暴出手加成等），不再作发动门禁。
@@ -4991,7 +5046,7 @@ class CombatEngine:
         if not rewritten_as:
             activated.add(name)
             self._monster_round_used(monster).add(name)
-            # 怪物道纹递增（DM裁定2026-08-18，README怪物准则9）：每实际发动一次，
+            # 怪物道纹递增（DM裁定2026-08-18，规则正文·怪物准则9）：每实际发动一次，
             # 该道纹X本场累加+2×副本阶级。只在真正完成发动时累加（无法支付代价、
             # 崩解中断、被控跳过的回合均不计）；残韵改写的一次性结算不递增源道纹。
             # 怪物无法力概念，递增只放大效果数值与真实代价；实例随战斗结束消散。
@@ -5141,12 +5196,9 @@ class CombatEngine:
         """
         expected = {actor["actor_ref"]: actor for actor in prepared["actors"]}
         refs = self._combat_entity_refs()
-        # 守夜灯：[敌回始]在怪物阶段执行时才授予。静态校验先于执行，因此
-        # 预计算本次将授予的法力，纳入反应法术预算（否则当前法力=0时
-        # 先发制人等合法反应法术会被误判「法力不足」，2026-08-21 实战确认）。
+        # 守夜灯自 2026-09-13 改为[回始]授予，进入怪物阶段时法力已经在池里，
+        # 静态校验无需再预付（再预付就是重复计算）。
         pending_shouyedeng = 0
-        if bool(prepared.get("actors") or prepared.get("skipped")):
-            pending_shouyedeng = self._shouyedeng_pending_grant(self.state.player)
         for actor_ref, choice in submitted.items():
             monster = refs.get(actor_ref)
             if monster is None or not monster.is_alive:
@@ -5280,16 +5332,8 @@ class CombatEngine:
         """校验全部通过后的怪物阶段执行（原 resolve_monster_phase 执行体，语义不变）。"""
         refs = self._combat_entity_refs()
         results: list[dict] = []
-        enemy_turn = bool(prepared.get("actors") or prepared.get("skipped"))
-        if enemy_turn:
-            granted = self._grant_shouyedeng(self.state.player)
-            if granted:
-                results.append(granted)
-        opponent = next((entity for entity in self.state.enemies
-                         if entity.entity_type == "轮回者" and entity.is_alive), None)
-        cleared_opp = self._clear_shouyedeng(opponent)
-        if cleared_opp:
-            results.append(cleared_opp)
+        # 守夜灯：用户裁定 2026-09-13 改为[回始]授予且不再清空，
+        # 故怪物阶段不再有「[敌回始]授予 / [敌回终]清空」这一对动作。
         results.extend(self._tick_baolie(self.state.get_all_enemy_side()))
         results.extend(prepared["skipped"])
         for actor_ref in submitted:  # 死斗部分提交：只结算本步提交的actor
@@ -5382,7 +5426,7 @@ class CombatEngine:
                         target, monster, hit.get("spell_choices"), refs,
                     )
                     attack_target = monster if monster.has_status("无神") else target
-                    # 无神重定向（README 479：目标强制选自身）：受击方已变为怪物自身，
+                    # 无神重定向（规则正文：目标强制选自身）：受击方已变为怪物自身，
                     # 但 hit["spell_choices"] 描述的是名义目标（玩家侧）的反应法术——
                     # resolve_attack 会按受击方资格集校验（见 1294 行），键集错配
                     # 必然报"必须逐一覆盖[]"，且此矛盾无法由提交方调和（同一字典需
@@ -5406,10 +5450,6 @@ class CombatEngine:
                         break
                 if not monster.is_alive:
                     break
-        if not self.state.in_final_duel:
-            cleared = self._clear_shouyedeng(self.state.player)
-            if cleared:
-                results.append(cleared)
         return results
 
     def buyaicai_escape_cost(self, monster: Entity) -> dict:

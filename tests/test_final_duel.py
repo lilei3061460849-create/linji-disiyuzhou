@@ -16,7 +16,7 @@ pytest 风格测试 - 里程碑7：最终的冠冕 / 第8场最终死斗
    成为下一位挑战者的候选人，形成擂台循环。
 
 注：第二位候选人到达触发死斗时，引擎先从队列取出擂主快照（候选文件可能暂时为空）；
-死斗结算后：胜者进入下一阶级封存槽；守擂成功（挑战者落败）的擂主按 README 550 放回队首
+死斗结算后：胜者进入下一阶级封存槽；守擂成功（挑战者落败）的擂主按 规则正文放回队首
 重新封存（2026-08-22 修复：此前擂主被无声吞掉）。因此清理代码统一用 _cleanup() 做存在性检查再删除。
 
 运行方式：
@@ -225,7 +225,7 @@ def test_defeat_triggers_reset_without_resealing():
     assert ruling["success"] is True
     assert ruling["death_book"]["legacy"] == legacy
     assert loser.state.player is None
-    # 败者（挑战者）不应被封存；但擂主卫冕成功须按 README 550 回到队首重新封存——
+    # 败者（挑战者）不应被封存；但擂主卫冕成功须按 规则正文回到队首重新封存——
     # 此前的实现把擂主无声吞掉，封存队列越打越空（2026-08-22 修复）。
     assert os.path.exists(path), "擂主卫冕成功后必须回到封存队列"
     import json as _json
@@ -271,7 +271,7 @@ def test_name_collision_between_challenger_and_opponent_is_resolved():
     hp_before = opp.current_hp
     r = challenger.execute_action("use_daowen", {"daowen_name": "杀伐", "x": 3, "target": opp.name})
     assert r["success"] is True, r
-    assert opp.current_hp == hp_before - 15, "伤害必须真正命中改名后的对手，而不是误伤自己"  # 杀伐3→5X=15
+    assert opp.current_hp == hp_before - 9, "伤害必须真正命中改名后的对手，而不是误伤自己"  # 杀伐3→X²=9
     assert challenger.state.player.current_hp == challenger.state.player.blood_limit, "挑战者自己不应被误伤"
     _cleanup(path)
 
@@ -349,7 +349,7 @@ def test_duel_opponent_reincarnator_can_cast_with_full_pool():
         "actor": opp.name, "daowen_name": "杀伐", "x": 3, "target": "挑战贾凡",
     })
     assert cast["success"] is True, cast
-    assert challenger.state.player.current_hp == hp_before - 15   # 杀伐3→5X=15（DM裁定 2026-09-10，原 2X=6）
+    assert challenger.state.player.current_hp == hp_before - 9   # 杀伐3→X²=9（2026-09-13）
     assert opp.current_mana == opp.mana_limit - 3
     assert challenger.state.duel_turn == "player_side"
     _cleanup(path)
@@ -403,8 +403,8 @@ def test_duel_opponent_wave_hits_player_side_not_self():
     assert r2["success"] is True, r2
     assert r2["execution"].get("wave_spread")
     assert opp.current_hp == hp_self
-    assert player.current_hp == hp_player - 10   # 杀伐4→5X=20，波及两目标各分摊10（原各4）
-    assert friend.current_hp == hp_friend - 10
+    assert player.current_hp == hp_player - 8   # 杀伐4→X²=16，波及两目标各分摊8
+    assert friend.current_hp == hp_friend - 8
     _cleanup(path)
 
 
@@ -449,40 +449,13 @@ def test_duel_target_daowen_no_speed_cannot_dodge():
     })
     assert r["success"] is True, r
     assert r["dodge"].get("fully_dodged") is False
-    assert opp.current_hp == hp - 15   # 杀伐3→5X=15
+    assert opp.current_hp == hp - 9   # 杀伐3→X²=9
     _cleanup(path)
 
 
-def test_duel_opponent_chooses_zhesu_relic():
-    """正常路径：对手自己决定是否发动折速；发动则疲惫X换6X法力"""
-    path = "data/test_duel_zhesu.json"
-    _cleanup(path)
-    sealed = _new_candidate("zhesu_sealed", path, speed_points=8, name="封存贾凡")
-    from engine.models import Relic
-    sealed.state.relics.append(Relic(name="折速法印", effect="[战始]可疲惫X获得6X法力"))
-    _finish_battle_7(sealed)
-    challenger = _new_candidate("zhesu_challenger", path, speed_points=12, name="挑战贾凡")
-    r = _finish_battle_7(challenger)
-    crown = r["result"]["final_crown"]
-    assert any(o["name"] == "折速法印" and o["side"] == "opponent_side" for o in crown["optional_relics"])
-    opp = next(e for e in challenger.state.enemies if e.entity_type == "轮回者")
-    refuse = challenger.execute_action("activate_duel_relic", {
-        "side": "opponent_side", "relic": "折速法印", "use": False,
-    })
-    assert refuse["success"] is True
-    assert opp.current_speed == opp.speed_limit   # 新口径下速限=加点//2，不再硬编码 8
-    use = challenger.execute_action("activate_duel_relic", {
-        "side": "opponent_side", "relic": "折速法印", "use": True, "x": 4,
-    })
-    assert use["success"] is True, use
-    assert opp.current_speed == max(0, opp.speed_limit - 4)   # 折速4付疲惫4，新口径速限4→0
-    # DM裁定 2026-09-09：开场已是满池，折速的 6X 叠在其上（法力允许超过[法限]）
-    assert opp.current_mana == opp.mana_limit + 24
-    bad = challenger.execute_action("activate_duel_relic", {
-        "side": "opponent_side", "relic": "折速法印", "use": True, "x": 9,
-    })
-    assert bad["success"] is False
-    _cleanup(path)
+# 【折速法印】的死斗发动用例随该遗物于 2026-09-13 一并删除——其"疲惫换法力"
+# 效果已改为道纹【搏命】，回归见 tests/test_boming_daowen.py。
+# 死斗开场可选遗物目前只剩【三相残韵盘】。
 
 
 def test_duel_activate_relic_rejected_without_duel():
@@ -492,7 +465,7 @@ def test_duel_activate_relic_rejected_without_duel():
     engine.execute_action("setup_attributes", {"blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(engine)
     r = engine.execute_action("activate_duel_relic", {
-        "side": "player_side", "relic": "折速法印", "use": True, "x": 1,
+        "side": "player_side", "relic": "三相残韵盘", "use": True,
     })
     assert r["success"] is False
 

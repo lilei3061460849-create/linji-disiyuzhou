@@ -14,7 +14,7 @@ import math
 class DaoWenEngine:
     """道纹计算引擎"""
 
-    # 怪物转化道纹（原始怪物道纹经残韵变化后的19个分支，与README"道纹归属规则"一致）
+    # 怪物转化道纹（原始怪物道纹经残韵变化后的19个分支，与规则正文《原始怪物道纹与转化道纹》一致）
     # 用于"雇佣"后"发现并选择一种转化道纹"等需要从此类别中随机抽取的场景
     TRANSFORMED_DAOWEN = [
         "愤怒", "自残", "无神", "借力", "弱化", "自食", "兴奋", "无力", "迟滞",
@@ -46,15 +46,17 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_shaifa(x: int, target: Entity = None) -> dict:
-        """杀伐X：消耗X。对[目标]造成5X点伤害
+        """杀伐X：消耗X。对[目标]造成X²点伤害
 
         DM裁定 2026-09-10：法力改一池制后（战终才复原，不再每回合回填），道纹数值
-        的约束从「速率」变成「预算」，可以放开——目标是「用几回合普攻把目标压到
-        斩杀线，再一次性耗尽法力收掉」。系数定为 5（12 太夸张）。
+        的约束从「速率」变成「预算」，可以放开。
+        用户裁定 2026-09-13：由线性 5X 改为平方 X²——小X时弱于旧值（X≤4），
+        大X时远强（X=10 打 100），把「攒法力一次性爆发」从习惯变成硬性最优解，
+        与一池制预算的设计意图一致。
         """
         target_name = target.name if target is not None else "未选定目标"
         cost = x
-        damage = 5 * x
+        damage = x * x
         return {
             "dao_wen": "杀伐",
             "x": x,
@@ -174,14 +176,20 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_touzhi(x: int) -> dict:
-        """透支X：代价：衰老X。获得4X点法力"""
+        """透支X：代价：流血4X。你获得X点法力
+
+        用户裁定 2026-09-12：与【再生X】构成生命⇄法力闭环，净值不产生免费资源；
+        实际上限由【癌变】(本场累计回复=2×血限) 自然封死。
+        用户裁定 2026-09-13：3X→4X。与【再生X】(消耗X法力→回复4X生命) 对齐为
+        严格 4:1 双向汇率，闭环净值归零，不再每轮白赚生命。
+        """
         return {
             "dao_wen": "透支",
             "x": x,
-            "cost_type": CostType.AGING.value,
-            "cost_blood_limit": x,
-            "mana_gain": 4 * x,
-            "summary": f"衰老{x}(血限-{x})，获得{4*x}点法力"
+            "cost_type": CostType.BLEED.value,
+            "cost_hp": 4 * x,
+            "mana_gain": x,
+            "summary": f"流血{4*x}，获得{x}点法力"
         }
     
     @staticmethod
@@ -636,17 +644,23 @@ class DaoWenEngine:
         }
     
     @staticmethod
-    def calculate_jianghua(x: int, target: Entity = None) -> dict:
-        """僵化X：消耗5X。使[目标]攻击力固定为1，持续X"""
-        target_name = target.name if target is not None else "未选定目标"
+    def calculate_boming(x: int) -> dict:
+        """搏命X：代价：疲惫X。你获得X点法力
+
+        用户裁定 2026-09-13：放弃闪避换法力、拼死一搏。倍率被【超频】
+        (消耗2X法力→速度+X) 反向锁死——设倍率为k，卖X速度得kX法力可经
+        超频买回 kX/2 速度，净变化 X(k/2-1)：k≥2 即永动或速度无限暴涨。
+        故取 k=1，每卖1点速度净亏0.5点，循环必然收敛。
+        （遗物【折速法印】原为6X，因[战始]一次性且不可复发才安全；改为
+        可反复发动的道纹后必须砍到1X，该遗物同步删除，不再双份存在。）
+        """
         return {
-            "dao_wen": "僵化",
+            "dao_wen": "搏命",
             "x": x,
-            "cost_type": CostType.MANA.value,
-            "cost": 5 * x,
-            "attack_fixed": 1,
-            "duration": x,
-            "summary": f"消耗{5*x}法力，使{target_name}攻击力固定为1，持续{x}回合"
+            "cost_type": CostType.FATIGUE.value,
+            "cost_speed": x,
+            "mana_gain": x,
+            "summary": f"疲惫{x}，获得{x}点法力"
         }
     
     @staticmethod
@@ -706,7 +720,7 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_jiahai(x: int, target: Entity = None) -> dict:
-        """加害X：消耗3X。使[目标]每次受到伤害+X，持续∞（README·龙心谷闭环起点）"""
+        """加害X：消耗3X。使[目标]每次受到伤害+X，持续∞（龙心谷闭环起点）"""
         target_name = target.name if target is not None else "未选定目标"
         cost = 3 * x
         return {
@@ -1044,7 +1058,7 @@ class DaoWenEngine:
             "变形": cls.calculate_bianxing,
             "定型": cls.calculate_dingxing,
             "畸变": cls.calculate_jibian,
-            "僵化": cls.calculate_jianghua,
+            "搏命": cls.calculate_boming,
             "超频": cls.calculate_chaopin,
             "坏死": cls.calculate_huaisi,
             "爆裂": cls.calculate_baolie,
@@ -1172,13 +1186,13 @@ class ResonanceEngine:
             ("束缚", "曲解", "封印"),
             ("封印", "反转", "杀伐"),
         ],
-        # ---- 副本专属闭环（README 第615/706/788行）----
+        # ---- 副本专属闭环（规则正文·副本专属道纹网络）----
         "扭曲都市闭环": [
             ("变形", "转换", "定型"),
             ("定型", "反转", "畸变"),
-            ("畸变", "曲解", "僵化"),
-            ("僵化", "转换", "超频"),
-            ("超频", "反转", "坏死"),
+            ("畸变", "曲解", "超频"),
+            ("超频", "反转", "搏命"),
+            ("搏命", "转换", "坏死"),
             ("坏死", "曲解", "爆裂"),
             ("爆裂", "曲解", "退化"),
             ("退化", "转换", "变形"),
@@ -1213,7 +1227,7 @@ class ResonanceEngine:
             ("镇尸", "曲解", "招魂"),
             ("招魂", "转换", "分裂"),
         ],
-        # ---- 原始怪物道纹 → 转化道纹（README 第469-490行）----
+        # ---- 原始怪物道纹 → 转化道纹（规则正文）----
         # 非闭环，是以原始道纹为根的分支树；怪物面板上的道纹多属此类，
         # 补齐后残韵才能作用于怪物（此前对必中/狂暴/飞行发动必然失败）。
         "怪物原始道纹": [

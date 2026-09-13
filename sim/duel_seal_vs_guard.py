@@ -45,7 +45,7 @@ def setup_challenger(snapshot_path: str, defender_path: str, seed: int, db: str)
     setup = e.execute_action("setup_choose_region", {"region": "乱葬岗"})
     e.execute_action("choose_discovered_relic", {"relic_name": setup["result"]["relic_choices"][0]})
     load_winner(e, snap)
-    # 死斗无局外阶段（README 312）：双方继承第7场战终的实际损耗+碎片，擂台前不回血。
+    # 死斗无局外阶段（规则正文）：双方继承第7场战终的实际损耗+碎片，擂台前不回血。
     # （此前硬设满血是测试缺陷，抹掉了快照真实损耗。）
     return e
 

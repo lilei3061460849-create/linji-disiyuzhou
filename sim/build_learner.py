@@ -51,8 +51,8 @@ CANDIDATES = sorted(n for n, fn in DaoWenEngine._registry.items()
                     and n not in ORIGINAL_MONSTER_DAOWEN)
 
 # 门禁修复后，并非所有道纹都能通过局外【学习】获得：
-#   - 怪物转化道纹：须以自身已持有的道纹为起点经残韵变化获得（README 211/248）
-#   - 副本专属道纹：须先经残韵从本副本怪物身上转化获得一种，才能学其余（README 156）
+#   - 怪物转化道纹：须以自身已持有的道纹为起点经残韵变化获得（规则正文·残韵作用）
+#   - 副本专属道纹：须先经残韵从本副本怪物身上转化获得一种，才能学其余（规则正文）
 # 若仍按全池组 build，绝大多数 build 会因"学不上"而退化成同一套，数据失真。
 # 故按副本给出"实际可通过学习获得"的候选池。
 from engine.gamedata import (REGION_EXCLUSIVE_DAOWEN, ORIGINAL_MONSTER_DAOWEN,
@@ -896,7 +896,7 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
     actual_starter = chosen["picked"]
     e.execute_action("setup_choose_resonance", {"resonance_type": resonance})
     setup = e.execute_action("setup_choose_region", {"region": region})
-    optional_relics = {"折速法印", "三相残韵盘"}
+    optional_relics = {"三相残韵盘"}
     relic_choices = setup["result"]["relic_choices"]
     if relic_policy == "prefer_optional":  # 扫描实验：主动选可选遗物
         starter_relic = next((n for n in relic_choices if n in optional_relics),
@@ -1094,7 +1094,7 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                 stalls = 0
 
         # 共鸣/事件可能在开局后继续获得可选战始遗物；按当前持有列表逐件显式决策
-        # （可以不用但不能不让用：折速法印换法力/三相残韵盘/猩红果实/苍白之花按情形发动）。
+        # （可以不用但不能不让用：三相残韵盘/猩红果实/苍白之花按情形发动）。
         _resolve_pending_choices(e)   # 上一场遗留门禁（含战后救赎）先清，再开战
         ev_mark = len(e.state.combat_events)
         bs, bs_artifact_logs = start_battle_with_artifacts(e)
@@ -1142,7 +1142,7 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
             # 不能再进怪物阶段（会被中断门禁挡成 invalid），直接按阵亡结算。
             if not e.state.player or not e.state.player.is_alive:
                 break
-            # [朋友]/[员工]自主出手（无语言命令时，README：微光者会根据情况对敌方出手）
+            # [朋友]/[员工]自主出手（无语言命令时，规则正文：微光者会根据情况对敌方出手）
             e.execute_action("resolve_ally_phases", {})
             if not [x for x in e.state.enemies if x.is_alive] and not getattr(e.state, "monster_reinforcements", None):  # 波次：增援未到不算清场
                 break

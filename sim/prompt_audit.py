@@ -194,7 +194,7 @@ _hp = [
     ("死斗低X逼闪高X终结", "B", "OVER_SPEC"),
     ("残血死斗防守蒙蔽/再生/庇护+癌变停止", "B", "OVER_SPEC"),
     ("爆裂忌满额杀伐/退化后确认X", "B", "OVER_SPEC"),
-    ("折速法印收益比较/血契分担指定", "B", "OVER_SPEC"),
+    ("搏命收益比较/血契分担指定", "B", "OVER_SPEC"),
     ("开局流程:先遗物3选1再初始道纹", "B", "F: api门禁强制", ),
     ("开局战报必须写全候选", "B", "F: format_setup_discovery拒绝"),
     ("杀伐公式2X+旧模拟数据作废", "B", "F: 引擎公式;作废声明并入批史"),
@@ -254,7 +254,7 @@ add("AIE-RZ3", F, "残韵闭环·实战策略6条", "先解锁再学闭环等", 
 # ---- 2026-08-22 版本变更 ----
 add("AIE-W1", F, "08-22变更1", "波及X不足即过滤", "波及目标数过滤", "D",
     status="stale", valid=False, hist=True,
-    evidence="第十四批裁定①降X替代; tests/test_wave_target_limit 已改降X语义; README:467注记",
+    evidence="第十四批裁定①降X替代; tests/test_wave_target_limit 已改降X语义; 规则正文注记",
     note="CF-2冲突旧方;→archive/hypotheses 留痕", flags=["CF-2", "HISTORICAL_POLLUTION"])
 add("AIE-W2", F, "08-22变更2", "怪物阶段失败可恢复", "token回滚可恢复", "C",
     hist=True, code="引擎契约+测试", note="修复叙述→archive")
@@ -343,7 +343,7 @@ for i, l in enumerate(KB["lessons"]):
 
 # ---- 文档级 ----
 _docs = [
-    ("DOC-01", "README.md", "世界观/规则正文事实源(627行)", "A", "第四宇宙底层定义唯一权威源"),
+    ("DOC-01", "README.md", "上手流程/规则正文事实源", "A", "第四宇宙底层定义唯一权威源"),
     ("DOC-02", "死者之书.md", "法术与遗言事实源", "A", "含历史遗言数据,属事实源设计"),
     ("DOC-03", "全道纹索引.md", "70道纹完整索引", "A", ""),
     ("DOC-04", "副本索引.md", "副本清单", "A", ""),

@@ -33,7 +33,7 @@ def _engine(tmp_path, seed=4, learn=("庇护", "再生", "冲击")):
     e.state.energy = 0
     choices = {}
     relic = e.state.relics[0].name
-    if relic in ("折速法印", "三相残韵盘"):
+    if relic == "三相残韵盘":
         choices[relic] = {"use": False}
     e.execute_action("battle_start", {"relic_choices": choices})
     e.execute_action("round_start", {})
@@ -70,7 +70,7 @@ def test_ai_finishes_killable_target(tmp_path):
     """正常路径：目标可被一击击杀时应当收割"""
     e = _engine(tmp_path)
     m = e.state.enemies[0]
-    m.current_hp = 4  # 杀伐X=2 造成6伤 即可击杀
+    m.current_hp = 4  # 杀伐X=2 造成X²=4伤 即可击杀
     ai = TacticalAI(e)
     r = ai.try_finish()
     assert r is not None, "可击杀目标却未收割"
@@ -174,7 +174,7 @@ def test_ai_cost_facts_come_from_preview_not_tables(tmp_path):
     probe = ai._probe("杀伐")
     assert probe is not None and probe["kind"] == "damage"
     assert probe["cost_per_x"] == 1          # 与正文现行公式一致（消耗X、5X伤害）
-    assert probe["dmg"] == 5                 # DM裁定 2026-09-10：杀伐 2X → 5X
+    assert probe["dmg"] == 1                 # 2026-09-13：杀伐 X²，X=1→1
     shield = ai._probe("庇护")
     assert shield is not None and shield["kind"] == "shield"
     assert shield["target_name"] == e.state.player.name, "庇护必须朝向自身（方向由预演判定）"
@@ -190,15 +190,16 @@ def test_probe_dmg_not_masked_by_enemy_shield(tmp_path):
     e = _engine(tmp_path)
     m = e.state.enemies[0]
     m.current_hp = 4
-    m.shield = 2                      # 吸掉 杀伐X=1（5点）中的 2 点，剩 3 点落到生命
+    m.shield = 2                      # 格挡吸收：验证 dmg 口径取事件流而非面板位移
     e.state.player.current_mana = 12
     ai = TacticalAI(e)
     probe = ai._probe("杀伐")
     assert probe is not None and probe["kind"] == "damage"
-    assert probe["dmg"] == 5, f"dmg 被格挡遮蔽成 {probe['dmg']}：口径须取事件流 raw_damage"
+    assert probe["dmg"] == 1, f"dmg 被格挡遮蔽成 {probe['dmg']}：口径须取事件流 raw_damage"
     xs = {int(c["label"].split("X=")[1]) for c in ai._daowen_candidates()
           if c["label"].startswith("杀伐")}
-    assert math.ceil(m.current_hp / probe["dmg"]) in xs, f"收割档未生成（候选档={sorted(xs)}）"
+    # 杀伐为 X²：打死 4 血需 X=2（线性外推会误算成 4），收割档须按真实预演生成
+    assert 2 in xs, f"收割档未生成（候选档={sorted(xs)}）"
 
 
 def test_ai_still_acts_when_shield_absorbs_all_probe_damage(tmp_path):

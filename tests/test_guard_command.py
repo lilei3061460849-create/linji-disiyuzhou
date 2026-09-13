@@ -44,7 +44,7 @@ def _start_battle_with(engine, monster):
     engine.state.enemies.append(monster)
     active = {r.name for r in engine.state.relics if engine.state.sealed_relics.get(r.name, 0) <= 0}
     bs = engine.execute_action("battle_start", {"relic_choices": {
-        n: {"use": False} for n in ("三相残韵盘", "折速法印", "猩红果实", "苍白之花") if n in active}})
+        n: {"use": False} for n in ("三相残韵盘", "猩红果实", "苍白之花") if n in active}})
     assert bs["success"], bs
     engine.execute_action("round_start", {"relic_choices": round_start_relic_choices(engine)})
 

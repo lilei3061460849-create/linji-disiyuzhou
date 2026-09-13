@@ -33,7 +33,7 @@ def _engine(starter="杀伐", learn=(), region="龙心谷", seed=1, tmp="/tmp/bv
     e.state.energy = 0
     choices = {}
     relic = e.state.relics[0].name
-    if relic in ("折速法印", "三相残韵盘"):
+    if relic == "三相残韵盘":
         choices[relic] = {"use": False}
     e.execute_action("battle_start", {"relic_choices": choices})
     e.execute_action("round_start", {})
@@ -58,11 +58,11 @@ def test_boba_marks_targets_after_start():
 
 # 专属道纹 → 其所属副本（学习受门禁限制，须在对应副本内）
 _REGION_OF = {"加害": "龙心谷", "裂变": "龙心谷", "伤痕": "龙心谷",
-              "僵化": "扭曲都市", "坏死": "扭曲都市",
+              "退化": "扭曲都市", "坏死": "扭曲都市",
               "逼债": "罪孽都市", "点金": "罪孽都市"}
 
 
-@pytest.mark.parametrize("dw", ["加害", "裂变", "伤痕", "僵化", "坏死", "逼债", "点金"])
+@pytest.mark.parametrize("dw", ["加害", "裂变", "伤痕", "退化", "坏死", "逼债", "点金"])
 def test_ai_uses_region_specific_daowen(dw, monkeypatch):
     """
     正常路径：各副本专属道纹只要持有就应被实际发动。
@@ -75,9 +75,11 @@ def test_ai_uses_region_specific_daowen(dw, monkeypatch):
     monkeypatch.setenv("LJ_AI_BASIC_ATTACK", "0")
     from engine.models import DaoWen, DaoWenInstance
     e = _engine(starter="杀伐", learn=[], region=_REGION_OF[dw])
-    # 只保留被测道纹（外加基础输出），避免 AI 选了同角色的其他道纹而误判
-    e.state.player.dao_wen = {
-        k: v for k, v in e.state.player.dao_wen.items() if k == "杀伐"}
+    # 只保留被测道纹，避免 AI 选了同角色的其他道纹而误判。
+    # 2026-09-13：连【杀伐】也一并清掉——改为 X² 伤害后它在任何局面都能靠高 X
+    # 档压过 debuff 的分数，并把法力一次抽干，被测牌再没有出手窗口。本例要验的
+    # 不变量是「持有专属道纹就会发动」，不是「debuff 能不能赢过主力输出」。
+    e.state.player.dao_wen = {}
     e.state.player.dao_wen[dw] = DaoWenInstance(
         DaoWen(name=dw, formula="", cost_type="消耗",
                cost_formula="X", effect_formula=""))
@@ -94,10 +96,12 @@ def test_ai_uses_region_specific_daowen(dw, monkeypatch):
             _m.dao_wen["强化"] = DaoWenInstance(
                 DaoWen(name="强化", formula="", cost_type="异变",
                        cost_formula="5X", effect_formula=""), x_value=1)
-        if dw == "僵化":
+        if dw == "退化":
             _m.attack_power = max(_m.attack_power, 20)  # 满足控场策略的威胁阈值
     ai = TacticalAI(e)
-    for _ in range(3):
+    # 6 回合而非 3：杀伐自 2026-09-13 改为 X² 后高 X 档分数陡增，会连吃前几手；
+    # 不变量仍是「持有即会发动」，给它把法力打空的时间，别把窗口卡在 3 手。
+    for _ in range(6):
         ai.new_round()
         ai.take_turn()
     assert ai.used.get(dw, 0) > 0, f"{dw} 从未被使用，实际使用：{ai.used}"
@@ -120,7 +124,7 @@ def test_damage_ranking_comes_from_probe_facts():
     ai = TacticalAI(e)
     probe = ai._probe("杀伐")
     assert probe["kind"] == "damage"
-    assert probe["dmg"] == 5 and probe["cost_per_x"] == 1   # 引擎事实：5伤害/1法力（DM裁定 2026-09-10，原 2X）
+    assert probe["dmg"] == 1 and probe["cost_per_x"] == 1   # 引擎事实：X=1→X²=1伤害/1法力（2026-09-13）
 
 
 def test_owned_nuke_only_contains_damage_kind():
@@ -174,7 +178,7 @@ def test_ai_skips_daowen_it_does_not_own():
         ai.new_round()
         ai.take_turn()
     assert "封印" not in ai.used
-    assert "僵化" not in ai.used
+    assert "退化" not in ai.used
 
 
 # ---------- 贯穿（无视格挡）回归 ----------
@@ -230,7 +234,7 @@ def test_pierce_status_drives_attack_resolution():
 
 # ---------- 进化·原初X 借用轮回者道纹（裁定）----------
 
-def _plight_engine(player_daowen=("杀伐", "庇护", "僵化")):
+def _plight_engine(player_daowen=("杀伐", "庇护", "搏命")):
     from engine.api import GameEngine
     from engine.models import Entity, DaoWen, DaoWenInstance
     e = GameEngine(db_path="/tmp/evo.db", rng_seed=1)
@@ -251,10 +255,10 @@ def _plight_engine(player_daowen=("杀伐", "庇护", "僵化")):
 
 def test_evolution_borrows_from_player_daowen():
     """正常路径：进化只能借用轮回者当前持有的道纹"""
-    e, m = _plight_engine(("杀伐", "庇护", "僵化"))
-    r = e.execute_action("declare_evolution", {"monster": "困境怪", "daowen": "僵化", "x": 1})
+    e, m = _plight_engine(("杀伐", "庇护", "搏命"))
+    r = e.execute_action("declare_evolution", {"monster": "困境怪", "daowen": "搏命", "x": 1})
     assert r["success"], r.get("error")
-    assert "僵化" in m.dao_wen, "应借用到轮回者的【僵化】"
+    assert "搏命" in m.dao_wen, "应借用到轮回者的【搏命】"
 
 
 def test_evolution_rejects_daowen_player_lacks():
@@ -270,11 +274,11 @@ def test_evolution_pool_tracks_player_build():
     边界：借用池随玩家构筑变化 —— 这正是该裁定的设计目的。
     玩家越依赖某条公式化路线，越可能被怪物复制反制。
     """
-    e1, _ = _plight_engine(("杀伐", "庇护", "僵化"))
+    e1, _ = _plight_engine(("杀伐", "庇护", "搏命"))
     opts1 = e1.combat.get_plight_evolution_options()[0]["borrowable_daowen"]
     e2, _ = _plight_engine(("切割", "贯穿"))
     opts2 = e2.combat.get_plight_evolution_options()[0]["borrowable_daowen"]
-    assert set(opts1) == {"杀伐", "庇护", "僵化"}
+    assert set(opts1) == {"杀伐", "庇护", "搏命"}
     assert set(opts2) == {"杀伐", "切割", "贯穿"}
     assert opts1 != opts2, "借用池必须随玩家构筑变化"
 

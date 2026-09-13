@@ -95,7 +95,7 @@ def test_suppress_battle_uses_existing_combat_flow_unmodified():
     # 法点6 → 法限3：杀伐 x 最多3；3×5=15 伤害（DM裁定 2026-09-10：5X）
     r_atk = engine.execute_action("use_daowen", {"daowen_name": "杀伐", "x": 3, "target": "彪悍打手"})
     assert r_atk["success"] is True, r_atk
-    assert rebel.current_hp == 50 - 15
+    assert rebel.current_hp == 50 - 9   # 杀伐3→X²=9
     prepared = engine.execute_action("prepare_monster_phase", {})
     actor = prepared["result"]["actors"][0]
     attacks = [{"hits": [{"target_ref": "player:0", "dodge": False, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}}

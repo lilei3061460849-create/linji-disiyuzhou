@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """可选遗物/法器策略：可以不用，但不能不让用。
 
-此前所有模拟/手操/生产脚本把可选战始遗物（折速法印/三相残韵盘/猩红果实/
+此前所有模拟/手操/生产脚本把可选战始遗物（三相残韵盘/猩红果实/
 苍白之花）一律 use:False 拒绝，回始遗物（血契/余火印）也从不使用，终音法器
 （黑金名片/罪业金库/教父左轮/烬翼/鲜血之翼/共心环）更是没有任何发动策略——
 这些机制"存在但不可用"，玩家战力被系统性低估。
 
 本模块给每一件可选遗物/法器实现**显式决策**（数据全部取自引擎实时状态），
 供各模拟脚本、TacticalAI 与 ai_player 调用：
-- battle_start_relic_choices：折速法印换法力 / 三相残韵盘 / 猩红果实 / 苍白之花
+- battle_start_relic_choices：三相残韵盘 / 猩红果实 / 苍白之花
 - round_start_relic_choices：回锋刀（原有）/ 血契换法力 / 余火印换法力
 - 战始窗口法器：共心环（共享龙心）、黑金名片（敌方血限减半）
 - 回始窗口法器：罪业金库（碎片→格挡）、烬翼（龙性→飞行）
@@ -28,7 +28,6 @@ from typing import Optional
 def battle_start_relic_choices(engine) -> dict:
     """战始可选遗物显式决策。
 
-    - 折速法印：疲惫X → +6X法力。速度富余时换法力（保留至少2点速度用于闪避）。
     - 三相残韵盘：消耗一种残韵，[战终]获得另两种各1（净+1残韵）。有库存就用，
       消耗存量最多的类型。
     - 猩红果实：流血10 → [战终]血限+2（永久成长）。付得起就用。
@@ -38,9 +37,6 @@ def battle_start_relic_choices(engine) -> dict:
               if engine.state.sealed_relics.get(r.name, 0) <= 0}
     p = engine.state.player
     out: dict = {}
-    if "折速法印" in active and p is not None:
-        x = min(max(0, p.current_speed - 2), 2)
-        out["折速法印"] = {"use": x >= 1, "x": max(1, x)}
     if "三相残韵盘" in active:
         stock = {k: v for k, v in engine.state.resonance.items() if v >= 1}
         if stock:
@@ -53,7 +49,7 @@ def battle_start_relic_choices(engine) -> dict:
         out["猩红果实"] = {"use": affordable}
     if "苍白之花" in active and p is not None:
         out["苍白之花"] = {"use": p.current_speed >= 7}
-    using_fatigue = bool(out.get("折速法印", {}).get("use") or out.get("苍白之花", {}).get("use"))
+    using_fatigue = bool(out.get("苍白之花", {}).get("use"))
     if using_fatigue and "回锋刀" in active:
         alive = [i for i, enemy in enumerate(engine.state.enemies) if enemy.is_alive]
         out["回锋刀"] = {"enemy_index": alive[0] if alive else 0}

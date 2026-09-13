@@ -51,7 +51,7 @@ def run_one(build: str, region: str, seed: int, battles: int = 7) -> dict:
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": region})
-    optional_relics = {"折速法印", "三相残韵盘"}
+    optional_relics = {"三相残韵盘"}
     starter_relic = next((n for n in setup["result"]["relic_choices"] if n not in optional_relics),
                          setup["result"]["relic_choices"][0])
     e.execute_action("choose_discovered_relic", {"relic_name": starter_relic})

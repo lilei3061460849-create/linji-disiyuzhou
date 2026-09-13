@@ -298,8 +298,8 @@ def sync_demo():
     print(f"  变更数：{len(report['changes_detected'])}")
     
     # 提取道纹
-    print("\n[2] 从README提取道纹定义：")
-    daowen = sync.extract_daowen_from_file("README.md")
+    print("\n[2] 从规则正文提取道纹定义：")
+    daowen = sync.extract_daowen_from_file("AI_EXPERIENCE.md")
     print(f"  提取到 {len(daowen)} 个道纹")
     for d in daowen[:5]:
         print(f"    • {d['name']}: {d['description'][:40]}...")
@@ -397,7 +397,7 @@ def full_demo():
     print("\n[规则同步状态]")
     report = sync.generate_sync_report()
     print(f"  变更: {len(report['changes_detected'])}个")
-    print(f"  道纹同步: {report['daowen_diffs'].get('README.md', {}).get('synced', 0)}个")
+    print(f"  道纹同步: {report['daowen_diffs'].get('AI_EXPERIENCE.md', {}).get('synced', 0)}个")
     
     print("\n" + "=" * 60)
     print("完整演示结束。")
@@ -505,7 +505,7 @@ def interactive_mode():
                 sync = RuleSync(db_path="data/rule_sync.db")
                 report = sync.generate_sync_report()
                 print(f"变更: {len(report['changes_detected'])}个")
-                diff = report['daowen_diffs'].get('README.md', {})
+                diff = report['daowen_diffs'].get('AI_EXPERIENCE.md', {})
                 print(f"道纹同步: {diff.get('synced', 0)}个")
                 if diff.get('new'):
                     print(f"新增: {diff['new']}个")

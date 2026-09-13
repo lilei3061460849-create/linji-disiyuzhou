@@ -771,7 +771,7 @@ def decide_pre_battle(engine, strat: Strategy, shards_budget: int):
 
 
 def battle_start_choices(engine, strat: Strategy) -> dict:
-    """战始可选遗物决策：猩红果实/苍白之花/折速法印/三相残韵盘。"""
+    """战始可选遗物决策：猩红果实/苍白之花/三相残韵盘。"""
     active = {r.name for r in engine.state.relics
               if engine.state.sealed_relics.get(r.name, 0) <= 0}
     p = engine.state.player
@@ -786,12 +786,6 @@ def battle_start_choices(engine, strat: Strategy) -> dict:
         out["苍白之花"] = {"use": p.current_speed >= 8 and p.mana_limit >= 10}
         if out["苍白之花"]["use"]:
             TRACE.text("  决策[遗物] 苍白之花：疲惫5 → 战终精力+1")
-    if "折速法印" in active and p is not None:
-        # 疲惫X换6X法力。速度富余时用（保留≥2速度闪避）。
-        x = min(max(0, p.current_speed - 2), 2)
-        out["折速法印"] = {"use": x >= 1, "x": max(1, x)}
-        if x >= 1:
-            TRACE.text(f"  决策[遗物] 折速法印：疲惫{x} → 法力+{6 * x}")
     if "三相残韵盘" in active:
         stock = {k: v for k, v in engine.state.resonance.items() if v >= 1}
         if stock:

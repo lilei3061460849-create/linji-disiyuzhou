@@ -8,7 +8,7 @@ DM裁定记录：出怪数量公式采用 AI_EXPERIENCE.md 记录版"battle_numb
 1. 数量公式：1/1/1/1/2/3/4 (最低1)
 2. 只从当前副本自己的12怪物池抽取，不混入其他副本
 3. 允许重复抽选同一怪物种族
-4. 抽到的Entity面板(攻击次数/攻击力/血限)与道纹X值必须与README一致
+4. 抽到的Entity面板(攻击次数/攻击力/血限)与道纹X值必须与规则正文一致
 5. "追求者·拿走口粮"登记的强制怪物，在下一场[战始]时真正额外加入敌方
 
 不在本文件覆盖范围：战斗背景(纯叙事，本身无机制，故不需要测试)。
@@ -39,7 +39,7 @@ def _new_engine(db_suffix: str, region: str) -> GameEngine:
     finish_initial_daowen(engine)
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
     setup = engine.execute_action("setup_choose_region", {"region": region})
-    optional = {"折速法印", "三相残韵盘"}
+    optional = {"三相残韵盘"}
     choice = next((n for n in setup["result"]["relic_choices"] if n not in optional),
                   setup["result"]["relic_choices"][0])
     engine.execute_action("choose_discovered_relic", {"relic_name": choice})

@@ -110,8 +110,8 @@ def test_boba_spreads_damage_equally_with_random_remainder():
     assert spread and spread["targets"] == [foe_a.name, foe_b.name]
     dealt = sum(e.get("actual_damage", 0) for e in r2["execution"]["effects"]
                 if e.get("type") == "damage")
-    assert dealt == 10, "总数值不变：10点伤害平分给两个目标（杀伐2→5X=10）"
-    assert foe_a.current_hp == 95 and foe_b.current_hp == 95
+    assert dealt == 4, "总数值不变：4点伤害平分给两个目标（杀伐2→X²=4）"
+    assert foe_a.current_hp == 98 and foe_b.current_hp == 98
 
 
 def test_boba_boundary_and_invalid_submissions():
@@ -277,7 +277,7 @@ def test_huaxiang_zhuiluo_dingxing_wushen_xuanyun():
         "actor": foe.name, "daowen_name": "杀伐", "x": 2, "target": p.name,
     })
     assert r["success"], r
-    assert foe.current_hp == hp_f - 10  # 无神改打自己（杀伐2→5X=10，DM裁定 2026-09-10，原 2X=4）
+    assert foe.current_hp == hp_f - 4   # 无神改打自己（杀伐2→X²=4，2026-09-13）
 
     m.add_status(StatusEffect(name="眩晕", remaining_rounds=2, value=1, source="测"))
     assert engine.combat.can_act(m) is False
@@ -360,6 +360,9 @@ def test_jisu_jiasu_dongcha():
     engine.execute_action("round_start", {})
 
     engine.execute_action("use_daowen", {"daowen_name": "急速", "x": 2, "target": p.name})
+    # 2026-09-13：当前速度不得超过[速限]。满速开局时"+1速"会被上限吃掉，
+    # 本例要验的是"急速每闪两次给1速"这件事发生了，先腾出空间再验。
+    p.current_speed = max(0, p.speed_limit - 3)
     spd = p.current_speed
     engine.combat._note_dodge(p)
     assert p.current_speed == spd
@@ -367,6 +370,7 @@ def test_jisu_jiasu_dongcha():
     assert p.current_speed == spd + 1
 
     engine.execute_action("use_daowen", {"daowen_name": "加速", "x": 1, "target": p.name})
+    p.speed_limit += 6          # 给翻倍后的 +6 留出上限空间（同上）
     spd = p.current_speed
     engine.execute_action("use_daowen", {"daowen_name": "超频", "x": 3})
     assert p.current_speed == spd + 6

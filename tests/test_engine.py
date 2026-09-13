@@ -23,7 +23,7 @@ def _choose_region(engine, region):
     result = engine.execute_action("setup_choose_region", {"region": region})
     if result.get("success") and engine.state.pending_relic_choices:
         # 通用流程测试不覆盖需要额外显式选择的遗物；相关遗物有独立测试。
-        optional = {"折速法印", "三相残韵盘", "回锋刀", "血契"}
+        optional = {"三相残韵盘", "回锋刀", "血契"}
         choice = next((n for n in engine.state.pending_relic_choices if n not in optional),
                       engine.state.pending_relic_choices[0])
         engine.execute_action("choose_discovered_relic", {"relic_name": choice})
@@ -112,7 +112,7 @@ def test_daowen_calculations():
     target = Entity(name="目标", entity_type=EntityType.MONSTER.value, blood_limit=100, current_hp=100)
     result = DaoWenEngine.resolve("杀伐", 3, target=target)
     assert result["cost"] == 3, f"杀伐消耗错误: {result['cost']}"
-    assert result["target_damage"] == 15, f"杀伐伤害错误: {result['target_damage']}"
+    assert result["target_damage"] == 9, f"杀伐伤害错误: {result['target_damage']}"   # X²=3²
     print("  ✓ 杀伐X=3: 消耗3，伤害15（DM裁定 2026-09-10：5X）")
     
     # 测试庇护

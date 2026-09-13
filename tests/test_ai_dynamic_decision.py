@@ -33,7 +33,7 @@ def _engine(tmp_path, seed=4, learn=("庇护", "再生")):
     e.state.energy = 0
     choices = {}
     relic = e.state.relics[0].name
-    if relic in ("折速法印", "三相残韵盘"):
+    if relic == "三相残韵盘":
         choices[relic] = {"use": False}
     e.execute_action("battle_start", {"relic_choices": choices})
     e.execute_action("round_start", {})
@@ -104,9 +104,12 @@ def test_state_driven_killable_target_gets_finished(tmp_path):
     """可收割目标:实时评分应选择恰好击杀(击杀加成+终结加成)。"""
     e = _engine(tmp_path)
     m = e.state.enemies[0]
-    m.current_hp = 6            # 杀伐X=3 恰好击杀
+    m.current_hp = 6            # 杀伐X=3 恰好击杀（X² 公式，2026-09-13）
     action = _nth_action(e, [], n=1)
-    assert "杀伐" in action, f"可收割局面未推进输出: {action}"
+    # 不变量是「这一手把可收割目标收掉」，而非固定用哪张牌：杀伐改为 X² 后
+    # 收割 6 血需 3 法力，零成本的满额普攻同样一击致死且打分更高——择优即可。
+    assert ("杀伐" in action or "普攻" in action or "结算一轮攻击" in action), \
+        f"可收割局面未推进输出: {action}"
     assert not m.is_alive or m.current_hp <= 0, "收割候选应被优先执行"
 
 

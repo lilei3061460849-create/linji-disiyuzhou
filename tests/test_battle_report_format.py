@@ -1,7 +1,7 @@
 """
 pytest - 战报格式化器（README《六、战斗推演格式》合规性）
 
-对应三项裁定中的第②项：战报必须严格符合 README 第318-337行定义的格式。
+对应三项裁定中的第②项：战报必须严格符合 规则正文定义的格式。
 
 覆盖：
 - 正常路径：完整一场战斗，产出含全部规范字段的战报
@@ -30,7 +30,7 @@ def _new_engine(tmp_path, region="龙心谷"):
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": region})
-    optional = {"折速法印", "三相残韵盘"}
+    optional = {"三相残韵盘"}
     choice = next((name for name in setup["result"]["relic_choices"] if name not in optional),
                   setup["result"]["relic_choices"][0])
     e.execute_action("choose_discovered_relic", {"relic_name": choice})
@@ -63,13 +63,13 @@ def test_setup_discovery_lists_options_then_pick():
         blood_limit=42, mana_limit=20, speed_limit=8, action_count=3, shards=20,
         daowen_options=["波及", "再生", "束缚"], daowen_pick="波及",
         resonance="反转",
-        relic_options=["避风铃", "回锋刀", "折速法印"], relic_pick="避风铃",
+        relic_options=["避风铃", "回锋刀", "守夜灯"], relic_pick="避风铃",
         region="罪孽都市",
     )
     text = "\n".join(lines)
     assert text.startswith("[开局]")
     assert "初始道纹发现：候选〔波及、再生、束缚〕→选择【波及】" in text
-    assert "遗物发现：候选〔避风铃、回锋刀、折速法印〕→选择【避风铃】" in text
+    assert "遗物发现：候选〔避风铃、回锋刀、守夜灯〕→选择【避风铃】" in text
     assert "副本：罪孽都市" in text
 
 
@@ -94,7 +94,7 @@ def test_setup_discovery_rejects_result_only():
             blood_limit=60, mana_limit=14, speed_limit=8, action_count=3, shards=20,
             daowen_options=[], daowen_pick="杀伐",
             resonance="反转",
-            relic_options=["避风铃", "回锋刀", "折速法印"], relic_pick="避风铃",
+            relic_options=["避风铃", "回锋刀", "守夜灯"], relic_pick="避风铃",
         )
     with pytest.raises(ValueError, match="遗物发现候选"):
         BR.format_setup_discovery(
@@ -110,7 +110,7 @@ def test_setup_discovery_rejects_result_only():
             blood_limit=60, mana_limit=14, speed_limit=8, action_count=3, shards=20,
             daowen_options=["波及", "再生", "束缚"], daowen_pick="杀伐",
             resonance="反转",
-            relic_options=["避风铃", "回锋刀", "折速法印"], relic_pick="避风铃",
+            relic_options=["避风铃", "回锋刀", "守夜灯"], relic_pick="避风铃",
         )
 
 
@@ -155,7 +155,7 @@ def test_enemy_panel_matches_spec_shape(tmp_path):
 def test_monster_hits_listed_one_per_line(tmp_path):
     """正常路径：怪物每一击单独成行，禁止合并结算。
     一轮攻击(attack_count 次)同属一个攻击出手，共用出手号并标注第N/M击，
-    但每击仍独立成行（每次攻击独立判定闪避，README:204）。"""
+    但每击仍独立成行（每次攻击独立判定闪避，规则正文）。"""
     e = _new_engine(tmp_path)
     e.execute_action("battle_start")
     e.execute_action("round_start", {})

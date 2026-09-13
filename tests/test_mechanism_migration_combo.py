@@ -29,7 +29,10 @@ from engine.mechanisms import MECHANISMS, Phase
 from engine.models import Entity, GameState, Relic, StatusEffect
 
 
-def _player(hp=100, bl=None, mana=50, mana_limit=50, speed=5, speed_limit=20,
+# 2026-09-13 全局上限：当前法力不得超过[法限]。本文件多条用例验的是
+# "某效果给了多少法力"，池子若开局就满，增量会被上限吃掉而看不出触发。
+# 故夹具把[法限]放宽到 200，当前法力仍为 50 —— 被测的是增量，不是封顶。
+def _player(hp=100, bl=None, mana=50, mana_limit=200, speed=5, speed_limit=20,
             entity_type="轮回者"):
     return Entity("P", entity_type, blood_limit=bl if bl is not None else hp,
                   current_hp=hp, mana_limit=mana_limit, current_mana=mana,
@@ -377,17 +380,20 @@ def test_extreme_blood_limit_one_and_mana_bounds():
     assert p2.current_mana == 3, f"勾魂期间 2 点应翻倍扣 4，实剩 {p2.current_mana}"
 
     # 法力满 + 洞察 pending：
-    #   无不朽之躯 -> 法力可超限（50+20=70，与旧实现一致）
+    #   2026-09-13 用户裁定「所有属性不得超过其上限」全局化后，
+    #   持不持有【不朽之躯】结果相同——都封顶到[法限]。
     state3, combat3 = _arena()
     p3 = state3.player
-    p3.current_mana = 50  # mana_limit=50 已满
+    p3.mana_limit = 50    # 本例专验封顶，显式把[法限]收回 50
+    p3.current_mana = 50  # 已满
     p3._dongcha_pending = 20
     combat3._dispatch_phase(Phase.ROUND_START, target=p3)
-    assert p3.current_mana == 70, f"无不朽之躯超限: {p3.current_mana}"
+    assert p3.current_mana == p3.mana_limit, f"2026-09-13 全局上限：无不朽之躯也封顶到法限: {p3.current_mana}"
 
-    #   有不朽之躯（side_has 识别的是遗物/初拥/龙族条目，不是状态）-> 钳制到法限
+    #   有不朽之躯（side_has 识别的是遗物/初拥/龙族条目，不是状态）-> 同样钳制到法限
     state4, combat4 = _arena(relics=[Relic("不朽之躯", "")])
     p4 = state4.player
+    p4.mana_limit = 50
     p4.current_mana = 50
     p4._dongcha_pending = 20
     combat4._dispatch_phase(Phase.ROUND_START, target=p4)

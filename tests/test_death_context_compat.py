@@ -33,7 +33,9 @@ def test_damage_death_records_death_context_parent_event():
 
 def test_charred_hair_speed_gain_parent_is_death_event():
     state = GameState(phase="in_combat", combat_subphase="player_actions")
-    player = Entity("P", "轮回者", blood_limit=60, current_hp=60, speed_limit=5, current_speed=5)
+    # 2026-09-13 全局上限：当前速度不得超过[速限]。留出 2 点空间，
+    # 否则焦黑发丝的 +2 会被上限吃掉，看不到本例要验的来源归因。
+    player = Entity("P", "轮回者", blood_limit=60, current_hp=60, speed_limit=7, current_speed=5)
     enemy = Entity("M", "怪物", blood_limit=10, current_hp=10)
     state.player = player
     state.enemies = [enemy]

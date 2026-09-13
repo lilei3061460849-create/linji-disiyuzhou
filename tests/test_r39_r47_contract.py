@@ -229,7 +229,7 @@ def test_r42_target_daowen_trigger_is_explicit(tmp_path):
         ]}}},
     })
     assert result["success"] and result["trigger_spell_logs"]
-    assert player.current_hp == 95 and opponent.current_hp == 95   # 杀伐1→5X=5（DM裁定 2026-09-10，原 2X=2）
+    assert player.current_hp == 99 and opponent.current_hp == 99   # 杀伐1→X²=1（2026-09-13）
 
 
 # R43：确定性事件
@@ -324,11 +324,15 @@ def test_r44_normal_guard_lamp_ceil(tmp_path):
     player.mana_limit = 5; player.current_mana = 0
     engine.state.relics = [Relic("守夜灯", "")]
     engine.combat.round_start({})
-    # DM裁定 2026-09-09：一池制，[回始]不回填（法限5 也不再自动补满）
-    assert player.current_mana == 0
+    # DM裁定 2026-09-09：一池制，[回始]不回填（法限5 也不再自动补满）；
+    # 2026-09-13：守夜灯改为[回始]授予 ceil(法限*10%)=ceil(0.5)=1，故池中恰为 1。
+    assert player.current_mana == 1
+    assert engine.combat._grant_shouyedeng(player) is None, "同回合不重复授予"
+    player.current_mana = 0
+    player._shouyedeng_granted = 0
     granted = engine.combat._grant_shouyedeng(player)
-    assert granted["gained"] == 3
-    assert player.current_mana == 3  # 一池制：少了 +法限5 的回填，只剩守夜灯的 ceil(5*0.5)=3
+    assert granted["gained"] == 1
+    assert player.current_mana == 1
 
 
 def test_r44_boundary_slow_one_stays_one(tmp_path):
@@ -424,7 +428,9 @@ def test_r46_normal_event_relic_battle_start_matrix(tmp_path):
     }
     engine.combat.validate_battle_start_relic_choices(choices)
     logs = engine.combat.process_relics("battle_start", {"relic_choices": choices})
-    assert logs and (player.current_hp, player.current_speed, player.current_mana) == (90, 1, 60)
+    # 2026-09-13 全局上限：缄默面具 +40 被[法限]截断，法力停在上限而非 60。
+    assert logs and (player.current_hp, player.current_speed) == (90, 1)
+    assert player.current_mana == player.mana_limit
     assert player.has_status("洗劫") and friend.has_status("负岳索") and friend.shield == 15
     assert heart.current_uses == 13 and engine.state.event_modifiers["brand_nail_target_ref"] == "enemy:0"
     enemy_hp = enemy.current_hp
@@ -478,6 +484,8 @@ def test_r46_boundary_death_dodge_dragon_and_might_triggers(tmp_path):
     engine.combat._spend_dodge_speed(player, "enemy:0")
     assert player.shield == 3 and enemy.current_hp == 97
     engine.state.relics.append(Relic("龙族血脉", "", tags=["龙族"]))
+    # 2026-09-13 全局上限：焦黑发丝的 +2 需要[速限]有空间，否则被上限吃掉。
+    player.speed_limit = max(player.speed_limit, player.current_speed + 2)
     before_speed = player.current_speed
     engine.combat._apply_hostile_damage(enemy, 1, source=player)
     assert not enemy.is_alive and player.current_speed == before_speed + 2
