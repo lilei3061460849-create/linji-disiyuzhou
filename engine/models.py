@@ -226,6 +226,9 @@ class Entity:
     # 现下放为实体级，使挑战者/守擂者共用同一套残韵机制（玩家侧仍经 State.resonance 兼容）。
     resonance: dict[str, int] = field(default_factory=dict)
     relics: list[Relic] = field(default_factory=list)  # 由正文明确授予该角色的随身物品（如防弹插板）
+    # 统一 AI 的当前轮回记忆：只属于活着的实体；命零前压缩成遗言后清空。
+    # 这是主观叙事，不是规则事实，不能改变引擎数值或合法性。
+    ai_memory: dict = field(default_factory=dict)
     
     # 状态
     shield: int = 0              # 格挡
@@ -614,6 +617,7 @@ class Entity:
             "fake_shards": self.fake_shards,
             "total_healed": self.total_healed,
             "hp_ratio": round(self.hp_ratio, 2),
+            "ai_memory": self.ai_memory,
             "dao_wen": {k: v.dao_wen.name for k, v in self.dao_wen.items()},
             "spells": [s.name for s in self.spells],
             "relics": [r.to_dict() for r in self.relics],

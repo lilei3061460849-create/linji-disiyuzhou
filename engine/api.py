@@ -36,6 +36,7 @@ from .gamedata import (REGION_EXCLUSIVE_DAOWEN, ORIGINAL_MONSTER_DAOWEN,
                        UNIMPLEMENTED_REGION_EXCLUSIVE_DAOWEN)
 from .dm_rulings import DMRulingsDB, DMRuling, Interrupt
 from .death_book import DeathBookStore, draft_legacy, validate_legacy
+from .ai_memory import clear_memory, condense_to_legacy
 from .effect_context import make_context, normalize_context
 from .personality import (
     get_personality as personality_get,
@@ -5184,9 +5185,23 @@ class GameEngine:
         if player is None or player.is_alive:
             return None
         last_action = self._action_history[-1] if self._action_history else None
-        draft = self.state.pending_death_draft or draft_legacy(
-            self.state, self._infer_death_cause(action_type), last_action,
-            self.state.death_book_capacity)
+        cause = self._infer_death_cause(action_type)
+        if self.state.pending_death_draft:
+            draft = self.state.pending_death_draft
+        elif getattr(player, "ai_memory", None):
+            # 记忆只活到当前轮回者命零这一刻。先压缩出遗言，再立即清空
+            # 身世、经历、经验和人格缓存；是否真正写入仍交给死之传承审核。
+            draft = validate_legacy({
+                "text": condense_to_legacy(
+                    player.ai_memory, cause, last_action,
+                    self.state.death_book_capacity),
+            }, self.state.death_book_capacity)
+            clear_memory(player)
+            personality_remove(self.state, player)
+        else:
+            draft = draft_legacy(
+                self.state, cause, last_action,
+                self.state.death_book_capacity)
         self.state.pending_death_draft = draft
         self.state.death_inheritance_queued = True
         interrupt = Interrupt(
