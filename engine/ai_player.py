@@ -24,6 +24,7 @@ from .api import GameEngine
 from .validator import RuleValidator
 from .rule_sync import RuleSync
 from .dm_rulings import Interrupt
+from .ai_tactics import TacticalAI
 
 
 class AIDecision:
@@ -665,12 +666,21 @@ def create_ai_backend(provider: str = "placeholder", **kwargs) -> AIBackend:
     return providers[provider](**kwargs)
 
 
-# ========== AI玩家控制器 ==========
+# ========== 统一 AI 玩家控制器 ==========
 
-class AIPlayer:
-    """
-    AI玩家控制器
-    将AI决策引擎与游戏引擎连接，加入规则校验
+class AIPlayer(TacticalAI):
+    """第四宇宙的统一 AI 入口。
+
+    这是对外唯一的 AI 玩家对象：
+
+    * 开局、选区、事件和局外行动由 ``backend`` 提供高层决策；
+    * 战斗中的候选生成、ActionPreview、招架、输出、闪避和安全过滤由本类
+      继承的 ``TacticalAI`` 负责；
+    * 所有动作最终仍统一经过 ``GameEngine.execute_action`` 和规则校验器。
+
+    ``TacticalAI`` 仍作为内部战术实现保留，目的是兼容旧实验脚本和子类，
+    不是第二个独立玩家。新代码应只创建 ``AIPlayer``，不应在流程代码中
+    分别拼装 AIPlayer 与 TacticalAI。
     """
     
     def __init__(
@@ -680,10 +690,19 @@ class AIPlayer:
         validator: RuleValidator = None,
         rule_sync: RuleSync = None,
         auto_validate: bool = True,
-        max_retries: int = 3
+        max_retries: int = 3,
+        verbose: bool = False,
+        actor: Any = None,
+        enemies: Optional[list] = None,
+        actor_ref: Optional[str] = None,
+        tactical_combat: bool = True,
     ):
-        self.engine = game_engine
+        super().__init__(game_engine, verbose=verbose, actor=actor,
+                         enemies=enemies, actor_ref=actor_ref)
         self.backend = backend or PlaceholderBackend()
+        # 默认由统一战术层处理战斗；仅旧式调用方显式关闭时，才让 backend 直接
+        # 提交战斗 action（用于兼容只测试 action schema 的旧夹具）。
+        self.tactical_combat = tactical_combat
         # 让后端能读到引擎实时状态，用于可选法器/遗物的显式决策（可以不用但不能不让用）。
         if not getattr(self.backend, "engine", None):
             try:
@@ -701,52 +720,76 @@ class AIPlayer:
     def on_violation(self, callback: Callable):
         """注册违规回调"""
         self._violation_callbacks.append(callback)
-    
-    def play_turn(self, context: str = "") -> dict:
-        """执行一个回合的AI决策"""
-        state = self.engine.get_state()
-        
-        if state.get("pending_interrupts"):
-            return {
-                "action": "等待DM裁定",
-                "interrupts": state["pending_interrupts"],
-                "instruction": "有中断等待DM裁定，AI无法继续决策"
-            }
-        
-        available_actions = self.engine.get_available_actions()
-        decision = self.backend.decide(state, available_actions, context)
-        
-        result = self.engine.execute_action(decision.action_type, decision.params)
-        
+
+    def _is_tactical_combat_step(self) -> bool:
+        """判断当前是否轮到统一 AI 处理轮回者的战斗行动。"""
+        state = self.engine.state
+        return (
+            state.phase == "in_combat"
+            and self.tactical_combat
+            and state.combat_subphase == "player_actions"
+            and not state.pending_attack
+            and not state.pending_monster_phase
+            and state.player is not None
+            and state.player.is_alive
+        )
+
+    def _run_tactical_step(self, context: str = "") -> dict:
+        """执行一次战斗决策，并把战术层结果包装成统一 AI 记录。"""
+        # play_turn 是按“一个决策”调用的，而 TacticalAI.take_turn 是按“完整回合”
+        # 调用的；这里按引擎回合号自动初始化一次回合记账，避免调用方再维护第二个 AI。
+        round_no = self.engine.state.current_round
+        if getattr(self, "_unified_round_no", None) != round_no:
+            self.new_round()
+            self._unified_round_no = round_no
+
+        result = self.take_action()
+        decision_info = getattr(self, "last_decision", None) or {}
+        if result is None:
+            # 战术候选全部被安全过滤或已无输出时，统一 AI 负责结束己方行动，
+            # 不把“无动作”留给调用方猜测。
+            decision = AIDecision(
+                "prepare_monster_phase", {},
+                "没有合法且安全的战斗候选，结束轮回者行动阶段",
+            )
+            result = self.engine.execute_action(decision.action_type, decision.params)
+        else:
+            decision = AIDecision(
+                decision_info.get("action", result.get("action", "tactical_action")),
+                decision_info.get("params", {}),
+                decision_info.get("label", "统一战斗策略实时决策"),
+            )
+        return self._finish_decision(decision, result)
+
+    def _finish_decision(self, decision: AIDecision, result: dict) -> dict:
+        """统一执行校验、违规回调、规则同步和历史记录。"""
         validation = {"valid": True, "violations": [], "warnings": []}
         if self.auto_validate:
             validation = self.validator.validate(self.engine.state, {
                 "action": decision.action_type,
                 "params": decision.params
             }, result)
-            
             if not validation["valid"]:
                 for callback in self._violation_callbacks:
                     try:
                         callback(validation)
                     except Exception:
                         pass
-        
+
         sync_report = None
         if self.rule_sync:
             changes = self.rule_sync.check_for_changes()
             if changes:
                 sync_report = self.rule_sync.generate_sync_report()
-        
+
         record = {
             "decision": decision.to_dict(),
             "result": result,
             "validation": validation,
             "sync_report": sync_report,
-            "timestamp": time.time()
+            "timestamp": time.time(),
         }
         self._decision_history.append(record)
-        
         return {
             "action": decision.action_type,
             "params": decision.params,
@@ -756,6 +799,27 @@ class AIPlayer:
             "sync_report": sync_report,
             "interrupt": result.get("interrupt"),
         }
+
+    def play_turn(self, context: str = "") -> dict:
+        """执行一个统一 AI 决策。
+
+        setup/pre_battle/event 等高层阶段使用后端；轮回者战斗阶段直接进入同一
+        个 TacticalAI 实时决策器，不再由另一个 AI 接管战斗。
+        """
+        state = self.engine.get_state()
+        if state.get("pending_interrupts"):
+            return {
+                "action": "等待DM裁定",
+                "interrupts": state["pending_interrupts"],
+                "instruction": "有中断等待DM裁定，AI无法继续决策",
+            }
+        if self._is_tactical_combat_step():
+            return self._run_tactical_step(context)
+
+        available_actions = self.engine.get_available_actions()
+        decision = self.backend.decide(state, available_actions, context)
+        result = self.engine.execute_action(decision.action_type, decision.params)
+        return self._finish_decision(decision, result)
 
     def get_history(self) -> list[dict]:
         return self._decision_history

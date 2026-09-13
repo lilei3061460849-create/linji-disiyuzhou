@@ -103,6 +103,9 @@ class TacticalAI:
         self._enemies = enemies
         self._actor_ref = actor_ref
         self.log: list[str] = []
+        # 最近一次实时决策的引擎动作；统一 AI 外壳用它记录同一条决策链，
+        # 旧的直接使用 TacticalAI 的实验脚本也可以忽略该字段。
+        self.last_decision: Optional[dict] = None
         self.used: dict[str, int] = {}   # 统计各道纹发动次数，便于流派对比
         self._controlled_this_round: set = set()   # 本回合已被控制的目标
         self._previewer = None           # 行动后果预演器（惰性创建）
@@ -979,6 +982,13 @@ class TacticalAI:
             return None
         scored.sort(key=lambda t: (-t[0], t[1]))
         best = scored[0][2]
+        self.last_decision = {
+            "action": best["action"],
+            "params": dict(best.get("params", {})),
+            "label": best["label"],
+        }
+        if best.get("steps"):
+            self.last_decision["steps"] = best["steps"]
         hp_before = sum(e.current_hp for e in self.alive_enemies())
         r = (self._run_steps(best["steps"]) if best.get("steps")
              else self.engine.execute_action(best["action"], best["params"]))
@@ -1447,6 +1457,7 @@ class TacticalAI:
 
     def take_action(self) -> Optional[dict]:
         """执行一次出手：实时评估候选；子类固定串（archive 实验）走旧级联。"""
+        self.last_decision = None
         self.resolve_pending_redemption()
         if not self.alive_enemies() or not self.player.is_alive:
             return None

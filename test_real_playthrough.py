@@ -2,10 +2,9 @@
 """
 Real full playthrough via GameEngine.execute_action public API only.
 
-AI paths used (repo's own, unmodified):
-  - Player turns : engine.ai_tactics.TacticalAI.take_turn()
-  - Monster turns: sim.alt_path_test.resolve_monster_turn  (handplay_dungeon_with_winner,
-                   fixed 2026-08-19: engine -> e at lines 129/181)
+AI paths used (repo's unified player):
+  - Player turns : engine.ai_player.AIPlayer (TacticalAI is its internal combat policy)
+  - Monster turns: sim.alt_path_test.resolve_monster_turn (engine phase resolver)
   - Pre-battle   : sim.build_learner.choose_pre_battle (DEFAULT_POLICY weights)
 
 Every round is logged for AI-decision observation (actions chosen, resources,
@@ -14,7 +13,7 @@ enemy state, dodge decisions, daowen used, death cause).
 import sys, os, json, tempfile, math
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from engine.api import GameEngine
-from engine.ai_tactics import TacticalAI
+from engine.ai_player import AIPlayer
 from sim.alt_path_test import resolve_monster_turn
 from sim.build_learner import DEFAULT_POLICY, choose_pre_battle
 from tests.setup_support import OPTIONAL_BATTLE_START, OPTIONAL_ROUND_START
@@ -475,7 +474,7 @@ def main():
         save_dir = tempfile.mkdtemp(prefix="linji")
         eng = GameEngine(db_path=os.path.join(save_dir, "g.db"), rng_seed=seed,
                          save_dir=save_dir)
-        ai = TacticalAI(eng, verbose=detail_mode)
+        ai = AIPlayer(eng, verbose=detail_mode)
         rng = random.Random(seed)
 
         r = eng.execute_action("setup_attributes", {
