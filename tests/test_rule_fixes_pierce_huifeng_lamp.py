@@ -2,7 +2,7 @@
 
 1. 贯穿：你造成的伤害（道纹/遗物/雕塑等）一律无视格挡，不只普攻。
 2. 回锋刀：每失去1点当前速度后对显式[目标]造成3点伤害；折速疲惫必须提交目标。
-3. 守夜灯：[敌回始]加法限50%，该法力[敌回终]清空；回始只获得法限。
+3. 守夜灯：[回始]加[法限]10%的法力，不再清空（2026-09-13 用户改版）。
 
 每条覆盖正常路径 / 边界 / 非法输入。
 """
@@ -188,46 +188,44 @@ def test_round_start_gap_damage_is_separate_from_zhesu(tmp_path):
 
 # ---------- 守夜灯 ----------
 
-def test_lamp_grants_at_enemy_turn_and_clears_that_amount(tmp_path):
-    """正常路径：回始只加法限；敌回始+50%；敌回终只清该授予量。"""
+def test_lamp_grants_at_round_start_and_keeps_it(tmp_path):
+    """正常路径（2026-09-13 新口径）：[回始]授予 ceil(法限*10%)，怪物阶段不再授予也不清空。"""
     e = _engine(tmp_path, "lamp_ok")
     e.state.relics.append(Relic("守夜灯", ""))
     begin_battle(e)
-    begin_round(e)
     p = e.state.player
-    assert p.current_mana == p.mana_limit
-    limit = p.mana_limit
-    half = math.ceil(limit / 2)
-    # 2026-09-13 全局上限：当前法力不得超过[法限]。守夜灯的额外授予从此
-    # 只能"回充"已花掉的部分，满池时会被上限全额吃掉。先花干净再验授予/清除。
+    # 满池时授予会被上限全额吃掉，先花干净再看[回始]授予。
     p.current_mana = 0
+    p._shouyedeng_granted = 0
+    tenth = math.ceil(p.mana_limit * 0.1)
+    begin_round(e)
+    assert p.current_mana == tenth, f"[回始]应授予{tenth}，实{p.current_mana}"
+    before = p.current_mana
     phase = _monster_phase_no_attack(e)
     assert phase["success"], phase
-    # 敌回终已清授予量：授予 half → 清 half → 净回到 0。
-    # 用净变化断言而不是绝对值：本局可能随机持有【血偿契】(每失去10生命得1法力)，
-    # 怪物这两下打出的失血会顺带回充法力，那与守夜灯的授予/清除口径无关。
-    toll = p.hp_lost_this_battle // 10 if e.state.side_has(p, "血偿契") else 0
-    assert p.current_mana == toll, f"守夜灯授予须被等量清除（血偿契回充{toll}）"
-    grants = [d for d in phase["result"]["details"] if d.get("type") == "shouyedeng_grant"]
-    clears = [d for d in phase["result"]["details"] if d.get("type") == "shouyedeng_clear"]
-    assert grants and grants[0]["gained"] == half
-    assert clears and clears[0]["granted"] == half
+    # 怪物阶段既不授予也不清空。本局可能随机持有【承露盏】(每失去10生命得1法力)，
+    # 故按净变化断言：只允许承露盏那份回充。
+    toll = p.hp_lost_this_battle // 10 if e.state.side_has(p, "承露盏") else 0
+    assert p.current_mana == min(p.mana_limit, before + toll), \
+        f"守夜灯法力应留存（承露盏回充{toll}）"
+    assert not [d for d in phase["result"]["details"] if d.get("type") == "shouyedeng_grant"]
+    assert not [d for d in phase["result"]["details"] if d.get("type") == "shouyedeng_clear"]
 
 
-def test_lamp_spent_partially_leaves_remainder(tmp_path):
-    """边界：敌回始21，花掉10，敌回终扣7，剩4。"""
+def test_lamp_grant_is_capped_by_mana_limit(tmp_path):
+    """边界：授予量向上取整，且落地后不得超过[法限]。"""
     e = _engine(tmp_path, "lamp_bound")
     e.state.relics.append(Relic("守夜灯", ""))
     p = e.state.player
-    # 2026-09-13 全局上限：授予后不得超过[法限]，故把池子设为 14/21 而非 14/14，
-    # 让 +7 有落地空间；本例要验的"只扣回未花掉的授予量"口径不变。
     p.mana_limit = 21
     p.current_mana = 14
     e.combat._grant_shouyedeng(p)
+    assert p.current_mana == 14 + math.ceil(21 * 0.1)  # ceil(2.1)=3 → 17
+    # 贴着上限时溢出丢弃
+    p.current_mana = 20
+    p._shouyedeng_granted = 0
+    e.combat._grant_shouyedeng(p)
     assert p.current_mana == 21
-    p.current_mana -= 10
-    e.combat._clear_shouyedeng(p)
-    assert p.current_mana == 4
 
 
 def test_lamp_does_not_grant_without_enemy_turn(tmp_path):

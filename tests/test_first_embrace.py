@@ -176,7 +176,7 @@ def test_option2_immortal_body_halves_blood_limit_and_blocks_growth():
 
     # 获得的法力无法超过法限：折速战始+24被钳到法限；守夜灯[敌回始]叠加也被钳到法限
     engine.state.relics.append(Relic(name="折速法印", effect="[战始]可疲惫X获得6X法力"))
-    engine.state.relics.append(Relic(name="守夜灯", effect="[敌回始]获得等同于[法限]50%的法力"))
+    engine.state.relics.append(Relic(name="守夜灯", effect="[回始]获得等同于[法限]10%的法力"))
     zhesu = {"折速法印": {"use": True, "x": 4}}
     if any(r.name == "回锋刀" for r in engine.state.relics):
         zhesu["回锋刀"] = {"enemy_index": 0}

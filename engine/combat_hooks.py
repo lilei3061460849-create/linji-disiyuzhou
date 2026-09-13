@@ -111,7 +111,7 @@ class BifenglingHook:
 
 
 class ShouyedengHook:
-    """守夜灯：[敌回始]获得等同于[法限]50%的法力，该法力[敌回终]清空
+    """守夜灯：[回始]获得等同于[法限]10%的法力（2026-09-13 用户改版，不再清空）
 
     ⚠️ 双实现登记（P1）：引擎真实分发路径是 `CombatEngine._grant_shouyedeng()`
     （额外校验 存活/轮回者/遗物封印，并调用 clamp_immortal_body）。
@@ -122,16 +122,17 @@ class ShouyedengHook:
     priority = 60
 
     def on_round_start(self, entity: Any, is_enemy_turn: bool, state: Any) -> Dict[str, Any]:
+        # is_enemy_turn 保留在签名里只为兼容 hook 协议：授予已改为[回始]，与敌我回合无关。
         if not entity or not hasattr(state, "side_has") or not state.side_has(entity, "守夜灯"):
             return {}
-        if is_enemy_turn:
-            if getattr(entity, "_shouyedeng_granted", 0):
-                return {}
-            mana_to_gain = math.ceil(entity.mana_limit * 0.5)
-            entity.current_mana += mana_to_gain
-            entity._shouyedeng_granted = mana_to_gain
-            return {"mana_gained": mana_to_gain, "for_reaction": True}
-        return {}
+        if getattr(entity, "_shouyedeng_granted", 0):
+            return {}
+        mana_to_gain = math.ceil(entity.mana_limit * 0.1)
+        entity.current_mana += mana_to_gain
+        if entity.current_mana > entity.mana_limit:   # 全局属性封顶
+            entity.current_mana = entity.mana_limit
+        entity._shouyedeng_granted = mana_to_gain
+        return {"mana_gained": mana_to_gain}
 
 
 class DamageRedirectionHook:

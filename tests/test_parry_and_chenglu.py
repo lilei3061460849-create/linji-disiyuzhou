@@ -1,4 +1,4 @@
-"""【招架】与遗物【血偿契】，以及「所有属性不得超过其上限」的全局裁定。
+"""【招架】与遗物【承露盏】，以及「所有属性不得超过其上限」的全局裁定。
 
 三条均为 2026-09-13 用户裁定：
 
@@ -7,7 +7,7 @@
    声明式、回合级：一次声明覆盖本轮全部受击，不消耗出手也不消耗速度，
    代价只记在下一个回合（裸奔一轮）。
 
-2. 遗物【血偿契】—— 每累计失去10点生命，获得1点法力。本场累计、余数滚存、
+2. 遗物【承露盏】—— 每累计失去10点生命，获得1点法力。本场累计、余数滚存、
    [战始]归零。设计意图是与一切卖血套路搭配（【透支】流血4X、【血影】流血10、
    法术【血炼周天】= 再生⇄透支 自持循环）。
 
@@ -176,19 +176,19 @@ def test_parry_is_listed_in_available_actions():
     assert entry.get("available") is True
 
 
-# ==================== 3. 血偿契 ====================
+# ==================== 3. 承露盏 ====================
 
-def test_blood_toll_grants_one_mana_per_ten_hp_lost():
+def test_chenglu_grants_one_mana_per_ten_hp_lost():
     """正常路径：累计失去10生命 → +1法力。"""
-    _, combat, player, enemy = _arena(mana=0, mana_limit=10, relics=("血偿契",))
+    _, combat, player, enemy = _arena(mana=0, mana_limit=10, relics=("承露盏",))
     combat._apply_hostile_damage(player, 10, source=enemy)
     assert player.current_mana == 1, "满10点应换1法力"
     assert player.hp_lost_this_battle == 10
 
 
-def test_blood_toll_remainder_carries_over():
+def test_chenglu_remainder_carries_over():
     """边界：余数滚存——分笔挨打照样在第10点上结账。"""
-    _, combat, player, enemy = _arena(mana=0, mana_limit=10, relics=("血偿契",))
+    _, combat, player, enemy = _arena(mana=0, mana_limit=10, relics=("承露盏",))
     combat._apply_hostile_damage(player, 7, source=enemy)
     assert player.current_mana == 0, "不足10点不结账"
     combat._apply_hostile_damage(player, 5, source=enemy)
@@ -197,21 +197,21 @@ def test_blood_toll_remainder_carries_over():
     assert player.current_mana == 2, "累计20 → 共2次"
 
 
-def test_blood_toll_pays_out_multiple_at_once():
+def test_chenglu_pays_out_multiple_at_once():
     """边界：一次掉25血应一次结算2点（不是只结1点）。"""
     _, combat, player, enemy = _arena(mana=0, mana_limit=10, bl=200, hp=200,
-                                      relics=("血偿契",))
+                                      relics=("承露盏",))
     combat._apply_hostile_damage(player, 25, source=enemy)
     assert player.current_mana == 2, "25//10=2"
 
 
-def test_blood_toll_counts_cost_bleed_not_just_attacks():
+def test_chenglu_counts_cost_bleed_not_just_attacks():
     """正常路径（与卖血套路搭配的关键）：【代价】流血同样计入。
 
-    【透支】流血4X 本来是纯支出，血偿契让它每满10点返还1法力。
+    【透支】流血4X 本来是纯支出，承露盏让它每满10点返还1法力。
     挂在唯一失血总账上，所以来源无关——挨打、流血代价、爆裂反噬一视同仁。
     """
-    _, combat, player, _ = _arena(mana=0, mana_limit=10, relics=("血偿契",))
+    _, combat, player, _ = _arena(mana=0, mana_limit=10, relics=("承露盏",))
     combat.pay_numeric_cost(player, "流血", 12, cost_context={
         "timing": "player_action", "source": "透支", "source_type": "daowen",
         "actor": player, "target": player, "mechanic": "cost",
@@ -219,27 +219,27 @@ def test_blood_toll_counts_cost_bleed_not_just_attacks():
     assert player.current_mana == 1, "透支的流血也算失去生命"
 
 
-def test_blood_toll_is_capped_by_mana_limit():
+def test_chenglu_is_capped_by_mana_limit():
     """边界：返还的法力同样不得超过[法限]（全局上限）。"""
-    _, combat, player, enemy = _arena(mana=9, mana_limit=10, relics=("血偿契",))
+    _, combat, player, enemy = _arena(mana=9, mana_limit=10, relics=("承露盏",))
     combat._apply_hostile_damage(player, 30, source=enemy)
     assert player.current_mana == 10, "3点返还只落地1点，其余被法限吃掉"
 
 
-def test_blood_toll_does_nothing_without_the_relic():
+def test_chenglu_does_nothing_without_the_relic():
     """对照：未持有该遗物时失血不产生任何法力。"""
     _, combat, player, enemy = _arena(mana=0, mana_limit=10)
     combat._apply_hostile_damage(player, 30, source=enemy)
     assert player.current_mana == 0
 
 
-def test_blood_toll_resets_between_battles():
+def test_chenglu_resets_between_battles():
     """边界：本场累计——[战始]归零，上一场的余数不带进新战斗。"""
-    _, combat, player, enemy = _arena(mana=0, mana_limit=10, relics=("血偿契",))
+    _, combat, player, enemy = _arena(mana=0, mana_limit=10, relics=("承露盏",))
     combat._apply_hostile_damage(player, 9, source=enemy)
     assert player.hp_lost_this_battle == 9 and player.current_mana == 0
     combat.reset_monster_activation()   # 战始重置入口
-    assert player.hp_lost_this_battle == 0 and player.blood_toll_paid == 0
+    assert player.hp_lost_this_battle == 0 and player.chenglu_paid == 0
     combat._apply_hostile_damage(player, 9, source=enemy)
     assert player.current_mana == 0, "新战斗重新计数，9+9 不得凑成一次结算"
 
@@ -267,17 +267,17 @@ def test_cap_does_not_block_refilling_a_spent_pool():
     assert player.current_mana == 7, "未满池时获得须如实入账"
 
 
-# ==================== 5. 招架 × 血偿契 × 卖血流 ====================
+# ==================== 5. 招架 × 承露盏 × 卖血流 ====================
 
-def test_parry_and_blood_toll_compose_on_the_same_hit():
-    """集成：同一次受击上，招架先减伤，剩下的失血再喂血偿契。
+def test_parry_and_chenglu_compose_on_the_same_hit():
+    """集成：同一次受击上，招架先减伤，剩下的失血再喂承露盏。
 
-    顺序是有意义的：招架在 _incoming_adjust 里先把伤害卸掉，血偿契记的是
+    顺序是有意义的：招架在 _incoming_adjust 里先把伤害卸掉，承露盏记的是
     **实际失去的生命**。所以扛得越稳，换到的法力越少——这两件东西互相牵制，
     不是无脑叠加。
     """
     _, combat, player, enemy = _arena(mana=4, mana_limit=20, bl=200, hp=200,
-                                      relics=("血偿契",))
+                                      relics=("承露盏",))
     player.parrying_this_round = True
     combat._apply_hostile_damage(player, 24, source=enemy)
     # 24 - 4(法力) = 20 实际失血 → 20//10 = 2 法力
@@ -285,23 +285,23 @@ def test_parry_and_blood_toll_compose_on_the_same_hit():
     assert player.current_mana == 6, "失血20 → +2法力（4→6）"
 
 
-def test_blood_toll_feeds_the_touzhi_regeneration_loop():
-    """集成（用户点名的搭配）：血偿契把【血炼周天】的闭环从净零变成净赚法力。
+def test_chenglu_feeds_the_touzhi_regeneration_loop():
+    """集成（用户点名的搭配）：承露盏把【血炼周天】的闭环从净零变成净赚法力。
 
     闭环本身：【再生X】消耗X法力→回复4X生命；【透支X】流血4X→获得X法力，
     严格 4:1 双向汇率，每轮生命净零、法力净零。
-    挂上血偿契后，透支那 4X 流血额外按每10点返1法力结算——闭环开始产出法力。
-    这里直接驱动一轮 X=3：流血12 → 得3法力(透支) + 1法力(血偿契 12//10)。
+    挂上承露盏后，透支那 4X 流血额外按每10点返1法力结算——闭环开始产出法力。
+    这里直接驱动一轮 X=3：流血12 → 得3法力(透支) + 1法力(承露盏 12//10)。
     """
     _, combat, player, _ = _arena(mana=0, mana_limit=20, bl=200, hp=200,
-                                  relics=("血偿契",))
+                                  relics=("承露盏",))
     combat.pay_numeric_cost(player, "流血", 12, cost_context={
         "timing": "player_action", "source": "透支", "source_type": "daowen",
         "actor": player, "target": player, "mechanic": "cost",
         "subtype": "bleed", "amount": 12, "tags": {"active_payment"}})
     toll_mana = player.current_mana
-    assert toll_mana == 1, "透支流血12 → 血偿契返1法力"
+    assert toll_mana == 1, "透支流血12 → 承露盏返1法力"
     player.current_mana += 3          # 透支本体产出
     combat.clamp_immortal_body(player)
-    assert player.current_mana == 4, "本轮共得4法力（透支3 + 血偿契1）"
+    assert player.current_mana == 4, "本轮共得4法力（透支3 + 承露盏1）"
     assert player.current_hp == 188

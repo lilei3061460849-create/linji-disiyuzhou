@@ -388,7 +388,7 @@ def lab_shouyedeng_touzhi():
     after_rs = p.current_mana
     granted = e.combat._grant_shouyedeng(p)
     after_enemy_start = p.current_mana
-    e.combat._clear_shouyedeng(p)
+    # 守夜灯 2026-09-13 起[回始]授予且不再清空，已无「敌回终清空」这一步。
     after_enemy_end = p.current_mana
     e.combat.round_end()
     after_re = p.current_mana

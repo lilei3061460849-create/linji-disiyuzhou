@@ -77,7 +77,7 @@ def test_gain_still_refills_a_spent_pool():
     """正常路径：封顶不等于失效——花掉的部分照样能被重新填回来。
 
     这条是上一条的另一半：如果只测"满池溢出丢弃"，很容易把封顶误实现成
-    "获得法力一律无效"。守夜灯/血偿契这类回充手段的价值正在这里。
+    "获得法力一律无效"。守夜灯/承露盏这类回充手段的价值正在这里。
     """
     e = _engine("refill_cap", blood_points=7, speed_points=8, mana_points=10)
     p = e.state.player
