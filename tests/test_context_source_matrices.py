@@ -151,6 +151,9 @@ def test_speed_source_matrix_contexts():
 
     enemy.current_hp = 0
     enemy.is_alive = False
+    # 2026-09-13 全局上限：满速时焦黑发丝的 +2 会被吃掉而不记事件；
+    # 本例验的是"来源归因写对了"，先腾出上限空间。
+    player.current_speed = max(0, player.speed_limit - 2)
     combat._on_entity_death(enemy, ctx={
         "timing": "player_action", "source": "杀伐", "source_type": "daowen",
         "actor": player, "target": enemy, "mechanic": "death", "subtype": "hp_zero",

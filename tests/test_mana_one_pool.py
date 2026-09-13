@@ -55,19 +55,38 @@ def test_battle_start_grants_full_pool():
     assert p.current_mana == p.mana_limit, p.current_mana
 
 
-def test_relic_gain_stacks_over_full_pool():
-    """边界：遗物获得叠在满池上，允许超过[法限]（反向禁区：不得加 clamp）。"""
+def test_relic_gain_cannot_exceed_mana_limit():
+    """边界：任何来源的法力获得都不得超过[法限]（用户裁定 2026-09-13 全局化）。
+
+    **本条曾是反向禁区（"不得加 clamp"），已于 2026-09-13 被用户明确推翻。**
+    旧裁定：只有【不朽之躯】才把当前法力压回[法限]，其余情况超池是合法面板。
+    新裁定：所有属性一律不得超过其上限——上限不只是初始值，它同时定义了
+    攻次(速度)与攻力(法力)，超池等于凭空突破面板。
+    满池时再获得 = 溢出丢弃；花掉之后再获得才补得回来（见下一条）。
+    """
     e = _engine("relic", blood_points=7, speed_points=8, mana_points=10)
-    # 原用【折速法印】(疲惫4→+24法力) 验证；该遗物已于 2026-09-13 删除
-    #（效果改为道纹【搏命】）。这条反向禁区针对的是"遗物/道纹给的法力
-    # 不得被钳回[法限]"，故改为直接走 gain_mana 这一公共入账口径。
     p = e.state.player
     begin_battle(e)
     assert p.current_mana == p.mana_limit
     p.current_mana += 24
-    e.combat.clamp_immortal_body(p)   # 唯一允许压回[法限]的是遗物【不朽之躯】
-    assert p.current_mana == p.mana_limit + 24, p.current_mana
-    assert p.current_mana > p.mana_limit, "超过法限是合法面板"
+    e.combat.clamp_immortal_body(p)
+    assert p.current_mana == p.mana_limit, f"满池获得须被压回法限，实{p.current_mana}"
+
+
+def test_gain_still_refills_a_spent_pool():
+    """正常路径：封顶不等于失效——花掉的部分照样能被重新填回来。
+
+    这条是上一条的另一半：如果只测"满池溢出丢弃"，很容易把封顶误实现成
+    "获得法力一律无效"。守夜灯/血偿契这类回充手段的价值正在这里。
+    """
+    e = _engine("refill_cap", blood_points=7, speed_points=8, mana_points=10)
+    p = e.state.player
+    begin_battle(e)
+    assert p.spend_mana(4) is True
+    assert p.current_mana == p.mana_limit - 4
+    p.current_mana += 3
+    e.combat.clamp_immortal_body(p)
+    assert p.current_mana == p.mana_limit - 1, "未满池时获得须如实入账"
 
 
 # ==================== 2. [回始]不回填 / [回终]不清空 ====================

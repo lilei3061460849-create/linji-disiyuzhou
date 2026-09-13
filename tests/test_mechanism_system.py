@@ -301,13 +301,18 @@ def _arena_mana(player_mana=50, mana_limit=50, relic_names=()):
     return state, CombatEngine(state, DiceEngine()), player
 
 
-def test_verb_mana_gain_and_immortal_clamp():
-    # 无不朽之躯：获得可以超过法限（与既有获取点一致）
+def test_verb_mana_gain_is_capped_at_limit():
+    """2026-09-13：法力上限对所有人生效（原为【不朽之躯】独占，已全局化）。
+
+    gained 报的是**声明获得量**（30），current_mana 报的是**落地量**（封顶到 50）——
+    两者故意不同口径：效果确实发生了，只是被上限截断，下游据此区分"没触发"与
+    "触发了但溢出"。
+    """
     state, combat, player = _arena_mana(player_mana=40, mana_limit=50)
     res = apply_verb(combat, "mana", {"target": player, "delta": 30})
-    assert res["gained"] == 30 and player.current_mana == 70
+    assert res["gained"] == 30 and player.current_mana == 50, "无遗物也须封顶"
 
-    # 持有不朽之躯：获得被钳制到法限
+    # 持有不朽之躯：结果相同，该遗物不再独占此项
     state, combat, player = _arena_mana(player_mana=40, mana_limit=50,
                                         relic_names=("不朽之躯",))
     res = apply_verb(combat, "mana", {"target": player, "delta": 30})

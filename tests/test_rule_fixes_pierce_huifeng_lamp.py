@@ -198,10 +198,16 @@ def test_lamp_grants_at_enemy_turn_and_clears_that_amount(tmp_path):
     assert p.current_mana == p.mana_limit
     limit = p.mana_limit
     half = math.ceil(limit / 2)
+    # 2026-09-13 全局上限：当前法力不得超过[法限]。守夜灯的额外授予从此
+    # 只能"回充"已花掉的部分，满池时会被上限全额吃掉。先花干净再验授予/清除。
+    p.current_mana = 0
     phase = _monster_phase_no_attack(e)
     assert phase["success"], phase
-    # 敌回终已清授予量，剩下回始法力（怪物若未消耗玩家法力）。
-    assert p.current_mana == limit
+    # 敌回终已清授予量：授予 half → 清 half → 净回到 0。
+    # 用净变化断言而不是绝对值：本局可能随机持有【血偿契】(每失去10生命得1法力)，
+    # 怪物这两下打出的失血会顺带回充法力，那与守夜灯的授予/清除口径无关。
+    toll = p.hp_lost_this_battle // 10 if e.state.side_has(p, "血偿契") else 0
+    assert p.current_mana == toll, f"守夜灯授予须被等量清除（血偿契回充{toll}）"
     grants = [d for d in phase["result"]["details"] if d.get("type") == "shouyedeng_grant"]
     clears = [d for d in phase["result"]["details"] if d.get("type") == "shouyedeng_clear"]
     assert grants and grants[0]["gained"] == half
@@ -213,7 +219,9 @@ def test_lamp_spent_partially_leaves_remainder(tmp_path):
     e = _engine(tmp_path, "lamp_bound")
     e.state.relics.append(Relic("守夜灯", ""))
     p = e.state.player
-    p.mana_limit = 14
+    # 2026-09-13 全局上限：授予后不得超过[法限]，故把池子设为 14/21 而非 14/14，
+    # 让 +7 有落地空间；本例要验的"只扣回未花掉的授予量"口径不变。
+    p.mana_limit = 21
     p.current_mana = 14
     e.combat._grant_shouyedeng(p)
     assert p.current_mana == 21

@@ -253,24 +253,26 @@ def test_bleed_cost_death_is_tagged_self_inflicted():
 
 # ------------------------------------------------- 反向裁定：法力可超法限
 
-def test_mana_may_exceed_mana_limit_without_immortal_body():
-    """反向裁定（防回退）：无【不朽之躯】时，回始获得的法力允许超过法限。
+def test_mana_is_capped_at_mana_limit_for_everyone():
+    """裁定（2026-09-13，推翻旧反向裁定）：任何人法力都不得超过[法限]。
 
-    回始是加法（0 → 法限），守夜灯等额外获得在其上叠加，因此 51/34 是
-    **合法**面板而不是假账。只有【不朽之躯】才 clamp。
+    旧裁定是"无【不朽之躯】时超池合法，只有该遗物才 clamp"，本测试原本正是
+    它的防回退守卫。用户已明确改判为**所有属性一律不得超过其上限**，故本条
+    反向：不持有【不朽之躯】也照样压回[法限]，该遗物不再独占此项。
     """
     engine = _engine("mana_over")
     p = engine.state.player
     engine.execute_action("round_start", {})
-    p.current_mana = p.mana_limit + 17      # 模拟守夜灯叠加后的合法面板
-    assert p.current_mana > p.mana_limit
+    p.current_mana = p.mana_limit + 17
     assert not engine.state.side_has(p, "不朽之躯")
     engine.combat.clamp_immortal_body(p)
-    assert p.current_mana == p.mana_limit + 17, "无不朽之躯不得被强行压回法限"
+    assert p.current_mana == p.mana_limit, "无不朽之躯也须压回法限（全局上限）"
+    # 持有该遗物时结果相同——它的效果已成为通用规则的一部分。
     engine.state.player.side_relics = None
     engine.state.relics = [type("R", (), {"name": "不朽之躯", "effect": "", "tags": []})()]
+    p.current_mana = p.mana_limit + 5
     engine.combat.clamp_immortal_body(p)
-    assert p.current_mana == p.mana_limit, "有【不朽之躯】时才 clamp 到法限"
+    assert p.current_mana == p.mana_limit
 
 
 def test_death_attribution_names_cancer():

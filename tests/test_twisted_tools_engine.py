@@ -25,6 +25,10 @@ def _setup_engine(region="扭曲都市", seed=42):
     assert engine.state.player is not None
     engine.state.player.current_hp = 60
     engine.state.player.blood_limit = 60
+    # 2026-09-13 全局上限：当前法力/速度不得超过[法限]/[速限]。本文件验的是
+    # 工具给了多少资源，故把上限一并放宽，让增量有落地空间（被测的是增量本身）。
+    engine.state.player.mana_limit = max(engine.state.player.mana_limit, 40)
+    engine.state.player.speed_limit = max(engine.state.player.speed_limit, 20)
     engine.state.player.current_mana = 14
     engine.state.player.current_speed = 8
     engine.state.player.shield = 0

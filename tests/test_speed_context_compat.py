@@ -81,6 +81,7 @@ def test_daowen_speed_boost_records_speed_change_context():
 
 def test_speed_events_clear_on_round_boundaries():
     _, combat, player, _ = _state()
+    player.current_speed -= 1   # 2026-09-13 全局上限：满速时 +1 会被吃掉，记不到事件
     combat._gain_speed(player, 1, ctx={
         "timing": "player_action", "source": "超频", "source_type": "daowen",
         "actor": player, "target": player, "mechanic": "speed_change", "subtype": "current_speed",

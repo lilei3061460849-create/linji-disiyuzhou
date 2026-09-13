@@ -617,6 +617,13 @@ class GameEngine:
                        if refs[a["ref"]].actions_used_this_round < refs[a["ref"]].action_count]
         actions.extend([
             {"action_type": "prepare_attack", "params_schema": {"actor_ref": actor_options}},
+            {"action_type": "declare_parry", "params_schema": {"actor_ref": actor_options},
+             "available": bool(player is not None
+                               and not getattr(player, "parry_locked_this_round", False)
+                               and not getattr(player, "parrying_this_round", False)),
+             "note": ("招架：本轮每次受到的伤害减去等同你法力的数值；不消耗出手，"
+                      "下回合不能再招架。减免按结算时的法力计——本轮花掉的法力"
+                      "会同步削弱招架")},
             {"action_type": "declare_wish", "params_schema": {"wish_text": "string", "target_ref": target_options}},
             {"action_type": "declare_escape", "params_schema": {}},
             {"action_type": "command_ally", "params_schema": {
@@ -712,6 +719,7 @@ class GameEngine:
 
     _COMBAT_ONLY_ACTIONS = {
         "prepare_attack", "resolve_attack", "attack", "declare_wish", "declare_escape",
+        "declare_parry",
         "retreat_via_toll", "deploy_employee", "lianxin_in_battle", "declare_evolution",
         "prepare_monster_phase", "resolve_monster_phase", "monster_phase",
         "round_start", "round_end", "resolve_rebellion_battle",
@@ -853,6 +861,7 @@ class GameEngine:
                 "resolve_attack": CombatSubphase.PLAYER_ACTIONS.value,
             }.get(action_type)
             player_actions = {
+                "declare_parry",
                 "use_daowen", "use_spell", "use_resonance", "consume_item",
                 "declare_wish", "declare_escape", "retreat_via_toll", "deploy_employee",
                 "lianxin_in_battle", "declare_evolution", "activate_duel_relic",
@@ -1001,6 +1010,8 @@ class GameEngine:
                 result = self._action_use_resonance(params)
             elif action_type == "redeem_attribute_points":
                 result = self._action_redeem_attribute_points(params)
+            elif action_type == "declare_parry":
+                result = self._action_declare_parry(params)
             elif action_type == "prepare_attack":
                 result = self._action_prepare_attack(params)
             elif action_type == "resolve_attack":
@@ -1499,7 +1510,7 @@ class GameEngine:
         9: ("封存血脉", "保留触发权，随时再次触发初拥之夜"),
     }
 
-    # 遗物池定义（10件；【发现】只列候选，效果在对应触发时点应用）
+    # 遗物池定义（11件；【发现】只列候选，效果在对应触发时点应用）
     RELIC_DEFS = [
         ("血誓戒", "[回始]首次主动支付流血代价时，获得等同于本次流血的格挡；若支付后生命≤30%，改为获得等量生命"),
         ("买路财", "战斗中可失去等同于怪物20%[血限]的[碎片]安全撤退"),
@@ -1511,6 +1522,7 @@ class GameEngine:
         ("守夜灯", "[敌回始]获得[法限]50%法力，[敌回终]清空，每回合一次"),
         ("无所求", "每当在事件中选拒绝类选项，永久获得1属性点"),
         ("忘忧香", "局外行动你可以选择\"忘忧\"（失忆1/2/3，获得30/55/80[碎片]）"),
+        ("血偿契", "每累计失去10点生命，获得1点法力（本场累计，余数滚存，[战始]归零）"),
     ]
 
     def _init_relic_pool(self):
@@ -2828,6 +2840,43 @@ class GameEngine:
                              "{'blood_points': 非负整数, 'speed_points': 偶数, 'mana_points': 偶数}",
                     "attribute_points": self.state.attribute_points}
         return self._redeem_attribute_points(allocations)
+
+    def _action_declare_parry(self, params: dict) -> dict:
+        """声明【招架】（2026-09-13 新增的第三种受击选项）。
+
+        规则：本轮你每次受到的伤害减去等同你法力的数值；下回合不能使用招架。
+
+        与闪避的关键差别，也是它为什么是回合级而不是逐击级：
+        闪避按「击」结算（每击花 1 速度、逐击提交），招架是一个**姿态**——
+        一次声明覆盖本轮全部受击，代价则记在下一个回合上。因此它不消耗出手、
+        不消耗速度，只在时间轴上欠一笔账（下回合裸奔）。
+
+        减免量取**结算那一刻**的当前法力，不是声明时的快照：法力同时就是攻力，
+        你在本轮花掉的每一点法力都会同步削弱自己的招架。这正是这张牌的张力所在
+        ——想硬扛就别出手，想出手就扛不住。
+        """
+        actor_ref = params.get("actor_ref", "player:0")
+        refs = self.combat._combat_entity_refs()
+        actor = refs.get(actor_ref)
+        if actor is None or not actor.is_alive:
+            return {"success": False, "error": "actor_ref不是当前存活行动者"}
+        if actor.entity_type == "怪物" and not self.state.in_final_duel:
+            return {"success": False, "error": "普通怪物必须通过怪物阶段行动"}
+        duel_error = self._check_duel_turn_or_error(actor)
+        if duel_error:
+            return duel_error
+        if not self.combat.can_act(actor):
+            return {"success": False, "error": f"{actor.name}当前无法行动"}
+        if getattr(actor, "parry_locked_this_round", False):
+            return {"success": False, "error": f"{actor.name}上回合已招架，本回合不能再招架"}
+        if getattr(actor, "parrying_this_round", False):
+            return {"success": False, "error": f"{actor.name}本回合已处于招架姿态"}
+        actor.parrying_this_round = True
+        return {"success": True, "action": f"{actor.name}招架",
+                "result": {"actor": actor.name,
+                           "reduction_preview": max(0, actor.current_mana),
+                           "note": "本轮每次受到的伤害减去等同当前法力的数值；"
+                                   "减免按结算时的法力计，下回合不能再招架"}}
 
     def _action_prepare_attack(self, params: dict) -> dict:
         """第一阶段：绑定一次行动的逐击目标、闪避、血影和法术反应选项。"""

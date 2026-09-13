@@ -360,6 +360,9 @@ def test_jisu_jiasu_dongcha():
     engine.execute_action("round_start", {})
 
     engine.execute_action("use_daowen", {"daowen_name": "急速", "x": 2, "target": p.name})
+    # 2026-09-13：当前速度不得超过[速限]。满速开局时"+1速"会被上限吃掉，
+    # 本例要验的是"急速每闪两次给1速"这件事发生了，先腾出空间再验。
+    p.current_speed = max(0, p.speed_limit - 3)
     spd = p.current_speed
     engine.combat._note_dodge(p)
     assert p.current_speed == spd
@@ -367,6 +370,7 @@ def test_jisu_jiasu_dongcha():
     assert p.current_speed == spd + 1
 
     engine.execute_action("use_daowen", {"daowen_name": "加速", "x": 1, "target": p.name})
+    p.speed_limit += 6          # 给翻倍后的 +6 留出上限空间（同上）
     spd = p.current_speed
     engine.execute_action("use_daowen", {"daowen_name": "超频", "x": 3})
     assert p.current_speed == spd + 6

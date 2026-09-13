@@ -212,7 +212,24 @@ class CombatEngine:
     def _incoming_adjust(self, target: Entity, amount: int, damage_type: str = "普通") -> int:
         if amount <= 0 or damage_type == "代价" or target is None:
             return amount
-        return self.hook_manager.apply_incoming_adjust(target, amount, damage_type, None, self.state)
+        amount = self.hook_manager.apply_incoming_adjust(target, amount, damage_type, None, self.state)
+        return self._apply_parry_reduction(target, amount, damage_type)
+
+    def _apply_parry_reduction(self, target: Entity, amount: int, damage_type: str) -> int:
+        """招架（2026-09-13）：本轮每次受到的伤害减去等同当前法力的数值。
+
+        接在 _incoming_adjust 末尾 = 所有伤害通道的公共咽喉（攻击、道纹、反噬
+        都经 _apply_hostile_damage → _incoming_adjust），不必逐路径接线。
+        减免在格挡之前结算：招架是"卸力"，格挡是"挨下来再吸收"，先卸后吸。
+        【代价】不在此列（上面已 return），与格挡口径一致——代价是自己付的，
+        不是"受到的伤害"，否则招架会顺带免掉透支的流血，卖血流直接变无代价。
+        """
+        if amount <= 0 or target is None or not getattr(target, "parrying_this_round", False):
+            return amount
+        reduction = max(0, target.current_mana)
+        if reduction <= 0:
+            return amount
+        return max(0, amount - reduction)
 
     def _record_speed_change_event(
         self, entity: Entity, amount: int,
@@ -262,15 +279,22 @@ class CombatEngine:
         return gained
 
     def clamp_immortal_body(self, entity: Entity) -> None:
-        """不朽之躯：获得的[法力]/[速度]无法超过[法限]/[速限]。
+        """任何属性都不得超过其上限（用户裁定 2026-09-13，全局化）。
 
-        只限制“获得”的当前法力/当前速度不得超过各自上限；属性点（修行/无所求）
-        提升的是上限本身，不受本限制。朋友/员工不继承（side_has 已排除）。
+        原先这条只在持有【不朽之躯】时生效，其余情况允许当前法力/速度超池。
+        现改为**无条件对所有角色生效**：当前生命≤[血限]、当前法力≤[法限]、
+        当前速度≤[速限]。理由是上限不再只是"初始值"，它同时定义了攻次(速度)
+        与攻力(法力)，超池等于凭空突破面板；【不朽之躯】的原文效果因此成为
+        通用规则的一部分（该遗物本身保留，不再独占此项）。
+
+        只限制"获得"的当前值，不动上限本身；属性点（修行/无所求）提升的是
+        上限，不受本限制。方法名保留兼容既有 12 处调用点与测试。
         """
-        if entity is None or not self.state.side_has(entity, "不朽之躯"):
+        if entity is None:
             return
         entity.current_mana = min(entity.current_mana, entity.mana_limit)
         entity.current_speed = min(entity.current_speed, entity.speed_limit)
+        entity.current_hp = min(entity.current_hp, entity.blood_limit)
 
     def _relic_active(self, entity: Entity, name: str) -> bool:
         if entity is None or not self.state.side_has(entity, name):
@@ -449,10 +473,15 @@ class CombatEngine:
         gained = self._shouyedeng_pending_grant(entity)
         if gained <= 0:
             return None
+        before = entity.current_mana
         entity.current_mana += gained
         self.clamp_immortal_body(entity)
-        entity._shouyedeng_granted = gained
-        return {"type": "shouyedeng_grant", "entity": entity.name, "gained": gained}
+        # 记**实际落地量**而不是声明量（2026-09-13 全局上限暴露的老 bug）：
+        # 上限把一部分授予吃掉后，[敌回终]若仍按声明量回扣，就会把玩家原本
+        # 自有的法力一起扣走（实测 14/21 池授予 11 只落地 7，回终扣 11 → 倒亏 4）。
+        entity._shouyedeng_granted = entity.current_mana - before
+        return {"type": "shouyedeng_grant", "entity": entity.name,
+                "gained": entity._shouyedeng_granted, "declared": gained}
 
     def _clear_shouyedeng(self, entity: Optional[Entity]) -> Optional[dict]:
         """守夜灯：该法力[敌回终]清空（只扣本回合授予量）。"""
@@ -606,7 +635,40 @@ class CombatEngine:
         else:
             logs = None
         record = self._write_hp_loss_record(entity, amount, parent_ctx, subtype, logs)
+        toll = self._settle_blood_toll(entity, amount, parent_ctx)
+        if toll:
+            record["blood_toll"] = toll
         return record
+
+    def _settle_blood_toll(self, entity: Entity, amount: int,
+                           parent_ctx: Optional[EffectContext | dict] = None) -> Optional[dict]:
+        """血偿契（遗物）：每累计失去10点生命，获得1点法力。本场累计，战始归零。
+
+        挂在 _record_hp_loss_event 这条**唯一失血总账**上，所以不区分来源：
+        透支的流血、血影的流血、挨打、爆裂反噬……一律计入。这正是它与卖血流
+        （血炼周天 = 再生⇄透支）配套的地方——透支每轮流血 4X 本来是纯支出，
+        现在每满 10 点返还 1 法力。
+
+        余数滚存（blood_toll_paid 记已兑换过的总额），所以"失去 7 + 失去 5"
+        照样在第 10 点上结一次账，不会因为分笔挨打而永远凑不满。
+        不朽之躯的钳制照常生效：返还的法力仍然过 clamp，不能超过[法限]。
+        """
+        if entity is None or amount <= 0:
+            return None
+        if not self._relic_active(entity, "血偿契"):
+            return None
+        entity.hp_lost_this_battle = getattr(entity, "hp_lost_this_battle", 0) + amount
+        paid = getattr(entity, "blood_toll_paid", 0)
+        gain = (entity.hp_lost_this_battle // 10) - (paid // 10)
+        if gain <= 0:
+            return None
+        entity.blood_toll_paid = (entity.hp_lost_this_battle // 10) * 10
+        before = entity.current_mana
+        entity.current_mana += gain
+        self.clamp_immortal_body(entity)
+        actual = entity.current_mana - before
+        return {"relic": "血偿契", "hp_lost_total": entity.hp_lost_this_battle,
+                "mana_gained": actual, "capped": actual < gain}
 
     # ---- 「失去生命后」统一拦截：绑定与兜底触发 (2026-08-30) ----
     def _hp_record_entities(self) -> list[Entity]:
@@ -1702,6 +1764,10 @@ class CombatEngine:
         # 活血追踪归零 + 出手预算归零（回始重置本回合已用出手次数）+ 血誓戒每回合限一次归零 + 血族血脉判定归零
         for e in self.state.get_all_player_side() + self.state.get_all_enemy_side():
             e.hp_lost_this_round = 0
+            # 招架：上回合招架过 → 本回合禁用；本回合姿态清空等待重新声明。
+            # 顺序要紧：先用旧的 parrying 值算出本回合的锁，再清姿态。
+            e.parry_locked_this_round = bool(getattr(e, "parrying_this_round", False))
+            e.parrying_this_round = False
             if hasattr(e, "_hp_loss_events"):
                 e._hp_loss_events = []
             if hasattr(e, "_speed_change_events"):
@@ -4623,6 +4689,13 @@ class CombatEngine:
 
     def reset_monster_activation(self):
         """战始重置怪物激活状态与战斗遗物状态"""
+        # 招架姿态与血偿契记账都是**每场**口径，战始一并归零，
+        # 避免上一场的姿态/余数漏到新战斗（换场时不经 [回始]）。
+        for e in self.state.get_all_player_side() + self.state.get_all_enemy_side():
+            e.parrying_this_round = False
+            e.parry_locked_this_round = False
+            e.hp_lost_this_battle = 0
+            e.blood_toll_paid = 0
         self._monster_activated = {}
         self._monster_evolved = set()  # 进化（原初X）：每场战斗限一次
         self._monster_daowen_round_used = {}

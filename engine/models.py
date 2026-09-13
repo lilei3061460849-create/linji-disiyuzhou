@@ -241,6 +241,13 @@ class Entity:
     departure_reason: str = ""   # 离场原因（雕塑/癌变/还债/救赎/封印/逃跑/...）
     hp_lost_this_round: int = 0   # 本回合累计失去的生命（活血用，回始归零）
     actions_used_this_round: int = 0  # 本回合已消耗的出手次数（回始归零，用于出手预算校验）
+    # ---- 招架（2026-09-13 新增第三种受击选项）----
+    # 声明即整轮生效：本轮每次受到的伤害减去等同当前法力的数值；下回合不能再招架。
+    parrying_this_round: bool = False   # 本回合是否已进入招架姿态
+    parry_locked_this_round: bool = False  # 本回合被禁用招架（上回合招架过）
+    # ---- 血偿契（遗物）：每累计失去10生命获得1法力，每场战斗累计 ----
+    hp_lost_this_battle: int = 0   # 本场累计失去的生命（战始归零）
+    blood_toll_paid: int = 0       # 本场已按此兑换过的生命总额（每10一档，战始归零）
 
     # 多路径胜利追踪
     shards: int = 0              # 怪物自带碎片（罪孽都市）/ 负值表示负债（还债）

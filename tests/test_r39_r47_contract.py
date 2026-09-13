@@ -424,7 +424,9 @@ def test_r46_normal_event_relic_battle_start_matrix(tmp_path):
     }
     engine.combat.validate_battle_start_relic_choices(choices)
     logs = engine.combat.process_relics("battle_start", {"relic_choices": choices})
-    assert logs and (player.current_hp, player.current_speed, player.current_mana) == (90, 1, 60)
+    # 2026-09-13 全局上限：缄默面具 +40 被[法限]截断，法力停在上限而非 60。
+    assert logs and (player.current_hp, player.current_speed) == (90, 1)
+    assert player.current_mana == player.mana_limit
     assert player.has_status("洗劫") and friend.has_status("负岳索") and friend.shield == 15
     assert heart.current_uses == 13 and engine.state.event_modifiers["brand_nail_target_ref"] == "enemy:0"
     enemy_hp = enemy.current_hp
@@ -478,6 +480,8 @@ def test_r46_boundary_death_dodge_dragon_and_might_triggers(tmp_path):
     engine.combat._spend_dodge_speed(player, "enemy:0")
     assert player.shield == 3 and enemy.current_hp == 97
     engine.state.relics.append(Relic("龙族血脉", "", tags=["龙族"]))
+    # 2026-09-13 全局上限：焦黑发丝的 +2 需要[速限]有空间，否则被上限吃掉。
+    player.speed_limit = max(player.speed_limit, player.current_speed + 2)
     before_speed = player.current_speed
     engine.combat._apply_hostile_damage(enemy, 1, source=player)
     assert not enemy.is_alive and player.current_speed == before_speed + 2
