@@ -1,6 +1,6 @@
 {
   "meta": {
-    "generated_at": "2026-09-14T06:21:43+00:00",
+    "generated_at": "2026-09-14T06:25:42+00:00",
     "engine": "engine.api.GameEngine via sim.build_learner._play",
     "script": "sim/test_chenglu_blood_splash.py",
     "opponent_snapshot": "data/real_winners/winner_01.json",
@@ -56,7 +56,7 @@
     },
     "termination_distribution": {
       "death": 47,
-      "nondeath_termination": 3
+      "sculpture": 3
     },
     "termination_battle_distribution": {
       "1": 50
@@ -71,11 +71,10 @@
       "普通攻击": 40,
       "伤痕": 7
     },
-    "nondeath_termination_distribution": {
-      "rng_suspect": 3
-    },
+    "nondeath_termination_distribution": {},
     "deaths_observed": 47,
-    "nondeath_terminations_observed": 3
+    "sculpture_terminations_observed": 3,
+    "nondeath_terminations_observed": 0
   },
   "runs": [
     {
@@ -92,6 +91,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "熔岩蜥",
       "spell_plan": "血溅五步"
@@ -110,6 +110,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "熔洞蛛",
       "spell_plan": "血溅五步"
@@ -128,6 +129,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "熔洞蛛",
       "spell_plan": "血溅五步"
@@ -146,6 +148,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "熔洞蛛",
       "spell_plan": "血溅五步"
@@ -164,6 +167,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "断角羊",
       "spell_plan": "血溅五步"
@@ -182,6 +186,7 @@
       "death_source": "伤痕",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "rng_suspect",
       "killer": "烙痕祭司",
       "spell_plan": "血溅五步"
@@ -200,6 +205,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "熔洞蛛",
       "spell_plan": "血溅五步"
@@ -218,6 +224,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "碎岩鸮",
       "spell_plan": "血溅五步"
@@ -236,6 +243,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "断角羊",
       "spell_plan": "血溅五步"
@@ -254,6 +262,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "余烬侍者",
       "spell_plan": "血溅五步"
@@ -272,6 +281,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "余烬侍者",
       "spell_plan": "血溅五步"
@@ -290,6 +300,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "熔洞蛛",
       "spell_plan": "血溅五步"
@@ -308,6 +319,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "熔岩蜥",
       "spell_plan": "血溅五步"
@@ -326,6 +338,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "断角羊",
       "spell_plan": "血溅五步"
@@ -344,6 +357,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "火山猿",
       "spell_plan": "血溅五步"
@@ -362,6 +376,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "碎岩鸮",
       "spell_plan": "血溅五步"
@@ -380,6 +395,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "断角羊",
       "spell_plan": "血溅五步"
@@ -398,6 +414,7 @@
       "death_source": "伤痕",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "rng_suspect",
       "killer": "烙痕祭司",
       "spell_plan": "血溅五步"
@@ -416,6 +433,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "熔洞蛛",
       "spell_plan": "血溅五步"
@@ -434,6 +452,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "余烬侍者",
       "spell_plan": "血溅五步"
@@ -452,6 +471,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "火山猿",
       "spell_plan": "血溅五步"
@@ -470,6 +490,7 @@
       "death_source": "伤痕",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "rng_suspect",
       "killer": "烙痕祭司",
       "spell_plan": "血溅五步"
@@ -488,6 +509,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "余烬侍者",
       "spell_plan": "血溅五步"
@@ -506,6 +528,7 @@
       "death_source": "伤痕",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "断翼巨像",
       "spell_plan": "血溅五步"
@@ -524,6 +547,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "碎岩鸮",
       "spell_plan": "血溅五步"
@@ -542,6 +566,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "石背熊",
       "spell_plan": "血溅五步"
@@ -559,8 +584,9 @@
       "death_subtype": "",
       "death_source": "",
       "termination_battle": 1,
-      "termination_kind": "nondeath_termination",
-      "termination_primary": "rng_suspect",
+      "termination_kind": "sculpture",
+      "sculpture_termination": true,
+      "termination_primary": "sculpture",
       "killer": "背碑人",
       "spell_plan": "血溅五步"
     },
@@ -578,6 +604,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "熔岩蜥",
       "spell_plan": "血溅五步"
@@ -596,6 +623,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "碎岩鸮",
       "spell_plan": "血溅五步"
@@ -614,6 +642,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "断角羊",
       "spell_plan": "血溅五步"
@@ -632,6 +661,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "熔岩蜥",
       "spell_plan": "血溅五步"
@@ -649,8 +679,9 @@
       "death_subtype": "",
       "death_source": "",
       "termination_battle": 1,
-      "termination_kind": "nondeath_termination",
-      "termination_primary": "rng_suspect",
+      "termination_kind": "sculpture",
+      "sculpture_termination": true,
+      "termination_primary": "sculpture",
       "killer": "背碑人",
       "spell_plan": "血溅五步"
     },
@@ -668,6 +699,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "余烬侍者",
       "spell_plan": "血溅五步"
@@ -686,6 +718,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "灰甲骑士",
       "spell_plan": "血溅五步"
@@ -704,6 +737,7 @@
       "death_source": "伤痕",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "断翼巨像",
       "spell_plan": "血溅五步"
@@ -722,6 +756,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "断角羊",
       "spell_plan": "血溅五步"
@@ -740,6 +775,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "墓门卫",
       "spell_plan": "血溅五步"
@@ -757,8 +793,9 @@
       "death_subtype": "",
       "death_source": "",
       "termination_battle": 1,
-      "termination_kind": "nondeath_termination",
-      "termination_primary": "rng_suspect",
+      "termination_kind": "sculpture",
+      "sculpture_termination": true,
+      "termination_primary": "sculpture",
       "killer": "背碑人",
       "spell_plan": "血溅五步"
     },
@@ -776,6 +813,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "火山猿",
       "spell_plan": "血溅五步"
@@ -794,6 +832,7 @@
       "death_source": "伤痕",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "断翼巨像",
       "spell_plan": "血溅五步"
@@ -812,6 +851,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "余烬侍者",
       "spell_plan": "血溅五步"
@@ -830,6 +870,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "余烬侍者",
       "spell_plan": "血溅五步"
@@ -848,6 +889,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "灰甲骑士",
       "spell_plan": "血溅五步"
@@ -866,6 +908,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "熔岩蜥",
       "spell_plan": "血溅五步"
@@ -884,6 +927,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "石背熊",
       "spell_plan": "血溅五步"
@@ -902,6 +946,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "灰甲骑士",
       "spell_plan": "血溅五步"
@@ -920,6 +965,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "墓门卫",
       "spell_plan": "血溅五步"
@@ -938,6 +984,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "墓门卫",
       "spell_plan": "血溅五步"
@@ -956,6 +1003,7 @@
       "death_source": "伤痕",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "断翼巨像",
       "spell_plan": "血溅五步"
@@ -974,6 +1022,7 @@
       "death_source": "普通攻击",
       "termination_battle": 1,
       "termination_kind": "death",
+      "sculpture_termination": false,
       "termination_primary": "sustained",
       "killer": "灰甲骑士",
       "spell_plan": "血溅五步"

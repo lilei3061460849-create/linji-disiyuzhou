@@ -142,7 +142,13 @@ def _run_one(task: tuple[int, str | None, str]) -> dict[str, Any]:
         pm = result.get("pm") or {}
         trace = result.get("death_trace") or {}
         death_observed = bool(trace.get("death_subtype"))
+        sculpture_observed = (not death_observed
+                              and any(str(item).endswith("雕塑")
+                                      for item in trace.get("unused_items", [])))
         termination_battle = pm.get("battle") if pm else None
+        termination_kind = ("death" if death_observed else
+                            "sculpture" if sculpture_observed else
+                            "nondeath_termination" if termination_battle is not None else "unknown")
         return {
             "seed": seed,
             "valid": valid,
@@ -158,9 +164,9 @@ def _run_one(task: tuple[int, str | None, str]) -> dict[str, Any]:
             "death_subtype": trace.get("death_subtype", "") if death_observed else "",
             "death_source": trace.get("death_source", "") if death_observed else "",
             "termination_battle": termination_battle,
-            "termination_kind": "death" if death_observed else (
-                "nondeath_termination" if termination_battle is not None else "unknown"),
-            "termination_primary": trace.get("primary", ""),
+            "termination_kind": termination_kind,
+            "sculpture_termination": sculpture_observed,
+            "termination_primary": "sculpture" if sculpture_observed else trace.get("primary", ""),
             "killer": pm.get("killer", "") if pm else "",
             "spell_plan": "血溅五步",
         }
@@ -172,7 +178,8 @@ def _run_one(task: tuple[int, str | None, str]) -> dict[str, Any]:
             "final_duel_fought": False, "final_duel_won": False,
             "death_battle": None, "death_subtype": "", "death_source": "",
             "termination_battle": None, "termination_kind": "unknown",
-            "termination_primary": "", "killer": "", "spell_plan": "血溅五步",
+            "sculpture_termination": False, "termination_primary": "",
+            "killer": "", "spell_plan": "血溅五步",
         }
     finally:
         setup_support.resolve_opening_relic = _ORIGINAL_RESOLVE
@@ -196,6 +203,7 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     deaths = [r for r in valid if r.get("death_battle") is not None]
     nondeath_terminations = [r for r in valid
                              if r.get("termination_kind") == "nondeath_termination"]
+    sculptures = [r for r in valid if r.get("sculpture_termination")]
     duel = [r for r in valid if r["final_duel_fought"]]
     return {
         "requested_runs": len(rows),
@@ -224,6 +232,7 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "nondeath_termination_distribution": dict(Counter(
             r.get("termination_primary", "") for r in nondeath_terminations)),
         "deaths_observed": len(deaths),
+        "sculpture_terminations_observed": len(sculptures),
         "nondeath_terminations_observed": len(nondeath_terminations),
     }
 
