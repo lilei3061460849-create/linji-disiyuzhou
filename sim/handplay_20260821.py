@@ -217,15 +217,15 @@ def decide_player_action(engine, strat: Strategy) -> Optional[dict]:
                         "params": {"daowen_name": "弱化", "x": x, "target_ref": enemy_ref(target),
                                    "trigger_spell_choices": {}}}
 
-    # ---- 3c. 封印：应急移除威胁怪物（代价异变8X——代价闭环：敢不敢付） ----
+    # ---- 3c. 封印：应急暂离威胁怪物（代价异变X，X回合后回场） ----
     if "封印" in p.dao_wen and len(enemies) >= 1:
         threat_now = threat_of(enemies)
         no_offense = not any(n in p.dao_wen for n in ("杀伐", "血债", "波及", "贯穿", "蒙蔽"))
         lethal = threat_now > p.current_hp + p.shield + 10 and p.current_hp <= p.blood_limit * 0.6
         if no_offense or lethal:
             target = max(enemies, key=lambda e: (e.attack_count or 0) * (e.attack_power or 0))
-            TRACE.text(f"  决策[封印] X=1 移出{target.name}（代价异变8，当前异变{p.mutation_count}，"
-                       f"累计{p.mutation_count + 8}层）")
+            TRACE.text(f"  决策[封印] X=1 使{target.name}延后1回合回场（代价异变1，当前异变{p.mutation_count}，"
+                       f"累计{p.mutation_count + 1}层）")
             return {"action_type": "use_daowen",
                     "params": {"daowen_name": "封印", "x": 1, "target_ref": enemy_ref(target),
                                "trigger_spell_choices": {}}}
@@ -608,7 +608,7 @@ def run_setup(engine, cfg: dict) -> bool:
     if prefer_dw in dw_choices:
         pick_dw = prefer_dw
     else:
-        # 价值排序：输出>防御>成长>控制>封印（封印异变8X对玩家代价过重）
+        # 价值排序：输出>防御>成长>控制>封印（封印只是暂离，不能替代清场）
         order = ["杀伐", "血债", "再生", "庇护", "波及", "贯穿", "增殖", "透支", "束缚", "固执", "封印"]
         pick_dw = next((d for d in order if d in dw_choices), dw_choices[0])
     TRACE.text(f"  [开局] 初始道纹发现候选：{dw_choices} → 选择【{pick_dw}】")

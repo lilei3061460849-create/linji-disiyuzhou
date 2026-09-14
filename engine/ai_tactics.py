@@ -111,6 +111,8 @@ class TacticalAI:
         self._previewer = None           # 行动后果预演器（惰性创建）
         self.preview_rejected: list[str] = []   # 被安全过滤淘汰的候选
         self._sacrifice_actions: set = set()    # 显式允许的主动牺牲策略（默认空）
+        # 运行器/实验可显式屏蔽某张牌，但真正的合法性与结算仍由 GameEngine 校验。
+        self.blocked_daowen_names: set[str] = set()
         self._last_risk: tuple = ("SAFE", [])   # 最近一次候选的风险等级
         # 第十九批实验钩子（默认 None = 现行≤40%血线门，行为不变）
         self.consumable_gate = None
@@ -541,6 +543,8 @@ class TacticalAI:
         out = []
         budget = self.mana_budget()
         for name, inst in sorted(self.player.dao_wen.items()):
+            if name in self.blocked_daowen_names:
+                continue
             if inst is None or not inst.can_use():
                 continue
             probe = self._probe(name)

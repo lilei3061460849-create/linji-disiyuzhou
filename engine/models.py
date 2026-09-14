@@ -235,13 +235,13 @@ class Entity:
     status_effects: list[StatusEffect] = field(default_factory=list)
     is_flying: bool = False      # 飞行状态
 
-    # 非击杀移出战斗标记（封印等；不产碎片）
+    # 非击杀永久离场标记（雕塑/癌变/还债/逃跑等；【封印】暂离不使用此标记）
     removed_without_kill: bool = False
-    # 统一【离场】标记（DM裁定 2026-08-18）：一切使角色脱离本场战斗的特殊事件
-    # （雕塑/癌变/还债/救赎/封印/逃跑及未来新增）一律经 depart_battle() 置位。
-    # 战斗胜利判定只看 命零(is_alive=False) 或 离场(is_departed)，新事件无须再改判定。
+    # 统一【离场】标记（DM裁定 2026-08-18）：永久使角色脱离本场战斗的特殊事件
+    # （雕塑/癌变/还债/救赎/逃跑及未来新增）一律经 depart_battle() 置位。
+    # 【封印】是暂离回场，不使用此标记；战斗胜利另由暂离队列门禁处理。
     is_departed: bool = False
-    departure_reason: str = ""   # 离场原因（雕塑/癌变/还债/救赎/封印/逃跑/...）
+    departure_reason: str = ""   # 离场原因（雕塑/癌变/还债/救赎/逃跑/...）
     hp_lost_this_round: int = 0   # 本回合累计失去的生命（活血用，回始归零）
     actions_used_this_round: int = 0  # 本回合已消耗的出手次数（回始归零，用于出手预算校验）
     # ---- 招架（2026-09-13 新增第三种受击选项）----
@@ -785,6 +785,9 @@ class GameState:
     # 波次出怪（2026-09-11 用户令）：[战始]只出第1只，其余进此队列，
     # R4/R7/R10…回始各增援1只直到上限。元素为怪物定义dict（见 monsters.make_monster_entity 入参）。
     monster_reinforcements: list[dict] = field(default_factory=list)
+    # 【封印X】的暂离队列：元素为 {"monster": Entity, "return_round": int}。
+    # 暂离不是死亡/永久离场，仍阻塞战终；到达回合始时把原实体重新加入 enemies。
+    delayed_monster_reentries: list[dict] = field(default_factory=list)
 
     # 员工叛变：待处理标记（[战终]检查命中后置真，三个处理分支任一生效后清空）
     rebellion_active: bool = False
@@ -1183,6 +1186,11 @@ class GameState:
             "event_modifiers": self.event_modifiers,
             "scoped_effect_ledger": [entry.to_dict() for entry in self.scoped_effect_ledger],
             "forced_monsters_next_battle": self.forced_monsters_next_battle,
+            "monster_reinforcements": list(self.monster_reinforcements),
+            "delayed_monster_reentries": [
+                {"name": entry["monster"].name, "return_round": entry["return_round"]}
+                for entry in getattr(self, "delayed_monster_reentries", [])
+            ],
             "rebellion_active": self.rebellion_active,
             "rebellion_in_progress": self.rebellion_in_progress,
             "wage_bonus": self.wage_bonus,
@@ -1232,10 +1240,10 @@ class GameState:
     def enemy_combat_active(self, enemy: Entity) -> bool:
         """该敌人是否仍构成战斗障碍（阻塞战终）。
 
-        DM裁定（2026-08-18）：战斗胜利＝敌方全部角色【命零】或【离场】。
-        一切特殊事件（雕塑/癌变/还债/救赎/封印/逃跑及未来新增）一律经
-        Entity.depart_battle() 记为离场——新增事件无须改动本判定。
-        离场不视为击杀、不产碎片（分类见 battle_end 读取 departure_reason）。
+        DM裁定（2026-08-18）：战斗胜利＝敌方全部角色【命零】或【永久离场】。
+        永久离场事件（雕塑/癌变/还债/救赎/逃跑及未来新增）经
+        Entity.depart_battle() 记为离场；【封印】暂离队列单独阻塞战终。
+        永久离场不视为击杀、不产碎片（分类见 battle_end 读取 departure_reason）。
         """
         return enemy.is_alive and not enemy.is_departed
 
@@ -1244,8 +1252,10 @@ class GameState:
         return [e for e in self.enemies if self.enemy_combat_active(e)]
 
     def battle_won(self) -> bool:
-        """战斗胜利＝敌方全部角色均已经由任一合法路径移出战场。"""
+        """战斗胜利＝敌方全部角色均已命零/永久离场，且没有待进场增援或封印暂离怪物。"""
         if getattr(self, "monster_reinforcements", None):
+            return False
+        if getattr(self, "delayed_monster_reentries", None):
             return False
         return not self.active_enemies()
 

@@ -206,16 +206,18 @@ class DaoWenEngine:
         }
     
     @staticmethod
-    def calculate_fengyin(x: int) -> dict:
-        """封印X：代价：异变8X。使X个[目标]怪物移出本场战斗。轮回者/微光者不在移出范围内。"""
+    def calculate_fengyin(x: int, target: Entity = None) -> dict:
+        """封印X：代价：异变X，使一个目标怪物延后X回合再入场。"""
+        target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "封印",
             "x": x,
             "cost_type": CostType.MUTATION.value,
-            "cost_mutation": 8 * x,
-            "targets_removed": x,
-            "note": "被移出的怪物不提供任何碎片收益",
-            "summary": f"异变+{8*x}，使{x}个目标怪物移出本场战斗"
+            "cost_mutation": x,
+            "delay_monster_reentry": True,
+            "delay_rounds": x,
+            "target_name": target_name,
+            "summary": f"异变+{x}，使{target_name}延后{x}回合再入场"
         }
     
     # ---- 怪物原始道纹 ----

@@ -4103,6 +4103,7 @@ class GameEngine:
         pool = self.monster_pool.get(region, [])
         self.state.enemies.clear()
         self.state.monster_reinforcements = []
+        self.state.delayed_monster_reentries = []
         drawn_names = []
         queued_names = []
         draw_count = 0
@@ -4911,6 +4912,9 @@ class GameEngine:
         queued = list(getattr(self.state, "monster_reinforcements", []) or [])
         if queued and not escaping:
             return {"success": False, "error": f"仍有{len(queued)}只怪物增援未进场，不能结算战终: {[m.get('name', '?') for m in queued]}"}
+        delayed = list(getattr(self.state, "delayed_monster_reentries", []) or [])
+        if delayed and not escaping:
+            return {"success": False, "error": f"仍有{len(delayed)}只怪物处于【封印】延迟，不能结算战终: {[e['monster'].name for e in delayed]}"}
         if escaping:
             for enemy in self.state.enemies:
                 if enemy.is_alive:
@@ -4944,7 +4948,7 @@ class GameEngine:
         # 满足条件（与遗物战终结算 relic_end 同一时序原则：先结算再清理）。
         spell_logs = self._resolve_global_trigger_spells_for_action(
             TriggerTiming.BATTLE_END.value, params)
-        # 碎片奖励计算（被雕塑/癌变/还债/封印移出的怪物不视为击杀，不产碎片）
+        # 碎片奖励计算（雕塑/癌变/还债/永久离场的怪物不视为击杀；【封印】暂离后回场，最终命零时正常产出碎片）
         # 奖励公式用的是[战始][血限]快照(battle_start_blood_limit)，不是当前血限(增殖等会改变当前血限)
         shard_reward = 0
         removed = []
@@ -4956,7 +4960,7 @@ class GameEngine:
                        ("雕塑" if monster.is_sculptured else
                         "救赎" if getattr(monster, "_redeemed", False) else
                         "癌变" if monster.is_proliferated else
-                        "还债" if monster.is_debt_bound else "封印"))
+                        "还债" if monster.is_debt_bound else "永久离场"))
                 leave_parent = normalize_context(getattr(monster, "_leave_ctx", None))
                 leave_ctx = make_context(
                     timing="battle_end", source=way, source_type="system",
@@ -5099,8 +5103,9 @@ class GameEngine:
         # 恢复精力；苍白之花的战终奖励叠加在基础3点之后。
         self.state.energy = 3 + pale_flower_bonus
 
-        # 清空敌人
+        # 清空敌人及本场延迟队列（正常战终前延迟队列已由门禁拦截；逃跑等强制结束也不跨场保留）。
         self.state.enemies.clear()
+        self.state.delayed_monster_reentries = []
 
         self.state.phase = "pre_battle"
 

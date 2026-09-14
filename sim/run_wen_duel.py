@@ -29,6 +29,7 @@ def snapshot(e):
             "name": p.name, "hp": p.current_hp, "blood_limit": p.blood_limit,
             "mana": p.current_mana, "mana_limit": p.mana_limit,
             "speed": p.current_speed, "speed_limit": p.speed_limit,
+            "alive": p.is_alive,
             "actions_used": p.actions_used_this_round, "action_count": p.action_count,
         } if p else None),
         "friends": [{"name": f.name, "hp": f.current_hp, "alive": f.is_alive}
@@ -36,6 +37,11 @@ def snapshot(e):
         "enemies": [{"name": x.name, "hp": x.current_hp, "alive": x.is_alive,
                      "entity_type": x.entity_type}
                     for x in e.state.enemies],
+        "delayed_monster_reentries": [
+            {"name": entry["monster"].name, "return_round": entry["return_round"]}
+            for entry in getattr(e.state, "delayed_monster_reentries", [])
+        ],
+        "monster_reinforcements": [m.get("name") for m in getattr(e.state, "monster_reinforcements", [])],
         "shards": e.state.shards,
         "energy": e.state.energy,
     }
@@ -109,11 +115,19 @@ def run(seed: int, name: str, slots: str, out_path: str):
         bs = act("battle_start", {"relic_choices": battle_start_relic_choices(e)},
                  f"第{battle_no}场战始")
         ai = AIPlayer(e, verbose=False)
-        for _ in range(24):
+        # 新版【封印】是延迟回场，不是永久清场；本复盘保留初始道纹选择。
+        # 前六场允许AI至多实际封印一次（然后由本轮的其它行动处理回场怪），
+        # 第七场的两次封印仍由下方显式龙心行动提交；全部结算都走 execute_action。
+        seal_used_this_battle = False
+        ai.blocked_daowen_names.clear()
+        for _ in range(120):
+            ai.blocked_daowen_names = {"封印"} if battle_no == 7 or seal_used_this_battle else set()
             if not e.state.player or not e.state.player.is_alive:
                 break
             alive = [x for x in e.state.enemies if x.is_alive]
-            if not alive and not getattr(e.state, "monster_reinforcements", []):
+            if (not alive
+                    and not getattr(e.state, "monster_reinforcements", [])
+                    and not getattr(e.state, "delayed_monster_reentries", [])):
                 break
 
             act("round_start", {"relic_choices": round_start_relic_choices(e)},
@@ -127,11 +141,11 @@ def run(seed: int, name: str, slots: str, out_path: str):
                 heart = next((c for c in e.state.consumables
                               if c.kind == "dragon_heart"
                               and c.dragon_heart_type == "异变"
-                              and c.current_uses >= 8), None)
+                              and c.current_uses >= 1), None)
                 if first is not None and heart is not None:
                     act("use_daowen", {
                         "daowen_name": "封印", "x": 1,
-                        "target_ref": f"enemy:{first}", "dragon_heart_use": 8,
+                        "target_ref": f"enemy:{first}", "dragon_heart_use": 1,
                         "dodge": False, "blood_shadow": False,
                         "trigger_spell_choices": {},
                     }, "终波龙心封印", "使用前几场炼心形成的真实龙心抵消异变代价。")
@@ -149,6 +163,10 @@ def run(seed: int, name: str, slots: str, out_path: str):
                     "action": ai.last_decision,
                     "result": result, "state": snapshot(e),
                 })
+                if (ai.last_decision or {}).get("action") == "use_daowen" \
+                        and (ai.last_decision or {}).get("params", {}).get("daowen_name") == "封印":
+                    seal_used_this_battle = True
+                    ai.blocked_daowen_names.add("封印")
                 if guard > 12:
                     raise RuntimeError("player action runaway")
 
@@ -202,7 +220,9 @@ def run(seed: int, name: str, slots: str, out_path: str):
 
         if not e.state.player or not e.state.player.is_alive:
             break
-        if any(x.is_alive for x in e.state.enemies):
+        if (any(x.is_alive for x in e.state.enemies)
+                or getattr(e.state, "monster_reinforcements", [])
+                or getattr(e.state, "delayed_monster_reentries", [])):
             break
         ended = act("battle_end", {}, f"第{battle_no}场战终")
         crown = (ended.get("result") or {}).get("final_crown") or {}

@@ -229,7 +229,10 @@ def _render_effect(eff: dict) -> str:
     if t == "blood_lineage_bleed":
         return f"{eff.get('entity')} 触发【血族血脉】：流血{eff.get('amount')}"
     if t == "seal":
-        return f"{eff.get('target')} 被【封印】移出本场战斗"
+        return (f"{eff.get('target')} 被【封印】暂离，延后{eff.get('delay_rounds')}回合"
+                f"于第{eff.get('return_round')}回合始再入场")
+    if t == "seal_reentry":
+        return f"{eff.get('entity')}结束【封印】暂离，于第{eff.get('round')}回合始重新入场"
     if t == "speed_boost":
         return f"{eff.get('entity') or eff.get('target')} 速度+{eff.get('amount')}"
     if t == "attack_fixed":

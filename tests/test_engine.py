@@ -134,11 +134,12 @@ def test_daowen_calculations():
     assert result["duration"] == -1
     print("  ✓ 波及X=2: 消耗6，选择2个目标建立/解除波及（持续∞）")
     
-    # 测试封印（代价：异变8X）
+    # 测试封印（代价：异变X；一个目标怪物延后X回合回场）
     result = DaoWenEngine.resolve("封印", 1)
     assert result["cost_type"] == CostType.MUTATION.value
-    assert result["cost_mutation"] == 8
-    print("  ✓ 封印X=1: 异变+8，移出1个目标怪物")
+    assert result["cost_mutation"] == 1
+    assert result["delay_rounds"] == 1
+    print("  ✓ 封印X=1: 异变+1，一个目标怪物延后1回合回场")
     
     # 测试飞行
     result = DaoWenEngine.resolve("飞行", 2)

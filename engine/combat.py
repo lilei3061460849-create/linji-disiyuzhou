@@ -53,7 +53,7 @@ class CombatEngine:
         "blood_limit_reduction", "hp_reduction", "blood_limit_increase", "blood_limit_penalty",
         "attack_boost", "attack_reduction",
         "speed_boost", "speed_penalty",
-        "targets_removed", "self_attack_count", "invalid_damage_hits",
+        "self_attack_count", "invalid_damage_hits",
     )
     
     def __init__(self, state: GameState, dice: DiceEngine):
@@ -734,7 +734,7 @@ class CombatEngine:
         """
         if entity is None or entity.current_hp > 0:
             return False
-        # 离场（雕塑/癌变/还债/救赎/封印/逃跑）不是命零，绝不在此处宣布死亡。
+        # 永久离场（雕塑/癌变/还债/救赎/逃跑）不是命零，绝不在此处宣布死亡；【封印】暂离不走本管线。
         if getattr(entity, "is_departed", False):
             return False
         # 已经走过统一死亡管线（含 Entity.take_damage 先翻了 is_alive 的情况）就不重复触发。
@@ -1842,6 +1842,25 @@ class CombatEngine:
 
         self.state.current_round += 1
 
+        # 【封印X】延迟回场：在第 R+X 回合始把原怪物重新加入敌方列表。
+        # 与波次增援相同，回场当回合设置 spawned_round，因而当回合白板。
+        delayed = list(getattr(self.state, "delayed_monster_reentries", []) or [])
+        due = [entry for entry in delayed if entry.get("return_round", 0) <= self.state.current_round]
+        if due:
+            for entry in due:
+                monster = entry["monster"]
+                monster.is_alive = True
+                monster.is_departed = False
+                monster.departure_reason = ""
+                monster.removed_without_kill = False
+                monster.spawned_round = self.state.current_round
+                monster._delayed_by_seal = False
+                self.state.enemies.append(monster)
+                self.state.delayed_monster_reentries.remove(entry)
+                effects.append({"type": "seal_reentry", "entity": monster.name,
+                                "round": self.state.current_round,
+                                "delay_rounds": entry.get("delay_rounds", 0)})
+
         # 波次出怪（2026-09-11 用户令）：R4/R7/R10…回始增援1只直到上限。
         # 死斗无增援；新怪本回合白板（见 prepare_monster_phase 的 spawned_round 口径）。
         queue = list(getattr(self.state, "monster_reinforcements", []) or [])
@@ -2420,6 +2439,29 @@ class CombatEngine:
         )
         monster._leave_ctx = leave_ctx.to_dict()
         monster.depart_battle(reason)
+
+    def _delay_monster_reentry(self, monster: Entity, delay_rounds: int) -> dict:
+        """【封印X】让一只活怪暂离，按当前回合+X在回始重新入场。
+
+        这不是命零，也不是 Entity.depart_battle() 意义上的永久离场：对象从
+        enemies 暂时移入专门队列，回场后仍沿用原生命、状态和碎片，并可正常被击杀。
+        """
+        delay_rounds = max(1, int(delay_rounds))
+        return_round = self.state.current_round + delay_rounds
+        self.state.enemies = [e for e in self.state.enemies if e is not monster]
+        # 暂离怪物仍然是活的；只是暂时不在 enemies/战场列表中。
+        monster.is_alive = True
+        monster.is_departed = False
+        monster.departure_reason = ""
+        monster.removed_without_kill = False
+        monster._delayed_by_seal = True
+        self.state.delayed_monster_reentries.append({
+            "monster": monster,
+            "return_round": return_round,
+            "delay_rounds": delay_rounds,
+        })
+        return {"monster": monster.name, "return_round": return_round,
+                "delay_rounds": delay_rounds}
 
     def _cancer_character(self, entity: Entity, ctx: Optional[EffectContext | dict] = None) -> dict:
         """轮回者/同伴癌变：累计恢复达血限×2 → 直接命零。不吸收进书、不加休整+8。"""
@@ -3377,49 +3419,19 @@ class CombatEngine:
                             "mechanic": "damage", "subtype": "self_attack", "amount": target.attack_power,
                             "tags": {"daowen", "self_damage"},
                         })})
-        if "targets_removed" in calc:  # 封印：仅移出怪物（规则正文：X个[目标]怪物）
-            removed = 0
-            removed_names = []
-            if "targets_removed" in wave_pieces:
-                # 波及：总名额平分（余数随机分配），优先作用于被标记的怪物。
-                quota = dict(zip(wave_status_targets, wave_pieces["targets_removed"]))
-                for e in list(self.state.enemies):
-                    if removed >= calc["targets_removed"]:
-                        break
-                    if e.is_alive and e.entity_type == "怪物" and quota.get(e, 0) > 0:
-                        quota[e] -= 1
-                        self._remove_from_combat(e, "封印", ctx={
-                            "timing": "player_action" if caster is self.state.player else "monster_action",
-                            "source": name, "source_type": "daowen", "actor": caster, "target": e,
-                            "mechanic": "leave", "subtype": "seal", "tags": {"leave", "no_shards"},
-                        })
-                        removed += 1
-                        removed_names.append(e.name)
-                # 剩余名额兜底：按原规则从敌人列表补足。
-                for e in list(self.state.enemies):
-                    if removed >= calc["targets_removed"]:
-                        break
-                    if e.is_alive and e.entity_type == "怪物":
-                        self._remove_from_combat(e, "封印", ctx={
-                            "timing": "player_action" if caster is self.state.player else "monster_action",
-                            "source": name, "source_type": "daowen", "actor": caster, "target": e,
-                            "mechanic": "leave", "subtype": "seal", "tags": {"leave", "no_shards"},
-                        })
-                        removed += 1
-                        removed_names.append(e.name)
-            else:
-                for e in list(self.state.enemies):
-                    if (e.is_alive and e.entity_type == "怪物"
-                            and removed < calc["targets_removed"]):
-                        self._remove_from_combat(e, "封印", ctx={
-                            "timing": "player_action" if caster is self.state.player else "monster_action",
-                            "source": name, "source_type": "daowen", "actor": caster, "target": e,
-                            "mechanic": "leave", "subtype": "seal", "tags": {"leave", "no_shards"},
-                        })
-                        removed += 1
-                        removed_names.append(e.name)
+        if calc.get("delay_monster_reentry"):
+            # 【封印X】：目标由 use_daowen 的显式 target_ref/target 绑定；只允许一只
+            # 当前在场怪物进入暂离队列。暂离不写离场/死亡上下文，也不产生碎片分类。
+            if target.entity_type != "怪物":
+                raise ValueError("【封印】的目标必须是当前在场的怪物")
+            if not any(e is target for e in self.state.enemies) or not target.is_alive:
+                raise ValueError("【封印】的目标必须是当前存活且在场的怪物")
+            reentry = self._delay_monster_reentry(target, calc.get("delay_rounds", x))
             result["effects"].append({
-                "type": "seal", "removed": removed, "targets": removed_names,
+                "type": "seal", "target": target.name,
+                "delay_rounds": reentry["delay_rounds"],
+                "return_round": reentry["return_round"],
+                "note": f"{target.name}延后{reentry['delay_rounds']}回合，于第{reentry['return_round']}回合始再入场",
             })
 
         # ---- 持续/触发状态（status_added）----
@@ -5026,13 +5038,14 @@ class CombatEngine:
                 return {"monster": monster.name, "collapsed": name,
                         "note": "支付异变后触发【崩解】，道纹效果中断"}
         elif name == "封印":
-            # 封印X：代价：异变8X（2026-08-21）；支付后崩解仍按统一死亡管线结算。
-            paid = monster.add_mutation(8 * inst.x_value)
+            # 怪物侧若持有【封印】，同样按新版口径支付异变X；玩家【封印】才会
+            # 把目标怪物放入延迟回场队列。
+            paid = monster.add_mutation(inst.x_value)
             if paid["collapsed"]:
                 self._on_entity_death(monster, ctx=self._collapse_context(monster, {
                     "timing": "monster_action", "source": name, "source_type": "daowen",
                     "actor": monster, "target": monster, "mechanic": "cost",
-                    "subtype": "mutation", "amount": 8 * inst.x_value,
+                    "subtype": "mutation", "amount": inst.x_value,
                     "tags": {"daowen", "active_payment"}}))
                 return {"monster": monster.name, "collapsed": name,
                         "note": "支付异变后触发【崩解】，道纹效果中断"}
@@ -5559,9 +5572,13 @@ class CombatEngine:
         return True
 
     def _get_combat_state(self) -> dict:
-        """获取当前战斗状态摘要"""
+        """获取当前战斗状态摘要（含封印暂离队列）。"""
         return {
             "round": self.state.current_round,
             "player_side": [e.to_dict() for e in self.state.get_all_player_side()],
             "enemy_side": [e.to_dict() for e in self.state.get_all_enemy_side()],
+            "delayed_monster_reentries": [
+                {"name": entry["monster"].name, "return_round": entry["return_round"]}
+                for entry in getattr(self.state, "delayed_monster_reentries", [])
+            ],
         }

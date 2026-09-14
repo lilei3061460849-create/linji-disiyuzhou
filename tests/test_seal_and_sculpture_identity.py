@@ -1,6 +1,6 @@
-"""封印仅移出怪物；雕塑对任何非轮回者；轮回者开局攻面板 0×0。
+"""封印延迟回场；雕塑对任何非轮回者；轮回者开局攻面板 0×0。
 
-封印 规则正文：使 X 个[目标]怪物移出本场战斗。
+封印X：支付异变X，使一个目标怪物延后X回合再入场；暂离不是死亡或永久离场。
 雕塑：用户裁定对任何非轮回者（怪物/微光者/赤族等）；轮回者不触发。
 """
 import os
@@ -24,6 +24,7 @@ def _engine(suffix):
     finish_initial_daowen(engine)
     engine.state.current_region = "龙心谷"
     engine.state.phase = "in_combat"
+    engine.state.combat_subphase = "await_round_start"
     p = engine.state.player
     p.dao_wen["封印"] = DaoWenInstance(
         DaoWen(name="封印", formula="", cost_type="消耗", cost_formula="10X", effect_formula=""))
@@ -43,63 +44,83 @@ def _monster(name, hp=80, atk=4, power=6):
 # 封印
 # ========================================================================
 
-def test_seal_removes_x_monsters():
-    """正常路径：封印X=1（代价：异变8X）移出一只活怪，另一只留下，不产击杀标记。"""
+def test_seal_delays_one_monster_and_reenters_on_scheduled_round():
+    """封印X=2支付异变2，只让一个目标暂离，并在R+X回始回场。"""
     engine = _engine("seal_happy")
     a = _monster("怪甲")
     b = _monster("怪乙")
     engine.state.enemies.extend([a, b])
-    engine.execute_action("round_start", {})
+    engine.execute_action("round_start", {})  # R1
     mana = engine.state.player.current_mana
-    r = engine.execute_action("use_daowen", {"daowen_name": "封印", "x": 1, "target": "怪甲"})
+    r = engine.execute_action("use_daowen", {"daowen_name": "封印", "x": 2, "target": "怪甲"})
     assert r["success"], r
-    assert engine.state.player.current_mana == mana  # 封印改为代价：异变8X，不消耗法力
-    assert engine.state.player.mutation_count == 8
+    assert engine.state.player.current_mana == mana  # 封印是异变代价，不消耗法力
+    assert engine.state.player.mutation_count == 2
     seal = next(e for e in r["execution"]["effects"] if e["type"] == "seal")
-    assert seal["removed"] == 1
-    assert seal["targets"] == ["怪甲"]
-    assert not a.is_alive and a.removed_without_kill
-    assert b.is_alive and not b.removed_without_kill
+    assert seal["target"] == "怪甲"
+    assert seal["delay_rounds"] == 2
+    assert seal["return_round"] == 3
+    assert a.is_alive and not a.is_departed and not a.removed_without_kill
+    assert a not in engine.state.enemies
+    assert engine.state.delayed_monster_reentries[0]["monster"] is a
+    assert b in engine.state.enemies and b.is_alive
+    assert not engine.state.battle_won(), "暂离怪物仍阻塞战斗胜利"
+
+    # 结束R1、进入R2：尚未回场。
+    engine.state.combat_subphase = "await_round_end"
+    engine.execute_action("round_end", {})
+    r2 = engine.execute_action("round_start", {})
+    assert engine.state.current_round == 2
+    assert a not in engine.state.enemies
+    assert not any(e.get("type") == "seal_reentry" for e in r2["result"]["effects"])
+
+    # 进入R3回始：原怪物回场，当回合白板标记由 spawned_round 提供。
+    engine.state.combat_subphase = "await_round_end"
+    engine.execute_action("round_end", {})
+    r3 = engine.execute_action("round_start", {})
+    assert engine.state.current_round == 3
+    assert a in engine.state.enemies and a.is_alive
+    assert engine.state.delayed_monster_reentries == []
+    assert any(e.get("type") == "seal_reentry" and e["entity"] == "怪甲"
+               for e in r3["result"]["effects"])
 
 
-def test_seal_skips_reincarnator_and_weiguang_then_takes_monster():
-    """边界：敌方混有轮回者/微光者/怪物时，只移出怪物。"""
-    engine = _engine("seal_bound")
+def test_seal_requires_a_monster_target():
+    """封印不能把轮回者/员工当作怪物暂离目标。"""
+    engine = _engine("seal_target_type")
     foe = Entity(name="敌对轮回者", entity_type="轮回者", blood_limit=70, current_hp=70,
-                 mana_limit=20, current_mana=20, speed_limit=6, current_speed=6,
                  attack_count=1, attack_power=1)
-    ally = Entity(name="敌方朋友", entity_type="朋友", blood_limit=30, current_hp=30,
-                  attack_count=3, attack_power=4)
-    m = _monster("真怪")
-    engine.state.enemies.extend([foe, ally, m])
+    engine.state.enemies.append(foe)
     engine.execute_action("round_start", {})
-    r = engine.execute_action("use_daowen", {"daowen_name": "封印", "x": 2, "target": foe.name})
-    assert r["success"], r
-    seal = next(e for e in r["execution"]["effects"] if e["type"] == "seal")
-    assert seal["removed"] == 1
-    assert seal["targets"] == ["真怪"]
-    assert foe.is_alive and ally.is_alive
-    assert not m.is_alive and m.removed_without_kill
-
-
-def test_seal_on_duel_reincarnator_only_removes_zero():
-    """错误输入/对照：场上没有怪物时封印仍支付异变8X，移出 0，轮回者留下。"""
-    engine = _engine("seal_invalid")
-    foe = Entity(name="敌对轮回者", entity_type="轮回者", blood_limit=70, current_hp=70,
-                 attack_count=1, attack_power=1)
-    emp = Entity(name="叛变员工", entity_type="员工", blood_limit=40, current_hp=40,
-                 attack_count=2, attack_power=4)
-    engine.state.enemies.extend([foe, emp])
-    engine.execute_action("round_start", {})
-    mana = engine.state.player.current_mana
     r = engine.execute_action("use_daowen", {"daowen_name": "封印", "x": 1, "target": foe.name})
+    assert not r["success"]
+    assert "怪物" in r["error"]
+    assert engine.state.player.mutation_count == 0
+    assert foe.is_alive and foe in engine.state.enemies
+
+
+def test_seal_delayed_monster_is_not_an_alt_victory_or_shardless_removal():
+    """延迟中的怪物不写旧版封印离场字段；回场后命零走正常碎片路径。"""
+    engine = _engine("seal_death")
+    monster = _monster("回场怪", hp=80)
+    engine.state.enemies.append(monster)
+    engine.execute_action("round_start", {})
+    r = engine.execute_action("use_daowen", {"daowen_name": "封印", "x": 1, "target": monster.name})
     assert r["success"], r
-    assert engine.state.player.current_mana == mana  # 异变8X代价，不消耗法力
-    assert engine.state.player.mutation_count == 8
-    seal = next(e for e in r["execution"]["effects"] if e["type"] == "seal")
-    assert seal["removed"] == 0
-    assert seal["targets"] == []
-    assert foe.is_alive and emp.is_alive
+    assert engine.state.player.mutation_count == 1
+    assert not engine.state.battle_won()
+    assert engine.execute_action("battle_end", {})["success"] is False
+
+    engine.state.combat_subphase = "await_round_end"
+    engine.execute_action("round_end", {})
+    engine.execute_action("round_start", {})
+    monster = next(e for e in engine.state.enemies if e.name == "回场怪")
+    monster.current_hp = 0
+    monster.is_alive = False
+    end = engine.execute_action("battle_end", {})
+    assert end["success"], end
+    assert end["result"]["removed_via_alt_path"] == []
+    assert end["result"]["death_shard_rewards"]
 
 
 # ========================================================================
