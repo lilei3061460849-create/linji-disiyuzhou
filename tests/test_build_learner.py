@@ -165,23 +165,21 @@ def test_synergy_detects_positive_pair():
     构造：A、B 单独都低分，一起出现时高分 → 增益应为正。
     """
     k = {"generation": 0, "trials": {}, "pair_scores": {}, "history": [], "best": None}
-    bl.update(k, "A", ["X"], 1.0)        # A 单独 低分
-    bl.update(k, "B", ["Y"], 1.0)        # B 单独 低分
-    bl.update(k, "A", ["B"], 9.0)        # A+B   高分
+    bl.update(k, "A", ["X"], 1.0)
+    bl.update(k, "B", ["Y"], 1.0)
     bl.update(k, "A", ["B"], 9.0)
-    syn = bl.synergies(k, min_n=2)
-    pair = [s for s in syn if {s[1], s[2]} == {"A", "B"}]
-    assert pair, "未能挖掘出 A+B 组合"
-    assert pair[0][0] > 0, f"A+B 应为正协同，实际 {pair[0][0]}"
+    bl.update(k, "A", ["B"], 9.0)
+    assert bl.synergies(k, min_n=2) == []
+    assert k["pair_scores"] == {}, "构筑整局分数不得自动复制为道纹Combo分数"
 
 
 def test_update_accumulates_knowledge():
-    """正常路径：多次 update 后单体价值与配对分均被累计"""
+    """正常路径：多次 update 后搜索先验累计，但不生成伪造配对贡献"""
     k = {"generation": 0, "trials": {}, "pair_scores": {}, "history": [], "best": None}
     bl.update(k, "杀伐", ["庇护", "再生"], 8.0)
     assert k["trials"]["杀伐"]["n"] == 1
     assert k["trials"]["庇护"]["sum"] == 8.0
-    assert "庇护|杀伐" in k["pair_scores"] or "杀伐|庇护" in k["pair_scores"]
+    assert k["pair_scores"] == {}
     assert k["best"]["score"] == 8.0
 
 
@@ -487,9 +485,8 @@ def test_valid_and_invalid_are_separated(monkeypatch):
     monkeypatch.setattr(bl, "play", mixed)
     score, valid, invalid = bl.fitness("杀伐", ["庇护"], 4, gen=1)
     assert valid == 2 and invalid == 2
-    # DM裁定 2026-09-09：适应度只数「经历的战斗场数」，胜负不再进分数
-    # （旧口径 cleared+3×胜率 → 有效局全胜为 (7+3)=10.0）
-    assert score == 7.0, "有效局分数应只由经历的战斗场数决定，不应被无效局拉低"
+    # 新口径：score=完整通关率；PVE/PVP分层数据另行统计。
+    assert score == 1.0, "有效局完整通关率应为1，不应把清场深度当作胜率"
 
 
 # ---------- 冷却代价（回归：束缚等曾可无限刷）----------
@@ -801,8 +798,8 @@ def test_duel_stats_recorded_and_won_means_duel_victory(monkeypatch):
     assert dz["fought"] == 2 and dz["won"] == 1, "死斗2场胜1场"
     assert dz["sealed_no_duel"] == 1, "1次封存不计死斗"
     assert dz["by_build"]["杀伐|庇护"] == {"fought": 2, "won": 1}
-    # DM裁定 2026-09-09：适应度=平均经历战斗场数；死斗胜负只进 telemetry，不进分数
-    assert score == (7 + 7 + 7 + 2) / 4, "适应度=平均经历战斗场数口径"
+    # 新口径：完整通关率=1/4；PVE/PVP分层胜负在 telemetry 中分别记录。
+    assert score == 0.25, "适应度必须使用完整通关率，而不是平均经历战斗场数"
 
 
 def test_behavior_stats_recorded_via_play():
@@ -909,3 +906,62 @@ def test_death_trace_uses_snapshot_blood_limit():
     t = bl._death_trace_payload(e, 6, snaps)
     assert t["hp_pct_at_last_round"] == 0.26, t         # 必须=快照口径，不得 26/30
     assert t["primary"] == "sustained", t               # 旧实现会虚增成 rng_suspect
+
+# ---------- 新构筑分层评价与低成本归因 ----------
+
+def test_build_metrics_keep_pve_pvp_full_separate():
+    """PVE、PVP、完整通关不能用同一个分母或平均清场数替代。"""
+    results = [
+        {"cleared": 7, "pve_won": True, "pvp_reached": True,
+         "pvp_won": True, "full_won": True},
+        {"cleared": 7, "pve_won": True, "pvp_reached": False,
+         "pvp_won": False, "full_won": False},
+        {"cleared": 1, "pve_won": False, "pvp_reached": False,
+         "pvp_won": False, "full_won": False},
+    ]
+    m = bl.summarize_build_results(results)
+    assert m["pve_wins"] == 2 and m["pve_trials"] == 3
+    assert m["pvp_wins"] == 1 and m["pvp_trials"] == 1
+    assert m["full_wins"] == 1 and m["full_trials"] == 3
+    assert m["pvp_rate"] == 1.0 and m["full_rate"] == pytest.approx(1 / 3)
+
+
+def test_metrics_update_does_not_copy_build_score_to_pairs():
+    """新搜索路径不得用整局胜利给每个道纹对发同样的贡献分。"""
+    k = {"generation": 0, "trials": {}, "pair_scores": {},
+         "history": [], "best": None}
+    metrics = {"valid": 3, "invalid": 0, "pve_wins": 2, "pve_trials": 3,
+               "pve_rate": 2 / 3, "pve_lcb": .2, "pvp_wins": 0,
+               "pvp_trials": 0, "pvp_rate": None, "pvp_lcb": None,
+               "full_wins": 0, "full_trials": 3, "full_rate": 0.0,
+               "full_lcb": 0.0}
+    bl.update(k, "A", ["B"], 0.0, metrics=metrics)
+    assert k["pair_scores"] == {}
+    assert k["history"][-1]["pve_rate"] == pytest.approx(2 / 3)
+
+
+def test_ablation_runs_only_one_removal_per_rune(monkeypatch):
+    """逐个消融只需要 k+1 次构筑评估，不枚举 2^k 子集。"""
+    calls = []
+
+    def fake(starter, learn, runs, gen, **kwargs):
+        calls.append((starter, tuple(learn)))
+        value = 1.0 if starter == "A" and "B" in learn else 0.5
+        return {
+            "valid": runs, "invalid": 0, "pve_wins": int(value * runs),
+            "pve_trials": runs, "pve_rate": value, "pve_lcb": value,
+            "pvp_wins": 0, "pvp_trials": 0, "pvp_rate": None, "pvp_lcb": None,
+            "full_wins": int(value * runs), "full_trials": runs,
+            "full_rate": value, "full_lcb": value, "avg_cleared": 1,
+        }
+
+    monkeypatch.setattr(bl, "evaluate_build", fake)
+    out = bl.evaluate_ablation("A", ["B", "C"], runs=3, gen=1)
+    assert len(calls) == 4  # 完整构筑 + A/B/C 各一次
+    assert len(out["ablations"]) == 3
+    assert all("Shapley" not in row["full_judgement"] for row in out["ablations"])
+
+
+def test_observed_combo_candidates_do_not_enumerate_pool():
+    activity = {"interactions": {"A+B": 2, "C+D": 1}}
+    assert bl.discover_observed_combos(activity) == [("A", "B"), ("C", "D")]

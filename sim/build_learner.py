@@ -9,13 +9,12 @@
 
 方法（多臂老虎机 + 协同增益挖掘）：
   1. 每轮从候选道纹池按 UCB1 采样一套 build（初始道纹 + 学习序列）
-  2. 跑 N 局，得到 fitness（**只数经历的战斗场数**，DM裁定 2026-09-09）
-  3. 用 fitness 更新：
-       - 单道纹价值   value[A]
-       - 配对协同     synergy[A,B] = 含AB的平均分 - (含A平均 + 含B平均)/2
-     synergy > 0 即 1+1>2
-  4. 精英组合交叉变异产生下一代，持续迭代
-  5. 全部状态存入 data/build_knowledge.json，可反复续跑累积经验
+  2. 跑 N 局，分别记录 PVE 胜率、PVP 胜率和完整通关率；异常/超时局剔除
+  3. 构筑排名与道纹归因分离：构筑只看三种通关指标；道纹只通过单道纹基准和
+     当前构筑的逐个消融评价，不把整局胜利复制给构筑内所有道纹
+  4. 只从真实战斗日志发现交互，再对发现的少量 Combo 定向复测
+  5. 精英组合交叉变异产生下一代，持续迭代
+  6. 全部状态存入 data/build_knowledge.json，可反复续跑累积经验
 
 用法：
     python3 sim/build_learner.py --generations 20 --runs 6
@@ -819,6 +818,145 @@ def _death_trace_payload(e, cleared: int, snaps: list) -> dict:
             "rounds": tail}
 
 
+
+def _activity_sources(value, out: set[str]) -> None:
+    """从动作结果/事件上下文提取已发生的道纹来源，跳过完整 state 快照。"""
+    if isinstance(value, dict):
+        if value.get("source_type") == "daowen" and value.get("source"):
+            out.add(str(value["source"]))
+        for key in ("daowen", "daowen_name", "source_daowen"):
+            candidate = value.get(key)
+            if isinstance(candidate, str) and candidate:
+                out.add(candidate)
+            elif isinstance(candidate, list):
+                out.update(x for x in candidate if isinstance(x, str) and x)
+        for key in ("calculation", "execution", "effects", "trigger_spell_logs",
+                    "dodge", "daowen_ctx", "ctx", "result"):
+            if key in value:
+                _activity_sources(value[key], out)
+    elif isinstance(value, list):
+        for item in value:
+            _activity_sources(item, out)
+
+
+def _activity_effect_sources(value, out: set[str]) -> None:
+    """只收集带有实际 effect 的道纹来源，用于区分“发动”与“产生效果”。"""
+    if isinstance(value, dict):
+        effects = value.get("effects")
+        if isinstance(effects, list) and effects:
+            src = value.get("daowen") or value.get("source")
+            if isinstance(src, str) and src:
+                out.add(src)
+            ctx = value.get("daowen_ctx") or value.get("ctx") or {}
+            if isinstance(ctx, dict) and ctx.get("source_type") == "daowen" and ctx.get("source"):
+                out.add(str(ctx["source"]))
+        for key in ("execution", "result", "trigger_spell_logs", "effects"):
+            if key in value:
+                _activity_effect_sources(value[key], out)
+    elif isinstance(value, list):
+        for item in value:
+            _activity_effect_sources(item, out)
+
+
+def _collect_daowen_activity(engine, result: dict) -> dict:
+    """从真实 GameEngine 行动历史和事件流生成最小可解释道纹实录。"""
+    held: set[str] = set()
+    active: Counter = Counter()
+    passive: Counter = Counter()
+    triggered: Counter = Counter()
+    effects: Counter = Counter()
+    interactions: Counter = Counter()
+    history = engine.get_action_history() if engine is not None else []
+    event_ids: dict[str, str] = {}
+    event_rows = []
+    for entry in history:
+        if not entry.get("result", {}).get("success"):
+            continue
+        action = entry.get("action", "")
+        params = entry.get("params") or {}
+        action_result = entry.get("result") or {}
+        if action == "setup_choose_initial_daowen":
+            name = params.get("daowen_name")
+            if isinstance(name, str) and name:
+                held.add(name)
+        if action == "pre_battle_action" and params.get("sub") == "daowen":
+            names = params.get("names") or [params.get("name")]
+            held.update(x for x in names if isinstance(x, str) and x)
+        current_sources: set[str] = set()
+        _activity_sources(action_result, current_sources)
+        root_name = params.get("daowen_name") if action == "use_daowen" else None
+        skipped = bool((action_result.get("result") or {}).get("skipped"))
+        if action == "use_daowen" and root_name and not skipped:
+            active[root_name] += 1
+            current_sources.add(root_name)
+        if action != "use_daowen":
+            passive.update(current_sources)
+        triggered.update(current_sources)
+        effect_sources: set[str] = set()
+        _activity_effect_sources(action_result, effect_sources)
+        effects.update(effect_sources)
+        if len(current_sources) >= 2:
+            names = sorted(current_sources)
+            for i, left in enumerate(names):
+                for right in names[i + 1:]:
+                    interactions[f"{left}+{right}"] += 1
+    player = getattr(getattr(engine, "state", None), "player", None)
+    if player is not None:
+        held.update(getattr(player, "dao_wen", {}).keys())
+    events = list(getattr(getattr(engine, "state", None), "combat_events", []) or [])
+    def stable(value):
+        # 引擎事件ID通常是随机UUID；它只用于本次扫描建立父子关系，
+        # 不应进入可复现的活动报告。
+        if isinstance(value, dict):
+            return {k: stable(v) for k, v in value.items()
+                    if k not in {"event_id", "parent_event_id", "timestamp"}}
+        if isinstance(value, list):
+            return [stable(v) for v in value]
+        return value
+
+    for event in events:
+        row = event.to_dict() if hasattr(event, "to_dict") else dict(event)
+        event_rows.append({"event_type": row.get("event_type"), "battle_no": row.get("battle_no"),
+                           "round_no": row.get("round_no"), "actor_name": row.get("actor_name"),
+                           "target_name": row.get("target_name"), "data": stable(row.get("data", {})),
+                           "ctx": stable(row.get("ctx"))})
+        ctx = row.get("ctx") or {}
+        if not (isinstance(ctx, dict) and ctx.get("source_type") == "daowen" and ctx.get("source")):
+            continue
+        source = str(ctx["source"])
+        passive[source] += 1
+        triggered[source] += 1
+        if row.get("event_type") in {"damage_applied", "heal_applied", "status_applied",
+                                      "entity_died", "entity_retreated", "blood_limit_changed"}:
+            effects[source] += 1
+        if ctx.get("event_id"):
+            event_ids[ctx["event_id"]] = source
+        parent_source = event_ids.get(ctx.get("parent_event_id"))
+        if parent_source and parent_source != source:
+            interactions["+".join(sorted((parent_source, source)))] += 1
+    return {"held": sorted(held), "active": dict(active), "passive": dict(passive),
+            "triggered": dict(triggered), "effects": dict(effects),
+            "interactions": dict(interactions), "events": event_rows,
+            "outcome": {"pve_won": bool(result.get("pve_won")),
+                         "pvp_won": bool(result.get("pvp_won")),
+                         "full_won": bool(result.get("full_won"))}}
+
+
+def _merge_daowen_activity(telemetry: dict, activity: dict) -> None:
+    """累计真实道纹活动日志；结构保持 JSON 可序列化。"""
+    out = telemetry.setdefault("daowen_activity", {
+        "runs": 0, "held": {}, "active": {}, "passive": {},
+        "triggered": {}, "effects": {}, "interactions": {},
+    })
+    out["runs"] += 1
+    for field in ("held", "active", "passive", "triggered", "effects", "interactions"):
+        bucket = out.setdefault(field, {})
+        values = activity.get(field) or {}
+        if field == "held":
+            values = {name: 1 for name in values}
+        for name, count in values.items():
+            bucket[name] = bucket.get(name, 0) + count
+
 def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
          rng: random.Random = None, policy: dict = None, telemetry: dict = None,
          spend_shards: bool = False, spell_plan: list = None,
@@ -830,12 +968,29 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
 
     consumable_policy/death_trace/lab_paths：第十九批实验钩子（默认=现行生产行为）。"""
     behaviors = behaviors if behaviors is not None else []
+    engine_ref = []
     r = _play(starter, learn, region, seed, battles=battles, rng=rng, policy=policy,
               telemetry=telemetry, spend_shards=spend_shards, spell_plan=spell_plan,
               behaviors=behaviors, attrs=attrs, resonance=resonance,
               relic_policy=relic_policy, ai_cls=ai_cls,
               consumable_policy=consumable_policy, death_trace=death_trace,
-              lab_paths=lab_paths)
+              lab_paths=lab_paths, engine_ref=engine_ref)
+    pve_won = bool(r.get("pve_won", r.get("cleared", 0) >= battles))
+    pvp_reached = bool(r.get("pvp_reached", r.get("duel_fought", False)))
+    pvp_won = bool(r.get("pvp_won", r.get("duel_won", False)))
+    full_won = bool(r.get("full_won", pve_won and pvp_won))
+    r["pve_won"] = pve_won
+    r["pvp_reached"] = pvp_reached
+    r["pvp_won"] = pvp_won
+    r["full_won"] = full_won
+    if r.get("duel_timeout"):
+        r["invalid"] = True
+        r.setdefault("reason", "pvp_timeout")
+    if engine_ref:
+        activity = _collect_daowen_activity(engine_ref[0], r)
+        r["daowen_activity"] = activity
+        if telemetry is not None:
+            _merge_daowen_activity(telemetry, activity)
     if telemetry is not None and not r.get("invalid"):
         _record_behaviors(telemetry, behaviors, r)
         if r.get("pm"):
@@ -850,7 +1005,7 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
           resonance: str = "反转", relic_policy: str = "skip_optional",
           ai_cls=None, consumable_policy: str = "current",
           death_trace: bool = False, lab_paths: dict = None,
-          xiuxing: dict = None) -> dict:
+          xiuxing: dict = None, engine_ref: list = None) -> dict:
     """跑一局轮回。seed=None 时引擎使用真随机源。
 
     policy: 局外行动权重 {行动名: 权重}，AI 按权重随机挑选可用行动。
@@ -878,6 +1033,8 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                    sealed_candidate_path=_lab.get("sealed_path",
                                                   "data/sealed_candidate.json"),
                    death_book_path=_lab.get("death_book_path", "死者之书.md"))
+    if engine_ref is not None:
+        engine_ref.append(e)
     # 默认初始加点（2026-08-22 加点扫描实验结论，三副本同种子配对验证：
     # 扭曲都市 优87/差21、罪孽都市 92/14、龙心谷 62/5；均通关×1.6~1.9、
     # 第1战死亡率减半）。机制：自由控X下法限=每轮道纹出手次数上限，蓝是稀缺
@@ -1390,33 +1547,101 @@ def choose_pre_battle(e, todo, battle_no, rng, policy):
     return act, {}
 
 
-def fitness(starter: str, learn: list, runs: int, gen: int,
-            random_seeds: bool = False, rng: random.Random = None,
-            telemetry: dict = None, spend_shards: bool = False,
-            region: str = None, policy: dict = None) -> tuple:
-    """
-    适应度 = 平均**经历的战斗场数**（DM裁定 2026-09-09）。
+def _beta_lcb95(wins: int, trials: int) -> float | None:
+    """无第三方依赖的 Jeffreys-Beta 后验近似95%下界，只用于构筑排序。"""
+    if trials <= 0:
+        return None
+    a = wins + 0.5
+    b = trials - wins + 0.5
+    total = a + b
+    mean = a / total
+    variance = a * b / (total * total * (total + 1.0))
+    return round(max(0.0, min(1.0, mean - 1.645 * math.sqrt(variance))), 6)
 
-    旧口径是「平均通关场数 + 3×胜率（0~10）」；裁定后**只**看经历的战斗越多越好，
-    胜负不再进分数——胜率仍照旧记进 telemetry，只是不参与打分。
 
-    random_seeds=False（默认）：种子由代数推导，同一代可复现，便于排查。
-    random_seeds=True：每局用真随机种子与随机副本，样本不重复，
-      能避免"只在某几局上表现好"的过拟合，代价是结果不可逐局复现。
-    region 指定时：全部局都打该副本（learn 列表是该副本实际可学的组合，
-      2026-08-22 起按代轮换避免采样退化到固定子池）。
-    policy: learned_policy 反哺后的局外行动权重（None=DEFAULT_POLICY）。
+def _normalise_outcome(result: dict, battles: int = 7) -> dict:
+    """把旧 play 返回值兼容成 PVE/PVP/完整轮回三层结果。"""
+    pve_won = bool(result.get("pve_won", result.get("cleared", 0) >= battles))
+    pvp_reached = bool(result.get("pvp_reached", result.get("duel_fought", False)))
+    if "pvp_won" in result:
+        pvp_won = bool(result["pvp_won"])
+    elif "duel_won" in result:
+        pvp_won = bool(result["duel_won"])
+    else:
+        pvp_won = bool(result.get("won", False) and pvp_reached)
+    full_won = bool(result.get("full_won", pve_won and pvp_won))
+    return {"pve_won": pve_won, "pvp_reached": pvp_reached,
+            "pvp_won": pvp_won, "full_won": full_won}
 
-    返回 (score, valid_runs, invalid_runs)。
-    出现引擎异常的对局视为**无效数据**，不计入分数与统计。
-    """
-    # 非随机模式必须完全可复现：局外行动的挑选也要用确定性 rng，
-    # 否则同参数两次评估会因决策不同而给出不同分数。
+
+def summarize_build_results(results: list[dict], invalid: int = 0,
+                            battles: int = 7) -> dict:
+    """构筑层统计：PVE、PVP、完整通关严格分开。"""
+    valid = len(results)
+    normalized = [_normalise_outcome(r, battles) for r in results]
+    pve_wins = sum(x["pve_won"] for x in normalized)
+    pvp_trials = sum(x["pvp_reached"] for x in normalized)
+    pvp_wins = sum(x["pvp_won"] for x in normalized if x["pvp_reached"])
+    full_wins = sum(x["full_won"] for x in normalized)
+    pve_rate = pve_wins / valid if valid else 0.0
+    pvp_rate = pvp_wins / pvp_trials if pvp_trials else None
+    full_rate = full_wins / valid if valid else 0.0
+    return {
+        "valid": valid, "invalid": invalid,
+        "pve_wins": pve_wins, "pve_trials": valid, "pve_rate": round(pve_rate, 6),
+        "pve_lcb": _beta_lcb95(pve_wins, valid),
+        "pvp_wins": pvp_wins, "pvp_trials": pvp_trials,
+        "pvp_rate": round(pvp_rate, 6) if pvp_rate is not None else None,
+        "pvp_lcb": _beta_lcb95(pvp_wins, pvp_trials),
+        "full_wins": full_wins, "full_trials": valid,
+        "full_rate": round(full_rate, 6), "full_lcb": _beta_lcb95(full_wins, valid),
+        "avg_cleared": round(sum(r.get("cleared", 0) for r in results) / valid, 6) if valid else 0.0,
+    }
+
+
+def _record_build_telemetry(telemetry: dict, result: dict,
+                            starter: str, learn: list, region: str) -> None:
+    """记录构筑层遥测；绝不把整局结果写入道纹贡献表。"""
+    outcome = _normalise_outcome(result)
+    oc = telemetry.setdefault("outcomes", {
+        "win": 0, "loss": 0, "cleared_sum": 0,
+        "pve_wins": 0, "pvp_reached": 0, "pvp_wins": 0, "full_wins": 0,
+    })
+    for key in ("win", "loss", "cleared_sum", "pve_wins", "pvp_reached", "pvp_wins", "full_wins"):
+        oc.setdefault(key, 0)
+    oc["win" if outcome["full_won"] else "loss"] += 1
+    oc["cleared_sum"] += result.get("cleared", 0)
+    oc["pve_wins"] += int(outcome["pve_won"])
+    oc["pvp_reached"] += int(outcome["pvp_reached"])
+    oc["pvp_wins"] += int(outcome["pvp_won"] and outcome["pvp_reached"])
+    oc["full_wins"] += int(outcome["full_won"])
+    telemetry.setdefault("region_runs", {})
+    telemetry["region_runs"][region] = telemetry["region_runs"].get(region, 0) + 1
+    du = telemetry.setdefault("duels", {"fought": 0, "won": 0,
+                                         "sealed_no_duel": 0, "by_build": {}})
+    bkey = f"{starter}|{'+'.join(learn)}"
+    bk = du["by_build"].setdefault(bkey, {"fought": 0, "won": 0})
+    if outcome["pvp_reached"]:
+        du["fought"] += 1
+        bk["fought"] += 1
+        if outcome["pvp_won"]:
+            du["won"] += 1
+            bk["won"] += 1
+    elif result.get("sealed") or result.get("cleared", 0) >= 7:
+        du["sealed_no_duel"] += 1
+
+
+def evaluate_build(starter: str, learn: list, runs: int, gen: int,
+                   random_seeds: bool = False, rng: random.Random = None,
+                   telemetry: dict = None, spend_shards: bool = False,
+                   region: str = None, policy: dict = None,
+                   attrs: dict = None, battles: int = 7,
+                   keep_runs: bool = False) -> dict:
+    """唯一的构筑评价入口，分别返回 PVE/PVP/完整通关表现。"""
     if rng is None:
         rng = random if random_seeds else random.Random(gen * 7919 + 13)
-    total = 0.0
-    valid = 0
-    invalid = 0
+    total_invalid = 0
+    results = []
     for i in range(runs):
         if region is not None:
             run_region = region
@@ -1427,41 +1652,154 @@ def fitness(starter: str, learn: list, runs: int, gen: int,
         else:
             seed = gen * 1000 + i * 7 + 1
             run_region = REGIONS[i % len(REGIONS)]
-        r = play(starter, learn, run_region, seed, rng=rng, telemetry=telemetry,
-                spend_shards=spend_shards, policy=policy)
-        if r.get("invalid"):
-            invalid += 1
+        run_telemetry = telemetry if telemetry is not None else {}
+        result = play(starter, learn, run_region, seed, rng=rng,
+                      telemetry=run_telemetry, spend_shards=spend_shards,
+                      policy=policy, attrs=attrs)
+        if result.get("invalid"):
+            total_invalid += 1
             if telemetry is not None:
                 telemetry.setdefault("invalid_reasons", {})
-                key = str(r.get("reason"))[:80]
+                key = str(result.get("reason", "invalid"))[:80]
                 telemetry["invalid_reasons"][key] = telemetry["invalid_reasons"].get(key, 0) + 1
             continue
-        valid += 1
-        total += r["cleared"]      # DM裁定 2026-09-09：只数经历的战斗，胜负不进分数
+        results.append(result)
         if telemetry is not None:
-            telemetry.setdefault("outcomes", {"win": 0, "loss": 0, "cleared_sum": 0})
-            telemetry["outcomes"]["win" if r["won"] else "loss"] += 1
-            telemetry["outcomes"]["cleared_sum"] += r["cleared"]
-            # PvP 死斗经验（含未达死斗的封存记录，DM裁定2026-08-22）
-            du = telemetry.setdefault("duels", {"fought": 0, "won": 0,
-                                                "sealed_no_duel": 0, "by_build": {}})
-            bkey = f"{starter}|{'+'.join(learn)}"
-            bk = du["by_build"].setdefault(bkey, {"fought": 0, "won": 0})
-            if r.get("duel_fought"):
-                du["fought"] += 1
-                bk["fought"] += 1
-                if r["won"]:
-                    du["won"] += 1
-                    bk["won"] += 1
-                if r.get("duel_timeout"):
-                    du["timeouts"] = du.get("timeouts", 0) + 1
-                    bk["timeouts"] = bk.get("timeouts", 0) + 1
-            elif r["cleared"] >= 7:
-                du["sealed_no_duel"] += 1
-            telemetry.setdefault("region_runs", {})
-            telemetry["region_runs"][run_region] = telemetry["region_runs"].get(run_region, 0) + 1
-    return (total / valid if valid else 0.0), valid, invalid
+            _record_build_telemetry(telemetry, result, starter, learn, run_region)
+    metrics = summarize_build_results(results, total_invalid, battles=battles)
+    requested = {x for x in [starter] + list(learn) if x}
+    formed = sum(1 for r in results
+                 if requested.issubset(set((r.get("daowen_activity") or {}).get("held", []))))
+    metrics["requested_build_runs"] = formed
+    metrics["requested_build_rate"] = round(formed / len(results), 6) if results else None
+    if keep_runs:
+        metrics["runs"] = results
+    return metrics
 
+
+def _fresh_evaluation_rng(gen: int, random_seeds: bool) -> random.Random:
+    """为基准/消融/Combo复测生成同一随机流，使用 common random numbers。"""
+    return random.Random(gen * 7919 + 13)
+
+
+def _metric_delta(base: dict, ablated: dict) -> dict:
+    """完整构筑减去消融构筑；PVP没有进入样本时保留 None。"""
+    out = {}
+    for name in ("pve_rate", "pvp_rate", "full_rate", "pve_lcb", "pvp_lcb", "full_lcb"):
+        left, right = base.get(name), ablated.get(name)
+        key = name.replace("_rate", "_drop").replace("_lcb", "_lcb_drop")
+        out[key] = round(left - right, 6) if left is not None and right is not None else None
+    return out
+
+
+def _contribution_label(delta: float | None, samples: int,
+                        threshold: float = 0.05, min_samples: int = 3) -> str:
+    if samples < min_samples or delta is None:
+        return "样本不足，暂不评价"
+    if delta > threshold:
+        return "移除后明显下降：当前构筑有实际贡献"
+    if delta < -threshold:
+        return "移除后反而提高：可能存在负协同"
+    return "基本不变：当前构筑贡献很低"
+
+
+def evaluate_ablation(starter: str, learn: list, runs: int, gen: int,
+                      random_seeds: bool = False, spend_shards: bool = False,
+                      region: str = None, policy: dict = None,
+                      attrs: dict = None, battles: int = 7,
+                      min_samples: int = 3) -> dict:
+    """只对当前完整构筑逐个移除一个道纹，最多 k+1 次评估。"""
+    base = evaluate_build(starter, list(learn), runs, gen,
+                          random_seeds=random_seeds,
+                          rng=_fresh_evaluation_rng(gen, random_seeds),
+                          spend_shards=spend_shards, region=region, policy=policy,
+                          attrs=attrs, battles=battles)
+    members = [x for x in [starter] + list(learn) if x]
+    rows = []
+    for removed in dict.fromkeys(members):
+        ablated_starter = None if removed == starter else starter
+        ablated_learn = [x for x in learn if x != removed]
+        ablated = evaluate_build(ablated_starter, ablated_learn, runs, gen,
+                                 random_seeds=random_seeds,
+                                 rng=_fresh_evaluation_rng(gen, random_seeds),
+                                 spend_shards=spend_shards, region=region, policy=policy,
+                                 attrs=attrs, battles=battles)
+        delta = _metric_delta(base, ablated)
+        rows.append({
+            "daowen": removed,
+            "requested_build": {"starter": ablated_starter, "learn": ablated_learn},
+            "metrics": ablated, "delta": delta,
+            "pve_judgement": _contribution_label(delta.get("pve_drop"), ablated.get("pve_trials", 0), min_samples=min_samples),
+            "pvp_judgement": _contribution_label(delta.get("pvp_drop"), ablated.get("pvp_trials", 0), min_samples=min_samples),
+            "full_judgement": _contribution_label(delta.get("full_drop"), ablated.get("full_trials", 0), min_samples=min_samples),
+        })
+    return {"build": {"starter": starter, "learn": list(learn)},
+            "base": base, "ablations": rows,
+            "note": "边际贡献仅适用于当前完整构筑，不代表道纹绝对强度"}
+
+
+def evaluate_single_daowen(daowen: str, runs: int, gen: int,
+                           random_seeds: bool = False, region: str = None,
+                           policy: dict = None, attrs: dict = None,
+                           battles: int = 7) -> dict:
+    """单道纹基准；与当前构筑消融完全分开。"""
+    return evaluate_build(daowen, [], runs, gen, random_seeds=random_seeds,
+                          rng=_fresh_evaluation_rng(gen, random_seeds),
+                          region=region, policy=policy, attrs=attrs,
+                          spend_shards=False, battles=battles)
+
+
+def discover_observed_combos(activity: dict | None = None,
+                              telemetry: dict | None = None) -> list[tuple[str, str]]:
+    """只从真实运行日志读取交互边，不枚举候选道纹组合。"""
+    if activity is None:
+        activity = (telemetry or {}).get("daowen_activity") or {}
+    pairs = activity.get("interactions") or {}
+    out = []
+    for key in pairs:
+        parts = tuple(sorted(x for x in key.split("+") if x))
+        if len(parts) == 2 and parts not in out:
+            out.append(parts)
+    return sorted(out)
+
+
+def verify_observed_combo(left: str, right: str, runs: int, gen: int,
+                          random_seeds: bool = False, region: str = None,
+                          policy: dict = None, attrs: dict = None,
+                          battles: int = 7) -> dict:
+    """对日志中已经发生过的 A+B 做定向复测：A、B、A+B、控制组。"""
+    control = evaluate_build(None, [], runs, gen, random_seeds=random_seeds,
+                             rng=_fresh_evaluation_rng(gen, random_seeds), region=region,
+                             policy=policy, attrs=attrs, battles=battles)
+    single_left = evaluate_single_daowen(left, runs, gen, random_seeds, region, policy, attrs, battles)
+    single_right = evaluate_single_daowen(right, runs, gen, random_seeds, region, policy, attrs, battles)
+    pair = evaluate_build(left, [right], runs, gen, random_seeds=random_seeds,
+                          rng=_fresh_evaluation_rng(gen, random_seeds), region=region,
+                          policy=policy, attrs=attrs, battles=battles)
+    extra = {}
+    for metric in ("pve_rate", "pvp_rate", "full_rate"):
+        values = [control.get(metric), single_left.get(metric),
+                  single_right.get(metric), pair.get(metric)]
+        extra[metric.replace("_rate", "_extra")] = (
+            round(values[3] - values[1] - values[2] + values[0], 6)
+            if all(v is not None for v in values) else None)
+    enough = pair.get("valid", 0) >= 3
+    return {"combo": [left, right],
+            "control": control,
+            "single": {left: single_left, right: single_right},
+            "pair": pair, "extra": extra,
+            "status": "样本不足，暂不评价" if not enough else "已完成定向复测",
+            "note": "仅验证日志中实际发生过的交互，不代表全道纹组合搜索"}
+
+def fitness(starter: str, learn: list, runs: int, gen: int,
+            random_seeds: bool = False, rng: random.Random = None,
+            telemetry: dict = None, spend_shards: bool = False,
+            region: str = None, policy: dict = None) -> tuple:
+    """兼容旧调用；score 现在是完整通关率，不再是平均存活场数。"""
+    metrics = evaluate_build(starter, learn, runs, gen, random_seeds=random_seeds,
+                             rng=rng, telemetry=telemetry, spend_shards=spend_shards,
+                             region=region, policy=policy)
+    return metrics["full_rate"], metrics["valid"], metrics["invalid"]
 
 # --------------------------------------------------------------------------
 # 知识库
@@ -1477,13 +1815,15 @@ def load() -> dict:
         # 2026-08-26 防公式化清理后，best/trials/pair_scores 可能已从文件中删除
         # （知识从零重学）；结构键缺失时按空库归一化，禁止代码层回填旧最优解。
         k.setdefault("trials", {})
+        k.setdefault("search_trials", {})
         k.setdefault("pair_scores", {})
         k.setdefault("history", [])
         k.setdefault("best", None)
         k.setdefault("lessons", [])
+        k["_loaded_from_file"] = True
         return k
-    return {"generation": 0, "trials": {}, "pair_scores": {}, "history": [], "best": None,
-            "tactics": {}}
+    return {"generation": 0, "trials": {}, "search_trials": {}, "pair_scores": {},
+            "history": [], "best": None, "tactics": {}}
 
 
 def save(k: dict) -> None:
@@ -1494,7 +1834,10 @@ def save(k: dict) -> None:
 
 def ucb(k: dict, name: str, total_n: int) -> float:
     """UCB1：平衡"已知高分"与"尝试次数少"。"""
-    t = k["trials"].get(name)
+    table = k.get("search_trials")
+    if not table and not k.get("_loaded_from_file"):
+        table = k.get("trials", {})
+    t = table.get(name)
     if not t or t["n"] == 0:
         return 1e9                      # 没试过的优先试
     mean = t["sum"] / t["n"]
@@ -1523,16 +1866,26 @@ DEEPEN_TOP = int(os.environ.get("BL_DEEPEN_TOP", "3"))
 DEEPEN_RUNS = int(os.environ.get("BL_DEEPEN_RUNS", "2"))
 
 
-def build_scoreboard(k: dict, min_evals: int = 0) -> list:
-    """历史按构筑聚合 → [(历次均值, (starter, learn元组))] 按均值降序。"""
-    counts: dict = {}
-    sums: dict = {}
+def build_scoreboard(k: dict, min_evals: int = 0, metric: str = "full") -> list:
+    """按指定构筑指标聚合历史；metric=pve/pvp/full，不是道纹贡献榜。"""
+    counts, sums = {}, {}
+    field = f"{metric}_lcb"
     for h in k.get("history", []):
+        value = h.get(field)
+        if value is None:
+            value = h.get(f"{metric}_rate")
+        if value is None and metric == "full":
+            # 旧知识库的 score 是平均存活深度；加载后不得继续当作完整通关分。
+            if k.get("_loaded_from_file") and h.get("schema", 1) < 2:
+                continue
+            value = h.get("score")
+        if not isinstance(value, (int, float)):
+            continue
         key = (h["starter"], tuple(h["learn"]))
         counts[key] = counts.get(key, 0) + 1
-        sums[key] = sums.get(key, 0.0) + h["score"]
-    return sorted(((sums[key] / c, key) for key, c in counts.items()
-                   if c >= min_evals), reverse=True)
+        sums[key] = sums.get(key, 0.0) + value
+    return sorted(((sums[key] / counts[key], key) for key in counts
+                   if counts[key] >= min_evals), reverse=True)
 
 
 def elite_library(k: dict, top: int = None) -> list:
@@ -1552,7 +1905,10 @@ def propose(k: dict, rng: random.Random, region: str = None,
     return_meta=True 时返回 (starter, learn, meta)：meta 记提案通道
     （elite_copy/elite_mutate/explore/legacy_best）与父构筑——供第十八批
     知识产量审计用；默认 False，原有调用方与返回值完全不变。"""
-    total_n = sum(t["n"] for t in k["trials"].values()) or 1
+    search_table = k.get("search_trials")
+    if not search_table and not k.get("_loaded_from_file"):
+        search_table = k.get("trials", {})
+    total_n = sum(t["n"] for t in search_table.values()) or 1
     CAND = learnable_candidates(region)
     if PRIOR_MODE == "confirmed":
         lib = elite_library(k)
@@ -1606,39 +1962,64 @@ def propose(k: dict, rng: random.Random, region: str = None,
     return starter, picked
 
 
-def update(k: dict, starter: str, learn: list, score: float) -> None:
+def update(k: dict, starter: str, learn: list, score: float,
+           metrics: dict | None = None) -> None:
+    """写入构筑评估；trials 只作搜索采样先验，不是道纹贡献。"""
     members = [starter] + list(learn)
+    search_value = (metrics or {}).get("full_lcb", score)
+    # 新路径的 per-rune 数据只是 UCB 采样先验，单独存放，绝不作为道纹贡献。
+    table_name = "search_trials" if metrics is not None else "trials"
+    table = k.setdefault(table_name, {})
     for m in members:
-        t = k["trials"].setdefault(m, {"n": 0, "sum": 0.0})
+        if not m:
+            continue
+        t = table.setdefault(m, {"n": 0, "sum": 0.0})
         t["n"] += 1
-        t["sum"] += score
-    for i in range(len(members)):
-        for j in range(i + 1, len(members)):
-            key = "|".join(sorted((members[i], members[j])))
-            p = k["pair_scores"].setdefault(key, {"n": 0, "sum": 0.0})
-            p["n"] += 1
-            p["sum"] += score
-    if not k.get("best") or score > k["best"]["score"]:
-        k["best"] = {"starter": starter, "learn": list(learn), "score": score}
-    k["history"].append({"gen": k["generation"], "starter": starter,
-                         "learn": list(learn), "score": round(score, 3)})
+        t["sum"] += search_value
+    # pair_scores 仅保留旧知识库字段，新旧任何 update 都不再写入伪造Combo。
+    entry = {"gen": k["generation"], "starter": starter,
+             "learn": list(learn), "score": round(score, 6)}
+    if metrics is not None:
+        for name in ("valid", "invalid", "pve_wins", "pve_trials", "pve_rate", "pve_lcb",
+                     "pvp_wins", "pvp_trials", "pvp_rate", "pvp_lcb",
+                     "full_wins", "full_trials", "full_rate", "full_lcb", "avg_cleared",
+                     "requested_build_runs", "requested_build_rate"):
+            if name in metrics:
+                entry[name] = metrics[name]
+    k.setdefault("history", []).append(entry)
     k["total_games"] = k.get("total_games", 0) + k.get("_last_runs", 0)
-    # best_confirmed（2026-08-23 排名噪声治理）：fitness 单次=6局，方差大，
-    # 单次评估的"最高分"常是运气样本（实测 KB分4.83 复测场均仅1.50）。
-    # '已确认最优'只在同一构筑被累计评估≥2次后按其历次**均值**排序——
-    # 供汇报/决策使用；best 字段（单次最高分）保持原口径不动。
-    counts: dict = {}
-    sums: dict = {}
+    if not k.get("best") or score > k["best"].get("score", -float("inf")):
+        k["best"] = {"starter": starter, "learn": list(learn), "score": score}
+    if metrics is None:
+        return
+    best_by_metric = k.setdefault("best_by_metric", {})
+    for metric in ("pve", "pvp", "full"):
+        value = metrics.get(f"{metric}_lcb")
+        if value is None:
+            continue
+        current = best_by_metric.get(metric)
+        if current is None or value > current.get("lcb", -float("inf")):
+            best_by_metric[metric] = {"starter": starter, "learn": list(learn),
+                                      "lcb": value, "rate": metrics.get(f"{metric}_rate"),
+                                      "wins": metrics.get(f"{metric}_wins"),
+                                      "trials": metrics.get(f"{metric}_trials")}
+    grouped = {}
     for h in k["history"]:
-        key = (h["starter"], tuple(h["learn"]))
-        counts[key] = counts.get(key, 0) + 1
-        sums[key] = sums.get(key, 0.0) + h["score"]
-    confirmed = [(sums[key] / c, key) for key, c in counts.items() if c >= 2]
-    if confirmed:
-        mean_score, key = max(confirmed)
-        k["best_confirmed"] = {"starter": key[0], "learn": list(key[1]),
-                               "score": round(mean_score, 3),
-                               "evals": counts[key]}
+        grouped.setdefault((h["starter"], tuple(h["learn"])), []).append(h)
+    confirmed = k.setdefault("best_confirmed_by_metric", {})
+    for metric in ("pve", "pvp", "full"):
+        field = f"{metric}_lcb"
+        candidates = []
+        for key, rows in grouped.items():
+            vals = [row[field] for row in rows if row.get(field) is not None]
+            if len(vals) >= 2:
+                candidates.append((sum(vals) / len(vals), key, len(vals), rows[-1]))
+        if candidates:
+            value, key, count, last = max(candidates)
+            confirmed[metric] = {"starter": key[0], "learn": list(key[1]),
+                                 "lcb": round(value, 6), "rate": last.get(f"{metric}_rate"),
+                                 "wins": last.get(f"{metric}_wins"), "trials": last.get(f"{metric}_trials"),
+                                 "evals": count}
 
 
 # ============ 战术知识区（战报驱动） ============
@@ -1701,7 +2082,10 @@ def report_tactics(k: dict) -> None:
 
 
 def synergies(k: dict, min_n: int = 2) -> list:
-    """协同增益：pair 均分 − 两个单体均分的平均。>0 即 1+1>2。"""
+    """旧 pair_scores 兼容读取接口，已弃用。
+
+    新搜索不写 pair_scores；Combo 必须来自实际日志并调用 verify_observed_combo。
+    """
     out = []
     for key, p in k["pair_scores"].items():
         if p["n"] < min_n:
@@ -1738,11 +2122,17 @@ def report_telemetry(k: dict) -> None:
 
     oc = t.get("outcomes")
     if oc:
-        tot = oc["win"] + oc["loss"]
+        tot = oc.get("win", 0) + oc.get("loss", 0)
         if tot:
-            print(f"\n【对局结果】有效 {tot} 局｜通关 {oc['win']}｜阵亡 {oc['loss']}"
-                  f"｜总胜率 {oc['win']/tot*100:.1f}%｜平均通关 {oc['cleared_sum']/tot:.2f} 场"
-                  f"（胜率口径：仅死斗胜利，DM2026-08-22）")
+            pve_wins = oc.get("pve_wins")
+            pve_text = f"{pve_wins}/{tot}" if isinstance(pve_wins, int) else "N/A（旧遥测无PVE分层）"
+            pvp_reached = oc.get("pvp_reached", 0)
+            pvp_text = f"{oc.get('pvp_wins', 0)}/{pvp_reached}" if pvp_reached else "N/A（未进入PVP）"
+            print(f"\n【分层构筑结果】有效 {tot} 局（异常/超时不计）"
+                  f"｜PVE {pve_text}"
+                  f"｜PVP {pvp_text}"
+                  f"｜完整通关 {oc.get('full_wins', oc.get('win', 0))}/{tot}"
+                  f"｜平均清场 {oc.get('cleared_sum', 0)/tot:.2f}（仅诊断，不参与最优排名）")
     dz = t.get("duels")
     if dz and (dz.get("fought") or dz.get("sealed_no_duel")):
         fought, won = dz.get("fought", 0), dz.get("won", 0)
@@ -1820,46 +2210,51 @@ def report_telemetry(k: dict) -> None:
         print("  ✅ 本批次未出现任何引擎异常，全部数据有效")
 
 
+def _print_metric_candidate(label: str, rec: dict | None) -> None:
+    if not rec:
+        print(f"  {label}：暂无样本")
+        return
+    rate = rec.get("rate")
+    trials = rec.get("trials")
+    # 有记录不等于有可解释的排行榜结论；PVP尤其可能没有进入死斗的样本。
+    if rate is None or (isinstance(trials, (int, float)) and trials < 3):
+        print(f"  {label}：样本不足，暂不评价")
+        return
+    text = f"{rate:.1%}"
+    print(f"  {label}：初始【{rec.get('starter')}】+{rec.get('learn', [])} "
+          f"胜率{text}，LCB={rec.get('lcb', 0):.1%} "
+          f"（{rec.get('wins', '?')}/{trials}）")
+
+
 def report(k: dict) -> None:
     print(f"已学习代数：{k['generation']}｜累计试验：{len(k['history'])} 套"
           f"｜有效对局：{k.get('total_games', 0)} 局"
-          f"｜无效(bug) {k.get('invalid_games', 0)} 局")
-    if k.get("best"):
-        b = k["best"]
-        # 适应度口径已改（DM裁定 2026-09-09）：平均经历战斗场数，上限=单局战斗数上限，
-        # 不再是旧的 0~10（通关+3×胜率），故不再印 /10。
-        print(f"\n★ 目前最优：初始【{b['starter']}】+ {b['learn']}"
-              f"   适应度（平均经历战斗场数）{b['score']:.2f}")
-    bc = k.get("best_confirmed")
-    if bc:
-        print(f"★ 确认最优（≥2次评估均值）：初始【{bc['starter']}】+ {bc['learn']}   "
-              f"均分 {bc['score']:.2f}（{bc['evals']}次评估）")
+          f"｜无效(bug/超时) {k.get('invalid_games', 0)} 局")
+    print("\n【构筑排行榜】PVE、PVP、完整通关分开统计；不生成默认综合最优")
+    confirmed = k.get("best_confirmed_by_metric") or {}
+    observed = k.get("best_by_metric") or {}
+    for metric, label in (("pve", "PVE表现"), ("pvp", "PVP表现"), ("full", "完整通关表现")):
+        _print_metric_candidate(label, confirmed.get(metric) or observed.get(metric))
+    if not confirmed and not observed and k.get("best"):
+        print("  旧知识库只有历史 score，无法恢复 PVE/PVP 分层；请重新评估后再排名。")
     if k.get("lessons"):
-        print("\n【心得与陷阱】（规则定义不入库，只记经验级结论；详见 README）")
+        print("\n【心得与陷阱】")
         for l in k["lessons"][-8:]:
             print(f"  [{l['kind']}] {l['text']}（{l['date']}）")
-
-    ranked = sorted(((t["sum"] / t["n"], n, t["n"])
-                     for n, t in k["trials"].items() if t["n"] > 0), reverse=True)
-    print("\n【单道纹价值 Top12】(平均适应度 × 试验次数)")
-    for v, n, cnt in ranked[:12]:
-        print(f"  {n:<6}{v:6.2f}  ({cnt}次)")
-    if len(ranked) > 12:
-        print("  ...最低3个：", "、".join(f"{n}{v:.2f}" for v, n, _ in ranked[-3:]))
-
     report_telemetry(k)
-
-    syn = synergies(k)
-    print("\n【协同增益 Top10  —— 1+1>2 的组合】")
-    if not syn:
-        print("  （数据不足，需要更多代数）")
-    for d, a, b, n, avg in syn[:10]:
-        print(f"  {a}+{b:<6} 增益{d:+.2f}  组合均分{avg:.2f} ({n}次)")
-    neg = [s for s in syn if s[0] < 0]
-    if neg:
-        print("\n【负协同 —— 互相拖累，应避免同时携带】")
-        for d, a, b, n, avg in neg[-5:]:
-            print(f"  {a}+{b:<6} 增益{d:+.2f} ({n}次)")
+    activity = (k.get("telemetry") or {}).get("daowen_activity") or {}
+    if activity:
+        print("\n【道纹实际活动】（持有、发动、被动触发、产生效果分开记录）")
+        for field, label in (("held", "实际持有局次"), ("active", "主动发动次数"),
+                             ("passive", "被动/反应实际触发次数"), ("effects", "实际产生效果次数")):
+            vals = sorted((activity.get(field) or {}).items(), key=lambda kv: -kv[1])
+            print(f"  {label}：" + ("、".join(f"{name}×{n}" for name, n in vals[:12]) or "无"))
+        combos = discover_observed_combos(telemetry=activity)
+        if combos:
+            print("  实战发现的Combo候选：" + "、".join("+".join(x) for x in combos))
+            print("  候选只来自真实日志；需调用 verify_observed_combo 定向复测后才能称为联动。")
+        else:
+            print("  实战发现的Combo候选：无")
 
 
 # --------------------------------------------------------------------------
@@ -1876,6 +2271,15 @@ def main():
                     help="每局用真随机种子与随机副本（推荐，避免过拟合到固定局面）")
     ap.add_argument("--spend", action="store_true",
                     help="七场局外花碎片提升战力（修行/附煞），用户裁定为正常玩法")
+    ap.add_argument("--audit-starter", default=None,
+                    help="对指定完整构筑做逐个道纹消融")
+    ap.add_argument("--audit-learn", nargs="*", default=[],
+                    help="--audit-starter 配套的学习道纹；只测试逐个移除")
+    ap.add_argument("--audit-single", default=None,
+                    help="对一道实际道纹做单道纹基准，不替代构筑内消融")
+    ap.add_argument("--audit-combo", nargs=2, default=None, metavar=("A", "B"),
+                    help="只复测日志中已观察到的Combo：A、B、A+B；未观察到则拒绝")
+    ap.add_argument("--audit-runs", type=int, default=6, help="消融/单体定向复测局数")
     a = ap.parse_args()
 
     if a.reset and os.path.exists(KNOWLEDGE):
@@ -1885,6 +2289,31 @@ def main():
     k = load()
     if a.report:
         report(k)
+        return
+    audit_gen = max(1, k.get("generation", 0) + 1)
+    if a.audit_starter:
+        audit = evaluate_ablation(a.audit_starter, a.audit_learn, a.audit_runs,
+                                  gen=audit_gen,
+                                  random_seeds=a.random_seeds, spend_shards=a.spend)
+        print(json.dumps(audit, ensure_ascii=False, indent=2))
+        return
+    if a.audit_single:
+        audit = evaluate_single_daowen(a.audit_single, a.audit_runs, audit_gen,
+                                       random_seeds=a.random_seeds)
+        print(json.dumps({"daowen": a.audit_single, "metrics": audit,
+                          "note": "单道纹基准不等于当前构筑边际贡献"},
+                         ensure_ascii=False, indent=2))
+        return
+    if a.audit_combo:
+        pair = tuple(sorted(a.audit_combo))
+        observed = discover_observed_combos(telemetry=(k.get("telemetry") or {}).get("daowen_activity"))
+        if pair not in observed:
+            print(json.dumps({"combo": list(pair), "status": "未在真实日志中观察到，拒绝枚举复测"},
+                             ensure_ascii=False, indent=2))
+            return
+        audit = verify_observed_combo(pair[0], pair[1], a.audit_runs, audit_gen,
+                                      random_seeds=a.random_seeds)
+        print(json.dumps(audit, ensure_ascii=False, indent=2))
         return
 
     rng = random.Random(a.seed or None)
@@ -1896,14 +2325,16 @@ def main():
         region = REGIONS[k["generation"] % len(REGIONS)]
         pol = learned_policy(k)   # 行为反哺闭环：提高胜率的行为改变后续采样
         starter, learn = propose(k, rng, region)
-        score, valid, invalid = fitness(starter, learn, a.runs, k["generation"],
-                                        random_seeds=a.random_seeds, rng=rng,
-                                        telemetry=tele, spend_shards=a.spend,
-                                        region=region, policy=pol)
+        metrics = evaluate_build(starter, learn, a.runs, k["generation"],
+                                 random_seeds=a.random_seeds, rng=rng,
+                                 telemetry=tele, spend_shards=a.spend,
+                                 region=region, policy=pol)
+        score = metrics["full_rate"]
+        valid, invalid = metrics["valid"], metrics["invalid"]
         k["total_games"] = k.get("total_games", 0) + valid
         k["invalid_games"] = k.get("invalid_games", 0) + invalid
-        if valid:                      # 全部无效的代不计入学习，避免污染权重
-            update(k, starter, learn, score)
+        if valid:
+            update(k, starter, learn, score, metrics=metrics)
         # 深挖复评（2026-08-23 扩散实验落地）：每 DEEPEN_EVERY 代对当前头部候选
         # （均值序，不限评估次数）追加 DEEPEN_RUNS 次评估——幻影在放大前先被
         # 复评杀死，真精英更快达到确认；双种子稳健性来源（s4242 崩溃=缺此环节）。
@@ -1911,24 +2342,27 @@ def main():
             deep = build_scoreboard(k)[:DEEPEN_TOP]
             for _, (d_starter, d_learn) in deep:
                 for _ in range(DEEPEN_RUNS):
-                    ds, dv, di = fitness(d_starter, list(d_learn), a.runs,
-                                         k["generation"], random_seeds=a.random_seeds,
-                                         rng=rng, telemetry=tele,
-                                         spend_shards=a.spend, region=region,
-                                         policy=pol)
+                    deep_metrics = evaluate_build(
+                        d_starter, list(d_learn), a.runs, k["generation"],
+                        random_seeds=a.random_seeds, rng=rng, telemetry=tele,
+                        spend_shards=a.spend, region=region, policy=pol)
+                    ds = deep_metrics["full_rate"]
+                    dv, di = deep_metrics["valid"], deep_metrics["invalid"]
                     k["total_games"] = k.get("total_games", 0) + dv
                     k["invalid_games"] = k.get("invalid_games", 0) + di
                     if dv:
-                        update(k, d_starter, list(d_learn), ds)
+                        update(k, d_starter, list(d_learn), ds, metrics=deep_metrics)
             if deep:
                 print(f"  ↳ 深挖复评 {len(deep)} 构筑 ×{DEEPEN_RUNS} 次"
-                      f"（头名 {deep[0][1][0]}+{'/'.join(deep[0][1][1])} "
-                      f"均值{deep[0][0]:.2f}）", flush=True)
-        star = " ★新最优" if k.get("best") and k["best"]["score"] == score else ""
+                      f"（按完整通关LCB排序，头名 {deep[0][1][0]}+{'/'.join(deep[0][1][1])} "
+                      f"LCB{deep[0][0]:.3f}）", flush=True)
+        star = " ★分层指标已记录"
         bad = f"  [无效{invalid}]" if invalid else ""
         # flush=True：管道下 Python 块缓冲会吞掉进度（曾致"两小时零输出"假象）
         print(f"第{k['generation']:>4}代｜{region}  【{starter}】{'+'.join(learn):<28} "
-              f"→ {score:5.2f}{star}{bad}", flush=True)
+              f"→ PVE {metrics['pve_rate']:.2f} / "
+              f"PVP {metrics['pvp_rate'] if metrics['pvp_rate'] is not None else 'N/A'} / "
+              f"完整 {metrics['full_rate']:.2f}{star}{bad}", flush=True)
         save(k)
 
     print()
