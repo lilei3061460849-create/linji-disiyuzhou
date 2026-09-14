@@ -1,7 +1,7 @@
-"""【封印】自动法术与普攻行动预算回归测试。
+"""以【封印】为核心的已学习自动法术回归测试。
 
-测试走真实 GameEngine 的 prepare/resolve/round phase 接口：不直接改生命或胜负，
-只把一个已持有【封印】的轮回者和真实怪物放入战场，验证自动触发的真实结算。
+重点：持有【封印】道纹本身不会凭空授予法术；只有把一个以【封印】为
+效果步骤、触发条件为“自身回合结束”的 Spell 学进角色后，才会自动触发。
 """
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
-from engine.models import DaoWen, DaoWenInstance, Entity
+from engine.models import DaoWen, DaoWenInstance, Entity, Spell
 from tests.attack_support import resolve_attack
 from tests.setup_support import finish_initial_daowen
 
@@ -39,14 +39,34 @@ def _engine():
     return e
 
 
-def test_seal_is_registered_as_automatic_spell_at_enemy_round_start():
+def _learn_seal_spell(e, name="封印术测试名"):
+    e.state.player.spells.append(Spell(
+        name=name,
+        required_daowen=["封印"],
+        trigger_condition="自身回合结束",
+        effect_flow="发动封印X于任意目标",
+    ))
+
+
+def test_seal_does_not_grant_a_spell_by_itself():
     e = _engine()
+    assert e.state.player.spells == []
+    e.state.combat_subphase = "player_actions"
+    actions = e._get_combat_actions()
+    seal_actions = [a for a in actions["actions"]
+                    if a.get("action_type") == "use_daowen"
+                    and a.get("params_schema", {}).get("daowen_name") == "封印"]
+    assert seal_actions, "仅持有道纹时，封印仍应作为普通道纹候选；不能凭空多出法术"
+
+
+def test_learned_seal_spell_triggers_at_own_turn_end():
+    e = _engine()
+    _learn_seal_spell(e)
     p = e.state.player
     monster = e.state.enemies[0]
     assert e.execute_action("round_start", {})["success"]
 
     speed_before = p.current_speed
-    # action_count 是轮回者本回合的真实主动预算；两次普攻都走真实两阶段接口。
     first = resolve_attack(e)
     second = resolve_attack(e)
     assert first["success"], first
@@ -58,22 +78,23 @@ def test_seal_is_registered_as_automatic_spell_at_enemy_round_start():
     prepared = e.execute_action("prepare_monster_phase", {})
     assert prepared["success"], prepared
     logs = prepared["result"]["spell_logs"]
-    assert any(log.get("spell") == "封印·己方回合结束" and log.get("target") == monster.name
+    assert any(log.get("spell") == "封印术测试名" and log.get("target") == monster.name
                for log in logs), logs
     assert p.mutation_count == 1
-    assert e.state.enemies == [], "自动封印后当前怪物应暂离，怪物阶段没有攻击者"
+    assert e.state.enemies == [], "自动法术结算后当前怪物应暂离"
     assert len(e.state.delayed_monster_reentries) == 1
     assert p.actions_used_this_round == 2, "自动法术不应额外消耗主动出手"
 
 
-def test_automatic_seal_does_not_need_manual_spell_choices():
+def test_automatic_seal_spell_does_not_need_manual_spell_choices():
     e = _engine()
+    _learn_seal_spell(e)
     assert e.execute_action("round_start", {})["success"]
     assert resolve_attack(e)["success"]
     assert resolve_attack(e)["success"]
 
-    # prepare_monster_phase 不提交 spell_choices；自动法术由引擎在真实触发点装配，
-    # 普通怪物阶段仍按其当前合法选项结算。
+    # prepare_monster_phase 不提交 spell_choices；已学习的“自身回合结束”法术
+    # 在真实触发点自动装配参数，普通法术才继续走显式 spell_choices 契约。
     prepared = e.execute_action("prepare_monster_phase", {})
     assert prepared["success"], prepared
     assert prepared["result"]["actors"] == []

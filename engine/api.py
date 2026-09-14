@@ -503,15 +503,10 @@ class GameEngine:
         player = self.state.player
         if not player or not player.is_alive:
             return {"phase": subphase, "actions": [], "note": "轮回者已死亡"}
-        self._ensure_automatic_daowen_spells()
         refs = self.combat._combat_entity_refs()
         target_options = [{"ref": ref, "name": entity.name} for ref, entity in refs.items()]
         actions: list[dict] = []
         for name, instance in player.dao_wen.items():
-            if name == "封印" and player.entity_type == "轮回者":
-                # 轮回者的【封印】已由自动法术接管，不能再作为主动道纹
-                # 候选占用一次行动；旧存档仍可通过核心接口结算以兼容历史战报。
-                continue
             if not instance.can_use():
                 actions.append({"action_type": "use_daowen", "available": False,
                                 "params_schema": {"daowen_name": name},
@@ -1694,7 +1689,9 @@ class GameEngine:
                         and (i.context or {}).get("kind") == "custom_spell")]
             spell = Spell(name=name.strip(), required_daowen=list(required),
                           trigger_condition=trigger.strip(), effect_flow=flow.strip(),
-                          rank=len(required), custom_conditions=list(definition.get("custom_conditions") or []))
+                          rank=len(required), custom_conditions=list(definition.get("custom_conditions") or []),
+                          automatic=parsed.trigger == TriggerTiming.SELF_TURN_END.value
+                                     or bool(definition.get("automatic", False)))
             player.spells.append(spell)
             # 2026-08-30：全部11种触发时机均已接入真实战斗结算管线，wired
             # 恒为True；_WIRED_TRIGGERS判断保留，作为未来若扩展新触发时机
@@ -1761,7 +1758,12 @@ class GameEngine:
             learned = []
             for name in names:
                 required = self.SPELL_REGISTRY[name]
-                spell = Spell(name=name, required_daowen=required, trigger_condition="", effect_flow="")
+                flow = self.combat.SPELL_FLOWS.get(name, {})
+                spell = Spell(name=name, required_daowen=required,
+                              trigger_condition=flow.get("trigger", ""),
+                              effect_flow=flow.get("effect_flow", ""),
+                              automatic=bool(flow.get("automatic", False)
+                                             or flow.get("trigger") == TriggerTiming.SELF_TURN_END.value))
                 player.spells.append(spell)
                 learned.append({"name": name, "required_daowen": required})
             self.state.shards -= cost
@@ -3864,12 +3866,10 @@ class GameEngine:
     def _action_prepare_monster_phase(self, params: dict) -> dict:
         """第一阶段：只返回合法选项，绝不替AI选择道纹、目标或闪避。
 
-        全局法术【敌回始】：普通战斗里怪物没有独立的"回合开始"动作，
-        最接近的真实执行点就是"即将进入怪物阶段"这一刻——对玩家侧持有者
-        而言，这就是敌方（怪物）即将开始行动的时点。若存在候选，须先通过
-        params.spell_choices 提交完整决策，才能真正进入怪物阶段。死斗中
-        双方都是轮回者、各自有独立的 round_start/round_end，敌回始/敌回终
-        不走这条路径（round_start/round_end 本身已覆盖对方视角）。
+        全局法术【自身回合结束】：普通战斗里轮回者的自身行动阶段
+        结束、怪物阶段开始前，是自动封印类法术的真实触发点。它不能
+        误挂在完整回合的 round_end（那已经晚于怪物行动）。死斗双方
+        都有独立的玩家侧回合，暂不从这条普通怪物阶段路径触发。
         """
         if self.state.pending_monster_phase:
             return {"success": False, "error": "已有待提交的怪物阶段决策"}
@@ -3884,7 +3884,7 @@ class GameEngine:
                     "instruction": "请调用resolve_monster_phase(choices=[])结束本阶段"}
         if not self.state.in_final_duel:
             spell_logs = self._resolve_global_trigger_spells_for_action(
-                TriggerTiming.ENEMY_ROUND_START.value, params)
+                TriggerTiming.SELF_TURN_END.value, params)
         else:
             spell_logs = []
         options = self.combat.prepare_monster_phase()
@@ -3964,31 +3964,6 @@ class GameEngine:
         return {"success": False,
                 "error": "monster_phase已停用；请依次调用prepare_monster_phase与resolve_monster_phase"}
 
-    def _ensure_automatic_daowen_spells(self) -> None:
-        """把需要自动触发的道纹能力注册为真正的 Spell 实例。
-
-        【封印】仍是道纹本体（代价、延后回场和目标校验都复用道纹结算），
-        但对轮回者不再作为主动 use_daowen 候选：持有它即可获得一个
-        「己方行动结束、敌方回合开始前」的自动法术。这个时点在普通战斗
-        中对应 ``敌回始``，正好发生在 prepare_monster_phase 之前，所以
-        触发后没有怪物行动就会进入下一回合；自动法术本身不增加或消耗
-        轮回者的主动出手次数。
-        """
-        refs = self.combat._combat_entity_refs()
-        for holder in refs.values():
-            if holder.entity_type != "轮回者" or "封印" not in holder.dao_wen:
-                continue
-            if any(sp.name == "封印·己方回合结束" for sp in holder.spells):
-                continue
-            holder.spells.append(Spell(
-                name="封印·己方回合结束",
-                required_daowen=["封印"],
-                trigger_condition=TriggerTiming.ENEMY_ROUND_START.value,
-                effect_flow="发动封印X于任意目标",
-                rank=1,
-                automatic=True,
-            ))
-
     def _resolve_global_trigger_spells_for_action(self, trigger: str, params: dict) -> list[dict]:
         """全局时点法术统一入口。
 
@@ -3996,7 +3971,6 @@ class GameEngine:
         ``automatic=True`` 的法术由引擎在真实触发点自动生成同一份结构化
         提交，既保留 Spell/DSL/道纹结算链，也不会把自动法术算作主动出手。
         """
-        self._ensure_automatic_daowen_spells()
         refs = self.combat._combat_entity_refs()
         expected = self.combat.prepare_global_trigger_spells(trigger)
         if not expected:

@@ -166,7 +166,7 @@ engine.remove_personality(entity)       # 手工清除（幂等）
 
 ## 出手预算校验
 
-已实现，详见 AI_EXPERIENCE.md。要点：`action_count`按entity_type分流公式；轮回者当前固定2次，普攻占用一次主动出手但不消耗速度；自动触发法术（如轮回者的【封印】）不占主动出手。
+已实现，详见 AI_EXPERIENCE.md。要点：`action_count`按entity_type分流公式；轮回者当前固定2次，普攻占用一次主动出手但不消耗速度；已学习的自动触发法术（例如以【封印】为步骤的法术）不占主动出手。
 消耗/不消耗出手的动作清单见下表备注。
 
 ## 最终的冠冕 / 第8场死斗

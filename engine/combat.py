@@ -3626,6 +3626,7 @@ class CombatEngine:
         TriggerTiming.BATTLE_END.value,
         TriggerTiming.ROUND_START.value,
         TriggerTiming.ROUND_END.value,
+        TriggerTiming.SELF_TURN_END.value,
         TriggerTiming.ENEMY_ROUND_START.value,
         TriggerTiming.ENEMY_ROUND_END.value,
         ActionPhase.AFTER_DAMAGE_TAKEN.value,
@@ -4163,7 +4164,10 @@ class CombatEngine:
                         steps.append({"daowen": daowen, "target_ref": reverse.get(id(holder)),
                                       "x": "positive integer", "dodge": "boolean if hostile"})
                 entries.append({"spell_name": name, "steps": steps, "loop": bool(flow.get("loop")),
-                                "automatic": bool(getattr(spell, "automatic", False))})
+                                # “自身回合结束”本身就是无主动选择的触发时点；
+                                # automatic 字段保留给未来其它自动法术。
+                                "automatic": bool(getattr(spell, "automatic", False)
+                                                   or flow.get("trigger") == "自身回合结束")})
             result[holder_ref] = entries
         return result
 
@@ -4171,8 +4175,17 @@ class CombatEngine:
         """查询一个全局法术是否由引擎自动提交。"""
         refs = self._combat_entity_refs()
         holder = refs.get(holder_ref)
-        return bool(holder and any(sp.name == spell_name and getattr(sp, "automatic", False)
-                                   for sp in holder.spells))
+        if holder is None:
+            return False
+        spell = next((sp for sp in holder.spells if sp.name == spell_name), None)
+        if spell is None:
+            return False
+        if getattr(spell, "automatic", False):
+            return True
+        flow = self.SPELL_FLOWS.get(spell.name)
+        if flow is None:
+            flow = self._parse_custom_spell(spell)
+        return bool(flow and flow.get("trigger") == "自身回合结束")
 
     def has_manual_global_trigger_spells(self, trigger: str) -> bool:
         """当前时点是否还存在需要外部显式提交的全局法术。"""
@@ -4181,12 +4194,13 @@ class CombatEngine:
                    for entries in expected.values() for entry in entries)
 
     def automatic_global_trigger_choices(self, trigger: str) -> dict:
-        """为 automatic Spell 构造真实引擎提交，不替普通法术做决策。
+        """为“自身回合结束”自动法术构造真实引擎提交。
 
-        【封印·己方回合结束】是唯一内置自动法术：当它在敌回始时点拥有
-        当前可选怪物，就以 X=1 选定第一只合法敌对怪物；没有可选目标时
-        提交 use=false。结算仍走 validate/resolve_global_trigger_spells，
-        因而异变支付、目标合法性和暂离队列都不是旁路注入。
+        自动法术仍必须先被学习并挂在持有者的 ``spells`` 上；这里只负责
+        在真实触发点为其提交流程参数。当前以 X=1 选择第一只合法敌对怪物，
+        没有可选目标时提交 use=false。结算仍走
+        validate/resolve_global_trigger_spells，因而异变支付、目标合法性和
+        暂离队列都不是旁路注入。
         """
         refs = self._combat_entity_refs()
         expected = self.prepare_global_trigger_spells(trigger)

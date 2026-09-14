@@ -37,6 +37,7 @@ class TriggerTiming(Enum):
     BATTLE_END = "战终"
     ROUND_START = "回始"
     ROUND_END = "回终"
+    SELF_TURN_END = "自身回合结束"
     ENEMY_ROUND_START = "敌回始"
     ENEMY_ROUND_END = "敌回终"
     ON_TARGET = "目标选定"
