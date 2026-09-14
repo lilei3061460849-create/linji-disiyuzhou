@@ -147,7 +147,7 @@ def run_duel(challenger_snap: str, defender_snap: str, seed: int,
     logs.append(f"  挑战方：{e.state.player.name}({e.state.player.blood_limit}) + "
                 + "、".join(f"{x.name}{x.blood_limit}" for x in e.state.friends)
                 + "、" + "、".join(f"{x.name}{x.blood_limit}" for x in e.state.employees))
-    # PvP 对称交替驱动：双方都按轮回者规则（法力制/出手次数=速限/3/自由控X）
+    # PvP 对称交替驱动：双方都按轮回者规则（法力制/action_count当前固定2次/自由控X）
     log_buf = []
     act = make_challenger_act(e, log_buf)
     result = run_duel_pvp(e, act, max_rounds=60, max_steps=400, log=log_buf)

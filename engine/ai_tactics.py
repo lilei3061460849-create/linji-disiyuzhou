@@ -543,6 +543,11 @@ class TacticalAI:
         out = []
         budget = self.mana_budget()
         for name, inst in sorted(self.player.dao_wen.items()):
+            # 【封印】已转为“己方行动结束、敌方回合开始前”自动法术；
+            # 它仍由真实道纹结算支付异变并延后怪物回场，但不再占一个主动
+            # use_daowen 出手，也不应成为 AI 的重复主动候选。
+            if name == "封印" and self.player.entity_type == "轮回者":
+                continue
             if name in self.blocked_daowen_names:
                 continue
             if inst is None or not inst.can_use():
@@ -1526,13 +1531,15 @@ class TacticalAI:
         self._damage_done_battle = False
 
     def take_turn(self) -> list[dict]:
-        """执行本回合全部出手（出手次数 = [速限]/3，向上取整）。"""
+        """执行本回合全部主动出手；普攻不支付当前速度。"""
         results = []
         self._refresh_personality()
         c = self.try_consumable()
         if c:
             results.append(c)
-        for _ in range(max(1, math.ceil(self.player.speed_limit / 3))):
+        # 轮回者的主动出手预算由 action_count（当前规则固定2次）给出，
+        # 不能再用速限/3；速度只在闪避等正文明确的机制里发生变化。
+        for _ in range(max(1, self.player.action_count)):
             if not self.alive_enemies() or not self.player.is_alive:
                 break
             r = self.take_action()

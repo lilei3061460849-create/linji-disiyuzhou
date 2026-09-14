@@ -503,10 +503,15 @@ class GameEngine:
         player = self.state.player
         if not player or not player.is_alive:
             return {"phase": subphase, "actions": [], "note": "轮回者已死亡"}
+        self._ensure_automatic_daowen_spells()
         refs = self.combat._combat_entity_refs()
         target_options = [{"ref": ref, "name": entity.name} for ref, entity in refs.items()]
         actions: list[dict] = []
         for name, instance in player.dao_wen.items():
+            if name == "封印" and player.entity_type == "轮回者":
+                # 轮回者的【封印】已由自动法术接管，不能再作为主动道纹
+                # 候选占用一次行动；旧存档仍可通过核心接口结算以兼容历史战报。
+                continue
             if not instance.can_use():
                 actions.append({"action_type": "use_daowen", "available": False,
                                 "params_schema": {"daowen_name": name},
@@ -554,6 +559,10 @@ class GameEngine:
                                                   "dodge": "boolean", "blood_shadow": "boolean",
                                                   "trigger_spell_choices": "complete object"}})
         for spell in player.spells:
+            # 自动触发法术（例如持有【封印】后获得的己方回合结束法术）
+            # 不是主动行动，不应伪装成一个会占用出手的 use_spell 选项。
+            if getattr(spell, "automatic", False):
+                continue
             actions.append({"action_type": "use_spell", "params_schema": {"spell_name": spell.name},
                             "available": all(n in player.dao_wen and player.dao_wen[n].can_use()
                                              for n in spell.required_daowen),
@@ -695,7 +704,8 @@ class GameEngine:
                 for ref, entity in self.combat.blood_pact_targets().items()
             ]
         global_spells_end = self.combat.prepare_global_trigger_spells(TriggerTiming.ROUND_END.value)
-        if global_spells_end:
+        if (global_spells_end
+                and self.combat.has_manual_global_trigger_spells(TriggerTiming.ROUND_END.value)):
             round_end_schema["spell_choices"] = {
                 "_instruction": "存在【回终】全局法术候选，须逐一显式提交use/cycles",
                 "candidates": global_spells_end,
@@ -2191,7 +2201,7 @@ class GameEngine:
 
     def _consume_action_or_error(self, entity: "Entity") -> Optional[dict]:
         """校验entity本回合出手是否用尽；未用尽则消耗1次并返回None，用尽则返回错误dict。
-        怪物走prepare/resolve两阶段规则，不受此速限/攻击次数推导的出手预算约束。"""
+        怪物走prepare/resolve两阶段规则，不受轮回者 action_count 的出手预算约束。"""
         if entity.entity_type == "怪物":
             return None
         if not self.combat.can_act(entity):
@@ -3954,21 +3964,72 @@ class GameEngine:
         return {"success": False,
                 "error": "monster_phase已停用；请依次调用prepare_monster_phase与resolve_monster_phase"}
 
-    def _resolve_global_trigger_spells_for_action(self, trigger: str, params: dict) -> list[dict]:
-        """battle_start/battle_end/round_start/round_end 四个action共用：
+    def _ensure_automatic_daowen_spells(self) -> None:
+        """把需要自动触发的道纹能力注册为真正的 Spell 实例。
 
-        若当前场上有持有者在该时机存在可发动的全局法术，params.spell_choices
-        必须显式逐一覆盖（与 relic_choices 同一套"可选但存在候选就必须显式提交"
-        的契约）；没有候选时不强制要求该字段。校验失败直接抛异常，
-        由execute_action的统一原子回滚接住（不改变游戏状态）。
+        【封印】仍是道纹本体（代价、延后回场和目标校验都复用道纹结算），
+        但对轮回者不再作为主动 use_daowen 候选：持有它即可获得一个
+        「己方行动结束、敌方回合开始前」的自动法术。这个时点在普通战斗
+        中对应 ``敌回始``，正好发生在 prepare_monster_phase 之前，所以
+        触发后没有怪物行动就会进入下一回合；自动法术本身不增加或消耗
+        轮回者的主动出手次数。
         """
+        refs = self.combat._combat_entity_refs()
+        for holder in refs.values():
+            if holder.entity_type != "轮回者" or "封印" not in holder.dao_wen:
+                continue
+            if any(sp.name == "封印·己方回合结束" for sp in holder.spells):
+                continue
+            holder.spells.append(Spell(
+                name="封印·己方回合结束",
+                required_daowen=["封印"],
+                trigger_condition=TriggerTiming.ENEMY_ROUND_START.value,
+                effect_flow="发动封印X于任意目标",
+                rank=1,
+                automatic=True,
+            ))
+
+    def _resolve_global_trigger_spells_for_action(self, trigger: str, params: dict) -> list[dict]:
+        """全局时点法术统一入口。
+
+        普通全局法术仍要求调用方在 params.spell_choices 中完整提交；
+        ``automatic=True`` 的法术由引擎在真实触发点自动生成同一份结构化
+        提交，既保留 Spell/DSL/道纹结算链，也不会把自动法术算作主动出手。
+        """
+        self._ensure_automatic_daowen_spells()
         refs = self.combat._combat_entity_refs()
         expected = self.combat.prepare_global_trigger_spells(trigger)
         if not expected:
             return []
-        submitted = params.get("spell_choices", {})
+
+        automatic = self.combat.automatic_global_trigger_choices(trigger)
+        has_manual = self.combat.has_manual_global_trigger_spells(trigger)
+        if has_manual:
+            # 自动候选不可由外部 use=false 覆盖；普通法术仍必须由调用方
+            # 显式补齐，不能因为自动构造器预填了use=false就绕过原有契约。
+            submitted = automatic
+            for holder_ref, choices in submitted.items():
+                for spell_name in list(choices):
+                    if not self.combat.is_automatic_spell(holder_ref, spell_name):
+                        del choices[spell_name]
+            supplied = params.get("spell_choices", {})
+            if isinstance(supplied, dict):
+                for holder_ref, choices in supplied.items():
+                    if holder_ref not in submitted or not isinstance(choices, dict):
+                        continue
+                    for spell_name, decision in choices.items():
+                        if not self.combat.is_automatic_spell(holder_ref, spell_name):
+                            submitted[holder_ref][spell_name] = decision
+        else:
+            # 全部是自动法术时，回合切换不需要额外参数。
+            submitted = automatic
         self.combat.validate_global_trigger_spells(trigger, submitted, refs)
-        return self.combat.resolve_global_trigger_spells(trigger, submitted, refs)
+        previous_timing = getattr(self.combat, "_forced_context_timing", "")
+        self.combat._forced_context_timing = trigger
+        try:
+            return self.combat.resolve_global_trigger_spells(trigger, submitted, refs)
+        finally:
+            self.combat._forced_context_timing = previous_timing
 
     def _action_round_start(self, params: dict) -> dict:
         """回始；完全平局死斗在每个新回合交换该回合首手方。"""
@@ -4253,7 +4314,9 @@ class GameEngine:
         for sp in d.get("spells", []):
             e.spells.append(Spell(name=sp["name"], required_daowen=sp["required_daowen"],
                                    trigger_condition=sp["trigger_condition"], effect_flow=sp["effect_flow"],
-                                   rank=sp.get("rank", 1)))
+                                   rank=sp.get("rank", 1),
+                                   custom_conditions=sp.get("custom_conditions", []),
+                                   automatic=sp.get("automatic", False)))
         for relic in d.get("relics", []):
             e.relics.append(Relic(name=relic["name"], effect=relic.get("effect", ""),
                                   tags=list(relic.get("tags") or [])))

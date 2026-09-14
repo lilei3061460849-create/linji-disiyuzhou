@@ -59,7 +59,7 @@ def player_turn(e, log):
             log.append("  命令岩行者「发动背负 打 轮回者」")
             out.append(r3)
     # 4) 玩家杀伐秒怪
-    for _ in range(max(1, (p.speed_limit + 2) // 3)):
+    for _ in range(max(1, p.action_count)):
         if not p.is_alive:
             break
         enemies = [x for x in e.state.enemies if x.is_alive]

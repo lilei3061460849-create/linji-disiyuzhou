@@ -382,15 +382,17 @@ class RuleValidator:
     def _check_action_count_valid(self, state: GameState, action: dict, result: dict) -> Optional[dict]:
         """检查出手次数是否合理"""
         if state.player:
-            expected = (state.player.speed_limit + 2) // 3  # 向上取整
+            # 轮回者主动出手次数与速限分离；普攻本身不支付当前速度。
+            expected = max(0, 2 + state.player.get_status_value("疯狂")
+                          - state.player.get_status_value("无力"))
             actual = state.player.action_count
-            if actual != expected and state.player.speed_limit > 0:
+            if actual != expected:
                 return {
                     "severity": "warning",
                     "rule_name": "出手次数计算",
-                    "rule_text": "出手次数 = 速限 / 3 向上取整",
-                    "violation_description": f"速限{state.player.speed_limit}，计算出手{expected}，实际{actual}",
-                    "context": {"speed_limit": state.player.speed_limit, "expected": expected, "actual": actual}
+                    "rule_text": "轮回者出手次数按 action_count（基础固定2次）",
+                    "violation_description": f"实际出手预算{actual}，规则计算应为{expected}",
+                    "context": {"action_count": actual, "expected": expected}
                 }
         return None
     

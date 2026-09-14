@@ -12,7 +12,7 @@
 本驱动让守擂方走与挑战者相同的玩家侧接口（use_daowen / prepare_attack /
 resolve_attack），引擎对 in_final_duel 的 opponent 侧已放行，且自动走：
   - 法力制（发动消耗道纹扣守擂主将法力）
-  - 出手次数 = 速限/3（朋友/员工 = 攻击次数/3）
+  - 轮回者出手次数按 action_count（当前固定2次）；朋友/员工 = 攻击次数/3
   - 道纹 X 自由控（由本驱动决策，与挑战者同策略）
   - 每次行动后 _advance_duel_turn 对称换边
 """

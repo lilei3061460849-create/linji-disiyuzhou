@@ -63,6 +63,7 @@ class Spell:
     effect_flow: str             # 生效流程
     rank: int = 1                # 阶级 = 所需道纹种数
     custom_conditions: list[str] = field(default_factory=list)
+    automatic: bool = False      # 是否由引擎在触发时点自动提交，不占主动出手
     
     def to_dict(self) -> dict:
         return {
@@ -71,7 +72,8 @@ class Spell:
             "trigger_condition": self.trigger_condition,
             "effect_flow": self.effect_flow,
             "rank": self.rank,
-            "custom_conditions": self.custom_conditions
+            "custom_conditions": self.custom_conditions,
+            "automatic": self.automatic,
         }
 
 
@@ -383,7 +385,7 @@ class Entity:
         """攻击次数（DM裁定 2026-09-10，**换算仅限轮回者**）：轮回者 = 当前速度。
 
         怪物/[朋友]/[员工]仍读面板值——怪物不持有法力（规则正文），换算对它无意义。
-        这样输出随资源衰减：闪避花掉速度，普攻的击数就跟着掉。
+        普攻不会支付速度；只有当前速度已经因闪避等明确机制变化时，后续派生攻击次数才会随面板变化。
         """
         if self.entity_type == "轮回者":
             return max(0, self.current_speed)

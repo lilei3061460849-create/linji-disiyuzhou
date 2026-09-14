@@ -51,8 +51,8 @@ def test_ai_uses_full_action_budget(tmp_path):
                 DaoWen("强化", "", "异变", "5X", ""), x_value=1)
     ai = TacticalAI(e)
     results = ai.take_turn()
-    expected = max(1, math.ceil(e.state.player.speed_limit / 3))
-    assert len(results) >= 2, f"只出手{len(results)}次，未用满预算(应约{expected}次)"
+    expected = max(1, e.state.player.action_count)
+    assert len(results) >= 2, f"只出手{len(results)}次，未用满预算(应为{expected}次)"
 
 
 def test_ai_shields_when_facing_lethal_damage(tmp_path):
@@ -116,7 +116,7 @@ def test_mana_budget_splits_across_actions(tmp_path):
     """边界：预算须按剩余出手次数均分，最后一次允许用尽"""
     e = _engine(tmp_path)
     ai = TacticalAI(e)
-    total = max(1, math.ceil(e.state.player.speed_limit / 3))
+    total = max(1, e.state.player.action_count)
     budget = ai.mana_budget()
     if total > 1:
         assert budget < e.state.player.current_mana, "预算未分配，会一次烧光法力"

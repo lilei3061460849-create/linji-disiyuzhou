@@ -510,6 +510,9 @@ class CombatEngine:
         return DaoWenEngine.single_round_action_count(entity)
 
     def _current_context_timing(self) -> str:
+        forced = getattr(self, "_forced_context_timing", "")
+        if forced:
+            return forced
         if getattr(self.state, "phase", "") == "pre_battle":
             return "pre_battle"
         sub = getattr(self.state, "combat_subphase", "") or ""
@@ -4146,6 +4149,7 @@ class CombatEngine:
             for name, flow in flows.items():
                 flat_steps = self._flatten_flow_steps(flow["steps"], holder, holder)
                 steps = []
+                spell = next((sp for sp in holder.spells if sp.name == name), None)
                 for step in flat_steps:
                     daowen = self._step_daowen(step)
                     role = self._step_role(step)
@@ -4158,9 +4162,73 @@ class CombatEngine:
                     else:
                         steps.append({"daowen": daowen, "target_ref": reverse.get(id(holder)),
                                       "x": "positive integer", "dodge": "boolean if hostile"})
-                entries.append({"spell_name": name, "steps": steps, "loop": bool(flow.get("loop"))})
+                entries.append({"spell_name": name, "steps": steps, "loop": bool(flow.get("loop")),
+                                "automatic": bool(getattr(spell, "automatic", False))})
             result[holder_ref] = entries
         return result
+
+    def is_automatic_spell(self, holder_ref: str, spell_name: str) -> bool:
+        """查询一个全局法术是否由引擎自动提交。"""
+        refs = self._combat_entity_refs()
+        holder = refs.get(holder_ref)
+        return bool(holder and any(sp.name == spell_name and getattr(sp, "automatic", False)
+                                   for sp in holder.spells))
+
+    def has_manual_global_trigger_spells(self, trigger: str) -> bool:
+        """当前时点是否还存在需要外部显式提交的全局法术。"""
+        expected = self.prepare_global_trigger_spells(trigger)
+        return any(not entry.get("automatic", False)
+                   for entries in expected.values() for entry in entries)
+
+    def automatic_global_trigger_choices(self, trigger: str) -> dict:
+        """为 automatic Spell 构造真实引擎提交，不替普通法术做决策。
+
+        【封印·己方回合结束】是唯一内置自动法术：当它在敌回始时点拥有
+        当前可选怪物，就以 X=1 选定第一只合法敌对怪物；没有可选目标时
+        提交 use=false。结算仍走 validate/resolve_global_trigger_spells，
+        因而异变支付、目标合法性和暂离队列都不是旁路注入。
+        """
+        refs = self._combat_entity_refs()
+        expected = self.prepare_global_trigger_spells(trigger)
+        submitted: dict[str, dict] = {}
+        for holder_ref, entries in expected.items():
+            holder = refs[holder_ref]
+            submitted[holder_ref] = {}
+            for entry in entries:
+                name = entry["spell_name"]
+                if not entry.get("automatic", False):
+                    submitted[holder_ref][name] = {"use": False}
+                    continue
+                flow = self._eligible_spell_flows(holder, trigger)[name]
+                flat_steps = self._flatten_flow_steps(flow["steps"], holder, holder)
+                cycle = []
+                valid = True
+                for step in flat_steps:
+                    role = self._step_role(step)
+                    if role == "any":
+                        # 【封印】的 DSL 目标是 any，但它的道纹结算还会
+                        # 检查“必须是怪物”；这里提前选择当前敌方怪物，
+                        # 不把轮回者/队友放进自动目标。
+                        candidates = [
+                            ref for ref, entity in refs.items()
+                            if entity.is_alive
+                            and entity.entity_type == "怪物"
+                            and self.state.on_player_side(entity) != self.state.on_player_side(holder)
+                            and self.is_targetable(holder, entity)
+                        ]
+                        target_ref = candidates[0] if candidates else None
+                        if target_ref is None:
+                            valid = False
+                            break
+                    else:
+                        target_ref = next((ref for ref, entity in refs.items()
+                                           if entity is holder), None)
+                    cycle.append({"x": 1, "target_ref": target_ref, "dodge": False})
+                submitted[holder_ref][name] = (
+                    {"use": True, "cycles": [cycle]}
+                    if valid and cycle else {"use": False}
+                )
+        return submitted
 
     def validate_global_trigger_spells(self, trigger: str, submitted: Any,
                                        refs: dict[str, Entity]) -> None:

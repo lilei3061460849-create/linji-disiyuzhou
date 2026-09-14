@@ -59,7 +59,7 @@ def battle(player, defs, log, relics, rng):
     player.current_mana = 0  # 战始清零；回始再获得等同法限的法力
     activated = {id(m): set() for m in monsters}
     log.append(f"  敌方：{'、'.join(d['name']+'('+str(d['ac'])+'×'+str(d['ap'])+'/'+str(d['hp'])+')' for d in defs)}")
-    log.append(f"  贾凡入场：HP{player.current_hp}/{player.blood_limit} 法{player.mana_limit} 速{player.speed_limit}(出手{max(1,math.ceil(player.speed_limit/3))})")
+    log.append(f"  贾凡入场：HP{player.current_hp}/{player.blood_limit} 法{player.mana_limit} 速{player.speed_limit}(出手{max(1, player.action_count)})")
     for rnd in range(1, 30):
         if not player.is_alive: log.append(f"  ✗ 贾凡阵亡（第{rnd}回合）"); return False
         if not alive_ms(monsters): break
@@ -74,7 +74,7 @@ def battle(player, defs, log, relics, rng):
                         if act in ("蒙蔽","坏死","减速","僵化"): bs.apply_control_to_player(act, m, player)
                         log.append(f"    {m.name}道纹出手：激活【{act}{m.dao_wen[act].x_value}】" + (f" 攻击力→{m.attack_power}" if act=="强化" else ""))
         # 玩家出手
-        mana = player.current_mana; acts = max(1, math.ceil(player.speed_limit/3))
+        mana = player.current_mana; acts = max(1, player.action_count)
         al = alive_ms(monsters); inc = sum(m.attack_count*m.attack_power for m in al)
         actions_log = []
         lethal = inc >= player.current_hp  # 不防御会死
@@ -159,9 +159,9 @@ def run_one(seed):
                     for pts,cost,name in tiers:
                         if shards >= cost:
                             shards -= cost
-                            spd_before = max(1,math.ceil(p.speed_limit/3))
+                            spd_before = p.speed_limit
                             for _ in range(pts):
-                                if max(1,math.ceil(p.speed_limit/3)) < 5: p.speed_limit += 1
+                                if p.speed_limit < 5: p.speed_limit += 1
                                 else: p.mana_limit += 2
                             p.current_speed = p.speed_limit
                             prep.append(f"修行({name},{cost}碎)+{pts}点→速{p.speed_limit}/法{p.mana_limit}")

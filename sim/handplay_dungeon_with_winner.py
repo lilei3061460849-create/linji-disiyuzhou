@@ -65,7 +65,7 @@ def manual_player_turn(e, log):
         return []
     out = []
     shielded_this_round = False
-    for _ in range(max(1, (p.speed_limit + 2) // 3)):
+    for _ in range(max(1, p.action_count)):
         if not p.is_alive:
             break
         enemies = [x for x in e.state.enemies if x.is_alive]

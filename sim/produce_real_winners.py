@@ -519,7 +519,7 @@ def play_first_tier(seed: int, region: str, sealed_path: str,
 
         if outcome == "duel_start" or e.state.in_final_duel:
             # 第8场死斗：用修复后的PvP对称驱动（守擂方走玩家侧接口：法力制/
-            # 出手次数=速限/3/自由控X，勿当怪物处理——用户裁定死斗必须按PvP规则）。
+            # 出手次数按轮回者 action_count（当前固定2次）/自由控X，勿当怪物处理——用户裁定死斗必须按PvP规则）。
             from sim.duel_pvp import run_duel_pvp
             def _act():
                 """挑战者死斗：专注杀守擂主将（轮回者）——与守擂方专注策略对称。

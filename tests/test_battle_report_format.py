@@ -374,7 +374,7 @@ def test_action_linter_allows_consecutive_actions_when_opponent_budget_exhausted
 
 
 def test_action_linter_rejects_exceeding_action_budget():
-    """错误输入/非法配置：单回合内出手次数超过速限允许上限必须被校验器拒绝"""
+    """错误输入/非法配置：单回合内出手次数超过 action_count 必须被校验器拒绝"""
     exceed_budget_snippet = """## 第8场（死斗）
 守擂冠军：林渊（42/50/6，出手2次）
 挑战胜者：莫非（42/52/12，出手4次）
@@ -386,7 +386,7 @@ def test_action_linter_rejects_exceeding_action_budget():
 出手4（林渊·第3动）：[动作声明] 发动【杀伐X=5】
 [回终]：
 """
-    with pytest.raises(ValueError, match="超过速限允许上限"):
+    with pytest.raises(ValueError, match="超过 action_count 上限"):
         BR.validate_battle_report_actions(exceed_budget_snippet)
 
 
