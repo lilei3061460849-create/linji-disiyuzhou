@@ -95,13 +95,37 @@ def test_win_only_pve_playout_signs():
         assert m.is_alive and m.current_hp == m.blood_limit
 
 
+def test_win_only_includes_parry_in_real_candidate_path(tmp_path):
+    """WinOnlyAI 不能因覆写动态候选入口而漏掉基类的招架候选。"""
+    from tests.test_ai_tactics import _engine
+
+    e = _engine(tmp_path, learn=())
+    e.state.player.dao_wen.clear()
+    e.state.resonance.clear()
+    e.state.player.current_hp = 10
+    e.state.player.current_mana = 3
+    e.state.enemies[0].attack_count = 1
+    e.state.enemies[0].attack_power = 12
+    ai = WinOnlyAI(e)
+
+    result = ai.take_action()
+
+    assert result is not None and result.get("success"), result
+    assert result.get("action") == "贾凡招架"
+    assert e.state.player.parrying_this_round is True
+
+
 class _VetoProbe(WinOnlyAI):
     """最小桩：只喂一个候选，其余协作方全部替身（只测提案层否决与裁决序）。"""
 
     def __init__(self, mutation, labels_scores):
         self._actor = None
-        player = type("P", (), {"mutation_count": mutation, "name": "探针"})()
-        state = type("S", (), {"player": player})()
+        player = type("P", (), {
+            "mutation_count": mutation, "name": "探针", "is_alive": True,
+            "current_mana": 0, "current_hp": 1, "shield": 0,
+            "parry_locked_this_round": False, "parrying_this_round": False,
+        })()
+        state = type("S", (), {"player": player, "enemies": []})()
         self.engine = type("E", (), {"state": state, "execute_action": staticmethod(
             lambda a, p: {"success": True, "action": a})})()
         self._pv = type("V", (), {

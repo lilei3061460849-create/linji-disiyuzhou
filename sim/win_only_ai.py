@@ -322,7 +322,14 @@ class WinOnlyAI(TacticalAI):
     # ---------- 选择：提案裁剪 + ±1 裁决 ----------
 
     def _dynamic_action(self):
-        candidates = self._daowen_candidates()
+        # WinOnlyAI 自己覆写了 TacticalAI 的候选入口；若这里只复制道纹/普攻/残韵，
+        # 就会把基类已经实现的【招架】静默漏掉。招架不占出手，且必须进入整局
+        # 推演，否则高压局永远只会在“继续输出”和“发动道纹”之间选。
+        candidates = []
+        parry = self._parry_candidate()
+        if parry is not None:
+            candidates.append(parry)
+        candidates.extend(self._daowen_candidates())
         candidates.extend(self._basic_attack_candidates())
         # 残韵候选已按威胁预筛，并附带一个基础分：既含「我要压制什么」（威胁），
         # 也含「我能拿到什么」（转化后收益，2026-09-13 补上的那一半）。
@@ -342,8 +349,13 @@ class WinOnlyAI(TacticalAI):
             res = pv.get("result") or {}
             if not res.get("success"):
                 continue
-            s = self._score_candidate(pv.get("diff", {}), cand["label"],
-                                      cand.get("kind"), cand.get("target"))
+            if cand.get("action") == "declare_parry":
+                # 招架是姿态，通用 diff 不会表达每击减伤；沿用 TacticalAI
+                # 的威胁评分，再交给 WinOnlyAI 的整局推演做最终胜负裁决。
+                s = self._score_parry_candidate(cand)
+            else:
+                s = self._score_candidate(pv.get("diff", {}), cand["label"],
+                                          cand.get("kind"), cand.get("target"))
             if s is None:
                 continue
             # 崩解线否决（训练 2026-09-10 六审）：异变 ≥ 50 即血 0 自爆
