@@ -977,6 +977,23 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                             _tag_behavior(behaviors, "学习", {"name": _tech}, e, b)
                             todo = [t for t in todo if t != _tech]
                             break
+                # 学习策略优先于花碎片（2026-09-14 修复）：此前 endpoint 技术纹之后
+                # 直接进入 tier 修行，把开局的20碎片和本场精力花光，todo 中的
+                # 杀伐/再生等永远学不到；封印起手因此在第一场只会叠异变并被凡庸。
+                # 先按固定 learn 顺序学习当前副本真正可学的道纹，学完后才花剩余碎片。
+                if p and todo:
+                    learnable = set(learnable_candidates(e.state.current_region))
+                    next_learn = next((name for name in todo if name in learnable), None)
+                    if next_learn:
+                        r = e.execute_action("pre_battle_action", {
+                            "sub_action": "学习", "sub": "daowen", "tier": 1,
+                            "names": [next_learn],
+                        })
+                        if r.get("success"):
+                            _tag_behavior(behaviors, "学习", {"name": next_learn}, e, b)
+                            todo.remove(next_learn)
+                            continue
+
                 # 花光口径（用户指令 2026-09-10「局外为什么不把碎片花完」）：
                 # 旧逻辑只买 tier3/tier2 且 tier2 被 todo 门控——后期一窗收入可
                 # >100（怪物奖励=ceil(战始血限×2%)+5×道纹数），3 精力×35 的花费
@@ -1107,7 +1124,8 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
         for _ in range(40):
             if not e.state.player or not e.state.player.is_alive:
                 break
-            if not [x for x in e.state.enemies if x.is_alive] and not getattr(e.state, "monster_reinforcements", None):  # 波次：增援未到不算清场
+            if (not [x for x in e.state.enemies if x.is_alive] and not getattr(e.state, "monster_reinforcements", None)
+                and not getattr(e.state, "delayed_monster_reentries", None)):  # 增援/封印延迟回场未到不算清场
                 break
             rs, _rs_logs = start_round_with_artifacts(e)
             if not rs.get("success"):
@@ -1136,7 +1154,8 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                 record("engine_error", "combat", f"{type(ex).__name__}: {ex}")
                 return {"cleared": cleared, "won": False, "invalid": True,
                         "reason": f"combat: {ex}"}
-            if not [x for x in e.state.enemies if x.is_alive] and not getattr(e.state, "monster_reinforcements", None):  # 波次：增援未到不算清场
+            if (not [x for x in e.state.enemies if x.is_alive] and not getattr(e.state, "monster_reinforcements", None)
+                and not getattr(e.state, "delayed_monster_reentries", None)):  # 增援/封印延迟回场未到不算清场
                 break
             # 玩家可能在自己回合内命零（癌变/崩解/代价反噬）——此时死之传承中断已入队，
             # 不能再进怪物阶段（会被中断门禁挡成 invalid），直接按阵亡结算。
@@ -1144,11 +1163,13 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                 break
             # [朋友]/[员工]自主出手（无语言命令时，规则正文：微光者会根据情况对敌方出手）
             e.execute_action("resolve_ally_phases", {})
-            if not [x for x in e.state.enemies if x.is_alive] and not getattr(e.state, "monster_reinforcements", None):  # 波次：增援未到不算清场
+            if (not [x for x in e.state.enemies if x.is_alive] and not getattr(e.state, "monster_reinforcements", None)
+                and not getattr(e.state, "delayed_monster_reentries", None)):  # 增援/封印延迟回场未到不算清场
                 break
             # 困境驱动（DM裁定2026-08-23③）：强制困境怪进化/逃跑二选一
             _drive_plight_monsters(e, telemetry)
-            if not [x for x in e.state.enemies if x.is_alive] and not getattr(e.state, "monster_reinforcements", None):  # 波次：增援未到不算清场
+            if (not [x for x in e.state.enemies if x.is_alive] and not getattr(e.state, "monster_reinforcements", None)
+                and not getattr(e.state, "delayed_monster_reentries", None)):  # 增援/封印延迟回场未到不算清场
                 break   # 困境怪全逃跑=清场（不视为击杀）
             mp = _resolve_monster_turn(e)
             if not mp.get("success"):
