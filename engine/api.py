@@ -507,6 +507,11 @@ class GameEngine:
         target_options = [{"ref": ref, "name": entity.name} for ref, entity in refs.items()]
         actions: list[dict] = []
         for name, instance in player.dao_wen.items():
+            if (name == "封印" and player.entity_type == "轮回者"
+                    and any(sp.name == "镇魔印" for sp in player.spells)):
+                # 已学习【镇魔印】后，封印由自身回合结束法术发动，
+                # 不再作为主动道纹候选；仅持有封印而未学习法术时仍显示。
+                continue
             if not instance.can_use():
                 actions.append({"action_type": "use_daowen", "available": False,
                                 "params_schema": {"daowen_name": name},
@@ -1484,6 +1489,7 @@ class GameEngine:
         "先发制人": ["杀伐"], "生生不息": ["再生"],
         "后发制人": ["庇护"], "以牙还牙": ["杀伐", "再生"], "借力打力": ["杀伐", "庇护"],
         "不死不休": ["血债"], "千刀万剐": ["血债", "再生"], "咎由自取": ["坠落", "杀伐", "血债"],
+        "镇魔印": ["封印"],
     }
     # 三副本终音法器（死斗胜利后按current_region发放，见resolve_final_duel/choose_terminal_artifact）
     TERMINAL_ARTIFACTS = {

@@ -12,7 +12,8 @@ import tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
-from engine.models import DaoWen, DaoWenInstance, Entity, Spell
+from engine.ai_tactics import TacticalAI
+from engine.models import DaoWen, DaoWenInstance, Entity
 from tests.attack_support import resolve_attack
 from tests.setup_support import finish_initial_daowen
 
@@ -39,13 +40,18 @@ def _engine():
     return e
 
 
-def _learn_seal_spell(e, name="封印术测试名"):
-    e.state.player.spells.append(Spell(
-        name=name,
-        required_daowen=["封印"],
-        trigger_condition="自身回合结束",
-        effect_flow="发动封印X于任意目标",
-    ))
+def _learn_seal_spell(e):
+    # 通过真实局外【学习】接口取得法术，不直接把 Spell 塞进构筑。
+    e.state.phase = "pre_battle"
+    e.state.energy = 1
+    learned = e.execute_action("pre_battle_action", {
+        "sub_action": "学习", "sub": "spell", "tier": 1,
+        "names": ["镇魔印"],
+    })
+    assert learned["success"], learned
+    assert any(sp.name == "镇魔印" for sp in e.state.player.spells)
+    e.state.phase = "in_combat"
+    e.state.combat_subphase = "await_round_start"
 
 
 def test_seal_does_not_grant_a_spell_by_itself():
@@ -67,10 +73,10 @@ def test_learned_seal_spell_triggers_at_own_turn_end():
     assert e.execute_action("round_start", {})["success"]
 
     speed_before = p.current_speed
-    first = resolve_attack(e)
-    second = resolve_attack(e)
-    assert first["success"], first
-    assert second["success"], second
+    # 真实 TacticalAI 先执行本回合主动行动；镇魔印不应被当作主动封印候选。
+    actions = TacticalAI(e).take_turn()
+    assert len(actions) == 2, actions
+    assert all("攻击" in item.get("action", "") for item in actions), actions
     assert p.actions_used_this_round == p.action_count == 2
     assert p.current_speed == speed_before, "普攻不应消耗速度"
     assert monster.current_hp < monster.blood_limit, "普攻必须先造成真实伤害"
@@ -78,7 +84,7 @@ def test_learned_seal_spell_triggers_at_own_turn_end():
     prepared = e.execute_action("prepare_monster_phase", {})
     assert prepared["success"], prepared
     logs = prepared["result"]["spell_logs"]
-    assert any(log.get("spell") == "封印术测试名" and log.get("target") == monster.name
+    assert any(log.get("spell") == "镇魔印" and log.get("target") == monster.name
                for log in logs), logs
     assert p.mutation_count == 1
     assert e.state.enemies == [], "自动法术结算后当前怪物应暂离"

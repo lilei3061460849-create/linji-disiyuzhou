@@ -1082,7 +1082,10 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
     round_snapshots: list = [] if death_trace else None
     todo = [name for name in learn if name != actual_starter]
     # 法术按当前持有道纹解锁，不再默认杀伐起手。
-    SPELL_PLAN = spell_plan or [("先发制人", ["杀伐"]), ("生生不息", ["再生"]), ("后发制人", ["庇护"])]
+    SPELL_PLAN = spell_plan or [
+        ("先发制人", ["杀伐"]), ("生生不息", ["再生"]),
+        ("后发制人", ["庇护"]), ("镇魔印", ["封印"]),
+    ]
     learned_spells = set()
     cleared = 0
 

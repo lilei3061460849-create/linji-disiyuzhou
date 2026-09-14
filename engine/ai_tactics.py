@@ -543,10 +543,11 @@ class TacticalAI:
         out = []
         budget = self.mana_budget()
         for name, inst in sorted(self.player.dao_wen.items()):
-            # 【封印】已转为“己方行动结束、敌方回合开始前”自动法术；
-            # 它仍由真实道纹结算支付异变并延后怪物回场，但不再占一个主动
-            # use_daowen 出手，也不应成为 AI 的重复主动候选。
-            if name == "封印" and self.player.entity_type == "轮回者":
+            if (name == "封印" and self.player.entity_type == "轮回者"
+                    and any(sp.name == "镇魔印" for sp in self.player.spells)):
+                # 学会【镇魔印】后，【封印】由自身回合结束法术结算；
+                # 避免 AI 又把同一道纹当成主动出手重复发动。未学习法术时，
+                # 单独持有【封印】仍可作为普通道纹候选。
                 continue
             if name in self.blocked_daowen_names:
                 continue

@@ -3600,6 +3600,10 @@ class CombatEngine:
         "不死不休": {"trigger": ActionPhase.AFTER_LIFE_LOST.value, "steps": [("血债", "attacker")], "loop": True},
         "千刀万剐": {"trigger": ActionPhase.AFTER_LIFE_LOST.value, "steps": [("再生", "self"), ("血债", "attacker")], "loop": True},
         "咎由自取": {"trigger": "目标发动道纹前", "steps": [("坠落", "target"), ("杀伐", "target"), ("血债", "target")]},
+        "镇魔印": {"trigger": TriggerTiming.SELF_TURN_END.value,
+                   "steps": [("封印", "any")],
+                   "effect_flow": "自身回合结束后→发动封印X于任意目标",
+                   "automatic": True},
     }
 
     # 自创法术文本→执行：解析 trigger_condition / effect_flow 为 SPELL_FLOWS 同构结构。
@@ -3608,7 +3612,7 @@ class CombatEngine:
     # 个解析器做过强校验，这里理论上不会再遇到解析失败；仍保留 try/except 兜底，
     # 解析失败时返回 None（不触发），而不是让战斗结算抛出未处理异常。
     #
-    # 全部 11 种触发时机现已全部接线：
+    # 全部 12 种触发时机现已全部接线：
     #   受到伤害前 / 失去生命后 / 目标发动道纹前 —— 复用既有反应型法术决策窗口
     #     （prepare/validate/resolve_spell_reactions，见 resolve_attack）。
     #   战始 / 战终 / 回始 / 回终 / 敌回始 / 敌回终 —— 全局时点法术
