@@ -51,8 +51,8 @@ def test_ai_uses_full_action_budget(tmp_path):
                 DaoWen("强化", "", "异变", "5X", ""), x_value=1)
     ai = TacticalAI(e)
     results = ai.take_turn()
-    expected = max(1, math.ceil(e.state.player.speed_limit / 3))
-    assert len(results) >= 2, f"只出手{len(results)}次，未用满预算(应约{expected}次)"
+    expected = max(1, e.state.player.action_count)
+    assert len(results) >= 2, f"只出手{len(results)}次，未用满预算(应为{expected}次)"
 
 
 def test_ai_shields_when_facing_lethal_damage(tmp_path):
@@ -64,6 +64,39 @@ def test_ai_shields_when_facing_lethal_damage(tmp_path):
     r = ai.try_survive()
     assert r is not None, "面临致死威胁却没有采取保命行动"
     assert "庇护" in r.get("action", "") or "再生" in r.get("action", "")
+
+
+def test_ai_can_declare_parry_under_lethal_threat(tmp_path):
+    """正常路径：招架是 AI 可用的独立防御候选，不只存在于人工 action 表。"""
+    e = _engine(tmp_path, learn=())
+    e.state.player.dao_wen.clear()
+    e.state.resonance.clear()
+    e.state.player.current_hp = 10
+    e.state.enemies[0].attack_count = 1
+    e.state.enemies[0].attack_power = 12
+    ai = TacticalAI(e)
+
+    result = ai.take_action()
+
+    assert result is not None and result.get("success"), result
+    assert result.get("action") == "贾凡招架"
+    assert e.state.player.parrying_this_round is True
+
+
+def test_ai_does_not_waste_parry_in_a_safe_window(tmp_path):
+    """边界：安全血线下仍应允许输出，不能因招架存在而每回合白占动作。"""
+    e = _engine(tmp_path, learn=())
+    e.state.player.dao_wen.clear()
+    e.state.resonance.clear()
+    e.state.player.current_hp = e.state.player.blood_limit
+    e.state.enemies[0].attack_count = 1
+    e.state.enemies[0].attack_power = 1
+    ai = TacticalAI(e)
+
+    result = ai.take_action()
+
+    assert result is not None and result.get("success"), result
+    assert result.get("action") != "贾凡招架"
 
 
 def test_ai_finishes_killable_target(tmp_path):
@@ -83,7 +116,7 @@ def test_mana_budget_splits_across_actions(tmp_path):
     """边界：预算须按剩余出手次数均分，最后一次允许用尽"""
     e = _engine(tmp_path)
     ai = TacticalAI(e)
-    total = max(1, math.ceil(e.state.player.speed_limit / 3))
+    total = max(1, e.state.player.action_count)
     budget = ai.mana_budget()
     if total > 1:
         assert budget < e.state.player.current_mana, "预算未分配，会一次烧光法力"

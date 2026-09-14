@@ -1,0 +1,3257 @@
+{
+  "schema": 1,
+  "protocol": {
+    "kind": "single_daowen_baseline",
+    "runs": 6,
+    "generation": 493,
+    "random_seeds": false,
+    "region": null,
+    "battles": 7,
+    "metrics": [
+      "pve",
+      "pvp",
+      "full"
+    ],
+    "note": "同副本/属性/AI/种子条件；不生成综合分；单道纹基准不代表构筑内边际贡献"
+  },
+  "scores": [
+    {
+      "daowen": "伤痕",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "借力",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "假钞",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "兴奋",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "再生",
+      "metrics": {
+        "valid": 5,
+        "invalid": 1,
+        "pve_wins": 0,
+        "pve_trials": 5,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 5,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.6,
+        "requested_build_runs": 3,
+        "requested_build_rate": 0.6
+      }
+    },
+    {
+      "daowen": "冥气",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "净化",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "减速",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "分裂",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "加害",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "加速",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "勾魂",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "变形",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "固执",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "坏死",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "坠落",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "增殖",
+      "metrics": {
+        "valid": 5,
+        "invalid": 1,
+        "pve_wins": 0,
+        "pve_trials": 5,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 5,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.2,
+        "requested_build_runs": 2,
+        "requested_build_rate": 0.4
+      }
+    },
+    {
+      "daowen": "嫁祸",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "定型",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "寄生",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "封印",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.5,
+        "requested_build_runs": 2,
+        "requested_build_rate": 0.333333
+      }
+    },
+    {
+      "daowen": "尸爆",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "庇护",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 1,
+        "requested_build_rate": 0.166667
+      }
+    },
+    {
+      "daowen": "弱化",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "强化",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "必中",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "急速",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "愤怒",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 1,
+        "requested_build_rate": 0.166667
+      }
+    },
+    {
+      "daowen": "抵扣",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "招魂",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "搏命",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 1,
+        "requested_build_rate": 0.166667
+      }
+    },
+    {
+      "daowen": "无力",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "无神",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "杀伐",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 1,
+        "requested_build_rate": 0.166667
+      }
+    },
+    {
+      "daowen": "束缚",
+      "metrics": {
+        "valid": 5,
+        "invalid": 1,
+        "pve_wins": 0,
+        "pve_trials": 5,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 5,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.2,
+        "requested_build_runs": 3,
+        "requested_build_rate": 0.6
+      }
+    },
+    {
+      "daowen": "波及",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "洞察",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "活血",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "消灾",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "清算",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "滋养",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "滑翔",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "点金",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "爆裂",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "狂暴",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "瓦解",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "畸变",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "疯狂",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "眩晕",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "缄默",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "背负",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 1,
+        "requested_build_rate": 0.166667
+      }
+    },
+    {
+      "daowen": "自愈",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "自残",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 1,
+        "requested_build_rate": 0.166667
+      }
+    },
+    {
+      "daowen": "自食",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 1,
+        "requested_build_rate": 0.166667
+      }
+    },
+    {
+      "daowen": "蒙蔽",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 1,
+        "requested_build_rate": 0.166667
+      }
+    },
+    {
+      "daowen": "血债",
+      "metrics": {
+        "valid": 5,
+        "invalid": 1,
+        "pve_wins": 0,
+        "pve_trials": 5,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 5,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.2,
+        "requested_build_runs": 1,
+        "requested_build_rate": 0.2
+      }
+    },
+    {
+      "daowen": "衰败",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "裂变",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "贯穿",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 1,
+        "requested_build_rate": 0.166667
+      }
+    },
+    {
+      "daowen": "赌命",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "赎金",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 1,
+        "requested_build_rate": 0.166667
+      }
+    },
+    {
+      "daowen": "超频",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "迟滞",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "退化",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "逆鳞",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "透支",
+      "metrics": {
+        "valid": 4,
+        "invalid": 2,
+        "pve_wins": 0,
+        "pve_trials": 4,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 4,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.5,
+        "requested_build_runs": 2,
+        "requested_build_rate": 0.5
+      }
+    },
+    {
+      "daowen": "逼债",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "镇尸",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "飞行",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    },
+    {
+      "daowen": "龙鳞",
+      "metrics": {
+        "valid": 6,
+        "invalid": 0,
+        "pve_wins": 0,
+        "pve_trials": 6,
+        "pve_rate": 0.0,
+        "pve_lcb": 0.0,
+        "pvp_wins": 0,
+        "pvp_trials": 0,
+        "pvp_rate": null,
+        "pvp_lcb": null,
+        "full_wins": 0,
+        "full_trials": 6,
+        "full_rate": 0.0,
+        "full_lcb": 0.0,
+        "avg_cleared": 0.666667,
+        "requested_build_runs": 0,
+        "requested_build_rate": 0.0
+      }
+    }
+  ],
+  "rankings": {
+    "pve": [
+      {
+        "daowen": "伤痕",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "借力",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "假钞",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "兴奋",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "再生",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 5,
+        "status": "可评价"
+      },
+      {
+        "daowen": "冥气",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "净化",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "减速",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "分裂",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "加害",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "加速",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "勾魂",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "变形",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "固执",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "坏死",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "坠落",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "增殖",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 5,
+        "status": "可评价"
+      },
+      {
+        "daowen": "嫁祸",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "定型",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "寄生",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "封印",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "尸爆",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "庇护",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "弱化",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "强化",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "必中",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "急速",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "愤怒",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "抵扣",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "招魂",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "搏命",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "无力",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "无神",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "杀伐",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "束缚",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 5,
+        "status": "可评价"
+      },
+      {
+        "daowen": "波及",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "洞察",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "活血",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "消灾",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "清算",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "滋养",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "滑翔",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "点金",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "爆裂",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "狂暴",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "瓦解",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "畸变",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "疯狂",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "眩晕",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "缄默",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "背负",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "自愈",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "自残",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "自食",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "蒙蔽",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "血债",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 5,
+        "status": "可评价"
+      },
+      {
+        "daowen": "衰败",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "裂变",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "贯穿",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "赌命",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "赎金",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "超频",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "迟滞",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "退化",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "逆鳞",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "透支",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 4,
+        "status": "可评价"
+      },
+      {
+        "daowen": "逼债",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "镇尸",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "飞行",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "龙鳞",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      }
+    ],
+    "pvp": [
+      {
+        "daowen": "伤痕",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "借力",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "假钞",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "兴奋",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "再生",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "冥气",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "净化",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "减速",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "分裂",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "加害",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "加速",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "勾魂",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "变形",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "固执",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "坏死",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "坠落",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "增殖",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "嫁祸",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "定型",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "寄生",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "封印",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "尸爆",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "庇护",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "弱化",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "强化",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "必中",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "急速",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "愤怒",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "抵扣",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "招魂",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "搏命",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "无力",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "无神",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "杀伐",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "束缚",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "波及",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "洞察",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "活血",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "消灾",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "清算",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "滋养",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "滑翔",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "点金",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "爆裂",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "狂暴",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "瓦解",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "畸变",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "疯狂",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "眩晕",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "缄默",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "背负",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "自愈",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "自残",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "自食",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "蒙蔽",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "血债",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "衰败",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "裂变",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "贯穿",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "赌命",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "赎金",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "超频",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "迟滞",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "退化",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "逆鳞",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "透支",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "逼债",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "镇尸",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "飞行",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      },
+      {
+        "daowen": "龙鳞",
+        "rate": null,
+        "lcb": null,
+        "wins": 0,
+        "trials": 0,
+        "status": "样本不足，暂不评价"
+      }
+    ],
+    "full": [
+      {
+        "daowen": "伤痕",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "借力",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "假钞",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "兴奋",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "再生",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 5,
+        "status": "可评价"
+      },
+      {
+        "daowen": "冥气",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "净化",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "减速",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "分裂",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "加害",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "加速",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "勾魂",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "变形",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "固执",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "坏死",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "坠落",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "增殖",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 5,
+        "status": "可评价"
+      },
+      {
+        "daowen": "嫁祸",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "定型",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "寄生",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "封印",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "尸爆",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "庇护",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "弱化",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "强化",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "必中",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "急速",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "愤怒",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "抵扣",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "招魂",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "搏命",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "无力",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "无神",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "杀伐",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "束缚",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 5,
+        "status": "可评价"
+      },
+      {
+        "daowen": "波及",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "洞察",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "活血",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "消灾",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "清算",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "滋养",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "滑翔",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "点金",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "爆裂",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "狂暴",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "瓦解",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "畸变",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "疯狂",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "眩晕",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "缄默",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "背负",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "自愈",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "自残",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "自食",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "蒙蔽",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "血债",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 5,
+        "status": "可评价"
+      },
+      {
+        "daowen": "衰败",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "裂变",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "贯穿",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "赌命",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "赎金",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "超频",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "迟滞",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "退化",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "逆鳞",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "透支",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 4,
+        "status": "可评价"
+      },
+      {
+        "daowen": "逼债",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "镇尸",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "飞行",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      },
+      {
+        "daowen": "龙鳞",
+        "rate": 0.0,
+        "lcb": 0.0,
+        "wins": 0,
+        "trials": 6,
+        "status": "可评价"
+      }
+    ]
+  },
+  "summary": {
+    "daowen_count": 70,
+    "valid_games": 414,
+    "invalid_games": 6,
+    "pve_wins": 0,
+    "pvp_wins": 0,
+    "pvp_trials": 0,
+    "full_wins": 0,
+    "formed_runs": 23
+  }
+}

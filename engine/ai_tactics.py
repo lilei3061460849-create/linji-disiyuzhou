@@ -103,11 +103,16 @@ class TacticalAI:
         self._enemies = enemies
         self._actor_ref = actor_ref
         self.log: list[str] = []
+        # 最近一次实时决策的引擎动作；统一 AI 外壳用它记录同一条决策链，
+        # 旧的直接使用 TacticalAI 的实验脚本也可以忽略该字段。
+        self.last_decision: Optional[dict] = None
         self.used: dict[str, int] = {}   # 统计各道纹发动次数，便于流派对比
         self._controlled_this_round: set = set()   # 本回合已被控制的目标
         self._previewer = None           # 行动后果预演器（惰性创建）
         self.preview_rejected: list[str] = []   # 被安全过滤淘汰的候选
         self._sacrifice_actions: set = set()    # 显式允许的主动牺牲策略（默认空）
+        # 运行器/实验可显式屏蔽某张牌，但真正的合法性与结算仍由 GameEngine 校验。
+        self.blocked_daowen_names: set[str] = set()
         self._last_risk: tuple = ("SAFE", [])   # 最近一次候选的风险等级
         # 第十九批实验钩子（默认 None = 现行≤40%血线门，行为不变）
         self.consumable_gate = None
@@ -476,11 +481,76 @@ class TacticalAI:
 
     # ---------- 候选生成与实时评分 ----------
 
+    def _parry_candidate(self) -> Optional[dict]:
+        """生成【招架】候选；招架是回合级防御姿态，不占用出手。"""
+        player = self.player
+        if player is None or not player.is_alive:
+            return None
+        if getattr(player, "parry_locked_this_round", False):
+            return None
+        if getattr(player, "parrying_this_round", False):
+            return None
+        if player.current_mana <= 0:
+            return None
+        enemies = self.alive_enemies()
+        if not enemies:
+            return None
+        # 招架按“每次受击”减当前法力；用敌方当前攻击次数×攻击力估算本轮
+        # 可减免量。这里只生成候选，最终是否合法仍由 declare_parry 引擎校验。
+        reduction = sum(
+            min(player.current_mana, max(0, enemy.effective_attack_power()))
+            * max(0, enemy.effective_attack_count())
+            for enemy in enemies
+        )
+        if reduction <= 0:
+            return None
+        # 若招架也无法把本轮预计伤害压回存活线，就不把它当作“保命”
+        # 候选；此时应继续寻找击杀/离场等能真正结束威胁的动作。
+        threat = self.incoming_damage()
+        if (threat > player.current_hp + player.shield
+                and threat - reduction > player.current_hp + player.shield):
+            return None
+        return {
+            "action": "declare_parry",
+            "label": f"招架（每次受击减免{player.current_mana}）",
+            "kind": "parry",
+            "params": {"actor_ref": self._actor_ref or "player:0"},
+            "expected_reduction": reduction,
+        }
+
+    def _score_parry_candidate(self, candidate: dict) -> float:
+        """按当前威胁给招架评分；高压/濒死时显著优先，安全时让出给输出。"""
+        player = self.player
+        threat = self.incoming_damage()
+        reduction = float(candidate.get("expected_reduction", 0))
+        score = 1.15 * reduction
+        effective_hp = player.current_hp + player.shield
+        if threat >= effective_hp:
+            score += 60.0
+        elif threat >= max(1, player.current_hp * 0.7):
+            score += 24.0
+        elif player.current_hp <= player.blood_limit * 0.35:
+            score += 16.0
+        else:
+            score -= 6.0
+        # 招架本身不花法力，但后续主动花蓝会降低其实际减免；
+        # 保守扣除少量“放弃输出”的机会成本，不阻止危急时刻使用。
+        score -= 0.12 * player.effective_attack_count() * player.current_mana
+        return score
+
     def _daowen_candidates(self) -> list[dict]:
         """玩家实持道纹 → 聚焦候选（X 按预算/需求取 2~3 档）。"""
         out = []
         budget = self.mana_budget()
         for name, inst in sorted(self.player.dao_wen.items()):
+            if (name == "封印" and self.player.entity_type == "轮回者"
+                    and any(sp.name == "镇魔印" for sp in self.player.spells)):
+                # 学会【镇魔印】后，【封印】由自身回合结束法术结算；
+                # 避免 AI 又把同一道纹当成主动出手重复发动。未学习法术时，
+                # 单独持有【封印】仍可作为普通道纹候选。
+                continue
+            if name in self.blocked_daowen_names:
+                continue
             if inst is None or not inst.can_use():
                 continue
             probe = self._probe(name)
@@ -867,19 +937,53 @@ class TacticalAI:
         resonance_rows: list[int] = []   # scored 中残韵候选的下标（含收益项加成）
         _resonance_bonus_of: dict = {}   # 下标 → 已计入的收益项加成
         ends_battle = False              # 是否存在「本手即终结战斗」的候选
-        candidates = self._daowen_candidates()
-        candidates.extend(self._basic_attack_candidates())
+        candidates = []
+        parry = self._parry_candidate()
+        if parry is not None:
+            # 防御候选放在前面，避免大量道纹候选触发性能上限时把招架裁掉。
+            candidates.append(parry)
+        candidates.extend(self._daowen_candidates())
+        basic_candidates = self._basic_attack_candidates()
+        candidates.extend(basic_candidates)
         for bonus, cand in self._resonance_candidates():
             candidates.append(cand)   # 残韵候选已按威胁预筛，附带基础分
-        for cand in candidates[:MAX_CANDIDATE_PREVIEWS]:
+        # 普攻是常驻候选，不能因为道纹候选太多而在
+        # MAX_CANDIDATE_PREVIEWS 截断时消失；否则AI会出现“有攻击力却只会
+        # 重复控制”的假性策略。
+        if basic_candidates:
+            reserve = min(len(basic_candidates), MAX_CANDIDATE_PREVIEWS)
+            non_basic = [cand for cand in candidates if cand not in basic_candidates]
+            candidates = (non_basic[:MAX_CANDIDATE_PREVIEWS - reserve]
+                          + basic_candidates[:reserve])
+        else:
+            candidates = candidates[:MAX_CANDIDATE_PREVIEWS]
+        immediate_damage_available = False
+        immediate_damage_candidates: set[int] = set()
+        for cand in candidates:
             # 普攻是两段动作，预演必须整串跑完才看得见伤害
             pv = (self.previewer.preview_sequence(cand["steps"]) if cand.get("steps")
                   else self.previewer.preview(cand["action"], cand["params"]))
             res = pv.get("result") or {}
             if not res.get("success"):
                 continue               # 引擎拒绝=非法候选，跳过
-            s = self._score_candidate(pv.get("diff", {}), cand["label"],
-                                      cand.get("kind"), cand.get("target"))
+            if cand["action"] == "declare_parry":
+                # 招架的姿态变化不在通用数值 diff 中；其收益由每击减免
+                # 与当前威胁现场计算，声明本身仍先经过 ActionPreview 校验。
+                s = self._score_parry_candidate(cand)
+            else:
+                diff = pv.get("diff", {})
+                s = self._score_candidate(diff, cand["label"],
+                                          cand.get("kind"), cand.get("target"))
+                if cand.get("kind") in ("attack", "damage"):
+                    # 不能把“敌人暂离/封印”产生的 hp_after=0 当成伤害。
+                    # 只有真实 damage_applied 且 actual_damage>0 才算完成首次接触。
+                    actual_damage = any(
+                        ev.get("type") == "damage_applied"
+                        and (ev.get("data") or {}).get("actual_damage", 0) > 0
+                        for ev in ((diff or {}).get("events", []) or []))
+                    if actual_damage:
+                        immediate_damage_available = True
+                        immediate_damage_candidates.add(id(cand))
             if s is None:
                 continue
             if cand["action"] == "use_resonance":
@@ -908,11 +1012,30 @@ class TacticalAI:
             for i in resonance_rows:
                 sc, lbl, cd = scored[i]
                 scored[i] = (sc - _resonance_bonus_of[i], lbl, cd)
+        # 首次接触时，只要安全的普攻/伤害动作存在，就先让敌方掉血。
+        # 控制、延迟和增益不能替代第一次造成伤害，否则【封印】会被用成
+        # “连续空转五回合后触发【凡庸】”。第一次伤害完成后，下一回合仍可
+        # 根据局势选择【封印】跳过怪物阶段。
+        force_progress = (not self._first_contact()
+                          and getattr(self, "_last_action_caused_damage", True) is False)
+        if immediate_damage_available and (self._first_contact() or force_progress):
+            progress = [row for row in scored
+                        if id(row[2]) in immediate_damage_candidates]
+            if progress:
+                scored = progress
         if not scored:
             return None
         scored.sort(key=lambda t: (-t[0], t[1]))
         best = scored[0][2]
+        self.last_decision = {
+            "action": best["action"],
+            "params": dict(best.get("params", {})),
+            "label": best["label"],
+        }
+        if best.get("steps"):
+            self.last_decision["steps"] = best["steps"]
         hp_before = sum(e.current_hp for e in self.alive_enemies())
+        self._last_action_caused_damage = id(best) in immediate_damage_candidates
         r = (self._run_steps(best["steps"]) if best.get("steps")
              else self.engine.execute_action(best["action"], best["params"]))
         if r.get("success"):
@@ -1380,6 +1503,7 @@ class TacticalAI:
 
     def take_action(self) -> Optional[dict]:
         """执行一次出手：实时评估候选；子类固定串（archive 实验）走旧级联。"""
+        self.last_decision = None
         self.resolve_pending_redemption()
         if not self.alive_enemies() or not self.player.is_alive:
             return None
@@ -1408,13 +1532,15 @@ class TacticalAI:
         self._damage_done_battle = False
 
     def take_turn(self) -> list[dict]:
-        """执行本回合全部出手（出手次数 = [速限]/3，向上取整）。"""
+        """执行本回合全部主动出手；普攻不支付当前速度。"""
         results = []
         self._refresh_personality()
         c = self.try_consumable()
         if c:
             results.append(c)
-        for _ in range(max(1, math.ceil(self.player.speed_limit / 3))):
+        # 轮回者的主动出手预算由 action_count（当前规则固定2次）给出，
+        # 不能再用速限/3；速度只在闪避等正文明确的机制里发生变化。
+        for _ in range(max(1, self.player.action_count)):
             if not self.alive_enemies() or not self.player.is_alive:
                 break
             r = self.take_action()

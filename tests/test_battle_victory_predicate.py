@@ -1,7 +1,7 @@
 """战斗结束与胜利·统一判定（DM裁定 2026-08-18）
 
 对应 README §二「战斗结束与胜利判定」：
-  胜利＝敌方全部经由七条路径之一移出战场（命零/救赎/雕塑/癌变/还债/封印/逃跑）；
+  胜利＝敌方全部经由合法路径结束战斗（命零/救赎/雕塑/癌变/还债/逃跑）；【封印】暂离不算结束。
   失败＝轮回者[命零]（任何死因）。
 引擎内所有"能否战终/胜负已定"判断必须走 GameState.battle_won/battle_lost/battle_over，
 本文件覆盖：正常路径 / 边界条件 / 错误输入。
@@ -42,7 +42,7 @@ def test_each_removal_path_deactivates_enemy():
     st.enemies = [dead]
     assert not st.enemy_combat_active(dead) and st.battle_won()
     # 各特殊事件 → 统一离场
-    for reason in ("雕塑", "癌变", "还债", "救赎", "封印", "逃跑"):
+    for reason in ("雕塑", "癌变", "还债", "救赎", "逃跑"):
         m = _monster(f"怪·{reason}")
         m.depart_battle(reason)
         st.enemies = [m]
@@ -119,6 +119,15 @@ def test_mixed_enemies_partial_removal_not_victory():
     st.enemies = [a, b]
     assert st.active_enemies() == [b]
     assert not st.battle_won() and not st.battle_over()
+
+
+def test_delayed_seal_monster_blocks_victory():
+    """封印暂离队列仍是未完成战斗，不能绕过增援门禁提前战终。"""
+    st = _state_with_player()
+    monster = _monster("暂离怪")
+    st.delayed_monster_reentries.append({"monster": monster, "return_round": 3, "delay_rounds": 2})
+    assert st.battle_won() is False
+    assert st.battle_over() is False
 
 
 def test_no_player_counts_as_lost():

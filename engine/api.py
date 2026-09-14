@@ -36,6 +36,7 @@ from .gamedata import (REGION_EXCLUSIVE_DAOWEN, ORIGINAL_MONSTER_DAOWEN,
                        UNIMPLEMENTED_REGION_EXCLUSIVE_DAOWEN)
 from .dm_rulings import DMRulingsDB, DMRuling, Interrupt
 from .death_book import DeathBookStore, draft_legacy, validate_legacy
+from .ai_memory import clear_memory, condense_to_legacy
 from .effect_context import make_context, normalize_context
 from .personality import (
     get_personality as personality_get,
@@ -506,6 +507,11 @@ class GameEngine:
         target_options = [{"ref": ref, "name": entity.name} for ref, entity in refs.items()]
         actions: list[dict] = []
         for name, instance in player.dao_wen.items():
+            if (name == "封印" and player.entity_type == "轮回者"
+                    and any(sp.name == "镇魔印" for sp in player.spells)):
+                # 已学习【镇魔印】后，封印由自身回合结束法术发动，
+                # 不再作为主动道纹候选；仅持有封印而未学习法术时仍显示。
+                continue
             if not instance.can_use():
                 actions.append({"action_type": "use_daowen", "available": False,
                                 "params_schema": {"daowen_name": name},
@@ -553,6 +559,10 @@ class GameEngine:
                                                   "dodge": "boolean", "blood_shadow": "boolean",
                                                   "trigger_spell_choices": "complete object"}})
         for spell in player.spells:
+            # 自动触发法术（例如持有【封印】后获得的己方回合结束法术）
+            # 不是主动行动，不应伪装成一个会占用出手的 use_spell 选项。
+            if getattr(spell, "automatic", False):
+                continue
             actions.append({"action_type": "use_spell", "params_schema": {"spell_name": spell.name},
                             "available": all(n in player.dao_wen and player.dao_wen[n].can_use()
                                              for n in spell.required_daowen),
@@ -694,7 +704,8 @@ class GameEngine:
                 for ref, entity in self.combat.blood_pact_targets().items()
             ]
         global_spells_end = self.combat.prepare_global_trigger_spells(TriggerTiming.ROUND_END.value)
-        if global_spells_end:
+        if (global_spells_end
+                and self.combat.has_manual_global_trigger_spells(TriggerTiming.ROUND_END.value)):
             round_end_schema["spell_choices"] = {
                 "_instruction": "存在【回终】全局法术候选，须逐一显式提交use/cycles",
                 "candidates": global_spells_end,
@@ -869,6 +880,8 @@ class GameEngine:
                 "select_shared_dragon_heart", "declare_fuyuebei_toll", "activate_dragon_body",
                 "devour_monster", "declare_tail_sacrifice", "use_dragon_wings",
                 "use_blood_wings", "enslave_as_chizu", "blood_feast",
+                # 轮回者指挥与友方自主行动都属于己方行动阶段，不能在怪物阶段插队。
+                "command_ally", "resolve_ally_phases",
             }
             if action_type in player_actions:
                 required = CombatSubphase.PLAYER_ACTIONS.value
@@ -1476,6 +1489,7 @@ class GameEngine:
         "先发制人": ["杀伐"], "生生不息": ["再生"],
         "后发制人": ["庇护"], "以牙还牙": ["杀伐", "再生"], "借力打力": ["杀伐", "庇护"],
         "不死不休": ["血债"], "千刀万剐": ["血债", "再生"], "咎由自取": ["坠落", "杀伐", "血债"],
+        "镇魔印": ["封印"],
     }
     # 三副本终音法器（死斗胜利后按current_region发放，见resolve_final_duel/choose_terminal_artifact）
     TERMINAL_ARTIFACTS = {
@@ -1681,7 +1695,9 @@ class GameEngine:
                         and (i.context or {}).get("kind") == "custom_spell")]
             spell = Spell(name=name.strip(), required_daowen=list(required),
                           trigger_condition=trigger.strip(), effect_flow=flow.strip(),
-                          rank=len(required), custom_conditions=list(definition.get("custom_conditions") or []))
+                          rank=len(required), custom_conditions=list(definition.get("custom_conditions") or []),
+                          automatic=parsed.trigger == TriggerTiming.SELF_TURN_END.value
+                                     or bool(definition.get("automatic", False)))
             player.spells.append(spell)
             # 2026-08-30：全部11种触发时机均已接入真实战斗结算管线，wired
             # 恒为True；_WIRED_TRIGGERS判断保留，作为未来若扩展新触发时机
@@ -1748,7 +1764,12 @@ class GameEngine:
             learned = []
             for name in names:
                 required = self.SPELL_REGISTRY[name]
-                spell = Spell(name=name, required_daowen=required, trigger_condition="", effect_flow="")
+                flow = self.combat.SPELL_FLOWS.get(name, {})
+                spell = Spell(name=name, required_daowen=required,
+                              trigger_condition=flow.get("trigger", ""),
+                              effect_flow=flow.get("effect_flow", ""),
+                              automatic=bool(flow.get("automatic", False)
+                                             or flow.get("trigger") == TriggerTiming.SELF_TURN_END.value))
                 player.spells.append(spell)
                 learned.append({"name": name, "required_daowen": required})
             self.state.shards -= cost
@@ -2188,7 +2209,7 @@ class GameEngine:
 
     def _consume_action_or_error(self, entity: "Entity") -> Optional[dict]:
         """校验entity本回合出手是否用尽；未用尽则消耗1次并返回None，用尽则返回错误dict。
-        怪物走prepare/resolve两阶段规则，不受此速限/攻击次数推导的出手预算约束。"""
+        怪物走prepare/resolve两阶段规则，不受轮回者 action_count 的出手预算约束。"""
         if entity.entity_type == "怪物":
             return None
         if not self.combat.can_act(entity):
@@ -3851,12 +3872,10 @@ class GameEngine:
     def _action_prepare_monster_phase(self, params: dict) -> dict:
         """第一阶段：只返回合法选项，绝不替AI选择道纹、目标或闪避。
 
-        全局法术【敌回始】：普通战斗里怪物没有独立的"回合开始"动作，
-        最接近的真实执行点就是"即将进入怪物阶段"这一刻——对玩家侧持有者
-        而言，这就是敌方（怪物）即将开始行动的时点。若存在候选，须先通过
-        params.spell_choices 提交完整决策，才能真正进入怪物阶段。死斗中
-        双方都是轮回者、各自有独立的 round_start/round_end，敌回始/敌回终
-        不走这条路径（round_start/round_end 本身已覆盖对方视角）。
+        全局法术【自身回合结束】：普通战斗里轮回者的自身行动阶段
+        结束、怪物阶段开始前，是自动封印类法术的真实触发点。它不能
+        误挂在完整回合的 round_end（那已经晚于怪物行动）。死斗双方
+        都有独立的玩家侧回合，暂不从这条普通怪物阶段路径触发。
         """
         if self.state.pending_monster_phase:
             return {"success": False, "error": "已有待提交的怪物阶段决策"}
@@ -3871,7 +3890,7 @@ class GameEngine:
                     "instruction": "请调用resolve_monster_phase(choices=[])结束本阶段"}
         if not self.state.in_final_duel:
             spell_logs = self._resolve_global_trigger_spells_for_action(
-                TriggerTiming.ENEMY_ROUND_START.value, params)
+                TriggerTiming.SELF_TURN_END.value, params)
         else:
             spell_logs = []
         options = self.combat.prepare_monster_phase()
@@ -3952,20 +3971,45 @@ class GameEngine:
                 "error": "monster_phase已停用；请依次调用prepare_monster_phase与resolve_monster_phase"}
 
     def _resolve_global_trigger_spells_for_action(self, trigger: str, params: dict) -> list[dict]:
-        """battle_start/battle_end/round_start/round_end 四个action共用：
+        """全局时点法术统一入口。
 
-        若当前场上有持有者在该时机存在可发动的全局法术，params.spell_choices
-        必须显式逐一覆盖（与 relic_choices 同一套"可选但存在候选就必须显式提交"
-        的契约）；没有候选时不强制要求该字段。校验失败直接抛异常，
-        由execute_action的统一原子回滚接住（不改变游戏状态）。
+        普通全局法术仍要求调用方在 params.spell_choices 中完整提交；
+        ``automatic=True`` 的法术由引擎在真实触发点自动生成同一份结构化
+        提交，既保留 Spell/DSL/道纹结算链，也不会把自动法术算作主动出手。
         """
         refs = self.combat._combat_entity_refs()
         expected = self.combat.prepare_global_trigger_spells(trigger)
         if not expected:
             return []
-        submitted = params.get("spell_choices", {})
+
+        automatic = self.combat.automatic_global_trigger_choices(trigger)
+        has_manual = self.combat.has_manual_global_trigger_spells(trigger)
+        if has_manual:
+            # 自动候选不可由外部 use=false 覆盖；普通法术仍必须由调用方
+            # 显式补齐，不能因为自动构造器预填了use=false就绕过原有契约。
+            submitted = automatic
+            for holder_ref, choices in submitted.items():
+                for spell_name in list(choices):
+                    if not self.combat.is_automatic_spell(holder_ref, spell_name):
+                        del choices[spell_name]
+            supplied = params.get("spell_choices", {})
+            if isinstance(supplied, dict):
+                for holder_ref, choices in supplied.items():
+                    if holder_ref not in submitted or not isinstance(choices, dict):
+                        continue
+                    for spell_name, decision in choices.items():
+                        if not self.combat.is_automatic_spell(holder_ref, spell_name):
+                            submitted[holder_ref][spell_name] = decision
+        else:
+            # 全部是自动法术时，回合切换不需要额外参数。
+            submitted = automatic
         self.combat.validate_global_trigger_spells(trigger, submitted, refs)
-        return self.combat.resolve_global_trigger_spells(trigger, submitted, refs)
+        previous_timing = getattr(self.combat, "_forced_context_timing", "")
+        self.combat._forced_context_timing = trigger
+        try:
+            return self.combat.resolve_global_trigger_spells(trigger, submitted, refs)
+        finally:
+            self.combat._forced_context_timing = previous_timing
 
     def _action_round_start(self, params: dict) -> dict:
         """回始；完全平局死斗在每个新回合交换该回合首手方。"""
@@ -4100,6 +4144,7 @@ class GameEngine:
         pool = self.monster_pool.get(region, [])
         self.state.enemies.clear()
         self.state.monster_reinforcements = []
+        self.state.delayed_monster_reentries = []
         drawn_names = []
         queued_names = []
         draw_count = 0
@@ -4249,7 +4294,9 @@ class GameEngine:
         for sp in d.get("spells", []):
             e.spells.append(Spell(name=sp["name"], required_daowen=sp["required_daowen"],
                                    trigger_condition=sp["trigger_condition"], effect_flow=sp["effect_flow"],
-                                   rank=sp.get("rank", 1)))
+                                   rank=sp.get("rank", 1),
+                                   custom_conditions=sp.get("custom_conditions", []),
+                                   automatic=sp.get("automatic", False)))
         for relic in d.get("relics", []):
             e.relics.append(Relic(name=relic["name"], effect=relic.get("effect", ""),
                                   tags=list(relic.get("tags") or [])))
@@ -4908,6 +4955,9 @@ class GameEngine:
         queued = list(getattr(self.state, "monster_reinforcements", []) or [])
         if queued and not escaping:
             return {"success": False, "error": f"仍有{len(queued)}只怪物增援未进场，不能结算战终: {[m.get('name', '?') for m in queued]}"}
+        delayed = list(getattr(self.state, "delayed_monster_reentries", []) or [])
+        if delayed and not escaping:
+            return {"success": False, "error": f"仍有{len(delayed)}只怪物处于【封印】延迟，不能结算战终: {[e['monster'].name for e in delayed]}"}
         if escaping:
             for enemy in self.state.enemies:
                 if enemy.is_alive:
@@ -4941,7 +4991,7 @@ class GameEngine:
         # 满足条件（与遗物战终结算 relic_end 同一时序原则：先结算再清理）。
         spell_logs = self._resolve_global_trigger_spells_for_action(
             TriggerTiming.BATTLE_END.value, params)
-        # 碎片奖励计算（被雕塑/癌变/还债/封印移出的怪物不视为击杀，不产碎片）
+        # 碎片奖励计算（雕塑/癌变/还债/永久离场的怪物不视为击杀；【封印】暂离后回场，最终命零时正常产出碎片）
         # 奖励公式用的是[战始][血限]快照(battle_start_blood_limit)，不是当前血限(增殖等会改变当前血限)
         shard_reward = 0
         removed = []
@@ -4953,7 +5003,7 @@ class GameEngine:
                        ("雕塑" if monster.is_sculptured else
                         "救赎" if getattr(monster, "_redeemed", False) else
                         "癌变" if monster.is_proliferated else
-                        "还债" if monster.is_debt_bound else "封印"))
+                        "还债" if monster.is_debt_bound else "永久离场"))
                 leave_parent = normalize_context(getattr(monster, "_leave_ctx", None))
                 leave_ctx = make_context(
                     timing="battle_end", source=way, source_type="system",
@@ -5096,8 +5146,9 @@ class GameEngine:
         # 恢复精力；苍白之花的战终奖励叠加在基础3点之后。
         self.state.energy = 3 + pale_flower_bonus
 
-        # 清空敌人
+        # 清空敌人及本场延迟队列（正常战终前延迟队列已由门禁拦截；逃跑等强制结束也不跨场保留）。
         self.state.enemies.clear()
+        self.state.delayed_monster_reentries = []
 
         self.state.phase = "pre_battle"
 
@@ -5184,9 +5235,23 @@ class GameEngine:
         if player is None or player.is_alive:
             return None
         last_action = self._action_history[-1] if self._action_history else None
-        draft = self.state.pending_death_draft or draft_legacy(
-            self.state, self._infer_death_cause(action_type), last_action,
-            self.state.death_book_capacity)
+        cause = self._infer_death_cause(action_type)
+        if self.state.pending_death_draft:
+            draft = self.state.pending_death_draft
+        elif getattr(player, "ai_memory", None):
+            # 记忆只活到当前轮回者命零这一刻。先压缩出遗言，再立即清空
+            # 身世、经历、经验和人格缓存；是否真正写入仍交给死之传承审核。
+            draft = validate_legacy({
+                "text": condense_to_legacy(
+                    player.ai_memory, cause, last_action,
+                    self.state.death_book_capacity),
+            }, self.state.death_book_capacity)
+            clear_memory(player)
+            personality_remove(self.state, player)
+        else:
+            draft = draft_legacy(
+                self.state, cause, last_action,
+                self.state.death_book_capacity)
         self.state.pending_death_draft = draft
         self.state.death_inheritance_queued = True
         interrupt = Interrupt(

@@ -60,8 +60,8 @@ def handplay(winner, seed=7, battles=1, verbose=True, spell_plan=None):
                     r = e.execute_action('command_ally', {'ally_ref': f'friend:{idx}', 'instruction': '护卫 9'})
                     if r.get('success') and verbose:
                         print(f'    决策: 命令{fr.name}护卫(挡9次)')
-            # 手操决策循环：每击显式决策——满法输出(与脚本版一致：3次出手全杀伐)
-            for _ in range(max(1,(p.speed_limit+2)//3)):
+            # 手操决策循环：每击显式决策——满法输出（轮回者按当前 action_count）
+            for _ in range(max(1, p.action_count)):
                 p = e.state.player
                 if not p or not p.is_alive: break
                 enemies = [x for x in e.state.enemies if x.is_alive]
@@ -80,9 +80,9 @@ def handplay(winner, seed=7, battles=1, verbose=True, spell_plan=None):
                     1 for fr in e.state.friends
                     if fr.is_alive and not fr.has_retreated)
                 lethal_next = threat - guard_absorb > p.current_hp + p.shield
-                # 3次出手能打死至少1只就全力输出（逐只清），否则才考虑庇护
+                # 本回合剩余出手能打死至少1只就全力输出（逐只清），否则才考虑庇护
                 per_hit = max(1, p.current_mana - 3)
-                acts = max(1, (p.speed_limit + 2) // 3)
+                acts = max(1, p.action_count)
                 can_kill_one = any(per_hit * acts >= x.current_hp for x in enemies)
                 if lethal_next and not can_kill_one and '庇护' in p.dao_wen and p.current_mana >= 10:
                     r = e.execute_action('use_daowen', {'daowen_name':'庇护','x':2,'target_ref':'player:0','trigger_spell_choices':{}})

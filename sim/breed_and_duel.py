@@ -9,7 +9,7 @@
      另存为 `data/breed_winners/won_XX.json`。
   2) 挑两个不同构建的通关胜者（挑战者/守擂者），用 `duel_seal_vs_guard.run_duel`
      触发 final_crown → duel_start，再经 `run_duel_pvp` 做**对称 PvP**死斗
-     （双侧都按轮回者规则：法力制、出手次数=速限/3、自由控 X、逐出手交替）。
+     （双侧都按轮回者规则：法力制、出手次数按 action_count（当前固定2次）、自由控 X、逐出手交替）。
 
 用法：
     python3 sim/breed_and_duel.py --breed 5          # 养 5 个通关胜者(最多)

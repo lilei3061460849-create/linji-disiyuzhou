@@ -2,10 +2,9 @@
 """
 Real full playthrough via GameEngine.execute_action public API only.
 
-AI paths used (repo's own, unmodified):
-  - Player turns : engine.ai_tactics.TacticalAI.take_turn()
-  - Monster turns: sim.alt_path_test.resolve_monster_turn  (handplay_dungeon_with_winner,
-                   fixed 2026-08-19: engine -> e at lines 129/181)
+AI paths used (repo's unified player):
+  - Player turns : engine.ai_player.AIPlayer (TacticalAI is its internal combat policy)
+  - Monster turns: sim.alt_path_test.resolve_monster_turn (engine phase resolver)
   - Pre-battle   : sim.build_learner.choose_pre_battle (DEFAULT_POLICY weights)
 
 Every round is logged for AI-decision observation (actions chosen, resources,
@@ -14,7 +13,7 @@ enemy state, dodge decisions, daowen used, death cause).
 import sys, os, json, tempfile, math
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from engine.api import GameEngine
-from engine.ai_tactics import TacticalAI
+from engine.ai_player import AIPlayer
 from sim.alt_path_test import resolve_monster_turn
 from sim.build_learner import DEFAULT_POLICY, choose_pre_battle
 from tests.setup_support import OPTIONAL_BATTLE_START, OPTIONAL_ROUND_START
@@ -111,8 +110,7 @@ def spend_energy(engine, battle_no, ai, rec, rng):
         resolve_discovery_pending(engine, "PREBATTLE")
         if not r.get("success"):
             r = engine.execute_action("pre_battle_action", {
-                "sub_action": "\u4fee\u884c", "tier": 1,
-                "allocations": {"speed_points": 0, "mana_points": 1}})
+                "sub_action": "\u4fee\u884c", "tier": 1})
             dlog(rec, "pre_battle:study_fallback", r.get("success"))
         if engine.state.energy >= before:
             # energy did not drop -> resolve gates, then force study
@@ -120,8 +118,7 @@ def spend_energy(engine, battle_no, ai, rec, rng):
             if engine.event_pool.current is not None:
                 try_resolve_events(engine, "PREBATTLE")
             r = engine.execute_action("pre_battle_action", {
-                "sub_action": "\u4fee\u884c", "tier": 1,
-                "allocations": {"speed_points": 0, "mana_points": 1}})
+                "sub_action": "\u4fee\u884c", "tier": 1})
             dlog(rec, "pre_battle:forced_study", r.get("success"))
             if not r.get("success") and engine.state.energy >= before:
                 report("PREBATTLE", "energy stuck: " + str(r.get("error", "")))
@@ -477,11 +474,11 @@ def main():
         save_dir = tempfile.mkdtemp(prefix="linji")
         eng = GameEngine(db_path=os.path.join(save_dir, "g.db"), rng_seed=seed,
                          save_dir=save_dir)
-        ai = TacticalAI(eng, verbose=detail_mode)
+        ai = AIPlayer(eng, verbose=detail_mode)
         rng = random.Random(seed)
 
         r = eng.execute_action("setup_attributes", {
-            "name": "Linji", "blood_points": 10, "speed_points": 8, "mana_points": 7})
+            "name": "Linji", "blood_points": 11, "speed_points": 8, "mana_points": 6})
         check(r.get("success"), "SETUP", "attr: " + str(r.get("error", "")))
         freed = list(eng.state.pending_relic_choices or [])
         if freed:

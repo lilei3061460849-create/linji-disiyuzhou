@@ -36,9 +36,10 @@
 - 数值型代价可与一名存活的朋友或员工**平分**（原"你承担向上取整一半"作废）；余数按随机数分配。[回始]可流血4X获得X法力，本次流血也可平分。
 - 实现：`CombatEngine.validate_numeric_cost` 改用 `_divide_flat(amount, 2)`。
 
-### 4. 封印道纹改为代价
-- 【封印X】：代价：异变8X。使X个[目标]怪物移出本场战斗（被移出的怪物不提供碎片收益）。
-- 怪物侧发动封印照常支付异变8X（`_resolve_monster_daowen_choice` 专属分支），支付后崩解按统一死亡管线结算。
+### 4. 封印道纹改为延迟回场（现行口径）
+- 【封印X】：代价：异变X，使一个显式目标怪物延后X回合再入场。
+- 暂离不是死亡或永久离场；暂离队列仍阻塞战终，回场后最终命零正常进入碎片结算。
+- 怪物侧若持有【封印】按新版口径支付异变X；玩家【封印】接入回合始延迟回场机制。
 
 ### 5. 删除道纹
 - 删除：缓慢、慈悲、切割。
@@ -57,7 +58,7 @@
 - 终音法器仍在当前副本阶级发放，之后才封存进下一阶级槽。
 
 ### 测试证据
-- 全库 pytest：1128 passed（波及标记/解除/平分扩散、血契平分、封印异变8X、死斗进阶封存与同阶排队均有正常/边界/非法输入测试）。
+- 规则修订前的历史全库 pytest 记录：1128 passed；其中封印相关断言已在现行测试中改为异变X与延迟回场语义。
 - 关键用例：`tests/test_daowen_wiring.py::test_boba_*`、`tests/test_blood_pact_and_effect_scope.py`、`tests/test_final_duel.py`、`tests/test_r01_r38_contract.py`、`tests/test_resonance_network.py::test_single_fourteen_node_core_loop`。
 
 ### 尚未迁移

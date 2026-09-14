@@ -157,7 +157,7 @@ def pre_battle_prep(player, shards, energy=3, battle_n=1, region=None, rng=None)
                 if shards >= cost:
                     shards -= cost
                     for _ in range(pts):
-                        if max(1, math.ceil(player.speed_limit/3)) < 5:
+                        if player.speed_limit < 5:
                             player.speed_limit += 1
                         else:
                             player.mana_limit += 2
@@ -176,7 +176,7 @@ def alive_monsters(monsters):
 def player_turn_multi(player, monsters, combat, rng):
     """多怪玩家回合：先标记波及再焦点最低血怪；低血再生、大伤害庇护"""
     mana = player.current_mana
-    actions = max(1, math.ceil(player.speed_limit / 3))
+    actions = max(1, player.action_count)
     alive = alive_monsters(monsters)
     if not alive: return
     incoming = sum(m.attack_count * m.attack_power for m in alive)

@@ -430,7 +430,8 @@ def test_placeholder_ai_casts_wave_without_rejection(tmp_path):
                                            attack_count=1, attack_power=3)])
     _dw(player, "波及", 0)  # 玩家唯一道纹：占位AI必然轮到它
     player.current_mana = 100
-    ai = AIPlayer(e, backend=PlaceholderBackend(), auto_validate=False)
+    ai = AIPlayer(e, backend=PlaceholderBackend(), auto_validate=False,
+                  tactical_combat=False)
 
     r = ai.play_turn()
     assert r["action"] == "use_daowen" and r["params"].get("daowen_name") == "波及", r["action"]

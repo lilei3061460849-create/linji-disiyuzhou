@@ -53,7 +53,7 @@ class CombatEngine:
         "blood_limit_reduction", "hp_reduction", "blood_limit_increase", "blood_limit_penalty",
         "attack_boost", "attack_reduction",
         "speed_boost", "speed_penalty",
-        "targets_removed", "self_attack_count", "invalid_damage_hits",
+        "self_attack_count", "invalid_damage_hits",
     )
     
     def __init__(self, state: GameState, dice: DiceEngine):
@@ -510,6 +510,9 @@ class CombatEngine:
         return DaoWenEngine.single_round_action_count(entity)
 
     def _current_context_timing(self) -> str:
+        forced = getattr(self, "_forced_context_timing", "")
+        if forced:
+            return forced
         if getattr(self.state, "phase", "") == "pre_battle":
             return "pre_battle"
         sub = getattr(self.state, "combat_subphase", "") or ""
@@ -734,7 +737,7 @@ class CombatEngine:
         """
         if entity is None or entity.current_hp > 0:
             return False
-        # 离场（雕塑/癌变/还债/救赎/封印/逃跑）不是命零，绝不在此处宣布死亡。
+        # 永久离场（雕塑/癌变/还债/救赎/逃跑）不是命零，绝不在此处宣布死亡；【封印】暂离不走本管线。
         if getattr(entity, "is_departed", False):
             return False
         # 已经走过统一死亡管线（含 Entity.take_damage 先翻了 is_alive 的情况）就不重复触发。
@@ -1842,6 +1845,25 @@ class CombatEngine:
 
         self.state.current_round += 1
 
+        # 【封印X】延迟回场：在第 R+X 回合始把原怪物重新加入敌方列表。
+        # 与波次增援相同，回场当回合设置 spawned_round，因而当回合白板。
+        delayed = list(getattr(self.state, "delayed_monster_reentries", []) or [])
+        due = [entry for entry in delayed if entry.get("return_round", 0) <= self.state.current_round]
+        if due:
+            for entry in due:
+                monster = entry["monster"]
+                monster.is_alive = True
+                monster.is_departed = False
+                monster.departure_reason = ""
+                monster.removed_without_kill = False
+                monster.spawned_round = self.state.current_round
+                monster._delayed_by_seal = False
+                self.state.enemies.append(monster)
+                self.state.delayed_monster_reentries.remove(entry)
+                effects.append({"type": "seal_reentry", "entity": monster.name,
+                                "round": self.state.current_round,
+                                "delay_rounds": entry.get("delay_rounds", 0)})
+
         # 波次出怪（2026-09-11 用户令）：R4/R7/R10…回始增援1只直到上限。
         # 死斗无增援；新怪本回合白板（见 prepare_monster_phase 的 spawned_round 口径）。
         queue = list(getattr(self.state, "monster_reinforcements", []) or [])
@@ -2421,6 +2443,29 @@ class CombatEngine:
         monster._leave_ctx = leave_ctx.to_dict()
         monster.depart_battle(reason)
 
+    def _delay_monster_reentry(self, monster: Entity, delay_rounds: int) -> dict:
+        """【封印X】让一只活怪暂离，按当前回合+X在回始重新入场。
+
+        这不是命零，也不是 Entity.depart_battle() 意义上的永久离场：对象从
+        enemies 暂时移入专门队列，回场后仍沿用原生命、状态和碎片，并可正常被击杀。
+        """
+        delay_rounds = max(1, int(delay_rounds))
+        return_round = self.state.current_round + delay_rounds
+        self.state.enemies = [e for e in self.state.enemies if e is not monster]
+        # 暂离怪物仍然是活的；只是暂时不在 enemies/战场列表中。
+        monster.is_alive = True
+        monster.is_departed = False
+        monster.departure_reason = ""
+        monster.removed_without_kill = False
+        monster._delayed_by_seal = True
+        self.state.delayed_monster_reentries.append({
+            "monster": monster,
+            "return_round": return_round,
+            "delay_rounds": delay_rounds,
+        })
+        return {"monster": monster.name, "return_round": return_round,
+                "delay_rounds": delay_rounds}
+
     def _cancer_character(self, entity: Entity, ctx: Optional[EffectContext | dict] = None) -> dict:
         """轮回者/同伴癌变：累计恢复达血限×2 → 直接命零。不吸收进书、不加休整+8。"""
         cancer_ctx = normalize_context(ctx)
@@ -2446,9 +2491,18 @@ class CombatEngine:
         }
 
     def _sculpture_monster(self, monster: Entity) -> dict:
-        """雕塑：怪物/微光者攻击次数或攻击力归0→化为雕塑消耗品（耐久=血限5%）"""
+        """雕塑：任一角色攻击次数和攻击力同时归0→化为雕塑消耗品（耐久=血限5%）"""
         durability = max(1, math.ceil(monster.blood_limit * 0.05))
-        reason = "攻击次数归0" if monster.attack_count <= 0 else "攻击力归0"
+        count_zero = monster.effective_attack_count() <= 0
+        power_zero = monster.effective_attack_power() <= 0
+        if count_zero and power_zero:
+            reason = "攻击次数和攻击力归0"
+        elif count_zero:
+            reason = "攻击次数归0"
+        elif power_zero:
+            reason = "攻击力归0"
+        else:
+            reason = "攻击手段归0"
         monster.is_sculptured = True
         self._remove_from_combat(monster, "雕塑", ctx={
             "timing": self._current_context_timing(), "source": "雕塑", "source_type": "system",
@@ -3368,49 +3422,19 @@ class CombatEngine:
                             "mechanic": "damage", "subtype": "self_attack", "amount": target.attack_power,
                             "tags": {"daowen", "self_damage"},
                         })})
-        if "targets_removed" in calc:  # 封印：仅移出怪物（规则正文：X个[目标]怪物）
-            removed = 0
-            removed_names = []
-            if "targets_removed" in wave_pieces:
-                # 波及：总名额平分（余数随机分配），优先作用于被标记的怪物。
-                quota = dict(zip(wave_status_targets, wave_pieces["targets_removed"]))
-                for e in list(self.state.enemies):
-                    if removed >= calc["targets_removed"]:
-                        break
-                    if e.is_alive and e.entity_type == "怪物" and quota.get(e, 0) > 0:
-                        quota[e] -= 1
-                        self._remove_from_combat(e, "封印", ctx={
-                            "timing": "player_action" if caster is self.state.player else "monster_action",
-                            "source": name, "source_type": "daowen", "actor": caster, "target": e,
-                            "mechanic": "leave", "subtype": "seal", "tags": {"leave", "no_shards"},
-                        })
-                        removed += 1
-                        removed_names.append(e.name)
-                # 剩余名额兜底：按原规则从敌人列表补足。
-                for e in list(self.state.enemies):
-                    if removed >= calc["targets_removed"]:
-                        break
-                    if e.is_alive and e.entity_type == "怪物":
-                        self._remove_from_combat(e, "封印", ctx={
-                            "timing": "player_action" if caster is self.state.player else "monster_action",
-                            "source": name, "source_type": "daowen", "actor": caster, "target": e,
-                            "mechanic": "leave", "subtype": "seal", "tags": {"leave", "no_shards"},
-                        })
-                        removed += 1
-                        removed_names.append(e.name)
-            else:
-                for e in list(self.state.enemies):
-                    if (e.is_alive and e.entity_type == "怪物"
-                            and removed < calc["targets_removed"]):
-                        self._remove_from_combat(e, "封印", ctx={
-                            "timing": "player_action" if caster is self.state.player else "monster_action",
-                            "source": name, "source_type": "daowen", "actor": caster, "target": e,
-                            "mechanic": "leave", "subtype": "seal", "tags": {"leave", "no_shards"},
-                        })
-                        removed += 1
-                        removed_names.append(e.name)
+        if calc.get("delay_monster_reentry"):
+            # 【封印X】：目标由 use_daowen 的显式 target_ref/target 绑定；只允许一只
+            # 当前在场怪物进入暂离队列。暂离不写离场/死亡上下文，也不产生碎片分类。
+            if target.entity_type != "怪物":
+                raise ValueError("【封印】的目标必须是当前在场的怪物")
+            if not any(e is target for e in self.state.enemies) or not target.is_alive:
+                raise ValueError("【封印】的目标必须是当前存活且在场的怪物")
+            reentry = self._delay_monster_reentry(target, calc.get("delay_rounds", x))
             result["effects"].append({
-                "type": "seal", "removed": removed, "targets": removed_names,
+                "type": "seal", "target": target.name,
+                "delay_rounds": reentry["delay_rounds"],
+                "return_round": reentry["return_round"],
+                "note": f"{target.name}延后{reentry['delay_rounds']}回合，于第{reentry['return_round']}回合始再入场",
             })
 
         # ---- 持续/触发状态（status_added）----
@@ -3576,6 +3600,10 @@ class CombatEngine:
         "不死不休": {"trigger": ActionPhase.AFTER_LIFE_LOST.value, "steps": [("血债", "attacker")], "loop": True},
         "千刀万剐": {"trigger": ActionPhase.AFTER_LIFE_LOST.value, "steps": [("再生", "self"), ("血债", "attacker")], "loop": True},
         "咎由自取": {"trigger": "目标发动道纹前", "steps": [("坠落", "target"), ("杀伐", "target"), ("血债", "target")]},
+        "镇魔印": {"trigger": TriggerTiming.SELF_TURN_END.value,
+                   "steps": [("封印", "any")],
+                   "effect_flow": "自身回合结束后→发动封印X于任意目标",
+                   "automatic": True},
     }
 
     # 自创法术文本→执行：解析 trigger_condition / effect_flow 为 SPELL_FLOWS 同构结构。
@@ -3584,7 +3612,7 @@ class CombatEngine:
     # 个解析器做过强校验，这里理论上不会再遇到解析失败；仍保留 try/except 兜底，
     # 解析失败时返回 None（不触发），而不是让战斗结算抛出未处理异常。
     #
-    # 全部 11 种触发时机现已全部接线：
+    # 全部 12 种触发时机现已全部接线：
     #   受到伤害前 / 失去生命后 / 目标发动道纹前 —— 复用既有反应型法术决策窗口
     #     （prepare/validate/resolve_spell_reactions，见 resolve_attack）。
     #   战始 / 战终 / 回始 / 回终 / 敌回始 / 敌回终 —— 全局时点法术
@@ -3602,6 +3630,7 @@ class CombatEngine:
         TriggerTiming.BATTLE_END.value,
         TriggerTiming.ROUND_START.value,
         TriggerTiming.ROUND_END.value,
+        TriggerTiming.SELF_TURN_END.value,
         TriggerTiming.ENEMY_ROUND_START.value,
         TriggerTiming.ENEMY_ROUND_END.value,
         ActionPhase.AFTER_DAMAGE_TAKEN.value,
@@ -3712,6 +3741,73 @@ class CombatEngine:
                 flat.append(step)
         return flat
 
+    @staticmethod
+    def _flow_step_variants(steps) -> list[list]:
+        """列出一个流程所有可能的条件展开结果，不读取当前战斗状态。
+
+        反应法术的提交可能要在同一攻击阶段的前一个命中已经结算后才真正执行。
+        如果此时再按当前法力求值，条件分支会从“短分支”漂移为“长分支”，
+        于是同一份提交在静态校验时合法、在后续命中校验时却被拒绝。这个辅助
+        只枚举 AST 中已经声明的分支，供一次提交冻结的分支签名复用；它不是
+        重新设计条件语义，也不会在没有提交签名时替代正常的当前状态求值。
+        """
+        from .spell_dsl import IfStep
+        variants = [[]]
+        for step in steps:
+            if isinstance(step, IfStep):
+                branches = []
+                for branch in (step.then_steps, step.else_steps):
+                    branches.extend(CombatEngine._flow_step_variants(branch))
+                variants = [prefix + suffix for prefix in variants for suffix in branches]
+            else:
+                variants = [prefix + [step] for prefix in variants]
+        return variants
+
+    def _flow_steps_signature(self, steps, holder: Entity, attacker: Entity,
+                              refs: dict[str, Entity]) -> tuple:
+        """把一次已展开的流程编码为不依赖实体对象的冻结签名。"""
+        reverse = {id(entity): ref for ref, entity in refs.items()}
+        signature = []
+        for step in steps:
+            role = self._step_role(step)
+            target = self._resolve_step_subject(role, holder, attacker)
+            signature.append((self._step_daowen(step), role, reverse.get(id(target))))
+        return tuple(signature)
+
+    def _steps_for_spell_decision(self, flow: dict, holder: Entity, attacker: Entity,
+                                  refs: dict[str, Entity], decision: dict) -> list:
+        """取得一次提交应使用的固定流程展开结果。
+
+        第一次（静态）校验按触发瞬间状态求值，并把结果签名写入这份提交；
+        同一次攻击后续命中/resolve_attack 的重复校验则只复用该签名，不再按
+        已经被前一个命中改变的法力或生命重新选择分支。这样既保留了“触发时
+        判断条件”的语义，也让 prepare → validate → resolve 使用同一份步骤。
+        """
+        current = self._flatten_flow_steps(flow["steps"], holder, attacker)
+        frozen = decision.get("_engine_branch_signature")
+        if frozen is None:
+            # 仅在调用方尚未完成第一次校验时返回当前展开；调用方在通过结构
+            # 校验后写入签名。
+            return current
+        if decision.get("_engine_branch_owner") is not self:
+            raise ValueError("法术提交包含未经引擎冻结的条件分支")
+        expected = tuple(tuple(item) for item in frozen)
+        for variant in self._flow_step_variants(flow["steps"]):
+            if self._flow_steps_signature(variant, holder, attacker, refs) == expected:
+                return variant
+        raise ValueError("法术提交的条件分支不是该法术已冻结的有效展开")
+
+    def _freeze_spell_decision_branch(self, flow: dict, holder: Entity, attacker: Entity,
+                                     refs: dict[str, Entity], decision: dict,
+                                     flat_steps: list) -> None:
+        """在首次通过校验后冻结条件展开；保留同一提交的 prepare 语义。"""
+        if "_engine_branch_signature" in decision:
+            return
+        decision["_engine_branch_owner"] = self
+        decision["_engine_branch_signature"] = [
+            list(item) for item in self._flow_steps_signature(flat_steps, holder, attacker, refs)
+        ]
+
     # 反应型法术四个挂接点：受到伤害前/失去生命后是历史已有的两个key
     # （"before"/"after"，字段名保留兼容旧调用点）；受到伤害后/失去生命前是
     # 本轮新增的两个挂接点，key为"damage_after"/"life_before"。四者共用
@@ -3820,7 +3916,9 @@ class CombatEngine:
                     raise ValueError(f"法术{spell_name}必须显式提交use布尔值")
                 if not decision["use"]:
                     continue
-                flat_steps = self._flatten_flow_steps(flow["steps"], holder, attacker)
+                flat_steps = self._steps_for_spell_decision(
+                    flow, holder, attacker, refs, decision,
+                )
                 cycles = decision.get("cycles")
                 if not isinstance(cycles, list) or not cycles:
                     raise ValueError(f"法术{spell_name}发动时必须提交至少一个cycles")
@@ -3862,6 +3960,11 @@ class CombatEngine:
                                 speed_budget[expected_ref] -= 1
                                 if speed_budget[expected_ref] < 0:
                                     raise ValueError("法术目标速度不足以闪避")
+                # 这一份 decision 会在同一怪物阶段的后续命中中再次校验；
+                # 条件分支必须锁定在第一次（触发瞬间）看到的状态。
+                self._freeze_spell_decision_branch(
+                    flow, holder, attacker, refs, decision, flat_steps,
+                )
 
     def _trigger_spell_subject(self, role: str, holder: Entity, actor: Entity) -> Optional[str]:
         """「目标发动道纹前」触发语境下的身份映射：
@@ -4051,6 +4154,7 @@ class CombatEngine:
             for name, flow in flows.items():
                 flat_steps = self._flatten_flow_steps(flow["steps"], holder, holder)
                 steps = []
+                spell = next((sp for sp in holder.spells if sp.name == name), None)
                 for step in flat_steps:
                     daowen = self._step_daowen(step)
                     role = self._step_role(step)
@@ -4063,9 +4167,86 @@ class CombatEngine:
                     else:
                         steps.append({"daowen": daowen, "target_ref": reverse.get(id(holder)),
                                       "x": "positive integer", "dodge": "boolean if hostile"})
-                entries.append({"spell_name": name, "steps": steps, "loop": bool(flow.get("loop"))})
+                entries.append({"spell_name": name, "steps": steps, "loop": bool(flow.get("loop")),
+                                # “自身回合结束”本身就是无主动选择的触发时点；
+                                # automatic 字段保留给未来其它自动法术。
+                                "automatic": bool(getattr(spell, "automatic", False)
+                                                   or flow.get("trigger") == "自身回合结束")})
             result[holder_ref] = entries
         return result
+
+    def is_automatic_spell(self, holder_ref: str, spell_name: str) -> bool:
+        """查询一个全局法术是否由引擎自动提交。"""
+        refs = self._combat_entity_refs()
+        holder = refs.get(holder_ref)
+        if holder is None:
+            return False
+        spell = next((sp for sp in holder.spells if sp.name == spell_name), None)
+        if spell is None:
+            return False
+        if getattr(spell, "automatic", False):
+            return True
+        flow = self.SPELL_FLOWS.get(spell.name)
+        if flow is None:
+            flow = self._parse_custom_spell(spell)
+        return bool(flow and flow.get("trigger") == "自身回合结束")
+
+    def has_manual_global_trigger_spells(self, trigger: str) -> bool:
+        """当前时点是否还存在需要外部显式提交的全局法术。"""
+        expected = self.prepare_global_trigger_spells(trigger)
+        return any(not entry.get("automatic", False)
+                   for entries in expected.values() for entry in entries)
+
+    def automatic_global_trigger_choices(self, trigger: str) -> dict:
+        """为“自身回合结束”自动法术构造真实引擎提交。
+
+        自动法术仍必须先被学习并挂在持有者的 ``spells`` 上；这里只负责
+        在真实触发点为其提交流程参数。当前以 X=1 选择第一只合法敌对怪物，
+        没有可选目标时提交 use=false。结算仍走
+        validate/resolve_global_trigger_spells，因而异变支付、目标合法性和
+        暂离队列都不是旁路注入。
+        """
+        refs = self._combat_entity_refs()
+        expected = self.prepare_global_trigger_spells(trigger)
+        submitted: dict[str, dict] = {}
+        for holder_ref, entries in expected.items():
+            holder = refs[holder_ref]
+            submitted[holder_ref] = {}
+            for entry in entries:
+                name = entry["spell_name"]
+                if not entry.get("automatic", False):
+                    submitted[holder_ref][name] = {"use": False}
+                    continue
+                flow = self._eligible_spell_flows(holder, trigger)[name]
+                flat_steps = self._flatten_flow_steps(flow["steps"], holder, holder)
+                cycle = []
+                valid = True
+                for step in flat_steps:
+                    role = self._step_role(step)
+                    if role == "any":
+                        # 【封印】的 DSL 目标是 any，但它的道纹结算还会
+                        # 检查“必须是怪物”；这里提前选择当前敌方怪物，
+                        # 不把轮回者/队友放进自动目标。
+                        candidates = [
+                            ref for ref, entity in refs.items()
+                            if entity.is_alive
+                            and entity.entity_type == "怪物"
+                            and self.state.on_player_side(entity) != self.state.on_player_side(holder)
+                            and self.is_targetable(holder, entity)
+                        ]
+                        target_ref = candidates[0] if candidates else None
+                        if target_ref is None:
+                            valid = False
+                            break
+                    else:
+                        target_ref = next((ref for ref, entity in refs.items()
+                                           if entity is holder), None)
+                    cycle.append({"x": 1, "target_ref": target_ref, "dodge": False})
+                submitted[holder_ref][name] = (
+                    {"use": True, "cycles": [cycle]}
+                    if valid and cycle else {"use": False}
+                )
+        return submitted
 
     def validate_global_trigger_spells(self, trigger: str, submitted: Any,
                                        refs: dict[str, Entity]) -> None:
@@ -4356,7 +4537,9 @@ class CombatEngine:
                 if not decision["use"]:
                     logs.append({"spell": spell_name, "used": False})
                     continue
-                flat_steps = self._flatten_flow_steps(flow["steps"], holder, attacker)
+                flat_steps = self._steps_for_spell_decision(
+                    flow, holder, attacker, refs, decision,
+                )
                 for cycle_index, cycle in enumerate(decision["cycles"], 1):
                     for entry, step in zip(cycle, flat_steps):
                         daowen = self._step_daowen(step)
@@ -5017,13 +5200,14 @@ class CombatEngine:
                 return {"monster": monster.name, "collapsed": name,
                         "note": "支付异变后触发【崩解】，道纹效果中断"}
         elif name == "封印":
-            # 封印X：代价：异变8X（2026-08-21）；支付后崩解仍按统一死亡管线结算。
-            paid = monster.add_mutation(8 * inst.x_value)
+            # 怪物侧若持有【封印】，同样按新版口径支付异变X；玩家【封印】才会
+            # 把目标怪物放入延迟回场队列。
+            paid = monster.add_mutation(inst.x_value)
             if paid["collapsed"]:
                 self._on_entity_death(monster, ctx=self._collapse_context(monster, {
                     "timing": "monster_action", "source": name, "source_type": "daowen",
                     "actor": monster, "target": monster, "mechanic": "cost",
-                    "subtype": "mutation", "amount": 8 * inst.x_value,
+                    "subtype": "mutation", "amount": inst.x_value,
                     "tags": {"daowen", "active_payment"}}))
                 return {"monster": monster.name, "collapsed": name,
                         "note": "支付异变后触发【崩解】，道纹效果中断"}
@@ -5550,9 +5734,13 @@ class CombatEngine:
         return True
 
     def _get_combat_state(self) -> dict:
-        """获取当前战斗状态摘要"""
+        """获取当前战斗状态摘要（含封印暂离队列）。"""
         return {
             "round": self.state.current_round,
             "player_side": [e.to_dict() for e in self.state.get_all_player_side()],
             "enemy_side": [e.to_dict() for e in self.state.get_all_enemy_side()],
+            "delayed_monster_reentries": [
+                {"name": entry["monster"].name, "return_round": entry["return_round"]}
+                for entry in getattr(self.state, "delayed_monster_reentries", [])
+            ],
         }

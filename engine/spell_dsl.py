@@ -49,6 +49,7 @@ TRIGGER_BATTLE_START = "战始"
 TRIGGER_BATTLE_END = "战终"
 TRIGGER_ROUND_START = "回始"
 TRIGGER_ROUND_END = "回终"
+TRIGGER_SELF_TURN_END = "自身回合结束"
 TRIGGER_ENEMY_ROUND_START = "敌回始"
 TRIGGER_ENEMY_ROUND_END = "敌回终"
 
@@ -57,7 +58,7 @@ ALL_TRIGGERS = (
     TRIGGER_BEFORE_LIFE_LOST, TRIGGER_AFTER_LIFE_LOST,
     TRIGGER_TARGET_BEFORE_DAOWEN,
     TRIGGER_BATTLE_START, TRIGGER_BATTLE_END,
-    TRIGGER_ROUND_START, TRIGGER_ROUND_END,
+    TRIGGER_ROUND_START, TRIGGER_ROUND_END, TRIGGER_SELF_TURN_END,
     TRIGGER_ENEMY_ROUND_START, TRIGGER_ENEMY_ROUND_END,
 )
 
@@ -103,7 +104,7 @@ def extra_trigger_roles(name: str) -> tuple[str, ...]:
 # 不允许学会一个语义不成立的写法（避免结算时随便指定一个"攻击者"）。
 GLOBAL_TRIGGERS = (
     TRIGGER_BATTLE_START, TRIGGER_BATTLE_END,
-    TRIGGER_ROUND_START, TRIGGER_ROUND_END,
+    TRIGGER_ROUND_START, TRIGGER_ROUND_END, TRIGGER_SELF_TURN_END,
     TRIGGER_ENEMY_ROUND_START, TRIGGER_ENEMY_ROUND_END,
 )
 
@@ -150,6 +151,10 @@ def parse_trigger(text: str) -> str:
     raw = (text or "").strip()
     if not raw:
         raise SpellDslError("触发条件不能为空")
+    # “自身回合结束”是玩家行动阶段结束、怪物阶段开始前的独立时点，
+    # 不能先按“自身/的”剥词后误归入完整回合的“回终”（那发生在怪物阶段之后）。
+    if any(phrase in raw for phrase in ("自身回合结束", "自己的回合结束", "己方回合结束")):
+        return TRIGGER_SELF_TURN_END
     cleaned = normalize_trigger_text(raw)
     if not cleaned:
         raise SpellDslError(f"触发条件【{raw}】剥离修饰词后为空，无法识别时机")

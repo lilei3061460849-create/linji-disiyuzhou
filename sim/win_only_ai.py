@@ -322,8 +322,27 @@ class WinOnlyAI(TacticalAI):
     # ---------- 选择：提案裁剪 + ±1 裁决 ----------
 
     def _dynamic_action(self):
-        candidates = self._daowen_candidates()
-        candidates.extend(self._basic_attack_candidates())
+        # WinOnlyAI 自己覆写了 TacticalAI 的候选入口；若这里只复制道纹/普攻/残韵，
+        # 就会把基类已经实现的【招架】静默漏掉。招架不占出手，且必须进入整局
+        # 推演，否则高压局永远只会在“继续输出”和“发动道纹”之间选。
+        candidates = []
+        parry = self._parry_candidate()
+        if parry is not None:
+            candidates.append(parry)
+        candidates.extend(self._daowen_candidates())
+        basic_candidates = self._basic_attack_candidates()
+        candidates.extend(basic_candidates)
+        # 普攻必须保留在提案裁剪中；否则大量道纹候选会把它截掉，导致
+        # WinOnlyAI连“先打一下再控场”的基本方案都看不到。
+        if basic_candidates:
+            reserve = min(len(basic_candidates), MAX_CANDIDATE_PREVIEWS)
+            non_basic = [cand for cand in candidates if cand not in basic_candidates]
+            candidates = (non_basic[:MAX_CANDIDATE_PREVIEWS - reserve]
+                          + basic_candidates[:reserve])
+        else:
+            candidates = candidates[:MAX_CANDIDATE_PREVIEWS]
+        immediate_damage_available = False
+        immediate_damage_candidates: set[int] = set()
         # 残韵候选已按威胁预筛，并附带一个基础分：既含「我要压制什么」（威胁），
         # 也含「我能拿到什么」（转化后收益，2026-09-13 补上的那一半）。
         # 这个分只用于**提案裁剪的排序**，不进入最终裁决——最终裁决仍然只认
@@ -342,8 +361,24 @@ class WinOnlyAI(TacticalAI):
             res = pv.get("result") or {}
             if not res.get("success"):
                 continue
-            s = self._score_candidate(pv.get("diff", {}), cand["label"],
-                                      cand.get("kind"), cand.get("target"))
+            if cand.get("action") == "declare_parry":
+                # 招架是姿态，通用 diff 不会表达每击减伤；沿用 TacticalAI
+                # 的威胁评分，再交给 WinOnlyAI 的整局推演做最终胜负裁决。
+                s = self._score_parry_candidate(cand)
+            else:
+                diff = pv.get("diff", {})
+                s = self._score_candidate(diff, cand["label"],
+                                          cand.get("kind"), cand.get("target"))
+                if cand.get("kind") in ("attack", "damage"):
+                    # 不能把“敌人暂离/封印”产生的 hp_after=0 当成伤害。
+                    # 只有真实 damage_applied 且 actual_damage>0 才算完成首次接触。
+                    actual_damage = any(
+                        ev.get("type") == "damage_applied"
+                        and (ev.get("data") or {}).get("actual_damage", 0) > 0
+                        for ev in ((diff or {}).get("events", []) or []))
+                    if actual_damage:
+                        immediate_damage_available = True
+                        immediate_damage_candidates.add(id(cand))
             if s is None:
                 continue
             # 崩解线否决（训练 2026-09-10 六审）：异变 ≥ 50 即血 0 自爆
@@ -357,6 +392,16 @@ class WinOnlyAI(TacticalAI):
             if projected >= 50 and not pv.get("all_gone"):
                 continue
             scored.append((s + resonance_bonus.get(id(cand), 0.0), cand))
+        # 第一次接触先造成实际伤害，再允许下一回合使用【封印】等控制。
+        # 这是对“连续封印、五回合零伤害、被【凡庸】处决”的通用修复，
+        # 不按道纹名称特判，只看真实预演是否存在安全的伤害候选。
+        force_progress = (not self._first_contact()
+                          and getattr(self, "_last_action_caused_damage", True) is False)
+        if immediate_damage_available and (self._first_contact() or force_progress):
+            progress = [row for row in scored
+                        if id(row[1]) in immediate_damage_candidates]
+            if progress:
+                scored = progress
         scored.sort(key=lambda t: (-t[0], t[1].get("label", "")))
         proposals = [c for _, c in scored[:self.PLAYOUT_TOP_N]]
         # 爬梯候选直通推演席（不受启发式排序门槛限制）：改写自己的 kit 沿闭环
@@ -382,6 +427,7 @@ class WinOnlyAI(TacticalAI):
                 best_s, best, best_ladder, best_surv = s, cand, ld, surv
         # 全部同分（含全 −1）：结果对胜负无差别——若爬梯有进展就爬一格
         # （多跳计划跨回合逐跳执行），否则照提案器首选。
+        self._last_action_caused_damage = id(best) in immediate_damage_candidates
         r = (self._run_steps(best["steps"]) if best.get("steps")
              else self.engine.execute_action(best["action"], best["params"]))
         if r.get("success"):

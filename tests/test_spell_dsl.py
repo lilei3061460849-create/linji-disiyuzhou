@@ -152,7 +152,7 @@ def test_condition_rejects_unclosed_parenthesis():
 # 三、效果流程：目标声明 / 条件分支 / 循环
 # ========================================================================
 
-KNOWN = {"杀伐", "再生", "庇护", "血债", "坠落"}
+KNOWN = {"杀伐", "再生", "透支", "庇护", "血债", "坠落"}
 
 
 def test_effect_flow_requires_explicit_target():
@@ -216,6 +216,21 @@ def test_effect_flow_conditional_then_multiple_actions():
         "若自身 法力 大于等于 10 则 发动杀伐X于攻击者；发动再生X于自身", KNOWN)
     branch = steps[0]
     assert branch.then_steps == (ActionStep("杀伐", "attacker"), ActionStep("再生", "self"))
+
+
+def test_blood_splash_uses_mana_branch_before_loop():
+    """【血溅五步】：法力够时先杀伐再透支，不够时跳过杀伐保留再生/透支闭环。"""
+    flow = (
+        "若自身 法力 大于等于 2 则 "
+        "发动再生X于自身；发动杀伐X于攻击者；发动透支X于自身 "
+        "否则 发动再生X于自身；发动透支X于自身→循环"
+    )
+    parsed = parse_spell_definition("失去生命后", flow, KNOWN)
+    assert parsed.loop is True
+    branch = parsed.steps[0]
+    assert isinstance(branch, IfStep)
+    assert [step.daowen for step in branch.then_steps] == ["再生", "杀伐", "透支"]
+    assert [step.daowen for step in branch.else_steps] == ["再生", "透支"]
 
 
 def test_effect_flow_mixed_branch_and_plain_steps():

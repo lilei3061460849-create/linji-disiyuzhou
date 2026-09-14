@@ -24,6 +24,8 @@ from .api import GameEngine
 from .validator import RuleValidator
 from .rule_sync import RuleSync
 from .dm_rulings import Interrupt
+from .ai_tactics import TacticalAI
+from .ai_memory import context_for_ai, ensure_memory, remember_action
 
 
 class AIDecision:
@@ -665,12 +667,21 @@ def create_ai_backend(provider: str = "placeholder", **kwargs) -> AIBackend:
     return providers[provider](**kwargs)
 
 
-# ========== AI玩家控制器 ==========
+# ========== 统一 AI 玩家控制器 ==========
 
-class AIPlayer:
-    """
-    AI玩家控制器
-    将AI决策引擎与游戏引擎连接，加入规则校验
+class AIPlayer(TacticalAI):
+    """第四宇宙的统一 AI 入口。
+
+    这是对外唯一的 AI 玩家对象：
+
+    * 开局、选区、事件和局外行动由 ``backend`` 提供高层决策；
+    * 战斗中的候选生成、ActionPreview、招架、输出、闪避和安全过滤由本类
+      继承的 ``TacticalAI`` 负责；
+    * 所有动作最终仍统一经过 ``GameEngine.execute_action`` 和规则校验器。
+
+    ``TacticalAI`` 仍作为内部战术实现保留，目的是兼容旧实验脚本和子类，
+    不是第二个独立玩家。新代码应只创建 ``AIPlayer``，不应在流程代码中
+    分别拼装 AIPlayer 与 TacticalAI。
     """
     
     def __init__(
@@ -680,10 +691,19 @@ class AIPlayer:
         validator: RuleValidator = None,
         rule_sync: RuleSync = None,
         auto_validate: bool = True,
-        max_retries: int = 3
+        max_retries: int = 3,
+        verbose: bool = False,
+        actor: Any = None,
+        enemies: Optional[list] = None,
+        actor_ref: Optional[str] = None,
+        tactical_combat: bool = True,
     ):
-        self.engine = game_engine
+        super().__init__(game_engine, verbose=verbose, actor=actor,
+                         enemies=enemies, actor_ref=actor_ref)
         self.backend = backend or PlaceholderBackend()
+        # 默认由统一战术层处理战斗；仅旧式调用方显式关闭时，才让 backend 直接
+        # 提交战斗 action（用于兼容只测试 action schema 的旧夹具）。
+        self.tactical_combat = tactical_combat
         # 让后端能读到引擎实时状态，用于可选法器/遗物的显式决策（可以不用但不能不让用）。
         if not getattr(self.backend, "engine", None):
             try:
@@ -697,56 +717,151 @@ class AIPlayer:
         
         self._decision_history: list[dict] = []
         self._violation_callbacks: list[Callable] = []
+        # 若玩家已在 AI 创建前完成属性分配，身份记忆立即生成；否则在 setup
+        # 成功后的第一次统一决策前惰性生成。
+        self._ensure_player_memory()
     
     def on_violation(self, callback: Callable):
         """注册违规回调"""
         self._violation_callbacks.append(callback)
-    
-    def play_turn(self, context: str = "") -> dict:
-        """执行一个回合的AI决策"""
-        state = self.engine.get_state()
-        
-        if state.get("pending_interrupts"):
-            return {
-                "action": "等待DM裁定",
-                "interrupts": state["pending_interrupts"],
-                "instruction": "有中断等待DM裁定，AI无法继续决策"
-            }
-        
-        available_actions = self.engine.get_available_actions()
-        decision = self.backend.decide(state, available_actions, context)
-        
-        result = self.engine.execute_action(decision.action_type, decision.params)
-        
+
+    # ---------- 长期记忆：统一 AI 的身份、经历与性格反馈 ----------
+
+    def _memory_seed(self) -> int | str:
+        seed = getattr(self.engine.dice, "_seed", None)
+        return seed if seed is not None else self.player.runtime_id
+
+    def _ensure_player_memory(self) -> dict | None:
+        player = self.engine.state.player
+        if player is None or not player.is_alive:
+            return None
+        return ensure_memory(player, self._memory_seed())
+
+    def _memory_snapshot(self) -> dict:
+        """只采集可由引擎状态验证的事实，绝不把 AI 的叙事当成数值事实。"""
+        player = self.engine.state.player
+        if player is None:
+            return {}
+        enemies = [e for e in self.engine.state.enemies if e.is_alive]
+        return {
+            "hp": player.current_hp,
+            "blood_limit": player.blood_limit,
+            "mana": player.current_mana,
+            "mana_limit": player.mana_limit,
+            "speed": player.current_speed,
+            "speed_limit": player.speed_limit,
+            "shield": player.shield,
+            "enemy_hp": sum(e.current_hp for e in enemies),
+            "threat": sum(e.effective_attack_count() * e.effective_attack_power()
+                           for e in enemies),
+        }
+
+    def _remember_success(self, before: dict, result: dict,
+                          action_info: dict | None = None) -> None:
+        memory = self._ensure_player_memory()
+        player = self.engine.state.player
+        if memory is None or player is None or not result.get("success"):
+            return
+        after = self._memory_snapshot()
+        _facts, evidence = remember_action(
+            memory, before, after, result, action_info,
+            battle=self.engine.state.current_battle,
+            round_no=self.engine.state.current_round,
+        )
+        for dimension, direction, reason in evidence:
+            # 性格系统负责 EMA、置信度、方向描述；记忆模块只负责提供可解释证据。
+            self.engine.update_personality(
+                player, dimension, direction, evidence=reason,
+            )
+
+    def _attach_memory_context(self, state: dict) -> dict:
+        player = self.engine.state.player
+        if player is not None and player.is_alive:
+            memory = self._ensure_player_memory()
+            if memory is not None:
+                # _build_user_prompt 会把 state.state 序列化给后端；摘要单独放入，
+                # 让模型看到相关记忆而不必依赖完整 episode 原文。
+                state.setdefault("state", {})["ai_memory_context"] = context_for_ai(memory)
+        return state
+
+    def take_action(self) -> Optional[dict]:
+        """统一 AI 的一次战斗行动：执行后自动留下经历并更新性格证据。"""
+        self._ensure_player_memory()
+        before = self._memory_snapshot()
+        result = super().take_action()
+        if result is not None and result.get("success"):
+            self._remember_success(before, result, getattr(self, "last_decision", None))
+        return result
+
+    def _is_tactical_combat_step(self) -> bool:
+        """判断当前是否轮到统一 AI 处理轮回者的战斗行动。"""
+        state = self.engine.state
+        return (
+            state.phase == "in_combat"
+            and self.tactical_combat
+            and state.combat_subphase == "player_actions"
+            and not state.pending_attack
+            and not state.pending_monster_phase
+            and state.player is not None
+            and state.player.is_alive
+        )
+
+    def _run_tactical_step(self, context: str = "") -> dict:
+        """执行一次战斗决策，并把战术层结果包装成统一 AI 记录。"""
+        # play_turn 是按“一个决策”调用的，而 TacticalAI.take_turn 是按“完整回合”
+        # 调用的；这里按引擎回合号自动初始化一次回合记账，避免调用方再维护第二个 AI。
+        round_no = self.engine.state.current_round
+        if getattr(self, "_unified_round_no", None) != round_no:
+            self.new_round()
+            self._unified_round_no = round_no
+
+        result = self.take_action()
+        decision_info = getattr(self, "last_decision", None) or {}
+        if result is None:
+            # 战术候选全部被安全过滤或已无输出时，统一 AI 负责结束己方行动，
+            # 不把“无动作”留给调用方猜测。
+            decision = AIDecision(
+                "prepare_monster_phase", {},
+                "没有合法且安全的战斗候选，结束轮回者行动阶段",
+            )
+            result = self.engine.execute_action(decision.action_type, decision.params)
+        else:
+            decision = AIDecision(
+                decision_info.get("action", result.get("action", "tactical_action")),
+                decision_info.get("params", {}),
+                decision_info.get("label", "统一战斗策略实时决策"),
+            )
+        return self._finish_decision(decision, result)
+
+    def _finish_decision(self, decision: AIDecision, result: dict) -> dict:
+        """统一执行校验、违规回调、规则同步和历史记录。"""
         validation = {"valid": True, "violations": [], "warnings": []}
         if self.auto_validate:
             validation = self.validator.validate(self.engine.state, {
                 "action": decision.action_type,
                 "params": decision.params
             }, result)
-            
             if not validation["valid"]:
                 for callback in self._violation_callbacks:
                     try:
                         callback(validation)
                     except Exception:
                         pass
-        
+
         sync_report = None
         if self.rule_sync:
             changes = self.rule_sync.check_for_changes()
             if changes:
                 sync_report = self.rule_sync.generate_sync_report()
-        
+
         record = {
             "decision": decision.to_dict(),
             "result": result,
             "validation": validation,
             "sync_report": sync_report,
-            "timestamp": time.time()
+            "timestamp": time.time(),
         }
         self._decision_history.append(record)
-        
         return {
             "action": decision.action_type,
             "params": decision.params,
@@ -756,6 +871,38 @@ class AIPlayer:
             "sync_report": sync_report,
             "interrupt": result.get("interrupt"),
         }
+
+    def play_turn(self, context: str = "") -> dict:
+        """执行一个统一 AI 决策。
+
+        setup/pre_battle/event 等高层阶段使用后端；轮回者战斗阶段直接进入同一
+        个 TacticalAI 实时决策器，不再由另一个 AI 接管战斗。
+        """
+        state = self._attach_memory_context(self.engine.get_state())
+        if state.get("pending_interrupts"):
+            return {
+                "action": "等待DM裁定",
+                "interrupts": state["pending_interrupts"],
+                "instruction": "有中断等待DM裁定，AI无法继续决策",
+            }
+        if self._is_tactical_combat_step():
+            return self._run_tactical_step(context)
+
+        available_actions = self.engine.get_available_actions()
+        decision = self.backend.decide(state, available_actions, context)
+        before = self._memory_snapshot()
+        result = self.engine.execute_action(decision.action_type, decision.params)
+        # setup_attributes 之前还没有轮回者，不生成一条虚假的“经历”；
+        # 后续选区、事件和局外行动则进入同一份当前轮回记忆。
+        if before:
+            self._remember_success(before, result, {
+                "action": decision.action_type,
+                "params": decision.params,
+                "label": decision.reasoning or decision.action_type,
+            })
+        else:
+            self._ensure_player_memory()
+        return self._finish_decision(decision, result)
 
     def get_history(self) -> list[dict]:
         return self._decision_history

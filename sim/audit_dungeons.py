@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """副本草案面板合规审计（只读）。
 
-一阶已实现：属性点60，道纹3/总值8（复用 audit_monsters.py 口径）。
+一阶已实现：属性点35，道纹3/总值8（复用 audit_monsters.py 口径）。
 二阶草案：乱葬岗/沉沦海 属性点110，道纹5/总值15（2026-08-14 裁定：面板成本反推上调声明）。
 永夜庭：固定场次属性点=60×N（血族机制），特殊豁免面板审计。
 
-面板成本 = ⌈血限/6⌉ + 攻击力 + 攻击次数²。
+面板成本 = ⌈血限/6⌉ + 2×攻击次数 + 2×攻击力（与轮回者属性点口径一致）。
 用法: python sim/audit_dungeons.py
 """
 import math
@@ -37,7 +37,7 @@ def parse_monsters(path: str) -> list[dict]:
 
 
 def panel_cost(hp, ap, ac):
-    return math.ceil(hp / 6) + ap + ac * ac
+    return math.ceil(hp / 6) + 2 * ac + 2 * ap
 
 
 def audit():

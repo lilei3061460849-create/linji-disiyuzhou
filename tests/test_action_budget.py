@@ -2,8 +2,9 @@
 pytest 风格测试 - 里程碑4b：出手预算校验
 
 DM裁定记录：
-- 出手次数公式按entity_type分流：轮回者=速限/3(向上取整)；[朋友]/[员工](微光者)=攻击次数/3(向上取整)；
+- 出手次数公式按entity_type分流：轮回者按`action_count`（当前固定2次）；[朋友]/[员工](微光者)=攻击次数/3(向上取整)；
   怪物走独立的run_monster_phase固定规则，不受此约束。
+- 普攻本身不消耗速度；速度消耗只来自正文明确的闪避等机制。
 - 消耗1出手的动作：attack、use_daowen(含指挥朋友/员工)、deploy_employee(消耗玩家的出手)、
   declare_wish、declare_escape。
 - 不消耗出手：consume_item(原文明确)、use_resonance(可任意时刻插队)。

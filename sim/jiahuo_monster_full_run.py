@@ -41,7 +41,7 @@ def player_turn(e, log):
             if r2.get("success"):
                 out.append(r2)
     # 3) 杀伐补刀
-    for _ in range(max(1, (p.speed_limit + 2) // 3)):
+    for _ in range(max(1, p.action_count)):
         if not p.is_alive: break
         enemies = [x for x in e.state.enemies if x.is_alive]
         if not enemies: break

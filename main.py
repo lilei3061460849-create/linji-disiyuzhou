@@ -178,37 +178,71 @@ def api_demo():
     print("=" * 60)
     
     # 1. 开局 - 分配属性
-    print("\n[1] 分配属性点：10血/8速/7法")
+    # 速限/法限按2属性点一档计价，必须传入偶数点数；25点未花完的部分会存入属性点池。
+    blood_points, speed_points, mana_points = 11, 8, 6
+    print(f"\n[1] 分配属性点：{blood_points}血/{speed_points}速/{mana_points}法")
     result = engine.execute_action("setup_attributes", {
         "name": "贾凡",
-        "blood_points": 10,
-        "speed_points": 8,
-        "mana_points": 7
+        "blood_points": blood_points,
+        "speed_points": speed_points,
+        "mana_points": mana_points,
     })
-    print(f"  → 血限:{10*6}=60, 速限:8, 法限:{7*2}=14")
-    print(f"  → 出手次数: {math.ceil(8/3)}")
-    
-    # 2. 初始道纹【杀伐】已随属性分配自动获得
-    print("\n[2] 自动获得初始道纹：杀伐")
+    if not result.get("success"):
+        print(f"  ✗ 开局失败：{result.get('error', '未知错误')}")
+        return
+    setup_result = result["result"]
+    print(
+        f"  → 血限:{setup_result['blood_limit']}, "
+        f"速限:{setup_result['speed_limit']}, 法限:{setup_result['mana_limit']}"
+    )
+    print(f"  → 出手次数: {setup_result['action_count']}")
+    print(f"  → 属性点池: {setup_result['attribute_points_banked']}")
 
-    # 3. 选择残韵
-    print("\n[3] 选择初始残韵：反转")
+    # 2. 开局遗物发现：必须先从引擎列出的候选中显式选择1件。
+    relic_choices = setup_result["relic_choices"]
+    relic_choice = relic_choices[0]
+    print(f"\n[2] 开局遗物发现：候选 {relic_choices}；选择：{relic_choice}")
+    result = engine.execute_action("choose_discovered_relic", {"relic_name": relic_choice})
+    if not result.get("success"):
+        print(f"  ✗ 遗物选择失败：{result.get('error', '未知错误')}")
+        return
+
+    # 3. 初始道纹发现：同样必须从本次候选中显式选择。
+    daowen_choices = result["result"].get("daowen_choices", [])
+    daowen_choice = daowen_choices[0]
+    print(f"\n[3] 初始道纹发现：候选 {daowen_choices}；选择：{daowen_choice}")
+    result = engine.execute_action(
+        "setup_choose_initial_daowen", {"daowen_name": daowen_choice}
+    )
+    if not result.get("success"):
+        print(f"  ✗ 初始道纹选择失败：{result.get('error', '未知错误')}")
+        return
+
+    # 4. 选择残韵
+    print("\n[4] 选择初始残韵：反转")
     result = engine.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
-    
-    # 4. 选择副本
-    print("\n[4] 选择副本：扭曲都市")
+    if not result.get("success"):
+        print(f"  ✗ 残韵选择失败：{result.get('error', '未知错误')}")
+        return
+
+    # 5. 选择副本
+    print("\n[5] 选择副本：扭曲都市")
     result = engine.execute_action("setup_choose_region", {"region": "扭曲都市"})
-    relic_choice = result["result"]["relic_choices"][0]
-    engine.execute_action("choose_discovered_relic", {"relic_name": relic_choice})
-    print(f"  → 开局发现候选：{result['result']['relic_choices']}；选择：{relic_choice}")
-    
-    # 5. 局外行动
-    print("\n[5] 局外行动：修行")
+    if not result.get("success"):
+        print(f"  ✗ 副本选择失败：{result.get('error', '未知错误')}")
+        return
+    print(f"  → 已拥有遗物：{result['result']['relics_owned']}")
+
+    # 6. 局外行动
+    print("\n[6] 局外行动：修行")
     result = engine.execute_action("pre_battle_action", {"sub_action": "修行"})
+    if not result.get("success"):
+        print(f"  ✗ 局外行动失败：{result.get('error', '未知错误')}")
+        return
     print(f"  → {json.dumps(result.get('result', {}), ensure_ascii=False)}")
-    
-    # 6. 查看状态
-    print("\n[6] 当前状态：")
+
+    # 7. 查看状态
+    print("\n[7] 当前状态：")
     print_state(engine)
     
     print("\n" + "=" * 60)
@@ -225,15 +259,32 @@ def validate_demo():
     validator = RuleValidator(db_path="data/demo_violations.db")
     engine = GameEngine()
     
-    # 正常开局
-    engine.execute_action("setup_attributes", {
-        "name": "测试", "blood_points": 10, "speed_points": 8, "mana_points": 7
+    # 正常开局：速限/法限按2属性点一档计价，开局后按遗物→道纹→残韵→副本推进。
+    setup = engine.execute_action("setup_attributes", {
+        "name": "测试", "blood_points": 11, "speed_points": 8, "mana_points": 6
     })
+    if not setup.get("success"):
+        print(f"  ✗ 开局失败：{setup.get('error', '未知错误')}")
+        return
+    relic_choices = setup["result"]["relic_choices"]
+    relic_result = engine.execute_action("choose_discovered_relic", {
+        "relic_name": relic_choices[0],
+    })
+    if not relic_result.get("success"):
+        print(f"  ✗ 遗物选择失败：{relic_result.get('error', '未知错误')}")
+        return
+    daowen_choices = relic_result["result"].get("daowen_choices", [])
+    daowen_result = engine.execute_action("setup_choose_initial_daowen", {
+        "daowen_name": daowen_choices[0],
+    })
+    if not daowen_result.get("success"):
+        print(f"  ✗ 初始道纹选择失败：{daowen_result.get('error', '未知错误')}")
+        return
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
-    setup = engine.execute_action("setup_choose_region", {"region": "扭曲都市"})
-    engine.execute_action("choose_discovered_relic", {
-        "relic_name": setup["result"]["relic_choices"][0],
-    })
+    region_result = engine.execute_action("setup_choose_region", {"region": "扭曲都市"})
+    if not region_result.get("success"):
+        print(f"  ✗ 副本选择失败：{region_result.get('error', '未知错误')}")
+        return
     
     # 测试1：正常行动校验
     print("\n[测试1] 正常修行行动：")

@@ -229,7 +229,10 @@ def _render_effect(eff: dict) -> str:
     if t == "blood_lineage_bleed":
         return f"{eff.get('entity')} 触发【血族血脉】：流血{eff.get('amount')}"
     if t == "seal":
-        return f"{eff.get('target')} 被【封印】移出本场战斗"
+        return (f"{eff.get('target')} 被【封印】暂离，延后{eff.get('delay_rounds')}回合"
+                f"于第{eff.get('return_round')}回合始再入场")
+    if t == "seal_reentry":
+        return f"{eff.get('entity')}结束【封印】暂离，于第{eff.get('round')}回合始重新入场"
     if t == "speed_boost":
         return f"{eff.get('entity') or eff.get('target')} 速度+{eff.get('amount')}"
     if t == "attack_fixed":
@@ -422,13 +425,12 @@ def validate_battle_report_actions(report_text: str) -> dict:
     """
     程序化校验战报中所有战斗与出手的合规性：
     1. 1出手=1道纹：每一次出手块内部至多包含 1 个独立的主动道纹/法术/能力声明，严禁合并打包发动；
-    2. 行动预算：单回合内各角色出手次数严格受限（轮回者为速限/3向上取整），严禁超额出手；
+    2. 行动预算：单回合内各角色出手次数严格受限（轮回者按 action_count，当前规则固定2次），严禁超额出手；
     3. 死斗交替与余量规则：在对手仍有剩余出手预算时，双方严格 1 对 1 对称交替；当一方出手耗尽后，另一方可连续执行剩余出手（符合正文铁律）；
     4. 出手序号必须单调递增。
     若发现任何违规，立即抛出 ValueError 并指出具体场次、回合与出手号。
     """
     import re
-    import math
     errors = []
     total_actions = 0
 
@@ -441,19 +443,17 @@ def validate_battle_report_actions(report_text: str) -> dict:
         first_line = section.strip().splitlines()[0]
         is_duel = "死斗" in first_line or "第8场" in first_line
 
-        # 提取双方初始速限与出手次数预算
-        challenger_budget = 4
-        defender_budget = 4
+        # 提取双方初始面板中的 action_count 出手预算（不从速限换算）
+        challenger_budget = 2
+        defender_budget = 2
         
         ch_match = re.search(r"挑战[^\n]*?出手(\d+)次", section) or re.search(r"挑战[^\n]*?/\d+/(\d+)", section)
         if ch_match:
-            val = int(ch_match.group(1))
-            challenger_budget = val if val <= 6 else math.ceil(val / 3)
+            challenger_budget = int(ch_match.group(1))
             
         def_match = re.search(r"守擂[^\n]*?出手(\d+)次", section) or re.search(r"守擂[^\n]*?/\d+/(\d+)", section)
         if def_match:
-            val = int(def_match.group(1))
-            defender_budget = val if val <= 6 else math.ceil(val / 3)
+            defender_budget = int(def_match.group(1))
 
         # 拆分回合
         round_blocks = re.split(r"第(\d+)回合", section)
@@ -503,7 +503,7 @@ def validate_battle_report_actions(report_text: str) -> dict:
                     if side_action_counts[current_side] > cur_budget:
                         errors.append(
                             f"[{first_line} 第{r_num}回合 {header_line}] {actor_name} 本回合出手次数 "
-                            f"({side_action_counts[current_side]}) 超过速限允许上限 ({cur_budget})！"
+                            f"({side_action_counts[current_side]}) 超过 action_count 上限 ({cur_budget})！"
                         )
 
                     # 检查交替合法性：仅当对手阵营仍有剩余行动预算时，才强制交替
