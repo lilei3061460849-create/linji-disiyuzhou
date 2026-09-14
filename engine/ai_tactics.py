@@ -937,10 +937,23 @@ class TacticalAI:
             # 防御候选放在前面，避免大量道纹候选触发性能上限时把招架裁掉。
             candidates.append(parry)
         candidates.extend(self._daowen_candidates())
-        candidates.extend(self._basic_attack_candidates())
+        basic_candidates = self._basic_attack_candidates()
+        candidates.extend(basic_candidates)
         for bonus, cand in self._resonance_candidates():
             candidates.append(cand)   # 残韵候选已按威胁预筛，附带基础分
-        for cand in candidates[:MAX_CANDIDATE_PREVIEWS]:
+        # 普攻是常驻候选，不能因为道纹候选太多而在
+        # MAX_CANDIDATE_PREVIEWS 截断时消失；否则AI会出现“有攻击力却只会
+        # 重复控制”的假性策略。
+        if basic_candidates:
+            reserve = min(len(basic_candidates), MAX_CANDIDATE_PREVIEWS)
+            non_basic = [cand for cand in candidates if cand not in basic_candidates]
+            candidates = (non_basic[:MAX_CANDIDATE_PREVIEWS - reserve]
+                          + basic_candidates[:reserve])
+        else:
+            candidates = candidates[:MAX_CANDIDATE_PREVIEWS]
+        immediate_damage_available = False
+        immediate_damage_candidates: set[int] = set()
+        for cand in candidates:
             # 普攻是两段动作，预演必须整串跑完才看得见伤害
             pv = (self.previewer.preview_sequence(cand["steps"]) if cand.get("steps")
                   else self.previewer.preview(cand["action"], cand["params"]))
@@ -952,8 +965,19 @@ class TacticalAI:
                 # 与当前威胁现场计算，声明本身仍先经过 ActionPreview 校验。
                 s = self._score_parry_candidate(cand)
             else:
-                s = self._score_candidate(pv.get("diff", {}), cand["label"],
+                diff = pv.get("diff", {})
+                s = self._score_candidate(diff, cand["label"],
                                           cand.get("kind"), cand.get("target"))
+                if cand.get("kind") in ("attack", "damage"):
+                    # 不能把“敌人暂离/封印”产生的 hp_after=0 当成伤害。
+                    # 只有真实 damage_applied 且 actual_damage>0 才算完成首次接触。
+                    actual_damage = any(
+                        ev.get("type") == "damage_applied"
+                        and (ev.get("data") or {}).get("actual_damage", 0) > 0
+                        for ev in ((diff or {}).get("events", []) or []))
+                    if actual_damage:
+                        immediate_damage_available = True
+                        immediate_damage_candidates.add(id(cand))
             if s is None:
                 continue
             if cand["action"] == "use_resonance":
@@ -982,6 +1006,17 @@ class TacticalAI:
             for i in resonance_rows:
                 sc, lbl, cd = scored[i]
                 scored[i] = (sc - _resonance_bonus_of[i], lbl, cd)
+        # 首次接触时，只要安全的普攻/伤害动作存在，就先让敌方掉血。
+        # 控制、延迟和增益不能替代第一次造成伤害，否则【封印】会被用成
+        # “连续空转五回合后触发【凡庸】”。第一次伤害完成后，下一回合仍可
+        # 根据局势选择【封印】跳过怪物阶段。
+        force_progress = (not self._first_contact()
+                          and getattr(self, "_last_action_caused_damage", True) is False)
+        if immediate_damage_available and (self._first_contact() or force_progress):
+            progress = [row for row in scored
+                        if id(row[2]) in immediate_damage_candidates]
+            if progress:
+                scored = progress
         if not scored:
             return None
         scored.sort(key=lambda t: (-t[0], t[1]))
@@ -994,6 +1029,7 @@ class TacticalAI:
         if best.get("steps"):
             self.last_decision["steps"] = best["steps"]
         hp_before = sum(e.current_hp for e in self.alive_enemies())
+        self._last_action_caused_damage = id(best) in immediate_damage_candidates
         r = (self._run_steps(best["steps"]) if best.get("steps")
              else self.engine.execute_action(best["action"], best["params"]))
         if r.get("success"):
