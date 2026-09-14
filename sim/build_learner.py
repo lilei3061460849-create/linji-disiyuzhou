@@ -963,7 +963,8 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
          behaviors: list = None, attrs: dict = None,
          resonance: str = "反转", relic_policy: str = "skip_optional",
          ai_cls=None, consumable_policy: str = "current",
-         death_trace: bool = False, lab_paths: dict = None) -> dict:
+         death_trace: bool = False, lab_paths: dict = None,
+         trace_history: bool = False) -> dict:
     """跑一局轮回（行为探针包装：本局用到了哪些行为，统一收口进知识库）。
 
     consumable_policy/death_trace/lab_paths：第十九批实验钩子（默认=现行生产行为）。"""
@@ -989,6 +990,8 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
     if engine_ref:
         activity = _collect_daowen_activity(engine_ref[0], r)
         r["daowen_activity"] = activity
+        if trace_history:
+            r["action_history"] = engine_ref[0].get_action_history()
         if telemetry is not None:
             _merge_daowen_activity(telemetry, activity)
     if telemetry is not None and not r.get("invalid"):
