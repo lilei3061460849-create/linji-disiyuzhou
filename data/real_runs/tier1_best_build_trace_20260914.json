@@ -1,0 +1,1264 @@
+{
+  "meta": {
+    "engine": "engine.api.GameEngine via sim.build_learner.play",
+    "build": "【贯穿】+【裂变/背负/波及】",
+    "region": "龙心谷",
+    "attrs": {
+      "blood_points": 7,
+      "speed_points": 6,
+      "mana_points": 12
+    },
+    "spend_shards": true
+  },
+  "runs": [
+    {
+      "seed": 2026091801,
+      "result": {
+        "cleared": 0,
+        "won": false,
+        "invalid": false,
+        "final_daowen": [
+          "增殖",
+          "自残",
+          "血债",
+          "透支"
+        ],
+        "consumable_uses": 0,
+        "pm": {
+          "battle": 1,
+          "killer": "熔岩蜥",
+          "unused_items": [],
+          "shards": 5,
+          "todo_left": [
+            "裂变",
+            "背负",
+            "波及"
+          ],
+          "full_mana": false
+        },
+        "death_trace": {
+          "battle": 1,
+          "primary": "sustained",
+          "flags": {
+            "unused_consumables": false,
+            "mana_zero": false,
+            "speed_disadv": false
+          },
+          "hp_pct_at_last_round": 0.238,
+          "unused_items": [],
+          "death_subtype": "hp_zero",
+          "death_source": "普通攻击",
+          "mutation_total": 0,
+          "enemies": [
+            {
+              "name": "熔岩蜥",
+              "hp": 42,
+              "speed": 0,
+              "daowen": [
+                "加害",
+                "增殖",
+                "自残"
+              ]
+            }
+          ],
+          "player_daowen": [
+            "增殖",
+            "自残",
+            "血债",
+            "透支"
+          ],
+          "rounds": [
+            {
+              "battle": 1,
+              "round": 1,
+              "hp": 42,
+              "hp_pct": 1.0,
+              "mana": 6,
+              "speed": 4,
+              "consumables": {},
+              "enemies": [
+                {
+                  "name": "熔岩蜥",
+                  "hp": 138,
+                  "speed": 0,
+                  "daowen": [
+                    "加害",
+                    "波及",
+                    "狂暴"
+                  ]
+                }
+              ],
+              "player_daowen": [
+                "血债",
+                "透支"
+              ]
+            },
+            {
+              "battle": 1,
+              "round": 2,
+              "hp": 34,
+              "hp_pct": 0.81,
+              "mana": 6,
+              "speed": 4,
+              "consumables": {},
+              "enemies": [
+                {
+                  "name": "熔岩蜥",
+                  "hp": 138,
+                  "speed": 0,
+                  "daowen": [
+                    "加害",
+                    "增殖",
+                    "自残"
+                  ]
+                }
+              ],
+              "player_daowen": [
+                "增殖",
+                "自残",
+                "血债",
+                "透支"
+              ]
+            },
+            {
+              "battle": 1,
+              "round": 3,
+              "hp": 22,
+              "hp_pct": 0.524,
+              "mana": 6,
+              "speed": 4,
+              "consumables": {},
+              "enemies": [
+                {
+                  "name": "熔岩蜥",
+                  "hp": 90,
+                  "speed": 0,
+                  "daowen": [
+                    "加害",
+                    "增殖",
+                    "自残"
+                  ]
+                }
+              ],
+              "player_daowen": [
+                "增殖",
+                "自残",
+                "血债",
+                "透支"
+              ]
+            },
+            {
+              "battle": 1,
+              "round": 4,
+              "hp": 10,
+              "hp_pct": 0.238,
+              "mana": 6,
+              "speed": 4,
+              "consumables": {},
+              "enemies": [
+                {
+                  "name": "熔岩蜥",
+                  "hp": 42,
+                  "speed": 0,
+                  "daowen": [
+                    "加害",
+                    "增殖",
+                    "自残"
+                  ]
+                }
+              ],
+              "player_daowen": [
+                "增殖",
+                "自残",
+                "血债",
+                "透支"
+              ]
+            }
+          ]
+        }
+      },
+      "actual_actions": [
+        {
+          "battle": 1,
+          "round": 1,
+          "action": "残韵【反转】狂暴 → 自残",
+          "summary": null,
+          "before": [
+            42,
+            6,
+            4,
+            [
+              [
+                "熔岩蜥",
+                138,
+                true
+              ]
+            ]
+          ],
+          "after": [
+            42,
+            6,
+            4,
+            [
+              [
+                "熔岩蜥",
+                138,
+                true
+              ]
+            ]
+          ]
+        },
+        {
+          "battle": 1,
+          "round": 1,
+          "action": "残韵【反转】波及 → 增殖",
+          "summary": null,
+          "before": [
+            42,
+            6,
+            4,
+            [
+              [
+                "熔岩蜥",
+                138,
+                true
+              ]
+            ]
+          ],
+          "after": [
+            42,
+            6,
+            4,
+            [
+              [
+                "熔岩蜥",
+                138,
+                true
+              ]
+            ]
+          ]
+        },
+        {
+          "battle": 1,
+          "round": 2,
+          "action": "贾凡结算一轮攻击",
+          "summary": null,
+          "before": [
+            34,
+            6,
+            4,
+            [
+              [
+                "熔岩蜥",
+                138,
+                true
+              ]
+            ]
+          ],
+          "after": [
+            34,
+            6,
+            4,
+            [
+              [
+                "熔岩蜥",
+                114,
+                true
+              ]
+            ]
+          ]
+        },
+        {
+          "battle": 1,
+          "round": 2,
+          "action": "贾凡结算一轮攻击",
+          "summary": null,
+          "before": [
+            34,
+            6,
+            4,
+            [
+              [
+                "熔岩蜥",
+                114,
+                true
+              ]
+            ]
+          ],
+          "after": [
+            34,
+            6,
+            4,
+            [
+              [
+                "熔岩蜥",
+                90,
+                true
+              ]
+            ]
+          ]
+        },
+        {
+          "battle": 1,
+          "round": 3,
+          "action": "贾凡结算一轮攻击",
+          "summary": null,
+          "before": [
+            22,
+            6,
+            4,
+            [
+              [
+                "熔岩蜥",
+                90,
+                true
+              ]
+            ]
+          ],
+          "after": [
+            22,
+            6,
+            4,
+            [
+              [
+                "熔岩蜥",
+                66,
+                true
+              ]
+            ]
+          ]
+        },
+        {
+          "battle": 1,
+          "round": 3,
+          "action": "贾凡结算一轮攻击",
+          "summary": null,
+          "before": [
+            22,
+            6,
+            4,
+            [
+              [
+                "熔岩蜥",
+                66,
+                true
+              ]
+            ]
+          ],
+          "after": [
+            22,
+            6,
+            4,
+            [
+              [
+                "熔岩蜥",
+                42,
+                true
+              ]
+            ]
+          ]
+        },
+        {
+          "battle": 1,
+          "round": 4,
+          "action": "贾凡结算一轮攻击",
+          "summary": null,
+          "before": [
+            10,
+            6,
+            4,
+            [
+              [
+                "熔岩蜥",
+                42,
+                true
+              ]
+            ]
+          ],
+          "after": [
+            10,
+            6,
+            4,
+            [
+              [
+                "熔岩蜥",
+                18,
+                true
+              ]
+            ]
+          ]
+        },
+        {
+          "battle": 1,
+          "round": 4,
+          "action": "发动道纹【血债X=1】",
+          "summary": "流血1，选择熔岩蜥 1次，每次造成1点伤害",
+          "before": [
+            10,
+            6,
+            4,
+            [
+              [
+                "熔岩蜥",
+                18,
+                true
+              ]
+            ]
+          ],
+          "after": [
+            9,
+            6,
+            4,
+            [
+              [
+                "熔岩蜥",
+                17,
+                true
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "seed": 2026091802,
+      "result": {
+        "cleared": 0,
+        "won": false,
+        "invalid": false,
+        "final_daowen": [
+          "波及",
+          "透支"
+        ],
+        "consumable_uses": 0,
+        "pm": {
+          "battle": 1,
+          "killer": "断翼巨像",
+          "unused_items": [],
+          "shards": 5,
+          "todo_left": [
+            "裂变",
+            "背负"
+          ],
+          "full_mana": false
+        },
+        "death_trace": {
+          "battle": 1,
+          "primary": "other",
+          "flags": {
+            "unused_consumables": false,
+            "mana_zero": false,
+            "speed_disadv": false
+          },
+          "hp_pct_at_last_round": 0.143,
+          "unused_items": [],
+          "death_subtype": "hp_zero",
+          "death_source": "伤痕",
+          "mutation_total": 0,
+          "enemies": [
+            {
+              "name": "断翼巨像",
+              "hp": 114,
+              "speed": 0,
+              "daowen": [
+                "伤痕",
+                "活血",
+                "背负"
+              ]
+            }
+          ],
+          "player_daowen": [
+            "波及",
+            "透支"
+          ],
+          "rounds": [
+            {
+              "battle": 1,
+              "round": 1,
+              "hp": 22,
+              "hp_pct": 0.524,
+              "mana": 6,
+              "speed": 4,
+              "consumables": {},
+              "enemies": [
+                {
+                  "name": "断翼巨像",
+                  "hp": 138,
+                  "speed": 0,
+                  "daowen": [
+                    "伤痕",
+                    "活血",
+                    "背负"
+                  ]
+                }
+              ],
+              "player_daowen": [
+                "波及",
+                "透支"
+              ]
+            },
+            {
+              "battle": 1,
+              "round": 2,
+              "hp": 6,
+              "hp_pct": 0.143,
+              "mana": 6,
+              "speed": 4,
+              "consumables": {},
+              "enemies": [
+                {
+                  "name": "断翼巨像",
+                  "hp": 138,
+                  "speed": 0,
+                  "daowen": [
+                    "伤痕",
+                    "活血",
+                    "背负"
+                  ]
+                }
+              ],
+              "player_daowen": [
+                "波及",
+                "透支"
+              ]
+            },
+            {
+              "battle": 1,
+              "round": 3,
+              "hp": 6,
+              "hp_pct": 0.143,
+              "mana": 6,
+              "speed": 4,
+              "consumables": {},
+              "enemies": [
+                {
+                  "name": "断翼巨像",
+                  "hp": 114,
+                  "speed": 0,
+                  "daowen": [
+                    "伤痕",
+                    "活血",
+                    "背负"
+                  ]
+                }
+              ],
+              "player_daowen": [
+                "波及",
+                "透支"
+              ]
+            }
+          ]
+        }
+      },
+      "actual_actions": [
+        {
+          "battle": 1,
+          "round": 1,
+          "action": "发动道纹【透支X=1】",
+          "summary": "流血4，获得1点法力",
+          "before": [
+            22,
+            6,
+            4,
+            [
+              [
+                "断翼巨像",
+                138,
+                true
+              ]
+            ]
+          ],
+          "after": [
+            18,
+            6,
+            4,
+            [
+              [
+                "断翼巨像",
+                138,
+                true
+              ]
+            ]
+          ]
+        },
+        {
+          "battle": 1,
+          "round": 1,
+          "action": "发动道纹【透支X=1】",
+          "summary": "流血4，获得1点法力",
+          "before": [
+            18,
+            6,
+            4,
+            [
+              [
+                "断翼巨像",
+                138,
+                true
+              ]
+            ]
+          ],
+          "after": [
+            14,
+            6,
+            4,
+            [
+              [
+                "断翼巨像",
+                138,
+                true
+              ]
+            ]
+          ]
+        },
+        {
+          "battle": 1,
+          "round": 2,
+          "action": "贾凡招架",
+          "summary": null,
+          "before": [
+            6,
+            6,
+            4,
+            [
+              [
+                "断翼巨像",
+                138,
+                true
+              ]
+            ]
+          ],
+          "after": [
+            6,
+            6,
+            4,
+            [
+              [
+                "断翼巨像",
+                138,
+                true
+              ]
+            ]
+          ]
+        },
+        {
+          "battle": 1,
+          "round": 2,
+          "action": "贾凡结算一轮攻击",
+          "summary": null,
+          "before": [
+            6,
+            6,
+            4,
+            [
+              [
+                "断翼巨像",
+                138,
+                true
+              ]
+            ]
+          ],
+          "after": [
+            6,
+            6,
+            4,
+            [
+              [
+                "断翼巨像",
+                114,
+                true
+              ]
+            ]
+          ]
+        },
+        {
+          "battle": 1,
+          "round": 3,
+          "action": "贾凡结算一轮攻击",
+          "summary": null,
+          "before": [
+            6,
+            6,
+            4,
+            [
+              [
+                "断翼巨像",
+                114,
+                true
+              ]
+            ]
+          ],
+          "after": [
+            6,
+            6,
+            4,
+            [
+              [
+                "断翼巨像",
+                90,
+                true
+              ]
+            ]
+          ]
+        },
+        {
+          "battle": 1,
+          "round": 3,
+          "action": "贾凡结算一轮攻击",
+          "summary": null,
+          "before": [
+            6,
+            6,
+            4,
+            [
+              [
+                "断翼巨像",
+                90,
+                true
+              ]
+            ]
+          ],
+          "after": [
+            6,
+            6,
+            4,
+            [
+              [
+                "断翼巨像",
+                66,
+                true
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "seed": 2026091803,
+      "result": {
+        "cleared": 0,
+        "won": false,
+        "invalid": false,
+        "final_daowen": [
+          "蒙蔽",
+          "裂变",
+          "贯穿",
+          "透支"
+        ],
+        "consumable_uses": 0,
+        "pm": {
+          "battle": 1,
+          "killer": "余烬侍者",
+          "unused_items": [],
+          "shards": 5,
+          "todo_left": [
+            "裂变",
+            "背负",
+            "波及"
+          ],
+          "full_mana": false
+        },
+        "death_trace": {
+          "battle": 1,
+          "primary": "sustained",
+          "flags": {
+            "unused_consumables": false,
+            "mana_zero": false,
+            "speed_disadv": false
+          },
+          "hp_pct_at_last_round": 0.262,
+          "unused_items": [],
+          "death_subtype": "hp_zero",
+          "death_source": "普通攻击",
+          "mutation_total": 0,
+          "enemies": [
+            {
+              "name": "余烬侍者",
+              "hp": 54,
+              "speed": 0,
+              "daowen": [
+                "蒙蔽",
+                "衰败",
+                "裂变"
+              ]
+            }
+          ],
+          "player_daowen": [
+            "蒙蔽",
+            "裂变",
+            "贯穿",
+            "透支"
+          ],
+          "rounds": [
+            {
+              "battle": 1,
+              "round": 3,
+              "hp": 42,
+              "hp_pct": 1.0,
+              "mana": 6,
+              "speed": 0,
+              "consumables": {},
+              "enemies": [
+                {
+                  "name": "余烬侍者",
+                  "hp": 54,
+                  "speed": 0,
+                  "daowen": [
+                    "必中",
+                    "活血",
+                    "衰败"
+                  ]
+                }
+              ],
+              "player_daowen": [
+                "贯穿",
+                "透支"
+              ]
+            },
+            {
+              "battle": 1,
+              "round": 4,
+              "hp": 32,
+              "hp_pct": 0.762,
+              "mana": 1,
+              "speed": 0,
+              "consumables": {},
+              "enemies": [
+                {
+                  "name": "余烬侍者",
+                  "hp": 54,
+                  "speed": 0,
+                  "daowen": [
+                    "必中",
+                    "活血",
+                    "衰败"
+                  ]
+                }
+              ],
+              "player_daowen": [
+                "贯穿",
+                "透支"
+              ]
+            },
+            {
+              "battle": 1,
+              "round": 5,
+              "hp": 18,
+              "hp_pct": 0.429,
+              "mana": 1,
+              "speed": 0,
+              "consumables": {},
+              "enemies": [
+                {
+                  "name": "余烬侍者",
+                  "hp": 54,
+                  "speed": 0,
+                  "daowen": [
+                    "蒙蔽",
+                    "衰败",
+                    "裂变"
+                  ]
+                }
+              ],
+              "player_daowen": [
+                "蒙蔽",
+                "裂变",
+                "贯穿",
+                "透支"
+              ]
+            },
+            {
+              "battle": 1,
+              "round": 6,
+              "hp": 11,
+              "hp_pct": 0.262,
+              "mana": 2,
+              "speed": 0,
+              "consumables": {},
+              "enemies": [
+                {
+                  "name": "余烬侍者",
+                  "hp": 54,
+                  "speed": 0,
+                  "daowen": [
+                    "蒙蔽",
+                    "衰败",
+                    "裂变"
+                  ]
+                }
+              ],
+              "player_daowen": [
+                "蒙蔽",
+                "裂变",
+                "贯穿",
+                "透支"
+              ]
+            }
+          ]
+        }
+      },
+      "actual_actions": [
+        {
+          "battle": 1,
+          "round": 1,
+          "action": "贾凡结算一轮攻击",
+          "summary": null,
+          "before": [
+            42,
+            6,
+            4,
+            [
+              [
+                "余烬侍者",
+                114,
+                true
+              ]
+            ]
+          ],
+          "after": [
+            42,
+            6,
+            4,
+            [
+              [
+                "余烬侍者",
+                90,
+                true
+              ]
+            ]
+          ]
+        },
+        {
+          "battle": 1,
+          "round": 1,
+          "action": "贾凡结算一轮攻击",
+          "summary": null,
+          "before": [
+            42,
+            6,
+            4,
+            [
+              [
+                "余烬侍者",
+                90,
+                true
+              ]
+            ]
+          ],
+          "after": [
+            42,
+            6,
+            4,
+            [
+              [
+                "余烬侍者",
+                66,
+                true
+              ]
+            ]
+          ]
+        },
+        {
+          "battle": 1,
+          "round": 2,
+          "action": "贾凡结算一轮攻击",
+          "summary": null,
+          "before": [
+            42,
+            6,
+            2,
+            [
+              [
+                "余烬侍者",
+                66,
+                true
+              ]
+            ]
+          ],
+          "after": [
+            42,
+            6,
+            2,
+            [
+              [
+                "余烬侍者",
+                54,
+                true
+              ]
+            ]
+          ]
+        },
+        {
+          "battle": 1,
+          "round": 2,
+          "action": "贾凡结算一轮攻击",
+          "summary": null,
+          "before": [
+            42,
+            6,
+            2,
+            [
+              [
+                "余烬侍者",
+                54,
+                true
+              ]
+            ]
+          ],
+          "after": [
+            42,
+            6,
+            2,
+            [
+              [
+                "余烬侍者",
+                42,
+                true
+              ]
+            ]
+          ]
+        },
+        {
+          "battle": 1,
+          "round": 3,
+          "action": "发动道纹【贯穿X=1】",
+          "summary": "消耗5法力，造成的伤害无视格挡，持续1回合",
+          "before": [
+            42,
+            6,
+            0,
+            [
+              [
+                "余烬侍者",
+                54,
+                true
+              ]
+            ]
+          ],
+          "after": [
+            42,
+            1,
+            0,
+            [
+              [
+                "余烬侍者",
+                54,
+                true
+              ]
+            ]
+          ]
+        },
+        {
+          "battle": 1,
+          "round": 3,
+          "action": "贾凡招架",
+          "summary": null,
+          "before": [
+            42,
+            1,
+            0,
+            [
+              [
+                "余烬侍者",
+                54,
+                true
+              ]
+            ]
+          ],
+          "after": [
+            42,
+            1,
+            0,
+            [
+              [
+                "余烬侍者",
+                54,
+                true
+              ]
+            ]
+          ]
+        },
+        {
+          "battle": 1,
+          "round": 4,
+          "action": "残韵【曲解】活血 → 裂变",
+          "summary": null,
+          "before": [
+            32,
+            1,
+            0,
+            [
+              [
+                "余烬侍者",
+                54,
+                true
+              ]
+            ]
+          ],
+          "after": [
+            32,
+            1,
+            0,
+            [
+              [
+                "余烬侍者",
+                54,
+                true
+              ]
+            ]
+          ]
+        },
+        {
+          "battle": 1,
+          "round": 4,
+          "action": "残韵【反转】必中 → 蒙蔽",
+          "summary": null,
+          "before": [
+            32,
+            1,
+            0,
+            [
+              [
+                "余烬侍者",
+                54,
+                true
+              ]
+            ]
+          ],
+          "after": [
+            32,
+            1,
+            0,
+            [
+              [
+                "余烬侍者",
+                54,
+                true
+              ]
+            ]
+          ]
+        },
+        {
+          "battle": 1,
+          "round": 5,
+          "action": "贾凡招架",
+          "summary": null,
+          "before": [
+            18,
+            1,
+            0,
+            [
+              [
+                "余烬侍者",
+                54,
+                true
+              ]
+            ]
+          ],
+          "after": [
+            18,
+            1,
+            0,
+            [
+              [
+                "余烬侍者",
+                54,
+                true
+              ]
+            ]
+          ]
+        },
+        {
+          "battle": 1,
+          "round": 5,
+          "action": "发动道纹【透支X=1】",
+          "summary": "流血4，获得1点法力",
+          "before": [
+            18,
+            1,
+            0,
+            [
+              [
+                "余烬侍者",
+                54,
+                true
+              ]
+            ]
+          ],
+          "after": [
+            14,
+            2,
+            0,
+            [
+              [
+                "余烬侍者",
+                54,
+                true
+              ]
+            ]
+          ]
+        },
+        {
+          "battle": 1,
+          "round": 6,
+          "action": "发动道纹【透支X=1】",
+          "summary": "流血4，获得1点法力",
+          "before": [
+            11,
+            2,
+            0,
+            [
+              [
+                "余烬侍者",
+                54,
+                true
+              ]
+            ]
+          ],
+          "after": [
+            7,
+            3,
+            0,
+            [
+              [
+                "余烬侍者",
+                54,
+                true
+              ]
+            ]
+          ]
+        },
+        {
+          "battle": 1,
+          "round": 6,
+          "action": "发动道纹【透支X=1】",
+          "summary": "流血4，获得1点法力",
+          "before": [
+            7,
+            3,
+            0,
+            [
+              [
+                "余烬侍者",
+                54,
+                true
+              ]
+            ]
+          ],
+          "after": [
+            3,
+            4,
+            0,
+            [
+              [
+                "余烬侍者",
+                54,
+                true
+              ]
+            ]
+          ]
+        }
+      ]
+    }
+  ]
+}
