@@ -1,0 +1,165 @@
+{
+  "candidates": {
+    "1": [
+      {
+        "player": {
+          "name": "陆沉",
+          "entity_type": "轮回者",
+          "blood_limit": 54,
+          "current_hp": 52,
+          "mana_limit": 6,
+          "current_mana": 6,
+          "speed_limit": 9,
+          "current_speed": 9,
+          "attack_count": 0,
+          "attack_power": 0,
+          "shield": 0,
+          "is_flying": false,
+          "is_alive": true,
+          "shards": 0,
+          "is_debt_bound": false,
+          "mutation_count": 0,
+          "dao_wen": {
+            "束缚": 0,
+            "固执": 0,
+            "封印": 0,
+            "再生": 0
+          },
+          "spells": [],
+          "relics": [],
+          "status_effects": []
+        },
+        "friends": [],
+        "employees": [
+          {
+            "name": "孢母",
+            "entity_type": "员工",
+            "blood_limit": 63,
+            "current_hp": 63,
+            "mana_limit": 0,
+            "current_mana": 0,
+            "speed_limit": 0,
+            "current_speed": 0,
+            "attack_count": 1,
+            "attack_power": 3,
+            "shield": 0,
+            "is_flying": false,
+            "is_alive": true,
+            "shards": 0,
+            "is_debt_bound": false,
+            "mutation_count": 0,
+            "dao_wen": {},
+            "spells": [],
+            "relics": [],
+            "status_effects": []
+          },
+          {
+            "name": "囊奴",
+            "entity_type": "员工",
+            "blood_limit": 69,
+            "current_hp": 69,
+            "mana_limit": 0,
+            "current_mana": 0,
+            "speed_limit": 0,
+            "current_speed": 0,
+            "attack_count": 1,
+            "attack_power": 3,
+            "shield": 0,
+            "is_flying": false,
+            "is_alive": true,
+            "shards": 0,
+            "is_debt_bound": false,
+            "mutation_count": 0,
+            "dao_wen": {},
+            "spells": [],
+            "relics": [],
+            "status_effects": []
+          }
+        ],
+        "relics": [
+          {
+            "name": "血契",
+            "effect": "数值型【代价】可与一名存活的朋友或员工平分，余数按随机数分配（通用规则见规则正文《基础定义·平分规则》）；[回始]可流血4X获得X法力，本次流血也可平分",
+            "tags": []
+          },
+          {
+            "name": "守夜灯",
+            "effect": "[回始]获得[法限]10%的法力，每回合一次",
+            "tags": []
+          },
+          {
+            "name": "承露盏",
+            "effect": "每累计失去10点生命，获得1点法力（本场累计，余数滚存，[战始]归零）",
+            "tags": []
+          },
+          {
+            "name": "忘忧香",
+            "effect": "局外行动你可以选择\"忘忧\"（失忆1/2/3，获得30/55/80[碎片]）",
+            "tags": []
+          }
+        ],
+        "resonance": {
+          "反转": 2
+        },
+        "shards": 112,
+        "death_book_wisdom": [],
+        "rest_heal_bonus": 0,
+        "death_book_legacies": [
+          {
+            "title": "贾凡·罪孽都市·第5场",
+            "text": "第5场受到致死攻击命零"
+          },
+          {
+            "title": "贾希希·龙心谷·第5场",
+            "text": "双熊战纯叠盾五回合未扣敌血凡庸命零"
+          },
+          {
+            "title": "某人·罪孽都市·留训",
+            "text": "不伤害他人，一味治疗，异变缠身都会死亡哦"
+          },
+          {
+            "title": "某人·扭曲都市·留训一",
+            "text": "法力一池不回填，蓝就是拳，别乱花"
+          },
+          {
+            "title": "某人·扭曲都市·留训二",
+            "text": "五回合打不掉敌人血，凡庸会收你命"
+          },
+          {
+            "title": "某人·扭曲都市·留训三",
+            "text": "回复过量会癌变，再生别贪杯"
+          },
+          {
+            "title": "某人·扭曲都市·留训四",
+            "text": "封印攒异变，五十层崩解命零"
+          },
+          {
+            "title": "某人·扭曲都市·留训五",
+            "text": "第7战四怪围攻，血与速都要堆"
+          },
+          {
+            "title": "沈昼·扭曲都市·第7场",
+            "text": "第7场最终死斗落败"
+          },
+          {
+            "title": "沈昼·扭曲都市·第7场",
+            "text": "第7场最终死斗落败"
+          },
+          {
+            "title": "沈昼·扭曲都市·第7场",
+            "text": "第7场最终死斗落败"
+          }
+        ],
+        "attribute_points": 0,
+        "current_region": "扭曲都市",
+        "artifacts_owned": [],
+        "first_embrace_traits": [],
+        "pending_first_embrace": false,
+        "chizu_names": [],
+        "dragon_nature": 0,
+        "dragon_traits": [],
+        "has_sacrifice_action": false
+      }
+    ]
+  }
+}
