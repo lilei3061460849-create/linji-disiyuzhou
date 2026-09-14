@@ -244,7 +244,7 @@ def main() -> None:
     ap.add_argument("--max-scan", type=int, default=10000)
     ap.add_argument("--workers", type=int, default=max(1, min(8, os.cpu_count() or 1)))
     ap.add_argument("--opponent", default=str(DEFAULT_OPPONENT))
-    ap.add_argument("--output", default=str(ROOT / "data" / "real_runs" / "chenglu_blood_splash_20260914.json"))
+    ap.add_argument("--output", default=str(ROOT / "data" / "real_runs" / "chenglu_blood_splash_tier1_35_20260914.json"))
     args = ap.parse_args()
     opponent = Path(args.opponent) if args.opponent else None
     if opponent is not None and not opponent.exists():
@@ -270,7 +270,8 @@ def main() -> None:
             "definition": "valid run; pve7=7场PvE完成；full_win=_play won=True（包含最终死斗）",
         },
         "fixed_config": {
-            "relic": TARGET_RELIC, "attributes": ATTRS,
+            "relic": TARGET_RELIC, "tier1_monster_attribute_budget": 35,
+            "attributes": ATTRS,
             "initial_daowen": INITIAL_DAOWEN, "learn": LEARN,
             "spell": BLOOD_SPLASH, "region": REGION,
             "resonance": RESONANCE,
