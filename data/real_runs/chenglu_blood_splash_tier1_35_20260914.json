@@ -37,7 +37,8 @@
       "学习透支",
       "学习血溅五步"
     ],
-    "tier1_monster_attribute_budget": 35
+    "tier1_monster_attribute_budget": 35,
+    "monster_attribute_pricing_formula": "历史：ceil(血限/6)+攻击力+攻击次数²"
   },
   "summary": {
     "requested_runs": 50,

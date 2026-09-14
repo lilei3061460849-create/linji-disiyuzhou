@@ -1,0 +1,616 @@
+{
+  "meta": {
+    "generated_at": "2026-09-14T07:22:12+00:00",
+    "engine": "engine.api.GameEngine via sim.build_learner.play",
+    "pricing_formula": "ceil(血限/6)+2×攻击次数+2×攻击力",
+    "tier1_budget": 35,
+    "test": "normal random regions/seeds; standard starter/learning plan; no custom spell"
+  },
+  "config": {
+    "attrs": {
+      "blood_points": 7,
+      "speed_points": 6,
+      "mana_points": 12
+    },
+    "starter_preference": "杀伐",
+    "learn": [
+      "庇护",
+      "再生",
+      "波及"
+    ],
+    "spend_shards": true,
+    "battles": 7
+  },
+  "summary": {
+    "requested_runs": 20,
+    "valid_runs": 20,
+    "invalid_runs": 0,
+    "invalid_reasons": {},
+    "wins": 0,
+    "pve7_completed": 0,
+    "cleared_distribution": {
+      "0": 17,
+      "1": 3
+    },
+    "death_battle_distribution": {
+      "1": 17,
+      "2": 3
+    },
+    "regions": {
+      "扭曲都市": 8,
+      "罪孽都市": 6,
+      "龙心谷": 6
+    }
+  },
+  "runs": [
+    {
+      "seed": 2026091401,
+      "region": "扭曲都市",
+      "result": {
+        "cleared": 0,
+        "won": false,
+        "invalid": false,
+        "final_daowen": [
+          "坏死",
+          "庇护",
+          "杀伐",
+          "透支"
+        ],
+        "consumable_uses": 2,
+        "pm": {
+          "battle": 1,
+          "killer": "血肉巨囊",
+          "unused_items": [],
+          "shards": 20,
+          "todo_left": [
+            "再生",
+            "波及"
+          ],
+          "full_mana": false
+        },
+        "death_trace": null
+      }
+    },
+    {
+      "seed": 2026091402,
+      "region": "罪孽都市",
+      "result": {
+        "cleared": 0,
+        "won": false,
+        "invalid": false,
+        "final_daowen": [
+          "增殖",
+          "庇护",
+          "透支"
+        ],
+        "consumable_uses": 0,
+        "pm": {
+          "battle": 1,
+          "killer": "暗哨",
+          "unused_items": [],
+          "shards": 0,
+          "todo_left": [
+            "再生",
+            "波及"
+          ],
+          "full_mana": false
+        },
+        "death_trace": null
+      }
+    },
+    {
+      "seed": 2026091403,
+      "region": "龙心谷",
+      "result": {
+        "cleared": 0,
+        "won": false,
+        "invalid": false,
+        "final_daowen": [
+          "庇护",
+          "杀伐",
+          "活血",
+          "自残",
+          "透支"
+        ],
+        "consumable_uses": 0,
+        "pm": {
+          "battle": 1,
+          "killer": "断角羊",
+          "unused_items": [],
+          "shards": 20,
+          "todo_left": [
+            "再生",
+            "波及"
+          ],
+          "full_mana": false
+        },
+        "death_trace": null
+      }
+    },
+    {
+      "seed": 2026091404,
+      "region": "扭曲都市",
+      "result": {
+        "cleared": 0,
+        "won": false,
+        "invalid": false,
+        "final_daowen": [
+          "固执",
+          "坠落",
+          "庇护",
+          "透支"
+        ],
+        "consumable_uses": 0,
+        "pm": {
+          "battle": 1,
+          "killer": "骨天使",
+          "unused_items": [
+            "高爆手雷"
+          ],
+          "shards": 20,
+          "todo_left": [
+            "再生",
+            "波及"
+          ],
+          "full_mana": false
+        },
+        "death_trace": null
+      }
+    },
+    {
+      "seed": 2026091405,
+      "region": "龙心谷",
+      "result": {
+        "cleared": 0,
+        "won": false,
+        "invalid": false,
+        "final_daowen": [
+          "封印",
+          "庇护",
+          "透支"
+        ],
+        "consumable_uses": 0,
+        "pm": {
+          "battle": 1,
+          "killer": "未知",
+          "unused_items": [],
+          "shards": 20,
+          "todo_left": [
+            "再生",
+            "波及"
+          ],
+          "full_mana": false
+        },
+        "death_trace": null
+      }
+    },
+    {
+      "seed": 2026091406,
+      "region": "龙心谷",
+      "result": {
+        "cleared": 0,
+        "won": false,
+        "invalid": false,
+        "final_daowen": [
+          "增殖",
+          "庇护",
+          "透支"
+        ],
+        "consumable_uses": 0,
+        "pm": {
+          "battle": 1,
+          "killer": "熔洞蛛",
+          "unused_items": [],
+          "shards": 20,
+          "todo_left": [
+            "再生",
+            "波及"
+          ],
+          "full_mana": false
+        },
+        "death_trace": null
+      }
+    },
+    {
+      "seed": 2026091407,
+      "region": "龙心谷",
+      "result": {
+        "cleared": 1,
+        "won": false,
+        "invalid": false,
+        "final_daowen": [
+          "伤痕",
+          "再生",
+          "封印",
+          "庇护",
+          "贯穿",
+          "透支"
+        ],
+        "consumable_uses": 0,
+        "pm": {
+          "battle": 2,
+          "killer": "未知",
+          "unused_items": [],
+          "shards": 38,
+          "todo_left": [
+            "波及"
+          ],
+          "full_mana": false
+        },
+        "death_trace": null
+      }
+    },
+    {
+      "seed": 2026091408,
+      "region": "扭曲都市",
+      "result": {
+        "cleared": 0,
+        "won": false,
+        "invalid": false,
+        "final_daowen": [
+          "庇护",
+          "弱化",
+          "杀伐",
+          "透支"
+        ],
+        "consumable_uses": 0,
+        "pm": {
+          "battle": 1,
+          "killer": "奇美拉",
+          "unused_items": [
+            "反怪物电击枪"
+          ],
+          "shards": 20,
+          "todo_left": [
+            "再生",
+            "波及"
+          ],
+          "full_mana": false
+        },
+        "death_trace": null
+      }
+    },
+    {
+      "seed": 2026091409,
+      "region": "扭曲都市",
+      "result": {
+        "cleared": 0,
+        "won": false,
+        "invalid": false,
+        "final_daowen": [
+          "坠落",
+          "庇护",
+          "杀伐",
+          "透支"
+        ],
+        "consumable_uses": 2,
+        "pm": {
+          "battle": 1,
+          "killer": "骨天使",
+          "unused_items": [
+            "储能电池"
+          ],
+          "shards": 20,
+          "todo_left": [
+            "再生",
+            "波及"
+          ],
+          "full_mana": false
+        },
+        "death_trace": null
+      }
+    },
+    {
+      "seed": 2026091410,
+      "region": "罪孽都市",
+      "result": {
+        "cleared": 0,
+        "won": false,
+        "invalid": false,
+        "final_daowen": [
+          "庇护",
+          "杀伐",
+          "透支"
+        ],
+        "consumable_uses": 0,
+        "pm": {
+          "battle": 1,
+          "killer": "赌鬼",
+          "unused_items": [],
+          "shards": 20,
+          "todo_left": [
+            "再生",
+            "波及"
+          ],
+          "full_mana": false
+        },
+        "death_trace": null
+      }
+    },
+    {
+      "seed": 2026091411,
+      "region": "扭曲都市",
+      "result": {
+        "cleared": 0,
+        "won": false,
+        "invalid": false,
+        "final_daowen": [
+          "庇护",
+          "杀伐",
+          "退化",
+          "透支"
+        ],
+        "consumable_uses": 0,
+        "pm": {
+          "battle": 1,
+          "killer": "畸变行者",
+          "unused_items": [
+            "反怪物电击枪"
+          ],
+          "shards": 20,
+          "todo_left": [
+            "再生",
+            "波及"
+          ],
+          "full_mana": false
+        },
+        "death_trace": null
+      }
+    },
+    {
+      "seed": 2026091412,
+      "region": "罪孽都市",
+      "result": {
+        "cleared": 0,
+        "won": false,
+        "invalid": false,
+        "final_daowen": [
+          "封印",
+          "庇护",
+          "透支"
+        ],
+        "consumable_uses": 0,
+        "pm": {
+          "battle": 1,
+          "killer": "未知",
+          "unused_items": [],
+          "shards": 20,
+          "todo_left": [
+            "再生",
+            "波及"
+          ],
+          "full_mana": false
+        },
+        "death_trace": null
+      }
+    },
+    {
+      "seed": 2026091413,
+      "region": "扭曲都市",
+      "result": {
+        "cleared": 0,
+        "won": false,
+        "invalid": false,
+        "final_daowen": [
+          "加速",
+          "庇护",
+          "波及",
+          "自食",
+          "透支"
+        ],
+        "consumable_uses": 0,
+        "pm": {
+          "battle": 1,
+          "killer": "脑蜘蛛",
+          "unused_items": [
+            "反怪物电击枪"
+          ],
+          "shards": 20,
+          "todo_left": [
+            "再生"
+          ],
+          "full_mana": false
+        },
+        "death_trace": null
+      }
+    },
+    {
+      "seed": 2026091414,
+      "region": "龙心谷",
+      "result": {
+        "cleared": 0,
+        "won": false,
+        "invalid": false,
+        "final_daowen": [
+          "坠落",
+          "庇护",
+          "血债",
+          "透支"
+        ],
+        "consumable_uses": 0,
+        "pm": {
+          "battle": 1,
+          "killer": "碎岩鸮",
+          "unused_items": [],
+          "shards": 20,
+          "todo_left": [
+            "再生",
+            "波及"
+          ],
+          "full_mana": false
+        },
+        "death_trace": null
+      }
+    },
+    {
+      "seed": 2026091415,
+      "region": "龙心谷",
+      "result": {
+        "cleared": 1,
+        "won": false,
+        "invalid": false,
+        "final_daowen": [
+          "伤痕",
+          "再生",
+          "封印",
+          "庇护",
+          "杀伐",
+          "衰败",
+          "透支"
+        ],
+        "consumable_uses": 0,
+        "pm": {
+          "battle": 2,
+          "killer": "未知",
+          "unused_items": [],
+          "shards": 20,
+          "todo_left": [
+            "波及"
+          ],
+          "full_mana": false
+        },
+        "death_trace": null
+      }
+    },
+    {
+      "seed": 2026091416,
+      "region": "扭曲都市",
+      "result": {
+        "cleared": 0,
+        "won": false,
+        "invalid": false,
+        "final_daowen": [
+          "再生",
+          "庇护",
+          "透支"
+        ],
+        "consumable_uses": 0,
+        "pm": {
+          "battle": 1,
+          "killer": "脑蜘蛛",
+          "unused_items": [
+            "高爆手雷"
+          ],
+          "shards": 20,
+          "todo_left": [
+            "波及"
+          ],
+          "full_mana": false
+        },
+        "death_trace": null
+      }
+    },
+    {
+      "seed": 2026091417,
+      "region": "罪孽都市",
+      "result": {
+        "cleared": 0,
+        "won": false,
+        "invalid": false,
+        "final_daowen": [
+          "再生",
+          "庇护",
+          "透支"
+        ],
+        "consumable_uses": 0,
+        "pm": {
+          "battle": 1,
+          "killer": "毒枭",
+          "unused_items": [],
+          "shards": 20,
+          "todo_left": [
+            "波及"
+          ],
+          "full_mana": false
+        },
+        "death_trace": null
+      }
+    },
+    {
+      "seed": 2026091418,
+      "region": "罪孽都市",
+      "result": {
+        "cleared": 0,
+        "won": false,
+        "invalid": false,
+        "final_daowen": [
+          "庇护",
+          "杀伐",
+          "透支"
+        ],
+        "consumable_uses": 0,
+        "pm": {
+          "battle": 1,
+          "killer": "打手头目",
+          "unused_items": [],
+          "shards": 20,
+          "todo_left": [
+            "再生",
+            "波及"
+          ],
+          "full_mana": false
+        },
+        "death_trace": null
+      }
+    },
+    {
+      "seed": 2026091419,
+      "region": "扭曲都市",
+      "result": {
+        "cleared": 1,
+        "won": false,
+        "invalid": false,
+        "final_daowen": [
+          "再生",
+          "坠落",
+          "封印",
+          "庇护",
+          "贯穿",
+          "透支"
+        ],
+        "consumable_uses": 0,
+        "pm": {
+          "battle": 2,
+          "killer": "未知",
+          "unused_items": [
+            "急救箱",
+            "强光探照灯"
+          ],
+          "shards": 38,
+          "todo_left": [
+            "波及"
+          ],
+          "full_mana": false
+        },
+        "death_trace": null
+      }
+    },
+    {
+      "seed": 2026091420,
+      "region": "罪孽都市",
+      "result": {
+        "cleared": 0,
+        "won": false,
+        "invalid": false,
+        "final_daowen": [
+          "庇护",
+          "杀伐",
+          "透支"
+        ],
+        "consumable_uses": 0,
+        "pm": {
+          "battle": 1,
+          "killer": "军火商",
+          "unused_items": [],
+          "shards": 20,
+          "todo_left": [
+            "再生",
+            "波及"
+          ],
+          "full_mana": false
+        },
+        "death_trace": null
+      }
+    }
+  ]
+}

@@ -42,6 +42,19 @@ BUILDS: dict[str, dict] = {
 REGIONS = ["罪孽都市", "扭曲都市", "龙心谷"]
 
 
+def _practice_tier1_mana(engine: GameEngine) -> dict:
+    """用合法的轮回者属性点口径执行一次低档修行。
+
+    1档只给1属性点，而法限按2点一档；若直接提交 mana_points=1，
+    引擎会正确拒绝并回滚精力。旧批测器在失败后重复提交同一动作，形成死循环。
+    有足够池内余点时兑2法，其余点先存池，保证测试器每次都推进。
+    """
+    allocations = {"mana_points": 2} if engine.state.attribute_points + 1 >= 2 else {}
+    return engine.execute_action("pre_battle_action", {
+        "sub_action": "修行", "tier": 1, "allocations": allocations,
+    })
+
+
 def run_one(build: str, region: str, seed: int, battles: int = 7) -> dict:
     """跑一局到通关或阵亡。返回结果统计。"""
     cfg = BUILDS[build]
@@ -69,12 +82,9 @@ def run_one(build: str, region: str, seed: int, battles: int = 7) -> dict:
                                      {"sub_action": "学习", "sub": "daowen", "name": name})
                 if not r.get("success"):
                     to_learn.insert(0, name)
-                    e.execute_action("pre_battle_action",
-                                     {"sub_action": "修行", "tier": 1, "to": "mana"})
+                    _practice_tier1_mana(e)
             else:
-                e.execute_action("pre_battle_action",
-                                 {"sub_action": "修行", "tier": 1,
-                                  "to": "mana" if battle_no % 2 else "speed"})
+                _practice_tier1_mana(e)
 
         from sim.optional_actions import battle_start_relic_choices
         started = e.execute_action("battle_start",

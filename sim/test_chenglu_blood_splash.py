@@ -270,7 +270,9 @@ def main() -> None:
             "definition": "valid run; pve7=7场PvE完成；full_win=_play won=True（包含最终死斗）",
         },
         "fixed_config": {
-            "relic": TARGET_RELIC, "tier1_monster_attribute_budget": 35,
+            "relic": TARGET_RELIC,
+            "tier1_monster_attribute_budget": 35,
+            "monster_attribute_pricing_formula": "ceil(血限/6)+2×攻击次数+2×攻击力",
             "attributes": ATTRS,
             "initial_daowen": INITIAL_DAOWEN, "learn": LEARN,
             "spell": BLOOD_SPLASH, "region": REGION,
