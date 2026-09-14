@@ -1029,7 +1029,7 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
     round_start_relic_choices = _rsrc
     # 第十九批：死斗实验室可注入隔离存储（默认=生产路径，行为不变）
     _lab = lab_paths or {}
-    e = GameEngine(db_path=_lab.get("db_path", "/tmp/learner.db"), rng_seed=seed,
+    e = GameEngine(db_path=_lab.get("db_path", os.environ.get("LJ_DB_PATH", "/tmp/learner.db")), rng_seed=seed,
                    sealed_candidate_path=_lab.get("sealed_path",
                                                   "data/sealed_candidate.json"),
                    death_book_path=_lab.get("death_book_path", "死者之书.md"))
@@ -1749,6 +1749,54 @@ def evaluate_single_daowen(daowen: str, runs: int, gen: int,
                           spend_shards=False, battles=battles)
 
 
+def evaluate_all_single_daowen(runs: int, gen: int,
+                               random_seeds: bool = False, region: str = None,
+                               policy: dict = None, attrs: dict = None,
+                               battles: int = 7) -> dict:
+    """按相同真实引擎条件逐个评估全部已注册道纹的单道纹基准。
+
+    这里故意不产生综合分：每个道纹只保留 PVE、PVP、完整通关三组指标，
+    并记录实际形成率；道纹绝对强度和构筑内边际贡献仍是两张不同的表。
+    """
+    rows = []
+    for index, daowen in enumerate(CANDIDATES, 1):
+        metrics = evaluate_single_daowen(daowen, runs, gen,
+                                         random_seeds=random_seeds, region=region,
+                                         policy=policy, attrs=attrs, battles=battles)
+        rows.append({"daowen": daowen, "metrics": metrics})
+        print(f"[{index}/{len(CANDIDATES)}] {daowen}：有效{metrics['valid']} "
+              f"无效{metrics['invalid']}｜PVE {metrics['pve_rate']:.3f}｜"
+              f"PVP {metrics['pvp_rate'] if metrics['pvp_rate'] is not None else 'N/A'}｜"
+              f"完整 {metrics['full_rate']:.3f}", flush=True)
+
+    rankings = {}
+    for metric in ("pve", "pvp", "full"):
+        candidates = []
+        for row in rows:
+            m = row["metrics"]
+            trials = m.get(f"{metric}_trials", 0)
+            rate = m.get(f"{metric}_rate")
+            lcb = m.get(f"{metric}_lcb")
+            status = "可评价" if rate is not None and trials >= 3 else "样本不足，暂不评价"
+            candidates.append({"daowen": row["daowen"], "rate": rate,
+                               "lcb": lcb, "wins": m.get(f"{metric}_wins"),
+                               "trials": trials, "status": status})
+        rankings[metric] = sorted(
+            candidates,
+            key=lambda x: (x["status"] == "可评价", x["lcb"] is not None,
+                           x["lcb"] if x["lcb"] is not None else -1),
+            reverse=True)
+    return {
+        "schema": 1,
+        "protocol": {"kind": "single_daowen_baseline", "runs": runs,
+                      "generation": gen, "random_seeds": random_seeds,
+                      "region": region, "battles": battles,
+                      "metrics": ["pve", "pvp", "full"],
+                      "note": "同副本/属性/AI/种子条件；不生成综合分；单道纹基准不代表构筑内边际贡献"},
+        "scores": rows, "rankings": rankings,
+    }
+
+
 def discover_observed_combos(activity: dict | None = None,
                               telemetry: dict | None = None) -> list[tuple[str, str]]:
     """只从真实运行日志读取交互边，不枚举候选道纹组合。"""
@@ -2277,6 +2325,10 @@ def main():
                     help="--audit-starter 配套的学习道纹；只测试逐个移除")
     ap.add_argument("--audit-single", default=None,
                     help="对一道实际道纹做单道纹基准，不替代构筑内消融")
+    ap.add_argument("--audit-all-daowen", action="store_true",
+                    help="按相同真实引擎条件评估全部已注册道纹的单道纹基准")
+    ap.add_argument("--audit-output", default=None,
+                    help="批量单道纹评分的JSON输出路径")
     ap.add_argument("--audit-combo", nargs=2, default=None, metavar=("A", "B"),
                     help="只复测日志中已观察到的Combo：A、B、A+B；未观察到则拒绝")
     ap.add_argument("--audit-runs", type=int, default=6, help="消融/单体定向复测局数")
@@ -2303,6 +2355,17 @@ def main():
         print(json.dumps({"daowen": a.audit_single, "metrics": audit,
                           "note": "单道纹基准不等于当前构筑边际贡献"},
                          ensure_ascii=False, indent=2))
+        return
+    if a.audit_all_daowen:
+        audit = evaluate_all_single_daowen(a.audit_runs, audit_gen,
+                                           random_seeds=a.random_seeds)
+        if a.audit_output:
+            os.makedirs(os.path.dirname(a.audit_output) or ".", exist_ok=True)
+            with open(a.audit_output, "w", encoding="utf-8") as f:
+                json.dump(audit, f, ensure_ascii=False, indent=2)
+            print(f"已写入单道纹评分：{a.audit_output}")
+        else:
+            print(json.dumps(audit, ensure_ascii=False, indent=2))
         return
     if a.audit_combo:
         pair = tuple(sorted(a.audit_combo))
