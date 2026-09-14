@@ -129,6 +129,9 @@ def _run_one(task: tuple[int, str | None, str]) -> dict[str, Any]:
                 attrs=dict(ATTRS),
                 spell_plan=[dict(BLOOD_SPLASH)],
                 ai_cls=BenchmarkAI,
+                # 终止归因需要引擎提供死亡上下文；否则“本场未清除”会被
+                # 运行器误写成“死亡场次”。
+                death_trace=True,
                 lab_paths={
                     "db_path": str(run_dir / "engine.db"),
                     "sealed_path": str(sealed),
@@ -137,6 +140,9 @@ def _run_one(task: tuple[int, str | None, str]) -> dict[str, Any]:
             )
         valid = not bool(result.get("invalid"))
         pm = result.get("pm") or {}
+        trace = result.get("death_trace") or {}
+        death_observed = bool(trace.get("death_subtype"))
+        termination_battle = pm.get("battle") if pm else None
         return {
             "seed": seed,
             "valid": valid,
@@ -146,7 +152,15 @@ def _run_one(task: tuple[int, str | None, str]) -> dict[str, Any]:
             "full_win": valid and bool(result.get("won")),
             "final_duel_fought": bool(result.get("duel_fought")),
             "final_duel_won": bool(result.get("duel_won")),
-            "death_battle": pm.get("battle"),
+            # death_battle 只记录确有死亡上下文的局；此前直接使用 pm.battle，
+            # 会把40回合未清场但玩家仍存活的局误计为死亡。
+            "death_battle": trace.get("battle") if death_observed else None,
+            "death_subtype": trace.get("death_subtype", "") if death_observed else "",
+            "death_source": trace.get("death_source", "") if death_observed else "",
+            "termination_battle": termination_battle,
+            "termination_kind": "death" if death_observed else (
+                "nondeath_termination" if termination_battle is not None else "unknown"),
+            "termination_primary": trace.get("primary", ""),
             "killer": pm.get("killer", "") if pm else "",
             "spell_plan": "血溅五步",
         }
@@ -156,7 +170,9 @@ def _run_one(task: tuple[int, str | None, str]) -> dict[str, Any]:
             "invalid_reason": f"uncaught {type(exc).__name__}: {exc}",
             "cleared_battles": 0, "pve7_completed": False, "full_win": False,
             "final_duel_fought": False, "final_duel_won": False,
-            "death_battle": None, "killer": "", "spell_plan": "血溅五步",
+            "death_battle": None, "death_subtype": "", "death_source": "",
+            "termination_battle": None, "termination_kind": "unknown",
+            "termination_primary": "", "killer": "", "spell_plan": "血溅五步",
         }
     finally:
         setup_support.resolve_opening_relic = _ORIGINAL_RESOLVE
@@ -178,6 +194,8 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     n = len(valid)
     cleared = [r["cleared_battles"] for r in valid]
     deaths = [r for r in valid if r.get("death_battle") is not None]
+    nondeath_terminations = [r for r in valid
+                             if r.get("termination_kind") == "nondeath_termination"]
     duel = [r for r in valid if r["final_duel_fought"]]
     return {
         "requested_runs": len(rows),
@@ -193,9 +211,20 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "average_cleared_battles": sum(cleared) / n if n else None,
         "average_survival_battles": sum(cleared) / n if n else None,
         "survival_distribution": dict(Counter(str(c) for c in cleared)),
+        "termination_distribution": dict(Counter(r.get("termination_kind", "unknown")
+                                                   for r in valid)),
+        "termination_battle_distribution": dict(sorted(
+            Counter(str(r["termination_battle"]) for r in valid
+                    if r.get("termination_battle") is not None).items(),
+            key=lambda item: int(item[0]))),
         "death_distribution": dict(sorted(Counter(str(r["death_battle"]) for r in deaths).items(),
                                            key=lambda item: int(item[0]))),
+        "death_subtype_distribution": dict(Counter(r.get("death_subtype", "") for r in deaths)),
+        "death_source_distribution": dict(Counter(r.get("death_source", "") for r in deaths)),
+        "nondeath_termination_distribution": dict(Counter(
+            r.get("termination_primary", "") for r in nondeath_terminations)),
         "deaths_observed": len(deaths),
+        "nondeath_terminations_observed": len(nondeath_terminations),
     }
 
 
