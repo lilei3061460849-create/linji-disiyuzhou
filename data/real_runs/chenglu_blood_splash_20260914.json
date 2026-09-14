@@ -1,6 +1,6 @@
 {
   "meta": {
-    "generated_at": "2026-09-14T05:34:17+00:00",
+    "generated_at": "2026-09-14T06:12:20+00:00",
     "engine": "engine.api.GameEngine via sim.build_learner._play",
     "script": "sim/test_chenglu_blood_splash.py",
     "opponent_snapshot": "data/real_winners/winner_01.json",
@@ -26,7 +26,7 @@
         "杀伐"
       ],
       "trigger_condition": "失去生命后",
-      "effect_flow": "发动再生X于自身→发动透支X于自身→发动杀伐X于攻击者→循环"
+      "effect_flow": "若自身 法力 大于等于 2 则 发动再生X于自身；发动杀伐X于攻击者；发动透支X于自身 否则 发动再生X于自身；发动透支X于自身→循环"
     },
     "region": "龙心谷",
     "resonance": "反转",
@@ -49,15 +49,13 @@
     "full_win_rate": 0.0,
     "final_duel_fought_runs": 0,
     "final_duel_wins": 0,
-    "average_cleared_battles": 0.06,
-    "average_survival_battles": 0.06,
+    "average_cleared_battles": 0.0,
+    "average_survival_battles": 0.0,
     "survival_distribution": {
-      "0": 47,
-      "1": 3
+      "0": 50
     },
     "death_distribution": {
-      "1": 47,
-      "2": 3
+      "1": 50
     },
     "deaths_observed": 50
   },
@@ -404,13 +402,13 @@
       "seed": 459,
       "valid": true,
       "invalid_reason": "",
-      "cleared_battles": 1,
+      "cleared_battles": 0,
       "pve7_completed": false,
       "full_win": false,
       "final_duel_fought": false,
       "final_duel_won": false,
-      "death_battle": 2,
-      "killer": "余烬侍者",
+      "death_battle": 1,
+      "killer": "背碑人",
       "spell_plan": "血溅五步"
     },
     {
@@ -469,13 +467,13 @@
       "seed": 536,
       "valid": true,
       "invalid_reason": "",
-      "cleared_battles": 1,
+      "cleared_battles": 0,
       "pve7_completed": false,
       "full_win": false,
       "final_duel_fought": false,
       "final_duel_won": false,
-      "death_battle": 2,
-      "killer": "烙痕祭司",
+      "death_battle": 1,
+      "killer": "背碑人",
       "spell_plan": "血溅五步"
     },
     {
@@ -547,13 +545,13 @@
       "seed": 576,
       "valid": true,
       "invalid_reason": "",
-      "cleared_battles": 1,
+      "cleared_battles": 0,
       "pve7_completed": false,
       "full_win": false,
       "final_duel_fought": false,
       "final_duel_won": false,
-      "death_battle": 2,
-      "killer": "碎岩鸮",
+      "death_battle": 1,
+      "killer": "背碑人",
       "spell_plan": "血溅五步"
     },
     {

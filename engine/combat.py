@@ -3733,6 +3733,73 @@ class CombatEngine:
                 flat.append(step)
         return flat
 
+    @staticmethod
+    def _flow_step_variants(steps) -> list[list]:
+        """列出一个流程所有可能的条件展开结果，不读取当前战斗状态。
+
+        反应法术的提交可能要在同一攻击阶段的前一个命中已经结算后才真正执行。
+        如果此时再按当前法力求值，条件分支会从“短分支”漂移为“长分支”，
+        于是同一份提交在静态校验时合法、在后续命中校验时却被拒绝。这个辅助
+        只枚举 AST 中已经声明的分支，供一次提交冻结的分支签名复用；它不是
+        重新设计条件语义，也不会在没有提交签名时替代正常的当前状态求值。
+        """
+        from .spell_dsl import IfStep
+        variants = [[]]
+        for step in steps:
+            if isinstance(step, IfStep):
+                branches = []
+                for branch in (step.then_steps, step.else_steps):
+                    branches.extend(CombatEngine._flow_step_variants(branch))
+                variants = [prefix + suffix for prefix in variants for suffix in branches]
+            else:
+                variants = [prefix + [step] for prefix in variants]
+        return variants
+
+    def _flow_steps_signature(self, steps, holder: Entity, attacker: Entity,
+                              refs: dict[str, Entity]) -> tuple:
+        """把一次已展开的流程编码为不依赖实体对象的冻结签名。"""
+        reverse = {id(entity): ref for ref, entity in refs.items()}
+        signature = []
+        for step in steps:
+            role = self._step_role(step)
+            target = self._resolve_step_subject(role, holder, attacker)
+            signature.append((self._step_daowen(step), role, reverse.get(id(target))))
+        return tuple(signature)
+
+    def _steps_for_spell_decision(self, flow: dict, holder: Entity, attacker: Entity,
+                                  refs: dict[str, Entity], decision: dict) -> list:
+        """取得一次提交应使用的固定流程展开结果。
+
+        第一次（静态）校验按触发瞬间状态求值，并把结果签名写入这份提交；
+        同一次攻击后续命中/resolve_attack 的重复校验则只复用该签名，不再按
+        已经被前一个命中改变的法力或生命重新选择分支。这样既保留了“触发时
+        判断条件”的语义，也让 prepare → validate → resolve 使用同一份步骤。
+        """
+        current = self._flatten_flow_steps(flow["steps"], holder, attacker)
+        frozen = decision.get("_engine_branch_signature")
+        if frozen is None:
+            # 仅在调用方尚未完成第一次校验时返回当前展开；调用方在通过结构
+            # 校验后写入签名。
+            return current
+        if decision.get("_engine_branch_owner") is not self:
+            raise ValueError("法术提交包含未经引擎冻结的条件分支")
+        expected = tuple(tuple(item) for item in frozen)
+        for variant in self._flow_step_variants(flow["steps"]):
+            if self._flow_steps_signature(variant, holder, attacker, refs) == expected:
+                return variant
+        raise ValueError("法术提交的条件分支不是该法术已冻结的有效展开")
+
+    def _freeze_spell_decision_branch(self, flow: dict, holder: Entity, attacker: Entity,
+                                     refs: dict[str, Entity], decision: dict,
+                                     flat_steps: list) -> None:
+        """在首次通过校验后冻结条件展开；保留同一提交的 prepare 语义。"""
+        if "_engine_branch_signature" in decision:
+            return
+        decision["_engine_branch_owner"] = self
+        decision["_engine_branch_signature"] = [
+            list(item) for item in self._flow_steps_signature(flat_steps, holder, attacker, refs)
+        ]
+
     # 反应型法术四个挂接点：受到伤害前/失去生命后是历史已有的两个key
     # （"before"/"after"，字段名保留兼容旧调用点）；受到伤害后/失去生命前是
     # 本轮新增的两个挂接点，key为"damage_after"/"life_before"。四者共用
@@ -3841,7 +3908,9 @@ class CombatEngine:
                     raise ValueError(f"法术{spell_name}必须显式提交use布尔值")
                 if not decision["use"]:
                     continue
-                flat_steps = self._flatten_flow_steps(flow["steps"], holder, attacker)
+                flat_steps = self._steps_for_spell_decision(
+                    flow, holder, attacker, refs, decision,
+                )
                 cycles = decision.get("cycles")
                 if not isinstance(cycles, list) or not cycles:
                     raise ValueError(f"法术{spell_name}发动时必须提交至少一个cycles")
@@ -3883,6 +3952,11 @@ class CombatEngine:
                                 speed_budget[expected_ref] -= 1
                                 if speed_budget[expected_ref] < 0:
                                     raise ValueError("法术目标速度不足以闪避")
+                # 这一份 decision 会在同一怪物阶段的后续命中中再次校验；
+                # 条件分支必须锁定在第一次（触发瞬间）看到的状态。
+                self._freeze_spell_decision_branch(
+                    flow, holder, attacker, refs, decision, flat_steps,
+                )
 
     def _trigger_spell_subject(self, role: str, holder: Entity, actor: Entity) -> Optional[str]:
         """「目标发动道纹前」触发语境下的身份映射：
@@ -4377,7 +4451,9 @@ class CombatEngine:
                 if not decision["use"]:
                     logs.append({"spell": spell_name, "used": False})
                     continue
-                flat_steps = self._flatten_flow_steps(flow["steps"], holder, attacker)
+                flat_steps = self._steps_for_spell_decision(
+                    flow, holder, attacker, refs, decision,
+                )
                 for cycle_index, cycle in enumerate(decision["cycles"], 1):
                     for entry, step in zip(cycle, flat_steps):
                         daowen = self._step_daowen(step)

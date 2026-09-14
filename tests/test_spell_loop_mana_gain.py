@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
 
-from engine.models import DaoWen, DaoWenInstance
+from engine.models import DaoWen, DaoWenInstance, Relic
 from tests.test_dragon_heart import _new_engine, _start_with_enemy
 
 # 官方条目见 死者之书.md「## 可学法术 → 血炼周天」。先【再生】回血、再
@@ -85,6 +85,126 @@ def _fire(engine, cycles, x=3):
                                       "spell_choices": spell_choices}]}],
     }]
     return combat.resolve_monster_phase(choices, prepared=prepared)
+
+
+BRANCH_SPELL = {
+    "name": "血溅五步",
+    "required_daowen": ["再生", "透支", "杀伐"],
+    "trigger_condition": "失去生命后",
+    "effect_flow": (
+        "若自身 法力 大于等于 2 则 "
+        "发动再生X于自身；发动杀伐X于攻击者；发动透支X于自身 "
+        "否则 发动再生X于自身；发动透支X于自身→循环"
+    ),
+}
+
+
+def _engine_with_branch_spell(suffix, *, mana):
+    """用真实 GameEngine 装配【血溅五步】并把怪物设为三击靶场。"""
+    engine = _new_engine(suffix)
+    player = engine.state.player
+    for name in ("杀伐", "再生", "透支"):
+        player.dao_wen[name] = DaoWenInstance(
+            DaoWen(name=name, formula="", cost_type="", cost_formula="X", effect_formula=""))
+
+    engine.state.energy = 3
+    draft = engine.execute_action("pre_battle_action", {
+        "sub_action": "学习", "sub": "custom_spell", "spell": BRANCH_SPELL,
+    })
+    assert draft["success"], draft
+    engine.state.energy = 3
+    learned = engine.execute_action("pre_battle_action", {
+        "sub_action": "学习", "sub": "custom_spell", "spell": BRANCH_SPELL,
+        "dm_approved": True,
+    })
+    assert learned["success"], learned
+    assert learned["result"]["wired"] is True
+
+    # 让前一击的真实失血与【承露盏】在同一阶段内把法力从<2推到≥2，
+    # 直接覆盖用户要求的“承露盏+血溅五步”引擎路径。
+    engine.state.relics.append(Relic(
+        name="承露盏", effect="每累计失去10点生命，获得1点法力"))
+    _start_with_enemy(engine)
+    foe = engine.state.enemies[0]
+    foe.current_hp = 99999
+    foe.attack_power = 6
+    foe.attack_count = 3
+    engine.state.player.current_hp = 40
+    engine.state.player.current_mana = mana
+    return engine
+
+
+def _branch_choices(option, *, use, cycles):
+    """按 prepare 返回的真实资格集生成一份完整反应提交。"""
+    spell_choices = {
+        timing: {
+            spell["spell_name"]: {"use": False}
+            for spell in option["spell_options"].get(timing, [])
+        }
+        for timing in ("before", "after", "damage_after", "life_before")
+    }
+    if use:
+        spell_choices["after"]["血溅五步"] = {"use": True, "cycles": cycles}
+    return spell_choices
+
+
+def _resolve_branch_phase(engine, hits):
+    """通过 CombatEngine 的 prepare/resolve 合约结算一次真实怪物阶段。"""
+    prepared = engine.combat.prepare_monster_phase()
+    actor = prepared["actors"][0]
+    target = actor["attack_target_options"][0]
+    option = target
+    choices = [{
+        "actor_ref": actor["actor_ref"],
+        "daowen": None,
+        "attack_actions": [{"hits": [
+            {"target_ref": target["ref"], "dodge": False, "blood_shadow": False,
+             "spell_choices": _branch_choices(option, use=use, cycles=cycles)}
+            for use, cycles in hits
+        ]}],
+    }]
+    return engine.combat.resolve_monster_phase(choices, prepared)
+
+
+def test_blood_splash_low_mana_branch_stays_frozen_across_hits():
+    """低法力分支在前一击产法力后，后续重复校验仍按同一次触发的两步展开。"""
+    engine = _engine_with_branch_spell("branch_low", mana=1)
+    # 两个连续命中都在提交时看到法力<2；第一轮【透支】会把法力推到2，
+    # 这是此前 prepare/validate/resolve 步数漂移的最小真实引擎复现。
+    result = _resolve_branch_phase(engine, [
+        (True, [[{"x": 1, "target_ref": "player:0"},
+                 {"x": 1, "target_ref": "player:0"}]]),
+        (True, [[{"x": 1, "target_ref": "player:0"},
+                 {"x": 1, "target_ref": "player:0"}]]),
+        (False, []),
+    ])
+    assert result and engine.state.player.is_alive
+    assert engine.state.player.current_mana == 3
+    used = [
+        log["daowen"]
+        for detail in result
+        for log in detail.get("spell_logs", [])
+        if "daowen" in log
+    ]
+    assert used == ["再生", "透支", "再生", "透支"]
+
+
+def test_blood_splash_high_mana_branch_submits_three_steps_and_loops():
+    """高法力分支必须实际提交并结算再生→杀伐→透支三步循环。"""
+    engine = _engine_with_branch_spell("branch_high", mana=2)
+    result = _resolve_branch_phase(engine, [
+        (
+            True,
+            [[{"x": 1, "target_ref": "player:0"},
+              {"x": 1, "target_ref": "enemy:0", "dodge": False},
+              {"x": 1, "target_ref": "player:0"}]],
+        ),
+        (False, []),
+        (False, []),
+    ])
+    assert result and engine.state.player.is_alive
+    logs = [log for detail in result for log in detail.get("spell_logs", [])]
+    assert [log["daowen"] for log in logs if "daowen" in log] == ["再生", "杀伐", "透支"]
 
 
 def test_single_cycle_is_mana_neutral():

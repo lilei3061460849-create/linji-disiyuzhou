@@ -48,7 +48,9 @@ BLOOD_SPLASH = {
     "required_daowen": ["再生", "透支", "杀伐"],
     "trigger_condition": "失去生命后",
     # DSL 要求每一步显式写目标身份；“攻击者”就是本次受击的怪物。
-    "effect_flow": "发动再生X于自身→发动透支X于自身→发动杀伐X于攻击者→循环",
+    # 触发时法力≥2才走再生→杀伐→透支；法力不足时跳过杀伐，
+    # 走再生→透支把法力循环起来。
+    "effect_flow": "若自身 法力 大于等于 2 则 发动再生X于自身；发动杀伐X于攻击者；发动透支X于自身 否则 发动再生X于自身；发动透支X于自身→循环",
 }
 DEFAULT_OPPONENT = ROOT / "data" / "real_winners" / "winner_01.json"
 _ORIGINAL_RESOLVE = setup_support.resolve_opening_relic
