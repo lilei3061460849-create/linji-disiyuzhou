@@ -115,9 +115,11 @@ def test_basic_attack_lands_current_speed_times_current_mana():
 
 
 def test_spending_mana_weakens_the_basic_attack():
-    """正常路径（一池制的取舍）：放一次法力道纹 = 本场普攻永久变弱。
+    """正常路径（一池制的取舍）：放一次法力道纹 = 普攻变弱，但回蓝后随时涨回来。
 
-    普攻本身不消耗法力，所以衰减不是自动发生的，而是「用法力」的机会成本。
+    普攻本身不消耗法力，所以衰减不是自动发生的，而是「用法力」的机会成本；
+    攻力是**实时读取当前法力**，不是战始快照——法力补回来（守夜灯/承露盏/
+    血契/透支/再生等）攻击力同步回升，不存在「掉下去就永远回不来」。
     """
     e = _engine("decay", blood_points=1, speed_points=8, mana_points=16)
     p = e.state.player
@@ -125,6 +127,15 @@ def test_spending_mana_weakens_the_basic_attack():
     assert p.spend_mana(3) is True                  # 模拟放一次法力道纹
     after = p.effective_attack_count() * p.effective_attack_power()
     assert after == p.effective_attack_count() * 5 == 20 < before
+    # 回蓝 2 点（例：守夜灯[回始]授予/承露盏失血返还）→ 攻力跟着回升到 7
+    p.current_mana += 2
+    assert p.effective_attack_power() == 7
+    assert p.effective_attack_count() * p.effective_attack_power() == 28
+    # 掉到 0 也不锁死：补满即回到战始水平
+    p.current_mana = 0
+    assert p.effective_attack_power() == 0
+    p.current_mana = p.mana_limit
+    assert p.effective_attack_power() == 8
 
 
 # ==================== 4. 修行：入池 + 兑换 ====================

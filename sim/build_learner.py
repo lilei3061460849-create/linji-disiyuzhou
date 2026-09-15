@@ -255,14 +255,14 @@ def _resolve_pending_choices(e) -> None:
 
     各 pending 池相互门禁：非空时绝大多数行动被 api.py:824-845 拒绝并退还精力，
     驱动不清理=原地死循环/战斗无法结算。处理：遗物/道具/雇员道纹/煞气取首项；
-    【救赎】固定选【无视】（确定性口径同 combo_loop_audit.py:819——接纳会产生
-    员工盟友，污染适应度横向比较）。事件链单趟上限20，防无限嵌套。
+    【救赎】固定选【终结】（2026-09-15 用户令：终结取代旧「无视」；两者都不产生
+    员工盟友，不污染适应度横向比较，且终结按命零口径给碎片）。事件链单趟上限20，防无限嵌套。
     """
     for _ in range(20):
         acted = False
         st = e.state
         if st.pending_redemption:
-            e.execute_action("resolve_redemption", {"option": "无视"})
+            e.execute_action("resolve_redemption", {"option": "终结"})
             acted = True
         if st.pending_relic_choices:
             e.execute_action("choose_discovered_relic",

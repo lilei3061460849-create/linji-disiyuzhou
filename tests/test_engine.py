@@ -640,18 +640,18 @@ def test_monster_phase_engine():
     st.enemies.append(m)
     combat = CombatEngine(st, DiceEngine()); combat.reset_monster_activation()
 
-    # 第1回合（白板）：不激活道纹，攻击力仍6
+    # 第1回合：2026-09-15 用户令删除白板限制，怪物首回合即可发动道纹
     combat.round_start()  # current_round→1
-    r1 = resolve_monster_phase(combat, {"打手": None})
-    assert m.attack_power == 6, f"白板回合攻击力应6，实{m.attack_power}"
+    r1 = resolve_monster_phase(combat, {"打手": "强化"}, target_refs={"打手": "enemy:0"})
+    assert m.attack_power == 9, f"发动强化3后攻击力应9，实{m.attack_power}"
     assert len(r1) > 0, "怪物应有出手"
-    print(f"  ✓ 第1回合(白板)：攻击力6，怪物出手{len(r1)}次，贾凡HP{st.player.current_hp} 速{st.player.current_speed}")
+    print(f"  ✓ 第1回合：激活【强化3】，攻击力6→9，怪物出手{len(r1)}次，贾凡HP{st.player.current_hp} 速{st.player.current_speed}")
 
-    # 第2回合：激活强化3 → 攻击力6→9
+    # 第2回合：重施狂暴3（准则9：不同道纹同回合各至多一次）
     combat.round_start()  # current_round→2
-    r2 = resolve_monster_phase(combat, {"打手": "强化"}, target_refs={"打手": "enemy:0"})
-    assert m.attack_power == 9, f"激活强化后攻击力应9，实{m.attack_power}"
-    print(f"  ✓ 第2回合：激活【强化3】，攻击力6→9，怪物自主攻击")
+    r2 = resolve_monster_phase(combat, {"打手": "狂暴"}, target_refs={"打手": "enemy:0"})
+    assert r2, "怪物自主攻击必须有结算"
+    print(f"  ✓ 第2回合：激活【狂暴3】，怪物自主攻击")
     print("  ✓ 怪物回合引擎化测试通过")
 
 
@@ -1155,7 +1155,8 @@ def test_original_daowen_only_charges_mutation_on_activation():
         dao_wen=DaoWen(name="庇护", formula="", cost_type="消耗", cost_formula="X",
                        effect_formula=""), x_value=1)
     _, c1 = mkbed(m1)
-    c1.round_start(); resolve_monster_phase(c1, {"持续怪": None})
+    # 删除白板后怪物每回合都有合法选项就必须出招，首回合先发填充道纹【庇护】
+    c1.round_start(); resolve_monster_phase(c1, {"持续怪": "庇护"})
     c1.round_start(); resolve_monster_phase(c1, {"持续怪": "自愈"})
     assert m1.mutation_count == 10 and m1.is_alive
     for _ in range(3):
@@ -1169,7 +1170,7 @@ def test_original_daowen_only_charges_mutation_on_activation():
         dao_wen=DaoWen(name="庇护", formula="", cost_type="消耗", cost_formula="X",
                        effect_formula=""), x_value=1)
     _, c2 = mkbed(m2)
-    c2.round_start(); resolve_monster_phase(c2, {"次数怪": None})
+    c2.round_start(); resolve_monster_phase(c2, {"次数怪": "庇护"})
     c2.round_start(); resolve_monster_phase(c2, {"次数怪": "必中"})
     c2.round_start(); resolve_monster_phase(c2, {"次数怪": "庇护"})
     assert m2.mutation_count == 15 and m2.is_alive
@@ -1178,8 +1179,11 @@ def test_original_daowen_only_charges_mutation_on_activation():
     # 崩解仍保留：若首次发动本身使异变达到阈值，效果中断并命零。
     m3 = mk("临界怪", [("自愈", 2)])
     m3.mutation_count = Entity.MUTATION_COLLAPSE_THRESHOLD - 10
+    m3.dao_wen["庇护"] = DaoWenInstance(
+        dao_wen=DaoWen(name="庇护", formula="", cost_type="消耗", cost_formula="X",
+                       effect_formula=""), x_value=1)
     _, c3 = mkbed(m3)
-    c3.round_start(); resolve_monster_phase(c3, {"临界怪": None})
+    c3.round_start(); resolve_monster_phase(c3, {"临界怪": "庇护"})
     c3.round_start(); result = resolve_monster_phase(c3, {"临界怪": "自愈"})
     assert not m3.is_alive and m3.mutation_count == Entity.MUTATION_COLLAPSE_THRESHOLD
     assert any(entry.get("collapsed") == "自愈" for entry in result)

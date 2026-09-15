@@ -229,7 +229,7 @@ class GameEngine:
                 "phase": "救赎待选",
                 "actions": [{"action_type": "resolve_redemption",
                              "params_schema": {
-                                 "option": [1, 2, "接纳", "无视"],
+                                 "option": [1, 2, "接纳", "终结"],
                                  "name": "接纳时必填且不得与场上重名"}}],
                 "pending": dict(self.state.pending_redemption),
             }
@@ -927,7 +927,7 @@ class GameEngine:
         if self.state.pending_redemption and action_type != "resolve_redemption":
             return {
                 "success": False,
-                "error": "必须先结算【救赎】：接纳或无视",
+                "error": "必须先结算【救赎】：接纳或终结",
                 "pending": dict(self.state.pending_redemption),
             }
         if self.state.pending_relic_choices and action_type != "choose_discovered_relic":
@@ -1258,7 +1258,13 @@ class GameEngine:
             cost_formula="X", effect_formula=""))
 
     def _action_resolve_redemption(self, params: dict) -> dict:
-        """救赎：接纳昏迷微光者为员工（待命，需派遣+战终工资，计入叛变），或无视。"""
+        """救赎：接纳昏迷微光者为员工（待命，需派遣+战终工资，计入叛变），或当场【终结】。
+
+        【终结】（2026-09-15 用户令，取代旧「无视」选项）：救赎不是免费收获——把昏迷
+        的微光者当场终结，效果等同击杀：它被还原为一次正常[命零]，[战终]按与普通击杀
+        完全相同的公式（⌈战始血限×2%⌉ + 道纹数×5）产出[碎片]，不再落入
+        「永久离场不产碎片」的分类。
+        """
         pending = self.state.pending_redemption
         if not pending:
             return {"success": False, "error": "当前没有待结算的救赎"}
@@ -1292,10 +1298,41 @@ class GameEngine:
                 "action": "救赎·接纳",
                 "result": {"employee": employee.to_dict(), "from": pending["name"]},
             }
-        if option in (2, "2", "无视"):
+        if option in (2, "2", "终结"):
             self.state.pending_redemption = {}
-            return {"success": True, "action": "救赎·无视", "result": {"note": "无事发生"}}
-        return {"success": False, "error": "option必须是1/接纳或2/无视"}
+            monster = next((m for m in self.state.enemies
+                            if m.name == pending.get("name")), None)
+            if monster is None:
+                # 实体已不在敌方列表（异常/旧档）：保守起见仍按快照给出击杀口径奖励，
+                # 保证「等同击杀」不被静默降级成无事发生。
+                blood_limit = pending.get("blood_limit", 0)
+                dao_wen = pending.get("dao_wen") or {}
+                reward = math.ceil(blood_limit * 0.02) + len(dao_wen) * 5
+                self.state.shards += reward
+                return {"success": True, "action": "救赎·终结",
+                        "result": {"monster": pending.get("name"), "shard_reward": reward,
+                                   "total_shards": self.state.shards,
+                                   "note": "等同击杀，碎片已结算"}}
+            # 还原为一次正常命零：清掉【离场】标记，让[战终]走普通击杀的奖励管线
+            # （奖励公式与结算时点都由 battle_end 统一负责，引擎内只有一处口径）。
+            monster.is_alive = False
+            monster.is_departed = False
+            monster.departure_reason = ""
+            monster.removed_without_kill = False
+            monster._redeemed = False
+            monster._leave_ctx = None
+            monster._death_ctx = make_context(
+                timing=self.state.combat_subphase or self.state.phase,
+                source="终结", source_type="system", target=monster,
+                mechanic="death", subtype="redemption_finish",
+                tags={"death", "redemption"},
+            ).to_dict()
+            return {"success": True, "action": "救赎·终结",
+                    "result": {"monster": monster.name,
+                               "note": "昏迷的微光者被当场终结，等同击杀，碎片于[战终]按命零奖励结算",
+                               "battle_start_blood_limit": monster.battle_start_blood_limit,
+                               "dao_wen_count": len(monster.dao_wen)}}
+        return {"success": False, "error": "option必须是1/接纳或2/终结"}
 
     # ==================== 局外行动 ====================
 

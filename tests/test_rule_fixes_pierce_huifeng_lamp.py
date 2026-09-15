@@ -50,8 +50,17 @@ def _monster_phase_no_attack(engine):
                   "spell_choices": {"before": {}, "after": {}}}
                  for _ in range(actor["base_hits_per_attack"])]
                 for _ in range(actor["base_attack_actions"])]
+        # 2026-09-15 删除白板后：有合法道纹选项就必须提交一个（本局怪物普遍有道纹）
+        dw = None
+        if actor.get("daowen_required"):
+            opt = next((o for o in actor["daowen_options"] if o["name"] != "变形"),
+                       actor["daowen_options"][0])
+            dw = {"name": opt["name"], "dodge": False, "blood_shadow": False,
+                  "trigger_spell_choices": {}}
+            if opt.get("requires_target"):
+                dw["target_ref"] = "player:0"
         choices.append({
-            "actor_ref": actor["actor_ref"], "daowen": None,
+            "actor_ref": actor["actor_ref"], "daowen": dw,
             "attack_actions": [{"hits": h} for h in hits],
         })
     return engine.execute_action("resolve_monster_phase", {

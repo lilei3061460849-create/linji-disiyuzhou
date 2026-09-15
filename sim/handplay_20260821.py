@@ -832,7 +832,7 @@ def round_start_choices(engine, strat: Strategy) -> dict:
 
 
 def resolve_redemption_if_pending(engine, strat: Strategy) -> None:
-    """救赎待结算：怪物≤10%血且无原始道纹 → 接纳（有用）或无视。"""
+    """救赎待结算：怪物≤10%血且无原始道纹 → 接纳（有用）或【终结】（等同击杀拿碎片）。"""
     state = engine.state
     guard = 0
     while state.pending_redemption and guard < 5:
@@ -840,7 +840,7 @@ def resolve_redemption_if_pending(engine, strat: Strategy) -> None:
         name = pend.get("name", "怪物")
         # 面板=原怪物面板/2；攻击力×次数≥2 才值得接纳（否则白养一个负担）
         atk = pend.get("attack_count", 0) * pend.get("attack_power", 0)
-        option = "接纳" if atk >= 2 else "无视"
+        option = "接纳" if atk >= 2 else "终结"
         TRACE.text(f"  决策[救赎] {name}（{pend.get('attack_count')}×{pend.get('attack_power')}→/2）→ {option}")
         r = engine.execute_action("resolve_redemption", {"option": option, "name": f"微光{name[:4]}"})
         guard += 1

@@ -265,7 +265,7 @@ class RedeemAI(TacticalAI):
                             return r
         return None
 
-    def resolve_pending_redemption(self, option: str = "无视"):
+    def resolve_pending_redemption(self, option: str = "终结"):
         st = self.engine.state
         n_allies = len([f for f in st.friends + st.employees if f.is_alive])
         if n_allies < self.ALLY_CAP:
