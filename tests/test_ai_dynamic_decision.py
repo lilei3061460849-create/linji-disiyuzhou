@@ -75,7 +75,7 @@ def test_state_driven_low_threat_prefers_offense(tmp_path):
     杀伐5X——不变量是「推进输出」，具体牌在 杀伐/普攻 间择优。
     """
     e = _engine(tmp_path)
-    # 一阶35点面板下首击可能直接击杀目标；只验证低威胁窗口的首个决策推进输出，
+    # 一阶60点面板下首击可能直接击杀目标；只验证低威胁窗口的首个决策推进输出，
     # 不把“必须还有第二手”误当成AI不变量。
     act = _nth_action(e, [], n=1, threat=(3, 4))
     assert ("杀伐" in act or "普攻" in act or "结算一轮攻击" in act), f"低威胁应输出: {act}"
