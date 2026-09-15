@@ -18,6 +18,7 @@ import argparse
 import contextlib
 import datetime as dt
 import json
+import math
 import multiprocessing as mp
 import os
 import shutil
@@ -39,6 +40,10 @@ from sim.relic_winrate import BenchmarkAI
 
 TARGET_RELIC = "承露盏"
 INITIAL_DAOWEN = "杀伐"
+# 一阶怪物面板口径（唯一事实源见 sim/audit_monsters.py）：
+# 2026-09-14 曾试压到 35 点，2026-09-15 用户令改回 60 点并原样恢复 60 点时代的 36 只面板。
+# 本文件只做结果标注，不参与战斗结算；跑完请用 `python sim/audit_monsters.py` 复核面板合规。
+TIER1_MONSTER_ATTRIBUTE_BUDGET = 60
 ATTRS = {"blood_points": 7, "speed_points": 6, "mana_points": 12}
 REGION = "龙心谷"
 RESONANCE = "反转"
@@ -55,6 +60,27 @@ BLOOD_SPLASH = {
 DEFAULT_OPPONENT = ROOT / "data" / "real_winners" / "winner_01.json"
 _ORIGINAL_RESOLVE = setup_support.resolve_opening_relic
 _ORIGINAL_CHOOSE = build_learner.choose_pre_battle
+
+
+def _assert_panel_budget_matches_docs() -> int:
+    """口径哨兵：结果里标注的一阶面板预算必须等于真面板的最大成本。
+
+    2026-09-15 教训：本文件曾把预算写死成 35，于是 60 点池的复测产物里同时出现
+    60 与 35 两个口径。现在改为真解析 36 只一阶面板，标注预算与实际不符就直接拒绝跑。
+    """
+    import sim.balance_sim as balance_sim
+    monsters = [m for m in balance_sim.parse_monsters()
+                if m["region"] in {"扭曲都市", "罪孽都市", "龙心谷"}]
+    if len(monsters) != 36:
+        raise SystemExit(f"一阶怪物池应解析出36只，实得{len(monsters)}；先跑 python sim/audit_monsters.py")
+    def _cost(m: dict) -> int:
+        return math.ceil(m["hp"] / 6) + 2 * m["ac"] + 2 * m["ap"]
+    top = max(monsters, key=_cost)
+    if _cost(top) > TIER1_MONSTER_ATTRIBUTE_BUDGET:
+        raise SystemExit(
+            f"口径不一致：{top['name']} 面板成本 {_cost(top)} > 标注预算 {TIER1_MONSTER_ATTRIBUTE_BUDGET}；"
+            f"先跑 python sim/audit_monsters.py 复核面板")
+    return _cost(top)
 
 
 def _probe(seed: int, db_path: str) -> tuple[list[str], list[str]]:
@@ -244,11 +270,15 @@ def main() -> None:
     ap.add_argument("--max-scan", type=int, default=10000)
     ap.add_argument("--workers", type=int, default=max(1, min(8, os.cpu_count() or 1)))
     ap.add_argument("--opponent", default=str(DEFAULT_OPPONENT))
-    ap.add_argument("--output", default=str(ROOT / "data" / "real_runs" / "chenglu_blood_splash_tier1_35_20260914.json"))
+    default_out = ROOT / "data" / "real_runs" / (
+        f"chenglu_blood_splash_tier1_{TIER1_MONSTER_ATTRIBUTE_BUDGET}_"
+        f"{dt.date.today().strftime('%Y%m%d')}.json")
+    ap.add_argument("--output", default=str(default_out))
     args = ap.parse_args()
     opponent = Path(args.opponent) if args.opponent else None
     if opponent is not None and not opponent.exists():
         raise SystemExit(f"守擂者快照不存在: {opponent}")
+    top_cost = _assert_panel_budget_matches_docs()
 
     with tempfile.TemporaryDirectory(prefix="chenglu_probe_", dir="/tmp") as probe_tmp, \
             tempfile.TemporaryDirectory(prefix="chenglu_runs_", dir="/tmp") as run_tmp:
@@ -268,10 +298,14 @@ def main() -> None:
             "script": "sim/test_chenglu_blood_splash.py",
             "opponent_snapshot": str(opponent.relative_to(ROOT)) if opponent else None,
             "definition": "valid run; pve7=7场PvE完成；full_win=_play won=True（包含最终死斗）",
+            "tier1_panel_budget": TIER1_MONSTER_ATTRIBUTE_BUDGET,
+            "tier1_panel_max_cost": top_cost,
+            "tier1_panel_note": ("2026-09-15 用户令恢复60点：原样恢复60点时代的36只面板，"
+                                 "9只单段高攻怪血限-6以合规；口径见 sim/audit_monsters.py"),
         },
         "fixed_config": {
             "relic": TARGET_RELIC,
-            "tier1_monster_attribute_budget": 35,
+            "tier1_monster_attribute_budget": TIER1_MONSTER_ATTRIBUTE_BUDGET,
             "monster_attribute_pricing_formula": "ceil(血限/6)+2×攻击次数+2×攻击力",
             "attributes": ATTRS,
             "initial_daowen": INITIAL_DAOWEN, "learn": LEARN,
