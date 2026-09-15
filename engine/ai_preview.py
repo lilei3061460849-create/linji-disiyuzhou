@@ -292,7 +292,8 @@ class ActionPreview:
         mut = getattr(p, "mutation_count", 0)
         mut_delta = diff.get("player", {}).get("mutation_delta", 0)
         if mut + mut_delta >= _MUT_THRESHOLD - 5:   # 离阈值5以内
-            reasons.append("异变即将达到崩解阈值（当前 %d，动作后 %d）" % (mut, mut + mut_delta))
+            reasons.append("异变即将达到崩解阈值（崩解（%d/%d）→ 动作后（%d/%d））"
+                           % (mut, _MUT_THRESHOLD, mut + mut_delta, _MUT_THRESHOLD))
             return "CRITICAL", reasons
 
         # CRITICAL：HP 已极低且动作会进一步降低（不含治疗方向）
@@ -305,7 +306,8 @@ class ActionPreview:
 
         # HIGH：异变显著增加（+10 以上，无论当前等级）
         if mut_delta >= 10:
-            reasons.append("异变增加 %d（当前 %d，动作后 %d）" % (mut_delta, mut, mut + mut_delta))
+            reasons.append("异变增加 %d（崩解（%d/%d）→ 动作后（%d/%d））"
+                           % (mut_delta, mut, _MUT_THRESHOLD, mut + mut_delta, _MUT_THRESHOLD))
 
         # HIGH：法力/速度归零
         mana_after = diff.get("player", {}).get("mana_after", 0)

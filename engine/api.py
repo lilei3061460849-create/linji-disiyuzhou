@@ -4305,6 +4305,10 @@ class GameEngine:
             # 带伤续战必须带着异变续战，否则封存=免费洗白崩解进度。
             # （癌变 total_healed 不随封存走：DM 已裁定它是局内减益、每场归零。）
             "mutation_count": e.mutation_count,
+            # 致死进度（用户令 2026-09-15）：封存快照同样保留可读进度
+            "no_action_rounds": e.no_action_rounds, "no_damage_rounds": e.no_damage_rounds,
+            "lethal_counters": {k: list(v) for k, v in e.lethal_counters().items()},
+            "lethal_progress": e.lethal_progress(),
             "dao_wen": {k: v.x_value for k, v in e.dao_wen.items()},
             "spells": [s.to_dict() for s in e.spells],
             "relics": [r.to_dict() for r in e.relics],

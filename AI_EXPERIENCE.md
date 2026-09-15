@@ -820,6 +820,7 @@ python sim/audit_monsters.py
 
 ## 当前有效的工程约束
 
+- 致死类特殊事件必须随面板输出**进度**（用户令 2026-09-15：「给致死的特殊事件标明进度，类似于崩解（10/50），让 AI 不要自爆」）：【崩解】异变X/50、【癌变】本场累计回复X/⌈血限×2⌉、【凡庸】连续空转X/5，统一由 `Entity.lethal_progress()` 渲染成「崩解（10/50）」这类串，出现在 `Entity.to_dict()["lethal_progress"/"lethal_counters"]`、战报资源面板（`battle_report.resource_line`）、`prepare_monster_phase` 每个 actor（怪物也会崩解，攻守双方都要看得见）与手操驱动器面板里；阈值唯一事实源＝`Entity.MUTATION_COLLAPSE_THRESHOLD`／`Entity.CANCER_HEAL_MULTIPLIER`／`Entity.MEDIOCRITY_ROUNDS`，`CombatEngine` 的同名量一律引用，禁止再写死数字。AI 每次决策前先看自己的致死进度，禁止把动作打到阈值上自爆。
 - 一阶副本出怪数 `max(1, 战斗场数-3)`，七场序列 `1/1/1/1/2/3/4`；事实实现 `engine/monsters.py::compute_draw_count` 与 `_action_battle_start`。
 - 一阶怪物面板属性点60（2026-09-15 用户令：35 太简单，筛不掉差操作，改回 60），按轮回者同口径审计：`ceil(血限/6) + 2×攻击次数 + 2×攻击力`；改面板后必须跑 `python sim/audit_monsters.py`。本次为**原样恢复 60 点时代的 36 只面板**（攻次/攻力回到 4×4、3×7、1×12 等），其中 9 只单段高攻怪在现行统一计价下超 1 分，血限各 −6（210→204／198→192／222→216／258→252／270→264），成本现为 52–60，全部合规。（2026-09-11 扭曲40试点已 revert：AI 硬打喊难在先，难度不动，见报告。）**口径只允许一处事实源**：测试/报告脚本禁止把面板预算写死成字面数字（2026-09-15 事故：`sim/test_chenglu_blood_splash.py` 写死 `35`，60 点池的复测产物里同时出现 60 与 35 两个口径，被用户当成"又把面板改回 35"）；现改为取常量 `TIER1_MONSTER_ATTRIBUTE_BUDGET`＋口径哨兵 `_assert_panel_budget_matches_docs()`，标注预算与真面板最大成本不符就直接拒绝跑。
 - 怪物困境信号≥1 触发强制二选一：进化借轮回者当前持有且自身未持有的纹（每场逃跑/进化限一次）；可选项只能由引擎列出。

@@ -62,7 +62,8 @@ def _panel(e) -> str:
     return (f"{e.name} 生命{e.current_hp}/{e.blood_limit} 法力{e.current_mana}/{e.mana_limit} "
             f"速度{e.current_speed}/{e.speed_limit} 攻{e.effective_attack_count()}×{e.effective_attack_power()} "
             f"格挡{e.shield} 出手{e.actions_used_this_round}/{e.action_count} 道纹[{dw}]"
-            + (f" 状态[{_status(e)}]" if e.status_effects else ""))
+            + (f" 状态[{_status(e)}]" if e.status_effects else "")
+            + (f" 致死进度[{'、'.join(e.lethal_progress())}]" if e.lethal_progress() else ""))
 
 
 def _status(e) -> str:

@@ -23,7 +23,8 @@ from .personality import remove_personality
 # 生命减少 → 凭空全身炸裂。这是**规则层**的反乌龟机制，必须优先于 sim 层的死锁
 # 防护（后者只是防卡死的程序兜底，不得抢在规则之前结束战斗，更不得擅定胜负）。
 # sim/duel_pvp.py 直接导入本常量推导兜底阈值，避免两处硬编码各自漂移。
-MEDIOCRITY_ROUNDS = 5
+# 阈值唯一事实源在 Entity（engine/models.py::Entity.MEDIOCRITY_ROUNDS）。
+MEDIOCRITY_ROUNDS = Entity.MEDIOCRITY_ROUNDS
 
 
 class CombatEngine:
@@ -2275,7 +2276,7 @@ class CombatEngine:
     # ========== 多路径胜利系统 ==========
     # 所有阈值数值均为占位初值，需经测试调整（见 AI_EXPERIENCE.md）
 
-    PROLIFERATION_THRESHOLD = 2.0  # 癌变：规则正文「累计恢复量达血限×2」；过量回复按原值计（双倍机制已删，DM裁定2026-08-18）
+    PROLIFERATION_THRESHOLD = Entity.CANCER_HEAL_MULTIPLIER  # 癌变：规则正文「累计恢复量达血限×2」；过量回复按原值计（阈值唯一事实源在 Entity，DM裁定2026-08-18）
     CANCER_THRESHOLD = PROLIFERATION_THRESHOLD  # 别名：增生旧名已统一为癌变，二者同阈值
     DEBT_THRESHOLD = 20           # 还债：怪物负债达到20碎片时触发（DM裁定2026-08-22 由10上调）
     SCULPTURE_DAMAGE = 15         # 雕塑：每点耐久可造成的伤害
@@ -5067,6 +5068,10 @@ class CombatEngine:
                 "base_attack_actions": base_actions,
                 "base_hits_per_attack": max(0, monster.attack_count - monster.get_status_value("手雷减攻")),
                 "dodge_must_be_explicit": True,
+                # 致死进度（用户令 2026-09-15）：怪物同样会【崩解】，攻守双方都要能直接读到
+                # 「崩解（30/50）」这种进度，才可能判断"再逼它发动一次道纹它就自爆"。
+                "lethal_counters": {k: list(v) for k, v in monster.lethal_counters().items()},
+                "lethal_progress": monster.lethal_progress(),
             })
         return {"round": self.state.current_round, "actors": actors, "skipped": skipped}
 

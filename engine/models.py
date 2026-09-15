@@ -474,6 +474,36 @@ class Entity:
         return detail
     
     MUTATION_COLLAPSE_THRESHOLD = 50  # 特殊事件【崩解】阈值：异变达到50层直接命零；原始道纹仅首次发动支付异变5X
+    # 致死类特殊事件的阈值（唯一事实源；CombatEngine 的同名量一律引用这里，禁止各写一份）：
+    CANCER_HEAL_MULTIPLIER = 2.0  # 【癌变】：本场累计受到的回复量 ≥ 血限×该系数 即命零
+    MEDIOCRITY_ROUNDS = 5         # 【凡庸】：连续 N 回合未出手、或连续 N 回合未使敌对角色掉血 即命零
+
+    def lethal_counters(self) -> dict:
+        """致死类特殊事件的进度：{名称: (当前值, 阈值)}。
+
+        2026-09-15 用户令「给致死的特殊事件标明进度（如崩解10/50），让 AI 不要自爆」：
+        进度必须能被 AI 在面板上直接读到，不允许只留一个布尔结果。口径：
+          * 崩解 = 异变层数 / MUTATION_COLLAPSE_THRESHOLD；
+          * 癌变 = 本场累计回复量 / ⌈血限×CANCER_HEAL_MULTIPLIER⌉；
+          * 凡庸 = 连续未出手（或连续未致敌掉血）回合数 / MEDIOCRITY_ROUNDS，取更接近线的那条。
+        """
+        out: dict[str, tuple[int, int]] = {
+            "崩解": (int(self.mutation_count), int(self.MUTATION_COLLAPSE_THRESHOLD)),
+        }
+        if self.blood_limit > 0:
+            out["癌变"] = (int(self.total_healed),
+                           int(math.ceil(self.blood_limit * self.CANCER_HEAL_MULTIPLIER)))
+        if self.no_action_rounds or self.no_damage_rounds:
+            if self.no_action_rounds >= self.no_damage_rounds:
+                out["凡庸·未出手"] = (int(self.no_action_rounds), int(self.MEDIOCRITY_ROUNDS))
+            else:
+                out["凡庸·未致敌掉血"] = (int(self.no_damage_rounds), int(self.MEDIOCRITY_ROUNDS))
+        return out
+
+    def lethal_progress(self) -> list[str]:
+        """致死进度的显示串，例如 ['崩解（10/50）', '癌变（30/84）']（用户令 2026-09-15）。"""
+        return [f"{name}（{current}/{limit}）"
+                for name, (current, limit) in self.lethal_counters().items()]
 
     def add_mutation(self, layers: int) -> dict:
         """
@@ -620,6 +650,13 @@ class Entity:
             "shards": self.shards,
             "fake_shards": self.fake_shards,
             "total_healed": self.total_healed,
+            "mutation_count": self.mutation_count,
+            "no_action_rounds": self.no_action_rounds,
+            "no_damage_rounds": self.no_damage_rounds,
+            # 致死类特殊事件的进度（用户令 2026-09-15）：AI 必须能在面板上直接读到
+            # 「崩解（10/50）」这种进度，禁止只给结果不给进度。
+            "lethal_counters": {k: list(v) for k, v in self.lethal_counters().items()},
+            "lethal_progress": self.lethal_progress(),
             "hp_ratio": round(self.hp_ratio, 2),
             "ai_memory": self.ai_memory,
             "dao_wen": {k: v.dao_wen.name for k, v in self.dao_wen.items()},
