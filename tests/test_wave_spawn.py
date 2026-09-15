@@ -2,7 +2,8 @@
 pytest 风格测试 - 波次出怪（2026-09-11 用户令）
 
 规则：R1只出第1只，R4/R7/R10…回始各增援1只直到上限（draw_count公式不变）；
-增援怪进场当回合白板（不出道纹）；增援未到齐时战终门禁拦。
+增援怪进场当回合即可发动道纹（2026-09-15 用户令删除白板限制）；
+增援未到齐时战终门禁拦。
 
 运行方式：
     python -m pytest tests/test_wave_spawn.py -v
@@ -115,8 +116,8 @@ def test_wave_schedule_r4_r7_r10():
     assert len(engine.state.enemies) == 4
 
 
-def test_reinforcement_whiteboard_on_arrival_round():
-    """正常路径：增援怪进场当回合白板（daowen_required False），次回合恢复"""
+def test_reinforcement_can_use_daowen_on_arrival_round():
+    """正常路径：增援怪进场当回合即可发动道纹（2026-09-15 用户令删除白板）"""
     engine = _new_engine("whiteboard")
     engine.state.current_battle = 6
     engine.state.energy = 0
@@ -130,7 +131,7 @@ def test_reinforcement_whiteboard_on_arrival_round():
     assert prep["success"] is True
     flags = {a["actor_ref"]: a["daowen_required"] for a in prep["result"]["actors"]}
     assert flags.get("enemy:0") is True, f"首怪R4应有道纹，实际{flags}"
-    assert flags.get("enemy:1") is False, f"增援怪R4应白板，实际{flags}"
+    assert flags.get("enemy:1") is True, f"增援怪R4进场当回合即可发动道纹，实际{flags}"
     # 交本轮怪阶段→回终→R5再看
     p = engine.state.player
     p.blood_limit = max(p.blood_limit, 9999)
@@ -138,7 +139,10 @@ def test_reinforcement_whiteboard_on_arrival_round():
     choices = []
     for a in prep["result"]["actors"]:
         if a.get("daowen_required"):
-            opt = a["daowen_options"][0]
+            # 优先选不改变攻击次数的道纹，保证 hits 与 prepare 快照一致
+            # （变形等会改变形态与攻击次数，提交击数须按结算后面板计）
+            opt = next((o for o in a["daowen_options"] if o["name"] in ("飞行", "必中", "爆裂")),
+                       a["daowen_options"][0])
             dw = {"name": opt["name"], "dodge": False, "blood_shadow": False,
                   "trigger_spell_choices": {}}
             if opt.get("requires_target"):
@@ -147,10 +151,10 @@ def test_reinforcement_whiteboard_on_arrival_round():
             dw = None
         atk = []
         for _ in range(a.get("base_attack_actions", 0)):
-            idx = int(a["actor_ref"].split(":")[1])
-            ac = engine.state.enemies[idx].attack_count
+            # 击数以 prepare 快照为准（发动道纹后攻击次数可能变化，面板值不再可靠）
             hits = [{"target_ref": "player:0", "dodge": False, "blood_shadow": False,
-                     "spell_choices": {"before": {}, "after": {}}} for _ in range(ac)]
+                     "spell_choices": {"before": {}, "after": {}}}
+                    for _ in range(a.get("base_hits_per_attack", 1))]
             atk.append({"hits": hits})
         choices.append({"actor_ref": a["actor_ref"], "daowen": dw, "attack_actions": atk})
     rr = engine.execute_action("resolve_monster_phase",
@@ -160,7 +164,7 @@ def test_reinforcement_whiteboard_on_arrival_round():
     engine.execute_action("round_start", {})
     prep5 = engine.execute_action("prepare_monster_phase", {})
     flags5 = {a["actor_ref"]: a["daowen_required"] for a in prep5["result"]["actors"]}
-    assert flags5.get("enemy:1") is True, f"增援怪R5应恢复道纹，实际{flags5}"
+    assert flags5.get("enemy:1") is True, f"增援怪R5仍应有道纹，实际{flags5}"
 
 
 def test_battle_end_blocked_while_queue_pending():

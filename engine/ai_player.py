@@ -465,7 +465,7 @@ class PlaceholderBackend(AIBackend):
         
         inner = state.get("state", {})
         if inner.get("pending_redemption"):
-            return AIDecision("resolve_redemption", {"option": 2}, "默认无视救赎")
+            return AIDecision("resolve_redemption", {"option": 2}, "默认终结救赎（等同击杀：战终按命零产碎片）")
         if phase == "setup":
             relic_choices = inner.get("pending_relic_choices") or []
             if relic_choices:

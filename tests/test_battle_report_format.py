@@ -47,7 +47,16 @@ def _resolve_monster_phase(e):
             {"target_ref": actor["attack_target_options"][0]["ref"], "dodge": False, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}}
             for _ in range(actor["base_hits_per_attack"])
         ]} for _ in range(actor["base_attack_actions"])]
-        choices.append({"actor_ref": actor["actor_ref"], "daowen": None,
+        # 2026-09-15 删除白板后：有合法道纹选项时必须提交一个（选首个，且避开会改形态的变形）
+        dw = None
+        if actor.get("daowen_required"):
+            opt = next((o for o in actor["daowen_options"] if o["name"] != "变形"),
+                       actor["daowen_options"][0])
+            dw = {"name": opt["name"], "dodge": False, "blood_shadow": False,
+                  "trigger_spell_choices": {}}
+            if opt.get("requires_target"):
+                dw["target_ref"] = actor["attack_target_options"][0]["ref"]
+        choices.append({"actor_ref": actor["actor_ref"], "daowen": dw,
                         "attack_actions": attacks})
     return e.execute_action("resolve_monster_phase", {
         "token": prepared["result"]["token"], "choices": choices,

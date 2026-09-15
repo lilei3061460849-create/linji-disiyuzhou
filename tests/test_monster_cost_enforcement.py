@@ -34,17 +34,14 @@ def test_monster_cooldown_daowen_sets_cooldown_and_cannot_repeat(tmp_path):
     started = begin_battle(e)
     assert started["success"], started
     m = Entity("靶怪", "怪物", blood_limit=80, current_hp=80, attack_count=1, attack_power=1)
-    m.dao_wen["固执"] = DaoWenInstance(
-        DaoWen(name="固执", formula="", cost_type="冷却", cost_formula="X", effect_formula=""),
-        x_value=3
-    )
     e.state.enemies[:] = [m]
 
-    # 第1回合（白板回合）
+    # 第1回合（空手：怪物此时没有道纹）
     e.execute_action("round_start", {"relic_choices": {}})
     e.execute_action("use_daowen", {"daowen_name": "杀伐", "x": 1, "target": m.name})
     pmp1 = e.execute_action("prepare_monster_phase", {})
     actor1 = pmp1["result"]["actors"][0]
+    assert actor1["daowen_required"] is False, "怪物无道纹时不得要求提交道纹"
     e.execute_action("resolve_monster_phase", {
         "token": pmp1["result"]["token"],
         "choices": [{
@@ -55,7 +52,11 @@ def test_monster_cooldown_daowen_sets_cooldown_and_cannot_repeat(tmp_path):
     })
     e.execute_action("round_end", {})
 
-    # 第2回合：怪物可发动固执
+    # 第2回合：怪物获得固执（2026-09-15 删除白板后，怪物持有道纹即当回合可发动）
+    m.dao_wen["固执"] = DaoWenInstance(
+        DaoWen(name="固执", formula="", cost_type="冷却", cost_formula="X", effect_formula=""),
+        x_value=3
+    )
     e.execute_action("round_start", {"relic_choices": {}})
     e.execute_action("use_daowen", {"daowen_name": "杀伐", "x": 1, "target": m.name})
     pmp2 = e.execute_action("prepare_monster_phase", {})
@@ -97,17 +98,14 @@ def test_monster_bleed_cost_daowen_deducts_monster_hp(tmp_path):
     started = begin_battle(e)
     assert started["success"], started
     m = Entity("靶怪", "怪物", blood_limit=80, current_hp=80, attack_count=1, attack_power=1)
-    m.dao_wen["血债"] = DaoWenInstance(
-        DaoWen(name="血债", formula="", cost_type="流血", cost_formula="X", effect_formula=""),
-        x_value=5
-    )
     e.state.enemies[:] = [m]
 
-    # 第1回合（白板）
+    # 第1回合（空手：怪物此时没有道纹）
     e.execute_action("round_start", {"relic_choices": {}})
     e.execute_action("use_daowen", {"daowen_name": "杀伐", "x": 1, "target": m.name})
     pmp1 = e.execute_action("prepare_monster_phase", {})
     actor1 = pmp1["result"]["actors"][0]
+    assert actor1["daowen_required"] is False, "怪物无道纹时不得要求提交道纹"
     e.execute_action("resolve_monster_phase", {
         "token": pmp1["result"]["token"],
         "choices": [{
@@ -118,7 +116,11 @@ def test_monster_bleed_cost_daowen_deducts_monster_hp(tmp_path):
     })
     e.execute_action("round_end", {})
 
-    # 第2回合发动血债
+    # 第2回合：怪物获得血债后发动（删除白板后，持有即可发动）
+    m.dao_wen["血债"] = DaoWenInstance(
+        DaoWen(name="血债", formula="", cost_type="流血", cost_formula="X", effect_formula=""),
+        x_value=5
+    )
     e.execute_action("round_start", {"relic_choices": {}})
     e.execute_action("use_daowen", {"daowen_name": "杀伐", "x": 1, "target": m.name})
     hp_after_player_hit = m.current_hp

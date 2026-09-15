@@ -325,11 +325,16 @@ def test_redemption_ignore_and_no_false_positive():
     exclusive.current_hp = 6
     hit = engine.combat.check_redemption(exclusive)
     assert hit is not None
-    r = engine.execute_action("resolve_redemption", {"option": "无视"})
+    r = engine.execute_action("resolve_redemption", {"option": "终结"})
     assert r["success"]
     assert engine.state.friends == []
     assert engine.state.employees == []
     assert not engine.state.pending_redemption
+    # 【终结】等同击杀：怪物被还原为一次正常命零，[战终]按命零公式产出碎片。
+    assert exclusive.is_alive is False
+    assert exclusive.removed_without_kill is False
+    assert exclusive.is_departed is False
+    assert exclusive.departure_reason == ""
 
 
 def test_redemption_rejects_bad_accept():
@@ -346,3 +351,48 @@ def test_redemption_rejects_bad_accept():
     bad = engine.execute_action("resolve_redemption", {"option": 3})
     assert not bad["success"]
     assert engine.state.pending_redemption
+
+
+def test_redemption_finish_pays_exactly_the_kill_reward():
+    """【终结】等同击杀：碎片在[战终]按命零公式结算，与普通击杀同额、不重复计。
+
+    公式（engine/api.py battle_end）：⌈[战始]血限×2%⌉ + 道纹数×5。
+    """
+    engine = _ready_combat(_engine("rd_finish"))
+    monster = Entity(name="油囊", entity_type="怪物", blood_limit=126, current_hp=126,
+                     attack_count=2, attack_power=5)
+    for name in ("坏死", "衰败", "寄生"):
+        _give(monster, name)
+    monster.battle_start_blood_limit = 126
+    engine.state.enemies[:] = [monster]
+    monster.current_hp = 12
+    assert engine.combat.check_redemption(monster) is not None
+
+    r = engine.execute_action("resolve_redemption", {"option": 2})
+    assert r["success"]
+    shards_before = engine.state.shards
+
+    end = engine.execute_action("battle_end", {})
+    assert end["success"]
+    reward = math.ceil(126 * 0.02) + 3 * 5     # 3 + 15 = 18
+    assert end["result"]["shard_reward"] == reward
+    assert [d["name"] for d in end["result"]["death_shard_rewards"]] == ["油囊"]
+    assert end["result"]["removed_via_alt_path"] == []
+    assert engine.state.shards == shards_before + reward
+
+
+def test_redemption_finish_is_not_double_counted_when_accepted():
+    """对照组【接纳】：仍是离场不产碎片（等同击杀只属于【终结】）。"""
+    engine = _ready_combat(_engine("rd_accept"))
+    monster = Entity(name="壳工", entity_type="怪物", blood_limit=126, current_hp=126,
+                     attack_count=2, attack_power=5)
+    _give(monster, "坏死")
+    monster.battle_start_blood_limit = 126
+    engine.state.enemies[:] = [monster]
+    monster.current_hp = 12
+    assert engine.combat.check_redemption(monster) is not None
+    assert engine.execute_action("resolve_redemption", {"option": 1, "name": "壳奴"})["success"]
+    end = engine.execute_action("battle_end", {})
+    assert end["success"]
+    assert end["result"]["shard_reward"] == 0
+    assert [d["name"] for d in end["result"]["removed_via_alt_path"]] == ["壳工"]

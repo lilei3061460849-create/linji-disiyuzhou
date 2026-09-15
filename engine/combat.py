@@ -23,7 +23,8 @@ from .personality import remove_personality
 # 生命减少 → 凭空全身炸裂。这是**规则层**的反乌龟机制，必须优先于 sim 层的死锁
 # 防护（后者只是防卡死的程序兜底，不得抢在规则之前结束战斗，更不得擅定胜负）。
 # sim/duel_pvp.py 直接导入本常量推导兜底阈值，避免两处硬编码各自漂移。
-MEDIOCRITY_ROUNDS = 5
+# 阈值唯一事实源在 Entity（engine/models.py::Entity.MEDIOCRITY_ROUNDS）。
+MEDIOCRITY_ROUNDS = Entity.MEDIOCRITY_ROUNDS
 
 
 class CombatEngine:
@@ -1846,7 +1847,8 @@ class CombatEngine:
         self.state.current_round += 1
 
         # 【封印X】延迟回场：在第 R+X 回合始把原怪物重新加入敌方列表。
-        # 与波次增援相同，回场当回合设置 spawned_round，因而当回合白板。
+        # 回场当回合记录 spawned_round；2026-09-15 用户令取消白板后，回场当回合
+        # 同样可以发动道纹（spawned_round 仅作出生回合记录）。
         delayed = list(getattr(self.state, "delayed_monster_reentries", []) or [])
         due = [entry for entry in delayed if entry.get("return_round", 0) <= self.state.current_round]
         if due:
@@ -1865,7 +1867,7 @@ class CombatEngine:
                                 "delay_rounds": entry.get("delay_rounds", 0)})
 
         # 波次出怪（2026-09-11 用户令）：R4/R7/R10…回始增援1只直到上限。
-        # 死斗无增援；新怪本回合白板（见 prepare_monster_phase 的 spawned_round 口径）。
+        # 死斗无增援；增援怪进场当回合即可发动道纹（2026-09-15 用户令删除白板）。
         queue = list(getattr(self.state, "monster_reinforcements", []) or [])
         if (queue and not self.state.in_final_duel
                 and self.state.current_round >= 4
@@ -2274,7 +2276,7 @@ class CombatEngine:
     # ========== 多路径胜利系统 ==========
     # 所有阈值数值均为占位初值，需经测试调整（见 AI_EXPERIENCE.md）
 
-    PROLIFERATION_THRESHOLD = 2.0  # 癌变：规则正文「累计恢复量达血限×2」；过量回复按原值计（双倍机制已删，DM裁定2026-08-18）
+    PROLIFERATION_THRESHOLD = Entity.CANCER_HEAL_MULTIPLIER  # 癌变：规则正文「累计恢复量达血限×2」；过量回复按原值计（阈值唯一事实源在 Entity，DM裁定2026-08-18）
     CANCER_THRESHOLD = PROLIFERATION_THRESHOLD  # 别名：增生旧名已统一为癌变，二者同阈值
     DEBT_THRESHOLD = 20           # 还债：怪物负债达到20碎片时触发（DM裁定2026-08-22 由10上调）
     SCULPTURE_DAMAGE = 15         # 雕塑：每点耐久可造成的伤害
@@ -2338,7 +2340,11 @@ class CombatEngine:
         return self._queue_redemption(monster, "low_hp_no_original")
 
     def _queue_redemption(self, monster: Entity, cause: str) -> dict:
-        """怪物融化离场，等待接纳/无视。不产碎片。"""
+        """怪物融化离场，等待【接纳】或【终结】（2026-09-15 用户令，终结取代旧「无视」）。
+
+        离场当时不产碎片；若玩家选【终结】，该怪物会被还原为一次正常[命零]，
+        [战终]按普通击杀公式产出[碎片]；选【接纳】则成为待命员工，不产碎片。
+        """
         snapshot = {
             "name": monster.name,
             "attack_count": monster.attack_count,
@@ -3789,7 +3795,7 @@ class CombatEngine:
             # 仅在调用方尚未完成第一次校验时返回当前展开；调用方在通过结构
             # 校验后写入签名。
             return current
-        if decision.get("_engine_branch_owner") is not self:
+        if decision.get("_engine_branch_owner") != self._branch_owner_token:
             raise ValueError("法术提交包含未经引擎冻结的条件分支")
         expected = tuple(tuple(item) for item in frozen)
         for variant in self._flow_step_variants(flow["steps"]):
@@ -3803,10 +3809,26 @@ class CombatEngine:
         """在首次通过校验后冻结条件展开；保留同一提交的 prepare 语义。"""
         if "_engine_branch_signature" in decision:
             return
-        decision["_engine_branch_owner"] = self
+        decision["_engine_branch_owner"] = self._branch_owner_token
         decision["_engine_branch_signature"] = [
             list(item) for item in self._flow_steps_signature(flat_steps, holder, attacker, refs)
         ]
+
+    @property
+    def _branch_owner_token(self) -> str:
+        """分支冻结的归属标记：字符串，随存档可序列化。
+
+        修复（2026-09-15）：此前这里写入的是 CombatEngine 活引用，冻结字段会随
+        调用方 params 进入 action_history，使 save_game 的 pickle 直接抛
+        "Can't pickle local object 'all_.<locals>.cond'"（MECHANISMS 里的闭包）。
+        改存归属字符串后语义不变（同一 process 内同一实例仍能通过校验），
+        存档/读档不再因一次反应法术而整体失败。
+        """
+        token = getattr(self, "_branch_owner_token_value", None)
+        if token is None:
+            token = f"combat-{id(self):x}"
+            self._branch_owner_token_value = token
+        return token
 
     # 反应型法术四个挂接点：受到伤害前/失去生命后是历史已有的两个key
     # （"before"/"after"，字段名保留兼容旧调用点）；受到伤害后/失去生命前是
@@ -4940,9 +4962,8 @@ class CombatEngine:
             if self.state.on_player_side(e)
         ]
         all_targets = [{"ref": ref, "name": e.name} for ref, e in refs.items()]
-        # 白板回合（首回合怪物只普攻不出道纹）不适用于死斗：守擂主将是轮回者，
-        # 与挑战者同样应首回合就能发动道纹，否则挑战者首回合秒杀裸奔主将（不对称）。
-        whiteboard = self.state.current_round <= 1 and not self.state.in_final_duel
+        # 白板回合已于 2026-09-15 用户令删除：怪物（含[战始]首发、波次增援、[封印]回场）
+        # 进场当回合即可发动道纹，不再有"登场回合只能普攻"的限制。
         actors = []
         skipped = []
         for index, monster in enumerate(self.state.enemies):
@@ -4955,11 +4976,10 @@ class CombatEngine:
             activated = self._monster_activated.get(id(monster), set())
             round_used = self._monster_round_used(monster)
             daowen_options = []
-            # 波次白板：增援怪进场当回合不出道纹（与R1怪同待遇）；旧实体缺字段回退1。
-            # 死斗不适用（守擂主将须R1就能发动道纹，与全局whiteboard同口径）。
-            monster_whiteboard = (whiteboard or (not self.state.in_final_duel
-                and getattr(monster, "spawned_round", 1) >= self.state.current_round))
-            if not monster_whiteboard and not monster.has_status("干扰"):
+            # 2026-09-15 用户令：删除白板限制——增援怪/回场怪进场当回合即可发动道纹
+            # （R1 首发怪同理）。spawned_round 仍作为出生回合的记录字段保留，但不再
+            # 参与任何"当回合不能发动道纹"的判定。
+            if not monster.has_status("干扰"):
                 for name, inst in monster.dao_wen.items():
                     if (name in round_used or not inst.can_use()
                             or name not in DaoWenEngine.list_all()):
@@ -5048,6 +5068,10 @@ class CombatEngine:
                 "base_attack_actions": base_actions,
                 "base_hits_per_attack": max(0, monster.attack_count - monster.get_status_value("手雷减攻")),
                 "dodge_must_be_explicit": True,
+                # 致死进度（用户令 2026-09-15）：怪物同样会【崩解】，攻守双方都要能直接读到
+                # 「崩解（30/50）」这种进度，才可能判断"再逼它发动一次道纹它就自爆"。
+                "lethal_counters": {k: list(v) for k, v in monster.lethal_counters().items()},
+                "lethal_progress": monster.lethal_progress(),
             })
         return {"round": self.state.current_round, "actors": actors, "skipped": skipped}
 

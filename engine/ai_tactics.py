@@ -1276,7 +1276,7 @@ class TacticalAI:
         allies = self._allies()
         return min(allies, key=lambda e: e.current_hp) if allies else None
 
-    def resolve_pending_redemption(self, option: str = "无视") -> Optional[dict]:
+    def resolve_pending_redemption(self, option: str = "终结") -> Optional[dict]:
         """救赎是强制待选：未结算前任何其它行动都会被引擎拒绝。"""
         pending = self.engine.state.pending_redemption
         if not pending:

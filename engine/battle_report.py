@@ -40,6 +40,16 @@ def _daowen_str(entity: Any) -> str:
     return "、".join(parts) if parts else "无"
 
 
+def _lethal_progress(entity: Any) -> list[str]:
+    """致死类特殊事件的进度串（崩解／癌变／凡庸），例如 ['崩解（10/50）']。
+
+    2026-09-15 用户令：致死事件的进度必须随面板一起输出，AI 才看得见自己离
+    【崩解】这类命零还有多远，不会"自爆"。口径唯一事实源＝Entity.lethal_progress()。
+    """
+    fn = getattr(entity, "lethal_progress", None)
+    return list(fn()) if callable(fn) else []
+
+
 def _status_str(entity: Any) -> str:
     """渲染 持续X 剩余回合，规范要求资源面板包含该项。"""
     out = []
@@ -76,7 +86,8 @@ def resource_line(entity: Any) -> str:
             f" 法力{entity.current_mana}/{entity.mana_limit}"
             f" 速度{entity.current_speed}/{entity.speed_limit}"
             + (f" 格挡{entity.shield}" if entity.shield else "")
-            + (f" 持续[{_status_str(entity)}]" if entity.status_effects else ""))
+            + (f" 持续[{_status_str(entity)}]" if entity.status_effects else "")
+            + (f" 致死进度[{'、'.join(_lethal_progress(entity))}]" if _lethal_progress(entity) else ""))
 
 
 def format_setup_discovery(

@@ -89,12 +89,15 @@ def test_bizhong_only_next_x_target_selections():
     player = engine.state.player
     player.current_speed = 5
     player.shield = 0
-    m = _monster(engine, hits=1, atk=8, daowen={"必中": 2})
+    m = _monster(engine, hits=1, atk=8)          # 首回合无道纹（删除白板后仍要显式空过）
     engine.combat.reset_monster_activation()
     engine.state.current_round = 0
-    engine.combat.round_start()  # -> 1 白板
+    engine.combat.round_start()  # -> 1
     resolve_monster_phase(engine.combat, {m.name: None}, dodge=True)
     assert engine.combat.bizhong_remaining(m) == 0
+    m.dao_wen["必中"] = DaoWenInstance(
+        DaoWen(name="必中", formula="", cost_type="异变", cost_formula="5X",
+               effect_formula=""), x_value=2)
     engine.combat.round_start()  # -> 2 激活必中2，打1击
     r2 = resolve_monster_phase(engine.combat, {m.name: "必中"}, dodge=True)
     hits2 = [d for d in r2 if d.get("attacker") == m.name]
@@ -121,11 +124,14 @@ def test_bizhong_two_hits_in_one_round_consume_two_charges():
     player = engine.state.player
     player.current_speed = 6
     player.shield = 0
-    m = _monster(engine, hits=2, atk=8, daowen={"必中": 2})
+    m = _monster(engine, hits=2, atk=8)
     engine.combat.reset_monster_activation()
     engine.state.current_round = 0
     engine.combat.round_start()
     resolve_monster_phase(engine.combat, {m.name: None}, dodge=True)
+    m.dao_wen["必中"] = DaoWenInstance(
+        DaoWen(name="必中", formula="", cost_type="异变", cost_formula="5X",
+               effect_formula=""), x_value=2)
     engine.combat.round_start()
     results = resolve_monster_phase(engine.combat, {m.name: "必中"}, dodge=True)
     hits = [d for d in results if d.get("attacker") == m.name]
@@ -144,7 +150,8 @@ def test_no_bizhong_auto_dodge_still_works():
     engine.combat.reset_monster_activation()
     engine.state.current_round = 0
     engine.combat.round_start()
-    results = resolve_monster_phase(engine.combat, {m.name: None}, dodge=True)
+    # 删除白板后首回合即有【狂暴】可发，照实提交（不涉及必中，闪避不受影响）
+    results = resolve_monster_phase(engine.combat, {m.name: "狂暴"}, dodge=True)
     hits = [d for d in results if d.get("attacker") == m.name]
     assert hits and hits[0].get("dodge_success") is True
 

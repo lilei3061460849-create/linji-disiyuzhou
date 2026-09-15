@@ -37,11 +37,12 @@ def _arena(seed: int = 1):
     e.state.energy = 0
     assert e.execute_action("battle_start", {"relic_choices": {}})["success"]
     m = e.state.enemies[0]
-    m.dao_wen["赎金"] = DaoWenInstance(
-        DaoWen(name="赎金", formula="", cost_type="", cost_formula="", effect_formula=""),
-        x_value=2)
     m.shards = 100
-    # 第 1 回合（白板）走完整两阶段 API
+    # 第 1 回合先让怪物空手（无道纹则 prepare 不列选项、daowen 提交 null），
+    # 免得首回合被迫发动道纹污染 activated 基线；赎金在第 1 回合结束后再加。
+    m.dao_wen.clear()
+    # 第 1 回合走完整两阶段 API：2026-09-15 删除白板后，首回合怪物也要交一个道纹，
+    # 这里选一个非【赎金】的选项（保住赎金 X=2，供第 2 回合断言吸金 10X=20）。
     assert e.execute_action("round_start", {"relic_choices": {}})["success"]
     prep1 = e.execute_action("prepare_monster_phase", {})
     assert prep1["success"], prep1
@@ -52,6 +53,7 @@ def _arena(seed: int = 1):
         to = next(t for t in a["attack_target_options"] if t["ref"] == tgt)
         hits = [{"target_ref": tgt, "dodge": False, "blood_shadow": False,
                  "spell_choices": _ds(to)} for _ in range(a["base_hits_per_attack"])]
+        assert a["daowen_required"] is False, "第1回合怪物无道纹，不得要求提交"
         choices1.append({"actor_ref": a["actor_ref"], "daowen": None,
                          "attack_actions": [{"hits": hits}
                                             for _ in range(a["base_attack_actions"])]})
@@ -59,7 +61,10 @@ def _arena(seed: int = 1):
                             {"token": prep1["result"]["token"],
                              "choices": choices1})["success"]
     assert e.execute_action("round_end", {})["success"]
-    # 第 2 回合：怪物可发动道纹
+    # 第 2 回合：怪物获得赎金，可发动道纹
+    m.dao_wen["赎金"] = DaoWenInstance(
+        DaoWen(name="赎金", formula="", cost_type="", cost_formula="", effect_formula=""),
+        x_value=2)
     assert e.execute_action("round_start", {"relic_choices": {}})["success"]
     prep = e.execute_action("prepare_monster_phase", {})
     assert prep["success"], prep

@@ -810,7 +810,7 @@ def run_seven(spec: ComboSpec, seed: int) -> dict:
             except Exception:
                 player_policy(e, spec)
             if e.state.pending_redemption:
-                e.execute_action("resolve_redemption", {"option": "无视"})
+                e.execute_action("resolve_redemption", {"option": "终结"})
             if e.state.battle_won():
                 break
             if e.state.battle_lost():
