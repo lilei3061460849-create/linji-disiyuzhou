@@ -31,7 +31,10 @@ def test_available_prebattle_schemas_use_real_executable_parameter_names(tmp_pat
 
     learning = by_sub_action["学习"]
     assert "mode" not in learning
-    assert {"sub", "tier", "names", "spell", "dm_approved"} <= set(learning)
+    # 2026-09-16：法术免学习后，局外【学习】只剩转化道纹，自创法术改由
+    # 战斗中的 define_spell 完成，故不再要求 spell / dm_approved 参数。
+    assert {"sub", "tier", "names"} <= set(learning)
+    assert "custom_spell" not in learning["sub"], "局外自创法术入口已取消"
     assert {"heal_allocations", "tier"} <= set(by_sub_action["休整"])
     assert {"allocations", "tier"} <= set(by_sub_action["修行"])
     assert "tier" in by_sub_action["探索"]
@@ -39,73 +42,28 @@ def test_available_prebattle_schemas_use_real_executable_parameter_names(tmp_pat
     assert "additional" not in by_sub_action["维修"]
 
 
-def test_learning_three_spells_and_two_daowen_applies_all_names(tmp_path):
+def test_learning_two_daowen_applies_all_names(tmp_path):
+    """学习道纹多档：一次学习两种，全部落到玩家道纹上（法术已免学习）。"""
     engine = _engine(tmp_path)
-    # 法术必须完全由已有道纹组成（2026-08-21 修复：缺少前置道纹会拒绝学习）。
-    # 开局仅持【杀伐】，先学习 再生/庇护 两个前置道纹，再一次性学习三个法术：
-    # 先发制人(杀伐) + 生生不息(再生) + 后发制人(庇护)。
-    daowen = engine.execute_action("pre_battle_action", {
+    # 开局仅持【杀伐】，一次学习 再生/庇护 两个转化道纹。
+    r = engine.execute_action("pre_battle_action", {
         "sub_action": "学习", "sub": "daowen", "tier": 2,
         "names": ["再生", "庇护"],
     })
-    assert daowen["success"]
-    assert {"杀伐", "再生", "庇护"} <= set(engine.state.player.dao_wen)
-    assert engine.state.shards == 90
-
-    engine.state.energy = 3
-    spell_names = ["先发制人", "生生不息", "后发制人"]
-    spells = engine.execute_action("pre_battle_action", {
-        "sub_action": "学习", "sub": "spell", "tier": 3, "names": spell_names,
-    })
-    assert spells["success"]
-    assert {spell.name for spell in engine.state.player.spells} == set(spell_names)
-    assert engine.state.shards == 65
+    assert r["success"], r.get("error")
+    assert {"再生", "庇护"} <= set(engine.state.player.dao_wen)
 
 
-def test_learning_wrong_count_duplicate_and_daowen_tier_three_are_atomic(tmp_path):
+def test_spell_learning_sub_is_retired_but_daowen_still_works(tmp_path):
+    """法术免学习：sub=spell 作废且不产生效果；sub=daowen 仍正常。"""
     engine = _engine(tmp_path)
-    before = (engine.state.energy, engine.state.shards, set(engine.state.player.dao_wen))
+    before = set(engine.state.player.dao_wen)
+    r = engine.execute_action("pre_battle_action", {
+        "sub_action": "学习", "sub": "spell", "tier": 1, "names": ["先发制人"]})
+    assert not r["success"], "法术已无需学习，旧入口应拒绝"
+    assert engine.state.player.spells == []
+    assert set(engine.state.player.dao_wen) == before
 
-    wrong_count = engine.execute_action("pre_battle_action", {
-        "sub_action": "学习", "sub": "spell", "tier": 2,
-        "names": [list(engine.SPELL_REGISTRY)[0]],
-    })
-    assert not wrong_count["success"]
-    assert (engine.state.energy, engine.state.shards, set(engine.state.player.dao_wen)) == before
-
-    invalid_tier = engine.execute_action("pre_battle_action", {
-        "sub_action": "学习", "sub": "daowen", "tier": 3,
-        "names": ["切割", "庇护", "再生"],
-    })
-    assert not invalid_tier["success"]
-    assert (engine.state.energy, engine.state.shards, set(engine.state.player.dao_wen)) == before
-
-
-def test_custom_spell_interrupt_then_approved_creation(tmp_path):
-    engine = _engine(tmp_path)
-    definition = {
-        "name": "杀意回响",
-        "required_daowen": ["杀伐"],
-        "trigger_condition": "受到伤害前",
-        "effect_flow": "发动杀伐X于攻击者",
-    }
-    before_energy = engine.state.energy
-    pending = engine.execute_action("pre_battle_action", {
-        "sub_action": "学习", "sub": "custom_spell", "spell": definition,
-    })
-    assert pending["success"] and pending["completed"] is False
-    assert engine.state.energy == before_energy
-    assert not any(spell.name == "杀意回响" for spell in engine.state.player.spells)
-
-    ruled = engine.submit_ruling("未见场景", "批准自创法术", {})
-    assert ruled["success"]
-    created = engine.execute_action("pre_battle_action", {
-        "sub_action": "学习", "sub": "custom_spell", "spell": definition,
-        "dm_approved": True,
-    })
-    assert created["success"]
-    assert any(spell.name == "杀意回响" for spell in engine.state.player.spells)
-    assert engine.state.energy == before_energy - 1
 
 
 def test_resonance_choose_requires_second_energy_and_applies_cost(tmp_path):

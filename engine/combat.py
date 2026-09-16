@@ -3612,6 +3612,90 @@ class CombatEngine:
                    "automatic": True},
     }
 
+    # 内置法术的所需道纹（唯一事实源；api.GameEngine.SPELL_REGISTRY 是本表的别名）。
+    # 键与 SPELL_FLOWS 一一对应——凡有流程的内置法术都必须在此登记所需道纹，
+    # 否则「持道纹即可施法」判定无法知道该法术需要什么。
+    BUILTIN_SPELL_DAOWEN = {
+        "先发制人": ["杀伐"],
+        "后发制人": ["庇护"],
+        "生生不息": ["再生"],
+        "以牙还牙": ["杀伐", "再生"],
+        "借力打力": ["杀伐", "庇护"],
+        "不死不休": ["血债"],
+        "千刀万剐": ["血债", "再生"],
+        "咎由自取": ["坠落", "杀伐", "血债"],
+        "镇魔印": ["封印"],
+    }
+    # 注：《死者之书》收录的【血炼周天】【血溅五步】没有内置流程——它们本来
+    # 就是可自创的范本（所需道纹见《死者之书》条目）。新规则下自创无需学习、
+    # 战斗中即可完成，玩家照着条目原样提交即可，故不占用内置名字。
+
+    # ------------------------------------------------------------------
+    # 「法术不再需要学习」：内置法术对任何持有全部所需道纹的角色直接开放。
+    # 自创法术仍然挂在实体自己的 spells 列表上（定义要随存档走），
+    # 内置法术不再写入该列表，改为按道纹实时推导。
+    # ------------------------------------------------------------------
+
+    def _builtin_spell_flows(self, holder: Entity) -> dict[str, dict]:
+        """当前**已装配**的内置法术：所需道纹全部持有且可发动，并经 use_spell 装配。
+
+        「可用」与「已装配」是两件事：持道纹=可以装配（不再需要学习），
+        装配=表达"我打算用它"，只有装配后才会在触发时点自动结算。
+        这样免去了学习门槛，但保留了意图门槛——否则一个同时持有【再生】
+        【血债】的角色每次挨打都要对四种反应法术逐个表态，战斗无法推进。
+        """
+        flows: dict[str, dict] = {}
+        if holder is None or not holder.is_alive:
+            return flows
+        armed = set(getattr(holder, "armed_spells", None) or ())
+        for name, required in self.BUILTIN_SPELL_DAOWEN.items():
+            flow = self.SPELL_FLOWS.get(name)
+            if flow is None or name not in armed:
+                continue
+            if all(d in holder.dao_wen and holder.dao_wen[d].can_use()
+                   for d in required):
+                flows[name] = flow
+        return flows
+
+    def buildable_spells(self, holder: Entity) -> list[str]:
+        """当前凭持有道纹**可以装配**但尚未装配的内置法术名。"""
+        if holder is None or not holder.is_alive:
+            return []
+        armed = set(getattr(holder, "armed_spells", None) or ())
+        out = []
+        for name, required in self.BUILTIN_SPELL_DAOWEN.items():
+            if name in armed or name not in self.SPELL_FLOWS:
+                continue
+            if all(d in holder.dao_wen and holder.dao_wen[d].can_use()
+                   for d in required):
+                out.append(name)
+        return sorted(out)
+
+    def spell_definition(self, holder: Entity, name: str):
+        """取一个法术的定义：自创法术读实体 spells，内置法术按道纹即时合成。
+
+        返回 Spell（内置法术为临时合成对象，不写回 holder.spells）；
+        取不到返回 None。合成对象每次新建，禁止拿它做身份比较。
+        """
+        if holder is None or not name:
+            return None
+        from .models import Spell
+        spell = next((sp for sp in holder.spells if sp.name == name), None)
+        if spell is not None:
+            return spell
+        required = self.BUILTIN_SPELL_DAOWEN.get(name)
+        flow = self.SPELL_FLOWS.get(name)
+        if required is None or flow is None:
+            return None
+        return Spell(
+            name=name,
+            required_daowen=list(required),
+            trigger_condition=flow.get("effect_flow", ""),
+            effect_flow=flow.get("effect_flow", ""),
+            rank=len(required),
+            automatic=bool(flow.get("automatic")),
+        )
+
     # 自创法术文本→执行：解析 trigger_condition / effect_flow 为 SPELL_FLOWS 同构结构。
     # 2026-08-29 重写：接入 engine.spell_dsl（触发时机词汇表扩展、显式目标声明、
     # 条件分支、真循环）。学习环节（engine/api.py._pre_battle_xuexi）已经用同一
@@ -3656,9 +3740,18 @@ class CombatEngine:
                 "dsl": True}
 
     def _eligible_spell_flows(self, holder: Entity, trigger: str) -> dict[str, dict]:
+        """某角色在某触发时机可发动的全部法术。
+
+        内置法术不再需要【学习】：所需道纹全部持有且可发动即进入候选
+        （见 _builtin_spell_flows）。自创法术仍读实体 spells 列表，
+        同名时自创定义覆盖内置定义（自创是本体的改写，不是重复）。
+        """
         flows = {}
         if holder is None or not holder.is_alive:
             return flows
+        for name, flow in self._builtin_spell_flows(holder).items():
+            if flow.get("trigger") == trigger:
+                flows[name] = flow
         for spell in holder.spells:
             flow = self.SPELL_FLOWS.get(spell.name)
             if flow is None:
@@ -4139,12 +4232,15 @@ class CombatEngine:
     def _global_trigger_holders(self, refs: dict[str, Entity]) -> dict[str, Entity]:
         """当前场上可能持有【战始/战终/回始/回终/敌回始/敌回终】法术的持有者。
 
-        怪物的 spells 恒为空列表（引擎从不给怪物挂法术），扫描全体 refs
-        对怪物零开销；死斗对手若通过完整封存快照持有自创法术，同样会被
-        正确扫描到（不局限于玩家侧）。
+        内置法术按道纹推导，因此不能只看 entity.spells 是否为空——
+        持有【封印】的角色即使 spells 为空也持有【镇魔印】（自身回合结束）。
+        怪物通常既不持 spells 也不持有内置法术所需道纹，扫描开销仍可忽略；
+        死斗对手若通过完整封存快照持有自创法术，同样会被正确扫描到
+        （不局限于玩家侧）。
         """
         return {ref: entity for ref, entity in refs.items()
-                if entity.is_alive and entity.spells}
+                if entity.is_alive
+                and (entity.spells or self._builtin_spell_flows(entity))}
 
     def _resolve_global_entry_target(self, step, entry, holder: Entity,
                                      refs: dict[str, Entity], reverse: dict[int, str]):
@@ -4176,7 +4272,7 @@ class CombatEngine:
             for name, flow in flows.items():
                 flat_steps = self._flatten_flow_steps(flow["steps"], holder, holder)
                 steps = []
-                spell = next((sp for sp in holder.spells if sp.name == name), None)
+                spell = self.spell_definition(holder, name)
                 for step in flat_steps:
                     daowen = self._step_daowen(step)
                     role = self._step_role(step)
@@ -4203,7 +4299,7 @@ class CombatEngine:
         holder = refs.get(holder_ref)
         if holder is None:
             return False
-        spell = next((sp for sp in holder.spells if sp.name == spell_name), None)
+        spell = self.spell_definition(holder, spell_name)
         if spell is None:
             return False
         if getattr(spell, "automatic", False):

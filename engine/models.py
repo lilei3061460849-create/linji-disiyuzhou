@@ -223,6 +223,10 @@ class Entity:
     # 道纹与法术
     dao_wen: dict[str, DaoWenInstance] = field(default_factory=dict)
     spells: list[Spell] = field(default_factory=list)
+    # 已装配的内置法术名（2026-09-16 裁定：法术无需学习，但反应型法术需先
+    # 经 use_spell 装配表达意图后才会自动触发）。自创法术不在此列——战斗中
+    # 自创本身已花掉一次出手，等价于表达了意图，创建即生效。
+    armed_spells: list[str] = field(default_factory=list)
     # 残韵库存：每个轮回者实体独立持有（{转换: n, 反转: n, 曲解: n}）。
     # 早期版本残韵只挂在 State（仅玩家侧），导致守擂者同为轮回者却无残韵可用。
     # 现下放为实体级，使挑战者/守擂者共用同一套残韵机制（玩家侧仍经 State.resonance 兼容）。
@@ -661,6 +665,7 @@ class Entity:
             "ai_memory": self.ai_memory,
             "dao_wen": {k: v.dao_wen.name for k, v in self.dao_wen.items()},
             "spells": [s.name for s in self.spells],
+            "armed_spells": list(self.armed_spells),
             "relics": [r.to_dict() for r in self.relics],
             "status_effects": [
                 {"name": s.name, "value": s.value, "rounds": s.remaining_rounds,

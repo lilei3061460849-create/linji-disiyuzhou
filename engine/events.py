@@ -744,11 +744,24 @@ def resolve_option_effect(text: str, engine, event_name: str = "", params=None) 
         applied.append(f"随机列出遗物候选：{'、'.join(discovery['choices'])}")
 
     # 学会法术必须由调用方在本次请求中显式提交合法名称。
+    # 2026-09-16：法术无需学习，事件授予的法术改为直接装配（armed_spells），
+    # 不再往 spells 里塞一个空流程的重复条目——内置法术由道纹推导，塞进去
+    # 只会与 spell_definition 的合成结果重复。
     if "选择学会两种法术" in text:
+        granted = []
         for name in params["spell_names"]:
-            player.spells.append(Spell(name=name, required_daowen=engine.SPELL_REGISTRY[name],
-                                       trigger_condition="", effect_flow=""))
-        applied.append(f"学会法术：{'、'.join(params['spell_names'])}")
+            required = engine.SPELL_REGISTRY.get(name)
+            if required is None:
+                instructions.append(f"未知法术【{name}】，需DM裁定")
+                continue
+            if not all(d in player.dao_wen for d in required):
+                instructions.append(f"缺少道纹{required}，无法装配法术【{name}】，需DM裁定")
+                continue
+            if name not in player.armed_spells:
+                player.armed_spells = sorted(set(player.armed_spells) | {name})
+            granted.append(name)
+        if granted:
+            applied.append(f"装配法术：{'、'.join(granted)}")
     # 获得N点[速限]/[法限]（属性点直接分配）
     for m in re.finditer(r'获得(\d+)点\s*\[?速限\]?', text):
         x = int(m.group(1)); player.speed_limit += x; player.current_speed = player.speed_limit; applied.append(f"获得{x}速限")

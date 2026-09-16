@@ -208,49 +208,70 @@ def test_guard_command_bad_x_rejected():
 # ========================================================================
 
 def _engine_custom(db_suffix, daowen_list):
-    from engine.models import DaoWen, DaoWenInstance
+    """自创法术用例：2026-09-16 起一律在战斗中自创，故这里直接开好战斗。"""
+    from engine.models import DaoWen, DaoWenInstance, Entity
     e = _engine(db_suffix, region="罪孽都市")
     for dn in daowen_list:
         e.state.player.dao_wen[dn] = DaoWenInstance(
             DaoWen(name=dn, formula="", cost_type="消耗", cost_formula="X", effect_formula=""), x_value=0)
+    _start_battle_with(e, Entity("靶怪", "怪物", blood_limit=999, current_hp=999,
+                                 attack_count=1, attack_power=1))
     return e
 
 
-def test_custom_spell_learn_requires_dm_then_approve():
-    """正常路径：自创法术先提交→未见场景中断→dm_approved后学会。
+def test_custom_spell_defined_in_battle_costs_one_action():
+    """正常路径：战斗中 define_spell 自创成功、立即生效、消耗 1 次主动出手。
 
-    2026-08-29：效果流程语法升级为显式目标声明（于自身/于攻击者/...），
-    "发动杀伐X"这种靠道纹类型自动猜测目标的旧写法已废弃。
+    2026-09-16 用户裁定：法术不再需要【学习】，局外自创入口取消，三大法则
+    由句式解析器硬性把关，故不再产生"未见场景"中断等 DM 裁定。
     """
-    e = _engine_custom("custom_learn", ["杀伐", "再生"])
+    e = _engine_custom("custom_define", ["杀伐", "再生"])
+    p = e.state.player
+    used_before = p.actions_used_this_round
     definition = {"name": "以杀养伤", "required_daowen": ["杀伐", "再生"],
                   "trigger_condition": "受到伤害前",
                   "effect_flow": "发动杀伐X于攻击者→发动再生X于自身"}
-    r = e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "custom_spell", "spell": definition})
-    assert r["success"] and r.get("completed") is False
-    assert e._pending_interrupts, "应生成未见场景中断等DM裁定"
-    r2 = e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "custom_spell",
-                                                "spell": definition, "dm_approved": True})
-    assert r2["success"], r2
-    assert [s.name for s in e.state.player.spells] == ["以杀养伤"]
-    assert not e._pending_interrupts, "dm_approved后中断应清除"
+    r = e.execute_action("define_spell", {"spell": definition})
+    assert r["success"], r.get("error")
+    assert r["result"]["wired"] is True
+    assert [s.name for s in p.spells] == ["以杀养伤"]
+    assert p.actions_used_this_round == used_before + 1, "自创法术应消耗1次主动出手"
+    assert not e._pending_interrupts, "新规则下自创不再卡DM裁定"
+
+
+def test_custom_spell_requires_in_combat():
+    """局外自定义入口已取消：pre_battle 提交必须被拒绝且不产生任何效果。"""
+    from engine.models import DaoWen, DaoWenInstance
+    e = _engine("custom_outside", region="罪孽都市")
+    e.state.player.dao_wen["杀伐"] = DaoWenInstance(
+        DaoWen(name="杀伐", formula="", cost_type="消耗", cost_formula="X", effect_formula=""), x_value=0)
+    definition = {"name": "局外法术", "required_daowen": ["杀伐"],
+                  "trigger_condition": "受到伤害前",
+                  "effect_flow": "发动杀伐X于攻击者"}
+    r = e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "custom_spell",
+                                               "spell": definition, "dm_approved": True})
+    assert not r["success"]
+    assert e.state.player.spells == []
+    r2 = e.execute_action("define_spell", {"spell": definition})
+    assert not r2["success"], "局外也不能用 define_spell"
 
 
 def test_custom_spell_rejects_unknown_daowen_in_flow():
-    """错误输入：effect_flow含非已有道纹（凭空回复X）→ 校验拦截。"""
+    """错误输入：required_daowen 含不存在的道纹 → 校验拦截。"""
     e = _engine_custom("custom_bad", ["杀伐"])
     definition = {"name": "假回复", "required_daowen": ["回复"],  # 无此道纹
                   "trigger_condition": "受到伤害前", "effect_flow": "发动回复X于自身"}
-    r = e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "custom_spell", "spell": definition})
+    r = e.execute_action("define_spell", {"spell": definition})
     assert not r["success"], "不存在道纹'回复'必须拒绝"
+    assert e.state.player.spells == []
 
 
 def test_custom_spell_rejects_missing_target_declaration():
-    """句式错误提醒（2026-08-29新增）：缺少显式目标声明必须报错，不能静默学会成摆设。"""
+    """句式错误提醒（2026-08-29新增）：缺少显式目标声明必须报错，不能静默成摆设。"""
     e = _engine_custom("custom_notarget", ["杀伐"])
     definition = {"name": "缺目标法术", "required_daowen": ["杀伐"],
                   "trigger_condition": "受到伤害前", "effect_flow": "发动杀伐X"}
-    r = e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "custom_spell", "spell": definition})
+    r = e.execute_action("define_spell", {"spell": definition})
     assert not r["success"]
     assert "句式错误" in r["error"] and "目标" in r["error"]
 
@@ -260,7 +281,7 @@ def test_custom_spell_rejects_unknown_trigger_wording():
     e = _engine_custom("custom_badtrigger", ["杀伐"])
     definition = {"name": "怪触发法术", "required_daowen": ["杀伐"],
                   "trigger_condition": "月圆之夜", "effect_flow": "发动杀伐X于攻击者"}
-    r = e.execute_action("pre_battle_action", {"sub_action": "学习", "sub": "custom_spell", "spell": definition})
+    r = e.execute_action("define_spell", {"spell": definition})
     assert not r["success"]
     assert "句式错误" in r["error"]
 

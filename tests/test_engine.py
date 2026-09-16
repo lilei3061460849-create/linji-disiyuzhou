@@ -563,14 +563,15 @@ def test_out_of_combat_actions():
     assert learn_name in player.dao_wen, f"{learn_name}应已加入玩家道纹"
     print(f"  ✓ 学习道纹：玩家道纹={list(player.dao_wen.keys())}")
 
-    # 学习法术2档：同时学习两种并支付10碎片
-    r = engine.execute_action("pre_battle_action", {
-        "sub_action": "学习", "sub": "spell", "tier": 2,
-        "names": ["先发制人", "后发制人"],
-    })
-    assert r["success"], f"学习法术失败: {r}"
-    assert {sp.name for sp in player.spells} == {"先发制人", "后发制人"}
-    print("  ✓ 学习法术2档：先发制人、后发制人均已掌握")
+    # 法术已免学习（2026-09-16）：持所需道纹即可装配，不再写入 spells。
+    # 开局持【杀伐】→ 装配【先发制人】应成功且可卸下。
+    r = engine.execute_action("use_spell", {"spell_name": "先发制人"})
+    assert r["success"], f"装配法术失败: {r}"
+    assert "先发制人" in player.armed_spells
+    r = engine.execute_action("use_spell", {"spell_name": "先发制人", "disarm": True})
+    assert r["success"], f"卸下法术失败: {r}"
+    assert "先发制人" not in player.armed_spells
+    print("  ✓ 法术装配/卸下：无需学习，持道纹即可")
 
     # 共鸣：获得遗物（补满精力以便测试）
     engine.state.energy = 3

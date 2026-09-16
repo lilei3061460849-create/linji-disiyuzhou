@@ -40,18 +40,10 @@ def _engine_with_loop_spell(suffix, *, hp, mana, spells=None):
     for name in ("透支", "再生"):
         player.dao_wen[name] = DaoWenInstance(
             DaoWen(name=name, formula="", cost_type="", cost_formula="X", effect_formula=""))
-    # 自创法术只能在局外阶段学习，故所有法术都要赶在 _start_with_enemy 之前学完。
-    for spell in (spells if spells is not None else (SPELL,)):
-        engine.state.energy = 3
-        engine.execute_action("pre_battle_action",
-                              {"sub_action": "学习", "sub": "custom_spell", "spell": spell})
-        learned = engine.execute_action(
-            "pre_battle_action",
-            {"sub_action": "学习", "sub": "custom_spell", "spell": spell, "dm_approved": True})
-        assert learned["success"], learned.get("error")
-        assert learned["result"]["wired"] is True
-
+    # 2026-09-16：自创法术只能在战斗中用 define_spell 完成（消耗1次主动出手），
+    # 局外【学习·自创法术】入口已取消，故必须先开战再自创。
     _start_with_enemy(engine)
+    _define_spells(engine, spells if spells is not None else (SPELL,))
     foe = engine.state.enemies[0]
     foe.current_hp = 99999
     foe.attack_power = 5
@@ -59,6 +51,14 @@ def _engine_with_loop_spell(suffix, *, hp, mana, spells=None):
     player.current_hp = hp
     player.current_mana = mana
     return engine
+
+
+def _define_spells(engine, spells):
+    """战斗中自创法术（2026-09-16 新规则入口，每次消耗 1 次主动出手）。"""
+    for spell in spells:
+        result = engine.execute_action("define_spell", {"spell": spell})
+        assert result["success"], result.get("error")
+        assert result["result"]["wired"] is True
 
 
 def _fire(engine, cycles, x=3):
@@ -107,24 +107,12 @@ def _engine_with_branch_spell(suffix, *, mana):
         player.dao_wen[name] = DaoWenInstance(
             DaoWen(name=name, formula="", cost_type="", cost_formula="X", effect_formula=""))
 
-    engine.state.energy = 3
-    draft = engine.execute_action("pre_battle_action", {
-        "sub_action": "学习", "sub": "custom_spell", "spell": BRANCH_SPELL,
-    })
-    assert draft["success"], draft
-    engine.state.energy = 3
-    learned = engine.execute_action("pre_battle_action", {
-        "sub_action": "学习", "sub": "custom_spell", "spell": BRANCH_SPELL,
-        "dm_approved": True,
-    })
-    assert learned["success"], learned
-    assert learned["result"]["wired"] is True
-
     # 让前一击的真实失血与【承露盏】在同一阶段内把法力从<2推到≥2，
     # 直接覆盖用户要求的“承露盏+血溅五步”引擎路径。
     engine.state.relics.append(Relic(
         name="承露盏", effect="每累计失去10点生命，获得1点法力"))
     _start_with_enemy(engine)
+    _define_spells(engine, (BRANCH_SPELL,))
     foe = engine.state.enemies[0]
     foe.current_hp = 99999
     foe.attack_power = 6

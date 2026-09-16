@@ -346,11 +346,11 @@ class GameEngine:
                                 "mana_points": "nonnegative integer",
                                 "constraint": "三者之和≤档位属性点+池内余点；1点=6血限，2点=1速限=1法限"}}},
             {"action_type": "pre_battle_action", "params_schema": {
-                "sub_action": "学习", "sub": ["spell", "daowen", "custom_spell"],
-                "tier": {"spell": [1, 2, 3], "daowen": [1, 2]},
-                "names": "spell/daowen必填，数量必须等于tier",
-                "spell": "custom_spell必填的完整法术定义",
-                "dm_approved": "custom_spell经审核后为true"}},
+                "sub_action": "学习", "sub": ["daowen"],
+                "tier": {"daowen": [1, 2]},
+                "names": "daowen必填，数量必须等于tier",
+                "note": "法术已于2026-09-16改为无需学习：持所需道纹即可在战斗中用 "
+                        "use_spell 装配、用 define_spell 自创（消耗1次主动出手）"}},
             {"action_type": "pre_battle_action", "params_schema": {
                 "sub_action": "共鸣",
                 "tier": {1: "随机列3件候选并显式选择1件", 2: "额外1精力+15碎片自选"},
@@ -507,10 +507,13 @@ class GameEngine:
         target_options = [{"ref": ref, "name": entity.name} for ref, entity in refs.items()]
         actions: list[dict] = []
         for name, instance in player.dao_wen.items():
+            # 装配了【镇魔印】后，【封印】由自身回合结束法术自动发动，
+            # 不再作为主动道纹候选——这正是该法术的意义：把一次主动出手
+            # 换成回合结束的免费暂离。仅持有【封印】而未装配时仍照常显示。
+            # 2026-09-16 免学习裁定后，判据由"已学习"改为"已装配"，
+            # 装配是显式动作，不会在玩家不知情的情况下顶掉主动【封印】。
             if (name == "封印" and player.entity_type == "轮回者"
-                    and any(sp.name == "镇魔印" for sp in player.spells)):
-                # 已学习【镇魔印】后，封印由自身回合结束法术发动，
-                # 不再作为主动道纹候选；仅持有封印而未学习法术时仍显示。
+                    and "镇魔印" in (getattr(player, "armed_spells", None) or ())):
                 continue
             if not instance.can_use():
                 actions.append({"action_type": "use_daowen", "available": False,
@@ -558,15 +561,38 @@ class GameEngine:
                                                   "x": fixed_x, "target_ref": target_options,
                                                   "dodge": "boolean", "blood_shadow": "boolean",
                                                   "trigger_spell_choices": "complete object"}})
-        for spell in player.spells:
-            # 自动触发法术（例如持有【封印】后获得的己方回合结束法术）
-            # 不是主动行动，不应伪装成一个会占用出手的 use_spell 选项。
-            if getattr(spell, "automatic", False):
+        # 法术不再需要【学习】：内置法术按持有道纹实时推导，与自创法术合并列出。
+        # 法术不再需要【学习】：持所需道纹即可装配（use_spell），装配后才触发。
+        # 自动触发类（如持【封印】可得的【镇魔印】）不占主动出手，但仍需装配。
+        known = {sp.name: sp for sp in player.spells}
+        armable = set(self.combat.buildable_spells(player))
+        armed = set(self.combat._builtin_spell_flows(player))
+        for spell_name in sorted(armable | armed | set(known)):
+            spell = known.get(spell_name) or self.combat.spell_definition(player, spell_name)
+            if spell is None:
                 continue
-            actions.append({"action_type": "use_spell", "params_schema": {"spell_name": spell.name},
-                            "available": all(n in player.dao_wen and player.dao_wen[n].can_use()
-                                             for n in spell.required_daowen),
-                            "note": "法术实际结算在对应判定的 spell_choices 中显式提交"})
+            usable = all(n in player.dao_wen and player.dao_wen[n].can_use()
+                         for n in spell.required_daowen)
+            if spell_name in known:
+                notes = "自创法术：创建即生效，无需装配"
+            elif spell_name in armed:
+                notes = "已装配，触发时点自动结算；用 disarm=true 卸下"
+            else:
+                notes = "可装配：装配后在其触发时点自动结算（装配本身不花出手/法力）"
+            actions.append({"action_type": "use_spell",
+                            "params_schema": {"spell_name": spell_name,
+                                              "disarm": "卸下时传true（仅内置法术）"},
+                            "available": usable,
+                            "note": notes})
+        # 战斗中自定义法术：持有所需道纹即可，消耗 1 次主动出手，立即生效。
+        if self.state.phase == GamePhase.IN_COMBAT.value:
+            actions.append({
+                "action_type": "define_spell",
+                "params_schema": {"spell": {"name": "str", "required_daowen": ["自身已持有道纹"],
+                                            "trigger_condition": "str", "effect_flow": "str"}},
+                "available": bool(player.dao_wen) and player.is_alive,
+                "note": "持有所需道纹即可自定义法术并立即生效，消耗1次主动出手；"
+                        "局外自定义入口已取消。三大法则由句式解析器硬性校验"})
         if any(value > 0 for value in self.state.resonance.values()):
             actions.append({"action_type": "use_resonance", "params_schema": {
                 "resonance_type": [n for n, v in self.state.resonance.items() if v > 0],
@@ -875,6 +901,7 @@ class GameEngine:
                 "declare_parry",
                 "use_daowen", "use_spell", "use_resonance", "consume_item",
                 "declare_wish", "declare_escape", "retreat_via_toll", "deploy_employee",
+                "define_spell",
                 "lianxin_in_battle", "declare_evolution", "activate_duel_relic",
                 "use_black_card", "use_crime_vault", "fire_godfather_revolver",
                 "select_shared_dragon_heart", "declare_fuyuebei_toll", "activate_dragon_body",
@@ -963,12 +990,9 @@ class GameEngine:
             }
         # 检查是否有待处理的中断
         # 豁免：自创法术 dm_approved 重提是"结算中断"的动作，不该被自己挡住
-        is_custom_approve = (action_type == "pre_battle_action"
-                             and isinstance(params, dict)
-                             and params.get("sub_action") in ("学习",)
-                             and params.get("sub") in ("custom_spell", "自创法术")
-                             and params.get("dm_approved"))
-        if self._pending_interrupts and not is_custom_approve:
+        # 注：旧 is_custom_approve 旁路口（局外自创法术的 dm_approved 重提）
+        # 已于 2026-09-16 随局外自创入口一并删除，不再需要豁免待裁定门禁。
+        if self._pending_interrupts:
             player_dead = (self.state.player is None) or (not self.state.player.is_alive)
             return {
                 "success": False,
@@ -1019,6 +1043,8 @@ class GameEngine:
                 result = self._action_use_daowen(params)
             elif action_type == "use_spell":
                 result = self._action_use_spell(params)
+            elif action_type == "define_spell":
+                result = self._action_define_spell(params)
             elif action_type == "use_resonance":
                 result = self._action_use_resonance(params)
             elif action_type == "redeem_attribute_points":
@@ -1522,12 +1548,10 @@ class GameEngine:
 
     # 可学法术注册表（名 → 所需道纹）
     # 2026-08-21：删除「临界泄压」（所需道纹·切割已删除）。
-    SPELL_REGISTRY = {
-        "先发制人": ["杀伐"], "生生不息": ["再生"],
-        "后发制人": ["庇护"], "以牙还牙": ["杀伐", "再生"], "借力打力": ["杀伐", "庇护"],
-        "不死不休": ["血债"], "千刀万剐": ["血债", "再生"], "咎由自取": ["坠落", "杀伐", "血债"],
-        "镇魔印": ["封印"],
-    }
+    # 唯一事实源在 CombatEngine.BUILTIN_SPELL_DAOWEN（与 SPELL_FLOWS 同处定义，
+    # 保证「有流程」与「有所需道纹」永不脱节）。此处只做别名，避免两处维护。
+    # 法术不再需要【学习】：持全部所需道纹即可直接使用（见 spell_definition）。
+    SPELL_REGISTRY = CombatEngine.BUILTIN_SPELL_DAOWEN
     # 三副本终音法器（死斗胜利后按current_region发放，见resolve_final_duel/choose_terminal_artifact）
     TERMINAL_ARTIFACTS = {
         "扭曲都市": [
@@ -1672,8 +1696,98 @@ class GameEngine:
         return {"success": True, "action": "选择发现消耗品",
                 "result": {"item": choice, "durability": durability, "source": source}}
 
+    def _build_custom_spell(self, actor: Entity, definition: dict) -> dict:
+        """自创法术的唯一构建入口（三大法则校验 + 组装 Spell）。
+
+        局外【学习·自创法术】与战斗内【define_spell】共用本方法——
+        规则只有一处，禁止两条路径各自校验。
+
+        返回 {"spell": Spell, "parsed": parsed} 成功；失败返回 {"error": str}。
+        不改动任何状态（不扣精力/出手/碎片），由调用方决定代价与写入时机。
+        """
+        name = definition.get("name")
+        required = definition.get("required_daowen")
+        trigger = definition.get("trigger_condition")
+        flow = definition.get("effect_flow")
+        if (not isinstance(name, str) or not name.strip()
+                or name in self.SPELL_REGISTRY
+                or any(spell.name == name for spell in actor.spells)
+                or not isinstance(required, list) or not required
+                or len(set(required)) != len(required)
+                or any(daowen not in actor.dao_wen for daowen in required)
+                or not isinstance(trigger, str) or not trigger.strip()
+                or not isinstance(flow, str) or not flow.strip()):
+            return {"error": "自创法术需唯一名称、至少一种自身已持有道纹、触发条件和效果流程"}
+        # 句式校验：提交时就必须能被完整解析，解析失败直接拒绝并附带具体原因，
+        # 禁止"学会了但因文本对不上而永远不触发"的静默哑火。已持有道纹之外
+        # 引用的道纹同样在此处一并拒绝。
+        try:
+            parsed = parse_spell_definition(trigger, flow, set(DaoWenEngine.list_all()))
+        except SpellDslError as exc:
+            return {"error": f"自创法术句式错误：{exc}"}
+        from .spell_dsl import collect_step_daowen
+        referenced = collect_step_daowen(parsed.steps)
+        missing = referenced - set(required)
+        if missing:
+            return {"error": ("自创法术句式错误：效果流程引用了未列入"
+                              f"required_daowen的道纹{sorted(missing)}")}
+        return {"spell": Spell(
+            name=name.strip(), required_daowen=list(required),
+            trigger_condition=trigger.strip(), effect_flow=flow.strip(),
+            rank=len(required),
+            custom_conditions=list(definition.get("custom_conditions") or []),
+            automatic=parsed.trigger == TriggerTiming.SELF_TURN_END.value
+                       or bool(definition.get("automatic", False)),
+        ), "parsed": parsed}
+
+    def _unlocked_builtin_spells(self, actor: Entity) -> list[str]:
+        """当前持道纹已解锁的内置法术名（无需学习）。"""
+        if actor is None:
+            return []
+        return sorted(self.combat._builtin_spell_flows(actor))
+
+    def _action_define_spell(self, params: dict) -> dict:
+        """战斗中自定义法术：持有所需道纹即可，消耗 1 次主动出手，立即生效。
+
+        2026-09-16 用户裁定：法术不再需要【学习】，局外自定义入口已删除，
+        一律在战斗中自创。三大法则由 DSL 解析器硬性把关
+        （parse_spell_definition + 引用的道纹必须全部列入 required_daowen），
+        因此不再额外要求 DM 审核中断，避免战斗中卡在待裁定队列里无法继续。
+        """
+        player = self.state.player
+        if player is None:
+            return {"success": False, "error": "没有玩家"}
+        if self.state.phase != GamePhase.IN_COMBAT.value:
+            return {"success": False,
+                    "error": "自定义法术只能在战斗中进行（消耗1次主动出手）；局外入口已取消"}
+        if not player.is_alive:
+            return {"success": False, "error": "轮回者已死亡，无法自定义法术"}
+        definition = params.get("spell")
+        if not isinstance(definition, dict):
+            return {"success": False, "error": "自定义法术必须提交spell对象："
+                                               "{name, required_daowen, trigger_condition, effect_flow}"}
+        built = self._build_custom_spell(player, definition)
+        if "error" in built:
+            return {"success": False, "error": built["error"]}
+        # 先扣出手再写入：出手预算不足时不产生任何效果，也不白造出法术。
+        budget_error = self._consume_action_or_error(player)
+        if budget_error:
+            return budget_error
+        player.spells.append(built["spell"])
+        parsed = built["parsed"]
+        wired = parsed.trigger in self.combat._WIRED_TRIGGERS
+        result = {"spell": built["spell"].to_dict(), "wired": wired, "cost": "1次主动出手"}
+        if not wired:
+            result["warning"] = (f"触发时机【{parsed.trigger}】已通过句式校验，"
+                                 "但该时机暂未接入战斗结算管线，本法术目前不会实际触发")
+        return {"success": True, "action": "自定义法术", "result": result}
+
     def _pre_battle_xuexi(self, params: dict) -> dict:
-        """学习：法术1/2/3种对应0/10/25碎片；道纹1/2种对应0/10碎片；自创法术进入DM审核。"""
+        """学习：转化道纹1/2种对应0/10碎片；自创法术进入DM审核。
+
+        法术本身不再需要【学习】（2026-09-16 裁定）：持全部所需道纹即可
+        直接使用，战斗中也可随时自创，故 sub="spell" 已废弃。
+        """
         player = self.state.player
         if not player:
             self.state.energy += 1
@@ -1681,90 +1795,35 @@ class GameEngine:
         sub = params.get("sub", "daowen")
 
         if sub in ("custom_spell", "自创法术"):
-            definition = params.get("spell")
-            if not isinstance(definition, dict):
-                self.state.energy += 1
-                return {"success": False, "error": "自创法术必须提交spell对象"}
-            name = definition.get("name")
-            required = definition.get("required_daowen")
-            trigger = definition.get("trigger_condition")
-            flow = definition.get("effect_flow")
-            if (not isinstance(name, str) or not name.strip()
-                    or name in self.SPELL_REGISTRY or any(spell.name == name for spell in player.spells)
-                    or not isinstance(required, list) or not required or len(set(required)) != len(required)
-                    or any(daowen not in player.dao_wen for daowen in required)
-                    or not isinstance(trigger, str) or not trigger.strip()
-                    or not isinstance(flow, str) or not flow.strip()):
-                self.state.energy += 1
-                return {"success": False,
-                        "error": "自创法术需唯一名称、至少一种自身已持有道纹、触发条件和效果流程"}
-            # 句式校验（2026-08-29修复）：提交时就必须能被完整解析，解析失败
-            # 直接拒绝并附带具体原因，禁止"学会了但因文本对不上而永远不触发"
-            # 的静默哑火。已持有道纹之外引用的道纹同样在此处一并拒绝。
-            try:
-                parsed = parse_spell_definition(trigger, flow, set(DaoWenEngine.list_all()))
-            except SpellDslError as exc:
-                self.state.energy += 1
-                return {"success": False, "error": f"自创法术句式错误：{exc}"}
-            from .spell_dsl import collect_step_daowen
-            referenced = collect_step_daowen(parsed.steps)
-            missing = referenced - set(required)
-            if missing:
-                self.state.energy += 1
-                return {"success": False,
-                        "error": f"自创法术句式错误：效果流程引用了未列入required_daowen的道纹{sorted(missing)}"}
-            if not params.get("dm_approved"):
-                interrupt = Interrupt(
-                    interrupt_type=InterruptType.UNSEEN_SCENE,
-                    context={"kind": "custom_spell", "spell": definition},
-                    description=f"自创法术【{name}】需审核是否完全由已有道纹按三大法则组装",
-                    options=[], state_snapshot=self.state.to_dict(),
-                )
-                self._pending_interrupts.append(interrupt)
-                self.state.energy += 1  # 审核阶段不消耗；dm_approved后重新提交才正式消耗本次行动。
-                return {"success": True, "action": "自创法术等待裁定",
-                        "completed": False, "interrupt": interrupt.to_dict()}
-            # dm_approved 重提：清掉本次待审的自创法术中断（否则留在队列，
-            # 后续所有行动被"有待处理的中断"门禁挡住，自创法术无法真正完成）。
-            self._pending_interrupts = [
-                i for i in self._pending_interrupts
-                if not (i.interrupt_type == InterruptType.UNSEEN_SCENE
-                        and (i.context or {}).get("kind") == "custom_spell")]
-            spell = Spell(name=name.strip(), required_daowen=list(required),
-                          trigger_condition=trigger.strip(), effect_flow=flow.strip(),
-                          rank=len(required), custom_conditions=list(definition.get("custom_conditions") or []),
-                          automatic=parsed.trigger == TriggerTiming.SELF_TURN_END.value
-                                     or bool(definition.get("automatic", False)))
-            player.spells.append(spell)
-            # 2026-08-30：全部11种触发时机均已接入真实战斗结算管线，wired
-            # 恒为True；_WIRED_TRIGGERS判断保留，作为未来若扩展新触发时机
-            # 时的显式安全阀（新时机默认wired=False，直到真正接线为止），
-            # 不再有当前已知的"合法但不会触发"的时机。
-            wired = parsed.trigger in self.combat._WIRED_TRIGGERS
-            result = {"learned": "custom_spell", "spell": spell.to_dict(), "shard_cost": 0, "wired": wired}
-            if not wired:
-                result["warning"] = (
-                    f"触发时机【{parsed.trigger}】已通过句式校验并学会，"
-                    "但该时机暂未接入战斗结算管线，本法术目前不会实际触发")
-            return {"success": True, "action": "学习·自创法术", "result": result}
+            # 2026-09-16 用户裁定：局外自定义法术入口已删除，法术一律在
+            # 战斗中用 define_spell 自创（消耗 1 次主动出手），不再走局外
+            # 【学习】+ DM 审核这条路径。
+            self.state.energy += 1
+            return {"success": False, "error": "局外自定义法术已取消：请在战斗中用 define_spell 自创（消耗1次主动出手）"}
 
         tier = params.get("tier", 1)
         if not isinstance(tier, int) or isinstance(tier, bool):
             self.state.energy += 1
             return {"success": False, "error": "学习tier必须是整数"}
         if sub == "spell":
-            cost_map = {1: 0, 2: 10, 3: 25}
-            kind = "spell"
-        elif sub in ("daowen", "转化道纹"):
+            # 2026-09-16 裁定：法术不再需要学习，持全部所需道纹即可直接使用，
+            # 战斗中也可随时自创（define_spell）。此处不再收费、不再写入 spells，
+            # 只回报当前已解锁清单，保持旧调用方不被硬报错。
+            self.state.energy += 1
+            return {"success": False, "completed": False,
+                    "error": "法术已无需学习：持有全部所需道纹即可直接使用（战斗中也能自创）",
+                    "action": "学习·法术（已废弃）",
+                    "result": {"unlocked": sorted(self._unlocked_builtin_spells(player)),
+                               "hint": "需要新法术请用 sub=custom_spell 自创，或战斗中用 define_spell"}}
+        if sub in ("daowen", "转化道纹"):
             cost_map = {1: 0, 2: 10}
             kind = "daowen"
         else:
             self.state.energy += 1
-            return {"success": False, "error": "学习sub必须是spell/daowen/custom_spell"}
+            return {"success": False, "error": "学习sub必须是daowen/custom_spell"}
         if tier not in cost_map:
             self.state.energy += 1
-            return {"success": False,
-                    "error": ("学习法术档位必须是1/2/3" if kind == "spell" else "学习道纹档位必须是1/2")}
+            return {"success": False, "error": "学习道纹档位必须是1/2"}
         cost = cost_map[tier]
         names = params.get("names")
         if names is None and tier == 1 and isinstance(params.get("name"), str):
@@ -3552,31 +3611,62 @@ class GameEngine:
         return {"success": True, "action": f"使用工具【{name}】", "result": result, "state": self.combat._get_combat_state()}
 
     def _action_use_spell(self, params: dict) -> dict:
-        """查看/装配法术（反应型法术学会后在触发时点由引擎自动结算，无需手动发动）"""
+        """装配／卸下法术（2026-09-16 裁定：法术无需学习，持所需道纹即可装配）。
+
+        装配后才会在触发时点自动结算；装配本身不消耗出手、不消耗法力——
+        真正花法力的是触发时的实际发动。卸下用 {"disarm": true}。
+        自创法术不参与装配：它在战斗中自创时已花掉一次出手，创建即生效。
+        """
         player = self.state.player
         if not player:
             return {"success": False, "error": "没有玩家"}
         spell_name = params.get("spell_name", "")
-        spell = next((s for s in player.spells if s.name == spell_name), None)
+        # 法术不再需要【学习】：内置法术持全部所需道纹即可装配。
+        spell = self.combat.spell_definition(player, spell_name)
         if spell is None:
             return {"success": False, "error": f"未掌握法术: {spell_name}"}
+        missing = [d for d in spell.required_daowen
+                   if d not in player.dao_wen or not player.dao_wen[d].can_use()]
+        if missing:
+            return {"success": False,
+                    "error": f"法术【{spell_name}】缺少可用道纹{sorted(missing)}"}
+        is_custom = any(sp.name == spell_name for sp in player.spells)
+        armed = set(getattr(player, "armed_spells", None) or ())
+        if is_custom:
+            return {"success": True, "action": f"查看法术【{spell_name}】",
+                    "result": {"kind": "自创法术", "armed": "自创法术创建即生效，无需装配"}}
+        if params.get("disarm"):
+            if spell_name not in armed:
+                return {"success": False, "error": f"法术【{spell_name}】当前未装配"}
+            player.armed_spells = sorted(armed - {spell_name})
+            return {"success": True, "action": f"卸下法术【{spell_name}】",
+                    "result": {"armed": list(player.armed_spells),
+                               "note": "卸下后触发时点不再自动结算"}}
+        if spell_name in armed:
+            return {"success": True, "action": f"法术【{spell_name}】已装配",
+                    "result": {"armed": sorted(armed), "note": "重复装配无效果；用 disarm 卸下"}}
+        player.armed_spells = sorted(armed | {spell_name})
+        return {"success": True, "action": f"装配法术【{spell_name}】",
+                "result": {"armed": list(player.armed_spells),
+                           "still_armable": self.combat.buildable_spells(player),
+                           "note": "装配后在其触发时点自动结算，实际发动才花法力"}}
         flow = self.combat.SPELL_FLOWS.get(spell_name)
         parsed = flow if flow is not None else self.combat._parse_custom_spell(spell)
-        armed = all(d in player.dao_wen and player.dao_wen[d].can_use() for d in spell.required_daowen)
+        flow = self.combat.SPELL_FLOWS.get(spell_name)
+        parsed = flow if flow is not None else self.combat._parse_custom_spell(spell)
         # wired：该触发时机在战斗管线里是否已经真正接线（能被结算触发）。
         # 2026-08-30：11种触发时机（受到伤害前/后、失去生命前/后、目标发动
         # 道纹前、战始/战终/回始/回终/敌回始/敌回终）均已接线，此判断保留
         # 作为未来新增时机时的显式安全阀。
         wired = bool(parsed) and parsed.get("trigger") in self.combat._WIRED_TRIGGERS
         return {
-            "success": True, "action": f"装配法术【{spell_name}】",
+            "success": True, "action": f"查看法术【{spell_name}】",
             "result": {"required_daowen": spell.required_daowen, "rank": spell.rank,
                        "trigger": parsed["trigger"] if parsed else spell.trigger_condition,
                        "steps": parsed["steps"] if parsed else spell.effect_flow,
                        "loop": bool(parsed.get("loop")) if parsed else False,
-                       "armed": armed,
                        "wired": wired,
-                       "note": ("反应型法术在触发时点由引擎自动结算（受到伤害前/后、失去生命前/后、"
+                       "note": ("已装配：在其触发时点自动结算（受到伤害前/后、失去生命前/后、"
                                 "目标发动道纹前，或战始/战终/回始/回终/敌回始/敌回终由对应action的"
                                 "spell_choices参数提交决策）"
                                 if wired else
@@ -4311,6 +4401,7 @@ class GameEngine:
             "lethal_progress": e.lethal_progress(),
             "dao_wen": {k: v.x_value for k, v in e.dao_wen.items()},
             "spells": [s.to_dict() for s in e.spells],
+            "armed_spells": list(getattr(e, "armed_spells", []) or []),
             "relics": [r.to_dict() for r in e.relics],
             "status_effects": [{"name": s.name, "value": s.value,
                                  "remaining_rounds": s.remaining_rounds, "source": s.source,
@@ -4338,6 +4429,7 @@ class GameEngine:
                                    rank=sp.get("rank", 1),
                                    custom_conditions=sp.get("custom_conditions", []),
                                    automatic=sp.get("automatic", False)))
+        e.armed_spells = list(d.get("armed_spells", []) or [])  # 旧档无此键回退空
         for relic in d.get("relics", []):
             e.relics.append(Relic(name=relic["name"], effect=relic.get("effect", ""),
                                   tags=list(relic.get("tags") or [])))

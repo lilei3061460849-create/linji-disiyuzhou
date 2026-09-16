@@ -1,7 +1,7 @@
-"""以【封印】为核心的已学习自动法术回归测试。
+"""以【封印】为核心的自动法术回归测试。
 
-重点：持有【封印】道纹本身不会凭空授予法术；只有把一个以【封印】为
-效果步骤、触发条件为“自身回合结束”的 Spell 学进角色后，才会自动触发。
+重点：持有【封印】道纹不会自动触发法术——2026-09-16 起法术虽无需学习，
+但仍须显式装配（use_spell）表达意图；装配后才会以“自身回合结束”自动触发。
 """
 from __future__ import annotations
 
@@ -40,17 +40,14 @@ def _engine():
     return e
 
 
-def _learn_seal_spell(e):
-    # 通过真实局外【学习】接口取得法术，不直接把 Spell 塞进构筑。
-    e.state.phase = "pre_battle"
-    e.state.energy = 1
-    learned = e.execute_action("pre_battle_action", {
-        "sub_action": "学习", "sub": "spell", "tier": 1,
-        "names": ["镇魔印"],
-    })
-    assert learned["success"], learned
-    assert any(sp.name == "镇魔印" for sp in e.state.player.spells)
+def _arm_seal_spell(e):
+    # 2026-09-16：法术无需学习，持【封印】即可在己方行动阶段装配【镇魔印】。
+    # 仍然走真实引擎接口，不直接把 Spell 塞进构筑。
     e.state.phase = "in_combat"
+    e.state.combat_subphase = "player_actions"
+    armed = e.execute_action("use_spell", {"spell_name": "镇魔印"})
+    assert armed["success"], armed
+    assert "镇魔印" in e.state.player.armed_spells
     e.state.combat_subphase = "await_round_start"
 
 
@@ -67,7 +64,7 @@ def test_seal_does_not_grant_a_spell_by_itself():
 
 def test_learned_seal_spell_triggers_at_own_turn_end():
     e = _engine()
-    _learn_seal_spell(e)
+    _arm_seal_spell(e)
     p = e.state.player
     monster = e.state.enemies[0]
     assert e.execute_action("round_start", {})["success"]
@@ -94,12 +91,12 @@ def test_learned_seal_spell_triggers_at_own_turn_end():
 
 def test_automatic_seal_spell_does_not_need_manual_spell_choices():
     e = _engine()
-    _learn_seal_spell(e)
+    _arm_seal_spell(e)
     assert e.execute_action("round_start", {})["success"]
     assert resolve_attack(e)["success"]
     assert resolve_attack(e)["success"]
 
-    # prepare_monster_phase 不提交 spell_choices；已学习的“自身回合结束”法术
+    # prepare_monster_phase 不提交 spell_choices；已装配的“自身回合结束”法术
     # 在真实触发点自动装配参数，普通法术才继续走显式 spell_choices 契约。
     prepared = e.execute_action("prepare_monster_phase", {})
     assert prepared["success"], prepared
