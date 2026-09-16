@@ -33,8 +33,9 @@ def _engine(tmp_path):
 
 
 def _monster_with(name, daowen: dict):
+    # 2026-09-16：怪物[法限]即法力池；1 点付不起杀伐2/勾魂2/衰败2，抬到 20。
     m = Entity(name=name, entity_type="怪物", blood_limit=200, current_hp=100,
-               attack_count=1, attack_power=1)
+               attack_count=1, attack_power=20)
     for dw, x in daowen.items():
         m.dao_wen[dw] = DaoWenInstance(
             DaoWen(name=dw, formula="", cost_type="消耗", cost_formula="X",

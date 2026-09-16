@@ -27,8 +27,10 @@ def _engine(region="罪孽都市", seed=5):
     st.current_round = 2  # 跳过白板首回合
     st.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60,
                        mana_limit=20, current_mana=20, speed_limit=8, current_speed=8)
+    # 2026-09-16：怪物[法限]即法力池。庇护X 每发动一次 X+2，4 点法力撑不起第二轮
+    # （3→5→7 需累计 3+5=8 点），抬到 20。本文件只断言 X 递增，不断言怪物伤害。
     m = Entity(name="打手", entity_type="怪物", blood_limit=120, current_hp=120,
-               attack_count=1, attack_power=4)
+               attack_count=1, attack_power=20)
     m.dao_wen["强化"] = DaoWenInstance(DaoWen("强化", "", "异变", "5X", ""), x_value=2)
     m.dao_wen["庇护"] = DaoWenInstance(DaoWen("庇护", "", "消耗", "X", ""), x_value=3)
     st.enemies = [m]

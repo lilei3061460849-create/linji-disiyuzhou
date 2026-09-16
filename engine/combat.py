@@ -1754,6 +1754,11 @@ class CombatEngine:
         
         # 活血追踪归零 + 出手预算归零（回始重置本回合已用出手次数）+ 血誓戒每回合限一次归零 + 血族血脉判定归零
         for e in self.state.get_all_player_side() + self.state.get_all_enemy_side():
+            # 2026-09-16 用户令：怪物[回始]法力恢复至上限——这是怪物侧相对轮回者
+            # 一池制（[战始]给满、[回始]不回填）的核心资源优势，也是"让轮回者吃苦头"的
+            # 主要来源。微光者（[朋友]/[员工]）**不享有**此回满，与轮回者同为一池制。
+            if e.entity_type == "怪物" and e.mana_limit > 0:
+                e.current_mana = e.mana_limit
             e.hp_lost_this_round = 0
             # 招架：上回合招架过 → 本回合禁用；本回合姿态清空等待重新声明。
             # 顺序要紧：先用旧的 parrying 值算出本回合的锁，再清姿态。
@@ -5202,6 +5207,11 @@ class CombatEngine:
             amount = calc.get(key, 0)
             if amount and capacity < amount:
                 return False
+        # 2026-09-16 用户令：怪物与轮回者同口径持有[法限]，发动【消耗】类道纹必须付法力。
+        # 旧条文「怪物不持有法力、发动道纹不支付法力」已废止。
+        if calc.get("cost_type") == "消耗" and calc.get("cost", 0) > 0:
+            if caster.current_mana < calc["cost"]:
+                return False
         return True
 
     def _resolve_monster_daowen_choice(
@@ -5237,6 +5247,12 @@ class CombatEngine:
         if not self._monster_can_pay_calc_cost(monster, calc):
             return {"monster": monster.name, "daowen_skipped": name,
                     "resolves_as": effective_name, "reason": "无法支付代价"}
+        # 2026-09-16 用户令：怪物支付法力（旧条文"不支付法力"已废止）。
+        # 付不起的情况已由上一闸门挡掉，这里只做实际支付。
+        # 注意：法力同时就是[攻击力]，此刻支付会削弱本回合**之后**的普攻——
+        # 攻击与道纹的先后顺序由提交方（AI/操作者）决定，这正是"先攻后纹还是先纹后攻"的取舍。
+        if calc.get("cost_type") == "消耗" and calc.get("cost", 0) > 0:
+            monster.spend_mana(calc["cost"])
         hostile = self.state.on_player_side(target) != self.state.on_player_side(monster)
         dodge = choice.get("dodge")
         blood_shadow = choice.get("blood_shadow", False)

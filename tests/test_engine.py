@@ -129,10 +129,10 @@ def test_daowen_calculations():
     
     # 测试波及
     result = DaoWenEngine.resolve("波及", 2)
-    assert result["cost"] == 6
+    assert result["cost"] == 4          # 2026-09-16：消耗3X→2X
     assert result["mark_targets"] == 2
     assert result["duration"] == -1
-    print("  ✓ 波及X=2: 消耗6，选择2个目标建立/解除波及（持续∞）")
+    print("  ✓ 波及X=2: 消耗4，选择2个目标建立/解除波及（持续∞）")
     
     # 测试封印（代价：异变X；一个目标怪物延后X回合回场）
     result = DaoWenEngine.resolve("封印", 1)
@@ -1144,8 +1144,11 @@ def test_original_daowen_only_charges_mutation_on_activation():
     from engine.dice import DiceEngine
 
     def mk(name, dw):
+        # 2026-09-16：怪物[法限]即法力池。道纹 X 每发动一次会 +2（升级机制），
+        # 庇护会从 X=1 涨到 7；法力池 5 到第 3 轮就付不起了，抬到 20。
+        # 本用例只断言异变计费与存活，不断言怪物伤害。
         m = Entity(name=name, entity_type="怪物", blood_limit=200, current_hp=200,
-                   attack_count=1, attack_power=5)
+                   attack_count=1, attack_power=20)
         for n, x in dw:
             m.dao_wen[n] = DaoWenInstance(
                 dao_wen=DaoWen(name=n, formula="", cost_type="代价", cost_formula="异变5X",

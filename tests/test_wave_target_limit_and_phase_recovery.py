@@ -64,9 +64,14 @@ def _controlled_combat(engine: GameEngine, monsters: list[Entity]) -> Entity:
 
 
 def _magma_lizard() -> Entity:
-    """龙心谷怪物池：熔岩蜥（3×6/234，加害2，狂暴3，波及3）。"""
+    """龙心谷怪物池：熔岩蜥（血限234/法限14/速限3，加害2，狂暴3，波及3）。
+
+    2026-09-16：怪物[法限]即法力池。道纹 X 每发动一次 +2（升级机制），波及会从
+    X=3 涨到 5、7；原法限 6 到第 2 轮就付不起 2X=10 了，抬到 14（覆盖到 X=7）。
+    本文件只断言波及的目标数与阶段恢复，不断言怪物伤害。
+    """
     m = Entity("熔岩蜥", "怪物", blood_limit=234, current_hp=234,
-               attack_count=3, attack_power=6)
+               attack_count=3, attack_power=14)
     _dw(m, "加害", 2)
     _dw(m, "狂暴", 3)
     _dw(m, "波及", 3)

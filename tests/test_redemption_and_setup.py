@@ -206,7 +206,7 @@ def test_jinghua_reduces_mutation():
     })
     assert r["success"]
     assert monster.mutation_count == 7
-    assert r["calculation"]["cost"] == 25
+    assert r["calculation"]["cost"] == 10  # 净化消耗5X→2X（2026-09-16），X=5
 
 
 def test_jinghua_can_go_negative_without_redemption():

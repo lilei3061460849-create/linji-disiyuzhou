@@ -69,21 +69,21 @@ def test_normal_dianjin_converts_mana_to_shards():
     mana0, shard0 = player.current_mana, engine.state.shards
     r = engine.execute_action("use_daowen", {"daowen_name": "点金", "x": 2, "target": m.name})
     assert r["success"], r
-    assert player.current_mana == mana0 - 16          # 8X = 16 法力（DM 2026-09-10 定为 8X）
+    assert player.current_mana == mana0 - 6           # 2026-09-16：消耗8X→3X = 6 法力
     assert engine.state.shards == shard0 + 2          # 换到 2 真碎片
     assert m.shards == 20, "点金不再从目标身上夺取"
     assert not player.has_status("点金"), "点金是即时结算，不得挂状态"
 
 
 def test_boundary_dianjin_insufficient_mana_rejected():
-    """边界：法力不够付 8X 时应当被拒绝，而不是半结算。"""
-    engine = _setup(mana=15); _grant(engine, ["点金"])
+    """边界：法力不够付 3X 时应当被拒绝，而不是半结算。"""
+    engine = _setup(mana=5); _grant(engine, ["点金"])   # 点金X=2 现需 3X=6，5 点不够
     player = engine.state.player
     _add_monster(engine, shards=20)
     shard0 = engine.state.shards
     r = engine.execute_action("use_daowen", {"daowen_name": "点金", "x": 2, "target": None})
     assert r["success"] is False
-    assert engine.state.shards == shard0 and player.current_mana == 15
+    assert engine.state.shards == shard0 and player.current_mana == 5
 
 
 def test_xijie_status_still_steals_shards_on_damage():

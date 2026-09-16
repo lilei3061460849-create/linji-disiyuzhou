@@ -56,7 +56,7 @@ def test_use_daowen_mengbi_blocks_next_hits():
     assert r["success"], r
     assert foe.has_status("蒙蔽")
     assert foe.get_status_value("蒙蔽") == 2
-    assert engine.state.player.current_mana == mana_before - 10
+    assert engine.state.player.current_mana == mana_before - 4   # 蒙蔽X=2：消耗5X→2X=4
 
     hp = engine.state.player.current_hp
     player = engine.state.player
@@ -109,7 +109,7 @@ def test_mengbi_stacks_and_rejects_bad_input():
     foe = _enemy_caster(engine)
     engine.execute_action("round_start", {})
 
-    engine.state.player.current_mana = 4
+    engine.state.player.current_mana = 1   # 蒙蔽X=1 现为消耗2X=2，故4点已够、需降到1才够不成
     r1 = engine.execute_action("use_daowen", {
         "daowen_name": "蒙蔽", "x": 1, "target": foe.name,
     })
@@ -167,5 +167,5 @@ def test_mengbi_dodged_does_not_apply_status():
     assert r["success"]
     assert r["dodge"]["fully_dodged"] is True
     assert not foe.has_status("蒙蔽")
-    assert engine.state.player.current_mana == mana - 5
+    assert engine.state.player.current_mana == mana - 2   # 蒙蔽X=1：消耗5X→2X=2
     assert foe.current_speed == spd - 1

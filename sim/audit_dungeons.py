@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """副本草案面板合规审计（只读）。
 
-一阶已实现：属性点60（2026-09-15 用户令改回），道纹3/总值8（复用 audit_monsters.py 口径）。
-二阶草案：乱葬岗/沉沦海 属性点110，道纹5/总值15（2026-08-14 裁定：面板成本反推上调声明）。
+2026-09-16 用户令：怪物设计只约束**属性点数**与**道纹数量**，道纹 X 值自由自定义。
+旧的「道纹总值」配额已废止——它本是"怪物发动道纹不支付法力"的补丁；怪物改为支付法力后，
+真正的约束是[法限]构成每回合法力预算，总值限制既多余又会与预算打架。
+二阶草案：乱葬岗/沉沦海 属性点100，道纹5条。
 永夜庭：固定场次属性点=60×N（血族机制），特殊豁免面板审计。
 
 面板成本 = ⌈血限/6⌉ + 2×攻击次数 + 2×攻击力（与轮回者属性点口径一致）。
@@ -13,8 +15,8 @@ import re
 import sys
 
 TARGETS = {
-    "乱葬岗": {"budget": 100, "dw_count": 5, "dw_total": 15},
-    "沉沦海": {"budget": 100, "dw_count": 5, "dw_total": 15},
+    "乱葬岗": {"budget": 100, "dw_count": 5},
+    "沉沦海": {"budget": 100, "dw_count": 5},
     "永夜庭": None,  # 特殊属性点机制，豁免
 }
 # 非普通池怪：事件boss/员工面板等，豁免面板与道纹配额审计
@@ -62,9 +64,6 @@ def audit():
                 issues.append(f"面板成本{cost}>{spec['budget']}")
             if len(m["dw"]) != spec["dw_count"]:
                 issues.append(f"道纹数{len(m['dw'])}≠{spec['dw_count']}")
-            total = sum(m["dw"].values())
-            if total != spec["dw_total"]:
-                issues.append(f"道纹总值{total}≠{spec['dw_total']}")
             status = "合规" if not issues else "❌" + "；".join(issues)
             if issues:
                 viol += 1
