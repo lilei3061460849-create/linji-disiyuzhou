@@ -563,15 +563,23 @@ def test_out_of_combat_actions():
     assert learn_name in player.dao_wen, f"{learn_name}应已加入玩家道纹"
     print(f"  ✓ 学习道纹：玩家道纹={list(player.dao_wen.keys())}")
 
-    # 法术已免学习（2026-09-16）：持所需道纹即可装配，不再写入 spells。
-    # 开局持【杀伐】→ 装配【先发制人】应成功且可卸下。
+    # 法术已免学习（2026-09-16）：持所需道纹即可在战斗中发动，不写入 spells。
+    # 局外不得发动（要占主动出手），故先确认拒绝，再进战斗验证。
     r = engine.execute_action("use_spell", {"spell_name": "先发制人"})
-    assert r["success"], f"装配法术失败: {r}"
+    assert not r["success"], "局外不得发动法术（需占1次主动出手）"
+    engine.state.phase = "in_combat"
+    engine.state.combat_subphase = "player_actions"
+    used = player.actions_used_this_round
+    r = engine.execute_action("use_spell", {"spell_name": "先发制人"})
+    assert r["success"], f"发动法术失败: {r}"
     assert "先发制人" in player.armed_spells
+    assert player.actions_used_this_round == used + 1, "发动法术应消耗1次主动出手"
     r = engine.execute_action("use_spell", {"spell_name": "先发制人", "disarm": True})
     assert r["success"], f"卸下法术失败: {r}"
     assert "先发制人" not in player.armed_spells
-    print("  ✓ 法术装配/卸下：无需学习，持道纹即可")
+    assert player.actions_used_this_round == used + 1, "卸下不应再扣出手"
+    engine.state.phase = "pre_battle"
+    print("  ✓ 法术发动/卸下：无需学习，持道纹即可，发动耗1次出手")
 
     # 共鸣：获得遗物（补满精力以便测试）
     engine.state.energy = 3
@@ -854,17 +862,20 @@ def test_relics_five_more():
     assert esc["shard_cost"] == 20, f"买路财应20碎片(100*20%)，实{esc['shard_cost']}"
     print(f"  ✓ 买路财：100血限怪撤退成本=20碎片")
 
-    # 无所求：resolve_event拒绝+1速限
+    # 无所求：resolve_event拒绝+1属性点（2026-09-16 裁定：按《物品索引》
+    # 原文入属性点池，不再由引擎折算成速限/法限）
     engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
     engine.execute_action("setup_attributes", {"name":"t","blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(engine)
     _choose_region(engine, "扭曲都市")
     engine.state.relics = [Relic(name="无所求", effect="")]
     engine.event_pool.current = "祭坛"
+    pool = engine.state.attribute_points
     sp = engine.state.player.speed_limit
-    engine.execute_action("resolve_event", {"event":"祭坛","option_id":3, "wusuoqiu_allocation": "speed"})  # 拒绝：无事发生
-    assert engine.state.player.speed_limit == sp + 1, "无所求拒绝应+1速限"
-    print(f"  ✓ 无所求：选拒绝类选项+1速限({sp}→{engine.state.player.speed_limit})")
+    engine.execute_action("resolve_event", {"event":"祭坛","option_id":3})  # 拒绝：无事发生
+    assert engine.state.attribute_points == pool + 1, "无所求拒绝应+1属性点"
+    assert engine.state.player.speed_limit == sp, "属性点入池，不应直接加速限"
+    print(f"  ✓ 无所求：选拒绝类选项+1属性点(池{pool}→{engine.state.attribute_points})")
     print("  ✓ 剩余5遗物测试通过")
 
 

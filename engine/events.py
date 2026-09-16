@@ -762,14 +762,21 @@ def resolve_option_effect(text: str, engine, event_name: str = "", params=None) 
             granted.append(name)
         if granted:
             applied.append(f"装配法术：{'、'.join(granted)}")
-    # 获得N点[速限]/[法限]（属性点直接分配）
+    # 获得N点[速限]/[法限]：按正文「2属性点 = 1[速限] = 1[法限]」，
+    # 速限与法限同价，各按字面点数加到对应上限（2026-09-16 裁定，清单 A4：
+    # 旧实现给法限加 2×x，与速限口径不一致）。
     for m in re.finditer(r'获得(\d+)点\s*\[?速限\]?', text):
         x = int(m.group(1)); player.speed_limit += x; player.current_speed = player.speed_limit; applied.append(f"获得{x}速限")
     for m in re.finditer(r'获得(\d+)点\s*\[?法限\]?', text):
-        x = int(m.group(1)); player.mana_limit += 2 * x; player.current_mana = player.mana_limit; applied.append(f"获得{x}法限")
-    # 属性点
-    if '属性点' in text and ('获得' in text or '+' in text):
-        player.speed_limit += 1; player.current_speed = player.speed_limit; applied.append("获得1速限(属性点)")
+        x = int(m.group(1)); player.mana_limit += x; player.current_mana = player.mana_limit; applied.append(f"获得{x}法限")
+    # 属性点：入属性点池，由玩家按正文自行兑换（2026-09-16 裁定，清单 A3：
+    # 旧实现把任意含"属性点"的文本直接吞成 +1 速限，既绕过属性点池，
+    # 也比价错误——1点属性点买不到1点速限，速限是2点一档）。
+    m_attr = re.search(r'获得(\d+)点?\s*属性点|属性点\s*\+(\d+)', text)
+    if m_attr:
+        pts = int(m_attr.group(1) or m_attr.group(2) or 1)
+        engine.state.attribute_points += pts
+        applied.append(f"获得{pts}属性点（属性点池 {engine.state.attribute_points}）")
     # 拒绝/无事
     if ('无事发生' in text or text.startswith('拒绝：') or text.startswith('拒绝:')
             or text.startswith('观棋') or text.startswith('无视') or text.startswith('离开')

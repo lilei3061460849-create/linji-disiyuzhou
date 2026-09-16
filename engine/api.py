@@ -261,7 +261,7 @@ class GameEngine:
             for option in event["options"]:
                 schema: dict = {"event": self.event_pool.current, "option_id": option["id"]}
                 if has_wusuoqiu and self._is_reject_option_text(option["text"]):
-                    schema["wusuoqiu_allocation"] = "speed(+1速限)/mana(+2法限)，拒绝类选项必填"
+                    schema["note"] = "持【无所求】：本选项另获1点属性点（入属性点池，按正文2点一档兑速限/法限、1点一档兑血限）"
                 actions.append({"action_type": "resolve_event",
                                 "params_schema": schema,
                                 "option": option["text"],
@@ -3611,15 +3611,23 @@ class GameEngine:
         return {"success": True, "action": f"使用工具【{name}】", "result": result, "state": self.combat._get_combat_state()}
 
     def _action_use_spell(self, params: dict) -> dict:
-        """装配／卸下法术（2026-09-16 裁定：法术无需学习，持所需道纹即可装配）。
+        """发动／装配法术（2026-09-16 裁定：消耗 1 次主动出手）。
 
-        装配后才会在触发时点自动结算；装配本身不消耗出手、不消耗法力——
-        真正花法力的是触发时的实际发动。卸下用 {"disarm": true}。
-        自创法术不参与装配：它在战斗中自创时已花掉一次出手，创建即生效。
+        轮回者用一次出手做二选一：
+          - 装配一种法术（use_spell）→ 该法术生效，此后在其触发时点自动结算；
+          - 自创一种法术（define_spell）→ 该法术生效，创建即可用。
+        装配不再免费：它要占一次主动出手，与自创同价。卸下不花出手
+        （收回意图不产生新东西）。真正花法力的是触发时的实际发动。
+        自创法术不参与装配：它在自创时已花掉一次出手，创建即生效。
         """
         player = self.state.player
         if not player:
             return {"success": False, "error": "没有玩家"}
+        if self.state.phase != GamePhase.IN_COMBAT.value:
+            return {"success": False,
+                    "error": "发动/装配法术只能在战斗中进行（消耗1次主动出手）"}
+        if not player.is_alive:
+            return {"success": False, "error": "轮回者已死亡，无法发动法术"}
         spell_name = params.get("spell_name", "")
         # 法术不再需要【学习】：内置法术持全部所需道纹即可装配。
         spell = self.combat.spell_definition(player, spell_name)
@@ -3634,45 +3642,29 @@ class GameEngine:
         armed = set(getattr(player, "armed_spells", None) or ())
         if is_custom:
             return {"success": True, "action": f"查看法术【{spell_name}】",
-                    "result": {"kind": "自创法术", "armed": "自创法术创建即生效，无需装配"}}
+                    "result": {"kind": "自创法术", "armed": "自创法术创建即生效，无需再装配"}}
         if params.get("disarm"):
             if spell_name not in armed:
                 return {"success": False, "error": f"法术【{spell_name}】当前未装配"}
             player.armed_spells = sorted(armed - {spell_name})
             return {"success": True, "action": f"卸下法术【{spell_name}】",
-                    "result": {"armed": list(player.armed_spells),
+                    "result": {"armed": list(player.armed_spells), "cost": "无（卸下不花出手）",
                                "note": "卸下后触发时点不再自动结算"}}
         if spell_name in armed:
             return {"success": True, "action": f"法术【{spell_name}】已装配",
-                    "result": {"armed": sorted(armed), "note": "重复装配无效果；用 disarm 卸下"}}
+                    "result": {"armed": sorted(armed), "cost": "无（已在生效中，不重复扣出手）",
+                               "note": "该法术已在生效；用 disarm 卸下"}}
+        # 发动/装配要占一次主动出手——与自创同价，先扣再写入。
+        budget_error = self._consume_action_or_error(player)
+        if budget_error:
+            return budget_error
         player.armed_spells = sorted(armed | {spell_name})
-        return {"success": True, "action": f"装配法术【{spell_name}】",
-                "result": {"armed": list(player.armed_spells),
+        return {"success": True, "action": f"发动法术【{spell_name}】",
+                "result": {"armed": list(player.armed_spells), "cost": "1次主动出手",
                            "still_armable": self.combat.buildable_spells(player),
-                           "note": "装配后在其触发时点自动结算，实际发动才花法力"}}
+                           "note": "生效后在其触发时点自动结算，实际发动才花法力"}}
         flow = self.combat.SPELL_FLOWS.get(spell_name)
         parsed = flow if flow is not None else self.combat._parse_custom_spell(spell)
-        flow = self.combat.SPELL_FLOWS.get(spell_name)
-        parsed = flow if flow is not None else self.combat._parse_custom_spell(spell)
-        # wired：该触发时机在战斗管线里是否已经真正接线（能被结算触发）。
-        # 2026-08-30：11种触发时机（受到伤害前/后、失去生命前/后、目标发动
-        # 道纹前、战始/战终/回始/回终/敌回始/敌回终）均已接线，此判断保留
-        # 作为未来新增时机时的显式安全阀。
-        wired = bool(parsed) and parsed.get("trigger") in self.combat._WIRED_TRIGGERS
-        return {
-            "success": True, "action": f"查看法术【{spell_name}】",
-            "result": {"required_daowen": spell.required_daowen, "rank": spell.rank,
-                       "trigger": parsed["trigger"] if parsed else spell.trigger_condition,
-                       "steps": parsed["steps"] if parsed else spell.effect_flow,
-                       "loop": bool(parsed.get("loop")) if parsed else False,
-                       "wired": wired,
-                       "note": ("已装配：在其触发时点自动结算（受到伤害前/后、失去生命前/后、"
-                                "目标发动道纹前，或战始/战终/回始/回终/敌回始/敌回终由对应action的"
-                                "spell_choices参数提交决策）"
-                                if wired else
-                                "触发时机已被正确解析，但该时机尚未接入战斗结算管线，本法术暂不会实际触发")},
-        }
-
     # ==================== 事件结算 ====================
 
     REJECT_OPTION_KEYWORDS = ("无事发生", "观棋", "无视", "离开", "目送", "绕桥", "让炉", "避开", "捂住", "转身")
@@ -3701,17 +3693,10 @@ class GameEngine:
             return {"success": False, "error": f"事件{name}无选项{option_id}"}
         # 「拒绝改造」等带代价的选项也含「拒绝」，不能当拒绝类。
         # 真拒绝：正文写「无事发生」，或选项以「拒绝：/拒绝:」起头。
-        # 必须在结算选项效果之前判定：持【无所求】选拒绝类选项时，属性点去向必须显式提交。
+        # 真拒绝必须在结算选项效果之前判定（旧版曾据此索取分配去向）。
         text = opt["text"]
         is_reject = self._is_reject_option_text(text)
         has_wusuoqiu = any(r.name == "无所求" for r in self.state.relics)
-        wusuoqiu_allocation = None
-        if is_reject and has_wusuoqiu:
-            wusuoqiu_allocation = params.get("wusuoqiu_allocation")
-            if wusuoqiu_allocation not in ("speed", "mana"):
-                return {"success": False,
-                        "error": "持【无所求】选择拒绝类选项时，必须显式提交wusuoqiu_allocation"
-                                 "（speed=+1速限 / mana=+2法限），1属性点=1[速限]=2[法限]"}
         res = resolve_option_effect(opt["text"], self, event_name=name, params=params)
         if res.get("interrupt_required"):
             interrupt = Interrupt(
@@ -3734,14 +3719,16 @@ class GameEngine:
             _rtype = ("转换", "反转", "曲解")[self.dice.randrange(3)]
             self.state.resonance[_rtype] = self.state.resonance.get(_rtype, 0) + 1
             res["applied"].append(f"拒绝奖励：随机获得{_rtype}残韵")
-        if wusuoqiu_allocation == "speed":
-            self.state.player.speed_limit += 1
-            self.state.player.current_speed = self.state.player.speed_limit
-            res["applied"].append("无所求：+1速限")
-        elif wusuoqiu_allocation == "mana":
-            self.state.player.mana_limit += 2
-            self.state.player.current_mana = self.state.player.mana_limit
-            res["applied"].append("无所求：+2法限")
+        if is_reject and has_wusuoqiu:
+            # 2026-09-16 裁定（清单 A1）：【无所求】按《物品索引》原文"永久获得
+            # 1点属性点"入属性点池，不再由引擎折算成面板——旧实现按
+            # "1属性点=1速限=2法限"直接加速限/法限，与正文
+            # 「2属性点=1[速限]=1[法限]=12[血限]」相悖，且把速限与法限做成
+            # 不等价。入池后由玩家按正文自行兑换（属性点可存储、随时兑换）。
+            self.state.attribute_points += 1
+            res["applied"].append(
+                f"无所求：+1属性点（属性点池 {self.state.attribute_points}；"
+                "按正文 2点=1速限=1法限、1点=6血限，兑换仅限战前）")
         self.event_pool.resolve(name)
         # 扭曲都市完成事件后附赠【发现】：正式随机只走DiceEngine，并等待显式选1。
         bonus = None

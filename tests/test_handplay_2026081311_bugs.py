@@ -109,65 +109,88 @@ def test_refuse_gaizao_applies_bleed_and_shards_without_wushi():
     assert engine.state.shards == 105
 
 
+def _resolve_reject(engine, event, option_id):
+    """结算一次真拒绝；扭曲都市事件后会附赠一次【发现】，需先选掉才能继续。"""
+    engine.event_pool.current = event
+    r = engine.execute_action("resolve_event", {"event": event, "option_id": option_id})
+    assert r["success"], r
+    bonus = r.get("result", {}).get("附赠发现")
+    if bonus and bonus.get("等待选择"):
+        picked = engine.execute_action(
+            "choose_discovered_item", {"item_name": bonus["候选"][0]})
+        assert picked["success"], picked
+    return r
+
+
 def test_true_refuse_still_wushi_and_wusuoqiu():
-    """边界：真拒绝「拒绝：无事发生」仍记无事发生；持无所求则+1速。"""
+    """边界：真拒绝「拒绝：无事发生」仍记无事发生；持无所求则+1属性点入池。"""
     engine = _engine("doc_bound")
     engine.state.relics.append(Relic(name="无所求", effect=""))
-    sp = engine.state.player.speed_limit
+    pool = engine.state.attribute_points
     engine.event_pool.current = "祭坛"
-    r = engine.execute_action("resolve_event", {"event": "祭坛", "option_id": 3, "wusuoqiu_allocation": "speed"})
+    r = engine.execute_action("resolve_event", {"event": "祭坛", "option_id": 3})
     assert r["success"], r
     assert "无事发生" in r["result"]["applied"]
     assert any("无所求" in a for a in r["result"]["applied"])
-    assert engine.state.player.speed_limit == sp + 1
+    assert engine.state.attribute_points == pool + 1
 
 
-def test_wusuoqiu_mana_allocation():
-    """正常路径：无所求属性点可自选加到法限（1属性点=2法限）。"""
-    engine = _engine("wusuoqiu_mana")
+def test_wusuoqiu_points_redeem_at_standard_rate():
+    """正常路径：无所求给的是属性点，按正文 2点=1速限=1法限 兑换。
+
+    2026-09-16 裁定（清单 A1）：旧实现按"1属性点=1速限=2法限"直接改面板，
+    与正文「2属性点=1[速限]=1[法限]」相悖且速限/法限不等价。现改为入池，
+    攒够 2 点兑 1 速限或 1 法限。
+    """
+    engine = _engine("wusuoqiu_redeem")
     engine.state.relics.append(Relic(name="无所求", effect=""))
     p = engine.state.player
-    ml = p.mana_limit
-    sp = p.speed_limit
-    engine.event_pool.current = "祭坛"
-    r = engine.execute_action("resolve_event", {"event": "祭坛", "option_id": 3, "wusuoqiu_allocation": "mana"})
-    assert r["success"], r
+    ml, sp = p.mana_limit, p.speed_limit
+    r = _resolve_reject(engine, "祭坛", 3)
     assert any("无所求" in a for a in r["result"]["applied"])
-    assert p.mana_limit == ml + 2, f"无所求mana应+2法限，实{p.mana_limit}"
-    assert p.speed_limit == sp, "选mana不应影响速限"
+    assert engine.state.attribute_points == 1, "第一次拒绝只给1点，不足以兑换"
+    assert p.mana_limit == ml and p.speed_limit == sp, "1点属性点换不到任何面板"
+    # 再拒绝一次（遗忘书屋）攒够 2 点，按正文兑 1 点法限
+    _resolve_reject(engine, "遗忘书屋", 4)
+    assert engine.state.attribute_points == 2
+    rr = engine.execute_action("redeem_attribute_points", {"allocations": {"mana_points": 2}})
+    assert rr["success"], rr
+    assert p.mana_limit == ml + 1, f"2点应兑1法限，实+{p.mana_limit - ml}"
 
 
-def test_wusuoqiu_requires_explicit_allocation():
-    """错误输入：持无所求选拒绝类选项但未提交wusuoqiu_allocation，必须拒绝且不生效。"""
-    engine = _engine("wusuoqiu_missing")
+def test_wusuoqiu_does_not_fire_on_non_reject_option():
+    """边界：非拒绝类选项不给属性点（无所求只认真拒绝）。"""
+    engine = _engine("wusuoqiu_nonreject")
     engine.state.relics.append(Relic(name="无所求", effect=""))
-    sp = engine.state.player.speed_limit
+    pool = engine.state.attribute_points
+    engine.state.shards = 100
     engine.event_pool.current = "祭坛"
-    r = engine.execute_action("resolve_event", {"event": "祭坛", "option_id": 3})
-    assert not r["success"] and "wusuoqiu_allocation" in r["error"]
-    assert engine.state.player.speed_limit == sp
-    assert engine.event_pool.current == "祭坛", "校验失败不应推进事件"
+    r = engine.execute_action("resolve_event", {"event": "祭坛", "option_id": 1})  # 献祭血肉
+    assert r["success"], r
+    assert engine.state.attribute_points == pool, "非拒绝选项不得给属性点"
 
 
-def test_wusuoqiu_invalid_allocation_rejected():
-    """错误输入：wusuoqiu_allocation只能是speed/mana。"""
-    engine = _engine("wusuoqiu_invalid")
+def test_wusuoqiu_points_accumulate_in_pool():
+    """正常路径：多次真拒绝的属性点累加进池，跨事件保留。"""
+    engine = _engine("wusuoqiu_accum")
     engine.state.relics.append(Relic(name="无所求", effect=""))
-    engine.event_pool.current = "祭坛"
-    r = engine.execute_action("resolve_event", {"event": "祭坛", "option_id": 3, "wusuoqiu_allocation": "blood"})
-    assert not r["success"] and "wusuoqiu_allocation" in r["error"]
+    base = engine.state.attribute_points
+    # 祭坛3＝拒绝：无事发生；遗忘书屋4＝拒绝：无事发生
+    for event, oid in (("祭坛", 3), ("遗忘书屋", 4)):
+        _resolve_reject(engine, event, oid)
+    assert engine.state.attribute_points == base + 2, "两次真拒绝应累计2点属性点"
 
 
 def test_wusuoqiu_does_not_fire_on_refuse_gaizao():
-    """错误对照：持无所求选拒绝改造，不得白给速限。"""
+    """错误对照：持无所求选拒绝改造，不得白给属性点。"""
     engine = _engine("doc_invalid")
     engine.state.relics.append(Relic(name="无所求", effect=""))
-    sp = engine.state.player.speed_limit
+    pool = engine.state.attribute_points
     engine.state.shards = 10
     engine.event_pool.current = "医生"
-    r = engine.execute_action("resolve_event", {"event": "医生", "option_id": 2, "wusuoqiu_allocation": "speed"})
+    r = engine.execute_action("resolve_event", {"event": "医生", "option_id": 2})
     assert r["success"], r
-    assert engine.state.player.speed_limit == sp
+    assert engine.state.attribute_points == pool, "拒绝改造不是真拒绝，不给属性点"
     assert not any("无所求" in a for a in r["result"]["applied"])
 
 
