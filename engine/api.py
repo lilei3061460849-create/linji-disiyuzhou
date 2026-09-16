@@ -2303,10 +2303,28 @@ class GameEngine:
     # 覆盖：attack/use_daowen/deploy_employee/declare_wish/declare_escape 消耗1出手；
     # consume_item(明确不消耗出手)、use_resonance(可任意时刻插队)不受此约束。
 
+    def _action_budget_of(self, entity: "Entity") -> int:
+        """本回合出手预算的唯一口径。
+
+        怪物读正文「每回合 1 次攻击 + 1 种道纹」（single_round_action_count）——
+        Entity.action_count 对怪物按速限推导，而怪物面板不含[速限]，恒为 0。
+        其余角色读 Entity.action_count（轮回者固定 2，朋友/员工 ⌈攻次/3⌉）。
+        """
+        if entity is None:
+            return 0
+        if entity.entity_type == "怪物":
+            return self.combat.single_round_action_count(entity)
+        return entity.action_count
+
     def _consume_action_or_error(self, entity: "Entity") -> Optional[dict]:
         """校验entity本回合出手是否用尽；未用尽则消耗1次并返回None，用尽则返回错误dict。
-        怪物走prepare/resolve两阶段规则，不受轮回者 action_count 的出手预算约束。"""
-        if entity.entity_type == "怪物":
+
+        普通战斗里怪物走 prepare/resolve 两阶段，不经过本函数（直接放行）。
+        死斗中守擂侧逐步结算，怪物必须**照常记账**——此前这里对怪物无条件
+        return None，怪物的 actions_used_this_round 永不增长，配合
+        _duel_side_can_act 的「存活即有余手」就成了事实上的无限出手。
+        """
+        if entity.entity_type == "怪物" and not self.state.in_final_duel:
             return None
         if not self.combat.can_act(entity):
             return {"success": False,
@@ -2315,9 +2333,11 @@ class GameEngine:
         if breath and not entity.is_alive:
             return {"success": False, "error": f"{entity.name}被龙息命零",
                     "dragon_breath": breath}
-        if entity.actions_used_this_round >= entity.action_count:
+        budget = self._action_budget_of(entity)
+        if entity.actions_used_this_round >= budget:
             return {"success": False,
-                    "error": f"{entity.name}本回合出手已用完({entity.actions_used_this_round}/{entity.action_count})"}
+                    "error": f"{entity.name}本回合出手已用完"
+                             f"({entity.actions_used_this_round}/{budget})"}
         entity.actions_used_this_round += 1
         if entity.has_status("兴奋"):
             self.combat._gain_speed(entity, 1, ctx={
@@ -2364,12 +2384,16 @@ class GameEngine:
             entities = self.state.get_all_player_side()
             return any(e.actions_used_this_round < e.action_count and self.combat.can_act(e)
                        for e in entities)
-        # 守擂侧：怪物（Entity.action_count 按速限推导恒为0）按怪物阶段逐 actor 结算，
-        # 存活未撤退即"有余手"；对手轮回者/盟友按出手预算判断（耗尽则连动）。
+        # 守擂侧：怪物按正文口径「每回合 1 次攻击 + 1 种道纹」计出手预算
+        # （single_round_action_count），与 _consume_action_or_error 同一口径——
+        # 此前这里写成"存活未撤退即有余手"，与实际结算门禁不一致：怪物既被
+        # 0 预算卡死无法出手，本函数又坚称它还有余手，回合因此永远结束不了。
+        # 对手轮回者/盟友按各自出手预算判断（耗尽则连动）。
         return any(
-            (e.entity_type == "怪物" and e.is_alive and not e.has_retreated)
-            or (e.entity_type != "怪物" and e.is_alive and not e.has_retreated
-                and e.actions_used_this_round < e.action_count and self.combat.can_act(e))
+            e.is_alive and not e.has_retreated and self.combat.can_act(e)
+            and e.actions_used_this_round < (
+                self.combat.single_round_action_count(e)
+                if e.entity_type == "怪物" else e.action_count)
             for e in self.state.get_all_enemy_side())
 
     def _advance_duel_turn(self):
@@ -3011,7 +3035,7 @@ class GameEngine:
             return duel_error
         if not self.combat.can_act(attacker):
             return {"success": False, "error": f"{attacker.name}当前无法行动"}
-        if attacker.actions_used_this_round >= attacker.action_count:
+        if attacker.actions_used_this_round >= self._action_budget_of(attacker):
             return {"success": False, "error": f"{attacker.name}本回合出手已用完"}
 
         if attacker.has_status("无神"):
@@ -3669,11 +3693,42 @@ class GameEngine:
 
     REJECT_OPTION_KEYWORDS = ("无事发生", "观棋", "无视", "离开", "目送", "绕桥", "让炉", "避开", "捂住", "转身")
 
+    # 带实际代价或收益的「拒绝改造」不算真拒绝——出现这些字样即判定为
+    # 「有实质的拒绝类选项」，不发放拒绝奖励（正文·事件拒绝奖励）。
+    # 必须是"付出/得到"的实质词，不能只写一个「拒绝」：拒绝本身就是这类选项的字面。
+    REJECT_BUT_PAID_KEYWORDS = (
+        "失去", "流血", "衰老", "枯竭", "萎缩", "疲惫", "异变", "失忆", "代价",
+        "支付", "消耗", "销毁", "献祭", "扣除", "获得", "得到", "回复", "碎片",
+        "属性点", "遗物", "法术", "道纹", "残韵", "生命", "血限", "法力", "速限",
+    )
+
     @staticmethod
     def _is_reject_option_text(text: str) -> bool:
-        """真拒绝：正文写「无事发生」，或选项以「拒绝：/拒绝:」起头。"""
-        return (any(k in text for k in GameEngine.REJECT_OPTION_KEYWORDS)
-                or text.startswith("拒绝：") or text.startswith("拒绝:"))
+        """真拒绝判定（2026-09-16 按清单 A5 收紧为「开头/分词」匹配）。
+
+        真拒绝 ＝ 选项正文写「无事发生」，或以「拒绝：/拒绝:」起头，
+        或以【无视】【离开】【目送】【绕桥】【避开】【捂住】【转身】等
+        明确离开/拒绝语义**开头**。
+
+        两条收紧：
+        1. 关键词必须出现在**开头**（或紧跟在「N.」序号后），不再做全文子串匹配——
+           旧实现只要句中含有「避开」等词就判真拒绝，误判风险高。
+        2. 带实际代价或收益的「拒绝改造」显式排除：正文中出现
+           「失去/获得/流血/属性点…」等实质得失字样即不算真拒绝。
+        """
+        body = text.strip()
+        # 去掉「1.」「2.」这类选项序号前缀
+        stripped = re.sub(r"^\d+\s*[.、)）]\s*", "", body)
+        if "无事发生" in stripped:
+            # 「无事发生」是完整语义，允许出现在句中（如「拒绝：无事发生」）
+            pass
+        elif not (stripped.startswith("拒绝")   # 拒绝：/拒绝:/拒绝下注 皆计
+                  or any(stripped.startswith(k) for k in GameEngine.REJECT_OPTION_KEYWORDS)):
+            return False
+        # 显式排除带代价/收益的「拒绝改造」
+        if any(k in stripped for k in GameEngine.REJECT_BUT_PAID_KEYWORDS):
+            return False
+        return True
 
     def _action_resolve_event(self, params: dict) -> dict:
         """结算事件选项：自动应用常见代价/收益，特殊效果交DM"""
@@ -5145,13 +5200,25 @@ class GameEngine:
                 )
                 death_rewards.append({"name": monster.name, "reward": reward, "ctx": reward_ctx.to_dict()})
 
+        # 2026-09-16 裁定（清单 B4）：【碎片】命零公式以正文为准，禁止改写。
+        # shard_reward 恒等于 Σ(⌈战始血限×2%⌉ + 道纹数×5)，任何副本/事件增益
+        # 都不得乘进或并入这一笔；事件收益改为下面单独列项的「战终奖金」，
+        # 名目与来源可逐条核对。
         modifiers = self.state.event_modifiers
+        event_bonuses: list[dict] = []
         if modifiers.pop("arena_double_loot", False):
-            shard_reward *= 2
-        shard_reward += modifiers.pop("bounty_reward", 0)
+            # 地下角斗场「赢了全拿」：不改命零公式，另发等额奖金。
+            event_bonuses.append({"name": "角斗场奖金", "amount": shard_reward,
+                                  "source": "地下角斗场"})
+        bounty = modifiers.pop("bounty_reward", 0)
+        if bounty:
+            event_bonuses.append({"name": "悬赏金", "amount": bounty,
+                                  "source": "通缉悬赏榜"})
         if modifiers.pop("arena_bet_three_rounds", False) and self.state.current_round <= 3:
-            shard_reward += 45
-        self.state.shards += shard_reward
+            event_bonuses.append({"name": "三回合彩头", "amount": 45,
+                                  "source": "地下角斗场"})
+        bonus_total = sum(b["amount"] for b in event_bonuses)
+        self.state.shards += shard_reward + bonus_total
         if modifiers.pop("scarlet_fruit_active", False) and self.state.player:
             self.state.player.blood_limit += 2
         pale_flower_bonus = 1 if modifiers.pop("pale_flower_active", False) else 0
@@ -5279,6 +5346,9 @@ class GameEngine:
         # 捕获战终结果数值，因【最终的冠冕】可能在下面把self.state整个替换为新轮回者的空白状态
         battle_end_result = {
             "shard_reward": shard_reward,
+            # 命零公式产出的碎片（正文口径，不含任何副本/事件增益）
+            "event_bonuses": event_bonuses,       # 事件奖金，单独列项，不并入命零公式
+            "event_bonus_shards": bonus_total,
             "total_shards": self.state.shards,
             "energy_restored": 3,
             "cleared_temp_friends": True,

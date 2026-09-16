@@ -22,11 +22,12 @@ import pytest
 from engine.models import DaoWen, DaoWenInstance, Relic
 from tests.test_dragon_heart import _new_engine, _start_with_enemy
 
-# 官方条目见 死者之书.md「## 可学法术 → 血炼周天」。先【再生】回血、再
+# 与官方条目 死者之书.md「## 可学法术 → 血炼周天」同构（现已是内置法术，
+# 这里刻意用另一个名字自创同一流程，以覆盖"自创循环法术"这条路径）。先【再生】回血、再
 # 【透支】把血卖成法力，【透支】的流血同时满足「失去生命后」驱动下一轮，
 # 与【千刀万剐】靠代价自驱同构。故需 3 点法力垫付第一轮【再生】。
 SPELL = {
-    "name": "血炼周天",
+    "name": "周天自持",
     "required_daowen": ["再生", "透支"],
     "trigger_condition": "失去生命后",
     "effect_flow": "发动再生X于自身→发动透支X于自身→循环",
@@ -68,12 +69,12 @@ def _fire(engine, cycles, x=3):
     actor = prepared["actors"][0]
     target = actor["attack_target_options"][0]
     options = target["spell_options"]
-    assert any(s["spell_name"] == "血炼周天" and s["loop"] for s in options["after"])
+    assert any(s["spell_name"] == "周天自持" and s["loop"] for s in options["after"])
 
     steps = [{"x": x, "target_ref": "player:0"}, {"x": x, "target_ref": "player:0"}]
     spell_choices = {
         "before": {s["spell_name"]: {"use": False} for s in options["before"]},
-        "after": {"血炼周天": {"use": True, "cycles": [list(steps) for _ in range(cycles)]}},
+        "after": {"周天自持": {"use": True, "cycles": [list(steps) for _ in range(cycles)]}},
         "damage_after": {s["spell_name"]: {"use": False} for s in options["damage_after"]},
         "life_before": {s["spell_name"]: {"use": False} for s in options["life_before"]},
     }
