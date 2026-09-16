@@ -391,38 +391,32 @@ class Entity:
 
     
     def effective_attack_count(self) -> int:
-        """攻击次数（DM裁定 2026-09-10，**换算仅限轮回者**）：轮回者 = 当前速度。
+        """攻击次数（2026-09-16 用户令：**换算对全体角色生效**）＝ 当前速度。
 
-        怪物/[朋友]/[员工]仍读面板值——怪物不持有法力（规则正文），换算对它无意义。
+        旧口径把换算限定在轮回者身上，理由是怪物不持有法力；怪物与微光者现已与轮回者
+        同口径持有[速限]/[法限]，该理由不再成立，故去掉类型分支。
         普攻不会支付速度；只有当前速度已经因闪避等明确机制变化时，后续派生攻击次数才会随面板变化。
         """
-        if self.entity_type == "轮回者":
-            return max(0, self.current_speed)
-        return max(0, self.attack_count)
+        return max(0, self.current_speed)
 
     def effective_attack_power(self) -> int:
-        """攻击力（DM裁定 2026-09-10，**换算仅限轮回者**）：轮回者 = 当前法力。
+        """攻击力（2026-09-16 用户令：**换算对全体角色生效**）＝ 当前法力。
 
         实时读取当前法力，不做快照：法力掉到 0 时每击 0 点，法力被补回来
-        （守夜灯/承露盏/血契/透支/再生等任何回蓝）后攻击力**同步回升**，
+        （守夜灯/承露盏/血契/透支/再生等任何回蓝、怪物的[回始]回满）后攻击力**同步回升**，
         并非单调下降。花蓝前要先算清这一笔对后续每击的连带影响。
         """
-        if self.entity_type == "轮回者":
-            return max(0, self.current_mana)
-        return max(0, self.attack_power)
+        return max(0, self.current_mana)
 
     @property
     def action_count(self) -> int:
-        """出手次数：轮回者**固定2次**（DM裁定 2026-09-10，不再由速限推导——速限已改作
-        攻击次数的来源，不能再重复记账）；[朋友]/[员工](微光者，面板无速限)=攻击次数/3
-        向上取整。怪物行动由CombatEngine的prepare/resolve两阶段接口独立计算。
-        疯狂+X、无力-X 对本属性的两种口径均生效。"""
-        if self.entity_type in ("朋友", "员工"):
-            base = math.ceil(self.attack_count / 3) if self.attack_count > 0 else 0
-        elif self.entity_type == "轮回者":
-            base = 2
-        else:
-            base = math.ceil(self.speed_limit / 3) if self.speed_limit > 0 else 0
+        """出手次数：**全体角色固定2次**（2026-09-16 用户令）。
+
+        不再由速限/攻击次数推导——速限已改作攻击次数的来源，再拿它算出手会重复记账；
+        微光者旧的「攻击次数/3」口径同步废止（该式会让高攻次微光者白拿第3、4次出手）。
+        唯一的额外来源是遗物；【疯狂】+X、【无力】-X 照旧生效。
+        怪物行动仍由CombatEngine的prepare/resolve两阶段接口独立计算。"""
+        base = 2
         base += self.get_status_value("疯狂")
         base -= self.get_status_value("无力")
         return max(0, base)
