@@ -2783,6 +2783,15 @@ class CombatEngine:
                                               int(calc.get("cost", 0)))
                 result["cooldown_set"] = inst.cooldown_remaining
 
+        # 【唯一】代价：规则正文「唯一：使用后，本次轮回中无法再次使用」。
+        # 此前该代价种类只有一行名字映射、没有任何结算逻辑，等于空定义；
+        # 现在与【冷却X】同处落账——唯一是轮回级一次性，跨战斗场数不恢复。
+        if calc.get("cost_type") == "唯一":
+            inst = caster.dao_wen.get(name)
+            if inst is not None:
+                inst.spent_unique = True
+                result["unique_spent"] = True
+
         # 蒙蔽(施法者伤害类道纹归零) / 坏死/镇尸(目标禁疗)
         mengbi_blocked = caster.has_status("蒙蔽") and ("target_damage" in calc or "aoe_damage" in calc)
         if mengbi_blocked:

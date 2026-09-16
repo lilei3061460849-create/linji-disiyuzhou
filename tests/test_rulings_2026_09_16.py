@@ -18,6 +18,7 @@ import pytest
 
 from engine.api import GameEngine
 from engine.events import parse_events
+from engine.enums import CostType
 from engine.models import DaoWen, DaoWenInstance, Entity
 from tests.setup_support import finish_initial_daowen
 
@@ -198,3 +199,50 @@ def test_blood_splash_removed_from_death_book():
     index = open("法术索引.md", encoding="utf-8").read()
     assert "血溅五步" not in book, "血溅五步应已从《死者之书》删除"
     assert "血溅五步" not in index, "血溅五步应已从《法术索引》删除"
+
+
+# ========================================================================
+# 唯一（轮回级一次性代价）
+# ========================================================================
+
+def test_unique_cost_blocks_reuse_for_the_whole_cycle(tmp_path):
+    """唯一：使用后本次轮回内不能再发动；跨战斗场数也不恢复。"""
+    e = GameEngine(db_path=str(tmp_path / "unique.db"), rng_seed=7)
+    e.execute_action("setup_attributes", {"blood_points": 13, "speed_points": 6,
+                                          "mana_points": 6})
+    finish_initial_daowen(e)
+    p = e.state.player
+    # 造一条「唯一」代价的道纹（正文定义但此前无任何道纹使用，也无结算逻辑）
+    p.dao_wen["一次性"] = DaoWenInstance(
+        DaoWen(name="一次性", formula="", cost_type="代价",
+               cost_formula="唯一", effect_formula=""), x_value=1)
+    assert p.dao_wen["一次性"].can_use() is True
+
+    e.combat.apply_daowen_effect(
+        "一次性", {"dao_wen": "一次性", "x": 1, "cost_type": CostType.UNIQUE.value},
+        caster=p, target=p)
+    assert p.dao_wen["一次性"].spent_unique is True
+    assert p.dao_wen["一次性"].can_use() is False, "唯一：本次轮回内不得再次发动"
+
+    # 战终递减只作用于 cooldown_remaining，唯一不受影响
+    e.state.phase = "in_combat"
+    e.execute_action("battle_end", {})
+    assert p.dao_wen["一次性"].can_use() is False, "唯一跨场不恢复"
+
+
+def test_unique_does_not_affect_other_instances(tmp_path):
+    """唯一只锁本次使用的那个实例，同名的另一份/其它道纹不受影响。"""
+    e = GameEngine(db_path=str(tmp_path / "unique2.db"), rng_seed=7)
+    e.execute_action("setup_attributes", {"blood_points": 13, "speed_points": 6,
+                                          "mana_points": 6})
+    finish_initial_daowen(e)
+    p = e.state.player
+    p.dao_wen["一次性"] = DaoWenInstance(
+        DaoWen(name="一次性", formula="", cost_type="代价",
+               cost_formula="唯一", effect_formula=""), x_value=1)
+    e.combat.apply_daowen_effect(
+        "一次性", {"dao_wen": "一次性", "x": 1, "cost_type": CostType.UNIQUE.value},
+        caster=p, target=p)
+    for name in p.dao_wen:
+        if name != "一次性":
+            assert p.dao_wen[name].can_use() is True, f"{name} 不应被唯一波及"

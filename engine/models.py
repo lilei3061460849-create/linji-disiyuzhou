@@ -49,9 +49,14 @@ class DaoWenInstance:
     cooldown_remaining: int = 0 # 冷却剩余
     is_frozen: bool = False     # 是否被封印
     sha_qi: str = ""            # 乱葬岗附煞：法煞/魂煞/冥煞/血煞/锁煞/心煞
-    
+    # 【唯一】代价：规则正文「唯一：使用后，本次轮回中无法再次使用」。
+    # 与冷却同族但作用域更大——冷却按战斗场数递减，唯一是轮回级一次性，
+    # 跨场不恢复，只有开新轮回（状态重置）才清零。
+    spent_unique: bool = False
+
     def can_use(self) -> bool:
-        return not self.is_frozen and self.cooldown_remaining <= 0
+        return (not self.is_frozen and not self.spent_unique
+                and self.cooldown_remaining <= 0)
 
 
 @dataclass
