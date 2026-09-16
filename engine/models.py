@@ -351,6 +351,26 @@ class Entity:
     def __post_init__(self):
         if self.battle_start_blood_limit == 0:
             self.battle_start_blood_limit = self.blood_limit
+        # ---- 2026-09-16 属性模型统一的向上兼容 ----
+        # 统一后 [攻击次数]=[当前速度]、[攻击力]=[当前法力] 对全体生效，但历史代码里
+        # 怪物/[朋友]/[员工] 只带 attack_count/attack_power 两个面板值、没有上限字段，
+        # 换算后会被读成 0×0。故：上限缺省时由旧面板值推定，并在战始把当前值给满。
+        # 轮回者不在此列——它的当前法力/速度是战斗中的消耗状态，允许为 0，
+        # 在这里回填等于凭空回蓝，会直接抹掉"蓝即拳"的全部张力。
+        if self.mana_limit == 0 and self.attack_power > 0:
+            self.mana_limit = self.attack_power
+        if self.speed_limit == 0 and self.attack_count > 0:
+            self.speed_limit = self.attack_count
+        if self.entity_type != "轮回者":
+            if self.current_mana == 0 and self.mana_limit > 0:
+                self.current_mana = self.mana_limit
+            if self.current_speed == 0 and self.speed_limit > 0:
+                self.current_speed = self.speed_limit
+        # 构造期结束标志：__init__ 里 attack_count/attack_power 的赋值会先于本方法触发
+        # 下面的写穿垫片，若垫片在构造期就生效，会和这里的"由旧面板推定上限"重复计数
+        # （例如 speed_limit=2 + attack_count=1 会被顶成 3）。故构造期只由本方法负责，
+        # 之后的运行时写入才交给垫片走增量。
+        object.__setattr__(self, "_panel_sync_ready", True)
 
     # ---- 「失去生命后」统一拦截 (2026-08-30) ---- 
     # 用户要求：不要再逐个效果开窗调 _fire_after_life_lost，只要当前生命
@@ -366,6 +386,25 @@ class Entity:
         object.__setattr__(self, name, value)
         if name == "current_hp" and old is not None and value < old:
             self._fire_hp_loss(old, value)
+        # ---- 2026-09-16 属性模型统一：旧面板字段写穿到新的上限/当前值 ----
+        # 统一后 [攻次]=[当前速度]、[攻力]=[当前法力]，但历史代码（含【变形】互换）
+        # 仍直接写 attack_count/attack_power。非轮回者在此同步写穿，否则换算读到 0×0。
+        # 轮回者**不写穿**：它的 attack_count/attack_power 是建号遗留字段、换算根本不读
+        # （如「龙族利爪」曾写死 3/1，若写穿会把玩家真实的法限/速限直接冲掉）。
+        if name in ("attack_power", "attack_count") and self.__dict__.get("_panel_sync_ready"):
+            etype = self.__dict__.get("entity_type")
+            if etype is not None and etype != "轮回者":
+                # **增量**写穿（而非把上限设成绝对值）：attack_power/attack_count 与
+                # 法限/速限在战始是相等的，但战斗中两者会被不同来源各自位移
+                # （血契分摊、疲惫代价、弱化…），用绝对值会抹掉那些真实消耗。
+                # 上限同步位移以维持「当前值永远落在 0~上限 闭区间」这条封顶规则。
+                d = value - (old if isinstance(old, int) else 0)
+                if name == "attack_power":
+                    self.mana_limit = max(0, self.mana_limit + d)
+                    self.current_mana = max(0, min(self.mana_limit, self.current_mana + d))
+                else:
+                    self.speed_limit = max(0, self.speed_limit + d)
+                    self.current_speed = max(0, min(self.speed_limit, self.current_speed + d))
 
     def _fire_hp_loss(self, old: int, new: int) -> None:
         eng = getattr(self, "_hp_engine_ref", None)

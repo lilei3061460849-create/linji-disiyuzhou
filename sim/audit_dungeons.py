@@ -25,14 +25,16 @@ def parse_monsters(path: str) -> list[dict]:
     text = open(path, encoding="utf-8").read()
     out = []
     for line in text.splitlines():
-        m = re.match(r"^([\u4e00-\u9fff]+)（(\d+)×(\d+)/(\d+)，(.+)）", line)
+        # 2026-09-16 用户令：面板与轮回者同口径，写作「名字（[血限]/[法限]/[速限]，道纹…）」
+        m = re.match(r"^([\u4e00-\u9fff]+)（(\d+)/(\d+)/(\d+)，(.+)）", line)
         if not m:
             continue
-        name, ac, ap, hp, dw_raw = m.groups()
+        name, hp, ml, sl, dw_raw = m.groups()
         dw = {}
         for dm in re.finditer(r"([\u4e00-\u9fff]{2})(\d+)", dw_raw):
             dw[dm.group(1)] = int(dm.group(2))
-        out.append({"name": name, "ac": int(ac), "ap": int(ap), "hp": int(hp), "dw": dw})
+        # 属性点计价不变：1点=6血限、2点=1法限=1速限（攻次=速限、攻力=法限）
+        out.append({"name": name, "hp": int(hp), "ap": int(ml), "ac": int(sl), "dw": dw})
     return out
 
 

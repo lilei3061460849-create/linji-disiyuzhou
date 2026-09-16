@@ -267,7 +267,9 @@ def test_hire_allows_zero_attack_count_boundary():
     assert r["success"] is True
     assert len(engine.state.employees) == before_count + 1
     emp = next(e for e in engine.state.employees if e.name == "纯坦克")
-    assert emp.attack_count == 0 and emp.action_count == 0
+    # 2026-09-16：出手次数全体固定 2，不再由攻击次数推导。0 攻次员工仍有 2 次出手，
+    # 只是[攻次]=[当前速度]=0 → 普攻 0 击；它可以拿这 2 次出手去发动道纹。
+    assert emp.attack_count == 0 and emp.action_count == 2
 
     r2 = _hire(engine, {
         "sub_action": "雇佣", "name": "合法员工", "blood_alloc": 17, "atk_bundles": 1,

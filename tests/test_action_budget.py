@@ -97,13 +97,17 @@ def test_budget_resets_at_round_start():
     assert r3["success"] is True, "新回合应重置出手预算"
 
 
-def test_ally_action_count_uses_attack_count_not_speed():
-    """正常路径：[朋友]/[员工]出手预算公式=攻击次数/3，与自身速限(通常为0)无关"""
+def test_ally_action_count_is_fixed_two_like_everyone():
+    """2026-09-16 用户令：全体角色出手次数固定 2 次，与攻击次数/速限都无关。
+
+    旧口径「微光者出手 = 攻击次数/3」已废止——该式会让高攻次微光者白拿第 3、4 次出手，
+    违反"出手不再与攻击次数挂钩"的裁定。唯一额外来源是遗物（【疯狂】+X 照旧）。
+    """
     engine = _new_engine("ally_formula")
     friend = Entity(name="力士", entity_type="朋友", blood_limit=40, current_hp=40,
                      attack_count=7, attack_power=3, speed_limit=0)
     engine.state.friends.append(friend)
-    assert friend.action_count == 3, "ceil(7/3)=3，与speed_limit=0无关"
+    assert friend.action_count == 2, "出手固定2次，攻次7不再推导出3"
 
 
 def test_deploy_employee_consumes_player_budget_not_employee():

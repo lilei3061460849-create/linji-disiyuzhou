@@ -108,19 +108,22 @@ def test_player_self_cast_unaffected_backward_compatible():
 # 边界条件
 # ========================================================================
 
-def test_zero_attack_count_ally_has_zero_action_budget_and_cannot_act():
-    """边界：出手次数公式=攻击次数/3(向上取整)，攻击次数为0的盟友出手预算=0，
-    指令其攻击必须被拒绝(不是"能行动但0次命中"，而是压根没有出手可用)。
-    R05已允许【雇佣】创建0攻击次数员工；本测试锁定其出手预算仍为0，防止此类角色
-    盟友意外携带0攻击次数时，行为依然可预期而不是崩溃。"""
+def test_zero_attack_count_ally_still_has_two_actions_but_zero_hits():
+    """边界：2026-09-16 起出手次数全体固定 2，不再由攻击次数推导。
+
+    旧口径下 0 攻击次数的盟友出手预算=0、压根动不了；新口径下它仍有 2 次出手，
+    只是[攻次]=[当前速度]=0 → 普攻 0 击（可以拿这 2 次出手去发动道纹，纯辅助定位成立）。
+    本测试锁定：此类角色行动**不崩溃、不报"出手已用完"**，且确实打不出命中。
+    """
     engine = _new_engine_with_enemy("zero_atk")
     friend = Entity(name="纯辅助", entity_type="朋友", blood_limit=30, current_hp=30,
                      attack_count=0, attack_power=0)
     engine.state.friends.append(friend)
-    assert friend.action_count == 0
+    assert friend.action_count == 2
+    assert friend.effective_attack_count() == 0, "攻次=当前速度=0"
     r = resolve_player_attack(engine, "纯辅助", [])
-    assert r["success"] is False
-    assert "出手已用完" in r["error"]
+    assert r["success"] is True, "有出手可用，不应被拒"
+    assert r.get("hits") in (None, 0, []), f"0攻次不应产生命中，实{r.get('hits')}"
 
 
 def test_undeployed_employee_cannot_be_commanded():
