@@ -8,6 +8,9 @@ from pathlib import Path
 from typing import Optional
 
 from .dungeons import load_dungeon_documents
+# 每只怪物出厂自带的遗物【某人的偏爱】——常量与授予都在 engine/models.py
+# （授予点在 Entity.__post_init__，覆盖所有构造路径），此处仅再导出便于就近引用。
+from .models import MONSTER_MANA_RELIC
 
 
 def parse_monster_pool(index_path: str | Path) -> dict:
@@ -71,6 +74,7 @@ def make_monster_entity(monster_def: dict):
                speed_limit=_speed_limit, mana_limit=_mana_limit)
     m.current_speed = _speed_limit
     m.current_mana = _mana_limit
+    # 遗物【某人的偏爱】由 Entity.__post_init__ 统一授予，此处不再重复挂载。
     for dw_name, x in monster_def["dao_wen"].items():
         m.dao_wen[dw_name] = DaoWenInstance(
             dao_wen=DaoWen(name=dw_name, formula="", cost_type="", cost_formula="", effect_formula=""),

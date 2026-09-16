@@ -46,7 +46,9 @@ def test_xiaozai_chain_reaches_debt_threshold_and_binds_at_settle():
     """链路：连续透支→负债≥20→回终结算触发还债→转为员工参战。"""
     combat = _make_combat(_xiaozai_monster(x=1, shards=0, fake=0))
     monster = combat.state.enemies[0]
-    for _ in range(3):   # 透支序列：X1→-5，递增X3→-15(累-20)，X5→-25(累-45)
+    # 2026-09-16：道纹递增已废止，消灾 X 恒为 1、每次真碎片代价恒为 5。
+    # 原序列靠 X 递增（5/15/25）三轮累到 -45；现在需 4 轮：-5/-10/-15/-20。
+    for _ in range(4):
         combat._resolve_monster_daowen_choice(
             monster, {"name": "消灾", "dodge": False, "blood_shadow": False},
             {}, set(), {})

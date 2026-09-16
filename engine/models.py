@@ -93,6 +93,12 @@ class Relic:
         return {"name": self.name, "effect": self.effect, "tags": self.tags}
 
 
+# 每只怪物出厂自带的遗物：怪物[回始]法力恢复至上限的**唯一来源**（2026-09-16 用户令）。
+# 定义在此而非 monsters.py：授予发生在 Entity.__post_init__，效果判定在 combat.py，
+# 两侧都要引用，放 models 可避免 monsters ↔ combat 的循环导入。
+MONSTER_MANA_RELIC = "某人的偏爱"
+
+
 @dataclass
 class Consumable:
     """消耗品"""
@@ -361,6 +367,17 @@ class Entity:
             self.mana_limit = self.attack_power
         if self.speed_limit == 0 and self.attack_count > 0:
             self.speed_limit = self.attack_count
+        # ---- 2026-09-16 用户令：每个怪物自带遗物【某人的偏爱】----
+        # 怪物[回始]法力恢复至上限**不是怪物种族自带的能力**，而是这件遗物的效果。
+        # 授予点放在 Entity 而非怪物工厂，是为了让"凡是怪物就有它"对**所有**构造路径
+        # 都成立（生产走 make_monster_entity，测试夹具常直接 new Entity），
+        # 否则手造怪物会静默丢掉回满，出现"同样是怪物、行为却不同"的陷阱。
+        # 效果判定端只读遗物（见 engine/combat.py round_start），不读实体类型。
+        if self.entity_type == "怪物" and not any(
+                r.name == MONSTER_MANA_RELIC for r in self.relics):
+            self.relics.append(
+                Relic(name=MONSTER_MANA_RELIC, effect="[回始]法力恢复至上限",
+                      tags=["怪物自带"]))
         if self.entity_type != "轮回者":
             if self.current_mana == 0 and self.mana_limit > 0:
                 self.current_mana = self.mana_limit

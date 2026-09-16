@@ -18,6 +18,8 @@ from .combat_hooks import CombatHookManager
 from .effect_context import EffectContext, make_context, normalize_context
 from .mechanisms import MECHANISMS, Phase, TriggerBus, TriggerContext
 from .personality import remove_personality
+# 常量定义在 models（授予点在 Entity.__post_init__），此处只读取以判定效果。
+from .models import MONSTER_MANA_RELIC
 
 # 【凡庸】连续无所作为的回合阈值：连续 N 回合未出手、或连续 N 回合未能使敌对角色
 # 生命减少 → 凭空全身炸裂。这是**规则层**的反乌龟机制，必须优先于 sim 层的死锁
@@ -39,8 +41,8 @@ class CombatEngine:
     
     # 原始怪物道纹（道纹归属规则：各组起点）——【原初X】可借用范围
     ORIGINAL_MONSTER_DAOWEN = ("狂暴", "强化", "疯狂", "减速", "必中", "自愈", "飞行")
-    # 原始怪物道纹每次实际发动时支付异变5X（X按该次发动时递增后的数值计算，
-    # 见规则正文·怪物准则9·道纹递增）；效果持续期间（未再次发动）不再重复计费。
+    # 原始怪物道纹每次实际发动时支付异变5X（X 恒为面板/借用时写定的值；
+    # 2026-09-16 用户令：道纹递增机制已废止）；效果持续期间（未再次发动）不再重复计费。
     # 必中为次数型（下X次选择[目标]无法闪避），余数记在 entity._bizhong_left。
     YUANCHU_COST_RATE = 5
     # 波及X（2026-08-21）：你发动的道纹同时作用于所有拥有波及效果的目标。
@@ -1754,10 +1756,13 @@ class CombatEngine:
         
         # 活血追踪归零 + 出手预算归零（回始重置本回合已用出手次数）+ 血誓戒每回合限一次归零 + 血族血脉判定归零
         for e in self.state.get_all_player_side() + self.state.get_all_enemy_side():
-            # 2026-09-16 用户令：怪物[回始]法力恢复至上限——这是怪物侧相对轮回者
-            # 一池制（[战始]给满、[回始]不回填）的核心资源优势，也是"让轮回者吃苦头"的
-            # 主要来源。微光者（[朋友]/[员工]）**不享有**此回满，与轮回者同为一池制。
-            if e.entity_type == "怪物" and e.mana_limit > 0:
+            # 2026-09-16 用户令：[回始]法力恢复至上限是遗物【某人的偏爱】的效果，
+            # 不是怪物种族自带的能力。每只怪物出厂自带该遗物（见 engine/monsters.py），
+            # 因此这里读遗物而非读实体类型——"谁持有谁生效"走正常物品逻辑，
+            # 可被继承、可被【封印】等机制作用。
+            # 微光者（[朋友]/[员工]）与轮回者都不持有，仍是一池制（[回始]不回填）。
+            # 这是怪物侧的核心资源优势，也是"让轮回者吃苦头"的主要来源。
+            if e.mana_limit > 0 and any(r.name == MONSTER_MANA_RELIC for r in e.relics):
                 e.current_mana = e.mana_limit
             e.hp_lost_this_round = 0
             # 招架：上回合招架过 → 本回合禁用；本回合姿态清空等待重新声明。
@@ -5012,8 +5017,9 @@ class CombatEngine:
         """该怪物本回合已发动的道纹集合（换回合自动清空）。
 
         DM裁定（2026-08-18，规则正文·怪物准则9）：怪物可在不同回合重复发动同一
-        道纹（冷却类由 can_use 管辖），每回合每道纹至多一次；重复使用的代价
-        由道纹递增机制承担（每次实际发动 X+2×副本阶级）。
+        道纹（冷却类由 can_use 管辖），每回合每道纹至多一次。
+        2026-09-16 用户令：原「重复发动则 X 累加 +2×副本阶级」的递增机制已废止，
+        重复发动按同一 X 计费。
         _monster_activated 保留为持续激活口径（狂暴出手加成等），不再作发动门禁。
         """
         rec = self._monster_daowen_round_used.get(id(monster))
@@ -5380,12 +5386,8 @@ class CombatEngine:
         if not rewritten_as:
             activated.add(name)
             self._monster_round_used(monster).add(name)
-            # 怪物道纹递增（DM裁定2026-08-18，规则正文·怪物准则9）：每实际发动一次，
-            # 该道纹X本场累加+2×副本阶级。只在真正完成发动时累加（无法支付代价、
-            # 崩解中断、被控跳过的回合均不计）；残韵改写的一次性结算不递增源道纹。
-            # 怪物无法力概念，递增只放大效果数值与真实代价；实例随战斗结束消散。
-            from .gamedata import REGION_TIERS
-            inst.x_value += 2 * REGION_TIERS.get(self.state.current_region, 1)
+            # 2026-09-16 用户令：道纹递增（升级）机制已废止。X 恒为面板/借用时写定的值，
+            # 重复发动按同一 X 计费，不再随发动次数累加。
         monster.actions_used_this_round += 1
 
         aoe_targets_override = None

@@ -1026,14 +1026,15 @@ def test_evolution_yuanchu():
     total1 = m_b.mutation_count
     assert total1 == 20, f"借用自愈2激活应付异变5×2=10（门票10+激活10=20），实{total1}"
     assert m_b.is_alive, "20层应存活"
-    # 准则9（DM裁定2026-08-18）：跨回合可重复发动，X已递增至4，重复发动按新X计费
-    assert m_b.dao_wen["自愈"].x_value == 4, "发动一次后X应+2（一阶）"
+    # 2026-09-16 用户令：道纹递增（每次发动 X+2×副本阶级）已废止，
+    # X 保持借用时写定的数值不变，重复发动按同一个 X 计费。
+    assert m_b.dao_wen["自愈"].x_value == 2, "递增已废止，X应保持借用的2"
     combat3.round_start()
     resolve_monster_phase(combat3, {"借用怪": "自愈"})
     total2 = m_b.mutation_count
-    assert total2 == 40 and m_b.is_alive, f"重复发动按递增X计费：20+5×4=40，实{total2}"
-    assert m_b.dao_wen["自愈"].x_value == 6
-    print("  ✓ 借用道纹门票10+首次发动10=20层；准则9重复发动按X=4再付20 → 40层")
+    assert total2 == 30 and m_b.is_alive, f"重复发动按同一X计费：20+5×2=30，实{total2}"
+    assert m_b.dao_wen["自愈"].x_value == 2
+    print("  ✓ 借用道纹门票10+首次发动10=20层；递增废止后重复发动按X=2再付10 → 30层")
     print("  ✓ 进化（原初X）与崩解测试通过")
 
 
@@ -1144,11 +1145,9 @@ def test_original_daowen_only_charges_mutation_on_activation():
     from engine.dice import DiceEngine
 
     def mk(name, dw):
-        # 2026-09-16：怪物[法限]即法力池。道纹 X 每发动一次会 +2（升级机制），
-        # 庇护会从 X=1 涨到 7；法力池 5 到第 3 轮就付不起了，抬到 20。
-        # 本用例只断言异变计费与存活，不断言怪物伤害。
+        # 2026-09-16：怪物[法限]即法力池，法力同时就是[攻击力]。
         m = Entity(name=name, entity_type="怪物", blood_limit=200, current_hp=200,
-                   attack_count=1, attack_power=20)
+                   attack_count=1, attack_power=5)
         for n, x in dw:
             m.dao_wen[n] = DaoWenInstance(
                 dao_wen=DaoWen(name=n, formula="", cost_type="代价", cost_formula="异变5X",
