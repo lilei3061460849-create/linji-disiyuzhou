@@ -447,19 +447,21 @@ def resolve_option_effect(text: str, engine, event_name: str = "", params=None) 
             applied.append("失去10碎片")
             emp = Entity(name="追求者", entity_type="员工", blood_limit=96, current_hp=96,
                          attack_count=8, attack_power=2, is_deployed=False)
-            for dw_name, x in (("逆鳞", 2), ("活血", 3), ("固执", 3)):
+            for dw_name in ("逆鳞", "活血", "固执"):
+                # 2026-09-17：面板不写死 X（与 副本/龙心谷.md 的「96/2/8，逆鳞，活血，固执」一致）
                 emp.dao_wen[dw_name] = DaoWenInstance(
                     DaoWen(name=dw_name, formula="", cost_type="消耗", cost_formula="X", effect_formula=""),
-                    x_value=x)
+                    x_value=0, x_free=True)
             engine.state.employees.append(emp)
-            applied.append("获得追求者(8×2/96，逆鳞2，活血3，固执3)作为员工，默认待命，需deploy_employee派遣")
+            applied.append("获得追求者(96/2/8，逆鳞，活血，固执)作为员工，默认待命，需deploy_employee派遣")
             return {"applied": applied, "instructions": instructions}
         elif text.startswith("拿走口粮"):
             engine.state.shards += 50
             applied.append("获得50碎片")
             engine.state.forced_monsters_next_battle.append({
                 "name": "追求者", "attack_count": 8, "attack_power": 2, "blood_limit": 96,
-                "dao_wen": {"逆鳞": 2, "活血": 3, "固执": 3},
+                # x=None → x_free，与雇佣分支一致（2026-09-17 面板不写死 X）
+                "dao_wen": {"逆鳞": None, "活血": None, "固执": None},
             })
             applied.append("已登记：下一场战斗追求者将作为怪物额外出现"
                             "(记录于 state.forced_monsters_next_battle，出怪流程本身另行接入时读取)")
@@ -468,8 +470,11 @@ def resolve_option_effect(text: str, engine, event_name: str = "", params=None) 
 
     # ---- 已写死面板/跨战斗结果的确定性事件登记；创造性文本才进入Interrupt。 ----
     def _grant_daowen(entity, name, x):
+        # 2026-09-17：微光者面板与怪物同格式，不再写死 X（x_free），
+        # X 由发动时自选，上限只受[法限]或代价限制。x 参数仅为兼容旧调用。
         entity.dao_wen[name] = DaoWenInstance(
-            DaoWen(name=name, formula="", cost_type="", cost_formula="", effect_formula=""), x_value=x)
+            DaoWen(name=name, formula="", cost_type="", cost_formula="", effect_formula=""),
+            x_value=0, x_free=True)
 
     if event_name == "遗忘书屋" and text.startswith("阅读《禁忌法典》"):
         # 文本“自选一件遗物与20[碎片]”中的“与20”不匹配通用“获得X碎片”正则，此处直补；
