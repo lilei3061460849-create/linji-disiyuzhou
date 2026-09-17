@@ -212,14 +212,14 @@ def test_scoped_ledger_rolls_back_battle_effects_but_keeps_costs(tmp_path):
     state.apply_scoped_delta(
         player, "attack_power", 5,
         scope=EffectScope.BATTLE.value, polarity=EffectPolarity.BUFF.value,
-        source="强化")
+        source="全力")
     combat.pay_numeric_cost(player, "衰老", 3)
     player.total_healed = 17
     player.no_action_rounds = 4
     player.no_damage_rounds = 3
     player._jisu_dodges = 1
     player.is_flying = True
-    player.add_status(StatusEffect("强化", -1, 5, "强化"))
+    player.add_status(StatusEffect("全力", -1, 5, "全力"))
 
     engine = GameEngine(db_path=str(tmp_path / "rulings.db"))
     engine.state = state
@@ -283,7 +283,7 @@ def test_scoped_ledger_survives_versioned_save_round_trip(tmp_path):
     state.apply_scoped_delta(
         player, "attack_power", 6,
         scope=EffectScope.BATTLE.value, polarity=EffectPolarity.BUFF.value,
-        source="强化")
+        source="全力")
     engine = GameEngine(db_path=str(tmp_path / "rulings.db"))
     engine.state = state
     engine.combat.state = state
@@ -301,8 +301,8 @@ def test_scoped_ledger_survives_versioned_save_round_trip(tmp_path):
 def test_status_scope_and_polarity_are_explicit():
     """状态元数据不再靠数值正负猜测：作用域与增减益极性分别可读。"""
     entity = Entity("角色", "朋友")
-    entity.add_status(StatusEffect("强化", -1, 2, "道纹"))
+    entity.add_status(StatusEffect("全力", -1, 2, "道纹"))
     entity.add_status(StatusEffect("坏死", 2, 1, "道纹"))
-    assert entity.get_status_effects("强化")[0].scope == EffectScope.BATTLE.value
-    assert entity.get_status_effects("强化")[0].polarity == EffectPolarity.BUFF.value
+    assert entity.get_status_effects("全力")[0].scope == EffectScope.BATTLE.value
+    assert entity.get_status_effects("全力")[0].polarity == EffectPolarity.BUFF.value
     assert entity.get_status_effects("坏死")[0].polarity == EffectPolarity.DEBUFF.value

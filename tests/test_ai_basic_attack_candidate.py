@@ -10,6 +10,7 @@
 所以预演器扩成能吃动作序列，AI 才能看见普攻的真实伤害并参与打分。
 """
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -156,4 +157,15 @@ def test_spent_pool_leaves_no_damaging_candidate(engine, monkeypatch):
     # 候选仍会枚举（引擎不按伤害过滤），但打分为 0，AI 不会选它——过滤发生在打分环节。
     ai.take_turn()
     decisions = [line for line in ai.log if "实时决策" in line]
-    assert all("普攻" not in line for line in decisions), decisions
+    # 2026-09-17：断言收紧为**真实不变量**——普攻可以被枚举（引擎不按伤害过滤），
+    # 但池空时它必须是负分，即 AI 不会选它。旧断言写的是"日志里绝不能出现普攻"，
+    # 那是比意图更严的快照：只要残韵候选的并列顺序一变（如【强化】改名【全力】），
+    # 普攻是否进入日志就会翻转，但它被选中的结论从未变过。
+    scored = []
+    for line in decisions:
+        if "普攻" not in line:
+            continue
+        m = re.search(r"得分\s*(-?\d+(?:\.\d+)?)", line)
+        scored.append(float(m.group(1)) if m else None)
+    assert all(s is not None and s <= 0 for s in scored), \
+        f"池空时普攻应为非正分（AI 不选它），实得 {scored}：{decisions}"

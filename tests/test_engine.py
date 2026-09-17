@@ -488,7 +488,7 @@ def test_daowen_effects_wired():
     player.speed_limit = 99
     # 给玩家多个道纹用于测试
     from engine.models import DaoWen, DaoWenInstance
-    for n in ["弱化","强化","变形","赎金","眩晕","飞行"]:
+    for n in ["弱化","全力","变形","赎金","眩晕","飞行"]:
         player.dao_wen[n] = DaoWenInstance(dao_wen=DaoWen(name=n,formula="",cost_type="消耗",cost_formula="X",effect_formula=""))
     m = Entity(name="靶怪", entity_type="怪物", blood_limit=100, current_hp=100, attack_count=3, attack_power=10)
     m.shards = 20
@@ -501,7 +501,7 @@ def test_daowen_effects_wired():
     assert m.attack_power == 7, f"弱化后攻击力应7，实{m.attack_power}"
     # 强化2（2026-09-17 用户令重做）→ 攻击力**锁定为其[法限]**，持续X。
     # 旧版「攻击力+X，持续∞」写遗留字段，属性统一后对不写穿的轮回者无效，已废止。
-    r = engine.execute_action("use_daowen", {"daowen_name":"强化","x":2,"target":"靶怪"})
+    r = engine.execute_action("use_daowen", {"daowen_name":"全力","x":2,"target":"靶怪"})
     assert r["success"], r
     assert m.effective_attack_power() == m.mana_limit, \
         f"强化后攻击力应锁定为法限{m.mana_limit}，实{m.effective_attack_power()}"
@@ -651,16 +651,16 @@ def test_monster_phase_engine():
     st = GameState(); st.current_region = "罪孽都市"
     st.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60, speed_limit=8, current_speed=8)
     m = Entity(name="打手", entity_type="怪物", blood_limit=120, current_hp=120, attack_count=4, attack_power=6)
-    for n,x in [("强化",3),("狂暴",3)]:
+    for n,x in [("全力",3),("狂暴",3)]:
         m.dao_wen[n] = DaoWenInstance(dao_wen=DaoWen(name=n,formula="",cost_type="",cost_formula="",effect_formula=""), x_value=x)
     st.enemies.append(m)
     combat = CombatEngine(st, DiceEngine()); combat.reset_monster_activation()
 
     # 第1回合：2026-09-15 用户令删除白板限制，怪物首回合即可发动道纹
     combat.round_start()  # current_round→1
-    r1 = resolve_monster_phase(combat, {"打手": "强化"}, target_refs={"打手": "enemy:0"})
-    # 【强化】2026-09-17 用户令重做：攻击力锁定为其[法限]，持续X（旧版"攻击力+X，持续∞"已废止）
-    assert m.has_status("强化"), "强化应作为状态生效"
+    r1 = resolve_monster_phase(combat, {"打手": "全力"}, target_refs={"打手": "enemy:0"})
+    # 【全力】2026-09-17 用户令重做：攻击力锁定为其[法限]，持续X（旧版"攻击力+X，持续∞"已废止）
+    assert m.has_status("全力"), "强化应作为状态生效"
     assert m.effective_attack_power() == m.mana_limit, \
         f"强化后攻击力应锁定为法限{m.mana_limit}，实{m.effective_attack_power()}"
     assert len(r1) > 0, "怪物应有出手"
@@ -906,7 +906,7 @@ def test_evolution_yuanchu():
         })
         finish_initial_daowen(engine)
         # 裁定：原初X 借用池 = 轮回者当前持有的道纹，故须先给轮回者道纹
-        for _n in ("自愈", "强化", "杀伐"):
+        for _n in ("自愈", "全力", "杀伐"):
             engine.state.player.dao_wen[_n] = DaoWenInstance(
                 dao_wen=DaoWen(name=_n, formula="", cost_type="消耗",
                                cost_formula="X", effect_formula=""), x_value=1)
@@ -970,13 +970,13 @@ def test_evolution_yuanchu():
     assert not r5["success"] and "不在轮回者当前持有的道纹中" in r5["error"], \
         f"借用轮回者未持有的道纹应被拒绝: {r5}"
     # ---- 非法输入：借用怪物自身已持有的道纹 → 拒绝 ----
-    # 用轮回者也持有的"强化"，确保先通过"必须在轮回者道纹池内"这一关，
+    # 用轮回者也持有的"全力"，确保先通过"必须在轮回者道纹池内"这一关，
     # 从而真正命中"怪物已持有"的拒绝分支。
     from engine.models import DaoWen as _DW, DaoWenInstance as _DWI
-    m_bad.dao_wen["强化"] = _DWI(dao_wen=_DW(name="强化", formula="", cost_type="代价",
+    m_bad.dao_wen["全力"] = _DWI(dao_wen=_DW(name="全力", formula="", cost_type="代价",
                                              cost_formula="异变5X", effect_formula="",
                                              is_monster_original=True), x_value=1)
-    r6 = engine2.execute_action("declare_evolution", {"monster": "非法怪", "daowen": "强化", "x": 1})
+    r6 = engine2.execute_action("declare_evolution", {"monster": "非法怪", "daowen": "全力", "x": 1})
     assert not r6["success"] and "已持有" in r6["error"], f"借用已持有道纹应被拒绝: {r6}"
     # ---- 非法输入：X=0 → 拒绝 ----
     r7 = engine2.execute_action("declare_evolution", {"monster": "非法怪", "daowen": "自愈", "x": 0})

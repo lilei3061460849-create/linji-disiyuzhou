@@ -236,8 +236,8 @@ class DaoWenEngine:
         }
     
     @staticmethod
-    def calculate_qianghua(x: int, target: Entity = None) -> dict:
-        """强化X：代价：异变5X。使[目标]攻击力等同其法限，持续X
+    def calculate_quanli(x: int, target: Entity = None) -> dict:
+        """全力X：代价：异变5X。使[目标]攻击力等同其法限，持续X
 
         2026-09-17 用户令重做。旧版「攻击力+X，持续∞」写的是遗留字段 attack_power，
         属性模型统一后（攻击力=当前法力）对不写穿的轮回者完全无效。
@@ -246,12 +246,12 @@ class DaoWenEngine:
         下降而下降——即"不用担心法力降低导致攻击输出降低"。法力本身照常被消耗
         （它仍是施法资源），只是攻击力不再跟着掉。
 
-        实现走状态层（状态名"强化"），由 models.py::effective_attack_power 读取，
+        实现走状态层（状态名"全力"），由 models.py::effective_attack_power 读取，
         故对轮回者/怪物/朋友/员工同口径生效。
         """
         target_name = target.name if target is not None else "未选定目标"
         return {
-            "dao_wen": "强化",
+            "dao_wen": "全力",
             "x": x,
             "cost_type": CostType.MUTATION.value,
             "cost_mutation": 5 * x,
@@ -1093,7 +1093,7 @@ class DaoWenEngine:
             "封印": cls.calculate_fengyin,
             # 怪物原始
             "狂暴": cls.calculate_kuangbao,
-            "强化": cls.calculate_qianghua,
+            "全力": cls.calculate_quanli,
             "疯狂": cls.calculate_huoli,
             "净化": cls.calculate_jinghua,
             "减速": cls.calculate_jiansu,
@@ -1300,9 +1300,9 @@ class ResonanceEngine:
             ("狂暴", "转换", "愤怒"),
             ("狂暴", "反转", "自残"),
             ("狂暴", "曲解", "无神"),
-            ("强化", "转换", "借力"),
-            ("强化", "反转", "弱化"),
-            ("强化", "曲解", "自食"),
+            ("全力", "转换", "借力"),
+            ("全力", "反转", "弱化"),
+            ("全力", "曲解", "自食"),
             ("疯狂", "转换", "兴奋"),
             ("疯狂", "反转", "无力"),
             ("疯狂", "曲解", "全速"),

@@ -40,7 +40,7 @@ class CombatEngine:
     }
     
     # 原始怪物道纹（道纹归属规则：各组起点）——【原初X】可借用范围
-    ORIGINAL_MONSTER_DAOWEN = ("狂暴", "强化", "疯狂", "减速", "必中", "自愈", "飞行")
+    ORIGINAL_MONSTER_DAOWEN = ("狂暴", "全力", "疯狂", "减速", "必中", "自愈", "飞行")
     # 原始怪物道纹每次实际发动时支付异变5X（X 恒为面板/借用时写定的值；
     # 2026-09-16 用户令：道纹递增机制已废止）；效果持续期间（未再次发动）不再重复计费。
     # 必中为次数型（下X次选择[目标]无法闪避），余数记在 entity._bizhong_left。
@@ -2001,7 +2001,7 @@ class CombatEngine:
             if expired:
                 # 只有“持续期间直接改写面板”的效果到期即还原；畸变/伤痕/逼债等
                 # 已经产生的累计局内后果保留到战终，再由battle作用域统一回滚。
-                panel_modifier_sources = {"强化", "弱化"}
+                panel_modifier_sources = {"全力", "弱化"}
                 rolled_back = self.state.rollback_scoped_sources(
                     entity, set(expired) & panel_modifier_sources)
                 effects.append({
@@ -3195,12 +3195,12 @@ class CombatEngine:
                     name, EffectPolarity.BUFF.value)
                 result["effects"].append({"type": "attack_boost", "target": panel_target.name,
                                           "attack_power": panel_target.attack_power})
-            # 【强化】2026-09-17 用户令重做：攻击力锁定 = [法限]，持续X。
+            # 【全力】2026-09-17 用户令重做：攻击力锁定 = [法限]，持续X。
             # 走状态层（models.py::effective_attack_power 读取），不再写遗留字段
             # attack_power——那样对不写穿的轮回者无效。
             if (not panel_locked) and calc.get("attack_power_to_mana_limit"):
                 panel_target.add_status(StatusEffect(
-                    name="强化", value=1,
+                    name="全力", value=1,
                     remaining_rounds=calc.get("duration", x), source=caster.name))
                 result["effects"].append({
                     "type": "attack_power_to_mana_limit", "target": panel_target.name,

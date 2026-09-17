@@ -153,12 +153,12 @@ def monster_round_start(m, activated):
 def monster_activate(m, activated, rng):
     """
     怪物道纹出手：激活一个尚未激活的道纹（白板第1回合后开始激活），返回激活名或None
-    成长型：疯狂X攻击出手+X；强化X攻击力+X；狂暴+1攻击出手；必中不可闪避；自愈/庇护回始生效
+    成长型：疯狂X攻击出手+X；全力X攻击力+X；狂暴+1攻击出手；必中不可闪避；自愈/庇护回始生效
     控场型（对轮回者）：蒙蔽X下X次伤害无效；坏死禁疗；减速速度减半；僵化攻击力固定1
     【异变计费接线，裁定②】原始怪物道纹以【异变】为代价：激活支付异变5×面板X；
     达阈值触发【崩解】直接命零，返回"崩解:道纹名"，本次激活效果中断。
     """
-    priority = ["疯狂", "强化", "狂暴", "必中", "蒙蔽", "坏死", "减速", "僵化", "自愈", "庇护", "飞行"]
+    priority = ["疯狂", "全力", "狂暴", "必中", "蒙蔽", "坏死", "减速", "僵化", "自愈", "庇护", "飞行"]
     for g in priority:
         if g in m.dao_wen and g not in activated:
             if g in CombatEngine.ORIGINAL_MONSTER_DAOWEN:
@@ -167,7 +167,7 @@ def monster_activate(m, activated, rng):
                     SIM_STATS["collapses"] += 1
                     return "崩解:" + g
             activated.add(g)
-            if g == "强化":
+            if g == "全力":
                 m.attack_power += m.dao_wen[g].x_value
             return g
     if USE_EXCLUSIVE:  # 副本专属层（裁定⑨）：通用层之后，代价未满足的跳过
@@ -182,7 +182,7 @@ def monster_activate(m, activated, rng):
 SIM_STATS = {"evolutions": 0, "collapses": 0}
 
 # 困境进化默认策略的借用优先级（在原始道纹范围内按模拟器激活优先级排序）
-EVO_PRIORITY = [d for d in ["疯狂", "强化", "狂暴", "必中", "蒙蔽", "坏死", "减速", "僵化", "自愈", "庇护", "飞行"]
+EVO_PRIORITY = [d for d in ["疯狂", "全力", "狂暴", "必中", "蒙蔽", "坏死", "减速", "僵化", "自愈", "庇护", "飞行"]
                 if d in CombatEngine.ORIGINAL_MONSTER_DAOWEN]
 
 

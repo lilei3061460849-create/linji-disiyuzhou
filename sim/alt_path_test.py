@@ -152,8 +152,8 @@ def strategy_turn(e, strategy: str, log):
                     out.append(r)
                     continue
         elif strategy == "石化" and "反转" in e.state.resonance:
-            # 尝试残韵：若怪物持 强化 → 反转得弱化；必中→反转得蒙蔽（作为石化/控制的钥匙）
-            for src in ("强化", "必中", "减速", "自愈"):
+            # 尝试残韵：若怪物持 全力 → 反转得弱化；必中→反转得蒙蔽（作为石化/控制的钥匙）
+            for src in ("全力", "必中", "减速", "自愈"):
                 if src in m.dao_wen:
                     r = e.execute_action("use_resonance", {
                         "source_daowen": src, "resonance_type": "反转", "target_ref": f"enemy:{e.state.enemies.index(m)}"})
