@@ -217,3 +217,84 @@ def test_negative_and_zero_x_rejected(tmp_path):
         r = _resolve(e, prep, actor, bad)
         assert r["success"] is False
         assert "超出可负担范围" in r.get("error", ""), r.get("error")
+
+
+# ---------------- 预演评分选 X（选案 C） ----------------
+
+def _preview_scenario(tmp_path, dw, *, monster_hp=300, monster_mana=40,
+                      monster_speed=3, player_mana=10, player_speed=3,
+                      seed=20260822):
+    """构造一个可预演的怪物阶段，返回 (engine, monster, actor, prep)。"""
+    e = _engine(tmp_path, seed)
+    m = Entity("测试怪", "怪物", blood_limit=monster_hp, current_hp=monster_hp,
+               attack_count=2, attack_power=monster_mana,
+               mana_limit=monster_mana, current_mana=monster_mana,
+               speed_limit=monster_speed, current_speed=monster_speed)
+    m.dao_wen[dw] = DaoWenInstance(
+        DaoWen(name=dw, formula="", cost_type="消耗", cost_formula="X",
+               effect_formula=""), x_value=0, x_free=True)
+    p = Entity("轮回者", "轮回者", blood_limit=100, current_hp=100,
+               mana_limit=player_mana, current_mana=player_mana,
+               speed_limit=player_speed, current_speed=player_speed,
+               attack_count=1, attack_power=player_mana)
+    e.state.player = p
+    e.state.friends = []
+    e.state.employees = []
+    e.state.enemies = [m]
+    e.state.phase = "in_combat"
+    e.state.combat_subphase = "player_actions"
+    e.state.pending_monster_phase = {}
+    e.state.current_round = 2
+    prep = e.execute_action("prepare_monster_phase", {})
+    return e, m, prep["result"]["actors"][0], prep
+
+
+def _chosen_x(e, m, actor, prep, dw):
+    """走 sim 侧完整的提交拼装（含正确的自身/敌方选目标）后取评分选出的 X。"""
+    from sim.monster_targets import pick_monster_daowen_target, pick_monster_daowen_x
+    opt = next(o for o in actor["daowen_options"] if o["name"] == dw)
+    atk = actor["attack_target_options"][0]
+    hits = [{"target_ref": atk["ref"], "dodge": False, "blood_shadow": False,
+             "spell_choices": _decline_spells(atk)}
+            for _ in range(actor["base_hits_per_attack"])]
+    dao = {"name": dw, "dodge": False, "blood_shadow": False,
+           "trigger_spell_choices": {}}
+    # 必须用怪物 AI 的选目标：把自身回血打到玩家身上等于喂养敌方，
+    # 评分会惩罚，X 恒为 1（曾据此误判"持续类被低估"）。
+    if opt["requires_target"]:
+        dao["target_ref"] = pick_monster_daowen_target(e, actor["actor_ref"], opt)
+    choice = {"actor_ref": actor["actor_ref"], "daowen": dao,
+              "attack_actions": [{"hits": hits}
+                                 for _ in range(actor["base_attack_actions"])]}
+    return pick_monster_daowen_x(e, m, opt, choice, prep["result"]["token"])
+
+
+def test_heal_x_scales_with_missing_hp(tmp_path):
+    """正常路径：【再生】按需回血，不浪费法力过量治疗。
+
+    目标必须选自身——打到玩家身上等于喂养敌方，评分会惩罚。
+    """
+    # 满血：不治疗，取最小值
+    e, m, actor, prep = _preview_scenario(tmp_path, "再生")
+    assert _chosen_x(e, m, actor, prep, "再生") == 1
+    # 缺 60 生命（再生回 4X）→ X=15 正好补满
+    e, m, actor, prep = _preview_scenario(tmp_path, "再生", monster_hp=300)
+    m.current_hp = 240
+    assert _chosen_x(e, m, actor, prep, "再生") == 15
+
+
+def test_persistent_duration_buff_scales_with_expected_rounds(tmp_path):
+    """边界：【狂暴】duration=X，效果下回合才兑现——单步预演看不到收益。
+
+    补上跨回合期望收益后，X 应随"预期还能打几回合"缩放：
+    预期够长时取满上限，朝不保夕时买那么久没有意义。
+    """
+    # 敌方每回合仅 6 伤 → 预期能打很久，值得买更长持续时间
+    e, m, actor, prep = _preview_scenario(tmp_path, "狂暴", player_mana=2)
+    long_x = _chosen_x(e, m, actor, prep, "狂暴")
+    assert long_x > 1, f"预期剩余回合很长时不应只买 X=1，实际 {long_x}"
+
+    # 敌方每回合 90 伤 → 怪物朝不保夕，买满时长是浪费
+    e, m, actor, prep = _preview_scenario(tmp_path, "狂暴", player_mana=30)
+    short_x = _chosen_x(e, m, actor, prep, "狂暴")
+    assert short_x <= long_x, f"濒死时不应买比长局更久的时长：{short_x} > {long_x}"

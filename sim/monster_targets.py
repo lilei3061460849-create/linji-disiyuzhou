@@ -175,9 +175,45 @@ def pick_monster_daowen_x(engine, monster, option, choice_tpl: dict, token: str)
                                     "%sX=%d" % (option.get("name", "?"), x))
         if score is None:
             continue
+        score += _persistent_duration_value(engine, monster, option, x, ai)
         if best_score is None or score > best_score:
             best_score, best = score, x
     return best
+
+
+def _persistent_duration_value(engine, monster, option, x, ai) -> float:
+    """跨回合生效的**时长型**道纹（duration == X）补一项期望收益。
+
+    典型：【狂暴】「异变+5X，回始发动一轮额外攻击，持续X回合」。效果从**下一
+    回合**才兑现，单步预演只看得到异变代价、一分收益都没有，于是恒选 X=1。
+    但按回合摊薄，X=1 与 X=9 的异变单价完全相同（都是 5/回合），真正的差别在
+    **道纹出手位**——X=1 每回合都要重放、占掉一次道纹机会；X=9 一次买断九回合。
+
+    收益按"每回合产出 × 有效回合数 × 折价"估：
+      · 每回合产出 = 攻次 × 攻力（该 buff 额外一轮攻击的伤害）
+      · 有效回合数 = min(X, 预期剩余回合)——打不完那么多回合，多买的时长是浪费
+      · 折价 0.5：战斗进程不确定（怪物可能先死、目标可能换），保守折扣
+    只作用于 duration == X 的道纹；【加害】这类 duration=-1 的持续状态不在此列
+    （它的 +X 在**当回合**的攻击里就已结算，预演看得到，不需要补）。
+    """
+    try:
+        from engine.daowen import DaoWenEngine
+        calc = DaoWenEngine.resolve(option.get("name", ""), x, caster=monster)
+    except Exception:
+        return 0.0
+    if int(calc.get("duration") or 0) != x:
+        return 0.0
+
+    per_round = monster.effective_attack_count() * monster.effective_attack_power()
+    if per_round <= 0:
+        return 0.0
+    try:
+        incoming = max(1.0, float(ai.incoming_damage()))
+    except Exception:
+        incoming = 1.0
+    expected_rounds = monster.current_hp / incoming
+    effective = min(float(x), expected_rounds)
+    return 0.5 * per_round * effective
 
 
 def pick_wave_dodge_targets(option: dict) -> list[dict]:
