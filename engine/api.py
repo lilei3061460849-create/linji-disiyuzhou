@@ -2529,10 +2529,10 @@ class GameEngine:
         发动道纹。
         params.actor 留空时=玩家自行发动道纹(法力制，行为与此前完全一致)。
         params.actor 指定为已部署[朋友]/[员工]时=听从轮回者指令代其发动：
-        1.[朋友]/[员工]不持有法力（与怪物规则一致），发动道纹不支付法力，只消耗其出手；
+        1.[朋友]/[员工]**照常支付法力**（2026-09-17 用户令裁定；旧版"不持有法力、
+          不支付法力"是已废止条文的残留，见 AI_EXPERIENCE.md:278/:1254 微光者持有
+          [法限]且为一池制），并额外消耗其出手；
           附带【代价】的道纹仍照常由该实体自身支付代价。
-          （待裁定 2026-09-17：与 AI_EXPERIENCE.md:1254「微光者一池制」存在张力，
-          详见下方 use_daowen 内的 TODO 与 tests/test_ally_commands.py 的锁定。）
         2.必须指定一个不是其自身的目标(听从指令的道纹/攻击均需面向"其他非自身目标")。
         """
         actor_ref = params.get("actor_ref", "")
@@ -2654,14 +2654,15 @@ class GameEngine:
                     "result": {"trigger_spell_logs": trigger_logs, "daowen_resolved": False}}
 
         # 检查法力是否足够（代价道纹不消耗法力）
-        # [朋友]/[员工]不持有法力（与怪物规则一致），发动道纹不支付法力，只消耗出手；仅玩家自身发动时走法力制
-        # TODO(待裁定 2026-09-17)：本条与正文 AI_EXPERIENCE.md:1254「轮回者与微光者
-        # 不持有[某人的偏爱]，仍是一池制，[回始]不回填」存在张力——不支出就无所谓
-        # "一池制"。但 2026-09-16 用户令原文（见 engine/combat.py 同位置）只点了
-        # 「怪物与轮回者」，未提微光者，且 tests/test_ally_commands.py 显式锁定
-        # 「员工发动道纹无需法力」。故维持现状，等用户裁定后再改。
+        # 2026-09-17 用户令裁定：微光者（[朋友]/[员工]）**同样支付法力**。
+        # 旧注释称其"不持有法力、发动道纹不支付法力，只消耗出手"，自我论证是
+        # 「与怪物规则一致」——而怪物那条已于 2026-09-16 用户令废止
+        # （见 engine/combat.py 同位置）。正文 AI_EXPERIENCE.md:278 明载
+        # 「怪物与轮回者、微光者共用同一套面板数据，同样持有[血限]/[法限]/[速限]」，
+        # :1254 明载微光者「仍是一池制，[回始]不回填」——不支出就无所谓"一池制"。
+        # 故三类角色同口径支付【消耗】类法力；微光者仍照常额外消耗其出手。
         cost = calc.get("cost", calc.get("cost_mutation", 0))
-        if not is_command and calc.get("cost_type") == "消耗" and cost > 0:
+        if calc.get("cost_type") == "消耗" and cost > 0:
             if not actor.spend_mana(cost):
                 return {"success": False, "error": f"法力不足，需要{cost}，当前{actor.current_mana}"}
             # 寒冰法力：持有者每消耗法力发动道纹，无论目标是谁(含自己)都累计"施加法力"

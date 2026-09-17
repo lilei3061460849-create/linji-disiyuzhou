@@ -9,7 +9,9 @@ pytest 风格测试 - 里程碑3：朋友/员工听从轮回者指令，对非�
 1. 攻击：验证[朋友]/[员工]通过现有 attack 动作的 attacker 参数发动攻击时，
    目标自动限定为对方阵营(既有实现，本文件补齐回归测试证明其确实可用于非玩家角色)。
 2. 道纹：generalize 后的 use_daowen 新增 actor 参数——
-   a) [朋友]/[员工]与怪物/微光者同属不持有法力的一方，发动道纹不支付法力，只消耗出手
+   a) [朋友]/[员工]与怪物、轮回者同口径持有[法限]，发动【消耗】类道纹同样支付
+      法力（2026-09-17 用户令裁定；AI_EXPERIENCE.md:278/:1254），并额外消耗其出手。
+      微光者为一池制、[回始]不回填，与怪物(遗物【某人的偏爱】每[回始]回满)不同
    b) 必须显式指定一个非自身的目标，否则拒绝
    c) 玩家自身发动道纹的原有行为(法力制、默认自身为目标)保持不变，向后兼容
 
@@ -74,14 +76,19 @@ def test_friend_attack_commanded_by_player_hits_enemy_side():
 
 
 def test_deployed_employee_can_be_commanded_to_use_daowen_on_enemy():
-    """正常路径：已部署[员工]听从指令对敌方发动道纹，无需法力(与怪物同规则)，只消耗出手"""
+    """正常路径：已部署[员工]听从指令对敌方发动道纹，照常支付法力并消耗其出手。
+
+    2026-09-17 用户令裁定：微光者（[朋友]/[员工]）与怪物、轮回者同口径持有[法限]、
+    发动【消耗】类道纹同样支付法力（AI_EXPERIENCE.md:278/:1254）。旧版"不持有法力、
+    不支付法力"是已废止条文的残留。微光者为一池制、[回始]不回填。
+    """
     engine = _new_engine_with_enemy("emp_daowen", region="罪孽都市")
     emp = Entity(name="工头", entity_type="员工", blood_limit=96, current_hp=96,
                  attack_count=4, attack_power=8, is_deployed=False)
     engine.state.employees.append(emp)
     _give_daowen(emp, "杀伐")
-    emp.current_mana = 0
-    emp.mana_limit = 0
+    # 一池制：法力 = [法限] = 攻击力 8，[回始]不回填
+    assert emp.current_mana == 8 and emp.mana_limit == 8
     engine.execute_action("deploy_employee", {"name": "工头"})
 
     enemy = engine.state.enemies[0]
@@ -89,7 +96,7 @@ def test_deployed_employee_can_be_commanded_to_use_daowen_on_enemy():
     r = engine.execute_action("use_daowen", {"actor": "工头", "daowen_name": "杀伐", "x": 5, "target": "测试怪"})
     assert r["success"] is True, r
     assert enemy.current_hp == hp_before - 25, "杀伐5应造成5*5=25点伤害（DM裁定 2026-09-10：5X）"
-    assert emp.current_mana == 0, "员工不应被扣减法力(本就没有法力)"
+    assert emp.current_mana == 3, "杀伐5需5点法力，一池制 8 点扣后应剩 3"
 
 
 def test_player_self_cast_unaffected_backward_compatible():
