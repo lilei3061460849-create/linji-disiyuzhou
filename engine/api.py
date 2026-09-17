@@ -1284,7 +1284,7 @@ class GameEngine:
             cost_formula="X", effect_formula=""))
 
     def _action_resolve_redemption(self, params: dict) -> dict:
-        """救赎：接纳昏迷微光者为员工（待命，需派遣+战终工资，计入叛变），或当场【终结】。
+        """救赎：接纳昏迷微光者为员工（待命，需派遣+战终工资，计入背叛），或当场【终结】。
 
         【终结】（2026-09-15 用户令，取代旧「无视」选项）：救赎不是免费收获——把昏迷
         的微光者当场终结，效果等同击杀：它被还原为一次正常[命零]，[战终]按与普通击杀
@@ -2127,14 +2127,14 @@ class GameEngine:
                 "result": {"employee": name, "chosen": daowen_name,
                            "employee_daowen": list(emp.dao_wen.keys())}}
 
-    # ==================== 员工叛变（三选一处理分支） ====================
+    # ==================== 员工背叛（三选一处理分支） ====================
 
     def _pending_rebellion_error(self, force: bool) -> Optional[dict]:
-        """未强制触发时，必须存在[战终]检查命中的待处理叛变才能选择处理分支"""
+        """未强制触发时，必须存在[战终]检查命中的待处理背叛才能选择处理分支"""
         if force:
             return None
         if not self.state.rebellion_active:
-            return {"success": False, "error": "当前没有待处理的员工叛变"}
+            return {"success": False, "error": "当前没有待处理的员工背叛"}
         return None
 
     def _action_suppress_rebellion(self, params: dict) -> dict:
@@ -2508,7 +2508,7 @@ class GameEngine:
     def _compute_pending_wages(self):
         """战终首次结算：为每个"存活+已部署+非还债"的员工计算应付工资，写入 pending_wage_decisions。
         已经出现过的key(无论是否已决策)不会被重新计算，避免同一员工在同一场战斗内被反复计费。
-        wage_bonus(员工叛变·让利)在封顶后叠加，不影响12碎片的封顶本身。"""
+        wage_bonus(员工背叛·让利)在封顶后叠加，不影响12碎片的封顶本身。"""
         for e in self.state.employees:
             if e.is_alive and e.is_deployed and not e.is_debt_bound and e.name not in self.state.pending_wage_decisions:
                 # current_round 为1-indexed的"当前回合序号"，与 deployed_at_round 同口径，故+1为闭区间计数
@@ -5336,6 +5336,26 @@ class GameEngine:
         # （先记录本场参战者供成长判定；若重置后再判 is_deployed，则参战者全被误判为待命而永不成长）
         _battled_ids = {id(emp) for emp in self.state.employees
                         if emp.is_alive and not emp.is_debt_bound and emp.is_deployed}
+
+        # 2026-09-17 用户令：[员工]**出场**并**存活**满 EMPLOYEE_PROMOTION_BATTLES
+        # 场战斗后转为[朋友]。口径与 _battled_ids 一致——本场确实参战(is_deployed)
+        # 且[战终]仍存活；待命未上场不计，阵亡者已被上面的 departed_employees 移除。
+        # 还债员工(is_debt_bound)不晋升：其身份是债务约束而非雇佣关系。
+        promoted = []
+        for emp in list(self.state.employees):
+            if id(emp) not in _battled_ids:
+                continue
+            emp.survived_battles_as_employee = getattr(
+                emp, "survived_battles_as_employee", 0) + 1
+            if emp.survived_battles_as_employee < Entity.EMPLOYEE_PROMOTION_BATTLES:
+                continue
+            self.state.employees.remove(emp)
+            emp.entity_type = "朋友"
+            emp.is_deployed = True          # [朋友]无待命概念，直接计入战场
+            self.state.friends.append(emp)
+            promoted.append({"name": emp.name,
+                             "battles": emp.survived_battles_as_employee})
+
         for emp in self.state.employees:
             if emp.is_alive and not emp.is_debt_bound:
                 emp.is_deployed = False
@@ -5390,6 +5410,7 @@ class GameEngine:
             "spell_logs": spell_logs,
             "scoped_effects_rolled_back": scoped_rollbacks,
             "employee_rebellion": rebellion_check,
+            "employee_promotions": promoted,   # [员工]出场存活满3场 → 转为[朋友]
             "player_dead": (not self.state.player.is_alive) if self.state.player else False,
         }
 

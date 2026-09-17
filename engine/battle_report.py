@@ -17,7 +17,7 @@
     [回终]：[回终]类效果结算→格挡清空→持续X剩余回合-1→本回合资源面板
 
     [战终]
-    死亡结算→[碎片]奖励计算→增益与减益清除→代价保留项→[朋友][员工]留存与[临时朋友]消失→精力恢复→【员工叛变】检查
+    死亡结算→[碎片]奖励计算→增益与减益清除→代价保留项→[朋友][员工]留存与[临时朋友]消失→精力恢复→【员工背叛】检查
 
 设计约束（对应 推演铁律）：
 1. 本模块只做"排版"，不产生任何数值。所有数字均取自引擎返回的结果字典 /
@@ -428,7 +428,7 @@ def format_battle_end(be_result: dict) -> list[str]:
     lines.append("[朋友][员工]留存，[临时朋友]消失")
     lines.append(f"精力恢复：{r.get('energy_restored')}")
     reb = r.get("employee_rebellion", {}) or {}
-    lines.append(f"【员工叛变】检查：{'触发' if reb.get('rebellion') else '未触发'}")
+    lines.append(f"【员工背叛】检查：{'触发' if reb.get('rebellion') else '未触发'}")
     return lines
 
 

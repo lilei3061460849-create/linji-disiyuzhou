@@ -1,15 +1,15 @@
 """
-pytest 风格测试 - 里程碑6：员工叛变三选一处理分支（镇压/让利/谈判）
+pytest 风格测试 - 里程碑6：员工背叛三选一处理分支（镇压/让利/谈判）
 
 原文：
-"员工叛变（[战终]检查，或被效果强制触发）：所有[员工]攻击总值≥轮回者当前生命+所有[朋友]攻击总值时，
-所有[员工]共同叛变夺取《死者之书》；被效果强制触发时跳过数值检查，直接叛变。
--镇压：与所有叛变[员工]开启战斗！若战斗失败或选择【撤退】，失去所有[碎片]，随后所有叛变[员工]携财逃跑；
+"员工背叛（[战终]检查，或被效果强制触发）：所有[员工]攻击总值≥轮回者当前生命+所有[朋友]攻击总值时，
+所有[员工]共同背叛夺取《死者之书》；被效果强制触发时跳过数值检查，直接背叛。
+-镇压：与所有背叛[员工]开启战斗！若战斗失败或选择【撤退】，失去所有[碎片]，随后所有背叛[员工]携财逃跑；
 若战斗胜利，肃清叛徒并保留财产。
--让利：本次轮回所有[员工]每场工资+5，叛变平息。
+-让利：本次轮回所有[员工]每场工资+5，背叛平息。
 -谈判：给出合理的谈判方案破解叛乱。"
 
-设计要点(用户已确认思路：直接复用现有战斗体系，把叛变员工的面板"当出怪"塞进state.enemies)：
+设计要点(用户已确认思路：直接复用现有战斗体系，把背叛员工的面板"当出怪"塞进state.enemies)：
 1. suppress_rebellion：把state.employees整体搬进state.enemies(保留其完整面板与道纹)，
    之后战斗完全走已有的 round_start/attack/use_daowen/monster_phase/round_end 流程，
    没有引入任何新的战斗计算逻辑。
@@ -37,7 +37,7 @@ from engine.models import Entity, DaoWen, DaoWenInstance
 
 
 def _setup_with_rebellion(db_suffix: str) -> GameEngine:
-    """构造一个战终检查会判定叛变(员工攻击总值≥玩家生命)的局面，并推进到rebellion_active=True"""
+    """构造一个战终检查会判定背叛(员工攻击总值≥玩家生命)的局面，并推进到rebellion_active=True"""
     engine = GameEngine(db_path=f"data/test_rebellion_{db_suffix}.db", rng_seed=1)
     engine.execute_action("setup_attributes", {"blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(engine)
@@ -55,9 +55,9 @@ def _setup_with_rebellion(db_suffix: str) -> GameEngine:
     engine.state.enemies.clear()
     engine.execute_action("battle_end", {})  # 第一次调用触发工资待决
     engine.execute_action("pay_employee_wage", {"name": "彪悍打手", "decision": "pay"})
-    r = engine.execute_action("battle_end", {})  # 第二次真正完成战终，顺带做叛变检查
+    r = engine.execute_action("battle_end", {})  # 第二次真正完成战终，顺带做背叛检查
     assert r["success"] is True
-    assert engine.state.rebellion_active is True, "测试前置条件：叛变必须已判定为待处理"
+    assert engine.state.rebellion_active is True, "测试前置条件：背叛必须已判定为待处理"
     return engine
 
 
@@ -86,7 +86,7 @@ def test_suppress_moves_employees_into_enemies_with_full_panel():
 
 def test_suppress_battle_uses_existing_combat_flow_unmodified():
     """正常路径：镇压后的战斗完全复用现有 round_start/attack/use_daowen/round_end 流程，
-    不需要任何专门为叛变新增的战斗计算代码"""
+    不需要任何专门为背叛新增的战斗计算代码"""
     engine = _setup_with_rebellion("reuse_flow")
     engine.execute_action("suppress_rebellion", {})
     rebel = engine.state.enemies[0]
@@ -168,7 +168,7 @@ def test_negotiate_raises_interrupt_for_dm_not_auto_resolved():
     assert r["success"] is True
     assert "interrupt" in r
     assert engine._pending_interrupts, "应产生待DM裁定的中断，不能自动判定成功或失败"
-    assert engine.state.rebellion_active is True, "谈判尚未经DM裁定前，叛变仍应视为未解决"
+    assert engine.state.rebellion_active is True, "谈判尚未经DM裁定前，背叛仍应视为未解决"
 
 
 # ========================================================================
@@ -202,7 +202,7 @@ def test_suppress_with_no_employees_rejected():
 
 
 def test_multiple_employees_all_rebel_together():
-    """边界：原文"所有[员工]共同叛变"——多名员工时应全部一起搬入state.enemies，不是只挑一个"""
+    """边界：原文"所有[员工]共同背叛"——多名员工时应全部一起搬入state.enemies，不是只挑一个"""
     engine = GameEngine(db_path="/tmp/linji_tests/test_rebellion_multi.db", rng_seed=1)
     engine.execute_action("setup_attributes", {"blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(engine)
@@ -240,7 +240,7 @@ def test_resolve_rejects_invalid_outcome_value():
 
 
 def test_branches_rejected_without_active_rebellion_and_without_force():
-    """错误输入：没有待处理叛变且未传force时，三个分支都必须拒绝，不能平白无故触发"""
+    """错误输入：没有待处理背叛且未传force时，三个分支都必须拒绝，不能平白无故触发"""
     engine = GameEngine(db_path="/tmp/linji_tests/test_rebellion_noactive.db", rng_seed=1)
     engine.execute_action("setup_attributes", {"blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(engine)

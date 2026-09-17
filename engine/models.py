@@ -330,6 +330,11 @@ class Entity:
     is_deployed: bool = True
     deployed_at_round: int = 0  # 派遣时 state.current_round 的原始值（用于结算"实际出场回合数"）
 
+    # 2026-09-17 用户令：[员工]**出场**（is_deployed 参战）并**存活**满
+    # EMPLOYEE_PROMOTION_BATTLES 场战斗后转为[朋友]。
+    # 只统计"本场实际参战且[战终]仍存活"的场次：待命未上场不计，阵亡清零不计。
+    survived_battles_as_employee: int = 0
+
     # 撤退（任意[朋友]/[员工]即将受到足以使当前命零的伤害时自动触发）：
     # 保留当前生命，不再计入本场战斗(get_all_player_side排除)，无法再次加入本场战斗；
     # 但未死亡，[战终]后随存活[朋友]/[员工]一同留存，下一场重置为False可正常参战。
@@ -537,6 +542,8 @@ class Entity:
         return detail
     
     MUTATION_COLLAPSE_THRESHOLD = 50  # 特殊事件【崩解】阈值：异变达到50层直接命零；原始道纹仅首次发动支付异变5X
+    # 2026-09-17 用户令：[员工]出场并存活满这么多场战斗即转为[朋友]（唯一事实源）。
+    EMPLOYEE_PROMOTION_BATTLES = 3
     # 致死类特殊事件的阈值（唯一事实源；CombatEngine 的同名量一律引用这里，禁止各写一份）：
     CANCER_HEAL_MULTIPLIER = 2.0  # 【癌变】：本场累计受到的回复量 ≥ 血限×该系数 即命零
     MEDIOCRITY_ROUNDS = 5         # 【凡庸】：连续 N 回合未出手、或连续 N 回合未使敌对角色掉血 即命零
@@ -894,11 +901,11 @@ class GameState:
     # 暂离不是死亡/永久离场，仍阻塞战终；到达回合始时把原实体重新加入 enemies。
     delayed_monster_reentries: list[dict] = field(default_factory=list)
 
-    # 员工叛变：待处理标记（[战终]检查命中后置真，三个处理分支任一生效后清空）
+    # 员工背叛：待处理标记（[战终]检查命中后置真，三个处理分支任一生效后清空）
     rebellion_active: bool = False
-    # 员工叛变·镇压子战斗：进行中标记（employees已搬入enemies，需resolve_rebellion_battle结算）
+    # 员工背叛·镇压子战斗：进行中标记（employees已搬入enemies，需resolve_rebellion_battle结算）
     rebellion_in_progress: bool = False
-    # 员工叛变·让利：每场工资在原公式基础上的固定加成（本次轮回持续生效）
+    # 员工背叛·让利：每场工资在原公式基础上的固定加成（本次轮回持续生效）
     wage_bonus: int = 0
 
     # 最终的冠冕/第8场死斗：进行中标记 + 当前该谁出手("player_side"/"opponent_side")

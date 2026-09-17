@@ -2694,7 +2694,7 @@ class CombatEngine:
 
     def initiate_negotiation(self, proposal: str) -> Interrupt:
         """
-        员工叛变·谈判声明：给出合理的谈判方案破解叛乱，需要DM裁定方案是否成立。
+        员工背叛·谈判声明：给出合理的谈判方案破解叛乱，需要DM裁定方案是否成立。
         """
         return Interrupt(
             interrupt_type=InterruptType.STAFF_MUTINY,
@@ -2706,7 +2706,7 @@ class CombatEngine:
                 "proposal": proposal,
             },
             description=(
-                f"轮回者尝试以谈判方案破解员工叛变：\n\n{proposal}\n\n"
+                f"轮回者尝试以谈判方案破解员工背叛：\n\n{proposal}\n\n"
                 f"请DM裁定该方案是否合理、能否平息叛乱。"
             ),
             options=[
@@ -4710,12 +4710,12 @@ class CombatEngine:
         finally:
             self._resolving_life_lost_reactions -= 1
 
-    # ========== 大流程：员工叛变 / 死之传承 ==========
+    # ========== 大流程：员工背叛 / 死之传承 ==========
 
     def check_employee_rebellion(self) -> dict:
         """
-        员工叛变（[战终]检查）：所有[员工]攻击次数×攻击力相加，
-        若 ≥ 轮回者当前生命 + 所有[朋友]攻击总值，则所有员工叛变夺取《死者之书》。
+        员工背叛（[战终]检查）：所有[员工]攻击次数×攻击力相加，
+        若 ≥ 轮回者当前生命 + 所有[朋友]攻击总值，则所有员工背叛夺取《死者之书》。
         """
         emps = [e for e in self.state.employees if e.is_alive]
         if not emps:
@@ -4727,7 +4727,7 @@ class CombatEngine:
         if emp_atk >= threshold:
             return {"rebellion": True, "rebels": [e.name for e in emps],
                     "employee_attack_total": emp_atk, "threshold": threshold,
-                    "options": ["镇压（与所有叛变员工开战）", "让利（本场每名员工工资+5碎片）", "谈判（给出合理方案）"]}
+                    "options": ["镇压（与所有背叛员工开战）", "让利（本场每名员工工资+5碎片）", "谈判（给出合理方案）"]}
         return {"rebellion": False, "employee_attack_total": emp_atk, "threshold": threshold}
 
     def trigger_death_legacy(self, legacy: dict[str, str] | str) -> dict:
