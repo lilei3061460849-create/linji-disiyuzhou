@@ -13,6 +13,34 @@ from .dungeons import load_dungeon_documents
 from .models import MONSTER_MANA_RELIC
 
 
+# 单个道纹词条：名字 2~4 个汉字 + **可选**的数字 X。
+# 「再生4」→ 固定 X=4；「再生」→ X 待发动时自选（x=None）。
+_DAOWEN_TOKEN = re.compile(r'^([一-鿿]{2,4})(\d+)?$')
+
+
+def _parse_daowen_field(dw_str: str) -> dict[str, int | None]:
+    """解析面板的道纹段，**同时兼容带 X 与不带 X 两种写法**。
+
+    2026-09-16 用户令：道纹 X 不再写死在面板上，改由怪物 AI 在发动时自选，
+    上限只受[法限]或代价限制。
+
+    返回值 None 表示该道纹面板没写 X、需由发动方自选；整数表示面板写死的固定 X。
+    保留固定 X 分支是为了让面板迁移可以**逐本进行**——改到一半时新旧写法混用
+    也不会读不出道纹（旧写法直接解析成空字典会让怪物变白板，属于改坏）。
+    """
+    out: dict[str, int | None] = {}
+    for token in re.split(r'[，,、]', dw_str or ""):
+        token = token.strip()
+        if not token:
+            continue
+        mt = _DAOWEN_TOKEN.match(token)
+        if not mt:
+            continue
+        name, digits = mt.group(1), mt.group(2)
+        out[name] = int(digits) if digits else None
+    return out
+
+
 def parse_monster_pool(index_path: str | Path) -> dict:
     """从索引登记的副本文档解析怪物池。
     返回 {region: [{"name","attack_count","attack_power","blood_limit","dao_wen"}, ...]}"""
@@ -37,7 +65,7 @@ def parse_monster_pool(index_path: str | Path) -> dict:
                 # 新口径：血限 / 法限 / 速限（与轮回者「[血限]/[法限]/[速限]」同序）
                 hp, mana_limit, speed_limit = int(m.group(2)), int(m.group(3)), int(m.group(4))
                 dw_str = m.group(5) or ""
-                dao_wen = {n: int(v) for n, v in re.findall(r'([\u4e00-\u9fff]{2})(\d+)', dw_str)}
+                dao_wen = _parse_daowen_field(dw_str)
                 monsters.append({
                     "name": name, "blood_limit": hp,
                     "mana_limit": mana_limit, "speed_limit": speed_limit,
@@ -76,9 +104,11 @@ def make_monster_entity(monster_def: dict):
     m.current_mana = _mana_limit
     # 遗物【某人的偏爱】由 Entity.__post_init__ 统一授予，此处不再重复挂载。
     for dw_name, x in monster_def["dao_wen"].items():
+        # x 为 None → 面板未写死 X，标记 x_free 由发动方自选（2026-09-16 用户令）；
+        # x 为整数 → 旧面板的固定 X，原样保留。
         m.dao_wen[dw_name] = DaoWenInstance(
             dao_wen=DaoWen(name=dw_name, formula="", cost_type="", cost_formula="", effect_formula=""),
-            x_value=x)
+            x_value=(x if x is not None else 0), x_free=(x is None))
     from .gamedata import ORIGINAL_MONSTER_DAOWEN
     if any(name in ORIGINAL_MONSTER_DAOWEN for name in m.dao_wen):
         m._had_monster_daowen = True

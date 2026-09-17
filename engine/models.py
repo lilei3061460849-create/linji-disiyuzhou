@@ -46,6 +46,10 @@ class DaoWenInstance:
     """道纹实例 - 角色持有的道纹"""
     dao_wen: DaoWen
     x_value: int = 0            # 当前X值（自由控X规则）
+    # 2026-09-16 用户令：面板不再写死 X，改由怪物 AI 在发动时自选，
+    # 上限只受[法限]或代价限制。x_free=True 表示面板没写 X、X 待发动时自选；
+    # x_free=False 表示面板写了固定 X（兼容旧面板，迁移期两种写法都必须能跑）。
+    x_free: bool = False
     cooldown_remaining: int = 0 # 冷却剩余
     is_frozen: bool = False     # 是否被封印
     sha_qi: str = ""            # 乱葬岗附煞：法煞/魂煞/冥煞/血煞/锁煞/心煞
