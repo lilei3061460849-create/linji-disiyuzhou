@@ -1056,6 +1056,21 @@ class TacticalAI:
     # ---------- 普攻（DM裁定 2026-09-09，实验旗标 LJ_AI_BASIC_ATTACK=1） ----------
 
     @staticmethod
+    def _target_worth_dodging(target, per_hit: int, hp_left: int) -> bool:
+        """目标侧的闪避判据——**轮回者与怪物共用同一口径**（2026-09-17 用户令）。
+
+        闪避要花 1 点当前速度，而[攻击次数]=当前速度，等于用一次出手换一次免伤，
+        所以只在两种情形值得闪：
+          1. 致命击：这一击会把自己打死（per_hit >= 剩余生命）；
+          2. 闪比反打划算：单次伤害高于自己的攻击力——站着挨这一下，
+             比省下速度去反打更亏。
+
+        判据放在这里而不是散在各个调用点，是为了让"给怪物闪避权"只改一处闸门，
+        不必复制一份可能漂移的判据。
+        """
+        return per_hit >= hp_left or per_hit > target.effective_attack_power()
+
+    @staticmethod
     def _decline_spell_choices(option: dict) -> dict:
         """逐击法术反应全部不使用——接口要求按目标 spell_options 完整提交。"""
         spell_options = option.get("spell_options", {}) or {}
@@ -1084,24 +1099,28 @@ class TacticalAI:
             #   · LJ_AI_DUEL_DODGE=0 关闸复现旧行为（全程 dodge=False）。
             dodge_on = (os.environ.get("LJ_AI_DUEL_DODGE", "1") != "0"
                         and self.engine.state.in_final_duel)
+            # 2026-09-17 用户令：怪物同样享有闪避权（此前只有最终死斗里的轮回者会闪）。
+            # 判据与轮回者完全同口径——见 _target_worth_dodging；怪物"不一定用"，
+            # 只在致命击或"闪比反打划算"时才花那 1 点速度。
+            # LJ_AI_MONSTER_DODGE=0 关闸复现旧行为（怪物全程不闪）。
+            monster_dodge_on = os.environ.get("LJ_AI_MONSTER_DODGE", "1") != "0"
             attacker = self.engine.combat._combat_entity_refs().get(actor_ref)
-            target = self.engine.combat._combat_entity_refs().get(option["ref"]) \
-                if dodge_on else None
-            dodgeable = bool(dodge_on and target is not None and attacker is not None
-                             and target.entity_type == "轮回者"
-                             and option.get("can_dodge"))
+            target = self.engine.combat._combat_entity_refs().get(option["ref"])
+            dodgeable = bool(target is not None and attacker is not None
+                             and option.get("can_dodge")
+                             and ((dodge_on and target.entity_type == "轮回者")
+                                  or (monster_dodge_on and target.entity_type == "怪物")))
             if dodgeable:
                 from engine.combat import CombatEngine as _CE
                 bizhong = _CE.bizhong_remaining(self.engine.combat, attacker)
                 per_hit = attacker.effective_attack_power()
-                my_power = target.effective_attack_power()
+                # 攻击力与剩余生命由 _target_worth_dodging 逐个击实时读取
                 hp_left, budget = target.current_hp, target.current_speed
             hits = []
             for i in range(res.get("hit_count", 0)):
                 dodge = False
                 if dodgeable and budget > 0 and bizhong <= i:
-                    lethal = per_hit >= hp_left
-                    if lethal or per_hit > my_power:
+                    if self._target_worth_dodging(target, per_hit, hp_left):
                         dodge = True
                         budget -= 1
                 if dodgeable and not dodge:
