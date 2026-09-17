@@ -751,6 +751,9 @@ class DaoWenEngine:
             "dao_wen": "点金",
             "x": x,
             "cost_type": CostType.MANA.value,
+            # 2026-09-16 由 8X 下调为 3X（见 tests/test_exclusive_zui_twisted.py
+            # 断言）。注意：本函数 docstring 与 summary 仍写着 8X，属未同步的
+            # 过期文案（同文件另一处注释还留着更早的 10X），待清理。
             "cost": 3 * x,
             "shard_gain": x,
             "summary": f"消耗{8*x}法力，获得{x}个碎片"
