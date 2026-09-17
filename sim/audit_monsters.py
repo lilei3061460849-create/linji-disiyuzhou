@@ -36,7 +36,7 @@ def audit():
     assert len(monsters) == 36, f"应解析36只一阶池怪，实{len(monsters)}"
     ATTR_CAP = 60
     print(f"解析到36只一阶副本池怪，属性点上限={ATTR_CAP}（⌈血限/6⌉+2×攻击次数+2×攻击力）\n")
-    print(f"{'怪物':<8}{'副本':<6}{'面板':<13}{'道纹(数量/总值)':<22}"
+    print(f"{'怪物':<8}{'副本':<6}{'面板':<13}{'道纹(数量)':<22}"
           f"{'成本':<6}{'判定':<8}{'道纹审查'}")
     all_viol = []
     for region in ["扭曲都市", "罪孽都市", "龙心谷"]:
@@ -47,11 +47,13 @@ def audit():
             if cost > ATTR_CAP: all_viol.append(m["name"])
             # 道纹审查
             dws = list(m["dw"].items())
-            n, total = len(dws), sum(m["dw"].values())
+            n = len(dws)
             issues = []
 
+            # 2026-09-16 用户令：「道纹总值」配额已废止（它本是"怪物不支付法力"的
+            # 补丁，改付法力后由[法限]预算承担约束）。此处不再审查总值，
+            # 且面板已不写 X，dw 的值为 None，求和会直接抛 TypeError。
             if n != 3: issues.append(f"数量{n}≠3")
-            if total != 8: issues.append(f"总值{total}≠8")
             key = (m["ac"], m["ap"], m["hp"], tuple(sorted(dws)))
             if key in seen: issues.append(f"与{seen[key]}组合重复")
             seen[key] = m["name"]
@@ -60,9 +62,10 @@ def audit():
                 if d not in legal:
                     src = next((r for r, s in REGION_EXCLUSIVE.items() if d in s and r != region), None)
                     issues.append(f"【{d}】" + (f"系{src}专属" if src else "不在任何许可池"))
-            dw_str = "+".join(f"{d}{v}" for d, v in dws)
+            # X 为 None 表示面板未写死、发动时自选，打印时只显示道纹名
+            dw_str = "+".join(f"{d}{'' if v is None else v}" for d, v in dws)
             print(f"{m['name']:<8}{region:<6}{m['ac']}×{m['ap']}/{m['hp']:<7}"
-                  f"{dw_str+' ('+str(n)+'/'+str(total)+')':<22}"
+                  f"{dw_str+' ('+str(n)+'条)':<22}"
                   f"{cost:<6}{verdict:<8}{'；'.join(issues) if issues else '合规'}")
         print()
     print("===== 汇总 =====")

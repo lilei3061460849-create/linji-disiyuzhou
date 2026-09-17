@@ -52,9 +52,12 @@ def make_monster(md):
                blood_limit=md["hp"], current_hp=md["hp"],
                attack_count=md["ac"], attack_power=md["ap"])
     for n, x in md["dw"].items():
+        # 2026-09-16 用户令：面板不再写死 X，解析结果为 None（发动时自选）。
+        # 直接把 None 塞进 x_value 会让后续的 X 算术（如 YUANCHU_COST_RATE * x）
+        # 抛 TypeError，故与 engine/monsters.py 同口径：None → x_free，值暂记 0。
         m.dao_wen[n] = DaoWenInstance(
             dao_wen=DaoWen(name=n, formula="", cost_type="", cost_formula="", effect_formula=""),
-            x_value=x)
+            x_value=(x if x is not None else 0), x_free=(x is None))
     # 副本专属道纹运行态（裁定⑨）
     m.fake_shards = 0; m.shards = 0
     m._jiahuo_left = 0; m._jiahuo_target = None
