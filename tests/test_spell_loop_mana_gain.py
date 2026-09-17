@@ -22,11 +22,12 @@ import pytest
 from engine.models import DaoWen, DaoWenInstance, Relic
 from tests.test_dragon_heart import _new_engine, _start_with_enemy
 
-# 官方条目见 死者之书.md「## 可学法术 → 血炼周天」。先【再生】回血、再
+# 与官方条目 死者之书.md「## 可学法术 → 血炼周天」同构（现已是内置法术，
+# 这里刻意用另一个名字自创同一流程，以覆盖"自创循环法术"这条路径）。先【再生】回血、再
 # 【透支】把血卖成法力，【透支】的流血同时满足「失去生命后」驱动下一轮，
 # 与【千刀万剐】靠代价自驱同构。故需 3 点法力垫付第一轮【再生】。
 SPELL = {
-    "name": "血炼周天",
+    "name": "周天自持",
     "required_daowen": ["再生", "透支"],
     "trigger_condition": "失去生命后",
     "effect_flow": "发动再生X于自身→发动透支X于自身→循环",
@@ -40,18 +41,10 @@ def _engine_with_loop_spell(suffix, *, hp, mana, spells=None):
     for name in ("透支", "再生"):
         player.dao_wen[name] = DaoWenInstance(
             DaoWen(name=name, formula="", cost_type="", cost_formula="X", effect_formula=""))
-    # 自创法术只能在局外阶段学习，故所有法术都要赶在 _start_with_enemy 之前学完。
-    for spell in (spells if spells is not None else (SPELL,)):
-        engine.state.energy = 3
-        engine.execute_action("pre_battle_action",
-                              {"sub_action": "学习", "sub": "custom_spell", "spell": spell})
-        learned = engine.execute_action(
-            "pre_battle_action",
-            {"sub_action": "学习", "sub": "custom_spell", "spell": spell, "dm_approved": True})
-        assert learned["success"], learned.get("error")
-        assert learned["result"]["wired"] is True
-
+    # 2026-09-16：自创法术只能在战斗中用 define_spell 完成（消耗1次主动出手），
+    # 局外【学习·自创法术】入口已取消，故必须先开战再自创。
     _start_with_enemy(engine)
+    _define_spells(engine, spells if spells is not None else (SPELL,))
     foe = engine.state.enemies[0]
     foe.current_hp = 99999
     foe.attack_power = 5
@@ -61,6 +54,14 @@ def _engine_with_loop_spell(suffix, *, hp, mana, spells=None):
     return engine
 
 
+def _define_spells(engine, spells):
+    """战斗中自创法术（2026-09-16 新规则入口，每次消耗 1 次主动出手）。"""
+    for spell in spells:
+        result = engine.execute_action("define_spell", {"spell": spell})
+        assert result["success"], result.get("error")
+        assert result["result"]["wired"] is True
+
+
 def _fire(engine, cycles, x=3):
     """让怪物普攻一次触发【失去生命后】，并提交 cycles 轮循环。"""
     combat = engine.combat
@@ -68,12 +69,12 @@ def _fire(engine, cycles, x=3):
     actor = prepared["actors"][0]
     target = actor["attack_target_options"][0]
     options = target["spell_options"]
-    assert any(s["spell_name"] == "血炼周天" and s["loop"] for s in options["after"])
+    assert any(s["spell_name"] == "周天自持" and s["loop"] for s in options["after"])
 
     steps = [{"x": x, "target_ref": "player:0"}, {"x": x, "target_ref": "player:0"}]
     spell_choices = {
         "before": {s["spell_name"]: {"use": False} for s in options["before"]},
-        "after": {"血炼周天": {"use": True, "cycles": [list(steps) for _ in range(cycles)]}},
+        "after": {"周天自持": {"use": True, "cycles": [list(steps) for _ in range(cycles)]}},
         "damage_after": {s["spell_name"]: {"use": False} for s in options["damage_after"]},
         "life_before": {s["spell_name"]: {"use": False} for s in options["life_before"]},
     }
@@ -107,24 +108,12 @@ def _engine_with_branch_spell(suffix, *, mana):
         player.dao_wen[name] = DaoWenInstance(
             DaoWen(name=name, formula="", cost_type="", cost_formula="X", effect_formula=""))
 
-    engine.state.energy = 3
-    draft = engine.execute_action("pre_battle_action", {
-        "sub_action": "学习", "sub": "custom_spell", "spell": BRANCH_SPELL,
-    })
-    assert draft["success"], draft
-    engine.state.energy = 3
-    learned = engine.execute_action("pre_battle_action", {
-        "sub_action": "学习", "sub": "custom_spell", "spell": BRANCH_SPELL,
-        "dm_approved": True,
-    })
-    assert learned["success"], learned
-    assert learned["result"]["wired"] is True
-
     # 让前一击的真实失血与【承露盏】在同一阶段内把法力从<2推到≥2，
     # 直接覆盖用户要求的“承露盏+血溅五步”引擎路径。
     engine.state.relics.append(Relic(
         name="承露盏", effect="每累计失去10点生命，获得1点法力"))
     _start_with_enemy(engine)
+    _define_spells(engine, (BRANCH_SPELL,))
     foe = engine.state.enemies[0]
     foe.current_hp = 99999
     foe.attack_power = 6

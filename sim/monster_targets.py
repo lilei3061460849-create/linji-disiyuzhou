@@ -16,7 +16,7 @@
 from typing import Optional
 
 MONSTER_SELF_DAOWEN = {
-    "自愈", "庇护", "再生", "固执", "疯狂", "强化", "借力", "兴奋", "滋养", "龙鳞",
+    "自愈", "庇护", "再生", "固执", "疯狂", "全力", "借力", "兴奋", "滋养", "龙鳞",
     "狂暴", "必中", "超频", "急速", "加速", "滑翔", "飞行", "自食", "招魂", "变形",
     "净化", "消灾", "增殖", "假钞",
     # 怪物面板实测补充（2026-08-21 分类覆盖审计）：
@@ -28,7 +28,7 @@ MONSTER_SELF_DAOWEN = {
 
 MONSTER_HOSTILE_DAOWEN = {
     "杀伐", "血债", "衰败", "减速", "束缚", "眩晕", "僵化", "蒙蔽", "弱化", "无神",
-    "愤怒", "迟滞", "无力", "点金", "逼债", "清算", "赎金", "赌命", "波及",
+    "愤怒", "全速", "无力", "点金", "逼债", "清算", "赎金", "赌命", "波及",
     "定型", "畸变", "坏死", "爆裂", "退化", "加害", "裂变", "嫁祸", "伤痕", "冥气",
     "勾魂", "镇尸", "缄默", "瓦解", "尸爆", "坠落", "自残", "寄生", "封印", "贯穿",
     "洞察",
@@ -57,7 +57,7 @@ MONSTER_DAOWEN_SELF = {
 }
 MONSTER_DAOWEN_OUTPUT = {
     # 原始
-    "狂暴", "强化",
+    "狂暴", "全力",
     # 转化
     "自残",
     # 杀伐闭环（怪物可经事件/原初持有）
@@ -69,7 +69,7 @@ MONSTER_DAOWEN_CONTROL = {
     # 原始
     "减速",
     # 转化
-    "愤怒", "无神", "弱化", "无力", "迟滞", "眩晕", "蒙蔽", "衰败", "坠落",
+    "愤怒", "无神", "弱化", "无力", "全速", "眩晕", "蒙蔽", "衰败", "坠落",
     # 杀伐闭环
     "束缚", "封印",
     # 副本专属
@@ -126,6 +126,94 @@ def pick_monster_daowen_option(cands: list[dict], *, player_low: bool = False,
         if mech_cands:
             return mech_cands[0]
     return min(cands, key=lambda o: monster_daowen_group(o["name"]))
+
+
+def pick_monster_daowen_x(engine, monster, option, choice_tpl: dict, token: str) -> int:
+    """x_free 道纹：用**战术预演评分**为怪物挑一个 X（2026-09-16 用户令，选案 C）。
+
+    面板不写死 X，能开多大只受[法限]或代价限制——但"能开多大"不等于"该开多大"。
+    X 越大代价越高（法力即[攻击力]，异变更是会把自己推向【崩解】），
+    因此逐个候选档位真实预演一遍，按后果评分取最优。
+
+    实现要点：
+    - 预演走 engine/ai_preview.py 的 ActionPreview（deepcopy state 后真实执行再丢弃），
+      不复制任何伤害/反伤规则，预演与结算口径天然一致
+    - 评分走 TacticalAI._score_candidate，用 actor=monster 把视角翻到怪物侧
+      （_split_diff 按名字在 diff["enemies"] 里找自己，怪物侧同样成立）
+    - 只取 1 / 中档 / 上限 三个代表值，不枚举全部 X——预演要 deepcopy 整个
+      state，全枚举在长模拟里开销过大
+    - 评分返回 None 表示该档位会把自己玩死（如异变逼近崩解线），直接跳过
+    - 全部候选都不可用时回退到上限，与引擎侧缺 x 的回退口径一致
+
+    choice_tpl 是已拼装好的完整提交模板（含攻击块），这里只替换 daowen["x"]；
+    保留攻击块是因为引擎要求 attack_actions 的逐击命中数必须提交完整，
+    只提交道纹会被拒（攻击部分的后果在各候选间是常量，不影响 X 之间的比较）。
+    """
+    import copy
+
+    max_x = int(option.get("max_x") or option.get("x") or 1)
+    if max_x <= 1:
+        return max(1, max_x)
+
+    from engine.ai_preview import ActionPreview
+    from engine.ai_tactics import TacticalAI
+
+    foes = [x for x in (engine.state.get_all_player_side() or []) if x.is_alive]
+    ai = TacticalAI(engine, actor=monster, enemies=foes)
+    preview = ActionPreview(engine)
+
+    best, best_score = max_x, None
+    for x in sorted({1, max(1, max_x // 2), max_x}):
+        trial = copy.deepcopy(choice_tpl)
+        trial["daowen"]["x"] = x
+        out = preview.preview("resolve_monster_phase",
+                              {"token": token, "choices": [trial]})
+        res = out.get("result") or {}
+        if not res.get("success"):
+            continue
+        score = ai._score_candidate(out.get("diff") or {},
+                                    "%sX=%d" % (option.get("name", "?"), x))
+        if score is None:
+            continue
+        score += _persistent_duration_value(engine, monster, option, x, ai)
+        if best_score is None or score > best_score:
+            best_score, best = score, x
+    return best
+
+
+def _persistent_duration_value(engine, monster, option, x, ai) -> float:
+    """跨回合生效的**时长型**道纹（duration == X）补一项期望收益。
+
+    典型：【狂暴】「异变+5X，回始发动一轮额外攻击，持续X回合」。效果从**下一
+    回合**才兑现，单步预演只看得到异变代价、一分收益都没有，于是恒选 X=1。
+    但按回合摊薄，X=1 与 X=9 的异变单价完全相同（都是 5/回合），真正的差别在
+    **道纹出手位**——X=1 每回合都要重放、占掉一次道纹机会；X=9 一次买断九回合。
+
+    收益按"每回合产出 × 有效回合数 × 折价"估：
+      · 每回合产出 = 攻次 × 攻力（该 buff 额外一轮攻击的伤害）
+      · 有效回合数 = min(X, 预期剩余回合)——打不完那么多回合，多买的时长是浪费
+      · 折价 0.5：战斗进程不确定（怪物可能先死、目标可能换），保守折扣
+    只作用于 duration == X 的道纹；【加害】这类 duration=-1 的持续状态不在此列
+    （它的 +X 在**当回合**的攻击里就已结算，预演看得到，不需要补）。
+    """
+    try:
+        from engine.daowen import DaoWenEngine
+        calc = DaoWenEngine.resolve(option.get("name", ""), x, caster=monster)
+    except Exception:
+        return 0.0
+    if int(calc.get("duration") or 0) != x:
+        return 0.0
+
+    per_round = monster.effective_attack_count() * monster.effective_attack_power()
+    if per_round <= 0:
+        return 0.0
+    try:
+        incoming = max(1.0, float(ai.incoming_damage()))
+    except Exception:
+        incoming = 1.0
+    expected_rounds = monster.current_hp / incoming
+    effective = min(float(x), expected_rounds)
+    return 0.5 * per_round * effective
 
 
 def pick_wave_dodge_targets(option: dict) -> list[dict]:

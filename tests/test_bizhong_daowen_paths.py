@@ -37,7 +37,10 @@ def _engine(suffix, region="乱葬岗"):
     return e
 
 
-def _monster(daowen, name="寄骨蝇", hp=200, atk=1, hits=1):
+def _monster(daowen, name="寄骨蝇", hp=200, atk=20, hits=1):
+    # 2026-09-16：怪物[法限]即法力池，atk 同时就是它的法力上限。原默认值 atk=1
+    # 付不起本文件用到的道纹（勾魂X/衰弱X 等），抬到 20。本文件只断言必中/闪避
+    # 与目标选择，不断言怪物伤害。
     m = Entity(name=name, entity_type="怪物", blood_limit=hp, current_hp=hp,
                attack_count=hits, attack_power=atk)
     for dw, x in daowen.items():

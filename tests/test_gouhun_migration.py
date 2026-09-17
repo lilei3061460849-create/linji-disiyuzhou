@@ -155,8 +155,10 @@ def test_resonance_conversion_does_not_clear_active_gouhun():
     e.state.phase = "in_combat"
     e.state.current_round = 2
     p = e.state.player
+    # 2026-09-16：怪物[法限]即法力池。勾魂4 经曲解变镇尸4，镇尸消耗2X=8，
+    # 原法限 1 付不起，抬到 12。本用例只断言牌面改写与道纹可不发动，不断言伤害。
     m = Entity(name="寄骨蝇", entity_type="怪物", blood_limit=200, current_hp=200,
-               attack_count=1, attack_power=1)
+               attack_count=1, attack_power=12)
     m.dao_wen["勾魂"] = DaoWenInstance(
         DaoWen(name="勾魂", formula="", cost_type="消耗", cost_formula="X",
                effect_formula=""), x_value=4)

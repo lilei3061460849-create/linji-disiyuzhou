@@ -125,13 +125,23 @@ def test_gangpailing_executes_exactly_once():
 
 
 def test_gangpailing_order_between_other_battle_start_relics():
-    """战始顺序保持：缄默面具（旧位置在前）→ 帮派令 → （负岳索等在后）。"""
+    """战始顺序保持：龙族利爪(4) → 帮派令(10) → （负岳索等在后）。
+
+    2026-09-17：【缄默面具】改版为「[战终][法限]+X」，已不在战始相位，
+    故战始日志不再含缄默面具条目。
+    """
     state, combat, player, _ = _arena()
     state.relics = [Relic("缄默面具", ""), Relic("帮派令", "")]
     state.event_modifiers["silent_mask_x"] = 2
     logs = combat.process_relics("battle_start", {"relic_choices": {}})
-    assert logs == ["缄默面具：+40法力", "帮派令：获得洗劫3"], \
-        "迁移必须保持缄默面具先于帮派令"
+    assert logs == ["帮派令：获得洗劫3"], \
+        "缄默面具已移至战终，战始只剩帮派令"
+
+    # 缄默面具改在战终结算：[法限]+X
+    limit_before = player.mana_limit
+    end_logs = combat.process_relics("battle_end")
+    assert any("缄默面具" in line for line in end_logs), end_logs
+    assert player.mana_limit == limit_before + 2
 
 
 def test_gangpailing_priority_among_battle_start_mechanisms():
@@ -229,29 +239,30 @@ def test_gangpailing_reference_sweep_via_full_process_relics():
 
 # ==================== 8. BATTLE_START 全管线（最终行为验证阶段新增） ====================
 
-def test_battle_start_pipeline_silent_mask_then_gangpailing():
-    """战始相位双机制管线：缄默面具(5) -> 帮派令(10) 在同一次 process_relics 中依次生效。
+def test_battle_start_pipeline_gangpailing_then_silent_mask_at_end():
+    """战始相位：缄默面具已移至战终，战始只剩帮派令；缄默面具在战终结算[法限]+X。
 
-    旧代码行为：process_relics 战始段先缄默面具块、后帮派令块；新机制同相位按 priority 保序。
+    2026-09-17 用户令改版：【缄默面具】由「[战始]+20X 法力」改为「[战终][法限]+X」。
+    旧代码行为：process_relics 战始段先缄默面具块、后帮派令块；改版后两者不在同一相位。
     """
     state, combat, player, enemy = _arena()
     state.relics = [Relic("缄默面具", ""), Relic("帮派令", "")]
-    state.event_modifiers["silent_mask_x"] = 2   # 缄默面具 X=2 -> +40 法力
+    state.event_modifiers["silent_mask_x"] = 2   # 缄默面具 X=2 -> [法限]+2
 
     logs = combat.process_relics("battle_start", {"relic_choices": {}})
 
-    # 日志顺序必须与旧实现一致：缄默面具在前，帮派令在后
-    assert logs[0] == "缄默面具：+40法力"
-    assert logs[1] == "帮派令：获得洗劫3"
-    assert player.current_mana == 40, f"实际法力={player.current_mana}"
+    assert logs == ["帮派令：获得洗劫3"], logs
     assert _wash_statuses(player) == [("洗劫", 3, 3, "帮派令")]
+    assert player.current_mana == 0, "战始不再给法力"
 
-    # 只触发一次：重复调用不再叠加
-    mana_after_first = player.current_mana
+    limit_before = player.mana_limit
+    end_logs = combat.process_relics("battle_end")
+    assert any("缄默面具" in line for line in end_logs), end_logs
+    assert player.mana_limit == limit_before + 2
+
+    # 只触发一次：重复战始不再叠加法限
     combat.process_relics("battle_start", {"relic_choices": {}})
-    # 2026-09-13 全局上限：第二次 +40 只能把池子填到[法限]50 为止（已有 40 → +10）。
-    # 本条要守的不变量是"重复战始仍会触发"，而不是"每次都真加满 40"。
-    assert player.current_mana == player.mana_limit, "重复战始仍可触发（增量被[法限]截断）"
+    assert player.mana_limit == limit_before + 2, "战始不加法限"
     assert len([s for s in player.status_effects if s.name == "洗劫"]) == 1
 
 

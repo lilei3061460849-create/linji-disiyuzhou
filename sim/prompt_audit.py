@@ -204,7 +204,7 @@ _hp = [
     ("残韵小纹转大纹救急技巧", "B", "OVER_SPEC"),
     ("原始怪物纹仅首次支付异变5X", "B", "F: 引擎语义"),
     ("癌变分流角色类型结算", "B", "F: 引擎+测试"),
-    ("强化怪池占比静态vs样本口径", "B", "方法论"),
+    ("全力怪池占比静态vs样本口径", "B", "方法论"),
 ]
 for i, (t, cls, note) in enumerate(_hp, 1):
     fl = ["OVER_SPECIFIED"] if "OVER_SPEC" in note else []

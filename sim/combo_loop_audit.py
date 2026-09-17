@@ -490,8 +490,8 @@ def acquisition_static():
                 flags["狂暴"].append((m["name"], atk))
             if "自愈" in names:
                 flags["自愈"].append((m["name"], atk))
-            if "强化" in names:
-                flags["强化"].append((m["name"], atk))
+            if "全力" in names:
+                flags["全力"].append((m["name"], atk))
             if atk >= 4:
                 flags["高攻次≥4"].append((m["name"], atk))
         out[region] = {k: v for k, v in flags.items()}

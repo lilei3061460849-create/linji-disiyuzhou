@@ -323,16 +323,25 @@ def test_battle_start_both_relics_sealed_no_trigger():
 
 
 def test_battle_start_partial_seal_one_fires_one_skips():
-    """帮派令被封印、缄默面具未封印：只有缄默面具触发。"""
+    """帮派令被封印、缄默面具未封印：战始都不触发；战终由缄默面具触发[法限]+X。
+
+    2026-09-17 用户令改版：【缄默面具】由「[战始]+20X 法力」改为「[战终][法限]+X」，
+    已不在 BATTLE_START 相位，故战始不再有它的条目。
+    """
     state, combat = _arena(relics=[Relic("缄默面具", ""), Relic("帮派令", "")],
                            sealed={"帮派令": 2})
     player = state.player
     state.event_modifiers["silent_mask_x"] = 1
 
     logs = combat.process_relics("battle_start", {"relic_choices": {}})
-    assert logs == ["缄默面具：+20法力"]
-    assert player.current_mana == 50 + 20
+    assert logs == [], f"战始两者都不触发: {logs}"
     assert not player.has_status("洗劫"), "封印的帮派令不得授予洗劫"
+
+    limit_before = player.mana_limit
+    end_logs = combat.process_relics("battle_end")
+    assert any("缄默面具" in line for line in end_logs), end_logs
+    assert player.mana_limit == limit_before + 1
+    assert not player.has_status("洗劫"), "封印的帮派令仍不得授予洗劫"
 
 
 # ==================== 7. 极端数值边界 ====================

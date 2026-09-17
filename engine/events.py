@@ -17,7 +17,7 @@ from .dungeons import load_dungeon_documents
 EVENT_RELICS = {
     "猩红果实": "每场[战始]可选择是否流血10；若选择，则[战终][血限]+2",
     "苍白之花": "每场[战始]可选择是否疲惫5；若选择，则[战终]精力+1",
-    "缄默面具": "无法再使用任何附带「代价」的道纹，每场[战始]获得20X点法力",
+    "缄默面具": "无法再使用任何附带「代价」的道纹，每场[战终][法限]+X",
     "焦黑发丝": "每当场上有一个怪物死亡时，你的速度+2",
     "皮衣": "上回合失去生命时，下回合获得等量格挡",
     "帮派令": "[战始]获得【洗劫3】",
@@ -447,19 +447,21 @@ def resolve_option_effect(text: str, engine, event_name: str = "", params=None) 
             applied.append("失去10碎片")
             emp = Entity(name="追求者", entity_type="员工", blood_limit=96, current_hp=96,
                          attack_count=8, attack_power=2, is_deployed=False)
-            for dw_name, x in (("逆鳞", 2), ("活血", 3), ("固执", 3)):
+            for dw_name in ("逆鳞", "活血", "固执"):
+                # 2026-09-17：面板不写死 X（与 副本/龙心谷.md 的「96/2/8，逆鳞，活血，固执」一致）
                 emp.dao_wen[dw_name] = DaoWenInstance(
                     DaoWen(name=dw_name, formula="", cost_type="消耗", cost_formula="X", effect_formula=""),
-                    x_value=x)
+                    x_value=0, x_free=True)
             engine.state.employees.append(emp)
-            applied.append("获得追求者(8×2/96，逆鳞2，活血3，固执3)作为员工，默认待命，需deploy_employee派遣")
+            applied.append("获得追求者(96/2/8，逆鳞，活血，固执)作为员工，默认待命，需deploy_employee派遣")
             return {"applied": applied, "instructions": instructions}
         elif text.startswith("拿走口粮"):
             engine.state.shards += 50
             applied.append("获得50碎片")
             engine.state.forced_monsters_next_battle.append({
                 "name": "追求者", "attack_count": 8, "attack_power": 2, "blood_limit": 96,
-                "dao_wen": {"逆鳞": 2, "活血": 3, "固执": 3},
+                # x=None → x_free，与雇佣分支一致（2026-09-17 面板不写死 X）
+                "dao_wen": {"逆鳞": None, "活血": None, "固执": None},
             })
             applied.append("已登记：下一场战斗追求者将作为怪物额外出现"
                             "(记录于 state.forced_monsters_next_battle，出怪流程本身另行接入时读取)")
@@ -468,8 +470,11 @@ def resolve_option_effect(text: str, engine, event_name: str = "", params=None) 
 
     # ---- 已写死面板/跨战斗结果的确定性事件登记；创造性文本才进入Interrupt。 ----
     def _grant_daowen(entity, name, x):
+        # 2026-09-17：微光者面板与怪物同格式，不再写死 X（x_free），
+        # X 由发动时自选，上限只受[法限]或代价限制。x 参数仅为兼容旧调用。
         entity.dao_wen[name] = DaoWenInstance(
-            DaoWen(name=name, formula="", cost_type="", cost_formula="", effect_formula=""), x_value=x)
+            DaoWen(name=name, formula="", cost_type="", cost_formula="", effect_formula=""),
+            x_value=0, x_free=True)
 
     if event_name == "遗忘书屋" and text.startswith("阅读《禁忌法典》"):
         # 文本“自选一件遗物与20[碎片]”中的“与20”不匹配通用“获得X碎片”正则，此处直补；
@@ -744,19 +749,39 @@ def resolve_option_effect(text: str, engine, event_name: str = "", params=None) 
         applied.append(f"随机列出遗物候选：{'、'.join(discovery['choices'])}")
 
     # 学会法术必须由调用方在本次请求中显式提交合法名称。
+    # 2026-09-16：法术无需学习，事件授予的法术改为直接装配（armed_spells），
+    # 不再往 spells 里塞一个空流程的重复条目——内置法术由道纹推导，塞进去
+    # 只会与 spell_definition 的合成结果重复。
     if "选择学会两种法术" in text:
+        granted = []
         for name in params["spell_names"]:
-            player.spells.append(Spell(name=name, required_daowen=engine.SPELL_REGISTRY[name],
-                                       trigger_condition="", effect_flow=""))
-        applied.append(f"学会法术：{'、'.join(params['spell_names'])}")
-    # 获得N点[速限]/[法限]（属性点直接分配）
+            required = engine.SPELL_REGISTRY.get(name)
+            if required is None:
+                instructions.append(f"未知法术【{name}】，需DM裁定")
+                continue
+            if not all(d in player.dao_wen for d in required):
+                instructions.append(f"缺少道纹{required}，无法装配法术【{name}】，需DM裁定")
+                continue
+            if name not in player.armed_spells:
+                player.armed_spells = sorted(set(player.armed_spells) | {name})
+            granted.append(name)
+        if granted:
+            applied.append(f"装配法术：{'、'.join(granted)}")
+    # 获得N点[速限]/[法限]：按正文「2属性点 = 1[速限] = 1[法限]」，
+    # 速限与法限同价，各按字面点数加到对应上限（2026-09-16 裁定，清单 A4：
+    # 旧实现给法限加 2×x，与速限口径不一致）。
     for m in re.finditer(r'获得(\d+)点\s*\[?速限\]?', text):
         x = int(m.group(1)); player.speed_limit += x; player.current_speed = player.speed_limit; applied.append(f"获得{x}速限")
     for m in re.finditer(r'获得(\d+)点\s*\[?法限\]?', text):
-        x = int(m.group(1)); player.mana_limit += 2 * x; player.current_mana = player.mana_limit; applied.append(f"获得{x}法限")
-    # 属性点
-    if '属性点' in text and ('获得' in text or '+' in text):
-        player.speed_limit += 1; player.current_speed = player.speed_limit; applied.append("获得1速限(属性点)")
+        x = int(m.group(1)); player.mana_limit += x; player.current_mana = player.mana_limit; applied.append(f"获得{x}法限")
+    # 属性点：入属性点池，由玩家按正文自行兑换（2026-09-16 裁定，清单 A3：
+    # 旧实现把任意含"属性点"的文本直接吞成 +1 速限，既绕过属性点池，
+    # 也比价错误——1点属性点买不到1点速限，速限是2点一档）。
+    m_attr = re.search(r'获得(\d+)点?\s*属性点|属性点\s*\+(\d+)', text)
+    if m_attr:
+        pts = int(m_attr.group(1) or m_attr.group(2) or 1)
+        engine.state.attribute_points += pts
+        applied.append(f"获得{pts}属性点（属性点池 {engine.state.attribute_points}）")
     # 拒绝/无事
     if ('无事发生' in text or text.startswith('拒绝：') or text.startswith('拒绝:')
             or text.startswith('观棋') or text.startswith('无视') or text.startswith('离开')

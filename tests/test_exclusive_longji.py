@@ -196,8 +196,8 @@ def test_monster_activates_exclusive():
     })
     assert resolved["success"]
     assert m.has_status("逆鳞")
-    # 准则9（DM裁定2026-08-18）：跨回合可重复发动，X递增+2（一阶）
-    assert m.dao_wen["逆鳞"].x_value == 4
+    # 2026-09-16 用户令：道纹递增已废止，X 保持面板写定值；跨回合可重复发动照旧。
+    assert m.dao_wen["逆鳞"].x_value == 2
     engine.execute_action("round_end", {})
     engine.execute_action("round_start", {})
     prepared2 = engine.execute_action("prepare_monster_phase", {})

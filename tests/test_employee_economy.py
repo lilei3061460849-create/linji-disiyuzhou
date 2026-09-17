@@ -9,7 +9,7 @@ pytest 风格测试 - 里程碑2：员工经济系统（出战支援 / 战终工
 5. 失信黑名单：累计3次(拒付/解雇/死亡离队) -> is_blacklisted，之后雇佣被拒绝
 6. "还债"转化员工独立于本套经济(自动部署、不产生工资决策)——设计取舍見随消息附带的进度报告
 
-不在本文件覆盖范围内：朋友/员工自动出手实际战斗行为、撤退机制、员工叛变"镇压"子战斗、
+不在本文件覆盖范围内：朋友/员工自动出手实际战斗行为、撤退机制、员工背叛"镇压"子战斗、
 第8场最终死斗、龙心谷"炼心"具体效果、雇佣后的"发现并选择转化道纹"子步骤。
 
 运行方式：
@@ -267,7 +267,9 @@ def test_hire_allows_zero_attack_count_boundary():
     assert r["success"] is True
     assert len(engine.state.employees) == before_count + 1
     emp = next(e for e in engine.state.employees if e.name == "纯坦克")
-    assert emp.attack_count == 0 and emp.action_count == 0
+    # 2026-09-16：出手次数全体固定 2，不再由攻击次数推导。0 攻次员工仍有 2 次出手，
+    # 只是[攻次]=[当前速度]=0 → 普攻 0 击；它可以拿这 2 次出手去发动道纹。
+    assert emp.attack_count == 0 and emp.action_count == 2
 
     r2 = _hire(engine, {
         "sub_action": "雇佣", "name": "合法员工", "blood_alloc": 17, "atk_bundles": 1,

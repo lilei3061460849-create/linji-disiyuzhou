@@ -1,7 +1,10 @@
 """二阶副本面板合规审计契约测试。
 
-口径（2026-08-14 裁定，2026-09-11 预算并入属性点）：二阶（乱葬岗/沉沦海）可分配属性点140，道纹5/总值15；
-面板成本=⌈血限/6⌉+2×攻击次数+2×攻击力 ≤140。永夜庭特殊属性点（60×场次）豁免。
+2026-09-16 用户令：怪物设计只约束**属性点数**与**道纹数量**，道纹 X 值自由自定义。
+旧的「道纹总值」配额已废止——它本是"怪物发动道纹不支付法力"的补丁；怪物改为支付法力后，
+真正的约束是[法限]构成的每回合法力预算。
+口径：二阶（乱葬岗/沉沦海）可分配属性点100，道纹5条；
+面板成本=⌈血限/6⌉+2×法限+2×速限 ≤100。永夜庭特殊属性点（60×场次）豁免。
 """
 import importlib.util
 import os
@@ -17,18 +20,21 @@ _spec.loader.exec_module(ad)
 
 
 def test_tier2_dungeon_panels_all_compliant():
-    """正常路径：乱葬岗/沉沦海全部普通池怪面板≤140、道纹5/总值15。"""
+    """正常路径：乱葬岗/沉沦海全部普通池怪面板≤100、道纹5条（总值不再约束）。"""
     for fname in ("乱葬岗", "沉沦海"):
         spec = ad.TARGETS[fname]
-        assert spec["budget"] == 100 and spec["dw_count"] == 5 and spec["dw_total"] == 15
+        # 2026-09-16 用户令：只约束属性点数与道纹数量；「道纹总值」配额已废止
+        # （它本是"怪物不支付法力"的补丁，改付法力后由[法限]预算承担该约束）。
+        assert spec["budget"] == 100 and spec["dw_count"] == 5
+        assert "dw_total" not in spec, "道纹总值配额已废止，不应再出现在审计口径里"
         monsters = [m for m in ad.parse_monsters(f"副本/{fname}.md")
                     if m["name"] not in ad.SPECIAL_MONSTERS]
         assert len(monsters) > 0
         for m in monsters:
             cost = ad.panel_cost(m["hp"], m["ap"], m["ac"])
-            assert cost <= 100, f"{fname}/{m['name']} 面板成本{cost}>140"
+            assert cost <= 100, f"{fname}/{m['name']} 面板成本{cost}>100"
             assert len(m["dw"]) == 5, f"{fname}/{m['name']} 道纹数{len(m['dw'])}≠5"
-            assert sum(m["dw"].values()) == 15, f"{fname}/{m['name']} 道纹总值≠15"
+            # 道纹总值不再约束（2026-09-16），X 值由[法限]预算自行决定
 
 
 def test_boundary_special_monsters_exempted():

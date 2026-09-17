@@ -33,8 +33,9 @@ def _engine(tmp_path):
 
 
 def _monster_with(name, daowen: dict):
+    # 2026-09-16：怪物[法限]即法力池；1 点付不起杀伐2/勾魂2/衰败2，抬到 20。
     m = Entity(name=name, entity_type="怪物", blood_limit=200, current_hp=100,
-               attack_count=1, attack_power=1)
+               attack_count=1, attack_power=20)
     for dw, x in daowen.items():
         m.dao_wen[dw] = DaoWenInstance(
             DaoWen(name=dw, formula="", cost_type="消耗", cost_formula="X",
@@ -120,12 +121,12 @@ def test_classification_sets_cover_all_dungeon_daowens():
     unclassified = needs_target - MONSTER_SELF_DAOWEN - MONSTER_HOSTILE_DAOWEN
     # 通用/区域道纹里允许未分类（默认走玩家优先），但至少不因分类缺失而崩溃；
     # 以下为当前怪物池里实际出现的需目标道纹，必须全部已分类。
-    critical = {"再生", "增殖", "庇护", "强化", "杀伐", "勾魂", "冥气", "镇尸",
+    critical = {"再生", "增殖", "庇护", "全力", "杀伐", "勾魂", "冥气", "镇尸",
                 "衰败", "减速", "必中", "飞行", "狂暴", "自残", "弱化", "借力",
                 "坏死", "爆裂", "定型", "僵化", "变形", "退化", "加害", "龙鳞",
                 "逆鳞", "活血", "裂变", "嫁祸", "背负", "伤痕", "点金", "逼债",
                 "抵扣", "清算", "赎金", "假钞", "赌命", "消灾", "封印", "波及",
-                "坠落", "寄生", "蒙蔽", "无神", "愤怒", "迟滞", "无力", "眩晕",
+                "坠落", "寄生", "蒙蔽", "无神", "愤怒", "全速", "无力", "眩晕",
                 "洞察", "滋养", "急速", "加速", "滑翔", "自食", "兴奋", "招魂",
                 "缄默", "瓦解", "尸爆", "分裂", "贯穿", "固执", "血债"}
     missing = critical - MONSTER_SELF_DAOWEN - MONSTER_HOSTILE_DAOWEN

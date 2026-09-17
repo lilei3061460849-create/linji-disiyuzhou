@@ -69,7 +69,7 @@ def test_boba_marks_and_unmarks_targets():
                               {"daowen_name": "波及", "x": 2, "dodge_targets": targets})
     assert r["success"], r
     assert r["calculation"]["mark_targets"] == 2
-    assert p.current_mana == mana - 6  # 波及消耗3X
+    assert p.current_mana == mana - 4  # 波及消耗3X→2X（2026-09-16）
     for ref in ("enemy:0", "enemy:1"):
         assert refs[ref].has_status("波及")
     assert r["dodge"]["wave_marked"] == [refs["enemy:0"].name, refs["enemy:1"].name]

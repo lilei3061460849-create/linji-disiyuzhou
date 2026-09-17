@@ -102,7 +102,7 @@ def test_shibao_classified_by_preview_not_by_label(tmp_path):
     probe = ai._probe("尸爆")
     assert probe is not None, "尸爆应可被预演归纳"
     assert probe["kind"] in ("damage", "tactician", "buff"), "分类须来自预演事件流"
-    assert probe["cost_per_x"] == 10           # 法力单价同样来自预演（10/X）
+    assert probe["cost_per_x"] == 3            # 尸爆消耗10X→3X（2026-09-16）
 
 
 # ---------- 边界条件 ----------

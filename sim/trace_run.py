@@ -72,7 +72,7 @@ def battle(player, defs, log, relics, rng):
                     act = bs.monster_activate(m, activated[id(m)], rng)
                     if act:
                         if act in ("蒙蔽","坏死","减速","僵化"): bs.apply_control_to_player(act, m, player)
-                        log.append(f"    {m.name}道纹出手：激活【{act}{m.dao_wen[act].x_value}】" + (f" 攻击力→{m.attack_power}" if act=="强化" else ""))
+                        log.append(f"    {m.name}道纹出手：激活【{act}{m.dao_wen[act].x_value}】" + (f" 攻击力→{m.attack_power}" if act=="全力" else ""))
         # 玩家出手
         mana = player.current_mana; acts = max(1, player.action_count)
         al = alive_ms(monsters); inc = sum(m.attack_count*m.attack_power for m in al)

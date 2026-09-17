@@ -46,12 +46,21 @@ class DaoWenInstance:
     """道纹实例 - 角色持有的道纹"""
     dao_wen: DaoWen
     x_value: int = 0            # 当前X值（自由控X规则）
+    # 2026-09-16 用户令：面板不再写死 X，改由怪物 AI 在发动时自选，
+    # 上限只受[法限]或代价限制。x_free=True 表示面板没写 X、X 待发动时自选；
+    # x_free=False 表示面板写了固定 X（兼容旧面板，迁移期两种写法都必须能跑）。
+    x_free: bool = False
     cooldown_remaining: int = 0 # 冷却剩余
     is_frozen: bool = False     # 是否被封印
     sha_qi: str = ""            # 乱葬岗附煞：法煞/魂煞/冥煞/血煞/锁煞/心煞
-    
+    # 【唯一】代价：规则正文「唯一：使用后，本次轮回中无法再次使用」。
+    # 与冷却同族但作用域更大——冷却按战斗场数递减，唯一是轮回级一次性，
+    # 跨场不恢复，只有开新轮回（状态重置）才清零。
+    spent_unique: bool = False
+
     def can_use(self) -> bool:
-        return not self.is_frozen and self.cooldown_remaining <= 0
+        return (not self.is_frozen and not self.spent_unique
+                and self.cooldown_remaining <= 0)
 
 
 @dataclass
@@ -86,6 +95,12 @@ class Relic:
     
     def to_dict(self) -> dict:
         return {"name": self.name, "effect": self.effect, "tags": self.tags}
+
+
+# 每只怪物出厂自带的遗物：怪物[回始]法力恢复至上限的**唯一来源**（2026-09-16 用户令）。
+# 定义在此而非 monsters.py：授予发生在 Entity.__post_init__，效果判定在 combat.py，
+# 两侧都要引用，放 models 可避免 monsters ↔ combat 的循环导入。
+MONSTER_MANA_RELIC = "某人的偏爱"
 
 
 @dataclass
@@ -223,6 +238,10 @@ class Entity:
     # 道纹与法术
     dao_wen: dict[str, DaoWenInstance] = field(default_factory=dict)
     spells: list[Spell] = field(default_factory=list)
+    # 已装配的内置法术名（2026-09-16 裁定：法术无需学习，但反应型法术需先
+    # 经 use_spell 装配表达意图后才会自动触发）。自创法术不在此列——战斗中
+    # 自创本身已花掉一次出手，等价于表达了意图，创建即生效。
+    armed_spells: list[str] = field(default_factory=list)
     # 残韵库存：每个轮回者实体独立持有（{转换: n, 反转: n, 曲解: n}）。
     # 早期版本残韵只挂在 State（仅玩家侧），导致守擂者同为轮回者却无残韵可用。
     # 现下放为实体级，使挑战者/守擂者共用同一套残韵机制（玩家侧仍经 State.resonance 兼容）。
@@ -311,6 +330,11 @@ class Entity:
     is_deployed: bool = True
     deployed_at_round: int = 0  # 派遣时 state.current_round 的原始值（用于结算"实际出场回合数"）
 
+    # 2026-09-17 用户令：[员工]**出场**（is_deployed 参战）并**存活**满
+    # EMPLOYEE_PROMOTION_BATTLES 场战斗后转为[朋友]。
+    # 只统计"本场实际参战且[战终]仍存活"的场次：待命未上场不计，阵亡清零不计。
+    survived_battles_as_employee: int = 0
+
     # 撤退（任意[朋友]/[员工]即将受到足以使当前命零的伤害时自动触发）：
     # 保留当前生命，不再计入本场战斗(get_all_player_side排除)，无法再次加入本场战斗；
     # 但未死亡，[战终]后随存活[朋友]/[员工]一同留存，下一场重置为False可正常参战。
@@ -342,6 +366,37 @@ class Entity:
     def __post_init__(self):
         if self.battle_start_blood_limit == 0:
             self.battle_start_blood_limit = self.blood_limit
+        # ---- 2026-09-16 属性模型统一的向上兼容 ----
+        # 统一后 [攻击次数]=[当前速度]、[攻击力]=[当前法力] 对全体生效，但历史代码里
+        # 怪物/[朋友]/[员工] 只带 attack_count/attack_power 两个面板值、没有上限字段，
+        # 换算后会被读成 0×0。故：上限缺省时由旧面板值推定，并在战始把当前值给满。
+        # 轮回者不在此列——它的当前法力/速度是战斗中的消耗状态，允许为 0，
+        # 在这里回填等于凭空回蓝，会直接抹掉"蓝即拳"的全部张力。
+        if self.mana_limit == 0 and self.attack_power > 0:
+            self.mana_limit = self.attack_power
+        if self.speed_limit == 0 and self.attack_count > 0:
+            self.speed_limit = self.attack_count
+        # ---- 2026-09-16 用户令：每个怪物自带遗物【某人的偏爱】----
+        # 怪物[回始]法力恢复至上限**不是怪物种族自带的能力**，而是这件遗物的效果。
+        # 授予点放在 Entity 而非怪物工厂，是为了让"凡是怪物就有它"对**所有**构造路径
+        # 都成立（生产走 make_monster_entity，测试夹具常直接 new Entity），
+        # 否则手造怪物会静默丢掉回满，出现"同样是怪物、行为却不同"的陷阱。
+        # 效果判定端只读遗物（见 engine/combat.py round_start），不读实体类型。
+        if self.entity_type == "怪物" and not any(
+                r.name == MONSTER_MANA_RELIC for r in self.relics):
+            self.relics.append(
+                Relic(name=MONSTER_MANA_RELIC, effect="[回始]法力恢复至上限",
+                      tags=["怪物自带"]))
+        if self.entity_type != "轮回者":
+            if self.current_mana == 0 and self.mana_limit > 0:
+                self.current_mana = self.mana_limit
+            if self.current_speed == 0 and self.speed_limit > 0:
+                self.current_speed = self.speed_limit
+        # 构造期结束标志：__init__ 里 attack_count/attack_power 的赋值会先于本方法触发
+        # 下面的写穿垫片，若垫片在构造期就生效，会和这里的"由旧面板推定上限"重复计数
+        # （例如 speed_limit=2 + attack_count=1 会被顶成 3）。故构造期只由本方法负责，
+        # 之后的运行时写入才交给垫片走增量。
+        object.__setattr__(self, "_panel_sync_ready", True)
 
     # ---- 「失去生命后」统一拦截 (2026-08-30) ---- 
     # 用户要求：不要再逐个效果开窗调 _fire_after_life_lost，只要当前生命
@@ -357,6 +412,25 @@ class Entity:
         object.__setattr__(self, name, value)
         if name == "current_hp" and old is not None and value < old:
             self._fire_hp_loss(old, value)
+        # ---- 2026-09-16 属性模型统一：旧面板字段写穿到新的上限/当前值 ----
+        # 统一后 [攻次]=[当前速度]、[攻力]=[当前法力]，但历史代码（含【变形】互换）
+        # 仍直接写 attack_count/attack_power。非轮回者在此同步写穿，否则换算读到 0×0。
+        # 轮回者**不写穿**：它的 attack_count/attack_power 是建号遗留字段、换算根本不读
+        # （如「龙族利爪」曾写死 3/1，若写穿会把玩家真实的法限/速限直接冲掉）。
+        if name in ("attack_power", "attack_count") and self.__dict__.get("_panel_sync_ready"):
+            etype = self.__dict__.get("entity_type")
+            if etype is not None and etype != "轮回者":
+                # **增量**写穿（而非把上限设成绝对值）：attack_power/attack_count 与
+                # 法限/速限在战始是相等的，但战斗中两者会被不同来源各自位移
+                # （血契分摊、疲惫代价、弱化…），用绝对值会抹掉那些真实消耗。
+                # 上限同步位移以维持「当前值永远落在 0~上限 闭区间」这条封顶规则。
+                d = value - (old if isinstance(old, int) else 0)
+                if name == "attack_power":
+                    self.mana_limit = max(0, self.mana_limit + d)
+                    self.current_mana = max(0, min(self.mana_limit, self.current_mana + d))
+                else:
+                    self.speed_limit = max(0, self.speed_limit + d)
+                    self.current_speed = max(0, min(self.speed_limit, self.current_speed + d))
 
     def _fire_hp_loss(self, old: int, new: int) -> None:
         eng = getattr(self, "_hp_engine_ref", None)
@@ -382,38 +456,49 @@ class Entity:
 
     
     def effective_attack_count(self) -> int:
-        """攻击次数（DM裁定 2026-09-10，**换算仅限轮回者**）：轮回者 = 当前速度。
+        """攻击次数（2026-09-16 用户令：**换算对全体角色生效**）＝ 当前速度。
 
-        怪物/[朋友]/[员工]仍读面板值——怪物不持有法力（规则正文），换算对它无意义。
+        旧口径把换算限定在轮回者身上，理由是怪物不持有法力；怪物与微光者现已与轮回者
+        同口径持有[速限]/[法限]，该理由不再成立，故去掉类型分支。
         普攻不会支付速度；只有当前速度已经因闪避等明确机制变化时，后续派生攻击次数才会随面板变化。
+
+        【全速】（2026-09-17 用户令，原名【迟滞】）覆盖：生效期间攻击次数锁定 = [速限]。
+        由于 clamp_immortal_body 已让「当前速度≤[速限]」无条件成立，本效果实为
+        增益——把被削的速度补满到上限，并免疫后续减速。走状态层，对全体角色生效。
         """
-        if self.entity_type == "轮回者":
-            return max(0, self.current_speed)
-        return max(0, self.attack_count)
+        if self.get_status_value("全速"):
+            return max(0, self.speed_limit)
+        return max(0, self.current_speed)
 
     def effective_attack_power(self) -> int:
-        """攻击力（DM裁定 2026-09-10，**换算仅限轮回者**）：轮回者 = 当前法力。
+        """攻击力（2026-09-16 用户令：**换算对全体角色生效**）＝ 当前法力。
 
         实时读取当前法力，不做快照：法力掉到 0 时每击 0 点，法力被补回来
-        （守夜灯/承露盏/血契/透支/再生等任何回蓝）后攻击力**同步回升**，
+        （守夜灯/承露盏/血契/透支/再生等任何回蓝、怪物的[回始]回满）后攻击力**同步回升**，
         并非单调下降。花蓝前要先算清这一笔对后续每击的连带影响。
+
+        两处覆盖（均走状态层，故对轮回者/怪物/朋友/员工同口径生效）：
+        - 【龙族利爪】（2026-09-17 用户令）：攻击力 = 当前法力×2。
+        - 【全力】（2026-09-17 用户令重做）：攻击力锁定 = [法限]，覆盖上一步的结果，
+          不再随当前法力下降。顺序上"全力"最后生效，故它压过龙族利爪的倍率。
         """
-        if self.entity_type == "轮回者":
-            return max(0, self.current_mana)
-        return max(0, self.attack_power)
+        power = self.current_mana
+        if self.get_status_value("龙族利爪"):
+            power *= 2
+        if self.get_status_value("全力"):
+            # 锁定为法限：花法力不再掉攻击力
+            power = self.mana_limit
+        return max(0, power)
 
     @property
     def action_count(self) -> int:
-        """出手次数：轮回者**固定2次**（DM裁定 2026-09-10，不再由速限推导——速限已改作
-        攻击次数的来源，不能再重复记账）；[朋友]/[员工](微光者，面板无速限)=攻击次数/3
-        向上取整。怪物行动由CombatEngine的prepare/resolve两阶段接口独立计算。
-        疯狂+X、无力-X 对本属性的两种口径均生效。"""
-        if self.entity_type in ("朋友", "员工"):
-            base = math.ceil(self.attack_count / 3) if self.attack_count > 0 else 0
-        elif self.entity_type == "轮回者":
-            base = 2
-        else:
-            base = math.ceil(self.speed_limit / 3) if self.speed_limit > 0 else 0
+        """出手次数：**全体角色固定2次**（2026-09-16 用户令）。
+
+        不再由速限/攻击次数推导——速限已改作攻击次数的来源，再拿它算出手会重复记账；
+        微光者旧的「攻击次数/3」口径同步废止（该式会让高攻次微光者白拿第3、4次出手）。
+        唯一的额外来源是遗物；【疯狂】+X、【无力】-X 照旧生效。
+        怪物行动仍由CombatEngine的prepare/resolve两阶段接口独立计算。"""
+        base = 2
         base += self.get_status_value("疯狂")
         base -= self.get_status_value("无力")
         return max(0, base)
@@ -474,6 +559,8 @@ class Entity:
         return detail
     
     MUTATION_COLLAPSE_THRESHOLD = 50  # 特殊事件【崩解】阈值：异变达到50层直接命零；原始道纹仅首次发动支付异变5X
+    # 2026-09-17 用户令：[员工]出场并存活满这么多场战斗即转为[朋友]（唯一事实源）。
+    EMPLOYEE_PROMOTION_BATTLES = 3
     # 致死类特殊事件的阈值（唯一事实源；CombatEngine 的同名量一律引用这里，禁止各写一份）：
     CANCER_HEAL_MULTIPLIER = 2.0  # 【癌变】：本场累计受到的回复量 ≥ 血限×该系数 即命零
     MEDIOCRITY_ROUNDS = 5         # 【凡庸】：连续 N 回合未出手、或连续 N 回合未使敌对角色掉血 即命零
@@ -606,11 +693,11 @@ class Entity:
         if effect.polarity == EffectPolarity.NEUTRAL.value:
             buffs = {
                 "固执", "贯穿", "急速", "洞察", "兴奋", "飞行", "滑翔", "狂暴",
-                "强化", "疯狂", "必中", "自愈", "洗劫", "逆鳞", "嫁祸", "背负",
+                "全力", "疯狂", "必中", "自愈", "洗劫", "逆鳞", "嫁祸", "背负",
                 "负岳索", "加速", "愤怒",
             }
             debuffs = {
-                "弱化", "无力", "减速", "迟滞", "束缚", "封印", "坠落",
+                "弱化", "无力", "减速", "全速", "束缚", "封印", "坠落",
                 "坏死", "爆裂", "退化", "定型", "畸变", "加害", "伤痕",
                 "寄生", "蒙蔽", "眩晕", "手雷减攻", "衰败", "被背负",
             }
@@ -661,6 +748,7 @@ class Entity:
             "ai_memory": self.ai_memory,
             "dao_wen": {k: v.dao_wen.name for k, v in self.dao_wen.items()},
             "spells": [s.name for s in self.spells],
+            "armed_spells": list(self.armed_spells),
             "relics": [r.to_dict() for r in self.relics],
             "status_effects": [
                 {"name": s.name, "value": s.value, "rounds": s.remaining_rounds,
@@ -830,11 +918,11 @@ class GameState:
     # 暂离不是死亡/永久离场，仍阻塞战终；到达回合始时把原实体重新加入 enemies。
     delayed_monster_reentries: list[dict] = field(default_factory=list)
 
-    # 员工叛变：待处理标记（[战终]检查命中后置真，三个处理分支任一生效后清空）
+    # 员工背叛：待处理标记（[战终]检查命中后置真，三个处理分支任一生效后清空）
     rebellion_active: bool = False
-    # 员工叛变·镇压子战斗：进行中标记（employees已搬入enemies，需resolve_rebellion_battle结算）
+    # 员工背叛·镇压子战斗：进行中标记（employees已搬入enemies，需resolve_rebellion_battle结算）
     rebellion_in_progress: bool = False
-    # 员工叛变·让利：每场工资在原公式基础上的固定加成（本次轮回持续生效）
+    # 员工背叛·让利：每场工资在原公式基础上的固定加成（本次轮回持续生效）
     wage_bonus: int = 0
 
     # 最终的冠冕/第8场死斗：进行中标记 + 当前该谁出手("player_side"/"opponent_side")

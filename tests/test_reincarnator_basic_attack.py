@@ -80,14 +80,19 @@ def test_attack_panel_is_derived_from_current_resources():
     assert (p.effective_attack_count(), p.effective_attack_power()) == (2, 3)
 
 
-def test_conversion_applies_only_to_reincarnator():
-    """边界（DM裁定原文「换算仅限轮回者」）：怪物没有法力，仍读自己的面板值。"""
+def test_conversion_applies_to_every_character():
+    """2026-09-16 用户令：[攻次]=[当前速度]、[攻力]=[当前法力] 对**全体角色**生效。
+
+    旧口径「换算仅限轮回者」已废止——怪物/微光者与轮回者同口径持有[速限]/[法限]，
+    "怪物不持有法力"这条旧条文不复存在，换算对它们不再无意义。
+    怪物战始当前值给满（故 15 = 由 attack_power 推定的法限），[回始]还会再次回满。
+    """
     e = _engine("monster", blood_points=1, speed_points=8, mana_points=16)
     m = Entity(name="尸霸", entity_type="怪物", blood_limit=264, current_hp=264,
                attack_count=5, attack_power=15, speed_limit=6, current_speed=6)
     e.state.enemies.append(m)
-    assert (m.effective_attack_count(), m.effective_attack_power()) == (5, 15)
-    assert m.current_mana == 0, "怪物不持有法力（规则正文）"
+    assert (m.effective_attack_count(), m.effective_attack_power()) == (6, 15)
+    assert m.current_mana == 15, "怪物战始法力给满=[法限]"
 
 
 def test_action_count_is_fixed_two():

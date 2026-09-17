@@ -9,7 +9,9 @@ pytest 风格测试 - 里程碑3：朋友/员工听从轮回者指令，对非�
 1. 攻击：验证[朋友]/[员工]通过现有 attack 动作的 attacker 参数发动攻击时，
    目标自动限定为对方阵营(既有实现，本文件补齐回归测试证明其确实可用于非玩家角色)。
 2. 道纹：generalize 后的 use_daowen 新增 actor 参数——
-   a) [朋友]/[员工]与怪物/微光者同属不持有法力的一方，发动道纹不支付法力，只消耗出手
+   a) [朋友]/[员工]与怪物、轮回者同口径持有[法限]，发动【消耗】类道纹同样支付
+      法力（2026-09-17 用户令裁定；AI_EXPERIENCE.md:278/:1254），并额外消耗其出手。
+      微光者为一池制、[回始]不回填，与怪物(遗物【某人的偏爱】每[回始]回满)不同
    b) 必须显式指定一个非自身的目标，否则拒绝
    c) 玩家自身发动道纹的原有行为(法力制、默认自身为目标)保持不变，向后兼容
 
@@ -74,14 +76,19 @@ def test_friend_attack_commanded_by_player_hits_enemy_side():
 
 
 def test_deployed_employee_can_be_commanded_to_use_daowen_on_enemy():
-    """正常路径：已部署[员工]听从指令对敌方发动道纹，无需法力(与怪物同规则)，只消耗出手"""
+    """正常路径：已部署[员工]听从指令对敌方发动道纹，照常支付法力并消耗其出手。
+
+    2026-09-17 用户令裁定：微光者（[朋友]/[员工]）与怪物、轮回者同口径持有[法限]、
+    发动【消耗】类道纹同样支付法力（AI_EXPERIENCE.md:278/:1254）。旧版"不持有法力、
+    不支付法力"是已废止条文的残留。微光者为一池制、[回始]不回填。
+    """
     engine = _new_engine_with_enemy("emp_daowen", region="罪孽都市")
     emp = Entity(name="工头", entity_type="员工", blood_limit=96, current_hp=96,
                  attack_count=4, attack_power=8, is_deployed=False)
     engine.state.employees.append(emp)
     _give_daowen(emp, "杀伐")
-    emp.current_mana = 0
-    emp.mana_limit = 0
+    # 一池制：法力 = [法限] = 攻击力 8，[回始]不回填
+    assert emp.current_mana == 8 and emp.mana_limit == 8
     engine.execute_action("deploy_employee", {"name": "工头"})
 
     enemy = engine.state.enemies[0]
@@ -89,7 +96,7 @@ def test_deployed_employee_can_be_commanded_to_use_daowen_on_enemy():
     r = engine.execute_action("use_daowen", {"actor": "工头", "daowen_name": "杀伐", "x": 5, "target": "测试怪"})
     assert r["success"] is True, r
     assert enemy.current_hp == hp_before - 25, "杀伐5应造成5*5=25点伤害（DM裁定 2026-09-10：5X）"
-    assert emp.current_mana == 0, "员工不应被扣减法力(本就没有法力)"
+    assert emp.current_mana == 3, "杀伐5需5点法力，一池制 8 点扣后应剩 3"
 
 
 def test_player_self_cast_unaffected_backward_compatible():
@@ -108,19 +115,22 @@ def test_player_self_cast_unaffected_backward_compatible():
 # 边界条件
 # ========================================================================
 
-def test_zero_attack_count_ally_has_zero_action_budget_and_cannot_act():
-    """边界：出手次数公式=攻击次数/3(向上取整)，攻击次数为0的盟友出手预算=0，
-    指令其攻击必须被拒绝(不是"能行动但0次命中"，而是压根没有出手可用)。
-    R05已允许【雇佣】创建0攻击次数员工；本测试锁定其出手预算仍为0，防止此类角色
-    盟友意外携带0攻击次数时，行为依然可预期而不是崩溃。"""
+def test_zero_attack_count_ally_still_has_two_actions_but_zero_hits():
+    """边界：2026-09-16 起出手次数全体固定 2，不再由攻击次数推导。
+
+    旧口径下 0 攻击次数的盟友出手预算=0、压根动不了；新口径下它仍有 2 次出手，
+    只是[攻次]=[当前速度]=0 → 普攻 0 击（可以拿这 2 次出手去发动道纹，纯辅助定位成立）。
+    本测试锁定：此类角色行动**不崩溃、不报"出手已用完"**，且确实打不出命中。
+    """
     engine = _new_engine_with_enemy("zero_atk")
     friend = Entity(name="纯辅助", entity_type="朋友", blood_limit=30, current_hp=30,
                      attack_count=0, attack_power=0)
     engine.state.friends.append(friend)
-    assert friend.action_count == 0
+    assert friend.action_count == 2
+    assert friend.effective_attack_count() == 0, "攻次=当前速度=0"
     r = resolve_player_attack(engine, "纯辅助", [])
-    assert r["success"] is False
-    assert "出手已用完" in r["error"]
+    assert r["success"] is True, "有出手可用，不应被拒"
+    assert r.get("hits") in (None, 0, []), f"0攻次不应产生命中，实{r.get('hits')}"
 
 
 def test_undeployed_employee_cannot_be_commanded():

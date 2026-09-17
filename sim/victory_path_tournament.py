@@ -241,7 +241,7 @@ class SculptAI(HarvestMixin, TacticalAI):
 class RedeemAI(TacticalAI):
     """救赎雇员流：先剥怪物原始道纹（残韵），残血压到≤血限10%触发救赎并接纳为员工。"""
 
-    ORIGINALS = ("狂暴", "强化", "疯狂", "减速", "必中", "自愈", "飞行")
+    ORIGINALS = ("狂暴", "全力", "疯狂", "减速", "必中", "自愈", "飞行")
     ALLY_CAP = 2
 
     def try_strip(self):

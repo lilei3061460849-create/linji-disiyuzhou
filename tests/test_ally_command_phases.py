@@ -107,7 +107,9 @@ def test_boundary_auto_skips_self_harm_daowen():
     r = e.execute_action("resolve_ally_phases", {})
     assert r["success"]
     kinds = [a["kind"] for entry in r["result"]["allies"] for a in entry["actions"]]
-    assert kinds == ["attack"], f"持背负应跳过道纹改用攻击，实{kinds}"
+    # 2026-09-16：出手次数全体固定 2（旧口径为攻次/3=1），故这里会得到 2 次行动。
+    # 本测试的意图是"跳过道纹"而非"只出手一次"，故断言全部行动都是攻击、不含道纹。
+    assert kinds and set(kinds) == {"attack"}, f"持背负应跳过道纹、全部改用攻击，实{kinds}"
 
 
 # ---------- 边界条件 ----------
@@ -137,8 +139,10 @@ def test_boundary_command_respects_action_budget():
     """边界：朋友出手用完后再命令被拒。"""
     e = _engine("budget")
     ally = _start_battle(e)
-    r1 = e.execute_action("command_ally", {"ally_ref": "friend:0", "instruction": "攻击 靶怪"})
-    assert r1["success"]
+    # 2026-09-16：出手次数全体固定 2（旧口径为攻次/3=1），故要连下 3 次指令才会耗尽。
+    for i in range(2):
+        r = e.execute_action("command_ally", {"ally_ref": "friend:0", "instruction": "攻击 靶怪"})
+        assert r["success"], f"第{i+1}次指令应成功（预算2次）"
     r2 = e.execute_action("command_ally", {"ally_ref": "friend:0", "instruction": "攻击 靶怪"})
     assert not r2["success"]
     assert "出手已用完" in r2["error"]

@@ -129,10 +129,10 @@ def test_daowen_calculations():
     
     # 测试波及
     result = DaoWenEngine.resolve("波及", 2)
-    assert result["cost"] == 6
+    assert result["cost"] == 4          # 2026-09-16：消耗3X→2X
     assert result["mark_targets"] == 2
     assert result["duration"] == -1
-    print("  ✓ 波及X=2: 消耗6，选择2个目标建立/解除波及（持续∞）")
+    print("  ✓ 波及X=2: 消耗4，选择2个目标建立/解除波及（持续∞）")
     
     # 测试封印（代价：异变X；一个目标怪物延后X回合回场）
     result = DaoWenEngine.resolve("封印", 1)
@@ -488,7 +488,7 @@ def test_daowen_effects_wired():
     player.speed_limit = 99
     # 给玩家多个道纹用于测试
     from engine.models import DaoWen, DaoWenInstance
-    for n in ["弱化","强化","变形","赎金","眩晕","飞行"]:
+    for n in ["弱化","全力","变形","赎金","眩晕","飞行"]:
         player.dao_wen[n] = DaoWenInstance(dao_wen=DaoWen(name=n,formula="",cost_type="消耗",cost_formula="X",effect_formula=""))
     m = Entity(name="靶怪", entity_type="怪物", blood_limit=100, current_hp=100, attack_count=3, attack_power=10)
     m.shards = 20
@@ -499,10 +499,17 @@ def test_daowen_effects_wired():
     r = engine.execute_action("use_daowen", {"daowen_name":"弱化","x":3,"target":"靶怪"})
     assert r["success"], r
     assert m.attack_power == 7, f"弱化后攻击力应7，实{m.attack_power}"
-    # 强化2 → 攻击力7+2=9
-    r = engine.execute_action("use_daowen", {"daowen_name":"强化","x":2,"target":"靶怪"})
-    assert m.attack_power == 9, f"强化后应9，实{m.attack_power}"
-    print("  ✓ 弱化/强化：靶怪攻击力 10→7→9")
+    # 强化2（2026-09-17 用户令重做）→ 攻击力**锁定为其[法限]**，持续X。
+    # 旧版「攻击力+X，持续∞」写遗留字段，属性统一后对不写穿的轮回者无效，已废止。
+    r = engine.execute_action("use_daowen", {"daowen_name":"全力","x":2,"target":"靶怪"})
+    assert r["success"], r
+    assert m.effective_attack_power() == m.mana_limit, \
+        f"强化后攻击力应锁定为法限{m.mana_limit}，实{m.effective_attack_power()}"
+    mana_before = m.current_mana
+    m.current_mana = 1      # 花掉法力
+    assert m.effective_attack_power() == m.mana_limit, "强化期间花法力不应掉攻击力"
+    m.current_mana = mana_before
+    print(f"  ✓ 弱化/强化：靶怪攻击力 10→7→锁定法限{m.mana_limit}（花法力不掉）")
 
     # R35 赎金3：有碎片则最多夺取现有20，不再把不足额扩成负债。
     shards_before = engine.state.shards
@@ -563,14 +570,23 @@ def test_out_of_combat_actions():
     assert learn_name in player.dao_wen, f"{learn_name}应已加入玩家道纹"
     print(f"  ✓ 学习道纹：玩家道纹={list(player.dao_wen.keys())}")
 
-    # 学习法术2档：同时学习两种并支付10碎片
-    r = engine.execute_action("pre_battle_action", {
-        "sub_action": "学习", "sub": "spell", "tier": 2,
-        "names": ["先发制人", "后发制人"],
-    })
-    assert r["success"], f"学习法术失败: {r}"
-    assert {sp.name for sp in player.spells} == {"先发制人", "后发制人"}
-    print("  ✓ 学习法术2档：先发制人、后发制人均已掌握")
+    # 法术已免学习（2026-09-16）：持所需道纹即可在战斗中发动，不写入 spells。
+    # 局外不得发动（要占主动出手），故先确认拒绝，再进战斗验证。
+    r = engine.execute_action("use_spell", {"spell_name": "先发制人"})
+    assert not r["success"], "局外不得发动法术（需占1次主动出手）"
+    engine.state.phase = "in_combat"
+    engine.state.combat_subphase = "player_actions"
+    used = player.actions_used_this_round
+    r = engine.execute_action("use_spell", {"spell_name": "先发制人"})
+    assert r["success"], f"发动法术失败: {r}"
+    assert "先发制人" in player.armed_spells
+    assert player.actions_used_this_round == used + 1, "发动法术应消耗1次主动出手"
+    r = engine.execute_action("use_spell", {"spell_name": "先发制人", "disarm": True})
+    assert r["success"], f"卸下法术失败: {r}"
+    assert "先发制人" not in player.armed_spells
+    assert player.actions_used_this_round == used + 1, "卸下不应再扣出手"
+    engine.state.phase = "pre_battle"
+    print("  ✓ 法术发动/卸下：无需学习，持道纹即可，发动耗1次出手")
 
     # 共鸣：获得遗物（补满精力以便测试）
     engine.state.energy = 3
@@ -635,17 +651,20 @@ def test_monster_phase_engine():
     st = GameState(); st.current_region = "罪孽都市"
     st.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60, speed_limit=8, current_speed=8)
     m = Entity(name="打手", entity_type="怪物", blood_limit=120, current_hp=120, attack_count=4, attack_power=6)
-    for n,x in [("强化",3),("狂暴",3)]:
+    for n,x in [("全力",3),("狂暴",3)]:
         m.dao_wen[n] = DaoWenInstance(dao_wen=DaoWen(name=n,formula="",cost_type="",cost_formula="",effect_formula=""), x_value=x)
     st.enemies.append(m)
     combat = CombatEngine(st, DiceEngine()); combat.reset_monster_activation()
 
     # 第1回合：2026-09-15 用户令删除白板限制，怪物首回合即可发动道纹
     combat.round_start()  # current_round→1
-    r1 = resolve_monster_phase(combat, {"打手": "强化"}, target_refs={"打手": "enemy:0"})
-    assert m.attack_power == 9, f"发动强化3后攻击力应9，实{m.attack_power}"
+    r1 = resolve_monster_phase(combat, {"打手": "全力"}, target_refs={"打手": "enemy:0"})
+    # 【全力】2026-09-17 用户令重做：攻击力锁定为其[法限]，持续X（旧版"攻击力+X，持续∞"已废止）
+    assert m.has_status("全力"), "强化应作为状态生效"
+    assert m.effective_attack_power() == m.mana_limit, \
+        f"强化后攻击力应锁定为法限{m.mana_limit}，实{m.effective_attack_power()}"
     assert len(r1) > 0, "怪物应有出手"
-    print(f"  ✓ 第1回合：激活【强化3】，攻击力6→9，怪物出手{len(r1)}次，贾凡HP{st.player.current_hp} 速{st.player.current_speed}")
+    print(f"  ✓ 第1回合：激活【强化3】，攻击力锁定为法限{m.mana_limit}，怪物出手{len(r1)}次，贾凡HP{st.player.current_hp} 速{st.player.current_speed}")
 
     # 第2回合：重施狂暴3（准则9：不同道纹同回合各至多一次）
     combat.round_start()  # current_round→2
@@ -793,25 +812,25 @@ def test_events_system():
 
 
 def test_rebellion_and_legacy():
-    """测试员工叛变检查 + 死之传承"""
-    print("\n=== 测试：员工叛变/死之传承 ===")
+    """测试员工背叛检查 + 死之传承"""
+    print("\n=== 测试：员工背叛/死之传承 ===")
     from engine.models import GameState
     from engine.combat import CombatEngine
     from engine.dice import DiceEngine
-    # 员工叛变：员工攻击总值≥玩家HP+朋友攻击 → 叛变
+    # 员工背叛：员工攻击总值≥玩家HP+朋友攻击 → 背叛
     st = GameState(); st.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=10)
     emp = Entity(name="追求者", entity_type="员工", blood_limit=96, current_hp=96, attack_count=8, attack_power=2)
     st.employees.append(emp)  # 攻击总值16 ≥ 玩家HP10
     combat = CombatEngine(st, DiceEngine())
     r = combat.check_employee_rebellion()
-    assert r["rebellion"] is True, f"应叛变(16≥10): {r}"
-    print(f"  ✓ 员工叛变：追求者攻击总值16 ≥ 阈值10，触发叛变")
+    assert r["rebellion"] is True, f"应背叛(16≥10): {r}"
+    print(f"  ✓ 员工背叛：追求者攻击总值16 ≥ 阈值10，触发背叛")
 
-    # 不叛变：玩家HP高
+    # 不背叛：玩家HP高
     st.player.current_hp = 50
     r2 = combat.check_employee_rebellion()
-    assert r2["rebellion"] is False, f"HP50时不应叛变(16<50): {r2}"
-    print(f"  ✓ 员工叛变：玩家HP50 > 员工攻击16，不叛变")
+    assert r2["rebellion"] is False, f"HP50时不应背叛(16<50): {r2}"
+    print(f"  ✓ 员工背叛：玩家HP50 > 员工攻击16，不背叛")
 
     # 死之传承
     st.player.is_alive = False; st.player.current_hp = 0
@@ -821,7 +840,7 @@ def test_rebellion_and_legacy():
     r3 = combat.trigger_death_legacy(legacy)
     assert r3["triggered"] and st.death_book_legacies == [legacy]
     print(f"  ✓ 死之传承：命零留单句遗言'{r3['legacy']['text'][:12]}...'")
-    print("  ✓ 员工叛变/死之传承测试通过")
+    print("  ✓ 员工背叛/死之传承测试通过")
 
 
 def test_relics_five_more():
@@ -853,17 +872,20 @@ def test_relics_five_more():
     assert esc["shard_cost"] == 20, f"买路财应20碎片(100*20%)，实{esc['shard_cost']}"
     print(f"  ✓ 买路财：100血限怪撤退成本=20碎片")
 
-    # 无所求：resolve_event拒绝+1速限
+    # 无所求：resolve_event拒绝+1属性点（2026-09-16 裁定：按《物品索引》
+    # 原文入属性点池，不再由引擎折算成速限/法限）
     engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
     engine.execute_action("setup_attributes", {"name":"t","blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(engine)
     _choose_region(engine, "扭曲都市")
     engine.state.relics = [Relic(name="无所求", effect="")]
     engine.event_pool.current = "祭坛"
+    pool = engine.state.attribute_points
     sp = engine.state.player.speed_limit
-    engine.execute_action("resolve_event", {"event":"祭坛","option_id":3, "wusuoqiu_allocation": "speed"})  # 拒绝：无事发生
-    assert engine.state.player.speed_limit == sp + 1, "无所求拒绝应+1速限"
-    print(f"  ✓ 无所求：选拒绝类选项+1速限({sp}→{engine.state.player.speed_limit})")
+    engine.execute_action("resolve_event", {"event":"祭坛","option_id":3})  # 拒绝：无事发生
+    assert engine.state.attribute_points == pool + 1, "无所求拒绝应+1属性点"
+    assert engine.state.player.speed_limit == sp, "属性点入池，不应直接加速限"
+    print(f"  ✓ 无所求：选拒绝类选项+1属性点(池{pool}→{engine.state.attribute_points})")
     print("  ✓ 剩余5遗物测试通过")
 
 
@@ -884,7 +906,7 @@ def test_evolution_yuanchu():
         })
         finish_initial_daowen(engine)
         # 裁定：原初X 借用池 = 轮回者当前持有的道纹，故须先给轮回者道纹
-        for _n in ("自愈", "强化", "杀伐"):
+        for _n in ("自愈", "全力", "杀伐"):
             engine.state.player.dao_wen[_n] = DaoWenInstance(
                 dao_wen=DaoWen(name=_n, formula="", cost_type="消耗",
                                cost_formula="X", effect_formula=""), x_value=1)
@@ -948,13 +970,13 @@ def test_evolution_yuanchu():
     assert not r5["success"] and "不在轮回者当前持有的道纹中" in r5["error"], \
         f"借用轮回者未持有的道纹应被拒绝: {r5}"
     # ---- 非法输入：借用怪物自身已持有的道纹 → 拒绝 ----
-    # 用轮回者也持有的"强化"，确保先通过"必须在轮回者道纹池内"这一关，
+    # 用轮回者也持有的"全力"，确保先通过"必须在轮回者道纹池内"这一关，
     # 从而真正命中"怪物已持有"的拒绝分支。
     from engine.models import DaoWen as _DW, DaoWenInstance as _DWI
-    m_bad.dao_wen["强化"] = _DWI(dao_wen=_DW(name="强化", formula="", cost_type="代价",
+    m_bad.dao_wen["全力"] = _DWI(dao_wen=_DW(name="全力", formula="", cost_type="代价",
                                              cost_formula="异变5X", effect_formula="",
                                              is_monster_original=True), x_value=1)
-    r6 = engine2.execute_action("declare_evolution", {"monster": "非法怪", "daowen": "强化", "x": 1})
+    r6 = engine2.execute_action("declare_evolution", {"monster": "非法怪", "daowen": "全力", "x": 1})
     assert not r6["success"] and "已持有" in r6["error"], f"借用已持有道纹应被拒绝: {r6}"
     # ---- 非法输入：X=0 → 拒绝 ----
     r7 = engine2.execute_action("declare_evolution", {"monster": "非法怪", "daowen": "自愈", "x": 0})
@@ -1014,14 +1036,15 @@ def test_evolution_yuanchu():
     total1 = m_b.mutation_count
     assert total1 == 20, f"借用自愈2激活应付异变5×2=10（门票10+激活10=20），实{total1}"
     assert m_b.is_alive, "20层应存活"
-    # 准则9（DM裁定2026-08-18）：跨回合可重复发动，X已递增至4，重复发动按新X计费
-    assert m_b.dao_wen["自愈"].x_value == 4, "发动一次后X应+2（一阶）"
+    # 2026-09-16 用户令：道纹递增（每次发动 X+2×副本阶级）已废止，
+    # X 保持借用时写定的数值不变，重复发动按同一个 X 计费。
+    assert m_b.dao_wen["自愈"].x_value == 2, "递增已废止，X应保持借用的2"
     combat3.round_start()
     resolve_monster_phase(combat3, {"借用怪": "自愈"})
     total2 = m_b.mutation_count
-    assert total2 == 40 and m_b.is_alive, f"重复发动按递增X计费：20+5×4=40，实{total2}"
-    assert m_b.dao_wen["自愈"].x_value == 6
-    print("  ✓ 借用道纹门票10+首次发动10=20层；准则9重复发动按X=4再付20 → 40层")
+    assert total2 == 30 and m_b.is_alive, f"重复发动按同一X计费：20+5×2=30，实{total2}"
+    assert m_b.dao_wen["自愈"].x_value == 2
+    print("  ✓ 借用道纹门票10+首次发动10=20层；递增废止后重复发动按X=2再付10 → 30层")
     print("  ✓ 进化（原初X）与崩解测试通过")
 
 
@@ -1132,6 +1155,7 @@ def test_original_daowen_only_charges_mutation_on_activation():
     from engine.dice import DiceEngine
 
     def mk(name, dw):
+        # 2026-09-16：怪物[法限]即法力池，法力同时就是[攻击力]。
         m = Entity(name=name, entity_type="怪物", blood_limit=200, current_hp=200,
                    attack_count=1, attack_power=5)
         for n, x in dw:

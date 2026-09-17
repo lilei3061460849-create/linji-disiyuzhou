@@ -164,22 +164,33 @@ def test_dragon_might_monsters_always_target_player():
 # 3. 龙族利爪
 # ========================================================================
 
-def test_dragon_claw_initial_stats_and_growth_per_action():
-    """正常路径：初始3次攻击1点攻击力；每完成一次行动后攻击次数+1、攻击力+2"""
+def test_dragon_claw_doubles_attack_power():
+    """正常路径（2026-09-17 用户令改版）：攻击力 = 当前法力×2。
+
+    旧版「初始3点攻击次数与1点攻击力；每完成一次行动后，攻击次数+1、攻击力+2」
+    写的是遗留字段 attack_count / attack_power。属性模型统一后
+    （攻击力=当前法力、攻击次数=当前速度），而 models.py 的写穿对轮回者不生效，
+    旧效果**对轮回者完全无效**——实测遗留字段 6→7 / 20→22，真实攻次与攻力恒定
+    6 / 20。故改为被动倍率，走状态层。
+    """
     engine = _new_engine(dbsuffix="claw")
     player = engine.state.player
     _with_heart(engine)
     engine.execute_action("unlock_dragon_trait", {"trait": "龙族利爪"})
-    assert player.attack_count == 3
-    assert player.attack_power == 1
 
     engine.execute_action("battle_start", {})
-    engine.state.enemies.clear()
-    engine.state.enemies.append(Entity(name="怪物", entity_type="怪物", blood_limit=999, current_hp=999))
-    engine.execute_action("round_start", {})
-    _resolve_full_attack(engine, player.name, engine.state.enemies[0], n_hits=3)
-    assert player.attack_count == 4
-    assert player.attack_power == 3
+    assert player.has_status("龙族利爪"), "战始应挂上【龙族利爪】状态"
+
+    player.current_mana = 10
+    assert player.effective_attack_power() == 20, \
+        f"法力10 → 攻力应20（×2），实{player.effective_attack_power()}"
+    player.current_mana = 3
+    assert player.effective_attack_power() == 6, \
+        f"法力3 → 攻力应6（×2，实时跟随），实{player.effective_attack_power()}"
+    # 对照：未持有时攻力 = 当前法力
+    bare = _new_engine(dbsuffix="clawbare")
+    bare.state.player.current_mana = 10
+    assert bare.state.player.effective_attack_power() == 10, "未持有龙族利爪时攻力应等于当前法力"
 
 
 # ========================================================================

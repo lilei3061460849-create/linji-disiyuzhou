@@ -1,10 +1,13 @@
-"""修复验证（2026-08-21）：学习法术必须校验前置道纹。
+"""装配法术必须校验前置道纹（2026-08-21 修复；2026-09-16 改口径）。
 
 背景：_pre_battle_xuexi 只检查 SPELL_REGISTRY 名称，不校验 required_daowen，
 导致玩家没有 庇护 却能学习 借力打力、没有 再生 却能学习 千刀万剐——
 消耗局外资源却获得整局无法使用的死条目（实战3次确认）。
-修复：学习法术时要求 required_daowen ⊆ 当前持有道纹；缺失则拒绝、
-不扣碎片/精力，并明确列出缺失道纹。
+修复：校验 required_daowen ⊆ 当前持有道纹；缺失则拒绝并明确列出缺失道纹。
+
+2026-09-16 用户裁定：法术不再需要【学习】，改为持有所需道纹即可装配
+（use_spell）。前置道纹的校验本身不变，只是从局外【学习】迁移到装配口，
+因此本文件继续钉住同一条规则：缺道纹就装不上，且不产生任何副作用。
 """
 import sys
 import os
@@ -25,70 +28,81 @@ def _engine(tmp_path):
     e.execute_action("setup_choose_region", {"region": "扭曲都市"})
     e.state.shards = 100
     e.state.energy = 3
+    # 装配合法发生己方行动阶段
+    e.state.phase = "in_combat"
+    e.state.combat_subphase = "player_actions"
     return e
 
 
 def _snapshot(e):
     return (e.state.energy, e.state.shards, set(e.state.player.dao_wen),
-            [s.name for s in e.state.player.spells])
+            list(e.state.player.armed_spells), [s.name for s in e.state.player.spells])
 
 
-def test_learn_rejected_when_prerequisite_missing(tmp_path):
-    """缺少前置道纹 → 学习失败、不扣碎片/精力、不产生法术。"""
+def test_arm_rejected_when_prerequisite_missing(tmp_path):
+    """缺少前置道纹 → 装配失败、不扣资源、不写入装配槽。"""
     e = _engine(tmp_path)
     before = _snapshot(e)
-    r = e.execute_action("pre_battle_action", {
-        "sub_action": "学习", "sub": "spell", "tier": 1, "names": ["借力打力"]})
-    assert not r.get("success"), "缺少前置道纹（庇护）应拒绝学习"
+    r = e.execute_action("use_spell", {"spell_name": "借力打力"})
+    assert not r.get("success"), "缺少前置道纹（庇护）应拒绝装配"
     assert "庇护" in r.get("error", ""), f"错误应列出缺失道纹：{r.get('error')}"
-    assert _snapshot(e) == before, "学习失败不得扣碎片/精力/写入法术"
+    assert _snapshot(e) == before, "装配失败不得扣资源/写入装配槽"
 
 
-def test_learn_rejected_when_multiple_prerequisites_missing(tmp_path):
+def test_arm_rejected_when_multiple_prerequisites_missing(tmp_path):
     """多个前置道纹缺失 → 正确列出全部缺失项。"""
     e = _engine(tmp_path)
     before = _snapshot(e)
-    r = e.execute_action("pre_battle_action", {
-        "sub_action": "学习", "sub": "spell", "tier": 1, "names": ["千刀万剐"]})
+    r = e.execute_action("use_spell", {"spell_name": "千刀万剐"})
     assert not r.get("success")
     assert "再生" in r.get("error", "") and "血债" in r.get("error", ""), \
         f"应列出再生与血债两个缺失道纹：{r.get('error')}"
     assert _snapshot(e) == before
 
 
-def test_learn_succeeds_when_all_prerequisites_owned(tmp_path):
-    """拥有全部前置道纹 → 正常学习。"""
+def test_arm_succeeds_when_all_prerequisites_owned(tmp_path):
+    """拥有全部前置道纹 → 正常装配，且不消耗任何资源。"""
     e = _engine(tmp_path)
     p = e.state.player
-    # 先学习庇护（通用核心道纹，可直接学习）
-    r = e.execute_action("pre_battle_action", {
-        "sub_action": "学习", "sub": "daowen", "tier": 1, "names": ["庇护"]})
-    assert r.get("success"), r.get("error")
-    e.state.energy = 3
-    r = e.execute_action("pre_battle_action", {
-        "sub_action": "学习", "sub": "spell", "tier": 1, "names": ["借力打力"]})
-    assert r.get("success"), f"拥有杀伐+庇护应可学习借力打力：{r.get('error')}"
-    assert any(s.name == "借力打力" for s in p.spells)
-    assert e.state.shards == 100, "一档法术学习不扣碎片"
+    from engine.models import DaoWen, DaoWenInstance
+    p.dao_wen["庇护"] = DaoWenInstance(
+        DaoWen(name="庇护", formula="", cost_type="消耗", cost_formula="X", effect_formula=""),
+        x_value=1)
+    r = e.execute_action("use_spell", {"spell_name": "借力打力"})
+    assert r.get("success"), f"拥有杀伐+庇护应可装配借力打力：{r.get('error')}"
+    assert "借力打力" in p.armed_spells
+    assert e.state.shards == 100, "装配不扣碎片"
+    assert e.state.energy == 3, "装配不扣精力"
 
 
-def test_already_learned_spells_unaffected(tmp_path):
-    """已学法术不受影响：先学后补前置，法术仍在且可用判定正确。"""
+def test_armed_spells_persist_and_can_be_disarmed(tmp_path):
+    """已装配法术不受后续道纹变动之外的因素影响；可显式卸下。"""
     e = _engine(tmp_path)
     p = e.state.player
-    # 先学先发制人（只需杀伐，开局即持有）
-    r = e.execute_action("pre_battle_action", {
-        "sub_action": "学习", "sub": "spell", "tier": 1, "names": ["先发制人"]})
+    r = e.execute_action("use_spell", {"spell_name": "先发制人"})  # 只需杀伐，开局即持有
     assert r.get("success"), r.get("error")
-    assert any(s.name == "先发制人" for s in p.spells)
-    # 补学庇护后，借力打力（杀伐+庇护）可正常学习
+    assert "先发制人" in p.armed_spells
+    # 重复装配无副作用
+    e.execute_action("use_spell", {"spell_name": "先发制人"})
+    assert p.armed_spells.count("先发制人") == 1
+    # 卸下
+    r = e.execute_action("use_spell", {"spell_name": "先发制人", "disarm": True})
+    assert r.get("success"), r.get("error")
+    assert "先发制人" not in p.armed_spells
+    # 未装配时卸下应报错
+    r = e.execute_action("use_spell", {"spell_name": "先发制人", "disarm": True})
+    assert not r.get("success")
+
+
+def test_learning_spell_sub_is_retired(tmp_path):
+    """局外【学习】的 sub=spell 已随免学习裁定作废，并指向新入口。"""
+    e = _engine(tmp_path)
+    e.state.phase = "pre_battle"
     e.state.energy = 3
-    r = e.execute_action("pre_battle_action", {
-        "sub_action": "学习", "sub": "daowen", "tier": 1, "names": ["庇护"]})
-    assert r.get("success")
-    e.state.energy = 3
+    before = _snapshot(e)
     r = e.execute_action("pre_battle_action", {
         "sub_action": "学习", "sub": "spell", "tier": 1, "names": ["借力打力"]})
-    assert r.get("success")
-    names = [s.name for s in p.spells]
-    assert "先发制人" in names and "借力打力" in names
+    assert not r.get("success")
+    assert "define_spell" in r.get("error", "") or "无需学习" in r.get("error", ""), \
+        f"错误应指向新入口：{r.get('error')}"
+    assert _snapshot(e) == before, "作废入口不得产生任何效果"

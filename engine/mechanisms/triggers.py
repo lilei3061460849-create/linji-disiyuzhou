@@ -28,6 +28,8 @@ class Phase:
     BEFORE_DAMAGE = "before_damage"                  # 受到伤害前（爆裂反噬）——未接线
     AFTER_DAMAGE = "after_damage"                    # 伤害落地后——未接线
     BATTLE_START = "battle_start"                    # 战始——已接线（process_relics 战始段）
+    BATTLE_END = "battle_end"                        # 战终——已接线（process_relics 战终遗物段，
+                                                     # 2026-09-17 为【缄默面具】改版新增）
     ROUND_START = "round_start"                      # 回始——已接线（combat.round_start 回始效果循环顶部）
     ROUND_END = "round_end"                          # 回终——已接线（round_end 第一逐实体循环顶部、
                                                      # 凡庸 tick 之前）。锚定语义：凡庸之后的回终机制

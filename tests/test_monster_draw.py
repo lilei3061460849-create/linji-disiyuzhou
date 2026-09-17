@@ -76,11 +76,16 @@ def test_battle_start_actually_populates_enemies_from_correct_region_pool():
 
 
 def test_drawn_monster_panel_matches_readme_exactly():
-    """正常路径：抽到的怪物面板(攻击次数/攻击力/血限)与道纹X值必须与独立副本文档定义完全一致"""
+    """正常路径：抽到的怪物面板(攻击次数/攻击力/血限)与道纹集合必须与独立副本文档定义完全一致
+
+    2026-09-16 用户令：面板不再写死 X，道纹段解析为 None（发动时自选），
+    因此本处只校验道纹**集合**与三围是否与副本文档一致；
+    X 值的自选与封顶校验见 tests/test_monster_daowen_x_free.py。
+    """
     pools = parse_monster_pool(DUNGEON_INDEX_PATH)
     known = next(m for m in pools["龙心谷"] if m["name"] == "熔岩蜥")
     assert (known["attack_count"], known["attack_power"], known["blood_limit"]) == (3, 6, 234)
-    assert known["dao_wen"] == {"加害": 2, "狂暴": 3, "波及": 3}
+    assert known["dao_wen"] == {"加害": None, "狂暴": None, "波及": None}
 
 
 def test_repetition_allowed_across_many_draws():

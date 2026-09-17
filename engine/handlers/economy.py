@@ -1,6 +1,6 @@
 """
-员工与叛变经济系统处理器（Economy & Rebellion Handler）
-负责员工派遣、解雇、债务付清、工资支付与叛变处置。
+员工与背叛经济系统处理器（Economy & Rebellion Handler）
+负责员工派遣、解雇、债务付清、工资支付与背叛处置。
 """
 from __future__ import annotations
 from typing import Any, Dict, List, Optional
@@ -37,7 +37,6 @@ def handle_deploy_employee(engine: Any, params: Dict[str, Any]) -> Dict[str, Any
     budget_error = engine._consume_action_or_error(engine.state.player)
     if budget_error:
         return budget_error
-    engine._apply_dragon_claw_growth(engine.state.player)
     emp.is_deployed = True
     emp.deployed_at_round = max(1, engine.state.current_round)
     engine._advance_duel_turn()
@@ -120,7 +119,7 @@ def handle_pay_employee_wage(engine: Any, params: Dict[str, Any]) -> Dict[str, A
 
 
 def handle_suppress_rebellion(engine: Any, params: Dict[str, Any]) -> Dict[str, Any]:
-    """镇压叛变"""
+    """镇压背叛"""
     force = params.get("force", False)
     err = engine._pending_rebellion_error(force)
     if err:
@@ -140,14 +139,14 @@ def handle_suppress_rebellion(engine: Any, params: Dict[str, Any]) -> Dict[str, 
     engine.state.phase = GamePhase.IN_COMBAT.value
     engine.state.combat_subphase = CombatSubphase.AWAIT_ROUND_START.value
     return {
-        "success": True, "action": "镇压叛变",
+        "success": True, "action": "镇压背叛",
         "result": {
             "rebels": [e.name for e in rebels],
             "panels": [{"name": e.name, "attack_count": e.attack_count, "attack_power": e.attack_power,
                         "blood_limit": e.blood_limit, "current_hp": e.current_hp,
                         "dao_wen": {k: v.x_value for k, v in e.dao_wen.items()}} for e in rebels],
         },
-        "instruction": "叛变员工已作为本场敌方(state.enemies)，按普通战斗流程推进；"
+        "instruction": "背叛员工已作为本场敌方(state.enemies)，按普通战斗流程推进；"
                        "战斗分出胜负后调用 resolve_rebellion_battle(outcome=victory/defeat) 结算",
     }
 
@@ -155,7 +154,7 @@ def handle_suppress_rebellion(engine: Any, params: Dict[str, Any]) -> Dict[str, 
 def handle_resolve_rebellion_battle(engine: Any, params: Dict[str, Any]) -> Dict[str, Any]:
     """镇压战斗结算"""
     if not engine.state.rebellion_in_progress:
-        return {"success": False, "error": "当前没有进行中的员工叛变战斗"}
+        return {"success": False, "error": "当前没有进行中的员工背叛战斗"}
     outcome = params.get("outcome", "")
     if outcome not in ("victory", "defeat"):
         return {"success": False, "error": "outcome必须是 victory 或 defeat（战斗失败与主动撤退统一按defeat结算）"}
@@ -195,7 +194,7 @@ def handle_negotiate_rebellion(engine: Any, params: Dict[str, Any]) -> Dict[str,
     interrupt = engine.combat.initiate_negotiation(proposal)
     engine._pending_interrupts.append(interrupt)
     return {
-        "success": True, "action": "员工叛变·谈判",
+        "success": True, "action": "员工背叛·谈判",
         "interrupt": interrupt.to_dict(),
         "instruction": "需要DM裁定谈判方案是否合理；裁定后请调用 appease_rebellion(force=True) 平息叛乱"
                        "或改用 suppress_rebellion(force=True) 镇压",

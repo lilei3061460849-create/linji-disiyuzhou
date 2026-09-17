@@ -2,7 +2,7 @@
 
 问题类目：规则写了、面板配了，实战里却永不触发/永不发动——非 bug 的
 "非预期效果"。两类探针：
-1. 特殊事件实际触发计数（还债/雕塑/救赎/进化/叛变/崩解/凡庸/癌变/封印/逃跑…）；
+1. 特殊事件实际触发计数（还债/雕塑/救赎/进化/背叛/崩解/凡庸/癌变/封印/逃跑…）；
 2. 怪物面板道纹的 持有战斗数 vs 实际发动数（找出被优先级/门禁锁死的死纹，
    先例如：通缉犯持消灾但机制组永远被自保组假钞压死）。
 
@@ -65,7 +65,7 @@ _orig_rebel = combat_mod.CombatEngine.check_employee_rebellion
 def _spy_rebel(self):
     r = _orig_rebel(self)
     if r.get("rebellion"):
-        FIRES["员工叛变"] += 1
+        FIRES["员工背叛"] += 1
     return r
 combat_mod.CombatEngine.check_employee_rebellion = _spy_rebel
 
@@ -155,7 +155,7 @@ def main():
         merged = dict(list(row["alt"].items()))
         merged.update(row["fires"])
         for k in ("凡庸", "封印", "伤害击杀", "救赎", "救赎触发", "雕塑", "癌变",
-                  "还债", "逃跑", "进化尝试", "进化成功", "员工叛变"):
+                  "还债", "逃跑", "进化尝试", "进化成功", "员工背叛"):
             v = merged.get(k, 0)
             bits.append(f"{k}={v}")
         print(f"{row['region']}: " + " ".join(bits)

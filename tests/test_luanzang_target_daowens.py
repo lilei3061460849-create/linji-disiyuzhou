@@ -36,8 +36,10 @@ def _mk_engine(tmp_path, region="乱葬岗"):
 
 def _monster_with(name, daowen: dict):
     """构造带指定道纹的怪物（x_value 取给定值）。"""
+    # 2026-09-16：怪物[法限]即法力池，也是[攻击力]。1 点法限付不起这里的道纹，
+    # 抬到 20（本文件只断言道纹行为，不断言怪物伤害）。
     m = Entity(name=name, entity_type="怪物", blood_limit=200, current_hp=200,
-               attack_count=1, attack_power=1)
+               attack_count=1, attack_power=20)
     for dw, x in daowen.items():
         m.dao_wen[dw] = DaoWenInstance(
             DaoWen(name=dw, formula="", cost_type="消耗", cost_formula="X",

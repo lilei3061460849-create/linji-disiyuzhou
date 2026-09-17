@@ -114,7 +114,7 @@ def test_resonance_permanently_converts_and_grants():
     monster = Entity(name="狂怪", entity_type="怪物", blood_limit=80, current_hp=80,
                      attack_count=2, attack_power=4)
     _give(monster, "狂暴")
-    _give(monster, "强化")
+    _give(monster, "全力")
     monster._had_monster_daowen = True
     engine.state.enemies[:] = [monster]
     r = engine.execute_action("use_resonance", {
@@ -122,7 +122,7 @@ def test_resonance_permanently_converts_and_grants():
     })
     assert r["success"]
     assert "狂暴" not in monster.dao_wen and "自残" in monster.dao_wen
-    assert "强化" in monster.dao_wen
+    assert "全力" in monster.dao_wen
     assert "自残" in engine.state.player.dao_wen
     assert "自残" not in ORIGINAL_MONSTER_DAOWEN
     assert not engine.state.pending_redemption
@@ -198,7 +198,7 @@ def test_jinghua_reduces_mutation():
     monster = Entity(name="疫怪", entity_type="怪物", blood_limit=80, current_hp=80,
                      attack_count=2, attack_power=4)
     monster.mutation_count = 12
-    _give(monster, "强化")
+    _give(monster, "全力")
     engine.state.enemies[:] = [monster]
     r = engine.execute_action("use_daowen", {
         "daowen_name": "净化", "x": 5, "target_ref": "enemy:0",
@@ -206,7 +206,7 @@ def test_jinghua_reduces_mutation():
     })
     assert r["success"]
     assert monster.mutation_count == 7
-    assert r["calculation"]["cost"] == 25
+    assert r["calculation"]["cost"] == 10  # 净化消耗5X→2X（2026-09-16），X=5
 
 
 def test_jinghua_can_go_negative_without_redemption():
@@ -218,7 +218,7 @@ def test_jinghua_can_go_negative_without_redemption():
     monster = Entity(name="净怪", entity_type="怪物", blood_limit=80, current_hp=80,
                      attack_count=2, attack_power=4)
     monster.mutation_count = 0
-    _give(monster, "强化")
+    _give(monster, "全力")
     engine.state.enemies[:] = [monster]
     r = engine.execute_action("use_daowen", {
         "daowen_name": "净化", "x": 30, "target_ref": "enemy:0",
@@ -258,17 +258,17 @@ def test_redemption_fires_at_low_hp_even_with_transform_left():
     engine.state.resonance["转换"] = 1
     monster = Entity(name="脑蜘蛛", entity_type="怪物", blood_limit=204, current_hp=20,
                      attack_count=2, attack_power=11)
-    _give(monster, "强化")
+    _give(monster, "全力")
     _give(monster, "坏死")
     engine.state.enemies[:] = [monster]
     r = engine.execute_action("use_resonance", {
-        "source_daowen": "强化", "resonance_type": "转换", "target_ref": "enemy:0",
+        "source_daowen": "全力", "resonance_type": "转换", "target_ref": "enemy:0",
     })
     assert r["success"]
     assert r.get("redemption")
     assert engine.state.pending_redemption
     assert "借力" in engine.state.pending_redemption["dao_wen"]
-    assert "强化" not in engine.state.pending_redemption["dao_wen"]
+    assert "全力" not in engine.state.pending_redemption["dao_wen"]
     assert not monster.is_alive
     accept = engine.execute_action("resolve_redemption", {"option": "接纳", "name": "微光蛛"})
     assert accept["success"]
@@ -289,7 +289,7 @@ def test_redemption_skips_full_hp_or_remaining_original():
     assert engine.combat.check_redemption(exclusive) is None
     wounded = Entity(name="脑蜘蛛", entity_type="怪物", blood_limit=204, current_hp=20,
                      attack_count=2, attack_power=11)
-    _give(wounded, "强化")
+    _give(wounded, "全力")
     engine.state.enemies[:] = [wounded]
     assert engine.combat.check_redemption(wounded) is None
 

@@ -18,6 +18,8 @@ from .combat_hooks import CombatHookManager
 from .effect_context import EffectContext, make_context, normalize_context
 from .mechanisms import MECHANISMS, Phase, TriggerBus, TriggerContext
 from .personality import remove_personality
+# 常量定义在 models（授予点在 Entity.__post_init__），此处只读取以判定效果。
+from .models import MONSTER_MANA_RELIC
 
 # 【凡庸】连续无所作为的回合阈值：连续 N 回合未出手、或连续 N 回合未能使敌对角色
 # 生命减少 → 凭空全身炸裂。这是**规则层**的反乌龟机制，必须优先于 sim 层的死锁
@@ -38,9 +40,9 @@ class CombatEngine:
     }
     
     # 原始怪物道纹（道纹归属规则：各组起点）——【原初X】可借用范围
-    ORIGINAL_MONSTER_DAOWEN = ("狂暴", "强化", "疯狂", "减速", "必中", "自愈", "飞行")
-    # 原始怪物道纹每次实际发动时支付异变5X（X按该次发动时递增后的数值计算，
-    # 见规则正文·怪物准则9·道纹递增）；效果持续期间（未再次发动）不再重复计费。
+    ORIGINAL_MONSTER_DAOWEN = ("狂暴", "全力", "疯狂", "减速", "必中", "自愈", "飞行")
+    # 原始怪物道纹每次实际发动时支付异变5X（X 恒为面板/借用时写定的值；
+    # 2026-09-16 用户令：道纹递增机制已废止）；效果持续期间（未再次发动）不再重复计费。
     # 必中为次数型（下X次选择[目标]无法闪避），余数记在 entity._bizhong_left。
     YUANCHU_COST_RATE = 5
     # 波及X（2026-08-21）：你发动的道纹同时作用于所有拥有波及效果的目标。
@@ -1003,28 +1005,33 @@ class CombatEngine:
                 self.state.dead_monsters = []
             if entity not in self.state.dead_monsters:
                 self.state.dead_monsters.append(entity)
-        # 乱葬岗·分裂：[命零]创造X个复制体（血限20%，无分裂道纹）；缄默时全场命零效果被禁
-        if getattr(self.state, "_pending_split_clones", 0) > 0:
-            silenced = any(e.has_status("缄默") for e in self.state.get_all_player_side()
-                           + self.state.get_all_enemy_side())
-            if not silenced and entity.entity_type != "怪物":
-                clones = self.state._pending_split_clones
-                base_hp = max(1, math.ceil(entity.blood_limit * 20 / 100))
-                for i in range(clones):
-                    clone = Entity(name=f"{entity.name}·裂{i + 1}", entity_type="临时朋友",
-                                   blood_limit=base_hp, current_hp=base_hp,
-                                   attack_count=max(0, entity.attack_count),
-                                   attack_power=entity.attack_power)
-                    for dw_name, dw_inst in entity.dao_wen.items():
-                        if dw_name == "分裂":
-                            continue  # 复制体无分裂道纹
-                        clone.dao_wen[dw_name] = dw_inst
-                    self._bind_hp_hook(clone)
-                    self.state.temp_friends.append(clone)
-                self.state._pending_split_clones = 0
-                self._split_clones_spawned = clones
+        # 2026-09-17：【分裂】改为即时创生（见 _spawn_fenlie_clones），
+        # 原「[命零]时按本体 20% 血限创造复制体」的分支已随重做删除。
+
+    def _spawn_fenlie_clones(self, caster, count: int, clone_hp: int) -> list:
+        """【分裂】即时创造复制体：count 个 clone_hp 血限/生命的自身复制体。
+
+        复制体继承本体除【分裂】外的全部道纹（避免无限套娃），阵营与本体一致
+        （本体是怪物→进 enemies；否则→进 temp_friends）。返回新建的复制体列表。
+        """
+        clones = []
+        for i in range(max(0, count)):
+            clone = Entity(name=f"{caster.name}·裂{i + 1}",
+                           entity_type=caster.entity_type,
+                           blood_limit=clone_hp, current_hp=clone_hp,
+                           attack_count=caster.attack_count,
+                           attack_power=caster.attack_power)
+            for dw_name, dw_inst in caster.dao_wen.items():
+                if dw_name == "分裂":
+                    continue      # 复制体无分裂道纹，防止无限分裂
+                clone.dao_wen[dw_name] = dw_inst
+            self._bind_hp_hook(clone)
+            if caster.entity_type == "怪物":
+                self.state.enemies.append(clone)
             else:
-                self.state._pending_split_clones = 0
+                self.state.temp_friends.append(clone)
+            clones.append(clone)
+        return clones
 
     # ---- F2 全量：罪孽/扭曲专属道纹的公共辅助 ----
     def _shards_of(self, entity: Entity) -> int:
@@ -1754,6 +1761,14 @@ class CombatEngine:
         
         # 活血追踪归零 + 出手预算归零（回始重置本回合已用出手次数）+ 血誓戒每回合限一次归零 + 血族血脉判定归零
         for e in self.state.get_all_player_side() + self.state.get_all_enemy_side():
+            # 2026-09-16 用户令：[回始]法力恢复至上限是遗物【某人的偏爱】的效果，
+            # 不是怪物种族自带的能力。每只怪物出厂自带该遗物（见 engine/monsters.py），
+            # 因此这里读遗物而非读实体类型——"谁持有谁生效"走正常物品逻辑，
+            # 可被继承、可被【封印】等机制作用。
+            # 微光者（[朋友]/[员工]）与轮回者都不持有，仍是一池制（[回始]不回填）。
+            # 这是怪物侧的核心资源优势，也是"让轮回者吃苦头"的主要来源。
+            if e.mana_limit > 0 and any(r.name == MONSTER_MANA_RELIC for r in e.relics):
+                e.current_mana = e.mana_limit
             e.hp_lost_this_round = 0
             # 招架：上回合招架过 → 本回合禁用；本回合姿态清空等待重新声明。
             # 顺序要紧：先用旧的 parrying 值算出本回合的锁，再清姿态。
@@ -1986,7 +2001,7 @@ class CombatEngine:
             if expired:
                 # 只有“持续期间直接改写面板”的效果到期即还原；畸变/伤痕/逼债等
                 # 已经产生的累计局内后果保留到战终，再由battle作用域统一回滚。
-                panel_modifier_sources = {"强化", "弱化"}
+                panel_modifier_sources = {"全力", "弱化"}
                 rolled_back = self.state.rollback_scoped_sources(
                     entity, set(expired) & panel_modifier_sources)
                 effects.append({
@@ -2006,11 +2021,15 @@ class CombatEngine:
                 if ("飞行" in expired or "滑翔" in expired) and not self._is_flying(entity):
                     entity.is_flying = False
                 if "变形" in expired and hasattr(entity, "_bianxing_original"):
-                    entity.attack_power, entity.attack_count = entity._bianxing_original
+                    # 2026-09-17 重做：还原的是互换前的**当前速度与当前法力**
+                    # （旧版还原遗留字段 attack_power/attack_count）。
+                    # 注意：互换时被上限钳掉的部分不会随还原回来——那是永久损失。
+                    entity.current_speed, entity.current_mana = entity._bianxing_original
                     delattr(entity, "_bianxing_original")
+                    self.clamp_immortal_body(entity)
                     effects.append({"type": "bianxing_restore", "entity": entity.name,
-                                    "attack_power": entity.attack_power,
-                                    "attack_count": entity.attack_count})
+                                    "current_speed": entity.current_speed,
+                                    "current_mana": entity.current_mana})
                 # 干扰/手雷减攻到期自动由 tick 清理，无需额外
             # F2：逼债/清算状态消失即清账（∞/持续X到期后不再逐回始结算）
             if not entity.has_status("逼债") and getattr(entity, "_bizhai", None):
@@ -2684,7 +2703,7 @@ class CombatEngine:
 
     def initiate_negotiation(self, proposal: str) -> Interrupt:
         """
-        员工叛变·谈判声明：给出合理的谈判方案破解叛乱，需要DM裁定方案是否成立。
+        员工背叛·谈判声明：给出合理的谈判方案破解叛乱，需要DM裁定方案是否成立。
         """
         return Interrupt(
             interrupt_type=InterruptType.STAFF_MUTINY,
@@ -2696,7 +2715,7 @@ class CombatEngine:
                 "proposal": proposal,
             },
             description=(
-                f"轮回者尝试以谈判方案破解员工叛变：\n\n{proposal}\n\n"
+                f"轮回者尝试以谈判方案破解员工背叛：\n\n{proposal}\n\n"
                 f"请DM裁定该方案是否合理、能否平息叛乱。"
             ),
             options=[
@@ -2732,7 +2751,8 @@ class CombatEngine:
         # ---- 波及X（2026-08-21）：你发动的道纹同时作用于所有拥有波及效果的目标 ----
         # 数值型效果的总数值在所有目标（本次[目标]+波及目标，均排除施法者自身）间平分，
         # 余数随机分配；状态类效果对波及目标原样生效。多目标不复制或增加总数值。
-        wave_status_targets: list[Entity] = [target]
+        # 目标可选的道纹（如【变形】）未指定目标时兜底为施法者，避免 [None]
+        wave_status_targets: list[Entity] = [target if target else caster]
         wave_pieces: dict[str, list[int]] = {}
         if name != "波及":
             wave_targets = self._wave_targets(caster)
@@ -2775,13 +2795,22 @@ class CombatEngine:
 
         # 【冷却X】代价：规则正文「冷却X：使用后该道纹记为【X(0)/Y】，[战终]后已完成
         # 战斗场数+1，达到Y时才能再次使用」。此前从未写入 cooldown_remaining，
-        # 导致 固执/束缚/畸变/迟滞 可在同一场里无限重复发动（束缚因此支配全局）。
+        # 导致 固执/束缚/畸变/全速 可在同一场里无限重复发动（束缚因此支配全局）。
         if calc.get("cost_type") == "冷却":
             inst = caster.dao_wen.get(name)
             if inst is not None:
                 inst.cooldown_remaining = max(inst.cooldown_remaining,
                                               int(calc.get("cost", 0)))
                 result["cooldown_set"] = inst.cooldown_remaining
+
+        # 【唯一】代价：规则正文「唯一：使用后，本次轮回中无法再次使用」。
+        # 此前该代价种类只有一行名字映射、没有任何结算逻辑，等于空定义；
+        # 现在与【冷却X】同处落账——唯一是轮回级一次性，跨战斗场数不恢复。
+        if calc.get("cost_type") == "唯一":
+            inst = caster.dao_wen.get(name)
+            if inst is not None:
+                inst.spent_unique = True
+                result["unique_spent"] = True
 
         # 蒙蔽(施法者伤害类道纹归零) / 坏死/镇尸(目标禁疗)
         mengbi_blocked = caster.has_status("蒙蔽") and ("target_damage" in calc or "aoe_damage" in calc)
@@ -3150,10 +3179,11 @@ class CombatEngine:
         _panel_keys = ("attack_boost", "attack_reduction", "attack_fixed", "attack_count_fixed")
         # 波及扩散：attack_boost/reduction 数值平分；attack_fixed/attack_count_fixed
         # （固定面板为状态类）对波及目标原样生效。
+        # 目标可选的道纹（如【变形】）未指定目标时兜底为施法者，避免 [None]
         panel_targets = wave_status_targets if (
             any(k in wave_pieces for k in ("attack_boost", "attack_reduction"))
             or (any(k in calc for k in ("attack_fixed", "attack_count_fixed"))
-                and len(wave_status_targets) > 1)) else [target]
+                and len(wave_status_targets) > 1)) else [target if target else caster]
         for panel_idx, panel_target in enumerate(panel_targets):
             panel_locked = panel_target.has_status("定型") and any(k in calc for k in _panel_keys)
             if panel_locked:
@@ -3165,6 +3195,17 @@ class CombatEngine:
                     name, EffectPolarity.BUFF.value)
                 result["effects"].append({"type": "attack_boost", "target": panel_target.name,
                                           "attack_power": panel_target.attack_power})
+            # 【全力】2026-09-17 用户令重做：攻击力锁定 = [法限]，持续X。
+            # 走状态层（models.py::effective_attack_power 读取），不再写遗留字段
+            # attack_power——那样对不写穿的轮回者无效。
+            if (not panel_locked) and calc.get("attack_power_to_mana_limit"):
+                panel_target.add_status(StatusEffect(
+                    name="全力", value=1,
+                    remaining_rounds=calc.get("duration", x), source=caster.name))
+                result["effects"].append({
+                    "type": "attack_power_to_mana_limit", "target": panel_target.name,
+                    "attack_power": panel_target.effective_attack_power(),
+                    "duration": calc.get("duration", x)})
             if (not panel_locked) and "attack_reduction" in calc:
                 amount = (wave_pieces.get("attack_reduction") or [calc["attack_reduction"]])[panel_idx]
                 delta = max(0, panel_target.attack_power - amount) - panel_target.attack_power
@@ -3178,6 +3219,17 @@ class CombatEngine:
                     name, EffectPolarity.NEUTRAL.value)
                 result["effects"].append({"type": "attack_fixed", "target": panel_target.name,
                                           "attack_power": panel_target.attack_power})
+            # 【全速】2026-09-17 用户令（原名【迟滞】）：攻击次数锁定 = [速限]，持续X。
+            # 走状态层（models.py::effective_attack_count 读取），不再写遗留字段
+            # attack_count——那样对不写穿的轮回者无效。
+            if (not panel_locked) and calc.get("attack_count_to_speed_limit"):
+                panel_target.add_status(StatusEffect(
+                    name="全速", value=1,
+                    remaining_rounds=calc.get("duration", x), source=caster.name))
+                result["effects"].append({
+                    "type": "attack_count_to_speed_limit", "target": panel_target.name,
+                    "attack_count": panel_target.effective_attack_count(),
+                    "duration": calc.get("duration", x)})
             if (not panel_locked) and "attack_count_fixed" in calc:
                 self._battle_delta(
                     panel_target, "attack_count", calc["attack_count_fixed"] - panel_target.attack_count,
@@ -3185,17 +3237,34 @@ class CombatEngine:
                 result["effects"].append({"type": "attack_count_fixed", "target": panel_target.name,
                                           "attack_count": panel_target.attack_count})
         bianxing_blocked = False
-        if name == "变形":  # 自身攻击力与攻击次数互换；持续结束后还原首次变形前面板
-            if caster.has_status("定型"):
+        if name == "变形":
+            # 2026-09-17 用户令：变形改为可选目标，不指定时作用于施法者。
+            # 【定型】的判定对象随之改为**被变形者**（旧版固定查施法者，
+            # 在"目标是别人"的场景下会误判）。
+            _bx_target = target if target else caster
+            if _bx_target.has_status("定型"):
                 bianxing_blocked = True
-                result["effects"].append({"type": "dingxing_block", "target": caster.name})
+                result["effects"].append({"type": "dingxing_block", "target": _bx_target.name})
             else:
-                if not hasattr(caster, "_bianxing_original"):
-                    caster._bianxing_original = (caster.attack_power, caster.attack_count)
-                caster.attack_power, caster.attack_count = caster.attack_count, caster.attack_power
-                result["effects"].append({"type": "swap", "target": caster.name,
-                                          "attack_power": caster.attack_power,
-                                          "attack_count": caster.attack_count})
+                # 2026-09-17 用户令重做：改为**[目标]当前速度 ↔ 当前法力互换**，
+                # 互换后各自被上限钳制（clamp_immortal_body：当前速度≤[速限]、
+                # 当前法力≤[法限]），被钳掉的部分**凭空消失**，不返还。
+                #   例：敌方 20/3/10（血限/速度/法力，速限3）→ 互换得 速度10、法力3
+                #       → 速度被速限钳回 3 → 结果 20/3/3：目标凭空失去 7 点法力。
+                # 旧版「自身攻击力与攻击次数互换」写遗留字段 attack_power/attack_count，
+                # 属性模型统一后（攻击力=当前法力、攻击次数=当前速度）对轮回者无效，
+                # 且只能对自己用。新版可指定目标，不指定时默认自身。
+                swap_target = target if target else caster
+                if not hasattr(swap_target, "_bianxing_original"):
+                    swap_target._bianxing_original = (swap_target.current_speed,
+                                                       swap_target.current_mana)
+                swap_target.current_speed, swap_target.current_mana = (
+                    swap_target.current_mana, swap_target.current_speed)
+                # 互换后立即钳制：超出上限的部分直接蒸发（全局钳制规则）
+                self.clamp_immortal_body(swap_target)
+                result["effects"].append({"type": "swap", "target": swap_target.name,
+                                          "current_speed": swap_target.current_speed,
+                                          "current_mana": swap_target.current_mana})
 
         # ---- 速度修改 ----
         if "speed_boost" in calc:
@@ -3383,11 +3452,17 @@ class CombatEngine:
                 })
                 result["self_destructed"] = True
         if name == "分裂" and calc.get("split_clones"):
-            # [命零]时创造X个复制体（血限20%）
-            self.state._pending_split_clones = calc["split_clones"]
-            result["effects"].append({"type": "fenlie",
-                                      "note": "本场[命零]时创造X个复制体（血限20%）",
-                                      "clones": calc["split_clones"]})
+            # 2026-09-17 用户令重做：分裂X/Y 改为**即时**创造 X 个 10Y 血限的
+            # 自身复制体（代价衰老＝X×10Y＝造出的总血限）。旧版把创造挂在
+            # [命零]上（_pending_split_clones），且血限按本体 20% 浮动——本体
+            # 血限越高白赚越多，代价【冷却】又与产出无关，可无限白嫖。
+            # 旧版还有 entity_type != "怪物" 的过滤，导致怪物永远不分裂，
+            # 与「乱葬岗·分裂」的设计不符；现对任意实体类型一视同仁。
+            clones = self._spawn_fenlie_clones(caster, calc["split_clones"],
+                                               calc.get("clone_hp", 10))
+            result["effects"].append({"type": "fenlie", "clones": len(clones),
+                                      "clone_hp": calc.get("clone_hp", 10),
+                                      "names": [c.name for c in clones]})
         if name == "招魂" and calc.get("revive_temp_friend"):
             # 唤回1具已击灭的怪物尸体作临时朋友（生命20X）
             dead = [e for e in self.state.dead_monsters if e.entity_type == "怪物"]
@@ -3501,7 +3576,12 @@ class CombatEngine:
             # 自身作用型道纹(变形/超频/自食等)作用于施法者
             # 2026-09-10：道纹【洗劫】已改名【点金】并改为即时结算（不再挂状态），
             # 故从自身作用名单移除；状态【洗劫】本身保留，仍由【帮派令】发放。
-            self_targeted = name in ("超频", "自食", "飞行", "滑翔", "狂暴", "自愈", "必中", "变形", "固执", "贯穿")
+            # 2026-09-17 用户令：【超频】改为自由选择目标（选到谁给谁加速），不再属于
+            # "自身作用型"。它原本留在本名单里也无效——其 calc 无 duration 键，
+            # 进不了本状态块，实际效果一直是下方数值段给 target 加速。
+            # 2026-09-17 用户令：【变形】改为可自由选择目标（不指定时默认自身），
+            # 故移出"自身作用型"名单，状态随之挂到目标身上（到期还原也落在目标）。
+            self_targeted = name in ("自食", "飞行", "滑翔", "狂暴", "自愈", "必中", "固执", "贯穿")
             if name == "疯狂":
                 # 2026-08-17 用户裁定：疯狂X改为【所有角色出手+X】（全局，变相平衡）。
                 # 状态盖到双方全部存活角色；出手口径各自读取自身疯狂状态：
@@ -3610,7 +3690,96 @@ class CombatEngine:
                    "steps": [("封印", "any")],
                    "effect_flow": "自身回合结束后→发动封印X于任意目标",
                    "automatic": True},
+        # 血炼周天（2026-09-16 补流程，清单 D1）：
+        # 失去生命后→发动再生→发动透支→失去生命后（循环）。
+        # 【透支】的流血会再次触发「失去生命后」，由此自驱动循环。
+        "血炼周天": {"trigger": ActionPhase.AFTER_LIFE_LOST.value,
+                     "steps": [("再生", "self"), ("透支", "self")],
+                     "effect_flow": "失去生命后→发动再生→发动透支→失去生命后（循环）",
+                     "loop": True},
     }
+
+    # 内置法术的所需道纹（唯一事实源；api.GameEngine.SPELL_REGISTRY 是本表的别名）。
+    # 键与 SPELL_FLOWS 一一对应——凡有流程的内置法术都必须在此登记所需道纹，
+    # 否则「持道纹即可施法」判定无法知道该法术需要什么。
+    BUILTIN_SPELL_DAOWEN = {
+        "先发制人": ["杀伐"],
+        "后发制人": ["庇护"],
+        "生生不息": ["再生"],
+        "以牙还牙": ["杀伐", "再生"],
+        "借力打力": ["杀伐", "庇护"],
+        "不死不休": ["血债"],
+        "千刀万剐": ["血债", "再生"],
+        "咎由自取": ["坠落", "杀伐", "血债"],
+        "镇魔印": ["封印"],
+        "血炼周天": ["再生", "透支"],
+    }
+
+    # ------------------------------------------------------------------
+    # 「法术不再需要学习」：内置法术对任何持有全部所需道纹的角色直接开放。
+    # 自创法术仍然挂在实体自己的 spells 列表上（定义要随存档走），
+    # 内置法术不再写入该列表，改为按道纹实时推导。
+    # ------------------------------------------------------------------
+
+    def _builtin_spell_flows(self, holder: Entity) -> dict[str, dict]:
+        """当前**已装配**的内置法术：所需道纹全部持有且可发动，并经 use_spell 装配。
+
+        「可用」与「已装配」是两件事：持道纹=可以装配（不再需要学习），
+        装配=表达"我打算用它"，只有装配后才会在触发时点自动结算。
+        这样免去了学习门槛，但保留了意图门槛——否则一个同时持有【再生】
+        【血债】的角色每次挨打都要对四种反应法术逐个表态，战斗无法推进。
+        """
+        flows: dict[str, dict] = {}
+        if holder is None or not holder.is_alive:
+            return flows
+        armed = set(getattr(holder, "armed_spells", None) or ())
+        for name, required in self.BUILTIN_SPELL_DAOWEN.items():
+            flow = self.SPELL_FLOWS.get(name)
+            if flow is None or name not in armed:
+                continue
+            if all(d in holder.dao_wen and holder.dao_wen[d].can_use()
+                   for d in required):
+                flows[name] = flow
+        return flows
+
+    def buildable_spells(self, holder: Entity) -> list[str]:
+        """当前凭持有道纹**可以装配**但尚未装配的内置法术名。"""
+        if holder is None or not holder.is_alive:
+            return []
+        armed = set(getattr(holder, "armed_spells", None) or ())
+        out = []
+        for name, required in self.BUILTIN_SPELL_DAOWEN.items():
+            if name in armed or name not in self.SPELL_FLOWS:
+                continue
+            if all(d in holder.dao_wen and holder.dao_wen[d].can_use()
+                   for d in required):
+                out.append(name)
+        return sorted(out)
+
+    def spell_definition(self, holder: Entity, name: str):
+        """取一个法术的定义：自创法术读实体 spells，内置法术按道纹即时合成。
+
+        返回 Spell（内置法术为临时合成对象，不写回 holder.spells）；
+        取不到返回 None。合成对象每次新建，禁止拿它做身份比较。
+        """
+        if holder is None or not name:
+            return None
+        from .models import Spell
+        spell = next((sp for sp in holder.spells if sp.name == name), None)
+        if spell is not None:
+            return spell
+        required = self.BUILTIN_SPELL_DAOWEN.get(name)
+        flow = self.SPELL_FLOWS.get(name)
+        if required is None or flow is None:
+            return None
+        return Spell(
+            name=name,
+            required_daowen=list(required),
+            trigger_condition=flow.get("effect_flow", ""),
+            effect_flow=flow.get("effect_flow", ""),
+            rank=len(required),
+            automatic=bool(flow.get("automatic")),
+        )
 
     # 自创法术文本→执行：解析 trigger_condition / effect_flow 为 SPELL_FLOWS 同构结构。
     # 2026-08-29 重写：接入 engine.spell_dsl（触发时机词汇表扩展、显式目标声明、
@@ -3656,9 +3825,18 @@ class CombatEngine:
                 "dsl": True}
 
     def _eligible_spell_flows(self, holder: Entity, trigger: str) -> dict[str, dict]:
+        """某角色在某触发时机可发动的全部法术。
+
+        内置法术不再需要【学习】：所需道纹全部持有且可发动即进入候选
+        （见 _builtin_spell_flows）。自创法术仍读实体 spells 列表，
+        同名时自创定义覆盖内置定义（自创是本体的改写，不是重复）。
+        """
         flows = {}
         if holder is None or not holder.is_alive:
             return flows
+        for name, flow in self._builtin_spell_flows(holder).items():
+            if flow.get("trigger") == trigger:
+                flows[name] = flow
         for spell in holder.spells:
             flow = self.SPELL_FLOWS.get(spell.name)
             if flow is None:
@@ -4139,12 +4317,15 @@ class CombatEngine:
     def _global_trigger_holders(self, refs: dict[str, Entity]) -> dict[str, Entity]:
         """当前场上可能持有【战始/战终/回始/回终/敌回始/敌回终】法术的持有者。
 
-        怪物的 spells 恒为空列表（引擎从不给怪物挂法术），扫描全体 refs
-        对怪物零开销；死斗对手若通过完整封存快照持有自创法术，同样会被
-        正确扫描到（不局限于玩家侧）。
+        内置法术按道纹推导，因此不能只看 entity.spells 是否为空——
+        持有【封印】的角色即使 spells 为空也持有【镇魔印】（自身回合结束）。
+        怪物通常既不持 spells 也不持有内置法术所需道纹，扫描开销仍可忽略；
+        死斗对手若通过完整封存快照持有自创法术，同样会被正确扫描到
+        （不局限于玩家侧）。
         """
         return {ref: entity for ref, entity in refs.items()
-                if entity.is_alive and entity.spells}
+                if entity.is_alive
+                and (entity.spells or self._builtin_spell_flows(entity))}
 
     def _resolve_global_entry_target(self, step, entry, holder: Entity,
                                      refs: dict[str, Entity], reverse: dict[int, str]):
@@ -4176,7 +4357,7 @@ class CombatEngine:
             for name, flow in flows.items():
                 flat_steps = self._flatten_flow_steps(flow["steps"], holder, holder)
                 steps = []
-                spell = next((sp for sp in holder.spells if sp.name == name), None)
+                spell = self.spell_definition(holder, name)
                 for step in flat_steps:
                     daowen = self._step_daowen(step)
                     role = self._step_role(step)
@@ -4203,7 +4384,7 @@ class CombatEngine:
         holder = refs.get(holder_ref)
         if holder is None:
             return False
-        spell = next((sp for sp in holder.spells if sp.name == spell_name), None)
+        spell = self.spell_definition(holder, spell_name)
         if spell is None:
             return False
         if getattr(spell, "automatic", False):
@@ -4590,12 +4771,12 @@ class CombatEngine:
         finally:
             self._resolving_life_lost_reactions -= 1
 
-    # ========== 大流程：员工叛变 / 死之传承 ==========
+    # ========== 大流程：员工背叛 / 死之传承 ==========
 
     def check_employee_rebellion(self) -> dict:
         """
-        员工叛变（[战终]检查）：所有[员工]攻击次数×攻击力相加，
-        若 ≥ 轮回者当前生命 + 所有[朋友]攻击总值，则所有员工叛变夺取《死者之书》。
+        员工背叛（[战终]检查）：所有[员工]攻击次数×攻击力相加，
+        若 ≥ 轮回者当前生命 + 所有[朋友]攻击总值，则所有员工背叛夺取《死者之书》。
         """
         emps = [e for e in self.state.employees if e.is_alive]
         if not emps:
@@ -4607,7 +4788,7 @@ class CombatEngine:
         if emp_atk >= threshold:
             return {"rebellion": True, "rebels": [e.name for e in emps],
                     "employee_attack_total": emp_atk, "threshold": threshold,
-                    "options": ["镇压（与所有叛变员工开战）", "让利（本场每名员工工资+5碎片）", "谈判（给出合理方案）"]}
+                    "options": ["镇压（与所有背叛员工开战）", "让利（本场每名员工工资+5碎片）", "谈判（给出合理方案）"]}
         return {"rebellion": False, "employee_attack_total": emp_atk, "threshold": threshold}
 
     def trigger_death_legacy(self, legacy: dict[str, str] | str) -> dict:
@@ -4865,6 +5046,11 @@ class CombatEngine:
                 if ally.is_alive and any(relic.name == "防弹插板" for relic in ally.relics):
                     ally.gain_shield(15)
                     logs.append(f"防弹插板：{ally.name}+15格挡")
+        # 机制系统：BATTLE_END 相位分发。位置=战终遗物段顶部（2026-09-17 新增相位，
+        # 首个注册者是改版后的【缄默面具】：[战终]法限+X）。
+        # process_relics 只宣布时点，具体机制条件/效果都在声明层。
+        if trigger == "battle_end":
+            logs.extend(self._dispatch_phase(Phase.BATTLE_END, target=player))
         if trigger == "battle_end" and "三相残韵盘" in relics and self._sanxiang_consumed:
             others = [t for t in ("转换", "反转", "曲解") if t != self._sanxiang_consumed]
             for t in others:
@@ -4897,8 +5083,9 @@ class CombatEngine:
         """该怪物本回合已发动的道纹集合（换回合自动清空）。
 
         DM裁定（2026-08-18，规则正文·怪物准则9）：怪物可在不同回合重复发动同一
-        道纹（冷却类由 can_use 管辖），每回合每道纹至多一次；重复使用的代价
-        由道纹递增机制承担（每次实际发动 X+2×副本阶级）。
+        道纹（冷却类由 can_use 管辖），每回合每道纹至多一次。
+        2026-09-16 用户令：原「重复发动则 X 累加 +2×副本阶级」的递增机制已废止，
+        重复发动按同一 X 计费。
         _monster_activated 保留为持续激活口径（狂暴出手加成等），不再作发动门禁。
         """
         rec = self._monster_daowen_round_used.get(id(monster))
@@ -4984,11 +5171,6 @@ class CombatEngine:
                     if (name in round_used or not inst.can_use()
                             or name not in DaoWenEngine.list_all()):
                         continue
-                    if name == "赌命" and getattr(monster, "fake_shards", 0) < inst.x_value:
-                        continue
-                    if (name == "消灾" and monster.fake_shards < 50 * inst.x_value
-                            and monster.shards < 5 * inst.x_value):
-                        continue
                     rewritten_as = (self._resonance_rewrites.get(id(monster)) or {}).get(name)
                     effective_name = rewritten_as or name
                     requires_target = self._daowen_requires_target(effective_name)
@@ -5001,12 +5183,6 @@ class CombatEngine:
                                              or target["ref"] == "player:0")]
                     if requires_target and not legal_targets:
                         continue
-                    # 过滤当前付不起数值代价的候选（改写后代价可能超出怪物资源）
-                    preview_target = (refs[legal_targets[0]["ref"]] if legal_targets else monster)
-                    preview_calc = DaoWenEngine.resolve(
-                        effective_name, inst.x_value, target=preview_target, caster=monster)
-                    if not self._monster_can_pay_calc_cost(monster, preview_calc):
-                        continue
                     # 波及X：必须显式提交X个互不重复的合法目标。DM裁定2026-08-23：
                     # 面板X超过当前合法目标数时按目标数**自适应降X**（有效X=
                     # min(面板X, 合法目标数)），与玩家侧 _max_legal_daowen_x 的
@@ -5015,18 +5191,46 @@ class CombatEngine:
                     # （取代2026-08-22 BUG-01的"不足X即过滤"方案：过滤让面板波及
                     # 怪在solo场上1/111场才开得出火，属于非符合预期效果。）
                     dodge_target_options: list[dict] = []
-                    wave_effective_x = 0
                     if effective_name == "波及":
                         dodge_target_options = [target for target in all_targets
                                                 if target["ref"] != actor_ref
                                                 and self.is_targetable(monster, refs[target["ref"]])]
                         if not dodge_target_options:
                             continue
-                        wave_effective_x = min(inst.x_value, len(dodge_target_options))
+                    # 过滤当前付不起数值代价的候选（改写后代价可能超出怪物资源）
+                    preview_target = (refs[legal_targets[0]["ref"]] if legal_targets else monster)
+                    # 2026-09-16 用户令：面板不写死 X 时，X 由发动方自选，
+                    # 「上限只受法限或者代价限制」。这里探出可负担上限，
+                    # 连 X=1 都付不起 → 本道纹此刻不可发动，prepare 过滤。
+                    if getattr(inst, "x_free", False):
+                        max_x = self._monster_max_daowen_x(
+                            monster, effective_name, preview_target,
+                            hard_cap=len(dodge_target_options) if effective_name == "波及" else None)
+                        if max_x < 1:
+                            continue
+                        effective_x = max_x
+                    else:
+                        if name == "赌命" and getattr(monster, "fake_shards", 0) < inst.x_value:
+                            continue
+                        if (name == "消灾" and monster.fake_shards < 50 * inst.x_value
+                                and monster.shards < 5 * inst.x_value):
+                            continue
+                        effective_x = inst.x_value
+                    preview_calc = DaoWenEngine.resolve(
+                        effective_name, effective_x, target=preview_target, caster=monster)
+                    if not self._monster_can_pay_calc_cost(monster, preview_calc):
+                        continue
+                    wave_effective_x = 0
+                    if effective_name == "波及":
+                        wave_effective_x = min(effective_x, len(dodge_target_options))
                     daowen_options.append({
                         "name": name,
                         "resolves_as": effective_name,
-                        "x": inst.x_value,
+                        # 2026-09-16 用户令：x_free 时面板没有 X，改由发动方在
+                        # [1, max_x] 内自选；x 字段保留为上限值以便旧调用方读取。
+                        "x": effective_x,
+                        "x_free": bool(getattr(inst, "x_free", False)),
+                        "max_x": max_x if getattr(inst, "x_free", False) else 0,
                         "wave_effective_x": wave_effective_x,
                         "requires_target": requires_target,
                         "target_options": legal_targets,
@@ -5092,7 +5296,49 @@ class CombatEngine:
             amount = calc.get(key, 0)
             if amount and capacity < amount:
                 return False
+        # 2026-09-16 用户令：怪物与轮回者同口径持有[法限]，发动【消耗】类道纹必须付法力。
+        # 旧条文「怪物不持有法力、发动道纹不支付法力」已废止。
+        if calc.get("cost_type") == "消耗" and calc.get("cost", 0) > 0:
+            if caster.current_mana < calc["cost"]:
+                return False
         return True
+
+    # 2026-09-16 用户令：面板不再写死 X，改由怪物 AI 在发动时自选，
+    # 「上限只受法限或者代价限制」。试探上限时逐个 X 递增，取第一个付不起的 X 之前的值。
+    # 代价随 X 单调递增（杀伐 X² 之类的超线性亦然），故首次失败即可停止，不必二分。
+    _DAOWEN_X_PROBE_CAP = 30
+
+    def _monster_max_daowen_x(self, monster: Entity, effective_name: str, target: Entity,
+                              hard_cap: int | None = None) -> int:
+        """求该道纹此刻可负担的最大 X。返回 0 表示连 X=1 都付不起（prepare 应过滤掉）。"""
+        cap = hard_cap if hard_cap is not None else self._DAOWEN_X_PROBE_CAP
+        best = 0
+        for x in range(1, max(0, cap) + 1):
+            try:
+                calc = DaoWenEngine.resolve(effective_name, x, target=target, caster=monster)
+            except ValueError:
+                # X_LIMITS 之类的硬性上限（如【失忆】X≤当前道纹数量）会在此抛错
+                break
+            if not self._monster_can_pay_calc_cost(monster, calc):
+                break
+            # 【异变】是**累加计数**而非可花费的预算：付异变等于给自己叠层，
+            # 达到 MUTATION_COLLAPSE_THRESHOLD 就【崩解】命零，所以它没有天然的
+            # "付不起"上限，探测会一路撞上试探封顶值。这里按生存线封顶——
+            # 允许叠加到崩解线之前，但**不把"当场自爆"的 X 当成合法选项**。
+            # （是否值得逼近崩解线由 AI 预演评分自行权衡，引擎只保证不主动提供自杀档。）
+            if calc.get("cost_type") == "异变":
+                headroom = (Entity.MUTATION_COLLAPSE_THRESHOLD
+                            - getattr(monster, "mutation_count", 0))
+                if calc.get("cost_mutation", 0) >= headroom:
+                    break
+            # 碎片/假碎片类道纹不经过 _monster_can_pay_calc_cost，单独封顶
+            if effective_name == "赌命" and getattr(monster, "fake_shards", 0) < x:
+                break
+            if effective_name == "消灾" and (monster.fake_shards < 50 * x
+                                             and monster.shards < 5 * x):
+                break
+            best = x
+        return best
 
     def _resolve_monster_daowen_choice(
         self, monster: Entity, choice: dict, refs: dict[str, Entity], activated: set,
@@ -5120,13 +5366,51 @@ class CombatEngine:
                 raise ValueError(f"道纹【{effective_name}】不接受target_ref")
             target = monster
 
+        # 2026-09-16 用户令：面板未写死 X（x_free）时，X 由发动方在提交里自选，
+        # 「上限只受法限或者代价限制」——这里按 prepare 同一口径重新探一次上限并校验，
+        # 防止提交方给出此刻已付不起的 X（资源在 prepare 之后可能已被消耗）。
+        if getattr(inst, "x_free", False):
+            submitted_x = choice.get("x")
+            # 提交方没有给 X 时**回退到可负担上限**而非报错。
+            # sim/ 下有几十处怪物阶段驱动各自拼装提交字典，面板去掉 X 后它们
+            # 不会凭空多出一个 x 字段；若此处硬报错，迁面板就等于让整个
+            # 模拟器与手操流程当场跑不起来。回退保证"改面板不会改坏"，
+            # 想要更精细取值的 AI 自行提交 x 即可（见 sim/duel_common.py）。
+            # 只把"没有这个字段"当作未提交；负数/0 是明确的非法输入，必须拒绝，
+            # 不能拿任何整数值当哨兵（否则 -1 会被静默当成"回退到上限"）。
+            missing = submitted_x is None
+            if not missing and (not isinstance(submitted_x, int)
+                                or isinstance(submitted_x, bool)):
+                raise ValueError(f"道纹【{name}】的x必须是整数")
+            hard_cap = (len(prepared_option.get("dodge_target_options", []))
+                        if effective_name == "波及" else None)
+            max_x = self._monster_max_daowen_x(monster, effective_name, target,
+                                               hard_cap=hard_cap)
+            if missing:                    # 提交方未给 X → 回退到上限
+                effective_x = max_x
+            elif not 1 <= submitted_x <= max_x:
+                raise ValueError(
+                    f"道纹【{name}】X={submitted_x}超出可负担范围1~{max_x}")
+            else:
+                effective_x = submitted_x
+            if effective_x < 1:
+                raise ValueError(f"道纹【{name}】此刻无可负担的X（上限{max_x}）")
+        else:
+            effective_x = inst.x_value
+
         # 先完成完整闪避提交的静态校验，再支付任何代价或改变激活状态。
-        calc = DaoWenEngine.resolve(effective_name, inst.x_value, target=target, caster=monster)
+        calc = DaoWenEngine.resolve(effective_name, effective_x, target=target, caster=monster)
         # 动态代价校验：残韵改写/状态变化后怪物可能付不起代价（如速度归零后
         # 【洞察】(疲惫3)）——本次视为无法发动并跳过，不硬报错、不占出手。
         if not self._monster_can_pay_calc_cost(monster, calc):
             return {"monster": monster.name, "daowen_skipped": name,
                     "resolves_as": effective_name, "reason": "无法支付代价"}
+        # 2026-09-16 用户令：怪物支付法力（旧条文"不支付法力"已废止）。
+        # 付不起的情况已由上一闸门挡掉，这里只做实际支付。
+        # 注意：法力同时就是[攻击力]，此刻支付会削弱本回合**之后**的普攻——
+        # 攻击与道纹的先后顺序由提交方（AI/操作者）决定，这正是"先攻后纹还是先纹后攻"的取舍。
+        if calc.get("cost_type") == "消耗" and calc.get("cost", 0) > 0:
+            monster.spend_mana(calc["cost"])
         hostile = self.state.on_player_side(target) != self.state.on_player_side(monster)
         dodge = choice.get("dodge")
         blood_shadow = choice.get("blood_shadow", False)
@@ -5138,7 +5422,7 @@ class CombatEngine:
             # DM裁定2026-08-23自适应降X：以prepare快照的wave_effective_x为准
             # （min(面板X, 合法目标数)），驱动与校验始终同一口径。
             mark_count = int(prepared_option.get("wave_effective_x")
-                             or calc.get("mark_targets", inst.x_value))
+                             or calc.get("mark_targets", effective_x))
             if not isinstance(submitted_dodges, list) or len(submitted_dodges) != mark_count:
                 raise ValueError(f"道纹【波及】必须为{mark_count}个目标显式提交dodge_targets")
             expected_ref_list = [
@@ -5212,35 +5496,35 @@ class CombatEngine:
                 raise ValueError("残韵改写已变化，请重新prepare_monster_phase")
         # 原始怪物道纹发动时支付异变5X；选择导致崩解仍是合法结算，效果中断。
         elif name in self.ORIGINAL_MONSTER_DAOWEN:
-            paid = monster.add_mutation(self.YUANCHU_COST_RATE * inst.x_value)
+            paid = monster.add_mutation(self.YUANCHU_COST_RATE * effective_x)
             if paid["collapsed"]:
                 # 修复：此前直接 return，崩解死者从不进入统一死亡管线
                 # （不产生 _death_ctx、不进 dead_monsters、不触发焦黑发丝/分裂）。
                 self._on_entity_death(monster, ctx=self._collapse_context(monster, {
                     "timing": "monster_action", "source": name, "source_type": "daowen",
                     "actor": monster, "target": monster, "mechanic": "cost",
-                    "subtype": "mutation", "amount": self.YUANCHU_COST_RATE * inst.x_value,
+                    "subtype": "mutation", "amount": self.YUANCHU_COST_RATE * effective_x,
                     "tags": {"daowen", "active_payment"}}))
                 return {"monster": monster.name, "collapsed": name,
                         "note": "支付异变后触发【崩解】，道纹效果中断"}
         elif name == "封印":
             # 怪物侧若持有【封印】，同样按新版口径支付异变X；玩家【封印】才会
             # 把目标怪物放入延迟回场队列。
-            paid = monster.add_mutation(inst.x_value)
+            paid = monster.add_mutation(effective_x)
             if paid["collapsed"]:
                 self._on_entity_death(monster, ctx=self._collapse_context(monster, {
                     "timing": "monster_action", "source": name, "source_type": "daowen",
                     "actor": monster, "target": monster, "mechanic": "cost",
-                    "subtype": "mutation", "amount": inst.x_value,
+                    "subtype": "mutation", "amount": effective_x,
                     "tags": {"daowen", "active_payment"}}))
                 return {"monster": monster.name, "collapsed": name,
                         "note": "支付异变后触发【崩解】，道纹效果中断"}
         elif name == "赌命":
-            if monster.fake_shards < inst.x_value:
+            if monster.fake_shards < effective_x:
                 raise ValueError(f"{monster.name}假碎片不足，不能发动【赌命】")
-            monster.fake_shards -= inst.x_value
+            monster.fake_shards -= effective_x
         elif name == "消灾":
-            fake_cost, real_cost = 50 * inst.x_value, 5 * inst.x_value
+            fake_cost, real_cost = 50 * effective_x, 5 * effective_x
             if monster.fake_shards >= fake_cost:
                 monster.fake_shards -= fake_cost
             else:
@@ -5254,12 +5538,8 @@ class CombatEngine:
         if not rewritten_as:
             activated.add(name)
             self._monster_round_used(monster).add(name)
-            # 怪物道纹递增（DM裁定2026-08-18，规则正文·怪物准则9）：每实际发动一次，
-            # 该道纹X本场累加+2×副本阶级。只在真正完成发动时累加（无法支付代价、
-            # 崩解中断、被控跳过的回合均不计）；残韵改写的一次性结算不递增源道纹。
-            # 怪物无法力概念，递增只放大效果数值与真实代价；实例随战斗结束消散。
-            from .gamedata import REGION_TIERS
-            inst.x_value += 2 * REGION_TIERS.get(self.state.current_region, 1)
+            # 2026-09-16 用户令：道纹递增（升级）机制已废止。X 恒为面板/借用时写定的值，
+            # 重复发动按同一 X 计费，不再随发动次数累加。
         monster.actions_used_this_round += 1
 
         aoe_targets_override = None
@@ -5285,7 +5565,7 @@ class CombatEngine:
             execution = self.apply_daowen_effect(effective_name, calc, monster, target)
             execution["wave_marked"] = wave_marked
             execution["wave_unmarked"] = wave_unmarked
-            return {"monster": monster.name, "daowen_activated": name, "x": inst.x_value,
+            return {"monster": monster.name, "daowen_activated": name, "x": effective_x,
                     "resolves_as": effective_name, "resonance_rewrite": bool(rewritten_as),
                     "target": target.name, "execution": execution,
                     "trigger_spell_logs": trigger_logs}
@@ -5310,7 +5590,7 @@ class CombatEngine:
             effective_name, calc, monster, target,
             aoe_targets_override=aoe_targets_override,
         )
-        return {"monster": monster.name, "daowen_activated": name, "x": inst.x_value,
+        return {"monster": monster.name, "daowen_activated": name, "x": effective_x,
                 "resolves_as": effective_name, "resonance_rewrite": bool(rewritten_as),
                 "target": target.name, "execution": execution,
                 "trigger_spell_logs": trigger_logs}

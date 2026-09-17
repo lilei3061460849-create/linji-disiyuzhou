@@ -98,10 +98,12 @@ def test_resonance_on_enemy_grants_dest_and_rewrites_next_activation():
     engine = _engine("res_happy")
     engine.state.resonance["反转"] = 1
     engine.execute_action("battle_start", {})
+    # 2026-09-16：法力即[攻击力]。反转后狂暴2→自残2，自残消耗3X=6，5 点法力付不起；
+    # 给 11 点：付掉 6 点后剩 5，自残按结算那一刻的攻力 5 打 2 次＝10 伤，HP 仍 80→70。
     monster = Entity(name="通缉犯", entity_type="怪物", blood_limit=80, current_hp=80,
-                     attack_count=1, attack_power=5)
+                     attack_count=1, attack_power=5, mana_limit=11, current_mana=11)
     _give_daowen(monster, "狂暴", x=2)
-    _give_daowen(monster, "强化", x=1)
+    _give_daowen(monster, "全力", x=1)
     monster._had_monster_daowen = True
     _put_enemy(engine, monster)
     engine.execute_action("round_start", {})
@@ -148,7 +150,7 @@ def test_resonance_no_duplicate_when_caster_already_owns_dest():
     monster = Entity(name="唯一狂暴", entity_type="怪物", blood_limit=80, current_hp=80,
                      attack_count=1, attack_power=4)
     _give_daowen(monster, "狂暴", x=1)
-    _give_daowen(monster, "强化", x=1)
+    _give_daowen(monster, "全力", x=1)
     monster._had_monster_daowen = True
     _put_enemy(engine, monster)
     engine.execute_action("round_start", {})
@@ -303,8 +305,10 @@ def test_borrowed_shaifa_fires_in_monster_phase():
     """正常路径：困境怪借杀伐2后，怪物回合按 X²=4 打向轮回者。"""
     engine = _engine("evo_happy")
     engine.execute_action("battle_start", {})
+    # 2026-09-16：怪物[法力]即[攻击力]。杀伐2 需 2 点法力，故给足 2 点——
+    # 引擎先结算道纹、后结算普攻，花光这 2 点后普攻为 0，总伤害仍只等于杀伐的 X²。
     monster = Entity(name="困境怪", entity_type="怪物", blood_limit=120, current_hp=30,
-                     attack_count=1, attack_power=0)
+                     attack_count=1, attack_power=0, mana_limit=2, current_mana=2)
     _put_enemy(engine, monster)
     _advance_to_active_round(engine)
     ev = engine.execute_action("declare_evolution", {
@@ -329,8 +333,11 @@ def test_borrowed_shaifa_x1_deals_two():
     """边界：借用杀伐X=1，伤害 X²=1。"""
     engine = _engine("evo_bound")
     engine.execute_action("battle_start", {})
+    # 2026-09-16：怪物[法力]即[攻击力]。杀伐2 需 2 点法力，故给足 2 点——
+    # 引擎先结算道纹、后结算普攻，花光这 2 点后普攻为 0，总伤害仍只等于杀伐的 X²。
+    # 杀伐X=1 只需 1 点法力；给 2 点的话放完还剩 1 点、普攻会多打 1 点，断言就会差 1。
     monster = Entity(name="困境怪", entity_type="怪物", blood_limit=120, current_hp=30,
-                     attack_count=1, attack_power=0)
+                     attack_count=1, attack_power=0, mana_limit=1, current_mana=1)
     _put_enemy(engine, monster)
     _advance_to_active_round(engine)
     assert engine.execute_action("declare_evolution", {

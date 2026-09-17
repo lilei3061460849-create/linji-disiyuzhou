@@ -25,6 +25,7 @@ from __future__ import annotations
 import math
 
 from ..combat_events import CombatEventType
+from ..models import StatusEffect
 from .conditions import (
     all_, amount_positive, any_, damage_type_not, entity_type, has_status, is_alive,
     not_, relic_active,
@@ -307,31 +308,68 @@ XIJIE_PASSIVE = Mechanism(
 )
 
 def _silent_mask_effect(ctx: TriggerContext, targets: list) -> str:
-    """旧 process_relics 缄默面具块语义（逐字复刻）：
+    """【缄默面具】2026-09-17 用户令改版：[战终][法限]+X。
 
-    获得 20×X 点法力（X=event_modifiers.silent_mask_x），经 mana 动词
-    （获得含不朽之躯钳制）；X=0 时旧块仍会执行钳制（+=0 后无条件 clamp），
-    故此处显式补一次钳制以保持逐字等价。返回旧日志串。
+    旧效果为「[战始]获得 20×X 点法力」（X=event_modifiers.silent_mask_x，
+    来自事件「献出声音：失忆X」）。属性模型统一后法力=攻击力，[战始]一次性
+    给 20X 法力等于同时白送攻击力，强度跳变；且法力每场都会回满，[战始]给蓝
+    的边际价值很低。故改为**战终永久成长**：[战终][法限]+X。
 
     注意：缄默面具的【无法发动附带代价的道纹】是 api.py 的静态校验规则
-    （另一字面规则），不在本机制范围。
+    （另一字面规则），不在本机制范围，保持不变。
+
+    X=0（未登记 silent_mask_x）时不发放，保持与旧块一致的无操作语义。
     """
     x = ctx.state.event_modifiers.get("silent_mask_x", 0)
     player = ctx.target
-    apply_verb(ctx.combat, "mana", {"target": player, "delta": 20 * x})
-    if x == 0:
-        ctx.combat.clamp_immortal_body(player)
-    return f"缄默面具：+{20*x}法力"
+    if x > 0:
+        player.mana_limit += x
+    # X=0 时旧块仍会执行钳制（+=0 后无条件 clamp），此处保持逐字等价：
+    # 法限提高不连带回血/回蓝，但当前法力不得超过（新）上限——全局钳制规则。
+    ctx.combat.clamp_immortal_body(player)
+    if x <= 0:
+        return "缄默面具：+0法限"
+    return f"缄默面具：[法限]+{x}（现为{player.mana_limit}）"
 
 
 SILENT_MASK = Mechanism(
     name="缄默面具",
-    when=Trigger.phase(Phase.BATTLE_START),
+    when=Trigger.phase(Phase.BATTLE_END),
     effect=_silent_mask_effect,
     target=SELF,
     condition=relic_active("缄默面具", of="target"),
-    # 旧位置=战始遗物段缄默面具块（帮派令=10 之前）；同相位按 priority 保持原序
-    priority=5,
+    # 2026-09-17 改版：由 BATTLE_START(priority=5) 移到 BATTLE_END；
+    # 新相位首个注册者，取 10 留出入位空间
+    priority=10,
+)
+
+
+def _dragon_claw_effect(ctx: TriggerContext, targets: list) -> str:
+    """【龙族利爪】（2026-09-17 用户令改版）：攻击力 = 当前法力×2。
+
+    旧版「初始3点攻击次数与1点攻击力；每完成一次行动后，攻击次数+1、攻击力+2」
+    写的是遗留字段 attack_power / attack_count。属性模型统一后
+    （攻击力=当前法力、攻击次数=当前速度），而 models.py 的写穿对轮回者不生效，
+    故旧版**对轮回者完全无效**——实测遗留字段 6→7 / 20→22，真实攻次与攻力恒定
+    6 / 20，整场每次行动都在空转。
+
+    新版改为被动倍率，走状态层，由 models.py::effective_attack_power 读取，
+    对轮回者/怪物/朋友/员工同口径生效。
+    """
+    player = ctx.target
+    player.add_status(StatusEffect(
+        name="龙族利爪", value=1, remaining_rounds=999, source="龙族利爪"))
+    return "龙族利爪：攻击力=当前法力×2"
+
+
+DRAGON_CLAW = Mechanism(
+    name="龙族利爪",
+    when=Trigger.phase(Phase.BATTLE_START),
+    effect=_dragon_claw_effect,
+    target=SELF,
+    condition=relic_active("龙族利爪", of="target"),
+    # 战始遗物段，排在缄默面具(5)之前无依赖，取 4
+    priority=4,
 )
 
 GANGPAILING = Mechanism(
@@ -418,4 +456,5 @@ MECHANISMS.register(KUANGBAO_MARKER)
 MECHANISMS.register(JIBIAN_MARKER)
 MECHANISMS.register(XIJIE_PASSIVE)
 MECHANISMS.register(SILENT_MASK)
+MECHANISMS.register(DRAGON_CLAW)
 
