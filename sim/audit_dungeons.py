@@ -32,9 +32,15 @@ def parse_monsters(path: str) -> list[dict]:
         if not m:
             continue
         name, hp, ml, sl, dw_raw = m.groups()
+        # 2026-09-16 用户令：面板不再写死 X，道纹段写作「分裂，狂暴，…」。
+        # 解析必须与 engine/monsters.py 同口径、且同样**兼容带 X 的旧写法**，
+        # 否则面板迁移后审计会把道纹数读成 0、误报"道纹数≠5"。
+        # 按「，」切词而非 findall：后者会把行内说明文字里的汉字+数字也当道纹。
         dw = {}
-        for dm in re.finditer(r"([\u4e00-\u9fff]{2})(\d+)", dw_raw):
-            dw[dm.group(1)] = int(dm.group(2))
+        for token in re.split(r"[，,、]", dw_raw):
+            mt = re.match(r"^\s*([\u4e00-\u9fff]{2,4})(\d+)?\s*$", token.strip())
+            if mt:
+                dw[mt.group(1)] = int(mt.group(2)) if mt.group(2) else None
         # 属性点计价不变：1点=6血限、2点=1法限=1速限（攻次=速限、攻力=法限）
         out.append({"name": name, "hp": int(hp), "ap": int(ml), "ac": int(sl), "dw": dw})
     return out
@@ -67,7 +73,8 @@ def audit():
             status = "合规" if not issues else "❌" + "；".join(issues)
             if issues:
                 viol += 1
-            dw_s = "+".join(f"{k}{v}" for k, v in m["dw"].items())
+            # X 为 None 表示面板未写死、发动时自选，打印时只显示道纹名
+            dw_s = "+".join(f"{k}{'' if v is None else v}" for k, v in m["dw"].items())
             print(f"  {m['name']:<8} {m['ac']}×{m['ap']}/{m['hp']:<5} {dw_s:<35} 成本{cost:<4} {status}")
         print(f"  违规 {viol}/{len(monsters)}\n")
         total_viol += viol
