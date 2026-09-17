@@ -5105,11 +5105,6 @@ class CombatEngine:
                     if (name in round_used or not inst.can_use()
                             or name not in DaoWenEngine.list_all()):
                         continue
-                    if name == "赌命" and getattr(monster, "fake_shards", 0) < inst.x_value:
-                        continue
-                    if (name == "消灾" and monster.fake_shards < 50 * inst.x_value
-                            and monster.shards < 5 * inst.x_value):
-                        continue
                     rewritten_as = (self._resonance_rewrites.get(id(monster)) or {}).get(name)
                     effective_name = rewritten_as or name
                     requires_target = self._daowen_requires_target(effective_name)
@@ -5122,12 +5117,6 @@ class CombatEngine:
                                              or target["ref"] == "player:0")]
                     if requires_target and not legal_targets:
                         continue
-                    # 过滤当前付不起数值代价的候选（改写后代价可能超出怪物资源）
-                    preview_target = (refs[legal_targets[0]["ref"]] if legal_targets else monster)
-                    preview_calc = DaoWenEngine.resolve(
-                        effective_name, inst.x_value, target=preview_target, caster=monster)
-                    if not self._monster_can_pay_calc_cost(monster, preview_calc):
-                        continue
                     # 波及X：必须显式提交X个互不重复的合法目标。DM裁定2026-08-23：
                     # 面板X超过当前合法目标数时按目标数**自适应降X**（有效X=
                     # min(面板X, 合法目标数)），与玩家侧 _max_legal_daowen_x 的
@@ -5136,18 +5125,46 @@ class CombatEngine:
                     # （取代2026-08-22 BUG-01的"不足X即过滤"方案：过滤让面板波及
                     # 怪在solo场上1/111场才开得出火，属于非符合预期效果。）
                     dodge_target_options: list[dict] = []
-                    wave_effective_x = 0
                     if effective_name == "波及":
                         dodge_target_options = [target for target in all_targets
                                                 if target["ref"] != actor_ref
                                                 and self.is_targetable(monster, refs[target["ref"]])]
                         if not dodge_target_options:
                             continue
-                        wave_effective_x = min(inst.x_value, len(dodge_target_options))
+                    # 过滤当前付不起数值代价的候选（改写后代价可能超出怪物资源）
+                    preview_target = (refs[legal_targets[0]["ref"]] if legal_targets else monster)
+                    # 2026-09-16 用户令：面板不写死 X 时，X 由发动方自选，
+                    # 「上限只受法限或者代价限制」。这里探出可负担上限，
+                    # 连 X=1 都付不起 → 本道纹此刻不可发动，prepare 过滤。
+                    if getattr(inst, "x_free", False):
+                        max_x = self._monster_max_daowen_x(
+                            monster, effective_name, preview_target,
+                            hard_cap=len(dodge_target_options) if effective_name == "波及" else None)
+                        if max_x < 1:
+                            continue
+                        effective_x = max_x
+                    else:
+                        if name == "赌命" and getattr(monster, "fake_shards", 0) < inst.x_value:
+                            continue
+                        if (name == "消灾" and monster.fake_shards < 50 * inst.x_value
+                                and monster.shards < 5 * inst.x_value):
+                            continue
+                        effective_x = inst.x_value
+                    preview_calc = DaoWenEngine.resolve(
+                        effective_name, effective_x, target=preview_target, caster=monster)
+                    if not self._monster_can_pay_calc_cost(monster, preview_calc):
+                        continue
+                    wave_effective_x = 0
+                    if effective_name == "波及":
+                        wave_effective_x = min(effective_x, len(dodge_target_options))
                     daowen_options.append({
                         "name": name,
                         "resolves_as": effective_name,
-                        "x": inst.x_value,
+                        # 2026-09-16 用户令：x_free 时面板没有 X，改由发动方在
+                        # [1, max_x] 内自选；x 字段保留为上限值以便旧调用方读取。
+                        "x": effective_x,
+                        "x_free": bool(getattr(inst, "x_free", False)),
+                        "max_x": max_x if getattr(inst, "x_free", False) else 0,
                         "wave_effective_x": wave_effective_x,
                         "requires_target": requires_target,
                         "target_options": legal_targets,
@@ -5220,6 +5237,43 @@ class CombatEngine:
                 return False
         return True
 
+    # 2026-09-16 用户令：面板不再写死 X，改由怪物 AI 在发动时自选，
+    # 「上限只受法限或者代价限制」。试探上限时逐个 X 递增，取第一个付不起的 X 之前的值。
+    # 代价随 X 单调递增（杀伐 X² 之类的超线性亦然），故首次失败即可停止，不必二分。
+    _DAOWEN_X_PROBE_CAP = 30
+
+    def _monster_max_daowen_x(self, monster: Entity, effective_name: str, target: Entity,
+                              hard_cap: int | None = None) -> int:
+        """求该道纹此刻可负担的最大 X。返回 0 表示连 X=1 都付不起（prepare 应过滤掉）。"""
+        cap = hard_cap if hard_cap is not None else self._DAOWEN_X_PROBE_CAP
+        best = 0
+        for x in range(1, max(0, cap) + 1):
+            try:
+                calc = DaoWenEngine.resolve(effective_name, x, target=target, caster=monster)
+            except ValueError:
+                # X_LIMITS 之类的硬性上限（如【失忆】X≤当前道纹数量）会在此抛错
+                break
+            if not self._monster_can_pay_calc_cost(monster, calc):
+                break
+            # 【异变】是**累加计数**而非可花费的预算：付异变等于给自己叠层，
+            # 达到 MUTATION_COLLAPSE_THRESHOLD 就【崩解】命零，所以它没有天然的
+            # "付不起"上限，探测会一路撞上试探封顶值。这里按生存线封顶——
+            # 允许叠加到崩解线之前，但**不把"当场自爆"的 X 当成合法选项**。
+            # （是否值得逼近崩解线由 AI 预演评分自行权衡，引擎只保证不主动提供自杀档。）
+            if calc.get("cost_type") == "异变":
+                headroom = (Entity.MUTATION_COLLAPSE_THRESHOLD
+                            - getattr(monster, "mutation_count", 0))
+                if calc.get("cost_mutation", 0) >= headroom:
+                    break
+            # 碎片/假碎片类道纹不经过 _monster_can_pay_calc_cost，单独封顶
+            if effective_name == "赌命" and getattr(monster, "fake_shards", 0) < x:
+                break
+            if effective_name == "消灾" and (monster.fake_shards < 50 * x
+                                             and monster.shards < 5 * x):
+                break
+            best = x
+        return best
+
     def _resolve_monster_daowen_choice(
         self, monster: Entity, choice: dict, refs: dict[str, Entity], activated: set,
         prepared_option: dict,
@@ -5246,8 +5300,26 @@ class CombatEngine:
                 raise ValueError(f"道纹【{effective_name}】不接受target_ref")
             target = monster
 
+        # 2026-09-16 用户令：面板未写死 X（x_free）时，X 由发动方在提交里自选，
+        # 「上限只受法限或者代价限制」——这里按 prepare 同一口径重新探一次上限并校验，
+        # 防止提交方给出此刻已付不起的 X（资源在 prepare 之后可能已被消耗）。
+        if getattr(inst, "x_free", False):
+            submitted_x = choice.get("x")
+            if not isinstance(submitted_x, int) or isinstance(submitted_x, bool):
+                raise ValueError(f"道纹【{name}】面板未写死X，必须提交整数x")
+            hard_cap = (len(prepared_option.get("dodge_target_options", []))
+                        if effective_name == "波及" else None)
+            max_x = self._monster_max_daowen_x(monster, effective_name, target,
+                                               hard_cap=hard_cap)
+            if not 1 <= submitted_x <= max_x:
+                raise ValueError(
+                    f"道纹【{name}】X={submitted_x}超出可负担范围1~{max_x}")
+            effective_x = submitted_x
+        else:
+            effective_x = inst.x_value
+
         # 先完成完整闪避提交的静态校验，再支付任何代价或改变激活状态。
-        calc = DaoWenEngine.resolve(effective_name, inst.x_value, target=target, caster=monster)
+        calc = DaoWenEngine.resolve(effective_name, effective_x, target=target, caster=monster)
         # 动态代价校验：残韵改写/状态变化后怪物可能付不起代价（如速度归零后
         # 【洞察】(疲惫3)）——本次视为无法发动并跳过，不硬报错、不占出手。
         if not self._monster_can_pay_calc_cost(monster, calc):
@@ -5270,7 +5342,7 @@ class CombatEngine:
             # DM裁定2026-08-23自适应降X：以prepare快照的wave_effective_x为准
             # （min(面板X, 合法目标数)），驱动与校验始终同一口径。
             mark_count = int(prepared_option.get("wave_effective_x")
-                             or calc.get("mark_targets", inst.x_value))
+                             or calc.get("mark_targets", effective_x))
             if not isinstance(submitted_dodges, list) or len(submitted_dodges) != mark_count:
                 raise ValueError(f"道纹【波及】必须为{mark_count}个目标显式提交dodge_targets")
             expected_ref_list = [
@@ -5344,35 +5416,35 @@ class CombatEngine:
                 raise ValueError("残韵改写已变化，请重新prepare_monster_phase")
         # 原始怪物道纹发动时支付异变5X；选择导致崩解仍是合法结算，效果中断。
         elif name in self.ORIGINAL_MONSTER_DAOWEN:
-            paid = monster.add_mutation(self.YUANCHU_COST_RATE * inst.x_value)
+            paid = monster.add_mutation(self.YUANCHU_COST_RATE * effective_x)
             if paid["collapsed"]:
                 # 修复：此前直接 return，崩解死者从不进入统一死亡管线
                 # （不产生 _death_ctx、不进 dead_monsters、不触发焦黑发丝/分裂）。
                 self._on_entity_death(monster, ctx=self._collapse_context(monster, {
                     "timing": "monster_action", "source": name, "source_type": "daowen",
                     "actor": monster, "target": monster, "mechanic": "cost",
-                    "subtype": "mutation", "amount": self.YUANCHU_COST_RATE * inst.x_value,
+                    "subtype": "mutation", "amount": self.YUANCHU_COST_RATE * effective_x,
                     "tags": {"daowen", "active_payment"}}))
                 return {"monster": monster.name, "collapsed": name,
                         "note": "支付异变后触发【崩解】，道纹效果中断"}
         elif name == "封印":
             # 怪物侧若持有【封印】，同样按新版口径支付异变X；玩家【封印】才会
             # 把目标怪物放入延迟回场队列。
-            paid = monster.add_mutation(inst.x_value)
+            paid = monster.add_mutation(effective_x)
             if paid["collapsed"]:
                 self._on_entity_death(monster, ctx=self._collapse_context(monster, {
                     "timing": "monster_action", "source": name, "source_type": "daowen",
                     "actor": monster, "target": monster, "mechanic": "cost",
-                    "subtype": "mutation", "amount": inst.x_value,
+                    "subtype": "mutation", "amount": effective_x,
                     "tags": {"daowen", "active_payment"}}))
                 return {"monster": monster.name, "collapsed": name,
                         "note": "支付异变后触发【崩解】，道纹效果中断"}
         elif name == "赌命":
-            if monster.fake_shards < inst.x_value:
+            if monster.fake_shards < effective_x:
                 raise ValueError(f"{monster.name}假碎片不足，不能发动【赌命】")
-            monster.fake_shards -= inst.x_value
+            monster.fake_shards -= effective_x
         elif name == "消灾":
-            fake_cost, real_cost = 50 * inst.x_value, 5 * inst.x_value
+            fake_cost, real_cost = 50 * effective_x, 5 * effective_x
             if monster.fake_shards >= fake_cost:
                 monster.fake_shards -= fake_cost
             else:
@@ -5413,7 +5485,7 @@ class CombatEngine:
             execution = self.apply_daowen_effect(effective_name, calc, monster, target)
             execution["wave_marked"] = wave_marked
             execution["wave_unmarked"] = wave_unmarked
-            return {"monster": monster.name, "daowen_activated": name, "x": inst.x_value,
+            return {"monster": monster.name, "daowen_activated": name, "x": effective_x,
                     "resolves_as": effective_name, "resonance_rewrite": bool(rewritten_as),
                     "target": target.name, "execution": execution,
                     "trigger_spell_logs": trigger_logs}
@@ -5438,7 +5510,7 @@ class CombatEngine:
             effective_name, calc, monster, target,
             aoe_targets_override=aoe_targets_override,
         )
-        return {"monster": monster.name, "daowen_activated": name, "x": inst.x_value,
+        return {"monster": monster.name, "daowen_activated": name, "x": effective_x,
                 "resolves_as": effective_name, "resonance_rewrite": bool(rewritten_as),
                 "target": target.name, "execution": execution,
                 "trigger_spell_logs": trigger_logs}
