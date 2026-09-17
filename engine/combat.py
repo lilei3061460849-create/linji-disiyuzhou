@@ -1005,28 +1005,33 @@ class CombatEngine:
                 self.state.dead_monsters = []
             if entity not in self.state.dead_monsters:
                 self.state.dead_monsters.append(entity)
-        # 乱葬岗·分裂：[命零]创造X个复制体（血限20%，无分裂道纹）；缄默时全场命零效果被禁
-        if getattr(self.state, "_pending_split_clones", 0) > 0:
-            silenced = any(e.has_status("缄默") for e in self.state.get_all_player_side()
-                           + self.state.get_all_enemy_side())
-            if not silenced and entity.entity_type != "怪物":
-                clones = self.state._pending_split_clones
-                base_hp = max(1, math.ceil(entity.blood_limit * 20 / 100))
-                for i in range(clones):
-                    clone = Entity(name=f"{entity.name}·裂{i + 1}", entity_type="临时朋友",
-                                   blood_limit=base_hp, current_hp=base_hp,
-                                   attack_count=max(0, entity.attack_count),
-                                   attack_power=entity.attack_power)
-                    for dw_name, dw_inst in entity.dao_wen.items():
-                        if dw_name == "分裂":
-                            continue  # 复制体无分裂道纹
-                        clone.dao_wen[dw_name] = dw_inst
-                    self._bind_hp_hook(clone)
-                    self.state.temp_friends.append(clone)
-                self.state._pending_split_clones = 0
-                self._split_clones_spawned = clones
+        # 2026-09-17：【分裂】改为即时创生（见 _spawn_fenlie_clones），
+        # 原「[命零]时按本体 20% 血限创造复制体」的分支已随重做删除。
+
+    def _spawn_fenlie_clones(self, caster, count: int, clone_hp: int) -> list:
+        """【分裂】即时创造复制体：count 个 clone_hp 血限/生命的自身复制体。
+
+        复制体继承本体除【分裂】外的全部道纹（避免无限套娃），阵营与本体一致
+        （本体是怪物→进 enemies；否则→进 temp_friends）。返回新建的复制体列表。
+        """
+        clones = []
+        for i in range(max(0, count)):
+            clone = Entity(name=f"{caster.name}·裂{i + 1}",
+                           entity_type=caster.entity_type,
+                           blood_limit=clone_hp, current_hp=clone_hp,
+                           attack_count=caster.attack_count,
+                           attack_power=caster.attack_power)
+            for dw_name, dw_inst in caster.dao_wen.items():
+                if dw_name == "分裂":
+                    continue      # 复制体无分裂道纹，防止无限分裂
+                clone.dao_wen[dw_name] = dw_inst
+            self._bind_hp_hook(clone)
+            if caster.entity_type == "怪物":
+                self.state.enemies.append(clone)
             else:
-                self.state._pending_split_clones = 0
+                self.state.temp_friends.append(clone)
+            clones.append(clone)
+        return clones
 
     # ---- F2 全量：罪孽/扭曲专属道纹的公共辅助 ----
     def _shards_of(self, entity: Entity) -> int:
@@ -2016,11 +2021,15 @@ class CombatEngine:
                 if ("飞行" in expired or "滑翔" in expired) and not self._is_flying(entity):
                     entity.is_flying = False
                 if "变形" in expired and hasattr(entity, "_bianxing_original"):
-                    entity.attack_power, entity.attack_count = entity._bianxing_original
+                    # 2026-09-17 重做：还原的是互换前的**当前速度与当前法力**
+                    # （旧版还原遗留字段 attack_power/attack_count）。
+                    # 注意：互换时被上限钳掉的部分不会随还原回来——那是永久损失。
+                    entity.current_speed, entity.current_mana = entity._bianxing_original
                     delattr(entity, "_bianxing_original")
+                    self.clamp_immortal_body(entity)
                     effects.append({"type": "bianxing_restore", "entity": entity.name,
-                                    "attack_power": entity.attack_power,
-                                    "attack_count": entity.attack_count})
+                                    "current_speed": entity.current_speed,
+                                    "current_mana": entity.current_mana})
                 # 干扰/手雷减攻到期自动由 tick 清理，无需额外
             # F2：逼债/清算状态消失即清账（∞/持续X到期后不再逐回始结算）
             if not entity.has_status("逼债") and getattr(entity, "_bizhai", None):
@@ -2742,7 +2751,8 @@ class CombatEngine:
         # ---- 波及X（2026-08-21）：你发动的道纹同时作用于所有拥有波及效果的目标 ----
         # 数值型效果的总数值在所有目标（本次[目标]+波及目标，均排除施法者自身）间平分，
         # 余数随机分配；状态类效果对波及目标原样生效。多目标不复制或增加总数值。
-        wave_status_targets: list[Entity] = [target]
+        # 目标可选的道纹（如【变形】）未指定目标时兜底为施法者，避免 [None]
+        wave_status_targets: list[Entity] = [target if target else caster]
         wave_pieces: dict[str, list[int]] = {}
         if name != "波及":
             wave_targets = self._wave_targets(caster)
@@ -2785,7 +2795,7 @@ class CombatEngine:
 
         # 【冷却X】代价：规则正文「冷却X：使用后该道纹记为【X(0)/Y】，[战终]后已完成
         # 战斗场数+1，达到Y时才能再次使用」。此前从未写入 cooldown_remaining，
-        # 导致 固执/束缚/畸变/迟滞 可在同一场里无限重复发动（束缚因此支配全局）。
+        # 导致 固执/束缚/畸变/全速 可在同一场里无限重复发动（束缚因此支配全局）。
         if calc.get("cost_type") == "冷却":
             inst = caster.dao_wen.get(name)
             if inst is not None:
@@ -3169,10 +3179,11 @@ class CombatEngine:
         _panel_keys = ("attack_boost", "attack_reduction", "attack_fixed", "attack_count_fixed")
         # 波及扩散：attack_boost/reduction 数值平分；attack_fixed/attack_count_fixed
         # （固定面板为状态类）对波及目标原样生效。
+        # 目标可选的道纹（如【变形】）未指定目标时兜底为施法者，避免 [None]
         panel_targets = wave_status_targets if (
             any(k in wave_pieces for k in ("attack_boost", "attack_reduction"))
             or (any(k in calc for k in ("attack_fixed", "attack_count_fixed"))
-                and len(wave_status_targets) > 1)) else [target]
+                and len(wave_status_targets) > 1)) else [target if target else caster]
         for panel_idx, panel_target in enumerate(panel_targets):
             panel_locked = panel_target.has_status("定型") and any(k in calc for k in _panel_keys)
             if panel_locked:
@@ -3184,6 +3195,17 @@ class CombatEngine:
                     name, EffectPolarity.BUFF.value)
                 result["effects"].append({"type": "attack_boost", "target": panel_target.name,
                                           "attack_power": panel_target.attack_power})
+            # 【强化】2026-09-17 用户令重做：攻击力锁定 = [法限]，持续X。
+            # 走状态层（models.py::effective_attack_power 读取），不再写遗留字段
+            # attack_power——那样对不写穿的轮回者无效。
+            if (not panel_locked) and calc.get("attack_power_to_mana_limit"):
+                panel_target.add_status(StatusEffect(
+                    name="强化", value=1,
+                    remaining_rounds=calc.get("duration", x), source=caster.name))
+                result["effects"].append({
+                    "type": "attack_power_to_mana_limit", "target": panel_target.name,
+                    "attack_power": panel_target.effective_attack_power(),
+                    "duration": calc.get("duration", x)})
             if (not panel_locked) and "attack_reduction" in calc:
                 amount = (wave_pieces.get("attack_reduction") or [calc["attack_reduction"]])[panel_idx]
                 delta = max(0, panel_target.attack_power - amount) - panel_target.attack_power
@@ -3197,6 +3219,17 @@ class CombatEngine:
                     name, EffectPolarity.NEUTRAL.value)
                 result["effects"].append({"type": "attack_fixed", "target": panel_target.name,
                                           "attack_power": panel_target.attack_power})
+            # 【全速】2026-09-17 用户令（原名【迟滞】）：攻击次数锁定 = [速限]，持续X。
+            # 走状态层（models.py::effective_attack_count 读取），不再写遗留字段
+            # attack_count——那样对不写穿的轮回者无效。
+            if (not panel_locked) and calc.get("attack_count_to_speed_limit"):
+                panel_target.add_status(StatusEffect(
+                    name="全速", value=1,
+                    remaining_rounds=calc.get("duration", x), source=caster.name))
+                result["effects"].append({
+                    "type": "attack_count_to_speed_limit", "target": panel_target.name,
+                    "attack_count": panel_target.effective_attack_count(),
+                    "duration": calc.get("duration", x)})
             if (not panel_locked) and "attack_count_fixed" in calc:
                 self._battle_delta(
                     panel_target, "attack_count", calc["attack_count_fixed"] - panel_target.attack_count,
@@ -3204,17 +3237,34 @@ class CombatEngine:
                 result["effects"].append({"type": "attack_count_fixed", "target": panel_target.name,
                                           "attack_count": panel_target.attack_count})
         bianxing_blocked = False
-        if name == "变形":  # 自身攻击力与攻击次数互换；持续结束后还原首次变形前面板
-            if caster.has_status("定型"):
+        if name == "变形":
+            # 2026-09-17 用户令：变形改为可选目标，不指定时作用于施法者。
+            # 【定型】的判定对象随之改为**被变形者**（旧版固定查施法者，
+            # 在"目标是别人"的场景下会误判）。
+            _bx_target = target if target else caster
+            if _bx_target.has_status("定型"):
                 bianxing_blocked = True
-                result["effects"].append({"type": "dingxing_block", "target": caster.name})
+                result["effects"].append({"type": "dingxing_block", "target": _bx_target.name})
             else:
-                if not hasattr(caster, "_bianxing_original"):
-                    caster._bianxing_original = (caster.attack_power, caster.attack_count)
-                caster.attack_power, caster.attack_count = caster.attack_count, caster.attack_power
-                result["effects"].append({"type": "swap", "target": caster.name,
-                                          "attack_power": caster.attack_power,
-                                          "attack_count": caster.attack_count})
+                # 2026-09-17 用户令重做：改为**[目标]当前速度 ↔ 当前法力互换**，
+                # 互换后各自被上限钳制（clamp_immortal_body：当前速度≤[速限]、
+                # 当前法力≤[法限]），被钳掉的部分**凭空消失**，不返还。
+                #   例：敌方 20/3/10（血限/速度/法力，速限3）→ 互换得 速度10、法力3
+                #       → 速度被速限钳回 3 → 结果 20/3/3：目标凭空失去 7 点法力。
+                # 旧版「自身攻击力与攻击次数互换」写遗留字段 attack_power/attack_count，
+                # 属性模型统一后（攻击力=当前法力、攻击次数=当前速度）对轮回者无效，
+                # 且只能对自己用。新版可指定目标，不指定时默认自身。
+                swap_target = target if target else caster
+                if not hasattr(swap_target, "_bianxing_original"):
+                    swap_target._bianxing_original = (swap_target.current_speed,
+                                                       swap_target.current_mana)
+                swap_target.current_speed, swap_target.current_mana = (
+                    swap_target.current_mana, swap_target.current_speed)
+                # 互换后立即钳制：超出上限的部分直接蒸发（全局钳制规则）
+                self.clamp_immortal_body(swap_target)
+                result["effects"].append({"type": "swap", "target": swap_target.name,
+                                          "current_speed": swap_target.current_speed,
+                                          "current_mana": swap_target.current_mana})
 
         # ---- 速度修改 ----
         if "speed_boost" in calc:
@@ -3402,11 +3452,17 @@ class CombatEngine:
                 })
                 result["self_destructed"] = True
         if name == "分裂" and calc.get("split_clones"):
-            # [命零]时创造X个复制体（血限20%）
-            self.state._pending_split_clones = calc["split_clones"]
-            result["effects"].append({"type": "fenlie",
-                                      "note": "本场[命零]时创造X个复制体（血限20%）",
-                                      "clones": calc["split_clones"]})
+            # 2026-09-17 用户令重做：分裂X/Y 改为**即时**创造 X 个 10Y 血限的
+            # 自身复制体（代价衰老＝X×10Y＝造出的总血限）。旧版把创造挂在
+            # [命零]上（_pending_split_clones），且血限按本体 20% 浮动——本体
+            # 血限越高白赚越多，代价【冷却】又与产出无关，可无限白嫖。
+            # 旧版还有 entity_type != "怪物" 的过滤，导致怪物永远不分裂，
+            # 与「乱葬岗·分裂」的设计不符；现对任意实体类型一视同仁。
+            clones = self._spawn_fenlie_clones(caster, calc["split_clones"],
+                                               calc.get("clone_hp", 10))
+            result["effects"].append({"type": "fenlie", "clones": len(clones),
+                                      "clone_hp": calc.get("clone_hp", 10),
+                                      "names": [c.name for c in clones]})
         if name == "招魂" and calc.get("revive_temp_friend"):
             # 唤回1具已击灭的怪物尸体作临时朋友（生命20X）
             dead = [e for e in self.state.dead_monsters if e.entity_type == "怪物"]
@@ -3520,7 +3576,12 @@ class CombatEngine:
             # 自身作用型道纹(变形/超频/自食等)作用于施法者
             # 2026-09-10：道纹【洗劫】已改名【点金】并改为即时结算（不再挂状态），
             # 故从自身作用名单移除；状态【洗劫】本身保留，仍由【帮派令】发放。
-            self_targeted = name in ("超频", "自食", "飞行", "滑翔", "狂暴", "自愈", "必中", "变形", "固执", "贯穿")
+            # 2026-09-17 用户令：【超频】改为自由选择目标（选到谁给谁加速），不再属于
+            # "自身作用型"。它原本留在本名单里也无效——其 calc 无 duration 键，
+            # 进不了本状态块，实际效果一直是下方数值段给 target 加速。
+            # 2026-09-17 用户令：【变形】改为可自由选择目标（不指定时默认自身），
+            # 故移出"自身作用型"名单，状态随之挂到目标身上（到期还原也落在目标）。
+            self_targeted = name in ("自食", "飞行", "滑翔", "狂暴", "自愈", "必中", "固执", "贯穿")
             if name == "疯狂":
                 # 2026-08-17 用户裁定：疯狂X改为【所有角色出手+X】（全局，变相平衡）。
                 # 状态盖到双方全部存活角色；出手口径各自读取自身疯狂状态：
@@ -4985,6 +5046,11 @@ class CombatEngine:
                 if ally.is_alive and any(relic.name == "防弹插板" for relic in ally.relics):
                     ally.gain_shield(15)
                     logs.append(f"防弹插板：{ally.name}+15格挡")
+        # 机制系统：BATTLE_END 相位分发。位置=战终遗物段顶部（2026-09-17 新增相位，
+        # 首个注册者是改版后的【缄默面具】：[战终]法限+X）。
+        # process_relics 只宣布时点，具体机制条件/效果都在声明层。
+        if trigger == "battle_end":
+            logs.extend(self._dispatch_phase(Phase.BATTLE_END, target=player))
         if trigger == "battle_end" and "三相残韵盘" in relics and self._sanxiang_consumed:
             others = [t for t in ("转换", "反转", "曲解") if t != self._sanxiang_consumed]
             for t in others:

@@ -494,7 +494,7 @@ def test_valid_and_invalid_are_separated(monkeypatch):
 def test_cooldown_cost_is_applied():
     """
     正常路径：代价为【冷却X】的道纹发动后必须写入 cooldown_remaining。
-    此前从未写入，导致 固执/束缚/畸变/迟滞 可在同场无限重复发动。
+    此前从未写入，导致 固执/束缚/畸变/全速 可在同场无限重复发动。
     """
     from engine.api import GameEngine
     e = GameEngine(db_path="/tmp/cdtest.db", rng_seed=1)

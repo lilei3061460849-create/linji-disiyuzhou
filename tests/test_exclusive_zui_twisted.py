@@ -56,7 +56,7 @@ def _apply_monster_daowen(engine, caster, name, x, target=None):
 
 
 # ==================== 点金（DM裁定 2026-09-10 由【洗劫】改名改制）====================
-# 道纹【点金】：消耗10X法力 → 直接获得X真碎片，与伤害彻底脱钩。
+# 道纹【点金】：消耗8X法力 → 直接获得X真碎片，与伤害彻底脱钩。（2026-09-17 用户令定为 8X）
 # 状态【洗劫】及其"造成伤害时夺取等量碎片"机制**保留**，但已不由道纹发放，
 # 只剩【帮派令】在[战始]发放（事件收益在禁区清单内，不动）。
 
@@ -69,7 +69,7 @@ def test_normal_dianjin_converts_mana_to_shards():
     mana0, shard0 = player.current_mana, engine.state.shards
     r = engine.execute_action("use_daowen", {"daowen_name": "点金", "x": 2, "target": m.name})
     assert r["success"], r
-    assert player.current_mana == mana0 - 6           # 2026-09-16：消耗8X→3X = 6 法力
+    assert player.current_mana == mana0 - 16          # 2026-09-17 用户令：消耗8X（X=2）= 16 法力
     assert engine.state.shards == shard0 + 2          # 换到 2 真碎片
     assert m.shards == 20, "点金不再从目标身上夺取"
     assert not player.has_status("点金"), "点金是即时结算，不得挂状态"

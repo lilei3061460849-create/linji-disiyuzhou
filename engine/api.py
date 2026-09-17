@@ -673,14 +673,17 @@ class GameEngine:
         ])
         return {"phase": subphase, "round": self.state.current_round, "actions": actions}
 
-    def _max_legal_daowen_x(self, actor: Entity, name: str) -> int:
-        """按真实代价口径枚举当前可提交的最大X，不把当前法力直接冒充上限。"""
+    def _max_legal_daowen_x(self, actor: Entity, name: str, y: int = 1) -> int:
+        """按真实代价口径枚举当前可提交的最大X，不把当前法力直接冒充上限。
+
+        y 为双参数道纹（如【分裂】X/Y）的第二参数，单参数道纹忽略。
+        """
         upper = max(1, actor.current_mana, actor.current_hp, actor.blood_limit,
                     actor.current_speed, self.state.shards, self.state.fake_shards, 50)
         legal = 0
         for x in range(1, upper + 1):
             try:
-                calc = DaoWenEngine.resolve(name, x, target=actor, caster=actor)
+                calc = DaoWenEngine.resolve(name, x, y=y, target=actor, caster=actor)
             except Exception:
                 continue
             ctype = calc.get("cost_type")
@@ -2347,21 +2350,6 @@ class GameEngine:
             })
         return None
 
-    def _apply_dragon_claw_growth(self, entity: "Entity") -> None:
-        """龙族利爪（真龙之心遗物）：自身每完成一次行动后，攻击次数+1，攻击力+2。
-        必须在该次行动本身已经用到(旧的)攻击次数之后才调用——尤其是【攻击】，
-        它的一轮攻击命中次数=攻击次数，若在calculate_round_attack读取攻击次数之前就先增长，
-        会导致本次攻击莫名要求多一个目标选择，这是过去出现过的真实bug。"""
-        if entity is not None and self.state.side_has(entity, "龙族利爪"):
-            self.state.apply_scoped_delta(
-                entity, "attack_count", 1,
-                scope=EffectScope.BATTLE.value, polarity=EffectPolarity.BUFF.value,
-                source="龙族利爪")
-            self.state.apply_scoped_delta(
-                entity, "attack_power", 2,
-                scope=EffectScope.BATTLE.value, polarity=EffectPolarity.BUFF.value,
-                source="龙族利爪")
-
     # ==================== 最终死斗·交替出手校验 ====================
 
     def _check_duel_turn_or_error(self, actor: "Entity") -> Optional[dict]:
@@ -2635,8 +2623,13 @@ class GameEngine:
             target = actor
 
         # 调用道纹引擎计算
+        # 【分裂】是双参数道纹（X=数量、Y=规模档）；y 缺省 1，单参数道纹不受影响。
+        daowen_y = params.get("y")
+        if not isinstance(daowen_y, int) or isinstance(daowen_y, bool) or daowen_y < 1:
+            daowen_y = 1
         try:
             resolve_kw = {"target": target, "caster": actor}
+            resolve_kw["y"] = daowen_y
             calc = DaoWenEngine.resolve(name, x, **resolve_kw)
         except Exception as e:
             return {"success": False, "error": f"道纹计算失败: {str(e)}"}
@@ -2712,7 +2705,6 @@ class GameEngine:
             budget_error = self._consume_action_or_error(actor)
             if budget_error:
                 return budget_error
-            self._apply_dragon_claw_growth(actor)
 
         dodge_value = params.get("dodge", False)
         blood_shadow_value = params.get("blood_shadow", False)
@@ -3173,7 +3165,6 @@ class GameEngine:
             )
             result["hit_index"] = index + 1
             results.append(result)
-        self._apply_dragon_claw_growth(attacker)
         self.state.pending_attack = {}
         self._advance_duel_turn()
         if self.state.in_final_duel and not self._duel_side_can_act("player_side") and not self._duel_side_can_act("opponent_side"):
@@ -3202,7 +3193,6 @@ class GameEngine:
         budget_error = self._consume_action_or_error(player)
         if budget_error:
             return budget_error
-        self._apply_dragon_claw_growth(player)
 
         interrupt = self.combat.initiate_wish(player, wish_text, target)
         self._pending_interrupts.append(interrupt)
@@ -3226,7 +3216,6 @@ class GameEngine:
         budget_error = self._consume_action_or_error(escaper)
         if budget_error:
             return budget_error
-        self._apply_dragon_claw_growth(escaper)
 
         interrupt = self.combat.initiate_escape(escaper, pursuers)
         self._pending_interrupts.append(interrupt)
@@ -5026,7 +5015,7 @@ class GameEngine:
     DRAGON_TRAIT_EFFECTS = {
         "龙族血脉": "对怪物造成伤害后，直接使其［命零］；对非怪物造成伤害翻倍",
         "龙威": "所有敌方必须优先选择自身为[目标]",
-        "龙族利爪": "初始获得3点攻击次数与1点攻击力；自身每完成一次行动后，攻击次数+1，攻击力+2",
+        "龙族利爪": "你的攻击力等同当前法力×2",
         "龙息": "所有敌方[目标]行动前，受到10×当前回合数的必中伤害",
         "震岳龙躯": "消耗6X点龙性，自身受到超出15点的所有伤害无效。持续X",
         "吞骸龙胃": "任意怪物［命零］后，可将其吞噬：自身获得[回复12]，并选择一枚【××龙心】，使其当前耐久+6",
@@ -5070,9 +5059,12 @@ class GameEngine:
             return {"success": False, "error": f"龙性不足，需要12，当前{self.state.dragon_nature}"}
         self.state.dragon_nature -= 12
         self.state.grant_relic(trait, self.DRAGON_TRAIT_EFFECTS.get(trait, ""), tag="龙族")
-        if trait == "龙族利爪":
-            self.state.player.attack_count = 3
-            self.state.player.attack_power = 1
+        # 【龙族利爪】2026-09-17 用户令改版：效果改为「攻击力 = 当前法力×2」，
+        # 不再写死初始 3 攻次 / 1 攻力——那两行直接覆盖玩家遗留字段，
+        # 而 models.py 的写穿对轮回者不生效（旧效果因此对玩家完全无效），
+        # 一旦写穿还会把玩家真实的[速限]/[法限]直接冲掉（见 models.py 注释）。
+        # 新效果走状态层，由 BATTLE_START 机制【龙族利爪】挂状态、
+        # models.py::effective_attack_power 读取。
         return {"success": True, "action": "真龙之心·获得龙族遗物",
                 "result": {"trait": trait, "dragon_nature_remaining": self.state.dragon_nature,
                            "dragon_traits": list(self.state.dragon_traits)}}

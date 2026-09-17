@@ -374,7 +374,7 @@ def play_first_tier(seed: int, region: str, sealed_path: str,
                         emp_name = next(iter(e.state.pending_daowen_choices))
                         choices = e.state.pending_daowen_choices[emp_name]
                         prefer = next((d for d in choices
-                                       if d in ("蒙蔽", "迟滞", "弱化", "愤怒", "自残", "衰败", "坠落")),
+                                       if d in ("蒙蔽", "全速", "弱化", "愤怒", "自残", "衰败", "坠落")),
                                       choices[0])
                         e.execute_action("choose_hired_daowen", {"name": emp_name, "daowen": prefer})
                     if e.state.pending_relic_choices:
@@ -431,7 +431,7 @@ def play_first_tier(seed: int, region: str, sealed_path: str,
                     emp_name = next(iter(e.state.pending_daowen_choices))
                     choices = e.state.pending_daowen_choices[emp_name]
                     prefer = next((d for d in choices
-                                   if d in ("蒙蔽", "迟滞", "弱化", "愤怒", "自残", "衰败", "坠落")),
+                                   if d in ("蒙蔽", "全速", "弱化", "愤怒", "自残", "衰败", "坠落")),
                                   choices[0])
                     e.execute_action("choose_hired_daowen", {"name": emp_name, "daowen": prefer})
                 if e.state.pending_relic_choices:

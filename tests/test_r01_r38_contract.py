@@ -545,12 +545,15 @@ def test_r32_r38_normal_decay_deform_ransom_and_transform_restore(tmp_path):
     assert monster.current_speed == 3  # 无碎片时才失去X速度
     assert engine.state.shards == 3
 
-    player.attack_power, player.attack_count = 5, 2
+    # 【变形】2026-09-17 用户令重做：互换**当前速度 ↔ 当前法力**
+    # （旧版写遗留字段 attack_power / attack_count，属性统一后对轮回者无效）
+    # 本夹具 speed_limit=9 / mana_limit=100，故 5↔2 互换不会被上限钳掉。
+    player.current_speed, player.current_mana = 5, 2
     transformed = DaoWenEngine.resolve("变形", 1, caster=player, target=player)
     engine.combat.apply_daowen_effect("变形", transformed, player, player)
-    assert (player.attack_power, player.attack_count) == (2, 5)
+    assert (player.current_speed, player.current_mana) == (2, 5)
     engine.combat.round_end()
-    assert (player.attack_power, player.attack_count) == (5, 2)
+    assert (player.current_speed, player.current_mana) == (5, 2), "持续结束后还原互换前的速度/法力"
 
     # R33：定型只锁攻击力/攻击次数；速度变化仍合法，且被挡的变形不挂空状态。
     player.add_status(StatusEffect("定型", 2, 1))
@@ -558,8 +561,10 @@ def test_r32_r38_normal_decay_deform_ransom_and_transform_restore(tmp_path):
     slow = DaoWenEngine.resolve("减速", 1, target=player, caster=monster)
     engine.combat.apply_daowen_effect("减速", slow, monster, player)
     assert player.current_speed == (speed_before + 1) // 2
+    # 被【定型】挡下的变形：不再改写任何面板（旧断言查的是遗留字段 attack_power/attack_count）
+    speed_after_slow, mana_after_slow = player.current_speed, player.current_mana
     engine.combat.apply_daowen_effect("变形", transformed, player, player)
-    assert (player.attack_power, player.attack_count) == (5, 2)
+    assert (player.current_speed, player.current_mana) == (speed_after_slow, mana_after_slow)
     assert not player.has_status("变形")
 
 

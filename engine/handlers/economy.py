@@ -37,7 +37,6 @@ def handle_deploy_employee(engine: Any, params: Dict[str, Any]) -> Dict[str, Any
     budget_error = engine._consume_action_or_error(engine.state.player)
     if budget_error:
         return budget_error
-    engine._apply_dragon_claw_growth(engine.state.player)
     emp.is_deployed = True
     emp.deployed_at_round = max(1, engine.state.current_round)
     engine._advance_duel_turn()

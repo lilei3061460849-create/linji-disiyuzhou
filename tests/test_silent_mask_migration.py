@@ -1,9 +1,14 @@
-"""【缄默面具】迁移验证：process_relics 战始 if → BATTLE_START 相位 Mechanism。
+"""【缄默面具】迁移验证：process_relics 战始 if → BATTLE_END 相位 Mechanism。
+
+2026-09-17 用户令改版：效果由「[战始]获得 20X 法力」改为「[战终][法限]+X」。
+属性模型统一后法力=攻击力，[战始]一次性给 20X 法力等于同时白送攻击力，强度跳变；
+且法力每场都会回满，[战始]给蓝的边际价值很低。改为战终永久成长。
 
 验证点：
-  - 经 mana 动词获得 20X 法力（含不朽之躯钳制）；X=0 仍钳制（旧块无条件 clamp）；
-  - 顺序：缄默面具(5) → 帮派令(10)，同相位按 priority 保持原序（旧块紧邻分发点之前）；
-  - 封印（抵扣X）不触发；【禁代价】是 api.py 的静态校验规则，不在本机制范围。
+  - 经 BATTLE_END 相位触发，[法限]+X（X=event_modifiers.silent_mask_x）；
+  - X=0 不发放；封印（抵扣X）不触发；未持有不触发；
+  - 【禁代价】是 api.py 的静态校验规则，不在本机制范围；
+  - 战始相位不再出现缄默面具（已移至战终）。
 """
 from __future__ import annotations
 
@@ -42,20 +47,22 @@ def _arena(mana=0, mana_limit=50, relics=(), sealed=None, x=None):
     return state, CombatEngine(state, DiceEngine()), player
 
 
-def _old_silent_mask(combat, player):
-    """process_relics 缄默面具旧块的逐行复刻（仅测试对照用，非生产代码）。"""
+def _ref_silent_mask(combat, player):
+    """新规则的参考实现（仅测试对照用，非生产代码）：[战终][法限]+X。"""
     state = combat.state
     relics = {r.name for r in state.relics if state.sealed_relics.get(r.name, 0) <= 0}
     if "缄默面具" in relics:
         x = state.event_modifiers.get("silent_mask_x", 0)
-        player.current_mana += 20 * x
+        if x <= 0:
+            return "缄默面具：+0法限"
+        player.mana_limit += x
         combat.clamp_immortal_body(player)
-        return f"缄默面具：+{20*x}法力"
+        return f"缄默面具：[法限]+{x}（现为{player.mana_limit}）"
     return None
 
 
 def _run_new(combat, player):
-    results = combat._dispatch_phase(Phase.BATTLE_START, target=player)
+    results = combat._dispatch_phase(Phase.BATTLE_END, target=player)
     return results[0] if results else None
 
 
@@ -63,11 +70,13 @@ def _run_new(combat, player):
 
 def test_silent_mask_registered_and_ordered():
     mech = MECHANISMS.get("缄默面具")
-    assert mech is not None and mech.when.matches_phase(Phase.BATTLE_START)
-    assert mech.priority == 5
+    assert mech is not None and mech.when.matches_phase(Phase.BATTLE_END)
+    assert mech.priority == 10
     from engine.mechanisms.registry import MECHANISMS as REG
-    assert [m.name for m in REG.phase_mechanisms(Phase.BATTLE_START)] == \
-        ["缄默面具", "帮派令"]
+    # 战始相位不再有缄默面具（已移至战终）；战始现有龙族利爪(4)与帮派令(10)
+    assert "缄默面具" not in [m.name for m in REG.phase_mechanisms(Phase.BATTLE_START)]
+    assert [m.name for m in REG.phase_mechanisms(Phase.BATTLE_START)] == ["龙族利爪", "帮派令"]
+    assert [m.name for m in REG.phase_mechanisms(Phase.BATTLE_END)] == ["缄默面具"]
 
 
 def test_old_silent_mask_block_removed():
@@ -78,62 +87,71 @@ def test_old_silent_mask_block_removed():
 # ==================== 2. 触发语义 ====================
 
 def test_silent_mask_normal():
-    state, combat, player = _arena(relics=("缄默面具",), x=2)
-    results = combat._dispatch_phase(Phase.BATTLE_START, target=player)
-    assert results == ["缄默面具：+40法力"]
-    assert player.current_mana == 40
+    """持有 + X=2 → [战终][法限]+2。"""
+    state, combat, player = _arena(mana_limit=50, relics=("缄默面具",), x=2)
+    results = combat._dispatch_phase(Phase.BATTLE_END, target=player)
+    assert results == ["缄默面具：[法限]+2（现为52）"]
+    assert player.mana_limit == 52
 
 
-def test_silent_mask_x_zero_still_logs_and_clamps():
-    """X=0：旧块 +=0 后无条件 clamp 且照常产生日志——逐字保持。"""
+def test_silent_mask_x_zero_no_gain():
+    """X=0：不发放法限，但仍产生日志（与旧块"照常执行"的语义保持一致）。"""
     state, combat, player = _arena(mana=70, mana_limit=50,
                                    relics=("缄默面具", "不朽之躯"), x=0)
-    results = combat._dispatch_phase(Phase.BATTLE_START, target=player)
-    assert results == ["缄默面具：+0法力"]
-    assert player.current_mana == 50, "X=0 时旧块仍执行不朽之躯钳制"
+    results = combat._dispatch_phase(Phase.BATTLE_END, target=player)
+    assert results == ["缄默面具：+0法限"]
+    assert player.mana_limit == 50
+    assert player.current_mana == 50, "X=0 时仍执行钳制"
 
 
-def test_silent_mask_immortal_clamp_on_gain():
-    state, combat, player = _arena(mana=40, mana_limit=50,
+def test_silent_mask_immortal_clamp_after_limit_gain():
+    """法限提高后当前法力不得超过新上限（全局钳制规则）。"""
+    state, combat, player = _arena(mana=45, mana_limit=50,
                                    relics=("缄默面具", "不朽之躯"), x=1)
-    combat._dispatch_phase(Phase.BATTLE_START, target=player)
-    assert player.current_mana == 50, "获得 20 后被不朽之躯钳制到法限"
+    combat._dispatch_phase(Phase.BATTLE_END, target=player)
+    assert player.mana_limit == 51
+    assert player.current_mana <= player.mana_limit
 
 
 def test_silent_mask_not_held_no_entry():
     state, combat, player = _arena(x=2)
     assert _run_new(combat, player) is None
-    assert player.current_mana == 0
+    assert player.mana_limit == 50
 
 
 def test_silent_mask_sealed_no_entry():
     state, combat, player = _arena(relics=("缄默面具",), x=2,
                                    sealed={"缄默面具": 2})
     assert _run_new(combat, player) is None
-    assert player.current_mana == 0
+    assert player.mana_limit == 50
 
 
 # ==================== 3. 顺序 / 只触发一次 ====================
 
-def test_silent_mask_before_gangpailing_in_full_process_relics():
-    """完整战始路径：缄默面具(5) → 帮派令(10)，日志与状态顺序与迁移前一致。"""
-    state, combat, player = _arena(relics=("缄默面具", "帮派令"), x=2)
+def test_silent_mask_at_battle_end_not_start():
+    """完整路径：战始只有帮派令；缄默面具改在战终结算[法限]+X。"""
+    state, combat, player = _arena(mana_limit=50, relics=("缄默面具", "帮派令"), x=2)
     logs = combat.process_relics("battle_start", {"relic_choices": {}})
-    assert logs == ["缄默面具：+40法力", "帮派令：获得洗劫3"]
-    assert player.current_mana == 40
+    assert logs == ["帮派令：获得洗劫3"], logs
     assert player.has_status("洗劫") and player.get_status_value("洗劫") == 3
+    assert player.mana_limit == 50, "战始不得加法限"
+
+    end_logs = combat.process_relics("battle_end")
+    assert any("缄默面具" in line for line in end_logs), end_logs
+    assert player.mana_limit == 52
 
 
 def test_silent_mask_executes_exactly_once():
-    state, combat, player = _arena(relics=("缄默面具",), x=2)
+    state, combat, player = _arena(mana_limit=50, relics=("缄默面具",), x=2)
     combat.process_relics("battle_start", {"relic_choices": {}})
-    assert player.current_mana == 40, "若双触发会得到 80"
+    combat.process_relics("battle_end")
+    assert player.mana_limit == 52, "若双触发会得到 54"
 
 
 # ==================== 4. 参考实现 sweep ====================
 
 def test_silent_mask_reference_sweep_zero_mismatch():
-    """旧块 vs 新机制：持有×封印×X×不朽 全场景逐结果一致。"""
+    """参考实现 vs 新机制：持有×封印×X×不朽 全场景逐结果一致。"""
     mismatches = []
     total = 0
     for held, sealed, x, immortal in itertools.product(
@@ -149,13 +167,13 @@ def test_silent_mask_reference_sweep_zero_mismatch():
                                              relics=tuple(relics_a),
                                              sealed={"缄默面具": 2} if sealed else None,
                                              x=x)
-        old_result = _old_silent_mask(combat_a, player_a)
+        old_result = _ref_silent_mask(combat_a, player_a)
         new_result = _run_new(combat_b, player_b)
         if old_result != new_result:
             mismatches.append(("result", held, sealed, x, immortal, old_result, new_result))
-        if player_a.current_mana != player_b.current_mana:
-            mismatches.append(("mana", held, sealed, x, immortal,
-                               player_a.current_mana, player_b.current_mana))
+        if player_a.mana_limit != player_b.mana_limit:
+            mismatches.append(("mana_limit", held, sealed, x, immortal,
+                               player_a.mana_limit, player_b.mana_limit))
 
     assert total == 2 * 2 * 3 * 2
     assert not mismatches, f"{total} 组场景出现 {len(mismatches)} 组差异: {mismatches[:3]}"

@@ -17,7 +17,7 @@ class DaoWenEngine:
     # 怪物转化道纹（原始怪物道纹经残韵变化后的19个分支，与规则正文《原始怪物道纹与转化道纹》一致）
     # 用于"雇佣"后"发现并选择一种转化道纹"等需要从此类别中随机抽取的场景
     TRANSFORMED_DAOWEN = [
-        "愤怒", "自残", "无神", "借力", "弱化", "自食", "兴奋", "无力", "迟滞",
+        "愤怒", "自残", "无神", "借力", "弱化", "自食", "兴奋", "无力", "全速",
         "急速", "加速", "眩晕", "洞察", "蒙蔽", "滋养", "衰败", "寄生", "滑翔", "坠落",
     ]
 
@@ -237,16 +237,27 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_qianghua(x: int, target: Entity = None) -> dict:
-        """强化X：代价：异变5X。使[目标]攻击力+X，持续∞"""
+        """强化X：代价：异变5X。使[目标]攻击力等同其法限，持续X
+
+        2026-09-17 用户令重做。旧版「攻击力+X，持续∞」写的是遗留字段 attack_power，
+        属性模型统一后（攻击力=当前法力）对不写穿的轮回者完全无效。
+
+        新版改为**锁定**：生效期间[目标]的攻击力恒等于其[法限]，不再随当前法力
+        下降而下降——即"不用担心法力降低导致攻击输出降低"。法力本身照常被消耗
+        （它仍是施法资源），只是攻击力不再跟着掉。
+
+        实现走状态层（状态名"强化"），由 models.py::effective_attack_power 读取，
+        故对轮回者/怪物/朋友/员工同口径生效。
+        """
         target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "强化",
             "x": x,
             "cost_type": CostType.MUTATION.value,
             "cost_mutation": 5 * x,
-            "attack_boost": x,
-            "duration": -1,  # ∞
-            "summary": f"异变+{5*x}，使{target_name}攻击力+{x}，永久"
+            "attack_power_to_mana_limit": True,
+            "duration": x,
+            "summary": f"异变+{5*x}，使{target_name}攻击力等同其法限，持续{x}回合"
         }
     
     @staticmethod
@@ -440,17 +451,29 @@ class DaoWenEngine:
         }
     
     @staticmethod
-    def calculate_chizhi(x: int, target: Entity = None) -> dict:
-        """迟滞X：代价：冷却X。使[目标]攻击次数固定为1，持续X"""
+    def calculate_quansu(x: int, target: Entity = None) -> dict:
+        """全速X（原名【迟滞】）：代价：冷却X。使[目标]攻击次数等同其速限，持续X
+
+        2026-09-17 用户令重做并改名。旧版「攻击次数固定为1」是减益，写的是遗留字段
+        attack_count，属性模型统一后（攻击次数=当前速度）对轮回者无效。
+
+        新版改为**锁定为[速限]**：生效期间[目标]的攻击次数恒等于其[速限]。
+        由于 2026-09-13 全局钳制规则（clamp_immortal_body）已让「当前速度≤[速限]」
+        无条件成立，本效果实为**增益**：把被削的速度补满到上限，并免疫后续减速。
+        因语义由减益翻转为增益，原名「迟滞」名不副实，故改名【全速】。
+
+        走状态层（状态名"全速"），由 models.py::effective_attack_count 读取，
+        对轮回者/怪物/朋友/员工同口径生效。
+        """
         target_name = target.name if target is not None else "未选定目标"
         return {
-            "dao_wen": "迟滞",
+            "dao_wen": "全速",
             "x": x,
             "cost_type": CostType.COOLDOWN.value,
             "cost": x,
-            "attack_count_fixed": 1,
+            "attack_count_to_speed_limit": True,
             "duration": x,
-            "summary": f"冷却{x}场，使{target_name}攻击次数固定为1，持续{x}回合"
+            "summary": f"冷却{x}场，使{target_name}攻击次数等同其速限，持续{x}回合"
         }
     
     @staticmethod
@@ -600,15 +623,33 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_bianxing(x: int) -> dict:
-        """变形X：消耗X。使自身攻击力与攻击次数互换，持续X"""
+        """变形X：消耗X。使[目标]当前速度与当前法力互换，持续X
+
+        注意**故意不声明 target 形参**：api.py 的判定是"计算函数声明了 target 就
+        强制要求显式指定目标，禁止静默改为自身"。而 2026-09-17 用户令要的是
+        **可选目标**：指定了就作用于该目标，不指定则作用于自身。故此处不声明，
+        由 combat.py 的 ``swap_target = target if target else caster`` 兜底。
+
+        2026-09-17 用户令重做。旧版「使自身攻击力与攻击次数互换」写的是遗留字段
+        attack_power / attack_count，属性模型统一后（攻击力=当前法力、攻击次数=
+        当前速度）对不写穿的轮回者无效，且只能对自己用。
+
+        新版直接互换**当前速度**与**当前法力**，可指定目标（不指定时默认自身）。
+        互换后两者各自被上限钳制（当前速度≤[速限]、当前法力≤[法限]），
+        **被钳掉的部分凭空消失**——这正是本道纹的收益来源：
+            例：敌方 20/3/10（血限/速度/法力，速限3）
+                互换 → 速度10、法力3 → 速度被速限钳回3
+                结果 20/3/3 —— 目标凭空失去 7 点法力（攻击力同步下降 7）。
+        持续X结束后还原互换前的当前速度/当前法力，但被钳掉的部分不返还。
+        """
         return {
             "dao_wen": "变形",
             "x": x,
             "cost_type": CostType.MANA.value,
             "cost": x,
             "duration": x,
-            "effect": "攻击力与攻击次数互换",
-            "summary": f"消耗{x}法力，攻击力与攻击次数互换，持续{x}回合"
+            "effect": "当前速度与当前法力互换",
+            "summary": f"消耗{x}法力，使[目标]当前速度与当前法力互换（超出上限部分蒸发），持续{x}回合"
         }
     
     @staticmethod
@@ -667,14 +708,19 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_chaopin(x: int) -> dict:
-        """超频X：消耗2X。使自身速度+X"""
+        """超频X：消耗2X。使[目标]速度+X（2026-09-17 用户令：改为自由选择目标）
+
+        目标由发动方自由指定，选到谁就给谁加速度——可以给自己，也可以给队友
+        或敌人。旧版写作"使自身速度+X"，但实现一直是给 target 加速，文案与
+        行为不符；现按用户裁定统一为"自由选择目标"。
+        """
         return {
             "dao_wen": "超频",
             "x": x,
             "cost_type": CostType.MANA.value,
             "cost": 2 * x,
             "speed_boost": x,
-            "summary": f"消耗{2*x}法力，自身速度+{x}"
+            "summary": f"消耗{2*x}法力，[目标]速度+{x}"
         }
     
     @staticmethod
@@ -751,10 +797,11 @@ class DaoWenEngine:
             "dao_wen": "点金",
             "x": x,
             "cost_type": CostType.MANA.value,
-            # 2026-09-16 由 8X 下调为 3X（见 tests/test_exclusive_zui_twisted.py
-            # 断言）。注意：本函数 docstring 与 summary 仍写着 8X，属未同步的
-            # 过期文案（同文件另一处注释还留着更早的 10X），待清理。
-            "cost": 3 * x,
+            # 2026-09-17 用户令：定为 8X（历史曾一度下调为 3X，现按用户裁定改回，
+            # 与 docstring/summary/正文 的 8X 一致）。DM裁定 2026-09-10 设计意图：
+            # 想要钱就得花法力，而[攻击力]=当前法力，花法力直接压低普攻输出，
+            # 是一笔明码标价的转换。
+            "cost": 8 * x,
             "shard_gain": x,
             "summary": f"消耗{8*x}法力，获得{x}个碎片"
         }
@@ -906,13 +953,27 @@ class DaoWenEngine:
     # ========== 乱葬岗（二阶）专属道纹 ==========
 
     @staticmethod
-    def calculate_fenlie(x: int) -> dict:
-        """分裂X：代价：冷却X。[命零]创造X个无分裂道纹的复制体；每个复制体血限/生命=本体血限20%。"""
+    def calculate_fenlie(x: int, y: int = 1) -> dict:
+        """分裂X/Y：代价：衰老X×10Y。创造X个10Y[血限]的自身复制体（2026-09-17 用户令重做）。
+
+        双参数道纹（引擎首个）：
+          X = 复制体**数量**
+          Y = 单个复制体的**规模档**，每个血限/生命 = 10Y
+        代价【衰老】= X×10Y，恰好等于造出来的**总血限**——造多少血就付多少
+        血限，不会凭空增殖，也不会因为本体血限高低而白赚或白亏。
+
+        旧版是「代价：冷却X；[命零]时创造X个本体血限20%的复制体」：触发时机
+        绑死在[命零]（只能死后发动，本体血限越高越赚，且无法主动使用），
+        代价冷却与产出无关，本体血限高的怪能无限白嫖。新版改为即时结算。
+
+        调用：DaoWenEngine.resolve("分裂", x, y=Y)；不传 y 时默认 1。
+        """
+        clone_hp = 10 * y
         return {
-            "dao_wen": "分裂", "x": x,
-            "cost_type": CostType.COOLDOWN.value, "cost": x,
-            "split_clones": x, "clone_hp_pct": 20,
-            "summary": f"冷却{x}，[命零]时创造{x}个复制体（血限20%）"
+            "dao_wen": "分裂", "x": x, "y": y,
+            "cost_type": CostType.AGING.value, "cost_blood_limit": x * clone_hp,
+            "split_clones": x, "clone_hp": clone_hp,
+            "summary": f"衰老{x * clone_hp}，创造{x}个{clone_hp}血限的自身复制体"
         }
 
     @staticmethod
@@ -1048,7 +1109,7 @@ class DaoWenEngine:
             "自食": cls.calculate_zishi,
             "兴奋": cls.calculate_xingfen,
             "无力": cls.calculate_wuli,
-            "迟滞": cls.calculate_chizhi,
+            "全速": cls.calculate_quansu,
             "急速": cls.calculate_jisu,
             "加速": cls.calculate_jiasu,
             "眩晕": cls.calculate_xuanyun,
@@ -1244,7 +1305,7 @@ class ResonanceEngine:
             ("强化", "曲解", "自食"),
             ("疯狂", "转换", "兴奋"),
             ("疯狂", "反转", "无力"),
-            ("疯狂", "曲解", "迟滞"),
+            ("疯狂", "曲解", "全速"),
             ("减速", "转换", "急速"),
             ("减速", "反转", "加速"),
             ("减速", "曲解", "眩晕"),

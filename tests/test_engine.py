@@ -499,10 +499,17 @@ def test_daowen_effects_wired():
     r = engine.execute_action("use_daowen", {"daowen_name":"弱化","x":3,"target":"靶怪"})
     assert r["success"], r
     assert m.attack_power == 7, f"弱化后攻击力应7，实{m.attack_power}"
-    # 强化2 → 攻击力7+2=9
+    # 强化2（2026-09-17 用户令重做）→ 攻击力**锁定为其[法限]**，持续X。
+    # 旧版「攻击力+X，持续∞」写遗留字段，属性统一后对不写穿的轮回者无效，已废止。
     r = engine.execute_action("use_daowen", {"daowen_name":"强化","x":2,"target":"靶怪"})
-    assert m.attack_power == 9, f"强化后应9，实{m.attack_power}"
-    print("  ✓ 弱化/强化：靶怪攻击力 10→7→9")
+    assert r["success"], r
+    assert m.effective_attack_power() == m.mana_limit, \
+        f"强化后攻击力应锁定为法限{m.mana_limit}，实{m.effective_attack_power()}"
+    mana_before = m.current_mana
+    m.current_mana = 1      # 花掉法力
+    assert m.effective_attack_power() == m.mana_limit, "强化期间花法力不应掉攻击力"
+    m.current_mana = mana_before
+    print(f"  ✓ 弱化/强化：靶怪攻击力 10→7→锁定法限{m.mana_limit}（花法力不掉）")
 
     # R35 赎金3：有碎片则最多夺取现有20，不再把不足额扩成负债。
     shards_before = engine.state.shards
@@ -652,9 +659,12 @@ def test_monster_phase_engine():
     # 第1回合：2026-09-15 用户令删除白板限制，怪物首回合即可发动道纹
     combat.round_start()  # current_round→1
     r1 = resolve_monster_phase(combat, {"打手": "强化"}, target_refs={"打手": "enemy:0"})
-    assert m.attack_power == 9, f"发动强化3后攻击力应9，实{m.attack_power}"
+    # 【强化】2026-09-17 用户令重做：攻击力锁定为其[法限]，持续X（旧版"攻击力+X，持续∞"已废止）
+    assert m.has_status("强化"), "强化应作为状态生效"
+    assert m.effective_attack_power() == m.mana_limit, \
+        f"强化后攻击力应锁定为法限{m.mana_limit}，实{m.effective_attack_power()}"
     assert len(r1) > 0, "怪物应有出手"
-    print(f"  ✓ 第1回合：激活【强化3】，攻击力6→9，怪物出手{len(r1)}次，贾凡HP{st.player.current_hp} 速{st.player.current_speed}")
+    print(f"  ✓ 第1回合：激活【强化3】，攻击力锁定为法限{m.mana_limit}，怪物出手{len(r1)}次，贾凡HP{st.player.current_hp} 速{st.player.current_speed}")
 
     # 第2回合：重施狂暴3（准则9：不同道纹同回合各至多一次）
     combat.round_start()  # current_round→2
