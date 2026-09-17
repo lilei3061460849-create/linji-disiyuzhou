@@ -2529,8 +2529,10 @@ class GameEngine:
         发动道纹。
         params.actor 留空时=玩家自行发动道纹(法力制，行为与此前完全一致)。
         params.actor 指定为已部署[朋友]/[员工]时=听从轮回者指令代其发动：
-        1.[朋友]/[员工]与怪物/微光者同属"不持有法力"的一方，发动道纹不支付法力，只消耗其出手(与怪物规则一致)；
+        1.[朋友]/[员工]不持有法力（与怪物规则一致），发动道纹不支付法力，只消耗其出手；
           附带【代价】的道纹仍照常由该实体自身支付代价。
+          （待裁定 2026-09-17：与 AI_EXPERIENCE.md:1254「微光者一池制」存在张力，
+          详见下方 use_daowen 内的 TODO 与 tests/test_ally_commands.py 的锁定。）
         2.必须指定一个不是其自身的目标(听从指令的道纹/攻击均需面向"其他非自身目标")。
         """
         actor_ref = params.get("actor_ref", "")
@@ -2653,6 +2655,11 @@ class GameEngine:
 
         # 检查法力是否足够（代价道纹不消耗法力）
         # [朋友]/[员工]不持有法力（与怪物规则一致），发动道纹不支付法力，只消耗出手；仅玩家自身发动时走法力制
+        # TODO(待裁定 2026-09-17)：本条与正文 AI_EXPERIENCE.md:1254「轮回者与微光者
+        # 不持有[某人的偏爱]，仍是一池制，[回始]不回填」存在张力——不支出就无所谓
+        # "一池制"。但 2026-09-16 用户令原文（见 engine/combat.py 同位置）只点了
+        # 「怪物与轮回者」，未提微光者，且 tests/test_ally_commands.py 显式锁定
+        # 「员工发动道纹无需法力」。故维持现状，等用户裁定后再改。
         cost = calc.get("cost", calc.get("cost_mutation", 0))
         if not is_command and calc.get("cost_type") == "消耗" and cost > 0:
             if not actor.spend_mana(cost):
@@ -3829,6 +3836,21 @@ class GameEngine:
     _ALLY_DAOWEN_VERBS = ("发动", "用", "使用")
     _ALLY_GUARD_VERBS = ("护卫", "保护我", "挡伤", "替我挡")
 
+    def _ally_daowen_x(self, ally, name: str, target) -> int:
+        """微光者发动道纹时自选 X（2026-09-17 用户令：面板不写死 X）。
+
+        面板仍写死 X 时（x_value>0）沿用固定值，保持迁移期双向兼容；
+        x_free 时交给 sim/ally_targets.py 的**整场预算分配**决策器——
+        微光者按 AI_EXPERIENCE.md:1254 是一池制、[回始]不回填，与怪物
+        （遗物【某人的偏爱】每[回始]回满）不是同一个问题，不能套用怪物侧
+        的每回合预演评分。返回 0 表示本回合不该发动，调用方应跳过而非报错。
+        """
+        inst = ally.dao_wen.get(name)
+        if inst is not None and getattr(inst, "x_value", 0) > 0:
+            return int(inst.x_value)
+        from sim.ally_targets import pick_ally_daowen_x
+        return pick_ally_daowen_x(ally, name, target)
+
     def _action_command_ally(self, params: dict) -> dict:
         """轮回者用语言命令[朋友]/[员工]行动（攻击/发动道纹/护卫）。
 
@@ -3948,8 +3970,13 @@ class GameEngine:
                             "error": f"找不到目标「{target_name}」；合法格式：发动 <道纹名> 打 <目标名>"
                                      "（保护类道纹可指向轮回者/队友）"}
                 target_ref = next((ref for ref, ent in refs.items() if ent is target), "")
+                daowen_x = self._ally_daowen_x(ally, daowen, target)
+                if daowen_x < 1:
+                    return {"success": False,
+                            "error": f"{ally.name}此刻不宜发动「{daowen}」"
+                                     f"（一池制余量不足或代价付不起）"}
                 use = self.execute_action("use_daowen", {
-                    "actor_ref": ally_ref, "daowen_name": daowen, "x": 1,
+                    "actor_ref": ally_ref, "daowen_name": daowen, "x": daowen_x,
                     "target_ref": target_ref,
                     "dodge": False, "blood_shadow": False, "trigger_spell_choices": {}})
                 if not use.get("success"):
@@ -4005,13 +4032,16 @@ class GameEngine:
                         # 背负类道纹对敌使用=让施法者替敌方承担伤害（帮敌人挡刀），自主不出
                         if name == "背负":
                             continue
+                        daowen_x = self._ally_daowen_x(ally, name, target)
+                        if daowen_x < 1:
+                            continue      # 一池制余量不足/付不起 → 不发动，改用普攻
                         use = self.execute_action("use_daowen", {
-                            "actor_ref": ally_ref, "daowen_name": name, "x": 1,
+                            "actor_ref": ally_ref, "daowen_name": name, "x": daowen_x,
                             "target_ref": f"enemy:{self.state.enemies.index(target)}",
                             "dodge": False, "blood_shadow": False, "trigger_spell_choices": {}})
                         if use.get("success"):
                             cast = {"kind": "daowen", "name": name, "target": target.name,
-                                    "detail": use.get("result")}
+                                    "x": daowen_x, "detail": use.get("result")}
                             break
                     if cast is None:
                         prepared = self.execute_action("prepare_attack", {"actor_ref": ally_ref})

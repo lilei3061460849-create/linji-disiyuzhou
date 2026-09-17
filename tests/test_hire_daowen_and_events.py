@@ -67,7 +67,11 @@ def test_choose_hired_daowen_attaches_to_employee():
 
 
 def test_zhuiqiuzhe_event_option1_hires_real_employee_with_fixed_panel():
-    """正常路径：龙心谷"追求者"选项1必须创建真实员工，面板与道纹数值完全按文档写死"""
+    """正常路径：龙心谷"追求者"选项1必须创建真实员工，面板数值完全按文档写死
+
+    道纹不再写死 X（2026-09-17 用户令：面板与怪物同格式，X 由发动时自选，
+    上限只受[法限]或代价限制），对应 副本/龙心谷.md 的「96/2/8，逆鳞，活血，固执」。
+    """
     engine = _new_engine("zqz_hire", region="龙心谷")
     engine.state.shards = 50
     engine.event_pool.current = "追求者"
@@ -78,7 +82,10 @@ def test_zhuiqiuzhe_event_option1_hires_real_employee_with_fixed_panel():
     assert emp is not None
     assert (emp.attack_count, emp.attack_power, emp.blood_limit) == (8, 2, 96)
     assert emp.is_deployed is False, "与DIY雇佣一致，默认待命"
-    assert {k: v.x_value for k, v in emp.dao_wen.items()} == {"逆鳞": 2, "活血": 3, "固执": 3}
+    assert set(emp.dao_wen) == {"逆鳞", "活血", "固执"}
+    # 面板不写死 X：x_free 且 x_value 归零，由发动时自选
+    assert all(getattr(v, "x_free", False) and v.x_value == 0
+               for v in emp.dao_wen.values())
 
 
 def test_zhuiqiuzhe_event_option2_queues_forced_monster_next_battle():
@@ -92,7 +99,8 @@ def test_zhuiqiuzhe_event_option2_queues_forced_monster_next_battle():
     assert len(engine.state.forced_monsters_next_battle) == 1
     queued = engine.state.forced_monsters_next_battle[0]
     assert queued["name"] == "追求者"
-    assert queued["dao_wen"] == {"逆鳞": 2, "活血": 3, "固执": 3}
+    # 面板不写死 X：x=None → make_monster_entity 标记为 x_free
+    assert queued["dao_wen"] == {"逆鳞": None, "活血": None, "固执": None}
     # 不应同时创建一个"员工"版本的追求者(选项2是怪物版，二者互斥)
     assert not any(e.name == "追求者" for e in engine.state.employees)
 
