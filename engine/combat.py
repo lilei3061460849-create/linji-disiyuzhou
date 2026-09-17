@@ -5305,16 +5305,30 @@ class CombatEngine:
         # 防止提交方给出此刻已付不起的 X（资源在 prepare 之后可能已被消耗）。
         if getattr(inst, "x_free", False):
             submitted_x = choice.get("x")
-            if not isinstance(submitted_x, int) or isinstance(submitted_x, bool):
-                raise ValueError(f"道纹【{name}】面板未写死X，必须提交整数x")
+            # 提交方没有给 X 时**回退到可负担上限**而非报错。
+            # sim/ 下有几十处怪物阶段驱动各自拼装提交字典，面板去掉 X 后它们
+            # 不会凭空多出一个 x 字段；若此处硬报错，迁面板就等于让整个
+            # 模拟器与手操流程当场跑不起来。回退保证"改面板不会改坏"，
+            # 想要更精细取值的 AI 自行提交 x 即可（见 sim/duel_common.py）。
+            # 只把"没有这个字段"当作未提交；负数/0 是明确的非法输入，必须拒绝，
+            # 不能拿任何整数值当哨兵（否则 -1 会被静默当成"回退到上限"）。
+            missing = submitted_x is None
+            if not missing and (not isinstance(submitted_x, int)
+                                or isinstance(submitted_x, bool)):
+                raise ValueError(f"道纹【{name}】的x必须是整数")
             hard_cap = (len(prepared_option.get("dodge_target_options", []))
                         if effective_name == "波及" else None)
             max_x = self._monster_max_daowen_x(monster, effective_name, target,
                                                hard_cap=hard_cap)
-            if not 1 <= submitted_x <= max_x:
+            if missing:                    # 提交方未给 X → 回退到上限
+                effective_x = max_x
+            elif not 1 <= submitted_x <= max_x:
                 raise ValueError(
                     f"道纹【{name}】X={submitted_x}超出可负担范围1~{max_x}")
-            effective_x = submitted_x
+            else:
+                effective_x = submitted_x
+            if effective_x < 1:
+                raise ValueError(f"道纹【{name}】此刻无可负担的X（上限{max_x}）")
         else:
             effective_x = inst.x_value
 

@@ -175,9 +175,9 @@ def test_unaffordable_daowen_filtered_from_prepare(tmp_path):
 
 # ---------------- 错误输入 ----------------
 
-@pytest.mark.parametrize("bad_x", [None, "3", 3.0, True])
+@pytest.mark.parametrize("bad_x", ["3", 3.0, True, [3]])
 def test_non_integer_x_rejected(tmp_path, bad_x):
-    """错误输入：x_free 道纹必须提交整数 X，否则拒绝。
+    """错误输入：提交的 x 必须是整数，否则拒绝。
 
     注意 True 是 int 的子类，必须显式排除（否则会被当成 X=1）。
     """
@@ -187,7 +187,24 @@ def test_non_integer_x_rejected(tmp_path, bad_x):
     prep, actor = _prepare(e)
     r = _resolve(e, prep, actor, bad_x)
     assert r["success"] is False
-    assert "必须提交整数x" in r.get("error", ""), r.get("error")
+    assert "x必须是整数" in r.get("error", ""), r.get("error")
+
+
+def test_missing_x_falls_back_to_max(tmp_path):
+    """不提交 x 时回退到可负担上限，而不是报错。
+
+    这是"改面板不能改坏"的兜底：sim/ 下几十处怪物阶段驱动各自拼装提交字典，
+    面板去掉 X 后它们不会凭空多出 x 字段。若硬报错，迁面板就等于让模拟器
+    与手操流程当场跑不起来。回退到上限保证旧驱动继续可用。
+    """
+    e = _engine(tmp_path)
+    m = _monster(mana=14)                    # 加害 2X → 上限 7
+    _setup(e, m)
+    prep, actor = _prepare(e)
+    before = m.current_mana
+    r = _resolve(e, prep, actor, None)
+    assert r["success"], r.get("error")
+    assert before - m.current_mana == 14     # 回退到 X=7 → 2×7=14
 
 
 def test_negative_and_zero_x_rejected(tmp_path):
