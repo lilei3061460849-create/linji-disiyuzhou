@@ -91,6 +91,16 @@ def _resolve_monster_turn_one(e, skip_refs: set):
                 for _ in range(actor["base_hits_per_attack"])]
         attacks.append({"hits": hits})
     choice = {"actor_ref": actor["actor_ref"], "daowen": dao, "attack_actions": attacks}
+    # 2026-09-16 用户令（选案 C）：面板不写死 X 时，用预演评分为这只怪挑一个 X。
+    # 必须在**完整 choice 拼好之后**再评分——引擎要求 attack_actions 的逐击命中
+    # 提交完整，只提交道纹会被拒，所以评分用的是带攻击块的真实提交模板。
+    if dao is not None and option.get("x_free"):
+        from sim.monster_targets import pick_monster_daowen_x
+        m_idx = int(actor["actor_ref"].split(":", 1)[1]) if ":" in actor["actor_ref"] else 0
+        monster = e.state.enemies[m_idx] if 0 <= m_idx < len(e.state.enemies) else None
+        if monster is not None:
+            dao["x"] = pick_monster_daowen_x(e, monster, option, choice,
+                                             prepared["result"]["token"])
     r = e.execute_action("resolve_monster_phase", {
         "token": prepared["result"]["token"], "choices": [choice]})
     return r, actor["actor_ref"]

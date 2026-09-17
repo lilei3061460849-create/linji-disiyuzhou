@@ -128,6 +128,58 @@ def pick_monster_daowen_option(cands: list[dict], *, player_low: bool = False,
     return min(cands, key=lambda o: monster_daowen_group(o["name"]))
 
 
+def pick_monster_daowen_x(engine, monster, option, choice_tpl: dict, token: str) -> int:
+    """x_free 道纹：用**战术预演评分**为怪物挑一个 X（2026-09-16 用户令，选案 C）。
+
+    面板不写死 X，能开多大只受[法限]或代价限制——但"能开多大"不等于"该开多大"。
+    X 越大代价越高（法力即[攻击力]，异变更是会把自己推向【崩解】），
+    因此逐个候选档位真实预演一遍，按后果评分取最优。
+
+    实现要点：
+    - 预演走 engine/ai_preview.py 的 ActionPreview（deepcopy state 后真实执行再丢弃），
+      不复制任何伤害/反伤规则，预演与结算口径天然一致
+    - 评分走 TacticalAI._score_candidate，用 actor=monster 把视角翻到怪物侧
+      （_split_diff 按名字在 diff["enemies"] 里找自己，怪物侧同样成立）
+    - 只取 1 / 中档 / 上限 三个代表值，不枚举全部 X——预演要 deepcopy 整个
+      state，全枚举在长模拟里开销过大
+    - 评分返回 None 表示该档位会把自己玩死（如异变逼近崩解线），直接跳过
+    - 全部候选都不可用时回退到上限，与引擎侧缺 x 的回退口径一致
+
+    choice_tpl 是已拼装好的完整提交模板（含攻击块），这里只替换 daowen["x"]；
+    保留攻击块是因为引擎要求 attack_actions 的逐击命中数必须提交完整，
+    只提交道纹会被拒（攻击部分的后果在各候选间是常量，不影响 X 之间的比较）。
+    """
+    import copy
+
+    max_x = int(option.get("max_x") or option.get("x") or 1)
+    if max_x <= 1:
+        return max(1, max_x)
+
+    from engine.ai_preview import ActionPreview
+    from engine.ai_tactics import TacticalAI
+
+    foes = [x for x in (engine.state.get_all_player_side() or []) if x.is_alive]
+    ai = TacticalAI(engine, actor=monster, enemies=foes)
+    preview = ActionPreview(engine)
+
+    best, best_score = max_x, None
+    for x in sorted({1, max(1, max_x // 2), max_x}):
+        trial = copy.deepcopy(choice_tpl)
+        trial["daowen"]["x"] = x
+        out = preview.preview("resolve_monster_phase",
+                              {"token": token, "choices": [trial]})
+        res = out.get("result") or {}
+        if not res.get("success"):
+            continue
+        score = ai._score_candidate(out.get("diff") or {},
+                                    "%sX=%d" % (option.get("name", "?"), x))
+        if score is None:
+            continue
+        if best_score is None or score > best_score:
+            best_score, best = score, x
+    return best
+
+
 def pick_wave_dodge_targets(option: dict) -> list[dict]:
     """波及X：从prepare的dodge_target_options中恰好选X个目标（对侧优先）。
 
