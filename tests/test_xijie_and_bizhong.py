@@ -96,7 +96,7 @@ def test_bizhong_only_next_x_target_selections():
     resolve_monster_phase(engine.combat, {m.name: None}, dodge=True)
     assert engine.combat.bizhong_remaining(m) == 0
     m.dao_wen["必中"] = DaoWenInstance(
-        DaoWen(name="必中", formula="", cost_type="异变", cost_formula="5X",
+        DaoWen(name="必中", formula="", cost_type="异变", cost_formula="X",
                effect_formula=""), x_value=2)
     engine.combat.round_start()  # -> 2 激活必中2，打1击
     r2 = resolve_monster_phase(engine.combat, {m.name: "必中"}, dodge=True)
@@ -130,7 +130,7 @@ def test_bizhong_two_hits_in_one_round_consume_two_charges():
     engine.combat.round_start()
     resolve_monster_phase(engine.combat, {m.name: None}, dodge=True)
     m.dao_wen["必中"] = DaoWenInstance(
-        DaoWen(name="必中", formula="", cost_type="异变", cost_formula="5X",
+        DaoWen(name="必中", formula="", cost_type="异变", cost_formula="X",
                effect_formula=""), x_value=2)
     engine.combat.round_start()
     results = resolve_monster_phase(engine.combat, {m.name: "必中"}, dodge=True)

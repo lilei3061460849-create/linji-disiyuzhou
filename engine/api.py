@@ -3917,7 +3917,8 @@ class GameEngine:
                 player = self.state.player
                 if player is None or not player.is_alive:
                     return {"success": False, "error": "轮回者不在场，无法护卫"}
-                # 强制施加背负：盟友下X次替轮回者承担伤害（无消耗，不占盟友出手）
+                # 强制施加背负：盟友下X次替轮回者承担伤害（无消耗；护卫**算**盟友当回合的
+                # 一次出手——2026-09-18 用户裁定，凡庸计数见 _tick_mediocrity_counters）
                 # 存 runtime_id 而非实体引用（引用环会炸事务回滚递归，2026-08-22）
                 ally._beifu_left = max(getattr(ally, "_beifu_left", 0) or 0, x)
                 ally._beifu_target = player.runtime_id
@@ -4352,6 +4353,10 @@ class GameEngine:
             entity.no_action_rounds = 0
             entity.no_damage_rounds = 0
         self.state.scoped_effect_ledger = []
+        # 战终碎片预览/一次性入账标记属于上一场：正常路径已在 battle_end 完成时清掉，
+        # 这里是防御性重置（工资待决期间存档读档、或战终被中断后重开一场）。
+        self._battle_end_preview = None
+        self.state.event_modifiers.pop("battle_end_shards_credited", None)
         # 事件流按场重置：只在本场战斗内可观测，避免长模拟无界增长。
         self.state.combat_events = []
         self.state.current_round = 0
@@ -5184,56 +5189,24 @@ class GameEngine:
         return {"success": True, "action": "烬翼",
                 "result": {"flying_rounds": x, "dragon_nature": self.state.dragon_nature}}
 
-    def _action_battle_end(self, params: dict) -> dict:
-        """战终；仍有未移出的存活敌人时不得跳过战斗直接结算（统一判定见 GameState.battle_won）。"""
-        living = [e.name for e in self.state.active_enemies()]
-        escaping = self.state.event_modifiers.pop("escape_at_battle_end", False)
-        if living and not escaping:
-            return {"success": False, "error": f"仍有存活敌人，不能结算战终: {living}"}
-        queued = list(getattr(self.state, "monster_reinforcements", []) or [])
-        if queued and not escaping:
-            return {"success": False, "error": f"仍有{len(queued)}只怪物增援未进场，不能结算战终: {[m.get('name', '?') for m in queued]}"}
-        delayed = list(getattr(self.state, "delayed_monster_reentries", []) or [])
-        if delayed and not escaping:
-            return {"success": False, "error": f"仍有{len(delayed)}只怪物处于【封印】延迟，不能结算战终: {[e['monster'].name for e in delayed]}"}
-        if escaping:
-            for enemy in self.state.enemies:
-                if enemy.is_alive:
-                    leave_ctx = make_context(
-                        timing="battle_end", source="绝息淤泥", source_type="consumable",
-                        target=enemy, mechanic="leave", subtype="escape",
-                        amount=0, tags={"leave", "no_shards"},
-                    )
-                    enemy._leave_ctx = leave_ctx.to_dict()
-                    enemy.depart_battle("逃跑")
-        # 员工经济系统·工资结算门槛：先按"存活+已部署+非还债"员工计算工资写入待决列表；
-        # 任何一名待决(值不为None，代表尚未pay/refuse)即阻塞后续战终结算。
-        self._compute_pending_wages()
-        still_pending = {k: v for k, v in self.state.pending_wage_decisions.items() if v is not None}
-        if still_pending:
-            return {
-                "success": True,
-                "action": "战终工资待决",
-                "completed": False,
-                "instruction": "请先为以下员工逐个调用 pay_employee_wage(name, decision=pay/refuse)，再重新调用battle_end",
-                "pending_wage_decisions": still_pending,
-            }
-        self.state.pending_wage_decisions = {}
-        # 死亡员工也必须先参与统一战终清理与作用域回滚，再从名单移除。
-        departed_employees = [e for e in self.state.employees
-                              if not e.is_alive and not e.is_debt_bound]
+    def _battle_end_shard_preview(self) -> tuple[int, list[dict], list[dict]]:
+        """战终碎片奖励预览（纯读取，无副作用）→ (碎片奖励, 离场名单, 逐条命零奖励)。
 
-        relic_end = self.combat.process_relics(TriggerTiming.BATTLE_END)
-        # 全局法术【战终】：必须在本函数下方"清除局内状态/法力相关计数"之前
-        # 结算，否则法术依赖的道纹/法力/状态在校验时已经被清空，永远无法
-        # 满足条件（与遗物战终结算 relic_end 同一时序原则：先结算再清理）。
-        spell_logs = self._resolve_global_trigger_spells_for_action(
-            TriggerTiming.BATTLE_END.value, params)
-        # 碎片奖励计算（雕塑/癌变/还债/永久离场的怪物不视为击杀；【封印】暂离后回场，最终命零时正常产出碎片）
-        # 奖励公式用的是[战始][血限]快照(battle_start_blood_limit)，不是当前血限(增殖等会改变当前血限)
+        公式（正文《特殊事件·命零》，2026-09-16 裁定 B4 钉死，禁止改写）：
+        Σ(⌈[战始][血限]×2%⌉ + 道纹数×5)，用 battle_start_blood_limit 快照而非当前血限
+        （增殖等会改变当前血限）。雕塑/癌变/还债/永久离场的怪物不视为击杀，走
+        leave_no_shards；【封印】暂离后回场、最终命零时正常产出碎片。
+
+        2026-09-18 用户裁定：工资门槛改到碎片奖励之后，所以这笔要在 pay_employee_wage
+        之前先入账 → battle_end 会被调用两次（第一次只返回「战终工资待决」指令）。
+        结果按引擎实例缓存，避免第二次重复构建 ctx；缓存在 battle_start 与战终完成时清掉。
+        """
+        cached = getattr(self, "_battle_end_preview", None)
+        if cached is not None:
+            return cached
         shard_reward = 0
-        removed = []
-        death_rewards = []
+        removed: list[dict] = []
+        death_rewards: list[dict] = []
         for monster in self.state.enemies:
             if monster.is_departed or monster.is_sculptured or monster.removed_without_kill \
                     or monster.is_proliferated or monster.is_debt_bound:
@@ -5262,6 +5235,66 @@ class GameEngine:
                     parent_event_id=death_parent.event_id if death_parent else None,
                 )
                 death_rewards.append({"name": monster.name, "reward": reward, "ctx": reward_ctx.to_dict()})
+        self._battle_end_preview = (shard_reward, removed, death_rewards)
+        return self._battle_end_preview
+
+    def _action_battle_end(self, params: dict) -> dict:
+        """战终；仍有未移出的存活敌人时不得跳过战斗直接结算（统一判定见 GameState.battle_won）。"""
+        living = [e.name for e in self.state.active_enemies()]
+        escaping = self.state.event_modifiers.pop("escape_at_battle_end", False)
+        if living and not escaping:
+            return {"success": False, "error": f"仍有存活敌人，不能结算战终: {living}"}
+        queued = list(getattr(self.state, "monster_reinforcements", []) or [])
+        if queued and not escaping:
+            return {"success": False, "error": f"仍有{len(queued)}只怪物增援未进场，不能结算战终: {[m.get('name', '?') for m in queued]}"}
+        delayed = list(getattr(self.state, "delayed_monster_reentries", []) or [])
+        if delayed and not escaping:
+            return {"success": False, "error": f"仍有{len(delayed)}只怪物处于【封印】延迟，不能结算战终: {[e['monster'].name for e in delayed]}"}
+        if escaping:
+            for enemy in self.state.enemies:
+                if enemy.is_alive:
+                    leave_ctx = make_context(
+                        timing="battle_end", source="绝息淤泥", source_type="consumable",
+                        target=enemy, mechanic="leave", subtype="escape",
+                        amount=0, tags={"leave", "no_shards"},
+                    )
+                    enemy._leave_ctx = leave_ctx.to_dict()
+                    enemy.depart_battle("逃跑")
+        # 员工经济系统·工资结算门槛：先按"存活+已部署+非还债"员工计算工资写入待决列表；
+        # 任何一名待决(值不为None，代表尚未pay/refuse)即阻塞后续战终结算。
+        # 2026-09-18 用户裁定：**碎片奖励先入账，再问工资**（此前门槛在前，碎片不足时
+        # 雇佣＝必然拒付＋失信一击）。碎片奖励是纯读取（按[战始][血限]快照与道纹数算），
+        # 故在门槛前先算好并入账；battle_end 会被调用两次（第一次只返回待决指令），
+        # 用 event_modifiers 里的一次性标记防止重复入账。
+        shard_reward, removed, death_rewards = self._battle_end_shard_preview()
+        if self.state.event_modifiers.get("battle_end_shards_credited") is None:
+            self.state.shards += shard_reward
+            self.state.event_modifiers["battle_end_shards_credited"] = shard_reward
+        self._compute_pending_wages()
+        still_pending = {k: v for k, v in self.state.pending_wage_decisions.items() if v is not None}
+        if still_pending:
+            return {
+                "success": True,
+                "action": "战终工资待决",
+                "completed": False,
+                "instruction": "请先为以下员工逐个调用 pay_employee_wage(name, decision=pay/refuse)，再重新调用battle_end",
+                "pending_wage_decisions": still_pending,
+            }
+        self.state.pending_wage_decisions = {}
+        # 死亡员工也必须先参与统一战终清理与作用域回滚，再从名单移除。
+        departed_employees = [e for e in self.state.employees
+                              if not e.is_alive and not e.is_debt_bound]
+
+        relic_end = self.combat.process_relics(TriggerTiming.BATTLE_END)
+        # 全局法术【战终】：必须在本函数下方"清除局内状态/法力相关计数"之前
+        # 结算，否则法术依赖的道纹/法力/状态在校验时已经被清空，永远无法
+        # 满足条件（与遗物战终结算 relic_end 同一时序原则：先结算再清理）。
+        spell_logs = self._resolve_global_trigger_spells_for_action(
+            TriggerTiming.BATTLE_END.value, params)
+        # 碎片奖励与离场名单已在工资门槛**之前**算好并入账（见 _battle_end_shard_preview），
+        # 这里只消费结果，并清掉一次性入账标记与预览缓存。
+        self.state.event_modifiers.pop("battle_end_shards_credited", None)
+        self._battle_end_preview = None
 
         # 2026-09-16 裁定（清单 B4）：【碎片】命零公式以正文为准，禁止改写。
         # shard_reward 恒等于 Σ(⌈战始血限×2%⌉ + 道纹数×5)，任何副本/事件增益
@@ -5281,7 +5314,8 @@ class GameEngine:
             event_bonuses.append({"name": "三回合彩头", "amount": 45,
                                   "source": "地下角斗场"})
         bonus_total = sum(b["amount"] for b in event_bonuses)
-        self.state.shards += shard_reward + bonus_total
+        # shard_reward 已在工资门槛前入账，这里只补战终奖金，禁止二次加总。
+        self.state.shards += bonus_total
         if modifiers.pop("scarlet_fruit_active", False) and self.state.player:
             self.state.player.blood_limit += 2
         pale_flower_bonus = 1 if modifiers.pop("pale_flower_active", False) else 0

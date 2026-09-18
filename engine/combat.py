@@ -43,8 +43,9 @@ class CombatEngine:
     ORIGINAL_MONSTER_DAOWEN = ("狂暴", "全力", "疯狂", "减速", "必中", "自愈", "飞行")
     # 【原初X】借用一种原始怪物道纹的门票＝异变5X（execute_evolution 直接结算）。
     # 2026-09-18 用户令：删除怪物「家族税」（旧口径＝原始怪物道纹每次发动都额外付
-    # 异变5X）。发动时只按各道纹自身正文代价支付——狂暴/全力/疯狂/减速/必中/飞行
-    # ＝异变5X，自愈＝冷却X——一律走统一代价总线，怪物与轮回者/同伴同口径。
+    # 异变5X）。发动时只按各道纹自身正文代价支付——狂暴/全力/疯狂/减速/飞行＝异变5X，
+    # 必中＝异变X（2026-09-18 用户令由 5X 降价），自愈＝冷却X——一律走统一代价总线，
+    # 怪物与轮回者/同伴同口径。
     # 必中为次数型（下X次选择[目标]无法闪避），余数记在 entity._bizhong_left。
     YUANCHU_COST_RATE = 5
     # 波及X（2026-08-21）：你发动的道纹同时作用于所有拥有波及效果的目标。
@@ -5462,6 +5463,11 @@ class CombatEngine:
                 # 属性统一后该字段不再随速度变化，怪物被减速/加速时命中数会算错。
                 "base_hits_per_attack": monster.effective_attack_count(),
                 "dodge_must_be_explicit": True,
+                # 2026-09-18 用户裁定：先攻击还是先发动道纹**由怪物 AI 自己决定**，引擎
+                # 不硬编码顺序。提交 {"attack_first": true} → 先普攻后道纹；缺省 false →
+                # 道纹先、攻击后（先【必中】让本回合攻击不可闪避）。
+                "attack_first_allowed": True,
+                "order_note": "attack_first=true 先普攻再发动道纹；缺省 false=先发动道纹再普攻",
                 # 致死进度（用户令 2026-09-15）：怪物同样会【崩解】，攻守双方都要能直接读到
                 # 「崩解（30/50）」这种进度，才可能判断"再逼它发动一次道纹它就自爆"。
                 "lethal_counters": {k: list(v) for k, v in monster.lethal_counters().items()},
@@ -5884,6 +5890,8 @@ class CombatEngine:
                 continue  # 与执行循环一致：死斗部分提交/已死者跳过
             expected_actor = expected[actor_ref]
 
+            if "attack_first" in choice and not isinstance(choice["attack_first"], bool):
+                raise ValueError(f"{monster.name}的attack_first必须是布尔值（true=先普攻）")
             dao_choice = choice.get("daowen")
             options = {o["name"] for o in expected_actor["daowen_options"]}
             if options and not isinstance(dao_choice, dict):
@@ -6031,109 +6039,127 @@ class CombatEngine:
             # 结算前状态给出的——两处必须一致，否则按 prepare 提交必然失败。
             activated_before = set(activated)
 
-            dao_choice = choice.get("daowen")
-            options = {o["name"] for o in expected[actor_ref]["daowen_options"]}
-            if options and not isinstance(dao_choice, dict):
-                raise ValueError(f"{monster.name}必须从合法选项中提交一个daowen对象")
-            if not options and dao_choice is not None:
-                raise ValueError(f"{monster.name}本次没有合法道纹选项，daowen必须为null")
-            if isinstance(dao_choice, dict):
-                if dao_choice.get("name") not in options:
-                    raise ValueError(f"{monster.name}提交的道纹不在prepare合法选项中")
-                prepared_option = next(
-                    option for option in expected[actor_ref]["daowen_options"]
-                    if option["name"] == dao_choice["name"]
-                )
-                if (prepared_option["requires_target"]
-                        and dao_choice.get("target_ref") not in {
-                            target["ref"] for target in prepared_option["target_options"]
-                        }):
-                    raise ValueError(f"{monster.name}提交的道纹目标不在prepare合法选项中")
-                dao_result = self._resolve_monster_daowen_choice(
-                    monster, dao_choice, refs, activated, prepared_option,
-                )
-                results.append(dao_result)
-                if not monster.is_alive:
-                    continue
+            attack_first = bool(choice.get("attack_first", False))
 
-            attack_actions = choice.get("attack_actions")
-            # 出手数按prepare快照校验：2026-08-17疯狂全局裁定后，状态在本actor
-            # 道纹结算中即盖到全场，若此处按当前状态重算会把"自下回合生效"提前到
-            # 本回合，导致按prepare提交必然失败；快照即契约（两处必须一致）。
-            expected_actions = expected[actor_ref]["base_attack_actions"]
-            if not isinstance(attack_actions, list) or len(attack_actions) != expected_actions:
-                raise ValueError(f"{monster.name}必须提交{expected_actions}个attack_actions")
-            # 命中数同样取 prepare 快照（2026-09-17）：base_hits_per_attack 现在等于
-            # effective_attack_count()（＝当前速度），而本阶段内速度会被真实改变
-            # （前一个actor的减速/超频、本actor自己发动的道纹、闪避扣速）。
-            # 若在此处按当前状态重算，就会把\"下回合生效\"提前到本回合，
-            # 且让按 prepare 快照提交的合法选择被判为违约——与上面出手数同一条契约。
-            hits_per_action = expected[actor_ref]["base_hits_per_attack"]
-            for action_index, attack_action in enumerate(attack_actions):
-                if not isinstance(attack_action, dict) or not isinstance(attack_action.get("hits"), list):
-                    raise ValueError("每个attack_action必须包含hits列表")
-                hits = attack_action["hits"]
-                if len(hits) != hits_per_action:
-                    raise ValueError(f"{monster.name}每个攻击出手必须提交{hits_per_action}次命中选择")
-                monster.actions_used_this_round += 1
-                legal_attack_options = {
-                    target["ref"]: target for target in expected[actor_ref]["attack_target_options"]
-                }
-                for hit_index, hit in enumerate(hits):
-                    if (not isinstance(hit, dict) or not isinstance(hit.get("dodge"), bool)
-                            or not isinstance(hit.get("blood_shadow"), bool)):
-                        raise ValueError("每次攻击必须显式提交target_ref、dodge与blood_shadow")
-                    if hit["dodge"] and hit["blood_shadow"]:
-                        raise ValueError("同一次判定不能同时闪避并使用血影")
-                    if hit.get("target_ref") not in legal_attack_options:
-                        raise ValueError("怪物攻击目标不在prepare合法选项中")
-                    target = refs.get(hit.get("target_ref", ""))
-                    if target is None or not self.state.on_player_side(target):
-                        raise ValueError("怪物攻击target_ref必须是prepare列出的己方目标")
-                    if not self.is_targetable(monster, target):
-                        raise ValueError(f"{target.name}当前不可被{monster.name}选中")
-                    if not target.is_alive:
-                        results.append({"attacker": monster.name, "target": target.name,
-                                        "skipped": "预选目标已命零", "hit_index": hit_index + 1})
-                        continue
-                    must_hit = self.bizhong_remaining(monster) > 0
-                    if hit["dodge"] and not must_hit and target.current_speed < 1:
-                        raise ValueError(f"{target.name}速度不足，不能选择闪避")
-                    option = legal_attack_options[hit["target_ref"]]
-                    if hit["blood_shadow"] and not option.get("can_blood_shadow"):
-                        raise ValueError(f"{target.name}不能使用血影")
-                    if hit["dodge"] and not must_hit and self.state.side_has(target, "回锋刀"):
-                        allowed = {entry["ref"] for entry in option["dodge_relic_target_options"]}
-                        if hit.get("dodge_relic_target_ref") not in allowed:
-                            raise ValueError("回锋刀触发必须显式提交合法目标")
-                    self.validate_spell_reaction_submission(
-                        target, monster, hit.get("spell_choices"), refs,
+            def _daowen_step() -> bool:
+                """结算本 actor 的道纹出手；返回 False 表示怪物已死，后续步骤不再结算。"""
+                dao_choice = choice.get("daowen")
+                options = {o["name"] for o in expected[actor_ref]["daowen_options"]}
+                if options and not isinstance(dao_choice, dict):
+                    raise ValueError(f"{monster.name}必须从合法选项中提交一个daowen对象")
+                if not options and dao_choice is not None:
+                    raise ValueError(f"{monster.name}本次没有合法道纹选项，daowen必须为null")
+                if isinstance(dao_choice, dict):
+                    if dao_choice.get("name") not in options:
+                        raise ValueError(f"{monster.name}提交的道纹不在prepare合法选项中")
+                    prepared_option = next(
+                        option for option in expected[actor_ref]["daowen_options"]
+                        if option["name"] == dao_choice["name"]
                     )
-                    attack_target = monster if monster.has_status("无神") else target
-                    # 无神重定向（规则正文：目标强制选自身）：受击方已变为怪物自身，
-                    # 但 hit["spell_choices"] 描述的是名义目标（玩家侧）的反应法术——
-                    # resolve_attack 会按受击方资格集校验（见 1294 行），键集错配
-                    # 必然报"必须逐一覆盖[]"，且此矛盾无法由提交方调和（同一字典需
-                    # 同时匹配玩家与怪物的资格集）——引擎契约缺陷，曾占平衡模拟
-                    # 无效局 46+/8000（2026-08-22 定位修复）。
-                    # 重定向时受击反应按空提交校验（怪物无 spells，资格集恒空）；
-                    # 若将来怪物可持反应法术，应新增 hit["self_spell_choices"] 契约字段。
-                    reaction_choices = (hit.get("spell_choices")
-                                        if attack_target is target else {"before": {}, "after": {}})
-                    resolved = self.resolve_attack(
-                        monster, attack_target, dodge=hit["dodge"], blood_shadow=hit["blood_shadow"],
-                        spell_choices=reaction_choices, entity_refs=refs,
-                        dodge_relic_target_ref=hit.get("dodge_relic_target_ref"),
-                        cost_share_target_ref=hit.get("cost_share_target_ref", ""),
+                    if (prepared_option["requires_target"]
+                            and dao_choice.get("target_ref") not in {
+                                target["ref"] for target in prepared_option["target_options"]
+                            }):
+                        raise ValueError(f"{monster.name}提交的道纹目标不在prepare合法选项中")
+                    dao_result = self._resolve_monster_daowen_choice(
+                        monster, dao_choice, refs, activated, prepared_option,
                     )
-                    resolved.update({"hit_index": hit_index + 1, "hit_total": hits_per_action,
-                                     "attack_action_index": action_index + 1,
-                                     "new_action": (hit_index == 0)})
-                    results.append(resolved)
+                    results.append(dao_result)
+                    if not monster.is_alive:
+                        return False
+                return True
+
+            def _attack_step() -> None:
+                """结算本 actor 的普攻出手（出手数/命中数校验与道纹先后无关）。"""
+                attack_actions = choice.get("attack_actions")
+                # 出手数按prepare快照校验：2026-08-17疯狂全局裁定后，状态在本actor
+                # 道纹结算中即盖到全场，若此处按当前状态重算会把"自下回合生效"提前到
+                # 本回合，导致按prepare提交必然失败；快照即契约（两处必须一致）。
+                expected_actions = expected[actor_ref]["base_attack_actions"]
+                if not isinstance(attack_actions, list) or len(attack_actions) != expected_actions:
+                    raise ValueError(f"{monster.name}必须提交{expected_actions}个attack_actions")
+                # 命中数同样取 prepare 快照（2026-09-17）：base_hits_per_attack 现在等于
+                # effective_attack_count()（＝当前速度），而本阶段内速度会被真实改变
+                # （前一个actor的减速/超频、本actor自己发动的道纹、闪避扣速）。
+                # 若在此处按当前状态重算，就会把\"下回合生效\"提前到本回合，
+                # 且让按 prepare 快照提交的合法选择被判为违约——与上面出手数同一条契约。
+                hits_per_action = expected[actor_ref]["base_hits_per_attack"]
+                for action_index, attack_action in enumerate(attack_actions):
+                    if not isinstance(attack_action, dict) or not isinstance(attack_action.get("hits"), list):
+                        raise ValueError("每个attack_action必须包含hits列表")
+                    hits = attack_action["hits"]
+                    if len(hits) != hits_per_action:
+                        raise ValueError(f"{monster.name}每个攻击出手必须提交{hits_per_action}次命中选择")
+                    monster.actions_used_this_round += 1
+                    legal_attack_options = {
+                        target["ref"]: target for target in expected[actor_ref]["attack_target_options"]
+                    }
+                    for hit_index, hit in enumerate(hits):
+                        if (not isinstance(hit, dict) or not isinstance(hit.get("dodge"), bool)
+                                or not isinstance(hit.get("blood_shadow"), bool)):
+                            raise ValueError("每次攻击必须显式提交target_ref、dodge与blood_shadow")
+                        if hit["dodge"] and hit["blood_shadow"]:
+                            raise ValueError("同一次判定不能同时闪避并使用血影")
+                        if hit.get("target_ref") not in legal_attack_options:
+                            raise ValueError("怪物攻击目标不在prepare合法选项中")
+                        target = refs.get(hit.get("target_ref", ""))
+                        if target is None or not self.state.on_player_side(target):
+                            raise ValueError("怪物攻击target_ref必须是prepare列出的己方目标")
+                        if not self.is_targetable(monster, target):
+                            raise ValueError(f"{target.name}当前不可被{monster.name}选中")
+                        if not target.is_alive:
+                            results.append({"attacker": monster.name, "target": target.name,
+                                            "skipped": "预选目标已命零", "hit_index": hit_index + 1})
+                            continue
+                        must_hit = self.bizhong_remaining(monster) > 0
+                        if hit["dodge"] and not must_hit and target.current_speed < 1:
+                            raise ValueError(f"{target.name}速度不足，不能选择闪避")
+                        option = legal_attack_options[hit["target_ref"]]
+                        if hit["blood_shadow"] and not option.get("can_blood_shadow"):
+                            raise ValueError(f"{target.name}不能使用血影")
+                        if hit["dodge"] and not must_hit and self.state.side_has(target, "回锋刀"):
+                            allowed = {entry["ref"] for entry in option["dodge_relic_target_options"]}
+                            if hit.get("dodge_relic_target_ref") not in allowed:
+                                raise ValueError("回锋刀触发必须显式提交合法目标")
+                        self.validate_spell_reaction_submission(
+                            target, monster, hit.get("spell_choices"), refs,
+                        )
+                        attack_target = monster if monster.has_status("无神") else target
+                        # 无神重定向（规则正文：目标强制选自身）：受击方已变为怪物自身，
+                        # 但 hit["spell_choices"] 描述的是名义目标（玩家侧）的反应法术——
+                        # resolve_attack 会按受击方资格集校验（见 1294 行），键集错配
+                        # 必然报"必须逐一覆盖[]"，且此矛盾无法由提交方调和（同一字典需
+                        # 同时匹配玩家与怪物的资格集）——引擎契约缺陷，曾占平衡模拟
+                        # 无效局 46+/8000（2026-08-22 定位修复）。
+                        # 重定向时受击反应按空提交校验（怪物无 spells，资格集恒空）；
+                        # 若将来怪物可持反应法术，应新增 hit["self_spell_choices"] 契约字段。
+                        reaction_choices = (hit.get("spell_choices")
+                                            if attack_target is target else {"before": {}, "after": {}})
+                        resolved = self.resolve_attack(
+                            monster, attack_target, dodge=hit["dodge"], blood_shadow=hit["blood_shadow"],
+                            spell_choices=reaction_choices, entity_refs=refs,
+                            dodge_relic_target_ref=hit.get("dodge_relic_target_ref"),
+                            cost_share_target_ref=hit.get("cost_share_target_ref", ""),
+                        )
+                        resolved.update({"hit_index": hit_index + 1, "hit_total": hits_per_action,
+                                         "attack_action_index": action_index + 1,
+                                         "new_action": (hit_index == 0)})
+                        results.append(resolved)
+                        if not monster.is_alive:
+                            break
                     if not monster.is_alive:
                         break
-                if not monster.is_alive:
-                    break
+
+            # 顺序由提交方决定（2026-09-18 用户裁定：不在引擎硬编码）：
+            #   attack_first=true  → 先普攻、后道纹（先打伤害再叠状态；此路下本回合
+            #                         刚发动的【必中】救不了本回合的攻击）
+            #   缺省 false         → 先道纹、后普攻（先【必中】让本回合攻击不可闪避）
+            if attack_first:
+                _attack_step()
+                if monster.is_alive:
+                    _daowen_step()
+            elif _daowen_step():
+                _attack_step()
         return results
 
     def buyaicai_escape_cost(self, monster: Entity) -> dict:
@@ -6177,7 +6203,18 @@ class CombatEngine:
         return self.state.battle_over()
 
     def _tick_mediocrity_counters(self, entity: Entity) -> Optional[str]:
-        """更新凡庸连续计数；达阈值返回原因，不立刻结算。"""
+        """更新凡庸连续计数；达阈值返回原因，不立刻结算。
+
+        2026-09-18 用户裁定：**护卫算[员工]/[朋友]的一次出手**。正在护卫的盟友
+        （`_beifu_left > 0`，来自 `command_ally` 的「护卫 X」指令或【背负】）替轮回者
+        承担伤害，这本身就是它本回合的贡献 → 「未出手」计数清零（视为已出手），
+        「未使敌掉血」计数**冻结不推进**（它确实没打伤害，但纯护卫不该被【凡庸】炸裂）。
+        护卫次数用尽后两条计数照常推进（冻结不清零，之前的累计接着算）。
+        """
+        if (entity.entity_type in ("朋友", "员工")
+                and getattr(entity, "_beifu_left", 0) > 0):
+            entity.no_action_rounds = 0
+            return None
         if entity.actions_used_this_round <= 0:
             entity.no_action_rounds += 1
         else:

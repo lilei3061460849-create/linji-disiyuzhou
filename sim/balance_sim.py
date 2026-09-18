@@ -13,7 +13,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.models import Entity, GameState, DaoWen, DaoWenInstance, StatusEffect
 from engine.combat import CombatEngine
+from engine.daowen import DaoWenEngine
 from engine.dice import DiceEngine
+
+DaoWenEngine.register_all()
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -157,17 +160,17 @@ def monster_activate(m, activated, rng):
     自愈X当场回复已损生命25X%（代价冷却X场，模拟器只打一场≈本场不再发动）；庇护回始生效
     控场型（对轮回者）：蒙蔽X下X次伤害无效；坏死禁疗；减速削其当前速度的10X%；僵化攻击力固定1
     【异变计费接线】怪物发动道纹只按该道纹**自身**代价支付（2026-09-18 用户令删除
-    怪物「家族税」＝原始怪物道纹每次发动额外硬扣异变5X）：自身代价为【异变5X】的六条
-    原始道纹激活时付异变5×面板X，达阈值触发【崩解】直接命零，返回"崩解:道纹名"、
-    本次激活效果中断；自身代价为【冷却X】的【自愈】不再产生异变层数。
+    怪物「家族税」＝原始怪物道纹每次发动额外硬扣异变5X）：异变层数直接读引擎 calc 的
+    `cost_mutation`（唯一事实源，必中＝X、其余异变类＝5X），不在镜像里另写倍率；
+    达阈值触发【崩解】直接命零，返回"崩解:道纹名"、本次激活效果中断；
+    自身代价为【冷却X】的【自愈】不产生异变层数。
     """
     priority = ["疯狂", "全力", "狂暴", "必中", "蒙蔽", "坏死", "减速", "僵化", "自愈", "庇护", "飞行"]
-    # 自身代价为【异变5X】的原始怪物道纹（自愈的代价是【冷却X】，不计异变）
-    mutation_cost_original = tuple(n for n in CombatEngine.ORIGINAL_MONSTER_DAOWEN if n != "自愈")
     for g in priority:
         if g in m.dao_wen and g not in activated:
-            if g in mutation_cost_original:
-                pay = m.add_mutation(CombatEngine.YUANCHU_COST_RATE * m.dao_wen[g].x_value)
+            layers = DaoWenEngine.resolve(g, m.dao_wen[g].x_value).get("cost_mutation", 0)
+            if layers:
+                pay = m.add_mutation(layers)
                 if pay["collapsed"]:
                     SIM_STATS["collapses"] += 1
                     return "崩解:" + g

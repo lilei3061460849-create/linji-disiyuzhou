@@ -352,6 +352,7 @@ def _resolve_monster_turn(engine):
     if not prepared.get("success"):
         return prepared
     from engine.ai_tactics import choose_dodge, choose_attack_target
+    from sim.monster_targets import pick_monster_daowen_x
 
     refs_all = engine.combat._combat_entity_refs()
     hit_overrides = {}     # actor_ref → 强制命中数/出手
@@ -389,10 +390,11 @@ def _resolve_monster_turn(engine):
                 if option["dodge_submission"] == "per_target":
                     from sim.monster_targets import pick_wave_dodge_targets
                     dao["dodge_targets"] = pick_wave_dodge_targets(option)
-                if option["resolves_as"] == "变形":
-                    enemy_index = int(actor["actor_ref"].split(":", 1)[1])
-                    hits_n = hit_overrides.get(actor["actor_ref"],
-                                               engine.state.enemies[enemy_index].attack_power)
+                # 【变形】不再改命中数：命中数契约是 prepare 快照
+                # （combat.py `hits_per_action = expected[actor_ref]["base_hits_per_attack"]`，
+                # 2026-09-17 起出手数与命中数一律按快照校验，阶段内真实改速度也不动契约）。
+                # 旧写法按 attack_power(＝当前法力) 提交，法力≠速度的怪必然被引擎拒
+                # （「每个攻击出手必须提交N次命中选择」），白烧一次重试额度。
             monster = refs_all.get(actor["actor_ref"])
             per_hit = monster.attack_power if monster is not None else 0
             target_option = next((o for o in actor["attack_target_options"]
@@ -430,6 +432,26 @@ def _resolve_monster_turn(engine):
                 attacks.append({"hits": hits})
             choices.append({"actor_ref": actor["actor_ref"], "daowen": dao,
                             "attack_actions": attacks})
+
+        # 2026-09-16 用户令（选案 C）＋ 2026-09-18 用户裁定（Q10：不是自定义 X 值的错，
+        # 是怪物 AI 太蠢）：x_free 道纹的 X 必须由怪物 AI 用战术预演评分自己挑，
+        # 不能交给引擎缺省回退（combat.py:5602 `if missing: effective_x = max_x`）——
+        # 【必中】代价降为 异变X 后，可负担上限能到 X≈49（异变 headroom 50 ÷ 每X 1 层），
+        # 一发就把自己推到【崩解】线上。必须在**整份 choices 拼好之后**评分：PVE 要求
+        # 全体 actor 一起提交，只交一个会被拒。
+        token = prepared["result"]["token"]
+        for choice, (actor, _hits, _tgt) in zip(choices, per_actor):
+            dao = choice.get("daowen")
+            if not dao:
+                continue
+            option = next((o for o in actor["daowen_options"] if o["name"] == dao["name"]), None)
+            if option is None or not option.get("x_free"):
+                continue
+            monster = refs_all.get(actor["actor_ref"])
+            if monster is None:
+                continue
+            dao["x"] = pick_monster_daowen_x(engine, monster, option, choice, token,
+                                             all_choices=choices)
 
         result = engine.execute_action("resolve_monster_phase", {
             "token": prepared["result"]["token"], "choices": choices,

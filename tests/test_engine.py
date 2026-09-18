@@ -1165,7 +1165,7 @@ def test_original_daowen_only_charges_mutation_on_activation():
     """原始怪物道纹的异变计费时机（2026-09-18 用户令：删除怪物「家族税」）：
 
     - 代价一律按道纹**自身 calc** 支付，怪物与轮回者/同伴同口径（统一代价总线）；
-    - 自身代价为【异变5X】的六条（狂暴/全力/疯狂/减速/必中/飞行）每次实际发动付一次，
+    - 自身代价为【异变】的五条（狂暴/全力/疯狂/减速/飞行＝5X，必中＝X）每次实际发动付一次，
       效果持续期间未再次发动不重复计费；再次发动按同一个 X 再付一次（递增机制已废止）；
     - 自身代价为【冷却X】的【自愈】不再产生任何异变层数（旧家族税已删）。
     """
@@ -1218,8 +1218,8 @@ def test_original_daowen_only_charges_mutation_on_activation():
     c2.round_start(); resolve_monster_phase(c2, {"次数怪": "庇护"})
     c2.round_start(); resolve_monster_phase(c2, {"次数怪": "必中"})
     c2.round_start(); resolve_monster_phase(c2, {"次数怪": "庇护"})
-    assert m2.mutation_count == 15 and m2.is_alive
-    print("  ✓ 必中3首次支付异变15，未再发动则不再计费")
+    assert m2.mutation_count == 3 and m2.is_alive
+    print("  ✓ 必中3首次支付异变3（2026-09-18 用户令：必中代价由异变5X 降为异变X），未再发动则不再计费")
 
     # 崩解仍保留：付**自身异变代价**达阈值时效果中断并命零
     # （减速2＝异变5×2＝10，40+10＝50＝阈值）。自愈已不产生异变，故换用减速验证。

@@ -128,7 +128,8 @@ def pick_monster_daowen_option(cands: list[dict], *, player_low: bool = False,
     return min(cands, key=lambda o: monster_daowen_group(o["name"]))
 
 
-def pick_monster_daowen_x(engine, monster, option, choice_tpl: dict, token: str) -> int:
+def pick_monster_daowen_x(engine, monster, option, choice_tpl: dict, token: str,
+                          all_choices: list | None = None) -> int:
     """x_free 道纹：用**战术预演评分**为怪物挑一个 X（2026-09-16 用户令，选案 C）。
 
     面板不写死 X，能开多大只受[法限]或代价限制——但"能开多大"不等于"该开多大"。
@@ -148,6 +149,11 @@ def pick_monster_daowen_x(engine, monster, option, choice_tpl: dict, token: str)
     choice_tpl 是已拼装好的完整提交模板（含攻击块），这里只替换 daowen["x"]；
     保留攻击块是因为引擎要求 attack_actions 的逐击命中数必须提交完整，
     只提交道纹会被拒（攻击部分的后果在各候选间是常量，不影响 X 之间的比较）。
+
+    all_choices：PVE 怪物阶段要求**全体 actor 一起提交**（combat.py:6002
+    `set(submitted) != set(expected)` 即拒），死斗才是部分提交。传完整 choices 列表
+    （其中必须含 choice_tpl 这个对象本身）时，评分按整份提交预演、只替换本 actor 的 X；
+    其余 actor 的选择原样带入——它们是常量，不影响 X 之间的相对比较。
     """
     import copy
 
@@ -166,8 +172,12 @@ def pick_monster_daowen_x(engine, monster, option, choice_tpl: dict, token: str)
     for x in sorted({1, max(1, max_x // 2), max_x}):
         trial = copy.deepcopy(choice_tpl)
         trial["daowen"]["x"] = x
+        if all_choices is None:
+            submitted = [trial]
+        else:
+            submitted = [trial if c is choice_tpl else copy.deepcopy(c) for c in all_choices]
         out = preview.preview("resolve_monster_phase",
-                              {"token": token, "choices": [trial]})
+                              {"token": token, "choices": submitted})
         res = out.get("result") or {}
         if not res.get("success"):
             continue

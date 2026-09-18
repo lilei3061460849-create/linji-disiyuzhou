@@ -145,6 +145,25 @@ class ActionPreview:
             "action_history_len": len(eng._action_history),
             "last_result": eng._last_result,
         }
+        # 副本世界还必须与真实世界隔离 combat 侧的 **id-keyed 账本**（2026-09-18）：
+        # 预演复用同一个 CombatEngine 对象，而副本里的实体是 deepcopy 出来的新对象、
+        # id 与真实实体不同。若让副本直接写真实账本，就会留下以副本 id 为键的垃圾条目；
+        # 副本被回收后地址复用时，后来的真实怪或新副本会**继承**这些条目——典型症状是
+        # 明明本回合没发动过却报「不能发动道纹【X】」（`_monster_round_used` 命中垃圾记录），
+        # 且是否命中取决于内存分配顺序 → 同一 seed 两次跑结果不同
+        # （`tests/test_build_learner.py::test_fixed_seed_is_reproducible` 曾因此失败：
+        # 战术选 X 的三档预演里，同一档在第一次跑通过、第二次跑被假拒绝）。
+        # 账本的值会被**原地改写**（`_monster_round_used(monster).add(name)`、
+        # `_monster_activated.setdefault(id, set())`），所以必须 deepcopy 而不是浅拷贝。
+        ledger_defaults = {
+            "_monster_activated": {}, "_monster_daowen_round_used": {},
+            "_resonance_rewrites": {}, "_monster_evolved": set(),
+            "_sanxiang_consumed": "", "_split_clones_spawned": 0, "_effect_chain_depth": 0,
+        }
+        saved_ledgers = {k: copy.deepcopy(getattr(combat, k, d))
+                         for k, d in ledger_defaults.items()}
+        for k, v in saved_ledgers.items():
+            setattr(combat, k, copy.deepcopy(v))
         eng.state = snap_state
         combat.state = snap_state
         eng.dice = snap_dice
@@ -168,6 +187,8 @@ class ActionPreview:
             combat.state = real_state
             eng.dice = real_dice
             combat.dice = real_dice
+            for k, v in saved_ledgers.items():      # 归还真实账本，副本里的写入一律作废
+                setattr(combat, k, v)
             eng._pending_interrupts = saved["pending_interrupts"]
             del eng._action_history[saved["action_history_len"]:]
             eng._last_result = saved["last_result"]
