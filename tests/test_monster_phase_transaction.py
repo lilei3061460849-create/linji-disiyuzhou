@@ -80,7 +80,7 @@ def _snapshot(e):
     m = e.state.enemies[0]
     return {
         "round_used": sorted(e.combat._monster_round_used(m)),
-        "activated": sorted(e.combat._monster_activated.get(id(m), set())),
+        "activated": sorted(e.combat._monster_activated.get(m.runtime_id, set())),
         "x": {k: v.x_value for k, v in m.dao_wen.items()},
         "monster_shards": m.shards,
         "player_shards": e.state.shards,

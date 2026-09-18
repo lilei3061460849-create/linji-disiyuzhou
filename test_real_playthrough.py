@@ -179,7 +179,7 @@ def monster_phase(engine, ai, rec, rnd):
                         "frozen": v.is_frozen, "can_use": v.can_use()}
                     for k, v in m.dao_wen.items()})
                 dlog(rec, "r%d:activated" % rnd,
-                     sorted(engine.combat._monster_activated.get(id(m), set())))
+                     sorted(engine.combat._monster_activated.get(m.runtime_id, set())))
                 dlog(rec, "r%d:round_used" % rnd,
                      sorted(engine.combat._monster_round_used(m)))
         try:

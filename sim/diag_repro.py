@@ -12,13 +12,13 @@
   L3 picks    —— 怪物战术选 X（`pick_monster_daowen_x` 的档位上限与选出的 X）
   L4 previews —— 每档预演的提交与结果（success/error）
   L5 scores   —— `TacticalAI._score_candidate` 的 (label, score)
-  L6 rejects  —— 引擎侧「不能发动道纹」类拒绝，附拒绝瞬间的 id-keyed 账本内容
-  L7 ledgers  —— 收工审计：全部 id-keyed 账本（清单取自 engine/ledger_isolation.py）
+  L6 rejects  —— 引擎侧「不能发动道纹」类拒绝，附拒绝瞬间的账本内容（键＝runtime_id）
+  L7 ledgers  —— 收工审计：全部实体键账本（键＝runtime_id，清单取自 engine/ledger_isolation.py）
                  里的**垃圾键**（键不对应任何在场实体）
 
 **L7 是这一类 bug 的指纹**：预演走副本执行（deepcopy state）时若复用真实
 `CombatEngine` 的 `_monster_daowen_round_used`／`_monster_activated`／
-`_resonance_rewrites`（都按 `id(entity)` 建索引），副本实体的 id 就会写进真实账本；
+`_resonance_rewrites`（当时都按 `id(entity)` 建索引），副本实体的 id 就会写进真实账本；
 副本被回收后地址复用，后来的真实怪/新副本**继承**这条记录 → 明明没发动过却报
 「不能发动道纹【X】」，而且是否命中取决于内存分配顺序 → 不可复现。
 2026-09-18 修的 `engine/ai_preview.py::preview_sequence` 正是这个（修法＝进副本前
@@ -50,7 +50,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 # 账本清单不在本文件定义：取自 engine/ledger_isolation.py（单一权威，预演/死斗推演同源）
-from engine.ledger_isolation import ID_KEYED_LEDGERS  # noqa: E402
+from engine.ledger_isolation import ENTITY_KEYED_LEDGERS  # noqa: E402
 
 HEX32 = re.compile(r"[0-9a-f]{32}")
 
@@ -124,7 +124,7 @@ def install_hooks(rec: dict, deep: bool) -> list:
                             "can_use": inst.can_use() if inst else None,
                             "cooldown": getattr(inst, "cooldown_remaining", None),
                             "ledgers": {k: _norm(v) for k, v in
-                                        ((lk, getattr(self, lk, None)) for lk in ID_KEYED_LEDGERS)},
+                                        ((lk, getattr(self, lk, None)) for lk in ENTITY_KEYED_LEDGERS)},
                         })
                     raise
             return f
@@ -188,14 +188,14 @@ def audit_ledgers(engines: list) -> dict:
       unbound_keys —— 键可以合法滞留的账本（_monster_evolved：怪进化/逃跑后 id 仍留存；
                       _dodge_counts：换回合才清），只作参考，不判失败。
     """
-    from engine.ledger_isolation import audit_id_ledgers
+    from engine.ledger_isolation import audit_ledgers as audit_one
 
     junk = unbound = 0
     detail: dict = {}
     for eng in engines:
         if getattr(eng, "state", None) is None:
             continue
-        a = audit_id_ledgers(eng)
+        a = audit_one(eng)
         junk += a["junk_keys"]
         unbound += a["unbound_keys"]
         for lname, n in a["detail"].items():
@@ -265,7 +265,7 @@ def report(args, runs: list, results: list) -> int:
                 print(f"  {mark} #{j} run{i + 1}: {_norm(b)[:200]}")
 
     print("=" * 78)
-    print("L7 ledgers（收工审计：id-keyed 账本里的垃圾键）")
+    print("L7 ledgers（收工审计：runtime_id 键账本里的垃圾键）")
     for i, r in enumerate(runs):
         a = r["ledger_audit"]
         flag = "✓" if a["junk_keys"] == 0 else "✗ 有副本写入真实账本的残留"

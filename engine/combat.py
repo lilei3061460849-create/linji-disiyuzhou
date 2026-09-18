@@ -79,7 +79,7 @@ class CombatEngine:
         # 三相残韵盘本场消耗的残韵
         self._sanxiang_consumed = ""
         # 残韵改写：entity_id → {源道纹: 变化后道纹}，只改下一次发动结算，不改持有
-        self._resonance_rewrites: dict[int, dict[str, str]] = {}
+        self._resonance_rewrites: dict[str, dict[str, str]] = {}   # 键＝Entity.runtime_id
         # 效果链深度保险丝（见 MAX_EFFECT_CHAIN_DEPTH）。
         self._effect_chain_depth = 0
         # AFTER_LIFE_LOST(失去生命后) 反应法术在“非攻击失血”路径的自动触发状态：
@@ -103,9 +103,9 @@ class CombatEngine:
         # 仅靠 reset_monster_activation 在战始降级为实例属性——绕过战始的引擎
         # （测试夹具/模拟器直驱）会把 add() 写进跨实例共享的类集合，且 id()
         # 复用会让后建的怪物“被已进化”，发生跨用例/跨局串扰。
-        self._monster_activated: dict = {}
-        self._monster_evolved: set = set()
-        self._monster_daowen_round_used: dict = {}
+        self._monster_activated: dict = {}        # 键＝Entity.runtime_id
+        self._monster_evolved: set = set()        # 元素＝Entity.runtime_id
+        self._monster_daowen_round_used: dict = {}  # 键＝Entity.runtime_id
 
     # 效果链深度上限。这是**防御性保险丝**，不是游戏规则：
     # 任何合法的 嫁祸/背负 重定向链都远低于此值（重定向每跳都会递减 _jiahuo_left/_beifu_left，
@@ -505,7 +505,7 @@ class CombatEngine:
             return 0
         if entity.entity_type == "怪物":
             n = 2
-            act = self._monster_activated.get(id(entity), set())
+            act = self._monster_activated.get(entity.runtime_id, set())
             # 疯狂(2026-08-17全局裁定)：状态盖到所有角色，怪物从自身状态读+X。
             # 不再走激活集合分支，避免与全局状态双重计数。
             n += entity.get_status_value("疯狂")
@@ -2250,7 +2250,7 @@ class CombatEngine:
         """
         if not monster.is_alive:
             return {"success": False, "error": f"{monster.name}已命零"}
-        if id(monster) in self._monster_evolved:
+        if monster.runtime_id in self._monster_evolved:
             return {"success": False, "error": f"{monster.name}本场已选择过逃跑/进化（每场战斗限一次）"}
         difficulty = self.check_monster_difficulty(monster)
         if not difficulty:
@@ -2269,7 +2269,7 @@ class CombatEngine:
         # 支付代价：异变5X（代价从做出选择开始生效，优先于效果结算）
         cost = self.YUANCHU_COST_RATE * x
         pay = monster.add_mutation(cost)
-        self._monster_evolved.add(id(monster))
+        self._monster_evolved.add(monster.runtime_id)
         log = [f"{monster.name}发动【原初{x}】：异变+{cost}（当前{pay['mutation_total']}层）"]
         
         if pay["collapsed"]:
@@ -2309,7 +2309,7 @@ class CombatEngine:
         """
         options = []
         for m in self.state.enemies:
-            if not m.is_alive or id(m) in self._monster_evolved:
+            if not m.is_alive or m.runtime_id in self._monster_evolved:
                 continue
             difficulty = self.check_monster_difficulty(m)
             if not difficulty:
@@ -4726,14 +4726,14 @@ class CombatEngine:
         if not self.is_targetable(holder, target):
             return False
         self._dodge_budget_reset()
-        used = self._dodge_counts.get(id(target), 0)
+        used = self._dodge_counts.get(target.runtime_id, 0)
         try:
             from engine.ai_tactics import choose_dodge
             want = bool(choose_dodge(None, int(dmg), budget_used=used, entity=target))
         except Exception:
             return False
         if want:
-            self._dodge_counts[id(target)] = used + 1
+            self._dodge_counts[target.runtime_id] = used + 1
         return want
 
     def _auto_after_life_lost_decision(self, name: str, flow: dict, holder: Entity,
@@ -5170,7 +5170,7 @@ class CombatEngine:
     # ========== 怪物回合（两阶段显式决策） ==========
     # 怪物已激活的道纹 / 已进化的怪物（均按战斗重置）
     _monster_activated: dict = {}
-    _monster_evolved: set = set()  # 进化（原初X）：本场已进化的怪物 id 集合
+    _monster_evolved: set = set()  # 进化（原初X）：本场已进化的怪物 runtime_id 集合
     _monster_daowen_round_used: dict = {}  # 本回合已发动的道纹（DM裁定2026-08-18：跨回合可重复发动）
 
     def reset_monster_activation(self):
@@ -5197,16 +5197,16 @@ class CombatEngine:
         重复发动按同一 X 计费。
         _monster_activated 保留为持续激活口径（狂暴出手加成等），不再作发动门禁。
         """
-        rec = self._monster_daowen_round_used.get(id(monster))
+        rec = self._monster_daowen_round_used.get(monster.runtime_id)
         if rec is None or rec[0] != self.state.current_round:
             rec = (self.state.current_round, set())
-            self._monster_daowen_round_used[id(monster)] = rec
+            self._monster_daowen_round_used[monster.runtime_id] = rec
         return rec[1]
     def consume_resonance_rewrite(self, entity: Entity, source: str) -> Optional[str]:
-        bucket = self._resonance_rewrites.get(id(entity)) or {}
+        bucket = self._resonance_rewrites.get(entity.runtime_id) or {}
         dest = bucket.pop(source, None)
         if dest and not bucket:
-            self._resonance_rewrites.pop(id(entity), None)
+            self._resonance_rewrites.pop(entity.runtime_id, None)
         return dest
 
     def _monster_attack_actions(self, m: Entity, activated: set) -> int:
@@ -5315,7 +5315,7 @@ class CombatEngine:
                 skipped.append({"actor_ref": actor_ref, "monster": monster.name,
                                 "reason": f"出手预算已用尽({monster.actions_used_this_round}/{budget})"})
                 continue
-            activated = self._monster_activated.get(id(monster), set())
+            activated = self._monster_activated.get(monster.runtime_id, set())
             round_used = self._monster_round_used(monster)
             daowen_options = []
             # 2026-09-15 用户令：删除白板限制——增援怪/回场怪进场当回合即可发动道纹
@@ -5326,7 +5326,7 @@ class CombatEngine:
                     if (name in round_used or not inst.can_use()
                             or name not in DaoWenEngine.list_all()):
                         continue
-                    rewritten_as = (self._resonance_rewrites.get(id(monster)) or {}).get(name)
+                    rewritten_as = (self._resonance_rewrites.get(monster.runtime_id) or {}).get(name)
                     effective_name = rewritten_as or name
                     target_mode = self._daowen_target_mode(effective_name)
                     requires_target = target_mode == "required"
@@ -5570,7 +5570,7 @@ class CombatEngine:
             raise ValueError(f"{monster.name}不能发动道纹【{name}】")
         if name not in DaoWenEngine.list_all():
             raise ValueError(f"未知道纹【{name}】")
-        rewritten_as = (self._resonance_rewrites.get(id(monster)) or {}).get(name)
+        rewritten_as = (self._resonance_rewrites.get(monster.runtime_id) or {}).get(name)
         effective_name = rewritten_as or name
         # 目标口径统一走 _monster_daowen_target：required / optional / none 三态。
         # optional（【变形】【超频】）提交 target_ref 即选定他方目标，不提交回落自身。
@@ -5816,7 +5816,7 @@ class CombatEngine:
             raise ValueError(f"{monster.name}不能发动道纹【{name}】")
         if name not in DaoWenEngine.list_all():
             raise ValueError(f"未知道纹【{name}】")
-        rewritten_as = (self._resonance_rewrites.get(id(monster)) or {}).get(name)
+        rewritten_as = (self._resonance_rewrites.get(monster.runtime_id) or {}).get(name)
         effective_name = rewritten_as or name
         # 与执行阶段同一个目标解析器：静态校验与真实结算不得各判一套口径
         target, target_mode = self._monster_daowen_target(
@@ -6039,7 +6039,7 @@ class CombatEngine:
                 results.append({"monster": monster.name, **breath})
                 if not monster.is_alive:
                     continue
-            activated = self._monster_activated.setdefault(id(monster), set())
+            activated = self._monster_activated.setdefault(monster.runtime_id, set())
             # 攻击出手数以“道纹结算前”的已激活集合为准：狂暴/疯狂是[回始]持续效果，
             # 本回合刚发动时从下回合起生效，prepare列出的 base_attack_actions 也是按
             # 结算前状态给出的——两处必须一致，否则按 prepare 提交必然失败。

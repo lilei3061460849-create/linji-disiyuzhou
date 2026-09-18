@@ -154,7 +154,7 @@ def test_normal_jammer():
     engine = _setup_engine()
     m = engine.state.enemies[0]
     m.dao_wen["疯狂"] = DaoWenInstance(DaoWen(name="疯狂", formula="", cost_type="", cost_formula="", effect_formula=""), x_value=2)
-    engine.combat._monster_activated = {id(m): set()}
+    engine.combat._monster_activated = {m.runtime_id: set()}
     _grant_tool(engine, "干扰仪")
     r = engine.execute_action("consume_item", {"name": "干扰仪"})
     assert r["success"]
@@ -173,7 +173,7 @@ def test_normal_hand_grenade():
     m.current_hp = 100
     engine.state.current_round = 2
     engine.combat.reset_monster_activation()
-    engine.combat._monster_activated = {id(m): set()}
+    engine.combat._monster_activated = {m.runtime_id: set()}
     _grant_tool(engine, "高爆手雷")
     r = engine.execute_action("consume_item", {"name": "高爆手雷", "target": m.name})
     assert r["success"]

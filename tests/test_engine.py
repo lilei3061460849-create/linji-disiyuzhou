@@ -1149,7 +1149,7 @@ def test_evolution_plight_listing():
     engine3.state.phase = "in_combat"
     m3 = Entity(name="已进化怪", entity_type="怪物", blood_limit=120, current_hp=30,
                 attack_count=2, attack_power=1)
-    engine3.combat._monster_evolved.add(id(m3))
+    engine3.combat._monster_evolved.add(m3.runtime_id)
     m4 = Entity(name="死亡怪", entity_type="怪物", blood_limit=120, current_hp=0,
                 attack_count=2, attack_power=1)
     m4.is_alive = False

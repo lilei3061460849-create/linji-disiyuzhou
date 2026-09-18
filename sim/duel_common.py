@@ -44,7 +44,7 @@ def _pick_monster_daowen(engine, actor):
     monster = None
     if 0 <= m_idx < len(enemies):
         monster = enemies[m_idx]
-    activated = engine.combat._monster_activated.get(id(monster), set()) if monster is not None else set()
+    activated = engine.combat._monster_activated.get(monster.runtime_id, set()) if monster is not None else set()
     cands = [o for o in opts if o["name"] not in activated]
     if not cands:
         return opts[0]

@@ -815,38 +815,32 @@ class GameEngine:
         restore_object(self.state, snapshot)
 
     def _snapshot_combat_runtime(self) -> dict:
-        """保存不在GameState内、但会被行动修改的战斗运行态，供失败事务回滚。"""
-        groups = {
-            "player": [self.state.player] if self.state.player else [],
-            "friend": self.state.friends,
-            "employee": self.state.employees,
-            "temp_friend": self.state.temp_friends,
-            "enemy": self.state.enemies,
-        }
-        refs = {(kind, i): entity for kind, entities in groups.items() for i, entity in enumerate(entities)}
-        by_id = {id(entity): ref for ref, entity in refs.items()}
+        """保存不在GameState内、但会被行动修改的战斗运行态，供失败事务回滚。
+
+        账本键＝`Entity.runtime_id`（2026-09-18 ③-full）：不再需要把 `id(entity)` 翻译成
+        `(kind, index)` 稳定引用再翻回来——runtime_id 本身就跨对象稳定（本函数配套的回滚是
+        **原位恢复**，实体对象不换；即便像 `combat._monster_phase_restore` 那样换掉实体对象，
+        runtime_id 也不变）。覆盖面仍是原来那 3 项：扩它＝改回滚行为，属另一裁定（见 报告.md D7）。
+        """
+        from engine.ledger_isolation import roster_runtime_ids
+        live = roster_runtime_ids(self.state)
         return {
-            "activated": {by_id[key]: set(value) for key, value in self.combat._monster_activated.items()
-                          if key in by_id},
-            "rewrites": {by_id[key]: dict(value) for key, value in self.combat._resonance_rewrites.items()
-                         if key in by_id},
+            "activated": {key: set(value) for key, value in self.combat._monster_activated.items()
+                          if key in live},
+            "rewrites": {key: dict(value) for key, value in self.combat._resonance_rewrites.items()
+                         if key in live},
             "sanxiang": self.combat._sanxiang_consumed,
         }
 
     def _restore_combat_runtime(self, snapshot: dict) -> None:
-        groups = {
-            "player": [self.state.player] if self.state.player else [],
-            "friend": self.state.friends,
-            "employee": self.state.employees,
-            "temp_friend": self.state.temp_friends,
-            "enemy": self.state.enemies,
-        }
-        refs = {(kind, i): entity for kind, entities in groups.items() for i, entity in enumerate(entities)}
+        """按 runtime_id 归还；已不在名册里的角色（离场/死亡后被清出列表）条目照旧丢弃。"""
+        from engine.ledger_isolation import roster_runtime_ids
+        live = roster_runtime_ids(self.state)
         self.combat._monster_activated = {
-            id(refs[ref]): set(value) for ref, value in snapshot["activated"].items() if ref in refs
+            key: set(value) for key, value in snapshot["activated"].items() if key in live
         }
         self.combat._resonance_rewrites = {
-            id(refs[ref]): dict(value) for ref, value in snapshot["rewrites"].items() if ref in refs
+            key: dict(value) for key, value in snapshot["rewrites"].items() if key in live
         }
         self.combat._sanxiang_consumed = snapshot["sanxiang"]
 

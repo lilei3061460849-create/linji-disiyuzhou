@@ -79,7 +79,7 @@ def _pick_monster_daowen(engine, actor):
     monster = None
     if 0 <= m_idx < len(enemies):
         monster = enemies[m_idx]
-    activated = engine.combat._monster_activated.get(id(monster), set()) if monster is not None else set()
+    activated = engine.combat._monster_activated.get(monster.runtime_id, set()) if monster is not None else set()
     cands = [o for o in opts if o["name"] not in activated]
     if not cands:
         return opts[0]
@@ -313,7 +313,7 @@ def _drive_plight_monsters(engine, telemetry: dict = None) -> None:
                         if e.name == opt.get("monster") and e.is_alive), None)
         if monster is None or monster.entity_type != "怪物":
             continue
-        if id(monster) in combat._monster_evolved:
+        if monster.runtime_id in combat._monster_evolved:
             continue
         borrowable = list(opt.get("borrowable_daowen") or [])
         max_x = int(opt.get("max_x_by_mutation") or 0)
@@ -329,7 +329,7 @@ def _drive_plight_monsters(engine, telemetry: dict = None) -> None:
             if stats is not None:
                 stats[key] = stats.get(key, 0) + 1
         else:
-            combat._monster_evolved.add(id(monster))
+            combat._monster_evolved.add(monster.runtime_id)
             combat._remove_from_combat(monster, "逃跑")
             if stats is not None:
                 stats["escape"] = stats.get("escape", 0) + 1

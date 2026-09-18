@@ -365,7 +365,7 @@ def test_pick_monster_daowen_uses_round_used_not_activated():
     actor = _pick_actor()
 
     # activated 含全部候选（跨回合持续激活），但 round_used 为空 → 仍可正常选择
-    e.combat._monster_activated[id(m)] = {"赎金", "减速", "蒙蔽"}
+    e.combat._monster_activated[m.runtime_id] = {"赎金", "减速", "蒙蔽"}
     pick = _pick_monster_daowen(e, actor)
     assert pick is not None, "activated 不应阻止跨回合再次选择"
 
