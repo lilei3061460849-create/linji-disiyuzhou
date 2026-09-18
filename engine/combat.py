@@ -3326,10 +3326,10 @@ class CombatEngine:
             # 减速X：使[目标]失去其当前速度的10X%（一次性切除整场速度池的一部分——
             # 速度是一池制，[回始]不回填、[战终]复原，故没有"持续X"可言）。
             # 按百分比结算＝状态类效果（非数值平分），对波及目标各按其自身当前速度原样生效。
-            # 取整向下，X=5 与旧版"速度减半"逐位一致；因此低 X 打低速度目标可能算出 0 点。
+            # 取整按正文「整数规则：所有计算都向上取整」；只有当前速度为 0 才会削 0 点。
             pct = calc["speed_loss_pct"]
             for wt in wave_status_targets:
-                lost = wt.current_speed * pct // 100
+                lost = math.ceil(wt.current_speed * pct / 100)
                 self._lose_current_speed(wt, lost, ctx={
                     "timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
                     "source": name, "source_type": "daowen", "actor": caster, "target": wt,

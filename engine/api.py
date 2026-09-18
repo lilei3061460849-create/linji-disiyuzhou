@@ -1890,7 +1890,7 @@ class GameEngine:
             if name in MONSTER_TRANSFORM_DAOWEN:
                 return f"【{name}】是怪物转化道纹，只能由自身已有道纹经残韵获得"
             if name in ORIGINAL_MONSTER_DAOWEN:
-                return f"【{name}】是原始怪物道纹，人类无法承受并获得"
+                return f"【{name}】是原始怪物道纹，人类无法通过学习获得（只能从怪物身上获得）"
             owner = UNIMPLEMENTED_REGION_EXCLUSIVE_DAOWEN.get(name)
             if owner is not None:
                 return f"【{name}】是{owner}专属道纹，当前副本无法习得"

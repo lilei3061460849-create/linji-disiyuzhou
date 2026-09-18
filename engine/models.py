@@ -564,7 +564,10 @@ class Entity:
         
         return detail
     
-    MUTATION_COLLAPSE_THRESHOLD = 50  # 特殊事件【崩解】阈值：异变达到50层直接命零；原始道纹仅首次发动支付异变5X
+    # 特殊事件【崩解】阈值：异变达到50层直接命零。原始怪物道纹**每发动一次**支付异变5X
+    # （正文《怪物准则》第5条「发动【异变5X】累加自身异变层数」，无"首次"限定；
+    # 结算点 combat.py 的怪物道纹执行段，残韵改写那次不付源道纹代价）。
+    MUTATION_COLLAPSE_THRESHOLD = 50
     # 2026-09-17 用户令：[员工]出场并存活满这么多场战斗即转为[朋友]（唯一事实源）。
     EMPLOYEE_PROMOTION_BATTLES = 3
     # 致死类特殊事件的阈值（唯一事实源；CombatEngine 的同名量一律引用这里，禁止各写一份）：

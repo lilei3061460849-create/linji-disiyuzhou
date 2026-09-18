@@ -4,13 +4,15 @@
 **从未被读取**——没有挂任何状态，就是一次性把当前速度砍半。于是 X 只把异变代价
 从 5 涨到 25、效果一点不变，减速X=2…5 被 X=1 严格支配（"没人会用减速"的根因）。
 
-新版把 X 变成**幅度**参数：失去当前速度的 10X%，X=5 恰好等于旧版减半；取整向下，
-与旧式 `lost = cur - ceil(cur/2)`（恒等于 `floor(cur/2)`）逐位一致。
+新版把 X 变成**幅度**参数：失去当前速度的 10X%，X=5 即"失去一半"。取整按正文
+「整数规则：所有计算都向上取整」（`ceil(cur × 10X / 100)`），因此奇数速度上 X=5 比
+旧版减半多削 1 点；向上取整同时消灭了"低 X 空放"——只有当前速度为 0 才削 0 点。
+X 不另设封顶：刹车是异变本身（达 50 层【崩解】直接命零，怪物侧探测按生存线卡在 9）。
 速度是一池制（[回始]不回填、[战终]复原），所以正文不再写「持续X」。
 
-覆盖：幅度随 X 线性 / X=5 与旧减半逐位相同 / 低 X 打低速度取整为 0（如实钉住）/
-削的是速度池不是[速限]（与【冥气】分轴）/ 代价与键位不变量 / 波及各按自身速度 /
-正文口径一致。
+覆盖：幅度随 X 线性 / X=5＝失去一半（向上取整）/ 低 X 至少削 1 点 / 速度 0 削 0 /
+X 只受崩解线约束（不设数值封顶）/ 削的是速度池不是[速限]（与【冥气】分轴）/
+代价与键位不变量 / 波及各按自身速度 / 正文口径一致。
 """
 from __future__ import annotations
 
@@ -64,28 +66,53 @@ def test_jiansu_loss_scales_linearly_with_x():
         assert player.current_speed == 40 - expected
 
 
-def test_jiansu_x5_matches_the_old_halving_bit_for_bit():
-    """边界：X=5 与旧版「速度减半」在当前速度 1…24 上逐位一致"""
+def test_jiansu_x5_loses_half_rounded_up():
+    """边界：X=5＝失去一半，按正文「整数规则：所有计算都向上取整」→
+    奇数速度上比旧版减半（floor）多削 1 点；剩余恒为 speed // 2"""
     state, combat, player, monster = _battle(player_speed=24)
 
     for speed in range(1, 25):
         player.current_speed = speed
         _cast_jiansu(combat, monster, player, x=5)
-        expected_lost = speed - math.ceil(speed / 2)   # 旧实现
-        assert player.current_speed == speed - expected_lost, f"当前速度{speed}时与旧减半不一致"
+        assert player.current_speed == speed // 2, (
+            f"当前速度{speed}：失去 ceil({speed}×50%)={math.ceil(speed / 2)}，应剩 {speed // 2}")
 
 
-def test_jiansu_low_x_on_low_speed_rounds_down_to_zero():
-    """边界：向下取整的如实后果——低 X 打低速度目标会算出 0 点（不扣、也不报错）"""
+def test_jiansu_low_x_still_takes_at_least_one_point():
+    """边界：向上取整消灭了"低X空放"——速度2 时 X=1 也削 1 点，怪物不会白花一次出手"""
     state, combat, player, monster = _battle(player_speed=2)
     player.current_speed = 2
 
     result = _cast_jiansu(combat, monster, player, x=1)
 
     effect = next(e for e in result["effects"] if e["type"] == "speed_loss_pct")
-    assert effect["lost"] == 0
-    assert player.current_speed == 2, "10% × 2 = 0.2 → 向下取整为 0"
+    assert effect["lost"] == 1, "ceil(2×10%) = 1"
+    assert player.current_speed == 1
     assert not player.has_status("减速"), "本效果不挂状态（旧版的持续X从来没被实现）"
+
+
+def test_jiansu_on_zero_speed_loses_nothing():
+    """边界：当前速度为 0 时削 0 点（唯一算出 0 的情形），不报错、不倒扣"""
+    state, combat, player, monster = _battle(player_speed=0)
+
+    result = _cast_jiansu(combat, monster, player, x=3)
+
+    effect = next(e for e in result["effects"] if e["type"] == "speed_loss_pct")
+    assert effect["lost"] == 0
+    assert player.current_speed == 0
+
+
+def test_jiansu_x_is_bounded_only_by_the_collapse_line():
+    """X 不另设数值封顶（DM 裁定：45 层异变不是小代价）——刹车是崩解线本身。
+    新怪 max_x=9（45 层，离 50 只差一次代价）；已叠到 45 层时连 X=1 都不再提供。"""
+    state, combat, player, monster = _battle()
+
+    assert monster.mutation_count == 0
+    assert combat._monster_max_daowen_x(monster, "减速", player) == 9
+
+    monster.mutation_count = 45
+    assert combat._monster_max_daowen_x(monster, "减速", player) == 0, \
+        "45 层时再付异变5X 即达 50 → 崩解命零，引擎不主动提供自杀档"
 
 
 # ---------------------------------------------------------------- 与【冥气】分轴

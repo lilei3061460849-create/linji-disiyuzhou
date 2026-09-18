@@ -306,9 +306,12 @@ class DaoWenEngine:
         旧版为「速度减半，持续X」，而 `duration` 在实现里**从未被读取**——没有挂任何
         状态，就是一次性把当前速度砍半。于是 X 只把异变代价从 5 涨到 25、效果一点不变，
         减速X=2…5 被减速X=1 严格支配（这正是"没人会用减速"的根因）。
-        新版让 X 成为**幅度**参数：10X%，X=5 恰好等于旧版的减半。
-        取整口径向下（`当前速度 × 10X // 100`），因此 X=5 与旧实现逐位一致
-        （旧式 `lost = cur - ceil(cur/2)` 恒等于 `floor(cur/2)`）。
+        新版让 X 成为**幅度**参数：10X%，X=5 即"失去一半"。
+        取整按正文「整数规则：所有计算都向上取整」——`ceil(当前速度 × 10X / 100)`，
+        因此奇数速度上 X=5 比旧版减半多削 1 点（旧式 `cur - ceil(cur/2)`＝floor）。
+        不封 X 上限：异变是累加计数、达 50 层【崩解】直接命零，怪物侧探测上限
+        `_monster_max_daowen_x` 已按生存线卡在 9（45 层＝离崩解只差一次代价），
+        高 X 的代价本身就是刹车，不需要再钉一道数值封顶。
         速度是一池制（[回始]不回填、[战终]复原），所以本效果没有"持续"可言：
         砍掉的就是整场速度池的一部分，正文因此不再写「持续X」。
         """
@@ -316,7 +319,7 @@ class DaoWenEngine:
         pct = 10 * x
         # 只在 summary 里给发动方看一个预览值；真正扣多少由 combat 在结算那一刻
         # 按各目标自己的当前速度算（波及目标各有其值），不落进 calc 当第二个事实源。
-        preview = (target.current_speed * pct // 100) if target is not None else 0
+        preview = DaoWenEngine.ceil(target.current_speed * pct / 100) if target is not None else 0
         return {
             "dao_wen": "减速",
             "x": x,
