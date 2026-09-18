@@ -521,7 +521,7 @@ Hook 分组、分发流程之前，必须确认不改变相对顺序。顺序敏
 1.采集“绝息淤泥”：流血10。获得“绝息淤泥”（可随时使用，使用后屏蔽自身灵魂位置，可使本次[战终]，立刻逃脱）。
 2.拒绝：无事发生。
 
-### 行动接口口径（跨副本行动 + 开局/结算批次）
+### 行动接口口径（全部行动接口的四要素条文）
 
 - **接口总则**：每个行动接口在正文里必须说清四件事——①**代价**（精力/法力/生命/碎片/回合）、②**目标要求**（是否必须给 `target_ref`、可否为空、可否指向友方）、③**能否在战斗中使用**（在 `_COMBAT_ONLY_ACTIONS` 名单内＝只能战斗中执行；不在名单＝任何阶段可调用，战斗内另受子阶段门控）、④**前置条件与产出**。条文与引擎不一致时以引擎为准，并回填条文。
 - **终音法器领取（`choose_terminal_artifact`）**：不受战斗限定，实际时机由前置决定——死斗胜者经 `resolve_final_duel(outcome="victory")` 置 `pending_terminal_region` 后才可领取，未领取前不得完整封存。`choice` 必须是当前副本终音法器表的 1~N 序号，越界或非整数拒绝。领取即入 `artifacts_owned`，并按死斗阶级进阶封存（胜者进入下一阶级封存槽，不再与原阶级角色死斗）；副本无已定义终音法器时，死斗结算直接进阶封存，不经本接口。「红头绳」附带献祭行动资格；「教父左轮」以 6/6 次可消耗遗物武器入账；「猩红尖牙」先强制触发【初拥之夜】——`choose_first_embrace(choice=1~9)`，1~8 各限选一次、选后回复 30%[血限]，初拥结算完毕才继续封存。无精力/法力代价。
@@ -559,6 +559,44 @@ Hook 分组、分发流程之前，必须确认不改变相对顺序。顺序敏
 - **已停用／已移除的旧入口（恒定失败，不得据其编造效果）**：
   - `attack`：恒返回「旧attack已移除；请使用prepare_attack/resolve_attack」。攻击一律走两段式——`prepare_attack` 绑定逐击选择、`resolve_attack` 原子结算并扣出手。
   - `monster_phase`：恒返回失败并要求依次调用 `prepare_monster_phase` 与 `resolve_monster_phase`。停用的目的是防止绕过两阶段的显式决策：怪物出手预算、可发动道纹选项与逐击目标都必须由发动方读 prepare 快照后显式提交，引擎不代怪物选。
+- **局外阶段（`pre_battle_action` 是局外唯一入口，其余为其后置选择/后续服务）**：
+  - `pre_battle_action`：不受战斗限定，在 `phase=pre_battle` 时调用。代价＝1 点精力，**先扣后判**：`energy<=0` 直接拒绝并提示改调 `battle_start`；战斗中发动过【炼心】时，`pending_energy_penalty` 在本次一并扣除（一次性结算，用完清零）。`sub_action` 必须是 11 种之一——休整／修行／学习／共鸣／探索／维修／雇佣／炼心／附煞／忘忧／献祭；未知子行动退还精力并拒绝。副本专属门禁：维修＝扭曲都市、雇佣＝罪孽都市、炼心＝龙心谷、附煞＝乱葬岗，跨副本调用即拒绝并退还精力（缺这道门禁会让任意副本都能用他人专属行动，统计与平衡数据失真）。子行动内部参数非法（休整档位不是 1/2/3、雇佣预算不满足 `blood_alloc + 3×atk_bundles = 20`、已被失信黑名单禁止雇佣等）同样退还精力。无目标要求；产出按子行动而定（休整给恢复额度并按稳定引用在自己／[朋友]／[员工]间分配，探索给消耗品发现候选，雇佣建员工并给转化道纹候选）。
+  - `choose_discovered_item`：不受战斗限定，前置＝`pending_item_choices` 非空（由探索/事件发现产生）。`item_name` 必须**同时**在本次发现列出的候选内、且属扭曲工具库 8 件，否则拒绝——非候选的显式选择必须被拒，不得回退成第一件。本接口自身无代价，代价已付在产生该发现的那次精力/事件上。产出：按工具库口径入背包（耐久与效果文本取自 `TWISTED_TOOL_LIBRARY`），并清空候选与 `pending_item_source`。无目标要求。
+  - `choose_hired_daowen`：不受战斗限定，是【雇佣】diy 的后置步骤。前置＝该员工名下有 `pending_daowen_choices`（未雇佣该员工、或已选择过则拒绝）；`daowen` 必须在 3 个候选内（候选由引擎从 19 个转化道纹里 `auto_roll` 抽出，该员工全部未持有）。无精力／[碎片]代价（雇佣本身已花精力）。产出：以 `cost_type=消耗`、`cost_formula=X` 把所选转化道纹授予该员工，并删除其候选。无目标要求。
+  - `upgrade_doctor`：不受战斗限定，前置＝存在存活的[员工]「医生」（医生事件的后续服务）。`mode` 必须是 `attack_count` 或 `attack_power`，其余拒绝。代价＝5[碎片]，不足即拒绝。产出：+1[攻击次数] 或 +2[攻击力]——直接改面板字段、不进作用域账本，故[战终]不回滚。无目标要求。
+- **员工经济与背叛（[员工]从派遣到离队的全生命周期）**：
+  - `deploy_employee`：**战斗限定**。代价＝**轮回者**1 次出手（走 `_consume_action_or_error`，含预算门禁「已用/预算」），不是员工自己的出手；死斗中另过 `duel_turn` 侧别门并在成功后推进轮转。`employee_ref`（形如 `employee:N`）或唯一名字定位，必须存活。三条拒绝：还债转化员工（已自动参战，无需派遣）、本场已【撤退】（不得再次加入本场战斗）、已在场（不重复派遣）。产出：`is_deployed=True`、`deployed_at_round=max(1, current_round)`——工资按参与回合数计，所以派遣时机直接影响工资。
+  - `dismiss_employee`：不受战斗限定。`name` 必须命中现有[员工]。无[碎片]代价，且**不结算工资**（同时移除其待决工资条目）。产出：直接从名单移除并计入失信黑名单（`_blacklist_departure("解雇")`），返回 `blacklist_level`/`is_blacklisted`；黑名单达阈值后本次轮回禁止再执行【雇佣】。无目标要求。
+  - `pay_employee_wage`：不受战斗限定，前置＝该员工在 `pending_wage_decisions` 里有待决工资（未部署／未存活／已决策过都没有）。`decision` 只能是 `pay` 或 `refuse`。`pay` 需[碎片]≥工资，不足即拒绝并明确要求改交 `refuse`（不许拖欠着继续战终）；`refuse` 则该员工立即离队并计入黑名单。两种决定都把条目置 None（＝已决策），`battle_end` 的工资门槛据此放行。工资额＝`min(12, 2×(1+参与回合数)) + wage_bonus`——`wage_bonus`（【让利】累加）叠在封顶之后，不影响 12[碎片] 封顶本身。无目标要求。
+  - `repay_debt_employee`：不受战斗限定，还债员工的独立轨道。`name` 必须命中 `is_debt_bound` 的还债员工；负债＝`max(0, -employee.shards)`，无未清负债即拒绝。代价＝**一次付清**全部负债[碎片]，不支持分期，不足即拒绝。产出：该员工负债归零并离队、移除其待决工资条目，**黑名单不变**（还债是履约，不是失信）。无目标要求。
+  - `appease_rebellion`：不受战斗限定，员工背叛三分支之一（让利）。前置＝`rebellion_active`（[战终]检查命中的待处理背叛），或显式提交 `force=True`（DM 裁定谈判结果后强制平息用）。无[碎片]代价。产出：`wage_bonus += 5`（此后每场工资在封顶后各多 5[碎片]）、`rebellion_active=False`。无目标要求。
+  - `negotiate_rebellion`：不受战斗限定，前置同【让利】（`rebellion_active` 或 `force=True`）。`proposal` 必须非空——**禁止空谈判**。无代价。产出：谈判中断交 DM 裁定方案是否合理；本接口自身不平息叛乱，裁定后改调 `appease_rebellion(force=True)` 平息或 `suppress_rebellion(force=True)` 镇压。
+  - `suppress_rebellion`：不受战斗限定（它是把背叛转成一场战斗的入口），前置同【让利】，且必须有[员工]（无员工可镇压即拒绝）。无[碎片]代价。产出：**当前全部[员工]一并转为本场敌方**（`is_deployed=True`、`has_retreated=False`，从 `employees` 移入 `enemies`），`current_round=0`、重置怪物激活集合、`rebellion_in_progress=True`、`rebellion_active=False`、`phase=in_combat`、子阶段置 `await_round_start`，并返回叛乱者面板。随后按普通战斗流程推进，分出胜负后必须调 `resolve_rebellion_battle(outcome=victory/defeat)` 结算：战斗失败与主动撤退统一按 `defeat`——[碎片]清零、存活背叛者携赃逃脱。
+- **终音法器的主动效果（副本终音，领取见 `choose_terminal_artifact`；均战斗限定）**：
+  - `use_black_card`（黑金名片·罪孽都市）：[战始]时机，每场限一次（`black_card_used_battle` 与 `current_battle` 相同即拒绝）；前置＝持有该法器且场上有敌方目标。代价＝**付出与削减量等额的[碎片]**——总额＝Σ⌈各敌[血限]/2⌉，允许负债但负债不得超过 50（`shards - total_cost < -50` 即拒绝）；付讫后触发一次「付出代价后」反应（血誓戒一类照常勾起）。产出：全场敌方[血限]减半（⌈/2⌉，走 `apply_scoped_delta`，scope=BATTLE、极性减益，[战终]回滚），当前生命同步封顶到新血限。全场生效，无目标要求。
+  - `use_crime_vault`（罪业金库·罪孽都市）：[回始]时机，每个回始限一次（按 `current_round+1` 记）。`x` 必须是 1~⌊当前[碎片]×2%⌋ 的整数，越界或非整数即拒绝。代价＝X[碎片]；产出＝自身获得 2X 点格挡。无目标要求。
+  - `fire_godfather_revolver`（教父左轮·罪孽都市）：以可消耗遗物武器入账，耐久 6/6，**每场[战始]回满**、本场内逐发递减，弹药耗尽即拒绝（等下一场）。`target_ref` 必须是当前合法目标。伤害＝⌈自身[血限]×30%⌉ × **本场已使用次数**（第 1 发 1 倍、第 2 发 2 倍……递增），伤害类型为必中，走 `_apply_hostile_damage` 统一漏斗。不消耗出手。
+  - `select_shared_dragon_heart`（共心环·龙心谷）：[战始]时机，每场限一次（已选定即拒绝）；`battle_start` 会清空 `shared_dragon_heart_type`，故每场都要重选。`dragon_heart_type` 必须是自身实际持有的龙心类型（`kind="dragon_heart"`），否则拒绝。无代价。产出：本场自身／[朋友]／[员工]都可以用这枚龙心抵消**同类型**代价。
+  - `declare_fuyuebei_toll`（负岳碑·龙心谷）：前置＝持有负岳碑，`target_ref` 必须是[朋友]或[员工]。这是**预声明**：登记「下次该盟友即将撤退时，改为轮回者流血 20 取消其撤退与本次伤害」，可同时保护多名（`fuyuebei_declared` 累积）。声明时即校验流血 20 付得起（`validate_numeric_cost`，可带 `cost_share_target_ref` 分担），但**不在声明时扣**——代价在真正触发取消的那一刻支付。不消耗出手。
+- **真龙之心与龙族遗物（龙性是这一线的唯一资源）**：
+  - `pay_for_dragon_nature`：前置＝持有终音法器「真龙之心」。`cost_type` 只能是 衰老／枯竭／萎缩，`x` 必须是正整数。代价＝该类型代价 X 点（走 `pay_numeric_cost`，可带 `cost_share_target_ref` 分担）；产出＝龙性 `X×汇率`（衰老2／枯竭6／萎缩12，即 6X衰老＝2X枯竭＝X萎缩＝12X龙性）。不受战斗限定，局外也能换。无目标要求。
+  - `unlock_dragon_trait`：前置＝持有「真龙之心」。`trait` 必须是 8 种龙族遗物之一（龙族血脉／龙威／龙族利爪／龙息／震岳龙躯／吞骸龙胃／断尾求生／烬翼），已持有则拒绝。代价＝12 龙性，不足即拒绝。产出：以【遗物】形式授予（tag＝龙族，效果文本与《物品索引》一致）。两条实现口径：【龙族利爪】走状态层（攻击力＝当前法力×2，由[战始]机制挂状态、`effective_attack_power` 读取），**不在授予时写死初始攻次/攻力**——写穿遗留字段对轮回者不生效，还会冲掉其真实的[速限]/[法限]；【龙威】通过 `prepare_monster_phase` 收窄合法目标列表实现，resolve 只接受 prepare 列出的目标。不受战斗限定。
+  - `activate_dragon_body`（震岳龙躯）：前置＝已解锁该遗物。`x` 必须是正整数；代价＝6X 龙性，不足即拒绝。产出：`dragon_body_shield_rounds=X`——持续 X 回合，自身受到**超出 15 点**的所有伤害无效。不受战斗限定，不消耗出手。
+  - `devour_monster`（吞骸龙胃）：前置＝已解锁。`monster_ref`（形如 `enemy:N`）必须指向**已命零**的怪物，存活即拒绝。产出：自身获得[回复12]（走 `apply_heal`，计入癌变与[战终]回吐）；`dragon_heart` 为可选参数——给一枚自有龙心的名字则其当前耐久与上限各 +6，未给或名字不匹配时只回复、不报错。不受战斗限定，不消耗出手。
+  - `declare_tail_sacrifice`（断尾求生）：前置＝已解锁。`trait` 必须是**本场已获得的其他**龙族遗物（不含断尾求生自身），否则拒绝并列出可选。这是预声明：登记「本次即将命零时销毁该遗物，抵消这次使自身命零的伤害」（`dragon_tail_sacrifice_declared`）。声明无代价，代价在触发时以销毁遗物支付。
+  - `use_dragon_wings`（烬翼）：前置＝已解锁。[回始]时机，每个回始限一次（按 `current_round+1` 记）。`x` 必须是正整数；代价＝3X 龙性，不足即拒绝。产出：自身获得【飞行X】，持续 X 回合。战斗限定。
+- **血族初拥特质（由 `choose_first_embrace` 授予，与真理眼同源）**：
+  - `use_blood_wings`（鲜血之翼）：前置＝`first_embrace_traits` 含该特质。`x` 必须是正整数。代价＝流血 5X（走 `pay_numeric_cost`，可带 `cost_share_target_ref` 分担）；产出＝自身获得【飞行X】，持续 X 回合。不受战斗限定，不消耗出手。
+  - `enslave_as_chizu`（血族尖牙）：前置＝含该特质。`target_ref` 必须是存活敌方目标，且其**当前生命必须低于自身**，否则拒绝。代价＝衰老 20（`pay_numeric_cost`，可分担）。产出：该目标 `entity_type` 改为「赤族」、`is_chizu_of` 记为轮回者、`is_deployed=True`，从 `enemies` 移入 `friends` 并登记进 `chizu_names`——转化为听命于你的赤族，此后可被【血食】献祭。不受战斗限定，不消耗出手。
+  - `blood_feast`（血食）：前置＝含该特质。`target_ref` 必须是**存活的赤族**且在自己的[朋友]名单内（`entity_type=="赤族"`），否则拒绝。代价＝该赤族[命零]（献祭）——走统一死亡入口 `_check_hp_zero_death` 并带 `death`/`blood_feast` 上下文，因此[命零]触发的效果照常结算（受【缄默】压制）。产出：自身获得等同于该赤族**当前生命**的[回复]（走 `apply_heal`，按献祭前的当前生命计）。不受战斗限定，不消耗出手。
+- **两段式的第二段与其余跨副本行动**：
+  - `resolve_attack`：战斗限定，两段式攻击的第二段。前置＝已有 `pending_attack`（否则报「请先调用prepare_attack」）；`token` 必须与快照一致且其 `round` 等于当前回合，跨回合即失效。**必须按 prepare 快照提交完整逐击选择**：`hits` 数量必须等于 `hit_count`；每击 `target_ref` 必须在快照列出的合法目标内；`dodge` 与 `blood_shadow` 必须显式提交布尔值，且同一击不得同时为真；闪避按击各花 1 点当前速度（累计超过目标当前速度即拒绝），目标持回锋刀时必须显式提交合法的 `dodge_relic_target_ref`；血影必须快照允许（`can_blood_shadow`）且流血 10 的分担方案付得起（`cost_share_target_ref`，任一承担者生命不足即拒绝）；法术反应必须按 `spell_options` 完整提交。**全部静态校验通过之后**才扣出手（`_consume_action_or_error`，含预算门禁），再逐击原子结算；任何一步失败由 API 事务整体回滚——非法输入不得留下任何战斗副作用。
+  - `choose_discovered_relic`：不受战斗限定，前置＝`pending_relic_choices` 非空（开局发现或事件发现产生）。`relic_name` 必须**同时**在本次发现列出的候选内、且存在于遗物池 `relics_pool`，否则拒绝并回列候选。无代价。产出：该遗物从池中移出并计入已持有（`relics`），清空候选与来源。开局流程衔接：当来源是「开局发现」且轮回者还没有任何道纹时，本接口顺带给出初始道纹的 3 个发现候选（限杀伐闭环），并把 `next_actions` 指向 `setup_choose_initial_daowen`。无目标要求。
+  - `declare_parry`：战斗限定。`actor_ref` 缺省 `player:0`，必须是存活行动者；普通怪物（非死斗）拒绝——怪物走怪物阶段；死斗中过侧别门；须 `can_act`。**不消耗出手、不消耗速度、不消耗法力**：招架是一个**姿态**而不是逐击判定，一次声明覆盖本轮全部受击。两条拒绝：上回合已招架（本回合不能再招架）、本回合已处于招架姿态。产出：本轮每次受到的伤害减去等同**结算那一刻**当前法力的数值（不是声明时的快照——法力同时就是攻力，本轮花掉的每一点法力都会同步削弱自己的招架），返回里给 `reduction_preview`；代价记在时间轴上：下回合失去招架资格。
+  - `command_ally`：战斗限定。`ally_ref` 必须指向存活的[朋友]/[员工]（其他类型一律拒绝），已撤退者拒绝。`instruction` 必须是**白名单语言**，非命中即拒绝、不猜测，叙事对白不得当成结构化指令：「攻击 <目标名>」／「打 <目标名>」＝一轮攻击；「发动 <道纹名>」／「用 <道纹名> [打/对 <目标名>]」＝发动道纹；「护卫 [X]」／「保护我 [X]」／「挡伤 [X]」／「替我挡 [X]」＝强制护卫（X 默认 1，限 1~9 的整数）。目标名缺省时取当前存活敌人中当前生命最少者（保护/治疗类命令可显式指向轮回者）。指挥本身**不消耗轮回者出手**；攻击与道纹分别转发 `prepare_attack`/`resolve_attack` 与 `use_daowen`，扣的是**被指挥盟友自己**的出手预算，预算不足则该指令失败。护卫的机制＝对盟友强制施加【背负】标记（复用龙心谷【背负】的伤害重定向），替轮回者承担下 X 次受到的伤害，不占盟友出手、不消耗法力，视为轮回者的指挥能力；轮回者不在场时拒绝。
+  - `use_resonance`：不受战斗限定，**不消耗出手**。`actor_ref` 缺省 `player:0`——守擂者等非玩家轮回者也能用自己的残韵，与挑战者共用同一套机制。残韵库存口径：玩家侧读 `State.resonance`；非玩家轮回者严格读自己实体级的 `resonance`（真实准备量，无则 0），**绝不回落借他人的库存**（有就有、没有就没有，不给没准备的对手塞残韵），库存不足即拒绝并回列当前库存。参数：`source_daowen`（被作用的道纹）、`resonance_type`（转换／反转／曲解）、`target_ref`（持有者定位，与 source 一起交给持有者查找）。产出：走 `ResonanceEngine.apply_resonance` 结算（`caster_has_daowen` 按"持有者是否就是施法者"判定），可改写敌方未发动的道纹并让施法者获得转化后的道纹。
+  - `redeem_attribute_points`：**限局外**——`phase != pre_battle` 即拒绝，因为兑换会把当前速度/当前法力一并补到新的上限，战斗内兑换等于免费重置法力一池。无代价（不耗精力、不耗[碎片]；属性点本就是自己存下的）。`allocations` 必须是对象：`blood_points` 非负整数、`speed_points`/`mana_points` 必须是偶数（2 点一档计价，与开局 `setup_attributes` 同口径）；格式非法或点数不足即拒绝并回列当前 `attribute_points`。产出：按分配把属性点兑成面板（1 属性点＝6[血限]、2 属性点＝1[速限]＝1[法限]），当前速度/法力同步补满到新上限。无目标要求。
+- **写在专题正文里的 4 个行动（本小节只指路，不重抄，避免两处口径漂移）**：`use_spell`／`define_spell` →《局外系统》「装配一种法术／自创一种法术」与《法术索引》的法术设计原则（装配与自创同价，各占 1 次主动出手；构建走同一个 `_build_custom_spell`，规则只有一处）；`prepare_monster_phase`／`resolve_monster_phase` →《怪物准则》第 11 条（出手预算、`action_budget`/`actions_used`/`actions_remaining` 三字段、道纹预留与 `skipped`），其两段式快照契约与本小节 `prepare_attack`／`resolve_attack` 同构。
 
 ## 第四宇宙设计原则（自 README 迁入 2026-09-12）
 
