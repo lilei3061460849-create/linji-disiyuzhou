@@ -465,6 +465,10 @@ class Entity:
         【全速】（2026-09-17 用户令，原名【迟滞】）覆盖：生效期间攻击次数锁定 = [速限]。
         由于 clamp_immortal_body 已让「当前速度≤[速限]」无条件成立，本效果实为
         增益——把被削的速度补满到上限，并免疫后续减速。走状态层，对全体角色生效。
+
+        消耗品不再动攻次（2026-09-17 用户令重做）：【高爆手雷】改走【无力】，
+        由出手预算口径统一扣减（`api._action_budget_of` / `single_round_action_count`）。
+        本函数只负责「当前速度 → 攻次」换算与【全速】锁定，不读任何消耗品状态。
         """
         if self.get_status_value("全速"):
             return max(0, self.speed_limit)
@@ -496,8 +500,10 @@ class Entity:
 
         不再由速限/攻击次数推导——速限已改作攻击次数的来源，再拿它算出手会重复记账；
         微光者旧的「攻击次数/3」口径同步废止（该式会让高攻次微光者白拿第3、4次出手）。
-        唯一的额外来源是遗物；【疯狂】+X、【无力】-X 照旧生效。
-        怪物行动仍由CombatEngine的prepare/resolve两阶段接口独立计算。"""
+        唯一的额外来源是遗物；【疯狂】+X、【无力】-X 照旧生效（【高爆手雷】给的也是
+        【无力】，不再自造一条同义状态）。
+        怪物行动仍由CombatEngine的prepare/resolve两阶段接口独立计算
+        （怪物侧同一扣减在 single_round_action_count 内）。"""
         base = 2
         base += self.get_status_value("疯狂")
         base -= self.get_status_value("无力")
@@ -699,7 +705,7 @@ class Entity:
             debuffs = {
                 "弱化", "无力", "减速", "全速", "束缚", "封印", "坠落",
                 "坏死", "爆裂", "退化", "定型", "畸变", "加害", "伤痕",
-                "寄生", "蒙蔽", "眩晕", "手雷减攻", "衰败", "被背负",
+                "寄生", "蒙蔽", "眩晕", "衰败", "被背负",
             }
             if effect.name in buffs:
                 effect.polarity = EffectPolarity.BUFF.value

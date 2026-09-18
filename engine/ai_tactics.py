@@ -173,6 +173,8 @@ class TacticalAI:
         # 2026-09-10：出手次数不再由速度换算，改读 action_count（轮回者固定2次，
         # 朋友/员工按攻次算，怪物按速限算；疯狂/无力的修正已含在内）。
         # 沿用 ceil(速限/3) 会让 AI 按旧口径估预算，法力分配跟着算错。
+        # 【无力】（道纹与【高爆手雷】同源）已在 Entity.action_count 属性内扣减，
+        # AI 预算自动同口径，不会规划一次打不出的出手。
         total = max(1, self.player.action_count)
         return max(0, total - getattr(self.player, "actions_used_this_round", 0))
 
@@ -365,11 +367,16 @@ class TacticalAI:
         return getattr(entity, "name", "")
 
     def _top_enemy_name(self) -> Optional[str]:
+        top = self._top_enemy()
+        return top.name if top is not None else None
+
+    def _top_enemy(self):
+        """威胁最高的存活敌人（攻次×攻力）；无敌人时返回 None。"""
         enemies = self.alive_enemies()
         if not enemies:
             return None
         return max(enemies,
-                   key=lambda e: e.effective_attack_count() * e.effective_attack_power()).name
+                   key=lambda e: e.effective_attack_count() * e.effective_attack_power())
 
     def _ally_name(self) -> Optional[str]:
         allies = self._allies()
@@ -1475,8 +1482,29 @@ class TacticalAI:
                 return self._cast(name, 1)
         return None
 
+    @staticmethod
+    def _preview_presses_enemies(diff: dict) -> bool:
+        """预演后果里有没有敌人被打到（掉血或倒下）。动作前已死的尸体不算这一手的功劳。"""
+        for foe in (diff or {}).get("enemies", []):
+            if not foe.get("alive_before"):
+                continue
+            before, after = foe.get("hp_before"), foe.get("hp_after")
+            if foe.get("dead") or (before is not None and after is not None and after < before):
+                return True
+        return False
+
     def try_consumable(self) -> Optional[dict]:
-        """消耗品：不消耗出手；完整后果预演 + 通用风险分级（不查物品名）。"""
+        """消耗品：不消耗出手；完整后果预演 + 通用风险分级（不查物品名）。
+
+        目标补齐：需敌方目标的工具（反怪物电击枪／强光探照灯一类）此前提交时
+        不带 target_ref，预演必然失败被跳过——AI 永远用不了它们。是否需要目标由**预演
+        返回的错误信息**判定（不写死物品名），需要则按"威胁最高"补一个敌方 target_ref 重演。
+
+        血线门：无 consumable_gate 时，**自身受益类**消耗品只在生命≤40%时考虑。
+        「对敌」的判据是**预演后果**（需敌方目标，或确实打到敌人掉血/倒下），不是物品名：
+        全场型工具（高爆手雷）不需要 target_ref，若按"要不要目标"分类会被误判成
+        自身受益类，AI 满血时就永远不用它。
+        """
         p = self.player
         if self.consumable_gate is not None:
             try:
@@ -1484,14 +1512,29 @@ class TacticalAI:
                     return None
             except Exception:
                 return None
-        elif p.current_hp > p.blood_limit * 0.4:
-            return None
+            low_hp = True          # 自定义血线门已决定这一轮要不要看消耗品
+        else:
+            low_hp = p.current_hp <= p.blood_limit * 0.4
         for item in list(self.engine.state.consumables):
             if getattr(item, "current_uses", 0) <= 0:
                 continue
-            pv = self.previewer.preview("consume_item", {"name": item.name})
+            params = {"name": item.name}
+            pv = self.previewer.preview("consume_item", params)
+            targeted = False
             if not pv.get("result") or not pv["result"].get("success"):
-                continue
+                error = str((pv.get("result") or {}).get("error", ""))
+                if "target_ref" not in error and "目标" not in error:
+                    continue
+                foe = self._top_enemy()
+                if foe is None:
+                    continue
+                params = {"name": item.name, "target_ref": self._target_ref_for(foe)}
+                pv = self.previewer.preview("consume_item", params)
+                if not pv.get("result") or not pv["result"].get("success"):
+                    continue
+                targeted = True
+            if not low_hp and not targeted and not self._preview_presses_enemies(pv.get("diff", {})):
+                continue          # 自身受益类：满血时不浪费
             risk_level, reasons = ActionPreview.risk_classify(pv.get("diff", {}), p)
             if risk_level in ("LETHAL", "CRITICAL"):
                 self.preview_rejected.append(
@@ -1499,7 +1542,7 @@ class TacticalAI:
                 if self.verbose:
                     self.log.append(f"[安全过滤] 拒绝 消耗品{item.name}: {risk_level} {' '.join(reasons)}")
                 continue
-            r = self.engine.execute_action("consume_item", {"name": item.name})
+            r = self.engine.execute_action("consume_item", params)
             if r.get("success"):
                 self.used[f"消耗品·{item.name}"] = self.used.get(f"消耗品·{item.name}", 0) + 1
                 return r

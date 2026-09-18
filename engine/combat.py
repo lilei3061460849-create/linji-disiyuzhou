@@ -805,6 +805,25 @@ class CombatEngine:
         """
         return entity is not None and (entity.has_status("坏死") or entity.has_status("镇尸"))
 
+    def _death_triggers_silenced(self, dying: Optional[Entity] = None) -> bool:
+        """【缄默】的消费点：场上所有由[命零]触发的效果无法触发（持续X回合）。
+
+        判定口径＝**全场**，不看阵营：只要场上还有一名存活实体带着【缄默】状态，
+        本次[命零]触发效果一律封禁。正在命零的这名**自身**也计入——它此刻
+        `is_alive` 已翻假、不在 `get_all_player_side()/get_all_enemy_side()` 里，
+        若不算它，「缄默持有者自毁（尸爆）」就会在它自己死亡的那一刻失效。
+
+        被封禁的效果：焦黑发丝（怪物命零→玩家速度+2）、招魂尸体入账、
+        尸爆的[命零]AoE 与自毁。不被封禁的：死亡本身、[战终]击杀奖励与碎片
+        （那不是[命零]触发的效果，是战斗结算）。
+        """
+        if dying is not None and dying.has_status("缄默"):
+            return True
+        for entity in (*self.state.get_all_player_side(), *self.state.get_all_enemy_side()):
+            if entity.has_status("缄默"):
+                return True
+        return False
+
     def _apply_blood_limit_change(
         self, entity: Entity, delta: int, source: str, polarity: str,
         *, ctx: Optional[EffectContext | dict] = None,
@@ -967,6 +986,8 @@ class CombatEngine:
         if getattr(entity, "_death_triggers_emitted", False):
             return
         parent = normalize_context(ctx)
+        # 【缄默】消费点：封禁判定必须在死亡上下文构造之前完成，才能进 tags 供机制条件读取。
+        silenced = self._death_triggers_silenced(entity)
         # 死因优先级：离场原因 > 调用方显式给出的死亡上下文 subtype > 兜底 hp_zero。
         # （【崩解】【凡庸】【尸爆】等特殊死因靠这一步才能留在 _death_ctx 里。）
         subtype = getattr(entity, "departure_reason", "")
@@ -985,7 +1006,8 @@ class CombatEngine:
             mechanic="death",
             subtype=subtype or "hp_zero",
             amount=0,
-            tags=(set(parent.tags) if parent else {"legacy_context"}),
+            tags=(set(parent.tags) if parent else {"legacy_context"})
+                 | ({"silenced_death"} if silenced else set()),
             parent_event_id=parent.event_id if parent else None,
         )
         entity._death_ctx = death_ctx.to_dict()
@@ -997,10 +1019,11 @@ class CombatEngine:
         self._emit(
             CombatEventType.ENTITY_DIED, actor=death_ctx.actor, target=entity,
             ctx=entity._death_ctx, entity_type=entity.entity_type,
-            cause=death_ctx.subtype,
+            cause=death_ctx.subtype, silenced=silenced,
         )
-        if entity.entity_type == "怪物":
-            # 乱葬岗·招魂：记录本场已命零怪物尸体
+        if entity.entity_type == "怪物" and not silenced:
+            # 乱葬岗·招魂：记录本场已命零怪物尸体。
+            # 【缄默】生效期不入账——唤尸是[命零]触发的效果，封禁期内无尸可唤。
             if not getattr(self.state, "dead_monsters", None):
                 self.state.dead_monsters = []
             if entity not in self.state.dead_monsters:
@@ -2030,7 +2053,7 @@ class CombatEngine:
                     effects.append({"type": "bianxing_restore", "entity": entity.name,
                                     "current_speed": entity.current_speed,
                                     "current_mana": entity.current_mana})
-                # 干扰/手雷减攻到期自动由 tick 清理，无需额外
+                # 干扰到期自动由 tick 清理，无需额外
             # F2：逼债/清算状态消失即清账（∞/持续X到期后不再逐回始结算）
             if not entity.has_status("逼债") and getattr(entity, "_bizhai", None):
                 entity._bizhai = []
@@ -3422,15 +3445,31 @@ class CombatEngine:
                                           "speed_loss_speed_limit": calc["speed_loss_speed_limit"],
                                           "duration": calc.get("duration", 1)})
         if name == "缄默" and calc.get("silence_death_triggers"):
-            for st_target in wave_status_targets:
+            # 「场上所有」＝敌我全体。wave_status_targets 对无目标道纹的兜底是施法者自己，
+            # 只盖施法者会把一条全场封禁做成单体状态，故这里显式取全场（含施法者）。
+            duration = calc.get("duration", 1)
+            field: list[Entity] = []
+            for candidate in (caster, *self.state.get_all_player_side(),
+                              *self.state.get_all_enemy_side()):
+                if not any(candidate is seen for seen in field):   # Entity 不可哈希，按同一性去重
+                    field.append(candidate)
+            for st_target in field:
                 st_target.add_status(StatusEffect(name="缄默", value=1,
-                                                  remaining_rounds=calc.get("duration", 1),
+                                                  remaining_rounds=duration,
                                                   source=caster.name))
-                result["effects"].append({"type": "qianmo", "target": st_target.name,
-                                          "duration": calc.get("duration", 1)})
+            result["effects"].append({"type": "qianmo", "scope": "field", "duration": duration,
+                                      "targets": [e.name for e in field],
+                                      "note": f"全场由[命零]触发的效果封禁{duration}回合"})
         if name == "尸爆" and calc.get("self_destruct"):
             # [命零]对全体敌方打出自身血限10X%伤害
-            if caster.is_alive and caster.current_hp > 0:
+            if self._death_triggers_silenced(caster):
+                # 【缄默】：尸爆整条都是「由[命零]触发的效果」——封禁期内既不产生 AoE，
+                # 也不发生自毁式命零（施法者留在场上）。法力已付、效果落空，不退还。
+                result["silenced"] = True
+                result["effects"].append({"type": "qianmo_blocked", "daowen": "尸爆",
+                                          "target": caster.name,
+                                          "note": "【缄默】生效：[命零]触发效果被封禁"})
+            elif caster.is_alive and caster.current_hp > 0:
                 pct = calc["aoe_pct"]
                 dmg = math.ceil(caster.blood_limit * pct / 100)
                 for enemy in [e for e in self.state.get_all_enemy_side() if e.is_alive]:
@@ -5106,7 +5145,9 @@ class CombatEngine:
         疯狂2026-08-17全局裁定：发动方把疯狂状态盖到所有角色，怪物从自身状态读+X；
         激活集合口径仅保留给狂暴。发动当回合的状态在resolve阶段才落下，
         prepare在本回合道纹结算前已快照出手数，因此疯狂自下回合生效的时序不变。
-        高爆手雷修改的是每轮攻击中的"攻击次数"，不再同时削减攻击出手数。
+        【无力】（道纹与【高爆手雷】同源）扣的是本回合**出手预算**
+        （single_round_action_count / api._action_budget_of）：有可发动道纹时最后一次出手
+        预留给道纹、其余全给攻击，预算归零则整只怪跳过。
         """
         n = 1
         n += m.get_status_value("疯狂")
@@ -5140,6 +5181,40 @@ class CombatEngine:
         func = DaoWenEngine._registry.get(name)
         return bool(func and "target" in inspect.signature(func).parameters)
 
+    def _daowen_target_mode(self, name: str) -> str:
+        """该道纹的目标口径："required"（正文含[目标]，必须显式选定）／
+        "optional"（可选，不填则自身）／"none"（无目标，只作用自身或全局）。
+
+        "optional" 来自 DaoWenEngine.OPTIONAL_TARGET_DAOWEN 这份数据，不由代码硬判：
+        这类道纹的 calculate_* 故意不声明 target 形参（声明了 api.py 就会强制显式
+        目标、堵死"不填则自身"），因此单看签名无法与"none"区分。
+        """
+        if name in DaoWenEngine.OPTIONAL_TARGET_DAOWEN:
+            return "optional"
+        return "required" if self._daowen_requires_target(name) else "none"
+
+    def _monster_daowen_target(self, monster: Entity, effective_name: str,
+                               choice: dict, refs: dict[str, Entity]):
+        """按目标口径解析怪物提交的 target_ref，返回 (target, mode)。
+
+        required：必须提交合法 target_ref；
+        optional：提交了就校验并采用，不提交回落自身；
+        none：不接受 target_ref，一律自身。
+        校验口径与玩家侧 _action_use_daowen 一致（非自身目标必须 is_targetable）。
+        """
+        mode = self._daowen_target_mode(effective_name)
+        target_ref = choice.get("target_ref", "")
+        if mode == "required" or (mode == "optional" and target_ref):
+            target = refs.get(target_ref)
+            if target is None:
+                raise ValueError(f"道纹【{effective_name}】必须提交合法target_ref")
+            if target is not monster and not self.is_targetable(monster, target):
+                raise ValueError(f"目标{target.name}当前不可被{monster.name}选中")
+            return target, mode
+        if target_ref:
+            raise ValueError(f"道纹【{effective_name}】不接受target_ref")
+        return monster, mode
+
     def prepare_monster_phase(self) -> dict:
         """只枚举合法选择，不决定道纹、目标或闪避，也不改变战斗数值。"""
         refs = self._combat_entity_refs()
@@ -5160,6 +5235,16 @@ class CombatEngine:
             if not self.can_act(monster):
                 skipped.append({"actor_ref": actor_ref, "monster": monster.name, "reason": "无法行动"})
                 continue
+            # 出手预算（正文：怪物每回合 1 次攻击 + 1 种道纹；【疯狂】+X、【狂暴】+1、
+            # 【无力】-X，【高爆手雷】给的也是【无力】）。此前这条预算只被
+            # api._action_budget_of 与 _duel_side_can_act 读取，怪物阶段自己从不校验——
+            # 【无力】挂满2层、预算算出0，怪物照样打出 1 次攻击 + 1 种道纹，等于对怪物完全无效。
+            budget = self.single_round_action_count(monster)
+            remaining = max(0, budget - monster.actions_used_this_round)
+            if remaining <= 0:
+                skipped.append({"actor_ref": actor_ref, "monster": monster.name,
+                                "reason": f"出手预算已用尽({monster.actions_used_this_round}/{budget})"})
+                continue
             activated = self._monster_activated.get(id(monster), set())
             round_used = self._monster_round_used(monster)
             daowen_options = []
@@ -5173,14 +5258,20 @@ class CombatEngine:
                         continue
                     rewritten_as = (self._resonance_rewrites.get(id(monster)) or {}).get(name)
                     effective_name = rewritten_as or name
-                    requires_target = self._daowen_requires_target(effective_name)
+                    target_mode = self._daowen_target_mode(effective_name)
+                    requires_target = target_mode == "required"
+                    # required 与 optional 都要给出目标候选：可选目标道纹（变形/超频）
+                    # 此前拿不到 target_options，怪物只能自施（见 OPTIONAL_TARGET_DAOWEN）
+                    targeted = target_mode != "none"
                     legal_targets = ([target for target in all_targets
                                       if self.is_targetable(monster, refs[target["ref"]])]
-                                     if requires_target else [])
+                                     if targeted else [])
                     if "龙威" in self.state.dragon_traits and self.state.player and self.state.player.is_alive:
                         legal_targets = [target for target in legal_targets
                                          if (not self.state.on_player_side(refs[target["ref"]])
                                              or target["ref"] == "player:0")]
+                    # 必选目标而场上无合法目标 → 此刻发不动，prepare 过滤；
+                    # 可选目标即使没有别的合法目标仍可自施，不过滤。
                     if requires_target and not legal_targets:
                         continue
                     # 波及X：必须显式提交X个互不重复的合法目标。DM裁定2026-08-23：
@@ -5220,12 +5311,24 @@ class CombatEngine:
                         effective_name, effective_x, target=preview_target, caster=monster)
                     if not self._monster_can_pay_calc_cost(monster, preview_calc):
                         continue
+                    # 效果正文（2026-09-17 用户令：怪物面板只写道纹、不写战术，
+                    # 战术由发动方按道纹语义实时推导）。prepare 是怪物侧唯一的信息
+                    # 出口，此前只给道纹名与合法目标，语义全靠读文档/背注释——文档一漂
+                    # 移（本轮 35 条 summary、32 处文档）怪物战术就静默失效。
+                    # 这里直接给引擎口径的 summary：改道纹只动 calculate_*，怪物侧零维护。
+                    # 不传 target → 文案写「未选定目标」，真实目标仍由提交方从
+                    # target_options 显式选，避免把"首个合法目标"暗示成默认意图。
+                    semantic_calc = DaoWenEngine.resolve(
+                        effective_name, effective_x, caster=monster)
                     wave_effective_x = 0
                     if effective_name == "波及":
                         wave_effective_x = min(effective_x, len(dodge_target_options))
                     daowen_options.append({
                         "name": name,
                         "resolves_as": effective_name,
+                        # 引擎口径的效果正文（含真实代价数字），按本次可选的 x 计算；
+                        # x_free 时 x 是上限，可下调到 1..max_x，代价与效果同比缩放。
+                        "summary": semantic_calc.get("summary", ""),
                         # 2026-09-16 用户令：x_free 时面板没有 X，改由发动方在
                         # [1, max_x] 内自选；x 字段保留为上限值以便旧调用方读取。
                         "x": effective_x,
@@ -5233,9 +5336,12 @@ class CombatEngine:
                         "max_x": max_x if getattr(inst, "x_free", False) else 0,
                         "wave_effective_x": wave_effective_x,
                         "requires_target": requires_target,
+                        # 可选目标道纹：不提交 target_ref 即作用自身；提交了他方目标
+                        # 就按敌我判定走闪避/血影提交（与玩家侧同一口径）。
+                        "target_optional": target_mode == "optional",
                         "target_options": legal_targets,
                         "dodge_submission": ("per_target" if effective_name == "波及"
-                                             else ("single_if_hostile" if requires_target else "none")),
+                                             else ("single_if_hostile" if targeted else "none")),
                         "dodge_target_options": dodge_target_options,
                         "trigger_spell_options": self.prepare_daowen_trigger_spells(monster),
                     })
@@ -5261,8 +5367,13 @@ class CombatEngine:
             # 没有任何合法攻击目标（如solo对手飞行而怪物不飞）→ 本回合不出手。
             # 否则怪物阶段无法被满足：每击都必须引用合法目标，提交永远失败
             # （与【波及】目标数限制同族：prepare不得给出无法满足的义务）。
+            # 预算内分配：若还有可发动的道纹，为它预留 1 次出手，其余给攻击出手。
+            # 【无力】/【高爆手雷】的扣减已在 single_round_action_count 内，此处只做分配，
+            # 保证任何合法提交（道纹至多 1 次 + base_attack_actions 次攻击）都不超预算。
+            reserve = 1 if daowen_options else 0
             base_actions = (0 if not attack_targets
-                            else self._monster_attack_actions(monster, activated))
+                            else max(0, min(self._monster_attack_actions(monster, activated),
+                                            remaining - reserve)))
             actors.append({
                 "actor_ref": actor_ref,
                 "monster": monster.name,
@@ -5270,7 +5381,17 @@ class CombatEngine:
                 "daowen_options": daowen_options,
                 "attack_target_options": attack_targets,
                 "base_attack_actions": base_actions,
-                "base_hits_per_attack": max(0, monster.attack_count - monster.get_status_value("手雷减攻")),
+                # 出手预算透明化：发动方（怪物 AI / DM）直接读到"还剩几次出手"，
+                # 不必自己按状态推算【无力】【高爆手雷】【疯狂】【狂暴】的净效果。
+                "action_budget": budget,
+                "actions_used": monster.actions_used_this_round,
+                "actions_remaining": remaining,
+                # 2026-09-17：命中数一律走 effective_attack_count()（＝当前速度，
+                # 【全速】生效期间锁定为[速限]）。消耗品不再动命中数——【高爆手雷】
+                # 改为削出手预算：给【无力】，见 single_round_action_count。
+                # 旧写法读遗留字段 monster.attack_count，与【全力】【全速】同一个坑：
+                # 属性统一后该字段不再随速度变化，怪物被减速/加速时命中数会算错。
+                "base_hits_per_attack": monster.effective_attack_count(),
                 "dodge_must_be_explicit": True,
                 # 致死进度（用户令 2026-09-15）：怪物同样会【崩解】，攻守双方都要能直接读到
                 # 「崩解（30/50）」这种进度，才可能判断"再逼它发动一次道纹它就自爆"。
@@ -5353,18 +5474,12 @@ class CombatEngine:
             raise ValueError(f"未知道纹【{name}】")
         rewritten_as = (self._resonance_rewrites.get(id(monster)) or {}).get(name)
         effective_name = rewritten_as or name
-        requires_target = self._daowen_requires_target(effective_name)
-        target_ref = choice.get("target_ref", "")
-        if requires_target:
-            target = refs.get(target_ref)
-            if target is None:
-                raise ValueError(f"道纹【{effective_name}】必须提交合法target_ref")
-            if target is not monster and not self.is_targetable(monster, target):
-                raise ValueError(f"目标{target.name}当前不可被{monster.name}选中")
-        else:
-            if target_ref:
-                raise ValueError(f"道纹【{effective_name}】不接受target_ref")
-            target = monster
+        # 目标口径统一走 _monster_daowen_target：required / optional / none 三态。
+        # optional（【变形】【超频】）提交 target_ref 即选定他方目标，不提交回落自身。
+        target, target_mode = self._monster_daowen_target(
+            monster, effective_name, choice, refs)
+        requires_target = target_mode == "required"
+        targeted = target_mode != "none"
 
         # 2026-09-16 用户令：面板未写死 X（x_free）时，X 由发动方在提交里自选，
         # 「上限只受法限或者代价限制」——这里按 prepare 同一口径重新探一次上限并校验，
@@ -5459,7 +5574,7 @@ class CombatEngine:
                 aoe_dodge_choices.append((entity, want_dodge, entry))
             if dodge not in (None, False):
                 raise ValueError("波及使用dodge_targets，不接受dodge=true")
-        elif requires_target and hostile:
+        elif targeted and hostile:
             if not isinstance(dodge, bool) or not isinstance(blood_shadow, bool):
                 raise ValueError(f"道纹【{effective_name}】必须显式提交布尔值dodge/blood_shadow")
             if dodge and blood_shadow:
@@ -5569,7 +5684,9 @@ class CombatEngine:
                     "resolves_as": effective_name, "resonance_rewrite": bool(rewritten_as),
                     "target": target.name, "execution": execution,
                     "trigger_spell_logs": trigger_logs}
-        elif requires_target and hostile:
+        elif targeted and hostile:
+            # 可选目标道纹指向敌对目标时，同样给对方闪避/血影的机会（正文：被选定为
+            # 非必中判定的目标后才可选择消耗1点速度完全闪避）——不因它"目标可选"而免判。
             if must_hit_preview:
                 self.consume_bizhong(monster)
             elif blood_shadow:
@@ -5614,18 +5731,11 @@ class CombatEngine:
             raise ValueError(f"未知道纹【{name}】")
         rewritten_as = (self._resonance_rewrites.get(id(monster)) or {}).get(name)
         effective_name = rewritten_as or name
-        requires_target = self._daowen_requires_target(effective_name)
-        target_ref = choice.get("target_ref", "")
-        if requires_target:
-            target = refs.get(target_ref)
-            if target is None:
-                raise ValueError(f"道纹【{effective_name}】必须提交合法target_ref")
-            if target is not monster and not self.is_targetable(monster, target):
-                raise ValueError(f"目标{target.name}当前不可被{monster.name}选中")
-        else:
-            if target_ref:
-                raise ValueError(f"道纹【{effective_name}】不接受target_ref")
-            target = monster
+        # 与执行阶段同一个目标解析器：静态校验与真实结算不得各判一套口径
+        target, target_mode = self._monster_daowen_target(
+            monster, effective_name, choice, refs)
+        requires_target = target_mode == "required"
+        targeted = target_mode != "none"
 
         hostile = self.state.on_player_side(target) != self.state.on_player_side(monster)
         dodge = choice.get("dodge")
@@ -5652,7 +5762,7 @@ class CombatEngine:
                 received[ref] = entry
             if dodge not in (None, False):
                 raise ValueError("波及使用dodge_targets，不接受dodge=true")
-        elif requires_target and hostile:
+        elif targeted and hostile:
             if not isinstance(dodge, bool) or not isinstance(blood_shadow, bool):
                 raise ValueError(f"道纹【{effective_name}】必须显式提交布尔值dodge/blood_shadow")
             if dodge and blood_shadow:
@@ -5872,7 +5982,12 @@ class CombatEngine:
             expected_actions = expected[actor_ref]["base_attack_actions"]
             if not isinstance(attack_actions, list) or len(attack_actions) != expected_actions:
                 raise ValueError(f"{monster.name}必须提交{expected_actions}个attack_actions")
-            hits_per_action = max(0, monster.attack_count - monster.get_status_value("手雷减攻"))
+            # 命中数同样取 prepare 快照（2026-09-17）：base_hits_per_attack 现在等于
+            # effective_attack_count()（＝当前速度），而本阶段内速度会被真实改变
+            # （前一个actor的减速/超频、本actor自己发动的道纹、闪避扣速）。
+            # 若在此处按当前状态重算，就会把\"下回合生效\"提前到本回合，
+            # 且让按 prepare 快照提交的合法选择被判为违约——与上面出手数同一条契约。
+            hits_per_action = expected[actor_ref]["base_hits_per_attack"]
             for action_index, attack_action in enumerate(attack_actions):
                 if not isinstance(attack_action, dict) or not isinstance(attack_action.get("hits"), list):
                     raise ValueError("每个attack_action必须包含hits列表")

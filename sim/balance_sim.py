@@ -464,17 +464,21 @@ def monster_can_pay_exclusive(m, g):
 # 无单点方案可击中 30% 目标，需组合方案或覆盖率杠杆另议。
 
 def get_monster_attack_actions(m, activated):
-    """怪物攻击出手数（现行口径）：1 + 疯狂X(已激活) + 狂暴1
+    """怪物攻击出手数（现行口径）：1 + 疯狂X(已激活) + 狂暴1 − 无力X
 
     引擎2026-08-17全局裁定后，怪物侧+X由自身疯狂状态驱动；
     此处按激活集合等价模拟（发动方视角），玩家侧+X未建模（见B6重测）。
+    【无力】（道纹与【高爆手雷】同源）在引擎里扣的是**出手预算**：有可发动道纹时最后一次
+    出手预留给道纹、其余全给攻击，预算归零则整只怪跳过。模拟器镜像为「攻击出手直接-X」+
+    run_sim 侧「无力≥2 时不发动道纹」，对单怪单回合等价。
     """
     n = 1
     if "疯狂" in activated:
         n += m.dao_wen["疯狂"].x_value
     if "狂暴" in activated:
         n += 1
-    return n
+    n -= m.get_status_value("无力")
+    return max(0, n)
 
 
 def monster_attack_round(m, player, combat, rng, must_hit):
@@ -489,7 +493,7 @@ def monster_attack_round(m, player, combat, rng, must_hit):
         return 0
     hp_before = player.current_hp
     nilin_applied = False
-    for _ in range(max(0, m.attack_count - getattr(m, "_nade_minus", 0))):  # 高爆手雷：攻击次数-1
+    for _ in range(max(0, m.attack_count)):  # 命中数＝攻次；出手数另算（见 get_monster_attack_actions）
         if not player.is_alive or not m.is_alive:
             break
         dmg = m.attack_power

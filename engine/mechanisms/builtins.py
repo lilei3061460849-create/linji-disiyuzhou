@@ -27,8 +27,8 @@ import math
 from ..combat_events import CombatEventType
 from ..models import StatusEffect
 from .conditions import (
-    all_, amount_positive, any_, damage_type_not, entity_type, has_status, is_alive,
-    not_, relic_active,
+    all_, amount_positive, any_, damage_type_not, death_not_silenced, entity_type,
+    has_status, is_alive, not_, relic_active,
 )
 from .registry import MECHANISMS, Mechanism
 from .targets import SELF, TARGET
@@ -439,6 +439,7 @@ JIAOHHEIFASI = Mechanism(
     condition=all_(
         entity_type("怪物", of="target"),
         relic_active("焦黑发丝", of="player"),   # 玩家持有且未封印（抵扣X）
+        death_not_silenced(),                    # 【缄默】：封禁期内命零反应不触发
     ),
     # 旧位置=_on_entity_death 内 ENTITY_DIED 发出点（招魂/分裂之前）；命零反应第一位
     priority=10,

@@ -76,7 +76,7 @@ TWISTED_TOOL_LIBRARY = {
     "储能电池": (3, "立即获得12点法力。"),
     "急救箱": (2, "使自身获得[回复25]，并清除自身身上一种“持续X”的负面减益。"),
     "干扰仪": (2, "使全场所有敌方[目标]本回合无法发动自身道纹"),
-    "高爆手雷": (2, "对一个[目标]造成15点伤害，并使其本回合攻击次数-1"),
+    "高爆手雷": (2, "对全场所有敌方[目标]造成20点伤害；随后当前生命≥其[血限]50%的[目标]获得【无力2】，否则获得【无力1】"),
 }
 
 
@@ -650,7 +650,8 @@ class GameEngine:
                         if self.state.on_player_side(entity) and entity.is_alive
                         and entity is not player and entity.entity_type in ("朋友", "员工")]
         idle_allies = [a for a in ally_options
-                       if refs[a["ref"]].actions_used_this_round < refs[a["ref"]].action_count]
+                       if refs[a["ref"]].actions_used_this_round
+                       < self._action_budget_of(refs[a["ref"]])]
         actions.extend([
             {"action_type": "prepare_attack", "params_schema": {"actor_ref": actor_options}},
             {"action_type": "declare_parry", "params_schema": {"actor_ref": actor_options},
@@ -2312,6 +2313,9 @@ class GameEngine:
         怪物读正文「每回合 1 次攻击 + 1 种道纹」（single_round_action_count）——
         Entity.action_count 对怪物按速限推导，而怪物面板不含[速限]，恒为 0。
         其余角色读 Entity.action_count（轮回者固定 2，朋友/员工 ⌈攻次/3⌉）。
+        【无力】（道纹与【高爆手雷】同源）两条分支都已含扣减：怪物分支在
+        single_round_action_count 内；其余角色在 Entity.action_count 属性内。
+        本函数不再重复扣，避免双减。
         """
         if entity is None:
             return 0
@@ -2370,18 +2374,17 @@ class GameEngine:
         守擂侧"有余手"= 仍有存活敌人未结算（驱动维护已结算集合）。"""
         if side == "player_side":
             entities = self.state.get_all_player_side()
-            return any(e.actions_used_this_round < e.action_count and self.combat.can_act(e)
+            return any(e.actions_used_this_round < self._action_budget_of(e)
+                       and self.combat.can_act(e)
                        for e in entities)
-        # 守擂侧：怪物按正文口径「每回合 1 次攻击 + 1 种道纹」计出手预算
-        # （single_round_action_count），与 _consume_action_or_error 同一口径——
+        # 守擂侧：出手预算一律走 _action_budget_of 唯一口径——怪物按正文「每回合 1 次攻击
+        # + 1 种道纹」（single_round_action_count），对手轮回者/盟友按各自 action_count，
+        # 两侧都含【无力】扣减（【高爆手雷】给的也是【无力】）；与 _consume_action_or_error 同口径。
         # 此前这里写成"存活未撤退即有余手"，与实际结算门禁不一致：怪物既被
         # 0 预算卡死无法出手，本函数又坚称它还有余手，回合因此永远结束不了。
-        # 对手轮回者/盟友按各自出手预算判断（耗尽则连动）。
         return any(
             e.is_alive and not e.has_retreated and self.combat.can_act(e)
-            and e.actions_used_this_round < (
-                self.combat.single_round_action_count(e)
-                if e.entity_type == "怪物" else e.action_count)
+            and e.actions_used_this_round < self._action_budget_of(e)
             for e in self.state.get_all_enemy_side())
 
     def _advance_duel_turn(self):
@@ -2615,9 +2618,10 @@ class GameEngine:
         if self.state.phase == "in_combat":
             if not self.combat.can_act(actor):
                 return {"success": False, "error": f"{actor.name}当前无法出手"}
-            if actor.entity_type != "怪物" and actor.actions_used_this_round >= actor.action_count:
+            if actor.entity_type != "怪物" and actor.actions_used_this_round >= self._action_budget_of(actor):
                 return {"success": False,
-                        "error": f"{actor.name}本回合出手已用完({actor.actions_used_this_round}/{actor.action_count})"}
+                        "error": f"{actor.name}本回合出手已用完"
+                                 f"({actor.actions_used_this_round}/{self._action_budget_of(actor)})"}
 
         if actor.has_status("无神"):
             target = actor
@@ -3036,7 +3040,9 @@ class GameEngine:
         if not self.combat.can_act(attacker):
             return {"success": False, "error": f"{attacker.name}当前无法行动"}
         if attacker.actions_used_this_round >= self._action_budget_of(attacker):
-            return {"success": False, "error": f"{attacker.name}本回合出手已用完"}
+            return {"success": False,
+                    "error": f"{attacker.name}本回合出手已用完"
+                             f"({attacker.actions_used_this_round}/{self._action_budget_of(attacker)})"}
 
         if attacker.has_status("无神"):
             target_refs = [actor_ref]
@@ -3286,7 +3292,8 @@ class GameEngine:
         }
 
     def _action_declare_evolution(self, params: dict) -> dict:
-        """怪物进化：发动【原初X】借用原始怪物道纹（引擎直接结算，无需DM中断）"""
+        """怪物进化：发动【原初X】借用「轮回者已持有、自身未持有」的道纹，代价异变5X
+        （引擎直接结算，无需DM中断；前置＝困境 + 每场逃跑/进化二选一）"""
         monster_name = params.get("monster", "")
         # 同名重复抽 + 封印尸体仍留在 state.enemies：必须跳过已命零/已移出的，
         # 否则会命中第一具尸体并报「已命零」，活着的同名困境怪永远进化不了。
@@ -3613,20 +3620,35 @@ class GameEngine:
                 m.add_status(StatusEffect(name="干扰", value=1, remaining_rounds=1, source="干扰仪"))
                 jammed.append(m.name)
             result.update({"jammed": jammed})
-        # 8. 高爆手雷：目标15伤害 + 本回合攻击次数-1
+        # 8. 高爆手雷：全场敌方 20 伤害；伤害后按生命线给【无力】（≥50%血限→2，否则1）
         elif name == "高爆手雷":
-            target = selected_enemy()
-            if target is None:
+            foes = [e for e in self.state.get_all_enemy_side() if e.is_alive]
+            if not foes:
                 item.current_uses += 1
-                return {"success": False, "error": "找不到敌方target_ref"}
-            detail = self.combat._apply_hostile_damage(target, 15, source=player, ctx={
-                "timing": self.state.combat_subphase or self.state.phase, "source": "高爆手雷", "source_type": "consumable",
-                "actor": player, "target": target, "mechanic": "damage", "subtype": "consumable",
-                "amount": 15, "tags": {"consumable"},
-            })
-            # 攻击次数-1：用状态标记，本回合内 _monster_attack_actions 会读取
-            target.add_status(StatusEffect(name="手雷减攻", value=1, remaining_rounds=1, source="高爆手雷"))
-            result.update({"target": target.name, "damage": 15, "detail": detail, "nade_minus": 1})
+                return {"success": False, "error": "场上没有敌方目标"}
+            hit = []
+            for foe in foes:
+                if not foe.is_alive:
+                    continue   # 连锁反应（尸爆/爆裂一类）可能已经把它带走
+                detail = self.combat._apply_hostile_damage(foe, 20, source=player, ctx={
+                    "timing": self.state.combat_subphase or self.state.phase,
+                    "source": "高爆手雷", "source_type": "consumable",
+                    "actor": player, "target": foe, "mechanic": "damage",
+                    "subtype": "consumable", "amount": 20, "tags": {"consumable", "aoe"},
+                })
+                entry = {"target": foe.name, "damage": 20, "detail": detail}
+                if foe.is_alive:
+                    # 生命线判定在伤害之后：手雷自己打出的 20 点参与判定。
+                    # 【无力】与道纹同源同口径（value=层数、remaining_rounds=-1＝本场永久、
+                    # scope=BATTLE 战终清除）；同名状态自动叠加（merge_with 数值相加）。
+                    stacks = 2 if foe.current_hp * 2 >= foe.blood_limit else 1
+                    foe.add_status(StatusEffect(name="无力", value=stacks,
+                                                remaining_rounds=-1, source="高爆手雷"))
+                    entry.update({"wuli": stacks, "hp_after": foe.current_hp,
+                                  "blood_limit": foe.blood_limit,
+                                  "action_budget_after": self._action_budget_of(foe)})
+                hit.append(entry)
+            result.update({"aoe": True, "damage": 20, "targets": hit})
         else:
             result.update({"note": "未知工具"})
         return {"success": True, "action": f"使用工具【{name}】", "result": result, "state": self.combat._get_combat_state()}
@@ -4000,18 +4022,18 @@ class GameEngine:
                     continue
                 if prefix == "employee" and not ally.is_deployed:
                     continue
-                if ally.actions_used_this_round >= ally.action_count:
+                if ally.actions_used_this_round >= self._action_budget_of(ally):
                     continue
                 enemies = [e for e in self.state.enemies if e.is_alive]
                 if not enemies:
                     break
                 ally_ref = f"{prefix}:{index}"
                 entry = {"ally": ally.name, "actions": []}
-                # 自主出手次数：用完 action_count（至少1次）；每次攻击或道纹
-                for _ in range(max(1, ally.action_count)):
+                # 自主出手次数：用完出手预算（至少1次；已含【无力】扣减）；每次攻击或道纹
+                for _ in range(max(1, self._action_budget_of(ally))):
                     if not ally.is_alive or not enemies:
                         break
-                    if ally.actions_used_this_round >= ally.action_count:
+                    if ally.actions_used_this_round >= self._action_budget_of(ally):
                         break
                     target = min(enemies, key=lambda e: e.current_hp)
                     # 优先道纹

@@ -485,8 +485,12 @@ def test_r25_r31_boundary_flight_grenade_and_all_character_cleanup(tmp_path):
     assert shot["result"]["flying_bonus"] == 0
     nade = engine.execute_action("consume_item", {"name": "高爆手雷", "target": "甲怪"})
     assert nade["success"]
-    assert engine.combat._monster_attack_actions(monster, set()) == 1
-    assert max(0, monster.attack_count - monster.get_status_value("手雷减攻")) == 1
+    # 现行口径：全场 20 伤害；伤害后生命≥50%血限 → 【无力2】，整份出手预算归零。
+    # （电击枪已先打掉 25：100→75，手雷再 20 → 55，55/100 仍在高线上。）
+    assert monster.current_hp == 55
+    assert monster.get_status_value("无力") == 2
+    assert engine._action_budget_of(monster) == 0
+    assert engine.combat._monster_attack_actions(monster, set()) == 1  # 攻击出手数口径不变
 
     friend = Entity("F", "朋友", blood_limit=50, current_hp=40,
                     speed_limit=3, current_speed=1, attack_count=1, attack_power=1)
