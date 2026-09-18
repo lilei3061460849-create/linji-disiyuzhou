@@ -13,7 +13,8 @@
   L4 previews —— 每档预演的提交与结果（success/error）
   L5 scores   —— `TacticalAI._score_candidate` 的 (label, score)
   L6 rejects  —— 引擎侧「不能发动道纹」类拒绝，附拒绝瞬间的 id-keyed 账本内容
-  L7 ledgers  —— 收工审计：三本 id-keyed 账本里的**垃圾键**（键不对应任何在场实体）
+  L7 ledgers  —— 收工审计：全部 id-keyed 账本（清单取自 engine/ledger_isolation.py）
+                 里的**垃圾键**（键不对应任何在场实体）
 
 **L7 是这一类 bug 的指纹**：预演走副本执行（deepcopy state）时若复用真实
 `CombatEngine` 的 `_monster_daowen_round_used`／`_monster_activated`／
@@ -48,8 +49,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+# 账本清单不在本文件定义：取自 engine/ledger_isolation.py（单一权威，预演/死斗推演同源）
+from engine.ledger_isolation import ID_KEYED_LEDGERS  # noqa: E402
+
 HEX32 = re.compile(r"[0-9a-f]{32}")
-LEDGERS = ("_monster_activated", "_monster_daowen_round_used", "_resonance_rewrites")
 
 
 def _norm(obj) -> str:
@@ -121,7 +124,7 @@ def install_hooks(rec: dict, deep: bool) -> list:
                             "can_use": inst.can_use() if inst else None,
                             "cooldown": getattr(inst, "cooldown_remaining", None),
                             "ledgers": {k: _norm(v) for k, v in
-                                        ((lk, getattr(self, lk, None)) for lk in LEDGERS)},
+                                        ((lk, getattr(self, lk, None)) for lk in ID_KEYED_LEDGERS)},
                         })
                     raise
             return f
@@ -177,29 +180,28 @@ def install_hooks(rec: dict, deep: bool) -> list:
 
 
 def audit_ledgers(engines: list) -> dict:
-    """L7：账本里有多少键不对应任何在场实体（＝副本执行留下的垃圾）。"""
-    junk, total = {}, 0
+    """L7：账本里有多少键不对应任何在场实体（＝副本执行留下的垃圾）。
+
+    清单与判定口径都取自 `engine/ledger_isolation.py`（单一权威），本工具不再自己抄一份：
+      junk_keys    —— 只数「键必须始终在场」的账本（_monster_activated／
+                      _monster_daowen_round_used／_resonance_rewrites），**门禁**：>0 即不可复现；
+      unbound_keys —— 键可以合法滞留的账本（_monster_evolved：怪进化/逃跑后 id 仍留存；
+                      _dodge_counts：换回合才清），只作参考，不判失败。
+    """
+    from engine.ledger_isolation import audit_id_ledgers
+
+    junk = unbound = 0
+    detail: dict = {}
     for eng in engines:
-        st = getattr(eng, "state", None)
-        if st is None:
+        if getattr(eng, "state", None) is None:
             continue
-        alive_ids = set()
-        for attr in ("player",):
-            e = getattr(st, attr, None)
-            if e is not None:
-                alive_ids.add(id(e))
-        for attr in ("friends", "employees", "temp_friends", "enemies"):
-            for e in (getattr(st, attr, []) or []):
-                alive_ids.add(id(e))
-        for lname in LEDGERS:
-            led = getattr(eng, lname, None)
-            if not isinstance(led, dict):
-                continue
-            j = [k for k in led if k not in alive_ids]
-            if j:
-                junk[f"{id(eng) % 100000}:{lname}"] = len(j)
-                total += len(j)
-    return {"junk_keys": total, "detail": junk, "engines": len(engines)}
+        a = audit_id_ledgers(eng)
+        junk += a["junk_keys"]
+        unbound += a["unbound_keys"]
+        for lname, n in a["detail"].items():
+            detail[f"{id(eng) % 100000}:{lname}"] = n
+    return {"junk_keys": junk, "unbound_keys": unbound, "detail": detail,
+            "engines": len(engines)}
 
 
 # --------------------------------------------------------------------------
@@ -267,7 +269,8 @@ def report(args, runs: list, results: list) -> int:
     for i, r in enumerate(runs):
         a = r["ledger_audit"]
         flag = "✓" if a["junk_keys"] == 0 else "✗ 有副本写入真实账本的残留"
-        print(f"  run{i + 1}: engines={a['engines']} junk_keys={a['junk_keys']} {flag}"
+        print(f"  run{i + 1}: engines={a['engines']} junk_keys={a['junk_keys']} "
+              f"unbound_keys={a.get('unbound_keys', 0)}（参考，不判失败） {flag}"
               + (f"  detail={a['detail']}" if a["detail"] else ""))
         if a["junk_keys"]:
             ok = False

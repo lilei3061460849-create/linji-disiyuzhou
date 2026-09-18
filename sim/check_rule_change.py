@@ -53,7 +53,10 @@ GUARD_TESTS = [
     "tests/test_guard_command.py",
     "tests/test_employee_economy.py",
     "tests/test_xijie_and_bizhong.py",
+    "tests/test_ledger_isolation.py",
 ]
+# 注：「同 seed 可复现」不在子集里（那条用例单跑约 29s，会把 7 秒的自检拖成半分钟）；
+# 要验复现性跑 sim/diag_repro.py（--quick 更快），它顺带做 L7 账本垃圾键审计。
 
 # 活语料分两层（archive/** 是历史档案，一律不扫）：
 #   硬层＝规则事实源与注入 AI 提示词的派生文档，命中废案即**门禁失败**；
