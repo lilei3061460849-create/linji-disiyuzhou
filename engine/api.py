@@ -2312,7 +2312,8 @@ class GameEngine:
 
         怪物读正文「每回合 1 次攻击 + 1 种道纹」（single_round_action_count）——
         Entity.action_count 对怪物按速限推导，而怪物面板不含[速限]，恒为 0。
-        其余角色读 Entity.action_count（轮回者固定 2，朋友/员工 ⌈攻次/3⌉）。
+        其余角色读 Entity.action_count：**全体固定 2**（2026-09-16 用户令；旧「朋友/员工
+        ＝⌈攻击次数/3⌉」口径已废止，速限改作攻击次数来源后再拿它算出手会重复记账）。
         【无力】（道纹与【高爆手雷】同源）两条分支都已含扣减：怪物分支在
         single_round_action_count 内；其余角色在 Entity.action_count 属性内。
         本函数不再重复扣，避免双减。

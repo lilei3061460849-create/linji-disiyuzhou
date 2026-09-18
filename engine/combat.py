@@ -48,7 +48,7 @@ class CombatEngine:
     # 波及X（2026-08-21）：你发动的道纹同时作用于所有拥有波及效果的目标。
     # 数值键：效果的总数值在所有目标（本次[目标]+波及目标，均排除施法者自身）
     # 之间平均分配；无法整除时余数按随机数分配。多目标不会复制或增加总数值。
-    # 状态类效果（减速减半/固定面板/持续状态等）对波及目标原样生效，不入下表。
+    # 状态类效果（减速按百分比削速/固定面板/持续状态等）对波及目标原样生效，不入下表。
     WAVE_NUMERIC_KEYS = (
         "target_damage", "total_damage", "hits", "aoe_damage", "hp_percent_loss",
         "target_heal", "heal_percent", "mutation_reduction",
@@ -3322,18 +3322,22 @@ class CombatEngine:
                 })
                 result["effects"].append({"type": "speed_boost", "target": target.name,
                                           "speed": target.current_speed, "gained": gained})
-        if "speed_halved" in calc:
-            # 减速X：速度减半为状态类效果（非数值平分），对波及目标原样生效。
+        if "speed_loss_pct" in calc:
+            # 减速X：使[目标]失去其当前速度的10X%（一次性切除整场速度池的一部分——
+            # 速度是一池制，[回始]不回填、[战终]复原，故没有"持续X"可言）。
+            # 按百分比结算＝状态类效果（非数值平分），对波及目标各按其自身当前速度原样生效。
+            # 取整向下，X=5 与旧版"速度减半"逐位一致；因此低 X 打低速度目标可能算出 0 点。
+            pct = calc["speed_loss_pct"]
             for wt in wave_status_targets:
-                lost = wt.current_speed - math.ceil(wt.current_speed / 2)
+                lost = wt.current_speed * pct // 100
                 self._lose_current_speed(wt, lost, ctx={
                     "timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
                     "source": name, "source_type": "daowen", "actor": caster, "target": wt,
                     "owner": caster, "mechanic": "speed_change", "subtype": "current_speed",
                     "amount": -lost, "tags": {"daowen"},
                 })
-                result["effects"].append({"type": "speed_halved", "target": wt.name,
-                                          "speed": wt.current_speed})
+                result["effects"].append({"type": "speed_loss_pct", "target": wt.name,
+                                          "pct": pct, "lost": lost, "speed": wt.current_speed})
         if "speed_penalty" in calc and (name != "赎金" or self._shards_of(target) <= 0):
             self._lose_current_speed(target, calc["speed_penalty"], ctx={
                 "timing": "monster_action" if caster.entity_type == "怪物" else "player_action",

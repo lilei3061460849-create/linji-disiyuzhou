@@ -560,9 +560,12 @@ def test_r32_r38_normal_decay_deform_ransom_and_transform_restore(tmp_path):
     assert (player.current_speed, player.current_mana) == (5, 2), "持续结束后还原互换前的速度/法力"
 
     # R33：定型只锁攻击力/攻击次数；速度变化仍合法，且被挡的变形不挂空状态。
+    # 载体用【减速X=5】＝失去当前速度的50%（X 是幅度参数，10X%）。不用 X=1：
+    # 速度5 时 10% 向下取整为 0 点，载不动"速度变化仍合法"这件事。
+    # 断言式 (speed_before+1)//2 ＝ speed - speed*50//100，对新旧口径同为 ceil(速度/2)。
     player.add_status(StatusEffect("定型", 2, 1))
     speed_before = player.current_speed
-    slow = DaoWenEngine.resolve("减速", 1, target=player, caster=monster)
+    slow = DaoWenEngine.resolve("减速", 5, target=player, caster=monster)
     engine.combat.apply_daowen_effect("减速", slow, monster, player)
     assert player.current_speed == (speed_before + 1) // 2
     # 被【定型】挡下的变形：不再改写任何面板（旧断言查的是遗留字段 attack_power/attack_count）

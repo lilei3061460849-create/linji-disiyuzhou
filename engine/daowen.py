@@ -300,16 +300,30 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_jiansu(x: int, target: Entity = None) -> dict:
-        """减速X：代价：异变5X。使[目标]速度减半，持续X"""
+        """减速X：代价：异变5X。使[目标]失去其当前速度的10X%
+
+        改版（2026-09-18，DM 裁定：冥气的倍率必须小于减速，否则没人会用减速）：
+        旧版为「速度减半，持续X」，而 `duration` 在实现里**从未被读取**——没有挂任何
+        状态，就是一次性把当前速度砍半。于是 X 只把异变代价从 5 涨到 25、效果一点不变，
+        减速X=2…5 被减速X=1 严格支配（这正是"没人会用减速"的根因）。
+        新版让 X 成为**幅度**参数：10X%，X=5 恰好等于旧版的减半。
+        取整口径向下（`当前速度 × 10X // 100`），因此 X=5 与旧实现逐位一致
+        （旧式 `lost = cur - ceil(cur/2)` 恒等于 `floor(cur/2)`）。
+        速度是一池制（[回始]不回填、[战终]复原），所以本效果没有"持续"可言：
+        砍掉的就是整场速度池的一部分，正文因此不再写「持续X」。
+        """
         target_name = target.name if target is not None else "未选定目标"
+        pct = 10 * x
+        # 只在 summary 里给发动方看一个预览值；真正扣多少由 combat 在结算那一刻
+        # 按各目标自己的当前速度算（波及目标各有其值），不落进 calc 当第二个事实源。
+        preview = (target.current_speed * pct // 100) if target is not None else 0
         return {
             "dao_wen": "减速",
             "x": x,
             "cost_type": CostType.MUTATION.value,
             "cost_mutation": 5 * x,
-            "speed_halved": True,
-            "duration": x,
-            "summary": f"异变+{5*x}，使{target_name}速度减半，持续{x}回合"
+            "speed_loss_pct": pct,
+            "summary": f"异变+{5*x}，使{target_name}失去其当前速度的{pct}%（{preview}点）"
         }
     
     @staticmethod
