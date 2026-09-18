@@ -1261,7 +1261,7 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                 # 失败必须退还精力，否则会死循环；引擎已退还，这里兜底防死锁
                 if e.state.energy >= before:
                     e.execute_action("pre_battle_action",
-                                     {"sub_action": "修行", "tier": 1, "to": "mana"})
+                                     {"sub_action": "修行", **xiuxing_params(e, b)})
             # 卡死哨兵：连续 STALL_LIMIT 步精力不退（门禁未清/兜底被拒），说明
             # 存在驱动解不开的语义门禁——回收为无效局，绝不挂死进程。
             if e.state.energy >= before:
@@ -1466,6 +1466,24 @@ DEFAULT_POLICY = {
 REGION_ACTION = {"炼心": "龙心谷", "维修": "扭曲都市", "雇佣": "罪孽都市", "附煞": "乱葬岗"}
 
 
+def xiuxing_params(e, battle_no=1):
+    """构造【修行】参数，口径对齐 engine/api.py（1属性点=6[血限]，2属性点=1[速限]=1[法限]）。
+
+    速限/法限的兑换点数**必须是偶数**（_redeem_attribute_points），而修行档位点数=tier，
+    故 tier1 单点直兑 mana/speed 必被拒——被拒的行动不退精力，局外循环会原地打转直到
+    死锁哨兵把整局判无效。这里按「池内点数（本次+存量）能凑出的最大偶数」兑换，
+    余点留池（DM裁定 2026-09-10：修行给的点先入池、不强制当场花掉）；凑不出偶数就
+    只存点，绝不提交必被拒的分配。
+    """
+    tier = 1
+    pool = getattr(e.state, "attribute_points", 0) + tier
+    even = pool - (pool % 2)
+    if even <= 0:
+        return {"tier": tier}
+    to = "mana" if battle_no % 2 else "speed"
+    return {"tier": tier, "allocations": {f"{to}_points": even}}
+
+
 def choose_pre_battle(e, todo, battle_no, rng, policy):
     """AI 自主挑选一个局外行动（按权重），返回 (行动名, 参数)。"""
     p = e.state.player
@@ -1483,7 +1501,7 @@ def choose_pre_battle(e, todo, battle_no, rng, policy):
             continue          # 满血不休整（无效行动，不该计入选择率）
         cands.append((act, w))
     if not cands:
-        return "修行", {"tier": 1, "to": "mana"}
+        return "修行", xiuxing_params(e, battle_no)
 
     total = sum(w for _, w in cands)
     pick = rng.uniform(0, total)
@@ -1500,15 +1518,15 @@ def choose_pre_battle(e, todo, battle_no, rng, policy):
     if act == "附煞":
         held = next(iter(p.dao_wen), None) if p else None
         if not held:
-            return "修行", {"tier": 1, "to": "mana"}
+            return "修行", xiuxing_params(e, battle_no)
         # 确定性：碎片≥25用选择（冥煞附当前持有道纹），≥10用发现，否则跳过
         if e.state.shards >= 25:
             return act, {"mode": "选择", "sha_qi": "冥煞", "daowen_name": held}
         if e.state.shards >= 10:
             return act, {"mode": "发现", "daowen_name": held}
-        return "修行", {"tier": 1, "to": "mana"}
+        return "修行", xiuxing_params(e, battle_no)
     if act == "修行":
-        return act, {"tier": 1, "to": "mana" if battle_no % 2 else "speed"}
+        return act, xiuxing_params(e, battle_no)
     if act == "休整":
         # 休整分级（2026-08-19 P2；2026-09-10 随引擎改制更新，同日二次裁定
         # 改三档）：恢复额度=轮回者血限百分比（tier1/2/3 = 20%/40%/60%，

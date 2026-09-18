@@ -3,7 +3,8 @@
 本阶段验证目标：
   - 衰败是普通声明：ROUND_START + SELF + has_status/is_alive 条件 + damage 动词；
   - 零新抽象、零管线改动（分发点沿用既有 ROUND_START 锚点）；
-  - 自愈(10) → 衰败(20) → 洞察/勾魂/... 顺序与迁移前完全一致；
+  - 衰败(20) → 洞察/勾魂/... 顺序与迁移前完全一致
+    （原自愈(10) 已于 2026-09-18 随【自愈】重做为主动道纹整体移除，priority 不重排）；
   - 伤害走完整管线（格挡/加减区/濒死/死后效果原样生效）。
 """
 from __future__ import annotations
@@ -107,11 +108,11 @@ def test_shuaibai_is_registered_mechanism():
     mech = MECHANISMS.get("衰败")
     assert mech is not None
     assert mech.when.matches_phase(Phase.ROUND_START)
-    assert mech.priority == 20, "旧位置=回始效果循环第二位（自愈10之后、洞察之前）"
+    assert mech.priority == 20, "旧位置=回始效果循环第二位（原自愈10之后、洞察之前）"
     from engine.mechanisms.registry import MECHANISMS as REG
-    # 回始相位机制按 priority：自愈(10) → 衰败(20) → 洞察(30) → 后续按 40/50/60 递增
+    # 回始相位机制按 priority：衰败(20) → 洞察(30) → 后续按 40/50/60 递增
     assert [m.name for m in REG.phase_mechanisms(Phase.ROUND_START)] == \
-        ["自愈", "衰败", "洞察·结算", "狂暴·标记", "畸变·标记"]
+        ["衰败", "洞察·结算", "狂暴·标记", "畸变·标记"]
 
 
 def test_old_shuaibai_if_removed_from_pipeline():
@@ -243,25 +244,30 @@ def test_shuaibai_unknown_source_actor_none():
 
 # ==================== 5. 顺序 / 组合 / 只触发一次 ====================
 
-def test_ziyu_then_shuaibai_order():
-    """自愈(10) → 衰败(20)：effects 顺序与事件顺序均与迁移前一致。"""
+def test_legacy_ziyu_status_is_inert_and_shuaibai_still_first():
+    """回撤钉死：旧【自愈】状态在[回始]已是死状态（不回血、无条目），衰败照常第一位结算。
+
+    2026-09-18 用户令把【自愈】重做为「代价：冷却X。恢复[目标]25X%已损生命」的主动
+    单体道纹，ROUND_START 上的自愈机制整体删除（见 机制迁移台账.md《已回撤》）。
+    本条替代原 test_ziyu_then_shuaibai_order：即使有人手工挂上旧的自愈状态，
+    回始也不得再凭空回血。新版自愈的语义覆盖见 tests/test_ziyu_ziyang_rework.py。
+    """
     state, combat, player, enemy = _arena(enemy_hp=50, enemy_bl=100)
     enemy.add_status(StatusEffect(name="自愈", remaining_rounds=-1, value=1, source="x"))
     _give_shuaibai(enemy, 2)
     res = combat.round_start()
 
     types = [e.get("type") for e in res["effects"] if e.get("entity") == "M"]
-    assert types.index("self_heal") < types.index("shuaibai_tick"), \
-        "自愈必须先于衰败结算"
+    assert "self_heal" not in types, f"自愈机制已移除，不得再产出条目: {types}"
+    assert types[0] == "shuaibai_tick"
 
-    # 数值链：50 + 10(自愈) = 60；ceil(60×20/100)=12 → 48
-    assert enemy.current_hp == 48, f"实际 {enemy.current_hp}"
+    # 数值链：50 - ceil(50×20/100)=10 → 40（不再有 +10 的自愈垫高）
+    assert enemy.current_hp == 40, f"实际 {enemy.current_hp}"
 
     event_types = [e.event_type for e in combat.event_stream
                    if e.target_name == "M" or e.actor_name == "M"]
-    assert event_types[0] == CombatEventType.HEAL_APPLIED
-    assert event_types[1] == CombatEventType.DAMAGE_APPLIED, \
-        "事件顺序必须与迁移前一致（先治疗事件后伤害事件）"
+    assert CombatEventType.HEAL_APPLIED not in event_types
+    assert event_types[0] == CombatEventType.DAMAGE_APPLIED
 
 
 def test_shuaibai_before_dongcha():
@@ -422,7 +428,8 @@ def test_shuaibai_kill_triggers_jiaohheifasi_chain():
 def test_shuaibai_full_round_start_pipeline():
     """全 ROUND_START 管线 5 个机制在同实体上依次触发（顺序即规则）。
 
-    旧代码行为：round_start 逐实体循环依次执行 自愈->衰败->洞察->狂暴标记->畸变标记。
+    旧代码行为：round_start 逐实体循环依次执行 衰败->洞察->狂暴标记->畸变标记
+    （自愈已于 2026-09-18 随道纹重做从回始循环移除）。
     新机制行为必须完全对齐。（勾魂 已于 2026-08-30 改版为非机制，见下）
     """
     state = GameState(phase="in_combat", combat_subphase="player_actions")
@@ -432,27 +439,26 @@ def test_shuaibai_full_round_start_pipeline():
                     mana_limit=30, current_mana=20)
     state.player = player
     state.enemies = [entity]
-    entity.add_status(StatusEffect(name="自愈", remaining_rounds=-1, value=1, source="x"))
     entity.add_status(StatusEffect(name="衰败", remaining_rounds=-1, value=1, source="x"))
     entity._dongcha_pending = 5
     entity.add_status(StatusEffect(name="狂暴", remaining_rounds=-1, value=1, source="x"))
     entity.add_status(StatusEffect(name="畸变", remaining_rounds=-1, value=1, source="x"))
     combat = CombatEngine(state, DiceEngine())
 
-    entity.current_hp = 80  # 让自愈效果可用
+    entity.current_hp = 80
 
     # 走生产 round_start() 完整路径：遗物 -> ROUND_START 相位分发 -> F2 块
     # （DM裁定 2026-09-09：法力一池制，回始不再有 mana_refill 回填）
     res = combat.round_start()
     types = [e.get("type") for e in res["effects"] if e.get("entity") == "E"]
 
-    # 五机制条目按旧 cycle 顺序出现
-    expected = ["self_heal", "shuaibai_tick", "dongcha_mana",
+    # 四机制条目按旧 cycle 顺序出现
+    expected = ["shuaibai_tick", "dongcha_mana",
                 "extra_attack_ready", "deform_pending"]
     assert types == expected, f"管道类型顺序: {types}"
 
-    # 数值链：hp 80->+10(自愈)=90->-ceil(90*10/100)=9 -> 81
-    assert entity.current_hp == 81, f"实际 hp={entity.current_hp}"
+    # 数值链：hp 80 -> -ceil(80*10/100)=8 -> 72
+    assert entity.current_hp == 72, f"实际 hp={entity.current_hp}"
 
     # mana: 20->+30(回填)=50->+5(洞察)=55（无勾魂扣减）
     # 一池制：回始少了 +法限30 的回填，故 55 → 25
@@ -461,9 +467,10 @@ def test_shuaibai_full_round_start_pipeline():
     # 洞察 pending 清零
     assert getattr(entity, "_dongcha_pending", 0) == 0, "洞察 pending 必须在结算后清零"
 
-    # 只触发一次：再次 round_start 不出现第二次五机制条目（状态仍在但数值不同）
+    # 只触发一次：再次 round_start 不出现第二次四机制条目（状态仍在但数值不同）
     types2 = [e.get("type") for e in combat.round_start()["effects"] if e.get("entity") == "E"]
-    assert types2.count("self_heal") == 1 and types2.count("shuaibai_tick") == 1
+    assert "self_heal" not in types2, "自愈机制已移除，任何回合都不得再产出该条目"
+    assert types2.count("shuaibai_tick") == 1
 
 
 def test_shuaibai_with_jibian_scheduled():

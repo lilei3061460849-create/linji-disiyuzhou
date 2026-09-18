@@ -140,11 +140,11 @@ def cast_shujin(player, monster, x):  # 赎金X：夺10X碎片（消耗10X）；
 
 
 def monster_round_start(m, activated):
-    """怪物回始被动：自愈/庇护（须已激活才生效；原始道纹只在首次发动时支付异变）。"""
-    if "自愈" in activated:
-        x = m.dao_wen["自愈"].x_value
-        heal = math.ceil(m.blood_limit * 10 * x / 100)
-        m.heal(heal)
+    """怪物回始被动：庇护（须已激活才生效；原始道纹只在首次发动时支付异变）。
+
+    2026-09-18 用户令：【自愈】已重做为主动道纹（当场恢复[目标]25X%已损生命、代价冷却X 场），
+    [回始]不再有自愈被动，其结算移到 monster_activate。
+    """
     if "庇护" in activated:
         x = m.dao_wen["庇护"].x_value
         m.shield += 4 * x
@@ -153,7 +153,8 @@ def monster_round_start(m, activated):
 def monster_activate(m, activated, rng):
     """
     怪物道纹出手：激活一个尚未激活的道纹（白板第1回合后开始激活），返回激活名或None
-    成长型：疯狂X攻击出手+X；全力X攻击力+X；狂暴+1攻击出手；必中不可闪避；自愈/庇护回始生效
+    成长型：疯狂X攻击出手+X；全力X攻击力+X；狂暴+1攻击出手；必中不可闪避；
+    自愈X当场回复已损生命25X%（代价冷却X场，模拟器只打一场≈本场不再发动）；庇护回始生效
     控场型（对轮回者）：蒙蔽X下X次伤害无效；坏死禁疗；减速削其当前速度的10X%；僵化攻击力固定1
     【异变计费接线，裁定②】原始怪物道纹以【异变】为代价：激活支付异变5×面板X；
     达阈值触发【崩解】直接命零，返回"崩解:道纹名"，本次激活效果中断。
@@ -169,6 +170,11 @@ def monster_activate(m, activated, rng):
             activated.add(g)
             if g == "全力":
                 m.attack_power += m.dao_wen[g].x_value
+            elif g == "自愈":
+                # 新版自愈：发动当下按已损生命25X%回复（向上取整）；怪物侧的家族税异变5X
+                # 已在上面统一支付，冷却X场由 activated 集合等价表达（本场不再二次发动）。
+                x = m.dao_wen[g].x_value
+                m.heal(math.ceil(max(0, m.blood_limit - m.current_hp) * 25 * x / 100))
             return g
     if USE_EXCLUSIVE:  # 副本专属层（裁定⑨）：通用层之后，代价未满足的跳过
         for g in EXCLUSIVE_PRIORITY:

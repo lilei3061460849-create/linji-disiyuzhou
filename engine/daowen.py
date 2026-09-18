@@ -342,16 +342,30 @@ class DaoWenEngine:
         }
     
     @staticmethod
-    def calculate_ziyu(x: int) -> dict:
-        """自愈X：代价：异变5X。回始获得自身血限10X%的回复，持续∞"""
+    def calculate_ziyu(x: int, target: Entity = None) -> dict:
+        """自愈X：代价：冷却X。恢复[目标]25X%已损生命。
+
+        2026-09-18 用户令重做。旧版「代价：异变5X。[回始]获得自身血限10X%的回复，持续∞」是 ROUND_START 机制，
+        在现行规则下是一台**自杀定时器**：回复走统一 heal 动词，total_healed 连过量部分
+        一起按原值累计，而癌变阈值只有 ceil(血限×2) → 承载怪每回合自我奶 ceil(血限×10X%)，
+        ceil(20/X) 回合后必然自我癌变（X=3→7、X=5→4、X=9→3），永久离场且不给[碎片]，
+        只白送局外【休整】+8；叠加异变5X/次与崩解线50，第二次发动还会直接崩解。
+
+        新版：主动、单体、按**已损生命**计价（不浪费在满血目标上）、代价【冷却X】
+        （X 场战斗，由 combat 的冷却分支写 cooldown_remaining，无需新结算代码）。
+        与【滋养】（使目标受到的恢复量翻倍）组成 combo：滋养 + 自愈2 = 50%×2 = 满血复活。
+        癌变没有被绕开——恢复量照原值计入 total_healed，唯一免疫仍是遗物【第一杯】。
+        """
+        target_name = target.name if target is not None else "未选定目标"
+        missing = max(0, target.blood_limit - target.current_hp) if target is not None else 0
+        heal = DaoWenEngine.ceil(missing * 25 * x / 100)
         return {
             "dao_wen": "自愈",
             "x": x,
-            "cost_type": CostType.MUTATION.value,
-            "cost_mutation": 5 * x,
-            "heal_percent": 10 * x,
-            "duration": -1,
-            "summary": f"异变+{5*x}，回始获得自身血限{10*x}%的回复，永久"
+            "cost_type": CostType.COOLDOWN.value,
+            "cost": x,
+            "heal_missing_percent": 25 * x,
+            "summary": f"冷却{x}场，恢复{target_name}已损生命的{25*x}%（{heal}点）"
         }
     
     @staticmethod
@@ -576,21 +590,30 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_ziyang(x: int, target: Entity = None) -> dict:
-        """滋养X：消耗2X。使[目标]获得血限10X%的回复"""
+        """滋养X：消耗2X。使[目标]受到的恢复量翻倍，持续X。
+
+        2026-09-18 用户令重做。旧版「使[目标]获得血限10X%的回复」是一次性大奶，且与母道纹【自愈】同形。
+        新版改成**放大器**：本身不回复任何生命，只在持续期间让目标受到的每一笔
+        恢复量×2——结算点在 models.GameState.apply_heal（统一回复入口），
+        因此覆盖一切来源（道纹／消耗品／寄生／休整…）。
+
+        过量部分同样翻倍计入 total_healed，所以滋养同时把癌变进度×2：
+        对怪＝更快癌变（无[碎片]、局外休整+8），对轮回者/同伴＝更快直接[命零]。
+        用户裁定：能避开癌变的方法有且只有遗物【第一杯】，这就是本道纹的强度上限。
+
+        与【自愈】的 combo：滋养（×2）+ 自愈2（已损生命50%）= 100% 已损 = 满血复活。
+        calc 只带 duration → 走 combat 通用状态块挂【滋养】状态（value=X、持续X回合）；
+        同名合并按正文规则：状态不增强倍率（恒为×2），只叠加持续时间。
+        """
         target_name = target.name if target is not None else "未选定目标"
         cost = 2 * x
-        if target is not None:
-            blood_limit = target.blood_limit
-            heal = DaoWenEngine.ceil(blood_limit * 10 * x / 100)
-        else:
-            heal = 0
         return {
             "dao_wen": "滋养",
             "x": x,
             "cost_type": CostType.MANA.value,
             "cost": cost,
-            "target_heal": heal,
-            "summary": f"消耗{cost}法力，使{target_name}获得{heal}点回复（血限{target.blood_limit if target is not None else 0}的{10*x}%）"
+            "duration": x,
+            "summary": f"消耗{cost}法力，使{target_name}受到的恢复量翻倍，持续{x}回合"
         }
     
     @staticmethod

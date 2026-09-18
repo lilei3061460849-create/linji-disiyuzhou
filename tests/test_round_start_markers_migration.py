@@ -62,7 +62,7 @@ def test_markers_registered_and_ordered():
     assert mech_k.priority == 50 and mech_j.priority == 60
     from engine.mechanisms.registry import MECHANISMS as REG
     assert [m.name for m in REG.phase_mechanisms(Phase.ROUND_START)] == \
-        ["自愈", "衰败", "洞察·结算", "狂暴·标记", "畸变·标记"]
+        ["衰败", "洞察·结算", "狂暴·标记", "畸变·标记"]
 
 
 def test_old_marker_blocks_removed():

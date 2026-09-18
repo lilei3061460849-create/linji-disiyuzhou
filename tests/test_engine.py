@@ -1019,13 +1019,16 @@ def test_evolution_yuanchu():
     print(f"  ✓ 异变{Entity.MUTATION_COLLAPSE_THRESHOLD-15}+激活狂暴3(15)={Entity.MUTATION_COLLAPSE_THRESHOLD}层：崩解命零，攻击中断，玩家HP仍为{st2.player.current_hp}")
 
     # ---- 7. 借用道纹：原初门票与首次发动各付一次，持续期间不再计费 ----
+    # 2026-09-18 用户令重做后：借用的【自愈】代价＝冷却X 场（另付怪物家族税异变5X），
+    # 同场不得二次发动，故「重复发动按同一X计费」改由无冷却的【减速】验证（见 8）。
     st3 = GameState()
     st3.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60,
                         speed_limit=8, current_speed=8)
     # 原初X 借用池 = 轮回者持有的道纹
-    st3.player.dao_wen["自愈"] = DaoWenInstance(
-        dao_wen=DaoWen(name="自愈", formula="", cost_type="消耗",
-                       cost_formula="X", effect_formula=""), x_value=1)
+    for _n in ("自愈", "减速"):
+        st3.player.dao_wen[_n] = DaoWenInstance(
+            dao_wen=DaoWen(name=_n, formula="", cost_type="消耗",
+                           cost_formula="X", effect_formula=""), x_value=1)
     m_b = mk_plight_monster(name="借用怪", hp=120, cur=30, atk=1)  # 无自有道纹，仅借用
     st3.enemies.append(m_b)
     combat3 = CombatEngine(st3, DiceEngine()); combat3.reset_monster_activation()
@@ -1034,17 +1037,33 @@ def test_evolution_yuanchu():
     combat3.round_start(); combat3.round_start()
     resolve_monster_phase(combat3, {"借用怪": "自愈"})  # 第2回合显式选择借用的自愈2
     total1 = m_b.mutation_count
-    assert total1 == 20, f"借用自愈2激活应付异变5×2=10（门票10+激活10=20），实{total1}"
+    assert total1 == 20, f"借用自愈2激活应付怪物家族税异变5×2=10（门票10+激活10=20），实{total1}"
     assert m_b.is_alive, "20层应存活"
     # 2026-09-16 用户令：道纹递增（每次发动 X+2×副本阶级）已废止，
     # X 保持借用时写定的数值不变，重复发动按同一个 X 计费。
     assert m_b.dao_wen["自愈"].x_value == 2, "递增已废止，X应保持借用的2"
+    # 新版自愈：冷却以「场」计，本场内不回落 → prepare 摘除该选项，且不再计异变
+    assert m_b.dao_wen["自愈"].cooldown_remaining == 2, "冷却2场应在本场内保持"
     combat3.round_start()
-    resolve_monster_phase(combat3, {"借用怪": "自愈"})
-    total2 = m_b.mutation_count
-    assert total2 == 30 and m_b.is_alive, f"重复发动按同一X计费：20+5×2=30，实{total2}"
-    assert m_b.dao_wen["自愈"].x_value == 2
-    print("  ✓ 借用道纹门票10+首次发动10=20层；递增废止后重复发动按X=2再付10 → 30层")
+    opts = combat3.prepare_monster_phase()["actors"][0]["daowen_options"]
+    assert all(o["name"] != "自愈" for o in opts), f"冷却期内不得再提供自愈: {[o['name'] for o in opts]}"
+    assert m_b.mutation_count == 20, "冷却期内不发动 = 不再付异变"
+    print("  ✓ 借用道纹门票10+首次发动家族税10=20层；新版自愈冷却2场，同场二次发动被摘除")
+
+    # ---- 8. 重复发动按同一X计费（无冷却的原始怪物道纹：减速2） ----
+    m_c = mk_plight_monster(name="减速怪", hp=120, cur=30, atk=1)
+    st3.enemies.append(m_c)
+    ev2 = combat3.execute_evolution(m_c, "减速", 2)
+    assert ev2["success"] and m_c.mutation_count == 10, f"减速怪门票应为10层: {ev2}"
+    combat3.round_start()
+    resolve_monster_phase(combat3, {"减速怪": "减速"})
+    assert m_c.mutation_count == 20, f"首次发动家族税5×2=10，实{m_c.mutation_count}"
+    combat3.round_start()
+    resolve_monster_phase(combat3, {"减速怪": "减速"})
+    total2 = m_c.mutation_count
+    assert total2 == 30 and m_c.is_alive, f"重复发动按同一X计费：20+5×2=30，实{total2}"
+    assert m_c.dao_wen["减速"].x_value == 2
+    print("  ✓ 递增废止后重复发动按X=2再付10 → 30层")
     print("  ✓ 进化（原初X）与崩解测试通过")
 
 

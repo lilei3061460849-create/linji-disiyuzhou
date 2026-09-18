@@ -51,7 +51,7 @@ class CombatEngine:
     # 状态类效果（减速按百分比削速/固定面板/持续状态等）对波及目标原样生效，不入下表。
     WAVE_NUMERIC_KEYS = (
         "target_damage", "total_damage", "hits", "aoe_damage", "hp_percent_loss",
-        "target_heal", "heal_percent", "mutation_reduction",
+        "target_heal", "heal_percent", "heal_missing_percent", "mutation_reduction",
         "target_shield", "shield_drain",
         "blood_limit_reduction", "hp_reduction", "blood_limit_increase", "blood_limit_penalty",
         "attack_boost", "attack_reduction",
@@ -3077,8 +3077,46 @@ class CombatEngine:
                     "owner": caster, "mechanic": "heal", "subtype": "daowen", "amount": heal_amount,
                     "tags": {"daowen"},
                 })})
-        # 自愈的 heal_percent 只在[回始]结算，发动当下不奶。
-        if "heal_percent" in calc and name != "自愈":
+        # 【自愈】（2026-09-18 用户令重做）：按**已损生命**百分比回复，主动单体结算。
+        # 旧版自愈走 heal_percent + ROUND_START 机制（持续∞ 自我奶），已随重做删除；
+        # 下面的 heal_percent 分支因此不再需要 `name != "自愈"` 例外。
+        if "heal_missing_percent" in calc:
+            pct = calc["heal_missing_percent"]
+            if "heal_missing_percent" in wave_pieces:
+                # 波及：总量=各目标按自身已损生命×百分比之和，再平分（对齐 heal_percent）。
+                total = sum(math.ceil(max(0, wt.blood_limit - wt.current_hp) * pct / 100)
+                            for wt in wave_status_targets)
+                pieces = self._divide_flat(total, len(wave_status_targets))
+                wave_pieces["heal_missing_percent"] = pieces
+                for wt, piece in zip(wave_status_targets, pieces):
+                    if self._heal_blocked(wt):
+                        result["effects"].append(
+                            {"type": "heal_missing_pct", "target": wt.name, "blocked_by": "坏死"})
+                        continue
+                    result["effects"].append({
+                        "type": "heal_missing_pct", "target": wt.name, "pct": pct,
+                        **self.state.apply_heal(wt, piece, ctx={
+                            "timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
+                            "source": name, "source_type": "daowen", "actor": caster, "target": wt,
+                            "owner": caster, "mechanic": "heal", "subtype": "daowen_missing_pct",
+                            "amount": piece, "tags": {"daowen", "missing_pct", "wave"},
+                        })})
+            elif self._heal_blocked(target):
+                result["effects"].append(
+                    {"type": "heal_missing_pct", "target": target.name, "blocked_by": "坏死"})
+            else:
+                missing = max(0, target.blood_limit - target.current_hp)
+                h = math.ceil(missing * pct / 100)
+                result["effects"].append({
+                    "type": "heal_missing_pct", "target": target.name,
+                    "missing_hp": missing, "pct": pct,
+                    **self.state.apply_heal(target, h, ctx={
+                        "timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
+                        "source": name, "source_type": "daowen", "actor": caster, "target": target,
+                        "owner": caster, "mechanic": "heal", "subtype": "daowen_missing_pct",
+                        "amount": h, "tags": {"daowen", "missing_pct"},
+                    })})
+        if "heal_percent" in calc:
             if "heal_percent" in wave_pieces:
                 # 波及：总数值=各目标按血限×百分比之和，再平分。
                 total = sum(math.ceil(wt.blood_limit * calc["heal_percent"] / 100)
@@ -3130,7 +3168,8 @@ class CombatEngine:
                     if redemption:
                         result["effects"].append(redemption)
 
-        if "target_heal" in calc or ("heal_percent" in calc and name != "自愈"):
+        if ("target_heal" in calc or "heal_percent" in calc
+                or "heal_missing_percent" in calc):
             for cancer_target in wave_status_targets:
                 cancer = self.check_cancer(cancer_target)
                 if cancer:
@@ -3634,7 +3673,9 @@ class CombatEngine:
             # 进不了本状态块，实际效果一直是下方数值段给 target 加速。
             # 2026-09-17 用户令：【变形】改为可自由选择目标（不指定时默认自身），
             # 故移出"自身作用型"名单，状态随之挂到目标身上（到期还原也落在目标）。
-            self_targeted = name in ("自食", "飞行", "滑翔", "狂暴", "自愈", "必中", "固执", "贯穿")
+            # 2026-09-18 用户令：【自愈】重做为「代价冷却X，恢复[目标]25X%已损生命」——
+            # 主动、需显式选定[目标]、calc 无 duration 键（不进本状态块），故移出自身作用名单。
+            self_targeted = name in ("自食", "飞行", "滑翔", "狂暴", "必中", "固执", "贯穿")
             if name == "疯狂":
                 # 2026-08-17 用户裁定：疯狂X改为【所有角色出手+X】（全局，变相平衡）。
                 # 状态盖到双方全部存活角色；出手口径各自读取自身疯狂状态：
@@ -5461,10 +5502,20 @@ class CombatEngine:
             # "付不起"上限，探测会一路撞上试探封顶值。这里按生存线封顶——
             # 允许叠加到崩解线之前，但**不把"当场自爆"的 X 当成合法选项**。
             # （是否值得逼近崩解线由 AI 预演评分自行权衡，引擎只保证不主动提供自杀档。）
-            if calc.get("cost_type") == "异变":
+            # 原始怪物道纹的**家族税**：怪物侧每次发动都按 异变5X 支付
+            # （resolve_monster_phase 的硬编码支付点），与 calc 自身的 cost_type 无关。
+            # 2026-09-18【自愈】重做为「代价：冷却X」后，它的 calc 不再声明异变，
+            # 只按 cost_type 判断就会漏掉这份税 → 探测会把"当场自爆"的 X 当合法选项
+            # （_DAOWEN_X_PROBE_CAP=30，异变150 远超崩解线50）。其余六条原始道纹
+            # calc 本来就是 异变5X，取 max 后行为不变。
+            mutation_tax = (calc.get("cost_mutation", 0)
+                            if calc.get("cost_type") == "异变" else 0)
+            if effective_name in self.ORIGINAL_MONSTER_DAOWEN:
+                mutation_tax = max(mutation_tax, self.YUANCHU_COST_RATE * x)
+            if mutation_tax:
                 headroom = (Entity.MUTATION_COLLAPSE_THRESHOLD
                             - getattr(monster, "mutation_count", 0))
-                if calc.get("cost_mutation", 0) >= headroom:
+                if mutation_tax >= headroom:
                     break
             # 碎片/假碎片类道纹不经过 _monster_can_pay_calc_cost，单独封顶
             if effective_name == "赌命" and getattr(monster, "fake_shards", 0) < x:

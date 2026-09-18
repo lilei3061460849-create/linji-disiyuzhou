@@ -2777,10 +2777,16 @@ class GameEngine:
         )
 
     def _find_resonance_holder(self, source: str, target_ref: str):
-        """按稳定引用定位残韵作用的道纹持有者；未指定时只接受唯一持有者。"""
+        """按稳定引用定位残韵作用的道纹持有者。
+
+        2026-09-18 用户令：**先按 target_ref 定位**（自由选择目标，再选它身上的道纹），
+        未指定 target_ref 时才回落「施法者本人 → 唯一持有者 → 多名持有者报错」。
+
+        旧口径是玩家优先且**无视 target_ref**：在回溯边（转化道纹 --同种残韵--> 原始
+        怪物道纹）打通、玩家可能永久持有原始怪物道纹之后，那条捷径会让「对怪物的同名
+        道纹发动残韵」永远打在自己身上（白烧残韵走 减速→急速→减速 空转）。
+        """
         player = self.state.player
-        if source in player.dao_wen:
-            return player, None
         refs = self.combat._combat_entity_refs()
         if target_ref:
             target = refs.get(target_ref)
@@ -2789,6 +2795,8 @@ class GameEngine:
             if source not in target.dao_wen:
                 return None, f"{target.name}未持有道纹: {source}"
             return target, None
+        if source in player.dao_wen:
+            return player, None
         holders = [entity for entity in refs.values() if entity is not player and source in entity.dao_wen]
         if len(holders) == 1:
             return holders[0], None

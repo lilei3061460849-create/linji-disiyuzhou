@@ -702,9 +702,12 @@ class Entity:
         if effect.polarity == EffectPolarity.NEUTRAL.value:
             buffs = {
                 "固执", "贯穿", "急速", "洞察", "兴奋", "飞行", "滑翔", "狂暴",
-                "全力", "疯狂", "必中", "自愈", "洗劫", "逆鳞", "嫁祸", "背负",
+                "全力", "疯狂", "必中", "滋养", "洗劫", "逆鳞", "嫁祸", "背负",
                 "负岳索", "加速", "愤怒",
             }
+            # 2026-09-18 用户令：【自愈】重做为主动单体奶（代价冷却X、恢复[目标]25X%
+            # 已损生命），不再挂任何持续状态，故从增益名单移出；【滋养】改为
+            # 「使[目标]受到的恢复量翻倍，持续X」的放大状态，进增益名单。
             debuffs = {
                 "弱化", "无力", "减速", "全速", "束缚", "封印", "坠落",
                 "坏死", "爆裂", "退化", "定型", "畸变", "加害", "伤痕",
@@ -1025,6 +1028,15 @@ class GameState:
 
         ctx 为兼容层来源上下文；未传时保持原回复行为，并在返回明细中给出 warning。
         """
+        # 【滋养】：使[目标]受到的恢复量翻倍（2026-09-18 用户令重做滋养）。
+        # 结算点放在统一回复入口的最前面，因此覆盖一切来源（道纹／消耗品／寄生／
+        # 休整…），且 ctx.amount、溢出转【龙血瓶】、HEAL_APPLIED 事件与
+        # Entity.total_healed（癌变计数）全部按翻倍后的值记账——滋养同时把癌变
+        # 进度×2，唯一免疫仍是遗物【第一杯】（用户裁定：这就是强度上限）。
+        # 倍率恒为 ×2、不随层数增强；同名重复施放只叠加持续时间。
+        ziyang_doubled = entity.has_status("滋养")
+        if ziyang_doubled:
+            amount = amount * 2
         heal_ctx = normalize_context(ctx)
         if heal_ctx is None:
             heal_ctx = make_context(
@@ -1045,6 +1057,8 @@ class GameState:
                     parent_event_id=heal_ctx.parent_event_id,
                 )
         detail = entity.heal(amount)
+        if ziyang_doubled:
+            detail["ziyang_doubled"] = True
         detail["heal_ctx"] = heal_ctx.to_dict()
         heal_events = getattr(entity, "_heal_events", None)
         if heal_events is None:

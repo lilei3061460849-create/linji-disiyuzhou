@@ -159,7 +159,7 @@ def test_boba_boundary_and_invalid_submissions():
 
 
 def test_ziyang_zishi_shuaibai():
-    """接线：滋养回血；自食打自己；衰败扣当前生命%。"""
+    """接线：滋养挂放大状态（本身不回血）；自食打自己；衰败扣当前生命%。"""
     engine = _engine("keys2")
     p = engine.state.player
     for n in ("滋养", "自食", "衰败"):
@@ -170,7 +170,9 @@ def test_ziyang_zishi_shuaibai():
     m.current_hp = 50
     r2 = engine.execute_action("use_daowen", {"daowen_name": "滋养", "x": 1, "target": m.name})
     assert r2["success"]
-    assert m.current_hp == 60  # 100*10%=10
+    # 2026-09-18 用户令：滋养改为「使[目标]受到的恢复量翻倍，持续X」，本身不回血
+    assert m.current_hp == 50
+    assert m.has_status("滋养")
 
     p.attack_power = 5
     p.current_hp = 40
@@ -187,7 +189,7 @@ def test_ziyang_zishi_shuaibai():
     engine.state.combat_subphase = "await_round_end"  # 单元测试跳过怪物行动
     engine.execute_action("round_end", {})
     engine.execute_action("round_start", {})
-    assert m.current_hp == hp - 6  # [回始]ceil(60*10%)
+    assert m.current_hp == hp - 5  # [回始]ceil(50*10%)
 
 
 def test_jiahai_guzhi_fennu_jieli_jisheng():
@@ -286,69 +288,90 @@ def test_huaxiang_zhuiluo_dingxing_wushen_xuanyun():
     assert engine.combat.can_act(m)
 
 
-def test_ziyu_cast_does_not_heal_until_round_start():
-    """正常：自愈发动当下不奶，回始才按血限10X%奶一次。"""
+def test_ziyu_cast_heals_target_immediately():
+    """正常：新版自愈＝主动单体奶（2026-09-18 用户令），发动当下按**已损生命**25X%结算。
+
+    旧版「发动只挂状态、[回始]按血限10X%奶」已废止：ROUND_START 上的自愈机制整体删除，
+    代价由异变5X 改为冷却X 场，且需显式选定[目标]（可以选自己）。
+    """
     import math
     engine = _engine("ziyu_ok")
     p = engine.state.player
     _give(p, "自愈")
     engine.execute_action("round_start", {})
     p.current_hp = 30
-    r = engine.execute_action("use_daowen", {"daowen_name": "自愈", "x": 2})
+    r = engine.execute_action("use_daowen", {"daowen_name": "自愈", "x": 2, "target": p.name})
     assert r["success"], r
-    assert p.has_status("自愈")
-    assert p.current_hp == 30
-    expected = math.ceil(p.blood_limit * 20 / 100)
+    expected = math.ceil((p.blood_limit - 30) * 50 / 100)
+    assert p.current_hp == 30 + expected
+    assert not p.has_status("自愈"), "新版自愈不挂任何持续状态"
+    # 代价＝冷却X 场：本场不得再次发动
+    assert p.dao_wen["自愈"].cooldown_remaining == 2
+    again = engine.execute_action("use_daowen", {"daowen_name": "自愈", "x": 1, "target": p.name})
+    assert again["success"] is False, "冷却期内必须拒绝发动"
+
+    hp = p.current_hp
     engine.state.combat_subphase = "await_round_end"
     engine.execute_action("round_end", {})
     engine.execute_action("round_start", {})
-    assert p.current_hp == 30 + expected
+    assert p.current_hp == hp, "[回始]不得再凭空回血（自愈机制已移除）"
 
 
 def test_ziyu_necrosis_blocks_and_invalid_x():
-    """边界：坏死回始不奶；X=0 合法（拒绝发动，不回血）；负数/非整数仍被拒。"""
+    """边界：坏死禁疗拦住新版自愈；X=0 合法（拒绝发动，不回血）；负数/非整数仍被拒。"""
     engine = _engine("ziyu_bound")
     p = engine.state.player
     _give(p, "自愈")
     engine.execute_action("round_start", {})
     hp_before = p.current_hp
-    zero = engine.execute_action("use_daowen", {"daowen_name": "自愈", "x": 0})
+    zero = engine.execute_action("use_daowen", {"daowen_name": "自愈", "x": 0, "target": p.name})
     assert zero["success"] is True
     assert zero.get("skipped") is True
     assert p.current_hp == hp_before      # 拒绝发动 = 没有回血
-    bad = engine.execute_action("use_daowen", {"daowen_name": "自愈", "x": -1})
+    bad = engine.execute_action("use_daowen", {"daowen_name": "自愈", "x": -1, "target": p.name})
     assert bad["success"] is False
     assert "X必须≥1" in bad["error"]
-    engine.execute_action("use_daowen", {"daowen_name": "自愈", "x": 1})
     p.current_hp = 30
     p.add_status(StatusEffect(name="坏死", remaining_rounds=-1, value=0, source="测"))
-    engine.execute_action("round_start", {})
-    assert p.current_hp == 30
+    blocked = engine.execute_action("use_daowen", {"daowen_name": "自愈", "x": 2, "target": p.name})
+    assert blocked["success"], blocked
+    assert p.current_hp == 30, "【坏死】禁疗期间自愈不得回血"
 
 
-def test_ziyu_monster_activate_heals_next_round_start():
-    """正常：怪物激活自愈只挂状态，下个回始才奶。"""
+def test_ziyu_monster_activate_heals_at_once_and_pays_family_tax():
+    """正常：怪物激活新版自愈＝当场奶选定目标，并同时付「异变5X 家族税 + 冷却X」两份代价。
+
+    家族税来自《怪物准则》：原始怪物道纹每次发动都支付异变5X（resolve_monster_phase 的
+    硬编码支付点），与道纹自身代价并存；轮回者侧只付自身代价（见 test_ziyu_cast_heals_target_immediately）。
+    自愈需显式选定[目标]，prepare 必须给出 target_options（含自己）。
+    """
     import math
     engine = _engine("ziyu_mon")
     m = _monster(engine, "自愈鱼", hp=100, atk=1, ap=1)
     m.dao_wen["自愈"] = DaoWenInstance(
-        DaoWen(name="自愈", formula="", cost_type="异变", cost_formula="5X", effect_formula=""),
+        DaoWen(name="自愈", formula="", cost_type="冷却", cost_formula="X", effect_formula=""),
         x_value=1)
     engine.state.current_round = 2
+    m.current_hp = 40
     prepared = engine.execute_action("prepare_monster_phase", {})
     actor = prepared["result"]["actors"][0]
+    opt = next(d for d in actor["daowen_options"] if d["name"] == "自愈")
+    assert opt["requires_target"] is True
+    assert {t["ref"] for t in opt["target_options"]} >= {"player:0", "enemy:0"}
+    self_ref = next(t["ref"] for t in opt["target_options"] if t["ref"] == "enemy:0")
+
     resolved = engine.execute_action("resolve_monster_phase", {
         "token": prepared["result"]["token"],
         "choices": [{"actor_ref": actor["actor_ref"],
-                     "daowen": {"name": "自愈", "dodge": False, "blood_shadow": False, "trigger_spell_choices": {}},
+                     "daowen": {"name": "自愈", "target_ref": self_ref, "dodge": False,
+                                "blood_shadow": False, "trigger_spell_choices": {}},
                      "attack_actions": [{"hits": [{"target_ref": "player:0", "dodge": False, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}}]}]}],
     })
-    assert resolved["success"]
-    assert m.has_status("自愈")
-    m.current_hp = 50
-    engine.execute_action("round_end", {})
-    engine.execute_action("round_start", {})
-    assert m.current_hp == 50 + math.ceil(m.blood_limit * 10 / 100)
+    assert resolved["success"], resolved
+    assert m.current_hp == 40 + math.ceil(60 * 25 / 100), f"已损60 的 25% = 15，实 hp={m.current_hp}"
+    assert not m.has_status("自愈"), "新版自愈不挂持续状态"
+    assert m.mutation_count == 5, f"家族税 异变5×1，实{m.mutation_count}"
+    assert m.dao_wen["自愈"].cooldown_remaining == 1
 
 
 def test_jisu_jiasu_dongcha():
