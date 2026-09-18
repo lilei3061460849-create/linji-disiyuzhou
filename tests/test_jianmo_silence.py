@@ -13,6 +13,13 @@
 4. 尸爆：整条都是「由[命零]触发的效果」→ 不产 AoE、不自毁（法力已付不退）；
 5. 到期：持续X回合走完 `tick_status_effects` 后，上述效果全部恢复；
 6. 死者自身：缄默持有者自己命零时其[命零]效果同样被封（否则它一死封禁就当场失效）。
+
+2026-09-18 起另有两处封禁面不在本文件（各自回归在别处，避免与龙族/机制系统的夹具重复搭建）：
+7. 吞骸龙胃的吞噬窗口（DM 裁定：窗口由[命零]开启，属被封禁的效果）
+   → `tests/test_dragon_traits.py` 第 7 节；
+8. 机制系统默认封禁：ENTITY_DIED 机制不必自己挂 `death_not_silenced()`，
+   由 `TriggerBus.dispatch` 统一跳过（退出须显式 `Mechanism.ignores_silence=True`）
+   → `tests/test_mechanism_system.py`「【缄默】默认封禁」节。
 """
 from __future__ import annotations
 

@@ -5120,6 +5120,13 @@ class GameEngine:
                 monster = None
         if monster is None or monster.is_alive:
             return {"success": False, "error": "monster_ref不是已命零怪物"}
+        # 【缄默】封禁（DM 裁定 2026-09-18）：吞噬窗口由该怪物的[命零]开启，属
+        # "由[命零]触发的效果"。封禁期内命零的尸体窗口没开过，因此不可吞噬——
+        # 与招魂"封禁期内不入 dead_monsters（无尸可唤）"同口径：看的是**死亡那一刻**
+        # 是否被封（读死亡上下文的 silenced_death 标签），不是看吞噬时缄默是否还在。
+        if "silenced_death" in ((getattr(monster, "_death_ctx", None) or {}).get("tags") or []):
+            return {"success": False,
+                    "error": f"【缄默】生效：{monster.name}的[命零]触发效果被封禁，无法吞噬"}
         player = self.state.player
         heal_detail = self.state.apply_heal(player, 12, ctx={
             "timing": self.state.combat_subphase or self.state.phase, "source": "吞骸龙胃", "source_type": "relic",
