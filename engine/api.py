@@ -2818,8 +2818,10 @@ class GameEngine:
         """残韵获得变化后道纹。X不从原道纹拷贝；同名不重复。"""
         if dest in player.dao_wen:
             return False
-        if dest in ORIGINAL_MONSTER_DAOWEN:
-            return False
+        # 2026-09-18 用户裁定A：撤销「dest 是原始怪物道纹就拒发」的旧闸。
+        # 原始怪物道纹现在只能作为**回溯边**的目标出现（转化道纹 --同种残韵--> 原始），
+        # 而转化道纹本身既不能【学习】也不能凭空获得，只能从持有原始道纹的怪物身上
+        # 残韵取得——裁定B「人类只能从怪物身上获得原始怪物道纹」由这条唯一来源保证。
         player.dao_wen[dest] = DaoWenInstance(DaoWen(
             name=dest, formula=f"{dest}X", cost_type="消耗",
             cost_formula="X", effect_formula=""))

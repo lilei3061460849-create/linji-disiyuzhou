@@ -141,7 +141,14 @@ def test_resonance_does_not_duplicate_same_name():
     assert "杀伐" not in engine.state.player.dao_wen
 
 
-def test_resonance_refuses_missing_stock_and_original_grant():
+def test_resonance_refuses_missing_stock_but_grants_backtracked_original():
+    """无库存必须拒绝且不消耗；回溯出的原始怪物道纹按裁定A 可以发放。
+
+    2026-09-18 用户裁定A：撤销「dest 是原始怪物道纹就拒发」的旧闸。原始怪物道纹
+    现在只能作为**回溯边**（转化道纹 --同种残韵--> 原始）的目标出现，而转化道纹自身
+    不可【学习】、只能从持有原始道纹的怪物身上残韵取得——裁定B「人类只能从怪物身上
+    获得原始怪物道纹」由这条唯一来源保证，不再靠拒发兜底。
+    """
     engine = _ready_combat(_engine("res_bad"))
     _give(engine.state.player, "杀伐")
     engine.state.resonance["反转"] = 0
@@ -151,8 +158,11 @@ def test_resonance_refuses_missing_stock_and_original_grant():
     assert not r["success"]
     assert "杀伐" in engine.state.player.dao_wen
     granted = engine._grant_transformed_daowen(engine.state.player, "疯狂")
-    assert granted is False
-    assert "疯狂" not in engine.state.player.dao_wen
+    assert granted is True
+    assert "疯狂" in engine.state.player.dao_wen
+    # 「同名不重复」仍然生效：不会因为回溯而发出第二份
+    assert engine._grant_transformed_daowen(engine.state.player, "疯狂") is False
+    assert list(engine.state.player.dao_wen).count("疯狂") == 1
 
 
 # ---------- 第一杯免疫癌变（原钱袋效果） ----------
