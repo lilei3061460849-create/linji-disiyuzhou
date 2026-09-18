@@ -5875,9 +5875,15 @@ class CombatEngine:
           - attack_actions 数量（vs prepare 快照）
           - 每次命中的 target_ref/dodge/blood_shadow 布尔/血影资格/回锋刀目标/法术提交
 
-        依赖执行后状态的数量校验（hits 命中数、目标当前速度、目标存活性）不在此
-        判定——它们必须按执行时的真实状态校验（如【变形】会改变命中数），失败由
+        依赖执行后状态的判定（目标当前速度够不够闪避、目标存活性、血影所需生命、
+        本回合已发动集合）不在此判定——它们必须按执行时的真实状态校验，失败由
         resolve_monster_phase 的快照回滚保证零副作用。
+
+        **出手数与命中数不属于上一段**：两者一律按 prepare 快照校验
+        （`base_attack_actions`／`base_hits_per_attack`，唯一判定点在 `_attack_step`），
+        阶段内真实改变速度（如【变形】把当前法力换到当前速度上）也不动这条契约——
+        2026-09-17 起的口径。旧注释写「hits 命中数按执行时真实状态校验（如变形会改变
+        命中数）」与实现相反，曾把 sim 驱动带偏（按 attack_power 提交命中数，必被引擎拒）。
         """
         expected = {actor["actor_ref"]: actor for actor in prepared["actors"]}
         refs = self._combat_entity_refs()
