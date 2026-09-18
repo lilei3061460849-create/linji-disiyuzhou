@@ -139,13 +139,14 @@ def test_spec_entries_are_self_documenting():
 
 
 def test_every_container_ledger_created_in_combat_is_registered():
-    """**静态**扫 `engine/combat.py`：凡在 CombatEngine 上创建的容器都必须已登记。
+    """**静态**扫战斗引擎全家族（`combat.py` + `combat_parts/*.py`）：凡在 CombatEngine 上创建的容器都必须已登记。
 
     为什么必须静态：新加的账本在多数局面里是**空的**（`_resonance_rewrites` 整局脚本轮回
     都没被写过），运行时扫描看不出键类型、抓不到「忘了登记」。反向对照实测：把
     `_resonance_rewrites` 从清单里摘掉 → 本用例失败并点名该账本（只用运行时扫描时不失败）。
     """
-    src = _src("engine/combat.py")
+    from tests.source_scan import combat_source
+    src = combat_source()  # 全家族：容器创建点已随 Mixin 分片搬到 combat_parts/
     created = set(_CONTAINER_ASSIGN.findall(src))
     assert created, "没扫到任何容器创建点，正则失效＝断言空转"
     assert {"_monster_activated", "_monster_daowen_round_used", "_resonance_rewrites",

@@ -388,8 +388,10 @@ def test_tool_text_matches_item_index_verbatim():
 def test_no_stale_grenade_wording_left_in_engine():
     """旧口径（15点伤害 / 攻击次数-1 / 出手次数-1 / 自造状态）不得在引擎里留尾巴。"""
     root = Path(__file__).resolve().parent.parent
-    for relative in ("engine/api.py", "engine/models.py", "engine/combat.py",
-                     "engine/daowen.py", "engine/ai_tactics.py"):
+    from tests.source_scan import combat_relative_paths
+    for relative in ("engine/api.py", "engine/models.py",
+                     "engine/daowen.py", "engine/ai_tactics.py",
+                     *combat_relative_paths()):  # combat.py 已拆出 combat_parts/*.py
         source = (root / relative).read_text(encoding="utf-8")
         for stale in ("手雷减攻", "手雷减出手"):
             assert stale not in source, f"{relative} 仍在读写已废状态{stale}"

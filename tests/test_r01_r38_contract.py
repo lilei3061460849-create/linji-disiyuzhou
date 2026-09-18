@@ -384,7 +384,8 @@ def test_r11_r17_targets_must_come_from_prepare_and_fail_atomically(tmp_path):
 def test_r11_r17_repository_has_no_legacy_automatic_monster_policy():
     """防回退：生产计算层和模拟调用方都不得保留旧固定优先级/自动闪避入口。"""
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    combat_source = open(os.path.join(root, "engine", "combat.py"), encoding="utf-8").read()
+    from tests.source_scan import combat_source
+    combat_source = combat_source()  # 全家族：combat.py + combat_parts/*.py
     assert "MONSTER_ACTIVATE_PRIORITY" not in combat_source
     assert "def run_monster_phase" not in combat_source
     assert "def _monster_activate(" not in combat_source

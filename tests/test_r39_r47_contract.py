@@ -556,5 +556,7 @@ def test_d01_d07_obsolete_paths_removed_or_reused():
     gamedata = (root / "engine" / "gamedata.py").read_text(encoding="utf-8")
     assert "class EventPool" not in dice_source and "class RandomRequest" not in dice_source
     assert "random_number" not in api_source and "request_random" not in api_source
-    assert "CombatSubphase" in api_source and "ActionPhase" in (root / "engine" / "combat.py").read_text(encoding="utf-8")
+    assert "CombatSubphase" in api_source
+    from tests.source_scan import combat_source
+    assert "ActionPhase" in combat_source()  # 全家族：combat.py + combat_parts/*.py
     assert "MONSTER_POOLS" not in gamedata and "RELIC_POOL" not in gamedata and "SPELL_LIBRARY" not in gamedata

@@ -23,10 +23,16 @@ from .enums import InterruptType
 # 同名机制的硬编码 has_status 分支。不扫描/不禁止历史代码，机制声明层
 # （engine/mechanisms/）自身也不在护栏范围内。
 
+# combat.py 已按 Mixin 拆出 engine/combat_parts/*.py：护栏必须覆盖整个家族，
+# 否则搬进分片的代码会脱离「已迁移机制不得硬编码」的检查（守卫静默失效）。
 _MIGRATION_GUARD_PROTECTED_FILES = (
     "engine/combat.py",
     "engine/combat_hooks.py",
     "engine/api.py",
+) + tuple(
+    "engine/combat_parts/" + p.name
+    for p in sorted((Path(__file__).resolve().parent / "combat_parts").glob("*.py"))
+    if p.name != "__init__.py"
 )
 
 
