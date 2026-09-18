@@ -44,10 +44,18 @@ PANEL = re.compile(r'^([\u4e00-\u9fff\w·]+)[（(](\d+)/(\d+)/(\d+)(?:[，,]([^)
 DOC_HEAD = re.compile(r'^\S+?(?P<head>X(?:/Y)?)(?:（(?P<alias>[^）]*)）)?[：:]\s*(?P<rest>.+)$')
 DOC_SPLIT = re.compile(r'^(?P<cost>.+?)(?:。|，)\s*(?P<eff>.*)$')
 COST_PREFIX = ("代价：", "消耗", "冷却", "流血", "疲惫", "异变", "衰老", "枯竭", "萎缩", "失忆")
-# 效果句尾的修订注记单独抽出，渲染成 `> 修订：` 行，避免混进效果正文
-REVISION = re.compile(r'（(?P<note>20\d\d-[^）]*)）\s*。?\s*$')
+# 效果句尾的修订注记与标题里的旧名（原名【迟滞】）一律从正文**剥掉且不发布**：
+# 正文红线要求规则正文只写现行口径。沿革留在三处——引擎 docstring（代码注释不受限）、
+# archive/ 与 `sim/check_rule_change.py::STALE_PHRASES`（怕改回去的机器守卫）。
+# 旧注释在这里写「渲染成 > 修订： 行」，但渲染代码从来不存在（`revisions` 建好没人读），
+# 已连同死变量一起删掉，免得下一个人以为索引里会有修订行。
+# 注记不一定以日期开头：实测【逼债】写的是「（DM裁定D 2026-08-22：旧…废止）」，
+# 旧正则要求括号紧跟日期 → 抽不出来，沿革就留在了**发布出去的规则正文**里
+# （正文红线：规则正文只写现行口径，沿革归《已删内容》表／修订行）。
+# 改成「句尾括号里含日期即算修订注记」，与注记的书写顺序解耦。
+REVISION = re.compile(r'（(?P<note>[^）]*20\d\d-[^）]*)）\s*。?\s*$')
 
-effects, costs, params_of, revisions, x_head = {}, {}, {}, {}, {}
+effects, costs, params_of, x_head = {}, {}, {}, {}
 for name, fn in DaoWenEngine._registry.items():
     doc = (fn.__doc__ or "").strip().splitlines()
     first = doc[0].strip()
@@ -60,18 +68,12 @@ for name, fn in DaoWenEngine._registry.items():
     assert cost.startswith(COST_PREFIX), f"{name}: 代价短语无法识别: {cost!r}"
     costs[name] = cost
     x_head[name] = m.group("head")   # 【分裂】为 "X/Y"，其余为 "X"
-    notes = []
-    if m.group("alias"):
-        notes.append(m.group("alias"))
     rm = REVISION.search(eff)
     while rm:
-        notes.append(rm.group("note"))
         eff = REVISION.sub("", eff, count=1)
         rm = REVISION.search(eff)
     eff = eff.strip()
     effects[name] = (eff + "。") if eff and not eff.endswith("。") else eff
-    if notes:
-        revisions[name] = "；".join(reversed(notes))
     params_of[name] = list(inspect.signature(fn).parameters)
 
 # 承载怪物：扫描全部已实现副本文档的面板行（怪物池+事件/雇佣）

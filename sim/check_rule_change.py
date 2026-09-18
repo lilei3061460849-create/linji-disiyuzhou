@@ -62,12 +62,10 @@ GUARD_TESTS = [
 #   硬层＝规则事实源与注入 AI 提示词的派生文档，命中废案即**门禁失败**；
 #   软层＝工作日志类（报告.md 记沿革、机制迁移台账.md 记已回撤），命中只**警告**——
 #         这两处本来就允许写旧口径（正文红线只约束规则正文），要求每行都带否定语境词不现实。
-CORPUS = [
-    "AI_EXPERIENCE.md", INDEX, "README.md", "副本索引.md", "物品索引.md", "法术索引.md",
-    "死者之书.md", "data/build_knowledge.json",
-]
-CORPUS_SOFT = ["报告.md", "机制迁移台账.md"]
-CORPUS_GLOBS = ["副本/*.md"]
+# 语料清单不在这里维护：唯一权威在 engine/document_validation.py（工具与测试守卫共用一份，
+# 免得两边各自漂移——那正是「一条规则改 5–6 处」的一种）。
+from engine.document_validation import (CORPUS_HARD as CORPUS, CORPUS_SOFT,
+                                        CORPUS_GLOBS, corpus_files)
 
 # 2026-09-18 全量实测的 9 条既有失败（AI/mock 类，见 报告.md 第二节）——不是回归，
 # 不计入门禁；哪天它们绿了，本工具会提示从名单里删掉。
@@ -101,6 +99,7 @@ STALE_PHRASES: list[tuple[tuple[str, ...], str]] = [
     (("自愈", "血限10X%"), "【自愈X】2026-09-18 重做＝冷却X＋恢复25X%已损生命"),
     (("减速", "速度减半"), "【减速X】2026-09-18 重做＝失去当前速度的10X%"),
     (("攻击次数/3",), "微光者出手＝攻击次数/3 已废止（全体固定 2 次出手）"),
+    (("否则失去2X点血限",), "【逼债X】旧口径 2026-08-22 DM裁定D 废止（现行＝无力支付记为负债、碎片扣负）"),
     (("钱袋",), "已删遗物钱袋"),
     (("双倍计入",), "癌变双倍计入已删除"),
     (("【领悟】",), "局外行动【领悟】2026-09-10 删除"),
@@ -108,12 +107,7 @@ STALE_PHRASES: list[tuple[tuple[str, ...], str]] = [
 
 
 def _files(soft: bool = False) -> list[Path]:
-    names = CORPUS_SOFT if soft else CORPUS
-    out = [ROOT / f for f in names if (ROOT / f).exists()]
-    if not soft:
-        for g in CORPUS_GLOBS:
-            out.extend(sorted(ROOT.glob(g)))
-    return out
+    return corpus_files(ROOT, soft=soft)
 
 
 def step_index(args) -> bool:

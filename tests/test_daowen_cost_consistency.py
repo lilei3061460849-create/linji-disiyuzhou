@@ -47,6 +47,8 @@ SUMMARY_LEAD = {
     "假碎片": lambda r: f"消耗{r['fake_cost']}假碎片",
     "碎片": lambda r: f"消耗{r['fake_cost']}假碎片或{r['real_cost']}碎片（局外×2）",
 }
+from engine.document_validation import handwritten_rule_docs
+
 ALL_NAMES = sorted(DaoWenEngine._registry)
 
 
@@ -202,7 +204,15 @@ UNIT_OF_TYPE = {"消耗": "消耗", "冷却": "冷却", "异变": "异变", "流
 
 
 def _doc_rule_files():
-    files = [ROOT / "AI_EXPERIENCE.md"] + sorted((ROOT / "副本").glob("*.md"))
+    """手写的规则文档；清单的唯一权威在 `engine/document_validation.py`。
+
+    原先这里自己列了一份（只有 AI_EXPERIENCE.md ＋ 副本/*.md），于是 README.md:41
+    【封印】异变X、法术索引.md:57-58【庇护X】消耗X／【再生X】消耗X 这些同样写着代价数字的
+    硬层文档落在守卫之外（当时数字恰好对——靠运气不靠机器）。生成物不在内：
+    `全道纹索引.md` 由 test_index_is_regeneration_byte_identical 逐字节守卫，
+    `data/build_knowledge.json` 是 sim 产出的叙述性知识库（其中数字是叙述不是口径）。
+    """
+    files = handwritten_rule_docs(ROOT)
     assert files and all(f.exists() for f in files), "规则文档缺失"
     return files
 
@@ -253,6 +263,82 @@ def test_unknown_cost_type_is_not_silently_ignored():
     assert used <= known, (
         f"出现未登记的代价类型 {sorted(used - known)}：先在 SUMMARY_LEAD/COST_FIELD "
         f"里登记口径，否则 summary 与文档的一致性无人看守")
+
+
+
+# ========================================================================
+# 规则正文的单一真源：引擎 docstring（＝发布到《全道纹索引》的正文）↔ resolve summary
+# ========================================================================
+# 为什么要有这两条：改一条规则的**效果数字**（不是代价）时，原先只有代价有机器守卫。
+# 实测（2026-09-19，把【自愈】的 25% 改成 30% 再还原）：代价守卫全绿、索引逐字节守卫全绿
+# （索引只印代价与效果正文，效果正文来自 docstring，docstring 没跟着改就一起错），
+# 只有 2 条行为用例失败；而 AI_EXPERIENCE.md:391「恢复[目标]25X%已损生命」这类
+# **发布给 AI 的口径**没人看守，会静默与引擎相反。这两条把源头（引擎自己两处渲染）钉死。
+
+REVISION_NOTE = re.compile(r'（[^）]*20\d\d-[^）]*）\s*。?\s*$')
+PLAIN_NUMBER = re.compile(r'\d+')
+INDEX_DOC = "全道纹索引.md"
+# 正文里合法、但引擎 X=1 的 summary 里不会出现的数字（例如正文举 X=3 的例子）。
+# 登记名字＋理由；不要直接放宽断言。当前为空。
+DOCSTRING_NUMBER_EXEMPT: dict[str, str] = {}
+
+
+def _rule_line_parts(name: str) -> tuple[str, str]:
+    """引擎 docstring 首行 → (代价短语, 效果正文)。与生成器同一套解析口径。"""
+    doc = (DaoWenEngine._registry[name].__doc__ or "").strip()
+    assert doc, f"{name}: 没有 docstring，索引无从生成"
+    m = DOC_HEAD.match(doc.splitlines()[0].strip())
+    assert m, f"{name}: docstring 首行无法解析: {doc.splitlines()[0]!r}"
+    cm = DOC_SPLIT.match(m.group("rest"))
+    return (cm.group("cost"), cm.group("eff")) if cm else (m.group("rest"), "")
+
+
+def test_published_rule_numbers_are_backed_by_engine():
+    """docstring 首行效果正文里的每个数字，都必须是引擎在 X=1 真的算得出来的数字。
+
+    docstring 首行就是《全道纹索引》的效果正文（生成器逐字取用），也是人读的规则口径；
+    summary 是引擎运行时自己打印的口径。两处各写各的＝同一条规则有两个真源，
+    改一处忘另一处时，发布出去的正文会与引擎相反。
+    """
+    bad = []
+    for name in ALL_NAMES:
+        if name in DOCSTRING_NUMBER_EXEMPT:
+            continue
+        _, eff = _rule_line_parts(name)
+        eff = REVISION_NOTE.sub("", eff)          # 沿革注记不是现行口径，不参与比对
+        doc_nums = set(PLAIN_NUMBER.findall(eff))
+        try:
+            summary = _resolve(name, 1).get("summary", "")
+        except Exception:                          # 需要目标/上下文的道纹：由行为用例看守
+            continue
+        extra = doc_nums - set(PLAIN_NUMBER.findall(summary))
+        if extra:
+            bad.append(f"[{name}] 正文写了 {sorted(extra)}，引擎 X=1 的 summary 里没有\n"
+                       f"    正文: {eff.strip()[:76]}\n    summary: {summary[:76]}")
+    assert not bad, ("规则正文的数字与引擎不符（改了结算忘了改 docstring，或反之）：\n"
+                     + "\n".join(bad))
+
+
+HISTORY_WATERMARK = re.compile(r'20\d\d-\d\d-\d\d|DM裁定|已废止|旧版|此前口径|原名【')
+RULE_TEXT_LINE = re.compile(r'^X(?:/Y)?[：:]')
+
+
+def test_generated_index_rule_text_carries_no_history():
+    """《全道纹索引》是**注入 AI 提示词的发布物**：正文只写现行口径（正文红线）。
+
+    沿革留在引擎 docstring（代码注释不受限）、archive/ 与 check_rule_change.STALE_PHRASES。
+    本守卫之前实测到的真例：【逼债】的「（DM裁定D 2026-08-22：旧"否则失去2X点血限"废止）」
+    因为注记不以日期开头，生成器的 REVISION 抽不出来，整段沿革被印进了索引正文
+    （生成器注释还写着「渲染成 > 修订： 行」，而渲染代码从来不存在）。
+    """
+    lines = (ROOT / INDEX_DOC).read_text(encoding="utf-8").splitlines()
+    rule_lines = [(i, l) for i, l in enumerate(lines, 1) if RULE_TEXT_LINE.match(l)]
+    assert len(rule_lines) >= len(ALL_NAMES), (
+        f"只认出 {len(rule_lines)} 行规则正文，道纹有 {len(ALL_NAMES)} 条——"
+        f"行首格式变了？先修本守卫的 RULE_TEXT_LINE，别让它退化成扫不到任何东西")
+    bad = [f"{INDEX_DOC}:{i}: {l.strip()[:88]}"
+           for i, l in rule_lines if HISTORY_WATERMARK.search(l)]
+    assert not bad, "发布的规则正文里混进了沿革/日期水印：\n" + "\n".join(bad)
 
 
 if __name__ == "__main__":
