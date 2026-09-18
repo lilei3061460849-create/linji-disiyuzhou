@@ -140,7 +140,7 @@ def cast_shujin(player, monster, x):  # 赎金X：夺10X碎片（消耗10X）；
 
 
 def monster_round_start(m, activated):
-    """怪物回始被动：庇护（须已激活才生效；原始道纹只在首次发动时支付异变）。
+    """怪物回始被动：庇护（须已激活才生效；异变代价按道纹自身代价在发动时支付）。
 
     2026-09-18 用户令：【自愈】已重做为主动道纹（当场恢复[目标]25X%已损生命、代价冷却X 场），
     [回始]不再有自愈被动，其结算移到 monster_activate。
@@ -156,13 +156,17 @@ def monster_activate(m, activated, rng):
     成长型：疯狂X攻击出手+X；全力X攻击力+X；狂暴+1攻击出手；必中不可闪避；
     自愈X当场回复已损生命25X%（代价冷却X场，模拟器只打一场≈本场不再发动）；庇护回始生效
     控场型（对轮回者）：蒙蔽X下X次伤害无效；坏死禁疗；减速削其当前速度的10X%；僵化攻击力固定1
-    【异变计费接线，裁定②】原始怪物道纹以【异变】为代价：激活支付异变5×面板X；
-    达阈值触发【崩解】直接命零，返回"崩解:道纹名"，本次激活效果中断。
+    【异变计费接线】怪物发动道纹只按该道纹**自身**代价支付（2026-09-18 用户令删除
+    怪物「家族税」＝原始怪物道纹每次发动额外硬扣异变5X）：自身代价为【异变5X】的六条
+    原始道纹激活时付异变5×面板X，达阈值触发【崩解】直接命零，返回"崩解:道纹名"、
+    本次激活效果中断；自身代价为【冷却X】的【自愈】不再产生异变层数。
     """
     priority = ["疯狂", "全力", "狂暴", "必中", "蒙蔽", "坏死", "减速", "僵化", "自愈", "庇护", "飞行"]
+    # 自身代价为【异变5X】的原始怪物道纹（自愈的代价是【冷却X】，不计异变）
+    mutation_cost_original = tuple(n for n in CombatEngine.ORIGINAL_MONSTER_DAOWEN if n != "自愈")
     for g in priority:
         if g in m.dao_wen and g not in activated:
-            if g in CombatEngine.ORIGINAL_MONSTER_DAOWEN:
+            if g in mutation_cost_original:
                 pay = m.add_mutation(CombatEngine.YUANCHU_COST_RATE * m.dao_wen[g].x_value)
                 if pay["collapsed"]:
                     SIM_STATS["collapses"] += 1
@@ -171,8 +175,8 @@ def monster_activate(m, activated, rng):
             if g == "全力":
                 m.attack_power += m.dao_wen[g].x_value
             elif g == "自愈":
-                # 新版自愈：发动当下按已损生命25X%回复（向上取整）；怪物侧的家族税异变5X
-                # 已在上面统一支付，冷却X场由 activated 集合等价表达（本场不再二次发动）。
+                # 新版自愈：发动当下按已损生命25X%回复（向上取整）；代价只有冷却X场，
+                # 由 activated 集合等价表达（本场不再二次发动），不产生异变层数。
                 x = m.dao_wen[g].x_value
                 m.heal(math.ceil(max(0, m.blood_limit - m.current_hp) * 25 * x / 100))
             return g
@@ -462,7 +466,7 @@ def monster_can_pay_exclusive(m, g):
 
 
 # ===== 疯狂（2026-08-17 全局裁定；裁定⑫其余候选已归档删除 2026-08-11） =====
-# 现行（engine侧）：疯狂X → 所有角色出手次数+X，持续∞；异变5X仅在首次发动时支付。
+# 现行（engine侧）：疯狂X → 所有角色出手次数+X，持续∞；异变5X 是它自身的代价，每次实际发动都付一次。
 # 本模拟器镜像只覆盖怪物自身攻击出手+X（发动方视角与全局等价）；
 # 玩家侧与其他怪物的+X尚未建模，疯狂相关模拟数据须按 B6 重测后才可引用。
 # 已归档候选（AI_EXPERIENCE 追记4）：charges / flat / burst / half — 已从本文件彻底删除，仅保留 current。

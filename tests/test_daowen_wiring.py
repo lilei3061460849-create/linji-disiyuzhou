@@ -338,11 +338,12 @@ def test_ziyu_necrosis_blocks_and_invalid_x():
     assert p.current_hp == 30, "【坏死】禁疗期间自愈不得回血"
 
 
-def test_ziyu_monster_activate_heals_at_once_and_pays_family_tax():
-    """正常：怪物激活新版自愈＝当场奶选定目标，并同时付「异变5X 家族税 + 冷却X」两份代价。
+def test_ziyu_monster_activate_heals_at_once_and_pays_only_cooldown():
+    """正常：怪物激活新版自愈＝当场奶选定目标，代价只有自身的【冷却X】。
 
-    家族税来自《怪物准则》：原始怪物道纹每次发动都支付异变5X（resolve_monster_phase 的
-    硬编码支付点），与道纹自身代价并存；轮回者侧只付自身代价（见 test_ziyu_cast_heals_target_immediately）。
+    2026-09-18 用户令：删除怪物「家族税」（旧口径＝原始怪物道纹每次发动都额外硬扣
+    异变5X），怪物与轮回者同口径按道纹自身 calc 付代价；【自愈】自身代价是【冷却X】，
+    所以怪物侧不再产生任何异变层数（见 test_ziyu_cast_heals_target_immediately）。
     自愈需显式选定[目标]，prepare 必须给出 target_options（含自己）。
     """
     import math
@@ -370,7 +371,7 @@ def test_ziyu_monster_activate_heals_at_once_and_pays_family_tax():
     assert resolved["success"], resolved
     assert m.current_hp == 40 + math.ceil(60 * 25 / 100), f"已损60 的 25% = 15，实 hp={m.current_hp}"
     assert not m.has_status("自愈"), "新版自愈不挂持续状态"
-    assert m.mutation_count == 5, f"家族税 异变5×1，实{m.mutation_count}"
+    assert m.mutation_count == 0, f"家族税已删除：自愈只付冷却X，不得再计异变，实{m.mutation_count}"
     assert m.dao_wen["自愈"].cooldown_remaining == 1
 
 

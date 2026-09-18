@@ -41,8 +41,10 @@ class CombatEngine:
     
     # 原始怪物道纹（道纹归属规则：各组起点）——【原初X】可借用范围
     ORIGINAL_MONSTER_DAOWEN = ("狂暴", "全力", "疯狂", "减速", "必中", "自愈", "飞行")
-    # 原始怪物道纹每次实际发动时支付异变5X（X 恒为面板/借用时写定的值；
-    # 2026-09-16 用户令：道纹递增机制已废止）；效果持续期间（未再次发动）不再重复计费。
+    # 【原初X】借用一种原始怪物道纹的门票＝异变5X（execute_evolution 直接结算）。
+    # 2026-09-18 用户令：删除怪物「家族税」（旧口径＝原始怪物道纹每次发动都额外付
+    # 异变5X）。发动时只按各道纹自身正文代价支付——狂暴/全力/疯狂/减速/必中/飞行
+    # ＝异变5X，自愈＝冷却X——一律走统一代价总线，怪物与轮回者/同伴同口径。
     # 必中为次数型（下X次选择[目标]无法闪避），余数记在 entity._bizhong_left。
     YUANCHU_COST_RATE = 5
     # 波及X（2026-08-21）：你发动的道纹同时作用于所有拥有波及效果的目标。
@@ -3421,8 +3423,12 @@ class CombatEngine:
             cost_spec = ("衰老", calc["cost_blood_limit"], "aging_cost")
         elif "cost_speed" in calc:
             cost_spec = ("疲惫", calc["cost_speed"], "fatigue_cost")
-        elif "cost_mutation" in calc and caster.entity_type != "怪物":
-            # 怪物原始道纹在两阶段怪物流程中已先支付异变5X；此处只补轮回者/同伴的同类代价。
+        elif "cost_mutation" in calc:
+            # 2026-09-18 用户令：删除怪物侧「家族税」硬编码支付点。异变代价一律按道纹
+            # 自身 calc 走统一代价总线，怪物与轮回者/同伴同口径（《怪物准则》第5条
+            # 「发动代价类道纹时必须照常支付对应代价」）。此前怪物被本分支排除、改由
+            # resolve_monster_phase 里按「原始怪物道纹每次发动付异变5X」硬扣，导致
+            # 【自愈】这类自身代价为【冷却X】的道纹在怪物侧被额外扣一份异变。
             cost_spec = ("异变", calc["cost_mutation"], "mutation_cost")
         if cost_spec is not None:
             cost_type, amount, effect_type = cost_spec
@@ -3441,6 +3447,14 @@ class CombatEngine:
             result["effects"].append(cost_effect)
         elif cost_share_target_ref:
             raise ValueError("该道纹没有可由【血契】共同承担的数值代价")
+        # 代价把自己打死（【异变】达50层→【崩解】命零）时道纹效果中断：这条口径原先
+        # 写在怪物阶段的家族税支付点上（支付→崩解→early return），2026-09-18 删除家族税、
+        # 异变代价改走统一总线后落到这里，对怪物与轮回者同样成立。
+        # 只认「异变」这一种代价：流血/衰老类代价致死仍按既有口径结算完效果。
+        if cost_spec is not None and cost_spec[0] == "异变" and not caster.is_alive:
+            result["effects"].append({"type": "interrupted_by_cost", "cost_type": "异变",
+                                      "collapsed": True, "caster": caster.name})
+            return result
         if "mana_gain" in calc:
             caster.current_mana += calc["mana_gain"]
             self.clamp_immortal_body(caster)
@@ -5502,16 +5516,12 @@ class CombatEngine:
             # "付不起"上限，探测会一路撞上试探封顶值。这里按生存线封顶——
             # 允许叠加到崩解线之前，但**不把"当场自爆"的 X 当成合法选项**。
             # （是否值得逼近崩解线由 AI 预演评分自行权衡，引擎只保证不主动提供自杀档。）
-            # 原始怪物道纹的**家族税**：怪物侧每次发动都按 异变5X 支付
-            # （resolve_monster_phase 的硬编码支付点），与 calc 自身的 cost_type 无关。
-            # 2026-09-18【自愈】重做为「代价：冷却X」后，它的 calc 不再声明异变，
-            # 只按 cost_type 判断就会漏掉这份税 → 探测会把"当场自爆"的 X 当合法选项
-            # （_DAOWEN_X_PROBE_CAP=30，异变150 远超崩解线50）。其余六条原始道纹
-            # calc 本来就是 异变5X，取 max 后行为不变。
-            mutation_tax = (calc.get("cost_mutation", 0)
-                            if calc.get("cost_type") == "异变" else 0)
-            if effective_name in self.ORIGINAL_MONSTER_DAOWEN:
-                mutation_tax = max(mutation_tax, self.YUANCHU_COST_RATE * x)
+            # 2026-09-18 用户令删除怪物「家族税」后：怪物要付的异变＝道纹自身 calc
+            # 声明的量，取值口径必须与统一代价总线一致——总线按 流血/衰老/疲惫 优先、
+            # 异变排第四位，故只有前三种代价都不存在时才会真的付异变。
+            mutation_tax = 0
+            if not any(k in calc for k in ("cost_hp", "cost_blood_limit", "cost_speed")):
+                mutation_tax = calc.get("cost_mutation", 0)
             if mutation_tax:
                 headroom = (Entity.MUTATION_COLLAPSE_THRESHOLD
                             - getattr(monster, "mutation_count", 0))
@@ -5525,6 +5535,23 @@ class CombatEngine:
                 break
             best = x
         return best
+
+    def _monster_collapse_marker(self, monster: Entity, name: str,
+                                 execution: dict) -> dict | None:
+        """怪物付【异变】代价当场【崩解】时，按旧支付点的口径回报 collapsed 标记。
+
+        2026-09-18 删除家族税后，异变代价改在 apply_daowen_effect 的统一代价总线里结算，
+        总线只留一条 `interrupted_by_cost` 效果；怪物阶段的公开返回值仍须带
+        `{"collapsed": 道纹名}`（tests/test_engine.py 与 sim/ 各驱动都读这个键）。
+        非异变代价致死（如流血）不进本分支，照旧带 execution 正常返回。
+        """
+        if monster.is_alive:
+            return None
+        if not any(ef.get("type") == "interrupted_by_cost" and ef.get("collapsed")
+                   for ef in (execution or {}).get("effects", [])):
+            return None
+        return {"monster": monster.name, "collapsed": name,
+                "note": "支付异变后触发【崩解】，道纹效果中断"}
 
     def _resolve_monster_daowen_choice(
         self, monster: Entity, choice: dict, refs: dict[str, Entity], activated: set,
@@ -5674,31 +5701,14 @@ class CombatEngine:
             consumed = self.consume_resonance_rewrite(monster, name)
             if consumed != rewritten_as:
                 raise ValueError("残韵改写已变化，请重新prepare_monster_phase")
-        # 原始怪物道纹发动时支付异变5X；选择导致崩解仍是合法结算，效果中断。
-        elif name in self.ORIGINAL_MONSTER_DAOWEN:
-            paid = monster.add_mutation(self.YUANCHU_COST_RATE * effective_x)
-            if paid["collapsed"]:
-                # 修复：此前直接 return，崩解死者从不进入统一死亡管线
-                # （不产生 _death_ctx、不进 dead_monsters、不触发焦黑发丝/分裂）。
-                self._on_entity_death(monster, ctx=self._collapse_context(monster, {
-                    "timing": "monster_action", "source": name, "source_type": "daowen",
-                    "actor": monster, "target": monster, "mechanic": "cost",
-                    "subtype": "mutation", "amount": self.YUANCHU_COST_RATE * effective_x,
-                    "tags": {"daowen", "active_payment"}}))
-                return {"monster": monster.name, "collapsed": name,
-                        "note": "支付异变后触发【崩解】，道纹效果中断"}
-        elif name == "封印":
-            # 怪物侧若持有【封印】，同样按新版口径支付异变X；玩家【封印】才会
-            # 把目标怪物放入延迟回场队列。
-            paid = monster.add_mutation(effective_x)
-            if paid["collapsed"]:
-                self._on_entity_death(monster, ctx=self._collapse_context(monster, {
-                    "timing": "monster_action", "source": name, "source_type": "daowen",
-                    "actor": monster, "target": monster, "mechanic": "cost",
-                    "subtype": "mutation", "amount": effective_x,
-                    "tags": {"daowen", "active_payment"}}))
-                return {"monster": monster.name, "collapsed": name,
-                        "note": "支付异变后触发【崩解】，道纹效果中断"}
+        # 2026-09-18 用户令：删除怪物「家族税」。此前这里硬编码两个支付点——「原始怪物
+        # 道纹每次发动付异变5X」与「怪物侧【封印】付异变X」——与道纹自身代价并存，
+        # 于是【自愈】这类自身代价为【冷却X】的道纹在怪物侧被扣两份（冷却X＋异变5X）。
+        # 现在异变代价一律按 calc 走统一代价总线（apply_daowen_effect 的 cost_mutation
+        # 分支），怪物与轮回者/同伴同口径；付异变达阈值仍【崩解】命零且效果中断，
+        # 死者由 _apply_numeric_cost_part → _on_entity_death 进统一死亡管线。
+        # 只有真碎片类代价（赌命/消灾）不走总线，保留原地的硬编码支付；
+        # 它们仍是 rewritten_as 的 elif 分支——残韵改写那次不付源道纹代价。
         elif name == "赌命":
             if monster.fake_shards < effective_x:
                 raise ValueError(f"{monster.name}假碎片不足，不能发动【赌命】")
@@ -5745,6 +5755,9 @@ class CombatEngine:
             execution = self.apply_daowen_effect(effective_name, calc, monster, target)
             execution["wave_marked"] = wave_marked
             execution["wave_unmarked"] = wave_unmarked
+            collapsed = self._monster_collapse_marker(monster, name, execution)
+            if collapsed is not None:
+                return collapsed
             return {"monster": monster.name, "daowen_activated": name, "x": effective_x,
                     "resolves_as": effective_name, "resonance_rewrite": bool(rewritten_as),
                     "target": target.name, "execution": execution,
@@ -5772,6 +5785,9 @@ class CombatEngine:
             effective_name, calc, monster, target,
             aoe_targets_override=aoe_targets_override,
         )
+        collapsed = self._monster_collapse_marker(monster, name, execution)
+        if collapsed is not None:
+            return collapsed
         return {"monster": monster.name, "daowen_activated": name, "x": effective_x,
                 "resolves_as": effective_name, "resonance_rewrite": bool(rewritten_as),
                 "target": target.name, "execution": execution,
