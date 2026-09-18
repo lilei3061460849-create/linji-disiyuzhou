@@ -530,6 +530,7 @@ def main() -> None:
             sc_fac = {}
             for a in actors:
                 dao = None
+                opt = None
                 opts = a.get("daowen_options") or []
                 if opts:
                     opt = _pick_monster_daowen(engine, a)
@@ -559,7 +560,18 @@ def main() -> None:
                     attacks.append({"hits": [{"target_ref": tgt, "dodge": want, "blood_shadow": False,
                                               "spell_choices": _mk_sc()} for _j in range(hits_n)]})
                 sc_fac[a["actor_ref"]] = _mk_sc
-                choices.append({"actor_ref": a["actor_ref"], "daowen": dao, "attack_actions": attacks})
+                _choice = {"actor_ref": a["actor_ref"], "daowen": dao, "attack_actions": attacks}
+                # x_free 道纹的 X 由战术评分器决定（照 sim/duel_common.py:97-103 的口径）：
+                # 引擎在提交方缺 x 时回退到"可负担上限"（engine/combat.py:5549-5560），
+                # 那会让怪物一律开满 X 自废/自爆；必须在**完整 choice 拼好之后**再评分。
+                if dao is not None and opt and opt.get("x_free"):
+                    from sim.monster_targets import pick_monster_daowen_x
+                    _mi = int(a["actor_ref"].split(":", 1)[1]) if ":" in a["actor_ref"] else 0
+                    _mon = engine.state.enemies[_mi] if 0 <= _mi < len(engine.state.enemies) else None
+                    if _mon is not None:
+                        dao["x"] = pick_monster_daowen_x(engine, _mon, opt, _choice, token)
+                        print(f"    ↳ 战术选X：{opt['name']} → X={dao['x']}（上限 {opt.get('max_x')}）")
+                choices.append(_choice)
             print("  怪侧裁定AI选择:", [(c["actor_ref"], (c["daowen"] or {}).get("name"),
                                         (c["daowen"] or {}).get("target_ref")) for c in choices],
                   "我方闪避:", want)
