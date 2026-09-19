@@ -903,7 +903,7 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_shujin(x: int, target: Entity = None) -> dict:
-        """赎金X：消耗3X。夺取目标10X碎片；若无碎片则失去X点速度"""
+        """赎金X：消耗3X。夺取目标10X碎片；若目标没有碎片，则其失去X点当前速度"""
         target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "赎金", "x": x, "cost_type": CostType.MANA.value, "cost": 3 * x,
@@ -913,7 +913,7 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_jiachao(x: int) -> dict:
-        """假钞X：消耗X。获得10X假碎片"""
+        """假钞X：消耗X。获得10X假碎片（战斗中失去[碎片]时优先失去[假碎片]）"""
         return {
             "dao_wen": "假钞", "x": x, "cost_type": CostType.MANA.value, "cost": x,
             "fake_shards": 10 * x,
@@ -953,7 +953,7 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_nilin(x: int, target: Entity = None) -> dict:
-        """逆鳞X：代价：流血X。目标每失去1生命获得1层逆鳞，下次伤害+全部层数，持续X"""
+        """逆鳞X：代价：流血X。目标每失去1点生命获得1层【逆鳞】；其下一次造成伤害时伤害+全部层数，随后清除全部层数，持续X"""
         target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "逆鳞", "x": x, "cost_type": CostType.BLEED.value, "cost_hp": x,
@@ -963,7 +963,7 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_huoxue(x: int, target: Entity = None) -> dict:
-        """活血X：消耗X。目标每累计失去2生命，回终获得回复1，持续X"""
+        """活血X：消耗X。目标每个完整回合内每累计失去2点生命，[回终]获得[回复1]；未满2点的余数在[回终]清空，持续X"""
         target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "活血", "x": x, "cost_type": CostType.MANA.value, "cost": x,
@@ -973,7 +973,7 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_liebian(x: int, target: Entity = None) -> dict:
-        """裂变X：消耗2X。使目标受到伤害改为分X次结算，持续∞"""
+        """裂变X：消耗2X。使目标受到伤害改为分X次结算，每次结算的伤害＝原伤害÷X（依整数规则向上取整），持续∞"""
         target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "裂变", "x": x, "cost_type": CostType.MANA.value, "cost": 2 * x,
@@ -1017,7 +1017,7 @@ class DaoWenEngine:
 
     @staticmethod
     def calculate_fenlie(x: int, y: int = 1) -> dict:
-        """分裂X/Y：代价：衰老X×10Y。创造X个10Y[血限]的自身复制体（2026-09-17 用户令重做）。
+        """分裂X/Y：代价：衰老X×10Y。创造X个10Y[血限]的自身复制体（复制体继承本体除【分裂】外的全部道纹，防止无限套娃）（2026-09-17 用户令重做）。
 
         双参数道纹（引擎首个）：
           X = 复制体**数量**
