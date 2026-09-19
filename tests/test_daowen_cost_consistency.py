@@ -340,6 +340,70 @@ def test_generated_index_rule_text_carries_no_history():
            for i, l in rule_lines if HISTORY_WATERMARK.search(l)]
     assert not bad, "发布的规则正文里混进了沿革/日期水印：\n" + "\n".join(bad)
 
+# ========================================================================
+# 发布正文与引擎「各说各话」的守卫（勾魂那一类）
+# ========================================================================
+# 数字对得上不代表规则是同一件事：实测【勾魂】的 docstring 首行写「使[目标]无法获得[法力]」，
+# 而它自己的实现返回 mana_cost_multiplier=2（combat_parts/daowen_effect.py:761 消费）、
+# summary 写「法力消耗翻倍」——数字守卫全绿（首行没有数字），索引却把 2026-08-30 的旧口径
+# 发布给了 AI。本条用「措辞重叠度」兜住这一类：docstring 首行效果段与 summary 效果段
+# 的字符二元组 Jaccard 低于阈值即报警。阈值分不开"换了说法"与"换了规则"
+# （搏命/透支 语义相同也是 0.00），所以靠下面这张**带理由**的豁免表区分：
+# 新增低重叠的道纹要么改正、要么登记理由，不许直接调阈值。
+WORDING_DRIFT_THRESHOLD = 0.22
+WORDING_STOP = set('使未选定目标其持续回合点获得无法所有自身本场每后前时X0123456789，。；：（）[]【】∞')
+WORDING_EXEMPT: dict[str, str] = {
+    "搏命": "正文「你获得X点法力」/summary「获得1点法力」：差第二人称与 X→1，语义同",
+    "透支": "同搏命：正文「你获得X点法力」/summary「获得1点法力」",
+    "镇尸": "正文「无法获得[回复]」/summary「无法获得回复」：只差方括号",
+    "瓦解": "正文「[血限]减少10X%」/summary「血限-10%」：减少↔减号写法",
+    "龙鳞": "正文「每次受到伤害-X，最低为0，持续∞」/summary「每次受伤-1(最低0)，永久」：受伤↔受到伤害、∞↔永久",
+    "增殖": "正文「［目标］［血限］+X」/summary「血限+1」：全角括号与 X→1",
+    "伤痕": "正文「每次失去生命后血限-X，持续∞」/summary「每次掉血后血限-1，永久」：失去生命↔掉血",
+    "畸变": "正文写代数式(攻击力×攻击次数)，summary 在无目标时算成「0血限（0×0）」：同一公式的两种呈现",
+    "活血": "正文「每累计失去2点生命…获得[回复1]」/summary「每失去2HP回终回复1」：点生命↔HP",
+    "赎金": "正文「夺取10X碎片；若无碎片则失去X点速度」/summary「夺取 10碎片或1速度」：分号句↔或句",
+}
+
+
+def _bigrams(s: str) -> set:
+    s = "".join(ch for ch in s if ch not in WORDING_STOP)
+    return {s[i:i + 2] for i in range(len(s) - 1)} or ({s} if s else set())
+
+
+def test_published_rule_wording_matches_engine():
+    """docstring 首行效果段（＝发布到索引的正文）与引擎 summary 效果段必须说的是同一件事。
+
+    低重叠＝要么换了说法（登记进 WORDING_EXEMPT 并写理由），要么换了规则（改正）。
+    """
+    flagged = {}
+    for name in ALL_NAMES:
+        _, eff = _rule_line_parts(name)
+        eff = REVISION_NOTE.sub("", eff).strip()
+        try:
+            summary = _resolve(name, 1).get("summary", "")
+        except Exception:
+            continue
+        se = summary.split("，", 1)[1] if "，" in summary else summary
+        if not eff or not se:
+            continue
+        a, b = _bigrams(eff), _bigrams(se)
+        j = len(a & b) / max(1, len(a | b))
+        if j < WORDING_DRIFT_THRESHOLD:
+            flagged[name] = (j, eff, se)
+    unexpected = sorted(set(flagged) - set(WORDING_EXEMPT))
+    detail = "\n".join(
+        f"  [{n}] 重叠 {flagged[n][0]:.2f}\n    正文: {flagged[n][1][:72]}\n    summary: {flagged[n][2][:72]}"
+        for n in unexpected)
+    assert not unexpected, (
+        "发布正文与引擎 summary 说的不像同一件事（勾魂那一类：数字对得上、规则却是旧的）：\n"
+        + detail + "\n要么按实现改正 docstring 首行，要么登记进 WORDING_EXEMPT 并写明理由。")
+    assert all(v.strip() for v in WORDING_EXEMPT.values()), "豁免必须写理由"
+    stale = sorted(set(WORDING_EXEMPT) - set(flagged))
+    assert not stale, (
+        f"这些豁免已经用不上了（重叠度已达标），请从 WORDING_EXEMPT 删掉：{stale}")
+
+
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

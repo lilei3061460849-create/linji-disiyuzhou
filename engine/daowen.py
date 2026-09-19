@@ -802,15 +802,15 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_baolie(x: int) -> dict:
-        """爆裂X：消耗2X。受到伤害后，攻击者失去等量生命，持续X"""
+        """爆裂X：消耗2X。受到伤害前，攻击者失去等量生命，持续X（持续回合数在持有者的[敌回终]递减）"""
         return {
             "dao_wen": "爆裂",
             "x": x,
             "cost_type": CostType.MANA.value,
             "cost": 2 * x,
             "duration": x,
-            "effect": "受到伤害后，攻击者失去等量生命",
-            "summary": f"消耗{2 * x}法力，受到伤害后攻击者失去等量生命，持续{x}回合"
+            "effect": "受到伤害前，攻击者失去等量生命",
+            "summary": f"消耗{2 * x}法力，受到伤害前攻击者失去等量生命，持续{x}回合"
         }
     
     @staticmethod
@@ -1088,7 +1088,7 @@ class DaoWenEngine:
 
     @staticmethod
     def calculate_gouhun(x: int, target: Entity = None) -> dict:
-        """勾魂X：消耗X。使[目标]无法获得[法力]，持续X。
+        """勾魂X：消耗X。使[目标]法力消耗翻倍，持续X。
 
         改版（2026-08-30，DM 裁定见 报告.md 硬伤2-C）：
         旧版为「[回始]使[目标]失去2X点当前法力，持续∞」——永久扣法力对输出决策
