@@ -29,10 +29,17 @@ from engine.daowen import DaoWenEngine  # noqa: E402
 
 DaoWenEngine.register_all()
 
-# ---- docstring 首行解析（与 sim/gen_daowen_index.py 同口径）----
-DOC_HEAD = re.compile(r'^\S+?(?P<head>X(?:/Y)?)(?:（[^）]*）)?[：:]\s*(?P<rest>.+)$')
-DOC_SPLIT = re.compile(r'^(?P<cost>.+?)(?:。|，)\s*(?P<eff>.*)$')
-COST_PREFIX = ("代价：", "消耗", "冷却", "流血", "疲惫", "异变", "衰老", "枯竭", "萎缩", "失忆")
+# ---- docstring 首行解析：与两个生成器**共用同一份**（共享层 `sim/daowen_doc.py`）----
+# 此前这里自己抄了一份正则（注释写「与 sim/gen_daowen_index.py 同口径」），于是首行格式一放宽
+# 就要同步改三处（本守卫／索引生成器／区域生成器）——①-B 抽出共享层就是为消掉这种拷贝。
+if str(ROOT / "sim") not in sys.path:
+    sys.path.insert(0, str(ROOT / "sim"))
+from daowen_doc import (  # noqa: E402
+    COST_PREFIX,
+    DOC_HEAD,
+    DOC_SPLIT,
+    REVISION as REVISION_NOTE,
+)
 
 # 代价类型 → (代价字段, summary 开头该怎么写)
 COST_FIELD = {"消耗": "cost", "冷却": "cost", "异变": "cost_mutation", "流血": "cost_hp",
@@ -225,12 +232,18 @@ def test_rule_docs_cost_numbers_match_engine():
     数字各归各主。日期化的历史结案记录（如「坏死设计=…（消耗5X」）不带 `名字X`
     形式，不在本条约束内——沿革留在变更记录里，正文只写现行口径。
     """
-    ratio, unit = {}, {}
+    ratio, unit, dual_param = {}, {}, set()
     for name in ALL_NAMES:
         r = _resolve(name, 1, y=1)
         ct = r["cost_type"]
         unit[name] = UNIT_OF_TYPE[ct]
         ratio[name] = _expected_tokens(name, r)[0]
+        # 双参数道纹（现仅【分裂】：X=数量、Y=规模档）的代价是**两个参数的公式**
+        # 「衰老X×10Y」，套不进「每X倍率」模型——按倍率比会要求写成「衰老10X」，
+        # 那对 Y≠1 就是错的。这里跳过，由 test_dual_param_cost_formula_matches_engine
+        # 用引擎真实计算正向钉住（跳过≠不看守）。
+        if "y" in r:
+            dual_param.add(name)
 
     bad = []
     for path in _doc_rule_files():
@@ -243,6 +256,8 @@ def test_rule_docs_cost_numbers_match_engine():
                               if pos < cm.start() and cm.start() - pos <= 24), None)
                 if owner is None:
                     continue
+                if owner in dual_param:
+                    continue
                 written_unit, n = cm.group(1), int(cm.group(2) or 1)
                 if written_unit != unit[owner]:
                     bad.append(f"{path.name}:{lineno} [{owner}] 代价类型写成 {written_unit}，"
@@ -251,6 +266,23 @@ def test_rule_docs_cost_numbers_match_engine():
                     bad.append(f"{path.name}:{lineno} [{owner}] 写 {written_unit}{n}X，"
                                f"引擎是 {written_unit}{ratio[owner]}X")
     assert not bad, "文档代价数字与引擎不符：\n" + "\n".join(bad)
+
+
+def test_dual_param_cost_formula_matches_engine():
+    """双参数道纹（X/Y）的发布正文必须写公式，且公式与引擎的真实计算一致。
+
+    上面的每X倍率守卫跳过它们（模型不适用），所以在这里正向钉住：
+    正文出现「衰老X×10Y」这一公式串，且引擎在两个采样点上算出的代价等于该公式。
+    将来再加双参数道纹时，这条会因为没有对应断言而**不会**自动放过——按同样写法补一条。
+    """
+    dual = [n for n in ALL_NAMES if "y" in _resolve(n, 1, y=1)]
+    assert dual == ["分裂"], f"双参数道纹清单变了（{dual}）：请同步本条与每X倍率守卫的跳过理由"
+    text = "\n".join(p.read_text(encoding="utf-8") for p in _doc_rule_files())
+    assert "衰老X×10Y" in text, "分裂的代价公式没写进任何手写规则文档（正文只写现行口径＝公式本身）"
+    for x, y in ((1, 1), (3, 2)):
+        r = _resolve("分裂", x, y=y)
+        assert r["cost_blood_limit"] == x * 10 * y, (x, y, r["cost_blood_limit"])
+        assert r["clone_hp"] == 10 * y and r["split_clones"] == x
 
 
 # ========================================================================
@@ -275,7 +307,6 @@ def test_unknown_cost_type_is_not_silently_ignored():
 # 只有 2 条行为用例失败；而 AI_EXPERIENCE.md:391「恢复[目标]25X%已损生命」这类
 # **发布给 AI 的口径**没人看守，会静默与引擎相反。这两条把源头（引擎自己两处渲染）钉死。
 
-REVISION_NOTE = re.compile(r'（[^）]*20\d\d-[^）]*）\s*。?\s*$')
 PLAIN_NUMBER = re.compile(r'\d+')
 INDEX_DOC = "全道纹索引.md"
 # 正文里合法、但引擎 X=1 的 summary 里不会出现的数字（例如正文举 X=3 的例子）。

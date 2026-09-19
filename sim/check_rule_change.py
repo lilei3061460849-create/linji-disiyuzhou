@@ -39,6 +39,8 @@ sys.path.insert(0, str(ROOT))
 
 INDEX = "全道纹索引.md"
 GENERATOR = "sim/gen_daowen_index.py"
+# 副本区域的「道纹网络」整节同样是派生产物（①-B：文档从引擎生成）
+REGION_GENERATOR = "sim/gen_region_daowen.py"
 
 GUARD_TESTS = [
     "tests/test_daowen_cost_consistency.py",
@@ -54,6 +56,9 @@ GUARD_TESTS = [
     "tests/test_employee_economy.py",
     "tests/test_xijie_and_bizhong.py",
     "tests/test_ledger_isolation.py",
+    # ①-B：副本区域整节＝派生产物；rule_sync 从这些文档抽道纹（引擎运行时读它）
+    "tests/test_region_daowen_generated.py",
+    "tests/test_rule_sources.py",
 ]
 # 注：「同 seed 可复现」不在子集里（那条用例单跑约 29s，会把 7 秒的自检拖成半分钟）；
 # 要验复现性跑 sim/diag_repro.py（--quick 更快），它顺带做 L7 账本垃圾键审计。
@@ -106,6 +111,12 @@ STALE_PHRASES: list[tuple[tuple[str, ...], str]] = [
     (("减速", "速度减半"), "【减速X】2026-09-18 重做＝失去当前速度的10X%"),
     (("攻击次数/3",), "微光者出手＝攻击次数/3 已废止（全体固定 2 次出手）"),
     (("否则失去2X点血限",), "【逼债X】旧口径 2026-08-22 DM裁定D 废止（现行＝无力支付记为负债、碎片扣负）"),
+    # 正则：同行里「点金」与「夺取」挨近才算命中——现行注记写的是「状态【洗劫】及其
+    # 「造成伤害时夺取等量碎片」机制保留」，同行没有「点金」二字，不会误报。
+    (r"点金.{0,24}夺取",
+     "【点金】2026-09-10 与伤害脱钩（前身【洗劫】的夺碎片只保留在状态【洗劫】，由【帮派令】[战始]发放）"),
+    (("本体血限20%的复制体",),
+     "【分裂】2026-09-17 重做＝即时创造、代价衰老X×10Y；旧口径挂[命零]且按本体血限20%（副本正文已剥离）"),
     # 2026-09-19 实测「发布正文与实现相反」后更正的六条（详见 报告.md 6.16）
     (("勾魂", "失去2X点当前法力"), "【勾魂X】最旧口径（永久扣法力）2026-08-30 废止"),
     (("勾魂", "无法获得[法力]"), "【勾魂X】2026-09-09 DM裁定改「法力消耗翻倍」：法力一池制后「无法获得法力」失去作用对象"),
@@ -135,12 +146,33 @@ def step_index(args) -> bool:
     after = hashlib.md5(path.read_bytes()).hexdigest()
     if before == after:
         print(f"   ✓ {INDEX} 与引擎同源（无变化）")
-        return True
+        return step_region_docs(args)
     print(f"   ✗ {INDEX} 被重生成改动 → 你改了引擎口径但没重生成索引；已替你生成好，记得 git add")
     d = subprocess.run(["git", "diff", "--stat", "--", INDEX], cwd=ROOT,
                        capture_output=True, text=True).stdout.strip()
     if d:
         print(f"     {d}")
+    return args.strict is False and step_region_docs(args)
+
+
+def step_region_docs(args) -> bool:
+    """1b) 副本/*.md 的「道纹网络」整节：重跑生成器，比对该不该变。
+
+    与索引同款口径——这四块是**派生产物**（源＝引擎 docstring 首行＋CLOSED_LOOPS＋NOTES），
+    手改生成块或改了引擎忘记重跑都要在这里被拦住。
+    """
+    print("   ── 副本区域「道纹网络」整节（已实现四区）")
+    r = subprocess.run([sys.executable, REGION_GENERATOR], cwd=ROOT, capture_output=True, text=True)
+    if r.returncode != 0:
+        print(f"   ✗ 生成器失败：{(r.stderr or r.stdout).strip()[-400:]}")
+        return False
+    out = r.stdout.strip()
+    if out.startswith("unchanged"):
+        print("   ✓ 副本区域整节与引擎同源（无变化）")
+        return True
+    print("   ✗ 副本区域整节被重生成改动 → 改了引擎口径/闭环没重生成；已替你生成好，记得 git add")
+    for ln in out.splitlines():
+        print(f"     {ln}")
     return args.strict is False
 
 

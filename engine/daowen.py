@@ -718,7 +718,7 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_dingxing(x: int, target: Entity = None) -> dict:
-        """定型X：消耗2X。使[目标]攻击次数与攻击力无法被改变，持续X"""
+        """定型X：消耗2X。使[目标]攻击次数与攻击力无法被改变（增减都挡），持续X"""
         target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "定型",
@@ -727,7 +727,7 @@ class DaoWenEngine:
             "cost": 2 * x,
             "duration": x,
             "effect": "攻击次数与攻击力无法被改变",
-            "summary": f"消耗{2 * x}法力，使{target_name}攻击次数与攻击力无法被改变，持续{x}回合"
+            "summary": f"消耗{2 * x}法力，使{target_name}攻击次数与攻击力无法被改变（增减都挡），持续{x}回合"
         }
     
     @staticmethod
@@ -772,7 +772,7 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_chaopin(x: int) -> dict:
-        """超频X：消耗2X。使[目标]速度+X（2026-09-17 用户令：改为自由选择目标）
+        """超频X：消耗2X。使[目标]速度+X（目标可自由指定：自己/队友/敌人）
 
         目标由发动方自由指定，选到谁就给谁加速度——可以给自己，也可以给队友
         或敌人。旧版写作"使自身速度+X"，但实现一直是给 target 加速，文案与
@@ -784,7 +784,7 @@ class DaoWenEngine:
             "cost_type": CostType.MANA.value,
             "cost": 2 * x,
             "speed_boost": x,
-            "summary": f"消耗{2*x}法力，[目标]速度+{x}"
+            "summary": f"消耗{2*x}法力，[目标]速度+{x}（目标可自由指定）"
         }
     
     @staticmethod
@@ -1025,7 +1025,7 @@ class DaoWenEngine:
 
     @staticmethod
     def calculate_fenlie(x: int, y: int = 1) -> dict:
-        """分裂X/Y：代价：衰老X×10Y。创造X个10Y[血限]的自身复制体（复制体继承本体除【分裂】外的全部道纹，防止无限套娃）（2026-09-17 用户令重做）。
+        """分裂X/Y：代价：衰老X×10Y。创造X个[血限]与生命均为10Y的自身复制体（复制体继承本体除【分裂】外的全部道纹，防止无限套娃）（2026-09-17 用户令重做）。
 
         双参数道纹（引擎首个）：
           X = 复制体**数量**
@@ -1044,7 +1044,7 @@ class DaoWenEngine:
             "dao_wen": "分裂", "x": x, "y": y,
             "cost_type": CostType.AGING.value, "cost_blood_limit": x * clone_hp,
             "split_clones": x, "clone_hp": clone_hp,
-            "summary": f"衰老{x * clone_hp}，创造{x}个{clone_hp}血限的自身复制体"
+            "summary": f"衰老{x * clone_hp}，创造{x}个血限与生命均为{clone_hp}的自身复制体"
         }
 
     @staticmethod
