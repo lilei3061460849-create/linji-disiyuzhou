@@ -365,7 +365,7 @@ def test_pick_monster_daowen_uses_round_used_not_activated():
     actor = _pick_actor()
 
     # activated 含全部候选（跨回合持续激活），但 round_used 为空 → 仍可正常选择
-    e.combat._monster_activated[m.runtime_id] = {"赎金", "减速", "蒙蔽"}
+    e.combat._monster_activated[id(m)] = {"赎金", "减速", "蒙蔽"}
     pick = _pick_monster_daowen(e, actor)
     assert pick is not None, "activated 不应阻止跨回合再次选择"
 
@@ -391,59 +391,3 @@ def test_pick_monster_daowen_cross_round_reuse():
     # 跨回合：current_round 变化后 round_used 自动清空 → 赎金重新可选
     e.state.current_round += 1
     assert _pick_monster_daowen(e, actor) is not None
-
-
-def test_guard_counts_as_ally_action_for_mediocrity():
-    """2026-09-18 用户裁定（报告 Q5）：**护卫算[朋友]/[员工]当回合的一次出手**。
-
-    纯护卫的盟友（本回合不攻击、不发动道纹，只替轮回者扛伤）不得被【凡庸】炸裂：
-    「未出手」计数清零（视为已出手）、「未使敌掉血」计数冻结不推进（不清零，
-    护卫次数用尽后接着累计）。旧口径下纯护卫的员工五回合必死（手操战报失误④）。
-    """
-    e = _engine("guard_mediocrity")
-    fr = _friend_beifu(x=9, hp=9999)   # 血量给足：本用例要连扛 MEDIOCRITY_ROUNDS+1 回合
-    e.state.friends.append(fr)
-    m = Entity("血僵", "怪物", blood_limit=9999, current_hp=9999,
-               attack_count=1, attack_power=1, speed_limit=1, current_speed=1,
-               mana_limit=0, current_mana=0)   # 攻击力压到1：护卫层数每回合会被逐击吃掉，
-    _start_battle_with(e, m)                   # 溢出部分落在轮回者身上，别把轮回者打死
-    r = e.execute_action("command_ally", {"ally_ref": "friend:0", "instruction": "护卫 9"})
-    assert r["success"], r
-    assert fr._beifu_left == 9
-
-    from engine.combat import MEDIOCRITY_ROUNDS
-    from tests.attack_support import resolve_attack
-    for i in range(MEDIOCRITY_ROUNDS + 1):
-        # 每回合续一次护卫（引擎取 max(现有层数, X)，是玩家侧的真实操作）：
-        # 岩行者全程纯护卫——不攻击、不发动道纹。
-        top = e.execute_action("command_ally", {"ally_ref": "friend:0", "instruction": "护卫 9"})
-        assert top["success"], top
-        assert fr._beifu_left > 0
-        assert resolve_attack(e)["success"], "轮回者本回合必须出手（否则它自己会凡庸）"
-        _resolve_monster_phase(e)          # 怪物打轮回者 → 伤害被护卫重定向到岩行者
-        rr = e.execute_action("round_end", {})
-        assert rr["success"], rr
-        assert fr.is_alive, f"第{i + 1}回合：纯护卫的盟友被【凡庸】炸裂"
-        assert fr.no_action_rounds == 0, "护卫必须视为已出手（未出手计数清零）"
-        assert fr.no_damage_rounds == 0, "护卫期间「未使敌掉血」计数必须冻结"
-        if i < MEDIOCRITY_ROUNDS:
-            e.execute_action("round_start", {"relic_choices": round_start_relic_choices(e)})
-
-    # 护卫层数用尽后：两条计数照常推进（冻结不清零，之前的累计接着算）
-    fr._beifu_left = 0
-    assert e.combat._tick_mediocrity_counters(fr) is None
-    assert (fr.no_action_rounds, fr.no_damage_rounds) == (1, 1)
-
-
-def test_guard_mediocrity_exempt_only_for_friends_and_employees():
-    """边界：豁免只覆盖[朋友]/[员工]——怪物即使背着【背负】也照常计凡庸。"""
-    e = _engine("guard_mediocrity_scope")
-    m = Entity("背负怪", "怪物", blood_limit=100, current_hp=100,
-               attack_count=1, attack_power=1)
-    m._beifu_left = 3
-    m.actions_used_this_round = 0
-    m.damage_dealt_this_round = 0
-    m.no_action_rounds = 2
-    m.no_damage_rounds = 2
-    assert e.combat._tick_mediocrity_counters(m) is None
-    assert (m.no_action_rounds, m.no_damage_rounds) == (3, 3), "怪物不得享受护卫豁免"

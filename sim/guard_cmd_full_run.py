@@ -3,7 +3,7 @@
 
 战法：每回合对每个存活盟友命令「护卫 9」（无消耗、不占出手，强制背负标记）
 → 3盟友=27次挡伤，覆盖3怪墙15次/4怪墙20+次全部命中 → 玩家满血
-→ 命令盟友攻击（护卫算盟友一次出手，照常输出）→ 玩家杀伐秒怪。
+→ 命令盟友攻击（护卫不占出手，照常输出）→ 玩家杀伐秒怪。
 """
 import json, os, sys, tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -41,7 +41,7 @@ def player_turn(e, log):
             if r.get("success"):
                 log.append(f"  命令{ally.name}护卫（替轮回者挡9次伤）")
                 out.append(r)
-    # 2) 命令盟友攻击（护卫算盟友一次出手，照常输出）
+    # 2) 命令盟友攻击（护卫不占出手，照常输出）
     for prefix, entities in (("friend", e.state.friends), ("employee", e.state.employees)):
         for idx, ally in enumerate(entities):
             if not ally.is_alive or ally.has_retreated:

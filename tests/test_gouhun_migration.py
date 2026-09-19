@@ -29,7 +29,7 @@ from engine.models import DaoWen, DaoWenInstance, Entity, GameState, StatusEffec
 from engine.validator import check_migrated_mechanism_guards  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
-from tests.source_scan import COMBAT_SOURCE  # noqa: E402  # 战斗引擎全家族：combat.py 已拆出 combat_parts/*.py
+COMBAT_SOURCE = (ROOT / "engine" / "combat.py").read_text(encoding="utf-8")
 
 
 def _arena(mana=20, gouhun_rounds=None, entity_type="轮回者", alive=True):

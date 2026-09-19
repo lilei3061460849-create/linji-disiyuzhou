@@ -159,7 +159,7 @@ def test_boba_boundary_and_invalid_submissions():
 
 
 def test_ziyang_zishi_shuaibai():
-    """接线：滋养挂放大状态（本身不回血）；自食打自己；衰败扣当前生命%。"""
+    """接线：滋养回血；自食打自己；衰败扣当前生命%。"""
     engine = _engine("keys2")
     p = engine.state.player
     for n in ("滋养", "自食", "衰败"):
@@ -170,9 +170,7 @@ def test_ziyang_zishi_shuaibai():
     m.current_hp = 50
     r2 = engine.execute_action("use_daowen", {"daowen_name": "滋养", "x": 1, "target": m.name})
     assert r2["success"]
-    # 2026-09-18 用户令：滋养改为「使[目标]受到的恢复量翻倍，持续X」，本身不回血
-    assert m.current_hp == 50
-    assert m.has_status("滋养")
+    assert m.current_hp == 60  # 100*10%=10
 
     p.attack_power = 5
     p.current_hp = 40
@@ -189,7 +187,7 @@ def test_ziyang_zishi_shuaibai():
     engine.state.combat_subphase = "await_round_end"  # 单元测试跳过怪物行动
     engine.execute_action("round_end", {})
     engine.execute_action("round_start", {})
-    assert m.current_hp == hp - 5  # [回始]ceil(50*10%)
+    assert m.current_hp == hp - 6  # [回始]ceil(60*10%)
 
 
 def test_jiahai_guzhi_fennu_jieli_jisheng():
@@ -288,91 +286,69 @@ def test_huaxiang_zhuiluo_dingxing_wushen_xuanyun():
     assert engine.combat.can_act(m)
 
 
-def test_ziyu_cast_heals_target_immediately():
-    """正常：新版自愈＝主动单体奶（2026-09-18 用户令），发动当下按**已损生命**25X%结算。
-
-    旧版「发动只挂状态、[回始]按血限10X%奶」已废止：ROUND_START 上的自愈机制整体删除，
-    代价由异变5X 改为冷却X 场，且需显式选定[目标]（可以选自己）。
-    """
+def test_ziyu_cast_does_not_heal_until_round_start():
+    """正常：自愈发动当下不奶，回始才按血限10X%奶一次。"""
     import math
     engine = _engine("ziyu_ok")
     p = engine.state.player
     _give(p, "自愈")
     engine.execute_action("round_start", {})
     p.current_hp = 30
-    r = engine.execute_action("use_daowen", {"daowen_name": "自愈", "x": 2, "target": p.name})
+    r = engine.execute_action("use_daowen", {"daowen_name": "自愈", "x": 2})
     assert r["success"], r
-    expected = math.ceil((p.blood_limit - 30) * 50 / 100)
-    assert p.current_hp == 30 + expected
-    assert not p.has_status("自愈"), "新版自愈不挂任何持续状态"
-    # 代价＝冷却X 场：本场不得再次发动
-    assert p.dao_wen["自愈"].cooldown_remaining == 2
-    again = engine.execute_action("use_daowen", {"daowen_name": "自愈", "x": 1, "target": p.name})
-    assert again["success"] is False, "冷却期内必须拒绝发动"
-
-    hp = p.current_hp
+    assert p.has_status("自愈")
+    assert p.current_hp == 30
+    expected = math.ceil(p.blood_limit * 20 / 100)
     engine.state.combat_subphase = "await_round_end"
     engine.execute_action("round_end", {})
     engine.execute_action("round_start", {})
-    assert p.current_hp == hp, "[回始]不得再凭空回血（自愈机制已移除）"
+    assert p.current_hp == 30 + expected
 
 
 def test_ziyu_necrosis_blocks_and_invalid_x():
-    """边界：坏死禁疗拦住新版自愈；X=0 合法（拒绝发动，不回血）；负数/非整数仍被拒。"""
+    """边界：坏死回始不奶；X=0 合法（拒绝发动，不回血）；负数/非整数仍被拒。"""
     engine = _engine("ziyu_bound")
     p = engine.state.player
     _give(p, "自愈")
     engine.execute_action("round_start", {})
     hp_before = p.current_hp
-    zero = engine.execute_action("use_daowen", {"daowen_name": "自愈", "x": 0, "target": p.name})
+    zero = engine.execute_action("use_daowen", {"daowen_name": "自愈", "x": 0})
     assert zero["success"] is True
     assert zero.get("skipped") is True
     assert p.current_hp == hp_before      # 拒绝发动 = 没有回血
-    bad = engine.execute_action("use_daowen", {"daowen_name": "自愈", "x": -1, "target": p.name})
+    bad = engine.execute_action("use_daowen", {"daowen_name": "自愈", "x": -1})
     assert bad["success"] is False
     assert "X必须≥1" in bad["error"]
+    engine.execute_action("use_daowen", {"daowen_name": "自愈", "x": 1})
     p.current_hp = 30
     p.add_status(StatusEffect(name="坏死", remaining_rounds=-1, value=0, source="测"))
-    blocked = engine.execute_action("use_daowen", {"daowen_name": "自愈", "x": 2, "target": p.name})
-    assert blocked["success"], blocked
-    assert p.current_hp == 30, "【坏死】禁疗期间自愈不得回血"
+    engine.execute_action("round_start", {})
+    assert p.current_hp == 30
 
 
-def test_ziyu_monster_activate_heals_at_once_and_pays_only_cooldown():
-    """正常：怪物激活新版自愈＝当场奶选定目标，代价只有自身的【冷却X】。
-
-    2026-09-18 用户令：删除怪物「家族税」（旧口径＝原始怪物道纹每次发动都额外硬扣
-    异变5X），怪物与轮回者同口径按道纹自身 calc 付代价；【自愈】自身代价是【冷却X】，
-    所以怪物侧不再产生任何异变层数（见 test_ziyu_cast_heals_target_immediately）。
-    自愈需显式选定[目标]，prepare 必须给出 target_options（含自己）。
-    """
+def test_ziyu_monster_activate_heals_next_round_start():
+    """正常：怪物激活自愈只挂状态，下个回始才奶。"""
     import math
     engine = _engine("ziyu_mon")
     m = _monster(engine, "自愈鱼", hp=100, atk=1, ap=1)
     m.dao_wen["自愈"] = DaoWenInstance(
-        DaoWen(name="自愈", formula="", cost_type="冷却", cost_formula="X", effect_formula=""),
+        DaoWen(name="自愈", formula="", cost_type="异变", cost_formula="5X", effect_formula=""),
         x_value=1)
     engine.state.current_round = 2
-    m.current_hp = 40
     prepared = engine.execute_action("prepare_monster_phase", {})
     actor = prepared["result"]["actors"][0]
-    opt = next(d for d in actor["daowen_options"] if d["name"] == "自愈")
-    assert opt["requires_target"] is True
-    assert {t["ref"] for t in opt["target_options"]} >= {"player:0", "enemy:0"}
-    self_ref = next(t["ref"] for t in opt["target_options"] if t["ref"] == "enemy:0")
-
     resolved = engine.execute_action("resolve_monster_phase", {
         "token": prepared["result"]["token"],
         "choices": [{"actor_ref": actor["actor_ref"],
-                     "daowen": {"name": "自愈", "target_ref": self_ref, "dodge": False,
-                                "blood_shadow": False, "trigger_spell_choices": {}},
+                     "daowen": {"name": "自愈", "dodge": False, "blood_shadow": False, "trigger_spell_choices": {}},
                      "attack_actions": [{"hits": [{"target_ref": "player:0", "dodge": False, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}}]}]}],
     })
-    assert resolved["success"], resolved
-    assert m.current_hp == 40 + math.ceil(60 * 25 / 100), f"已损60 的 25% = 15，实 hp={m.current_hp}"
-    assert not m.has_status("自愈"), "新版自愈不挂持续状态"
-    assert m.mutation_count == 0, f"家族税已删除：自愈只付冷却X，不得再计异变，实{m.mutation_count}"
-    assert m.dao_wen["自愈"].cooldown_remaining == 1
+    assert resolved["success"]
+    assert m.has_status("自愈")
+    m.current_hp = 50
+    engine.execute_action("round_end", {})
+    engine.execute_action("round_start", {})
+    assert m.current_hp == 50 + math.ceil(m.blood_limit * 10 / 100)
 
 
 def test_jisu_jiasu_dongcha():
@@ -408,117 +384,3 @@ def test_jisu_jiasu_dongcha():
     engine.execute_action("round_start", {})
     # DM裁定 2026-09-09：一池制，[回始]不回填 → 只有洞察结算的那 10 点
     assert p.current_mana == mana + 10, f"{p.current_mana} != {mana}+10"
-
-
-# ============ 波及·自施扩散（用户裁定 2026-09-19 选案A） ============
-# 口径：扩散名单**含施法者自己**——本次[目标]是自己时，自己那一份不丢，
-# 波及目标额外各得一份；数值型因此在自施时也开始平分。
-# 出处：sim/probe_wave_spread.py 实验（data/experiments/wave_spread_2026-09-19.md）
-# 查出旧实现把自我增益的状态整体送给对方、自己拿不到，与 daowen_effect 自己的注释
-# 「状态类效果对每个波及目标（含本次[目标]）原样生效」相反。
-
-def _mark(engine, caster, target):
-    """挂波及标记（引擎原语；真实发动内部就是调它，见 api.py::_resolve_daowen_dodge）。"""
-    return engine.combat._toggle_wave_mark(target, caster)
-
-
-def test_boba_self_buff_keeps_own_status_and_gives_marks_a_copy():
-    """自我增益（状态类）：自己保留状态，波及目标额外得一份——不再整体送给对方。"""
-    engine = _engine("boba_selfbuff")
-    p = engine.state.player
-    _give(p, "滋养")
-    foe = _monster(engine, "靶怪", hp=100, atk=3, ap=6)
-    engine.execute_action("round_start", {})
-    _mark(engine, p, foe)                      # 轮回者自己挂出去的标记
-    assert engine.combat._wave_targets(p) == [foe]
-
-    r = engine.execute_action("use_daowen", {
-        "daowen_name": "滋养", "x": 2, "target_ref": "player:0",
-        "dodge": False, "blood_shadow": False})
-    assert r["success"], r
-    assert p.has_status("滋养"), "选案A：施法者自己必须保留自我增益"
-    assert foe.has_status("滋养"), "波及目标额外得一份"
-    assert (r["execution"].get("wave_spread") or {}).get("targets") == [p.name, foe.name]
-
-
-def test_boba_self_heal_splits_between_caster_and_marks():
-    """自我回复（数值类）：总量不变，在「自己＋波及目标」之间平分（A 的既定代价）。"""
-    engine = _engine("boba_selfheal")
-    p = engine.state.player
-    _give(p, "再生")
-    foe = _monster(engine, "靶怪", hp=100, atk=3, ap=6)
-    engine.execute_action("round_start", {})
-    p.current_hp = p.blood_limit - 40
-    foe.current_hp = foe.blood_limit - 40
-    _mark(engine, p, foe)
-
-    r = engine.execute_action("use_daowen", {
-        "daowen_name": "再生", "x": 2, "target_ref": "player:0",
-        "dodge": False, "blood_shadow": False})
-    assert r["success"], r
-    heals = [e.get("actual_heal", 0) for e in r["execution"]["effects"] if e.get("type") == "heal"]
-    assert sum(heals) == 8, f"总数值不增加：再生2→8点，实得 {heals}"
-    assert len(heals) == 2 and sorted(heals) == [4, 4], f"平分给自己与波及目标：{heals}"
-    assert p.current_hp > engine.state.player.blood_limit - 40
-
-
-def test_boba_self_targeted_whitelist_also_spreads():
-    """`self_targeted` 白名单（贯穿/飞行/滑翔/狂暴/必中/固执/自食）：状态永远挂施法者，
-    但按 A 也要给波及目标一份——此前它们完全绕过扩散名单，与其余自我增益行为相反。"""
-    engine = _engine("boba_whitelist")
-    p = engine.state.player
-    _give(p, "贯穿")
-    foe = _monster(engine, "靶怪", hp=100, atk=3, ap=6)
-    engine.execute_action("round_start", {})
-    _mark(engine, p, foe)
-
-    r = engine.execute_action("use_daowen", {
-        "daowen_name": "贯穿", "x": 2, "dodge": False, "blood_shadow": False})
-    assert r["success"], r
-    assert p.has_status("贯穿"), "白名单道纹仍必须挂在施法者身上"
-    assert foe.has_status("贯穿"), "A 之后波及目标也生效（与其余自我增益同口径）"
-
-
-def test_boba_marks_from_others_do_not_spread_your_own_casts():
-    """单向性守卫：**别人**挂在你身上的标记不会让你自己的道纹扩散。
-
-    实验实测（420 行矩阵，P1/M2 与无标记基线逐条全等）：标记带 source＝挂标记者，
-    `_wave_targets(caster)` 只认 `source == caster.name` 的标记。
-    """
-    engine = _engine("boba_oneway")
-    p = engine.state.player
-    _give(p, "滋养")
-    foe = _monster(engine, "靶怪", hp=100, atk=3, ap=6)
-    engine.execute_action("round_start", {})
-    _mark(engine, foe, p)                      # 怪物挂到轮回者身上
-    assert p.has_status("波及")
-    assert engine.combat._wave_targets(p) == [], "自己没挂出标记 → 自己的道纹不扩散"
-
-    r = engine.execute_action("use_daowen", {
-        "daowen_name": "滋养", "x": 2, "target_ref": "player:0",
-        "dodge": False, "blood_shadow": False})
-    assert r["success"], r
-    assert p.has_status("滋养")
-    assert not foe.has_status("滋养"), "对方挂的标记不得把我方增益吸过去"
-    assert not r["execution"].get("wave_spread")
-
-
-def test_boba_hostile_target_split_unchanged_by_ruling_a():
-    """打敌方目标时口径不变：本次[目标]＋波及目标去重后平分（选案A 只影响自施）。"""
-    engine = _engine("boba_hostile_a")
-    p = engine.state.player
-    _give(p, "杀伐")
-    a = _monster(engine, "靶怪甲", hp=100, atk=3, ap=6)
-    b = _monster(engine, "靶怪乙", hp=100, atk=3, ap=6)
-    engine.execute_action("round_start", {})
-    _mark(engine, p, b)
-
-    r = engine.execute_action("use_daowen", {
-        "daowen_name": "杀伐", "x": 2, "target_ref": "enemy:0",
-        "dodge": False, "blood_shadow": False})
-    assert r["success"], r
-    dealt = sum(e.get("actual_damage", 0) for e in r["execution"]["effects"]
-                if e.get("type") == "damage")
-    assert dealt == 4, "总量不变：杀伐2→4点，平分给靶怪甲与靶怪乙"
-    assert a.current_hp == 98 and b.current_hp == 98
-    assert not p.has_status("杀伐") and p.current_hp == p.blood_limit, "打敌方时不把施法者拉进名单"

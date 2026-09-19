@@ -4,43 +4,6 @@ from pathlib import Path
 import re
 from urllib.parse import unquote
 
-# ===== 活语料清单的唯一权威 =====
-# 任何「扫文档」的工具与守卫都从这里取清单，别各自再抄一份：清单分叉＝有的文档没人看守。
-# 单一化之前实测：代价数字守卫只扫 AI_EXPERIENCE.md 与 副本/*.md，而 README.md:41【封印】异变X、
-# 法术索引.md:57-58【庇护X】消耗X／【再生X】消耗X 同样写着代价数字，落在守卫之外
-# （当时数字恰好是对的——靠运气，不靠机器）。
-# archive/** 是历史档案，一律不扫（那里允许记沿革）。
-CORPUS_HARD = (
-    "AI_EXPERIENCE.md", "全道纹索引.md", "README.md", "副本索引.md",
-    "物品索引.md", "法术索引.md", "死者之书.md", "data/build_knowledge.json",
-)
-CORPUS_SOFT = ("报告.md", "机制迁移台账.md")   # 工作日志：本来就允许写旧口径，命中只警告
-CORPUS_GLOBS = ("副本/*.md",)
-# 生成物不手写，守卫方式是「重跑生成器逐字节比对」而不是文本扫描：
-#   全道纹索引.md            ← sim/gen_daowen_index.py（引擎 docstring 是唯一来源）
-#   data/build_knowledge.json ← sim 工具产出的知识库（含历史判决叙述，其中的数字是叙述不是口径）
-GENERATED_DOCS = frozenset({"全道纹索引.md", "data/build_knowledge.json"})
-_REPO_ROOT = Path(__file__).resolve().parent.parent
-
-
-def corpus_files(root: str | Path | None = None, soft: bool = False) -> list[Path]:
-    """硬层（规则事实源＋注入 AI 提示词的派生文档）或软层（工作日志）的现存文件。"""
-    root = Path(root) if root is not None else _REPO_ROOT
-    names = CORPUS_SOFT if soft else CORPUS_HARD
-    out = [root / f for f in names if (root / f).exists()]
-    if not soft:
-        for g in CORPUS_GLOBS:
-            out.extend(sorted(root.glob(g)))
-    return out
-
-
-def handwritten_rule_docs(root: str | Path | None = None) -> list[Path]:
-    """硬层里**手写**的规则文档（生成物除外）：口径数字守卫该扫的就是这些。"""
-    root = Path(root) if root is not None else _REPO_ROOT
-    return [p for p in corpus_files(root)
-            if p.relative_to(root).as_posix() not in GENERATED_DOCS]
-
-
 LINK = re.compile(r"(?<!!)\[([^\]]+)\]\(([^)]+)\)")
 HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*#*$")
 

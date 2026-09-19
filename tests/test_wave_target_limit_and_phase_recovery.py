@@ -1,11 +1,11 @@
 """BUG-01/BUG-02 回归（2026-08-22）：怪物【波及】目标数限制 + 怪物阶段失败恢复。
 
-波及X（用户裁定 2026-09-19）：X 上限＝**场上当前角色总数**（含发动者自己），
-        引擎不再替发动方"目标不足就降X结算"，也不再因目标不足把指令判成不可发动。
-        波及不能选自己（`api.py::_resolve_daowen_dodge`），所以真正可标记的只有
-        prepare 枚举的 dodge_target_options；把 X 收到可标记目标数以内是**发动方**
-        （AI/操作者）自己的事——AI 侧统一走 `sim/monster_targets.apply_wave_submission`。
-        仅"可标记目标数为0"时怪物 prepare 才不给出该道纹（一个都标记不了）。
+BUG-01：【波及X】的X必须受合法目标数量限制——引擎不得给出永远无法结算的选项
+        （原故障：龙心谷 熔岩蜥【波及3】solo场上只有1个合法目标，
+        任何提交都被拒"必须为3个目标显式提交dodge_targets"）。
+DM裁定2026-08-23（取代2026-08-22"不足X即过滤"方案）：面板X超过合法目标数时
+        自适应降X（有效X=min(面板X,合法目标数)，见 prepare 的 wave_effective_x），
+        与玩家侧 _max_legal_daowen_x 口径一致；仅合法目标数为0时才不提供。
 BUG-02：resolve_monster_phase 提交失败后战斗不得卡在怪物阶段——
         失败时状态整体回滚（零副作用），pending保持有效且同token可修正重交；
         所有失败/拦截路径都返回 recoverable/token/instruction，恢复路径明确可执行。
@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
 from engine.models import DaoWen, DaoWenInstance, Entity
-from sim.monster_targets import apply_wave_submission, clamp_wave_x, pick_wave_dodge_targets
+from sim.monster_targets import pick_wave_dodge_targets
 from tests.setup_support import finish_initial_daowen
 
 
@@ -42,11 +42,10 @@ def _full_setup(engine: GameEngine, region: str = "龙心谷") -> None:
     assert engine.execute_action("setup_choose_region", {"region": region})["success"]
 
 
-def _dw(entity: Entity, name: str, x: int = 1, x_free: bool = False) -> None:
-    """挂一条道纹。x_free=True＝面板不写 X（2026-09-16 用户令后现行怪物面板的常态）。"""
+def _dw(entity: Entity, name: str, x: int = 1) -> None:
     entity.dao_wen[name] = DaoWenInstance(
         DaoWen(name=name, formula="", cost_type="消耗", cost_formula="X", effect_formula=""),
-        x_value=(0 if x_free else x), x_free=x_free)
+        x_value=x)
 
 
 def _controlled_combat(engine: GameEngine, monsters: list[Entity]) -> Entity:
@@ -65,17 +64,17 @@ def _controlled_combat(engine: GameEngine, monsters: list[Entity]) -> Entity:
 
 
 def _magma_lizard() -> Entity:
-    """龙心谷怪物池：熔岩蜥（血限234/法限14/速限3，加害，狂暴，波及）。
+    """龙心谷怪物池：熔岩蜥（血限234/法限14/速限3，加害2，狂暴3，波及3）。
 
-    现行面板（副本/龙心谷.md:67）三条道纹都不写 X → x_free，X 由发动方在
-    [1, min(代价上限, 场上角色总数)] 内自选。法限 14 够付到波及 X=7（代价 2X）。
+    2026-09-16：怪物[法限]即法力池。道纹 X 每发动一次 +2（升级机制），波及会从
+    X=3 涨到 5、7；原法限 6 到第 2 轮就付不起 2X=10 了，抬到 14（覆盖到 X=7）。
     本文件只断言波及的目标数与阶段恢复，不断言怪物伤害。
     """
     m = Entity("熔岩蜥", "怪物", blood_limit=234, current_hp=234,
                attack_count=3, attack_power=14)
-    _dw(m, "加害", x_free=True)
-    _dw(m, "狂暴", x_free=True)
-    _dw(m, "波及", x_free=True)
+    _dw(m, "加害", 2)
+    _dw(m, "狂暴", 3)
+    _dw(m, "波及", 3)
     return m
 
 
@@ -120,7 +119,7 @@ def _legal_daowen(actor: dict) -> dict | None:
     if chosen["requires_target"]:
         dao["target_ref"] = chosen["target_options"][0]["ref"]
     if chosen["dodge_submission"] == "per_target":
-        apply_wave_submission(dao, chosen)      # X 与目标提交数成对
+        dao["dodge_targets"] = pick_wave_dodge_targets(chosen)
     return dao
 
 
@@ -138,28 +137,27 @@ def _snapshot(e: GameEngine) -> dict:
     }
 
 
-# ============ 波及：X 上限＝场上当前角色总数（发动方自己收 X） ============
+# ============ BUG-01：【波及】合法目标数限制 ============
 
-def test_wave_x_cap_is_field_character_count_solo(tmp_path):
-    """solo 场（轮回者＋熔岩蜥＝2 个角色）：X 上限＝场上当前角色总数＝2，
-    而不是"可标记目标数"1；prepare 也不再输出降X快照。发动方自己把 X 收到 1 后可结算。"""
+def test_wave_adaptive_clamp_solo(tmp_path):
+    """DM裁定2026-08-23（取代2026-08-22过滤方案）：solo场上【波及3】只有1个
+    合法目标——prepare不再过滤，而是自适应降X为1（wave_effective_x=1），
+    可正常结算标记1个目标，永不死锁。面板x仍为3（递增/展示口径）。"""
     e = _engine(tmp_path)
     _full_setup(e)
     _controlled_combat(e, [_magma_lizard()])
     prepared, actor = _prepared_monster_option(e)
     option = next((o for o in actor["daowen_options"] if o["name"] == "波及"), None)
-    assert option is not None, f"solo场上波及必须给出: {[o['name'] for o in actor['daowen_options']]}"
-    assert option["x_free"] is True
-    assert option["max_x"] == 2, option          # 上限＝场上角色总数（法限够付到7）
-    assert "wave_effective_x" not in option, "降X快照已删除，不得再出现在 prepare 输出里"
-    assert len(option["dodge_target_options"]) == 1   # 波及不能选自己
-    # 发动方自己收 X：clamp 到可标记目标数，提交数与 X 成对
-    assert clamp_wave_x(option, option["max_x"]) == 1
+    assert option is not None, f"solo场上波及3必须按降X给出: {[o['name'] for o in actor['daowen_options']]}"
+    assert option["x"] == 3
+    assert option["wave_effective_x"] == 1
+    assert len(option["dodge_target_options"]) == 1
+    # 按有效X提交即可结算：波及标记打在唯一合法目标（玩家）身上
     dao = {"name": "波及", "dodge": False, "blood_shadow": False,
            "trigger_spell_choices": {h: {sp["spell_name"]: {"use": False} for sp in ss}
-                                     for h, ss in option.get("trigger_spell_options", {}).items()}}
-    assert apply_wave_submission(dao, option) == 1
-    assert dao["x"] == 1 and len(dao["dodge_targets"]) == 1
+                                     for h, ss in option.get("trigger_spell_options", {}).items()},
+           "dodge_targets": pick_wave_dodge_targets(option)}
+    assert len(dao["dodge_targets"]) == 1
     ok = e.execute_action("resolve_monster_phase", {
         "token": prepared["result"]["token"],
         "choices": [{"actor_ref": actor["actor_ref"], "daowen": dao,
@@ -168,27 +166,27 @@ def test_wave_x_cap_is_field_character_count_solo(tmp_path):
     assert e.state.player.has_status("波及")
 
 
-def test_wave_x_cap_scales_with_field_size(tmp_path):
-    """X 上限随**场上角色总数**走（含发动者自己），可标记目标数＝总数-1。"""
+def test_wave_adaptive_clamp_scales_with_targets(tmp_path):
+    """【波及3】：2个合法目标时降X为2；3个合法目标时全额X=3。"""
     e = _engine(tmp_path)
     _full_setup(e)
     _controlled_combat(e, [_magma_lizard()])
     e.state.friends.append(_friend("友军A"))
     actor = _combat_prepared_actor(e)
     option = next(o for o in actor["daowen_options"] if o["name"] == "波及")
-    assert option["max_x"] == 3 and len(option["dodge_target_options"]) == 2
+    assert option["x"] == 3 and option["wave_effective_x"] == 2
 
     e.state.friends.append(_friend("友军B"))
     actor = _combat_prepared_actor(e)
     option = next(o for o in actor["daowen_options"] if o["name"] == "波及")
-    assert option["max_x"] == 4 and len(option["dodge_target_options"]) == 3
-    assert "wave_effective_x" not in option
+    assert option["x"] == 3 and option["wave_effective_x"] == 3
+    assert len(option["dodge_target_options"]) == 3
     refs = {t["ref"] for t in option["dodge_target_options"]}
     assert refs == {"player:0", "friend:0", "friend:1"}
     assert option["dodge_submission"] == "per_target"
-    # 发动方按可标记目标数收 X：3；照上限 4 提交则凑不出 4 个合法目标
-    assert clamp_wave_x(option, option["max_x"]) == 3
-    assert len(pick_wave_dodge_targets(option)) == 3
+    # 降X口径下多交/少交仍被拒（恰好=有效X）
+    pick = pick_wave_dodge_targets(option)
+    assert len(pick) == 3
 
 
 def test_wave_marks_exactly_x_targets(tmp_path):
@@ -321,8 +319,7 @@ def test_stale_token_replay_returns_valid_token(tmp_path):
 
 def test_user_original_playthrough_no_longer_stucks(tmp_path):
     """用户原流程回归：龙心谷 seed=20260822 熔岩蜥 solo，连续3回合不卡死。
-    现行口径下波及每回合都仍被 prepare 给出（可标记目标数＝1≠0），
-    发动方把 X 收到 1 后即可结算——不需要引擎代为降X。"""
+    DM裁定2026-08-23后：波及3降X为1持续可选——每回合都专门发动波及验证可解算。"""
     e = _engine(tmp_path, seed=20260822)
     _full_setup(e)
     _controlled_combat(e, [_magma_lizard()])
@@ -332,11 +329,11 @@ def test_user_original_playthrough_no_longer_stucks(tmp_path):
         assert e.execute_action("round_start", {"relic_choices": {}})["success"]
         prepared, actor = _prepared_monster_option(e)
         option = next((o for o in actor["daowen_options"] if o["name"] == "波及"), None)
-        assert option is not None and option["max_x"] == 2   # 场上2个角色
+        assert option is not None and option["wave_effective_x"] == 1
         dao = {"name": "波及", "dodge": False, "blood_shadow": False,
                "trigger_spell_choices": {h: {sp["spell_name"]: {"use": False} for sp in ss}
-                                         for h, ss in option.get("trigger_spell_options", {}).items()}}
-        assert apply_wave_submission(dao, option) == 1       # 发动方自己收到可标记目标数
+                                         for h, ss in option.get("trigger_spell_options", {}).items()},
+               "dodge_targets": pick_wave_dodge_targets(option)}
         ok = e.execute_action("resolve_monster_phase", {
             "token": prepared["result"]["token"],
             "choices": [{"actor_ref": actor["actor_ref"], "daowen": dao,
@@ -345,7 +342,7 @@ def test_user_original_playthrough_no_longer_stucks(tmp_path):
         assert e.execute_action("round_end", {})["success"]
 
 
-# ============ 玩家/指令侧：use_daowen 的波及X上限＝场上角色总数 ============
+# ============ 玩家/指令侧：use_daowen 的波及X受目标数封顶（BUG-01 玩家侧） ============
 
 def _wave_use_daowen_schema(engine: GameEngine, actor_ref: str = "") -> dict:
     """从可用行动中取 波及 的 use_daowen schema。"""
@@ -359,31 +356,30 @@ def _wave_use_daowen_schema(engine: GameEngine, actor_ref: str = "") -> dict:
     return {}
 
 
-def test_use_daowen_schema_caps_wave_x_by_field_character_count(tmp_path):
-    """玩家侧：schema 的X上限＝场上当前角色总数（含自己），不再按可标记目标数封顶。"""
+def test_use_daowen_schema_caps_wave_x_by_target_count(tmp_path):
+    """玩家侧：schema 的X上限必须受合法目标数封顶——目标不足时不得给出无法发动的X。"""
     e = _engine(tmp_path)
     _full_setup(e)
     player = _controlled_combat(e, [_magma_lizard()])
     _dw(player, "波及", 0)
     player.current_mana = 100  # 法力充足：X上限只能被目标数压住
 
-    # solo：场上2个角色（轮回者＋怪物）→ X上限=2，而不是法力允许的大X
+    # solo：仅1个合法目标（怪物）→ X上限=1，而不是法力允许的大X
     action = _wave_use_daowen_schema(e)
     assert action, "use_daowen schema 缺失"
     assert action["available"] is True
-    assert action["params_schema"]["x"]["maximum"] == 2, action["params_schema"]
+    assert action["params_schema"]["x"]["maximum"] == 1, action["params_schema"]
 
-    # 2怪+1友军：场上4个角色 → X上限=4（其中可标记的只有3个：波及不能选自己）
+    # 2怪+1友军：3个合法目标 → X上限=3
     e.state.enemies.append(Entity("石背熊", "怪物", blood_limit=100, current_hp=100,
                                   attack_count=1, attack_power=3))
     e.state.friends.append(_friend("友军A"))
     action = _wave_use_daowen_schema(e)
-    assert action["params_schema"]["x"]["maximum"] == 4, action["params_schema"]
+    assert action["params_schema"]["x"]["maximum"] == 3, action["params_schema"]
 
 
-def test_player_wave_cast_at_markable_count_succeeds(tmp_path):
-    """按**可标记目标数**发动 波及（恰好提交X个目标）：成功且标记正确。
-    照 schema 的字面上限（场上角色总数，含自己）发动则凑不出那么多合法目标 → 被拒。"""
+def test_player_wave_cast_at_schema_max_succeeds(tmp_path):
+    """按 schema 上限发动 波及（恰好提交X个目标）：成功且标记正确。"""
     e = _engine(tmp_path)
     _full_setup(e)
     player = _controlled_combat(e, [_magma_lizard()])
@@ -393,18 +389,7 @@ def test_player_wave_cast_at_markable_count_succeeds(tmp_path):
     player.current_mana = 100
 
     action = _wave_use_daowen_schema(e)
-    assert action["params_schema"]["x"]["maximum"] == 3   # 场上3个角色（含自己）
-    x = 2                                                 # 可标记的只有两只怪物
-    # 先验：照字面上限 X=3 发动必被拒（第三个目标只能是自己，而波及不能选自己）
-    bad = e.execute_action("use_daowen", {"daowen_name": "波及", "x": 3,
-                                          "dodge": False, "blood_shadow": False,
-                                          "trigger_spell_choices": {},
-                                          "dodge_targets": [
-                                              {"target_ref": "enemy:0", "dodge": False,
-                                               "blood_shadow": False},
-                                              {"target_ref": "enemy:1", "dodge": False,
-                                               "blood_shadow": False}]})
-    assert not bad["success"] and "必须为3个目标" in str(bad.get("error", "")), bad
+    x = action["params_schema"]["x"]["maximum"]  # =2（两只怪物）
     ok = e.execute_action("use_daowen", {"daowen_name": "波及", "x": x,
                                          "dodge": False, "blood_shadow": False,
                                          "trigger_spell_choices": {},
@@ -419,12 +404,8 @@ def test_player_wave_cast_at_markable_count_succeeds(tmp_path):
     assert not player.has_status("波及")
 
 
-def test_commanded_wave_not_gated_by_target_count(tmp_path):
-    """指令侧：目标不足也**不再**把【波及】判成 available=False（用户裁定 2026-09-19 删除门禁）。
-
-    固定X面板（这里 X=3）是历史形态：现行副本面板的波及一律不写 X。目标真不够时
-    由结算阶段照实报错，不在指令列表里预先判死。
-    """
+def test_commanded_wave_unavailable_when_targets_insufficient(tmp_path):
+    """指令侧：朋友固定X=3的【波及】在目标不足时 available=False 且给出原因。"""
     e = _engine(tmp_path)
     _full_setup(e)
     _controlled_combat(e, [_magma_lizard()])
@@ -434,10 +415,10 @@ def test_commanded_wave_not_gated_by_target_count(tmp_path):
 
     action = _wave_use_daowen_schema(e, actor_ref="friend:0")
     assert action, "指令 use_daowen schema 缺失"
-    assert action["available"] is True, action      # 门禁已删：不再预判不可发动
-    assert "reason" not in action, action
+    assert action["available"] is False, action
+    assert "波及3需要3个目标" in action.get("reason", ""), action
 
-    # 补足目标后同样是 available=True（口径不再随目标数翻转）
+    # 补足目标（2怪+友军自身外的存活角色=3）→ available=True
     e.state.enemies.append(Entity("石背熊", "怪物", blood_limit=100, current_hp=100,
                                   attack_count=1, attack_power=3))
     action = _wave_use_daowen_schema(e, actor_ref="friend:0")

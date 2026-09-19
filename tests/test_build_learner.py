@@ -479,13 +479,7 @@ def test_valid_and_invalid_are_separated(monkeypatch):
     def mixed(starter, learn, region, seed=None, battles=7, rng=None, telemetry=None, spend_shards=False, **kw):
         calls["n"] += 1
         if calls["n"] % 2:
-            # 现行口径下「完整通关」是三层里的最外层：_normalise_outcome 要求
-            # full_won = pve_won（cleared>=battles）AND pvp_won（死斗赢）。
-            # 只给 cleared/won 时 pvp_reached 默认 False → pvp_won False → full_won False，
-            # 分数恒 0.0，测的就不是「有效局决定分数」而是「假数据缺了死斗层」。
-            # 这一局要代表「真的全通了」，就必须把死斗层一并给出。
-            return {"cleared": 7, "won": True, "invalid": False,
-                    "pvp_reached": True, "pvp_won": True}
+            return {"cleared": 7, "won": True, "invalid": False}
         return {"cleared": 0, "won": False, "invalid": True, "reason": "bug"}
 
     monkeypatch.setattr(bl, "play", mixed)

@@ -3,8 +3,7 @@
 1. 同名重复怪 + 封印尸体：declare_evolution 必须命中活着的那只
 2. 「拒绝改造」不是拒绝类：流血/碎片照常，无所求不触发
 3. 备用血泵 / 急救箱 必须走 Entity.heal（癌变记账 + 战终回吐）
-4. 高爆手雷：全场20伤害，伤害后按生命线给【无力】（≥50%血限2层／否则1层），
-   不改面板、不减每次出手的命中数
+4. 高爆手雷减本回合攻击次数（每出手少打一下），不改面板、不减出手数
 
 每条覆盖正常 / 边界 / 错误输入。
 """
@@ -240,79 +239,58 @@ def test_missing_pump_does_not_heal():
 
 
 # ========================================================================
-# 4. 高爆手雷：全场20伤害 + 按伤害后生命线给【无力】
+# 4. 高爆手雷减攻击次数
 # ========================================================================
 
-def _give_daowen(entity: Entity, name: str, x: int = 1) -> None:
-    """给测试怪挂一枚可发动道纹（prepare 会为它预留 1 次出手）。"""
-    entity.dao_wen[name] = DaoWenInstance(
-        DaoWen(name=name, formula="", cost_type="消耗", cost_formula="2X", effect_formula=""),
-        x_value=x)
-
-
-def _nade_engine(suffix: str, name: str, hp: int, daowen: str | None):
-    engine = _engine(suffix)
-    m = Entity(name=name, entity_type="怪物", blood_limit=hp, current_hp=hp,
+def test_grenade_cuts_hits_not_actions():
+    """正常路径：3×5 怪挨手雷后本回合只打 2 下，出手数仍为 1。"""
+    engine = _engine("nade_happy")
+    m = Entity(name="畸变行者", entity_type="怪物", blood_limit=210, current_hp=210,
                attack_count=3, attack_power=8)
-    if daowen:
-        _give_daowen(m, daowen)
     engine.state.enemies = [m]
     engine.state.current_round = 2
     engine.combat.reset_monster_activation()
     engine.state.consumables.append(Consumable(
-        name="高爆手雷",
-        effect="对全场所有敌方[目标]造成20点伤害；随后当前生命≥其[血限]50%的[目标]"
-               "获得【无力2】，否则获得【无力1】",
+        name="高爆手雷", effect="造成15点伤害，并使其本回合攻击次数-1",
         current_uses=2, max_uses=2))
-    return engine, m
-
-
-def test_grenade_high_line_wuli2_skips_the_monster_whole_round():
-    """正常路径：满血怪挨完20点仍在高线 → 【无力2】把 1攻+1纹 的预算清零，整只跳过。"""
-    engine, m = _nade_engine("nade_happy", "畸变行者", 210, "爆裂")
-    r = engine.execute_action("consume_item", {"name": "高爆手雷"})
+    r = engine.execute_action("consume_item", {"name": "高爆手雷", "target": "畸变行者"})
     assert r["success"], r
-    assert m.current_hp == 190, "全场20伤害"
-    assert m.get_status_value("无力") == 2
+    assert m.current_hp == 195
     assert m.attack_count == 3
-
-    prepared = engine.combat.prepare_monster_phase()
-    assert prepared["actors"] == []
-    assert prepared["skipped"][0]["reason"] == "出手预算已用尽(0/0)"
-    details = resolve_monster_phase(engine.combat)
+    assert engine.combat._monster_attack_actions(m, set()) == 1
+    details = resolve_monster_phase(engine.combat, {m.name: None})
     hits = [d for d in details if "damage_dealt" in d or "dodge_success" in d]
-    assert hits == [], f"预算归零：本回合不该有任何命中：{details}"
-    assert m.actions_used_this_round == 0
+    assert len(hits) == 2, f"应打2下，实{len(hits)} {details}"
+    assert all(d.get("hit_total") == 2 for d in hits)
 
 
-def test_grenade_low_line_wuli1_keeps_daowen_and_hits_per_attack():
-    """边界：落在低线只给1层 → 预算剩1次出手，全给道纹；每次出手的命中数口径不变。"""
-    engine, m = _nade_engine("nade_bound", "眼树", 210, "弱化")
-    m.current_hp = 100                            # 100-20=80 → 38% <50% → 1层
-    r = engine.execute_action("consume_item", {"name": "高爆手雷"})
-    assert r["success"], r
-
-    prepared = engine.combat.prepare_monster_phase()
-    actor = prepared["actors"][0]
-    assert actor["action_budget"] == 1 and actor["base_attack_actions"] == 0
-    assert actor["base_hits_per_attack"] == 3, "命中数口径不受手雷影响"
-    details = resolve_monster_phase(engine.combat)   # 有可发动道纹时自动选
+def test_grenade_can_zero_hits_without_sculpting():
+    """边界：1次攻击的怪挨手雷后本回合0下，攻击次数面板仍为1，不雕塑。"""
+    engine = _engine("nade_bound")
+    m = Entity(name="眼树", entity_type="怪物", blood_limit=198, current_hp=198,
+               attack_count=1, attack_power=13)
+    engine.state.enemies = [m]
+    engine.state.current_round = 2
+    engine.combat.reset_monster_activation()
+    engine.state.consumables.append(Consumable(
+        name="高爆手雷", effect="造成15点伤害，并使其本回合攻击次数-1",
+        current_uses=2, max_uses=2))
+    engine.execute_action("consume_item", {"name": "高爆手雷", "target": "眼树"})
+    details = resolve_monster_phase(engine.combat, {m.name: None})
     hits = [d for d in details if "damage_dealt" in d or "dodge_success" in d]
-    assert hits == [], f"攻击出手已被【无力】吃掉：{details}"
-    assert m.actions_used_this_round == 1, "预算只剩 1 次出手，全给了道纹"
-    assert m.attack_count == 3
+    assert hits == []
+    assert m.attack_count == 1
     assert m.is_alive and not m.is_sculptured
 
 
-def test_grenade_without_enemies_refunds_durability():
-    """错误输入：场上没有敌方目标 → 拒绝使用，不扣耐久。"""
+def test_grenade_missing_target_refunds_durability():
+    """错误输入：找不到目标不扣耐久。"""
     engine = _engine("nade_invalid")
     engine.state.enemies = []
     item = Consumable(name="高爆手雷", effect="...", current_uses=2, max_uses=2)
     engine.state.consumables.append(item)
     r = engine.execute_action("consume_item", {"name": "高爆手雷", "target": "没有这只怪"})
     assert r["success"] is False
-    assert r["error"] == "场上没有敌方目标"
     assert item.current_uses == 2
 
 

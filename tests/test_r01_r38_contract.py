@@ -384,8 +384,7 @@ def test_r11_r17_targets_must_come_from_prepare_and_fail_atomically(tmp_path):
 def test_r11_r17_repository_has_no_legacy_automatic_monster_policy():
     """防回退：生产计算层和模拟调用方都不得保留旧固定优先级/自动闪避入口。"""
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    from tests.source_scan import combat_source
-    combat_source = combat_source()  # 全家族：combat.py + combat_parts/*.py
+    combat_source = open(os.path.join(root, "engine", "combat.py"), encoding="utf-8").read()
     assert "MONSTER_ACTIVATE_PRIORITY" not in combat_source
     assert "def run_monster_phase" not in combat_source
     assert "def _monster_activate(" not in combat_source
@@ -486,12 +485,8 @@ def test_r25_r31_boundary_flight_grenade_and_all_character_cleanup(tmp_path):
     assert shot["result"]["flying_bonus"] == 0
     nade = engine.execute_action("consume_item", {"name": "高爆手雷", "target": "甲怪"})
     assert nade["success"]
-    # 现行口径：全场 20 伤害；伤害后生命≥50%血限 → 【无力2】，整份出手预算归零。
-    # （电击枪已先打掉 25：100→75，手雷再 20 → 55，55/100 仍在高线上。）
-    assert monster.current_hp == 55
-    assert monster.get_status_value("无力") == 2
-    assert engine._action_budget_of(monster) == 0
-    assert engine.combat._monster_attack_actions(monster, set()) == 1  # 攻击出手数口径不变
+    assert engine.combat._monster_attack_actions(monster, set()) == 1
+    assert max(0, monster.attack_count - monster.get_status_value("手雷减攻")) == 1
 
     friend = Entity("F", "朋友", blood_limit=50, current_hp=40,
                     speed_limit=3, current_speed=1, attack_count=1, attack_power=1)
@@ -561,14 +556,11 @@ def test_r32_r38_normal_decay_deform_ransom_and_transform_restore(tmp_path):
     assert (player.current_speed, player.current_mana) == (5, 2), "持续结束后还原互换前的速度/法力"
 
     # R33：定型只锁攻击力/攻击次数；速度变化仍合法，且被挡的变形不挂空状态。
-    # 载体用【减速X=5】＝失去当前速度的一半（X 是幅度参数，10X%）。不用 X=1：
-    # 那只是"至少削1点"的最小档，载不动"速度变化仍合法"这件事的量级。
-    # 向上取整（正文整数规则）下失去 ceil(速度/2)，故剩余＝speed_before // 2。
     player.add_status(StatusEffect("定型", 2, 1))
     speed_before = player.current_speed
-    slow = DaoWenEngine.resolve("减速", 5, target=player, caster=monster)
+    slow = DaoWenEngine.resolve("减速", 1, target=player, caster=monster)
     engine.combat.apply_daowen_effect("减速", slow, monster, player)
-    assert player.current_speed == speed_before // 2
+    assert player.current_speed == (speed_before + 1) // 2
     # 被【定型】挡下的变形：不再改写任何面板（旧断言查的是遗留字段 attack_power/attack_count）
     speed_after_slow, mana_after_slow = player.current_speed, player.current_mana
     engine.combat.apply_daowen_effect("变形", transformed, player, player)
