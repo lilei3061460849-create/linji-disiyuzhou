@@ -29,7 +29,8 @@ from .daowen import DaoWenEngine, ResonanceEngine
 from .combat import CombatEngine
 from .spell_dsl import parse_spell_definition, SpellDslError
 from .combat_events import register_combat_event_observer
-from .events import EventPool, parse_events
+from .events import EventPool
+from .rule_repository import RuleRepository
 from .dungeons import DEFAULT_INDEX
 from .gamedata import (REGION_EXCLUSIVE_DAOWEN, ORIGINAL_MONSTER_DAOWEN,
                        MONSTER_TRANSFORM_DAOWEN, SHAFA_LOOP_DAOWEN,
@@ -124,11 +125,14 @@ class GameEngine:
         # 体外心脏：记录[战始]翻倍前的血限基准，[战终]用于还原
         self._artifact_base_blood_limit = 0
 
-        # 事件系统
-        self.event_pool = EventPool(parse_events(DEFAULT_INDEX) if DEFAULT_INDEX.exists() else {})
-        # 怪物池（出怪系统）：从全副本索引加载，不再解析规则正文。
-        from .monsters import parse_monster_pool
-        self.monster_pool = parse_monster_pool(DEFAULT_INDEX) if DEFAULT_INDEX.exists() else {}
+        # 事件系统 / 怪物池：静态规则只解析一次，多个引擎共享同一份解析结果
+        # （rule_repository 按输入正文摘要缓存，并给每个引擎一份结构副本）。
+        if DEFAULT_INDEX.exists():
+            self.event_pool = EventPool(RuleRepository.events(DEFAULT_INDEX))
+            self.monster_pool = RuleRepository.monster_pool(DEFAULT_INDEX)
+        else:
+            self.event_pool = EventPool({})
+            self.monster_pool = {}
         # 行动历史（可追溯）
         self._action_history: list[dict] = []
 
