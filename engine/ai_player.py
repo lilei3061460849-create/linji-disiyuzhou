@@ -877,18 +877,32 @@ class AIPlayer(TacticalAI):
 
         setup/pre_battle/event 等高层阶段使用后端；轮回者战斗阶段直接进入同一
         个 TacticalAI 实时决策器，不再由另一个 AI 接管战斗。
+
+        顺序（2026-09-19 性能优化）：先判「能不能走战术路径」，再决定要不要
+        付整份状态序列化的代价。`get_state()` 会序列化 GameState 并生成
+        available_actions，只有**高层决策**需要它；战术路径走引擎对象本身，
+        不读这份 JSON。因此战斗回合不再为一次战术决策白做一遍状态序列化。
         """
-        state = self._attach_memory_context(self.engine.get_state())
-        if state.get("pending_interrupts"):
+        # 记忆与是否序列化状态无关：先保持既有副作用（命零前建立当轮记忆），
+        # 待裁定判断改为直接读引擎字段——与 get_state()["pending_interrupts"] 同源。
+        player = self.engine.state.player
+        if player is not None and player.is_alive:
+            self._ensure_player_memory()
+        if self.engine._pending_interrupts:
             return {
                 "action": "等待DM裁定",
-                "interrupts": state["pending_interrupts"],
+                "interrupts": [i.to_dict() for i in self.engine._pending_interrupts],
                 "instruction": "有中断等待DM裁定，AI无法继续决策",
             }
         if self._is_tactical_combat_step():
             return self._run_tactical_step(context)
 
-        available_actions = self.engine.get_available_actions()
+        state = self._attach_memory_context(self.engine.get_state())
+        # get_state() 已经把 available_actions 生成好了（纯读，无副作用），
+        # 不再重复生成一遍。
+        available_actions = state.get("available_actions")
+        if available_actions is None:
+            available_actions = self.engine.get_available_actions()
         decision = self.backend.decide(state, available_actions, context)
         before = self._memory_snapshot()
         result = self.engine.execute_action(decision.action_type, decision.params)

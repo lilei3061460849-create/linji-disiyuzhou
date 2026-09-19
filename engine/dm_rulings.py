@@ -103,7 +103,17 @@ class DMRulingsDB:
     def __init__(self, db_path: str = "data/dm_rulings.db"):
         self.db_path = db_path
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        # 建表推迟到第一次真正读写时才做（2026-09-19 性能优化）：模拟批量开局时
+        # 每个 GameEngine 都要构造本对象，而多数局一次裁定都不会产生——构造期
+        # 付三条 DDL 的成本纯浪费。对外契约不变：任何读写前表一定已建好。
+        self._schema_ready = False
+
+    def _ensure_schema(self) -> None:
+        """首次访问数据库前建表；幂等。"""
+        if self._schema_ready:
+            return
         self._init_db()
+        self._schema_ready = True
     
     def _init_db(self):
         conn = sqlite3.connect(self.db_path)
@@ -132,6 +142,7 @@ class DMRulingsDB:
     
     def save_ruling(self, ruling: DMRuling) -> int:
         """保存裁定，返回ID"""
+        self._ensure_schema()
         conn = sqlite3.connect(self.db_path)
         cursor = conn.execute(
             """INSERT INTO rulings 
@@ -169,6 +180,7 @@ class DMRulingsDB:
         查找类似场景的裁定
         先按类型过滤，再按关键词匹配
         """
+        self._ensure_schema()
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         
@@ -218,6 +230,7 @@ class DMRulingsDB:
         return results
     
     def get_ruling(self, ruling_id: int) -> Optional[DMRuling]:
+        self._ensure_schema()
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         row = conn.execute("SELECT * FROM rulings WHERE id = ?", (ruling_id,)).fetchone()
@@ -227,6 +240,7 @@ class DMRulingsDB:
         return None
     
     def increment_match_count(self, ruling_id: int):
+        self._ensure_schema()
         conn = sqlite3.connect(self.db_path)
         conn.execute(
             "UPDATE rulings SET match_count = match_count + 1 WHERE id = ?",
@@ -236,6 +250,7 @@ class DMRulingsDB:
         conn.close()
     
     def get_all_rulings(self, interrupt_type: Optional[str] = None) -> list[DMRuling]:
+        self._ensure_schema()
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         if interrupt_type:

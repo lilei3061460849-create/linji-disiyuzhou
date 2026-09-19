@@ -50,8 +50,8 @@ def test_boundary_no_zengsheng_in_active_code():
                         # 允许 models.py 的那一行（包含“旧名 增生”）
                         if p.name == "models.py" and "旧名" in line and "增生" in line:
                             continue
-                        # 允许 combat.py 的那一行 type= proliferation 注释中的旧名说明（若有）
-                        if p.name == "combat.py" and "旧名" in line:
+                        # 允许 combat.py（或其分片 engine/combat_parts/）里标注了“旧名”的兼容注释
+                        if ("combat.py" == p.name or "combat_parts" in p.parts) and "旧名" in line:
                             continue
                         hits.append(f"{p}:{i}:{line.strip()}")
     assert hits == [], f"活跃代码仍含增生（应已全改为癌变）：{hits[:5]}"

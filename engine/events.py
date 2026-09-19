@@ -47,12 +47,23 @@ EVENT_NAMES = {
 }
 
 
-def parse_events(index_path: str | Path) -> dict:
-    """从全副本索引及副本文档解析事件。通用事件位于 AI_EXPERIENCE.md 规则正文。"""
+def load_event_sources(index_path: str | Path) -> tuple[str, dict]:
+    """读取事件解析的全部输入：规则正文 + 已实现副本文档正文。
+
+    规则正文（AI_EXPERIENCE.md）承载通用事件，副本文档承载副本专属事件，
+    两者合起来就是事件解析的**唯一**输入。缓存层（rule_repository）用同一份
+    输入算摘要，避免「缓存读了哪几个文件」与「解析读了哪几个文件」各写一份而漂移。
+    """
     index = Path(index_path)
     root = index.parent
     content = (root / "AI_EXPERIENCE.md").read_text(encoding="utf-8")
     documents = load_dungeon_documents(index)
+    return content, documents
+
+
+def parse_events(index_path: str | Path) -> dict:
+    """从全副本索引及副本文档解析事件。通用事件位于 AI_EXPERIENCE.md 规则正文。"""
+    content, documents = load_event_sources(index_path)
     lines = content.split("\n")
     # 每个专属副本独立文档追加到解析输入；事件名白名单阻止标题被误判。
     for document in documents.values():

@@ -25,7 +25,10 @@ from engine.models import Entity, GameState, StatusEffect
 from engine.validator import check_migrated_mechanism_guards
 
 ROOT = Path(__file__).resolve().parents[1]
-COMBAT_SOURCE = (ROOT / "engine" / "combat.py").read_text(encoding="utf-8")
+# combat 管线已分片（engine/combat_parts/）：源码断言必须扫整个表面，
+# 否则“留在引擎里”的存在性断言会因方法搬进分片而假失败。
+COMBAT_SOURCE = (ROOT / "engine" / "combat.py").read_text(encoding="utf-8") + "".join(
+    p.read_text(encoding="utf-8") for p in sorted((ROOT / "engine" / "combat_parts").glob("*.py")))
 
 
 def _arena(player_hp=100, player_shards=0):
