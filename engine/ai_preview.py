@@ -18,6 +18,7 @@ import copy
 from typing import Any, Optional
 
 
+
 class ActionPreview:
     """行动后果预演器。preview() 返回动作的完整后果，不改变真实战斗状态。"""
 
@@ -131,8 +132,11 @@ class ActionPreview:
         用来串 token 这类只有运行时才知道的值。AI 不复制任何引擎公式，只转发引擎
         自己给出的快照。任一步失败即停，result 为该失败步的返回。
         返回 {result, diff, results}：result=最后执行步的返回，results=逐步返回。
+
+        预演内部走 `_execute_action_core`（不经 `execute_action` 的事务层）：
+        sandbox 本身用后即弃，再存一份 transaction snapshot 属于纯重复劳动
+        （2026-09-19 性能优化）。规则逻辑仍是同一份实现，不存在第二套结算。
         """
-        import copy
         eng = self.engine
         combat = eng.combat
         real_state = eng.state
@@ -154,7 +158,8 @@ class ActionPreview:
             try:
                 for action_type, params in steps:
                     p = params(results[-1]) if callable(params) else (params or {})
-                    result = eng.execute_action(action_type, p)
+                    # 不建 transaction：sandbox 本身就是一次性副本，回滚无意义。
+                    result = eng._execute_action_core(action_type, p)
                     results.append(result)
                     if not result.get("success"):
                         break
