@@ -130,6 +130,43 @@ def test_preview_sequence_attack_two_phase(engines):
     assert pv.get("results") is not None
 
 
+def test_preview_leaves_combat_runtime_untouched(engines):
+    """预演零副作用（运行态口径）：combat 自己的字典也不得被沙盒写脏。
+
+    这些字典按 `id(entity)` 建索引，而沙盒实体是深拷贝副本：预演一旦把沙盒
+    实体的键写进真实引擎，就会留下一批「老键」；下次沙盒副本极可能复用同一
+    地址，于是下一次预演会「看见」上一次预演用过的道纹（每回合每道纹至多
+    一次），候选集在预演里悄悄缩水——adfd9d8 的实盘轨迹漂移即源于此
+    （2026-09-19：修 engine/ai_preview.py 的 _RUNTIME_ATTRS 保存/恢复前，
+    强制 transaction=True 的对照轨迹与优化树一致，说明差额全部出自这里）。
+    """
+    a, _ = engines
+    combat = a.combat
+
+    def rt():
+        return {k: copy.deepcopy(getattr(combat, k, None))
+                for k in ActionPreview._RUNTIME_ATTRS}
+
+    before = rt()
+    # 逐条预演若干会被引擎写运行态的路径（命中/失败都要覆盖）
+    for action, params in (("use_daowen", {"daowen_name": "冲击", "x": 1}),
+                           ("use_daowen", {"daowen_name": "庇护", "x": 1,
+                                           "target": "贾凡"}),
+                           ("use_daowen", {"daowen_name": "不存在"}),
+                           ("prepare_monster_phase", {})):
+        ActionPreview(a).preview(action, dict(params))
+    assert rt() == before, "预演泄漏：真实引擎的战斗运行态被写入"
+
+    # 真实实体之外不得出现任何「老键」（沙盒实体 id 留下的残渣）
+    real_ids = {id(e) for e in ([a.state.player] if a.state.player else [])
+                + a.state.friends + a.state.employees + a.state.temp_friends
+                + a.state.enemies}
+    for attr in ("_monster_activated", "_monster_daowen_round_used",
+                 "_resonance_rewrites"):
+        stale = [k for k in getattr(combat, attr) if k not in real_ids]
+        assert stale == [], f"预演在 {attr} 留下沙盒实体老键：{stale}"
+
+
 def test_preview_does_not_build_transaction_snapshot(engines):
     """性能护栏：预演走 core，不得再建 transaction snapshot（deepcopy 次数）。"""
     a, _ = engines
