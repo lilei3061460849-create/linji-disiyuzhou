@@ -332,7 +332,10 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_bizhong(x: int) -> dict:
-        """必中X：代价：异变X。自身下X次选择[目标]（攻击与道纹通用，共用层数）时其无法闪避
+        """必中X：代价：异变X。自身下X次选择[目标]时其无法闪避
+
+        「攻击与道纹通用、共用同一叠层数」这层口径发布在 `sim/daowen_doc.py::NOTES["必中"]`，
+        不写进首行：首行带嵌套括号会让 `rule_sync` 的内联正则抽不到这条（详见 calculate_xuanyun）。
 
         2026-09-18 用户令：代价由 异变5X 降为 异变X。理由＝【变形】＋怪物出厂遗物
         【某人的偏爱】组成的白嫖闪避循环很难缠：怪物花当前速度逐次闪避轮回者的攻击
@@ -559,7 +562,18 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_xuanyun(x: int, target: Entity = None) -> dict:
-        """眩晕X：消耗5X。使[目标]无法出手，受到伤害后解除，持续X"""
+        """眩晕X：消耗5X。使[目标]无法出手，持续X；[目标]失去生命后立刻苏醒
+
+        解除条件的实现在 models.py 的扣血入口：格挡吸收与【固执】压帽之后 `remaining > 0`
+        才摘掉【眩晕】状态（那里的代码注释就写着「眩晕：失去生命后立刻苏醒」）。所以
+        「受到伤害后解除」这个说法不精确——被格挡吃满的一击不掉血，眩晕照旧挂着。
+        首行不写这段括号说明：规则正文的原始/转化道纹用内联格式发布，`rule_sync` 抽它的
+        正则 `([^（）]+)` 不容忍嵌套括号，首行一带括号这条就从提取结果里消失（38→37）。
+        所以「格挡吃满不解除」这层机制口径发布在 `sim/daowen_doc.py::NOTES["眩晕"]`
+        （索引与本节都会渲染成「注：」行），首行只留可抽取的净口径。
+        2026-09-19 按实现更正首行/effect/summary 三处（此前 AI_EXPERIENCE.md 写的是对的、
+        引擎首行是错的；①-B 第二刀要把那三节改成引擎生成，生成前必须先让引擎说得准）。
+        """
         target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "眩晕",
@@ -567,8 +581,8 @@ class DaoWenEngine:
             "cost_type": CostType.MANA.value,
             "cost": 5 * x,
             "duration": x,
-            "effect": "无法出手，受到伤害后解除",
-            "summary": f"消耗{5 * x}法力，使{target_name}无法出手，受伤害后解除，持续{x}回合"
+            "effect": "无法出手，失去生命后立刻苏醒",
+            "summary": f"消耗{5 * x}法力，使{target_name}无法出手，持续{x}回合；失去生命后立刻苏醒"
         }
     
     @staticmethod

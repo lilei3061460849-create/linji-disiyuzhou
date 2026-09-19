@@ -37,6 +37,13 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from engine.daowen import DaoWenEngine, ResonanceEngine  # noqa: E402
+from engine.gamedata import (  # noqa: E402
+    MONSTER_TRANSFORM_DAOWEN,
+    ORIGINAL_MONSTER_DAOWEN,
+    REGION_EXCLUSIVE_DAOWEN,
+    SHAFA_LOOP_DAOWEN,
+    UNIMPLEMENTED_REGION_EXCLUSIVE_DAOWEN,
+)
 
 DaoWenEngine.register_all()
 
@@ -123,9 +130,53 @@ NOTES = {
     "原初": "怪物困境时发动【原初X】可临时借用一种自身未持有的原始怪物道纹（仅借用，不获得）。",
 }
 
+# 以下口径 2026-09-19 从 AI_EXPERIENCE.md 的手写正文逐字搬来（①-B 第二刀：那三节要改成
+# 引擎生成，文档独有的现行口径必须先在引擎侧有位置，否则生成＝裁剪式删口径）。
+# 注意：搬的是「现行规则」，日期水印（如「2026-09-16 起无需学习」）按正文红线一律剥掉。
+NOTES["封印"] += (
+    "【镇魔印】以【封印】为步骤，声明“自身回合结束后→发动封印”；在己方主动出手阶段结束、"
+    "怪物阶段开始前自动选定当前怪物（默认X=1），不占主动出手。持有【封印】道纹即具备装配"
+    "【镇魔印】的资格，但须显式装配后才会自动发动；装配期间【封印】不再作为主动道纹候选——"
+    "这正是该法术把一次主动出手换成回合结束免费暂离的意义。暂离期间仍计入未完成战斗，"
+    "回场后按普通怪物正常结算并可产生[碎片]。"
+)
+NOTES["点金"] = (
+    "不再与伤害挂钩：想要钱就得花法力，而[攻击力]=当前法力，花法力直接压低普攻输出。"
+) + NOTES["点金"]
+# 净化：归属与学习门禁直接由引擎数据派生（UNIMPLEMENTED_REGION_EXCLUSIVE_DAOWEN），不手抄。
+for _name, _region in UNIMPLEMENTED_REGION_EXCLUSIVE_DAOWEN.items():
+    NOTES[_name] = f"{_region}专属；计算已实现，不可经局外学习直接获得"
+# 眩晕/必中：首行不能带嵌套括号（rule_sync 内联正则 `([^（）]+)` 抽不到），机制口径落在这里。
+NOTES["眩晕"] = (
+    "解除条件＝**失去生命**，不是「受到伤害」：格挡吸收与【固执】压帽之后仍有实际掉血才苏醒，"
+    "被格挡吃满的一击不掉血、眩晕照旧挂着（实现在 models.py 的扣血入口）。"
+)
+NOTES["必中"] = "层数对**攻击与道纹通用**：普攻与道纹选目标都消耗同一叠层数，用完即失效。"
+NOTES["龙鳞"] = (
+    "与【加害】是一对**对称道纹**：同为消耗类同档代价、同「每次受到伤害」触发、同持续∞，"
+    "只差符号——加害使受伤增加、龙鳞使受伤减少且最低为0。二者刻意保留为两条不合并："
+    "加害是龙心谷闭环起点、龙鳞是它的反转位，闭环拓扑与残韵映射都按两个独立节点接线。"
+)
+NOTES["自愈"] = (
+    "按**已损生命**计价（满血目标回复0），代价【冷却X】＝X 场战斗内不能再次发动；"
+    "【坏死】【镇尸】的禁疗照常拦住它。怪物与轮回者同口径只付自身的【冷却X】，"
+    "发动它不产生异变层数。"
+)
+NOTES["滋养"] = (
+    "本身不回复任何生命，它让[目标]在持续期间**受到的每一笔恢复量翻倍**：结算点在统一回复入口，"
+    "覆盖战斗内的一切来源（道纹／消耗品／寄生…），过量部分同样翻倍计入本场累计回复。"
+    "它是局内状态，[战终]清除，因此不加成局外行动（【休整】的恢复量与它无关）。"
+    "与【自愈】组合即满血复活：滋养（×2）＋自愈2（已损生命50%）＝已损生命100%。"
+    "翻倍同样把【癌变】进度翻倍（对怪＝更快被吸收进《死者之书》且不给[碎片]，"
+    "对轮回者/[朋友]/[员工]＝更快直接[命零]），能免疫癌变的有且只有遗物【第一杯】。"
+)
+
 # ---------- 闭环（顺序＝残韵闭环顺序，起点＝第一条边的 src） ----------
 # 只有**引擎已实现**的四个区域有闭环数据；其余四区（永夜庭/沉沦海/荒疫古城/巴别塔）
 # 的道纹尚未接入引擎，正文仍是手写设计稿，不在生成范围内。
+# 区域顺序＝文档与索引的既有呈现顺序（阶级升序内的历史次序），生成时按它排。
+REGION_ORDER = ("扭曲都市", "罪孽都市", "龙心谷", "乱葬岗")
+
 REGION_LOOPS = {
     "扭曲都市": "扭曲都市闭环",
     "罪孽都市": "罪孽都市闭环",
@@ -202,3 +253,115 @@ def region_block(region: str) -> str:
         if note:
             out.append(note)
     return "\n".join(out)
+
+
+# ==================== AI_EXPERIENCE.md 三节的渲染（①-B 第二刀） ====================
+# 这三节（道纹体系／副本专属道纹／原始怪物道纹与转化道纹）此前是手写的，2026-09-19 改成
+# 引擎生成。渲染格式**沿用文档既有写法**，唯一硬约束是：
+# `engine/rule_sync.py::extract_daowen_from_file` 从这三节抽出的通用道纹必须仍是
+# 那 38 条、名字与口径一条不少一条不多（tests/test_rule_sources.py 钉死 38 与双向 diff 为空）。
+# 抽取器认两种行：
+#   标准行 `名X[（说明）]：代价。效果`（`^(?:\d+\.)?([两汉字])X(?:/Y)?(?:（[^）]*）)?[：:](.+)$`）
+#   内联行 `名X（含「消耗」或「代价」的括号说明）`（`([两汉字])X（([^（）]+)）`）
+# 于是三节各自的格式是被抽取器倒推出来的，不能随手统一：
+#   道纹体系     → 标准行（11 条，进 38）
+#   原始/转化树  → 内联行（26 条，进 38）；**首行不得带嵌套括号**，一层括号抽取器就看不见这条
+#                  （【眩晕】【必中】的机制说明因此发布在 NOTES，不写进 docstring 首行）
+#   副本专属     → 项目符号 `- 【名】X：…`（32 条，**不进 38**：抽取器不认项目符号行，
+#                  这是刻意的——区域专属道纹的事实源是《全道纹索引》与副本正文）
+MONSTER_FORWARD_LOOP = "怪物原始道纹"
+MONSTER_BACKWARD_LOOP = "怪物原始道纹回溯"
+
+
+def _body(name: str) -> str:
+    """`Rule.line` 去掉尾句点（内联进括号、或后面还要接括号说明时用）。"""
+    body = RULES[name].line
+    return body[:-1] if body.endswith("。") else body
+
+
+def _inline(name: str) -> str:
+    """内联行的括号内容：`代价：异变5X。效果` → `代价：异变5X：效果`（首个句点转冒号）。"""
+    return _body(name).replace("。", "：", 1)
+
+
+def shafa_block() -> str:
+    """`### 道纹体系` 正文：杀伐闭环主轨 ＋ 11 条定义行（顺序＝SHAFA_LOOP_DAOWEN）。"""
+    loop = "杀伐闭环"
+    start = loop_start(loop)
+    chain = loop_chain(loop, suffix="X").replace(start + "X", start + "X（起点/终点）", 1)
+    out = [chain, ""]
+    for name in SHAFA_LOOP_DAOWEN:
+        out.append(def_line(name))
+        note = note_line(name)
+        if note:
+            out.append(note)
+    return "\n".join(out)
+
+
+def region_exclusive_block() -> str:
+    """`### 副本专属道纹` 正文：四个已实现区域各自的专属道纹（项目符号行，不进 38 条抽取）。
+
+    区域内按名字排序，与《全道纹索引》的区域段同序（`gen_daowen_index.py` 用 `sorted()`），
+    两份发布文档同一个顺序，读者/AI 对照时不会错位。
+    """
+    out: list[str] = []
+    for region in REGION_ORDER:
+        out += [f"**{region}**", ""]
+        for name in sorted(REGION_EXCLUSIVE_DAOWEN[region]):
+            rule = RULES[name]
+            out.append(f"- 【{name}】{rule.head}：{rule.line}")
+            note = note_line(name)
+            if note:
+                out.append(note)
+        out.append("")
+    return "\n".join(out).rstrip("\n")
+
+
+def monster_groups() -> dict:
+    """原始道纹 → [(残韵类型, 转化道纹)]；组序＝引擎闭环边序（这是权威顺序，不手写）。"""
+    groups: dict = {}
+    for src, rtype, dst in ResonanceEngine.CLOSED_LOOPS[MONSTER_FORWARD_LOOP]:
+        groups.setdefault(src, []).append((rtype, dst))
+    return groups
+
+
+def monster_tree_block() -> str:
+    """`### 原始怪物道纹与转化道纹` 的正向部分：7 组树 ＋ 组后注 ＋ 净化行。
+
+    每组第一行把原始道纹的代价与效果也内联出来（`狂暴X（代价：异变5X：效果）→（转换）愤怒X（…）`），
+    其余行只写 `原始X→（残韵）转化X（…）`——与文档既有写法逐字对齐，也保住代价数字守卫的
+    24 字窗口行为（改成逐行定义会让窗口里出现的数字换位置，守卫要跟着重调，没必要）。
+    """
+    out: list[str] = []
+    for i, (src, edges) in enumerate(monster_groups().items()):
+        if i:
+            out.append("")
+        for j, (rtype, dst) in enumerate(edges):
+            head = f"{src}X（{_inline(src)}）→" if j == 0 else f"{src}X→"
+            out.append(f"{head}（{rtype}）{dst}X（{_inline(dst)}）")
+        # 组后注：先原始道纹自己，再按边序给转化道纹；这里不是逐行挂载，所以带上【名】前缀。
+        for name in [src] + [d for _r, d in edges]:
+            if name in NOTES:
+                out.append(f"> 注：【{name}】{NOTES[name]}")
+    # 净化：所属副本尚未接入运行时，不挂任何树，单独一行标准格式；
+    # 归属与学习门禁内联在括号里（NOTES 由 UNIMPLEMENTED_REGION_EXCLUSIVE_DAOWEN 派生）。
+    for name in UNIMPLEMENTED_REGION_EXCLUSIVE_DAOWEN:
+        out += ["", f"{name}X：{_body(name)}（{NOTES[name]}）"]
+    return "\n".join(out)
+
+
+def monster_back_block() -> str:
+    """回溯边：19 条 `转化X→（残韵）原始X`（源＝CLOSED_LOOPS['怪物原始道纹回溯']，不反推）。"""
+    edges = ResonanceEngine.CLOSED_LOOPS[MONSTER_BACKWARD_LOOP]
+    return "\n".join(f"{s}X→（{r}）{d}X" for s, r, d in edges)
+
+
+def monster_coverage() -> dict:
+    """自检用：三节该覆盖的道纹集合（生成器与守卫都拿它核对引擎，防漏防多）。"""
+    return {
+        "杀伐": set(SHAFA_LOOP_DAOWEN),
+        "原始": set(ORIGINAL_MONSTER_DAOWEN),
+        "转化": set(MONSTER_TRANSFORM_DAOWEN),
+        "区域专属": {n for s in REGION_EXCLUSIVE_DAOWEN.values() for n in s},
+        "未实现专属": set(UNIMPLEMENTED_REGION_EXCLUSIVE_DAOWEN),
+    }

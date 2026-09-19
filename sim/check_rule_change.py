@@ -3,7 +3,9 @@
 
 四步，任一步失败即以非零码退出（可以当提交前门禁）：
 
-  1. **索引同步**：重跑生成器 `sim/gen_daowen_index.py`，比对 `全道纹索引.md` 前后哈希。
+  1. **派生文档同步**：重跑三个生成器（`sim/gen_daowen_index.py` → `全道纹索引.md`、
+     `sim/gen_region_daowen.py` → `副本/*.md` 的「道纹网络」整节、`sim/gen_experience_daowen.py`
+     → `AI_EXPERIENCE.md` 的三节道纹正文），比对前后哈希。
      变了＝你改了引擎口径却忘了重生成派生索引（索引是注入 AI 提示词的文档，必须与引擎同源；
      `tests/test_daowen_cost_consistency.py` 会逐字节守卫它）。工具会替你把索引重生成好，
      记得 `git add`。
@@ -41,6 +43,8 @@ INDEX = "全道纹索引.md"
 GENERATOR = "sim/gen_daowen_index.py"
 # 副本区域的「道纹网络」整节同样是派生产物（①-B：文档从引擎生成）
 REGION_GENERATOR = "sim/gen_region_daowen.py"
+# 规则正文的三节（道纹体系／副本专属道纹／原始怪物道纹与转化道纹）也是（①-B 第二刀）
+EXPERIENCE_GENERATOR = "sim/gen_experience_daowen.py"
 
 GUARD_TESTS = [
     "tests/test_daowen_cost_consistency.py",
@@ -58,6 +62,8 @@ GUARD_TESTS = [
     "tests/test_ledger_isolation.py",
     # ①-B：副本区域整节＝派生产物；rule_sync 从这些文档抽道纹（引擎运行时读它）
     "tests/test_region_daowen_generated.py",
+    # ①-B 第二刀：规则正文三节＝派生产物；rule_sync 与 events.py 都读这份文件
+    "tests/test_experience_daowen_generated.py",
     "tests/test_rule_sources.py",
 ]
 # 注：「同 seed 可复现」不在子集里（那条用例单跑约 29s，会把 7 秒的自检拖成半分钟）；
@@ -169,8 +175,30 @@ def step_region_docs(args) -> bool:
     out = r.stdout.strip()
     if out.startswith("unchanged"):
         print("   ✓ 副本区域整节与引擎同源（无变化）")
-        return True
+        return step_experience_docs(args)
     print("   ✗ 副本区域整节被重生成改动 → 改了引擎口径/闭环没重生成；已替你生成好，记得 git add")
+    for ln in out.splitlines():
+        print(f"     {ln}")
+    return args.strict is False and step_experience_docs(args)
+
+
+def step_experience_docs(args) -> bool:
+    """1c) AI_EXPERIENCE.md 的三节道纹正文：重跑生成器，比对该不该变。
+
+    与索引、副本区域同款口径（源＝引擎归属集合＋docstring 首行＋CLOSED_LOOPS＋NOTES）。
+    这一份比前两份更要紧：`rule_sync`/`events.py` **运行时就读它**，格式一变引擎抽到的
+    道纹条数就变（内联正则不容忍嵌套括号，详见 tests/test_experience_daowen_generated.py）。
+    """
+    print("   ── 规则正文三节（道纹体系／副本专属道纹／原始怪物道纹与转化道纹）")
+    r = subprocess.run([sys.executable, EXPERIENCE_GENERATOR], cwd=ROOT, capture_output=True, text=True)
+    if r.returncode != 0:
+        print(f"   ✗ 生成器失败：{(r.stderr or r.stdout).strip()[-400:]}")
+        return False
+    out = r.stdout.strip()
+    if out.startswith("unchanged"):
+        print("   ✓ 规则正文三节与引擎同源（无变化）")
+        return True
+    print("   ✗ 规则正文三节被重生成改动 → 改了引擎口径/归属/闭环没重生成；已替你生成好，记得 git add")
     for ln in out.splitlines():
         print(f"     {ln}")
     return args.strict is False
