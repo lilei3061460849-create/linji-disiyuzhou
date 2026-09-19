@@ -17,6 +17,7 @@ from ..combat_events import CombatEvent, CombatEventType, register_combat_event_
 from ..combat_hooks import CombatHookManager
 from ..effect_context import EffectContext, make_context, normalize_context
 from ..mechanisms import MECHANISMS, Phase, TriggerBus, TriggerContext
+from ..resolution import KIND_EFFECT, resolution_frame
 from ..personality import remove_personality
 from ..models import MONSTER_MANA_RELIC
 
@@ -748,6 +749,11 @@ class MonsterPhaseMixin:
         self._split_clones_spawned = snap["split_spawned"]
 
     def resolve_monster_phase(self, choices: list[dict], prepared: dict) -> list[dict]:
+        """怪物阶段的公开入口（开帧后转实现体 `_resolve_monster_phase_impl`）。"""
+        with resolution_frame(self, KIND_EFFECT, "怪物阶段"):
+            return self._resolve_monster_phase_impl(choices, prepared)
+
+    def _resolve_monster_phase_impl(self, choices: list[dict], prepared: dict) -> list[dict]:
         """严格按传入的prepare快照验证并结算；任何非法输入由API事务整体回滚。"""
         if not isinstance(choices, list):
             raise ValueError("choices必须是列表")

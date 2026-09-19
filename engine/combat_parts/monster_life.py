@@ -18,6 +18,7 @@ from ..combat_events import CombatEvent, CombatEventType, register_combat_event_
 from ..combat_hooks import CombatHookManager
 from ..effect_context import EffectContext, make_context, normalize_context
 from ..mechanisms import MECHANISMS, Phase, TriggerBus, TriggerContext
+from ..resolution import KIND_EFFECT, KIND_EVOLVE, resolution_frame
 from ..personality import remove_personality
 from ..models import MONSTER_MANA_RELIC
 
@@ -114,6 +115,12 @@ class MonsterLifeMixin:
     # ========== 进化（原初X，引擎直接结算，无需DM中断） ==========
     
     def execute_evolution(self, monster: Entity, daowen_name: str, x: int) -> dict:
+        """【进化】的公开入口（开帧后转实现体 `_execute_evolution_impl`）。"""
+        with resolution_frame(self, KIND_EVOLVE,
+                              getattr(monster, "name", "?"), daowen_name):
+            return self._execute_evolution_impl(monster, daowen_name, x)
+
+    def _execute_evolution_impl(self, monster: Entity, daowen_name: str, x: int) -> dict:
         """
         特殊事件【进化】：怪物发动【原初X】（规则正文·特殊事件）。
         原初X：代价：异变5X。选择一种**当前轮回者已持有**、且自身未持有的道纹，

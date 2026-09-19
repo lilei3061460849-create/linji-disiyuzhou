@@ -19,7 +19,8 @@ from ..combat_hooks import CombatHookManager
 from ..effect_context import EffectContext, make_context, normalize_context
 from ..mechanisms import MECHANISMS, Phase, TriggerBus, TriggerContext
 from ..personality import remove_personality
-from ..resolution import KIND_DAMAGE
+from ..resolution import (KIND_DEATH, KIND_DAMAGE, KIND_SPLIT,
+                           note_delta, resolution_frame)
 from ..models import MONSTER_MANA_RELIC
 
 
@@ -225,6 +226,15 @@ class DamageDeathMixin:
         濒死/保护（撤退、负岳碑、断尾求生）在伤害管线更早的 mitigation 阶段完成，
         走到这里说明保护已经没有拦住。
         """
+        with resolution_frame(self, KIND_DEATH, "命零",
+                              getattr(entity, "name", "?")):
+            return self._check_hp_zero_death_inner(entity, ctx)
+
+    def _check_hp_zero_death_inner(
+        self, entity: Optional[Entity],
+        ctx: Optional[EffectContext | dict] = None,
+    ) -> bool:
+        """命零判定的实现体（对外契约见 _check_hp_zero_death）。"""
         if entity is None or entity.current_hp > 0:
             return False
         # 永久离场（雕塑/癌变/还债/救赎/逃跑）不是命零，绝不在此处宣布死亡；【封印】暂离不走本管线。
@@ -334,16 +344,16 @@ class DamageDeathMixin:
         # 结算生命周期：深度/预算保险丝与可追踪性统一由 ResolutionContext 记账
         # （见 engine/resolution.py）。阈值 64 与既有 MAX_EFFECT_CHAIN_DEPTH 同义，
         # 实测合法峰值 5，故行为不变——只在真出现 A→B→A 循环时截断成可诊断异常。
-        frame = self.resolution.enter(
-            KIND_DAMAGE,
-            f"{damage_ctx.source}→{getattr(target, 'name', '?')}")
-        self._hp_loss_recording += 1  # 伤害失血由 _record_hp_loss_event 接管，抑制兜底钩子
-        try:
-            return self._apply_hostile_damage_inner(
-                target, amount, damage_type, source, damage_ctx, legacy_ctx)
-        finally:
-            self._hp_loss_recording -= 1
-            self.resolution.leave(frame)
+        hp_before = target.current_hp
+        with resolution_frame(self, KIND_DAMAGE, damage_ctx.source,
+                              getattr(target, "name", "?"), amount):
+            self._hp_loss_recording += 1  # 伤害失血由 _record_hp_loss_event 接管，抑制兜底钩子
+            try:
+                return self._apply_hostile_damage_inner(
+                    target, amount, damage_type, source, damage_ctx, legacy_ctx)
+            finally:
+                self._hp_loss_recording -= 1
+                note_delta(self, "hp", hp_before, target.current_hp)
 
     def _apply_hostile_damage_inner(
         self, target: Entity, amount: int, damage_type: str,
@@ -501,6 +511,12 @@ class DamageDeathMixin:
         复制体继承本体除【分裂】外的全部道纹（避免无限套娃），阵营与本体一致
         （本体是怪物→进 enemies；否则→进 temp_friends）。返回新建的复制体列表。
         """
+        with resolution_frame(self, KIND_SPLIT, "分裂",
+                              getattr(caster, "name", "?"), count):
+            return self._spawn_fenlie_clones_inner(caster, count, clone_hp)
+
+    def _spawn_fenlie_clones_inner(self, caster, count: int, clone_hp: int) -> list:
+        """分裂的实现体（对外契约见 _spawn_fenlie_clones）。"""
         clones = []
         for i in range(max(0, count)):
             clone = Entity(name=f"{caster.name}·裂{i + 1}",

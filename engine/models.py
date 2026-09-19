@@ -10,7 +10,9 @@ import uuid
 
 from .enums import EffectScope, EffectPolarity
 from .effect_context import EffectContext, make_context, normalize_context
-from .combat_events import CombatEvent, CombatEventType, get_combat_event_observer
+from .resolution import KIND_HEAL, note_delta, resolution_frame
+from .combat_events import (CombatEvent, CombatEventType, engine_for_state,
+                            get_combat_event_observer)
 from .personality import export_for_ai as personality_export_for_ai
 
 
@@ -1016,6 +1018,21 @@ class GameState:
 
         ctx 为兼容层来源上下文；未传时保持原回复行为，并在返回明细中给出 warning。
         """
+        # 结算生命周期记账（engine/resolution.py）：状态层拿不到引擎，
+        # 经既有观察者表解析（combat_events.engine_for_state）；拿不到就跳过记账
+        # ——本函数也可在纯 GameState 单测里独立调用。
+        _heal_engine = engine_for_state(self)
+        _hp_before = entity.current_hp
+        with resolution_frame(_heal_engine, KIND_HEAL,
+                              getattr(entity, "name", "?"), amount):
+            try:
+                return self._apply_heal_inner(entity, amount, ctx)
+            finally:
+                note_delta(_heal_engine, "hp", _hp_before, entity.current_hp)
+
+    def _apply_heal_inner(self, entity: Entity, amount: int,
+                          ctx: Optional[EffectContext | dict] = None) -> dict:
+        """回复的实现体（对外契约见 apply_heal）。"""
         heal_ctx = normalize_context(ctx)
         if heal_ctx is None:
             heal_ctx = make_context(

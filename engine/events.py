@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Optional
 
 from .dungeons import load_dungeon_documents
+from .resolution import KIND_EFFECT, resolution_frame
 
 
 # 各池事件名（与规则正文一致）
@@ -221,6 +222,12 @@ def _event_preflight(text: str, engine, params: dict) -> Optional[str]:
 
 
 def resolve_option_effect(text: str, engine, event_name: str = "", params=None) -> dict:
+    """事件选项效果的公开入口（开帧后转实现体 `_resolve_option_effect_impl`）。"""
+    with resolution_frame(engine, KIND_EFFECT, "选项", event_name or text[:12]):
+        return _resolve_option_effect_impl(text, engine, event_name, params)
+
+
+def _resolve_option_effect_impl(text: str, engine, event_name: str = "", params=None) -> dict:
     """
     结算事件选项效果（关键字解释器）。
     自动扣除常见代价（流血/失去碎片/衰老/枯竭/失去精力）与应用常见收益（获碎片/血限/残韵/遗物/法术）。

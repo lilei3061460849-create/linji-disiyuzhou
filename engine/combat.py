@@ -18,7 +18,7 @@ from .combat_hooks import CombatHookManager
 from .effect_context import EffectContext, make_context, normalize_context
 from .mechanisms import MECHANISMS, Phase, TriggerBus, TriggerContext
 from .personality import remove_personality
-from .resolution import ResolutionContext
+from .resolution import KIND_EFFECT, ResolutionContext, resolution_frame
 # 常量定义在 models（授予点在 Entity.__post_init__），此处只读取以判定效果。
 from .models import MONSTER_MANA_RELIC
 
@@ -574,6 +574,28 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         }.get(damage_type, damage_type or "normal")
 
     def resolve_attack(
+        self,
+        attacker: Entity,
+        target: Entity,
+        hit_index: int = 0,
+        is_must_hit: bool = False,
+        dodge: bool = False,
+        blood_shadow: bool = False,
+        spell_choices: Optional[dict] = None,
+        entity_refs: Optional[dict[str, Entity]] = None,
+        dodge_relic_target_ref: Optional[str] = None,
+        cost_share_target_ref: str = "",
+    ) -> dict:
+        """攻击结算的公开入口（开帧后转实现体 `_resolve_attack_impl`）。"""
+        with resolution_frame(self, KIND_EFFECT, "攻击",
+                              getattr(attacker, "name", "?"),
+                              "->", getattr(target, "name", "?")):
+            return self._resolve_attack_impl(
+                attacker, target, hit_index, is_must_hit, dodge, blood_shadow,
+                spell_choices, entity_refs, dodge_relic_target_ref,
+                cost_share_target_ref)
+
+    def _resolve_attack_impl(
         self,
         attacker: Entity,
         target: Entity,

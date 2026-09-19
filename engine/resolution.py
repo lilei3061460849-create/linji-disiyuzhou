@@ -43,6 +43,7 @@
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -55,7 +56,7 @@ class ResolutionBudgetError(RuntimeError):
     """一次行动内的效果总数超过预算——深度不涨但数量爆炸的失控形态。"""
 
 
-@dataclass(frozen=True)
+@dataclass
 class ResolutionFrame:
     """链上的一帧（只在 tracing 打开时创建）。"""
 
@@ -64,9 +65,12 @@ class ResolutionFrame:
     kind: str
     label: str
     parent: Optional[int]
+    #: 诊断备注（如 `hp 10→4`），由 `ResolutionContext.note()` 写入。
+    note: str = ""
 
 
 #: 效果种类：**观测用标签**，不是行为开关。汇点按这个粒度记账。
+KIND_EFFECT = "effect"
 KIND_DAMAGE = "damage"
 KIND_HEAL = "heal"
 KIND_COST = "cost"
@@ -94,6 +98,9 @@ class ResolutionContext:
     MAX_DEPTH = 64
     #: 单次顶层行动内的效果总数上限（实测峰值 45，留 40 倍余量）。
     MAX_EFFECTS = 2000
+    #: trace 保留的**已结束**帧上限（环形丢弃）。上限存在的意义是：
+    #: 长局/长时间挂着 trace 也不会把内存吃光（需求：不得大量驻留对象）。
+    MAX_HISTORY = 500
 
     def __init__(self, *, tracing: bool = False):
         self._depth = 0
@@ -107,6 +114,8 @@ class ResolutionContext:
         self.scratch: dict[str, Any] = {}
         #: 已处理过的触发标签（供诊断「这个 trigger 为什么没生效」）。
         self.seen_triggers: list[str] = []
+        #: 已结束的帧（**只在 tracing 打开时**累积；环形，最多 MAX_HISTORY 条）。
+        self.history: list[ResolutionFrame] = []
 
     # ------------------------------------------------------------ 生命周期
 
@@ -128,6 +137,10 @@ class ResolutionContext:
     def end_action(self) -> None:
         """一次顶层行动结束：只保留终止原因（链本身留给 trace 快照）。"""
         self._action = ""
+
+    def clear_history(self) -> None:
+        """丢弃已结束的帧（trace 数据的唯一保留点是 `history`）。"""
+        self.history.clear()
 
     @property
     def action(self) -> str:
@@ -164,11 +177,20 @@ class ResolutionContext:
         return frame
 
     def leave(self, token: Optional[ResolutionFrame] = None) -> None:
-        """离开一次效果结算（必须与 `enter` 成对，用 try/finally 保证）。"""
+        """离开一次效果结算（必须与 `enter` 成对，用 try/finally 保证）。
+
+        trace 打开时，把这一帧**带备注地**归档到 `history`：帧一旦结束就不再
+        参与判定，只作为「事情是怎么发生的」的证据。归档是环形写入，
+        上限 `MAX_HISTORY`，因此长时间开着 trace 也不会无限增长。
+        """
         if self._depth > 0:
             self._depth -= 1
-        if token is not None and self._chain:
-            self._chain.pop()
+        if token is not None:
+            if self._chain and self._chain[-1] is token:
+                self._chain.pop()
+            self.history.append(token)
+            if len(self.history) > self.MAX_HISTORY:
+                del self.history[:len(self.history) - self.MAX_HISTORY]
 
     # ------------------------------------------------------------ 观测
 
@@ -212,6 +234,39 @@ class ResolutionContext:
         if self._tracing:
             self.scratch[key] = value
 
+    def note(self, text: str) -> None:
+        """给**当前最内层帧**追加一条诊断备注（如 `hp 10→4`）。
+
+        只在 tracing 打开时生效；效果代码可以放心地把它写在结算路径上
+        ——关闭时它只是一次布尔判断。
+        """
+        if self._tracing and self._chain:
+            frame = self._chain[-1]
+            frame.note = f"{frame.note} {text}".strip() if frame.note else text
+
+    def describe_trace(self, limit: int = 60) -> str:
+        """把已结束的帧渲染成一条因果链（trace 关闭时返回提示串）。
+
+        每行形如：
+
+            [3] damage 赌鬼 3   hp 10→7        ← 状态变化
+            [4] death  命零 赌鬼
+        """
+        if not self._tracing:
+            return "(trace 未开启：game.combat.resolution.set_tracing(True))"
+        if not self.history:
+            return "(无结算记录)"
+        lines = []
+        # 帧是结束（leave）时才归档的，所以按 seq 排序才是「发生顺序」。
+        for frame in sorted(self.history[-limit:], key=lambda f: f.seq):
+            line = f"[{frame.seq}] {'  ' * (frame.depth - 1)}{frame.kind}"
+            if frame.label:
+                line += f" {frame.label}"
+            if frame.note:
+                line += f"   {frame.note}"
+            lines.append(line)
+        return "\n".join(lines)
+
     def note_trigger(self, label: str) -> None:
         """记一次触发处理（trace/诊断用；默认也要记账，成本是一个 append）。"""
         if self._tracing and len(self.seen_triggers) < 512:
@@ -225,9 +280,58 @@ class ResolutionContext:
         只保存标量与链长度：链帧本身是诊断数据，预演不需要把它带出来。
         """
         return (self._depth, self._effects, self._seq, len(self._chain),
-                self._trip_reason, self._action)
+                self._trip_reason, self._action, len(self.history))
 
     def restore(self, token: tuple) -> None:
         """按快照还原（退出预演时调用）——原地恢复，身份不变。"""
-        self._depth, self._effects, self._seq, chain_len, self._trip_reason, self._action = token
+        (self._depth, self._effects, self._seq, chain_len,
+         self._trip_reason, self._action, history_len) = token
         del self._chain[chain_len:]
+        del self.history[history_len:]
+
+
+# ------------------------------------------------------------------ 统一入口写法
+
+def resolution_of(target: Any) -> Optional["ResolutionContext"]:
+    """从「引擎」或「战斗管理器」解析出结算上下文；拿不到就返回 None（跳过记账）。
+
+    为什么要这个函数：结算入口分布在不同层——`GameEngine`（events/api）、
+    `CombatEngine`（combat/机制分片），有些工具函数只拿到其中之一。
+    统一在这里解析，避免每个入口各写一遍 `getattr(getattr(x, "combat", None), ...)`。
+    纯 `GameState` / 单测对象上没有引擎时返回 None，记账自动降级为「无操作」。
+    """
+    if target is None:
+        return None
+    ctx = getattr(target, "resolution", None)
+    if isinstance(ctx, ResolutionContext):
+        return ctx
+    combat = getattr(target, "combat", None)
+    ctx = getattr(combat, "resolution", None)
+    return ctx if isinstance(ctx, ResolutionContext) else None
+
+
+def note_delta(target: Any, field: str, before: Any, after: Any) -> None:
+    """把一次状态变化记到当前帧上（`hp 10→4`）；无变化或无 trace 时是空操作。"""
+    if before == after:
+        return
+    ctx = resolution_of(target)
+    if ctx is not None:
+        ctx.note(f"{field} {before}→{after}")
+
+
+@contextmanager
+def resolution_frame(target: Any, kind: str, *parts: Any):
+    """开一个结算帧：`with resolution_frame(self, KIND_EFFECT, "杀伐", target.name):`。
+
+    这是**唯一**的开帧写法（入口与汇点都用它），保证进出成对、异常也收尾。
+    trace 关闭时 label 根本不构造（parts 只在开启时才 join）。
+    """
+    ctx = resolution_of(target)
+    if ctx is None:
+        yield None
+        return
+    token = ctx.enter(kind, " ".join(str(p) for p in parts) if ctx.tracing else "")
+    try:
+        yield token
+    finally:
+        ctx.leave(token)

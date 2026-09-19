@@ -19,6 +19,7 @@ from ..combat_hooks import CombatHookManager
 from ..effect_context import EffectContext, make_context, normalize_context
 from ..mechanisms import MECHANISMS, Phase, TriggerBus, TriggerContext
 from ..personality import remove_personality
+from ..resolution import KIND_COST, note_delta, resolution_frame
 from ..models import MONSTER_MANA_RELIC
 
 
@@ -278,6 +279,36 @@ class CostPaymentMixin:
         未迁移调用点仍可不传 ctx，但若存在需要上下文的监听，会在返回明细中给出
         context_warning，避免开发/测试时静默漏掉来源。
         """
+
+        # 结算生命周期记账（engine/resolution.py）：代价也是「效果」，同样受限。
+        _cost_field = {"生命": "hp", "法力": "mana", "精力": "energy"}.get(cost_type, cost_type)
+        _before = {f: getattr(payer, f, None) for f in ("current_hp", "mana", "energy")}
+        with resolution_frame(self, KIND_COST, getattr(payer, "name", "?"),
+                              cost_type, amount):
+            try:
+                return self._pay_numeric_cost_inner(
+                    payer, cost_type, amount,
+                    cost_share_target_ref=cost_share_target_ref,
+                    dragon_heart_use=dragon_heart_use, ctx=ctx,
+                    cost_context=cost_context)
+            finally:
+                for attr, field in (("current_hp", "hp"), ("mana", "mana"),
+                                    ("energy", "energy")):
+                    note_delta(self, field if attr != "current_hp" else _cost_field,
+                               _before[attr], getattr(payer, attr, None))
+
+    def _pay_numeric_cost_inner(
+        self,
+        payer: Entity,
+        cost_type: str,
+        amount: int,
+        *,
+        cost_share_target_ref: str = "",
+        dragon_heart_use: int = 0,
+        ctx: Optional[EffectContext | dict] = None,
+        cost_context: Optional[EffectContext | dict] = None,
+    ) -> dict:
+        """代价支付的实现体（对外契约见 pay_numeric_cost）。"""
         if not isinstance(dragon_heart_use, int) or isinstance(dragon_heart_use, bool) or dragon_heart_use < 0:
             raise ValueError("dragon_heart_use必须是非负整数")
         if payer is not self.state.player:

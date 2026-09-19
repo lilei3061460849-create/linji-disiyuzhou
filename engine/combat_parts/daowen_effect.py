@@ -18,11 +18,30 @@ from ..combat_hooks import CombatHookManager
 from ..effect_context import EffectContext, make_context, normalize_context
 from ..mechanisms import MECHANISMS, Phase, TriggerBus, TriggerContext
 from ..personality import remove_personality
+from ..resolution import KIND_EFFECT, resolution_frame
 from ..models import MONSTER_MANA_RELIC
 
 
 class DaowenEffectMixin:
     def apply_daowen_effect(
+        self, name: str, calc: dict, caster: Entity, target: Entity,
+        dragon_heart_use: int = 0, *, cost_share_target_ref: str = "",
+        aoe_targets_override: Optional[list[Entity]] = None,
+    ) -> dict:
+        """道纹效果结算的**唯一公开入口**（规则层只认这一个名字）。
+
+        包装层只做一件事：开一个结算帧，让这次道纹结算成为链上可追踪的一段。
+        实现体见 `_apply_daowen_effect_impl`（逐字节未改）。
+        """
+        with resolution_frame(self, KIND_EFFECT, "道纹", name,
+                              getattr(caster, "name", "?"),
+                              "->", getattr(target, "name", "?")):
+            return self._apply_daowen_effect_impl(
+                name, calc, caster, target, dragon_heart_use,
+                cost_share_target_ref=cost_share_target_ref,
+                aoe_targets_override=aoe_targets_override)
+
+    def _apply_daowen_effect_impl(
         self, name: str, calc: dict, caster: Entity, target: Entity,
         dragon_heart_use: int = 0, *, cost_share_target_ref: str = "",
         aoe_targets_override: Optional[list[Entity]] = None,
