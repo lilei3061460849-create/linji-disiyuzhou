@@ -26,7 +26,8 @@ from engine.dice import DiceEngine                                      # noqa: 
 from engine.mechanisms import Mechanism, Trigger                       # noqa: E402
 from engine.models import Entity, GameState                             # noqa: E402
 from engine.resolution import (                                         # noqa: E402
-    ResolutionBudgetError, ResolutionContext, ResolutionDepthError,
+    KIND_DAMAGE, KIND_HEAL, ResolutionBudgetError, ResolutionContext,
+    ResolutionCycleError, ResolutionDepthError,
 )
 from tests.preview_support import build_battle_engine                   # noqa: E402
 
@@ -213,3 +214,77 @@ def test_trip_reason_and_chain_survive_for_diagnosis():
         ResolutionContext.MAX_DEPTH = real_max
     assert ctx.trip_reason == "深度 5 超过 4"
     assert "damage:第0层" in ctx.describe_chain()
+
+
+# ---------------------------------------------------------------- 循环诊断
+
+def test_a_b_a_b_cycle_is_named_before_reaching_the_depth_bound():
+    """A→B→A→B…：不必等到 64 层，同类帧堆到上限就点名报错。"""
+    ctx = ResolutionContext()
+    assert max(ResolutionContext.MAX_REPEAT * 2,
+               ResolutionContext.MAX_DEPTH) >= ResolutionContext.MAX_REPEAT * 2
+    tokens = []
+    with pytest.raises(ResolutionCycleError) as excinfo:
+        for _ in range(ResolutionContext.MAX_REPEAT + 5):
+            tokens.append(ctx.enter(KIND_DAMAGE, "伤害"))
+            tokens.append(ctx.enter(KIND_HEAL, "再生"))     # A→B→A→B 形态
+    assert KIND_DAMAGE in str(excinfo.value)
+    assert "同一链" in str(excinfo.value)
+    assert ctx.trip_reason
+    for token in reversed(tokens):
+        ctx.leave(token)
+    assert ctx.depth == 0
+    assert ctx._kind_counts == {}, "循环诊断的账本必须随退出清干净"
+
+
+def test_a_b_c_a_cycle_is_also_caught():
+    """A→B→C→A：换了一类又绕回来的形态同样要被抓到。"""
+    ctx = ResolutionContext()
+    tokens = []
+    with pytest.raises(ResolutionCycleError):
+        for _ in range(ResolutionContext.MAX_REPEAT + 2):
+            for kind in (KIND_DAMAGE, KIND_HEAL, "trigger"):
+                tokens.append(ctx.enter(kind))
+    for token in reversed(tokens):
+        ctx.leave(token)
+    assert ctx.depth == 0 and ctx._kind_counts == {}
+
+
+def test_repeats_that_are_sequential_never_accumulate():
+    """顺序重复（合法的）与嵌套重复（循环）必须被区分开——这是判定标准本身。"""
+    ctx = ResolutionContext()
+    for _ in range(ResolutionContext.MAX_REPEAT * 3):
+        token = ctx.enter(KIND_DAMAGE)
+        ctx.leave(token)
+    assert ctx.depth == 0 and ctx._kind_counts == {}
+    assert ctx.trip_reason == ""
+
+
+def test_engine_self_trigger_now_trips_the_cycle_fuse():
+    """引擎级：自触发机制在 16 层内被点名（而不是等到 64 层）。"""
+    state, combat, player, _enemy = _probe_battle(player_hp=100)
+
+    def self_trigger(trigger_ctx, targets):
+        combat._apply_hostile_damage(player, 1, source=None)
+        return {"recursing": True}
+
+    with _TempMechanism(combat, "测试·自触发2", CombatEventType.DAMAGE_APPLIED,
+                        self_trigger):
+        with pytest.raises(ResolutionCycleError):
+            combat._apply_hostile_damage(player, 1, source=None)
+    assert combat.resolution.depth == 0
+    assert combat.resolution.trip_reason.startswith("同类结算")
+
+
+def test_explain_answers_why_a_target_did_not_die(tmp_path):
+    """trace 必须能回答「这个怪为什么没死」——给出事实，不重新推理。"""
+    engine = build_battle_engine(tmp_path, name="explain")
+    ctx = engine.combat.resolution
+    ctx.set_tracing(True)
+    enemy = next(e for e in engine.state.enemies if e.is_alive)
+    engine.execute_action("use_daowen",
+                          {"daowen_name": "杀伐", "x": 1, "target": enemy.name})
+    text = ctx.explain(enemy.name)
+    assert "damage" in text and enemy.name in text
+    assert "hp " in text, "必须能看到血量变化，否则回答不了「为什么没死」"
+    assert "没有涉及" in ctx.explain("不存在的实体")

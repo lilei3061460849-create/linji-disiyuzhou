@@ -61,10 +61,12 @@ def test_leave_on_unbalanced_call_never_goes_negative():
 
 def test_depth_fuse_raises_at_threshold():
     ctx = ResolutionContext()
-    tokens = [ctx.enter(KIND_OTHER) for _ in range(ctx.MAX_DEPTH)]
+    # 每层换一种 kind，避免先撞上同类循环诊断（那条另有测试）
+    kinds = [f"k{i}" for i in range(ctx.MAX_DEPTH)]
+    tokens = [ctx.enter(kind) for kind in kinds]
     assert ctx.depth == ctx.MAX_DEPTH
     with pytest.raises(ResolutionDepthError) as excinfo:
-        ctx.enter(KIND_DAMAGE, "越界")
+        ctx.enter("越界")
     assert str(ctx.MAX_DEPTH) in str(excinfo.value)
     assert ctx.trip_reason, "终止原因必须可追踪"
     for token in tokens:
@@ -76,6 +78,7 @@ def test_budget_fuse_raises_on_breadth_explosion():
     """深度不涨、数量爆炸的形态：靠预算保险丝拦（这是原来完全没有的保护）。"""
     ctx = ResolutionContext()
     for _ in range(ctx.MAX_EFFECTS):
+        assert ctx.depth == 0, "本例刻意不嵌套"
         token = ctx.enter(KIND_OTHER)
         ctx.leave(token)
         assert ctx.depth == 0, "本例刻意不嵌套，只堆数量"

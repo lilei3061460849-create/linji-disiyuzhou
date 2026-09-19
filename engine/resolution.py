@@ -54,6 +54,15 @@ class ResolutionDepthError(RecursionError):
     """嵌套深度超过保险丝——正常规则不可能达到，出现即为失控（如 A→B→A 循环）。"""
 
 
+class ResolutionCycleError(ResolutionDepthError):
+    """同一类结算在**同一条嵌套链**上重复过多次——即 A→B→A→B… / A→B→C→A 形态。
+
+    它与「合法的重复」的区别不是效果名字，而是**是否嵌套**：
+    失去生命→再生→血债→失去生命 里，每次结算都会在退出后才发生下一次
+    （链上同类帧只有 1 个）；而循环触发会让同一类帧在链上越堆越多。
+    """
+
+
 class ResolutionBudgetError(RuntimeError):
     """一次行动内的效果总数超过预算——深度不涨但数量爆炸的失控形态。"""
 
@@ -103,6 +112,10 @@ class ResolutionContext:
     #: trace 保留的**已结束**帧上限（环形丢弃）。上限存在的意义是：
     #: 长局/长时间挂着 trace 也不会把内存吃光（需求：不得大量驻留对象）。
     MAX_HISTORY = 500
+    #: 同一类结算在**同一条链上**允许同时存在的最大帧数（实测峰值 5 层总量，
+    #: 单类更少——取 16 是为了「只有真的循环才会碰到」，同时比 64 层更早报错、
+    #: 且能直接点名是哪一类结算在打转）。
+    MAX_REPEAT = 16
 
     def __init__(self, *, tracing: bool = False):
         self._depth = 0
@@ -118,6 +131,9 @@ class ResolutionContext:
         self.seen_triggers: list[str] = []
         #: 已结束的帧（**只在 tracing 打开时**累积；环形，最多 MAX_HISTORY 条）。
         self.history: list[ResolutionFrame] = []
+        #: 当前链上每一类结算各有几帧（循环诊断用；随进出增减，深度上限即其上限）。
+        self._kind_counts: dict[str, int] = {}
+        self._kind_stack: list[str] = []
 
     # ------------------------------------------------------------ 生命周期
 
@@ -134,6 +150,8 @@ class ResolutionContext:
         self._trip_reason = ""
         self.seen_triggers.clear()
         self.scratch.clear()
+        self._kind_counts.clear()
+        self._kind_stack.clear()
         self._action = action
 
     def end_action(self) -> None:
@@ -166,8 +184,18 @@ class ResolutionContext:
                 f"单次行动内效果数超过 {self.MAX_EFFECTS}"
                 f"（当前 {kind}{'：' + label if label else ''}），疑似失控扩散；"
                 f"链：{self.describe_chain()}")
+        # 循环诊断（A→B→A→B… / A→B→C→A）：同类结算在**同一条链**上堆叠过多。
+        # 合法的重复是「顺序」的（上一帧退出后才有下一帧），不会累加这里的计数。
+        repeats = self._kind_counts.get(kind, 0) + 1
+        if repeats > self.MAX_REPEAT:
+            self._trip_reason = f"同类结算 {kind} 在同一链上重复 {repeats} 次"
+            raise ResolutionCycleError(
+                f"疑似循环结算：{kind} 在同一链上已嵌套 {repeats - 1} 层"
+                f"（上限 {self.MAX_REPEAT}）；链：{self.describe_chain()}")
         self._depth = depth
         self._effects = effects
+        self._kind_counts[kind] = repeats
+        self._kind_stack.append(kind)
         if not self._tracing:
             return None
         self._seq += 1
@@ -187,6 +215,13 @@ class ResolutionContext:
         """
         if self._depth > 0:
             self._depth -= 1
+        if self._kind_stack:
+            kind = self._kind_stack.pop()
+            left = self._kind_counts.get(kind, 1) - 1
+            if left > 0:
+                self._kind_counts[kind] = left
+            else:
+                self._kind_counts.pop(kind, None)
         if token is not None:
             if self._chain and self._chain[-1] is token:
                 self._chain.pop()
@@ -269,6 +304,35 @@ class ResolutionContext:
             lines.append(line)
         return "\n".join(lines)
 
+    def explain(self, name: str = "") -> str:
+        """回答「某个实体身上到底发生了什么」——把 trace 按实体过滤出来。
+
+        用于需求里的典型提问「这个怪为什么没死？」：
+
+            game.combat.resolution.set_tracing(True)
+            game.execute_action(...)
+            print(game.combat.resolution.explain("石背熊"))
+
+        输出是**已发生的事实**（帧 + 状态变化备注），不是重新推理的结论：
+        引擎不会为了回答问题而重跑一遍规则。
+        """
+        if not self._tracing:
+            return "(trace 未开启：game.combat.resolution.set_tracing(True))"
+        frames = [f for f in sorted(self.history, key=lambda f: f.seq)
+                  if not name or name in f.label or name in f.note]
+        if not frames:
+            return f"(没有涉及「{name}」的结算记录)" if name else "(无结算记录)"
+        lines = []
+        for frame in frames:
+            indent = "  " * (frame.depth - 1)
+            text = f"[{frame.seq}] {indent}{frame.kind}"
+            if frame.label:
+                text += f" {frame.label}"
+            if frame.note:
+                text += f"   {frame.note}"
+            lines.append(text)
+        return "\n".join(lines)
+
     def note_trigger(self, label: str) -> None:
         """记一次触发处理（trace/诊断用；默认也要记账，成本是一个 append）。"""
         if self._tracing and len(self.seen_triggers) < 512:
@@ -282,14 +346,17 @@ class ResolutionContext:
         只保存标量与链长度：链帧本身是诊断数据，预演不需要把它带出来。
         """
         return (self._depth, self._effects, self._seq, len(self._chain),
-                self._trip_reason, self._action, len(self.history))
+                self._trip_reason, self._action, len(self.history),
+                tuple(sorted(self._kind_counts.items())))
 
     def restore(self, token: tuple) -> None:
         """按快照还原（退出预演时调用）——原地恢复，身份不变。"""
         (self._depth, self._effects, self._seq, chain_len,
-         self._trip_reason, self._action, history_len) = token
+         self._trip_reason, self._action, history_len, kind_counts) = token
         del self._chain[chain_len:]
         del self.history[history_len:]
+        self._kind_counts = dict(kind_counts)
+        del self._kind_stack[self._depth:]
 
 
 # ------------------------------------------------------------------ 统一入口写法
