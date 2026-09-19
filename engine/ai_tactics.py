@@ -624,8 +624,12 @@ class TacticalAI:
                 for ref, entity in refs.items()
                 if entity.is_alive and id(entity) in enemy_ids
             ]
-            if len(candidates) >= x:
-                p["dodge_targets"] = candidates[:x]
+            # X 上限＝场上当前角色总数（含自己），但波及不能选自己 → 发动方自己把 X
+            # 收到可标记目标数以内，否则「提交数≠X」必被引擎拒（用户裁定 2026-09-19）。
+            n = min(x, len(candidates))
+            if n >= 1:
+                p["x"] = n
+                p["dodge_targets"] = candidates[:n]
                 p["target_ref"] = candidates[0]["target_ref"]
         return p
 

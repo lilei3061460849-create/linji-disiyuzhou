@@ -93,8 +93,8 @@ def _pick_monster_daowen(engine, actor):
 
 
 def _pick_monster_daowen_avoiding_wave(engine, actor):
-    """波及重试专用（2026-08-22）：波及的X个闪避目标冻结在 prepare 快照
-    （combat.py:4081），阶段内任一目标死亡则该道纹同 token 下永远无法结算；
+    """波及重试专用（2026-08-22）：波及的X个闪避目标取自 prepare 快照的候选，
+    阶段内任一目标死亡则该道纹同 token 下永远无法结算；
     报错文案"请重新prepare_monster_phase"具误导性（pending 有效期内 prepare
     会被拒，api.py:854）——正确路径是按 api.py:3598 契约注释用同 token 换选
     非波及备选道纹重交（dodge_submission=="per_target" 的才排除）。"""
@@ -388,8 +388,8 @@ def _resolve_monster_turn(engine):
                 if option["requires_target"]:
                     dao["target_ref"] = pick_monster_daowen_target(engine, actor["actor_ref"], option)
                 if option["dodge_submission"] == "per_target":
-                    from sim.monster_targets import pick_wave_dodge_targets
-                    dao["dodge_targets"] = pick_wave_dodge_targets(option)
+                    from sim.monster_targets import apply_wave_submission
+                    apply_wave_submission(dao, option)
                 # 【变形】不再改命中数：命中数契约是 prepare 快照
                 # （combat.py `hits_per_action = expected[actor_ref]["base_hits_per_attack"]`，
                 # 2026-09-17 起出手数与命中数一律按快照校验，阶段内真实改速度也不动契约）。
@@ -452,6 +452,10 @@ def _resolve_monster_turn(engine):
                 continue
             dao["x"] = pick_monster_daowen_x(engine, monster, option, choice, token,
                                              all_choices=choices)
+            if dao.get("dodge_targets") is not None:
+                # 波及：目标提交数必须等于最终X（引擎已不代为降X）
+                from sim.monster_targets import apply_wave_submission
+                apply_wave_submission(dao, option, dao["x"])
 
         result = engine.execute_action("resolve_monster_phase", {
             "token": prepared["result"]["token"], "choices": choices,

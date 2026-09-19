@@ -198,13 +198,13 @@ class MonsterPhaseMixin:
                     # 可选目标即使没有别的合法目标仍可自施，不过滤。
                     if requires_target and not legal_targets:
                         continue
-                    # 波及X：必须显式提交X个互不重复的合法目标。DM裁定2026-08-23：
-                    # 面板X超过当前合法目标数时按目标数**自适应降X**（有效X=
-                    # min(面板X, 合法目标数)），与玩家侧 _max_legal_daowen_x 的
-                    # 目标数封顶口径一致——永不因目标不足而不可结算/死锁；仅当
-                    # 合法目标数为0时本道纹才真正无法发动，prepare才过滤。
-                    # （取代2026-08-22 BUG-01的"不足X即过滤"方案：过滤让面板波及
-                    # 怪在solo场上1/111场才开得出火，属于非符合预期效果。）
+                    # 波及X：必须显式提交X个互不重复的合法目标（不能选自己）。
+                    # X 上限＝**场上当前角色总数**（用户裁定 2026-09-19）；可标记目标
+                    # 不足时由发动方自己把 X 选小（AI 侧统一走
+                    # sim/monster_targets.apply_wave_submission），引擎不代为降 X、
+                    # 也不因目标不足判成不可发动。
+                    # 过滤只针对"一个可标记目标都没有"：曾有"不足X即过滤"的方案，
+                    # 那会让面板波及怪在 solo 场上几乎开不出火（1/111 场），属非预期效果。
                     dodge_target_options: list[dict] = []
                     if effective_name == "波及":
                         dodge_target_options = [target for target in all_targets
@@ -218,9 +218,11 @@ class MonsterPhaseMixin:
                     # 「上限只受法限或者代价限制」。这里探出可负担上限，
                     # 连 X=1 都付不起 → 本道纹此刻不可发动，prepare 过滤。
                     if getattr(inst, "x_free", False):
+                        # 波及X 的上限＝场上当前角色总数（用户裁定 2026-09-19），
+                        # 不再按「可标记候选数」封顶——够不够标记由发动方自己选 X。
                         max_x = self._monster_max_daowen_x(
                             monster, effective_name, preview_target,
-                            hard_cap=len(dodge_target_options) if effective_name == "波及" else None)
+                            hard_cap=len(refs) if effective_name == "波及" else None)
                         if max_x < 1:
                             continue
                         effective_x = max_x
@@ -244,9 +246,6 @@ class MonsterPhaseMixin:
                     # target_options 显式选，避免把"首个合法目标"暗示成默认意图。
                     semantic_calc = DaoWenEngine.resolve(
                         effective_name, effective_x, caster=monster)
-                    wave_effective_x = 0
-                    if effective_name == "波及":
-                        wave_effective_x = min(effective_x, len(dodge_target_options))
                     daowen_options.append({
                         "name": name,
                         "resolves_as": effective_name,
@@ -258,7 +257,6 @@ class MonsterPhaseMixin:
                         "x": effective_x,
                         "x_free": bool(getattr(inst, "x_free", False)),
                         "max_x": max_x if getattr(inst, "x_free", False) else 0,
-                        "wave_effective_x": wave_effective_x,
                         "requires_target": requires_target,
                         # 可选目标道纹：不提交 target_ref 即作用自身；提交了他方目标
                         # 就按敌我判定走闪避/血影提交（与玩家侧同一口径）。
@@ -449,7 +447,8 @@ class MonsterPhaseMixin:
             if not missing and (not isinstance(submitted_x, int)
                                 or isinstance(submitted_x, bool)):
                 raise ValueError(f"道纹【{name}】的x必须是整数")
-            hard_cap = (len(prepared_option.get("dodge_target_options", []))
+            # 波及X 的上限＝场上当前角色总数（用户裁定 2026-09-19）。
+            hard_cap = (len(self._combat_entity_refs())
                         if effective_name == "波及" else None)
             max_x = self._monster_max_daowen_x(monster, effective_name, target,
                                                hard_cap=hard_cap)
@@ -486,10 +485,9 @@ class MonsterPhaseMixin:
         if effective_name == "波及":
             # 波及X：选择X个[目标]建立/解除波及效果（持续∞）。每个目标显式提交闪避。
             submitted_dodges = choice.get("dodge_targets")
-            # DM裁定2026-08-23自适应降X：以prepare快照的wave_effective_x为准
-            # （min(面板X, 合法目标数)），驱动与校验始终同一口径。
-            mark_count = int(prepared_option.get("wave_effective_x")
-                             or calc.get("mark_targets", effective_x))
+            # 结算目标数＝本次发动的X。用户裁定 2026-09-19 删除「合法目标不足按目标数降X结算」
+            # （旧 wave_effective_x 快照）：目标不够时由发动方自己把X选小，引擎不代劳。
+            mark_count = int(calc.get("mark_targets", effective_x))
             if not isinstance(submitted_dodges, list) or len(submitted_dodges) != mark_count:
                 raise ValueError(f"道纹【波及】必须为{mark_count}个目标显式提交dodge_targets")
             expected_ref_list = [
@@ -683,8 +681,15 @@ class MonsterPhaseMixin:
         blood_shadow = choice.get("blood_shadow", False)
         if effective_name == "波及":
             submitted_dodges = choice.get("dodge_targets")
-            # DM裁定2026-08-23自适应降X：与执行阶段同一口径（prepare快照）。
-            mark_count = int(prepared_option.get("wave_effective_x") or inst.x_value)
+            # 与执行阶段同一口径：x_free 时以提交的 x 为准（未提交＝prepare 快照的上限），
+            # 固定X面板用 inst.x_value。引擎不再替发动方降X（用户裁定 2026-09-19）。
+            if getattr(inst, "x_free", False):
+                _sx = choice.get("x")
+                mark_count = (int(_sx) if isinstance(_sx, int) and not isinstance(_sx, bool)
+                              else int(prepared_option.get("max_x")
+                                       or prepared_option.get("x") or 1))
+            else:
+                mark_count = int(inst.x_value)
             if not isinstance(submitted_dodges, list) or len(submitted_dodges) != mark_count:
                 raise ValueError(f"道纹【波及】必须为{mark_count}个目标显式提交dodge_targets")
             expected_refs = {

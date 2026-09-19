@@ -563,9 +563,9 @@ class PlaceholderBackend(AIBackend):
                                    for holder, spells in option.get("trigger_spell_options", {}).items()}}
                         if option["requires_target"]: dao["target_ref"] = option["target_options"][0]["ref"]
                         if option["dodge_submission"] == "per_target":
-                            # 波及X：必须恰好提交X个目标（候选全量提交会在候选>X时被拒）。
-                            from sim.monster_targets import pick_wave_dodge_targets
-                            dao["dodge_targets"] = pick_wave_dodge_targets(option)
+                            # 波及X：必须恰好提交X个目标；X 由发动方收到可标记目标数以内。
+                            from sim.monster_targets import apply_wave_submission
+                            apply_wave_submission(dao, option)
                         if option["resolves_as"] == "疯狂": action_count += option["x"]
                         if option["resolves_as"] == "狂暴": action_count += 1
                     target = (actor["attack_target_options"][0]
@@ -618,11 +618,17 @@ class PlaceholderBackend(AIBackend):
                               "trigger_spell_choices": {}}
                     if "actor_ref" in schema: params["actor_ref"] = schema["actor_ref"]
                     if schema["daowen_name"] == "波及" and engine is not None:
-                        # 波及X：必须恰好提交X个存活非自身目标（schema上限已按目标数封顶）
+                        # 波及X：必须恰好提交X个存活非自身目标。schema 的 X 上限是
+                        # 「场上当前角色总数」（含发动者自己），而波及不能选自己，
+                        # 所以 AI 自己把 X 收到可标记目标数以内，否则提交必被拒。
                         refs = engine.combat._combat_entity_refs()
                         actor = refs.get(schema.get("actor_ref", "")) or engine.state.player
                         candidates = [r for r, e in refs.items()
                                       if e.is_alive and e is not actor]
+                        if not candidates:
+                            continue        # 场上没有可标记目标：跳过这个行动
+                        x = max(1, min(x, len(candidates)))
+                        params["x"] = x
                         params["dodge_targets"] = [{"target_ref": r, "dodge": False,
                                                     "blood_shadow": False}
                                                    for r in candidates[:x]]

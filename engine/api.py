@@ -544,18 +544,9 @@ class GameEngine:
                 if not instance.can_use():
                     continue
                 fixed_x = instance.x_value if instance.x_value > 0 else 1
-                # 波及X（固定X）：合法目标不足X时该指令永远无法发动——
-                # 与玩家侧同一规则（2026-08-22 BUG-01 指令侧）。
-                if name == "波及":
-                    wave_candidates = [e for e in refs.values()
-                                       if e.is_alive and e is not actor]
-                    if len(wave_candidates) < fixed_x:
-                        actions.append({"action_type": "use_daowen", "available": False,
-                                        "params_schema": {"actor_ref": actor_ref,
-                                                          "daowen_name": name, "x": fixed_x},
-                                        "reason": f"波及{fixed_x}需要{fixed_x}个目标，"
-                                                  f"当前仅{len(wave_candidates)}个存活非自身角色"})
-                        continue
+                # 波及不再有「目标不足即不可发动」的门禁（用户裁定 2026-09-19 删除）：
+                # X 上限＝场上当前角色总数，够不够标记由发动方自己选 X 决定，
+                # 引擎不在指令列表里预先判死。目标真不够时结算阶段照实报错。
                 actions.append({"action_type": "use_daowen", "available": True,
                                 "params_schema": {"actor_ref": actor_ref, "daowen_name": name,
                                                   "x": fixed_x, "target_ref": target_options,
@@ -715,12 +706,14 @@ class GameEngine:
             if name == "赌命" and self.state.fake_shards < calc.get("fake_cost", x):
                 continue
             legal = x
-        # 波及X：X还不得超过合法目标数（全部存活非自身角色）——否则schema会给出
-        # 永远无法发动的X（AI按schema选X后提交必被拒，2026-08-22 BUG-01 玩家侧）。
+        # 波及X：上限＝场上当前角色总数（用户裁定 2026-09-19）。
+        # 旧口径按「存活非自身角色数」封顶，是为了配合已删除的「合法目标不足就降X结算」补丁。
+        # 现在发动方自己按可标记目标数选 X（AI 侧见 sim/monster_targets.apply_wave_submission、
+        # engine/ai_player、engine/ai_tactics），引擎不再替它降 X。
+        # 注：波及不能选自己（见 _resolve_daowen_dodge），所以场上只剩发动者时 X 只能由
+        # 发动方收到 0＝不发动；prepare 侧对怪物是「合法目标数为0则不给出该道纹」。
         if name == "波及":
-            wave_candidates = [e for e in self.combat._combat_entity_refs().values()
-                               if e.is_alive and e is not actor]
-            legal = min(legal, len(wave_candidates))
+            legal = min(legal, len(self.combat._combat_entity_refs()))
         return legal
 
     def _get_battle_end_actions(self) -> dict:
