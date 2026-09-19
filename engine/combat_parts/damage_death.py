@@ -345,6 +345,7 @@ class DamageDeathMixin:
         # （见 engine/resolution.py）。阈值 64 与既有 MAX_EFFECT_CHAIN_DEPTH 同义，
         # 实测合法峰值 5，故行为不变——只在真出现 A→B→A 循环时截断成可诊断异常。
         hp_before = target.current_hp
+        shield_before = getattr(target, "shield", 0)
         with resolution_frame(self, KIND_DAMAGE, damage_ctx.source,
                               getattr(target, "name", "?"), amount):
             self._hp_loss_recording += 1  # 伤害失血由 _record_hp_loss_event 接管，抑制兜底钩子
@@ -354,6 +355,9 @@ class DamageDeathMixin:
             finally:
                 self._hp_loss_recording -= 1
                 note_delta(self, "hp", hp_before, target.current_hp)
+                # 护盾吸收也要看得见：否则「打了却没掉血」在 trace 上是空白的
+                note_delta(self, "shield", shield_before,
+                           getattr(target, "shield", 0))
 
     def _apply_hostile_damage_inner(
         self, target: Entity, amount: int, damage_type: str,
