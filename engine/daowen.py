@@ -96,7 +96,7 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_bihu(x: int, target: Entity = None) -> dict:
-        """庇护X：消耗X。使[目标]获得2X点格挡（可抵消等量伤害），持续1"""
+        """庇护X：消耗X。使[目标]获得2X点格挡（可抵消等量伤害，保留到被打掉或[战终]）"""
         target_name = target.name if target is not None else "未选定目标"
         cost = x
         shield = 2 * x
@@ -922,11 +922,11 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_duming(x: int) -> dict:
-        """赌命X：消耗X假碎片。[回始]按存活角色投随机数，对应目标失去30%当前生命，持续X"""
+        """赌命X：消耗X假碎片。[回始]按场上存活角色统计、从轮回者方开始发放数字，投出随机数，数字对应的[目标]失去等同30%[血限]的生命，持续X"""
         return {
             "dao_wen": "赌命", "x": x, "cost_type": "假碎片", "fake_cost": x,
             "duming_hp_pct": 30, "duration": x,
-            "summary": f"消耗{x}假碎片，[回始]随机目标失去30%当前生命，持续{x}回合"
+            "summary": f"消耗{x}假碎片，[回始]随机目标失去等同30%血限的生命，持续{x}回合"
         }
     
     @staticmethod
@@ -963,7 +963,14 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_huoxue(x: int, target: Entity = None) -> dict:
-        """活血X：消耗X。目标每个完整回合内每累计失去2点生命，[回终]获得[回复1]；未满2点的余数在[回终]清空，持续X"""
+        """活血X：消耗X。目标每个完整回合内每累计失去2点生命，[回终]获得[回复1]；未满2点的余数在[回终]清空，持续X
+
+        待重做（用户裁定 2026-09-19，见 报告.md 第三节 D8）：遗物【承露盏】已经取代本道纹的作用
+        （承露盏＝每累计失去10点生命获得1点法力、本场累计、余数滚存；活血＝每累计失去2点生命
+        [回终]回复1、余数在[回终]清空）。本轮只记档，不改口径、不动结算。
+        另记：结算用 hp_lost_this_round // 2（向下取整），与 AI_EXPERIENCE.md 整数规则
+        「所有计算都向上取整」的适用范围一并留到重做时定。
+        """
         target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "活血", "x": x, "cost_type": CostType.MANA.value, "cost": x,

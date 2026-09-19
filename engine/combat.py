@@ -862,7 +862,10 @@ class CombatEngine(
                                        context=f"{holder.name}发动赌命")
             idx = int(roll["player_number"]) - 1
             tgt = alive[min(max(idx, 0), len(alive) - 1)]
-            d = math.ceil(tgt.blood_limit * 30 / 100)  # 用户裁定口径：血限30%
+            # 用户裁定口径：血限30%。百分比取自引擎声明字段 duming_hp_pct，
+            # 不再在这里硬编码一份（声明与结算各写一份＝改一处忘一处）。
+            pct = DaoWenEngine.resolve("赌命", 1).get("duming_hp_pct", 30)
+            d = math.ceil(tgt.blood_limit * pct / 100)
             rd = self._raw_hp_loss(tgt, d, ctx={
                 "timing": "round_start", "source": "赌命", "source_type": "daowen",
                 "actor": holder, "target": tgt, "mechanic": "hp_loss", "subtype": "percent",
@@ -920,8 +923,10 @@ class CombatEngine(
         """
         回终结算
         1. 回终类效果结算
-        2. 格挡清空
-        3. 持续X剩余回合-1
+        2. 持续X剩余回合-1
+
+        注：格挡**不在回终清空**（DM裁定 2026-09-10：改为保留到被打掉或[战终]，
+        战终由 api.py 的 clear_shield 统一清）。此前这里列着「格挡清空」，是过期文案。
         """
         effects = []
         mediocrity_ready: list[tuple[Entity, str]] = []
