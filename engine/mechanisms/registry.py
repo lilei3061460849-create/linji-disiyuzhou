@@ -25,6 +25,12 @@ class Mechanism:
     condition: Optional[Callable[[TriggerContext], bool]] = None
     priority: int = 100               # 数字小先执行。与 CombatHook.priority 同一套语义，顺序即规则。
     needs_state: bool = False         # 需要按实体的机制自身状态时置 True
+    # 【缄默】默认生效（DM 裁定 2026-09-18）：ENTITY_DIED 事件机制一律视为
+    # 「由[命零]触发的效果」，封禁期内由 TriggerBus.dispatch 直接跳过——不需要
+    # 每条机制自己记得挂 conditions.death_not_silenced()（闭包不可内省，靠自觉必然漂移）。
+    # 只有当某机制**不属于**[命零]触发的效果时（如纯记录/纯账面，不给任何人收益），
+    # 才显式置 True 退出封禁，并在此处写明理由。
+    ignores_silence: bool = False
 
     def __post_init__(self):
         if self.effect is None:

@@ -73,7 +73,7 @@ def test_plight_evolution_first_borrows_player_daowen(tmp_path):
     assert m.dao_wen["加害"].x_value == 3, "X=min(预算9, 3)=3"
     assert m.mutation_count == 15, f"门票异变=5X=15，实际{m.mutation_count}"
     assert telemetry["plight"]["evolve"] == 1
-    assert id(m) in e.combat._monster_evolved
+    assert m.runtime_id in e.combat._monster_evolved
     # 每场限一次：再次驱动不得重复触发
     _drive_plight_monsters(e, telemetry)
     assert telemetry["plight"]["evolve"] == 1

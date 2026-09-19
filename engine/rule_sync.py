@@ -158,8 +158,10 @@ class RuleSync:
         lines = content.splitlines()
         for line_number, line in enumerate(lines, 1):
             # 标准格式：道纹X（可选说明）：效果；副本正文统一使用此格式。
+            # `X/Y` ＝双参数道纹（现仅【分裂】：X=复制体数量、Y=规模档），这是
+            # `sim/daowen_doc.py::RULES[name].head` 发布的规范头，索引与副本正文同源同形。
             standard = re.match(
-                r"^(?:\d+\.)?([\u4e00-\u9fff]{2})X(?:（[^）]*）)?[：:](.+)$", line)
+                r"^(?:\d+\.)?([\u4e00-\u9fff]{2})X(?:/Y)?(?:（[^）]*）)?[：:](.+)$", line)
             if standard:
                 name, description = standard.groups()
                 definitions.setdefault(name, {

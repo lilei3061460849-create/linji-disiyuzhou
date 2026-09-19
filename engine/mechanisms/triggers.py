@@ -121,12 +121,22 @@ class TriggerBus:
 
         target/actor 由调用方（CombatEngine._emit）在持有实体对象时显式传入——
         事件只存名字，而死者（is_alive=False）无法从存活池按名解析回来。
+
+        【缄默】：带 `silenced` 标记的 ENTITY_DIED 事件默认不分发（见 Mechanism.ignores_silence），
+        所以命零反应类机制不需要自己挂 `death_not_silenced()` 也不会漏封。
         """
         listeners = self._listeners.get(event.event_type)
         if not listeners:
             return []
         results = []
         for mechanism in list(listeners):
+            # 【缄默】消费点（默认生效，见 Mechanism.ignores_silence）：封禁期内命零的
+            # 死亡事件不分发给任何 ENTITY_DIED 机制。判定口径在
+            # CombatEngine._death_triggers_silenced（全场任一存活实体带【缄默】，或死者自身带）。
+            if (event.event_type == CombatEventType.ENTITY_DIED
+                    and not mechanism.ignores_silence
+                    and (getattr(event, "data", None) or {}).get("silenced", False)):
+                continue
             ctx = self._context_for(event, combat, target=target, actor=actor)
             if mechanism.condition is not None and not mechanism.condition(ctx):
                 continue

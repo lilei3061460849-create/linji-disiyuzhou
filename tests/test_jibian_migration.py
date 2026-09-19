@@ -25,7 +25,7 @@ from engine.models import Entity, GameState, StatusEffect
 from engine.validator import check_migrated_mechanism_guards
 
 ROOT = Path(__file__).resolve().parents[1]
-COMBAT_SOURCE = (ROOT / "engine" / "combat.py").read_text(encoding="utf-8")
+from tests.source_scan import COMBAT_SOURCE  # noqa: E402  # 战斗引擎全家族：combat.py 已拆出 combat_parts/*.py
 
 
 def _arena(enemy_hp=100, enemy_bl=None, enemy_ac=0, enemy_ap=0):

@@ -107,7 +107,7 @@ def handplay(winner, seed=7, battles=1, verbose=True, spell_plan=None):
                 # 读引擎真实输出：怪物每只的激活道纹 + 命中详情
                 for m in e.state.enemies:
                     if m.is_alive or True:
-                        act = e.combat._monster_activated.get(id(m), set())
+                        act = e.combat._monster_activated.get(m.runtime_id, set())
                         print(f'  [怪阶段] {m.name} 已激活道纹={sorted(act)} is_flying={e.combat._is_flying(m)}')
                 for d in (mp.get('result',{}).get('details') or []):
                     dw = d.get('daowen') or {}

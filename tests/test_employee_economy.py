@@ -312,6 +312,64 @@ def test_pay_wage_with_insufficient_shards_is_rejected_not_auto_refused():
         "被拒绝后该员工应仍处于待决状态且工资金额不变"
 
 
+def test_kill_shards_are_credited_before_wage_gate():
+    """2026-09-18 用户裁定（报告 Q6，选案 A）：战终**先入账击杀[碎片]，再问工资**。
+
+    旧口径把工资门槛排在碎片奖励之前：刚打完这场、账上碎片不够时，雇佣＝必然拒付
+    ＋失信一击（明明这场怪物的奖励够付）。现在 battle_end 第一次调用（completed=False，
+    只返回待决工资）时击杀奖励已经到账，可以直接 pay；第二次调用完成结算，且
+    **不重复入账**（一次性标记 `battle_end_shards_credited`，battle_start 处兜底清除）。
+    """
+    engine = _new_engine("wage_after_shards")
+    engine.state.shards = 0
+    _hire(engine, {
+        "sub_action": "雇佣", "name": "打完就发钱", "blood_alloc": 2, "atk_bundles": 6,
+    })
+    _start_battle(engine)
+    m = Entity("肥怪", "怪物", blood_limit=600, current_hp=600,
+               attack_count=1, attack_power=1)
+    engine.state.enemies.append(m)
+    engine.execute_action("round_start", {})
+    engine.execute_action("deploy_employee", {"name": "打完就发钱"})
+    _finish_round_without_monster_actions(engine)
+    engine.execute_action("round_start", {})
+    _finish_round_without_monster_actions(engine)
+    engine.execute_action("round_start", {})
+    _finish_round_without_monster_actions(engine)   # 3回合 → 工资=min(12,2*(1+3))=8
+    assert engine.state.current_round == 3
+
+    # 打死这只怪（本用例只关心战终结算顺序）：奖励＝⌈600×2%⌉ + 道纹0×5 ＝ 12
+    m.battle_start_blood_limit = 600
+    m.current_hp = 0
+    m.is_alive = False      # is_alive 是存储字段，直接置位＝模拟命零
+
+    blocked = engine.execute_action("battle_end", {})
+    assert blocked["success"] is True and blocked["completed"] is False, blocked
+    assert blocked["pending_wage_decisions"] == {"打完就发钱": 8}
+    assert engine.state.shards == 12, "击杀[碎片]必须在工资门槛**之前**入账"
+
+    paid = engine.execute_action("pay_employee_wage", {"name": "打完就发钱", "decision": "pay"})
+    assert paid["success"] is True, "这场刚赚的碎片必须能用来付这场工资"
+    assert engine.state.shards == 4
+
+    finished = engine.execute_action("battle_end", {})
+    assert finished["success"] is True, finished
+    assert finished.get("completed") is not False
+    assert engine.state.shards == 4, "第二次 battle_end 不得重复入账击杀奖励"
+    assert "battle_end_shards_credited" not in engine.state.event_modifiers, \
+        "一次性入账标记必须在战终完成时清掉"
+
+
+def test_shard_credit_flag_is_reset_at_battle_start():
+    """边界：残留的入账标记/预览缓存不得跨场（battle_start 兜底清除）。"""
+    engine = _new_engine("wage_flag_reset")
+    engine.state.event_modifiers["battle_end_shards_credited"] = 7
+    engine._battle_end_preview = (7, [], [])
+    _start_battle(engine)
+    assert "battle_end_shards_credited" not in engine.state.event_modifiers
+    assert engine._battle_end_preview is None
+
+
 def test_battle_end_blocked_until_all_pending_wages_resolved():
     """错误输入/非法状态：只要还有任意一名员工未决策，battle_end必须持续失败，不能被绕过"""
     engine = _new_engine("wage_block_multi")

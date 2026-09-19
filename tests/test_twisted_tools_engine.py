@@ -154,7 +154,7 @@ def test_normal_jammer():
     engine = _setup_engine()
     m = engine.state.enemies[0]
     m.dao_wen["疯狂"] = DaoWenInstance(DaoWen(name="疯狂", formula="", cost_type="", cost_formula="", effect_formula=""), x_value=2)
-    engine.combat._monster_activated = {id(m): set()}
+    engine.combat._monster_activated = {m.runtime_id: set()}
     _grant_tool(engine, "干扰仪")
     r = engine.execute_action("consume_item", {"name": "干扰仪"})
     assert r["success"]
@@ -169,17 +169,26 @@ def test_normal_hand_grenade():
     m = engine.state.enemies[0]
     m.attack_count = 3
     m.attack_power = 5
+    m.blood_limit = 100
     m.current_hp = 100
-    engine.combat._monster_activated = {id(m): set()}
+    engine.state.current_round = 2
+    engine.combat.reset_monster_activation()
+    engine.combat._monster_activated = {m.runtime_id: set()}
     _grant_tool(engine, "高爆手雷")
     r = engine.execute_action("consume_item", {"name": "高爆手雷", "target": m.name})
     assert r["success"]
-    assert r["result"]["damage"] == 15
-    assert m.current_hp == 85
-    assert m.has_status("手雷减攻")
-    # 正文：本回合攻击次数-1。出手数不变，每出手少打一下。
-    assert engine.combat._monster_attack_actions(m, set()) == 1
+    # 现行口径：全场敌方 20 伤害；伤害后生命≥50%血限 → 【无力2】（本场永久）。
+    assert r["result"]["aoe"] is True and r["result"]["damage"] == 20
+    assert m.current_hp == 80
+    assert m.get_status_value("无力") == 2, "80/100＝80% ≥50% → 2 层"
+    assert engine._action_budget_of(m) == 0, "怪物出手预算 1攻+1纹 被【无力2】清零"
+    prepared = engine.combat.prepare_monster_phase()
+    assert all(a["monster"] != m.name for a in prepared["actors"])
+    assert any(s["monster"] == m.name and "出手预算已用尽" in s["reason"]
+               for s in prepared["skipped"])
+    # 面板攻击次数与攻击出手数口径都不被改写（削弱只发生在预算层，否则会误触雕塑）
     assert m.attack_count == 3, "面板攻击次数不应被改写（否则会误触雕塑）"
+    assert engine.combat._monster_attack_actions(m, set()) == 1
 
 # ---------- 边界 ----------
 

@@ -7,7 +7,6 @@
 - 残韵闭环：engine/daowen.py DaoWenEngine.CLOSED_LOOPS
 - 承载怪物：副本/*.md 全部怪物面板行（怪物池 + 事件/雇佣面板）
 """
-import inspect
 import re
 import sys
 from collections import defaultdict
@@ -26,22 +25,25 @@ from engine.gamedata import (  # noqa: E402
     UNIMPLEMENTED_REGION_EXCLUSIVE_DAOWEN,
 )
 from engine.dungeons import load_dungeon_documents  # noqa: E402
+from engine.monsters import _parse_daowen_field  # noqa: E402
 
 DaoWenEngine.register_all()
 
-PANEL = re.compile(r'^([\u4e00-\u9fff\w·]+)[（(](\d+)[×x](\d+)/(\d+)(?:[，,]([^)）\n]*))?[）)]')
+# 面板格式（2026-09-16 用户令）：「名字（[血限]/[法限]/[速限]，道纹…）」——
+# 与 engine/monsters.py::parse_monster_pool 同格式；道纹段复用其解析器，
+# 兼容带X与不带X两种写法（不带X＝发动时自选）。
+PANEL = re.compile(r'^([\u4e00-\u9fff\w·]+)[（(](\d+)/(\d+)/(\d+)(?:[，,]([^)）\n]*))?[）)]')
 
 # ---------- 采集 ----------
-effects, costs, params_of = {}, {}, {}
-for name, fn in DaoWenEngine._registry.items():
-    doc = (fn.__doc__ or "").strip().splitlines()
-    first = doc[0].strip()
-    m = re.match(r'^\S+?X：(.+?)。(.*)$', first)
-    assert m, f"{name}: docstring 格式无法解析: {first!r}"
-    costs[name] = m.group(1)
-    eff = m.group(2)
-    effects[name] = (eff + "。") if eff and not eff.endswith("。") else eff
-    params_of[name] = list(inspect.signature(fn).parameters)
+# 首行格式解析、修订注记剥离、闭环链渲染、NOTES 全在共享层 `sim/daowen_doc.py`：
+# 索引与副本区域正文（`sim/gen_region_daowen.py`）必须用**同一套**解析与注记，
+# 否则改一条口径要同步两处——①-B 要消灭的正是这个。
+from daowen_doc import NOTES, RULES, loop_chain  # noqa: E402
+
+effects = {n: r.effect for n, r in RULES.items()}
+costs = {n: r.cost for n, r in RULES.items()}
+params_of = {n: r.params for n, r in RULES.items()}
+x_head = {n: r.head for n, r in RULES.items()}   # 【分裂】为 "X/Y"，其余为 "X"
 
 # 承载怪物：扫描全部已实现副本文档的面板行（怪物池+事件/雇佣）
 carriers = defaultdict(list)
@@ -49,9 +51,9 @@ for region, text in sorted(load_dungeon_documents().items()):
     for line in text.splitlines():
         m = PANEL.match(line.strip())
         if m and m.group(5):
-            for n, v in re.findall(r'([\u4e00-\u9fff]{2})(\d+)', m.group(5)):
+            for n, v in _parse_daowen_field(m.group(5)).items():
                 if n in DaoWenEngine._registry:
-                    entry = f"{m.group(1)}{v}"
+                    entry = f"{m.group(1)}{v}" if v else m.group(1)
                     if entry not in carriers[n]:
                         carriers[n].append(entry)
 
@@ -95,30 +97,6 @@ for n, region in UNIMPLEMENTED_REGION_EXCLUSIVE_DAOWEN.items():
 assert set(CATEGORY) == set(DaoWenEngine._registry), (
     set(CATEGORY) ^ set(DaoWenEngine._registry))
 
-# 特殊注记（引擎机制，非数值）
-NOTES = {
-    "波及": "目标由两阶段决策显式提交恰好X个（怪物侧prepare枚举候选，候选不足X时prepare不给出该道纹；玩家侧use_daowen的dodge_targets）。你发动的道纹对已标记目标同时生效，数值平分。",
-    "消灾": "唯一允许局外发动的道纹（局外消耗×2）；重置随机数。",
-    "封印": "玩家支付异变X，使一个显式选定的目标怪物延后X回合再入场；暂离仍阻塞战终，回场当回合沿用增援白板，最终命零正常进入死亡与碎片结算。",
-    "分裂": "【命零】时触发；复制体无【分裂】道纹、无[碎片]奖励。",
-    "尸爆": "【命零】时触发。",
-    "招魂": "唤回者为[临时朋友]，[战终]消失。",
-    "原初": "怪物困境时发动【原初X】可临时借用一种自身未持有的原始怪物道纹（仅借用，不获得）。",
-}
-
-def loop_chain(loop_name):
-    edges = ResonanceEngine.CLOSED_LOOPS[loop_name]
-    # 环：找起点（第一条边的src）并按边串联
-    first = edges[0][0]
-    chain = [first]
-    nxt = {s: (r, d) for s, r, d in edges}
-    cur = first
-    for _ in range(len(edges)):
-        r, d = nxt[cur]
-        chain.append(f"⇄（{r}）{d}")
-        cur = d
-    return " ".join(chain)
-
 # ---------- 渲染 ----------
 L = []
 A = L.append
@@ -129,9 +107,9 @@ A("杀伐闭环（通用核心）11 ｜ 原始怪物道纹 7 ｜ 怪物转化道
 A("")
 A("- **效果正文**抄自引擎 `engine/daowen.py`（`DaoWenEngine.calculate_*` 的规范文本）——**公式以引擎结算为准**。")
 A("- **归属与残韵闭环**：`engine/gamedata.py` + `engine/daowen.py`（`CLOSED_LOOPS`）；与规则正文的闭环图一致。")
-A("- **承载怪物**：解析自 `副本/*.md` 全部面板行（12只怪物池 + 事件/雇佣面板，如「追求者」）；格式 `怪物名X`。")
+A("- **承载怪物**：解析自 `副本/*.md` 全部面板行（12只怪物池 + 事件/雇佣面板，如「追求者」）；格式 `怪物名`（面板写死X时附X，2026-09-16 起面板不写X＝发动时自选）。")
 A("- 冲突时：数值/结算以引擎为准，规则叙述以 [规则正文](AI_EXPERIENCE.md#第四宇宙规则正文) 为准，本索引为派生索引（与两者冲突时应重新生成本文件）。")
-A("- 通用规则（自由控X、[目标]与闪避、代价结算、平分、声明、怪物道纹递增等）见 [规则正文](AI_EXPERIENCE.md#第四宇宙规则正文)，本文件不重复。")
+A("- 通用规则（自由控X、[目标]与闪避、代价结算、平分、声明等）见 [规则正文](AI_EXPERIENCE.md#第四宇宙规则正文)，本文件不重复。")
 A("")
 A("## 目录")
 A("")
@@ -161,9 +139,10 @@ CAT_LABEL = {
 }
 for name in sorted(DaoWenEngine._registry, key=lambda n: (list(CATEGORY).index(n), n)):
     pass
+# 区域专属在 gamedata 里是 set：必须 sorted() 固定顺序，否则索引每次重跑都整段位移
 order = (list(SHAFA_LOOP_DAOWEN) + sorted(ORIGINAL_MONSTER_DAOWEN)
          + sorted(MONSTER_TRANSFORM_DAOWEN)
-         + [n for r in ("扭曲都市", "罪孽都市", "龙心谷", "乱葬岗") for n in REGION_EXCLUSIVE_DAOWEN[r]]
+         + [n for r in ("扭曲都市", "罪孽都市", "龙心谷", "乱葬岗") for n in sorted(REGION_EXCLUSIVE_DAOWEN[r])]
          + list(UNIMPLEMENTED_REGION_EXCLUSIVE_DAOWEN))
 for name in order:
     out = "、".join(out_edges[name]) if out_edges[name] else "—"
@@ -187,7 +166,8 @@ def section(title, names, note_lines=(), loop=None, loop_title=None):
         A("")
     for name in names:
         A(f"### {name}")
-        A(f"X：{costs[name]}。{effects[name]}" if effects[name] else f"X：{costs[name]}。")
+        head = x_head.get(name, "X")
+        A(f"{head}：{costs[name]}。{effects[name]}" if effects[name] else f"{head}：{costs[name]}。")
         meta = [f"[目标]：{target_label(name)}"]
         res = []
         if out_edges[name]:
@@ -210,28 +190,36 @@ section("杀伐闭环（通用核心·11）", list(SHAFA_LOOP_DAOWEN),
 
 section("原始怪物道纹（7）", sorted(ORIGINAL_MONSTER_DAOWEN),
         note_lines=[
-            "原始怪物道纹是各转化分支的起点：**不消耗法力**，每次实际发动支付【异变5X】"
-            "（X按该次发动时递增后的数值计算）；只能单向变化为转化道纹；**无法被永久获得**，"
-            "只能经【原初X】临时借用（怪物困境时，借一种自身未持有的原始道纹）。",
-            "怪物道纹递增（规则正文·怪物准则9）：怪物每实际发动一次某道纹，该道纹X本场累加+2×副本阶级"
-            "（一阶+2、二阶+4…），递增同步放大效果与真实代价。",
+            "原始怪物道纹是各转化分支的起点：**不消耗法力**，各自按正文写明的代价支付"
+            "（狂暴/全力/疯狂/减速/飞行＝【异变5X】，必中＝【异变X】，自愈＝【冷却X】），怪物与轮回者同口径；"
+            "与转化道纹之间是**双向**的（同种残韵可回溯）。"
+            "人类无法【学习】它，永久取得的唯一路径是**两步残韵**：先对持有它的怪物发动残韵取得转化道纹，"
+            "再对自身持有的该转化道纹发动同种残韵回溯（两步共2枚同种残韵；第一步后该怪物永久失去这条原始道纹）；"
+            "另有【原初X】临时借用（怪物困境时，借一种自身未持有的原始道纹，仅借用不获得）。",
+            "怪物面板不写X：X 由发动方按道纹语义当场自选，上限只受[法限]或代价限制"
+            "（规则正文·怪物准则9）。",
         ])
-A("分支结构（原始→转化，残韵单向）：")
+A("分支结构（原始↔转化，同种残韵可回溯）：")
 A("")
 for src in sorted(ORIGINAL_MONSTER_DAOWEN):
     ds = out_edges.get(src, [])
     A(f"- {src}：{'、'.join(ds) if ds else '—'}")
 A("")
+A("每条箭头都能原样反走：对转化道纹发动**同种**残韵，它就变回原始怪物道纹（19条正向边对应19条回溯边；"
+  "必中/飞行没有【曲解】产物，故也没有对应的曲解回溯边）。")
+A("")
 
 section("怪物转化道纹（19）", sorted(MONSTER_TRANSFORM_DAOWEN),
-        note_lines=["转化道纹由原始怪物道纹经残韵单向变化而来：对持有原始道纹的角色发动残韵，"
-                    "该道纹永久变为转化道纹，施法者同时永久获得。人类无法直接学习怪物道纹，只能经此路径。"])
+        note_lines=["转化道纹由原始怪物道纹经残韵变化而来：对持有原始道纹的角色发动残韵，"
+                    "该道纹永久变为转化道纹，施法者同时永久获得。人类无法直接学习怪物道纹，只能经此路径。",
+                    "转化道纹可用**同种残韵**回溯为它的原始怪物道纹（施法者对自身持有的那条发动）——"
+                    "这是人类永久取得原始怪物道纹的唯一路径：两步残韵，共2枚同种残韵。"])
 
 for region in ("扭曲都市", "罪孽都市", "龙心谷", "乱葬岗"):
     ns = REGION_EXCLUSIVE_DAOWEN[region]
     tier = REGION_TIERS[region]
-    section(f"{region}专属（8）", list(ns),
-            note_lines=[f"副本阶级：{'一二三四'[tier-1]}阶（道纹递增+{2*tier}/次）。学习门禁：先经残韵从本副本怪物处"
+    section(f"{region}专属（8）", sorted(ns),
+            note_lines=[f"副本阶级：{'一二三四'[tier-1]}阶（死斗按阶级分槽封存）。学习门禁：先经残韵从本副本怪物处"
                         f"转化获得至少一种本副本道纹，此后才可学习本副本其它专属道纹；其它副本专属道纹不可学习。"],
             loop=f"{region}闭环", loop_title=region)
 
@@ -246,14 +234,19 @@ A("## 道纹归属与学习规则")
 A("")
 A("1. **杀伐闭环（通用核心）**：开局发现初始道纹的来源；人类侧基础概念。")
 A("2. **副本专属**：学习门槛=先经残韵从本副本怪物转化获得至少一种；其它副本专属不可学。")
-A("3. **怪物转化**：只能由自身已持有道纹经残韵变化获得（施法者同时获得）；原始→转化单向。")
-A("4. **原始怪物**：人类不可学习；怪物发动支付异变5X；可经【原初X】临时借用。")
+A("3. **怪物转化**：只能由自身已持有道纹经残韵变化获得（施法者同时获得）；原始↔转化双向，同种残韵可回溯。")
+A("4. **原始怪物**：人类无法通过【学习】获得，只能从怪物身上获得——两步残韵（怪物的原始道纹→转化道纹→同种回溯），"
+  "共2枚同种残韵；怪物发动只付该道纹自身代价（异变类＝异变5X，自愈＝冷却X）；另有【原初X】临时借用（门票异变5X）。")
 A("5. **角色道纹唯一**：同名道纹不重复存在；通过残韵获得的道纹X按自由控X规则自定义。")
 A("6. **道纹只在战斗中发动**，唯一局外例外为【消灾】。")
-A("7. **自由控X**：发动时可自由指定 1 ≤ X ≤ 当前可用法力/代价上限；【波及】的X还受合法目标数封顶"
-  "（目标不足X时：怪物prepare不给出该道纹；玩家schema的X上限按目标数封顶）。")
+A("7. **自由控X**：发动时可自由指定 1 ≤ X ≤ 当前可用法力/代价上限；【波及】的X还受"
+  "**场上当前角色总数**封顶（波及不能选自己，可标记目标不足X时由发动方自己把X选小；"
+  "一个可标记目标都没有时怪物prepare不给出该道纹）。")
 A("")
 
-out = ROOT / "全道纹索引.md"
+# 输出路径可用环境变量重定向：tests/test_daowen_cost_consistency.py 靠它把重生成
+# 结果写进 tmp_path 再与仓库里的文件逐字节比对，从而钉住「索引＝派生产物、不得手改」。
+import os
+out = Path(os.environ.get("DAOWEN_INDEX_OUT") or (ROOT / "全道纹索引.md"))
 out.write_text("\n".join(L) + "\n", encoding="utf-8")
 print(f"written {out}: {len(L)} lines, {len(DaoWenEngine._registry)} daowen")

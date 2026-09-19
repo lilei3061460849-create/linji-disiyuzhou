@@ -44,7 +44,7 @@ def _pick_monster_daowen(engine, actor):
     monster = None
     if 0 <= m_idx < len(enemies):
         monster = enemies[m_idx]
-    activated = engine.combat._monster_activated.get(id(monster), set()) if monster is not None else set()
+    activated = engine.combat._monster_activated.get(monster.runtime_id, set()) if monster is not None else set()
     cands = [o for o in opts if o["name"] not in activated]
     if not cands:
         return opts[0]
@@ -78,8 +78,8 @@ def _resolve_monster_turn_one(e, skip_refs: set):
         if option["requires_target"]:
             dao["target_ref"] = pick_monster_daowen_target(e, actor["actor_ref"], option)
         if option["dodge_submission"] == "per_target":
-            from sim.monster_targets import pick_wave_dodge_targets
-            dao["dodge_targets"] = pick_wave_dodge_targets(option)
+            from sim.monster_targets import apply_wave_submission
+            apply_wave_submission(dao, option)
     from engine.ai_tactics import choose_attack_target
     refs = e.combat._combat_entity_refs()
     target_ref = choose_attack_target(actor["attack_target_options"], refs)
@@ -101,6 +101,10 @@ def _resolve_monster_turn_one(e, skip_refs: set):
         if monster is not None:
             dao["x"] = pick_monster_daowen_x(e, monster, option, choice,
                                              prepared["result"]["token"])
+            if dao.get("dodge_targets") is not None:
+                # 波及：目标提交数必须等于最终X（引擎已不代为降X）
+                from sim.monster_targets import apply_wave_submission
+                apply_wave_submission(dao, option, dao["x"])
     r = e.execute_action("resolve_monster_phase", {
         "token": prepared["result"]["token"], "choices": [choice]})
     return r, actor["actor_ref"]

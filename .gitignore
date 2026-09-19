@@ -26,3 +26,9 @@ data/batch_*
 # OS
 .DS_Store
 Thumbs.db
+
+# 会话备份（patch/bundle 一律生成在仓库外的 /home/user/）
+# 2026-09-19 踩坑：一次 `git -C <repo> bundle create linji_session.bundle` 用相对路径，
+# 文件被生成在仓库内，随后 `git add -A` 把 5.4MB 二进制提交进了 d45ead1。此处拦住重犯。
+*.bundle
+*.patch

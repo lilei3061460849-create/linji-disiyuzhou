@@ -117,6 +117,26 @@ def damage_type_not(damage_type: str) -> Condition:
     return lambda ctx: ctx.damage_type != damage_type
 
 
+def death_not_silenced() -> Condition:
+    """【缄默】消费点：死亡事件被封禁时，命零反应类机制一律不触发。
+
+    读的是 `_on_entity_death` 发出 ENTITY_DIED 时附带的 `silenced` 标记，
+    判定口径见 `CombatEngine._death_triggers_silenced`（全场任一存活实体带【缄默】，
+    或死者自身带【缄默】）。非死亡事件（ctx.event 缺失）不拦。
+
+    2026-09-18 起 `TriggerBus.dispatch` 已对 ENTITY_DIED 机制**默认**执行同一封禁
+    （退出需显式 `Mechanism.ignores_silence=True`），本条件因此对事件型机制是冗余的双保险；
+    保留它是为了：①相位型机制若将来要读死亡上下文时可复用同一判据；
+    ②`ignores_silence=True` 的机制仍可用它做更细的局部门禁。
+    """
+    def cond(ctx: TriggerContext) -> bool:
+        event = ctx.event
+        if event is None:
+            return True
+        return not (getattr(event, "data", None) or {}).get("silenced", False)
+    return cond
+
+
 def all_(*conds: Condition) -> Condition:
     def cond(ctx: TriggerContext) -> bool:
         return all(c(ctx) for c in conds)

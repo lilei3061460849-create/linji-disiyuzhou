@@ -465,6 +465,10 @@ class Entity:
         【全速】（2026-09-17 用户令，原名【迟滞】）覆盖：生效期间攻击次数锁定 = [速限]。
         由于 clamp_immortal_body 已让「当前速度≤[速限]」无条件成立，本效果实为
         增益——把被削的速度补满到上限，并免疫后续减速。走状态层，对全体角色生效。
+
+        消耗品不再动攻次（2026-09-17 用户令重做）：【高爆手雷】改走【无力】，
+        由出手预算口径统一扣减（`api._action_budget_of` / `single_round_action_count`）。
+        本函数只负责「当前速度 → 攻次」换算与【全速】锁定，不读任何消耗品状态。
         """
         if self.get_status_value("全速"):
             return max(0, self.speed_limit)
@@ -496,8 +500,10 @@ class Entity:
 
         不再由速限/攻击次数推导——速限已改作攻击次数的来源，再拿它算出手会重复记账；
         微光者旧的「攻击次数/3」口径同步废止（该式会让高攻次微光者白拿第3、4次出手）。
-        唯一的额外来源是遗物；【疯狂】+X、【无力】-X 照旧生效。
-        怪物行动仍由CombatEngine的prepare/resolve两阶段接口独立计算。"""
+        唯一的额外来源是遗物；【疯狂】+X、【无力】-X 照旧生效（【高爆手雷】给的也是
+        【无力】，不再自造一条同义状态）。
+        怪物行动仍由CombatEngine的prepare/resolve两阶段接口独立计算
+        （怪物侧同一扣减在 single_round_action_count 内）。"""
         base = 2
         base += self.get_status_value("疯狂")
         base -= self.get_status_value("无力")
@@ -558,7 +564,12 @@ class Entity:
         
         return detail
     
-    MUTATION_COLLAPSE_THRESHOLD = 50  # 特殊事件【崩解】阈值：异变达到50层直接命零；原始道纹仅首次发动支付异变5X
+    # 特殊事件【崩解】阈值：异变达到50层直接命零。异变层数只由道纹/消耗品自身写明的
+    # 【异变】代价产生（正文《怪物准则》第5条「发动【异变5X】累加自身异变层数」）：
+    # 结算点＝combat.py 统一代价总线的 cost_mutation 分支，怪物与轮回者/同伴同口径，
+    # 残韵改写那次不付源道纹代价。2026-09-18 用户令删除怪物「家族税」（旧口径：
+    # 原始怪物道纹每次发动额外硬扣异变5X）。
+    MUTATION_COLLAPSE_THRESHOLD = 50
     # 2026-09-17 用户令：[员工]出场并存活满这么多场战斗即转为[朋友]（唯一事实源）。
     EMPLOYEE_PROMOTION_BATTLES = 3
     # 致死类特殊事件的阈值（唯一事实源；CombatEngine 的同名量一律引用这里，禁止各写一份）：
@@ -693,13 +704,16 @@ class Entity:
         if effect.polarity == EffectPolarity.NEUTRAL.value:
             buffs = {
                 "固执", "贯穿", "急速", "洞察", "兴奋", "飞行", "滑翔", "狂暴",
-                "全力", "疯狂", "必中", "自愈", "洗劫", "逆鳞", "嫁祸", "背负",
+                "全力", "疯狂", "必中", "滋养", "洗劫", "逆鳞", "嫁祸", "背负",
                 "负岳索", "加速", "愤怒",
             }
+            # 2026-09-18 用户令：【自愈】重做为主动单体奶（代价冷却X、恢复[目标]25X%
+            # 已损生命），不再挂任何持续状态，故从增益名单移出；【滋养】改为
+            # 「使[目标]受到的恢复量翻倍，持续X」的放大状态，进增益名单。
             debuffs = {
                 "弱化", "无力", "减速", "全速", "束缚", "封印", "坠落",
                 "坏死", "爆裂", "退化", "定型", "畸变", "加害", "伤痕",
-                "寄生", "蒙蔽", "眩晕", "手雷减攻", "衰败", "被背负",
+                "寄生", "蒙蔽", "眩晕", "衰败", "被背负",
             }
             if effect.name in buffs:
                 effect.polarity = EffectPolarity.BUFF.value
@@ -1016,6 +1030,17 @@ class GameState:
 
         ctx 为兼容层来源上下文；未传时保持原回复行为，并在返回明细中给出 warning。
         """
+        # 【滋养】：使[目标]受到的恢复量翻倍（2026-09-18 用户令重做滋养）。
+        # 结算点放在统一回复入口的最前面，因此覆盖**战斗内**的一切来源（道纹／消耗品／
+        # 寄生…），且 ctx.amount、溢出转【龙血瓶】、HEAL_APPLIED 事件与
+        # Entity.total_healed（癌变计数）全部按翻倍后的值记账——滋养同时把癌变
+        # 进度×2，唯一免疫仍是遗物【第一杯】（用户裁定：这就是强度上限）。
+        # 倍率恒为 ×2、不随层数增强；同名重复施放只叠加持续时间。
+        # 它**不**加成局外【休整】：滋养状态 scope=BATTLE、[战终]统一清除
+        # （见 api.py 的战终清场），而【休整】是战前行动，两者永不同时在场。
+        ziyang_doubled = entity.has_status("滋养")
+        if ziyang_doubled:
+            amount = amount * 2
         heal_ctx = normalize_context(ctx)
         if heal_ctx is None:
             heal_ctx = make_context(
@@ -1036,6 +1061,8 @@ class GameState:
                     parent_event_id=heal_ctx.parent_event_id,
                 )
         detail = entity.heal(amount)
+        if ziyang_doubled:
+            detail["ziyang_doubled"] = True
         detail["heal_ctx"] = heal_ctx.to_dict()
         heal_events = getattr(entity, "_heal_events", None)
         if heal_events is None:

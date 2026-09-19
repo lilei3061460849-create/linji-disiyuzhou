@@ -69,15 +69,15 @@ def _add(entity, name, value=1, rounds=-1, source="x"):
 # ==================== 1. 完整回合一（跨相位组合） ====================
 
 def test_full_battle_cycle_all_mechanism_types_fire():
-    """同场战斗中：回始5机制 + 伤害加减区 + 两个事件机制 + 回终结算全部生效。
+    """同场战斗中：回始4机制 + 伤害加减区 + 两个事件机制 + 回终结算全部生效。
 
-    覆盖机制：自愈/衰败/洞察·结算/狂暴·标记/畸变·标记（ROUND_START）、
+    覆盖机制：衰败/洞察·结算/狂暴·标记/畸变·标记（ROUND_START；原自愈机制已于
+    2026-09-18 随【自愈】重做为主动道纹整体移除）、
     加害/龙鳞（INCOMING_ADJUST）、洗劫·夺碎片/焦黑发丝（事件）、畸变·结算（ROUND_END）。
     """
     state, combat = _arena(shards=0, relics=[Relic("焦黑发丝", "")])
     player = state.player
     # 玩家：回始全机制
-    _add(player, "自愈", 1)
     _add(player, "衰败", 1)
     player._dongcha_pending = 4
     _add(player, "狂暴", 1)
@@ -91,14 +91,14 @@ def test_full_battle_cycle_all_mechanism_types_fire():
     enemy.attack_count = 2
     enemy.attack_power = 3
 
-    # 回始：自愈 -> 衰败 -> 洞察 -> 狂暴标记
+    # 回始：衰败 -> 洞察 -> 狂暴标记
     # （DM裁定 2026-09-09：法力一池制，mana_refill 已不在回始管道里）
     res = combat.round_start()
     p_types = [e.get("type") for e in res["effects"] if e.get("entity") == "P"]
-    assert p_types == ["self_heal", "shuaibai_tick", "dongcha_mana",
+    assert p_types == ["shuaibai_tick", "dongcha_mana",
                        "extra_attack_ready"], f"回始顺序: {p_types}"
 
-    # 回始数值链（P: hp100 满血 -> 自愈 +10 封顶 100 -> 衰败 ceil(100*10/100)=10 -> 90）
+    # 回始数值链（P: hp100 满血 -> 衰败 ceil(100*10/100)=10 -> 90）
     assert player.current_hp == 90, f"P hp={player.current_hp}"
     # mana: 50(初始) + 50(回填) + 4(洞察) = 104（无不朽之躯 -> 不钳制）
     # 一池制：回始少了 +法限50 的回填，故 104 → 54
@@ -200,7 +200,7 @@ def test_friend_and_employee_round_start_mechanisms_fire():
     _add(friend, "衰败", 2)
     employee = Entity("W", "员工", blood_limit=80, current_hp=50,
                       mana_limit=50, current_mana=50, is_deployed=True)
-    _add(employee, "自愈", 1)
+    _add(employee, "衰败", 1)   # 2026-09-18：自愈机制已移除，改用衰败验证员工侧回始结算
     state, combat = _arena(friends=[friend], employees=[employee])
     state.player = _player(hp=100)
 
@@ -211,8 +211,8 @@ def test_friend_and_employee_round_start_mechanisms_fire():
     assert friend.current_hp == 80, f"朋友 hp={friend.current_hp}（100-20）"
 
     w_types = [e.get("type") for e in res["effects"] if e.get("entity") == "W"]
-    assert "self_heal" in w_types, f"员工自愈: {w_types}"
-    assert employee.current_hp == 58, f"员工 hp={employee.current_hp}（50+8）"
+    assert "shuaibai_tick" in w_types, f"员工衰败: {w_types}"
+    assert employee.current_hp == 45, f"员工 hp={employee.current_hp}（50-ceil(50*10/100)=45）"
 
     # 未部署的员工不进入战场循环
     employee2 = Entity("W2", "员工", blood_limit=80, current_hp=80,
@@ -363,17 +363,16 @@ def test_extreme_zero_hp_and_overkill():
 
 def test_extreme_blood_limit_one_and_mana_bounds():
     """血限 1 / 法力 0 / 法力满：回始机制在边界值下的行为。"""
-    # 血限 1：自愈 ceil(1*10/100)=1；衰败 ceil(1*10/100)=1 -> 命零
+    # 血限 1：衰败 ceil(1*10/100)=1 -> 命零
     state, combat = _arena()
     enemy = state.enemies[0]
     enemy.blood_limit = 1
     enemy.current_hp = 1
-    _add(enemy, "自愈", 1)
     _add(enemy, "衰败", 1)
     res = combat.round_start()
     types = [e.get("type") for e in res["effects"] if e.get("entity") == "M"]
-    assert types == ["self_heal", "shuaibai_tick"], types
-    # 数值链：hp 1 -> 自愈 +1 -> 封顶 1 -> 衰败 -1 -> 命零（与引擎既有语义一致）
+    assert types == ["shuaibai_tick"], types
+    # 数值链：hp 1 -> 衰败 -1 -> 命零（与引擎既有语义一致）
     assert enemy.current_hp == 0, f"hp={enemy.current_hp}"
     assert enemy.is_alive is False
 

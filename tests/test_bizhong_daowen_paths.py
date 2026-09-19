@@ -221,6 +221,10 @@ def test_monster_self_buff_bizhong_then_forces_debuff():
     # 回合②：debuff 道纹压上来，玩家提交 dodge 也无效
     e.state.current_round = 3
     e.combat.reset_monster_activation()
+    # 直接改回合号跳过了回始，引擎本该在这里把出手数归零；怪物阶段现在真校验出手预算，
+    # 不归零就会被当成"本回合已用满"而进 skipped（本例要验的是必中层数，不是预算）。
+    m.actions_used_this_round = 0
+    p.actions_used_this_round = 0
     before = e.combat.bizhong_remaining(m)
     prepared = e.combat.prepare_monster_phase()
     actor = next(a for a in prepared["actors"] if a["actor_ref"] == "enemy:0")

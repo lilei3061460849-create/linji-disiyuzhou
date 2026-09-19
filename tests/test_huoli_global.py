@@ -60,8 +60,13 @@ def test_normal_vitality_global_boost():
     assert p.action_count == base_actions + 2, "玩家出手次数应+X"
 
     engine.state.current_round = 3
+    # 引擎在 round_start 里把 actions_used_this_round 归零；本例直接改回合号跳过回始，
+    # 所以要手动归零——怪物阶段现在真校验出手预算，否则会被当成"本回合已用满"而进 skipped。
+    for entity in (p, m):
+        entity.actions_used_this_round = 0
     prepared = engine.combat.prepare_monster_phase()
     actor = next(a for a in prepared["actors"] if a["actor_ref"] == "enemy:0")
+    assert actor["action_budget"] == 2 + 2, "怪物出手预算应为 2+X"
     assert actor["base_attack_actions"] == 1 + 2, "怪物攻击出手数应为 1+X"
 
 

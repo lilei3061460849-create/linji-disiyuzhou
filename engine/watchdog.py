@@ -140,10 +140,16 @@ class CombatWatchdog:
                 findings.append(f"敌方【{m.name}】处于【爆裂{val}】状态，受到伤害前对攻击者进行100%反噬。")
                 recommendations.append(f"对策方案：使用【残韵·曲解】将【爆裂】篡改为【退化】或【坏死】瓦解反噬！")
 
-            # 4. 自愈/活血回血抵消判定
-            if m.has_status("自愈"):
-                findings.append(f"敌方【{m.name}】处于【自愈】状态，回始巨额回复抵消了常规攻击。")
-                recommendations.append(f"对策方案：使用【残韵·反转】将【自愈】篡改为【衰败】使其自损生命！")
+            # 4. 自愈回血抵消判定
+            #    2026-09-18 用户令重做后：【自愈】不再是[回始]持续状态，而是
+            #    「代价：冷却X。恢复[目标]25X%已损生命」的主动道纹，故改查持有与冷却。
+            ziyu_inst = m.dao_wen.get("自愈")
+            if ziyu_inst is not None:
+                if ziyu_inst.cooldown_remaining > 0:
+                    findings.append(f"敌方【{m.name}】的【自愈】在冷却中（还剩{ziyu_inst.cooldown_remaining}场），本场已无法再回血。")
+                else:
+                    findings.append(f"敌方【{m.name}】持有【自愈】，可随时恢复已损生命的25X%（代价冷却X场），消耗战会被它抹平。")
+                    recommendations.append(f"对策方案：使用【残韵·反转】将【自愈】篡改为【衰败】使其自损生命，或用【坏死】/【镇尸】禁疗！")
 
             # 5. 格挡阻隔判定
             if m.shield >= 20:

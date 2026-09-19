@@ -3,7 +3,8 @@
 验证点：
   - mana 动词（统一法力入口）逐字覆盖旧 洞察 语义（+= pending + 不朽之躯钳制）；
   - 条件：pending>0 且 轮回者 且 存活（与旧块短路顺序同义——不满足则不触发也不清零）；
-  - 顺序：自愈(10) → 衰败(20) → 洞察(30) → 勾魂（尚未迁移，硬编码块在其后）。
+  - 顺序：衰败(20) → 洞察(30) → 勾魂（尚未迁移，硬编码块在其后）。
+    原自愈(10) 已于 2026-09-18 随【自愈】重做为主动道纹而整体移除，priority 不重排。
 """
 from __future__ import annotations
 
@@ -23,7 +24,7 @@ from engine.models import Entity, GameState, Relic
 from engine.validator import check_migrated_mechanism_guards
 
 ROOT = Path(__file__).resolve().parents[1]
-COMBAT_SOURCE = (ROOT / "engine" / "combat.py").read_text(encoding="utf-8")
+from tests.source_scan import COMBAT_SOURCE  # noqa: E402  # 战斗引擎全家族：combat.py 已拆出 combat_parts/*.py
 
 
 def _arena(pending=0, entity_type="轮回者", mana=20, mana_limit=50,
@@ -69,7 +70,7 @@ def test_dongcha_is_registered():
     assert mech.priority == 30
     from engine.mechanisms.registry import MECHANISMS as REG
     assert [m.name for m in REG.phase_mechanisms(Phase.ROUND_START)] == \
-        ["自愈", "衰败", "洞察·结算", "狂暴·标记", "畸变·标记"]
+        ["衰败", "洞察·结算", "狂暴·标记", "畸变·标记"]
 
 
 def test_old_dongcha_block_removed():

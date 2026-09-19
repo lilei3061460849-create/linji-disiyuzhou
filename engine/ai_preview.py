@@ -14,7 +14,6 @@
 """
 from __future__ import annotations
 
-import copy
 from typing import Any, Optional
 
 
@@ -23,89 +22,6 @@ class ActionPreview:
 
     def __init__(self, engine: Any):
         self.engine = engine
-
-    # ---------------- 快照 / 回滚（复用 P0 事务体系） ----------------
-
-    def snapshot(self) -> dict:
-        eng = self.engine
-        combat = eng.combat
-        return {
-            "state": copy.deepcopy(eng.state),
-            "activated": copy.deepcopy(combat._monster_activated),
-            "round_used": copy.deepcopy(combat._monster_daowen_round_used),
-            "rewrites": copy.deepcopy(combat._resonance_rewrites),
-            "sanxiang": combat._sanxiang_consumed,
-            "split_spawned": getattr(combat, "_split_clones_spawned", 0),
-            "evolved": copy.deepcopy(combat._monster_evolved),
-            "effect_chain_depth": combat._effect_chain_depth,
-            "dice": copy.deepcopy(eng.dice),
-            "pending_interrupts": copy.deepcopy(eng._pending_interrupts),
-            "action_history_len": len(eng._action_history),
-            "last_result": eng._last_result,
-        }
-
-    @staticmethod
-    def _restore_entity(orig, snap_entity) -> None:
-        """原地恢复单个实体属性：保持对象 id 稳定。
-
-        预演执行会修改实体属性（HP/法力/状态/动态标记）；恢复时必须把快照
-        属性写回**原实体对象**，绝不能替换为新对象——combat 的
-        `_monster_activated`/`_monster_daowen_round_used` 等按 id(entity) 建索引，
-        实体被替换会导致 id 失配，怪物后续决策"忘记"已激活/已用状态。
-        """
-        if orig is None:
-            return
-        if snap_entity is None:
-            for k in list(orig.__dict__):
-                delattr(orig, k)
-            return
-        orig.__dict__.clear()
-        orig.__dict__.update(snap_entity.__dict__)
-
-    @classmethod
-    def _restore_group(cls, state, restored, attr: str) -> None:
-        """列表实体组原地恢复；仅当预演增删了实体（长度变化）才整体替换。"""
-        orig_list = getattr(state, attr)
-        snap_list = getattr(restored, attr)
-        if len(orig_list) != len(snap_list):
-            setattr(state, attr, snap_list)
-            return
-        for o, s in zip(orig_list, snap_list):
-            cls._restore_entity(o, s)
-
-    def restore(self, snap: dict) -> None:
-        eng = self.engine
-        combat = eng.combat
-        state = eng.state
-        restored = snap["state"]
-        # 1) 实体原地恢复（保持 id 稳定，combat 的 id-key 字典不失配）
-        self._restore_entity(state.player, restored.player)
-        for attr in ("friends", "employees", "temp_friends", "enemies"):
-            self._restore_group(state, restored, attr)
-        # 2) state 其余字段从快照复制；预演新增的动态字段（如 dead_monsters/
-        #    _pending_split_clones）必须删除，避免微小泄漏累积改变后续行为。
-        _groups = ("player", "friends", "employees", "temp_friends", "enemies")
-        for k in list(state.__dict__):
-            if k not in restored.__dict__ and k not in _groups:
-                delattr(state, k)
-        for k, v in restored.__dict__.items():
-            if k not in _groups:
-                setattr(state, k, v)
-        # 3) combat / engine 侧状态
-        combat._monster_activated = snap["activated"]
-        combat._monster_daowen_round_used = snap["round_used"]
-        combat._resonance_rewrites = snap["rewrites"]
-        combat._sanxiang_consumed = snap["sanxiang"]
-        combat._split_clones_spawned = snap["split_spawned"]
-        combat._monster_evolved = snap["evolved"]
-        combat._effect_chain_depth = snap["effect_chain_depth"]
-        eng.dice = snap["dice"]
-        # combat 与 engine 共享同一 dice 引用：预演执行可能消耗了旧 dice 对象
-        # 的 RNG 状态，必须一并恢复，否则后续 combat 结算 RNG 序列偏移。
-        eng.combat.dice = snap["dice"]
-        eng._pending_interrupts = snap["pending_interrupts"]
-        del eng._action_history[snap["action_history_len"]:]
-        eng._last_result = snap["last_result"]
 
     # ---------------- 预演主入口 ----------------
 
@@ -132,25 +48,16 @@ class ActionPreview:
         自己给出的快照。任一步失败即停，result 为该失败步的返回。
         返回 {result, diff, results}：result=最后执行步的返回，results=逐步返回。
         """
-        import copy
+        from engine.ledger_isolation import copy_world
+
         eng = self.engine
-        combat = eng.combat
-        real_state = eng.state
-        real_dice = eng.dice
-        # 副本世界：state + dice（实体互引在副本内自洽）
-        snap_state = copy.deepcopy(real_state)
-        snap_dice = copy.deepcopy(real_dice)
-        saved = {
-            "pending_interrupts": copy.deepcopy(eng._pending_interrupts),
-            "action_history_len": len(eng._action_history),
-            "last_result": eng._last_result,
-        }
-        eng.state = snap_state
-        combat.state = snap_state
-        eng.dice = snap_dice
-        combat.dice = snap_dice
         results: list = []
-        try:
+        # 副本世界隔离（state/dice ＋ combat 侧**全部 id 账本**）＝ engine/ledger_isolation.py
+        # 的单一权威清单，与 sim/win_only_ai.py 的死斗推演共用同一份。为什么必须隔离、
+        # 漏一本账的症状（同 seed 两次跑不一致、假拒绝「不能发动道纹【X】」）见该文件 docstring。
+        # 进出都由 copy_world 保证：异常/提前 return 也一定还原真实世界。
+        with copy_world(eng) as snap:
+            real_state, snap_state = snap["eng_state"], snap["copy_state"]
             try:
                 for action_type, params in steps:
                     p = params(results[-1]) if callable(params) else (params or {})
@@ -163,14 +70,6 @@ class ActionPreview:
             diff = self._diff(real_state, snap_state)
             return {"result": results[-1] if results else None, "diff": diff,
                     "results": results}
-        finally:
-            eng.state = real_state
-            combat.state = real_state
-            eng.dice = real_dice
-            combat.dice = real_dice
-            eng._pending_interrupts = saved["pending_interrupts"]
-            del eng._action_history[saved["action_history_len"]:]
-            eng._last_result = saved["last_result"]
 
     # ---------------- 后果提取 ----------------
 
