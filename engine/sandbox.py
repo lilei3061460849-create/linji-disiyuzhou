@@ -57,3 +57,121 @@ def copy_dice_for_snapshot(dice: Any, *, keep_history: bool = True) -> Any:
     rng.setstate(dice._rng.getstate())
     clone._rng = rng
     return clone
+
+
+# ===========================================================================
+# 沙盒作用域：一次「不会碰到真实世界」的执行所需要的全部隔离项
+# ===========================================================================
+# 为什么要有这张表（而不是在预演里手写保存/恢复）：
+#
+# 隔离项是**引擎状态的清单**，不是某段代码的细节。历史上两次真实的污染
+# （2026-09-19 combat 运行态、2026-09-20 event_pool）都是「有人加了一处
+# 引擎侧可变状态，而沙盒没跟着加」。把清单集中在这里以后：
+#   1. 新增引擎侧可变状态时，tests/test_sandbox_pollution.py 的
+#      「未分类可变状态」用例会直接失败——由测试提醒，不靠记忆；
+#   2. 预演/事务两条路径共用同一份读写实现，不会各写一份而漂移；
+#   3. 每一项都写明「为什么必须隔离 / 为什么可以共享」，便于复核。
+#
+# 三类隔离方式（成本从低到高，按需选最低的那一档）：
+#   swap    —— 整体换成副本对象，退出时换回原对象（大对象用，如 state/dice）
+#   runtime —— 原地保存/恢复内容（小对象、且身份被别处引用，如 id 键字典）
+#   restore —— 保存副本、退出时整体写回（长度/标量型，如行动历史）
+#
+# 明确**不需要**隔离的（写清楚以免下次又被"顺手加上"）：
+#   monster_pool / event_pool.events / relics_pool —— 规则数据，只读；
+#   death_book / rulings_db                         —— 外部 IO，不属于战斗结算；
+#   hook_manager / mechanism_bus                    —— 机制**定义**表（全局注册），
+#                                                      每个引擎一份壳但内容只读。
+
+#: 需要原地保存/恢复的战斗运行态（键多为 id(entity)，身份必须稳定）。
+COMBAT_RUNTIME_ATTRS = (
+    "_monster_activated",          # 本场已激活道纹（持续激活口径，如狂暴出手加成）
+    "_monster_daowen_round_used",  # 本回合已发动道纹（每回合每道纹至多一次）
+    "_resonance_rewrites",         # 残韵改写映射（按实体）
+    "_sanxiang_consumed",          # 三相残韵盘本场已消耗的类型
+    "_split_clones_spawned",       # 【分裂】本场已创生数量
+    "_monster_evolved",            # 本场已进化怪物（每场一次）
+    "_effect_chain_depth",         # 效果链深度保险丝计数器
+    "_resolving_life_lost_reactions",  # 失去生命反应的再入保护计数
+    "_hp_loss_recording",          # 失血事件记账计数（抑制兜底钩子）
+)
+
+#: 需要整体换对象再换回的状态根（大对象，深拷贝成本已由 sandbox 口径压低）。
+SWAPPED_ROOTS = ("state", "dice")
+
+
+def copy_runtime_value(value: Any) -> Any:
+    """运行态专用浅拷贝：结构都是「小容器套不可变值」，不值得走 deepcopy。
+
+    dict 重建一层（值可能是 set/dict/list），set 重建，标量原样。
+    """
+    if isinstance(value, dict):
+        out = {}
+        for k, v in value.items():
+            if isinstance(v, set):
+                out[k] = set(v)
+            elif isinstance(v, dict):
+                out[k] = dict(v)
+            elif isinstance(v, (tuple, list)):
+                out[k] = type(v)(set(x) if isinstance(x, set) else x for x in v)
+            else:
+                out[k] = v
+        return out
+    if isinstance(value, set):
+        return set(value)
+    return value
+
+
+def snapshot_engine_side(engine: Any) -> dict:
+    """保存一次沙盒作用域需要隔离的**引擎侧**（非 state）可变状态。
+
+    返回的 token 交给 ``restore_engine_side`` 恢复；两者必须成对使用。
+    """
+    combat = engine.combat
+    pool = getattr(engine, "event_pool", None)
+    return {
+        "runtime": {k: copy_runtime_value(getattr(combat, k, None))
+                    for k in COMBAT_RUNTIME_ATTRS},
+        # 有些运行态是惰性创建的（如 _split_clones_spawned 首次分裂才出现）。
+        # 保存时必须记下「本来没有」，否则恢复会凭空创建出这个属性——那也是污染。
+        "runtime_absent": tuple(k for k in COMBAT_RUNTIME_ATTRS
+                                if not hasattr(combat, k)),
+        "pending_interrupts": copy.deepcopy(engine._pending_interrupts),
+        "action_history_len": len(engine._action_history),
+        "last_result": engine._last_result,
+        # 事件池的「已触发集合 + 当前待结算事件」：结算事件的选项会写这两项，
+        # 而沙盒不换 event_pool 对象本身（规则数据 events 是只读的大表）。
+        "event_triggered": set(pool.triggered) if pool is not None else None,
+        "event_current": getattr(pool, "current", None) if pool is not None else None,
+    }
+
+
+def restore_engine_side(engine: Any, token: dict) -> None:
+    """按 token 恢复引擎侧可变状态（全部原地恢复，保持对象身份稳定）。"""
+    combat = engine.combat
+    absent = set(token.get("runtime_absent", ()))
+    for key, value in token["runtime"].items():
+        if key in absent:
+            # 快照时本就不存在：沙盒里被惰性创建出来的，退出时删掉。
+            if hasattr(combat, key):
+                delattr(combat, key)
+            continue
+        current = getattr(combat, key, None)
+        if isinstance(current, dict) and isinstance(value, dict):
+            current.clear()
+            for k, v in value.items():
+                current[k] = set(v) if isinstance(v, set) else v
+        elif isinstance(current, set) and isinstance(value, set):
+            current.clear()
+            current.update(value)
+        else:
+            setattr(combat, key, value)
+    engine._pending_interrupts = token["pending_interrupts"]
+    del engine._action_history[token["action_history_len"]:]
+    engine._last_result = token["last_result"]
+    pool = getattr(engine, "event_pool", None)
+    if pool is not None and token["event_triggered"] is not None:
+        # 原地恢复：event_pool 身份被 api.py 的存档/读档路径引用。
+        pool.triggered.clear()
+        pool.triggered.update(token["event_triggered"])
+        pool.current = token["event_current"]

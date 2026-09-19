@@ -17,50 +17,23 @@ from __future__ import annotations
 import copy
 from typing import Any, Optional
 
-from .sandbox import copy_dice_for_snapshot, copy_state_for_snapshot
+from .pollution_guard import (assert_runtime_unchanged, guard_enabled,
+                              snapshot_runtime_state)
+from .sandbox import (COMBAT_RUNTIME_ATTRS, copy_dice_for_snapshot,
+                      copy_state_for_snapshot, restore_engine_side,
+                      snapshot_engine_side)
+
+
+#: 调试开关：LJ_POLLUTION_GUARD=1 时每次预演自动自检（见 pollution_guard）。
+_GUARD_ON = guard_enabled()
 
 
 class ActionPreview:
     """行动后果预演器。preview() 返回动作的完整后果，不改变真实战斗状态。"""
-
-    # 不在 GameState 内、但会被结算写到的战斗运行态（CombatEngine 自己的属性）。
-    # 预演只换了 state/dice，combat 仍是**真实对象**，分片结算照常写这些字典；
-    # 键是 id(entity)，而沙盒实体是深拷贝副本——写完不恢复就会在真实引擎里留下
-    # 一批「老键」。下一次沙盒的副本实体极可能复用同一地址，于是下一次预演会
-    # 「看见」上一次预演已经用过的道纹（每回合每道纹至多一次），候选集悄然变化。
-    # 契约是预演零副作用（见本模块 docstring），因此进出沙盒一律整体换回。
-    _RUNTIME_ATTRS = ("_monster_activated", "_monster_daowen_round_used",
-                      "_resonance_rewrites", "_sanxiang_consumed",
-                      "_split_clones_spawned", "_monster_evolved",
-                      "_effect_chain_depth")
-
-    @staticmethod
-    def _copy_runtime_value(value: Any) -> Any:
-        """运行态专用浅拷贝：结构都是「小容器套不可变值」，不值得走 deepcopy。
-
-        `copy.deepcopy` 是本模块的性能护栏（每次预演 ≤4 次，见
-        tests/test_action_preview_parity.py），运行态又必须在同一处恢复，
-        因此按类型逐个重建：dict 重建一层（值可能是 set），set 重建，标量原样。
-        """
-        if isinstance(value, dict):
-            out = {}
-            for k, v in value.items():
-                if isinstance(v, set):
-                    out[k] = set(v)
-                elif isinstance(v, dict):
-                    out[k] = dict(v)
-                elif isinstance(v, (tuple, list)):
-                    out[k] = type(v)(set(x) if isinstance(x, set) else x for x in v)
-                else:
-                    out[k] = v
-            return out
-        if isinstance(value, set):
-            return set(value)
-        return value
-
-    def _runtime_snapshot(self, combat: Any) -> dict:
-        return {k: self._copy_runtime_value(getattr(combat, k, None))
-                for k in self._RUNTIME_ATTRS}
+    # 隔离项清单的唯一事实源在 engine/sandbox.py：预演与事务共用同一份读写实现，
+    # 新增引擎侧可变状态时 tests/test_sandbox_pollution.py 的「未分类可变状态」
+    # 用例会先失败——由测试提醒，不靠记忆。
+    _RUNTIME_ATTRS = COMBAT_RUNTIME_ATTRS
 
     def __init__(self, engine: Any):
         self.engine = engine
@@ -186,14 +159,17 @@ class ActionPreview:
         # （不可变事实记录），随机源不复制 roll 历史——沙盒用完即弃。
         snap_state = copy_state_for_snapshot(real_state)
         snap_dice = copy_dice_for_snapshot(real_dice, keep_history=False)
-        saved = {
-            "pending_interrupts": copy.deepcopy(eng._pending_interrupts),
-            "action_history_len": len(eng._action_history),
-            "last_result": eng._last_result,
-            # 战斗运行态（combat 属性）必须与 state/dice 一起换回；结构都很小
-            # （几组 id→集合），浅拷贝即可，且不占 deepcopy 护栏额度。
-            "runtime": self._runtime_snapshot(combat),
-        }
+        # 引擎侧可变状态（combat 运行态 / 中断 / 行动历史 / 事件池）统一走
+        # sandbox 的集中清单保存，退出时原地恢复——见 engine/sandbox.py。
+        saved = snapshot_engine_side(eng)
+        # 调试开关（LJ_POLLUTION_GUARD=1）：正式运行是 False，只有一次布尔判断。
+        # 长局（事件流很长）自动降级为「只追加事实记录不逐元素比对内容」，避免
+        # 打开开关就把模拟变成慢动作；短局仍然全字段比对。
+        if _GUARD_ON:
+            guard_before = snapshot_runtime_state(
+                eng, check_record_contents=len(real_state.combat_events) <= 200)
+        else:
+            guard_before = None
         eng.state = snap_state
         combat.state = snap_state
         eng.dice = snap_dice
@@ -218,11 +194,13 @@ class ActionPreview:
             combat.state = real_state
             eng.dice = real_dice
             combat.dice = real_dice
-            for key, value in saved["runtime"].items():
-                setattr(combat, key, value)
-            eng._pending_interrupts = saved["pending_interrupts"]
-            del eng._action_history[saved["action_history_len"]:]
-            eng._last_result = saved["last_result"]
+            restore_engine_side(eng, saved)
+            if guard_before is not None:
+                assert_runtime_unchanged(
+                    guard_before,
+                    snapshot_runtime_state(
+                        eng, check_record_contents=len(real_state.combat_events) <= 200),
+                    context=f"预演 {[s[0] for s in steps]}")
 
     # ---------------- 后果提取 ----------------
 
