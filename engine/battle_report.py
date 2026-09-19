@@ -207,18 +207,6 @@ def _render_effect(eff: dict) -> str:
         if before is not None and after is not None:
             return f"{who} [回复]{amt}点生命（百分比，生命由{before}升至{after}）"
         return f"{who} [回复]{amt}点生命（百分比）"
-    if t == "heal_missing_pct":
-        # 按**已损生命**百分比回复（现行唯一来源＝【自愈】，2026-09-18 用户令重做）
-        who = eff.get("target") or eff.get("entity")
-        if eff.get("blocked_by"):
-            return f"{who} 的按已损生命回复被【{eff.get('blocked_by')}】拦住，未回血"
-        amt = eff.get("actual_heal", eff.get("amount"))
-        before, after = eff.get("hp_before"), eff.get("hp_after")
-        pct = eff.get("pct")
-        tail = f"（已损生命{pct}%）" if pct is not None else "（按已损生命）"
-        if before is not None and after is not None:
-            return f"{who} [回复]{amt}点生命{tail[:-1]}，生命由{before}升至{after}）"
-        return f"{who} [回复]{amt}点生命{tail}"
     if t == "aoe_damage":
         return (f"{eff.get('target')} 受到范围伤害{eff.get('actual_damage')}"
                 f"（格挡吸收{eff.get('shield_absorbed', 0)}）"
@@ -273,9 +261,8 @@ def _render_effect(eff: dict) -> str:
         return f"【赌命】结算：{eff.get('target')} 失去 {eff.get('damage')} 点生命"
     if t == "duming_register":
         return f"{eff.get('caster')} 登记【赌命X={eff.get('x')}】"
-    # 2026-09-18 用户令：【自愈】重做为主动单体奶（代价冷却X、恢复[目标]25X%已损生命），
-    # ROUND_START 上的自愈机制整体删除 → self_heal 条目已无产出，渲染分支一并删除（不留死接线）；
-    # 新版自愈的回复走 heal_missing_pct 分支。
+    if t == "self_heal":
+        return f"{eff.get('entity')} 触发【自愈】：[回复]{eff.get('actual', eff.get('heal'))}点生命"
     if t == "decay_damage":
         return f"{eff.get('entity')} 触发【衰败】：失去{eff.get('damage')}点生命"
     if t == "bizhong":

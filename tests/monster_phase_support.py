@@ -42,8 +42,9 @@ def resolve_monster_phase(combat, daowen_choices=None, *, dodge=False, target_re
                 # 波及X：恰好提交X个目标（候选全量提交会在候选>X时被拒，2026-08-22）
                 from sim.monster_targets import pick_wave_dodge_targets
                 dao["dodge_targets"] = pick_wave_dodge_targets(option)
-            # 命中数一律用 prepare 快照（base_hits_per_attack）：【变形】等阶段内真实
-            # 改速度的道纹不动这条契约，按 attack_power 提交会被引擎拒。
+            elif option["resolves_as"] == "变形":
+                enemy_index = int(key.split(":", 1)[1])
+                hit_count = combat.state.enemies[enemy_index].attack_power
         attack_target = actor["attack_target_options"][0]["ref"]
         target_option = next(target for target in actor["attack_target_options"]
                              if target["ref"] == attack_target)

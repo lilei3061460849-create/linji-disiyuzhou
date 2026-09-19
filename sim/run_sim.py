@@ -100,16 +100,11 @@ def tools_phase(player, monsters, activated, rnd):
         player.current_hp = min(player.blood_limit, player.current_hp + 25)
         neg = [s for s in player.status_effects if s.remaining_rounds > 0 or s.name in ("坏死","退化","伤痕","畸变","蒙蔽")]
         if neg: player.status_effects.remove(neg[0])
-    # 高爆手雷：全场敌方20伤害；伤害后生命≥50%血限→【无力2】，否则【无力1】（本场永久）
-    if _has(player, "高爆手雷") and any(m.is_alive for m in monsters):
+    # 高爆手雷：集火目标15伤害+本回合攻击次数-1
+    if focus is not None and _has(player, "高爆手雷"):
         _use(player, "高爆手雷")
-        for m in [x for x in monsters if x.is_alive]:
-            bs.hit_monster(player, m, 20, monsters)
-        for m in monsters:
-            if not m.is_alive:
-                continue  # 打死就不必压制了
-            m.add_status(bs.StatusEffect("无力", remaining_rounds=-1,
-                                         value=2 if m.current_hp * 2 >= m.blood_limit else 1))
+        bs.hit_monster(player, focus, 15, monsters)
+        focus._nade_minus = getattr(focus, "_nade_minus", 0) + 1
     # 反怪物电击枪：集火25伤害（飞行+15）
     focus = _focus(monsters)
     if focus is not None and _has(player, "反怪物电击枪"):
@@ -235,13 +230,12 @@ def run_multi_battle(player, monster_defs, rng):
         for m in monsters:
             m.hp_lost_this_round = 0
             m._jammed = False
+            m._nade_minus = 0
         if getattr(player, "tools", None):
             tools_phase(player, monsters, activated, rnd)  # 回始道具阶段（裁定⑬）
         for m in monsters:
             if m.is_alive: bs.monster_round_start(m, activated[id(m)])
-            # 干扰仪：本回合无法发动道纹；【无力】2 层：出手预算归零，整只跳过（引擎同口径）
-            if rnd > 1 and m.is_alive and not getattr(m, "_jammed", False) \
-                    and m.get_status_value("无力") < 2:
+            if rnd > 1 and m.is_alive and not getattr(m, "_jammed", False):  # 干扰仪：本回合无法发动道纹
                 act = bs.monster_activate(m, activated[id(m)], rng)
                 if act and not act.startswith("崩解:"):  # 崩解：激活效果中断
                     bs.apply_control_to_player(act, m, player)

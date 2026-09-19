@@ -79,7 +79,7 @@ def _pick_monster_daowen(engine, actor):
     monster = None
     if 0 <= m_idx < len(enemies):
         monster = enemies[m_idx]
-    activated = engine.combat._monster_activated.get(monster.runtime_id, set()) if monster is not None else set()
+    activated = engine.combat._monster_activated.get(id(monster), set()) if monster is not None else set()
     cands = [o for o in opts if o["name"] not in activated]
     if not cands:
         return opts[0]
@@ -93,8 +93,8 @@ def _pick_monster_daowen(engine, actor):
 
 
 def _pick_monster_daowen_avoiding_wave(engine, actor):
-    """波及重试专用（2026-08-22）：波及的X个闪避目标取自 prepare 快照的候选，
-    阶段内任一目标死亡则该道纹同 token 下永远无法结算；
+    """波及重试专用（2026-08-22）：波及的X个闪避目标冻结在 prepare 快照
+    （combat.py:4081），阶段内任一目标死亡则该道纹同 token 下永远无法结算；
     报错文案"请重新prepare_monster_phase"具误导性（pending 有效期内 prepare
     会被拒，api.py:854）——正确路径是按 api.py:3598 契约注释用同 token 换选
     非波及备选道纹重交（dodge_submission=="per_target" 的才排除）。"""
@@ -313,7 +313,7 @@ def _drive_plight_monsters(engine, telemetry: dict = None) -> None:
                         if e.name == opt.get("monster") and e.is_alive), None)
         if monster is None or monster.entity_type != "怪物":
             continue
-        if monster.runtime_id in combat._monster_evolved:
+        if id(monster) in combat._monster_evolved:
             continue
         borrowable = list(opt.get("borrowable_daowen") or [])
         max_x = int(opt.get("max_x_by_mutation") or 0)
@@ -329,7 +329,7 @@ def _drive_plight_monsters(engine, telemetry: dict = None) -> None:
             if stats is not None:
                 stats[key] = stats.get(key, 0) + 1
         else:
-            combat._monster_evolved.add(monster.runtime_id)
+            combat._monster_evolved.add(id(monster))
             combat._remove_from_combat(monster, "逃跑")
             if stats is not None:
                 stats["escape"] = stats.get("escape", 0) + 1
@@ -352,7 +352,6 @@ def _resolve_monster_turn(engine):
     if not prepared.get("success"):
         return prepared
     from engine.ai_tactics import choose_dodge, choose_attack_target
-    from sim.monster_targets import pick_monster_daowen_x
 
     refs_all = engine.combat._combat_entity_refs()
     hit_overrides = {}     # actor_ref → 强制命中数/出手
@@ -388,13 +387,12 @@ def _resolve_monster_turn(engine):
                 if option["requires_target"]:
                     dao["target_ref"] = pick_monster_daowen_target(engine, actor["actor_ref"], option)
                 if option["dodge_submission"] == "per_target":
-                    from sim.monster_targets import apply_wave_submission
-                    apply_wave_submission(dao, option)
-                # 【变形】不再改命中数：命中数契约是 prepare 快照
-                # （combat.py `hits_per_action = expected[actor_ref]["base_hits_per_attack"]`，
-                # 2026-09-17 起出手数与命中数一律按快照校验，阶段内真实改速度也不动契约）。
-                # 旧写法按 attack_power(＝当前法力) 提交，法力≠速度的怪必然被引擎拒
-                # （「每个攻击出手必须提交N次命中选择」），白烧一次重试额度。
+                    from sim.monster_targets import pick_wave_dodge_targets
+                    dao["dodge_targets"] = pick_wave_dodge_targets(option)
+                if option["resolves_as"] == "变形":
+                    enemy_index = int(actor["actor_ref"].split(":", 1)[1])
+                    hits_n = hit_overrides.get(actor["actor_ref"],
+                                               engine.state.enemies[enemy_index].attack_power)
             monster = refs_all.get(actor["actor_ref"])
             per_hit = monster.attack_power if monster is not None else 0
             target_option = next((o for o in actor["attack_target_options"]
@@ -432,30 +430,6 @@ def _resolve_monster_turn(engine):
                 attacks.append({"hits": hits})
             choices.append({"actor_ref": actor["actor_ref"], "daowen": dao,
                             "attack_actions": attacks})
-
-        # 2026-09-16 用户令（选案 C）＋ 2026-09-18 用户裁定（Q10：不是自定义 X 值的错，
-        # 是怪物 AI 太蠢）：x_free 道纹的 X 必须由怪物 AI 用战术预演评分自己挑，
-        # 不能交给引擎缺省回退（combat.py:5602 `if missing: effective_x = max_x`）——
-        # 【必中】代价降为 异变X 后，可负担上限能到 X≈49（异变 headroom 50 ÷ 每X 1 层），
-        # 一发就把自己推到【崩解】线上。必须在**整份 choices 拼好之后**评分：PVE 要求
-        # 全体 actor 一起提交，只交一个会被拒。
-        token = prepared["result"]["token"]
-        for choice, (actor, _hits, _tgt) in zip(choices, per_actor):
-            dao = choice.get("daowen")
-            if not dao:
-                continue
-            option = next((o for o in actor["daowen_options"] if o["name"] == dao["name"]), None)
-            if option is None or not option.get("x_free"):
-                continue
-            monster = refs_all.get(actor["actor_ref"])
-            if monster is None:
-                continue
-            dao["x"] = pick_monster_daowen_x(engine, monster, option, choice, token,
-                                             all_choices=choices)
-            if dao.get("dodge_targets") is not None:
-                # 波及：目标提交数必须等于最终X（引擎已不代为降X）
-                from sim.monster_targets import apply_wave_submission
-                apply_wave_submission(dao, option, dao["x"])
 
         result = engine.execute_action("resolve_monster_phase", {
             "token": prepared["result"]["token"], "choices": choices,
@@ -1287,7 +1261,7 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                 # 失败必须退还精力，否则会死循环；引擎已退还，这里兜底防死锁
                 if e.state.energy >= before:
                     e.execute_action("pre_battle_action",
-                                     {"sub_action": "修行", **xiuxing_params(e, b)})
+                                     {"sub_action": "修行", "tier": 1, "to": "mana"})
             # 卡死哨兵：连续 STALL_LIMIT 步精力不退（门禁未清/兜底被拒），说明
             # 存在驱动解不开的语义门禁——回收为无效局，绝不挂死进程。
             if e.state.energy >= before:
@@ -1492,24 +1466,6 @@ DEFAULT_POLICY = {
 REGION_ACTION = {"炼心": "龙心谷", "维修": "扭曲都市", "雇佣": "罪孽都市", "附煞": "乱葬岗"}
 
 
-def xiuxing_params(e, battle_no=1):
-    """构造【修行】参数，口径对齐 engine/api.py（1属性点=6[血限]，2属性点=1[速限]=1[法限]）。
-
-    速限/法限的兑换点数**必须是偶数**（_redeem_attribute_points），而修行档位点数=tier，
-    故 tier1 单点直兑 mana/speed 必被拒——被拒的行动不退精力，局外循环会原地打转直到
-    死锁哨兵把整局判无效。这里按「池内点数（本次+存量）能凑出的最大偶数」兑换，
-    余点留池（DM裁定 2026-09-10：修行给的点先入池、不强制当场花掉）；凑不出偶数就
-    只存点，绝不提交必被拒的分配。
-    """
-    tier = 1
-    pool = getattr(e.state, "attribute_points", 0) + tier
-    even = pool - (pool % 2)
-    if even <= 0:
-        return {"tier": tier}
-    to = "mana" if battle_no % 2 else "speed"
-    return {"tier": tier, "allocations": {f"{to}_points": even}}
-
-
 def choose_pre_battle(e, todo, battle_no, rng, policy):
     """AI 自主挑选一个局外行动（按权重），返回 (行动名, 参数)。"""
     p = e.state.player
@@ -1527,7 +1483,7 @@ def choose_pre_battle(e, todo, battle_no, rng, policy):
             continue          # 满血不休整（无效行动，不该计入选择率）
         cands.append((act, w))
     if not cands:
-        return "修行", xiuxing_params(e, battle_no)
+        return "修行", {"tier": 1, "to": "mana"}
 
     total = sum(w for _, w in cands)
     pick = rng.uniform(0, total)
@@ -1544,15 +1500,15 @@ def choose_pre_battle(e, todo, battle_no, rng, policy):
     if act == "附煞":
         held = next(iter(p.dao_wen), None) if p else None
         if not held:
-            return "修行", xiuxing_params(e, battle_no)
+            return "修行", {"tier": 1, "to": "mana"}
         # 确定性：碎片≥25用选择（冥煞附当前持有道纹），≥10用发现，否则跳过
         if e.state.shards >= 25:
             return act, {"mode": "选择", "sha_qi": "冥煞", "daowen_name": held}
         if e.state.shards >= 10:
             return act, {"mode": "发现", "daowen_name": held}
-        return "修行", xiuxing_params(e, battle_no)
+        return "修行", {"tier": 1, "to": "mana"}
     if act == "修行":
-        return act, xiuxing_params(e, battle_no)
+        return act, {"tier": 1, "to": "mana" if battle_no % 2 else "speed"}
     if act == "休整":
         # 休整分级（2026-08-19 P2；2026-09-10 随引擎改制更新，同日二次裁定
         # 改三档）：恢复额度=轮回者血限百分比（tier1/2/3 = 20%/40%/60%，

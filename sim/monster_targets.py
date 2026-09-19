@@ -128,8 +128,7 @@ def pick_monster_daowen_option(cands: list[dict], *, player_low: bool = False,
     return min(cands, key=lambda o: monster_daowen_group(o["name"]))
 
 
-def pick_monster_daowen_x(engine, monster, option, choice_tpl: dict, token: str,
-                          all_choices: list | None = None) -> int:
+def pick_monster_daowen_x(engine, monster, option, choice_tpl: dict, token: str) -> int:
     """x_free 道纹：用**战术预演评分**为怪物挑一个 X（2026-09-16 用户令，选案 C）。
 
     面板不写死 X，能开多大只受[法限]或代价限制——但"能开多大"不等于"该开多大"。
@@ -149,20 +148,10 @@ def pick_monster_daowen_x(engine, monster, option, choice_tpl: dict, token: str,
     choice_tpl 是已拼装好的完整提交模板（含攻击块），这里只替换 daowen["x"]；
     保留攻击块是因为引擎要求 attack_actions 的逐击命中数必须提交完整，
     只提交道纹会被拒（攻击部分的后果在各候选间是常量，不影响 X 之间的比较）。
-
-    all_choices：PVE 怪物阶段要求**全体 actor 一起提交**（combat.py:6002
-    `set(submitted) != set(expected)` 即拒），死斗才是部分提交。传完整 choices 列表
-    （其中必须含 choice_tpl 这个对象本身）时，评分按整份提交预演、只替换本 actor 的 X；
-    其余 actor 的选择原样带入——它们是常量，不影响 X 之间的相对比较。
     """
     import copy
 
     max_x = int(option.get("max_x") or option.get("x") or 1)
-    # 波及：可标记目标数就是发动方能开的硬上限（引擎只给「场上角色总数」这个粗上限）。
-    # 不收的话逐档预演会因「提交数≠X」全部失败，评分退化成一律回退到上限。
-    is_wave = option.get("dodge_submission") == "per_target"
-    if is_wave:
-        max_x = clamp_wave_x(option, max_x)
     if max_x <= 1:
         return max(1, max_x)
 
@@ -177,15 +166,8 @@ def pick_monster_daowen_x(engine, monster, option, choice_tpl: dict, token: str,
     for x in sorted({1, max(1, max_x // 2), max_x}):
         trial = copy.deepcopy(choice_tpl)
         trial["daowen"]["x"] = x
-        if is_wave:
-            # 目标提交数必须跟着这一档的X一起变，否则预演必被拒（引擎不再降X）
-            apply_wave_submission(trial["daowen"], option, x)
-        if all_choices is None:
-            submitted = [trial]
-        else:
-            submitted = [trial if c is choice_tpl else copy.deepcopy(c) for c in all_choices]
         out = preview.preview("resolve_monster_phase",
-                              {"token": token, "choices": submitted})
+                              {"token": token, "choices": [trial]})
         res = out.get("result") or {}
         if not res.get("success"):
             continue
@@ -234,52 +216,21 @@ def _persistent_duration_value(engine, monster, option, x, ai) -> float:
     return 0.5 * per_round * effective
 
 
-def wave_candidate_count(option: dict) -> int:
-    """波及此刻可标记的目标数（prepare 枚举的 dodge_target_options）。"""
-    return len(list(option.get("dodge_target_options") or []))
-
-
-def clamp_wave_x(option: dict, want: int) -> int:
-    """发动方自己把 X 收到「可标记目标数」以内（用户裁定 2026-09-19）。
-
-    引擎侧 X 上限＝场上当前角色总数（含发动者自己），而波及不能选自己，
-    所以真正能标记的只有 dodge_target_options 这些人。引擎已不再替发动方降X，
-    提交数≠本次X 会被直接拒收——收 X 是发动方（AI/操作者）自己的事。
-    返回 0 表示此刻一个都标记不了（prepare 对怪物本就不给出该道纹）。
-    """
-    n = wave_candidate_count(option)
-    if n <= 0:
-        return 0
-    return max(1, min(int(want or 1), n))
-
-
-def apply_wave_submission(dao: dict, option: dict, x: int | None = None) -> int:
-    """把「本次发动的X」与「恰好X个目标提交」写成一对，返回该X。
-
-    x_free 面板会同时写 dao["x"]（未写则引擎回退到可负担上限，与提交数对不上）；
-    固定X面板的 dao["x"] 引擎不读，只保证目标数尽量对齐（目标真不够时结算报错，
-    这是面板写死X的固有后果，现行副本面板的波及一律不写X）。
-    """
-    want = int(x if x is not None else (option.get("max_x") or option.get("x") or 1))
-    n = clamp_wave_x(option, want)
-    if option.get("x_free"):
-        dao["x"] = n
-    dao["dodge_targets"] = pick_wave_dodge_targets(option, n)
-    return n
-
-
-def pick_wave_dodge_targets(option: dict, x: int | None = None) -> list[dict]:
+def pick_wave_dodge_targets(option: dict) -> list[dict]:
     """波及X：从prepare的dodge_target_options中恰好选X个目标（对侧优先）。
 
     规则要求显式提交恰好X个不重复目标：此前各解析器把dodge_target_options全量
     提交，候选数大于X时必然被resolve拒收（2026-08-22 BUG-01配套修复）。
-    不传 x 时按本次能开的上限（max_x/x）再收到可标记目标数以内，见 clamp_wave_x。
+    DM裁定2026-08-23自适应降X：prepare在面板X>合法目标数时把有效X降到
+    wave_effective_x=min(面板X, 候选数)，此处必须按有效X取目标，否则提交数≠
+    结算侧mark_count必被拒。
     优先选怪物对侧（玩家方）目标——把后续道纹扩散打到敌方才符合怪物意图；
     对侧不足X时以其余合法目标补齐。
     """
     candidates = list(option.get("dodge_target_options") or [])
-    want = int(x if x is not None else (option.get("max_x") or option.get("x") or 1))
-    need = clamp_wave_x(option, want)
+    need = int(option.get("wave_effective_x") or 0)
+    if not need:
+        need = min(int(option.get("x", 0) or 0), len(candidates))
     hostiles = [t for t in candidates if not str(t.get("ref", "")).startswith("enemy:")]
     others = [t for t in candidates if str(t.get("ref", "")).startswith("enemy:")]
     picked = (hostiles + others)[:need]

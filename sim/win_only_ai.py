@@ -19,6 +19,7 @@ engine 与 combat 双侧，外加 combat 的全部可变记账字典），推演
 from __future__ import annotations
 
 import contextlib
+import copy
 import os
 
 from engine.ai_tactics import TacticalAI, MAX_CANDIDATE_PREVIEWS
@@ -45,12 +46,10 @@ class WinOnlyAI(TacticalAI):
     PLAYOUT_MAX_ROUNDS_PVE = 10 # PvE 推演回合上限（要装得下「爬梯5跳+透支爆发」的完整计划）
     PLAYOUT_ACTION_CAP = 40    # 推演内单轮玩家出手上限（防拒绝循环）
 
-    # ---------- 世界切换（与 ai_preview 共用 engine/ledger_isolation 的换世界口径，整场推演后丢弃副本） ----------
+    # ---------- 世界切换（镜像 ai_preview 的换世界口径，整场推演后丢弃副本） ----------
 
     def _swap_world(self):
         """context manager：把引擎换到深拷贝世界；退出时原样换回。
-
-        隔离哪些字段由 `engine/ledger_isolation.COMBAT_LEDGERS` 单一定义（新增账本只改那里）。
 
         进入/退出维护模块级 `_PLAYOUT_DEPTH`（可重入）：诊断工具（duel_diff_trace
         等）据此把推演世界的 execute_action 排除出「真实结算」实录——修复前
@@ -59,15 +58,52 @@ class WinOnlyAI(TacticalAI):
 
         @contextlib.contextmanager
         def _cm():
-            from engine.ledger_isolation import copy_world
             _PLAYOUT_DEPTH[0] += 1
+            eng = self.engine
+            combat = eng.combat
+            real = {
+                "state": eng.state, "dice": eng.dice,
+                "combat_state": combat.state, "combat_dice": combat.dice,
+                "pending": eng._pending_interrupts,
+                "hist_len": len(eng._action_history),
+                "last": eng._last_result,
+                "activated": combat._monster_activated,
+                "round_used": combat._monster_daowen_round_used,
+                "rewrites": combat._resonance_rewrites,
+                "sanxiang": combat._sanxiang_consumed,
+                "split": getattr(combat, "_split_clones_spawned", 0),
+                "evolved": combat._monster_evolved,
+                "depth": combat._effect_chain_depth,
+            }
+            eng.state = copy.deepcopy(real["state"])
+            combat.state = eng.state
+            eng.dice = copy.deepcopy(real["dice"])
+            combat.dice = eng.dice
+            combat._monster_activated = copy.deepcopy(real["activated"])
+            combat._monster_daowen_round_used = copy.deepcopy(real["round_used"])
+            combat._resonance_rewrites = copy.deepcopy(real["rewrites"])
+            combat._sanxiang_consumed = copy.deepcopy(real["sanxiang"])
+            combat._split_clones_spawned = copy.deepcopy(real["split"])
+            combat._monster_evolved = copy.deepcopy(real["evolved"])
+            combat._effect_chain_depth = copy.deepcopy(real["depth"])
+            eng._pending_interrupts = copy.deepcopy(real["pending"])
             try:
-                # 换世界口径与 ai_preview **共用同一份权威清单**（engine/ledger_isolation.py）：
-                # state/dice ＋ combat 侧全部 id 账本进副本前 deepcopy、退出按引用归还。
-                # 原先这里是手抄的第二份清单（存一遍＋还一遍写两次，漏字段不报错只静默漂移）。
-                with copy_world(self.engine):
-                    yield
+                yield
             finally:
+                eng.state = real["state"]
+                combat.state = real["combat_state"]
+                eng.dice = real["dice"]
+                combat.dice = real["combat_dice"]
+                combat._monster_activated = real["activated"]
+                combat._monster_daowen_round_used = real["round_used"]
+                combat._resonance_rewrites = real["rewrites"]
+                combat._sanxiang_consumed = real["sanxiang"]
+                combat._split_clones_spawned = real["split"]
+                combat._monster_evolved = real["evolved"]
+                combat._effect_chain_depth = real["depth"]
+                eng._pending_interrupts = real["pending"]
+                del eng._action_history[real["hist_len"]:]
+                eng._last_result = real["last"]
                 _PLAYOUT_DEPTH[0] -= 1
         return _cm()
 

@@ -68,7 +68,7 @@ def test_transformed_monster_daowen_not_learnable_outside_battle():
 
 
 def test_original_monster_daowen_never_learnable():
-    """边界：原始怪物道纹人类无法通过【学习】获得，只能从怪物身上获得（规则正文·道纹归属第4条）"""
+    """边界：原始怪物道纹人类无法承受并获得（规则正文）"""
     e = _engine("龙心谷")
     for dw in ("必中", "狂暴", "自愈", "飞行"):
         r = _learn(e, dw)

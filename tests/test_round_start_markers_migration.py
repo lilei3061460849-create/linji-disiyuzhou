@@ -26,7 +26,7 @@ from engine.models import Entity, GameState, StatusEffect
 from engine.validator import check_migrated_mechanism_guards
 
 ROOT = Path(__file__).resolve().parents[1]
-from tests.source_scan import COMBAT_SOURCE  # noqa: E402  # 战斗引擎全家族：combat.py 已拆出 combat_parts/*.py
+COMBAT_SOURCE = (ROOT / "engine" / "combat.py").read_text(encoding="utf-8")
 
 
 def _arena(ac=0, ap=0, statuses=()):
@@ -62,7 +62,7 @@ def test_markers_registered_and_ordered():
     assert mech_k.priority == 50 and mech_j.priority == 60
     from engine.mechanisms.registry import MECHANISMS as REG
     assert [m.name for m in REG.phase_mechanisms(Phase.ROUND_START)] == \
-        ["衰败", "洞察·结算", "狂暴·标记", "畸变·标记"]
+        ["自愈", "衰败", "洞察·结算", "狂暴·标记", "畸变·标记"]
 
 
 def test_old_marker_blocks_removed():

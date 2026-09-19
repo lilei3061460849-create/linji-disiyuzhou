@@ -80,7 +80,7 @@ def _snapshot(e):
     m = e.state.enemies[0]
     return {
         "round_used": sorted(e.combat._monster_round_used(m)),
-        "activated": sorted(e.combat._monster_activated.get(m.runtime_id, set())),
+        "activated": sorted(e.combat._monster_activated.get(id(m), set())),
         "x": {k: v.x_value for k, v in m.dao_wen.items()},
         "monster_shards": m.shards,
         "player_shards": e.state.shards,
@@ -109,7 +109,8 @@ def _decline_spells(option):
 def _legal_hits(engine, prep, actor):
     """按 prepare 快照构造合法攻击（hits 数 = 道纹执行后 attack_count，变形除外）。"""
     a = _actors(prep)[actor]
-    hits_per = max(0, engine.state.enemies[int(actor.split(":", 1)[1])].attack_count)
+    hits_per = max(0, engine.state.enemies[int(actor.split(":", 1)[1])].attack_count
+                   - engine.state.enemies[int(actor.split(":", 1)[1])].get_status_value("手雷减攻"))
     target_ref = a["attack_target_options"][0]["ref"]
     target_option = next(t for t in a["attack_target_options"] if t["ref"] == target_ref)
     return [{"hits": [{"target_ref": target_ref, "dodge": False, "blood_shadow": False,
