@@ -125,7 +125,12 @@ class _VetoProbe(WinOnlyAI):
             "current_mana": 0, "current_hp": 1, "shield": 0,
             "parry_locked_this_round": False, "parrying_this_round": False,
         })()
-        state = type("S", (), {"player": player, "enemies": []})()
+        # current_round 是引擎真读的字段：TacticalAI._first_contact() 用
+        # `state.current_round <= 1` 判「开局首轮/刚遇新敌」（ai_tactics.py:928）。
+        # 填 2 ＝非首次接触，与本桩「异变已累积到中局、只测提案层否决与裁决序」的意图一致；
+        # 本桩覆写了 _score_candidate 且不产普攻候选，故该值不会改变裁决结果（两条用到
+        # _first_contact 的路径都进不来），补它只为让替身字段齐备、不再 AttributeError。
+        state = type("S", (), {"player": player, "enemies": [], "current_round": 2})()
         self.engine = type("E", (), {"state": state, "execute_action": staticmethod(
             lambda a, p: {"success": True, "action": a})})()
         self._pv = type("V", (), {
