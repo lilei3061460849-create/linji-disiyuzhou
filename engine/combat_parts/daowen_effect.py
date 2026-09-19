@@ -50,18 +50,26 @@ class DaowenEffectMixin:
         )
         result["daowen_ctx"] = daowen_ctx.to_dict()
 
-        # ---- 波及X（2026-08-21）：你发动的道纹同时作用于所有拥有波及效果的目标 ----
+        # ---- 波及X（2026-08-21）：你发动的道纹同时作用于所有**由你**挂上波及效果的目标（别人挂在你身上的标记不影响你自己的道纹）；[目标]选自己时你自己也保留一份，波及目标各额外得一份；2026-09-19 用户裁定 D10 选案 A 落地，见 报告.md 6.21 ----
         # 数值型效果的总数值在所有目标（本次[目标]+波及目标，均排除施法者自身）间平分，
         # 余数随机分配；状态类效果对波及目标原样生效。多目标不复制或增加总数值。
         # 目标可选的道纹（如【变形】）未指定目标时兜底为施法者，避免 [None]
         wave_status_targets: list[Entity] = [target if target else caster]
         wave_pieces: dict[str, list[int]] = {}
+        wave_targets: list[Entity] = []
         if name != "波及":
             wave_targets = self._wave_targets(caster)
             if wave_targets:
                 effective: list[Entity] = []
-                for wt in ([target] if target is not caster and target.is_alive else []) + wave_targets:
-                    if wt.is_alive and wt not in effective:
+                # 用户裁定 2026-09-19（选案A）：本次[目标]是施法者自己时，施法者**保留在名单里**。
+                # 旧写法把 `target is not caster` 当过滤条件，于是自施时名单里只剩波及目标：
+                # 自我增益类道纹的状态整体跑到对方身上、自己一点拿不到（与下方注释「含本次[目标]」
+                # 相反，也让 summary 的「使某某……」与事实相反）。现行口径＝「你发动的道纹同时
+                # 作用于所有拥有波及效果的目标」：自己那一份不丢，波及目标额外各得一份；
+                # 代价是数值型在自施时也会开始平分（用户裁定时已认可：怕波及当内鬼就不用波及）。
+                # 去重按同一性（Entity 不可哈希，与下方【缄默】全场名单同一写法）。
+                for wt in ([target] if target is not None else [caster]) + wave_targets:
+                    if wt.is_alive and not any(wt is seen for seen in effective):
                         effective.append(wt)
                 if effective:
                     wave_status_targets = effective
@@ -969,15 +977,19 @@ class DaowenEffectMixin:
                     result["effects"].append({"type": "status_added", "target": et_all.name,
                                               "status": name, "duration": duration, "value": x})
             elif self_targeted:
-                et = caster
-                if name in ("飞行", "滑翔") and self._field_has_zhuiluo():
-                    et.is_flying = False
-                    et.add_status(StatusEffect(name="坠落", remaining_rounds=1, value=x, source=caster.name))
-                    result["effects"].append({"type": "zhuiluo_block_flight", "target": et.name})
-                else:
-                    et.add_status(StatusEffect(name=name, remaining_rounds=duration, value=x, source=caster.name))
-                    result["effects"].append({"type": "status_added", "target": et.name,
-                                              "status": name, "duration": duration, "value": x})
+                # 这类道纹的状态永远挂施法者（不受提交目标影响）；用户裁定 2026-09-19（A）后，
+                # 波及目标也一并生效——与下面 else 分支同一口径：自己那一份不丢，对方额外得一份。
+                # 此前它们完全绕过扩散名单，导致同为自我增益的道纹在波及下行为相反。
+                for et in [caster] + [wt for wt in wave_targets
+                                      if wt is not caster and wt.is_alive]:
+                    if name in ("飞行", "滑翔") and self._field_has_zhuiluo():
+                        et.is_flying = False
+                        et.add_status(StatusEffect(name="坠落", remaining_rounds=1, value=x, source=caster.name))
+                        result["effects"].append({"type": "zhuiluo_block_flight", "target": et.name})
+                    else:
+                        et.add_status(StatusEffect(name=name, remaining_rounds=duration, value=x, source=caster.name))
+                        result["effects"].append({"type": "status_added", "target": et.name,
+                                                  "status": name, "duration": duration, "value": x})
             else:
                 # 波及：状态类效果对每个拥有波及效果的目标（含本次[目标]）原样生效。
                 for et in wave_status_targets:
