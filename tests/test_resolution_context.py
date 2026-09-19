@@ -93,13 +93,14 @@ def test_begin_action_resets_counters_and_chain():
 
 
 def test_thresholds_have_measured_headroom():
-    """阈值必须显著高于实测峰值（实测：深度 5 / 单行动效果 45）。
+    """阈值必须显著高于实测峰值（全路径记账后实测：深度 5 / 单行动效果 83）。
 
     留 10 倍以上余量是本条硬性要求——否则保险丝会开始改游戏结果。
+    实测脚本：`sim/threshold_evidence.py`。
     """
     assert ResolutionContext.MAX_DEPTH >= 50
     assert CombatEngine.MAX_EFFECT_CHAIN_DEPTH == ResolutionContext.MAX_DEPTH
-    assert ResolutionContext.MAX_EFFECTS >= 450
+    assert ResolutionContext.MAX_EFFECTS >= 830
 
 
 # ---------------------------------------------------------------- trace
