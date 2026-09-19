@@ -64,6 +64,8 @@ GUARD_TESTS = [
     "tests/test_region_daowen_generated.py",
     # ①-B 第二刀：规则正文三节＝派生产物；rule_sync 与 events.py 都读这份文件
     "tests/test_experience_daowen_generated.py",
+    # ①-B 第三刀：《行动接口口径》逐条对引擎核（覆盖／战斗限定／四要素／停用入口）
+    "tests/test_action_interface_doc.py",
     "tests/test_rule_sources.py",
 ]
 # 注：「同 seed 可复现」不在子集里（那条用例单跑约 29s，会把 7 秒的自检拖成半分钟）；
