@@ -1049,6 +1049,11 @@ class GameEngine:
             event_pool_before = (set(self.event_pool.triggered), self.event_pool.current)
             dice_before = copy.deepcopy(self.dice)
             interrupts_before = copy.deepcopy(self._pending_interrupts)
+        # 结算生命周期：一次顶层行动 = 一次 resolution。
+        # 只做计数清零与（可选的）链记录，不参与任何规则判定——见 engine/resolution.py。
+        # 预演内部也走本函数，但它是沙盒执行：context 状态由 engine/sandbox.py
+        # 在进出沙盒时保存/恢复，所以预演不会污染真实行动的预算/深度。
+        self.combat.resolution.begin_action(action_type, params)
         try:
             result = self._dispatch_action(action_type, params)
 
@@ -1108,9 +1113,11 @@ class GameEngine:
                 ).strip()
 
             self._last_result = result
+            self.combat.resolution.end_action()
             return result
 
         except Exception as e:
+            self.combat.resolution.end_action()
             if transaction:
                 self._restore_state_in_place(state_before)
                 self.combat.state = self.state

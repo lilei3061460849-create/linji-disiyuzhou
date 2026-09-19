@@ -19,6 +19,7 @@ from ..combat_hooks import CombatHookManager
 from ..effect_context import EffectContext, make_context, normalize_context
 from ..mechanisms import MECHANISMS, Phase, TriggerBus, TriggerContext
 from ..personality import remove_personality
+from ..resolution import KIND_DAMAGE
 from ..models import MONSTER_MANA_RELIC
 
 
@@ -330,19 +331,19 @@ class DamageDeathMixin:
         ctx 为兼容层来源上下文，不改变既有伤害结算顺序和返回核心字段。
         """
         damage_ctx, legacy_ctx = self._damage_context(target, amount, damage_type, source, ctx)
-        if self._effect_chain_depth >= self.MAX_EFFECT_CHAIN_DEPTH:
-            # 保险丝：正常规则下不可能走到这里（重定向每跳都会递减计数，本身收敛）。
-            raise RecursionError(
-                f"效果链深度超过{self.MAX_EFFECT_CHAIN_DEPTH}层，疑似 A→B→A 循环触发："
-                f"{damage_ctx.source}→{getattr(target, 'name', '?')}")
-        self._effect_chain_depth += 1
+        # 结算生命周期：深度/预算保险丝与可追踪性统一由 ResolutionContext 记账
+        # （见 engine/resolution.py）。阈值 64 与既有 MAX_EFFECT_CHAIN_DEPTH 同义，
+        # 实测合法峰值 5，故行为不变——只在真出现 A→B→A 循环时截断成可诊断异常。
+        frame = self.resolution.enter(
+            KIND_DAMAGE,
+            f"{damage_ctx.source}→{getattr(target, 'name', '?')}")
         self._hp_loss_recording += 1  # 伤害失血由 _record_hp_loss_event 接管，抑制兜底钩子
         try:
             return self._apply_hostile_damage_inner(
                 target, amount, damage_type, source, damage_ctx, legacy_ctx)
         finally:
             self._hp_loss_recording -= 1
-            self._effect_chain_depth -= 1
+            self.resolution.leave(frame)
 
     def _apply_hostile_damage_inner(
         self, target: Entity, amount: int, damage_type: str,

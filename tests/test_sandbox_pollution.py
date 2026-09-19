@@ -33,61 +33,24 @@ from engine.pollution_guard import (                      # noqa: E402
     PollutionGuard, RuntimePollutionError, assert_runtime_unchanged,
     snapshot_runtime_state,
 )
-from tests.setup_support import finish_initial_daowen      # noqa: E402
+from tests.preview_support import (                       # noqa: E402
+    build_battle_engine, build_pre_battle_engine,
+)
 
 
 # ---------------------------------------------------------------- 夹具
 
-def _battle_engine(tmp_path, name: str = "a", seed: int = 4,
-                   daowen=("庇护", "再生", "冲击", "杀伐", "血债")):
-    """同 tests/test_action_preview_parity.py 的构造：战斗内、轮回者待出手。"""
-    engine = GameEngine(db_path=str(tmp_path / f"{name}.db"),
-                        save_dir=str(tmp_path / name),
-                        death_book_path=str(tmp_path / f"{name}_book.md"),
-                        rng_seed=seed)
-    engine.execute_action("setup_attributes",
-                          {"name": "贾凡", "blood_points": 11,
-                           "speed_points": 8, "mana_points": 6})
-    finish_initial_daowen(engine)
-    engine.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
-    setup = engine.execute_action("setup_choose_region", {"region": "龙心谷"})
-    engine.execute_action("choose_discovered_relic",
-                          {"relic_name": setup["result"]["relic_choices"][0]})
-    for dw in daowen:
-        engine.execute_action("pre_battle_action",
-                              {"sub_action": "学习", "sub": "daowen", "name": dw})
-    engine.state.energy = 0
-    relic = engine.state.relics[0].name if engine.state.relics else ""
-    engine.execute_action("battle_start",
-                          {"relic_choices": {relic: {"use": False}} if relic else {}})
-    engine.execute_action("round_start", {})
-    return engine
-
-
 @pytest.fixture()
 def engine(tmp_path):
-    return _battle_engine(tmp_path)
+    return build_battle_engine(tmp_path)
 
 
 @pytest.fixture()
 def out_of_battle_engine(tmp_path):
     """局外阶段引擎：事件只能在局外结算（战斗内会被阶段门禁拒掉）。"""
-    engine = GameEngine(db_path=str(tmp_path / "evt.db"),
-                        save_dir=str(tmp_path / "evt"),
-                        death_book_path=str(tmp_path / "evt_book.md"),
-                        rng_seed=4)
-    engine.execute_action("setup_attributes",
-                          {"name": "贾凡", "blood_points": 11,
-                           "speed_points": 8, "mana_points": 6})
-    finish_initial_daowen(engine)
-    engine.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
-    setup = engine.execute_action("setup_choose_region", {"region": "龙心谷"})
-    engine.execute_action("choose_discovered_relic",
-                          {"relic_name": setup["result"]["relic_choices"][0]})
-    return engine
+    return build_pre_battle_engine(tmp_path)
 
 
-# 覆盖：正常 / 会失败 / 目标非法 / X 超限 / 未知行动 / 两段动作 / 怪物阶段 / 事件
 PREVIEW_CASES = [
     ("use_daowen", {"daowen_name": "庇护", "x": 1, "target": "贾凡"}),
     ("use_daowen", {"daowen_name": "庇护", "x": 2, "target": "贾凡"}),
@@ -241,7 +204,7 @@ def test_random_preview_sequences_leave_no_trace(engine):
 
 def test_preview_matches_execute_after_many_previews(engine, tmp_path):
     """预演零污染的**行为含义**：预演过很多次之后，正式执行仍与没预演过一致。"""
-    control = _battle_engine(tmp_path, name="control")
+    control = build_battle_engine(tmp_path, name="control")
 
     preview = ActionPreview(engine)
     for _ in range(30):
@@ -275,6 +238,7 @@ _CLASSIFIED_ENGINE_ATTRS = {
 }
 _CLASSIFIED_COMBAT_ATTRS = {
     **{name: "isolated" for name in sandbox.COMBAT_RUNTIME_ATTRS},
+    **{name: "isolated" for name in sandbox.CONTEXT_OBJECTS},
     "state": "isolated", "dice": "isolated", "combat_log": "isolated",
     "hook_manager": "rule_data", "mechanism_bus": "rule_data",
     "_attack_after_window_target": "isolated", "_hp_loss_ctx": "isolated",

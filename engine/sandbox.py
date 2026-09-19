@@ -76,6 +76,7 @@ def copy_dice_for_snapshot(dice: Any, *, keep_history: bool = True) -> Any:
 #   swap    —— 整体换成副本对象，退出时换回原对象（大对象用，如 state/dice）
 #   runtime —— 原地保存/恢复内容（小对象、且身份被别处引用，如 id 键字典）
 #   restore —— 保存副本、退出时整体写回（长度/标量型，如行动历史）
+#   context —— 对象自带 snapshot/restore 协议（如 ResolutionContext）
 #
 # 明确**不需要**隔离的（写清楚以免下次又被"顺手加上"）：
 #   monster_pool / event_pool.events / relics_pool —— 规则数据，只读；
@@ -98,6 +99,9 @@ COMBAT_RUNTIME_ATTRS = (
 
 #: 需要整体换对象再换回的状态根（大对象，深拷贝成本已由 sandbox 口径压低）。
 SWAPPED_ROOTS = ("state", "dice")
+
+#: 自带 snapshot/restore 协议的引擎侧对象（不是容器，按对象协议隔离）。
+CONTEXT_OBJECTS = ("resolution",)
 
 
 def copy_runtime_value(value: Any) -> Any:
@@ -143,6 +147,9 @@ def snapshot_engine_side(engine: Any) -> dict:
         # 而沙盒不换 event_pool 对象本身（规则数据 events 是只读的大表）。
         "event_triggered": set(pool.triggered) if pool is not None else None,
         "event_current": getattr(pool, "current", None) if pool is not None else None,
+        # 结算生命周期（深度/预算/链）：预演里也会进入结算，必须与 state/dice
+        # 一起换回，否则预演会把真实行动的深度与预算吃掉（见 engine/resolution.py）。
+        "resolution": combat.resolution.snapshot(),
     }
 
 
@@ -169,6 +176,7 @@ def restore_engine_side(engine: Any, token: dict) -> None:
     engine._pending_interrupts = token["pending_interrupts"]
     del engine._action_history[token["action_history_len"]:]
     engine._last_result = token["last_result"]
+    combat.resolution.restore(token["resolution"])
     pool = getattr(engine, "event_pool", None)
     if pool is not None and token["event_triggered"] is not None:
         # 原地恢复：event_pool 身份被 api.py 的存档/读档路径引用。

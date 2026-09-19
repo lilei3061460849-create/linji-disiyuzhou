@@ -18,6 +18,7 @@ from .combat_hooks import CombatHookManager
 from .effect_context import EffectContext, make_context, normalize_context
 from .mechanisms import MECHANISMS, Phase, TriggerBus, TriggerContext
 from .personality import remove_personality
+from .resolution import ResolutionContext
 # 常量定义在 models（授予点在 Entity.__post_init__），此处只读取以判定效果。
 from .models import MONSTER_MANA_RELIC
 
@@ -91,8 +92,9 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         self._sanxiang_consumed = ""
         # 残韵改写：entity_id → {源道纹: 变化后道纹}，只改下一次发动结算，不改持有
         self._resonance_rewrites: dict[int, dict[str, str]] = {}
-        # 效果链深度保险丝（见 MAX_EFFECT_CHAIN_DEPTH）。
-        self._effect_chain_depth = 0
+        # 效果链深度保险丝（见 MAX_EFFECT_CHAIN_DEPTH / engine/resolution.py）。
+        # 2026-09-20：不再是独立计数器——ResolutionContext 是唯一事实源
+        # （下面的 self.resolution 创建之后，`_effect_chain_depth` 只是它的视图）。
         # AFTER_LIFE_LOST(失去生命后) 反应法术在“非攻击失血”路径的自动触发状态：
         #   _resolving_life_lost_reactions > 0 表示正在结算某次反应法术——反应
         #     自身引发的失血不得再次触发反应（否则以牙还牙/血债会互相连锁死循环）。
@@ -117,12 +119,32 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         self._monster_activated: dict = {}
         self._monster_evolved: set = set()
         self._monster_daowen_round_used: dict = {}
+        # 效果结算生命周期（见 engine/resolution.py）：深度/预算保险丝 + trace。
+        # 每个引擎一份；预演沙盒会在进出时保存/恢复它（engine/sandbox.py）。
+        self.resolution = ResolutionContext()
 
     # 效果链深度上限。这是**防御性保险丝**，不是游戏规则：
     # 任何合法的 嫁祸/背负 重定向链都远低于此值（重定向每跳都会递减 _jiahuo_left/_beifu_left，
     # 本身就收敛）。设成这么大是为了保证它永远不会改变任何现有战斗结果，
     # 只在真的出现 A→B→A→B 死循环时把它截断成一次可诊断的异常。
-    MAX_EFFECT_CHAIN_DEPTH = 64
+    # 2026-09-20：计数器迁到 ResolutionContext（engine/resolution.py），
+    # 本常量作为兼容别名保留（同一数值）。
+    MAX_EFFECT_CHAIN_DEPTH = ResolutionContext.MAX_DEPTH
+
+    @property
+    def _effect_chain_depth(self) -> int:
+        """兼容别名（2026-09-20 起为 ResolutionContext.depth 的只读视图）。
+
+        历史上这是一个实例属性，被 sim/win_only_ai.py 的沙盒保存/恢复、
+        tests/test_effect_chain_audit.py 的保险丝用例直接读写。语义保持不变：
+        进入结算 +1、离开 -1、越界抛 RecursionError（现在由 context 抛
+        ResolutionDepthError，它是 RecursionError 的子类）。
+        """
+        return self.resolution.depth
+
+    @_effect_chain_depth.setter
+    def _effect_chain_depth(self, value: int) -> None:
+        self.resolution._depth = int(value)
 
     @property
     def event_stream(self) -> list[CombatEvent]:
