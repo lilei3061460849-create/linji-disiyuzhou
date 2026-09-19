@@ -17,6 +17,7 @@ from __future__ import annotations
 import copy
 from typing import Any, Optional
 
+from .sandbox import copy_dice_for_snapshot, copy_state_for_snapshot
 
 
 class ActionPreview:
@@ -141,9 +142,11 @@ class ActionPreview:
         combat = eng.combat
         real_state = eng.state
         real_dice = eng.dice
-        # 副本世界：state + dice（实体互引在副本内自洽）
-        snap_state = copy.deepcopy(real_state)
-        snap_dice = copy.deepcopy(real_dice)
+        # 副本世界：state + dice（实体互引在副本内自洽）。
+        # 拷贝口径见 engine/sandbox.py：只追加的战斗事件流共享元素引用
+        # （不可变事实记录），随机源不复制 roll 历史——沙盒用完即弃。
+        snap_state = copy_state_for_snapshot(real_state)
+        snap_dice = copy_dice_for_snapshot(real_dice, keep_history=False)
         saved = {
             "pending_interrupts": copy.deepcopy(eng._pending_interrupts),
             "action_history_len": len(eng._action_history),
