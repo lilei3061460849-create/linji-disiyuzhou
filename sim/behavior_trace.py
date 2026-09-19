@@ -7,6 +7,16 @@
     .venv/bin/python sim/behavior_trace.py
     .venv/bin/python sim/behavior_trace.py --json /tmp/trace.json
 
+**扫参门禁**（上一轮报告「下一步建议 2」的落地，默认关闭）：
+
+    .venv/bin/python sim/behavior_trace.py --cases 60
+
+  内置三组「起手道纹/学习表/地区」轮流用、种子取 1..N，打印 `SWEEP_SHA256`
+  与 `SWEEP_CASES … cleared/won/invalid` 统计。用途是发版前跑一次、与上一版对比：
+  指纹不同就说明 AI 决策链在实盘上漂移了（单元测试覆盖不到这一层）。
+  与 3 例验收指纹分开打印（`TRACE_SHA256`），避免两个口径混用。
+  用例表的契约由 `tests/test_behavior_trace_sweep.py` 锁死（种子/轮换/前缀稳定）。
+
 两个**诊断开关**（默认关闭，只用于定位"为什么两棵树的指纹不同"）：
 
   --force-preview-transaction
@@ -46,6 +56,19 @@ CWD = Path.cwd().resolve()
 if str(ROOT) in sys.path:
     sys.path.remove(str(ROOT))
 sys.path.insert(0, str(CWD))
+
+def _sweep_cases(count: int) -> list:
+    """扫参用例：内置 3 组「起手道纹/学习表/地区」轮流用，种子取 1..count。
+
+    这是上一轮报告「下一步建议 2」的落地：把 3 个固定种子扩成 N 个种子的
+    **发版前行为回归门禁**（同一种子在任何树上都必须给出同一个 SWEEP_SHA256）。
+    """
+    out = []
+    for index in range(count):
+        starter, learn, region, _seed = CASES[index % len(CASES)]
+        out.append((starter, learn, region, index + 1))
+    return out
+
 
 CASES = [
     ("杀伐", ["再生", "庇护", "束缚", "贯穿", "固执"], "扭曲都市", 2),
@@ -124,6 +147,10 @@ def main() -> int:
     parser.add_argument("--patch-runtime-leak", action="store_true",
                         help="补上预演对 combat 运行态的保存/恢复")
     parser.add_argument("--json", default="", help="把逐例结果写到此路径")
+    parser.add_argument("--cases", type=int, default=0,
+                        help="扫参模式：跑 N 个种子（内置 3 组构筑/地区轮流用），"
+                             "打印 SWEEP_SHA256 作为发版前行为回归门禁；"
+                             "0 = 只跑内置 3 例（验收指纹 TRACE_SHA256）")
     args = parser.parse_args()
 
     import engine  # noqa: F401  （确认被测树已可导入）
@@ -137,9 +164,11 @@ def main() -> int:
 
     from sim import build_learner as bl
 
+    cases = _sweep_cases(args.cases) if args.cases > 0 else CASES
     digest = hashlib.sha256()
     rows = []
-    for starter, learn, region, seed in CASES:
+    quiet = len(cases) > 20 and not args.json
+    for starter, learn, region, seed in cases:
         result = bl.play(starter, learn, region, seed=seed,
                          rng=random.Random(seed))
         payload = json.dumps(_norm(result), ensure_ascii=False, sort_keys=True)
@@ -148,10 +177,18 @@ def main() -> int:
         rows.append({"region": region, "seed": seed,
                      "cleared": result.get("cleared"), "won": result.get("won"),
                      "invalid": result.get("invalid"), "hash": case_hash})
-        print(f"{region} seed={seed}: cleared={result.get('cleared')} "
-              f"won={result.get('won')} invalid={result.get('invalid')} "
-              f"hash={case_hash}")
-    print("TRACE_SHA256", digest.hexdigest())
+        if not quiet:
+            print(f"{region} seed={seed}: cleared={result.get('cleared')} "
+                  f"won={result.get('won')} invalid={result.get('invalid')} "
+                  f"hash={case_hash}")
+    # 验收指纹（内置 3 例）与扫参指纹（--cases N）分开打印，避免混淆两个口径。
+    print(("TRACE_SHA256" if args.cases <= 0 else "SWEEP_SHA256"),
+          digest.hexdigest())
+    if args.cases > 0:
+        cleared = sum(1 for r in rows if r["cleared"])
+        won = sum(1 for r in rows if r["won"])
+        invalid = sum(1 for r in rows if r["invalid"])
+        print(f"SWEEP_CASES {len(rows)} cleared={cleared} won={won} invalid={invalid}")
 
     if args.json:
         with open(args.json, "w", encoding="utf-8") as fh:
