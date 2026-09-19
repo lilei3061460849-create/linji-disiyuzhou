@@ -287,7 +287,9 @@ def run_battle(engine, battle_idx, ai, rng):
     print("  player: %s" % p0)
 
     won = False
-    for rnd in range(1, 30):
+    # 回合上限放宽到 40：判胜改用 battle_won() 后，波次增援（R4/R7/R10…）与【封印】
+    # 回场的等待回合也要计入，旧上限 29 会把还没打完的战斗掐断。
+    for rnd in range(1, 41):
         round_count += 1
         rrec = {"round": rnd, "before": None, "after": None}
         rec["rounds"].append(rrec)
@@ -296,7 +298,11 @@ def run_battle(engine, battle_idx, ai, rng):
             rrec["death"] = "dead_at_round_start"
             rec["outcome"] = "defeat_player_dead"
             break
-        if not [e for e in engine.state.enemies if e.is_alive]:
+        # 判胜统一走引擎权威口径 GameState.battle_won()：仍有待进场增援或【封印】暂离的怪，
+        # 这一仗就没打完。暂离怪已被移出 state.enemies（见 combat_parts/monster_life.py），
+        # 旧写法只数 enemies 里的活怪 → 提前宣告胜利 → battle_end 被战终闸门正确拒绝 →
+        # 驱动器就此放弃本局，后面几场战斗全部漏测（压测报告里那批假警报的根因）。
+        if engine.state.battle_won():
             won = True
             break
         from sim.optional_actions import round_start_relic_choices as _rsrc
@@ -312,6 +318,38 @@ def run_battle(engine, battle_idx, ai, rng):
             rec["outcome"] = "defeat_player_dead"
             resolve_all_pending(engine, ctx)
             break
+        # 回始这一步才会把增援（R4/R7/R10…）与【封印】到期的怪放进场，所以判胜要重算一次。
+        if engine.state.battle_won():
+            won = True
+            break
+        if not engine.state.active_enemies():
+            # 场上暂时无敌可打：增援还没到进场回合（R4/R7/R10…）、封印怪还没到 return_round。
+            # 空转推进回合等怪进场——不叫 AI（没有目标，白跑还可能报"没有目标"），
+            # 但怪物阶段两相位照走，否则子阶段停在 player_actions，round_end 会被拒。
+            rrec["waiting_for_monsters"] = True
+            if p.is_alive:
+                try:
+                    monster_phase(engine, ai, rec, rnd)
+                except Exception as exc:
+                    report(ctx, "round %d monster phase exception (waiting): %s" % (rnd, exc))
+                    rec["outcome"] = "monster_phase_exception"
+                    break
+                if not p.is_alive:
+                    rrec["death"] = "died_while_waiting_for_monsters"
+                    rec["outcome"] = "defeat_player_dead"
+                    resolve_all_pending(engine, ctx)
+                    break
+            re_ = engine.execute_action("round_end", {})
+            if not re_.get("success"):
+                if resolve_all_pending(engine, ctx):
+                    re_ = engine.execute_action("round_end", {})
+                if not re_.get("success"):
+                    report(ctx, "round %d round_end fail (waiting): %s" % (rnd, str(re_.get("error"))))
+                    rec["outcome"] = "round_end_failed"
+                    break
+            rrec["after"] = player_state(engine)
+            rrec["enemies_after"] = enemy_state(engine)
+            continue
 
         player_turn(engine, ai, rec, rnd)
         if not p.is_alive:
@@ -320,9 +358,13 @@ def run_battle(engine, battle_idx, ai, rng):
             report(ctx, "round %d player died on own action" % rnd)
             resolve_all_pending(engine, ctx)   # 清理死之传承等中断，避免流程卡死
             break
-        if not [e for e in engine.state.enemies if e.is_alive]:
+        if engine.state.battle_won():
             won = True
             break
+        # 怪物阶段**不能跳过**：场上没怪时 prepare/resolve 两相位照样成功（零 actor），
+        # 而 resolve_monster_phase 正是把子阶段从 player_actions 推到 await_round_end 的
+        # 唯一入口（engine/api.py:4168）；跳过它，后面的 round_end 必被拒
+        # （「要求战斗子阶段await_round_end，当前为player_actions」）。
         if p.is_alive:
             try:
                 monster_phase(engine, ai, rec, rnd)
@@ -347,6 +389,14 @@ def run_battle(engine, battle_idx, ai, rng):
         rrec["after"] = player_state(engine)
         rrec["enemies_after"] = enemy_state(engine)
 
+    if not won and rec["outcome"] is None:
+        # 打满回合上限仍不满足 battle_won()：把原因写明，别静默当成"败北"
+        rec["outcome"] = "round_cap_reached"
+        report(ctx, "打满40回合仍未 battle_won()：待进场增援=%d、封印暂离=%d、在场敌人=%s" % (
+            len(getattr(engine.state, "monster_reinforcements", []) or []),
+            len(getattr(engine.state, "delayed_monster_reentries", []) or []),
+            [e.name for e in engine.state.active_enemies()]))
+
     rec["preview_rejected"] = list(ai.preview_rejected)
     ai.preview_rejected.clear()
     if won:
@@ -369,7 +419,8 @@ def run_battle(engine, battle_idx, ai, rng):
             report(ctx, "battle_end fail: " + str(be.get("error", "")))
             break
         return True
-    rec["outcome"] = "defeat"
+    if rec["outcome"] != "round_cap_reached":
+        rec["outcome"] = "defeat"
     print("  defeat")
     return False
 
