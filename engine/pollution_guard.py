@@ -109,7 +109,12 @@ def _walk(obj: Any, path: str, out: dict, seen: set, depth: int,
     seen.add(id(obj))
     if isinstance(obj, dict):
         out[path + ":__type__"] = "dict"
-        for key, value in obj.items():
+        # 键序必须**确定**：dict 的插入顺序会随「新增/删除一个键」变化，
+        # 而遍历顺序变化会改变「同一个共享对象先被哪条路径访问到」，
+        # 于是循环引用标记 `<cycle:...>` 出现的位置也跟着变——那是假阳性
+        # （Phase 8 的随机压力测试就是被这个误报挡住过一次）。
+        # 代价：每层多一次排序；对象图里的 dict 都很小，实测无感。
+        for key, value in sorted(obj.items(), key=lambda kv: repr(kv[0])):
             _walk(value, f"{path}[{key!r}]", out, seen, depth + 1,
                   record_contents=record_contents)
         return

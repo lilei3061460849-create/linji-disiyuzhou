@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import copy
 import dataclasses
+import weakref
 import json
 import pickle
 import os
@@ -777,13 +778,22 @@ class GameEngine:
     }
 
     def _restore_state_in_place(self, snapshot: GameState) -> None:
-        """事务失败时原位恢复，既回滚数值，也保持调用方已持有的实体引用有效。"""
+        """事务失败时原位恢复，既回滚数值，也保持调用方已持有的实体引用有效。
+
+        **不可序列化的运行时引用就地保留**：`_hp_engine_ref` 是指向战斗引擎的
+        弱引用（Entity.__getstate__ 会剔除它，深拷贝后为 None）。若照搬快照值，
+        回滚会把活实体上的绑定覆盖成 None——之后这个实体的降血兜底钩子就哑了。
+        Phase 8 随机压力测试实测发现此缺陷；这里按「弱引用不覆盖」处理，
+        既不丢绑定，也不给本来没绑定的实体凭空补绑定（那会改变既有行为）。
+        """
         def restore_object(current, saved):
             current_keys = set(current.__dict__)
             saved_keys = set(saved.__dict__)
             for key in current_keys - saved_keys:
                 delattr(current, key)
             for key in saved_keys:
+                if isinstance(current.__dict__.get(key), weakref.ReferenceType):
+                    continue     # 活对象上的弱引用绑定不是快照数据，原样保留
                 saved_value = getattr(saved, key)
                 if not hasattr(current, key):
                     setattr(current, key, copy.deepcopy(saved_value))
@@ -1053,7 +1063,12 @@ class GameEngine:
         # 只做计数清零与（可选的）链记录，不参与任何规则判定——见 engine/resolution.py。
         # 预演内部也走本函数，但它是沙盒执行：context 状态由 engine/sandbox.py
         # 在进出沙盒时保存/恢复，所以预演不会污染真实行动的预算/深度。
-        self.combat.resolution.begin_action(action_type, params)
+        # 预算随在场实体数放大：结算量天然与战场规模成正比（见 ResolutionContext）。
+        try:
+            _scale = len(self.combat._hp_record_entities())
+        except Exception:          # 兜底：拿不到就按最小规模算
+            _scale = 1
+        self.combat.resolution.begin_action(action_type, params, scale=_scale)
         try:
             result = self._dispatch_action(action_type, params)
 

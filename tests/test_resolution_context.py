@@ -75,8 +75,13 @@ def test_depth_fuse_raises_at_threshold():
 
 
 def test_budget_fuse_raises_on_breadth_explosion():
-    """深度不涨、数量爆炸的形态：靠预算保险丝拦（这是原来完全没有的保护）。"""
+    """深度不涨、数量爆炸的形态：靠预算保险丝拦（这是原来完全没有的保护）。
+
+    预算的计量单位是**一次顶层行动**（begin_action ~ end_action），
+    所以这里必须先开一次行动——不开口径就没有意义。
+    """
     ctx = ResolutionContext()
+    ctx.begin_action("测试")
     for _ in range(ctx.MAX_EFFECTS):
         assert ctx.depth == 0, "本例刻意不嵌套"
         token = ctx.enter(KIND_OTHER)
@@ -85,6 +90,20 @@ def test_budget_fuse_raises_on_breadth_explosion():
     with pytest.raises(ResolutionBudgetError):
         token = ctx.enter(KIND_OTHER)
         ctx.leave(token)
+    ctx.end_action()
+
+
+def test_top_level_calls_outside_an_action_start_a_fresh_budget():
+    """直调内部入口（无 API 行动包裹）时，每次顶层结算重新起算预算。
+
+    否则工具/测试直驱引擎会把预算算成「一次无限长的行动」并误报失控。
+    """
+    ctx = ResolutionContext()
+    for _ in range(ctx.MAX_EFFECTS + 100):
+        token = ctx.enter(KIND_OTHER)
+        ctx.leave(token)
+    assert ctx.trip_reason == "", "直调内部入口不应触发预算保险丝"
+    assert ctx.effect_count == 1, "每次顶层结算自成一次（计数为 1）"
 
 
 def test_begin_action_resets_counters_and_chain():

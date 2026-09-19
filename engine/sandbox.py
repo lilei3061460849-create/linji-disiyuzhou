@@ -95,6 +95,13 @@ COMBAT_RUNTIME_ATTRS = (
     "_effect_chain_depth",         # 效果链深度保险丝计数器
     "_resolving_life_lost_reactions",  # 失去生命反应的再入保护计数
     "_hp_loss_recording",          # 失血事件记账计数（抑制兜底钩子）
+    # 以下四项由 Phase 8 的随机压力测试**实测**发现会从预演泄漏出来
+    # （预演里结算伤害/攻击/闪避会在真实引擎对象上留下沙盒实体的痕迹）：
+    "_hp_loss_ctx",                # 当前一次降血的来源上下文（持实体引用）
+    "_attack_after_window_target", # 当前攻击中走反应窗口的目标（持实体引用）
+    "_dodge_counts",               # 本回合各自动反应路径已用闪避次数
+    "_dodge_round",                # 上面那份计数属于哪一回合
+    "_branch_owner_token_value",   # 反应法术分支归属 token（惰性创建，只写一次）
 )
 
 #: 需要整体换对象再换回的状态根（大对象，深拷贝成本已由 sandbox 口径压低）。

@@ -109,6 +109,11 @@ class ResolutionContext:
     MAX_DEPTH = 64
     #: 单次顶层行动内的效果总数上限（实测峰值 83，留 24 倍余量）。
     MAX_EFFECTS = 2000
+    #: 每多一只**在场实体**追加的预算。为什么需要：结算量天然随战场规模增长
+    #: （Phase 8 随机压力测试实测：105 只怪的战场，一次 round_start 合法结算就
+    #: 超过 2000 次），固定上限会把「大而合法」误判成失控。40/只 仍远高于实测
+    #: 单实体均值，而真正的失控（几十万次）一样会被拦住。
+    MIN_EFFECTS_PER_ENTITY = 40
     #: trace 保留的**已结束**帧上限（环形丢弃）。上限存在的意义是：
     #: 长局/长时间挂着 trace 也不会把内存吃光（需求：不得大量驻留对象）。
     MAX_HISTORY = 500
@@ -125,6 +130,14 @@ class ResolutionContext:
         self._tracing = tracing
         self._trip_reason: str = ""
         self._action: str = ""
+        #: 本次行动的预算（= MAX_EFFECTS + 每实体追加 × (在场实体数-1)）。
+        self._budget: int = self.MAX_EFFECTS
+        #: 是否处于一次**API 顶层行动**中（begin_action ~ end_action）。
+        #: 不在行动中时，任何从 depth==0 进入的结算都自成一次「顶层结算」，
+        #: 预算随之重新起算——否则直接用引擎内部入口驱动的长时间模拟
+        #: （工具/测试直调 `_apply_hostile_damage` 等）会把预算算成一次无限长的行动，
+        #: 攒够 2000 次之后被保险丝误报。正式玩法一律走 API，预算口径不变。
+        self._action_active: bool = False
         #: 本次结算的临时数据（只在 tracing 打开时使用；效果自身的小账本）。
         self.scratch: dict[str, Any] = {}
         #: 已处理过的触发标签（供诊断「这个 trigger 为什么没生效」）。
@@ -137,7 +150,8 @@ class ResolutionContext:
 
     # ------------------------------------------------------------ 生命周期
 
-    def begin_action(self, action: str = "", params: Any = None) -> None:
+    def begin_action(self, action: str = "", params: Any = None,
+                     *, scale: int = 1) -> None:
         """一次**顶层行动**开始：清空计数与链。
 
         注意：预演内部也会走 `_execute_action_core`，但预演是沙盒执行，它的
@@ -153,10 +167,14 @@ class ResolutionContext:
         self._kind_counts.clear()
         self._kind_stack.clear()
         self._action = action
+        self._action_active = True
+        self._scale = max(1, int(scale or 1))
+        self._budget = self.MAX_EFFECTS + self.MIN_EFFECTS_PER_ENTITY * (self._scale - 1)
 
     def end_action(self) -> None:
         """一次顶层行动结束：只保留终止原因（链本身留给 trace 快照）。"""
         self._action = ""
+        self._action_active = False
 
     def clear_history(self) -> None:
         """丢弃已结束的帧（trace 数据的唯一保留点是 `history`）。"""
@@ -170,6 +188,10 @@ class ResolutionContext:
 
     def enter(self, kind: str, label: str = "") -> Optional[ResolutionFrame]:
         """进入一次效果结算；返回 token（未开 trace 时为 None）交给 `leave`。"""
+        if self._depth == 0 and not self._action_active:
+            # 没有 API 行动包裹的顶层结算（工具/测试直调内部入口）：
+            # 自成一次结算，预算重新起算（见 _action_active 注释）。
+            self._effects = 0
         depth = self._depth + 1
         if depth > self.MAX_DEPTH:
             self._trip_reason = f"深度 {depth} 超过 {self.MAX_DEPTH}"
@@ -178,10 +200,10 @@ class ResolutionContext:
                 f"{'：' + label if label else ''}），疑似循环触发；"
                 f"链：{self.describe_chain()}")
         effects = self._effects + 1
-        if effects > self.MAX_EFFECTS:
-            self._trip_reason = f"效果数 {effects} 超过 {self.MAX_EFFECTS}"
+        if effects > self._budget:
+            self._trip_reason = f"效果数 {effects} 超过 {self._budget}"
             raise ResolutionBudgetError(
-                f"单次行动内效果数超过 {self.MAX_EFFECTS}"
+                f"单次行动内效果数超过 {self._budget}"
                 f"（当前 {kind}{'：' + label if label else ''}），疑似失控扩散；"
                 f"链：{self.describe_chain()}")
         # 循环诊断（A→B→A→B… / A→B→C→A）：同类结算在**同一条链**上堆叠过多。
@@ -240,6 +262,11 @@ class ResolutionContext:
     def effect_count(self) -> int:
         """本次行动累计的效果次数。"""
         return self._effects
+
+    @property
+    def budget(self) -> int:
+        """本次行动的预算（随在场实体数放大，见 MIN_EFFECTS_PER_ENTITY）。"""
+        return self._budget
 
     @property
     def tracing(self) -> bool:
@@ -347,12 +374,14 @@ class ResolutionContext:
         """
         return (self._depth, self._effects, self._seq, len(self._chain),
                 self._trip_reason, self._action, len(self.history),
-                tuple(sorted(self._kind_counts.items())))
+                tuple(sorted(self._kind_counts.items())), self._action_active,
+                self._budget, getattr(self, "_scale", 1))
 
     def restore(self, token: tuple) -> None:
         """按快照还原（退出预演时调用）——原地恢复，身份不变。"""
         (self._depth, self._effects, self._seq, chain_len,
-         self._trip_reason, self._action, history_len, kind_counts) = token
+         self._trip_reason, self._action, history_len, kind_counts,
+         self._action_active, self._budget, self._scale) = token
         del self._chain[chain_len:]
         del self.history[history_len:]
         self._kind_counts = dict(kind_counts)

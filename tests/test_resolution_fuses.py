@@ -168,12 +168,14 @@ def test_budget_fuse_catches_breadth_explosion_at_depth_one():
     real_max = ResolutionContext.MAX_EFFECTS
     ResolutionContext.MAX_EFFECTS = 12
     try:
+        combat.resolution.begin_action("测试：广度爆炸")
         with pytest.raises(ResolutionBudgetError) as excinfo:
             for _ in range(50):
                 combat._apply_hostile_damage(enemy, 1, source=None)
         assert "12" in str(excinfo.value)
     finally:
         ResolutionContext.MAX_EFFECTS = real_max
+        combat.resolution.end_action()
     assert combat.resolution.depth == 0
     assert combat.resolution.trip_reason.startswith("效果数")
 
