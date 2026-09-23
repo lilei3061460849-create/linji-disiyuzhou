@@ -2,13 +2,14 @@
 pytest 风格测试 - 里程碑8：修复5件坏掉/缺失的遗物（血誓戒/买路财/同魂笔/第一杯(原钱袋)/忘忧香）
 
 历史背景：早期遗物池中只有7件真正在战斗中生效，血誓戒完全没做、买路财只有计算没有执行动作、同魂笔只生成
-一条虚假日志不改任何状态、钱袋的触发点从未被调用过是死代码、忘忧香曾未注册。钱袋已删除，其免疫癌变效果并入【第一杯】，当前遗物池为11件。
+一条虚假日志不改任何状态、钱袋的触发点从未被调用过是死代码、忘忧香曾未注册。钱袋已删除；其当初并入【第一杯】的免疫癌变效果也已在 2026-09-23【第一杯】重做时废止。
 
 覆盖范围：
 1. 血誓戒：[回始]玩家首次主动支付流血代价获得等量格挡/低血量时改为等量生命，每回合限一次
 2. 买路财：新增retreat_via_toll真正执行撤退(扣碎片/生命、清空战场)，不再只是算个数字
 3. 同魂笔：第二目标的道纹也永久变为变化后的道纹，施法者同时永久获得
-4. 第一杯：持有者不再受到癌变事件影响（承接原钱袋效果）；朋友/员工不继承
+4. 第一杯（2026-09-23 用户令重做）：你受到的[回复]与失去的生命翻倍；
+   旧「+50%回复、[回终]未回复流血10、免疫癌变」已废止，持有者照样癌变；朋友/员工不继承
 5. 忘忧香：保持在当前12件遗物池中，并实现对应的"忘忧"局外行动
 
 运行方式：
@@ -156,23 +157,37 @@ def test_tonghunbi_grants_caster_real_daowen_from_second_target():
     assert "固执" not in enemy.dao_wen and "血债" in enemy.dao_wen
 
 
-def test_moneybag_blocks_cancer():
-    """第一杯正常路径：持有者累计回复达阈值也不触发癌变（原钱袋效果已并入第一杯）"""
-    engine = _new_engine("moneybag_ok")
+def test_first_cup_doubles_heal_and_no_longer_blocks_cancer():
+    """第一杯（2026-09-23 重做）：回复翻倍；旧「免疫癌变」条款废止，持有者照样癌变。
+
+    旧断言（持有者 check_cancer 返回 None）编码的是已被用户令删除的规则，
+    本用例按新规则重写；完整覆盖见 tests/test_first_cup_rework.py。
+    """
+    engine = _new_engine("firstcup_ok")
     engine.state.relics.append(Relic(name="第一杯", effect=""))
     player = engine.state.player
+    player.current_hp = 9
+
+    detail = engine.state.apply_heal(player, 6)
+
+    assert detail["heal_amount"] == 12, "持有第一杯应使受到的回复翻倍"
+    assert player.current_hp == 21
     player.total_healed = engine.combat.cancer_threshold_of(player)
     hit = engine.combat.check_cancer(player)
-    assert hit is None
-    assert player.is_alive and not player.is_proliferated
+    assert hit is not None
+    assert not player.is_alive, "第一杯不再免疫癌变"
 
 
-def test_moneybag_does_not_protect_allies():
-    """第一杯边界：朋友/员工不继承免疫"""
-    engine = _new_engine("moneybag_ally")
+def test_first_cup_doubling_is_not_inherited_by_allies():
+    """第一杯边界：朋友/员工不继承——既不被翻倍，也不会被免癌变。"""
+    engine = _new_engine("firstcup_ally")
     engine.state.relics.append(Relic(name="第一杯", effect=""))
-    friend = Entity(name="同伴", entity_type="朋友", blood_limit=40, current_hp=40)
+    friend = Entity(name="同伴", entity_type="朋友", blood_limit=40, current_hp=10)
     engine.state.friends.append(friend)
+
+    engine.state.apply_heal(friend, 5)
+
+    assert friend.current_hp == 15, "非持有者回复量不变"
     friend.total_healed = engine.combat.cancer_threshold_of(friend)
     hit = engine.combat.check_cancer(friend)
     assert hit is not None

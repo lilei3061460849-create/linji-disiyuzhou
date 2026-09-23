@@ -116,3 +116,21 @@ def register_combat_event_observer(state, engine) -> None:
 
 def get_combat_event_observer(state):
     return getattr(state, "_mechanism_event_observer", None)
+
+
+def engine_for_state(state):
+    """按 state 找回绑定在它上面的 CombatEngine（无则 None）。
+
+    复用既有观察者表（`_ENGINE_REFS`，弱引用），不新增全局注册表：
+    状态层的统一入口（如 `GameState.apply_heal`）需要拿到结算上下文
+    （`engine/combat.py::CombatEngine.resolution`）时用它，避免把引擎
+    反向塞进 GameState（那会让存档把引擎带进去）。
+    预演沙盒里 `state` 是深拷贝副本，其观察者是"同一 engine_id 的新实例"，
+    因此这里解析回**真实**引擎——正是所需：沙盒内的结算记账落在真实 context 上，
+    而 context 本身由 sandbox 快照/恢复（见 engine/sandbox.py）。
+    """
+    observer = get_combat_event_observer(state)
+    if observer is None:
+        return None
+    ref = _ENGINE_REFS.get(getattr(observer, "_engine_id", -1))
+    return ref() if ref is not None else None

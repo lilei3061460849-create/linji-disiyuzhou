@@ -17,9 +17,23 @@ from __future__ import annotations
 import copy
 from typing import Any, Optional
 
+from .pollution_guard import (assert_runtime_unchanged, guard_enabled,
+                              snapshot_runtime_state)
+from .sandbox import (COMBAT_RUNTIME_ATTRS, copy_dice_for_snapshot,
+                      copy_state_for_snapshot, restore_engine_side,
+                      snapshot_engine_side)
+
+
+#: 调试开关：LJ_POLLUTION_GUARD=1 时每次预演自动自检（见 pollution_guard）。
+_GUARD_ON = guard_enabled()
+
 
 class ActionPreview:
     """行动后果预演器。preview() 返回动作的完整后果，不改变真实战斗状态。"""
+    # 隔离项清单的唯一事实源在 engine/sandbox.py：预演与事务共用同一份读写实现，
+    # 新增引擎侧可变状态时 tests/test_sandbox_pollution.py 的「未分类可变状态」
+    # 用例会先失败——由测试提醒，不靠记忆。
+    _RUNTIME_ATTRS = COMBAT_RUNTIME_ATTRS
 
     def __init__(self, engine: Any):
         self.engine = engine
@@ -131,20 +145,31 @@ class ActionPreview:
         用来串 token 这类只有运行时才知道的值。AI 不复制任何引擎公式，只转发引擎
         自己给出的快照。任一步失败即停，result 为该失败步的返回。
         返回 {result, diff, results}：result=最后执行步的返回，results=逐步返回。
+
+        预演内部走 `_execute_action_core`（不经 `execute_action` 的事务层）：
+        sandbox 本身用后即弃，再存一份 transaction snapshot 属于纯重复劳动
+        （2026-09-19 性能优化）。规则逻辑仍是同一份实现，不存在第二套结算。
         """
-        import copy
         eng = self.engine
         combat = eng.combat
         real_state = eng.state
         real_dice = eng.dice
-        # 副本世界：state + dice（实体互引在副本内自洽）
-        snap_state = copy.deepcopy(real_state)
-        snap_dice = copy.deepcopy(real_dice)
-        saved = {
-            "pending_interrupts": copy.deepcopy(eng._pending_interrupts),
-            "action_history_len": len(eng._action_history),
-            "last_result": eng._last_result,
-        }
+        # 副本世界：state + dice（实体互引在副本内自洽）。
+        # 拷贝口径见 engine/sandbox.py：只追加的战斗事件流共享元素引用
+        # （不可变事实记录），随机源不复制 roll 历史——沙盒用完即弃。
+        snap_state = copy_state_for_snapshot(real_state)
+        snap_dice = copy_dice_for_snapshot(real_dice, keep_history=False)
+        # 引擎侧可变状态（combat 运行态 / 中断 / 行动历史 / 事件池）统一走
+        # sandbox 的集中清单保存，退出时原地恢复——见 engine/sandbox.py。
+        saved = snapshot_engine_side(eng)
+        # 调试开关（LJ_POLLUTION_GUARD=1）：正式运行是 False，只有一次布尔判断。
+        # 长局（事件流很长）自动降级为「只追加事实记录不逐元素比对内容」，避免
+        # 打开开关就把模拟变成慢动作；短局仍然全字段比对。
+        if _GUARD_ON:
+            guard_before = snapshot_runtime_state(
+                eng, check_record_contents=len(real_state.combat_events) <= 200)
+        else:
+            guard_before = None
         eng.state = snap_state
         combat.state = snap_state
         eng.dice = snap_dice
@@ -154,7 +179,8 @@ class ActionPreview:
             try:
                 for action_type, params in steps:
                     p = params(results[-1]) if callable(params) else (params or {})
-                    result = eng.execute_action(action_type, p)
+                    # 不建 transaction：sandbox 本身就是一次性副本，回滚无意义。
+                    result = eng._execute_action_core(action_type, p)
                     results.append(result)
                     if not result.get("success"):
                         break
@@ -168,9 +194,13 @@ class ActionPreview:
             combat.state = real_state
             eng.dice = real_dice
             combat.dice = real_dice
-            eng._pending_interrupts = saved["pending_interrupts"]
-            del eng._action_history[saved["action_history_len"]:]
-            eng._last_result = saved["last_result"]
+            restore_engine_side(eng, saved)
+            if guard_before is not None:
+                assert_runtime_unchanged(
+                    guard_before,
+                    snapshot_runtime_state(
+                        eng, check_record_contents=len(real_state.combat_events) <= 200),
+                    context=f"预演 {[s[0] for s in steps]}")
 
     # ---------------- 后果提取 ----------------
 

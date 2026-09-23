@@ -1,0 +1,478 @@
+{
+  "date": "2026-09-20",
+  "purpose": "Phase 9 性能回归：结算上下文 / 保险丝 / 沙盒隔离清单 的开销",
+  "pre_commit": "24ff69e",
+  "post_commit": "b2bf700",
+  "note": "pre = /tmp/linji-pre 工作树（上一任务收尾提交）；post = 本次 HEAD。三轮交替取中位数。",
+  "small": {
+    "pre": [
+      {
+        "init": {
+          "total_ms": 33.981,
+          "mean_ms": 2.2654,
+          "median_ms": 2.1482,
+          "p95_ms": 2.445,
+          "rounds": 15
+        },
+        "preview": {
+          "total_ms": 157.154,
+          "mean_ms": 0.3929,
+          "median_ms": 0.3777,
+          "p95_ms": 0.473,
+          "rounds": 400,
+          "action": "prepare_attack",
+          "params": {
+            "target": "石背熊"
+          },
+          "enemies": 1,
+          "player_daowen": 3,
+          "target": "石背熊"
+        },
+        "ai": {
+          "total_ms": 684.957,
+          "mean_ms": 13.6991,
+          "median_ms": 13.4883,
+          "p95_ms": 14.8113,
+          "rounds": 50,
+          "actions_returned": 50,
+          "enemies": 1
+        }
+      },
+      {
+        "init": {
+          "total_ms": 32.173,
+          "mean_ms": 2.1449,
+          "median_ms": 2.1339,
+          "p95_ms": 2.1793,
+          "rounds": 15
+        },
+        "preview": {
+          "total_ms": 154.523,
+          "mean_ms": 0.3863,
+          "median_ms": 0.371,
+          "p95_ms": 0.4415,
+          "rounds": 400,
+          "action": "prepare_attack",
+          "params": {
+            "target": "石背熊"
+          },
+          "enemies": 1,
+          "player_daowen": 3,
+          "target": "石背熊"
+        },
+        "ai": {
+          "total_ms": 769.825,
+          "mean_ms": 15.3965,
+          "median_ms": 13.6417,
+          "p95_ms": 24.4743,
+          "rounds": 50,
+          "actions_returned": 50,
+          "enemies": 1
+        }
+      },
+      {
+        "init": {
+          "total_ms": 32.47,
+          "mean_ms": 2.1646,
+          "median_ms": 2.1621,
+          "p95_ms": 2.274,
+          "rounds": 15
+        },
+        "preview": {
+          "total_ms": 157.056,
+          "mean_ms": 0.3926,
+          "median_ms": 0.3753,
+          "p95_ms": 0.4746,
+          "rounds": 400,
+          "action": "prepare_attack",
+          "params": {
+            "target": "石背熊"
+          },
+          "enemies": 1,
+          "player_daowen": 3,
+          "target": "石背熊"
+        },
+        "ai": {
+          "total_ms": 702.745,
+          "mean_ms": 14.0549,
+          "median_ms": 13.6855,
+          "p95_ms": 15.3544,
+          "rounds": 50,
+          "actions_returned": 50,
+          "enemies": 1
+        }
+      }
+    ],
+    "post": [
+      {
+        "init": {
+          "total_ms": 32.718,
+          "mean_ms": 2.1812,
+          "median_ms": 2.1647,
+          "p95_ms": 2.2069,
+          "rounds": 15
+        },
+        "preview": {
+          "total_ms": 156.46,
+          "mean_ms": 0.3911,
+          "median_ms": 0.3792,
+          "p95_ms": 0.4408,
+          "rounds": 400,
+          "action": "prepare_attack",
+          "params": {
+            "target": "石背熊"
+          },
+          "enemies": 1,
+          "player_daowen": 3,
+          "target": "石背熊"
+        },
+        "ai": {
+          "total_ms": 712.734,
+          "mean_ms": 14.2547,
+          "median_ms": 14.1063,
+          "p95_ms": 15.3368,
+          "rounds": 50,
+          "actions_returned": 50,
+          "enemies": 1
+        }
+      },
+      {
+        "init": {
+          "total_ms": 33.107,
+          "mean_ms": 2.2071,
+          "median_ms": 2.2028,
+          "p95_ms": 2.2457,
+          "rounds": 15
+        },
+        "preview": {
+          "total_ms": 156.905,
+          "mean_ms": 0.3923,
+          "median_ms": 0.3762,
+          "p95_ms": 0.4482,
+          "rounds": 400,
+          "action": "prepare_attack",
+          "params": {
+            "target": "石背熊"
+          },
+          "enemies": 1,
+          "player_daowen": 3,
+          "target": "石背熊"
+        },
+        "ai": {
+          "total_ms": 716.502,
+          "mean_ms": 14.33,
+          "median_ms": 14.1653,
+          "p95_ms": 14.846,
+          "rounds": 50,
+          "actions_returned": 50,
+          "enemies": 1
+        }
+      },
+      {
+        "init": {
+          "total_ms": 32.985,
+          "mean_ms": 2.199,
+          "median_ms": 2.1757,
+          "p95_ms": 2.264,
+          "rounds": 15
+        },
+        "preview": {
+          "total_ms": 157.356,
+          "mean_ms": 0.3934,
+          "median_ms": 0.3783,
+          "p95_ms": 0.4496,
+          "rounds": 400,
+          "action": "prepare_attack",
+          "params": {
+            "target": "石背熊"
+          },
+          "enemies": 1,
+          "player_daowen": 3,
+          "target": "石背熊"
+        },
+        "ai": {
+          "total_ms": 729.624,
+          "mean_ms": 14.5925,
+          "median_ms": 14.3448,
+          "p95_ms": 15.9722,
+          "rounds": 50,
+          "actions_returned": 50,
+          "enemies": 1
+        }
+      }
+    ]
+  },
+  "long": {
+    "pre": [
+      {
+        "init": {
+          "total_ms": 11.52,
+          "mean_ms": 2.3041,
+          "median_ms": 2.2,
+          "p95_ms": 2.4548,
+          "rounds": 5
+        },
+        "preview": {
+          "total_ms": 41.963,
+          "mean_ms": 1.0491,
+          "median_ms": 1.0339,
+          "p95_ms": 1.1165,
+          "rounds": 40,
+          "action": "prepare_attack",
+          "params": {
+            "target": "石背熊"
+          },
+          "enemies": 1,
+          "player_daowen": 3,
+          "target": "石背熊"
+        },
+        "ai": {
+          "total_ms": 693.607,
+          "mean_ms": 86.7009,
+          "median_ms": 85.1884,
+          "p95_ms": 89.2073,
+          "rounds": 8,
+          "actions_returned": 8,
+          "enemies": 1
+        }
+      }
+    ],
+    "post": [
+      {
+        "init": {
+          "total_ms": 11.353,
+          "mean_ms": 2.2706,
+          "median_ms": 2.2109,
+          "p95_ms": 2.2597,
+          "rounds": 5
+        },
+        "preview": {
+          "total_ms": 40.682,
+          "mean_ms": 1.017,
+          "median_ms": 1.0051,
+          "p95_ms": 1.0792,
+          "rounds": 40,
+          "action": "prepare_attack",
+          "params": {
+            "target": "石背熊"
+          },
+          "enemies": 1,
+          "player_daowen": 3,
+          "target": "石背熊"
+        },
+        "ai": {
+          "total_ms": 669.731,
+          "mean_ms": 83.7164,
+          "median_ms": 82.3952,
+          "p95_ms": 88.2919,
+          "rounds": 8,
+          "actions_returned": 8,
+          "enemies": 1
+        }
+      }
+    ]
+  },
+  "debug_tools": {
+    "trace_on_preview_overhead": "+12.7%（默认关闭）",
+    "pollution_snapshot_ms": 1.77,
+    "history_cap_frames": 500
+  },
+  "deepcopy": {
+    "pre": {
+      "preview_per_call": 2.0,
+      "ai_per_decision": 302.3
+    },
+    "post": {
+      "preview_per_call": 2.0,
+      "ai_per_decision": 301.3
+    }
+  },
+  "three_way_pref_recheck": {
+    "purpose": "同一脚本/同一口径/同机交替三轮的三树复测：逐条复核上一轮报告的性能结论",
+    "script": "sim/perf_bench.py（自 fe738b8 起未改动）",
+    "settings": {
+      "small": "--rounds-init 15 --rounds-preview 400 --rounds-ai 50 --count-deepcopy",
+      "long": "--events 3000 --rounds-init 5 --rounds-preview 40 --rounds-ai 8"
+    },
+    "trees": {
+      "adfd9d8": "adfd9d8（上一轮报告的基线：性能优化之前）",
+      "24ff69e": "24ff69e（上一轮报告的收尾提交：性能优化之后）",
+      "f85fa11": "f85fa11（本次最终 HEAD）"
+    },
+    "medians_small_ms": {
+      "adfd9d8": {
+        "init": 73.1536,
+        "preview": 1.3136,
+        "ai": 32.6585
+      },
+      "24ff69e": {
+        "init": 2.1792,
+        "preview": 0.3904,
+        "ai": 14.4672
+      },
+      "f85fa11": {
+        "init": 2.3155,
+        "preview": 0.4036,
+        "ai": 14.6259
+      }
+    },
+    "medians_long_ms": {
+      "adfd9d8": {
+        "init": 68.2074,
+        "preview": 58.0583,
+        "ai": 1358.3552
+      },
+      "24ff69e": {
+        "init": 2.2104,
+        "preview": 1.0296,
+        "ai": 89.3315
+      },
+      "f85fa11": {
+        "init": 2.347,
+        "preview": 1.0591,
+        "ai": 94.1867
+      }
+    },
+    "deepcopy_small": {
+      "adfd9d8": {
+        "preview_per_call": 6.0,
+        "ai_per_decision": 1232.3
+      },
+      "24ff69e": {
+        "preview_per_call": 2.0,
+        "ai_per_decision": 302.3
+      },
+      "f85fa11": {
+        "preview_per_call": 2.0,
+        "ai_per_decision": 301.3
+      }
+    },
+    "note": "三棵树的工作树：/tmp/linji-base(adfd9d8)、/tmp/linji-pre(24ff69e)、仓库根(f85fa11)；adfd9d8 缺 sim/perf_bench.py，测量时把 HEAD 的脚本原样拷入（脚本自带 root 定位，不改动基线树源码）。机器空载（load ~0.7）时逐轮 base→pre→post 交替执行。",
+    "raw_runs": {
+      "small": {
+        "base": [
+          {
+            "init_median_ms": 64.571,
+            "preview_median_ms": 1.277,
+            "ai_median_ms": 32.6585,
+            "label": "base-small-1"
+          },
+          {
+            "init_median_ms": 74.2707,
+            "preview_median_ms": 1.3136,
+            "ai_median_ms": 33.4919,
+            "label": "base-small-2"
+          },
+          {
+            "init_median_ms": 73.1536,
+            "preview_median_ms": 1.3539,
+            "ai_median_ms": 32.6522,
+            "label": "base-small-3"
+          }
+        ],
+        "pre": [
+          {
+            "init_median_ms": 2.1596,
+            "preview_median_ms": 0.3856,
+            "ai_median_ms": 13.8267,
+            "label": "pre-small-1"
+          },
+          {
+            "init_median_ms": 2.1792,
+            "preview_median_ms": 0.3904,
+            "ai_median_ms": 14.4672,
+            "label": "pre-small-2"
+          },
+          {
+            "init_median_ms": 2.4098,
+            "preview_median_ms": 0.3947,
+            "ai_median_ms": 15.0562,
+            "label": "pre-small-3"
+          }
+        ],
+        "post": [
+          {
+            "init_median_ms": 2.3155,
+            "preview_median_ms": 0.4036,
+            "ai_median_ms": 14.6259,
+            "label": "post-small-1"
+          },
+          {
+            "init_median_ms": 2.2261,
+            "preview_median_ms": 0.395,
+            "ai_median_ms": 14.4705,
+            "label": "post-small-2"
+          },
+          {
+            "init_median_ms": 2.3247,
+            "preview_median_ms": 0.4461,
+            "ai_median_ms": 14.6857,
+            "label": "post-small-3"
+          }
+        ]
+      },
+      "long": {
+        "base": [
+          {
+            "init_median_ms": 68.2074,
+            "preview_median_ms": 58.0583,
+            "ai_median_ms": 1358.3552,
+            "label": "base-long-1"
+          },
+          {
+            "init_median_ms": 64.3901,
+            "preview_median_ms": 58.5227,
+            "ai_median_ms": 1450.144,
+            "label": "base-long-2"
+          },
+          {
+            "init_median_ms": 73.0293,
+            "preview_median_ms": 56.9814,
+            "ai_median_ms": 1334.4524,
+            "label": "base-long-3"
+          }
+        ],
+        "pre": [
+          {
+            "init_median_ms": 2.1768,
+            "preview_median_ms": 1.0296,
+            "ai_median_ms": 89.3315,
+            "label": "pre-long-1"
+          },
+          {
+            "init_median_ms": 2.4304,
+            "preview_median_ms": 1.0725,
+            "ai_median_ms": 90.5559,
+            "label": "pre-long-2"
+          },
+          {
+            "init_median_ms": 2.2104,
+            "preview_median_ms": 1.0073,
+            "ai_median_ms": 88.5397,
+            "label": "pre-long-3"
+          }
+        ],
+        "post": [
+          {
+            "init_median_ms": 2.4047,
+            "preview_median_ms": 1.0921,
+            "ai_median_ms": 111.3905,
+            "label": "post-long-1"
+          },
+          {
+            "init_median_ms": 2.2232,
+            "preview_median_ms": 1.0256,
+            "ai_median_ms": 84.8317,
+            "label": "post-long-2"
+          },
+          {
+            "init_median_ms": 2.347,
+            "preview_median_ms": 1.0591,
+            "ai_median_ms": 94.1867,
+            "label": "post-long-3"
+          }
+        ]
+      }
+    }
+  }
+}

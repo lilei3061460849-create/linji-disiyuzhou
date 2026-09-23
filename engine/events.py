@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Optional
 
 from .dungeons import load_dungeon_documents
+from .resolution import KIND_EFFECT, resolution_frame
 
 
 # 各池事件名（与规则正文一致）
@@ -47,12 +48,23 @@ EVENT_NAMES = {
 }
 
 
-def parse_events(index_path: str | Path) -> dict:
-    """从全副本索引及副本文档解析事件。通用事件位于 AI_EXPERIENCE.md 规则正文。"""
+def load_event_sources(index_path: str | Path) -> tuple[str, dict]:
+    """读取事件解析的全部输入：规则正文 + 已实现副本文档正文。
+
+    规则正文（AI_EXPERIENCE.md）承载通用事件，副本文档承载副本专属事件，
+    两者合起来就是事件解析的**唯一**输入。缓存层（rule_repository）用同一份
+    输入算摘要，避免「缓存读了哪几个文件」与「解析读了哪几个文件」各写一份而漂移。
+    """
     index = Path(index_path)
     root = index.parent
     content = (root / "AI_EXPERIENCE.md").read_text(encoding="utf-8")
     documents = load_dungeon_documents(index)
+    return content, documents
+
+
+def parse_events(index_path: str | Path) -> dict:
+    """从全副本索引及副本文档解析事件。通用事件位于 AI_EXPERIENCE.md 规则正文。"""
+    content, documents = load_event_sources(index_path)
     lines = content.split("\n")
     # 每个专属副本独立文档追加到解析输入；事件名白名单阻止标题被误判。
     for document in documents.values():
@@ -210,6 +222,12 @@ def _event_preflight(text: str, engine, params: dict) -> Optional[str]:
 
 
 def resolve_option_effect(text: str, engine, event_name: str = "", params=None) -> dict:
+    """事件选项效果的公开入口（开帧后转实现体 `_resolve_option_effect_impl`）。"""
+    with resolution_frame(engine, KIND_EFFECT, "选项", event_name or text[:12]):
+        return _resolve_option_effect_impl(text, engine, event_name, params)
+
+
+def _resolve_option_effect_impl(text: str, engine, event_name: str = "", params=None) -> dict:
     """
     结算事件选项效果（关键字解释器）。
     自动扣除常见代价（流血/失去碎片/衰老/枯竭/失去精力）与应用常见收益（获碎片/血限/残韵/遗物/法术）。

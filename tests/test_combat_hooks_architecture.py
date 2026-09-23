@@ -20,11 +20,21 @@ from engine.combat_hooks import (
 
 
 class MockState:
+    """CombatHookManager 的状态替身：只实现 Hook 会用到的那部分 GameState 接口。"""
+
     def __init__(self, relics=None):
         self.relics = relics or []
 
     def side_has(self, entity, relic_name):
         return relic_name in self.relics
+
+    def life_loss_multiplier(self, entity):
+        """【第一杯】「失去的生命翻倍」的倍率：真实实现在 GameState，
+        替身保持同接口（本替身不持有该遗物 → 1）。"""
+        return 2 if self.side_has(entity, "第一杯") else 1
+
+    def heal_multiplier(self, entity):
+        return 2 if self.side_has(entity, "第一杯") else 1
 
 
 # ---------- 正常路径 ----------

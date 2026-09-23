@@ -23,11 +23,23 @@ from .enums import InterruptType
 # 同名机制的硬编码 has_status 分支。不扫描/不禁止历史代码，机制声明层
 # （engine/mechanisms/）自身也不在护栏范围内。
 
-_MIGRATION_GUARD_PROTECTED_FILES = (
-    "engine/combat.py",
-    "engine/combat_hooks.py",
-    "engine/api.py",
-)
+_COMBAT_GUARD_ROOT = Path(__file__).resolve().parent
+
+
+def _combat_guard_files() -> tuple:
+    """护栏扫描范围：combat 门面 + 全部分片 + 其余核心管线文件。
+
+    拆分（见 engine/combat_parts/）后，同一批方法体分散在多个文件里，
+    若只扫门面会把护栏悄悄失效——新分片必须自动纳入本元组。
+    """
+    shards = tuple(sorted(
+        str(p.relative_to(_COMBAT_GUARD_ROOT.parent))
+        for p in (_COMBAT_GUARD_ROOT / "combat_parts").glob("*.py")
+    ))
+    return ("engine/combat.py",) + shards + ("engine/combat_hooks.py", "engine/api.py")
+
+
+_MIGRATION_GUARD_PROTECTED_FILES = _combat_guard_files()
 
 
 def _mechanism_guard_scan(protected_files: tuple) -> list[dict]:

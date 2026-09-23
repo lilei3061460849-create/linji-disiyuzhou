@@ -13,7 +13,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Optional
 
-from ..combat_events import CombatEvent, CombatEventType
+from ..combat_events import CombatEvent
+from ..resolution import KIND_TRIGGER, resolution_frame, resolution_of
 
 
 class Phase:
@@ -124,15 +125,22 @@ class TriggerBus:
         """
         listeners = self._listeners.get(event.event_type)
         if not listeners:
-            return []
-        results = []
-        for mechanism in list(listeners):
-            ctx = self._context_for(event, combat, target=target, actor=actor)
-            if mechanism.condition is not None and not mechanism.condition(ctx):
-                continue
-            targets = mechanism.target.select(ctx) if mechanism.target is not None else []
-            results.append((mechanism.name, mechanism.effect(ctx, targets)))
-        return results
+            return []   # 无订阅者：零开销快路径（保持在开帧之前）
+        # 触发也是结算的一部分：它可能产生新效果（失去生命→再生→血债→…），
+        # 因此同样计入深度与预算，并可在 trace 里看到「谁订阅、谁生效」。
+        with resolution_frame(combat, KIND_TRIGGER,
+                                  getattr(event.event_type, "name", event.event_type)):
+            resolution = resolution_of(combat)
+            results = []
+            for mechanism in list(listeners):
+                ctx = self._context_for(event, combat, target=target, actor=actor)
+                if mechanism.condition is not None and not mechanism.condition(ctx):
+                    continue
+                if resolution is not None:
+                    resolution.note_trigger(mechanism.name)
+                targets = mechanism.target.select(ctx) if mechanism.target is not None else []
+                results.append((mechanism.name, mechanism.effect(ctx, targets)))
+            return results
 
     @staticmethod
     def _resolve_ref(ref, combat):

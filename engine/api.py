@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import copy
 import dataclasses
+import weakref
 import json
 import pickle
 import os
@@ -29,7 +30,8 @@ from .daowen import DaoWenEngine, ResonanceEngine
 from .combat import CombatEngine
 from .spell_dsl import parse_spell_definition, SpellDslError
 from .combat_events import register_combat_event_observer
-from .events import EventPool, parse_events
+from .events import EventPool
+from .rule_repository import RuleRepository
 from .dungeons import DEFAULT_INDEX
 from .gamedata import (REGION_EXCLUSIVE_DAOWEN, ORIGINAL_MONSTER_DAOWEN,
                        MONSTER_TRANSFORM_DAOWEN, SHAFA_LOOP_DAOWEN,
@@ -124,11 +126,14 @@ class GameEngine:
         # 体外心脏：记录[战始]翻倍前的血限基准，[战终]用于还原
         self._artifact_base_blood_limit = 0
 
-        # 事件系统
-        self.event_pool = EventPool(parse_events(DEFAULT_INDEX) if DEFAULT_INDEX.exists() else {})
-        # 怪物池（出怪系统）：从全副本索引加载，不再解析规则正文。
-        from .monsters import parse_monster_pool
-        self.monster_pool = parse_monster_pool(DEFAULT_INDEX) if DEFAULT_INDEX.exists() else {}
+        # 事件系统 / 怪物池：静态规则只解析一次，多个引擎共享同一份解析结果
+        # （rule_repository 按输入正文摘要缓存，并给每个引擎一份结构副本）。
+        if DEFAULT_INDEX.exists():
+            self.event_pool = EventPool(RuleRepository.events(DEFAULT_INDEX))
+            self.monster_pool = RuleRepository.monster_pool(DEFAULT_INDEX)
+        else:
+            self.event_pool = EventPool({})
+            self.monster_pool = {}
         # 行动历史（可追溯）
         self._action_history: list[dict] = []
 
@@ -773,13 +778,22 @@ class GameEngine:
     }
 
     def _restore_state_in_place(self, snapshot: GameState) -> None:
-        """事务失败时原位恢复，既回滚数值，也保持调用方已持有的实体引用有效。"""
+        """事务失败时原位恢复，既回滚数值，也保持调用方已持有的实体引用有效。
+
+        **不可序列化的运行时引用就地保留**：`_hp_engine_ref` 是指向战斗引擎的
+        弱引用（Entity.__getstate__ 会剔除它，深拷贝后为 None）。若照搬快照值，
+        回滚会把活实体上的绑定覆盖成 None——之后这个实体的降血兜底钩子就哑了。
+        Phase 8 随机压力测试实测发现此缺陷；这里按「弱引用不覆盖」处理，
+        既不丢绑定，也不给本来没绑定的实体凭空补绑定（那会改变既有行为）。
+        """
         def restore_object(current, saved):
             current_keys = set(current.__dict__)
             saved_keys = set(saved.__dict__)
             for key in current_keys - saved_keys:
                 delattr(current, key)
             for key in saved_keys:
+                if isinstance(current.__dict__.get(key), weakref.ReferenceType):
+                    continue     # 活对象上的弱引用绑定不是快照数据，原样保留
                 saved_value = getattr(saved, key)
                 if not hasattr(current, key):
                     setattr(current, key, copy.deepcopy(saved_value))
@@ -930,11 +944,9 @@ class GameEngine:
         return None
 
     def execute_action(self, action_type: str, params: dict = None) -> dict:
-        """
-        执行行动的统一入口
-        AI通过此接口执行所有行动
+        """正式执行行动的统一入口（事务层）。
 
-        返回格式：
+        AI通过此接口执行所有行动。返回格式：
         {
             "success": bool,
             "action": str,
@@ -943,6 +955,24 @@ class GameEngine:
             "interrupt": dict,   # 如果触发中断，此处不为空
             "next_actions": list  # 接下来可用的行动
         }
+
+        正式执行与 ActionPreview 预演共用同一个实现 `_execute_action_core`
+        （2026-09-19 性能优化：预演不再重复建立 transaction snapshot）。
+        本入口是两者**唯一**的区别所在：改状态前保存快照，失败/异常时整体回滚。
+        """
+        return self._execute_action_core(action_type, params, transaction=True)
+
+    def _execute_action_core(self, action_type: str, params: dict = None,
+                             *, transaction: bool = False) -> dict:
+        """动作执行的唯一实现：门禁 → dispatch → 记账/中断。
+
+        transaction=True（正式执行）在 dispatch 前保存快照，失败/异常时原地回滚；
+        transaction=False（ActionPreview 的 sandbox）跳过快照与回滚——sandbox 用后
+        即弃，规则逻辑与正式执行逐行相同。
+
+        Preview 的语义差别仅有这一处：失败回滚不会发生在 sandbox 内。引擎所有
+        内部调用方（TacticalAI/策略层）都只读取 `success=True` 的预演 diff，
+        失败候选一律跳过，故对外可观测行为不变（见 tests/test_ai_safety_preview.py）。
         """
         if params is None:
             params = {}
@@ -1020,146 +1050,29 @@ class GameEngine:
         if phase_error:
             return phase_error
 
-        # 所有行动按“校验失败不改变游戏状态”的原子契约执行。
-        # 随机数请求必须在各处理器完成静态校验后才发起，避免失败消耗随机源。
-        state_before = copy.deepcopy(self.state)
-        combat_runtime_before = self._snapshot_combat_runtime()
-        event_pool_before = (set(self.event_pool.triggered), self.event_pool.current)
-        dice_before = copy.deepcopy(self.dice)
-        interrupts_before = copy.deepcopy(self._pending_interrupts)
+        state_before = None
+        if transaction:
+            # 所有行动按“校验失败不改变游戏状态”的原子契约执行。
+            # 随机数请求必须在各处理器完成静态校验后才发起，避免失败消耗随机源。
+            state_before = copy.deepcopy(self.state)
+            combat_runtime_before = self._snapshot_combat_runtime()
+            event_pool_before = (set(self.event_pool.triggered), self.event_pool.current)
+            dice_before = copy.deepcopy(self.dice)
+            interrupts_before = copy.deepcopy(self._pending_interrupts)
+        # 结算生命周期：一次顶层行动 = 一次 resolution。
+        # 只做计数清零与（可选的）链记录，不参与任何规则判定——见 engine/resolution.py。
+        # 预演内部也走本函数，但它是沙盒执行：context 状态由 engine/sandbox.py
+        # 在进出沙盒时保存/恢复，所以预演不会污染真实行动的预算/深度。
+        # 预算随在场实体数放大：结算量天然与战场规模成正比（见 ResolutionContext）。
         try:
-            if action_type == "setup_attributes":
-                result = self._action_setup_attributes(params)
-            elif action_type == "setup_choose_region":
-                result = self._action_setup_choose_region(params)
-            elif action_type == "setup_choose_resonance":
-                result = self._action_setup_choose_resonance(params)
-            elif action_type == "setup_choose_initial_daowen":
-                result = self._action_setup_choose_initial_daowen(params)
-            elif action_type == "resolve_redemption":
-                result = self._action_resolve_redemption(params)
-            elif action_type == "pre_battle_action":
-                result = self._action_pre_battle(params)
-            elif action_type == "upgrade_doctor":
-                result = self._action_upgrade_doctor(params)
-            elif action_type == "use_daowen":
-                result = self._action_use_daowen(params)
-            elif action_type == "use_spell":
-                result = self._action_use_spell(params)
-            elif action_type == "define_spell":
-                result = self._action_define_spell(params)
-            elif action_type == "use_resonance":
-                result = self._action_use_resonance(params)
-            elif action_type == "redeem_attribute_points":
-                result = self._action_redeem_attribute_points(params)
-            elif action_type == "declare_parry":
-                result = self._action_declare_parry(params)
-            elif action_type == "prepare_attack":
-                result = self._action_prepare_attack(params)
-            elif action_type == "resolve_attack":
-                result = self._action_resolve_attack(params)
-            elif action_type == "attack":
-                result = {"success": False, "error": "旧attack已移除；请使用prepare_attack/resolve_attack"}
-            elif action_type == "consume_item":
-                result = self._action_consume_item(params)
-            elif action_type == "declare_wish":
-                result = self._action_declare_wish(params)
-            elif action_type == "declare_escape":
-                result = self._action_declare_escape(params)
-            elif action_type == "retreat_via_toll":
-                result = self._action_retreat_via_toll(params)
-            elif action_type == "lianxin_in_battle":
-                result = self._action_lianxin_in_battle(params)
-            elif action_type == "declare_evolution":
-                result = self._action_declare_evolution(params)
-            elif action_type == "deploy_employee":
-                result = self._action_deploy_employee(params)
-            elif action_type == "dismiss_employee":
-                result = self._action_dismiss_employee(params)
-            elif action_type == "pay_employee_wage":
-                result = self._action_pay_employee_wage(params)
-            elif action_type == "choose_hired_daowen":
-                result = self._action_choose_hired_daowen(params)
-            elif action_type == "choose_sha_qi":
-                result = self._action_choose_sha_qi(params)
-            elif action_type == "suppress_rebellion":
-                result = self._action_suppress_rebellion(params)
-            elif action_type == "resolve_rebellion_battle":
-                result = self._action_resolve_rebellion_battle(params)
-            elif action_type == "appease_rebellion":
-                result = self._action_appease_rebellion(params)
-            elif action_type == "negotiate_rebellion":
-                result = self._action_negotiate_rebellion(params)
-            elif action_type == "activate_duel_relic":
-                result = self._action_activate_duel_relic(params)
-            elif action_type == "resolve_final_duel":
-                result = self._action_resolve_final_duel(params)
-            elif action_type == "choose_terminal_artifact":
-                result = self._action_choose_terminal_artifact(params)
-            elif action_type == "choose_first_embrace":
-                result = self._action_choose_first_embrace(params)
-            elif action_type == "use_black_card":
-                result = self._action_use_black_card(params)
-            elif action_type == "use_crime_vault":
-                result = self._action_use_crime_vault(params)
-            elif action_type == "fire_godfather_revolver":
-                result = self._action_fire_godfather_revolver(params)
-            elif action_type == "select_shared_dragon_heart":
-                result = self._action_select_shared_dragon_heart(params)
-            elif action_type == "declare_fuyuebei_toll":
-                result = self._action_declare_fuyuebei_toll(params)
-            elif action_type == "pay_for_dragon_nature":
-                result = self._action_pay_for_dragon_nature(params)
-            elif action_type == "unlock_dragon_trait":
-                result = self._action_unlock_dragon_trait(params)
-            elif action_type == "activate_dragon_body":
-                result = self._action_activate_dragon_body(params)
-            elif action_type == "devour_monster":
-                result = self._action_devour_monster(params)
-            elif action_type == "declare_tail_sacrifice":
-                result = self._action_declare_tail_sacrifice(params)
-            elif action_type == "use_dragon_wings":
-                result = self._action_use_dragon_wings(params)
-            elif action_type == "use_blood_wings":
-                result = self._action_use_blood_wings(params)
-            elif action_type == "enslave_as_chizu":
-                result = self._action_enslave_as_chizu(params)
-            elif action_type == "use_truth_eye":
-                result = self._action_use_truth_eye(params)
-            elif action_type == "blood_feast":
-                result = self._action_blood_feast(params)
-            elif action_type == "command_ally":
-                result = self._action_command_ally(params)
-            elif action_type == "resolve_ally_phases":
-                result = self._action_resolve_ally_phases(params)
-            elif action_type == "prepare_monster_phase":
-                result = self._action_prepare_monster_phase(params)
-            elif action_type == "resolve_monster_phase":
-                result = self._action_resolve_monster_phase(params)
-            elif action_type == "monster_phase":
-                result = self._action_monster_phase(params)
-            elif action_type == "choose_discovered_relic":
-                result = self._action_choose_discovered_relic(params)
-            elif action_type == "choose_discovered_item":
-                result = self._action_choose_discovered_item(params)
-            elif action_type == "repay_debt_employee":
-                result = self._action_repay_debt_employee(params)
-            elif action_type == "round_start":
-                result = self._action_round_start(params)
-            elif action_type == "round_end":
-                result = self._action_round_end(params)
-            elif action_type == "battle_start":
-                result = self._action_battle_start(params)
-            elif action_type == "battle_end":
-                result = self._action_battle_end(params)
-            elif action_type == "resolve_event":
-                result = self._action_resolve_event(params)
-            elif action_type == "read_death_book":
-                result = self._action_read_death_book(params)
-            else:
-                result = {"success": False, "error": f"未知行动类型: {action_type}"}
+            _scale = len(self.combat._hp_record_entities())
+        except Exception:          # 兜底：拿不到就按最小规模算
+            _scale = 1
+        self.combat.resolution.begin_action(action_type, params, scale=_scale)
+        try:
+            result = self._dispatch_action(action_type, params)
 
-            if not result.get("success", False):
+            if not result.get("success", False) and transaction:
                 self._restore_state_in_place(state_before)
                 self.combat.state = self.state
                 self._restore_combat_runtime(combat_runtime_before)
@@ -1215,16 +1128,19 @@ class GameEngine:
                 ).strip()
 
             self._last_result = result
+            self.combat.resolution.end_action()
             return result
 
         except Exception as e:
-            self._restore_state_in_place(state_before)
-            self.combat.state = self.state
-            self._restore_combat_runtime(combat_runtime_before)
-            self.event_pool.triggered, self.event_pool.current = event_pool_before
-            self.dice = dice_before
-            self.combat.dice = self.dice
-            self._pending_interrupts = interrupts_before
+            self.combat.resolution.end_action()
+            if transaction:
+                self._restore_state_in_place(state_before)
+                self.combat.state = self.state
+                self._restore_combat_runtime(combat_runtime_before)
+                self.event_pool.triggered, self.event_pool.current = event_pool_before
+                self.dice = dice_before
+                self.combat.dice = self.dice
+                self._pending_interrupts = interrupts_before
             # 引擎异常：状态已整体回滚，pending保持有效（与success=False路径一致），
             # 失败提交不得把战斗锁死——保留token供修正后重交（2026-08-22 BUG-02）。
             error_result = {
@@ -1243,6 +1159,139 @@ class GameEngine:
                 error_result["token"] = self.state.pending_attack.get("token")
             self._last_result = error_result
             return error_result
+
+    def _dispatch_action(self, action_type: str, params: dict) -> dict:
+        """action 名 → 处理器：唯一的 action 路由表（执行实现见各 _action_*）。"""
+        if action_type == "setup_attributes":
+            return self._action_setup_attributes(params)
+        elif action_type == "setup_choose_region":
+            return self._action_setup_choose_region(params)
+        elif action_type == "setup_choose_resonance":
+            return self._action_setup_choose_resonance(params)
+        elif action_type == "setup_choose_initial_daowen":
+            return self._action_setup_choose_initial_daowen(params)
+        elif action_type == "resolve_redemption":
+            return self._action_resolve_redemption(params)
+        elif action_type == "pre_battle_action":
+            return self._action_pre_battle(params)
+        elif action_type == "upgrade_doctor":
+            return self._action_upgrade_doctor(params)
+        elif action_type == "use_daowen":
+            return self._action_use_daowen(params)
+        elif action_type == "use_spell":
+            return self._action_use_spell(params)
+        elif action_type == "define_spell":
+            return self._action_define_spell(params)
+        elif action_type == "use_resonance":
+            return self._action_use_resonance(params)
+        elif action_type == "redeem_attribute_points":
+            return self._action_redeem_attribute_points(params)
+        elif action_type == "declare_parry":
+            return self._action_declare_parry(params)
+        elif action_type == "prepare_attack":
+            return self._action_prepare_attack(params)
+        elif action_type == "resolve_attack":
+            return self._action_resolve_attack(params)
+        elif action_type == "attack":
+            return {"success": False, "error": "旧attack已移除；请使用prepare_attack/resolve_attack"}
+        elif action_type == "consume_item":
+            return self._action_consume_item(params)
+        elif action_type == "declare_wish":
+            return self._action_declare_wish(params)
+        elif action_type == "declare_escape":
+            return self._action_declare_escape(params)
+        elif action_type == "retreat_via_toll":
+            return self._action_retreat_via_toll(params)
+        elif action_type == "lianxin_in_battle":
+            return self._action_lianxin_in_battle(params)
+        elif action_type == "declare_evolution":
+            return self._action_declare_evolution(params)
+        elif action_type == "deploy_employee":
+            return self._action_deploy_employee(params)
+        elif action_type == "dismiss_employee":
+            return self._action_dismiss_employee(params)
+        elif action_type == "pay_employee_wage":
+            return self._action_pay_employee_wage(params)
+        elif action_type == "choose_hired_daowen":
+            return self._action_choose_hired_daowen(params)
+        elif action_type == "choose_sha_qi":
+            return self._action_choose_sha_qi(params)
+        elif action_type == "suppress_rebellion":
+            return self._action_suppress_rebellion(params)
+        elif action_type == "resolve_rebellion_battle":
+            return self._action_resolve_rebellion_battle(params)
+        elif action_type == "appease_rebellion":
+            return self._action_appease_rebellion(params)
+        elif action_type == "negotiate_rebellion":
+            return self._action_negotiate_rebellion(params)
+        elif action_type == "activate_duel_relic":
+            return self._action_activate_duel_relic(params)
+        elif action_type == "resolve_final_duel":
+            return self._action_resolve_final_duel(params)
+        elif action_type == "choose_terminal_artifact":
+            return self._action_choose_terminal_artifact(params)
+        elif action_type == "choose_first_embrace":
+            return self._action_choose_first_embrace(params)
+        elif action_type == "use_black_card":
+            return self._action_use_black_card(params)
+        elif action_type == "use_crime_vault":
+            return self._action_use_crime_vault(params)
+        elif action_type == "fire_godfather_revolver":
+            return self._action_fire_godfather_revolver(params)
+        elif action_type == "select_shared_dragon_heart":
+            return self._action_select_shared_dragon_heart(params)
+        elif action_type == "declare_fuyuebei_toll":
+            return self._action_declare_fuyuebei_toll(params)
+        elif action_type == "pay_for_dragon_nature":
+            return self._action_pay_for_dragon_nature(params)
+        elif action_type == "unlock_dragon_trait":
+            return self._action_unlock_dragon_trait(params)
+        elif action_type == "activate_dragon_body":
+            return self._action_activate_dragon_body(params)
+        elif action_type == "devour_monster":
+            return self._action_devour_monster(params)
+        elif action_type == "declare_tail_sacrifice":
+            return self._action_declare_tail_sacrifice(params)
+        elif action_type == "use_dragon_wings":
+            return self._action_use_dragon_wings(params)
+        elif action_type == "use_blood_wings":
+            return self._action_use_blood_wings(params)
+        elif action_type == "enslave_as_chizu":
+            return self._action_enslave_as_chizu(params)
+        elif action_type == "use_truth_eye":
+            return self._action_use_truth_eye(params)
+        elif action_type == "blood_feast":
+            return self._action_blood_feast(params)
+        elif action_type == "command_ally":
+            return self._action_command_ally(params)
+        elif action_type == "resolve_ally_phases":
+            return self._action_resolve_ally_phases(params)
+        elif action_type == "prepare_monster_phase":
+            return self._action_prepare_monster_phase(params)
+        elif action_type == "resolve_monster_phase":
+            return self._action_resolve_monster_phase(params)
+        elif action_type == "monster_phase":
+            return self._action_monster_phase(params)
+        elif action_type == "choose_discovered_relic":
+            return self._action_choose_discovered_relic(params)
+        elif action_type == "choose_discovered_item":
+            return self._action_choose_discovered_item(params)
+        elif action_type == "repay_debt_employee":
+            return self._action_repay_debt_employee(params)
+        elif action_type == "round_start":
+            return self._action_round_start(params)
+        elif action_type == "round_end":
+            return self._action_round_end(params)
+        elif action_type == "battle_start":
+            return self._action_battle_start(params)
+        elif action_type == "battle_end":
+            return self._action_battle_end(params)
+        elif action_type == "resolve_event":
+            return self._action_resolve_event(params)
+        elif action_type == "read_death_book":
+            return self._action_read_death_book(params)
+        else:
+            return {"success": False, "error": f"未知行动类型: {action_type}"}
 
     # ==================== 开局行动 ====================
 
@@ -3249,7 +3298,10 @@ class GameEngine:
         player = self.state.player
         if not player:
             return {"success": False, "error": "没有玩家"}
-        if life_cost > 0 and player.current_hp <= life_cost:
+        # 【第一杯】：持有者「失去的生命翻倍」，所以补足差额要按翻倍后的实际支出校验，
+        # 否则原本"保证不致死"的校验会被翻倍击穿。
+        _life_mult = self.state.life_loss_multiplier(player)
+        if life_cost > 0 and player.current_hp <= life_cost * _life_mult:
             return {"success": False,
                     "error": f"碎片不足({self.state.shards}/{cost})，且生命不足以补足差额(还需{life_cost}点生命)"}
 
@@ -3257,7 +3309,7 @@ class GameEngine:
         if life_cost > 0:
             # 刻意不改走 pay_numeric_cost：那会额外触发血誓戒/烙痕钉/血契，属于改规则。
             # 前面的校验保证 current_hp > life_cost，因此这里不会致死；只补来源记账。
-            player.take_damage(life_cost, "代价")
+            player.take_damage(life_cost, "代价", life_loss_multiplier=_life_mult)
             _toll_ctx = normalize_context({
                 "timing": self.state.combat_subphase or self.state.phase, "source": "买路财",
                 "source_type": "relic", "actor": player, "target": player, "owner": player,
