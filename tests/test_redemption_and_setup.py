@@ -1,4 +1,4 @@
-"""开局发现 / 新残韵 / 第一杯免疫癌变 / 净化 / 救赎。
+"""开局发现 / 新残韵 / 第一杯（重做：回复与失去的生命翻倍） / 净化 / 救赎。
 
 每项覆盖正常、边界、非法三类。
 """
@@ -155,15 +155,15 @@ def test_resonance_refuses_missing_stock_and_original_grant():
     assert "疯狂" not in engine.state.player.dao_wen
 
 
-# ---------- 第一杯免疫癌变（原钱袋效果） ----------
+# ---------- 第一杯（2026-09-23 重做：回复与失去的生命翻倍） ----------
 
-def test_moneybag_blocks_player_cancer():
+def test_first_cup_no_longer_blocks_player_cancer():
     engine = _ready_combat(_engine("bag_ok"))
     engine.state.relics.append(Relic(name="第一杯", effect=""))
     player = engine.state.player
     player.total_healed = engine.combat.cancer_threshold_of(player)
-    assert engine.combat.check_cancer(player) is None
-    assert player.is_alive
+    assert engine.combat.check_cancer(player) is not None, "旧免疫条款已废止"
+    assert not player.is_alive
 
 
 def test_moneybag_threshold_exactly_two_times_blood_limit():
@@ -177,11 +177,13 @@ def test_moneybag_threshold_exactly_two_times_blood_limit():
     assert hit is not None and not player.is_alive
 
 
-def test_moneybag_does_not_protect_friends():
+def test_first_cup_doubling_does_not_apply_to_friends():
     engine = _ready_combat(_engine("bag_ally"))
     engine.state.relics.append(Relic(name="第一杯", effect=""))
-    friend = Entity(name="同伴", entity_type="朋友", blood_limit=30, current_hp=30)
+    friend = Entity(name="同伴", entity_type="朋友", blood_limit=30, current_hp=10)
     engine.state.friends.append(friend)
+    detail = engine.state.apply_heal(friend, 5)
+    assert detail["heal_amount"] == 5 and friend.current_hp == 15, "朋友不继承倍率"
     friend.total_healed = engine.combat.cancer_threshold_of(friend)
     hit = engine.combat.check_cancer(friend)
     assert hit is not None

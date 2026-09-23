@@ -1040,7 +1040,9 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                     actor=entity, target=entity, owner=entity,
                     mechanic="cost", subtype="bleed", amount=20,
                     tags={"bloodline", "round_end", "automatic"})
-                bleed_detail = entity.take_damage(20, "代价")
+                # 【第一杯】：赤族诅咒的流血同样是「失去的生命」（持有者翻倍）。
+                bleed_detail = entity.take_damage(
+                    20, "代价", life_loss_multiplier=self.state.life_loss_multiplier(entity))
                 loss_ctx = self._record_hp_loss_event(
                     entity, bleed_detail.get("actual_damage", 0), curse_ctx, subtype="cost")
                 if bleed_detail.get("died"):

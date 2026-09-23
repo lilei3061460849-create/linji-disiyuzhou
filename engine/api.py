@@ -3298,7 +3298,10 @@ class GameEngine:
         player = self.state.player
         if not player:
             return {"success": False, "error": "没有玩家"}
-        if life_cost > 0 and player.current_hp <= life_cost:
+        # 【第一杯】：持有者「失去的生命翻倍」，所以补足差额要按翻倍后的实际支出校验，
+        # 否则原本"保证不致死"的校验会被翻倍击穿。
+        _life_mult = self.state.life_loss_multiplier(player)
+        if life_cost > 0 and player.current_hp <= life_cost * _life_mult:
             return {"success": False,
                     "error": f"碎片不足({self.state.shards}/{cost})，且生命不足以补足差额(还需{life_cost}点生命)"}
 
@@ -3306,7 +3309,7 @@ class GameEngine:
         if life_cost > 0:
             # 刻意不改走 pay_numeric_cost：那会额外触发血誓戒/烙痕钉/血契，属于改规则。
             # 前面的校验保证 current_hp > life_cost，因此这里不会致死；只补来源记账。
-            player.take_damage(life_cost, "代价")
+            player.take_damage(life_cost, "代价", life_loss_multiplier=_life_mult)
             _toll_ctx = normalize_context({
                 "timing": self.state.combat_subphase or self.state.phase, "source": "买路财",
                 "source_type": "relic", "actor": player, "target": player, "owner": player,

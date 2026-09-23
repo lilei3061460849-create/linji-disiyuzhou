@@ -77,7 +77,10 @@ class BaolieHook:
         if (target and hasattr(target, "has_status") and target.has_status("爆裂")
                 and attacker is not None and attacker is not target and amount > 0 and damage_type != "代价"):
             prev_hp = attacker.current_hp
-            attacker.current_hp = max(0, attacker.current_hp - amount)
+            # 【第一杯】：反噬也是攻击者「失去的生命」（持有者翻倍）。
+            # Hook 只有 state，没有 combat —— 倍率的唯一事实源恰好就在 state 上。
+            loss = amount * state.life_loss_multiplier(attacker)
+            attacker.current_hp = max(0, attacker.current_hp - loss)
             reflect_amt = prev_hp - attacker.current_hp
             # 与 Entity.take_damage / CombatEngine._raw_hp_loss 同口径：
             # 只要实际掉了 HP，就计入本回合失血（【活血】等效果据此结算）。

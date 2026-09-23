@@ -628,17 +628,21 @@ def test_relic_effects():
     assert m2.current_hp < 120, f"回锋刀应造伤，实HP{m2.current_hp}"
     print(f"  ✓ 回锋刀：回始造伤(失速3→9伤)，靶HP120→{m2.current_hp}")
 
-    # 第一杯：免疫癌变（原钱袋效果，钱袋已删除）
+    # 第一杯（2026-09-23 用户令重做）：你受到的[回复]与失去的生命翻倍；
+    # 旧「免疫癌变」（原钱袋效果）条款已废止 → 持有者照样癌变。
     engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
     engine.execute_action("setup_attributes", {"name":"测试","blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(engine)
     _choose_region(engine, "罪孽都市")
     engine.state.relics = [Relic(name="第一杯", effect="")]
     player = engine.state.player
+    player.current_hp = 10
+    heal = engine.state.apply_heal(player, 5)
+    assert heal["heal_amount"] == 10 and player.current_hp == 20, "持有第一杯应使受到的回复翻倍"
     player.total_healed = engine.combat.cancer_threshold_of(player)
     hit = engine.combat.check_cancer(player)
-    assert hit is None and player.is_alive, "持有第一杯的轮回者应免疫癌变"
-    print("  ✓ 第一杯：累计回复达阈值也不触发癌变")
+    assert hit is not None and not player.is_alive, "第一杯不再免疫癌变"
+    print("  ✓ 第一杯：回复翻倍，且不再免疫癌变")
     print("  ✓ 遗物效果测试通过")
 
 

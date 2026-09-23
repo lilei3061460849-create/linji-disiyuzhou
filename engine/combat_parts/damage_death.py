@@ -431,7 +431,12 @@ class DamageDeathMixin:
                     reaction_logs.extend(life_before)
                 if source is not None and not source.is_alive:
                     amount = 0
-        detail = target.take_damage(amount, apply_type)
+        # 【第一杯】：持有者失去的生命翻倍。倍率在这里注入（格挡与压帽在
+        # take_damage 内部先结算），因此盾的吸收量不变、只有真正落地的生命损失翻倍，
+        # 且 detail["actual_damage"]/失血总账/命零判定全部拿到同一个数值。
+        detail = target.take_damage(
+            amount, apply_type,
+            life_loss_multiplier=self.state.life_loss_multiplier(target))
         self._attach_damage_context(detail, damage_ctx, legacy_ctx)
         actual = detail.get("actual_damage", 0)
         # 「受到伤害后」自动反应窗口：这一击已完整落地（即使被格挡全部吸收也算
@@ -565,7 +570,9 @@ class DamageDeathMixin:
             reaction_logs = self._fire_before_life_lost(entity, ctx) or []
         self._hp_loss_recording += 1  # 直接失血由 _record_hp_loss_event 接管，抑制兜底钩子
         try:
-            entity.current_hp = max(0, entity.current_hp - max(0, amount))
+            # 【第一杯】：直接失血（爆裂反射/赌命/血影等）同样属于「失去的生命」。
+            entity.current_hp = max(
+                0, entity.current_hp - max(0, amount) * self.state.life_loss_multiplier(entity))
         finally:
             self._hp_loss_recording -= 1
         lost = before - entity.current_hp

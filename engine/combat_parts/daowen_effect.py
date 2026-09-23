@@ -443,7 +443,9 @@ class DaowenEffectMixin:
             # 对残血目标等于毫无效果。合并成一次写入：既保持与两步扣减相同的终值，
             # 又让 Entity.__setattr__ 的「失去生命后」钩子恰好触发一次。
             if "hp_reduction" in calc:
-                _target_hp = target.current_hp - calc["hp_reduction"]
+                # 【第一杯】：这是规则明确写出的「当前生命 -NX」，属于失去生命，
+                # 持有者翻倍（血限本身的扣减不翻倍——压顶是封顶后果，不是失血）。
+                _target_hp = target.current_hp - calc["hp_reduction"] * self.state.life_loss_multiplier(target)
             else:
                 _target_hp = target.current_hp
             self._hp_loss_ctx = daowen_ctx

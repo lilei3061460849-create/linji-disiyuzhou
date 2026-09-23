@@ -509,10 +509,18 @@ class Entity:
     def hp_ratio(self) -> float:
         return self.current_hp / self.blood_limit if self.blood_limit > 0 else 0
     
-    def take_damage(self, amount: int, damage_type: str = "普通") -> dict:
+    def take_damage(self, amount: int, damage_type: str = "普通", *,
+                    life_loss_multiplier: int = 1) -> dict:
         """
         受到伤害，返回结算详情
         规则：格挡仅能抵消外部【伤害】，代价绝对无法被格挡吸收
+
+        life_loss_multiplier：【第一杯】的「失去的生命翻倍」由此注入
+        （唯一事实源 `GameState.life_loss_multiplier`，由调用方传入——Entity
+        不认识遗物，持有者判定留在状态层）。倍率作用在**格挡与【固执】压帽
+        之后**：翻倍的是最终失去的生命，不是原始伤害，所以格挡该吸收多少
+        仍是原来的数。`actual_damage` 报出的同样是翻倍后的数值，失血总账
+        （承露盏/失去生命后反应）因此不会少记一半。
         """
         detail = {
             "raw_damage": amount,
@@ -541,6 +549,11 @@ class Entity:
         if remaining > 0 and damage_type != "代价" and self.has_status("固执"):
             remaining = min(remaining, 1)
             detail["capped_by"] = "固执"
+
+        # 【第一杯】：失去的生命翻倍（格挡/压帽之后、扣血之前）
+        if life_loss_multiplier > 1 and remaining > 0:
+            remaining *= life_loss_multiplier
+            detail["life_loss_multiplier"] = life_loss_multiplier
 
         # 扣除生命
         self.current_hp = max(0, self.current_hp - remaining)
@@ -1032,7 +1045,14 @@ class GameState:
 
     def _apply_heal_inner(self, entity: Entity, amount: int,
                           ctx: Optional[EffectContext | dict] = None) -> dict:
-        """回复的实现体（对外契约见 apply_heal）。"""
+        """回复的实现体（对外契约见 apply_heal）。
+
+        【第一杯】：持有者受到的回复翻倍（唯一事实源 `heal_multiplier`）。
+        倍率在进入实现体的第一行生效，所以回复明细、`total_healed`
+        （癌变累计）与战斗事件里的数值都是**翻倍后**的真实值，不存在
+        "账上一份、面板另一份"。
+        """
+        amount = amount * self.heal_multiplier(entity)
         heal_ctx = normalize_context(ctx)
         if heal_ctx is None:
             heal_ctx = make_context(
@@ -1142,6 +1162,32 @@ class GameState:
             if e is entity:
                 return True
         return False
+
+    # ---- 【第一杯】倍率（2026-09-23 用户令重做，唯一事实源）----
+    # 旧条文「每次回复额外+50%、[回终]未回复则流血10、免疫癌变」全部废止；
+    # 新条文「你受到的[回复]与失去的生命翻倍」。两条倍率都只读这一处，
+    # 引擎其它地方不得再各写一份判断（朋友/员工不继承由 side_has 保证）。
+    FIRST_CUP = "第一杯"
+    FIRST_CUP_MULTIPLIER = 2
+
+    def heal_multiplier(self, entity: Entity) -> int:
+        """【第一杯】：该实体受到的[回复]倍率（非持有者=1）。
+
+        入口唯一：所有回复都经 `apply_heal` → `_apply_heal_inner`，
+        倍率在那里生效，因此累计回复量（癌变阈值）、回复事件与「回复量」本身
+        三者天然一致。
+        """
+        return self.FIRST_CUP_MULTIPLIER if self.side_has(entity, self.FIRST_CUP) else 1
+
+    def life_loss_multiplier(self, entity: Entity) -> int:
+        """【第一杯】：该实体失去的生命倍率（非持有者=1）。
+
+        只作用于**有明确数值的失去生命**：伤害、数值型【代价】（流血）、
+        直接失血（爆裂反噬等）。血限被压低导致的当前生命封顶、以及
+        「当前生命直接置0」的命零类效果（癌变/崩解/雕塑等）不带数值、
+        也不翻倍——它们不是"失去生命"，是判定归零。
+        """
+        return self.FIRST_CUP_MULTIPLIER if self.side_has(entity, self.FIRST_CUP) else 1
 
     def side_has(self, entity: Entity, name: str) -> bool:
         """该实体所属轮回者是否持有该终音/初拥/龙族项目。朋友/员工不继承。"""

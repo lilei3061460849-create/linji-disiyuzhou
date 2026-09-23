@@ -394,13 +394,18 @@ class CostPaymentMixin:
             life_before_logs = self._fire_before_life_lost(payer, cost_context) or []
         self._hp_loss_recording += 1  # 代价失血由 _record_hp_loss_event 接管，抑制兜底钩子
         try:
-            detail = payer.take_damage(actual, "代价")
+            # 【第一杯】：代价的「流血X」支付 X（代价语义、血誓戒按 X 结算），
+            # 但持有者**失去的生命**翻倍——代价与落地生命损失在这里分道。
+            detail = payer.take_damage(
+                actual, "代价", life_loss_multiplier=self.state.life_loss_multiplier(payer))
         finally:
             self._hp_loss_recording -= 1
         detail["dragon_heart_offset"] = offset
         if life_before_logs:
             detail["reaction_logs"] = life_before_logs
-        hp_loss_ctx = self._record_hp_loss_event(payer, actual, cost_context, subtype="cost")
+        # 失血总账记**真实失去的生命**（【第一杯】持有者=2×代价；其余=1×，与旧口径逐位相同）。
+        life_lost = detail.get("actual_damage", actual)
+        hp_loss_ctx = self._record_hp_loss_event(payer, life_lost, cost_context, subtype="cost")
         if hp_loss_ctx:
             detail["hp_loss_ctx"] = hp_loss_ctx
         if (cost_context is None and actual > 0 and payer is self.state.player

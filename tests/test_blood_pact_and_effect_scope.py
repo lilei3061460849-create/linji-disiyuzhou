@@ -196,7 +196,7 @@ def test_regeneration_is_four_x_and_old_contracts_are_removed():
     assert "血契" in names
     assert "鲜血契约" not in names
     assert "卖身契" not in names
-    assert "钱袋" not in names  # 钱袋已删除，免疫癌变并入【第一杯】
+    assert "钱袋" not in names  # 钱袋已删除（其效果一度并入【第一杯】，2026-09-23【第一杯】重做时废止）
     assert len(names) == 11  # 2026-09-13：折速法印删除(→道纹【搏命】)、新增【承露盏】
 
 

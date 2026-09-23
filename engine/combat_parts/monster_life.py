@@ -231,8 +231,10 @@ class MonsterLifeMixin:
         """任一角色恢复量达阈值即癌变。怪物仍吸收进书；轮回者/同伴直接命零。"""
         if entity is None or not entity.is_alive or entity.is_proliferated:
             return None
-        if self.state.side_has(entity, "第一杯"):
-            return None
+        # 2026-09-23：【第一杯】重做，旧「持有者免疫癌变」条款废止（原为钱袋并入的效果）。
+        # 现在持有者照样癌变——而且因为「受到的回复翻倍」，累计回复更快撞上 2×血限。
+        # 新条文只有「受到的[回复]与失去的生命翻倍」，两条倍率的唯一事实源在
+        # GameState.heal_multiplier / life_loss_multiplier。
         threshold = self.cancer_threshold_of(entity)
         if threshold <= 0 or entity.total_healed < threshold:
             return None
