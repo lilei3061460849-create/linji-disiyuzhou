@@ -9,7 +9,7 @@ from engine.ai_memory import (
     create_memory,
     remember_action,
 )
-from engine.ai_player import AIPlayer
+from engine.ai_player import AIBackend, AIDecision, AIPlayer
 from engine.api import GameEngine
 from tests.setup_support import begin_battle, begin_round, finish_initial_daowen
 
@@ -46,7 +46,12 @@ def test_unified_ai_creates_identity_and_learns_from_real_action(tmp_path):
     enemy.attack_count = 1
     enemy.attack_power = 12
 
-    ai = AIPlayer(engine)
+    class _ParryLLM(AIBackend):
+        # 模拟 LLM 的战斗决策（2026-09-29 起战斗行动全部由 LLM 决定）
+        def decide(self, state, available_actions, context=""):
+            return AIDecision("declare_parry", {}, "致命威胁，先招架")
+
+    ai = AIPlayer(engine, backend=_ParryLLM())
     result = ai.play_turn("评估本轮威胁")
 
     assert result["result"]["success"], result
