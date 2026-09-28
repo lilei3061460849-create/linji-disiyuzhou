@@ -20,6 +20,11 @@ from ..effect_context import EffectContext, make_context, normalize_context
 from ..mechanisms import MECHANISMS, Phase, TriggerBus, TriggerContext
 from ..personality import remove_personality
 from ..models import MONSTER_MANA_RELIC
+from ..spell_execution import (
+    SpellDefinition, SpellBinding, SpellCastRequest, SpellExecution,
+    StepRequest, StepResult, StepStatus, InterruptReason,
+    TriggerType, Lifecycle, ExecutionStatus,
+)
 
 
 class SpellReactionMixin:
@@ -412,6 +417,211 @@ class SpellReactionMixin:
         "proliferation": "cancer",
     }
 
+    # ------------------------------------------------------------------
+    # Phase 1 统一单步执行核心：所有法术类型（反应/道纹前/全局/瞬发）最终都
+    # 通过 _execute_single_daowen_step 结算单步。正常游戏流程中断通过
+    # StepResult(status=INTERRUPTED/SKIPPED/...) 返回，不再 raise ValueError
+    # 跨 combat action 冒泡；真正的契约违例（AST 非法/内部状态错）仍抛异常。
+    # ------------------------------------------------------------------
+
+    def _execute_single_daowen_step(self, *, definition, step, entry, caster: Entity,
+                                    attacker: Optional[Entity], refs: dict[str, Entity],
+                                    trigger_label: str = "",
+                                    target_resolver=None,
+                                    skip_predicate=None) -> "StepResult":
+        """执行法术中的单步道纹，返回 StepResult。
+
+        参数：
+          definition           当前 SpellDefinition（仅用于日志/name）。
+          step                 ActionStep / IfStep / (daowen, role) 元组。IfStep 由调用方
+                               在 flatten 阶段展开为 ActionStep，Phase 1 不应在本方法
+                               遇到 IfStep（Phase 3 控制流接管时由 SpellExecution 直接处理）。
+          entry                dict 或 StepRequest：含 x / target_ref / dodge / dodge_relic_target_ref。
+          caster               施放该法术的角色。
+          attacker             触发本法术的对手实体（反应/道纹前语境）；全局/瞬发可为 None。
+          refs                 _combat_entity_refs() 的 dict。
+          trigger_label        触发时机标签（仅日志）。
+          target_resolver      可选回调：signature (step, entry, caster, attacker, refs) -> (target, target_ref)。
+                               为 None 时使用默认的 _resolve_entry_target/_resolve_step_subject 路径。
+          skip_predicate       可选回调：signature (daowen, target, previous_damage, step, entry) ->
+                               Optional[str]。返回非 None 字符串表示该步应跳过（如坠落目标不飞行、
+                               血债无前序伤害），返回值作为 skipped 的 detail。
+        """
+        # 延迟导入避免循环
+        from ..spell_execution import StepResult, StepStatus, InterruptReason
+        from ..spell_dsl import IfStep
+
+        reverse = {id(entity): ref for ref, entity in refs.items()}
+
+        # --- 解析 entry（支持 dict / StepRequest 两种） ---
+        if hasattr(entry, "x"):
+            x = entry.x
+            target_ref_in = entry.target_ref
+            dodge_flag = bool(entry.dodge)
+            dodge_relic = entry.dodge_relic_target_ref
+            entry_dict = {"x": x, "target_ref": target_ref_in, "dodge": dodge_flag,
+                          "dodge_relic_target_ref": dodge_relic}
+            entry_dict.update(entry.extra or {})
+        else:
+            entry_dict = entry if isinstance(entry, dict) else {}
+            x = entry_dict.get("x")
+            target_ref_in = entry_dict.get("target_ref")
+            dodge_flag = bool(entry_dict.get("dodge"))
+            dodge_relic = entry_dict.get("dodge_relic_target_ref")
+
+        # --- 解析道纹名与目标 ---
+        if isinstance(step, IfStep):
+            return StepResult(
+                status=StepStatus.FAILED, daowen="",
+                reason=InterruptReason.INVALID_INPUT,
+                detail=f"Phase 1 执行核心不接受 IfStep（必须由调用方在 flatten 阶段展开）",
+            )
+        daowen = self._step_daowen(step)
+
+        # target 解析
+        try:
+            if target_resolver is not None:
+                target, expected_ref = target_resolver(step, entry_dict, caster, attacker, refs)
+            else:
+                # 默认路径（反应/全局通用）
+                role = self._step_role(step)
+                if role == "any":
+                    target = refs.get(target_ref_in)
+                    expected_ref = target_ref_in
+                    if target is None:
+                        return StepResult(
+                            status=StepStatus.INTERRUPTED, daowen=daowen,
+                            reason=InterruptReason.TARGET_INVALID,
+                            detail=f"任意目标target_ref={target_ref_in}不是当前合法实体",
+                        )
+                    if not self.is_targetable(caster, target):
+                        return StepResult(
+                            status=StepStatus.INTERRUPTED, daowen=daowen, x=x or 0,
+                            target_ref=expected_ref, target_name=target.name,
+                            reason=InterruptReason.TARGET_UNTARGETABLE,
+                            detail=f"{target.name}处于飞行，无法被选中为法术目标",
+                        )
+                else:
+                    target = self._resolve_step_subject(role, caster, attacker)
+                    expected_ref = reverse.get(id(target))
+        except Exception as exc:  # programmer contract error
+            raise ValueError(f"法术单步目标解析失败: {exc}") from exc
+
+        # target_ref 一致性校验（any 场景下提交方可能给错 ref）
+        role = self._step_role(step)
+        if role != "any" and target_ref_in is not None and target_ref_in != expected_ref:
+            return StepResult(
+                status=StepStatus.INTERRUPTED, daowen=daowen, x=x or 0,
+                target_ref=target_ref_in,
+                reason=InterruptReason.INVALID_INPUT,
+                detail=f"步骤target_ref={target_ref_in}与期望{expected_ref}不一致",
+            )
+        target_ref = expected_ref if role != "any" else target_ref_in
+
+        # --- 目标失效检查 ---
+        if target is None or not target.is_alive:
+            return StepResult(
+                status=StepStatus.SKIPPED, daowen=daowen, x=x or 0,
+                target_ref=target_ref, target_name=target.name if target else "(none)",
+                reason=InterruptReason.TARGET_INVALID,
+                detail="目标已失效",
+            )
+
+        # --- X 合法性 ---
+        if not isinstance(x, int) or isinstance(x, bool) or x < 1:
+            return StepResult(
+                status=StepStatus.INTERRUPTED, daowen=daowen,
+                target_ref=target_ref, target_name=target.name,
+                reason=InterruptReason.INVALID_X,
+                detail=f"X={x!r}非法，必须≥1整数",
+            )
+
+        # --- 道纹可用性 ---
+        dw_inst = caster.dao_wen.get(daowen)
+        if dw_inst is None or not dw_inst.can_use():
+            return StepResult(
+                status=StepStatus.INTERRUPTED, daowen=daowen, x=x,
+                target_ref=target_ref, target_name=target.name,
+                reason=InterruptReason.DAOWEN_UNUSABLE,
+                detail=f"道纹{daowen}不可用（未持有/封印/冷却/唯一已用）",
+            )
+
+        # --- 跳过谓词（如坠落目标不飞行/血债无前序伤害） ---
+        if skip_predicate is not None:
+            skip_reason = skip_predicate(daowen, target, entry_dict, step)
+            if skip_reason:
+                return StepResult(
+                    status=StepStatus.SKIPPED, daowen=daowen, x=x,
+                    target_ref=target_ref, target_name=target.name,
+                    detail=skip_reason,
+                )
+
+        # --- 道纹计算 ---
+        try:
+            calc = DaoWenEngine.resolve(daowen, x, target=target, caster=caster)
+        except Exception as exc:
+            return StepResult(
+                status=StepStatus.FAILED, daowen=daowen, x=x,
+                target_ref=target_ref, target_name=target.name,
+                reason=InterruptReason.INVALID_INPUT,
+                detail=f"道纹{daowen}计算失败: {exc}",
+            )
+
+        # --- 法力消耗（资源不足=interrupted，不 raise） ---
+        cost_paid = 0
+        mana_gained = 0
+        if calc.get("cost_type") == "消耗":
+            cost = calc.get("cost", 0)
+            if cost > 0:
+                if not caster.spend_mana(cost):
+                    return StepResult(
+                        status=StepStatus.INTERRUPTED, daowen=daowen, x=x,
+                        target_ref=target_ref, target_name=target.name,
+                        reason=InterruptReason.MANA_INSUFFICIENT,
+                        detail=f"法力不足，需{cost}，当前{caster.current_mana + cost_paid}",
+                    )
+                cost_paid = cost
+                self.note_mana_inflicted(caster, target, cost)
+        if "mana_gain" in calc:
+            mana_gained = calc["mana_gain"]  # 法力在 apply_daowen_effect 中已增加或这里增加
+
+        # --- 闪避（敌对目标） ---
+        hostile = self.state.on_player_side(caster) != self.state.on_player_side(target)
+        if hostile and dodge_flag:
+            if target.current_speed < 1:
+                return StepResult(
+                    status=StepStatus.INTERRUPTED, daowen=daowen, x=x,
+                    target_ref=target_ref, target_name=target.name, cost_paid=cost_paid,
+                    mana_gained=mana_gained,
+                    reason=InterruptReason.SPEED_INSUFFICIENT,
+                    detail="目标速度不足以闪避",
+                )
+            self._spend_dodge_speed(target, dodge_relic)
+            return StepResult(
+                status=StepStatus.DODGED, daowen=daowen, x=x,
+                target_ref=target_ref, target_name=target.name,
+                cost_paid=cost_paid, mana_gained=mana_gained,
+            )
+
+        # --- 真正执行道纹效果 ---
+        try:
+            execution = self.apply_daowen_effect(daowen, calc, caster, target)
+        except Exception as exc:
+            return StepResult(
+                status=StepStatus.FAILED, daowen=daowen, x=x,
+                target_ref=target_ref, target_name=target.name,
+                cost_paid=cost_paid, mana_gained=mana_gained,
+                reason=InterruptReason.INVALID_INPUT,
+                detail=f"道纹{daowen}执行失败: {exc}",
+            )
+
+        return StepResult(
+            status=StepStatus.COMPLETED, daowen=daowen, x=x,
+            target_ref=target_ref, target_name=target.name,
+            cost_paid=cost_paid, mana_gained=mana_gained,
+            execution=execution,
+        )
+
     def _resolve_entry_target(self, step, entry, holder: Entity, attacker: Entity,
                               refs: dict[str, Entity], reverse: dict[int, str]):
         """按步骤声明的目标身份，从提交里取出/校验实际目标实体，返回(entity, ref)。
@@ -614,42 +824,68 @@ class SpellReactionMixin:
 
     def resolve_daowen_trigger_spells(self, actor: Entity, submitted: dict,
                                       refs: dict[str, Entity]) -> list[dict]:
+        """「目标发动道纹前」反应法术结算（Phase 1：内部改用 SpellExecution）。"""
         logs = []
         for holder_ref, choices in submitted.items():
             holder = refs[holder_ref]
             for spell_name, flow in self._eligible_spell_flows(holder, "目标发动道纹前").items():
                 decision = choices[spell_name]
-                if not decision["use"]:
+                if not decision.get("use"):
                     continue
                 flat_steps = self._flatten_flow_steps(flow["steps"], holder, actor)
-                previous_damage = 0
-                for entry, step in zip(decision["steps"], flat_steps):
-                    daowen = self._step_daowen(step)
-                    subject = self._trigger_spell_subject(self._step_role(step), holder, actor)
+                steps = decision.get("steps", [])
+                cycle = []
+                for entry in steps:
+                    cycle.append(StepRequest(
+                        x=entry.get("x", 0),
+                        target_ref=entry.get("target_ref"),
+                        dodge=bool(entry.get("dodge")),
+                        dodge_relic_target_ref=entry.get("dodge_relic_target_ref"),
+                    ))
+                # 咎由自取特殊：坠落目标不飞行跳过、血债无前序伤害跳过
+                previous_damage = {"value": 0}
+                def _daowen_resolver(step, entry_dict, caster, attacker, rs):
+                    subject = self._trigger_spell_subject(self._step_role(step), caster, attacker)
                     if subject == "any":
-                        target = refs.get(entry.get("target_ref"))
-                    else:
-                        target = actor if subject == "actor" else holder
+                        t = rs.get(entry_dict.get("target_ref"))
+                        return t, entry_dict.get("target_ref")
+                    if subject == "actor":
+                        return attacker, next((r for r, e in rs.items() if e is attacker), None)
+                    return caster, next((r for r, e in rs.items() if e is caster), None)
+                def _daowen_skip(daowen, target, entry_dict, step):
                     if daowen == "坠落" and not (target.is_flying or target.has_status("飞行") or target.has_status("滑翔")):
-                        continue
-                    if daowen == "血债" and previous_damage > 0:
-                        continue
-                    calc = DaoWenEngine.resolve(daowen, entry["x"], target=target, caster=holder)
-                    if calc.get("cost_type") == "消耗":
-                        cost = calc.get("cost", 0)
-                        if not holder.spend_mana(cost):
-                            raise ValueError("法术结算法力不足")
-                        self.note_mana_inflicted(holder, target, cost)
-                    if entry["dodge"]:
-                        if target.current_speed < 1:
-                            raise ValueError("道纹行动者速度不足以闪避反应法术")
-                        self._spend_dodge_speed(target, entry.get("dodge_relic_target_ref"))
-                        logs.append({"spell": spell_name, "daowen": daowen, "dodged": True})
-                        previous_damage = 0
-                        continue
-                    execution = self.apply_daowen_effect(daowen, calc, holder, target)
-                    previous_damage = sum(effect.get("actual_damage", 0) for effect in execution.get("effects", []))
-                    logs.append({"spell": spell_name, "daowen": daowen, "execution": execution})
+                        return "坠落目标未在飞行"
+                    if daowen == "血债" and previous_damage["value"] > 0:
+                        return "血债需要前序伤害"
+                    return None
+                definition = self._build_spell_definition_from_flow(spell_name, flow, "目标发动道纹前")
+                request = SpellCastRequest(use=True, cycles=[cycle])
+                previous_damage = {"value": 0}
+                def _daowen_skip(daowen, target, entry_dict, step):
+                    if daowen == "坠落" and not (target.is_flying or target.has_status("飞行") or target.has_status("滑翔")):
+                        return "坠落目标未在飞行"
+                    if daowen == "血债" and previous_damage["value"] > 0:
+                        return "血债需要前序伤害"
+                    return None
+                def _on_step(result):
+                    if result.status == StepStatus.COMPLETED and result.execution is not None:
+                        previous_damage["value"] = sum(
+                            e.get("actual_damage", 0) for e in result.execution.get("effects", []))
+                    elif result.status == StepStatus.DODGED:
+                        previous_damage["value"] = 0
+                execution = SpellExecution(
+                    engine=self, definition=definition, caster=holder,
+                    attacker=actor, refs=refs, request=request,
+                    flat_steps=flat_steps, trigger_label="目标发动道纹前",
+                    target_resolver=_daowen_resolver,
+                    skip_predicate=_daowen_skip,
+                    on_step=_on_step,
+                )
+                execution.run_all()
+                logs.extend(execution.logs())
+                if execution.status == ExecutionStatus.FAILED:
+                    raise ValueError(
+                        f"法术{spell_name}执行失败: {execution.interrupt_reason.value} {execution.interrupt_detail}")
         return logs
 
     # ---- 全局时点法术（战始/战终/回始/回终/敌回始/敌回终）----
@@ -865,8 +1101,7 @@ class SpellReactionMixin:
 
     def resolve_global_trigger_spells(self, trigger: str, submitted: dict,
                                       refs: dict[str, Entity]) -> list[dict]:
-        """结算全局时点法术；调用前必须先通过 validate_global_trigger_spells。"""
-        reverse = {id(entity): ref for ref, entity in refs.items()}
+        """结算全局时点法术（Phase 1：内部改用 SpellExecution）。"""
         logs = []
         for holder_ref, choices in submitted.items():
             holder = refs.get(holder_ref)
@@ -879,30 +1114,35 @@ class SpellReactionMixin:
                     logs.append({"spell": spell_name, "holder": holder.name, "used": False})
                     continue
                 flat_steps = self._flatten_flow_steps(flow["steps"], holder, holder)
-                for cycle_index, cycle in enumerate(decision["cycles"], 1):
-                    for entry, step in zip(cycle, flat_steps):
-                        daowen = self._step_daowen(step)
-                        target, _ = self._resolve_global_entry_target(step, entry, holder, refs, reverse)
-                        if target is None or not target.is_alive:
-                            logs.append({"spell": spell_name, "holder": holder.name, "cycle": cycle_index,
-                                        "daowen": daowen, "skipped": "目标已失效"})
-                            continue
-                        x = entry["x"]
-                        calc = DaoWenEngine.resolve(daowen, x, target=target, caster=holder)
-                        if calc.get("cost_type") == "消耗":
-                            cost = calc.get("cost", 0)
-                            if not holder.spend_mana(cost):
-                                raise ValueError(f"法术{spell_name}结算时法力不足")
-                            self.note_mana_inflicted(holder, target, cost)
-                        hostile = self.state.on_player_side(holder) != self.state.on_player_side(target)
-                        if hostile and entry.get("dodge"):
-                            self._spend_dodge_speed(target, entry.get("dodge_relic_target_ref"))
-                            logs.append({"spell": spell_name, "holder": holder.name, "cycle": cycle_index,
-                                        "daowen": daowen, "target": target.name, "dodged": True})
-                            continue
-                        execution = self.apply_daowen_effect(daowen, calc, holder, target)
-                        logs.append({"spell": spell_name, "holder": holder.name, "cycle": cycle_index,
-                                    "daowen": daowen, "x": x, "target": target.name, "execution": execution})
+                cycles = []
+                for cycle in decision.get("cycles", []):
+                    reqs = []
+                    for entry in cycle:
+                        reqs.append(StepRequest(
+                            x=entry.get("x", 0),
+                            target_ref=entry.get("target_ref"),
+                            dodge=bool(entry.get("dodge")),
+                            dodge_relic_target_ref=entry.get("dodge_relic_target_ref"),
+                        ))
+                    cycles.append(reqs)
+                definition = self._build_spell_definition_from_flow(spell_name, flow, trigger)
+                request = SpellCastRequest(use=True, cycles=cycles)
+                reverse = {id(entity): ref for ref, entity in refs.items()}
+                def _global_resolver(step, entry_dict, caster, attacker, rs):
+                    return self._resolve_global_entry_target(step, entry_dict, caster, rs, reverse)
+                execution = SpellExecution(
+                    engine=self, definition=definition, caster=holder,
+                    attacker=holder, refs=refs, request=request,
+                    flat_steps=flat_steps, trigger_label=trigger,
+                    target_resolver=_global_resolver,
+                )
+                execution.run_all()
+                for log_entry in execution.logs():
+                    log_entry["holder"] = holder.name
+                logs.extend(execution.logs())
+                if execution.status == ExecutionStatus.FAILED:
+                    raise ValueError(
+                        f"法术{spell_name}执行失败: {execution.interrupt_reason.value} {execution.interrupt_detail}")
         return logs
 
     def _max_auto_life_lost_x(self, daowen: str, target: Entity, caster: Entity,
@@ -1076,43 +1316,77 @@ class SpellReactionMixin:
 
     def _resolve_spell_reactions(self, trigger: str, holder: Entity, attacker: Entity,
                                  submitted: dict, refs: dict[str, Entity]) -> list[dict]:
+        """反应法术结算（Phase 1：内部改用 SpellExecution + _execute_single_daowen_step）。"""
         self._resolving_life_lost_reactions += 1
         try:
-            reverse = {id(entity): ref for ref, entity in refs.items()}
             flows = self._eligible_spell_flows(holder, trigger)
             logs = []
             for spell_name, flow in flows.items():
                 decision = submitted[spell_name]
-                if not decision["use"]:
+                if not decision.get("use"):
                     logs.append({"spell": spell_name, "used": False})
                     continue
                 flat_steps = self._steps_for_spell_decision(
                     flow, holder, attacker, refs, decision,
                 )
-                for cycle_index, cycle in enumerate(decision["cycles"], 1):
-                    for entry, step in zip(cycle, flat_steps):
-                        daowen = self._step_daowen(step)
-                        target, _ = self._resolve_entry_target(step, entry, holder, attacker, refs, reverse)
-                        if target is None or not target.is_alive:
-                            logs.append({"spell": spell_name, "cycle": cycle_index,
-                                         "daowen": daowen, "skipped": "目标已失效"})
-                            continue
-                        x = entry["x"]
-                        calc = DaoWenEngine.resolve(daowen, x, target=target, caster=holder)
-                        if calc.get("cost_type") == "消耗":
-                            cost = calc.get("cost", 0)
-                            if not holder.spend_mana(cost):
-                                raise ValueError(f"法术{spell_name}结算时法力不足")
-                            self.note_mana_inflicted(holder, target, cost)
-                        hostile = self.state.on_player_side(holder) != self.state.on_player_side(target)
-                        if hostile and entry.get("dodge"):
-                            self._spend_dodge_speed(target, entry.get("dodge_relic_target_ref"))
-                            logs.append({"spell": spell_name, "cycle": cycle_index,
-                                         "daowen": daowen, "target": target.name, "dodged": True})
-                            continue
-                        execution = self.apply_daowen_effect(daowen, calc, holder, target)
-                        logs.append({"spell": spell_name, "cycle": cycle_index, "daowen": daowen,
-                                     "x": x, "target": target.name, "execution": execution})
+                # 把提交里 dict 形式的 cycle/entry 转成 StepRequest
+                cycles = []
+                for cycle in decision.get("cycles", []):
+                    reqs = []
+                    for entry in cycle:
+                        reqs.append(StepRequest(
+                            x=entry.get("x", 0),
+                            target_ref=entry.get("target_ref"),
+                            dodge=bool(entry.get("dodge")),
+                            dodge_relic_target_ref=entry.get("dodge_relic_target_ref"),
+                        ))
+                    cycles.append(reqs)
+                definition = self._build_spell_definition_from_flow(spell_name, flow, trigger)
+                request = SpellCastRequest(
+                    use=True, cycles=cycles,
+                    branch_signature=decision.get("_engine_branch_signature"),
+                    branch_owner=decision.get("_engine_branch_owner"),
+                )
+                execution = SpellExecution(
+                    engine=self, definition=definition, caster=holder,
+                    attacker=attacker, refs=refs, request=request,
+                    flat_steps=flat_steps, trigger_label=trigger,
+                )
+                execution.run_all()
+                logs.extend(execution.logs())
+                if execution.status == ExecutionStatus.FAILED:
+                    raise ValueError(
+                        f"法术{spell_name}执行失败: {execution.interrupt_reason.value} {execution.interrupt_detail}")
             return logs
         finally:
             self._resolving_life_lost_reactions -= 1
+
+    def _build_spell_definition_from_flow(self, name: str, flow: dict,
+                                          trigger_str: str) -> SpellDefinition:
+        """Phase 1 辅助：从现有 flow dict 构造 SpellDefinition。"""
+        trigger = None
+        for t in TriggerType:
+            if t.value == trigger_str:
+                trigger = t
+                break
+        if trigger is None:
+            trigger = TriggerType.AFTER_LIFE_LOST
+        lifecycle = Lifecycle.PERMANENT
+        required = flow.get("required_daowen", [])
+        if not required:
+            from ..spell_dsl import collect_step_daowen
+            try:
+                required = sorted(collect_step_daowen(flow.get("steps", [])))
+            except Exception:
+                required = []
+        return SpellDefinition(
+            name=name,
+            required_daowen=required,
+            trigger=trigger,
+            lifecycle=lifecycle,
+            body=list(flow.get("steps", [])),
+            rank=len(required),
+            automatic=bool(flow.get("automatic")),
+            loop=bool(flow.get("loop")),
+            effect_flow_text=flow.get("effect_flow", ""),
+        )
