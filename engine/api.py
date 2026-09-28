@@ -604,6 +604,22 @@ class GameEngine:
                 "available": bool(player.dao_wen) and player.is_alive,
                 "note": "持有所需道纹即可自定义法术并立即生效，消耗1次主动出手；"
                         "局外自定义入口已取消。三大法则由句式解析器硬性校验"})
+            # 瞬发法术：一次出手依次发动多种已持有道纹，执行完不留在角色身上。
+            actions.append({
+                "action_type": "cast",
+                "params_schema": {
+                    "flow": "效果流程，如“发动杀伐X于目标→发动再生X于自身”（不可含循环）",
+                    "target_ref": target_options,
+                    "steps": [{"x": "该步自己的正整数X", "target_ref": "仅“于任意目标”步骤填写",
+                               "dodge": "该步目标为敌方时由其声明的布尔值",
+                               "trigger_spell_choices": "该步的目标发动道纹前反应提交，结构同use_daowen"}],
+                    "name": "可选，仅用于日志",
+                },
+                "available": bool(player.dao_wen) and player.is_alive,
+                "note": "瞬发法术=一次出手依次发动多种道纹：只扣1次出手，每一步都算一次发动道纹"
+                        "（照常触发敌方目标发动道纹前反应、受无神/缄默面具影响、照付代价）；"
+                        "按真实剩余法力逐步结算，某步付不起即中断，已结算的步骤保留、出手不退；"
+                        "不写入角色法术列表。kind=daowen/spell 仍是单道纹发动/装配法术"})
         if any(value > 0 for value in self.state.resonance.values()):
             actions.append({"action_type": "use_resonance", "params_schema": {
                 "resonance_type": [n for n, v in self.state.resonance.items() if v > 0],
@@ -1798,7 +1814,11 @@ class GameEngine:
             parsed = parse_spell_definition(trigger, flow, set(DaoWenEngine.list_all()))
         except SpellDslError as exc:
             return {"error": f"自创法术句式错误：{exc}"}
-        from .spell_dsl import collect_step_daowen
+        from .spell_dsl import collect_step_daowen, TRIGGER_INSTANT
+        if parsed.trigger == TRIGGER_INSTANT:
+            # 瞬发法术是一次性执行对象（lifecycle=instant），不能保存为角色法术；
+            # 否则会变成"学会了一个永不触发的法术"。请改用 cast(flow=...)。
+            return {"error": "瞬发法术不能用define_spell保存：请用cast(flow=...)直接施放"}
         referenced = collect_step_daowen(parsed.steps)
         missing = referenced - set(required)
         if missing:
@@ -1811,6 +1831,9 @@ class GameEngine:
             custom_conditions=list(definition.get("custom_conditions") or []),
             automatic=parsed.trigger == TriggerTiming.SELF_TURN_END.value
                        or bool(definition.get("automatic", False)),
+            # Phase 2：define_spell 暂保持旧的永久语义（Phase 5 才改默认 battle）。
+            lifecycle="permanent",
+            trigger=parsed.trigger,
         ), "parsed": parsed}
 
     def _unlocked_builtin_spells(self, actor: Entity) -> list[str]:
@@ -2572,6 +2595,54 @@ class GameEngine:
 
     # ==================== 战斗行动 ====================
 
+    # ---------- "发动道纹"的共用环节（use_daowen 与瞬发法术每一步共用） ----------
+
+    def _silenced_by_mask(self, actor: Entity, calc: dict) -> bool:
+        """缄默面具：持有方无法发动附带代价（非"消耗"法力）的道纹。"""
+        return bool(self.state.side_has(actor, "缄默面具")
+                    and calc.get("cost_type") not in (None, "", "消耗"))
+
+    def _pay_daowen_shard_cost(self, actor: Entity, name: str, calc: dict, x: int) -> Optional[str]:
+        """赌命X/消灾X 的碎片类代价：足够则支付并返回 None，不足返回错误文本（不扣任何东西）。"""
+        # 赌命X：消耗X假碎片
+        if name == "赌命":
+            fake_need = calc.get("fake_cost", x)
+            if actor is self.state.player:
+                have = self.state.fake_shards
+            else:
+                have = getattr(actor, "fake_shards", 0)
+            if have < fake_need:
+                return f"假碎片不足：赌命X需{fake_need}假碎片，当前{have}"
+            if actor is self.state.player:
+                self.state.fake_shards -= fake_need
+            else:
+                actor.fake_shards -= fake_need
+        # 消灾X：消耗50X假碎片/5X碎片（局外发动消耗×2）；优先假碎片
+        # 战斗全程 phase="in_combat"；局外发动时两类碎片代价均×2。
+        elif name == "消灾":
+            in_combat = self.state.phase == "in_combat"
+            mult = 1 if in_combat else 2
+            fake_need = calc.get("fake_cost", 50 * x) * mult
+            real_need = calc.get("real_cost", 5 * x) * mult
+            if actor is self.state.player:
+                have_fake, have_real = self.state.fake_shards, self.state.shards
+            else:
+                have_fake, have_real = getattr(actor, "fake_shards", 0), actor.shards
+            if have_fake >= fake_need:
+                if actor is self.state.player:
+                    self.state.fake_shards -= fake_need
+                else:
+                    actor.fake_shards -= fake_need
+            elif have_real >= real_need:
+                if actor is self.state.player:
+                    self.state.lose_shards(real_need)
+                else:
+                    actor.lose_shards(real_need)
+            else:
+                return (f"碎片不足：消灾X需{fake_need}假碎片或{real_need}碎片（局外×{mult}），"
+                        f"当前假{have_fake}/真{have_real}")
+        return None
+
     def _action_use_daowen(self, params: dict) -> dict:
         """
         发动道纹。
@@ -2693,8 +2764,7 @@ class GameEngine:
             calc = DaoWenEngine.resolve(name, x, **resolve_kw)
         except Exception as e:
             return {"success": False, "error": f"道纹计算失败: {str(e)}"}
-        if (self.state.side_has(actor, "缄默面具")
-                and calc.get("cost_type") not in (None, "", "消耗")):
+        if self._silenced_by_mask(actor, calc):
             return {"success": False, "error": "缄默面具：无法发动附带代价的道纹"}
         trigger_choices = params.get("trigger_spell_choices", {})
         try:
@@ -2722,44 +2792,9 @@ class GameEngine:
             self.combat.note_mana_inflicted(actor, target, cost)
 
         # F2：赌命X/消灾X 的碎片类代价预检与支付（代价类型非"消耗"，不走法力制）
-        # 赌命X：消耗X假碎片
-        if name == "赌命":
-            fake_need = calc.get("fake_cost", x)
-            if actor is self.state.player:
-                have = self.state.fake_shards
-            else:
-                have = getattr(actor, "fake_shards", 0)
-            if have < fake_need:
-                return {"success": False, "error": f"假碎片不足：赌命X需{fake_need}假碎片，当前{have}"}
-            if actor is self.state.player:
-                self.state.fake_shards -= fake_need
-            else:
-                actor.fake_shards -= fake_need
-        # 消灾X：消耗50X假碎片/5X碎片（局外发动消耗×2）；优先假碎片
-        # 战斗全程 phase="in_combat"；局外发动时两类碎片代价均×2。
-        elif name == "消灾":
-            in_combat = self.state.phase == "in_combat"
-            mult = 1 if in_combat else 2
-            fake_need = calc.get("fake_cost", 50 * x) * mult
-            real_need = calc.get("real_cost", 5 * x) * mult
-            if actor is self.state.player:
-                have_fake, have_real = self.state.fake_shards, self.state.shards
-            else:
-                have_fake, have_real = getattr(actor, "fake_shards", 0), actor.shards
-            if have_fake >= fake_need:
-                if actor is self.state.player:
-                    self.state.fake_shards -= fake_need
-                else:
-                    actor.fake_shards -= fake_need
-            elif have_real >= real_need:
-                if actor is self.state.player:
-                    self.state.lose_shards(real_need)
-                else:
-                    actor.lose_shards(real_need)
-            else:
-                return {"success": False,
-                        "error": f"碎片不足：消灾X需{fake_need}假碎片或{real_need}碎片（局外×{mult}），"
-                                 f"当前假{have_fake}/真{have_real}"}
+        shard_error = self._pay_daowen_shard_cost(actor, name, calc, x)
+        if shard_error:
+            return {"success": False, "error": shard_error}
 
         if self.state.phase == "in_combat":
             budget_error = self._consume_action_or_error(actor)
@@ -3090,6 +3125,13 @@ class GameEngine:
             kind: "daowen" 或 "spell"（默认 "daowen"）
             其余参数透传给 _action_use_daowen / _action_use_spell。
         """
+        if "flow" in params:
+            # Phase 2：cast(flow=...) = 瞬发法术（trigger=瞬发, lifecycle=instant）。
+            # 独立入口，不转发给 use_daowen/use_spell。
+            if params.get("kind") not in (None, "flow", "instant"):
+                return {"success": False,
+                        "error": "cast(flow=...)不能与kind=daowen/spell同时使用"}
+            return self._action_cast_instant(params)
         kind = params.get("kind", "daowen")
         sub = {k: v for k, v in params.items() if k != "kind"}
         if kind == "daowen":
@@ -3097,6 +3139,165 @@ class GameEngine:
         if kind == "spell":
             return self._action_use_spell(sub)
         return {"success": False, "error": f"cast.kind 必须是 daowen 或 spell，收到 {kind!r}"}
+
+    def _action_cast_instant(self, params: dict) -> dict:
+        """cast(flow=...)：一次消耗1出手的瞬发 SpellExecution。
+
+        params:
+            actor_ref: 施法者（默认 player:0）
+            flow: 效果流程文本，如 "发动杀伐X于目标→发动再生X于自身"
+            target_ref: 本次施法的[目标]（流程含"于目标"时必填）
+            steps: 每步决策列表 [{x, target_ref?, dodge?}, ...]，一次性完整提交
+            name: 可选显示名（默认"瞬发法术"），仅用于日志
+
+        语义：
+        - 提交结构非法（句式/步数/X/目标）= 契约错误：返回 success=False，不扣出手；
+        - 结构合法则扣 1 次出手（整次 cast 只扣一次，与步骤数无关），
+          然后按步骤顺序逐步执行；每一步都以执行时真实法力/速度判定；
+        - 资源不足等正常中断：已结算步骤保留，execution.status=interrupted，
+          返回 success=True（施法动作本身发生了）；
+        - lifecycle=instant：不写入 entity.spells / armed_spells，不留任何绑定。
+        """
+        actor_ref = params.get("actor_ref", "player:0")
+        refs = self.combat._combat_entity_refs()
+        actor = refs.get(actor_ref)
+        if actor is None or not actor.is_alive or actor.has_retreated:
+            return {"success": False, "error": "actor_ref不是当前存活行动者"}
+        if self.state.phase != GamePhase.IN_COMBAT.value:
+            return {"success": False, "error": "瞬发法术只能在战斗中施放"}
+        if actor.entity_type == "怪物" and not self.state.in_final_duel:
+            return {"success": False, "error": "普通怪物必须通过怪物阶段行动"}
+        duel_err = self._check_duel_turn_or_error(actor)
+        if duel_err:
+            return duel_err
+        if not self.combat.can_act(actor):
+            return {"success": False, "error": f"{actor.name}当前无法行动"}
+        target_ref = params.get("target_ref")
+        cast_target = None
+        if target_ref is not None:
+            cast_target = refs.get(target_ref)
+            if cast_target is None:
+                return {"success": False, "error": "target_ref不是当前合法实体"}
+        spell_name = params.get("name") or "瞬发法术"
+        try:
+            execution = self.combat.build_instant_execution(
+                actor, params.get("flow"), cast_target, params.get("steps"), refs,
+                spell_name=str(spell_name))
+        except ValueError as exc:
+            return {"success": False, "error": str(exc)}
+        # 法术本质上就是依次发动多种道纹（2026-09-29 用户裁定）：每一步都必须提交
+        # 敌方「目标发动道纹前」反应的决策，口径与 use_daowen 的 trigger_spell_choices 相同。
+        # 在扣出手之前校验：提交不合法属于契约错误，不扣出手。
+        for idx, entry in enumerate(execution.request.cycles[0], 1):
+            try:
+                self.combat.validate_daowen_trigger_spells(
+                    actor, entry.extra.get("trigger_spell_choices", {}), refs)
+            except ValueError as exc:
+                return {"success": False,
+                        "error": f"瞬发法术第{idx}步的trigger_spell_choices非法：{exc}"}
+        execution.before_step = self._instant_step_as_daowen_declaration(actor, refs)
+        # 结构合法：整次 cast 扣 1 次出手（不按步骤数扣）。
+        # 此后无论哪一步中断（法力不足等），出手都已用掉——施法失败不退出手。
+        budget_err = self._consume_action_or_error(actor)
+        if budget_err:
+            return budget_err
+        execution.run_all()
+        from .spell_execution import ExecutionStatus
+        # 一次 cast = 一次出手：死斗轮次推进一次（与 use_daowen 同口径）
+        self._advance_duel_turn()
+        if (self.state.in_final_duel and not self._duel_side_can_act("player_side")
+                and not self._duel_side_can_act("opponent_side")):
+            self.state.combat_subphase = CombatSubphase.AWAIT_ROUND_END.value
+        status = execution.status.value
+        reason = execution.interrupt_reason.value or None
+        step_logs = [log for idx, step_log in enumerate(execution.logs())
+                     for log in (execution.step_extras[idx].get("trigger_spell_logs", [])
+                                 + [step_log])]
+        if execution.status == ExecutionStatus.FAILED:
+            # 契约错误（道纹计算异常等）：出手已扣，但必须如实报错而不是吞掉
+            return {"success": False,
+                    "error": f"瞬发法术结算失败({reason}): {execution.interrupt_detail}",
+                    "result": {"execution_status": status,
+                               "step_results": execution.step_summaries(),
+                               "steps": step_logs}}
+        return {"success": True, "action": f"{actor.name}施放{spell_name}",
+                "result": {
+                    "spell": spell_name,
+                    "trigger": execution.definition.trigger.value,
+                    "lifecycle": execution.definition.lifecycle.value,
+                    "execution_status": status,
+                    "interrupt_reason": reason,
+                    "interrupt_detail": execution.interrupt_detail or None,
+                    "step_results": execution.step_summaries(),
+                    "steps": step_logs,
+                    "cost": "1次主动出手",
+                }}
+
+    def _instant_step_as_daowen_declaration(self, actor: Entity, refs: dict):
+        """瞬发法术每一步的"发动道纹"前置环节（注入 SpellExecution.before_step）。
+
+        法术 = 依次发动多种道纹，所以每一步在进入单步核心（扣法力/闪避/生效）之前，
+        走与 use_daowen 相同的环节、相同的顺序：
+          （无神改向已在瞬发目标解析器里）→ 飞行不可选中 → 缄默面具 →
+          敌方「目标发动道纹前」反应 → 施法者是否存活 → 赌命/消灾碎片代价。
+        这些环节都调用 use_daowen 也在用的同一批函数，不另写规则。
+        资源/局面导致的失败返回 interrupted（正常中断，已结算步骤保留）；
+        目标已死、X 非法、道纹不可用等交给单步核心按统一口径判定。
+        """
+        from .spell_execution import StepResult, StepStatus, InterruptReason
+
+        def hook(step, entry, execution):
+            daowen = self.combat._step_daowen(step)
+            x = entry.x
+            extra: dict = {}
+            target, target_ref = execution.target_resolver(
+                step, {"x": x, "target_ref": entry.target_ref}, actor,
+                execution.attacker, refs)
+            if target is None or not target.is_alive:
+                return None, extra  # 单步核心给出 skipped（目标已失效）
+
+            def _interrupt(reason, detail):
+                return StepResult(status=StepStatus.INTERRUPTED, daowen=daowen, x=x,
+                                  target_ref=target_ref, target_name=target.name,
+                                  reason=reason, detail=detail), extra
+
+            if target is not actor and not self.combat.is_targetable(actor, target):
+                return _interrupt(InterruptReason.TARGET_UNTARGETABLE,
+                                  f"{target.name}处于飞行，无法被选中为法术目标")
+            try:
+                calc = DaoWenEngine.resolve(daowen, x, target=target, caster=actor)
+            except Exception:
+                return None, extra  # 交给单步核心产出 failed（契约错误）
+            if self._silenced_by_mask(actor, calc):
+                return _interrupt(InterruptReason.DAOWEN_UNUSABLE,
+                                  "缄默面具：无法发动附带代价的道纹")
+            choices = entry.extra.get("trigger_spell_choices", {})
+            try:
+                self.combat.validate_daowen_trigger_spells(actor, choices, refs)
+            except ValueError as exc:
+                return _interrupt(InterruptReason.TRIGGER_CHOICES_INVALID,
+                                  f"目标发动道纹前反应提交已不合法：{exc}")
+            extra["trigger_spell_logs"] = self.combat.resolve_daowen_trigger_spells(
+                actor, choices, refs)
+            if not actor.is_alive:
+                return _interrupt(InterruptReason.CASTER_DEAD,
+                                  f"{actor.name}发动道纹前被反应法术命零")
+            if not target.is_alive:
+                return None, extra
+            # 反应可能改变了局面：按当前状态重算，再判定碎片代价。
+            try:
+                calc = DaoWenEngine.resolve(daowen, x, target=target, caster=actor)
+            except Exception:
+                return None, extra
+            # 法力付不起时不先扣碎片：让单步核心给出 mana_insufficient。
+            if calc.get("cost_type") == "消耗" and calc.get("cost", 0) > actor.current_mana:
+                return None, extra
+            shard_error = self._pay_daowen_shard_cost(actor, daowen, calc, x)
+            if shard_error:
+                return _interrupt(InterruptReason.SHARDS_INSUFFICIENT, shard_error)
+            return None, extra
+
+        return hook
 
     def _action_focus(self, params: dict) -> dict:
         """聚能（2026-09-28 基础动作）：消耗1次主动出手，立即获得自身20%[法限]的法力。"""
@@ -4681,7 +4882,10 @@ class GameEngine:
                                    trigger_condition=sp["trigger_condition"], effect_flow=sp["effect_flow"],
                                    rank=sp.get("rank", 1),
                                    custom_conditions=sp.get("custom_conditions", []),
-                                   automatic=sp.get("automatic", False)))
+                                   automatic=sp.get("automatic", False),
+                                   # 旧档无 lifecycle 键 → permanent（与旧行为一致）
+                                   lifecycle=sp.get("lifecycle", "permanent"),
+                                   trigger=sp.get("trigger")))
         e.armed_spells = list(d.get("armed_spells", []) or [])  # 旧档无此键回退空
         for relic in d.get("relics", []):
             e.relics.append(Relic(name=relic["name"], effect=relic.get("effect", ""),

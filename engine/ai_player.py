@@ -177,7 +177,13 @@ SYSTEM_PROMPT = """你是第四宇宙游戏的AI玩家。你的任务是根据�
 - choose_discovered_relic: 从当前遗物发现候选中显式选1件（params: relic_name；开局遗物选定后从杀伐闭环发现3种初始道纹）
 - choose_discovered_item: 从当前消耗品发现候选中显式选1件（params: item_name）
 - pre_battle_action: 局外行动（params: sub_action + tier等）
-- use_daowen: 发动道纹（params: daowen_name, x, target）
+- use_daowen: 发动道纹（params: daowen_name, x, target_ref；等价于 cast 且 kind="daowen"）
+- use_spell: 装配/卸下内置法术（params: spell_name, disarm）；装配后在触发时点自动结算
+- define_spell: 战斗中自创一种触发型法术并立即生效，消耗1次出手（params: spell{name, required_daowen, trigger_condition, effect_flow}）；不能用来保存瞬发法术
+- cast: 施法。带 flow 参数时是瞬发法术（params: flow, target_ref, steps[{x, target_ref?, dodge, trigger_spell_choices}]）：
+  一次出手依次发动多种已持有道纹，只扣1次出手；每一步都是一次真正的发动道纹，照常触发敌方「目标发动道纹前」反应、受无神/缄默面具影响、照付代价；
+  每步提交自己的X，引擎按执行时真实剩余法力逐步结算，某步付不起就中断，已结算步骤保留，出手不退——所以先算清总花费再提交，别指望失败退款；
+  瞬发法术执行完不留在角色身上，想在触发时点自动反应请用 define_spell
 - prepare_attack: 准备一轮攻击并取得逐击合法目标、闪避、血影与法术反应选项
 - resolve_attack: 携带prepare返回的一次性token，逐击显式提交完整选择后原子结算；禁止使用旧attack/dodge_decision
 - declare_evolution: 怪物进化·发动原初X（params: monster, daowen, x；仅当可用行动中出现evolution项且available=true时可对其中列出的困境怪物使用，x不得超过max_x_by_mutation，否则触发崩解自杀）

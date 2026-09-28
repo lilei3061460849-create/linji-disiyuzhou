@@ -46,7 +46,7 @@ class TriggerType(str, Enum):
     ENEMY_ROUND_START = "敌回始"
     ENEMY_ROUND_END = "敌回终"
     DODGE = "闪避时"
-    IMMEDIATE = "瞬发"  # Phase 2 启用；Phase 1 先保留枚举不接线
+    IMMEDIATE = "瞬发"  # Phase 2：cast(flow=...) 瞬发法术
 
 
 class Lifecycle(str, Enum):
@@ -80,6 +80,10 @@ class InterruptReason(str, Enum):
     SPEED_INSUFFICIENT = "speed_insufficient"
     INVALID_X = "invalid_x"                   # X<1 或 X 非整数
     INVALID_INPUT = "invalid_input"           # 提交结构非法（契约错，本应抛异常但反应路径需容错时用）
+    # Phase 2：瞬发每一步都是一次"发动道纹"，与 use_daowen 同口径的正常中断
+    SHARDS_INSUFFICIENT = "shards_insufficient"          # 赌命/消灾碎片代价付不起
+    CASTER_DEAD = "caster_dead"                          # 施法者被「目标发动道纹前」反应命零
+    TRIGGER_CHOICES_INVALID = "trigger_choices_invalid"  # 该步的反应提交在执行时已不合法
 
 
 # ---------------------------------------------------------------------------
@@ -223,7 +227,7 @@ class SpellExecution:
                  attacker, refs: dict[str, Any], request: SpellCastRequest,
                  flat_steps: list, *, trigger_label: str = "",
                  target_resolver=None, skip_predicate=None,
-                 on_step=None):
+                 on_step=None, before_step=None):
         self.engine = engine
         self.definition = definition
         self.caster = caster
@@ -235,6 +239,13 @@ class SpellExecution:
         self.target_resolver = target_resolver
         self.skip_predicate = skip_predicate
         self.on_step = on_step   # callback(StepResult) 在每步结束后调用，供路径特定状态更新
+        # Phase 2：每步进入单步核心之前的前置环节（由调用方注入，Execution 本身不含规则）。
+        #   before_step(step, entry, execution) -> (early: StepResult|None, extra: dict)
+        # early 非 None 时本步不进核心，直接以 early 作为本步结果（interrupted 则停机）；
+        # extra 记入 step_extras（如该步触发的「目标发动道纹前」反应日志）。
+        # 瞬发法术用它让每一步与 use_daowen 走同一套"发动道纹"环节。
+        self.before_step = before_step
+        self.step_extras: list[dict] = []
 
         self.status: ExecutionStatus = ExecutionStatus.RUNNING
         self.interrupt_reason: InterruptReason = InterruptReason.NONE
@@ -266,6 +277,23 @@ class SpellExecution:
             for self.step_index, (entry, step) in enumerate(zip(cycle, self.flat_steps)):
                 if not self.is_running:
                     break
+                extra: dict = {}
+                if self.before_step is not None:
+                    early, extra = self.before_step(step, entry, self)
+                    extra = extra or {}
+                    if early is not None:
+                        self.results.append(early)
+                        self.step_extras.append(extra)
+                        if self.on_step is not None:
+                            self.on_step(early)
+                        if early.status in (StepStatus.INTERRUPTED, StepStatus.FAILED):
+                            self._stop(
+                                ExecutionStatus.INTERRUPTED if early.status == StepStatus.INTERRUPTED
+                                else ExecutionStatus.FAILED,
+                                early.reason, early.detail,
+                            )
+                            break
+                        continue
                 # entry 可能是 StepRequest 或 dict；_execute_single_daowen_step 都能处理
                 result = self.engine._execute_single_daowen_step(
                     definition=self.definition,
@@ -279,6 +307,7 @@ class SpellExecution:
                     skip_predicate=self.skip_predicate,
                 )
                 self.results.append(result)
+                self.step_extras.append(extra)
                 if self.on_step is not None:
                     self.on_step(result)
                 if result.status == StepStatus.INTERRUPTED or result.status == StepStatus.FAILED:
@@ -303,4 +332,18 @@ class SpellExecution:
             if self.cycle_index:
                 entry["cycle"] = self.cycle_index
             out.append(entry)
+        return out
+
+    def step_summaries(self) -> list[dict]:
+        """可 JSON 序列化的逐步结果摘要（瞬发 cast 的返回值使用）。"""
+        out = []
+        for idx, r in enumerate(self.results):
+            extra = self.step_extras[idx] if idx < len(self.step_extras) else {}
+            out.append({
+                "step": idx + 1, "status": r.status.value, "reason": r.reason.value or None,
+                "daowen": r.daowen, "x": r.x, "target": r.target_name or None,
+                "cost_paid": r.cost_paid, "mana_gained": r.mana_gained,
+                "detail": r.detail or None,
+                "trigger_spell_logs": extra.get("trigger_spell_logs", []),
+            })
         return out

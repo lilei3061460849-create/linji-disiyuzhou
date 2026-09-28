@@ -622,6 +622,110 @@ class SpellReactionMixin:
             execution=execution,
         )
 
+    # ------------------------------------------------------------------
+    # Phase 2：瞬发法术（trigger=IMMEDIATE, lifecycle=INSTANT）
+    #
+    # 只负责把一次 cast(flow=...) 提交组装成
+    #   SpellDefinition(IMMEDIATE, INSTANT) + SpellCastRequest(1 个 cycle) + SpellExecution；
+    # 解析 flow、校验提交结构（契约错误 raise ValueError）。
+    # 单步 resolve/扣法力/闪避/生效全部由 SpellExecution 驱动 _execute_single_daowen_step，
+    # 这里不复制任何结算逻辑；也不预先计算总费用——法力够不够由每一步执行时判断。
+    # 扣出手、"发动道纹"前置环节（缄默面具/目标发动道纹前反应/碎片代价）由 API 层注入。
+    # ------------------------------------------------------------------
+    def _instant_target_resolver(self, cast_target: Optional[Entity]):
+        """瞬发的身份映射：复用「目标发动道纹前」的 _trigger_spell_subject——
+        self/caster→施法者，target→本次施法目标（对方），any→该步提交的 target_ref。
+        【无神】与 use_daowen 同一条规则：施法者处于无神时，每一步目标都改为自身。"""
+        def _resolver(step, entry_dict, caster, attacker, refs):
+            reverse_ref = lambda e: next((r for r, x in refs.items() if x is e), None)
+            if caster.has_status("无神"):
+                return caster, reverse_ref(caster)
+            subject = self._trigger_spell_subject(self._step_role(step), caster, attacker)
+            if subject == "any":
+                ref = entry_dict.get("target_ref")
+                return refs.get(ref), ref
+            if subject == "actor":
+                return attacker, reverse_ref(attacker)
+            return caster, reverse_ref(caster)
+        return _resolver
+
+    def build_instant_execution(self, caster: Entity, flow_text: Any,
+                                cast_target: Optional[Entity], step_requests: Any,
+                                refs: dict[str, Entity], spell_name: str = "瞬发法术",
+                                before_step=None) -> SpellExecution:
+        from ..spell_dsl import parse_instant_flow, SpellDslError, collect_step_daowen
+        if not isinstance(flow_text, str) or not flow_text.strip():
+            raise ValueError("cast(flow=...)必须提交非空的效果流程文本")
+        try:
+            parsed = parse_instant_flow(flow_text, set(DaoWenEngine.list_all()))
+        except SpellDslError as exc:
+            raise ValueError(f"瞬发法术句式错误：{exc}") from exc
+        # IfStep 仍沿用 Phase 1 的施法瞬间展开（执行期求值属于 Phase 3）。
+        flat_steps = self._flatten_flow_steps(parsed.steps, caster, cast_target)
+        if not flat_steps:
+            raise ValueError("瞬发法术在当前局面下展开后没有任何步骤")
+        for step in flat_steps:
+            daowen = self._step_daowen(step)
+            inst = caster.dao_wen.get(daowen)
+            if inst is None:
+                raise ValueError(f"{caster.name}未持有瞬发法术所需道纹【{daowen}】")
+            if not inst.can_use():
+                raise ValueError(f"道纹{daowen}不可用（冷却/封印），无法施放瞬发法术")
+        if any(self._step_role(step) == "target" for step in flat_steps):
+            if cast_target is None or not cast_target.is_alive:
+                raise ValueError("瞬发法术含“于目标”步骤，必须提交存活的target_ref")
+        if not isinstance(step_requests, list) or len(step_requests) != len(flat_steps):
+            raise ValueError(f"瞬发法术必须一次性完整提交{len(flat_steps)}步的steps决策")
+
+        resolver = self._instant_target_resolver(cast_target)
+        cycle = []
+        for idx, (entry, step) in enumerate(zip(step_requests, flat_steps), 1):
+            if not isinstance(entry, dict):
+                raise ValueError(f"瞬发法术第{idx}步决策必须是对象")
+            x = entry.get("x")
+            if not isinstance(x, int) or isinstance(x, bool) or x < 1:
+                raise ValueError(f"瞬发法术第{idx}步x必须是≥1整数")
+            dodge = entry.get("dodge", False)
+            if not isinstance(dodge, bool):
+                raise ValueError(f"瞬发法术第{idx}步dodge必须是布尔值")
+            is_any = self._step_role(step) == "any"
+            target, _ = resolver(step, {"target_ref": entry.get("target_ref")}, caster,
+                                 cast_target, refs)
+            if target is None:
+                raise ValueError(f"瞬发法术第{idx}步的任意目标target_ref不是当前合法实体")
+            if not is_any and "target_ref" in entry and not caster.has_status("无神") \
+                    and refs.get(entry["target_ref"]) is not target:
+                raise ValueError(f"瞬发法术第{idx}步target_ref与流程声明的目标身份不符")
+            if target is not caster and not self.is_targetable(caster, target):
+                raise ValueError(f"{target.name}处于飞行，无法被选中为法术目标")
+            hostile = self.state.on_player_side(caster) != self.state.on_player_side(target)
+            if dodge and not hostile:
+                raise ValueError(f"瞬发法术第{idx}步目标非敌对，不能声明闪避")
+            cycle.append(StepRequest(
+                x=x,
+                # 固定身份的步骤由解析器定目标，不透传 target_ref（避免与无神改向冲突）
+                target_ref=entry.get("target_ref") if is_any else None,
+                dodge=dodge,
+                dodge_relic_target_ref=entry.get("dodge_relic_target_ref"),
+                # 每一步都是一次"发动道纹"：敌方「目标发动道纹前」反应的逐步提交
+                extra={"trigger_spell_choices": entry.get("trigger_spell_choices", {})},
+            ))
+
+        required = sorted(collect_step_daowen(parsed.steps))
+        definition = SpellDefinition(
+            name=spell_name, required_daowen=required,
+            trigger=TriggerType.IMMEDIATE, lifecycle=Lifecycle.INSTANT,
+            body=list(parsed.steps), rank=len(required), loop=False,
+            effect_flow_text=flow_text.strip(),
+        )
+        return SpellExecution(
+            engine=self, definition=definition, caster=caster,
+            attacker=cast_target, refs=refs,
+            request=SpellCastRequest(use=True, cycles=[cycle]),
+            flat_steps=flat_steps, trigger_label=TriggerType.IMMEDIATE.value,
+            target_resolver=resolver, before_step=before_step,
+        )
+
     def _resolve_entry_target(self, step, entry, holder: Entity, attacker: Entity,
                               refs: dict[str, Entity], reverse: dict[int, str]):
         """按步骤声明的目标身份，从提交里取出/校验实际目标实体，返回(entity, ref)。

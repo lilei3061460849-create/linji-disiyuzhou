@@ -70,12 +70,20 @@ class Spell:
     """法术定义"""
     name: str
     required_daowen: list[str]   # 所需道纹列表
-    trigger_condition: str       # 触发条件
+    trigger_condition: str       # 触发条件（文本，保留以兼容旧存档/旧 API）
     effect_flow: str             # 生效流程
     rank: int = 1                # 阶级 = 所需道纹种数
     custom_conditions: list[str] = field(default_factory=list)
     automatic: bool = False      # 是否由引擎在触发时点自动提交，不占主动出手
-    
+    # Phase 2 新增：lifecycle（instant / battle / permanent）。
+    # 旧存档/旧 define_spell 调用未传此字段时默认 permanent，避免旧法术意外消失
+    # （Phase 5 会把 define_spell 默认改为 battle；本阶段保持 backward compat）。
+    lifecycle: str = "permanent"
+    # trigger 字段：spell_dsl 解析出的规范 trigger 名（"瞬发"/"受到伤害前"/...）。
+    # 旧对象未传时由 trigger_condition 懒解析得到；不序列化强制要求，
+    # 保持与旧存档 pickled Spell 兼容。
+    trigger: Optional[str] = None
+
     def to_dict(self) -> dict:
         return {
             "name": self.name,
@@ -85,6 +93,8 @@ class Spell:
             "rank": self.rank,
             "custom_conditions": self.custom_conditions,
             "automatic": self.automatic,
+            "lifecycle": self.lifecycle,
+            "trigger": self.trigger,
         }
 
 
