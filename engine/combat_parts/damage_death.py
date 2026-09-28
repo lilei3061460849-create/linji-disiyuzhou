@@ -218,7 +218,7 @@ class DamageDeathMixin:
     ) -> bool:
         """统一“生命归零 → 命零”判定。
 
-        任何使生命可能归零的状态变化（伤害 / 代价 / 血限压迫 / 崩解 / 特殊事件）
+        任何使生命可能归零的状态变化（伤害 / 代价 / 血限压迫 / 迷失（崩解/叛变） / 特殊事件）
         都必须用这一个入口收口，禁止再写 `entity.is_alive = False`。
         返回本次调用是否判定了死亡（已死者返回 False，保持幂等）。
 
@@ -474,7 +474,7 @@ class DamageDeathMixin:
             return
         parent = normalize_context(ctx)
         # 死因优先级：离场原因 > 调用方显式给出的死亡上下文 subtype > 兜底 hp_zero。
-        # （【崩解】【凡庸】【尸爆】等特殊死因靠这一步才能留在 _death_ctx 里。）
+        # （【迷失·崩解】【迷失·命零】【凡庸】【尸爆】等特殊死因靠这一步才能留在 _death_ctx 里。）
         subtype = getattr(entity, "departure_reason", "")
         if not subtype and parent is not None and parent.subtype:
             if parent.mechanic == "death":
@@ -594,25 +594,140 @@ class DamageDeathMixin:
         return result
 
     def _seal_one_relic(self, target: Entity, rounds: int) -> str:
-        """抵扣X：封印目标拥有的一件遗物，持续X回合。返回被封印的遗物名；目标无遗物返回\"\"。"""
+        """抵扣X：封印目标拥有的一件遗物，持续X回合。返回被封印的遗物名；目标无遗物返回\"\"。
+
+        2026-09-28：旧【抵扣】改名【豪夺】并改为"夺取"，但封印路径仍保留给旧事件/状态使用。
+        """
         if target is self.state.player:
             holder = self.state
             owned = [r.name for r in self.state.relics]
         else:
-            # 引擎中怪物/同伴无 relic 字段 → 视为不拥有遗物，封印无效果
             holder = target
-            owned = []
-        # 目标无遗物 → 无效果
+            owned = [r.name for r in getattr(target, "relics", [])]
+        # 目标无遗物 → 无效果；已被夺取的遗物也不再属于该目标，不算可封印目标
         if not owned:
             return ""
-        # 封印第一件未在封印中的遗物；若全部已封印则延长第一件的剩余回合
+        stolen_set = {k for k, v in (getattr(holder, "stolen_relics", {}) or {}).items()
+                      if v.get("remaining", 0) > 0}
+        # 封印第一件未在封印/未被夺取走的遗物
         for rname in owned:
-            if holder.sealed_relics.get(rname, 0) <= 0:
+            if holder.sealed_relics.get(rname, 0) <= 0 and rname not in stolen_set:
                 holder.sealed_relics[rname] = max(1, rounds)
                 return rname
         first = owned[0]
         holder.sealed_relics[first] = max(holder.sealed_relics.get(first, 0), rounds)
         return first
+
+    def _steal_one_relic(
+        self, caster: Entity, target: Entity, rounds: int,
+    ) -> str:
+        """豪夺X（2026-09-28）：消耗5X碎片，夺取[目标]1件遗物持续X回合。
+        夺取期间施法者真正持有该遗物（享受其被动），目标暂时失去；回终递减回合，到期归还。
+        返回被夺取的遗物名；目标无遗物可夺返回\"\"。
+        """
+        # 定位遗物容器
+        if target is self.state.player:
+            tgt_list = self.state.relics
+            tgt_sealed = self.state.sealed_relics
+            tgt_stolen = self.state.stolen_relics
+        else:
+            tgt_list = getattr(target, "relics", None) or []
+            tgt_sealed = target.sealed_relics
+            tgt_stolen = target.stolen_relics
+        if caster is self.state.player:
+            cst_list = self.state.relics
+            cst_stolen = self.state.stolen_relics
+        else:
+            if not hasattr(caster, "relics"):
+                caster.relics = []
+            cst_list = caster.relics
+            cst_stolen = caster.stolen_relics
+        # 过滤出真正"在目标身上、未被封印、未被夺取走"的候选
+        sealed_names = {k for k, v in (tgt_sealed or {}).items() if v > 0}
+        already_stolen = {k for k, v in (tgt_stolen or {}).items() if v.get("remaining", 0) > 0}
+        candidates = [r for r in tgt_list
+                      if r.name not in sealed_names and r.name not in already_stolen]
+        if not candidates:
+            return ""
+        stolen = candidates[0]
+        # 从目标列表移除
+        tgt_list.remove(stolen)
+        # 加入施法者列表（标记为"豪夺来的"，到期归还）
+        cst_list.append(stolen)
+        cst_stolen[stolen.name] = {
+            "remaining": max(1, rounds),
+            "from_entity_ref": id(target),
+            "from_entity_name": target.name,
+            "target_is_player": target is self.state.player,
+        }
+        return stolen.name
+
+    def _tick_sealed_and_stolen_relics(self) -> dict:
+        """[回终]处理封印/豪夺遗物的回合递减，到期归还（2026-09-28 加入豪夺归还）。"""
+        returned: list[str] = []
+        # —— 己方（state）——
+        for holder_list, holder_stolen, sealed_attr in (
+            (self.state.relics, self.state.stolen_relics, self.state.sealed_relics),
+        ):
+            # 封印递减
+            expired_seals = []
+            for name in list(sealed_attr.keys()):
+                sealed_attr[name] -= 1
+                if sealed_attr[name] <= 0:
+                    expired_seals.append(name)
+                    del sealed_attr[name]
+            # 豪夺递减（玩家侧持有别人遗物）
+            expired_steals = []
+            for name, info in list(holder_stolen.items()):
+                info["remaining"] -= 1
+                if info["remaining"] <= 0:
+                    expired_steals.append(name)
+            # 归还豪夺遗物（简易策略：回到原 owner 列表末尾，且解除对方封印冲突）
+            for name in expired_steals:
+                info = holder_stolen.pop(name)
+                relic_obj = next((r for r in holder_list if r.name == name), None)
+                if relic_obj is not None:
+                    holder_list.remove(relic_obj)
+                    # 还原到原目标
+                    if info.get("target_is_player"):
+                        self.state.relics.append(relic_obj)
+                    else:
+                        # 回给对应实体：按 from_entity_name 在 enemies/friends/employees/temp_friends 里找
+                        for lst in (self.state.enemies, getattr(self.state, "friends", []),
+                                    getattr(self.state, "employees", []),
+                                    getattr(self.state, "temp_friends", [])):
+                            owner = next((e for e in lst if e.name == info.get("from_entity_name")), None)
+                            if owner is not None:
+                                if not hasattr(owner, "relics"):
+                                    owner.relics = []
+                                owner.relics.append(relic_obj)
+                                break
+                    returned.append(name)
+        # —— 每个非玩家实体：递减其自身 sealed_relics / stolen_relics ——
+        for entity in self._combat_entity_refs().values():
+            if entity is self.state.player:
+                continue
+            for attr in ("sealed_relics", "stolen_relics"):
+                d = getattr(entity, attr, None) or {}
+                for name in list(d.keys()):
+                    d[name] = (d[name] - 1) if isinstance(d[name], int) else dict(d[name])
+                    if isinstance(d[name], int):
+                        if d[name] <= 0:
+                            del d[name]
+                    else:
+                        d[name]["remaining"] -= 1
+                        if d[name]["remaining"] <= 0:
+                            # 简单归还：如果是 stolen 则移回 state.relics（若 from player）
+                            info = d.pop(name)
+                            if attr == "stolen_relics" and info.get("target_is_player", False):
+                                relic_obj = next((r for r in entity.relics if r.name == name), None) \
+                                    if hasattr(entity, "relics") else None
+                                if relic_obj is not None and relic_obj in entity.relics:
+                                    entity.relics.remove(relic_obj)
+                                if relic_obj is not None:
+                                    self.state.relics.append(relic_obj)
+                                returned.append(name)
+        return {"expired_seals": expired_seals, "returned_steals": returned}
 
     def _xijie_steal(self, caster: Entity, target: Entity, damage_amount: int) -> int:
         """洗劫X：造成伤害时夺取[目标]等量[碎片]（假碎片优先由目标侧扣减；夺取量=min(目标碎片,伤害)）"""

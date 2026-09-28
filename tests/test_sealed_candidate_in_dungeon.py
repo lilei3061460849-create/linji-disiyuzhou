@@ -132,10 +132,20 @@ def test_sealed_candidate_dungeon_growth_applies():
     e = _engine_with_snapshot(snapshot, seed=8)
     ally = e.state.friends[0]
     atk_before = ally.attack_count
-    e.state.enemies.append(Entity("怪", "怪物", blood_limit=30, current_hp=30,
-                                  attack_count=1, attack_power=1))
     started = begin_battle(e)
     assert started["success"], started
+    # 2026-09-28：乱葬岗配方式出怪会随机 S 只首发并登记增援队列；本用例只验朋友成长，
+    # 增援与额外首发都不属于断言面，直接清掉以保留"打一只怪→战终成长"的可预测场景。
+    e.state.monster_reinforcements = []
+    for m in list(e.state.enemies)[1:]:
+        m.is_alive = False
+        m.current_hp = 0
+    target = e.state.enemies[0]
+    target.blood_limit = 30
+    target.current_hp = 30
+    target.attack_count = 1
+    target.attack_power = 1
+    target.is_alive = True
     started_round = begin_round(e, relic_choices=round_start_relic_choices(e))
     assert started_round["success"], started_round
     for m in list(e.state.enemies):

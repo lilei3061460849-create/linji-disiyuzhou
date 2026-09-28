@@ -163,6 +163,11 @@ SYSTEM_PROMPT = """你是第四宇宙游戏的AI玩家。你的任务是根据�
 3. 每次决策必须返回JSON格式：{"action_type": "...", "params": {...}, "reasoning": "..."}
 4. reasoning字段解释你的决策逻辑
 
+战斗回合（2026-09-29 起轮回者的战斗行动全部由你决策，没有规则 AI 兜底）：
+- 你的回合按"可用行动"逐个出手；出手次数用完或不想再出手时，提交 prepare_monster_phase 结束己方行动
+- 每次提交前先看自己的致死进度（崩解/癌变/凡庸）与法力，不要把动作打到阈值上自爆
+- 他人回合的闪避/招架/反应法术选择同样由你在 resolve_attack / resolve_monster_phase 里显式提交
+
 决策原则：
 - 轮回者需要强烈的生存意志，不能消极等死
 - 怪物陷入困境时会尝试逃跑或进化
@@ -177,9 +182,18 @@ SYSTEM_PROMPT = """你是第四宇宙游戏的AI玩家。你的任务是根据�
 - choose_discovered_relic: 从当前遗物发现候选中显式选1件（params: relic_name；开局遗物选定后从杀伐闭环发现3种初始道纹）
 - choose_discovered_item: 从当前消耗品发现候选中显式选1件（params: item_name）
 - pre_battle_action: 局外行动（params: sub_action + tier等）
-- use_daowen: 发动道纹（params: daowen_name, x, target）
+- use_daowen: 发动道纹（params: daowen_name, x, target_ref；等价于 cast 且 kind="daowen"）
+- use_spell: 装配/卸下内置法术（params: spell_name, disarm）；装配后在触发时点自动结算
+- define_spell: 战斗中自创一种触发型法术并立即生效，消耗1次出手（params: spell{name, required_daowen, trigger_condition, effect_flow}）；不能用来保存瞬发法术
+- cast: 施法。带 flow 参数时是瞬发法术（params: flow, target_ref, steps[{x, target_ref?, dodge, trigger_spell_choices}]）：
+  一次出手依次发动多种已持有道纹，只扣1次出手；每一步都是一次真正的发动道纹，照常触发敌方「目标发动道纹前」反应、受无神/缄默面具影响、照付代价；
+  每步提交自己的X，引擎按执行时真实剩余法力逐步结算，某步付不起就中断，已结算步骤保留，出手不退——所以先算清总花费再提交，别指望失败退款；
+  瞬发法术执行完不留在角色身上，想在触发时点自动反应请用 define_spell
 - prepare_attack: 准备一轮攻击并取得逐击合法目标、闪避、血影与法术反应选项
 - resolve_attack: 携带prepare返回的一次性token，逐击显式提交完整选择后原子结算；禁止使用旧attack/dodge_decision
+- declare_parry: 招架姿态（不花出手、不花速度）：本轮受到的攻击伤害-你10%当前生命（向下取整），每回合可抵挡次数=当前生命；按结算那一刻的生命计算
+- focus: 聚能，消耗1次出手，立即获得 ceil(20%法限) 法力（法限为0时白白浪费出手）
+- rest: 蓄锐，消耗1次出手，下回合出手+1
 - declare_evolution: 怪物进化·发动原初X（params: monster, daowen, x；仅当可用行动中出现evolution项且available=true时可对其中列出的困境怪物使用，x不得超过max_x_by_mutation，否则触发崩解自杀）
 - prepare_monster_phase: 只获取本次怪物阶段的合法道纹、目标、攻击与闪避选项
 - resolve_monster_phase: 携带prepare返回的一次性token，为全部可行动怪物提交完整选择后统一结算；禁止使用旧monster_phase
@@ -672,18 +686,20 @@ def create_ai_backend(provider: str = "placeholder", **kwargs) -> AIBackend:
 class AIPlayer(TacticalAI):
     """第四宇宙的统一 AI 入口。
 
-    这是对外唯一的 AI 玩家对象：
+    2026-09-29 用户令：**不用规则型 AI，全部决策交给 LLM**。
 
-    * 开局、选区、事件和局外行动由 ``backend`` 提供高层决策；
-    * 战斗中的候选生成、ActionPreview、招架、输出、闪避和安全过滤由本类
-      继承的 ``TacticalAI`` 负责；
-    * 所有动作最终仍统一经过 ``GameEngine.execute_action`` 和规则校验器。
+    * 开局、选区、事件、局外行动、轮回者自己的战斗行动、他人回合的闪避/招架/反应，
+      全部由 ``backend``（LLM）根据 ``get_state()`` 与 ``available_actions`` 决策；
+    * 所有动作最终仍统一经过 ``GameEngine.execute_action`` 和规则校验器，
+      非法提交由引擎拒绝，不由规则 AI 代为兜底；
+    * 没有配置任何 LLM API key 时只能用 ``PlaceholderBackend``——它是离线测试桩，
+      按写死顺序提交合法动作，不是游戏策略。
 
-    ``TacticalAI`` 仍作为内部战术实现保留，目的是兼容旧实验脚本和子类，
-    不是第二个独立玩家。新代码应只创建 ``AIPlayer``，不应在流程代码中
-    分别拼装 AIPlayer 与 TacticalAI。
+    继承 ``TacticalAI`` 只是为了兼容旧实验脚本/子类（sim/ 下的对照实验仍直接用它）。
+    战斗中不再调用 TacticalAI 的规则打分：``tactical_combat`` 默认 False；
+    只有显式传 ``tactical_combat=True`` 的旧实验脚本才会回到规则战术层。
     """
-    
+
     def __init__(
         self,
         game_engine: GameEngine,
@@ -696,13 +712,13 @@ class AIPlayer(TacticalAI):
         actor: Any = None,
         enemies: Optional[list] = None,
         actor_ref: Optional[str] = None,
-        tactical_combat: bool = True,
+        tactical_combat: bool = False,
     ):
         super().__init__(game_engine, verbose=verbose, actor=actor,
                          enemies=enemies, actor_ref=actor_ref)
         self.backend = backend or PlaceholderBackend()
-        # 默认由统一战术层处理战斗；仅旧式调用方显式关闭时，才让 backend 直接
-        # 提交战斗 action（用于兼容只测试 action schema 的旧夹具）。
+        # 2026-09-29 用户令：全部用 LLM 决策。默认战斗也由 backend 直接提交 action；
+        # 仅旧实验脚本显式传 tactical_combat=True 时才回到规则战术层。
         self.tactical_combat = tactical_combat
         # 让后端能读到引擎实时状态，用于可选法器/遗物的显式决策（可以不用但不能不让用）。
         if not getattr(self.backend, "engine", None):
@@ -875,8 +891,8 @@ class AIPlayer(TacticalAI):
     def play_turn(self, context: str = "") -> dict:
         """执行一个统一 AI 决策。
 
-        setup/pre_battle/event 等高层阶段使用后端；轮回者战斗阶段直接进入同一
-        个 TacticalAI 实时决策器，不再由另一个 AI 接管战斗。
+        所有阶段（含轮回者战斗行动）都由后端（LLM）决策（2026-09-29 用户令）。
+        只有显式 tactical_combat=True 的旧实验脚本，战斗阶段才进入 TacticalAI。
 
         顺序（2026-09-19 性能优化）：先判「能不能走战术路径」，再决定要不要
         付整份状态序列化的代价。`get_state()` 会序列化 GameState 并生成

@@ -195,7 +195,11 @@ class CostPaymentMixin:
         elif cost_type == "异变":
             mutation = payer.add_mutation(amount)
             if mutation.get("collapsed"):
-                self._on_entity_death(payer, ctx=self._collapse_context(payer, cost_context))
+                # 怪物异变达阈值：直接崩解命零（旧【崩解】行为）
+                self._on_entity_death(payer, ctx=self._lost_context(payer, cost_context, subtype="collapse"))
+            elif mutation.get("lost"):
+                # 非怪物异变达阈值：触发【迷失】——有队友则变怪物开战，否则命零
+                self._resolve_mutation_lost(payer, cost_context)
             self._bank_lianxin(payer, cost_type, amount)
             nail = self._on_cost_paid(payer, cost_context)
             return {"payer": payer.name, "cost_type": cost_type, "paid": amount,
@@ -205,25 +209,147 @@ class CostPaymentMixin:
         return {"payer": payer.name, "cost_type": cost_type, "paid": amount,
                 "brand_nail": nail}
 
-    def _collapse_context(
+    def _lost_context(
         self, entity: Entity, parent: Optional[EffectContext | dict] = None,
+        subtype: str = "lost",
     ) -> EffectContext:
-        """【崩解】（异变达阈值直接命零）的统一死亡上下文。
+        """【迷失】（异变达阈值）的统一上下文。
 
-        Entity.add_mutation 出于模型层职责只翻 is_alive，不知道战斗上下文；
-        所有调用点都必须用本上下文把死亡交回 _on_entity_death，否则崩解死者
-        不会触发任何[命零]效果（焦黑发丝/招魂尸体/分裂）。
+        Entity.add_mutation 出于模型层职责只翻 is_alive / lost，不知道战斗上下文；
+        所有调用点都必须用本上下文把事件交给 _on_entity_death / _resolve_mutation_lost，
+        否则崩解/迷失不会触发对应的[命零]效果（焦黑发丝/招魂尸体/分裂）。
+
+        subtype 取值：
+          * "collapse" —— 怪物异变爆体（旧【崩解】语义，直接命零）；
+          * "lost_death" —— 非怪物迷失但无队友，直接命零；
+          * "lost_transform" —— 非怪物迷失且有队友，异变为怪物（不进死亡管线，
+            仅作事件记录）。
         """
         norm = normalize_context(parent)
         return make_context(
             timing=norm.timing if norm else self._current_context_timing(),
-            source="崩解", source_type="system",
+            source="迷失", source_type="system",
             actor=norm.actor if norm else None, target=entity,
             owner=norm.owner if norm else None,
-            mechanic="death", subtype="collapse", amount=0,
-            tags=(set(norm.tags) if norm else set()) | {"mutation", "collapse"},
+            mechanic="death" if subtype != "lost_transform" else "transform",
+            subtype=subtype, amount=0,
+            tags=((set(norm.tags) if norm else set())
+                  | {"mutation", "lost", "collapse"}
+                  | ({subtype} if subtype else set())),
             parent_event_id=norm.event_id if norm else None,
         )
+
+    # 几个【迷失】的事件描述例子（写入 battle log，"注重变异成怪物的过程"——用户令 2026-09-28）：
+    _LOST_TRANSFORM_FLAVORS = [
+        "皮肤一寸寸龟裂，黑液从缝隙里涌出，{name}的脊椎发出不属人类的弯折声——"
+        "眼珠在眼眶里融化、重生为复眼，他/她抬起头时已不再认得队友。",
+        "异变纹路像活物一样爬上{name}的颈侧，牙齿在咯咯作响中尽数脱落、替换成细密的尖齿；"
+        "喉咙里挤出的最后一个音节是旧日同伴的名字，之后便只剩怪物的嘶吼。",
+        "{name}的影子先于身体扭曲——影子伸出不属于他/她的手掐住自己的喉咙，"
+        "当影子松开时，站在那里的东西对曾经的队友露出了饥饿的笑。",
+        "骨头在皮肉下重新拼接的声音持续了整整三息，{name}低下头看着自己多出的关节，"
+        "像是第一次学会使用这具身体——然后朝离他/她最近的朋友张开了嘴。",
+    ]
+
+    def _living_allies_of(self, entity: Entity) -> list[Entity]:
+        """返回与 entity 同阵营、存活、且不是 entity 自身、且未撤退的实体列表。
+        用于判定【迷失】时是否有队友——有队友则变身，无队友则命零。
+        """
+        if not self.state or not self.state.player:
+            return []
+        pool: list[Entity] = []
+        if self.state.player and self.state.player.is_alive and self.state.player is not entity:
+            pool.append(self.state.player)
+        for lst in (getattr(self.state, "friends", []) or [],
+                    getattr(self.state, "employees", []) or [],
+                    getattr(self.state, "temp_friends", []) or []):
+            for e in lst:
+                if e is entity or not e.is_alive or getattr(e, "has_retreated", False):
+                    continue
+                if getattr(e, "is_deployed", True) is False:
+                    continue
+                pool.append(e)
+        # 敌对阵营里如果存在与 entity 同阵营的轮回者（罕见：如被封印/策反的轮回者），也算队友
+        if self.state.on_enemy_side(entity):
+            for e in getattr(self.state, "enemies", []) or []:
+                if e is entity or not e.is_alive or getattr(e, "has_retreated", False):
+                    continue
+                if self.state.on_enemy_side(e):
+                    pool.append(e)
+        return pool
+
+    def _resolve_mutation_lost(
+        self, entity: Entity, parent: Optional[EffectContext | dict] = None,
+    ) -> dict:
+        """非怪物角色异变达到阈值后的【迷失】处理（2026-09-28 用户令）。
+
+        判定：
+          * 己方还有其他存活角色（轮回者/朋友/员工/临时朋友）→ 该角色异变为怪物：
+              - 从原所属列表（friends/employees/temp_friends/enemies...）中移除；
+              - 加入 state.enemies，阵营翻转；entity_type 改为 "怪物"；
+              - 重置出手/激活状态，立即按怪物激活流程开战。
+          * 否则 → 直接[命零]死亡，走统一死亡管线。
+        返回说明 dict（包含 flavor 文本，便于日志/面板展示）。
+        """
+        allies = self._living_allies_of(entity)
+        if not allies:
+            # 无队友：命零。subtype 仍记为 "collapse" 以兼容死者之书既有死因分类
+            # （死亡书 CAUSE_DRAFTS["collapse"] 的文案已改为"迷失（崩解/叛变）"）。
+            # 必须先把 hp 置 0、is_alive 翻 False，_on_entity_death 才能触发（与 add_mutation
+            # 对怪物路径的行为保持一致；_hp_loss_recording 让此期间不额外触发「失去生命后」）。
+            if not getattr(self, "_hp_loss_recording", 0):
+                self._hp_loss_recording = getattr(self, "_hp_loss_recording", 0) + 1
+                try:
+                    entity.current_hp = 0
+                    entity.is_alive = False
+                finally:
+                    self._hp_loss_recording -= 1
+            else:
+                entity.current_hp = 0
+                entity.is_alive = False
+            self._on_entity_death(entity, ctx=self._lost_context(
+                entity, parent, subtype="collapse"))
+            return {"lost": "death", "entity": entity.name,
+                    "note": f"{entity.name}异变达到{entity.MUTATION_COLLAPSE_THRESHOLD}层，"
+                            f"身旁已无可依的同伴，触发【迷失】：直接命零"}
+        # 有队友：异变为怪物
+        flavor_idx = self.dice.randrange(len(self._LOST_TRANSFORM_FLAVORS))
+        flavor = self._LOST_TRANSFORM_FLAVORS[flavor_idx].format(name=entity.name)
+        # 从原所属列表移除
+        removed_from = None
+        for attr in ("friends", "employees", "temp_friends"):
+            lst = getattr(self.state, attr, None)
+            if lst is not None and entity in lst:
+                lst.remove(entity)
+                removed_from = attr
+                break
+        if removed_from is None and self.state.enemies and entity in self.state.enemies:
+            # 罕见：entity 本身就在敌方阵营（例如敌方阵营中的轮回者角色），原地变身为怪物
+            self.state.enemies.remove(entity)
+            removed_from = "enemies"
+        # 翻转阵营
+        entity.entity_type = "怪物"
+        entity.is_monster_transform = True
+        # 重置一些会干扰"作为怪物重新激活"的临时状态
+        entity.has_retreated = False
+        entity.is_deployed = True
+        # 加入敌方；如果 entity 原是玩家本人，不应让 state.player 指向一个敌方怪物，
+        # 这里保留引用但在 on_player_side 判定中会按 entity_type==怪物返回 False。
+        self.state.enemies.append(entity)
+        # 重新走怪物激活准备（幂等），确保变身角色本轮能发动攻击
+        if hasattr(self, "reset_monster_activation"):
+            self.reset_monster_activation()
+        # 记录事件上下文（不走死亡管线）
+        ctx = self._lost_context(entity, parent, subtype="lost_transform")
+        if hasattr(self, "_log_event"):
+            self._log_event({"event": "mutation_lost_transform",
+                             "entity": entity.name, "from": removed_from,
+                             "mutation_total": entity.mutation_count,
+                             "flavor": flavor, "ctx": ctx.event_id})
+        return {"lost": "transform", "entity": entity.name, "from": removed_from,
+                "flavor": flavor,
+                "note": f"{entity.name}异变达到{entity.MUTATION_COLLAPSE_THRESHOLD}层，触发【迷失】——"
+                        f"{flavor} {entity.name}已异变为怪物，与原队伍开战"}
 
     def _divide_flat(self, total: int, count: int) -> list[int]:
         """平分规则（2026-08-21）：总数值在 count 个目标间平均分配；

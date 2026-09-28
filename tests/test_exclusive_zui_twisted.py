@@ -55,35 +55,44 @@ def _apply_monster_daowen(engine, caster, name, x, target=None):
     return engine.combat.apply_daowen_effect(name, calc, caster, target)
 
 
-# ==================== 点金（DM裁定 2026-09-10 由【洗劫】改名改制）====================
-# 道纹【点金】：消耗8X法力 → 直接获得X真碎片，与伤害彻底脱钩。（2026-09-17 用户令定为 8X）
-# 状态【洗劫】及其"造成伤害时夺取等量碎片"机制**保留**，但已不由道纹发放，
-# 只剩【帮派令】在[战始]发放（事件收益在禁区清单内，不动）。
+# ==================== 失忆（2026-09-28 由【点金】改名改值；前身【洗劫】已废弃）====================
+# 道纹【失忆】：消耗8X法力 → 直接获得80X真碎片，与伤害彻底脱钩。
+# 旧"血限扣减/印记/清算联动"本版本不存在；状态【洗劫】及其"造成伤害时夺取等量碎片"
+# 机制**保留**，但已不由道纹发放，只剩【帮派令】在[战始]发放。
 
 
-def test_normal_dianjin_converts_mana_to_shards():
-    """正常路径：点金X 消耗8X法力，直接换X真碎片，不碰目标、不挂状态。"""
-    engine = _setup(); _grant(engine, ["点金"])
+def test_normal_shiyi_converts_mana_to_shards():
+    """正常路径：失忆X 消耗8X法力，直接换80X真碎片，不碰目标、不挂状态。"""
+    engine = _setup(); _grant(engine, ["失忆"])
     player = engine.state.player
     m = _add_monster(engine, shards=20)
     mana0, shard0 = player.current_mana, engine.state.shards
-    r = engine.execute_action("use_daowen", {"daowen_name": "点金", "x": 2, "target": m.name})
+    r = engine.execute_action("use_daowen", {"daowen_name": "失忆", "x": 2, "target": m.name})
     assert r["success"], r
-    assert player.current_mana == mana0 - 16          # 2026-09-17 用户令：消耗8X（X=2）= 16 法力
-    assert engine.state.shards == shard0 + 2          # 换到 2 真碎片
-    assert m.shards == 20, "点金不再从目标身上夺取"
-    assert not player.has_status("点金"), "点金是即时结算，不得挂状态"
+    assert player.current_mana == mana0 - 16           # 2026-09-28 用户令：消耗8X（X=2）= 16 法力
+    assert engine.state.shards == shard0 + 160        # 换到 80*2=160 真碎片
+    assert m.shards == 20, "失忆不再从目标身上夺取"
+    assert not player.has_status("失忆"), "失忆是即时结算，不得挂状态"
 
 
-def test_boundary_dianjin_insufficient_mana_rejected():
-    """边界：法力不够付 3X 时应当被拒绝，而不是半结算。"""
-    engine = _setup(mana=5); _grant(engine, ["点金"])   # 点金X=2 现需 3X=6，5 点不够
+def test_boundary_shiyi_insufficient_mana_rejected():
+    """边界：法力不够付 8X 时应当被拒绝，而不是半结算。"""
+    engine = _setup(mana=15); _grant(engine, ["失忆"])  # 失忆X=2 需 8X=16，15 点不够
     player = engine.state.player
     _add_monster(engine, shards=20)
     shard0 = engine.state.shards
-    r = engine.execute_action("use_daowen", {"daowen_name": "点金", "x": 2, "target": None})
+    r = engine.execute_action("use_daowen", {"daowen_name": "失忆", "x": 2, "target": None})
     assert r["success"] is False
-    assert engine.state.shards == shard0 and player.current_mana == 5
+    assert engine.state.shards == shard0 and player.current_mana == 15
+
+
+# 2026-09-28：【点金】已正式改名为【失忆】，旧名不再接受（避免出现双注册与
+# diff_project_daowen 报警）。如果需要旧存档兼容，可在 use_daowen 层做 alias。
+def test_legacy_dianjin_name_rejected():
+    engine = _setup(); _grant(engine, ["失忆"])
+    m = _add_monster(engine, shards=20)
+    r = engine.execute_action("use_daowen", {"daowen_name": "点金", "x": 1, "target": m.name})
+    assert r["success"] is False, "旧名【点金】已废弃，必须用新名【失忆】"
 
 
 def test_xijie_status_still_steals_shards_on_damage():
@@ -171,36 +180,47 @@ def test_boundary_battle_end_clears_ledger():
     assert engine.state.sealed_relics == {}, "战终应清封印遗物"
 
 
-# ==================== 抵扣 ====================
+# ==================== 豪夺（2026-09-28 由【抵扣】改名改制） ====================
+# 旧【抵扣】=消耗3X法力封印遗物；新【豪夺】=消耗5X碎片夺取遗物持续X回合。
 
-def test_normal_dikou_seals_relic():
-    engine = _setup(); _grant(engine, ["抵扣"])
+def test_normal_haoduo_steals_relic_for_x_rounds():
+    engine = _setup(); _grant(engine, ["豪夺"])
     player = engine.state.player
-    engine.state.relics = [Relic(name="回锋刀", effect="回始造成伤害"), Relic(name="避风铃", effect="闪避+格挡")]
-    r = engine.execute_action("use_daowen", {"daowen_name": "抵扣", "x": 2, "target": player.name})
+    # 目标（敌人）持有1件遗物
+    m = _add_monster(engine, shards=0)
+    m.relics = [Relic(name="防弹插板", effect="伤害减半"), Relic(name="其他", effect="x")]
+    engine.state.shards = 100
+    shards_before = engine.state.shards
+    r = engine.execute_action("use_daowen", {"daowen_name": "豪夺", "x": 2, "target": m.name})
     assert r["success"], r
-    assert engine.state.sealed_relics.get("回锋刀", 0) == 2, "应封印第一件遗物"
-    # 封印期间 process_relics 不触发被封印遗物
-    logs = engine.combat.process_relics("round_start")
-    assert not any("回锋刀" in lg for lg in logs), f"封印遗物不应触发: {logs}"
+    assert engine.state.shards == shards_before - 10, "消耗5X=10碎片"
+    # 敌人失去防弹插板
+    assert not any(r.name == "防弹插板" for r in m.relics)
+    # 玩家持有防弹插板
+    assert any(r.name == "防弹插板" for r in engine.state.relics), "豪夺成功后施法者应获得该遗物"
+    assert "防弹插板" in engine.state.stolen_relics
+    assert engine.state.stolen_relics["防弹插板"]["remaining"] == 2
 
 
-def test_boundary_dikou_unseals_after_rounds():
-    engine = _setup(); _grant(engine, ["抵扣"])
-    player = engine.state.player
-    engine.state.relics = [Relic(name="回锋刀", effect="回始造成伤害")]
-    engine.execute_action("use_daowen", {"daowen_name": "抵扣", "x": 1, "target": player.name})
-    engine.combat.round_end()
-    assert engine.state.sealed_relics.get("回锋刀", 0) == 0, "1回合后应解封"
-    assert "回锋刀" not in engine.state.sealed_relics
+def test_haoduo_no_relic_no_effect():
+    engine = _setup(); _grant(engine, ["豪夺"])
+    m = _add_monster(engine, shards=0)
+    m.relics = []
+    engine.state.shards = 100
+    r = engine.execute_action("use_daowen", {"daowen_name": "豪夺", "x": 1, "target": m.name})
+    # 无遗物时仍会成功（没东西可夺），但不扣遗物
+    assert r["success"]
+    assert engine.state.stolen_relics == {}
 
 
-def test_boundary_dikou_no_relic_no_effect():
-    engine = _setup(); _grant(engine, ["抵扣"])
-    player = engine.state.player
-    engine.state.relics = []  # 清空（开局自动发现会持有遗物）
-    engine.execute_action("use_daowen", {"daowen_name": "抵扣", "x": 1, "target": player.name})
-    assert engine.state.sealed_relics == {}, "无遗物则无效果"
+def test_legacy_dikou_name_rejected():
+    """旧名【抵扣】已从注册表移除，use_daowen 不再受理该名字。"""
+    engine = _setup(); _grant(engine, ["豪夺"])
+    m = _add_monster(engine)
+    m.relics = [Relic(name="回锋刀", effect="x")]
+    engine.state.shards = 100
+    r = engine.execute_action("use_daowen", {"daowen_name": "抵扣", "x": 1, "target": m.name})
+    assert r["success"] is False, "旧名【抵扣】已废弃，必须用新名【豪夺】"
 
 
 # ==================== 清算 ====================

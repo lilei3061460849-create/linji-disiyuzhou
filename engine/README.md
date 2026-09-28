@@ -47,9 +47,9 @@ engine/
 ├── daowen.py            # 道纹系统（含当前全部 64 道纹 calculate_* 与 ResonanceEngine；增殖为道纹，癌变为机制，二者无关）
 ├── combat.py            # 战斗计算引擎（伤害/回合/闪避/多路径 癌变/雕塑/还债，PROLIFERATION_THRESHOLD 为癌变阈值，CANCER_THRESHOLD 别名）
 ├── battle_report.py     # 战报渲染（推演格式逐回合输出）
-├── ai_player.py         # 统一 AI 玩家入口（开局/事件/战斗/校验/长期记忆）
+├── ai_player.py         # 统一 AI 玩家入口（开局/事件/战斗/校验/长期记忆）；2026-09-29 起全部决策由 LLM backend 给出
 ├── ai_memory.py         # 当前轮回者的身世、经历、性格证据与遗言压缩
-├── ai_tactics.py        # AIPlayer 内部战术策略（ActionPreview 逐候选预演，按局势+性格+可见信息打分；旧 try_* 策略名仅为兼容）
+├── ai_tactics.py        # 规则型战术 AI（TacticalAI）。游戏中已停用（用户令 2026-09-29：全用 LLM），仅作 sim/ 对照实验基类保留
 ├── dm_rulings.py        # DM 裁定库（SQLite + FTS，先例匹配）
 ├── rule_sync.py         # 多事实源同步（README/死者之书/物品索引/副本索引）
 ├── document_validation.py # Markdown标题、文件链接与锚点校验
@@ -166,7 +166,7 @@ engine.remove_personality(entity)       # 手工清除（幂等）
 
 ## 出手预算校验
 
-已实现，详见 AI_EXPERIENCE.md。要点：`action_count`按entity_type分流公式；轮回者当前固定2次，普攻占用一次主动出手但不消耗速度；已学习的自动触发法术【镇魔印】不占主动出手。
+已实现，详见 AI_EXPERIENCE.md。要点：`action_count`按entity_type分流公式；轮回者基础2次出手（【蓄锐】消耗1次出手使下回合+1），普攻占用一次主动出手但不消耗速度；已装配的自动触发法术【镇魔印】不占主动出手。
 消耗/不消耗出手的动作清单见下表备注。
 
 ## 最终的冠冕 / 第8场死斗
@@ -192,7 +192,9 @@ engine.remove_personality(entity)       # 手工清除（幂等）
 | `setup_choose_region` | 选择副本 |
 | `pre_battle_action` | 局外行动（休整/修行/学习/共鸣/探索/忘忧(需持有忘忧香)/献祭(需持有红头绳)；【领悟】已于2026-09-10删除） |
 | `use_daowen` | 发动道纹（可选actor：留空=玩家自身法力制发动；指定[朋友]/[员工]名=听从指令发动，免法力只消耗出手，且必须指定非自身目标） |
-| `use_spell` | 发动法术 |
+| `use_spell` | 装配/卸下内置法术（装配后在触发时点自动结算） |
+| `define_spell` | 战斗中自创触发型法术并立即生效（1出手）；不接受瞬发触发 |
+| `cast` | 施法。`kind=daowen`（默认）=发动单个道纹；`kind=spell`=装配法术；带 `flow` = **瞬发法术**：一次出手依次发动多种道纹（只扣1出手，每步都是一次发动道纹，逐步按真实法力结算，中断保留已结算步骤、出手不退，不写入角色法术列表）。见 法术索引.md §5.4 |
 | `use_resonance` | 使用残韵 |
 | `attack` | 普通攻击（attacker可指定为已部署[朋友]/[员工]，目标自动限定为对方阵营） |
 | `deploy_employee` | 派遣[员工]出战(出战支援，消耗1出手) |
@@ -230,7 +232,7 @@ engine.remove_personality(entity)       # 手工清除（幂等）
 | `declare_evolution` | 怪物进化：发动【原初X】借用原始怪物道纹（引擎直接结算） |
 | `round_start` | 回始结算 |
 | `round_end` | 回终结算 |
-| `battle_start` | 战始（自动出怪：数量=战斗场数-3(最低1)，从当前副本12怪物池随机抽取，允许重复；战斗背景纯叙事不做机制化） |
+| `battle_start` | 战始（配方式出怪：N=随机(1,上界), S=随机(1,N), 增援 R_i/T_i 随机；上界一阶=max(1,战斗场数-3)、二阶及以上=12；从当前副本池随机抽取允许重复；战斗背景纯叙事不做机制化；无尽模式出怪池=所有副本合并、面板按轮次递增） |
 | `battle_end` | 战终 |
 
 ## 运行

@@ -482,44 +482,44 @@ class TacticalAI:
     # ---------- 候选生成与实时评分 ----------
 
     def _parry_candidate(self) -> Optional[dict]:
-        """生成【招架】候选；招架是回合级防御姿态，不占用出手。"""
+        """生成【招架】候选；招架是回合级防御姿态，不占用出手。
+
+        2026-09-28 用户令重写：减免=10%当前生命（每击）；可用次数=当前生命；
+        移除"上回合锁"。仍不占出手。
+        """
         player = self.player
         if player is None or not player.is_alive:
             return None
-        if getattr(player, "parry_locked_this_round", False):
-            return None
         if getattr(player, "parrying_this_round", False):
             return None
-        if player.current_mana <= 0:
+        if player.current_hp < 10:
+            # 当前生命<10 时 10% 取整为 0，招架完全没用
             return None
         enemies = self.alive_enemies()
         if not enemies:
             return None
-        # 招架按“每次受击”减当前法力；用敌方当前攻击次数×攻击力估算本轮
-        # 可减免量。这里只生成候选，最终是否合法仍由 declare_parry 引擎校验。
-        reduction = sum(
-            min(player.current_mana, max(0, enemy.effective_attack_power()))
-            * max(0, enemy.effective_attack_count())
-            for enemy in enemies
-        )
+        per_hit_reduction = max(1, player.current_hp // 10)
+        # 总受击数 = 敌方攻击次数之和；招架可用次数上限=player.current_hp，
+        # 因此减免量 = per_hit_reduction × min(总受击数, current_hp)
+        total_hits = sum(max(0, e.effective_attack_count()) for e in enemies)
+        effective_hits = min(total_hits, max(1, int(player.current_hp)))
+        reduction = per_hit_reduction * effective_hits
         if reduction <= 0:
             return None
-        # 若招架也无法把本轮预计伤害压回存活线，就不把它当作“保命”
-        # 候选；此时应继续寻找击杀/离场等能真正结束威胁的动作。
         threat = self.incoming_damage()
         if (threat > player.current_hp + player.shield
                 and threat - reduction > player.current_hp + player.shield):
             return None
         return {
             "action": "declare_parry",
-            "label": f"招架（每次受击减免{player.current_mana}）",
+            "label": f"招架（每击减免{per_hit_reduction}，共{effective_hits}次）",
             "kind": "parry",
             "params": {"actor_ref": self._actor_ref or "player:0"},
             "expected_reduction": reduction,
         }
 
     def _score_parry_candidate(self, candidate: dict) -> float:
-        """按当前威胁给招架评分；高压/濒死时显著优先，安全时让出给输出。"""
+        """按当前威胁给招架评分；高压/濒死时显著优先，安全时让出给输出。（2026-09-28 重算口径）"""
         player = self.player
         threat = self.incoming_damage()
         reduction = float(candidate.get("expected_reduction", 0))
@@ -533,9 +533,8 @@ class TacticalAI:
             score += 16.0
         else:
             score -= 6.0
-        # 招架本身不花法力，但后续主动花蓝会降低其实际减免；
-        # 保守扣除少量“放弃输出”的机会成本，不阻止危急时刻使用。
-        score -= 0.12 * player.effective_attack_count() * player.current_mana
+        # 招架本身不花法力/出手，但后续受击掉血会削弱减免，机会成本极低。
+        score -= 0.05 * player.effective_attack_count() * player.effective_attack_power()
         return score
 
     def _daowen_candidates(self) -> list[dict]:
@@ -913,8 +912,13 @@ class TacticalAI:
         return adj, None
 
     def _first_contact(self) -> bool:
-        """开局首轮/刚遇新敌（先观察型性格用；可见信息：本场出手与回合数）。"""
-        return (not self.used and self.engine.state.current_round <= 1)
+        """开局首轮/刚遇新敌（先观察型性格用；可见信息：本场出手与回合数）。
+
+        注：mock state 可能缺 current_round 字段（test_win_only_ai::_VetoProbe 等），
+        用 getattr 兜底=0，保证早期 mock 测试不崩。
+        """
+        cr = getattr(self.engine.state, "current_round", 0) or 0
+        return (not self.used and cr <= 1)
 
     def _dynamic_action(self) -> Optional[dict]:
         """实时决策主路径：生成候选 → 预演评分 → 执行最高分。"""

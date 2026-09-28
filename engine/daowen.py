@@ -302,14 +302,19 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_bizhong(x: int) -> dict:
-        """必中X：代价：异变5X。自身下X次选择[目标]（攻击与道纹通用，共用层数）时其无法闪避"""
+        """必中X（2026-09-28 二次更正）：代价：异变X。自身进入【必中】姿态持续X回合。
+
+        用户明确口径：必中是**给自己上buff**——"你选中的目标无法闪避"。
+        也就是：你持续X回合内，不管攻击还是敌向道纹，你选中的目标都无法闪避。
+        （之前我一度误改成给目标挂debuff，现已纠正回self-buff。不需要目标。）
+        """
         return {
             "dao_wen": "必中",
             "x": x,
             "cost_type": CostType.MUTATION.value,
-            "cost_mutation": 5 * x,
-            "guaranteed_hits": x,
-            "summary": f"异变+{5*x}，自身下{x}次选择[目标]（攻击/道纹共用层数）时其无法闪避"
+            "cost_mutation": x,
+            "bizhong_self_buff": x,   # 给自身挂持续X回合的必中buff
+            "summary": f"异变+{x}，自身进入必中姿态持续{x}回合，期间你选中的[目标]无法闪避"
         }
     
     @staticmethod
@@ -782,28 +787,23 @@ class DaoWenEngine:
         }
 
     @staticmethod
-    def calculate_dianjin(x: int) -> dict:
-        """点金X：消耗8X法力，获得X个碎片
+    def calculate_shiyi(x: int) -> dict:
+        """失忆X：消耗8X法力，获得80X碎片（2026-09-28 用户令：【点金】改名【失忆】，
+        效果改为"失忆X → 你获得80X碎片"；旧"血限扣减/印记/清算联动"本版本就不存在，
+        确认删除；前身【洗劫】是伤害挂钩夺碎片，早已废弃。
 
-        DM裁定 2026-09-10：前身【洗劫】是"造成伤害时夺取目标等量碎片"，挂在杀伐
-        伤害上，等于白送的经济水龙头。改为与伤害彻底脱钩——想要钱就得花法力，
-        而攻力=当前法力，花法力直接压低普攻输出，于是这是一笔明码标价的转换。
-        刻意不返回 duration 键：通用状态块以 "duration" in calc 为前提
-        （combat.py:3388），带上就会凭空长出一个【点金】状态。
-        注意：状态【洗劫】及其"夺碎片"机制**保留**，仍由【帮派令】在[战始]发放；
-        事件收益在 报告.md「当前禁区清单」内，不动。
+        设计意图保持：想要钱就得花法力，而[攻击力]=当前法力，花法力直接压低普攻输出，
+        是一笔明码标价的转换；X越大收益/代价同比放大（收益=80X，代价=8X法力）。
+        刻意不返回 duration 键：通用状态块以 "duration" in calc 为前提，带上就会凭空
+        长出一个【失忆】状态，不符合"立即结算"的口径。
         """
         return {
-            "dao_wen": "点金",
+            "dao_wen": "失忆",
             "x": x,
             "cost_type": CostType.MANA.value,
-            # 2026-09-17 用户令：定为 8X（历史曾一度下调为 3X，现按用户裁定改回，
-            # 与 docstring/summary/正文 的 8X 一致）。DM裁定 2026-09-10 设计意图：
-            # 想要钱就得花法力，而[攻击力]=当前法力，花法力直接压低普攻输出，
-            # 是一笔明码标价的转换。
             "cost": 8 * x,
-            "shard_gain": x,
-            "summary": f"消耗{8*x}法力，获得{x}个碎片"
+            "shard_gain": 80 * x,
+            "summary": f"消耗{8*x}法力，获得{80*x}个碎片",
         }
     
     # ---- 罪孽都市专属道纹 ----
@@ -819,14 +819,24 @@ class DaoWenEngine:
         }
     
     @staticmethod
-    def calculate_dikou(x: int, target: Entity = None) -> dict:
-        """抵扣X：消耗3X。封印目标拥有的一件遗物，持续X"""
+    def calculate_haoduo(x: int, target: Entity = None) -> dict:
+        """豪夺X（2026-09-28 用户令，旧【抵扣】改名）：消耗5X碎片，夺取[目标]1件遗物持续X回合。
+
+        夺取=把目标的一件遗物转移到己方（施法者）临时持有，持续X回合，到期归还。
+        与旧【抵扣】（只封印）的区别：夺取期间施法者**真正持有**该遗物并能触发其被动，
+        目标在这段时间里不能触发该遗物。
+        """
         target_name = target.name if target is not None else "未选定目标"
         return {
-            "dao_wen": "抵扣", "x": x, "cost_type": CostType.MANA.value, "cost": 3 * x,
-            "relic_seal": 1, "duration": x,
-            "summary": f"消耗{10*x}法力，封印{target_name}一件遗物，持续{x}回合"
+            "dao_wen": "豪夺", "x": x,
+            # 2026-09-28 用户令：消耗5X碎片（沿用现有 cost_shards 付费通道；
+            # 不写 cost_type=MANA，避免被当成法力支付）。
+            "cost_type": "代价", "cost_shards": 5 * x,
+            "relic_steal": 1, "duration": x,
+            "summary": f"消耗{5*x}碎片，夺取{target_name}一件遗物，持续{x}回合"
         }
+
+    # 旧名 calculate_dikou 不再保留（避免注册时与"豪夺"双注册）。
     
     @staticmethod
     def calculate_qingsuan(x: int, target: Entity = None, caster_shards: int = 0) -> dict:
@@ -863,7 +873,7 @@ class DaoWenEngine:
         return {
             "dao_wen": "赌命", "x": x, "cost_type": "假碎片", "fake_cost": x,
             "duming_hp_pct": 30, "duration": x,
-            "summary": f"消耗{x}假碎片，[回始]随机目标失去30%当前生命，持续{x}回合"
+            "summary": f"消耗{x}假碎片；持续{x}回合，每[回始]随机一名存活角色失去30%当前生命"
         }
     
     @staticmethod
@@ -1131,9 +1141,9 @@ class DaoWenEngine:
             "退化": cls.calculate_tuihua,
             # 罪孽都市
             "加害": cls.calculate_jiahai,
-            "点金": cls.calculate_dianjin,
+            "失忆": cls.calculate_shiyi,
             "逼债": cls.calculate_bizhai,
-            "抵扣": cls.calculate_dikou,
+            "豪夺": cls.calculate_haoduo,
             "清算": cls.calculate_qingsuan,
             "赎金": cls.calculate_shujin,
             "假钞": cls.calculate_jiachao,
@@ -1264,14 +1274,14 @@ class ResonanceEngine:
             ("退化", "转换", "变形"),
         ],
         "罪孽都市闭环": [
-            ("点金", "转换", "逼债"),
-            ("逼债", "反转", "抵扣"),
-            ("抵扣", "曲解", "清算"),
+            ("失忆", "转换", "逼债"),
+            ("逼债", "反转", "豪夺"),
+            ("豪夺", "曲解", "清算"),
             ("清算", "反转", "赎金"),
             ("赎金", "转换", "假钞"),
             ("假钞", "曲解", "赌命"),
             ("赌命", "反转", "消灾"),
-            ("消灾", "曲解", "点金"),
+            ("消灾", "曲解", "失忆"),
         ],
         "龙心谷闭环": [
             ("加害", "反转", "龙鳞"),

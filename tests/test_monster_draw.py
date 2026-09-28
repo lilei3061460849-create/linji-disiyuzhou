@@ -1,11 +1,12 @@
 """
 pytest 风格测试 - 里程碑4a：出怪系统(战始抽怪)
 
-DM裁定记录：出怪数量公式采用 AI_EXPERIENCE.md 记录版"battle_number-3"（README.md已同步更正，
-不再是曾经的"-2"）。一阶7场序列：1/1/1/1/2/3/4。
+规则变更记录：出怪数量 2026-09-28 用户令改为**配方式**（N=随机(1,上界)，S=随机(1,N)，
+R_i/T_i 随机），按阶级递增——一阶上界沿用旧"battle_number-3"（旧"确定值"口径已废止），
+二阶及以上上界为怪物池规模 12。事实源 `engine/monsters.py::roll_spawn_plan`。
 
 覆盖范围：
-1. 数量公式：1/1/1/1/2/3/4 (最低1)
+1. 上界与配方不变量（一阶 1/1/1/1/2/3/4 为上界序列；N=S+ΣR_i；1≤T_i≤5）
 2. 只从当前副本自己的12怪物池抽取，不混入其他副本
 3. 允许重复抽选同一怪物种族
 4. 抽到的Entity面板(攻击次数/攻击力/血限)与道纹X值必须与规则正文一致
@@ -27,7 +28,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import pytest
 
 from engine.api import GameEngine
-from engine.monsters import compute_draw_count, parse_monster_pool
+from engine.dice import DiceEngine
+from engine.monsters import compute_draw_cap, parse_monster_pool, roll_spawn_plan
 
 
 DUNGEON_INDEX_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "副本索引.md")
@@ -51,16 +53,59 @@ def _new_engine(db_suffix: str, region: str) -> GameEngine:
 # 正常路径
 # ========================================================================
 
-def test_draw_count_formula_matches_confirmed_sequence():
-    """正常路径：全部副本统一，7场出怪数量必须是 1/1/1/1/2/3/4（DM已裁定的-3公式）"""
+def test_draw_cap_tier1_follows_battle_sequence():
+    """正常路径：一阶 N 的上界 = max(1, 战斗场数-3)，七场为 1/1/1/1/2/3/4
+
+    2026-09-28 用户令改配方式出怪后，这串数字的语义从"确定值"变成"随机上界"
+    （N=随机(1,上界)）；旧"数量=战斗场数-3"精确口径已废止。
+    """
     expected = [1, 1, 1, 1, 2, 3, 4]
-    actual = [compute_draw_count(n) for n in range(1, 8)]
+    actual = [compute_draw_cap(n, tier=1) for n in range(1, 8)]
     assert actual == expected
 
 
-def test_draw_count_same_for_all_tiers():
-    """正常路径：二阶乱葬岗与一阶共用同一出怪公式（不区分阶级）"""
-    assert [compute_draw_count(n) for n in range(1, 8)] == [1, 1, 1, 1, 2, 3, 4]
+def test_draw_cap_scales_with_tier():
+    """正常路径：阶级递增——二阶及以上 N=随机(1,12)，与战斗场数无关"""
+    assert [compute_draw_cap(n, tier=2) for n in range(1, 8)] == [12] * 7
+    assert compute_draw_cap(3, tier=5) == 12
+    # 一阶即使场次很大也被池规模夹住（正文口径 N=随机(1,12)），不会突破上界
+    assert compute_draw_cap(99, tier=1) == 12
+
+
+@pytest.mark.parametrize("seed", range(1, 21))
+def test_spawn_recipe_invariants(seed):
+    """正常路径：配方式四条不变量对任意种子都成立
+
+    N=随机(1,上界)、S=随机(1,N)、R_i=随机(1,N-S-ΣR_j)、T_i=随机(1,5)，直至 S+ΣR_i=N。
+    """
+    dice = DiceEngine(seed=seed)
+    for tier in (1, 2, 4):
+        for battle in range(1, 8):
+            plan = roll_spawn_plan(dice, battle, tier)
+            waves = plan["waves"]
+            assert 1 <= plan["total"] <= plan["cap"] == compute_draw_cap(battle, tier)
+            assert 1 <= plan["first_count"] <= plan["total"]
+            assert sum(w["count"] for w in waves) == plan["total"] - plan["first_count"]
+            assert len(plan["queue_rounds"]) == plan["total"] - plan["first_count"]
+            prev = 1
+            for wave in waves:
+                assert 1 <= wave["count"]                        # R_i ≥ 1
+                assert 1 <= wave["arrive_round"] - prev <= 5     # T_i = 随机(1,5)
+                prev = wave["arrive_round"]
+
+
+def test_battle_start_follows_spawn_plan():
+    """正常路径：[战始]只让 S 只首发，其余按计划的进场回合进入增援队列"""
+    engine = _new_engine("recipe_match", "扭曲都市")
+    engine.state.current_battle = 6   # 第7场：一阶上界=4，才会出现"有增援"的局面
+    engine.state.energy = 0
+    r = engine.execute_action("battle_start", {})
+    assert r["success"] is True
+    plan = r["spawn_plan"]
+    assert r["draw_count"] == plan["total"] == len(engine.state.enemies) + len(plan["queue_rounds"])
+    assert len(engine.state.enemies) == plan["first_count"]
+    assert [m["arrive_round"] for m in engine.state.monster_reinforcements] == plan["queue_rounds"]
+    assert r["reinforcement_waves"] == plan["waves"]
 
 
 def test_battle_start_actually_populates_enemies_from_correct_region_pool():
@@ -88,15 +133,18 @@ def test_drawn_monster_panel_matches_readme_exactly():
     assert known["dao_wen"] == {"加害": None, "狂暴": None, "波及": None}
 
 
-def test_repetition_allowed_across_many_draws():
-    """正常路径：允许重复抽选同一怪物种族——多场连续抽取应能抽出重复名字"""
+def test_seven_battles_match_per_battle_draw_totals():
+    """正常路径：七场连续出怪——每场总数=首发+增援，全部来自本副本池"""
     engine = _new_engine("repeat_ok", "龙心谷")
-    all_names = []
+    pool_names = {m["name"] for m in engine.monster_pool["龙心谷"]}
+    all_names, expected_total = [], 0
     for _ in range(7):
         engine.state.energy = 0
         r = engine.execute_action("battle_start", {})
         all_names.extend(r["enemies"] + r["queued_reinforcements"])
-        # 波次：逐轮放出增援并清掉，否则战终门禁拦
+        expected_total += r["draw_count"]
+        assert len(r["enemies"]) == r["first_wave_count"], "首发数必须等于配方里的 S"
+        # 配方：按计划进场回合逐轮放出增援并清掉，否则战终门禁拦
         while engine.state.monster_reinforcements:
             engine.execute_action("round_start", {})
             for enemy in engine.state.enemies:
@@ -112,8 +160,22 @@ def test_repetition_allowed_across_many_draws():
             enemy.current_hp = 0
             enemy.is_alive = False
         engine.execute_action("battle_end", {})
-    assert len(all_names) == 13  # 1+1+1+1+2+3+4 = 13
-    assert len(set(all_names)) < len(all_names), "13次抽取(池仅12种)必然会出现至少一次重复(抽屉原理)"
+    assert len(all_names) == expected_total, "每场 N=首发+增援，七场总数应等于各场 N 之和"
+    assert all(name in pool_names for name in all_names), "出怪只能来自当前副本自己的池"
+
+
+def test_draws_are_with_replacement():
+    """正常路径：出怪是**有放回**抽取——允许重复抽选同一怪物种族，池不被消耗
+
+    抽屉原理：40 次抽取只可能来自 12 种，必然出现重复；若改成无放回，本例会失败。
+    """
+    pool = parse_monster_pool(DUNGEON_INDEX_PATH)["龙心谷"]
+    dice = DiceEngine(seed=5)
+    names = [dice.auto_roll(f"draw_with_replacement_{i}", pool, context="有放回抽取校验")["selected"]["name"]
+             for i in range(40)]
+    assert len(names) == 40
+    assert len(set(names)) < len(names), "40次抽取(池仅12种)必须出现重复=有放回"
+    assert set(names) <= {m["name"] for m in pool}
 
 
 def test_forced_monster_from_event_appears_extra_next_battle():
@@ -127,7 +189,8 @@ def test_forced_monster_from_event_appears_extra_next_battle():
     r = engine.execute_action("battle_start", {})
     names = r["enemies"]
     assert any("追求者" in n for n in names), f"追求者应额外出现，实际{names}"
-    assert len(engine.state.enemies) == r["draw_count"] + 1, "额外怪物应叠加在正常出怪数量之上，而不是占用/替换名额"
+    assert len(engine.state.enemies) == r["first_wave_count"] + 1, \
+        "额外怪物应叠加在正常出怪数量之上，而不是占用/替换名额"
     assert engine.state.forced_monsters_next_battle == [], "登记项使用后应清空，不能在第三场重复出现"
 
     zhuiqiuzhe = next(e for e in engine.state.enemies if e.name == "追求者")
@@ -138,12 +201,17 @@ def test_forced_monster_from_event_appears_extra_next_battle():
 # 边界条件
 # ========================================================================
 
-def test_draw_count_floors_at_one_for_high_battle_number_underflow():
-    """边界：公式在场次很小时不能算出0或负数，必须floor在1"""
-    assert compute_draw_count(1) == 1
-    assert compute_draw_count(2) == 1
-    assert compute_draw_count(3) == 1
-    assert compute_draw_count(0) == 1
+def test_draw_cap_floors_at_one_for_small_battle_numbers():
+    """边界：上界在场次很小时不能算出0或负数，必须floor在1（此时 N=1、S=1、无增援）"""
+    assert compute_draw_cap(1) == 1
+    assert compute_draw_cap(2) == 1
+    assert compute_draw_cap(3) == 1
+    assert compute_draw_cap(0) == 1
+    # 上界为 1 时不掷骰（随机数恒为 1，不占用正式随机流）
+    dice = DiceEngine(seed=11)
+    plan = roll_spawn_plan(dice, 1, tier=1)
+    assert plan == {"total": 1, "first_count": 1, "waves": [], "queue_rounds": [], "cap": 1}
+    assert dice._history == [], "上界=1 不应消耗随机流"
 
 
 def test_unknown_region_draws_nothing_but_does_not_crash():

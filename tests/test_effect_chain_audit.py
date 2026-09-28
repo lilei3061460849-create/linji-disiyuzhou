@@ -308,10 +308,10 @@ def test_e_collapse_goes_through_unified_death():
 
     assert enemy.is_alive is False
     assert enemy._death_ctx["subtype"] == "collapse"
-    assert enemy._death_ctx["source"] == "崩解"
+    assert enemy._death_ctx["source"] == "迷失", "2026-09-28【崩解】改名【迷失·崩解】，source 统一为'迷失'"
     assert enemy._death_ctx["parent_event_id"] is not None
     assert len(_events(combat, CombatEventType.ENTITY_DIED)) == 1
-    assert player.current_speed == 3, "崩解死者同样要触发[命零]后效果"
+    assert player.current_speed == 3, "迷失·崩解死者同样要触发[命零]后效果"
 
 
 # ==================== F. Hook 顺序显式化 ====================

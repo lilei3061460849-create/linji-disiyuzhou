@@ -25,7 +25,7 @@ def _engine(suffix, **points):
     assert r.get("success"), r
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "曲解"})
-    e.execute_action("setup_choose_region", {"region": "乱葬岗"})
+    e.execute_action("setup_choose_region", {"region": "扭曲都市"})
     assert e.state.phase == "pre_battle", e.state.phase   # 战始只接受局外阶段
     return e
 

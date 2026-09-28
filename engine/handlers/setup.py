@@ -97,19 +97,38 @@ def handle_setup_choose_region(engine: Any, params: Dict[str, Any]) -> Dict[str,
     if not engine.state.player.dao_wen or sum(engine.state.resonance.values()) != 1:
         return {"success": False, "error": "选择副本前必须先获得初始道纹并选择1种初始残韵"}
     region = params.get("region", "")
-    valid = ["罪孽都市", "扭曲都市", "龙心谷", "乱葬岗"]
+    valid = engine.unlocked_regions()
     if region not in valid:
+        from ..gamedata import REGION_TIERS
+        if region not in getattr(engine, "monster_pool", {}):
+            return {"success": False,
+                    "error": f"副本【{region}】尚未接入运行时（未实现草案），只能从{valid}中选择"}
+        from ..monsters import PROGRESSION_ENABLED
+        if (PROGRESSION_ENABLED and not engine.state.endless_mode
+                and int(REGION_TIERS.get(region, 1)) > int(engine.state.unlocked_tier)):
+            need = int(REGION_TIERS.get(region, 1)) - 1
+            return {"success": False,
+                    "error": f"副本【{region}】是{REGION_TIERS.get(region, 1)}阶，"
+                             f"当前只解锁到{engine.state.unlocked_tier}阶"
+                             f"（通过{need}阶最终死斗后解锁下一阶级）；只能从{valid}中选择"}
         return {"success": False, "error": f"只能从{valid}中选择"}
     engine.state.current_region = region
     engine.state.phase = "pre_battle"
     owned = [r.name for r in engine.state.relics]
+    endless_note = ""
+    if engine.state.endless_mode:
+        endless_note = (f"｜无尽模式第{engine.state.endless_cycle}轮：怪物池=全部已实现副本，"
+                        f"局外精力{engine.state.energy_budget}点，【探索】不开放")
     return {
         "success": True,
         "action": "选择副本",
         # relic_choices 为兼容回显：开局遗物已在属性分配后发现并选定（新流程：先遗物后道纹）。
-        "result": {"region": region, "relic_choices": owned, "relics_owned": owned},
+        "result": {"region": region, "relic_choices": owned, "relics_owned": owned,
+                   "unlocked_tier": int(engine.state.unlocked_tier),
+                   "endless_mode": bool(engine.state.endless_mode),
+                   "endless_cycle": int(engine.state.endless_cycle)},
         "next_actions": ["pre_battle_action"],
-        "note": "副本已选择；开局配置完成（遗物与初始道纹均已在此前发现），进入局外行动。",
+        "note": "副本已选择；开局配置完成（遗物与初始道纹均已在此前发现），进入局外行动。" + endless_note,
     }
 
 

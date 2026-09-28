@@ -199,11 +199,10 @@ def test_bizhong_layers_persist_across_rounds_until_used():
 
 # ==================== 硬伤2 整环：必中 → debuff → 逼玩家用残韵 ====================
 
-def test_monster_self_buff_bizhong_then_forces_debuff():
-    """整环：怪物自施【必中】拿到层数，下一手 debuff 消耗 1 层 → 玩家无法抵抗。
-
-    这是硬伤2 想要的「压力」：玩家要么吃下 debuff，要么花残韵把该道纹转掉。
-    怪物面板本来就承载【必中】（勾魂使者4、尸霸2、执念4…），无需新增面板字段。
+def test_monster_cast_bizhong_self_then_forces_debuff():
+    """整环（2026-09-28 必中X最终=self-buff口径）：怪物施放必中X=3——给**自身**挂【必中】
+    姿态持续3回合；下一手怪物放勾魂，玩家提交 dodge 也无法闪避/抵抗（必中姿态下
+    怪物选中的目标无法闪避），被挂上勾魂。
     """
     e = _engine("loop")
     p = e.state.player
@@ -212,16 +211,15 @@ def test_monster_self_buff_bizhong_then_forces_debuff():
     e.state.enemies.append(m)
     e.combat.reset_monster_activation()
 
-    # 回合①：自施必中（自身道纹，不需目标）→ 拿到层数
+    # 怪物对自己施必中3（self-buff，无目标）→ 怪物身上挂【必中】姿态
     out1 = resolve_monster_phase(e.combat, {"enemy:0": "必中"})
     assert any(isinstance(d, dict) and d.get("daowen_activated") == "必中"
                for d in out1), out1
-    assert e.combat.bizhong_remaining(m) > 0, "怪物自施必中后应持有层数"
+    assert m.has_status("必中"), "怪物施必中X后自身应进入【必中】姿态"
 
-    # 回合②：debuff 道纹压上来，玩家提交 dodge 也无效
+    # 下一回合：怪物放勾魂 → 怪物处于必中姿态 → 玩家无法闪避/抵抗 → 勾魂生效
     e.state.current_round = 3
     e.combat.reset_monster_activation()
-    before = e.combat.bizhong_remaining(m)
     prepared = e.combat.prepare_monster_phase()
     actor = next(a for a in prepared["actors"] if a["actor_ref"] == "enemy:0")
     dao = {"name": "勾魂", "target_ref": "player:0", "dodge": True,
@@ -234,10 +232,9 @@ def test_monster_self_buff_bizhong_then_forces_debuff():
     e.combat.resolve_monster_phase(
         [{"actor_ref": "enemy:0", "daowen": dao, "attack_actions": attacks}],
         prepared=prepared)
-    assert p.has_status("勾魂"), "持必中的怪物 debuff 必须生效（玩家无法抵抗）"
-    assert e.combat.bizhong_remaining(m) < before, "debuff 判定应消耗 1 层"
+    assert p.has_status("勾魂"), "怪物处于必中姿态，勾魂必须命中生效"
 
-    # 玩家的出路：残韵把该道纹转掉，怪物后面不再施放它（已生效的 debuff 不清除）
+    # 玩家的出路：残韵把该道纹转掉（已生效的 debuff 不清除）
     e.state.resonance = {"曲解": 1}
     r = e.execute_action("use_resonance", {"source_daowen": "勾魂",
                                            "resonance_type": "曲解",

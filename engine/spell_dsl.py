@@ -52,6 +52,7 @@ TRIGGER_ROUND_END = "回终"
 TRIGGER_SELF_TURN_END = "自身回合结束"
 TRIGGER_ENEMY_ROUND_START = "敌回始"
 TRIGGER_ENEMY_ROUND_END = "敌回终"
+TRIGGER_INSTANT = "瞬发"
 
 ALL_TRIGGERS = (
     TRIGGER_BEFORE_DAMAGE, TRIGGER_AFTER_DAMAGE,
@@ -60,6 +61,7 @@ ALL_TRIGGERS = (
     TRIGGER_BATTLE_START, TRIGGER_BATTLE_END,
     TRIGGER_ROUND_START, TRIGGER_ROUND_END, TRIGGER_SELF_TURN_END,
     TRIGGER_ENEMY_ROUND_START, TRIGGER_ENEMY_ROUND_END,
+    TRIGGER_INSTANT,
 )
 
 
@@ -155,6 +157,10 @@ def parse_trigger(text: str) -> str:
     # 不能先按“自身/的”剥词后误归入完整回合的“回终”（那发生在怪物阶段之后）。
     if any(phrase in raw for phrase in ("自身回合结束", "自己的回合结束", "己方回合结束")):
         return TRIGGER_SELF_TURN_END
+    # 瞬发（trigger=immediate）是主动施法，不是事件时点：只接受"瞬发"/"immediate"
+    # 这两种明确写法，不做模糊同义（"立即"等词常出现在事件触发描述里，会误判）。
+    if raw in ("瞬发", "immediate", "trigger=immediate"):
+        return TRIGGER_INSTANT
     cleaned = normalize_trigger_text(raw)
     if not cleaned:
         raise SpellDslError(f"触发条件【{raw}】剥离修饰词后为空，无法识别时机")
@@ -556,6 +562,11 @@ def _check_global_trigger_targets(trigger: str, steps) -> None:
     """
     if trigger in GLOBAL_TRIGGERS:
         allowed = ("self", "caster", "any")
+    elif trigger == TRIGGER_INSTANT:
+        # 瞬发：主动施法，没有"攻击者"；"目标"=本次施法指定的目标。
+        # 条件表达式仍不能以攻击者/目标为主语（条件求值器里 target 映射到持有者，
+        # 语义不成立；执行期条件求值属于 Phase 3）。
+        allowed = ("self", "caster", "target", "any")
     else:
         roles = extra_trigger_roles(trigger)
         if not roles:
@@ -588,6 +599,21 @@ def parse_spell_definition(trigger_condition: str, effect_flow: str,
     steps, loop = parse_effect_flow(effect_flow, known_daowen)
     _check_global_trigger_targets(trigger, steps)
     return ParsedSpell(trigger=trigger, steps=steps, loop=loop)
+
+
+def parse_instant_flow(effect_flow: str, known_daowen: set[str]) -> ParsedSpell:
+    """瞬发法术（cast(flow=...)）的效果流程解析入口。
+
+    与 parse_spell_definition 共用 parse_effect_flow 与目标身份校验，只是触发
+    时机固定为 TRIGGER_INSTANT，不需要触发条件文本。
+    循环标记在瞬发里暂不支持：最终 LoopStep 语义属于 Phase 4，本阶段直接拒绝，
+    避免临时设计一套循环语义。
+    """
+    steps, loop = parse_effect_flow(effect_flow, known_daowen)
+    if loop:
+        raise SpellDslError("瞬发法术暂不支持循环（循环执行器尚未接入瞬发路径）")
+    _check_global_trigger_targets(TRIGGER_INSTANT, steps)
+    return ParsedSpell(trigger=TRIGGER_INSTANT, steps=steps, loop=False)
 
 
 def describe_condition(node) -> str:

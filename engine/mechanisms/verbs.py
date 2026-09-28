@@ -118,7 +118,17 @@ def _verb_shield(combat, spec, ctx):
 
 
 def _verb_mutation(combat, spec, ctx):
-    return spec["target"].add_mutation(spec.get("layers", spec.get("amount", 0)))
+    """施加异变。2026-09-28 用户令：非怪物达阈值触发【迷失】（变怪物/命零），
+    怪物达阈值【迷失·崩解】直接命零——统一在动词层处理，避免每个 effect 写一份。"""
+    target = spec["target"]
+    layers = spec.get("layers", spec.get("amount", 0))
+    mut = target.add_mutation(layers)
+    if mut.get("collapsed"):
+        combat._on_entity_death(
+            target, ctx=combat._lost_context(target, ctx, subtype="collapse"))
+    elif mut.get("lost"):
+        combat._resolve_mutation_lost(target, ctx)
+    return mut
 
 
 def _verb_mana(combat, spec, ctx):

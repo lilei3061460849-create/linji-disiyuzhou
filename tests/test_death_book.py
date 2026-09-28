@@ -146,7 +146,7 @@ def test_two_config_examples_append_without_code_change(tmp_path):
     second = store.append(CAUSE_DRAFTS["collapse"])
     loaded = store.load()
     assert loaded[0]["text"] == first["text"] == "受到致死攻击命零"
-    assert loaded[1]["text"] == second["text"] == "异变叠满崩解命零"
+    assert loaded[1]["text"] == second["text"] == "异变叠满迷失（崩解/叛变）命零"
     parsed = parse_legacies(book.read_text(encoding="utf-8"))
     assert [item["text"] for item in parsed] == [first["text"], second["text"]]
 
