@@ -157,12 +157,13 @@ class MonsterLifeMixin:
         log = [f"{monster.name}发动【原初{x}】：异变+{cost}（当前{pay['mutation_total']}层）"]
         
         if pay["collapsed"]:
-            self._on_entity_death(monster, ctx=self._collapse_context(monster, {
+            # 怪物异变爆体（旧【崩解】，怪物达到阈值仍直接命零；2026-09-28 非怪物改成【迷失】）
+            self._on_entity_death(monster, ctx=self._lost_context(monster, {
                 "timing": self._current_context_timing(), "source": f"原初{x}",
                 "source_type": "evolution", "actor": monster, "target": monster,
                 "mechanic": "cost", "subtype": "mutation", "amount": cost,
-                "tags": {"evolution", "active_payment"}}))
-            log.append(f"异变达到{pay['mutation_total']}层，触发【崩解】：{monster.name}直接命零，进化效果中断")
+                "tags": {"evolution", "active_payment"}}, subtype="collapse"))
+            log.append(f"异变达到{pay['mutation_total']}层，触发【迷失·崩解】：{monster.name}异变爆体直接命零，进化效果中断")
             return {"success": True, "action": "进化·原初X", "collapsed": True,
                     "log": log, "mutation": pay,
                     "state": self._get_combat_state()}
@@ -198,7 +199,7 @@ class MonsterLifeMixin:
             difficulty = self.check_monster_difficulty(m)
             if not difficulty:
                 continue
-            # 异变预算：门票异变5X后若达到阈值则触发【崩解】直接命零、借用中断。
+            # 异变预算：门票异变5X后若达到阈值则触发【迷失·崩解】直接命零、借用中断。
             # max_x_by_mutation = 不崩解的最大X；超出属于合法但纯亏的自杀式选择，不禁止。
             max_x = max(0, (Entity.MUTATION_COLLAPSE_THRESHOLD - 1 - m.mutation_count) // self.YUANCHU_COST_RATE)
             options.append({

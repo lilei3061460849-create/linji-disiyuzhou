@@ -204,21 +204,49 @@ def test_wangyouxiang_registered_in_revised_relic_pool():
     assert "钱袋" not in names
 
 
-def test_wangyouxiang_action_loses_daowen_and_gains_shards():
-    """忘忧香正常路径：忘忧行动按档位永久失去指定数量道纹、获得对应碎片"""
-    engine = _new_engine("wangyou_action")
+def test_wangyouxiang_out_of_battle_action_removed():
+    """2026-09-28 用户令：忘忧香改为战斗被动（溢出回复→格挡），局外【忘忧】行动已删除。"""
+    engine = _new_engine("wangyou_removed")
     engine.state.relics.append(Relic(name="忘忧香", effect=""))
-    _give_daowen(engine.state.player, "再生")
     engine.state.energy = 3
-    shards_before = engine.state.shards
-
     r = engine.execute_action("pre_battle_action", {
         "sub_action": "忘忧", "tier": 2, "daowen_names": ["杀伐", "再生"],
     })
-    assert r["success"] is True
-    assert engine.state.shards == shards_before + 55
-    assert "杀伐" not in engine.state.player.dao_wen
-    assert "再生" not in engine.state.player.dao_wen
+    assert r["success"] is False, "局外【忘忧】已删除，应返回失败"
+
+
+def test_wangyouxiang_converts_overheal_to_block():
+    """战斗被动：持有忘忧香时，溢出回复转化为等量格挡。"""
+    engine = _new_engine("wangyou_passive")
+    engine.state.relics.append(Relic(name="忘忧香", effect=""))
+    _start_with_enemy(engine, Entity(name="大怪", entity_type="怪物", blood_limit=100, current_hp=100))
+    p = engine.state.player
+    p.current_hp = p.blood_limit  # 满血，任何回复都是溢出
+    block_before = p.shield
+    detail = engine.state.apply_heal(p, 12, ctx={
+        "timing": "player_action", "source": "测试", "source_type": "test",
+        "actor": p, "target": p, "mechanic": "heal", "subtype": "test", "amount": 12,
+        "tags": {"test"}})
+    assert detail["actual_heal"] == 0
+    assert detail["overheal"] == 12
+    assert detail.get("wangyouxiang_block") == 12
+    assert p.shield == block_before + 12, f"溢出12应转12格挡，实得{p.shield - block_before}"
+
+
+def test_wangyouxiang_does_nothing_without_relic():
+    """无忘忧香时，溢出回复按原逻辑走（不转格挡）。"""
+    engine = _new_engine("wangyou_no_relic")
+    engine.state.relics = [r for r in engine.state.relics if r.name != "忘忧香"]
+    _start_with_enemy(engine, Entity(name="大怪", entity_type="怪物", blood_limit=100, current_hp=100))
+    p = engine.state.player
+    p.current_hp = p.blood_limit
+    block_before = p.shield
+    detail = engine.state.apply_heal(p, 12, ctx={
+        "timing": "player_action", "source": "测试", "source_type": "test",
+        "actor": p, "target": p, "mechanic": "heal", "subtype": "test", "amount": 12,
+        "tags": {"test"}})
+    assert detail.get("wangyouxiang_block") is None
+    assert p.shield == block_before
 
 
 # ========================================================================

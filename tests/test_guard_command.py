@@ -40,12 +40,20 @@ def _friend_beifu(name="岩行者", x=1, hp=54, atk_count=2, atk_power=4) -> Ent
 
 
 def _start_battle_with(engine, monster):
+    """构造一个「场上恰好是指定单怪、无增援」的战斗场景，用于护卫/指令类单步断言。
+
+    2026-09-28 配方式出怪后，battle_start 会先清空 enemies 再按配方放 S 只首发 + 增援队列；
+    本夹具用指定单怪替换掉配方放出来的首发与增援，避免依赖具体 S/T_i 的随机落点。
+    """
     engine.state.energy = 0
-    engine.state.enemies.append(monster)
     active = {r.name for r in engine.state.relics if engine.state.sealed_relics.get(r.name, 0) <= 0}
     bs = engine.execute_action("battle_start", {"relic_choices": {
         n: {"use": False} for n in ("三相残韵盘", "猩红果实", "苍白之花") if n in active}})
     assert bs["success"], bs
+    # 用测试指定单怪替换配方出怪（等价于「这场战斗固定就是这只怪」），并清空增援队列
+    engine.state.enemies.clear()
+    engine.state.enemies.append(monster)
+    engine.state.monster_reinforcements = []
     engine.execute_action("round_start", {"relic_choices": round_start_relic_choices(engine)})
 
 

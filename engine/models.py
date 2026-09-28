@@ -162,7 +162,7 @@ class StatusEffect:
     
     def __post_init__(self):
         # 即使调用方直接append而不经过Entity.add_status，代价标记也不能被战终误清。
-        if (self.name in {"流血", "衰老", "枯竭", "萎缩", "疲惫", "异变", "崩解"}
+        if (self.name in {"流血", "衰老", "枯竭", "萎缩", "疲惫", "异变", "迷失"}
                 and self.scope == EffectScope.BATTLE.value):
             self.scope = EffectScope.COST.value
 
@@ -267,10 +267,16 @@ class Entity:
     departure_reason: str = ""   # 离场原因（雕塑/癌变/还债/救赎/逃跑/...）
     hp_lost_this_round: int = 0   # 本回合累计失去的生命（活血用，回始归零）
     actions_used_this_round: int = 0  # 本回合已消耗的出手次数（回始归零，用于出手预算校验）
-    # ---- 招架（2026-09-13 新增第三种受击选项）----
-    # 声明即整轮生效：本轮每次受到的伤害减去等同当前法力的数值；下回合不能再招架。
-    parrying_this_round: bool = False   # 本回合是否已进入招架姿态
-    parry_locked_this_round: bool = False  # 本回合被禁用招架（上回合招架过）
+    # ---- 蓄锐（2026-09-28 基础动作）：消耗1出手换取下回合+1出手 ----
+    # 用 Entity.field 方式声明：
+    _xurui_pending: int = field(default=0)
+    # 新规则：本回合你受到的攻击伤害 - 你10%当前生命（向下取整，最低0）；
+    # 每回合可使用次数 = 你当前生命（每次受击消耗1次，用完后本回合后续攻击不再减伤）。
+    # 不再有"上回合招架过→本回合禁用"的锁定。
+    parrying_this_round: bool = False   # 本回合是否已声明招架姿态
+    parry_uses_remaining_this_round: int = 0  # 本回合剩余可招架次数（声明时设为 current_hp）
+    # 旧 parry_locked_this_round 字段 2026-09-28 废弃，保留以兼容旧存档反序列化（不再读取/写入）。
+    parry_locked_this_round: bool = False
     # ---- 承露盏（遗物）：每累计失去10生命获得1法力，每场战斗累计 ----
     hp_lost_this_battle: int = 0   # 本场累计失去的生命（战始归零）
     chenglu_paid: int = 0       # 本场已按此兑换过的生命总额（每10一档，战始归零）
@@ -287,8 +293,12 @@ class Entity:
     # 逼债/清算：目标侧挂账 [{x, caster}]，[回始]逐条结算，状态消失即清账
     _bizhai: list = field(default_factory=list)
     _qingsuan: list = field(default_factory=list)
-    # 抵扣：被封印的遗物 {遗物名: 剩余回合}，[回终]-1，归零解封
+    # 抵扣（旧）：被封印的遗物 {遗物名: 剩余回合}，[回终]-1，归零解封
     sealed_relics: dict = field(default_factory=dict)
+    # 豪夺（2026-09-28，旧【抵扣】改名改制）：从他人处夺取的遗物临时持有
+    # 结构：{遗物名: {"remaining": int, "from_side": "player"|"enemy", "from_entity_name": str}}
+    # 夺取期间归夺取方（caster）持有并触发被动；[回终] -1，归零归还原持有者。
+    stolen_relics: dict = field(default_factory=dict)
 
     def lose_shards(self, amount: int) -> int:
         """失去碎片（假碎片优先，余额不足则不足额损失）。返回实际失去的真碎片数。"""
@@ -320,7 +330,7 @@ class Entity:
     def is_cancer(self, value: bool):
         self.is_proliferated = value
 
-    # 异变计数（特殊事件【崩解】：达到阈值直接命零）
+    # 异变计数（特殊事件【迷失】：非怪物角色达到阈值时异变为怪物；怪物保持原阈值直接命零）
     mutation_count: int = 0
 
     # 存活
@@ -503,6 +513,8 @@ class Entity:
         base = 2
         base += self.get_status_value("疯狂")
         base -= self.get_status_value("无力")
+        # 蓄锐·增（2026-09-28 基础动作"蓄锐"的爆发buff）：每层+1出手
+        base += self.get_status_value("蓄锐·增")
         return max(0, base)
 
     @property
@@ -573,7 +585,7 @@ class Entity:
         
         return detail
     
-    MUTATION_COLLAPSE_THRESHOLD = 50  # 特殊事件【崩解】阈值：异变达到50层直接命零；原始道纹仅首次发动支付异变5X
+    MUTATION_COLLAPSE_THRESHOLD = 50  # 特殊事件【迷失】阈值：异变达到50层触发；怪物仍直接命零，非怪物见 add_mutation 注释
     # 2026-09-17 用户令：[员工]出场并存活满这么多场战斗即转为[朋友]（唯一事实源）。
     EMPLOYEE_PROMOTION_BATTLES = 3
     # 致死类特殊事件的阈值（唯一事实源；CombatEngine 的同名量一律引用这里，禁止各写一份）：
@@ -583,14 +595,16 @@ class Entity:
     def lethal_counters(self) -> dict:
         """致死类特殊事件的进度：{名称: (当前值, 阈值)}。
 
-        2026-09-15 用户令「给致死的特殊事件标明进度（如崩解10/50），让 AI 不要自爆」：
+        2026-09-15 用户令「给致死的特殊事件标明进度」，2026-09-28 用户令将【崩解】
+        重命名为【迷失】（非怪物异变达阈值：有队友→变怪物开战；无队友→命零；
+        怪物仍保持原"阈值直接命零"行为）。
         进度必须能被 AI 在面板上直接读到，不允许只留一个布尔结果。口径：
-          * 崩解 = 异变层数 / MUTATION_COLLAPSE_THRESHOLD；
+          * 迷失 = 异变层数 / MUTATION_COLLAPSE_THRESHOLD；
           * 癌变 = 本场累计回复量 / ⌈血限×CANCER_HEAL_MULTIPLIER⌉；
           * 凡庸 = 连续未出手（或连续未致敌掉血）回合数 / MEDIOCRITY_ROUNDS，取更接近线的那条。
         """
         out: dict[str, tuple[int, int]] = {
-            "崩解": (int(self.mutation_count), int(self.MUTATION_COLLAPSE_THRESHOLD)),
+            "迷失": (int(self.mutation_count), int(self.MUTATION_COLLAPSE_THRESHOLD)),
         }
         if self.blood_limit > 0:
             out["癌变"] = (int(self.total_healed),
@@ -603,32 +617,47 @@ class Entity:
         return out
 
     def lethal_progress(self) -> list[str]:
-        """致死进度的显示串，例如 ['崩解（10/50）', '癌变（30/84）']（用户令 2026-09-15）。"""
+        """致死进度的显示串，例如 ['迷失（10/50）', '癌变（30/84）']（用户令 2026-09-15/2026-09-28）。"""
         return [f"{name}（{current}/{limit}）"
                 for name, (current, limit) in self.lethal_counters().items()]
 
     def add_mutation(self, layers: int) -> dict:
-        """
-        增减异变层数。正值累加，负值削减，可降到负数。
-        特殊事件【崩解】：任一角色异变达到阈值（当前50层）时直接[命零]死亡；
+        """增减异变层数。正值累加，负值削减，可降到负数。
+
+        特殊事件【迷失】（2026-09-28 用户令重写，原【崩解】改名）：
+          * 怪物（entity_type=="怪物"）：达到阈值仍按旧规则直接[命零]死亡（"崩解"爆体）——
+            因为"变成怪物"对怪物本身无意义，怪物阈值只是"异变爆体"的上限。
+          * 非怪物角色（轮回者/朋友/员工/临时朋友/赤族等）：达到阈值时不在模型层直接命零，
+            返回 `lost=True` 交由战斗层 _resolve_mutation_lost 判定——
+              - 己方还有其他存活角色（队友/朋友/员工/临时朋友/其他轮回者阵营角色）：
+                该角色异变为怪物，立刻与原队伍开战；
+              - 否则：直接[命零]死亡。
+        模型层只负责数值与阈值，"变谁的敌/是否命零"由战斗引擎处理。
         正在结算的效果是否中断由调用方判定（与中断规则同精神：代价先付）。
         """
         if not isinstance(layers, int) or isinstance(layers, bool):
             raise ValueError("异变层数必须是整数")
         if layers != 0:
             self.mutation_count += layers
-        collapsed = self.mutation_count >= self.MUTATION_COLLAPSE_THRESHOLD
-        if collapsed and self.is_alive:
-            # 同 take_damage：调用方必须在拿到 collapsed=True 后走
-            # CombatEngine._on_entity_death(..., ctx=_collapse_context(...))，
-            # 否则崩解死者不会触发任何[命零]效果。
-            # 先翻 is_alive 再置 0：崩解=命零死因，不触发「失去生命后」反应。
-            self.is_alive = False
-            self.current_hp = 0
+        threshold_hit = self.mutation_count >= self.MUTATION_COLLAPSE_THRESHOLD
+        collapsed = False
+        lost = False
+        if threshold_hit and self.is_alive:
+            if self.entity_type == "怪物":
+                # 怪物：达到阈值仍直接命零（旧【崩解】行为保留）。调用方走 _on_entity_death(...,
+                # ctx=_lost_context(..., subtype="collapse"))，触发[命零]反应。
+                collapsed = True
+                self.is_alive = False
+                self.current_hp = 0
+            else:
+                # 非怪物：标记"迷失阈值已达"，战斗层决定是变怪物还是命零。
+                # 这里不直接改 is_alive，交给 _resolve_mutation_lost 处理。
+                lost = True
         return {
             "mutation_added": layers,
             "mutation_total": self.mutation_count,
-            "collapsed": collapsed,
+            "collapsed": collapsed,   # 怪物崩解=命零
+            "lost": lost,             # 非怪物触发"迷失"，等待战斗层处理
         }
     
     def heal(self, amount: int) -> dict:
@@ -709,7 +738,7 @@ class Entity:
             buffs = {
                 "固执", "贯穿", "急速", "洞察", "兴奋", "飞行", "滑翔", "狂暴",
                 "全力", "疯狂", "必中", "自愈", "洗劫", "逆鳞", "嫁祸", "背负",
-                "负岳索", "加速", "愤怒",
+                "负岳索", "加速", "愤怒", "蓄锐·增",
             }
             debuffs = {
                 "弱化", "无力", "减速", "全速", "束缚", "封印", "坠落",
@@ -755,8 +784,8 @@ class Entity:
             "mutation_count": self.mutation_count,
             "no_action_rounds": self.no_action_rounds,
             "no_damage_rounds": self.no_damage_rounds,
-            # 致死类特殊事件的进度（用户令 2026-09-15）：AI 必须能在面板上直接读到
-            # 「崩解（10/50）」这种进度，禁止只给结果不给进度。
+            # 致死类特殊事件的进度（用户令 2026-09-15/2026-09-28）：AI 必须能在面板上直接读到
+            # 「迷失（10/50）」这种进度，禁止只给结果不给进度。
             "lethal_counters": {k: list(v) for k, v in self.lethal_counters().items()},
             "lethal_progress": self.lethal_progress(),
             "hp_ratio": round(self.hp_ratio, 2),
@@ -873,6 +902,10 @@ class GameState:
     consumables: list[Consumable] = field(default_factory=list)
     # 抵扣X封印的玩家遗物 {遗物名: 剩余回合}，[回终]-1，归零解封（封印期间不触发 process_relics）
     sealed_relics: dict = field(default_factory=dict)
+    # 豪夺（2026-09-28）：玩家/敌人互相夺取的遗物临时寄存
+    #   player_stolen_from_player：{name: {"remaining":int}}——理论上罕见，留结构占位
+    #   实体.stolen_relics 在 Entity 上（玩家侧实际使用 state.stolen_relics 统一管理）
+    stolen_relics: dict = field(default_factory=dict)
     
     # 战场公开频道（硬伤3，2026-08-30）：双方与观战者共享的台词记录。
     # 条目只含 {round, battle, speaker, posture, text}——**禁止**任何真伪字段
@@ -912,6 +945,22 @@ class GameState:
     # 当前死斗中被挑战的擂主原始快照（触发时从队列取出后暂存）：
     # 挑战者落败（擂主卫冕成功）时须按 规则正文规则放回队首重新封存。
     duel_defending_snapshot: dict = field(default_factory=dict)
+
+    # 阶级推进与无尽模式（2026-09-28 用户令，待办②落地）
+    # unlocked_tier：已解锁的最高副本阶级。开局只能选阶级≤它的副本；通过某阶最终死斗
+    # 后解锁下一阶（持久化在 data/progression.json，跨轮回有效——"胜者进入下一阶级副本"
+    # 落在轮回者血脉上，而不是落在已被封存的单个角色身上）。
+    # endless_mode/endless_cycle：通过五阶死斗后进入无尽模式；cycle 是第几轮无尽，
+    # 每轮结束时+1，用于强度递增与精力递减。
+    MAX_TIER = 5  # 阶级推进的终点（五阶·启示录）；再往上就是无尽模式
+
+    # 默认值在引擎构造时被进一步处理：跨轮回持久文件不存在时视为当前已实现阶级都已解锁，
+    # 以便与"旧版本开局能直接选二阶乱葬岗"兼容；只有从持久文件显式读出 1（新轮回从一阶起）
+    # 或通过 _advance_region_unlock 把值压回 1 时，阶级门禁才真的生效。
+    # PROGRESSION_ENABLED=False（2026-09-28）时此值实际不参与门禁，保留是为未来启用做准备。
+    unlocked_tier: int = 1
+    endless_mode: bool = False
+    endless_cycle: int = 0
     
     # 员工相关
     blacklist_level: int = 0     # 黑名单计数（每累计3名员工因拒付工资/解雇/死亡离队+1，≥3触发is_blacklisted）
@@ -926,8 +975,10 @@ class GameState:
     # 事件登记的"下一场战斗额外出现的怪物"（如龙心谷"追求者·拿走口粮"），[战始]出怪时读取并额外加入
     forced_monsters_next_battle: list[dict] = field(default_factory=list)
 
-    # 波次出怪（2026-09-11 用户令）：[战始]只出第1只，其余进此队列，
-    # R4/R7/R10…回始各增援1只直到上限。元素为怪物定义dict（见 monsters.make_monster_entity 入参）。
+    # 出怪配方的增援队列（2026-09-28 用户令，取代 2026-09-11 的固定波次 R4/R7/R10）：
+    # [战始]只让 S=随机(1,N) 只首发进场，其余按第 i 波 `T_i=随机(1,5)` 的间隔、
+    # 每波 R_i 只（可>1）在对应[回始]进场。元素为怪物定义dict + "arrive_round"，
+    # 见 monsters.roll_spawn_plan / make_monster_entity 入参。
     monster_reinforcements: list[dict] = field(default_factory=list)
     # 【封印X】的暂离队列：元素为 {"monster": Entity, "return_round": int}。
     # 暂离不是死亡/永久离场，仍阻塞战终；到达回合始时把原实体重新加入 enemies。
@@ -1083,17 +1134,33 @@ class GameState:
             detail["context_warning"] = "回复缺少EffectContext；已按legacy来源兼容记录"
         overheal = detail.get("overheal", 0)
         if overheal > 0 and self.on_player_side(entity):
+            # 【忘忧香】（2026-09-28 用户令）：战斗被动。受到溢出回复时将其转化为等量格挡。
+            # 这是遗物级被动：只要持有者（己方实体/轮回者阵营）持有忘忧香，溢出回复1:1转格挡。
+            wangyou = next((r for r in self.relics if r.name == "忘忧香"), None)
+            if wangyou is not None:
+                entity.gain_shield(overheal)
+                detail["wangyouxiang_block"] = overheal
+                detail["wangyouxiang_ctx"] = make_context(
+                    timing=heal_ctx.timing, source="忘忧香", source_type="relic",
+                    actor=entity, target=entity, owner=entity,
+                    mechanic="shield", subtype="overheal_to_block", amount=overheal,
+                    tags={"overheal", "block", "wangyouxiang"},
+                    parent_event_id=heal_ctx.event_id,
+                ).to_dict()
             bottle = next((item for item in self.consumables if item.name == "龙血瓶"), None)
             if bottle is not None:
-                bottle.current_uses += overheal
-                bottle.max_uses += overheal
-                detail["dragon_blood_bottle_stored"] = overheal
-                detail["dragon_blood_bottle_ctx"] = make_context(
-                    timing=heal_ctx.timing, source="龙血瓶", source_type="consumable",
-                    actor=entity, target=entity, owner=entity,
-                    mechanic="heal_storage", subtype="overheal", amount=overheal,
-                    tags={"overheal", "storage"}, parent_event_id=heal_ctx.event_id,
-                ).to_dict()
+                # 忘忧香先转化格挡，剩余溢出再进龙血瓶；两者同时存在时忘忧香优先。
+                remaining = overheal - detail.get("wangyouxiang_block", 0)
+                if remaining > 0:
+                    bottle.current_uses += remaining
+                    bottle.max_uses += remaining
+                    detail["dragon_blood_bottle_stored"] = remaining
+                    detail["dragon_blood_bottle_ctx"] = make_context(
+                        timing=heal_ctx.timing, source="龙血瓶", source_type="consumable",
+                        actor=entity, target=entity, owner=entity,
+                        mechanic="heal_storage", subtype="overheal", amount=remaining,
+                        tags={"overheal", "storage"}, parent_event_id=heal_ctx.event_id,
+                    ).to_dict()
         self.emit_combat_event(
             CombatEventType.HEAL_APPLIED,
             actor=heal_ctx.actor, target=entity, ctx=detail["heal_ctx"],
@@ -1184,7 +1251,7 @@ class GameState:
 
         只作用于**有明确数值的失去生命**：伤害、数值型【代价】（流血）、
         直接失血（爆裂反噬等）。血限被压低导致的当前生命封顶、以及
-        「当前生命直接置0」的命零类效果（癌变/崩解/雕塑等）不带数值、
+        「当前生命直接置0」的命零类效果（癌变/迷失·崩解/雕塑等）不带数值、
         也不翻倍——它们不是"失去生命"，是判定归零。
         """
         return self.FIRST_CUP_MULTIPLIER if self.side_has(entity, self.FIRST_CUP) else 1
@@ -1349,8 +1416,18 @@ class GameState:
                 return True
         return False
 
+    @property
+    def energy_budget(self) -> int:
+        """局外[精力]预算：常规 3 点；无尽模式逐轮递减（2026-09-28 用户令「精力越来越少」）。
+
+        递减口径（AI 拟定、可由用户一句话改数）：第 C 轮为 `max(1, 3-(C-1))`，
+        即 3→2→1 后封底 1 点。[战终]恢复与买路财安全撤退的恢复都走这里。
+        """
+        if not self.endless_mode:
+            return 3
+        return max(1, 3 - max(0, int(self.endless_cycle) - 1))
+
     def to_dict(self) -> dict:
-        """导出完整状态（供AI读取）"""
         return {
             "game_id": self.game_id,
             "phase": self.phase,
@@ -1393,6 +1470,11 @@ class GameState:
             "sealed_candidates": self.sealed_candidates,
             "duel_tier": self.duel_tier,
             "duel_defending_snapshot": self.duel_defending_snapshot,
+            # 阶级推进 / 无尽模式（2026-09-28 用户令）
+            "unlocked_tier": self.unlocked_tier,
+            "endless_mode": self.endless_mode,
+            "endless_cycle": self.endless_cycle,
+            "energy_budget": self.energy_budget,
             "attribute_points": self.attribute_points,
             "player": self.player.to_dict() if self.player else None,
             "friends": [f.to_dict() for f in self.friends],
@@ -1452,7 +1534,7 @@ class GameState:
         return not self.active_enemies()
 
     def battle_lost(self) -> bool:
-        """战斗失败＝轮回者非存活（无论死因：伤害/凡庸/癌变/崩解/代价）。"""
+        """战斗失败＝轮回者非存活（无论死因：伤害/凡庸/癌变/迷失/代价）。"""
         return self.player is None or not self.player.is_alive
 
     def battle_over(self) -> bool:

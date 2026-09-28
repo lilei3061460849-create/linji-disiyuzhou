@@ -637,7 +637,7 @@ class DaowenEffectMixin:
             else:
                 caster.shards += gained
             result["effects"].append({"type": "shard_steal", "target": target.name, "gained": gained})
-        if "shard_gain" in calc:  # 点金：消耗10X法力直接换X真碎片（与伤害无关）
+        if "shard_gain" in calc:  # 失忆（旧点金）：消耗8X法力直接换80X真碎片（与伤害无关，2026-09-28）
             if caster is self.state.player:
                 self.state.shards += calc["shard_gain"]
             else:
@@ -834,12 +834,28 @@ class DaowenEffectMixin:
                 "note": f"{target.name}延后{reentry['delay_rounds']}回合，于第{reentry['return_round']}回合始再入场",
             })
 
-        # ---- 持续/触发状态（status_added）----
+        # ---- 旧必中（施法者自身次数型buff）入口已在 2026-09-28 改为自身持续X回合状态：
+        #      保留兼容分支，防止老存档调用 calc["guaranteed_hits"]。
         if "guaranteed_hits" in calc:
             self.grant_bizhong(caster, int(calc["guaranteed_hits"]))
             result["effects"].append({"type": "bizhong", "target": caster.name,
                                       "count": calc["guaranteed_hits"],
                                       "remaining": self.bizhong_remaining(caster)})
+        # 必中X（2026-09-28 二次更正）：给**自身**挂【必中】buff 持续X回合。
+        # 期间本 caster 选中的任何目标都无法闪避（见 resolve_attack 中 must_hit 判定
+        # attacker.has_status("必中") 分支）。
+        if "bizhong_self_buff" in calc:
+            rounds = int(calc["bizhong_self_buff"])
+            existed = next((s for s in caster.status_effects if s.name == "必中"), None)
+            if existed is not None:
+                existed.remaining_rounds = max(existed.remaining_rounds or 0, rounds)
+                existed.value = rounds
+            else:
+                caster.add_status(StatusEffect(
+                    name="必中", remaining_rounds=rounds, value=rounds,
+                    source=caster.name))
+            result["effects"].append({"type": "bizhong_self", "target": caster.name,
+                                      "rounds": rounds})
 
         # 蒙蔽X：使[目标]下X次造成的伤害无效。次数型，不走 duration 挂状态。
         # 此前只算出 invalid_damage_hits，apply 不消费，轮回者 use_daowen 等于白扣 5X 法力。
@@ -890,7 +906,8 @@ class DaowenEffectMixin:
             duration = calc["duration"] if calc["duration"] != 0 else -1
             effect_target = target if target else caster
             # 自身作用型道纹(变形/超频/自食等)作用于施法者
-            # 2026-09-10：道纹【洗劫】已改名【点金】并改为即时结算（不再挂状态），
+            # 2026-09-10：道纹【洗劫】改名【点金】后即时结算；2026-09-28【点金】改名【失忆】，
+            # 仍即时结算（不挂状态）。
             # 故从自身作用名单移除；状态【洗劫】本身保留，仍由【帮派令】发放。
             # 2026-09-17 用户令：【超频】改为自由选择目标（选到谁给谁加速），不再属于
             # "自身作用型"。它原本留在本名单里也无效——其 calc 无 duration 键，
@@ -976,12 +993,18 @@ class DaowenEffectMixin:
         elif name == "消灾":
             self.dice.set_rerolls(self.dice.rerolls_pending + x)
             result["effects"].append({"type": "xiaozai_rerolls", "added": x, "total": self.dice.rerolls_pending})
-        # 抵扣X：封印[目标]拥有的一件遗物，持续X（目标无遗物则无效果）
+        # 抵扣X（旧名）：封印[目标]拥有的一件遗物，持续X
         elif name == "抵扣":
             for st_target in wave_status_targets:
                 sealed = self._seal_one_relic(st_target, x)
                 result["effects"].append({"type": "dikou", "target": st_target.name,
                                           "sealed": sealed or None, "rounds": x})
+        # 豪夺X（2026-09-28）：消耗5X碎片，夺取[目标]1件遗物持续X回合（夺取者持有并享受被动）
+        elif name == "豪夺":
+            for st_target in wave_status_targets:
+                stolen = self._steal_one_relic(caster, st_target, x)
+                result["effects"].append({"type": "haoduo", "target": st_target.name,
+                                          "stolen": stolen or None, "rounds": x})
 
         # 波及X：标记建立/解除由 use_daowen 与怪物两阶段结算按显式提交逐目标处理，
         # 此处仅登记结算信息（通用状态块已排除波及，避免重复挂状态）。

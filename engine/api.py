@@ -96,6 +96,8 @@ class GameEngine:
         测试/回归场景可传入固定整数，使全程随机结果可复现。
         sealed_candidate_path: "最终的冠冕"封存候选人的持久化文件路径。必须在不同GameEngine
         实例/不同轮回者playthrough之间共享同一路径，候选人数据才能被下一位到达者读取。
+        同一个文件同时承载阶级进度（`progression` 段，见 _load_progression）：
+        跨轮回、按引擎实例隔离，测试传 tmp 路径即可，不会污染生产文件。
         """
         self.state = GameState()
         self.dice = DiceEngine(seed=rng_seed)
@@ -106,6 +108,7 @@ class GameEngine:
         self.death_book_path = death_book_path
         self.death_book = DeathBookStore(death_book_path)
         self.state.death_book_legacies = self.death_book.load()
+        self._load_progression()  # 阶级推进/无尽模式：与封存槽同文件持久（见 _save_progression）
         # 封存槽是跨轮回持久文件；若进程重启，从中恢复《死者之书》的永久癌变强化。
         if os.path.exists(sealed_candidate_path):
             try:
@@ -328,8 +331,9 @@ class GameEngine:
                 actions.append({"action_type": "setup_choose_resonance",
                                 "params_schema": {"resonance_type": ["转换", "反转", "曲解"]}})
             if not self.state.current_region:
+                # 可选副本=已实现且阶级已解锁（2026-09-28 用户令「阶级推进」）；无尽模式不设限制
                 actions.append({"action_type": "setup_choose_region",
-                                "params_schema": {"region": ["罪孽都市", "扭曲都市", "龙心谷", "乱葬岗"]}})
+                                "params_schema": {"region": self.unlocked_regions()}})
         return {"phase": GamePhase.SETUP.value, "actions": actions}
 
     def _get_pre_battle_actions(self) -> dict:
@@ -373,10 +377,7 @@ class GameEngine:
             actions.append({"action_type": "upgrade_doctor",
                             "params_schema": {"mode": ["attack_count", "attack_power"]},
                             "cost": "5碎片，不消耗精力"})
-        if any(relic.name == "忘忧香" for relic in self.state.relics):
-            actions.append({"action_type": "pre_battle_action",
-                            "params_schema": {"sub_action": "忘忧", "tier": [1, 2, 3],
-                                              "daowen_names": "完整失忆选择"}})
+        # 2026-09-28 用户令：删除局外【忘忧】行动；忘忧香改为战斗被动（溢出回复→等量格挡）。
         player = self.state.player
         blood_pact_cost_targets = ([
             {"ref": ref, "name": entity.name}
@@ -418,6 +419,11 @@ class GameEngine:
                     "candidates": global_spells_start,
                 }
             actions.append({"action_type": "battle_start", "params_schema": battle_start_schema})
+        if self.state.endless_mode:
+            # 无尽模式「无法探索」（2026-09-28 用户令）：不出现在可用行动里，
+            # 保证 get_available_actions 的输出仍可原样执行（开发规则 13）。
+            actions = [a for a in actions
+                       if a.get("params_schema", {}).get("sub_action") != "探索"]
         return {"phase": GamePhase.PRE_BATTLE.value, "energy": self.state.energy, "actions": actions}
 
     def _get_region_actions(self) -> list[dict]:
@@ -764,7 +770,7 @@ class GameEngine:
 
     _COMBAT_ONLY_ACTIONS = {
         "prepare_attack", "resolve_attack", "attack", "declare_wish", "declare_escape",
-        "declare_parry",
+        "declare_parry", "cast", "focus", "rest",
         "retreat_via_toll", "deploy_employee", "lianxin_in_battle", "declare_evolution",
         "prepare_monster_phase", "resolve_monster_phase", "monster_phase",
         "round_start", "round_end", "resolve_rebellion_battle",
@@ -913,10 +919,14 @@ class GameEngine:
                 "round_end": CombatSubphase.AWAIT_ROUND_END.value,
                 "prepare_attack": CombatSubphase.PLAYER_ACTIONS.value,
                 "resolve_attack": CombatSubphase.PLAYER_ACTIONS.value,
+                "cast": CombatSubphase.PLAYER_ACTIONS.value,
+                "focus": CombatSubphase.PLAYER_ACTIONS.value,
+                "rest": CombatSubphase.PLAYER_ACTIONS.value,
             }.get(action_type)
             player_actions = {
                 "declare_parry",
                 "use_daowen", "use_spell", "use_resonance", "consume_item",
+                "cast", "focus", "rest",
                 "declare_wish", "declare_escape", "retreat_via_toll", "deploy_employee",
                 "define_spell",
                 "lianxin_in_battle", "declare_evolution", "activate_duel_relic",
@@ -1180,6 +1190,17 @@ class GameEngine:
             return self._action_use_daowen(params)
         elif action_type == "use_spell":
             return self._action_use_spell(params)
+        # 2026-09-28 用户令：回合动作重构
+        #   attack  → 普攻（等价 prepare_attack+resolve_attack 单步封装；或走prepare/resolve两步）
+        #   cast    → 施法（=发动道纹/装配法术 合并入口；内部委托给 _action_use_daowen / _action_use_spell）
+        #   focus   → 聚能：消耗1出手，获得20%法限的法力
+        #   rest    → 蓄锐：消耗1出手，下回合出手+1
+        elif action_type == "cast":
+            return self._action_cast(params)
+        elif action_type == "focus":
+            return self._action_focus(params)
+        elif action_type == "rest":
+            return self._action_rest(params)
         elif action_type == "define_spell":
             return self._action_define_spell(params)
         elif action_type == "use_resonance":
@@ -1462,9 +1483,9 @@ class GameEngine:
             "雇佣": self._pre_battle_guyong,
             "炼心": self._pre_battle_lianxin,
             "附煞": self._pre_battle_fusha,
-            "忘忧": self._pre_battle_wangyou,
             "献祭": self._pre_battle_sacrifice,
         }
+        # 2026-09-28：局外【忘忧】已删除，忘忧香改为战斗被动。
 
         # 副本专属行动门禁（规则正文：维修=扭曲都市、雇佣=罪孽都市、炼心=龙心谷专属）。
         # 缺少该校验会让任意副本都能用他人专属行动，统计与平衡数据将失真。
@@ -1648,7 +1669,7 @@ class GameEngine:
         ("避风铃", "每次闪避后获得3格挡；当前速度归零时获得15格挡"),
         ("守夜灯", "[回始]获得[法限]10%的法力，每回合一次"),
         ("无所求", "每当在事件中选拒绝类选项，永久获得1属性点"),
-        ("忘忧香", "局外行动你可以选择\"忘忧\"（失忆1/2/3，获得30/55/80[碎片]）"),
+        ("忘忧香", "战斗被动：你受到溢出的回复时将其转化为等量格挡（2026-09-28 重做；局外【忘忧】行动已删除）"),
         ("承露盏", "每累计失去10点生命，获得1点法力（本场累计，余数滚存，[战始]归零）"),
     ]
 
@@ -2001,6 +2022,10 @@ class GameEngine:
 
     def _pre_battle_tansuo(self, params: dict) -> dict:
         """探索：一档免费发现1个未遇事件；二档支付30碎片并依次发现2个不同未遇事件。"""
+        if self.state.endless_mode:
+            # 无尽模式「无法探索」（2026-09-28 用户令）：调用方已扣的 1 点精力按失败原子性退回。
+            self.state.energy += 1
+            return {"success": False, "error": "无尽模式下无法探索：进入无尽模式后不再开放【探索】"}
         if self.event_pool.current is not None or self.state.pending_event_queue:
             self.state.energy += 1
             pending = self.event_pool.current or self.state.pending_event_queue[0]
@@ -2300,27 +2325,7 @@ class GameEngine:
             }
         }
 
-    def _pre_battle_wangyou(self, params: dict) -> dict:
-        """忘忧（需持有遗物"忘忧香"）：失忆1/2/3(永久失去自身指定的X种道纹)，获得30/55/80碎片"""
-        if not any(r.name == "忘忧香" for r in self.state.relics):
-            self.state.energy += 1
-            return {"success": False, "error": "没有忘忧香，无法执行忘忧"}
-        tier = params.get("tier", 1)
-        reward_map = {1: 30, 2: 55, 3: 80}
-        if tier not in reward_map:
-            self.state.energy += 1
-            return {"success": False, "error": "忘忧档位必须是1/2/3"}
-        player = self.state.player
-        daowen_names = params.get("daowen_names", [])
-        if not player or len(daowen_names) != tier or any(d not in player.dao_wen for d in daowen_names):
-            self.state.energy += 1
-            return {"success": False, "error": f"必须指定{tier}种自身已持有的道纹(daowen_names)永久失去"}
-        for d in daowen_names:
-            del player.dao_wen[d]
-        reward = reward_map[tier]
-        self.state.shards += reward
-        return {"success": True, "action": "忘忧",
-                "result": {"lost_daowen": daowen_names, "shards_gained": reward, "shards": self.state.shards}}
+    # 2026-09-28：_pre_battle_wangyou 已删除（局外【忘忧】被删除，忘忧香改为战斗被动）。
 
     def _pre_battle_sacrifice(self, params: dict) -> dict:
         """献祭（需持有终音法器"红头绳"）：衰老3，换取精力+2"""
@@ -2464,6 +2469,12 @@ class GameEngine:
         波及X：按显式提交逐目标建立/解除波及标记，日志返回 wave_marked/wave_unmarked。"""
         log = {"must_hit": False, "dodged_names": [], "fully_dodged": False}
         hostile_possible = (target is not None and self._hostile_to(actor, target))
+        # 必中X self-buff（remaining_rounds>0）：必中但不消耗次数
+        _bizhong_st = next((s for s in actor.status_effects if s.name == "必中"), None)
+        _real_self_buff = bool(_bizhong_st and _bizhong_st.remaining_rounds > 0)
+        if hostile_possible and _real_self_buff:
+            log["must_hit"] = True
+            return log, None
         if hostile_possible and self.combat.bizhong_remaining(actor) > 0:
             log["must_hit"] = self.combat.consume_bizhong(actor)
             if log["must_hit"]:
@@ -3032,18 +3043,17 @@ class GameEngine:
         return self._redeem_attribute_points(allocations)
 
     def _action_declare_parry(self, params: dict) -> dict:
-        """声明【招架】（2026-09-13 新增的第三种受击选项）。
+        """声明【招架】（2026-09-28 用户令重写）。
 
-        规则：本轮你每次受到的伤害减去等同你法力的数值；下回合不能使用招架。
+        新规则：
+          * 本轮你受到的攻击伤害 - 你 10% 当前生命（向下取整，最低0）；
+          * 每回合可使用次数 = 你当前生命（每次受击消耗1次，用完后本回合后续攻击不再减伤）；
+          * 减免量取**结算那一刻**的当前生命，不是声明时的快照——你在本轮掉的每一点血
+            都会同步削弱招架，这是这张牌的张力（越打越扛不住）。
+          * 不再有"上回合招架过→本回合禁用"的锁定，本回合只要没声明过就能再声明。
 
-        与闪避的关键差别，也是它为什么是回合级而不是逐击级：
-        闪避按「击」结算（每击花 1 速度、逐击提交），招架是一个**姿态**——
-        一次声明覆盖本轮全部受击，代价则记在下一个回合上。因此它不消耗出手、
-        不消耗速度，只在时间轴上欠一笔账（下回合裸奔）。
-
-        减免量取**结算那一刻**的当前法力，不是声明时的快照：法力同时就是攻力，
-        你在本轮花掉的每一点法力都会同步削弱自己的招架。这正是这张牌的张力所在
-        ——想硬扛就别出手，想出手就扛不住。
+        与闪避的关键差别：闪避按「击」结算（每击花 1 速度、逐击提交），招架是一个**姿态**
+        ——一次声明覆盖本轮的前 N 次受击（N=当前生命），不消耗出手、不消耗速度。
         """
         actor_ref = params.get("actor_ref", "player:0")
         refs = self.combat._combat_entity_refs()
@@ -3057,16 +3067,93 @@ class GameEngine:
             return duel_error
         if not self.combat.can_act(actor):
             return {"success": False, "error": f"{actor.name}当前无法行动"}
-        if getattr(actor, "parry_locked_this_round", False):
-            return {"success": False, "error": f"{actor.name}上回合已招架，本回合不能再招架"}
         if getattr(actor, "parrying_this_round", False):
             return {"success": False, "error": f"{actor.name}本回合已处于招架姿态"}
+        if actor.current_hp <= 0:
+            return {"success": False, "error": f"{actor.name}当前生命为0，无法招架"}
         actor.parrying_this_round = True
+        actor.parry_uses_remaining_this_round = max(1, int(actor.current_hp))
         return {"success": True, "action": f"{actor.name}招架",
                 "result": {"actor": actor.name,
-                           "reduction_preview": max(0, actor.current_mana),
-                           "note": "本轮每次受到的伤害减去等同当前法力的数值；"
-                                   "减免按结算时的法力计，下回合不能再招架"}}
+                           "reduction_preview": max(0, actor.current_hp // 10),
+                           "uses": actor.parry_uses_remaining_this_round,
+                           "note": f"本轮每次受到的伤害前{actor.parry_uses_remaining_this_round}击"
+                                   f"减去{actor.current_hp // 10}（10%当前生命）；"
+                                   "减免按结算时的生命计"}}
+
+    # ---------- 2026-09-28 新回合动作：cast/focus/rest ----------
+
+    def _action_cast(self, params: dict) -> dict:
+        """施法（2026-09-28 用户令：合并发动道纹/装配法术为单一"施法"动作）。
+
+        params:
+            kind: "daowen" 或 "spell"（默认 "daowen"）
+            其余参数透传给 _action_use_daowen / _action_use_spell。
+        """
+        kind = params.get("kind", "daowen")
+        sub = {k: v for k, v in params.items() if k != "kind"}
+        if kind == "daowen":
+            return self._action_use_daowen(sub)
+        if kind == "spell":
+            return self._action_use_spell(sub)
+        return {"success": False, "error": f"cast.kind 必须是 daowen 或 spell，收到 {kind!r}"}
+
+    def _action_focus(self, params: dict) -> dict:
+        """聚能（2026-09-28 基础动作）：消耗1次主动出手，立即获得自身20%[法限]的法力。"""
+        actor_ref = params.get("actor_ref", "player:0")
+        refs = self.combat._combat_entity_refs()
+        actor = refs.get(actor_ref)
+        if actor is None or not actor.is_alive:
+            return {"success": False, "error": "actor_ref不是当前存活行动者"}
+        if actor.entity_type == "怪物" and not self.state.in_final_duel:
+            return {"success": False, "error": "普通怪物必须通过怪物阶段行动"}
+        duel_err = self._check_duel_turn_or_error(actor)
+        if duel_err:
+            return duel_err
+        if not self.combat.can_act(actor):
+            return {"success": False, "error": f"{actor.name}当前无法行动"}
+        # 出手机会校验
+        budget_err = self._consume_action_or_error(actor)
+        if budget_err:
+            return budget_err
+        # 回20%法限
+        import math
+        gain = math.ceil(max(0, actor.mana_limit) * 20 / 100)
+        if gain <= 0:
+            # 法限=0的角色使用聚能：浪费1出手，不回蓝
+            return {"success": True, "action": f"{actor.name}聚能",
+                    "result": {"actor": actor.name, "mana_gained": 0,
+                               "note": f"{actor.name}法限为0，聚能未获法力"}}
+        mana_before = actor.current_mana
+        actor.current_mana = min(actor.mana_limit, actor.current_mana + gain)
+        gained = actor.current_mana - mana_before
+        return {"success": True, "action": f"{actor.name}聚能",
+                "result": {"actor": actor.name, "mana_gained": gained,
+                           "mana_before": mana_before,
+                           "mana_after": actor.current_mana}}
+
+    def _action_rest(self, params: dict) -> dict:
+        """蓄锐（2026-09-28 基础动作）：消耗1次主动出手，下回合出手+1。"""
+        actor_ref = params.get("actor_ref", "player:0")
+        refs = self.combat._combat_entity_refs()
+        actor = refs.get(actor_ref)
+        if actor is None or not actor.is_alive:
+            return {"success": False, "error": "actor_ref不是当前存活行动者"}
+        if actor.entity_type == "怪物" and not self.state.in_final_duel:
+            return {"success": False, "error": "普通怪物必须通过怪物阶段行动"}
+        duel_err = self._check_duel_turn_or_error(actor)
+        if duel_err:
+            return duel_err
+        if not self.combat.can_act(actor):
+            return {"success": False, "error": f"{actor.name}当前无法行动"}
+        budget_err = self._consume_action_or_error(actor)
+        if budget_err:
+            return budget_err
+        actor._xurui_pending = int(getattr(actor, "_xurui_pending", 0) or 0) + 1
+        return {"success": True, "action": f"{actor.name}蓄锐",
+                "result": {"actor": actor.name,
+                           "xurui_pending": actor._xurui_pending,
+                           "note": "下[回始]获得【蓄锐·增】：出手+1持续1回合"}}
 
     def _action_prepare_attack(self, params: dict) -> dict:
         """第一阶段：绑定一次行动的逐击目标、闪避、血影和法术反应选项。"""
@@ -3328,7 +3415,7 @@ class GameEngine:
                 emp.deployed_at_round = 0
         for ally in self.state.friends + self.state.employees:
             ally.has_retreated = False
-        self.state.energy = 3
+        self.state.energy = self.state.energy_budget  # 无尽模式逐轮递减，见 GameState.energy_budget
         self.state.phase = "pre_battle"
 
         return {
@@ -3426,21 +3513,55 @@ class GameEngine:
                 "mutation_added": mut["mutation_added"],
                 "mutation_total": mut["mutation_total"],
                 "collapsed": mut["collapsed"],
+                "lost": mut.get("lost", False),
             }
             if mut["collapsed"]:
-                # 修复：崩解同样是命零，必须交回统一死亡管线。
+                # 怪物（理论上玩家不会走到这里）：异变爆体命零
                 self.combat._on_entity_death(
                     self.state.player,
-                    ctx=self.combat._collapse_context(self.state.player, {
+                    ctx=self.combat._lost_context(self.state.player, {
                         "timing": self.state.combat_subphase or self.state.phase,
                         "source": "消耗品", "source_type": "consumable",
                         "actor": self.state.player, "target": self.state.player,
                         "mechanic": "cost", "subtype": "mutation", "amount": layers,
-                        "tags": {"consumable", "active_payment"}}))
+                        "tags": {"consumable", "active_payment"}}, subtype="collapse"))
                 self.state.last_death_cause = "collapse"
                 mutation_info["note"] = (
-                    f"异变达{mut['mutation_total']}层触发【崩解】，"
-                    f"{self.state.player.name}直接命零，尸体变为怪物")
+                    f"异变达{mut['mutation_total']}层触发【迷失·崩解】，"
+                    f"{self.state.player.name}异变爆体直接命零")
+            elif mut.get("lost"):
+                # 非怪物：触发【迷失】——战斗中则变身/命零；局外则直接命零。
+                if self.state.phase == "in_combat":
+                    res = self.combat._resolve_mutation_lost(self.state.player, {
+                        "timing": self.state.combat_subphase or self.state.phase,
+                        "source": "消耗品", "source_type": "consumable",
+                        "actor": self.state.player, "target": self.state.player,
+                        "mechanic": "cost", "subtype": "mutation", "amount": layers,
+                        "tags": {"consumable", "active_payment"}})
+                    # 变身不产生"死亡"，不触发死之传承；命零才走 collapse 死因
+                    if res["lost"] == "death":
+                        self.state.last_death_cause = "collapse"
+                    mutation_info["note"] = res["note"]
+                    mutation_info["lost_transform"] = (res["lost"] == "transform")
+                    mutation_info["collapsed"] = (res["lost"] == "death")
+                else:
+                    # 局外触发【迷失】无队友可战：直接命零。_on_entity_death 本身不置 hp/is_alive，
+                    # 需调用方先归零（与 add_mutation 怪物路径的口径一致）。
+                    self.state.player.current_hp = 0
+                    self.state.player.is_alive = False
+                    self.combat._on_entity_death(
+                        self.state.player,
+                        ctx=self.combat._lost_context(self.state.player, {
+                            "timing": self.state.combat_subphase or self.state.phase,
+                            "source": "消耗品", "source_type": "consumable",
+                            "actor": self.state.player, "target": self.state.player,
+                            "mechanic": "cost", "subtype": "mutation", "amount": layers,
+                            "tags": {"consumable", "active_payment"}}, subtype="collapse"))
+                    self.state.last_death_cause = "collapse"
+                    mutation_info["collapsed"] = True
+                    mutation_info["note"] = (
+                        f"异变达{mut['mutation_total']}层触发【迷失】，"
+                        f"身边无可战之敌，{self.state.player.name}直接命零")
         return {
             "success": True,
             "action": f"使用消耗品【{item_name}】",
@@ -4352,10 +4473,12 @@ class GameEngine:
         return logs
 
     def _action_battle_start(self, params: dict) -> dict:
-        """战始：抽取出怪(数量=战斗场数-3,最低1,允许重复抽选同一怪物种族)→结算战始遗物。
+        """战始：配方式出怪(总数N=随机(1,上界)、首发S=随机(1,N)、增援R_i/T_i 随机；
+        上界：一阶=战斗场数-3最低1，二阶及以上=12；允许重复抽选同一怪物种族)→结算战始遗物。
+        配方口径唯一事实源见 `engine/monsters.py::roll_spawn_plan`（2026-09-28 用户令）。
         战斗背景：文档"战斗背景：（名称与影响）"仅为战斗推演格式里的占位提示，
         正文未定义任何具体名称与机制效果，故本引擎不做机制化处理，留给叙事层自由发挥。"""
-        from .monsters import compute_draw_count, make_monster_entity
+        from .monsters import make_monster_entity, roll_spawn_plan, scale_monster_def_for_endless
         relic_choices = params.get("relic_choices", {})
         # 先完成全部静态校验，再抽怪；非法遗物参数不得消耗正式随机源。
         self.combat.validate_battle_start_relic_choices(relic_choices)
@@ -4382,32 +4505,41 @@ class GameEngine:
             gun.current_uses = gun.max_uses  # 教父左轮：[战终]耐久回满(此处按下一场[战始]起效实现，效果等价)
 
         region = self.state.current_region
-        pool = self.monster_pool.get(region, [])
+        pool = self._monster_pool_for_battle()
+        endless_cycle = int(getattr(self.state, "endless_cycle", 0) or 0)
         self.state.enemies.clear()
         self.state.monster_reinforcements = []
         self.state.delayed_monster_reentries = []
         drawn_names = []
         queued_names = []
         draw_count = 0
+        spawn_plan = None
         if pool:
-            draw_count = compute_draw_count(self.state.current_battle)
+            spawn_plan = roll_spawn_plan(self.dice, self.state.current_battle, self._current_tier())
+            draw_count = spawn_plan["total"]
             drawn_defs = []
             for i in range(draw_count):
                 roll = self.dice.auto_roll(f"monster_draw_{self.state.current_battle}_{i}", pool,
                                             context=f"出怪(第{self.state.current_battle}场,第{i + 1}只)")
-                drawn_defs.append(roll["selected"])
-            # 波次出怪（2026-09-11 用户令）：R1只出第1只，其余进增援队列，
-            # R4/R7/R10…回始各增援1只。抽怪随机流与旧版完全一致（全抽、仅延迟进场）。
+                # 无尽模式：面板按轮次递增（非无尽时 cycle<=1，原样返回）
+                drawn_defs.append(scale_monster_def_for_endless(roll["selected"], endless_cycle))
+            # 出怪配方（2026-09-28 用户令）：S=随机(1,N) 只在[战始]进场，其余进增援队列，
+            # 每波在上一波之后等待 T_i=随机(1,5) 回合进场 R_i 只（一波可多只）。
+            # 旧的"R1只出第1只、R4/R7/R10各增援1只"固定波次已废止；抽怪随机流不变（全抽、仅延迟进场）。
+            first_count = min(int(spawn_plan["first_count"]), draw_count)
+            queue_rounds = spawn_plan["queue_rounds"]
             for i, monster_def in enumerate(drawn_defs):
-                if i == 0:
+                if i < first_count:
                     m = make_monster_entity(monster_def)
                     m.spawned_round = 1
                     self.combat.init_monster_shards(m)  # 罪孽都市：[战始]自带碎片=专属道纹数值之和×2（洗劫/赎金/逼债的碎片来源）
                     self.state.enemies.append(m)
                     drawn_names.append(monster_def["name"])
                 else:
-                    self.state.monster_reinforcements.append(monster_def)
-                    queued_names.append(monster_def["name"])
+                    entry = dict(monster_def)
+                    entry["arrive_round"] = int(queue_rounds[i - first_count])
+                    self.state.monster_reinforcements.append(entry)
+                    queued_names.append(entry["name"])
 
         # 事件登记的下一场修正全部在战始一次性消费。
         modifiers = self.state.event_modifiers
@@ -4417,7 +4549,7 @@ class GameEngine:
                 f"bounty_monster_{self.state.current_battle}", pool,
                 context="通缉悬赏榜额外帮派怪物",
             )
-            bonus = make_monster_entity(roll["selected"])
+            bonus = make_monster_entity(scale_monster_def_for_endless(roll["selected"], endless_cycle))
             self.combat.init_monster_shards(bonus)
             self.state.enemies.append(bonus)
             drawn_names.append(bonus.name + "(悬赏额外)")
@@ -4443,7 +4575,7 @@ class GameEngine:
         forced = list(self.state.forced_monsters_next_battle)
         self.state.forced_monsters_next_battle = []
         for fm in forced:
-            m = make_monster_entity(fm)
+            m = make_monster_entity(scale_monster_def_for_endless(fm, endless_cycle))
             self.combat.init_monster_shards(m)
             self.state.enemies.append(m)
             drawn_names.append(fm["name"] + "(额外出现)")
@@ -4473,20 +4605,27 @@ class GameEngine:
         spell_logs = self._resolve_global_trigger_spells_for_action(
             TriggerTiming.BATTLE_START.value, params)
 
+        waves = (spawn_plan["waves"] if spawn_plan else [])
         return {
             "success": True, "action": "战始",
             "battle_number": self.state.current_battle,
             "region": region,
-            "draw_count": draw_count,
+            "draw_count": draw_count,                 # 本场怪物总数 N（配方口径）
+            "first_wave_count": (spawn_plan["first_count"] if spawn_plan else 0),
+            "spawn_plan": spawn_plan,                  # 配方明细：N/S/每波进场回合与数量
             "enemies": drawn_names,
             "queued_reinforcements": queued_names,
+            "reinforcement_waves": waves,
             "full_information": ([enemy.to_dict() for enemy in self.state.enemies]
                                  if reveal_full_information else None),
             "relic_logs": relic_logs,
             "spell_logs": spell_logs,
             "artifact_logs": artifact_logs,
-            "instruction": ("首只怪物已进场" + (f"；另有{len(queued_names)}只增援待命，R4/R7/R10…回始各进场1只" if queued_names else "（无增援）") +
-                            "；请补充选择本场战斗背景(纯叙事，不影响数值)并结算其余[战始]效果"),
+            "instruction": (f"首发{len(drawn_names)}只怪物已进场"
+                            + (f"；另有{len(queued_names)}只增援待命（"
+                               + "、".join(f"R{w['arrive_round']}进{w['count']}只" for w in waves)
+                               + "）" if queued_names else "（无增援）")
+                            + "；请补充选择本场战斗背景(纯叙事，不影响数值)并结算其余[战始]效果"),
         }
 
     # ==================== 最终的冠冕 / 第8场最终死斗 ====================
@@ -4608,6 +4747,52 @@ class GameEngine:
         """先手顺序：速限→法限→血限→当前生命，数值越大越先手"""
         return (e.speed_limit, e.mana_limit, e.blood_limit, e.current_hp)
 
+    def _read_seal_payload(self) -> dict:
+        """封存槽文件的原始 payload（{"candidates": …, "progression": …}）；缺失/坏文件→空。"""
+        path = self.sealed_candidate_path
+        if not path or not os.path.exists(path):
+            return {}
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+        except (ValueError, OSError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def _progression_payload(self) -> dict:
+        """跨轮回进度的落盘内容。
+
+        返回非空（需要落盘）的条件：
+        1) PROGRESSION_ENABLED=True —— 只要开关打开，就持久化 unlocked_tier/endless_mode/
+           endless_cycle，哪怕 unlocked_tier=1、还在第一阶；
+        2) 或者当前已处于无尽模式（endless_mode=True）—— 即使开关已关，也保留无尽进度
+           避免回退。
+        否则返回 {} —— 默认第一阶体验不写任何 progression 段，保持旧「无进度即无段」语义。
+        """
+        from .monsters import PROGRESSION_ENABLED
+        if not PROGRESSION_ENABLED and not self.state.endless_mode:
+            return {}
+        return {"unlocked_tier": int(self.state.unlocked_tier),
+                "endless_mode": bool(self.state.endless_mode),
+                "endless_cycle": int(self.state.endless_cycle)}
+
+    def _write_seal_payload(self, candidates: dict, progression: dict) -> None:
+        """写回封存槽与进度；两者皆空时删除文件（旧「无候选即删文件」语义不变）。"""
+        path = self.sealed_candidate_path
+        payload: dict = {}
+        non_empty_candidates = {str(t): q for t, q in sorted(candidates.items()) if q}
+        if non_empty_candidates:
+            payload["candidates"] = non_empty_candidates
+        if progression:
+            payload["progression"] = progression
+        if not payload:
+            if os.path.exists(path):
+                os.remove(path)
+            return
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+
     def _load_seal_slots(self) -> dict:
         """读取阶级封存槽文件 {阶级: [候选快照, ...]}（先来后到队列）。
 
@@ -4615,33 +4800,127 @@ class GameEngine:
         保证升级前后已有的候选人文件不丢失。
         """
         slots: dict = {}
-        if os.path.exists(self.sealed_candidate_path):
-            with open(self.sealed_candidate_path, encoding="utf-8") as f:
+        data = self._read_seal_payload()
+        if isinstance(data.get("candidates"), dict):
+            for tier_str, queue in data["candidates"].items():
                 try:
-                    data = json.load(f)
-                except (ValueError, OSError):
-                    return slots
-            if isinstance(data, dict) and isinstance(data.get("candidates"), dict):
-                for tier_str, queue in data["candidates"].items():
-                    try:
-                        tier = int(tier_str)
-                    except (TypeError, ValueError):
-                        continue
-                    slots[tier] = [q for q in (queue or []) if isinstance(q, dict)]
-            elif isinstance(data, dict) and isinstance(data.get("player"), dict):
-                slots[1] = [data]
+                    tier = int(tier_str)
+                except (TypeError, ValueError):
+                    continue
+                slots[tier] = [q for q in (queue or []) if isinstance(q, dict)]
+        elif isinstance(data.get("player"), dict):
+            slots[1] = [data]
         return slots
 
     def _save_seal_slots(self, slots: dict) -> None:
-        """写回阶级封存槽文件；空阶级槽不落盘；全部槽为空时删除文件。"""
-        payload = {"candidates": {str(t): q for t, q in sorted(slots.items()) if q}}
-        if not payload["candidates"]:
-            if os.path.exists(self.sealed_candidate_path):
-                os.remove(self.sealed_candidate_path)
+        """写回阶级封存槽文件；空阶级槽不落盘；全部槽为空时删除文件（跨轮回进度随后落盘）。"""
+        self._write_seal_payload(slots, self._progression_payload())
+
+    # ==================== 阶级推进 / 无尽模式（2026-09-28 用户令，待办②） ====================
+
+    def _load_progression(self) -> None:
+        """从封存槽文件的 `progression` 段装回「已解锁阶级 / 无尽模式」。
+
+        与封存槽同文件：跨轮回有效、随 `sealed_candidate_path` 一起被测试隔离。
+        文件缺失、缺段或数值非法时一律保持初始值（1 阶、非无尽、0 轮）。
+        """
+        data = self._read_seal_payload().get("progression")
+        if not isinstance(data, dict):
             return
-        os.makedirs(os.path.dirname(self.sealed_candidate_path) or ".", exist_ok=True)
-        with open(self.sealed_candidate_path, "w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False, indent=2)
+        try:
+            self.state.unlocked_tier = max(1, int(data.get("unlocked_tier", 1)))
+            self.state.endless_cycle = max(0, int(data.get("endless_cycle", 0)))
+        except (TypeError, ValueError):
+            return
+        self.state.endless_mode = bool(data.get("endless_mode", False))
+
+    def _save_progression(self, slots: Optional[dict] = None) -> None:
+        """落盘「已解锁阶级 / 无尽模式」：跨轮回进度，不随新轮回者清零（候选队列原样保留）。
+        若调用方已加载好 slots（例如已把本次胜者追加进去），直接使用以避免把胜者写丢。
+        """
+        base = slots if slots is not None else self._load_seal_slots()
+        self._write_seal_payload(base, self._progression_payload())
+
+    def _advance_region_unlock(self, won_duel_tier: int, slots: Optional[dict] = None) -> dict:
+        """死斗胜利后推进阶级：解锁 `won_duel_tier + 1` 阶副本（2026-09-28 用户令）。
+
+        「胜者进入下一阶级副本」在引擎里的落点是**轮回者血脉的进度**（持久化），
+        因为胜者本人随后进进阶封存槽、不再被玩家操作。
+        通过五阶死斗 ⇒ 进入无尽模式（`endless_cycle` 从 1 起算）。
+
+        参数 `slots`：调用方已组装好的封存槽（含本次胜者）；当开关关闭时仍需落盘
+        （否则下面 _replace_state_preserving_death_book_progress 会清空 state，
+        本次胜者的快照丢失）。开关打开时则由 _save_progression 一并把 slots 重写。
+
+        2026-09-28 用户令：阶级推进总开关 `PROGRESSION_ENABLED` 默认 False；
+        关闭时不修改 unlocked_tier/endless_mode、不写 progression 段——
+        留作未来五阶全部接入后启用。
+        """
+        from .monsters import PROGRESSION_ENABLED
+        if not PROGRESSION_ENABLED:
+            if slots is not None:
+                self._save_seal_slots(slots)
+            return {}
+        won_duel_tier = int(won_duel_tier or 0)
+        if won_duel_tier <= 0:
+            return {}
+        before = int(self.state.unlocked_tier)
+        self.state.unlocked_tier = max(before, won_duel_tier + 1)
+        entered_endless = False
+        if won_duel_tier >= GameState.MAX_TIER and not self.state.endless_mode:
+            self.state.endless_mode = True
+            self.state.endless_cycle = 1
+            entered_endless = True
+        self._save_progression(slots=slots)
+        note = ""
+        if self.state.unlocked_tier > before:
+            note = (f"阶级推进：已解锁至{self.state.unlocked_tier}阶副本"
+                    + ("；无尽模式开启（怪物池=全部副本，精力递减，无法探索）" if entered_endless else ""))
+        return {"unlocked_tier": self.state.unlocked_tier,
+                "advanced": self.state.unlocked_tier > before,
+                "endless_mode": self.state.endless_mode,
+                "endless_cycle": self.state.endless_cycle,
+                "note": note}
+
+    def _advance_endless_cycle(self) -> dict:
+        """无尽模式每完成一轮（第7场战终）强度递增一档（2026-09-28 用户令）。
+
+        总开关 PROGRESSION_ENABLED=False 时不推进轮次（无尽模式本身只会由
+        _advance_region_unlock 打开，关推进=永不进入无尽）。
+        """
+        from .monsters import PROGRESSION_ENABLED
+        if not PROGRESSION_ENABLED or not self.state.endless_mode:
+            return {}
+        self.state.endless_cycle = int(self.state.endless_cycle) + 1
+        self._save_progression()
+        return {"endless_cycle": self.state.endless_cycle,
+                "energy_budget": self.state.energy_budget}
+
+    def unlocked_regions(self) -> list[str]:
+        """当前可选副本：已实现（进入运行时）且阶级≤已解锁阶级；无尽模式不设限制。
+
+        阶级推进总开关关闭（PROGRESSION_ENABLED=False）时，固定返回全部已实现副本，
+        与 2026-09-28 之前的旧行为一致；开关打开后才按 unlocked_tier 门禁。
+        顺序固定按 `副本索引.md` 的登记顺序（`monster_pool` 的键序）。
+        """
+        from .gamedata import REGION_TIERS
+        from .monsters import PROGRESSION_ENABLED
+        regions = list(self.monster_pool.keys())
+        if not PROGRESSION_ENABLED or self.state.endless_mode:
+            return regions
+        return [r for r in regions if int(REGION_TIERS.get(r, 1)) <= int(self.state.unlocked_tier)]
+
+    def _monster_pool_for_battle(self) -> list[dict]:
+        """本场出怪池：无尽模式＝全部已实现副本合并（用户令「怪物池包含所有副本」）。"""
+        if self.state.endless_mode:
+            from .monsters import merge_monster_pools
+            return merge_monster_pools(self.monster_pool)
+        return self.monster_pool.get(self.state.current_region, [])
+
+    def _current_tier(self) -> int:
+        """当前副本阶级（无尽模式下按当前副本记，用于出怪配方 N 的上界）。"""
+        from .gamedata import REGION_TIERS
+        return int(REGION_TIERS.get(self.state.current_region, 1))
 
     def _trigger_final_crown(self) -> dict:
         """完成第7场后自动触发【最终的冠冕】。
@@ -4652,6 +4931,9 @@ class GameEngine:
         """
         from .gamedata import REGION_TIERS
         tier = REGION_TIERS.get(self.state.current_region, 1)
+        # 无尽模式：一轮=7场打完触发冠冕，此时强度递增一档（2026-09-28 用户令「越来越高」）。
+        # 放在封存/转场之前，因为下面的流程可能整体替换 state。
+        endless_update = self._advance_endless_cycle()
         sealed_name = self.state.player.name if self.state.player else "轮回者"
         slots = self._load_seal_slots()
         queue = [q for q in slots.get(tier, []) if q]
@@ -4663,8 +4945,12 @@ class GameEngine:
                 "outcome": "sealed",
                 "sealed_name": sealed_name,
                 "tier": tier,
+                "endless": (endless_update or None),
                 "instruction": f"无{tier}阶封存候选，{sealed_name}已连同队伍完整封存入{tier}阶封存槽；"
-                               "请调用 setup_attributes 开始新的轮回者",
+                               "请调用 setup_attributes 开始新的轮回者"
+                               + (("；" + f"无尽第{endless_update['endless_cycle']}轮开始，"
+                                           f"局外精力{endless_update['energy_budget']}点")
+                                  if endless_update else ""),
             }
         candidate_snapshot = queue.pop(0)
         slots[tier] = queue
@@ -4749,6 +5035,7 @@ class GameEngine:
         return {
             "outcome": "duel_start",
             "tier": tier,
+            "endless": (endless_update or None),
             "opponent_name": opponent_leader.name if opponent_leader else "未知对手",
             "opponent_side": [e.name for e in opponent_side],
             "first_mover": first_mover,
@@ -4780,12 +5067,18 @@ class GameEngine:
             tier = REGION_TIERS.get(self.state.current_region, 1)
         slots = self._load_seal_slots()
         slots.setdefault(tier, []).append(self._serialize_full_character())
-        self._save_seal_slots(slots)
+        # 阶级推进（2026-09-28 用户令）：
+        # - 开关关闭：仅把含本次胜者的 slots 落盘，不推进阶级。
+        # - 开关打开：同时推进 unlocked_tier/endless 并把 slots+progression 一起落盘。
+        # 必须 **在** replace_state 之前落盘，否则新 state 的默认 unlocked_tier=1 会把进度写没。
+        progression = self._advance_region_unlock(int(advance_tier or 0), slots=slots)
         self._replace_state_preserving_death_book_progress()
+        note = ("；" + progression["note"]) if progression and progression.get("note") else ""
         return {"sealed_name": sealed_name, "tier": tier,
+                "progression": (progression or None),
                 "instruction": f"{sealed_name}获胜并连同队伍完整封存入{tier}阶封存槽"
                                f"（进阶封存：不再与原阶级角色死斗）；"
-                               "请调用 setup_attributes 开始新的轮回者"}
+                               "请调用 setup_attributes 开始新的轮回者" + note}
 
     def _action_choose_terminal_artifact(self, params: dict) -> dict:
         """领取死斗胜利后的终音法器；若选择"猩红尖牙"则先触发初拥之夜，之后才真正完整封存"""
@@ -5425,8 +5718,8 @@ class GameEngine:
                 ally.attack_power += 1
                 grown.append(f"{ally.name}:攻击力{ally.attack_power}")
 
-        # 恢复精力；苍白之花的战终奖励叠加在基础3点之后。
-        self.state.energy = 3 + pale_flower_bonus
+        # 恢复精力；苍白之花的战终奖励叠加在基础值之后（无尽模式下基础值逐轮递减）。
+        self.state.energy = self.state.energy_budget + pale_flower_bonus
 
         # 清空敌人及本场延迟队列（正常战终前延迟队列已由门禁拦截；逃跑等强制结束也不跨场保留）。
         self.state.enemies.clear()
@@ -5445,7 +5738,7 @@ class GameEngine:
             "event_bonuses": event_bonuses,       # 事件奖金，单独列项，不并入命零公式
             "event_bonus_shards": bonus_total,
             "total_shards": self.state.shards,
-            "energy_restored": 3,
+            "energy_restored": self.state.energy_budget,
             "cleared_temp_friends": True,
             "ally_growth": grown,
             "removed_via_alt_path": removed,
@@ -5482,7 +5775,17 @@ class GameEngine:
         was_duel = self.state.in_final_duel
         duel_snap = dict(self.state.duel_defending_snapshot) if was_duel else {}
         duel_tier = self.state.duel_tier if was_duel else 0
+        # 阶级推进与无尽模式属于跨轮回进度：换新轮回者时随文件装回，不清零。
+        unlocked_tier = int(self.state.unlocked_tier)
+        endless_mode = bool(self.state.endless_mode)
+        endless_cycle = int(self.state.endless_cycle)
         self.state = GameState(rest_heal_bonus=bonus, death_book_wisdom=wisdom)
+        self.state.unlocked_tier = unlocked_tier
+        self.state.endless_mode = endless_mode
+        self.state.endless_cycle = endless_cycle
+        if endless_mode:
+            # 新轮回者的局外精力同样吃无尽递减（字段默认值 3 不适用于无尽轮次）
+            self.state.energy = self.state.energy_budget
         if was_duel:
             self.state.in_final_duel = True
             self.state.duel_tier = duel_tier

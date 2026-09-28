@@ -39,7 +39,10 @@ def engine(tmp_path):
                      {"name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
-    setup = e.execute_action("setup_choose_region", {"region": "乱葬岗"})
+    # 2026-09-28：二阶副本配方式出怪首发 S 随机、增援会提前进场，使「目标在进场后索引稳定」
+    # 的单怪前提失效；本文件验的是可选遗物/法器本身，与副本阶级正交，改用一阶副本即可保留
+    # "单怪首发 + 第1场无增援"的可预测场景。
+    setup = e.execute_action("setup_choose_region", {"region": "扭曲都市"})
     e.execute_action("choose_discovered_relic",
                      {"relic_name": setup["result"]["relic_choices"][0]})
     return e

@@ -1,10 +1,12 @@
-"""致死进度（【崩解】/【癌变】/【凡庸】）——用户令 2026-09-15：
+"""致死进度（【迷失】/【癌变】/【凡庸】）——用户令 2026-09-15 / 2026-09-28：
 
-「给致死的特殊事件标明进度，类似于崩解（10/50），让 AI 不要自爆」。
+「给致死的特殊事件标明进度」。2026-09-28 将【崩解】改名为【迷失】（崩解作为怪物异变爆体子情形保留）。
 
 覆盖：
-- 正常路径：进度串（崩解（10/50））与结构化计数同时可见；
-- 边界条件：凡庸两条线取更接近触发的一条、血限为 0 时不产生癌变线、阈值恰好触发崩解；
+- 正常路径：进度串（迷失（10/50））与结构化计数同时可见；
+- 边界条件：凡庸两条线取更接近触发的一条、血限为 0 时不产生癌变线、阈值恰好触发迷失；
+  * 怪物达阈值：collapsed=True 直接命零；
+  * 非怪物达阈值：lost=True（由战斗层 _resolve_mutation_lost 决定变身/命零）。
 - 错误输入：阈值唯一事实源——CombatEngine 的同名量必须引用 Entity，不得各写一份。
 """
 import math
@@ -27,14 +29,20 @@ def _player(**kw):
     return Entity(**data)
 
 
+def _monster(**kw):
+    data = dict(name="测试怪", entity_type="怪物", blood_limit=30, current_hp=30)
+    data.update(kw)
+    return Entity(**data)
+
+
 def test_progress_rendering_matches_rule_numbers():
     e = _player()
     e.mutation_count = 10
     e.total_healed = 30
     counters = e.lethal_counters()
-    assert counters["崩解"] == (10, Entity.MUTATION_COLLAPSE_THRESHOLD) == (10, 50)
+    assert counters["迷失"] == (10, Entity.MUTATION_COLLAPSE_THRESHOLD) == (10, 50)
     assert counters["癌变"] == (30, math.ceil(42 * 2))
-    assert e.lethal_progress() == ["崩解（10/50）", "癌变（30/84）"]
+    assert e.lethal_progress() == ["迷失（10/50）", "癌变（30/84）"]
 
 
 def test_mediocrity_shows_the_closer_line():
@@ -56,10 +64,10 @@ def test_to_dict_and_resource_line_carry_progress():
     e = _player()
     e.mutation_count = 45
     data = e.to_dict()
-    assert data["lethal_progress"] == ["崩解（45/50）", "癌变（0/84）"]
-    assert data["lethal_counters"]["崩解"] == [45, 50]
+    assert data["lethal_progress"] == ["迷失（45/50）", "癌变（0/84）"]
+    assert data["lethal_counters"]["迷失"] == [45, 50]
     assert data["mutation_count"] == 45
-    assert "致死进度[崩解（45/50）" in BR.resource_line(e)
+    assert "致死进度[迷失（45/50）" in BR.resource_line(e)
 
 
 def test_thresholds_have_a_single_source():
@@ -69,12 +77,28 @@ def test_thresholds_have_a_single_source():
     assert Entity.MUTATION_COLLAPSE_THRESHOLD == 50
 
 
-def test_collapse_triggers_exactly_at_threshold():
-    e = _player()
-    e.add_mutation(49)
-    assert e.is_alive is True
-    assert e.add_mutation(1)["collapsed"] is True
-    assert e.is_alive is False and e.current_hp == 0
+def test_collapse_monster_kills_instantly():
+    """怪物（entity_type=='怪物'）达阈值：collapsed=True 直接命零（旧崩解行为保留）。"""
+    m = _monster()
+    m.add_mutation(49)
+    assert m.is_alive is True
+    r = m.add_mutation(1)
+    assert r["collapsed"] is True
+    assert r.get("lost") is not True
+    assert m.is_alive is False and m.current_hp == 0
+
+
+def test_lost_non_monster_flags_lost_without_dying():
+    """非怪物（轮回者/朋友/员工/…）达阈值：lost=True，但模型层不直接命零——
+    交给战斗层 _resolve_mutation_lost 根据是否有队友决定变身/命零。"""
+    p = _player()
+    p.add_mutation(49)
+    assert p.is_alive is True
+    r = p.add_mutation(1)
+    assert r["collapsed"] is False
+    assert r["lost"] is True
+    # 模型层不直接改 is_alive：变身/命零属于战斗层逻辑
+    assert p.is_alive is True
 
 
 def _new_engine(tmp_path, region="龙心谷"):
@@ -93,7 +117,7 @@ def _new_engine(tmp_path, region="龙心谷"):
 
 
 def test_monster_phase_payload_carries_monster_progress(tmp_path):
-    """怪物同样会【崩解】：prepare_monster_phase 的每个 actor 必须带致死进度。"""
+    """怪物同样会【迷失·崩解】：prepare_monster_phase 的每个 actor 必须带致死进度。"""
     e = _new_engine(tmp_path)
     e.execute_action("battle_start")
     e.execute_action("round_start", {})
@@ -102,5 +126,5 @@ def test_monster_phase_payload_carries_monster_progress(tmp_path):
     actors = prepared["result"]["actors"]
     assert actors, "本回合应有可行动的怪物 actor"
     for actor in actors:
-        assert actor["lethal_counters"]["崩解"] == [0, Entity.MUTATION_COLLAPSE_THRESHOLD]
-        assert "崩解（0/50）" in actor["lethal_progress"]
+        assert actor["lethal_counters"]["迷失"] == [0, Entity.MUTATION_COLLAPSE_THRESHOLD]
+        assert "迷失（0/50）" in actor["lethal_progress"]

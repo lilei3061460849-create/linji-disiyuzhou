@@ -50,7 +50,7 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
     # 副本专属道纹
     REGION_EXCLUSIVE_DAOWEN = {
         "扭曲都市": {"变形","定型","畸变","搏命","超频","坏死","爆裂","退化"},
-        "罪孽都市": {"点金","逼债","抵扣","清算","赎金","假钞","赌命","消灾"},
+        "罪孽都市": {"失忆","逼债","豪夺","清算","赎金","假钞","赌命","消灾"},
         "龙心谷":   {"加害","龙鳞","逆鳞","活血","裂变","嫁祸","背负","伤痕"},
     }
     
@@ -255,19 +255,30 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         return self._apply_parry_reduction(target, amount, damage_type)
 
     def _apply_parry_reduction(self, target: Entity, amount: int, damage_type: str) -> int:
-        """招架（2026-09-13）：本轮每次受到的伤害减去等同当前法力的数值。
+        """招架（2026-09-28 用户令重写）：本轮每次受到的攻击伤害减去你10%当前生命。
 
         接在 _incoming_adjust 末尾 = 所有伤害通道的公共咽喉（攻击、道纹、反噬
         都经 _apply_hostile_damage → _incoming_adjust），不必逐路径接线。
         减免在格挡之前结算：招架是"卸力"，格挡是"挨下来再吸收"，先卸后吸。
         【代价】不在此列（上面已 return），与格挡口径一致——代价是自己付的，
         不是"受到的伤害"，否则招架会顺带免掉透支的流血，卖血流直接变无代价。
+
+        新规则（2026-09-28）：
+          * 减伤 = floor(当前生命 × 10%)（以**本次受击结算时**的当前生命计，非声明时快照）；
+          * 每回合可使用次数 = 声明招架时的当前生命；每次受击消耗1次；
+            次数用尽后本回合后续受击不再享受招架减免（姿态保留但无减免）。
         """
         if amount <= 0 or target is None or not getattr(target, "parrying_this_round", False):
             return amount
-        reduction = max(0, target.current_mana)
-        if reduction <= 0:
+        uses = getattr(target, "parry_uses_remaining_this_round", 0)
+        if uses <= 0:
             return amount
+        reduction = max(0, target.current_hp // 10)
+        if reduction <= 0:
+            # 当前生命不足10时招架减伤为0，但仍消耗1次次数（避免靠低血无限"招架"空挥）
+            target.parry_uses_remaining_this_round = max(0, uses - 1)
+            return amount
+        target.parry_uses_remaining_this_round = max(0, uses - 1)
         return max(0, amount - reduction)
 
     def _record_speed_change_event(
@@ -636,8 +647,20 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
             result["note"] = "飞行目标无法被非飞行者选中"
             return result
 
-        # 必中：显式必中，或消耗一次「下X次选择[目标]」余数
-        must_hit = is_must_hit or self.consume_bizhong(attacker)
+        # 必中：三种口径（2026-09-28 必中X=self-buff最终口径）
+        #   1) 显式必中（法术/遗物/状态显式标记 is_must_hit）；
+        #   2) 攻击者自身【必中】buff（必中X：自身必中姿态持续X回合，期间你选中的目标无法闪避）；
+        #   3) 旧版 _bizhong_left 次数型必中余数（兼容老 grant_bizhong 内部接口/怪物旧道纹/旧【蒙蔽】反制）。
+        # 自身【必中】buff 判定：
+        # - 新必中X（self-buff，持续X回合）：status.remaining_rounds > 0 → 必中但不消耗次数
+        # - grant_bizhong 留下的次数型状态：status.remaining_rounds == -1（永久），仅作显示，
+        #   必中与否看 _bizhong_left 次数，由 consume_bizhong 负责扣减
+        def _has_real_bizhong_buff(ent):
+            if ent is None: return False
+            s = next((s for s in ent.status_effects if s.name == "必中"), None)
+            return bool(s and s.remaining_rounds > 0)  # -1 是次数型标记，不算真buff
+        caster_has_bizhong_buff = _has_real_bizhong_buff(attacker)
+        must_hit = is_must_hit or caster_has_bizhong_buff or self.consume_bizhong(attacker)
 
         # 血影（初拥之夜遗物，仅玩家自身持有）：非必中判定下，可流血10取消本次判定，是常规闪避外的另一选项
         if (blood_shadow and not must_hit and self.state.side_has(target, "血影")):
@@ -836,10 +859,11 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
             if e.mana_limit > 0 and any(r.name == MONSTER_MANA_RELIC for r in e.relics):
                 e.current_mana = e.mana_limit
             e.hp_lost_this_round = 0
-            # 招架：上回合招架过 → 本回合禁用；本回合姿态清空等待重新声明。
-            # 顺序要紧：先用旧的 parrying 值算出本回合的锁，再清姿态。
-            e.parry_locked_this_round = bool(getattr(e, "parrying_this_round", False))
+            # 招架：2026-09-28 用户令重写——不再有"上回合招架过→本回合禁用"锁；
+            # 本回合姿态清空、剩余次数清零，等本回合玩家/怪物重新 declare_parry。
             e.parrying_this_round = False
+            e.parry_uses_remaining_this_round = 0
+            e.parry_locked_this_round = False  # 旧字段保留但不再使用
             if hasattr(e, "_hp_loss_events"):
                 e._hp_loss_events = []
             if hasattr(e, "_speed_change_events"):
@@ -867,6 +891,19 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         
         # 结算回始效果
         for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
+            # 蓄锐（2026-09-28）：上回合施放蓄锐积攒的 pending 转成【蓄锐·增】1回 buff（+1出手）。
+            pending = int(getattr(entity, "_xurui_pending", 0) or 0)
+            if pending > 0:
+                entity._xurui_pending = 0
+                existed = next((s for s in entity.status_effects if s.name == "蓄锐·增"), None)
+                if existed is not None:
+                    existed.remaining_rounds = 1
+                    existed.value = (existed.value or 0) + pending
+                else:
+                    entity.add_status(StatusEffect(
+                        name="蓄锐·增", remaining_rounds=1, value=pending,
+                        source=entity.name))
+                effects.append({"type": "xurui_burst", "entity": entity.name, "bonus": pending})
             # 机制系统：ROUND_START 相位分发。位置即原【自愈】结算位置（本循环第一项）。
             # round_start 只负责宣布时点，具体机制由声明层按 priority 执行；
             # 机制的报告条目并入 effects，战报格式与迁移前一致。
@@ -916,7 +953,7 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                                        context=f"{holder.name}发动赌命")
             idx = int(roll["player_number"]) - 1
             tgt = alive[min(max(idx, 0), len(alive) - 1)]
-            d = math.ceil(tgt.blood_limit * 30 / 100)  # 用户裁定口径：血限30%
+            d = math.ceil(tgt.current_hp * 30 / 100)  # 2026-09-28 按用户描述：失去30%**当前**生命（不是血限）
             rd = self._raw_hp_loss(tgt, d, ctx={
                 "timing": "round_start", "source": "赌命", "source_type": "daowen",
                 "actor": holder, "target": tgt, "mechanic": "hp_loss", "subtype": "percent",
@@ -947,21 +984,23 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                                 "round": self.state.current_round,
                                 "delay_rounds": entry.get("delay_rounds", 0)})
 
-        # 波次出怪（2026-09-11 用户令）：R4/R7/R10…回始增援1只直到上限。
+        # 出怪配方（2026-09-28 用户令）：增援在第 i 波 `T_i` 累加的回合进场，
+        # 一波可进 R_i（≥1）只；旧的固定波次 R4/R7/R10 已废止。
         # 死斗无增援；增援怪进场当回合即可发动道纹（2026-09-15 用户令删除白板）。
         queue = list(getattr(self.state, "monster_reinforcements", []) or [])
-        if (queue and not self.state.in_final_duel
-                and self.state.current_round >= 4
-                and (self.state.current_round - 1) % 3 == 0):
+        if queue and not self.state.in_final_duel:
             from .monsters import make_monster_entity
-            monster_def = self.state.monster_reinforcements.pop(0)
-            m = make_monster_entity(monster_def)
-            m.spawned_round = self.state.current_round
-            self.init_monster_shards(m)
-            self.state.enemies.append(m)
-            effects.append({"type": "wave_spawn", "entity": m.name,
-                            "round": self.state.current_round,
-                            "queued_left": len(self.state.monster_reinforcements)})
+            due = [entry for entry in queue
+                   if int(entry.get("arrive_round", 1)) <= self.state.current_round]
+            for monster_def in due:
+                self.state.monster_reinforcements.remove(monster_def)
+                m = make_monster_entity(monster_def)
+                m.spawned_round = self.state.current_round
+                self.init_monster_shards(m)
+                self.state.enemies.append(m)
+                effects.append({"type": "wave_spawn", "entity": m.name,
+                                "round": self.state.current_round,
+                                "queued_left": len(self.state.monster_reinforcements)})
 
         return {
             "round": self.state.current_round,
@@ -1104,16 +1143,13 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                 entity._bizhai = []
             if not entity.has_status("清算") and getattr(entity, "_qingsuan", None):
                 entity._qingsuan = []
-            # F2：抵扣封印回合递减，归零解封
-            for rname in list(getattr(entity, "sealed_relics", {}).keys()):
-                entity.sealed_relics[rname] -= 1
-                if entity.sealed_relics[rname] <= 0:
-                    del entity.sealed_relics[rname]
-        # 玩家侧抵扣封印回合递减（state.sealed_relics）
-        for rname in list(self.state.sealed_relics.keys()):
-            self.state.sealed_relics[rname] -= 1
-            if self.state.sealed_relics[rname] <= 0:
-                del self.state.sealed_relics[rname]
+            # F2：抵扣封印/豪夺夺取回合递减统一走 _tick_sealed_and_stolen_relics，
+            # 不再在此处逐实体递减。
+        # 统一处理：玩家侧 + 每个存活实体的封印/豪夺遗物回终递减与归还
+        ticked = self._tick_sealed_and_stolen_relics()
+        if ticked.get("returned_steals"):
+            effects.append({"type": "haoduo_returned",
+                            "returned": ticked["returned_steals"]})
 
         # 震岳龙躯：两边各自递减
         if self.state.dragon_body_shield_rounds > 0:

@@ -81,12 +81,128 @@ def parse_monster_pool(index_path: str | Path) -> dict:
     return pools
 
 
-def compute_draw_count(battle_number: int) -> int:
-    """出怪数量公式（全部副本统一，DM裁定采用记录版"-3"）：
-    数量 = 战斗场数 - 3，最低为1。（7场序列：1/1/1/1/2/3/4）
-    乱葬岗等二阶及以上副本与一阶共用同一公式。
-    2026-09-11起此数量为上限：R1只进场第1只，R4/R7/R10…回始各增援1只（见 combat.round_start）。"""
-    return max(1, battle_number - 3)
+# 出怪配方（2026-09-28 用户令）的三个常量：N 的上界、T_i 的上界、一阶的场数偏置。
+# 正文口径见 README.md「[战始]：抽取出怪」与 AI_EXPERIENCE.md「当前有效的工程约束」。
+MONSTER_POOL_LIMIT = 12      # 每副本怪物池 12 种，也是配方 N=随机(1,12) 的上界
+SPAWN_WAVE_GAP_LIMIT = 5     # T_i=随机(1,5)：上一波之后最多等待 5 回合
+SPAWN_TIER1_BATTLE_BIAS = 3  # 一阶把旧「战斗场数-3」保留为 N 的上界（见 compute_draw_cap）
+
+# 阶级推进总开关（2026-09-28 用户令）：
+# 机制代码完整保留，但默认关闭——玩家通过一阶死斗不会自动解锁二阶/五阶→无尽。
+# 未来五阶副本【启示录】正文与怪物池全部接入后，再把此开关拨为 True 启用自动推进。
+# 测试可通过 `engine.monsters.set_progression_enabled(True/False)` 临时覆盖。
+PROGRESSION_ENABLED = False
+
+
+def set_progression_enabled(value: bool) -> None:
+    """测试用：临时开关阶级推进。生产代码不要调用。"""
+    global PROGRESSION_ENABLED
+    PROGRESSION_ENABLED = bool(value)
+
+
+def compute_draw_cap(battle_number: int, tier: int = 1) -> int:
+    """本场怪物总数 N 的随机上界（配方式出怪，2026-09-28 用户令，按阶级递增）。
+
+    * 一阶：上界沿用旧「数量 = 战斗场数 - 3，最低为1」，因此旧七场序列
+      `1/1/1/1/2/3/4` 从"确定值"变成"上限"（N=随机(1,上限)）；上界再被怪物池规模 12 夹住，
+      使第 8 场以后（无尽/自定义长局）不会突破「N=随机(1,12)」的正文口径。
+    * 二阶及以上：上界固定为怪物池规模 12，即 N=随机(1,12)。
+    旧口径里"数量=战斗场数-3"是**精确值**；本函数只保留它作为**上界**的语义。
+    """
+    if int(tier) <= 1:
+        return min(MONSTER_POOL_LIMIT, max(1, int(battle_number) - SPAWN_TIER1_BATTLE_BIAS))
+    return MONSTER_POOL_LIMIT
+
+
+def _roll_upper(dice, pool_name: str, upper: int, context: str) -> int:
+    """在 1..upper 中随机一个整数。
+
+    正式随机源唯一：走 `DiceEngine.auto_roll`（记录种子与序号，可复现），
+    不引入模块级 random。`upper <= 1` 时不掷骰（随机数恒为 1，不占随机流）。
+    """
+    if upper <= 1:
+        return 1
+    roll = dice.auto_roll(pool_name, list(range(1, upper + 1)), context=context)
+    return int(roll["selected"])
+
+
+def roll_spawn_plan(dice, battle_number: int, tier: int = 1) -> dict:
+    """出怪配方（2026-09-28 用户令，取代"数量=战斗场数-3"的确定值口径）。
+
+    ```text
+    N=随机(1,上界)，S=随机(1,N)，R_i=随机(1,N-S-ΣR_j)，T_i=随机(1,5)，直至 S+ΣR_i=N
+    ```
+
+    * N＝本场怪物总数（上界见 `compute_draw_cap`：一阶按场数、二阶及以上为12）；
+    * S＝[战始]（R1）首发数量；若仍有未出场怪物，则等待 T_i 回合后增援 R_i 只，
+      R_i 不超过剩余未出场数量，循环到全部怪物入场（一波可进多只）。
+    * 增援回合相对**上一波**累计（首发波记为 R1），因此第 i 波在
+      `R1 + T_1 + … + T_i` 回合的[回始]进场。
+    返回 `{"total": N, "first_count": S, "waves": [{"arrive_round": r, "count": c}, …],
+    "queue_rounds": [每一只待增援怪物的进场回合]}`。
+    """
+    cap = compute_draw_cap(battle_number, tier)
+    total = _roll_upper(dice, f"spawn_total_{battle_number}", cap,
+                        f"出怪配方·本场怪物总数N(第{battle_number}场,上限{cap})")
+    first_count = _roll_upper(dice, f"spawn_first_count_{battle_number}", total,
+                              f"出怪配方·战始首发数量S(第{battle_number}场)")
+    waves: list[dict] = []
+    queue_rounds: list[int] = []
+    remaining = total - first_count
+    cursor_round = 1  # 首发波在 R1 进场，T_i 从它往后累计
+    index = 0
+    while remaining > 0:
+        index += 1
+        count = _roll_upper(dice, f"spawn_reinforce_count_{battle_number}_{index}", remaining,
+                            f"出怪配方·第{index}波增援数量R_i(剩余{remaining})")
+        gap = _roll_upper(dice, f"spawn_reinforce_wait_{battle_number}_{index}",
+                          SPAWN_WAVE_GAP_LIMIT,
+                          f"出怪配方·第{index}波增援等待回合T_i(1~{SPAWN_WAVE_GAP_LIMIT})")
+        cursor_round += gap
+        waves.append({"arrive_round": cursor_round, "count": count})
+        queue_rounds.extend([cursor_round] * count)
+        remaining -= count
+    return {"total": total, "first_count": first_count,
+            "waves": waves, "queue_rounds": queue_rounds, "cap": cap}
+
+
+def scale_monster_def_for_endless(monster_def: dict, cycle: int) -> dict:
+    """无尽模式强度递增（2026-09-28 用户令）：第 C 轮把怪物面板整体抬高。
+
+    C<=1 时原样返回（无尽首轮＝基线，与实盘口径逐位相同）；C>=2 起
+    [血限]×(100+25(C-1))% 向上取整、[法限]/[速限]各 +3(C-1)。
+    只改**本场出怪用的定义副本**，不回写 `monster_pool`，因此跨场/跨轮回不会复利。
+    """
+    if int(cycle) <= 1:
+        return monster_def
+    factor = 100 + 25 * (int(cycle) - 1)
+    bump = 3 * (int(cycle) - 1)
+    scaled = dict(monster_def)
+    scaled["blood_limit"] = -(-int(monster_def["blood_limit"]) * factor // 100)  # 向上取整
+    scaled["mana_limit"] = int(monster_def["mana_limit"]) + bump
+    scaled["speed_limit"] = int(monster_def["speed_limit"]) + bump
+    # 兼容旧键：攻次=速限、攻力=法限（与 make_monster_entity 同口径）
+    scaled["attack_count"] = scaled["speed_limit"]
+    scaled["attack_power"] = scaled["mana_limit"]
+    return scaled
+
+
+def merge_monster_pools(monster_pools: dict) -> list[dict]:
+    """无尽模式怪物池（2026-09-28 用户令：怪物池包含所有副本）。
+
+    按 `副本索引.md` 登记的已实现副本顺序合并全部怪物池；同名怪物只保留先出现的一只，
+    避免"同一种怪在合并池里被抽到的概率翻倍"。草案副本不进入运行时，因此不参与合并。
+    """
+    merged: list[dict] = []
+    seen: set[str] = set()
+    for pool in (monster_pools or {}).values():
+        for monster_def in pool:
+            name = monster_def.get("name", "")
+            if name in seen:
+                continue
+            seen.add(name)
+            merged.append(monster_def)
+    return merged
 
 
 def make_monster_entity(monster_def: dict):

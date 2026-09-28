@@ -59,10 +59,10 @@ def test_boba_marks_targets_after_start():
 # 专属道纹 → 其所属副本（学习受门禁限制，须在对应副本内）
 _REGION_OF = {"加害": "龙心谷", "裂变": "龙心谷", "伤痕": "龙心谷",
               "退化": "扭曲都市", "坏死": "扭曲都市",
-              "逼债": "罪孽都市", "点金": "罪孽都市"}
+              "逼债": "罪孽都市", "失忆": "罪孽都市"}
 
 
-@pytest.mark.parametrize("dw", ["加害", "裂变", "伤痕", "退化", "坏死", "逼债", "点金"])
+@pytest.mark.parametrize("dw", ["加害", "裂变", "伤痕", "退化", "坏死", "逼债", "失忆"])
 def test_ai_uses_region_specific_daowen(dw, monkeypatch):
     """
     正常路径：各副本专属道纹只要持有就应被实际发动。

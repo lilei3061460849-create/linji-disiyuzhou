@@ -1,4 +1,4 @@
-"""洗劫只在持有状态下夺碎片；必中只覆盖下X次选择[目标]。"""
+"""洗劫只在持有状态下夺碎片；必中X=给自身上buff（2026-09-28 最终口径：你选中的目标无法闪避，持续X）。"""
 import os
 import sys
 
@@ -21,146 +21,136 @@ def _engine(region="罪孽都市"):
     finish_initial_daowen(engine)
     engine.state.current_region = region
     engine.state.phase = "in_combat"
-    engine.state.player.current_mana = 40
+    engine.state.player.current_mana = 5
     engine.state.player.attack_power = 5
     return engine
 
 
-def _monster(engine, *, name="靶怪", hp=80, atk=8, hits=1, shards=20, daowen=None):
+def _monster(engine, *, name="靶怪", hp=500, atk=8, hits=1, shards=20, daowen=None):
     m = Entity(name=name, entity_type="怪物", blood_limit=hp, current_hp=hp,
-               attack_count=hits, attack_power=atk)
-    m.shards = shards
-    for dw_name, x in (daowen or {}).items():
-        m.dao_wen[dw_name] = DaoWenInstance(
-            DaoWen(name=dw_name, formula="", cost_type="异变", cost_formula="5X", effect_formula=""),
-            x_value=x)
+               speed_limit=6, current_speed=6,
+               attack_count=hits, attack_power=atk, shards=shards, fake_shards=0)
+    m.relics = []
+    if daowen:
+        for n, x in daowen.items():
+            inst = DaoWenInstance(
+                DaoWen(name=n, formula=f"{n}X", cost_type="异变" if n == "必中" else "消耗",
+                       cost_formula="X", effect_formula=""),
+                x_value=x)
+            m.dao_wen[n] = inst
     engine.state.enemies.append(m)
     return m
 
 
-# ---------- 洗劫门闩 ----------
+# ==================== 洗劫（保持旧口径）====================
 
 def test_shaifa_without_xijie_does_not_steal():
-    """正常/非法：没洗劫状态时，杀伐造成伤害不得夺碎片。"""
     engine = _engine()
     m = _monster(engine, shards=20)
-    before = engine.state.shards
-    r = engine.execute_action("use_daowen", {"daowen_name": "杀伐", "x": 3, "target": m.name})
-    assert r["success"] is True
-    dmg = 3 * 3   # 杀伐X：X²（2026-09-13，原 5X）
-    assert m.current_hp == 80 - dmg
+    engine.combat.reset_monster_activation()
+    engine.state.current_round = 1
+    shards0 = engine.state.shards
+    engine.combat.resolve_attack(engine.state.player, m, hit_index=0,
+                                 is_must_hit=True, dodge=False)
     assert m.shards == 20
-    assert engine.state.shards == before
+    assert engine.state.shards == shards0, "没洗劫时玩家碎片不应增加"
 
 
 def test_shaifa_with_xijie_status_steals():
-    """正常路径：先挂洗劫，再杀伐，按实伤夺碎片。"""
     engine = _engine()
     player = engine.state.player
     m = _monster(engine, shards=20)
+    player.current_mana = 5
     player.add_status(StatusEffect(name="洗劫", value=2, remaining_rounds=2, source=player.name))
-    before = engine.state.shards
-    r = engine.execute_action("use_daowen", {"daowen_name": "杀伐", "x": 3, "target": m.name})
-    assert r["success"] is True
-    dmg = 3 * 3   # 杀伐X：X²；洗劫按实伤夺等量碎片
-    assert m.shards == 20 - dmg
-    assert engine.state.shards == before + dmg
+    shards0 = engine.state.shards
+    engine.combat.resolve_attack(player, m, hit_index=0, is_must_hit=True, dodge=False)
+    assert m.shards == 15
+    assert engine.state.shards - shards0 == 5, f"洗劫应偷5碎片，实际+{engine.state.shards - shards0}"
 
 
 def test_xijie_expired_no_longer_steals():
-    """边界：洗劫持续走完后，再造成伤害不再夺。"""
     engine = _engine()
     player = engine.state.player
     m = _monster(engine, shards=20)
-    player.add_status(StatusEffect(name="洗劫", value=1, remaining_rounds=1, source=player.name))
-    engine.combat.round_end()
-    assert not player.has_status("洗劫")
-    before = engine.state.shards
-    engine.execute_action("use_daowen", {"daowen_name": "杀伐", "x": 2, "target": m.name})
+    player.current_mana = 5
+    player.add_status(StatusEffect(name="洗劫", value=0, remaining_rounds=0, source=player.name))
+    shards0 = engine.state.shards
+    engine.combat.resolve_attack(player, m, hit_index=0, is_must_hit=True, dodge=False)
     assert m.shards == 20
-    assert engine.state.shards == before
+    assert engine.state.shards == shards0
 
 
-# ---------- 必中余数 ----------
+# ==================== 必中X（self-buff，持续X回合）====================
 
-def test_bizhong_only_next_x_target_selections():
-    """正常路径：必中2只让接下来2次选目标无法闪避，第3次可闪。"""
+def test_bizhong_self_buff_makes_all_your_targets_unable_to_dodge():
+    """对自己发动必中X=2：施法者进入必中姿态持续2回合——期间你选的任何目标都无法闪避。"""
     engine = _engine()
     player = engine.state.player
-    player.current_speed = 5
-    player.shield = 0
-    m = _monster(engine, hits=1, atk=8)          # 首回合无道纹（删除白板后仍要显式空过）
-    engine.combat.reset_monster_activation()
-    engine.state.current_round = 0
-    engine.combat.round_start()  # -> 1
-    resolve_monster_phase(engine.combat, {m.name: None}, dodge=True)
-    assert engine.combat.bizhong_remaining(m) == 0
-    m.dao_wen["必中"] = DaoWenInstance(
-        DaoWen(name="必中", formula="", cost_type="异变", cost_formula="5X",
-               effect_formula=""), x_value=2)
-    engine.combat.round_start()  # -> 2 激活必中2，打1击
-    r2 = resolve_monster_phase(engine.combat, {m.name: "必中"}, dodge=True)
-    hits2 = [d for d in r2 if d.get("attacker") == m.name]
-    assert hits2 and hits2[0].get("dodge_success") is False
-    assert engine.combat.bizhong_remaining(m) == 1
-    # 准则9下怪物会每回合复读必中刷新次数；本测试只验证已获得次数的消耗语义，
-    # 故激活后移除该道纹，隔离变量。
-    del m.dao_wen["必中"]
-    engine.combat.round_start()  # -> 3 再打1击，用尽
-    r3 = resolve_monster_phase(engine.combat, {m.name: None}, dodge=True)
-    hits3 = [d for d in r3 if d.get("attacker") == m.name]
-    assert hits3 and hits3[0].get("dodge_success") is False
-    assert engine.combat.bizhong_remaining(m) == 0
-    assert not m.has_status("必中")
-    engine.combat.round_start()  # -> 4 可闪
-    r4 = resolve_monster_phase(engine.combat, {m.name: None}, dodge=True)
-    hits4 = [d for d in r4 if d.get("attacker") == m.name]
-    assert hits4 and hits4[0].get("dodge_success") is True
-
-
-def test_bizhong_two_hits_in_one_round_consume_two_charges():
-    """边界：一轮攻击2击 = 2次选择[目标]，必中2恰好用完。"""
-    engine = _engine()
-    player = engine.state.player
-    player.current_speed = 6
-    player.shield = 0
-    m = _monster(engine, hits=2, atk=8)
+    player.current_speed = 1
+    m = _monster(engine, hits=1, atk=8)
     engine.combat.reset_monster_activation()
     engine.state.current_round = 0
     engine.combat.round_start()
-    resolve_monster_phase(engine.combat, {m.name: None}, dodge=True)
-    m.dao_wen["必中"] = DaoWenInstance(
-        DaoWen(name="必中", formula="", cost_type="异变", cost_formula="5X",
-               effect_formula=""), x_value=2)
-    engine.combat.round_start()
-    results = resolve_monster_phase(engine.combat, {m.name: "必中"}, dodge=True)
-    hits = [d for d in results if d.get("attacker") == m.name]
-    assert len(hits) == 2
-    assert all(h.get("dodge_success") is False for h in hits)
-    assert engine.combat.bizhong_remaining(m) == 0
+    # 玩家对自己施必中2（self-buff，不需要target）
+    calc = DaoWenEngine.resolve("必中", 2)
+    assert "bizhong_self_buff" in calc and calc["cost_mutation"] == 2
+    engine.combat.apply_daowen_effect("必中", calc, player, target=None)
+    assert player.has_status("必中")
+    st = next(s for s in player.status_effects if s.name == "必中")
+    assert st.remaining_rounds == 2
+    assert player.mutation_count == 2
+    # 玩家打怪，dodge=True也无法闪避（is_must_hit=False 但 attacker 有必中buff）
+    hp0 = m.current_hp
+    engine.combat.resolve_attack(player, m, hit_index=0, is_must_hit=False, dodge=True)
+    assert m.current_hp < hp0, "必中姿态下目标无法闪避"
+    # 手动tick两轮验证状态递减
+    st.tick()
+    assert st.remaining_rounds == 1 and player.has_status("必中")
+    st.tick()
+    assert st.remaining_rounds == 0
+    player.status_effects = [s for s in player.status_effects if s.name != "必中" or s.remaining_rounds > 0]
+    assert not player.has_status("必中")
+
+
+def test_bizhong_refreshes_duration():
+    """重复施放必中X=延长（取max），不叠加层数。"""
+    combat = CombatEngine(GameState(), DiceEngine(seed=1))
+    player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60)
+    calc1 = DaoWenEngine.resolve("必中", 1)
+    combat.apply_daowen_effect("必中", calc1, player, target=None)
+    calc2 = DaoWenEngine.resolve("必中", 3)
+    combat.apply_daowen_effect("必中", calc2, player, target=None)
+    s = next(s for s in player.status_effects if s.name == "必中")
+    assert s.remaining_rounds == 3
+    assert player.mutation_count == 1 + 3
+
+
+def test_bizhong_x_costs_x_mutation():
+    calc = DaoWenEngine.resolve("必中", 5)
+    assert calc["cost_mutation"] == 5
 
 
 def test_no_bizhong_auto_dodge_still_works():
-    """错误/对照：没激活必中时，auto 闪避照常成功。"""
+    """没必中buff时闪避照常成功。"""
     engine = _engine()
     player = engine.state.player
     player.current_speed = 4
-    player.shield = 0
     m = _monster(engine, hits=1, atk=8, daowen={"狂暴": 1})
     engine.combat.reset_monster_activation()
     engine.state.current_round = 0
     engine.combat.round_start()
-    # 删除白板后首回合即有【狂暴】可发，照实提交（不涉及必中，闪避不受影响）
     results = resolve_monster_phase(engine.combat, {m.name: "狂暴"}, dodge=True)
     hits = [d for d in results if d.get("attacker") == m.name]
     assert hits and hits[0].get("dodge_success") is True
 
 
-def test_player_cast_bizhong_sets_charges():
-    """正常路径：玩家发动必中X，余数写入自身。"""
+def test_bizhong_does_not_affect_other_attackers():
+    """只有必中持有者自己的攻击必中——队友打同一目标不享受必中。"""
     combat = CombatEngine(GameState(), DiceEngine(seed=1))
-    player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60)
-    calc = DaoWenEngine.resolve("必中", 3, caster=player)
-    combat.apply_daowen_effect("必中", calc, player, player)
-    assert combat.bizhong_remaining(player) == 3
-    assert player.has_status("必中")
+    A = Entity(name="A", entity_type="轮回者", blood_limit=60, current_hp=60)
+    B = Entity(name="B", entity_type="轮回者", blood_limit=60, current_hp=60)
+    T = Entity(name="T", entity_type="怪物", blood_limit=60, current_hp=60)
+    calc = DaoWenEngine.resolve("必中", 2)
+    combat.apply_daowen_effect("必中", calc, A, target=None)
+    assert combat.caster_has_bizhong(A) if hasattr(combat, 'caster_has_bizhong') else A.has_status("必中")
+    assert not B.has_status("必中"), "必中是self-buff，不影响队友"

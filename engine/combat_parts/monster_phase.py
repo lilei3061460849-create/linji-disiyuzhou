@@ -35,6 +35,7 @@ class MonsterPhaseMixin:
         # 避免上一场的姿态/余数漏到新战斗（换场时不经 [回始]）。
         for e in self.state.get_all_player_side() + self.state.get_all_enemy_side():
             e.parrying_this_round = False
+            e.parry_uses_remaining_this_round = 0
             e.parry_locked_this_round = False
             e.hp_lost_this_battle = 0
             e.chenglu_paid = 0
@@ -237,8 +238,8 @@ class MonsterPhaseMixin:
                 "base_attack_actions": base_actions,
                 "base_hits_per_attack": max(0, monster.attack_count - monster.get_status_value("手雷减攻")),
                 "dodge_must_be_explicit": True,
-                # 致死进度（用户令 2026-09-15）：怪物同样会【崩解】，攻守双方都要能直接读到
-                # 「崩解（30/50）」这种进度，才可能判断"再逼它发动一次道纹它就自爆"。
+                # 致死进度（用户令 2026-09-15/2026-09-28）：怪物同样会【迷失·崩解】，攻守双方都要能直接读到
+                # 「迷失（30/50）」这种进度，才可能判断"再逼它发动一次道纹它就自爆"。
                 "lethal_counters": {k: list(v) for k, v in monster.lethal_counters().items()},
                 "lethal_progress": monster.lethal_progress(),
             })
@@ -287,10 +288,11 @@ class MonsterPhaseMixin:
             if not self._monster_can_pay_calc_cost(monster, calc):
                 break
             # 【异变】是**累加计数**而非可花费的预算：付异变等于给自己叠层，
-            # 达到 MUTATION_COLLAPSE_THRESHOLD 就【崩解】命零，所以它没有天然的
-            # "付不起"上限，探测会一路撞上试探封顶值。这里按生存线封顶——
-            # 允许叠加到崩解线之前，但**不把"当场自爆"的 X 当成合法选项**。
-            # （是否值得逼近崩解线由 AI 预演评分自行权衡，引擎只保证不主动提供自杀档。）
+            # 怪物达到 MUTATION_COLLAPSE_THRESHOLD 就【迷失·崩解】爆体命零；非怪物则【迷失】变怪物
+            # （两者对发动者而言都是绝对坏事），所以它没有天然的"付不起"上限，
+            # 探测会一路撞上试探封顶值。这里按生存线封顶——
+            # 允许叠加到迷失线之前，但**不把"当场自爆/叛变"的 X 当成合法选项**。
+            # （是否值得逼近迷失线由 AI 预演评分自行权衡，引擎只保证不主动提供自杀档。）
             if calc.get("cost_type") == "异变":
                 headroom = (Entity.MUTATION_COLLAPSE_THRESHOLD
                             - getattr(monster, "mutation_count", 0))
@@ -380,7 +382,11 @@ class MonsterPhaseMixin:
         dodge = choice.get("dodge")
         blood_shadow = choice.get("blood_shadow", False)
         aoe_dodge_choices: list[tuple[Entity, bool, dict]] = []
-        must_hit_preview = self.bizhong_remaining(monster) > 0
+        # 必中：次数型（bizhong_remaining）+ 新必中X 真self-buff（remaining_rounds>0）
+        def _has_real_buff(ent):
+            s = next((s for s in ent.status_effects if s.name == "必中"), None)
+            return bool(s and s.remaining_rounds > 0)
+        must_hit_preview = (self.bizhong_remaining(monster) > 0 or _has_real_buff(monster))
         if effective_name == "波及":
             # 波及X：选择X个[目标]建立/解除波及效果（持续∞）。每个目标显式提交闪避。
             submitted_dodges = choice.get("dodge_targets")
@@ -459,31 +465,40 @@ class MonsterPhaseMixin:
             consumed = self.consume_resonance_rewrite(monster, name)
             if consumed != rewritten_as:
                 raise ValueError("残韵改写已变化，请重新prepare_monster_phase")
-        # 原始怪物道纹发动时支付异变5X；选择导致崩解仍是合法结算，效果中断。
+        # 原始怪物道纹发动时支付异变5X；怪物异变达阈值=【迷失·崩解】直接命零、效果中断。
         elif name in self.ORIGINAL_MONSTER_DAOWEN:
             paid = monster.add_mutation(self.YUANCHU_COST_RATE * effective_x)
             if paid["collapsed"]:
                 # 修复：此前直接 return，崩解死者从不进入统一死亡管线
                 # （不产生 _death_ctx、不进 dead_monsters、不触发焦黑发丝/分裂）。
-                self._on_entity_death(monster, ctx=self._collapse_context(monster, {
+                self._on_entity_death(monster, ctx=self._lost_context(monster, {
                     "timing": "monster_action", "source": name, "source_type": "daowen",
                     "actor": monster, "target": monster, "mechanic": "cost",
                     "subtype": "mutation", "amount": self.YUANCHU_COST_RATE * effective_x,
-                    "tags": {"daowen", "active_payment"}}))
+                    "tags": {"daowen", "active_payment"}}, subtype="collapse"))
                 return {"monster": monster.name, "collapsed": name,
-                        "note": "支付异变后触发【崩解】，道纹效果中断"}
+                        "note": "支付异变后触发【迷失·崩解】，道纹效果中断"}
         elif name == "封印":
             # 怪物侧若持有【封印】，同样按新版口径支付异变X；玩家【封印】才会
             # 把目标怪物放入延迟回场队列。
             paid = monster.add_mutation(effective_x)
             if paid["collapsed"]:
-                self._on_entity_death(monster, ctx=self._collapse_context(monster, {
+                self._on_entity_death(monster, ctx=self._lost_context(monster, {
                     "timing": "monster_action", "source": name, "source_type": "daowen",
                     "actor": monster, "target": monster, "mechanic": "cost",
                     "subtype": "mutation", "amount": effective_x,
-                    "tags": {"daowen", "active_payment"}}))
+                    "tags": {"daowen", "active_payment"}}, subtype="collapse"))
                 return {"monster": monster.name, "collapsed": name,
-                        "note": "支付异变后触发【崩解】，道纹效果中断"}
+                        "note": "支付异变后触发【迷失·崩解】，道纹效果中断"}
+            elif paid.get("lost"):
+                # 非怪物（罕见：怪物侧持有封印的轮回者/朋友等）：触发【迷失】
+                self._resolve_mutation_lost(monster, {
+                    "timing": "monster_action", "source": name, "source_type": "daowen",
+                    "actor": monster, "target": monster, "mechanic": "cost",
+                    "subtype": "mutation", "amount": effective_x,
+                    "tags": {"daowen", "active_payment"}})
+                return {"monster": monster.name, "lost": name,
+                        "note": "支付异变后触发【迷失】"}
         elif name == "赌命":
             if monster.fake_shards < effective_x:
                 raise ValueError(f"{monster.name}假碎片不足，不能发动【赌命】")
@@ -514,7 +529,9 @@ class MonsterPhaseMixin:
             wave_unmarked: list[str] = []
             for entity, want_dodge, entry in aoe_dodge_choices:
                 if must_hit_preview:
-                    self.consume_bizhong(monster)
+                    # 次数型必中扣1次，状态型必中（monster.has_status("必中")）不扣
+                    if self.bizhong_remaining(monster) > 0:
+                        self.consume_bizhong(monster)
                     marked = self._toggle_wave_mark(entity, monster)
                     (wave_marked if marked else wave_unmarked).append(entity.name)
                 elif entry["blood_shadow"]:
@@ -536,7 +553,8 @@ class MonsterPhaseMixin:
                     "trigger_spell_logs": trigger_logs}
         elif requires_target and hostile:
             if must_hit_preview:
-                self.consume_bizhong(monster)
+                if self.bizhong_remaining(monster) > 0:
+                    self.consume_bizhong(monster)
             elif blood_shadow:
                 self.pay_numeric_cost(
                     target, "流血", 10,
@@ -870,7 +888,12 @@ class MonsterPhaseMixin:
                         results.append({"attacker": monster.name, "target": target.name,
                                         "skipped": "预选目标已命零", "hit_index": hit_index + 1})
                         continue
-                    must_hit = self.bizhong_remaining(monster) > 0
+                    _s = next((s for s in monster.status_effects if s.name == "必中"), None)
+                    _real_buff = bool(_s and _s.remaining_rounds > 0)
+                    must_hit = (self.bizhong_remaining(monster) > 0 or _real_buff)
+                    # 次数型必中余号：每次物理判定消耗1次（consume_bizhong 内部无余号时返回False）
+                    if self.bizhong_remaining(monster) > 0:
+                        self.consume_bizhong(monster)
                     if hit["dodge"] and not must_hit and target.current_speed < 1:
                         raise ValueError(f"{target.name}速度不足，不能选择闪避")
                     option = legal_attack_options[hit["target_ref"]]

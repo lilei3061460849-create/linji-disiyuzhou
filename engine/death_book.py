@@ -28,7 +28,7 @@ EMPTY_MARK = "当前没有遗言。"
 # 可扩展草稿表：新增死因只需加一条，流程代码不用改。
 CAUSE_DRAFTS: dict[str, dict[str, str]] = {
     "attack": {"text": "受到致死攻击命零"},
-    "collapse": {"text": "异变叠满崩解命零"},
+    "collapse": {"text": "异变叠满迷失（崩解/叛变）命零"},
     "mediocrity": {"text": "连续五回合触发凡庸"},
     "duel": {"text": "最终死斗落败"},
     "bleed": {"text": "代价流血导致命零"},
