@@ -507,9 +507,21 @@ def main():
           " sim/probe_global_trigger_spells.py。")
     print("受到伤害后/失去生命前两个伤害管线内时点的真实触发验证见"
           " sim/probe_damage_pipeline_triggers.py。")
-    return REPORT
+    # 退出码契约（2026-10-02 独立验证补齐）：此前本探针只打印表格、永远 exit 0，
+    # 真实触发静默失效时脚本/CI 无法发现。期望：
+    #   * 已接线行（wired=True）必须真实触发；
+    #   * 拒绝类行（wired=None）表示 DSL 定义期就该拒绝，拒绝成立即通过。
+    all_ok = True
+    for row in REPORT:
+        if row["learn_wired"] is True:
+            ok = row["actually_fired"] is True
+        else:
+            ok = row["learn_wired"] is None and row["actually_fired"] is True
+        all_ok = all_ok and ok
+    print("全部通过" if all_ok else "存在失败用例，见上表")
+    return 0 if all_ok else 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
 

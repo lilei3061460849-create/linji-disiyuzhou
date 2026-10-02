@@ -16,7 +16,7 @@
      10 生命面对 12 伤害时招架只能减 1 点、救不了命，
      ``_parry_candidate()`` 会**故意拒绝**这种无收益招架（threat-reduction > hp）。
 
-按用户令「不得为保住陈旧测试改战斗语义」，这 3 条原断言以 xfail（strict=False）
+按用户令「不得为保住陈旧测试改战斗语义」，这 3 条原断言以 xfail（strict=True）
 留档：规则 AI 排序再次漂移时仍可被看见，但不会把实验工具的偏好伪装成生产契约。
 下方同时断言**当前真实生效**的契约（这些必须通过），避免本文件只是一座墓园：
 
@@ -49,7 +49,7 @@ def _lethal_engine(tmp_path, hp=10, attack_power=12):
 # 一、留档的陈旧断言（xfail：记录实验规则 AI 排序的历史口径）
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(strict=False, reason="2026-09-28 招架改为 10%当前生命后，"
+@pytest.mark.xfail(strict=True, reason="2026-09-28 招架改为 10%当前生命后，"
                                         "10 生命面 12 伤害时招架救不了命，规则 AI 不再优先它")
 def test_legacy_rule_ai_prefers_parry_under_lethal_threat(tmp_path):
     from engine.ai_tactics import TacticalAI
@@ -60,7 +60,7 @@ def test_legacy_rule_ai_prefers_parry_under_lethal_threat(tmp_path):
     assert result.get("action") == "贾凡招架"
 
 
-@pytest.mark.xfail(strict=False, reason="同上：WinOnlyAI 继承同一套招架候选过滤")
+@pytest.mark.xfail(strict=True, reason="同上：WinOnlyAI 继承同一套招架候选过滤")
 def test_legacy_win_only_keeps_parry_in_real_candidate_path(tmp_path):
     from sim.win_only_ai import WinOnlyAI
 
@@ -70,7 +70,7 @@ def test_legacy_win_only_keeps_parry_in_real_candidate_path(tmp_path):
     assert result.get("action") == "贾凡招架"
 
 
-@pytest.mark.xfail(strict=False, reason="2026-09-10 攻次/攻力改制后，1×1 面板下"
+@pytest.mark.xfail(strict=True, reason="2026-09-10 攻次/攻力改制后，1×1 面板下"
                                         "普攻（免费1伤）与杀伐（1法力1伤）的真实取舍已改变")
 def test_legacy_one_by_one_daowen_outscores_basic_attack(tmp_path):
     from engine.ai_tactics import TacticalAI

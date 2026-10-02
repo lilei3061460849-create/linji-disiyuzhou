@@ -101,7 +101,8 @@ class SpellReactionMixin:
                                         allow_trigger_reactions=False,
                                         trigger_choices_required=False)
 
-    # 全部 12 种触发时机现已全部接线（见 报告.md）。
+    # 已接线清单（11 项）。DSL 词汇表里的“敌回始”见下方注释：
+    # 全引擎没有结算点，学习仍成功但如实标注 wired=False，不列入本清单。
     _WIRED_TRIGGERS = (
         ActionPhase.BEFORE_DAMAGE_TAKEN.value,
         ActionPhase.AFTER_LIFE_LOST.value,

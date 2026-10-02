@@ -343,9 +343,12 @@ def main():
     print()
     print("=" * 78)
     print(f"总体结论：解析层={ok1}  已接线真实触发层={ok2}  未接线诚实标注层={ok3}")
-    print(f"全部通过 = {ok1 and ok2 and ok3}")
+    all_ok = ok1 and ok2 and ok3
+    print(f"全部通过 = {all_ok}")
     print("=" * 78)
+    # 退出码契约（2026-10-02 独立验证补齐）：此前只打印结论、永远 exit 0。
+    return all_ok
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(0 if main() else 1)
