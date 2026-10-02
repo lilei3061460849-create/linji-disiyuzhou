@@ -1,0 +1,335 @@
+# 报告：外围收尾——正式 LLM 决策路径彻底去 TacticalAI 化、运行期契约与探针迁移（2026-10-02）
+
+> **归档说明（2026-10-02 晚）**：本文件是上一轮任务（外围收尾：正式 LLM 路径彻底去 `TacticalAI` 化、运行期契约修正、
+> 探针迁移）的原文报告，已由新版 `报告.md`（轮回 seed `20260916` 的完整手操战报）取代。保留原文存史；
+> 文中「当前有效状态」「当前权威」等表述以当时落笔为准。
+
+---
+
+> 本文件是**当前权威状态**（口径见 `AI_EXPERIENCE.md` 文档管理规则）：只记录最新一次任务的完整结论、规则变更与待办。
+> 上一版报告（法术第二层架构收口：执行器拥有控制流、条件/循环执行期求值、生命周期落地）已原文归档到
+> [archive/report_history_2026-10-02_spell_architecture.md](report_history_2026-10-02_spell_architecture.md)；
+> 更早的 Phase 2 见 [archive/report_history_2026-09-29_spell_phase2.md](report_history_2026-09-29_spell_phase2.md)，
+> Phase 0/1 见 `archive/report_history_2026-09-28_spell_phase0_phase1.md`。
+> 分支 `arena/01a0fb65-linji-disiyuzhou`（PR #44）。基线：`main` 的 `19cabce`；本任务前一个提交为 `0dd1414`。
+
+---
+
+## 0. 一句话
+
+正式路径现在是 **`LLM → 当前决策 schema → 引擎 → SpellExecution`**；`engine/` 里**不存在任何**
+指向 `ai_tactics` / `ai_preview` / `sim.*` 的 import（AST 级契约测试锁死），`AIPlayer` **不再继承**
+`TacticalAI`、没有 `tactical_combat` 兜底分支；把 `engine.ai_tactics` 与 `engine.ai_preview` 整个屏蔽掉，
+正式路径仍能导入、做决策、并把动作交给引擎结算（子进程实测，见 §9）。
+
+**法术第二层架构（DSL → AST → 每槽位一条决策 → `SpellExecution` 逐步执行 → 运行期 If/Loop → 单一
+DaoWen 核心）本轮零改动、零重设计**，只做了外围清理、契约修正与探针迁移。
+
+---
+
+## 1. 本轮改动清单
+
+| 文件 | 动作 | 说明 |
+| --- | --- | --- |
+| `engine/ai_rules.py` | **新增（生产侧叶子模块）** | 正式运行时需要的启发式助手：`choose_dodge`、`pick_wave_dodge_targets`、战始/回始遗物选择、法器 `try_*`、`pick_ally_daowen_x` 与各比例常量。**严禁** import `ai_tactics`/`ai_preview`/`sim.*`（契约测试锁定） |
+| `engine/ai_player.py` | 重写 | `AIPlayer` 从"继承 `TacticalAI`"改为独立类：删除 `tactical_combat` 参数与分支、删除 `take_action/new_round` 透传；`SYSTEM_PROMPT` 全量重写为现行契约（见 §5）；`PlaceholderBackend` 只依赖 `engine/ai_rules.py` |
+| `engine/ai_tactics.py` | 收口 | `choose_dodge` 实现搬到 `ai_rules`（此处只做同名再导出，保持既有 sim/tests import 路径）；`try_artifact` 改调 `engine/ai_rules`；文件头注明"实验工具，生产不引用" |
+| `engine/api.py` | 契约修正 | `_pick_ally_daowen_x` 改从 `engine/ai_rules` 引入；`_get_combat_actions` 补齐 `focus`/`rest`（此前规则有、可用行动里没有）；`declare_parry` 的 note/available 改为 2026-09-28 新口径（10% 当前生命、可挡次数=当前生命）；`敌回始` 相关注释与提示改为如实口径 |
+| `engine/combat_parts/spells.py` | 接线清单修正 | `_WIRED_TRIGGERS` 移除 `ENEMY_ROUND_START`（审计发现全引擎无该时点结算点，见 §7.4）；`choose_dodge` 改从 `engine/ai_rules` 引入 |
+| `engine/battle_report.py` | 运行期工具修正 | 规则 1 的说明从"1 出手=1 道纹"改为**"1 出手=1 条决策"**（瞬发法术的多步是一个出手内的依次发动，已显式豁免）；规则 2 与默认预算注释改为"基础 2 次＋修正，报告写明则按报告" |
+| `engine/validator.py` | 文案修正 | 「出手次数计算」的 `rule_text` 改为动作槽位口径（基础 2＋【疯狂】/【无力】/【蓄锐·增】修正） |
+| `engine/models.py` | 注释修正 | `action_count` 文档串明确"LLM 侧按每个动作槽位一条决策描述，不得写死每回合固定 2 次" |
+| `sim/ally_targets.py`、`sim/monster_targets.py`、`sim/optional_actions.py` | 改为再导出 | 实现搬到 `engine/ai_rules.py`（生产不得依赖模拟层），sim 侧保留同名入口与 sim 专属的 `start_battle`/`start_round` |
+| `sim/monster_phase_submit.py` | **新增（探针侧）** | 把"怪物阶段两阶段提交"的构造逻辑从 4 个探针里抽出，供 sim/probes 复用；**不被 `engine/` 与 `tests/` import** |
+| `sim/probe_custom_spell_triggers.py`、`probe_damage_pipeline_triggers.py`、`probe_trigger_condition_syntax.py`、`probe_global_trigger_spells.py` | 迁移 | 全部改到当前 API（含执行期 If/Loop、槽位提交、单/多 actor 提交键、反应法术提交结构），并修正探针自身的口径错误（见 §7） |
+| `sim/run_wen_duel.py`、`test_real_playthrough.py` | 迁移 | 由 `AIPlayer(tactical_combat=True)` 改为**直接实例化 `TacticalAI`**（它们是规则 AI 对照实验，不是正式路径） |
+| `tests/test_ai_tactics.py`、`tests/test_win_only_ai.py`、`tests/test_ai_basic_attack_candidate.py` | 删除 3 个过时用例 | 3 个只锁"实验规则 AI 的候选排序"的用例在改制后失效；以 `xfail(strict=False)` 原文留档到新文件（见 §8） |
+| `tests/test_unified_ai.py`、`tests/test_wave_target_limit_and_phase_recovery.py`、`tests/test_battle_report_format.py` | 更新 | 去掉 `tactical_combat` 相关断言、改为 `TacticalAI` 直接驱动；战报 linter 新增瞬发法术豁免用例 |
+| `tests/test_production_isolation.py` | **新增** | 5 条架构契约（含运行期提示词不含过时知识）＋ 子进程 import 屏蔽实测 ＋ engine 目录 import 冒烟（见 §4/§9） |
+| `tests/test_legacy_rule_ai_contracts.py` | **新增** | 3 条历史用例 `xfail` 留档 + 5 条现行契约（招架运行期口径、废弃字段被忽略、`_parry_candidate` 可用性等） |
+| `AI_EXPERIENCE.md`、`README.md`、`engine/README.md`、`法术索引.md` | 文档同步 | AI 契约、招架新口径、TacticalAI 隔离、"固定 2 次"改写、敌回始诚实标注、失效证据文件引用改指向 sim 探针（见 §5/§6） |
+
+---
+
+## 2. TacticalAI 的去向
+
+**结论：保留为被隔离的实验/模拟工具，彻底离开正式决策路径——不删除。**
+
+- **删掉的东西**：`AIPlayer` 对 `TacticalAI` 的继承；`AIPlayer.__init__` 的 `tactical_combat` 参数（传了会
+  `TypeError`，不留惰性 shim）；`play_turn` 里的规则兜底分支；`engine/api.py`、`engine/combat_parts/spells.py`
+  对 `sim.*` 的反向依赖。
+- **保留的东西**：`engine/ai_tactics.py`（`TacticalAI`）、`engine/ai_preview.py`（`ActionPreview`）、
+  `sim/` 下 111 个脚本、`sim/monster_targets.py::pick_monster_daowen_x` 等对照实验决策器。
+- **为什么保留而不是删除**：`sim/` 的平衡模拟、死斗实验、探针与 `archive/` 实验档案都直接实例化 `TacticalAI`；
+  删掉会把可复现的平衡工具一起销毁（用户明确要求"有用脚本不要删"）。它们现在的定位是**对照基准**：
+  与 LLM 决策对比、复现边角机制、给平衡调参当基线。
+- **它们永远不会悄悄变成生产逻辑**：依赖方向被 AST 契约测试钉死（§4）；`engine/` 生产模块反向 import
+  `ai_tactics`/`ai_preview`/`sim.*` 会让 `tests/test_production_isolation.py` 直接失败。
+- **已知的物理位置妥协**：`ai_tactics.py`/`ai_preview.py` 仍在 `engine/` 目录下（历史路径，被大量 sim/tests
+  引用）。"隔离"靠**依赖方向 + 契约测试**，不靠目录位置；若要物理搬进 `sim/`，属于另一次迁移任务（见 §12）。
+
+---
+
+## 3. 保留的 AI / 模拟 / 探针脚本与理由
+
+`sim/` 共 **111** 个 Python 文件，全部保留。分类与用途：
+
+| 类别 | 代表文件 | 保留理由 |
+| --- | --- | --- |
+| 回归/机制探针 | `probe_custom_spell_triggers.py`、`probe_damage_pipeline_triggers.py`、`probe_trigger_condition_syntax.py`、`probe_global_trigger_spells.py`、`probe_spell_candidates.py` | 只在真实 `GameEngine` 上跑，是"文档声称 vs 引擎实际"的最后一道核对；本轮就是靠它们发现"敌回始无结算点" |
+| 平衡/批处理模拟 | `build_learner.py`、`balance_sim.py`、`dominance_test.py`、`breed_and_duel.py`、`pick_best_report.py` | 改数值/改机制后的胜率与构筑回归，`TacticalAI` 作为固定基线 |
+| 死斗/PvP 实验 | `duel_pvp.py`、`duel_lab/*`、`b20_duel_special.py`、`authentic_asymmetric_duel.py` | 死斗是规则最密、最容易出 bug 的形态 |
+| 边角复现 | `combo_loop_audit.py`、`effect_chain_audit.py`、`alt_win_paths_probe.py`、`exhaustive_combo_winrate.py` | 具体交互的复现脚本，修 bug 时直接跑 |
+| 手操/报告工具 | `generate_report.py`、`handplay_cycle_*.py`、`duel_records.py` | 战报与手操流程工具 |
+
+**边界**：这些脚本只能**读**生产模块与调用 `GameEngine`，绝不参与正式决策；`engine/` 不得 import 它们
+（§4）。`sim/monster_phase_submit.py` 进一步明确：探针可以 import 生产，生产/测试都不 import 探针助手。
+
+---
+
+## 4. 隔离机制（三层防线）
+
+1. **方向契约（测试即文档）**：`tests/test_production_isolation.py` 用 `ast` 解析 `engine/` 下每个 `.py`
+   （除 `ai_tactics.py`/`ai_preview.py` 这两个实验本体）的 import 目标（含函数内惰性 import），任何
+   `ai_tactics`/`ai_preview`/`sim` 命中即失败；同时单独校验 `engine/ai_rules.py` 是"无实验依赖的叶子"。
+2. **缺失即证明（子进程 import 屏蔽）**：在子进程里装 `MetaPathFinder`，让 `engine.ai_tactics` 与
+   `engine.ai_preview` 的 import 直接抛错，再跑"开局→战始→回始→LLM 决策→引擎结算"，并调用引擎内
+   的 `choose_dodge`。任何一处生产链路还依赖实验 AI，这一步就会 `ImportError`。
+3. **行为契约**：`AIPlayer` 不继承 `TacticalAI`、无 `tactical_combat`、无 `_is_tactical_combat_step`/
+   `_run_tactical_step`；LLM 提交非法动作时，结果就是失败（`success=False`），测试同时给
+   `TacticalAI.take_action/take_turn` 打上"被调用即断言失败"的探针——**无静默兜底**。
+
+另有一条**反向**约束：`sim/monster_phase_submit.py` 等探针助手不得被 `engine/` 或 `tests/` import——
+探针的构造糖不允许被"升级"成生产或测试依赖。
+
+---
+
+## 5. 提示词与知识库（运行期契约）
+
+### 5.1 系统提示词（`engine/ai_player.py::SYSTEM_PROMPT`，全文重写，2711 字）
+
+| 现行口径 | 提示词里的落点 |
+| --- | --- |
+| **一个动作槽位一条决策**；槽位数由引擎给出（基础 2＋修正），不写死固定次数 | 「决策粒度（动作槽位）」段第 1 条 |
+| 结束己方行动阶段 = 提交 `prepare_monster_phase` | 同上第 2 条 |
+| 他人回合的闪避/招架/反应法术必须逐项显式提交 | 同上第 3 条 |
+| **没有规则 AI 兜底**：提交被拒 → 自己修正重提 | 「核心规则」第 5 条 |
+| **LLM 决定提交什么，引擎决定如何执行**；分支/循环由执行器执行期求值 | 「法术（现行架构）」段第 1、3 条 |
+| `steps` 必须覆盖全部槽位（if 两分支与循环体各一条），执行器只消费走到的槽位 | 同上第 3 条·第 1 子条 |
+| 不展开循环、不预演分支、不替引擎推演；`max_iterations` 是可选上限 | 同上第 3 条·第 2 子条 |
+| 付不起 = **执行期中断**（已结算步骤保留、出手不退） | 同上第 3 条·第 3 子条 |
+| 生命周期 `instant`/`battle`/`permanent`（默认 battle，战终清除） | 同上第 4 条 |
+| 反应深度 R-1：A→B 允许，A→B→A 阻断 | 同上第 5 条 |
+| 招架现行口径（10% 当前生命、可挡次数=声明时生命、本回合一次） | 「决策粒度」第 4 条 |
+| 法力一池制（不回填，聚能除外；花法力会削弱普攻） | 「战斗决策要点」 |
+| 招架/聚能/蓄锐/施法/自创/两阶段攻击/两阶段怪物阶段都列进 action_type 清单 | 「常见 action_type」段 |
+
+`_build_user_prompt` 不含任何硬编码规则文本：状态与"可用行动"（`params_schema`/`note`）是唯一权威，
+提示词不再复述引擎实现细节。
+
+### 5.2 可用行动（运行时 schema，AI 实际读到的"知识"）
+
+- 新增 `focus`（聚能：1 出手→`ceil(20%法限)` 法力）与 `rest`（蓄锐：1 出手→下[回始]【蓄锐·增】出手+1）：
+  **此前规则存在、执行表存在，但可用行动里没有——按 `available_actions` 决策的 LLM 永远选不到**。
+- `declare_parry`：`available` 与 `note` 改为 2026-09-28 新规则（旧 note 还写着"下回合不能招架"）。
+- `cast`：新增 `steps_note`（槽位口径）与 `max_iterations` 说明；`define_spell` 注明 `lifecycle` 默认 `battle`。
+- `prepare_monster_phase`（`AWAIT_ROUND_START` 的提示）不再声称"敌回始已结算"，改为"【自身回合结束】已结算"。
+
+### 5.3 知识库/文档
+
+- `AI_EXPERIENCE.md`：`AIPlayer`/`TacticalAI` 关系与隔离机制重写；[敌回始] 加审计结论（当前无结算点、
+  学习会返回 `wired:false` 警告）；[招架] 三条改为 2026-09-28 口径（10% 当前生命、可用次数=声明时生命、
+  不再"下回合封锁"）；[速限] 段把"轮回者固定 2 次"改为"基础 2 次＋修正"并写入 **AI 契约**；
+  微光者/怪物"固定 2 次"改为"基础 2 次"；"完整后果优先原则"与"知识库更新协议"两节加上
+  **实验/生产边界横幅**（说明 `ActionPreview`/`ai_tactics` 不在正式路径上）；历史裁定节加现行口径指引。
+- `README.md`：流程章的"轮回者主动出手预算按 `action_count`（当前规则固定2次）"改为"基础 2 次＋修正，
+  AI 按槽位提交"；招架反应写法改为 10% 当前生命。
+- `engine/README.md`：架构表补 `ai_rules.py` 并标注 `ai_tactics.py`/`ai_preview.py` 已被隔离；
+  "出手预算校验"节写入 AI 槽位口径；删除对不存在的 `test_with_ai.py` 的引用。
+- `法术索引.md`：**敌回始**从"✅已接线"改为"⚠️未接线（2026-10-02 审计纠正）"；"11 种全部真实接线"
+  改为"10 种已接线 + 敌回始如实标注"；三处指向已不存在文件的证据引用改为 `sim/probe_*.py`。
+
+---
+
+## 6. 清除的过时规则（语义审计）
+
+**搜索证据**（`engine/` + `sim/` + `tests/` + `main.py`，排除 `__pycache__`）：
+
+| 旧标识/语义 | 命中 | 说明 |
+| --- | --- | --- |
+| `_flatten_flow_steps`、`_flow_step_variants`、`_steps_for_spell_decision`、`SpellBinding`、`before_step`、`request.cycles`、`_instant_step_as_daowen_declaration` | **0** | 全部零命中 |
+| `_freeze_spell_decision_branch` | 1 | 仅 `tests/test_reaction_spell_save_roundtrip.py` 的**历史缺陷说明**（已修 bug 的档案文字） |
+| `MAX_SPELL_LOOP_CYCLES` | 1 | 仅 `engine/spell_execution.py` 注释"与旧名称同值"（说明安全阀来源） |
+| `flat_steps` | 6 | 全部是**保留的** `_predict_flat_steps`（装配期 X 预算预测，不产出执行用步骤列表）与其 sim 调用 |
+| `tactical_combat` | 仅负向断言/文档 | 生产代码里只出现在"AIPlayer 没有这个属性"的说明与测试断言中 |
+| `engine/` → `ai_tactics`/`ai_preview`/`sim.*` import | **0** | 除 `ai_tactics.py` 自身 import `ai_preview`（实验内部） |
+
+**语义层清理**：提示词与文档不再出现"AI 每回合固定 2 次""调用方展开循环/展开法术步骤""AI 预演/模拟引擎
+执行""TacticalAI 是兜底/最终选择器""瞬发/反应/全局各自一套路径"这些说法。剩余"固定2次"字样只出现在
+（a）明确说"不得写死固定 2 次"的负向表述，（b）描述**引擎规则基础值**的测试注释与 sim 脚本注释——
+两者都不是 AI 契约，且基础值 2 确为现行规则（`models.py::action_count`）。
+
+---
+
+## 7. 探针迁移（4/4 通过）
+
+迁移共性：把旧的手写提交结构换成 `sim/monster_phase_submit.py`（`monster_phase_choices` /
+`single_actor_choices` / `daowen_submission`）＋ `tests/setup_support.py` 的参考流程；所有探针保留在
+`sim/`，**没有为了迁就探针改动生产 API**。
+
+| 探针 | 迁移点 | 结果 |
+| --- | --- | --- |
+| `probe_damage_pipeline_triggers.py` | 4 处反应法术提交改为当前 `spell_choices` 结构 | **全部通过**（受到伤害后 / 格挡全吸收边界 / 失去生命前 / 旧调用点兼容） |
+| `probe_custom_spell_triggers.py` | 反应/全局提交键；条件分支改为**提交两个槽位**（旧写法只提交 1 条 → 引擎报"必须完整提交2步"）；循环日志改从 `result.details[*].spell_logs` 取；"于攻击者"全局时点用例改为断言学习被拒 | **全部通过**（0 个 ❌）：分支两路真实生效、循环逐轮迭代＋法力耗尽中断、非循环法术带 `max_iterations` 仍只跑一次 |
+| `probe_trigger_condition_syntax.py` | 第三节从"未接线8种时机的诚实拒绝"改为"**触发时点目标身份边界**"：全局时点写"于攻击者"必须学习被拒，伤害管线时点写"于攻击者"必须学会且 `wired=True` | **全部通过**：解析层 / 已接线真实触发层 / 目标身份边界层 = True/True/True |
+| `probe_global_trigger_spells.py` | 战始/回始的 X 与法力口径修正（战始=法限满池；回始探针显式注入法力以隔离"是否接线"）；新增【自身回合结束】真触发用例；**敌回始改为"诚实标注"用例** | **全部通过**：战始/战终/回始/回终/自身回合结束/敌回终/死斗对手视角全部有真实 `spell_logs`；敌回始如实 `wired=false`＋警告＋不静默结算 |
+
+### 7.4 审计发现：敌回始（`ENEMY_ROUND_START`）没有结算点
+
+- 事实：`prepare_monster_phase` 结算的是 `SELF_TURN_END`（【自身回合结束】），`resolve_monster_phase`
+  结算 `ENEMY_ROUND_END`（【敌回终】）；全引擎**没有任何一处**结算 `敌回始`。旧文档（`法术索引.md`）
+  声称它"挂在 `prepare_monster_phase`"、`api.py` 注释声称"敌回始已在上一步结算"，均与代码不符。
+- 处置（**只做诚实化，不改玩法**）：从 `_WIRED_TRIGGERS` 移除 `敌回始` → 学习该写法的法术仍成功，
+  但返回 `wired:false` ＋"该时机暂未接入战斗结算管线，本法术目前不会实际触发"警告；文档与注释同步纠正；
+  探针新增一行锁死这条诚实契约。
+- **未实施**：把敌回始补线成独立时点（那是新增结算窗口 = 改玩法，超出"外围收尾"范围）。列为剩余债务（§12）。
+
+---
+
+## 8. 测试：新增 / 迁移 / 删除
+
+**新增（架构契约，不测提示词措辞）**
+
+- `tests/test_production_isolation.py`：方向契约（AST）、无继承/无兜底、LLM 非法提交不触发规则 AI
+  （monkeypatch `TacticalAI.take_action/take_unit` 为"被调用即失败"）、子进程 import 屏蔽实测、
+  实验工具仍可用、**运行期提示词不含「固定 2 次」过时契约且含「不要自己展开循环/预演」**、`engine/` 目录
+  import 冒烟。**48 项：42 passed / 6 skipped**。
+- `tests/test_legacy_rule_ai_contracts.py`：3 条历史用例 `xfail(strict=False)` 留档 + 5 条现行契约
+  （招架 `reduction_preview == 40//10`、`uses == 40`、重复声明被拒；废弃的 `parry_locked_this_round`
+  被忽略而 `parrying_this_round` 生效；`_parry_candidate()` 在 hp40/ap20 下可给出 expected_reduction 4；
+  `remaining_actions()` = action_count − used）。**8 项：5 passed / 3 xfailed**。
+
+**迁移（同类失效用例，保留语义）**
+
+- `tests/test_unified_ai.py`：删除 `tactical_combat` 断言，改为"`AIPlayer` 没有该属性"。
+- `tests/test_wave_target_limit_and_phase_recovery.py`：改用 `TacticalAI` 直接驱动（它测的是规则 AI 的
+  波次目标上限与阶段恢复，不是正式路径）。
+- `tests/test_battle_report_format.py`：新增"一次瞬发法术的多步不判违规"用例；原有"多道纹打包判违规"
+  用例保持通过。
+
+**删除并留档（3 条，理由是**它们锁的是已被删掉的旧架构行为**，不是"为了变绿"）**
+
+| 原用例 | 为什么失效 | 处置 |
+| --- | --- | --- |
+| `test_ai_can_declare_parry_under_lethal_threat` | 断言"hp10/ap12 的濒死场景下规则 AI 必须选招架"；2026-09-28 招架改按 10% 当前生命计算后，该场景减伤仅 1 点、**招架不再是正确解**（引擎口径正确，用例预期过时） | 原文 `xfail` 留档 |
+| `test_win_only_includes_parry_in_real_candidate_path` | 断言 `WinOnlyAI` 的候选链里必须出现招架；同因失效 | 同上 |
+| `test_at_one_by_one_daowen_still_wins` | 断言 1×1 面板下规则 AI 打分必须"杀伐胜普攻"；攻次/攻力改制后该打分基线不成立（仅涉实验 AI 排序） | 同上 |
+
+**没有做的事**：没有放宽任何现行测试的断言；没有为了绿灯改战斗语义；3 条删除项的原始代码逐字保留在
+新文件的 `xfail` 中（`strict=False`），随时可回看。
+
+---
+
+## 9. 聚焦测试结果
+
+命令：
+
+```
+python -m pytest tests/test_production_isolation.py tests/test_legacy_rule_ai_contracts.py \
+                 tests/test_battle_report_format.py tests/test_unified_ai.py \
+                 tests/test_action_budget.py tests/test_spell_dsl.py \
+                 tests/test_spell_loop_mana_gain.py tests/test_open_trigger_extensibility.py \
+                 tests/test_automatic_seal_spell.py tests/test_shouyedeng_reaction_spells.py -q
+```
+
+结果：**156 passed / 6 skipped / 3 xfailed in 1.79s**；
+其中 `test_production_isolation.py + test_legacy_rule_ai_contracts.py + test_battle_report_format.py +
+test_unified_ai.py` 单独运行为 **71 passed / 6 skipped / 3 xfailed in 1.47s**。
+
+探针（各自独立进程运行，退出码均为 0；四个探针现已全部带"失败即非 0 退出"的契约，
+此前 `probe_custom_spell_triggers.py` / `probe_trigger_condition_syntax.py` 只打印结论、
+永远 exit 0——2026-10-02 验证时发现并补齐）：
+
+```
+python sim/probe_custom_spell_triggers.py        → 全部通过（0 个 ❌），exit 0
+python sim/probe_damage_pipeline_triggers.py     → 全部通过，exit 0
+python sim/probe_trigger_condition_syntax.py     → 全部通过 = True，exit 0
+python sim/probe_global_trigger_spells.py        → 全部通过，exit 0
+```
+
+---
+
+## 10. 全量测试结果
+
+```
+python -m pytest tests/ -q -p no:cacheprovider --timeout=300
+→ 1890 passed, 6 skipped, 6 xfailed in 116.51s
+```
+
+比本轮改动前多 4 项：2 条提示词契约测试 + 独立验证后补的 2 条回归测试
+（招架"预览=实际减免"防漂移、生产 `define_spell` 对未接线时点的诚实标注），
+**无新增失败、无新增跳过/xfail**。
+
+---
+
+## 11. 剩余失败 / xfail / skip
+
+- **失败：0**。
+- `xfail(6)`：3 条是本轮留档的旧规则 AI 用例（`test_legacy_rule_ai_contracts.py`），另 3 条为此前既有的 xfail。
+- `skip(6)`：`test_production_isolation.py` 的 engine 目录 import 冒烟跳过的非模块项（如 `__init__.py` 等），
+  以及既有跳过项。
+- 未运行的测试：无。以上数字均为实际执行的输出。
+
+---
+
+## 12. 剩余债务（诚实清单）
+
+1. **敌回始仍无结算点**：已如实标注（`wired:false`＋警告＋文档纠正），但 DSL 仍然接受该写法。
+   是否补线为独立时点 / 或干脆从词汇表移除，属**规则面决策**，需用户裁定。
+2. **`ai_tactics.py` / `ai_preview.py` 物理位置仍在 `engine/`**：已由契约测试隔离，但目录语义上仍可能
+   误导读者；物理搬迁到 `sim/`（或 `experiments/`）会影响大量 sim/tests 的 import，建议单独一次迁移任务。
+3. **战斗内自创法术的 `cost_share_target_ref`**：`SpellStep` 顶层不接受该字段（`spells.py:504`），
+   需要分摊代价的步只能走其它入口；本轮未动（改它是改引擎契约）。
+4. **战报 linter 的瞬发判定是文本启发式**：手操战报若把瞬发法术写得不像"瞬发法术/多步/cast"，仍可能被
+   规则 1 误判；已加豁免关键词并补用例，但无法做到 100% 语义识别。
+5. **`battle_report.validate_battle_report_actions` 的默认预算 2**：这是"报告未写明出手数"时的基础值兜底，
+   当前规则下正确；若将来基础值变化需同步。
+6. **sim/ 自有注释里仍有"当前固定2次"的旧措辞**（描述引擎基础值，不是 AI 契约）：不影响决策路径，
+   本轮未逐文件清理（111 个脚本全量改注释收益低、diff 噪音大）。
+7. **`AI_EXPERIENCE.md` 仍有大量实验侧历史章节**：本轮只在两处加了"实验/生产边界"横幅，
+   未逐段改写（避免把历史证据改写成"看起来像现状"）。
+
+**2026-10-02 验证后的补充/更新**：
+
+8. **4 个探针的 `_learn` 捷径复制了生产的 wired 判定**：探针直接比较
+   `parsed.trigger in e.combat._WIRED_TRIGGERS`，而不是走生产 `define_spell`；生产包装层
+   （`_action_define_spell`）的 wired 计算此前无任何测试覆盖（变异复现：强制 `wired=False`
+   时 4 个探针仍全绿）。已补 `test_open_trigger_extensibility.py` 的生产路径回归测试；
+   探针本身仍保留捷径（属设计选择，避免消耗出手），但该盲区已被测试兜住。
+9. **招架减免公式在 `api.py:3150`（预览）与 `combat.py:276`（实际）各写一遍**：
+   仍重复，但已补 `test_parry_preview_matches_actual_reduction_on_same_state` 锁死两者一致
+   （此前只改 `combat.py` 一处不会被旧契约测试发现）。
+10. **`xfail` 归档已从 `strict=False` 收紧为 `strict=True`**：未来这 3 条旧规则 AI 断言若意外
+    通过，会以 `XPASS(strict)` 直接失败，而不是被静默吞掉。
+
+---
+
+## 13. 确认：第三层内容未改动
+
+- `副本/`、`副本索引.md`、`死者之书.md`、`物品索引.md`、世界观/遗物设计/剧情/未完成机制文件
+  **不在本轮改动清单内**（`git status` 可验证：改动仅限 `engine/`、`sim/`、`tests/` 与 4 个文档）。
+- 玩法规则只做了两类改动：（a）**移除 TacticalAI 对正式路径的依赖**（不改战斗结算）；
+  （b）**文档/提示词对齐既有引擎行为**（招架 10% 当前生命、敌回始诚实标注、槽位口径）——
+  没有新增/删除/改数值任何战斗机制。
+
+---
+
+## 附：本轮"做与不做"一览
+
+| 做了 | 没做（明确不做） |
+| --- | --- |
+| 生产路径与实验 AI 的依赖切断 + 契约测试 | 重设计法术第二层架构（DSL/执行器/单一 DaoWen 核心零改动） |
+| 提示词/可用行动/知识库同步现行契约 | 为迁就旧探针修改生产 API |
+| 4 个探针迁移到当前 API 并跑通 | 删除有用的 sim/探针脚本 |
+| 3 条过时测试留档 + 5 条现行契约补测 | 削弱/放宽任何现行测试断言 |
+| 敌回始、招架、"固定2次"等过时说法纠正 | 给敌回始补线（改玩法）、改第三层内容 |
