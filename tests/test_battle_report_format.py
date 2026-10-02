@@ -362,6 +362,19 @@ def test_action_linter_rejects_multi_daowen_bundled_in_single_action():
         BR.validate_battle_report_actions(illegal_snippet)
 
 
+def test_action_linter_allows_instant_spell_steps_in_one_action():
+    """边界：一次【瞬发法术】是一条决策，多步在同一出手内依次发动不算合并打包。"""
+    snippet = """## 第1场
+第1回合
+[回始]：
+出手1（莫非）：[动作声明] 瞬发法术：发动【杀伐X=3】→发动【再生X=2】
+[回终]：
+"""
+    res = BR.validate_battle_report_actions(snippet)
+    assert res["status"] == "compliant"
+    assert res["total_actions_validated"] == 1
+
+
 def test_action_linter_allows_consecutive_actions_when_opponent_budget_exhausted():
     """边界条件：当对手出手预算耗尽时，出手多的一方连续执行剩余出手（正文铁律：一方出手耗尽后另一方余下出手继续）必须合法通过"""
     asymmetric_snippet = """## 第8场（死斗）

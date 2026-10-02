@@ -1,4 +1,9 @@
-"""真实引擎冒烟：逐一实测11种触发时机能否在自创法术上真正触发。
+"""真实引擎冒烟：逐一实测各触发时机能否在自创法术上真正触发。
+
+覆盖范围（2026-10-02 更新）：反应时点（受到伤害前/失去生命后/目标发动道纹前）的真实
+触发、全局时点的 DSL 目标身份边界、条件分支/循环/任意目标的真实触发与执行期语义。
+全局六时点的真实触发见 sim/probe_global_trigger_spells.py；伤害管线内两时点见
+sim/probe_damage_pipeline_triggers.py。
 
 不是纸面描述——每个用例都真正调用 GameEngine.execute_action 的公开
 两阶段接口（prepare_monster_phase / resolve_monster_phase）跑一次完整
@@ -24,6 +29,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from engine.api import GameEngine
 from engine.models import DaoWen, DaoWenInstance
 from tests.setup_support import finish_initial_daowen
+from sim.monster_phase_submit import single_actor_choices, monster_phase_choices  # noqa: E402
 
 
 def _fresh_engine(tag: str, region: str = "罪孽都市") -> GameEngine:
@@ -76,20 +82,12 @@ def _decline_all_spell_choices(target_option):
 
 
 def _pure_attack_round(e):
-    """驱动一整回合怪物阶段：全体谢绝反应法术，纯普攻。用于凑出第2回合。"""
+    """驱动一整回合怪物阶段：全体按当前契约提交（有合法道纹则声明第一个），纯普攻。"""
     res = e.execute_action("prepare_monster_phase", {})
-    choices = []
-    for a in res["result"]["actors"]:
-        hits = []
-        for _ in range(a["base_hits_per_attack"]):
-            target_opt = a["attack_target_options"][0]
-            hits.append({"target_ref": target_opt["ref"], "dodge": False, "blood_shadow": False,
-                         "spell_choices": _decline_all_spell_choices(target_opt)})
-        # 怪物阶段现已要求：有合法道纹选项时必须声明一个（不选=无道纹）
-        dao = a["daowen_options"][0] if a.get("daowen_options") else None
-        choices.append({"actor_ref": a["actor_ref"], "daowen": dao,
-                        "attack_actions": [{"hits": hits} for _ in range(a["base_attack_actions"])]})
-    r = e.execute_action("resolve_monster_phase", {"token": res["result"]["token"], "choices": choices})
+    assert res["success"], res
+    choices = monster_phase_choices(res["result"]["actors"], engine=e)
+    r = e.execute_action("resolve_monster_phase", {"token": res["result"]["token"],
+                                                  "choices": choices})
     assert r["success"], r
     e.execute_action("round_end", {})
     e.execute_action("round_start", {})
@@ -126,9 +124,8 @@ def probe_before_damage():
     target_opt = a["attack_target_options"][0]
     spell_choices = _decline_all_spell_choices(target_opt)
     spell_choices["before"]["临危反杀"] = {"use": True, "steps": [{"x": 6, "target_ref": "enemy:0", "dodge": False}], "max_iterations": 1}
-    choices = [{"actor_ref": a["actor_ref"], "daowen": None,
-                "attack_actions": [{"hits": [{"target_ref": target_opt["ref"], "dodge": False,
-                                              "blood_shadow": False, "spell_choices": spell_choices}]}]}]
+    choices = single_actor_choices(a, engine=e,
+                                            spell_uses=spell_choices)
     r = e.execute_action("resolve_monster_phase", {"token": res["result"]["token"], "choices": choices})
     hp_after = e.state.enemies[0].current_hp
     fired = r["success"] and hp_after < hp_before
@@ -160,9 +157,8 @@ def probe_after_life_lost():
     target_opt = a["attack_target_options"][0]
     spell_choices = _decline_all_spell_choices(target_opt)
     spell_choices["after"]["痛定回春"] = {"use": True, "steps": [{"x": 4, "target_ref": "player:0", "dodge": False}], "max_iterations": 1}
-    choices = [{"actor_ref": a["actor_ref"], "daowen": None,
-                "attack_actions": [{"hits": [{"target_ref": target_opt["ref"], "dodge": False,
-                                              "blood_shadow": False, "spell_choices": spell_choices}]}]}]
+    choices = single_actor_choices(a, engine=e,
+                                            spell_uses=spell_choices)
     r = e.execute_action("resolve_monster_phase", {"token": res["result"]["token"], "choices": choices})
     hp_after = e.state.player.current_hp
     # 先掉5点伤害，再靠【再生4】回12点生命，净变化应该是 +7（若净值高于"只掉伤害"说明确实回血了）
@@ -246,11 +242,14 @@ def probe_condition_branch():
         a = res["result"]["actors"][0]
         target_opt = a["attack_target_options"][0]
         spell_choices = _decline_all_spell_choices(target_opt)
-        ref = "player:0" if hp < 100 else "enemy:0"
-        spell_choices["before"]["临机应变"] = {"use": True, "steps": [{"x": 4, "target_ref": ref, "dodge": False}], "max_iterations": 1}
-        choices = [{"actor_ref": a["actor_ref"], "daowen": None,
-                    "attack_actions": [{"hits": [{"target_ref": target_opt["ref"], "dodge": False,
-                                                  "blood_shadow": False, "spell_choices": spell_choices}]}]}]
+        # 新契约（执行期求值 If）：评价器只消费实际走到的分支，但 steps 必须
+        # 覆盖所有槽位——then（再生于自身）与 else（杀伐于攻击者）各提交一条。
+        spell_choices["before"]["临机应变"] = {"use": True, "steps": [
+            {"x": 4, "target_ref": "player:0", "dodge": False},
+            {"x": 2, "target_ref": "enemy:0", "dodge": False},
+        ], "max_iterations": 1}
+        choices = single_actor_choices(a, engine=e,
+                                            spell_uses=spell_choices)
         enemy_hp_before = enemy.current_hp
         r = e.execute_action("resolve_monster_phase", {"token": res["result"]["token"], "choices": choices})
         return learned, r, hp, e.state.player.current_hp, enemy_hp_before, e.state.enemies[0].current_hp
@@ -297,9 +296,8 @@ def probe_any_target():
     spell_choices = _decline_all_spell_choices(target_opt)
     # 使用者不是道纹类型推断出的默认身份，而是自己显式选中战场上的"敌方"作为目标
     spell_choices["before"]["自选制裁"] = {"use": True, "steps": [{"x": 5, "target_ref": "enemy:0", "dodge": False}], "max_iterations": 1}
-    choices = [{"actor_ref": a["actor_ref"], "daowen": None,
-                "attack_actions": [{"hits": [{"target_ref": target_opt["ref"], "dodge": False,
-                                              "blood_shadow": False, "spell_choices": spell_choices}]}]}]
+    choices = single_actor_choices(a, engine=e,
+                                            spell_uses=spell_choices)
     hp_before = enemy.current_hp
     r = e.execute_action("resolve_monster_phase", {"token": res["result"]["token"], "choices": choices})
     hp_after = e.state.enemies[0].current_hp
@@ -345,9 +343,8 @@ def probe_loop():
         "steps": [{"x": 2, "target_ref": "enemy:0", "dodge": False}],
         "max_iterations": 3,
     }
-    choices = [{"actor_ref": a["actor_ref"], "daowen": None,
-                "attack_actions": [{"hits": [{"target_ref": target_opt["ref"], "dodge": False,
-                                              "blood_shadow": False, "spell_choices": spell_choices}]}]}]
+    choices = single_actor_choices(a, engine=e,
+                                            spell_uses=spell_choices)
     hp_before, mana_before = enemy.current_hp, p.current_mana
     r_ok = e.execute_action("resolve_monster_phase", {"token": res["result"]["token"], "choices": choices})
     hp_after_ok, mana_after_ok = e.state.enemies[0].current_hp, p.current_mana
@@ -373,13 +370,16 @@ def probe_loop():
         "steps": [{"x": 2, "target_ref": "enemy:0", "dodge": False}],
         "max_iterations": 3,
     }
-    choices2 = [{"actor_ref": a2["actor_ref"], "daowen": None,
-                 "attack_actions": [{"hits": [{"target_ref": target_opt2["ref"], "dodge": False,
-                                               "blood_shadow": False, "spell_choices": spell_choices2}]}]}]
+    choices2 = single_actor_choices(a2, engine=e2,
+                                            spell_uses=spell_choices2)
     r_mana_interrupt = e2.execute_action("resolve_monster_phase", {"token": res2["result"]["token"],
                                                                   "choices": choices2})
     hp2_after = e2.state.enemies[0].current_hp
-    interrupted = [lg for lg in (r_mana_interrupt.get("spell_logs") or [])
+    # 反应法术的日志挂在 result.details[*].spell_logs（每次命中一组），不在顶层。
+    reaction_logs: list = []
+    for detail in (r_mana_interrupt.get("result", {}).get("details") or []):
+        reaction_logs.extend(detail.get("spell_logs") or [])
+    interrupted = [lg for lg in reaction_logs
                    if lg.get("spell") == "连环杀伐" and lg.get("interrupted")]
 
     # 对照2：非循环法术提交 max_iterations 不报错——没有循环时该预算无效果，仍只跑一次
@@ -405,9 +405,8 @@ def probe_loop():
         "steps": [{"x": 2, "target_ref": "enemy:0", "dodge": False}],
         "max_iterations": 5,  # 非循环法术：上限无效果
     }
-    choices3 = [{"actor_ref": a3["actor_ref"], "daowen": None,
-                 "attack_actions": [{"hits": [{"target_ref": target_opt3["ref"], "dodge": False,
-                                               "blood_shadow": False, "spell_choices": spell_choices3}]}]}]
+    choices3 = single_actor_choices(a3, engine=e3,
+                                            spell_uses=spell_choices3)
     r_non_loop = e3.execute_action("resolve_monster_phase", {"token": res3["result"]["token"],
                                                              "choices": choices3})
     n_mana_used = p3.current_mana < 30 and (hp3_before - e3.state.enemies[0].current_hp) > 0
@@ -445,8 +444,9 @@ def probe_learn_time_rejection():
         _give_daowen(e.state.player, "杀伐")
         d = {"name": f"坏法术_{label}", "required_daowen": ["杀伐"],
              "trigger_condition": trig, "effect_flow": flow}
-        r = e.execute_action("pre_battle_action", {
-            "sub_action": "学习", "sub": "custom_spell", "spell": d})
+        # 局外学习入口已取消；这里用同一 _build_custom_spell 校验（define_spell
+        # 在战斗内走的也是它），断言坏法术在任何入口都建不出来。
+        r = _learn(e, d)
         rejected = not r["success"]
         all_rejected = all_rejected and rejected
         details.append(f"[{label}] 拒绝={rejected} error={r.get('error')!r}")
@@ -454,7 +454,7 @@ def probe_learn_time_rejection():
 
 
 def probe_unwired(trigger_text, label):
-    """2026-08-30 更新：11种触发时机现已全部接线，本函数改名保留但语义
+    """全局时点目标身份边界：全局时点没有攻击者身份，【于攻击者】应在学习阶段被拒
     变为"验证全局时点DSL层的目标身份边界"——用【于攻击者】写法在全局
     时点上应该被学习阶段直接拒绝（全局时点没有攻击者/目标这个对手身份，
     见 engine/spell_dsl.py._check_global_trigger_targets），而不是像
@@ -494,15 +494,15 @@ def main():
         probe_unwired(trigger_text, label)
 
     print("=" * 78)
-    print("自创法术触发时机 —— 真实引擎实测结果（2026-08-30 更新：11种全部接线）")
+    print("自创法术触发时机 —— 真实引擎实测结果（2026-10-02：单时点真触发/全局边界/分支循环）")
     print("=" * 78)
     for row in REPORT:
         print(f"[{row['trigger']}] learn阶段wired={row['learn_wired']} "
               f"实际触发={row['actually_fired']}")
         print(f"    {row['detail']}")
     print("=" * 78)
-    print("说明：本文件只覆盖【受到伤害前/失去生命后/目标发动道纹前】三个历史时机"
-          "的真实触发验证，以及全局时点的DSL边界校验（不含真实触发）。")
+    print("说明：本文件覆盖【受到伤害前/失去生命后/目标发动道纹前】的真实触发、"
+          "条件分支/循环/任意目标的执行期语义、以及全局时点的DSL目标身份边界。")
     print("六个全局时点（战始/战终/回始/回终/敌回始/敌回终）的真实触发验证见"
           " sim/probe_global_trigger_spells.py。")
     print("受到伤害后/失去生命前两个伤害管线内时点的真实触发验证见"

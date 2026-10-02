@@ -507,7 +507,7 @@ class GameEngine:
         if subphase == CombatSubphase.MONSTER_ACTIONS.value:
             return {"phase": subphase, "actions": [
                 {"action_type": "prepare_monster_phase", "params_schema": {}}
-            ], "note": "已进入怪物阶段，本步无需spell_choices（敌回始已在上一步prepare_monster_phase里结算过）"}
+            ], "note": "已进入怪物阶段，本步无需spell_choices（玩家行动阶段结束时刻的【自身回合结束】法术已在上一步prepare_monster_phase里结算过；【敌回始】当前无结算点，见 engine/combat_parts/spells.py 的 _WIRED_TRIGGERS 注释）"}
         if subphase == CombatSubphase.AWAIT_ROUND_END.value:
             return self._get_battle_end_actions()
 
@@ -626,6 +626,9 @@ class GameEngine:
                     "steps": [{"x": "该步自己的正整数X", "target_ref": "仅“于任意目标”步骤填写",
                                "dodge": "该步目标为敌方时由其声明的布尔值",
                                "trigger_spell_choices": "该步的目标发动道纹前反应提交，结构同use_daowen"}],
+                    "steps_note": "每条决策对应 flow 按深度优先顺序展开的一个决策槽位"
+                                  "（if 的两个分支与循环体各计一条，即使本次不一定走到）；"
+                                  "实际只消费走到的槽位，数量不符会被拒绝并报出应有步数",
                     "name": "可选，仅用于日志",
                     "max_iterations": "可选正整数：循环法术最多跑几轮（省略=按规则循环到不能继续）",
                 },
@@ -692,15 +695,28 @@ class GameEngine:
                         and entity is not player and entity.entity_type in ("朋友", "员工")]
         idle_allies = [a for a in ally_options
                        if refs[a["ref"]].actions_used_this_round < refs[a["ref"]].action_count]
+        # 基础动作【聚能】/【蓄锐】（2026-09-28 规则）：各消耗 1 次出手。
+        # 它们一直存在于引擎执行表中，也必须出现在运行时可用行动里——否则
+        # LLM 只能从 available_actions 里选，规则写了却永远选不到。
+        actions.extend([
+            {"action_type": "focus",
+             "params_schema": {"actor_ref": actor_options},
+             "available": bool(player is not None and player.is_alive),
+             "note": "聚能：消耗1次出手，立即获得 ceil(20%[法限]) 法力（法限为0时白白浪费出手）"},
+            {"action_type": "rest",
+             "params_schema": {"actor_ref": actor_options},
+             "available": bool(player is not None and player.is_alive),
+             "note": "蓄锐：消耗1次出手，下[回始]获得【蓄锐·增】（出手+1，持续1回合）"},
+        ])
         actions.extend([
             {"action_type": "prepare_attack", "params_schema": {"actor_ref": actor_options}},
             {"action_type": "declare_parry", "params_schema": {"actor_ref": actor_options},
              "available": bool(player is not None
-                               and not getattr(player, "parry_locked_this_round", False)
                                and not getattr(player, "parrying_this_round", False)),
-             "note": ("招架：本轮每次受到的伤害减去等同你法力的数值；不消耗出手，"
-                      "下回合不能再招架。减免按结算时的法力计——本轮花掉的法力"
-                      "会同步削弱招架")},
+             "note": ("招架：声明后本轮每次受到的伤害减去 floor(10%当前生命)，"
+                      "减免按**结算那一刻**的生命计（掉血会同步削弱招架）；"
+                      "可抵挡次数=声明时的当前生命，每受击消耗1次；"
+                      "不消耗出手、不消耗速度，本回合已声明过则不能再声明")},
             {"action_type": "declare_wish", "params_schema": {"wish_text": "string", "target_ref": target_options}},
             {"action_type": "declare_escape", "params_schema": {}},
             {"action_type": "command_ally", "params_schema": {
@@ -1011,7 +1027,7 @@ class GameEngine:
         即弃，规则逻辑与正式执行逐行相同。
 
         Preview 的语义差别仅有这一处：失败回滚不会发生在 sandbox 内。引擎所有
-        内部调用方（TacticalAI/策略层）都只读取 `success=True` 的预演 diff，
+        内部调用方（实验/模拟工具，如 sim 与 TacticalAI 对照脚本）只读取 `success=True` 的预演 diff，
         失败候选一律跳过，故对外可观测行为不变（见 tests/test_ai_safety_preview.py）。
         """
         if params is None:
@@ -2436,7 +2452,7 @@ class GameEngine:
 
         怪物读正文「每回合 1 次攻击 + 1 种道纹」（single_round_action_count）——
         Entity.action_count 对怪物按速限推导，而怪物面板不含[速限]，恒为 0。
-        其余角色读 Entity.action_count（轮回者固定 2，朋友/员工 ⌈攻次/3⌉）。
+        其余角色读 Entity.action_count（全体基础 2 次，再受【疯狂】/【无力】/【蓄锐·增】修正）。
         """
         if entity is None:
             return 0
@@ -4158,7 +4174,7 @@ class GameEngine:
         """微光者发动道纹时自选 X（2026-09-17 用户令：面板不写死 X）。
 
         面板仍写死 X 时（x_value>0）沿用固定值，保持迁移期双向兼容；
-        x_free 时交给 sim/ally_targets.py 的**整场预算分配**决策器——
+        x_free 时交给 engine/ai_rules.py 的**整场预算分配**决策器——
         微光者按 AI_EXPERIENCE.md:1254 是一池制、[回始]不回填，与怪物
         （遗物【某人的偏爱】每[回始]回满）不是同一个问题，不能套用怪物侧
         的每回合预演评分。返回 0 表示本回合不该发动，调用方应跳过而非报错。
@@ -4166,7 +4182,7 @@ class GameEngine:
         inst = ally.dao_wen.get(name)
         if inst is not None and getattr(inst, "x_value", 0) > 0:
             return int(inst.x_value)
-        from sim.ally_targets import pick_ally_daowen_x
+        from .ai_rules import pick_ally_daowen_x
         return pick_ally_daowen_x(ally, name, target)
 
     def _action_command_ally(self, params: dict) -> dict:

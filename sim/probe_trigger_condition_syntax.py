@@ -23,6 +23,7 @@ from engine.api import GameEngine
 from engine.models import DaoWen, DaoWenInstance
 from engine.spell_dsl import parse_trigger, SpellDslError
 from tests.setup_support import finish_initial_daowen
+from sim.monster_phase_submit import single_actor_choices, monster_phase_choices  # noqa: E402
 
 
 def _fresh_engine(tag: str) -> GameEngine:
@@ -170,9 +171,8 @@ def _fire_before_damage_case(trigger_text):
     spell_name = definition["name"]
     spell_choices = _decline_all_spell_choices(target_opt)
     spell_choices["before"][spell_name] = {"use": True, "steps": [{"x": 3, "target_ref": "enemy:0", "dodge": False}], "max_iterations": 1}
-    choices = [{"actor_ref": a["actor_ref"], "daowen": None,
-                "attack_actions": [{"hits": [{"target_ref": target_opt["ref"], "dodge": False,
-                                              "blood_shadow": False, "spell_choices": spell_choices}]}]}]
+    choices = single_actor_choices(a, engine=e,
+                                            spell_uses=spell_choices)
     hp_before = enemy.current_hp
     r = e.execute_action("resolve_monster_phase", {"token": res["result"]["token"], "choices": choices})
     hp_after = e.state.enemies[0].current_hp
@@ -205,9 +205,8 @@ def _fire_after_life_lost_case(trigger_text):
     spell_name = definition["name"]
     spell_choices = _decline_all_spell_choices(target_opt)
     spell_choices["after"][spell_name] = {"use": True, "steps": [{"x": 4, "target_ref": "player:0", "dodge": False}], "max_iterations": 1}
-    choices = [{"actor_ref": a["actor_ref"], "daowen": None,
-                "attack_actions": [{"hits": [{"target_ref": target_opt["ref"], "dodge": False,
-                                              "blood_shadow": False, "spell_choices": spell_choices}]}]}]
+    choices = single_actor_choices(a, engine=e,
+                                            spell_uses=spell_choices)
     hp_before = p.current_hp
     r = e.execute_action("resolve_monster_phase", {"token": res["result"]["token"], "choices": choices})
     hp_after = p.current_hp
@@ -216,19 +215,12 @@ def _fire_after_life_lost_case(trigger_text):
 
 
 def _pure_attack_round(e):
+    """驱动一整回合怪物阶段：全体按当前契约提交（有合法道纹则声明第一个），纯普攻。"""
     res = e.execute_action("prepare_monster_phase", {})
-    choices = []
-    for a in res["result"]["actors"]:
-        hits = []
-        for _ in range(a["base_hits_per_attack"]):
-            target_opt = a["attack_target_options"][0]
-            hits.append({"target_ref": target_opt["ref"], "dodge": False, "blood_shadow": False,
-                        "spell_choices": _decline_all_spell_choices(target_opt)})
-        # 怪物阶段现已要求：有合法道纹选项时必须声明一个（不选=无道纹）
-        dao = a["daowen_options"][0] if a.get("daowen_options") else None
-        choices.append({"actor_ref": a["actor_ref"], "daowen": dao,
-                        "attack_actions": [{"hits": hits} for _ in range(a["base_attack_actions"])]})
-    r = e.execute_action("resolve_monster_phase", {"token": res["result"]["token"], "choices": choices})
+    assert res["success"], res
+    choices = monster_phase_choices(res["result"]["actors"], engine=e)
+    r = e.execute_action("resolve_monster_phase", {"token": res["result"]["token"],
+                                                  "choices": choices})
     assert r["success"], r
     e.execute_action("round_end", {})
     e.execute_action("round_start", {})
@@ -309,40 +301,45 @@ def probe_wired_synonyms():
     return all_ok
 
 
-def probe_unwired_synonyms():
+GLOBAL_TIMINGS = ("战始", "战终", "回始", "回终", "敌回始", "敌回终")
+
+# 同义写法分组（与 probe_wired_synonyms 共用）。下表是 2026-10-02 后的实际口径：
+#   · 全局时点（战始/战终/回始/回终/敌回始/敌回终）没有"攻击者/目标"身份，
+#     写"于攻击者"必须在**学习阶段**被拒绝（不能学会一个语义不成立的写法）；
+#   · 伤害管线时点（受到伤害后/失去生命前）天然带攻击者，写"于攻击者"必须
+#     学会并标注 wired=True。
+def probe_trigger_target_identity_boundary():
     print()
     print("=" * 78)
-    print("三、真实引擎层：未接线8种时机，逐一同义写法验证'诚实拒绝触发'")
+    print("三、真实引擎层：触发时点的目标身份边界（全局时点 vs 伤害管线时点）")
     print("=" * 78)
-    unwired_canon = ["受到伤害后", "失去生命前", "战始", "战终", "回始", "回终", "敌回始", "敌回终"]
     all_ok = True
-    for canonical in unwired_canon:
+    for canonical in ("受到伤害后", "失去生命前", "战始", "战终", "回始", "回终", "敌回始", "敌回终"):
         phrasings = SYNONYM_GROUPS[canonical]
-        print(f"\n【{canonical}】（{len(phrasings)}种同义写法逐一实测学习阶段标注）")
+        global_timing = canonical in GLOBAL_TIMINGS
+        expect = "学习阶段拒绝（无攻击者身份）" if global_timing else "学会并标注已接线"
+        print(f"\n【{canonical}】{len(phrasings)}种同义写法——预期：{expect}")
         for p in phrasings:
-            e = _fresh_engine(f"unwired_{canonical}")
+            e = _fresh_engine(f"boundary_{canonical}")
             _give_daowen(e.state.player, "杀伐")
             definition = {"name": f"同义测试_{p}", "required_daowen": ["杀伐"],
                           "trigger_condition": p, "effect_flow": "发动杀伐X于攻击者"}
-            r2 = _learn(e, definition)
-            if not r2["success"]:
-                print(f"  ❌ 写法={p!r:20s} 学习被意外拒绝：{r2.get('error')}")
-                all_ok = False
-                continue
-            wired = r2["result"].get("wired")
-            warning = r2["result"].get("warning", "")
-            ok = wired is False and bool(warning)
+            r = _learn(e, definition)
+            if global_timing:
+                ok = (not r["success"]) and "攻击者" in (r.get("error") or "")
+            else:
+                ok = r["success"] and r["result"].get("wired") is True
             all_ok = all_ok and ok
-            status = "✅" if ok else "❌"
-            print(f"  {status} 写法={p!r:20s} wired={wired} warning={warning[:40]!r}...")
-    print(f"\n未接线时机同义写法结论：全部写法均学会成功但如实标注不会触发 = {all_ok}")
+            print(f"  {'✅' if ok else '❌'} 写法={p!r:20s} "
+                  f"{'拒绝：' + (r.get('error') or '')[:36] if not r['success'] else 'wired=' + str(r['result'].get('wired'))}")
+    print(f"\n触发时点目标身份边界结论：全部写法均符合当前口径 = {all_ok}")
     return all_ok
 
 
 def main():
     ok1 = probe_parser_layer()
     ok2 = probe_wired_synonyms()
-    ok3 = probe_unwired_synonyms()
+    ok3 = probe_trigger_target_identity_boundary()
     print()
     print("=" * 78)
     print(f"总体结论：解析层={ok1}  已接线真实触发层={ok2}  未接线诚实标注层={ok3}")

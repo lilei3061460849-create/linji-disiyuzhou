@@ -111,7 +111,11 @@ class SpellReactionMixin:
         TriggerTiming.ROUND_START.value,
         TriggerTiming.ROUND_END.value,
         TriggerTiming.SELF_TURN_END.value,
-        TriggerTiming.ENEMY_ROUND_START.value,
+        # 2026-10-02 审计：ENEMY_ROUND_START（"敌回始"）当前全引擎**没有结算点**
+        # ——prepare_monster_phase 结算的是 SELF_TURN_END（"自身回合结束"，同一时刻
+        # 的玩家侧视角），resolve_monster_phase 结算 ENEMY_ROUND_END。把它留在
+        # 已接线清单里会让「敌回始」法术被静默标注为"会真实触发"却永不结算。
+        # 故从清单移除：学习仍成功，但如实标注"该时机暂未接入战斗结算管线"。
         TriggerTiming.ENEMY_ROUND_END.value,
         ActionPhase.AFTER_DAMAGE_TAKEN.value,
         ActionPhase.BEFORE_LIFE_LOST.value,
@@ -1371,7 +1375,8 @@ class SpellReactionMixin:
         self._dodge_budget_reset()
         used = self._dodge_counts.get(id(target), 0)
         try:
-            from engine.ai_tactics import choose_dodge
+            # production 本地规则助手（engine/ai_rules.py）；不依赖实验性 TacticalAI。
+            from ..ai_rules import choose_dodge
             want = bool(choose_dodge(None, int(dmg), budget_used=used, entity=target))
         except Exception:
             return False

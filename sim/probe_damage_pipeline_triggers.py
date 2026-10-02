@@ -24,6 +24,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from engine.api import GameEngine
 from engine.models import DaoWen, DaoWenInstance
 from tests.setup_support import finish_initial_daowen
+from sim.monster_phase_submit import single_actor_choices, monster_phase_choices  # noqa: E402
 
 
 def _fresh_engine(tag: str, region: str = "罪孽都市") -> GameEngine:
@@ -109,9 +110,8 @@ def probe_after_damage_taken():
     target_opt = a["attack_target_options"][0]
     spell_choices = _decline_all_spell_choices(target_opt)
     spell_choices["damage_after"]["落地反击"] = {"use": True, "steps": [{"x": 6, "target_ref": "enemy:0", "dodge": False}], "max_iterations": 1}
-    choices = [{"actor_ref": a["actor_ref"], "daowen": None,
-                "attack_actions": [{"hits": [{"target_ref": target_opt["ref"], "dodge": False,
-                                              "blood_shadow": False, "spell_choices": spell_choices}]}]}]
+    choices = single_actor_choices(a, engine=e,
+                                            spell_uses=spell_choices)
     r = e.execute_action("resolve_monster_phase", {"token": res["result"]["token"], "choices": choices})
     hp_after = e.state.enemies[0].current_hp
     fired = r["success"] and hp_after < hp_before
@@ -149,9 +149,8 @@ def probe_after_damage_taken_even_when_shielded():
     target_opt = a["attack_target_options"][0]
     spell_choices = _decline_all_spell_choices(target_opt)
     spell_choices["damage_after"]["格挡侦知"] = {"use": True, "steps": [{"x": 3, "target_ref": "enemy:0", "dodge": False}], "max_iterations": 1}
-    choices = [{"actor_ref": a["actor_ref"], "daowen": None,
-                "attack_actions": [{"hits": [{"target_ref": target_opt["ref"], "dodge": False,
-                                              "blood_shadow": False, "spell_choices": spell_choices}]}]}]
+    choices = single_actor_choices(a, engine=e,
+                                            spell_uses=spell_choices)
     r = e.execute_action("resolve_monster_phase", {"token": res["result"]["token"], "choices": choices})
     hp_after = e.state.enemies[0].current_hp
     fired = r["success"] and hp_after < hp_before
@@ -188,9 +187,8 @@ def probe_before_life_lost():
     target_opt = a["attack_target_options"][0]
     spell_choices = _decline_all_spell_choices(target_opt)
     spell_choices["life_before"]["临扣护体"] = {"use": True, "steps": [{"x": 5, "target_ref": "player:0", "dodge": False}], "max_iterations": 1}
-    choices = [{"actor_ref": a["actor_ref"], "daowen": None,
-                "attack_actions": [{"hits": [{"target_ref": target_opt["ref"], "dodge": False,
-                                              "blood_shadow": False, "spell_choices": spell_choices}]}]}]
+    choices = single_actor_choices(a, engine=e,
+                                            spell_uses=spell_choices)
     r = e.execute_action("resolve_monster_phase", {"token": res["result"]["token"], "choices": choices})
     hp_after = e.state.player.current_hp
     hp_lost = hp_before - hp_after
@@ -222,9 +220,8 @@ def probe_backward_compat_old_callers():
     target_opt = a["attack_target_options"][0]
     # 故意只提交旧的两个key，模拟历史调用点
     old_style_choices = {"before": {}, "after": {}}
-    choices = [{"actor_ref": a["actor_ref"], "daowen": None,
-                "attack_actions": [{"hits": [{"target_ref": target_opt["ref"], "dodge": False,
-                                              "blood_shadow": False, "spell_choices": old_style_choices}]}]}]
+    choices = single_actor_choices(a, engine=e,
+                                            spell_uses=old_style_choices)
     r = e.execute_action("resolve_monster_phase", {"token": res["result"]["token"], "choices": choices})
     record("兼容性(旧调用点只提交before/after)", None, r["success"],
            f"resolve success={r['success']}"

@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """怪物道纹目标选择的共享辅助（sim 侧"最优策略"解析器专用，非引擎规则）。
 
+`pick_wave_dodge_targets` 的实现已迁到 engine/ai_rules.py（生产侧也用），
+本模块再导出。`pick_monster_daowen_x` 等预演评分只服务模拟，仍留在 sim。
+
 背景（2026-08-21 修复）：此前的解析器一律取 target_options[0]（=玩家），
 导致 再生/增殖 等增益道纹被怪物打给玩家，污染模拟数据（实测：眼树再生奶玩家、
 血肉巨囊增殖给玩家加血限）。规则本身允许怪物错误选择目标；但"最优策略"模拟器
@@ -216,26 +219,9 @@ def _persistent_duration_value(engine, monster, option, x, ai) -> float:
     return 0.5 * per_round * effective
 
 
-def pick_wave_dodge_targets(option: dict) -> list[dict]:
-    """波及X：从prepare的dodge_target_options中恰好选X个目标（对侧优先）。
-
-    规则要求显式提交恰好X个不重复目标：此前各解析器把dodge_target_options全量
-    提交，候选数大于X时必然被resolve拒收（2026-08-22 BUG-01配套修复）。
-    DM裁定2026-08-23自适应降X：prepare在面板X>合法目标数时把有效X降到
-    wave_effective_x=min(面板X, 候选数)，此处必须按有效X取目标，否则提交数≠
-    结算侧mark_count必被拒。
-    优先选怪物对侧（玩家方）目标——把后续道纹扩散打到敌方才符合怪物意图；
-    对侧不足X时以其余合法目标补齐。
-    """
-    candidates = list(option.get("dodge_target_options") or [])
-    need = int(option.get("wave_effective_x") or 0)
-    if not need:
-        need = min(int(option.get("x", 0) or 0), len(candidates))
-    hostiles = [t for t in candidates if not str(t.get("ref", "")).startswith("enemy:")]
-    others = [t for t in candidates if str(t.get("ref", "")).startswith("enemy:")]
-    picked = (hostiles + others)[:need]
-    return [{"target_ref": t["ref"], "dodge": False, "blood_shadow": False}
-            for t in picked]
+# 波及X 的「恰好选 X 个目标」助手已迁到 production（engine/ai_rules.py），
+# 因为 PlaceholderBackend 提交怪物阶段时也在用它；此处再导出保持 sim 路径可用。
+from engine.ai_rules import pick_wave_dodge_targets  # noqa: E402,F401
 
 
 def pick_monster_daowen_target(engine, actor_ref: str, option: dict) -> str:
