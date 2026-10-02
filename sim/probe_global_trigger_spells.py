@@ -44,12 +44,27 @@ def _give_daowen(entity, name, x=0):
 
 
 def _learn(e, definition):
-    r1 = e.execute_action("pre_battle_action", {
-        "sub_action": "学习", "sub": "custom_spell", "spell": definition})
-    if not r1["success"]:
-        return r1
-    return e.execute_action("pre_battle_action", {
-        "sub_action": "学习", "sub": "custom_spell", "spell": definition, "dm_approved": True})
+    return _learn(e, definition)
+
+
+def _learn(e, definition):
+    """探针专用：直接写入玩家法术列表（跳过 define_spell 的 1 次出手消耗）。
+
+    局外【学习】自定义法术入口已于 2026-09-16 取消（法术一律在战斗中用
+    define_spell 自创）；探针只关心触发管线是否接线，故此捷径保留"学习"语义：
+    仍然走同一个 _build_custom_spell/parse_spell_definition 校验与 wired 标注。
+    """
+    built = e._build_custom_spell(e.state.player, definition)
+    if "error" in built:
+        return {"success": False, "error": built["error"]}
+    e.state.player.spells.append(built["spell"])
+    parsed = built["parsed"]
+    wired = parsed.trigger in e.combat._WIRED_TRIGGERS
+    result = {"spell": built["spell"].to_dict(), "wired": wired, "cost": "0（探针捷径）"}
+    if not wired:
+        result["warning"] = (f"触发时机【{parsed.trigger}】已通过句式校验，"
+                             "但该时机暂未接入战斗结算管线，本法术目前不会实际触发")
+    return {"success": True, "action": "自定义法术(探针)", "result": result}
 
 
 def _decline_all_spell_choices(target_option):
@@ -90,8 +105,11 @@ def _spell_choices_for(candidates, spell_name, x, target_ref):
         holder_choices = {}
         for entry in entries:
             if entry["spell_name"] == spell_name:
-                cycle = [{"x": x, "target_ref": target_ref, "dodge": False} for _ in entry["steps"]]
-                holder_choices[entry["spell_name"]] = {"use": True, "cycles": [cycle]}
+                # 每个决策槽位一条；老探针只提交一轮，故上限写1
+                submitted = [{"x": x, "target_ref": target_ref, "dodge": False}
+                             for _ in entry["steps"]]
+                holder_choices[entry["spell_name"]] = {"use": True, "steps": submitted,
+                                                       "max_iterations": 1}
             else:
                 holder_choices[entry["spell_name"]] = {"use": False}
         result[holder_ref] = holder_choices

@@ -184,7 +184,7 @@ def lab_blood_pact_qiankewanua():
     p.current_mana = 12
     f.current_hp = 80
     hp_p0, hp_f0, mana0, heal0 = p.current_hp, f.current_hp, p.current_mana, p.total_healed
-    # 法术反应入口当前不把 cycle 里的 cost_share_target_ref 传给 pay_numeric_cost。
+    # 法术反应入口当前不把 steps 里的 cost_share_target_ref 传给 pay_numeric_cost。
     # 对照：直接 use_daowen 血债并显式分担。
     share = e.execute_action("use_daowen", {
         "daowen_name": "血债", "x": 2, "target_ref": "enemy:0",
@@ -195,11 +195,13 @@ def lab_blood_pact_qiankewanua():
     submitted = {
         "千刀万剐": {
             "use": True,
-            "cycles": [[
+            # 每个决策槽位一条；循环由执行器逐轮结算（旧 cycles 预展开已废弃）
+            "steps": [
                 {"x": 2, "target_ref": "player:0"},
                 {"x": 2, "target_ref": "enemy:0", "dodge": False,
                  "cost_share_target_ref": "friend:0"},
-            ]],
+            ],
+            "max_iterations": 3,
         }
     }
     logs = e.combat._resolve_spell_reactions("失去生命后", p, m, submitted, e.combat._combat_entity_refs())
@@ -210,7 +212,7 @@ def lab_blood_pact_qiankewanua():
         "player_total_healed": f"{heal0}→{p.total_healed}",
         "monster_hp": m.current_hp,
         "cancer_threshold": e.combat.cancer_threshold_of(p),
-        "cycles_submitted": 3,
+        "max_iterations_submitted": 3,
         "logs": logs,
         "player_still_lost_hp_so_trigger_ok": True,
         "daowen_share_ok": share.get("success"),

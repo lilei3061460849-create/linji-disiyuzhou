@@ -47,12 +47,27 @@ def _give_daowen(entity, name, x=0):
 
 
 def _learn(e, definition):
-    r1 = e.execute_action("pre_battle_action", {
-        "sub_action": "学习", "sub": "custom_spell", "spell": definition})
-    if not r1["success"]:
-        return r1
-    return e.execute_action("pre_battle_action", {
-        "sub_action": "学习", "sub": "custom_spell", "spell": definition, "dm_approved": True})
+    return _learn(e, definition)
+
+
+def _learn(e, definition):
+    """探针专用：直接写入玩家法术列表（跳过 define_spell 的 1 次出手消耗）。
+
+    局外【学习】自定义法术入口已于 2026-09-16 取消（法术一律在战斗中用
+    define_spell 自创）；探针只关心触发管线是否接线，故此捷径保留"学习"语义：
+    仍然走同一个 _build_custom_spell/parse_spell_definition 校验与 wired 标注。
+    """
+    built = e._build_custom_spell(e.state.player, definition)
+    if "error" in built:
+        return {"success": False, "error": built["error"]}
+    e.state.player.spells.append(built["spell"])
+    parsed = built["parsed"]
+    wired = parsed.trigger in e.combat._WIRED_TRIGGERS
+    result = {"spell": built["spell"].to_dict(), "wired": wired, "cost": "0（探针捷径）"}
+    if not wired:
+        result["warning"] = (f"触发时机【{parsed.trigger}】已通过句式校验，"
+                             "但该时机暂未接入战斗结算管线，本法术目前不会实际触发")
+    return {"success": True, "action": "自定义法术(探针)", "result": result}
 
 
 def _decline_all_spell_choices(target_option):
@@ -70,7 +85,9 @@ def _pure_attack_round(e):
             target_opt = a["attack_target_options"][0]
             hits.append({"target_ref": target_opt["ref"], "dodge": False, "blood_shadow": False,
                          "spell_choices": _decline_all_spell_choices(target_opt)})
-        choices.append({"actor_ref": a["actor_ref"], "daowen": None,
+        # 怪物阶段现已要求：有合法道纹选项时必须声明一个（不选=无道纹）
+        dao = a["daowen_options"][0] if a.get("daowen_options") else None
+        choices.append({"actor_ref": a["actor_ref"], "daowen": dao,
                         "attack_actions": [{"hits": hits} for _ in range(a["base_attack_actions"])]})
     r = e.execute_action("resolve_monster_phase", {"token": res["result"]["token"], "choices": choices})
     assert r["success"], r
@@ -108,8 +125,7 @@ def probe_before_damage():
     a = res["result"]["actors"][0]
     target_opt = a["attack_target_options"][0]
     spell_choices = _decline_all_spell_choices(target_opt)
-    spell_choices["before"]["临危反杀"] = {"use": True, "cycles": [[
-        {"x": 6, "target_ref": "enemy:0", "dodge": False}]]}
+    spell_choices["before"]["临危反杀"] = {"use": True, "steps": [{"x": 6, "target_ref": "enemy:0", "dodge": False}], "max_iterations": 1}
     choices = [{"actor_ref": a["actor_ref"], "daowen": None,
                 "attack_actions": [{"hits": [{"target_ref": target_opt["ref"], "dodge": False,
                                               "blood_shadow": False, "spell_choices": spell_choices}]}]}]
@@ -143,8 +159,7 @@ def probe_after_life_lost():
     a = res["result"]["actors"][0]
     target_opt = a["attack_target_options"][0]
     spell_choices = _decline_all_spell_choices(target_opt)
-    spell_choices["after"]["痛定回春"] = {"use": True, "cycles": [[
-        {"x": 4, "target_ref": "player:0", "dodge": False}]]}
+    spell_choices["after"]["痛定回春"] = {"use": True, "steps": [{"x": 4, "target_ref": "player:0", "dodge": False}], "max_iterations": 1}
     choices = [{"actor_ref": a["actor_ref"], "daowen": None,
                 "attack_actions": [{"hits": [{"target_ref": target_opt["ref"], "dodge": False,
                                               "blood_shadow": False, "spell_choices": spell_choices}]}]}]
@@ -232,8 +247,7 @@ def probe_condition_branch():
         target_opt = a["attack_target_options"][0]
         spell_choices = _decline_all_spell_choices(target_opt)
         ref = "player:0" if hp < 100 else "enemy:0"
-        spell_choices["before"]["临机应变"] = {"use": True, "cycles": [[
-            {"x": 4, "target_ref": ref, "dodge": False}]]}
+        spell_choices["before"]["临机应变"] = {"use": True, "steps": [{"x": 4, "target_ref": ref, "dodge": False}], "max_iterations": 1}
         choices = [{"actor_ref": a["actor_ref"], "daowen": None,
                     "attack_actions": [{"hits": [{"target_ref": target_opt["ref"], "dodge": False,
                                                   "blood_shadow": False, "spell_choices": spell_choices}]}]}]
@@ -282,8 +296,7 @@ def probe_any_target():
                              for sp in before_opts if sp["spell_name"] == "自选制裁")
     spell_choices = _decline_all_spell_choices(target_opt)
     # 使用者不是道纹类型推断出的默认身份，而是自己显式选中战场上的"敌方"作为目标
-    spell_choices["before"]["自选制裁"] = {"use": True, "cycles": [[
-        {"x": 5, "target_ref": "enemy:0", "dodge": False}]]}
+    spell_choices["before"]["自选制裁"] = {"use": True, "steps": [{"x": 5, "target_ref": "enemy:0", "dodge": False}], "max_iterations": 1}
     choices = [{"actor_ref": a["actor_ref"], "daowen": None,
                 "attack_actions": [{"hits": [{"target_ref": target_opt["ref"], "dodge": False,
                                               "blood_shadow": False, "spell_choices": spell_choices}]}]}]
@@ -298,8 +311,13 @@ def probe_any_target():
 
 
 def probe_loop():
-    """循环：法力充足时可多次循环发动，法力不足以支撑声明的循环次数时应被拒绝，
-    非循环法术强行提交多个cycle同样应被拒绝（对照组）。"""
+    """循环：执行器逐轮迭代，每轮重读真实状态。
+
+    旧契约由调用方预展开 cycles（"法力不足以支撑声明的循环次数时应拒绝"）。
+    新契约（2026-10-02）：调用方只提交每个决策槽位一条 steps，循环轮数由执行器
+    按真实状态决定；max_iterations 是调用方的轮数上限（省略=按规则循环）；
+    法力不足是**运行期中断**而不是提交被拒——已结算的轮次保留，出手/这次触发不退。
+    """
     e = _fresh_engine("loop_ok")
     p = e.state.player
     _give_daowen(p, "杀伐")
@@ -317,11 +335,16 @@ def probe_loop():
     res = e.execute_action("prepare_monster_phase", {})
     a = res["result"]["actors"][0]
     target_opt = a["attack_target_options"][0]
-    loop_flag = next(sp["loop"] for sp in target_opt["spell_options"]["before"]
-                     if sp["spell_name"] == "连环杀伐")
+    loop_entry = next(sp for sp in target_opt["spell_options"]["before"]
+                      if sp["spell_name"] == "连环杀伐")
+    loop_flag = loop_entry["loop"]
     spell_choices = _decline_all_spell_choices(target_opt)
-    spell_choices["before"]["连环杀伐"] = {"use": True, "cycles": [
-        [{"x": 2, "target_ref": "enemy:0", "dodge": False}] for _ in range(3)]}
+    # 每槽位一条决策 + 轮数上限3（调用方预算；程序本身也可以省略上限按规则循环）
+    spell_choices["before"]["连环杀伐"] = {
+        "use": True,
+        "steps": [{"x": 2, "target_ref": "enemy:0", "dodge": False}],
+        "max_iterations": 3,
+    }
     choices = [{"actor_ref": a["actor_ref"], "daowen": None,
                 "attack_actions": [{"hits": [{"target_ref": target_opt["ref"], "dodge": False,
                                               "blood_shadow": False, "spell_choices": spell_choices}]}]}]
@@ -329,7 +352,7 @@ def probe_loop():
     r_ok = e.execute_action("resolve_monster_phase", {"token": res["result"]["token"], "choices": choices})
     hp_after_ok, mana_after_ok = e.state.enemies[0].current_hp, p.current_mana
 
-    # 对照1：法力不足以支撑声明的循环次数 → 应拒绝，不能"打到哪算哪"
+    # 对照1：法力只够跑1轮 → 不是提交被拒，而是运行期在中途中断，已结算轮次保留
     e2 = _fresh_engine("loop_insufficient_mana")
     p2 = e2.state.player
     _give_daowen(p2, "杀伐")
@@ -337,23 +360,30 @@ def probe_loop():
     e2.state.energy = 0
     e2.execute_action("battle_start", {})
     e2.execute_action("round_start", {})
-    p2.current_mana = 5  # 只够1次杀伐2，不够3次
+    p2.current_mana = 5  # 只够1次杀伐2
     e2.state.enemies[0].attack_power = 5
     e2.state.enemies[0].attack_count = 1
     res2 = e2.execute_action("prepare_monster_phase", {})
     a2 = res2["result"]["actors"][0]
     target_opt2 = a2["attack_target_options"][0]
+    hp2_before = e2.state.enemies[0].current_hp
     spell_choices2 = _decline_all_spell_choices(target_opt2)
-    spell_choices2["before"]["连环杀伐"] = {"use": True, "cycles": [
-        [{"x": 2, "target_ref": "enemy:0", "dodge": False}] for _ in range(3)]}
+    spell_choices2["before"]["连环杀伐"] = {
+        "use": True,
+        "steps": [{"x": 2, "target_ref": "enemy:0", "dodge": False}],
+        "max_iterations": 3,
+    }
     choices2 = [{"actor_ref": a2["actor_ref"], "daowen": None,
-                "attack_actions": [{"hits": [{"target_ref": target_opt2["ref"], "dodge": False,
-                                              "blood_shadow": False, "spell_choices": spell_choices2}]}]}]
-    r_mana_reject = e2.execute_action("resolve_monster_phase", {"token": res2["result"]["token"], "choices": choices2})
+                 "attack_actions": [{"hits": [{"target_ref": target_opt2["ref"], "dodge": False,
+                                               "blood_shadow": False, "spell_choices": spell_choices2}]}]}]
+    r_mana_interrupt = e2.execute_action("resolve_monster_phase", {"token": res2["result"]["token"],
+                                                                  "choices": choices2})
+    hp2_after = e2.state.enemies[0].current_hp
+    interrupted = [lg for lg in (r_mana_interrupt.get("spell_logs") or [])
+                   if lg.get("spell") == "连环杀伐" and lg.get("interrupted")]
 
-    # 对照2：非循环法术强行提交2个cycle → 应拒绝（证明"只能提交一个cycle"仍对非循环法术生效，
-    # 循环能力是显式声明才解锁的新增语义，不是把限制去掉）
-    e3 = _fresh_engine("non_loop_reject")
+    # 对照2：非循环法术提交 max_iterations 不报错——没有循环时该预算无效果，仍只跑一次
+    e3 = _fresh_engine("non_loop_ignores_cap")
     p3 = e3.state.player
     _give_daowen(p3, "杀伐")
     non_loop_def = {"name": "单发杀伐", "required_daowen": ["杀伐"], "trigger_condition": "受到伤害前",
@@ -368,26 +398,34 @@ def probe_loop():
     res3 = e3.execute_action("prepare_monster_phase", {})
     a3 = res3["result"]["actors"][0]
     target_opt3 = a3["attack_target_options"][0]
+    hp3_before = e3.state.enemies[0].current_hp
     spell_choices3 = _decline_all_spell_choices(target_opt3)
-    spell_choices3["before"]["单发杀伐"] = {"use": True, "cycles": [
-        [{"x": 2, "target_ref": "enemy:0", "dodge": False}],
-        [{"x": 2, "target_ref": "enemy:0", "dodge": False}]]}
+    spell_choices3["before"]["单发杀伐"] = {
+        "use": True,
+        "steps": [{"x": 2, "target_ref": "enemy:0", "dodge": False}],
+        "max_iterations": 5,  # 非循环法术：上限无效果
+    }
     choices3 = [{"actor_ref": a3["actor_ref"], "daowen": None,
-                "attack_actions": [{"hits": [{"target_ref": target_opt3["ref"], "dodge": False,
-                                              "blood_shadow": False, "spell_choices": spell_choices3}]}]}]
-    r_non_loop_reject = e3.execute_action("resolve_monster_phase", {"token": res3["result"]["token"], "choices": choices3})
+                 "attack_actions": [{"hits": [{"target_ref": target_opt3["ref"], "dodge": False,
+                                               "blood_shadow": False, "spell_choices": spell_choices3}]}]}]
+    r_non_loop = e3.execute_action("resolve_monster_phase", {"token": res3["result"]["token"],
+                                                             "choices": choices3})
+    n_mana_used = p3.current_mana < 30 and (hp3_before - e3.state.enemies[0].current_hp) > 0
 
     fired = (loop_flag is True and r_ok["success"] and hp_after_ok < hp_before
              and mana_after_ok < mana_before
-             and r_mana_reject["success"] is False
-             and r_non_loop_reject["success"] is False)
-    record("循环(多cycle+安全阀)", wired, fired,
-           f"loop字段={loop_flag}；3次循环resolve success={r_ok['success']}，"
+             and r_mana_interrupt["success"] is True
+             and hp2_after < hp2_before
+             and any(lg.get("interrupted") == "mana_insufficient" for lg in interrupted)
+             and r_non_loop["success"] is True and n_mana_used)
+    record("循环(执行器逐轮+运行期耗尽中断)", wired, fired,
+           f"loop字段={loop_flag}；上限3轮 resolve success={r_ok['success']}，"
            f"敌方hp {hp_before}→{hp_after_ok}，玩家法力 {mana_before}→{mana_after_ok}；"
-           f"法力不足以支撑声明循环次数时应拒绝：success={r_mana_reject['success']} "
-           f"error={r_mana_reject.get('error')!r}；"
-           f"非循环法术强行提交2个cycle应拒绝：success={r_non_loop_reject['success']} "
-           f"error={r_non_loop_reject.get('error')!r}")
+           f"法力只够1轮时不是拒绝而是中断：success={r_mana_interrupt['success']}，"
+           f"敌方hp {hp2_before}→{hp2_after}，中断原因="
+           f"{[lg.get('interrupted') for lg in interrupted]!r}；"
+           f"非循环法术带 max_iterations 仍只执行一次：success={r_non_loop['success']}，"
+           f"消耗法力/造成伤害={n_mana_used}")
 
 
 def probe_learn_time_rejection():

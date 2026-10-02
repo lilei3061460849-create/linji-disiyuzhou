@@ -648,8 +648,9 @@ class MonsterPhaseMixin:
                 raise ValueError(f"道纹【{effective_name}】当前结算不接受闪避提交")
 
         trigger_choices = choice.get("trigger_spell_choices", {})
-        self.validate_daowen_trigger_spells(
-            monster, trigger_choices, refs, extra_mana=pending_shouyedeng)
+        # 2026-10-02：法力预算不再参与静态校验（资源问题一律是执行期中断），
+        # 因此不再需要把守夜灯的预付法力传进来。
+        self.validate_daowen_trigger_spells(monster, trigger_choices, refs)
 
     def _validate_monster_phase_static(
         self, submitted: dict[str, dict], prepared: dict,
@@ -732,7 +733,6 @@ class MonsterPhaseMixin:
                             raise ValueError("回锋刀触发必须显式提交合法目标")
                     self.validate_spell_reaction_submission(
                         target, monster, hit.get("spell_choices"), refs,
-                        extra_mana=pending_shouyedeng,
                     )
 
     def _monster_phase_snapshot(self) -> dict:

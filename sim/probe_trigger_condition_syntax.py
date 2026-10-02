@@ -44,6 +44,26 @@ def _give_daowen(entity, name):
         DaoWen(name=name, formula="", cost_type="消耗", cost_formula="X", effect_formula=""))
 
 
+def _learn(e, definition):
+    """探针专用：直接写入玩家法术列表（跳过 define_spell 的 1 次出手消耗）。
+
+    局外【学习】自定义法术入口已于 2026-09-16 取消（法术一律在战斗中用
+    define_spell 自创）；探针只关心触发管线是否接线，故此捷径保留"学习"语义：
+    仍然走同一个 _build_custom_spell/parse_spell_definition 校验与 wired 标注。
+    """
+    built = e._build_custom_spell(e.state.player, definition)
+    if "error" in built:
+        return {"success": False, "error": built["error"]}
+    e.state.player.spells.append(built["spell"])
+    parsed = built["parsed"]
+    wired = parsed.trigger in e.combat._WIRED_TRIGGERS
+    result = {"spell": built["spell"].to_dict(), "wired": wired, "cost": "0（探针捷径）"}
+    if not wired:
+        result["warning"] = (f"触发时机【{parsed.trigger}】已通过句式校验，"
+                             "但该时机暂未接入战斗结算管线，本法术目前不会实际触发")
+    return {"success": True, "action": "自定义法术(探针)", "result": result}
+
+
 def _decline_all_spell_choices(target_option):
     return {k: {sp["spell_name"]: {"use": False} for sp in target_option.get("spell_options", {}).get(k, [])}
             for k in ("before", "after")}
@@ -133,12 +153,9 @@ def _fire_before_damage_case(trigger_text):
     definition = {"name": f"同义测试_{trigger_text}", "required_daowen": ["杀伐"],
                   "trigger_condition": trigger_text,
                   "effect_flow": "发动杀伐X于攻击者"}
-    r1 = e.execute_action("pre_battle_action", {
-        "sub_action": "学习", "sub": "custom_spell", "spell": definition})
-    if not r1["success"]:
-        return False, None, f"学习被拒绝：{r1.get('error')}"
-    r2 = e.execute_action("pre_battle_action", {
-        "sub_action": "学习", "sub": "custom_spell", "spell": definition, "dm_approved": True})
+    r2 = _learn(e, definition)
+    if not r2["success"]:
+        return False, None, f"学习被拒绝：{r2.get('error')}"
     wired = r2["result"].get("wired")
     e.state.energy = 0
     e.execute_action("battle_start", {})
@@ -152,8 +169,7 @@ def _fire_before_damage_case(trigger_text):
     target_opt = a["attack_target_options"][0]
     spell_name = definition["name"]
     spell_choices = _decline_all_spell_choices(target_opt)
-    spell_choices["before"][spell_name] = {"use": True, "cycles": [[
-        {"x": 3, "target_ref": "enemy:0", "dodge": False}]]}
+    spell_choices["before"][spell_name] = {"use": True, "steps": [{"x": 3, "target_ref": "enemy:0", "dodge": False}], "max_iterations": 1}
     choices = [{"actor_ref": a["actor_ref"], "daowen": None,
                 "attack_actions": [{"hits": [{"target_ref": target_opt["ref"], "dodge": False,
                                               "blood_shadow": False, "spell_choices": spell_choices}]}]}]
@@ -171,12 +187,9 @@ def _fire_after_life_lost_case(trigger_text):
     definition = {"name": f"同义测试_{trigger_text}", "required_daowen": ["再生"],
                   "trigger_condition": trigger_text,
                   "effect_flow": "发动再生X于自身"}
-    r1 = e.execute_action("pre_battle_action", {
-        "sub_action": "学习", "sub": "custom_spell", "spell": definition})
-    if not r1["success"]:
-        return False, None, f"学习被拒绝：{r1.get('error')}"
-    r2 = e.execute_action("pre_battle_action", {
-        "sub_action": "学习", "sub": "custom_spell", "spell": definition, "dm_approved": True})
+    r2 = _learn(e, definition)
+    if not r2["success"]:
+        return False, None, f"学习被拒绝：{r2.get('error')}"
     wired = r2["result"].get("wired")
     e.state.energy = 0
     e.execute_action("battle_start", {})
@@ -191,8 +204,7 @@ def _fire_after_life_lost_case(trigger_text):
     target_opt = a["attack_target_options"][0]
     spell_name = definition["name"]
     spell_choices = _decline_all_spell_choices(target_opt)
-    spell_choices["after"][spell_name] = {"use": True, "cycles": [[
-        {"x": 4, "target_ref": "player:0", "dodge": False}]]}
+    spell_choices["after"][spell_name] = {"use": True, "steps": [{"x": 4, "target_ref": "player:0", "dodge": False}], "max_iterations": 1}
     choices = [{"actor_ref": a["actor_ref"], "daowen": None,
                 "attack_actions": [{"hits": [{"target_ref": target_opt["ref"], "dodge": False,
                                               "blood_shadow": False, "spell_choices": spell_choices}]}]}]
@@ -212,7 +224,9 @@ def _pure_attack_round(e):
             target_opt = a["attack_target_options"][0]
             hits.append({"target_ref": target_opt["ref"], "dodge": False, "blood_shadow": False,
                         "spell_choices": _decline_all_spell_choices(target_opt)})
-        choices.append({"actor_ref": a["actor_ref"], "daowen": None,
+        # 怪物阶段现已要求：有合法道纹选项时必须声明一个（不选=无道纹）
+        dao = a["daowen_options"][0] if a.get("daowen_options") else None
+        choices.append({"actor_ref": a["actor_ref"], "daowen": dao,
                         "attack_actions": [{"hits": hits} for _ in range(a["base_attack_actions"])]})
     r = e.execute_action("resolve_monster_phase", {"token": res["result"]["token"], "choices": choices})
     assert r["success"], r
@@ -229,12 +243,9 @@ def _fire_target_before_daowen_case(trigger_text):
     definition = {"name": spell_name, "required_daowen": ["坠落", "杀伐", "血债"],
                   "trigger_condition": trigger_text,
                   "effect_flow": "发动坠落X于目标→发动杀伐X于目标→发动血债X于目标"}
-    r1 = e.execute_action("pre_battle_action", {
-        "sub_action": "学习", "sub": "custom_spell", "spell": definition})
-    if not r1["success"]:
-        return False, None, f"学习被拒绝：{r1.get('error')}"
-    r2 = e.execute_action("pre_battle_action", {
-        "sub_action": "学习", "sub": "custom_spell", "spell": definition, "dm_approved": True})
+    r2 = _learn(e, definition)
+    if not r2["success"]:
+        return False, None, f"学习被拒绝：{r2.get('error')}"
     wired = r2["result"].get("wired")
     e.state.energy = 0
     e.execute_action("battle_start", {})
@@ -313,14 +324,11 @@ def probe_unwired_synonyms():
             _give_daowen(e.state.player, "杀伐")
             definition = {"name": f"同义测试_{p}", "required_daowen": ["杀伐"],
                           "trigger_condition": p, "effect_flow": "发动杀伐X于攻击者"}
-            r1 = e.execute_action("pre_battle_action", {
-                "sub_action": "学习", "sub": "custom_spell", "spell": definition})
-            if not r1["success"]:
-                print(f"  ❌ 写法={p!r:20s} 学习被意外拒绝：{r1.get('error')}")
+            r2 = _learn(e, definition)
+            if not r2["success"]:
+                print(f"  ❌ 写法={p!r:20s} 学习被意外拒绝：{r2.get('error')}")
                 all_ok = False
                 continue
-            r2 = e.execute_action("pre_battle_action", {
-                "sub_action": "学习", "sub": "custom_spell", "spell": definition, "dm_approved": True})
             wired = r2["result"].get("wired")
             warning = r2["result"].get("warning", "")
             ok = wired is False and bool(warning)

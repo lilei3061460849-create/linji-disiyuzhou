@@ -11,8 +11,8 @@ import pytest
 
 from engine.spell_dsl import (
     SpellDslError, parse_trigger, parse_condition, evaluate_condition,
-    parse_effect_flow, parse_spell_definition, ActionStep, IfStep,
-    BoolOp, Not, Cmp, collect_step_daowen,
+    parse_effect_flow, parse_spell_definition, ActionStep, IfStep, LoopStep,
+    BoolOp, Not, Cmp, collect_step_daowen, iter_action_steps, count_action_steps,
     TRIGGER_BEFORE_DAMAGE, TRIGGER_AFTER_DAMAGE, TRIGGER_BEFORE_LIFE_LOST,
     TRIGGER_AFTER_LIFE_LOST, TRIGGER_TARGET_BEFORE_DAOWEN,
     TRIGGER_BATTLE_START, TRIGGER_BATTLE_END, TRIGGER_ROUND_START,
@@ -185,13 +185,39 @@ def test_effect_flow_rejects_unknown_target_word():
 
 
 def test_effect_flow_loop_marker():
+    """循环标记产出 LoopStep：控制流归执行器，不再预展开。"""
     steps, loop = parse_effect_flow("发动血债X于攻击者→循环直到法力耗尽", KNOWN)
     assert loop is True
-    assert steps == [ActionStep("血债", "attacker")]
+    assert steps == [LoopStep(body=(ActionStep("血债", "attacker"),), max_iterations=None)]
 
     steps2, loop2 = parse_effect_flow("发动再生X于自身→发动血债X于攻击者→循环", KNOWN)
     assert loop2 is True
-    assert steps2 == [ActionStep("再生", "self"), ActionStep("血债", "attacker")]
+    assert steps2 == [LoopStep(body=(ActionStep("再生", "self"),
+                                     ActionStep("血债", "attacker")), max_iterations=None)]
+
+
+def test_effect_flow_fixed_count_loop():
+    """支持"循环N次"的定次循环（N≥1）。"""
+    steps, loop = parse_effect_flow("发动再生X于自身→循环3次", KNOWN)
+    assert loop is True
+    assert steps == [LoopStep(body=(ActionStep("再生", "self"),), max_iterations=3)]
+
+
+def test_effect_flow_nested_conditional_branch():
+    """条件分支可嵌套，且执行顺序按深度优先展开成决策槽位。"""
+    steps, loop = parse_effect_flow(
+        "若自身 生命 小于 50 则（若自身 法力 大于 2 则 发动杀伐X于攻击者 "
+        "否则 发动再生X于自身）否则 发动血债X于攻击者", KNOWN)
+    branch = steps[0]
+    assert isinstance(branch, IfStep)
+    inner = branch.then_steps[0]
+    assert isinstance(inner, IfStep)
+    assert inner.then_steps == (ActionStep("杀伐", "attacker"),)
+    assert inner.else_steps == (ActionStep("再生", "self"),)
+    assert branch.else_steps == (ActionStep("血债", "attacker"),)
+    indices = [(i, s.daowen) for i, s in iter_action_steps(steps)]
+    assert indices == [(0, "杀伐"), (1, "再生"), (2, "血债")]
+    assert count_action_steps(steps) == 3
 
 
 def test_effect_flow_conditional_branch():
@@ -227,7 +253,8 @@ def test_blood_splash_uses_mana_branch_before_loop():
     )
     parsed = parse_spell_definition("失去生命后", flow, KNOWN)
     assert parsed.loop is True
-    branch = parsed.steps[0]
+    assert len(parsed.steps) == 1 and isinstance(parsed.steps[0], LoopStep)
+    branch = parsed.steps[0].body[0]
     assert isinstance(branch, IfStep)
     assert [step.daowen for step in branch.then_steps] == ["再生", "杀伐", "透支"]
     assert [step.daowen for step in branch.else_steps] == ["再生", "透支"]
@@ -237,10 +264,12 @@ def test_effect_flow_mixed_branch_and_plain_steps():
     steps, loop = parse_effect_flow(
         "发动庇护X于自身→若目标 拥有 飞行 则 发动坠落X于目标→发动杀伐X于攻击者→循环", KNOWN)
     assert loop is True
-    assert len(steps) == 3
-    assert isinstance(steps[0], ActionStep)
-    assert isinstance(steps[1], IfStep)
-    assert isinstance(steps[2], ActionStep)
+    assert len(steps) == 1 and isinstance(steps[0], LoopStep)
+    body = steps[0].body
+    assert len(body) == 3
+    assert isinstance(body[0], ActionStep)
+    assert isinstance(body[1], IfStep)
+    assert isinstance(body[2], ActionStep)
 
 
 def test_effect_flow_rejects_empty():

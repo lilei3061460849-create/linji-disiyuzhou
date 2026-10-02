@@ -124,11 +124,10 @@ def _trigger_spells(option, player_mana):
             name = spell["spell_name"]
             steps = spell.get("steps", [])
             use = False
-            cycles = []
+            submitted = []
             if player_mana >= 1:
                 use = True
                 # 自由控X：攻击步骤尽量大X（杀伐/血债等），自保步骤留1
-                cycle = []
                 remaining = player_mana
                 for st in steps:
                     is_self = st.get("target_ref") == "player:0"
@@ -136,10 +135,12 @@ def _trigger_spells(option, player_mana):
                     entry = {"x": x, "target_ref": st.get("target_ref")}
                     if st.get("target_ref") != "player:0":
                         entry["dodge"] = False
-                    cycle.append(entry)
+                    submitted.append(entry)
                     remaining -= x
-                cycles = [cycle]
-            out[timing][name] = {"use": use, "cycles": cycles} if use else {"use": False}
+            # 新契约：每个决策槽位一条 steps；老逻辑只提交一轮，故上限写1，
+            # 循环本身由执行器逐轮结算（不会再出现调用方预展开的 cycles）。
+            out[timing][name] = ({"use": True, "steps": submitted, "max_iterations": 1}
+                                 if use else {"use": False})
     return out
 
 
@@ -195,7 +196,7 @@ def _live_spell_choices(engine, actor_ref, target_ref, use, banned=()):
                     # 全部基线(x=1)都付不起的法术直接弃权，不给提交校验留死路
                     out[timing][name] = {"use": False}
                     continue
-                cycle = []
+                submitted_steps = []
                 remaining = wallet
                 for index, st in enumerate(steps):
                     reserve = sum(base_costs[index + 1:])       # 后续步骤x=1的预留
@@ -216,9 +217,11 @@ def _live_spell_choices(engine, actor_ref, target_ref, use, banned=()):
                     entry = {"x": x, "target_ref": st.get("target_ref")}
                     if not is_self:
                         entry["dodge"] = False
-                    cycle.append(entry)
+                    submitted_steps.append(entry)
                     remaining -= step_cost
-                out[timing][name] = {"use": True, "cycles": [cycle]}
+                # 2026-10-02 契约：每步一条决策 + 单轮上限；循环由执行器拥有。
+                out[timing][name] = {"use": True, "steps": submitted_steps,
+                                     "max_iterations": 1}
                 wallet = remaining   # 钱包流转给下一个法术（与引擎共享池同口径）
             else:
                 out[timing][name] = {"use": False}
