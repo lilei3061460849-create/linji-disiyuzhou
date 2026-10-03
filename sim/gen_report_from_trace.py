@@ -576,9 +576,11 @@ def _load_probe(filename: str):
 def ask_headline() -> list[str]:
     """头部「追问速答」：两条一句话答案，数字与文末《四》同源（探针现场复算）。"""
     out = ["", "> **追问速答（详见文末《四》）**——"]
-    for i, (name, _) in enumerate((("probe_dongcha_reach.py", 1), ("probe_monster_cast_order.py", 2)), 1):
+    n = 0
+    for name in ("probe_dongcha_reach.py", "probe_monster_cast_order.py"):
         for ln in _load_probe(name).summary():
-            out.append(f"> {i}. {ln}")
+            n += 1
+            out.append(f"> {n}. {ln}")
     return out
 
 
@@ -588,9 +590,10 @@ def followup_lines() -> list[str]:
     A = L.append
     A("## 四、两个追问答疑")
     A("")
-    A("> 本节回答两个问题，数字全部由程序现场复算：`sim/probe_dongcha_reach.py`（跑穷举 harness 的同一沙盒）"
+    A("> 本节回答两个追问，外加一个衍生问题（为什么【搏命】同样百搭、而且与【洞察】并列）。"
+      "数字全部由程序现场复算：`sim/probe_dongcha_reach.py`（跑穷举 harness 的同一沙盒）"
       "与 `sim/probe_monster_cast_order.py`（跑生产引擎的怪物阶段 + 聚合本局流水）。"
-      "两条速答同源于上方「追问速答」。")
+      "头部「追问速答」与本节的数字同源。")
     A("")
     for name in ("probe_dongcha_reach.py", "probe_monster_cast_order.py"):
         L.extend(_load_probe(name).lines())

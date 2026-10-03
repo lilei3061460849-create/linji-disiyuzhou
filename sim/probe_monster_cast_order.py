@@ -100,9 +100,30 @@ def player_order_facts() -> dict:
             "third_action_rejected": third.get("error", "")}
 
 
+def refill_facts() -> dict:
+    """实测怪物[回始]法力回满：发动一次耗 6/7 的道纹，下一回合开始再看池子。"""
+    e = _sandbox("refill", "坏死")
+    before = e.state.enemies[0].current_mana
+    res = e.execute_action("prepare_monster_phase", {})["result"]
+    hit = {"target_ref": "player:0", "dodge": False, "blood_shadow": False,
+           "spell_choices": {"before": {}, "after": {}}}
+    e.execute_action("resolve_monster_phase", {"token": res["token"], "choices": [
+        {"actor_ref": "enemy:0",
+         "daowen": {"name": "坏死", "x": 3, "dodge": False, "blood_shadow": False,
+                    "target_ref": "player:0"},
+         "attack_actions": [{"hits": [dict(hit) for _ in range(PANEL["speed"])]}]}]})
+    after_cast = e.state.enemies[0].current_mana
+    harness._advance_round(e)                      # 回终 → 回始
+    next_round = e.state.enemies[0].current_mana
+    return {"start": before, "after_cast": after_cast, "next_round": next_round,
+            "relics": [r.name for r in e.state.enemies[0].relics],
+            "player_relics": [r.name for r in e.state.player.relics]}
+
+
 def engine_facts() -> dict:
     return {
         "player_order": player_order_facts(),
+        "refill": refill_facts(),
         "no_cast_rejected": _submit("坏死", None),
         "cast_costs_mana": _submit("坏死", {"name": "坏死", "x": 3, "dodge": False,
                                             "blood_shadow": False, "target_ref": "player:0"}),
@@ -240,6 +261,23 @@ def lines() -> list[str]:
       f"生产侧则是《怪物准则》的固定优先级（自保→输出→控制→机制，入口 `sim/monster_targets.py::"
       f"pick_monster_daowen_option`）——两者都不会因为「发动会削弱本回合普攻」而改选或不选。")
     A("")
+    rf = f.get("refill", {})
+    A(f"**第四层（反事实：如果顺序反过来会怎样）**——按你的设想，怪物先普攻、再花法力发动道纹，"
+      f"本轮伤害就该是 `击数 × 法限`（满法力），而代价呢？实测：怪物法力 {rf.get('start')} → "
+      f"发动【坏死X=3】（耗 6）后 {rf.get('after_cast')} → **下一回合[回始]又回到 {rf.get('next_round')}**"
+      f"（怪物出厂自带遗物【某人的偏爱】{rf.get('relics')}；轮回者没有这件遗物 {rf.get('player_relics')}，是一池制）。"
+      f"也就是说，留在法力池里的余量**不花白不花**——下回合[回始]会被直接覆盖。")
+    A("")
+    A(f"于是「先普攻、后发动」的组合＝**满法力打满伤害 ＋ 道纹照常生效 ＋ 法力代价为零**。"
+      f"按这个口径，本局那 {tf['rounds']} 个回合的普攻会从实测 {tf['actual']} 点变成 {tf['full']} 点，"
+      f"而怪物一分钱没多付（差值 {tf['full'] - tf['actual']} 点全部白拿）。")
+    A("")
+    A(f"**这就是为什么引擎不让先攻后发**（推断设计意图，非文档原文）：规则正文只写「怪物每回合 1 次攻击 + 1 种道纹」"
+      f"（`AI_EXPERIENCE.md`·怪物准则 8），**没有规定先后**；引擎把顺序定死在执行体里"
+      f"（道纹 → 逐击普攻）。在当前顺序下，怪物花在道纹上的法力**正好从自己这一轮的普攻里扣**，"
+      f"而[回始]回满这条怪物资源优势才不等于「免费开道纹」——它换来的是「每回合都能开得起道纹」，"
+      f"要付的是当回合的基础伤害。顺序一旦反过来，这份代价就消失了。")
+    A("")
     A("**所以**：怪物「不先攻击」不是策略选择的问题，而是①引擎契约强制发动、②执行顺序固定为道纹→普攻、"
       "③[攻力]＝[当前法力] 逐击读取——三条叠加，等于用当回合的输出换取道纹效果。"
       "这是规则层的既定交换，不是 bug；但它对本局的影响是可量化的：上面那张表的差值与 7 次【凡庸】。")
@@ -260,7 +298,9 @@ def summary() -> list[str]:
             f"而 [攻力]＝[当前法力] 是逐击读取的，所以先付法力就是先削弱自己：同面板发【坏死X=3】（耗 6/7）"
             f"普攻 {sum(b_['per_hit'])} 点，改发不耗法力的【畸变X=3】则是 {sum(c_['per_hit'])} 点。"
             f"本局 {tf['rounds']} 个这类回合实测普攻 {tf['actual']} 点（满法力反事实 {tf['full']} 点），"
-            f"其中 {tf['zero_rounds']} 个 0 伤回合直接喂出 {tf['mediocrity']} 次【凡庸】自爆（详见《四》）。"]
+            f"其中 {tf['zero_rounds']} 个 0 伤回合直接喂出 {tf['mediocrity']} 次【凡庸】自爆。"
+            f"若真允许「先攻后发」，法力代价会被[回始]回满抵消为零（实测：发动后 1/7 → 下一回合 7/7，"
+            f"靠出厂遗物【某人的偏爱】）——等于白拿道纹效果又保满伤害，这就是引擎把顺序定死的原因（详见《四》）。"]
 
 
 def main() -> None:

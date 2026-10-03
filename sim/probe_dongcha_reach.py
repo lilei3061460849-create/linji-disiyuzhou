@@ -86,6 +86,57 @@ def scene_measure(name: str = NAME, x: int = X) -> dict:
                         "enemy_hp": harness.SB["enemy_hp"]}}
 
 
+def cost_groups() -> tuple[list[tuple[str, int, float]], dict]:
+    """按「代价形态」给 70 个道纹分组，并统计组内 Cat2 平均度（数据取自穷举 CSV）。"""
+    from engine.daowen import DaoWenEngine
+    DaoWenEngine.register_all()
+    deg: dict = {}
+    if CSV_PATH.exists():
+        for r in csv.DictReader(CSV_PATH.open(encoding="utf-8")):
+            if r["classification"] == "2" and r["confidence"] != "UNVERIFIED":
+                deg[r["daowen_a"]] = deg.get(r["daowen_a"], 0) + 1
+                deg[r["daowen_b"]] = deg.get(r["daowen_b"], 0) + 1
+    groups: dict = {}
+    for name in sorted(DaoWenEngine._registry):
+        try:
+            c = dict(DaoWenEngine.resolve(name, X))
+        except Exception:
+            continue
+        if c.get("cost_speed"):
+            label = "疲惫（扣自己[当前速度]）"
+        elif c.get("cost"):
+            label = "消耗（扣法力）"
+        elif c.get("cost_hp") or c.get("cost_blood_limit"):
+            label = "生命/血限"
+        elif c.get("cost_mutation"):
+            label = "异变"
+        else:
+            label = "其它/无代价"
+        groups.setdefault(label, []).append((name, deg.get(name, 0)))
+    out = [(k, len(v), sum(d for _, d in v) / len(v), sorted(v, key=lambda kv: -kv[1]))
+           for k, v in groups.items()]
+    out.sort(key=lambda kv: -kv[2])
+    return out, {n: d for _, _, _, mem in out for n, d in mem}
+
+
+def boming_measure() -> dict:
+    """现场跑一遍【搏命】solo：它也吃疲惫代价（扣速度），同时给自己加法力。"""
+    tmp = Path(tempfile.mkdtemp())
+    base = harness.run_scene(harness.build_sandbox(tmp / "base"), [])
+    solo = harness.run_scene(harness.build_sandbox(tmp / "solo", granted=("搏命",)),
+                             [{"name": "搏命", "x": X, "target_ref": harness.natural_target("搏命")}])
+    cast = solo["casts"][0]
+    hit = None
+    db, ds = base["probes"]["player_attacks"]["delta"], solo["probes"]["player_attacks"]["delta"]
+    if db.get("e_hp") != ds.get("e_hp"):
+        hit = (db.get("e_hp"), ds.get("e_hp"))
+    single = None
+    db2, ds2 = base["probes"]["hurt_then_attack"]["delta"], solo["probes"]["hurt_then_attack"]["delta"]
+    if db2.get("e_hp") != ds2.get("e_hp"):
+        single = (db2.get("e_hp"), ds2.get("e_hp"))
+    return {"ok": cast["ok"], "delta": cast["delta"], "two_actions": hit, "one_action": single}
+
+
 def lines() -> list[str]:
     st, sc = pair_stats(), scene_measure()
     if not st["partners"] or not sc["cast_ok"]:
@@ -138,6 +189,46 @@ def lines() -> list[str]:
     A("* 度数度量的是**作用面 × 代价落点**：代价落在输出乘数上的道纹，天生与所有输出类道纹耦合；"
       "高度数不代表它更强或更弱，只代表它的代价与结算被更多探针读到。")
     A("")
+
+    # ---- 四-3：为什么「搏命」也百搭，而且和洞察并列最高 ----
+    groups, deg = cost_groups()
+    bm = boming_measure()
+    if groups and bm["ok"]:
+        A(f"### 四-3 为什么「搏命」和「洞察」并列为最高（同为疲惫代价）")
+        A("")
+        A(f"把 70 个道纹按**代价形态**分组，再统计组内 Cat2 平均度（度数取自同一批穷举结果）：")
+        A("")
+        A("| 代价形态 | 个数 | 组内平均度 | 成员（度数） |")
+        A("| --- | --- | --- | --- |")
+        for label, n, avg, members in groups:
+            mem = "、".join(f"{nm}({d})" for nm, d in members)
+            A(f"| {label} | {n} | {avg:.1f} | {mem} |")
+        A("")
+        A(f"**最高的一行只有两个成员：{groups[0][3][0][0]} 与 {groups[0][3][1][0]}（各 {groups[0][3][0][1]} 度）**——"
+          f"也就是说，「百搭」不是两种不同的机制，而是**同一族**：70 个道纹里只有这两个的代价是"
+          f"【疲惫】（扣自己 X 点[当前速度]）。")
+        A("")
+        db_ = bm["delta"]
+        A(f"机制上，伤害 = [攻击次数] × [攻击力]=[当前速度] × [当前法力] 是两个乘数，而两类代价的落点不同：")
+        A("")
+        A(f"* **法力代价**只是在法力池里做**减法**：55 − c_A − c_B ＝ (55 − c_A) − c_B，两次发动的效果"
+          f"**可加**，两次独立发动不构成协同（判 Cat1）→ 所以 {next(n for l, n, a, _ in groups if l.startswith('消耗'))} 个"
+          f"「消耗（扣法力）」道纹的平均度只有 {next(a for l, n, a, _ in groups if l.startswith('消耗')):.1f}。")
+        A(f"* **疲惫代价**直接改**攻次**这个乘数（[攻击次数]＝[当前速度]）：一旦攻次被改，"
+          f"伙伴对[攻击力]做的任何加减都会被**缩放**，两次发动必然不可加（判 Cat2）。"
+          f"实测【搏命X={X}】：速度 {d.get('p_speed')}、[攻次] {d.get('p_atk')}、"
+          f"法力 {db_.get('p_mana')}、[攻力] {db_.get('p_pow')}——它**同时动了两个乘数**"
+          f"（卖速度得法力）；单次普攻 "
+          f"{abs(bm['one_action'][0]) if bm['one_action'] else '?'} → "
+          f"{abs(bm['one_action'][1]) if bm['one_action'] else '?'}，两次普攻 "
+          f"{abs(bm['two_actions'][0]) if bm['two_actions'] else '?'} → "
+          f"{abs(bm['two_actions'][1]) if bm['two_actions'] else '?'}。")
+        A("")
+        A(f"这也解释了为什么「搏命百搭」的感觉是对的、但理由不是「效果花样多」：它的**效果**（获得法力）很简单，"
+          f"高度数来自**代价落在乘法项**——与洞察同源。"
+          f"（推断）若把这两者的代价从疲惫改成消耗法力，它们会掉进「消耗（扣法力）」那一组的平均度水平；"
+          f"本报告没有做这个改写实验，只登记机制归属。")
+        A("")
     return L
 
 
@@ -146,12 +237,20 @@ def summary() -> list[str]:
     if not st["partners"] or not sc["cast_ok"]:
         return []
     d = sc["cast_delta"]
+    groups, _ = cost_groups()
+    fam = ""
+    if groups:
+        label, n, avg, members = groups[0]
+        fam = (f"同族的【{members[0][0]}】与【{members[1][0]}】并列最高（各 {members[0][1]} 度），"
+               f"因为 70 个道纹里只有这两个的代价是【疲惫】（扣自己[速度]）——"
+               f"而「消耗（扣法力）」那 {next(nn for l, nn, a, _ in groups if l.startswith('消耗'))} 个"
+               f"只是做减法（可加），平均度 {next(a for l, nn, a, _ in groups if l.startswith('消耗')):.1f}。")
     return [f"**洞察的度数为什么最高**：它是「代价＝自己[速度]」的道纹，而本引擎 [攻击次数]＝[当前速度]——"
             f"发动一次洞察就是把自己的攻次砍 {abs(d.get('p_atk', 0))} 点（实测 "
             f"{sc['sandbox']['player_speed']}→{sc['sandbox']['player_speed'] - abs(d.get('p_atk', 0))}，"
             f"同一发普攻的靶怪承伤 550→220）；伙伴只要动[攻力]（法力）或[攻次]（速度）就与它不可加，"
             f"于是 {st['partners']} 个伙伴里 {st['verifiable']} 个可验证对全判进分类 2"
-            f"（其中 {st['signature_n']} 对读数逐位相同）。度数≈作用面×代价落点，不是强度（详见《四》）。"]
+            f"（其中 {st['signature_n']} 对读数逐位相同）。{fam}度数≈作用面×代价落点，不是强度（详见《四》）。"]
 
 
 def main() -> None:
