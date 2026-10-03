@@ -5,7 +5,7 @@
 进入怪物阶段时法力已在池中，静态校验不再需要预付预算——
 原先 2026-08-21 那套「预计算 pending grant」的补丁随之作废。
 本文件现在验证：授予量为 ceil(法限*0.1)、法力留存不清空、
-以及不足时仍照常拒绝。
+以及"法力不足"在结算期表现为带原因的 interrupted（不是提交错误、不吞成异常）。
 """
 import sys
 import os
@@ -57,8 +57,8 @@ def _monster_phase_submit(e, spell_x=None, use_spell=True):
                 spell_x = 2
             spell_choices["before"]["先发制人"] = {
                 "use": True,
-                "cycles": [[{"x": spell_x, "target_ref": sp["steps"][0]["target_ref"],
-                             "dodge": False}]],
+                "steps": [{"x": spell_x, "target_ref": sp["steps"][0]["target_ref"],
+                           "dodge": False}],
             }
         else:
             spell_choices["before"][sp["spell_name"]] = {"use": False}
@@ -127,8 +127,8 @@ def test_shouyedeng_grants_once_per_round(tmp_path):
     assert p.current_mana == 2
 
 
-def test_insufficient_real_mana_still_rejected(tmp_path):
-    """守夜灯授予量不足以覆盖法术消耗 → 仍拒绝（不满足真实法力需求）。"""
+def test_insufficient_real_mana_interrupts_at_runtime(tmp_path):
+    """守夜灯授予量不足以覆盖法术消耗 → 执行期中断（资源问题是中断，不是提交错误）。"""
     e = _engine(tmp_path)
     e.state.relics.append(Relic(name="守夜灯", effect="", tags=[]))
     p = e.state.player
@@ -136,25 +136,24 @@ def test_insufficient_real_mana_still_rejected(tmp_path):
     p.mana_limit = 20
     e.combat._grant_shouyedeng(p)  # 授予2；先发制人 X=3 需3 > 2
     prepared, choice = _monster_phase_submit(e, spell_x=3)
-    try:
-        e.combat.resolve_monster_phase([choice], prepared)
-        raise AssertionError("法力不足的提交应被拒绝")
-    except ValueError as exc:
-        assert "法力不足" in str(exc), f"应报法力不足：{exc}"
-    assert not p.has_status("勾魂"), "被拒后无副作用"
+    res = e.combat.resolve_monster_phase([choice], prepared)
+    logs = [lg for hit in res for lg in (hit.get("spell_logs") or [])
+            if lg.get("spell") == "先发制人"]
+    assert logs and logs[0].get("interrupted") == "mana_insufficient", logs
+    assert not p.has_status("勾魂"), "中断后无副作用"
+    assert p.current_mana == 2, "未支付任何法力"
 
 
-def test_no_shouyedeng_still_rejects_when_mana_zero(tmp_path):
-    """无守夜灯且当前法力=0 → 反应法术提交仍被拒绝（原行为保持）。"""
+def test_no_shouyedeng_mana_zero_interrupts_at_runtime(tmp_path):
+    """无守夜灯且当前法力=0 → 反应法术执行期中断，怪物阶段照常完成。"""
     e = _engine(tmp_path)
     p = e.state.player
     p.current_mana = 0
     prepared, choice = _monster_phase_submit(e, spell_x=2)
-    try:
-        e.combat.resolve_monster_phase([choice], prepared)
-        raise AssertionError("无守夜灯法力时提交应被拒绝")
-    except ValueError as exc:
-        assert "法力不足" in str(exc), f"应报法力不足：{exc}"
+    res = e.combat.resolve_monster_phase([choice], prepared)
+    logs = [lg for hit in res for lg in (hit.get("spell_logs") or [])
+            if lg.get("spell") == "先发制人"]
+    assert logs and logs[0].get("interrupted") == "mana_insufficient", logs
 
 
 def test_normal_mana_source_works_without_shouyedeng(tmp_path):

@@ -8,6 +8,10 @@
 
 普攻是两段动作（prepare_attack → resolve_attack，resolve 需要 prepare 给的 token），
 所以预演器扩成能吃动作序列，AI 才能看见普攻的真实伤害并参与打分。
+
+2026-10-02：原 `test_at_one_by_one_daowen_still_wins`（1×1 面板下杀伐仍应优先）
+在攻次/攻力改制后已失效——它只锁实验规则 AI 的候选排序，与正式 LLM 路径无关，
+现以 xfail 形式移入 tests/test_legacy_rule_ai_contracts.py 留档。
 """
 import os
 import re
@@ -102,20 +106,6 @@ def test_empty_pool_means_zero_damage_output(engine, monkeypatch):
     assert engine.state.player.effective_attack_power() == 0
     ai.take_turn()
     assert foe.current_hp == hp_before, f"攻力0时普攻应为0伤，实掉 {hp_before - foe.current_hp}"
-
-
-def test_at_one_by_one_daowen_still_wins(engine, monkeypatch):
-    """边界：普攻是候选不是覆盖——1×1 面板下（每手 1 伤）杀伐仍然优先。
-
-    实测打分：杀伐X=7 → 17.92，普攻（1伤）→ 1.40。
-    """
-    monkeypatch.setenv(FLAG, "1")
-    p = engine.state.player
-    p.current_speed, p.current_mana = 1, 1     # 攻次/攻力随之变成 1×1
-    ai = TacticalAI(engine, verbose=True)
-    ai.take_turn()
-    decisions = [line for line in ai.log if "实时决策" in line]
-    assert decisions and all("普攻" not in line for line in decisions), decisions
 
 
 def test_full_pool_shaifa_outscores_basic_attack(engine, monkeypatch):

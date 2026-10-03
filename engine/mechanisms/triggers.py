@@ -10,7 +10,7 @@
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from ..combat_events import CombatEvent
@@ -32,9 +32,19 @@ class Phase:
     BATTLE_END = "battle_end"                        # 战终——已接线（process_relics 战终遗物段，
                                                      # 2026-09-17 为【缄默面具】改版新增）
     ROUND_START = "round_start"                      # 回始——已接线（combat.round_start 回始效果循环顶部）
+    ROUND_START_SETTLE = "round_start_settle"        # 回始·全场结算（2026-10-03 接线）。
+                                                     # 锚点：回始效果循环之后、current_round+=1 之前
+                                                     # （原 F2 逼债/清算/赌命三块的位置）。
+                                                     # 分发语义与其余相位不同——机制优先：
+                                                     # 每个机制按 priority 对**全部实体**结算完再轮到下一个，
+                                                     # 逐字保持旧三段循环（逼债全体→清算全体→赌命全体）的顺序。
     ROUND_END = "round_end"                          # 回终——已接线（round_end 第一逐实体循环顶部、
                                                      # 凡庸 tick 之前）。锚定语义：凡庸之后的回终机制
                                                      # 禁止注册本相位（会改变既有顺序），见机制迁移台账。
+    ROUND_END_RECONCILE = "round_end_reconcile"      # 回终·清账（2026-10-03 接线）。
+                                                     # 锚点：回终第一逐实体循环内、status tick 之后
+                                                     # （原 F2「状态消失即清账」位置）。只清账、不结算，
+                                                     # 时机必须晚于状态到期判定，否则会多结算一轮。
 
 
 @dataclass(frozen=True)
@@ -71,6 +81,9 @@ class TriggerContext:
     source: Any = None              # 行为发起者（攻击者 / 事件行为者）
     amount: int = 0
     damage_type: str = ""
+    # 选择器的「选择依据」等附加事实（如 RNG 的 roll/of）：由 TargetSelector 写入、
+    # 机制效果读取，避免为了写战报把随机选择重投一次（见 targets.roll_pick）。
+    picks: dict = field(default_factory=dict)
 
     def resolve(self, of: str) -> Any:
         """把条件/目标里的"对谁"词汇解析成实体。"""

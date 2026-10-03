@@ -1,31 +1,28 @@
-"""循环法术的法力校验必须与结算口径一致：产法力道纹的收益要计入预算。
+"""循环法术：执行器逐轮迭代，每轮重读真实状态；调用方不再提交 cycles。
 
-背景（2026-09-12）：【透支】是"流血3X→获得X法力"，是体系里唯一的法力来源。
-把它和【再生】打包成循环法术（透支X于自身→再生X于自身→循环）时，
-每个循环法力净零，理应能从0法力自持启动、由【癌变】(累计回复达2×血限)自然终止。
+架构（2026-10-02，Part 4）：DSL 里的【循环】由 SpellExecution 的 LoopStep 拥有。
+调用方为程序里每个 ActionStep 提交一条决策（X/目标/闪避），可选地给一个
+``max_iterations`` 上限（"我最多跑几轮"），但**不能**预先展开每轮的步骤列表。
+终止条件全部由规则给出：法力耗尽、施法者命零、目标失效、本轮无进展、
+DSL 定次（循环N次）。10000 次是工程安全阀，不是游戏规则。
 
-但校验期 `validate_spell_reaction_submission` / 全局时点校验只扣 cost_type=="消耗"
-的花费，从不计 mana_gain，于是 N 次循环被要求预付 cost*N 的法力——而这笔法力
-恰恰正是循环自己要产出的东西。结果：循环法术这一【循环】法则对
-"再生+透支"闭环完全不可用。结算侧(_apply_daowen_result)一直是计入 mana_gain 的，
-所以这是校验与结算的口径不一致，而非设计意图。
-
-本测试锁定：零法力起步的透支+再生循环可以提交并结算，且仍被癌变封顶。
+本文件锁定三条真实语义：
+1. 零法力起步的【透支】+【再生】自持循环可以提交并结算（校验期不得把
+   产法力道纹当成纯支出）；
+2. 每轮法力净零、生命净零，累计回复推进【癌变】阈值 → 到顶即命零、循环终止；
+3. 付不起的循环仍然会被拒绝——只是从"提交时报错"变成"执行期中断"。
 """
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import pytest
-
 from engine.models import DaoWen, DaoWenInstance, Relic
 from tests.test_dragon_heart import _new_engine, _start_with_enemy
 
 # 与官方条目 死者之书.md「## 可学法术 → 血炼周天」同构（现已是内置法术，
 # 这里刻意用另一个名字自创同一流程，以覆盖"自创循环法术"这条路径）。先【再生】回血、再
-# 【透支】把血卖成法力，【透支】的流血同时满足「失去生命后」驱动下一轮，
-# 与【千刀万剐】靠代价自驱同构。故需 3 点法力垫付第一轮【再生】。
+# 【透支】把血卖成法力，【透支】的流血同时满足「失去生命后」驱动下一轮。
 SPELL = {
     "name": "周天自持",
     "required_daowen": ["再生", "透支"],
@@ -41,8 +38,7 @@ def _engine_with_loop_spell(suffix, *, hp, mana, spells=None):
     for name in ("透支", "再生"):
         player.dao_wen[name] = DaoWenInstance(
             DaoWen(name=name, formula="", cost_type="", cost_formula="X", effect_formula=""))
-    # 2026-09-16：自创法术只能在战斗中用 define_spell 完成（消耗1次主动出手），
-    # 局外【学习·自创法术】入口已取消，故必须先开战再自创。
+    # 2026-09-16：自创法术只能在战斗中用 define_spell 完成（消耗1次主动出手）。
     _start_with_enemy(engine)
     _define_spells(engine, spells if spells is not None else (SPELL,))
     foe = engine.state.enemies[0]
@@ -62,19 +58,23 @@ def _define_spells(engine, spells):
         assert result["result"]["wired"] is True
 
 
-def _fire(engine, cycles, x=3):
-    """让怪物普攻一次触发【失去生命后】，并提交 cycles 轮循环。"""
+def _fire(engine, max_iterations, x=3):
+    """让怪物普攻一次触发【失去生命后】，提交 max_iterations 轮上限。"""
     combat = engine.combat
     prepared = combat.prepare_monster_phase()
     actor = prepared["actors"][0]
     target = actor["attack_target_options"][0]
     options = target["spell_options"]
     assert any(s["spell_name"] == "周天自持" and s["loop"] for s in options["after"])
+    schema = next(s for s in options["after"] if s["spell_name"] == "周天自持")
+    # 每个决策槽位一条；循环体在每个决策槽位上各列一次（不是每轮一条）。
+    assert len(schema["steps"]) == 2
 
-    steps = [{"x": x, "target_ref": "player:0"}, {"x": x, "target_ref": "player:0"}]
+    steps = [{"x": x, "target_ref": "player:0"} for _ in schema["steps"]]
     spell_choices = {
         "before": {s["spell_name"]: {"use": False} for s in options["before"]},
-        "after": {"周天自持": {"use": True, "cycles": [list(steps) for _ in range(cycles)]}},
+        "after": {"周天自持": {"use": True, "steps": steps,
+                              "max_iterations": max_iterations}},
         "damage_after": {s["spell_name"]: {"use": False} for s in options["damage_after"]},
         "life_before": {s["spell_name"]: {"use": False} for s in options["life_before"]},
     }
@@ -86,6 +86,11 @@ def _fire(engine, cycles, x=3):
                                       "spell_choices": spell_choices}]}],
     }]
     return combat.resolve_monster_phase(choices, prepared=prepared)
+
+
+def _spell_logs(result, name="周天自持"):
+    return [log for detail in result for log in detail.get("spell_logs", [])
+            if log.get("spell") == name]
 
 
 BRANCH_SPELL = {
@@ -123,22 +128,38 @@ def _engine_with_branch_spell(suffix, *, mana):
     return engine
 
 
-def _branch_choices(option, *, use, cycles):
-    """按 prepare 返回的真实资格集生成一份完整反应提交。"""
+def _branch_steps(x=1):
+    """程序有 5 个决策槽位：则分支 3 个（再生/杀伐/透支）→ 否则分支 2 个（再生/透支）。"""
+    return [
+        {"x": x, "target_ref": "player:0"},
+        {"x": x, "target_ref": "enemy:0", "dodge": False},
+        {"x": x, "target_ref": "player:0"},
+        {"x": x, "target_ref": "player:0"},
+        {"x": x, "target_ref": "player:0"},
+    ]
+
+
+def _branch_choices(option, *, use, decision=None, max_iterations=1):
+    """按 prepare 返回的真实资格集生成一份完整反应提交（两个分支的槽位都覆盖）。"""
     spell_choices = {
         timing: {
-            spell["spell_name"]: {"use": False}
-            for spell in option["spell_options"].get(timing, [])
+            s["spell_name"]: {"use": False}
+            for s in option["spell_options"].get(timing, [])
         }
         for timing in ("before", "after", "damage_after", "life_before")
     }
     if use:
-        spell_choices["after"]["血溅五步"] = {"use": True, "cycles": cycles}
+        spell_choices["after"]["血溅五步"] = decision or {
+            "use": True, "steps": _branch_steps(), "max_iterations": max_iterations}
     return spell_choices
 
 
 def _resolve_branch_phase(engine, hits):
-    """通过 CombatEngine 的 prepare/resolve 合约结算一次真实怪物阶段。"""
+    """通过 CombatEngine 的 prepare/resolve 合约结算一次真实怪物阶段。
+
+    hits: [(use, spell_choices), ...]，每次命中一份提交；把同一份 dict 传给
+    多个命中，就是"同一份提交在多次命中中复用"（条件分支冻结的真实场景）。
+    """
     prepared = engine.combat.prepare_monster_phase()
     actor = prepared["actors"][0]
     target = actor["attack_target_options"][0]
@@ -148,81 +169,80 @@ def _resolve_branch_phase(engine, hits):
         "daowen": None,
         "attack_actions": [{"hits": [
             {"target_ref": target["ref"], "dodge": False, "blood_shadow": False,
-             "spell_choices": _branch_choices(option, use=use, cycles=cycles)}
-            for use, cycles in hits
+             "spell_choices": _branch_choices(option, use=use, decision=decision)}
+            for use, decision in hits
         ]}],
     }]
     return engine.combat.resolve_monster_phase(choices, prepared)
 
 
-def test_blood_splash_low_mana_branch_stays_frozen_across_hits():
-    """低法力分支在前一击产法力后，后续重复校验仍按同一次触发的两步展开。"""
+def test_blood_splash_branch_evaluated_at_execution_and_frozen_across_hits():
+    """条件分支在执行到时求值；同一份提交在后续命中里复用首次的分支选择。"""
     engine = _engine_with_branch_spell("branch_low", mana=1)
-    # 两个连续命中都在提交时看到法力<2；第一轮【透支】会把法力推到2，
-    # 这是此前 prepare/validate/resolve 步数漂移的最小真实引擎复现。
+    decision = {"use": True, "steps": _branch_steps(), "max_iterations": 1}
+    # 第一个命中到达条件时法力=1 → 走"否则"分支（2 步）；
+    # 结算后【透支】把法力推到 2，但第二、三次命中复用同一份提交 → 分支冻结。
     result = _resolve_branch_phase(engine, [
-        (True, [[{"x": 1, "target_ref": "player:0"},
-                 {"x": 1, "target_ref": "player:0"}]]),
-        (True, [[{"x": 1, "target_ref": "player:0"},
-                 {"x": 1, "target_ref": "player:0"}]]),
-        (False, []),
+        (True, decision),
+        (True, decision),
+        (False, None),
     ])
     assert result and engine.state.player.is_alive
     assert engine.state.player.current_mana == 3
-    used = [
-        log["daowen"]
-        for detail in result
-        for log in detail.get("spell_logs", [])
-        if "daowen" in log
-    ]
+    used = [log["daowen"] for log in _spell_logs(result, "血溅五步") if "daowen" in log]
     assert used == ["再生", "透支", "再生", "透支"]
+    # 冻结快照随提交写回调用方，且归属标记可序列化（字符串）
+    assert decision["branch_snapshot"] == {"0L0": 1}
+    assert isinstance(decision["_engine_branch_owner"], str)
+    assert decision["branch_snapshot"]
 
 
 def test_blood_splash_high_mana_branch_submits_three_steps_and_loops():
-    """高法力分支必须实际提交并结算再生→杀伐→透支三步循环。"""
+    """高法力分支按当前状态求值：再生→杀伐→透支（各一步）。"""
     engine = _engine_with_branch_spell("branch_high", mana=2)
     result = _resolve_branch_phase(engine, [
-        (
-            True,
-            [[{"x": 1, "target_ref": "player:0"},
-              {"x": 1, "target_ref": "enemy:0", "dodge": False},
-              {"x": 1, "target_ref": "player:0"}]],
-        ),
-        (False, []),
-        (False, []),
+        (True, {"use": True, "steps": _branch_steps(), "max_iterations": 1}),
+        (False, None),
+        (False, None),
     ])
     assert result and engine.state.player.is_alive
-    logs = [log for detail in result for log in detail.get("spell_logs", [])]
-    assert [log["daowen"] for log in logs if "daowen" in log] == ["再生", "杀伐", "透支"]
+    used = [log["daowen"] for log in _spell_logs(result, "血溅五步") if "daowen" in log]
+    assert used == ["再生", "杀伐", "透支"]
 
 
-def test_single_cycle_is_mana_neutral():
+def test_single_iteration_is_mana_neutral():
     """一轮循环法力净零：再生耗3、透支产3，法力回到起点，生命净+3。"""
     engine = _engine_with_loop_spell("loop_one", hp=40, mana=SEED_MANA)
     player = engine.state.player
 
-    _fire(engine, cycles=1)
+    _fire(engine, max_iterations=1)
 
     # 挨打5点后触发：再生3(耗3法力、回12生命) → 透支3(流血12、产3法力)
-    # 2026-09-13 透支改 4X 后，与再生4X 构成严格 4:1 对称，每轮净 0 生命。
     assert player.current_hp == 35          # 40-5+12-12
     assert player.current_mana == SEED_MANA  # 用3产3，回到起点
     assert player.total_healed == 12
 
 
-def test_loop_cannot_start_without_seed_mana():
-    """首步是【再生】，零法力起不来——循环自持但不自举。"""
+def test_loop_without_seed_mana_interrupts_as_mana_insufficient():
+    """首步是【再生】，零法力起不来：执行期中断（正常游戏结果，不是异常）。"""
     engine = _engine_with_loop_spell("loop_noseed", hp=40, mana=0)
-    with pytest.raises(ValueError, match="法力不足"):
-        _fire(engine, cycles=1)
+    player = engine.state.player
+
+    result = _fire(engine, max_iterations=1)
+
+    logs = _spell_logs(result)
+    assert logs and logs[0]["interrupted"] == "mana_insufficient"
+    assert player.current_hp == 35          # 只有挨打那 5 点
+    assert player.current_mana == 0
+    assert player.is_alive
 
 
-def test_loop_is_mana_neutral_across_many_cycles():
+def test_loop_is_mana_neutral_across_many_iterations():
     """多轮循环同样零法力自持，每轮净 0 生命（4:1 对称闭环）。"""
     engine = _engine_with_loop_spell("loop_many", hp=40, mana=SEED_MANA)
     player = engine.state.player
 
-    _fire(engine, cycles=10)
+    _fire(engine, max_iterations=10)
 
     assert player.current_mana == SEED_MANA  # 10轮之后法力仍回到起点
     assert player.total_healed == 120        # 10轮 × 再生3回12
@@ -231,21 +251,25 @@ def test_loop_is_mana_neutral_across_many_cycles():
 
 
 def test_cancer_still_caps_the_loop():
-    """癌变是天然闸门：累计回复达2×血限即命零，提交再多循环也止步于此。"""
-    for cycles in (11, 50):
-        engine = _engine_with_loop_spell(f"loop_cap_{cycles}", hp=40, mana=SEED_MANA)
+    """癌变是天然闸门：累计回复达2×血限即命零，max_iterations 再大也止步于此。"""
+    for max_iterations in (11, 50):
+        engine = _engine_with_loop_spell(f"loop_cap_{max_iterations}", hp=40, mana=SEED_MANA)
         player = engine.state.player
         cap = 2 * player.blood_limit
 
-        _fire(engine, cycles=cycles)
+        result = _fire(engine, max_iterations=max_iterations)
 
-        assert player.total_healed == cap   # 132，不因提交更多循环而继续累加
+        assert player.total_healed == cap   # 132，不因提交更多轮数而继续累加
         assert player.current_hp == 0
         assert not player.is_alive
+        # 第 11 轮的【透支】不再结算：循环因施法者命零而中止
+        logs = _spell_logs(result)
+        assert logs[-1]["interrupted"] == "caster_dead"
+        assert max_iterations == 11 or len(logs) == 22
 
 
-def test_validation_still_rejects_genuinely_unaffordable_loop():
-    """修复不得放水：没有产法力步骤的循环，法力不足照样必须拒绝。"""
+def test_unaffordable_pure_cost_loop_interrupts_without_crashing():
+    """没有产法力步骤的循环：法力不足时执行期中断，不吞成异常、不半途写状态。"""
     spell = {
         "name": "纯耗周天",
         "required_daowen": ["再生"],
@@ -253,6 +277,7 @@ def test_validation_still_rejects_genuinely_unaffordable_loop():
         "effect_flow": "发动再生X于自身→循环",
     }
     engine = _engine_with_loop_spell("loop_broke", hp=40, mana=0, spells=(spell,))
+    player = engine.state.player
 
     combat = engine.combat
     prepared = combat.prepare_monster_phase()
@@ -261,7 +286,9 @@ def test_validation_still_rejects_genuinely_unaffordable_loop():
     options = target["spell_options"]
     after = {s["spell_name"]: {"use": False} for s in options["after"]}
     assert "纯耗周天" in after
-    after["纯耗周天"] = {"use": True, "cycles": [[{"x": 3, "target_ref": "player:0"}]]}
+    after["纯耗周天"] = {"use": True,
+                        "steps": [{"x": 3, "target_ref": "player:0"}],
+                        "max_iterations": 5}
     spell_choices = {
         "before": {s["spell_name"]: {"use": False} for s in options["before"]},
         "after": after,
@@ -275,5 +302,9 @@ def test_validation_still_rejects_genuinely_unaffordable_loop():
                                       "blood_shadow": False,
                                       "spell_choices": spell_choices}]}],
     }]
-    with pytest.raises(ValueError, match="法力不足"):
-        combat.resolve_monster_phase(choices, prepared=prepared)
+    result = combat.resolve_monster_phase(choices, prepared=prepared)
+    logs = [log for detail in result for log in detail.get("spell_logs", [])
+            if log.get("spell") == "纯耗周天"]
+    assert logs and logs[0]["interrupted"] == "mana_insufficient"
+    assert player.current_mana == 0
+    assert player.is_alive

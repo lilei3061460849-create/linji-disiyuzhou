@@ -1,7 +1,9 @@
 """开放可扩展触发时点：新增时点=注册一条事件挂钩，注册后即被 DSL 接受并真实触发。
 
-用户约定：**凡是语法能接受的触发时必须真能触发**，不许出现“被识别却不触发”的死时点。
-因此 EXTRA_TRIGGERS 里只登记**确实在引擎接了线的时点**；本测试锁定该契约。
+用户约定：**凡是语法能接受的触发时必须要么真能触发、要么如实标注未接线**，
+不许出现“被识别却永不触发、还静默装作可用”的死时点。EXTRA_TRIGGERS 里只登记
+**确实在引擎接了线的时点**；“敌回始”属例外——DSL 接受，但生产 define_spell 以
+wired=False + “暂未接入战斗结算管线”警告如实标注（见本文件末尾回归测试）。
 
 验证点：
   1. 既有 11 个时点全部仍被 DSL 接受（防止后续把它改成不可识别/死时点）。
@@ -58,6 +60,47 @@ def test_unregistered_trigger_rejected():
     """未注册写法仍被拒绝（词汇表封闭，不会随意放行新时点）。"""
     with pytest.raises(SpellDslError):
         parse_spell_definition("对方施法前", "发动庇护 X于自身", _known())
+
+
+def test_unwired_trigger_is_honestly_labelled_by_production_define_spell(tmp_path):
+    """诚实契约：DSL 接受、但引擎尚未接线的时点，生产 define_spell 必须
+
+    wired=False + 明确“暂未接入战斗结算管线”警告——不许静默标注成会触发。
+    本测试走生产 define_spell（4 个 sim 探针都走各自的 _learn 捷径、复制了这条判定，
+    因此生产包装层此前没有任何覆盖），并用已接线时点做反向对照，防止退化成恒 False。
+    """
+    from engine.api import GameEngine
+    from tests.setup_support import begin_battle, begin_round, finish_initial_daowen
+
+    e = GameEngine(db_path=str(tmp_path / "g.db"), save_dir=str(tmp_path / "saves"),
+                   sealed_candidate_path=str(tmp_path / "cand.json"), rng_seed=5)
+    assert e.execute_action("setup_attributes", {
+        "name": "测试者", "blood_points": 11, "speed_points": 8, "mana_points": 6})["success"]
+    assert finish_initial_daowen(e)["success"]
+    assert e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})["success"]
+    assert e.execute_action("setup_choose_region", {"region": "龙心谷"})["success"]
+    player = e.state.player
+    player.dao_wen["庇护"] = DaoWenInstance(
+        DaoWen(name="庇护", formula="", cost_type="消耗", cost_formula="X", effect_formula=""),
+        x_value=0, x_free=True)
+    assert begin_battle(e)["success"]
+    assert begin_round(e)["success"]
+
+    r = e.execute_action("define_spell", {"spell": {
+        "name": "死时点探针", "trigger_condition": "敌回始", "required_daowen": ["庇护"],
+        "effect_flow": "发动庇护X于自身"}})
+    assert r["success"], r
+    assert r["result"]["wired"] is False
+    assert "暂未接入" in (r["result"].get("warning") or ""), r["result"]
+
+    # 反向对照：已接线时点仍必须 wired=True 且无警告。
+    player.actions_used_this_round = 0
+    r2 = e.execute_action("define_spell", {"spell": {
+        "name": "回始探针", "trigger_condition": "回始", "required_daowen": ["庇护"],
+        "effect_flow": "发动庇护X于自身"}})
+    assert r2["success"], r2
+    assert r2["result"]["wired"] is True
+    assert not r2["result"].get("warning"), r2["result"]
 
 
 def test_dodge_trigger_fires_on_successful_dodge():

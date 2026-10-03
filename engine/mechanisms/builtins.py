@@ -1,5 +1,6 @@
-"""已迁移到声明层的机制（当前 10 个：加害、龙鳞、自愈、帮派令、衰败、畸变·结算、
-焦黑发丝、洞察·结算、狂暴·标记、畸变·标记）。
+"""已迁移到声明层的机制（当前 18 个：加害、龙鳞、自愈、帮派令、衰败、畸变·结算、
+焦黑发丝、洞察·结算、狂暴·标记、畸变·标记、洗劫·夺碎片、缄默面具、龙爪、
+逼债·结算、清算·结算、赌命·结算、逼债·对账、清算·对账）。
 
 迁移协议（迁移前后必须同时满足）：
   1. 规则语义与旧实现完全一致（加害：amount+状态值；龙鳞：max(0, amount-状态值)；
@@ -31,7 +32,8 @@ from .conditions import (
     not_, relic_active,
 )
 from .registry import MECHANISMS, Mechanism
-from .targets import SELF, TARGET
+from .ledger import clear_ledger, ledger_of
+from .targets import RANDOM_ALL, SELF, TARGET, roll_pick
 from .triggers import Phase, Trigger, TriggerContext
 from .verbs import apply_verb
 
@@ -444,6 +446,151 @@ JIAOHHEIFASI = Mechanism(
     priority=10,
 )
 
+# ==========================================================================
+# 罪孽都市·账本三机制（2026-10-03 迁移）
+# 旧实现：combat.py 回始效果循环后的三段内嵌 for（逼债→清算→赌命），
+# 以及回终「状态消失即清账」块。三者共用一份账本存储（engine/mechanisms/ledger.py）
+# 与一个碎片动词（shards）。顺序逐字保持：逼债全体 → 清算全体 → 赌命全体。
+# ==========================================================================
+
+def _bizhai_effect(ctx: TriggerContext, targets: list) -> dict | None:
+    """【逼债·结算】[回始]目标失去X碎片；无力支付的部分记负债（真碎片扣负）。
+
+    逐字复刻旧 combat.py 逼债块：可支付量够 → `bizhai` 报告；不够 → `bizhai_debt`
+    报告（含 obligation/shards_now/debt_now）。每笔账在每次回始各结算一次（旧口径：
+    挂账不删，状态 ∞；状态消失由【逼债·对账】清账）。
+    """
+    entity = ctx.target
+    entries = list(ledger_of(entity, "逼债"))
+    if not entries:
+        return None
+    results = []
+    for entry in entries:
+        x = int(entry.get("x", 0))
+        if x <= 0:
+            continue
+        paid = apply_verb(ctx.combat, "shards", {
+            "target": entity, "delta": -x,
+            "ctx": {"timing": "round_start", "source": "逼债", "source_type": "daowen",
+                    "actor": entity, "target": entity, "mechanic": "cost", "subtype": "bizhai",
+                    "amount": -x, "tags": {"daowen", "round_start", "shards"}},
+        })
+        if paid["paid"]:
+            results.append({"type": "bizhai", "entity": entity.name, "lost_shards": x})
+        else:
+            results.append({"type": "bizhai_debt", "entity": entity.name,
+                            "obligation": x, "shards_now": paid["shards_now"],
+                            "debt_now": paid["debt"]})
+    return results or None
+
+
+def _qingsuan_effect(ctx: TriggerContext, targets: list) -> dict | None:
+    """【清算·结算】[回始]目标失去[施法者当前碎片]点格挡（每回始重读施法者碎片）。"""
+    entity = ctx.target
+    entries = list(ledger_of(entity, "清算"))
+    if not entries:
+        return None
+    results = []
+    for entry in entries:
+        caster = entry.get("caster")
+        if caster is None:
+            continue
+        drain = max(0, ctx.combat._shards_of(caster))
+        lost = min(entity.shield, drain)
+        entity.shield -= lost
+        results.append({"type": "qingsuan", "entity": entity.name,
+                        "lost_shield": lost, "drain": drain})
+    return results or None
+
+
+def _duming_effect(ctx: TriggerContext, targets: list) -> dict | None:
+    """【赌命·结算】[回始]按场上存活角色（玩家侧在前）投随机数，对应目标失去30%当前生命。
+
+    随机目标经 targets.roll_pick（DiceEngine，池名含回合号 → 可复现）；一次调用只投一次，
+    roll/of 直接进战报。伤害走 hp_loss 动词 = 旧 `_raw_hp_loss`（绕过格挡、计入失血追踪、
+    含命零判定与「失去生命」反应窗口）。
+    """
+    holder = ctx.target
+    state = ctx.state or getattr(ctx.combat, "state", None)
+    stream = f"赌命_r{state.current_round}"
+    picked = ctx.picks.get(stream)      # RANDOM_ALL 选择器已投过，这里只读结果
+    if picked is None:
+        return None
+    tgt = picked["entity"]
+    d = math.ceil(tgt.current_hp * 30 / 100)   # 2026-09-28 用户口径：失去30%**当前**生命
+    rd = apply_verb(ctx.combat, "hp_loss", {
+        "target": tgt, "amount": d,
+        "ctx": {"timing": "round_start", "source": "赌命", "source_type": "daowen",
+                "actor": holder, "target": tgt, "mechanic": "hp_loss", "subtype": "percent",
+                "amount": d, "tags": {"daowen", "round_start"}},
+    })
+    return {"type": "duming", "caster": holder.name, "target": tgt.name,
+            "roll": picked["roll"], "of": picked["of"], "damage": rd["lost"], **rd}
+
+
+BIZHAI_SETTLE = Mechanism(
+    name="逼债·结算",
+    when=Trigger.phase(Phase.ROUND_START_SETTLE),
+    effect=_bizhai_effect,
+    target=SELF,
+    # 旧实现按“账本是否有账”判定（不看状态：挂账在先、状态只是持续期标记），
+    # 故这里 condition=None，由 effect 读账本自判——账空即无报告条目。
+    condition=None,
+    priority=10,     # 旧顺序：逼债全体 → 清算全体 → 赌命全体
+)
+
+QINGSUAN_SETTLE = Mechanism(
+    name="清算·结算",
+    when=Trigger.phase(Phase.ROUND_START_SETTLE),
+    effect=_qingsuan_effect,
+    target=SELF,
+    condition=None,  # 旧实现按“是否有账”判定，账在状态在；无账即无报告条目
+    priority=20,
+)
+
+DUMING_SETTLE = Mechanism(
+    name="赌命·结算",
+    when=Trigger.phase(Phase.ROUND_START_SETTLE),
+    effect=_duming_effect,
+    target=RANDOM_ALL,   # RNG 目标选择（流名 赌命_r{回合}，一次投掷、结果进战报）
+    condition=all_(has_status("赌命", of="self"), is_alive(of="self")),
+    priority=30,
+)
+
+
+def _bizhai_reconcile_effect(ctx: TriggerContext, targets: list) -> None:
+    """【逼债·对账】状态消失即清账（∞ 逼债被驱散/清除后不再逐回始结算）。"""
+    if not ctx.target.has_status("逼债"):
+        clear_ledger(ctx.target, "逼债")
+    return None
+
+
+def _qingsuan_reconcile_effect(ctx: TriggerContext, targets: list) -> None:
+    """【清算·对账】持续X到期（状态被 tick 掉）后清账，防止多结算一轮。"""
+    if not ctx.target.has_status("清算"):
+        clear_ledger(ctx.target, "清算")
+    return None
+
+
+BIZHAI_RECONCILE = Mechanism(
+    name="逼债·对账",
+    when=Trigger.phase(Phase.ROUND_END_RECONCILE),
+    effect=_bizhai_reconcile_effect,
+    target=SELF,
+    condition=None,
+    priority=10,     # 锚点：回终 status tick 之后（原「F2 清账」位置）
+)
+
+QINGSUAN_RECONCILE = Mechanism(
+    name="清算·对账",
+    when=Trigger.phase(Phase.ROUND_END_RECONCILE),
+    effect=_qingsuan_reconcile_effect,
+    target=SELF,
+    condition=None,
+    priority=20,
+)
+
+
 MECHANISMS.register(JIAHAI)
 MECHANISMS.register(LONGLIN)
 MECHANISMS.register(ZIYU)
@@ -457,4 +604,9 @@ MECHANISMS.register(JIBIAN_MARKER)
 MECHANISMS.register(XIJIE_PASSIVE)
 MECHANISMS.register(SILENT_MASK)
 MECHANISMS.register(DRAGON_CLAW)
+MECHANISMS.register(BIZHAI_SETTLE)
+MECHANISMS.register(QINGSUAN_SETTLE)
+MECHANISMS.register(DUMING_SETTLE)
+MECHANISMS.register(BIZHAI_RECONCILE)
+MECHANISMS.register(QINGSUAN_RECONCILE)
 

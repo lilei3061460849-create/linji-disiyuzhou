@@ -49,7 +49,9 @@ engine/
 ├── battle_report.py     # 战报渲染（推演格式逐回合输出）
 ├── ai_player.py         # 统一 AI 玩家入口（开局/事件/战斗/校验/长期记忆）；2026-09-29 起全部决策由 LLM backend 给出
 ├── ai_memory.py         # 当前轮回者的身世、经历、性格证据与遗言压缩
-├── ai_tactics.py        # 规则型战术 AI（TacticalAI）。游戏中已停用（用户令 2026-09-29：全用 LLM），仅作 sim/ 对照实验基类保留
+├── ai_rules.py         # 生产侧本地规则助手（闪避/遗物/法器/友方道纹X的启发式）。engine/ 生产路径唯一可用的"非 LLM 决策"来源，严禁 import ai_tactics/ai_preview/sim
+├── ai_tactics.py        # 规则型战术 AI（TacticalAI）。游戏中已停用（用户令 2026-09-29：全用 LLM）；2026-10-02 起与生产路径隔离，仅供 sim/probes/测试直接实例化（engine/ 不引用它）
+├── ai_preview.py        # TacticalAI 的行动后果预演层；同属隔离的实验/模拟工具，生产路径不引用
 ├── dm_rulings.py        # DM 裁定库（SQLite + FTS，先例匹配）
 ├── rule_sync.py         # 多事实源同步（README/死者之书/物品索引/副本索引）
 ├── document_validation.py # Markdown标题、文件链接与锚点校验
@@ -166,7 +168,7 @@ engine.remove_personality(entity)       # 手工清除（幂等）
 
 ## 出手预算校验
 
-已实现，详见 AI_EXPERIENCE.md。要点：`action_count`按entity_type分流公式；轮回者基础2次出手（【蓄锐】消耗1次出手使下回合+1），普攻占用一次主动出手但不消耗速度；已装配的自动触发法术【镇魔印】不占主动出手。
+已实现，详见 AI_EXPERIENCE.md。要点：`action_count`按entity_type分流公式；轮回者出手预算是**基础 2 次**再叠加修正（【疯狂】+X/【无力】-X/【蓄锐·增】+1），普攻占用一次主动出手但不消耗速度；已装配的自动触发法术【镇魔印】不占主动出手。AI 侧口径：出手预算=**动作槽位数量**，每个槽位提交一条决策，槽位用完就结束己方行动阶段（不写死"每回合固定 2 次"、不把多次独立行动打包成一条）。
 消耗/不消耗出手的动作清单见下表备注。
 
 ## 最终的冠冕 / 第8场死斗
@@ -249,4 +251,4 @@ python tests/test_engine.py
 python -m pytest tests -q
 ```
 
-用户说「测试」时，默认由 AI 通过 `GameEngine.execute_action` 逐步点选手操并按 README《六、战斗推演格式》写战报。禁止把 `TacticalAI`、`sim/pick_best_report.py`、`test_with_ai.py`、sim 批量通关当作默认测试。`pytest` 只锁定回归。`报告.md` 只保留最新一次轮回记录。
+用户说「测试」时，默认由 AI 通过 `GameEngine.execute_action` 逐步点选手操并按 README《六、战斗推演格式》写战报。禁止把 `TacticalAI`（已被隔离的实验工具）、`sim/pick_best_report.py`、sim 批量通关当作默认测试。`pytest` 只锁定回归。`报告.md` 只保留最新一次轮回记录。

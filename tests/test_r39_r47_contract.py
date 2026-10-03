@@ -190,9 +190,9 @@ def _spell_combat():
 def test_r42_normal_explicit_spell_x_resolves():
     state, player, enemy, combat = _spell_combat()
     result = combat.resolve_attack(enemy, player, spell_choices={
-        "before": {"后发制人": {"use": True, "cycles": [[
+        "before": {"后发制人": {"use": True, "steps": [
             {"x": 4, "target_ref": "player:0", "dodge": False},
-        ]]}}, "after": {},
+        ]}}, "after": {},
     })
     assert result["spell_logs"] and player.current_hp == 60 and player.current_mana == 16
 

@@ -402,7 +402,7 @@ class RuleValidator:
                 return {
                     "severity": "warning",
                     "rule_name": "出手次数计算",
-                    "rule_text": "轮回者出手次数按 action_count（基础固定2次）",
+                    "rule_text": "出手按动作槽位记账：action_count = 基础2次 +【疯狂】/【无力】/【蓄锐·增】修正",
                     "violation_description": f"实际出手预算{actual}，规则计算应为{expected}",
                     "context": {"action_count": actual, "expected": expected}
                 }

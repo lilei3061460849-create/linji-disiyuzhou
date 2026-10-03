@@ -154,6 +154,24 @@ def test_cannot_parry_twice_in_same_round():
     assert not r2["success"] and "已处于招架" in r2["error"]
 
 
+def test_parry_preview_matches_actual_reduction_on_same_state():
+    """防漂移：declare_parry 的 reduction_preview 必须与真实减伤结算同口径。
+
+    预览公式写在 engine/api.py（声明返回），实际减免写在 engine/combat.py
+    （伤害咽喉 _apply_parry_reduction），两处各写了一遍 floor(当前生命×10%)。
+    2026-10-02 独立验证用变异复现过：只改 combat.py 的一处，旧契约测试仍全绿。
+    本测试把两侧锁在一起——任何一侧改口径都会失败。
+    """
+    e = _combat_engine("preview_parity")
+    p = e.state.player
+    hp = p.current_hp
+    r = e.execute_action("declare_parry", {})
+    assert r["success"], r
+    preview = r["result"]["reduction_preview"]
+    applied = 30 - e.combat._apply_parry_reduction(p, 30, "普通")
+    assert preview == applied == max(0, hp // 10), (preview, applied, hp)
+
+
 def test_parry_does_not_lock_next_round():
     """2026-09-28 新规则：不再有"上回合招架→本回合禁用"锁；下回合可以重新声明。"""
     e = _combat_engine("nolock")

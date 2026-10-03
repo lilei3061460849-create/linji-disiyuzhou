@@ -157,6 +157,55 @@ def _verb_mana(combat, spec, ctx):
     return {"delta": 0, "gained": 0, "lost": 0, "current_mana": target.current_mana}
 
 
+def _verb_shards(combat, spec, ctx):
+    """碎片统一增减动词（2026-10-03 迁移【逼债】时新增；见机制迁移台账）。
+
+    语义 = 旧 F2 逼债块的字面约定（逐字复刻，不改数值）：
+      - delta < 0（失去 X）：
+          * 可支付量（`_shards_of`：假碎片 + max(0, 真碎片)）够 → 走统一扣除
+            `_lose_shards_of`（玩家走 state.lose_shards，其余走 entity.lose_shards）；
+          * 不够 → **假碎片优先**扣完，差额从真碎片里扣（允许扣成负数=负债）。
+            旧口径的「负债不抵消仍可支付的假碎片」正是这一步的产物。
+      - delta > 0（获得 X）：真碎片 +X（玩家走 state.shards，其余走 entity.shards）。
+    返回 {delta, lost, gained, paid, shards_now, debt}；负债口径 debt = max(0, -shards_now)。
+    """
+    target = spec["target"]
+    delta = int(spec.get("delta", spec.get("amount", 0)))
+    is_player = target is combat.state.player
+    if delta > 0:
+        if is_player:
+            combat.state.shards += delta
+            now = combat.state.shards
+        else:
+            target.shards += delta
+            now = target.shards
+        return {"delta": delta, "lost": 0, "gained": delta, "paid": True,
+                "shards_now": now, "debt": max(0, -now)}
+    if delta == 0:
+        return {"delta": 0, "lost": 0, "gained": 0, "paid": True,
+                "shards_now": (combat.state.shards if is_player else target.shards), "debt": 0}
+
+    need = -delta
+    if combat._shards_of(target) >= need:
+        lost = combat._lose_shards_of(target, need)
+        now = combat.state.shards if is_player else target.shards
+        return {"delta": -lost, "lost": lost, "gained": 0, "paid": True,
+                "shards_now": now, "debt": max(0, -now)}
+    # 无力支付：假碎片优先，差额记负债（真碎片扣负）
+    if is_player:
+        use_fake = min(combat.state.fake_shards, need)
+        combat.state.fake_shards -= use_fake
+        combat.state.shards -= (need - use_fake)
+        now = combat.state.shards
+    else:
+        use_fake = min(target.fake_shards, need)
+        target.fake_shards -= use_fake
+        target.shards -= (need - use_fake)
+        now = target.shards
+    return {"delta": -need, "lost": use_fake + (need - use_fake), "gained": 0, "paid": False,
+            "shards_now": now, "debt": max(0, -now)}
+
+
 def _verb_depart(combat, spec, ctx):
     reason = spec.get("reason", "mechanism")
     spec["target"].depart_battle(reason)
@@ -178,5 +227,6 @@ register_verb("speed", _verb_speed)
 register_verb("shield", _verb_shield)
 register_verb("mutation", _verb_mutation)
 register_verb("mana", _verb_mana)
+register_verb("shards", _verb_shards)
 register_verb("depart", _verb_depart)
 register_verb("execute", _verb_execute)

@@ -163,10 +163,10 @@ def main() -> None:
     p.current_mana = 200
     before = p.current_hp
     sc = {"before": {}, "life_before": {}, "damage_after": {}, "after": {}}
-    sc["before"]["先发制人"] = {"use": True, "cycles": [[_step_cycle("enemy:0", 4)]]}
-    sc["life_before"]["亡语"] = {"use": True, "cycles": [[_step_cycle("enemy:0", 2)]]}
-    sc["damage_after"]["护佑"] = {"use": True, "cycles": [[_step_cycle("player:0", 15)]]}
-    sc["after"]["生生不息"] = {"use": True, "cycles": [[_step_cycle("player:0", 25)]]}
+    sc["before"]["先发制人"] = {"use": True, "steps": [_step_cycle("enemy:0", 4)], "max_iterations": 1}
+    sc["life_before"]["亡语"] = {"use": True, "steps": [_step_cycle("enemy:0", 2)], "max_iterations": 1}
+    sc["damage_after"]["护佑"] = {"use": True, "steps": [_step_cycle("player:0", 15)], "max_iterations": 1}
+    sc["after"]["生生不息"] = {"use": True, "steps": [_step_cycle("player:0", 25)], "max_iterations": 1}
     res = combat.resolve_attack(enemy, p, dodge=False, spell_choices=sc, entity_refs=refs)
     print(f"    命中扣血 {res.get('hp_lost')}（{before}→{p.current_hp}）盾={p.shield} → 窗口触发：")
     _dump(res.get("spell_logs"))

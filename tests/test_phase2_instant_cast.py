@@ -272,8 +272,10 @@ def test_instant_target_roles_match_existing_semantics():
               {"x": 1, "target_ref": _ref(engine, foe), "dodge": False}], refs)
     assert execution.definition.trigger == TriggerType.IMMEDIATE
     assert execution.definition.lifecycle == Lifecycle.INSTANT
+    from engine.spell_dsl import iter_action_steps
+    program = list(iter_action_steps(execution.definition.body))
     resolved = [execution.target_resolver(s, {"target_ref": e.target_ref}, player, foe, refs)[0]
-                for s, e in zip(execution.flat_steps, execution.request.cycles[0])]
+                for (_i, s), e in zip(program, execution.request.steps)]
     assert resolved == [foe, player, player, foe]
     # 与既有「目标发动道纹前」身份映射同一函数：目标→对方，自身/施法者→持有者
     assert combat._trigger_spell_subject("target", player, foe) == "actor"
@@ -385,7 +387,8 @@ def test_instant_routes_through_single_step_core(monkeypatch):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("flow,steps,why", [
-    ("发动杀伐X于目标→循环", [{"x": 1, "dodge": False}], "loop 属于 Phase 4"),
+    ("发动杀伐X于目标→循环", [{"x": 1, "dodge": False}], "max_iterations 非整数"),
+    ("发动杀伐X于目标→循环", [{"x": 1, "dodge": False}], "max_iterations 超安全阀"),
     ("发动杀伐X于目标→发动再生X于自身", [{"x": 1, "dodge": False}], "步数不完整"),
     ("发动杀伐X于目标", [{"x": 0, "dodge": False}], "X 非法"),
     ("发动杀伐X于目标", [{"x": 1, "dodge": "no"}], "dodge 非布尔"),
@@ -396,7 +399,13 @@ def test_instant_contract_errors_reject_without_side_effects(flow, steps, why):
     engine = _setup("p2_contract")
     player, foe = engine.state.player, engine.state.enemies[0]
     used0, mana0, hp0 = player.actions_used_this_round, player.current_mana, foe.current_hp
-    resp = _cast(engine, flow, steps, target=foe)
+    # 两个 max_iterations 用例走同一入口，只是带上非法的循环上限参数。
+    extra = {}
+    if "max_iterations 非整数" in why:
+        extra["max_iterations"] = "many"
+    elif "max_iterations 超安全阀" in why:
+        extra["max_iterations"] = 10 ** 9
+    resp = _cast(engine, flow, steps, target=foe, **extra)
     assert not resp["success"], why
     assert player.actions_used_this_round == used0
     assert player.current_mana == mana0 and foe.current_hp == hp0
@@ -442,7 +451,7 @@ def test_spell_lifecycle_field_defaults_and_roundtrip():
         "instant", "battle", "permanent"}
 
 
-def test_define_spell_keeps_permanent_and_rejects_instant():
+def test_define_spell_defaults_battle_and_rejects_instant():
     engine = _setup("p2_define")
     player = engine.state.player
     ok = engine.execute_action("define_spell", {"spell": {
@@ -450,8 +459,17 @@ def test_define_spell_keeps_permanent_and_rejects_instant():
         "trigger_condition": "受到伤害前", "effect_flow": "发动杀伐X于攻击者"}})
     assert ok["success"], ok
     spell = next(s for s in player.spells if s.name == "反击")
-    assert spell.lifecycle == LIFECYCLE_PERMANENT  # Phase 5 前保持旧永久语义
+    # Part 6：战斗中自创默认 battle 作用域（战终清除）；要跨战斗保留必须显式 permanent。
+    assert spell.lifecycle == LIFECYCLE_BATTLE
     assert spell.trigger == "受到伤害前"
+
+    player.actions_used_this_round = 0
+    ok2 = engine.execute_action("define_spell", {"spell": {
+        "name": "常驻反击", "required_daowen": ["杀伐"],
+        "trigger_condition": "受到伤害前", "effect_flow": "发动杀伐X于攻击者",
+        "lifecycle": "permanent"}})
+    assert ok2["success"], ok2
+    assert next(s for s in player.spells if s.name == "常驻反击").lifecycle == LIFECYCLE_PERMANENT
 
     player.actions_used_this_round = 0
     bad = engine.execute_action("define_spell", {"spell": {

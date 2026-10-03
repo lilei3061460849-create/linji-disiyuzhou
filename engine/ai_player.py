@@ -24,7 +24,13 @@ from .api import GameEngine
 from .validator import RuleValidator
 from .rule_sync import RuleSync
 from .dm_rulings import Interrupt
-from .ai_tactics import TacticalAI
+from .ai_rules import (
+    battle_start_relic_choices, round_start_relic_choices,
+    pick_wave_dodge_targets,
+    try_fire_godfather_revolver, try_select_shared_dragon_heart,
+    try_use_black_card, try_use_blood_wings, try_use_crime_vault,
+    try_use_dragon_wings,
+)
 from .ai_memory import context_for_ai, ensure_memory, remember_action
 
 
@@ -158,49 +164,64 @@ def _call_gemini(
 SYSTEM_PROMPT = """你是第四宇宙游戏的AI玩家。你的任务是根据游戏状态做出最优决策。
 
 核心规则：
-1. 你只能从"可用行动"列表中选择，不能编造新的行动
-2. 所有数值计算由游戏引擎完成，你不要自己计算
-3. 每次决策必须返回JSON格式：{"action_type": "...", "params": {...}, "reasoning": "..."}
-4. reasoning字段解释你的决策逻辑
+1. 你只能从"可用行动"列表中选择（action_type 与 params_schema 是唯一权威），不能编造行动或参数
+2. 所有数值计算与结算由游戏引擎完成：你不要自己算伤害/法力/层数，也不要替引擎预演结果
+3. 每次决策返回JSON格式：{"action_type": "...", "params": {...}, "reasoning": "..."}
+4. reasoning用一两句话说明你的决策依据
+5. **没有规则AI兜底**（2026-09-29起）：引擎不会在你提交失败后替你换一个动作，也不会用打分帮你
+   选牌；提交被拒就读 error / instruction，自己修正后用同一token重提
 
-战斗回合（2026-09-29 起轮回者的战斗行动全部由你决策，没有规则 AI 兜底）：
-- 你的回合按"可用行动"逐个出手；出手次数用完或不想再出手时，提交 prepare_monster_phase 结束己方行动
-- 每次提交前先看自己的致死进度（崩解/癌变/凡庸）与法力，不要把动作打到阈值上自爆
-- 他人回合的闪避/招架/反应法术选择同样由你在 resolve_attack / resolve_monster_phase 里显式提交
+决策粒度（动作槽位）：
+- 每个**动作槽位**提交**一条**决策；槽位数量由引擎的当前出手预算决定（基础2次，叠加【疯狂】+X、
+  【无力】-X、【蓄锐·增】+1等修正；怪物侧另有自己的预算）。不要假定任何固定的每回合次数，
+  更不要把多次独立行动打包进同一条提交
+- 槽位用完、或不想再出手时，提交 prepare_monster_phase 结束己方行动阶段
+- 他人回合的闪避/招架/反应法术，由你在 resolve_attack / resolve_monster_phase 里逐项显式提交，
+  引擎不会替你补默认值
+- 【招架】declare_parry：不占出手、不占速度；本轮每次受到伤害减去 floor(10%当前生命)，
+  减免按**结算那一刻**的生命计（掉血会同步削弱招架）；可抵挡次数=声明时的当前生命；
+  本回合已声明过就不能再声明
 
-决策原则：
-- 轮回者需要强烈的生存意志，不能消极等死
-- 怪物陷入困境时会尝试逃跑或进化
-- 资源（法力、速度、碎片）是稀缺的，要精打细算
-- 优先使用能改变局势的道纹，不要无脑输出
+法术（现行架构，2026-10）：
+- 你决定**提交什么**，引擎决定**如何执行**：结算时按当时的真实状态逐步执行
+- 触发型法术用 define_spell 在战斗中自创并立即生效，消耗1次出手；lifecycle默认battle
+  （本场战斗有效，战终自动清除），显式 permanent 才跨战斗保留
+- 瞬发法术用 cast（flow + steps）：一次出手依次发动多种已持有道纹，每一步都算一次"发动道纹"
+  （照常触发敌方"目标发动道纹前"反应、照付代价），执行完不留在角色身上
+  · steps 必须覆盖 flow 按深度优先顺序展开的**全部决策槽位**（if 的两个分支与循环体各计一条，
+    即使本次不一定走到）；执行器只消费实际走到的槽位，数量不符会被拒绝并报出应有步数
+  · 分支（若/否则）与循环都由**执行器在执行期**按真实状态求值；循环可用可选 max_iterations
+    限制本轮最多跑几轮。你不要自己展开循环、不要预演分支走向、不要替引擎推演每一步结果
+  · 某步付不起是**执行期中断**：已结算的步骤保留、出手不退——先算清总花费再提交
+- 生命周期三档：instant（瞬发，执行完不留存）／battle（本场有效，战终清除）／
+  permanent（跨战斗保留，代价与风险自担）
+- 反应深度（R-1）：法术的每一步视作一次发动，可引发对方的"目标发动道纹前"反应法术，
+  但反应产生的步骤不再引发新的反应（A→B 允许，A→B→A 被阻断）
 
-可选的action_type包括：
-- setup_attributes: 开局分配属性（params: name, blood_points, speed_points, mana_points，总和必须25；成功后先随机列出3件开局遗物候选）
-- setup_choose_initial_daowen: 从发现候选中显式选1种作为初始道纹（params: daowen_name）
-- setup_choose_resonance: 选择残韵（params: resonance_type，可选"转换"/"反转"/"曲解"）
-- setup_choose_region: 选择副本（params: region，可选"罪孽都市"/"扭曲都市"/"龙心谷"）
-- choose_discovered_relic: 从当前遗物发现候选中显式选1件（params: relic_name；开局遗物选定后从杀伐闭环发现3种初始道纹）
-- choose_discovered_item: 从当前消耗品发现候选中显式选1件（params: item_name）
-- pre_battle_action: 局外行动（params: sub_action + tier等）
-- use_daowen: 发动道纹（params: daowen_name, x, target_ref；等价于 cast 且 kind="daowen"）
-- use_spell: 装配/卸下内置法术（params: spell_name, disarm）；装配后在触发时点自动结算
-- define_spell: 战斗中自创一种触发型法术并立即生效，消耗1次出手（params: spell{name, required_daowen, trigger_condition, effect_flow}）；不能用来保存瞬发法术
-- cast: 施法。带 flow 参数时是瞬发法术（params: flow, target_ref, steps[{x, target_ref?, dodge, trigger_spell_choices}]）：
-  一次出手依次发动多种已持有道纹，只扣1次出手；每一步都是一次真正的发动道纹，照常触发敌方「目标发动道纹前」反应、受无神/缄默面具影响、照付代价；
-  每步提交自己的X，引擎按执行时真实剩余法力逐步结算，某步付不起就中断，已结算步骤保留，出手不退——所以先算清总花费再提交，别指望失败退款；
-  瞬发法术执行完不留在角色身上，想在触发时点自动反应请用 define_spell
-- prepare_attack: 准备一轮攻击并取得逐击合法目标、闪避、血影与法术反应选项
-- resolve_attack: 携带prepare返回的一次性token，逐击显式提交完整选择后原子结算；禁止使用旧attack/dodge_decision
-- declare_parry: 招架姿态（不花出手、不花速度）：本轮受到的攻击伤害-你10%当前生命（向下取整），每回合可抵挡次数=当前生命；按结算那一刻的生命计算
-- focus: 聚能，消耗1次出手，立即获得 ceil(20%法限) 法力（法限为0时白白浪费出手）
-- rest: 蓄锐，消耗1次出手，下回合出手+1
-- declare_evolution: 怪物进化·发动原初X（params: monster, daowen, x；仅当可用行动中出现evolution项且available=true时可对其中列出的困境怪物使用，x不得超过max_x_by_mutation，否则触发崩解自杀）
-- prepare_monster_phase: 只获取本次怪物阶段的合法道纹、目标、攻击与闪避选项
-- resolve_monster_phase: 携带prepare返回的一次性token，为全部可行动怪物提交完整选择后统一结算；禁止使用旧monster_phase
-- round_start: 回始
-- round_end: 回终
-- battle_start: 战始（持有可选战始遗物时，params.relic_choices必须逐件显式提交use及所需X/目标/残韵）
-- battle_end: 战终"""
+战斗决策要点：
+- 提交前先看自己的致死进度（崩解/癌变/凡庸）与法力，不要把动作打到阈值上自爆
+- 法力是**一场战斗一池**：消耗后不会自动回填（聚能除外），发动法力道纹会同步削弱本场剩余时间的普攻
+- 资源（法力/速度/碎片/代价承受力）是稀缺的，优先使用能改变局势的道纹，不要无脑输出；
+  允许冒险（赌一把/低血强杀），但要清楚代价
+
+常见 action_type（细节以"可用行动"里的 params_schema / note 为准）：
+- setup_attributes / setup_choose_initial_daowen / setup_choose_resonance / setup_choose_region
+- pre_battle_action（局外行动）、choose_discovered_relic / choose_discovered_item
+- use_daowen：发动一次道纹（params: daowen_name, x, target_ref, dodge, blood_shadow, spell_choices）
+- use_spell / undefine_spell：装配/卸下触发型内置法术（装配不花出手，触发时自动结算）
+- define_spell：战斗中自创触发型法术（params: spell{name, required_daowen, trigger_condition, effect_flow, lifecycle}）
+- cast：施法（带flow时=瞬发法术；params: flow, target_ref, steps[{x, target_ref?, dodge, trigger_spell_choices}], max_iterations?）
+- prepare_attack / resolve_attack：两阶段攻击（先prepare拿一次性token，再逐击显式提交闪避、血影与反应法术）
+- declare_parry（招架）、declare_evolution（怪物进化·发动原初X）
+- focus：聚能，1次出手→立即获得 ceil(20%法限) 法力（法限为0时白白浪费出手）
+- rest：蓄锐，1次出手→下[回始]获得【蓄锐·增】（出手+1，持续1回合）
+- prepare_monster_phase / resolve_monster_phase：怪物阶段两阶段接口（为每个actors条目提交完整选择）
+- battle_start / round_start / round_end / battle_end：阶段推进；存在候选时必须显式提交
+  relic_choices / spell_choices，不能省略（无候选时不用传）
+- 其余动作（use_resonance / consume_item / command_ally / resolve_ally_phases / deploy_employee /
+  法器与龙性动作等）见"可用行动"列表
+"""
+
 
 def _build_user_prompt(state: dict, available_actions: dict, context: str) -> str:
     return f"""当前游戏状态：
@@ -514,7 +535,6 @@ class PlaceholderBackend(AIBackend):
             # 精力耗尽时，可进入战始：按共享策略显式提交可选战始遗物（可以不用但不能不让用）。
             for action in available_actions.get("actions", []) or []:
                 if action.get("action_type") == "battle_start" and engine is not None:
-                    from sim.optional_actions import battle_start_relic_choices
                     return AIDecision("battle_start", {
                         "relic_choices": battle_start_relic_choices(engine),
                     }, "进入战始并提交可选遗物决策")
@@ -531,11 +551,6 @@ class PlaceholderBackend(AIBackend):
             engine = getattr(self, "engine", None)
             actions = available_actions.get("actions", [])
             if engine is not None:
-                from sim.optional_actions import (
-                    try_select_shared_dragon_heart, try_use_black_card,
-                    try_use_crime_vault, try_use_dragon_wings,
-                    try_use_blood_wings, try_fire_godfather_revolver,
-                )
                 artifact_map = {
                     "select_shared_dragon_heart": try_select_shared_dragon_heart,
                     "use_black_card": try_use_black_card,
@@ -578,7 +593,6 @@ class PlaceholderBackend(AIBackend):
                         if option["requires_target"]: dao["target_ref"] = option["target_options"][0]["ref"]
                         if option["dodge_submission"] == "per_target":
                             # 波及X：必须恰好提交X个目标（候选全量提交会在候选>X时被拒）。
-                            from sim.monster_targets import pick_wave_dodge_targets
                             dao["dodge_targets"] = pick_wave_dodge_targets(option)
                         if option["resolves_as"] == "疯狂": action_count += option["x"]
                         if option["resolves_as"] == "狂暴": action_count += 1
@@ -608,7 +622,6 @@ class PlaceholderBackend(AIBackend):
                     if action_type == "round_start":
                         engine = getattr(self, "engine", None)
                         if engine is not None:
-                            from sim.optional_actions import round_start_relic_choices
                             choices = round_start_relic_choices(engine)
                         else:
                             schema = action.get("params_schema", {}).get("relic_choices", {})
@@ -683,21 +696,28 @@ def create_ai_backend(provider: str = "placeholder", **kwargs) -> AIBackend:
 
 # ========== 统一 AI 玩家控制器 ==========
 
-class AIPlayer(TacticalAI):
-    """第四宇宙的统一 AI 入口。
+class AIPlayer:
+    """第四宇宙的统一 AI 入口 —— **正式决策路径全部由 LLM 后端完成**。
 
-    2026-09-29 用户令：**不用规则型 AI，全部决策交给 LLM**。
+    2026-09-29 用户令：不用规则型 AI，全部决策交给 LLM。
+    2026-10-02 架构收口：本类**不再继承** ``TacticalAI``，也不再有规则战术
+    兜底——旧的 ``tactical_combat=True`` 分支已删除。规则 AI（``engine/ai_tactics.py``）
+    保留为隔离的实验/模拟工具，只能由 sim、probes 与测试直接实例化，永远不参与
+    正式决策。
 
-    * 开局、选区、事件、局外行动、轮回者自己的战斗行动、他人回合的闪避/招架/反应，
-      全部由 ``backend``（LLM）根据 ``get_state()`` 与 ``available_actions`` 决策；
-    * 所有动作最终仍统一经过 ``GameEngine.execute_action`` 和规则校验器，
-      非法提交由引擎拒绝，不由规则 AI 代为兜底；
-    * 没有配置任何 LLM API key 时只能用 ``PlaceholderBackend``——它是离线测试桩，
-      按写死顺序提交合法动作，不是游戏策略。
-
-    继承 ``TacticalAI`` 只是为了兼容旧实验脚本/子类（sim/ 下的对照实验仍直接用它）。
-    战斗中不再调用 TacticalAI 的规则打分：``tactical_combat`` 默认 False；
-    只有显式传 ``tactical_combat=True`` 的旧实验脚本才会回到规则战术层。
+    决策契约：
+    * 开局、选区、事件、局外行动、轮回者自己的战斗行动、他人回合的闪避/招架/
+      反应法术，全部由 ``backend``（LLM）根据 ``get_state()`` 与
+      ``available_actions`` 决策；**每个动作槽位提交一条决策**，槽位数由引擎的
+      当前出手预算决定（基础 2 次，受【疯狂】/【无力】/【蓄锐·增】修正），
+      不写死「每回合固定 2 次」；
+    * LLM 只决定「提交什么」，引擎决定「如何执行」：If/Loop 由执行器按结算时的
+      真实状态逐步求值，LLM 不展开循环、不预演引擎；
+    * 一切动作仍统一经过 ``GameEngine.execute_action`` 与规则校验器：非法提交
+      被引擎拒绝并作为结果返回，**不会**改由规则 AI 兜底；
+    * LLM 返回非法动作或不可解析内容时，结果就是失败/中断，绝不静默切换策略；
+    * 没有配置任何 LLM API key 时用 ``PlaceholderBackend``——它是离线测试桩，
+      按写死的顺序提交合法动作，不是游戏策略，也不使用 TacticalAI。
     """
 
     def __init__(
@@ -709,18 +729,12 @@ class AIPlayer(TacticalAI):
         auto_validate: bool = True,
         max_retries: int = 3,
         verbose: bool = False,
-        actor: Any = None,
-        enemies: Optional[list] = None,
-        actor_ref: Optional[str] = None,
-        tactical_combat: bool = False,
     ):
-        super().__init__(game_engine, verbose=verbose, actor=actor,
-                         enemies=enemies, actor_ref=actor_ref)
+        self.engine = game_engine
+        self.verbose = verbose
         self.backend = backend or PlaceholderBackend()
-        # 2026-09-29 用户令：全部用 LLM 决策。默认战斗也由 backend 直接提交 action；
-        # 仅旧实验脚本显式传 tactical_combat=True 时才回到规则战术层。
-        self.tactical_combat = tactical_combat
-        # 让后端能读到引擎实时状态，用于可选法器/遗物的显式决策（可以不用但不能不让用）。
+        # 让后端能读到引擎实时状态，用于可选法器/遗物的显式决策
+        # （可以不用，但不能不让用）。
         if not getattr(self.backend, "engine", None):
             try:
                 self.backend.engine = game_engine
@@ -730,13 +744,17 @@ class AIPlayer(TacticalAI):
         self.rule_sync = rule_sync
         self.auto_validate = auto_validate
         self.max_retries = max_retries
-        
+
         self._decision_history: list[dict] = []
         self._violation_callbacks: list[Callable] = []
         # 若玩家已在 AI 创建前完成属性分配，身份记忆立即生成；否则在 setup
         # 成功后的第一次统一决策前惰性生成。
         self._ensure_player_memory()
-    
+
+    @property
+    def player(self):
+        return self.engine.state.player
+
     def on_violation(self, callback: Callable):
         """注册违规回调"""
         self._violation_callbacks.append(callback)
@@ -800,55 +818,6 @@ class AIPlayer(TacticalAI):
                 state.setdefault("state", {})["ai_memory_context"] = context_for_ai(memory)
         return state
 
-    def take_action(self) -> Optional[dict]:
-        """统一 AI 的一次战斗行动：执行后自动留下经历并更新性格证据。"""
-        self._ensure_player_memory()
-        before = self._memory_snapshot()
-        result = super().take_action()
-        if result is not None and result.get("success"):
-            self._remember_success(before, result, getattr(self, "last_decision", None))
-        return result
-
-    def _is_tactical_combat_step(self) -> bool:
-        """判断当前是否轮到统一 AI 处理轮回者的战斗行动。"""
-        state = self.engine.state
-        return (
-            state.phase == "in_combat"
-            and self.tactical_combat
-            and state.combat_subphase == "player_actions"
-            and not state.pending_attack
-            and not state.pending_monster_phase
-            and state.player is not None
-            and state.player.is_alive
-        )
-
-    def _run_tactical_step(self, context: str = "") -> dict:
-        """执行一次战斗决策，并把战术层结果包装成统一 AI 记录。"""
-        # play_turn 是按“一个决策”调用的，而 TacticalAI.take_turn 是按“完整回合”
-        # 调用的；这里按引擎回合号自动初始化一次回合记账，避免调用方再维护第二个 AI。
-        round_no = self.engine.state.current_round
-        if getattr(self, "_unified_round_no", None) != round_no:
-            self.new_round()
-            self._unified_round_no = round_no
-
-        result = self.take_action()
-        decision_info = getattr(self, "last_decision", None) or {}
-        if result is None:
-            # 战术候选全部被安全过滤或已无输出时，统一 AI 负责结束己方行动，
-            # 不把“无动作”留给调用方猜测。
-            decision = AIDecision(
-                "prepare_monster_phase", {},
-                "没有合法且安全的战斗候选，结束轮回者行动阶段",
-            )
-            result = self.engine.execute_action(decision.action_type, decision.params)
-        else:
-            decision = AIDecision(
-                decision_info.get("action", result.get("action", "tactical_action")),
-                decision_info.get("params", {}),
-                decision_info.get("label", "统一战斗策略实时决策"),
-            )
-        return self._finish_decision(decision, result)
-
     def _finish_decision(self, decision: AIDecision, result: dict) -> dict:
         """统一执行校验、违规回调、规则同步和历史记录。"""
         validation = {"valid": True, "violations": [], "warnings": []}
@@ -889,15 +858,12 @@ class AIPlayer(TacticalAI):
         }
 
     def play_turn(self, context: str = "") -> dict:
-        """执行一个统一 AI 决策。
+        """执行一个统一 AI 决策（每个动作槽位一条）。
 
-        所有阶段（含轮回者战斗行动）都由后端（LLM）决策（2026-09-29 用户令）。
-        只有显式 tactical_combat=True 的旧实验脚本，战斗阶段才进入 TacticalAI。
-
-        顺序（2026-09-19 性能优化）：先判「能不能走战术路径」，再决定要不要
-        付整份状态序列化的代价。`get_state()` 会序列化 GameState 并生成
-        available_actions，只有**高层决策**需要它；战术路径走引擎对象本身，
-        不读这份 JSON。因此战斗回合不再为一次战术决策白做一遍状态序列化。
+        所有阶段（含轮回者战斗行动、他人回合的闪避/招架/反应法术）都由后端
+        （LLM）决策（2026-09-29 用户令）。没有规则 AI 分支，也没有兜底：
+        `get_state()` 生成状态与 available_actions，LLM 提交一个动作，
+        引擎负责校验、结算与执行期语义（If/Loop、法力不足中断等）。
         """
         # 记忆与是否序列化状态无关：先保持既有副作用（命零前建立当轮记忆），
         # 待裁定判断改为直接读引擎字段——与 get_state()["pending_interrupts"] 同源。
@@ -910,9 +876,6 @@ class AIPlayer(TacticalAI):
                 "interrupts": [i.to_dict() for i in self.engine._pending_interrupts],
                 "instruction": "有中断等待DM裁定，AI无法继续决策",
             }
-        if self._is_tactical_combat_step():
-            return self._run_tactical_step(context)
-
         state = self._attach_memory_context(self.engine.get_state())
         # get_state() 已经把 available_actions 生成好了（纯读，无副作用），
         # 不再重复生成一遍。

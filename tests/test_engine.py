@@ -700,9 +700,9 @@ def test_spells_trigger():
     st.enemies.append(m)
     combat = CombatEngine(st, DiceEngine())
     r = combat.resolve_attack(m, st.player, spell_choices={
-        "before": {"后发制人": {"use": True, "cycles": [[
+        "before": {"后发制人": {"use": True, "steps": [
             {"x": 10, "target_ref": "player:0", "dodge": False},
-        ]]}},
+        ]}},
         "after": {},
     })
     assert st.player.current_hp == 60, f"后发制人应挡掉20伤，实HP{st.player.current_hp}"
@@ -718,9 +718,9 @@ def test_spells_trigger():
     st2.player.current_speed = 0
     r2 = combat2.resolve_attack(m2, st2.player, spell_choices={
         "before": {},
-        "after": {"生生不息": {"use": True, "cycles": [[
+        "after": {"生生不息": {"use": True, "steps": [
             {"x": 4, "target_ref": "player:0", "dodge": False},
-        ]]}},
+        ]}},
     })
     assert st2.player.current_hp == 60, f"生生不息应奶回满，实HP{st2.player.current_hp}"
     print(f"  ✓ 生生不息：失血后发动再生，奶回满(HP{st2.player.current_hp})")

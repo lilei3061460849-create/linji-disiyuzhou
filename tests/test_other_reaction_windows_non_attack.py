@@ -132,7 +132,7 @@ def test_windows_do_not_double_fire_on_attack():
     spell_choices = {
         "before": {},
         "after": {"再生-失去生命后": {"use": True,
-                                "cycles": [[{"x": 1, "target_ref": "player:0", "dodge": False}]]}},
+                                "steps": [{"x": 1, "target_ref": "player:0", "dodge": False}]}},
     }
     res = combat.resolve_attack(enemy, player, spell_choices=spell_choices, entity_refs=refs)
     # 窗口结算了一次生生不息。

@@ -263,6 +263,13 @@ class ActionPreview:
                 # 移除的。多怪局首杀后场上有尸体，不带 alive_before 时尸体在 diff
                 # 里恒 dead=True → 下游 _digest_diff 把「打自己」误归纳成 remove。
                 "alive_before": bool(eb.is_alive),
+                # 2026-10-03：补法力/速度/异变的前后值（纯追加字段）。怪物互斗的
+                # 训练评分要区分「这次发动花了多少法力/速度、堆了多少异变」，
+                # 而原来只有生命前后值；既有消费者只读指定键，不受影响。
+                "mana_before": eb.current_mana, "mana_after": (ea.current_mana if ea else 0),
+                "speed_before": eb.current_speed, "speed_after": (ea.current_speed if ea else 0),
+                "mut_before": getattr(eb, "mutation_count", 0),
+                "mut_after": getattr(ea, "mutation_count", 0) if ea else 0,
             })
 
         # 事件流增量 = 完整效果链（含被触发的被动/监听/反噬）

@@ -435,8 +435,11 @@ def format_battle_end(be_result: dict) -> list[str]:
 def validate_battle_report_actions(report_text: str) -> dict:
     """
     程序化校验战报中所有战斗与出手的合规性：
-    1. 1出手=1道纹：每一次出手块内部至多包含 1 个独立的主动道纹/法术/能力声明，严禁合并打包发动；
-    2. 行动预算：单回合内各角色出手次数严格受限（轮回者按 action_count，当前规则固定2次），严禁超额出手；
+    1. 1出手=1条决策：每一次出手块内部至多包含 1 条**独立**行动声明，严禁把多次独立出手
+       打包进同一次出手。注意现行法术架构：一次【瞬发法术】（cast）本身就是一条决策，
+       它在一个出手内按步骤依次发动多种道纹、逐步结算（每步各算一次发动道纹）——
+       写明「瞬发法术」的出手块按一条决策计，不判违规；
+    2. 行动预算：单回合内各角色出手次数严格受限（轮回者按 `action_count`＝基础 2 次＋【疯狂】/【无力】/【蓄锐·增】等修正；报告若写明出手数则按报告），严禁超额出手；
     3. 死斗交替与余量规则：在对手仍有剩余出手预算时，双方严格 1 对 1 对称交替；当一方出手耗尽后，另一方可连续执行剩余出手（符合正文铁律）；
     4. 出手序号必须单调递增。
     若发现任何违规，立即抛出 ValueError 并指出具体场次、回合与出手号。
@@ -488,7 +491,10 @@ def validate_battle_report_actions(report_text: str) -> dict:
                 actor_match = re.search(r"出手\d+（(.+?)）", header_line)
                 actor_name = actor_match.group(1) if actor_match else ""
 
-                # 校验1：单次出手内声明的独立主动发动数
+                # 校验1：单次出手内声明的独立主动发动数。
+                # 例外：一次【瞬发法术】（cast）是一条决策，其多个步骤在一个出手内
+                # 依次发动、逐步结算（R-1：法术每一步 = 一次发动道纹），不是"合并打包"。
+                is_instant_spell = bool(re.search(r"瞬发法术|法术流程|多步施法|\bcast\b", a_text))
                 daowen_decls = re.findall(r"\[动作声明\].*?发动(?:专属道纹|大招|全力重击|满额|终结大招|终结技)?【(.+?)】|\[动作声明\].*?使用(?:废墟工具)?【(.+?)】|(?<!被动)发动(?:专属道纹|大招|全力重击|满额|终结大招|终结技)?【(.+?)】", a_text)
                 real_activations = []
                 for d in daowen_decls:
@@ -497,7 +503,7 @@ def validate_battle_report_actions(report_text: str) -> dict:
                         real_activations.append(act)
 
                 clean_activations = [x for x in real_activations if "处于" not in x and "获得状态" not in x and "触发" not in x and "被动" not in x]
-                if len(clean_activations) > 1:
+                if len(clean_activations) > 1 and not is_instant_spell:
                     errors.append(
                         f"[{first_line} 第{r_num}回合 {header_line}] 违规合并发动了多个道纹/能力 "
                         f"({clean_activations})，违反“1出手=1道纹”行动预算铁律！"

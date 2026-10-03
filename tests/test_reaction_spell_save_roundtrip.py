@@ -60,8 +60,8 @@ def _fire_reaction_spell(e, spell_x=2):
                   if sp["spell_name"] == "先发制人"), None)
     assert steps, "靶怪攻击的提交里应带出【先发制人】候选"
     before["先发制人"] = {"use": True,
-                       "cycles": [[{"x": spell_x, "target_ref": steps[0]["target_ref"],
-                                    "dodge": False}]]}
+                       "steps": [{"x": spell_x, "target_ref": steps[0]["target_ref"],
+                                  "dodge": False}]}
     after = {sp["spell_name"]: {"use": False}
              for sp in target_option.get("spell_options", {}).get("after", []) or []}
     hits = [{"target_ref": "player:0", "dodge": False, "blood_shadow": False,

@@ -89,7 +89,7 @@ def test_after_life_lost_no_double_fire_on_attack():
     spell_choices = {
         "before": {},
         "after": {"生生不息": {"use": True,
-                            "cycles": [[{"x": 1, "target_ref": "player:0", "dodge": False}]]}},
+                            "steps": [{"x": 1, "target_ref": "player:0", "dodge": False}]}},
     }
     res = combat.resolve_attack(enemy, player, spell_choices=spell_choices, entity_refs=refs)
     # 窗口结算一次：生生不息执行

@@ -390,7 +390,15 @@ def evaluate_condition(node, resolver) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# 三、效果流程：发动道纹步骤 + 条件分支 + 循环标记
+# 三、效果流程：发动道纹步骤 + 条件分支 + 循环
+#
+# AST 三种节点（执行器的程序体，不在解析/准备阶段展开）：
+#   ActionStep  发动单个道纹（法术的一步）
+#   IfStep      条件分支；条件在**执行到本节点时**按当时的真实状态求值
+#   LoopStep    循环；由执行器自己迭代，条件/资源每轮重新读取
+#
+# 旧架构把 IfStep 在准备阶段展开、把 LoopStep 交给调用方用 cycles 预展开，
+# 两个表示现在都已删除：调用方只提交"程序 + 每步决策"，控制流归执行器。
 # ---------------------------------------------------------------------------
 
 _TARGET_ALIASES = {
@@ -407,6 +415,8 @@ _ACTION_RE = re.compile(
 _ACTION_NO_TARGET_RE = re.compile(r"发动\s*(?P<daowen>[\u4e00-\u9fa5]{2,4})\s*X\b")
 
 _LOOP_MARKERS = ("循环直到法力耗尽", "循环至法力耗尽", "循环", "（循环）", "(循环)")
+# 定次循环：仅在本节点末尾识别"循环N次"（N≥1）。
+_LOOP_COUNT_RE = re.compile(r"循环\s*(\d+)\s*次\s*$")
 
 
 @dataclass(frozen=True)
@@ -420,6 +430,20 @@ class IfStep:
     condition: Any
     then_steps: tuple
     else_steps: tuple
+
+
+@dataclass(frozen=True)
+class LoopStep:
+    """循环体（用户法则二【循环】）。
+
+    max_iterations=None 表示规则循环：只要还能执行（法力足够、流程未中断、
+    本轮至少实际执行了一步），就继续下一轮；由执行器在每轮开始前重新读取
+    当前状态。max_iterations=N 表示写法"循环N次"的定次循环。
+
+    工程安全阀 MAX_SPELL_LOOP_ITERATIONS 不属于游戏规则，见 spell_execution。
+    """
+    body: tuple
+    max_iterations: Optional[int] = None
 
 
 def _split_top_level(text: str, sep: str) -> list[str]:
@@ -445,6 +469,64 @@ def _split_top_level(text: str, sep: str) -> list[str]:
     return [p for p in (s.strip() for s in parts) if p]
 
 
+def _split_first_top_level(text: str, sep: str):
+    """在括号深度 0 处第一次出现 sep 的位置切分；找不到返回 None。"""
+    depth = 0
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if ch in "(（":
+            depth += 1
+        elif ch in ")）":
+            depth -= 1
+        if depth == 0 and text[i:i + len(sep)] == sep:
+            return text[:i], text[i + len(sep):]
+        i += 1
+    return None
+
+
+def _count_top_level(text: str, sep: str) -> int:
+    depth = 0
+    count = 0
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if ch in "(（":
+            depth += 1
+        elif ch in ")）":
+            depth -= 1
+        if depth == 0 and text[i:i + len(sep)] == sep:
+            count += 1
+            i += len(sep)
+            continue
+        i += 1
+    return count
+
+
+def _unwrap_group(text: str) -> str:
+    """如果整段文本被一对括号包住（分组写法），脱掉这层括号。"""
+    t = text.strip()
+    if len(t) >= 2 and t[0] in "(（" and t[-1] in ")）":
+        depth = 0
+        for i, ch in enumerate(t):
+            if ch in "(（":
+                depth += 1
+            elif ch in ")）":
+                depth -= 1
+                if depth == 0 and i != len(t) - 1:
+                    return t  # 并没有包住整段
+        return t[1:-1].strip()
+    return t
+
+
+def _split_steps_text(text: str) -> list[str]:
+    """把一个分支体切成若干子句：子句分隔符"；"与"→"等价（顶层）。"""
+    out: list[str] = []
+    for part in _split_top_level(text, "；"):
+        out.extend(_split_top_level(part, "→"))
+    return [p for p in (s.strip() for s in out) if p]
+
+
 def _parse_action_clause(clause: str, known_daowen: set[str]) -> ActionStep:
     m = _ACTION_RE.search(clause)
     if m:
@@ -467,59 +549,97 @@ def _parse_action_clause(clause: str, known_daowen: set[str]) -> ActionStep:
     daowen = m.group("daowen")
     if daowen not in known_daowen:
         raise SpellDslError(f"效果步骤【{clause}】引用了不存在的道纹【{daowen}】")
+    tail = clause.replace(m.group(0), "", 1).strip()
+    if tail:
+        raise SpellDslError(
+            f"效果步骤【{clause}】在动作之后还有无法识别的内容【{tail}】；"
+            f"多个动作请用“→”或“；”分隔，嵌套条件分支请用括号分组")
     return ActionStep(daowen=daowen, target=target)
 
 
 def parse_effect_flow(text: str, known_daowen: set[str]):
     """解析效果流程文本，返回 (steps, loop: bool)。
 
-    steps 是 ActionStep / IfStep 的列表；顶层用"→"分隔多个步骤。
-    条件分支写法："若<条件>则<效果子句>[否则<效果子句>]"，子句内可用
-    "；"分隔多个动作（分支内不支持再嵌套 if，保持语法可控）。
-    循环写法：整体文本以 循环标记 结尾（如"...→循环直到法力耗尽"）。
+    steps 是 ActionStep / IfStep 的列表；若文本声明了循环，则 steps 是
+    单独一个 LoopStep（循环体为其余步骤）。
+    顶层用"→"分隔多个步骤；条件分支写法："若<条件>则<效果子句>[否则<效果子句>]"，
+    子句内可用"；"分隔多个步骤，且允许继续嵌套条件分支（不设人为深度上限）。
+    循环写法（整条流程末尾）："循环"、"循环直到法力耗尽"（规则循环），
+    或"循环N次"（定次循环，N≥1）。
     """
     raw = (text or "").strip()
     if not raw:
         raise SpellDslError("效果流程不能为空")
 
     loop = False
+    max_iterations: Optional[int] = None
     body = raw
-    for marker in _LOOP_MARKERS:
-        if body.endswith(marker):
-            body = body[: -len(marker)].rstrip("→ ")
-            loop = True
-            break
+    count_match = _LOOP_COUNT_RE.search(body)
+    if count_match:
+        max_iterations = int(count_match.group(1))
+        if max_iterations < 1:
+            raise SpellDslError("效果流程【%s】的循环次数必须≥1" % raw)
+        body = body[: count_match.start()].rstrip("→ ")
+        loop = True
+    else:
+        for marker in _LOOP_MARKERS:
+            if body.endswith(marker):
+                body = body[: -len(marker)].rstrip("→ ")
+                loop = True
+                break
 
     if not body:
         raise SpellDslError("效果流程去除循环标记后为空")
 
     steps = []
     for clause in _split_top_level(body, "→"):
-        if clause.startswith("若"):
-            steps.append(_parse_if_clause(clause, known_daowen))
-        else:
-            steps.append(_parse_action_clause(clause, known_daowen))
+        steps.append(_parse_clause(clause, known_daowen))
     if not steps:
         raise SpellDslError(f"效果流程【{raw}】未解析出任何有效步骤")
+    if loop:
+        steps = [LoopStep(body=tuple(steps), max_iterations=max_iterations)]
     return steps, loop
 
 
+def _parse_clause(clause: str, known_daowen: set[str]):
+    """解析一个子句：条件分支或单步动作（条件分支内部可继续嵌套）。"""
+    if clause.startswith("若"):
+        return _parse_if_clause(clause, known_daowen)
+    return _parse_action_clause(clause, known_daowen)
+
+
 def _parse_if_clause(clause: str, known_daowen: set[str]) -> IfStep:
+    """解析"若<条件>则<子句集>[否则<子句集>]"。
+
+    嵌套条件分支时必须用括号把分支体分组（否则无法判定"否则"属于哪一层）：
+      若A则（若B则C否则D）否则E
+    未用括号时，只允许一层"否则"，且"若"出现在分支体里而没有分组会直接报错，
+    不会静默丢弃内容。
+    """
     if not clause.startswith("若"):
         raise SpellDslError(f"条件分支【{clause}】必须以“若”开头")
-    rest = clause[1:]
-    if "则" not in rest:
+    split = _split_first_top_level(clause[1:], "则")
+    if split is None:
         raise SpellDslError(f"条件分支【{clause}】缺少“则”")
-    cond_text, remainder = rest.split("则", 1)
-    if "否则" in remainder:
-        then_text, else_text = remainder.split("否则", 1)
-    else:
+    cond_text, remainder = split
+    else_split = _split_first_top_level(remainder, "否则")
+    if else_split is None:
         then_text, else_text = remainder, ""
+    else:
+        then_text, else_text = else_split
+    if _count_top_level(remainder, "否则") > 1:
+        # 多个顶层"否则"无法判定归属：要求显式括号分组。
+        if not (then_text.strip().startswith(("(", "（"))
+                and then_text.strip().endswith((")", "）"))):
+            raise SpellDslError(
+                f"条件分支【{clause}】出现多个顶层“否则”，无法判定归属；"
+                f"嵌套条件分支请用括号分组，如：若A则（若B则C否则D）否则E")
     condition = parse_condition(cond_text)
-    then_steps = tuple(_parse_action_clause(c, known_daowen)
-                        for c in _split_top_level(then_text, "；"))
-    else_steps = tuple(_parse_action_clause(c, known_daowen)
-                        for c in _split_top_level(else_text, "；")) if else_text.strip() else ()
+    then_text = _unwrap_group(then_text)
+    else_text = _unwrap_group(else_text)
+    then_steps = tuple(_parse_clause(c, known_daowen) for c in _split_steps_text(then_text))
+    else_steps = tuple(_parse_clause(c, known_daowen) for c in _split_steps_text(else_text)) \
+        if else_text.strip() else ()
     if not then_steps:
         raise SpellDslError(f"条件分支【{clause}】的“则”分支不能为空")
     return IfStep(condition=condition, then_steps=then_steps, else_steps=else_steps)
@@ -586,6 +706,8 @@ def _check_global_trigger_targets(trigger: str, steps) -> None:
                 _check_condition_subjects_no_attacker(trigger, step.condition)
             _check_global_trigger_targets(trigger, step.then_steps)
             _check_global_trigger_targets(trigger, step.else_steps)
+        elif isinstance(step, LoopStep):
+            _check_global_trigger_targets(trigger, step.body)
 
 
 
@@ -605,15 +727,12 @@ def parse_instant_flow(effect_flow: str, known_daowen: set[str]) -> ParsedSpell:
     """瞬发法术（cast(flow=...)）的效果流程解析入口。
 
     与 parse_spell_definition 共用 parse_effect_flow 与目标身份校验，只是触发
-    时机固定为 TRIGGER_INSTANT，不需要触发条件文本。
-    循环标记在瞬发里暂不支持：最终 LoopStep 语义属于 Phase 4，本阶段直接拒绝，
-    避免临时设计一套循环语义。
+    时机固定为 TRIGGER_INSTANT，不需要触发条件文本。循环由统一的 LoopStep
+    执行器处理，瞬发与触发型法术语义一致（规则循环/定次循环都支持）。
     """
     steps, loop = parse_effect_flow(effect_flow, known_daowen)
-    if loop:
-        raise SpellDslError("瞬发法术暂不支持循环（循环执行器尚未接入瞬发路径）")
     _check_global_trigger_targets(TRIGGER_INSTANT, steps)
-    return ParsedSpell(trigger=TRIGGER_INSTANT, steps=steps, loop=False)
+    return ParsedSpell(trigger=TRIGGER_INSTANT, steps=steps, loop=loop)
 
 
 def describe_condition(node) -> str:
@@ -629,7 +748,7 @@ def describe_condition(node) -> str:
 
 
 def collect_step_daowen(steps) -> set[str]:
-    """递归收集一个 steps 列表里出现过的所有道纹名（含 if 分支内部）。"""
+    """递归收集一个 steps 列表里出现过的所有道纹名（含 if 分支/循环体内部）。"""
     names: set[str] = set()
     for step in steps:
         if isinstance(step, ActionStep):
@@ -637,4 +756,47 @@ def collect_step_daowen(steps) -> set[str]:
         elif isinstance(step, IfStep):
             names |= collect_step_daowen(step.then_steps)
             names |= collect_step_daowen(step.else_steps)
+        elif isinstance(step, LoopStep):
+            names |= collect_step_daowen(step.body)
     return names
+
+
+def _walk_action_steps(steps, optional: bool = False):
+    """深度优先枚举程序里的 ActionStep（含所有条件分支与循环体）。
+
+    optional=True 表示该步位于条件分支内部，本次执行不一定会走到；
+    决策列表仍然必须覆盖它（校验与结算永远看到同一组槽位）。
+    """
+    for step in steps:
+        if isinstance(step, ActionStep):
+            yield step, optional
+        elif isinstance(step, IfStep):
+            yield from _walk_action_steps(step.then_steps, True)
+            yield from _walk_action_steps(step.else_steps, True)
+        elif isinstance(step, LoopStep):
+            yield from _walk_action_steps(step.body, optional)
+
+
+def iter_action_steps(steps):
+    """按规范的深度优先顺序枚举程序里全部 ActionStep。
+
+    执行器用这个顺序给每一步绑定调用方提交的决策；未执行到的分支的决策被忽略，
+    循环体里的步骤在每一轮复用同一条决策（X/目标由调用方一次提交）。
+    产出 (index, step)：index 是稳定下标，供决策列表对齐。
+    """
+    for index, (step, _optional) in enumerate(_walk_action_steps(steps)):
+        yield index, step
+
+
+def iter_action_slots(steps):
+    """同 iter_action_steps，但额外给出该步是否位于条件分支内（schema 用）。
+
+    产出 (index, step, optional)。顺序与 iter_action_steps 完全一致。
+    """
+    for index, (step, optional) in enumerate(_walk_action_steps(steps)):
+        yield index, step, optional
+
+
+def count_action_steps(steps) -> int:
+    """程序里全部 ActionStep 的数量（决策列表必须与之等长）。"""
+    return sum(1 for _ in _walk_action_steps(steps))
