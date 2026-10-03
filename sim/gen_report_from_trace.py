@@ -176,6 +176,7 @@ paper.append("@@SYN_HEADLINE@@")   # 占位：结论速览在文件末尾按实�
 paper.append("")
 
 # ---------------------------------------------------------------- 开局
+_compact_idx = len(paper)          # 压缩章节插入点（按实测数据在文末统一生成）
 paper.append("## 一、开局")
 paper.append("")
 setup_names = {"setup_attributes": "分配属性", "choose_discovered_relic": "选择发现遗物",
@@ -501,6 +502,64 @@ def _syn_layer(types: str) -> str:
     if "ORDER_SENSITIVE" in t:
         return "ORDER_ONLY"
     return "SCALAR_COUPLING"
+
+
+def _load_compactor():
+    """按路径加载压缩模块（sim/compact_cycle_report.py）。"""
+    import importlib.util
+    path = ROOT / "sim" / "compact_cycle_report.py"
+    spec = importlib.util.spec_from_file_location("compact_cycle_report", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _code_body(text: str) -> list[str]:
+    """取出压缩文本的正文：去掉 ``` 围栏（否则在报告的代码块里会提前闭合）与独立文件的一级标题。
+    其余行（含 ### 小节标题）原样保留，因此内嵌块与 reports/ 下的独立文件只差这一行标题。"""
+    lines = [x for x in text.rstrip().splitlines() if x.strip() != "```"]
+    while lines and not lines[0].startswith("# "):
+        lines.pop(0)
+    if lines and lines[0].startswith("# "):
+        lines.pop(0)
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    return lines
+
+
+def compressed_section(md_text: str) -> tuple[list[str], dict]:
+    """生成《〇、压缩记录》章节（极简 + 精简），并写两份独立文件；返回 (行, 统计)。"""
+    mod = _load_compactor()
+    out = mod.compress(md_text)
+    d = ROOT / "reports"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "轮回记录_精简版.md").write_text(out["compact"], encoding="utf-8")
+    (d / "轮回记录_极简版.md").write_text(out["mini"], encoding="utf-8")
+    st = out["stats"]
+    L: list[str] = []
+    A = L.append
+    A("## 〇、压缩记录（粘贴给外部模型用）")
+    A("")
+    A(f"> 完整《报告.md》约 {len(md_text)} 字，聊天窗口直接粘贴会提示「文本消息太长」。本节是同一份记录的"
+      f"两个压缩版，数字全部由程序从完整版机械提取（不估算、不新增），生成器 `sim/compact_cycle_report.py`："
+      f"`python sim/compact_cycle_report.py --write` 可单独重生成。")
+    A(f"> **只复制需要的那个代码块**（不要复制整份报告）。"
+      f"极简版约 {st['mini_chars']} 字（逐场一行）；精简版约 {st['compact_chars']} 字（逐回合一行 + 速览/复盘）。"
+      f"两份也各有独立文件：`reports/轮回记录_极简版.md`、`reports/轮回记录_精简版.md`。")
+    A("")
+    A("### 〇-1 极简版（逐场一行）")
+    A("")
+    A("```")
+    L.extend(_code_body(out["mini"]))
+    A("```")
+    A("")
+    A("### 〇-2 精简版（逐回合一行 + 速览/复盘）")
+    A("")
+    A("```")
+    L.extend(_code_body(out["compact"]))
+    A("```")
+    A("")
+    return L, st
 
 
 def _syn_headline() -> list[str]:
@@ -870,6 +929,10 @@ if "@@SYN_HEADLINE@@" in paper:
         paper[_idx:_idx + 1] = [">"] + _syn_head
     else:
         paper.pop(_idx)
+
+# 压缩章节：在速览回填之后生成，保证压缩文本不含占位符
+_compact_lines, _compact_stats = compressed_section("\n".join(paper))
+paper[_compact_idx:_compact_idx] = _compact_lines
 
 OUT.write_text("\n".join(paper) + "\n", encoding="utf-8")
 print("written:", OUT, len(paper), "lines")
