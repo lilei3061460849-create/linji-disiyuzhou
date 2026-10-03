@@ -1,0 +1,34 @@
+{
+ "weights": {
+  "dmg": 131.9599,
+  "kill": 11.9777,
+  "hp": 38.2553,
+  "tempo": 33.5718,
+  "mana": 18.1099,
+  "speed": 28.2128,
+  "mut": 33.9352,
+  "debuff": 7.3429,
+  "overkill": 8.0189
+ },
+ "metrics": {
+  "matches": 12,
+  "monsters": 3,
+  "seats": 36,
+  "mean_fitness": 0.4477222222222222,
+  "casts": 0,
+  "attack_groups": 124,
+  "composition": {
+   "攻击×2": 62,
+   "道纹×2": 0,
+   "一攻一道纹": 0,
+   "单槽/无动作": 0
+  },
+  "win_rate": 0.25,
+  "kills": 21,
+  "self_kill_rate": 0.027777777777777776,
+  "avg_damage_per_match": 138.83333333333334,
+  "avg_rounds": 6.916666666666667
+ },
+ "source": "sim/monster_arena.py",
+ "note": "养蛊场演化出的通用怪物打分权重；默认不接入生产，需显式传 --weights 或调用方指定才会使用。"
+}

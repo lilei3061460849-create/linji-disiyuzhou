@@ -82,7 +82,7 @@ def monster_pool(region: str = "扭曲都市") -> list[dict]:
 
 
 def build_arena(lineup: list[dict], *, seed: int = 0, rng_seed: int = 7,
-                hp_scale: float = 0.25):
+                hp_scale: float = 0.25, free_actions: bool = False):
     """建一座养蛊场：玩家侧只当观众（不参战），enemies 全是互斗的怪物。"""
     tmp = Path(tempfile.mkdtemp())
     e = GameEngine(db_path=str(tmp / "arena.db"), save_dir=str(tmp),
@@ -106,6 +106,9 @@ def build_arena(lineup: list[dict], *, seed: int = 0, rng_seed: int = 7,
     e.state.enemies = monsters
     # 观众不进合法目标（arena_ffa 只把「其它怪物」加进目标集）
     e.state.arena_ffa = True
+    # 行动自由化（2026-10-03 用户裁定，规则实验）：怪物不再被强制发动道纹，
+    # 每回合 2 个槽——攻击/道纹各占 1 槽，可「连续两次攻击」「连续两次道纹」。
+    e.state.monster_free_actions = bool(free_actions)
     return e
 
 
@@ -119,11 +122,84 @@ def _side_resources(ent) -> dict:
 # ---------------------------------------------------------------------------
 
 def _candidates(actor: dict, rivals: list[dict]) -> list[dict]:
-    """把 prepare 给出的合法选项展开成候选提交（确定性顺序，性能闸门截断）。"""
+    """把 prepare 给出的合法选项展开成候选提交（确定性顺序，性能闸门截断）。
+
+    默认契约（free_actions=False）：必须发 1 个道纹 + 1 组攻击。
+    自由行动（free_actions=True，2026-10-03 用户裁定）：每回合 2 个槽，
+    攻击/道纹各占 1 槽——空过 / 1 次攻击 / 1 次道纹 / 攻击×2 / 道纹×2 / 一攻一道纹。
+    """
     out: list[dict] = []
-    has_daowen = bool(actor.get("daowen_options"))
+    free = bool(actor.get("free_actions"))
+    daowen_opts = actor.get("daowen_options") or []
+    hit = {"dodge": False, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}}
+    groups = max(1, int(actor.get("base_attack_actions") or 1))
+    base_hits = max(1, actor.get("base_hits_per_attack", 1))
+
+    def attacks(times: int) -> list[dict]:
+        return [{"hits": [dict(hit, target_ref=rival["ref"]) for _ in range(base_hits)]}
+                for _ in range(groups * times)]
+
+    if free:
+        # 道纹对象（每个候选＝一个 daowen 提交）
+        dao_objs: list[dict] = []
+        for opt in daowen_opts:
+            xs = ([1, max(1, (opt.get("max_x") or 1) // 2), opt.get("max_x") or 1]
+                  if opt.get("x_free") else [opt.get("x") or 1])
+            targets = ([t["ref"] for t in (opt.get("target_options") or [])]
+                       if opt.get("requires_target") else [None])
+            for x in sorted({int(v) for v in xs if int(v) >= 1}):
+                for tref in targets:
+                    cand = {"name": opt["name"], "x": x, "dodge": False, "blood_shadow": False}
+                    if tref:
+                        cand["target_ref"] = tref
+                    if opt["name"] == "波及":
+                        cand["dodge_targets"] = [{"target_ref": r["ref"], "dodge": False,
+                                                  "blood_shadow": False}
+                                                 for r in rivals[:max(1, x)]]
+                    dao_objs.append(cand)
+        can_atk = bool(rivals) and groups > 0
+        # 四类候选分桶，再轮转交错取前 MAX_CANDIDATES 个——避免"某一类把配额吃光"
+        # （例如按对手轮询时，道纹×2 的候选会被排到配额之外，等于永远不被考虑）。
+        buckets: dict[str, list[dict]] = {"攻击×2": [], "道纹×2": [], "一攻一道纹": [], "单槽": []}
+        for rival in rivals:
+            if can_atk:
+                buckets["攻击×2"].append({"actor_ref": actor["actor_ref"], "daowen": None,
+                                          "attack_actions": attacks(2)})
+                for dao_obj in dao_objs:
+                    buckets["一攻一道纹"].append({"actor_ref": actor["actor_ref"], "daowen": dao_obj,
+                                                  "attack_actions": attacks(1)})
+        for i, d1 in enumerate(dao_objs):
+            for d2 in dao_objs[i + 1:]:
+                if d1["name"] == d2["name"]:
+                    continue
+                buckets["道纹×2"].append({"actor_ref": actor["actor_ref"], "daowen": d1,
+                                          "daowen_2": d2, "attack_actions": []})
+        # 两槽都不可能时才退到单槽（保证任何 prepare 结果都有合法提交可选）
+        if not any(buckets[k] for k in ("攻击×2", "道纹×2", "一攻一道纹")):
+            if can_atk:
+                buckets["单槽"].append({"actor_ref": actor["actor_ref"], "daowen": None,
+                                        "attack_actions": attacks(1)})
+            for dao_obj in dao_objs[:1]:
+                buckets["单槽"].append({"actor_ref": actor["actor_ref"], "daowen": dao_obj,
+                                        "attack_actions": []})
+        order = ["攻击×2", "一攻一道纹", "道纹×2", "单槽"]
+        idx = {k: 0 for k in order}
+        while len(out) < MAX_CANDIDATES:
+            progressed = False
+            for k in order:
+                if idx[k] < len(buckets[k]):
+                    out.append(buckets[k][idx[k]])
+                    idx[k] += 1
+                    progressed = True
+                    if len(out) >= MAX_CANDIDATES:
+                        break
+            if not progressed:
+                break
+        return out
+
+    has_daowen = bool(daowen_opts)
     dao_cands: list[dict | None] = []
-    for opt in actor.get("daowen_options") or []:
+    for opt in daowen_opts:
         xs = ([1, max(1, (opt.get("max_x") or 1) // 2), opt.get("max_x") or 1]
               if opt.get("x_free") else [opt.get("x") or 1])
         targets = ([t["ref"] for t in (opt.get("target_options") or [])]
@@ -140,13 +216,10 @@ def _candidates(actor: dict, rivals: list[dict]) -> list[dict]:
                 dao_cands.append(cand)
     if not dao_cands and not has_daowen:
         dao_cands = [None]                       # 无合法道纹时才允许 null
-    hit = {"dodge": False, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}}
     for cand in dao_cands:
         for rival in rivals:
-            attack = [{"hits": [dict(hit, target_ref=rival["ref"])
-                                for _ in range(max(1, actor.get("base_hits_per_attack", 1)))]}
-                      for _ in range(max(1, actor.get("base_attack_actions", 1)))]
-            out.append({"actor_ref": actor["actor_ref"], "daowen": cand, "attack_actions": attack})
+            out.append({"actor_ref": actor["actor_ref"], "daowen": cand,
+                        "attack_actions": attacks(1)})
     return out[:MAX_CANDIDATES]
 
 
@@ -197,6 +270,9 @@ def choose_action(e, token: str, actor: dict, me_index: int, weights: dict,
 
     mode="random" 是**对照用**的随机决策（等概率挑一个合法候选），
     用来量「这套沙盒里『选得聪明』到底值多少分」；训练与评测一律用 "best"。
+    mode 取 "attack2"/"mixed"/"dao2" 时：把候选限制在对应行动构成里再按权重取最高
+    （该构成没有候选时退回全部候选）——用于「固定构成」对照实验，例如
+    「怪物还会不会用道纹」。
     """
     scored = []
     for cand in _candidates(actor, rivals):
@@ -217,6 +293,23 @@ def choose_action(e, token: str, actor: dict, me_index: int, weights: dict,
     if mode == "random":
         best_score, best_cand, best_feats = (rng or random).choice(scored)
         return best_cand, {"#random": round(best_score, 2)}, best_feats
+    if mode in ("attack2", "mixed", "dao2"):
+        base_groups = max(1, int(actor.get("base_attack_actions") or 1))
+
+        def _kind(cand: dict) -> str:
+            casts = sum(1 for key in ("daowen", "daowen_2") if isinstance(cand.get(key), dict))
+            atk = len(cand.get("attack_actions") or []) // base_groups
+            if casts and atk:
+                return "mixed"
+            if casts >= 2:
+                return "dao2"
+            if atk >= 2:
+                return "attack2"
+            return "other"
+
+        only = [t for t in scored if _kind(t[1]) == mode]
+        if only:
+            scored = only
     scored.sort(key=lambda t: (-t[0], t[1]["daowen"]["name"] if t[1]["daowen"] else ""))
     best_score, best_cand, best_feats = scored[0]
     return best_cand, {f"#{i}": round(s, 2) for i, (s, _, _) in enumerate(scored[:3])}, best_feats
@@ -229,7 +322,7 @@ def choose_action(e, token: str, actor: dict, me_index: int, weights: dict,
 def run_match(lineup: list[dict], weights: dict, *, seed: int = 0, max_rounds: int = 12,
               weight_sets: list[dict] | None = None, hp_scale: float = 0.25,
               setup=None, choice_log: list | None = None,
-              choice_modes: list[str] | None = None) -> dict:
+              choice_modes: list[str] | None = None, free_actions: bool = False) -> dict:
     """lineup 里的怪物互斗；weight_sets 可以为每只怪物指定不同的权重（否则共用）。
 
     setup(engine) 是可选钩子，用来在开打前摆好特定场面（例如把某只怪物推到崩解线附近），
@@ -237,16 +330,19 @@ def run_match(lineup: list[dict], weights: dict, *, seed: int = 0, max_rounds: i
     choice_log 传入列表时，逐次决策记一行（回合/怪物/道纹/X/攻击目标），
     供「两套权重到底有没有改变行为」这类对照探针使用。
     choice_modes 可以为每只怪物指定 "best"（默认，按权重取最高）或 "random"（对照）。
+    free_actions=True 打开「怪物行动自由化」（规则实验，默认关）。
     """
-    e = build_arena(lineup, seed=seed, hp_scale=hp_scale)
+    e = build_arena(lineup, seed=seed, hp_scale=hp_scale, free_actions=free_actions)
     if setup is not None:
         setup(e)
     sets = weight_sets or [weights] * len(lineup)
     modes = choice_modes or ["best"] * len(lineup)
     chooser_rng = random.Random(seed * 7919 + 13)
     stats = {i: {"dmg_out": 0, "dmg_taken": 0, "kills": 0, "deaths": 0, "self_kill": False,
-                 "casts": 0, "rounds_acted": 0, "zero_damage_rounds": 0} for i in range(len(lineup))}
+                 "casts": 0, "attack_groups": 0, "rounds_acted": 0, "zero_damage_rounds": 0}
+             for i in range(len(lineup))}
     log: list[dict] = []
+    composition = {"攻击×2": 0, "道纹×2": 0, "一攻一道纹": 0, "单槽/无动作": 0}
     rounds_played = 0
     for rnd in range(1, max_rounds + 1):
         alive = [i for i, m in enumerate(e.state.enemies) if m.is_alive]
@@ -291,8 +387,17 @@ def run_match(lineup: list[dict], weights: dict, *, seed: int = 0, max_rounds: i
                 log.append({"round": rnd, "monster": monster.name, "error": out.get("error", "")})
                 continue
             stats[me_index]["rounds_acted"] += 1
-            if cand.get("daowen"):
-                stats[me_index]["casts"] += 1
+            stats[me_index]["casts"] += sum(
+                1 for key in ("daowen", "daowen_2") if isinstance(cand.get(key), dict))
+            groups = max(1, int(actor.get("base_attack_actions") or 1))
+            atk_groups = len(cand.get("attack_actions") or []) // groups
+            stats[me_index]["attack_groups"] += atk_groups
+            if free_actions:
+                key = (("攻击×2" if atk_groups >= 2 else "单槽/无动作")
+                       if not (cand.get("daowen") or cand.get("daowen_2")) else
+                       ("道纹×2" if (cand.get("daowen") and cand.get("daowen_2")) else
+                        ("一攻一道纹" if atk_groups >= 1 else "单槽/无动作")))
+                composition[key] += 1
             dealt = 0
             for j, m in enumerate(e.state.enemies):
                 delta = before_hp[j] - m.current_hp
@@ -333,7 +438,8 @@ def run_match(lineup: list[dict], weights: dict, *, seed: int = 0, max_rounds: i
             e.execute_action("round_start", {"relic_choices": {}})
     survivors = [i for i, m in enumerate(e.state.enemies) if m.is_alive]
     return {"lineup": [d["name"] for d in lineup], "rounds": rounds_played,
-            "survivors": survivors, "stats": stats, "log": log[-8:]}
+            "survivors": survivors, "stats": stats, "log": log[-8:],
+            "composition": composition}
 
 
 def fitness(result: dict, me_index: int, weights: dict, *, cull_self_kill: bool = True) -> float:
@@ -398,14 +504,21 @@ def _lineups(pool: list[dict], n_monsters: int, count: int, seed: int) -> list[l
 
 def evaluate(weights: dict, *, matches: int, monsters: int, seed: int, rounds: int,
              lineups: list[list[dict]] | None = None, hp_scale: float = 0.25,
-             cull_self_kill: bool = True) -> dict:
+             cull_self_kill: bool = True, free_actions: bool = False) -> dict:
     pool = monster_pool()
     lineups = lineups or _lineups(pool, monsters, matches, seed)
     wins = kills = self_kills = 0
+    casts = attack_groups = 0
+    composition = {"攻击×2": 0, "道纹×2": 0, "一攻一道纹": 0, "单槽/无动作": 0}
     dmgs, rounds_played = [], []
     per_seat = []
     for k, lineup in enumerate(lineups):
-        res = run_match(lineup, weights, seed=seed + k, max_rounds=rounds, hp_scale=hp_scale)
+        res = run_match(lineup, weights, seed=seed + k, max_rounds=rounds, hp_scale=hp_scale,
+                        free_actions=free_actions)
+        for key, val in (res.get("composition") or {}).items():
+            composition[key] = composition.get(key, 0) + val
+        casts += sum(v["casts"] for v in res["stats"].values())
+        attack_groups += sum(v["attack_groups"] for v in res["stats"].values())
         seats = [fitness(res, i, weights, cull_self_kill=cull_self_kill)
                  for i in range(len(lineup))]
         per_seat.append({"lineup": res["lineup"], "fitness": [round(f, 3) for f in seats],
@@ -419,6 +532,7 @@ def evaluate(weights: dict, *, matches: int, monsters: int, seed: int, rounds: i
     n = len(lineups) * monsters
     return {"matches": len(lineups), "monsters": monsters, "seats": n,
             "mean_fitness": (sum(sum(p["fitness"]) for p in per_seat) / n) if n else 0.0,
+            "casts": casts, "attack_groups": attack_groups, "composition": composition,
             "win_rate": (wins / n) if n else 0.0,
             "kills": kills, "self_kill_rate": (self_kills / n) if n else 0.0,
             "avg_damage_per_match": (sum(dmgs) / len(dmgs)) if dmgs else 0.0,
@@ -437,7 +551,7 @@ def _mutate(w: dict, rng: random.Random, scale: float) -> dict:
 
 def train(*, gens: int, pop: int, matches: int, monsters: int, seed: int, rounds: int,
           generations_log: list | None = None, hp_scale: float = 0.25,
-          cull_self_kill: bool = True) -> dict:
+          cull_self_kill: bool = True, free_actions: bool = False) -> dict:
     """(μ+λ) 演化：每代用同一批阵容/种子评测全部个体，取前 1/4 变异繁殖。"""
     rng = random.Random(seed)
     lineups = _lineups(monster_pool(), monsters, matches, seed)   # 固定评测集＝公平比较
@@ -449,7 +563,8 @@ def train(*, gens: int, pop: int, matches: int, monsters: int, seed: int, rounds
         scored = []
         for w in population:
             m = evaluate(w, matches=matches, monsters=monsters, seed=seed, rounds=rounds,
-                         lineups=lineups, hp_scale=hp_scale, cull_self_kill=cull_self_kill)
+                         lineups=lineups, hp_scale=hp_scale, cull_self_kill=cull_self_kill,
+                         free_actions=free_actions)
             # 目标＝全席平均适应度：fitness 本身已经写着「存活+1／击杀+0.3／自己作死死＝0」
             # （2026-10-03 用户令），直接用它的均值当选择压力，比只看赢率（二值、噪声大）
             # 更稳；再给输出效率一个小权重把平局拉开。
@@ -512,6 +627,8 @@ def main() -> None:
                     help="在 holdout 种子的同一批阵容上，对比默认权重与已保存权重")
     ap.add_argument("--weights", type=Path, default=None)
     ap.add_argument("--save", action="store_true", help="训练后保存权重到 reports/monster_ai_weights.json")
+    ap.add_argument("--free-actions", action="store_true", dest="free_actions",
+                    help="规则实验（2026-10-03 用户裁定）：怪物每回合 2 槽、不再强制发动道纹")
     ap.add_argument("--no-cull", action="store_false", dest="cull_self_kill",
                     help="消融：训练时不把「自己行动导致自己死亡」判为失败品（权重另存 _nocull 文件）")
     args = ap.parse_args()
@@ -573,8 +690,11 @@ def main() -> None:
         out = train(gens=args.gens, pop=args.pop, matches=args.matches,
                     monsters=args.monsters, seed=args.seed, rounds=args.rounds,
                     generations_log=log, hp_scale=args.hp_scale,
-                    cull_self_kill=args.cull_self_kill)
-        print(f"训练完成 {time.time() - t0:.1f}s｜最优适应度 {out['best']['score']}")
+                    cull_self_kill=args.cull_self_kill,
+                    free_actions=args.free_actions)
+        print(f"训练完成 {time.time() - t0:.1f}s｜最优适应度 {out['best']['score']}"
+              f"｜规则：{'自由行动（2槽，道纹非强制）' if args.free_actions else '原契约（强制道纹）'}"
+              f"｜评测构成 {out['best']['metrics'].get('composition')}")
         for row in out["history"]:
             print(f"  第{row['gen']:>2}代  最优 {row['best']:>7.4f}  均值 {row['mean']:>7.4f}  "
                   f"赢率 {row['best_win_rate']:.3f}  自爆率 {row['best_self_kill_rate']:.3f}  "
@@ -582,16 +702,23 @@ def main() -> None:
         print("最优权重:", json.dumps({k: round(v, 2) for k, v in out["best"]["weights"].items()},
                                      ensure_ascii=False))
         if args.save:
-            path = WEIGHTS_PATH if args.cull_self_kill else \
-                WEIGHTS_PATH.with_name("monster_ai_weights_nocull.json")
+            # 不同规则/口径各存各的，避免互相覆盖：自由行动组单独一份
+            if args.free_actions:
+                path = WEIGHTS_PATH.with_name("monster_ai_weights_free.json")
+            else:
+                path = WEIGHTS_PATH if args.cull_self_kill else \
+                    WEIGHTS_PATH.with_name("monster_ai_weights_nocull.json")
             save_weights(out["best"]["weights"], out["best"]["metrics"], path)
             print("已保存:", path)
     if args.eval:
         w = load_weights(args.weights) if args.weights else load_weights()
         t0 = time.time()
         m = evaluate(w, matches=args.matches, monsters=args.monsters, seed=args.seed,
-                     rounds=args.rounds, hp_scale=args.hp_scale)
-        print(f"评测 {m['matches']} 场×{m['monsters']} 只｜用时 {time.time() - t0:.1f}s")
+                     rounds=args.rounds, hp_scale=args.hp_scale, free_actions=args.free_actions)
+        print(f"评测 {m['matches']} 场×{m['monsters']} 只｜用时 {time.time() - t0:.1f}s"
+              f"｜怪物自由行动 {'开' if args.free_actions else '关'}")
+        if getattr(m, "get", None) and m.get("casts") is not None:
+            print(f"  行动构成：{m['composition']}｜道纹总数 {m['casts']}｜攻击组总数 {m['attack_groups']}")
         print(f"  赢率 {m['win_rate']:.3f}｜自爆率 {m['self_kill_rate']:.3f}｜"
               f"总击杀 {m['kills']}｜场均输出 {m['avg_damage_per_match']:.1f}｜平均回合 {m['avg_rounds']:.1f}")
         for row in m["detail"]:

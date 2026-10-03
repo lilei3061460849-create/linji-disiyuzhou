@@ -38,9 +38,10 @@ import monster_arena as A  # noqa: E402
 POLICIES = {"train": ("weights", "best"), "default": ("prior", "best"), "random": ("prior", "random")}
 
 
-def _run(lineup, seed, rounds, hp_scale, sets, modes):
+def _run(lineup, seed, rounds, hp_scale, sets, modes, free_actions=False):
     return A.run_match(lineup, dict(A.DEFAULT_WEIGHTS), seed=seed, max_rounds=rounds,
-                       weight_sets=sets, choice_modes=modes, hp_scale=hp_scale)
+                       weight_sets=sets, choice_modes=modes, hp_scale=hp_scale,
+                       free_actions=free_actions)
 
 
 def main() -> None:
@@ -50,11 +51,17 @@ def main() -> None:
     ap.add_argument("--monsters", type=int, default=3)
     ap.add_argument("--rounds", type=int, default=20)
     ap.add_argument("--hp-scale", type=float, default=0.25, dest="hp_scale")
-    ap.add_argument("--weights", type=Path, default=A.WEIGHTS_PATH, help="训练权重文件")
+    ap.add_argument("--weights", type=Path, default=A.WEIGHTS_PATH, help="被考察权重文件")
+    ap.add_argument("--vs", type=Path, default=None,
+                    help="对手权重文件（默认＝人工先验 DEFAULT_WEIGHTS）")
+    ap.add_argument("--free-actions", action="store_true", dest="free_actions",
+                    help="在「怪物行动自由化」规则下对打（默认关＝原契约）")
     args = ap.parse_args()
 
     seeds = [int(x) for x in args.seeds.split(",") if x.strip()]
     w = {"weights": A.load_weights(args.weights), "prior": dict(A.DEFAULT_WEIGHTS)}
+    if args.vs is not None:
+        w["prior"] = A.load_weights(args.vs)
     empty = {"seats": 0, "wins": 0, "fitness": 0.0, "self_kills": 0}
 
     pairs = [("train", "default"), ("default", "random")]
@@ -68,7 +75,8 @@ def main() -> None:
                     sets = [w[POLICIES[a][0]] if i == seat else w[POLICIES[b][0]]
                             for i in range(len(lineup))]
                     modes = [POLICIES[a][1] if i == seat else POLICIES[b][1] for i in range(len(lineup))]
-                    res = _run(lineup, sd + k, args.rounds, args.hp_scale, sets, modes)
+                    res = _run(lineup, sd + k, args.rounds, args.hp_scale, sets, modes,
+                               args.free_actions)
                     runs += 1
                     winner = res["survivors"][0] if len(res["survivors"]) == 1 else None
                     resolved += 1 if winner is not None else 0
@@ -103,7 +111,7 @@ def main() -> None:
     for sd in seeds:
         for k, lineup in enumerate(A._lineups(A.monster_pool(), args.monsters, args.matches, sd)):
             res = _run(lineup, sd + k, args.rounds, args.hp_scale,
-                       [w["prior"]] * len(lineup), ["best"] * len(lineup))
+                       [w["prior"]] * len(lineup), ["best"] * len(lineup), args.free_actions)
             winner = res["survivors"][0] if len(res["survivors"]) == 1 else None
             for i, m in enumerate(res["lineup"]):
                 per[m]["seats"] += 1

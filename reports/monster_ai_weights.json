@@ -15,6 +15,14 @@
   "monsters": 3,
   "seats": 36,
   "mean_fitness": 0.3330833333333333,
+  "casts": 91,
+  "attack_groups": 91,
+  "composition": {
+   "攻击×2": 0,
+   "道纹×2": 0,
+   "一攻一道纹": 0,
+   "单槽/无动作": 0
+  },
   "win_rate": 0.16666666666666666,
   "kills": 18,
   "self_kill_rate": 0.08333333333333333,

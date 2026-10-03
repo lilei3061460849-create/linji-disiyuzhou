@@ -1006,6 +1006,11 @@ class GameState:
     # 并允许逐个 actor 提交（严格交替，避免先手方一次结算全场）。默认 False——
     # 正式玩法与既有测试完全不受影响，只有训练沙盒会打开它。
     arena_ffa: bool = False
+    # 怪物行动自由化（2026-10-03 用户裁定，默认关）：打开后不再强制怪物发动道纹，
+    # 每只怪物每回合有 2 个「行动槽」——1 次攻击或 1 次道纹各占 1 槽，
+    # 允许「连续两次攻击」「连续两次道纹」「一攻一道纹」，也可以只出 1 槽。
+    # 默认 False——正式玩法与既有测试完全不受影响。
+    monster_free_actions: bool = False
     # 最终的冠冕/第8场死斗：进行中标记 + 当前该谁出手("player_side"/"opponent_side")
     in_final_duel: bool = False
     duel_turn: str = ""
