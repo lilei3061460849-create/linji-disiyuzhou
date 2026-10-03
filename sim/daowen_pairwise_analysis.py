@@ -945,7 +945,9 @@ def write_report_md(names, targets, vocab, rows, head, elapsed, run_cmd, base):
     A("")
     A(f"> 仓库 HEAD：`{head}`｜分析对象：**当前生产道纹词汇表**（`engine/daowen.py` "
       f"`DaoWenEngine._registry`）")
-    A(f"> 道纹 N = **{n}**｜无序对 C(N,2) = **{total}**｜统一发动 X = {CAST_X}｜扫描耗时 {elapsed:.0f}s")
+    time_note = (f"扫描耗时 {elapsed:.0f}s" if elapsed else
+                 "耗时见 `--all` 运行日志（本文件由场景缓存重算，分类口径不变）")
+    A(f"> 道纹 N = **{n}**｜无序对 C(N,2) = **{total}**｜统一发动 X = {CAST_X}｜{time_note}")
     A(f"> 复现：`{run_cmd}`")
     A(f"> 被分析的引擎源码指纹：`engine_src_sha256={engine_fingerprint()[:16]}`"
       f"（对 `engine/**/*.py` 排序后拼接取 sha256；用于核对分析对象没被换过）")
