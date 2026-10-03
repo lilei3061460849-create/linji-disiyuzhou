@@ -540,9 +540,9 @@ def compressed_section(md_text: str) -> tuple[list[str], dict]:
     A = L.append
     A("## 〇、压缩记录（粘贴给外部模型用）")
     A("")
-    A(f"> 完整《报告.md》约 {len(md_text)} 字，聊天窗口直接粘贴会提示「文本消息太长」。本节是同一份记录的"
-      f"两个压缩版，数字全部由程序从完整版机械提取（不估算、不新增），生成器 `sim/compact_cycle_report.py`："
-      f"`python sim/compact_cycle_report.py --write` 可单独重生成。")
+    A(f"> 《报告.md》正文（不含本节）约 {len(md_text)} 字，聊天窗口直接粘贴会提示「文本消息太长」。"
+      f"本节是同一份记录压缩成的两个版本，数字全部由程序从完整正文机械提取（不估算、不新增），"
+      f"生成器 `sim/compact_cycle_report.py`：`python sim/compact_cycle_report.py --write` 可单独重生成。")
     A(f"> **只复制需要的那个代码块**（不要复制整份报告）。"
       f"极简版约 {st['mini_chars']} 字（逐场一行）；精简版约 {st['compact_chars']} 字（逐回合一行 + 速览/复盘）。"
       f"两份也各有独立文件：`reports/轮回记录_极简版.md`、`reports/轮回记录_精简版.md`。")
