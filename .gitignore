@@ -26,3 +26,6 @@ data/batch_*
 # OS
 .DS_Store
 Thumbs.db
+
+# 分析缓存（可由 sim/daowen_pairwise_analysis.py --all 重新生成）
+reports/_cache/
