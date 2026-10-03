@@ -581,15 +581,18 @@ def classify_pair(a: str, b: str, base: dict, sa: dict, sb: dict, pair: dict) ->
         ev_a = _evtypes(_events_of(sa, probe))
         ev_b = _evtypes(_events_of(sb, probe))
         ev_ab = _evtypes(_events_of(ab_scene, probe))
+        ev_ba = _evtypes(_events_of(ba_scene, probe))
         for t, n in ev_ab.items():
             if t not in ev_base and t not in ev_a and t not in ev_b:
                 findings.append({"probe": probe, "obs": f"event:{t}",
                                  "kind": "NEW_EVENT_TYPE", "count": n,
                                  "base": ev_base.get(t, 0), "a": ev_a.get(t, 0),
-                                 "b": ev_b.get(t, 0), "ab": n})
+                                 "b": ev_b.get(t, 0), "ab": n, "ba": ev_ba.get(t, 0)})
             elif n > ev_a.get(t, 0) + ev_b.get(t, 0) and (ev_a.get(t, 0) + ev_b.get(t, 0)) > 0:
                 findings.append({"probe": probe, "obs": f"event:{t}", "kind": "EVENT_COUNT",
-                                 "ab": n, "a": ev_a.get(t, 0), "b": ev_b.get(t, 0)})
+                                 "base": ev_base.get(t, 0),
+                                 "ab": n, "a": ev_a.get(t, 0), "b": ev_b.get(t, 0),
+                                 "ba": ev_ba.get(t, 0)})
 
     order_sensitive = False
     order_detail = ""
@@ -668,8 +671,10 @@ def classify_pair(a: str, b: str, base: dict, sa: dict, sb: dict, pair: dict) ->
                       f"｜B→A={_v(ba_scene)}（{_d(ba_scene):+d}）"
                       + (f"｜可加预期增量={f0['expected_additive']:+d}" if "expected_additive" in f0
                          else f"｜判定={f0.get('kind', '')}（首个偏离项）"))
+    ev_finding = next((f for f in findings
+                       if f.get("kind") in ("NEW_EVENT_TYPE", "EVENT_COUNT")), None)
     return {"classification": cls, "interaction_types": types, "synergy_kind": kind,
-            "causal": causal,
+            "causal": causal, "event_finding": ev_finding,
             "findings": findings[:6], "n_findings": len(findings),
             "shared_channels": sorted(shared_channels),
             "probes_hit": probes_hit, "order_sensitive": order_sensitive,
@@ -842,6 +847,46 @@ def causal_string(a, b, base, sa, sb, pair, finding) -> str:
             f"| {a}+{b}={g(pair['ab'])}（可加预期 {finding.get('expected_additive', '?')}）")
 
 
+def _event_finding(r):
+    """该对的事件层偏离项（新事件类型 / 事件计数超可加）；没有则 None。
+
+    classify_pair 已单独保存该字段（不受 findings[:6] 截断影响），旧缓存里没有时回退扫描。
+    """
+    if r.get("event_finding"):
+        return r["event_finding"]
+    for f in r.get("findings") or []:
+        if f.get("kind") in ("NEW_EVENT_TYPE", "EVENT_COUNT"):
+            return f
+    return None
+
+
+def deviation_pattern(r) -> str:
+    """形态标签（只描述数字/事件关系，不解释机制）。
+
+    事件级协同要看的就是事件层那一项，所以有这个项时优先用它，而不是 findings[0]。
+    """
+    if not r.get("findings"):
+        return ""
+    f = _event_finding(r) or r["findings"][0]
+    kind = f.get("kind", "")
+    a, b = f.get("a"), f.get("b")
+    ab = f.get("ab")
+    if kind == "NEW_EVENT_TYPE":
+        if not a and not b:
+            return "新事件：两侧独发都没有，并施才出现"
+        return f"新事件：并施出现两侧独发都没有的事件类型（A独发{a}、B独发{b}）"
+    if kind == "EVENT_COUNT":
+        exp = (a or 0) + (b or 0)
+        if (ab or 0) > exp:
+            return f"事件计数高于两侧之和（放大：{ab} vs {a}+{b}={exp}）"
+        return f"事件计数低于两侧之和（抑制：{ab} vs {a}+{b}={exp}）"
+    if "expected_additive" in f:
+        exp = f["expected_additive"]
+        rel = "高于" if (ab or 0) > exp else "低于"
+        return f"数值{rel}可加预期（{ab} vs {exp}）"
+    return "数值偏离"
+
+
 def evidence_ids(a, b, r):
     return ";".join(f"{a}+{b}@{p}" for p in r["probes_hit"][:3]) or f"{a}+{b}@none"
 
@@ -891,12 +936,22 @@ def write_outputs(names, targets, vocab, rows, extra):
                       "formula": vocab[n]["formula"],
                       "cast_target": targets[n]["target"],
                       "visibility": round(targets[n]["visibility"], 3)})
-    edges = [{"a": r["daowen_a"], "b": r["daowen_b"], "classification": 2,
-              "types": r["interaction_types"], "verifiable": bool(r.get("verifiable", True)),
-              "scene_problems": r.get("scene_problems", {}),
-              "evidence": [f"{r['daowen_a']}+{r['daowen_b']}@{p}" for p in r["probes_hit"]],
-              "order_sensitive": r["order_sensitive"]}
-             for r in rows if r["classification"] == 2]
+    def _edge(r):
+        f = r.get("event_finding") or (r.get("findings") or [{}])[0]
+        return {"a": r["daowen_a"], "b": r["daowen_b"], "classification": 2,
+                "types": r["interaction_types"], "verifiable": bool(r.get("verifiable", True)),
+                "scene_problems": r.get("scene_problems", {}),
+                "evidence": [f"{r['daowen_a']}+{r['daowen_b']}@{p}" for p in r["probes_hit"]],
+                "order_sensitive": r["order_sensitive"],
+                "pattern": deviation_pattern(r),
+                # 首个偏离项的原始数字（供报告/复核直接引用，避免转述走样）
+                "first_deviation": {"probe": f.get("probe", ""), "obs": f.get("obs", ""),
+                                    "kind": f.get("kind", ""), "base": f.get("base"),
+                                    "a": f.get("a"), "b": f.get("b"),
+                                    "ab": f.get("ab"), "ba": f.get("ba"),
+                                    "expected_additive": f.get("expected_additive")}}
+
+    edges = [_edge(r) for r in rows if r["classification"] == 2]
     graph = {"nodes": nodes, "edges": edges,
              "meta": {"head": extra["head"], "daowen_count": len(names),
                       "pair_count": len(rows), "cast_x": CAST_X,

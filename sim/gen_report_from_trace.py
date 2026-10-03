@@ -485,6 +485,13 @@ def _syn_rows() -> list[dict]:
         return list(csv.DictReader(fh))
 
 
+def _syn_edges() -> list[dict]:
+    """读 Cat2 关系图（已提交），拿每对的首个偏离明细。"""
+    if not SYN_GRAPH.exists():
+        return []
+    return json.loads(SYN_GRAPH.read_text(encoding="utf-8")).get("edges", [])
+
+
 def _syn_layer(types: str) -> str:
     t = set(x for x in (types or "").split("|") if x)
     if t & {"EVENT_CONVERSION", "EVENT_MULTIPLICATION"}:
@@ -507,6 +514,11 @@ def _syn_headline() -> list[str]:
     c2v = [r for r in rows if r["classification"] == "2" and r["confidence"] != "UNVERIFIED"]
     c2u = sum(1 for r in rows if r["classification"] == "2" and r["confidence"] == "UNVERIFIED")
     ev = [r for r in c2v if _syn_layer(r["interaction_type"]) == "EVENT_LEVEL"]
+    _ev_edges = [e for e in _syn_edges()
+                 if e.get("verifiable")
+                 and set(e.get("types", [])) & {"EVENT_CONVERSION", "EVENT_MULTIPLICATION"}]
+    _ev_amp = sum(1 for e in _ev_edges if str(e.get("pattern", "")).startswith("事件计数高于"))
+    _ev_new = sum(1 for e in _ev_edges if str(e.get("pattern", "")).startswith("新事件"))
     scalar = sum(1 for r in c2v if _syn_layer(r["interaction_type"]) == "SCALAR_COUPLING")
     names = sorted({r["daowen_a"] for r in rows} | {r["daowen_b"] for r in rows})
     hub = {n: 0 for n in names}
@@ -522,7 +534,8 @@ def _syn_headline() -> list[str]:
         f"{c0} 对（{pct(c0)}）彼此独立；",
         f"> ② 协同里 **{scalar} 对（占协同的 {100.0 * scalar / len(c2v):.1f}%）只是结算层数值耦合**，"
         f"根源是同一条换算「[攻击力]＝[当前法力]、[攻击次数]＝[当前速度]」；",
-        f"> ③ **真正的事件级交互只有 {len(ev)} 对**（占全部对的 {pct(len(ev))}）；"
+        f"> ③ **真正的事件级交互只有 {len(ev)} 对**（占全部对的 {pct(len(ev))}，"
+        f"其中 {_ev_new} 对是并施才出现的新事件、{_ev_amp} 对是事件计数被放大）；"
         f"发动本身被同伴改变的 134 对；顺序敏感 {sum(1 for r in c2v if r['order_sensitive'] == 'True')} 对；",
         f"> ④ 没有任何协同伙伴的道纹只有 **{len(zero)}** 个（{'、'.join(zero)}）；"
         f"连接度最高的是 **{top[0][1]}、{top[1][1]}**（各 {top[0][0]} 个伙伴）；",
@@ -592,7 +605,14 @@ def daowen_synergy_lines() -> list[str]:
        f"根源是同一条换算：[攻击力]＝[当前法力]、[攻击次数]＝[当前速度] |")
     a_(f"| 有哪些是「发动被改写」？ | {layers.get('CAST_EXECUTION', 0)} 对——同伴先发动后，"
        f"后一道纹的代价/数值/目标集合被改变 |")
-    a_(f"| 有哪些是事件级交互？ | {layers.get('EVENT_LEVEL', 0)} 对（3.5 节全列） |")
+    _ev_edges = [e for e in _syn_edges()
+                 if e.get("verifiable") and "EVENT_LEVEL"
+                 and set(e.get("types", [])) & {"EVENT_CONVERSION", "EVENT_MULTIPLICATION"}]
+    _amp = sum(1 for e in _ev_edges if str(e.get("pattern", "")).startswith("事件计数高于"))
+    _new = sum(1 for e in _ev_edges if str(e.get("pattern", "")).startswith("新事件"))
+    a_(f"| 有哪些是事件级交互？ | {layers.get('EVENT_LEVEL', 0)} 对（3.5 节全列）："
+       f"其中 **{_new} 对是「两侧独发都没有、并施才出现的新事件」**，"
+       f"**{_amp} 对是「事件计数高于两侧之和」** |")
     a_(f"| 顺序会改变结果吗？ | {len(order)} 对两序结果不同（不判定为 bug；生产里顺序本身就是规则） |")
     a_(f"| 有没有「孤岛」道纹？ | {len(zero)} 个"
        + (f"（{'、'.join(zero)}；尸爆为自毁型，发动即[命零]，无法在同一场景内完成两连发，一律记 UNVERIFIED）"
@@ -686,14 +706,47 @@ def daowen_synergy_lines() -> list[str]:
     a_("")
     a_("### 3.5 事件级协同（27 对全列）")
     a_("")
-    a_("结构层交互——出现两侧独发都没有的新事件，或事件计数超出两侧之和。下表逐对给出因果串；"
-       "每一串都是该对的**首个偏离项**（绝对值 + 相对基线的增量 + 可加预期），"
-       "完整的多项偏离见 `reports/daowen_pairwise_synergy.md` §7 的事件序列对照。")
+    a_("结构层交互——出现两侧独发都没有的新事件，或事件计数超出两侧之和。"
+       "这是**全 27 对**，下表每一行都取自生产引擎的真实数字：`基线`／`A独发`／`B独发`／"
+       "`A→B`／`B→A` 是同一探针同一通道上的实测值，`偏离形态` 只描述数字与事件的关系。")
     a_("")
     ev = sorted([r for r in c2v if _syn_layer(r["interaction_type"]) == "EVENT_LEVEL"],
                 key=lambda r: (r["daowen_a"], r["daowen_b"]))
+    edge_by = {(e["a"], e["b"]): e for e in _syn_edges()}
+
+    def _num(x):
+        return "—" if x is None else (f"{x:+d}" if isinstance(x, int) else str(x))
+
+    a_("| A | B | 类型 | 探针／通道 | 基线 | A独发 | B独发 | A→B | B→A | 偏离形态 |")
+    a_("| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |")
     for r in ev:
-        a_(f"* **{r['daowen_a']} + {r['daowen_b']}**（{r['interaction_type']}）— {r['causal_trace']}")
+        e = edge_by.get((r["daowen_a"], r["daowen_b"]), {})
+        d = e.get("first_deviation", {})
+        t = r["interaction_type"].replace("|OUTPUT_ARITHMETIC", "")
+        obs = d.get("obs", "")
+        if obs.startswith("event:"):
+            obs = f"事件「{obs[6:]}」"
+        a_(f"| {r['daowen_a']} | {r['daowen_b']} | {t} | {d.get('probe','')}／{obs} "
+           f"| {_num(d.get('base'))} | {_num(d.get('a'))} | {_num(d.get('b'))} "
+           f"| {_num(d.get('ab'))} | {_num(d.get('ba'))} | {e.get('pattern','')} |")
+    a_("")
+    # 形态归并（纯计数，不做解释）
+    import collections as _c
+    shapes = _c.Counter()
+    for r in ev:
+        pat = edge_by.get((r["daowen_a"], r["daowen_b"]), {}).get("pattern", "")
+        if pat.startswith("新事件"):
+            shapes["出现两侧独发都没有的新事件"] += 1
+        elif pat.startswith("事件计数高于"):
+            shapes["事件计数高于两侧之和（放大）"] += 1
+        elif pat.startswith("事件计数低于"):
+            shapes["事件计数低于两侧之和（抑制）"] += 1
+        else:
+            shapes["数值偏离（事件层之外）"] += 1
+    a_("形态归并：" + "；".join(f"{k} **{v}** 对" for k, v in shapes.items()) + "。")
+    a_("")
+    a_("重放任一行的命令：`python sim/daowen_pairwise_analysis.py --pair A,B`"
+       "（A、B 换成表中两道纹名），输出与这里的数字同源。")
     a_("")
     a_("### 3.6 代表样本（含事件序列）")
     a_("")
