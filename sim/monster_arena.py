@@ -190,8 +190,14 @@ def score_features(f: dict, w: dict) -> float:
 
 
 def choose_action(e, token: str, actor: dict, me_index: int, weights: dict,
-                  rivals: list[dict], preview: ActionPreview) -> tuple[dict, dict, dict]:
-    """按权重给候选打分，返回 (提交, 分数表, 最佳候选特征)。"""
+                  rivals: list[dict], preview: ActionPreview, *,
+                  mode: str = "best", rng: random.Random | None = None
+                  ) -> tuple[dict, dict, dict]:
+    """按权重给候选打分，返回 (提交, 分数表, 最佳候选特征)。
+
+    mode="random" 是**对照用**的随机决策（等概率挑一个合法候选），
+    用来量「这套沙盒里『选得聪明』到底值多少分」；训练与评测一律用 "best"。
+    """
     scored = []
     for cand in _candidates(actor, rivals):
         out = preview.preview("resolve_monster_phase", {"token": token, "choices": [cand]})
@@ -208,6 +214,9 @@ def choose_action(e, token: str, actor: dict, me_index: int, weights: dict,
                                              for _ in range(max(1, actor.get("base_hits_per_attack", 1)))]}
                                    for _ in range(max(1, actor.get("base_attack_actions", 1)))]}
         return cand, {}, {}
+    if mode == "random":
+        best_score, best_cand, best_feats = (rng or random).choice(scored)
+        return best_cand, {"#random": round(best_score, 2)}, best_feats
     scored.sort(key=lambda t: (-t[0], t[1]["daowen"]["name"] if t[1]["daowen"] else ""))
     best_score, best_cand, best_feats = scored[0]
     return best_cand, {f"#{i}": round(s, 2) for i, (s, _, _) in enumerate(scored[:3])}, best_feats
@@ -219,18 +228,22 @@ def choose_action(e, token: str, actor: dict, me_index: int, weights: dict,
 
 def run_match(lineup: list[dict], weights: dict, *, seed: int = 0, max_rounds: int = 12,
               weight_sets: list[dict] | None = None, hp_scale: float = 0.25,
-              setup=None, choice_log: list | None = None) -> dict:
+              setup=None, choice_log: list | None = None,
+              choice_modes: list[str] | None = None) -> dict:
     """lineup 里的怪物互斗；weight_sets 可以为每只怪物指定不同的权重（否则共用）。
 
     setup(engine) 是可选钩子，用来在开打前摆好特定场面（例如把某只怪物推到崩解线附近），
     只改场景参数，不改规则。
     choice_log 传入列表时，逐次决策记一行（回合/怪物/道纹/X/攻击目标），
     供「两套权重到底有没有改变行为」这类对照探针使用。
+    choice_modes 可以为每只怪物指定 "best"（默认，按权重取最高）或 "random"（对照）。
     """
     e = build_arena(lineup, seed=seed, hp_scale=hp_scale)
     if setup is not None:
         setup(e)
     sets = weight_sets or [weights] * len(lineup)
+    modes = choice_modes or ["best"] * len(lineup)
+    chooser_rng = random.Random(seed * 7919 + 13)
     stats = {i: {"dmg_out": 0, "dmg_taken": 0, "kills": 0, "deaths": 0, "self_kill": False,
                  "casts": 0, "rounds_acted": 0, "zero_damage_rounds": 0} for i in range(len(lineup))}
     log: list[dict] = []
@@ -264,7 +277,8 @@ def run_match(lineup: list[dict], weights: dict, *, seed: int = 0, max_rounds: i
             before_hp = {j: m.current_hp for j, m in enumerate(e.state.enemies)}
             preview = ActionPreview(e)
             cand, scores, _ = choose_action(e, token, actor, me_index, sets[me_index],
-                                            rivals, preview)
+                                            rivals, preview, mode=modes[me_index],
+                                            rng=chooser_rng)
             if choice_log is not None:
                 dw = cand.get("daowen") or {}
                 tgt = [h.get("target_ref") for act in cand.get("attack_actions", [])
