@@ -644,15 +644,30 @@ def classify_pair(a: str, b: str, base: dict, sa: dict, sb: dict, pair: dict) ->
             return [x for x in _events_of(scene, probe) if x.startswith(obs[6:])]
         return _delta_of(scene, probe).get(obs, 0)
 
+    # 因果串：绝对值 + 相对基线的增量（两套口径都给，读者可自行验算增量是否可加）
     causal = ""
     if findings:
         f0 = findings[0]
         p0, o0 = f0["probe"], f0["obs"]
-        causal = (f"{p0} / {o0}：基线={_cell(base, p0, o0)}"
-                  f"；{a}独发={_cell(sa, p0, o0)}；{b}独发={_cell(sb, p0, o0)}"
-                  f"；并施 A→B={_cell(ab_scene, p0, o0)}；B→A={_cell(ba_scene, p0, o0)}"
-                  + (f"（可加预期={f0['expected_additive']}）" if "expected_additive" in f0
-                     else f"（{f0.get('kind','')}）"))
+
+        def _v(sc):
+            return _cell(sc, p0, o0)
+
+        if o0.startswith("event:"):
+            causal = (f"{p0} / {o0}：基线={_v(base)}｜{a}独发={_v(sa)}｜{b}独发={_v(sb)}"
+                      f"｜A→B={_v(ab_scene)}｜B→A={_v(ba_scene)}"
+                      f"｜判定={f0.get('kind', '')}（首个偏离项）")
+        else:
+            def _d(sc):
+                return _v(sc) - _v(base)
+
+            causal = (f"{p0} / {o0}：基线={_v(base)}（增量 0）"
+                      f"｜{a}独发={_v(sa)}（{_d(sa):+d}）"
+                      f"｜{b}独发={_v(sb)}（{_d(sb):+d}）"
+                      f"｜A→B={_v(ab_scene)}（{_d(ab_scene):+d}）"
+                      f"｜B→A={_v(ba_scene)}（{_d(ba_scene):+d}）"
+                      + (f"｜可加预期增量={f0['expected_additive']:+d}" if "expected_additive" in f0
+                         else f"｜判定={f0.get('kind', '')}（首个偏离项）"))
     return {"classification": cls, "interaction_types": types, "synergy_kind": kind,
             "causal": causal,
             "findings": findings[:6], "n_findings": len(findings),

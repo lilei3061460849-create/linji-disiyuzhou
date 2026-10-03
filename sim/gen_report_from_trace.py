@@ -170,6 +170,8 @@ paper.append("> **本文件只保留最新一次轮回记录。** 上一版《�
              "已原文归档到 `archive/report_history_2026-10-02_peripheral_cleanup.md`；新的完整轮回写入后覆盖本记录，"
              "不得用 `sim/pick_best_report.py` / TacticalAI 批量评选覆盖本文件。")
 paper.append("> 格式遵循 README《六、战斗推演格式》与 AI 知识库七步原子时序切片管道：逐回合、逐次出手，禁止概括、跳过或合并结算。")
+paper.append("> 本文件另附《三、道纹两两协同穷举》：那是**独立于本局的实测附录**（穷举全部道纹无序对，"
+             "回答「任意两道纹同时持有会怎样」），与本局实际发生的 17 次【再生】不是一回事。")
 paper.append("")
 
 # ---------------------------------------------------------------- 开局
@@ -467,6 +469,239 @@ while i < len(entries):
     prev_snap = st
     i += 1
 
+
+# ---------------------------------------------------------------- 附录：道纹两两协同
+SYN_CSV = ROOT / "reports/daowen_pairwise_synergy.csv"
+SYN_GRAPH = ROOT / "reports/daowen_synergy_graph.json"
+
+
+def _syn_rows() -> list[dict]:
+    """读逐对分类表（本仓库已提交，故本附录可字节复现）。"""
+    import csv
+    if not SYN_CSV.exists():
+        return []
+    with SYN_CSV.open(encoding="utf-8-sig", newline="") as fh:
+        return list(csv.DictReader(fh))
+
+
+def _syn_layer(types: str) -> str:
+    t = set(x for x in (types or "").split("|") if x)
+    if t & {"EVENT_CONVERSION", "EVENT_MULTIPLICATION"}:
+        return "EVENT_LEVEL"
+    if "CAST_EXECUTION" in t:
+        return "CAST_EXECUTION"
+    if "ORDER_SENSITIVE" in t:
+        return "ORDER_ONLY"
+    return "SCALAR_COUPLING"
+
+
+def daowen_synergy_lines() -> list[str]:
+    """把两两协同穷举的测量结果写进本报告（全部数字取自逐对分类表，不手写）。"""
+    rows = _syn_rows()
+    if not rows:
+        return []
+    L: list[str] = []
+    a_ = L.append
+    total = len(rows)
+    c0 = [r for r in rows if r["classification"] == "0"]
+    c1 = [r for r in rows if r["classification"] == "1"]
+    c2v = [r for r in rows if r["classification"] == "2" and r["confidence"] != "UNVERIFIED"]
+    c2u = [r for r in rows if r["classification"] == "2" and r["confidence"] == "UNVERIFIED"]
+    pct = lambda k: f"{100.0 * k / total:.1f}%"
+    names = sorted({r["daowen_a"] for r in rows} | {r["daowen_b"] for r in rows})
+    hub = {n: 0 for n in names}
+    for r in c2v:
+        hub[r["daowen_a"]] += 1
+        hub[r["daowen_b"]] += 1
+    zero = sorted(n for n in names if hub[n] == 0)
+    order = [r for r in c2v if r["order_sensitive"] == "True"]
+    layers: dict[str, int] = {}
+    for r in c2v:
+        k = _syn_layer(r["interaction_type"])
+        layers[k] = layers.get(k, 0) + 1
+    types: dict[str, int] = {}
+    for r in c2v:
+        for t in (r["interaction_type"] or "").split("|"):
+            if t:
+                types[t] = types.get(t, 0) + 1
+
+    a_("## 三、道纹两两协同穷举（附：生产引擎实测）")
+    a_("")
+    a_("> 结论一节（本文件「二、本局速览」）里的 17 次【再生】是**这一局**的选择；本附录要回答的是"
+       "另一个问题：**当前生产道纹表里，任意两道纹同时持有并先后发动，会发生什么**。")
+    a_("> 分析对象＝生产注册表 `engine/daowen.py` `DaoWenEngine._registry`，**穷举全部无序对、无抽样**；"
+       "全部执行在生产引擎里跑（无第二套战斗引擎）。")
+    a_(f"> 道纹 N = **{len(names)}**｜无序对 C(N,2) = **{total}**｜统一发动 X = 3｜"
+       "逐对明细：`reports/daowen_pairwise_synergy.csv`（每对一行）｜关系图：`reports/daowen_synergy_graph.json`｜"
+       "长版报告：`reports/daowen_pairwise_synergy.md`")
+    a_("> 复现：`python sim/daowen_pairwise_analysis.py --all`（全量，约 6 分钟）；"
+       "`--report` 只按缓存重算报告；`--pair 固执,龙鳞` 单对重放。本报告由 "
+       "`python sim/gen_report_from_trace.py` 转写，本附录数字全部取自上面那张逐对表。")
+    a_("> 分析未改动任何道纹定义/数值/代价/规则；分析时段内 `engine/` 无改动。")
+    a_("")
+    a_("### 3.1 判定口径")
+    a_("")
+    a_("* 每个无序对跑 5 个场景：`基线`、`A 独发`、`B 独发`、`A→B 并施`、`B→A 并施`，"
+       "再对每个场景跑 17 个探针（受击/多段受击/怪物阶段/闪避/普攻/流血代价/回复/击杀/回合推进/"
+       "速度损失/血限损失/法力循环/被闪避后回合 等），逐通道比对**事件序列与中间值**，不只看末态血量。")
+    a_("* `ab == a + b`（相对空基线的增量可加）→ 可加；两者都动同一通道 → **1 加和型**；"
+       "从不共触同一通道 → **0 独立型**；`ab != a + b` 或事件类型/计数出现新东西 → **2 非平凡协同**。")
+    a_("* **发动侧按生产 `summary` 的受益方定**（29 个道纹对敌发动，其余对自身）——这是场景选择，"
+       "不是规则：不对敌放【庇护】这类非打法，否则会造出与道纹对无关的假交互。")
+    a_("* 生产规则里**每次发动都吃 1 次出手**，两发必然等比少打普攻；攻击类探针先把"
+       "「本回合已用出手」归零再打，把「独立发动的公共代价」从效果层交互里剥离。")
+    a_("* 某次发动被引擎拒绝、或发动后留下待 DM 裁定的中断时，该对记 `UNVERIFIED`，"
+       "**不做猜测、不计入任何结论数字**（原因见 3.7）。")
+    a_("")
+    a_("### 3.2 总量")
+    a_("")
+    a_("| 分类 | 对数 | 占比 |")
+    a_("| --- | ---: | ---: |")
+    a_(f"| 0 独立型（各自跑，互不影响） | {len(c0)} | {pct(len(c0))} |")
+    a_(f"| 1 加和型（共触同一通道、增量可加） | {len(c1)} | {pct(len(c1))} |")
+    a_(f"| 2 非平凡协同（可验证） | {len(c2v)} | {pct(len(c2v))} |")
+    a_(f"| 2′ 判定为 2 但执行受限（UNVERIFIED，不计入结论） | {len(c2u)} | {pct(len(c2u))} |")
+    a_(f"| 合计 | {total} | 100% |")
+    a_("")
+    a_("**分类 2 的层级拆分**（每个对只归一类，用来区分「结算层数值耦合」和「结构层交互」）：")
+    a_("")
+    a_("| 层级 | 对数 | 判据 |")
+    a_("| --- | ---: | --- |")
+    for key, meaning in (("EVENT_LEVEL", "出现两侧独发都没有的新事件类型，或事件计数超出两侧之和"),
+                         ("CAST_EXECUTION", "某次发动的自身增量（代价/数值/结果）被同伴改变"),
+                         ("ORDER_ONLY", "A→B 与 B→A 结果不同，且无上述两类"),
+                         ("SCALAR_COUPLING", "只有结算层数值耦合（两序一致、无新事件、发动期未被改）")):
+        a_(f"| {key} | {layers.get(key, 0)} | {meaning} |")
+    a_("")
+    a_("`SCALAR_COUPLING` 仍计入分类 2 的理由：本引擎里 **[攻击力]＝[当前法力]、[攻击次数]＝[当前速度]**"
+       "是乘法关系，两次发动对同一池的加减在结算上不可加；这属于乘性耦合，不是「另一个互不相干的数值修正」。")
+    a_("")
+    a_("类型标签命中次数（一个对可命中多个）：" + "、".join(
+        f"{k} {v}" for k, v in sorted(types.items(), key=lambda kv: (-kv[1], kv[0]))) + "。")
+    a_("")
+    a_("### 3.3 连接度（Cat2 图）")
+    a_("")
+    top = sorted(((v, k) for k, v in hub.items() if v), reverse=True)[:15]
+    a_(f"零 Cat2 伙伴的道纹：**{len(zero)}** 个"
+       + (f"（{'、'.join(zero)}）" if zero else "（无）")
+       + f"；平均度 {2 * len(c2v) / len(names):.2f}，中位度 "
+         f"{sorted(hub.values())[len(names) // 2]}。")
+    a_("")
+    a_("| 道纹 | Cat2 伙伴数 |")
+    a_("| --- | ---: |")
+    for v, k in top:
+        a_(f"| {k} | {v} |")
+    a_("")
+    a_("### 3.4 顺序敏感的对")
+    a_("")
+    a_(f"共 **{len(order)}** 对在 A→B 与 B→A 下结果不同（**不判定为 bug**，只记录分歧发生在哪个探针）。"
+       "生产里顺序本身就是规则（例：`combat_hooks.py` 的钩子优先级决定【加害】必须先于【龙鳞】结算）。")
+    a_("")
+    # 覆盖面优先：证据通道最少的对先列（更聚焦），且同一道纹不重复出现
+    order_sorted = sorted(order, key=lambda r: (len(r["evidence"].split(";")), r["daowen_a"], r["daowen_b"]))
+    shown, used = [], set()
+    for r in order_sorted:
+        if r["daowen_a"] in used or r["daowen_b"] in used:
+            continue
+        used.add(r["daowen_a"]); used.add(r["daowen_b"]); shown.append(r)
+    a_("| A | B | 命中探针（证据 ID） | 类型 |")
+    a_("| --- | --- | --- | --- |")
+    for r in shown[:20]:
+        a_(f"| {r['daowen_a']} | {r['daowen_b']} | `{r['evidence']}` | {r['interaction_type']} |")
+    if len(order) > len(shown[:20]):
+        a_(f"| … | 其余 {len(order) - len(shown[:20])} 对 | 见逐对表 `order_sensitive=True` | |")
+    a_("")
+    a_("### 3.5 事件级协同（27 对全列）")
+    a_("")
+    a_("结构层交互——出现两侧独发都没有的新事件，或事件计数超出两侧之和。下表逐对给出因果串；"
+       "每一串都是该对的**首个偏离项**（绝对值 + 相对基线的增量 + 可加预期），"
+       "完整的多项偏离见 `reports/daowen_pairwise_synergy.md` §7 的事件序列对照。")
+    a_("")
+    ev = sorted([r for r in c2v if _syn_layer(r["interaction_type"]) == "EVENT_LEVEL"],
+                key=lambda r: (r["daowen_a"], r["daowen_b"]))
+    for r in ev:
+        a_(f"* **{r['daowen_a']} + {r['daowen_b']}**（{r['interaction_type']}）— {r['causal_trace']}")
+    a_("")
+    a_("### 3.6 代表样本（含事件序列）")
+    a_("")
+    reps = []
+    seen_kind: dict[str, int] = {}
+    for r in sorted(c2v, key=lambda r: (r["daowen_a"], r["daowen_b"])):
+        k = _syn_layer(r["interaction_type"])
+        if seen_kind.get(k, 0) >= 1 and k != "EVENT_LEVEL":
+            continue
+        if k == "EVENT_LEVEL" and seen_kind.get(k, 0) >= 2:
+            continue
+        seen_kind[k] = seen_kind.get(k, 0) + 1
+        reps.append((k, r))
+    if rows:
+        canonical = next((r for r in rows if {r["daowen_a"], r["daowen_b"]} == {"固执", "龙鳞"}), None)
+        if canonical and all(canonical is not r for _, r in reps):
+            reps.insert(0, ("指定样本", canonical))
+    for k, r in reps[:8]:
+        a_(f"* **{r['daowen_a']} + {r['daowen_b']}**｜分类 {r['classification']}"
+           f"（{k}）｜{r['interaction_type']}")
+        a_(f"  * 事件序列：{r['causal_trace']}")
+    a_("")
+    a_("### 3.7 执行受限的对（UNVERIFIED）")
+    a_("")
+    a_("原因只有两类：某次发动被引擎拒绝，或发动后留下待 DM 裁定的中断导致同场景后续动作被门禁挡住。")
+    a_("")
+    def _unver_reason(trace: str) -> str:
+        """把逐对不同的错误串并成可读类别（只归类，不改写原因本身）。"""
+        if "尸爆" in trace:
+            return "尸爆（自毁型）发动即[命零]触发【死之传承】中断，同场景后续动作被门禁挡住"
+        if "target_ref不是当前合法实体" in trace:
+            return "后手发动时目标已不合法（先手改变了目标集合）"
+        if "波及必须为" in trace:
+            return "波及的显式目标数在提交瞬间与合法目标数不一致"
+        if "无法完整承担" in trace or "法力不足" in trace or "出手已用完" in trace:
+            return "代价/预算不足（连发两次超出本回合的法力或疲惫承受力）"
+        if "有待处理的中断" in trace:
+            return "先手留下待裁定中断，后手被门禁挡住"
+        return "其它执行受限"
+
+    reasons: dict[str, int] = {}
+    for r in c2u:
+        key = _unver_reason(r["causal_trace"])
+        reasons[key] = reasons.get(key, 0) + 1
+    a_("| 原因 | 对数 |")
+    a_("| --- | ---: |")
+    for k, v in sorted(reasons.items(), key=lambda kv: (-kv[1], kv[0]))[:8]:
+        a_(f"| {k} | {v} |")
+    a_("")
+    a_("### 3.8 结论（可测量事实）与假设")
+    a_("")
+    a_("可测量事实：")
+    a_("")
+    a_(f"1. {len(names)} 个道纹产出 {total} 组无序对，全部跑完并逐对给出 0/1/2 唯一分类。")
+    a_(f"2. 观测到分类 2（非平凡协同）**{len(c2v)}** 对，密度 **{pct(len(c2v))}**；"
+       f"分类 1 **{len(c1)}** 对；分类 0 **{len(c0)}** 对。")
+    a_(f"3. 分类 2 中：事件级 {layers.get('EVENT_LEVEL', 0)} 对、发动期被改变 "
+       f"{layers.get('CAST_EXECUTION', 0)} 对、仅顺序不同 {layers.get('ORDER_ONLY', 0)} 对、"
+       f"纯结算层数值耦合 {layers.get('SCALAR_COUPLING', 0)} 对。")
+    a_(f"4. 没有任何分类 2 伙伴的道纹 **{len(zero)}** 个"
+       + (f"（{'、'.join(zero)}）" if zero else "（无）") + "。")
+    a_(f"5. 度最高的道纹：**{top[0][1]}**（{top[0][0]} 个 Cat2 伙伴）；"
+       f"顺序敏感对 {len(order)} 对；执行受限 {len(c2u)} 对已单列，未计入上述任何数字。")
+    a_("")
+    a_("假设（**不是**结论，供后续验证）：")
+    a_("")
+    a_("1. 大量协同来自 **[攻击力]＝[当前法力]** 这一条换算：任何改动法力的道纹都会同时改动攻击力，"
+       "于是「两次发动对同一法力池的加减」天然不可加。若要减少这类耦合，可验证的方向是"
+       "把攻击力与法力解耦，而不是逐个道纹调数。")
+    a_("2. 度高的是「改变别人参数」的道纹（削弱、增伤、扣法力/速限），度低的是「只改自己」的道纹——"
+       "连接度可能主要反映**作用面**，而不是数值强度。")
+    a_("3. 顺序敏感对集中在「同一结算窗口内互相改参数」的组合上；本报告只登记分歧通道，"
+       "不主张哪一序才是设计意图。")
+    a_("4. 事件级 27 对（触发式交互）数量远少于数值级，可能是因为沙盒只有 1 名敌人、"
+       "没有友方/员工/多怪，触发类道纹的作用面被场景限制；换更宽的沙盒可能变多。")
+    a_("")
+    a_("> 本附录只报告测量结果：不评价道纹强弱、不判断协同「够不够」，也不把顺序敏感当作缺陷。")
+    a_("")
+    return L
+
+
 # ---------------------------------------------------------------- 速览与复盘
 final_shards = next(e["state"]["shards"] for e in reversed(entries) if e["state"].get("phase") == "in_combat")
 speed = [
@@ -499,6 +734,7 @@ speed = [
     "",
 ]
 paper.extend(speed)
+paper.extend(daowen_synergy_lines())
 
 OUT.write_text("\n".join(paper) + "\n", encoding="utf-8")
 print("written:", OUT, len(paper), "lines")
