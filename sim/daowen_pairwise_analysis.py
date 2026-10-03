@@ -947,6 +947,8 @@ def write_report_md(names, targets, vocab, rows, head, elapsed, run_cmd, base):
       f"`DaoWenEngine._registry`）")
     A(f"> 道纹 N = **{n}**｜无序对 C(N,2) = **{total}**｜统一发动 X = {CAST_X}｜扫描耗时 {elapsed:.0f}s")
     A(f"> 复现：`{run_cmd}`")
+    A(f"> 被分析的引擎源码指纹：`engine_src_sha256={engine_fingerprint()[:16]}`"
+      f"（对 `engine/**/*.py` 排序后拼接取 sha256；用于核对分析对象没被换过）")
     A("")
     A("> 本文件只做**测**，不做改。未修改任何道纹定义、数值、代价或规则。")
     A("")
@@ -1228,6 +1230,16 @@ def representative(rows, names, targets, base, n=8):
     return out
 
 
+def engine_fingerprint() -> str:
+    """被分析引擎源码的指纹：排序后拼接 engine/**/*.py 内容取 sha256。"""
+    import hashlib
+    h = hashlib.sha256()
+    for f in sorted((ROOT / "engine").rglob("*.py")):
+        h.update(f.relative_to(ROOT).as_posix().encode("utf-8"))
+        h.update(f.read_bytes())
+    return h.hexdigest()
+
+
 def doc_drift_note(names, vocab):
     """与 全道纹索引.md 交叉核对（只报告差异，不改文档）。"""
     idx = ROOT / "全道纹索引.md"
@@ -1361,6 +1373,11 @@ def main():
         print(f"扫描 {len(names)} 道纹 / {len(names)*(len(names)-1)//2} 对 …", flush=True)
         sweep(names, targets, base, verbose=True, force=args.force)
     elapsed = time.time() - t0
+    if not args.report:
+        _w(CACHE / "meta.json", {"elapsed": elapsed})
+    else:
+        meta = CACHE / "meta.json"
+        elapsed = _r(meta)["elapsed"] if meta.exists() else 0.0   # 报告重算沿用最近一次扫描耗时
     bad_cache = cache_consistency(names, targets)
     print(f"缓存自检：{'通过' if not bad_cache else '异常 ' + '；'.join(bad_cache[:5])}", flush=True)
     if args.report:

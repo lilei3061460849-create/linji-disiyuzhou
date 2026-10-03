@@ -1,8 +1,9 @@
 # 道纹两两协同穷举分析（观测报告）
 
-> 仓库 HEAD：`0a3a7a82a2ca2d2dd84c2b7425414220bbb07ca9`｜分析对象：**当前生产道纹词汇表**（`engine/daowen.py` `DaoWenEngine._registry`）
-> 道纹 N = **70**｜无序对 C(N,2) = **2415**｜统一发动 X = 3｜扫描耗时 357s
+> 仓库 HEAD：`d5750793a56f70a9a6ad21f0939a1446b5a1b60d`｜分析对象：**当前生产道纹词汇表**（`engine/daowen.py` `DaoWenEngine._registry`）
+> 道纹 N = **70**｜无序对 C(N,2) = **2415**｜统一发动 X = 3｜扫描耗时 0s
 > 复现：`python sim/daowen_pairwise_analysis.py --all`
+> 被分析的引擎源码指纹：`engine_src_sha256=e1a336ecdd1ebc0c`（对 `engine/**/*.py` 排序后拼接取 sha256；用于核对分析对象没被换过）
 
 > 本文件只做**测**，不做改。未修改任何道纹定义、数值、代价或规则。
 
