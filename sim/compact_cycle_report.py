@@ -96,10 +96,13 @@ def _split_cycle(md: str) -> dict:
             (cur["outside"] if cur is not None else pre_outside).append(ln)
         else:
             cur["lines"].append(ln)
+    # 速览/复盘只取《二、本局速览》这一节：不能把后面《三、道纹两两协同穷举》的
+    # 编号结论也吸进来（它们是另一份独立附录，不属于轮回记录）。
+    i_next = next((i for i in range(i_summary + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
     return {"setup": [x for x in setup if x.strip()],
             "pre_outside": [x for x in pre_outside if x.strip()],
             "battles": battles,
-            "summary": lines[i_summary:], "n_battles": len(battles),
+            "summary": lines[i_summary:i_next], "n_battles": len(battles),
             "n_rounds": sum(len(b["rounds"]) for b in battles)}
 
 
