@@ -29,14 +29,18 @@ from engine.dungeons import load_dungeon_documents  # noqa: E402
 
 DaoWenEngine.register_all()
 
-PANEL = re.compile(r'^([\u4e00-\u9fff\w·]+)[（(](\d+)[×x](\d+)/(\d+)(?:[，,]([^)）\n]*))?[）)]')
+# 面板行两种历史格式都要认：旧 `名字（血限×法限/速限，道纹…）`、新 `名字（血限/法限/速限，道纹…）`。
+# （2026-10-03 修：旧正则只认旧的 × 格式，导致「承载怪物」整列被清空。）
+PANEL = re.compile(r'^([\u4e00-\u9fff\w·]+)[（(](\d+)(?:[×x](\d+)|/(\d+))/(\d+)(?:[，,]([^)）\n]*))?[）)]')
 
 # ---------- 采集 ----------
 effects, costs, params_of = {}, {}, {}
 for name, fn in DaoWenEngine._registry.items():
     doc = (fn.__doc__ or "").strip().splitlines()
     first = doc[0].strip()
-    m = re.match(r'^\S+?X：(.+?)。(.*)$', first)
+    # 2026-10-03：容忍道纹名后的括注（如「全速X（原名【迟滞】）」「必中X（2026-09-28 二次更正）」），
+    # 括注不参与解析；效果正文仍取紧随其后的第一段。
+    m = re.match(r'^\S+?X(?:/[A-Za-z]+)?(?:（[^）]*）)?[：:](.+?)。(.*)$', first)
     assert m, f"{name}: docstring 格式无法解析: {first!r}"
     costs[name] = m.group(1)
     eff = m.group(2)
@@ -48,12 +52,17 @@ carriers = defaultdict(list)
 for region, text in sorted(load_dungeon_documents().items()):
     for line in text.splitlines():
         m = PANEL.match(line.strip())
-        if m and m.group(5):
-            for n, v in re.findall(r'([\u4e00-\u9fff]{2})(\d+)', m.group(5)):
-                if n in DaoWenEngine._registry:
-                    entry = f"{m.group(1)}{v}"
-                    if entry not in carriers[n]:
-                        carriers[n].append(entry)
+        if m and m.group(6):
+            # 新面板格式的道纹列不带次数（如「畸变，衰败，狂暴」），旧格式带次数（如「执念2」）。
+            # 两种都解析：有次数就带次数，没有就只记怪物名。
+            for token in re.split(r'[，,、]', m.group(6)):
+                token = token.strip()
+                mm = re.match(r'^([\u4e00-\u9fff·]+?)(\d+)?$', token)
+                if not mm or mm.group(1) not in DaoWenEngine._registry:
+                    continue
+                entry = f"{m.group(1)}{mm.group(2) or ''}"
+                if entry not in carriers[mm.group(1)]:
+                    carriers[mm.group(1)].append(entry)
 
 # 残韵边（出/入）
 out_edges, in_edges = defaultdict(list), defaultdict(list)

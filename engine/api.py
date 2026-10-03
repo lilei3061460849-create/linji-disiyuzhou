@@ -532,11 +532,12 @@ class GameEngine:
                                 "reason": "冷却中或被封印"})
                 continue
             max_x = self._max_legal_daowen_x(player, name)
+            min_x = max(1, DaoWenEngine.X_MIN.get(name, 1))   # 2026-10-03：波及 X≥2
             actions.append({
-                "action_type": "use_daowen", "available": max_x >= 1,
+                "action_type": "use_daowen", "available": max_x >= min_x,
                 "params_schema": {
                     "daowen_name": name,
-                    "x": {"type": "integer", "minimum": 1, "maximum": max_x},
+                    "x": {"type": "integer", "minimum": min_x, "maximum": max_x},
                     "target_ref": target_options,
                     "dodge": "敌对单目标时必填布尔值",
                     "blood_shadow": "目标持有血影时必填布尔值",
@@ -5799,8 +5800,10 @@ class GameEngine:
             entity.total_healed = 0
             entity.status_effects = [s for s in entity.status_effects
                                      if s.scope in persistent_scopes]
-            entity._bizhai = []
-            entity._qingsuan = []
+            # 账本清空一律走唯一入口（引擎/机制两层的口径都从 ledger 模块取）
+            from .mechanisms.ledger import clear_ledger
+            clear_ledger(entity, "逼债")
+            clear_ledger(entity, "清算")
             entity.current_speed = entity.speed_limit
             # DM裁定 2026-09-09：法力与速度同口径——只在[战终]复原（[回始]不再回填）。
             if entity.entity_type == "轮回者":

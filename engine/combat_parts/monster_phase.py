@@ -182,7 +182,8 @@ class MonsterPhaseMixin:
                         max_x = self._monster_max_daowen_x(
                             monster, effective_name, preview_target,
                             hard_cap=len(dodge_target_options) if effective_name == "波及" else None)
-                        if max_x < 1:
+                        # 2026-10-03 用户令：波及 X 下限=2 → 合法目标不足2个时本道纹此刻不可发动。
+                        if max_x < DaoWenEngine.X_MIN.get(effective_name, 1):
                             continue
                         effective_x = max_x
                     else:
@@ -207,6 +208,7 @@ class MonsterPhaseMixin:
                         "x": effective_x,
                         "x_free": bool(getattr(inst, "x_free", False)),
                         "max_x": max_x if getattr(inst, "x_free", False) else 0,
+                        "min_x": DaoWenEngine.X_MIN.get(effective_name, 1),
                         "wave_effective_x": wave_effective_x,
                         "requires_target": requires_target,
                         "target_options": legal_targets,
@@ -290,7 +292,11 @@ class MonsterPhaseMixin:
         """求该道纹此刻可负担的最大 X。返回 0 表示连 X=1 都付不起（prepare 应过滤掉）。"""
         cap = hard_cap if hard_cap is not None else self._DAOWEN_X_PROBE_CAP
         best = 0
-        for x in range(1, max(0, cap) + 1):
+        # X下限（【波及】≥2）：探测从下限起步；上限若连下限都够不到则直接判不可发动。
+        x_floor = max(1, DaoWenEngine.X_MIN.get(effective_name, 1))
+        if cap < x_floor:
+            return 0
+        for x in range(x_floor, max(0, cap) + 1):
             try:
                 calc = DaoWenEngine.resolve(effective_name, x, target=target, caster=monster)
             except ValueError:

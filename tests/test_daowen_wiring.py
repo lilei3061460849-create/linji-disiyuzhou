@@ -93,12 +93,14 @@ def test_boba_spreads_damage_equally_with_random_remainder():
     foe_b = _monster(engine, "靶怪乙", hp=100, atk=3, ap=6)
     engine.execute_action("round_start", {})
     refs = engine.combat._combat_entity_refs()
+    # 2026-10-03 用户令：波及 X 下限=2 → 想标记「敌1」必须同时提交第2个目标（这里连敌0一起标）
     r = engine.execute_action("use_daowen", {
-        "daowen_name": "波及", "x": 1,
-        "dodge_targets": [{"target_ref": "enemy:1", "dodge": False, "blood_shadow": False}],
+        "daowen_name": "波及", "x": 2,
+        "dodge_targets": [{"target_ref": "enemy:0", "dodge": False, "blood_shadow": False},
+                          {"target_ref": "enemy:1", "dodge": False, "blood_shadow": False}],
     })
     assert r["success"], r
-    assert refs["enemy:1"].has_status("波及")
+    assert refs["enemy:0"].has_status("波及") and refs["enemy:1"].has_status("波及")
 
     # 杀伐2X=4点总伤害作用于[目标]敌0+波及目标敌1：2+2。
     r2 = engine.execute_action("use_daowen", {
@@ -141,21 +143,24 @@ def test_boba_boundary_and_invalid_submissions():
     assert r1["success"] is False
     assert "dodge_targets" in r1.get("error", "")
 
-    # 不能标记自身
+    # 不能标记自身（X=2 档、数量对得上，触发的必须是「非自身」那条校验）
     p_ref = next(ref for ref, e in engine.combat._combat_entity_refs().items() if e is p)
     r2 = engine.execute_action("use_daowen", {
-        "daowen_name": "波及", "x": 1,
-        "dodge_targets": [{"target_ref": p_ref, "dodge": False, "blood_shadow": False}],
+        "daowen_name": "波及", "x": 2,
+        "dodge_targets": [{"target_ref": p_ref, "dodge": False, "blood_shadow": False},
+                          {"target_ref": "enemy:0", "dodge": False, "blood_shadow": False}],
     })
     assert r2["success"] is False
 
-    # 正常发动一次：标记目标
+    # 正常发动一次：标记目标（X≥2 → 追加一只怪，两个目标一起标）
+    m2 = _monster(engine, "陪标怪")
     r3 = engine.execute_action("use_daowen", {
-        "daowen_name": "波及", "x": 1,
-        "dodge_targets": [{"target_ref": "enemy:0", "dodge": False, "blood_shadow": False}],
+        "daowen_name": "波及", "x": 2,
+        "dodge_targets": [{"target_ref": "enemy:0", "dodge": False, "blood_shadow": False},
+                          {"target_ref": "enemy:1", "dodge": False, "blood_shadow": False}],
     })
     assert r3["success"], r3
-    assert m.has_status("波及")
+    assert m.has_status("波及") and m2.has_status("波及")
 
 
 def test_ziyang_zishi_shuaibai():

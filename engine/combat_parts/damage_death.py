@@ -60,7 +60,12 @@ class DamageDeathMixin:
 
     def _write_hp_loss_record(self, entity: Entity, amount: int,
                               parent_ctx: Optional[EffectContext | dict],
-                              subtype: str, reaction_logs: Optional[list]) -> dict:
+                              subtype: str, reaction_logs: Optional[list],
+                              *, source_override: Optional[str] = None,
+                              source_type_override: Optional[str] = None,
+                              actor_override: Optional[Entity] = None,
+                              owner_override: Optional[Entity] = None,
+                              tags_extra: Optional[set] = None) -> dict:
         """构造一条“实际失去生命”事件并登记到 entity._hp_loss_events。
 
         仅负责记账，不触发任何反应。触发统一由调用方决定：
@@ -75,15 +80,15 @@ class DamageDeathMixin:
         parent_ctx = normalize_context(parent_ctx) if parent_ctx is not None else None
         ctx = make_context(
             timing=parent_ctx.timing if parent_ctx else self._current_context_timing(),
-            source=parent_ctx.source if parent_ctx else "legacy_hp_loss",
-            source_type=parent_ctx.source_type if parent_ctx else "legacy",
-            actor=parent_ctx.actor if parent_ctx else None,
+            source=source_override or (parent_ctx.source if parent_ctx else "legacy_hp_loss"),
+            source_type=source_type_override or (parent_ctx.source_type if parent_ctx else "legacy"),
+            actor=actor_override or (parent_ctx.actor if parent_ctx else None),
             target=entity,
-            owner=parent_ctx.owner if parent_ctx else None,
+            owner=owner_override or (parent_ctx.owner if parent_ctx else None),
             mechanic="hp_loss",
             subtype=subtype,
             amount=amount,
-            tags=(set(parent_ctx.tags) if parent_ctx else {"legacy_context"}),
+            tags=((set(parent_ctx.tags) if parent_ctx else {"legacy_context"}) | set(tags_extra or ())),
             parent_event_id=parent_ctx.event_id if parent_ctx else None,
         )
         record = ctx.to_dict()
@@ -100,6 +105,11 @@ class DamageDeathMixin:
         self, entity: Entity, amount: int,
         parent_ctx: Optional[EffectContext] = None,
         *, subtype: str = "damage",
+        source_override: Optional[str] = None,
+        source_type_override: Optional[str] = None,
+        actor_override: Optional[Entity] = None,
+        owner_override: Optional[Entity] = None,
+        tags_extra: Optional[set] = None,
     ) -> Optional[dict]:
         """记录“实际失去生命”事件；不改变既有 hp_lost_this_round 数值来源。
 
@@ -115,7 +125,11 @@ class DamageDeathMixin:
             logs = self._fire_after_life_lost(entity, parent_ctx)
         else:
             logs = None
-        record = self._write_hp_loss_record(entity, amount, parent_ctx, subtype, logs)
+        record = self._write_hp_loss_record(
+            entity, amount, parent_ctx, subtype, logs,
+            source_override=source_override, source_type_override=source_type_override,
+            actor_override=actor_override, owner_override=owner_override,
+            tags_extra=tags_extra)
         toll = self._settle_chenglu(entity, amount, parent_ctx)
         if toll:
             record["chenglu"] = toll
@@ -383,13 +397,23 @@ class DamageDeathMixin:
         before_res = self.hook_manager.apply_before_damage(target, amount, damage_type, source, self.state)
         if before_res.get("reflected"):
             # 爆裂在 Hook 内直接扣了攻击者的生命并计入其本回合失血；此处补记来源上下文。
+            # 归因口径（2026-10-03 用户裁定）：这笔失血**记【爆裂】**，不再沿用攻击者的
+            # 伤害上下文——旧口径会把失血账与死因都写成「普通攻击（baolie_reflect）」，
+            # 战报里看不到是【爆裂】反噬杀的。
+            # parent 仍挂这次伤害（父事件链不变，故 event_id 链、时序、血影等口径不动），
+            # 只把「这笔失血算谁造成的」改成【爆裂】：source/source_type/actor/owner+标签。
             reflect_ctx = self._record_hp_loss_event(
-                source, before_res["reflected"], damage_ctx, subtype="baolie_reflect")
+                source, before_res["reflected"], damage_ctx, subtype="baolie_reflect",
+                source_override="爆裂", source_type_override="daowen",
+                actor_override=target, owner_override=target,
+                tags_extra={"daowen", "reflect"})
             if reflect_ctx:
                 before_res["reflect_ctx"] = reflect_ctx
         if before_res.get("suppressed"):
             if source is not None and not source.is_alive:
-                self._on_entity_death(source, ctx=before_res.get("reflect_ctx") or make_context(
+                # 死因同样记【爆裂】：显式给 mechanic="death"，让 _on_entity_death
+                # 保留 subtype=baolie_reflect，而不是退回 hp_zero。
+                self._on_entity_death(source, ctx=make_context(
                     timing=damage_ctx.timing, source="爆裂", source_type="daowen",
                     actor=target, target=source, owner=target, mechanic="death",
                     subtype="baolie_reflect", tags={"daowen", "reflect"},

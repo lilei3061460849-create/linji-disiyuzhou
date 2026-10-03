@@ -355,13 +355,24 @@ PROBE_NAMES = list(PROBES)
 
 
 def cast_params(e, name: str, x: int, target_ref: str) -> dict:
-    """生产 use_daowen 的提交参数；波及需要显式 dodge_targets（X=合法目标数）。"""
+    """生产 use_daowen 的提交参数；波及需要显式 dodge_targets（X=合法目标数）。
+
+    X 下限（2026-10-03 用户令）：【波及】X≥2。合法目标数不足下限时返回 `_skip`
+    标记，由 run_scene 记为「未发动」——不硬凑一个非法提交（旧版凑成 1 个目标，
+    撞 API 的 dodge_targets 校验，被记为一次假失败）。
+    """
     params = {"actor_ref": "player:0", "daowen_name": name, "x": x,
               "target_ref": target_ref, "dodge": False, "blood_shadow": False,
               "trigger_spell_choices": {}}
     if name == "波及":
-        refs = [r for r in ("enemy:0",) if r in e.combat._combat_entity_refs()]
-        n = max(1, min(x, len(refs)))
+        from engine.daowen import DaoWenEngine
+        min_x = max(1, DaoWenEngine.X_MIN.get("波及", 1))
+        refs = [r for r in e.combat._combat_entity_refs() if r != "player:0"]
+        if len(refs) < min_x:
+            params["_skip"] = (f"沙盒合法目标{len(refs)}个 < 【波及】X下限{min_x}："
+                               f"按 2026-10-03 规则本场景无法发动")
+            return params
+        n = max(min_x, min(x, len(refs)))
         params["x"] = n
         params["dodge_targets"] = [{"target_ref": r, "dodge": False, "blood_shadow": False}
                                    for r in refs[:n]]
@@ -381,6 +392,12 @@ def run_scene(e, casts: list) -> dict:
         before = snapshot(e)
         n_before = _pending_count(e)
         params = cast_params(e, c["name"], c["x"], c["target_ref"])
+        skip = params.pop("_skip", None)
+        if skip:
+            # 场景不满足该道纹的 X 下限（当前只有【波及】）：如实记为未发动。
+            cast_log.append({"name": c["name"], "ok": False, "error": skip,
+                             "skipped_under_min_x": True})
+            continue
         r = e.execute_action("use_daowen", params)
         after = snapshot(e)
         n_after = _pending_count(e)
@@ -425,9 +442,16 @@ def _r(p: Path):
 
 SCENE_VERSION = 3   # 沙盒常量/探针集/快照口径的版本戳：改动它们必须 +1，否则旧缓存会被误用
                     # （v3：自然目标侧 + 出手预算中性化 + 回合链修正 + 资源/rerolls 通道 + 池 55/60）
+# 单道纹口径变更只作废该道纹的缓存（避免为了【波及】一条把 70×70 全表重跑）。
+# 2026-10-03：【波及】X 下限改 2，本沙盒只有 1 个合法目标 → 该场景记为「未发动」。
+NAME_SCENE_VERSION = {"波及": 1}
 
 
-def _cached(path: Path):
+def _scene_ver(*names: str) -> int:
+    return SCENE_VERSION + max((NAME_SCENE_VERSION.get(n, 0) for n in names), default=0)
+
+
+def _cached(path: Path, ver: int = None):
     """读缓存，但版本戳不符就当作不存在（防止改了口径还在用旧场景）。"""
     if not path.exists():
         return None
@@ -435,7 +459,7 @@ def _cached(path: Path):
         data = _r(path)
     except Exception:
         return None
-    if isinstance(data, dict) and data.get("_v") == SCENE_VERSION:
+    if isinstance(data, dict) and data.get("_v") == (SCENE_VERSION if ver is None else ver):
         return data
     return None
 
@@ -461,7 +485,7 @@ def solo_path(name: str, target: str) -> Path:
 def get_solo(name: str, target: str, force=False) -> dict:
     f = solo_path(name, target)
     if not force:
-        hit = _cached(f)
+        hit = _cached(f, _scene_ver(name))
         if hit is not None:
             return hit
     f.parent.mkdir(parents=True, exist_ok=True)
@@ -470,7 +494,7 @@ def get_solo(name: str, target: str, force=False) -> dict:
                       [{"name": name, "x": CAST_X, "target_ref": target}])
     shutil.rmtree(tmp, ignore_errors=True)
     scene["target"] = target
-    scene["_v"] = SCENE_VERSION
+    scene["_v"] = _scene_ver(name)
     _w(f, scene)
     return scene
 
@@ -478,7 +502,7 @@ def get_solo(name: str, target: str, force=False) -> dict:
 def get_pair(a: str, ta: str, b: str, tb: str, force=False) -> dict:
     f = CACHE / "pairs" / f"{a}__{b}.json"
     if not force:
-        hit = _cached(f)
+        hit = _cached(f, _scene_ver(a, b))
         if hit is not None:
             return hit
     f.parent.mkdir(parents=True, exist_ok=True)
@@ -490,7 +514,7 @@ def get_pair(a: str, ta: str, b: str, tb: str, force=False) -> dict:
     ba = run_scene(e_ba, [{"name": b, "x": CAST_X, "target_ref": tb},
                           {"name": a, "x": CAST_X, "target_ref": ta}])
     shutil.rmtree(tmp, ignore_errors=True)
-    out = {"ab": ab, "ba": ba, "_v": SCENE_VERSION,
+    out = {"ab": ab, "ba": ba, "_v": _scene_ver(a, b),
            "targets": {a: ta, b: tb}}
     _w(f, out)
     return out
@@ -807,7 +831,7 @@ def cache_consistency(names, targets) -> list:
     bad = []
     for a, b in ((names[i], names[j]) for i, x in enumerate(names) for j, y in enumerate(names) if j > i):
         f = CACHE / "pairs" / f"{a}__{b}.json"
-        data = _cached(f)
+        data = _cached(f, _scene_ver(a, b))
         if data is None:
             bad.append(f"{a}+{b}:缓存缺失或版本不符")
             continue

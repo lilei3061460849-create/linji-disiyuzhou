@@ -188,6 +188,30 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                 results.append(result)
         return results
 
+    def _dispatch_phase_all(self, phase: str, entities: list) -> list:
+        """相位分发（机制优先）：每个机制按 priority 对**全部实体**结算完，再轮到下一个。
+
+        与 `_dispatch_phase`（实体优先，逐实体跑全部机制）的区别只在遍历次序：
+        【逼债/清算/赌命】的旧实现是「逼债全体 → 清算全体 → 赌命全体」，用实体优先
+        分发会变成「逼债甲→清算甲→赌命甲→逼债乙…」，顺序即规则，故单列本方法。
+        调用点必须与旧内嵌块位置逐字对齐（见 Phase.ROUND_START_SETTLE 的锚点注释）。
+        """
+        results = []
+        for mechanism in MECHANISMS.phase_mechanisms(phase):
+            for entity in entities:
+                ctx = TriggerContext(combat=self, state=self.state, phase=phase, target=entity)
+                if mechanism.condition is not None and not mechanism.condition(ctx):
+                    continue
+                targets = mechanism.target.select(ctx) if mechanism.target is not None else []
+                result = mechanism.effect(ctx, targets)
+                if result is None:
+                    continue
+                if isinstance(result, list):
+                    results.extend(result)     # 一次结算多笔账目 → 多条报告条目
+                else:
+                    results.append(result)
+        return results
+
     def _battle_delta(self, entity: Entity, field_name: str, delta: int,
                       source: str, polarity: str) -> int:
         """战斗中未注明永久且不是代价/伤害的面板变化统一登记为局内效果。"""
@@ -909,58 +933,14 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
             # 机制的报告条目并入 effects，战报格式与迁移前一致。
             effects.extend(self._dispatch_phase(Phase.ROUND_START, target=entity))
 
-        # ---- F2：罪孽专属道纹 [回始] 结算（逼债/清算/赌命） ----
-        # 逼债X：目标失去X碎片，无力支付的部分记为负债（碎片扣负，DM裁定D 2026-08-22，
-        # 旧"否则失去2X血限"废止）。负债≥20触发【还债】（仅怪物，见 settle_victory_paths）；
-        # 玩家被挂逼债无力支付时同样计负债——玩家负债不触发还债，但冻结一切
-        # 碎片支出（假碎片仍可花，见 _shards_of 口径）。
-        for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
-            for entry in list(getattr(entity, "_bizhai", [])):
-                x = entry["x"]
-                if self._shards_of(entity) >= x:
-                    self._lose_shards_of(entity, x)
-                    effects.append({"type": "bizhai", "entity": entity.name, "lost_shards": x})
-                else:
-                    if entity is self.state.player:
-                        use_fake = min(self.state.fake_shards, x)
-                        self.state.fake_shards -= use_fake
-                        self.state.shards -= (x - use_fake)
-                        now = self.state.shards
-                    else:
-                        use_fake = min(entity.fake_shards, x)
-                        entity.fake_shards -= use_fake
-                        entity.shards -= (x - use_fake)
-                        now = entity.shards
-                    effects.append({"type": "bizhai_debt", "entity": entity.name,
-                                    "obligation": x, "shards_now": now,
-                                    "debt_now": max(0, -now)})
-        # 清算X：目标失去[你碎片]点格挡（你=施法者当前碎片，每回始读取）
-        for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
-            for entry in list(getattr(entity, "_qingsuan", [])):
-                caster = entry["caster"]
-                drain = max(0, self._shards_of(caster))
-                lost = min(entity.shield, drain)
-                entity.shield -= lost
-                effects.append({"type": "qingsuan", "entity": entity.name, "lost_shield": lost, "drain": drain})
-        # 赌命X：按场上存活角色从轮回者方开始发放数字，投随机数，对应目标失去30%当前生命
-        duming_holders = [e for e in self.state.get_all_player_side() + self.state.get_all_enemy_side()
-                          if e.is_alive and e.has_status("赌命")]
-        for holder in duming_holders:
-            alive = [e for e in self.state.get_all_player_side() + self.state.get_all_enemy_side() if e.is_alive]
-            if len(alive) < 1:
-                continue
-            roll = self.dice.auto_roll(f"赌命_r{self.state.current_round}", [e.name for e in alive],
-                                       context=f"{holder.name}发动赌命")
-            idx = int(roll["player_number"]) - 1
-            tgt = alive[min(max(idx, 0), len(alive) - 1)]
-            d = math.ceil(tgt.current_hp * 30 / 100)  # 2026-09-28 按用户描述：失去30%**当前**生命（不是血限）
-            rd = self._raw_hp_loss(tgt, d, ctx={
-                "timing": "round_start", "source": "赌命", "source_type": "daowen",
-                "actor": holder, "target": tgt, "mechanic": "hp_loss", "subtype": "percent",
-                "amount": d, "tags": {"daowen", "round_start"},
-            })
-            effects.append({"type": "duming", "caster": holder.name, "target": tgt.name,
-                            "roll": idx + 1, "of": len(alive), "damage": rd["lost"], **rd})
+        # ---- F2：罪孽专属道纹 [回始] 结算（逼债/清算/赌命）----
+        # 2026-10-03 迁移：本位置只宣布相位时点（锚点 = 回始效果循环之后、current_round+1 之前），
+        # 三段 for 已搬进声明层（builtins 的 逼债·结算/清算·结算/赌命·结算）。
+        # 分发语义=机制优先：逐个机制对全体实体结算，逐字保持「逼债全体 → 清算全体 →
+        # 赌命全体」的旧顺序（顺序即规则）；账本访问一律走 mechanisms.ledger。
+        effects.extend(self._dispatch_phase_all(
+            Phase.ROUND_START_SETTLE,
+            self.state.get_all_player_side() + self.state.get_all_enemy_side()))
 
         self.state.current_round += 1
 
@@ -1138,11 +1118,10 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                                     "current_speed": entity.current_speed,
                                     "current_mana": entity.current_mana})
                 # 干扰/手雷减攻到期自动由 tick 清理，无需额外
-            # F2：逼债/清算状态消失即清账（∞/持续X到期后不再逐回始结算）
-            if not entity.has_status("逼债") and getattr(entity, "_bizhai", None):
-                entity._bizhai = []
-            if not entity.has_status("清算") and getattr(entity, "_qingsuan", None):
-                entity._qingsuan = []
+            # F2：逼债/清算状态消失即清账（∞/持续X到期后不再逐回始结算）。
+            # 2026-10-03 迁移：判定与清账都在声明层（逼债·对账/清算·对账）；
+            # 本行只宣布相位时点，位置必须在 status tick 之后（否则会多结算一轮）。
+            effects.extend(self._dispatch_phase(Phase.ROUND_END_RECONCILE, target=entity))
             # F2：抵扣封印/豪夺夺取回合递减统一走 _tick_sealed_and_stolen_relics，
             # 不再在此处逐实体递减。
         # 统一处理：玩家侧 + 每个存活实体的封印/豪夺遗物回终递减与归还

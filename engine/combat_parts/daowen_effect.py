@@ -4,6 +4,8 @@
 CombatEngine 仍是唯一入口（门面类继承本 Mixin）。
 """
 from __future__ import annotations
+
+from ..mechanisms.ledger import ledger_of
 import math
 import weakref
 from typing import Optional, Any
@@ -977,13 +979,14 @@ class DaowenEffectMixin:
         # 逼债X：[回始]使[目标]失去X碎片，否则失去2X血限（二选一）。此处仅挂账，[回始]在 round_start 结算。
         if name == "逼债":
             for st_target in wave_status_targets:
-                st_target._bizhai.append({"x": x, "caster": caster})
+                # 账本唯一入口（engine/mechanisms/ledger.py）；[回始]结算在机制声明层。
+                ledger_of(st_target, "逼债").append({"x": x, "caster": caster})
                 st_target.add_status(StatusEffect(name="逼债", value=x, remaining_rounds=-1, source=caster.name))
                 result["effects"].append({"type": "bizhai_register", "target": st_target.name, "x": x})
         # 清算X：[回始]使[目标]失去你[碎片]点格挡，持续X。此处仅挂账。
         elif name == "清算":
             for st_target in wave_status_targets:
-                st_target._qingsuan.append({"x": x, "caster": caster})
+                ledger_of(st_target, "清算").append({"x": x, "caster": caster})
                 result["effects"].append({"type": "qingsuan_register", "target": st_target.name, "x": x})
         # 赌命X：玩家侧在_action_use_daowen预检付费；怪物侧由两阶段决策结算器付费。
         # 状态经 duration 挂在施法者上，[回始]在 round_start 按存活角色随机结算。

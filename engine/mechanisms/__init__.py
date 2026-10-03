@@ -10,7 +10,10 @@ priority 10/20/30/40/50/60——回始循环已全部声明化；洞察/勾魂�
 孤儿诊断字段 xijie_stolen 已正式废弃）、【帮派令】（BATTLE_START 相位 +
 relic_active 条件——证明 Relic 可以成为普通 Mechanism 声明）、【缄默面具】
 （BATTLE_START 相位 priority 5，经统一 mana 动词；其【禁代价】静态校验规则
-保留在 api.py，属另一字面规则）。
+保留在 api.py，属另一字面规则）、【逼债·结算】【清算·结算】【赌命·结算】
+（ROUND_START_SETTLE 相位 priority 10/20/30——机制优先分发，保持旧三段循环顺序；
+经新 shards 动词与 ledger 账本模块，赌命用 RNG 目标 roll_pick）、
+【逼债·对账】【清算·对账】（ROUND_END_RECONCILE 相位，状态消失即清账）。
 
 刻意边界（不要做成框架）：无 DSL、无 JSON 配置、无脚本系统、无 Action Queue、
 无通用推理引擎、无冲突自动解决、无反射。机制声明就是 Python 数据结构。

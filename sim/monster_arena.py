@@ -143,19 +143,29 @@ def _candidates(actor: dict, rivals: list[dict]) -> list[dict]:
         # 道纹对象（每个候选＝一个 daowen 提交）
         dao_objs: list[dict] = []
         for opt in daowen_opts:
-            xs = ([1, max(1, (opt.get("max_x") or 1) // 2), opt.get("max_x") or 1]
+            # X下限（2026-10-03 用户令：波及≥2）：候选不得低于下限，否则提交必被引擎拒。
+            min_x = max(1, int(opt.get("min_x") or 1))
+            # 波及的显式目标要按 dodge_target_options 取（含非攻击目标，如观众/友方），
+            # 不是 attack_target_options；x 也不得超过可用目标数，否则 API 会拒收。
+            wave_refs = ([t["ref"] for t in (opt.get("dodge_target_options") or [])]
+                         or [r["ref"] for r in rivals]) if opt["name"] == "波及" else []
+            if opt["name"] == "波及" and len(wave_refs) < min_x:
+                continue          # 合法目标不足下限 → 本场景无法发动
+            xs = ([min_x, max(min_x, (opt.get("max_x") or 1) // 2), opt.get("max_x") or 1]
                   if opt.get("x_free") else [opt.get("x") or 1])
             targets = ([t["ref"] for t in (opt.get("target_options") or [])]
                        if opt.get("requires_target") else [None])
-            for x in sorted({int(v) for v in xs if int(v) >= 1}):
+            for x in sorted({int(v) for v in xs if int(v) >= min_x}):
+                if opt["name"] == "波及" and x > len(wave_refs):
+                    continue
                 for tref in targets:
                     cand = {"name": opt["name"], "x": x, "dodge": False, "blood_shadow": False}
                     if tref:
                         cand["target_ref"] = tref
                     if opt["name"] == "波及":
-                        cand["dodge_targets"] = [{"target_ref": r["ref"], "dodge": False,
+                        cand["dodge_targets"] = [{"target_ref": r, "dodge": False,
                                                   "blood_shadow": False}
-                                                 for r in rivals[:max(1, x)]]
+                                                 for r in wave_refs[:x]]
                     dao_objs.append(cand)
         can_atk = bool(rivals) and groups > 0
         # 四类候选分桶，再轮转交错取前 MAX_CANDIDATES 个——避免"某一类把配额吃光"
@@ -200,19 +210,26 @@ def _candidates(actor: dict, rivals: list[dict]) -> list[dict]:
     has_daowen = bool(daowen_opts)
     dao_cands: list[dict | None] = []
     for opt in daowen_opts:
-        xs = ([1, max(1, (opt.get("max_x") or 1) // 2), opt.get("max_x") or 1]
+        min_x = max(1, int(opt.get("min_x") or 1))          # 2026-10-03：波及≥2
+        wave_refs = ([t["ref"] for t in (opt.get("dodge_target_options") or [])]
+                     or [r["ref"] for r in rivals]) if opt["name"] == "波及" else []
+        if opt["name"] == "波及" and len(wave_refs) < min_x:
+            continue
+        xs = ([min_x, max(min_x, (opt.get("max_x") or 1) // 2), opt.get("max_x") or 1]
               if opt.get("x_free") else [opt.get("x") or 1])
         targets = ([t["ref"] for t in (opt.get("target_options") or [])]
                    if opt.get("requires_target") else [None])
-        for x in sorted({int(v) for v in xs if int(v) >= 1}):
+        for x in sorted({int(v) for v in xs if int(v) >= min_x}):
+            if opt["name"] == "波及" and x > len(wave_refs):
+                continue
             for tref in targets:
                 cand = {"name": opt["name"], "x": x, "dodge": False, "blood_shadow": False}
                 if tref:
                     cand["target_ref"] = tref
                 if opt["name"] == "波及":
-                    cand["dodge_targets"] = [{"target_ref": r["ref"], "dodge": False,
+                    cand["dodge_targets"] = [{"target_ref": r, "dodge": False,
                                               "blood_shadow": False}
-                                             for r in rivals[:max(1, x)]]
+                                             for r in wave_refs[:x]]
                 dao_cands.append(cand)
     if not dao_cands and not has_daowen:
         dao_cands = [None]                       # 无合法道纹时才允许 null
