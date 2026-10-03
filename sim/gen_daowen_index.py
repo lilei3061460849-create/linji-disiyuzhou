@@ -87,6 +87,19 @@ def target_label(name):
         return "全局"
     return "自身"
 
+# 确定性顺序（2026-10-03 修）：REGION_EXCLUSIVE_DAOWEN 的值是 **set**，直接迭代会得到
+# 随进程变化的哈希序——每次重新生成索引，副本专属段与总览表里的行序都会漂移。
+# 这里改为确定口径：先按该副本闭环链的出场顺序，其余按名字排序补齐。
+def region_daowen_order(region: str) -> list:
+    ns = set(REGION_EXCLUSIVE_DAOWEN[region])
+    chain: list = []
+    for src, _rtype, dst in ResonanceEngine.CLOSED_LOOPS.get(f"{region}闭环", []):
+        for n in (src, dst):
+            if n in ns and n not in chain:
+                chain.append(n)
+    return chain + sorted(ns - set(chain))
+
+
 # 分类
 CATEGORY = {}
 for n in SHAFA_LOOP_DAOWEN:
@@ -95,8 +108,8 @@ for n in ORIGINAL_MONSTER_DAOWEN:
     CATEGORY[n] = "original"
 for n in MONSTER_TRANSFORM_DAOWEN:
     CATEGORY[n] = "transform"
-for region, ns in REGION_EXCLUSIVE_DAOWEN.items():
-    for n in ns:
+for region in REGION_EXCLUSIVE_DAOWEN:
+    for n in region_daowen_order(region):
         CATEGORY[n] = region
 for n, region in UNIMPLEMENTED_REGION_EXCLUSIVE_DAOWEN.items():
     CATEGORY[n] = "unimpl"
@@ -172,7 +185,7 @@ for name in sorted(DaoWenEngine._registry, key=lambda n: (list(CATEGORY).index(n
     pass
 order = (list(SHAFA_LOOP_DAOWEN) + sorted(ORIGINAL_MONSTER_DAOWEN)
          + sorted(MONSTER_TRANSFORM_DAOWEN)
-         + [n for r in ("扭曲都市", "罪孽都市", "龙心谷", "乱葬岗") for n in REGION_EXCLUSIVE_DAOWEN[r]]
+         + [n for r in ("扭曲都市", "罪孽都市", "龙心谷", "乱葬岗") for n in region_daowen_order(r)]
          + list(UNIMPLEMENTED_REGION_EXCLUSIVE_DAOWEN))
 for name in order:
     out = "、".join(out_edges[name]) if out_edges[name] else "—"
@@ -237,7 +250,7 @@ section("怪物转化道纹（19）", sorted(MONSTER_TRANSFORM_DAOWEN),
                     "该道纹永久变为转化道纹，施法者同时永久获得。人类无法直接学习怪物道纹，只能经此路径。"])
 
 for region in ("扭曲都市", "罪孽都市", "龙心谷", "乱葬岗"):
-    ns = REGION_EXCLUSIVE_DAOWEN[region]
+    ns = region_daowen_order(region)
     tier = REGION_TIERS[region]
     section(f"{region}专属（8）", list(ns),
             note_lines=[f"副本阶级：{'一二三四'[tier-1]}阶（道纹递增+{2*tier}/次）。学习门禁：先经残韵从本副本怪物处"
