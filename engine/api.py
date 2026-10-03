@@ -4487,6 +4487,15 @@ class GameEngine:
             else:
                 self.state.combat_subphase = CombatSubphase.AWAIT_ROUND_END.value
             self._advance_duel_turn()
+        elif getattr(self.state, "arena_ffa", False):
+            # 养蛊场：允许逐 actor 提交，每步只结算 1 只怪物（严格交替）。
+            # 只要还有「本回合尚未出手」的存活怪物，就把子阶段退回玩家行动阶段，
+            # 让下一次 prepare_monster_phase 能列出剩余怪物的合法选项；全部出手完
+            # 才进入 await_round_end。默认关闭时走下面的原分支，行为不变。
+            if any(m.is_alive and m.actions_used_this_round < 1 for m in self.state.enemies):
+                self.state.combat_subphase = CombatSubphase.PLAYER_ACTIONS.value
+            else:
+                self.state.combat_subphase = CombatSubphase.AWAIT_ROUND_END.value
         else:
             self.state.combat_subphase = CombatSubphase.AWAIT_ROUND_END.value
         player_dead = (self.state.player is None) or (not self.state.player.is_alive)

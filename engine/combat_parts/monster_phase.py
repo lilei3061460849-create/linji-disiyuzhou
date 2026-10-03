@@ -132,6 +132,14 @@ class MonsterPhaseMixin:
             # 2026-09-15 用户令：删除白板限制——增援怪/回场怪进场当回合即可发动道纹
             # （R1 首发怪同理）。spawned_round 仍作为出生回合的记录字段保留，但不再
             # 参与任何"当回合不能发动道纹"的判定。
+            # 养蛊场：怪物互斗时，道纹与普攻的合法目标都是「除自己以外的其它存活怪物」
+            # （不含玩家侧；正式玩法下该名单为空，走下面的原有分支）。
+            ffa_rivals = (
+                [target for target in all_targets
+                 if target["ref"] != actor_ref and self.state.on_enemy_side(refs[target["ref"]])
+                 and refs[target["ref"]].is_alive and self.is_targetable(monster, refs[target["ref"]])]
+                if getattr(self.state, "arena_ffa", False) else []
+            )
             if not monster.has_status("干扰"):
                 for name, inst in monster.dao_wen.items():
                     if (name in round_used or not inst.can_use()
@@ -140,9 +148,11 @@ class MonsterPhaseMixin:
                     rewritten_as = (self._resonance_rewrites.get(id(monster)) or {}).get(name)
                     effective_name = rewritten_as or name
                     requires_target = self._daowen_requires_target(effective_name)
-                    legal_targets = ([target for target in all_targets
-                                      if self.is_targetable(monster, refs[target["ref"]])]
-                                     if requires_target else [])
+                    legal_targets = (
+                        (list(ffa_rivals) if ffa_rivals else
+                         [target for target in all_targets
+                          if self.is_targetable(monster, refs[target["ref"]])])
+                        if requires_target else [])
                     if "龙威" in self.state.dragon_traits and self.state.player and self.state.player.is_alive:
                         legal_targets = [target for target in legal_targets
                                          if (not self.state.on_player_side(refs[target["ref"]])
@@ -205,10 +215,10 @@ class MonsterPhaseMixin:
                         "dodge_target_options": dodge_target_options,
                         "trigger_spell_options": self.prepare_daowen_trigger_spells(monster),
                     })
-            attack_targets = [
+            attack_targets = (list(ffa_rivals) if ffa_rivals else [
                 target for target in player_refs
                 if self.is_targetable(monster, refs[target["ref"]])
-            ]
+            ])
             # 【龙威】是规则约束而非策略默认：敌方只能把持有者列为合法攻击目标。
             if "龙威" in self.state.dragon_traits and self.state.player and self.state.player.is_alive:
                 attack_targets = [target for target in attack_targets if target["ref"] == "player:0"]
@@ -720,8 +730,12 @@ class MonsterPhaseMixin:
                     if hit.get("target_ref") not in legal_attack_options:
                         raise ValueError("怪物攻击目标不在prepare合法选项中")
                     target = refs.get(hit.get("target_ref", ""))
-                    if target is None or not self.state.on_player_side(target):
-                        raise ValueError("怪物攻击target_ref必须是prepare列出的己方目标")
+                    if target is None or not (
+                            self.state.on_player_side(target)
+                            or (getattr(self.state, "arena_ffa", False)
+                                and self.state.on_enemy_side(target) and target is not monster)):
+                        raise ValueError("怪物攻击target_ref必须是prepare列出的己方目标"
+                                         "（养蛊场下可为其它怪物）")
                     if not self.is_targetable(monster, target):
                         raise ValueError(f"{target.name}当前不可被{monster.name}选中")
                     option = legal_attack_options[hit["target_ref"]]
@@ -788,7 +802,10 @@ class MonsterPhaseMixin:
             submitted[ref] = choice
         # 死斗交替（对称）：守擂侧每步只结算1个actor，其余本步不动
         # （逐出手交替与挑战者侧一致，修复守擂方机制性必胜）。
-        if not self.state.in_final_duel and set(submitted) != set(expected):
+        # 养蛊场：允许逐个 actor 提交（与死斗同样按「每步只结算 1 个 actor」处理），
+        # 否则先手方会连带结算全场，训练出来的策略会带上出手顺序红利。
+        if (not self.state.in_final_duel and not getattr(self.state, "arena_ffa", False)
+                and set(submitted) != set(expected)):
             raise ValueError(f"必须为全部可行动怪物各提交一次选择；需要{sorted(expected)}，收到{sorted(submitted)}")
         # 事务一致性（2026-08-19）：先完成全部静态 schema 校验（零副作用），
         # 再执行任何龙息/守夜灯/道纹/攻击。依赖执行后状态的动态校验
@@ -880,8 +897,12 @@ class MonsterPhaseMixin:
                     if hit.get("target_ref") not in legal_attack_options:
                         raise ValueError("怪物攻击目标不在prepare合法选项中")
                     target = refs.get(hit.get("target_ref", ""))
-                    if target is None or not self.state.on_player_side(target):
-                        raise ValueError("怪物攻击target_ref必须是prepare列出的己方目标")
+                    if target is None or not (
+                            self.state.on_player_side(target)
+                            or (getattr(self.state, "arena_ffa", False)
+                                and self.state.on_enemy_side(target) and target is not monster)):
+                        raise ValueError("怪物攻击target_ref必须是prepare列出的己方目标"
+                                         "（养蛊场下可为其它怪物）")
                     if not self.is_targetable(monster, target):
                         raise ValueError(f"{target.name}当前不可被{monster.name}选中")
                     if not target.is_alive:

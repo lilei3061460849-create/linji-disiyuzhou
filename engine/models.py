@@ -1002,6 +1002,10 @@ class GameState:
     # 员工背叛·让利：每场工资在原公式基础上的固定加成（本次轮回持续生效）
     wage_bonus: int = 0
 
+    # 养蛊场（怪物互斗）训练模式：开启后怪物阶段的合法目标从「玩家侧」扩为「其它怪物」，
+    # 并允许逐个 actor 提交（严格交替，避免先手方一次结算全场）。默认 False——
+    # 正式玩法与既有测试完全不受影响，只有训练沙盒会打开它。
+    arena_ffa: bool = False
     # 最终的冠冕/第8场死斗：进行中标记 + 当前该谁出手("player_side"/"opponent_side")
     in_final_duel: bool = False
     duel_turn: str = ""
