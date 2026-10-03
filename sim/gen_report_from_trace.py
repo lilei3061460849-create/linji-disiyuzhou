@@ -173,6 +173,7 @@ paper.append("> 格式遵循 README《六、战斗推演格式》与 AI 知识�
 paper.append("> 本文件另附《三、道纹两两协同穷举》：那是**独立于本局的实测附录**（穷举全部道纹无序对，"
              "回答「任意两道纹同时持有会怎样」），与本局实际发生的 17 次【再生】不是一回事。")
 paper.append("@@SYN_HEADLINE@@")   # 占位：结论速览在文件末尾按实测数据生成后回填
+paper.append("@@ASK_HEADLINE@@")   # 占位：两个追问的速答（文末按实测数据生成后回填）
 paper.append("")
 
 # ---------------------------------------------------------------- 开局
@@ -562,6 +563,40 @@ def compressed_section(md_text: str) -> tuple[list[str], dict]:
     return L, st
 
 
+def _load_probe(filename: str):
+    """按路径加载 sim/ 下的探针模块（探针自身会把它所在的 sim/ 加进 sys.path）。"""
+    import importlib.util
+    path = ROOT / "sim" / filename
+    spec = importlib.util.spec_from_file_location(filename[:-3], path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def ask_headline() -> list[str]:
+    """头部「追问速答」：两条一句话答案，数字与文末《四》同源（探针现场复算）。"""
+    out = ["", "> **追问速答（详见文末《四》）**——"]
+    for i, (name, _) in enumerate((("probe_dongcha_reach.py", 1), ("probe_monster_cast_order.py", 2)), 1):
+        for ln in _load_probe(name).summary():
+            out.append(f"> {i}. {ln}")
+    return out
+
+
+def followup_lines() -> list[str]:
+    """《四、两个追问答疑》——两个追问问答的完整版（探针现场复算，非手写数字）。"""
+    L: list[str] = []
+    A = L.append
+    A("## 四、两个追问答疑")
+    A("")
+    A("> 本节回答两个问题，数字全部由程序现场复算：`sim/probe_dongcha_reach.py`（跑穷举 harness 的同一沙盒）"
+      "与 `sim/probe_monster_cast_order.py`（跑生产引擎的怪物阶段 + 聚合本局流水）。"
+      "两条速答同源于上方「追问速答」。")
+    A("")
+    for name in ("probe_dongcha_reach.py", "probe_monster_cast_order.py"):
+        L.extend(_load_probe(name).lines())
+    return L
+
+
 def _syn_headline() -> list[str]:
     """报告头部的结论速览（数字与附录同源：同一张逐对表）。"""
     rows = _syn_rows()
@@ -920,6 +955,7 @@ speed = [
 ]
 paper.extend(speed)
 paper.extend(daowen_synergy_lines())
+paper.extend(followup_lines())
 
 # 回填头部结论速览（数字与附录同源）
 _syn_head = _syn_headline()
@@ -927,6 +963,15 @@ if "@@SYN_HEADLINE@@" in paper:
     _idx = paper.index("@@SYN_HEADLINE@@")
     if _syn_head:
         paper[_idx:_idx + 1] = [">"] + _syn_head
+    else:
+        paper.pop(_idx)
+
+# 回填头部「追问速答」（同样必须在压缩章节之前）
+_ask_head = ask_headline()
+if "@@ASK_HEADLINE@@" in paper:
+    _idx = paper.index("@@ASK_HEADLINE@@")
+    if _ask_head:
+        paper[_idx:_idx + 1] = _ask_head
     else:
         paper.pop(_idx)
 
