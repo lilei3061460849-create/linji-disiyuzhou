@@ -296,6 +296,7 @@ class Entity:
     is_sculptured: bool = False  # 已化为雕塑（攻击次数和攻击力同时归0）
     is_proliferated: bool = False  # 已被癌变吸收进死者之书（旧名 增生，已统一为 癌变；保留字段名兼容）
     is_debt_bound: bool = False  # 已因还债成为员工
+    free_crystal_feed_count: int = 0  # 本场被喂食【自由结晶】次数
 
     # ---- 罪孽都市专属道纹的回始记账（F2 全量） ----
     # 逼债/清算：目标侧挂账 [{x, caster}]，[回始]逐条结算，状态消失即清账
@@ -793,6 +794,7 @@ class Entity:
             "mutation_count": self.mutation_count,
             "no_action_rounds": self.no_action_rounds,
             "no_damage_rounds": self.no_damage_rounds,
+            "free_crystal_feed_count": self.free_crystal_feed_count,
             # 致死类特殊事件的进度：AI 必须能在面板上直接读到
             # 「迷失（10/50）」这种进度，禁止只给结果不给进度。
             "lethal_counters": {k: list(v) for k, v in self.lethal_counters().items()},

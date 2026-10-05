@@ -265,8 +265,8 @@ class MonsterLifeMixin:
             return 0
         return math.ceil(monster.blood_limit * self.REDEMPTION_HP_RATIO)
 
-    def check_redemption(self, monster: Entity) -> Optional[dict]:
-        """救赎：当前生命≤血限10%，且没有七种原始怪物道纹。"""
+    def check_redemption(self, monster: Entity, *, force: bool = False) -> Optional[dict]:
+        """救赎：通常要求残血且没有七种原始怪物道纹；自由结晶可强制触发。"""
         if monster is None or monster.entity_type != "怪物" or not monster.is_alive:
             return None
         if monster.is_sculptured or monster.is_proliferated or monster.is_debt_bound:
@@ -275,11 +275,11 @@ class MonsterLifeMixin:
             return None
         if self.state.pending_redemption:
             return None
-        if self.monster_has_original_daowen(monster):
+        if not force and self.monster_has_original_daowen(monster):
             return None
-        if monster.current_hp > self.redemption_hp_threshold(monster):
+        if not force and monster.current_hp > self.redemption_hp_threshold(monster):
             return None
-        return self._queue_redemption(monster, "low_hp_no_original")
+        return self._queue_redemption(monster, "free_crystal" if force else "low_hp_no_original")
 
     def _queue_redemption(self, monster: Entity, cause: str) -> dict:
         """怪物融化离场，等待【接纳】或【终结】（2026-09-15 用户令，终结取代旧「无视」）。

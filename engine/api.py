@@ -3587,6 +3587,29 @@ class GameEngine:
                 "state": self.combat._get_combat_state(),
             }
 
+        # 自由结晶：消耗品不占主动出手；同一目标喂满3次后强制触发救赎。
+        if item.name == "自由结晶":
+            target_ref = params.get("target_ref", "")
+            target = self.combat._combat_entity_refs().get(target_ref)
+            if target is None or target.entity_type != "怪物" or not self.state.enemy_combat_active(target):
+                return {"success": False, "error": "自由结晶只能对存活的怪物目标使用"}
+            remaining = item.use()
+            target.free_crystal_feed_count += 1
+            redemption = None
+            if target.free_crystal_feed_count >= 3:
+                redemption = self.combat.check_redemption(target, force=True)
+            return {
+                "success": True,
+                "action": f"对【{target.name}】使用自由结晶",
+                "result": {
+                    "target": target.name,
+                    "feed_count": target.free_crystal_feed_count,
+                    "uses_remaining": remaining,
+                    "redemption": redemption,
+                },
+                "state": self.combat._get_combat_state(),
+            }
+
         # 正文具名消耗品：全部在扣耐久前完成参数校验；未实现项不得“成功但只扣耐久”。
         if item.name in {"绝息淤泥", "活性土壤", "假钞贴", "穿甲弹", "洗劫面具", "赤泉囊", "龙血瓶"}:
             return self._consume_named_event_item(item, params)
