@@ -142,6 +142,8 @@ class GameEngine:
 
         # 上一次的行动结果
         self._last_result: Optional[dict] = None
+        # 战斗重来快照：记录进入本场战斗前的完整状态，供 restart_battle 使用。
+        self._battle_restart_snapshot: Optional[dict] = None
 
     @property
     def validator(self):
@@ -516,7 +518,11 @@ class GameEngine:
             return {"phase": subphase, "actions": [], "note": "轮回者已死亡"}
         refs = self.combat._combat_entity_refs()
         target_options = [{"ref": ref, "name": entity.name} for ref, entity in refs.items()]
-        actions: list[dict] = []
+        actions: list[dict] = [{
+            "action_type": "restart_battle",
+            "params_schema": {},
+            "note": "结束本场战斗，恢复到战始前状态，并按当前规则重新开始本场战斗；不保留本场战斗结果",
+        }]
         for name, instance in player.dao_wen.items():
             # 已定义【镇魔印】后，【封印】由法术流程自动发动，
             # 不再作为主动道纹候选；仅持有【封印】时仍照常显示。
@@ -941,6 +947,8 @@ class GameEngine:
                 return None
             if phase != "in_combat":
                 return {"success": False, "error": "道纹只能在战斗中发动；局外唯一例外是【消灾】"}
+        if action_type == "restart_battle" and phase != "in_combat":
+            return {"success": False, "error": "只有进行中的战斗可以重来"}
         if action_type in self._COMBAT_ONLY_ACTIONS and phase != "in_combat":
             return {"success": False, "error": f"【{action_type}】只能在战斗中执行"}
         if action_type == "battle_end" and phase != "in_combat":
@@ -1056,7 +1064,7 @@ class GameEngine:
                 "instruction": "攻击pending仍有效（上次提交失败已被整体回滚）；"
                                "用上方token重新调用resolve_attack提交完整选择",
             }
-        if self.state.pending_monster_phase and action_type != "resolve_monster_phase":
+        if self.state.pending_monster_phase and action_type not in {"resolve_monster_phase", "restart_battle"}:
             return {
                 "success": False,
                 "error": "已有待提交的怪物阶段决策，请先调用resolve_monster_phase",
@@ -1338,6 +1346,8 @@ class GameEngine:
             return self._action_round_start(params)
         elif action_type == "round_end":
             return self._action_round_end(params)
+        elif action_type == "restart_battle":
+            return self._action_restart_battle(params)
         elif action_type == "battle_start":
             return self._action_battle_start(params)
         elif action_type == "battle_end":
@@ -4527,6 +4537,25 @@ class GameEngine:
             logs.append("对手羔羊之泪：场上所有角色与怪物立刻失去50%当前生命")
         return logs
 
+    def _action_restart_battle(self, params: dict) -> dict:
+        """恢复到本场战始前并按当前规则重新开始；不产生战斗奖励或战终结算。"""
+        snapshot = self._battle_restart_snapshot
+        if not snapshot:
+            return {"success": False, "error": "本场没有可用的战始快照，无法重来"}
+        self.state = copy.deepcopy(snapshot["state"])
+        self.dice = copy.deepcopy(snapshot["dice"])
+        self.combat.state = self.state
+        self.combat.dice = self.dice
+        register_combat_event_observer(self.state, self.combat)
+        self._restore_combat_runtime(copy.deepcopy(snapshot["combat_runtime"]))
+        start_params = copy.deepcopy(snapshot.get("battle_start_params") or {})
+        result = self._action_battle_start(start_params)
+        if not result.get("success"):
+            return result
+        result["action"] = "重来本场战斗"
+        result["restart"] = True
+        return result
+
     def _action_battle_start(self, params: dict) -> dict:
         """战始：配方式出怪(总数N=随机(1,上界)、首发S=随机(1,N)、增援R_i/T_i 随机；
         上界：一阶=战斗场数-3最低1，二阶及以上=12；允许重复抽选同一怪物种族)→结算战始遗物。
@@ -4537,6 +4566,13 @@ class GameEngine:
         relic_choices = params.get("relic_choices", {})
         # 先完成全部静态校验，再抽怪；非法遗物参数不得消耗正式随机源。
         self.combat.validate_battle_start_relic_choices(relic_choices)
+        # 在战始产生随机怪物前保存快照；重来会恢复随机源并再次按当前代码抽取。
+        self._battle_restart_snapshot = {
+            "state": copy.deepcopy(self.state),
+            "dice": copy.deepcopy(self.dice),
+            "combat_runtime": copy.deepcopy(self._snapshot_combat_runtime()),
+            "battle_start_params": copy.deepcopy(params),
+        }
         self.state.phase = GamePhase.IN_COMBAT.value
         self.state.combat_subphase = CombatSubphase.AWAIT_ROUND_START.value
         self.state.current_battle += 1
@@ -6081,6 +6117,7 @@ class GameEngine:
             "pending_interrupts": self._pending_interrupts,
             "action_history": self._action_history,
             "last_result": self._last_result,
+            "battle_restart_snapshot": self._battle_restart_snapshot,
         }
         encoded = base64.b64encode(pickle.dumps(snapshot, protocol=pickle.HIGHEST_PROTOCOL)).decode("ascii")
         save_data = {"format": "linji-save", "version": self.SAVE_FORMAT_VERSION,
@@ -6120,6 +6157,7 @@ class GameEngine:
         self._pending_interrupts = restored["pending_interrupts"]
         self._action_history = restored["action_history"]
         self._last_result = restored["last_result"]
+        self._battle_restart_snapshot = restored.get("battle_restart_snapshot")
         self._restore_combat_runtime(restored["combat_runtime"])
         return {"success": True, "filepath": filepath, "version": self.SAVE_FORMAT_VERSION,
                 "state": self.state.to_dict()}
