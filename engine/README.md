@@ -22,10 +22,10 @@ AI（决策者）──→ GameEngine API ──→ 计算/随机数
 
 ## 正文事实源
 
-- `README.md`：通用规则与通用道纹。
-- `AI_EXPERIENCE.md`：AI 知识库、协作规范、推演铁律与工程验证准则。
-- `法术索引.md`：法术设计原则、三大法则、法术阶级规则、可学法术与自创法术标准语法的唯一完整说明。
-- `死者之书.md`：可学法术数据的引擎事实源（`RuleSync.extract_spells_from_file` 读取此文件）与三段式遗言格式；法术效果正文的可读性权威说明见 `法术索引.md`。
+- `README.md`：通用规则与通用道纹的唯一事实源，同时包含新手流程与战斗推演格式。
+- `AI_EXPERIENCE.md`：AI 知识库、协作规范、推演铁律与工程验证准则，不承载通用规则正文。
+- `法术索引.md`：法术设计原则、三大法则、法术阶级规则、法术大全与自创法术标准语法的唯一完整说明。
+- `死者之书.md`：法术大全数据的引擎事实源（`RuleSync.extract_spells_from_file` 读取此文件）与三段式遗言格式；法术效果正文的可读性权威说明见 `法术索引.md`。
 - `物品索引.md`：遗物、消耗品与法器。
 - `副本索引.md`：副本清单；其链接的已实现副本文档进入运行时，未实现草案只参与文档校验。
 
@@ -50,7 +50,7 @@ engine/
 ├── ai_player.py         # 统一 AI 玩家入口（开局/事件/战斗/校验/长期记忆）；2026-09-29 起全部决策由 LLM backend 给出
 ├── ai_memory.py         # 当前轮回者的身世、经历、性格证据与遗言压缩
 ├── ai_rules.py         # 生产侧本地规则助手（闪避/遗物/法器/友方道纹X的启发式）。engine/ 生产路径唯一可用的"非 LLM 决策"来源，严禁 import ai_tactics/ai_preview/sim
-├── ai_tactics.py        # 规则型战术 AI（TacticalAI）。游戏中已停用（用户令 2026-09-29：全用 LLM）；2026-10-02 起与生产路径隔离，仅供 sim/probes/测试直接实例化（engine/ 不引用它）
+├── ai_tactics.py        # 规则型战术 AI（TacticalAI）。游戏中已停用；2026-10-02 起与生产路径隔离，仅供 sim/probes/测试直接实例化（engine/ 不引用它）
 ├── ai_preview.py        # TacticalAI 的行动后果预演层；同属隔离的实验/模拟工具，生产路径不引用
 ├── dm_rulings.py        # DM 裁定库（SQLite + FTS，先例匹配）
 ├── rule_sync.py         # 多事实源同步（README/死者之书/物品索引/副本索引）
@@ -65,7 +65,7 @@ engine/
 
 > **2026-08-11 F7 订正**：五章「全程自动触发」已与「特殊事件（全局触发）」14 项对齐（补 凡庸/癌变/崩解/还债/雕塑/救赎）；「增生」全量更名为「癌变」（旧名 增生 保留为兼容字段 `is_proliferated`/`PROLIFERATION_THRESHOLD`/`proliferation`），「增殖」为独立道纹（血限+2X）二者无关。
 
-## 机制系统（MVP，2026-08-19）
+## 机制系统
 
 `engine/mechanisms/` 提供最小可行机制声明层，验证 Effect / Trigger / Condition / Target / Verb 思路：
 
@@ -131,7 +131,7 @@ if precedent["found"]:
     ...
 ```
 
-### 5. 随机数（2026-08-09起：引擎自动结算，不再要求玩家提供数字）
+### 5. 随机数
 ```python
 # 游戏内实际随机行动（探索/共鸣/开局遗物等）均由引擎内部调用 DiceEngine.auto_roll()
 # 直接生成随机数并结算，AI拿到的是已经确定的结果，无需再向玩家索要数字：
@@ -142,7 +142,7 @@ result = engine.execute_action("pre_battle_action", {"sub_action": "探索"})
 engine = GameEngine(rng_seed=12345)
 ```
 
-## 角色性格特征（Personality Traits，2026-08-26）
+## 角色性格特征
 
 原则"先射箭，后画靶"：创建角色不预设人格；性格只能由实际发生的行为逐渐推断
 （`update_personality`，每条证据=维度+方向±1+行为依据）；单次行为不贴死标签
@@ -168,17 +168,17 @@ engine.remove_personality(entity)       # 手工清除（幂等）
 
 ## 出手预算校验
 
-已实现，详见 AI_EXPERIENCE.md。要点：`action_count`按entity_type分流公式；轮回者出手预算是**基础 2 次**再叠加修正（【疯狂】+X/【无力】-X/【蓄锐·增】+1），普攻占用一次主动出手但不消耗速度；已装配的自动触发法术【镇魔印】不占主动出手。AI 侧口径：出手预算=**动作槽位数量**，每个槽位提交一条决策，槽位用完就结束己方行动阶段（不写死"每回合固定 2 次"、不把多次独立行动打包成一条）。
+已实现，详见 README.md 与 AI_EXPERIENCE.md。要点：`action_count`按entity_type分流公式；轮回者出手预算是**基础 2 次**再叠加修正（【疯狂】+X/【无力】-X/【蓄锐·增】+1），普攻占用一次主动出手但不消耗速度；已装配的自动触发法术【镇魔印】不占主动出手。AI 侧口径：出手预算=**动作槽位数量**，每个槽位提交一条决策，槽位用完就结束己方行动阶段（不写死"每回合固定 2 次"、不把多次独立行动打包成一条）。
 消耗/不消耗出手的动作清单见下表备注。
 
 ## 最终的冠冕 / 第8场死斗
 
-已实现，详见 AI_EXPERIENCE.md。要点：`GameEngine(sealed_candidate_path=...)`指定跨实例共享的
+已实现，详见 README.md 与 AI_EXPERIENCE.md。要点：`GameEngine(sealed_candidate_path=...)`指定跨实例共享的
 封存候选人JSON路径；[战终]第7场自动判定"封存"或"进入死斗"，无需额外调用。
 
 ## 三副本终音法器 / 初拥之夜 / 真龙之心
 
-已实现，详见 AI_EXPERIENCE.md。要点：死斗胜利后按`current_region`从`GameEngine.TERMINAL_ARTIFACTS`
+已实现，详见 README.md 与 AI_EXPERIENCE.md。要点：死斗胜利后按`current_region`从`GameEngine.TERMINAL_ARTIFACTS`
 对应列表中选1件（`choose_terminal_artifact`），选到"猩红尖牙"会先强制触发初拥之夜
 （`GameEngine.FIRST_EMBRACE_OPTIONS`9选1，`choose_first_embrace`）完成后才真正封存；
 "真龙之心"解锁后进入独立的龙性资源/8遗物系统（`GameEngine.DRAGON_NATURE_RATE`/`DRAGON_TRAITS`）。
@@ -192,11 +192,10 @@ engine.remove_personality(entity)       # 手工清除（幂等）
 | `resolve_redemption` | 救赎触发后选择接纳为待命员工（自定义员工名）或无视 |
 | `setup_choose_resonance` | 选择初始残韵 |
 | `setup_choose_region` | 选择副本 |
-| `pre_battle_action` | 局外行动（休整/修行/学习/共鸣/探索/忘忧(需持有忘忧香)/献祭(需持有红头绳)；【领悟】已于2026-09-10删除） |
+| `pre_battle_action` | 局外行动 |
 | `use_daowen` | 发动道纹（可选actor：留空=玩家自身法力制发动；指定[朋友]/[员工]名=听从指令发动，免法力只消耗出手，且必须指定非自身目标） |
-| `use_spell` | 装配/卸下内置法术（装配后在触发时点自动结算） |
-| `define_spell` | 战斗中自创触发型法术并立即生效（1出手）；不接受瞬发触发 |
-| `cast` | 施法。`kind=daowen`（默认）=发动单个道纹；`kind=spell`=装配法术；带 `flow` = **瞬发法术**：一次出手依次发动多种道纹（只扣1出手，每步都是一次发动道纹，逐步按真实法力结算，中断保留已结算步骤、出手不退，不写入角色法术列表）。见 法术索引.md §5.4 |
+| `define_spell` | 统一自定义施法：用 `spell_name` 定义法术大全条目，或用 `spell` 定义新法术；所有法术类型均由此入口表达（1出手） |
+| `cast` | 施法。`kind=daowen`（默认）=发动单个道纹；`kind=spell`=统一自定义施法；带 `flow` = **瞬发法术**：一次出手依次发动多种道纹（只扣1出手，每步都是一次发动道纹，逐步按真实法力结算，中断保留已结算步骤、出手不退，不写入角色法术列表）。见 法术索引.md §5.4 |
 | `use_resonance` | 使用残韵 |
 | `attack` | 普通攻击（attacker可指定为已部署[朋友]/[员工]，目标自动限定为对方阵营） |
 | `deploy_employee` | 派遣[员工]出战(出战支援，消耗1出手) |

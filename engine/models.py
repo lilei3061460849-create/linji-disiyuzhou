@@ -109,7 +109,7 @@ class Relic:
         return {"name": self.name, "effect": self.effect, "tags": self.tags}
 
 
-# 每只怪物出厂自带的遗物：怪物[回始]法力恢复至上限的**唯一来源**（2026-09-16 用户令）。
+# 每只怪物出厂自带的遗物：怪物[回始]法力恢复至上限的**唯一来源**。
 # 定义在此而非 monsters.py：授予发生在 Entity.__post_init__，效果判定在 combat.py，
 # 两侧都要引用，放 models 可避免 monsters ↔ combat 的循环导入。
 MONSTER_MANA_RELIC = "某人的偏爱"
@@ -250,9 +250,7 @@ class Entity:
     # 道纹与法术
     dao_wen: dict[str, DaoWenInstance] = field(default_factory=dict)
     spells: list[Spell] = field(default_factory=list)
-    # 已装配的内置法术名（2026-09-16 裁定：法术无需学习，但反应型法术需先
-    # 经 use_spell 装配表达意图后才会自动触发）。自创法术不在此列——战斗中
-    # 自创本身已花掉一次出手，等价于表达了意图，创建即生效。
+    # 旧存档兼容字段：现行法术系统不读取该字段，法术统一存入 spells。
     armed_spells: list[str] = field(default_factory=list)
     # 残韵库存：每个轮回者实体独立持有（{转换: n, 反转: n, 曲解: n}）。
     # 早期版本残韵只挂在 State（仅玩家侧），导致守擂者同为轮回者却无残韵可用。
@@ -270,14 +268,14 @@ class Entity:
 
     # 非击杀永久离场标记（雕塑/癌变/还债/逃跑等；【封印】暂离不使用此标记）
     removed_without_kill: bool = False
-    # 统一【离场】标记（DM裁定 2026-08-18）：永久使角色脱离本场战斗的特殊事件
+    # 统一【离场】标记：永久使角色脱离本场战斗的特殊事件
     # （雕塑/癌变/还债/救赎/逃跑及未来新增）一律经 depart_battle() 置位。
     # 【封印】是暂离回场，不使用此标记；战斗胜利另由暂离队列门禁处理。
     is_departed: bool = False
     departure_reason: str = ""   # 离场原因（雕塑/癌变/还债/救赎/逃跑/...）
     hp_lost_this_round: int = 0   # 本回合累计失去的生命（回始归零）
     actions_used_this_round: int = 0  # 本回合已消耗的出手次数（回始归零，用于出手预算校验）
-    # ---- 蓄锐（2026-09-28 基础动作）：消耗1出手换取下回合+1出手 ----
+    # ---- 蓄锐：消耗1出手换取下回合+1出手 ----
     # 用 Entity.field 方式声明：
     _xurui_pending: int = field(default=0)
     # 新规则：本回合你受到的攻击伤害 - 你10%当前生命（向下取整，最低0）；
@@ -305,7 +303,7 @@ class Entity:
     _qingsuan: list = field(default_factory=list)
     # 抵扣（旧）：被封印的遗物 {遗物名: 剩余回合}，[回终]-1，归零解封
     sealed_relics: dict = field(default_factory=dict)
-    # 豪夺（2026-09-28，旧【抵扣】改名改制）：从他人处夺取的遗物临时持有
+    # 豪夺：从他人处夺取的遗物临时持有
     # 结构：{遗物名: {"remaining": int, "from_side": "player"|"enemy", "from_entity_name": str}}
     # 夺取期间归夺取方（caster）持有并触发被动；[回终] -1，归零归还原持有者。
     stolen_relics: dict = field(default_factory=dict)
@@ -478,13 +476,13 @@ class Entity:
 
     
     def effective_attack_count(self) -> int:
-        """攻击次数（2026-09-16 用户令：**换算对全体角色生效**）＝ 当前速度。
+        """攻击次数＝ 当前速度。
 
-        旧口径把换算限定在轮回者身上，理由是怪物不持有法力；怪物与微光者现已与轮回者
+        此前口径把换算限定在轮回者身上，理由是怪物不持有法力；怪物与微光者现已与轮回者
         同口径持有[速限]/[法限]，该理由不再成立，故去掉类型分支。
         普攻不会支付速度；只有当前速度已经因闪避等明确机制变化时，后续派生攻击次数才会随面板变化。
 
-        【全速】（2026-09-17 用户令，原名【迟滞】）覆盖：生效期间攻击次数锁定 = [速限]。
+        【全速】覆盖：生效期间攻击次数锁定 = [速限]。
         由于 clamp_immortal_body 已让「当前速度≤[速限]」无条件成立，本效果实为
         增益——把被削的速度补满到上限，并免疫后续减速。走状态层，对全体角色生效。
         """
@@ -493,15 +491,15 @@ class Entity:
         return max(0, self.current_speed)
 
     def effective_attack_power(self) -> int:
-        """攻击力（2026-09-16 用户令：**换算对全体角色生效**）＝ 当前法力。
+        """攻击力＝ 当前法力。
 
         实时读取当前法力，不做快照：法力掉到 0 时每击 0 点，法力被补回来
         （守夜灯/承露盏/血契/透支/再生等任何回蓝、怪物的[回始]回满）后攻击力**同步回升**，
         并非单调下降。花蓝前要先算清这一笔对后续每击的连带影响。
 
         两处覆盖（均走状态层，故对轮回者/怪物/朋友/员工同口径生效）：
-        - 【龙族利爪】（2026-09-17 用户令）：攻击力 = 当前法力×2。
-        - 【全力】（2026-09-17 用户令重做）：攻击力锁定 = [法限]，覆盖上一步的结果，
+        - 【龙族利爪】：攻击力 = 当前法力×2。
+        - 【全力】：攻击力锁定 = [法限]，覆盖上一步的结果，
           不再随当前法力下降。顺序上"全力"最后生效，故它压过龙族利爪的倍率。
         """
         power = self.current_mana
@@ -514,7 +512,7 @@ class Entity:
 
     @property
     def action_count(self) -> int:
-        """出手次数：**全体角色基础 2 次**（2026-09-16 用户令）。
+        """出手次数：**全体角色基础 2 次**。
 
         不再由速限/攻击次数推导——速限已改作攻击次数的来源，再拿它算出手会重复记账；
         微光者旧的「攻击次数/3」口径同步废止（该式会让高攻次微光者白拿第3、4次出手）。
@@ -524,7 +522,7 @@ class Entity:
         base = 2
         base += self.get_status_value("疯狂")
         base -= self.get_status_value("无力")
-        # 蓄锐·增（2026-09-28 基础动作"蓄锐"的爆发buff）：每层+1出手
+        # 蓄锐·增：每层+1出手
         base += self.get_status_value("蓄锐·增")
         return max(0, base)
 
@@ -628,15 +626,15 @@ class Entity:
         return out
 
     def lethal_progress(self) -> list[str]:
-        """致死进度的显示串，例如 ['迷失（10/50）', '癌变（30/84）']（用户令 2026-09-15/2026-09-28）。"""
+        """致死进度的显示串，例如 ['迷失（10/50）', '癌变（30/84）']。"""
         return [f"{name}（{current}/{limit}）"
                 for name, (current, limit) in self.lethal_counters().items()]
 
     def add_mutation(self, layers: int) -> dict:
         """增减异变层数。正值累加，负值削减，可降到负数。
 
-        特殊事件【迷失】（2026-09-28 用户令重写，原【崩解】改名）：
-          * 怪物（entity_type=="怪物"）：达到阈值仍按旧规则直接[命零]死亡（"崩解"爆体）——
+        特殊事件【迷失】：
+          * 怪物（entity_type=="怪物"）：达到阈值仍按规则直接[命零]死亡（"崩解"爆体）——
             因为"变成怪物"对怪物本身无意义，怪物阈值只是"异变爆体"的上限。
           * 非怪物角色（轮回者/朋友/员工/临时朋友/赤族等）：达到阈值时不在模型层直接命零，
             返回 `lost=True` 交由战斗层 _resolve_mutation_lost 判定——
@@ -677,7 +675,7 @@ class Entity:
         self.current_hp = min(self.blood_limit, self.current_hp + amount)
         actual = self.current_hp - before
         overheal = amount - actual
-        # 癌变追踪：DM裁定（2026-08-18）删除过量回复双倍计入机制，
+        # 癌变追踪：DM裁定删除过量回复双倍计入机制，
         # 受到的全部回复（含过量部分）一律按原值计入累计恢复量。
         self.total_healed += amount
         self.healed_this_battle += actual
@@ -692,7 +690,7 @@ class Entity:
     def gain_shield(self, amount: int) -> int:
         """获得格挡。
 
-        格挡**没有**上限（DM 裁定 2026-08-30 撤销早前的血限压帽）：格挡只写
+        格挡**没有**上限：格挡只写
         「可抵消等量伤害」，正文从未规定它不得超过[血限]，血限 36 的角色叠到
         68 盾是合法面板，不是假账。曾误以为这是"永远消耗不完的堆积"而擅自压帽，
         属自造规则，已撤销。负 amount（扣盾）只做下限 0 保护。
@@ -795,7 +793,7 @@ class Entity:
             "mutation_count": self.mutation_count,
             "no_action_rounds": self.no_action_rounds,
             "no_damage_rounds": self.no_damage_rounds,
-            # 致死类特殊事件的进度（用户令 2026-09-15/2026-09-28）：AI 必须能在面板上直接读到
+            # 致死类特殊事件的进度：AI 必须能在面板上直接读到
             # 「迷失（10/50）」这种进度，禁止只给结果不给进度。
             "lethal_counters": {k: list(v) for k, v in self.lethal_counters().items()},
             "lethal_progress": self.lethal_progress(),
@@ -860,7 +858,7 @@ class GameState:
     # 敌方
     enemies: list[Entity] = field(default_factory=list)
 
-    # 角色性格特征（2026-08-26）：{runtime_id: {name, traits:{dimension: entry}}}
+    # 角色性格特征：{runtime_id: {name, traits:{dimension: entry}}}
     # 实例级数据（键=Entity.runtime_id，同名不同实例互不共享）；
     # 只由 engine/personality.py 读写：行为推断写入、命零时经统一死亡管线删除；
     # 纯 dict 结构，随本类 deepcopy 快照 / pickle 存档自然往返，不写入任何角色模板。
@@ -913,12 +911,12 @@ class GameState:
     consumables: list[Consumable] = field(default_factory=list)
     # 抵扣X封印的玩家遗物 {遗物名: 剩余回合}，[回终]-1，归零解封（封印期间不触发 process_relics）
     sealed_relics: dict = field(default_factory=dict)
-    # 豪夺（2026-09-28）：玩家/敌人互相夺取的遗物临时寄存
+    # 豪夺：玩家/敌人互相夺取的遗物临时寄存
     #   player_stolen_from_player：{name: {"remaining":int}}——理论上罕见，留结构占位
     #   实体.stolen_relics 在 Entity 上（玩家侧实际使用 state.stolen_relics 统一管理）
     stolen_relics: dict = field(default_factory=dict)
     
-    # 战场公开频道（硬伤3，2026-08-30）：双方与观战者共享的台词记录。
+    # 战场公开频道：双方与观战者共享的台词记录。
     # 条目只含 {round, battle, speaker, posture, text}——**禁止**任何真伪字段
     # （"你都标出来了，还猜什么"）。纯 dict 结构，随 deepcopy 快照 / pickle 存档往返。
     # 只有 sim/duel_pvp.py 之类的表现层调用 engine.dialogue.utter() 写入；
@@ -948,7 +946,7 @@ class GameState:
     
     # 封存候选人（最终的冠冕）
     sealed_candidate: Optional[dict] = None
-    # 死斗规则（2026-08-21）：通过死斗的角色进入"进阶封存"，封存按阶级分槽存放。
+    # 死斗规则：通过死斗的角色进入"进阶封存"，封存按阶级分槽存放。
     # 每个阶级封存槽是一份先来后到的候选队列；该阶级的挑战者依次与队首死斗。
     # 当前正在进行的死斗所属阶级（1=一阶挑战者/胜者死斗，2=二阶…；0=非死斗）。
     sealed_candidates: dict = field(default_factory=dict)  # {阶级: [候选快照, ...]}
@@ -957,7 +955,7 @@ class GameState:
     # 挑战者落败（擂主卫冕成功）时须按 规则正文规则放回队首重新封存。
     duel_defending_snapshot: dict = field(default_factory=dict)
 
-    # 阶级推进与无尽模式（2026-09-28 用户令，待办②落地）
+    # 阶级推进与无尽模式
     # unlocked_tier：已解锁的最高副本阶级。开局只能选阶级≤它的副本；通过某阶最终死斗
     # 后解锁下一阶（持久化在 data/progression.json，跨轮回有效——"胜者进入下一阶级副本"
     # 落在轮回者血脉上，而不是落在已被封存的单个角色身上）。
@@ -968,7 +966,7 @@ class GameState:
     # 默认值在引擎构造时被进一步处理：跨轮回持久文件不存在时视为当前已实现阶级都已解锁，
     # 以便与"旧版本开局能直接选二阶乱葬岗"兼容；只有从持久文件显式读出 1（新轮回从一阶起）
     # 或通过 _advance_region_unlock 把值压回 1 时，阶级门禁才真的生效。
-    # PROGRESSION_ENABLED=False（2026-09-28）时此值实际不参与门禁，保留是为未来启用做准备。
+    # PROGRESSION_ENABLED=False时此值实际不参与门禁，保留是为未来启用做准备。
     unlocked_tier: int = 1
     endless_mode: bool = False
     endless_cycle: int = 0
@@ -986,7 +984,7 @@ class GameState:
     # 事件登记的"下一场战斗额外出现的怪物"（如龙心谷"追求者·拿走口粮"），[战始]出怪时读取并额外加入
     forced_monsters_next_battle: list[dict] = field(default_factory=list)
 
-    # 出怪配方的增援队列（2026-09-28 用户令，取代 2026-09-11 的固定波次 R4/R7/R10）：
+    # 出怪配方的增援队列：
     # [战始]只让 S=随机(1,N) 只首发进场，其余按第 i 波 `T_i=随机(1,5)` 的间隔、
     # 每波 R_i 只（可>1）在对应[回始]进场。元素为怪物定义dict + "arrive_round"，
     # 见 monsters.roll_spawn_plan / make_monster_entity 入参。
@@ -1006,7 +1004,7 @@ class GameState:
     # 并允许逐个 actor 提交（严格交替，避免先手方一次结算全场）。默认 False——
     # 正式玩法与既有测试完全不受影响，只有训练沙盒会打开它。
     arena_ffa: bool = False
-    # 怪物行动自由化（2026-10-03 用户裁定，默认关）：打开后不再强制怪物发动道纹，
+    # 怪物行动自由化：打开后不再强制怪物发动道纹，
     # 每只怪物每回合有 2 个「行动槽」——1 次攻击或 1 次道纹各占 1 槽，
     # 允许「连续两次攻击」「连续两次道纹」「一攻一道纹」，也可以只出 1 槽。
     # 默认 False——正式玩法与既有测试完全不受影响。
@@ -1154,7 +1152,7 @@ class GameState:
             detail["context_warning"] = "回复缺少EffectContext；已按legacy来源兼容记录"
         overheal = detail.get("overheal", 0)
         if overheal > 0 and self.on_player_side(entity):
-            # 【忘忧香】（2026-09-28 用户令）：战斗被动。受到溢出回复时将其转化为等量格挡。
+            # 【忘忧香】：战斗被动。受到溢出回复时将其转化为等量格挡。
             # 这是遗物级被动：只要持有者（己方实体/轮回者阵营）持有忘忧香，溢出回复1:1转格挡。
             wangyou = next((r for r in self.relics if r.name == "忘忧香"), None)
             if wangyou is not None:
@@ -1250,7 +1248,7 @@ class GameState:
                 return True
         return False
 
-    # ---- 【第一杯】倍率（2026-09-23 用户令重做，唯一事实源）----
+    # ---- 【第一杯】倍率----
     # 旧条文「每次回复额外+50%、[回终]未回复则流血10、免疫癌变」全部废止；
     # 新条文「你受到的[回复]与失去的生命翻倍」。两条倍率都只读这一处，
     # 引擎其它地方不得再各写一份判断（朋友/员工不继承由 side_has 保证）。
@@ -1277,7 +1275,7 @@ class GameState:
         return self.FIRST_CUP_MULTIPLIER if self.side_has(entity, self.FIRST_CUP) else 1
 
     def _relic_active(self, entity: Entity, name: str) -> bool:
-        """遗物持有判定（唯一口径，2026-10-03，自 CombatEngine 平移）。
+        """遗物持有判定。
 
         - 归属查 `side_has`（玩家＝本局 relics；敌方轮回者＝opponent_relics）；
         - 玩家侧再查 sealed_relics：被【豪夺/封印】封住的遗物不生效（原口径）。
@@ -1451,7 +1449,7 @@ class GameState:
 
     @property
     def energy_budget(self) -> int:
-        """局外[精力]预算：常规 3 点；无尽模式逐轮递减（2026-09-28 用户令「精力越来越少」）。
+        """局外[精力]预算：常规 3 点；无尽模式逐轮递减。
 
         递减口径（AI 拟定、可由用户一句话改数）：第 C 轮为 `max(1, 3-(C-1))`，
         即 3→2→1 后封底 1 点。[战终]恢复与买路财安全撤退的恢复都走这里。
@@ -1503,7 +1501,7 @@ class GameState:
             "sealed_candidates": self.sealed_candidates,
             "duel_tier": self.duel_tier,
             "duel_defending_snapshot": self.duel_defending_snapshot,
-            # 阶级推进 / 无尽模式（2026-09-28 用户令）
+            # 阶级推进 / 无尽模式
             "unlocked_tier": self.unlocked_tier,
             "endless_mode": self.endless_mode,
             "endless_cycle": self.endless_cycle,
@@ -1541,13 +1539,13 @@ class GameState:
         """获取敌方所有存活实体"""
         return [e for e in self.enemies if e.is_alive]
 
-    # ==================== 战斗结束与胜利·统一判定（DM裁定 2026-08-18） ====================
+    # ==================== 战斗结束与胜利·统一判定 ====================
     # 引擎内一切"战斗是否结束/能否战终"的判断必须走以下四个方法，禁止再散落写 is_alive 组合。
 
     def enemy_combat_active(self, enemy: Entity) -> bool:
         """该敌人是否仍构成战斗障碍（阻塞战终）。
 
-        DM裁定（2026-08-18）：战斗胜利＝敌方全部角色【命零】或【永久离场】。
+        DM裁定：战斗胜利＝敌方全部角色【命零】或【永久离场】。
         永久离场事件（雕塑/癌变/还债/救赎/逃跑及未来新增）经
         Entity.depart_battle() 记为离场；【封印】暂离队列单独阻塞战终。
         永久离场不视为击杀、不产碎片（分类见 battle_end 读取 departure_reason）。

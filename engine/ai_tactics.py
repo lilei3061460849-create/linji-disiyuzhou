@@ -543,10 +543,9 @@ class TacticalAI:
         budget = self.mana_budget()
         for name, inst in sorted(self.player.dao_wen.items()):
             if (name == "封印" and self.player.entity_type == "轮回者"
-                    and "镇魔印" in (getattr(self.player, "armed_spells", None) or ())):
-                # 装配【镇魔印】后，【封印】由自身回合结束法术结算；
-                # 避免 AI 又把同一道纹当成主动出手重复发动。未装配法术时，
-                # 单独持有【封印】仍可作为普通道纹候选。
+                    and any(spell.name == "镇魔印" for spell in (self.player.spells or []))):
+                # 已定义【镇魔印】后，【封印】由法术的自身回合结束流程结算，
+                # 避免 AI 将同一道纹重复作为主动出手。
                 continue
             if name in self.blocked_daowen_names:
                 continue

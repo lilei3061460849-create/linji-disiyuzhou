@@ -1,6 +1,6 @@
 """CombatEngine 分片：法术流程表、提交校验、自动反应、统一单步道纹结算。
 
-架构（2026-10-02 重写，取代 Phase 0/1 的"调用方预展开"模型）：
+架构：
 
     道纹是积木，法术是由道纹写成的程序。
 
@@ -64,7 +64,7 @@ class SpellReactionMixin:
                    "steps": [("封印", "any")],
                    "effect_flow": "自身回合结束后→发动封印X于任意目标",
                    "automatic": True},
-        # 血炼周天（2026-09-16 补流程，清单 D1）：
+        # 血炼周天：
         # 失去生命后→发动再生→发动透支（循环）。
         # 【透支】的流血每轮都会推进【癌变】阈值，循环由规则自然终止
         # （施法者命零 / 法力耗尽 / 调用方提交的 max_iterations 到顶）。
@@ -134,28 +134,31 @@ class SpellReactionMixin:
     # ==================================================================
 
     def _builtin_spell_flows(self, holder: Entity) -> dict[str, dict]:
-        """当前**已装配**的内置法术：所需道纹全部持有且可发动，并经 use_spell 装配。"""
+        """当前已定义且可触发的法术大全条目。
+
+        法术不再有“装配”状态；预定义法术与自定义法术统一存入
+        ``holder.spells``，自定义施法定义后立即生效。
+        """
         flows: dict[str, dict] = {}
         if holder is None or not holder.is_alive:
             return flows
-        armed = set(getattr(holder, "armed_spells", None) or ())
-        for name, required in self.BUILTIN_SPELL_DAOWEN.items():
-            flow = self.SPELL_FLOWS.get(name)
-            if flow is None or name not in armed:
+        for spell in getattr(holder, "spells", []) or []:
+            flow = self.SPELL_FLOWS.get(spell.name)
+            if flow is None:
                 continue
             if all(d in holder.dao_wen and holder.dao_wen[d].can_use()
-                   for d in required):
-                flows[name] = flow
+                   for d in spell.required_daowen):
+                flows[spell.name] = flow
         return flows
 
     def buildable_spells(self, holder: Entity) -> list[str]:
-        """当前凭持有道纹**可以装配**但尚未装配的内置法术名。"""
+        """当前凭持有道纹可以通过自定义施法定义的法术大全条目。"""
         if holder is None or not holder.is_alive:
             return []
-        armed = set(getattr(holder, "armed_spells", None) or ())
+        defined = {sp.name for sp in getattr(holder, "spells", []) or []}
         out = []
         for name, required in self.BUILTIN_SPELL_DAOWEN.items():
-            if name in armed or name not in self.SPELL_FLOWS:
+            if name in defined or name not in self.SPELL_FLOWS:
                 continue
             if all(d in holder.dao_wen and holder.dao_wen[d].can_use()
                    for d in required):
@@ -176,7 +179,7 @@ class SpellReactionMixin:
         return Spell(
             name=name,
             required_daowen=list(required),
-            trigger_condition=flow.get("effect_flow", ""),
+            trigger_condition=flow.get("trigger", ""),
             effect_flow=flow.get("effect_flow", ""),
             rank=len(required),
             automatic=bool(flow.get("automatic")),
@@ -360,7 +363,7 @@ class SpellReactionMixin:
         选择写进调用方那份 decision dict（branch_snapshot），后续命中复用，
         不会因为前一次命中改变了法力/生命而在两次命中之间漂移。
         标记必须是字符串——此前的引擎活引用会随 params 进 action_history
-        并让 save_game 的 pickle 直接失败（2026-09-15 修复）。
+        并让 save_game 的 pickle 直接失败。
         """
         token = getattr(self, "_branch_owner_token_value", None)
         if token is None:
@@ -848,14 +851,8 @@ class SpellReactionMixin:
         """列出一个实体当前的绑定（供 schema/存档审计；不改动状态）。"""
         out = []
         for spell in getattr(holder, "spells", []) or []:
-            out.append({"kind": "custom", "name": spell.name,
-                        "lifecycle": getattr(spell, "lifecycle", Lifecycle.PERMANENT.value),
-                        "armed": spell.name in (getattr(holder, "armed_spells", None) or [])})
-        for name in getattr(holder, "armed_spells", None) or []:
-            if any(b["name"] == name for b in out):
-                continue
-            out.append({"kind": "builtin", "name": name,
-                        "lifecycle": Lifecycle.PERMANENT.value, "armed": True})
+            out.append({"kind": "spell", "name": spell.name,
+                        "lifecycle": getattr(spell, "lifecycle", Lifecycle.PERMANENT.value)})
         return out
 
     def clear_battle_scoped_spells(self) -> list[dict]:
@@ -878,27 +875,17 @@ class SpellReactionMixin:
             if not gone:
                 continue
             holder.spells = kept
-            armed = getattr(holder, "armed_spells", None)
-            if armed is not None:
-                holder.armed_spells = [n for n in armed if n not in gone]
         return removed
 
     def undefine_spell(self, holder: Entity, spell_name: str) -> dict:
-        """显式移除一个法术绑定（自创法术定义 / 内置法术装配意图）。
-
-        只做移除，不涉及出手与法力（与 use_spell 的 disarm 同价：卸下不花出手）。
-        """
-        removed = {"custom": False, "armed": False}
+        """移除一个已经定义的自定义法术，不涉及出手与法力。"""
+        removed = {"custom": False}
         spells = list(getattr(holder, "spells", None) or [])
         for spell in spells:
             if spell.name == spell_name:
                 holder.spells = [sp for sp in spells if sp is not spell]
                 removed["custom"] = True
                 break
-        armed = getattr(holder, "armed_spells", None)
-        if armed and spell_name in armed:
-            holder.armed_spells = [n for n in armed if n != spell_name]
-            removed["armed"] = True
         return removed
 
     # ==================================================================
@@ -1353,7 +1340,7 @@ class SpellReactionMixin:
                                       holder: Entity, target: Entity) -> bool:
         """自动反应法术路径：被选定方是否消耗 1 点速度闪避本次道纹。
 
-        DM 裁定（2026-08-31）：法术说到底只是自定义了触发条件的道纹，
+        DM 裁定：法术说到底只是自定义了触发条件的道纹，
         **道纹要遵守的规则，法术一样要遵守**。规则正文「凡带 [目标] 道纹，
         目标被选定时均可消耗 1 点当前速度进行闪避」、规则正文「禁止跳过闪避判定」。
         """

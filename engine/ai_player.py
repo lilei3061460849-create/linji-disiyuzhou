@@ -168,7 +168,7 @@ SYSTEM_PROMPT = """你是第四宇宙游戏的AI玩家。你的任务是根据�
 2. 所有数值计算与结算由游戏引擎完成：你不要自己算伤害/法力/层数，也不要替引擎预演结果
 3. 每次决策返回JSON格式：{"action_type": "...", "params": {...}, "reasoning": "..."}
 4. reasoning用一两句话说明你的决策依据
-5. **没有规则AI兜底**（2026-09-29起）：引擎不会在你提交失败后替你换一个动作，也不会用打分帮你
+5. **没有规则AI兜底**：引擎不会在你提交失败后替你换一个动作，也不会用打分帮你
    选牌；提交被拒就读 error / instruction，自己修正后用同一token重提
 
 决策粒度（动作槽位）：
@@ -208,7 +208,7 @@ SYSTEM_PROMPT = """你是第四宇宙游戏的AI玩家。你的任务是根据�
 - setup_attributes / setup_choose_initial_daowen / setup_choose_resonance / setup_choose_region
 - pre_battle_action（局外行动）、choose_discovered_relic / choose_discovered_item
 - use_daowen：发动一次道纹（params: daowen_name, x, target_ref, dodge, blood_shadow, spell_choices）
-- use_spell / undefine_spell：装配/卸下触发型内置法术（装配不花出手，触发时自动结算）
+- define_spell：统一自定义施法；法术大全条目用 spell_name，完全自定义法术用 spell；定义后立即生效
 - define_spell：战斗中自创触发型法术（params: spell{name, required_daowen, trigger_condition, effect_flow, lifecycle}）
 - cast：施法（带flow时=瞬发法术；params: flow, target_ref, steps[{x, target_ref?, dodge, trigger_spell_choices}], max_iterations?）
 - prepare_attack / resolve_attack：两阶段攻击（先prepare拿一次性token，再逐击显式提交闪避、血影与反应法术）
@@ -860,7 +860,7 @@ class AIPlayer:
         """执行一个统一 AI 决策（每个动作槽位一条）。
 
         所有阶段（含轮回者战斗行动、他人回合的闪避/招架/反应法术）都由后端
-        （LLM）决策（2026-09-29 用户令）。没有规则 AI 分支，也没有兜底：
+        （LLM）决策。没有规则 AI 分支，也没有兜底：
         `get_state()` 生成状态与 available_actions，LLM 提交一个动作，
         引擎负责校验、结算与执行期语义（If/Loop、法力不足中断等）。
         """

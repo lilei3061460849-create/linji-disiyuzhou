@@ -63,7 +63,7 @@ def load_event_sources(index_path: str | Path) -> tuple[str, dict]:
 
 
 def parse_events(index_path: str | Path) -> dict:
-    """从全副本索引及副本文档解析事件。通用事件位于 AI_EXPERIENCE.md 规则正文。"""
+    """从全副本索引及副本文档解析事件。通用事件位于 README.md 规则正文。"""
     content, documents = load_event_sources(index_path)
     lines = content.split("\n")
     # 每个专属副本独立文档追加到解析输入；事件名白名单阻止标题被误判。
@@ -186,7 +186,7 @@ def _event_preflight(text: str, engine, params: dict) -> Optional[str]:
         allow_debt = event_name == "遗落的赌局"
     else:
         allow_debt = False
-    # 负债口径（DM裁定2026-08-22）：冻结的是碎片**支出**(shard_cost>0)；
+    # 负债口径：冻结的是碎片**支出**(shard_cost>0)；
     # 0费选项不属于支出，不得因负债被误拒——否则负债玩家遇到全收费选项事件
     # 时事件永不可结算，而待结算事件门禁一切其它行动（api.py:742）=全死锁。
     if shard_cost > 0 and shard_cost > engine.state.shards and not allow_debt:
@@ -479,7 +479,7 @@ def _resolve_option_effect_impl(text: str, engine, event_name: str = "", params=
                          attack_count=8, attack_power=2, is_deployed=False)
             for dw_name in ("逆鳞", "固执"):
                 # 2026-09-17：面板不写死 X（与 副本/龙心谷.md 的「96/2/8，逆鳞，固执」一致）
-                # 2026-10-03：【活血】道纹删除，面板同步去掉（待用户裁定是否补位）
+                # 2026-10-03：【活血】道纹删除，面板同步去掉
                 emp.dao_wen[dw_name] = DaoWenInstance(
                     DaoWen(name=dw_name, formula="", cost_type="消耗", cost_formula="X", effect_formula=""),
                     x_value=0, x_free=True)
@@ -491,7 +491,7 @@ def _resolve_option_effect_impl(text: str, engine, event_name: str = "", params=
             applied.append("获得50碎片")
             engine.state.forced_monsters_next_battle.append({
                 "name": "追求者", "attack_count": 8, "attack_power": 2, "blood_limit": 96,
-                # x=None → x_free，与雇佣分支一致（2026-09-17 面板不写死 X）
+                # x=None → x_free，与雇佣分支一致
                 "dao_wen": {"逆鳞": None, "固执": None},
             })
             applied.append("已登记：下一场战斗追求者将作为怪物额外出现"
@@ -565,7 +565,7 @@ def _resolve_option_effect_impl(text: str, engine, event_name: str = "", params=
     elif event_name == "乞丐" and text.startswith("给予庇护"):
         beggar = Entity("乞丐", "朋友", blood_limit=50, current_hp=50,
                         attack_count=2, attack_power=3)
-        # 2026-10-03：【狂暴】道纹删除，乞丐不再附带道纹（待用户裁定是否补位）
+        # 2026-10-03：【狂暴】道纹删除，乞丐不再附带道纹
         beggar.mutation_count = 3
         engine.state.friends.append(beggar)
         applied.append("乞丐作为朋友加入")
@@ -779,10 +779,8 @@ def _resolve_option_effect_impl(text: str, engine, event_name: str = "", params=
                     "error": discovery.get("error", "无法发现遗物")}
         applied.append(f"随机列出遗物候选：{'、'.join(discovery['choices'])}")
 
-    # 学会法术必须由调用方在本次请求中显式提交合法名称。
-    # 2026-09-16：法术无需学习，事件授予的法术改为直接装配（armed_spells），
-    # 不再往 spells 里塞一个空流程的重复条目——内置法术由道纹推导，塞进去
-    # 只会与 spell_definition 的合成结果重复。
+    # 法术大全中的预定义法术不需要学习或装配；获得时写入角色的法术定义，
+    # 后续统一通过自定义施法入口使用。
     if "选择学会两种法术" in text:
         granted = []
         for name in params["spell_names"]:
@@ -791,13 +789,17 @@ def _resolve_option_effect_impl(text: str, engine, event_name: str = "", params=
                 instructions.append(f"未知法术【{name}】，需DM裁定")
                 continue
             if not all(d in player.dao_wen for d in required):
-                instructions.append(f"缺少道纹{required}，无法装配法术【{name}】，需DM裁定")
+                instructions.append(f"缺少道纹{required}，无法使用法术【{name}】，需DM裁定")
                 continue
-            if name not in player.armed_spells:
-                player.armed_spells = sorted(set(player.armed_spells) | {name})
+            if not any(sp.name == name for sp in player.spells):
+                flow = engine.combat.SPELL_FLOWS.get(name, {})
+                player.spells.append(Spell(name=name, required_daowen=list(required),
+                                           trigger_condition=flow.get("trigger", ""),
+                                           effect_flow=flow.get("effect_flow", ""),
+                                           rank=len(required), automatic=bool(flow.get("automatic"))))
             granted.append(name)
         if granted:
-            applied.append(f"装配法术：{'、'.join(granted)}")
+            applied.append(f"取得法术定义：{'、'.join(granted)}")
     # 获得N点[速限]/[法限]：按正文「2属性点 = 1[速限] = 1[法限]」，
     # 速限与法限同价，各按字面点数加到对应上限（2026-09-16 裁定，清单 A4：
     # 旧实现给法限加 2×x，与速限口径不一致）。
