@@ -213,7 +213,7 @@ SYSTEM_PROMPT = """你是第四宇宙游戏的AI玩家。你的任务是根据�
 - cast：施法（带flow时=瞬发法术；params: flow, target_ref, steps[{x, target_ref?, dodge, trigger_spell_choices}], max_iterations?）
 - prepare_attack / resolve_attack：两阶段攻击（先prepare拿一次性token，再逐击显式提交闪避、血影与反应法术）
 - declare_parry（招架）、declare_evolution（怪物进化·发动原初X）
-- focus：聚能，1次出手→立即获得 ceil(20%法限) 法力（法限为0时白白浪费出手）
+- focus：聚能，1次出手→恢复50%已损法力（向上取整）
 - rest：蓄锐，1次出手→下[回始]获得【蓄锐·增】（出手+1，持续1回合）
 - prepare_monster_phase / resolve_monster_phase：怪物阶段两阶段接口（为每个actors条目提交完整选择）
 - battle_start / round_start / round_end / battle_end：阶段推进；存在候选时必须显式提交
