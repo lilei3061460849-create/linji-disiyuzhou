@@ -134,6 +134,7 @@ class SpellDefinition:
     automatic: bool = False
     effect_flow_text: str = ""
     custom_conditions: list[str] = field(default_factory=list)
+    loop_stop_conditions: list[str] = field(default_factory=list)
 
     @property
     def loop(self) -> bool:
@@ -151,6 +152,7 @@ class SpellDefinition:
             "loop": self.loop,
             "effect_flow": self.effect_flow_text,
             "custom_conditions": list(self.custom_conditions),
+            "loop_stop_conditions": list(self.loop_stop_conditions),
         }
 
 
@@ -385,6 +387,12 @@ class SpellExecution:
             if self.request.max_iterations is not None:
                 bound = (self.request.max_iterations if bound is None
                          else min(bound, self.request.max_iterations))
+            guard = getattr(self.engine, "spell_loop_guard", None)
+            if guard is not None:
+                stop, reason = guard(self.definition, self.caster, self.attacker)
+                if stop:
+                    self.loop_stop_reason = reason
+                    break
             if bound is not None and rounds >= bound:
                 self.loop_stop_reason = "max_iterations"
                 break

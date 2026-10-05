@@ -482,20 +482,24 @@ class MonsterLifeMixin:
         monster.is_cancer = True  # type: ignore[attr-defined]
         self._remove_from_combat(monster, "癌变", ctx=cancer_ctx)
         absorbed = monster.total_healed
-        # 正文：每只被吸收的癌变怪物使局外【休整】永久额外产生8点恢复量，可叠加。
-        boost = 8
-        self.state.rest_heal_bonus += boost
-        self.state.death_book_wisdom.append(f"癌变·{monster.name}：休整恢复量+{boost}")
+        meat = Consumable(
+            name="无限肉块",
+            effect="使用后恢复5生命，不计入癌变累计治疗量；战终恢复80%已损耐久",
+            current_uses=1,
+            max_uses=1,
+            kind="infinite_meat",
+        )
+        self.state.consumables.append(meat)
         return {
             "type": "proliferation",  # 保留旧 key 兼容；新 key 见下一行
             "type_alias": "cancer",
             "monster": monster.name,
             "absorbed_heal": absorbed,
-            "rest_boost": boost,
-            "rest_heal_bonus_total": self.state.rest_heal_bonus,
+            "consumable": meat.name,
+            "consumable_uses": "1/1",
             "ctx": cancer_ctx.to_dict() if cancer_ctx else None,
             "note": (f"{monster.name}累计承受{absorbed}点恢复被癌变吸收进《死者之书》，"
-                     f"局外【休整】恢复量永久+{boost}（累计+{self.state.rest_heal_bonus}）"),
+                     "轮回者获得【无限肉块】（1/1）")
         }
 
     def _debt_bind_monster(self, monster: Entity) -> dict:

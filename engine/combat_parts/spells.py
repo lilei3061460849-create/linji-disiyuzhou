@@ -72,6 +72,13 @@ class SpellReactionMixin:
                      "steps": [("再生", "self"), ("透支", "self")],
                      "effect_flow": "失去生命后→发动再生→发动透支→循环",
                      "loop": True},
+        # 三阶动态循环：目标与中断条件由通用条件/目标选择器提供，
+        # 不在法术名分支里写专用结算逻辑。
+        "徒劳无功": {"trigger": ActionPhase.AFTER_LIFE_LOST.value,
+                     "steps": [("再生", "self"), ("透支", "self"), ("弱化", "any")],
+                     "effect_flow": "失去生命后→发动再生X于自身→发动透支X于自身→发动弱化X于任意目标→循环",
+                     "loop": True,
+                     "loop_stop_conditions": ["自身场上最高怪物攻击力等于0", "自身癌变安全余量小于等于0"]},
     }
 
     # 内置法术的所需道纹（唯一事实源；api.GameEngine.SPELL_REGISTRY 是本表的别名）。
@@ -86,6 +93,7 @@ class SpellReactionMixin:
         "咎由自取": ["杀伐", "血债"],
         "镇魔印": ["封印"],
         "血炼周天": ["再生", "透支"],
+        "徒劳无功": ["再生", "透支", "弱化"],
     }
 
     # 一步 = 一次"发动道纹"。两类策略的唯一差异是**是否开启新的
@@ -285,6 +293,7 @@ class SpellReactionMixin:
             lifecycle=lifecycle, body=program, rank=len(required),
             automatic=bool(flow.get("automatic")),
             effect_flow_text=flow.get("effect_flow", ""),
+            loop_stop_conditions=list(flow.get("loop_stop_conditions") or []),
         )
 
     def _resolve_step_subject(self, role: str, holder: Entity, attacker: Entity,
@@ -326,6 +335,19 @@ class SpellReactionMixin:
             if isinstance(field, tuple) and field[0] == "daowen_stacks":
                 inst = entity.dao_wen.get(field[1])
                 return inst.x_value if inst else 0
+            if isinstance(field, tuple) and field[0] == "battle_metric":
+                monsters = [m for m in self.state.active_enemies()
+                             if getattr(m, "entity_type", "") == "怪物"]
+                powers = [m.effective_attack_power() for m in monsters]
+                if field[1] == "max_monster_attack_power":
+                    return max(powers, default=0)
+                if field[1] == "sum_monster_attack_power":
+                    return sum(powers)
+                if field[1] == "cancer_safety_margin":
+                    margins = [max(0, m.blood_limit * Entity.CANCER_HEAL_MULTIPLIER
+                                   - m.total_healed) for m in monsters]
+                    return min(margins, default=0)
+                raise ValueError(f"未知战斗级条件指标: {field[1]}")
             mapping = {
                 "hp": entity.current_hp, "blood_limit": entity.blood_limit,
                 "mana": entity.current_mana, "mana_limit": entity.mana_limit,
@@ -334,6 +356,17 @@ class SpellReactionMixin:
             }
             return mapping[field]
         return _resolve
+
+    def spell_loop_guard(self, definition, caster: Entity, attacker: Entity):
+        """通用循环守卫：由法术定义声明停止条件，执行器统一调用。"""
+        from ..spell_dsl import parse_condition, evaluate_condition, SpellDslError
+        for text in getattr(definition, "loop_stop_conditions", ()) or ():
+            try:
+                if evaluate_condition(parse_condition(text), self._condition_resolver(caster, attacker)):
+                    return True, f"loop_condition:{text}"
+            except SpellDslError as exc:
+                return True, f"invalid_loop_condition:{exc}"
+        return False, ""
 
     def _evaluate_spell_condition(self, node, caster: Entity, attacker: Entity) -> bool:
         """SpellExecution 在**执行到条件步骤的那一刻**求值条件（Part 3）。
@@ -1395,8 +1428,14 @@ class SpellReactionMixin:
             daowen = self._step_daowen(step)
             role = self._step_role(step)
             if role == "any":
-                return {"use": False}
-            target = self._resolve_step_subject(role, holder, attacker)
+                # 通用“任意目标”自动选择器：优先选择当前有效攻击力最高的存活怪物，
+                # 并列按稳定战场顺序；没有合法目标才放弃本次自动触发。
+                candidates = [m for m in self.state.active_enemies()
+                              if getattr(m, "entity_type", "") == "怪物" and m.is_alive]
+                candidates = [m for m in candidates if m.effective_attack_power() > 0]
+                target = max(candidates, key=lambda m: m.effective_attack_power(), default=None)
+            else:
+                target = self._resolve_step_subject(role, holder, attacker)
             if target is not None and not target.is_alive:
                 target = None
             if role == "attacker" and target is holder:
@@ -1424,7 +1463,9 @@ class SpellReactionMixin:
                               daowen, calc, holder, target)})
         if not steps:
             return {"use": False}
-        return {"use": True, "steps": steps, "max_iterations": 1,
+        return {"use": True, "steps": steps,
+                # 通用循环法术默认由资源/条件/无进展终止；旧反应法术保留单轮保护。
+                "max_iterations": None if name == "徒劳无功" else 1,
                 "_cost": consumed, "_engine_automatic": True}
 
     def _fire_auto_reaction(self, holder: Entity, trigger: str,

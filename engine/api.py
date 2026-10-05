@@ -88,7 +88,7 @@ class GameEngine:
     AI通过此接口与游戏交互，所有数值计算必须经过本引擎
     """
 
-    def __init__(self, db_path: str = "data/dm_rulings.db", save_dir: str = "data/saves",
+    def __init__(self, db_path: str = "data/dm_rulings.db", save_dir: str = "data/saves", autosave: bool = True,
                  rng_seed: Optional[int] = None, sealed_candidate_path: str = "data/sealed_candidate.json",
                  death_book_path: str = "死者之书.md"):
         """
@@ -104,6 +104,7 @@ class GameEngine:
         self.combat = CombatEngine(self.state, self.dice)
         self.rulings_db = DMRulingsDB(db_path)
         self.save_dir = save_dir
+        self.autosave = bool(autosave)
         self.sealed_candidate_path = sealed_candidate_path
         self.death_book_path = death_book_path
         self.death_book = DeathBookStore(death_book_path)
@@ -1182,6 +1183,14 @@ class GameEngine:
 
             self._last_result = result
             self.combat.resolution.end_action()
+            if transaction and self.autosave and result.get("success"):
+                try:
+                    self.save_game("current")
+                    result["autosaved"] = True
+                except Exception as exc:
+                    # 存档失败不得回滚已经成功的游戏行动；把失败明确暴露给调用方。
+                    result["autosaved"] = False
+                    result["autosave_error"] = str(exc)
             return result
 
         except Exception as e:
@@ -3610,6 +3619,27 @@ class GameEngine:
                 "state": self.combat._get_combat_state(),
             }
 
+        # 【无限肉块】：恢复5生命，但本次恢复不计入癌变累计治疗量。
+        if item.kind == "infinite_meat":
+            before_total = self.state.player.total_healed
+            before_battle_total = self.state.player.healed_this_battle
+            remaining = item.use()
+            heal = self.state.apply_heal(self.state.player, 5, ctx={
+                "timing": self.state.phase, "source": item.name, "source_type": "consumable",
+                "actor": self.state.player, "target": self.state.player, "mechanic": "heal",
+                "subtype": "infinite_meat", "amount": 5,
+                "tags": {"consumable", "exclude_cancer_accumulation"},
+            })
+            self.state.player.total_healed = before_total
+            self.state.player.healed_this_battle = before_battle_total
+            return {
+                "success": True,
+                "action": f"使用消耗品【{item.name}】",
+                "result": {"uses_remaining": remaining, "heal": heal,
+                           "excluded_from_cancer_accumulation": True},
+                "state": self.combat._get_combat_state(),
+            }
+
         # 正文具名消耗品：全部在扣耐久前完成参数校验；未实现项不得“成功但只扣耐久”。
         if item.name in {"绝息淤泥", "活性土壤", "假钞贴", "穿甲弹", "洗劫面具", "赤泉囊", "龙血瓶"}:
             return self._consume_named_event_item(item, params)
@@ -5721,6 +5751,20 @@ class GameEngine:
         modifiers.pop("huifeng_target_ref", None)
         modifiers.pop("huifeng_target_ref_opponent", None)
 
+        # 【无限肉块】：战终恢复80%已损耐久，向上取整。
+        infinite_meat_logs = []
+        for item in self.state.consumables:
+            if item.kind != "infinite_meat":
+                continue
+            lost = max(0, item.max_uses - item.current_uses)
+            restored = min(lost, math.ceil(lost * 0.8)) if lost else 0
+            if restored:
+                item.current_uses += restored
+            infinite_meat_logs.append({"item": item.name, "lost": lost,
+                                       "restored": restored,
+                                       "current_uses": item.current_uses,
+                                       "max_uses": item.max_uses})
+
         # [战终]对所有角色统一清除局内回复、格挡与状态；不得只清轮回者。
         all_characters = (([self.state.player] if self.state.player else [])
                           + self.state.friends + self.state.employees
@@ -5877,6 +5921,7 @@ class GameEngine:
             "removed_via_alt_path": removed,
             "death_shard_rewards": death_rewards,
             "relic_end_logs": relic_end,
+            "infinite_meat_logs": infinite_meat_logs,
             "spell_logs": spell_logs,
             "scoped_effects_rolled_back": scoped_rollbacks,
             "spell_bindings_removed": spell_bindings_removed,
