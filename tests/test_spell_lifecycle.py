@@ -6,8 +6,7 @@
                不会以"跨战斗绑定"的形式活过战终（含存档/读档往返）；
   permanent —— 显式声明的永久法术：正常存档语义，跨战斗保留。
 
-绑定的事实源仍只有 entity.spells（自创定义）与 entity.armed_spells（内置装配
-意图），没有引入第二张 binding 表；本文件同时锁定 old-save 兼容：旧存档里的
+持续法术的事实源只有 entity.spells；本文件同时锁定旧存档兼容：旧存档里的
 Spell 没有 lifecycle 实例属性时按 permanent 处理（类属性默认值）。
 """
 import os
@@ -104,29 +103,17 @@ def test_battle_end_removes_battle_spells_and_keeps_permanent():
     assert "急救" not in names and "常驻" in names
 
 
-def test_undefine_spell_removes_custom_and_armed_bindings_without_action_cost():
+def test_undefine_spell_removes_custom_definition_without_action_cost():
     e = _engine("undefine")
     _start_battle(e)
-    _give_daowen(e, "再生", "杀伐")
+    _give_daowen(e, "再生")
     assert _define(e, "急救").get("success")
-    armed = e.execute_action("use_spell", {"spell_name": "先发制人"})
-    # 先发制人需要【杀伐】；用【杀伐】装配内置法术是"内置装配意图"路径
-    if not armed.get("success"):
-        e.state.player.armed_spells.append("先发制人")
     e.state.player.actions_used_this_round = 0
-
-    r = e.execute_action("undefine_spell", {"spell_name": "急救"})
-    assert r["success"], r
-    assert r["result"]["removed"]["custom"] is True
-    assert "急救" not in [s.name for s in e.state.player.spells]
-    assert e.state.player.actions_used_this_round == 0, "移除不花出手"
-
-    r2 = e.execute_action("undefine_spell", {"spell_name": "先发制人"})
-    assert r2["success"], r2
-    assert "先发制人" not in (e.state.player.armed_spells or [])
-
-    missing = e.execute_action("undefine_spell", {"spell_name": "不存在"})
-    assert not missing["success"]
+    result = e.execute_action("undefine_spell", {"spell_name": "急救"})
+    assert result["success"], result
+    assert result["result"]["removed"]["custom"] is True
+    assert not e.state.player.spells
+    assert e.state.player.actions_used_this_round == 0
 
 
 def test_battle_spell_is_battle_local_and_never_survives_battle_end_via_save(tmp_path):

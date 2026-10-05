@@ -209,7 +209,7 @@ def _event_preflight(text: str, engine, params: dict) -> Optional[str]:
         engine._init_relic_pool()
         if not isinstance(relic_name, str) or not any(r.name == relic_name for r in engine.state.relics_pool):
             return "必须用relic_name显式指定遗物池中的一件遗物"
-    if "选择学会两种法术" in text:
+    if "选择获得两种法术定义" in text:
         names = params.get("spell_names")
         if (not isinstance(names, list) or len(names) != 2 or len(set(names)) != 2
                 or any(n not in engine.SPELL_REGISTRY for n in names)):
@@ -779,9 +779,9 @@ def _resolve_option_effect_impl(text: str, engine, event_name: str = "", params=
                     "error": discovery.get("error", "无法发现遗物")}
         applied.append(f"随机列出遗物候选：{'、'.join(discovery['choices'])}")
 
-    # 法术大全中的预定义法术不需要学习或装配；获得时写入角色的法术定义，
+    # 法术大全中的预定义法术在事件奖励中直接写入角色的法术定义，
     # 后续统一通过自定义施法入口使用。
-    if "选择学会两种法术" in text:
+    if "选择获得两种法术定义" in text:
         granted = []
         for name in params["spell_names"]:
             required = engine.SPELL_REGISTRY.get(name)

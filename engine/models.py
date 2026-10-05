@@ -801,7 +801,6 @@ class Entity:
             "ai_memory": self.ai_memory,
             "dao_wen": {k: v.dao_wen.name for k, v in self.dao_wen.items()},
             "spells": [s.name for s in self.spells],
-            "armed_spells": list(self.armed_spells),
             "relics": [r.to_dict() for r in self.relics],
             "status_effects": [
                 {"name": s.name, "value": s.value, "rounds": s.remaining_rounds,

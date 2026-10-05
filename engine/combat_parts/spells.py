@@ -176,11 +176,18 @@ class SpellReactionMixin:
         flow = self.SPELL_FLOWS.get(name)
         if required is None or flow is None:
             return None
+        role_text = {"self": "自身", "attacker": "攻击者", "target": "目标", "any": "任意目标"}
+        effect_flow = "→".join(
+            f"发动{daowen}X于{role_text.get(role, role)}"
+            for daowen, role in flow.get("steps", [])
+        )
+        if flow.get("loop"):
+            effect_flow += "→循环"
         return Spell(
             name=name,
             required_daowen=list(required),
             trigger_condition=flow.get("trigger", ""),
-            effect_flow=flow.get("effect_flow", ""),
+            effect_flow=effect_flow,
             rank=len(required),
             automatic=bool(flow.get("automatic")),
         )
@@ -339,7 +346,7 @@ class SpellReactionMixin:
     def _predict_flat_steps(self, steps, holder: Entity, attacker: Entity) -> list:
         """按**当前**状态预测条件分支会走到哪些步骤。
 
-        仅用于引擎自动装配（_auto_after_life_lost_decision）时的 X 预算与"是否
+        仅用于引擎自动选择（_auto_after_life_lost_decision）时的 X 预算与"是否
         放弃触发"判断；执行期的分支选择永远由 SpellExecution 在执行到该步时
         自行求值，本方法不产出也没有能力产出"执行用的步骤列表"。
         """
@@ -839,10 +846,7 @@ class SpellReactionMixin:
     # ==================================================================
     # 五点五、生命周期（Part 6）
     #
-    # 绑定的事实源只有两处，不再引入第二张 binding 表：
-    #   entity.spells       = 自创法术定义（Spell.lifecycle 决定作用域）
-    #   entity.armed_spells = 内置法术"我打算用它"的装配意图（permanent）
-    # instant 法术从不写入任何绑定（cast 完即弃）。
+    # 持续法术的唯一事实源是 entity.spells；瞬发法术执行完即弃。
     # battle 作用域在战终由 clear_battle_scoped_spells 统一清除，
     # 因此绝不会以跨战斗绑定的形式活过存档/读档边界。
     # ==================================================================
@@ -1319,7 +1323,7 @@ class SpellReactionMixin:
 
     def _max_auto_life_lost_x(self, daowen: str, target: Entity, caster: Entity,
                               budget: int) -> Optional[int]:
-        """自动装配反应法术时，为单步挑一个可支付的 X（至少 1）。"""
+        """自动选择反应法术时，为单步挑一个可支付的 X（至少 1）。"""
         upper = min(max(1, budget), 10_000)
         for x in range(upper, 0, -1):
             calc = DaoWenEngine.resolve(daowen, x, target=target, caster=caster)
@@ -1375,7 +1379,7 @@ class SpellReactionMixin:
                                        budget: Optional[int] = None) -> dict:
         """为一次非攻击失血自动生成单法术提交（steps 契约）。
 
-        没有 AI 决策窗口，因此按"可支付且效果方向合理"自动装配：
+        没有 AI 决策窗口，因此按"可支付且效果方向合理"自动选择：
           - 目标为 any（任意目标）时无法静态定目标 → 本法术放弃自动触发。
           - 预测会走到的步骤里任一法力步骤付不起（X=1 都超出预算）→ 放弃触发。
           - 不一定会走到的分支槽位填 x=1（结构必须完整；真走到时按运行期判定）。

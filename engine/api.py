@@ -518,11 +518,8 @@ class GameEngine:
         target_options = [{"ref": ref, "name": entity.name} for ref, entity in refs.items()]
         actions: list[dict] = []
         for name, instance in player.dao_wen.items():
-            # 装配了【镇魔印】后，【封印】由自身回合结束法术自动发动，
-            # 不再作为主动道纹候选——这正是该法术的意义：把一次主动出手
-            # 换成回合结束的免费暂离。仅持有【封印】而未装配时仍照常显示。
-            # 2026-09-16 免学习裁定后，判据由"已学习"改为"已装配"，
-            # 装配是显式动作，不会在玩家不知情的情况下顶掉主动【封印】。
+            # 已定义【镇魔印】后，【封印】由法术流程自动发动，
+            # 不再作为主动道纹候选；仅持有【封印】时仍照常显示。
             if (name == "封印" and player.entity_type == "轮回者"
                     and any(sp.name == "镇魔印" for sp in (getattr(player, "spells", None) or []))):
                 continue
@@ -573,7 +570,7 @@ class GameEngine:
                                                   "x": fixed_x, "target_ref": target_options,
                                                   "dodge": "boolean", "blood_shadow": "boolean",
                                                   "trigger_spell_choices": "complete object"}})
-        # 法术大全中的预定义法术也通过统一的自定义施法入口定义；没有装配状态。
+        # 法术大全中的预定义法术也通过统一的自定义施法入口定义；没有额外状态。
         known = {sp.name: sp for sp in player.spells}
         available_builtin = set(self.combat.buildable_spells(player))
         for spell_name in sorted(available_builtin | set(known)):
@@ -586,14 +583,14 @@ class GameEngine:
                             "params_schema": {"spell_name": spell_name},
                             "available": usable,
                             "note": "通过自定义施法定义法术；定义后立即生效，消耗1次主动出手"})
-        # 显式移除绑定：自创法术定义 / 内置法术装配意图（不花出手）。
+        # 显式移除当前法术定义（不花出手）。
         removable = [b["name"] for b in self.combat.spell_bindings(player)]
         if removable:
             actions.append({
                 "action_type": "undefine_spell",
                 "params_schema": {"spell_name": removable},
                 "available": True,
-                "note": "移除一个法术绑定（自创定义或内置装配意图），不花出手；"
+                "note": "移除一个当前法术定义，不花出手；"
                         "battle 作用域的自创法术本来会在战终自动清除"})
         # 战斗中自定义法术：持有所需道纹即可，消耗 1 次主动出手，立即生效。
         if self.state.phase == GamePhase.IN_COMBAT.value:
@@ -1813,7 +1810,7 @@ class GameEngine:
         return {"success": True, "action": "选择发现消耗品",
                 "result": {"item": choice, "durability": durability, "source": source}}
 
-    def _build_custom_spell(self, actor: Entity, definition: dict) -> dict:
+    def _build_custom_spell(self, actor: Entity, definition: dict, *, allow_predefined: bool = False) -> dict:
         """自创法术的唯一构建入口（三大法则校验 + 组装 Spell）。
 
         战斗内【define_spell】使用本方法——
@@ -1827,7 +1824,7 @@ class GameEngine:
         trigger = definition.get("trigger_condition")
         flow = definition.get("effect_flow")
         if (not isinstance(name, str) or not name.strip()
-                or name in self.SPELL_REGISTRY
+                or (name in self.SPELL_REGISTRY and not allow_predefined)
                 or any(spell.name == name for spell in actor.spells)
                 or not isinstance(required, list) or not required
                 or len(set(required)) != len(required)
@@ -1836,7 +1833,7 @@ class GameEngine:
                 or not isinstance(flow, str) or not flow.strip()):
             return {"error": "自创法术需唯一名称、至少一种自身已持有道纹、触发条件和效果流程"}
         # 句式校验：提交时就必须能被完整解析，解析失败直接拒绝并附带具体原因，
-        # 禁止"学会了但因文本对不上而永远不触发"的静默哑火。已持有道纹之外
+        # 禁止"定义成功但因文本对不上而永远不触发"的静默哑火。已持有道纹之外
         # 引用的道纹同样在此处一并拒绝。
         try:
             parsed = parse_spell_definition(trigger, flow, set(DaoWenEngine.list_all()))
@@ -1852,7 +1849,7 @@ class GameEngine:
             return {"error": f"法术lifecycle只能是battle或permanent，收到{lifecycle_raw!r}"}
         if parsed.trigger == TRIGGER_INSTANT:
             # 瞬发法术是一次性执行对象（lifecycle=instant），不能保存为角色法术；
-            # 否则会变成"学会了一个永不触发的法术"。请改用 cast(flow=...)。
+            # 否则会变成"定义了一个永不触发的法术"。请改用 cast(flow=...)。
             return {"error": "瞬发法术不能用define_spell保存：请用cast(flow=...)直接施放"}
         referenced = collect_step_daowen(parsed.steps)
         missing = referenced - set(required)
@@ -1870,14 +1867,8 @@ class GameEngine:
             trigger=parsed.trigger,
         ), "parsed": parsed}
 
-    def _unlocked_builtin_spells(self, actor: Entity) -> list[str]:
-        """当前持道纹已解锁的内置法术名（无需学习）。"""
-        if actor is None:
-            return []
-        return sorted(self.combat._builtin_spell_flows(actor))
-
     def _action_undefine_spell(self, params: dict) -> dict:
-        """卸下/移除一个法术绑定（不花出手）。
+        """移除一个法术定义（不花出手）。
 
         - 自创法术：从 entity.spells 移除（battle 作用域法术本来就会在战终被
           引擎自动清除；本入口用于战斗中主动放弃，或移除 permanent 定义）；
@@ -1903,8 +1894,7 @@ class GameEngine:
     def _action_define_spell(self, params: dict) -> dict:
         """战斗中自定义法术：持有所需道纹即可，消耗 1 次主动出手，立即生效。
 
-        2026-09-16 用户裁定：法术不再需要【学习】，局外自定义入口已删除，
-        一律在战斗中自创。三大法则由 DSL 解析器硬性把关
+        法术不属于学习行动，统一在战斗中自定义。三大法则由 DSL 解析器硬性把关
         （parse_spell_definition + 引用的道纹必须全部列入 required_daowen），
         因此不再额外要求 DM 审核中断，避免战斗中卡在待裁定队列里无法继续。
         """
@@ -1925,9 +1915,10 @@ class GameEngine:
             if any(sp.name == predefined_name for sp in player.spells):
                 return {"success": False, "error": f"法术【{predefined_name}】已经定义"}
             definition = predefined.to_dict()
+            definition["lifecycle"] = params.get("lifecycle", "battle")
         if not isinstance(definition, dict):
             return {"success": False, "error": "自定义施法必须提交spell对象或spell_name"}
-        built = self._build_custom_spell(player, definition)
+        built = self._build_custom_spell(player, definition, allow_predefined=predefined_name is not None)
         if "error" in built:
             return {"success": False, "error": built["error"]}
         # 先扣出手再写入：出手预算不足时不产生任何效果，也不白造出法术。
@@ -1947,7 +1938,7 @@ class GameEngine:
         """学习：仅用于转化道纹1/2种对应0/10碎片。
 
         法术本身不再需要【学习】：持全部所需道纹即可
-        直接使用，战斗中也可随时自创，故 sub="spell" 已废弃。
+        直接使用，战斗中也可随时自创，法术统一从战斗中的 `define_spell` 入口定义。
         """
         player = self.state.player
         if not player:
@@ -1955,32 +1946,15 @@ class GameEngine:
             return {"success": False, "error": "没有玩家"}
         sub = params.get("sub", "daowen")
 
-        if sub in ("custom_spell", "自创法术"):
-            # 2026-09-16 用户裁定：局外自定义法术入口已删除，法术一律在
-            # 战斗中用 define_spell 自创（消耗 1 次主动出手），不再走局外
-            # 【学习】+ DM 审核这条路径。
-            self.state.energy += 1
-            return {"success": False, "error": "局外自定义法术已取消：请在战斗中用 define_spell 自创（消耗1次主动出手）"}
-
         tier = params.get("tier", 1)
         if not isinstance(tier, int) or isinstance(tier, bool):
             self.state.energy += 1
             return {"success": False, "error": "学习tier必须是整数"}
-        if sub == "spell":
-            # 2026-09-16 裁定：法术不再需要学习，持全部所需道纹即可直接使用，
-            # 战斗中也可随时自创（define_spell）。此处不再收费、不再写入 spells，
-            # 只回报当前已解锁清单，保持旧调用方不被硬报错。
-            self.state.energy += 1
-            return {"success": False, "completed": False,
-                    "error": "法术已无需学习：持有全部所需道纹即可直接使用（战斗中也能自创）",
-                    "result": {"unlocked": sorted(self._unlocked_builtin_spells(player)),
-                               "hint": "需要新法术请用 sub=custom_spell 自创，或战斗中用 define_spell"}}
         if sub in ("daowen", "转化道纹"):
             cost_map = {1: 0, 2: 10}
-            kind = "daowen"
         else:
             self.state.energy += 1
-            return {"success": False, "error": "学习sub必须是daowen/custom_spell"}
+            return {"success": False, "error": "学习sub必须是daowen"}
         if tier not in cost_map:
             self.state.energy += 1
             return {"success": False, "error": "学习道纹档位必须是1/2"}
@@ -4735,7 +4709,6 @@ class GameEngine:
             "lethal_progress": e.lethal_progress(),
             "dao_wen": {k: v.x_value for k, v in e.dao_wen.items()},
             "spells": [s.to_dict() for s in e.spells],
-            "armed_spells": list(getattr(e, "armed_spells", []) or []),
             "relics": [r.to_dict() for r in e.relics],
             "status_effects": [{"name": s.name, "value": s.value,
                                  "remaining_rounds": s.remaining_rounds, "source": s.source,
@@ -4766,7 +4739,13 @@ class GameEngine:
                                    # 旧档无 lifecycle 键 → permanent（与旧行为一致）
                                    lifecycle=sp.get("lifecycle", "permanent"),
                                    trigger=sp.get("trigger")))
-        e.armed_spells = list(d.get("armed_spells", []) or [])  # 旧档无此键回退空
+        # 旧存档的 armed_spells 迁移为正式法术定义；新存档不再写入该字段。
+        for spell_name in d.get("armed_spells", []) or []:
+            if any(sp.name == spell_name for sp in e.spells):
+                continue
+            migrated = self.combat.spell_definition(e, spell_name)
+            if migrated is not None:
+                e.spells.append(migrated)
         for relic in d.get("relics", []):
             e.relics.append(Relic(name=relic["name"], effect=relic.get("effect", ""),
                                   tags=list(relic.get("tags") or [])))
