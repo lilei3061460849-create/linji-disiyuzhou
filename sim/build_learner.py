@@ -124,11 +124,10 @@ def _trigger_spells(option, player_mana):
             name = spell["spell_name"]
             steps = spell.get("steps", [])
             use = False
-            cycles = []
+            submitted = []
             if player_mana >= 1:
                 use = True
                 # 自由控X：攻击步骤尽量大X（杀伐/血债等），自保步骤留1
-                cycle = []
                 remaining = player_mana
                 for st in steps:
                     is_self = st.get("target_ref") == "player:0"
@@ -136,10 +135,12 @@ def _trigger_spells(option, player_mana):
                     entry = {"x": x, "target_ref": st.get("target_ref")}
                     if st.get("target_ref") != "player:0":
                         entry["dodge"] = False
-                    cycle.append(entry)
+                    submitted.append(entry)
                     remaining -= x
-                cycles = [cycle]
-            out[timing][name] = {"use": use, "cycles": cycles} if use else {"use": False}
+            # 新契约：每个决策槽位一条 steps；老逻辑只提交一轮，故上限写1，
+            # 循环本身由执行器逐轮结算（不会再出现调用方预展开的 cycles）。
+            out[timing][name] = ({"use": True, "steps": submitted, "max_iterations": 1}
+                                 if use else {"use": False})
     return out
 
 
@@ -195,7 +196,7 @@ def _live_spell_choices(engine, actor_ref, target_ref, use, banned=()):
                     # 全部基线(x=1)都付不起的法术直接弃权，不给提交校验留死路
                     out[timing][name] = {"use": False}
                     continue
-                cycle = []
+                submitted_steps = []
                 remaining = wallet
                 for index, st in enumerate(steps):
                     reserve = sum(base_costs[index + 1:])       # 后续步骤x=1的预留
@@ -216,9 +217,11 @@ def _live_spell_choices(engine, actor_ref, target_ref, use, banned=()):
                     entry = {"x": x, "target_ref": st.get("target_ref")}
                     if not is_self:
                         entry["dodge"] = False
-                    cycle.append(entry)
+                    submitted_steps.append(entry)
                     remaining -= step_cost
-                out[timing][name] = {"use": True, "cycles": [cycle]}
+                # 2026-10-02 契约：每步一条决策 + 单轮上限；循环由执行器拥有。
+                out[timing][name] = {"use": True, "steps": submitted_steps,
+                                     "max_iterations": 1}
                 wallet = remaining   # 钱包流转给下一个法术（与引擎共享池同口径）
             else:
                 out[timing][name] = {"use": False}
@@ -1173,8 +1176,12 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                                if e.state.shards >= c)
                     r = e.execute_action("pre_battle_action", {
                         "sub_action": "修行", "tier": tier,
+                        # 2026-10-03：速限/法限按 2 属性点一档，奇数点必被拒；
+                        # 3/5 档给奇数点，奇数档一律改投血限（1 点一档，永远合法）。
                         "allocations": (xiuxing or {}).get(
-                            f"tier{tier}", {"speed_points": tier, "mana_points": 0})})
+                            f"tier{tier}",
+                            {"speed_points": tier, "mana_points": 0} if tier % 2 == 0
+                            else {"blood_points": tier})})
                     if r.get("success"):
                         _tag_behavior(behaviors, "修行", {"tier": tier}, e, b)
                         continue
@@ -1260,8 +1267,10 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                 record("failed", act, str(r.get("error"))[:60])
                 # 失败必须退还精力，否则会死循环；引擎已退还，这里兜底防死锁
                 if e.state.energy >= before:
+                    # tier1 只给 1 属性点：速限/法限要偶数点，只能进血限，
+                    # 否则兜底自己也会被引擎拒（2026-10-03 修死锁）。
                     e.execute_action("pre_battle_action",
-                                     {"sub_action": "修行", "tier": 1, "to": "mana"})
+                                     {"sub_action": "修行", "tier": 1, "to": "blood"})
             # 卡死哨兵：连续 STALL_LIMIT 步精力不退（门禁未清/兜底被拒），说明
             # 存在驱动解不开的语义门禁——回收为无效局，绝不挂死进程。
             if e.state.energy >= before:
@@ -1483,7 +1492,7 @@ def choose_pre_battle(e, todo, battle_no, rng, policy):
             continue          # 满血不休整（无效行动，不该计入选择率）
         cands.append((act, w))
     if not cands:
-        return "修行", {"tier": 1, "to": "mana"}
+        return "修行", {"tier": 1, "to": "blood"}
 
     total = sum(w for _, w in cands)
     pick = rng.uniform(0, total)
@@ -1500,15 +1509,16 @@ def choose_pre_battle(e, todo, battle_no, rng, policy):
     if act == "附煞":
         held = next(iter(p.dao_wen), None) if p else None
         if not held:
-            return "修行", {"tier": 1, "to": "mana"}
+            return "修行", {"tier": 1, "to": "blood"}
         # 确定性：碎片≥25用选择（冥煞附当前持有道纹），≥10用发现，否则跳过
         if e.state.shards >= 25:
             return act, {"mode": "选择", "sha_qi": "冥煞", "daowen_name": held}
         if e.state.shards >= 10:
             return act, {"mode": "发现", "daowen_name": held}
-        return "修行", {"tier": 1, "to": "mana"}
+        return "修行", {"tier": 1, "to": "blood"}
     if act == "修行":
-        return act, {"tier": 1, "to": "mana" if battle_no % 2 else "speed"}
+        # tier1 = 1 属性点，速限/法限要偶数点 → 只能进血限（2026-10-03 修）
+        return act, {"tier": 1, "to": "blood"}
     if act == "休整":
         # 休整分级（2026-08-19 P2；2026-09-10 随引擎改制更新，同日二次裁定
         # 改三档）：恢复额度=轮回者血限百分比（tier1/2/3 = 20%/40%/60%，

@@ -81,21 +81,51 @@ def _select_enemies(ctx: TriggerContext) -> list:
     return list(state.get_all_enemy_side() if side else state.get_all_player_side())
 
 
+def roll_pick(ctx: TriggerContext, candidates: list, *, stream: str, context: str) -> dict:
+    """从候选里按 DiceEngine 口径随机取一个（RNG 目标选择，2026-10-03 【赌命】迁移时抽象）。
+
+    返回 {"entity", "roll"(1-based), "of", "names"}；无候选返回 None。
+    **一次调用只投一次**：调用方拿 roll/of 直接写战报，不得再投第二次（否则战报与实际目标不符）。
+    池名由调用方给出（含回合号的流名，如 `赌命_r3`），保证同一场次可复现。
+    """
+    candidates = [e for e in candidates if e is not None]
+    if not candidates:
+        return None
+    combat = ctx.combat
+    dice = getattr(combat, "dice", None) if combat is not None else None
+    if dice is not None and hasattr(dice, "auto_roll"):
+        roll = dice.auto_roll(stream, [e.name for e in candidates], context=context)
+        number = int(roll["player_number"])
+    else:                                     # 无骰子（离线脚本）时的降级：仍按序号口径
+        import random
+        number = random.randrange(len(candidates)) + 1
+    idx = min(max(number - 1, 0), len(candidates) - 1)
+    info = {"entity": candidates[idx], "roll": idx + 1, "of": len(candidates),
+            "names": [e.name for e in candidates], "stream": stream}
+    ctx.picks[stream] = info      # 供机制效果写战报（同一笔投掷，不重投）
+    return info
+
+
 def _select_random_enemy(ctx: TriggerContext) -> list:
     enemies = _select_enemies(ctx)
     if not enemies:
         return []
-    combat = ctx.combat
-    dice = getattr(combat, "dice", None) if combat is not None else None
-    if dice is not None and hasattr(dice, "auto_roll"):
-        # 与引擎其它随机选择同口径：走 DiceEngine，保证可复现。
-        roll = dice.auto_roll(
-            "mechanism_random_enemy", [e.name for e in enemies],
-            context="机制目标选择·随机敌人")
-        idx = max(0, int(roll["player_number"]) - 1)
-        return [enemies[min(idx, len(enemies) - 1)]]
-    import random
-    return [random.choice(enemies)]
+    picked = roll_pick(ctx, enemies, stream="mechanism_random_enemy",
+                       context="机制目标选择·随机敌人")
+    return [picked["entity"]] if picked else []
+
+
+def _select_random_all(ctx: TriggerContext) -> list:
+    """双方全部存活角色（玩家侧在前，与旧【赌命】结算的号码口径一致）。"""
+    state = _state(ctx)
+    if state is None:
+        return []
+    alive = [e for e in (state.get_all_player_side() + state.get_all_enemy_side()) if e.is_alive]
+    # 流名含回合号：与旧【赌命】口径一致（同一回合同一流，跨回合不串），可复现。
+    state_round = getattr(_state(ctx), "current_round", 0)
+    picked = roll_pick(ctx, alive, stream=f"赌命_r{state_round}",
+                       context="机制目标选择·随机全体（赌命）")
+    return [picked["entity"]] if picked else []
 
 
 def _select_dead(ctx: TriggerContext) -> list:
@@ -112,4 +142,5 @@ ALL = TargetSelector("all", _select_all)              # 双方全部存活实体
 ALL_ALLIES = TargetSelector("all_allies", _select_allies)    # 触发主体同阵营（不含主体）
 ALL_ENEMIES = TargetSelector("all_enemies", _select_enemies)  # 触发主体敌对阵营
 RANDOM_ENEMY = TargetSelector("random_enemy", _select_random_enemy)
+RANDOM_ALL = TargetSelector("random_all", _select_random_all)   # 双方全体（赌命用）
 DEAD_ENTITY = TargetSelector("dead_entity", _select_dead)  # ENTITY_DIED 事件的死者

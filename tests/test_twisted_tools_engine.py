@@ -71,7 +71,9 @@ def test_normal_electric_gun():
     assert r["success"]
     assert r["result"]["damage"] == 40
     assert r["result"]["flying_bonus"] == 15
-    assert m.has_status("坠落")
+    # 2026-10-03：【坠落】道纹删除，电击枪的“击落（施坠落1）”随之移除；
+    # 对飞行目标的额外 15 伤害保留，飞行状态本身不再被工具清除。
+    assert m.is_flying and not m.has_status("坠落")
 
 def test_normal_blood_pump():
     engine = _setup_engine()

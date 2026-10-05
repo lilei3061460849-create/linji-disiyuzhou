@@ -190,9 +190,9 @@ def _spell_combat():
 def test_r42_normal_explicit_spell_x_resolves():
     state, player, enemy, combat = _spell_combat()
     result = combat.resolve_attack(enemy, player, spell_choices={
-        "before": {"后发制人": {"use": True, "cycles": [[
+        "before": {"后发制人": {"use": True, "steps": [
             {"x": 4, "target_ref": "player:0", "dodge": False},
-        ]]}}, "after": {},
+        ]}}, "after": {},
     })
     assert result["spell_logs"] and player.current_hp == 60 and player.current_mana == 16
 
@@ -216,14 +216,14 @@ def test_r42_target_daowen_trigger_is_explicit(tmp_path):
     engine = _engine(tmp_path); player, opponent = _combat(engine)
     opponent.entity_type = "轮回者"; opponent.mana_limit = opponent.current_mana = 20
     player.dao_wen["杀伐"] = DaoWenInstance(DaoWen("杀伐", "", "消耗", "X", ""))
-    for name in ("坠落", "杀伐", "血债"):
+    for name in ("必中", "杀伐", "血债"):   # 2026-10-03：【坠落】删除 → 改用【必中】
         opponent.dao_wen[name] = DaoWenInstance(DaoWen(name, "", "消耗", "X", ""))
-    opponent.spells = [Spell("咎由自取", ["坠落", "杀伐", "血债"], "目标发动道纹前", "")]
+    opponent.spells = [Spell("咎由自取", ["杀伐", "血债"], "目标发动道纹前", "")]
     result = engine.execute_action("use_daowen", {
         "daowen_name": "杀伐", "x": 1, "target_ref": "enemy:0",
         "dodge": False, "blood_shadow": False,
+        # 2026-10-03：【坠落】删除后【咎由自取】只剩 杀伐→血债 两步
         "trigger_spell_choices": {"enemy:0": {"咎由自取": {"use": True, "steps": [
-            {"x": 1, "target_ref": "player:0", "dodge": False},
             {"x": 1, "target_ref": "player:0", "dodge": False},
             {"x": 1, "target_ref": "player:0", "dodge": False},
         ]}}},

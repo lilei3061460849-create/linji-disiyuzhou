@@ -19,8 +19,20 @@ ad = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(ad)
 
 
+# 2026-10-03 用户令删除 爆裂/坠落/滑翔/狂暴/兴奋/尸爆/活血 后，承载这些道纹的怪物
+# 面板出现空位；是否补位（以及补哪条道纹）待用户裁定，故这里显式列出**已知**空位，
+# 新出现的缺员仍会让本用例失败。
+PENDING_DW_GAPS = {
+    "乱葬岗/蛆冢", "乱葬岗/不死骸骨", "乱葬岗/尸霸", "乱葬岗/血僵",
+    "沉沦海/疫巢", "沉沦海/潮尸", "沉沦海/碑文鲛", "沉沦海/扩潮母体", "沉沦海/沉船守卫",
+}
+
+
 def test_tier2_dungeon_panels_all_compliant():
-    """正常路径：乱葬岗/沉沦海全部普通池怪面板≤100、道纹5条（总值不再约束）。"""
+    """正常路径：乱葬岗/沉沦海全部普通池怪面板≤100、道纹≤5条（总值不再约束）。
+
+    道纹数因本批删除而临时不足 5 的面板必须在 PENDING_DW_GAPS 里；超出即视为新破口。
+    """
     for fname in ("乱葬岗", "沉沦海"):
         spec = ad.TARGETS[fname]
         # 2026-09-16 用户令：只约束属性点数与道纹数量；「道纹总值」配额已废止
@@ -30,10 +42,15 @@ def test_tier2_dungeon_panels_all_compliant():
         monsters = [m for m in ad.parse_monsters(f"副本/{fname}.md")
                     if m["name"] not in ad.SPECIAL_MONSTERS]
         assert len(monsters) > 0
+        actual_gaps = set()
         for m in monsters:
             cost = ad.panel_cost(m["hp"], m["ap"], m["ac"])
             assert cost <= 100, f"{fname}/{m['name']} 面板成本{cost}>100"
-            assert len(m["dw"]) == 5, f"{fname}/{m['name']} 道纹数{len(m['dw'])}≠5"
+            assert len(m["dw"]) <= 5, f"{fname}/{m['name']} 道纹数{len(m['dw'])}>5"
+            if len(m["dw"]) < 5:
+                actual_gaps.add(f"{fname}/{m['name']}")
+        assert actual_gaps <= PENDING_DW_GAPS, \
+            f"出现未登记的缺员面板：{sorted(actual_gaps - PENDING_DW_GAPS)}"
             # 道纹总值不再约束（2026-09-16），X 值由[法限]预算自行决定
 
 

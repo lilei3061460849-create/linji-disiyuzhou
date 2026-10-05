@@ -57,17 +57,16 @@ def _make_engine(suffix, *, a_hp, b_hp, a_mana, b_mana, a_has_spell=False, b_blo
 
 
 def _build_submit_for_spell(spell_prepare_entry, x=1):
-    cycle = []
+    """按 schema 的槽位顺序构造 steps（每个决策槽位一条，含两个分支）。"""
+    steps = []
     for step in spell_prepare_entry.get("steps", []):
-        entry = {"x": x}
+        entry = {"x": x, "dodge": False}
         if step.get("target_options"):
-            entry["target_ref"] = step["target_options"][0]["ref"]
+            entry["target_ref"] = step["target_options"][0]
         else:
             entry["target_ref"] = step["target_ref"]
-        if step.get("dodge") == "boolean if hostile":
-            entry["dodge"] = False
-        cycle.append(entry)
-    return [cycle]
+        steps.append(entry)
+    return steps
 
 
 def _submit_attack(engine):
@@ -82,7 +81,7 @@ def _submit_attack(engine):
         slot = {}
         for s in spell_opts.get(timing, []):
             if s["spell_name"] == "测试反应转换" and timing == "before":
-                slot[s["spell_name"]] = {"use": True, "cycles": _build_submit_for_spell(s)}
+                slot[s["spell_name"]] = {"use": True, "steps": _build_submit_for_spell(s)}
             else:
                 slot[s["spell_name"]] = {"use": False}
         spell_choices[timing] = slot

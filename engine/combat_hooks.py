@@ -59,41 +59,27 @@ class DragonBloodlineMultiplierHook:
         return amount
 
 
-class BaolieHook:
-    """爆裂：受到伤害前，攻击者失去等量生命，持续X（敌回终递减）
+class QianjingjiaHook:
+    """千荆甲（通用遗物池，2026-10-03 出自被删【爆裂】道纹）的数值实现。
 
-    架构说明：这里直接改 attacker.current_hp 并翻 is_alive，不走
-    CombatEngine._raw_hp_loss（Hook 只拿得到 state，拿不到 combat）。
-    死亡通知与来源上下文由 CombatEngine._apply_hostile_damage_inner 的
-    reflected/suppressed 分支统一补齐。
-    反噬失血本身**不再触发一次爆裂**，避免 A→B→A 无限反弹（现有规则，勿改）。
-
-    失血统计（DM 裁定 2026-08-19）：【活血】只看角色本回合有没有实际掉过 HP，
-    不区分掉血来源，因此爆裂反噬造成的 HP 损失必须计入 hp_lost_this_round。
+    与旧【爆裂】Hook 同口径：直接改 attacker.current_hp，不走 take_damage，
+    因此无视格挡/护盾；【第一杯】失血倍率经 state.life_loss_multiplier 生效。
+    触发条件（"只有攻击行动"与"持有者是否激活"）由 CombatEngine 侧判定，
+    本 Hook 只负责把"等量伤害"换成"实际扣掉的生命"。
+    反噬本身是直接失血，不会再触发千荆甲（防 A→B→A 反弹）。
     """
     priority = 40
 
-    def on_before_damage(self, target: Any, amount: int, damage_type: str, attacker: Optional[Any], state: Any) -> Dict[str, Any]:
-        if (target and hasattr(target, "has_status") and target.has_status("爆裂")
-                and attacker is not None and attacker is not target and amount > 0 and damage_type != "代价"):
-            prev_hp = attacker.current_hp
-            # 【第一杯】：反噬也是攻击者「失去的生命」（持有者翻倍）。
-            # Hook 只有 state，没有 combat —— 倍率的唯一事实源恰好就在 state 上。
-            loss = amount * state.life_loss_multiplier(attacker)
-            attacker.current_hp = max(0, attacker.current_hp - loss)
-            reflect_amt = prev_hp - attacker.current_hp
-            # 与 Entity.take_damage / CombatEngine._raw_hp_loss 同口径：
-            # 只要实际掉了 HP，就计入本回合失血（【活血】等效果据此结算）。
-            attacker.hp_lost_this_round += reflect_amt
-            suppressed = (attacker.current_hp <= 0)
-            if suppressed:
-                attacker.is_alive = False
-            return {
-                "reflected": reflect_amt,
-                "attacker_hp_after": attacker.current_hp,
-                "suppressed": suppressed,
-            }
-        return {}
+    def reflect_attack_damage(self, target: Any, amount: int, attacker: Any,
+                              state: Any) -> int:
+        """返回本次应反噬的数值（含【第一杯】倍率），**不动生命**。
+
+        扣血与记账唯一入口是 CombatEngine._resolve_reflect_aftermath——
+        两处都改 HP 会双倍扣（2026-10-03 实测踩过：45HP 挨 10 点反噬掉 20）。
+        """
+        if attacker is None or attacker is target or amount <= 0:
+            return 0
+        return amount * state.life_loss_multiplier(attacker)
 
 
 class BifenglingHook:
@@ -358,7 +344,7 @@ class CombatHookManager:
         self._hooks: List[Any] = self._sorted([
             DragonBloodlineMultiplierHook(),
             *mechanism_hooks,
-            BaolieHook(),
+            QianjingjiaHook(),
             BifenglingHook(),
             ShouyedengHook(),
             self.redirection_hook,
@@ -412,6 +398,14 @@ class CombatHookManager:
             if hasattr(hook, "on_incoming_adjust"):
                 amount = hook.on_incoming_adjust(target, amount, damage_type, source, state)
         return amount
+
+    def reflect_attack_damage(self, target: Any, amount: int, attacker: Any, state: Any) -> int:
+        """千荆甲反噬：转发给 QianjingjiaHook（显式分发，不走通用遍历）。"""
+        res = 0
+        for hook in self._hooks:
+            if hasattr(hook, "reflect_attack_damage"):
+                res += hook.reflect_attack_damage(target, amount, attacker, state)
+        return res
 
     def apply_before_damage(self, target: Any, amount: int, damage_type: str, attacker: Optional[Any], state: Any) -> Dict[str, Any]:
         result = {}

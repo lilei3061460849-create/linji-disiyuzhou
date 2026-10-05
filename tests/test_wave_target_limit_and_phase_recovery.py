@@ -364,18 +364,23 @@ def test_use_daowen_schema_caps_wave_x_by_target_count(tmp_path):
     _dw(player, "波及", 0)
     player.current_mana = 100  # 法力充足：X上限只能被目标数压住
 
-    # solo：仅1个合法目标（怪物）→ X上限=1，而不是法力允许的大X
+    # solo：仅1个合法目标（怪物）→ X上限=1，且低于 X下限2 → 本档不可发动
+    # （2026-10-03 用户令：波及 X 下限=2；旧口径下这里是 available=True/max=1，
+    #  会把一个引擎必拒的档位摆给玩家选）
     action = _wave_use_daowen_schema(e)
     assert action, "use_daowen schema 缺失"
-    assert action["available"] is True
+    assert action["available"] is False
     assert action["params_schema"]["x"]["maximum"] == 1, action["params_schema"]
+    assert action["params_schema"]["x"]["minimum"] == 2, action["params_schema"]
 
-    # 2怪+1友军：3个合法目标 → X上限=3
+    # 2怪+1友军：3个合法目标 → X上限=3（下限2，档位 2..3 都可发动）
     e.state.enemies.append(Entity("石背熊", "怪物", blood_limit=100, current_hp=100,
                                   attack_count=1, attack_power=3))
     e.state.friends.append(_friend("友军A"))
     action = _wave_use_daowen_schema(e)
+    assert action["available"] is True
     assert action["params_schema"]["x"]["maximum"] == 3, action["params_schema"]
+    assert action["params_schema"]["x"]["minimum"] == 2, action["params_schema"]
 
 
 def test_player_wave_cast_at_schema_max_succeeds(tmp_path):
@@ -435,8 +440,7 @@ def test_placeholder_ai_casts_wave_without_rejection(tmp_path):
                                            attack_count=1, attack_power=3)])
     _dw(player, "波及", 0)  # 玩家唯一道纹：占位AI必然轮到它
     player.current_mana = 100
-    ai = AIPlayer(e, backend=PlaceholderBackend(), auto_validate=False,
-                  tactical_combat=False)
+    ai = AIPlayer(e, backend=PlaceholderBackend(), auto_validate=False)
 
     r = ai.play_turn()
     assert r["action"] == "use_daowen" and r["params"].get("daowen_name") == "波及", r["action"]

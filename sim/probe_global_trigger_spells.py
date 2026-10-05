@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from engine.api import GameEngine
 from engine.models import DaoWen, DaoWenInstance, Relic
 from tests.setup_support import finish_initial_daowen
+from sim.monster_phase_submit import single_actor_choices, monster_phase_choices  # noqa: E402
 
 
 def _fresh_engine(tag: str, region: str = "罪孽都市") -> GameEngine:
@@ -44,12 +45,27 @@ def _give_daowen(entity, name, x=0):
 
 
 def _learn(e, definition):
-    r1 = e.execute_action("pre_battle_action", {
-        "sub_action": "学习", "sub": "custom_spell", "spell": definition})
-    if not r1["success"]:
-        return r1
-    return e.execute_action("pre_battle_action", {
-        "sub_action": "学习", "sub": "custom_spell", "spell": definition, "dm_approved": True})
+    return _learn(e, definition)
+
+
+def _learn(e, definition):
+    """探针专用：直接写入玩家法术列表（跳过 define_spell 的 1 次出手消耗）。
+
+    局外【学习】自定义法术入口已于 2026-09-16 取消（法术一律在战斗中用
+    define_spell 自创）；探针只关心触发管线是否接线，故此捷径保留"学习"语义：
+    仍然走同一个 _build_custom_spell/parse_spell_definition 校验与 wired 标注。
+    """
+    built = e._build_custom_spell(e.state.player, definition)
+    if "error" in built:
+        return {"success": False, "error": built["error"]}
+    e.state.player.spells.append(built["spell"])
+    parsed = built["parsed"]
+    wired = parsed.trigger in e.combat._WIRED_TRIGGERS
+    result = {"spell": built["spell"].to_dict(), "wired": wired, "cost": "0（探针捷径）"}
+    if not wired:
+        result["warning"] = (f"触发时机【{parsed.trigger}】已通过句式校验，"
+                             "但该时机暂未接入战斗结算管线，本法术目前不会实际触发")
+    return {"success": True, "action": "自定义法术(探针)", "result": result}
 
 
 def _decline_all_spell_choices(target_option):
@@ -58,19 +74,12 @@ def _decline_all_spell_choices(target_option):
 
 
 def _decline_monster_phase(e):
-    """走完一次完整怪物阶段：全体谢绝反应法术，纯普攻，不主动结束回合。"""
+    """走完一次完整怪物阶段：按当前契约提交（有合法道纹则声明第一个），不主动结束回合。"""
     res = e.execute_action("prepare_monster_phase", {})
     assert res["success"], res
-    choices = []
-    for a in res["result"]["actors"]:
-        hits = []
-        for _ in range(a["base_hits_per_attack"]):
-            target_opt = a["attack_target_options"][0]
-            hits.append({"target_ref": target_opt["ref"], "dodge": False, "blood_shadow": False,
-                         "spell_choices": _decline_all_spell_choices(target_opt)})
-        choices.append({"actor_ref": a["actor_ref"], "daowen": None,
-                        "attack_actions": [{"hits": hits} for _ in range(a["base_attack_actions"])]})
-    r = e.execute_action("resolve_monster_phase", {"token": res["result"]["token"], "choices": choices})
+    choices = monster_phase_choices(res["result"]["actors"], engine=e)
+    r = e.execute_action("resolve_monster_phase", {"token": res["result"]["token"],
+                                                  "choices": choices})
     assert r["success"], r
     return res, r
 
@@ -90,8 +99,11 @@ def _spell_choices_for(candidates, spell_name, x, target_ref):
         holder_choices = {}
         for entry in entries:
             if entry["spell_name"] == spell_name:
-                cycle = [{"x": x, "target_ref": target_ref, "dodge": False} for _ in entry["steps"]]
-                holder_choices[entry["spell_name"]] = {"use": True, "cycles": [cycle]}
+                # 每个决策槽位一条；老探针只提交一轮，故上限写1
+                submitted = [{"x": x, "target_ref": target_ref, "dodge": False}
+                             for _ in entry["steps"]]
+                holder_choices[entry["spell_name"]] = {"use": True, "steps": submitted,
+                                                       "max_iterations": 1}
             else:
                 holder_choices[entry["spell_name"]] = {"use": False}
         result[holder_ref] = holder_choices
@@ -118,15 +130,17 @@ def probe_battle_start():
     e.state.energy = 0
     candidates = e.combat.prepare_global_trigger_spells("战始")
     listed = bool(candidates)
+    # [战始]把法力重置为当前[法限]满池（一池制），可承担的 X 上限就是法限。
+    x = max(1, e.state.player.mana_limit)
     r = e.execute_action("battle_start", {
         "relic_choices": {},
-        "spell_choices": _spell_choices_for(candidates, "开局回春", 4, "player:0"),
+        "spell_choices": _spell_choices_for(candidates, "开局回春", x, "player:0"),
     })
     hp_after = e.state.player.current_hp
     fired = r["success"] and hp_after > hp_before
     record("战始", wired, fired,
            f"学习前listed={listed}；resolve success={r['success']}；玩家hp {hp_before}→{hp_after}"
-           f"（应在[战始]满池法力上靠【再生4】回12血，法力足以支付4点消耗）")
+           f"（[战始]法力=法限{x}，【再生{x}】应回{2 * x}血）")
 
 
 def probe_battle_end():
@@ -180,6 +194,9 @@ def probe_round_start():
     wired = learned["result"].get("wired")
     e.state.energy = 0
     e.execute_action("battle_start", {})
+    # 一池制：[回始]不回填法力（AI_EXPERIENCE.md:1254）。探针这里显式注入法力，
+    # 只为隔离"法术是否接线"这一点，不代表回始会回蓝。
+    e.state.player.current_mana = 30
     e.state.player.current_hp = 50
     hp_before = e.state.player.current_hp
     candidates = e.combat.prepare_global_trigger_spells("回始")
@@ -191,7 +208,8 @@ def probe_round_start():
     fired = r["success"] and hp_after > hp_before
     record("回始", wired, fired,
            f"学习前listed={listed}；resolve success={r['success']}；玩家hp {hp_before}→{hp_after}"
-           f"（应因【再生5】回15血；回始本身也会重置法力，法力足以支付）")
+           f"（探针已显式注入法力；一池制下[回始]不回蓝，"
+           f"注入只为隔离接线判定；体力上限封顶故实际回{hp_after - hp_before}）")
 
 
 def probe_round_end():
@@ -230,7 +248,14 @@ def probe_round_end():
 
 
 def probe_enemy_round_start():
-    """敌回始（普通战斗）：即将进入怪物阶段前，法术自动对自身发动再生。"""
+    """敌回始（普通战斗）：2026-10-02 审计发现全引擎**没有该时点的结算点**。
+
+    真正承载"玩家行动结束/怪物阶段即将开始"这一时刻的是【自身回合结束】
+    （SELF_TURN_END，见 probe_self_turn_end）。因此本探针改为验证**诚实标注**：
+    含有"敌回始"字样的法术仍可通过句式校验被学会，但 `wired=False`，
+    引擎在学会结果里明确警告"暂未接入结算管线"，且 prepare_monster_phase
+    不会静默地把它当成别的时点结算（spell_logs 为空）。
+    """
     e = _fresh_engine("enemy_round_start")
     _give_daowen(e.state.player, "再生")
     definition = {"name": "戒备回血", "required_daowen": ["再生"],
@@ -238,6 +263,7 @@ def probe_enemy_round_start():
                   "effect_flow": "发动再生X于自身"}
     learned = _learn(e, definition)
     wired = learned["result"].get("wired")
+    warned = "暂未接入战斗结算管线" in (learned["result"].get("warning") or "")
     e.state.energy = 0
     e.execute_action("battle_start", {})
     e.execute_action("round_start", {})
@@ -250,10 +276,41 @@ def probe_enemy_round_start():
         "spell_choices": _spell_choices_for(candidates, "戒备回血", 3, "player:0")
     })
     hp_after = e.state.player.current_hp
+    not_silently_resolved = not (r.get("result", {}).get("spell_logs") or [])
+    fired = (wired is False and warned and listed
+             and r["success"] and not_silently_resolved and hp_after == hp_before)
+    record("敌回始(未接线·诚实标注)", wired, fired,
+           f"学习成功但wired={wired}，warning={'有' if warned else '无'}；"
+           f"prepare_monster_phase列出的候选={listed}，spell_logs为空={not_silently_resolved}；"
+           f"玩家hp {hp_before}→{hp_after}（该时点当前无结算点，见 法术索引.md）")
+
+
+def probe_self_turn_end():
+    """自身回合结束：玩家行动结束 / 怪物阶段开始前的真实结算点
+    （prepare_monster_phase；自动触发法术走同一条路，这里验证手动提交）。"""
+    e = _fresh_engine("self_turn_end")
+    _give_daowen(e.state.player, "再生")
+    definition = {"name": "收势回血", "required_daowen": ["再生"],
+                  "trigger_condition": "自身回合结束",
+                  "effect_flow": "发动再生X于自身"}
+    learned = _learn(e, definition)
+    wired = learned["result"].get("wired")
+    e.state.energy = 0
+    e.execute_action("battle_start", {})
+    e.execute_action("round_start", {})
+    e.state.player.current_mana = 20
+    e.state.player.current_hp = 50
+    hp_before = e.state.player.current_hp
+    candidates = e.combat.prepare_global_trigger_spells("自身回合结束")
+    listed = bool(candidates)
+    r = e.execute_action("prepare_monster_phase", {
+        "spell_choices": _spell_choices_for(candidates, "收势回血", 3, "player:0")
+    })
+    hp_after = e.state.player.current_hp
     fired = r["success"] and hp_after > hp_before
-    record("敌回始(普通战斗)", wired, fired,
+    record("自身回合结束(玩家行动结束)", wired, fired,
            f"学习前listed={listed}；resolve success={r['success']}；玩家hp {hp_before}→{hp_after}"
-           f"（应因【再生3】回9血；结算于prepare_monster_phase，怪物尚未行动）")
+           f"（【再生3】回6血，结算于prepare_monster_phase）")
 
 
 def probe_enemy_round_end():
@@ -279,8 +336,7 @@ def probe_enemy_round_end():
         target_opt = a["attack_target_options"][0]
         hits.append({"target_ref": target_opt["ref"], "dodge": False, "blood_shadow": False,
                      "spell_choices": _decline_all_spell_choices(target_opt)})
-    choices = [{"actor_ref": a["actor_ref"], "daowen": None,
-                "attack_actions": [{"hits": hits} for _ in range(a["base_attack_actions"])]}]
+    choices = single_actor_choices(a, engine=e)
     candidates = e.combat.prepare_global_trigger_spells("敌回终")
     listed = bool(candidates)
     r = e.execute_action("resolve_monster_phase", {
@@ -312,17 +368,19 @@ def probe_duel_opponent_round_start_spell():
     sealed_path = os.path.join(d, "sealed.json")
 
     def _candidate(tag, speed_points, name):
+        # 速限/法限按 2 属性点一档计价（点数必须偶数），故这里按偶数分配。
         e = GameEngine(db_path=os.path.join(d, f"{tag}.db"), rng_seed=1,
                        sealed_candidate_path=sealed_path)
-        mana_points = 7
+        mana_points = 6
+        speed_points = speed_points - (speed_points % 2)
         blood_points = 25 - speed_points - mana_points
-        e.execute_action("setup_attributes", {
+        r = e.execute_action("setup_attributes", {
             "name": name, "blood_points": blood_points,
             "speed_points": speed_points, "mana_points": mana_points})
-        finish_initial_daowen(e)
+        assert r["success"], r
+        finish_initial_daowen(e)   # 已包含开局遗物发现与选择
         e.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
-        setup = e.execute_action("setup_choose_region", {"region": "龙心谷"})
-        e.execute_action("choose_discovered_relic", {"relic_name": setup["result"]["relic_choices"][0]})
+        e.execute_action("setup_choose_region", {"region": "龙心谷"})
         return e
 
     def _finish_battle_7(e):
@@ -331,20 +389,23 @@ def probe_duel_opponent_round_start_spell():
         e.state.phase = "in_combat"
         return e.execute_action("battle_end", {})
 
-    sealed = _candidate("sealed", 5, "封存对手")
+    sealed = _candidate("sealed", 6, "封存对手")
     sealed.state.player.dao_wen["再生"] = DaoWenInstance(
         DaoWen(name="再生", formula="", cost_type="消耗", cost_formula="X", effect_formula=""))
+    # 生命周期（Part 6）：战斗中自创的法术默认 lifecycle=battle，[战终]即清除，
+    # 也就不会被封存进死斗对手；要跨战斗（含封存/转场）保留必须显式 permanent。
     definition = {"name": "对手回血术", "required_daowen": ["再生"],
-                  "trigger_condition": "回始", "effect_flow": "发动再生X于自身"}
-    r1 = sealed.execute_action("pre_battle_action", {
-        "sub_action": "学习", "sub": "custom_spell", "spell": definition})
-    assert r1["success"], r1
-    r2 = sealed.execute_action("pre_battle_action", {
-        "sub_action": "学习", "sub": "custom_spell", "spell": definition, "dm_approved": True})
-    wired = r2["result"].get("wired")
+                  "trigger_condition": "回始", "effect_flow": "发动再生X于自身",
+                  "lifecycle": "permanent"}
+    # 局外"学习自定义法术"入口已于 2026-09-16 取消（法术一律在战斗中用
+    # define_spell 自创）；探针只关心封存/全局触发管线，故沿用 _learn 捷径
+    # （同一 _build_custom_spell 校验，只是跳过 1 次出手消耗）。
+    learned = _learn(sealed, definition)
+    assert learned["success"], learned
+    wired = learned["result"].get("wired")
     _finish_battle_7(sealed)
 
-    challenger = _candidate("challenger", 13, "挑战者")
+    challenger = _candidate("challenger", 12, "挑战者")
     r = _finish_battle_7(challenger)
     assert r["result"]["final_crown"]["outcome"] == "duel_start", r
 
@@ -373,13 +434,18 @@ def main():
     probe_round_start()
     probe_round_end()
     probe_enemy_round_start()
+    probe_self_turn_end()
     probe_enemy_round_end()
     probe_duel_opponent_round_start_spell()
 
     print(f"{'时机':<16}{'学得wired':<12}{'真实触发':<10}详情")
     all_ok = True
     for row in REPORT:
-        ok = row["learn_wired"] is True and row["actually_fired"] is True
+        # 常规行：学得 wired=True 且真实触发=True。
+        # 「未接线·诚实标注」行是例外：预期 wired=False，且探针已验证
+        # "不静默结算、如实警告"——fired=True 表示这条诚实契约成立。
+        expected_wired = "未接线" not in row["trigger"]
+        ok = (row["learn_wired"] is expected_wired) and row["actually_fired"] is True
         all_ok = all_ok and ok
         print(f"{row['trigger']:<16}{str(row['learn_wired']):<12}{str(row['actually_fired']):<10}{row['detail']}")
     print()

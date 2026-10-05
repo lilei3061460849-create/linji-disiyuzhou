@@ -82,7 +82,8 @@ def test_zhuiqiuzhe_event_option1_hires_real_employee_with_fixed_panel():
     assert emp is not None
     assert (emp.attack_count, emp.attack_power, emp.blood_limit) == (8, 2, 96)
     assert emp.is_deployed is False, "与DIY雇佣一致，默认待命"
-    assert set(emp.dao_wen) == {"逆鳞", "活血", "固执"}
+    # 2026-10-03：【活血】删除，追求者面板剩 逆鳞/固执
+    assert set(emp.dao_wen) == {"逆鳞", "固执"}
     # 面板不写死 X：x_free 且 x_value 归零，由发动时自选
     assert all(getattr(v, "x_free", False) and v.x_value == 0
                for v in emp.dao_wen.values())
@@ -100,7 +101,7 @@ def test_zhuiqiuzhe_event_option2_queues_forced_monster_next_battle():
     queued = engine.state.forced_monsters_next_battle[0]
     assert queued["name"] == "追求者"
     # 面板不写死 X：x=None → make_monster_entity 标记为 x_free
-    assert queued["dao_wen"] == {"逆鳞": None, "活血": None, "固执": None}
+    assert queued["dao_wen"] == {"逆鳞": None, "固执": None}
     # 不应同时创建一个"员工"版本的追求者(选项2是怪物版，二者互斥)
     assert not any(e.name == "追求者" for e in engine.state.employees)
 

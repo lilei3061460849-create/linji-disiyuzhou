@@ -111,7 +111,7 @@ def test_shuaibai_is_registered_mechanism():
     from engine.mechanisms.registry import MECHANISMS as REG
     # 回始相位机制按 priority：自愈(10) → 衰败(20) → 洞察(30) → 后续按 40/50/60 递增
     assert [m.name for m in REG.phase_mechanisms(Phase.ROUND_START)] == \
-        ["自愈", "衰败", "洞察·结算", "狂暴·标记", "畸变·标记"]
+        ["自愈", "衰败", "洞察·结算", "畸变·标记"]   # 2026-10-03：【狂暴·标记】随道纹删除
 
 
 def test_old_shuaibai_if_removed_from_pipeline():
@@ -420,10 +420,11 @@ def test_shuaibai_kill_triggers_jiaohheifasi_chain():
 
 
 def test_shuaibai_full_round_start_pipeline():
-    """全 ROUND_START 管线 5 个机制在同实体上依次触发（顺序即规则）。
+    """全 ROUND_START 管线 4 个机制在同实体上依次触发（顺序即规则）。
 
     旧代码行为：round_start 逐实体循环依次执行 自愈->衰败->洞察->狂暴标记->畸变标记。
-    新机制行为必须完全对齐。（勾魂 已于 2026-08-30 改版为非机制，见下）
+    新机制行为必须完全对齐。（勾魂 已于 2026-08-30 改版为非机制；
+    狂暴·标记 已于 2026-10-03 随【狂暴】道纹删除）
     """
     state = GameState(phase="in_combat", combat_subphase="player_actions")
     player = Entity("P", "轮回者", blood_limit=100, current_hp=100,
@@ -435,7 +436,6 @@ def test_shuaibai_full_round_start_pipeline():
     entity.add_status(StatusEffect(name="自愈", remaining_rounds=-1, value=1, source="x"))
     entity.add_status(StatusEffect(name="衰败", remaining_rounds=-1, value=1, source="x"))
     entity._dongcha_pending = 5
-    entity.add_status(StatusEffect(name="狂暴", remaining_rounds=-1, value=1, source="x"))
     entity.add_status(StatusEffect(name="畸变", remaining_rounds=-1, value=1, source="x"))
     combat = CombatEngine(state, DiceEngine())
 
@@ -446,9 +446,8 @@ def test_shuaibai_full_round_start_pipeline():
     res = combat.round_start()
     types = [e.get("type") for e in res["effects"] if e.get("entity") == "E"]
 
-    # 五机制条目按旧 cycle 顺序出现
-    expected = ["self_heal", "shuaibai_tick", "dongcha_mana",
-                "extra_attack_ready", "deform_pending"]
+    # 四机制条目按旧 cycle 顺序出现（狂暴·标记随道纹删除）
+    expected = ["self_heal", "shuaibai_tick", "dongcha_mana", "deform_pending"]
     assert types == expected, f"管道类型顺序: {types}"
 
     # 数值链：hp 80->+10(自愈)=90->-ceil(90*10/100)=9 -> 81

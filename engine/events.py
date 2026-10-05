@@ -477,13 +477,14 @@ def _resolve_option_effect_impl(text: str, engine, event_name: str = "", params=
             applied.append("失去10碎片")
             emp = Entity(name="追求者", entity_type="员工", blood_limit=96, current_hp=96,
                          attack_count=8, attack_power=2, is_deployed=False)
-            for dw_name in ("逆鳞", "活血", "固执"):
-                # 2026-09-17：面板不写死 X（与 副本/龙心谷.md 的「96/2/8，逆鳞，活血，固执」一致）
+            for dw_name in ("逆鳞", "固执"):
+                # 2026-09-17：面板不写死 X（与 副本/龙心谷.md 的「96/2/8，逆鳞，固执」一致）
+                # 2026-10-03：【活血】道纹删除，面板同步去掉（待用户裁定是否补位）
                 emp.dao_wen[dw_name] = DaoWenInstance(
                     DaoWen(name=dw_name, formula="", cost_type="消耗", cost_formula="X", effect_formula=""),
                     x_value=0, x_free=True)
             engine.state.employees.append(emp)
-            applied.append("获得追求者(96/2/8，逆鳞，活血，固执)作为员工，默认待命，需deploy_employee派遣")
+            applied.append("获得追求者(96/2/8，逆鳞，固执)作为员工，默认待命，需deploy_employee派遣")
             return {"applied": applied, "instructions": instructions}
         elif text.startswith("拿走口粮"):
             engine.state.shards += 50
@@ -491,7 +492,7 @@ def _resolve_option_effect_impl(text: str, engine, event_name: str = "", params=
             engine.state.forced_monsters_next_battle.append({
                 "name": "追求者", "attack_count": 8, "attack_power": 2, "blood_limit": 96,
                 # x=None → x_free，与雇佣分支一致（2026-09-17 面板不写死 X）
-                "dao_wen": {"逆鳞": None, "活血": None, "固执": None},
+                "dao_wen": {"逆鳞": None, "固执": None},
             })
             applied.append("已登记：下一场战斗追求者将作为怪物额外出现"
                             "(记录于 state.forced_monsters_next_battle，出怪流程本身另行接入时读取)")
@@ -564,7 +565,7 @@ def _resolve_option_effect_impl(text: str, engine, event_name: str = "", params=
     elif event_name == "乞丐" and text.startswith("给予庇护"):
         beggar = Entity("乞丐", "朋友", blood_limit=50, current_hp=50,
                         attack_count=2, attack_power=3)
-        _grant_daowen(beggar, "狂暴", 2)
+        # 2026-10-03：【狂暴】道纹删除，乞丐不再附带道纹（待用户裁定是否补位）
         beggar.mutation_count = 3
         engine.state.friends.append(beggar)
         applied.append("乞丐作为朋友加入")

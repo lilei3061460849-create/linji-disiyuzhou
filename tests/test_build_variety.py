@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
 from engine.ai_tactics import TacticalAI
+from engine.models import Entity
 
 
 def _engine(starter="杀伐", learn=(), region="龙心谷", seed=1, tmp="/tmp/bv.db"):
@@ -43,17 +44,22 @@ def _engine(starter="杀伐", learn=(), region="龙心谷", seed=1, tmp="/tmp/bv
 # ---------- 正常路径 ----------
 
 def test_boba_marks_targets_after_start():
-    """正常路径：波及开局后可真实发动并标记目标。"""
+    """正常路径：波及开局后可真实发动并标记目标（2026-10-03 起 X 下限=2，需两个目标）。"""
     e = _engine(starter="波及")
     assert set(e.state.player.dao_wen) >= {"杀伐", "波及"}
     enemy = e.state.enemies[0]
+    second = Entity("陪标怪", "怪物", blood_limit=100, current_hp=100,
+                    speed_limit=2, current_speed=2, attack_count=1, attack_power=1)
+    e.state.enemies.append(second)
+    e.state.player.current_mana = max(e.state.player.current_mana, 10)   # X=2 → 4 法力
     result = e.execute_action("use_daowen", {
-        "daowen_name": "波及", "x": 1,
-        "dodge_targets": [{"target_ref": "enemy:0", "dodge": False, "blood_shadow": False}],
+        "daowen_name": "波及", "x": 2,
+        "dodge_targets": [{"target_ref": "enemy:0", "dodge": False, "blood_shadow": False},
+                          {"target_ref": "enemy:1", "dodge": False, "blood_shadow": False}],
         "trigger_spell_choices": {},
     })
     assert result["success"], result
-    assert enemy.has_status("波及")
+    assert enemy.has_status("波及") and second.has_status("波及")
 
 
 # 专属道纹 → 其所属副本（学习受门禁限制，须在对应副本内）

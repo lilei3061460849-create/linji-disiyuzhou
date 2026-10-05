@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 from engine.api import GameEngine
-from engine.ai_player import AIPlayer
+from engine.ai_tactics import TacticalAI
 from sim.build_learner import _resolve_monster_turn
 from sim.duel_pvp import run_duel_pvp
 from sim.optional_actions import battle_start_relic_choices, round_start_relic_choices
@@ -114,7 +114,7 @@ def run(seed: int, name: str, slots: str, out_path: str):
 
         bs = act("battle_start", {"relic_choices": battle_start_relic_choices(e)},
                  f"第{battle_no}场战始")
-        ai = AIPlayer(e, verbose=False)
+        ai = TacticalAI(e, verbose=False)
         # 新版【封印】是延迟回场，不是永久清场；本复盘保留初始道纹选择。
         # 前六场允许AI至多实际封印一次（然后由本轮的其它行动处理回场怪），
         # 第七场的两次封印仍由下方显式龙心行动提交；全部结算都走 execute_action。

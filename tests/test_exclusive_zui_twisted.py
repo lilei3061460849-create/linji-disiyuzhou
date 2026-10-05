@@ -380,84 +380,53 @@ def test_monster_jiachao_and_duming_flow():
     assert True  # 不抛异常即通过
 
 
-# ==================== 爆裂（扭曲都市；裁定口径：受到伤害前反噬） ====================
+# ==================== 千荆甲（通用遗物；承接已删【爆裂】的反噬口径） ====================
+# 2026-10-03 用户令：【爆裂】道纹删除，反噬语义改由遗物【千荆甲】承接
+# （受到攻击伤害前，攻击者受到等量伤害）。原爆裂的持续X到期用例随道纹删除一并移除。
 
-def test_normal_baolie_reflects_before_damage():
-    engine = _setup(region="扭曲都市"); _grant(engine, ["杀伐"])
-    player = engine.state.player
-    m = _add_monster(engine, hp=100)
-    m.add_status(StatusEffect(name="爆裂", value=1, remaining_rounds=2, source=m.name))
-    hp_before = player.current_hp
-    r = engine.execute_action("use_daowen", {"daowen_name": "杀伐", "x": 2, "target": m.name})
-    assert r["success"], r
-    # 杀伐2 造成4伤害（X²）：玩家先被反噬4，怪物仍受4伤害
-    assert player.current_hp == hp_before - 4, f"攻击者应先失去等量生命，实差{hp_before - player.current_hp}"
-    assert m.current_hp == 100 - 4
-
-
-def test_boundary_baolie_attacker_dies_damage_cancelled():
-    engine = _setup(region="扭曲都市"); _grant(engine, ["杀伐"])
-    player = engine.state.player
-    player.current_hp = 3
-    m = _add_monster(engine, hp=100)
-    m.add_status(StatusEffect(name="爆裂", value=1, remaining_rounds=2, source=m.name))
-    r = engine.execute_action("use_daowen", {"daowen_name": "杀伐", "x": 2, "target": m.name})
-    assert r["success"], r
-    assert not player.is_alive, "攻击者被反噬致死"
-    assert m.current_hp == 100, "攻击者先死，本次伤害不落地"
-
-
-def test_boundary_baolie_attack_path():
-    """物理攻击路径的反噬（怪物持爆裂，玩家攻击）"""
-    engine = _setup(region="扭曲都市", mana=5)   # 攻力=当前法力：给5才有可断言的每手5点
-    player = engine.state.player
-    m = _add_monster(engine, hp=100)
-    m.add_status(StatusEffect(name="爆裂", value=1, remaining_rounds=2, source=m.name))
-    hp_before = player.current_hp
-    res = engine.combat.resolve_attack(player, m, hit_index=0, is_must_hit=True, dodge=False)
-    assert res["damage_dealt"] == 5
-    assert player.current_hp == hp_before - 5, "攻击者先被反噬等量生命"
-
-
-def test_normal_monster_baolie1_survives_same_round_end():
-    """正常：怪挂爆裂1，同回终不掉，下一手玩家打仍反噬。"""
+def test_normal_qianjingjia_reflects_before_damage():
+    """正常：怪物攻击持【千荆甲】的玩家 → 攻击者先受等量伤害，攻击照常落地。"""
     engine = _setup(region="扭曲都市")
     player = engine.state.player
-    m = _add_monster(engine, hp=100)
-    _apply_monster_daowen(engine, m, "爆裂", 1)
-    assert m.has_status("爆裂")
-    engine.combat.round_end()
-    assert m.has_status("爆裂"), "敌方爆裂1不应在同回终清掉"
-    player.current_mana = 5   # 攻力=当前法力：压到5才有可断言的每手5点
+    engine.state.relics.append(Relic(name="千荆甲", effect=""))
+    m = _add_monster(engine, hp=100, atk=5)
     hp_before = player.current_hp
-    res = engine.combat.resolve_attack(player, m, is_must_hit=True, dodge=False)
+    res = engine.combat.resolve_attack(m, player, hit_index=0, is_must_hit=True, dodge=False)
     assert res["damage_dealt"] == 5
+    assert m.current_hp == 100 - 5, f"攻击者应先失去等量生命，实差{100 - m.current_hp}"
     assert player.current_hp == hp_before - 5
 
 
-def test_boundary_monster_baolie1_expires_at_next_enemy_round_end():
-    """边界：怪挂爆裂1，下一次怪物回合开始（它们的敌回终）才到期。"""
+def test_boundary_qianjingjia_attacker_dies_attack_cancelled():
+    """边界：反噬把攻击者打死 → 本次攻击伤害不再落地（与旧【爆裂】同口径）。"""
     engine = _setup(region="扭曲都市")
-    m = _add_monster(engine, hp=100)
-    _apply_monster_daowen(engine, m, "爆裂", 1)
-    engine.combat.round_end()
-    assert m.has_status("爆裂")
-    engine.state.current_round = 2  # 跳过白板，让怪物回合能跑
-    resolve_monster_phase(engine.combat, {m.name: None})
-    assert not m.has_status("爆裂"), "下一敌回终应到期"
-
-
-def test_boundary_player_baolie1_expires_after_monster_phase():
-    """边界：自己挂爆裂1，撑过本轮怪物出手，回终到期。"""
-    engine = _setup(region="扭曲都市")
-    _grant(engine, ["爆裂"])
     player = engine.state.player
-    _add_monster(engine, hp=100)
-    r = engine.execute_action("use_daowen", {"daowen_name": "爆裂", "x": 1})
-    assert r["success"], r
-    assert player.has_status("爆裂")
-    engine.combat.round_end()
-    assert not player.has_status("爆裂"), "己方爆裂1在回终（敌回终）到期"
+    engine.state.relics.append(Relic(name="千荆甲", effect=""))
+    hp_before = player.current_hp
+    m = _add_monster(engine, hp=4, atk=5)     # 5 点反噬直接打死 4 血怪
+    res = engine.combat.resolve_attack(m, player, hit_index=0, is_must_hit=True, dodge=False)
+    assert not m.is_alive, "攻击者被反噬致死"
+    assert res["damage_dealt"] == 0
+    assert player.current_hp == hp_before, "攻击者先死，本次伤害不落地"
+
+
+def test_qianjingjia_only_triggers_on_attack_damage():
+    """边界：非攻击伤害（道纹直伤）不触发反噬。"""
+    engine = _setup(region="扭曲都市")
+    player = engine.state.player
+    engine.state.relics.append(Relic(name="千荆甲", effect=""))
+    m = _add_monster(engine, hp=100, atk=5)
+    _apply_monster_daowen(engine, m, "杀伐", 2, target=player)
+    assert m.current_hp == 100, "道纹伤害不得触发千荆甲"
+
+
+def test_qianjingjia_absent_no_reflect():
+    """边界：不持有遗物则无任何反噬。"""
+    engine = _setup(region="扭曲都市")
+    player = engine.state.player
+    m = _add_monster(engine, hp=100, atk=5)
+    engine.combat.resolve_attack(m, player, hit_index=0, is_must_hit=True, dodge=False)
+    assert m.current_hp == 100
 
 
 # ==================== 退化（扭曲都市） ====================

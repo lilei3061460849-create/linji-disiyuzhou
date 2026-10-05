@@ -2,7 +2,7 @@
 
 本文件不测“最后 HP 是多少”，而是钉死架构约束：
   A 单层效果    —— 伤害产生 EffectContext + CombatEvent，source/target 正确
-  B 两层链      —— 伤害 → 爆裂反噬，parent_event_id 正确
+  B 两层链      —— 伤害 → 千荆甲反噬，parent_event_id 正确
   C 三层链      —— 道纹 → 血限变化 → 命零，parent_event_id 连续
   D 防双触发    —— 旧逻辑 + Hook 不会让同一效果跑两次
   E 死亡流程    —— HP=0 → 统一死亡判定 → ENTITY_DIED → 死后效果
@@ -23,7 +23,7 @@ from engine.combat_events import CombatEventType
 from engine.combat_hooks import (
     CombatHookManager,
     DragonBloodlineMultiplierHook,
-    BaolieHook,
+    QianjingjiaHook,
     AfterDamageEffectsHook,
 )
 from engine.dice import DiceEngine
@@ -88,42 +88,50 @@ def test_a_legacy_call_without_ctx_is_marked_not_silent():
     assert "context_warning" in detail
 
 
-# ==================== B. 两层链：伤害 → 爆裂反伤 ====================
+# ==================== B. 两层链：攻击伤害 → 千荆甲反噬 ====================
+# 2026-10-03：【爆裂】道纹删除；反噬语义由通用遗物【千荆甲】承接
+# （你受到攻击伤害前，攻击者受到等量伤害）。
 
-def test_b_two_layer_chain_baolie_reflect_parent_is_damage():
-    """爆裂反噬的失血必须挂在这次伤害之下。"""
-    _, combat, player, enemy = _arena(player_hp=100, enemy_hp=100)
-    enemy.add_status(StatusEffect("爆裂", value=2, remaining_rounds=2, source="test"))
+def _qianjingjia_arena(player_hp: int = 100, enemy_hp: int = 100):
+    state, combat, player, enemy = _arena(player_hp=player_hp, enemy_hp=enemy_hp)
+    state.relics.append(Relic(name="千荆甲", effect=""))
+    return state, combat, player, enemy
 
-    detail = combat._apply_hostile_damage(enemy, 10, source=player, ctx={
-        "timing": "player_action", "source": "杀伐", "source_type": "daowen",
-        "actor": player, "target": enemy, "mechanic": "damage", "subtype": "daowen",
-        "amount": 10, "tags": {"daowen"}, "event_id": "B-1",
+
+def test_b_two_layer_chain_reflect_parent_is_damage():
+    """千荆甲反噬的失血必须挂在这次攻击伤害之下。"""
+    state, combat, player, enemy = _qianjingjia_arena(player_hp=100, enemy_hp=100)
+
+    detail = combat._apply_hostile_damage(player, 10, source=enemy, ctx={
+        "timing": "monster_action", "source": "普通攻击", "source_type": "attack",
+        "actor": enemy, "target": player, "mechanic": "damage", "subtype": "attack",
+        "amount": 10, "tags": {"attack"}, "event_id": "B-1",
     })
 
-    assert player.current_hp == 90, "爆裂数值口径不得改变"
+    assert enemy.current_hp == 90, "反噬数值口径：等量（10 点）"
     assert detail["actual_damage"] == 10
-    reflect = [e for e in player._hp_loss_events if e["subtype"] == "baolie_reflect"]
+    reflect = [e for e in enemy._hp_loss_events if e["subtype"] == "relic_reflect"]
     assert len(reflect) == 1, "反噬只能记一次"
-    assert reflect[0]["parent_event_id"] == "B-1"
+    assert reflect[0]["parent_event_id"] == detail["ctx"]["event_id"], \
+        "反噬失血必须挂在这一笔伤害的 event_id 之下"
     assert reflect[0]["amount"] == 10
+    assert reflect[0]["source"] == "千荆甲"
 
 
-def test_b_baolie_lethal_reflect_death_is_traceable():
+def test_b_lethal_reflect_death_is_traceable():
     """反噬致死：死亡上下文必须能追回这次伤害，不能是 legacy_death。"""
-    _, combat, player, enemy = _arena(player_hp=6, enemy_hp=100)
-    enemy.add_status(StatusEffect("爆裂", value=2, remaining_rounds=2, source="test"))
+    state, combat, player, enemy = _qianjingjia_arena(player_hp=100, enemy_hp=6)
 
-    combat._apply_hostile_damage(enemy, 10, source=player, ctx={
-        "timing": "player_action", "source": "杀伐", "source_type": "daowen",
-        "actor": player, "target": enemy, "mechanic": "damage", "subtype": "daowen",
-        "amount": 10, "tags": {"daowen"}, "event_id": "B-2",
+    combat._apply_hostile_damage(player, 10, source=enemy, ctx={
+        "timing": "monster_action", "source": "普通攻击", "source_type": "attack",
+        "actor": enemy, "target": player, "mechanic": "damage", "subtype": "attack",
+        "amount": 10, "tags": {"attack"}, "event_id": "B-2",
     })
 
-    assert player.is_alive is False
-    assert player._death_ctx["mechanic"] == "death"
-    assert player._death_ctx["source_type"] != "legacy"
-    assert player._death_ctx["parent_event_id"] is not None
+    assert enemy.is_alive is False
+    assert enemy._death_ctx["mechanic"] == "death"
+    assert enemy._death_ctx["source_type"] != "legacy"
+    assert enemy._death_ctx["parent_event_id"] is not None
     assert len(_events(combat, CombatEventType.ENTITY_DIED)) == 1
 
 
@@ -328,7 +336,7 @@ def test_f_hook_order_is_explicit_and_unchanged():
         "DragonBloodlineMultiplierHook",
         "MechanismHookAdapter",  # 【加害】迁移后：原 JiahaiHook 位置（priority 20）
         "MechanismHookAdapter",  # 【龙鳞】迁移后：原 LonglinHook 位置（priority 30）
-        "BaolieHook",
+        "QianjingjiaHook",
         "BifenglingHook",
         "ShouyedengHook",
         "DamageRedirectionHook",
@@ -583,130 +591,93 @@ def test_h_battle_start_resets_event_stream(tmp_path):
     assert engine.combat.event_stream == []
 
 
-# ==================== I. 【活血】只看"本回合有没有实际掉血" ====================
-# DM裁定（2026-08-19）：【活血】不区分掉血来源。普通伤害 / 反伤 / 爆裂反噬 / 代价 /
-# 血限压迫导致的生命损失，只要角色本回合实际掉过 HP，都进入 hp_lost_this_round。
+# ==================== I. 【活血衣】：受到攻击伤害后回复一半 ====================
+# 2026-10-03：【活血】道纹删除；改为通用遗物【活血衣】
+# （你受到攻击造成的伤害后，恢复等同其一半的生命，向上取整）。
 
-def _huoxue_arena(player_hp=100):
+def _huoxueyi_arena(player_hp=100):
     state, combat, player, enemy = _arena(player_hp=player_hp, enemy_hp=200, enemy_bl=200)
-    player.add_status(StatusEffect("活血", value=3, remaining_rounds=-1, source="P"))
+    state.relics.append(Relic(name="活血衣", effect=""))
     return state, combat, player, enemy
 
 
-def _round_end_huoxue(state, combat):
-    state.combat_subphase = "await_round_end"
-    result = combat.round_end()
-    return [e for e in result["effects"] if e.get("type") == "huoxue_heal"]
+def _total_healed(player):
+    return player.total_healed
 
 
-def test_i_baolie_reflect_counts_into_hp_lost_this_round():
-    """爆裂反噬造成的 HP 损失必须进入本回合失血统计。"""
-    state, combat, player, enemy = _huoxue_arena(player_hp=100)
-    enemy.add_status(StatusEffect("爆裂", value=2, remaining_rounds=2, source="test"))
+def test_i_huoxueyi_heals_half_of_attack_damage():
+    """攻击伤害 20 → 立即回复 10（向上取整）。"""
+    state, combat, player, enemy = _huoxueyi_arena(player_hp=100)
+    healed_before = _total_healed(player)
 
-    combat._apply_hostile_damage(enemy, 20, source=player, ctx={
-        "timing": "player_action", "source": "杀伐", "source_type": "daowen",
-        "actor": player, "target": enemy, "mechanic": "damage", "subtype": "daowen",
-        "amount": 20, "tags": {"daowen"}, "event_id": "HX-1",
-    })
-
-    assert player.current_hp == 80, "爆裂反噬数值口径不得改变（等量反噬20）"
-    assert player.hp_lost_this_round == 20, "反噬失血必须计入 hp_lost_this_round"
-    # 失血仍然可追溯到那次伤害
-    reflect = [e for e in player._hp_loss_events if e["subtype"] == "baolie_reflect"]
-    assert len(reflect) == 1 and reflect[0]["parent_event_id"] == "HX-1"
-
-
-def test_i_huoxue_triggers_on_baolie_reflect_loss():
-    """完整链：活血 → 本回合被爆裂反噬 → 回终按失血÷2 回复。"""
-    state, combat, player, enemy = _huoxue_arena(player_hp=100)
-    enemy.add_status(StatusEffect("爆裂", value=2, remaining_rounds=2, source="test"))
-
-    combat._apply_hostile_damage(enemy, 20, source=player, ctx={
-        "timing": "player_action", "source": "杀伐", "source_type": "daowen",
-        "actor": player, "target": enemy, "mechanic": "damage", "subtype": "daowen",
-        "amount": 20, "tags": {"daowen"},
-    })
-    assert player.current_hp == 80
-
-    heals = _round_end_huoxue(state, combat)
-    assert len(heals) == 1, "活血应当触发一次"
-    assert heals[0]["heal"] == 10, "20 点失血 ÷2 = 10"
-    assert player.current_hp == 90
-    assert player.hp_lost_this_round == 0, "回终后失血计数归零"
-
-
-def test_i_huoxue_triggers_on_ordinary_damage_same_way():
-    """同样的失血量，普通伤害与爆裂反噬给出相同的活血结果——活血不判断来源。"""
-    state, combat, player, enemy = _huoxue_arena(player_hp=100)
     combat._apply_hostile_damage(player, 20, source=enemy, ctx={
         "timing": "monster_action", "source": "普通攻击", "source_type": "attack",
         "actor": enemy, "target": player, "mechanic": "damage", "subtype": "attack",
-        "amount": 20, "tags": {"attack"},
+        "amount": 20, "tags": {"attack"}, "event_id": "HX-1",
     })
-    assert player.hp_lost_this_round == 20
-    heals = _round_end_huoxue(state, combat)
-    assert len(heals) == 1 and heals[0]["heal"] == 10 and player.current_hp == 90
+
+    assert player.current_hp == 90, "20 伤 - 10 回复"
+    assert _total_healed(player) - healed_before == 10, "回复量=伤害一半"
+    assert player.hp_lost_this_round == 20, "失血统计不受回复影响"
 
 
-def test_i_huoxue_does_not_trigger_without_actual_hp_loss():
-    """本回合没有实际掉血 → 活血不触发。"""
-    state, combat, player, enemy = _huoxue_arena(player_hp=100)
-    # 护盾完全吸收：有"受到伤害"，但没有实际掉 HP
+def test_i_huoxueyi_rounds_up_on_odd_damage():
+    """奇数伤害向上取整：9 → 回复 5。"""
+    state, combat, player, enemy = _huoxueyi_arena(player_hp=100)
+    healed_before = _total_healed(player)
+    combat._apply_hostile_damage(player, 9, source=enemy, ctx={
+        "timing": "monster_action", "source": "普通攻击", "source_type": "attack",
+        "actor": enemy, "target": player, "mechanic": "damage", "subtype": "attack",
+        "amount": 9, "tags": {"attack"},
+    })
+    assert _total_healed(player) - healed_before == 5
+    assert player.current_hp == 96
+
+
+def test_i_huoxueyi_does_not_trigger_on_daowen_damage():
+    """非攻击伤害（道纹）不触发活血衣。"""
+    state, combat, player, enemy = _huoxueyi_arena(player_hp=100)
+    healed_before = _total_healed(player)
+    combat._apply_hostile_damage(player, 20, source=enemy, ctx={
+        "timing": "monster_action", "source": "杀伐", "source_type": "daowen",
+        "actor": enemy, "target": player, "mechanic": "damage", "subtype": "daowen",
+        "amount": 20, "tags": {"daowen"},
+    })
+    assert _total_healed(player) - healed_before == 0
+    assert player.current_hp == 80
+
+
+def test_i_huoxueyi_does_not_trigger_without_actual_hp_loss():
+    """护盾完全吸收 → 实际伤害 0，不回复。"""
+    state, combat, player, enemy = _huoxueyi_arena(player_hp=100)
     player.shield = 50
+    healed_before = _total_healed(player)
     detail = combat._apply_hostile_damage(player, 20, source=enemy, ctx={
         "timing": "monster_action", "source": "普通攻击", "source_type": "attack",
         "actor": enemy, "target": player, "mechanic": "damage", "subtype": "attack",
         "amount": 20, "tags": {"attack"},
     })
     assert detail["shield_absorbed"] == 20 and detail["actual_damage"] == 0
-    assert player.current_hp == 100 and player.hp_lost_this_round == 0
-
-    heals = _round_end_huoxue(state, combat)
-    assert heals == [], "没有实际掉血就不该触发活血"
+    assert _total_healed(player) - healed_before == 0
     assert player.current_hp == 100
 
 
-def test_i_huoxue_not_triggered_when_baolie_absent():
-    """没有爆裂时攻击者不掉血，活血同样不触发（防止误把反噬无条件计入）。"""
-    state, combat, player, enemy = _huoxue_arena(player_hp=100)
-    combat._apply_hostile_damage(enemy, 20, source=player, ctx={
-        "timing": "player_action", "source": "杀伐", "source_type": "daowen",
-        "actor": player, "target": enemy, "mechanic": "damage", "subtype": "daowen",
-        "amount": 20, "tags": {"daowen"},
+def test_i_huoxueyi_not_triggered_without_relic():
+    """不持有遗物则无回复。"""
+    state, combat, player, enemy = _arena(player_hp=100, enemy_hp=200, enemy_bl=200)
+    healed_before = _total_healed(player)
+    combat._apply_hostile_damage(player, 20, source=enemy, ctx={
+        "timing": "monster_action", "source": "普通攻击", "source_type": "attack",
+        "actor": enemy, "target": player, "mechanic": "damage", "subtype": "attack",
+        "amount": 20, "tags": {"attack"},
     })
-    assert player.current_hp == 100 and player.hp_lost_this_round == 0
-    assert _round_end_huoxue(state, combat) == []
-
-
-def test_i_huoxue_threshold_needs_at_least_two_hp_lost():
-    """既有阈值不变：本回合失血 <2 时活血不回复。"""
-    state, combat, player, enemy = _huoxue_arena(player_hp=100)
-    enemy.add_status(StatusEffect("爆裂", value=2, remaining_rounds=2, source="test"))
-    combat._apply_hostile_damage(enemy, 1, source=player, ctx={
-        "timing": "player_action", "source": "杀伐", "source_type": "daowen",
-        "actor": player, "target": enemy, "mechanic": "damage", "subtype": "daowen",
-        "amount": 1, "tags": {"daowen"},
-    })
-    assert player.current_hp == 99 and player.hp_lost_this_round == 1
-    assert _round_end_huoxue(state, combat) == [], "失血1 <2，活血不触发（既有规则）"
+    assert _total_healed(player) - healed_before == 0
+    assert player.current_hp == 80
 
 
 # ==================== J. 二次验收补充回归 ====================
 
-def test_j_shibao_self_destruct_keeps_current_hp_unchanged():
-    """尸爆是自毁式[命零]，不清零当前生命（钉死收尾修复期间的一次回归）。"""
-    state, combat, player, enemy = _arena(enemy_hp=100)
-    enemy2 = Entity("M2", "怪物", blood_limit=100, current_hp=100)
-    state.enemies = [enemy, enemy2]
-
-    combat.apply_daowen_effect("尸爆", {"x": 3, "self_destruct": True, "aoe_pct": 30},
-                               enemy, enemy)
-
-    assert enemy.is_alive is False
-    assert enemy.current_hp == 70, "尸爆不改变施法者当前生命，只置命零"
-    assert enemy._death_ctx["subtype"] == "self_destruct"
-    assert len(_events(combat, CombatEventType.ENTITY_DIED)) == 1
+# 2026-10-03：【尸爆】道纹删除，其自毁式[命零]回归用例一并移除。
 
 
 def test_j_entity_died_event_carries_actor_name_from_dict_context():

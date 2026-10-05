@@ -19,9 +19,9 @@ from engine.combat import CombatEngine
 # ---------- 道纹注册与闭环 ----------
 
 def test_dungeon_daowen_registered():
-    """正常路径：8个乱葬岗专属道纹已注册并可解析。"""
+    """正常路径：7个乱葬岗专属道纹已注册并可解析（2026-10-03 删【尸爆】）。"""
     DaoWenEngine.register_all()
-    for name in ("分裂", "尸爆", "缄默", "瓦解", "冥气", "勾魂", "镇尸", "招魂"):
+    for name in ("分裂", "缄默", "瓦解", "冥气", "勾魂", "镇尸", "招魂"):
         assert name in DaoWenEngine._registry, f"{name} 未注册"
         r = DaoWenEngine.resolve(name, 2, target=Entity("T", "怪物", blood_limit=100, current_hp=100),
                                  caster=Entity("C", "轮回者", blood_limit=60, current_hp=60))
@@ -29,9 +29,9 @@ def test_dungeon_daowen_registered():
 
 
 def test_dungeon_resonance_loop_complete():
-    """正常路径：乱葬岗残韵闭环8条路径全部可达。"""
+    """正常路径：乱葬岗残韵闭环7条路径全部可达（2026-10-03 删【尸爆】：分裂→缄默直连）。"""
     DaoWenEngine.register_all()
-    loop = [("分裂", "尸爆"), ("尸爆", "缄默"), ("缄默", "瓦解"), ("瓦解", "冥气"),
+    loop = [("分裂", "缄默"), ("缄默", "瓦解"), ("瓦解", "冥气"),
             ("冥气", "勾魂"), ("勾魂", "镇尸"), ("镇尸", "招魂"), ("招魂", "分裂")]
     for a, b in loop:
         paths = ResonanceEngine.get_available_resonance(a)

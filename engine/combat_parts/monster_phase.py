@@ -52,7 +52,7 @@ class MonsterPhaseMixin:
         道纹（冷却类由 can_use 管辖），每回合每道纹至多一次。
         2026-09-16 用户令：原「重复发动则 X 累加 +2×副本阶级」的递增机制已废止，
         重复发动按同一 X 计费。
-        _monster_activated 保留为持续激活口径（狂暴出手加成等），不再作发动门禁。
+        _monster_activated 保留为持续激活口径，不再作发动门禁。
         """
         rec = self._monster_daowen_round_used.get(id(monster))
         if rec is None or rec[0] != self.state.current_round:
@@ -67,17 +67,16 @@ class MonsterPhaseMixin:
         return dest
 
     def _monster_attack_actions(self, m: Entity, activated: set) -> int:
-        """怪物攻击出手数 = 1 + 疯狂X(自身状态) + 狂暴1(若激活)。
+        """怪物攻击出手数 = 1 + 疯狂X(自身状态)。
 
-        疯狂2026-08-17全局裁定：发动方把疯狂状态盖到所有角色，怪物从自身状态读+X；
-        激活集合口径仅保留给狂暴。发动当回合的状态在resolve阶段才落下，
-        prepare在本回合道纹结算前已快照出手数，因此疯狂自下回合生效的时序不变。
+        疯狂2026-08-17全局裁定：发动方把疯狂状态盖到所有角色，怪物从自身状态读+X。
+        发动当回合的状态在resolve阶段才落下，prepare在本回合道纹结算前已快照出手数，
+        因此疯狂自下回合生效的时序不变。
         高爆手雷修改的是每轮攻击中的"攻击次数"，不再同时削减攻击出手数。
+        2026-10-03：【狂暴】道纹删除，原"+1 出手"加成随之移除。
         """
         n = 1
         n += m.get_status_value("疯狂")
-        if "狂暴" in activated or m.has_status("狂暴"):
-            n += 1
         return max(0, n)
 
     def _combat_entity_refs(self) -> dict[str, Entity]:
@@ -132,6 +131,14 @@ class MonsterPhaseMixin:
             # 2026-09-15 用户令：删除白板限制——增援怪/回场怪进场当回合即可发动道纹
             # （R1 首发怪同理）。spawned_round 仍作为出生回合的记录字段保留，但不再
             # 参与任何"当回合不能发动道纹"的判定。
+            # 养蛊场：怪物互斗时，道纹与普攻的合法目标都是「除自己以外的其它存活怪物」
+            # （不含玩家侧；正式玩法下该名单为空，走下面的原有分支）。
+            ffa_rivals = (
+                [target for target in all_targets
+                 if target["ref"] != actor_ref and self.state.on_enemy_side(refs[target["ref"]])
+                 and refs[target["ref"]].is_alive and self.is_targetable(monster, refs[target["ref"]])]
+                if getattr(self.state, "arena_ffa", False) else []
+            )
             if not monster.has_status("干扰"):
                 for name, inst in monster.dao_wen.items():
                     if (name in round_used or not inst.can_use()
@@ -140,9 +147,11 @@ class MonsterPhaseMixin:
                     rewritten_as = (self._resonance_rewrites.get(id(monster)) or {}).get(name)
                     effective_name = rewritten_as or name
                     requires_target = self._daowen_requires_target(effective_name)
-                    legal_targets = ([target for target in all_targets
-                                      if self.is_targetable(monster, refs[target["ref"]])]
-                                     if requires_target else [])
+                    legal_targets = (
+                        (list(ffa_rivals) if ffa_rivals else
+                         [target for target in all_targets
+                          if self.is_targetable(monster, refs[target["ref"]])])
+                        if requires_target else [])
                     if "龙威" in self.state.dragon_traits and self.state.player and self.state.player.is_alive:
                         legal_targets = [target for target in legal_targets
                                          if (not self.state.on_player_side(refs[target["ref"]])
@@ -172,7 +181,8 @@ class MonsterPhaseMixin:
                         max_x = self._monster_max_daowen_x(
                             monster, effective_name, preview_target,
                             hard_cap=len(dodge_target_options) if effective_name == "波及" else None)
-                        if max_x < 1:
+                        # 2026-10-03 用户令：波及 X 下限=2 → 合法目标不足2个时本道纹此刻不可发动。
+                        if max_x < DaoWenEngine.X_MIN.get(effective_name, 1):
                             continue
                         effective_x = max_x
                     else:
@@ -197,6 +207,7 @@ class MonsterPhaseMixin:
                         "x": effective_x,
                         "x_free": bool(getattr(inst, "x_free", False)),
                         "max_x": max_x if getattr(inst, "x_free", False) else 0,
+                        "min_x": DaoWenEngine.X_MIN.get(effective_name, 1),
                         "wave_effective_x": wave_effective_x,
                         "requires_target": requires_target,
                         "target_options": legal_targets,
@@ -205,10 +216,10 @@ class MonsterPhaseMixin:
                         "dodge_target_options": dodge_target_options,
                         "trigger_spell_options": self.prepare_daowen_trigger_spells(monster),
                     })
-            attack_targets = [
+            attack_targets = (list(ffa_rivals) if ffa_rivals else [
                 target for target in player_refs
                 if self.is_targetable(monster, refs[target["ref"]])
-            ]
+            ])
             # 【龙威】是规则约束而非策略默认：敌方只能把持有者列为合法攻击目标。
             if "龙威" in self.state.dragon_traits and self.state.player and self.state.player.is_alive:
                 attack_targets = [target for target in attack_targets if target["ref"] == "player:0"]
@@ -232,7 +243,8 @@ class MonsterPhaseMixin:
             actors.append({
                 "actor_ref": actor_ref,
                 "monster": monster.name,
-                "daowen_required": bool(daowen_options),
+                "daowen_required": bool(daowen_options) and not self._monster_free_actions(),
+                "free_actions": self._monster_free_actions(),
                 "daowen_options": daowen_options,
                 "attack_target_options": attack_targets,
                 "base_attack_actions": base_actions,
@@ -279,7 +291,11 @@ class MonsterPhaseMixin:
         """求该道纹此刻可负担的最大 X。返回 0 表示连 X=1 都付不起（prepare 应过滤掉）。"""
         cap = hard_cap if hard_cap is not None else self._DAOWEN_X_PROBE_CAP
         best = 0
-        for x in range(1, max(0, cap) + 1):
+        # X下限（【波及】≥2）：探测从下限起步；上限若连下限都够不到则直接判不可发动。
+        x_floor = max(1, DaoWenEngine.X_MIN.get(effective_name, 1))
+        if cap < x_floor:
+            return 0
+        for x in range(x_floor, max(0, cap) + 1):
             try:
                 calc = DaoWenEngine.resolve(effective_name, x, target=target, caster=monster)
             except ValueError:
@@ -648,8 +664,39 @@ class MonsterPhaseMixin:
                 raise ValueError(f"道纹【{effective_name}】当前结算不接受闪避提交")
 
         trigger_choices = choice.get("trigger_spell_choices", {})
-        self.validate_daowen_trigger_spells(
-            monster, trigger_choices, refs, extra_mana=pending_shouyedeng)
+        # 2026-10-02：法力预算不再参与静态校验（资源问题一律是执行期中断），
+        # 因此不再需要把守夜灯的预付法力传进来。
+        self.validate_daowen_trigger_spells(monster, trigger_choices, refs)
+
+    def _monster_free_actions(self) -> bool:
+        """怪物行动自由化开关（默认关，见 GameState.monster_free_actions）。
+
+        打开后每只怪物每回合 2 个行动槽：1 次攻击 / 1 次道纹各占 1 槽；
+        不再强制发动道纹。关闭时完全走原契约。
+        """
+        return bool(getattr(self.state, "monster_free_actions", False))
+
+    def _check_monster_daowen_object(
+        self, monster, dao_choice: dict, expected_actor: dict, refs: dict,
+        pending_shouyedeng: int = 0, *, label: str = "daowen",
+    ) -> None:
+        """校验一个 daowen 提交对象（第一发与第二发道纹共用同一套静态校验）。"""
+        options = {o["name"] for o in expected_actor["daowen_options"]}
+        if dao_choice.get("name") not in options:
+            raise ValueError(f"{monster.name}提交的道纹不在prepare合法选项中（{label}）")
+        prepared_option = next(
+            option for option in expected_actor["daowen_options"]
+            if option["name"] == dao_choice["name"]
+        )
+        if (prepared_option["requires_target"]
+                and dao_choice.get("target_ref") not in {
+                    target["ref"] for target in prepared_option["target_options"]
+                }):
+            raise ValueError(f"{monster.name}提交的道纹目标不在prepare合法选项中（{label}）")
+        self._validate_monster_daowen_schema(
+            monster, dao_choice, refs, prepared_option,
+            pending_shouyedeng=pending_shouyedeng,
+        )
 
     def _validate_monster_phase_static(
         self, submitted: dict[str, dict], prepared: dict,
@@ -676,32 +723,62 @@ class MonsterPhaseMixin:
                 continue  # 与执行循环一致：死斗部分提交/已死者跳过
             expected_actor = expected[actor_ref]
 
+            free = self._monster_free_actions()
             dao_choice = choice.get("daowen")
+            dao_choice_2 = choice.get("daowen_2")
             options = {o["name"] for o in expected_actor["daowen_options"]}
-            if options and not isinstance(dao_choice, dict):
+            if not free and dao_choice_2 is not None:
+                raise ValueError(f"{monster.name}本局未开启怪物自由行动，不接受daowen_2")
+            if free:
+                if dao_choice_2 is not None and not isinstance(dao_choice_2, dict):
+                    raise ValueError(f"{monster.name}的daowen_2必须是对象或null")
+                if isinstance(dao_choice_2, dict):
+                    if not isinstance(dao_choice, dict):
+                        raise ValueError(f"{monster.name}提交daowen_2前必须先提交daowen")
+                    if dao_choice_2.get("name") == dao_choice.get("name"):
+                        raise ValueError(f"{monster.name}同一回合不能重复发动同一种道纹")
+            if options and not isinstance(dao_choice, dict) and not free:
                 raise ValueError(f"{monster.name}必须从合法选项中提交一个daowen对象")
-            if not options and dao_choice is not None:
-                raise ValueError(f"{monster.name}本次没有合法道纹选项，daowen必须为null")
+            if not options:
+                if dao_choice is not None:
+                    raise ValueError(f"{monster.name}本次没有合法道纹选项，daowen必须为null")
+                if dao_choice_2 is not None:
+                    raise ValueError(f"{monster.name}本次没有合法道纹选项，daowen_2必须为null")
             if isinstance(dao_choice, dict):
-                if dao_choice.get("name") not in options:
-                    raise ValueError(f"{monster.name}提交的道纹不在prepare合法选项中")
-                prepared_option = next(
-                    option for option in expected_actor["daowen_options"]
-                    if option["name"] == dao_choice["name"]
-                )
-                if (prepared_option["requires_target"]
-                        and dao_choice.get("target_ref") not in {
-                            target["ref"] for target in prepared_option["target_options"]
-                        }):
-                    raise ValueError(f"{monster.name}提交的道纹目标不在prepare合法选项中")
-                self._validate_monster_daowen_schema(
-                    monster, dao_choice, refs, prepared_option,
-                    pending_shouyedeng=pending_shouyedeng,
-                )
+                self._check_monster_daowen_object(
+                    monster, dao_choice, expected_actor, refs, pending_shouyedeng)
+            if isinstance(dao_choice_2, dict):
+                self._check_monster_daowen_object(
+                    monster, dao_choice_2, expected_actor, refs, pending_shouyedeng,
+                    label="daowen_2")
 
             attack_actions = choice.get("attack_actions")
             expected_actions = expected_actor["base_attack_actions"]
-            if not isinstance(attack_actions, list) or len(attack_actions) != expected_actions:
+            if free:
+                if monster.actions_used_this_round >= 2:
+                    raise ValueError(f"{monster.name}本回合的行动已经用完（2 个槽）")
+                # 行动槽预算（用户裁定 2026-10-03）：1 次攻击＝base_attack_actions 组命中，
+                # 1 次道纹＝1 个 daowen 对象；两者合计 1~2 槽。
+                if not isinstance(attack_actions, list):
+                    raise ValueError("attack_actions必须是列表")
+                if expected_actions <= 0:
+                    if attack_actions:
+                        raise ValueError(f"{monster.name}本回合没有合法攻击目标，attack_actions必须为空")
+                    attack_slots = 0
+                else:
+                    if (len(attack_actions) % expected_actions
+                            or len(attack_actions) // expected_actions > 2):
+                        raise ValueError(
+                            f"{monster.name}自由行动下attack_actions只能是0、"
+                            f"{expected_actions}或{2 * expected_actions}个")
+                    attack_slots = len(attack_actions) // expected_actions
+                dao_slots = sum(1 for obj in (dao_choice, dao_choice_2)
+                                if isinstance(obj, dict))
+                if not (1 <= attack_slots + dao_slots <= 2):
+                    raise ValueError(
+                        f"{monster.name}本回合必须使用1~2个行动"
+                        f"（攻击/道纹各占1个；收到攻击{attack_slots}＋道纹{dao_slots}）")
+            elif not isinstance(attack_actions, list) or len(attack_actions) != expected_actions:
                 raise ValueError(f"{monster.name}必须提交{expected_actions}个attack_actions")
             legal_attack_options = {
                 target["ref"]: target for target in expected_actor["attack_target_options"]
@@ -719,8 +796,12 @@ class MonsterPhaseMixin:
                     if hit.get("target_ref") not in legal_attack_options:
                         raise ValueError("怪物攻击目标不在prepare合法选项中")
                     target = refs.get(hit.get("target_ref", ""))
-                    if target is None or not self.state.on_player_side(target):
-                        raise ValueError("怪物攻击target_ref必须是prepare列出的己方目标")
+                    if target is None or not (
+                            self.state.on_player_side(target)
+                            or (getattr(self.state, "arena_ffa", False)
+                                and self.state.on_enemy_side(target) and target is not monster)):
+                        raise ValueError("怪物攻击target_ref必须是prepare列出的己方目标"
+                                         "（养蛊场下可为其它怪物）")
                     if not self.is_targetable(monster, target):
                         raise ValueError(f"{target.name}当前不可被{monster.name}选中")
                     option = legal_attack_options[hit["target_ref"]]
@@ -732,7 +813,6 @@ class MonsterPhaseMixin:
                             raise ValueError("回锋刀触发必须显式提交合法目标")
                     self.validate_spell_reaction_submission(
                         target, monster, hit.get("spell_choices"), refs,
-                        extra_mana=pending_shouyedeng,
                     )
 
     def _monster_phase_snapshot(self) -> dict:
@@ -788,7 +868,10 @@ class MonsterPhaseMixin:
             submitted[ref] = choice
         # 死斗交替（对称）：守擂侧每步只结算1个actor，其余本步不动
         # （逐出手交替与挑战者侧一致，修复守擂方机制性必胜）。
-        if not self.state.in_final_duel and set(submitted) != set(expected):
+        # 养蛊场：允许逐个 actor 提交（与死斗同样按「每步只结算 1 个 actor」处理），
+        # 否则先手方会连带结算全场，训练出来的策略会带上出手顺序红利。
+        if (not self.state.in_final_duel and not getattr(self.state, "arena_ffa", False)
+                and set(submitted) != set(expected)):
             raise ValueError(f"必须为全部可行动怪物各提交一次选择；需要{sorted(expected)}，收到{sorted(submitted)}")
         # 事务一致性（2026-08-19）：先完成全部静态 schema 校验（零副作用），
         # 再执行任何龙息/守夜灯/道纹/攻击。依赖执行后状态的动态校验
@@ -810,7 +893,7 @@ class MonsterPhaseMixin:
         results: list[dict] = []
         # 守夜灯：用户裁定 2026-09-13 改为[回始]授予且不再清空，
         # 故怪物阶段不再有「[敌回始]授予 / [敌回终]清空」这一对动作。
-        results.extend(self._tick_baolie(self.state.get_all_enemy_side()))
+        # 2026-10-03：【爆裂】删除后不再有敌回终专属递减拍（_tick_baolie 已移除）。
         results.extend(prepared["skipped"])
         for actor_ref in submitted:  # 死斗部分提交：只结算本步提交的actor
             monster = refs.get(actor_ref)
@@ -823,42 +906,61 @@ class MonsterPhaseMixin:
                 if not monster.is_alive:
                     continue
             activated = self._monster_activated.setdefault(id(monster), set())
-            # 攻击出手数以“道纹结算前”的已激活集合为准：狂暴/疯狂是[回始]持续效果，
+            # 攻击出手数以“道纹结算前”的已激活集合为准：疯狂是[回始]持续效果，
             # 本回合刚发动时从下回合起生效，prepare列出的 base_attack_actions 也是按
             # 结算前状态给出的——两处必须一致，否则按 prepare 提交必然失败。
             activated_before = set(activated)
 
+            free = self._monster_free_actions()
             dao_choice = choice.get("daowen")
+            dao_choice_2 = choice.get("daowen_2")
             options = {o["name"] for o in expected[actor_ref]["daowen_options"]}
-            if options and not isinstance(dao_choice, dict):
+            if options and not isinstance(dao_choice, dict) and not free:
                 raise ValueError(f"{monster.name}必须从合法选项中提交一个daowen对象")
             if not options and dao_choice is not None:
                 raise ValueError(f"{monster.name}本次没有合法道纹选项，daowen必须为null")
-            if isinstance(dao_choice, dict):
-                if dao_choice.get("name") not in options:
-                    raise ValueError(f"{monster.name}提交的道纹不在prepare合法选项中")
+            for dao_obj in (dao_choice, dao_choice_2):
+                if not isinstance(dao_obj, dict):
+                    continue
                 prepared_option = next(
                     option for option in expected[actor_ref]["daowen_options"]
-                    if option["name"] == dao_choice["name"]
+                    if option["name"] == dao_obj["name"]
                 )
-                if (prepared_option["requires_target"]
-                        and dao_choice.get("target_ref") not in {
-                            target["ref"] for target in prepared_option["target_options"]
-                        }):
-                    raise ValueError(f"{monster.name}提交的道纹目标不在prepare合法选项中")
                 dao_result = self._resolve_monster_daowen_choice(
-                    monster, dao_choice, refs, activated, prepared_option,
+                    monster, dao_obj, refs, activated, prepared_option,
                 )
                 results.append(dao_result)
                 if not monster.is_alive:
-                    continue
+                    break
+            if not monster.is_alive:
+                continue
 
             attack_actions = choice.get("attack_actions")
+            # 自由行动回合推进标记（2026-10-03）：本模式下每只怪一回合提交 1~2 个槽
+            # （攻击组/道纹各占 1 槽），引擎的子阶段路由按「是否已出手」判断回合是否走完；
+            # 若本回合只交了道纹而没交攻击，actions_used_this_round 不会自增，
+            # 会把回合卡在玩家行动阶段。这里在该怪结算完成后统一标记为「本回合已走完」
+            # （≥2 槽）。只在自由行动模式下生效，默认关时一行不改。
+            if free:
+                monster.actions_used_this_round = max(monster.actions_used_this_round, 2)
             # 出手数按prepare快照校验：2026-08-17疯狂全局裁定后，状态在本actor
             # 道纹结算中即盖到全场，若此处按当前状态重算会把"自下回合生效"提前到
             # 本回合，导致按prepare提交必然失败；快照即契约（两处必须一致）。
             expected_actions = expected[actor_ref]["base_attack_actions"]
-            if not isinstance(attack_actions, list) or len(attack_actions) != expected_actions:
+            if free:
+                # 自由行动：0 / 1 / 2 次攻击（每次＝base_attack_actions组命中），
+                # 槽预算已由静态校验判定；这里只复核长度形状与快照一致。
+                if not isinstance(attack_actions, list):
+                    raise ValueError("attack_actions必须是列表")
+                if expected_actions <= 0:
+                    if attack_actions:
+                        raise ValueError(f"{monster.name}本回合没有合法攻击目标，attack_actions必须为空")
+                elif (len(attack_actions) % expected_actions
+                        or len(attack_actions) // expected_actions > 2):
+                    raise ValueError(
+                        f"{monster.name}自由行动下attack_actions只能是0、"
+                        f"{expected_actions}或{2 * expected_actions}个")
+            elif not isinstance(attack_actions, list) or len(attack_actions) != expected_actions:
                 raise ValueError(f"{monster.name}必须提交{expected_actions}个attack_actions")
             hits_per_action = max(0, monster.attack_count - monster.get_status_value("手雷减攻"))
             for action_index, attack_action in enumerate(attack_actions):
@@ -880,8 +982,12 @@ class MonsterPhaseMixin:
                     if hit.get("target_ref") not in legal_attack_options:
                         raise ValueError("怪物攻击目标不在prepare合法选项中")
                     target = refs.get(hit.get("target_ref", ""))
-                    if target is None or not self.state.on_player_side(target):
-                        raise ValueError("怪物攻击target_ref必须是prepare列出的己方目标")
+                    if target is None or not (
+                            self.state.on_player_side(target)
+                            or (getattr(self.state, "arena_ffa", False)
+                                and self.state.on_enemy_side(target) and target is not monster)):
+                        raise ValueError("怪物攻击target_ref必须是prepare列出的己方目标"
+                                         "（养蛊场下可为其它怪物）")
                     if not self.is_targetable(monster, target):
                         raise ValueError(f"{target.name}当前不可被{monster.name}选中")
                     if not target.is_alive:

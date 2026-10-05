@@ -344,7 +344,7 @@ def build_spell_choices(engine, target_option, player_ref: str, mana_budget: int
     """
     spell_options = target_option.get("spell_options", {}) or {}
     out = {}
-    # 预算跨法术共享递减：每个法术的 cycle 都从同一 remaining_budget 扣减，
+    # 预算跨法术共享递减：每个法术的提交都从同一 remaining_budget 扣减，
     # 否则多法术（先发制人+后发制人+生生不息）各自从 mana_budget 全额计算，
     # 会提交超出实际法力的组合 → 执行阶段「法力不足」整段回滚（2026-08-21 实测）。
     remaining_budget = mana_budget
@@ -354,7 +354,7 @@ def build_spell_choices(engine, target_option, player_ref: str, mana_budget: int
             name = spell["spell_name"]
             steps = spell.get("steps", [])
             use = False
-            cycles = []
+            submitted = []
             if timing == "before":
                 # 有敌对步骤才用（先发制人/借力打力）；庇护型（后发制人）在威胁大时用
                 has_hostile = any(s.get("target_ref") != player_ref for s in steps)
@@ -404,15 +404,17 @@ def build_spell_choices(engine, target_option, player_ref: str, mana_budget: int
                             break
                     cycle.append(entry)
                 if ok and cycle:
-                    cycles = [cycle]
+                    submitted = cycle
                     use = True
                     remaining_budget = max(0, remaining_budget - sum(
-                        e.get("x", 1) for cy in cycles for e in cy))
+                        e.get("x", 1) for e in submitted))
                 else:
                     use = False
             else:
-                use = False  # 法力不足 → 显式拒绝，不能留空cycles
-            out[timing][name] = {"use": use, "cycles": cycles} if use else {"use": False}
+                use = False  # 法力不足 → 显式拒绝，不能留空steps
+            # 新契约：每个决策槽位一条 steps；老逻辑只算一轮预算，故上限写1。
+            out[timing][name] = ({"use": True, "steps": submitted, "max_iterations": 1}
+                                 if use else {"use": False})
     return out
 
 
@@ -494,7 +496,7 @@ def resolve_monster_turn_hand(engine, strat: Strategy):
                     for sp in target_option.get("spell_options", {}).get(timing, []) or []:
                         dec = sc.get(timing, {}).get(sp["spell_name"], {})
                         if dec.get("use"):
-                            cost = sum(e.get("x", 1) for cy in dec.get("cycles", []) for e in cy)
+                            cost = sum(e.get("x", 1) for e in dec.get("steps") or [])
                             spell_mana_left = max(0, spell_mana_left - cost)
                 hit = {"target_ref": target_ref, "dodge": want_dodge,
                        "blood_shadow": False, "spell_choices": sc}

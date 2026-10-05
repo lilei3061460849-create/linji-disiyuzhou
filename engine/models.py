@@ -275,7 +275,7 @@ class Entity:
     # 【封印】是暂离回场，不使用此标记；战斗胜利另由暂离队列门禁处理。
     is_departed: bool = False
     departure_reason: str = ""   # 离场原因（雕塑/癌变/还债/救赎/逃跑/...）
-    hp_lost_this_round: int = 0   # 本回合累计失去的生命（活血用，回始归零）
+    hp_lost_this_round: int = 0   # 本回合累计失去的生命（回始归零）
     actions_used_this_round: int = 0  # 本回合已消耗的出手次数（回始归零，用于出手预算校验）
     # ---- 蓄锐（2026-09-28 基础动作）：消耗1出手换取下回合+1出手 ----
     # 用 Entity.field 方式声明：
@@ -514,11 +514,12 @@ class Entity:
 
     @property
     def action_count(self) -> int:
-        """出手次数：**全体角色固定2次**（2026-09-16 用户令）。
+        """出手次数：**全体角色基础 2 次**（2026-09-16 用户令）。
 
         不再由速限/攻击次数推导——速限已改作攻击次数的来源，再拿它算出手会重复记账；
         微光者旧的「攻击次数/3」口径同步废止（该式会让高攻次微光者白拿第3、4次出手）。
-        唯一的额外来源是遗物；【疯狂】+X、【无力】-X 照旧生效。
+        在基础值之上叠加：遗物、【疯狂】+X、【无力】-X、【蓄锐·增】+1（持续1回合）。
+        LLM 侧按「每个动作槽位一条决策」描述，不得写死每回合固定 2 次。
         怪物行动仍由CombatEngine的prepare/resolve两阶段接口独立计算。"""
         base = 2
         base += self.get_status_value("疯狂")
@@ -581,7 +582,7 @@ class Entity:
         self.current_hp = max(0, self.current_hp - remaining)
         detail["actual_damage"] = remaining
         detail["hp_after"] = self.current_hp
-        self.hp_lost_this_round += remaining  # 活血追踪
+        self.hp_lost_this_round += remaining  # 本回合失血追踪
         
         if self.current_hp <= 0:
             # 模型层只翻标记，不知道战斗上下文。命零的“通知 + 死后效果”必须由调用方
@@ -728,7 +729,7 @@ class Entity:
         return sum(s.value for s in self.status_effects if s.name == name and not s.is_expired)
     
     def tick_status_effects(self, skip_names: tuple = ()) -> list[str]:
-        """回合递减，返回已过期的效果名。skip_names 本拍不减（爆裂改走敌回终）。"""
+        """回合递减，返回已过期的效果名。skip_names 本拍不减。"""
         expired = []
         remaining = []
         for s in self.status_effects:
@@ -746,13 +747,13 @@ class Entity:
         """添加状态效果；未显式给出极性时按规则表标注，生命周期仍由scope独立决定。"""
         if effect.polarity == EffectPolarity.NEUTRAL.value:
             buffs = {
-                "固执", "贯穿", "急速", "洞察", "兴奋", "飞行", "滑翔", "狂暴",
+                "固执", "贯穿", "急速", "洞察", "飞行",
                 "全力", "疯狂", "必中", "自愈", "洗劫", "逆鳞", "嫁祸", "背负",
                 "负岳索", "加速", "愤怒", "蓄锐·增",
             }
             debuffs = {
-                "弱化", "无力", "减速", "全速", "束缚", "封印", "坠落",
-                "坏死", "爆裂", "退化", "定型", "畸变", "加害", "伤痕",
+                "弱化", "无力", "减速", "全速", "束缚", "封印",
+                "坏死", "退化", "定型", "畸变", "加害", "伤痕",
                 "寄生", "蒙蔽", "眩晕", "手雷减攻", "衰败", "被背负",
             }
             if effect.name in buffs:
@@ -1001,6 +1002,15 @@ class GameState:
     # 员工背叛·让利：每场工资在原公式基础上的固定加成（本次轮回持续生效）
     wage_bonus: int = 0
 
+    # 养蛊场（怪物互斗）训练模式：开启后怪物阶段的合法目标从「玩家侧」扩为「其它怪物」，
+    # 并允许逐个 actor 提交（严格交替，避免先手方一次结算全场）。默认 False——
+    # 正式玩法与既有测试完全不受影响，只有训练沙盒会打开它。
+    arena_ffa: bool = False
+    # 怪物行动自由化（2026-10-03 用户裁定，默认关）：打开后不再强制怪物发动道纹，
+    # 每只怪物每回合有 2 个「行动槽」——1 次攻击或 1 次道纹各占 1 槽，
+    # 允许「连续两次攻击」「连续两次道纹」「一攻一道纹」，也可以只出 1 槽。
+    # 默认 False——正式玩法与既有测试完全不受影响。
+    monster_free_actions: bool = False
     # 最终的冠冕/第8场死斗：进行中标记 + 当前该谁出手("player_side"/"opponent_side")
     in_final_duel: bool = False
     duel_turn: str = ""
@@ -1260,11 +1270,24 @@ class GameState:
         """【第一杯】：该实体失去的生命倍率（非持有者=1）。
 
         只作用于**有明确数值的失去生命**：伤害、数值型【代价】（流血）、
-        直接失血（爆裂反噬等）。血限被压低导致的当前生命封顶、以及
+        直接失血（千荆甲反噬等）。血限被压低导致的当前生命封顶、以及
         「当前生命直接置0」的命零类效果（癌变/迷失·崩解/雕塑等）不带数值、
         也不翻倍——它们不是"失去生命"，是判定归零。
         """
         return self.FIRST_CUP_MULTIPLIER if self.side_has(entity, self.FIRST_CUP) else 1
+
+    def _relic_active(self, entity: Entity, name: str) -> bool:
+        """遗物持有判定（唯一口径，2026-10-03，自 CombatEngine 平移）。
+
+        - 归属查 `side_has`（玩家＝本局 relics；敌方轮回者＝opponent_relics）；
+        - 玩家侧再查 sealed_relics：被【豪夺/封印】封住的遗物不生效（原口径）。
+        新遗物（千荆甲等）的触发一律经本函数，避免各处各写一份持有判定。
+        """
+        if entity is None or not self.side_has(entity, name):
+            return False
+        if entity is self.player:
+            return self.sealed_relics.get(name, 0) <= 0
+        return True
 
     def side_has(self, entity: Entity, name: str) -> bool:
         """该实体所属轮回者是否持有该终音/初拥/龙族项目。朋友/员工不继承。"""

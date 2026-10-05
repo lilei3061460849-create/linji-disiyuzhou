@@ -20,7 +20,7 @@ from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
-from engine.models import Entity, StatusEffect, DaoWenInstance, DaoWen, Spell
+from engine.models import Entity, Relic, StatusEffect, DaoWenInstance, DaoWen, Spell
 from engine.enums import EntityType
 
 
@@ -120,19 +120,22 @@ def test_step3_cannot_dodge_without_speed(tmp_path):
     assert target.current_hp == hp_before - 25, "速度为0闪避失败，目标实打实扣除25点生命（杀伐5→5X）"
 
 
-# ==================== 4. 爆裂受到伤害前反噬测试 ====================
+# ==================== 4. 千荆甲受到伤害前反噬测试（2026-10-03 承接原【爆裂】） ====================
 
-def test_step4_baolie_reflects_before_damage(tmp_path):
-    """正常路径：爆裂在受到伤害前扣除攻击者生命；若攻击者因此命零，伤害不落地"""
+def test_step4_qianjingjia_reflects_before_damage(tmp_path):
+    """正常路径：千荆甲在受到攻击伤害前扣除攻击者生命；若攻击者因此命零，伤害不落地"""
     e = _setup_engine(tmp_path)
     p = e.state.player
     enemy = Entity(name="脆皮怪", blood_limit=15, current_hp=15, attack_power=20, entity_type="怪物")
-    p.add_status(StatusEffect(name="爆裂", value=1, remaining_rounds=2, source=p.name))
+    e.state.relics.append(Relic("千荆甲", ""))
     p.shield = 10
     hp_before = p.current_hp
 
-    # 脆皮怪对玩家造成20点伤害：受到伤害前反噬20点生命 -> 脆皮怪当前生命归零[命零]，攻击取消
-    dmg_res = e.combat._apply_hostile_damage(p, 20, "普通", enemy)
+    # 脆皮怪对玩家造成20点攻击伤害：受到伤害前反噬20点生命 -> 脆皮怪当前生命归零[命零]，攻击取消
+    dmg_res = e.combat._apply_hostile_damage(p, 20, "普通", enemy, ctx={
+        "timing": "monster_action", "source": "普通攻击", "source_type": "attack",
+        "actor": enemy, "target": p, "mechanic": "damage", "subtype": "attack",
+        "amount": 20, "tags": {"attack"}})
     assert enemy.current_hp <= 0 or not enemy.is_alive
     assert p.current_hp == hp_before, "攻击者在造成伤害前命零，落地伤害取消"
 

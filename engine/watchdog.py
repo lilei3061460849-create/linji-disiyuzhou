@@ -129,18 +129,12 @@ class CombatWatchdog:
                 findings.append(f"敌方【{m.name}】处于【固执{val}】状态（单次失去生命上限为1），常规大额伤害被完全锁死。")
                 recommendations.append(f"对策方案：使用【残韵·反转】将【固执】逆转为【血债】，或使用【血债X】打出X次独立1点伤害绕过上限！")
 
-            # 2. 飞行判定
+            # 2. 飞行判定（2026-10-03：【坠落】道纹删除，击落手段移除）
             if m.has_status("飞行") or m.is_flying:
                 findings.append(f"敌方【{m.name}】处于【飞行】状态，地面攻击无法锁定目标。")
-                recommendations.append(f"对策方案：使用【残韵·反转】将【飞行】篡改为【坠落】击落，或使用扭曲工具【反怪物电击枪】！")
+                recommendations.append("对策方案：使用扭曲工具【反怪物电击枪】对其造成额外伤害，或用【残韵】篡改其【飞行】状态！")
 
-            # 3. 爆裂反噬判定
-            if m.has_status("爆裂"):
-                val = m.get_status_value("爆裂")
-                findings.append(f"敌方【{m.name}】处于【爆裂{val}】状态，受到伤害前对攻击者进行100%反噬。")
-                recommendations.append(f"对策方案：使用【残韵·曲解】将【爆裂】篡改为【退化】或【坏死】瓦解反噬！")
-
-            # 4. 自愈/活血回血抵消判定
+            # 4. 自愈回血抵消判定
             if m.has_status("自愈"):
                 findings.append(f"敌方【{m.name}】处于【自愈】状态，回始巨额回复抵消了常规攻击。")
                 recommendations.append(f"对策方案：使用【残韵·反转】将【自愈】篡改为【衰败】使其自损生命！")

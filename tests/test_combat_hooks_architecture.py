@@ -13,7 +13,7 @@ from engine.models import Entity, GameState, StatusEffect
 from engine.combat_events import CombatEvent, CombatEventType
 from engine.combat_hooks import (
     CombatHookManager,
-    BaolieHook,
+    QianjingjiaHook,
     BifenglingHook,
     ShouyedengHook,
 )
@@ -40,7 +40,12 @@ class MockState:
 # ---------- 正常路径 ----------
 
 def test_hooks_normal_incoming_and_reflect():
-    """正常路径：加害提升伤害、爆裂受到伤害前反噬、避风铃闪避叠甲"""
+    """正常路径：加害提升伤害、千荆甲反噬数值层、避风铃闪避叠甲
+
+    2026-10-03：【爆裂】道纹删除；反噬的触发判定（持有者/只对攻击伤害）移到
+    CombatEngine 侧，Hook 只负责把「等量伤害」换算成实际反噬数值（含【第一杯】倍率），
+    扣血与记账唯一入口是 _resolve_reflect_aftermath（避免双倍扣血）。
+    """
     manager = CombatHookManager()
     state = MockState(relics=["避风铃"])
 
@@ -48,17 +53,15 @@ def test_hooks_normal_incoming_and_reflect():
     target = Entity(name="防守者", blood_limit=42, current_hp=42, mana_limit=50, speed_limit=12, entity_type="轮回者")
     target.current_speed = 12
     target.add_status(StatusEffect(name="加害", value=2, remaining_rounds=-1, source="test"))
-    target.add_status(StatusEffect(name="爆裂", value=2, remaining_rounds=2, source="test"))
 
     # 1. 伤害修正（加害2使10伤害变为12）
     adjusted = manager.apply_incoming_adjust(target, 10, "普通", attacker, state)
     assert adjusted == 12
 
-    # 2. 受到伤害前反噬（攻击者在造成伤害前先扣12血）
-    res = manager.apply_before_damage(target, adjusted, "普通", attacker, state)
-    assert res["reflected"] == 12
-    assert attacker.current_hp == 30
-    assert not res["suppressed"]
+    # 2. 千荆甲反噬数值层：返回等量反噬数值，不动生命（扣血由引擎侧统一做）
+    assert manager.reflect_attack_damage(target, adjusted, attacker, state) == 12
+    assert attacker.current_hp == 42, "数值层不得自己扣血（双扣回归防护）"
+    assert manager.apply_before_damage(target, adjusted, "普通", attacker, state) == {}
 
     # 3. 闪避触发避风铃（获得3格挡）
     dodge_res = manager.apply_dodge(target, state)

@@ -44,6 +44,9 @@ def _engine(tmp_path):
 
 def _fire_reaction_spell(e, spell_x=2):
     """让靶怪普攻玩家，玩家用【先发制人】反打一次；返回 resolve 明细。"""
+    # 2026-10-03：开局自动授予的遗物里新增了【活血衣】（挨打回血），会干扰本用例的
+    # HP 断言；本用例只测反应法术冻结字段的序列化，故清空遗物。
+    e.state.relics = []
     m = Entity(name="靶怪", entity_type="怪物", blood_limit=200, current_hp=200,
                attack_count=1, attack_power=3)
     e.state.enemies.append(m)
@@ -60,8 +63,8 @@ def _fire_reaction_spell(e, spell_x=2):
                   if sp["spell_name"] == "先发制人"), None)
     assert steps, "靶怪攻击的提交里应带出【先发制人】候选"
     before["先发制人"] = {"use": True,
-                       "cycles": [[{"x": spell_x, "target_ref": steps[0]["target_ref"],
-                                    "dodge": False}]]}
+                       "steps": [{"x": spell_x, "target_ref": steps[0]["target_ref"],
+                                  "dodge": False}]}
     after = {sp["spell_name"]: {"use": False}
              for sp in target_option.get("spell_options", {}).get("after", []) or []}
     hits = [{"target_ref": "player:0", "dodge": False, "blood_shadow": False,

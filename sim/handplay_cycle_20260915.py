@@ -225,7 +225,7 @@ def _build_monster_choices(prepared: dict, policy: dict) -> list[dict]:
         hits_per = actor.get("base_hits_per_attack") or 1
         actions = actor.get("base_attack_actions") or 1
         spells = t_opt.get("spell_options") or {}
-        # spec["spells"] = {"before": {"先发制人": {"use": True, "cycles": [[{"x":5,"target_ref":"enemy:0","dodge":False}]]}}}
+        # spec["spells"] = {"before": {"先发制人": {"use": True, "steps": [{"x":5,"target_ref":"enemy:0","dodge":False}]}}}
         # 缺省一律不发动；数值与目标仍由引擎校验，驱动器不代填。
         wanted = spec.get("spells") or {}
 

@@ -97,7 +97,7 @@ def test_cannot_afford_returns_zero_instead_of_error():
 def test_mutation_stays_clear_of_collapse_line():
     """异变累加到崩解线即命零且跨战斗不回退，必须留足安全边距。"""
     ally = _ally("乞丐", hp=50, ac=2, ap=3, mut=3)
-    x = pick_ally_daowen_x(ally, "狂暴", ally)      # 异变 +5X
+    x = pick_ally_daowen_x(ally, "全力", ally)      # 异变 +5X（2026-10-03 起用【全力】替代已删的【狂暴】）
     after = ally.mutation_count + 5 * x
     assert after < Entity.MUTATION_COLLAPSE_THRESHOLD
     assert after <= Entity.MUTATION_COLLAPSE_THRESHOLD * 0.8 + 5 * 1
@@ -105,10 +105,10 @@ def test_mutation_stays_clear_of_collapse_line():
 
 def test_mutation_choice_shrinks_as_mutation_accumulates():
     """异变是累加且不可逆的预算：层数越高，后续可选 X 越小。"""
-    first = pick_ally_daowen_x(_ally("乞丐", hp=50, ac=2, ap=3, mut=3), "狂暴", None)
+    first = pick_ally_daowen_x(_ally("乞丐", hp=50, ac=2, ap=3, mut=3), "全力", None)
     ally = _ally("乞丐", hp=50, ac=2, ap=3, mut=3)
     ally.mutation_count += 5 * first
-    second = pick_ally_daowen_x(ally, "狂暴", None)
+    second = pick_ally_daowen_x(ally, "全力", None)
     assert second < first, f"异变累积后应收敛：{first} → {second}"
 
 

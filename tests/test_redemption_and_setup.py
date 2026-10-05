@@ -111,20 +111,22 @@ def test_resonance_permanently_converts_and_grants():
     engine = _ready_combat(_engine("res_ok"))
     engine.state.resonance["反转"] = 1
     _give(engine.state.player, "杀伐")
-    monster = Entity(name="狂怪", entity_type="怪物", blood_limit=80, current_hp=80,
+    monster = Entity(name="慢怪", entity_type="怪物", blood_limit=80, current_hp=80,
                      attack_count=2, attack_power=4)
-    _give(monster, "狂暴")
+    # 2026-10-03：【狂暴】删除（其反转边 狂暴→自残 一并删除），
+    # 改用仍在怪物原始道纹树上的 减速→(反转)→加速。
+    _give(monster, "减速")
     _give(monster, "全力")
     monster._had_monster_daowen = True
     engine.state.enemies[:] = [monster]
     r = engine.execute_action("use_resonance", {
-        "source_daowen": "狂暴", "resonance_type": "反转", "target_ref": "enemy:0",
+        "source_daowen": "减速", "resonance_type": "反转", "target_ref": "enemy:0",
     })
     assert r["success"]
-    assert "狂暴" not in monster.dao_wen and "自残" in monster.dao_wen
+    assert "减速" not in monster.dao_wen and "加速" in monster.dao_wen
     assert "全力" in monster.dao_wen
-    assert "自残" in engine.state.player.dao_wen
-    assert "自残" not in ORIGINAL_MONSTER_DAOWEN
+    assert "加速" in engine.state.player.dao_wen
+    assert "加速" not in ORIGINAL_MONSTER_DAOWEN
     assert not engine.state.pending_redemption
 
 

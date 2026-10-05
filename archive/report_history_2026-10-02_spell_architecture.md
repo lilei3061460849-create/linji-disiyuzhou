@@ -1,0 +1,202 @@
+# 报告：法术第二层架构收口——执行器拥有控制流、条件/循环执行期求值、生命周期落地（2026-10-02）
+
+> **归档说明（2026-10-02 晚）**：本文件是上一轮任务（法术第二层架构收口）的原文报告，已由新版 `报告.md`
+> （外围收尾 + 正式 LLM 路径彻底去 `TacticalAI` 化）取代。保留原文存史；文中"当前有效状态""当前权威"
+> 等表述以当时落笔为准。
+
+> 本文件是**当前有效状态**统一文档（口径见 `AI_EXPERIENCE.md` 文档管理规则）：只记录最新一次任务的完整结论、规则变更与待办。
+> 上一版（Phase 2：瞬发 + lifecycle 字段）已原文归档到 [`report_history_2026-09-29_spell_phase2.md`](report_history_2026-09-29_spell_phase2.md)；更早的 Phase 0/1 见 `archive/report_history_2026-09-28_spell_phase0_phase1.md`。
+> 分支 `arena/01a0fb65-linji-disiyuzhou`，基线 = `main` 的 `19cabce`（PR #43 合并后的 Phase 2 末态）。
+> **本报告取代此前"R-1 待裁定""Phase 3/4/5/6 待启动""瞬发不支持循环"的全部说法：这些项已实现并有回归测试。**
+
+---
+
+## 0. 一句话
+
+**道纹是积木，法术是由道纹写成的程序。** 程序的控制流（条件、循环）属于执行器，不属于调用方：
+调用方只提交"这个程序里每个动作槽位各自用什么 X / 打谁 / 闪不闪"，执行器一次执行一条指令、每次读**当前** GameState、每步都走**同一个**单步道纹结算核心。
+
+> 这条原则的落地含义（DM 口径，保留原文）：*在模拟层构建一个新的战斗对象，只是构造一组不同的指令序列。*
+
+---
+
+## 1. 诊断（Part 1：审计结论）
+
+审计对象：`engine/spell_execution.py`、`engine/spell_dsl.py`、`engine/combat_parts/spells.py`、`engine/api.py`、`engine/models.py`、全部法术测试与 `sim/` 提交点。**以可执行代码 + 测试为事实源，不采信 README/报告的旧描述。** 结论：
+
+| # | 旧状态 | 证据 |
+|---|---|---|
+| 1 | **循环在调用方**：`use_spell`/反应/全局/瞬发各调用点自己算 `cycles`（每轮一份步骤列表），校验期逐轮预演；调用方不提交循环就"不循环" | `_steps_for_spell_decision`/`_flow_step_variants`/`MAX_SPELL_LOOP_CYCLES` 遍布 `combat_parts/spells.py`；`test_spell_loop_mana_gain.py` 原断言"提交 N 轮 → 跑 N 轮" |
+| 2 | **条件在准备期展开**：IfStep 在校验/准备时按当时状态展开成固定步骤列表，之后执行不再看状态；嵌套只有一层 | `_flatten_flow_steps`、`_freeze_spell_decision_branch`、`_steps_for_spell_decision`；`spell_dsl` 拒收未加括号的嵌套 |
+| 3 | **多套单步逻辑**：瞬发/反应/全局各自复制"目标→存活→X→道纹可用→resolve→扣法力→闪避→生效"的片段 | 三套 `before_step`/`_daowen_step_preflight` 变体 + api 的 `_silent_by_mask`/`_pay_daowen_shard_cost` 转发 |
+| 4 | **lifecycle 只有字段没有行为**：`battle` 不会在战终清除，能活过战终进存档；没有移除 API | `models.Spell.lifecycle` 无消费方；`battle_end` 只回滚 `scoped_effect_ledger` 数值 |
+| 5 | **R-1 悬而未决**：只有瞬发的每一步算"发动道纹"，反应/全局路径不开「目标发动道纹前」窗口、不查缄默面具/飞行 | 瞬发有逐步前置检查，反应/全局路径没有 |
+| 6 | **补丁叠补丁**：分支冻结靠"引擎活引用写进调用方 dict"（曾让存档 pickle 失败，后改为字符串 token 补丁） | `test_reaction_spell_save_roundtrip.py` 的注释就是这段历史的记录 |
+
+**这些不是各自独立的 bug，而是同一个架构缺口**：执行模型把"程序"与"执行"分开放在调用方，于是每个调用点都得自己再实现一遍循环/条件/前置检查。
+
+## 2. 决策：就地重构（IN-PLACE REFACTOR），不另建第二套引擎
+
+选择就地重构，理由：
+
+1. **已有正确的骨架**：Phase 1 已落地 `SpellDefinition / SpellCastRequest / StepRequest / SpellExecution / StepResult / TriggerType / Lifecycle`，`spell_dsl` 已有 Flow AST（`ActionStep/IfStep/LoopStep`）。缺口是"执行器没拿到控制流"和"调用点还在模拟执行"，不是缺组件。
+2. **避免双引擎**：另建第二套执行器会让 `use_daowen`（生产路径）、反应/全局/瞬发、AI 预演各连一套，违反"唯一单步结算核心"。
+3. **删除优于兼容**：过渡架构（调用方 `cycles` 预展开、准备期条件展开、分支冻结补丁、重复前置检查）整体约 500 行，删掉它们的同时把语义收敛进一个执行器，比保留兼容层更简单。**没有留 `cycles` 兼容分支**：提交 `cycles` 会得到一条明确的契约错误（"请提交 steps，不要再提交 cycles"），而不是被静默接受。
+4. 目标架构（Part 2）在重构中一次到位：
+
+```
+DSL 文本 → spell_dsl 解析/校验 → AST（SpellDefinition.body）
+        → 调用方提交"每个动作槽位一条决策"的 steps（可选 max_iterations）
+        → SpellExecution 一次执行一条指令
+             ├ 读当前 GameState
+             ├ 求值 IfStep 条件 / 判断 LoopStep 是否继续
+             ├ 通过**唯一**的单步核心 _execute_single_daowen_step 执行一步
+             │   （目标/飞行/缄默面具/X/碎片代价/施法者死亡/「目标发动道纹前」窗口/闪避/生效）
+             └ 再读 GameState，继续
+        → StepResult 列表 + 中断原因 + 日志
+```
+
+## 3. 改了哪些文件
+
+| 文件 | 改动 | 行数 |
+|---|---|---|
+| `engine/combat_parts/spells.py` | 重写为"单一单步核心 + 统一 schema/校验/执行入口"：`_flow_program`（唯一规范化点）、`_slot_schema`（列全部决策槽位）、`_validate_decision`（只校验结构，不判资源）、`_decision_to_requests`、`_run_flow_spell`、`_evaluate_spell_condition`、`_execute_single_daowen_step`、`SpellStepPolicy`、`build_instant_execution`；新增第五节五（生命周期 API） | +921 / −936 |
+| `engine/spell_execution.py` | 执行器自持控制流：`_run_steps/_run_loop`、`LoopStep.max_iterations` 与 `SpellCastRequest.max_iterations` 取小、`MAX_SPELL_LOOP_ITERATIONS` 安全阀、`loop_stop_reason`、`branch_snapshot` 原地写回、`trigger_spell_logs`、`StepResult/StepStatus/InterruptReason` 扩充 | +332 / −165 |
+| `engine/spell_dsl.py` | `LoopStep`、`循环N次` 定次语法、括号分组的嵌套条件、`iter_action_slots`（槽位 + `optional` 标记）、DFS 步数统计 | +193 / −31 |
+| `engine/api.py` | `use_daowen`/`cast` 改走统一契约；删除 `_instant_step_as_daowen_declaration`；4 处全局时点 `_instruction` 改为 use/steps；`define_spell` 生命周期校验（默认 battle）；新增 `undefine_spell` 动作；`battle_end` 调用战斗作用域清理并返回 `spell_bindings_removed`；可用动作 schema 同步 | +91 / −132 |
+| `engine/combat_parts/monster_phase.py` | 去掉已废弃的 `extra_mana=pending_shouyedeng` 传参 | +3 / −3 |
+| `tests/`（11 个文件 + 2 个新增） | 契约迁移与新语义断言；新增 `test_spell_executor_semantics.py`（17 项）、`test_spell_lifecycle.py`（6 项）；`test_build_learner.py` 的陈旧 mock 补上三层口径字段 | +~600 |
+| `sim/`（13 个脚本） | 提交点从 `cycles` 迁到 `steps`+`max_iterations`；探针 `_learn` 改用战斗内自创路径 | +~250 / −~250 |
+| `法术索引.md`、`AI_EXPERIENCE.md` | 循环/条件/瞬发/生命周期的规则与提交格式同步 | +~100 |
+
+总计 `git diff --stat`：**30 个文件，+2037 / −1548**。
+
+## 4. 架构改动（Part 2/5：执行契约）
+
+**唯一单步核心**：`_execute_single_daowen_step(definition, step, entry, caster, attacker, refs, trigger_label, target_resolver, skip_predicate, policy, step_key, iteration)`。`use_daowen`、瞬发、反应、全局自动法术、AI 预演全部经它；前置环节顺序与旧 `use_daowen` 逐字一致（目标合法/飞行 → 缄默面具 → 「目标发动道纹前」窗口 → 施法者存活 → X → 道纹可用 → 碎片代价 → resolve → 扣法力/流血 → 闪避 → 生效）。
+
+**三分错误模型**（Part 5）：
+
+| 类别 | 例子 | 表现 |
+|---|---|---|
+| 契约错误 | 句式错、槽位数不符、X 非正整数、未持道纹、`max_iterations` 非法、缺 `target_ref`、反应提交不完整 | 提交时 `success=False` + error，**不扣出手、不结算任何一步** |
+| 运行期中断 | 法力/碎片不足、目标进入飞行、道纹被封印、缄默面具、施法者被反杀命零、循环安全阀 | `success=True` + `execution_status="interrupted"` + `interrupt_reason`；**已结算的步骤/轮次保留，不回滚，出手不退** |
+| 引擎/程序错误 | 道纹计算异常、AST 非法、条件求值异常 | `FAILED`，显式中断原因（`spell_execution` 不吞异常为"游戏中断"） |
+
+**确定性出手**：整次 `cast` 只扣 1 次出手，与步骤数、轮数无关；结构非法时一次都不扣。
+
+## 5. IfStep（Part 3）
+
+- **执行期求值**：条件在走到它的那一刻按当前状态求值；前面的步骤改了生命/法力/道纹层数，后面的条件就按新值判断。循环体里的条件**每轮重新求值**。回归：`test_spell_executor_semantics.py::test_if_is_evaluated_when_reached_not_precomputed`、`test_loop_re_evaluates_condition_every_round`。
+- **嵌套**：DSL 支持括号分组的嵌套（`若A 则（若B 则 C 否则 D）否则 E`）；"一个若只能有一个顶层否则"的限制**保留且更明确**——出现第二个未分组的"否则"直接报错并提示用括号（不再靠猜归属）。一个分支里多个动作用 `；` 分隔。
+- **分支冻结（事件级规则，保留并显式化）**：同一份提交在多次命中中复用时，第一次执行做出的分支选择写回该提交（`branch_snapshot`，键是稳定的槽位路径如 `"0L0"`），后续命中沿用，不会因为第一击产出的法力让第二击换分支。回归：`test_spell_loop_mana_gain.py::test_blood_splash_branch_evaluated_at_execution_and_frozen_across_hits`（低法力分支 + 承露盏把法力推过阈值仍冻结）。
+- **提交契约**：条件**两侧**的步骤都要各给一条（顺序 = 程序槽位顺序；`spell_options[].steps` 带 `optional` 标记），执行时只消费走到的分支。这样校验与结算永远看到同一组槽位，旧架构"步数随分支漂移"的问题从根上消失。
+
+## 6. LoopStep（Part 4）
+
+- **执行器拥有迭代**：`LoopStep` 逐轮执行，每轮重读 GameState（法力支出/产出、施法者命零、目标失效、道纹不可用、反应中断）。调用方**不再计算 `cycles`**，只提交每个槽位一条决策，可选 `max_iterations`（"我最多跑几轮"，与程序里的 `循环N次` 取小）。
+- **程序里的轮数写法**：`→循环`、`→循环直到法力耗尽`、`→循环3次`（定次）。
+- **终止条件**：施法者命零（`caster_dead`）→ 步中断（`mana_insufficient` 等）→ 本轮无进展（`no_progress`，正常结束）→ 轮数上限（`max_iterations`，正常结束）。
+- **安全阀**：`MAX_SPELL_LOOP_ITERATIONS = 10_000`（工程保险丝，不是游戏规则；文档与模块 docstring 都写明）。触达时 `loop_guard` 中断并给明确原因，不静默停止。回归：`test_loop_hits_engineering_fuse_with_explicit_reason`（monkeypatch 到 3 轮验证）。
+- **删掉"硬编码轮数当语义"**：`MAX_SPELL_LOOP_CYCLES` 与调用方 `cycles` 全部删除；`sim/` 里的提交点改为"一条槽位决策 + 轮数上限"。
+
+## 7. 生命周期（Part 6）
+
+| 生命周期 | 行为 |
+|---|---|
+| `instant` | `cast(flow=...)`：执行一次即弃，不写 `entity.spells`/`armed_spells`，不留任何绑定 |
+| `battle` | **战斗内自创法术的默认值**：承认它是"本场即兴发明"；`battle_end` 时由引擎清除（`clear_battle_scoped_spells()`，含朋友/员工的绑定；在【战终】全局法术结算**之后**执行，避免清掉战终法术自己要用的绑定），被清的条目在 `battle_end_result["spell_bindings_removed"]` 里列出 |
+| `permanent` | 显式声明才跨战斗保留；正常存档语义 |
+
+- **事实源只有两处**：`entity.spells`（自创定义）与 `entity.armed_spells`（内置装配意图），没有引入第二张 binding 表。
+- **新增移除 API**：`undefine_spell` 动作（自创定义或内置装配，**不花出手**），与 `use_spell(disarm=true)` 互补。
+- **定义入口校验**：`define_spell` 只接受 `battle`/`permanent`（传 `instant` 或其它值 → 契约错误、不扣出手）；`cast(flow=...)` 恒为 `instant`；内置法术/旧【学习】入口为 `permanent`；`_serialize_entity_full` 还原时 `spell.get("lifecycle", "permanent")`。
+- **存档/读档**：`SAVE_FORMAT_VERSION` 保持 5（**刻意不升版**）。战斗中的存档往返会保留 battle 绑定（战斗还没结束，语义正确），战终清理后再存就读不到了；旧存档里的 `Spell` 没有 `lifecycle` 实例属性时按类默认 `permanent` 处理（`test_spell_lifecycle.py::test_legacy_spell_without_lifecycle_attribute_is_permanent`）。旧的 `cycles` 只存在于 `action_history` 这类惰性记录里，读档不重放、不校验，故无需迁移。
+- 知识库同步：`法术索引.md` §一、`AI_EXPERIENCE.md` 已写入；文档里"[战终]可以进行修订"的承诺现在有对应行为与测试。
+
+## 8. 反应/全局/瞬发的一致性裁定（Part 7/8，R-1 定稿）
+
+**R-1 裁定：法术的每一步都是一次"发动道纹"。** 与 `use_daowen` 走同一批前置环节，四类法术同口径：
+
+| 前置环节 | use_daowen | 瞬发 | 反应（事件型） | 全局时点 |
+|---|---|---|---|---|
+| 目标合法/飞行不可选中 | ✅ | ✅ | ✅ | ✅ |
+| 缄默面具（带代价道纹） | ✅ | ✅ | ✅ | ✅ |
+| 缄默面具（消耗类） | 允许 | 允许 | 允许 | 允许 |
+| 施法者命零即止 | ✅ | ✅ | ✅ | ✅ |
+| 碎片代价（赌命/消灾） | ✅ | ✅ | ✅ | ✅ |
+| 道纹可用（冷却/封印） | ✅ | ✅ | ✅ | ✅ |
+| 「目标发动道纹前」窗口 | 开 | 开（每步各自提交） | **不开** | **不开** |
+
+**唯一显式差异**编码在 `SpellStepPolicy` 里（`allow_trigger_reactions`），由执行位置决定：正在结算反应法术时（reaction_depth>0）不再开新的「目标发动道纹前」窗口，从而**A→B 允许、A→B→A 阻断**，与"反应链只允许 1 层"的语义在语义层一致，而不是在某个函数里靠 early-return 实现。回归：`test_spell_executor_semantics.py` 的 `test_instant_step_opens_target_before_daowen_window`、`test_event_path_does_not_open_trigger_window`、`test_event_path_applies_silence_mask_to_step`、`test_event_path_pays_shard_cost_and_interrupts_when_short`、`test_event_path_flight_blocks_step_with_explicit_reason`、`test_multiple_independent_reactions_on_one_event`、`test_reaction_resolution_does_not_chain_into_itself`、`test_same_interruption_reason_and_detail_as_use_daowen`（连报错文案都与 `use_daowen` 对齐）。
+
+已知并保留的流程特例（不改）：【咎由自取】的"坠落仅在目标飞行时结算""血债需要前序伤害"用 `skip_predicate` 表达，与旧实现逐字一致；其中"有前序伤害时跳过血债"与其 detail 文案相反，属未裁定的历史行为，见 §12。
+
+## 9. 删除的过渡架构（Part 9）
+
+| 删除项 | 说明 |
+|---|---|
+| 调用方 `cycles` 预展开（`_steps_for_spell_decision`、`_flow_step_variants`、`_flow_step_signature` 等） | 循环改由执行器拥有；提交 `cycles` 现在得到明确契约错误 |
+| `MAX_SPELL_LOOP_CYCLES` 及其校验期逐轮预演 | 换成执行期 `LoopStep` + `MAX_SPELL_LOOP_ITERATIONS` 安全阀 |
+| 准备期条件展开（`_flatten_flow_steps` 在准备/校验路径的使用） | IfStep 改为执行期求值；`_predict_flat_steps` 仅保留给"引擎自动装配时的 X 预算预测"，docstring 已注明它不产出执行用步骤列表 |
+| `_freeze_spell_decision_branch` 及"引擎活引用写进调用方 dict"的冻结补丁 | 换成执行器原地写回 `branch_snapshot`（字符串键、可序列化） |
+| api 的 `_instant_step_as_daowen_declaration`（66 行） | 每步"发动道纹"改由统一单步核心天然提供 |
+| api 的 `_silenced_by_mask` / `_pay_daowen_shard_cost` 转发 | 直接调用 `combat.silenced_by_mask` / `combat.pay_daowen_shard_cost` |
+| 反应/全局路径各自复制的单步前置片段、重复的 `_daowen_skip` 定义 | 收敛到 `_daowen_step_preflight` + `SpellStepPolicy` |
+| `sim/` 13 个脚本的 `cycles` 提交 | 迁到 `steps` + `max_iterations`（语义保持：老的"一轮"写法 → `max_iterations=1`） |
+
+静态搜索（`engine/` + `sim/` + `main.py` + 全部 `tests/`）：`_flatten_flow_steps`、`_flow_step_variants`、`_steps_for_spell_decision`、`_freeze_spell_decision_branch`、`SpellBinding`、`before_step`、`flat_steps`、`request.cycles`、`MAX_SPELL_LOOP_CYCLES`、`_instant_step_as_daowen_declaration` 均**零命中**（仅剩文档/注释里的历史说明）。`spells.py` / `spell_execution.py` / `spell_dsl.py` 的全部方法与类均有消费方（脚本化扫描无孤儿）。
+
+## 10. 测试结果（Part 10/13）
+
+**专项（13 个法术/反应测试文件，175 项）**：`test_spell_dsl`、`test_phase2_instant_cast`、`test_spell_loop_mana_gain`、`test_spell_executor_semantics`（新）、`test_spell_lifecycle`（新）、`test_reaction_nesting`、`test_shouyedeng_reaction_spells`、`test_reaction_spell_save_roundtrip`、`test_after_life_lost_any_hp_loss`、`test_other_reaction_windows_non_attack`、`test_automatic_seal_spell`、`test_learn_spell_prerequisite`、`test_engine` → **175 passed**。
+
+**全量**：
+
+```
+python -m pytest tests/ -q     → 3 failed, 1840 passed, 3 xfailed in 116.27s
+```
+
+三个失败**都是既有的规则型 AI 策略测试，与本轮无关**，且已在干净 `HEAD`（`19cabce`）的 worktree 上复现同样的失败（不是本轮回归）：
+
+1. `test_ai_basic_attack_candidate::test_at_one_by_one_daowen_still_wins`（1 血场景 AI 选了普攻，候选评分问题）
+2. `test_ai_tactics::test_ai_can_declare_parry_under_lethal_threat`（招架声明路径）
+3. `test_win_only_ai::test_win_only_includes_parry_in_real_candidate_path`（同上）
+
+另有一项基线失败**本轮修好**：`test_build_learner::test_valid_and_invalid_are_separated` —— 该测试的 mock 返回值停留在旧口径（只给 `cleared/won`），与 build_learner 现在的"PVE/PVP/完整通关三层口径"不符，属**陈旧测试**；已补上 `pve_won/pvp_reached/pvp_won/full_won` 四个字段，断言意图不变（无效局不计入分母）。
+
+新语义的关键断言（可作验收句）：
+
+- IF 执行期求值（含嵌套）、循环每轮重新求值：前置步骤改了状态就改变分支走向；
+- 定次循环恰好 N 轮；空转循环 `no_progress` 正常结束而非死循环；安全阀触达给 `loop_guard`；
+- 法力耗尽的循环 = 运行期中断，已结算轮次保留；
+- 事件型法术步骤同样受缄默面具/飞行/碎片代价/施法者死亡约束，报错文案与 `use_daowen` 一致；
+- battle 法术在战终被清（含朋友/员工）、permanent 保留；旧对象无 `lifecycle` 属性按 permanent；
+- instant 不产生任何绑定；战斗中存档往返保留 battle 绑定、战终后清除。
+
+## 11. 剩余债务
+
+1. **`sim/` 探针的脚手架陈旧**（与本轮契约无关，基线即坏）：`sim/probe_custom_spell_triggers.py`、`probe_damage_pipeline_triggers.py`、`probe_trigger_condition_syntax.py`、`probe_global_trigger_spells.py` 现在能过"学习/触发时机"段（已改用战斗内自创路径），但继续跑会遇到**其它 API 早于本轮就改过的形状**：怪物阶段的 `daowen` 声明形状、`trigger_spell_choices` 必须覆盖全部持有者、死斗对手的遗物选择流程。这些脚本是开发用探针，不是测试；建议后续单独一轮把它们对齐当前怪物阶段契约。
+2. `sim/handplay_20260821.py`、`sim/produce_real_winners.py`、`sim/start_cycle_showcase.py` 等手操脚本已按新契约迁移提交格式，但未逐个重跑（它们依赖具体副本/事件的种子，历史上也不是每次可复现）。
+3. 规则型 AI（`TacticalAI`）已停用，但 3 个策略测试仍挂着（见 §10）；是否连同 `sim/` 对照脚本一起删除仍是待裁定项 AI-2。
+4. 知识库 KB-1（"出手固定 2 次"旧条目）仍有 `AI_EXPERIENCE.md` 第 179/289/1168 行、`README.md` 第 43 行未改。
+
+## 12. 刻意未改动（Part 11：不顺手改无关规则）
+
+- **道纹公式、副本/怪物/遗物内容、灵魂/碎片经济、轮回、未完成副本**：一行未动。
+- **【咎由自取】的 `血债` 跳过判定**：沿用旧实现字面行为（"有前序伤害时跳过血债"），与其 detail 文案相反；属未经裁定的历史行为，本轮只把它显式化并加注释，不改语义。
+- **非攻击路径的自动反应（`_fire_auto_reaction`）**：只做契约迁移，不重新设计其 X 预算/目标策略。
+- **`TacticalAI` / `AIPlayer` 规则层**：涉及 `models.py` 红线 E 与 ~100 个 `sim/` 脚本，不删除、不改。
+- **`Spell.lifecycle` 的序列化版本号**：不升 `SAVE_FORMAT_VERSION`（理由见 §7），旧档按类默认 permanent 兼容。
+- **报告/文档里的历史实验记录**（`data/experiments/*`、`archive/*`）：保留原文，只在归档头标注时点。
+
+## 附：仍待办（置顶）
+
+| 编号 | 内容 | 状态 |
+|---|---|---|
+| AI-2 | 是否彻底删除 `TacticalAI`（`engine/ai_tactics.py`、`ai_preview.py`）、依赖它的 sim/ 对照脚本和 3 个失败测试？ | 待裁定 |
+| KB-1 | "出手固定 2 次"旧条目：`AI_EXPERIENCE.md` 179/289/1168、`README.md` 43 行 | 待修 |
+| KB-2 | 通读全库排查更多规则矛盾（道纹代价、遗物叠加、自动反应 X 选择等） | 持续 |
+| ④ 副本 | 四阶副本【怠惰之罪·温柔乡】正文/怪物/事件/遗物名 | 待用户提供 |
+| 8 项核对 | 狂暴/兴奋/急速/坠落/避风铃/守夜灯/残骸/冥婚 的规则口径 | 待用户确认 |
+| 探针对齐 | 见 §11.1（怪物阶段 `daowen`/`trigger_spell_choices` 形状） | 待排期 |

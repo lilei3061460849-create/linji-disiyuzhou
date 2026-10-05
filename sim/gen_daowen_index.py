@@ -29,14 +29,18 @@ from engine.dungeons import load_dungeon_documents  # noqa: E402
 
 DaoWenEngine.register_all()
 
-PANEL = re.compile(r'^([\u4e00-\u9fff\w·]+)[（(](\d+)[×x](\d+)/(\d+)(?:[，,]([^)）\n]*))?[）)]')
+# 面板行两种历史格式都要认：旧 `名字（血限×法限/速限，道纹…）`、新 `名字（血限/法限/速限，道纹…）`。
+# （2026-10-03 修：旧正则只认旧的 × 格式，导致「承载怪物」整列被清空。）
+PANEL = re.compile(r'^([\u4e00-\u9fff\w·]+)[（(](\d+)(?:[×x](\d+)|/(\d+))/(\d+)(?:[，,]([^)）\n]*))?[）)]')
 
 # ---------- 采集 ----------
 effects, costs, params_of = {}, {}, {}
 for name, fn in DaoWenEngine._registry.items():
     doc = (fn.__doc__ or "").strip().splitlines()
     first = doc[0].strip()
-    m = re.match(r'^\S+?X：(.+?)。(.*)$', first)
+    # 2026-10-03：容忍道纹名后的括注（如「全速X（原名【迟滞】）」「必中X（2026-09-28 二次更正）」），
+    # 括注不参与解析；效果正文仍取紧随其后的第一段。
+    m = re.match(r'^\S+?X(?:/[A-Za-z]+)?(?:（[^）]*）)?[：:](.+?)。(.*)$', first)
     assert m, f"{name}: docstring 格式无法解析: {first!r}"
     costs[name] = m.group(1)
     eff = m.group(2)
@@ -48,12 +52,17 @@ carriers = defaultdict(list)
 for region, text in sorted(load_dungeon_documents().items()):
     for line in text.splitlines():
         m = PANEL.match(line.strip())
-        if m and m.group(5):
-            for n, v in re.findall(r'([\u4e00-\u9fff]{2})(\d+)', m.group(5)):
-                if n in DaoWenEngine._registry:
-                    entry = f"{m.group(1)}{v}"
-                    if entry not in carriers[n]:
-                        carriers[n].append(entry)
+        if m and m.group(6):
+            # 新面板格式的道纹列不带次数（如「畸变，衰败，狂暴」），旧格式带次数（如「执念2」）。
+            # 两种都解析：有次数就带次数，没有就只记怪物名。
+            for token in re.split(r'[，,、]', m.group(6)):
+                token = token.strip()
+                mm = re.match(r'^([\u4e00-\u9fff·]+?)(\d+)?$', token)
+                if not mm or mm.group(1) not in DaoWenEngine._registry:
+                    continue
+                entry = f"{m.group(1)}{mm.group(2) or ''}"
+                if entry not in carriers[mm.group(1)]:
+                    carriers[mm.group(1)].append(entry)
 
 # 残韵边（出/入）
 out_edges, in_edges = defaultdict(list), defaultdict(list)
@@ -78,6 +87,19 @@ def target_label(name):
         return "全局"
     return "自身"
 
+# 确定性顺序（2026-10-03 修）：REGION_EXCLUSIVE_DAOWEN 的值是 **set**，直接迭代会得到
+# 随进程变化的哈希序——每次重新生成索引，副本专属段与总览表里的行序都会漂移。
+# 这里改为确定口径：先按该副本闭环链的出场顺序，其余按名字排序补齐。
+def region_daowen_order(region: str) -> list:
+    ns = set(REGION_EXCLUSIVE_DAOWEN[region])
+    chain: list = []
+    for src, _rtype, dst in ResonanceEngine.CLOSED_LOOPS.get(f"{region}闭环", []):
+        for n in (src, dst):
+            if n in ns and n not in chain:
+                chain.append(n)
+    return chain + sorted(ns - set(chain))
+
+
 # 分类
 CATEGORY = {}
 for n in SHAFA_LOOP_DAOWEN:
@@ -86,8 +108,8 @@ for n in ORIGINAL_MONSTER_DAOWEN:
     CATEGORY[n] = "original"
 for n in MONSTER_TRANSFORM_DAOWEN:
     CATEGORY[n] = "transform"
-for region, ns in REGION_EXCLUSIVE_DAOWEN.items():
-    for n in ns:
+for region in REGION_EXCLUSIVE_DAOWEN:
+    for n in region_daowen_order(region):
         CATEGORY[n] = region
 for n, region in UNIMPLEMENTED_REGION_EXCLUSIVE_DAOWEN.items():
     CATEGORY[n] = "unimpl"
@@ -163,7 +185,7 @@ for name in sorted(DaoWenEngine._registry, key=lambda n: (list(CATEGORY).index(n
     pass
 order = (list(SHAFA_LOOP_DAOWEN) + sorted(ORIGINAL_MONSTER_DAOWEN)
          + sorted(MONSTER_TRANSFORM_DAOWEN)
-         + [n for r in ("扭曲都市", "罪孽都市", "龙心谷", "乱葬岗") for n in REGION_EXCLUSIVE_DAOWEN[r]]
+         + [n for r in ("扭曲都市", "罪孽都市", "龙心谷", "乱葬岗") for n in region_daowen_order(r)]
          + list(UNIMPLEMENTED_REGION_EXCLUSIVE_DAOWEN))
 for name in order:
     out = "、".join(out_edges[name]) if out_edges[name] else "—"
@@ -228,7 +250,7 @@ section("怪物转化道纹（19）", sorted(MONSTER_TRANSFORM_DAOWEN),
                     "该道纹永久变为转化道纹，施法者同时永久获得。人类无法直接学习怪物道纹，只能经此路径。"])
 
 for region in ("扭曲都市", "罪孽都市", "龙心谷", "乱葬岗"):
-    ns = REGION_EXCLUSIVE_DAOWEN[region]
+    ns = region_daowen_order(region)
     tier = REGION_TIERS[region]
     section(f"{region}专属（8）", list(ns),
             note_lines=[f"副本阶级：{'一二三四'[tier-1]}阶（道纹递增+{2*tier}/次）。学习门禁：先经残韵从本副本怪物处"

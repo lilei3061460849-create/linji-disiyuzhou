@@ -1,0 +1,128 @@
+# 报告：法术系统重构 Phase 2 完成——瞬发 + lifecycle；AI 全面改用 LLM（2026-09-29）
+
+> **归档说明（2026-10-02）**：本文件是法术重构 Phase 2 版 `报告.md` 的原文快照（基线 `19cabce` = PR #43 合并后的末态），Phase 3–6 完成后归档。当前有效状态见根目录 [`报告.md`](../报告.md)。
+> 本文件原文里"Phase 3/4/5/6 待启动""R-1 待裁定"等说法**在归档时点已全部实现**，保留原文只为留痕。
+> Phase 0/1 版报告见 [`report_history_2026-09-28_spell_phase0_phase1.md`](report_history_2026-09-28_spell_phase0_phase1.md)。
+> 分支 `arena/01a0e397-linji-disiyuzhou`，基线是远端 Phase 1 提交 `255c513`。
+> **怎么看到本报告**：GitHub 仓库首页显示的是 `main`，它还停在 `e4aad81`（9-23）。本轮全部改动在上面这个分支上，要合并 PR 后 `main` 才会更新。
+
+## 🆕 本轮追加：不用规则型 AI，全部改用 LLM AI（用户令 2026-09-29）
+
+| 项 | 改动前 | 改动后 |
+|---|---|---|
+| 轮回者自己的战斗行动 | `AIPlayer` 默认 `tactical_combat=True`，战斗回合绕过 LLM，交给规则型 `TacticalAI` 打分选择 | 默认 `tactical_combat=False`：**所有决策都由 LLM backend 给出**（开局、选区、事件、局外、自己的战斗行动、他人回合的闪避/招架/反应） |
+| 非法提交 | 规则层预先过滤 | 由引擎 `execute_action` 拒绝，没有规则 AI 兜底 |
+| SYSTEM_PROMPT | 缺招架/聚能/蓄锐，也没说明战斗回合怎么结束 | 补上 `declare_parry`/`focus`/`rest`，并写明"出手用完或不想再出手时提交 prepare_monster_phase""先看致死进度再出手" |
+| 没配 API key | — | 只能用 `PlaceholderBackend`：离线测试桩，按写死顺序提交合法动作，**不是游戏策略**。真实对局需设置 GEMINI/GROQ/OPENROUTER/DEEPSEEK 任一 API key |
+| `TacticalAI` | 游戏战斗的实际决策者 | 游戏中停用；只作为 sim/ 对照实验的基类保留（旧脚本显式传 `tactical_combat=True` 才会用到） |
+
+- 测试：`tests/test_unified_ai.py` 改为用脚本化后端模拟 LLM，断言战斗回合**确实问了 LLM**，且可用动作里有 `declare_parry` 和 `cast`；新增 `test_ai_player_default_does_not_use_rule_tactics`（默认调用规则层就直接报错）。`tests/test_ai_memory.py` 的记忆测试也改为由模拟 LLM 决定招架。原本就失败的 `test_unified_ai` 因此修好了。
+- 知识库：`AI_EXPERIENCE.md`（统一 AI 段）、`engine/README.md`（模块说明）已同步。
+- 剩下 4 个失败都是**规则型 AI 自身的**策略测试（`test_ai_basic_attack_candidate`、`test_ai_tactics` 招架、`test_build_learner`、`test_win_only_ai` 招架），测的是已经停用的 TacticalAI，与游戏行为无关。要不要连同 TacticalAI 和 sim/ 实验脚本一起删掉，见待办 AI-2。
+
+---
+
+## 📌 当前待办（置顶）
+
+> 最新、最高优先级在最上。
+
+| 编号 | 内容 | 状态 | 等待 |
+|---|---|---|---|
+| **R-1** | 反应法术、全局自动法术的每一步是否也算"发动道纹"？如果算，就会触发对方的「目标发动道纹前」反应，和"反应链只允许 1 层"冲突。本阶段只让**瞬发**每步算发动道纹，反应/全局路径保持原样 | **待裁定** | 用户裁定 |
+| Phase 3 | IfStep 改为执行时求值，同时保留"同一次反应命中多个目标时分支冻结"的事件级规则。瞬发里的 IfStep 目前仍在施法那一刻展开 | 待启动 | 用户确认进入 Phase 3 |
+| Phase 4 | LoopStep 由执行器自己迭代，取消调用方手工展开 cycles。瞬发目前**直接拒绝**带"循环"的流程 | 待 Phase 3 | — |
+| Phase 5 | define_spell 默认 lifecycle=battle；战斗结束时清掉 battle 绑定；存档不保存 battle 绑定；补 undefine_spell。现在 battle 只有字段，没有行为 | 待 Phase 4 | — |
+| Phase 6 | 8 个压力测试 + 反应边界回归 | 待 Phase 5 | — |
+| AI-1 | ~~规则型 AI 不会生成 cast(flow)~~ | **已解决**：用户令改为全用 LLM，规则型 AI 不再参与游戏决策 | — |
+| AI-2 | 是否彻底删除 `TacticalAI`（engine/ai_tactics.py、ai_preview.py）、依赖它的 sim/ 对照实验脚本和它的 4 个失败测试？当前只是停用、保留代码 | 待裁定 | 用户裁定 |
+| KB-1 | 知识库矛盾：AI_EXP/README/engine.README 里"出手固定 2 次、唯一额外来源是遗物"的旧条目，要补上"蓄锐（rest）+1 出手"也是合法来源；怪物 action_count 应改成"按面板，多数怪物是 1 攻 + 1 道纹" | **部分完成**：AI_EXPERIENCE 的出手规则段已补上蓄锐；AI_EXP 第 179/289/1168 行、README 第 43 行仍是旧说法 | — |
+| KB-2 | 通读全库，排查更多规则矛盾（道纹代价、遗物叠加、自动反应的 X 选择、必中自增益口径等） | 持续进行 | — |
+| ④ 副本 | 四阶副本【怠惰之罪·温柔乡】的正文、怪物、事件、遗物名还没定 | 挂待办 | 用户提供 |
+| 8 项核对 | 狂暴/兴奋/急速/坠落/避风铃/守夜灯/残骸/冥婚 的规则口径 | 挂待办 | 用户确认 |
+| Phase 0 遗留问题 | 7 项中第 1 项（瞬发 X 的提交形式）已按"一次提交全部步骤"落实；其余 6 项（循环终止语法、自动路径 X 策略、镇魔印自动策略、旧存档 lifecycle、IfStep 深度上限、新反应提交结构）原文见归档 §六 | 逐 Phase 处理 | — |
+
+---
+
+## 1. 基线
+
+- 开工前：`git fetch` 后 HEAD = 远端 `255c513`（Phase 0 `3909e9f` → Phase 1 `4d978c8` → `e583298` → `255c513`），工作区干净。
+- 基线全量测试：**1779 passed / 5 failed / 3 xfailed**。5 个失败都是既有的 AI 策略测试，与法术系统无关（见 §7）。
+- **开工前的一次纠错**：上一轮我在一个陈旧的本地 checkout（`e4aad81`）上工作，里面没有远端的 Phase 1 提交，所以当时"SpellDefinition 等类不存在"的审计结论**是错的**，改动也一直没推送。这也是你看到"报告还是 5 小时前"的原因。本轮已经对齐远端，Phase 2 完全建立在远端 Phase 1 的 `SpellDefinition / SpellCastRequest / StepRequest / SpellExecution / StepResult / TriggerType / Lifecycle` 上，没有另建第二套。
+
+## 2. 修改文件
+
+| 文件 | 改动 |
+|---|---|
+| `engine/spell_execution.py` | `InterruptReason` 新增 `shards_insufficient / caster_dead / trigger_choices_invalid`；`SpellExecution` 新增 `before_step` 回调和 `step_extras`（执行器本身不含规则）；新增 `step_summaries()`；`TriggerType.IMMEDIATE` 接线 |
+| `engine/combat_parts/spells.py` | 新增 `_instant_target_resolver`、`build_instant_execution`（只做组装和契约校验，不做任何结算） |
+| `engine/api.py` | `cast` 新增 `flow` 分支 → `_action_cast_instant`；新增每步"发动道纹"钩子 `_instant_step_as_daowen_declaration`；从 use_daowen 抽出共用函数 `_silenced_by_mask`、`_pay_daowen_shard_cost`；define_spell 拒绝瞬发并写入 lifecycle；读档处理 lifecycle；可用动作列表加入 cast(flow) |
+| `engine/spell_dsl.py` | 新增 `TRIGGER_INSTANT="瞬发"`（只精确识别"瞬发"/"immediate"，不收模糊同义词）；`parse_instant_flow`；瞬发允许的目标身份 |
+| `engine/models.py` | `Spell` 新增 `lifecycle`（默认 permanent）和 `trigger` 字段，序列化兼容旧存档 |
+| `engine/ai_player.py` | SYSTEM_PROMPT 补充 cast(flow) 用法和"先算清再提交、失败不退出手" |
+| `tests/test_phase2_instant_cast.py` | 新增，32 项 |
+| `法术索引.md` §5.4、`AI_EXPERIENCE.md`、`engine/README.md` | 知识库同步（见 §4） |
+| `报告.md` / `archive/…phase0_phase1.md` | 本报告 / 旧报告归档 |
+
+## 3. 实际实现
+
+- **TriggerImmediate**：`TriggerType.IMMEDIATE` 由 `build_instant_execution` 写入 `SpellDefinition.trigger`；DSL 层 `parse_trigger("瞬发")` 和 `parse_trigger("immediate")` 都返回 `"瞬发"`，旧触发条件的解析不变。
+- **Lifecycle**：瞬发构造的是 `SpellDefinition(trigger=IMMEDIATE, lifecycle=INSTANT)`。`models.Spell.lifecycle` 三态都能序列化和读回；没有该字段的旧对象、旧存档按 permanent 处理；define_spell 在 Phase 5 之前保持 permanent。
+- **cast(flow=...)**：`_action_cast` 看到 `flow` 参数就走 `_action_cast_instant`，不转发给 use_daowen/use_spell。
+- **执行路径**：`SpellExecution.run_all()` → 每步先跑 `before_step`（发动道纹前置环节）→ 再调用远端 Phase 1 的 `_execute_single_daowen_step`（目标 → 存活 → X → 道纹可用 → resolve → 扣法力 → 闪避 → 生效）。没有复制任何 resolve/spend/dodge/apply 代码。
+- **X 提交**：一次 cast 提交完整 `steps=[{x, target_ref?, dodge?, dodge_relic_target_ref?, trigger_spell_choices?}]`，每步用自己的 X，执行中途不能改。
+- **逐步资源检查**：不做总费用预检。每一步由核心按**当时的真实法力**判定。不足时这一步是 `interrupted(mana_insufficient)`，已结算的步骤保留，不回滚，也不抛 ValueError。
+- **每步都算"发动道纹"（按你的裁定）**：`before_step` 按 use_daowen 的顺序走完：飞行不可选中 → 缄默面具 → 敌方「目标发动道纹前」反应 → 施法者是否还活着 → 赌命/消灾碎片代价。无神放在瞬发目标解析器里：施法者处于无神时，每一步都打自己，和 use_daowen 是同一条规则。
+- **instant 不留绑定**：不写 `entity.spells`、`armed_spells`，也不产生 SpellBinding。
+- **目标身份**：复用「目标发动道纹前」的 `_trigger_spell_subject`：`于目标`→本次 target_ref，`于自身/于施法者`→施法者，`于任意目标`→该步的 target_ref。瞬发里没有"攻击者"，写了直接拒绝。
+
+## 4. API 行为与知识库
+
+| 情况 | 返回 | 出手 |
+|---|---|---|
+| 句式错误、步数不全、X 或 dodge 非法、没持有道纹、目标飞行、含循环、缺少或非法 `trigger_spell_choices` | `success=False` + error（契约错误，不吞） | **不扣** |
+| 结构合法、全部完成 | `success=True, execution_status="completed"` | 扣 1 |
+| 某步法力或碎片不足、缄默面具、施法者被反应命零、执行时道纹被封印 | `success=True, execution_status="interrupted"`，附 `interrupt_reason`，已结算步骤保留 | 扣 1，**不退**（第一步就不足也扣） |
+| 道纹计算异常（程序错误） | `success=False, execution_status="failed"` | 扣 1 |
+
+返回里有 `step_results`（每步状态、原因、X、目标、实际花费、产出法力、该步触发的反应日志）和旧格式的 `steps` 日志。
+
+知识库同步：`法术索引.md` §5.4 写完整规则和示例；`AI_EXPERIENCE.md` 加瞬发摘要和 4 条要点（先算清再提交、失败不退、每步都会触发对方反应、瞬发不能保存）；`engine/README.md` 补动作说明；SYSTEM_PROMPT 同步。
+
+## 5. 新增测试（`tests/test_phase2_instant_cast.py`，32 项）
+
+单步 / 双步 / 三步都只扣 1 出手；每步用自己的 X；第二步法力不足时保留第一步；第一步不足直接停；三步压力测试（总费用 6 > 5 不被预检拦截，第三步中断）；0 法力起手先透支再杀伐（证明每步读的是真实法力）；执行时道纹被封印 → interrupted；必须经过单步核心（打桩验证）；不产生绑定；目标身份映射；目标飞行 / 写了攻击者 / 6 类契约错误都拒绝且不扣出手；必须持有道纹；DSL 触发解析；lifecycle 默认值与序列化往返；define_spell 保持 permanent 并拒绝瞬发；旧 cast(kind=daowen) 不变；**裁定相关**：每步各触发一次咎由自取、缺反应提交时拒绝且不扣出手、施法者被反应命零 → `caster_dead` 中断且出手照扣、无神打自己、缄默面具中断代价步骤、赌命碎片不足 → 正常中断、赌命照付碎片。
+
+## 6. 测试结果
+
+```
+python3 -m pytest -q tests/test_phase2_instant_cast.py   → 32 passed
+python3 -m pytest -q                                      → 1811 passed, 5 failed, 3 xfailed（Phase 2 提交时）
+python3 -m pytest -q                                      → 见文末"最终测试"（改用 LLM 后）
+```
+
+## 7. 回归结果
+
+- 全量从 1779 → 1811 通过，新增的 32 项全部通过。**失败的仍是同样 5 个基线 AI 测试**，本轮没有新增失败：`test_ai_basic_attack_candidate::test_at_one_by_one_daowen_still_wins`、`test_ai_tactics::test_ai_can_declare_parry_under_lethal_threat`、`test_build_learner::test_valid_and_invalid_are_separated`、`test_unified_ai::test_ai_player_is_the_combat_and_high_level_entrypoint`、`test_win_only_ai::test_win_only_includes_parry_in_real_candidate_path`。
+- 反应嵌套、循环法力、use_daowen、use_spell、define_spell、文档结构测试全部照过。反应/全局/道纹前三条路径的目标失效语义（skipped + 继续；道纹前路径不查存活）没有改动。
+
+## 8. 未解决问题
+
+1. **R-1**（见置顶）。
+2. 碎片代价的顺序有细微差异：use_daowen 是先扣法力再付碎片；瞬发是先确认法力够、再付碎片，最后由核心扣法力。两者都保证"法力不够时不白付碎片"，结算结果相同。
+3. `resolve_daowen_trigger_spells` 里重复定义了 `previous_damage/_daowen_skip`，这是 Phase 1 遗留的代码瑕疵，不属于本阶段，没有改。
+
+## 9. 是否满足进入 Phase 3 的条件
+
+满足。验收句可以直接从代码和测试验证：**cast(flow=...) 是一次消耗 1 出手的 instant SpellExecution；按提交的步骤顺序逐步执行，每一步使用执行时的真实资源；资源不足只中断当前法术并保留已结算的步骤，不产生持久 Binding。** 对应测试：`test_instant_two_steps_consume_one_action`、`test_instant_stress_three_steps_third_interrupted`、`test_instant_second_step_reads_real_mana_after_first`、`test_instant_second_step_mana_insufficient_keeps_first`、`test_instant_does_not_create_binding`、`test_instant_routes_through_single_step_core`。
+
+## 10. 不属于 Phase 2 的问题（只记录，没有实现）
+
+IfStep 执行时求值（Phase 3）；LoopStep（Phase 4，瞬发目前拒绝循环）；battle lifecycle 的清理、存档迁移、undefine、define 默认 battle（Phase 5）；规则型 AI 生成 cast(flow)（AI-1）。
+
+## 最终测试（改用 LLM 后，2026-09-29）
+
+```
+python3 -m pytest -q   → 1813 passed, 4 failed, 3 xfailed
+```
+
+4 个失败均为已停用的规则型 TacticalAI 自身的策略测试（见"本轮追加"），与游戏行为无关；没有其它失败。

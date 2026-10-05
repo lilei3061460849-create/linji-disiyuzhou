@@ -49,13 +49,13 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
     
     # 副本专属道纹
     REGION_EXCLUSIVE_DAOWEN = {
-        "扭曲都市": {"变形","定型","畸变","搏命","超频","坏死","爆裂","退化"},
+        "扭曲都市": {"变形","定型","畸变","搏命","超频","坏死","退化"},   # 2026-10-03 删【爆裂】
         "罪孽都市": {"失忆","逼债","豪夺","清算","赎金","假钞","赌命","消灾"},
-        "龙心谷":   {"加害","龙鳞","逆鳞","活血","裂变","嫁祸","背负","伤痕"},
+        "龙心谷":   {"加害","龙鳞","逆鳞","裂变","嫁祸","背负","伤痕"},   # 2026-10-03 删【活血】
     }
     
     # 原始怪物道纹（道纹归属规则：各组起点）——【原初X】可借用范围
-    ORIGINAL_MONSTER_DAOWEN = ("狂暴", "全力", "疯狂", "减速", "必中", "自愈", "飞行")
+    ORIGINAL_MONSTER_DAOWEN = ("全力", "疯狂", "减速", "必中", "自愈", "飞行")   # 2026-10-03 删【狂暴】
     # 原始怪物道纹每次实际发动时支付异变5X（X 恒为面板/借用时写定的值；
     # 2026-09-16 用户令：道纹递增机制已废止）；效果持续期间（未再次发动）不再重复计费。
     # 必中为次数型（下X次选择[目标]无法闪避），余数记在 entity._bizhong_left。
@@ -188,6 +188,30 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                 results.append(result)
         return results
 
+    def _dispatch_phase_all(self, phase: str, entities: list) -> list:
+        """相位分发（机制优先）：每个机制按 priority 对**全部实体**结算完，再轮到下一个。
+
+        与 `_dispatch_phase`（实体优先，逐实体跑全部机制）的区别只在遍历次序：
+        【逼债/清算/赌命】的旧实现是「逼债全体 → 清算全体 → 赌命全体」，用实体优先
+        分发会变成「逼债甲→清算甲→赌命甲→逼债乙…」，顺序即规则，故单列本方法。
+        调用点必须与旧内嵌块位置逐字对齐（见 Phase.ROUND_START_SETTLE 的锚点注释）。
+        """
+        results = []
+        for mechanism in MECHANISMS.phase_mechanisms(phase):
+            for entity in entities:
+                ctx = TriggerContext(combat=self, state=self.state, phase=phase, target=entity)
+                if mechanism.condition is not None and not mechanism.condition(ctx):
+                    continue
+                targets = mechanism.target.select(ctx) if mechanism.target is not None else []
+                result = mechanism.effect(ctx, targets)
+                if result is None:
+                    continue
+                if isinstance(result, list):
+                    results.extend(result)     # 一次结算多笔账目 → 多条报告条目
+                else:
+                    results.append(result)
+        return results
+
     def _battle_delta(self, entity: Entity, field_name: str, delta: int,
                       source: str, polarity: str) -> int:
         """战斗中未注明永久且不是代价/伤害的面板变化统一登记为局内效果。"""
@@ -229,24 +253,19 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
     
     def _is_flying(self, entity: Entity) -> bool:
         return bool(getattr(entity, "is_flying", False)
-                    or entity.has_status("飞行")
-                    or entity.has_status("滑翔"))
+                    or entity.has_status("飞行"))
 
-    def _field_has_zhuiluo(self) -> bool:
-        for e in self.state.get_all_player_side() + self.state.get_all_enemy_side():
-            if e.has_status("坠落"):
-                return True
+    def _wanjunyin_holder(self, target: Entity) -> bool:
+        """被攻击一方是否有【万钧印】持有者（激活中）。玩家侧朋友/员工视同玩家侧。"""
+        if target is None:
+            return False
+        if target is self.state.player:
+            return self._relic_active(self.state.player, "万钧印")
+        if target.entity_type == "轮回者" and self.state.on_enemy_side(target):
+            return self._relic_active(target, "万钧印")
+        if target.entity_type in ("朋友", "员工", "临时朋友"):
+            return self._relic_active(self.state.player, "万钧印")
         return False
-
-    def _tick_baolie(self, entities) -> list:
-        """只递减爆裂。持续X按持有者的[敌回终]计数。"""
-        logs = []
-        for entity in entities:
-            keep = tuple(s.name for s in entity.status_effects if s.name != "爆裂")
-            expired = entity.tick_status_effects(skip_names=keep)
-            if expired:
-                logs.append({"type": "baolie_expired", "entity": entity.name})
-        return logs
 
     def _incoming_adjust(self, target: Entity, amount: int, damage_type: str = "普通") -> int:
         if amount <= 0 or damage_type == "代价" or target is None:
@@ -553,11 +572,13 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
             # 疯狂(2026-08-17全局裁定)：状态盖到所有角色，怪物从自身状态读+X。
             # 不再走激活集合分支，避免与全局状态双重计数。
             n += entity.get_status_value("疯狂")
-            if "狂暴" in act or entity.has_status("狂暴"):
-                n += 1
             n -= entity.get_status_value("无力")
             return max(0, n)
-        return DaoWenEngine.single_round_action_count(entity)
+        n = DaoWenEngine.single_round_action_count(entity)
+        # 癫狂之脑（通用遗物池，2026-10-03 新增）：你每回合的出手次数+1。
+        if self._relic_active(entity, "癫狂之脑"):
+            n += 1
+        return n
 
     def _current_context_timing(self) -> str:
         forced = getattr(self, "_forced_context_timing", "")
@@ -596,6 +617,7 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         entity_refs: Optional[dict[str, Entity]] = None,
         dodge_relic_target_ref: Optional[str] = None,
         cost_share_target_ref: str = "",
+        wanjunyin: Optional[bool] = None,
     ) -> dict:
         """攻击结算的公开入口（开帧后转实现体 `_resolve_attack_impl`）。"""
         with resolution_frame(self, KIND_EFFECT, "攻击",
@@ -604,7 +626,7 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
             return self._resolve_attack_impl(
                 attacker, target, hit_index, is_must_hit, dodge, blood_shadow,
                 spell_choices, entity_refs, dodge_relic_target_ref,
-                cost_share_target_ref)
+                cost_share_target_ref, wanjunyin)
 
     def _resolve_attack_impl(
         self,
@@ -618,6 +640,8 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         entity_refs: Optional[dict[str, Entity]] = None,
         dodge_relic_target_ref: Optional[str] = None,
         cost_share_target_ref: str = "",
+        wanjunyin: Optional[bool] = None,
+        _wanjunyin_converted: bool = False,
     ) -> dict:
         """
         解析一次攻击
@@ -641,6 +665,26 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
             "hp_lost": 0,
             "target_died": False,
         }
+        # 万钧印（通用遗物池，2026-10-03 新增）：有[目标]发动攻击时，可将其改为
+        # 该攻击者对自己发动攻击。触发条件＝被攻击的一方（含其阵营）持有并激活
+        # 【万钧印】；改道后本次攻击由攻击者承受自己的攻击（目标不再挨打）。
+        # 决策口径：引擎没有交互式决策层，故默认发动；调用方显式传 wanjunyin=False
+        # 可拒绝本次（为未来的玩家决策层留口）。被改道的一次自攻不会再被改道
+        # （_wanjunyin_converted 防 A→B→A 递归）。
+        if (not _wanjunyin_converted and wanjunyin is not False
+                and attacker is not target and attacker.is_alive
+                and self._wanjunyin_holder(target)):
+            converted = self._resolve_attack_impl(
+                attacker, attacker, hit_index, is_must_hit, False, False,
+                spell_choices, entity_refs, None, cost_share_target_ref,
+                None, True)
+            converted["wanjunyin"] = {
+                "relic": "万钧印", "original_target": target.name,
+                "converted_to": attacker.name,
+                "note": "万钧印：本次攻击改为攻击者对自己发动",
+            }
+            return converted
+
         # 飞行：非飞行者无法选中飞行目标
         if not self.is_targetable(attacker, target):
             result["cant_target"] = True
@@ -707,8 +751,6 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
             result["nilin_bonus"] = bonus
             attacker._nilin = 0
         damage = self._jieli_boost(attacker, damage)
-        if attacker.has_status("坠落"):
-            damage = math.ceil(damage / 2)
         # 检查蒙蔽状态
         if attacker.has_status("蒙蔽"):
             stacks = attacker.get_status_value("蒙蔽")
@@ -815,15 +857,6 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                 result.setdefault("spell_logs", []).extend(slogs2)
         self._attack_after_window_target = None
         
-        # 结算后效果
-        # 兴奋：每次出手后速度+1（X 只管持续）
-        if attacker.has_status("兴奋"):
-            result["speed_boost_from_excitement"] = self._gain_speed(attacker, 1, ctx={
-                "timing": self._current_context_timing(), "source": "兴奋", "source_type": "daowen",
-                "actor": attacker, "target": attacker, "mechanic": "speed_change", "subtype": "current_speed",
-                "amount": 1, "tags": {"daowen", "action_followup"},
-            })
-
         return result
 
     # ========== 回合管理 ==========
@@ -909,58 +942,14 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
             # 机制的报告条目并入 effects，战报格式与迁移前一致。
             effects.extend(self._dispatch_phase(Phase.ROUND_START, target=entity))
 
-        # ---- F2：罪孽专属道纹 [回始] 结算（逼债/清算/赌命） ----
-        # 逼债X：目标失去X碎片，无力支付的部分记为负债（碎片扣负，DM裁定D 2026-08-22，
-        # 旧"否则失去2X血限"废止）。负债≥20触发【还债】（仅怪物，见 settle_victory_paths）；
-        # 玩家被挂逼债无力支付时同样计负债——玩家负债不触发还债，但冻结一切
-        # 碎片支出（假碎片仍可花，见 _shards_of 口径）。
-        for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
-            for entry in list(getattr(entity, "_bizhai", [])):
-                x = entry["x"]
-                if self._shards_of(entity) >= x:
-                    self._lose_shards_of(entity, x)
-                    effects.append({"type": "bizhai", "entity": entity.name, "lost_shards": x})
-                else:
-                    if entity is self.state.player:
-                        use_fake = min(self.state.fake_shards, x)
-                        self.state.fake_shards -= use_fake
-                        self.state.shards -= (x - use_fake)
-                        now = self.state.shards
-                    else:
-                        use_fake = min(entity.fake_shards, x)
-                        entity.fake_shards -= use_fake
-                        entity.shards -= (x - use_fake)
-                        now = entity.shards
-                    effects.append({"type": "bizhai_debt", "entity": entity.name,
-                                    "obligation": x, "shards_now": now,
-                                    "debt_now": max(0, -now)})
-        # 清算X：目标失去[你碎片]点格挡（你=施法者当前碎片，每回始读取）
-        for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
-            for entry in list(getattr(entity, "_qingsuan", [])):
-                caster = entry["caster"]
-                drain = max(0, self._shards_of(caster))
-                lost = min(entity.shield, drain)
-                entity.shield -= lost
-                effects.append({"type": "qingsuan", "entity": entity.name, "lost_shield": lost, "drain": drain})
-        # 赌命X：按场上存活角色从轮回者方开始发放数字，投随机数，对应目标失去30%当前生命
-        duming_holders = [e for e in self.state.get_all_player_side() + self.state.get_all_enemy_side()
-                          if e.is_alive and e.has_status("赌命")]
-        for holder in duming_holders:
-            alive = [e for e in self.state.get_all_player_side() + self.state.get_all_enemy_side() if e.is_alive]
-            if len(alive) < 1:
-                continue
-            roll = self.dice.auto_roll(f"赌命_r{self.state.current_round}", [e.name for e in alive],
-                                       context=f"{holder.name}发动赌命")
-            idx = int(roll["player_number"]) - 1
-            tgt = alive[min(max(idx, 0), len(alive) - 1)]
-            d = math.ceil(tgt.current_hp * 30 / 100)  # 2026-09-28 按用户描述：失去30%**当前**生命（不是血限）
-            rd = self._raw_hp_loss(tgt, d, ctx={
-                "timing": "round_start", "source": "赌命", "source_type": "daowen",
-                "actor": holder, "target": tgt, "mechanic": "hp_loss", "subtype": "percent",
-                "amount": d, "tags": {"daowen", "round_start"},
-            })
-            effects.append({"type": "duming", "caster": holder.name, "target": tgt.name,
-                            "roll": idx + 1, "of": len(alive), "damage": rd["lost"], **rd})
+        # ---- F2：罪孽专属道纹 [回始] 结算（逼债/清算/赌命）----
+        # 2026-10-03 迁移：本位置只宣布相位时点（锚点 = 回始效果循环之后、current_round+1 之前），
+        # 三段 for 已搬进声明层（builtins 的 逼债·结算/清算·结算/赌命·结算）。
+        # 分发语义=机制优先：逐个机制对全体实体结算，逐字保持「逼债全体 → 清算全体 →
+        # 赌命全体」的旧顺序（顺序即规则）；账本访问一律走 mechanisms.ledger。
+        effects.extend(self._dispatch_phase_all(
+            Phase.ROUND_START_SETTLE,
+            self.state.get_all_player_side() + self.state.get_all_enemy_side()))
 
         self.state.current_round += 1
 
@@ -1100,11 +1089,9 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         # 朋友/员工/怪物没有法限，不走这条。
         # DM裁定 2026-09-09：[敌回终]不再清空法力（法力一池制，只在[战终]复原）。
         
-        # 持续效果递减。爆裂按[敌回终]：己方身上在此拍；敌方身上改在怪物回合开始时减。
-        player_side_ids = {id(e) for e in self.state.get_all_player_side()}
+        # 持续效果递减。
         for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
-            skip = ("爆裂",) if id(entity) not in player_side_ids else ()
-            expired = entity.tick_status_effects(skip_names=skip)
+            expired = entity.tick_status_effects()
             if expired:
                 # 只有“持续期间直接改写面板”的效果到期即还原；畸变/伤痕/逼债等
                 # 已经产生的累计局内后果保留到战终，再由battle作用域统一回滚。
@@ -1125,7 +1112,7 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                     entity._jiahuo_left = 0
                     if hasattr(entity, "_jiahuo_target"):
                         delattr(entity, "_jiahuo_target")
-                if ("飞行" in expired or "滑翔" in expired) and not self._is_flying(entity):
+                if "飞行" in expired and not self._is_flying(entity):
                     entity.is_flying = False
                 if "变形" in expired and hasattr(entity, "_bianxing_original"):
                     # 2026-09-17 重做：还原的是互换前的**当前速度与当前法力**
@@ -1138,11 +1125,10 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                                     "current_speed": entity.current_speed,
                                     "current_mana": entity.current_mana})
                 # 干扰/手雷减攻到期自动由 tick 清理，无需额外
-            # F2：逼债/清算状态消失即清账（∞/持续X到期后不再逐回始结算）
-            if not entity.has_status("逼债") and getattr(entity, "_bizhai", None):
-                entity._bizhai = []
-            if not entity.has_status("清算") and getattr(entity, "_qingsuan", None):
-                entity._qingsuan = []
+            # F2：逼债/清算状态消失即清账（∞/持续X到期后不再逐回始结算）。
+            # 2026-10-03 迁移：判定与清账都在声明层（逼债·对账/清算·对账）；
+            # 本行只宣布相位时点，位置必须在 status tick 之后（否则会多结算一轮）。
+            effects.extend(self._dispatch_phase(Phase.ROUND_END_RECONCILE, target=entity))
             # F2：抵扣封印/豪夺夺取回合递减统一走 _tick_sealed_and_stolen_relics，
             # 不再在此处逐实体递减。
         # 统一处理：玩家侧 + 每个存活实体的封印/豪夺遗物回终递减与归还
@@ -1169,19 +1155,9 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
             if leather_loss > 0:
                 self.state.event_modifiers["leather_shield_next"] = leather_loss
 
-        # 活血：有活血状态的实体，回终按本回合累计失血÷2回复
+        # 回终清理本回合记账（失血 / 速度变化 / 血限变化），供下一回合重新累计。
+        # 2026-10-03：【活血】道纹删除后本段与活血无关，独立成循环（此前缩进被误并入皮衣分支）。
         for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
-            if entity.has_status("活血") and entity.hp_lost_this_round >= 2:
-                heal_n = entity.hp_lost_this_round // 2
-                h = self.state.apply_heal(entity, heal_n, ctx={
-                    "timing": "round_end", "source": "活血", "source_type": "daowen",
-                    "actor": entity, "target": entity, "owner": entity,
-                    "mechanic": "heal", "subtype": "huoxue", "amount": heal_n,
-                    "tags": {"daowen", "round_end"},
-                })
-                effects.append({"type": "huoxue_heal", "entity": entity.name,
-                                "heal": heal_n, "actual": h["actual_heal"],
-                                "heal_ctx": h.get("heal_ctx")})
             entity.hp_lost_this_round = 0
             if hasattr(entity, "_hp_loss_events"):
                 entity._hp_loss_events = []
@@ -1594,9 +1570,7 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                 and not entity.has_status("束缚"))
 
     def is_targetable(self, attacker: Entity, target: Entity) -> bool:
-        """目标是否可被选中。滑翔视同飞行；坠落压住全场飞行。"""
-        if self._field_has_zhuiluo() or target.has_status("坠落"):
-            return True
+        """目标是否可被选中：非飞行者无法选中飞行目标。"""
         if self._is_flying(target):
             return self._is_flying(attacker)
         return True

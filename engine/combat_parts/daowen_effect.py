@@ -4,6 +4,8 @@
 CombatEngine 仍是唯一入口（门面类继承本 Mixin）。
 """
 from __future__ import annotations
+
+from ..mechanisms.ledger import ledger_of
 import math
 import weakref
 from typing import Optional, Any
@@ -149,8 +151,6 @@ class DaowenEffectMixin:
         if "target_damage" in calc:
             base = calc["target_damage"] + (nilin_bonus if nilin_bonus else 0)
             base = self._jieli_boost(caster, base)
-            if caster.has_status("坠落") and base > 0:
-                base = math.ceil(base / 2)
             dmg_amount = 0 if mengbi_blocked else base
             if "target_damage" in wave_pieces:
                 # 波及：修正后总数值平分（余数随机分配），逆鳞已计入首段总值。
@@ -226,8 +226,6 @@ class DaowenEffectMixin:
             add = nilin_bonus
             nilin_bonus = 0
             chunk = self._jieli_boost(caster, calc["total_damage"] + add)
-            if caster.has_status("坠落") and chunk > 0:
-                chunk = math.ceil(chunk / 2)
             dmg_amount = 0 if mengbi_blocked else chunk
             if "total_damage" in wave_pieces:
                 pieces = self._divide_flat(dmg_amount, len(wave_status_targets))
@@ -272,8 +270,6 @@ class DaowenEffectMixin:
 
         if "aoe_damage" in calc:
             a = 0 if mengbi_blocked else self._jieli_boost(caster, calc["aoe_damage"])
-            if caster.has_status("坠落") and a > 0:
-                a = math.ceil(a / 2)
             # 逆鳞加成仅作用于首个目标的首段伤害
             if nilin_bonus:
                 a += nilin_bonus
@@ -744,29 +740,6 @@ class DaowenEffectMixin:
                                                   source=caster.name))
                 result["effects"].append({"type": "qianmo", "target": st_target.name,
                                           "duration": calc.get("duration", 1)})
-        if name == "尸爆" and calc.get("self_destruct"):
-            # [命零]对全体敌方打出自身血限10X%伤害
-            if caster.is_alive and caster.current_hp > 0:
-                pct = calc["aoe_pct"]
-                dmg = math.ceil(caster.blood_limit * pct / 100)
-                for enemy in [e for e in self.state.get_all_enemy_side() if e.is_alive]:
-                    rd = self._apply_hostile_damage(enemy, dmg, source=caster, ctx={
-                        "timing": "player_action" if caster is self.state.player else "monster_action",
-                        "source": "尸爆", "source_type": "daowen", "actor": caster, "target": enemy,
-                        "mechanic": "damage", "subtype": "self_destruct_aoe", "amount": dmg,
-                        "tags": {"daowen", "aoe", "self_destruct"},
-                    })
-                    result["effects"].append({"type": "aoe_damage", "target": enemy.name, **rd})
-                # 尸爆是「自毁式[命零]」，不是生命归零致死：正文未规定清零当前生命，
-                # 因此这里刻意不走 _check_hp_zero_death（它会把 current_hp 抹成 0），
-                # 而是直接置命零标记 + 统一死亡通知（带完整 ctx）。
-                caster.is_alive = False
-                self._on_entity_death(caster, ctx={
-                    "timing": "player_action" if caster is self.state.player else "monster_action",
-                    "source": "尸爆", "source_type": "daowen", "actor": caster, "target": caster,
-                    "mechanic": "death", "subtype": "self_destruct", "tags": {"daowen", "self_destruct"},
-                })
-                result["self_destructed"] = True
         if name == "分裂" and calc.get("split_clones"):
             # 2026-09-17 用户令重做：分裂X/Y 改为**即时**创造 X 个 10Y 血限的
             # 自身复制体（代价衰老＝X×10Y＝造出的总血限）。旧版把创造挂在
@@ -886,19 +859,7 @@ class DaowenEffectMixin:
                         "remaining": target.get_status_value("蒙蔽"),
                     })
 
-        if name == "坠落":
-            duration = x if calc.get("duration") in (None, 0) else calc["duration"]
-            grounded = []
-            for e in self.state.get_all_player_side() + self.state.get_all_enemy_side():
-                if not e.is_alive:
-                    continue
-                if self._is_flying(e) or e.has_status("坠落"):
-                    e.is_flying = False
-                    e.status_effects = [s for s in e.status_effects if s.name not in ("飞行", "滑翔")]
-                    e.add_status(StatusEffect(name="坠落", remaining_rounds=duration, value=x, source=caster.name))
-                    grounded.append(e.name)
-            result["effects"].append({"type": "zhuiluo", "targets": grounded, "duration": duration})
-        elif ("duration" in calc and calc.get("duration") is not None
+        if ("duration" in calc and calc.get("duration") is not None
               and not (name == "变形" and bianxing_blocked)
               # 波及标记由 use_daowen/怪物结算逐目标处理，不走通用状态块
               # 乱葬岗道纹已在上方乱葬岗段自行 add_status，跳过通用状态处理避免重复叠加
@@ -914,7 +875,7 @@ class DaowenEffectMixin:
             # 进不了本状态块，实际效果一直是下方数值段给 target 加速。
             # 2026-09-17 用户令：【变形】改为可自由选择目标（不指定时默认自身），
             # 故移出"自身作用型"名单，状态随之挂到目标身上（到期还原也落在目标）。
-            self_targeted = name in ("自食", "飞行", "滑翔", "狂暴", "自愈", "必中", "固执", "贯穿")
+            self_targeted = name in ("自食", "飞行", "自愈", "必中", "固执", "贯穿")
             if name == "疯狂":
                 # 2026-08-17 用户裁定：疯狂X改为【所有角色出手+X】（全局，变相平衡）。
                 # 状态盖到双方全部存活角色；出手口径各自读取自身疯狂状态：
@@ -928,14 +889,9 @@ class DaowenEffectMixin:
                                               "status": name, "duration": duration, "value": x})
             elif self_targeted:
                 et = caster
-                if name in ("飞行", "滑翔") and self._field_has_zhuiluo():
-                    et.is_flying = False
-                    et.add_status(StatusEffect(name="坠落", remaining_rounds=1, value=x, source=caster.name))
-                    result["effects"].append({"type": "zhuiluo_block_flight", "target": et.name})
-                else:
-                    et.add_status(StatusEffect(name=name, remaining_rounds=duration, value=x, source=caster.name))
-                    result["effects"].append({"type": "status_added", "target": et.name,
-                                              "status": name, "duration": duration, "value": x})
+                et.add_status(StatusEffect(name=name, remaining_rounds=duration, value=x, source=caster.name))
+                result["effects"].append({"type": "status_added", "target": et.name,
+                                          "status": name, "duration": duration, "value": x})
             else:
                 # 波及：状态类效果对每个拥有波及效果的目标（含本次[目标]）原样生效。
                 for et in wave_status_targets:
@@ -977,13 +933,14 @@ class DaowenEffectMixin:
         # 逼债X：[回始]使[目标]失去X碎片，否则失去2X血限（二选一）。此处仅挂账，[回始]在 round_start 结算。
         if name == "逼债":
             for st_target in wave_status_targets:
-                st_target._bizhai.append({"x": x, "caster": caster})
+                # 账本唯一入口（engine/mechanisms/ledger.py）；[回始]结算在机制声明层。
+                ledger_of(st_target, "逼债").append({"x": x, "caster": caster})
                 st_target.add_status(StatusEffect(name="逼债", value=x, remaining_rounds=-1, source=caster.name))
                 result["effects"].append({"type": "bizhai_register", "target": st_target.name, "x": x})
         # 清算X：[回始]使[目标]失去你[碎片]点格挡，持续X。此处仅挂账。
         elif name == "清算":
             for st_target in wave_status_targets:
-                st_target._qingsuan.append({"x": x, "caster": caster})
+                ledger_of(st_target, "清算").append({"x": x, "caster": caster})
                 result["effects"].append({"type": "qingsuan_register", "target": st_target.name, "x": x})
         # 赌命X：玩家侧在_action_use_daowen预检付费；怪物侧由两阶段决策结算器付费。
         # 状态经 duration 挂在施法者上，[回始]在 round_start 按存活角色随机结算。

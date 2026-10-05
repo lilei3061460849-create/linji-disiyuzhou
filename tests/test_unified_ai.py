@@ -1,7 +1,9 @@
 """统一 AI 入口回归测试。
 
 AIPlayer 是对外唯一的玩家控制器。2026-09-29 用户令：不用规则型 AI，
-全部决策（含轮回者自己的战斗行动）交给 LLM 后端；规则战术层不再参与。
+全部决策（含轮回者自己的战斗行动）交给 LLM 后端。
+2026-10-02 架构收口：AIPlayer 不再继承 TacticalAI，也没有 tactical_combat 分支——
+规则战术层（engine/ai_tactics.py）只作为隔离的实验/模拟工具存在。
 """
 from __future__ import annotations
 
@@ -71,17 +73,19 @@ def test_ai_player_is_the_combat_and_high_level_entrypoint(tmp_path):
 
 
 def test_ai_player_default_does_not_use_rule_tactics(tmp_path, monkeypatch):
-    """默认不走 TacticalAI 规则打分：战斗中 take_action 不应被调用。"""
+    """AIPlayer 与规则战术层既无继承关系，也不会调用其打分入口。"""
     engine = _combat_engine(tmp_path)
     from engine.ai_tactics import TacticalAI
 
+    assert not issubclass(AIPlayer, TacticalAI), "AIPlayer 不得继承 TacticalAI"
+    assert not hasattr(AIPlayer, "tactical_combat"), "tactical_combat 分支已删除"
+
     def _forbidden(self, *a, **k):
-        raise AssertionError("默认 AIPlayer 不得调用规则战术层")
+        raise AssertionError("正式 AI 不得调用规则战术层")
 
     monkeypatch.setattr(TacticalAI, "take_action", _forbidden)
     llm = _ScriptedLLM(AIDecision("declare_parry", {}, "招架"))
     ai = AIPlayer(engine, backend=llm)
-    assert ai.tactical_combat is False
     result = ai.play_turn()
     assert result["result"]["success"], result
     assert len(llm.calls) == 1

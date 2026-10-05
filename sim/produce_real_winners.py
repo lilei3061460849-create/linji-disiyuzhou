@@ -99,7 +99,7 @@ def build_spell_choices(target_option: dict, player_ref: str, mana_budget: int) 
             steps = spell.get("steps", [])
             # 决定是否使用
             use = False
-            cycles = []
+            submitted = []
             if timing == "before":
                 # 先发制人/借力打力等：有敌对步骤就打；后发制人/庇护类上盾
                 has_hostile = any(s.get("target_ref") != player_ref for s in steps)
@@ -120,10 +120,12 @@ def build_spell_choices(target_option: dict, player_ref: str, mana_budget: int) 
                     remaining -= entry["x"]
                     if remaining < 1:
                         break
-                cycles = [cycle]
+                submitted = cycle
             else:
                 use = False  # 预算不足时显式拒绝，避免结算法力不足报错
-            out[timing][name] = {"use": use, "cycles": cycles} if use else {"use": False}
+            # 新契约：每个决策槽位一条 steps；老逻辑只算一轮预算，故上限写1
+            out[timing][name] = ({"use": True, "steps": submitted, "max_iterations": 1}
+                                 if use else {"use": False})
     return out
 
 

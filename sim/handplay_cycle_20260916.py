@@ -158,7 +158,12 @@ def policy_pre_battle(engine: GameEngine) -> dict | None:
         return None
     p = st.player
     if p and p.current_hp < p.blood_limit * 0.5:
-        return {"sub_action": "休整", "sub": 2}     # 40% 档，10 碎片
+        # 2026-10-02：引擎现按 tier 取档并要求 heal_allocations 恰好分完恢复量；
+        # 旧写法 {"sub": 2} 会被当成 tier=1（16 点）且在提交期被拒，轮回卡在第 2 场门口。
+        import math as _math
+        heal = _math.ceil(p.blood_limit * 40 / 100) + st.rest_heal_bonus
+        return {"sub_action": "休整", "tier": 2,      # 40% 档，10 碎片
+                "heal_allocations": [{"target_ref": "player:0", "amount": heal}]}
     return {"sub_action": "探索", "sub": 1}          # 其余精力拿事件与碎片
 
 
@@ -216,6 +221,20 @@ def _drain_interrupts(engine: GameEngine) -> None:
             engine.save_game(SLOT)
             continue
         return
+
+
+def _drain_redemption(engine: GameEngine) -> None:
+    """处理【救赎】待选（否则任何其它行动都会被门禁挡回）。
+
+    本轮操作者的决策：一律【终结】（当场命零；[战终]按与普通击杀相同的公式产出碎片）。
+    不接纳员工，避免工资/背叛/派遣等额外变量干扰这一轮的流程验证。
+    """
+    for _ in range(6):
+        if not getattr(engine.state, "pending_redemption", None):
+            return
+        result = _run(engine, "resolve_redemption", {"option": 2}, quiet=True)
+        if not result.get("success"):
+            return
 
 
 def _drain_discoveries(engine: GameEngine) -> None:
@@ -335,6 +354,7 @@ def _do_monster_phase(engine: GameEngine) -> None:
 def _play_battle(engine: GameEngine, max_rounds: int = 30) -> None:
     st = engine.state
     for _ in range(max_rounds):
+        _drain_redemption(engine)
         if not (st.player and st.player.is_alive):
             break
         if not [m for m in st.enemies if m.is_alive]:
@@ -356,11 +376,14 @@ def _play_battle(engine: GameEngine, max_rounds: int = 30) -> None:
                             "target": min((m for m in st.enemies if m.is_alive),
                                           key=lambda m: m.current_hp).name}
                 _do_player_action(engine, decision)
+        _drain_redemption(engine)
         if p and p.is_alive:
             _run(engine, "resolve_ally_phases", {}, quiet=True)
         if [m for m in st.enemies if m.is_alive]:
             _do_monster_phase(engine)
-        if st.player and st.player.is_alive:
+        # 敌人已全灭 = 本场已胜，子阶段不会再进入 await_round_end；
+        # 此时补发 round_end 只会被拒（历史 trace 里留下两条噪声失败）。
+        if st.player and st.player.is_alive and [m for m in st.enemies if m.is_alive]:
             _run(engine, "round_end", {}, quiet=True)
 
 
@@ -384,22 +407,31 @@ def run_cycle(engine: GameEngine, max_battles: int = 7) -> None:
             break
         # 正文：精力耗尽后才能进入战斗。先把 3 点精力花在局外（含事件）。
         for _ in range(8):
+            _drain_redemption(engine)
             _drain_discoveries(engine)
             _drain_events(engine)
+            # 事件结算本身可能新产生「发现待选」，决策前必须再排空一次，
+            # 否则紧接着的 pre_battle_action 会被门禁拒绝（空转 ✗）。
+            _drain_redemption(engine)
+            _drain_discoveries(engine)
             if st.energy <= 0:
                 break
             decision = policy_pre_battle(engine)
             if not decision:
                 break
             _run(engine, "pre_battle_action", decision)
+        _drain_redemption(engine)
         _drain_discoveries(engine)
         _drain_events(engine)
         _run(engine, "battle_start", {})
         _play_battle(engine)
         if not (st.player and st.player.is_alive):
-            # 命零：先过【死之传承】审核，再结算战终。
+            # 命零：先过【死之传承】审核；裁定本身会收尾战斗，
+            # 若战斗已结束就不再多发一次被拒的 battle_end。
             _drain_interrupts(engine)
-            _run(engine, "battle_end", {})
+            # 死之传承裁定可能整局重置（engine.state 换新对象），必须以当前状态判断。
+            if getattr(engine.state, "phase", "") == "in_combat":
+                _run(engine, "battle_end", {})
             print("  轮回者命零，本轮轮回到此结束。")
             break
         _run(engine, "battle_end", {})

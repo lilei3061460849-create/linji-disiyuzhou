@@ -479,7 +479,10 @@ def test_valid_and_invalid_are_separated(monkeypatch):
     def mixed(starter, learn, region, seed=None, battles=7, rng=None, telemetry=None, spend_shards=False, **kw):
         calls["n"] += 1
         if calls["n"] % 2:
-            return {"cleared": 7, "won": True, "invalid": False}
+            # 三层口径（PVE/PVP/完整通关）下的"有效且完整通关"局：三个布尔都要给，
+            # 否则 _normalise_outcome 只能推断出 PVE 胜利（full_won=False）。
+            return {"cleared": 7, "won": True, "invalid": False,
+                    "pve_won": True, "pvp_reached": True, "pvp_won": True, "full_won": True}
         return {"cleared": 0, "won": False, "invalid": True, "reason": "bug"}
 
     monkeypatch.setattr(bl, "play", mixed)

@@ -170,8 +170,8 @@ class TacticalAI:
                    for e in self.alive_enemies())
 
     def remaining_actions(self) -> int:
-        # 2026-09-10：出手次数不再由速度换算，改读 action_count（轮回者固定2次，
-        # 朋友/员工按攻次算，怪物按速限算；疯狂/无力的修正已含在内）。
+        # 2026-09-10：出手次数不再由速度换算，改读 action_count（全体角色基础2次，
+        # 疯狂/无力/蓄锐·增的修正已含在属性里；朋友/员工不再按攻次算）。
         # 沿用 ceil(速限/3) 会让 AI 按旧口径估预算，法力分配跟着算错。
         total = max(1, self.player.action_count)
         return max(0, total - getattr(self.player, "actions_used_this_round", 0))
@@ -1510,8 +1510,8 @@ class TacticalAI:
         return None
 
     def try_artifact(self) -> Optional[dict]:
-        """可选法器（不占出手）：由 sim.optional_actions 驱动，引擎校验把关。"""
-        from sim.optional_actions import (
+        """可选法器（不占出手）：由 engine/ai_rules.py 的策略驱动，引擎校验把关。"""
+        from engine.ai_rules import (
             try_fire_godfather_revolver, try_use_blood_wings,
         )
         for fn in (try_fire_godfather_revolver, try_use_blood_wings):
@@ -1561,7 +1561,7 @@ class TacticalAI:
         c = self.try_consumable()
         if c:
             results.append(c)
-        # 轮回者的主动出手预算由 action_count（当前规则固定2次）给出，
+        # 轮回者的主动出手预算由 action_count（基础2次 + 修正）给出，
         # 不能再用速限/3；速度只在闪避等正文明确的机制里发生变化。
         for _ in range(max(1, self.player.action_count)):
             if not self.alive_enemies() or not self.player.is_alive:
@@ -1581,37 +1581,9 @@ def _full_text(inst) -> str:
     )))
 
 
-def choose_dodge(engine, per_hit_damage: int, *, budget_used: int = 0,
-                 max_dodges: int = 2, min_hit_pct: float = 0.10,
-                 entity=None) -> bool:
-    """AI 闪避决策（供 sim 怪物阶段解析器调用，处理轮回者受到的攻击）。
-
-    规则依据（规则正文·基础定义）：被选为[目标]后可消耗 1 点当前速度完全闪避。
-    - 速度不足/必中已由引擎拒绝，这里只做预算与收益判断；
-    - 每回合最多闪避 max_dodges 次（留速度应对残韵/回锋刀等）；
-    - 只闪避会伤 ≥ min_hit_pct×[血限] 的命中，低伤不浪费速度。
-
-    entity：被选定方实体。缺省时取 engine.state.player（历史行为，调用方不变）。
-    2026-08-31 新增该参数，供引擎「道纹伤害 → 自动反应法术」路径指定任意被选定方
-    （死斗里被反打的一方未必是 state.player），使闪避判定不再被跳过
-    （DM 裁定：法术只是自定义触发条件的道纹，道纹要遵守的规则法术一样要遵守；
-    规则正文·推演铁律5 禁止跳过闪避判定）。
-    """
-    p = entity
-    if p is None:
-        _state = getattr(engine, "state", None)
-        p = getattr(_state, "player", None) if _state is not None else None
-    if p is None or not p.is_alive:
-        return False
-    if p.current_speed <= budget_used:
-        return False
-    if p.has_status("固执"):
-        return False            # 固执3：单次失去生命≤1，无需闪避
-    if per_hit_damage < max(3, math.ceil(p.blood_limit * min_hit_pct)):
-        return False
-    if budget_used >= max_dodges:
-        return False
-    return True
+# 闪避启发式已迁到正式运行时助手 engine/ai_rules.py（引擎自动反应法术路径与
+# 本实验模块共用同一实现）；此处保留同名再导出，供既有 sim/tests 引用。
+from engine.ai_rules import choose_dodge  # noqa: E402,F401
 
 
 def monster_threat(entity) -> int:
