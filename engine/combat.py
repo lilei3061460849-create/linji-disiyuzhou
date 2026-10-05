@@ -1556,8 +1556,12 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         effects = [{"type": "mediocrity", "entity": entity.name,
                     "note": f"{why}，触发【凡庸】：凭空全身炸裂，[命零]"}]
         if entity.entity_type == "怪物":
+            # 2026-10-05 用户令：旧【残骸】（恢复20生命+异变10）与旧【自由结晶】
+            # （喂3次触发救赎）合并重做为单一【自由结晶】，效果见 物品索引.md。
             self.state.consumables.append(
-                Consumable(name="自由结晶", effect="对种族为怪物的目标使用3次后，使其立刻触发救赎事件",
+                Consumable(name="自由结晶",
+                           effect=("对[目标]使用后使其随机付出一种代价，共计10；"
+                                   "若目标是生命≤20%血限的怪物，强制触发救赎事件"),
                            current_uses=1, max_uses=1))
             effects.append({"type": "mediocrity_loot", "entity": entity.name,
                             "note": "轮回者获得消耗品【自由结晶】(1/1)"})

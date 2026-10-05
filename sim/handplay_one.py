@@ -29,10 +29,10 @@ def handplay(winner, seed=7, battles=1, verbose=True, spell_plan=None):
         p = e.state.player
 
         if p and p.current_hp < p.blood_limit:
-            r = e.execute_action('pre_battle_action', {'sub_action':'休整','tier':3,'heal_allocations':[{'target_ref':'player:0','amount':48+e.state.rest_heal_bonus}]})
+            r = e.execute_action('pre_battle_action', {'sub_action':'休整','tier':3,'heal_allocations':[{'target_ref':'player:0','amount':48}]})
             if r.get('success'): continue
             # 血差<48且碎片不够3档→1档
-            r2 = e.execute_action('pre_battle_action', {'sub_action':'休整','tier':1,'heal_allocations':[{'target_ref':'player:0','amount':8+e.state.rest_heal_bonus}]})
+            r2 = e.execute_action('pre_battle_action', {'sub_action':'休整','tier':1,'heal_allocations':[{'target_ref':'player:0','amount':8}]})
             if r2.get('success'): continue
         r = e.execute_action('pre_battle_action', {'sub_action':'附煞','mode':'选择','sha_qi':'冥煞','daowen_name':'杀伐'})
         if r.get('success'): continue
