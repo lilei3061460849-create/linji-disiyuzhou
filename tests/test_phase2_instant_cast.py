@@ -89,7 +89,7 @@ def _statuses(resp):
 
 
 def _spell_snapshot(entity):
-    return ([s.to_dict() for s in entity.spells], list(entity.armed_spells))
+    return [s.to_dict() for s in entity.spells]
 
 
 def _expected_damage(engine, x, target):
@@ -241,7 +241,6 @@ def test_instant_does_not_create_binding():
     engine = _setup("p2_nobind")
     player, foe = engine.state.player, engine.state.enemies[0]
     spells_before = copy.deepcopy([s.to_dict() for s in player.spells])
-    armed_before = list(player.armed_spells)
 
     for _ in range(2):
         player.actions_used_this_round = 0
@@ -250,7 +249,6 @@ def test_instant_does_not_create_binding():
         assert resp["success"], resp
 
     assert [s.to_dict() for s in player.spells] == spells_before
-    assert player.armed_spells == armed_before
     assert all(s.name != "试刃" for s in player.spells)
     assert "试刃" not in engine.combat._eligible_spell_flows(player, TRIGGER_INSTANT)
     # 存档序列化里也没有它
@@ -522,7 +520,7 @@ def test_each_instant_step_triggers_target_before_daowen_reactions():
     engine = _setup("p2_zyzq", mana=10)
     player, foe = engine.state.player, engine.state.enemies[0]
     _give(foe, "坠落", "杀伐", "血债")
-    foe.armed_spells.append("咎由自取")
+    foe.spells.append(engine.combat.spell_definition(foe, "咎由自取"))
     foe.mana_limit = foe.current_mana = 20
     hp0 = player.current_hp
     choices = _zyzq_choices(engine, foe)
@@ -546,7 +544,7 @@ def test_instant_caster_killed_by_reaction_is_normal_interrupt():
     engine = _setup("p2_zyzq_dead", mana=10)
     player, foe = engine.state.player, engine.state.enemies[0]
     _give(foe, "坠落", "杀伐", "血债")
-    foe.armed_spells.append("咎由自取")
+    foe.spells.append(engine.combat.spell_definition(foe, "咎由自取"))
     foe.mana_limit = foe.current_mana = 20
     choices = _zyzq_choices(engine, foe)
     player.current_hp = 1
@@ -570,7 +568,7 @@ def test_instant_missing_trigger_choices_rejected_without_consuming_action():
     engine = _setup("p2_zyzq_missing")
     player, foe = engine.state.player, engine.state.enemies[0]
     _give(foe, "坠落", "杀伐", "血债")
-    foe.armed_spells.append("咎由自取")
+    foe.spells.append(engine.combat.spell_definition(foe, "咎由自取"))
     used0 = player.actions_used_this_round
     resp = _cast(engine, "发动杀伐X于目标", [{"x": 1, "dodge": False}], target=foe)
     assert not resp["success"]

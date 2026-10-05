@@ -177,7 +177,14 @@ class MonsterPhaseMixin:
                     # 2026-09-16 用户令：面板不写死 X 时，X 由发动方自选，
                     # 「上限只受法限或者代价限制」。这里探出可负担上限，
                     # 连 X=1 都付不起 → 本道纹此刻不可发动，prepare 过滤。
-                    if getattr(inst, "x_free", False):
+                    cooldown_limited = (
+                        DaoWenEngine.resolve(effective_name, 1, target=preview_target, caster=monster)
+                        .get("cost_type") == "冷却")
+                    if cooldown_limited:
+                        # 怪物不得把冷却型道纹的 X 调大来延长战斗控制效果。
+                        max_x = 1
+                        effective_x = 1
+                    elif getattr(inst, "x_free", False):
                         max_x = self._monster_max_daowen_x(
                             monster, effective_name, preview_target,
                             hard_cap=len(dodge_target_options) if effective_name == "波及" else None)
@@ -186,7 +193,9 @@ class MonsterPhaseMixin:
                             continue
                         effective_x = max_x
                     else:
-                        if name == "赌命" and getattr(monster, "fake_shards", 0) < inst.x_value:
+                        if cooldown_limited:
+                            effective_x = 1
+                        elif name == "赌命" and getattr(monster, "fake_shards", 0) < inst.x_value:
                             continue
                         if (name == "消灾" and monster.fake_shards < 50 * inst.x_value
                                 and monster.shards < 5 * inst.x_value):
@@ -352,7 +361,12 @@ class MonsterPhaseMixin:
         # 2026-09-16 用户令：面板未写死 X（x_free）时，X 由发动方在提交里自选，
         # 「上限只受法限或者代价限制」——这里按 prepare 同一口径重新探一次上限并校验，
         # 防止提交方给出此刻已付不起的 X（资源在 prepare 之后可能已被消耗）。
-        if getattr(inst, "x_free", False):
+        cooldown_limited = (
+            DaoWenEngine.resolve(effective_name, 1, target=target, caster=monster)
+            .get("cost_type") == "冷却")
+        if cooldown_limited:
+            effective_x = 1
+        elif getattr(inst, "x_free", False):
             submitted_x = choice.get("x")
             # 提交方没有给 X 时**回退到可负担上限**而非报错。
             # sim/ 下有几十处怪物阶段驱动各自拼装提交字典，面板去掉 X 后它们

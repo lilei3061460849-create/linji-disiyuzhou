@@ -2,7 +2,7 @@
 
 对应 规则正文：
   第500-501行 【凡庸】：任一角色连续五回合未出手／五回合未能使敌对角色生命减少，
-               即触发；该角色全身炸裂[命零]，若为怪物则轮回者获得消耗品【残骸】(1/1)。
+               即触发；该角色全身炸裂[命零]，若为怪物则轮回者获得消耗品【自由结晶】(1/1)。
   第304行     [战终]：清除局内增益（包括回复、格挡、持续∞等）与减益（不包括代价）。
 """
 import os
@@ -60,13 +60,13 @@ def test_mediocrity_triggers_after_five_idle_rounds():
     assert p.is_alive, "有作为的轮回者不应被【凡庸】波及"
 
 
-def test_mediocrity_on_monster_grants_wreckage():
-    """正常路径：怪物因【凡庸】命零时，轮回者获得消耗品【残骸】(1/1)"""
+def test_mediocrity_on_monster_grants_free_crystal():
+    """正常路径：怪物因【凡庸】命零时，轮回者获得【自由结晶】(1/1)"""
     e = _engine()
     cm = e.combat
     cm.state.enemies = [_monster()]
     m = cm.state.enemies[0]
-    before = len([c for c in cm.state.consumables if c.name == "残骸"])
+    before = len([c for c in cm.state.consumables if c.name == "自由结晶"])
 
     for _ in range(5):
         m.damage_dealt_this_round = 0
@@ -75,9 +75,9 @@ def test_mediocrity_on_monster_grants_wreckage():
         cm.state.player.actions_used_this_round = 1
         cm.round_end()
 
-    wrecks = [c for c in cm.state.consumables if c.name == "残骸"]
-    assert len(wrecks) == before + 1, "怪物触发【凡庸】应产出一件【残骸】"
-    assert wrecks[-1].current_uses == 1 and wrecks[-1].max_uses == 1, "【残骸】应为 1/1"
+    crystals = [c for c in cm.state.consumables if c.name == "自由结晶"]
+    assert len(crystals) == before + 1, "怪物触发【凡庸】应产出一件【自由结晶】"
+    assert crystals[-1].current_uses == 1 and crystals[-1].max_uses == 1, "【自由结晶】应为 1/1"
 
 
 # ---------- 边界条件 ----------
@@ -139,8 +139,8 @@ def test_mediocrity_non_reincarnator_fires_first():
     assert not m.is_alive and not friend.is_alive
     assert p.is_alive, "战场已清空，轮回者的凡庸应被中断，不得死亡"
     assert p.no_damage_rounds == 0 and p.no_action_rounds == 0, "中断者计数应清零"
-    wrecks = [c for c in cm.state.consumables if c.name == "残骸"]
-    assert len(wrecks) == 1, "怪物凡庸仍应产出残骸"
+    crystals = [c for c in cm.state.consumables if c.name == "自由结晶"]
+    assert len(crystals) == 1, "怪物凡庸仍应产出自由结晶"
     assert e.state.last_death_cause != "mediocrity"
 
 

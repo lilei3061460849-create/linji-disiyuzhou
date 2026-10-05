@@ -1557,10 +1557,10 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                     "note": f"{why}，触发【凡庸】：凭空全身炸裂，[命零]"}]
         if entity.entity_type == "怪物":
             self.state.consumables.append(
-                Consumable(name="残骸", effect="局内使用恢复20生命并获得异变10",
+                Consumable(name="自由结晶", effect="对种族为怪物的目标使用3次后，使其立刻触发救赎事件",
                            current_uses=1, max_uses=1))
             effects.append({"type": "mediocrity_loot", "entity": entity.name,
-                            "note": "轮回者获得消耗品【残骸】(1/1)"})
+                            "note": "轮回者获得消耗品【自由结晶】(1/1)"})
         return effects
 
     def can_act(self, entity: Entity) -> bool:

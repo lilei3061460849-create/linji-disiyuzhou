@@ -570,23 +570,21 @@ def test_out_of_combat_actions():
     assert learn_name in player.dao_wen, f"{learn_name}应已加入玩家道纹"
     print(f"  ✓ 学习道纹：玩家道纹={list(player.dao_wen.keys())}")
 
-    # 法术已免学习（2026-09-16）：持所需道纹即可在战斗中发动，不写入 spells。
-    # 局外不得发动（要占主动出手），故先确认拒绝，再进战斗验证。
-    r = engine.execute_action("use_spell", {"spell_name": "先发制人"})
-    assert not r["success"], "局外不得发动法术（需占1次主动出手）"
+    # 法术统一通过战斗中的自定义施法定义，立即写入 spells 并消耗一次主动出手。
     engine.state.phase = "in_combat"
     engine.state.combat_subphase = "player_actions"
     used = player.actions_used_this_round
-    r = engine.execute_action("use_spell", {"spell_name": "先发制人"})
-    assert r["success"], f"发动法术失败: {r}"
-    assert "先发制人" in player.armed_spells
-    assert player.actions_used_this_round == used + 1, "发动法术应消耗1次主动出手"
-    r = engine.execute_action("use_spell", {"spell_name": "先发制人", "disarm": True})
-    assert r["success"], f"卸下法术失败: {r}"
-    assert "先发制人" not in player.armed_spells
-    assert player.actions_used_this_round == used + 1, "卸下不应再扣出手"
+    r = engine.execute_action("define_spell", {"spell_name": "先发制人"})
+    assert r["success"], f"定义法术失败: {r}"
+    assert "先发制人" in [spell.name for spell in player.spells]
+    assert player.armed_spells == []
+    assert player.actions_used_this_round == used + 1, "定义法术应消耗1次主动出手"
+    r = engine.execute_action("undefine_spell", {"spell_name": "先发制人"})
+    assert r["success"], f"移除法术失败: {r}"
+    assert player.spells == []
+    assert player.actions_used_this_round == used + 1, "移除不应再扣出手"
     engine.state.phase = "pre_battle"
-    print("  ✓ 法术发动/卸下：无需学习，持道纹即可，发动耗1次出手")
+    print("  ✓ 法术定义/移除：持道纹即可定义，定义耗1次出手")
 
     # 共鸣：获得遗物（补满精力以便测试）
     engine.state.energy = 3

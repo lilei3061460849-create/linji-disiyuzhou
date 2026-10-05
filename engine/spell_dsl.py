@@ -6,7 +6,7 @@
    敌回始/敌回终/受到伤害前后/失去生命前后/目标发动道纹前），
    且接受常见同义表述（"我方受到伤害前"/"战斗开始时"等）。
 2. 句式错误在【学习】提交时就地报错、附带具体原因，不会出现
-   "学会了但因解析失败而在战斗里永远不触发"的静默哑火。
+   "定义成功但因解析失败而在战斗里永远不触发"的静默哑火。
 3. 支持真正的条件分支：若<条件>则<效果>否则<效果>，条件支持
    且/或/非组合与对生命/法力/血限/法限/速度/速限/护盾/道纹层数/
    状态的数值与布尔比较。
@@ -196,6 +196,9 @@ _FIELD_ALIASES = {
     "速度": "speed", "当前速度": "speed",
     "速限": "speed_limit",
     "护盾": "shield", "格挡": "shield",
+    "场上最高怪物攻击力": ("battle_metric", "max_monster_attack_power"),
+    "场上怪物攻击力总和": ("battle_metric", "sum_monster_attack_power"),
+    "癌变安全余量": ("battle_metric", "cancer_safety_margin"),
 }
 
 _SUBJECT_ALIASES = {
@@ -230,7 +233,7 @@ class _CondTokenizer:
     """把条件文本切成 token 序列：主语、字段、比较词、数值、且/或/非、括号。"""
 
     _TOKEN_RE = re.compile(
-        r"\s*(且|或|非|\(|（|\)|）|" + "|".join(_CMP_OPS) + r"|拥有|没有|层|-?\d+|"
+        r"\s*(场上最高怪物攻击力|场上怪物攻击力总和|癌变安全余量|且|或|非|\(|（|\)|）|" + "|".join(_CMP_OPS) + r"|拥有|没有|层|-?\d+|"
         r"[\u4e00-\u9fa5A-Za-z]+)"
     )
 
@@ -356,6 +359,10 @@ def parse_condition(text: str):
     raw = (text or "").strip()
     if not raw:
         raise SpellDslError("条件表达式不能为空")
+    # 允许自然中文连续书写“自身场上最高怪物攻击力”，内部规范化为
+    # “自身 场上最高怪物攻击力”，保持条件语法可扩展而不为每个字段开专门分支。
+    for subject in _SUBJECT_ALIASES:
+        raw = raw.replace(subject, subject + " ")
     tokens = _CondTokenizer(raw).tokens
     if not tokens:
         raise SpellDslError(f"条件表达式【{raw}】无法切分出任何有效内容")

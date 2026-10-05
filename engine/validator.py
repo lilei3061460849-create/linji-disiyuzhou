@@ -344,7 +344,7 @@ class RuleValidator:
                     return {
                         "severity": "critical",
                         "rule_name": "禁止发动未持有道纹",
-                        "rule_text": "禁止发动未持有的道纹、未学会的法术",
+                        "rule_text": "禁止发动未持有的道纹、未定义的法术",
                         "violation_description": f"尝试发动未持有的道纹【{name}】",
                         "context": {"daowen": name, "held": list(state.player.dao_wen.keys())}
                     }

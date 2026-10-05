@@ -53,7 +53,7 @@ def _patched_action(self, action_type, params=None):
             elif action_type == "use_daowen":
                 ACTION["道纹"] += 1
                 DAOWEN[(params or {}).get("daowen_name", "?")] += 1
-            elif action_type == "use_spell":
+            elif action_type in ("define_spell", "cast"):
                 ACTION["法术"] += 1
             elif action_type == "use_resonance":
                 ACTION["残韵"] += 1

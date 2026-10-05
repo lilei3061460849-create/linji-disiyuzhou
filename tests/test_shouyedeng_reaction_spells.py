@@ -35,7 +35,7 @@ def _engine(tmp_path):
     return e
 
 
-def _monster_phase_submit(e, spell_x=None, use_spell=True):
+def _monster_phase_submit(e, spell_x=None, trigger_spell=True):
     """构造怪物攻击玩家的提交：怪物普攻1次，玩家可提交先发制人反应。
 
     返回 (prepared, choice) 供 resolve 使用。
@@ -52,7 +52,7 @@ def _monster_phase_submit(e, spell_x=None, use_spell=True):
     target_option = next(t for t in actor["attack_target_options"] if t["ref"] == "player:0")
     spell_choices = {timing: {} for timing in ("before", "after")}
     for sp in target_option.get("spell_options", {}).get("before", []) or []:
-        if sp["spell_name"] == "先发制人" and use_spell:
+        if sp["spell_name"] == "先发制人" and trigger_spell:
             if spell_x is None:
                 spell_x = 2
             spell_choices["before"]["先发制人"] = {

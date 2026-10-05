@@ -106,7 +106,7 @@ BRANCH_SPELL = {
 
 
 def _engine_with_branch_spell(suffix, *, mana):
-    """用真实 GameEngine 装配【血溅五步】并把怪物设为三击靶场。"""
+    """用真实 GameEngine 定义【血溅五步】并把怪物设为三击靶场。"""
     engine = _new_engine(suffix)
     player = engine.state.player
     for name in ("杀伐", "再生", "透支"):

@@ -1,6 +1,6 @@
 """《死者之书》遗言：文件是唯一事实源。
 
-只读写 `死者之书.md` 的「## 遗言」节，不得改动「## 可学法术」。
+只读写 `死者之书.md` 的「## 遗言」节，不得改动「## 法术大全」。
 新增遗言只需往该节追加一页，不必改引擎代码。
 
 **DM裁定 2026-08-31：遗言不再三段式**——每页只有一句话，上限 20 字，除此之外没有其他
@@ -18,7 +18,7 @@ LEGACY_FIELD = "text"
 LEGACY_FIELDS = (LEGACY_FIELD,)
 FIELD_LABELS = {LEGACY_FIELD: "遗言"}
 LEGACY_LABEL = "遗言"
-# 旧三段式字段（DM裁定 2026-08-31 废止）：只用于读取旧书页／兼容旧调用方，不再写出。
+# 旧三段式字段：只用于读取旧书页／兼容旧调用方，不再写出。
 DEPRECATED_FIELDS = ("trigger_point", "fork", "cost_budget")
 DEPRECATED_LABELS = {"trigger_point": "触发点", "fork": "岔路", "cost_budget": "代价预算"}
 DEFAULT_CAPACITY = 20
@@ -60,7 +60,7 @@ def _collapse_legacy(legacy: Any) -> str:
 
 
 def validate_legacy(legacy: Any, capacity: int = DEFAULT_CAPACITY) -> dict[str, str]:
-    """单句校验：一句话，非空，不超过字数上限（DM裁定 2026-08-31：无其他限制）。
+    """单句校验：一句话，非空，不超过字数上限。
 
     入参可以是纯字符串，也可以是 `{"text": ...}`（+可选 title）。旧三段式字段一律拒绝——
     格式只有一种；存量旧书页的兼容放在**读取端**（`parse_legacies` 按第一句折叠）。
@@ -69,7 +69,7 @@ def validate_legacy(legacy: Any, capacity: int = DEFAULT_CAPACITY) -> dict[str, 
     if isinstance(legacy, dict):
         if set(legacy) & set(DEPRECATED_FIELDS):
             raise ValueError(
-                "遗言已改为单句（DM裁定 2026-08-31）：只提交 text（≤"
+                "遗言已改为单句：只提交 text（≤"
                 f"{capacity}字），旧三段式 trigger_point/fork/cost_budget 已废止")
         extra = set(legacy) - {LEGACY_FIELD} - allowed_extra
         if extra:

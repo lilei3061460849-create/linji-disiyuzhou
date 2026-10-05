@@ -1,6 +1,6 @@
 """CombatEngine 分片：法术流程表、提交校验、自动反应、统一单步道纹结算。
 
-架构（2026-10-02 重写，取代 Phase 0/1 的"调用方预展开"模型）：
+架构：
 
     道纹是积木，法术是由道纹写成的程序。
 
@@ -64,7 +64,7 @@ class SpellReactionMixin:
                    "steps": [("封印", "any")],
                    "effect_flow": "自身回合结束后→发动封印X于任意目标",
                    "automatic": True},
-        # 血炼周天（2026-09-16 补流程，清单 D1）：
+        # 血炼周天：
         # 失去生命后→发动再生→发动透支（循环）。
         # 【透支】的流血每轮都会推进【癌变】阈值，循环由规则自然终止
         # （施法者命零 / 法力耗尽 / 调用方提交的 max_iterations 到顶）。
@@ -72,6 +72,13 @@ class SpellReactionMixin:
                      "steps": [("再生", "self"), ("透支", "self")],
                      "effect_flow": "失去生命后→发动再生→发动透支→循环",
                      "loop": True},
+        # 三阶动态循环：目标与中断条件由通用条件/目标选择器提供，
+        # 不在法术名分支里写专用结算逻辑。
+        "徒劳无功": {"trigger": ActionPhase.AFTER_LIFE_LOST.value,
+                     "steps": [("再生", "self"), ("透支", "self"), ("弱化", "any")],
+                     "effect_flow": "失去生命后→发动再生X于自身→发动透支X于自身→发动弱化X于任意目标→循环",
+                     "loop": True,
+                     "loop_stop_conditions": ["自身场上最高怪物攻击力等于0", "自身癌变安全余量小于等于0"]},
     }
 
     # 内置法术的所需道纹（唯一事实源；api.GameEngine.SPELL_REGISTRY 是本表的别名）。
@@ -86,6 +93,7 @@ class SpellReactionMixin:
         "咎由自取": ["杀伐", "血债"],
         "镇魔印": ["封印"],
         "血炼周天": ["再生", "透支"],
+        "徒劳无功": ["再生", "透支", "弱化"],
     }
 
     # 一步 = 一次"发动道纹"。两类策略的唯一差异是**是否开启新的
@@ -134,28 +142,31 @@ class SpellReactionMixin:
     # ==================================================================
 
     def _builtin_spell_flows(self, holder: Entity) -> dict[str, dict]:
-        """当前**已装配**的内置法术：所需道纹全部持有且可发动，并经 use_spell 装配。"""
+        """当前已定义且可触发的法术大全条目。
+
+        法术不再有“装配”状态；预定义法术与自定义法术统一存入
+        ``holder.spells``，自定义施法定义后立即生效。
+        """
         flows: dict[str, dict] = {}
         if holder is None or not holder.is_alive:
             return flows
-        armed = set(getattr(holder, "armed_spells", None) or ())
-        for name, required in self.BUILTIN_SPELL_DAOWEN.items():
-            flow = self.SPELL_FLOWS.get(name)
-            if flow is None or name not in armed:
+        for spell in getattr(holder, "spells", []) or []:
+            flow = self.SPELL_FLOWS.get(spell.name)
+            if flow is None:
                 continue
             if all(d in holder.dao_wen and holder.dao_wen[d].can_use()
-                   for d in required):
-                flows[name] = flow
+                   for d in spell.required_daowen):
+                flows[spell.name] = flow
         return flows
 
     def buildable_spells(self, holder: Entity) -> list[str]:
-        """当前凭持有道纹**可以装配**但尚未装配的内置法术名。"""
+        """当前凭持有道纹可以通过自定义施法定义的法术大全条目。"""
         if holder is None or not holder.is_alive:
             return []
-        armed = set(getattr(holder, "armed_spells", None) or ())
+        defined = {sp.name for sp in getattr(holder, "spells", []) or []}
         out = []
         for name, required in self.BUILTIN_SPELL_DAOWEN.items():
-            if name in armed or name not in self.SPELL_FLOWS:
+            if name in defined or name not in self.SPELL_FLOWS:
                 continue
             if all(d in holder.dao_wen and holder.dao_wen[d].can_use()
                    for d in required):
@@ -173,11 +184,18 @@ class SpellReactionMixin:
         flow = self.SPELL_FLOWS.get(name)
         if required is None or flow is None:
             return None
+        role_text = {"self": "自身", "attacker": "攻击者", "target": "目标", "any": "任意目标"}
+        effect_flow = "→".join(
+            f"发动{daowen}X于{role_text.get(role, role)}"
+            for daowen, role in flow.get("steps", [])
+        )
+        if flow.get("loop"):
+            effect_flow += "→循环"
         return Spell(
             name=name,
             required_daowen=list(required),
-            trigger_condition=flow.get("effect_flow", ""),
-            effect_flow=flow.get("effect_flow", ""),
+            trigger_condition=flow.get("trigger", ""),
+            effect_flow=effect_flow,
             rank=len(required),
             automatic=bool(flow.get("automatic")),
         )
@@ -275,6 +293,7 @@ class SpellReactionMixin:
             lifecycle=lifecycle, body=program, rank=len(required),
             automatic=bool(flow.get("automatic")),
             effect_flow_text=flow.get("effect_flow", ""),
+            loop_stop_conditions=list(flow.get("loop_stop_conditions") or []),
         )
 
     def _resolve_step_subject(self, role: str, holder: Entity, attacker: Entity,
@@ -316,6 +335,19 @@ class SpellReactionMixin:
             if isinstance(field, tuple) and field[0] == "daowen_stacks":
                 inst = entity.dao_wen.get(field[1])
                 return inst.x_value if inst else 0
+            if isinstance(field, tuple) and field[0] == "battle_metric":
+                monsters = [m for m in self.state.active_enemies()
+                             if getattr(m, "entity_type", "") == "怪物"]
+                powers = [m.effective_attack_power() for m in monsters]
+                if field[1] == "max_monster_attack_power":
+                    return max(powers, default=0)
+                if field[1] == "sum_monster_attack_power":
+                    return sum(powers)
+                if field[1] == "cancer_safety_margin":
+                    margins = [max(0, m.blood_limit * Entity.CANCER_HEAL_MULTIPLIER
+                                   - m.total_healed) for m in monsters]
+                    return min(margins, default=0)
+                raise ValueError(f"未知战斗级条件指标: {field[1]}")
             mapping = {
                 "hp": entity.current_hp, "blood_limit": entity.blood_limit,
                 "mana": entity.current_mana, "mana_limit": entity.mana_limit,
@@ -324,6 +356,17 @@ class SpellReactionMixin:
             }
             return mapping[field]
         return _resolve
+
+    def spell_loop_guard(self, definition, caster: Entity, attacker: Entity):
+        """通用循环守卫：由法术定义声明停止条件，执行器统一调用。"""
+        from ..spell_dsl import parse_condition, evaluate_condition, SpellDslError
+        for text in getattr(definition, "loop_stop_conditions", ()) or ():
+            try:
+                if evaluate_condition(parse_condition(text), self._condition_resolver(caster, attacker)):
+                    return True, f"loop_condition:{text}"
+            except SpellDslError as exc:
+                return True, f"invalid_loop_condition:{exc}"
+        return False, ""
 
     def _evaluate_spell_condition(self, node, caster: Entity, attacker: Entity) -> bool:
         """SpellExecution 在**执行到条件步骤的那一刻**求值条件（Part 3）。
@@ -336,7 +379,7 @@ class SpellReactionMixin:
     def _predict_flat_steps(self, steps, holder: Entity, attacker: Entity) -> list:
         """按**当前**状态预测条件分支会走到哪些步骤。
 
-        仅用于引擎自动装配（_auto_after_life_lost_decision）时的 X 预算与"是否
+        仅用于引擎自动选择（_auto_after_life_lost_decision）时的 X 预算与"是否
         放弃触发"判断；执行期的分支选择永远由 SpellExecution 在执行到该步时
         自行求值，本方法不产出也没有能力产出"执行用的步骤列表"。
         """
@@ -360,7 +403,7 @@ class SpellReactionMixin:
         选择写进调用方那份 decision dict（branch_snapshot），后续命中复用，
         不会因为前一次命中改变了法力/生命而在两次命中之间漂移。
         标记必须是字符串——此前的引擎活引用会随 params 进 action_history
-        并让 save_game 的 pickle 直接失败（2026-09-15 修复）。
+        并让 save_game 的 pickle 直接失败。
         """
         token = getattr(self, "_branch_owner_token_value", None)
         if token is None:
@@ -836,10 +879,7 @@ class SpellReactionMixin:
     # ==================================================================
     # 五点五、生命周期（Part 6）
     #
-    # 绑定的事实源只有两处，不再引入第二张 binding 表：
-    #   entity.spells       = 自创法术定义（Spell.lifecycle 决定作用域）
-    #   entity.armed_spells = 内置法术"我打算用它"的装配意图（permanent）
-    # instant 法术从不写入任何绑定（cast 完即弃）。
+    # 持续法术的唯一事实源是 entity.spells；瞬发法术执行完即弃。
     # battle 作用域在战终由 clear_battle_scoped_spells 统一清除，
     # 因此绝不会以跨战斗绑定的形式活过存档/读档边界。
     # ==================================================================
@@ -848,14 +888,8 @@ class SpellReactionMixin:
         """列出一个实体当前的绑定（供 schema/存档审计；不改动状态）。"""
         out = []
         for spell in getattr(holder, "spells", []) or []:
-            out.append({"kind": "custom", "name": spell.name,
-                        "lifecycle": getattr(spell, "lifecycle", Lifecycle.PERMANENT.value),
-                        "armed": spell.name in (getattr(holder, "armed_spells", None) or [])})
-        for name in getattr(holder, "armed_spells", None) or []:
-            if any(b["name"] == name for b in out):
-                continue
-            out.append({"kind": "builtin", "name": name,
-                        "lifecycle": Lifecycle.PERMANENT.value, "armed": True})
+            out.append({"kind": "spell", "name": spell.name,
+                        "lifecycle": getattr(spell, "lifecycle", Lifecycle.PERMANENT.value)})
         return out
 
     def clear_battle_scoped_spells(self) -> list[dict]:
@@ -878,27 +912,17 @@ class SpellReactionMixin:
             if not gone:
                 continue
             holder.spells = kept
-            armed = getattr(holder, "armed_spells", None)
-            if armed is not None:
-                holder.armed_spells = [n for n in armed if n not in gone]
         return removed
 
     def undefine_spell(self, holder: Entity, spell_name: str) -> dict:
-        """显式移除一个法术绑定（自创法术定义 / 内置法术装配意图）。
-
-        只做移除，不涉及出手与法力（与 use_spell 的 disarm 同价：卸下不花出手）。
-        """
-        removed = {"custom": False, "armed": False}
+        """移除一个已经定义的自定义法术，不涉及出手与法力。"""
+        removed = {"custom": False}
         spells = list(getattr(holder, "spells", None) or [])
         for spell in spells:
             if spell.name == spell_name:
                 holder.spells = [sp for sp in spells if sp is not spell]
                 removed["custom"] = True
                 break
-        armed = getattr(holder, "armed_spells", None)
-        if armed and spell_name in armed:
-            holder.armed_spells = [n for n in armed if n != spell_name]
-            removed["armed"] = True
         return removed
 
     # ==================================================================
@@ -1332,7 +1356,7 @@ class SpellReactionMixin:
 
     def _max_auto_life_lost_x(self, daowen: str, target: Entity, caster: Entity,
                               budget: int) -> Optional[int]:
-        """自动装配反应法术时，为单步挑一个可支付的 X（至少 1）。"""
+        """自动选择反应法术时，为单步挑一个可支付的 X（至少 1）。"""
         upper = min(max(1, budget), 10_000)
         for x in range(upper, 0, -1):
             calc = DaoWenEngine.resolve(daowen, x, target=target, caster=caster)
@@ -1353,7 +1377,7 @@ class SpellReactionMixin:
                                       holder: Entity, target: Entity) -> bool:
         """自动反应法术路径：被选定方是否消耗 1 点速度闪避本次道纹。
 
-        DM 裁定（2026-08-31）：法术说到底只是自定义了触发条件的道纹，
+        DM 裁定：法术说到底只是自定义了触发条件的道纹，
         **道纹要遵守的规则，法术一样要遵守**。规则正文「凡带 [目标] 道纹，
         目标被选定时均可消耗 1 点当前速度进行闪避」、规则正文「禁止跳过闪避判定」。
         """
@@ -1388,7 +1412,7 @@ class SpellReactionMixin:
                                        budget: Optional[int] = None) -> dict:
         """为一次非攻击失血自动生成单法术提交（steps 契约）。
 
-        没有 AI 决策窗口，因此按"可支付且效果方向合理"自动装配：
+        没有 AI 决策窗口，因此按"可支付且效果方向合理"自动选择：
           - 目标为 any（任意目标）时无法静态定目标 → 本法术放弃自动触发。
           - 预测会走到的步骤里任一法力步骤付不起（X=1 都超出预算）→ 放弃触发。
           - 不一定会走到的分支槽位填 x=1（结构必须完整；真走到时按运行期判定）。
@@ -1404,8 +1428,14 @@ class SpellReactionMixin:
             daowen = self._step_daowen(step)
             role = self._step_role(step)
             if role == "any":
-                return {"use": False}
-            target = self._resolve_step_subject(role, holder, attacker)
+                # 通用“任意目标”自动选择器：优先选择当前有效攻击力最高的存活怪物，
+                # 并列按稳定战场顺序；没有合法目标才放弃本次自动触发。
+                candidates = [m for m in self.state.active_enemies()
+                              if getattr(m, "entity_type", "") == "怪物" and m.is_alive]
+                candidates = [m for m in candidates if m.effective_attack_power() > 0]
+                target = max(candidates, key=lambda m: m.effective_attack_power(), default=None)
+            else:
+                target = self._resolve_step_subject(role, holder, attacker)
             if target is not None and not target.is_alive:
                 target = None
             if role == "attacker" and target is holder:
@@ -1433,7 +1463,9 @@ class SpellReactionMixin:
                               daowen, calc, holder, target)})
         if not steps:
             return {"use": False}
-        return {"use": True, "steps": steps, "max_iterations": 1,
+        return {"use": True, "steps": steps,
+                # 通用循环法术默认由资源/条件/无进展终止；旧反应法术保留单轮保护。
+                "max_iterations": None if name == "徒劳无功" else 1,
                 "_cost": consumed, "_engine_automatic": True}
 
     def _fire_auto_reaction(self, holder: Entity, trigger: str,

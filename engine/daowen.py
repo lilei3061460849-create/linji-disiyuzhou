@@ -329,15 +329,15 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_feixing(x: int) -> dict:
-        """飞行X：代价：异变5X。无法被非飞行角色选为目标，持续X"""
+        """飞行X：代价：冷却X。无法被非飞行角色选为目标，持续X回合。"""
         return {
             "dao_wen": "飞行",
             "x": x,
-            "cost_type": CostType.MUTATION.value,
-            "cost_mutation": 5 * x,
+            "cost_type": CostType.COOLDOWN.value,
+            "cost": x,
             "duration": x,
             "effect": "无法被非飞行角色选为目标",
-            "summary": f"异变+{5*x}，无法被非飞行角色选为目标，持续{x}回合"
+            "summary": f"冷却{x}场，无法被非飞行角色选为目标，持续{x}回合"
         }
     
     # ---- 怪物转化道纹 ----
