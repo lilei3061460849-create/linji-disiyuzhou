@@ -61,14 +61,18 @@ def test_single_fourteen_node_core_loop():
 
 def test_three_region_loops_present():
     """正常路径：三条副本闭环必须存在"""
-    for loop in ("扭曲都市闭环", "罪孽都市闭环", "龙心谷闭环"):
+    # 2026-10-03：扭曲都市删【爆裂】、龙心谷删【活血】，这两条闭环 8 → 7 条边；罪孽都市不变。
+    expected = {"扭曲都市闭环": 7, "罪孽都市闭环": 8, "龙心谷闭环": 7}
+    for loop, n in expected.items():
         assert loop in R.CLOSED_LOOPS, f"缺少 {loop}"
-        assert len(R.CLOSED_LOOPS[loop]) == 8, f"{loop} 应有8条边"
+        assert len(R.CLOSED_LOOPS[loop]) == n, f"{loop} 应有{n}条边"
 
 
 def test_monster_daowen_now_transformable():
     """正常路径：怪物面板常见道纹必须有可用残韵路径"""
-    for dw in ("必中", "狂暴", "飞行", "自愈", "全力", "疯狂", "减速"):
+    # 2026-10-03：狂暴删除；飞行暂无残韵路径（原转换→滑翔、反转→坠落都随之删除，
+    # 是否给飞行补新路径待用户裁定，见 报告.md）。
+    for dw in ("必中", "自愈", "全力", "疯狂", "减速"):
         paths = R.get_available_resonance(dw)
         assert paths, f"{dw} 仍无残韵路径"
 

@@ -68,5 +68,6 @@ def test_combat_watchdog_detects_5min_timeout():
     assert res["reason"] == "timeout_5min"
     assert "超过 300.0 秒/5分钟" in res["message"]
     assert "飞行" in str(res["diagnosis"]["findings"])
-    assert "坠落" in str(res["diagnosis"]["recommendations"])
+    # 2026-10-03：【坠落】道纹删除，推荐语只保留“残韵篡改飞行”
+    assert "飞行" in str(res["diagnosis"]["recommendations"])
 

@@ -59,7 +59,7 @@ class SpellReactionMixin:
         "借力打力": {"trigger": ActionPhase.BEFORE_DAMAGE_TAKEN.value, "steps": [("庇护", "self"), ("杀伐", "attacker")]},
         "不死不休": {"trigger": ActionPhase.AFTER_LIFE_LOST.value, "steps": [("血债", "attacker")], "loop": True},
         "千刀万剐": {"trigger": ActionPhase.AFTER_LIFE_LOST.value, "steps": [("再生", "self"), ("血债", "attacker")], "loop": True},
-        "咎由自取": {"trigger": "目标发动道纹前", "steps": [("坠落", "target"), ("杀伐", "target"), ("血债", "target")]},
+        "咎由自取": {"trigger": "目标发动道纹前", "steps": [("杀伐", "target"), ("血债", "target")]},
         "镇魔印": {"trigger": TriggerTiming.SELF_TURN_END.value,
                    "steps": [("封印", "any")],
                    "effect_flow": "自身回合结束后→发动封印X于任意目标",
@@ -83,7 +83,7 @@ class SpellReactionMixin:
         "借力打力": ["杀伐", "庇护"],
         "不死不休": ["血债"],
         "千刀万剐": ["血债", "再生"],
-        "咎由自取": ["坠落", "杀伐", "血债"],
+        "咎由自取": ["杀伐", "血债"],
         "镇魔印": ["封印"],
         "血炼周天": ["再生", "透支"],
     }
@@ -751,7 +751,7 @@ class SpellReactionMixin:
                 reason=InterruptReason.DAOWEN_UNUSABLE,
                 detail=f"道纹{daowen}不可用（未持有/封印/冷却/唯一已用）")
 
-        # --- 跳过谓词（如坠落目标不飞行） ---
+        # --- 跳过谓词（如血债需要前序伤害） ---
         if skip_predicate is not None:
             skip_reason = skip_predicate(daowen, target, entry_dict, step)
             if skip_reason:
@@ -1024,16 +1024,13 @@ class SpellReactionMixin:
                                       refs: dict[str, Entity]) -> list[dict]:
         """「目标发动道纹前」反应法术结算。
 
-        【咎由自取】的两个流程特例（坠落仅在目标飞行时结算、血债需要前序伤害）
-        以 skip_predicate 表达，保持与旧实现逐字一致。
+        流程特例（血债需要前序伤害）以 skip_predicate 表达，保持与旧实现逐字一致。
+        2026-10-03：【坠落】道纹删除，【咎由自取】的坠落步骤一并移除（现为杀伐+血债）。
         """
         logs = []
         previous_damage = {"value": 0}
 
         def _daowen_skip(daowen, target, entry_dict, step):
-            if daowen == "坠落" and not (target.is_flying or target.has_status("飞行")
-                                         or target.has_status("滑翔")):
-                return "坠落目标未在飞行"
             # 2026-10-02 注：以下判定沿用了旧实现的字面行为（有前序伤害时跳过血债），
             # 与其 detail 文案相反，属未经裁定的历史行为，见 报告.md「刻意未改动」。
             if daowen == "血债" and previous_damage["value"] > 0:
@@ -1445,7 +1442,7 @@ class SpellReactionMixin:
 
         攻击路径（resolve_attack）由显式反应窗口按提交结算，不经过本方法；
         这里处理其余一切导致"伤害/失血"的通道（道纹伤害/流血代价/血限压迫/
-        爆裂反射/赌命/直接失血/未来新增效果……），对持有者而言"触发时机一到
+        千荆甲反射/赌命/直接失血/未来新增效果……），对持有者而言"触发时机一到
         就触发"——只检测事件，不逐个开窗。
         """
         if holder is None or not holder.is_alive:

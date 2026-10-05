@@ -61,7 +61,7 @@ def test_transformed_monster_daowen_not_learnable_outside_battle():
     """正常路径：怪物转化道纹须以自身已持有的道纹为起点经残韵获得，
     不可通过局外【学习】直接习得（规则正文·局外系统·学习门槛）"""
     e = _engine("龙心谷")
-    for dw in ("蒙蔽", "坠落", "弱化"):
+    for dw in ("蒙蔽", "弱化", "无力"):
         r = _learn(e, dw)
         assert not r["success"], f"转化道纹{dw}不应能被局外直接学习"
         assert "怪物转化道纹" in r["error"]
@@ -70,7 +70,7 @@ def test_transformed_monster_daowen_not_learnable_outside_battle():
 def test_original_monster_daowen_never_learnable():
     """边界：原始怪物道纹人类无法承受并获得（规则正文）"""
     e = _engine("龙心谷")
-    for dw in ("必中", "狂暴", "自愈", "飞行"):
+    for dw in ("必中", "自愈", "飞行", "疯狂"):
         r = _learn(e, dw)
         assert not r["success"], f"原始怪物道纹{dw}不应能被学习"
         assert "原始怪物道纹" in r["error"]

@@ -52,7 +52,7 @@ class MonsterPhaseMixin:
         道纹（冷却类由 can_use 管辖），每回合每道纹至多一次。
         2026-09-16 用户令：原「重复发动则 X 累加 +2×副本阶级」的递增机制已废止，
         重复发动按同一 X 计费。
-        _monster_activated 保留为持续激活口径（狂暴出手加成等），不再作发动门禁。
+        _monster_activated 保留为持续激活口径，不再作发动门禁。
         """
         rec = self._monster_daowen_round_used.get(id(monster))
         if rec is None or rec[0] != self.state.current_round:
@@ -67,17 +67,16 @@ class MonsterPhaseMixin:
         return dest
 
     def _monster_attack_actions(self, m: Entity, activated: set) -> int:
-        """怪物攻击出手数 = 1 + 疯狂X(自身状态) + 狂暴1(若激活)。
+        """怪物攻击出手数 = 1 + 疯狂X(自身状态)。
 
-        疯狂2026-08-17全局裁定：发动方把疯狂状态盖到所有角色，怪物从自身状态读+X；
-        激活集合口径仅保留给狂暴。发动当回合的状态在resolve阶段才落下，
-        prepare在本回合道纹结算前已快照出手数，因此疯狂自下回合生效的时序不变。
+        疯狂2026-08-17全局裁定：发动方把疯狂状态盖到所有角色，怪物从自身状态读+X。
+        发动当回合的状态在resolve阶段才落下，prepare在本回合道纹结算前已快照出手数，
+        因此疯狂自下回合生效的时序不变。
         高爆手雷修改的是每轮攻击中的"攻击次数"，不再同时削减攻击出手数。
+        2026-10-03：【狂暴】道纹删除，原"+1 出手"加成随之移除。
         """
         n = 1
         n += m.get_status_value("疯狂")
-        if "狂暴" in activated or m.has_status("狂暴"):
-            n += 1
         return max(0, n)
 
     def _combat_entity_refs(self) -> dict[str, Entity]:
@@ -894,7 +893,7 @@ class MonsterPhaseMixin:
         results: list[dict] = []
         # 守夜灯：用户裁定 2026-09-13 改为[回始]授予且不再清空，
         # 故怪物阶段不再有「[敌回始]授予 / [敌回终]清空」这一对动作。
-        results.extend(self._tick_baolie(self.state.get_all_enemy_side()))
+        # 2026-10-03：【爆裂】删除后不再有敌回终专属递减拍（_tick_baolie 已移除）。
         results.extend(prepared["skipped"])
         for actor_ref in submitted:  # 死斗部分提交：只结算本步提交的actor
             monster = refs.get(actor_ref)
@@ -907,7 +906,7 @@ class MonsterPhaseMixin:
                 if not monster.is_alive:
                     continue
             activated = self._monster_activated.setdefault(id(monster), set())
-            # 攻击出手数以“道纹结算前”的已激活集合为准：狂暴/疯狂是[回始]持续效果，
+            # 攻击出手数以“道纹结算前”的已激活集合为准：疯狂是[回始]持续效果，
             # 本回合刚发动时从下回合起生效，prepare列出的 base_attack_actions 也是按
             # 结算前状态给出的——两处必须一致，否则按 prepare 提交必然失败。
             activated_before = set(activated)

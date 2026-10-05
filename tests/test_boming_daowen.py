@@ -55,7 +55,7 @@ def test_boming_is_chaopin_reversal_in_closed_loop():
                for p in paths), paths
 
     edges = ResonanceEngine.CLOSED_LOOPS["扭曲都市闭环"]
-    assert len(edges) == 8
+    assert len(edges) == 7   # 2026-10-03：【爆裂】删除（原 8 节点闭环 → 7）
     srcs = sorted(s for s, _, _ in edges)
     dsts = sorted(d for _, _, d in edges)
     assert srcs == dsts, "闭环未合拢"

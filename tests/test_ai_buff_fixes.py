@@ -6,7 +6,7 @@ pytest - AI 战术表死码修复（2026-08-18）
    爆裂/超频/龙鳞/滑翔/分裂/招魂）授予后 0 发动（死码）。
 2. try_debuff 的 X≥2 门槛对代价型道纹（cost≤0，_x_for 恒为1，如畸变/逆鳞）
    永不满足；衰败被错标为 nuke 且按默认 dmg_per_x=2 错价，从未被选中。
-3. 尸爆被错标为即时 aoe（无 dmg_per_x → 总伤恒 0 被跳过），实为[命零]死亡触发。
+3. （2026-10-03：【尸爆】删除）同类的「分类必须来自预演而非人工标签」回归改用【瓦解】。
 
 覆盖：正常路径 / 边界条件 / 错误输入
 """
@@ -85,24 +85,24 @@ def test_shuaibai_reclassified_as_debuff_and_casts(tmp_path):
     assert r is not None, "衰败X=1（回始扣20%当前生命）应被发动"
 
 
-def test_shibao_classified_by_preview_not_by_label(tmp_path):
-    """尸爆：类别由预演事实归纳（引擎结算即真理），不得靠人工标签查表。
+def test_wajie_classified_by_preview_not_by_label(tmp_path):
+    """瓦解：类别由预演事实归纳（引擎结算即真理），不得靠人工标签查表。
 
-    实测：该场面下尸爆X=1 触发 damage_applied 链（引擎事实），故归 damage；
-    换场面后类别随真实效果自动变化——这正是"实时决策"的意义。
+    2026-10-03：【尸爆】删除，本用例改用同为副本专属、成本同为 3X 的【瓦解】
+    （使一个[目标]的[血限]减少10X%）。实测该场面下预演归纳为 damage。
     """
     e = _engine(tmp_path)
-    _give(e.state.player, "尸爆")
+    _give(e.state.player, "瓦解")
     # DM裁定 2026-09-10 加点降价后（2属性点=1法限），夹具的 10 法点只换到法限5，
-    # 而尸爆 X=1 就要 10 法力——四个目标变体的预演会全被引擎拒掉，_probe 返回 None。
-    # 抬到法限10（修行后的合法值）才能测到"分类来自预演"这件事本身。
+    # 而瓦解 X=1 就要 3 法力——抬到法限10（修行后的合法值）才能测到
+    # "分类来自预演"这件事本身。
     e.state.player.mana_limit = 10
     e.state.player.current_mana = 10
     ai = TacticalAI(e)
-    probe = ai._probe("尸爆")
-    assert probe is not None, "尸爆应可被预演归纳"
+    probe = ai._probe("瓦解")
+    assert probe is not None, "瓦解应可被预演归纳"
     assert probe["kind"] in ("damage", "tactician", "buff"), "分类须来自预演事件流"
-    assert probe["cost_per_x"] == 3            # 尸爆消耗10X→3X（2026-09-16）
+    assert probe["cost_per_x"] == 3            # 瓦解消耗3X
 
 
 # ---------- 边界条件 ----------

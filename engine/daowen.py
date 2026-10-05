@@ -17,8 +17,8 @@ class DaoWenEngine:
     # 怪物转化道纹（原始怪物道纹经残韵变化后的19个分支，与规则正文《原始怪物道纹与转化道纹》一致）
     # 用于"雇佣"后"发现并选择一种转化道纹"等需要从此类别中随机抽取的场景
     TRANSFORMED_DAOWEN = [
-        "愤怒", "自残", "无神", "借力", "弱化", "自食", "兴奋", "无力", "全速",
-        "急速", "加速", "眩晕", "洞察", "蒙蔽", "滋养", "衰败", "寄生", "滑翔", "坠落",
+        "愤怒", "自残", "无神", "借力", "弱化", "自食", "无力", "全速",
+        "急速", "加速", "眩晕", "洞察", "蒙蔽", "滋养", "衰败", "寄生",
     ]
 
     # X下限规则（道纹名 → 最小可用X）。2026-10-03 用户令：**波及的数值下限改为 2**。
@@ -232,19 +232,6 @@ class DaoWenEngine:
     # ---- 怪物原始道纹 ----
     
     @staticmethod
-    def calculate_kuangbao(x: int) -> dict:
-        """狂暴X：代价：异变5X。回始发动一轮额外攻击，持续X"""
-        return {
-            "dao_wen": "狂暴",
-            "x": x,
-            "cost_type": CostType.MUTATION.value,
-            "cost_mutation": 5 * x,
-            "duration": x,
-            "effect": "回始发动一轮额外攻击",
-            "summary": f"异变+{5*x}，回始发动一轮额外攻击，持续{x}回合"
-        }
-    
-    @staticmethod
     def calculate_quanli(x: int, target: Entity = None) -> dict:
         """全力X：代价：异变5X。使[目标]攻击力等同其法限，持续X
 
@@ -438,20 +425,6 @@ class DaoWenEngine:
         }
     
     @staticmethod
-    def calculate_xingfen(x: int, target: Entity = None) -> dict:
-        """兴奋X：消耗2X。使[目标]每次出手后速度+1，持续X"""
-        target_name = target.name if target is not None else "未选定目标"
-        return {
-            "dao_wen": "兴奋",
-            "x": x,
-            "cost_type": CostType.MANA.value,
-            "cost": 2 * x,
-            "speed_gain_per_action": 1,
-            "duration": x,
-            "summary": f"消耗{2 * x}法力，使{target_name}每次出手后速度+1，持续{x}回合"
-        }
-    
-    @staticmethod
     def calculate_wuli(x: int, target: Entity = None) -> dict:
         """无力X：消耗3X。回始使[目标]出手次数-X，持续∞"""
         target_name = target.name if target is not None else "未选定目标"
@@ -608,32 +581,6 @@ class DaoWenEngine:
             "summary": f"消耗{3 * x}法力，使{target_name}受到伤害的{20*x}%转化为{caster_name}的回复，永久"
         }
     
-    @staticmethod
-    def calculate_huaxiang(x: int) -> dict:
-        """滑翔X：消耗2X。获得飞行，持续X"""
-        return {
-            "dao_wen": "滑翔",
-            "x": x,
-            "cost_type": CostType.MANA.value,
-            "cost": 2 * x,
-            "duration": x,
-            "effect": "获得飞行",
-            "summary": f"消耗{2 * x}法力，获得飞行，持续{x}回合"
-        }
-    
-    @staticmethod
-    def calculate_zhuiluo(x: int) -> dict:
-        """坠落X：消耗X。所有飞行角色无法飞行且造成伤害减半，持续X"""
-        return {
-            "dao_wen": "坠落",
-            "x": x,
-            "cost_type": CostType.MANA.value,
-            "cost": x,
-            "duration": x,
-            "effect": "所有飞行角色无法飞行且造成伤害减半",
-            "summary": f"消耗{x}法力，所有飞行角色无法飞行且造成伤害减半，持续{x}回合"
-        }
-    
     # ---- 扭曲都市专属道纹 ----
     
     @staticmethod
@@ -750,19 +697,6 @@ class DaoWenEngine:
             "duration": x,
             "effect": "无法获得回复",
             "summary": f"消耗{2 * x}法力，使{target_name}无法获得回复，持续{x}回合"
-        }
-    
-    @staticmethod
-    def calculate_baolie(x: int) -> dict:
-        """爆裂X：消耗2X。受到伤害后，攻击者失去等量生命，持续X"""
-        return {
-            "dao_wen": "爆裂",
-            "x": x,
-            "cost_type": CostType.MANA.value,
-            "cost": 2 * x,
-            "duration": x,
-            "effect": "受到伤害后，攻击者失去等量生命",
-            "summary": f"消耗{2 * x}法力，受到伤害后攻击者失去等量生命，持续{x}回合"
         }
     
     @staticmethod
@@ -920,16 +854,6 @@ class DaoWenEngine:
         }
     
     @staticmethod
-    def calculate_huoxue(x: int, target: Entity = None) -> dict:
-        """活血X：消耗X。目标每累计失去2生命，回终获得回复1，持续X"""
-        target_name = target.name if target is not None else "未选定目标"
-        return {
-            "dao_wen": "活血", "x": x, "cost_type": CostType.MANA.value, "cost": x,
-            "heal_per_2hp": 1, "duration": x,
-            "summary": f"消耗{1 * x}法力，{target_name}每失去2HP回终回复1，持续{x}回合"
-        }
-    
-    @staticmethod
     def calculate_liebian(x: int, target: Entity = None) -> dict:
         """裂变X：消耗2X。使目标受到伤害改为分X次结算，持续∞"""
         target_name = target.name if target is not None else "未选定目标"
@@ -995,16 +919,6 @@ class DaoWenEngine:
             "cost_type": CostType.AGING.value, "cost_blood_limit": x * clone_hp,
             "split_clones": x, "clone_hp": clone_hp,
             "summary": f"衰老{x * clone_hp}，创造{x}个{clone_hp}血限的自身复制体"
-        }
-
-    @staticmethod
-    def calculate_shibao(x: int) -> dict:
-        """尸爆X：消耗3X。[命零]对所有敌方[目标]打出自身[血限]的10X%伤害。"""
-        return {
-            "dao_wen": "尸爆", "x": x,
-            "cost_type": CostType.MANA.value, "cost": 3 * x,
-            "self_destruct": True, "aoe_pct": 10 * x,
-            "summary": f"消耗{3 * x}法力，[命零]对全体敌造成自身血限{10*x}%伤害"
         }
 
     @staticmethod
@@ -1113,7 +1027,6 @@ class DaoWenEngine:
             "贯穿": cls.calculate_guanchuan,
             "封印": cls.calculate_fengyin,
             # 怪物原始
-            "狂暴": cls.calculate_kuangbao,
             "全力": cls.calculate_quanli,
             "疯狂": cls.calculate_huoli,
             "净化": cls.calculate_jinghua,
@@ -1128,7 +1041,6 @@ class DaoWenEngine:
             "借力": cls.calculate_jieli,
             "弱化": cls.calculate_ruhua,
             "自食": cls.calculate_zishi,
-            "兴奋": cls.calculate_xingfen,
             "无力": cls.calculate_wuli,
             "全速": cls.calculate_quansu,
             "急速": cls.calculate_jisu,
@@ -1139,8 +1051,6 @@ class DaoWenEngine:
             "滋养": cls.calculate_ziyang,
             "衰败": cls.calculate_shuaibai,
             "寄生": cls.calculate_jisheng,
-            "滑翔": cls.calculate_huaxiang,
-            "坠落": cls.calculate_zhuiluo,
             # 扭曲都市
             "变形": cls.calculate_bianxing,
             "定型": cls.calculate_dingxing,
@@ -1148,7 +1058,6 @@ class DaoWenEngine:
             "搏命": cls.calculate_boming,
             "超频": cls.calculate_chaopin,
             "坏死": cls.calculate_huaisi,
-            "爆裂": cls.calculate_baolie,
             "退化": cls.calculate_tuihua,
             # 罪孽都市
             "加害": cls.calculate_jiahai,
@@ -1163,14 +1072,12 @@ class DaoWenEngine:
             # 龙心谷
             "龙鳞": cls.calculate_longlin,
             "逆鳞": cls.calculate_nilin,
-            "活血": cls.calculate_huoxue,
             "裂变": cls.calculate_liebian,
             "嫁祸": cls.calculate_jiahuo,
             "背负": cls.calculate_beifu,
             "伤痕": cls.calculate_shanghen,
             # ---- 乱葬岗（二阶）----
             "分裂": cls.calculate_fenlie,
-            "尸爆": cls.calculate_shibao,
             "缄默": cls.calculate_qianmo,
             "瓦解": cls.calculate_wajie,
             "冥气": cls.calculate_mingqi,
@@ -1187,8 +1094,6 @@ class DaoWenEngine:
         if getattr(entity, "entity_type", "") == "怪物":
             n = 2  # 1 攻 + 1 纹
             n += entity.get_status_value("疯狂")
-            if entity.has_status("狂暴"):
-                n += 1
             n -= entity.get_status_value("无力")
             return max(0, n)
         return max(0, entity.action_count)
@@ -1288,8 +1193,8 @@ class ResonanceEngine:
             ("畸变", "曲解", "超频"),
             ("超频", "反转", "搏命"),
             ("搏命", "转换", "坏死"),
-            ("坏死", "曲解", "爆裂"),
-            ("爆裂", "曲解", "退化"),
+            # 2026-10-03 用户令删除【爆裂】→ 由【坏死】直连【退化】保持环连通
+            ("坏死", "曲解", "退化"),
             ("退化", "转换", "变形"),
         ],
         "罪孽都市闭环": [
@@ -1305,16 +1210,16 @@ class ResonanceEngine:
         "龙心谷闭环": [
             ("加害", "反转", "龙鳞"),
             ("龙鳞", "曲解", "逆鳞"),
-            ("逆鳞", "转换", "活血"),
-            ("活血", "曲解", "裂变"),
+            # 2026-10-03 用户令删除【活血】→ 由【逆鳞】直连【裂变】
+            ("逆鳞", "转换", "裂变"),
             ("裂变", "转换", "嫁祸"),
             ("嫁祸", "反转", "背负"),
             ("背负", "曲解", "伤痕"),
             ("伤痕", "转换", "加害"),
         ],
         "乱葬岗闭环": [
-            ("分裂", "转换", "尸爆"),
-            ("尸爆", "反转", "缄默"),
+            # 2026-10-03 用户令删除【尸爆】→ 由【分裂】直连【缄默】
+            ("分裂", "转换", "缄默"),
             ("缄默", "曲解", "瓦解"),
             ("瓦解", "转换", "冥气"),
             ("冥气", "反转", "勾魂"),
@@ -1326,13 +1231,13 @@ class ResonanceEngine:
         # 非闭环，是以原始道纹为根的分支树；怪物面板上的道纹多属此类，
         # 补齐后残韵才能作用于怪物（此前对必中/狂暴/飞行发动必然失败）。
         "怪物原始道纹": [
-            ("狂暴", "转换", "愤怒"),
-            ("狂暴", "反转", "自残"),
-            ("狂暴", "曲解", "无神"),
+            # 2026-10-03 删除（用户令）：("狂暴", "转换", "愤怒"),
+            # 2026-10-03 删除（用户令）：("狂暴", "反转", "自残"),
+            # 2026-10-03 删除（用户令）：("狂暴", "曲解", "无神"),
             ("全力", "转换", "借力"),
             ("全力", "反转", "弱化"),
             ("全力", "曲解", "自食"),
-            ("疯狂", "转换", "兴奋"),
+            # 2026-10-03 删除（用户令）：("疯狂", "转换", "兴奋"),
             ("疯狂", "反转", "无力"),
             ("疯狂", "曲解", "全速"),
             ("减速", "转换", "急速"),
@@ -1343,8 +1248,8 @@ class ResonanceEngine:
             ("自愈", "转换", "滋养"),
             ("自愈", "反转", "衰败"),
             ("自愈", "曲解", "寄生"),
-            ("飞行", "转换", "滑翔"),
-            ("飞行", "反转", "坠落"),
+            # 2026-10-03 删除（用户令）：("飞行", "转换", "滑翔"),
+            # 2026-10-03 删除（用户令）：("飞行", "反转", "坠落"),
         ],
     }
     

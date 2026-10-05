@@ -655,7 +655,7 @@ def test_monster_phase_engine():
     st = GameState(); st.current_region = "罪孽都市"
     st.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60, speed_limit=8, current_speed=8)
     m = Entity(name="打手", entity_type="怪物", blood_limit=120, current_hp=120, attack_count=4, attack_power=6)
-    for n,x in [("全力",3),("狂暴",3)]:
+    for n,x in [("全力",3),("疯狂",3)]:   # 2026-10-03：【狂暴】删除，改用【疯狂】
         m.dao_wen[n] = DaoWenInstance(dao_wen=DaoWen(name=n,formula="",cost_type="",cost_formula="",effect_formula=""), x_value=x)
     st.enemies.append(m)
     combat = CombatEngine(st, DiceEngine()); combat.reset_monster_activation()
@@ -670,11 +670,11 @@ def test_monster_phase_engine():
     assert len(r1) > 0, "怪物应有出手"
     print(f"  ✓ 第1回合：激活【强化3】，攻击力锁定为法限{m.mana_limit}，怪物出手{len(r1)}次，贾凡HP{st.player.current_hp} 速{st.player.current_speed}")
 
-    # 第2回合：重施狂暴3（准则9：不同道纹同回合各至多一次）
+    # 第2回合：发动【疯狂3】（准则9：不同道纹同回合各至多一次）
     combat.round_start()  # current_round→2
-    r2 = resolve_monster_phase(combat, {"打手": "狂暴"}, target_refs={"打手": "enemy:0"})
+    r2 = resolve_monster_phase(combat, {"打手": "疯狂"}, target_refs={"打手": "enemy:0"})
     assert r2, "怪物自主攻击必须有结算"
-    print(f"  ✓ 第2回合：激活【狂暴3】，怪物自主攻击")
+    print(f"  ✓ 第2回合：发动【疯狂3】，怪物自主攻击")
     print("  ✓ 怪物回合引擎化测试通过")
 
 
@@ -758,26 +758,27 @@ def test_flying_and_split():
     print("  ✓ 飞行/裂变测试通过")
 
 
-def test_huoxue():
-    """测试活血：本回合失血÷2回终回复"""
-    print("\n=== 测试：活血 ===")
-    from engine.models import GameState, StatusEffect
+def test_huoxueyi_relic():
+    """测试【活血衣】（2026-10-03 承接已删【活血】道纹）：受到攻击伤害后回复其一半"""
+    print("\n=== 测试：活血衣（遗物） ===")
+    from engine.models import GameState, Relic
     from engine.combat import CombatEngine
     from engine.dice import DiceEngine
     st = GameState(); st.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60, speed_limit=8, current_speed=8)
-    st.player.add_status(StatusEffect(name="活血", remaining_rounds=3, value=1))
+    st.relics = [Relic(name="活血衣", effect="")]
     m = Entity(name="打手", entity_type="怪物", blood_limit=120, current_hp=120, attack_count=1, attack_power=5)
     st.enemies.append(m)
     combat = CombatEngine(st, DiceEngine()); combat.reset_monster_activation()
     combat.round_start()
-    # 玩家挨5点(不闪避)
+    # 玩家挨5点(不闪避)：立刻回复 ceil(5/2)=3 → HP60→52
     st.player.current_speed = 0
-    combat.resolve_attack(m, st.player)  # 玩家HP60→55, hp_lost_this_round=5
-    assert st.player.current_hp == 55 and st.player.hp_lost_this_round == 5
-    combat.round_end()  # 活血回终回复5//2=2 → HP57
-    assert st.player.current_hp == 57, f"活血应回2→57，实{st.player.current_hp}"
-    print(f"  ✓ 活血：本回合失血5，回终回复2，HP55→{st.player.current_hp}")
-    print("  ✓ 活血测试通过")
+    combat.resolve_attack(m, st.player)
+    assert st.player.current_hp == 58, f"活血衣：受击5点→55，即时回复ceil(5/2)=3→58，实{st.player.current_hp}"
+    assert st.player.hp_lost_this_round == 5
+    combat.round_end()  # 活血衣是即时回复，回终不再有追加回复
+    assert st.player.current_hp == 58, f"回终不得再有活血回复，实{st.player.current_hp}"
+    print(f"  ✓ 活血衣：受击5点→55，即时回复3→58；回终无追加回复")
+    print("  ✓ 活血衣测试通过")
 
 
 def test_events_system():
@@ -930,7 +931,7 @@ def test_evolution_yuanchu():
 
     # ---- 1. 正常路径：困境怪物发动原初2借用【自愈2】 ----
     engine = mk_engine()
-    m = mk_plight_monster(dw=[("狂暴", 2)])
+    m = mk_plight_monster(dw=[("全力", 2)])   # 2026-10-03：【狂暴】删除，改用同为原始怪物道纹的【全力】
     engine.state.enemies.append(m)
     r = engine.execute_action("declare_evolution", {"monster": "困境怪", "daowen": "自愈", "x": 2})
     assert r["success"], f"正常进化应成功: {r}"
@@ -998,29 +999,29 @@ def test_evolution_yuanchu():
     st = GameState()
     st.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60,
                        speed_limit=8, current_speed=8)
-    m_act = mk_plight_monster(name="计费怪", hp=120, cur=120, atk=6, dw=[("狂暴", 3)])
+    m_act = mk_plight_monster(name="计费怪", hp=120, cur=120, atk=6, dw=[("全力", 3)])   # 2026-10-03：狂暴删除 → 全力
     st.enemies.append(m_act)
     combat = CombatEngine(st, DiceEngine()); combat.reset_monster_activation()
     combat.round_start()  # 第1回合（白板）
-    combat.round_start()  # 第2回合：激活狂暴3
-    r9 = resolve_monster_phase(combat, {"计费怪": "狂暴"})
-    assert m_act.mutation_count == 15, f"激活狂暴3应付异变5×3=15，实{m_act.mutation_count}"
-    print(f"  ✓ 怪物激活【狂暴3】真实支付异变15层（当前{m_act.mutation_count}层）")
+    combat.round_start()  # 第2回合：发动全力3
+    r9 = resolve_monster_phase(combat, {"计费怪": "全力"})
+    assert m_act.mutation_count == 15, f"发动全力3应付异变5×3=15，实{m_act.mutation_count}"
+    print(f"  ✓ 怪物发动【全力3】真实支付异变15层（当前{m_act.mutation_count}层）")
 
-    # 崩解中断：异变(阈值-15) + 狂暴3门票15 = 阈值 → 激活中断、不攻击
+    # 崩解中断：异变(阈值-15) + 全力3门票15 = 阈值 → 激活中断、不攻击
     st2 = GameState()
     st2.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60,
                         speed_limit=8, current_speed=8)
-    m_col = mk_plight_monster(name="自毁怪", hp=120, cur=120, atk=6, dw=[("狂暴", 3)])
+    m_col = mk_plight_monster(name="自毁怪", hp=120, cur=120, atk=6, dw=[("全力", 3)])
     m_col.mutation_count = Entity.MUTATION_COLLAPSE_THRESHOLD - 15
     st2.enemies.append(m_col)
     combat2 = CombatEngine(st2, DiceEngine()); combat2.reset_monster_activation()
     combat2.round_start(); combat2.round_start()
-    r10 = resolve_monster_phase(combat2, {"自毁怪": "狂暴"})
+    r10 = resolve_monster_phase(combat2, {"自毁怪": "全力"})
     assert m_col.mutation_count == Entity.MUTATION_COLLAPSE_THRESHOLD and not m_col.is_alive, "激活付异变达阈值应崩解命零"
     assert st2.player.current_hp == 60, "崩解怪攻击出手应被中断，玩家无伤"
-    assert any(e.get("collapsed") == "狂暴" for e in r10), "结果应记录崩解事件"
-    print(f"  ✓ 异变{Entity.MUTATION_COLLAPSE_THRESHOLD-15}+激活狂暴3(15)={Entity.MUTATION_COLLAPSE_THRESHOLD}层：崩解命零，攻击中断，玩家HP仍为{st2.player.current_hp}")
+    assert any(e.get("collapsed") == "全力" for e in r10), "结果应记录崩解事件"
+    print(f"  ✓ 异变{Entity.MUTATION_COLLAPSE_THRESHOLD-15}+发动全力3(15)={Entity.MUTATION_COLLAPSE_THRESHOLD}层：崩解命零，攻击中断，玩家HP仍为{st2.player.current_hp}")
 
     # ---- 7. 借用道纹：原初门票与首次发动各付一次，持续期间不再计费 ----
     st3 = GameState()

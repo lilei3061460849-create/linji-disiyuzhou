@@ -179,17 +179,26 @@ def test_first_cup_doubles_raw_hp_loss():
     assert player.current_hp == hp_before - 8
 
 
-def test_first_cup_doubles_baolie_reflect():
-    """爆裂反噬：攻击者失去的生命翻倍（Hook 侧同样读唯一事实源）。"""
-    engine = _cup_engine("baolie")
-    player, monster = engine.state.player, engine.state.enemies[0]
-    monster.add_status(StatusEffect(name="爆裂", remaining_rounds=1, value=1, source="测试"))
+def test_first_cup_doubles_qianjingjia_reflect():
+    """千荆甲反噬（2026-10-03 承接被删【爆裂】）：攻击者失去的生命翻倍。
+
+    反噬只能由**轮回者持有者**打出（怪物不持遗物），故靶子换成敌方轮回者，
+    并把【千荆甲】放进 opponent_relics。反噬本身是直接失血，倍率仍走
+    life_loss_multiplier（Hook 与记账共用同一事实源）。
+    """
+    engine = _cup_engine("qianjingjia")
+    player = engine.state.player
+    holder = Entity(name="持甲者", entity_type="轮回者", blood_limit=200, current_hp=200,
+                    mana_limit=10, current_mana=10)
+    engine.state.enemies.append(holder)
+    engine.state.opponent_relics.append(Relic(name="千荆甲", effect=""))
     hp_before = player.current_hp
 
     engine.combat._apply_hostile_damage(
-        monster, 5, "普通", source=player,
+        holder, 5, "普通", source=player,
         ctx={"timing": "test", "source": "测试伤害", "source_type": "test",
-             "actor": player, "target": monster, "mechanic": "damage"})
+             "actor": player, "target": holder, "mechanic": "damage",
+             "subtype": "attack"})
 
     assert player.current_hp == hp_before - 10, "5 点反噬应造成 10 点生命损失"
 
@@ -307,18 +316,23 @@ def test_first_cup_doubling_visible_in_preview():
     from engine.ai_preview import ActionPreview
 
     def _preview(cup: bool, db_suffix: str):
-        engine = _cup_engine(db_suffix, daowen="杀伐") if cup else _new_engine(db_suffix)
+        # 2026-10-03：原用例借【爆裂】反噬制造「自己失去的生命」，该道纹已删除；
+        # 改用【血债】：代价流血X（自己失去 X 点生命）+ 对目标造成 X 点伤害，
+        # 同一预演里同时可观察「打出的伤害」与「自己失去的生命」。
+        engine = _cup_engine(db_suffix, daowen="血债") if cup else _new_engine(db_suffix)
         if not cup:
+            _give_daowen(engine.state.player, "血债")
             _start_with_enemy(engine, Entity(name="靶怪", entity_type="怪物",
                                              blood_limit=200, current_hp=200))
         monster = engine.state.enemies[0]
         monster.blood_limit = monster.current_hp = 200
-        monster.add_status(StatusEffect(name="爆裂", remaining_rounds=1, value=1, source="测试"))
         player = engine.state.player
         player.current_mana = 40
+        player.current_hp = 100
+        engine.state.shards = 0
         player_hp_before, monster_hp_before = player.current_hp, monster.current_hp
         preview = ActionPreview(engine).preview(
-            "use_daowen", {"daowen_name": "杀伐", "x": 3, "target": "靶怪"})
+            "use_daowen", {"daowen_name": "血债", "x": 3, "target": "靶怪"})
         diff = preview["diff"]
         assert preview["result"].get("error") is None
         # 预演零污染
@@ -330,6 +344,6 @@ def test_first_cup_doubling_visible_in_preview():
     plain_loss, plain_dealt = _preview(False, "pvw_plain")
     cup_loss, cup_dealt = _preview(True, "pvw_cup")
 
-    assert cup_dealt == plain_dealt, "打出去的伤害不变（盾/血限全在，翻的只是自己失去的生命）"
-    assert plain_loss == plain_dealt, "无遗物：爆裂反噬 = 打出的伤害"
+    assert cup_dealt == plain_dealt, "打出去的伤害不变（翻的只是自己失去的生命）"
+    assert plain_loss == plain_dealt, "无遗物：流血代价 = 打出的伤害（血债X=3 → 各 3 点）"
     assert cup_loss == plain_loss * 2, "持有【第一杯】：预演里的生命损失同样翻倍"

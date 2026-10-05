@@ -9,16 +9,16 @@
      畸变·结算：[回终]失去(攻击力×攻击次数)点血限，血限压 0 连带命零统一判定；
      焦黑发丝：怪物命零 → 玩家速度+2（经统一速度入口）；
      洞察·结算：[回始]待结算法力经 mana 动词获得（含不朽之躯钳制）；
-     狂暴·标记/畸变·标记：纯报告条目，无动词）；
+     畸变·标记：纯报告条目，无动词；狂暴·标记随【狂暴】道纹删除）；
   2. priority 保持原值或按旧代码位置固化：加害=20、龙鳞=30（伤害加减区）；
-     自愈=10、衰败=20、洞察·结算=30、狂暴·标记=50、畸变·标记=60
+     自愈=10、衰败=20、洞察·结算=30、畸变·标记=60（狂暴·标记随道纹删除）
      （勾魂=40 已于 2026-08-30 随【勾魂】改版移除：不再回始扣法力）
      （回始效果循环，现已全部声明化）；帮派令=10（战始遗物段）；
      畸变·结算=10（回终第一循环顶部、凡庸前）；焦黑发丝=10（命零反应第一位）；
   3. 执行路径唯一：伤害相位经 CombatHookManager 上的 MechanismHookAdapter，
      回合/战始/回终相位经 CombatEngine._dispatch_phase，事件机制经 TriggerBus
      （订阅于战斗实例构造时）——旧类/旧 if 已删除。
-     注意：洞察状态的【闪避→pending+10】站点（_note_dodge）与狂暴的怪物行动逻辑
+     注意：洞察状态的【闪避→pending+10】站点（_note_dodge）与（已删除的）狂暴的怪物行动逻辑
      属于其它字面规则，不在迁移范围（机制名带后缀以示区分）。
 """
 from __future__ import annotations
@@ -238,15 +238,6 @@ DONGCHA = Mechanism(
     priority=30,
 )
 
-def _kuangbao_marker_effect(ctx: TriggerContext, targets: list) -> dict:
-    """旧 round_start 狂暴标记块语义（逐字复刻）：纯报告条目，无动词。"""
-    return {
-        "type": "extra_attack_ready",
-        "entity": ctx.target.name,
-        "note": "该实体本回合有一次额外攻击机会",
-    }
-
-
 def _jibian_marker_effect(ctx: TriggerContext, targets: list) -> dict:
     """旧 round_start 畸变标记块语义（逐字复刻）：纯报告条目，无动词。
 
@@ -261,16 +252,6 @@ def _jibian_marker_effect(ctx: TriggerContext, targets: list) -> dict:
         "note": "回终结算",
     }
 
-
-KUANGBAO_MARKER = Mechanism(
-    name="狂暴·标记",
-    when=Trigger.phase(Phase.ROUND_START),
-    effect=_kuangbao_marker_effect,
-    target=SELF,
-    condition=has_status("狂暴", of="self"),
-    # 旧位置=回始效果循环第五位（原勾魂之后、畸变标记之前；勾魂已移除）
-    priority=50,
-)
 
 JIBIAN_MARKER = Mechanism(
     name="畸变·标记",
@@ -599,7 +580,6 @@ MECHANISMS.register(SHUAIBAI)
 MECHANISMS.register(JIBIAN_SETTLE)
 MECHANISMS.register(JIAOHHEIFASI)
 MECHANISMS.register(DONGCHA)
-MECHANISMS.register(KUANGBAO_MARKER)
 MECHANISMS.register(JIBIAN_MARKER)
 MECHANISMS.register(XIJIE_PASSIVE)
 MECHANISMS.register(SILENT_MASK)

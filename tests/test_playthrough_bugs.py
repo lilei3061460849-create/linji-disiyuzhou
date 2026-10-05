@@ -94,75 +94,78 @@ def _resolve_prepared_monsters(engine: GameEngine, daowen_name: str | None = Non
 # ========================================================================
 
 def test_resonance_on_enemy_grants_dest_and_rewrites_next_activation():
-    """正常路径：反转敌方狂暴 → 敌人永久变为自残，贾凡同时永久获得自残。"""
+    """正常路径：反转敌方【减速】→ 敌人永久变为【加速】，贾凡同时永久获得【加速】。
+
+    2026-10-03：原用例把敌方【狂暴】反转成【自残】；【狂暴】删除后该边不存在，
+    改用仍在怪物原始道纹树上的 减速→(反转)→加速（同为 MONSTER_TRANSFORM_DAOWEN）。
+    """
     engine = _engine("res_happy")
     engine.state.resonance["反转"] = 1
     engine.execute_action("battle_start", {})
-    # 2026-09-16：法力即[攻击力]。反转后狂暴2→自残2，自残消耗3X=6，5 点法力付不起；
-    # 给 11 点：付掉 6 点后剩 5，自残按结算那一刻的攻力 5 打 2 次＝10 伤，HP 仍 80→70。
     monster = Entity(name="通缉犯", entity_type="怪物", blood_limit=80, current_hp=80,
-                     attack_count=1, attack_power=5, mana_limit=11, current_mana=11)
-    _give_daowen(monster, "狂暴", x=2)
+                     attack_count=1, attack_power=5, mana_limit=11, current_mana=11,
+                     speed_limit=4, current_speed=4)
+    _give_daowen(monster, "减速", x=1)
     _give_daowen(monster, "全力", x=1)
     monster._had_monster_daowen = True
     _put_enemy(engine, monster)
     engine.execute_action("round_start", {})
 
     r = engine.execute_action("use_resonance", {
-        "source_daowen": "狂暴", "resonance_type": "反转", "target_ref": "enemy:0",
+        "source_daowen": "减速", "resonance_type": "反转", "target_ref": "enemy:0",
     })
     assert r["success"], r
-    assert r["granted_daowen"] == "自残"
-    assert "自残" in engine.state.player.dao_wen
-    assert "狂暴" not in monster.dao_wen
-    assert "自残" in monster.dao_wen
+    assert r["granted_daowen"] == "加速"
+    assert "加速" in engine.state.player.dao_wen
+    assert "减速" not in monster.dao_wen
+    assert "加速" in monster.dao_wen
     assert engine.state.resonance["反转"] == 0
 
     finish_round(engine)
     engine.execute_action("round_start", {})
     prepared = engine.execute_action("prepare_monster_phase", {})
     actor = prepared["result"]["actors"][0]
-    option = next(o for o in actor["daowen_options"] if o["name"] == "自残")
+    option = next(o for o in actor["daowen_options"] if o["name"] == "加速")
+    assert option, "改写后的【加速】应成为怪物可发动道纹"
     phase = engine.execute_action("resolve_monster_phase", {
         "token": prepared["result"]["token"],
         "choices": [{
             "actor_ref": actor["actor_ref"],
-            "daowen": {"name": "自残", "target_ref": "enemy:0",
+            "daowen": {"name": "加速", "target_ref": "enemy:0",
                        "dodge": False, "blood_shadow": False, "trigger_spell_choices": {}},
             "attack_actions": [{"hits": [{"target_ref": "player:0", "dodge": False, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}}]}],
         }],
     })
     assert phase["success"], phase
     details = phase["result"]["details"]
-    activated = [d for d in details if d.get("daowen_activated") == "自残"]
-    assert activated, f"应发动永久改写后的自残: {details}"
-    assert monster.current_hp == 70, f"自残2次×攻击力5，HP应80→70，实{monster.current_hp}"
-    assert "自残" in monster.dao_wen
-    assert "狂暴" not in monster.dao_wen
+    activated = [d for d in details if d.get("daowen_activated") == "加速"]
+    assert activated, f"应发动永久改写后的加速: {details}"
+    assert monster.has_status("加速"), "改写后的道纹必须真实生效"
+    assert "加速" in monster.dao_wen and "减速" not in monster.dao_wen
 
 
 def test_resonance_no_duplicate_when_caster_already_owns_dest():
     """边界：施法者已持有变化后道纹则不重复获得；目标道纹仍永久变化。"""
     engine = _engine("res_bound")
     engine.state.resonance["反转"] = 1
-    _give_daowen(engine.state.player, "自残")
+    _give_daowen(engine.state.player, "加速")
     engine.execute_action("battle_start", {})
-    monster = Entity(name="唯一狂暴", entity_type="怪物", blood_limit=80, current_hp=80,
+    monster = Entity(name="唯一减速", entity_type="怪物", blood_limit=80, current_hp=80,
                      attack_count=1, attack_power=4)
-    _give_daowen(monster, "狂暴", x=1)
+    _give_daowen(monster, "减速", x=1)
     _give_daowen(monster, "全力", x=1)
     monster._had_monster_daowen = True
     _put_enemy(engine, monster)
     engine.execute_action("round_start", {})
 
     r = engine.execute_action("use_resonance", {
-        "source_daowen": "狂暴", "resonance_type": "反转",
+        "source_daowen": "减速", "resonance_type": "反转",
     })
     assert r["success"], r
     assert r["granted_daowen"] is None
-    assert list(engine.state.player.dao_wen).count("自残") == 1
-    assert "狂暴" not in monster.dao_wen
-    assert "自残" in monster.dao_wen
+    assert list(engine.state.player.dao_wen).count("加速") == 1
+    assert "减速" not in monster.dao_wen
+    assert "加速" in monster.dao_wen
 
 
 def test_resonance_fails_without_holder_or_stock():

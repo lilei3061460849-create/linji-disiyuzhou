@@ -91,12 +91,11 @@ def test_full_battle_cycle_all_mechanism_types_fire():
     enemy.attack_count = 2
     enemy.attack_power = 3
 
-    # 回始：自愈 -> 衰败 -> 洞察 -> 狂暴标记
+    # 回始：自愈 -> 衰败 -> 洞察（2026-10-03：【狂暴·标记】随道纹删除）
     # （DM裁定 2026-09-09：法力一池制，mana_refill 已不在回始管道里）
     res = combat.round_start()
     p_types = [e.get("type") for e in res["effects"] if e.get("entity") == "P"]
-    assert p_types == ["self_heal", "shuaibai_tick", "dongcha_mana",
-                       "extra_attack_ready"], f"回始顺序: {p_types}"
+    assert p_types == ["self_heal", "shuaibai_tick", "dongcha_mana"], f"回始顺序: {p_types}"
 
     # 回始数值链（P: hp100 满血 -> 自愈 +10 封顶 100 -> 衰败 ceil(100*10/100)=10 -> 90）
     assert player.current_hp == 90, f"P hp={player.current_hp}"

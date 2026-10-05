@@ -186,8 +186,8 @@ def test_jiaohhei_on_collapse(tmp_path):
     assert p.current_speed == speed + 2
 
 
-def test_jiaohhei_on_baolie_reflect(tmp_path):
-    """第三条来源：怪物被爆裂反噬命零，焦黑发丝仍+2。"""
+def test_jiaohhei_on_qianjingjia_reflect(tmp_path):
+    """第三条来源：怪物被【千荆甲】反噬命零，焦黑发丝仍+2（2026-10-03 起替代爆裂）。"""
     e = _engine(tmp_path, "hair_baolie")
     begin_battle(e)
     p, m = e.state.player, e.state.enemies[0]
@@ -195,9 +195,12 @@ def test_jiaohhei_on_baolie_reflect(tmp_path):
     # 2026-09-13 全局上限：满速时 +2 会被吃掉，先腾空间再验"焦黑发丝触发了"
     p.current_speed = max(0, p.speed_limit - 2)
     speed = p.current_speed
-    p.add_status(StatusEffect(name="爆裂", value=1, remaining_rounds=2, source=p.name))
+    e.state.relics.append(Relic("千荆甲", ""))
     m.current_hp = 4
-    e.combat._apply_hostile_damage(p, 10, source=m)
+    e.combat._apply_hostile_damage(p, 10, source=m, ctx={
+        "timing": "monster_action", "source": "普通攻击", "source_type": "attack",
+        "actor": m, "target": p, "mechanic": "damage", "subtype": "attack",
+        "amount": 10, "tags": {"attack"}})
     assert not m.is_alive
     assert p.current_speed == speed + 2
 

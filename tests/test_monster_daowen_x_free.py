@@ -145,19 +145,20 @@ def test_max_x_boundary_accepted_and_exceeded_rejected(tmp_path):
 def test_mutation_daowen_capped_below_collapse(tmp_path):
     """边界：【异变】是累加计数而非预算，按崩解线封顶，不提供自爆档。
 
-    狂暴是原始怪物道纹，代价 异变5X；崩解阈值 50，异变 0 → 上限 X=9（5×9=45<50，
+    全力是原始怪物道纹，代价 异变5X；崩解阈值 50，异变 0 → 上限 X=9（5×9=45<50，
     5×10=50 已触及崩解线）。法限再高也不该突破这条生存线。
+    （2026-10-03：【狂暴】删除，改用同为「异变5X」的【全力】验证同一规则。）
     """
     e = _engine(tmp_path)
     m = Entity("测试怪", "怪物", blood_limit=234, current_hp=234,
                attack_count=3, attack_power=99, mana_limit=99, current_mana=99,
                speed_limit=3, current_speed=3)
-    m.dao_wen["狂暴"] = DaoWenInstance(
-        DaoWen(name="狂暴", formula="", cost_type="异变", cost_formula="5X",
+    m.dao_wen["全力"] = DaoWenInstance(
+        DaoWen(name="全力", formula="", cost_type="异变", cost_formula="5X",
                effect_formula=""), x_value=0, x_free=True)
     _setup(e, m)
     prep, actor = _prepare(e)
-    opt = next(o for o in actor["daowen_options"] if o["name"] == "狂暴")
+    opt = next(o for o in actor["daowen_options"] if o["name"] == "全力")
     assert opt["max_x"] == 9, opt
     # 上限之内不致死
     assert m.mutation_count + 5 * opt["max_x"] < Entity.MUTATION_COLLAPSE_THRESHOLD
@@ -284,17 +285,18 @@ def test_heal_x_scales_with_missing_hp(tmp_path):
 
 
 def test_persistent_duration_buff_scales_with_expected_rounds(tmp_path):
-    """边界：【狂暴】duration=X，效果下回合才兑现——单步预演看不到收益。
+    """边界：持续X类道纹（此处用【减速】代替已删的【狂暴】）duration=X，
+    效果下回合才兑现——单步预演看不到收益。
 
     补上跨回合期望收益后，X 应随"预期还能打几回合"缩放：
     预期够长时取满上限，朝不保夕时买那么久没有意义。
     """
     # 敌方每回合仅 6 伤 → 预期能打很久，值得买更长持续时间
-    e, m, actor, prep = _preview_scenario(tmp_path, "狂暴", player_mana=2)
-    long_x = _chosen_x(e, m, actor, prep, "狂暴")
+    e, m, actor, prep = _preview_scenario(tmp_path, "减速", player_mana=2)
+    long_x = _chosen_x(e, m, actor, prep, "减速")
     assert long_x > 1, f"预期剩余回合很长时不应只买 X=1，实际 {long_x}"
 
     # 敌方每回合 90 伤 → 怪物朝不保夕，买满时长是浪费
-    e, m, actor, prep = _preview_scenario(tmp_path, "狂暴", player_mana=30)
-    short_x = _chosen_x(e, m, actor, prep, "狂暴")
+    e, m, actor, prep = _preview_scenario(tmp_path, "减速", player_mana=30)
+    short_x = _chosen_x(e, m, actor, prep, "减速")
     assert short_x <= long_x, f"濒死时不应买比长局更久的时长：{short_x} > {long_x}"

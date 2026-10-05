@@ -195,11 +195,11 @@ def test_first_cup_doubling_is_not_inherited_by_allies():
 
 
 def test_wangyouxiang_registered_in_revised_relic_pool():
-    """删除两件旧契约、钱袋与折速法印后，忘忧香仍在10件遗物池中。"""
+    """删除两件旧契约、钱袋与折速法印后，忘忧香仍在遗物池中（2026-10-03 新增 5 件 → 16）。"""
     engine = _new_engine("wangyou_registered")
     names = {n for n, _ in engine.RELIC_DEFS}
     assert "忘忧香" in names
-    assert len(engine.RELIC_DEFS) == 11   # 2026-09-13 新增【承露盏】
+    assert len(engine.RELIC_DEFS) == 16   # 2026-09-13 新增【承露盏】；2026-10-03 新增千荆甲/万钧印/癫狂之脑/活血衣/增生药剂
     assert "血契" in names
     assert "钱袋" not in names
 

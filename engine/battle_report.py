@@ -250,13 +250,9 @@ def _render_effect(eff: dict) -> str:
         return f"{eff.get('target')} 攻击力被固定为 {eff.get('value', 1)}"
     if t == "relic":
         return f"遗物：{eff.get('log')}"
-    if t == "huoxue_heal":
-        return f"{eff.get('entity') or eff.get('target')} 触发【活血】：[回复]{eff.get('actual', eff.get('heal'))}点生命"
     if t == "status_expired":
         expired = "、".join(eff.get("expired_effects", []))
         return f"{eff.get('entity') or eff.get('target')} 状态到期清除：{expired}"
-    if t == "extra_attack_ready":
-        return f"{eff.get('entity') or eff.get('target')} 【狂暴】生效：本回合获得额外一轮攻击"
     if t == "duming":
         return f"【赌命】结算：{eff.get('target')} 失去 {eff.get('damage')} 点生命"
     if t == "duming_register":
@@ -271,9 +267,6 @@ def _render_effect(eff: dict) -> str:
         return f"{eff.get('target')} 获得【蒙蔽】{eff.get('count')}次"
     if t == "boba_register":
         return f"【波及X={eff.get('x')}】结算登记：目标 {eff.get('target')}"
-    if t == "zhuiluo":
-        targets = "、".join(eff.get("targets", []))
-        return f"【坠落】生效：击落飞行目标 {targets}"
     if t == "jiahuo":
         return f"{eff.get('caster')} 发动【嫁祸】：受到伤害由 {eff.get('target')} 承担"
     if t == "beifu":

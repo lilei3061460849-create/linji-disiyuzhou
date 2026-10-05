@@ -71,7 +71,7 @@ from .handlers.duel import (
 
 # 扭曲都市废墟设施工具库（规则正文8件：名→(耐久, 效果文本逐字)）
 TWISTED_TOOL_LIBRARY = {
-    "反怪物电击枪": (3, "对一个[目标]造成25点伤害；若[目标]处于【飞行】，额外造成15点伤害并施加【坠落1】"),
+    "反怪物电击枪": (3, "对一个[目标]造成25点伤害；若[目标]处于【飞行】，额外造成15点伤害。（2026-10-03：【坠落】道纹删除，原「施加【坠落1】」一并移除）"),
     "备用血泵": (3, "使自身获得20点［回复］；若自身当前生命≤30%，额外获得30点格挡。"),
     "强光探照灯": (2, "使一个[目标]陷入【蒙蔽2】"),
     "高压水枪": (2, "清除全场所有敌方[目标]身上的所有“持续X”效果"),
@@ -695,7 +695,8 @@ class GameEngine:
                         if self.state.on_player_side(entity) and entity.is_alive
                         and entity is not player and entity.entity_type in ("朋友", "员工")]
         idle_allies = [a for a in ally_options
-                       if refs[a["ref"]].actions_used_this_round < refs[a["ref"]].action_count]
+                       if refs[a["ref"]].actions_used_this_round
+                       < self.combat.single_round_action_count(refs[a["ref"]])]
         # 基础动作【聚能】/【蓄锐】（2026-09-28 规则）：各消耗 1 次出手。
         # 它们一直存在于引擎执行表中，也必须出现在运行时可用行动里——否则
         # LLM 只能从 available_actions 里选，规则写了却永远选不到。
@@ -1720,6 +1721,12 @@ class GameEngine:
         ("无所求", "每当在事件中选拒绝类选项，永久获得1属性点"),
         ("忘忧香", "战斗被动：你受到溢出的回复时将其转化为等量格挡（2026-09-28 重做；局外【忘忧】行动已删除）"),
         ("承露盏", "每累计失去10点生命，获得1点法力（本场累计，余数滚存，[战始]归零）"),
+        # 2026-10-03 新增 5 件（承接被删道纹，全部加入通用遗物池）：
+        ("千荆甲", "你受到攻击伤害前，攻击者受到等量伤害（承接原【爆裂】道纹；只对攻击行动生效）"),
+        ("万钧印", "有[目标]发动攻击时，可将其改为该攻击者对自己发动攻击（2026-10-03 用户修订版；引擎无交互决策层时默认发动）"),
+        ("癫狂之脑", "你每回合的出手次数+1，受到的攻击伤害翻倍"),
+        ("活血衣", "你受到攻击造成的伤害后，恢复等同其一半的生命（向上取整）"),
+        ("增生药剂", "你每次对自己造成伤害后，恢复10生命"),
     ]
 
     def _init_relic_pool(self):
@@ -2453,13 +2460,12 @@ class GameEngine:
 
         怪物读正文「每回合 1 次攻击 + 1 种道纹」（single_round_action_count）——
         Entity.action_count 对怪物按速限推导，而怪物面板不含[速限]，恒为 0。
-        其余角色读 Entity.action_count（全体基础 2 次，再受【疯狂】/【无力】/【蓄锐·增】修正）。
+        其余角色读 Entity.action_count（全体基础 2 次，再受【疯狂】/【无力】/【蓄锐·增】修正），
+        并叠加遗物【癫狂之脑】的 +1（统一走 combat.single_round_action_count，避免口径分叉）。
         """
         if entity is None:
             return 0
-        if entity.entity_type == "怪物":
-            return self.combat.single_round_action_count(entity)
-        return entity.action_count
+        return self.combat.single_round_action_count(entity)
 
     def _consume_action_or_error(self, entity: "Entity") -> Optional[dict]:
         """校验entity本回合出手是否用尽；未用尽则消耗1次并返回None，用尽则返回错误dict。
@@ -2484,12 +2490,6 @@ class GameEngine:
                     "error": f"{entity.name}本回合出手已用完"
                              f"({entity.actions_used_this_round}/{budget})"}
         entity.actions_used_this_round += 1
-        if entity.has_status("兴奋"):
-            self.combat._gain_speed(entity, 1, ctx={
-                "timing": "player_action", "source": "兴奋", "source_type": "daowen",
-                "actor": entity, "target": entity, "mechanic": "speed_change", "subtype": "current_speed",
-                "amount": 1, "tags": {"daowen", "action_followup"},
-            })
         return None
 
     # ==================== 最终死斗·交替出手校验 ====================
@@ -2512,8 +2512,8 @@ class GameEngine:
         守擂侧"有余手"= 仍有存活敌人未结算（驱动维护已结算集合）。"""
         if side == "player_side":
             entities = self.state.get_all_player_side()
-            return any(e.actions_used_this_round < e.action_count and self.combat.can_act(e)
-                       for e in entities)
+            return any(e.actions_used_this_round < self.combat.single_round_action_count(e)
+                       and self.combat.can_act(e) for e in entities)
         # 守擂侧：怪物按正文口径「每回合 1 次攻击 + 1 种道纹」计出手预算
         # （single_round_action_count），与 _consume_action_or_error 同一口径——
         # 此前这里写成"存活未撤退即有余手"，与实际结算门禁不一致：怪物既被
@@ -2521,9 +2521,7 @@ class GameEngine:
         # 对手轮回者/盟友按各自出手预算判断（耗尽则连动）。
         return any(
             e.is_alive and not e.has_retreated and self.combat.can_act(e)
-            and e.actions_used_this_round < (
-                self.combat.single_round_action_count(e)
-                if e.entity_type == "怪物" else e.action_count)
+            and e.actions_used_this_round < self.combat.single_round_action_count(e)
             for e in self.state.get_all_enemy_side())
 
     def _advance_duel_turn(self):
@@ -2781,9 +2779,10 @@ class GameEngine:
         if self.state.phase == "in_combat":
             if not self.combat.can_act(actor):
                 return {"success": False, "error": f"{actor.name}当前无法出手"}
-            if actor.entity_type != "怪物" and actor.actions_used_this_round >= actor.action_count:
+            budget = self._action_budget_of(actor)
+            if actor.actions_used_this_round >= budget:
                 return {"success": False,
-                        "error": f"{actor.name}本回合出手已用完({actor.actions_used_this_round}/{actor.action_count})"}
+                        "error": f"{actor.name}本回合出手已用完({actor.actions_used_this_round}/{budget})"}
 
         if actor.has_status("无神"):
             target = actor
@@ -3881,23 +3880,23 @@ class GameEngine:
         # 全部参数合法后统一扣耐久。
         remaining = item.use()
         result: dict[str, Any] = {"tool": name, "uses_remaining": remaining, "is_depleted": item.is_depleted}
-        # 1. 反怪物电击枪：对目标 25 伤害，飞行目标 +15 并施坠落
+        # 1. 反怪物电击枪：对目标 25 伤害，飞行目标额外 +15
+        # （2026-10-03：【坠落】删除，击落效果移除；额外伤害保留）
         if name == "反怪物电击枪":
             target = selected_enemy()
             if target is None:
                 item.current_uses += 1
                 return {"success": False, "error": "找不到敌方target_ref"}
-            # 只有当前飞行/滑翔状态算飞行；仅“持有”飞行道纹不算已经飞行。
-            flying = target.is_flying or target.has_status("飞行") or target.has_status("滑翔")
+            # 只有当前飞行状态算飞行；仅“持有”飞行道纹不算已经飞行。
+            flying = target.is_flying or target.has_status("飞行")
             dmg = 25 + (15 if flying else 0)
             detail = self.combat._apply_hostile_damage(target, dmg, source=player, ctx={
                 "timing": self.state.combat_subphase or self.state.phase, "source": "反怪物电击枪", "source_type": "consumable",
                 "actor": player, "target": target, "mechanic": "damage", "subtype": "consumable",
                 "amount": dmg, "tags": {"consumable"},
             })
-            if flying:
-                target.add_status(StatusEffect(name="坠落", value=1, remaining_rounds=1, source="反怪物电击枪"))
             result.update({"target": target.name, "damage": dmg, "flying_bonus": 15 if flying else 0, "hp_after": target.current_hp, "detail": detail})
+            # 2026-10-03：原“击落”（施【坠落1】）随道纹删除移除。
         # 2. 备用血泵：回复20（走 heal，计入癌变/战终回吐），≤30% 额外30格挡
         elif name == "备用血泵":
             heal_detail = self.state.apply_heal(player, 20, ctx={

@@ -1176,8 +1176,12 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                                if e.state.shards >= c)
                     r = e.execute_action("pre_battle_action", {
                         "sub_action": "修行", "tier": tier,
+                        # 2026-10-03：速限/法限按 2 属性点一档，奇数点必被拒；
+                        # 3/5 档给奇数点，奇数档一律改投血限（1 点一档，永远合法）。
                         "allocations": (xiuxing or {}).get(
-                            f"tier{tier}", {"speed_points": tier, "mana_points": 0})})
+                            f"tier{tier}",
+                            {"speed_points": tier, "mana_points": 0} if tier % 2 == 0
+                            else {"blood_points": tier})})
                     if r.get("success"):
                         _tag_behavior(behaviors, "修行", {"tier": tier}, e, b)
                         continue
@@ -1263,8 +1267,10 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                 record("failed", act, str(r.get("error"))[:60])
                 # 失败必须退还精力，否则会死循环；引擎已退还，这里兜底防死锁
                 if e.state.energy >= before:
+                    # tier1 只给 1 属性点：速限/法限要偶数点，只能进血限，
+                    # 否则兜底自己也会被引擎拒（2026-10-03 修死锁）。
                     e.execute_action("pre_battle_action",
-                                     {"sub_action": "修行", "tier": 1, "to": "mana"})
+                                     {"sub_action": "修行", "tier": 1, "to": "blood"})
             # 卡死哨兵：连续 STALL_LIMIT 步精力不退（门禁未清/兜底被拒），说明
             # 存在驱动解不开的语义门禁——回收为无效局，绝不挂死进程。
             if e.state.energy >= before:
@@ -1486,7 +1492,7 @@ def choose_pre_battle(e, todo, battle_no, rng, policy):
             continue          # 满血不休整（无效行动，不该计入选择率）
         cands.append((act, w))
     if not cands:
-        return "修行", {"tier": 1, "to": "mana"}
+        return "修行", {"tier": 1, "to": "blood"}
 
     total = sum(w for _, w in cands)
     pick = rng.uniform(0, total)
@@ -1503,15 +1509,16 @@ def choose_pre_battle(e, todo, battle_no, rng, policy):
     if act == "附煞":
         held = next(iter(p.dao_wen), None) if p else None
         if not held:
-            return "修行", {"tier": 1, "to": "mana"}
+            return "修行", {"tier": 1, "to": "blood"}
         # 确定性：碎片≥25用选择（冥煞附当前持有道纹），≥10用发现，否则跳过
         if e.state.shards >= 25:
             return act, {"mode": "选择", "sha_qi": "冥煞", "daowen_name": held}
         if e.state.shards >= 10:
             return act, {"mode": "发现", "daowen_name": held}
-        return "修行", {"tier": 1, "to": "mana"}
+        return "修行", {"tier": 1, "to": "blood"}
     if act == "修行":
-        return act, {"tier": 1, "to": "mana" if battle_no % 2 else "speed"}
+        # tier1 = 1 属性点，速限/法限要偶数点 → 只能进血限（2026-10-03 修）
+        return act, {"tier": 1, "to": "blood"}
     if act == "休整":
         # 休整分级（2026-08-19 P2；2026-09-10 随引擎改制更新，同日二次裁定
         # 改三档）：恢复额度=轮回者血限百分比（tier1/2/3 = 20%/40%/60%，

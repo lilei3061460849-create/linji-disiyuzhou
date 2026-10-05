@@ -86,7 +86,7 @@ def copy_dice_for_snapshot(dice: Any, *, keep_history: bool = True) -> Any:
 
 #: 需要原地保存/恢复的战斗运行态（键多为 id(entity)，身份必须稳定）。
 COMBAT_RUNTIME_ATTRS = (
-    "_monster_activated",          # 本场已激活道纹（持续激活口径，如狂暴出手加成）
+    "_monster_activated",          # 本场已激活道纹（持续激活口径）
     "_monster_daowen_round_used",  # 本回合已发动道纹（每回合每道纹至多一次）
     "_resonance_rewrites",         # 残韵改写映射（按实体）
     "_sanxiang_consumed",          # 三相残韵盘本场已消耗的类型

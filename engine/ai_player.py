@@ -595,7 +595,6 @@ class PlaceholderBackend(AIBackend):
                             # 波及X：必须恰好提交X个目标（候选全量提交会在候选>X时被拒）。
                             dao["dodge_targets"] = pick_wave_dodge_targets(option)
                         if option["resolves_as"] == "疯狂": action_count += option["x"]
-                        if option["resolves_as"] == "狂暴": action_count += 1
                     target = (actor["attack_target_options"][0]
                               if actor["attack_target_options"] else None)
                     if target is None:

@@ -69,7 +69,7 @@ def test_dongcha_is_registered():
     assert mech.priority == 30
     from engine.mechanisms.registry import MECHANISMS as REG
     assert [m.name for m in REG.phase_mechanisms(Phase.ROUND_START)] == \
-        ["自愈", "衰败", "洞察·结算", "狂暴·标记", "畸变·标记"]
+        ["自愈", "衰败", "洞察·结算", "畸变·标记"]   # 2026-10-03：【狂暴·标记】随道纹删除
 
 
 def test_old_dongcha_block_removed():

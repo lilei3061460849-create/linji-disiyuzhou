@@ -275,7 +275,7 @@ class Entity:
     # 【封印】是暂离回场，不使用此标记；战斗胜利另由暂离队列门禁处理。
     is_departed: bool = False
     departure_reason: str = ""   # 离场原因（雕塑/癌变/还债/救赎/逃跑/...）
-    hp_lost_this_round: int = 0   # 本回合累计失去的生命（活血用，回始归零）
+    hp_lost_this_round: int = 0   # 本回合累计失去的生命（回始归零）
     actions_used_this_round: int = 0  # 本回合已消耗的出手次数（回始归零，用于出手预算校验）
     # ---- 蓄锐（2026-09-28 基础动作）：消耗1出手换取下回合+1出手 ----
     # 用 Entity.field 方式声明：
@@ -582,7 +582,7 @@ class Entity:
         self.current_hp = max(0, self.current_hp - remaining)
         detail["actual_damage"] = remaining
         detail["hp_after"] = self.current_hp
-        self.hp_lost_this_round += remaining  # 活血追踪
+        self.hp_lost_this_round += remaining  # 本回合失血追踪
         
         if self.current_hp <= 0:
             # 模型层只翻标记，不知道战斗上下文。命零的“通知 + 死后效果”必须由调用方
@@ -729,7 +729,7 @@ class Entity:
         return sum(s.value for s in self.status_effects if s.name == name and not s.is_expired)
     
     def tick_status_effects(self, skip_names: tuple = ()) -> list[str]:
-        """回合递减，返回已过期的效果名。skip_names 本拍不减（爆裂改走敌回终）。"""
+        """回合递减，返回已过期的效果名。skip_names 本拍不减。"""
         expired = []
         remaining = []
         for s in self.status_effects:
@@ -747,13 +747,13 @@ class Entity:
         """添加状态效果；未显式给出极性时按规则表标注，生命周期仍由scope独立决定。"""
         if effect.polarity == EffectPolarity.NEUTRAL.value:
             buffs = {
-                "固执", "贯穿", "急速", "洞察", "兴奋", "飞行", "滑翔", "狂暴",
+                "固执", "贯穿", "急速", "洞察", "飞行",
                 "全力", "疯狂", "必中", "自愈", "洗劫", "逆鳞", "嫁祸", "背负",
                 "负岳索", "加速", "愤怒", "蓄锐·增",
             }
             debuffs = {
-                "弱化", "无力", "减速", "全速", "束缚", "封印", "坠落",
-                "坏死", "爆裂", "退化", "定型", "畸变", "加害", "伤痕",
+                "弱化", "无力", "减速", "全速", "束缚", "封印",
+                "坏死", "退化", "定型", "畸变", "加害", "伤痕",
                 "寄生", "蒙蔽", "眩晕", "手雷减攻", "衰败", "被背负",
             }
             if effect.name in buffs:
@@ -1270,11 +1270,24 @@ class GameState:
         """【第一杯】：该实体失去的生命倍率（非持有者=1）。
 
         只作用于**有明确数值的失去生命**：伤害、数值型【代价】（流血）、
-        直接失血（爆裂反噬等）。血限被压低导致的当前生命封顶、以及
+        直接失血（千荆甲反噬等）。血限被压低导致的当前生命封顶、以及
         「当前生命直接置0」的命零类效果（癌变/迷失·崩解/雕塑等）不带数值、
         也不翻倍——它们不是"失去生命"，是判定归零。
         """
         return self.FIRST_CUP_MULTIPLIER if self.side_has(entity, self.FIRST_CUP) else 1
+
+    def _relic_active(self, entity: Entity, name: str) -> bool:
+        """遗物持有判定（唯一口径，2026-10-03，自 CombatEngine 平移）。
+
+        - 归属查 `side_has`（玩家＝本局 relics；敌方轮回者＝opponent_relics）；
+        - 玩家侧再查 sealed_relics：被【豪夺/封印】封住的遗物不生效（原口径）。
+        新遗物（千荆甲等）的触发一律经本函数，避免各处各写一份持有判定。
+        """
+        if entity is None or not self.side_has(entity, name):
+            return False
+        if entity is self.player:
+            return self.sealed_relics.get(name, 0) <= 0
+        return True
 
     def side_has(self, entity: Entity, name: str) -> bool:
         """该实体所属轮回者是否持有该终音/初拥/龙族项目。朋友/员工不继承。"""

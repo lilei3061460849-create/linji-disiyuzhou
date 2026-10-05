@@ -47,21 +47,32 @@ def test_daowen_heal_effect_has_context_without_warning():
     assert heal["heal_ctx"]["subtype"] == "daowen"
 
 
-def test_huoxue_and_blood_lineage_heals_have_contexts():
+def test_relic_and_blood_lineage_heals_have_contexts():
+    """遗物回复与血族血脉回复都必须带 heal_ctx。
+
+    2026-10-03：【活血】道纹删除（效果由通用遗物【活血衣】承接），原「回终活血回复」
+    段落改为直接验证【活血衣】的即时回复带上下文。
+    """
     state = GameState(phase="in_combat", combat_subphase="await_round_end")
     player = Entity("P", "轮回者", blood_limit=100, current_hp=70)
     state.player = player
-    state.relics = []
+    state.relics = [Relic("活血衣", "", tags=[])]
     combat = CombatEngine(state, DiceEngine())
+    monster = Entity("M", "怪物", blood_limit=100, current_hp=100, attack_power=8)
+    state.enemies = [monster]
+    player.current_speed = 0
+    detail = combat._apply_hostile_damage(player, 8, "普通", source=monster, ctx={
+        "timing": "测试", "source": "怪物攻击", "source_type": "monster",
+        "actor": monster, "target": player, "mechanic": "damage", "subtype": "attack"})
+    # 受到攻击伤害 → 活血衣即时回复 ceil(实际伤害/2)，且回复必须带动作上下文
+    relic_heal = detail["huoxueyi_heal"]
+    assert relic_heal["amount"] == 4 and relic_heal["actual"] == 4
+    assert relic_heal["ctx"]["source"] == "活血衣"
+    assert relic_heal["ctx"]["mechanic"] == "heal"
+    assert relic_heal["ctx"]["subtype"] == "relic_heal_huoxueyi"
+    assert player.current_hp == 70 - 8 + 4
 
-    player.add_status(StatusEffect("活血", value=1, remaining_rounds=-1, source="test"))
-    player.hp_lost_this_round = 8
-    result = combat.round_end()
-    huoxue = next(e for e in result["effects"] if e.get("type") == "huoxue_heal")
-    assert huoxue["actual"] == 4
-    assert huoxue["heal_ctx"]["source"] == "活血"
-    assert huoxue["heal_ctx"]["mechanic"] == "heal"
-
+    # 单独测血族血脉，避免遗物干扰。
     # 单独测血族血脉，避免活血干扰。
     state = GameState(phase="in_combat", combat_subphase="await_round_end")
     player = Entity("P", "轮回者", blood_limit=100, current_hp=70)

@@ -379,6 +379,13 @@ class DamageDeathMixin:
     ) -> dict:
         amount = self.hook_manager.apply_multiplier_adjust(target, amount, damage_type, source, self.state)
         amount = self._incoming_adjust(target, amount, damage_type)
+        # 癫狂之脑（通用遗物池，2026-10-03 新增）：你受到的**攻击伤害**翻倍。
+        # 只翻攻击行动造成的伤害（subtype=attack；含被万钧印改道的自攻）；
+        # 道纹/代价/直接失血不受影响。倍率发生在格挡/护盾之前，故本次伤害的
+        # "攻击伤害数值"整体翻倍，千荆甲反噬也按翻倍后的数值等量反射。
+        if (damage_ctx.subtype == "attack"
+                and self._relic_active(target, "癫狂之脑")):
+            amount *= 2
 
         # 1. 伤害重定向 (嫁祸 / 背负)
         redirected_target = self.hook_manager.apply_redirection(target, damage_type, self.state)
@@ -393,37 +400,29 @@ class DamageDeathMixin:
             )
             return self._apply_hostile_damage(redirected_target, amount, damage_type, source, ctx=redirected_ctx)
 
-        # 2. 受到伤害前反噬 (爆裂 Hook)
+        # 2. 受到伤害前反噬 (千荆甲遗物：受到攻击伤害前，攻击者受等量伤害)
         before_res = self.hook_manager.apply_before_damage(target, amount, damage_type, source, self.state)
-        if before_res.get("reflected"):
-            # 爆裂在 Hook 内直接扣了攻击者的生命并计入其本回合失血；此处补记来源上下文。
-            # 归因口径（2026-10-03 用户裁定）：这笔失血**记【爆裂】**，不再沿用攻击者的
-            # 伤害上下文——旧口径会把失血账与死因都写成「普通攻击（baolie_reflect）」，
-            # 战报里看不到是【爆裂】反噬杀的。
-            # parent 仍挂这次伤害（父事件链不变，故 event_id 链、时序、血影等口径不动），
-            # 只把「这笔失血算谁造成的」改成【爆裂】：source/source_type/actor/owner+标签。
-            reflect_ctx = self._record_hp_loss_event(
-                source, before_res["reflected"], damage_ctx, subtype="baolie_reflect",
-                source_override="爆裂", source_type_override="daowen",
-                actor_override=target, owner_override=target,
-                tags_extra={"daowen", "reflect"})
-            if reflect_ctx:
-                before_res["reflect_ctx"] = reflect_ctx
-        if before_res.get("suppressed"):
-            if source is not None and not source.is_alive:
-                # 死因同样记【爆裂】：显式给 mechanic="death"，让 _on_entity_death
-                # 保留 subtype=baolie_reflect，而不是退回 hp_zero。
-                self._on_entity_death(source, ctx=make_context(
-                    timing=damage_ctx.timing, source="爆裂", source_type="daowen",
-                    actor=target, target=source, owner=target, mechanic="death",
-                    subtype="baolie_reflect", tags={"daowen", "reflect"},
-                    parent_event_id=damage_ctx.event_id))
-            return self._attach_damage_context({
-                "raw_damage": amount, "shield_absorbed": 0, "actual_damage": 0,
-                "hp_before": target.current_hp, "hp_after": target.current_hp,
-                "blood_limit_before": target.blood_limit, "died": False,
-                "damage_type": damage_type, "baolie_suppress": True,
-            }, damage_ctx, legacy_ctx)
+        # 千荆甲（通用遗物池，2026-10-03 出自被删【爆裂】道纹）：你受到攻击伤害**前**，
+        # 攻击者受到等量伤害。只对攻击行动（subtype=attack）生效，非攻击伤害不触发；
+        # 反噬本身是"直接失血"，不视为"受到攻击造成的伤害"，因此不会连环触发千荆甲/活血衣。
+        # 归因口径沿用 2026-10-03 裁定：这笔失血记【千荆甲】。
+        reflect_amount = 0
+        if (source is not None and source is not target
+                and damage_ctx.subtype == "attack"
+                and self._relic_active(target, "千荆甲")):
+            reflect_amount = self.hook_manager.reflect_attack_damage(
+                target, amount, source, self.state)
+        if reflect_amount > 0:
+            self._resolve_reflect_aftermath(source, reflect_amount, damage_ctx, target)
+            if not source.is_alive:
+                # 与旧【爆裂】同口径：反噬把攻击者打死的这一击不再落地
+                # （攻击者已命零，本次攻击的伤害被压制为 0）。
+                return self._attach_damage_context({
+                    "raw_damage": amount, "shield_absorbed": 0, "actual_damage": 0,
+                    "hp_before": target.current_hp, "hp_after": target.current_hp,
+                    "blood_limit_before": target.blood_limit, "died": False,
+                    "damage_type": damage_type, "qianjingjia_suppress": True,
+                }, damage_ctx, legacy_ctx)
 
         # 3. 濒死伤害拦截与保护 (撤退 / 负岳碑 / 断尾求生)
         mitigation = self.hook_manager.apply_mitigation(target, amount, damage_type, self)
@@ -463,6 +462,33 @@ class DamageDeathMixin:
             life_loss_multiplier=self.state.life_loss_multiplier(target))
         self._attach_damage_context(detail, damage_ctx, legacy_ctx)
         actual = detail.get("actual_damage", 0)
+        # 活血衣（通用遗物池，2026-10-03 出自被删【活血】道纹）：受到攻击伤害后，
+        # 恢复该次伤害一半的生命（向上取整，整数口径）。反噬等直接失血不算"受到攻击"。
+        if (damage_ctx.subtype == "attack" and actual > 0
+                and self._relic_active(target, "活血衣")):
+            heal_n = math.ceil(actual / 2)
+            h = self.state.apply_heal(target, heal_n, ctx={
+                "timing": self._current_context_timing(), "source": "活血衣", "source_type": "relic",
+                "actor": target, "target": target, "owner": target, "mechanic": "heal",
+                "subtype": "relic_heal_huoxueyi", "amount": heal_n,
+                "tags": {"relic", "after_damage"},
+                "parent_event_id": damage_ctx.event_id,
+            })
+            detail["huoxueyi_heal"] = {"relic": "活血衣", "amount": heal_n,
+                                       "actual": h.get("actual_heal"), "ctx": h.get("heal_ctx")}
+        # 增生药剂（通用遗物池，2026-10-03 新增）：你每次对自己造成伤害后，恢复10生命。
+        # 触发口径＝这份伤害的 actor 就是被打者本人（自残 self_attack / 自伤类），
+        # 或显式带 self_damage 标签；反噬等他人造成的直接失血不触发。
+        if (actual > 0 and self._relic_active(target, "增生药剂")
+                and (damage_ctx.actor is target or "self_damage" in set(damage_ctx.tags or ()))):
+            zs_ctx = make_context(
+                timing=self._current_context_timing(), source="增生药剂", source_type="relic",
+                actor=target, target=target, owner=target, mechanic="heal",
+                subtype="relic_heal_zengsheng", amount=10,
+                parent_event_id=damage_ctx.event_id, tags={"relic", "self_damage_followup"})
+            zh = self.state.apply_heal(target, 10, ctx=zs_ctx)
+            detail["zengsheng_heal"] = {"relic": "增生药剂", "amount": 10,
+                                        "actual": zh.get("actual_heal"), "ctx": zh.get("heal_ctx")}
         # 「受到伤害后」自动反应窗口：这一击已完整落地（即使被格挡全部吸收也算
         # "受到了伤害"，与"失去生命后"要求 actual_damage>0 严格区分）。
         if (self._attack_after_window_target is not target
@@ -570,6 +596,44 @@ class DamageDeathMixin:
         return clones
 
     # ---- F2 全量：罪孽/扭曲专属道纹的公共辅助 ----
+    def _resolve_reflect_aftermath(self, attacker: Entity, amount: int,
+                                   damage_ctx: EffectContext, reflector: Entity) -> dict:
+        """千荆甲反噬落地（直接失血，绕过格挡/护盾/减伤，与旧【爆裂】Hook 同口径）。
+
+        - 【第一杯】失血倍率照常生效；
+        - 计入 attacker.hp_lost_this_round（【活血】等按本回合失血结算的效果看得见）；
+        - 失血账与死因**记【千荆甲】**（2026-10-03 归因口径，沿用爆裂改记来源的做法）；
+        - 不走受到伤害/失去生命的反应窗口（与旧爆裂一致：反噬不是"挨了一下"）。
+        """
+        prev_hp = attacker.current_hp
+        # amount 已含【第一杯】倍率（由 reflect_attack_damage 换算），这里只扣一次。
+        loss = amount
+        self._hp_loss_recording += 1
+        try:
+            attacker.current_hp = max(0, attacker.current_hp - loss)
+        finally:
+            self._hp_loss_recording -= 1
+        lost = prev_hp - attacker.current_hp
+        if lost > 0:
+            attacker.hp_lost_this_round += lost
+        # 归因口径沿用 2026-10-03 裁定（爆裂改记来源时的做法）：这笔失血记【千荆甲】，
+        # parent 直接挂本次伤害的 event_id，不额外造中间层。
+        hp_loss_ctx = self._record_hp_loss_event(
+            attacker, lost, damage_ctx, subtype="relic_reflect",
+            source_override="千荆甲", source_type_override="relic",
+            actor_override=reflector, owner_override=reflector,
+            tags_extra={"relic", "reflect"})
+        result = {"hp_before": prev_hp, "hp_after": attacker.current_hp,
+                  "reflected": lost, "hp_loss_ctx": hp_loss_ctx}
+        if attacker.current_hp <= 0:
+            self._check_hp_zero_death(attacker, ctx=make_context(
+                timing=damage_ctx.timing, source="千荆甲", source_type="relic",
+                actor=reflector, target=attacker, owner=reflector, mechanic="death",
+                subtype="relic_reflect", tags={"relic", "reflect"},
+                parent_event_id=damage_ctx.event_id))
+            result["died"] = True
+        return result
+
     def _shards_of(self, entity: Entity) -> int:
         """实体可失去/被夺取的碎片量；假碎片优先，负债不抵消仍可支付的假碎片。"""
         if entity is self.state.player:

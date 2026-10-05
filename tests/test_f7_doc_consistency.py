@@ -47,6 +47,10 @@ def test_boundary_no_zengsheng_in_active_code():
                 # 计算行号
                 for i, line in enumerate(text.splitlines(), 1):
                     if "增生" in line and "增殖" not in line:
+                        # 2026-10-03：通用遗物【增生药剂】是用户令新增的正当名字，
+                        # 与旧机制名「增生」（已改叫癌变）无关——只放行这一处。
+                        if "增生药剂" in line:
+                            continue
                         # 允许 models.py 的那一行（包含“旧名 增生”）
                         if p.name == "models.py" and "旧名" in line and "增生" in line:
                             continue
@@ -99,9 +103,10 @@ def test_no_active_zengsheng_in_tests_except_allowed():
         if p.name == "test_f7_doc_consistency.py":
             continue
         text = p.read_text(encoding="utf-8")
-        if "增生" in text:
-            # test_engine.py 的旧路径测试已在上轮改为癌变，允许其存在中文“癌变”，但不应再有“增生”
-            hits.append(str(p))
+        # 2026-10-03：逐行判定——只放行遗物名【增生药剂】，其余「增生」仍视为漏改。
+        for i, line in enumerate(text.splitlines(), 1):
+            if "增生" in line and "增生药剂" not in line:
+                hits.append(f"{p}:{i}:{line.strip()}")
     # 允许 test_engine.py 中仍保留的 proliferation 英文 type 字符串，但中文不应再出现
     # 实际本轮已将 tests/test_engine.py 的增生中文改为癌变，故此处应为空
     # 若仍有，说明还有漏改

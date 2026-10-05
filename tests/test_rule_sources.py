@@ -17,8 +17,11 @@ def test_project_rules_are_extracted_from_their_authoritative_documents():
     """正常路径：法术、物品、副本和怪物分别来自裁定后的事实源。"""
     sync = _sync()
     facts = sync.extract_project_rules()
-    assert len(facts["common_daowen"]) == 38  # 2026-08-21：冲击改名波及；删除缓慢/慈悲/切割
-    assert len(facts["dungeon_daowen"]) == 64
+    # 2026-10-03：删除爆裂/坠落/滑翔/狂暴/兴奋/尸爆/活血后：
+    # 通用道纹 38→34（删 7 条、正文补回 愤怒/自残/无神/疯狂 定义），
+    # 副本道纹 64→61（扭曲-1、龙心-1、乱葬-1）
+    assert len(facts["common_daowen"]) == 34
+    assert len(facts["dungeon_daowen"]) == 61
     assert len(facts["spells"]) == 10  # 2026-09-16：删「血溅五步」（无引擎流程的空名字）
     assert len(facts["dungeons"]) == 8
     assert len(facts["monsters"]) == 48  # 36 + 乱葬岗12(已实现)

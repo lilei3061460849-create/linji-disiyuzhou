@@ -239,27 +239,17 @@ def test_jiahai_guzhi_fennu_jieli_jisheng():
     assert p.current_hp == before + 2  # 10 * 20%
 
 
-def test_huaxiang_zhuiluo_dingxing_wushen_xuanyun():
-    """滑翔视同飞行；坠落落地并减半；定型挡弱化；无神打自己；眩晕掉血苏醒。"""
+def test_huaxiang_dingxing_wushen_xuanyun():
+    """定型挡弱化；无神打自己；眩晕掉血苏醒。
+
+    2026-10-03：【滑翔/坠落】删除，原「滑翔视同飞行、坠落落地并减半」段落一并移除。
+    """
     engine = _engine("ctrl")
     p = engine.state.player
-    for n in ("滑翔", "坠落", "定型", "无神", "弱化"):
+    for n in ("定型", "无神", "弱化"):
         _give(p, n)
     m = _monster(engine, ap=8)
     engine.execute_action("round_start", {})
-
-    engine.execute_action("use_daowen", {"daowen_name": "滑翔", "x": 2})
-    assert p.has_status("滑翔")
-    assert engine.combat.is_targetable(m, p) is False
-
-    engine.execute_action("use_daowen", {"daowen_name": "坠落", "x": 1})
-    assert not p.has_status("滑翔")
-    assert p.has_status("坠落")
-    assert engine.combat.is_targetable(m, p) is True
-    m.add_status(StatusEffect(name="坠落", remaining_rounds=1, value=1, source="测"))
-    hp = p.current_hp
-    engine.combat.resolve_attack(m, p, dodge=False)
-    assert p.current_hp == hp - 4  # ceil(8/2)
 
     m.attack_power = 10
     engine.execute_action("use_daowen", {"daowen_name": "定型", "x": 1, "target": m.name})
