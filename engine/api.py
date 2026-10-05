@@ -697,7 +697,7 @@ class GameEngine:
             {"action_type": "focus",
              "params_schema": {"actor_ref": actor_options},
              "available": bool(player is not None and player.is_alive),
-             "note": "聚能：消耗1次出手，立即获得 ceil(20%[法限]) 法力（法限为0时白白浪费出手）"},
+             "note": "聚能：消耗1次出手，恢复50%已损法力（向上取整）"},
             {"action_type": "rest",
              "params_schema": {"actor_ref": actor_options},
              "available": bool(player is not None and player.is_alive),
@@ -1234,7 +1234,7 @@ class GameEngine:
         # 2026-09-28 用户令：回合动作重构
         #   attack  → 普攻（等价 prepare_attack+resolve_attack 单步封装；或走prepare/resolve两步）
         #   cast    → 施法（=发动道纹或瞬发自定义施法）
-        #   focus   → 聚能：消耗1出手，获得20%法限的法力
+        #   focus   → 聚能：消耗1出手，恢复50%已损法力（向上取整）
         #   rest    → 蓄锐：消耗1出手，下回合出手+1
         elif action_type == "cast":
             return self._action_cast(params)
@@ -3210,7 +3210,7 @@ class GameEngine:
                 }}
 
     def _action_focus(self, params: dict) -> dict:
-        """聚能：消耗1次主动出手，立即获得自身20%[法限]的法力。"""
+        """聚能：消耗1次主动出手，恢复50%已损法力，向上取整。"""
         actor_ref = params.get("actor_ref", "player:0")
         refs = self.combat._combat_entity_refs()
         actor = refs.get(actor_ref)
@@ -3227,14 +3227,16 @@ class GameEngine:
         budget_err = self._consume_action_or_error(actor)
         if budget_err:
             return budget_err
-        # 回20%法限
+        # 恢复已损法力的50%，向上取整；满法力时聚能不产生资源。
         import math
-        gain = math.ceil(max(0, actor.mana_limit) * 20 / 100)
+        missing_mana = max(0, actor.mana_limit - actor.current_mana)
+        gain = math.ceil(missing_mana * 50 / 100)
         if gain <= 0:
-            # 法限=0的角色使用聚能：浪费1出手，不回蓝
             return {"success": True, "action": f"{actor.name}聚能",
                     "result": {"actor": actor.name, "mana_gained": 0,
-                               "note": f"{actor.name}法限为0，聚能未获法力"}}
+                               "mana_before": actor.current_mana,
+                               "mana_after": actor.current_mana,
+                               "note": f"{actor.name}当前法力已满，聚能未获法力"}}
         mana_before = actor.current_mana
         actor.current_mana = min(actor.mana_limit, actor.current_mana + gain)
         gained = actor.current_mana - mana_before
@@ -4548,6 +4550,9 @@ class GameEngine:
         self.combat.dice = self.dice
         register_combat_event_observer(self.state, self.combat)
         self._restore_combat_runtime(copy.deepcopy(snapshot["combat_runtime"]))
+        # 重来本场时丢弃旧战斗遗留的中断、pending 和上次结果。
+        self._pending_interrupts = []
+        self._last_result = None
         start_params = copy.deepcopy(snapshot.get("battle_start_params") or {})
         result = self._action_battle_start(start_params)
         if not result.get("success"):
