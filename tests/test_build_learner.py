@@ -368,8 +368,18 @@ def test_fixed_seed_is_reproducible():
     assert a == b, "同一固定种子+同一决策rng，两次结果必须一致"
 
 
-def test_fitness_fixed_mode_is_deterministic():
-    """边界：非随机模式下同参数 fitness 必须一致"""
+def test_fitness_fixed_mode_is_deterministic(monkeypatch):
+    """边界：非随机模式下同参数 fitness 必须一致
+
+    死斗驱动带 30s 墙钟守护（CPU 争用时会抖成 pvp_timeout），
+    本用例只验证决策确定性，把墙钟上限放大以排除机器速度干扰。
+    """
+    import sim.duel_pvp as _dp
+    _orig = _dp.run_duel_pvp
+    def _no_wall_timeout(*a, **kw):
+        kw["max_wall_seconds"] = 1e9
+        return _orig(*a, **kw)
+    monkeypatch.setattr(_dp, "run_duel_pvp", _no_wall_timeout)
     f1, v1, _ = bl.fitness("杀伐", ["庇护", "再生"], 3, gen=1)
     f2, v2, _ = bl.fitness("杀伐", ["庇护", "再生"], 3, gen=1)
     assert (f1, v1) == (f2, v2)
