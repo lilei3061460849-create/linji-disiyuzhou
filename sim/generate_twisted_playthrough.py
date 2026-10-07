@@ -71,14 +71,14 @@ def run_twisted_playthrough():
         while e.state.energy > 0:
             missing = p.blood_limit - p.current_hp
             if missing >= 15 and e.state.shards >= 10:
-                heal_amt = 24
+                heal_amt = 24 + e.state.rest_heal_bonus
                 act = e.execute_action("pre_battle_action", {
                     "sub_action": "休整", "tier": 2,
                     "heal_allocations": [{"target_ref": "player:0", "amount": heal_amt}]
                 })
                 pre_actions_log.append(f"休整二档（消耗10碎片，生命恢复{heal_amt}点）")
             elif missing >= 6:
-                heal_amt = 8
+                heal_amt = 8 + e.state.rest_heal_bonus
                 act = e.execute_action("pre_battle_action", {
                     "sub_action": "休整", "tier": 1,
                     "heal_allocations": [{"target_ref": "player:0", "amount": heal_amt}]

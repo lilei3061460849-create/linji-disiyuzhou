@@ -51,7 +51,7 @@ def run_playthrough(seed=42):
         # 激进局外消费规划：花满碎片，即时将经济转化为战斗力
         while e.state.energy > 0:
             if p.current_hp < p.blood_limit - 10:
-                heal = 8
+                heal = 8 + e.state.rest_heal_bonus
                 r = e.execute_action("pre_battle_action", {
                     "sub_action": "休整", "tier": 1,
                     "heal_allocations": [{"target_ref": "player:0", "amount": heal}]

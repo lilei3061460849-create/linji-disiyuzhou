@@ -1531,7 +1531,7 @@ def choose_pre_battle(e, todo, battle_no, rng, policy):
         p = e.state.player
         bl = p.blood_limit if p else 0
         gap = max(0, bl - p.current_hp) if p else 0
-        bonus = 0  # 2026-10-05 用户令：癌变休整加成废止，休整恢复量=档位基础值
+        bonus = e.state.rest_heal_bonus
         shards = e.state.shards
         deployed = sum(1 for emp in e.state.employees
                        if emp.is_alive and emp.is_deployed and not emp.is_debt_bound)

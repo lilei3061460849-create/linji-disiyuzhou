@@ -131,14 +131,14 @@ def test_new_cycle_clears_triggered_and_pending_events(tmp_path):
     engine.event_pool.triggered = {"祭坛"}
     engine.event_pool.current = "猩红暴雨"
     engine.state.pending_event_queue = ["祭坛"]
-    engine.state.death_book_wisdom = ["癌变·甲"]
+    engine.state.rest_heal_bonus = 16
 
     engine._reset_after_death()
 
     assert engine.event_pool.triggered == set()
     assert engine.event_pool.current is None
     assert engine.state.pending_event_queue == []
-    assert engine.state.death_book_wisdom == ["癌变·甲"]
+    assert engine.state.rest_heal_bonus == 16
 
 
 def test_event_queue_survives_versioned_save(tmp_path):

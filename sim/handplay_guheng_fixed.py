@@ -92,7 +92,7 @@ def spend_energy(e, battle_no, p):
             tier, cost, heal = 1, 0, 8
         r = act(e, "pre_battle_action", {"sub_action": "休整", "tier": tier,
                                          "heal_allocations": [{"target_ref": "player:0",
-                                                               "amount": heal}]})
+                                                               "amount": heal + e.state.rest_heal_bonus}]})
         if not r.get("success"):
             r = act(e, "pre_battle_action", {"sub_action": "修行", "tier": 1})
             if not r.get("success"):

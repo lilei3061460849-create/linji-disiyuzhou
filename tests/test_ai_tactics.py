@@ -287,7 +287,7 @@ def test_ai_can_use_resonance_on_monster_daowen(tmp_path):
     e = _engine(tmp_path, learn=())
     e.state.player.dao_wen.clear()
     e.state.enemies[0].dao_wen["飞行"] = DaoWenInstance(
-        DaoWen("飞行", "", "冷却", "X", "飞行X"), x_value=1,
+        DaoWen("飞行", "", "异变", "5X", "飞行X"), x_value=1,
     )
     ai = TacticalAI(e)
     r = ai.try_resonance()

@@ -10,8 +10,8 @@ import re
 
 def test_normal_readme_auto_trigger_list():
     readme = pathlib.Path("README.md").read_text(encoding="utf-8")
-    # 规则正文唯一事实源在 README（文档分工见 AI_EXPERIENCE.md「文档分工与事实源」）。
-    rules = readme
+    # 2026-09-12：规则条文迁入 AI_EXPERIENCE.md，README 只留流程。
+    rules = pathlib.Path("AI_EXPERIENCE.md").read_text(encoding="utf-8")
     # 找到 五、全程自动触发 段
     m = re.search(r"五、全程自动触发[^\n]*\n([^\n]+)", readme)
     assert m, "未找到 五、全程自动触发 段"

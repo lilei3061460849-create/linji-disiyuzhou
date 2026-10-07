@@ -48,7 +48,7 @@ class MonsterPhaseMixin:
     def _monster_round_used(self, monster: Entity) -> set:
         """该怪物本回合已发动的道纹集合（换回合自动清空）。
 
-        DM裁定（2026-08-18）：怪物可在不同回合重复发动同一
+        DM裁定（2026-08-18，规则正文·怪物准则9）：怪物可在不同回合重复发动同一
         道纹（冷却类由 can_use 管辖），每回合每道纹至多一次。
         2026-09-16 用户令：原「重复发动则 X 累加 +2×副本阶级」的递增机制已废止，
         重复发动按同一 X 计费。
@@ -182,8 +182,6 @@ class MonsterPhaseMixin:
                         .get("cost_type") == "冷却")
                     if cooldown_limited:
                         # 怪物不得把冷却型道纹的 X 调大来延长战斗控制效果。
-                        # 2026-10-05 用户令成文（规则正文·怪物准则5）：怪物使用
-                        # 冷却代价类的道纹 X 值只能≤1，一律按 X=1 结算。
                         max_x = 1
                         effective_x = 1
                     elif getattr(inst, "x_free", False):
@@ -367,7 +365,7 @@ class MonsterPhaseMixin:
             DaoWenEngine.resolve(effective_name, 1, target=target, caster=monster)
             .get("cost_type") == "冷却")
         if cooldown_limited:
-            effective_x = 1  # 怪物冷却代价类道纹 X≤1（规则正文·怪物准则5）
+            effective_x = 1
         elif getattr(inst, "x_free", False):
             submitted_x = choice.get("x")
             # 提交方没有给 X 时**回退到可负担上限**而非报错。

@@ -161,7 +161,7 @@ def policy_pre_battle(engine: GameEngine) -> dict | None:
         # 2026-10-02：引擎现按 tier 取档并要求 heal_allocations 恰好分完恢复量；
         # 旧写法 {"sub": 2} 会被当成 tier=1（16 点）且在提交期被拒，轮回卡在第 2 场门口。
         import math as _math
-        heal = _math.ceil(p.blood_limit * 40 / 100)
+        heal = _math.ceil(p.blood_limit * 40 / 100) + st.rest_heal_bonus
         return {"sub_action": "休整", "tier": 2,      # 40% 档，10 碎片
                 "heal_allocations": [{"target_ref": "player:0", "amount": heal}]}
     return {"sub_action": "探索", "sub": 1}          # 其余精力拿事件与碎片

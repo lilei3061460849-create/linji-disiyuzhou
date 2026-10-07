@@ -22,7 +22,7 @@ def pre_battle(e, log):
             r = e.execute_action("pre_battle_action", {
                 "sub_action": "休整", "tier": 3,
                 "heal_allocations": [{"target_ref": "player:0",
-                                      "amount": 48}]})
+                                      "amount": 48 + e.state.rest_heal_bonus}]})
             if r.get("success"):
                 continue
         r = e.execute_action("pre_battle_action", {

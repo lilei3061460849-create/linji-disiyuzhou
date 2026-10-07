@@ -259,8 +259,8 @@ def play_dungeon(winner_path: str, battles: int, seed: int):
             if p and p.current_hp < p.blood_limit:
                 r = e.execute_action("pre_battle_action", {
                     "sub_action": "休整", "tier": 3,
-                    "heal_allocations": [{"target_ref": "player:0", "amount": 48}]})
-                print(f"局外：休整3档 恢复{48} 血 → {p.current_hp}/{p.blood_limit}"
+                    "heal_allocations": [{"target_ref": "player:0", "amount": 48 + e.state.rest_heal_bonus}]})
+                print(f"局外：休整3档 恢复{48 + e.state.rest_heal_bonus} 血 → {p.current_hp}/{p.blood_limit}"
                       if r.get("success") else f"局外：休整失败 {r.get('error')}")
                 continue
             if not fusha_done and e.state.shards >= 25:

@@ -266,7 +266,7 @@ def choose_pre_battle(e, battle_no, todo_spells, todo_daowen, rng=None):
         return choose_pre_battle(e, battle_no, todo_spells, todo_daowen, rng)
     if p and p.current_hp < p.blood_limit * 0.6:
         return "休整", {"tier": 1, "heal_allocations": [
-            {"target_ref": "player:0", "amount": 8}]}
+            {"target_ref": "player:0", "amount": 8 + e.state.rest_heal_bonus}]}
     # 碎片→战力（spend_shards 模式，由 play_first_tier 传入全局标记；这里保守：
     # 主循环在每次局外结束后额外尝试花碎片，见 play_first_tier）。
     return "修行", {"tier": 1}
