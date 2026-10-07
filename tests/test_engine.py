@@ -141,10 +141,12 @@ def test_daowen_calculations():
     assert result["delay_rounds"] == 1
     print("  ✓ 封印X=1: 异变+1，一个目标怪物延后1回合回场")
     
-    # 测试飞行
+    # 测试飞行（2026-10-05 用户令：飞行代价 异变5X→冷却X，与引擎口径对齐）
     result = DaoWenEngine.resolve("飞行", 2)
-    assert result["cost_mutation"] == 10
-    print("  ✓ 飞行X=2: 异变+10，无法被选为目标，持续2回合")
+    assert result["cost_type"] == CostType.COOLDOWN.value
+    assert result["cost"] == 2
+    assert result["duration"] == 2
+    print("  ✓ 飞行X=2: 冷却2场，无法被选为目标，持续2回合")
     
     print("  ✓ 所有道纹计算通过")
 
@@ -359,7 +361,7 @@ def test_full_flow():
     assert engine.state.player.speed_limit == speed_before + 1, "修行应+1速限"
     print(f"  ✓ 修行：速限{speed_before}→{engine.state.player.speed_limit}")
     
-    heal_amt = math.ceil(engine.state.player.blood_limit * 0.2) + engine.state.rest_heal_bonus
+    heal_amt = math.ceil(engine.state.player.blood_limit * 0.2)
     result = engine.execute_action("pre_battle_action", {
         "sub_action": "休整", "tier": 1,
         "heal_allocations": [{"target_ref": "player:0", "amount": heal_amt}],
@@ -375,8 +377,7 @@ def test_full_flow():
     result = engine.execute_action("pre_battle_action", {
         "sub_action": "休整", "tier": 1,
         "heal_allocations": [{"target_ref": "player:0",
-                              "amount": math.ceil(engine.state.player.blood_limit * 0.2)
-                              + engine.state.rest_heal_bonus}],
+                              "amount": math.ceil(engine.state.player.blood_limit * 0.2)}],
     })
     assert result["success"], result
     assert engine.state.energy == 0, f"精力应耗尽，实际{engine.state.energy}"
@@ -470,8 +471,12 @@ def test_sculpture_and_proliferation():
     paths2 = combat2.settle_victory_paths()
     assert any(p["type"] == "proliferation" for p in paths2), "应触发癌变"
     assert m2.is_proliferated and not m2.is_alive
-    assert state2.rest_heal_bonus == 8
-    print("  ✓ 恢复量超阈值→触发癌变，吸收进死者之书（休整恢复量永久+8）")
+    # 2026-10-05 用户令：癌变不再加成休整，奖励统一为【无限肉块】（1/1）
+    meats = [c for c in state2.consumables if c.kind == "infinite_meat"]
+    assert len(meats) == 1 and meats[0].name == "无限肉块"
+    assert meats[0].current_uses == 1 and meats[0].max_uses == 1
+    assert "恢复10生命" in meats[0].effect
+    print("  ✓ 恢复量超阈值→触发癌变，吸收进死者之书（获得【无限肉块】）")
     print("  ✓ 雕塑/癌变路径测试通过")
 
 
@@ -553,7 +558,7 @@ def test_out_of_combat_actions():
 
     # 休整：先扣血再休整，验证回血
     player.current_hp = 20
-    heal_amt2 = math.ceil(player.blood_limit * 0.4) + engine.state.rest_heal_bonus
+    heal_amt2 = math.ceil(player.blood_limit * 0.4)
     r = engine.execute_action("pre_battle_action", {
         "sub_action": "休整", "tier": 2,
         "heal_allocations": [{"target_ref": "player:0", "amount": heal_amt2}],

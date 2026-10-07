@@ -121,13 +121,13 @@ def run_three_generations():
         while e1.state.energy > 0:
             missing = p1.blood_limit - p1.current_hp
             if missing >= 15 and e1.state.shards >= 10:
-                heal_amt = 24 + e1.state.rest_heal_bonus
+                heal_amt = 24
                 e1.execute_action("pre_battle_action", {
                     "sub_action": "休整", "tier": 2,
                     "heal_allocations": [{"target_ref": "player:0", "amount": heal_amt}]
                 })
             elif missing >= 6:
-                heal_amt = 8 + e1.state.rest_heal_bonus
+                heal_amt = 8
                 e1.execute_action("pre_battle_action", {
                     "sub_action": "休整", "tier": 1,
                     "heal_allocations": [{"target_ref": "player:0", "amount": heal_amt}]
@@ -231,13 +231,13 @@ def run_three_generations():
         while e2.state.energy > 0:
             missing = p2.blood_limit - p2.current_hp
             if missing >= 15 and e2.state.shards >= 10:
-                heal_amt = 24 + e2.state.rest_heal_bonus
+                heal_amt = 24
                 e2.execute_action("pre_battle_action", {
                     "sub_action": "休整", "tier": 2,
                     "heal_allocations": [{"target_ref": "player:0", "amount": heal_amt}]
                 })
             elif missing >= 6:
-                heal_amt = 8 + e2.state.rest_heal_bonus
+                heal_amt = 8
                 e2.execute_action("pre_battle_action", {
                     "sub_action": "休整", "tier": 1,
                     "heal_allocations": [{"target_ref": "player:0", "amount": heal_amt}]
@@ -359,7 +359,7 @@ def run_three_generations():
         while e3.state.energy > 0:
             missing = p3.blood_limit - p3.current_hp
             if missing >= 15 and e3.state.shards >= 10:
-                heal_amt = 24 + e3.state.rest_heal_bonus
+                heal_amt = 24
                 r = e3.execute_action("pre_battle_action", {
                     "sub_action": "休整", "tier": 2,
                     "heal_allocations": [{"target_ref": "player:0", "amount": heal_amt}]
@@ -367,7 +367,7 @@ def run_three_generations():
                 assert r["success"], r
                 pre_texts.append(f"休整2档（消耗10碎片） → 回复生命 {heal_amt} 点（生命 {p3.current_hp-heal_amt}→{p3.current_hp}）")
             elif missing >= 6:
-                heal_amt = 8 + e3.state.rest_heal_bonus
+                heal_amt = 8
                 r = e3.execute_action("pre_battle_action", {
                     "sub_action": "休整", "tier": 1,
                     "heal_allocations": [{"target_ref": "player:0", "amount": heal_amt}]

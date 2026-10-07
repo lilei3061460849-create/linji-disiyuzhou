@@ -78,7 +78,7 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_zaisheng(x: int, target: Entity = None) -> dict:
-        """再生X：消耗X。为[目标]回复4X点生命（2026-09-11 用户令：3X→4X，再生被庇护完爆）"""
+        """再生X：消耗X。为[目标]回复4X点生命"""
         target_name = target.name if target is not None else "未选定目标"
         cost = x
         heal = 4 * x
@@ -258,7 +258,7 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_huoli(x: int) -> dict:
-        """疯狂X：代价：异变5X。所有角色出手次数+X，持续∞（2026-08-17裁定：全局生效，变相平衡）"""
+        """疯狂X：代价：异变5X。所有角色出手次数+X，持续∞"""
         return {
             "dao_wen": "疯狂",
             "x": x,
@@ -298,12 +298,10 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_bizhong(x: int) -> dict:
-        """必中X：代价：异变X。自身进入【必中】姿态持续X回合。
+        """必中X：代价：异变X。你选中的目标无法闪避，持续X。
 
-        2026-09-28 二次更正（历史注记，勿再改回给目标挂 debuff）。
-        用户明确口径：必中是**给自己上buff**——"你选中的目标无法闪避"。
-        也就是：你持续X回合内，不管攻击还是敌向道纹，你选中的目标都无法闪避。
-        （之前我一度误改成给目标挂debuff，现已纠正回self-buff。不需要目标。）
+        口径（历史注记，勿再改回给目标挂 debuff）：必中是**给自己上buff**——
+        自身进入【必中】姿态持续X回合，期间你选中的目标都无法闪避（不需要目标）。
         """
         return {
             "dao_wen": "必中",
@@ -311,7 +309,7 @@ class DaoWenEngine:
             "cost_type": CostType.MUTATION.value,
             "cost_mutation": x,
             "bizhong_self_buff": x,   # 给自身挂持续X回合的必中buff
-            "summary": f"异变+{x}，自身进入必中姿态持续{x}回合，期间你选中的[目标]无法闪避"
+            "summary": f"异变+{x}，你选中的[目标]无法闪避，持续{x}回合"
         }
     
     @staticmethod
@@ -670,7 +668,7 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_chaopin(x: int) -> dict:
-        """超频X：消耗2X。使[目标]速度+X（2026-09-17 用户令：改为自由选择目标）
+        """超频X：消耗2X。使[目标]速度+X
 
         目标由发动方自由指定，选到谁就给谁加速度——可以给自己，也可以给队友
         或敌人。旧版写作"使自身速度+X"，但实现一直是给 target 加速，文案与
@@ -755,7 +753,7 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_bizhai(x: int, target: Entity = None) -> dict:
-        """逼债X：消耗X。[回始]使目标失去X点碎片，无力支付的部分记为负债（碎片扣负），持续∞（DM裁定D 2026-08-22：旧"否则失去2X点血限"废止）"""
+        """逼债X：消耗X。[回始]使目标失去X点碎片，无力支付的部分记为负债（碎片扣负），持续∞"""
         target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "逼债", "x": x, "cost_type": CostType.MANA.value, "cost": x,
@@ -899,7 +897,7 @@ class DaoWenEngine:
 
     @staticmethod
     def calculate_fenlie(x: int, y: int = 1) -> dict:
-        """分裂X/Y：代价：衰老X×10Y。创造X个10Y[血限]的自身复制体（2026-09-17 用户令重做）。
+        """分裂X/Y：代价：衰老X×10Y。创造X个10Y[血限]的自身复制体。
 
         双参数道纹（引擎首个）：
           X = 复制体**数量**

@@ -222,10 +222,13 @@ def play_and_record(region: str, seed: int, battles: int = 7):
                         prep.append(f"学习·{nm}")
                         continue
                     todo.pop(0)
+                pool = engine.state.attribute_points + 1  # 一档修行先给1点入池
+                even = pool if pool % 2 == 0 else pool - 1  # 速/法限按2点一档，只兑偶数
+                to_key = "mana_points" if battle_no % 2 else "speed_points"
                 rr = engine.execute_action(
                     "pre_battle_action",
                     {"sub_action": "修行", "tier": 1,
-                     "to": "mana" if battle_no % 2 else "speed"})
+                     "allocations": {to_key: even}})
                 if rr.get("success"):
                     prep.append(f"修行·{'法限' if battle_no % 2 else '速限'}+")
                 else:

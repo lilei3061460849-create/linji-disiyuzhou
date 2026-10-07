@@ -697,11 +697,11 @@ def decide_pre_battle(engine, strat: Strategy, shards_budget: int):
                 cost = {1: 0, 2: 10, 3: 25}[tier]
                 if state.shards < cost:
                     continue
-                alloc = [{"target_ref": "player:0", "amount": base + state.rest_heal_bonus}]
+                alloc = [{"target_ref": "player:0", "amount": base}]
                 r = engine.execute_action("pre_battle_action", {
                     "sub_action": "休整", "tier": tier, "heal_allocations": alloc})
                 if r.get("success"):
-                    TRACE.text(f"  局外[休整{tier}] 恢复{base + state.rest_heal_bonus}（碎片{state.shards}→{state.shards - cost}）")
+                    TRACE.text(f"  局外[休整{tier}] 恢复{base}（碎片{state.shards}→{state.shards - cost}）")
                 continue
             if act == "学习法术":
                 names = spec[1]
@@ -757,11 +757,11 @@ def decide_pre_battle(engine, strat: Strategy, shards_budget: int):
             cost = {1: 0, 2: 10, 3: 25}[tier]
             if state.shards >= cost:
                 base = {1: 8, 2: 24, 3: 48}[tier]
-                alloc = [{"target_ref": "player:0", "amount": base + state.rest_heal_bonus}]
+                alloc = [{"target_ref": "player:0", "amount": base}]
                 r = engine.execute_action("pre_battle_action", {
                     "sub_action": "休整", "tier": tier, "heal_allocations": alloc})
                 if r.get("success"):
-                    TRACE.text(f"  局外[休整{tier}] 恢复{base + state.rest_heal_bonus}")
+                    TRACE.text(f"  局外[休整{tier}] 恢复{base}")
                     continue
         r = engine.execute_action("pre_battle_action", {
             "sub_action": "修行", "tier": 1})

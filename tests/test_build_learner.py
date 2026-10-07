@@ -368,8 +368,18 @@ def test_fixed_seed_is_reproducible():
     assert a == b, "同一固定种子+同一决策rng，两次结果必须一致"
 
 
-def test_fitness_fixed_mode_is_deterministic():
-    """边界：非随机模式下同参数 fitness 必须一致"""
+def test_fitness_fixed_mode_is_deterministic(monkeypatch):
+    """边界：非随机模式下同参数 fitness 必须一致
+
+    死斗驱动带 30s 墙钟守护（CPU 争用时会抖成 pvp_timeout），
+    本用例只验证决策确定性，把墙钟上限放大以排除机器速度干扰。
+    """
+    import sim.duel_pvp as _dp
+    _orig = _dp.run_duel_pvp
+    def _no_wall_timeout(*a, **kw):
+        kw["max_wall_seconds"] = 1e9
+        return _orig(*a, **kw)
+    monkeypatch.setattr(_dp, "run_duel_pvp", _no_wall_timeout)
     f1, v1, _ = bl.fitness("杀伐", ["庇护", "再生"], 3, gen=1)
     f2, v2, _ = bl.fitness("杀伐", ["庇护", "再生"], 3, gen=1)
     assert (f1, v1) == (f2, v2)
@@ -609,7 +619,7 @@ def test_rest_large_gap_with_enough_shards_uses_tier3():
     e.state.shards = 60
     tier, heal = _pick_rest(e)
     assert tier == 3, f"缺口45+碎片60 应休整3级，实际 {tier}"
-    assert heal == math.ceil(60 * 0.6) + e.state.rest_heal_bonus   # 60% 血限
+    assert heal == math.ceil(60 * 0.6)   # 60% 血限
 
 
 def test_rest_medium_gap_falls_back_to_tier2():
@@ -621,7 +631,7 @@ def test_rest_medium_gap_falls_back_to_tier2():
     e.state.shards = 20
     tier, heal = _pick_rest(e)
     assert tier == 2, f"碎片20 应休整2级，实际 {tier}"
-    assert heal == math.ceil(60 * 0.4) + e.state.rest_heal_bonus   # 40% 血限
+    assert heal == math.ceil(60 * 0.4)   # 40% 血限
 
 
 def test_rest_small_shards_uses_tier1():
@@ -633,7 +643,7 @@ def test_rest_small_shards_uses_tier1():
     e.state.shards = 5
     tier, heal = _pick_rest(e)
     assert tier == 1
-    assert heal == math.ceil(60 * 0.2) + e.state.rest_heal_bonus   # 20% 血限
+    assert heal == math.ceil(60 * 0.2)   # 20% 血限
 
 
 def test_rest_small_gap_does_not_waste_shards():
