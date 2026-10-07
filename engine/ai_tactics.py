@@ -633,6 +633,7 @@ class TacticalAI:
         if not stock:
             return []
         out = []
+        best: dict = {}
         enemies = sorted(self.alive_enemies(),
                          key=lambda e: -e.effective_attack_count() * e.effective_attack_power())
         for enemy in enemies:
@@ -655,14 +656,25 @@ class TacticalAI:
                     score = 4.0 * (0.5 + threat_share) * weight
                     score += self._resonance_gain_bonus(path.get("target_daowen"))
                     params = {"source_daowen": dw, "resonance_type": rtype,
+                              # 双向后同一（源道纹, 残韵）可能通向两个相邻节点，
+                              # 必须显式提交走向，不让引擎替我们挑。
+                              "target_daowen": path.get("target_daowen", ""),
                               "target": enemy.name,             # 兼容测试/旧解析：按名字找目标
                               "target_ref": self._target_ref_for(enemy)}  # use_resonance 需要稳定引用
                     if self._actor_ref:
                         params["actor_ref"] = self._actor_ref
-                    out.append((score, {
-                        "action": "use_resonance",
-                        "label": f"残韵·{rtype}→{dw}@{enemy.name}",
-                        "params": params}))
+                    # 残韵路径双向后，同一道纹可通向两个相邻节点；候选若全量铺开会
+                    # 让每个敌人的每条道纹都翻一倍（AI 每个决策点只提交一条，多出来的
+                    # 分支纯属浪费）。同一（敌人, 道纹）只保留**评分最高**的那条路径：
+                    # 正反两向都参与打分，只是不再各自占一个候选位。
+                    key = (enemy.name, dw)
+                    prior = best.get(key)
+                    if prior is None or score > prior[0]:
+                        best[key] = (score, {
+                            "action": "use_resonance",
+                            "label": f"残韵·{rtype}→{dw}@{enemy.name}",
+                            "params": params})
+        out.extend(best.values())
         out.sort(key=lambda t: -t[0])
         return out[:3]
 

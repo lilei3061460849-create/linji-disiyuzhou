@@ -1165,8 +1165,14 @@ class ResonanceEngine:
     转换（平向支流）：平移法则维度
     反转（极性对冲）：逆转因果极性
     曲解（概念腐化）：扭曲代数逻辑
+
+    2026-10-07 用户令：残韵路径**双向**。`CLOSED_LOOPS` 里的每条边 `(src, 类型, dst)`
+    是无向边：src 与 dst 互为闭环上的相邻节点，两个方向都走**同一种**残韵、
+    **同样**消耗一次（规则正文：沿闭环选择一条相邻的变化路径）。边表只登记一次，
+    不重复登记反向边——双向由 `find_transformations` 在查询时展开，避免边数与
+    「闭环 N 条边」的口径翻倍。
     """
-    
+
     # 闭环结构定义
     CLOSED_LOOPS = {
         "杀伐闭环": [
@@ -1252,41 +1258,106 @@ class ResonanceEngine:
     }
     
     @classmethod
-    def find_transformation(cls, source_daowen: str, resonance_type: str) -> Optional[str]:
+    def find_transformations(cls, source_daowen: str, resonance_type: str) -> list[dict]:
         """
-        查找残韵变化结果
+        双向查找残韵变化结果（2026-10-07 用户令：路径双向）
         source_daowen: 源道纹名
         resonance_type: 残韵类型（转换/反转/曲解）
-        返回：变化后的道纹名，或None（如果路径不存在）
+        返回：[{resonance_type, target_daowen, direction, loop}, ...]
+
+        每条登记边 (src, 类型, dst) 正反两向都可用：正向 src→dst、反向 dst→src，
+        消耗同种残韵、同样一次。同一个源道纹在同一个残韵类型上可能通向**两个**
+        相邻节点（例：【杀伐】的【反转】同时通向【再生】与【封印】），此时
+        `find_transformation` 不替调用方挑，必须由发动者显式指定走哪一条。
         """
+        seen: set = set()
+        out: list[dict] = []
         for loop_name, edges in cls.CLOSED_LOOPS.items():
             for src, rtype, dst in edges:
-                if src == source_daowen and rtype == resonance_type:
-                    return dst
-        return None
-    
+                if rtype != resonance_type:
+                    continue
+                if src == source_daowen:
+                    direction, other = "正向", dst
+                elif dst == source_daowen:
+                    direction, other = "反向", src
+                else:
+                    continue
+                if other in seen:
+                    continue
+                seen.add(other)
+                out.append({
+                    "resonance_type": rtype,
+                    "target_daowen": other,
+                    "direction": direction,
+                    "loop": loop_name,
+                })
+        return out
+
+    @classmethod
+    def find_transformation(cls, source_daowen: str, resonance_type: str,
+                            target_daowen: str = "") -> Optional[str]:
+        """
+        单值查找残韵变化结果
+        target_daowen: 歧义时指定要走向哪个相邻节点（正向或反向皆可）
+        返回：变化后的道纹名；路径不存在、或歧义而未指定时返回 None
+        """
+        candidates = cls.find_transformations(source_daowen, resonance_type)
+        if not candidates:
+            return None
+        if target_daowen:
+            for cand in candidates:
+                if cand["target_daowen"] == target_daowen:
+                    return target_daowen
+            return None
+        if len(candidates) > 1:
+            return None      # 歧义：不替调用方取第一项，须显式指定
+        return candidates[0]["target_daowen"]
+
+    @classmethod
+    def is_ambiguous_path(cls, source_daowen: str, resonance_type: str) -> bool:
+        """该（源道纹, 残韵类型）是否通向两个相邻节点，需要发动者显式选择。"""
+        return len(cls.find_transformations(source_daowen, resonance_type)) > 1
+
     @classmethod
     def get_available_resonance(cls, source_daowen: str) -> list[dict]:
-        """获取某个道纹可用的残韵变化"""
-        results = []
+        """获取某个道纹可用的残韵变化（双向：正向在前，反向在后）"""
+        forward: list[dict] = []
+        backward: list[dict] = []
         for loop_name, edges in cls.CLOSED_LOOPS.items():
             for src, rtype, dst in edges:
                 if src == source_daowen:
-                    results.append({
+                    forward.append({
                         "resonance_type": rtype,
                         "target_daowen": dst,
-                        "loop": loop_name
+                        "direction": "正向",
+                        "loop": loop_name,
                     })
-        return results
-    
+                elif dst == source_daowen:
+                    backward.append({
+                        "resonance_type": rtype,
+                        "target_daowen": src,
+                        "direction": "反向",
+                        "loop": loop_name,
+                    })
+        out: list[dict] = []
+        seen: set = set()
+        for item in forward + backward:
+            key = (item["resonance_type"], item["target_daowen"])
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(item)
+        return out
+
     @classmethod
     def apply_resonance(
-        cls, 
-        source_daowen: str, 
+        cls,
+        source_daowen: str,
         resonance_type: str,
         caster_has_daowen: bool,
         target_has_daowen: bool,
-        resonance_stock: dict = None
+        resonance_stock: dict = None,
+        target_daowen: str = ""
     ) -> dict:
         """
         应用残韵变化
@@ -1294,15 +1365,36 @@ class ResonanceEngine:
         1. 残韵作用于任意角色拥有的道纹时，将其永久变为变化后的道纹
         2. 施法者同时永久获得变化后的道纹
         3. 通过残韵获得的道纹，X值按施法者自由控X规则自定义
+        4. 路径双向：正反向同一种残韵、同样消耗（2026-10-07 用户令）
         """
-        # 检查路径是否存在
-        target = cls.find_transformation(source_daowen, resonance_type)
-        if target is None:
+        # 检查路径是否存在（双向展开）
+        candidates = cls.find_transformations(source_daowen, resonance_type)
+        if not candidates:
             return {
                 "success": False,
                 "error": f"道纹'{source_daowen}'不存在'{resonance_type}'路径"
             }
-        
+
+        names = "／".join(cand["target_daowen"] for cand in candidates)
+        if target_daowen:
+            chosen = next((c for c in candidates if c["target_daowen"] == target_daowen), None)
+            if chosen is None:
+                return {
+                    "success": False,
+                    "error": (f"道纹'{source_daowen}'的'{resonance_type}'路径不通向"
+                              f"'{target_daowen}'（可选：{names}）")
+                }
+        elif len(candidates) > 1:
+            return {
+                "success": False,
+                "error": (f"道纹'{source_daowen}'的'{resonance_type}'通向两个相邻节点"
+                          f"（{names}），须显式指定 target_daowen"),
+                "ambiguous": True,
+                "candidates": [c["target_daowen"] for c in candidates],
+            }
+        else:
+            chosen = candidates[0]
+
         # 检查玩家是否拥有该类型残韵
         if resonance_stock is not None:
             available = resonance_stock.get(resonance_type, 0)
@@ -1311,15 +1403,17 @@ class ResonanceEngine:
                     "success": False,
                     "error": f"没有可用的{resonance_type}残韵（当前：{resonance_stock}）"
                 }
-        
+
+        target = chosen["target_daowen"]
         return {
             "success": True,
             "source": source_daowen,
             "resonance_type": resonance_type,
             "target": target,
+            "direction": chosen["direction"],
             "permanent_change": True,
             "caster_gets_daowen": True,
-            "summary": f"【{resonance_type}】{source_daowen} → {target}"
+            "summary": f"【{resonance_type}】{source_daowen} → {target}",
         }
 
 

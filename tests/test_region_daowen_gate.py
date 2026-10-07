@@ -67,13 +67,16 @@ def test_transformed_monster_daowen_not_learnable_outside_battle():
         assert "怪物转化道纹" in r["error"]
 
 
-def test_original_monster_daowen_never_learnable():
-    """边界：原始怪物道纹人类无法承受并获得（规则正文）"""
+def test_original_monster_daowen_learnable_after_lift():
+    """边界：原始怪物道纹不再是人类禁区（2026-10-07 用户令：残韵双向 + 完全放开）。
+
+    旧断言「人类无法承受并获得」编码的是已被用户令删除的门禁，本用例按新裁定重写。
+    """
     e = _engine("龙心谷")
     for dw in ("必中", "自愈", "飞行", "疯狂"):
         r = _learn(e, dw)
-        assert not r["success"], f"原始怪物道纹{dw}不应能被学习"
-        assert "原始怪物道纹" in r["error"]
+        assert r["success"], f"原始怪物道纹{dw}应可经局外【学习】习得：{r.get('error')}"
+        assert dw in e.state.player.dao_wen
 
 
 def test_rejected_monster_daowen_refunds_energy():

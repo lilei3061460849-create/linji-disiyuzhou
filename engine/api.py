@@ -2008,8 +2008,8 @@ class GameEngine:
                     return f"【{name}】须先经残韵获得本副本一种专属道纹后才能学习"
             if name in MONSTER_TRANSFORM_DAOWEN:
                 return f"【{name}】是怪物转化道纹，只能由自身已有道纹经残韵获得"
-            if name in ORIGINAL_MONSTER_DAOWEN:
-                return f"【{name}】是原始怪物道纹，人类无法承受并获得"
+            # 2026-10-07 用户令：原始怪物道纹不再是人类禁区（残韵双向 + 可永久持有），
+            # 局外【学习】不再以「人类无法承受」为由拒绝。
             owner = UNIMPLEMENTED_REGION_EXCLUSIVE_DAOWEN.get(name)
             if owner is not None:
                 return f"【{name}】是{owner}专属道纹，当前副本无法习得"
@@ -2897,10 +2897,12 @@ class GameEngine:
         return True
 
     def _grant_transformed_daowen(self, player: Entity, dest: str) -> bool:
-        """残韵获得变化后道纹。X不从原道纹拷贝；同名不重复。"""
+        """残韵获得变化后道纹。X不从原道纹拷贝；同名不重复。
+
+        2026-10-07 用户令：残韵路径双向 + 完全放开——变化结果是原始怪物道纹时
+        施法者同样永久获得（旧版在此处直接拒绝授予，与「双向 + 可永久持有」冲突）。
+        """
         if dest in player.dao_wen:
-            return False
-        if dest in ORIGINAL_MONSTER_DAOWEN:
             return False
         player.dao_wen[dest] = DaoWenInstance(DaoWen(
             name=dest, formula=f"{dest}X", cost_type="消耗",
@@ -2937,11 +2939,17 @@ class GameEngine:
 
         caster_has = holder is actor
 
+        # 路径双向后，同一（源道纹, 残韵类型）可能通向两个相邻节点
+        # （例：【杀伐】的【反转】通向【再生】与【封印】）。歧义时不替发动者挑，
+        # 必须显式提交 target_daowen；未指定则原样拒绝并列出候选（残韵不消耗）。
+        target_daowen = params.get("target_daowen", "") or ""
+
         result = ResonanceEngine.apply_resonance(
             source, rtype,
             caster_has_daowen=caster_has,
             target_has_daowen=True,
-            resonance_stock=stock  # 传入施法者残韵库存用于校验
+            resonance_stock=stock,  # 传入施法者残韵库存用于校验
+            target_daowen=target_daowen,
         )
 
         if not result["success"]:
@@ -2970,9 +2978,11 @@ class GameEngine:
                 elif second_source_daowen not in second_entity.dao_wen:
                     second_log = f"同魂笔：{second}未持有{second_source_daowen}，未生效"
                 else:
-                    r2 = ResonanceEngine.apply_resonance(second_source_daowen, rtype,
-                                                          caster_has_daowen=(second_source_daowen in player.dao_wen),
-                                                          target_has_daowen=True)
+                    r2 = ResonanceEngine.apply_resonance(
+                        second_source_daowen, rtype,
+                        caster_has_daowen=(second_source_daowen in player.dao_wen),
+                        target_has_daowen=True,
+                        target_daowen=params.get("second_target_daowen", "") or "")
                     if r2.get("success"):
                         new_name = r2["target"]
                         self._permanently_convert_daowen(second_entity, second_source_daowen, new_name)

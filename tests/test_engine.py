@@ -155,11 +155,17 @@ def test_resonance():
     """测试残韵系统"""
     print("\n=== 测试：残韵系统 ===")
     
-    # 杀伐 → 反转 → 再生
-    result = ResonanceEngine.apply_resonance("杀伐", "反转", False, True)
+    # 杀伐 → 反转 → 再生（杀伐的反转通向再生与封印两个相邻节点，须显式指定走向）
+    result = ResonanceEngine.apply_resonance("杀伐", "反转", False, True, target_daowen="再生")
     assert result["success"], f"残韵失败: {result}"
     assert result["target"] == "再生"
     print("  ✓ 杀伐 --反转--> 再生")
+
+    # 路径双向：再生 --反转--> 杀伐 同样成立（2026-10-07 用户令）
+    result = ResonanceEngine.apply_resonance("再生", "反转", False, True, target_daowen="杀伐")
+    assert result["success"], f"残韵失败: {result}"
+    assert result["target"] == "杀伐"
+    print("  ✓ 再生 --反转--> 杀伐（反向）")
     
     # 再生 → 曲解 → 庇护
     result = ResonanceEngine.apply_resonance("再生", "曲解", False, True)

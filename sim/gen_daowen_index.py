@@ -64,12 +64,14 @@ for region, text in sorted(load_dungeon_documents().items()):
                 if entry not in carriers[mm.group(1)]:
                     carriers[mm.group(1)].append(entry)
 
-# 残韵边（出/入）
-out_edges, in_edges = defaultdict(list), defaultdict(list)
-for loop, edges in ResonanceEngine.CLOSED_LOOPS.items():
-    for src, rtype, dst in edges:
-        out_edges[src].append(f"（{rtype}）→{dst}")
-        in_edges[dst].append(f"←{src}（{rtype}）")
+# 残韵边（双向：2026-10-07 用户令——同一条边正反两向都走，同一种残韵、同样消耗一次）
+out_edges = defaultdict(list)
+for _name in DaoWenEngine._registry:
+    for _p in ResonanceEngine.get_available_resonance(_name):
+        out_edges[_name].append(
+            f"（{_p['resonance_type']}）→{_p['target_daowen']}"
+            f"（{'正向' if _p['direction'] == '正向' else '反向'}）")
+in_edges = defaultdict(list)
 
 # 目标需求
 def target_label(name):
@@ -154,7 +156,9 @@ A(f"杀伐闭环（通用核心）{len(SHAFA_LOOP_DAOWEN)} ｜ 原始怪物道�
   f"未实现 {len(UNIMPLEMENTED_REGION_EXCLUSIVE_DAOWEN)}。")
 A("")
 A("- **效果正文**抄自引擎 `engine/daowen.py`（`DaoWenEngine.calculate_*` 的规范文本）——**公式以引擎结算为准**。")
-A("- **归属与残韵闭环**：`engine/gamedata.py` + `engine/daowen.py`（`CLOSED_LOOPS`）；与规则正文的闭环图一致。")
+A("- **归属与残韵闭环**：`engine/gamedata.py` + `engine/daowen.py`（`CLOSED_LOOPS`）；与规则正文的闭环图一致。\n"
+  "  `CLOSED_LOOPS` 里的每条边为**无向边**（2026-10-07 用户令：残韵路径双向）——登记 `(a,类型,b)` 表示 a、b 互为相邻节点，\n"
+  "  正反两向都走同一种残韵、同样消耗一次；双向由 `ResonanceEngine.find_transformations` 在查询时展开，边表不重复登记反向边。")
 A("- **承载怪物**：解析自 `副本/*.md` 全部面板行（12只怪物池 + 事件/雇佣面板，如「追求者」）；格式 `怪物名X`。")
 A("- 冲突时：数值/结算以引擎为准，规则叙述以 [规则正文](README.md#第四宇宙规则正文) 为准，本索引为派生索引（与两者冲突时应重新生成本文件）。")
 A("- 通用规则（自由控X、[目标]与闪避、代价结算、平分、声明、怪物冷却道纹X≤1等）见 [规则正文](README.md#第四宇宙规则正文)，本文件不重复。")
@@ -176,7 +180,7 @@ A("")
 # 总览表
 A("## 总览表")
 A("")
-A("| 道纹 | 分类 | 代价 | [目标] | 残韵变化（出） | 承载怪物 |")
+A("| 道纹 | 分类 | 代价 | [目标] | 残韵路径（双向） | 承载怪物 |")
 A("| --- | --- | --- | --- | --- | --- |")
 CAT_LABEL = {
     "shaifa": "通用核心", "original": "原始", "transform": "转化",
@@ -213,13 +217,8 @@ def section(title, names, note_lines=(), loop=None, loop_title=None):
         A(f"### {name}")
         A(f"X：{costs[name]}。{effects[name]}" if effects[name] else f"X：{costs[name]}。")
         meta = [f"[目标]：{target_label(name)}"]
-        res = []
         if out_edges[name]:
-            res.append("出：" + "、".join(out_edges[name]))
-        if in_edges[name]:
-            res.append("入：" + "、".join(in_edges[name]))
-        if res:
-            meta.append("残韵：" + "；".join(res))
+            meta.append("残韵路径（双向）：" + "、".join(out_edges[name]))
         c = carriers.get(name, [])
         meta.append("承载：" + ("、".join(c) if c else "—（无怪物承载）"))
         A(f"> {' ｜ '.join(meta)}")
@@ -236,13 +235,14 @@ section(f"原始怪物道纹（{len(ORIGINAL_MONSTER_DAOWEN)}）", sorted(ORIGIN
         note_lines=[
             "原始怪物道纹是各转化分支的起点：**不消耗法力**，每次实际发动按条目支付对应代价"
             "（全力／减速／疯狂／自愈为【异变5X】，必中为【异变X】，飞行为【冷却X】）；"
-            "只能单向变化为转化道纹；**无法被永久获得**，"
-            "只能经【原初X】临时借用（怪物困境时，借一种自身未持有的原始道纹）。",
+            "与转化道纹互为残韵双向路径（转化道纹可反向变回原始道纹），"
+            "人类与怪物均可经残韵永久获得；"
+            "怪物另可经【原初X】临时借用（怪物困境时，借一种自身未持有的原始道纹）。",
             "怪物重复发动同一道纹按同一X计费，不存在「发动越多X越大」的递增。"
             "怪物使用冷却代价类的道纹（固执、束缚、全速、畸变、飞行）"
             "X 值只能≤1，一律按 X=1 结算（规则正文·怪物准则5）。",
         ])
-A("分支结构（原始→转化，残韵单向）：")
+A("分支结构（原始 ⇄ 转化，残韵双向）：")
 A("")
 for src in sorted(ORIGINAL_MONSTER_DAOWEN):
     ds = out_edges.get(src, [])
@@ -250,8 +250,9 @@ for src in sorted(ORIGINAL_MONSTER_DAOWEN):
 A("")
 
 section(f"怪物转化道纹（{len(MONSTER_TRANSFORM_DAOWEN)}）", sorted(MONSTER_TRANSFORM_DAOWEN),
-        note_lines=["转化道纹由原始怪物道纹经残韵单向变化而来：对持有原始道纹的角色发动残韵，"
-                    "该道纹永久变为转化道纹，施法者同时永久获得。人类无法直接学习怪物道纹，只能经此路径。"])
+        note_lines=["转化道纹与原始怪物道纹互为残韵双向路径：对持有原始道纹的角色发动残韵，"
+                    "该道纹永久变为转化道纹，施法者同时永久获得；对持有转化道纹的角色发动同种残韵，"
+                    "亦可把它反向变回原始道纹。转化道纹不可由局外【学习】直接习得，只能经此路径取得。"])
 
 for region in ("扭曲都市", "罪孽都市", "龙心谷", "乱葬岗"):
     ns = region_daowen_order(region)
@@ -272,8 +273,8 @@ A("## 道纹归属与学习规则")
 A("")
 A("1. **杀伐闭环（通用核心）**：开局发现初始道纹的来源；人类侧基础概念。")
 A("2. **副本专属**：学习门槛=先经残韵从本副本怪物转化获得至少一种；其它副本专属不可学。")
-A("3. **怪物转化**：只能由自身已持有道纹经残韵变化获得（施法者同时获得）；原始→转化单向。")
-A("4. **原始怪物**：人类不可学习；怪物发动按条目支付代价（全力／减速／疯狂／自愈异变5X、必中异变X、飞行冷却X，冷却类X≤1）；可经【原初X】临时借用。")
+A("3. **怪物转化**：只能由自身已持有道纹经残韵变化获得（施法者同时获得）；原始⇄转化双向，反向可把转化道纹变回原始道纹。")
+A("4. **原始怪物**：不再是人类禁区——可经残韵（含转化道纹反向）永久获得，局外【学习】亦可习得；怪物发动按条目支付代价（全力／减速／疯狂／自愈异变5X、必中异变X、飞行冷却X，冷却类X≤1）；可经【原初X】临时借用。")
 A("5. **角色道纹唯一**：同名道纹不重复存在；通过残韵获得的道纹X按自由控X规则自定义。")
 A("6. **道纹只在战斗中发动**，唯一局外例外为【消灾】。")
 A("7. **自由控X**：发动时可自由指定 1 ≤ X ≤ 当前可用法力/代价上限；【波及】的X还受合法目标数封顶"
