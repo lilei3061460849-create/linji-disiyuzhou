@@ -81,6 +81,11 @@ TWISTED_TOOL_LIBRARY = {
     "高爆手雷": (2, "对一个[目标]造成15点伤害，并使其本回合攻击次数-1"),
 }
 
+# 自由结晶随机代价池（2026-10-05 用户令）：代价一节中可数值化的八种代价，共计10。
+# 【唯一】无数值、无法按 X=10 结算，不入池（见 物品索引.md#自由结晶）。
+FREE_CRYSTAL_COST_POOL = ("流血", "衰老", "枯竭", "萎缩", "疲惫", "失忆", "异变", "冷却")
+FREE_CRYSTAL_COST_AMOUNT = 10
+
 
 class GameEngine:
     """
@@ -110,12 +115,13 @@ class GameEngine:
         self.death_book = DeathBookStore(death_book_path)
         self.state.death_book_legacies = self.death_book.load()
         self._load_progression()  # 阶级推进/无尽模式：与封存槽同文件持久（见 _save_progression）
-        # 封存槽是跨轮回持久文件；若进程重启，从中恢复《死者之书》的永久癌变强化。
+        # 封存槽是跨轮回持久文件；若进程重启，从中恢复《死者之书》的系统记录。
+        # （2026-10-05 用户令：癌变休整加成 rest_heal_bonus 已废止，旧封存文件里
+        # 的该键直接忽略。）
         if os.path.exists(sealed_candidate_path):
             try:
                 with open(sealed_candidate_path, encoding="utf-8") as handle:
                     sealed = json.load(handle)
-                self.state.rest_heal_bonus = max(0, int(sealed.get("rest_heal_bonus", 0)))
                 self.state.death_book_wisdom = list(sealed.get("death_book_wisdom") or [])
             except (OSError, ValueError, TypeError, json.JSONDecodeError):
                 pass  # 正式读取/报错仍由最终冠冕流程负责；初始化不得因坏候选阻塞。
@@ -350,7 +356,7 @@ class GameEngine:
             {"action_type": "pre_battle_action", "params_schema": {
                 "sub_action": "休整", "tier": [1, 2, 3],
                 "heal_allocations": {"target_options": heal_targets,
-                                     "constraint": "amount总和=档位基础恢复量+永久休整加成"}}},
+                                     "constraint": "amount总和=档位基础恢复量"}}},
             {"action_type": "pre_battle_action", "params_schema": {
                 "sub_action": "修行", "tier": [1, 2, 3, 4, 5, 6],
                 "allocations": {"blood_points": "nonnegative integer",
@@ -1572,8 +1578,8 @@ class GameEngine:
         base_heal = (math.ceil(player.blood_limit * tier_pct[tier] / 100)
                      if player is not None else 0)
         cost = tier_cost[tier]
-        bonus = self.state.rest_heal_bonus
-        heal = base_heal + bonus
+        # 2026-10-05 用户令：癌变不再为【休整】提供额外恢复量，恢复额度=档位基础值。
+        heal = base_heal
         refs = ({"player:0": self.state.player}
                 if self.state.player and self.state.player.is_alive else {})
         refs.update({f"friend:{index}": entity for index, entity in enumerate(self.state.friends)
@@ -1611,7 +1617,7 @@ class GameEngine:
             target.healed_this_battle = healed_this_battle_before
             healed.append({"target_ref": entry["target_ref"], "target": target.name,
                            "allocated": entry["amount"], **detail})
-        payload = {"base_heal_amount": base_heal, "rest_heal_bonus": bonus,
+        payload = {"base_heal_amount": base_heal,
                    "heal_amount": heal, "shard_cost": cost, "heals": healed,
                    "shards_remaining": self.state.shards}
         return {"success": True, "action": "休整", "result": payload}
@@ -3565,6 +3571,42 @@ class GameEngine:
 
         return self.combat.execute_evolution(monster, daowen_name, x)
 
+    def _settle_free_crystal_cost(self, target: Entity, cost_type: str, amount: int) -> dict:
+        """自由结晶：强制目标付出指定代价共计 amount（2026-10-05 用户令）。
+
+        流血/衰老/枯竭/萎缩/疲惫/异变走统一代价结算入口 _apply_numeric_cost_part
+        （含致死判定、不朽之躯免疫、异变崩解/迷失等既有口径）；失忆与冷却没有
+        现成结算体，在这里按 物品索引.md#自由结晶 的定义实现：失忆＝随机失去至多
+        X 种自身道纹，冷却＝其持有的全部道纹进入冷却 X 场。
+        """
+        ctx = make_context(
+            timing=self.state.combat_subphase or self.state.phase,
+            source="自由结晶", source_type="consumable",
+            actor=self.state.player, target=target, owner=self.state.player,
+            mechanic="cost", subtype=self.combat._cost_context_subtype(cost_type),
+            amount=amount, tags={"consumable", "free_crystal", "cost"})
+        if cost_type == "失忆":
+            lost: list[str] = []
+            pool = list(target.dao_wen.keys())
+            for slot in range(min(amount, len(pool))):
+                roll = self.dice.auto_roll(
+                    f"free_crystal_amnesia_{target.name}_{slot + 1}", pool,
+                    context=f"自由结晶·失忆：{target.name}失去道纹{slot + 1}")
+                name = roll["record"]["selected_value"]
+                pool.remove(name)
+                target.dao_wen.pop(name, None)
+                lost.append(name)
+            return {"payer": target.name, "cost_type": cost_type,
+                    "paid": len(lost), "lost_daowen": lost}
+        if cost_type == "冷却":
+            cooled = []
+            for name, inst in target.dao_wen.items():
+                inst.cooldown_remaining = max(inst.cooldown_remaining, amount)
+                cooled.append(name)
+            return {"payer": target.name, "cost_type": cost_type,
+                    "paid": amount, "cooled_daowen": cooled}
+        return self.combat._apply_numeric_cost_part(target, cost_type, amount, ctx)
+
     def _action_consume_item(self, params: dict) -> dict:
         """使用消耗品（雕塑/普通/扭曲工具库8件，遵守现有消耗品规则，使用不消耗出手）"""
         item_name = params.get("name", "")
@@ -3596,38 +3638,51 @@ class GameEngine:
                 "state": self.combat._get_combat_state(),
             }
 
-        # 自由结晶：消耗品不占主动出手；同一目标喂满3次后强制触发救赎。
+        # 自由结晶（2026-10-05 用户令重做，旧口径「对同一怪物喂满3次触发救赎」废止）：
+        # 对[目标]使用→其随机付出一种代价，共计10；若目标是生命≤20%血限的怪物，
+        # 代价结算后仍存活的，强制触发救赎。消耗品不占主动出手。
         if item.name == "自由结晶":
             target_ref = params.get("target_ref", "")
             target = self.combat._combat_entity_refs().get(target_ref)
-            if target is None or target.entity_type != "怪物" or not self.state.enemy_combat_active(target):
-                return {"success": False, "error": "自由结晶只能对存活的怪物目标使用"}
+            if target is None or not target.is_alive:
+                return {"success": False, "error": "自由结晶只能对当前参战的存活目标使用"}
+            redemption_eligible = (
+                target.entity_type == "怪物"
+                and target.blood_limit > 0
+                and target.current_hp <= math.ceil(target.blood_limit * 0.2))
             remaining = item.use()
-            target.free_crystal_feed_count += 1
+            roll = self.dice.auto_roll(
+                f"free_crystal_cost_{target.name}_{remaining}",
+                list(FREE_CRYSTAL_COST_POOL),
+                context=f"自由结晶：{target.name}随机付出一种代价，共计{FREE_CRYSTAL_COST_AMOUNT}")
+            cost_type = roll["record"]["selected_value"]
+            cost_detail = self._settle_free_crystal_cost(target, cost_type, FREE_CRYSTAL_COST_AMOUNT)
             redemption = None
-            if target.free_crystal_feed_count >= 3:
+            if redemption_eligible and target.is_alive:
                 redemption = self.combat.check_redemption(target, force=True)
             return {
                 "success": True,
                 "action": f"对【{target.name}】使用自由结晶",
                 "result": {
                     "target": target.name,
-                    "feed_count": target.free_crystal_feed_count,
+                    "cost_type": cost_type,
+                    "cost_amount": FREE_CRYSTAL_COST_AMOUNT,
+                    "cost_detail": cost_detail,
                     "uses_remaining": remaining,
                     "redemption": redemption,
                 },
                 "state": self.combat._get_combat_state(),
             }
 
-        # 【无限肉块】：恢复5生命，但本次恢复不计入癌变累计治疗量。
+        # 【无限肉块】：恢复10生命（2026-10-05 用户令：5→10），但本次恢复不计入癌变累计治疗量。
         if item.kind == "infinite_meat":
             before_total = self.state.player.total_healed
             before_battle_total = self.state.player.healed_this_battle
             remaining = item.use()
-            heal = self.state.apply_heal(self.state.player, 5, ctx={
+            heal = self.state.apply_heal(self.state.player, 10, ctx={
                 "timing": self.state.phase, "source": item.name, "source_type": "consumable",
                 "actor": self.state.player, "target": self.state.player, "mechanic": "heal",
-                "subtype": "infinite_meat", "amount": 5,
+                "subtype": "infinite_meat", "amount": 10,
                 "tags": {"consumable", "exclude_cancer_accumulation"},
             })
             self.state.player.total_healed = before_total
@@ -4863,7 +4918,6 @@ class GameEngine:
             "resonance": dict(s.resonance),
             "shards": s.shards,
             "death_book_wisdom": list(s.death_book_wisdom),
-            "rest_heal_bonus": s.rest_heal_bonus,
             "death_book_legacies": [dict(entry) for entry in s.death_book_legacies],
             "attribute_points": s.attribute_points,
             "current_region": s.current_region,
@@ -5946,8 +6000,9 @@ class GameEngine:
         self.state.death_book_legacies = self.death_book.load()
 
     def _replace_state_preserving_death_book_progress(self) -> None:
-        """开始新轮回者时保留《死者之书》的永久癌变强化。"""
-        bonus = self.state.rest_heal_bonus
+        """开始新轮回者时保留《死者之书》的系统记录。
+
+        2026-10-05 用户令：癌变休整加成已废止，此处不再携带 rest_heal_bonus。"""
         wisdom = list(self.state.death_book_wisdom)
         # 死斗败者先过死之传承（reset）再走resolve_final_duel(defeat)；
         # reset若清空擂主快照，defeat就无声吞掉擂主（r14实战复现）。
@@ -5958,7 +6013,7 @@ class GameEngine:
         unlocked_tier = int(self.state.unlocked_tier)
         endless_mode = bool(self.state.endless_mode)
         endless_cycle = int(self.state.endless_cycle)
-        self.state = GameState(rest_heal_bonus=bonus, death_book_wisdom=wisdom)
+        self.state = GameState(death_book_wisdom=wisdom)
         self.state.unlocked_tier = unlocked_tier
         self.state.endless_mode = endless_mode
         self.state.endless_cycle = endless_cycle

@@ -266,7 +266,7 @@ class MonsterLifeMixin:
         return math.ceil(monster.blood_limit * self.REDEMPTION_HP_RATIO)
 
     def check_redemption(self, monster: Entity, *, force: bool = False) -> Optional[dict]:
-        """救赎：通常要求残血且没有七种原始怪物道纹；自由结晶可强制触发。"""
+        """救赎：通常要求残血且没有六种原始怪物道纹；自由结晶可强制触发。"""
         if monster is None or monster.entity_type != "怪物" or not monster.is_alive:
             return None
         if monster.is_sculptured or monster.is_proliferated or monster.is_debt_bound:
@@ -341,7 +341,7 @@ class MonsterLifeMixin:
                 results.append(self._sculpture_monster(monster))
                 continue
 
-            # 2. 救赎：残血且没有七种原始怪物道纹
+            # 2. 救赎：残血且没有六种原始怪物道纹
             redemption = self.check_redemption(monster)
             if redemption:
                 results.append(redemption)
@@ -415,7 +415,7 @@ class MonsterLifeMixin:
                 "delay_rounds": delay_rounds}
 
     def _cancer_character(self, entity: Entity, ctx: Optional[EffectContext | dict] = None) -> dict:
-        """轮回者/同伴癌变：累计恢复达血限×2 → 直接命零。不吸收进书、不加休整+8。"""
+        """轮回者/同伴癌变：累计恢复达血限×2 → 直接命零。不吸收进书、不产生奖励。"""
         cancer_ctx = normalize_context(ctx)
         entity.is_proliferated = True
         entity.is_cancer = True
@@ -475,7 +475,11 @@ class MonsterLifeMixin:
         }
 
     def _proliferate_monster(self, monster: Entity, ctx: Optional[EffectContext | dict] = None) -> dict:
-        """癌变：累计受到恢复量达阈值→吸收进死者之书，强化休整（旧名 增生）"""
+        """癌变：累计受到恢复量达阈值→吸收进死者之书，获得【无限肉块】（旧名 增生）。
+
+        2026-10-05 用户令：癌变不再为【休整】提供永久恢复量加成（原每只+8），
+        奖励仅保留【无限肉块】（1/1）；恢复量 5→10。
+        """
         cancer_ctx = normalize_context(ctx)
         monster.is_proliferated = True
         # 兼容：同时写入癌变别名，便于外部以新名读取
@@ -484,7 +488,7 @@ class MonsterLifeMixin:
         absorbed = monster.total_healed
         meat = Consumable(
             name="无限肉块",
-            effect="使用后恢复5生命，不计入癌变累计治疗量；战终恢复80%已损耐久",
+            effect="使用后恢复10生命，不计入癌变累计治疗量；战终恢复80%已损耐久",
             current_uses=1,
             max_uses=1,
             kind="infinite_meat",
