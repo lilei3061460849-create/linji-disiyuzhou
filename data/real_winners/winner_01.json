@@ -1,0 +1,245 @@
+{
+  "candidates": {
+    "2": [
+      {
+        "player": {
+          "name": "阮烟",
+          "entity_type": "轮回者",
+          "blood_limit": 60,
+          "current_hp": 53,
+          "mana_limit": 3,
+          "current_mana": 1,
+          "speed_limit": 4,
+          "current_speed": 4,
+          "attack_count": 0,
+          "attack_power": 0,
+          "shield": 2,
+          "is_flying": false,
+          "is_alive": true,
+          "shards": 0,
+          "is_debt_bound": false,
+          "mutation_count": 0,
+          "no_action_rounds": 0,
+          "no_damage_rounds": 0,
+          "lethal_counters": {
+            "迷失": [
+              0,
+              50
+            ],
+            "癌变": [
+              0,
+              120
+            ]
+          },
+          "lethal_progress": [
+            "迷失（0/50）",
+            "癌变（0/120）"
+          ],
+          "dao_wen": {
+            "杀伐": 0,
+            "庇护": 0,
+            "再生": 0,
+            "加速": 0
+          },
+          "spells": [],
+          "relics": [],
+          "status_effects": []
+        },
+        "friends": [],
+        "employees": [
+          {
+            "name": "铁卫1",
+            "entity_type": "员工",
+            "blood_limit": 60,
+            "current_hp": 60,
+            "mana_limit": 10,
+            "current_mana": 10,
+            "speed_limit": 5,
+            "current_speed": 5,
+            "attack_count": 5,
+            "attack_power": 10,
+            "shield": 0,
+            "is_flying": false,
+            "is_alive": true,
+            "shards": 0,
+            "is_debt_bound": false,
+            "mutation_count": 0,
+            "no_action_rounds": 0,
+            "no_damage_rounds": 0,
+            "lethal_counters": {
+              "迷失": [
+                0,
+                50
+              ],
+              "癌变": [
+                0,
+                120
+              ]
+            },
+            "lethal_progress": [
+              "迷失（0/50）",
+              "癌变（0/120）"
+            ],
+            "dao_wen": {
+              "蒙蔽": 0
+            },
+            "spells": [],
+            "relics": [],
+            "status_effects": []
+          },
+          {
+            "name": "铁卫2",
+            "entity_type": "员工",
+            "blood_limit": 60,
+            "current_hp": 60,
+            "mana_limit": 10,
+            "current_mana": 10,
+            "speed_limit": 5,
+            "current_speed": 5,
+            "attack_count": 5,
+            "attack_power": 10,
+            "shield": 0,
+            "is_flying": false,
+            "is_alive": true,
+            "shards": 0,
+            "is_debt_bound": false,
+            "mutation_count": 0,
+            "no_action_rounds": 0,
+            "no_damage_rounds": 0,
+            "lethal_counters": {
+              "迷失": [
+                0,
+                50
+              ],
+              "癌变": [
+                0,
+                120
+              ]
+            },
+            "lethal_progress": [
+              "迷失（0/50）",
+              "癌变（0/120）"
+            ],
+            "dao_wen": {
+              "愤怒": 0
+            },
+            "spells": [],
+            "relics": [],
+            "status_effects": []
+          },
+          {
+            "name": "铁卫3",
+            "entity_type": "员工",
+            "blood_limit": 60,
+            "current_hp": 60,
+            "mana_limit": 10,
+            "current_mana": 10,
+            "speed_limit": 5,
+            "current_speed": 5,
+            "attack_count": 5,
+            "attack_power": 10,
+            "shield": 0,
+            "is_flying": false,
+            "is_alive": true,
+            "shards": 0,
+            "is_debt_bound": false,
+            "mutation_count": 0,
+            "no_action_rounds": 0,
+            "no_damage_rounds": 0,
+            "lethal_counters": {
+              "迷失": [
+                0,
+                50
+              ],
+              "癌变": [
+                0,
+                120
+              ]
+            },
+            "lethal_progress": [
+              "迷失（0/50）",
+              "癌变（0/120）"
+            ],
+            "dao_wen": {
+              "愤怒": 0
+            },
+            "spells": [],
+            "relics": [],
+            "status_effects": []
+          }
+        ],
+        "relics": [],
+        "resonance": {
+          "反转": 0
+        },
+        "shards": 51,
+        "death_book_wisdom": [],
+        "death_book_legacies": [
+          {
+            "title": "贾凡·罪孽都市·第5场",
+            "text": "第5场受到致死攻击命零"
+          },
+          {
+            "title": "贾希希·龙心谷·第5场",
+            "text": "双熊战纯叠盾五回合未扣敌血凡庸命零"
+          },
+          {
+            "title": "某人·罪孽都市·留训",
+            "text": "不伤害他人，一味治疗，异变缠身都会死亡哦"
+          },
+          {
+            "title": "某人·扭曲都市·留训一",
+            "text": "法力一池不回填，蓝就是拳，别乱花"
+          },
+          {
+            "title": "某人·扭曲都市·留训二",
+            "text": "五回合打不掉敌人血，凡庸会收你命"
+          },
+          {
+            "title": "某人·扭曲都市·留训三",
+            "text": "回复过量会癌变，再生别贪杯"
+          },
+          {
+            "title": "某人·扭曲都市·留训四",
+            "text": "封印攒异变，五十层崩解命零"
+          },
+          {
+            "title": "某人·扭曲都市·留训五",
+            "text": "第7战四怪围攻，血与速都要堆"
+          },
+          {
+            "title": "沈昼·扭曲都市·第7场",
+            "text": "第7场最终死斗落败"
+          },
+          {
+            "title": "沈昼·扭曲都市·第7场",
+            "text": "第7场最终死斗落败"
+          },
+          {
+            "title": "沈昼·扭曲都市·第7场",
+            "text": "第7场最终死斗落败"
+          }
+        ],
+        "attribute_points": 17,
+        "current_region": "罪孽都市",
+        "artifacts_owned": [
+          "黑金名片"
+        ],
+        "first_embrace_traits": [],
+        "pending_first_embrace": false,
+        "chizu_names": [],
+        "dragon_nature": 0,
+        "dragon_traits": [],
+        "has_sacrifice_action": false
+      }
+    ]
+  },
+  "origin": {
+    "region": "罪孽都市",
+    "seed": 600,
+    "rank": 1,
+    "duel_won": true,
+    "duels_fought": 4,
+    "terminal_artifact": true
+  }
+}
