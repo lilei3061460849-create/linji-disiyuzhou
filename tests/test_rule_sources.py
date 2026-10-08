@@ -20,8 +20,12 @@ def test_project_rules_are_extracted_from_their_authoritative_documents():
     # 2026-10-03：删除爆裂/坠落/滑翔/狂暴/兴奋/尸爆/活血后：
     # 通用道纹 38→34（删 7 条、正文补回 愤怒/自残/无神/疯狂 定义），
     # 副本道纹 64→61（扭曲-1、龙心-1、乱葬-1）
-    assert len(facts["common_daowen"]) == 34
-    assert len(facts["dungeon_daowen"]) == 61
+    # 2026-10-08 用户令删除【镇尸】（与【坏死】硬重复）与【自残】
+    # （【狂暴】被删后遗留的孤儿转化道纹）：
+    # 通用道纹 34→33（删自残），副本道纹 61→60（乱葬-1）。
+    # 真正的护栏是下面 diff_project_daowen() 双向为空——正文与引擎必须逐条对齐。
+    assert len(facts["common_daowen"]) == 33
+    assert len(facts["dungeon_daowen"]) == 60
     assert len(facts["spells"]) == 10  # 2026-09-16：删「血溅五步」（无引擎流程的空名字）
     assert len(facts["dungeons"]) == 8
     assert len(facts["monsters"]) == 48  # 36 + 乱葬岗12(已实现)

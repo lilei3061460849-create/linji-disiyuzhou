@@ -310,11 +310,11 @@ class DamageDeathMixin:
         return record
 
     def _heal_blocked(self, entity: Entity) -> bool:
-        """目标是否被禁疗：坏死 / 镇尸 均为「无法获得[回复]」的效果。
+        """目标是否被禁疗：只有【坏死】这一个「无法获得[回复]」的实现。
 
-        两个道纹各自独立（不做合并），只在同一消费点上共同判定。
+        2026-10-08 用户令删除【镇尸】（与【坏死】硬重复）后，禁疗的判定点收敛为单一来源。
         """
-        return entity is not None and (entity.has_status("坏死") or entity.has_status("镇尸"))
+        return entity is not None and entity.has_status("坏死")
 
     def _apply_blood_limit_change(
         self, entity: Entity, delta: int, source: str, polarity: str,

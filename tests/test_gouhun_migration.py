@@ -150,13 +150,15 @@ def test_resonance_conversion_does_not_clear_active_gouhun():
                    sealed_candidate_path=f"/tmp/linji_tests/test_gouhun_res_s_{os.getpid()}.json")
     e.execute_action("setup_attributes", {"name": "白某", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
-    e.execute_action("setup_choose_resonance", {"resonance_type": "曲解"})
+    e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     e.execute_action("setup_choose_region", {"region": "乱葬岗"})
     e.state.phase = "in_combat"
     e.state.current_round = 2
     p = e.state.player
-    # 2026-09-16：怪物[法限]即法力池。勾魂4 经曲解变镇尸4，镇尸消耗2X=8，
+    # 2026-09-16：怪物[法限]即法力池。勾魂4 经反转变冥气4，冥气消耗2X=8，
     # 原法限 1 付不起，抬到 12。本用例只断言牌面改写与道纹可不发动，不断言伤害。
+    # 2026-10-08 删【镇尸】后，勾魂的【曲解】那一格留成空占位符（不可获得），
+    # 玩家的出路只剩【反转】→冥气。
     m = Entity(name="寄骨蝇", entity_type="怪物", blood_limit=200, current_hp=200,
                attack_count=1, attack_power=12)
     m.dao_wen["勾魂"] = DaoWenInstance(
@@ -169,13 +171,13 @@ def test_resonance_conversion_does_not_clear_active_gouhun():
     e.combat.apply_daowen_effect("勾魂", calc, m, p)
     assert p.has_status("勾魂")
 
-    # 玩家用残韵把怪物的【勾魂】曲解成【镇尸】
-    e.state.resonance = {"曲解": 1}
+    # 玩家用残韵把怪物的【勾魂】反转成【冥气】
+    e.state.resonance = {"反转": 1}
     r = e.execute_action("use_resonance", {"source_daowen": "勾魂",
-                                           "resonance_type": "曲解",
+                                           "resonance_type": "反转",
                                            "target_ref": "enemy:0"})
     assert r.get("success") is True, r.get("error")
-    assert "镇尸" in m.dao_wen and "勾魂" not in m.dao_wen, "怪物牌面应已改写"
+    assert "冥气" in m.dao_wen and "勾魂" not in m.dao_wen, "怪物牌面应已改写"
 
     # 裁定要点：玩家身上已生效的勾魂**不**被清除，继续按剩余持续压制
     assert p.has_status("勾魂"), "转化不得清除已生效的 debuff"
@@ -183,8 +185,50 @@ def test_resonance_conversion_does_not_clear_active_gouhun():
     assert p.spend_mana(5) is True
     assert p.current_mana == 10, "转化后勾魂仍应让玩家法力消耗翻倍"
 
-    # 真实生效：怪物下回合用新道纹（镇尸）而不是已被转化的勾魂
+    # 真实生效：怪物下回合用新道纹（冥气）而不是已被转化的勾魂
     e.state.current_round = 3
     prepared = e.combat.prepare_monster_phase()
     names = [o["name"] for o in prepared["actors"][0]["daowen_options"]]
-    assert names == ["镇尸"], f"转化后怪物应改用新道纹，实{names}"
+    assert names == ["冥气"], f"转化后怪物应改用新道纹，实{names}"
+
+
+def test_gouhun_qujie_lands_on_reserved_slot_and_is_refused():
+    """边界（2026-10-08 删【镇尸】）：【勾魂】的【曲解】通向闭环空占位符，不可获得。
+
+    旧行为：勾魂 —(曲解)→ 镇尸，玩家可把怪物的勾魂转成镇尸。
+    新行为：那一格留成空位（RESERVED_SLOT），残韵走到它 = 无事发生：
+    失败、不消耗残韵、怪物牌面不变、施法者也不获得任何道纹。
+    """
+    import os
+    from engine.api import GameEngine
+    from engine.daowen import RESERVED_SLOT
+    from engine.models import Entity, DaoWen, DaoWenInstance
+    from tests.setup_support import finish_initial_daowen
+
+    db = f"/tmp/linji_tests/test_gouhun_slot_{os.getpid()}.db"
+    e = GameEngine(db_path=db, rng_seed=7,
+                   sealed_candidate_path=f"/tmp/linji_tests/test_gouhun_slot_s_{os.getpid()}.json")
+    e.execute_action("setup_attributes", {"name": "白某", "blood_points": 11,
+                                          "speed_points": 8, "mana_points": 6})
+    finish_initial_daowen(e)
+    e.execute_action("setup_choose_resonance", {"resonance_type": "曲解"})
+    e.execute_action("setup_choose_region", {"region": "乱葬岗"})
+    e.state.phase = "in_combat"
+    e.state.current_round = 2
+    p = e.state.player
+    m = Entity(name="寄骨蝇", entity_type="怪物", blood_limit=200, current_hp=200,
+               attack_count=1, attack_power=12)
+    m.dao_wen["勾魂"] = DaoWenInstance(
+        DaoWen(name="勾魂", formula="", cost_type="消耗", cost_formula="X",
+               effect_formula=""), x_value=4)
+    e.state.enemies.append(m)
+
+    e.state.resonance = {"曲解": 1}
+    r = e.execute_action("use_resonance", {"source_daowen": "勾魂",
+                                           "resonance_type": "曲解",
+                                           "target_ref": "enemy:0"})
+    assert r.get("success") is False, f"通向空占位符的残韵应失败，实：{r}"
+    assert e.state.resonance.get("曲解") == 1, "失败不应消耗残韵"
+    assert "勾魂" in m.dao_wen, "怪物牌面不应被改写"
+    assert RESERVED_SLOT not in m.dao_wen, "空占位符不得进入任何人的道纹列表"
+    assert RESERVED_SLOT not in p.dao_wen, "施法者也不得获得空占位符"

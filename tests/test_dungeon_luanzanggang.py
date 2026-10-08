@@ -1,7 +1,7 @@
 """乱葬岗（二阶副本）实现契约测试。
 
-覆盖：8专属道纹注册/残韵闭环、区域可选、怪物池解析、附煞行动（7煞气）、
-专属道纹效果（瓦解/镇尸/勾魂/冥气/缄默/尸爆/招魂）。
+覆盖：6专属道纹注册/残韵闭环（2026-10-08 删【镇尸】）、区域可选、怪物池解析、
+附煞行动（7煞气）、专属道纹效果（瓦解/勾魂/冥气/缄默/招魂）。
 """
 import os
 import sys
@@ -10,7 +10,7 @@ from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
-from engine.daowen import DaoWenEngine, ResonanceEngine
+from engine.daowen import DaoWenEngine, ResonanceEngine, RESERVED_SLOT
 from engine.models import Entity, GameState
 from engine.dice import DiceEngine
 from engine.combat import CombatEngine
@@ -19,9 +19,12 @@ from engine.combat import CombatEngine
 # ---------- 道纹注册与闭环 ----------
 
 def test_dungeon_daowen_registered():
-    """正常路径：7个乱葬岗专属道纹已注册并可解析（2026-10-03 删【尸爆】）。"""
+    """正常路径：6个乱葬岗专属道纹已注册并可解析。
+
+    2026-10-03 删【尸爆】；2026-10-08 删【镇尸】（与【坏死】硬重复）。
+    """
     DaoWenEngine.register_all()
-    for name in ("分裂", "缄默", "瓦解", "冥气", "勾魂", "镇尸", "招魂"):
+    for name in ("分裂", "缄默", "瓦解", "冥气", "勾魂", "招魂"):
         assert name in DaoWenEngine._registry, f"{name} 未注册"
         r = DaoWenEngine.resolve(name, 2, target=Entity("T", "怪物", blood_limit=100, current_hp=100),
                                  caster=Entity("C", "轮回者", blood_limit=60, current_hp=60))
@@ -29,13 +32,42 @@ def test_dungeon_daowen_registered():
 
 
 def test_dungeon_resonance_loop_complete():
-    """正常路径：乱葬岗残韵闭环7条路径全部可达（2026-10-03 删【尸爆】：分裂→缄默直连）。"""
+    """正常路径：乱葬岗残韵闭环7条路径全部可达。
+
+    2026-10-03 删【尸爆】：分裂→缄默直连。
+    2026-10-08 删【镇尸】：勾魂与招魂之间那一格留成**空占位符**，环仍是 7 条边，
+    因此这两条路径查得到，但不可获得（见 test_reserved_slot_not_obtainable）。
+    """
     DaoWenEngine.register_all()
     loop = [("分裂", "缄默"), ("缄默", "瓦解"), ("瓦解", "冥气"),
-            ("冥气", "勾魂"), ("勾魂", "镇尸"), ("镇尸", "招魂"), ("招魂", "分裂")]
+            ("冥气", "勾魂"), ("勾魂", RESERVED_SLOT), (RESERVED_SLOT, "招魂"),
+            ("招魂", "分裂")]
     for a, b in loop:
         paths = ResonanceEngine.get_available_resonance(a)
         assert any(p.get("target_daowen") == b for p in paths), f"{a}→{b} 缺失"
+
+
+def test_reserved_slot_not_obtainable():
+    """边界：闭环上的空占位符查得到，但**不能获得**——残韵走到它=无事发生。
+
+    不消耗残韵、不改写目标牌面、不授予施法者（2026-10-08 用户令）。
+    """
+    DaoWenEngine.register_all()
+    stock = {"曲解": 3}
+    r = ResonanceEngine.apply_resonance("勾魂", "曲解", True, True, dict(stock))
+    assert r["success"] is False
+    assert r.get("reserved") is True
+    assert stock["曲解"] == 3, "走到空占位符不得消耗残韵"
+    # 显式指定空位同样被拒
+    r2 = ResonanceEngine.apply_resonance("招魂", "曲解", True, True, dict(stock),
+                                         target_daowen=RESERVED_SLOT)
+    assert r2["success"] is False and r2.get("reserved") is True
+    assert stock["曲解"] == 3
+    # 空位不是道纹：不得出现在注册表与任何持有集合中
+    assert RESERVED_SLOT not in DaoWenEngine._registry
+    from engine.gamedata import REGION_EXCLUSIVE_DAOWEN, MONSTER_TRANSFORM_DAOWEN
+    assert RESERVED_SLOT not in REGION_EXCLUSIVE_DAOWEN.get("乱葬岗", set())
+    assert RESERVED_SLOT not in MONSTER_TRANSFORM_DAOWEN
 
 
 # ---------- 区域与怪物池 ----------
@@ -143,18 +175,23 @@ def test_wajie_reduces_blood_limit_pct():
     assert any(e["type"] == "wajie" for e in r["effects"])
 
 
-def test_zhenshi_blocks_heal():
-    """正常路径：镇尸X使目标无法获得回复。"""
+def test_huaisi_is_the_only_heal_block():
+    """正常路径：禁疗只剩【坏死】一个实现（2026-10-08 删【镇尸】）。
+
+    坏死X：消耗2X。使[目标]无法获得回复，持续X。
+    """
+    DaoWenEngine.register_all()
     st = GameState()
     st.player = Entity("P", "轮回者", blood_limit=60, current_hp=60)
     st.enemies.append(Entity("怪", "怪物", blood_limit=200, current_hp=200))
     c = CombatEngine(st, DiceEngine(seed=1))
     c.reset_monster_activation()
     target = st.enemies[0]
-    calc = DaoWenEngine.resolve("镇尸", 2, target=target, caster=st.player)
-    r = c.apply_daowen_effect("镇尸", calc, st.player, target)
-    assert target.has_status("镇尸")
-    assert any(e["type"] == "zhenshi" for e in r["effects"])
+    assert "镇尸" not in DaoWenEngine._registry, "【镇尸】应已删除"
+    calc = DaoWenEngine.resolve("坏死", 2, target=target, caster=st.player)
+    r = c.apply_daowen_effect("坏死", calc, st.player, target)
+    assert target.has_status("坏死")
+    assert c._heal_blocked(target) is True
 
 
 def test_gouhun_doubles_mana_cost_for_x_rounds():

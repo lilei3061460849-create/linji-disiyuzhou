@@ -649,6 +649,10 @@ class TacticalAI:
                     rtype = path.get("resonance_type")
                     if not rtype or stock.get(rtype, 0) <= 0:
                         continue
+                    # 闭环上的空占位符（道纹被删后留的空位）不可获得，
+                    # 别把它当成一个可收割的目标去提交残韵（2026-10-08）。
+                    if path.get("reserved"):
+                        continue
                     # 残韵是双向的：既削敌（敌人失去 dw），也补己
                     # （api._grant_transformed_daowen 把转化结果白送给施法者）。
                     # 2026-09-13 修正：此前只算"敌人少了什么"，漏掉"我多了什么"

@@ -128,7 +128,7 @@ class DaowenEffectMixin:
                 inst.spent_unique = True
                 result["unique_spent"] = True
 
-        # 蒙蔽(施法者伤害类道纹归零) / 坏死/镇尸(目标禁疗)
+        # 蒙蔽(施法者伤害类道纹归零) / 坏死(目标禁疗)
         mengbi_blocked = caster.has_status("蒙蔽") and ("target_damage" in calc or "aoe_damage" in calc)
         if mengbi_blocked:
             for s in caster.status_effects:
@@ -706,13 +706,8 @@ class DaowenEffectMixin:
                 result["effects"].append({"type": "wajie", "target": target.name,
                                           "blood_limit_pct": pct, "blood_limit_cut": cut,
                                           "blood_limit_after": target.blood_limit})
-        if name == "镇尸" and calc.get("no_heal"):
-            for st_target in wave_status_targets:
-                st_target.add_status(StatusEffect(name="镇尸", value=1,
-                                                  remaining_rounds=calc.get("duration", 1),
-                                                  source=caster.name))
-                result["effects"].append({"type": "zhenshi", "target": st_target.name,
-                                          "duration": calc.get("duration", 1)})
+        # 2026-10-08 用户令删除【镇尸】：与【坏死】是同一效果的两套实现，
+        # 保留【坏死】为「无法获得[回复]」的唯一入口。
         if name == "勾魂" and calc.get("mana_cost_multiplier"):
             # 勾魂X（DM裁定 2026-09-09 再改版）：持续X回合**法力消耗翻倍**
             # （实现在 models.py::spend_mana）。历史：旧版「[回始]失去2X法力，持续∞」
@@ -770,7 +765,10 @@ class DaowenEffectMixin:
                 result["effects"].append({"type": "zhaohun", "note": "没有可唤回的怪物尸体"})
 
         # ---- 特殊 ----
-        if "self_attack_count" in calc:  # 自残：目标自打X次
+        # 2026-10-08 删【自残】后，当前没有任何已注册道纹产出 self_attack_count，
+        # 本分支暂时无人触发。保留它作为可复用通道（波及平分也已接线），
+        # 将来补进乱葬岗空位的新道纹若走"目标自打"效果可直接用。
+        if "self_attack_count" in calc:  # 原【自残】：目标自打X次
             if "self_attack_count" in wave_pieces:
                 pieces = self._divide_flat(calc["self_attack_count"], len(wave_status_targets))
                 wave_pieces["self_attack_count"] = pieces
@@ -863,7 +861,7 @@ class DaowenEffectMixin:
               and not (name == "变形" and bianxing_blocked)
               # 波及标记由 use_daowen/怪物结算逐目标处理，不走通用状态块
               # 乱葬岗道纹已在上方乱葬岗段自行 add_status，跳过通用状态处理避免重复叠加
-              and name not in ("勾魂", "冥气", "缄默", "镇尸", "瓦解", "波及")):
+              and name not in ("勾魂", "冥气", "缄默", "瓦解", "波及")):
             duration = calc["duration"] if calc["duration"] != 0 else -1
             effect_target = target if target else caster
             # 自身作用型道纹(变形/超频/自食等)作用于施法者

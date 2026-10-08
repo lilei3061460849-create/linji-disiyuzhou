@@ -9,15 +9,28 @@ from .enums import CostType
 import math
 
 
+# 残韵闭环上的**空占位符**（2026-10-08 用户令）。
+# 删除道纹后，它在闭环上那一格不直连、也不拿别的道纹顶替，而是留成一个显式空位：
+#   · 结构层：它是闭环的一环，环长与入度/出度不变，将来补新道纹直接填这一格；
+#   · 残韵层：查得到（环完整可验证），但**不能获得**——apply_resonance 会拒绝，
+#     不消耗残韵、不改写牌面、不授予施法者。
+# 名字带全角括号，确保永不与任何真实道纹名冲突，且可全局 grep。
+RESERVED_SLOT = "（待补）"
+
+
+def is_reserved_slot(name) -> bool:
+    """该名字是否为闭环上的空占位符（而非真实道纹）。"""
+    return name == RESERVED_SLOT
 
 
 class DaoWenEngine:
     """道纹计算引擎"""
 
-    # 怪物转化道纹（原始怪物道纹经残韵变化后的19个分支，与规则正文《原始怪物道纹与转化道纹》一致）
+    # 怪物转化道纹（原始怪物道纹经残韵变化后的分支，与规则正文《原始怪物道纹与转化道纹》一致）
     # 用于"雇佣"后"发现并选择一种转化道纹"等需要从此类别中随机抽取的场景
+    # 2026-10-08 用户令删【自残】（与【狂暴】断开后一直无残韵路径的孤儿）
     TRANSFORMED_DAOWEN = [
-        "愤怒", "自残", "无神", "借力", "弱化", "自食", "无力", "全速",
+        "愤怒", "无神", "借力", "弱化", "自食", "无力", "全速",
         "急速", "加速", "眩晕", "洞察", "蒙蔽", "滋养", "衰败", "寄生",
     ]
 
@@ -355,18 +368,10 @@ class DaoWenEngine:
         }
     
     @staticmethod
-    def calculate_zican(x: int, target: Entity = None) -> dict:
-        """自残X：消耗3X。使[目标]对其自身打出X次攻击"""
-        target_name = target.name if target is not None else "未选定目标"
-        return {
-            "dao_wen": "自残",
-            "x": x,
-            "cost_type": CostType.MANA.value,
-            "cost": 3 * x,
-            "self_attack_count": x,
-            "summary": f"消耗{3 * x}法力，使{target_name}对自身打出{x}次攻击"
-        }
-    
+    # 2026-10-08 用户令删除【自残】（消耗3X：使[目标]对其自身打出X次攻击）。
+    # 它是【狂暴】被删后遗留的孤儿转化道纹，没有任何残韵路径；空出的位置不补。
+    # 原 calculate_zican 一并移除，注册表与转化池同步见 RESERVED_SLOT 注释。
+
     @staticmethod
     def calculate_wushen(x: int, target: Entity = None) -> dict:
         """无神X：消耗5X。使[目标]选择目标时强制改为自身，持续X"""
@@ -964,7 +969,7 @@ class DaoWenEngine:
         旧版为「[回始]使[目标]失去2X点当前法力，持续∞」——永久扣法力对输出决策
         是单向碾压，且玩家只能靠残韵改掉怪物道纹来止损。新版改为**持续X回合
         无法获得法力**：[回始]法力回填被压制（不扣已有法力），X 回合后自然恢复。
-        这样威胁是"暂时断蓝"而非"永久死刑"，且期限明确（与【镇尸】禁回复同构）。
+        这样威胁是"暂时断蓝"而非"永久死刑"，且期限明确（与【坏死】禁回复同构）。
 
         修复（2026-08-21）：补上 target 参数使该道纹正确声明需要[目标]，
         否则 requires_target=False 导致怪物只能自施（寄骨蝇勾魂自吸无法力=空放）。
@@ -979,21 +984,10 @@ class DaoWenEngine:
             "summary": f"消耗{x}法力，{target_name}法力消耗翻倍，持续{x}回合"
         }
 
-    @staticmethod
-    def calculate_zhenshi(x: int, target: Entity = None) -> dict:
-        """镇尸X：消耗2X。使一个[目标]无法获得[回复]，持续X。
-
-        修复（2026-08-21）：补上 target 参数使该道纹正确声明需要[目标]，
-        否则 requires_target=False 导致怪物只能自施（实战：血僵镇尸自禁回复）。
-        效果数值与消耗不变。
-        """
-        target_name = target.name if target is not None else "未选定目标"
-        return {
-            "dao_wen": "镇尸", "x": x,
-            "cost_type": CostType.MANA.value, "cost": 2 * x,
-            "duration": x, "no_heal": True,
-            "summary": f"消耗{2 * x}法力，{target_name}无法获得回复，持续{x}回合"
-        }
+    # 2026-10-08 用户令删除【镇尸】（消耗2X。使一个[目标]无法获得[回复]，持续X）。
+    # 它与【坏死】是同一效果的**两套实现**（坏死=effect 字符串状态，镇尸=no_heal 布尔钩子），
+    # 属硬重复。保留【坏死】作为「无法获得[回复]」的唯一实现；乱葬岗闭环上这一格
+    # 留成空占位符（见 RESERVED_SLOT），不直连、不拿别的道纹顶替。
 
     @staticmethod
     def calculate_zhaohun(x: int) -> dict:
@@ -1034,7 +1028,6 @@ class DaoWenEngine:
             "飞行": cls.calculate_feixing,
             # 怪物转化
             "愤怒": cls.calculate_fennu,
-            "自残": cls.calculate_zican,
             "无神": cls.calculate_wushen,
             "借力": cls.calculate_jieli,
             "弱化": cls.calculate_ruhua,
@@ -1080,7 +1073,6 @@ class DaoWenEngine:
             "瓦解": cls.calculate_wajie,
             "冥气": cls.calculate_mingqi,
             "勾魂": cls.calculate_gouhun,
-            "镇尸": cls.calculate_zhenshi,
             "招魂": cls.calculate_zhaohun,
         }
     
@@ -1227,8 +1219,10 @@ class ResonanceEngine:
             ("缄默", "曲解", "瓦解"),
             ("瓦解", "转换", "冥气"),
             ("冥气", "反转", "勾魂"),
-            ("勾魂", "曲解", "镇尸"),
-            ("镇尸", "曲解", "招魂"),
+            # 2026-10-08 用户令删除【镇尸】（与【坏死】硬重复）→ 该格留成空占位符，
+            # 不直连【勾魂】与【招魂】，也不拿别的道纹顶替；环仍为 7 条边。
+            ("勾魂", "曲解", RESERVED_SLOT),
+            (RESERVED_SLOT, "曲解", "招魂"),
             ("招魂", "转换", "分裂"),
         ],
         # ---- 原始怪物道纹 → 转化道纹（规则正文）----
@@ -1285,12 +1279,16 @@ class ResonanceEngine:
                 if other in seen:
                     continue
                 seen.add(other)
-                out.append({
+                item = {
                     "resonance_type": rtype,
                     "target_daowen": other,
                     "direction": direction,
                     "loop": loop_name,
-                })
+                }
+                if is_reserved_slot(other):
+                    # 空占位符：结构上保留这一格，但标记出来，调用方不得把它当可获得的道纹。
+                    item["reserved"] = True
+                out.append(item)
         return out
 
     @classmethod
@@ -1346,6 +1344,8 @@ class ResonanceEngine:
             if key in seen:
                 continue
             seen.add(key)
+            if is_reserved_slot(item["target_daowen"]):
+                item["reserved"] = True
             out.append(item)
         return out
 
@@ -1374,6 +1374,28 @@ class ResonanceEngine:
                 "success": False,
                 "error": f"道纹'{source_daowen}'不存在'{resonance_type}'路径"
             }
+
+        # 空占位符：这一格在闭环上留着，但**不能获得**。
+        # 走到它 = 无事发生：不消耗残韵、不改写牌面、不授予施法者。
+        # 放在这里（而不是 find 层）拦，是为了让闭环结构仍可被验证（环长、入度/出度、
+        # roundtrip 可达性都得照常成立），只有真正发动时才拒绝。
+        if target_daowen:
+            if is_reserved_slot(target_daowen):
+                return {
+                    "success": False,
+                    "error": (f"'{target_daowen}'是闭环上的空占位符，尚未补入道纹，"
+                              f"无法作为残韵结果获得"),
+                    "reserved": True,
+                }
+        else:
+            real = [c for c in candidates if not c.get("reserved")]
+            if not real and any(c.get("reserved") for c in candidates):
+                return {
+                    "success": False,
+                    "error": (f"道纹'{source_daowen}'的'{resonance_type}'路径只通向闭环上的"
+                              f"空占位符（待补），尚未补入道纹，无法获得"),
+                    "reserved": True,
+                }
 
         names = "／".join(cand["target_daowen"] for cand in candidates)
         if target_daowen:

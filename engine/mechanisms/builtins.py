@@ -129,11 +129,9 @@ ZIYU = Mechanism(
     target=SELF,
     condition=all_(
         has_status("自愈", of="self"),
-        # 坏死/镇尸禁疗（镇尸2026-08-21接入：效果同「无法获得回复」）
-        not_(any_(
-            has_status("坏死", of="self"),
-            has_status("镇尸", of="self"),
-        )),
+        # 坏死禁疗。2026-10-08 用户令删【镇尸】（与坏死硬重复）后，
+        # 「无法获得[回复]」只剩【坏死】一个实现。
+        not_(has_status("坏死", of="self")),
     ),
     priority=10,    # 旧代码位置=回始效果循环第一位；后续回始机制按 20/30/... 递增
 )
