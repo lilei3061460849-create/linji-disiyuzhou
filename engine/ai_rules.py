@@ -315,7 +315,7 @@ MANA_POOL_SPEND_RATIO = 0.5
 # 流血：单次发动最多动用当前生命的比例，且绝不把自己流死。
 HP_SPEND_RATIO = 0.25
 
-# 异变：累加到 MUTATION_COLLAPSE_THRESHOLD 就【崩解】命零，且跨战斗不回退，
+# 异变：累加到 MUTATION_COLLAPSE_THRESHOLD 就【迷失】命零，且跨战斗不回退，
 # 是最贵的一种"预算"。留 20% 安全边距（与 TacticalAI.SELF_PRESERVE_MARGIN 同口径）。
 MUTATION_SAFE_RATIO = 0.8
 
@@ -353,7 +353,7 @@ def _can_pay(ally: Entity, calc: dict) -> bool:
     if calc.get("cost_type") == "消耗" and calc.get("cost", 0) > 0:
         if getattr(ally, "current_mana", 0) < calc["cost"]:
             return False
-    # 【异变】是累加计数而非可花费预算：叠满崩解线当场命零，不提供自杀档。
+    # 【异变】是累加计数而非可花费预算：叠满迷失阈值当场命零，不提供自杀档。
     if calc.get("cost_type") == "异变":
         headroom = Entity.MUTATION_COLLAPSE_THRESHOLD - getattr(ally, "mutation_count", 0)
         if calc.get("cost_mutation", 0) >= headroom:

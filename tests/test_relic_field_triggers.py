@@ -172,7 +172,7 @@ def test_jiaohhei_sealed_does_not_trigger(tmp_path):
 
 
 def test_jiaohhei_on_collapse(tmp_path):
-    """第二条来源：怪物异变崩解命零，焦黑发丝仍+2。"""
+    """第二条来源：怪物异变迷失命零，焦黑发丝仍+2。"""
     e = _engine(tmp_path, "hair_collapse")
     begin_battle(e)
     p, m = e.state.player, e.state.enemies[0]

@@ -583,7 +583,8 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         if gained <= 0:
             return None
         before = entity.current_mana
-        entity.current_mana += gained
+        # 2026-10-08：走统一入口，【勾魂】期间不生效
+        entity.gain_mana(gained)
         self.clamp_immortal_body(entity)
         # 记实际落地量（上限可能吃掉一部分），供战报如实呈现。
         entity._shouyedeng_granted = entity.current_mana - before
@@ -947,8 +948,10 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
             e.damage_dealt_this_round = 0
         # DM裁定 2026-09-09：[回始]不再回填法力。法力改为**一池制**——[战始]给满
         # 等同[法限]的一池，整场只出不进，[战终]复原（与[速度]同口径）。
-        # 原「勾魂：[回始]不获得法力」随本段一起取消，【勾魂】改为消耗法力翻倍
-        # （见 models.py::spend_mana）。
+        # 因这一段，"[回始]不获得法力"曾一度失去作用对象，【勾魂】在 2026-09-09
+        # 改为消耗法力翻倍；2026-10-08 用户令恢复「无法获得[法力]」原意——
+        # 战斗内已有多个法力来源（聚能/储能电池/守夜灯/承露盏/血契/余火印/
+        # 搏命·透支/法术），效果重新有对象。判定位见 models.py::gain_mana。
 
         # 遗物：回始触发（回锋刀按速限缺口造伤）。
         relic_logs = self.process_relics(TriggerTiming.ROUND_START, {"relic_choices": relic_choices or {}})
@@ -1421,7 +1424,8 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                     dragon_heart_use=decision.get("dragon_heart_use", 0),
                     cost_context={"timing": "round_start", "source": "血契", "source_type": "relic", "tags": {"active_payment"}},
                 )
-                player.current_mana += x
+                # 2026-10-08：走统一入口，【勾魂】期间不生效
+                player.gain_mana(x)
                 self.clamp_immortal_body(player)
                 shared = payment.get("shared_with")
                 shared_note = f"，与{shared['payer']}共同承担" if shared else ""
@@ -1436,7 +1440,8 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                     opponent, "流血", 4 * x,
                     cost_share_target_ref=decision.get("cost_share_target_ref", ""),
                     cost_context={"timing": "round_start", "source": "血契", "source_type": "relic", "tags": {"active_payment"}})
-                opponent.current_mana += x
+                # 2026-10-08：走统一入口，【勾魂】期间不生效
+                opponent.gain_mana(x)
                 self.clamp_immortal_body(opponent)
                 shared = payment.get("shared_with")
                 shared_note = f"，与{shared['payer']}共同承担" if shared else ""
@@ -1446,7 +1451,8 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                 heart = next(item for item in self.state.consumables
                              if item.name == choices["余火印"]["heart_name"] and item.kind == "dragon_heart")
                 heart.current_uses -= x
-                player.current_mana += 2 * x
+                # 2026-10-08：走统一入口，【勾魂】期间不生效
+                player.gain_mana(2 * x)
                 self.clamp_immortal_body(player)
                 logs.append(f"余火印：消耗{heart.name}耐久{x}，+{2*x}法力")
         if trigger == "battle_start":

@@ -604,7 +604,7 @@ class Entity:
     def lethal_counters(self) -> dict:
         """致死类特殊事件的进度：{名称: (当前值, 阈值)}。
 
-        2026-09-15 用户令「给致死的特殊事件标明进度」，2026-09-28 用户令将【崩解】
+        2026-09-15 用户令「给致死的特殊事件标明进度」，2026-09-28 用户令将【迷失】
         重命名为【迷失】（非怪物异变达阈值：有队友→变怪物开战；无队友→命零；
         怪物仍保持原"阈值直接命零"行为）。
         进度必须能被 AI 在面板上直接读到，不允许只留一个布尔结果。口径：
@@ -634,7 +634,7 @@ class Entity:
         """增减异变层数。正值累加，负值削减，可降到负数。
 
         特殊事件【迷失】：
-          * 怪物（entity_type=="怪物"）：达到阈值仍按规则直接[命零]死亡（"崩解"爆体）——
+          * 怪物（entity_type=="怪物"）：达到阈值仍按规则直接[命零]死亡（爆体）——
             因为"变成怪物"对怪物本身无意义，怪物阈值只是"异变爆体"的上限。
           * 非怪物角色（轮回者/朋友/员工/临时朋友/赤族等）：达到阈值时不在模型层直接命零，
             返回 `lost=True` 交由战斗层 _resolve_mutation_lost 判定——
@@ -653,7 +653,7 @@ class Entity:
         lost = False
         if threshold_hit and self.is_alive:
             if self.entity_type == "怪物":
-                # 怪物：达到阈值仍直接命零（旧【崩解】行为保留）。调用方走 _on_entity_death(...,
+                # 怪物：达到阈值仍直接命零（怪物仍直接命零）。调用方走 _on_entity_death(...,
                 # ctx=_lost_context(..., subtype="collapse"))，触发[命零]反应。
                 collapsed = True
                 self.is_alive = False
@@ -665,7 +665,7 @@ class Entity:
         return {
             "mutation_added": layers,
             "mutation_total": self.mutation_count,
-            "collapsed": collapsed,   # 怪物崩解=命零
+            "collapsed": collapsed,   # 怪物迷失=命零
             "lost": lost,             # 非怪物触发"迷失"，等待战斗层处理
         }
     
@@ -703,19 +703,53 @@ class Entity:
         self.shield = 0
     
     def spend_mana(self, amount: int) -> bool:
-        """消耗法力。愤怒：法力消耗减半（向上取整）；勾魂：法力消耗翻倍。
+        """消耗法力。愤怒：法力消耗减半（向上取整）。
 
-        DM裁定 2026-09-09：【勾魂】原效果是「[回始]不获得法力」，而法力已改为
-        只在[战终]恢复（不再每[回始]回填），旧效果失去作用对象，故改为消耗翻倍。
+        版本史（【勾魂】）：
+        - 旧版「[回始]失去2X法力，持续∞」——已废止。
+        - 2026-08-30 版「持续X回合无法获得法力」：随法力改为一池制
+          （不再每[回始]回填）而一度失去作用对象。
+        - 2026-09-09 DM裁定：改为**法力消耗翻倍**，在 spend_mana 里乘 2。
+        - 2026-10-08 用户令：恢复「无法获得[法力]」原意，翻倍逻辑撤销。
+          此时战斗内已有多个法力来源（聚能/储能电池/守夜灯/承露盏/血契/
+          余火印/搏命·透支/法术），效果重新有对象；判定位统一收敛到
+          `can_gain_mana()` / `gain_mana()`，不再散落各处。
         """
         if amount > 0 and self.has_status("愤怒"):
             amount = math.ceil(amount / 2)
-        if amount > 0 and self.has_status("勾魂"):
-            amount = amount * 2
         if self.current_mana < amount:
             return False
         self.current_mana -= amount
         return True
+
+    def can_gain_mana(self) -> bool:
+        """当前是否允许获得[法力]。
+
+        【勾魂】期间恒为 False——「无法获得[回复]」的姊妹判定：
+        只压制**增益**，已持有的法力一分不扣（【勾魂】不减少当前法力）。
+        这是「无法获得[法力]」的唯一判定位，所有来源都必须走 `gain_mana()`。
+        """
+        return not self.has_status("勾魂")
+
+    def gain_mana(self, amount: int) -> int:
+        """获得[法力]的统一入口，返回**实际**获得量。
+
+        - 【勾魂】期间任何来源的增益都不生效，返回 0（法力纹丝不动）；
+        - 其余情况按 [法限] 封顶，返回封顶后真正落到账上的数量。
+
+        调用方若要 clamp_immortal_body（不朽之躯钳制），请在拿到返回值后
+        按既有口径自行调用——那是 CombatEngine 的方法，Entity 层拿不到。
+        """
+        if amount <= 0:
+            return 0
+        if not self.can_gain_mana():
+            return 0
+        before = self.current_mana
+        self.current_mana += amount
+        limit = getattr(self, "mana_limit", None)
+        if isinstance(limit, int) and self.current_mana > limit:
+            self.current_mana = limit
+        return self.current_mana - before
 
     def get_status_effects(self, name: str) -> list[StatusEffect]:
         return [s for s in self.status_effects if s.name == name]
@@ -1268,7 +1302,7 @@ class GameState:
 
         只作用于**有明确数值的失去生命**：伤害、数值型【代价】（流血）、
         直接失血（千荆甲反噬等）。血限被压低导致的当前生命封顶、以及
-        「当前生命直接置0」的命零类效果（癌变/迷失·崩解/雕塑等）不带数值、
+        「当前生命直接置0」的命零类效果（癌变/迷失·迷失/雕塑等）不带数值、
         也不翻倍——它们不是"失去生命"，是判定归零。
         """
         return self.FIRST_CUP_MULTIPLIER if self.side_has(entity, self.FIRST_CUP) else 1

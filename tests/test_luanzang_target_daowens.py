@@ -84,11 +84,12 @@ def test_requires_target_flag_now_true(tmp_path):
         assert "target" in inspect.signature(DaoWenEngine._registry[name]).parameters, name
 
 
-def test_monster_gouhun_doubles_player_mana_cost(tmp_path):
-    """怪物勾魂 → 玩家获得勾魂状态，持续X回合**法力消耗翻倍**。
+def test_monster_gouhun_blocks_player_mana_gain(tmp_path):
+    """怪物勾魂 → 玩家获得勾魂状态，持续X回合**无法获得法力**（不扣已有法力）。
 
-    版本史：旧版「[回始]失去2X法力，持续∞」→ 2026-08-30「[回始]不获得法力」
-    → DM裁定 2026-09-09：法力改一池制后旧效果失去作用对象，改为消耗翻倍。
+    版本史：旧版「[回始]失去2X法力，持续∞」→ 2026-08-30「无法获得法力」
+    → 2026-09-09 因法力改一池制一度改为「消耗翻倍」
+    → 2026-10-08 用户令：恢复「无法获得[法力]」，翻倍撤销。
     """
     e = _mk_engine(tmp_path)
     p = e.state.player
@@ -100,11 +101,13 @@ def test_monster_gouhun_doubles_player_mana_cost(tmp_path):
     assert r, r
     assert p.has_status("勾魂"), "勾魂应挂在玩家身上"
 
-    # 勾魂期间：消耗翻倍
+    # 勾魂期间：增益被压死，已持有的法力一分不扣，消耗也不翻倍
     p.current_mana = 9
+    assert p.can_gain_mana() is False
+    assert p.gain_mana(5) == 0
+    assert p.current_mana == 9, f"勾魂期间不得获得法力，实剩 {p.current_mana}"
     assert p.spend_mana(4) is True
-    assert p.current_mana == 1, f"4 点消耗应翻倍扣 8，实剩 {p.current_mana}"
-    assert p.spend_mana(1) is False, "翻倍后需 2，只剩 1 → 付不起"
+    assert p.current_mana == 5, f"勾魂不改消耗倍率，实剩 {p.current_mana}"
 
 
 def test_monster_mingqi_cuts_player_speed_limit_on_speed_loss(tmp_path):

@@ -293,7 +293,7 @@ def test_first_cup_does_not_double_blood_limit_clamp():
 
 
 def test_first_cup_death_zeroing_is_idempotent():
-    """把当前生命直接置0的命零类效果（癌变/崩解/雕塑）不带数值，翻倍无从作用。"""
+    """把当前生命直接置0的命零类效果（癌变/迷失/雕塑）不带数值，翻倍无从作用。"""
     engine = _cup_engine("zero")
     player = engine.state.player
     player.current_hp = 3

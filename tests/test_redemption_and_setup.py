@@ -113,7 +113,7 @@ def test_resonance_permanently_converts_and_grants():
     _give(engine.state.player, "杀伐")
     monster = Entity(name="慢怪", entity_type="怪物", blood_limit=80, current_hp=80,
                      attack_count=2, attack_power=4)
-    # 2026-10-03：【狂暴】删除（其反转边 狂暴→自残 一并删除），
+    # 2026-10-03：【狂暴】删除（其反转边一并删除），
     # 改用仍在怪物原始道纹树上的 减速→(反转)→加速。
     _give(monster, "减速")
     _give(monster, "全力")

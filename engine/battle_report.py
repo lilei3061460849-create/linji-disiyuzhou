@@ -41,10 +41,10 @@ def _daowen_str(entity: Any) -> str:
 
 
 def _lethal_progress(entity: Any) -> list[str]:
-    """致死类特殊事件的进度串（崩解／癌变／凡庸），例如 ['崩解（10/50）']。
+    """致死类特殊事件的进度串（迷失／癌变／凡庸），例如 ['迷失（10/50）']。
 
     2026-09-15 用户令：致死事件的进度必须随面板一起输出，AI 才看得见自己离
-    【崩解】这类命零还有多远，不会"自爆"。口径唯一事实源＝Entity.lethal_progress()。
+    【迷失】这类命零还有多远，不会"自爆"。口径唯一事实源＝Entity.lethal_progress()。
     """
     fn = getattr(entity, "lethal_progress", None)
     return list(fn()) if callable(fn) else []
@@ -276,7 +276,7 @@ def _render_effect(eff: dict) -> str:
     if t == "nilin_setup":
         return f"{eff.get('target')} 获得【逆鳞】"
     if t == "self_attack":
-        return f"{eff.get('target')} 受【自残】影响攻击自身"
+        return f"{eff.get('target')} 受自伤类效果影响，攻击自身"
     # 兜底：仍以中文陈述，不直接抛出英文字段名（战报要求全程中文）
     _CN = {"entity": "对象", "target": "目标", "source": "来源", "amount": "数值",
            "value": "数值", "actual_damage": "实际伤害", "raw_damage": "原始伤害",
@@ -349,7 +349,7 @@ def format_monster_hits(start_idx: int, details: list) -> list[str]:
             idx += 1
             continue
         if "collapsed" in d:
-            lines.append(f"出手{idx}（{d.get('monster')}）：{d.get('note', '崩解')}")
+            lines.append(f"出手{idx}（{d.get('monster')}）：{d.get('note', '暂离结束')}")
             idx += 1
             continue
         atk = d.get("attacker", "?")

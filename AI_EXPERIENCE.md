@@ -223,7 +223,7 @@ Hook 分组、分发流程之前，必须确认不改变相对顺序。顺序敏
 取最优。微光者与轮回者不持有该遗物，按[法限]是**一池制**、[回始]不回填，约束是
 **整场**预算——第一回合砸光，之后整场再无道纹可用；微光者侧因此用整场预算分配
 （`sim/ally_targets.py::pick_ally_daowen_x`），按代价类型分别留余量：法力单次不超过
-池子一半（几何衰减，池子不归零也不闲置）、异变留 20% 崩解边距（累加至崩解线即命
+池子一半（几何衰减，池子不归零也不闲置）、异变留 20% 迷失边距（累加至迷失阈值即命
 零且跨战斗不可逆）、流血单次不超过 1/4 当前生命且绝不流死、冷却类一律 X=1（X 越大
 锁的场次越多）、duration 随 X 一起涨者不超过战斗视野（超出部分是白付的代价）。
 余量规则只压上限、不把微光者压到失声：X=1 付得起就至少开 X=1。
@@ -360,7 +360,7 @@ Hook 分组、分发流程之前，必须确认不改变相对顺序。顺序敏
        ↓
 【步骤 6：后置响应窗口】若实际扣减生命，检查「失去生命后」类法术（如：生生不息、以牙还牙、千刀万剐）
        ↓
-【步骤 7：状态基准检查】检查存活、[命零]、癌变、凡庸、雕塑、崩解、撤退、救赎等全局状态
+【步骤 7：状态基准检查】检查存活、[命零]、癌变、凡庸、雕塑、迷失、撤退、救赎等全局状态
 ```
 
 ### 堆栈与残韵插队优先级
@@ -557,12 +557,15 @@ python sim/audit_monsters.py
 
 ## 当前有效的工程约束
 
-- 致死类特殊事件必须随面板输出**进度**（用户令 2026-09-15：「给致死的特殊事件标明进度，类似于崩解（10/50），让 AI 不要自爆」）：【崩解】异变X/50、【癌变】本场累计回复X/⌈血限×2⌉、【凡庸】连续空转X/5，统一由 `Entity.lethal_progress()` 渲染成「崩解（10/50）」这类串，出现在 `Entity.to_dict()["lethal_progress"/"lethal_counters"]`、战报资源面板（`battle_report.resource_line`）、`prepare_monster_phase` 每个 actor（怪物也会崩解，攻守双方都要看得见）与手操驱动器面板里；阈值唯一事实源＝`Entity.MUTATION_COLLAPSE_THRESHOLD`／`Entity.CANCER_HEAL_MULTIPLIER`／`Entity.MEDIOCRITY_ROUNDS`，`CombatEngine` 的同名量一律引用，禁止再写死数字。AI 每次决策前先看自己的致死进度，禁止把动作打到阈值上自爆。
+- 致死类特殊事件必须随面板输出**进度**（用户令 2026-09-15：「给致死的特殊事件标明进度，类似于迷失（10/50），让 AI 不要自爆」）：【迷失】异变X/50、【癌变】本场累计回复X/⌈血限×2⌉、【凡庸】连续空转X/5，统一由 `Entity.lethal_progress()` 渲染成「迷失（10/50）」这类串，出现在 `Entity.to_dict()["lethal_progress"/"lethal_counters"]`、战报资源面板（`battle_report.resource_line`）、`prepare_monster_phase` 每个 actor（怪物也会迷失，攻守双方都要看得见）与手操驱动器面板里；阈值唯一事实源＝`Entity.MUTATION_COLLAPSE_THRESHOLD`／`Entity.CANCER_HEAL_MULTIPLIER`／`Entity.MEDIOCRITY_ROUNDS`，`CombatEngine` 的同名量一律引用，禁止再写死数字。AI 每次决策前先看自己的致死进度，禁止把动作打到阈值上自爆。
 - 出怪配方：`N=随机(1,上界), S=随机(1,N), R_i=随机(1,N-S-ΣR_j), T_i=随机(1,5)` 直到 `S+ΣR_i=N`；上界按阶级递增：一阶沿用 `max(1, 战斗场数-3)` 作为 N 的上界（旧七场序列 1/1/1/1/2/3/4 由「确定值」变为「随机上界」），二阶及以上上界固定为怪物池规模 12；[战始]放 S 只首发，其余每波间隔 T_i 回合增援 R_i 只直到全部入场（一波可进多只，旧的固定波次 R4/R7/R10 已废止）。唯一事实源：`engine/monsters.py::roll_spawn_plan`、`compute_draw_cap`、`engine/api.py::_action_battle_start`、`engine/combat.py::round_start`。
 - 阶级推进与无尽模式：通过某阶最终死斗后解锁下一阶级，持久化到 `data/sealed_candidate.json` 的 `progression` 段；跨轮回生效。五阶死斗胜利后进入无尽模式：怪物池=所有已实现副本合并（`engine/monsters.py::merge_monster_pools`）、强度逐轮递增（`scale_monster_def_for_endless`，每轮血限×1.25、法/速+3）、精力逐轮递减（`GameState.energy_budget`：3→2→1 封底）、【探索】不开放。五阶副本「启示录」正文尚未落地，当前引擎只实现"分支契约+持久化+怪物/精力/探索门禁"，端到端走 7 场→死斗→终音→封印路径需等启示录副本接入。唯一事实源：`engine/api.py::_advance_region_unlock`、`_advance_endless_cycle`、`unlocked_regions`、`_monster_pool_for_battle`，以及 `tests/test_progression_endless.py`。
 - 一阶怪物面板属性点60，按轮回者同口径审计：`ceil(血限/6) + 2×攻击次数 + 2×攻击力`；改面板后必须跑 `python sim/audit_monsters.py`。本次为**原样恢复 60 点时代的 36 只面板**（攻次/攻力回到 4×4、3×7、1×12 等），其中 9 只单段高攻怪在现行统一计价下超 1 分，血限各 −6（210→204／198→192／222→216／258→252／270→264），成本现为 52–60，全部合规。**口径只允许一处事实源**：测试/报告脚本禁止把面板预算写死成字面数字；现改为取常量 `TIER1_MONSTER_ATTRIBUTE_BUDGET`＋口径哨兵 `_assert_panel_budget_matches_docs()`，标注预算与真面板最大成本不符就直接拒绝跑。
 - 怪物困境信号≥1 触发强制二选一：进化借轮回者当前持有且自身未持有的纹（每场逃跑/进化限一次）；可选项只能由引擎列出。
-- 异变 50 层触发【崩解】命零，累积统一走 `Entity.add_mutation`；调用方拿到 `collapsed=True` 必须交回 `_on_entity_death(..., ctx=_collapse_context(...))`。
+- 异变 50 层触发【迷失】命零，累积统一走 `Entity.add_mutation`；调用方拿到 `collapsed=True` 必须交回 `_on_entity_death(..., ctx=_lost_context(...))`。
+  2026-10-08 用户令：怪物侧旧称【崩解】、非怪物侧称【迷失】，现统一叫【迷失】——
+  历史存档/实验数据里的「崩解」指的就是同一件事。内部标识符（`collapse`/`collapsed`/
+  `MUTATION_COLLAPSE_THRESHOLD`）不变，只有玩家可见文案与规则正文统一。
 - 【活血】已随 2026-10-03 删除；其"按本回合失血"的口径由遗物【活血衣】（受到攻击伤害后回复一半）替代。
 - 死斗按阶级封存（先来后到队列），胜者进阶封存不得再与同阶死斗。
 - 手操轮回结束后，把道纹实战使用率与胜率等平衡观测写入《报告.md》（批量实验批次写入 data/experiments/）。
@@ -702,10 +705,10 @@ python sim/audit_monsters.py
 
 ## 化雕塑判定区分
 
-- 死斗判负原因必须区分 被击杀/化雕塑/凡庸/崩解/自付代价，不许一律写「阵亡」。
+- 死斗判负原因必须区分 被击杀/化雕塑/凡庸/迷失/自付代价，不许一律写「阵亡」。
 - 落地：`sim/duel_pvp.py` 判定存活检查纳入离场标记（`is_sculptured`/`is_departed`，
   化雕塑是「攻次与攻力双0离场」不是命零）→ 专属文案「化雕塑（攻次与攻力双0离场，
-  判负；非被击杀）」；`_DEATH_CAUSE_LABELS` 补 `sculpture→化雕塑`（凡庸/崩解/癌变/
+  判负；非被击杀）」；`_DEATH_CAUSE_LABELS` 补 `sculpture→化雕塑`（凡庸/迷失/癌变/
   自付代价已有归因，2026-08-30 裁定的 `death_attribution_note`）。`duel_common`
   交替驱动同口径。守卫：`tests/test_duel_settlement_integrity.py::test_sculpture_loss_is_distinguished_from_death`。
 - 报告其余零散小项（碎片封存时点/死斗带币/局外休整禁疗/132局对照）用户裁定「不管」，

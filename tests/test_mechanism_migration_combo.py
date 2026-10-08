@@ -376,7 +376,7 @@ def test_extreme_blood_limit_one_and_mana_bounds():
     assert enemy.current_hp == 0, f"hp={enemy.current_hp}"
     assert enemy.is_alive is False
 
-    # 勾魂（DM裁定 2026-09-09 再改版）：法力消耗翻倍；回始不动已有法力
+    # 勾魂（2026-10-08 用户令）：无法获得[法力]；挂状态/回始都不动已有法力
     state2, combat2 = _arena()
     p2 = state2.player
     p2.current_mana = 7
@@ -384,8 +384,11 @@ def test_extreme_blood_limit_one_and_mana_bounds():
     res2 = combat2.round_start()
     assert [e for e in res2["effects"] if e.get("type") == "mana_refill_blocked"] == []
     assert p2.current_mana == 7, f"回始不动已有法力: {p2.current_mana}"
+    assert p2.can_gain_mana() is False, "勾魂期间无法获得法力"
+    assert p2.gain_mana(4) == 0
+    assert p2.current_mana == 7, f"增益应被压死，实剩 {p2.current_mana}"
     assert p2.spend_mana(2) is True
-    assert p2.current_mana == 3, f"勾魂期间 2 点应翻倍扣 4，实剩 {p2.current_mana}"
+    assert p2.current_mana == 5, f"勾魂不改消耗倍率，实剩 {p2.current_mana}"
 
     # 法力满 + 洞察 pending：
     #   2026-09-13 用户裁定「所有属性不得超过其上限」全局化后，

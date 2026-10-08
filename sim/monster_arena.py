@@ -14,7 +14,7 @@
     （严格交替，避免先手方一次结算全场）。
   · 赢了加分——存活到最后 +1；每击杀 +0.3。
   · 自己行动导致自己死亡＝失败品——两条路径都记为 self_kill 并在报告里单列：
-    ① 自己出手之后自己没了（自残/反噬/自爆）；② 回合结算时被【凡庸】一类"自己折腾出来的"
+    ① 自己出手之后自己没了（自伤/反噬/自爆）；② 回合结算时被【凡庸】一类"自己折腾出来的"
     结算掉（判据：回合开始时还活着、回合结束时没了、且对手在这一回合没打掉它多少生命）。
     命中即适应度 0。`--no-cull` 是消融开关：训练时不判失败品，用来对照这条规则的作用。
   · 算法——候选动作由生产引擎 prepare 枚举，逐个用 `ActionPreview` 真预演，
@@ -429,7 +429,7 @@ def run_match(lineup: list[dict], weights: dict, *, seed: int = 0, max_rounds: i
                     stats[me_index]["kills"] += 1
             if dealt <= 0:
                 stats[me_index]["zero_damage_rounds"] += 1
-            # 「自己行动导致自己死亡」之一：自己这一步之后自己没了（自残/反噬/自爆）
+            # 「自己行动导致自己死亡」之一：自己这一步之后自己没了（自伤/反噬/自爆）
             if not e.state.enemies[me_index].is_alive and before_hp[me_index] > 0:
                 stats[me_index]["deaths"] += 1
                 stats[me_index]["self_kill"] = True

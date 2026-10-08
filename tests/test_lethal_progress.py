@@ -1,6 +1,6 @@
 """致死进度（【迷失】/【癌变】/【凡庸】）——用户令 2026-09-15 / 2026-09-28：
 
-「给致死的特殊事件标明进度」。2026-09-28 将【崩解】改名为【迷失】（崩解作为怪物异变爆体子情形保留）。
+「给致死的特殊事件标明进度」。2026-09-28 将【迷失】改名为【迷失】（迷失作为怪物异变爆体子情形保留）。
 
 覆盖：
 - 正常路径：进度串（迷失（10/50））与结构化计数同时可见；
@@ -78,7 +78,7 @@ def test_thresholds_have_a_single_source():
 
 
 def test_collapse_monster_kills_instantly():
-    """怪物（entity_type=='怪物'）达阈值：collapsed=True 直接命零（旧崩解行为保留）。"""
+    """怪物（entity_type=='怪物'）达阈值：collapsed=True 直接命零（旧迷失行为保留）。"""
     m = _monster()
     m.add_mutation(49)
     assert m.is_alive is True
@@ -117,7 +117,7 @@ def _new_engine(tmp_path, region="龙心谷"):
 
 
 def test_monster_phase_payload_carries_monster_progress(tmp_path):
-    """怪物同样会【迷失·崩解】：prepare_monster_phase 的每个 actor 必须带致死进度。"""
+    """怪物同样会【迷失】：prepare_monster_phase 的每个 actor 必须带致死进度。"""
     e = _new_engine(tmp_path)
     e.execute_action("battle_start")
     e.execute_action("round_start", {})

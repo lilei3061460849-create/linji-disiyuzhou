@@ -156,7 +156,7 @@ def test_jiaohhei_non_monster_death_no_trigger():
 
 
 def test_jiaohhei_bleed_and_collapse_deaths():
-    """失血命零与崩解命零同样触发（既有规则：所有怪物死亡来源）。"""
+    """失血命零与迷失命零同样触发（既有规则：所有怪物死亡来源）。"""
     state, combat, player, enemy = _arena(player_speed=5)
     _prepare(state, combat, held=True)
     _kill_by_bleed(combat, enemy)
@@ -267,7 +267,7 @@ def test_jiaohhei_reference_sweep_zero_mismatch():
 
 
 def test_jiaohhei_reference_matches_existing_regression_paths():
-    """与既有测试同口径的三条路径：伤害命零 / 流血命零 / 崩解命零 / 封印。"""
+    """与既有测试同口径的三条路径：伤害命零 / 流血命零 / 迷失命零 / 封印。"""
     old = _OldJiaohheiReference()
     for kind in ("damage", "bleed", "collapse", "sealed"):
         state_a, combat_a, player_a, enemy_a = _arena(player_speed=5)

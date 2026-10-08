@@ -53,7 +53,7 @@ STEPS_PER_ENGINE = max(10, FUZZ_CASES // ENGINES)
 STEP_TIME_LIMIT = 3.0        # 单步墙钟上限（秒）：终止性证据
 
 DAOWEN_POOL = ["杀伐", "再生", "庇护", "血债", "坠落", "透支", "分裂", "压制",
-               "贯穿", "增殖", "变形", "崩解", "焦热", "咆哮"]
+               "贯穿", "增殖", "变形", "迷失", "焦热", "咆哮"]
 ILLEGAL_DAOWEN = ["不存在的道纹", "", "杀伐X", None]
 BAD_PARAMS = [
     {"daowen_name": "杀伐"},                                  # 缺目标

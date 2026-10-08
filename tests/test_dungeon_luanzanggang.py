@@ -194,10 +194,12 @@ def test_huaisi_is_the_only_heal_block():
     assert c._heal_blocked(target) is True
 
 
-def test_gouhun_doubles_mana_cost_for_x_rounds():
-    """正常路径（2026-08-30 改版）：勾魂X挂到目标身上，持续X回合[回始]不获得法力。
+def test_gouhun_blocks_mana_gain_for_x_rounds():
+    """正常路径（2026-10-08 用户令）：勾魂X挂到目标身上，持续X回合**无法获得法力**。
 
-    旧版为「[回始]失去2X法力，持续∞」，已废止；新版**不扣已有法力**，只压制回填。
+    旧版为「[回始]失去2X法力，持续∞」，已废止；现行版**不扣已有法力**，
+    只压制一切法力增益（判定位：Entity.gain_mana()）。
+    2026-09-09 曾因法力改一池制而改为「消耗翻倍」，2026-10-08 撤销。
     """
     st = GameState()
     # DM裁定 2026-09-09：轮回者普攻面板初始 1×1，且雕塑不再排除轮回者；
@@ -216,17 +218,20 @@ def test_gouhun_doubles_mana_cost_for_x_rounds():
     dur = next(s.remaining_rounds for s in foe.status_effects if s.name == "勾魂")
     assert dur == 2, f"勾魂X=2 应持续2回合，实{dur}"
 
-    # DM裁定 2026-09-09：勾魂改为「目标消耗法力翻倍」（法力已改一池制，
-    # 旧的「[回始]不获得法力」失去作用对象）
+    # 2026-10-08：勾魂 = 「无法获得[法力]」（消耗不翻倍）
     foe.current_mana = 20
+    assert foe.can_gain_mana() is False, "勾魂期间不得获得法力"
+    assert foe.gain_mana(9) == 0
+    assert foe.current_mana == 20, f"增益应被压死，实{foe.current_mana}"
     assert foe.spend_mana(4) is True
-    assert foe.current_mana == 12, f"勾魂期间 4 点消耗应翻倍扣 8，实剩 {foe.current_mana}"
+    assert foe.current_mana == 16, f"勾魂不改消耗倍率，实剩 {foe.current_mana}"
 
     # 第2回合仍在持续期内（持续X=2，[回终]才递减）
     c.round_start({"relic_choices": {}})
     assert foe.has_status("勾魂")
+    assert foe.can_gain_mana() is False, "持续期内仍无法获得法力"
     assert foe.spend_mana(2) is True
-    assert foe.current_mana == 8, f"仍应翻倍，实剩 {foe.current_mana}"
+    assert foe.current_mana == 14, f"仍不翻倍，实剩 {foe.current_mana}"
 
     # 持续走完后恢复正常消耗
     from engine.enums import CombatSubphase
@@ -235,5 +240,8 @@ def test_gouhun_doubles_mana_cost_for_x_rounds():
     st.combat_subphase = CombatSubphase.AWAIT_ROUND_END.value
     c.round_end()
     assert not foe.has_status("勾魂"), "持续X走完后勾魂应自然到期"
+    assert foe.can_gain_mana() is True, "到期后恢复获得法力的能力"
+    before = foe.current_mana
+    assert foe.gain_mana(3) == 3
+    assert foe.current_mana == before + 3, "到期后增益恢复生效"
     assert foe.spend_mana(4) is True
-    assert foe.current_mana == 4, f"到期后按原值扣费，实剩 {foe.current_mana}"

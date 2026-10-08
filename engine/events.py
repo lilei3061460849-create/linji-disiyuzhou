@@ -324,14 +324,14 @@ def _resolve_option_effect_impl(text: str, engine, event_name: str = "", params=
             _mut = player.add_mutation(3)
             applied.append("获得异变3")
             if _mut.get("collapsed"):
-                # 怪物异变爆体（旧【崩解】）：命零。玩家理论上不会走到这里（entity_type 非"怪物"），
+                # 怪物异变爆体（【迷失】）：命零。玩家理论上不会走到这里（entity_type 非"怪物"），
                 # 保留以兼容玩家被异常标记为怪物的极端情况。
                 engine.combat._on_entity_death(
                     player, ctx=engine.combat._lost_context(player, {
                         "timing": "pre_battle_event", "source": "纸人冥婚", "source_type": "event",
                         "actor": player, "target": player, "mechanic": "cost",
                         "subtype": "mutation", "amount": 3, "tags": {"event"}}, subtype="collapse"))
-                applied.append("异变达阈值，触发【迷失·崩解】：直接命零")
+                applied.append("异变达阈值，触发【迷失】：直接命零")
             elif _mut.get("lost"):
                 # 非怪物局外触发【迷失】：此处尚未进入战斗，直接判命零——
                 # 战斗中触发才会走「异变为怪物与原队伍开战」分支（见 _resolve_mutation_lost）。

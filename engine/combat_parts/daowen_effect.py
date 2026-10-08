@@ -678,9 +678,12 @@ class DaowenEffectMixin:
         elif cost_share_target_ref:
             raise ValueError("该道纹没有可由【血契】共同承担的数值代价")
         if "mana_gain" in calc:
-            caster.current_mana += calc["mana_gain"]
+            # 2026-10-08：走统一入口，【勾魂】期间不生效（实际获得量可能与声明量不同）
+            gained = caster.gain_mana(calc["mana_gain"])
             self.clamp_immortal_body(caster)
-            result["effects"].append({"type": "mana_gain", "source": caster.name, "mana_gained": calc["mana_gain"]})
+            result["effects"].append({"type": "mana_gain", "source": caster.name,
+                                      "mana_gained": gained,
+                                      "mana_declared": calc["mana_gain"]})
 
         # ---- 乱葬岗（二阶）专属道纹效果 ----
         if name == "瓦解" and calc.get("blood_limit_pct"):
@@ -708,17 +711,17 @@ class DaowenEffectMixin:
                                           "blood_limit_after": target.blood_limit})
         # 2026-10-08 用户令删除【镇尸】：与【坏死】是同一效果的两套实现，
         # 保留【坏死】为「无法获得[回复]」的唯一入口。
-        if name == "勾魂" and calc.get("mana_cost_multiplier"):
-            # 勾魂X（DM裁定 2026-09-09 再改版）：持续X回合**法力消耗翻倍**
-            # （实现在 models.py::spend_mana）。历史：旧版「[回始]失去2X法力，持续∞」
-            # 已废止；2026-08-30 版「[回始]无法获得法力」随法力一池制一起失去作用对象。
+        if name == "勾魂" and calc.get("no_mana_gain"):
+            # 勾魂X：持续X回合**无法获得[法力]**（不扣已有法力）。
+            # 2026-10-08 用户令：撤销 2026-09-09 的「法力消耗翻倍」，恢复原效果。
+            # 判定只有一处：Entity.can_gain_mana() —— 所有法力增益来源都过 gain_mana()。
             for st_target in wave_status_targets:
                 st_target.add_status(StatusEffect(name="勾魂", value=1,
                                                   remaining_rounds=calc.get("duration", x),
                                                   source=caster.name))
                 result["effects"].append({
                     "type": "gouhun", "target": st_target.name,
-                    "mana_cost_multiplier": calc.get("mana_cost_multiplier"),
+                    "no_mana_gain": True,
                     "duration": calc.get("duration", x)})
         if name == "冥气" and calc.get("speed_loss_speed_limit"):
             for st_target in wave_status_targets:
@@ -765,10 +768,10 @@ class DaowenEffectMixin:
                 result["effects"].append({"type": "zhaohun", "note": "没有可唤回的怪物尸体"})
 
         # ---- 特殊 ----
-        # 2026-10-08 删【自残】后，当前没有任何已注册道纹产出 self_attack_count，
-        # 本分支暂时无人触发。保留它作为可复用通道（波及平分也已接线），
-        # 将来补进乱葬岗空位的新道纹若走"目标自打"效果可直接用。
-        if "self_attack_count" in calc:  # 原【自残】：目标自打X次
+        # 当前没有任何已注册道纹产出 self_attack_count，本分支暂时无人触发。
+        # 保留它作为可复用通道（波及平分也已接线），将来若有道纹走
+        # "目标自打"效果可直接用。
+        if "self_attack_count" in calc:  # 目标自打X次
             if "self_attack_count" in wave_pieces:
                 pieces = self._divide_flat(calc["self_attack_count"], len(wave_status_targets))
                 wave_pieces["self_attack_count"] = pieces

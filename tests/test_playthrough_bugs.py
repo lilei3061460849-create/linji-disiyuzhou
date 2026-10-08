@@ -96,7 +96,7 @@ def _resolve_prepared_monsters(engine: GameEngine, daowen_name: str | None = Non
 def test_resonance_on_enemy_grants_dest_and_rewrites_next_activation():
     """正常路径：反转敌方【减速】→ 敌人永久变为【加速】，贾凡同时永久获得【加速】。
 
-    2026-10-03：原用例把敌方【狂暴】反转成【自残】；【狂暴】删除后该边不存在，
+    2026-10-03：原用例把敌方【狂暴】反转成其转化分支；【狂暴】删除后该边不存在，
     改用仍在怪物原始道纹树上的 减速→(反转)→加速（同为 MONSTER_TRANSFORM_DAOWEN）。
     """
     engine = _engine("res_happy")
@@ -183,7 +183,7 @@ def test_resonance_fails_without_holder_or_stock():
     })
     assert r["success"] is False
     assert engine.state.resonance["反转"] == 1
-    assert "自残" not in engine.state.player.dao_wen
+    assert not ({"狂暴"} & set(engine.state.player.dao_wen)), "已删道纹不得出现"
 
     engine.state.resonance["反转"] = 0
     r2 = engine.execute_action("use_resonance", {

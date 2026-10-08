@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""嫁祸目标=怪物（敌人自残流）——乱葬岗完整7场挑战。
+"""嫁祸目标=怪物（敌人自伤流）——乱葬岗完整7场挑战。
 
 战法：轮回者每回合【嫁祸X】目标=怪物 → 怪物打玩家的伤害转给怪物自己
-（玩家免伤+怪物自残双收益）。铁卫天然吸火当第二层肉盾，杀伐补刀。
+（玩家免伤+怪物自伤双收益）。铁卫天然吸火当第二层肉盾，杀伐补刀。
 """
 import json, os, sys, tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -26,7 +26,7 @@ def player_turn(e, log):
     enemies = [x for x in e.state.enemies if x.is_alive]
     if enemies and "嫁祸" in p.dao_wen and p.current_mana >= 15:
         target = max(enemies, key=lambda x: x.attack_count * x.attack_power)
-        x = 2 if p.current_mana >= 45 else 1  # 嫁祸X=2(30法)挡2次+怪自残，剩余法力杀伐
+        x = 2 if p.current_mana >= 45 else 1  # 嫁祸X=2(30法)挡2次+怪物自伤，剩余法力杀伐
         if x >= 1:
             r = e.execute_action("use_daowen", {"daowen_name": "嫁祸", "x": x,
                                                 "target_ref": f"enemy:{e.state.enemies.index(target)}",
@@ -137,7 +137,7 @@ def main():
             for l in logs: print(l)
             print(f"  结果：通关 {cleared}/7 场")
     tot = len(stats)
-    print(f"\n===== 嫁祸给怪物(自残流) 汇总（{tot}局）=====")
+    print(f"\n===== 嫁祸给怪物(自伤流) 汇总（{tot}局）=====")
     for i in range(1, 8):
         n = sum(1 for c in stats if c >= i)
         print(f"  活过第{i}场: {n}/{tot} ({n/tot*100:.0f}%)")

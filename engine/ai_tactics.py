@@ -457,7 +457,7 @@ class TacticalAI:
             kind = "buff"
         elif max(0, p.get("hp_before", 0) - p.get("hp_after", 0)) > 0:
             kind = "harm"      # 自伤不是战术牌（③修复连带：无活敌时 杀伐 自指
-            #                    变体曾被兜底成 tactician → try_buff 拿它自残）
+            #                    变体曾被兜底成 tactician → try_buff 拿它打自己）
         else:
             kind = "tactician"   # 其余无面板位移的战术牌
         # dmg 口径：事件流 raw_damage（未扣盾），与上面的 kind 判定同源同口径。
@@ -885,7 +885,7 @@ class TacticalAI:
         只读引擎阈值与实体字段（`cancer_threshold_of` / `MUTATION_COLLAPSE_THRESHOLD` /
         连续未使敌掉血回合数），**不按道纹名特判、不改任何规则数值**：
           ① 癌变：本手后 total_healed ≥ combat.cancer_threshold_of(自己)；
-          ② 崩解：本手后 mutation_count ≥ Entity.MUTATION_COLLAPSE_THRESHOLD；
+          ② 迷失：本手后 mutation_count ≥ Entity.MUTATION_COLLAPSE_THRESHOLD；
           ③ 凡庸：连续五回合未能使敌对角色掉血 → 越接近线，「能推进伤害」越值钱。
         致命原因非空 = 这一手就是自己把自己送走，与 LETHAL 同档一票否决。
         """
@@ -907,14 +907,14 @@ class TacticalAI:
                 if after >= soft:
                     adj -= 25.0 * (after - soft) / max(1.0, line - soft)
 
-        # ② 崩解线：异变层数达阈值直接命零
+        # ② 迷失阈值：异变层数达阈值直接命零
         collapse = getattr(type(me), "MUTATION_COLLAPSE_THRESHOLD", 0) or 0
         mut_after = p.get("mutation_after")
         if mut_after is None:
             mut_after = getattr(me, "mutation_count", 0) + max(0.0, p.get("mutation_delta", 0) or 0)
         if collapse > 0:
             if mut_after >= collapse:
-                return adj, f"本手后异变{mut_after:.0f}≥崩解线{collapse}"
+                return adj, f"本手后异变{mut_after:.0f}≥迷失阈值{collapse}"
             soft = collapse * self.SELF_PRESERVE_MARGIN
             if mut_after >= soft:
                 adj -= 25.0 * (mut_after - soft) / max(1.0, collapse - soft)

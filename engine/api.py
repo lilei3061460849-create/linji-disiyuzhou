@@ -3268,8 +3268,8 @@ class GameEngine:
                                "mana_after": actor.current_mana,
                                "note": f"{actor.name}当前法力已满，聚能未获法力"}}
         mana_before = actor.current_mana
-        actor.current_mana = min(actor.mana_limit, actor.current_mana + gain)
-        gained = actor.current_mana - mana_before
+        # 2026-10-08：走统一入口，【勾魂】（无法获得[法力]）期间增益不生效
+        gained = actor.gain_mana(gain)
         return {"success": True, "action": f"{actor.name}聚能",
                 "result": {"actor": actor.name, "mana_gained": gained,
                            "mana_before": mana_before,
@@ -3590,7 +3590,7 @@ class GameEngine:
         """自由结晶：强制目标付出指定代价共计 amount（2026-10-05 用户令）。
 
         流血/衰老/枯竭/萎缩/疲惫/异变走统一代价结算入口 _apply_numeric_cost_part
-        （含致死判定、不朽之躯免疫、异变崩解/迷失等既有口径）；失忆与冷却没有
+        （含致死判定、不朽之躯免疫、异变迷失等既有口径）；失忆与冷却没有
         现成结算体，在这里按 物品索引.md#自由结晶 的定义实现：失忆＝随机失去至多
         X 种自身道纹，冷却＝其持有的全部道纹进入冷却 X 场。
         """
@@ -3715,7 +3715,7 @@ class GameEngine:
             return self._consume_named_event_item(item, params)
 
         # 普通消耗品：扣减耐久；异变类效果走统一入口 add_mutation
-        # （裁定⑧= A4全量：任何角色的任何异变来源同一入口，达50层即【崩解】命零；
+        # （裁定⑧= A4全量：任何角色的任何异变来源同一入口，达50层即【迷失】命零；
         #  其余效果仅限已经有机械解析器的回复/异变文本；未知效果在扣耐久前拒绝。）
         effect = item.effect or ""
         heal_match = (re.search(r"恢复(\d+)生命", effect)
@@ -3763,7 +3763,7 @@ class GameEngine:
                         "tags": {"consumable", "active_payment"}}, subtype="collapse"))
                 self.state.last_death_cause = "collapse"
                 mutation_info["note"] = (
-                    f"异变达{mut['mutation_total']}层触发【迷失·崩解】，"
+                    f"异变达{mut['mutation_total']}层触发【迷失】，"
                     f"{self.state.player.name}异变爆体直接命零")
             elif mut.get("lost"):
                 # 非怪物：触发【迷失】——战斗中则变身/命零；局外则直接命零。
@@ -3997,9 +3997,10 @@ class GameEngine:
             result.update({"cleared_enemies": cleared})
         # 5. 储能电池：使用后立即获得12法力
         elif name == "储能电池":
-            player.current_mana += 12
+            # 2026-10-08：走统一入口，【勾魂】期间不生效
+            gained = player.gain_mana(12)
             self.combat.clamp_immortal_body(player)
-            result.update({"mana_gained": 12, "mana_after": player.current_mana})
+            result.update({"mana_gained": gained, "mana_after": player.current_mana})
         # 6. 急救箱：回复25（走 heal）并清一种负面持续
         elif name == "急救箱":
             heal_detail = self.state.apply_heal(player, 25, ctx={
@@ -4864,7 +4865,7 @@ class GameEngine:
             "shield": e.shield, "is_flying": e.is_flying, "is_alive": e.is_alive,
             "shards": e.shards, "is_debt_bound": e.is_debt_bound,
             # ④修复：异变是代价资源、封存前已实付——
-            # 带伤续战必须带着异变续战，否则封存=免费洗白崩解进度。
+            # 带伤续战必须带着异变续战，否则封存=免费洗白迷失进度。
             # （癌变 total_healed 不随封存走：DM 已裁定它是局内减益、每场归零。）
             "mutation_count": e.mutation_count,
             # 致死进度：封存快照同样保留可读进度

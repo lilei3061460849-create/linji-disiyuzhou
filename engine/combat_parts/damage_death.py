@@ -159,9 +159,9 @@ class DamageDeathMixin:
             return None
         entity.chenglu_paid = (entity.hp_lost_this_battle // 10) * 10
         before = entity.current_mana
-        entity.current_mana += gain
+        # 2026-10-08：走统一入口，【勾魂】期间不生效
+        actual = entity.gain_mana(gain)
         self.clamp_immortal_body(entity)
-        actual = entity.current_mana - before
         return {"relic": "承露盏", "hp_lost_total": entity.hp_lost_this_battle,
                 "mana_gained": actual, "capped": actual < gain}
 
@@ -232,7 +232,7 @@ class DamageDeathMixin:
     ) -> bool:
         """统一“生命归零 → 命零”判定。
 
-        任何使生命可能归零的状态变化（伤害 / 代价 / 血限压迫 / 迷失（崩解/叛变） / 特殊事件）
+        任何使生命可能归零的状态变化（伤害 / 代价 / 血限压迫 / 迷失 / 特殊事件）
         都必须用这一个入口收口，禁止再写 `entity.is_alive = False`。
         返回本次调用是否判定了死亡（已死者返回 False，保持幂等）。
 
@@ -477,7 +477,7 @@ class DamageDeathMixin:
             detail["huoxueyi_heal"] = {"relic": "活血衣", "amount": heal_n,
                                        "actual": h.get("actual_heal"), "ctx": h.get("heal_ctx")}
         # 增生药剂（通用遗物池，2026-10-03 新增）：你每次对自己造成伤害后，恢复10生命。
-        # 触发口径＝这份伤害的 actor 就是被打者本人（自残 self_attack / 自伤类），
+        # 触发口径＝这份伤害的 actor 就是被打者本人（self_attack / 自伤类），
         # 或显式带 self_damage 标签；反噬等他人造成的直接失血不触发。
         if (actual > 0 and self._relic_active(target, "增生药剂")
                 and (damage_ctx.actor is target or "self_damage" in set(damage_ctx.tags or ()))):
@@ -524,7 +524,7 @@ class DamageDeathMixin:
             return
         parent = normalize_context(ctx)
         # 死因优先级：离场原因 > 调用方显式给出的死亡上下文 subtype > 兜底 hp_zero。
-        # （【迷失·崩解】【迷失·命零】【凡庸】【尸爆】等特殊死因靠这一步才能留在 _death_ctx 里。）
+        # （【迷失】【迷失·命零】【凡庸】【尸爆】等特殊死因靠这一步才能留在 _death_ctx 里。）
         subtype = getattr(entity, "departure_reason", "")
         if not subtype and parent is not None and parent.subtype:
             if parent.mechanic == "death":

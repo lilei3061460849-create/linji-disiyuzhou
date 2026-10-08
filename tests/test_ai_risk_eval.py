@@ -1,7 +1,7 @@
 """AI 风险分类器回归测试（2026-08-19，非特判体系）。
 
 覆盖：risk_classify 的 LETHAL / CRITICAL / HIGH / MEDIUM / LOW / SAFE 等级，
-try_consumable 接入预演后的残骸崩解拒绝，_cast 风险记录。
+try_consumable 接入预演后的残骸迷失拒绝，_cast 风险记录。
 
 **所有风险判断不依赖道纹/消耗品具体名称，全靠 diff 数值。**
 """
@@ -139,9 +139,9 @@ def test_risk_classify_low_on_safe_action():
 
 
 def test_try_consumable_residual_rejected_by_risk():
-    """残骸崩解对抗：try_consumable 经预演拒绝 LETHAL/CRITICAL 级消耗品。
+    """残骸迷失对抗：try_consumable 经预演拒绝 LETHAL/CRITICAL 级消耗品。
 
-    构造玩家异变 46 + 残骸（恢复20 + 异变10 → 56 ≥ 50 崩解）。
+    构造玩家异变 46 + 残骸（恢复20 + 异变10 → 56 ≥ 50 迷失）。
     不写残骸名称，全靠风险分类器。
     """
     from engine.models import StatusEffect
@@ -158,7 +158,7 @@ def test_try_consumable_residual_rejected_by_risk():
     e.state.current_round = 2
     ai = TacticalAI(e)
 
-    # try_consumable 应拒绝残骸（预演显示异变 46+10=56 → 崩解 → LETHAL）
+    # try_consumable 应拒绝残骸（预演显示异变 46+10=56 → 迷失 → LETHAL）
     r = ai.try_consumable()
     assert r is None, "致死消耗品必须被安全过滤拒绝"
     assert any("残骸" in entry for entry in ai.preview_rejected), \
