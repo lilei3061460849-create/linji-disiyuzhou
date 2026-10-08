@@ -80,9 +80,16 @@ class MonsterPhaseMixin:
         return max(0, n)
 
     def _combat_entity_refs(self) -> dict[str, Entity]:
-        """为两阶段决策提供本场稳定的显式目标引用，避免同名实体歧义。"""
+        """为两阶段决策提供本场稳定的显式目标引用，避免同名实体歧义。
+
+        被【封印】暂离的实体不在场上：既不能当目标（不可被选、不可被打），
+        也不能当行动者（不能出手、不能发动道纹）。2026-10-08 起封印可作用于
+        任意目标含自己，这条过滤是"暂离"语义的唯一把关点——所有两阶段决策
+        （怪物阶段、玩家攻击准备、道纹目标绑定）都从这里取 refs。
+        """
         refs: dict[str, Entity] = {}
-        if self.state.player and self.state.player.is_alive:
+        if (self.state.player and self.state.player.is_alive
+                and not self.state.is_sealed_away(self.state.player)):
             refs["player:0"] = self.state.player
         for prefix, entities in (
             ("friend", self.state.friends),
@@ -95,6 +102,8 @@ class MonsterPhaseMixin:
                     continue
                 if prefix == "employee" and not entity.is_deployed:
                     continue
+                if self.state.is_sealed_away(entity):
+                    continue  # 【封印】暂离中：不在场上，不可选也不可行动
                 self._bind_hp_hook(entity)  # 确认战斗实体已绑定「失去生命后」兜底钩子（幂等）
                 refs[f"{prefix}:{i}"] = entity
         return refs

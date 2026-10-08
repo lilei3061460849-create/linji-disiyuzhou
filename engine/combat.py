@@ -994,7 +994,9 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
 
         self.state.current_round += 1
 
-        # 【封印X】延迟回场：在第 R+X 回合始把原怪物重新加入敌方列表。
+        # 【封印X】延迟回场：在第 R+X 回合始把原实体放回它脱场前所在的阵营。
+        # 2026-10-08 用户令：封印的目标已不限于怪物，home/index 记录原址
+        # （"player" 表示玩家位），一律回原址，不得一律塞回 enemies。
         # 回场当回合记录 spawned_round；2026-09-15 用户令取消白板后，回场当回合
         # 同样可以发动道纹（spawned_round 仅作出生回合记录）。
         delayed = list(getattr(self.state, "delayed_monster_reentries", []) or [])
@@ -1007,12 +1009,15 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                 monster.departure_reason = ""
                 monster.removed_without_kill = False
                 monster.spawned_round = self.state.current_round
+                # home/index 缺省视为旧存档：那只可能是怪物，回 enemies。
+                self.state.reattach_to_field(entry.get("home") or "enemies",
+                                             entry.get("index"), monster)
                 monster._delayed_by_seal = False
-                self.state.enemies.append(monster)
                 self.state.delayed_monster_reentries.remove(entry)
                 effects.append({"type": "seal_reentry", "entity": monster.name,
                                 "round": self.state.current_round,
-                                "delay_rounds": entry.get("delay_rounds", 0)})
+                                "delay_rounds": entry.get("delay_rounds", 0),
+                                "home": entry.get("home") or "enemies"})
 
         # 出怪配方（2026-09-28 用户令）：增援在第 i 波 `T_i` 累加的回合进场，
         # 一波可进 R_i（≥1）只；旧的固定波次 R4/R7/R10 已废止。
@@ -1612,8 +1617,14 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         return effects
 
     def can_act(self, entity: Entity) -> bool:
-        """是否可出手（眩晕/束缚下不可）"""
+        """是否可出手（眩晕/束缚下不可；被【封印】暂离者不在场上，同样不可出手）。
+
+        2026-10-08 用户令：封印可作用于任意目标含自己。这里是"能否出手"的唯一
+        事实源，加上暂离判断后，玩家/朋友/员工/怪物被封印期间一律不能行动，
+        不必在每个行动入口各写一份。
+        """
         return (entity.is_alive
+                and not self.state.is_sealed_away(entity)
                 and not entity.has_status("眩晕")
                 and not entity.has_status("束缚"))
 
@@ -1630,7 +1641,8 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
             "player_side": [e.to_dict() for e in self.state.get_all_player_side()],
             "enemy_side": [e.to_dict() for e in self.state.get_all_enemy_side()],
             "delayed_monster_reentries": [
-                {"name": entry["monster"].name, "return_round": entry["return_round"]}
+                {"name": entry["monster"].name, "return_round": entry["return_round"],
+                 "home": entry.get("home") or "enemies"}
                 for entry in getattr(self.state, "delayed_monster_reentries", [])
             ],
         }

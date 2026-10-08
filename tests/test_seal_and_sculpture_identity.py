@@ -1,6 +1,10 @@
 """封印延迟回场；雕塑对任何非轮回者；轮回者开局攻面板 0×0。
 
-封印X：支付异变X，使一个目标怪物延后X回合再入场；暂离不是死亡或永久离场。
+封印X：支付异变X，使一个目标延后X回合再入场；暂离不是死亡或永久离场。
+
+2026-10-08 用户令：封印的目标由"只限怪物"放开为**任意目标**（含[朋友]/[员工]/
+临时朋友/敌对轮回者，以及施法者自己）。回场一律回原阵营原下标。
+暂离不是死亡或永久离场。
 雕塑：用户裁定对任何非轮回者（怪物/微光者/赤族等）；轮回者不触发。
 """
 import os
@@ -85,18 +89,120 @@ def test_seal_delays_one_monster_and_reenters_on_scheduled_round():
                for e in r3["result"]["effects"])
 
 
-def test_seal_requires_a_monster_target():
-    """封印不能把轮回者/员工当作怪物暂离目标。"""
+def test_seal_accepts_any_living_on_field_target():
+    """2026-10-08 用户令：封印放开到任意目标，敌对轮回者同样可被暂离。
+
+    旧行为是「目标必须是当前在场的怪物」，敌对轮回者被拒；现在只要活着、在场上、
+    没在暂离中即可，且回场必须回到原阵营（enemies 的原下标）。
+    """
     engine = _engine("seal_target_type")
     foe = Entity(name="敌对轮回者", entity_type="轮回者", blood_limit=70, current_hp=70,
                  attack_count=1, attack_power=1)
-    engine.state.enemies.append(foe)
+    other = _monster("占位怪")
+    engine.state.enemies.extend([foe, other])
     engine.execute_action("round_start", {})
     r = engine.execute_action("use_daowen", {"daowen_name": "封印", "x": 1, "target": foe.name})
-    assert not r["success"]
-    assert "怪物" in r["error"]
-    assert engine.state.player.mutation_count == 0
-    assert foe.is_alive and foe in engine.state.enemies
+    assert r["success"], r
+    seal = next(e for e in r["execution"]["effects"] if e["type"] == "seal")
+    assert seal["target"] == "敌对轮回者"
+    assert seal["home"] == "enemies"
+    assert engine.state.player.mutation_count == 1
+    assert foe.is_alive and foe not in engine.state.enemies
+    assert engine.state.delayed_monster_reentries[0]["monster"] is foe
+
+
+def test_seal_on_a_friend_returns_them_to_the_friend_slot_not_enemies():
+    """封印自己的[朋友]：脱场后必须回到 friends 原下标，绝不能被塞进 enemies。
+
+    这是"放开到任意目标"最危险的回归——旧实现一律 `enemies.append(...)` 回场，
+    封印队友会直接把队友变成敌人。
+    """
+    engine = _engine("seal_friend")
+    f0 = Entity(name="甲友", entity_type="微光者", blood_limit=30, current_hp=30,
+                attack_count=0, attack_power=0)
+    f1 = Entity(name="乙友", entity_type="微光者", blood_limit=30, current_hp=30,
+                attack_count=0, attack_power=0)
+    engine.state.friends.extend([f0, f1])
+    engine.execute_action("round_start", {})  # R1
+    r = engine.execute_action("use_daowen", {"daowen_name": "封印", "x": 1, "target": "甲友"})
+    assert r["success"], r
+    seal = next(e for e in r["execution"]["effects"] if e["type"] == "seal")
+    assert seal["home"] == "friends" and seal["index"] == 0
+    assert f0 not in engine.state.friends and f1 in engine.state.friends
+    assert f0 not in engine.state.enemies, "暂离的朋友不能落进敌方列表"
+    assert engine.state.is_sealed_away(f0)
+
+    # 回场：回到 friends 的 0 号位（乙友之前），不是追加到末尾、更不是 enemies。
+    engine.state.combat_subphase = "await_round_end"
+    engine.execute_action("round_end", {})
+    engine.execute_action("round_start", {})  # R2
+    assert engine.state.friends == [f0, f1], engine.state.friends
+    assert f0 not in engine.state.enemies
+    assert not engine.state.is_sealed_away(f0)
+    assert "friend:0" in engine.combat._combat_entity_refs()
+
+
+def test_seal_on_self_removes_the_player_from_play_without_counting_as_a_loss():
+    """封印施法者自己：暂离期间不在场上，但不是命零、不判负，X回合后原样回场。
+
+    玩家是 state.player 单字段，摘不走，只能靠 `_delayed_by_seal` 标记表达
+    "不在场上"——因此所有枚举入口（_combat_entity_refs / get_all_player_side）
+    都必须尊重这个标记，否则封印自己会变成"无敌但还能行动"。
+    """
+    engine = _engine("seal_self")
+    engine.execute_action("round_start", {})  # R1
+    player = engine.state.player
+    foe = _monster("对手怪")
+    engine.state.enemies.append(foe)
+
+    r = engine.execute_action("use_daowen", {"daowen_name": "封印", "x": 2,
+                                             "target": player.name})
+    assert r["success"], r
+    assert engine.state.is_sealed_away(player)
+    assert player.is_alive, "暂离不是命零"
+    assert not engine.state.battle_lost(), "暂离不是判负"
+    assert not engine.state.battle_won(), "暂离队列非空，仍阻塞战终"
+
+    # 不在场上：既不能当目标，也不能当行动者。
+    refs = engine.combat._combat_entity_refs()
+    assert "player:0" not in refs, "暂离的玩家不能被选为目标"
+    assert player not in engine.state.get_all_player_side(), "暂离的玩家不在场上"
+    assert not engine.combat.can_act(player), "暂离的玩家不能出手"
+    assert engine.execute_action("use_daowen", {"daowen_name": "封印", "x": 1,
+                                                "target": "对手怪"})["success"] is False, \
+        "被自己封印后不能再靠默认 actor=player 绕开校验发动道纹"
+
+    # R2 尚未回场；R3 回始回到玩家位。
+    engine.state.combat_subphase = "await_round_end"
+    engine.execute_action("round_end", {})
+    r2 = engine.execute_action("round_start", {})
+    assert engine.state.current_round == 2
+    assert engine.state.is_sealed_away(player)
+    assert not any(e.get("type") == "seal_reentry" for e in r2["result"]["effects"])
+    engine.state.combat_subphase = "await_round_end"
+    engine.execute_action("round_end", {})
+    r3 = engine.execute_action("round_start", {})
+    assert engine.state.current_round == 3
+    assert not engine.state.is_sealed_away(player)
+    assert engine.state.player is player
+    assert "player:0" in engine.combat._combat_entity_refs()
+    assert engine.combat.can_act(player)
+    assert any(e.get("type") == "seal_reentry" and e["entity"] == player.name
+               for e in r3["result"]["effects"])
+    assert engine.state.delayed_monster_reentries == []
+
+
+def test_seal_still_refuses_units_that_are_not_on_the_field():
+    """放开到任意目标不等于放开到任意对象：已离场/已撤退/已在暂离中的不能封印。"""
+    engine = _engine("seal_refuse")
+    engine.execute_action("round_start", {})
+    gone = _monster("已离场怪")
+    gone.depart_battle("逃跑")
+    engine.state.enemies.append(gone)
+    r = engine.execute_action("use_daowen", {"daowen_name": "封印", "x": 1, "target": gone.name})
+    assert not r["success"], r
+    assert "离场" in r["error"], r["error"]
+    assert engine.state.player.mutation_count == 0, "被拒不能付代价"
 
 
 def test_seal_delayed_monster_is_not_an_alt_victory_or_shardless_removal():

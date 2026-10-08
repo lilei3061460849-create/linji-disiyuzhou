@@ -1022,8 +1022,16 @@ class GameState:
     # 每波 R_i 只（可>1）在对应[回始]进场。元素为怪物定义dict + "arrive_round"，
     # 见 monsters.roll_spawn_plan / make_monster_entity 入参。
     monster_reinforcements: list[dict] = field(default_factory=list)
-    # 【封印X】的暂离队列：元素为 {"monster": Entity, "return_round": int}。
-    # 暂离不是死亡/永久离场，仍阻塞战终；到达回合始时把原实体重新加入 enemies。
+    # 【封印X】的暂离队列：元素为
+    #   {"monster": Entity, "return_round": int, "delay_rounds": int,
+    #    "home": str, "index": Optional[int]}
+    # 暂离不是死亡/永久离场，仍阻塞战终；到达回合始时把原实体放回它原本所在的容器。
+    # 2026-10-08 用户令：【封印】放开到任意目标（含[朋友]/[员工]/临时朋友与施法者
+    # 自己），因此队列不再只装怪物，home/index 记录原址——
+    #   * "enemies"/"friends"/"employees"/"temp_friends" —— 从对应 list 摘走再插回原下标；
+    #   * "player" —— state.player 是单字段，摘不走，改为就地打 `_delayed_by_seal`
+    #     标记（见 detach_from_field），回场时清标记即可。
+    # 字段名保留 delayed_monster_reentries 是为了不打断既有调用方与存档。
     delayed_monster_reentries: list[dict] = field(default_factory=list)
 
     # 员工背叛：待处理标记（[战终]检查命中后置真，三个处理分支任一生效后清空）
@@ -1521,7 +1529,8 @@ class GameState:
             "forced_monsters_next_battle": self.forced_monsters_next_battle,
             "monster_reinforcements": list(self.monster_reinforcements),
             "delayed_monster_reentries": [
-                {"name": entry["monster"].name, "return_round": entry["return_round"]}
+                {"name": entry["monster"].name, "return_round": entry["return_round"],
+                 "home": entry.get("home") or "enemies"}
                 for entry in getattr(self, "delayed_monster_reentries", [])
             ],
             "rebellion_active": self.rebellion_active,
@@ -1557,18 +1566,64 @@ class GameState:
             "personality_traits": personality_export_for_ai(self),
         }
     
+    # ==================== 【封印】暂离：脱场与回场 ====================
+    # 2026-10-08 用户令：【封印】可作用于任意目标（含自己）。引擎侧唯一的语义是
+    # "从场上摘走、X 回合后原样放回"，因此脱场/回场必须是**成对**的，且要记住
+    # 原址——不能像旧实现那样一律塞回 enemies（否则封印自己的[朋友]会把它变成敌人）。
+
+    SEAL_HOMES = ("enemies", "friends", "employees", "temp_friends")
+
+    @staticmethod
+    def is_sealed_away(entity: Optional[Entity]) -> bool:
+        """该实体是否正处于【封印】暂离（不在场上、不可被选、不可行动）。"""
+        return entity is not None and bool(getattr(entity, "_delayed_by_seal", False))
+
+    def seal_home_of(self, entity: Entity) -> tuple[str, Optional[int]]:
+        """该实体当前属于场上哪个容器（含下标）。玩家返回 ("player", None)。"""
+        if self.player is not None and entity is self.player:
+            return ("player", None)
+        for key in self.SEAL_HOMES:
+            container = getattr(self, key)
+            for index, candidate in enumerate(container):
+                if candidate is entity:
+                    return (key, index)
+        raise ValueError(f"实体{entity.name}不在当前场上，无法【封印】")
+
+    def detach_from_field(self, entity: Entity) -> tuple[str, Optional[int]]:
+        """把实体摘离战场，返回原址 (home, index) 供回场使用。"""
+        home, index = self.seal_home_of(entity)
+        if home != "player":
+            getattr(self, home).pop(index)
+        # 玩家是单字段摘不走，用标记表达"不在场上"；所有枚举场上单位的入口
+        # （_combat_entity_refs / get_all_player_side）都必须尊重这个标记。
+        entity._delayed_by_seal = True
+        return (home, index)
+
+    def reattach_to_field(self, home: str, index: Optional[int], entity: Entity) -> None:
+        """把实体放回它脱场前所在的容器与下标（下标已被占满则追加到末尾）。"""
+        if home != "player":
+            container = getattr(self, home)
+            container.insert(min(index or 0, len(container)), entity)
+        entity._delayed_by_seal = False
+
     def get_all_player_side(self) -> list[Entity]:
-        """获取己方所有实体（[员工]需 is_deployed=True 才计入战场；已【撤退】者不再计入本场战斗）"""
+        """获取己方所有实体（[员工]需 is_deployed=True 才计入战场；已【撤退】者不再计入本场战斗）
+
+        被【封印】暂离者不计入——它不在场上，也就吃不到[回始]/[回终]的持续结算。
+        """
         entities = []
-        if self.player and self.player.is_alive:
+        if self.player and self.player.is_alive and not self.is_sealed_away(self.player):
             entities.append(self.player)
-        entities.extend(f for f in self.friends if f.is_alive and not f.has_retreated)
-        entities.extend(e for e in self.employees if e.is_alive and e.is_deployed and not e.has_retreated)
-        entities.extend(t for t in self.temp_friends if t.is_alive and not t.has_retreated)
+        entities.extend(f for f in self.friends if f.is_alive and not f.has_retreated
+                        and not self.is_sealed_away(f))
+        entities.extend(e for e in self.employees if e.is_alive and e.is_deployed and not e.has_retreated
+                        and not self.is_sealed_away(e))
+        entities.extend(t for t in self.temp_friends if t.is_alive and not t.has_retreated
+                        and not self.is_sealed_away(t))
         return entities
     
     def get_all_enemy_side(self) -> list[Entity]:
-        """获取敌方所有存活实体"""
+        """获取敌方所有存活实体（被【封印】暂离者已被摘出 enemies，不在此列）"""
         return [e for e in self.enemies if e.is_alive]
 
     # ==================== 战斗结束与胜利·统一判定 ====================
@@ -1589,7 +1644,11 @@ class GameState:
         return [e for e in self.enemies if self.enemy_combat_active(e)]
 
     def battle_won(self) -> bool:
-        """战斗胜利＝敌方全部角色均已命零/永久离场，且没有待进场增援或封印暂离怪物。"""
+        """战斗胜利＝敌方全部角色均已命零/永久离场，且没有待进场增援或封印暂离的单位。
+
+        2026-10-08 起 delayed_monster_reentries 可能装着己方单位（封印自己/队友），
+        队列非空一律阻塞战终——否则会出现"把队友封印后直接结算战终"的漏洞。
+        """
         if getattr(self, "monster_reinforcements", None):
             return False
         if getattr(self, "delayed_monster_reentries", None):

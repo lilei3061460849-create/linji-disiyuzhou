@@ -794,17 +794,31 @@ class DaowenEffectMixin:
                             "tags": {"daowen", "self_damage"},
                         })})
         if calc.get("delay_monster_reentry"):
-            # 【封印X】：目标由 use_daowen 的显式 target_ref/target 绑定；只允许一只
-            # 当前在场怪物进入暂离队列。暂离不写离场/死亡上下文，也不产生碎片分类。
-            if target.entity_type != "怪物":
-                raise ValueError("【封印】的目标必须是当前在场的怪物")
-            if not any(e is target for e in self.state.enemies) or not target.is_alive:
-                raise ValueError("【封印】的目标必须是当前存活且在场的怪物")
-            reentry = self._delay_monster_reentry(target, calc.get("delay_rounds", x))
+            # 【封印X】：目标由 use_daowen 的显式 target_ref/target 绑定，进入暂离队列。
+            # 暂离不写离场/死亡上下文，也不产生碎片分类。
+            #
+            # 2026-10-08 用户令：**任意目标**都可以被封印——敌人、[朋友]、[员工]、
+            # 临时朋友、敌对轮回者，以及施法者自己（延后 X 回合再入场）。
+            # 校验随之放开：只要"还活着、还在场上、没处于暂离中"即可，
+            # 不再要求 entity_type == "怪物"，也不再要求属于 enemies。
+            # 但明确不允许封印已经永久离场/撤退的单位（那不是"暂离"的对象）。
+            if target is None or not target.is_alive:
+                raise ValueError("【封印】的目标必须仍存活")
+            if target.is_departed or target.has_retreated:
+                raise ValueError(f"【封印】的目标{target.name}已永久离场，不是暂离的对象")
+            if self.state.is_sealed_away(target):
+                raise ValueError(f"【封印】的目标{target.name}已处于暂离中")
+            try:
+                self.state.seal_home_of(target)
+            except ValueError as exc:
+                raise ValueError(f"【封印】的目标必须仍在场上：{exc}") from None
+            reentry = self._delay_entity_reentry(target, calc.get("delay_rounds", x))
             result["effects"].append({
                 "type": "seal", "target": target.name,
                 "delay_rounds": reentry["delay_rounds"],
                 "return_round": reentry["return_round"],
+                "home": reentry["home"],
+                "index": reentry["index"],
                 "note": f"{target.name}延后{reentry['delay_rounds']}回合，于第{reentry['return_round']}回合始再入场",
             })
 

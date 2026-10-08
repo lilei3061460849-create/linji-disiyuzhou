@@ -863,6 +863,24 @@ class GameEngine:
                                     and type(a) is type(b) for a, b in zip(current_value, saved_value))):
                         for a, b in zip(current_value, saved_value):
                             restore_object(a, b)
+                    elif (len(current_value) == len(saved_value)
+                            and all(isinstance(a, dict) and isinstance(b, dict)
+                                    and set(a) == set(b) for a, b in zip(current_value, saved_value))):
+                        # 【封印】暂离队列这类"list[dict]，dict 里装着实体"的结构：
+                        # 必须逐键就地还原、实体按同一下标还原回原对象，不能整列表
+                        # deepcopy 换掉。否则队列里的实体会和 state.player / enemies
+                        # 里的是两个不同对象，回场时把副本塞回去、原对象丢失
+                        # （实测：封印自己之后再执行任意一个失败行动就会触发——
+                        # 失败回滚把队列换成副本，回场后 state.player 仍是原对象，
+                        # 于是玩家永远解不开暂离）。
+                        for a, b in zip(current_value, saved_value):
+                            for key in list(a):
+                                va, vb = a[key], b[key]
+                                if (dataclasses.is_dataclass(va) and dataclasses.is_dataclass(vb)
+                                        and type(va) is type(vb)):
+                                    restore_object(va, vb)
+                                else:
+                                    a[key] = copy.deepcopy(vb)
                     else:
                         current_value[:] = copy.deepcopy(saved_value)
                 elif isinstance(current_value, dict) and isinstance(saved_value, dict):
@@ -2653,6 +2671,11 @@ class GameEngine:
             actor = matches[0] if len(matches) == 1 else None
         else:
             actor = self.state.player
+        # 2026-10-08：被【封印】暂离的实体不在场上，不能发动道纹（含封印自己后
+        # 靠默认 actor=player 绕开 refs 的路径——上面 `actor = self.state.player`
+        # 是直取单字段，不过 _combat_entity_refs，必须在这里单独挡一道）。
+        if self.state.is_sealed_away(actor):
+            return {"success": False, "error": f"{actor.name}正处于【封印】暂离，不能发动道纹"}
         if actor is None or not actor.is_alive or actor.has_retreated:
             return {"success": False, "error": "actor_ref不是当前存活行动者"}
         if actor is self.state.player:
@@ -5727,7 +5750,7 @@ class GameEngine:
             return {"success": False, "error": f"仍有{len(queued)}只怪物增援未进场，不能结算战终: {[m.get('name', '?') for m in queued]}"}
         delayed = list(getattr(self.state, "delayed_monster_reentries", []) or [])
         if delayed and not escaping:
-            return {"success": False, "error": f"仍有{len(delayed)}只怪物处于【封印】延迟，不能结算战终: {[e['monster'].name for e in delayed]}"}
+            return {"success": False, "error": f"仍有{len(delayed)}个单位处于【封印】暂离，不能结算战终: {[e['monster'].name for e in delayed]}"}
         if escaping:
             for enemy in self.state.enemies:
                 if enemy.is_alive:

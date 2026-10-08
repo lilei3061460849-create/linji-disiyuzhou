@@ -229,7 +229,13 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_fengyin(x: int, target: Entity = None) -> dict:
-        """封印X：代价：异变X，使一个目标怪物延后X回合再入场。"""
+        """封印X：代价：异变X，使一个[目标]延后X回合再入场。
+
+        2026-10-08 用户令：目标由"只限怪物"放开为**任意目标**——敌人、[朋友]、
+        [员工]、临时朋友、敌对轮回者，以及施法者自己都可以被封印。
+        暂离的语义不变：从场上摘走，X 回合后的[回始]回到它原本所在的阵营与位置
+        （见 GameState.detach_from_field / reattach_to_field）。
+        """
         target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "封印",
