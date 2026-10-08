@@ -27,7 +27,7 @@ from .enums import (GamePhase, CombatSubphase, ActionPhase, TriggerTiming,
                     InterruptType, EntityType, EffectScope, EffectPolarity)
 from .dice import DiceEngine
 from .daowen import DaoWenEngine, ResonanceEngine
-from .combat import CombatEngine
+from .combat import CombatEngine, parry_reduction_for, parry_uses_for
 from .spell_dsl import parse_spell_definition, SpellDslError
 from .combat_events import register_combat_event_observer
 from .events import EventPool
@@ -2776,12 +2776,17 @@ class GameEngine:
         # 「怪物与轮回者、微光者共用同一套面板数据，同样持有[血限]/[法限]/[速限]」，
         # :1254 明载微光者「仍是一池制，[回始]不回填」——不支出就无所谓"一池制"。
         # 故三类角色同口径支付【消耗】类法力；微光者仍照常额外消耗其出手。
-        cost = calc.get("cost", calc.get("cost_mutation", 0))
-        if calc.get("cost_type") == "消耗" and cost > 0:
-            if not actor.spend_mana(cost):
-                return {"success": False, "error": f"法力不足，需要{cost}，当前{actor.current_mana}"}
-            # 寒冰法力：持有者每消耗法力发动道纹，无论目标是谁(含自己)都累计"施加法力"
-            self.combat.note_mana_inflicted(actor, target, cost)
+        #
+        # 2026-10-08 结构审查：此处的法力支付原为一份内联副本，口径与法术单步
+        # （CombatEngine.pay_daowen_mana）表面相同、实则多一条 `cost_mutation`
+        # 兜底，属「同一条规则两处实现」。现统一调用共享实现。
+        # 等价性已验证：遍历全部 63 个道纹 × X∈{1,3}，凡 cost_type=="消耗" 的
+        # calc 都带 `cost` 键；缺 `cost` 只有 `cost_mutation` 的 6 个道纹
+        # （全力/减速/封印/必中/疯狂/自愈）全部是「异变」类型，不进法力分支，
+        # 故该兜底是死代码，删除后数值逐字节不变。
+        _cost_paid, mana_error = self.combat.pay_daowen_mana(actor, calc, target)
+        if mana_error:
+            return {"success": False, "error": mana_error}
 
         # F2：赌命X/消灾X 的碎片类代价预检与支付（代价类型非"消耗"，不走法力制）
         shard_error = self._pay_daowen_shard_cost(actor, name, calc, x)
@@ -3109,13 +3114,13 @@ class GameEngine:
         if actor.current_hp <= 0:
             return {"success": False, "error": f"{actor.name}当前生命为0，无法招架"}
         actor.parrying_this_round = True
-        actor.parry_uses_remaining_this_round = max(1, int(actor.current_hp))
+        actor.parry_uses_remaining_this_round = parry_uses_for(actor.current_hp)
         return {"success": True, "action": f"{actor.name}招架",
                 "result": {"actor": actor.name,
-                           "reduction_preview": max(0, actor.current_hp // 10),
+                           "reduction_preview": parry_reduction_for(actor.current_hp),
                            "uses": actor.parry_uses_remaining_this_round,
                            "note": f"本轮每次受到的伤害前{actor.parry_uses_remaining_this_round}击"
-                                   f"减去{actor.current_hp // 10}（10%当前生命）；"
+                                   f"减去{parry_reduction_for(actor.current_hp)}（10%当前生命）；"
                                    "减免按结算时的生命计"}}
 
     # ---------- 2026-09-28 新回合动作：cast/focus/rest ----------

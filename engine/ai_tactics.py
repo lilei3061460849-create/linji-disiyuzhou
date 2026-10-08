@@ -27,6 +27,8 @@ import math
 import os
 from typing import Any, Optional
 from engine.ai_preview import ActionPreview
+# 招架减免/可用次数的规则真源（AI 不得自己再写一遍公式，见 engine/combat.py）
+from engine.combat import parry_reduction_for, parry_uses_for
 
 # 单次出手最多预演的候选数（性能护栏；候选按新鲜度与威胁优先）
 MAX_CANDIDATE_PREVIEWS = 26
@@ -498,11 +500,11 @@ class TacticalAI:
         enemies = self.alive_enemies()
         if not enemies:
             return None
-        per_hit_reduction = max(1, player.current_hp // 10)
+        per_hit_reduction = parry_reduction_for(player.current_hp)
         # 总受击数 = 敌方攻击次数之和；招架可用次数上限=player.current_hp，
         # 因此减免量 = per_hit_reduction × min(总受击数, current_hp)
         total_hits = sum(max(0, e.effective_attack_count()) for e in enemies)
-        effective_hits = min(total_hits, max(1, int(player.current_hp)))
+        effective_hits = min(total_hits, parry_uses_for(player.current_hp))
         reduction = per_hit_reduction * effective_hits
         if reduction <= 0:
             return None

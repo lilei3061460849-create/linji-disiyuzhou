@@ -30,6 +30,44 @@ from .models import MONSTER_MANA_RELIC
 MEDIOCRITY_ROUNDS = Entity.MEDIOCRITY_ROUNDS
 
 
+# ---------------------------------------------------------------------------
+# 【招架】规则的单一真源（2026-10-08 结构审查）
+#
+# 规则正文：本轮你受到的攻击伤害 - 你 10% 当前生命（向下取整，最低 0）；
+# 每回合可使用次数 = 你声明招架时的当前生命，每次受击消耗 1 次。
+#
+# 这条规则此前在三处各写一遍：
+#   1. 真实结算 —— 本文件 CombatEngine._apply_parry_reduction；
+#   2. AI 候选生成 —— engine/ai_tactics.py::_parry_candidate；
+#   3. 声明回执文案 —— engine/api.py::_action_declare_parry。
+# 其中 AI 那份多一个 max(1, …) 下界，与结算口径（max(0, …)）**不是同一条公式**，
+# 只因「当前生命 < 10 不生成候选」的早退才没暴露分叉。
+# 三处一律改为调用下面两个函数：改规则只改这里一处，AI 与回执不会再各自漂移。
+# 数值语义与既有行为逐字节一致（未改任何规则数值）。
+# ---------------------------------------------------------------------------
+
+def parry_reduction_for(current_hp: Any) -> int:
+    """招架的单击减免 = floor(当前生命 × 10%)，最低 0。
+
+    取**受击结算那一刻**的生命，不是声明时的快照——本轮掉的每一点血都会
+    同步削弱招架，这是这张牌的设计张力。
+    """
+    try:
+        hp = int(current_hp)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, hp // 10)
+
+
+def parry_uses_for(current_hp: Any) -> int:
+    """招架的每回合可用次数 = 声明招架时的当前生命（每次受击消耗 1 次）。"""
+    try:
+        hp = int(current_hp)
+    except (TypeError, ValueError):
+        return 1
+    return max(1, hp)
+
+
 # 实现分片：方法体在 engine/combat_parts/*.py，本文件保留门面与核心结算
 # （__init__ / 伤害与数值管线 / resolve_attack / 回合管理 / 员工背叛与死之传承 /
 #  遗物结算 / 凡庸与目标合法性）。拆分不改变行为与对外契约：CombatEngine 仍是
@@ -292,7 +330,7 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         uses = getattr(target, "parry_uses_remaining_this_round", 0)
         if uses <= 0:
             return amount
-        reduction = max(0, target.current_hp // 10)
+        reduction = parry_reduction_for(target.current_hp)
         if reduction <= 0:
             # 当前生命不足10时招架减伤为0，但仍消耗1次次数（避免靠低血无限"招架"空挥）
             target.parry_uses_remaining_this_round = max(0, uses - 1)
