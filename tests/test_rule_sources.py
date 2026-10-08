@@ -70,8 +70,11 @@ def test_spell_without_required_fields_is_rejected(tmp_path):
     """错误输入：缺少所需道纹或生效流程的法术配置必须拒绝。"""
     sync = _sync(tmp_path)
     invalid = tmp_path / "spells.md"
+    # 节名必须是「## 法术大全」——rule_sync.extract_spells_from_file 只认这个
+    # 标题（真实的 死者之书.md 用的也是它）。旧夹具写成「## 可学法术」，解析器
+    # 根本不会进入法术节，于是永远抛不出 ValueError，用例假失败。
     invalid.write_text(
-        "# 死者之书\n\n## 可学法术\n\n### 空法术\n\n触发条件：回始\n",
+        "# 死者之书\n\n## 法术大全\n\n### 空法术\n\n触发条件：回始\n",
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="缺少所需道纹或生效流程"):
