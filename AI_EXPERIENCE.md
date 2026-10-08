@@ -712,6 +712,53 @@ python sim/audit_monsters.py
 
 ---
 
+## 工作方法红线：沙盒重置后的 git 对齐
+
+**现象（2026-10-08 一晚踩了两次）**：沙盒会在会话之间重置。**工作区文件保留，
+但 git 的 HEAD／index／本地提交会退回分叉点**（实测退回 `2d7567d`）。
+
+**为什么危险**：此时工作区里其实躺着之前**已经推送过**的全部工作，但它们不再
+属于任何提交。若照常 `git add -A && git commit`，这些已推送的内容会被**再次**
+吸进一个新提交，与远端分叉——历史变成"一个巨型提交包住所有事"，且后续 push
+会撞 non-fast-forward 被拒。
+
+### 每轮开工先检测
+
+```bash
+git fetch origin <branch> -q
+git rev-parse --short HEAD FETCH_HEAD
+git merge-base --is-ancestor FETCH_HEAD HEAD && echo "正常" || echo "已分叉，先对齐"
+```
+
+顺带确认**运行环境**也一起被重置了：pip 装过的包（如 pytest）会消失，
+跑测试前先 `python3 -m pytest --version`，没有就重装。
+
+### 对齐步骤
+
+1. **比对内容**，判断工作区与远端是否一致：
+   ```bash
+   git diff FETCH_HEAD --stat                  # 已跟踪文件的差异
+   git status --porcelain | grep "^??"         # 未跟踪文件（远端可能已有）
+   ```
+   对未跟踪文件要逐个比对内容（`diff <(git show FETCH_HEAD:<路径>) <路径>`），
+   不能只看文件名。
+2. **内容完全一致** → `git reset --hard FETCH_HEAD`。不丢任何东西，因为内容相同。
+3. **工作区有新的未提交改动** → 用 `--soft` 保住它们：
+   ```bash
+   git reset --soft FETCH_HEAD      # HEAD 移到远端，改动留在暂存区
+   git diff --cached --stat         # 此时看到的正是"本轮净改动"
+   ```
+   再按逻辑分组 `git add` 提交（不要一次 `git add -A`，否则又合成一个巨型提交）。
+
+### 预防
+
+- **每轮结束必须 commit + push**（同《实验灾备协议》）。
+- push 之后**立刻核对**：`git rev-parse HEAD` 必须等于 `git rev-parse FETCH_HEAD`。
+  只看到 "To https://..." 的输出不足以确认——曾出现过 push 报了输出但实际未生效、
+  直到下次 fetch 才发现分叉的情况。
+
+---
+
 ## 死锁判卫冕 = 模拟器兜底，不是规则
 
 **DM 质疑**：「死锁是什么东西？我可不记得我有规则提到过这个东西。」——质疑成立。
