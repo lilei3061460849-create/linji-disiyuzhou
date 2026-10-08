@@ -8,6 +8,7 @@
 那一句折叠载入（存量书不至于读不出来），**写入**一律走新的单句格式。
 """
 from __future__ import annotations
+from .rules_source import lethal_events
 
 import re
 from pathlib import Path
@@ -26,13 +27,17 @@ SECTION_HEADER = "## 遗言"
 EMPTY_MARK = "当前没有遗言。"
 
 # 可扩展草稿表：新增死因只需加一条，流程代码不用改。
+# 可扩展草稿表：新增死因只需加一条，流程代码不用改。
+# 2026-10-08：致死类特殊事件（迷失/癌变/凡庸）的文案不再是本地常量，事实源移到
+# data/rules/lethal_events.toml（各自条目的 death_cause_text），与引擎阈值、
+# 进度格式串同源——改一处即可，三处（引擎行为/面板进度/死因文案）跟着变。
 CAUSE_DRAFTS: dict[str, dict[str, str]] = {
     "attack": {"text": "受到致死攻击命零"},
-    "collapse": {"text": "异变叠满迷失命零"},
-    "mediocrity": {"text": "连续五回合触发凡庸"},
+    "collapse": {"text": lethal_events.death_cause_text("mishi")},
+    "mediocrity": {"text": lethal_events.death_cause_text("fanyong")},
     "duel": {"text": "最终死斗落败"},
     "bleed": {"text": "代价流血导致命零"},
-    "cancer": {"text": "回复过量触发癌变"},
+    "cancer": {"text": lethal_events.death_cause_text("aibian")},
     "echo_error": {"text": "回音长廊安魂曲", "title": "错误遗言"},
 }
 

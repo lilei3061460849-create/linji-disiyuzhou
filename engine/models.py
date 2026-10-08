@@ -2,6 +2,7 @@
 核心数据模型
 """
 from __future__ import annotations
+from .rules_source import lethal_events
 from dataclasses import dataclass, field
 from typing import Optional, Any
 import math
@@ -594,12 +595,15 @@ class Entity:
         
         return detail
     
-    MUTATION_COLLAPSE_THRESHOLD = 50  # 特殊事件【迷失】阈值：异变达到50层触发；怪物仍直接命零，非怪物见 add_mutation 注释
+    # 2026-10-08 起：这三个阈值的**事实源在 data/rules/lethal_events.toml**，
+    # 经 engine/rules_source.py 在 import 时载入。保留成类属性是为了让全仓库
+    # 那几十处 `Entity.MUTATION_COLLAPSE_THRESHOLD` 的写法一个都不用改——
+    # 改规则现在只动 toml，这里不再是数字的家。
+    MUTATION_COLLAPSE_THRESHOLD = lethal_events.threshold("mishi")  # 【迷失】：异变达到 50 层触发
     # 2026-09-17 用户令：[员工]出场并存活满这么多场战斗即转为[朋友]（唯一事实源）。
     EMPLOYEE_PROMOTION_BATTLES = 3
-    # 致死类特殊事件的阈值（唯一事实源；CombatEngine 的同名量一律引用这里，禁止各写一份）：
-    CANCER_HEAL_MULTIPLIER = 2.0  # 【癌变】：本场累计受到的回复量 ≥ 血限×该系数 即命零
-    MEDIOCRITY_ROUNDS = 5         # 【凡庸】：连续 N 回合未出手、或连续 N 回合未使敌对角色掉血 即命零
+    CANCER_HEAL_MULTIPLIER = lethal_events.threshold_multiplier("aibian")  # 【癌变】：本场累计回复量 ≥ 血限×该系数 即命零
+    MEDIOCRITY_ROUNDS = lethal_events.threshold("fanyong")  # 【凡庸】：连续 N 回合未出手、或连续 N 回合未使敌对角色掉血 即命零
 
     def lethal_counters(self) -> dict:
         """致死类特殊事件的进度：{名称: (当前值, 阈值)}。
@@ -619,16 +623,25 @@ class Entity:
             out["癌变"] = (int(self.total_healed),
                            int(math.ceil(self.blood_limit * self.CANCER_HEAL_MULTIPLIER)))
         if self.no_action_rounds or self.no_damage_rounds:
+            # 显示键来自 data/rules/lethal_events.toml 的 progress_keys（[0]=未出手，[1]=未致敌掉血）
+            keys = lethal_events.progress_keys("fanyong") or ["凡庸·未出手", "凡庸·未致敌掉血"]
             if self.no_action_rounds >= self.no_damage_rounds:
-                out["凡庸·未出手"] = (int(self.no_action_rounds), int(self.MEDIOCRITY_ROUNDS))
+                out[keys[0]] = (int(self.no_action_rounds), int(self.MEDIOCRITY_ROUNDS))
             else:
-                out["凡庸·未致敌掉血"] = (int(self.no_damage_rounds), int(self.MEDIOCRITY_ROUNDS))
+                out[keys[1]] = (int(self.no_damage_rounds), int(self.MEDIOCRITY_ROUNDS))
         return out
 
     def lethal_progress(self) -> list[str]:
-        """致死进度的显示串，例如 ['迷失（10/50）', '癌变（30/84）']。"""
-        return [f"{name}（{current}/{limit}）"
-                for name, (current, limit) in self.lethal_counters().items()]
+        """致死进度的显示串，例如 ['迷失（10/50）', '癌变（30/84）']。
+
+        格式串的事实源在 data/rules/lethal_events.toml 的 progress_format，
+        不再在这里写死「（{}/{})」的括号样式。
+        """
+        out = []
+        for name, (current, limit) in self.lethal_counters().items():
+            fmt = lethal_events.by_name(name)["progress_format"]
+            out.append(fmt.format(name=name, current=current, limit=limit))
+        return out
 
     def add_mutation(self, layers: int) -> dict:
         """增减异变层数。正值累加，负值削减，可降到负数。
