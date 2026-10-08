@@ -186,8 +186,13 @@ class MonsterPhaseMixin:
                     # 2026-09-16 用户令：面板不写死 X 时，X 由发动方自选，
                     # 「上限只受法限或者代价限制」。这里探出可负担上限，
                     # 连 X=1 都付不起 → 本道纹此刻不可发动，prepare 过滤。
+                    # 探测只用 X 取代价类型（冷却与否与 X 无关），但 X 不能低于该道纹的
+                    # 下限——否则【波及】这类 X_MIN=2 的道纹会在 X_MIN 守卫之前就抛
+                    # 「X=1低于下限」，整个 prepare 直接崩（实测 test_wave_* 就是这样挂的）。
+                    _probe_x = max(1, DaoWenEngine.X_MIN.get(effective_name, 1))
                     cooldown_limited = (
-                        DaoWenEngine.resolve(effective_name, 1, target=preview_target, caster=monster)
+                        DaoWenEngine.resolve(effective_name, _probe_x,
+                                             target=preview_target, caster=monster)
                         .get("cost_type") == "冷却")
                     if cooldown_limited:
                         # 怪物不得把冷却型道纹的 X 调大来延长战斗控制效果。
@@ -212,6 +217,17 @@ class MonsterPhaseMixin:
                                 and monster.shards < 5 * inst.x_value):
                             continue
                         effective_x = inst.x_value
+                    # 【波及】实际标得到的目标数 = min(面板X, 合法目标数)（DM裁定
+                    # 2026-08-23 自适应降 X）。2026-10-03 用户令加了 X 下限=2：
+                    # 降完不足 2 个时本道纹**此刻不可发动**，必须过滤掉，不能把
+                    # X=1 透进 resolve（会抛「X=1低于下限波及≥2」，实测 prepare
+                    # 整个崩掉）。上面 x_free 分支已用 max_x 判过同一条件，这里
+                    # 补的是固定 X 分支——此前两个分支不一致。
+                    # 注意只用于过滤，不改 effective_x：面板 x 仍是展示口径。
+                    if effective_name == "波及":
+                        if min(effective_x, len(dodge_target_options)) < \
+                                DaoWenEngine.X_MIN.get(effective_name, 1):
+                            continue
                     preview_calc = DaoWenEngine.resolve(
                         effective_name, effective_x, target=preview_target, caster=monster)
                     if not self._monster_can_pay_calc_cost(monster, preview_calc):
@@ -372,8 +388,12 @@ class MonsterPhaseMixin:
         # 2026-09-16 用户令：面板未写死 X（x_free）时，X 由发动方在提交里自选，
         # 「上限只受法限或者代价限制」——这里按 prepare 同一口径重新探一次上限并校验，
         # 防止提交方给出此刻已付不起的 X（资源在 prepare 之后可能已被消耗）。
+        # 与 prepare 侧（见上方同名探测）同一处坑：探测只能用「不低于该道纹下限」
+        # 的 X，否则【波及】这类 X_MIN=2 的道纹会在 X_MIN 守卫之前抛「X=1低于下限」，
+        # 把整个 resolve 打成 recoverable 错误（实测 r01_r38/wave 三处用例挂在这里）。
+        _probe_x = max(1, DaoWenEngine.X_MIN.get(effective_name, 1))
         cooldown_limited = (
-            DaoWenEngine.resolve(effective_name, 1, target=target, caster=monster)
+            DaoWenEngine.resolve(effective_name, _probe_x, target=target, caster=monster)
             .get("cost_type") == "冷却")
         if cooldown_limited:
             effective_x = 1  # 怪物冷却代价类道纹 X≤1（规则正文·怪物准则5）
