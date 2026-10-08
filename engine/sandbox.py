@@ -148,6 +148,13 @@ def snapshot_engine_side(engine: Any) -> dict:
         "runtime_absent": tuple(k for k in COMBAT_RUNTIME_ATTRS
                                 if not hasattr(combat, k)),
         "pending_interrupts": copy.deepcopy(engine._pending_interrupts),
+        # 【重来本场】的战始快照。沙盒目前不会执行 battle_start（预览只用
+        # consume_item / use_daowen / use_resonance / resolve_monster_phase），
+        # 但"现在不会"不等于"永远不会"——一旦有人在沙盒里预览战始，这个字段
+        # 就会被整体替换，真实引擎的重来目标随之被污染。存引用即可，因为
+        # _action_battle_start 是整体重新赋值、从不在原对象上就地改写；
+        # 若在此 deepcopy，AI 预览循环每步都要多拷一份 state，明显拖慢。
+        "battle_restart_snapshot": getattr(engine, "_battle_restart_snapshot", None),
         "action_history_len": len(engine._action_history),
         "last_result": engine._last_result,
         # 事件池的「已触发集合 + 当前待结算事件」：结算事件的选项会写这两项，
@@ -181,6 +188,7 @@ def restore_engine_side(engine: Any, token: dict) -> None:
         else:
             setattr(combat, key, value)
     engine._pending_interrupts = token["pending_interrupts"]
+    engine._battle_restart_snapshot = token.get("battle_restart_snapshot")
     del engine._action_history[token["action_history_len"]:]
     engine._last_result = token["last_result"]
     combat.resolution.restore(token["resolution"])

@@ -1866,15 +1866,25 @@ class GameEngine:
         required = definition.get("required_daowen")
         trigger = definition.get("trigger_condition")
         flow = definition.get("effect_flow")
-        if (not isinstance(name, str) or not name.strip()
-                or (name in self.SPELL_REGISTRY and not allow_predefined)
-                or any(spell.name == name for spell in actor.spells)
-                or not isinstance(required, list) or not required
-                or len(set(required)) != len(required)
-                or any(daowen not in actor.dao_wen for daowen in required)
-                or not isinstance(trigger, str) or not trigger.strip()
-                or not isinstance(flow, str) or not flow.strip()):
+        # 逐条校验而不是合成一个大判断：合一之后只能给出一句笼统的
+        # 「需唯一名称、至少一种自身已持有道纹、触发条件和效果流程」，玩家（和 AI）
+        # 看不出到底缺哪条道纹——定义预置法术时这是最常见的一条失败路径。
+        if not isinstance(name, str) or not name.strip():
             return {"error": "自创法术需唯一名称、至少一种自身已持有道纹、触发条件和效果流程"}
+        if name in self.SPELL_REGISTRY and not allow_predefined:
+            return {"error": f"名称【{name}】与法术大全已有法术重名，请换一个"}
+        if any(spell.name == name for spell in actor.spells):
+            return {"error": f"法术【{name}】已经定义"}
+        if not isinstance(required, list) or not required:
+            return {"error": "自创法术需至少一种自身已持有道纹"}
+        if len(set(required)) != len(required):
+            return {"error": "自创法术的所需道纹不可重复"}
+        missing = [d for d in required if d not in actor.dao_wen]
+        if missing:
+            return {"error": f"自创法术缺少所需道纹：{'、'.join(missing)}（须自身已持有）"}
+        if (not isinstance(trigger, str) or not trigger.strip()
+                or not isinstance(flow, str) or not flow.strip()):
+            return {"error": "自创法术需触发条件和效果流程"}
         # 句式校验：提交时就必须能被完整解析，解析失败直接拒绝并附带具体原因，
         # 禁止"定义成功但因文本对不上而永远不触发"的静默哑火。已持有道纹之外
         # 引用的道纹同样在此处一并拒绝。

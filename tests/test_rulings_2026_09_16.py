@@ -70,19 +70,38 @@ def test_true_rejection_counts_match_documented_numbers():
 # ========================================================================
 
 def test_dungeon_daowen_are_documented_in_rules_text():
-    """24 种副本专属道纹必须在正文「副本专属道纹」小节有条文。"""
-    lines = open("AI_EXPERIENCE.md", encoding="utf-8").read().split("\n")
+    """副本专属道纹必须在正文「副本专属道纹」小节有条文。
+
+    期望名单**取自引擎**（engine/gamedata.py::REGION_EXCLUSIVE_DAOWEN），
+    不在测试里抄一份。抄名单的代价是每次增删道纹都得同步改测试，改漏了就是
+    假失败——本用例实际挂了很久，两个原因都出在"抄"上：
+      * 2026-10-03 删【爆裂】【活血】【尸爆】、2026-10-08 删【镇尸】后，
+        名单里还留着这些已删道纹，正文当然查不到；
+      * 2026-10-07 规则正文由 AI_EXPERIENCE.md 迁到 README.md，用例还读旧文件，
+        直接 StopIteration。
+    改成从引擎取名单后，增删道纹只需改引擎与正文，用例自动跟随。
+    """
+    from engine.gamedata import REGION_EXCLUSIVE_DAOWEN
+
+    lines = open("README.md", encoding="utf-8").read().split("\n")
     start = next(i for i, line in enumerate(lines)
                  if line.startswith("### 副本专属道纹"))
     end = next(i for i, line in enumerate(lines)
                if i > start and line.startswith("### "))
     section = "\n".join(lines[start:end])
-    for name in ("变形", "定型", "搏命", "超频", "坏死", "爆裂", "退化",
-                 "点金", "抵扣", "清算", "赎金", "赌命", "消灾",
-                 "龙鳞", "逆鳞", "活血", "裂变", "嫁祸",
-                 # 2026-10-08 用户令删【镇尸】（与【坏死】硬重复）
-                 "尸爆", "瓦解", "冥气", "勾魂", "招魂"):
+
+    expected = sorted({name for names in REGION_EXCLUSIVE_DAOWEN.values()
+                       for name in names})
+    assert expected, "引擎没有登记任何副本专属道纹，名单来源可能已改名"
+    for name in expected:
         assert f"【{name}】" in section, f"正文缺少副本道纹【{name}】"
+
+    # 已删除的道纹不得以**生效条文**的形式残留：删除注记（- ~~【X】~~）允许保留，
+    # 但活条文会让人以为它还能用。
+    for name in ("镇尸", "尸爆", "爆裂", "活血"):
+        live = [ln for ln in section.split("\n")
+                if f"【{name}】" in ln and not ln.lstrip().startswith("- ~~")]
+        assert not live, f"已删除的【{name}】在正文中仍是生效条文: {live}"
 
 
 # ========================================================================
