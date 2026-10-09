@@ -378,7 +378,9 @@ class DamageDeathMixin:
         source: Optional[Entity], damage_ctx: EffectContext, legacy_ctx: bool,
     ) -> dict:
         amount = self.hook_manager.apply_multiplier_adjust(target, amount, damage_type, source, self.state)
-        amount = self._incoming_adjust(target, amount, damage_type)
+        # 招架属于受击姿态资源，仍在格挡之前卸力；道纹持续状态则在格挡
+        # 之后一起进入同一 X 排序窗口（由 take_damage 的 status_adjuster 调用）。
+        amount = self._apply_parry_reduction(target, amount, damage_type)
         # 癫狂之脑（通用遗物池，2026-10-03 新增）：你受到的**攻击伤害**翻倍。
         # 只翻攻击行动造成的伤害（subtype=attack；含被万钧印改道的自攻）；
         # 道纹/代价/直接失血不受影响。倍率发生在格挡/护盾之前，故本次伤害的
@@ -424,16 +426,33 @@ class DamageDeathMixin:
                     "damage_type": damage_type, "qianjingjia_suppress": True,
                 }, damage_ctx, legacy_ctx)
 
-        # 3. 濒死伤害拦截与保护 (撤退 / 负岳碑 / 断尾求生)
-        mitigation = self.hook_manager.apply_mitigation(target, amount, damage_type, self)
-        if mitigation is not None:
-            return self._attach_damage_context(mitigation, damage_ctx, legacy_ctx)
-
-        # 4. 基础扣血。贯穿：你造成的伤害（任意通道）无视格挡；代价仍按代价结算。
+        # 3. 基础扣血。贯穿：你造成的伤害（任意通道）无视格挡；代价仍按代价结算。
         apply_type = damage_type
         if (source is not None and damage_type != "代价"
                 and hasattr(source, "has_status") and source.has_status("贯穿")):
             apply_type = "无视格挡"
+
+        # 4. 濒死伤害拦截与保护 (撤退 / 负岳碑 / 断尾求生)。保护需要看到
+        # 真正会落地的数值，故在不修改实体的前提下预演一次「格挡→持续状态
+        # X 排序」；真实扣血时 take_damage 会按同一函数再结算一次。
+        if apply_type == "无视格挡" or damage_type == "代价":
+            preview_after_shield = amount
+        else:
+            preview_after_shield = max(0, amount - getattr(target, "shield", 0))
+        preview_adjusted = (
+            self.hook_manager.apply_incoming_adjust(
+                target, preview_after_shield, apply_type, source, self.state)
+            if preview_after_shield > 0 and damage_type != "代价"
+            else preview_after_shield
+        )
+        # LethalMitigationHook 自己按传入 type 处理格挡；normal 情况补回护盾
+        # 即可让它看到同一份 post-shield/post-status 的剩余伤害。
+        mitigation_input = (preview_adjusted if apply_type == "无视格挡"
+                            else preview_adjusted + getattr(target, "shield", 0))
+        mitigation = self.hook_manager.apply_mitigation(target, mitigation_input, apply_type, self)
+        if mitigation is not None:
+            return self._attach_damage_context(mitigation, damage_ctx, legacy_ctx)
+
         # ---- 「受到伤害前 / 失去生命前」自动反应窗口（非攻击伤害） ----
         # 攻击路径（resolve_attack）由显式反应窗口结算，此处跳过以免双发；只有
         # 非攻击伤害（道纹/反噬等）才在这里自动触发，且无需逐个效果开窗。
@@ -454,12 +473,14 @@ class DamageDeathMixin:
                     reaction_logs.extend(life_before)
                 if source is not None and not source.is_alive:
                     amount = 0
-        # 【第一杯】：持有者失去的生命翻倍。倍率在这里注入（格挡与压帽在
-        # take_damage 内部先结算），因此盾的吸收量不变、只有真正落地的生命损失翻倍，
-        # 且 detail["actual_damage"]/失血总账/命零判定全部拿到同一个数值。
+        # 【第一杯】：持有者失去的生命翻倍。倍率在这里注入；take_damage 先让
+        # 格挡吸收，再把仍存在的伤害交给全局持续状态排序器，最后才放大真正
+        # 落地的生命损失。状态区内部不会因中间归零而短路。
         detail = target.take_damage(
             amount, apply_type,
-            life_loss_multiplier=self.state.life_loss_multiplier(target))
+            life_loss_multiplier=self.state.life_loss_multiplier(target),
+            status_adjuster=lambda remaining: self.hook_manager.apply_incoming_adjust(
+                target, remaining, apply_type, source, self.state))
         self._attach_damage_context(detail, damage_ctx, legacy_ctx)
         actual = detail.get("actual_damage", 0)
         # 活血衣（通用遗物池，2026-10-03 出自被删【活血】道纹）：受到攻击伤害后，

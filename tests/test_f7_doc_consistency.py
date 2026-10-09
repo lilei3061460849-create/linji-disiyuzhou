@@ -1,6 +1,6 @@
 """
 F7 验证：文档一致性（全程自动触发 + 命名漂移 + engine/README 复审）
-- 正常：README 流程五章列表与规则正文（AI_EXPERIENCE.md）特殊事件节 14 项对齐
+- 正常：推演规范「五、全程自动触发」列表与规则正文特殊事件节 14 项对齐
 - 边界：活跃代码层（engine/*.py, sim/*.py, tests/*.py）不再出现中文“增生”，仅允许在废弃别名注释中出现
 - 边界（2026-10-08）：规则正文与引擎文案不再出现“迷失”，已统一为“迷失”
 - 错误：对旧名“增生”的显式调用应被拒绝或不存在
@@ -9,12 +9,11 @@ F7 验证：文档一致性（全程自动触发 + 命名漂移 + engine/README 
 import pathlib
 import re
 
-def test_normal_readme_auto_trigger_list():
-    readme = pathlib.Path("README.md").read_text(encoding="utf-8")
-    # 规则正文唯一事实源在 README（文档分工见 AI_EXPERIENCE.md「文档分工与事实源」）。
-    rules = readme
-    # 找到 五、全程自动触发 段
-    m = re.search(r"五、全程自动触发[^\n]*\n([^\n]+)", readme)
+def test_normal_auto_trigger_list_matches_rules_text():
+    rules = pathlib.Path("规则正文.md").read_text(encoding="utf-8")
+    playbook = pathlib.Path("推演规范.md").read_text(encoding="utf-8")
+    # 精确规则事实源在规则正文；流程的「五、全程自动触发」清单在推演规范。
+    m = re.search(r"五、全程自动触发[^\n]*\n([^\n]+)", playbook)
     assert m, "未找到 五、全程自动触发 段"
     line = m.group(1)
     # 必须包含 凡庸 / 癌变 / 迷失（本次 F7 补漏的三项；2026-10-08 迷失统一为迷失）
@@ -27,9 +26,9 @@ def test_normal_readme_auto_trigger_list():
     # 验证特殊事件节的标题与五章一致（不校验数量，仅校验关键词存在）
     assert "凡庸（任一角色连续五回合" in rules
     assert "多个角色触发凡庸时，非轮回者优先触发" in rules
-    assert "初始道纹发现：候选〔甲、乙、丙〕→选择【所选】" in readme
-    assert "遗物发现：候选〔甲、乙、丙〕→选择【所选】" in readme
-    assert "禁止只写选择结果" in readme
+    assert "初始道纹发现：候选〔甲、乙、丙〕→选择【所选】" in playbook
+    assert "遗物发现：候选〔甲、乙、丙〕→选择【所选】" in playbook
+    assert "禁止只写选择结果" in playbook
     assert "癌变（任一角色在本场战斗内累计受到回复" in rules
     assert "累计回复属于局内减益追踪，[战终]清零" in rules
     assert "迷失（任一角色【异变】达到" in rules
@@ -121,7 +120,7 @@ def test_boundary_bengjie_term_retired_in_favour_of_mishi():
     旧称二字在下方拼接成串，避免本文件被同类批量改名再次误伤。
     """
     retired = "崩" + "解"
-    for rel in ("README.md",):
+    for rel in ("规则正文.md", "推演规范.md"):
         text = pathlib.Path(rel).read_text(encoding="utf-8")
         assert retired not in text, f"{rel} 仍出现旧称“{retired}”，应统一为“迷失”"
         assert "迷失" in text, f"{rel} 应已改用“迷失”"

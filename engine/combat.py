@@ -206,15 +206,17 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                         amount: int = 0, damage_type: str = "") -> list:
         """宣布一个管线相位时点（机制系统，通用分发，不含任何机制判断）。
 
-        已注册的相位机制按 priority 升序执行；返回值是各机制的报告条目
-        （由调用点并入 effects/战报，保证报告与迁移前一致）。
+        同一实体/相位的持续状态机制按「发动 X 降序、同 X 施加先后」执行；
+        无状态锚点的遗物/系统机制才使用静态 priority 后备。自然相位本身并不
+        倒流。返回值是各机制的报告条目（由调用点并入 effects/战报）。
 
         调用约定：管线只负责"在既有语义位置上宣布时点"，具体机制逻辑
         全部在声明层（engine/mechanisms/）。当前接线相位：
         INCOMING_ADJUST（Hook 路径）与 ROUND_START（本方法）。
         """
         results = []
-        for mechanism in MECHANISMS.phase_mechanisms(phase):
+        mechanisms = MECHANISMS.phase_mechanisms(phase)
+        for mechanism in sorted(mechanisms, key=lambda item: item.ordering_key(target)):
             ctx = TriggerContext(combat=self, state=self.state, phase=phase,
                                  target=target, source=source,
                                  amount=amount, damage_type=damage_type)
@@ -227,27 +229,35 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         return results
 
     def _dispatch_phase_all(self, phase: str, entities: list) -> list:
-        """相位分发（机制优先）：每个机制按 priority 对**全部实体**结算完，再轮到下一个。
+        """全场相位分发：同一待结算窗口按统一状态排序，而非旧机制优先循环。
 
-        与 `_dispatch_phase`（实体优先，逐实体跑全部机制）的区别只在遍历次序：
-        【逼债/清算/赌命】的旧实现是「逼债全体 → 清算全体 → 赌命全体」，用实体优先
-        分发会变成「逼债甲→清算甲→赌命甲→逼债乙…」，顺序即规则，故单列本方法。
-        调用点必须与旧内嵌块位置逐字对齐（见 Phase.ROUND_START_SETTLE 的锚点注释）。
+        自然时机仍由调用点锚定（例如回始·全场结算）；进入该窗口后，带状态
+        锚点的效果不论来自哪个实体均按发动 X、同 X 施加先后排列。遗物、账本等
+        无状态锚点才保留 priority/实体列表顺序作为稳定后备。
         """
         results = []
-        for mechanism in MECHANISMS.phase_mechanisms(phase):
-            for entity in entities:
-                ctx = TriggerContext(combat=self, state=self.state, phase=phase, target=entity)
-                if mechanism.condition is not None and not mechanism.condition(ctx):
-                    continue
-                targets = mechanism.target.select(ctx) if mechanism.target is not None else []
-                result = mechanism.effect(ctx, targets)
-                if result is None:
-                    continue
-                if isinstance(result, list):
-                    results.extend(result)     # 一次结算多笔账目 → 多条报告条目
-                else:
-                    results.append(result)
+        # 这里的实体×机制对会在同一个全场自然窗口内待结算；扁平化后才能让
+        # 不同实体上的持续状态也遵守同一套 X/施加先后规则，而不是被旧的
+        # 「一个机制跑完整个全场」循环人为隔开。没有状态锚点的账本/遗物仍按
+        # 原 priority，再按实体列表顺序稳定落位。
+        pending = [
+            (mechanism, entity, entity_index)
+            for mechanism in MECHANISMS.phase_mechanisms(phase)
+            for entity_index, entity in enumerate(entities)
+        ]
+        pending.sort(key=lambda row: (*row[0].ordering_key(row[1]), row[2]))
+        for mechanism, entity, _ in pending:
+            ctx = TriggerContext(combat=self, state=self.state, phase=phase, target=entity)
+            if mechanism.condition is not None and not mechanism.condition(ctx):
+                continue
+            targets = mechanism.target.select(ctx) if mechanism.target is not None else []
+            result = mechanism.effect(ctx, targets)
+            if result is None:
+                continue
+            if isinstance(result, list):
+                results.extend(result)     # 一次结算多笔账目 → 多条报告条目
+            else:
+                results.append(result)
         return results
 
     def _battle_delta(self, entity: Entity, field_name: str, delta: int,

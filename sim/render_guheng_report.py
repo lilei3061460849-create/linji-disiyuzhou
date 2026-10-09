@@ -37,7 +37,7 @@ def main():
     lines.append("# 报告")
     lines.append("")
     lines.append("> 本文件只保留最新一次轮回记录（顾衡·扭曲都市·种子%d，修复后重跑）。" % log["seed"])
-    lines.append("> 战报只保留后台数据，不含叙事；格式遵循 README《六、战斗推演格式》。")
+    lines.append("> 战报只保留后台数据，不含叙事；格式遵循 推演规范《六、战斗推演格式》。")
     lines.append("> 不得用 sim/pick_best_report.py 等批量工具覆盖本文件。")
     lines.append("> 原手操战报中顾衡第 6 场死于「冲击触发场上【爆裂】反噬」（39HP + 双爆裂 + "
                  "冲击4(借力2) → 48 反噬命零）——该死因已由 **AI 行动预演安全层** 修复："

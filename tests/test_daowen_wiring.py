@@ -93,7 +93,8 @@ def test_boba_spreads_damage_equally_with_random_remainder():
     foe_b = _monster(engine, "靶怪乙", hp=100, atk=3, ap=6)
     engine.execute_action("round_start", {})
     refs = engine.combat._combat_entity_refs()
-    # 2026-10-03 用户令：波及 X 下限=2 → 想标记「敌1」必须同时提交第2个目标（这里连敌0一起标）
+    # 波及 X=2：恰好提交 2 个目标（想标记「敌1」须同时提交第2个目标，这里连敌0一起标；
+    # 2026-10-09 起 X 下限 repealed，X=1 也合法——单目标全值）
     r = engine.execute_action("use_daowen", {
         "daowen_name": "波及", "x": 2,
         "dodge_targets": [{"target_ref": "enemy:0", "dodge": False, "blood_shadow": False},

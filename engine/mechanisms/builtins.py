@@ -28,7 +28,7 @@ import math
 from ..combat_events import CombatEventType
 from ..models import StatusEffect
 from .conditions import (
-    all_, amount_positive, any_, damage_type_not, entity_type, has_status, is_alive,
+    all_, any_, damage_type_not, entity_type, has_status, is_alive,
     not_, relic_active,
 )
 from .registry import MECHANISMS, Mechanism
@@ -45,9 +45,14 @@ def _jiahai_effect(ctx: TriggerContext, targets: list) -> dict:
 
 
 def _longlin_effect(ctx: TriggerContext, targets: list) -> dict:
-    """旧 LonglinHook 语义：max(0, amount - status_value)（value 缺失按 0）。"""
+    """龙鳞：max(0, amount - status_value)。0 仍须留给后续状态继续调整。"""
     value = ctx.target.get_status_value("龙鳞") or 0
     return {"amount": max(0, ctx.amount - value)}
+
+
+def _guzhi_effect(ctx: TriggerContext, targets: list) -> dict:
+    """固执：本次伤害至多失去 1 点生命（代价区外）。"""
+    return {"amount": min(ctx.amount, 1)}
 
 
 def _ziyu_effect(ctx: TriggerContext, targets: list) -> dict:
@@ -84,12 +89,13 @@ JIAHAI = Mechanism(
     when=Trigger.phase(Phase.INCOMING_ADJUST),
     effect=_jiahai_effect,
     target=TARGET,
+    status_name="加害",
     condition=all_(
-        amount_positive(),          # amount > 0
         damage_type_not("代价"),    # 代价伤害不受增幅
         has_status("加害", of="target"),
     ),
-    priority=20,                    # 原 JiahaiHook.priority = 20，不得调整
+    # 只作没有状态元数据时的兼容后备；真实结算使用状态的 ordering_key。
+    priority=20,
 )
 
 LONGLIN = Mechanism(
@@ -97,12 +103,25 @@ LONGLIN = Mechanism(
     when=Trigger.phase(Phase.INCOMING_ADJUST),
     effect=_longlin_effect,
     target=TARGET,
+    status_name="龙鳞",
     condition=all_(
-        amount_positive(),          # amount > 0
-        damage_type_not("代价"),    # 代价伤害不受减免（代价绝对无法被格挡吸收的同族语义）
+        damage_type_not("代价"),    # 代价不受减免
         has_status("龙鳞", of="target"),
     ),
-    priority=30,                    # 原 LonglinHook.priority = 30，不得调整（须后于加害）
+    priority=30,
+)
+
+GUZHI = Mechanism(
+    name="固执",
+    when=Trigger.phase(Phase.INCOMING_ADJUST),
+    effect=_guzhi_effect,
+    target=TARGET,
+    status_name="固执",
+    condition=all_(
+        damage_type_not("代价"),
+        has_status("固执", of="target"),
+    ),
+    priority=40,
 )
 
 def _gangpailing_effect(ctx: TriggerContext, targets: list) -> str:
@@ -127,6 +146,7 @@ ZIYU = Mechanism(
     when=Trigger.phase(Phase.ROUND_START),
     effect=_ziyu_effect,
     target=SELF,
+    status_name="自愈",
     condition=all_(
         has_status("自愈", of="self"),
         # 坏死禁疗。2026-10-08 用户令删【镇尸】（与坏死硬重复）后，
@@ -225,6 +245,7 @@ DONGCHA = Mechanism(
     when=Trigger.phase(Phase.ROUND_START),
     effect=_dongcha_effect,
     target=SELF,
+    status_name="洞察",
     condition=all_(
         _has_dongcha_pending,
         entity_type("轮回者", of="self"),
@@ -256,6 +277,7 @@ JIBIAN_MARKER = Mechanism(
     when=Trigger.phase(Phase.ROUND_START),
     effect=_jibian_marker_effect,
     target=SELF,
+    status_name="畸变",
     condition=has_status("畸变", of="self"),
     # 旧位置=回始效果循环第六位（最后一位）
     priority=60,
@@ -283,6 +305,8 @@ XIJIE_PASSIVE = Mechanism(
     when=Trigger.event(CombatEventType.DAMAGE_APPLIED),
     effect=_xijie_passive_effect,
     target=None,
+    status_name="洗劫",
+    status_owner="source",
     condition=has_status("洗劫", of="source"),
     # 旧位置=DAMAGE_APPLIED 发出点（伤害管线 emit 之后），事件机制在此同步执行
     priority=10,
@@ -368,6 +392,7 @@ SHUAIBAI = Mechanism(
     when=Trigger.phase(Phase.ROUND_START),
     effect=_shuaibai_effect,
     target=SELF,
+    status_name="衰败",
     condition=all_(
         has_status("衰败", of="self"),
         is_alive(of="self"),
@@ -404,6 +429,7 @@ JIBIAN_SETTLE = Mechanism(
     when=Trigger.phase(Phase.ROUND_END),
     effect=_jibian_settle_effect,
     target=SELF,
+    status_name="畸变",
     condition=all_(
         has_status("畸变", of="self"),
         is_alive(of="self"),
@@ -512,6 +538,7 @@ BIZHAI_SETTLE = Mechanism(
     when=Trigger.phase(Phase.ROUND_START_SETTLE),
     effect=_bizhai_effect,
     target=SELF,
+    status_name="逼债",
     # 旧实现按“账本是否有账”判定（不看状态：挂账在先、状态只是持续期标记），
     # 故这里 condition=None，由 effect 读账本自判——账空即无报告条目。
     condition=None,
@@ -523,6 +550,7 @@ QINGSUAN_SETTLE = Mechanism(
     when=Trigger.phase(Phase.ROUND_START_SETTLE),
     effect=_qingsuan_effect,
     target=SELF,
+    status_name="清算",
     condition=None,  # 旧实现按“是否有账”判定，账在状态在；无账即无报告条目
     priority=20,
 )
@@ -532,6 +560,7 @@ DUMING_SETTLE = Mechanism(
     when=Trigger.phase(Phase.ROUND_START_SETTLE),
     effect=_duming_effect,
     target=RANDOM_ALL,   # RNG 目标选择（流名 赌命_r{回合}，一次投掷、结果进战报）
+    status_name="赌命",
     condition=all_(has_status("赌命", of="self"), is_alive(of="self")),
     priority=30,
 )
@@ -556,6 +585,7 @@ BIZHAI_RECONCILE = Mechanism(
     when=Trigger.phase(Phase.ROUND_END_RECONCILE),
     effect=_bizhai_reconcile_effect,
     target=SELF,
+    status_name="逼债",
     condition=None,
     priority=10,     # 锚点：回终 status tick 之后（原「F2 清账」位置）
 )
@@ -565,6 +595,7 @@ QINGSUAN_RECONCILE = Mechanism(
     when=Trigger.phase(Phase.ROUND_END_RECONCILE),
     effect=_qingsuan_reconcile_effect,
     target=SELF,
+    status_name="清算",
     condition=None,
     priority=20,
 )
@@ -572,6 +603,7 @@ QINGSUAN_RECONCILE = Mechanism(
 
 MECHANISMS.register(JIAHAI)
 MECHANISMS.register(LONGLIN)
+MECHANISMS.register(GUZHI)
 MECHANISMS.register(ZIYU)
 MECHANISMS.register(GANGPAILING)
 MECHANISMS.register(SHUAIBAI)

@@ -23,8 +23,21 @@ class Mechanism:
     # 相位修正机制返回 {"amount": 新值} 或 int（新值）；事件机制返回值仅作记录。
     target: Any = None                # TargetSelector；None = 不产生目标（纯数值修正）
     condition: Optional[Callable[[TriggerContext], bool]] = None
-    priority: int = 100               # 数字小先执行。与 CombatHook.priority 同一套语义，顺序即规则。
+    priority: int = 100               # 没有持续状态排序锚点时的兼容后备顺序。
     needs_state: bool = False         # 需要按实体的机制自身状态时置 True
+    # 机制由某个持续状态发动/维持时，显式写其状态名。空串表示遗物或纯事件机制，
+    # 仍按 priority；不再从展示名猜测，避免「畸变·结算」等名字歧义。
+    status_name: str = ""
+    status_owner: str = "target"   # target | source；事件机制可由施放者身上的状态驱动
+
+    def ordering_key(self, entity) -> tuple:
+        """返回此机制在 entity 的当前自然结算窗口中的通用顺序键。"""
+        if self.status_name and entity is not None:
+            status = next((s for s in getattr(entity, "status_effects", ())
+                           if s.name == self.status_name and not s.is_expired), None)
+            if status is not None:
+                return (0, *status.ordering_key, self.priority, self.name)
+        return (1, self.priority, self.name)
 
     def __post_init__(self):
         if self.effect is None:
@@ -117,7 +130,25 @@ class MechanismHookAdapter:
             amount=amount, damage_type=damage_type,
         )
 
+    def incoming_status(self, target):
+        """返回本伤害机制对应的持续状态，供同窗口的统一 X 排序使用。"""
+        statuses = getattr(target, "status_effects", ()) if target is not None else ()
+        status_name = self.mechanism.status_name or self.mechanism.name
+        return next((status for status in statuses
+                     if status.name == status_name and not status.is_expired), None)
+
+    def incoming_order_key(self, target) -> tuple:
+        """活跃持续状态按发动 X 降序、同 X 按施加先后；静态 priority 仅为后备。"""
+        status = self.incoming_status(target)
+        if status is not None:
+            return (0, *status.ordering_key, self.priority)
+        return (1, self.priority, self.mechanism.name)
+
     def on_incoming_adjust(self, target, amount, damage_type, source, state):
+        # 负数不是一笔可调整的伤害；0 则可能是本窗口较早状态刚刚压出的
+        # 中间值，必须继续放行后续状态（由 HookManager 的正输入门槛保证）。
+        if amount < 0:
+            return amount
         mechanism = self.mechanism
         ctx = self._context(target, amount, damage_type, source, state)
         if mechanism.condition is not None and not mechanism.condition(ctx):

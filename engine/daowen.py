@@ -34,14 +34,9 @@ class DaoWenEngine:
         "急速", "加速", "眩晕", "洞察", "蒙蔽", "滋养", "衰败", "寄生",
     ]
 
-    # X下限规则（道纹名 → 最小可用X）。2026-10-03 用户令：**波及的数值下限改为 2**。
-    # 波及本体是「选择X个[目标]建立/解除波及效果，数值平分」：X=1 时既没有可平分的
-    # 对象，也和代价 2X 的最小可用档不符（旧行为允许 X=1，探针/怪物提交 1 个目标会
-    # 在 API 的 dodge_targets 校验处炸出「必须为1个目标显式提交」的假失败）。
-    # 引擎在此统一拦下；调用方（怪物 prepare / 探针 / AI）请读本表取最小X。
-    X_MIN = {
-        "波及": 2,
-    }
+    # 2026-10-09 用户令：**波及 X≥2 下限 repealed**——整套 X_MIN 装置拔除。
+    # 波及「选择X个[目标]建立/解除波及效果，数值平分」：X=1 完全合法，
+    # 平分份数=目标数，单目标时全值落于该目标（与多目标同一条分路，无特判）。
 
     # X上限规则（代价类型 → 最大值函数）
     X_LIMITS = {
@@ -1120,12 +1115,8 @@ class DaoWenEngine:
         # 先调用一次获取cost_type
         func = cls._registry[dao_wen_name]
 
-        # X下限（道纹特有的最小可用X，如【波及】≥2）：先于实算拦下，报错信息带下限。
-        x_min = cls.X_MIN.get(dao_wen_name, 0)
-        if x < x_min:
-            raise ValueError(
-                f"X={x}低于下限{dao_wen_name}≥{x_min}。道纹: {dao_wen_name}"
-            )
+        # 2026-10-09 用户令：波及 X≥2 下限 repealed——X_MIN 装置整套拔除，
+        # 不再有「低于下限」的拦截；波及 X=1 合法（单目标全值，见 daowen_effect 分路）。
 
         import inspect
         sig = inspect.signature(func)

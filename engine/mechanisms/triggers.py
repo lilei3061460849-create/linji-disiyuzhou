@@ -145,7 +145,12 @@ class TriggerBus:
                                   getattr(event.event_type, "name", event.event_type)):
             resolution = resolution_of(combat)
             results = []
-            for mechanism in list(listeners):
+            def ordering_key(mechanism):
+                owner = actor if getattr(mechanism, "status_owner", "target") == "source" else target
+                return mechanism.ordering_key(owner)
+
+            # 事件类型是自然时机；仅在这同一事件窗口内读取状态排序键。
+            for mechanism in sorted(list(listeners), key=ordering_key):
                 ctx = self._context_for(event, combat, target=target, actor=actor)
                 if mechanism.condition is not None and not mechanism.condition(ctx):
                     continue

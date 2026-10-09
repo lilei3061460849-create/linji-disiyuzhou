@@ -13,7 +13,7 @@
 - 每场战斗结束后 driver 停止，由测试者阅读战报再决定下一场策略（真实手操节奏）。
 
 输出：
-- 逐回合推演日志（stdout，按 README《六、战斗推演格式》的紧凑版）
+- 逐回合推演日志（stdout，按 推演规范《六、战斗推演格式》的紧凑版）
 - data/handplay_20260821_<副本>_<角色>.jsonl 全量事件轨迹
 """
 from __future__ import annotations

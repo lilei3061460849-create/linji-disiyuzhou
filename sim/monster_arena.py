@@ -143,7 +143,8 @@ def _candidates(actor: dict, rivals: list[dict]) -> list[dict]:
         # 道纹对象（每个候选＝一个 daowen 提交）
         dao_objs: list[dict] = []
         for opt in daowen_opts:
-            # X下限（2026-10-03 用户令：波及≥2）：候选不得低于下限，否则提交必被引擎拒。
+            # X 下限恒为 1（2026-10-09 用户令 repealed 了波及 X≥2；prepare 已不再暴露
+            # min_x 字段，这里兜底 1）。波及 X=1 合法——单目标全值。
             min_x = max(1, int(opt.get("min_x") or 1))
             # 波及的显式目标要按 dodge_target_options 取（含非攻击目标，如观众/友方），
             # 不是 attack_target_options；x 也不得超过可用目标数，否则 API 会拒收。
@@ -210,7 +211,9 @@ def _candidates(actor: dict, rivals: list[dict]) -> list[dict]:
     has_daowen = bool(daowen_opts)
     dao_cands: list[dict | None] = []
     for opt in daowen_opts:
-        min_x = max(1, int(opt.get("min_x") or 1))          # 2026-10-03：波及≥2
+        # X 下限恒为 1（2026-10-09 用户令 repealed 了波及 X≥2；prepare 已不再暴露
+        # min_x 字段，这里兜底 1）。波及 X=1 合法——单目标全值。
+        min_x = max(1, int(opt.get("min_x") or 1))
         wave_refs = ([t["ref"] for t in (opt.get("dodge_target_options") or [])]
                      or [r["ref"] for r in rivals]) if opt["name"] == "波及" else []
         if opt["name"] == "波及" and len(wave_refs) < min_x:

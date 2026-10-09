@@ -1,7 +1,8 @@
 """规则自动同步系统。
 
-事实源分工：README.md 提供通用规则正文，死者之书.md 提供法术与遗言格式，
-物品索引.md 提供物品，副本索引.md 与其链接文档提供副本内容。
+事实源分工：规则正文.md 提供通用规则正文，死者之书.md 提供法术与遗言格式，
+物品索引.md 提供物品，副本索引.md 与其链接文档提供副本内容；README.md 只作入口
+与 AI/维护速览，不参与规则抽取（2026-10-09 迁移）。
 """
 from __future__ import annotations
 import os
@@ -14,6 +15,8 @@ from typing import Optional
 from pathlib import Path
 from .daowen import DaoWenEngine
 from .dm_rulings import DMRulingsDB
+from .document_sources import (COMMON_RULES_FILE, DEATH_BOOK_FILE, DUNGEON_INDEX_FILE,
+                               ITEM_INDEX_FILE)
 
 
 class RuleFile:
@@ -51,7 +54,9 @@ class RuleFile:
 class RuleSync:
     """管理多份正文事实源与引擎之间的同步。"""
 
-    DEFAULT_RULE_FILES = ["README.md", "死者之书.md", "物品索引.md", "副本索引.md"]
+    # README 仅入口/速览，精确通用条文由 COMMON_RULES_FILE 提供（2026-10-09 迁移）。
+    DEFAULT_RULE_FILES = [COMMON_RULES_FILE, DEATH_BOOK_FILE, ITEM_INDEX_FILE,
+                          DUNGEON_INDEX_FILE]
     
     def __init__(
         self, 
@@ -146,8 +151,9 @@ class RuleSync:
             return []
         content = full_path.read_text(encoding="utf-8")
 
-        # 限定到道纹正文，避免把“冷却X/流血X”等代价定义误识别成道纹。
-        if full_path.name == "README.md" and "### 道纹体系\n" in content:
+        # 限定到通用道纹正文，避免把“冷却X/流血X”等代价定义误识别成道纹。
+        # README 自 2026-10-09 起只作入口；精确条文由规则正文.md 提供。
+        if full_path.name == COMMON_RULES_FILE and "### 道纹体系\n" in content:
             content = content.split("### 道纹体系\n", 1)[1].split("### 特殊事件", 1)[0]
         elif "道纹定义：" in content:
             content = content.split("道纹定义：", 1)[1].split("专属行动", 1)[0]
@@ -418,10 +424,10 @@ class RuleSync:
         index_path = Path(self.rules_dir) / "副本索引.md"
         manifest = load_dungeon_manifest(index_path)
         return {
-            "common_daowen": self.extract_daowen_from_file("README.md"),
+            "common_daowen": self.extract_daowen_from_file(COMMON_RULES_FILE),
             "dungeon_daowen": self.extract_dungeon_daowen(include_drafts=True),
-            "spells": self.extract_spells_from_file("死者之书.md"),
-            "items": self.extract_items_from_file("物品索引.md"),
+            "spells": self.extract_spells_from_file(DEATH_BOOK_FILE),
+            "items": self.extract_items_from_file(ITEM_INDEX_FILE),
             "dungeons": [
                 {"name": entry.name, "tier": entry.tier, "status": entry.status,
                  "path": str(entry.path)} for entry in manifest
@@ -448,7 +454,7 @@ class RuleSync:
 
     def diff_project_daowen(self) -> dict:
         """比较引擎与当前已实现正文中的通用及副本专属道纹。"""
-        file_daowen = self.extract_daowen_from_file("README.md")
+        file_daowen = self.extract_daowen_from_file(COMMON_RULES_FILE)
         file_daowen += self.extract_dungeon_daowen(include_drafts=False)
         file_names = {item["name"] for item in file_daowen}
         registered = set(DaoWenEngine.list_all())
@@ -525,11 +531,11 @@ class RuleSync:
         changes = self.check_for_changes()
         report["changes_detected"] = changes
         
-        # 通用道纹只与规则正文（README.md）比较；其他 Markdown 各自使用专用提取器，
+        # 通用道纹只与规则正文（规则正文.md）比较；其他 Markdown 各自使用专用提取器，
         # 避免把物品标题或法术字段误报成道纹。
-        if "README.md" in self._rule_files and "副本索引.md" in self._rule_files:
+        if COMMON_RULES_FILE in self._rule_files and DUNGEON_INDEX_FILE in self._rule_files:
             diff = self.diff_project_daowen()
-            report["daowen_diffs"]["README.md"] = {
+            report["daowen_diffs"][COMMON_RULES_FILE] = {
                 "new": len(diff["in_file_only"]),
                 "missing": len(diff["in_engine_only"]),
                 "synced": len(diff["in_both"]),

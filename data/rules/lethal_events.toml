@@ -41,7 +41,7 @@ death_cause_key = "collapse"
 death_cause_text = "异变叠满迷失命零"
 progress_format = "{name}（{current}/{limit}）"
 
-# ---- 规则正文：README「特殊事件」节的原文，逐行照录 ----
+# ---- 规则正文：规则正文.md「特殊事件」节的原文，逐行照录 ----
 rule_lines = [
   "迷失（任一角色【异变】达到50层时触发）",
   "该角色直接判定[命零]死亡，尸体变为怪物",

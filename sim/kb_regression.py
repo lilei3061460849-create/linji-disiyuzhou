@@ -6,14 +6,14 @@
   语料分层：
     PRE_ACTIVE   = tag 快照 AI_EXPERIENCE.md + 报告.md（瘦身前 Agent 常驻注入）
     POST_ACTIVE  = HEAD AI_EXPERIENCE.md + 报告.md（瘦身后常驻注入）
-    SHARED       = README.md + 规则附件（两版共用、未变更，计入两边）
+    SHARED       = 规则正文.md + 推演规范.md + 规则附件（两版共用、按当前事实源计入两边）
     ARCHIVE      = archive/**（瘦身新增：可检索、不常驻注入；仅 POST 侧存在）
     POST_FULL    = POST_ACTIVE + ARCHIVE
   每条探针带 gold 锚点（事实必须文本可达）与 stale 锚点（不得以"当前规则"形式出现，
   否定语境：已删除/已废止/作废/已并入/改名/原【/留痕/过期/替代 视为历史注明，不算污染）。
 判定：
   AVAILABLE-ACTIVE    gold 全命中常驻注入层
-  AVAILABLE-SHARED    gold 靠 SHARED 命中（两版等价，规则单一事实源=README）
+  AVAILABLE-SHARED    gold 靠 SHARED 命中（两版等价，规则单一事实源=规则正文）
   AVAILABLE-ARCHIVE   gold 只在 archive 命中，且 POST_ACTIVE 有该档案指针
   MISSING             gold 在 POST 全集（含 archive+shared）不可达 → 真退化
   POLLUTED            stale 锚点以当前规则语境出现
@@ -43,7 +43,7 @@ def load_corpora():
            + "\n" + sh("git", "show", f"{TAG}:报告.md"))
     post = ((ROOT / "AI_EXPERIENCE.md").read_text(encoding="utf-8")
             + "\n" + (ROOT / "报告.md").read_text(encoding="utf-8"))
-    shared_files = ["README.md", "死者之书.md", "全道纹索引.md", "副本索引.md", "物品索引.md", "法术索引.md"]
+    shared_files = ["README.md", "规则正文.md", "推演规范.md", "死者之书.md", "全道纹索引.md", "副本索引.md", "物品索引.md", "法术索引.md"]
     shared = "\n".join((ROOT / f).read_text(encoding="utf-8") for f in shared_files
                        if (ROOT / f).exists())
     arch = "\n".join(p.read_text(encoding="utf-8")
@@ -69,9 +69,9 @@ def _stale_active_lines(corpus: str, anchor) -> list[str]:
     return [ln for ln in hits if not any(n in ln for n in NEG)]
 
 
-# ---------------- 探针库（锚点全部来自仓库事实源：README/引擎字符串/DM裁定原文） ----------------
+# ---------------- 探针库（锚点全部来自仓库事实源：规则正文/推演规范/引擎字符串/DM裁定原文） ----------------
 PROBES = [
-    # 一、基础规则理解（事实源=SHARED README，KB 不得矛盾；两版共用 → 预期 EQUIV）
+    # 一、基础规则理解（事实源=SHARED 规则正文，KB 不得矛盾；两版共用 → 预期 EQUIV）
     dict(id="C1-01", cat=1, q="第四宇宙/轮回的本质", gold=["轮回是为了填补过去的不甘心"], layer="SHARED"),
     dict(id="C1-02", cat=1, q="死者之书=灵魂契约交易承载体", gold=["局外行动本质上均由《死者之书》承担"], layer="SHARED"),
     dict(id="C1-03", cat=1, q="灵魂碎片与微光者", gold=["灵魂碎片是字面意思"], layer="SHARED"),
@@ -87,7 +87,7 @@ PROBES = [
          gold=["format_setup_discovery", ["杀伐不是默认起手", "杀伐非默认起手"], "【发现】"]),
     dict(id="C2-03", cat=2, q="怪物专属道纹首次发动代价",
          gold=[["原始怪物道纹只在首次发动时支付异变5X", "原始怪物道纹仅首次发动支付异变5X"]]),
-    dict(id="C2-04", cat=2, q="怪物道纹递增（+2×阶级，README准则9 单一事实源）",
+    dict(id="C2-04", cat=2, q="怪物道纹递增（+2×阶级，规则正文·怪物准则 单一事实源）",
          gold=["累加+2×副本阶级"], layer="SHARED+PRE_ACTIVE"),
     dict(id="C2-05", cat=2, q="道纹变化（退化降X实战注意）", gold=["退化"]),
     dict(id="C2-06", cat=2, q="资源限制：法力支付/冷却锚点", gold=["冷却"]),

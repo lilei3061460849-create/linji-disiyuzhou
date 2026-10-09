@@ -251,7 +251,7 @@ def test_r11_r17_impact_dodge_targets_are_bound_to_prepare_snapshot(tmp_path):
     engine = _engine(tmp_path)
     player, monster = _controlled_combat(engine)
     monster.attack_count = 0
-    _dw(monster, "波及", 2)          # 2026-10-03：波及 X 下限=2（面板固定 X=2）
+    _dw(monster, "波及", 2)          # 面板固定 X=2（2026-10-09 起 X 下限 repealed，X=1 也合法）
     early_friend = Entity("早友军", "朋友", blood_limit=40, current_hp=40,
                           speed_limit=2, current_speed=2, attack_count=1, attack_power=1)
     engine.state.friends.append(early_friend)
@@ -305,7 +305,7 @@ def test_r11_r17_aoe_dodge_does_not_leak_into_next_resolution(tmp_path):
     first.speed_limit = first.current_speed = 2
     engine.state.enemies.append(second)
     player.attack_count = 2
-    _dw(player, "波及", 2)      # 2026-10-03：波及 X 下限=2 → 每次同时提交甲/乙
+    _dw(player, "波及", 2)      # 面板固定 X=2 → 每次同时提交甲/乙（2026-10-09 起 X 下限 repealed）
     _dw(player, "杀伐", 1)
 
     # 第一次：甲怪闪避不被标记，乙怪被标记（同一笔提交里逐目标闪避互不影响）

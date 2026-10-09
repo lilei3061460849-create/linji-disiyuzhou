@@ -382,11 +382,24 @@ def test_fixed_seed_is_reproducible(tmp_path):
     assert a == b, "同一固定种子+同一决策rng，两次结果必须一致"
 
 
-def test_fitness_fixed_mode_is_deterministic(monkeypatch):
+def test_fitness_fixed_mode_is_deterministic(monkeypatch, tmp_path):
     """边界：非随机模式下同参数 fitness 必须一致
 
     死斗驱动带 30s 墙钟守护（CPU 争用时会抖成 pvp_timeout），
     本用例只验证决策确定性，把墙钟上限放大以排除机器速度干扰。
+
+    2026-10-09 修复抖动根因：fitness 不传 lab_paths 时，6 次 play 共享生产封存文件
+    data/sealed_candidate.json——第 1 次调用里某 run 打到第 7 场会写入/消费封存候选，
+    文件状态在两次调用之间演化，同参数两次调用结果必然不同（实测 (1/3,3) vs (0,3)）。
+    play 路径里封存文件是**唯一**会被写的共享状态（死者之书只读、rulings DB 不写），
+    所以本用例把 sealed_path 隔离到 tmp_path，死者之书仍读生产正本——遗言会改变 AI
+    行为，留着它才能把 run 推进到第 7 场。
+
+    死斗覆盖：空白封存槽出发时，本构筑固定只有 1 个 run 能进第 7 场（封存后战终
+    阵亡），不会再有 run 触发死斗——旧用例的死斗覆盖纯靠共享文件里的残留候选，
+    属污染而非设计。现在先跑一遍 evaluate_build 让候选封存落盘并快照；每次 fitness
+    前恢复快照，保证两次调用从同一状态出发（死斗弹出队首候选会改写文件，胜负都不
+    是不动点），死斗路径也被确定性比较覆盖。
     """
     import sim.duel_pvp as _dp
     _orig = _dp.run_duel_pvp
@@ -394,8 +407,23 @@ def test_fitness_fixed_mode_is_deterministic(monkeypatch):
         kw["max_wall_seconds"] = 1e9
         return _orig(*a, **kw)
     monkeypatch.setattr(_dp, "run_duel_pvp", _no_wall_timeout)
-    f1, v1, _ = bl.fitness("杀伐", ["庇护", "再生"], 3, gen=1)
-    f2, v2, _ = bl.fitness("杀伐", ["庇护", "再生"], 3, gen=1)
+
+    lab = {"db_path": str(tmp_path / "seed.db"),
+           "sealed_path": str(tmp_path / "sealed.json")}
+    # 前置：空白槽跑一遍，让封存候选落盘（固定种子下行为确定）。
+    bl.evaluate_build("杀伐", ["庇护", "再生"], 3, 1, lab_paths=lab)
+    assert os.path.exists(lab["sealed_path"]), \
+        "前置失败：未封存候选则死斗路径无覆盖，请检查本构筑能否进第 7 场"
+    with open(lab["sealed_path"], "rb") as _f:
+        _snapshot = _f.read()
+
+    def _fitness():
+        with open(lab["sealed_path"], "wb") as _f:
+            _f.write(_snapshot)
+        return bl.fitness("杀伐", ["庇护", "再生"], 3, gen=1, lab_paths=lab)
+
+    f1, v1, _ = _fitness()
+    f2, v2, _ = _fitness()
     assert (f1, v1) == (f2, v2)
 
 

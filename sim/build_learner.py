@@ -1653,8 +1653,14 @@ def evaluate_build(starter: str, learn: list, runs: int, gen: int,
                    telemetry: dict = None, spend_shards: bool = False,
                    region: str = None, policy: dict = None,
                    attrs: dict = None, battles: int = 7,
-                   keep_runs: bool = False) -> dict:
-    """唯一的构筑评价入口，分别返回 PVE/PVP/完整通关表现。"""
+                   keep_runs: bool = False, lab_paths: dict = None) -> dict:
+    """唯一的构筑评价入口，分别返回 PVE/PVP/完整通关表现。
+
+    lab_paths：透传给 play 的隔离存储（db/sealed/death_book 三件套）。不传则各 run
+    共享生产路径（data/sealed_candidate.json、/tmp/learner.db）——封存槽跨 run 演化，
+    评评价结果会依赖调用前的文件状态，确定性复测必须传隔离目录（2026-10-09 修复
+    test_fitness_fixed_mode_is_deterministic 的抖动根因）。
+    """
     if rng is None:
         rng = random if random_seeds else random.Random(gen * 7919 + 13)
     total_invalid = 0
@@ -1670,24 +1676,23 @@ def evaluate_build(starter: str, learn: list, runs: int, gen: int,
             seed = gen * 1000 + i * 7 + 1
             run_region = REGIONS[i % len(REGIONS)]
         run_telemetry = telemetry if telemetry is not None else {}
-        # 【评价必须可复现】封存槽（【最终的冠冕】= 死斗守擂擂主）是**跨轮回
-        # 持久**状态：谁跑完第 7 场就把自己写进去，下一个跑局的人拿它当对手。
-        # 若沿用默认路径，第 i 局的擂主由第 i-1 局决定，同参数的两次 fitness
-        # 会走出完全不同的结局（实测同参数两次调用得到 0.0 / 0.333333，
-        # 见 tests/test_build_learner.py::test_fitness_fixed_mode_is_deterministic）。
-        # 评价是**测量**而不是游戏进程，每一局都必须从干净的槽开始，
-        # 让 runs 局成为独立同分布样本，也让同参数 fitness 结果稳定。
-        _seal_fd, _seal_path = tempfile.mkstemp(prefix="lj_eval_seal_", suffix=".json")
-        os.close(_seal_fd)
-        os.unlink(_seal_path)  # 只借一个不存在的路径：槽为空 = 全新起点
+        # 每个评价样本默认使用新的封存槽，避免上一局第 7 场写出的擂主污染
+        # 下一局；调用者若已显式提供 sealed_path，则尊重其隔离/持久化选择。
+        run_lab_paths = dict(lab_paths or {})
+        _temporary_seal_path = ""
+        if not run_lab_paths.get("sealed_path"):
+            _seal_fd, _temporary_seal_path = tempfile.mkstemp(
+                prefix="lj_eval_seal_", suffix=".json")
+            os.close(_seal_fd)
+            os.unlink(_temporary_seal_path)
+            run_lab_paths["sealed_path"] = _temporary_seal_path
         try:
             result = play(starter, learn, run_region, seed, rng=rng,
                           telemetry=run_telemetry, spend_shards=spend_shards,
-                          policy=policy, attrs=attrs,
-                          lab_paths={"sealed_path": _seal_path})
+                          policy=policy, attrs=attrs, lab_paths=run_lab_paths)
         finally:
-            if os.path.exists(_seal_path):
-                os.unlink(_seal_path)
+            if _temporary_seal_path and os.path.exists(_temporary_seal_path):
+                os.unlink(_temporary_seal_path)
         if result.get("invalid"):
             total_invalid += 1
             if telemetry is not None:
@@ -1874,11 +1879,16 @@ def verify_observed_combo(left: str, right: str, runs: int, gen: int,
 def fitness(starter: str, learn: list, runs: int, gen: int,
             random_seeds: bool = False, rng: random.Random = None,
             telemetry: dict = None, spend_shards: bool = False,
-            region: str = None, policy: dict = None) -> tuple:
-    """兼容旧调用；score 现在是完整通关率，不再是平均存活场数。"""
+            region: str = None, policy: dict = None,
+            lab_paths: dict = None) -> tuple:
+    """兼容旧调用；score 现在是完整通关率，不再是平均存活场数。
+
+    lab_paths：隔离存储透传（见 evaluate_build）——确定性复测必须传，
+    否则封存槽文件跨调用演化会让两次同参调用结果不同。
+    """
     metrics = evaluate_build(starter, learn, runs, gen, random_seeds=random_seeds,
                              rng=rng, telemetry=telemetry, spend_shards=spend_shards,
-                             region=region, policy=policy)
+                             region=region, policy=policy, lab_paths=lab_paths)
     return metrics["full_rate"], metrics["valid"], metrics["invalid"]
 
 # --------------------------------------------------------------------------

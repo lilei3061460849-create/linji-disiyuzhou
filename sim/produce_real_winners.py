@@ -275,7 +275,7 @@ def choose_pre_battle(e, battle_no, todo_spells, todo_daowen, rng=None):
 def unlock_sin_city_daowen(e, log=None):
     """罪孽都市一阶：用残韵对怪物的专属道纹转化，让玩家获得第一种罪孽都市道纹。
 
-    门禁：学习罪孽都市专属道纹须先经残韵获得一种（README）。优先 点金→转换→逼债
+    门禁：学习罪孽都市专属道纹须先经残韵获得一种（规则正文）。优先 点金→转换→逼债
     （逼债对乱葬岗0碎片怪=每回始削2X血限，是二阶可用武器）；无点金怪则用任意
     专属道纹+存在的残韵路径解锁门禁。返回是否成功解锁。"""
     p = e.state.player
