@@ -18,10 +18,13 @@ def test_project_rules_are_extracted_from_their_authoritative_documents():
     sync = _sync()
     facts = sync.extract_project_rules()
     # 2026-10-03：删除爆裂/坠落/滑翔/狂暴/兴奋/尸爆/活血后：
-    # 通用道纹 38→34（删 7 条、正文补回 愤怒/自残/无神/疯狂 定义），
+    # 通用道纹 38→34（删 7 条、正文补回 愤怒/无神/疯狂 定义），
     # 副本道纹 64→61（扭曲-1、龙心-1、乱葬-1）
-    assert len(facts["common_daowen"]) == 34
-    assert len(facts["dungeon_daowen"]) == 61
+    # 2026-10-08 用户令删除【镇尸】（与【坏死】硬重复）与一条无残韵路径的
+    # 孤儿转化道纹：通用道纹 34→33，副本道纹 61→60（乱葬-1）。
+    # 真正的护栏是下面 diff_project_daowen() 双向为空——正文与引擎必须逐条对齐。
+    assert len(facts["common_daowen"]) == 33
+    assert len(facts["dungeon_daowen"]) == 60
     assert len(facts["spells"]) == 10  # 2026-09-16：删「血溅五步」（无引擎流程的空名字）
     assert len(facts["dungeons"]) == 8
     assert len(facts["monsters"]) == 48  # 36 + 乱葬岗12(已实现)
@@ -67,8 +70,11 @@ def test_spell_without_required_fields_is_rejected(tmp_path):
     """错误输入：缺少所需道纹或生效流程的法术配置必须拒绝。"""
     sync = _sync(tmp_path)
     invalid = tmp_path / "spells.md"
+    # 节名必须是「## 法术大全」——rule_sync.extract_spells_from_file 只认这个
+    # 标题（真实的 死者之书.md 用的也是它）。旧夹具写成「## 可学法术」，解析器
+    # 根本不会进入法术节，于是永远抛不出 ValueError，用例假失败。
     invalid.write_text(
-        "# 死者之书\n\n## 可学法术\n\n### 空法术\n\n触发条件：回始\n",
+        "# 死者之书\n\n## 法术大全\n\n### 空法术\n\n触发条件：回始\n",
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="缺少所需道纹或生效流程"):

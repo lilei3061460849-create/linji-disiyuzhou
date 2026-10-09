@@ -27,7 +27,7 @@ from .enums import (GamePhase, CombatSubphase, ActionPhase, TriggerTiming,
                     InterruptType, EntityType, EffectScope, EffectPolarity)
 from .dice import DiceEngine
 from .daowen import DaoWenEngine, ResonanceEngine
-from .combat import CombatEngine
+from .combat import CombatEngine, parry_reduction_for, parry_uses_for
 from .spell_dsl import parse_spell_definition, SpellDslError
 from .combat_events import register_combat_event_observer
 from .events import EventPool
@@ -863,6 +863,24 @@ class GameEngine:
                                     and type(a) is type(b) for a, b in zip(current_value, saved_value))):
                         for a, b in zip(current_value, saved_value):
                             restore_object(a, b)
+                    elif (len(current_value) == len(saved_value)
+                            and all(isinstance(a, dict) and isinstance(b, dict)
+                                    and set(a) == set(b) for a, b in zip(current_value, saved_value))):
+                        # 【封印】暂离队列这类"list[dict]，dict 里装着实体"的结构：
+                        # 必须逐键就地还原、实体按同一下标还原回原对象，不能整列表
+                        # deepcopy 换掉。否则队列里的实体会和 state.player / enemies
+                        # 里的是两个不同对象，回场时把副本塞回去、原对象丢失
+                        # （实测：封印自己之后再执行任意一个失败行动就会触发——
+                        # 失败回滚把队列换成副本，回场后 state.player 仍是原对象，
+                        # 于是玩家永远解不开暂离）。
+                        for a, b in zip(current_value, saved_value):
+                            for key in list(a):
+                                va, vb = a[key], b[key]
+                                if (dataclasses.is_dataclass(va) and dataclasses.is_dataclass(vb)
+                                        and type(va) is type(vb)):
+                                    restore_object(va, vb)
+                                else:
+                                    a[key] = copy.deepcopy(vb)
                     else:
                         current_value[:] = copy.deepcopy(saved_value)
                 elif isinstance(current_value, dict) and isinstance(saved_value, dict):
@@ -1848,15 +1866,25 @@ class GameEngine:
         required = definition.get("required_daowen")
         trigger = definition.get("trigger_condition")
         flow = definition.get("effect_flow")
-        if (not isinstance(name, str) or not name.strip()
-                or (name in self.SPELL_REGISTRY and not allow_predefined)
-                or any(spell.name == name for spell in actor.spells)
-                or not isinstance(required, list) or not required
-                or len(set(required)) != len(required)
-                or any(daowen not in actor.dao_wen for daowen in required)
-                or not isinstance(trigger, str) or not trigger.strip()
-                or not isinstance(flow, str) or not flow.strip()):
+        # 逐条校验而不是合成一个大判断：合一之后只能给出一句笼统的
+        # 「需唯一名称、至少一种自身已持有道纹、触发条件和效果流程」，玩家（和 AI）
+        # 看不出到底缺哪条道纹——定义预置法术时这是最常见的一条失败路径。
+        if not isinstance(name, str) or not name.strip():
             return {"error": "自创法术需唯一名称、至少一种自身已持有道纹、触发条件和效果流程"}
+        if name in self.SPELL_REGISTRY and not allow_predefined:
+            return {"error": f"名称【{name}】与法术大全已有法术重名，请换一个"}
+        if any(spell.name == name for spell in actor.spells):
+            return {"error": f"法术【{name}】已经定义"}
+        if not isinstance(required, list) or not required:
+            return {"error": "自创法术需至少一种自身已持有道纹"}
+        if len(set(required)) != len(required):
+            return {"error": "自创法术的所需道纹不可重复"}
+        missing = [d for d in required if d not in actor.dao_wen]
+        if missing:
+            return {"error": f"自创法术缺少所需道纹：{'、'.join(missing)}（须自身已持有）"}
+        if (not isinstance(trigger, str) or not trigger.strip()
+                or not isinstance(flow, str) or not flow.strip()):
+            return {"error": "自创法术需触发条件和效果流程"}
         # 句式校验：提交时就必须能被完整解析，解析失败直接拒绝并附带具体原因，
         # 禁止"定义成功但因文本对不上而永远不触发"的静默哑火。已持有道纹之外
         # 引用的道纹同样在此处一并拒绝。
@@ -2008,8 +2036,8 @@ class GameEngine:
                     return f"【{name}】须先经残韵获得本副本一种专属道纹后才能学习"
             if name in MONSTER_TRANSFORM_DAOWEN:
                 return f"【{name}】是怪物转化道纹，只能由自身已有道纹经残韵获得"
-            if name in ORIGINAL_MONSTER_DAOWEN:
-                return f"【{name}】是原始怪物道纹，人类无法承受并获得"
+            # 2026-10-07 用户令：原始怪物道纹不再是人类禁区（残韵双向 + 可永久持有），
+            # 局外【学习】不再以「人类无法承受」为由拒绝。
             owner = UNIMPLEMENTED_REGION_EXCLUSIVE_DAOWEN.get(name)
             if owner is not None:
                 return f"【{name}】是{owner}专属道纹，当前副本无法习得"
@@ -2653,6 +2681,11 @@ class GameEngine:
             actor = matches[0] if len(matches) == 1 else None
         else:
             actor = self.state.player
+        # 2026-10-08：被【封印】暂离的实体不在场上，不能发动道纹（含封印自己后
+        # 靠默认 actor=player 绕开 refs 的路径——上面 `actor = self.state.player`
+        # 是直取单字段，不过 _combat_entity_refs，必须在这里单独挡一道）。
+        if self.state.is_sealed_away(actor):
+            return {"success": False, "error": f"{actor.name}正处于【封印】暂离，不能发动道纹"}
         if actor is None or not actor.is_alive or actor.has_retreated:
             return {"success": False, "error": "actor_ref不是当前存活行动者"}
         if actor is self.state.player:
@@ -2776,12 +2809,17 @@ class GameEngine:
         # 「怪物与轮回者、微光者共用同一套面板数据，同样持有[血限]/[法限]/[速限]」，
         # :1254 明载微光者「仍是一池制，[回始]不回填」——不支出就无所谓"一池制"。
         # 故三类角色同口径支付【消耗】类法力；微光者仍照常额外消耗其出手。
-        cost = calc.get("cost", calc.get("cost_mutation", 0))
-        if calc.get("cost_type") == "消耗" and cost > 0:
-            if not actor.spend_mana(cost):
-                return {"success": False, "error": f"法力不足，需要{cost}，当前{actor.current_mana}"}
-            # 寒冰法力：持有者每消耗法力发动道纹，无论目标是谁(含自己)都累计"施加法力"
-            self.combat.note_mana_inflicted(actor, target, cost)
+        #
+        # 2026-10-08 结构审查：此处的法力支付原为一份内联副本，口径与法术单步
+        # （CombatEngine.pay_daowen_mana）表面相同、实则多一条 `cost_mutation`
+        # 兜底，属「同一条规则两处实现」。现统一调用共享实现。
+        # 等价性已验证：遍历全部 63 个道纹 × X∈{1,3}，凡 cost_type=="消耗" 的
+        # calc 都带 `cost` 键；缺 `cost` 只有 `cost_mutation` 的 6 个道纹
+        # （全力/减速/封印/必中/疯狂/自愈）全部是「异变」类型，不进法力分支，
+        # 故该兜底是死代码，删除后数值逐字节不变。
+        _cost_paid, mana_error = self.combat.pay_daowen_mana(actor, calc, target)
+        if mana_error:
+            return {"success": False, "error": mana_error}
 
         # F2：赌命X/消灾X 的碎片类代价预检与支付（代价类型非"消耗"，不走法力制）
         shard_error = self._pay_daowen_shard_cost(actor, name, calc, x)
@@ -2897,10 +2935,12 @@ class GameEngine:
         return True
 
     def _grant_transformed_daowen(self, player: Entity, dest: str) -> bool:
-        """残韵获得变化后道纹。X不从原道纹拷贝；同名不重复。"""
+        """残韵获得变化后道纹。X不从原道纹拷贝；同名不重复。
+
+        2026-10-07 用户令：残韵路径双向 + 完全放开——变化结果是原始怪物道纹时
+        施法者同样永久获得（旧版在此处直接拒绝授予，与「双向 + 可永久持有」冲突）。
+        """
         if dest in player.dao_wen:
-            return False
-        if dest in ORIGINAL_MONSTER_DAOWEN:
             return False
         player.dao_wen[dest] = DaoWenInstance(DaoWen(
             name=dest, formula=f"{dest}X", cost_type="消耗",
@@ -2937,11 +2977,17 @@ class GameEngine:
 
         caster_has = holder is actor
 
+        # 路径双向后，同一（源道纹, 残韵类型）可能通向两个相邻节点
+        # （例：【杀伐】的【反转】通向【再生】与【封印】）。歧义时不替发动者挑，
+        # 必须显式提交 target_daowen；未指定则原样拒绝并列出候选（残韵不消耗）。
+        target_daowen = params.get("target_daowen", "") or ""
+
         result = ResonanceEngine.apply_resonance(
             source, rtype,
             caster_has_daowen=caster_has,
             target_has_daowen=True,
-            resonance_stock=stock  # 传入施法者残韵库存用于校验
+            resonance_stock=stock,  # 传入施法者残韵库存用于校验
+            target_daowen=target_daowen,
         )
 
         if not result["success"]:
@@ -2970,9 +3016,11 @@ class GameEngine:
                 elif second_source_daowen not in second_entity.dao_wen:
                     second_log = f"同魂笔：{second}未持有{second_source_daowen}，未生效"
                 else:
-                    r2 = ResonanceEngine.apply_resonance(second_source_daowen, rtype,
-                                                          caster_has_daowen=(second_source_daowen in player.dao_wen),
-                                                          target_has_daowen=True)
+                    r2 = ResonanceEngine.apply_resonance(
+                        second_source_daowen, rtype,
+                        caster_has_daowen=(second_source_daowen in player.dao_wen),
+                        target_has_daowen=True,
+                        target_daowen=params.get("second_target_daowen", "") or "")
                     if r2.get("success"):
                         new_name = r2["target"]
                         self._permanently_convert_daowen(second_entity, second_source_daowen, new_name)
@@ -3099,13 +3147,13 @@ class GameEngine:
         if actor.current_hp <= 0:
             return {"success": False, "error": f"{actor.name}当前生命为0，无法招架"}
         actor.parrying_this_round = True
-        actor.parry_uses_remaining_this_round = max(1, int(actor.current_hp))
+        actor.parry_uses_remaining_this_round = parry_uses_for(actor.current_hp)
         return {"success": True, "action": f"{actor.name}招架",
                 "result": {"actor": actor.name,
-                           "reduction_preview": max(0, actor.current_hp // 10),
+                           "reduction_preview": parry_reduction_for(actor.current_hp),
                            "uses": actor.parry_uses_remaining_this_round,
                            "note": f"本轮每次受到的伤害前{actor.parry_uses_remaining_this_round}击"
-                                   f"减去{actor.current_hp // 10}（10%当前生命）；"
+                                   f"减去{parry_reduction_for(actor.current_hp)}（10%当前生命）；"
                                    "减免按结算时的生命计"}}
 
     # ---------- 2026-09-28 新回合动作：cast/focus/rest ----------
@@ -3253,8 +3301,8 @@ class GameEngine:
                                "mana_after": actor.current_mana,
                                "note": f"{actor.name}当前法力已满，聚能未获法力"}}
         mana_before = actor.current_mana
-        actor.current_mana = min(actor.mana_limit, actor.current_mana + gain)
-        gained = actor.current_mana - mana_before
+        # 2026-10-08：走统一入口，【勾魂】（无法获得[法力]）期间增益不生效
+        gained = actor.gain_mana(gain)
         return {"success": True, "action": f"{actor.name}聚能",
                 "result": {"actor": actor.name, "mana_gained": gained,
                            "mana_before": mana_before,
@@ -3575,7 +3623,7 @@ class GameEngine:
         """自由结晶：强制目标付出指定代价共计 amount（2026-10-05 用户令）。
 
         流血/衰老/枯竭/萎缩/疲惫/异变走统一代价结算入口 _apply_numeric_cost_part
-        （含致死判定、不朽之躯免疫、异变崩解/迷失等既有口径）；失忆与冷却没有
+        （含致死判定、不朽之躯免疫、异变迷失等既有口径）；失忆与冷却没有
         现成结算体，在这里按 物品索引.md#自由结晶 的定义实现：失忆＝随机失去至多
         X 种自身道纹，冷却＝其持有的全部道纹进入冷却 X 场。
         """
@@ -3700,7 +3748,7 @@ class GameEngine:
             return self._consume_named_event_item(item, params)
 
         # 普通消耗品：扣减耐久；异变类效果走统一入口 add_mutation
-        # （裁定⑧= A4全量：任何角色的任何异变来源同一入口，达50层即【崩解】命零；
+        # （裁定⑧= A4全量：任何角色的任何异变来源同一入口，达50层即【迷失】命零；
         #  其余效果仅限已经有机械解析器的回复/异变文本；未知效果在扣耐久前拒绝。）
         effect = item.effect or ""
         heal_match = (re.search(r"恢复(\d+)生命", effect)
@@ -3748,7 +3796,7 @@ class GameEngine:
                         "tags": {"consumable", "active_payment"}}, subtype="collapse"))
                 self.state.last_death_cause = "collapse"
                 mutation_info["note"] = (
-                    f"异变达{mut['mutation_total']}层触发【迷失·崩解】，"
+                    f"异变达{mut['mutation_total']}层触发【迷失】，"
                     f"{self.state.player.name}异变爆体直接命零")
             elif mut.get("lost"):
                 # 非怪物：触发【迷失】——战斗中则变身/命零；局外则直接命零。
@@ -3982,9 +4030,10 @@ class GameEngine:
             result.update({"cleared_enemies": cleared})
         # 5. 储能电池：使用后立即获得12法力
         elif name == "储能电池":
-            player.current_mana += 12
+            # 2026-10-08：走统一入口，【勾魂】期间不生效
+            gained = player.gain_mana(12)
             self.combat.clamp_immortal_body(player)
-            result.update({"mana_gained": 12, "mana_after": player.current_mana})
+            result.update({"mana_gained": gained, "mana_after": player.current_mana})
         # 6. 急救箱：回复25（走 heal）并清一种负面持续
         elif name == "急救箱":
             heal_detail = self.state.apply_heal(player, 25, ctx={
@@ -4849,7 +4898,7 @@ class GameEngine:
             "shield": e.shield, "is_flying": e.is_flying, "is_alive": e.is_alive,
             "shards": e.shards, "is_debt_bound": e.is_debt_bound,
             # ④修复：异变是代价资源、封存前已实付——
-            # 带伤续战必须带着异变续战，否则封存=免费洗白崩解进度。
+            # 带伤续战必须带着异变续战，否则封存=免费洗白迷失进度。
             # （癌变 total_healed 不随封存走：DM 已裁定它是局内减益、每场归零。）
             "mutation_count": e.mutation_count,
             # 致死进度：封存快照同样保留可读进度
@@ -5711,7 +5760,7 @@ class GameEngine:
             return {"success": False, "error": f"仍有{len(queued)}只怪物增援未进场，不能结算战终: {[m.get('name', '?') for m in queued]}"}
         delayed = list(getattr(self.state, "delayed_monster_reentries", []) or [])
         if delayed and not escaping:
-            return {"success": False, "error": f"仍有{len(delayed)}只怪物处于【封印】延迟，不能结算战终: {[e['monster'].name for e in delayed]}"}
+            return {"success": False, "error": f"仍有{len(delayed)}个单位处于【封印】暂离，不能结算战终: {[e['monster'].name for e in delayed]}"}
         if escaping:
             for enemy in self.state.enemies:
                 if enemy.is_alive:

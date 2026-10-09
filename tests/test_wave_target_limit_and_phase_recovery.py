@@ -90,6 +90,27 @@ def _prepared_monster_option(engine: GameEngine, actor_ref: str = "enemy:0") -> 
     return prepared, actor
 
 
+def _submission_for(actor: dict, option: dict | None = None) -> dict:
+    """按 prepare 快照构造一次怪物阶段提交。
+
+    option 缺省时提交「不发动道纹」；给了就按其合法目标/波及目标构造。
+    目标类道纹必须带 target_ref，否则引擎以「目标不在prepare合法选项中」拒绝。
+    """
+    choice = {"actor_ref": actor["actor_ref"], "daowen": None,
+              "attack_actions": _attack_block(actor)}
+    if option is None:
+        return choice
+    dao: dict = {"name": option["name"], "dodge": False, "blood_shadow": False}
+    if option.get("requires_target") and option.get("target_options"):
+        dao["target_ref"] = option["target_options"][0]["ref"]
+    dao["trigger_spell_choices"] = {
+        h: {sp["spell_name"]: {"use": False} for sp in ss}
+        for h, ss in option.get("trigger_spell_options", {}).items()}
+    dao["dodge_targets"] = pick_wave_dodge_targets(option)
+    choice["daowen"] = dao
+    return choice
+
+
 def _combat_prepared_actor(engine: GameEngine, actor_ref: str = "enemy:0") -> dict:
     """纯枚举（CombatEngine层，无pending副作用）——只用于检查prepare给出的选项。"""
     prepared = engine.combat.prepare_monster_phase()
@@ -140,30 +161,29 @@ def _snapshot(e: GameEngine) -> dict:
 # ============ BUG-01：【波及】合法目标数限制 ============
 
 def test_wave_adaptive_clamp_solo(tmp_path):
-    """DM裁定2026-08-23（取代2026-08-22过滤方案）：solo场上【波及3】只有1个
-    合法目标——prepare不再过滤，而是自适应降X为1（wave_effective_x=1），
-    可正常结算标记1个目标，永不死锁。面板x仍为3（递增/展示口径）。"""
+    """solo 场上【波及3】只有 1 个合法目标：**不给出**【波及】选项（永不死锁）。
+
+    规则沿革——两条规定叠加后的净结果：
+      * DM裁定 2026-08-23（取代 2026-08-22 过滤方案）：【波及】的实际目标数按
+        合法目标数自适应降 X（min(面板X, 合法目标数)），不得给出永远无法结算的选项；
+      * 2026-10-03 用户令：【波及】X 下限 = 2（X=1 时没有可平分的数值，无意义）。
+    两者叠加 ⇒ 合法目标不足 2 个时降完的 X 达不到下限，本道纹此刻**不可发动**，
+    prepare 必须过滤掉它，而不是把 X=1 透给结算（那会抛「X=1低于下限波及≥2」）。
+    因此"不死锁"的落地方式由「降 X 到 1 也能结算」变为「该选项根本不出现」。
+    """
     e = _engine(tmp_path)
     _full_setup(e)
     _controlled_combat(e, [_magma_lizard()])
     prepared, actor = _prepared_monster_option(e)
     option = next((o for o in actor["daowen_options"] if o["name"] == "波及"), None)
-    assert option is not None, f"solo场上波及3必须按降X给出: {[o['name'] for o in actor['daowen_options']]}"
-    assert option["x"] == 3
-    assert option["wave_effective_x"] == 1
-    assert len(option["dodge_target_options"]) == 1
-    # 按有效X提交即可结算：波及标记打在唯一合法目标（玩家）身上
-    dao = {"name": "波及", "dodge": False, "blood_shadow": False,
-           "trigger_spell_choices": {h: {sp["spell_name"]: {"use": False} for sp in ss}
-                                     for h, ss in option.get("trigger_spell_options", {}).items()},
-           "dodge_targets": pick_wave_dodge_targets(option)}
-    assert len(dao["dodge_targets"]) == 1
+    assert option is None, f"solo场上波及不足X下限=2，不应给出: {option}"
+    # 过滤不等于没有选项：怪物仍须能正常出手（否则又回到死锁）
+    assert actor["daowen_options"] or actor["base_attack_actions"] > 0
+    # 且这一手必须真能提交成功——这才是"永不死锁"的实测
+    choice = _submission_for(actor, actor["daowen_options"][0] if actor["daowen_options"] else None)
     ok = e.execute_action("resolve_monster_phase", {
-        "token": prepared["result"]["token"],
-        "choices": [{"actor_ref": actor["actor_ref"], "daowen": dao,
-                     "attack_actions": _attack_block(actor)}]})
+        "token": prepared["result"]["token"], "choices": [choice]})
     assert ok["success"], ok
-    assert e.state.player.has_status("波及")
 
 
 def test_wave_adaptive_clamp_scales_with_targets(tmp_path):
@@ -328,16 +348,14 @@ def test_user_original_playthrough_no_longer_stucks(tmp_path):
         e.state.player.current_hp = e.state.player.blood_limit  # 夹具：避免死之传承中断干扰
         assert e.execute_action("round_start", {"relic_choices": {}})["success"]
         prepared, actor = _prepared_monster_option(e)
+        # 2026-10-03 X 下限=2 后，solo 场上【波及】不再作为合法选项出现，
+        # 这正是"永不死锁"的现行落地方式（原为降 X 到 1 后仍可结算）。
         option = next((o for o in actor["daowen_options"] if o["name"] == "波及"), None)
-        assert option is not None and option["wave_effective_x"] == 1
-        dao = {"name": "波及", "dodge": False, "blood_shadow": False,
-               "trigger_spell_choices": {h: {sp["spell_name"]: {"use": False} for sp in ss}
-                                         for h, ss in option.get("trigger_spell_options", {}).items()},
-               "dodge_targets": pick_wave_dodge_targets(option)}
+        assert option is None, f"solo 回合不应给出波及: {option}"
+        # 波及被过滤后仍须能从剩余合法选项里提交一个，回合照常推进
+        choice = _submission_for(actor, actor["daowen_options"][0] if actor["daowen_options"] else None)
         ok = e.execute_action("resolve_monster_phase", {
-            "token": prepared["result"]["token"],
-            "choices": [{"actor_ref": actor["actor_ref"], "daowen": dao,
-                         "attack_actions": _attack_block(actor)}]})
+            "token": prepared["result"]["token"], "choices": [choice]})
         assert ok["success"], ok
         assert e.execute_action("round_end", {})["success"]
 

@@ -48,16 +48,24 @@ EVENT_NAMES = {
 }
 
 
+# 规则正文中承载「通用事件池」的文件。2026-10-07 规则正文由 AI_EXPERIENCE.md
+# 迁到 README.md，此处必须跟着指过去——指错文件不会报错，只会让 10 个通用事件
+# 静默解析不出来（实测：resolve_event 一律回「未知事件: 祭坛」，一阶探索也
+# 探不到任何通用事件）。事实源分工见 AI_EXPERIENCE.md「文档分工与事实源」。
+RULES_TEXT_FILE = "README.md"
+
+
 def load_event_sources(index_path: str | Path) -> tuple[str, dict]:
     """读取事件解析的全部输入：规则正文 + 已实现副本文档正文。
 
-    规则正文（AI_EXPERIENCE.md）承载通用事件，副本文档承载副本专属事件，
-    两者合起来就是事件解析的**唯一**输入。缓存层（rule_repository）用同一份
-    输入算摘要，避免「缓存读了哪几个文件」与「解析读了哪几个文件」各写一份而漂移。
+    规则正文（README.md「第四宇宙规则正文」）承载通用事件，副本文档承载副本
+    专属事件，两者合起来就是事件解析的**唯一**输入。缓存层（rule_repository）
+    用同一份输入算摘要，避免「缓存读了哪几个文件」与「解析读了哪几个文件」
+    各写一份而漂移。
     """
     index = Path(index_path)
     root = index.parent
-    content = (root / "AI_EXPERIENCE.md").read_text(encoding="utf-8")
+    content = (root / RULES_TEXT_FILE).read_text(encoding="utf-8")
     documents = load_dungeon_documents(index)
     return content, documents
 
@@ -324,14 +332,14 @@ def _resolve_option_effect_impl(text: str, engine, event_name: str = "", params=
             _mut = player.add_mutation(3)
             applied.append("获得异变3")
             if _mut.get("collapsed"):
-                # 怪物异变爆体（旧【崩解】）：命零。玩家理论上不会走到这里（entity_type 非"怪物"），
+                # 怪物异变爆体（【迷失】）：命零。玩家理论上不会走到这里（entity_type 非"怪物"），
                 # 保留以兼容玩家被异常标记为怪物的极端情况。
                 engine.combat._on_entity_death(
                     player, ctx=engine.combat._lost_context(player, {
                         "timing": "pre_battle_event", "source": "纸人冥婚", "source_type": "event",
                         "actor": player, "target": player, "mechanic": "cost",
                         "subtype": "mutation", "amount": 3, "tags": {"event"}}, subtype="collapse"))
-                applied.append("异变达阈值，触发【迷失·崩解】：直接命零")
+                applied.append("异变达阈值，触发【迷失】：直接命零")
             elif _mut.get("lost"):
                 # 非怪物局外触发【迷失】：此处尚未进入战斗，直接判命零——
                 # 战斗中触发才会走「异变为怪物与原队伍开战」分支（见 _resolve_mutation_lost）。

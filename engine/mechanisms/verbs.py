@@ -119,7 +119,7 @@ def _verb_shield(combat, spec, ctx):
 
 def _verb_mutation(combat, spec, ctx):
     """施加异变。2026-09-28 用户令：非怪物达阈值触发【迷失】（变怪物/命零），
-    怪物达阈值【迷失·崩解】直接命零——统一在动词层处理，避免每个 effect 写一份。"""
+    怪物达阈值【迷失】直接命零——统一在动词层处理，避免每个 effect 写一份。"""
     target = spec["target"]
     layers = spec.get("layers", spec.get("amount", 0))
     mut = target.add_mutation(layers)
@@ -145,7 +145,8 @@ def _verb_mana(combat, spec, ctx):
     target = spec["target"]
     delta = int(spec.get("delta", spec.get("amount", 0)))
     if delta > 0:
-        target.current_mana += delta
+        # 2026-10-08：走统一入口，【勾魂】（无法获得[法力]）期间增益不生效
+        target.gain_mana(delta)
         combat.clamp_immortal_body(target)
         return {"delta": delta, "gained": delta, "lost": 0,
                 "current_mana": target.current_mana}

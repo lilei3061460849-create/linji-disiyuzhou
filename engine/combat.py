@@ -30,6 +30,44 @@ from .models import MONSTER_MANA_RELIC
 MEDIOCRITY_ROUNDS = Entity.MEDIOCRITY_ROUNDS
 
 
+# ---------------------------------------------------------------------------
+# 【招架】规则的单一真源（2026-10-08 结构审查）
+#
+# 规则正文：本轮你受到的攻击伤害 - 你 10% 当前生命（向下取整，最低 0）；
+# 每回合可使用次数 = 你声明招架时的当前生命，每次受击消耗 1 次。
+#
+# 这条规则此前在三处各写一遍：
+#   1. 真实结算 —— 本文件 CombatEngine._apply_parry_reduction；
+#   2. AI 候选生成 —— engine/ai_tactics.py::_parry_candidate；
+#   3. 声明回执文案 —— engine/api.py::_action_declare_parry。
+# 其中 AI 那份多一个 max(1, …) 下界，与结算口径（max(0, …)）**不是同一条公式**，
+# 只因「当前生命 < 10 不生成候选」的早退才没暴露分叉。
+# 三处一律改为调用下面两个函数：改规则只改这里一处，AI 与回执不会再各自漂移。
+# 数值语义与既有行为逐字节一致（未改任何规则数值）。
+# ---------------------------------------------------------------------------
+
+def parry_reduction_for(current_hp: Any) -> int:
+    """招架的单击减免 = floor(当前生命 × 10%)，最低 0。
+
+    取**受击结算那一刻**的生命，不是声明时的快照——本轮掉的每一点血都会
+    同步削弱招架，这是这张牌的设计张力。
+    """
+    try:
+        hp = int(current_hp)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, hp // 10)
+
+
+def parry_uses_for(current_hp: Any) -> int:
+    """招架的每回合可用次数 = 声明招架时的当前生命（每次受击消耗 1 次）。"""
+    try:
+        hp = int(current_hp)
+    except (TypeError, ValueError):
+        return 1
+    return max(1, hp)
+
+
 # 实现分片：方法体在 engine/combat_parts/*.py，本文件保留门面与核心结算
 # （__init__ / 伤害与数值管线 / resolve_attack / 回合管理 / 员工背叛与死之传承 /
 #  遗物结算 / 凡庸与目标合法性）。拆分不改变行为与对外契约：CombatEngine 仍是
@@ -292,7 +330,7 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         uses = getattr(target, "parry_uses_remaining_this_round", 0)
         if uses <= 0:
             return amount
-        reduction = max(0, target.current_hp // 10)
+        reduction = parry_reduction_for(target.current_hp)
         if reduction <= 0:
             # 当前生命不足10时招架减伤为0，但仍消耗1次次数（避免靠低血无限"招架"空挥）
             target.parry_uses_remaining_this_round = max(0, uses - 1)
@@ -545,7 +583,8 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         if gained <= 0:
             return None
         before = entity.current_mana
-        entity.current_mana += gained
+        # 2026-10-08：走统一入口，【勾魂】期间不生效
+        entity.gain_mana(gained)
         self.clamp_immortal_body(entity)
         # 记实际落地量（上限可能吃掉一部分），供战报如实呈现。
         entity._shouyedeng_granted = entity.current_mana - before
@@ -909,8 +948,10 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
             e.damage_dealt_this_round = 0
         # DM裁定 2026-09-09：[回始]不再回填法力。法力改为**一池制**——[战始]给满
         # 等同[法限]的一池，整场只出不进，[战终]复原（与[速度]同口径）。
-        # 原「勾魂：[回始]不获得法力」随本段一起取消，【勾魂】改为消耗法力翻倍
-        # （见 models.py::spend_mana）。
+        # 因这一段，"[回始]不获得法力"曾一度失去作用对象，【勾魂】在 2026-09-09
+        # 改为消耗法力翻倍；2026-10-08 用户令恢复「无法获得[法力]」原意——
+        # 战斗内已有多个法力来源（聚能/储能电池/守夜灯/承露盏/血契/余火印/
+        # 搏命·透支/法术），效果重新有对象。判定位见 models.py::gain_mana。
 
         # 遗物：回始触发（回锋刀按速限缺口造伤）。
         relic_logs = self.process_relics(TriggerTiming.ROUND_START, {"relic_choices": relic_choices or {}})
@@ -953,7 +994,9 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
 
         self.state.current_round += 1
 
-        # 【封印X】延迟回场：在第 R+X 回合始把原怪物重新加入敌方列表。
+        # 【封印X】延迟回场：在第 R+X 回合始把原实体放回它脱场前所在的阵营。
+        # 2026-10-08 用户令：封印的目标已不限于怪物，home/index 记录原址
+        # （"player" 表示玩家位），一律回原址，不得一律塞回 enemies。
         # 回场当回合记录 spawned_round；2026-09-15 用户令取消白板后，回场当回合
         # 同样可以发动道纹（spawned_round 仅作出生回合记录）。
         delayed = list(getattr(self.state, "delayed_monster_reentries", []) or [])
@@ -966,12 +1009,15 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                 monster.departure_reason = ""
                 monster.removed_without_kill = False
                 monster.spawned_round = self.state.current_round
+                # home/index 缺省视为旧存档：那只可能是怪物，回 enemies。
+                self.state.reattach_to_field(entry.get("home") or "enemies",
+                                             entry.get("index"), monster)
                 monster._delayed_by_seal = False
-                self.state.enemies.append(monster)
                 self.state.delayed_monster_reentries.remove(entry)
                 effects.append({"type": "seal_reentry", "entity": monster.name,
                                 "round": self.state.current_round,
-                                "delay_rounds": entry.get("delay_rounds", 0)})
+                                "delay_rounds": entry.get("delay_rounds", 0),
+                                "home": entry.get("home") or "enemies"})
 
         # 出怪配方（2026-09-28 用户令）：增援在第 i 波 `T_i` 累加的回合进场，
         # 一波可进 R_i（≥1）只；旧的固定波次 R4/R7/R10 已废止。
@@ -1383,7 +1429,8 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                     dragon_heart_use=decision.get("dragon_heart_use", 0),
                     cost_context={"timing": "round_start", "source": "血契", "source_type": "relic", "tags": {"active_payment"}},
                 )
-                player.current_mana += x
+                # 2026-10-08：走统一入口，【勾魂】期间不生效
+                player.gain_mana(x)
                 self.clamp_immortal_body(player)
                 shared = payment.get("shared_with")
                 shared_note = f"，与{shared['payer']}共同承担" if shared else ""
@@ -1398,7 +1445,8 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                     opponent, "流血", 4 * x,
                     cost_share_target_ref=decision.get("cost_share_target_ref", ""),
                     cost_context={"timing": "round_start", "source": "血契", "source_type": "relic", "tags": {"active_payment"}})
-                opponent.current_mana += x
+                # 2026-10-08：走统一入口，【勾魂】期间不生效
+                opponent.gain_mana(x)
                 self.clamp_immortal_body(opponent)
                 shared = payment.get("shared_with")
                 shared_note = f"，与{shared['payer']}共同承担" if shared else ""
@@ -1408,7 +1456,8 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                 heart = next(item for item in self.state.consumables
                              if item.name == choices["余火印"]["heart_name"] and item.kind == "dragon_heart")
                 heart.current_uses -= x
-                player.current_mana += 2 * x
+                # 2026-10-08：走统一入口，【勾魂】期间不生效
+                player.gain_mana(2 * x)
                 self.clamp_immortal_body(player)
                 logs.append(f"余火印：消耗{heart.name}耐久{x}，+{2*x}法力")
         if trigger == "battle_start":
@@ -1568,8 +1617,14 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         return effects
 
     def can_act(self, entity: Entity) -> bool:
-        """是否可出手（眩晕/束缚下不可）"""
+        """是否可出手（眩晕/束缚下不可；被【封印】暂离者不在场上，同样不可出手）。
+
+        2026-10-08 用户令：封印可作用于任意目标含自己。这里是"能否出手"的唯一
+        事实源，加上暂离判断后，玩家/朋友/员工/怪物被封印期间一律不能行动，
+        不必在每个行动入口各写一份。
+        """
         return (entity.is_alive
+                and not self.state.is_sealed_away(entity)
                 and not entity.has_status("眩晕")
                 and not entity.has_status("束缚"))
 
@@ -1586,7 +1641,8 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
             "player_side": [e.to_dict() for e in self.state.get_all_player_side()],
             "enemy_side": [e.to_dict() for e in self.state.get_all_enemy_side()],
             "delayed_monster_reentries": [
-                {"name": entry["monster"].name, "return_round": entry["return_round"]}
+                {"name": entry["monster"].name, "return_round": entry["return_round"],
+                 "home": entry.get("home") or "enemies"}
                 for entry in getattr(self.state, "delayed_monster_reentries", [])
             ],
         }

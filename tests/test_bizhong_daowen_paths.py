@@ -235,10 +235,12 @@ def test_monster_cast_bizhong_self_then_forces_debuff():
     assert p.has_status("勾魂"), "怪物处于必中姿态，勾魂必须命中生效"
 
     # 玩家的出路：残韵把该道纹转掉（已生效的 debuff 不清除）
-    e.state.resonance = {"曲解": 1}
+    # 2026-10-08 删【镇尸】后，勾魂的【曲解】通向闭环空占位符（不可获得），
+    # 唯一可用的转化路径是【反转】→冥气。
+    e.state.resonance = {"反转": 1}
     r = e.execute_action("use_resonance", {"source_daowen": "勾魂",
-                                           "resonance_type": "曲解",
+                                           "resonance_type": "反转",
                                            "target_ref": "enemy:0"})
     assert r.get("success") is True, r.get("error")
-    assert "勾魂" not in m.dao_wen and "镇尸" in m.dao_wen
+    assert "勾魂" not in m.dao_wen and "冥气" in m.dao_wen
     assert p.has_status("勾魂"), "转化不清除已生效 debuff（硬伤2-D）"

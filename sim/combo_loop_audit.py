@@ -48,7 +48,6 @@ HUNT = {
     "寄生": ("自愈", "曲解"),
     "滋养": ("自愈", "转换"),
     "无神": ("狂暴", "曲解"),
-    "自残": ("狂暴", "反转"),
 }
 
 
@@ -271,27 +270,18 @@ def lab_wushen_zican():
     m = _monster(e, name="狂暴猿", hp=222, atk=3, ap=14)
     _give_dw(m, "狂暴", 3)
     _give_dw(p, "无神")
-    _give_dw(p, "自残")
     p.current_mana = 80
     r = e.execute_action("use_daowen", {"daowen_name": "无神", "x": 1, "target_ref": "enemy:0"})
     # 无神改攻击目标
     hp0 = m.current_hp
     e.state.current_round = 2
     resolved = e.combat.resolve_attack(m, p, dodge=False)
-    # 自残在强化后
-    m.attack_power = 20
-    hp1 = m.current_hp
-    r2 = e.execute_action("use_daowen", {"daowen_name": "自残", "x": 2, "target_ref": "enemy:0"})
     return {
         "无神挂上": m.has_status("无神") and r.get("success"),
         "无神攻击打自己": resolved.get("target") == m.name or m.current_hp < hp0,
         "无神后生命": f"{hp0}→{m.current_hp}",
-        "自残2次20攻": hp1 - m.current_hp,
-        "期望40": 40,
-        "自残成功": r2.get("success"),
         "无神持续": 1,
         "无神法力": 20,
-        "自残法力": 20,
     }
 
 
@@ -369,9 +359,6 @@ def lab_tonghun_sanxiang():
     end = dict(e2.state.resonance)
     return {
         "同魂笔成功": r.get("success"),
-        "甲变自残": "自残" in m1.dao_wen and "狂暴" not in m1.dao_wen,
-        "乙变自残": "自残" in m2.dao_wen and "狂暴" not in m2.dao_wen,
-        "玩家获得自残": "自残" in p.dao_wen,
         "残韵消耗": 1,
         "三相战始后": mid,
         "三相战终后": end,
@@ -458,7 +445,7 @@ def run_lab():
         "折速回锋": lab_zhesu_huifeng(),
         "血契千刀万剐": lab_blood_pact_qiankewanua(),
         "寄生滋养癌变": lab_jisheng_and_ziyang(),
-        "无神自残": lab_wushen_zican(),
+        "无神": lab_wushen_zican(),
         "冲击切割贯穿": lab_chongji_qiege_guanchuan(),
         "同魂三相": lab_tonghun_sanxiang(),
         "守夜灯透支": lab_shouyedeng_touzhi(),
@@ -620,16 +607,6 @@ def player_policy(e, spec: ComboSpec):
             if "狂暴" in m.dao_wen and "无神" in p.dao_wen and not m.has_status("无神") and p.current_mana >= 20:
                 _cast(e, "无神", 1, f"enemy:{i}")
                 break
-        i, m = min(alive, key=lambda t: t[1].current_hp)
-        if "杀伐" in p.dao_wen and p.current_mana > 0:
-            _cast(e, "杀伐", p.current_mana, f"enemy:{i}")
-        return
-
-    if spec.policy == "zican":
-        best = max(alive, key=lambda t: t[1].attack_power)
-        if "自残" in p.dao_wen and p.current_mana >= 10 and best[1].attack_power >= 6:
-            x = min(p.current_mana // 10, 2)
-            _cast(e, "自残", x, f"enemy:{best[0]}")
         i, m = min(alive, key=lambda t: t[1].current_hp)
         if "杀伐" in p.dao_wen and p.current_mana > 0:
             _cast(e, "杀伐", p.current_mana, f"enemy:{i}")
@@ -883,9 +860,6 @@ def specs():
         S(name="无神+狂暴猎取", region="罪孽都市", resonance="曲解",
           prefer_relics=["守夜灯"], learn=["庇护", "杀伐"],
           hunt=["无神"], lingwu_cycle=["曲解"], policy="wushen"),
-        S(name="自残猎取", region="罪孽都市", resonance="反转",
-          prefer_relics=["守夜灯"], learn=["庇护", "杀伐"],
-          hunt=["自残"], lingwu_cycle=["反转"], policy="zican"),
         S(name="寄生猎取", region="龙心谷", resonance="曲解",
           prefer_relics=["守夜灯"], learn=["庇护", "杀伐"],
           hunt=["寄生"], lingwu_cycle=["曲解"], policy="jisheng"),
@@ -906,15 +880,13 @@ def specs():
           hunt=["急速"], lingwu_cycle=["转换"], policy="kill"),
         S(name="同魂笔+残韵", region="罪孽都市", resonance="反转",
           prefer_relics=["同魂笔"], learn=["庇护", "杀伐"],
-          hunt=["自残"], lingwu_cycle=["反转"], policy="zican"),
+          hunt=["衰败"], lingwu_cycle=["反转"], policy="kill"),
     ]
     for spec in items:
         if "急速+避风铃" in spec.name:
             spec.formed_needed = _formed_checker(["避风铃", "回锋刀"], ["急速"])
         elif spec.name.startswith("无神"):
             spec.formed_needed = _formed_checker((), ["无神"])
-        elif spec.name.startswith("自残"):
-            spec.formed_needed = _formed_checker((), ["自残"])
         elif spec.name.startswith("寄生"):
             spec.formed_needed = _formed_checker((), ["寄生"])
         elif spec.name.startswith("滋养"):
@@ -999,7 +971,7 @@ def main():
         ("折速回锋", lab_zhesu_huifeng),
         ("血契千刀万剐", lab_blood_pact_qiankewanua),
         ("寄生滋养癌变", lab_jisheng_and_ziyang),
-        ("无神自残", lab_wushen_zican),
+        ("无神", lab_wushen_zican),
         ("冲击切割贯穿", lab_chongji_qiege_guanchuan),
         ("同魂三相", lab_tonghun_sanxiang),
         ("守夜灯透支", lab_shouyedeng_touzhi),

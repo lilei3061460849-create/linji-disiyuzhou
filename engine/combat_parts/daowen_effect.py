@@ -128,7 +128,7 @@ class DaowenEffectMixin:
                 inst.spent_unique = True
                 result["unique_spent"] = True
 
-        # 蒙蔽(施法者伤害类道纹归零) / 坏死/镇尸(目标禁疗)
+        # 蒙蔽(施法者伤害类道纹归零) / 坏死(目标禁疗)
         mengbi_blocked = caster.has_status("蒙蔽") and ("target_damage" in calc or "aoe_damage" in calc)
         if mengbi_blocked:
             for s in caster.status_effects:
@@ -678,9 +678,12 @@ class DaowenEffectMixin:
         elif cost_share_target_ref:
             raise ValueError("该道纹没有可由【血契】共同承担的数值代价")
         if "mana_gain" in calc:
-            caster.current_mana += calc["mana_gain"]
+            # 2026-10-08：走统一入口，【勾魂】期间不生效（实际获得量可能与声明量不同）
+            gained = caster.gain_mana(calc["mana_gain"])
             self.clamp_immortal_body(caster)
-            result["effects"].append({"type": "mana_gain", "source": caster.name, "mana_gained": calc["mana_gain"]})
+            result["effects"].append({"type": "mana_gain", "source": caster.name,
+                                      "mana_gained": gained,
+                                      "mana_declared": calc["mana_gain"]})
 
         # ---- 乱葬岗（二阶）专属道纹效果 ----
         if name == "瓦解" and calc.get("blood_limit_pct"):
@@ -706,24 +709,19 @@ class DaowenEffectMixin:
                 result["effects"].append({"type": "wajie", "target": target.name,
                                           "blood_limit_pct": pct, "blood_limit_cut": cut,
                                           "blood_limit_after": target.blood_limit})
-        if name == "镇尸" and calc.get("no_heal"):
-            for st_target in wave_status_targets:
-                st_target.add_status(StatusEffect(name="镇尸", value=1,
-                                                  remaining_rounds=calc.get("duration", 1),
-                                                  source=caster.name))
-                result["effects"].append({"type": "zhenshi", "target": st_target.name,
-                                          "duration": calc.get("duration", 1)})
-        if name == "勾魂" and calc.get("mana_cost_multiplier"):
-            # 勾魂X（DM裁定 2026-09-09 再改版）：持续X回合**法力消耗翻倍**
-            # （实现在 models.py::spend_mana）。历史：旧版「[回始]失去2X法力，持续∞」
-            # 已废止；2026-08-30 版「[回始]无法获得法力」随法力一池制一起失去作用对象。
+        # 2026-10-08 用户令删除【镇尸】：与【坏死】是同一效果的两套实现，
+        # 保留【坏死】为「无法获得[回复]」的唯一入口。
+        if name == "勾魂" and calc.get("no_mana_gain"):
+            # 勾魂X：持续X回合**无法获得[法力]**（不扣已有法力）。
+            # 2026-10-08 用户令：撤销 2026-09-09 的「法力消耗翻倍」，恢复原效果。
+            # 判定只有一处：Entity.can_gain_mana() —— 所有法力增益来源都过 gain_mana()。
             for st_target in wave_status_targets:
                 st_target.add_status(StatusEffect(name="勾魂", value=1,
                                                   remaining_rounds=calc.get("duration", x),
                                                   source=caster.name))
                 result["effects"].append({
                     "type": "gouhun", "target": st_target.name,
-                    "mana_cost_multiplier": calc.get("mana_cost_multiplier"),
+                    "no_mana_gain": True,
                     "duration": calc.get("duration", x)})
         if name == "冥气" and calc.get("speed_loss_speed_limit"):
             for st_target in wave_status_targets:
@@ -770,7 +768,10 @@ class DaowenEffectMixin:
                 result["effects"].append({"type": "zhaohun", "note": "没有可唤回的怪物尸体"})
 
         # ---- 特殊 ----
-        if "self_attack_count" in calc:  # 自残：目标自打X次
+        # 当前没有任何已注册道纹产出 self_attack_count，本分支暂时无人触发。
+        # 保留它作为可复用通道（波及平分也已接线），将来若有道纹走
+        # "目标自打"效果可直接用。
+        if "self_attack_count" in calc:  # 目标自打X次
             if "self_attack_count" in wave_pieces:
                 pieces = self._divide_flat(calc["self_attack_count"], len(wave_status_targets))
                 wave_pieces["self_attack_count"] = pieces
@@ -793,17 +794,31 @@ class DaowenEffectMixin:
                             "tags": {"daowen", "self_damage"},
                         })})
         if calc.get("delay_monster_reentry"):
-            # 【封印X】：目标由 use_daowen 的显式 target_ref/target 绑定；只允许一只
-            # 当前在场怪物进入暂离队列。暂离不写离场/死亡上下文，也不产生碎片分类。
-            if target.entity_type != "怪物":
-                raise ValueError("【封印】的目标必须是当前在场的怪物")
-            if not any(e is target for e in self.state.enemies) or not target.is_alive:
-                raise ValueError("【封印】的目标必须是当前存活且在场的怪物")
-            reentry = self._delay_monster_reentry(target, calc.get("delay_rounds", x))
+            # 【封印X】：目标由 use_daowen 的显式 target_ref/target 绑定，进入暂离队列。
+            # 暂离不写离场/死亡上下文，也不产生碎片分类。
+            #
+            # 2026-10-08 用户令：**任意目标**都可以被封印——敌人、[朋友]、[员工]、
+            # 临时朋友、敌对轮回者，以及施法者自己（延后 X 回合再入场）。
+            # 校验随之放开：只要"还活着、还在场上、没处于暂离中"即可，
+            # 不再要求 entity_type == "怪物"，也不再要求属于 enemies。
+            # 但明确不允许封印已经永久离场/撤退的单位（那不是"暂离"的对象）。
+            if target is None or not target.is_alive:
+                raise ValueError("【封印】的目标必须仍存活")
+            if target.is_departed or target.has_retreated:
+                raise ValueError(f"【封印】的目标{target.name}已永久离场，不是暂离的对象")
+            if self.state.is_sealed_away(target):
+                raise ValueError(f"【封印】的目标{target.name}已处于暂离中")
+            try:
+                self.state.seal_home_of(target)
+            except ValueError as exc:
+                raise ValueError(f"【封印】的目标必须仍在场上：{exc}") from None
+            reentry = self._delay_entity_reentry(target, calc.get("delay_rounds", x))
             result["effects"].append({
                 "type": "seal", "target": target.name,
                 "delay_rounds": reentry["delay_rounds"],
                 "return_round": reentry["return_round"],
+                "home": reentry["home"],
+                "index": reentry["index"],
                 "note": f"{target.name}延后{reentry['delay_rounds']}回合，于第{reentry['return_round']}回合始再入场",
             })
 
@@ -863,7 +878,7 @@ class DaowenEffectMixin:
               and not (name == "变形" and bianxing_blocked)
               # 波及标记由 use_daowen/怪物结算逐目标处理，不走通用状态块
               # 乱葬岗道纹已在上方乱葬岗段自行 add_status，跳过通用状态处理避免重复叠加
-              and name not in ("勾魂", "冥气", "缄默", "镇尸", "瓦解", "波及")):
+              and name not in ("勾魂", "冥气", "缄默", "瓦解", "波及")):
             duration = calc["duration"] if calc["duration"] != 0 else -1
             effect_target = target if target else caster
             # 自身作用型道纹(变形/超频/自食等)作用于施法者

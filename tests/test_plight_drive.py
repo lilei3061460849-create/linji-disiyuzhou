@@ -2,8 +2,8 @@
 
 裁定：怪物陷入困境（check_monster_difficulty ≥1 劣势信号）时——
   1. 进化优先：有借用票（轮回者持有、自身未持有的道纹）且原初X门票异变5X
-     不必然崩解 → declare_evolution 借纹（X≤异变预算）；
-  2. 无票或必崩解 → 逃跑（统一【离场】，不视为击杀）。
+     不必然迷失 → declare_evolution 借纹（X≤异变预算）；
+  2. 无票或必迷失 → 逃跑（统一【离场】，不视为击杀）。
 门禁：死斗不驱动；决斗敌方（轮回者，非怪物）永不驱动；每场战斗每怪限一次。
 """
 from __future__ import annotations
@@ -94,7 +94,7 @@ def test_plight_escape_when_no_ticket(tmp_path):
 
 
 def test_plight_escape_when_certain_collapse(tmp_path):
-    """门票异变必崩解（max_x=0）→ 即使有票也逃跑。"""
+    """门票异变必迷失（max_x=0）→ 即使有票也逃跑。"""
     e = _engine(tmp_path)
     _full_ok(e)
     m = _plight_monster()

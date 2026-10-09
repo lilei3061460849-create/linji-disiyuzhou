@@ -27,6 +27,8 @@ import math
 import os
 from typing import Any, Optional
 from engine.ai_preview import ActionPreview
+# 招架减免/可用次数的规则真源（AI 不得自己再写一遍公式，见 engine/combat.py）
+from engine.combat import parry_reduction_for, parry_uses_for
 
 # 单次出手最多预演的候选数（性能护栏；候选按新鲜度与威胁优先）
 MAX_CANDIDATE_PREVIEWS = 26
@@ -455,7 +457,7 @@ class TacticalAI:
             kind = "buff"
         elif max(0, p.get("hp_before", 0) - p.get("hp_after", 0)) > 0:
             kind = "harm"      # 自伤不是战术牌（③修复连带：无活敌时 杀伐 自指
-            #                    变体曾被兜底成 tactician → try_buff 拿它自残）
+            #                    变体曾被兜底成 tactician → try_buff 拿它打自己）
         else:
             kind = "tactician"   # 其余无面板位移的战术牌
         # dmg 口径：事件流 raw_damage（未扣盾），与上面的 kind 判定同源同口径。
@@ -498,11 +500,11 @@ class TacticalAI:
         enemies = self.alive_enemies()
         if not enemies:
             return None
-        per_hit_reduction = max(1, player.current_hp // 10)
+        per_hit_reduction = parry_reduction_for(player.current_hp)
         # 总受击数 = 敌方攻击次数之和；招架可用次数上限=player.current_hp，
         # 因此减免量 = per_hit_reduction × min(总受击数, current_hp)
         total_hits = sum(max(0, e.effective_attack_count()) for e in enemies)
-        effective_hits = min(total_hits, max(1, int(player.current_hp)))
+        effective_hits = min(total_hits, parry_uses_for(player.current_hp))
         reduction = per_hit_reduction * effective_hits
         if reduction <= 0:
             return None
@@ -633,6 +635,7 @@ class TacticalAI:
         if not stock:
             return []
         out = []
+        best: dict = {}
         enemies = sorted(self.alive_enemies(),
                          key=lambda e: -e.effective_attack_count() * e.effective_attack_power())
         for enemy in enemies:
@@ -646,6 +649,10 @@ class TacticalAI:
                     rtype = path.get("resonance_type")
                     if not rtype or stock.get(rtype, 0) <= 0:
                         continue
+                    # 闭环上的空占位符（道纹被删后留的空位）不可获得，
+                    # 别把它当成一个可收割的目标去提交残韵（2026-10-08）。
+                    if path.get("reserved"):
+                        continue
                     # 残韵是双向的：既削敌（敌人失去 dw），也补己
                     # （api._grant_transformed_daowen 把转化结果白送给施法者）。
                     # 2026-09-13 修正：此前只算"敌人少了什么"，漏掉"我多了什么"
@@ -655,14 +662,25 @@ class TacticalAI:
                     score = 4.0 * (0.5 + threat_share) * weight
                     score += self._resonance_gain_bonus(path.get("target_daowen"))
                     params = {"source_daowen": dw, "resonance_type": rtype,
+                              # 双向后同一（源道纹, 残韵）可能通向两个相邻节点，
+                              # 必须显式提交走向，不让引擎替我们挑。
+                              "target_daowen": path.get("target_daowen", ""),
                               "target": enemy.name,             # 兼容测试/旧解析：按名字找目标
                               "target_ref": self._target_ref_for(enemy)}  # use_resonance 需要稳定引用
                     if self._actor_ref:
                         params["actor_ref"] = self._actor_ref
-                    out.append((score, {
-                        "action": "use_resonance",
-                        "label": f"残韵·{rtype}→{dw}@{enemy.name}",
-                        "params": params}))
+                    # 残韵路径双向后，同一道纹可通向两个相邻节点；候选若全量铺开会
+                    # 让每个敌人的每条道纹都翻一倍（AI 每个决策点只提交一条，多出来的
+                    # 分支纯属浪费）。同一（敌人, 道纹）只保留**评分最高**的那条路径：
+                    # 正反两向都参与打分，只是不再各自占一个候选位。
+                    key = (enemy.name, dw)
+                    prior = best.get(key)
+                    if prior is None or score > prior[0]:
+                        best[key] = (score, {
+                            "action": "use_resonance",
+                            "label": f"残韵·{rtype}→{dw}@{enemy.name}",
+                            "params": params})
+        out.extend(best.values())
         out.sort(key=lambda t: -t[0])
         return out[:3]
 
@@ -867,7 +885,7 @@ class TacticalAI:
         只读引擎阈值与实体字段（`cancer_threshold_of` / `MUTATION_COLLAPSE_THRESHOLD` /
         连续未使敌掉血回合数），**不按道纹名特判、不改任何规则数值**：
           ① 癌变：本手后 total_healed ≥ combat.cancer_threshold_of(自己)；
-          ② 崩解：本手后 mutation_count ≥ Entity.MUTATION_COLLAPSE_THRESHOLD；
+          ② 迷失：本手后 mutation_count ≥ Entity.MUTATION_COLLAPSE_THRESHOLD；
           ③ 凡庸：连续五回合未能使敌对角色掉血 → 越接近线，「能推进伤害」越值钱。
         致命原因非空 = 这一手就是自己把自己送走，与 LETHAL 同档一票否决。
         """
@@ -889,14 +907,14 @@ class TacticalAI:
                 if after >= soft:
                     adj -= 25.0 * (after - soft) / max(1.0, line - soft)
 
-        # ② 崩解线：异变层数达阈值直接命零
+        # ② 迷失阈值：异变层数达阈值直接命零
         collapse = getattr(type(me), "MUTATION_COLLAPSE_THRESHOLD", 0) or 0
         mut_after = p.get("mutation_after")
         if mut_after is None:
             mut_after = getattr(me, "mutation_count", 0) + max(0.0, p.get("mutation_delta", 0) or 0)
         if collapse > 0:
             if mut_after >= collapse:
-                return adj, f"本手后异变{mut_after:.0f}≥崩解线{collapse}"
+                return adj, f"本手后异变{mut_after:.0f}≥迷失阈值{collapse}"
             soft = collapse * self.SELF_PRESERVE_MARGIN
             if mut_after >= soft:
                 adj -= 25.0 * (mut_after - soft) / max(1.0, collapse - soft)

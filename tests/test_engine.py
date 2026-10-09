@@ -155,11 +155,17 @@ def test_resonance():
     """测试残韵系统"""
     print("\n=== 测试：残韵系统 ===")
     
-    # 杀伐 → 反转 → 再生
-    result = ResonanceEngine.apply_resonance("杀伐", "反转", False, True)
+    # 杀伐 → 反转 → 再生（杀伐的反转通向再生与封印两个相邻节点，须显式指定走向）
+    result = ResonanceEngine.apply_resonance("杀伐", "反转", False, True, target_daowen="再生")
     assert result["success"], f"残韵失败: {result}"
     assert result["target"] == "再生"
     print("  ✓ 杀伐 --反转--> 再生")
+
+    # 路径双向：再生 --反转--> 杀伐 同样成立（2026-10-07 用户令）
+    result = ResonanceEngine.apply_resonance("再生", "反转", False, True, target_daowen="杀伐")
+    assert result["success"], f"残韵失败: {result}"
+    assert result["target"] == "杀伐"
+    print("  ✓ 再生 --反转--> 杀伐（反向）")
     
     # 再生 → 曲解 → 庇护
     result = ResonanceEngine.apply_resonance("再生", "曲解", False, True)
@@ -899,11 +905,11 @@ def test_relics_five_more():
 
 def test_evolution_yuanchu():
     """
-    测试【进化】（原初X）与【崩解】（异变达到阈值直接命零）
+    测试【进化】（原初X）与【迷失】（异变达到阈值直接命零）
     规则：原初X：代价：异变5X。选择一种自身未持有的原始怪物道纹，[战终]前视为持有
     （数值固定为本次X），借用的道纹发动时照常支付其自身代价。须处于困境，每场限一次。
     """
-    print("\n=== 测试：进化（原初X）与崩解 ===")
+    print("\n=== 测试：进化（原初X）与迷失 ===")
     from engine.models import GameState, DaoWen, DaoWenInstance
     from engine.combat import CombatEngine
 
@@ -941,7 +947,7 @@ def test_evolution_yuanchu():
     assert m.mutation_count == 10, f"门票异变应为5×2=10，实{m.mutation_count}"
     assert "自愈" in m.dao_wen and m.dao_wen["自愈"].x_value == 2, "应借用【自愈2】"
     assert "原初借用" in m.dao_wen["自愈"].dao_wen.tags, "借用道纹应有原初借用标记"
-    assert r["collapsed"] is False, "10层不应崩解"
+    assert r["collapsed"] is False, "10层不应迷失"
     print(f"  ✓ 困境怪发动【原初2】：异变+10（当前{m.mutation_count}层），借用【自愈2】至战终")
 
     # ---- 2. 边界：同场第二次进化 → 拒绝 ----
@@ -958,17 +964,17 @@ def test_evolution_yuanchu():
     r3 = engine.execute_action("declare_evolution", {"monster": "临界怪", "daowen": "自愈", "x": 2})
     assert r3["success"] and r3["collapsed"] is False, f"{T-1}层应存活: {r3}"
     assert m29.mutation_count == T - 1 and m29.is_alive, f"{T-1}层应存活"
-    print(f"  ✓ 异变{T-11}+10={T-1}层：存活，借用生效（崩解阈值{T}未达）")
+    print(f"  ✓ 异变{T-11}+10={T-1}层：存活，借用生效（迷失阈值{T}未达）")
 
-    # ---- 4. 边界：异变恰好到阈值 → 崩解命零，进化效果中断 ----
-    m30 = mk_plight_monster(name="崩解怪")
+    # ---- 4. 边界：异变恰好到阈值 → 迷失命零，进化效果中断 ----
+    m30 = mk_plight_monster(name="迷失怪")
     m30.mutation_count = T - 10
     engine.state.enemies.append(m30)
-    r4 = engine.execute_action("declare_evolution", {"monster": "崩解怪", "daowen": "自愈", "x": 2})
-    assert r4["success"] and r4["collapsed"] is True, f"{T}层应触发崩解: {r4}"
-    assert m30.mutation_count == T and not m30.is_alive and m30.current_hp == 0, "崩解应直接命零"
-    assert "自愈" not in m30.dao_wen, "崩解时进化效果中断，借用不生效"
-    print(f"  ✓ 异变{T-10}+10={T}层：触发【崩解】直接命零，借用【自愈】中断未生效")
+    r4 = engine.execute_action("declare_evolution", {"monster": "迷失怪", "daowen": "自愈", "x": 2})
+    assert r4["success"] and r4["collapsed"] is True, f"{T}层应触发迷失: {r4}"
+    assert m30.mutation_count == T and not m30.is_alive and m30.current_hp == 0, "迷失应直接命零"
+    assert "自愈" not in m30.dao_wen, "迷失时进化效果中断，借用不生效"
+    print(f"  ✓ 异变{T-10}+10={T}层：触发【迷失】直接命零，借用【自愈】中断未生效")
 
     # ---- 5. 非法输入：借用轮回者未持有的道纹 → 拒绝 ----
     engine2 = mk_engine()
@@ -998,7 +1004,7 @@ def test_evolution_yuanchu():
     assert m_bad.mutation_count == 0 and m_fine.mutation_count == 0, "被拒绝的进化均不扣异变"
     print(f"  ✓ 非法输入全部拒绝：转化道纹/已持有/X=0/非困境，且均不扣异变")
 
-    # ---- 6. 怪物激活原始道纹真实计费 + 崩解中断 ----
+    # ---- 6. 怪物激活原始道纹真实计费 + 迷失中断 ----
     st = GameState()
     st.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60,
                        speed_limit=8, current_speed=8)
@@ -1011,7 +1017,7 @@ def test_evolution_yuanchu():
     assert m_act.mutation_count == 15, f"发动全力3应付异变5×3=15，实{m_act.mutation_count}"
     print(f"  ✓ 怪物发动【全力3】真实支付异变15层（当前{m_act.mutation_count}层）")
 
-    # 崩解中断：异变(阈值-15) + 全力3门票15 = 阈值 → 激活中断、不攻击
+    # 迷失中断：异变(阈值-15) + 全力3门票15 = 阈值 → 激活中断、不攻击
     st2 = GameState()
     st2.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60,
                         speed_limit=8, current_speed=8)
@@ -1021,10 +1027,10 @@ def test_evolution_yuanchu():
     combat2 = CombatEngine(st2, DiceEngine()); combat2.reset_monster_activation()
     combat2.round_start(); combat2.round_start()
     r10 = resolve_monster_phase(combat2, {"自毁怪": "全力"})
-    assert m_col.mutation_count == Entity.MUTATION_COLLAPSE_THRESHOLD and not m_col.is_alive, "激活付异变达阈值应崩解命零"
-    assert st2.player.current_hp == 60, "崩解怪攻击出手应被中断，玩家无伤"
-    assert any(e.get("collapsed") == "全力" for e in r10), "结果应记录崩解事件"
-    print(f"  ✓ 异变{Entity.MUTATION_COLLAPSE_THRESHOLD-15}+发动全力3(15)={Entity.MUTATION_COLLAPSE_THRESHOLD}层：崩解命零，攻击中断，玩家HP仍为{st2.player.current_hp}")
+    assert m_col.mutation_count == Entity.MUTATION_COLLAPSE_THRESHOLD and not m_col.is_alive, "激活付异变达阈值应迷失命零"
+    assert st2.player.current_hp == 60, "迷失怪攻击出手应被中断，玩家无伤"
+    assert any(e.get("collapsed") == "全力" for e in r10), "结果应记录迷失事件"
+    print(f"  ✓ 异变{Entity.MUTATION_COLLAPSE_THRESHOLD-15}+发动全力3(15)={Entity.MUTATION_COLLAPSE_THRESHOLD}层：迷失命零，攻击中断，玩家HP仍为{st2.player.current_hp}")
 
     # ---- 7. 借用道纹：原初门票与首次发动各付一次，持续期间不再计费 ----
     st3 = GameState()
@@ -1053,7 +1059,7 @@ def test_evolution_yuanchu():
     assert total2 == 30 and m_b.is_alive, f"重复发动按同一X计费：20+5×2=30，实{total2}"
     assert m_b.dao_wen["自愈"].x_value == 2
     print("  ✓ 借用道纹门票10+首次发动10=20层；递增废止后重复发动按X=2再付10 → 30层")
-    print("  ✓ 进化（原初X）与崩解测试通过")
+    print("  ✓ 进化（原初X）与迷失测试通过")
 
 
 def test_evolution_plight_listing():
@@ -1094,7 +1100,7 @@ def test_evolution_plight_listing():
     assert info["max_x_by_mutation"] == (T_list - 1 - 10) // 5, \
         f"max_x应为({T_list-1}-10)//5={(T_list-1-10)//5}，实{info['max_x_by_mutation']}"
     print(f"  ✓ evolution项已暴露：困境怪（信号{info['difficulty_signals']}），"
-          f"可借6种原始道纹，不崩解最大X={info['max_x_by_mutation']}")
+          f"可借6种原始道纹，不触发迷失最大X={info['max_x_by_mutation']}")
 
     # ---- 2. 边界：仅1个劣势信号 → 判定困境（裁定⑦：探针≥1） ----
     m2 = Entity(name="半血怪", entity_type="怪物", blood_limit=120, current_hp=120,
@@ -1208,7 +1214,7 @@ def test_original_daowen_only_charges_mutation_on_activation():
     assert m2.mutation_count == 15 and m2.is_alive
     print("  ✓ 必中3首次支付异变15，未再发动则不再计费")
 
-    # 崩解仍保留：若首次发动本身使异变达到阈值，效果中断并命零。
+    # 迷失仍保留：若首次发动本身使异变达到阈值，效果中断并命零。
     m3 = mk("临界怪", [("自愈", 2)])
     m3.mutation_count = Entity.MUTATION_COLLAPSE_THRESHOLD - 10
     m3.dao_wen["庇护"] = DaoWenInstance(
@@ -1219,13 +1225,13 @@ def test_original_daowen_only_charges_mutation_on_activation():
     c3.round_start(); result = resolve_monster_phase(c3, {"临界怪": "自愈"})
     assert not m3.is_alive and m3.mutation_count == Entity.MUTATION_COLLAPSE_THRESHOLD
     assert any(entry.get("collapsed") == "自愈" for entry in result)
-    print("  ✓ 首次发动支付异变达到阈值时仍会崩解，效果中断")
+    print("  ✓ 首次发动支付异变达到阈值时仍会迷失，效果中断")
 
 
 def test_consumable_mutation_wiring():
     """
     测试裁定⑧（A4全量）：普通消耗品中"获得异变N"统一走 Entity.add_mutation；
-    任何角色达50层即【崩解】命零（尸体变怪物=世界观句，无数值效果）。
+    任何角色达50层即【迷失】命零（尸体变怪物=世界观句，无数值效果）。
     """
     print("\n=== 测试：消耗品异变统一入口（裁定⑧） ===")
     from engine.models import Consumable
@@ -1253,16 +1259,16 @@ def test_consumable_mutation_wiring():
     assert engine.state.consumables[0].is_depleted, "残骸（1/1）应用尽"
     print(f"  ✓ 残骸使用：异变+10（当前{p.mutation_count}层，阈值{T}），耐久1→0")
 
-    # ---- 2. 边界：T-10层使用残骸 → 恰好T层触发崩解，命零 ----
+    # ---- 2. 边界：T-10层使用残骸 → 恰好T层触发迷失，命零 ----
     engine2 = mk_engine(mut=T - 10)
     engine2.state.consumables.append(Consumable(
         name="残骸", effect="局内使用恢复20生命并获得异变10", current_uses=1, max_uses=1))
     r2 = engine2.execute_action("consume_item", {"name": "残骸"})
-    assert r2["success"] and r2["result"]["mutation"]["collapsed"], f"{T-10}+10应崩解: {r2}"
+    assert r2["success"] and r2["result"]["mutation"]["collapsed"], f"{T-10}+10应迷失: {r2}"
     p2 = engine2.state.player
     assert p2.mutation_count == T and not p2.is_alive and p2.current_hp == 0, \
-        "轮回者崩解应直接命零"
-    print(f"  ✓ 边界：{T-10}层+异变10={T}层触发崩解，轮回者命零（{r2['result']['mutation'].get('note','')}）")
+        "轮回者迷失应直接命零"
+    print(f"  ✓ 边界：{T-10}层+异变10={T}层触发迷失，轮回者命零（{r2['result']['mutation'].get('note','')}）")
 
     # ---- 3. 非法/对照：不含异变的普通消耗品不触碰异变；找不到的消耗品拒绝 ----
     engine3 = mk_engine()

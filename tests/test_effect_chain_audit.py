@@ -302,7 +302,7 @@ def test_e_departure_is_not_death():
 
 
 def test_e_collapse_goes_through_unified_death():
-    """崩解（异变≥50）此前不通知死亡；现在必须走统一管线。"""
+    """迷失（异变≥50）此前不通知死亡；现在必须走统一管线。"""
     state, combat, player, enemy = _arena(enemy_hp=40)
     state.relics = [Relic("焦黑发丝", "")]
     player.current_speed = 1
@@ -316,10 +316,10 @@ def test_e_collapse_goes_through_unified_death():
 
     assert enemy.is_alive is False
     assert enemy._death_ctx["subtype"] == "collapse"
-    assert enemy._death_ctx["source"] == "迷失", "2026-09-28【崩解】改名【迷失·崩解】，source 统一为'迷失'"
+    assert enemy._death_ctx["source"] == "迷失", "2026-09-28【迷失】改名【迷失】，source 统一为'迷失'"
     assert enemy._death_ctx["parent_event_id"] is not None
     assert len(_events(combat, CombatEventType.ENTITY_DIED)) == 1
-    assert player.current_speed == 3, "迷失·崩解死者同样要触发[命零]后效果"
+    assert player.current_speed == 3, "迷失·迷失死者同样要触发[命零]后效果"
 
 
 # ==================== F. Hook 顺序显式化 ====================

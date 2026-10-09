@@ -146,7 +146,7 @@ def test_two_config_examples_append_without_code_change(tmp_path):
     second = store.append(CAUSE_DRAFTS["collapse"])
     loaded = store.load()
     assert loaded[0]["text"] == first["text"] == "受到致死攻击命零"
-    assert loaded[1]["text"] == second["text"] == "异变叠满迷失（崩解/叛变）命零"
+    assert loaded[1]["text"] == second["text"] == "异变叠满迷失命零"
     parsed = parse_legacies(book.read_text(encoding="utf-8"))
     assert [item["text"] for item in parsed] == [first["text"], second["text"]]
 
@@ -196,7 +196,7 @@ def test_reject_does_not_write_and_invalid_edit_keeps_interrupt(tmp_path):
 
 
 def test_collapse_and_mediocrity_both_trigger_inheritance(tmp_path):
-    """正常路径：崩解与凡庸导致的轮回者命零都触发死之传承。"""
+    """正常路径：迷失与凡庸导致的轮回者命零都触发死之传承。"""
     engine, _ = _engine(tmp_path, "causes")
     T = Entity.MUTATION_COLLAPSE_THRESHOLD
     engine.state.player.mutation_count = T - 10

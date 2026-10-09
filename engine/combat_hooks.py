@@ -117,11 +117,10 @@ class ShouyedengHook:
         if getattr(entity, "_shouyedeng_granted", 0):
             return {}
         mana_to_gain = math.ceil(entity.mana_limit * 0.1)
-        entity.current_mana += mana_to_gain
-        if entity.current_mana > entity.mana_limit:   # 全局属性封顶
-            entity.current_mana = entity.mana_limit
-        entity._shouyedeng_granted = mana_to_gain
-        return {"mana_gained": mana_to_gain}
+        # 2026-10-08：走统一入口，【勾魂】期间不生效
+        gained = entity.gain_mana(mana_to_gain)
+        entity._shouyedeng_granted = gained
+        return {"mana_gained": gained}
 
 
 class DamageRedirectionHook:

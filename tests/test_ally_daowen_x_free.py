@@ -95,7 +95,7 @@ def test_cannot_afford_returns_zero_instead_of_error():
 
 
 def test_mutation_stays_clear_of_collapse_line():
-    """异变累加到崩解线即命零且跨战斗不回退，必须留足安全边距。"""
+    """异变累加到迷失阈值即命零且跨战斗不回退，必须留足安全边距。"""
     ally = _ally("乞丐", hp=50, ac=2, ap=3, mut=3)
     x = pick_ally_daowen_x(ally, "全力", ally)      # 异变 +5X（2026-10-03 起用【全力】替代已删的【狂暴】）
     after = ally.mutation_count + 5 * x

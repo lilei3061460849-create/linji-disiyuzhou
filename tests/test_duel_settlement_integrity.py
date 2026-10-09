@@ -223,7 +223,7 @@ def test_death_attribution_marks_self_paid_cost():
     assert "非对手击杀" in death_attribution_note(e, "守擂主将")
     e._death_ctx = {"actor": "司空", "source": "杀伐", "tags": ["daowen"]}
     assert death_attribution_note(e, "守擂主将") == "守擂主将阵亡"
-    e._death_ctx = {"actor": "闻人", "source": "崩解", "tags": []}
+    e._death_ctx = {"actor": "闻人", "source": "迷失", "tags": []}
     assert "自伤命零" in death_attribution_note(e, "守擂主将")
     assert death_attribution_note(None, "守擂主将") == "守擂主将阵亡"
 
@@ -294,12 +294,12 @@ def test_death_attribution_names_cancer():
     assert "非对手击杀" in note, note
 
     # 无具名死因时仍走原口径（不为改而改）
-    e._death_ctx = {"actor": None, "source": "崩解", "tags": []}
+    e._death_ctx = {"actor": None, "source": "迷失", "tags": []}
     assert "自伤命零" in death_attribution_note(e, "守擂主将")
 
 
 def test_sculpture_loss_is_distinguished_from_death():
-    """②裁定（2026-09-10 用户）：死斗判定必须区分 被击杀/化雕塑/凡庸/崩解。
+    """②裁定（2026-09-10 用户）：死斗判定必须区分 被击杀/化雕塑/凡庸/迷失。
 
     化雕塑是「攻次与攻力双0离场」（离场不是命零）——判负原因不得写成「阵亡」。
     """

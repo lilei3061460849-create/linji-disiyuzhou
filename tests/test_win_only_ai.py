@@ -148,9 +148,9 @@ class _VetoProbe(WinOnlyAI):
 
 
 def test_collapse_line_veto_rejects_mutation_suicide():
-    """崩解线否决（六审训练）：异变 48 时 封印X=1（+8→56≥50）非终结 → 整个提案被拒。
+    """迷失阈值否决（六审训练）：异变 48 时 封印X=1（+8→56≥50）非终结 → 整个提案被拒。
 
-    seed5 实锤：异变 48 放封印 X=1 → 异变 56 ≥ 崩解线 50 → 血 0 自爆。
+    seed5 实锤：异变 48 放封印 X=1 → 异变 56 ≥ 迷失阈值 50 → 血 0 自爆。
     纯 AI 层知识，不许碰引擎规则面；终结（all_gone）豁免不在本桩覆盖内。
     """
     ai = _VetoProbe(mutation=48, labels_scores={"封印X=1": 5.0})

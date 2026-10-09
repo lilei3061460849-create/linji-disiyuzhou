@@ -232,6 +232,9 @@ _CLASSIFIED_ENGINE_ATTRS = {
     "state": "isolated", "dice": "isolated", "combat": "isolated",
     "_pending_interrupts": "isolated", "_action_history": "isolated",
     "_last_result": "isolated", "event_pool": "isolated",
+    # 【重来本场】战始快照：由 engine/sandbox.py 的 snapshot/restore_engine_side
+    # 存引用并原样换回（只整体重新赋值，不就地改写，故无需 deepcopy）。
+    "_battle_restart_snapshot": "isolated",
     "monster_pool": "rule_data",
     "death_book": "io", "rulings_db": "io", "_validator": "io", "_rule_sync": "io",
     "save_dir": "io", "death_book_path": "io", "sealed_candidate_path": "io",

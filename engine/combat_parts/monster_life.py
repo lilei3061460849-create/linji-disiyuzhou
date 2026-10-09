@@ -157,13 +157,13 @@ class MonsterLifeMixin:
         log = [f"{monster.name}发动【原初{x}】：异变+{cost}（当前{pay['mutation_total']}层）"]
         
         if pay["collapsed"]:
-            # 怪物异变爆体（旧【崩解】，怪物达到阈值仍直接命零；2026-09-28 非怪物改成【迷失】）
+            # 怪物异变爆体：达到阈值直接命零（2026-10-08 起与【迷失】统一命名）
             self._on_entity_death(monster, ctx=self._lost_context(monster, {
                 "timing": self._current_context_timing(), "source": f"原初{x}",
                 "source_type": "evolution", "actor": monster, "target": monster,
                 "mechanic": "cost", "subtype": "mutation", "amount": cost,
                 "tags": {"evolution", "active_payment"}}, subtype="collapse"))
-            log.append(f"异变达到{pay['mutation_total']}层，触发【迷失·崩解】：{monster.name}异变爆体直接命零，进化效果中断")
+            log.append(f"异变达到{pay['mutation_total']}层，触发【迷失】：{monster.name}异变爆体直接命零，进化效果中断")
             return {"success": True, "action": "进化·原初X", "collapsed": True,
                     "log": log, "mutation": pay,
                     "state": self._get_combat_state()}
@@ -199,8 +199,8 @@ class MonsterLifeMixin:
             difficulty = self.check_monster_difficulty(m)
             if not difficulty:
                 continue
-            # 异变预算：门票异变5X后若达到阈值则触发【迷失·崩解】直接命零、借用中断。
-            # max_x_by_mutation = 不崩解的最大X；超出属于合法但纯亏的自杀式选择，不禁止。
+            # 异变预算：门票异变5X后若达到阈值则触发【迷失】直接命零、借用中断。
+            # max_x_by_mutation = 不触发迷失的最大X；超出属于合法但纯亏的自杀式选择，不禁止。
             max_x = max(0, (Entity.MUTATION_COLLAPSE_THRESHOLD - 1 - m.mutation_count) // self.YUANCHU_COST_RATE)
             options.append({
                 "monster": m.name,
@@ -392,27 +392,37 @@ class MonsterLifeMixin:
         monster.depart_battle(reason)
 
     def _delay_monster_reentry(self, monster: Entity, delay_rounds: int) -> dict:
-        """【封印X】让一只活怪暂离，按当前回合+X在回始重新入场。
+        """【封印X】让一个仍存活的目标暂离，按当前回合+X在[回始]原样回场。
 
-        这不是命零，也不是 Entity.depart_battle() 意义上的永久离场：对象从
-        enemies 暂时移入专门队列，回场后仍沿用原生命、状态和碎片，并可正常被击杀。
+        这不是命零，也不是 Entity.depart_battle() 意义上的永久离场：对象从场上
+        暂时移入专门队列，回场后仍沿用原生命、状态、法力和碎片，并可正常被击杀。
+
+        2026-10-08 用户令：目标不再限于怪物——[朋友]/[员工]/临时朋友/敌对轮回者、
+        乃至施法者自己都可以被封印。脱场/回场因此统一走 `GameState.detach_from_field`
+        与 `GameState.reattach_to_field` 这对接口，由 home/index 记住原址：
+        不能一律塞回 enemies，否则封印自己的[朋友]会把它变成敌人、封印自己会把
+        玩家变成敌人。玩家（state.player 是单字段）摘不走，用 `_delayed_by_seal`
+        标记表达"不在场上"，回场时清标记。
         """
         delay_rounds = max(1, int(delay_rounds))
         return_round = self.state.current_round + delay_rounds
-        self.state.enemies = [e for e in self.state.enemies if e is not monster]
-        # 暂离怪物仍然是活的；只是暂时不在 enemies/战场列表中。
+        home, index = self.state.detach_from_field(monster)
+        # 暂离单位仍然是活的；只是暂时不在场上（enemies/friends/… 列表或玩家位）。
         monster.is_alive = True
         monster.is_departed = False
         monster.departure_reason = ""
         monster.removed_without_kill = False
         monster._delayed_by_seal = True
-        self.state.delayed_monster_reentries.append({
-            "monster": monster,
-            "return_round": return_round,
-            "delay_rounds": delay_rounds,
-        })
+        entry = {"monster": monster, "return_round": return_round,
+                 "delay_rounds": delay_rounds, "home": home, "index": index}
+        self.state.delayed_monster_reentries.append(entry)
         return {"monster": monster.name, "return_round": return_round,
-                "delay_rounds": delay_rounds}
+                "delay_rounds": delay_rounds, "home": home, "index": index}
+
+    # 2026-10-08 起的正式名字：封印的目标已不限于怪物。旧名保留为别名，
+    # 既有调用方与测试（test_effect_composition / test_resolution_fuzz）仍在用。
+    _delay_entity_reentry = _delay_monster_reentry
+
 
     def _cancer_character(self, entity: Entity, ctx: Optional[EffectContext | dict] = None) -> dict:
         """轮回者/同伴癌变：累计恢复达血限×2 → 直接命零。不吸收进书、不产生奖励。"""

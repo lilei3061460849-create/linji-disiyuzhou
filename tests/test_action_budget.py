@@ -138,7 +138,8 @@ def test_consume_item_and_resonance_do_not_consume_budget():
     assert r_item["success"] is True, "消耗品不应受出手预算限制"
 
     engine.state.resonance["反转"] = 1
-    r_res = engine.execute_action("use_resonance", {"source_daowen": "杀伐", "resonance_type": "反转"})
+    r_res = engine.execute_action("use_resonance", {"source_daowen": "杀伐", "resonance_type": "反转",
+                                                 "target_daowen": "再生"})
     assert r_res["success"] is True, f"残韵可任意时刻插队使用，不应受出手预算限制: {r_res}"
 
 

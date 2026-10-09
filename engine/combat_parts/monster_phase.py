@@ -80,9 +80,16 @@ class MonsterPhaseMixin:
         return max(0, n)
 
     def _combat_entity_refs(self) -> dict[str, Entity]:
-        """为两阶段决策提供本场稳定的显式目标引用，避免同名实体歧义。"""
+        """为两阶段决策提供本场稳定的显式目标引用，避免同名实体歧义。
+
+        被【封印】暂离的实体不在场上：既不能当目标（不可被选、不可被打），
+        也不能当行动者（不能出手、不能发动道纹）。2026-10-08 起封印可作用于
+        任意目标含自己，这条过滤是"暂离"语义的唯一把关点——所有两阶段决策
+        （怪物阶段、玩家攻击准备、道纹目标绑定）都从这里取 refs。
+        """
         refs: dict[str, Entity] = {}
-        if self.state.player and self.state.player.is_alive:
+        if (self.state.player and self.state.player.is_alive
+                and not self.state.is_sealed_away(self.state.player)):
             refs["player:0"] = self.state.player
         for prefix, entities in (
             ("friend", self.state.friends),
@@ -95,6 +102,8 @@ class MonsterPhaseMixin:
                     continue
                 if prefix == "employee" and not entity.is_deployed:
                     continue
+                if self.state.is_sealed_away(entity):
+                    continue  # 【封印】暂离中：不在场上，不可选也不可行动
                 self._bind_hp_hook(entity)  # 确认战斗实体已绑定「失去生命后」兜底钩子（幂等）
                 refs[f"{prefix}:{i}"] = entity
         return refs
@@ -177,8 +186,13 @@ class MonsterPhaseMixin:
                     # 2026-09-16 用户令：面板不写死 X 时，X 由发动方自选，
                     # 「上限只受法限或者代价限制」。这里探出可负担上限，
                     # 连 X=1 都付不起 → 本道纹此刻不可发动，prepare 过滤。
+                    # 探测只用 X 取代价类型（冷却与否与 X 无关），但 X 不能低于该道纹的
+                    # 下限——否则【波及】这类 X_MIN=2 的道纹会在 X_MIN 守卫之前就抛
+                    # 「X=1低于下限」，整个 prepare 直接崩（实测 test_wave_* 就是这样挂的）。
+                    _probe_x = max(1, DaoWenEngine.X_MIN.get(effective_name, 1))
                     cooldown_limited = (
-                        DaoWenEngine.resolve(effective_name, 1, target=preview_target, caster=monster)
+                        DaoWenEngine.resolve(effective_name, _probe_x,
+                                             target=preview_target, caster=monster)
                         .get("cost_type") == "冷却")
                     if cooldown_limited:
                         # 怪物不得把冷却型道纹的 X 调大来延长战斗控制效果。
@@ -203,6 +217,17 @@ class MonsterPhaseMixin:
                                 and monster.shards < 5 * inst.x_value):
                             continue
                         effective_x = inst.x_value
+                    # 【波及】实际标得到的目标数 = min(面板X, 合法目标数)（DM裁定
+                    # 2026-08-23 自适应降 X）。2026-10-03 用户令加了 X 下限=2：
+                    # 降完不足 2 个时本道纹**此刻不可发动**，必须过滤掉，不能把
+                    # X=1 透进 resolve（会抛「X=1低于下限波及≥2」，实测 prepare
+                    # 整个崩掉）。上面 x_free 分支已用 max_x 判过同一条件，这里
+                    # 补的是固定 X 分支——此前两个分支不一致。
+                    # 注意只用于过滤，不改 effective_x：面板 x 仍是展示口径。
+                    if effective_name == "波及":
+                        if min(effective_x, len(dodge_target_options)) < \
+                                DaoWenEngine.X_MIN.get(effective_name, 1):
+                            continue
                     preview_calc = DaoWenEngine.resolve(
                         effective_name, effective_x, target=preview_target, caster=monster)
                     if not self._monster_can_pay_calc_cost(monster, preview_calc):
@@ -261,7 +286,7 @@ class MonsterPhaseMixin:
                 "base_attack_actions": base_actions,
                 "base_hits_per_attack": max(0, monster.attack_count - monster.get_status_value("手雷减攻")),
                 "dodge_must_be_explicit": True,
-                # 致死进度（用户令 2026-09-15/2026-09-28）：怪物同样会【迷失·崩解】，攻守双方都要能直接读到
+                # 致死进度（用户令 2026-09-15/2026-09-28）：怪物同样会【迷失】，攻守双方都要能直接读到
                 # 「迷失（30/50）」这种进度，才可能判断"再逼它发动一次道纹它就自爆"。
                 "lethal_counters": {k: list(v) for k, v in monster.lethal_counters().items()},
                 "lethal_progress": monster.lethal_progress(),
@@ -315,7 +340,7 @@ class MonsterPhaseMixin:
             if not self._monster_can_pay_calc_cost(monster, calc):
                 break
             # 【异变】是**累加计数**而非可花费的预算：付异变等于给自己叠层，
-            # 怪物达到 MUTATION_COLLAPSE_THRESHOLD 就【迷失·崩解】爆体命零；非怪物则【迷失】变怪物
+            # 怪物达到 MUTATION_COLLAPSE_THRESHOLD 就【迷失】爆体命零；非怪物则【迷失】变怪物
             # （两者对发动者而言都是绝对坏事），所以它没有天然的"付不起"上限，
             # 探测会一路撞上试探封顶值。这里按生存线封顶——
             # 允许叠加到迷失线之前，但**不把"当场自爆/叛变"的 X 当成合法选项**。
@@ -363,8 +388,12 @@ class MonsterPhaseMixin:
         # 2026-09-16 用户令：面板未写死 X（x_free）时，X 由发动方在提交里自选，
         # 「上限只受法限或者代价限制」——这里按 prepare 同一口径重新探一次上限并校验，
         # 防止提交方给出此刻已付不起的 X（资源在 prepare 之后可能已被消耗）。
+        # 与 prepare 侧（见上方同名探测）同一处坑：探测只能用「不低于该道纹下限」
+        # 的 X，否则【波及】这类 X_MIN=2 的道纹会在 X_MIN 守卫之前抛「X=1低于下限」，
+        # 把整个 resolve 打成 recoverable 错误（实测 r01_r38/wave 三处用例挂在这里）。
+        _probe_x = max(1, DaoWenEngine.X_MIN.get(effective_name, 1))
         cooldown_limited = (
-            DaoWenEngine.resolve(effective_name, 1, target=target, caster=monster)
+            DaoWenEngine.resolve(effective_name, _probe_x, target=target, caster=monster)
             .get("cost_type") == "冷却")
         if cooldown_limited:
             effective_x = 1  # 怪物冷却代价类道纹 X≤1（规则正文·怪物准则5）
@@ -497,11 +526,11 @@ class MonsterPhaseMixin:
             consumed = self.consume_resonance_rewrite(monster, name)
             if consumed != rewritten_as:
                 raise ValueError("残韵改写已变化，请重新prepare_monster_phase")
-        # 原始怪物道纹发动时支付异变5X；怪物异变达阈值=【迷失·崩解】直接命零、效果中断。
+        # 原始怪物道纹发动时支付异变5X；怪物异变达阈值=【迷失】直接命零、效果中断。
         elif name in self.ORIGINAL_MONSTER_DAOWEN:
             paid = monster.add_mutation(self.YUANCHU_COST_RATE * effective_x)
             if paid["collapsed"]:
-                # 修复：此前直接 return，崩解死者从不进入统一死亡管线
+                # 修复：此前直接 return，迷失死者从不进入统一死亡管线
                 # （不产生 _death_ctx、不进 dead_monsters、不触发焦黑发丝/分裂）。
                 self._on_entity_death(monster, ctx=self._lost_context(monster, {
                     "timing": "monster_action", "source": name, "source_type": "daowen",
@@ -509,7 +538,7 @@ class MonsterPhaseMixin:
                     "subtype": "mutation", "amount": self.YUANCHU_COST_RATE * effective_x,
                     "tags": {"daowen", "active_payment"}}, subtype="collapse"))
                 return {"monster": monster.name, "collapsed": name,
-                        "note": "支付异变后触发【迷失·崩解】，道纹效果中断"}
+                        "note": "支付异变后触发【迷失】，道纹效果中断"}
         elif name == "封印":
             # 怪物侧若持有【封印】，同样按新版口径支付异变X；玩家【封印】才会
             # 把目标怪物放入延迟回场队列。
@@ -521,7 +550,7 @@ class MonsterPhaseMixin:
                     "subtype": "mutation", "amount": effective_x,
                     "tags": {"daowen", "active_payment"}}, subtype="collapse"))
                 return {"monster": monster.name, "collapsed": name,
-                        "note": "支付异变后触发【迷失·崩解】，道纹效果中断"}
+                        "note": "支付异变后触发【迷失】，道纹效果中断"}
             elif paid.get("lost"):
                 # 非怪物（罕见：怪物侧持有封印的轮回者/朋友等）：触发【迷失】
                 self._resolve_mutation_lost(monster, {

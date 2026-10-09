@@ -2,6 +2,7 @@
 F7 验证：文档一致性（全程自动触发 + 命名漂移 + engine/README 复审）
 - 正常：README 流程五章列表与规则正文（AI_EXPERIENCE.md）特殊事件节 14 项对齐
 - 边界：活跃代码层（engine/*.py, sim/*.py, tests/*.py）不再出现中文“增生”，仅允许在废弃别名注释中出现
+- 边界（2026-10-08）：规则正文与引擎文案不再出现“迷失”，已统一为“迷失”
 - 错误：对旧名“增生”的显式调用应被拒绝或不存在
 - 引擎规则正文：文件结构已补全至当前19项且含F7订正注记
 """
@@ -16,11 +17,11 @@ def test_normal_readme_auto_trigger_list():
     m = re.search(r"五、全程自动触发[^\n]*\n([^\n]+)", readme)
     assert m, "未找到 五、全程自动触发 段"
     line = m.group(1)
-    # 必须包含 凡庸 / 癌变 / 崩解（本次 F7 补漏的三项）
-    for kw in ["凡庸", "癌变", "崩解"]:
+    # 必须包含 凡庸 / 癌变 / 迷失（本次 F7 补漏的三项；2026-10-08 迷失统一为迷失）
+    for kw in ["凡庸", "癌变", "迷失"]:
         assert kw in line, f"五章列表应包含 {kw}，实际为：{line}"
-    # 同步 all 14 项：死之传承、凡庸、癌变、还债、雕塑、员工背叛、许愿、逃跑与追击、进化、崩解、撤退、最终的冠冕、初拥之夜、救赎
-    expected_14 = ["死之传承","凡庸","癌变","还债","雕塑","员工背叛","许愿","逃跑与追击","进化","崩解","撤退","最终的冠冕","初拥之夜","救赎"]
+    # 同步 all 14 项：死之传承、凡庸、癌变、还债、雕塑、员工背叛、许愿、逃跑与追击、进化、迷失、撤退、最终的冠冕、初拥之夜、救赎
+    expected_14 = ["死之传承","凡庸","癌变","还债","雕塑","员工背叛","许愿","逃跑与追击","进化","迷失","撤退","最终的冠冕","初拥之夜","救赎"]
     for kw in expected_14:
         assert kw in line, f"同步后五章应含 {kw}"
     # 验证特殊事件节的标题与五章一致（不校验数量，仅校验关键词存在）
@@ -31,7 +32,7 @@ def test_normal_readme_auto_trigger_list():
     assert "禁止只写选择结果" in readme
     assert "癌变（任一角色在本场战斗内累计受到回复" in rules
     assert "累计回复属于局内减益追踪，[战终]清零" in rules
-    assert "崩解（任一角色【异变】达到" in rules
+    assert "迷失（任一角色【异变】达到" in rules
     assert "救赎（怪物当前生命≤其[血限]10%" in rules
 
 def test_boundary_no_zengsheng_in_active_code():
@@ -111,3 +112,24 @@ def test_no_active_zengsheng_in_tests_except_allowed():
     # 实际本轮已将 tests/test_engine.py 的增生中文改为癌变，故此处应为空
     # 若仍有，说明还有漏改
     assert hits == [], f"tests 仍含增生中文：{hits}"
+
+
+def test_boundary_bengjie_term_retired_in_favour_of_mishi():
+    """边界：规则正文与引擎文案里旧称已退场，统一为“迷失”（2026-10-08 用户令）。
+
+    历史存档（data/、reports/、archive/）里的旧称指同一件事，不在扫描范围内。
+    旧称二字在下方拼接成串，避免本文件被同类批量改名再次误伤。
+    """
+    retired = "崩" + "解"
+    for rel in ("README.md",):
+        text = pathlib.Path(rel).read_text(encoding="utf-8")
+        assert retired not in text, f"{rel} 仍出现旧称“{retired}”，应统一为“迷失”"
+        assert "迷失" in text, f"{rel} 应已改用“迷失”"
+    hits = []
+    for root in (pathlib.Path("engine"),):
+        for p in root.rglob("*.py"):
+            if "__pycache__" in str(p):
+                continue
+            if retired in p.read_text(encoding="utf-8"):
+                hits.append(str(p))
+    assert not hits, f"引擎仍出现旧称“{retired}”：{hits}"

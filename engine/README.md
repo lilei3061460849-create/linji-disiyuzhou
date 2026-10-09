@@ -63,7 +63,7 @@ engine/
 └── api.py               # GameEngine 主类 — AI 唯一交互入口（含 TWISTED_TOOL_LIBRARY、TERMINAL_ARTIFACTS、FIRST_EMBRACE_OPTIONS 等）
 ```
 
-> **2026-08-11 F7 订正**：五章「全程自动触发」已与「特殊事件（全局触发）」14 项对齐（补 凡庸/癌变/崩解/还债/雕塑/救赎）；「增生」全量更名为「癌变」（旧名 增生 保留为兼容字段 `is_proliferated`/`PROLIFERATION_THRESHOLD`/`proliferation`），「增殖」为独立道纹（血限+2X）二者无关。
+> **2026-08-11 F7 订正**：五章「全程自动触发」已与「特殊事件（全局触发）」14 项对齐（补 凡庸/癌变/迷失/还债/雕塑/救赎）；「增生」全量更名为「癌变」（旧名 增生 保留为兼容字段 `is_proliferated`/`PROLIFERATION_THRESHOLD`/`proliferation`），「增殖」为独立道纹（血限+2X）二者无关。
 
 ## 机制系统
 

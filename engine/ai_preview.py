@@ -325,11 +325,11 @@ class ActionPreview:
         if diff.get("player_dead"):
             return "LETHAL", ["完整效果链导致轮回者命零"]
 
-        # CRITICAL：异变达危险阈值（≥45 时动作可能触发崩解）
+        # CRITICAL：异变达危险阈值（≥45 时动作可能触发迷失）
         mut = getattr(p, "mutation_count", 0)
         mut_delta = diff.get("player", {}).get("mutation_delta", 0)
         if mut + mut_delta >= _MUT_THRESHOLD - 5:   # 离阈值5以内
-            reasons.append("异变即将达到崩解阈值（崩解（%d/%d）→ 动作后（%d/%d））"
+            reasons.append("异变即将达到迷失阈值（迷失（%d/%d）→ 动作后（%d/%d））"
                            % (mut, _MUT_THRESHOLD, mut + mut_delta, _MUT_THRESHOLD))
             return "CRITICAL", reasons
 
@@ -343,7 +343,7 @@ class ActionPreview:
 
         # HIGH：异变显著增加（+10 以上，无论当前等级）
         if mut_delta >= 10:
-            reasons.append("异变增加 %d（崩解（%d/%d）→ 动作后（%d/%d））"
+            reasons.append("异变增加 %d（迷失（%d/%d）→ 动作后（%d/%d））"
                            % (mut_delta, mut, _MUT_THRESHOLD, mut + mut_delta, _MUT_THRESHOLD))
 
         # HIGH：法力/速度归零
@@ -354,7 +354,7 @@ class ActionPreview:
         if speed_after == 0 and p.current_speed > 0:
             reasons.append("速度耗尽（%d → 0）" % p.current_speed)
 
-        # HIGH：触发负面效果链（diff 事件中含死亡/血限/崩解类事件）
+        # HIGH：触发负面效果链（diff 事件中含死亡/血限/迷失类事件）
         events = diff.get("events") or []
         event_types = {e.get("type") for e in events}
         if "entity_died" in event_types and any(e.get("actor") == p.name or e.get("target") == p.name
@@ -380,7 +380,7 @@ class ActionPreview:
 
         return "LOW", reasons
 
-# 异变崩解阈值（与 Entity 一致，保持单一事实源）
+# 异变迷失阈值（与 Entity 一致，保持单一事实源）
 try:
     from engine.models import Entity
     _MUT_THRESHOLD = Entity.MUTATION_COLLAPSE_THRESHOLD

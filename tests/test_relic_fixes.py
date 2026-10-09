@@ -149,7 +149,7 @@ def test_tonghunbi_grants_caster_real_daowen_from_second_target():
     engine.execute_action("round_start", {})
 
     r = engine.execute_action("use_resonance", {
-        "source_daowen": "杀伐", "resonance_type": "反转",
+        "source_daowen": "杀伐", "resonance_type": "反转", "target_daowen": "再生",
         "second_target_ref": "enemy:0", "second_source_daowen": "固执",
     })
     assert r["success"] is True
@@ -326,7 +326,7 @@ def test_tonghunbi_rejected_when_second_target_lacks_daowen():
     engine.execute_action("round_start", {})
 
     r = engine.execute_action("use_resonance", {
-        "source_daowen": "杀伐", "resonance_type": "反转",
+        "source_daowen": "杀伐", "resonance_type": "反转", "target_daowen": "再生",
         "second_target_ref": "enemy:0", "second_source_daowen": "固执",
     })
     assert r["success"] is True  # 主残韵仍然成功，只是second分支未生效

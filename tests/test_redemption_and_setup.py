@@ -113,7 +113,7 @@ def test_resonance_permanently_converts_and_grants():
     _give(engine.state.player, "杀伐")
     monster = Entity(name="慢怪", entity_type="怪物", blood_limit=80, current_hp=80,
                      attack_count=2, attack_power=4)
-    # 2026-10-03：【狂暴】删除（其反转边 狂暴→自残 一并删除），
+    # 2026-10-03：【狂暴】删除（其反转边一并删除），
     # 改用仍在怪物原始道纹树上的 减速→(反转)→加速。
     _give(monster, "减速")
     _give(monster, "全力")
@@ -136,25 +136,30 @@ def test_resonance_does_not_duplicate_same_name():
     _give(engine.state.player, "杀伐")
     _give(engine.state.player, "再生")
     r = engine.execute_action("use_resonance", {
-        "source_daowen": "杀伐", "resonance_type": "反转",
+        "source_daowen": "杀伐", "resonance_type": "反转", "target_daowen": "再生",
     })
     assert r["success"]
     assert list(engine.state.player.dao_wen).count("再生") == 1
     assert "杀伐" not in engine.state.player.dao_wen
 
 
-def test_resonance_refuses_missing_stock_and_original_grant():
+def test_resonance_refuses_missing_stock_and_grants_original():
+    """残韵库存不足时拒绝；授予不再区分原始/转化（2026-10-07 用户令：完全放开）。
+
+    旧断言「原始怪物道纹不授予施法者」编码的是已被用户令删除的门禁，
+    本用例按新裁定重写。
+    """
     engine = _ready_combat(_engine("res_bad"))
     _give(engine.state.player, "杀伐")
     engine.state.resonance["反转"] = 0
     r = engine.execute_action("use_resonance", {
-        "source_daowen": "杀伐", "resonance_type": "反转",
+        "source_daowen": "杀伐", "resonance_type": "反转", "target_daowen": "再生",
     })
     assert not r["success"]
     assert "杀伐" in engine.state.player.dao_wen
     granted = engine._grant_transformed_daowen(engine.state.player, "疯狂")
-    assert granted is False
-    assert "疯狂" not in engine.state.player.dao_wen
+    assert granted is True
+    assert "疯狂" in engine.state.player.dao_wen
 
 
 # ---------- 第一杯（2026-09-23 重做：回复与失去的生命翻倍） ----------

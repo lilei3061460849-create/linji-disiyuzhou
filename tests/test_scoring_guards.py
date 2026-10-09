@@ -1,7 +1,7 @@
 """评分守卫测试（报告⑥ 待办，2026-09-10 六审续落地）。
 
 钉住打分层的三个不变量：
-1. 自伤不是战术牌（_digest_diff → kind="harm"，杜绝无活敌时 try_buff 自残）；
+1. 自伤不是战术牌（_digest_diff → kind="harm"，杜绝无活敌时 try_buff 拿输出纹打自己）；
 2. remove 只认「动作前还活着」的敌人（尸体不再白得 +6.0 向性分）；
 3. 法力损耗按攻力等价折价（「法力=攻力」的机会成本进打分，满池梭哈盾为负分）。
 """
@@ -40,7 +40,7 @@ def _base_player_diff():
 
 
 def test_self_damage_is_harm_not_tactician(engine):
-    """自伤 diff 必须归纳为 harm——兜底 tactician 会让 try_buff 拿输出纹自残。"""
+    """自伤 diff 必须归纳为 harm——兜底 tactician 会让 try_buff 拿输出纹打自己。"""
     ai = TacticalAI(engine)
     diff = {"player": dict(_base_player_diff(), hp_after=37),
             "enemies": [], "events": [

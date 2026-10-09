@@ -360,11 +360,25 @@ def test_play_accepts_none_seed():
     assert isinstance(r["won"], bool)
 
 
-def test_fixed_seed_is_reproducible():
-    """边界：固定种子必须完全可复现（否则无法排查问题）"""
+def test_fixed_seed_is_reproducible(tmp_path):
+    """边界：固定种子必须完全可复现（否则无法排查问题）
+
+    存储必须隔离，且**两次运行各用自己的一套**：`play()` 默认把封存候选写到生产
+    路径 `data/sealed_candidate.json`，通关到第7场的局会把候选留到下一次调用——
+    第二次 play 就会凭空多出一个挑战对象、直接进死斗，两次结果自然不同
+    （与种子无关，是跨局状态污染）。
+    """
     import random as _r
-    a = bl.play("杀伐", ["庇护", "再生"], "龙心谷", 42, rng=_r.Random(9))
-    b = bl.play("杀伐", ["庇护", "再生"], "龙心谷", 42, rng=_r.Random(9))
+
+    def _lab(tag):
+        d = tmp_path / tag
+        d.mkdir()
+        return {"db_path": str(d / "seed.db"),
+                "sealed_path": str(d / "sealed.json"),
+                "death_book_path": str(d / "death.md")}
+
+    a = bl.play("杀伐", ["庇护", "再生"], "龙心谷", 42, rng=_r.Random(9), lab_paths=_lab("a"))
+    b = bl.play("杀伐", ["庇护", "再生"], "龙心谷", 42, rng=_r.Random(9), lab_paths=_lab("b"))
     assert a == b, "同一固定种子+同一决策rng，两次结果必须一致"
 
 

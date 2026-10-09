@@ -9,15 +9,28 @@ from .enums import CostType
 import math
 
 
+# 残韵闭环上的**空占位符**（2026-10-08 用户令）。
+# 删除道纹后，它在闭环上那一格不直连、也不拿别的道纹顶替，而是留成一个显式空位：
+#   · 结构层：它是闭环的一环，环长与入度/出度不变，将来补新道纹直接填这一格；
+#   · 残韵层：查得到（环完整可验证），但**不能获得**——apply_resonance 会拒绝，
+#     不消耗残韵、不改写牌面、不授予施法者。
+# 名字带全角括号，确保永不与任何真实道纹名冲突，且可全局 grep。
+RESERVED_SLOT = "（待补）"
+
+
+def is_reserved_slot(name) -> bool:
+    """该名字是否为闭环上的空占位符（而非真实道纹）。"""
+    return name == RESERVED_SLOT
 
 
 class DaoWenEngine:
     """道纹计算引擎"""
 
-    # 怪物转化道纹（原始怪物道纹经残韵变化后的19个分支，与规则正文《原始怪物道纹与转化道纹》一致）
+    # 怪物转化道纹（原始怪物道纹经残韵变化后的分支，与规则正文《原始怪物道纹与转化道纹》一致）
     # 用于"雇佣"后"发现并选择一种转化道纹"等需要从此类别中随机抽取的场景
+    # 2026-10-08 清理：原孤儿转化道纹已移除（曾挂在【狂暴】的反转分支下）。
     TRANSFORMED_DAOWEN = [
-        "愤怒", "自残", "无神", "借力", "弱化", "自食", "无力", "全速",
+        "愤怒", "无神", "借力", "弱化", "自食", "无力", "全速",
         "急速", "加速", "眩晕", "洞察", "蒙蔽", "滋养", "衰败", "寄生",
     ]
 
@@ -216,7 +229,13 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_fengyin(x: int, target: Entity = None) -> dict:
-        """封印X：代价：异变X，使一个目标怪物延后X回合再入场。"""
+        """封印X：代价：异变X，使一个[目标]延后X回合再入场。
+
+        2026-10-08 用户令：目标由"只限怪物"放开为**任意目标**——敌人、[朋友]、
+        [员工]、临时朋友、敌对轮回者，以及施法者自己都可以被封印。
+        暂离的语义不变：从场上摘走，X 回合后的[回始]回到它原本所在的阵营与位置
+        （见 GameState.detach_from_field / reattach_to_field）。
+        """
         target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "封印",
@@ -355,18 +374,6 @@ class DaoWenEngine:
         }
     
     @staticmethod
-    def calculate_zican(x: int, target: Entity = None) -> dict:
-        """自残X：消耗3X。使[目标]对其自身打出X次攻击"""
-        target_name = target.name if target is not None else "未选定目标"
-        return {
-            "dao_wen": "自残",
-            "x": x,
-            "cost_type": CostType.MANA.value,
-            "cost": 3 * x,
-            "self_attack_count": x,
-            "summary": f"消耗{3 * x}法力，使{target_name}对自身打出{x}次攻击"
-        }
-    
     @staticmethod
     def calculate_wushen(x: int, target: Entity = None) -> dict:
         """无神X：消耗5X。使[目标]选择目标时强制改为自身，持续X"""
@@ -897,26 +904,29 @@ class DaoWenEngine:
 
     @staticmethod
     def calculate_fenlie(x: int, y: int = 1) -> dict:
-        """分裂X/Y：代价：衰老X×10Y。创造X个10Y[血限]的自身复制体。
+        """分裂X/Y：代价：流血X×10Y。创造X个10Y[血限]的自身复制体。
 
         双参数道纹（引擎首个）：
           X = 复制体**数量**
           Y = 单个复制体的**规模档**，每个血限/生命 = 10Y
-        代价【衰老】= X×10Y，恰好等于造出来的**总血限**——造多少血就付多少
-        血限，不会凭空增殖，也不会因为本体血限高低而白赚或白亏。
+        代价【流血】= X×10Y，恰好等于造出来的**总血限**——造多少血就流多少
+        血，不会凭空增殖，也不会因为本体血限高低而白赚或白亏。
 
-        旧版是「代价：冷却X；[命零]时创造X个本体血限20%的复制体」：触发时机
-        绑死在[命零]（只能死后发动，本体血限越高越赚，且无法主动使用），
-        代价冷却与产出无关，本体血限高的怪能无限白嫖。新版改为即时结算。
+        代价轴沿革：旧版「代价：冷却X；[命零]时创造X个本体血限20%的复制体」
+        （触发时机绑死在[命零]、代价与产出无关、本体越壮越白赚，三项均已废止）
+        → 2026-09-17 改为「即时发动 + 代价【衰老】X×10Y（扣血限）」
+        → 2026-10-08 用户令：代价由【衰老】改为【流血】。数值不变，但付的是
+        **当前生命**而不是[血限]：血限是永久损耗、生命可再生，于是分裂从
+        「拿上限换数量」变成「拿血换数量」，付不起（生命不足）则不能发动。
 
         调用：DaoWenEngine.resolve("分裂", x, y=Y)；不传 y 时默认 1。
         """
         clone_hp = 10 * y
         return {
             "dao_wen": "分裂", "x": x, "y": y,
-            "cost_type": CostType.AGING.value, "cost_blood_limit": x * clone_hp,
+            "cost_type": CostType.BLEED.value, "cost_hp": x * clone_hp,
             "split_clones": x, "clone_hp": clone_hp,
-            "summary": f"衰老{x * clone_hp}，创造{x}个{clone_hp}血限的自身复制体"
+            "summary": f"流血{x * clone_hp}，创造{x}个{clone_hp}血限的自身复制体"
         }
 
     @staticmethod
@@ -964,36 +974,29 @@ class DaoWenEngine:
         旧版为「[回始]使[目标]失去2X点当前法力，持续∞」——永久扣法力对输出决策
         是单向碾压，且玩家只能靠残韵改掉怪物道纹来止损。新版改为**持续X回合
         无法获得法力**：[回始]法力回填被压制（不扣已有法力），X 回合后自然恢复。
-        这样威胁是"暂时断蓝"而非"永久死刑"，且期限明确（与【镇尸】禁回复同构）。
+        这样威胁是"暂时断蓝"而非"永久死刑"，且期限明确（与【坏死】禁回复同构）。
 
         修复（2026-08-21）：补上 target 参数使该道纹正确声明需要[目标]，
         否则 requires_target=False 导致怪物只能自施（寄骨蝇勾魂自吸无法力=空放）。
+
+        2026-09-09 DM裁定：法力改一池制后一度改为「消耗法力翻倍」；
+        2026-10-08 用户令：恢复「无法获得[法力]」原意，翻倍逻辑撤销。
+        此时战斗内已有多个法力来源（聚能／储能电池／守夜灯／承露盏／血契／
+        余火印／搏命·透支／法术），效果重新有对象。判定位统一在
+        `Entity.can_gain_mana()` / `Entity.gain_mana()`，所有法力增益都必须过它。
         """
         target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "勾魂", "x": x,
             "cost_type": CostType.MANA.value, "cost": x,
-            # DM裁定 2026-09-09：法力改一池制（[战始]给满、[回始]不回填、[战终]复原）后，
-            # 「[回始]无法获得法力」失去作用对象，改为**目标消耗法力翻倍**。
-            "mana_cost_multiplier": 2, "duration": x,
-            "summary": f"消耗{x}法力，{target_name}法力消耗翻倍，持续{x}回合"
+            "no_mana_gain": True, "duration": x,
+            "summary": f"消耗{x}法力，{target_name}无法获得法力，持续{x}回合"
         }
 
-    @staticmethod
-    def calculate_zhenshi(x: int, target: Entity = None) -> dict:
-        """镇尸X：消耗2X。使一个[目标]无法获得[回复]，持续X。
-
-        修复（2026-08-21）：补上 target 参数使该道纹正确声明需要[目标]，
-        否则 requires_target=False 导致怪物只能自施（实战：血僵镇尸自禁回复）。
-        效果数值与消耗不变。
-        """
-        target_name = target.name if target is not None else "未选定目标"
-        return {
-            "dao_wen": "镇尸", "x": x,
-            "cost_type": CostType.MANA.value, "cost": 2 * x,
-            "duration": x, "no_heal": True,
-            "summary": f"消耗{2 * x}法力，{target_name}无法获得回复，持续{x}回合"
-        }
+    # 2026-10-08 用户令删除【镇尸】（消耗2X。使一个[目标]无法获得[回复]，持续X）。
+    # 它与【坏死】是同一效果的**两套实现**（坏死=effect 字符串状态，镇尸=no_heal 布尔钩子），
+    # 属硬重复。保留【坏死】作为「无法获得[回复]」的唯一实现；乱葬岗闭环上这一格
+    # 留成空占位符（见 RESERVED_SLOT），不直连、不拿别的道纹顶替。
 
     @staticmethod
     def calculate_zhaohun(x: int) -> dict:
@@ -1034,7 +1037,6 @@ class DaoWenEngine:
             "飞行": cls.calculate_feixing,
             # 怪物转化
             "愤怒": cls.calculate_fennu,
-            "自残": cls.calculate_zican,
             "无神": cls.calculate_wushen,
             "借力": cls.calculate_jieli,
             "弱化": cls.calculate_ruhua,
@@ -1080,7 +1082,6 @@ class DaoWenEngine:
             "瓦解": cls.calculate_wajie,
             "冥气": cls.calculate_mingqi,
             "勾魂": cls.calculate_gouhun,
-            "镇尸": cls.calculate_zhenshi,
             "招魂": cls.calculate_zhaohun,
         }
     
@@ -1165,8 +1166,14 @@ class ResonanceEngine:
     转换（平向支流）：平移法则维度
     反转（极性对冲）：逆转因果极性
     曲解（概念腐化）：扭曲代数逻辑
+
+    2026-10-07 用户令：残韵路径**双向**。`CLOSED_LOOPS` 里的每条边 `(src, 类型, dst)`
+    是无向边：src 与 dst 互为闭环上的相邻节点，两个方向都走**同一种**残韵、
+    **同样**消耗一次（规则正文：沿闭环选择一条相邻的变化路径）。边表只登记一次，
+    不重复登记反向边——双向由 `find_transformations` 在查询时展开，避免边数与
+    「闭环 N 条边」的口径翻倍。
     """
-    
+
     # 闭环结构定义
     CLOSED_LOOPS = {
         "杀伐闭环": [
@@ -1221,8 +1228,10 @@ class ResonanceEngine:
             ("缄默", "曲解", "瓦解"),
             ("瓦解", "转换", "冥气"),
             ("冥气", "反转", "勾魂"),
-            ("勾魂", "曲解", "镇尸"),
-            ("镇尸", "曲解", "招魂"),
+            # 2026-10-08 用户令删除【镇尸】（与【坏死】硬重复）→ 该格留成空占位符，
+            # 不直连【勾魂】与【招魂】，也不拿别的道纹顶替；环仍为 7 条边。
+            ("勾魂", "曲解", RESERVED_SLOT),
+            (RESERVED_SLOT, "曲解", "招魂"),
             ("招魂", "转换", "分裂"),
         ],
         # ---- 原始怪物道纹 → 转化道纹（规则正文）----
@@ -1230,7 +1239,6 @@ class ResonanceEngine:
         # 补齐后残韵才能作用于怪物（此前对必中/狂暴/飞行发动必然失败）。
         "怪物原始道纹": [
             # 2026-10-03 删除（用户令）：("狂暴", "转换", "愤怒"),
-            # 2026-10-03 删除（用户令）：("狂暴", "反转", "自残"),
             # 2026-10-03 删除（用户令）：("狂暴", "曲解", "无神"),
             ("全力", "转换", "借力"),
             ("全力", "反转", "弱化"),
@@ -1252,41 +1260,112 @@ class ResonanceEngine:
     }
     
     @classmethod
-    def find_transformation(cls, source_daowen: str, resonance_type: str) -> Optional[str]:
+    def find_transformations(cls, source_daowen: str, resonance_type: str) -> list[dict]:
         """
-        查找残韵变化结果
+        双向查找残韵变化结果（2026-10-07 用户令：路径双向）
         source_daowen: 源道纹名
         resonance_type: 残韵类型（转换/反转/曲解）
-        返回：变化后的道纹名，或None（如果路径不存在）
+        返回：[{resonance_type, target_daowen, direction, loop}, ...]
+
+        每条登记边 (src, 类型, dst) 正反两向都可用：正向 src→dst、反向 dst→src，
+        消耗同种残韵、同样一次。同一个源道纹在同一个残韵类型上可能通向**两个**
+        相邻节点（例：【杀伐】的【反转】同时通向【再生】与【封印】），此时
+        `find_transformation` 不替调用方挑，必须由发动者显式指定走哪一条。
         """
+        seen: set = set()
+        out: list[dict] = []
         for loop_name, edges in cls.CLOSED_LOOPS.items():
             for src, rtype, dst in edges:
-                if src == source_daowen and rtype == resonance_type:
-                    return dst
-        return None
-    
+                if rtype != resonance_type:
+                    continue
+                if src == source_daowen:
+                    direction, other = "正向", dst
+                elif dst == source_daowen:
+                    direction, other = "反向", src
+                else:
+                    continue
+                if other in seen:
+                    continue
+                seen.add(other)
+                item = {
+                    "resonance_type": rtype,
+                    "target_daowen": other,
+                    "direction": direction,
+                    "loop": loop_name,
+                }
+                if is_reserved_slot(other):
+                    # 空占位符：结构上保留这一格，但标记出来，调用方不得把它当可获得的道纹。
+                    item["reserved"] = True
+                out.append(item)
+        return out
+
+    @classmethod
+    def find_transformation(cls, source_daowen: str, resonance_type: str,
+                            target_daowen: str = "") -> Optional[str]:
+        """
+        单值查找残韵变化结果
+        target_daowen: 歧义时指定要走向哪个相邻节点（正向或反向皆可）
+        返回：变化后的道纹名；路径不存在、或歧义而未指定时返回 None
+        """
+        candidates = cls.find_transformations(source_daowen, resonance_type)
+        if not candidates:
+            return None
+        if target_daowen:
+            for cand in candidates:
+                if cand["target_daowen"] == target_daowen:
+                    return target_daowen
+            return None
+        if len(candidates) > 1:
+            return None      # 歧义：不替调用方取第一项，须显式指定
+        return candidates[0]["target_daowen"]
+
+    @classmethod
+    def is_ambiguous_path(cls, source_daowen: str, resonance_type: str) -> bool:
+        """该（源道纹, 残韵类型）是否通向两个相邻节点，需要发动者显式选择。"""
+        return len(cls.find_transformations(source_daowen, resonance_type)) > 1
+
     @classmethod
     def get_available_resonance(cls, source_daowen: str) -> list[dict]:
-        """获取某个道纹可用的残韵变化"""
-        results = []
+        """获取某个道纹可用的残韵变化（双向：正向在前，反向在后）"""
+        forward: list[dict] = []
+        backward: list[dict] = []
         for loop_name, edges in cls.CLOSED_LOOPS.items():
             for src, rtype, dst in edges:
                 if src == source_daowen:
-                    results.append({
+                    forward.append({
                         "resonance_type": rtype,
                         "target_daowen": dst,
-                        "loop": loop_name
+                        "direction": "正向",
+                        "loop": loop_name,
                     })
-        return results
-    
+                elif dst == source_daowen:
+                    backward.append({
+                        "resonance_type": rtype,
+                        "target_daowen": src,
+                        "direction": "反向",
+                        "loop": loop_name,
+                    })
+        out: list[dict] = []
+        seen: set = set()
+        for item in forward + backward:
+            key = (item["resonance_type"], item["target_daowen"])
+            if key in seen:
+                continue
+            seen.add(key)
+            if is_reserved_slot(item["target_daowen"]):
+                item["reserved"] = True
+            out.append(item)
+        return out
+
     @classmethod
     def apply_resonance(
-        cls, 
-        source_daowen: str, 
+        cls,
+        source_daowen: str,
         resonance_type: str,
         caster_has_daowen: bool,
         target_has_daowen: bool,
-        resonance_stock: dict = None
+        resonance_stock: dict = None,
+        target_daowen: str = ""
     ) -> dict:
         """
         应用残韵变化
@@ -1294,15 +1373,58 @@ class ResonanceEngine:
         1. 残韵作用于任意角色拥有的道纹时，将其永久变为变化后的道纹
         2. 施法者同时永久获得变化后的道纹
         3. 通过残韵获得的道纹，X值按施法者自由控X规则自定义
+        4. 路径双向：正反向同一种残韵、同样消耗（2026-10-07 用户令）
         """
-        # 检查路径是否存在
-        target = cls.find_transformation(source_daowen, resonance_type)
-        if target is None:
+        # 检查路径是否存在（双向展开）
+        candidates = cls.find_transformations(source_daowen, resonance_type)
+        if not candidates:
             return {
                 "success": False,
                 "error": f"道纹'{source_daowen}'不存在'{resonance_type}'路径"
             }
-        
+
+        # 空占位符：这一格在闭环上留着，但**不能获得**。
+        # 走到它 = 无事发生：不消耗残韵、不改写牌面、不授予施法者。
+        # 放在这里（而不是 find 层）拦，是为了让闭环结构仍可被验证（环长、入度/出度、
+        # roundtrip 可达性都得照常成立），只有真正发动时才拒绝。
+        if target_daowen:
+            if is_reserved_slot(target_daowen):
+                return {
+                    "success": False,
+                    "error": (f"'{target_daowen}'是闭环上的空占位符，尚未补入道纹，"
+                              f"无法作为残韵结果获得"),
+                    "reserved": True,
+                }
+        else:
+            real = [c for c in candidates if not c.get("reserved")]
+            if not real and any(c.get("reserved") for c in candidates):
+                return {
+                    "success": False,
+                    "error": (f"道纹'{source_daowen}'的'{resonance_type}'路径只通向闭环上的"
+                              f"空占位符（待补），尚未补入道纹，无法获得"),
+                    "reserved": True,
+                }
+
+        names = "／".join(cand["target_daowen"] for cand in candidates)
+        if target_daowen:
+            chosen = next((c for c in candidates if c["target_daowen"] == target_daowen), None)
+            if chosen is None:
+                return {
+                    "success": False,
+                    "error": (f"道纹'{source_daowen}'的'{resonance_type}'路径不通向"
+                              f"'{target_daowen}'（可选：{names}）")
+                }
+        elif len(candidates) > 1:
+            return {
+                "success": False,
+                "error": (f"道纹'{source_daowen}'的'{resonance_type}'通向两个相邻节点"
+                          f"（{names}），须显式指定 target_daowen"),
+                "ambiguous": True,
+                "candidates": [c["target_daowen"] for c in candidates],
+            }
+        else:
+            chosen = candidates[0]
+
         # 检查玩家是否拥有该类型残韵
         if resonance_stock is not None:
             available = resonance_stock.get(resonance_type, 0)
@@ -1311,15 +1433,17 @@ class ResonanceEngine:
                     "success": False,
                     "error": f"没有可用的{resonance_type}残韵（当前：{resonance_stock}）"
                 }
-        
+
+        target = chosen["target_daowen"]
         return {
             "success": True,
             "source": source_daowen,
             "resonance_type": resonance_type,
             "target": target,
+            "direction": chosen["direction"],
             "permanent_change": True,
             "caster_gets_daowen": True,
-            "summary": f"【{resonance_type}】{source_daowen} → {target}"
+            "summary": f"【{resonance_type}】{source_daowen} → {target}",
         }
 
 
