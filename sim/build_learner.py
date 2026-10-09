@@ -28,6 +28,7 @@ import os
 import random
 import re
 import sys
+import tempfile
 from collections import defaultdict, Counter
 
 # sys.path 必须先于 tests/engine 导入设置：直接 `python3 sim/build_learner.py`
@@ -1669,9 +1670,24 @@ def evaluate_build(starter: str, learn: list, runs: int, gen: int,
             seed = gen * 1000 + i * 7 + 1
             run_region = REGIONS[i % len(REGIONS)]
         run_telemetry = telemetry if telemetry is not None else {}
-        result = play(starter, learn, run_region, seed, rng=rng,
-                      telemetry=run_telemetry, spend_shards=spend_shards,
-                      policy=policy, attrs=attrs)
+        # 【评价必须可复现】封存槽（【最终的冠冕】= 死斗守擂擂主）是**跨轮回
+        # 持久**状态：谁跑完第 7 场就把自己写进去，下一个跑局的人拿它当对手。
+        # 若沿用默认路径，第 i 局的擂主由第 i-1 局决定，同参数的两次 fitness
+        # 会走出完全不同的结局（实测同参数两次调用得到 0.0 / 0.333333，
+        # 见 tests/test_build_learner.py::test_fitness_fixed_mode_is_deterministic）。
+        # 评价是**测量**而不是游戏进程，每一局都必须从干净的槽开始，
+        # 让 runs 局成为独立同分布样本，也让同参数 fitness 结果稳定。
+        _seal_fd, _seal_path = tempfile.mkstemp(prefix="lj_eval_seal_", suffix=".json")
+        os.close(_seal_fd)
+        os.unlink(_seal_path)  # 只借一个不存在的路径：槽为空 = 全新起点
+        try:
+            result = play(starter, learn, run_region, seed, rng=rng,
+                          telemetry=run_telemetry, spend_shards=spend_shards,
+                          policy=policy, attrs=attrs,
+                          lab_paths={"sealed_path": _seal_path})
+        finally:
+            if os.path.exists(_seal_path):
+                os.unlink(_seal_path)
         if result.get("invalid"):
             total_invalid += 1
             if telemetry is not None:
