@@ -542,7 +542,8 @@ class GameEngine:
                                 "reason": "冷却中或被封印"})
                 continue
             max_x = self._max_legal_daowen_x(player, name)
-            min_x = max(1, DaoWenEngine.X_MIN.get(name, 1))   # 2026-10-03：波及 X≥2
+            # 2026-10-09 用户令：波及 X≥2 下限 repealed，X 下限恒为 1（X_MIN 已拔除）。
+            min_x = 1
             actions.append({
                 "action_type": "use_daowen", "available": max_x >= min_x,
                 "params_schema": {
@@ -2533,7 +2534,7 @@ class GameEngine:
                               blood_shadow: bool = False,
                               blood_shadow_cost_share_target_ref: str = "",
                               dodge_relic_target_ref: str = "",
-                              wave_count: int = 0) -> tuple[dict, Optional[list[Entity]]]:
+                              wave_count: int = 0, activation_x: int = 0) -> tuple[dict, Optional[list[Entity]]]:
         """结算显式闪避，并直接返回本次AOE目标，避免跨行动保存临时跳过状态。
         波及X：按显式提交逐目标建立/解除波及标记，日志返回 wave_marked/wave_unmarked。"""
         log = {"must_hit": False, "dodged_names": [], "fully_dodged": False}
@@ -2580,7 +2581,7 @@ class GameEngine:
                 if ent is None or not ent.is_alive or ent is actor:
                     raise ValueError("波及目标必须为当前存活的非自身角色")
                 if log["must_hit"]:
-                    marked = self.combat._toggle_wave_mark(ent, actor)
+                    marked = self.combat._toggle_wave_mark(ent, actor, activation_x=activation_x)
                     (wave_marked if marked else wave_unmarked).append(ent.name)
                     continue
                 if entry["blood_shadow"]:
@@ -2597,7 +2598,7 @@ class GameEngine:
                     extra = self.combat._spend_dodge_speed(ent, entry.get("dodge_relic_target_ref"))
                     log["dodged_names"].append({"name": ent.name, "speed_after": ent.current_speed, **extra})
                 else:
-                    marked = self.combat._toggle_wave_mark(ent, actor)
+                    marked = self.combat._toggle_wave_mark(ent, actor, activation_x=activation_x)
                     (wave_marked if marked else wave_unmarked).append(ent.name)
             log["wave_marked"] = wave_marked
             log["wave_unmarked"] = wave_unmarked
@@ -2846,6 +2847,7 @@ class GameEngine:
                 "blood_shadow_cost_share_target_ref", ""),
             dodge_relic_target_ref=params.get("dodge_relic_target_ref", ""),
             wave_count=int(calc.get("mark_targets", 0)),
+            activation_x=x,
         )
         if dodge_log.get("fully_dodged"):
             self._advance_duel_turn()
@@ -4910,7 +4912,9 @@ class GameEngine:
             "relics": [r.to_dict() for r in e.relics],
             "status_effects": [{"name": s.name, "value": s.value,
                                  "remaining_rounds": s.remaining_rounds, "source": s.source,
-                                 "scope": s.scope, "polarity": s.polarity}
+                                 "scope": s.scope, "polarity": s.polarity,
+                                 "activation_x": s.activation_x,
+                                 "application_sequence": s.application_sequence}
                                 for s in e.status_effects],
         }
 
@@ -4952,7 +4956,9 @@ class GameEngine:
                                                   remaining_rounds=st.get("remaining_rounds", -1),
                                                   source=st.get("source", ""),
                                                   scope=st.get("scope", EffectScope.BATTLE.value),
-                                                  polarity=st.get("polarity", EffectPolarity.NEUTRAL.value)))
+                                                  polarity=st.get("polarity", EffectPolarity.NEUTRAL.value),
+                                                  activation_x=st.get("activation_x"),
+                                                  application_sequence=st.get("application_sequence", 0)))
         return e
 
     def _serialize_full_character(self) -> dict:

@@ -8,6 +8,8 @@ from engine.document_validation import validate_markdown_documents
 ROOT = Path(__file__).resolve().parents[1]
 AI_EXPERIENCE_FILE = ROOT / "AI_EXPERIENCE.md"
 README_FILE = ROOT / "README.md"
+PLAYBOOK_FILE = ROOT / "推演规范.md"
+RULES_TEXT_FILE = ROOT / "规则正文.md"
 
 
 # ---------- 正常路径 ----------
@@ -48,14 +50,20 @@ def test_ai_knowledge_base_contains_all_core_sections_and_scenarios():
     assert "场景 6：循环自伤法术" in text
 
 
-def test_readme_navigates_to_ai_experience_and_has_clean_structure():
-    """正常路径：README 导航链接到 AI_EXPERIENCE.md，且原 AI 规范段落已完成移出。"""
+def test_readme_is_a_clean_entry_and_playbook_keeps_execution_format():
+    """README 是入口，不再承载长规则；完整推演格式迁到推演规范。"""
     readme_text = README_FILE.read_text(encoding="utf-8")
-    assert "[AI知识库](AI_EXPERIENCE.md)" in readme_text
+    assert "[AI 知识库](AI_EXPERIENCE.md)" in readme_text
+    assert "[规则正文](规则正文.md)" in readme_text
+    assert "[推演规范](推演规范.md)" in readme_text
+    assert "## 第四宇宙规则正文" not in readme_text
     assert "【十三、AI协作规范】" not in readme_text
     assert "零、职责划分" not in readme_text
-    assert "六、战斗推演格式" in readme_text
-    assert "七步原子流水线" in readme_text
+    assert "六、战斗推演格式" not in readme_text
+    assert "七步原子流水线" not in readme_text
+    assert "六、战斗推演格式" in PLAYBOOK_FILE.read_text(encoding="utf-8")
+    assert "七步原子流水线" in PLAYBOOK_FILE.read_text(encoding="utf-8")
+    assert "### 道纹体系" in RULES_TEXT_FILE.read_text(encoding="utf-8")
 
 
 # ---------- 边界条件 ----------

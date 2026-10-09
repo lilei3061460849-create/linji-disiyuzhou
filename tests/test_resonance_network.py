@@ -20,9 +20,9 @@ from engine.daowen import ResonanceEngine as R
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def readme() -> str:
-    """规则正文事实源：README.md#第四宇宙规则正文（见 AI_EXPERIENCE.md《文档分工与事实源》）。"""
-    with open(os.path.join(ROOT, "README.md"), encoding="utf-8") as f:
+def rules_text() -> str:
+    """规则正文事实源：规则正文.md#第四宇宙规则正文（见 AI_EXPERIENCE.md《文档分工与事实源》）。"""
+    with open(os.path.join(ROOT, "规则正文.md"), encoding="utf-8") as f:
         return f.read()
 
 
@@ -42,7 +42,7 @@ def test_all_readme_monster_transforms_registered():
 
     2026-10-07 用户令：转化途径改为双向，正文用 ⇄（历史写法 → 同样接受）。
     """
-    txt = readme()
+    txt = rules_text()
     spec = set()
     # 双向写法：全力X⇄（转换）借力X；历史单向写法：全力X→（转换）借力X
     for arrow in ("⇄", "→"):

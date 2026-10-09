@@ -1,6 +1,6 @@
 """
 事件系统
-解析规则正文（AI_EXPERIENCE.md）中的通用事件池与各副本专属事件，构建事件池，触发与结算。
+解析规则正文（规则正文.md）中的通用事件池与各副本专属事件，构建事件池，触发与结算。
 规则：当前事件池 = 所有未遇到的通用事件 + 当前区域中符合条件且未遇到的专属事件（通用在前）。
 """
 from __future__ import annotations
@@ -10,6 +10,7 @@ import math
 from pathlib import Path
 from typing import Optional
 
+from .document_sources import COMMON_RULES_FILE
 from .dungeons import load_dungeon_documents
 from .resolution import KIND_EFFECT, resolution_frame
 
@@ -48,17 +49,18 @@ EVENT_NAMES = {
 }
 
 
-# 规则正文中承载「通用事件池」的文件。2026-10-07 规则正文由 AI_EXPERIENCE.md
-# 迁到 README.md，此处必须跟着指过去——指错文件不会报错，只会让 10 个通用事件
-# 静默解析不出来（实测：resolve_event 一律回「未知事件: 祭坛」，一阶探索也
-# 探不到任何通用事件）。事实源分工见 AI_EXPERIENCE.md「文档分工与事实源」。
-RULES_TEXT_FILE = "README.md"
+# 规则正文中承载「通用事件池」的文件。2026-10-09 精确中文规则自 README.md
+# 迁至「规则正文.md」：README 只作入口与速览。此处必须跟着规范文件名——指错文件
+# 不会报错，只会让 10 个通用事件静默解析不出来（实测：resolve_event 一律回
+# 「未知事件: 祭坛」，一阶探索也探不到任何通用事件）。集中定义见 document_sources。
+# 保留 RULES_TEXT_FILE 名称，供现有调用方/测试兼容。
+RULES_TEXT_FILE = COMMON_RULES_FILE
 
 
 def load_event_sources(index_path: str | Path) -> tuple[str, dict]:
     """读取事件解析的全部输入：规则正文 + 已实现副本文档正文。
 
-    规则正文（README.md「第四宇宙规则正文」）承载通用事件，副本文档承载副本
+    规则正文（规则正文.md「第四宇宙规则正文」）承载通用事件，副本文档承载副本
     专属事件，两者合起来就是事件解析的**唯一**输入。缓存层（rule_repository）
     用同一份输入算摘要，避免「缓存读了哪几个文件」与「解析读了哪几个文件」
     各写一份而漂移。
@@ -71,7 +73,7 @@ def load_event_sources(index_path: str | Path) -> tuple[str, dict]:
 
 
 def parse_events(index_path: str | Path) -> dict:
-    """从全副本索引及副本文档解析事件。通用事件位于 README.md 规则正文。"""
+    """从全副本索引及副本文档解析事件。通用事件位于规则正文.md。"""
     content, documents = load_event_sources(index_path)
     lines = content.split("\n")
     # 每个专属副本独立文档追加到解析输入；事件名白名单阻止标题被误判。

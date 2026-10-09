@@ -186,10 +186,9 @@ class MonsterPhaseMixin:
                     # 2026-09-16 用户令：面板不写死 X 时，X 由发动方自选，
                     # 「上限只受法限或者代价限制」。这里探出可负担上限，
                     # 连 X=1 都付不起 → 本道纹此刻不可发动，prepare 过滤。
-                    # 探测只用 X 取代价类型（冷却与否与 X 无关），但 X 不能低于该道纹的
-                    # 下限——否则【波及】这类 X_MIN=2 的道纹会在 X_MIN 守卫之前就抛
-                    # 「X=1低于下限」，整个 prepare 直接崩（实测 test_wave_* 就是这样挂的）。
-                    _probe_x = max(1, DaoWenEngine.X_MIN.get(effective_name, 1))
+                    # 探测只用 X 取代价类型（冷却与否与 X 无关），X=1 即可
+                    # （2026-10-09 用户令：波及 X≥2 下限 repealed，X=1 合法，X_MIN 已拔除）。
+                    _probe_x = 1
                     cooldown_limited = (
                         DaoWenEngine.resolve(effective_name, _probe_x,
                                              target=preview_target, caster=monster)
@@ -204,8 +203,9 @@ class MonsterPhaseMixin:
                         max_x = self._monster_max_daowen_x(
                             monster, effective_name, preview_target,
                             hard_cap=len(dodge_target_options) if effective_name == "波及" else None)
-                        # 2026-10-03 用户令：波及 X 下限=2 → 合法目标不足2个时本道纹此刻不可发动。
-                        if max_x < DaoWenEngine.X_MIN.get(effective_name, 1):
+                        # 2026-10-09 用户令：波及 X 下限 repealed，X=1 合法——
+                        # 合法目标只有 1 个时波及降 X 到 1 照常给出（单目标全值）。
+                        if max_x < 1:
                             continue
                         effective_x = max_x
                     else:
@@ -218,16 +218,10 @@ class MonsterPhaseMixin:
                             continue
                         effective_x = inst.x_value
                     # 【波及】实际标得到的目标数 = min(面板X, 合法目标数)（DM裁定
-                    # 2026-08-23 自适应降 X）。2026-10-03 用户令加了 X 下限=2：
-                    # 降完不足 2 个时本道纹**此刻不可发动**，必须过滤掉，不能把
-                    # X=1 透进 resolve（会抛「X=1低于下限波及≥2」，实测 prepare
-                    # 整个崩掉）。上面 x_free 分支已用 max_x 判过同一条件，这里
-                    # 补的是固定 X 分支——此前两个分支不一致。
-                    # 注意只用于过滤，不改 effective_x：面板 x 仍是展示口径。
-                    if effective_name == "波及":
-                        if min(effective_x, len(dodge_target_options)) < \
-                                DaoWenEngine.X_MIN.get(effective_name, 1):
-                            continue
+                    # 2026-08-23 自适应降 X）。2026-10-09 用户令：X 下限 repealed——
+                    # 降到 X=1 仍可发动（单目标全值），0 个合法目标时上面
+                    # `if not dodge_target_options: continue` 已拦截，故此处无需再过滤。
+                    # 面板 x 仍是展示口径，wave_effective_x 才是实际标数。
                     preview_calc = DaoWenEngine.resolve(
                         effective_name, effective_x, target=preview_target, caster=monster)
                     if not self._monster_can_pay_calc_cost(monster, preview_calc):
@@ -243,7 +237,7 @@ class MonsterPhaseMixin:
                         "x": effective_x,
                         "x_free": bool(getattr(inst, "x_free", False)),
                         "max_x": max_x if getattr(inst, "x_free", False) else 0,
-                        "min_x": DaoWenEngine.X_MIN.get(effective_name, 1),
+                        # 2026-10-09：min_x 字段随 X_MIN 装置一并移除（下限恒为 1）。
                         "wave_effective_x": wave_effective_x,
                         "requires_target": requires_target,
                         "target_options": legal_targets,
@@ -327,8 +321,9 @@ class MonsterPhaseMixin:
         """求该道纹此刻可负担的最大 X。返回 0 表示连 X=1 都付不起（prepare 应过滤掉）。"""
         cap = hard_cap if hard_cap is not None else self._DAOWEN_X_PROBE_CAP
         best = 0
-        # X下限（【波及】≥2）：探测从下限起步；上限若连下限都够不到则直接判不可发动。
-        x_floor = max(1, DaoWenEngine.X_MIN.get(effective_name, 1))
+        # 探测从 X=1 起步（2026-10-09 用户令：波及 X≥2 下限 repealed，X=1 合法，
+        # X_MIN 装置已整套拔除；上限若连 X=1 都够不到则直接判不可发动）。
+        x_floor = 1
         if cap < x_floor:
             return 0
         for x in range(x_floor, max(0, cap) + 1):
@@ -388,10 +383,10 @@ class MonsterPhaseMixin:
         # 2026-09-16 用户令：面板未写死 X（x_free）时，X 由发动方在提交里自选，
         # 「上限只受法限或者代价限制」——这里按 prepare 同一口径重新探一次上限并校验，
         # 防止提交方给出此刻已付不起的 X（资源在 prepare 之后可能已被消耗）。
-        # 与 prepare 侧（见上方同名探测）同一处坑：探测只能用「不低于该道纹下限」
-        # 的 X，否则【波及】这类 X_MIN=2 的道纹会在 X_MIN 守卫之前抛「X=1低于下限」，
-        # 把整个 resolve 打成 recoverable 错误（实测 r01_r38/wave 三处用例挂在这里）。
-        _probe_x = max(1, DaoWenEngine.X_MIN.get(effective_name, 1))
+        # 探测只用 X 取代价类型（冷却与否与 X 无关），X=1 即可
+        # （2026-10-09 用户令：波及 X≥2 下限 repealed，X=1 合法，X_MIN 已拔除，
+        #  探测再也不会撞「X=1低于下限」守卫）。
+        _probe_x = 1
         cooldown_limited = (
             DaoWenEngine.resolve(effective_name, _probe_x, target=target, caster=monster)
             .get("cost_type") == "冷却")
@@ -593,7 +588,7 @@ class MonsterPhaseMixin:
                     # 次数型必中扣1次，状态型必中（monster.has_status("必中")）不扣
                     if self.bizhong_remaining(monster) > 0:
                         self.consume_bizhong(monster)
-                    marked = self._toggle_wave_mark(entity, monster)
+                    marked = self._toggle_wave_mark(entity, monster, activation_x=effective_x)
                     (wave_marked if marked else wave_unmarked).append(entity.name)
                 elif entry["blood_shadow"]:
                     self.pay_numeric_cost(
@@ -603,7 +598,7 @@ class MonsterPhaseMixin:
                 elif want_dodge:
                     self._spend_dodge_speed(entity, entry.get("dodge_relic_target_ref"))
                 else:
-                    marked = self._toggle_wave_mark(entity, monster)
+                    marked = self._toggle_wave_mark(entity, monster, activation_x=effective_x)
                     (wave_marked if marked else wave_unmarked).append(entity.name)
             execution = self.apply_daowen_effect(effective_name, calc, monster, target)
             execution["wave_marked"] = wave_marked

@@ -1652,8 +1652,14 @@ def evaluate_build(starter: str, learn: list, runs: int, gen: int,
                    telemetry: dict = None, spend_shards: bool = False,
                    region: str = None, policy: dict = None,
                    attrs: dict = None, battles: int = 7,
-                   keep_runs: bool = False) -> dict:
-    """唯一的构筑评价入口，分别返回 PVE/PVP/完整通关表现。"""
+                   keep_runs: bool = False, lab_paths: dict = None) -> dict:
+    """唯一的构筑评价入口，分别返回 PVE/PVP/完整通关表现。
+
+    lab_paths：透传给 play 的隔离存储（db/sealed/death_book 三件套）。不传则各 run
+    共享生产路径（data/sealed_candidate.json、/tmp/learner.db）——封存槽跨 run 演化，
+    评评价结果会依赖调用前的文件状态，确定性复测必须传隔离目录（2026-10-09 修复
+    test_fitness_fixed_mode_is_deterministic 的抖动根因）。
+    """
     if rng is None:
         rng = random if random_seeds else random.Random(gen * 7919 + 13)
     total_invalid = 0
@@ -1671,7 +1677,7 @@ def evaluate_build(starter: str, learn: list, runs: int, gen: int,
         run_telemetry = telemetry if telemetry is not None else {}
         result = play(starter, learn, run_region, seed, rng=rng,
                       telemetry=run_telemetry, spend_shards=spend_shards,
-                      policy=policy, attrs=attrs)
+                      policy=policy, attrs=attrs, lab_paths=lab_paths)
         if result.get("invalid"):
             total_invalid += 1
             if telemetry is not None:
@@ -1858,11 +1864,16 @@ def verify_observed_combo(left: str, right: str, runs: int, gen: int,
 def fitness(starter: str, learn: list, runs: int, gen: int,
             random_seeds: bool = False, rng: random.Random = None,
             telemetry: dict = None, spend_shards: bool = False,
-            region: str = None, policy: dict = None) -> tuple:
-    """兼容旧调用；score 现在是完整通关率，不再是平均存活场数。"""
+            region: str = None, policy: dict = None,
+            lab_paths: dict = None) -> tuple:
+    """兼容旧调用；score 现在是完整通关率，不再是平均存活场数。
+
+    lab_paths：隔离存储透传（见 evaluate_build）——确定性复测必须传，
+    否则封存槽文件跨调用演化会让两次同参调用结果不同。
+    """
     metrics = evaluate_build(starter, learn, runs, gen, random_seeds=random_seeds,
                              rng=rng, telemetry=telemetry, spend_shards=spend_shards,
-                             region=region, policy=policy)
+                             region=region, policy=policy, lab_paths=lab_paths)
     return metrics["full_rate"], metrics["valid"], metrics["invalid"]
 
 # --------------------------------------------------------------------------

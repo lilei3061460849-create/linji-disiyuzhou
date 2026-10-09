@@ -44,7 +44,7 @@ def _engine(starter="杀伐", learn=(), region="龙心谷", seed=1, tmp="/tmp/bv
 # ---------- 正常路径 ----------
 
 def test_boba_marks_targets_after_start():
-    """正常路径：波及开局后可真实发动并标记目标（2026-10-03 起 X 下限=2，需两个目标）。"""
+    """正常路径：波及开局后可真实发动并标记目标（X=2 标两个目标；2026-10-09 起 X 下限 repealed，X=1 也合法）。"""
     e = _engine(starter="波及")
     assert set(e.state.player.dao_wen) >= {"杀伐", "波及"}
     enemy = e.state.enemies[0]

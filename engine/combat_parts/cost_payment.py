@@ -378,14 +378,14 @@ class CostPaymentMixin:
                 out.append(entity)
         return out
 
-    def _toggle_wave_mark(self, entity: Entity, caster: Entity) -> bool:
-        """建立/解除波及效果：已带施法者波及标记则解除，否则建立。返回是否建立。"""
+    def _toggle_wave_mark(self, entity: Entity, caster: Entity, *, activation_x: int = 0) -> bool:
+        """建立/解除波及效果；建立时记录这次道纹发动 X。"""
         for s in list(entity.status_effects):
             if s.name == "波及" and s.source == caster.name:
                 entity.status_effects.remove(s)
                 return False
         entity.add_status(StatusEffect(name="波及", value=1, remaining_rounds=-1,
-                                       source=caster.name))
+                                       source=caster.name, activation_x=activation_x))
         return True
 
     def pay_numeric_cost(

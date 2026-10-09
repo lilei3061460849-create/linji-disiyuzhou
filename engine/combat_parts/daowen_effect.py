@@ -25,6 +25,11 @@ from ..models import MONSTER_MANA_RELIC
 
 
 class DaowenEffectMixin:
+    @staticmethod
+    def _daowen_status(*, activation_x: int, **kwargs) -> StatusEffect:
+        """道纹施加持续状态的唯一构造口：记录本次发动 X 与施加顺序。"""
+        return StatusEffect(activation_x=activation_x, **kwargs)
+
     def apply_daowen_effect(
         self, name: str, calc: dict, caster: Entity, target: Entity,
         dragon_heart_use: int = 0, *, cost_share_target_ref: str = "",
@@ -68,11 +73,16 @@ class DaowenEffectMixin:
         # 数值型效果的总数值在所有目标（本次[目标]+波及目标，均排除施法者自身）间平分，
         # 余数随机分配；状态类效果对波及目标原样生效。多目标不复制或增加总数值。
         # 目标可选的道纹（如【变形】）未指定目标时兜底为施法者，避免 [None]
+        # 2026-10-09 用户令：波及 X≥2 下限 repealed——effective 非空即走分路，
+        # 不再有「不足 2 个不分」的特判：平分份数=目标数，单目标时 _divide_flat(v,1)=[v]，
+        # 全值落于该目标，与多目标完全同一条链路。
         wave_status_targets: list[Entity] = [target if target else caster]
         wave_pieces: dict[str, list[int]] = {}
+        has_wave_targets = False
         if name != "波及":
             wave_targets = self._wave_targets(caster)
             if wave_targets:
+                has_wave_targets = True
                 effective: list[Entity] = []
                 for wt in ([target] if target is not caster and target.is_alive else []) + wave_targets:
                     if wt.is_alive and wt not in effective:
@@ -80,14 +90,14 @@ class DaowenEffectMixin:
                 if effective:
                     wave_status_targets = effective
                     numeric_keys = [k for k in self.WAVE_NUMERIC_KEYS if k in calc]
-                    if numeric_keys and len(effective) >= 2:
+                    if numeric_keys:
                         wave_pieces = {k: self._divide_flat(calc[k], len(effective))
                                        for k in numeric_keys}
                         result["wave_spread"] = {
                             "targets": [e.name for e in effective],
                             "pieces": {k: list(v) for k, v in wave_pieces.items()},
                         }
-                    elif len(effective) >= 2:
+                    else:
                         result["wave_spread"] = {
                             "targets": [e.name for e in effective], "status_only": True}
 
@@ -492,10 +502,13 @@ class DaowenEffectMixin:
         # 波及扩散：attack_boost/reduction 数值平分；attack_fixed/attack_count_fixed
         # （固定面板为状态类）对波及目标原样生效。
         # 目标可选的道纹（如【变形】）未指定目标时兜底为施法者，避免 [None]
+        # 2026-10-09：单标记也走波及面板（has_wave_targets 即有效目标非空），
+        # 不再用「>1」门槛——否则 1 标记时状态类面板会回退打给主目标/施法者，
+        # 与多标记"面板落在波及目标上"的语义不一致。
         panel_targets = wave_status_targets if (
             any(k in wave_pieces for k in ("attack_boost", "attack_reduction"))
             or (any(k in calc for k in ("attack_fixed", "attack_count_fixed"))
-                and len(wave_status_targets) > 1)) else [target if target else caster]
+                and has_wave_targets)) else [target if target else caster]
         for panel_idx, panel_target in enumerate(panel_targets):
             panel_locked = panel_target.has_status("定型") and any(k in calc for k in _panel_keys)
             if panel_locked:
@@ -511,7 +524,7 @@ class DaowenEffectMixin:
             # 走状态层（models.py::effective_attack_power 读取），不再写遗留字段
             # attack_power——那样对不写穿的轮回者无效。
             if (not panel_locked) and calc.get("attack_power_to_mana_limit"):
-                panel_target.add_status(StatusEffect(
+                panel_target.add_status(self._daowen_status(activation_x=x,
                     name="全力", value=1,
                     remaining_rounds=calc.get("duration", x), source=caster.name))
                 result["effects"].append({
@@ -535,7 +548,7 @@ class DaowenEffectMixin:
             # 走状态层（models.py::effective_attack_count 读取），不再写遗留字段
             # attack_count——那样对不写穿的轮回者无效。
             if (not panel_locked) and calc.get("attack_count_to_speed_limit"):
-                panel_target.add_status(StatusEffect(
+                panel_target.add_status(self._daowen_status(activation_x=x,
                     name="全速", value=1,
                     remaining_rounds=calc.get("duration", x), source=caster.name))
                 result["effects"].append({
@@ -688,7 +701,10 @@ class DaowenEffectMixin:
         # ---- 乱葬岗（二阶）专属道纹效果 ----
         if name == "瓦解" and calc.get("blood_limit_pct"):
             pct = calc["blood_limit_pct"]
-            if len(wave_status_targets) > 1:
+            # 2026-10-09：单标记同样走"总和再平分"分路（has_wave_targets 即有效目标
+            # 非空），1 个目标时总和=该目标血限×百分比、全值落于该目标；不再用
+            # 「>1」门槛让单标记回退到主目标特判。
+            if has_wave_targets:
                 # 波及：总数值=各目标血限×百分比之和，再平分。
                 total = sum(math.ceil(wt.blood_limit * pct / 100) for wt in wave_status_targets)
                 pieces = self._divide_flat(total, len(wave_status_targets))
@@ -716,7 +732,7 @@ class DaowenEffectMixin:
             # 2026-10-08 用户令：撤销 2026-09-09 的「法力消耗翻倍」，恢复原效果。
             # 判定只有一处：Entity.can_gain_mana() —— 所有法力增益来源都过 gain_mana()。
             for st_target in wave_status_targets:
-                st_target.add_status(StatusEffect(name="勾魂", value=1,
+                st_target.add_status(self._daowen_status(activation_x=x, name="勾魂", value=1,
                                                   remaining_rounds=calc.get("duration", x),
                                                   source=caster.name))
                 result["effects"].append({
@@ -725,7 +741,7 @@ class DaowenEffectMixin:
                     "duration": calc.get("duration", x)})
         if name == "冥气" and calc.get("speed_loss_speed_limit"):
             for st_target in wave_status_targets:
-                st_target.add_status(StatusEffect(name="冥气", value=calc["speed_loss_speed_limit"],
+                st_target.add_status(self._daowen_status(activation_x=x, name="冥气", value=calc["speed_loss_speed_limit"],
                                                   remaining_rounds=calc.get("duration", 1),
                                                   source=caster.name))
                 result["effects"].append({"type": "mingqi", "target": st_target.name,
@@ -733,7 +749,7 @@ class DaowenEffectMixin:
                                           "duration": calc.get("duration", 1)})
         if name == "缄默" and calc.get("silence_death_triggers"):
             for st_target in wave_status_targets:
-                st_target.add_status(StatusEffect(name="缄默", value=1,
+                st_target.add_status(self._daowen_status(activation_x=x, name="缄默", value=1,
                                                   remaining_rounds=calc.get("duration", 1),
                                                   source=caster.name))
                 result["effects"].append({"type": "qianmo", "target": st_target.name,
@@ -838,8 +854,13 @@ class DaowenEffectMixin:
             if existed is not None:
                 existed.remaining_rounds = max(existed.remaining_rounds or 0, rounds)
                 existed.value = rounds
+                # 【必中】历史上是覆盖式刷新而非 add_status 的数值叠加，
+                # 但它仍是一轮新的发动：同样采用最后一次施加的 X/来源/顺序。
+                existed.refresh_order_from(self._daowen_status(
+                    activation_x=x, name="必中", remaining_rounds=rounds,
+                    value=rounds, source=caster.name))
             else:
-                caster.add_status(StatusEffect(
+                caster.add_status(self._daowen_status(activation_x=x,
                     name="必中", remaining_rounds=rounds, value=rounds,
                     source=caster.name))
             result["effects"].append({"type": "bizhong_self", "target": caster.name,
@@ -854,7 +875,7 @@ class DaowenEffectMixin:
                 wave_pieces["invalid_damage_hits"] = pieces
                 for wt, piece in zip(wave_status_targets, pieces):
                     if piece > 0:
-                        wt.add_status(StatusEffect(
+                        wt.add_status(self._daowen_status(activation_x=x,
                             name="蒙蔽", remaining_rounds=-1, value=piece, source=caster.name))
                         result["effects"].append({
                             "type": "mengbi",
@@ -865,7 +886,7 @@ class DaowenEffectMixin:
             else:
                 hits = int(calc["invalid_damage_hits"])
                 if hits > 0:
-                    target.add_status(StatusEffect(
+                    target.add_status(self._daowen_status(activation_x=x,
                         name="蒙蔽", remaining_rounds=-1, value=hits, source=caster.name))
                     result["effects"].append({
                         "type": "mengbi",
@@ -898,13 +919,13 @@ class DaowenEffectMixin:
                 for et_all in self.state.get_all_player_side() + self.state.get_all_enemy_side():
                     if not et_all.is_alive:
                         continue
-                    et_all.add_status(StatusEffect(name="疯狂", remaining_rounds=duration,
+                    et_all.add_status(self._daowen_status(activation_x=x, name="疯狂", remaining_rounds=duration,
                                                    value=x, source=caster.name))
                     result["effects"].append({"type": "status_added", "target": et_all.name,
                                               "status": name, "duration": duration, "value": x})
             elif self_targeted:
                 et = caster
-                et.add_status(StatusEffect(name=name, remaining_rounds=duration, value=x, source=caster.name))
+                et.add_status(self._daowen_status(activation_x=x, name=name, remaining_rounds=duration, value=x, source=caster.name))
                 result["effects"].append({"type": "status_added", "target": et.name,
                                           "status": name, "duration": duration, "value": x})
             else:
@@ -912,7 +933,7 @@ class DaowenEffectMixin:
                 for et in wave_status_targets:
                     if not et.is_alive:
                         continue
-                    et.add_status(StatusEffect(name=name, remaining_rounds=duration, value=x, source=caster.name))
+                    et.add_status(self._daowen_status(activation_x=x, name=name, remaining_rounds=duration, value=x, source=caster.name))
                     result["effects"].append({"type": "status_added", "target": et.name,
                                               "status": name, "duration": duration, "value": x})
 
@@ -929,7 +950,7 @@ class DaowenEffectMixin:
         elif name == "嫁祸":
             caster._jiahuo_left = x
             caster._jiahuo_target = target.runtime_id
-            caster.add_status(StatusEffect(name="嫁祸", value=x, remaining_rounds=x, source=caster.name))
+            caster.add_status(self._daowen_status(activation_x=x, name="嫁祸", value=x, remaining_rounds=x, source=caster.name))
             result["effects"].append({"type": "jiahuo", "caster": caster.name, "target": target.name, "count": x})
         # 背负X：目标下X次受伤由自身承担（同样只存 runtime_id）
         elif name == "背负":
@@ -937,7 +958,7 @@ class DaowenEffectMixin:
             caster._beifu_target = target.runtime_id
             # 在目标侧加标记便于查询
             for st_target in wave_status_targets:
-                st_target.add_status(StatusEffect(name="被背负", value=x, remaining_rounds=-1, source=caster.name))
+                st_target.add_status(self._daowen_status(activation_x=x, name="被背负", value=x, remaining_rounds=-1, source=caster.name))
                 result["effects"].append({"type": "beifu", "caster": caster.name, "target": st_target.name, "count": x})
         # 伤痕X：目标每次掉血后血限-X，永久（已通过 duration 加伤痕状态，此处仅补日志）
         elif name == "伤痕":
@@ -950,7 +971,7 @@ class DaowenEffectMixin:
             for st_target in wave_status_targets:
                 # 账本唯一入口（engine/mechanisms/ledger.py）；[回始]结算在机制声明层。
                 ledger_of(st_target, "逼债").append({"x": x, "caster": caster})
-                st_target.add_status(StatusEffect(name="逼债", value=x, remaining_rounds=-1, source=caster.name))
+                st_target.add_status(self._daowen_status(activation_x=x, name="逼债", value=x, remaining_rounds=-1, source=caster.name))
                 result["effects"].append({"type": "bizhai_register", "target": st_target.name, "x": x})
         # 清算X：[回始]使[目标]失去你[碎片]点格挡，持续X。此处仅挂账。
         elif name == "清算":

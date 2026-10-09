@@ -15,16 +15,11 @@ from .mechanisms.triggers import Phase
 class CombatHook(Protocol):
     """战斗生命周期钩子协议。
 
-    priority：**执行优先级，数字小的先执行**。
+    priority：无发动 X 元数据的 Hook 的兼容后备顺序（数字小的先执行）。
 
-    警告：本项目里 Hook 的执行顺序**本身就是规则的一部分**，不是实现细节。
-    例：`加害`(+X) 必须先于 `龙鳞`(-X，且 max(0,...) 下限截断) 结算——
-    伤害8/加害2/龙鳞8 时，现顺序得 max(0, (8+2)-8) = 2；
-    反过来龙鳞先把 8 削成 0，加害的 `amount > 0` 前置条件不再成立，结果是 0。
-    因此下面这些 priority 数值是对「重构前字面注册顺序」的**如实固化**，
-    不得在没有 DM 裁定的情况下调整。
-    已迁移到声明层的机制（当前仅【加害】，priority=20）经 MechanismHookAdapter
-    挂在本列表的原位置，priority 语义与数值完全不变。
+    道纹建立的持续状态在同一个自然结算窗口不再由本字段决定：发动 X 大者
+    先，X 相同按施加先后；状态中间把数值压成 0 也不会短路后续状态。静态
+    priority 仅保留给非状态 Hook、旧档和审计输出，不能覆盖状态排序键。
     """
 
     priority: int = 100
@@ -173,7 +168,8 @@ class LethalMitigationHook:
 
         # 1. 朋友/员工撤退与负岳碑
         if getattr(target, "entity_type", "") in ("朋友", "员工") and not getattr(target, "has_retreated", False):
-            remaining_after_shield = max(0, amount - getattr(target, "shield", 0)) if amount > 0 else 0
+            remaining_after_shield = (amount if damage_type == "无视格挡"
+                                      else max(0, amount - getattr(target, "shield", 0))) if amount > 0 else 0
             if remaining_after_shield >= target.current_hp and target.current_hp > 0:
                 player = combat.state.player
                 target_ref = next((ref for ref, entity in combat._combat_entity_refs().items() if entity is target), "")
@@ -203,7 +199,8 @@ class LethalMitigationHook:
         # 2. 断尾求生
         if (getattr(target, "is_alive", False) and combat.state.side_has(target, "断尾求生")
                 and combat.state.side_tail_declared(target)):
-            remaining_after_shield = max(0, amount - getattr(target, "shield", 0)) if amount > 0 else 0
+            remaining_after_shield = (amount if damage_type == "无视格挡"
+                                      else max(0, amount - getattr(target, "shield", 0))) if amount > 0 else 0
             if remaining_after_shield >= target.current_hp and target.current_hp > 0:
                 sacrificed = combat.state.side_tail_declared(target)
                 combat.state.remove_side_relic(target, sacrificed)
@@ -332,8 +329,8 @@ class CombatHookManager:
         self.redirection_hook = DamageRedirectionHook()
         self.mitigation_hook = LethalMitigationHook()
         self.after_damage_hook = AfterDamageEffectsHook()
-        # 已迁移到声明层的机制（当前：加害=20、龙鳞=30）经适配器挂到同一条 Hook
-        # 分发路径，执行顺序与迁移前完全一致（加害先于龙鳞，顺序即规则）。
+        # 已迁移到声明层的伤害持续状态经适配器挂到同一条 Hook 路径。其实际
+        # 执行顺序不是静态 priority：每次伤害窗口都读取状态的发动 X 与施加序号。
         mechanism_hooks: List[Any] = [
             MechanismHookAdapter(mechanism)
             for mechanism in MECHANISMS.phase_mechanisms(Phase.INCOMING_ADJUST)
@@ -391,11 +388,29 @@ class CombatHookManager:
         return amount
 
     def apply_incoming_adjust(self, target: Any, amount: int, damage_type: str, source: Optional[Any], state: Any) -> int:
-        for hook in self._hooks:
-            if self._is_explicit(hook):
-                continue
-            if hasattr(hook, "on_incoming_adjust"):
-                amount = hook.on_incoming_adjust(target, amount, damage_type, source, state)
+        """结算本次伤害窗口的持续状态调整。
+
+        只要原始输入是一笔正伤害，状态区内即使先被压成 0，后续状态仍照常
+        运行并可把它改回正数。自然时机没有被重排：这里只排序已经同时进入
+        INCOMING_ADJUST 窗口的持续状态；无状态元数据的外部 Hook 仍按 priority
+        作为兼容后备。
+        """
+        if amount <= 0:
+            return amount
+
+        candidates = [
+            hook for hook in self._hooks
+            if not self._is_explicit(hook) and hasattr(hook, "on_incoming_adjust")
+        ]
+
+        def incoming_key(hook: Any) -> tuple:
+            if isinstance(hook, MechanismHookAdapter):
+                return hook.incoming_order_key(target)
+            # 非持续状态 Hook 没有发动 X，放在状态窗口后按原 priority 运行。
+            return (2, self._priority_of(hook), type(hook).__name__)
+
+        for hook in sorted(candidates, key=incoming_key):
+            amount = hook.on_incoming_adjust(target, amount, damage_type, source, state)
         return amount
 
     def reflect_attack_damage(self, target: Any, amount: int, attacker: Any, state: Any) -> int:

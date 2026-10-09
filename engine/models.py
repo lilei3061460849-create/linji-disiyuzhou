@@ -4,7 +4,7 @@
 from __future__ import annotations
 from .rules_source import lethal_events
 from dataclasses import dataclass, field
-from typing import Optional, Any
+from typing import Optional, Any, Callable
 import math
 import json
 import uuid
@@ -161,21 +161,71 @@ class Consumable:
         }
 
 
+# 单调序号是同 X 时的因果锚点。它故意不按回合重置：只要状态仍存在，
+# 后一次施加就必然在排序上晚于此前已经存在的状态。
+_STATUS_APPLICATION_SEQUENCE = 0
+
+
+def _next_status_application_sequence() -> int:
+    global _STATUS_APPLICATION_SEQUENCE
+    _STATUS_APPLICATION_SEQUENCE += 1
+    return _STATUS_APPLICATION_SEQUENCE
+
+
+def _observe_status_application_sequence(sequence: int) -> None:
+    """从存档还原一个既有序号时，保证后来新施加的状态仍排在它之后。"""
+    global _STATUS_APPLICATION_SEQUENCE
+    _STATUS_APPLICATION_SEQUENCE = max(_STATUS_APPLICATION_SEQUENCE, sequence)
+
+
 @dataclass
 class StatusEffect:
-    """持续效果。scope 与 polarity 显式区分生命周期和增减益极性。"""
+    """持续效果及其发动顺序元数据。
+
+    ``activation_x`` / ``application_sequence`` 不是显示层数，而是同一自然结算
+    窗口的通用排序键：发动 X 大者先；X 相同则先施加者先。``activation_x``
+    为 ``None`` 的旧档、遗物或测试构造状态兼容地以当前 value 作为 X。持续∞
+    （remaining_rounds=-1）和有限持续状态完全一视同仁。
+    """
     name: str
     remaining_rounds: int        # 剩余回合（-1=∞；仍只代表本场战斗内的无限）
     value: int = 0               # 效果数值
     source: str = ""             # 来源
     scope: str = EffectScope.BATTLE.value
     polarity: str = EffectPolarity.NEUTRAL.value
+    activation_x: Optional[int] = None
+    application_sequence: int = field(default_factory=_next_status_application_sequence)
     
     def __post_init__(self):
         # 即使调用方直接append而不经过Entity.add_status，代价标记也不能被战终误清。
         if (self.name in {"流血", "衰老", "枯竭", "萎缩", "疲惫", "异变", "迷失"}
                 and self.scope == EffectScope.BATTLE.value):
             self.scope = EffectScope.COST.value
+        # 旧存档可能显式带 0；该值不是合法序号，统一补发一个新的稳定序号。
+        if self.application_sequence <= 0:
+            self.application_sequence = _next_status_application_sequence()
+        else:
+            _observe_status_application_sequence(self.application_sequence)
+
+    @property
+    def ordering_x(self) -> int:
+        """本状态用于统一排序的发动 X（遗留状态退回其当前数值）。"""
+        raw_x = self.value if self.activation_x is None else self.activation_x
+        try:
+            return max(0, int(raw_x))
+        except (TypeError, ValueError):
+            return 0
+
+    @property
+    def ordering_key(self) -> tuple[int, int, str]:
+        """可直接供任意同窗口状态结算使用的稳定排序键。"""
+        return (-self.ordering_x, self.application_sequence, self.name)
+
+    def refresh_order_from(self, other: 'StatusEffect') -> None:
+        """采用一次新的施加事实作为本合并状态的来源和排序锚点。"""
+        self.activation_x = other.activation_x
+        self.application_sequence = other.application_sequence
+        self.source = other.source
 
     @property
     def is_permanent(self) -> bool:
@@ -193,7 +243,7 @@ class StatusEffect:
         return self.remaining_rounds > 0
     
     def merge_with(self, other: 'StatusEffect') -> bool:
-        """合并同名效果：数值相加"""
+        """合并同名效果，并按最后一次施加刷新来源及统一排序锚点。"""
         if self.name != other.name:
             return False
         if self.is_permanent or other.is_permanent:
@@ -201,6 +251,9 @@ class StatusEffect:
         else:
             self.remaining_rounds += other.remaining_rounds
         self.value += other.value
+        # 用户裁定：同名持续状态重施/合并视为最后一次施加；不能继续沿用
+        # 第一层的 X、来源或同 X 先后顺序。
+        self.refresh_order_from(other)
         return True
 
 
@@ -532,17 +585,19 @@ class Entity:
         return self.current_hp / self.blood_limit if self.blood_limit > 0 else 0
     
     def take_damage(self, amount: int, damage_type: str = "普通", *,
-                    life_loss_multiplier: int = 1) -> dict:
+                    life_loss_multiplier: int = 1,
+                    status_adjuster: Optional[Callable[[int], int]] = None) -> dict:
         """
-        受到伤害，返回结算详情
-        规则：格挡仅能抵消外部【伤害】，代价绝对无法被格挡吸收
+        受到伤害，返回结算详情。
 
-        life_loss_multiplier：【第一杯】的「失去的生命翻倍」由此注入
-        （唯一事实源 `GameState.life_loss_multiplier`，由调用方传入——Entity
-        不认识遗物，持有者判定留在状态层）。倍率作用在**格挡与【固执】压帽
-        之后**：翻倍的是最终失去的生命，不是原始伤害，所以格挡该吸收多少
-        仍是原来的数。`actual_damage` 报出的同样是翻倍后的数值，失血总账
-        （承露盏/失去生命后反应）因此不会少记一半。
+        格挡先在伤害资源层吸收；随后（若由战斗引擎传入）在同一伤害窗口调用
+        ``status_adjuster``，以统一的「发动 X 降序、同 X 施加先后」处理所有
+        持续状态。adjuster 只要收到一笔仍有效的伤害，就必须自行允许 0 被后续
+        状态继续修正。代价不经该持续状态调整区。
+
+        ``life_loss_multiplier``：【第一杯】的「失去的生命翻倍」发生在格挡及
+        持续状态调整之后、扣血之前。直接调用 Entity 的旧入口未传 adjuster 时，
+        保留【固执】压帽兼容行为；完整战斗管线由 CombatHookManager 接管。
         """
         detail = {
             "raw_damage": amount,
@@ -567,12 +622,17 @@ class Entity:
             remaining -= absorbed
             detail["shield_absorbed"] = absorbed
         
-        # 固执：自身单次失去生命最高为 1。代价不被格挡，也不被固执压帽。
-        if remaining > 0 and damage_type != "代价" and self.has_status("固执"):
+        # 完整战斗管线：格挡后的所有持续状态由同一排序器结算。这里不以
+        # remaining==0 作为状态区内部的短路条件——回调一旦开始，其后的效果
+        # 仍可把 0 改回正数；但护盾已完全吸收的事件不进入持续状态区。
+        if remaining > 0 and damage_type != "代价" and status_adjuster is not None:
+            remaining = status_adjuster(remaining)
+        # 兼容直接 Entity.take_damage 的历史调用（没有战斗引擎上下文时）。
+        elif remaining > 0 and damage_type != "代价" and self.has_status("固执"):
             remaining = min(remaining, 1)
             detail["capped_by"] = "固执"
 
-        # 【第一杯】：失去的生命翻倍（格挡/压帽之后、扣血之前）
+        # 【第一杯】：失去的生命翻倍（格挡/持续状态调整之后、扣血之前）
         if life_loss_multiplier > 1 and remaining > 0:
             remaining *= life_loss_multiplier
             detail["life_loss_multiplier"] = life_loss_multiplier
@@ -788,6 +848,16 @@ class Entity:
         self.status_effects = remaining
         return expired
     
+    def ordered_statuses(self, names: Optional[set[str]] = None) -> list[StatusEffect]:
+        """返回同一自然结算窗口应使用的状态顺序。
+
+        这是所有持续状态并发结算的唯一排序入口；调用者只决定自己的自然
+        时机/候选状态集合，不能再自行按机制静态 priority 排序。
+        """
+        statuses = (status for status in self.status_effects
+                    if names is None or status.name in names)
+        return sorted(statuses, key=lambda status: status.ordering_key)
+
     def add_status(self, effect: StatusEffect):
         """添加状态效果；未显式给出极性时按规则表标注，生命周期仍由scope独立决定。"""
         if effect.polarity == EffectPolarity.NEUTRAL.value:

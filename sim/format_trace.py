@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-按 README《六、战斗推演格式》生成合规战报。
+按 推演规范《六、战斗推演格式》生成合规战报。
 
 与旧的 sim/engine_trace.py 的区别：engine_trace 输出的是汇总行
 （"第1回合：怪物出手2次，贾凡HP60"），违反"禁止概括、跳过或合并结算"。
@@ -60,7 +60,7 @@ def run(region: str = "龙心谷", seed: int = 7, battles: int = 3) -> list[str]
         engine.execute_action("pre_battle_action",
                               {"sub_action": "学习", "sub": "spell", "name": sp})
 
-    out = [f"# 战报（{region}，种子{seed}）· 按 README《六、战斗推演格式》",
+    out = [f"# 战报（{region}，种子{seed}）· 按 推演规范《六、战斗推演格式》",
            "",
            ]
     out.extend(BR.format_setup_discovery(

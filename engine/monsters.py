@@ -82,7 +82,7 @@ def parse_monster_pool(index_path: str | Path) -> dict:
 
 
 # 出怪配方（2026-09-28 用户令）的三个常量：N 的上界、T_i 的上界、一阶的场数偏置。
-# 正文口径见 README.md「[战始]：抽取出怪」与 AI_EXPERIENCE.md「当前有效的工程约束」。
+# 正文口径见 推演规范.md「[战始]：抽取出怪」与 AI_EXPERIENCE.md「当前有效的工程约束」。
 MONSTER_POOL_LIMIT = 12      # 每副本怪物池 12 种，也是配方 N=随机(1,12) 的上界
 SPAWN_WAVE_GAP_LIMIT = 5     # T_i=随机(1,5)：上一波之后最多等待 5 回合
 SPAWN_TIER1_BATTLE_BIAS = 3  # 一阶把旧「战斗场数-3」保留为 N 的上界（见 compute_draw_cap）

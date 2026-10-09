@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 实战平衡模拟器
-解析README全部怪物面板，用不同胜利路径策略跑单场战斗，统计胜率。
+解析全副本索引全部怪物面板，用不同胜利路径策略跑单场战斗，统计胜率。
 用于把占位阈值（癌变/还债/雕塑）调到目标胜率。
 
 用法:
@@ -33,7 +33,7 @@ REGION_EXCLUSIVE = {
 
 # 各副本怪物池的行范围（用于归属判定）——按面板出现顺序解析即可
 def parse_monsters():
-    """从全副本索引加载怪物池，而不是直接解析 README。"""
+    """从全副本索引加载怪物池，而不是直接解析规则正文。"""
     from engine.monsters import parse_monster_pool
     pools = parse_monster_pool(os.path.join(ROOT, "副本索引.md"))
     return [
@@ -223,7 +223,7 @@ def apply_control_to_player(name, m, player):
 
 # =========================================================================
 # 副本专属道纹实装（裁定⑨ 2026-08-10：全部24种专属道纹建模后重测平衡）
-# 语义事实源：README道纹定义 + engine/combat.py 已实现口径（赌命=当前生命30%等）。
+# 语义事实源：规则正文道纹定义 + engine/combat.py 已实现口径（赌命=当前生命30%等）。
 # USE_EXCLUSIVE=False 回到未建模基线（A/B对照用）。
 # 已知本模拟器结构性空转（照激活、记计数、无数值影响）：超频（怪速度未入战斗数学）、
 # 定型（模拟玩家战斗中不涨攻击/次数）、抵扣（模拟玩家无遗物）。
@@ -381,7 +381,7 @@ def exclusive_round_end(player, monsters):
 
 
 def apply_exclusive(act, m, player, monsters, rng):
-    """怪物激活副本专属道纹的效果施加（对照README定义；空转型照激活记计数）"""
+    """怪物激活副本专属道纹的效果施加（对照规则正文定义；空转型照激活记计数）"""
     x = m.dao_wen[act].x_value
     if act == "变形":      # 自身攻击力与攻击次数互换，持续X
         m.attack_power, m.attack_count = m.attack_count, m.attack_power

@@ -15,7 +15,7 @@ import sys
 import pytest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-README = os.path.join(ROOT, "README.md")
+RULES_TEXT = os.path.join(ROOT, "规则正文.md")
 DUNGEON_DIR = os.path.join(ROOT, "副本")
 INDEX = os.path.join(ROOT, "物品索引.md")
 
@@ -38,7 +38,7 @@ def index_anchors() -> set:
 
 
 def item_links() -> list:
-    documents = [README] + [os.path.join(DUNGEON_DIR, name) for name in os.listdir(DUNGEON_DIR)
+    documents = [RULES_TEXT] + [os.path.join(DUNGEON_DIR, name) for name in os.listdir(DUNGEON_DIR)
                             if name.endswith(".md")]
     return [anchor for document in documents
             for anchor in re.findall(r"\]\((?:\.\./)?物品索引\.md#([^)]+)\)", read(document))]
@@ -86,7 +86,7 @@ def test_no_duplicate_headings_in_index():
 
 def test_effect_text_not_duplicated_outside_item_index():
     """边界：正式与草案副本都只能链接物品，不得重复完整效果。"""
-    documents = [README] + [os.path.join(DUNGEON_DIR, name) for name in os.listdir(DUNGEON_DIR)
+    documents = [RULES_TEXT] + [os.path.join(DUNGEON_DIR, name) for name in os.listdir(DUNGEON_DIR)
                             if name.endswith(".md")]
     external_text = "\n".join(read(document) for document in documents)
     moved = [

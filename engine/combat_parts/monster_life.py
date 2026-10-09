@@ -21,6 +21,7 @@ from ..mechanisms import MECHANISMS, Phase, TriggerBus, TriggerContext
 from ..resolution import KIND_EFFECT, KIND_EVOLVE, resolution_frame
 from ..personality import remove_personality
 from ..models import MONSTER_MANA_RELIC
+from ..rules_source import special_events
 
 
 class MonsterLifeMixin:
@@ -219,8 +220,9 @@ class MonsterLifeMixin:
     PROLIFERATION_THRESHOLD = Entity.CANCER_HEAL_MULTIPLIER  # 癌变：规则正文「累计恢复量达血限×2」；过量回复按原值计（阈值唯一事实源在 Entity，DM裁定2026-08-18）
     CANCER_THRESHOLD = PROLIFERATION_THRESHOLD  # 别名：增生旧名已统一为癌变，二者同阈值
     DEBT_THRESHOLD = 20           # 还债：怪物负债达到20碎片时触发（DM裁定2026-08-22 由10上调）
-    SCULPTURE_DAMAGE = 15         # 雕塑：每点耐久可造成的伤害
-    SCULPTURE_SHIELD = 20         # 雕塑：每点耐久可获得的格挡
+    # 雕塑数值唯一事实源在 data/rules/special_events.toml（与 Entity 阈值同口径接线）
+    SCULPTURE_DAMAGE = special_events.damage_per_durability("diaosu")    # 每点耐久可造成的伤害
+    SCULPTURE_SHIELD = special_events.shield_per_durability("diaosu")    # 每点耐久可获得的格挡
 
     def cancer_threshold_of(self, entity: Entity) -> int:
         """规则正文：累计恢复量达到血限×2（过量按原值计入 total_healed，双倍机制已删）。"""
@@ -450,7 +452,9 @@ class MonsterLifeMixin:
 
     def _sculpture_monster(self, monster: Entity) -> dict:
         """雕塑：任一角色攻击次数和攻击力同时归0→化为雕塑消耗品（耐久=血限5%）"""
-        durability = max(1, math.ceil(monster.blood_limit * 0.05))
+        # 耐久 = ceil([血限] × durability_ratio)，至少 durability_min（事实源见 toml）
+        durability = max(special_events.durability_min("diaosu"),
+                         math.ceil(monster.blood_limit * special_events.durability_ratio("diaosu")))
         count_zero = monster.effective_attack_count() <= 0
         power_zero = monster.effective_attack_power() <= 0
         if count_zero and power_zero:

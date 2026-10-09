@@ -100,7 +100,8 @@ def test_self_daowen_no_legal_self_falls_back_not_forced_to_player(tmp_path):
 def test_wave_multi_target_uses_dodge_targets_not_helper(tmp_path):
     """波及（多目标）走 dodge_targets 且排除自身，不经过单目标 helper。
 
-    2026-10-03 用户令：波及 X 下限=2 → 面板固定 X=2，且场上必须有 ≥2 个合法目标。
+    面板固定 X=2，场上有 2 个合法目标（2026-10-09 起 X 下限 repealed，
+    X=1 也合法——prepare 不再暴露 min_x 字段，下限恒为 1）。
     """
     e = _engine(tmp_path)
     m = _monster_with("波怪", {"波及": 2})
@@ -112,7 +113,7 @@ def test_wave_multi_target_uses_dodge_targets_not_helper(tmp_path):
     refs = [t["ref"] for t in opt["dodge_target_options"]]
     assert "enemy:0" not in refs, "波及 dodge_targets 应排除施法者自身"
     assert "player:0" in refs and "friend:0" in refs, "两个合法目标都应在选项里"
-    assert opt["min_x"] == 2, "prepare 必须暴露 X 下限"
+    assert "min_x" not in opt, "2026-10-09：X_MIN 拔除后 prepare 不再暴露 min_x 字段"
 
 
 def test_classification_sets_cover_all_dungeon_daowens():

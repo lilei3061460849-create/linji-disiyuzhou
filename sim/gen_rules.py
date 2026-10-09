@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """从结构化事实源（data/rules/*.toml）生成《死者之书.md》的「## 规则」节。
 
-样板批（2026-10-08）：只生成「致死类特殊事件」一章。格式定下来后再逐章扩。
+章节（2026-10-09 起多章并行；章顺序固定：核心规则在前，特殊事件在后）：
+  - 「核心规则」（data/rules/game_rules.toml）：底层逻辑的**压缩讲述**；不改任何
+    结算，完整正文以《规则正文》为准。
+  - 「特殊事件」（data/rules/lethal_events.toml + special_events.toml，按 order
+    合并）：致死类事件（样板批 2026-10-08）结构化数值 + 原文照录；非致死类事件
+    （雕塑批 2026-10-09）数值字段随事件自身 + 原文照录。
 
 ## 为什么规则署名 ？？？
 
@@ -30,7 +35,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from engine.rules_source import lethal_events  # noqa: E402
+from engine.rules_source import game_rules, lethal_events, special_events  # noqa: E402
 
 BOOK = ROOT / "死者之书.md"
 SECTION_HEADER = "## 规则"
@@ -39,7 +44,7 @@ CHAPTER = lethal_events.chapter
 
 
 def render_section() -> str:
-    """把致死类特殊事件渲染成「## 规则」节的全文（不含首尾空行）。"""
+    """把全部规则事实源渲染成「## 规则」节的全文（不含首尾空行）。"""
     lines: list[str] = []
     lines.append(SECTION_HEADER)
     lines.append("")
@@ -52,23 +57,51 @@ def render_section() -> str:
         f"> 署名统一为 `{SIGNATURE}`：遗言署真人姓名、可能有真假；规则不会，"
         "所有人看到的规则都一样。"
     )
+    lines.append(">")
+    lines.append(
+        "> 「核心规则」章只收从始至终不会改变的底层逻辑的压缩讲述——同一条"
+        "逻辑更短的说法，不改任何结算；可调数值与机制细则不进本章，完整正文"
+        "以规则文档为准。"
+    )
     lines.append("")
 
-    for entry in lethal_events.all():
+    # ---- 章一：核心规则（压缩讲述，2026-10-09 起逐条加入）----
+    for entry in game_rules.all():
+        lines.append(f"### {game_rules.signature}·{game_rules.chapter}·{entry['name']}")
+        lines.append("")
+        for text in entry["rule_lines"]:
+            lines.append(text)
+        lines.append("")
+
+    # ---- 章二：特殊事件（致死类 + 非致死类，按 order 合并排序）----
+    all_events = ([("lethal", e) for e in lethal_events.all()]
+                  + [("special", e) for e in special_events.all()])
+    all_events.sort(key=lambda pair: pair[1].get("order", 0))
+    for kind, entry in all_events:
         name = entry["name"]
         lines.append(f"### {SIGNATURE}·{CHAPTER}·{name}")
         lines.append("")
-        # 结构化字段：让人和 AI 都能直接读到数值，不必回散文里数
-        bits = []
-        if "threshold" in entry:
-            bits.append(f"阈值 {entry['threshold']}")
-        if "threshold_multiplier" in entry:
-            bits.append(f"阈值 ⌈[血限]×{entry['threshold_multiplier']}⌉")
-        bits.append(f"进度口径 {entry['counter_label']}")
-        lines.append(f"- {'；'.join(bits)}")
-        lines.append(f"- 阈值算法：{entry['threshold_expr']}")
-        lines.append(f"- 死因文案：{entry['death_cause_text']}")
-        lines.append("")
+        if kind == "lethal":
+            # 结构化字段：让人和 AI 都能直接读到数值，不必回散文里数
+            bits = []
+            if "threshold" in entry:
+                bits.append(f"阈值 {entry['threshold']}")
+            if "threshold_multiplier" in entry:
+                bits.append(f"阈值 ⌈[血限]×{entry['threshold_multiplier']}⌉")
+            bits.append(f"进度口径 {entry['counter_label']}")
+            lines.append(f"- {'；'.join(bits)}")
+            lines.append(f"- 阈值算法：{entry['threshold_expr']}")
+            lines.append(f"- 死因文案：{entry['death_cause_text']}")
+            lines.append("")
+        else:
+            # 非致死类：数值字段随事件自身（雕塑：耐久与每耐久伤害/格挡）
+            if "durability_ratio" in entry:
+                lines.append(
+                    f"- 耐久上限 ⌈[血限]×{entry['durability_ratio']}⌉（至少 {entry['durability_min']}）；"
+                    f"每点耐久 伤害 {entry['damage_per_durability']} / 格挡 {entry['shield_per_durability']}")
+            if entry.get("trigger"):
+                lines.append(f"- 触发条件：{entry['trigger']}")
+            lines.append("")
         for text in entry["rule_lines"]:
             lines.append(text)
         lines.append("")
@@ -120,7 +153,9 @@ def main() -> int:
     else:
         new_text = book_text.replace(current, wanted)
     BOOK.write_text(new_text, encoding="utf-8")
-    print(f"written {BOOK}: 「## 规则」节 {len(lethal_events.all())} 条")
+    print(f"written {BOOK}: 「## 规则」节 "
+          f"核心规则 {len(game_rules.all())} 条 + 特殊事件 "
+          f"{len(lethal_events.all()) + len(special_events.all())} 条")
     return 0
 
 

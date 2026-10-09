@@ -357,22 +357,19 @@ PROBE_NAMES = list(PROBES)
 def cast_params(e, name: str, x: int, target_ref: str) -> dict:
     """生产 use_daowen 的提交参数；波及需要显式 dodge_targets（X=合法目标数）。
 
-    X 下限（2026-10-03 用户令）：【波及】X≥2。合法目标数不足下限时返回 `_skip`
-    标记，由 run_scene 记为「未发动」——不硬凑一个非法提交（旧版凑成 1 个目标，
-    撞 API 的 dodge_targets 校验，被记为一次假失败）。
+    X 下限：2026-10-09 用户令 repealed 了 2026-10-03 的「波及 X≥2」——X 恒可从 1 起，
+    单目标时全值生效。合法目标数为 0 时返回 `_skip` 标记，由 run_scene 记为
+    「未发动」——不硬凑一个非法提交。
     """
     params = {"actor_ref": "player:0", "daowen_name": name, "x": x,
               "target_ref": target_ref, "dodge": False, "blood_shadow": False,
               "trigger_spell_choices": {}}
     if name == "波及":
-        from engine.daowen import DaoWenEngine
-        min_x = max(1, DaoWenEngine.X_MIN.get("波及", 1))
         refs = [r for r in e.combat._combat_entity_refs() if r != "player:0"]
-        if len(refs) < min_x:
-            params["_skip"] = (f"沙盒合法目标{len(refs)}个 < 【波及】X下限{min_x}："
-                               f"按 2026-10-03 规则本场景无法发动")
+        if not refs:
+            params["_skip"] = "沙盒无合法目标：本场景无法发动【波及】"
             return params
-        n = max(min_x, min(x, len(refs)))
+        n = max(1, min(x, len(refs)))
         params["x"] = n
         params["dodge_targets"] = [{"target_ref": r, "dodge": False, "blood_shadow": False}
                                    for r in refs[:n]]

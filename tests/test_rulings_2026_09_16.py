@@ -77,13 +77,13 @@ def test_dungeon_daowen_are_documented_in_rules_text():
     假失败——本用例实际挂了很久，两个原因都出在"抄"上：
       * 2026-10-03 删【爆裂】【活血】【尸爆】、2026-10-08 删【镇尸】后，
         名单里还留着这些已删道纹，正文当然查不到；
-      * 2026-10-07 规则正文由 AI_EXPERIENCE.md 迁到 README.md，用例还读旧文件，
-        直接 StopIteration。
+      * 2026-10-07 规则正文由 AI_EXPERIENCE.md 迁到 README.md、2026-10-09 再迁到
+        规则正文.md；用例若还读旧文件会直接 StopIteration。
     改成从引擎取名单后，增删道纹只需改引擎与正文，用例自动跟随。
     """
     from engine.gamedata import REGION_EXCLUSIVE_DAOWEN
 
-    lines = open("README.md", encoding="utf-8").read().split("\n")
+    lines = open("规则正文.md", encoding="utf-8").read().split("\n")
     start = next(i for i, line in enumerate(lines)
                  if line.startswith("### 副本专属道纹"))
     end = next(i for i, line in enumerate(lines)
