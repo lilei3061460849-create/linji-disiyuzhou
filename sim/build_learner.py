@@ -28,6 +28,7 @@ import os
 import random
 import re
 import sys
+import tempfile
 from collections import defaultdict, Counter
 
 # sys.path 必须先于 tests/engine 导入设置：直接 `python3 sim/build_learner.py`
@@ -1675,9 +1676,23 @@ def evaluate_build(starter: str, learn: list, runs: int, gen: int,
             seed = gen * 1000 + i * 7 + 1
             run_region = REGIONS[i % len(REGIONS)]
         run_telemetry = telemetry if telemetry is not None else {}
-        result = play(starter, learn, run_region, seed, rng=rng,
-                      telemetry=run_telemetry, spend_shards=spend_shards,
-                      policy=policy, attrs=attrs, lab_paths=lab_paths)
+        # 每个评价样本默认使用新的封存槽，避免上一局第 7 场写出的擂主污染
+        # 下一局；调用者若已显式提供 sealed_path，则尊重其隔离/持久化选择。
+        run_lab_paths = dict(lab_paths or {})
+        _temporary_seal_path = ""
+        if not run_lab_paths.get("sealed_path"):
+            _seal_fd, _temporary_seal_path = tempfile.mkstemp(
+                prefix="lj_eval_seal_", suffix=".json")
+            os.close(_seal_fd)
+            os.unlink(_temporary_seal_path)
+            run_lab_paths["sealed_path"] = _temporary_seal_path
+        try:
+            result = play(starter, learn, run_region, seed, rng=rng,
+                          telemetry=run_telemetry, spend_shards=spend_shards,
+                          policy=policy, attrs=attrs, lab_paths=run_lab_paths)
+        finally:
+            if _temporary_seal_path and os.path.exists(_temporary_seal_path):
+                os.unlink(_temporary_seal_path)
         if result.get("invalid"):
             total_invalid += 1
             if telemetry is not None:
