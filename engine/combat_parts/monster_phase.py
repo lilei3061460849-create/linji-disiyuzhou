@@ -190,6 +190,10 @@ class MonsterPhaseMixin:
                     # 下限——否则【波及】这类 X_MIN=2 的道纹会在 X_MIN 守卫之前就抛
                     # 「X=1低于下限」，整个 prepare 直接崩（实测 test_wave_* 就是这样挂的）。
                     _probe_x = max(1, DaoWenEngine.X_MIN.get(effective_name, 1))
+                    # 【退化】垫上：resolve 内部是「先扣退化、后查下限」，退化 1 的
+                    # 施法者连探测值 2 都会被压到 1 而撞下限（实测孢子母体 + 波及 X_MIN=2）。
+                    if monster.has_status("退化"):
+                        _probe_x += monster.get_status_value("退化")
                     cooldown_limited = (
                         DaoWenEngine.resolve(effective_name, _probe_x,
                                              target=preview_target, caster=monster)
@@ -217,17 +221,23 @@ class MonsterPhaseMixin:
                                 and monster.shards < 5 * inst.x_value):
                             continue
                         effective_x = inst.x_value
-                    # 【波及】实际标得到的目标数 = min(面板X, 合法目标数)（DM裁定
-                    # 2026-08-23 自适应降 X）。2026-10-03 用户令加了 X 下限=2：
-                    # 降完不足 2 个时本道纹**此刻不可发动**，必须过滤掉，不能把
-                    # X=1 透进 resolve（会抛「X=1低于下限波及≥2」，实测 prepare
-                    # 整个崩掉）。上面 x_free 分支已用 max_x 判过同一条件，这里
-                    # 补的是固定 X 分支——此前两个分支不一致。
-                    # 注意只用于过滤，不改 effective_x：面板 x 仍是展示口径。
+                    # X 下限守卫：必须按**结算时真正生效的 X** 来判，而不是面板 X。
+                    # 两个会在 prepare 之后继续压低 X 的因素：
+                    #   * 【波及】实际标得到的目标数 = min(面板X, 合法目标数)
+                    #     （DM裁定 2026-08-23 自适应降 X）；
+                    #   * 【退化】在 resolve 里先扣退化值、后查 X 下限，所以带退化的
+                    #     施法者会把 X 再压一截（daowen.py resolve 的顺序如此）。
+                    # 两者叠加后不足下限 ⇒ 本道纹此刻不可发动，prepare 必须过滤，
+                    # 不能把 X=1 透进 resolve（会抛「X=1低于下限波及≥2」，实测
+                    # prepare 整个崩掉、sim 整局跑图被判 invalid）。
+                    # 只用于过滤，不改 effective_x：面板 x 仍是展示口径。
+                    x_at_resolve = effective_x
+                    if monster.has_status("退化"):
+                        x_at_resolve = max(0, x_at_resolve - monster.get_status_value("退化"))
                     if effective_name == "波及":
-                        if min(effective_x, len(dodge_target_options)) < \
-                                DaoWenEngine.X_MIN.get(effective_name, 1):
-                            continue
+                        x_at_resolve = min(x_at_resolve, len(dodge_target_options))
+                    if x_at_resolve < DaoWenEngine.X_MIN.get(effective_name, 1):
+                        continue
                     preview_calc = DaoWenEngine.resolve(
                         effective_name, effective_x, target=preview_target, caster=monster)
                     if not self._monster_can_pay_calc_cost(monster, preview_calc):
@@ -392,6 +402,10 @@ class MonsterPhaseMixin:
         # 的 X，否则【波及】这类 X_MIN=2 的道纹会在 X_MIN 守卫之前抛「X=1低于下限」，
         # 把整个 resolve 打成 recoverable 错误（实测 r01_r38/wave 三处用例挂在这里）。
         _probe_x = max(1, DaoWenEngine.X_MIN.get(effective_name, 1))
+        # 【退化】垫上：resolve 内部是「先扣退化、后查下限」，退化 1 的
+        # 施法者连探测值 2 都会被压到 1 而撞下限（实测孢子母体 + 波及 X_MIN=2）。
+        if monster.has_status("退化"):
+            _probe_x += monster.get_status_value("退化")
         cooldown_limited = (
             DaoWenEngine.resolve(effective_name, _probe_x, target=target, caster=monster)
             .get("cost_type") == "冷却")
