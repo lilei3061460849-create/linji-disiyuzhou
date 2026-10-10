@@ -32,7 +32,7 @@ class DaoWenEngine:
     # 2026-10-08 清理：原孤儿转化道纹已移除（曾挂在【狂暴】的反转分支下）。
     TRANSFORMED_DAOWEN = [
         "愤怒", "无神", "借力", "弱化", "自食", "无力", "全速",
-        "急速", "加速", "眩晕", "洞察", "蒙蔽", "衰败", "寄生",
+        "急速", "加速", "洞察", "蒙蔽", "衰败", "寄生",
     ]
 
     # 2026-10-09 用户令：**波及 X≥2 下限 repealed**——整套 X_MIN 装置拔除。
@@ -481,20 +481,6 @@ class DaoWenEngine:
             "speed_doubled": True,
             "duration": x,
             "summary": f"消耗{5 * x}法力，使{target_name}获得的速度翻倍，持续{x}回合"
-        }
-    
-    @staticmethod
-    def calculate_xuanyun(x: int, target: Entity = None) -> dict:
-        """眩晕X：消耗5X。使[目标]无法出手，受到伤害后解除，持续X"""
-        target_name = target.name if target is not None else "未选定目标"
-        return {
-            "dao_wen": "眩晕",
-            "x": x,
-            "cost_type": CostType.MANA.value,
-            "cost": 5 * x,
-            "duration": x,
-            "effect": "无法出手，受到伤害后解除",
-            "summary": f"消耗{5 * x}法力，使{target_name}无法出手，受伤害后解除，持续{x}回合"
         }
     
     @staticmethod
@@ -1015,7 +1001,6 @@ class DaoWenEngine:
             "全速": cls.calculate_quansu,
             "急速": cls.calculate_jisu,
             "加速": cls.calculate_jiasu,
-            "眩晕": cls.calculate_xuanyun,
             "洞察": cls.calculate_dongcha,
             "蒙蔽": cls.calculate_mengbi,
             "衰败": cls.calculate_shuaibai,
@@ -1218,7 +1203,6 @@ class ResonanceEngine:
             ("疯狂", "曲解", "全速"),
             ("减速", "转换", "急速"),
             ("减速", "反转", "加速"),
-            ("减速", "曲解", "眩晕"),
             ("必中", "转换", "洞察"),
             ("必中", "反转", "蒙蔽"),
             # 2026-10-03 删除（用户令）：("飞行", "转换", "滑翔"),
