@@ -82,6 +82,23 @@ def test_daowen_sequence_position_survives_entity_seal_roundtrip():
     assert legacy_restored.ordered_statuses()[0].name == "龙鳞"
 
 
+def test_legacy_pickle_statuses_get_sequence_position_during_load_migration():
+    """旧 pickle 实例缺少新字段时，读档迁移不报错并恢复同名道纹顺序。"""
+    target, _, _ = _arena()
+    for name in ("龙鳞", "固执"):
+        target.dao_wen[name] = DaoWenInstance(
+            DaoWen(name=name, formula="", cost_type="消耗", cost_formula="X", effect_formula=""),
+            x_value=1,
+        )
+    for status in target.status_effects:
+        if "daowen_order" in vars(status):
+            delattr(status, "daowen_order")
+    engine = GameEngine.__new__(GameEngine)
+    engine.state = GameState(player=target)
+    engine._migrate_legacy_daowen_status_order()
+    assert target.ordered_statuses()[0].name == "龙鳞"
+
+
 def test_guzhi_longlin_zeroes_only_hits_within_longlin_threshold_and_each_large_hit_still_costs_one():
     """≤龙鳞值的单击为0；超过后每一笔独立伤害仍掉1，故不能免任意多击。"""
     target, source, combat = _arena()
