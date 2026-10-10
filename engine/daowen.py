@@ -32,7 +32,7 @@ class DaoWenEngine:
     # 2026-10-08 清理：原孤儿转化道纹已移除（曾挂在【狂暴】的反转分支下）。
     TRANSFORMED_DAOWEN = [
         "愤怒", "无神", "借力", "弱化", "自食", "无力", "全速",
-        "急速", "加速", "眩晕", "洞察", "蒙蔽", "滋养", "衰败", "寄生",
+        "急速", "加速", "眩晕", "洞察", "蒙蔽", "衰败", "寄生",
     ]
 
     # 2026-10-09 用户令：**波及 X≥2 下限 repealed**——整套 X_MIN 装置拔除。
@@ -331,19 +331,6 @@ class DaoWenEngine:
         }
     
     @staticmethod
-    def calculate_ziyu(x: int) -> dict:
-        """自愈X：代价：异变5X。回始获得自身血限10X%的回复，持续∞"""
-        return {
-            "dao_wen": "自愈",
-            "x": x,
-            "cost_type": CostType.MUTATION.value,
-            "cost_mutation": 5 * x,
-            "heal_percent": 10 * x,
-            "duration": -1,
-            "summary": f"异变+{5*x}，回始获得自身血限{10*x}%的回复，永久"
-        }
-    
-    @staticmethod
     def calculate_feixing(x: int) -> dict:
         """飞行X：代价：冷却X。无法被非飞行角色选为目标，持续X回合。"""
         return {
@@ -535,25 +522,6 @@ class DaoWenEngine:
             "cost": 2 * x,
             "invalid_damage_hits": x,
             "summary": f"消耗{2 * x}法力，使{target_name}下{x}次造成的伤害无效"
-        }
-    
-    @staticmethod
-    def calculate_ziyang(x: int, target: Entity = None) -> dict:
-        """滋养X：消耗2X。使[目标]获得血限10X%的回复"""
-        target_name = target.name if target is not None else "未选定目标"
-        cost = 2 * x
-        if target is not None:
-            blood_limit = target.blood_limit
-            heal = DaoWenEngine.ceil(blood_limit * 10 * x / 100)
-        else:
-            heal = 0
-        return {
-            "dao_wen": "滋养",
-            "x": x,
-            "cost_type": CostType.MANA.value,
-            "cost": cost,
-            "target_heal": heal,
-            "summary": f"消耗{cost}法力，使{target_name}获得{heal}点回复（血限{target.blood_limit if target is not None else 0}的{10*x}%）"
         }
     
     @staticmethod
@@ -1036,7 +1004,6 @@ class DaoWenEngine:
             "净化": cls.calculate_jinghua,
             "减速": cls.calculate_jiansu,
             "必中": cls.calculate_bizhong,
-            "自愈": cls.calculate_ziyu,
             "飞行": cls.calculate_feixing,
             # 怪物转化
             "愤怒": cls.calculate_fennu,
@@ -1051,7 +1018,6 @@ class DaoWenEngine:
             "眩晕": cls.calculate_xuanyun,
             "洞察": cls.calculate_dongcha,
             "蒙蔽": cls.calculate_mengbi,
-            "滋养": cls.calculate_ziyang,
             "衰败": cls.calculate_shuaibai,
             "寄生": cls.calculate_jisheng,
             # 扭曲都市
@@ -1255,9 +1221,6 @@ class ResonanceEngine:
             ("减速", "曲解", "眩晕"),
             ("必中", "转换", "洞察"),
             ("必中", "反转", "蒙蔽"),
-            ("自愈", "转换", "滋养"),
-            ("自愈", "反转", "衰败"),
-            ("自愈", "曲解", "寄生"),
             # 2026-10-03 删除（用户令）：("飞行", "转换", "滑翔"),
             # 2026-10-03 删除（用户令）：("飞行", "反转", "坠落"),
         ],
