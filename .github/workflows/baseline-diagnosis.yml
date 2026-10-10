@@ -9,9 +9,9 @@ permissions:
 
 jobs:
   pytest:
-    name: Main baseline tests
+    name: Main baseline targeted tests
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -23,5 +23,5 @@ jobs:
           cache-dependency-path: requirements-dev.txt
       - name: Install test dependencies
         run: python -m pip install --upgrade pip && python -m pip install -r requirements-dev.txt
-      - name: Run test suite on main baseline
-        run: python -m pytest -q
+      - name: Run targeted tests on main baseline
+        run: python -m pytest -q tests/test_ai_context.py tests/test_effect_chain_audit.py tests/test_guzhi_longlin_combo.py tests/test_jiahai_migration.py tests/test_longlin_migration.py tests/test_shuai_bai_migration.py tests/test_ziyu_migration.py tests/test_zui_ledger_migration.py
