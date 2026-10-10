@@ -263,14 +263,14 @@ def test_battle_end_clears_infinite_duration_buffs():
     from engine.models import StatusEffect
     e = _engine()
     p = e.state.player
-    p.status_effects.append(StatusEffect(name="自愈", remaining_rounds=-1, value=2))
+    p.status_effects.append(StatusEffect(name="测试增益", remaining_rounds=-1, value=2))
     p.status_effects.append(StatusEffect(name="杀伐", remaining_rounds=3, value=1))
     p.shield = 10
 
     e._action_battle_end({})
 
     names = [s.name for s in p.status_effects]
-    assert "自愈" not in names, "持续∞的回复类增益应在[战终]清除"
+    assert "测试增益" not in names, "持续∞的局内增益应在[战终]清除"
     assert "杀伐" not in names, "局内持续增益应在[战终]清除"
     assert p.shield == 0, "格挡应在[战终]清空"
 

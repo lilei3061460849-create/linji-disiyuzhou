@@ -1,17 +1,17 @@
-"""已迁移到声明层的机制（当前 18 个：加害、龙鳞、自愈、帮派令、衰败、畸变·结算、
+"""已迁移到声明层的机制（当前 17 个：加害、龙鳞、帮派令、衰败、畸变·结算、
 焦黑发丝、洞察·结算、狂暴·标记、畸变·标记、洗劫·夺碎片、缄默面具、龙爪、
 逼债·结算、清算·结算、赌命·结算、逼债·对账、清算·对账）。
 
 迁移协议（迁移前后必须同时满足）：
   1. 规则语义与旧实现完全一致（加害：amount+状态值；龙鳞：max(0, amount-状态值)；
-     自愈：无坏死时回复 ceil(血限×10X/100)；帮派令：[战始]获得【洗劫3】；
+     帮派令：[战始]获得【洗劫3】；
      衰败：[回始]对自己造成 ceil(当前生命×10X/100) 点伤害，走完整伤害管线；
      畸变·结算：[回终]失去(攻击力×攻击次数)点血限，血限压 0 连带命零统一判定；
      焦黑发丝：怪物命零 → 玩家速度+2（经统一速度入口）；
      洞察·结算：[回始]待结算法力经 mana 动词获得（含不朽之躯钳制）；
      畸变·标记：纯报告条目，无动词；狂暴·标记随【狂暴】道纹删除）；
   2. priority 保持原值或按旧代码位置固化：加害=20、龙鳞=30（伤害加减区）；
-     自愈=10、衰败=20、洞察·结算=30、畸变·标记=60（狂暴·标记随道纹删除）
+     衰败=10、洞察·结算=20、畸变·标记=60（狂暴·标记随道纹删除）
      （勾魂=40 已于 2026-08-30 随【勾魂】改版移除：不再回始扣法力）
      （回始效果循环，现已全部声明化）；帮派令=10（战始遗物段）；
      畸变·结算=10（回终第一循环顶部、凡庸前）；焦黑发丝=10（命零反应第一位）；
@@ -27,6 +27,9 @@ import math
 
 from ..combat_events import CombatEventType
 from ..models import StatusEffect
+from ..rule_engine import (
+    DAOWEN_RULES, DamageResolutionContext, RULE_EXECUTOR, rule_matches,
+)
 from .conditions import (
     all_, any_, damage_type_not, entity_type, has_status, is_alive,
     not_, relic_active,
@@ -38,91 +41,59 @@ from .triggers import Phase, Trigger, TriggerContext
 from .verbs import apply_verb
 
 
-def _jiahai_effect(ctx: TriggerContext, targets: list) -> dict:
-    """旧 JiahaiHook 语义：amount + status_value（value 缺失按 0）。"""
-    value = ctx.target.get_status_value("加害") or 0
-    return {"amount": ctx.amount + value}
+def _rule_context(rule, ctx: TriggerContext) -> DamageResolutionContext:
+    amount = ctx.amount
+    return DamageResolutionContext(
+        event_id=f"mechanism:{rule.rule_id}:{getattr(ctx.target, 'name', '?')}",
+        attacker=ctx.source,
+        recipient=ctx.target,
+        damage_type=ctx.damage_type or "普通",
+        original_damage=amount,
+        incoming_damage=amount,
+        current_damage=amount,
+        mode="commit",
+    )
 
 
-def _longlin_effect(ctx: TriggerContext, targets: list) -> dict:
-    """龙鳞：max(0, amount - status_value)。0 仍须留给后续状态继续调整。"""
-    value = ctx.target.get_status_value("龙鳞") or 0
-    return {"amount": max(0, ctx.amount - value)}
+def _rule_condition(rule):
+    def condition(ctx: TriggerContext) -> bool:
+        status = next((item for item in getattr(ctx.target, "status_effects", ())
+                       if item.name == rule.status_name and not item.is_expired), None)
+        return rule_matches(rule, _rule_context(rule, ctx), status)
+    return condition
 
 
-def _guzhi_effect(ctx: TriggerContext, targets: list) -> dict:
-    """固执：本次伤害至多失去 1 点生命（代价区外）。"""
-    return {"amount": min(ctx.amount, 1)}
+def _rule_effect(rule):
+    def effect(ctx: TriggerContext, targets: list) -> dict:
+        context = _rule_context(rule, ctx)
+        status = next((item for item in getattr(ctx.target, "status_effects", ())
+                       if item.name == rule.status_name and not item.is_expired), None)
+        RULE_EXECUTOR.execute(rule, context, status)
+        return {"amount": context.current_damage}
+    return effect
 
 
-def _ziyu_effect(ctx: TriggerContext, targets: list) -> dict:
-    """旧 round_start 自愈块语义（逐字复刻）：
-
-    回复 heal = ceil(血限 × 10X / 100)，必须经统一 heal 动词 → apply_heal
-    （龙血瓶溢出等既有副作用原样生效）；返回与旧代码同形状的报告条目。
-    """
-    entity = ctx.target
-    x = entity.get_status_value("自愈")
-    heal_pct = 10 * x
-    heal_amount = math.ceil(entity.blood_limit * heal_pct / 100)
-    heal_result = apply_verb(ctx.combat, "heal", {
-        "target": entity,
-        "amount": heal_amount,
-        "ctx": {
-            "timing": "round_start", "source": "自愈", "source_type": "daowen",
-            "actor": entity, "target": entity, "owner": entity,
-            "mechanic": "heal", "subtype": "self_heal", "amount": heal_amount,
-            "tags": {"daowen", "round_start"},
-        },
-    })
-    return {
-        "type": "self_heal",
-        "entity": entity.name,
-        "heal": heal_amount,
-        "actual": heal_result["actual_heal"],
-        "heal_ctx": heal_result.get("heal_ctx"),
-    }
+def _numeric_rule_mechanism(name: str) -> Mechanism:
+    definition = DAOWEN_RULES[name]
+    rule = definition.rules[0]
+    return Mechanism(
+        name=name,
+        when=Trigger.phase(Phase.INCOMING_ADJUST),
+        effect=_rule_effect(rule),
+        target=TARGET,
+        status_name=rule.status_name,
+        condition=_rule_condition(rule),
+        priority=rule.priority,
+        rule_definition=rule,
+    )
 
 
-JIAHAI = Mechanism(
-    name="加害",
-    when=Trigger.phase(Phase.INCOMING_ADJUST),
-    effect=_jiahai_effect,
-    target=TARGET,
-    status_name="加害",
-    condition=all_(
-        damage_type_not("代价"),    # 代价伤害不受增幅
-        has_status("加害", of="target"),
-    ),
-    # 只作没有状态元数据时的兼容后备；真实结算使用状态的 ordering_key。
-    priority=20,
-)
 
-LONGLIN = Mechanism(
-    name="龙鳞",
-    when=Trigger.phase(Phase.INCOMING_ADJUST),
-    effect=_longlin_effect,
-    target=TARGET,
-    status_name="龙鳞",
-    condition=all_(
-        damage_type_not("代价"),    # 代价不受减免
-        has_status("龙鳞", of="target"),
-    ),
-    priority=30,
-)
-
-GUZHI = Mechanism(
-    name="固执",
-    when=Trigger.phase(Phase.INCOMING_ADJUST),
-    effect=_guzhi_effect,
-    target=TARGET,
-    status_name="固执",
-    condition=all_(
-        damage_type_not("代价"),
-        has_status("固执", of="target"),
-    ),
-    priority=40,
-)
+# 数值事实与运行时摘要共用 engine.rule_engine.DAOWEN_RULES；这里仅保留
+# MechanismHookAdapter 兼容壳，不另写条件、运算或组合配方。
+JIAHAI = _numeric_rule_mechanism("加害")
+LONGLIN = _numeric_rule_mechanism("龙鳞")
+GUZHI = _numeric_rule_mechanism("固执")
 
 def _gangpailing_effect(ctx: TriggerContext, targets: list) -> str:
     """旧 process_relics 帮派令块语义（逐字复刻）：
@@ -140,21 +111,6 @@ def _gangpailing_effect(ctx: TriggerContext, targets: list) -> str:
     })
     return "帮派令：获得洗劫3"
 
-
-ZIYU = Mechanism(
-    name="自愈",
-    when=Trigger.phase(Phase.ROUND_START),
-    effect=_ziyu_effect,
-    target=SELF,
-    status_name="自愈",
-    condition=all_(
-        has_status("自愈", of="self"),
-        # 坏死禁疗。2026-10-08 用户令删【镇尸】（与坏死硬重复）后，
-        # 「无法获得[回复]」只剩【坏死】一个实现。
-        not_(has_status("坏死", of="self")),
-    ),
-    priority=10,    # 旧代码位置=回始效果循环第一位；后续回始机制按 20/30/... 递增
-)
 
 def _shuaibai_effect(ctx: TriggerContext, targets: list) -> dict | None:
     """旧 round_start 衰败块语义（逐字复刻）：
@@ -251,7 +207,7 @@ DONGCHA = Mechanism(
         entity_type("轮回者", of="self"),
         is_alive(of="self"),
     ),
-    # 旧位置=回始效果循环第三位（自愈10、衰败20 之后；勾魂之前）。
+    # 自愈删除后，洞察回始结算位前移；独立闪避记账规则不变。
     # 注：洞察状态另有【闪避→pending+10】的独立字面规则站点（_note_dodge），
     # 不在本次迁移范围（本机制只迁移回始结算部分，故名为"洞察·结算"）。
     priority=30,
@@ -397,7 +353,7 @@ SHUAIBAI = Mechanism(
         has_status("衰败", of="self"),
         is_alive(of="self"),
     ),
-    # 旧位置=回始效果循环第二位（自愈=10 之后、洞察之前）；后续回始机制按 30/40/... 递增
+    # 自愈删除后，衰败为回始效果循环第一位；洞察随后结算
     priority=20,
 )
 
@@ -605,7 +561,6 @@ QINGSUAN_RECONCILE = Mechanism(
 MECHANISMS.register(JIAHAI)
 MECHANISMS.register(LONGLIN)
 MECHANISMS.register(GUZHI)
-MECHANISMS.register(ZIYU)
 MECHANISMS.register(GANGPAILING)
 MECHANISMS.register(SHUAIBAI)
 MECHANISMS.register(JIBIAN_SETTLE)

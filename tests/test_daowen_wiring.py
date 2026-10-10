@@ -164,19 +164,14 @@ def test_boba_boundary_and_invalid_submissions():
     assert m.has_status("波及") and m2.has_status("波及")
 
 
-def test_ziyang_zishi_shuaibai():
-    """接线：滋养回血；自食打自己；衰败扣当前生命%。"""
+def test_zishi_shuaibai():
+    """接线：自食打自己；衰败扣当前生命百分比。"""
     engine = _engine("keys2")
     p = engine.state.player
-    for n in ("滋养", "自食", "衰败"):
+    for n in ("自食", "衰败"):
         _give(p, n)
     m = _monster(engine)
     engine.execute_action("round_start", {})
-
-    m.current_hp = 50
-    r2 = engine.execute_action("use_daowen", {"daowen_name": "滋养", "x": 1, "target": m.name})
-    assert r2["success"]
-    assert m.current_hp == 60  # 100*10%=10
 
     p.attack_power = 5
     p.current_hp = 40
@@ -185,16 +180,15 @@ def test_ziyang_zishi_shuaibai():
     assert p.attack_power == 2
     assert p.current_hp == 43
 
-    hp = m.current_hp
+    m.current_hp = 60
     r4 = engine.execute_action("use_daowen", {"daowen_name": "衰败", "x": 1, "target": m.name})
     assert r4["success"]
-    assert m.current_hp == hp  # R32：发动时不立即触发
+    assert m.current_hp == 60  # [回始]发动时不立即触发
     assert m.has_status("衰败")
-    engine.state.combat_subphase = "await_round_end"  # 单元测试跳过怪物行动
+    engine.state.combat_subphase = "await_round_end"
     engine.execute_action("round_end", {})
     engine.execute_action("round_start", {})
-    assert m.current_hp == hp - 6  # [回始]ceil(60*10%)
-
+    assert m.current_hp == 54  # [回始]ceil(60*10%)
 
 def test_jiahai_guzhi_fennu_jieli_jisheng():
     """加害挂目标加伤；固执单次掉 1；愤怒法力减半；借力加伤；寄生吸血。"""
@@ -240,8 +234,8 @@ def test_jiahai_guzhi_fennu_jieli_jisheng():
     assert p.current_hp == before + 2  # 10 * 20%
 
 
-def test_huaxiang_dingxing_wushen_xuanyun():
-    """定型挡弱化；无神打自己；眩晕掉血苏醒。
+def test_huaxiang_dingxing_wushen():
+    """定型挡弱化；无神打自己。
 
     2026-10-03：【滑翔/坠落】删除，原「滑翔视同飞行、坠落落地并减半」段落一并移除。
     """
@@ -275,76 +269,14 @@ def test_huaxiang_dingxing_wushen_xuanyun():
     assert r["success"], r
     assert foe.current_hp == hp_f - 4   # 无神改打自己（杀伐2→X²=4，2026-09-13）
 
-    m.add_status(StatusEffect(name="眩晕", remaining_rounds=2, value=1, source="测"))
-    assert engine.combat.can_act(m) is False
-    m.take_damage(3)
-    assert not m.has_status("眩晕")
-    assert engine.combat.can_act(m)
 
 
-def test_ziyu_cast_does_not_heal_until_round_start():
-    """正常：自愈发动当下不奶，回始才按血限10X%奶一次。"""
-    import math
-    engine = _engine("ziyu_ok")
-    p = engine.state.player
-    _give(p, "自愈")
-    engine.execute_action("round_start", {})
-    p.current_hp = 30
-    r = engine.execute_action("use_daowen", {"daowen_name": "自愈", "x": 2})
-    assert r["success"], r
-    assert p.has_status("自愈")
-    assert p.current_hp == 30
-    expected = math.ceil(p.blood_limit * 20 / 100)
-    engine.state.combat_subphase = "await_round_end"
-    engine.execute_action("round_end", {})
-    engine.execute_action("round_start", {})
-    assert p.current_hp == 30 + expected
-
-
-def test_ziyu_necrosis_blocks_and_invalid_x():
-    """边界：坏死回始不奶；X=0 合法（拒绝发动，不回血）；负数/非整数仍被拒。"""
-    engine = _engine("ziyu_bound")
-    p = engine.state.player
-    _give(p, "自愈")
-    engine.execute_action("round_start", {})
-    hp_before = p.current_hp
-    zero = engine.execute_action("use_daowen", {"daowen_name": "自愈", "x": 0})
-    assert zero["success"] is True
-    assert zero.get("skipped") is True
-    assert p.current_hp == hp_before      # 拒绝发动 = 没有回血
-    bad = engine.execute_action("use_daowen", {"daowen_name": "自愈", "x": -1})
-    assert bad["success"] is False
-    assert "X必须≥1" in bad["error"]
-    engine.execute_action("use_daowen", {"daowen_name": "自愈", "x": 1})
-    p.current_hp = 30
-    p.add_status(StatusEffect(name="坏死", remaining_rounds=-1, value=0, source="测"))
-    engine.execute_action("round_start", {})
-    assert p.current_hp == 30
-
-
-def test_ziyu_monster_activate_heals_next_round_start():
-    """正常：怪物激活自愈只挂状态，下个回始才奶。"""
-    import math
-    engine = _engine("ziyu_mon")
-    m = _monster(engine, "自愈鱼", hp=100, atk=1, ap=1)
-    m.dao_wen["自愈"] = DaoWenInstance(
-        DaoWen(name="自愈", formula="", cost_type="异变", cost_formula="5X", effect_formula=""),
-        x_value=1)
-    engine.state.current_round = 2
-    prepared = engine.execute_action("prepare_monster_phase", {})
-    actor = prepared["result"]["actors"][0]
-    resolved = engine.execute_action("resolve_monster_phase", {
-        "token": prepared["result"]["token"],
-        "choices": [{"actor_ref": actor["actor_ref"],
-                     "daowen": {"name": "自愈", "dodge": False, "blood_shadow": False, "trigger_spell_choices": {}},
-                     "attack_actions": [{"hits": [{"target_ref": "player:0", "dodge": False, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}}]}]}],
-    })
-    assert resolved["success"]
-    assert m.has_status("自愈")
-    m.current_hp = 50
-    engine.execute_action("round_end", {})
-    engine.execute_action("round_start", {})
-    assert m.current_hp == 50 + math.ceil(m.blood_limit * 10 / 100)
+def test_retired_healing_runes_are_not_registered():
+    """边界：自愈与滋养已删除，不得通过旧注册表恢复。"""
+    DaoWenEngine.register_all()
+    assert "自愈" not in DaoWenEngine._registry
+    assert "滋养" not in DaoWenEngine._registry
+    assert "眩晕" not in DaoWenEngine._registry
 
 
 def test_jisu_jiasu_dongcha():

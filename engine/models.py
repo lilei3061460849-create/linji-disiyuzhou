@@ -15,6 +15,8 @@ from .resolution import KIND_HEAL, note_delta, resolution_frame
 from .combat_events import (CombatEvent, CombatEventType, engine_for_state,
                             get_combat_event_observer)
 from .personality import export_for_ai as personality_export_for_ai
+from .rule_engine import apply_final_life_loss_cap, validate_damage_amount
+from .rule_engine import apply_final_life_loss_cap
 
 
 @dataclass
@@ -257,6 +259,8 @@ class Entity:
     name: str
     entity_type: str
     runtime_id: str = field(default_factory=lambda: uuid.uuid4().hex)
+    # 分裂复制体的创建者身份；供遗物被动追踪归属，不依赖可能重名的实体名称。
+    copy_creator_runtime_id: str = ""
     
     # 基础属性
     blood_limit: int = 0         # 血限
@@ -568,10 +572,19 @@ class Entity:
         持续状态调整之后、扣血之前。直接调用 Entity 的旧入口未传 adjuster 时，
         保留【固执】压帽兼容行为；完整战斗管线由 CombatHookManager 接管。
         """
+        amount = validate_damage_amount(amount, "Entity.take_damage.amount")
+        life_loss_multiplier = validate_damage_amount(
+            life_loss_multiplier, "Entity.take_damage.life_loss_multiplier",
+            allow_negative=False)
+        if life_loss_multiplier < 1:
+            raise ValueError("Entity.take_damage.life_loss_multiplier 必须至少为 1")
+        if not isinstance(damage_type, str) or not damage_type:
+            raise ValueError("Entity.take_damage.damage_type 必须是非空字符串")
         detail = {
             "raw_damage": amount,
             "shield_absorbed": 0,
             "actual_damage": 0,
+            "actual_life_loss": 0,
             "hp_before": self.current_hp,
             "hp_after": self.current_hp,
             "blood_limit_before": self.blood_limit,
@@ -583,35 +596,56 @@ class Entity:
             return detail
         
         remaining = amount
-        
-        # 格挡抵消（代价类型的伤害不被格挡抵消；"无视格挡"为【贯穿】等效果，同样跳过格挡）
-        if self.shield > 0 and damage_type not in ("代价", "无视格挡"):
-            absorbed = min(self.shield, remaining)
-            self.shield -= absorbed
-            remaining -= absorbed
-            detail["shield_absorbed"] = absorbed
-        
-        # 完整战斗管线：格挡后的所有持续状态由同一排序器结算。这里不以
-        # remaining==0 作为状态区内部的短路条件——回调一旦开始，其后的效果
-        # 仍可把 0 改回正数；但护盾已完全吸收的事件不进入持续状态区。
-        if remaining > 0 and damage_type != "代价" and status_adjuster is not None:
-            remaining = status_adjuster(remaining)
-        # 兼容直接 Entity.take_damage 的历史调用（没有战斗引擎上下文时）。
-        elif remaining > 0 and damage_type != "代价" and self.has_status("固执"):
-            remaining = min(remaining, 1)
-            detail["capped_by"] = "固执"
+        shield_before = self.shield
+        try:
+            # 格挡抵消（代价类型的伤害不被格挡抵消；"无视格挡"为【贯穿】等效果，同样跳过格挡）
+            if self.shield > 0 and damage_type not in ("代价", "无视格挡"):
+                absorbed = min(self.shield, remaining)
+                self.shield -= absorbed
+                remaining -= absorbed
+                detail["shield_absorbed"] = absorbed
 
-        # 【第一杯】：失去的生命翻倍（格挡/持续状态调整之后、扣血之前）
-        if life_loss_multiplier > 1 and remaining > 0:
-            remaining *= life_loss_multiplier
-            detail["life_loss_multiplier"] = life_loss_multiplier
+            # 完整战斗管线：格挡后的所有持续状态由同一排序器结算。这里不以
+            # remaining==0 作为状态区内部的短路条件——回调一旦开始，其后的效果
+            # 仍可把 0 改回正数；但护盾已完全吸收的事件不进入持续状态区。
+            if remaining > 0 and damage_type != "代价" and status_adjuster is not None:
+                remaining = max(0, validate_damage_amount(
+                    status_adjuster(remaining), "Entity.take_damage.status_adjuster.result"))
+            # 兼容直接 Entity.take_damage 的历史调用（没有战斗引擎上下文时）。
+            elif remaining > 0 and damage_type != "代价" and self.has_status("固执"):
+                remaining = min(remaining, 1)
+                detail["capped_by"] = "固执"
 
-        # 扣除生命
+            # 【第一杯】：失去的生命翻倍（格挡/持续状态调整之后、扣血之前）
+            if life_loss_multiplier > 1 and remaining > 0:
+                remaining = validate_damage_amount(
+                    remaining * life_loss_multiplier,
+                    "Entity.take_damage.after_life_loss_multiplier")
+                detail["life_loss_multiplier"] = life_loss_multiplier
+            detail["damage_after_life_loss_multiplier"] = remaining
+
+            # 【固执】是最终失血边界，位于所有倍率之后。
+            before_final_cap = remaining
+            remaining = apply_final_life_loss_cap(remaining, self, damage_type)
+            if remaining < before_final_cap:
+                detail["capped_by"] = "固执"
+                detail["guzhi_final_cap"] = True
+        except Exception:
+            # 状态执行/数值校验失败时，尚未扣血；把此前吸收的护盾一并回滚，
+            # 不留下半次结算已消耗防御资源的状态。
+            self.shield = shield_before
+            raise
+
+        # 扣除生命；actual_damage 是经过倍率的待扣数值，actual_life_loss 是
+        # HP 实际下降量，过量伤害时二者可不同。
+        hp_before = self.current_hp
         self.current_hp = max(0, self.current_hp - remaining)
+        actual_life_loss = max(0, hp_before - self.current_hp)
         detail["actual_damage"] = remaining
+        detail["actual_life_loss"] = actual_life_loss
         detail["hp_after"] = self.current_hp
-        self.hp_lost_this_round += remaining  # 本回合失血追踪
-        
+        self.hp_lost_this_round += remaining  # 保持既有追踪字段的待扣数口径
+
         if self.current_hp <= 0:
             # 模型层只翻标记，不知道战斗上下文。命零的“通知 + 死后效果”必须由调用方
             # 交给 CombatEngine._check_hp_zero_death()（唯一统一死亡入口）。
@@ -831,7 +865,7 @@ class Entity:
         if effect.polarity == EffectPolarity.NEUTRAL.value:
             buffs = {
                 "固执", "贯穿", "急速", "洞察", "飞行",
-                "全力", "疯狂", "必中", "自愈", "洗劫", "逆鳞", "嫁祸", "背负",
+                "全力", "疯狂", "必中", "洗劫", "逆鳞", "嫁祸", "背负",
                 "负岳索", "加速", "愤怒", "蓄锐·增",
             }
             debuffs = {

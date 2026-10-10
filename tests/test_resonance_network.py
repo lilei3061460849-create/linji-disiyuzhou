@@ -73,7 +73,7 @@ def test_monster_transform_branch_is_reversible():
     assert R.find_transformation("借力", "转换") == "全力"
     assert R.find_transformation("弱化", "反转") == "全力"
     assert R.find_transformation("自食", "曲解") == "全力"
-    assert R.find_transformation("寄生", "曲解") == "自愈"
+    assert R.find_transformation("寄生", "曲解") is None  # 自愈删除后不补新路径
     assert R.get_available_resonance("全力") == [
         {"resonance_type": "转换", "target_daowen": "借力", "direction": "正向", "loop": "怪物原始道纹"},
         {"resonance_type": "反转", "target_daowen": "弱化", "direction": "正向", "loop": "怪物原始道纹"},
@@ -108,7 +108,7 @@ def test_monster_daowen_now_transformable():
     """正常路径：怪物面板常见道纹必须有可用残韵路径"""
     # 2026-10-03：狂暴删除；飞行暂无残韵路径（原转换→滑翔、反转→坠落都随之删除，
     # 是否给飞行补新路径待用户裁定，见 报告.md）。
-    for dw in ("必中", "自愈", "全力", "疯狂", "减速"):
+    for dw in ("必中", "全力", "疯狂", "减速"):
         paths = R.get_available_resonance(dw)
         assert paths, f"{dw} 仍无残韵路径"
 

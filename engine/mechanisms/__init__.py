@@ -2,7 +2,7 @@
 
 五个基础抽象：Verb / Mechanism / Trigger / Condition / Target。
 目标：普通新机制尽量只描述【什么时候 / 对谁 / 满足什么条件 / 做什么】，
-而不是给核心管线加新的 if。当前已迁移：【加害】【龙鳞】（伤害加减区）、
+而不是给核心管线加新的 if。当前统一数值规则第一阶段：【加害】【龙鳞】【固执】（受击伤害链）；
 【自愈】【衰败】【洞察·结算】【勾魂】【狂暴·标记】【畸变·标记】（ROUND_START 相位，
 priority 10/20/30/40/50/60——回始循环已全部声明化；洞察/勾魂经统一 mana 动词）、
 【畸变·结算】（ROUND_END 相位，priority 10，锚定凡庸 tick 之前）、【焦黑发丝】
@@ -36,5 +36,5 @@ from .targets import (  # noqa: F401
 from .triggers import Phase, Trigger, TriggerBus, TriggerContext  # noqa: F401
 from .verbs import apply_verb, get_verb, register_verb, verb_names  # noqa: F401
 
-# 导入即注册已迁移机制（当前 13 个，见 builtins.py）。
+# 导入即注册 builtins.py 中全部声明式机制；数值规则事实源另见 engine.rule_engine。
 from . import builtins  # noqa: E402,F401

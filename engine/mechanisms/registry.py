@@ -29,14 +29,17 @@ class Mechanism:
     # 仍按 priority；不再从展示名猜测，避免「畸变·结算」等名字歧义。
     status_name: str = ""
     status_owner: str = "target"   # target | source；事件机制可由施放者身上的状态驱动
+    # 数值规则迁移期适配器：定义是数值/条件/文案的唯一事实源；该字段不改变
+    # 非数值 Mechanism 的既有声明与生命周期。
+    rule_definition: Any = None
 
     def ordering_key(self, entity) -> tuple:
-        """返回此机制在 entity 的当前结算窗口中的道纹序列顺序键。"""
+        """返回此机制在 entity 的当前自然结算窗口中的通用顺序键。"""
         if self.status_name and entity is not None:
             status = next((s for s in getattr(entity, "status_effects", ())
                            if s.name == self.status_name and not s.is_expired), None)
-            # 只有带 daowen_order 的状态才有道纹序列锚点；测试、旧存档或普通状态
-            # 未记录锚点时必须回退到 priority，不能无条件压过无状态机制。
+            # 只有显式道纹序列位置才构成锚点；旧状态/测试状态没有位置时
+            # 必须退回 priority，不能无条件压过无状态机制。
             if status is not None and status.daowen_order is not None:
                 return (0, *status.ordering_key, self.priority, self.name)
         return (1, self.priority, self.name)
@@ -44,6 +47,9 @@ class Mechanism:
     def __post_init__(self):
         if self.effect is None:
             raise ValueError(f"机制[{self.name}]缺少 effect")
+        if (self.rule_definition is not None
+                and self.rule_definition.daowen_name != self.name):
+            raise ValueError(f"机制[{self.name}]与数值规则定义归属不一致")
 
     def state_of(self, entity) -> dict:
         """本机制在该实体上的自身状态（惰性创建，按实体存放，不进入全局表）。
@@ -114,8 +120,8 @@ class MechanismHookAdapter:
     同一份机制只在此处执行一次：机制定义在声明层，执行仍走 Hook 层
     这一条既有分发路径——不引入第三条路径，也不会与旧 Hook 重复触发。
 
-    MVP 只桥接相位 INCOMING_ADJUST（【加害】）。接线其它相位前，必须先确认
-    对应分发方法在引擎里只有唯一调用点。
+    数值规则第一阶段通过相位 INCOMING_ADJUST 桥接【加害】【龙鳞】【固执】。
+    接线其它相位前，必须先确认对应分发方法在引擎里只有唯一调用点。
     """
 
     def __init__(self, mechanism: Mechanism):
@@ -123,7 +129,7 @@ class MechanismHookAdapter:
             raise ValueError(
                 f"机制[{mechanism.name}]不是相位机制，不能挂到 Hook 分发路径")
         self.mechanism = mechanism
-        self.priority = mechanism.priority  # 沿用机制声明的 priority（顺序即规则）
+        self.priority = mechanism.priority  # 保留旧 Hook 接口；排序无状态锚点时才用
 
     def _context(self, target, amount, damage_type, source, state) -> TriggerContext:
         return TriggerContext(
@@ -133,25 +139,52 @@ class MechanismHookAdapter:
         )
 
     def incoming_status(self, target):
-        """返回本伤害机制对应的持续状态，读取其来源道纹的序列位置。"""
+        """返回本伤害机制对应的持续状态，供同窗口的统一 X 排序使用。"""
         statuses = getattr(target, "status_effects", ()) if target is not None else ()
         status_name = self.mechanism.status_name or self.mechanism.name
         return next((status for status in statuses
                      if status.name == status_name and not status.is_expired), None)
 
     def incoming_order_key(self, target) -> tuple:
-        """活跃道纹状态按来源道纹序列位置；旧状态缺少位置时才用 priority 兜底。"""
+        """活跃持续状态按发动 X 降序、同 X 按施加先后；静态 priority 仅为后备。"""
         status = self.incoming_status(target)
+        rule_definition = self.mechanism.rule_definition
+        if rule_definition is not None:
+            return rule_definition.ordering_key(status)
         if status is not None:
             return (0, *status.ordering_key, self.priority)
         return (1, self.priority, self.mechanism.name)
 
-    def on_incoming_adjust(self, target, amount, damage_type, source, state):
-        # 负数不是一笔可调整的伤害；0 则可能是本窗口较早状态刚刚压出的
-        # 中间值，必须继续放行后续状态（由 HookManager 的正输入门槛保证）。
-        if amount < 0:
-            return amount
+    def on_incoming_adjust(self, target, amount, damage_type, source, state,
+                           *, rule_context=None):
         mechanism = self.mechanism
+        rule_definition = mechanism.rule_definition
+        if rule_definition is not None:
+            from uuid import uuid4
+            from ..rule_engine import DamageResolutionContext, RULE_EXECUTOR, validate_damage_amount
+
+            amount = validate_damage_amount(amount, "mechanism incoming amount")
+            if amount < 0 and rule_context is None:
+                # 兼容旧适配器直接调用：负的初始输入不启动新规则链。
+                # HookManager 对正伤害链传入共享 context，负中间值仍会继续串行执行。
+                return amount
+            context = rule_context or DamageResolutionContext(
+                event_id=f"mechanism-adjust:{uuid4().hex}",
+                attacker=source,
+                recipient=target,
+                damage_type=damage_type,
+                original_damage=amount,
+                incoming_damage=amount,
+                current_damage=amount,
+                mode="commit",
+            )
+            if context.recipient is not target or context.damage_type != damage_type:
+                raise ValueError("伤害规则上下文与机制调用的受击者/伤害类型不一致")
+            context.set_current_damage(amount)
+            RULE_EXECUTOR.execute(
+                rule_definition, context, status=self.incoming_status(target))
+            return context.current_damage
+
         ctx = self._context(target, amount, damage_type, source, state)
         if mechanism.condition is not None and not mechanism.condition(ctx):
             return amount
