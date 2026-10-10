@@ -752,7 +752,8 @@ class DamageDeathMixin:
                            entity_type=caster.entity_type,
                            blood_limit=clone_hp, current_hp=clone_hp,
                            attack_count=caster.attack_count,
-                           attack_power=caster.attack_power)
+                           attack_power=caster.attack_power,
+                           copy_creator_runtime_id=caster.runtime_id)
             for dw_name, dw_inst in caster.dao_wen.items():
                 if dw_name == "分裂":
                     continue      # 复制体无分裂道纹，防止无限分裂
