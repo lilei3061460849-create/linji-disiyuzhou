@@ -31,11 +31,13 @@ class Mechanism:
     status_owner: str = "target"   # target | source；事件机制可由施放者身上的状态驱动
 
     def ordering_key(self, entity) -> tuple:
-        """返回此机制在 entity 的当前自然结算窗口中的通用顺序键。"""
+        """返回此机制在 entity 的当前结算窗口中的道纹序列顺序键。"""
         if self.status_name and entity is not None:
             status = next((s for s in getattr(entity, "status_effects", ())
                            if s.name == self.status_name and not s.is_expired), None)
-            if status is not None:
+            # 只有带 daowen_order 的状态才有道纹序列锚点；测试、旧存档或普通状态
+            # 未记录锚点时必须回退到 priority，不能无条件压过无状态机制。
+            if status is not None and status.daowen_order is not None:
                 return (0, *status.ordering_key, self.priority, self.name)
         return (1, self.priority, self.name)
 
@@ -131,14 +133,14 @@ class MechanismHookAdapter:
         )
 
     def incoming_status(self, target):
-        """返回本伤害机制对应的持续状态，供同窗口的统一 X 排序使用。"""
+        """返回本伤害机制对应的持续状态，读取其来源道纹的序列位置。"""
         statuses = getattr(target, "status_effects", ()) if target is not None else ()
         status_name = self.mechanism.status_name or self.mechanism.name
         return next((status for status in statuses
                      if status.name == status_name and not status.is_expired), None)
 
     def incoming_order_key(self, target) -> tuple:
-        """活跃持续状态按发动 X 降序、同 X 按施加先后；静态 priority 仅为后备。"""
+        """活跃道纹状态按来源道纹序列位置；旧状态缺少位置时才用 priority 兜底。"""
         status = self.incoming_status(target)
         if status is not None:
             return (0, *status.ordering_key, self.priority)

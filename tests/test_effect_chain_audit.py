@@ -336,6 +336,7 @@ def test_f_hook_order_is_explicit_and_unchanged():
         "DragonBloodlineMultiplierHook",
         "MechanismHookAdapter",  # 【加害】迁移后：原 JiahaiHook 位置（priority 20）
         "MechanismHookAdapter",  # 【龙鳞】迁移后：原 LonglinHook 位置（priority 30）
+        "MechanismHookAdapter",  # 【固执】也接入同一伤害相位（priority 40）
         "QianjingjiaHook",
         "BifenglingHook",
         "ShouyedengHook",
@@ -347,7 +348,7 @@ def test_f_hook_order_is_explicit_and_unchanged():
     assert priorities == sorted(priorities)
     adapter_priorities = [h.priority for h in manager.hooks()
                           if isinstance(h, MechanismHookAdapter)]
-    assert adapter_priorities == [20, 30], "加害(20)必须先于龙鳞(30)，顺序即规则"
+    assert adapter_priorities == [20, 30, 40], "加害(20)先于龙鳞(30)，固执(40)位于其后"
 
 
 def test_f_jiahai_before_longlin_is_rule_relevant():
@@ -366,14 +367,14 @@ def test_f_jiahai_before_longlin_is_rule_relevant():
     jiahai_adapter = next(a for a in adapters if a.mechanism.name == "加害")
     longlin_adapter = next(a for a in adapters if a.mechanism.name == "龙鳞")
 
-    # 现行顺序：max(0, (8 + 2) - 8) = 2
-    assert manager.apply_incoming_adjust(target, 8, "普通", None, _State()) == 2
-    # 反过来：龙鳞先把 8 削成 0，加害的 `amount > 0` 前置条件不再成立 → 0。
-    # 两者结果不同，证明 Hook 顺序确实是规则的一部分，priority 只能固化不能调整。
+    # 输入 5：加害先结算为 7，再被龙鳞削至 0。
+    assert manager.apply_incoming_adjust(target, 5, "普通", None, _State()) == 0
+    # 反过来先结算龙鳞，5 被压到 0；加害仍会继续调整中间值，结果为 2。
+    # 这同时钉死“中间值归零不短路后续状态”的现行语义。
     reversed_result = jiahai_adapter.on_incoming_adjust(
-        target, longlin_adapter.on_incoming_adjust(target, 8, "普通", None, _State()),
+        target, longlin_adapter.on_incoming_adjust(target, 5, "普通", None, _State()),
         "普通", None, _State())
-    assert reversed_result == 0
+    assert reversed_result == 2
 
 
 def test_f_register_hook_respects_priority():

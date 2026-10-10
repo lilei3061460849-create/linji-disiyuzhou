@@ -101,9 +101,8 @@ def test_jiahai_executes_exactly_once_through_engine():
     state, combat, player, enemy = _arena()
     enemy.add_status(StatusEffect(name="加害", remaining_rounds=-1, value=2, source="x"))
     detail = combat._apply_hostile_damage(enemy, 10, source=player)
-    # 加害2：10→12（raw_damage 是加减区结算后的数值，迁移前后同口径）。
-    # 若新旧两条路径并存会得到 14（重复触发）或 10（丢触发）。
-    assert detail["raw_damage"] == 12
+    # raw_damage 保留加减区前的原始输入；actual_damage 才是加害结算后的落地值。
+    assert detail["raw_damage"] == 10
     assert detail["actual_damage"] == 12
     assert enemy.current_hp == 88
 
@@ -144,12 +143,12 @@ def test_jiahai_before_longlin_still_rule_relevant():
     longlin_adapter = next(h for h in manager.hooks()
                            if isinstance(h, MechanismHookAdapter) and h.mechanism.name == "龙鳞")
 
-    assert manager.apply_incoming_adjust(target, 8, "普通", None, _State()) == 2
+    assert manager.apply_incoming_adjust(target, 5, "普通", None, _State()) == 0
     reversed_result = adapter.on_incoming_adjust(
         target,
-        longlin_adapter.on_incoming_adjust(target, 8, "普通", None, _State()),
+        longlin_adapter.on_incoming_adjust(target, 5, "普通", None, _State()),
         "普通", None, _State())
-    assert reversed_result == 0, "反过来先削到0，加害的 amount>0 前置不成立 → 0"
+    assert reversed_result == 2, "中间值归零后仍继续结算加害"
 
 
 # ==================== 5. EffectContext 传递 ====================

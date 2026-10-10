@@ -26,9 +26,9 @@ from ..models import MONSTER_MANA_RELIC
 
 class DaowenEffectMixin:
     @staticmethod
-    def _daowen_status(*, activation_x: int, **kwargs) -> StatusEffect:
-        """道纹施加持续状态的唯一构造口：记录本次发动 X 与施加顺序。"""
-        return StatusEffect(activation_x=activation_x, **kwargs)
+    def _daowen_status(*, daowen_order: int, **kwargs) -> StatusEffect:
+        """道纹施加持续状态的唯一构造口：记录来源道纹在序列中的位置。"""
+        return StatusEffect(daowen_order=daowen_order, **kwargs)
 
     def apply_daowen_effect(
         self, name: str, calc: dict, caster: Entity, target: Entity,
@@ -56,6 +56,10 @@ class DaowenEffectMixin:
         """应用道纹效果；aoe_targets_override用于绑定两阶段决策的目标快照。"""
         result = {"daowen": name, "effects": []}
         x = calc.get("x", 0)
+        # Entity.dao_wen 是角色当前道纹序列的有序映射；状态继承发动道纹的位置，
+        # 后续结算不再从 X 值、状态施加时间或刷新时间推断顺序。
+        daowen_sequence = list(caster.dao_wen)
+        daowen_order = daowen_sequence.index(name) if name in caster.dao_wen else len(daowen_sequence)
         if name in ("自食", "固执"):
             target = caster
         # 本次道纹结算的根上下文。由它派生的血限/生命/命零变化都以此为父事件，
@@ -524,7 +528,7 @@ class DaowenEffectMixin:
             # 走状态层（models.py::effective_attack_power 读取），不再写遗留字段
             # attack_power——那样对不写穿的轮回者无效。
             if (not panel_locked) and calc.get("attack_power_to_mana_limit"):
-                panel_target.add_status(self._daowen_status(activation_x=x,
+                panel_target.add_status(self._daowen_status(daowen_order=daowen_order,
                     name="全力", value=1,
                     remaining_rounds=calc.get("duration", x), source=caster.name))
                 result["effects"].append({
@@ -548,7 +552,7 @@ class DaowenEffectMixin:
             # 走状态层（models.py::effective_attack_count 读取），不再写遗留字段
             # attack_count——那样对不写穿的轮回者无效。
             if (not panel_locked) and calc.get("attack_count_to_speed_limit"):
-                panel_target.add_status(self._daowen_status(activation_x=x,
+                panel_target.add_status(self._daowen_status(daowen_order=daowen_order,
                     name="全速", value=1,
                     remaining_rounds=calc.get("duration", x), source=caster.name))
                 result["effects"].append({
@@ -732,7 +736,7 @@ class DaowenEffectMixin:
             # 2026-10-08 用户令：撤销 2026-09-09 的「法力消耗翻倍」，恢复原效果。
             # 判定只有一处：Entity.can_gain_mana() —— 所有法力增益来源都过 gain_mana()。
             for st_target in wave_status_targets:
-                st_target.add_status(self._daowen_status(activation_x=x, name="勾魂", value=1,
+                st_target.add_status(self._daowen_status(daowen_order=daowen_order, name="勾魂", value=1,
                                                   remaining_rounds=calc.get("duration", x),
                                                   source=caster.name))
                 result["effects"].append({
@@ -741,7 +745,7 @@ class DaowenEffectMixin:
                     "duration": calc.get("duration", x)})
         if name == "冥气" and calc.get("speed_loss_speed_limit"):
             for st_target in wave_status_targets:
-                st_target.add_status(self._daowen_status(activation_x=x, name="冥气", value=calc["speed_loss_speed_limit"],
+                st_target.add_status(self._daowen_status(daowen_order=daowen_order, name="冥气", value=calc["speed_loss_speed_limit"],
                                                   remaining_rounds=calc.get("duration", 1),
                                                   source=caster.name))
                 result["effects"].append({"type": "mingqi", "target": st_target.name,
@@ -749,7 +753,7 @@ class DaowenEffectMixin:
                                           "duration": calc.get("duration", 1)})
         if name == "缄默" and calc.get("silence_death_triggers"):
             for st_target in wave_status_targets:
-                st_target.add_status(self._daowen_status(activation_x=x, name="缄默", value=1,
+                st_target.add_status(self._daowen_status(daowen_order=daowen_order, name="缄默", value=1,
                                                   remaining_rounds=calc.get("duration", 1),
                                                   source=caster.name))
                 result["effects"].append({"type": "qianmo", "target": st_target.name,
@@ -857,10 +861,10 @@ class DaowenEffectMixin:
                 # 【必中】历史上是覆盖式刷新而非 add_status 的数值叠加，
                 # 但它仍是一轮新的发动：同样采用最后一次施加的 X/来源/顺序。
                 existed.refresh_order_from(self._daowen_status(
-                    activation_x=x, name="必中", remaining_rounds=rounds,
+                    daowen_order=daowen_order, name="必中", remaining_rounds=rounds,
                     value=rounds, source=caster.name))
             else:
-                caster.add_status(self._daowen_status(activation_x=x,
+                caster.add_status(self._daowen_status(daowen_order=daowen_order,
                     name="必中", remaining_rounds=rounds, value=rounds,
                     source=caster.name))
             result["effects"].append({"type": "bizhong_self", "target": caster.name,
@@ -875,7 +879,7 @@ class DaowenEffectMixin:
                 wave_pieces["invalid_damage_hits"] = pieces
                 for wt, piece in zip(wave_status_targets, pieces):
                     if piece > 0:
-                        wt.add_status(self._daowen_status(activation_x=x,
+                        wt.add_status(self._daowen_status(daowen_order=daowen_order,
                             name="蒙蔽", remaining_rounds=-1, value=piece, source=caster.name))
                         result["effects"].append({
                             "type": "mengbi",
@@ -886,7 +890,7 @@ class DaowenEffectMixin:
             else:
                 hits = int(calc["invalid_damage_hits"])
                 if hits > 0:
-                    target.add_status(self._daowen_status(activation_x=x,
+                    target.add_status(self._daowen_status(daowen_order=daowen_order,
                         name="蒙蔽", remaining_rounds=-1, value=hits, source=caster.name))
                     result["effects"].append({
                         "type": "mengbi",
@@ -919,13 +923,13 @@ class DaowenEffectMixin:
                 for et_all in self.state.get_all_player_side() + self.state.get_all_enemy_side():
                     if not et_all.is_alive:
                         continue
-                    et_all.add_status(self._daowen_status(activation_x=x, name="疯狂", remaining_rounds=duration,
+                    et_all.add_status(self._daowen_status(daowen_order=daowen_order, name="疯狂", remaining_rounds=duration,
                                                    value=x, source=caster.name))
                     result["effects"].append({"type": "status_added", "target": et_all.name,
                                               "status": name, "duration": duration, "value": x})
             elif self_targeted:
                 et = caster
-                et.add_status(self._daowen_status(activation_x=x, name=name, remaining_rounds=duration, value=x, source=caster.name))
+                et.add_status(self._daowen_status(daowen_order=daowen_order, name=name, remaining_rounds=duration, value=x, source=caster.name))
                 result["effects"].append({"type": "status_added", "target": et.name,
                                           "status": name, "duration": duration, "value": x})
             else:
@@ -933,7 +937,7 @@ class DaowenEffectMixin:
                 for et in wave_status_targets:
                     if not et.is_alive:
                         continue
-                    et.add_status(self._daowen_status(activation_x=x, name=name, remaining_rounds=duration, value=x, source=caster.name))
+                    et.add_status(self._daowen_status(daowen_order=daowen_order, name=name, remaining_rounds=duration, value=x, source=caster.name))
                     result["effects"].append({"type": "status_added", "target": et.name,
                                               "status": name, "duration": duration, "value": x})
 
@@ -950,7 +954,7 @@ class DaowenEffectMixin:
         elif name == "嫁祸":
             caster._jiahuo_left = x
             caster._jiahuo_target = target.runtime_id
-            caster.add_status(self._daowen_status(activation_x=x, name="嫁祸", value=x, remaining_rounds=x, source=caster.name))
+            caster.add_status(self._daowen_status(daowen_order=daowen_order, name="嫁祸", value=x, remaining_rounds=x, source=caster.name))
             result["effects"].append({"type": "jiahuo", "caster": caster.name, "target": target.name, "count": x})
         # 背负X：目标下X次受伤由自身承担（同样只存 runtime_id）
         elif name == "背负":
@@ -958,7 +962,7 @@ class DaowenEffectMixin:
             caster._beifu_target = target.runtime_id
             # 在目标侧加标记便于查询
             for st_target in wave_status_targets:
-                st_target.add_status(self._daowen_status(activation_x=x, name="被背负", value=x, remaining_rounds=-1, source=caster.name))
+                st_target.add_status(self._daowen_status(daowen_order=daowen_order, name="被背负", value=x, remaining_rounds=-1, source=caster.name))
                 result["effects"].append({"type": "beifu", "caster": caster.name, "target": st_target.name, "count": x})
         # 伤痕X：目标每次掉血后血限-X，永久（已通过 duration 加伤痕状态，此处仅补日志）
         elif name == "伤痕":
@@ -971,7 +975,7 @@ class DaowenEffectMixin:
             for st_target in wave_status_targets:
                 # 账本唯一入口（engine/mechanisms/ledger.py）；[回始]结算在机制声明层。
                 ledger_of(st_target, "逼债").append({"x": x, "caster": caster})
-                st_target.add_status(self._daowen_status(activation_x=x, name="逼债", value=x, remaining_rounds=-1, source=caster.name))
+                st_target.add_status(self._daowen_status(daowen_order=daowen_order, name="逼债", value=x, remaining_rounds=-1, source=caster.name))
                 result["effects"].append({"type": "bizhai_register", "target": st_target.name, "x": x})
         # 清算X：[回始]使[目标]失去你[碎片]点格挡，持续X。此处仅挂账。
         elif name == "清算":

@@ -455,7 +455,8 @@ JIAOHHEIFASI = Mechanism(
 # 罪孽都市·账本三机制（2026-10-03 迁移）
 # 旧实现：combat.py 回始效果循环后的三段内嵌 for（逼债→清算→赌命），
 # 以及回终「状态消失即清账」块。三者共用一份账本存储（engine/mechanisms/ledger.py）
-# 与一个碎片动词（shards）。顺序逐字保持：逼债全体 → 清算全体 → 赌命全体。
+# 与一个碎片动词（shards）。结算顺序服从各状态来源道纹在施法者道纹序列中的位置，
+# 不再固定为「逼债全体 → 清算全体 → 赌命全体」；priority 仅作为缺少序列锚点时的后备。
 # ==========================================================================
 
 def _bizhai_effect(ctx: TriggerContext, targets: list) -> dict | None:
@@ -542,7 +543,7 @@ BIZHAI_SETTLE = Mechanism(
     # 旧实现按“账本是否有账”判定（不看状态：挂账在先、状态只是持续期标记），
     # 故这里 condition=None，由 effect 读账本自判——账空即无报告条目。
     condition=None,
-    priority=10,     # 旧顺序：逼债全体 → 清算全体 → 赌命全体
+    priority=10,     # 仅作为状态缺少道纹序列位置时的兼容后备
 )
 
 QINGSUAN_SETTLE = Mechanism(

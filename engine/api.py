@@ -2901,9 +2901,8 @@ class GameEngine:
     def _find_resonance_holder(self, source: str, target_ref: str):
         """按稳定引用定位残韵作用的道纹持有者；未指定时只接受唯一持有者。"""
         player = self.state.player
-        if source in player.dao_wen:
-            return player, None
         refs = self.combat._combat_entity_refs()
+        # 显式目标优先：不能因为玩家也持有同一道纹而忽略调用方指定的目标。
         if target_ref:
             target = refs.get(target_ref)
             if target is None:
@@ -2911,7 +2910,8 @@ class GameEngine:
             if source not in target.dao_wen:
                 return None, f"{target.name}未持有道纹: {source}"
             return target, None
-        holders = [entity for entity in refs.values() if entity is not player and source in entity.dao_wen]
+        # 未指定目标时，只有场上唯一持有者可被自动选中；玩家也参与唯一性判断。
+        holders = [entity for entity in refs.values() if source in entity.dao_wen]
         if len(holders) == 1:
             return holders[0], None
         if not holders:
@@ -3020,13 +3020,13 @@ class GameEngine:
                 else:
                     r2 = ResonanceEngine.apply_resonance(
                         second_source_daowen, rtype,
-                        caster_has_daowen=(second_source_daowen in player.dao_wen),
+                        caster_has_daowen=(second_source_daowen in actor.dao_wen),
                         target_has_daowen=True,
                         target_daowen=params.get("second_target_daowen", "") or "")
                     if r2.get("success"):
                         new_name = r2["target"]
                         self._permanently_convert_daowen(second_entity, second_source_daowen, new_name)
-                        if self._grant_transformed_daowen(player, new_name):
+                        if self._grant_transformed_daowen(actor, new_name):
                             second_log = f"同魂笔：{second_entity.name}的{second_source_daowen}永久变为{new_name}，施法者同时永久获得{new_name}"
                         else:
                             second_log = f"同魂笔：{second_entity.name}的{second_source_daowen}永久变为{new_name}；施法者已持有{new_name}"
@@ -4913,8 +4913,7 @@ class GameEngine:
             "status_effects": [{"name": s.name, "value": s.value,
                                  "remaining_rounds": s.remaining_rounds, "source": s.source,
                                  "scope": s.scope, "polarity": s.polarity,
-                                 "activation_x": s.activation_x,
-                                 "application_sequence": s.application_sequence}
+                                 "daowen_order": s.daowen_order}
                                 for s in e.status_effects],
         }
 
@@ -4932,6 +4931,9 @@ class GameEngine:
         for name, x in d.get("dao_wen", {}).items():
             e.dao_wen[name] = DaoWenInstance(
                 DaoWen(name=name, formula="", cost_type="消耗", cost_formula="X", effect_formula=""), x_value=x)
+        # 旧封存未记录道纹位置；对同名道纹状态从实体当前序列恢复位置。
+        # 新格式优先使用显式 daowen_order，避免状态名与来源道纹名不同时猜测。
+        daowen_order_by_name = {name: index for index, name in enumerate(e.dao_wen)}
         for sp in d.get("spells", []):
             e.spells.append(Spell(name=sp["name"], required_daowen=sp["required_daowen"],
                                    trigger_condition=sp["trigger_condition"], effect_flow=sp["effect_flow"],
@@ -4957,8 +4959,12 @@ class GameEngine:
                                                   source=st.get("source", ""),
                                                   scope=st.get("scope", EffectScope.BATTLE.value),
                                                   polarity=st.get("polarity", EffectPolarity.NEUTRAL.value),
+                                                  # 旧档 X/施加序号仅保留为兼容元数据，不参与结算顺序。
                                                   activation_x=st.get("activation_x"),
-                                                  application_sequence=st.get("application_sequence", 0)))
+                                                  application_sequence=st.get("application_sequence", 0),
+                                                  daowen_order=(st.get("daowen_order")
+                                                                if st.get("daowen_order") is not None
+                                                                else daowen_order_by_name.get(st["name"]))))
         return e
 
     def _serialize_full_character(self) -> dict:
@@ -6289,6 +6295,41 @@ class GameEngine:
 
     SAVE_FORMAT_VERSION = 5
 
+    def _migrate_legacy_daowen_status_order(self) -> None:
+        """给旧 pickle 状态补齐序列字段，优先从状态来源角色的同名道纹恢复位置。"""
+        state = self.state
+        entities = [getattr(state, "player", None)]
+        for field_name in ("friends", "employees", "temp_friends", "enemies", "dead_monsters"):
+            entities.extend(getattr(state, field_name, []) or [])
+        entities.extend(
+            entry.get("monster") for entry in (getattr(state, "delayed_monster_reentries", []) or [])
+            if isinstance(entry, dict)
+        )
+        unique_entities = []
+        seen = set()
+        for entity in entities:
+            if isinstance(entity, Entity) and id(entity) not in seen:
+                seen.add(id(entity))
+                unique_entities.append(entity)
+        # 状态可能挂在目标身上，但其排序锚点来自施加该状态的角色。
+        # 例如【逼债】/【清算】的状态在目标身上，位置却属于施法者的道纹序列。
+        entity_by_name = {entity.name: entity for entity in unique_entities}
+        order_by_entity = {
+            id(entity): {name: index for index, name in enumerate(entity.dao_wen)}
+            for entity in unique_entities
+        }
+        for entity in unique_entities:
+            owner_order = order_by_entity[id(entity)]
+            for status in entity.status_effects:
+                # 旧 pickle 反序列化不会自动填充新 dataclass 字段。
+                if not hasattr(status, "daowen_order"):
+                    status.daowen_order = None
+                if status.daowen_order is None:
+                    source_entity = entity_by_name.get(getattr(status, "source", ""))
+                    source_order = order_by_entity.get(id(source_entity), {}) if source_entity else {}
+                    # 能从来源角色的同名道纹确认位置时优先用来源；否则兼容退回状态持有者。
+                    status.daowen_order = source_order.get(status.name, owner_order.get(status.name))
+
     def save_game(self, slot: str = "auto") -> dict:
         """保存可完整往返的版本化快照；只允许load_game读取本引擎生成的本地文件。"""
         snapshot = {
@@ -6328,6 +6369,7 @@ class GameEngine:
             return {"success": False, "error": f"存档损坏: {exc}"}
 
         self.state = restored["state"]
+        self._migrate_legacy_daowen_status_order()
         self.dice = restored["dice"]
         self.combat.state = self.state
         self.combat.dice = self.dice

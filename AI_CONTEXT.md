@@ -40,7 +40,7 @@
 | 14 | 副本正文：荒疫古城（未实现，三阶） | [副本/荒疫古城.md](副本/荒疫古城.md) | `9841f2f2e5a253ace255d6d72bac6afcb5d030df45b9f2a232c5a9a19b59ceae` |
 | 15 | 副本正文：巴别塔（未实现，四阶） | [副本/巴别塔.md](副本/巴别塔.md) | `e8c265be1dbfddee23f0ac7bc7b0f8b69880a41b29a623248a13a128e44f1e0c` |
 | 16 | 世界观与战报正典 | [故事文档.md](故事文档.md) | `f1fcb0c2b03feb785f374692c18362f488c35c381e3e904a2beed10947ce4ee3` |
-| 17 | AI 开发/维护/推演约束 | [AI_EXPERIENCE.md](AI_EXPERIENCE.md) | `663a0555f287b1e58cc93e6873df39fa1732591700c8276559eca0dd9c9dee49` |
+| 17 | AI 开发/维护/推演约束 | [AI_EXPERIENCE.md](AI_EXPERIENCE.md) | `a9683997fdb6d910caf5dee2abc69b412e7a43ae269c2a6839c5caee596a02a3` |
 | 18 | 结构化规则源：致死特殊事件 | [data/rules/lethal_events.toml](data/rules/lethal_events.toml) | `f6397b362cb2c3d04470274b8dadc3e576f17e001c15c3f817b36890e70d3547` |
 | 19 | 结构化规则源：非致死特殊事件 | [data/rules/special_events.toml](data/rules/special_events.toml) | `583393909c4d203c315f260dc74ec5184e021341ce9577a1cf6041891477e225` |
 | 20 | 结构化规则源：稳定底层逻辑压缩稿 | [data/rules/game_rules.toml](data/rules/game_rules.toml) | `500f7dc8a235e49e312d86c01fda2d81cbde717fb42a1a92228db0ee8da67778` |
@@ -3383,7 +3383,7 @@ X：消耗2X。使[目标]【异变】-X层。
 ### 来源 17：AI 开发/维护/推演约束
 
 - 路径：`AI_EXPERIENCE.md`
-- SHA-256：`663a0555f287b1e58cc93e6873df39fa1732591700c8276559eca0dd9c9dee49`
+- SHA-256：`a9683997fdb6d910caf5dee2abc69b412e7a43ae269c2a6839c5caee596a02a3`
 
 ````markdown
 # AI经验库
@@ -4178,6 +4178,104 @@ git merge-base --is-ancestor FETCH_HEAD HEAD && echo "正常" || echo "已分叉
 效果量都必须与判定同源取自事件流；面板净位移会被格挡吸收遮蔽，不得当伤害口径。
 由 `tests/test_ai_tactics.py::test_probe_dmg_not_masked_by_enemy_shield` 钉住；
 死斗侧 A/B（30 组有序配对 × seed=1）确认此项只改「AI 是否出手」，不改僵持结局。
+
+## 工作方法红线：同种子跑两次结果不同 → 先查持久状态，别急着改数值
+
+**症状（2026-10-09 实测）**：`bl.play("杀伐",["再生","庇护"],"扭曲都市",seed=901,rng=random.Random(1))`
+同一个 seed、同一个 rng，跑两次得到**完全不同的结局**，且严格 **A-B 交替**：
+
+| 结局 | 耗时 | 结果 |
+|---|---|---|
+| A | 300s | `won=True` `cleared=7`（上一轮把胜者封存成了擂主，下一轮打赢它） |
+| B | 21s | `won=False` `cleared=7` `battle=7` `todo_left=[]` |
+
+**排查顺序（按这个顺序做，别跳步，前三步全是死路）**：
+
+1. ~~全局 `random`~~ —— 两进程都 `random.seed(12345)` 后**仍然不同**。
+2. ~~`PYTHONHASHSEED`~~ —— 置 0（消除 set/dict 迭代顺序随机）后**仍然不同**。
+3. ~~`uuid4`~~ —— `engine/models.py:237` 的 `runtime_id` 确实用 `uuid4()`，
+   但确定性化（换成计数器）后**仍然不同**。（顺带记录：`engine/ai_player.py:765`
+   `_memory_seed()` 在 `dice._seed` 为 None 时回退到 `runtime_id`，是个隐患，但本次不是它。）
+4. ~~`/tmp/learner.db`~~ —— 每次用完即删，不是它。
+5. **✅ 运行前后 md5 对比** —— 真凶：`data/sealed_candidate.json` 的 md5 变了。
+
+```bash
+md5sum data/sealed_candidate.json   # 跑之前
+<跑一次>
+md5sum data/sealed_candidate.json   # 跑之后，对比
+```
+
+**这条手法要记住**：当"同一个 seed 结果不同"时，**别去调数值、别去怀疑规则**，
+先把工作区所有 git-ignored 的运行时文件做一次前后 md5 快照。
+`git status --porcelain` **看不见** git-ignored 文件的变化，所以必须显式 md5 比对。
+
+**真凶是什么**：`data/sealed_candidate.json` 存的是【最终的冠冕】封存候选
+= **死斗的守擂擂主**，并且还附带存 `unlocked_tier / endless_mode` 跨轮回进度。
+它跨进程持久化，谁跑完第 7 场就把自己写进去，下一个进程拿它当对手 ⇒ A-B 交替。
+
+**隔离清单（tests/conftest.py 的 autouse 夹具必须覆盖）**：
+
+| 路径 | 隔离方式 | 为什么 |
+|---|---|---|
+| `death_book_path`（`死者之书.md`） | 拷到 `tmp_path` **副本** | 文件**在版本库里**，只读用例要读真实档案 |
+| `sealed_candidate_path`（`data/sealed_candidate.json`） | `tmp_path` **空文件，不拷贝** | 文件**被 .gitignore 忽略**，任何用例都不可能合法依赖其既有内容；拷过来等于把本地残留固化成"基线"，隔离就失去意义。全新 clone（无此文件）才是可复现基线 |
+
+`engine/api.py:5084` 早就写着"随 `sealed_candidate_path` 一起被测试隔离"——
+**引擎本来就按"此路径已被隔离"来写**，只是 conftest 此前漏了。
+改之前有 **129 处** `GameEngine(` 未显式传参、全部共用仓库里那一个文件。
+
+**评价函数必须自隔离**：`sim/build_learner.py::evaluate_build` 是**测量**入口，
+不能沿用默认封存槽——否则第 i 局的擂主由第 i-1 局决定，
+同参数两次 `fitness` 结果不同（实测 `0.0` vs `0.333333`）。
+现逐局用 `tempfile.mkstemp` 借一个**不存在的路径**（空槽）并在 finally 里清理，
+使 `runs` 局成为独立同分布样本。
+
+**判定口诀**：**凡是"跨轮回/跨进程持久"的状态，进入测试与评价时必须被隔离；
+凡是"测量"函数，不得读取上一次测量留下的状态。**
+
+## 工作方法红线：定位"内部抛错"要用 v2 探针
+
+**场景**：`DaoWenEngine.resolve` 内部抛 `ValueError`，但在**入口处**参数完全合法
+（传入 x=2，下限也是 2），所以"在调用前判断参数"的探针永远不触发。
+
+**❌ 探针 v1（错）**：在 resolve 调用**前**判断 `if x < 2: 打印栈` —— 永不命中，
+因为抛错是函数**内部**把 x 改小之后才发生的。
+
+**✅ 探针 v2（对）**：在调用**外**包 `try/except ValueError`，捕获时打印
+**传入值 / 下限 / 施法者全部状态 / 调用栈**，一次命中：
+
+```python
+try:
+    DaoWenEngine.resolve(name, x, target=t, caster=monster)
+except ValueError as e:
+    import traceback
+    print("道纹:", name, "| 传入 x =", x, "| X_MIN:", DaoWenEngine.X_MIN.get(name))
+    print("施法者:", monster.name, "| 退化:", monster.has_status("退化"),
+          monster.get_status_value("退化"), "| 全部状态:", dict(monster.status_effects))
+    traceback.print_stack()
+    raise
+```
+
+**本轮靠它抓到的现场**（`monster_phase.py:194`，代价类型探测调用）：
+
+```
+道纹: 波及 | 传入 x = 2 | X_MIN: 2
+施法者: 孢子母体 | 退化值: 1 | 全部状态: {'退化': 1}
+→ "X=1低于下限波及≥2"
+```
+
+**根因**：`engine/daowen.py::resolve` 的顺序是 **先扣【退化】、后查 X_MIN**
+（`x = max(0, x - 退化值)` 在 `if x < X_MIN: raise` 之前）。
+所以**任何在 prepare 阶段调 resolve 的地方，只要传的是面板 X 而不扣退化，
+退化就会把 X 压到下限以下并抛错**，prepare 整体崩、sim 整局被判 invalid。
+
+**推论（同类陷阱，全库适用）**：凡是"先探测再真正调用"的地方，
+探测用的 X 必须是 `X_MIN + 退化值`，不能只垫到 `X_MIN`。
+`monster_phase.py` 里 prepare 与 resolve **两处**探测都要垫，漏一处就会在另一条路径炸。
+
+**另一条推论**：前两轮在 `sim/build_learner.py` 里加 `_x_min_ok()` 过滤候选道纹，
+是**改错了层** —— 崩的是 prepare，prepare 整体失败后重试拿不到新选项，
+sim 层的任何过滤/重试都救不了。**报错在 sim 层，根因可能在 engine 层。**
 
 ## 反向禁区
 

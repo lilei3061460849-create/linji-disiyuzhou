@@ -92,13 +92,13 @@ def test_old_longlin_hook_fully_removed():
 def test_same_phase_hosts_both_mechanisms_in_priority_order():
     from engine.mechanisms.registry import MECHANISMS as REG
     phase_mechs = REG.phase_mechanisms(Phase.INCOMING_ADJUST)
-    assert [m.name for m in phase_mechs] == ["加害", "龙鳞"]
-    assert [m.priority for m in phase_mechs] == [20, 30]
+    assert [m.name for m in phase_mechs] == ["加害", "龙鳞", "固执"]
+    assert [m.priority for m in phase_mechs] == [20, 30, 40]
 
     manager = CombatHookManager()
     adapters = [h for h in manager.hooks() if isinstance(h, MechanismHookAdapter)]
-    assert [a.mechanism.name for a in adapters] == ["加害", "龙鳞"]
-    assert [a.priority for a in adapters] == [20, 30]
+    assert [a.mechanism.name for a in adapters] == ["加害", "龙鳞", "固执"]
+    assert [a.priority for a in adapters] == [20, 30, 40]
 
 
 # ==================== 3. 数值语义等价 ====================
@@ -166,8 +166,8 @@ def test_longlin_executes_exactly_once_through_engine():
     state, combat, player, enemy = _arena()
     enemy.add_status(StatusEffect(name="龙鳞", remaining_rounds=-1, value=3, source="x"))
     detail = combat._apply_hostile_damage(enemy, 10, source=player)
-    # 龙鳞3：10→7。若新旧两条路径并存会得到 4（重复触发）或 10（丢触发）。
-    assert detail["raw_damage"] == 7
+    # raw_damage 是加减区前的原始输入；actual_damage 才是龙鳞结算后的落地值。
+    assert detail["raw_damage"] == 10
     assert detail["actual_damage"] == 7
     assert enemy.current_hp == 93
 
@@ -185,8 +185,9 @@ def test_jiahai_and_longlin_each_execute_once():
     # (10+2)-3 = 9；任何重复触发都会偏离（如加害双触发=11-3=8、龙鳞双触发=12-6=6）
     assert detail["actual_damage"] == 9
     assert enemy.current_hp == 91
-    assert len([h for h in combat.hook_manager.hooks()
-                if isinstance(h, MechanismHookAdapter)]) == 2, "两个机制各一个执行壳"
+    adapters = [h for h in combat.hook_manager.hooks()
+                 if isinstance(h, MechanismHookAdapter)]
+    assert [h.mechanism.name for h in adapters] == ["加害", "龙鳞", "固执"]
 
 
 # ==================== 6. EffectContext 传递 ====================
