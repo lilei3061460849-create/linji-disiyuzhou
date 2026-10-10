@@ -370,7 +370,8 @@ class DaoWenRuleDefinition:
         value_label = _value_label(rule.reads)
         operator = rule.operator
         if rule.daowen_name == "固执":
-            action = "将本次最终实际失血限制为不超过1点"
+            cap = _format_number(operator.operand if operator.operand is not None else 0)
+            action = f"将本次最终实际失血限制为不超过{cap}点"
         elif operator.kind == RuleOperator.ADD:
             action = f"使{value_label}增加{x}"
         elif operator.kind == RuleOperator.SUBTRACT:
@@ -386,8 +387,13 @@ class DaoWenRuleDefinition:
             action = f"将{value_label}至少设为{operand}"
         else:
             action = f"按{operator.kind.value}规则变换{value_label}"
+        final_cap_note = (
+            f"；失血倍率结算后仍封顶为{_format_number(operator.operand if operator.operand is not None else 0)}点"
+            if rule.daowen_name == "固执"
+            else ""
+        )
         order_note = (
-            "；失血倍率结算后仍封顶为1点"
+            final_cap_note
             if rule.daowen_name == "固执"
             else "；该阶段后续规则读取更新后的当前值"
         )
@@ -611,10 +617,14 @@ def apply_final_life_loss_cap(amount: int, recipient: Any, damage_type: str) -> 
     """
     amount = validate_damage_amount(
         amount, "final_life_loss_cap.amount", allow_negative=False)
-    if (amount > 1 and damage_type != "代价" and recipient is not None
+    definition = DAOWEN_RULES.get("固执")
+    if definition is None:
+        raise RuleError("缺少【固执】的最终失血上限定义")
+    cap = int(definition.rules[0].operator.operand)
+    if (amount > cap and damage_type != "代价" and recipient is not None
             and callable(getattr(recipient, "has_status", None))
             and recipient.has_status("固执")):
-        return 1
+        return cap
     return amount
 
 
