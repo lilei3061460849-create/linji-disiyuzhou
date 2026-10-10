@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 import math
+from copy import copy
 from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
 from .combat_events import CombatEvent, CombatEventType
 from .effect_context import make_context, normalize_context
@@ -330,7 +331,7 @@ class CombatHookManager:
         self.mitigation_hook = LethalMitigationHook()
         self.after_damage_hook = AfterDamageEffectsHook()
         # 已迁移到声明层的伤害持续状态经适配器挂到同一条 Hook 路径。其实际
-        # 执行顺序不是静态 priority：每次伤害窗口都读取状态来源道纹的序列位置。
+        # 执行顺序不是静态 priority：每次伤害窗口都读取状态的发动 X 与施加序号。
         mechanism_hooks: List[Any] = [
             MechanismHookAdapter(mechanism)
             for mechanism in MECHANISMS.phase_mechanisms(Phase.INCOMING_ADJUST)
@@ -387,29 +388,96 @@ class CombatHookManager:
                 amount = hook.on_multiplier_adjust(target, amount, damage_type, source, state)
         return amount
 
-    def apply_incoming_adjust(self, target: Any, amount: int, damage_type: str, source: Optional[Any], state: Any) -> int:
-        """结算本次伤害窗口的持续状态调整。
+    def apply_incoming_adjust(self, target: Any, amount: int, damage_type: str,
+                              source: Optional[Any], state: Any, *,
+                              resolution_context: Any = None) -> int:
+        """结算本次伤害窗口的持续状态/数值规则。
 
-        只要原始输入是一笔正伤害，状态区内即使先被压成 0，后续状态仍照常
-        运行并可把它改回正数。自然时机没有被重排：这里只按来源道纹序列位置排序已经同时进入 INCOMING_ADJUST 窗口的道纹状态；
-        没有道纹位置的旧状态/外部 Hook 才按 priority 作为兼容后备。
+        初始输入≤0仍按旧契约不启动状态链；一旦正伤害进入链，内部中间值
+        即使变为0或负数，后续规则仍读取同一上下文的最新当前值，不短路。
+        resolution_context 由调用方区分 preview 与 commit；旧五参数调用兼容。
         """
-        if amount <= 0:
-            return amount
+        from uuid import uuid4
+        from .rule_engine import (
+            DamageResolutionContext, RuleError, _trace_number, validate_damage_amount,
+        )
 
+        amount = validate_damage_amount(amount, "incoming_adjust.amount")
         candidates = [
             hook for hook in self._hooks
             if not self._is_explicit(hook) and hasattr(hook, "on_incoming_adjust")
         ]
+        if amount < 0:
+            # 保持旧 Hook API：负的初始输入不启动规则链，并原样返回。
+            # CombatEngine 的真实扣血入口另将负原始伤害作为 no-op 处理，不会反向治疗。
+            return amount
+        if amount == 0:
+            if resolution_context is not None:
+                resolution_context.set_current_damage(0)
+                resolution_context.post_rule_damage = 0
+            return 0
+        if resolution_context is None:
+            # 兼容旧五参数调用仍使用唯一结算上下文和事件 ID；否则多个规则
+            # 会各自按局部 amount 计算，破坏同一受击链的串行当前值。
+            resolution_context = DamageResolutionContext(
+                event_id=f"incoming-adjust:{uuid4().hex}",
+                attacker=source,
+                recipient=target,
+                damage_type=damage_type,
+                original_damage=amount,
+                incoming_damage=amount,
+                current_damage=amount,
+                mode="commit",
+            )
+        if not isinstance(resolution_context, DamageResolutionContext):
+            raise RuleError("incoming_adjust.resolution_context 类型无效")
+        if resolution_context.recipient is not target or resolution_context.damage_type != damage_type:
+            raise RuleError("incoming_adjust 上下文的受击者/伤害类型与调用参数不一致")
 
         def incoming_key(hook: Any) -> tuple:
             if isinstance(hook, MechanismHookAdapter):
                 return hook.incoming_order_key(target)
-            # 非道纹状态 Hook 没有序列位置，放在道纹状态后按原 priority 运行。
+            # 非持续状态 Hook 没有发动 X，放在状态窗口后按原 priority 运行。
             return (2, self._priority_of(hook), type(hook).__name__)
 
+        # 整个 Hook 窗口先在副本上执行；若后续某条规则/校验失败，已运行规则的
+        # 当前值、执行标记、DEFER 与 trace 一并丢弃，不留下半结算 context。
+        working_context = copy(resolution_context)
+        working_context.trace = list(resolution_context.trace)
+        working_context.deferred_effects = list(resolution_context.deferred_effects)
+        working_context._executed_rule_ids = set(resolution_context._executed_rule_ids)
+
         for hook in sorted(candidates, key=incoming_key):
-            amount = hook.on_incoming_adjust(target, amount, damage_type, source, state)
+            working_context.set_current_damage(amount)
+            if (isinstance(hook, MechanismHookAdapter)
+                    and hook.mechanism.rule_definition is not None):
+                amount = hook.on_incoming_adjust(
+                    target, amount, damage_type, source, state,
+                    rule_context=working_context)
+            else:
+                amount = hook.on_incoming_adjust(target, amount, damage_type, source, state)
+            amount = validate_damage_amount(amount, "incoming_adjust.result")
+        # 伤害链允许中间负值参与后续运算，但不能以负伤害治疗受击者。
+        if amount < 0:
+            working_context.trace.append({
+                "mode": working_context.mode,
+                "status": "normalized",
+                "reason": "negative_damage_floor",
+                "before": _trace_number(amount),
+                "after": 0,
+                "explanation": f"规则窗口结束时将负伤害 {_trace_number(amount)} 归一为 0；不产生治疗",
+            })
+            amount = 0
+        working_context.set_current_damage(amount)
+        working_context.post_rule_damage = amount
+
+        # 单一提交点：保留原有 context/list 引用，原子替换本窗口新增数据。
+        resolution_context.set_current_damage(amount)
+        resolution_context.post_rule_damage = amount
+        resolution_context.trace[:] = working_context.trace
+        resolution_context.deferred_effects[:] = working_context.deferred_effects
+        resolution_context._executed_rule_ids.clear()
+        resolution_context._executed_rule_ids.update(working_context._executed_rule_ids)
         return amount
 
     def reflect_attack_damage(self, target: Any, amount: int, attacker: Any, state: Any) -> int:
