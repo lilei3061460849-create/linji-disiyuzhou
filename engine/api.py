@@ -4913,8 +4913,7 @@ class GameEngine:
             "status_effects": [{"name": s.name, "value": s.value,
                                  "remaining_rounds": s.remaining_rounds, "source": s.source,
                                  "scope": s.scope, "polarity": s.polarity,
-                                 "activation_x": s.activation_x,
-                                 "application_sequence": s.application_sequence}
+                                 "daowen_order": s.daowen_order}
                                 for s in e.status_effects],
         }
 
@@ -4957,8 +4956,10 @@ class GameEngine:
                                                   source=st.get("source", ""),
                                                   scope=st.get("scope", EffectScope.BATTLE.value),
                                                   polarity=st.get("polarity", EffectPolarity.NEUTRAL.value),
+                                                  # 旧档 X/施加序号仅保留为兼容元数据，不参与结算顺序。
                                                   activation_x=st.get("activation_x"),
-                                                  application_sequence=st.get("application_sequence", 0)))
+                                                  application_sequence=st.get("application_sequence", 0),
+                                                  daowen_order=st.get("daowen_order")))
         return e
 
     def _serialize_full_character(self) -> dict:
