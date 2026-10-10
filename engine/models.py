@@ -15,6 +15,7 @@ from .resolution import KIND_HEAL, note_delta, resolution_frame
 from .combat_events import (CombatEvent, CombatEventType, engine_for_state,
                             get_combat_event_observer)
 from .personality import export_for_ai as personality_export_for_ai
+from .rule_engine import apply_final_life_loss_cap
 
 
 @dataclass
@@ -609,8 +610,9 @@ class Entity:
         # 【固执】约束的是最终实际失血，而不是倍率前的中间伤害。
         # 先前的状态规则仍在倍率前执行；这里作为最终结算边界，确保【第一杯】
         # 等失血倍率不能把本次实际失血放大到 1 点以上。代价区仍不受固执限制。
-        if remaining > 1 and damage_type != "代价" and self.has_status("固执"):
-            remaining = 1
+        before_final_cap = remaining
+        remaining = apply_final_life_loss_cap(remaining, self, damage_type)
+        if remaining < before_final_cap:
             detail["capped_by"] = "固执"
             detail["guzhi_final_cap"] = True
 
