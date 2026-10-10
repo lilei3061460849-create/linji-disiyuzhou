@@ -606,6 +606,14 @@ class Entity:
             remaining *= life_loss_multiplier
             detail["life_loss_multiplier"] = life_loss_multiplier
 
+        # 【固执】约束的是最终实际失血，而不是倍率前的中间伤害。
+        # 先前的状态规则仍在倍率前执行；这里作为最终结算边界，确保【第一杯】
+        # 等失血倍率不能把本次实际失血放大到 1 点以上。代价区仍不受固执限制。
+        if remaining > 1 and damage_type != "代价" and self.has_status("固执"):
+            remaining = 1
+            detail["capped_by"] = "固执"
+            detail["guzhi_final_cap"] = True
+
         # 扣除生命
         self.current_hp = max(0, self.current_hp - remaining)
         detail["actual_damage"] = remaining
