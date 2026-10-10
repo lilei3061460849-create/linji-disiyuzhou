@@ -6295,6 +6295,28 @@ class GameEngine:
 
     SAVE_FORMAT_VERSION = 5
 
+    def _migrate_legacy_daowen_status_order(self) -> None:
+        """给旧 pickle 状态补齐序列字段，并从同名道纹恢复可确定的位置。"""
+        state = self.state
+        entities = [state.player, *state.friends, *state.employees,
+                    *state.temp_friends, *state.enemies, *state.dead_monsters]
+        entities.extend(
+            entry.get("monster") for entry in state.delayed_monster_reentries
+            if isinstance(entry, dict)
+        )
+        seen = set()
+        for entity in entities:
+            if not isinstance(entity, Entity) or id(entity) in seen:
+                continue
+            seen.add(id(entity))
+            order_by_name = {name: index for index, name in enumerate(entity.dao_wen)}
+            for status in entity.status_effects:
+                # 旧 pickle 反序列化不会自动填充新 dataclass 字段。
+                if not hasattr(status, "daowen_order"):
+                    status.daowen_order = None
+                if status.daowen_order is None:
+                    status.daowen_order = order_by_name.get(status.name)
+
     def save_game(self, slot: str = "auto") -> dict:
         """保存可完整往返的版本化快照；只允许load_game读取本引擎生成的本地文件。"""
         snapshot = {
@@ -6334,6 +6356,7 @@ class GameEngine:
             return {"success": False, "error": f"存档损坏: {exc}"}
 
         self.state = restored["state"]
+        self._migrate_legacy_daowen_status_order()
         self.dice = restored["dice"]
         self.combat.state = self.state
         self.combat.dice = self.dice
