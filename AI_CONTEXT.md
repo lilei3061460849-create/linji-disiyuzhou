@@ -40,7 +40,7 @@
 | 14 | 副本正文：荒疫古城（未实现，三阶） | [副本/荒疫古城.md](副本/荒疫古城.md) | `9841f2f2e5a253ace255d6d72bac6afcb5d030df45b9f2a232c5a9a19b59ceae` |
 | 15 | 副本正文：巴别塔（未实现，四阶） | [副本/巴别塔.md](副本/巴别塔.md) | `e8c265be1dbfddee23f0ac7bc7b0f8b69880a41b29a623248a13a128e44f1e0c` |
 | 16 | 世界观与战报正典 | [故事文档.md](故事文档.md) | `f1fcb0c2b03feb785f374692c18362f488c35c381e3e904a2beed10947ce4ee3` |
-| 17 | AI 开发/维护/推演约束 | [AI_EXPERIENCE.md](AI_EXPERIENCE.md) | `460153f2139e3a076c297b02d962363739d0884aa07fd30b08bb5d7fa1250189` |
+| 17 | AI 开发/维护/推演约束 | [AI_EXPERIENCE.md](AI_EXPERIENCE.md) | `79affdec51571eab03749744cd4c5cfeb2a89ef3ca60754f366d5ad2d1414e6a` |
 | 18 | 结构化规则源：致死特殊事件 | [data/rules/lethal_events.toml](data/rules/lethal_events.toml) | `f6397b362cb2c3d04470274b8dadc3e576f17e001c15c3f817b36890e70d3547` |
 | 19 | 结构化规则源：非致死特殊事件 | [data/rules/special_events.toml](data/rules/special_events.toml) | `583393909c4d203c315f260dc74ec5184e021341ce9577a1cf6041891477e225` |
 | 20 | 结构化规则源：稳定底层逻辑压缩稿 | [data/rules/game_rules.toml](data/rules/game_rules.toml) | `500f7dc8a235e49e312d86c01fda2d81cbde717fb42a1a92228db0ee8da67778` |
@@ -3395,7 +3395,7 @@ X：消耗2X。使[目标]【异变】-X层。
 ### 来源 17：AI 开发/维护/推演约束
 
 - 路径：`AI_EXPERIENCE.md`
-- SHA-256：`460153f2139e3a076c297b02d962363739d0884aa07fd30b08bb5d7fa1250189`
+- SHA-256：`79affdec51571eab03749744cd4c5cfeb2a89ef3ca60754f366d5ad2d1414e6a`
 
 ````markdown
 # AI经验库
@@ -4343,7 +4343,6 @@ sim 层的任何过滤/重试都救不了。**报错在 sim 层，根因可能�
 - 权衡点：1~2个便宜好养；3个起工资吃紧；5个以上基本背叛。r5式十朋友雪球在新规下=十员工，
   战终必背叛+工资破产——旧证据（data/handplay_20260911_b60r4/r5）仅保留走位与算伤参考，滚雪球规模须重测。
 - 待命员工不吃工资、不长历练，但照样计入背叛——板凳也占"编制"，多了就解雇（+1黑名单）或干脆无视。
-
 ````
 
 ### 来源 18：结构化规则源：致死特殊事件
