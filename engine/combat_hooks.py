@@ -230,6 +230,51 @@ class AfterDamageEffectsHook:
         res = {}
         damage_ctx = normalize_context(detail.get("ctx"))
         damage_event_id = damage_ctx.event_id if damage_ctx else None
+
+        # 遗物【???】：由持有该遗物的创建者所创造的分裂复制体造成伤害后，
+        # 复制体先回复等同实际失血的生命；超过复制体生命上限的部分再回复创建者。
+        # 以实际生命减少量为基数，避免把超过目标剩余生命的过量伤害计入。
+        creator_id = getattr(attacker, "copy_creator_runtime_id", "") if attacker is not None else ""
+        if creator_id and actual_damage > 0:
+            candidates = []
+            for container_name in ("player", "friends", "employees", "temp_friends", "enemies"):
+                value = getattr(combat.state, container_name, None)
+                if isinstance(value, list):
+                    candidates.extend(value)
+                elif value is not None:
+                    candidates.append(value)
+            creator = next((entity for entity in candidates
+                            if getattr(entity, "runtime_id", "") == creator_id), None)
+            actual_life_loss = max(0, int(detail.get("actual_life_loss", actual_damage)))
+            if (creator is not None and actual_life_loss > 0
+                    and combat._relic_active(creator, "???")
+                    and not attacker.has_status("坏死")):
+                clone_heal = combat.state.apply_heal(attacker, actual_life_loss, ctx={
+                    "timing": damage_ctx.timing if damage_ctx else "",
+                    "source": "???", "source_type": "relic", "actor": attacker,
+                    "target": attacker, "owner": creator, "mechanic": "heal",
+                    "subtype": "split_clone_lifesteal", "amount": actual_life_loss,
+                    "tags": {"relic", "after_damage", "split_clone"},
+                    "parent_event_id": damage_event_id,
+                })
+                overflow = max(0, int(clone_heal.get("overheal", 0)))
+                creator_heal = None
+                if overflow > 0 and creator.is_alive and not creator.has_status("坏死"):
+                    creator_heal = combat.state.apply_heal(creator, overflow, ctx={
+                        "timing": damage_ctx.timing if damage_ctx else "",
+                        "source": "???", "source_type": "relic", "actor": attacker,
+                        "target": creator, "owner": creator, "mechanic": "heal",
+                        "subtype": "split_clone_overflow", "amount": overflow,
+                        "tags": {"relic", "after_damage", "split_clone", "overflow"},
+                        "parent_event_id": damage_event_id,
+                    })
+                detail["split_clone_lifesteal"] = {
+                    "creator": creator.name,
+                    "damage_basis": actual_life_loss,
+                    "clone_heal": clone_heal,
+                    "creator_overflow_heal": creator_heal,
+                }
+
         # 致死时挂在死亡上下文下的父事件。默认是本次伤害；
         # 若死因其实是血限被压（伤痕），则改挂那次血限变化，形成
         # 伤害 → 血限下降 → 命零 的三层链。
