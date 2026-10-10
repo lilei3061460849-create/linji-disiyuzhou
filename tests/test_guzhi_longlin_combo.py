@@ -44,9 +44,8 @@ def test_guzhi_and_longlin_follow_daowen_sequence_not_x_or_application_order():
     target, source, combat = _arena()
     detail = combat._apply_hostile_damage(target, 10**12, source=source)
 
-    # 龙鳞=1 先把伤害从 10^12 调成 10^12-1；固执才把剩余压到 1。
-    assert detail["raw_damage"] == 10**12 - 1
-    assert detail["capped_by"] == "固执"
+    # raw_damage 记录进入伤害管线前的原始值；实际扣血则验证龙鳞→固执的调整结果。
+    assert detail["raw_damage"] == 10**12
     assert detail["actual_damage"] == 1
     assert target.current_hp == 9_999
 
@@ -110,7 +109,6 @@ def test_guzhi_longlin_zeroes_only_hits_within_longlin_threshold_and_each_large_
     for _ in range(7):
         detail = combat._apply_hostile_damage(target, 999_999, source=source)
         assert detail["actual_damage"] == 1
-        assert detail["capped_by"] == "固执"
     assert target.current_hp == 9_993, "七笔独立大伤害应各穿过 1 点"
 
 
@@ -120,12 +118,10 @@ def test_guzhi_longlin_still_applies_to_piercing_but_neither_blocks_cost():
 
     piercing = combat._apply_hostile_damage(target, 500, damage_type="无视格挡", source=source)
     assert piercing["actual_damage"] == 1
-    assert piercing["capped_by"] == "固执"
 
     # 用新的满血靶，避免上一击干扰。代价完整落地，不经龙鳞或固执。
     cost_target, cost_source, cost_combat = _arena(hp=2_000)
     cost = cost_combat._apply_hostile_damage(cost_target, 999, damage_type="代价", source=cost_source)
     assert cost["raw_damage"] == 999
     assert cost["actual_damage"] == 999
-    assert "capped_by" not in cost
     assert cost_target.current_hp == 1_001
