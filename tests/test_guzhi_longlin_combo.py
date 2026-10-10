@@ -16,9 +16,10 @@
 
 这组断言钉住顺序，防止将来重构时误把组合变成无限免伤，或误把龙鳞挪到固执之后。
 """
+from engine.api import GameEngine
 from engine.combat import CombatEngine
 from engine.dice import DiceEngine
-from engine.models import Entity, GameState, StatusEffect
+from engine.models import DaoWen, DaoWenInstance, Entity, GameState, StatusEffect
 
 
 def _arena(hp: int = 10_000, sequence: tuple[str, str] = ("龙鳞", "固执")) -> tuple[Entity, Entity, CombatEngine]:
@@ -56,6 +57,22 @@ def test_reversing_daowen_sequence_reverses_incoming_adjustment_order():
     detail = combat._apply_hostile_damage(target, 5, source=source)
     assert detail["actual_damage"] == 0
     assert target.current_hp == 10_000
+
+
+def test_daowen_sequence_position_survives_entity_seal_roundtrip():
+    """封存/还原必须保留道纹位置，不能让旧 X 或施加时间接管顺序。"""
+    target, _, _ = _arena()
+    for name in ("龙鳞", "固执"):
+        target.dao_wen[name] = DaoWenInstance(
+            DaoWen(name=name, formula="", cost_type="消耗", cost_formula="X", effect_formula=""),
+            x_value=1,
+        )
+    engine = GameEngine.__new__(GameEngine)
+    sealed = engine._serialize_entity_full(target)
+    restored = engine._deserialize_entity_full(sealed)
+    assert list(restored.dao_wen) == ["龙鳞", "固执"]
+    assert {s.name: s.daowen_order for s in restored.status_effects} == {"固执": 1, "龙鳞": 0}
+    assert restored.ordered_statuses()[0].name == "龙鳞"
 
 
 def test_guzhi_longlin_zeroes_only_hits_within_longlin_threshold_and_each_large_hit_still_costs_one():
