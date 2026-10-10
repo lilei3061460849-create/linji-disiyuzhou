@@ -620,6 +620,7 @@ class Entity:
                     remaining * life_loss_multiplier,
                     "Entity.take_damage.after_life_loss_multiplier")
                 detail["life_loss_multiplier"] = life_loss_multiplier
+            detail["damage_after_life_loss_multiplier"] = remaining
 
             # 【固执】是最终失血边界，位于所有倍率之后。
             before_final_cap = remaining
