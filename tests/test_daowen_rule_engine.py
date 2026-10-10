@@ -365,7 +365,11 @@ def test_zero_is_a_valid_intermediate_value_and_jiahai_can_add_after_longlin():
     assert result == 2
 
     # 发动X排序令龙鳞先将当前值削到0；随后 ADD 读取的是0，而不是初始8，且不中断。
-    event_target = _target(("加害", 2), ("龙鳞", 8))
+    event_target = Entity("受击者", "轮回者", blood_limit=100, current_hp=100)
+    event_target.add_status(StatusEffect(
+        "加害", value=2, remaining_rounds=-1, source="test", daowen_order=1))
+    event_target.add_status(StatusEffect(
+        "龙鳞", value=8, remaining_rounds=-1, source="test", daowen_order=0))
     event_context = DamageResolutionContext(
         event_id="zero-then-add", attacker=None, recipient=event_target,
         damage_type="普通", original_damage=8, incoming_damage=8, current_damage=8,
@@ -549,35 +553,30 @@ def test_status_ordering_rejects_noninteger_x_and_preserves_mainline_sequence_or
                               remaining_rounds=-1)
     anchored = StatusEffect("anchored", value=5, activation_x=float("inf"),
                             remaining_rounds=-1, daowen_order=3)
-    assert unanchored.ordering_x == 0
     assert unanchored.ordering_key == (1, 0)
     assert anchored.ordering_key == (0, 3)
 
 
-def test_full_sealed_entity_roundtrip_preserves_status_ordering_metadata():
+def test_full_sealed_entity_roundtrip_preserves_mainline_sequence_metadata():
     entity = Entity("存档角色", "轮回者", blood_limit=100, current_hp=100)
-    entity.add_status(StatusEffect("固执", value=1, activation_x=3,
-                                   remaining_rounds=2, source="固执"))
-    entity.add_status(StatusEffect("龙鳞", value=2, activation_x=7,
-                                   remaining_rounds=-1, source="龙鳞"))
+    entity.add_status(StatusEffect("固执", value=1, remaining_rounds=2,
+                                   source="固执", daowen_order=1))
+    entity.add_status(StatusEffect("龙鳞", value=2, remaining_rounds=-1,
+                                   source="龙鳞", daowen_order=0))
     api = GameEngine.__new__(GameEngine)
 
     snapshot = api._serialize_entity_full(entity)
     restored = api._deserialize_entity_full(snapshot)
-    assert [(s.name, s.activation_x, s.application_sequence)
-            for s in restored.ordered_statuses()] == [
-                (s.name, s.activation_x, s.application_sequence)
-                for s in entity.ordered_statuses()
-            ]
+    assert [(s.name, s.daowen_order) for s in restored.ordered_statuses()] == [
+        (s.name, s.daowen_order) for s in entity.ordered_statuses()
+    ]
 
-    # 旧封存状态缺少新锚点时，沿用既有 value/自动序号回退，不会破坏加载。
+    # 旧封存状态缺少道纹序列锚点时仍可加载，并回退到普通状态顺序。
     legacy = copy.deepcopy(snapshot)
     for status in legacy["status_effects"]:
-        status.pop("activation_x", None)
-        status.pop("application_sequence", None)
+        status.pop("daowen_order", None)
     legacy_restored = api._deserialize_entity_full(legacy)
-    assert all(status.activation_x is None for status in legacy_restored.status_effects)
-    assert all(status.application_sequence > 0 for status in legacy_restored.status_effects)
+    assert all(status.daowen_order is None for status in legacy_restored.status_effects)
 
 
 def test_direct_entity_compatibility_path_still_applies_guzhi_once():
