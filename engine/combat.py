@@ -996,8 +996,8 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         # ---- F2：罪孽专属道纹 [回始] 结算（逼债/清算/赌命）----
         # 2026-10-03 迁移：本位置只宣布相位时点（锚点 = 回始效果循环之后、current_round+1 之前），
         # 三段 for 已搬进声明层（builtins 的 逼债·结算/清算·结算/赌命·结算）。
-        # 分发语义=机制优先：逐个机制对全体实体结算，逐字保持「逼债全体 → 清算全体 →
-        # 赌命全体」的旧顺序（顺序即规则）；账本访问一律走 mechanisms.ledger。
+        # 分发语义=统一状态排序：按各账本状态记录的来源道纹序列位置结算；不再保留旧的
+        # 「逼债全体 → 清算全体 → 赌命全体」固定顺序。账本访问一律走 mechanisms.ledger。
         effects.extend(self._dispatch_phase_all(
             Phase.ROUND_START_SETTLE,
             self.state.get_all_player_side() + self.state.get_all_enemy_side()))
