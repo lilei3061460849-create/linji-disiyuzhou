@@ -21,21 +21,25 @@ from engine.dice import DiceEngine
 from engine.models import Entity, GameState, StatusEffect
 
 
-def _arena(hp: int = 10_000) -> tuple[Entity, Entity, CombatEngine]:
+def _arena(hp: int = 10_000, sequence: tuple[str, str] = ("龙鳞", "固执")) -> tuple[Entity, Entity, CombatEngine]:
     state = GameState(phase="in_combat", combat_subphase="player_actions")
     target = Entity("受测者", "轮回者", blood_limit=hp, current_hp=hp,
                     mana_limit=10, current_mana=10, speed_limit=1, current_speed=1)
     source = Entity("攻击者", "怪物", blood_limit=hp, current_hp=hp,
                     attack_count=1, attack_power=1)
-    target.add_status(StatusEffect("固执", value=1, remaining_rounds=1, source="test"))
-    target.add_status(StatusEffect("龙鳞", value=1, remaining_rounds=-1, source="test"))
+    order = {name: index for index, name in enumerate(sequence)}
+    # 故意按「固执先施加」构造状态，并给 X 相反值，验证实际结算只认道纹序列位置。
+    target.add_status(StatusEffect("固执", value=1, remaining_rounds=1, source="test",
+                                   activation_x=999, daowen_order=order["固执"]))
+    target.add_status(StatusEffect("龙鳞", value=1, remaining_rounds=-1, source="test",
+                                   activation_x=1, daowen_order=order["龙鳞"]))
     state.player = target
     state.enemies = [source]
     return target, source, CombatEngine(state, DiceEngine(seed=20261009))
 
 
-def test_guzhi_and_longlin_do_not_make_arbitrarily_large_damage_zero():
-    """龙鳞先减、固执后封顶：10^12 普通伤害最终是 1，不是 0。"""
+def test_guzhi_and_longlin_follow_daowen_sequence_not_x_or_application_order():
+    """序列为龙鳞→固执时，龙鳞先减、固执后封顶：10^12 伤害最终是 1。"""
     target, source, combat = _arena()
     detail = combat._apply_hostile_damage(target, 10**12, source=source)
 
@@ -44,6 +48,14 @@ def test_guzhi_and_longlin_do_not_make_arbitrarily_large_damage_zero():
     assert detail["capped_by"] == "固执"
     assert detail["actual_damage"] == 1
     assert target.current_hp == 9_999
+
+
+def test_reversing_daowen_sequence_reverses_incoming_adjustment_order():
+    """固执→龙鳞时，先封顶再减龙鳞，单击可归零；序列位置是唯一排序依据。"""
+    target, source, combat = _arena(sequence=("固执", "龙鳞"))
+    detail = combat._apply_hostile_damage(target, 5, source=source)
+    assert detail["actual_damage"] == 0
+    assert target.current_hp == 10_000
 
 
 def test_guzhi_longlin_zeroes_only_hits_within_longlin_threshold_and_each_large_hit_still_costs_one():
