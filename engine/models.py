@@ -221,8 +221,7 @@ class StatusEffect:
         else:
             self.remaining_rounds += other.remaining_rounds
         self.value += other.value
-        # 用户裁定：同名持续状态重施/合并视为最后一次施加；不能继续沿用
-        # 第一层的 X、来源或同 X 先后顺序。
+        # 同名持续状态重施/合并时，来源道纹位置随最新来源更新；X 和施加时间不参与排序。
         self.refresh_order_from(other)
         return True
 
