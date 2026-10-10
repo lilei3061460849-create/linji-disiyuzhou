@@ -198,7 +198,7 @@ def test_duming_single_alive_always_targeted_and_consumes_nothing_extra():
 # ==================== 顺序即规则 ====================
 
 def test_settlement_order_follows_daowen_sequence_not_fixed_order():
-    """清算→逼债→赌命：即使与旧固定顺序相反，也必须按来源道纹序列结算。"""
+    """赌命→清算→逼债：三个机制全部偏离旧固定顺序时，仍按来源道纹序列结算。"""
     state, combat, player, enemy = _arena()
     second = Entity("M2", "怪物", blood_limit=100, current_hp=100, shield=40,
                     speed_limit=2, current_speed=2)
@@ -210,14 +210,14 @@ def test_settlement_order_follows_daowen_sequence_not_fixed_order():
         ledger_of(e, "逼债").append({"x": 2})
         ledger_of(e, "清算").append({"x": 1, "caster": player})
         e.add_status(StatusEffect("清算", value=1, remaining_rounds=-1,
-                                  source=player.name, daowen_order=0))
-        e.add_status(StatusEffect("逼债", value=2, remaining_rounds=-1,
                                   source=player.name, daowen_order=1))
+        e.add_status(StatusEffect("逼债", value=2, remaining_rounds=-1,
+                                  source=player.name, daowen_order=2))
     player.add_status(StatusEffect("赌命", value=1, remaining_rounds=-1,
-                                   source=player.name, daowen_order=2))
+                                   source=player.name, daowen_order=0))
     kinds = [e["type"] for e in combat.round_start()["effects"]
              if e.get("type") in ("bizhai", "qingsuan", "duming")]
-    assert kinds == ["qingsuan", "qingsuan", "bizhai", "bizhai", "duming"]
+    assert kinds == ["duming", "qingsuan", "qingsuan", "bizhai", "bizhai"]
 
 
 # ==================== 对账：状态消失即清账 ====================
