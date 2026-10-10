@@ -6296,7 +6296,7 @@ class GameEngine:
     SAVE_FORMAT_VERSION = 5
 
     def _migrate_legacy_daowen_status_order(self) -> None:
-        """给旧 pickle 状态补齐序列字段，并从同名道纹恢复可确定的位置。"""
+        """给旧 pickle 状态补齐序列字段，优先从状态来源角色的同名道纹恢复位置。"""
         state = self.state
         entities = [getattr(state, "player", None)]
         for field_name in ("friends", "employees", "temp_friends", "enemies", "dead_monsters"):
@@ -6305,18 +6305,30 @@ class GameEngine:
             entry.get("monster") for entry in (getattr(state, "delayed_monster_reentries", []) or [])
             if isinstance(entry, dict)
         )
+        unique_entities = []
         seen = set()
         for entity in entities:
-            if not isinstance(entity, Entity) or id(entity) in seen:
-                continue
-            seen.add(id(entity))
-            order_by_name = {name: index for index, name in enumerate(entity.dao_wen)}
+            if isinstance(entity, Entity) and id(entity) not in seen:
+                seen.add(id(entity))
+                unique_entities.append(entity)
+        # 状态可能挂在目标身上，但其排序锚点来自施加该状态的角色。
+        # 例如【逼债】/【清算】的状态在目标身上，位置却属于施法者的道纹序列。
+        entity_by_name = {entity.name: entity for entity in unique_entities}
+        order_by_entity = {
+            id(entity): {name: index for index, name in enumerate(entity.dao_wen)}
+            for entity in unique_entities
+        }
+        for entity in unique_entities:
+            owner_order = order_by_entity[id(entity)]
             for status in entity.status_effects:
                 # 旧 pickle 反序列化不会自动填充新 dataclass 字段。
                 if not hasattr(status, "daowen_order"):
                     status.daowen_order = None
                 if status.daowen_order is None:
-                    status.daowen_order = order_by_name.get(status.name)
+                    source_entity = entity_by_name.get(getattr(status, "source", ""))
+                    source_order = order_by_entity.get(id(source_entity), {}) if source_entity else {}
+                    # 能从来源角色的同名道纹确认位置时优先用来源；否则兼容退回状态持有者。
+                    status.daowen_order = source_order.get(status.name, owner_order.get(status.name))
 
     def save_game(self, slot: str = "auto") -> dict:
         """保存可完整往返的版本化快照；只允许load_game读取本引擎生成的本地文件。"""
