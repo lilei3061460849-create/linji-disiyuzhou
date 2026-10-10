@@ -1,7 +1,7 @@
 # 第四宇宙 · AI 全量上下文
 
- > **生成文件，禁止手改。** 源文件变更后运行 `python3 sim/gen_ai_context.py`；
-> 只检查一致性则运行 `python3 sim/gen_ai_context.py --check`.
+> **生成文件，禁止手改。** 源文件变更后运行 `python3 sim/gen_ai_context.py`；
+> 只检查一致性则运行 `python3 sim/gen_ai_context.py --check`。
 >
 > 此文件给只会抓取一个 raw URL 的外部 AI 使用。它汇总当前有效的游戏文档，
 > 但不改变任何来源的事实源地位：规则冲突仍按下列优先级判断。
