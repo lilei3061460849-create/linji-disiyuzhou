@@ -74,6 +74,13 @@ def test_daowen_sequence_position_survives_entity_seal_roundtrip():
     assert {s.name: s.daowen_order for s in restored.status_effects} == {"固执": 1, "龙鳞": 0}
     assert restored.ordered_statuses()[0].name == "龙鳞"
 
+    # 旧封存没有 daowen_order：同名道纹状态从已保存的道纹序列恢复位置。
+    legacy = engine._serialize_entity_full(target)
+    for status in legacy["status_effects"]:
+        status.pop("daowen_order", None)
+    legacy_restored = engine._deserialize_entity_full(legacy)
+    assert legacy_restored.ordered_statuses()[0].name == "龙鳞"
+
 
 def test_guzhi_longlin_zeroes_only_hits_within_longlin_threshold_and_each_large_hit_still_costs_one():
     """≤龙鳞值的单击为0；超过后每一笔独立伤害仍掉1，故不能免任意多击。"""
