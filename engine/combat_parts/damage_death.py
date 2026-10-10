@@ -611,7 +611,7 @@ class DamageDeathMixin:
         committed_rule_context = committed_rule_contexts[-1] if committed_rule_contexts else None
         if committed_rule_context is not None:
             committed_rule_context.post_rule_damage = committed_rule_context.current_damage
-            committed_rule_context.damage_after_life_loss_multiplier = actual
+            committed_rule_context.damage_after_life_loss_multiplier = detail.get("damage_after_life_loss_multiplier", actual)
             committed_rule_context.actual_life_loss = actual_life_loss
             committed_rule_context.hp_before = detail.get("hp_before")
             committed_rule_context.hp_after = detail.get("hp_after")
