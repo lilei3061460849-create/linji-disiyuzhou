@@ -4931,6 +4931,9 @@ class GameEngine:
         for name, x in d.get("dao_wen", {}).items():
             e.dao_wen[name] = DaoWenInstance(
                 DaoWen(name=name, formula="", cost_type="消耗", cost_formula="X", effect_formula=""), x_value=x)
+        # 旧封存未记录道纹位置；对同名道纹状态从实体当前序列恢复位置。
+        # 新格式优先使用显式 daowen_order，避免状态名与来源道纹名不同时猜测。
+        daowen_order_by_name = {name: index for index, name in enumerate(e.dao_wen)}
         for sp in d.get("spells", []):
             e.spells.append(Spell(name=sp["name"], required_daowen=sp["required_daowen"],
                                    trigger_condition=sp["trigger_condition"], effect_flow=sp["effect_flow"],
@@ -4959,7 +4962,9 @@ class GameEngine:
                                                   # 旧档 X/施加序号仅保留为兼容元数据，不参与结算顺序。
                                                   activation_x=st.get("activation_x"),
                                                   application_sequence=st.get("application_sequence", 0),
-                                                  daowen_order=st.get("daowen_order")))
+                                                  daowen_order=(st.get("daowen_order")
+                                                                if st.get("daowen_order") is not None
+                                                                else daowen_order_by_name.get(st["name"]))))
         return e
 
     def _serialize_full_character(self) -> dict:
