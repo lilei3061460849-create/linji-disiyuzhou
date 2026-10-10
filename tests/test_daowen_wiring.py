@@ -234,8 +234,8 @@ def test_jiahai_guzhi_fennu_jieli_jisheng():
     assert p.current_hp == before + 2  # 10 * 20%
 
 
-def test_huaxiang_dingxing_wushen_xuanyun():
-    """定型挡弱化；无神打自己；眩晕掉血苏醒。
+def test_huaxiang_dingxing_wushen():
+    """定型挡弱化；无神打自己。
 
     2026-10-03：【滑翔/坠落】删除，原「滑翔视同飞行、坠落落地并减半」段落一并移除。
     """
@@ -269,11 +269,6 @@ def test_huaxiang_dingxing_wushen_xuanyun():
     assert r["success"], r
     assert foe.current_hp == hp_f - 4   # 无神改打自己（杀伐2→X²=4，2026-09-13）
 
-    m.add_status(StatusEffect(name="眩晕", remaining_rounds=2, value=1, source="测"))
-    assert engine.combat.can_act(m) is False
-    m.take_damage(3)
-    assert not m.has_status("眩晕")
-    assert engine.combat.can_act(m)
 
 
 def test_retired_healing_runes_are_not_registered():
@@ -281,6 +276,7 @@ def test_retired_healing_runes_are_not_registered():
     DaoWenEngine.register_all()
     assert "自愈" not in DaoWenEngine._registry
     assert "滋养" not in DaoWenEngine._registry
+    assert "眩晕" not in DaoWenEngine._registry
 
 
 def test_jisu_jiasu_dongcha():

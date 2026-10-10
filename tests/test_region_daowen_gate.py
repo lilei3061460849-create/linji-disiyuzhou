@@ -73,7 +73,7 @@ def test_original_monster_daowen_learnable_after_lift():
     旧断言「人类无法承受并获得」编码的是已被用户令删除的门禁，本用例按新裁定重写。
     """
     e = _engine("龙心谷")
-    for dw in ("必中", "自愈", "飞行", "疯狂"):
+    for dw in ("必中", "减速", "飞行", "疯狂"):
         r = _learn(e, dw)
         assert r["success"], f"原始怪物道纹{dw}应可经局外【学习】习得：{r.get('error')}"
         assert dw in e.state.player.dao_wen
