@@ -7,8 +7,8 @@
     【逼债·对账】【清算·对账】状态消失即清账
 
 本文件钉死的约束（迁移协议第 1/4 条）：
-    1. 声明映射：when/target/condition/effect/priority 与旧位置一一对应；
-    2. 顺序即规则：机制优先（逼债全体 → 清算全体 → 赌命全体），与旧三段循环逐字一致；
+    1. 声明映射：when/target/condition/effect 均正确注册；priority 只作序列位置缺失时的后备；
+    2. 顺序即规则：三个账本机制按来源道纹在角色序列中的位置结算，不保留旧固定顺序；
     3. 只触发一次：每次回始每笔账结算一次，叠加多笔=多条报告；
     4. 报告条目与旧实现同形（字段名不改，战报读法不变）；
     5. 账本唯一入口（engine/mechanisms/ledger.py），管线里不再有硬编码分支
@@ -51,19 +51,19 @@ def _effects_of(effects, kind):
 # ==================== 声明映射 ====================
 
 def test_mechanisms_registered_with_expected_phase_and_priority():
-    """三个结算机制注册在 ROUND_START_SETTLE，优先级即旧三段顺序；两个对账机制在回终清账点。"""
-    expected = {"逼债·结算": 10, "清算·结算": 20, "赌命·结算": 30}
-    for name, priority in expected.items():
+    """三个结算机制注册在 ROUND_START_SETTLE；priority 仅作缺少序列锚点时的后备。"""
+    expected = {"逼债·结算", "清算·结算", "赌命·结算"}
+    for name in expected:
         m = MECHANISMS.get(name)
         assert m is not None, f"{name} 未注册"
         assert m.when.kind == "phase" and m.when.key == Phase.ROUND_START_SETTLE
-        assert m.priority == priority, name
+        assert m.status_name in {"逼债", "清算", "赌命"}
     for name in ("逼债·对账", "清算·对账"):
         m = MECHANISMS.get(name)
         assert m is not None and m.when.key == Phase.ROUND_END_RECONCILE
-    # 回始结算相位只有这三个机制（防后人往这条机制优先队列里塞别的机制打乱顺序）
+    # 相位内仅允许这三个账本结算机制；实际顺序由状态的道纹序列位置决定。
     names = [m.name for m in MECHANISMS.phase_mechanisms(Phase.ROUND_START_SETTLE)]
-    assert names == ["逼债·结算", "清算·结算", "赌命·结算"]
+    assert len(names) == 3 and set(names) == expected
 
 
 def test_pipeline_has_no_hardcoded_branches_for_migrated_mechanisms():
@@ -197,9 +197,8 @@ def test_duming_single_alive_always_targeted_and_consumes_nothing_extra():
 
 # ==================== 顺序即规则 ====================
 
-def test_settlement_order_is_mechanism_major():
-    """旧顺序：逼债全体 → 清算全体 → 赌命全体。实体优先分发会写成 逼债甲→清算甲→逼债乙，
-    这里用两只怪同挂账钉死分发次序。"""
+def test_settlement_order_follows_daowen_sequence_not_fixed_order():
+    """清算→逼债→赌命：即使与旧固定顺序相反，也必须按来源道纹序列结算。"""
     state, combat, player, enemy = _arena()
     second = Entity("M2", "怪物", blood_limit=100, current_hp=100, shield=40,
                     speed_limit=2, current_speed=2)
@@ -210,10 +209,15 @@ def test_settlement_order_is_mechanism_major():
         e.shield = 40
         ledger_of(e, "逼债").append({"x": 2})
         ledger_of(e, "清算").append({"x": 1, "caster": player})
-    player.add_status(StatusEffect("赌命", value=1, remaining_rounds=-1, source="P"))
+        e.add_status(StatusEffect("清算", value=1, remaining_rounds=-1,
+                                  source=player.name, daowen_order=0))
+        e.add_status(StatusEffect("逼债", value=2, remaining_rounds=-1,
+                                  source=player.name, daowen_order=1))
+    player.add_status(StatusEffect("赌命", value=1, remaining_rounds=-1,
+                                   source=player.name, daowen_order=2))
     kinds = [e["type"] for e in combat.round_start()["effects"]
              if e.get("type") in ("bizhai", "qingsuan", "duming")]
-    assert kinds == ["bizhai", "bizhai", "qingsuan", "qingsuan", "duming"]
+    assert kinds == ["qingsuan", "qingsuan", "bizhai", "bizhai", "duming"]
 
 
 # ==================== 对账：状态消失即清账 ====================
