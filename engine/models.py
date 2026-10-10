@@ -259,6 +259,8 @@ class Entity:
     name: str
     entity_type: str
     runtime_id: str = field(default_factory=lambda: uuid.uuid4().hex)
+    # 分裂复制体的创建者身份；供遗物被动追踪归属，不依赖可能重名的实体名称。
+    copy_creator_runtime_id: str = ""
     
     # 基础属性
     blood_limit: int = 0         # 血限
