@@ -9,14 +9,14 @@ permissions:
 
 jobs:
   pytest:
-    name: Main baseline targeted tests
+    name: Pre-PR main baseline targeted tests
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Check out unchanged main baseline
+      - name: Check out pre-PR main baseline
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: 2e4cfb419093548e0b98cae4836d4e7133c022d1
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -25,5 +25,5 @@ jobs:
           cache-dependency-path: requirements-dev.txt
       - name: Install test dependencies
         run: python -m pip install --upgrade pip && python -m pip install -r requirements-dev.txt
-      - name: Run targeted tests on main baseline
+      - name: Run targeted tests on pre-PR main baseline
         run: python -m pytest -q tests/test_ai_context.py tests/test_effect_chain_audit.py tests/test_guzhi_longlin_combo.py tests/test_jiahai_migration.py tests/test_longlin_migration.py tests/test_shuai_bai_migration.py tests/test_ziyu_migration.py tests/test_zui_ledger_migration.py
