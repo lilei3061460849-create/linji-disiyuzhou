@@ -257,7 +257,7 @@ class DamageRuleDefinition:
             raise RuleError("伤害规则必须读取同一结算链最新当前值")
 
     def ordering_key(self, status: Any = None) -> tuple:
-        """活跃状态按发动 X 降序、同 X 按施加序号；priority 仅作为稳定后备。"""
+        """状态按道纹序列位置排序；缺少序列锚点时以 priority/rule_id 稳定后备。"""
         if status is not None:
             return (0, *status.ordering_key, self.priority, self.rule_id)
         return (1, self.priority, self.rule_id)
