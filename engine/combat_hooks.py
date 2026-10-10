@@ -330,7 +330,7 @@ class CombatHookManager:
         self.mitigation_hook = LethalMitigationHook()
         self.after_damage_hook = AfterDamageEffectsHook()
         # 已迁移到声明层的伤害持续状态经适配器挂到同一条 Hook 路径。其实际
-        # 执行顺序不是静态 priority：每次伤害窗口都读取状态的发动 X 与施加序号。
+        # 执行顺序不是静态 priority：每次伤害窗口都读取状态来源道纹的序列位置。
         mechanism_hooks: List[Any] = [
             MechanismHookAdapter(mechanism)
             for mechanism in MECHANISMS.phase_mechanisms(Phase.INCOMING_ADJUST)
@@ -391,9 +391,8 @@ class CombatHookManager:
         """结算本次伤害窗口的持续状态调整。
 
         只要原始输入是一笔正伤害，状态区内即使先被压成 0，后续状态仍照常
-        运行并可把它改回正数。自然时机没有被重排：这里只排序已经同时进入
-        INCOMING_ADJUST 窗口的持续状态；无状态元数据的外部 Hook 仍按 priority
-        作为兼容后备。
+        运行并可把它改回正数。自然时机没有被重排：这里只按来源道纹序列位置排序已经同时进入 INCOMING_ADJUST 窗口的道纹状态；
+        没有道纹位置的旧状态/外部 Hook 才按 priority 作为兼容后备。
         """
         if amount <= 0:
             return amount
@@ -406,7 +405,7 @@ class CombatHookManager:
         def incoming_key(hook: Any) -> tuple:
             if isinstance(hook, MechanismHookAdapter):
                 return hook.incoming_order_key(target)
-            # 非持续状态 Hook 没有发动 X，放在状态窗口后按原 priority 运行。
+            # 非道纹状态 Hook 没有序列位置，放在道纹状态后按原 priority 运行。
             return (2, self._priority_of(hook), type(hook).__name__)
 
         for hook in sorted(candidates, key=incoming_key):
