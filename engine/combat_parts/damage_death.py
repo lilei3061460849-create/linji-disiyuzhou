@@ -22,6 +22,7 @@ from ..personality import remove_personality
 from ..resolution import (KIND_DEATH, KIND_DAMAGE, KIND_SPLIT,
                            note_delta, resolution_frame)
 from ..models import MONSTER_MANA_RELIC
+from ..rule_engine import DamageResolutionContext, validate_damage_amount
 
 
 class DamageDeathMixin:
@@ -57,6 +58,44 @@ class DamageDeathMixin:
         if legacy_warning:
             detail["context_warning"] = "伤害缺少EffectContext；已按legacy来源兼容记录"
         return detail
+
+    def _damage_noop_result(
+        self, target: Entity, amount: int, damage_type: str,
+        damage_ctx: EffectContext, legacy_ctx: bool, *, reason: str,
+        original_damage: Optional[int] = None,
+        applied_damage_type: Optional[str] = None,
+    ) -> dict:
+        """返回不扣血、不耗护盾、不触发伤害事件的显式 no-op 结果。"""
+        hp = target.current_hp
+        detail = {
+            "raw_damage": amount,
+            "shield_absorbed": 0,
+            "actual_damage": 0,
+            "actual_life_loss": 0,
+            "hp_before": hp,
+            "hp_after": hp,
+            "blood_limit_before": target.blood_limit,
+            "died": False,
+            "damage_type": damage_type,
+            "no_op": True,
+            "no_op_reason": reason,
+            "rule_trace": [],
+            "preview_rule_trace": [],
+            "damage_resolution_preview": None,
+            "damage_resolution": {
+                "event_id": damage_ctx.event_id,
+                "original_damage": amount if original_damage is None else original_damage,
+                "incoming_damage": amount,
+                "damage_type": damage_type,
+                "applied_damage_type": applied_damage_type or damage_type,
+                "attacker": getattr(damage_ctx.actor, "name", None),
+                "recipient": getattr(target, "name", None),
+                "preview": None,
+                "commit": None,
+                "outcome": reason,
+            },
+        }
+        return self._attach_damage_context(detail, damage_ctx, legacy_ctx)
 
     def _write_hp_loss_record(self, entity: Entity, amount: int,
                               parent_ctx: Optional[EffectContext | dict],
@@ -354,7 +393,13 @@ class DamageDeathMixin:
         对target造成外部/敌对伤害的统一入口（通过 HookManager 全生命周期调度）。
         ctx 为兼容层来源上下文，不改变既有伤害结算顺序和返回核心字段。
         """
+        amount = validate_damage_amount(amount, "CombatEngine._apply_hostile_damage.amount")
         damage_ctx, legacy_ctx = self._damage_context(target, amount, damage_type, source, ctx)
+        if amount < 0:
+            return self._damage_noop_result(
+                target, amount, damage_type, damage_ctx, legacy_ctx,
+                reason="negative_damage_input",
+            )
         # 结算生命周期：深度/预算保险丝与可追踪性统一由 ResolutionContext 记账
         # （见 engine/resolution.py）。阈值 64 与既有 MAX_EFFECT_CHAIN_DEPTH 同义，
         # 实测合法峰值 5，故行为不变——只在真出现 A→B→A 循环时截断成可诊断异常。
@@ -377,17 +422,35 @@ class DamageDeathMixin:
         self, target: Entity, amount: int, damage_type: str,
         source: Optional[Entity], damage_ctx: EffectContext, legacy_ctx: bool,
     ) -> dict:
-        amount = self.hook_manager.apply_multiplier_adjust(target, amount, damage_type, source, self.state)
+        original_damage = amount
+        amount = validate_damage_amount(
+            self.hook_manager.apply_multiplier_adjust(target, amount, damage_type, source, self.state),
+            "CombatEngine.apply_multiplier_adjust.result")
+        if amount < 0:
+            return self._damage_noop_result(
+                target, amount, damage_type, damage_ctx, legacy_ctx,
+                reason="negative_damage_after_multiplier_adjust",
+                original_damage=original_damage,
+            )
         # 招架属于受击姿态资源，仍在格挡之前卸力；道纹持续状态则在格挡
         # 之后一起进入同一 X 排序窗口（由 take_damage 的 status_adjuster 调用）。
-        amount = self._apply_parry_reduction(target, amount, damage_type)
+        amount = validate_damage_amount(
+            self._apply_parry_reduction(target, amount, damage_type),
+            "CombatEngine._apply_parry_reduction.result")
+        if amount < 0:
+            return self._damage_noop_result(
+                target, amount, damage_type, damage_ctx, legacy_ctx,
+                reason="negative_damage_after_parry",
+                original_damage=original_damage,
+            )
         # 癫狂之脑（通用遗物池，2026-10-03 新增）：你受到的**攻击伤害**翻倍。
         # 只翻攻击行动造成的伤害（subtype=attack；含被万钧印改道的自攻）；
         # 道纹/代价/直接失血不受影响。倍率发生在格挡/护盾之前，故本次伤害的
         # "攻击伤害数值"整体翻倍，千荆甲反噬也按翻倍后的数值等量反射。
         if (damage_ctx.subtype == "attack"
                 and self._relic_active(target, "癫狂之脑")):
-            amount *= 2
+            amount = validate_damage_amount(
+                amount * 2, "CombatEngine.狂脑伤害倍率.result")
 
         # 1. 伤害重定向 (嫁祸 / 背负)
         redirected_target = self.hook_manager.apply_redirection(target, damage_type, self.state)
@@ -419,12 +482,13 @@ class DamageDeathMixin:
             if not source.is_alive:
                 # 与旧【爆裂】同口径：反噬把攻击者打死的这一击不再落地
                 # （攻击者已命零，本次攻击的伤害被压制为 0）。
-                return self._attach_damage_context({
-                    "raw_damage": amount, "shield_absorbed": 0, "actual_damage": 0,
-                    "hp_before": target.current_hp, "hp_after": target.current_hp,
-                    "blood_limit_before": target.blood_limit, "died": False,
-                    "damage_type": damage_type, "qianjingjia_suppress": True,
-                }, damage_ctx, legacy_ctx)
+                suppressed = self._damage_noop_result(
+                    target, amount, damage_type, damage_ctx, legacy_ctx,
+                    reason="qianjingjia_suppress",
+                    original_damage=original_damage,
+                )
+                suppressed["qianjingjia_suppress"] = True
+                return suppressed
 
         # 3. 基础扣血。贯穿：你造成的伤害（任意通道）无视格挡；代价仍按代价结算。
         apply_type = damage_type
@@ -435,22 +499,57 @@ class DamageDeathMixin:
         # 4. 濒死伤害拦截与保护 (撤退 / 负岳碑 / 断尾求生)。保护需要看到
         # 真正会落地的数值，故在不修改实体的前提下预演一次「格挡→持续状态
         # X 排序」；真实扣血时 take_damage 会按同一函数再结算一次。
+        shield_before_preview = getattr(target, "shield", 0)
         if apply_type == "无视格挡" or damage_type == "代价":
             preview_after_shield = amount
+            preview_shield_absorbed = 0
         else:
-            preview_after_shield = max(0, amount - getattr(target, "shield", 0))
+            preview_after_shield = max(0, amount - shield_before_preview)
+            preview_shield_absorbed = max(0, min(amount, shield_before_preview))
+        preview_rule_context = DamageResolutionContext(
+            event_id=damage_ctx.event_id,
+            attacker=source,
+            recipient=target,
+            damage_type=apply_type,
+            original_damage=original_damage,
+            incoming_damage=amount,
+            current_damage=preview_after_shield,
+            mode="preview",
+            shield_absorbed=preview_shield_absorbed,
+            hp_before=target.current_hp,
+            tags=frozenset(damage_ctx.tags),
+        )
         preview_adjusted = (
             self.hook_manager.apply_incoming_adjust(
-                target, preview_after_shield, apply_type, source, self.state)
+                target, preview_after_shield, apply_type, source, self.state,
+                resolution_context=preview_rule_context)
             if preview_after_shield > 0 and damage_type != "代价"
             else preview_after_shield
         )
+        preview_rule_context.post_rule_damage = preview_adjusted
         # LethalMitigationHook 自己按传入 type 处理格挡；normal 情况补回护盾
         # 即可让它看到同一份 post-shield/post-status 的剩余伤害。
         mitigation_input = (preview_adjusted if apply_type == "无视格挡"
                             else preview_adjusted + getattr(target, "shield", 0))
         mitigation = self.hook_manager.apply_mitigation(target, mitigation_input, apply_type, self)
         if mitigation is not None:
+            preview_rule_context.post_rule_damage = preview_adjusted
+            mitigation.setdefault("actual_life_loss", 0)
+            mitigation.setdefault("rule_trace", [])
+            mitigation["damage_resolution_preview"] = preview_rule_context.to_dict()
+            mitigation["preview_rule_trace"] = list(preview_rule_context.trace)
+            mitigation["damage_resolution"] = {
+                "event_id": damage_ctx.event_id,
+                "original_damage": original_damage,
+                "incoming_damage": amount,
+                "damage_type": damage_type,
+                "applied_damage_type": apply_type,
+                "attacker": getattr(source, "name", None),
+                "recipient": getattr(target, "name", None),
+                "preview": preview_rule_context.to_dict(),
+                "commit": None,
+                "outcome": "lethal_mitigation",
+            }
             return self._attach_damage_context(mitigation, damage_ctx, legacy_ctx)
 
         # ---- 「受到伤害前 / 失去生命前」自动反应窗口（非攻击伤害） ----
@@ -474,15 +573,62 @@ class DamageDeathMixin:
                 if source is not None and not source.is_alive:
                     amount = 0
         # 【第一杯】：持有者失去的生命翻倍。倍率在这里注入；take_damage 先让
-        # 格挡吸收，再把仍存在的伤害交给全局持续状态排序器，最后才放大真正
-        # 落地的生命损失。状态区内部不会因中间归零而短路。
+        # 格挡吸收，再把仍存在的伤害交给统一规则链，最后才应用失血倍率并扣血。
+        # 预演 context 和正式 context 分开，规则 ID 可在 preview/commit 各执行一次，
+        # 但同一 context 内重复执行会被拒绝。
+        shield_before_commit = getattr(target, "shield", 0)
+        hp_before_commit = target.current_hp
+        committed_rule_contexts: list[DamageResolutionContext] = []
+
+        def _commit_incoming_rules(remaining: int) -> int:
+            committed_context = DamageResolutionContext(
+                event_id=damage_ctx.event_id,
+                attacker=source,
+                recipient=target,
+                damage_type=apply_type,
+                original_damage=original_damage,
+                incoming_damage=amount,
+                current_damage=remaining,
+                mode="commit",
+                shield_absorbed=max(0, shield_before_commit - getattr(target, "shield", 0)),
+                hp_before=hp_before_commit,
+                tags=frozenset(damage_ctx.tags),
+            )
+            committed_rule_contexts.append(committed_context)
+            return self.hook_manager.apply_incoming_adjust(
+                target, remaining, apply_type, source, self.state,
+                resolution_context=committed_context)
+
         detail = target.take_damage(
             amount, apply_type,
             life_loss_multiplier=self.state.life_loss_multiplier(target),
-            status_adjuster=lambda remaining: self.hook_manager.apply_incoming_adjust(
-                target, remaining, apply_type, source, self.state))
+            status_adjuster=_commit_incoming_rules)
         self._attach_damage_context(detail, damage_ctx, legacy_ctx)
         actual = detail.get("actual_damage", 0)
+        actual_life_loss = max(0, detail.get("hp_before", target.current_hp)
+                               - detail.get("hp_after", target.current_hp))
+        detail["actual_life_loss"] = actual_life_loss
+        committed_rule_context = committed_rule_contexts[-1] if committed_rule_contexts else None
+        if committed_rule_context is not None:
+            committed_rule_context.post_rule_damage = committed_rule_context.current_damage
+            committed_rule_context.damage_after_life_loss_multiplier = actual
+            committed_rule_context.actual_life_loss = actual_life_loss
+            committed_rule_context.hp_before = detail.get("hp_before")
+            committed_rule_context.hp_after = detail.get("hp_after")
+        detail["damage_resolution_preview"] = preview_rule_context.to_dict()
+        detail["preview_rule_trace"] = list(preview_rule_context.trace)
+        detail["rule_trace"] = (list(committed_rule_context.trace)
+                                if committed_rule_context is not None else [])
+        detail["damage_resolution"] = {
+            "original_damage": original_damage,
+            "incoming_damage": amount,
+            "damage_type": damage_type,
+            "applied_damage_type": apply_type,
+            "attacker": getattr(source, "name", None),
+            "recipient": getattr(target, "name", None),
+            "preview": preview_rule_context.to_dict(),
+            "commit": committed_rule_context.to_dict() if committed_rule_context else None,
+        }
         # 活血衣（通用遗物池，2026-10-03 出自被删【活血】道纹）：受到攻击伤害后，
         # 恢复该次伤害一半的生命（向上取整，整数口径）。反噬等直接失血不算"受到攻击"。
         if (damage_ctx.subtype == "attack" and actual > 0
@@ -526,8 +672,11 @@ class DamageDeathMixin:
         self._emit(
             CombatEventType.DAMAGE_APPLIED, actor=source, target=target, ctx=detail["ctx"],
             raw_damage=amount, actual_damage=actual,
+            actual_life_loss=actual_life_loss,
             shield_absorbed=detail.get("shield_absorbed", 0),
             hp_after=detail.get("hp_after"), damage_type=damage_type,
+            rule_trace=detail["rule_trace"],
+            preview_rule_trace=detail["preview_rule_trace"],
         )
 
         # 5. 落地后效果 (逆鳞 / 伤痕 / 寄生 / 负岳索 / 龙族血脉斩杀)
