@@ -27,6 +27,9 @@ import math
 
 from ..combat_events import CombatEventType
 from ..models import StatusEffect
+from ..rule_engine import (
+    DAOWEN_RULES, DamageResolutionContext, RULE_EXECUTOR, rule_matches,
+)
 from .conditions import (
     all_, any_, damage_type_not, entity_type, has_status, is_alive,
     not_, relic_active,
@@ -38,21 +41,51 @@ from .triggers import Phase, Trigger, TriggerContext
 from .verbs import apply_verb
 
 
-def _jiahai_effect(ctx: TriggerContext, targets: list) -> dict:
-    """旧 JiahaiHook 语义：amount + status_value（value 缺失按 0）。"""
-    value = ctx.target.get_status_value("加害") or 0
-    return {"amount": ctx.amount + value}
+def _rule_context(rule, ctx: TriggerContext) -> DamageResolutionContext:
+    amount = ctx.amount
+    return DamageResolutionContext(
+        event_id=f"mechanism:{rule.rule_id}:{getattr(ctx.target, 'name', '?')}",
+        attacker=ctx.source,
+        recipient=ctx.target,
+        damage_type=ctx.damage_type or "普通",
+        original_damage=amount,
+        incoming_damage=amount,
+        current_damage=amount,
+        mode="commit",
+    )
 
 
-def _longlin_effect(ctx: TriggerContext, targets: list) -> dict:
-    """龙鳞：max(0, amount - status_value)。0 仍须留给后续状态继续调整。"""
-    value = ctx.target.get_status_value("龙鳞") or 0
-    return {"amount": max(0, ctx.amount - value)}
+def _rule_condition(rule):
+    def condition(ctx: TriggerContext) -> bool:
+        status = next((item for item in getattr(ctx.target, "status_effects", ())
+                       if item.name == rule.status_name and not item.is_expired), None)
+        return rule_matches(rule, _rule_context(rule, ctx), status)
+    return condition
 
 
-def _guzhi_effect(ctx: TriggerContext, targets: list) -> dict:
-    """固执：本次伤害至多失去 1 点生命（代价区外）。"""
-    return {"amount": min(ctx.amount, 1)}
+def _rule_effect(rule):
+    def effect(ctx: TriggerContext, targets: list) -> dict:
+        context = _rule_context(rule, ctx)
+        status = next((item for item in getattr(ctx.target, "status_effects", ())
+                       if item.name == rule.status_name and not item.is_expired), None)
+        RULE_EXECUTOR.execute(rule, context, status)
+        return {"amount": context.current_damage}
+    return effect
+
+
+def _numeric_rule_mechanism(name: str) -> Mechanism:
+    definition = DAOWEN_RULES[name]
+    rule = definition.rules[0]
+    return Mechanism(
+        name=name,
+        when=Trigger.phase(Phase.INCOMING_ADJUST),
+        effect=_rule_effect(rule),
+        target=TARGET,
+        status_name=rule.status_name,
+        condition=_rule_condition(rule),
+        priority=rule.priority,
+        rule_definition=rule,
+    )
 
 
 def _ziyu_effect(ctx: TriggerContext, targets: list) -> dict:
@@ -84,45 +117,11 @@ def _ziyu_effect(ctx: TriggerContext, targets: list) -> dict:
     }
 
 
-JIAHAI = Mechanism(
-    name="加害",
-    when=Trigger.phase(Phase.INCOMING_ADJUST),
-    effect=_jiahai_effect,
-    target=TARGET,
-    status_name="加害",
-    condition=all_(
-        damage_type_not("代价"),    # 代价伤害不受增幅
-        has_status("加害", of="target"),
-    ),
-    # 只作没有状态元数据时的兼容后备；真实结算使用状态的 ordering_key。
-    priority=20,
-)
-
-LONGLIN = Mechanism(
-    name="龙鳞",
-    when=Trigger.phase(Phase.INCOMING_ADJUST),
-    effect=_longlin_effect,
-    target=TARGET,
-    status_name="龙鳞",
-    condition=all_(
-        damage_type_not("代价"),    # 代价不受减免
-        has_status("龙鳞", of="target"),
-    ),
-    priority=30,
-)
-
-GUZHI = Mechanism(
-    name="固执",
-    when=Trigger.phase(Phase.INCOMING_ADJUST),
-    effect=_guzhi_effect,
-    target=TARGET,
-    status_name="固执",
-    condition=all_(
-        damage_type_not("代价"),
-        has_status("固执", of="target"),
-    ),
-    priority=40,
-)
+# 数值事实与运行时摘要共用 engine.rule_engine.DAOWEN_RULES；这里仅保留
+# MechanismHookAdapter 兼容壳，不另写条件、运算或组合配方。
+JIAHAI = _numeric_rule_mechanism("加害")
+LONGLIN = _numeric_rule_mechanism("龙鳞")
+GUZHI = _numeric_rule_mechanism("固执")
 
 def _gangpailing_effect(ctx: TriggerContext, targets: list) -> str:
     """旧 process_relics 帮派令块语义（逐字复刻）：
