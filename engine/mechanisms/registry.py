@@ -29,6 +29,8 @@ class Mechanism:
     # 仍按 priority；不再从展示名猜测，避免「畸变·结算」等名字歧义。
     status_name: str = ""
     status_owner: str = "target"   # target | source；事件机制可由施放者身上的状态驱动
+    # 数值规则迁移期适配器：定义是数值/条件/文案的唯一事实源；不改变非数值机制。
+    rule_definition: Any = None
 
     def ordering_key(self, entity) -> tuple:
         """返回此机制在 entity 的当前结算窗口中的道纹序列顺序键。"""
@@ -44,6 +46,9 @@ class Mechanism:
     def __post_init__(self):
         if self.effect is None:
             raise ValueError(f"机制[{self.name}]缺少 effect")
+        if (self.rule_definition is not None
+                and self.rule_definition.daowen_name != self.name):
+            raise ValueError(f"机制[{self.name}]与数值规则定义归属不一致")
 
     def state_of(self, entity) -> dict:
         """本机制在该实体上的自身状态（惰性创建，按实体存放，不进入全局表）。
