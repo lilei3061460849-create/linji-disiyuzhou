@@ -369,7 +369,9 @@ class DaoWenRuleDefinition:
         trigger = "每次格挡后仍有伤害待结算的非代价受击时"
         value_label = _value_label(rule.reads)
         operator = rule.operator
-        if operator.kind == RuleOperator.ADD:
+        if rule.daowen_name == "固执":
+            action = "将本次最终实际失血限制为不超过1点"
+        elif operator.kind == RuleOperator.ADD:
             action = f"使{value_label}增加{x}"
         elif operator.kind == RuleOperator.SUBTRACT:
             if operator.lower_bound is not None:
@@ -384,11 +386,16 @@ class DaoWenRuleDefinition:
             action = f"将{value_label}至少设为{operand}"
         else:
             action = f"按{operator.kind.value}规则变换{value_label}"
-        order_note = "；该阶段后续规则读取更新后的当前值"
+        order_note = (
+            "；失血倍率结算后仍封顶为1点"
+            if rule.daowen_name == "固执"
+            else "；该阶段后续规则读取更新后的当前值"
+        )
         multiplier_note = (
             "；其后的失血倍率仍会结算"
             if operator.kind == RuleOperator.MIN
             and rule.stage == RuleStage.POST_BLOCK_PRE_LIFE_LOSS_MULTIPLIER
+            and rule.daowen_name != "固执"
             else ""
         )
         return (
@@ -594,6 +601,21 @@ def validate_damage_amount(value: Any, field_name: str = "damage",
     if not allow_negative and value < 0:
         raise RuleError(f"{field_name} 不得为负数")
     return value
+
+
+def apply_final_life_loss_cap(amount: int, recipient: Any, damage_type: str) -> int:
+    """应用位于所有失血倍率之后的最终生命损失边界。
+
+    【固执】限制的是最终实际失血；因此不能只依赖倍率前的 CURRENT_DAMAGE 规则。
+    代价区明确排除，且本函数不修改实体状态。
+    """
+    amount = validate_damage_amount(
+        amount, "final_life_loss_cap.amount", allow_negative=False)
+    if (amount > 1 and damage_type != "代价" and recipient is not None
+            and callable(getattr(recipient, "has_status", None))
+            and recipient.has_status("固执")):
+        return 1
+    return amount
 
 
 def _coerce_rule_number(value: Any, *, field: str) -> RuleNumber:
