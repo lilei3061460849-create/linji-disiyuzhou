@@ -180,12 +180,11 @@ def _observe_status_application_sequence(sequence: int) -> None:
 
 @dataclass
 class StatusEffect:
-    """持续效果及其发动顺序元数据。
+    """持续效果及其来源道纹的序列位置。
 
-    ``activation_x`` / ``application_sequence`` 不是显示层数，而是同一自然结算
-    窗口的通用排序键：发动 X 大者先；X 相同则先施加者先。``activation_x``
-    为 ``None`` 的旧档、遗物或测试构造状态兼容地以当前 value 作为 X。持续∞
-    （remaining_rounds=-1）和有限持续状态完全一视同仁。
+    道纹排序只看 ``daowen_order``（越小越先）；X 值和状态施加/刷新时间
+    不参与排序。旧字段 activation_x/application_sequence 暂保留用于旧调用兼容，
+    但不再是结算顺序依据。没有道纹位置的普通状态保持原有列表顺序。
     """
     name: str
     remaining_rounds: int        # 剩余回合（-1=∞；仍只代表本场战斗内的无限）
@@ -193,8 +192,9 @@ class StatusEffect:
     source: str = ""             # 来源
     scope: str = EffectScope.BATTLE.value
     polarity: str = EffectPolarity.NEUTRAL.value
-    activation_x: Optional[int] = None
-    application_sequence: int = field(default_factory=_next_status_application_sequence)
+    activation_x: Optional[int] = None  # 旧版兼容字段，不参与排序
+    application_sequence: int = field(default_factory=_next_status_application_sequence)  # 旧版兼容字段
+    daowen_order: Optional[int] = None  # 发动该状态的道纹在持有者序列中的位置，越小越先
     
     def __post_init__(self):
         # 即使调用方直接append而不经过Entity.add_status，代价标记也不能被战终误清。
@@ -217,14 +217,15 @@ class StatusEffect:
             return 0
 
     @property
-    def ordering_key(self) -> tuple[int, int, str]:
-        """可直接供任意同窗口状态结算使用的稳定排序键。"""
-        return (-self.ordering_x, self.application_sequence, self.name)
+    def ordering_key(self) -> tuple[int, int]:
+        """道纹位置优先；未知位置的状态稳定地排在已知道纹之后。"""
+        if self.daowen_order is None:
+            return (1, 0)
+        return (0, int(self.daowen_order))
 
     def refresh_order_from(self, other: 'StatusEffect') -> None:
-        """采用一次新的施加事实作为本合并状态的来源和排序锚点。"""
-        self.activation_x = other.activation_x
-        self.application_sequence = other.application_sequence
+        """刷新状态来源与道纹序列位置；施加时间和 X 不影响结算顺序。"""
+        self.daowen_order = other.daowen_order
         self.source = other.source
 
     @property
