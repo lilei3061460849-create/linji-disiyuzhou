@@ -6,6 +6,7 @@ from __future__ import annotations
 from typing import Optional, Any
 from .models import Entity, StatusEffect, DaoWen, DaoWenInstance
 from .enums import CostType
+from .rule_engine import get_daowen_rule
 import math
 
 
@@ -118,17 +119,20 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_guzhi(x: int) -> dict:
-        """固执X：代价：冷却X。自身单次失去生命最高为1，持续X"""
+        """固执X：代价：冷却X。最终实际失血最高为1，失血倍率后仍封顶。"""
+        definition = get_daowen_rule("固执")
+        cap = int(definition.rules[0].operator.operand)
         return {
             "dao_wen": "固执",
             "x": x,
-            "cost_type": CostType.COOLDOWN.value,
-            "cost": x,
-            "duration": x,
-            "max_life_loss_per_hit": 1,
-            "summary": f"冷却{x}场，自身单次失去生命最高为1，持续{x}回合"
+            "cost_type": definition.cost_type,
+            "cost": definition.cost(x),
+            "duration": definition.duration.value(x),
+            "max_current_damage_per_hit": cap,
+            "max_life_loss_per_hit": cap,
+            "summary": definition.summary(x),
         }
-    
+
     @staticmethod
     def calculate_xuezhai(x: int, target: Entity = None) -> dict:
         """血债X：代价：流血X。选择[目标] X 次，每次对其造成 1 点伤害"""
@@ -717,17 +721,19 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_jiahai(x: int, target: Entity = None) -> dict:
-        """加害X：消耗2X。使[目标]每次受到伤害+X，持续∞（龙心谷闭环起点）"""
+        """加害X：消耗2X。数值规则见 engine.rule_engine.DAOWEN_RULES。"""
+        definition = get_daowen_rule("加害")
         target_name = target.name if target is not None else "未选定目标"
-        cost = 2 * x
+        cost = definition.cost(x)
         return {
             "dao_wen": "加害",
             "x": x,
-            "cost_type": CostType.MANA.value,
+            "cost_type": definition.cost_type,
             "cost": cost,
-            "duration": -1,
-            "status": {"name": "加害", "value": x, "duration": -1},
-            "summary": f"消耗{cost}法力，使{target_name}每次受到伤害+{x}，持续∞",
+            "duration": definition.duration.value(x),
+            "status": {"name": definition.rules[0].status_name, "value": x,
+                       "duration": definition.duration.value(x)},
+            "summary": definition.summary(x, target_name=target_name),
         }
 
     @staticmethod
@@ -835,14 +841,16 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_longlin(x: int, target: Entity = None) -> dict:
-        """龙鳞X：消耗2X。使目标每次受到伤害-X，最低为0，持续∞"""
+        """龙鳞X：消耗2X。数值规则见 engine.rule_engine.DAOWEN_RULES。"""
+        definition = get_daowen_rule("龙鳞")
         target_name = target.name if target is not None else "未选定目标"
         return {
-            "dao_wen": "龙鳞", "x": x, "cost_type": CostType.MANA.value, "cost": 2 * x,
-            "damage_reduction": x, "duration": -1,
-            "summary": f"消耗{2 * x}法力，{target_name}每次受伤-{x}(最低0)，永久"
+            "dao_wen": "龙鳞", "x": x, "cost_type": definition.cost_type,
+            "cost": definition.cost(x),
+            "damage_reduction": x, "duration": definition.duration.value(x),
+            "summary": definition.summary(x, target_name=target_name),
         }
-    
+
     @staticmethod
     def calculate_nilin(x: int, target: Entity = None) -> dict:
         """逆鳞X：代价：流血X。目标每失去1生命获得1层逆鳞，下次伤害+全部层数，持续X"""
