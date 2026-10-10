@@ -543,11 +543,15 @@ def test_negative_hostile_damage_is_an_explicit_noop_without_spending_shield():
     json.dumps(detail, ensure_ascii=False, allow_nan=False)
 
 
-def test_status_ordering_rejects_noninteger_x_without_crashing_or_truncating():
-    status = StatusEffect("invalid-x", value=5, activation_x=float("inf"),
-                          remaining_rounds=-1)
-    assert status.ordering_x == 0
-    assert status.ordering_key[0] == 0
+def test_status_ordering_rejects_noninteger_x_and_preserves_mainline_sequence_order():
+    # activation_x is legacy metadata only; mainline ordering uses daowen_order.
+    unanchored = StatusEffect("invalid-x", value=5, activation_x=float("inf"),
+                              remaining_rounds=-1)
+    anchored = StatusEffect("anchored", value=5, activation_x=float("inf"),
+                            remaining_rounds=-1, daowen_order=3)
+    assert unanchored.ordering_x == 0
+    assert unanchored.ordering_key == (1, 0)
+    assert anchored.ordering_key == (0, 3)
 
 
 def test_full_sealed_entity_roundtrip_preserves_status_ordering_metadata():
