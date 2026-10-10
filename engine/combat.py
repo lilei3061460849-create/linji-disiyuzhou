@@ -93,7 +93,7 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
     }
     
     # 原始怪物道纹（道纹归属规则：各组起点）——【原初X】可借用范围
-    ORIGINAL_MONSTER_DAOWEN = ("全力", "疯狂", "减速", "必中", "自愈", "飞行")   # 2026-10-03 删【狂暴】
+    ORIGINAL_MONSTER_DAOWEN = ("全力", "疯狂", "减速", "必中", "飞行")   # 2026-10-03 删【狂暴】
     # 原始怪物道纹每次实际发动时支付异变5X（X 恒为面板/借用时写定的值；
     # 2026-09-16 用户令：道纹递增机制已废止）；效果持续期间（未再次发动）不再重复计费。
     # 必中为次数型（下X次选择[目标]无法闪避），余数记在 entity._bizhong_left。
@@ -988,7 +988,7 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                         name="蓄锐·增", remaining_rounds=1, value=pending,
                         source=entity.name))
                 effects.append({"type": "xurui_burst", "entity": entity.name, "bonus": pending})
-            # 机制系统：ROUND_START 相位分发。位置即原【自愈】结算位置（本循环第一项）。
+            # 机制系统：ROUND_START 相位分发。自愈删除后不再有回始回血机制。
             # round_start 只负责宣布时点，具体机制由声明层按 priority 执行；
             # 机制的报告条目并入 effects，战报格式与迁移前一致。
             effects.extend(self._dispatch_phase(Phase.ROUND_START, target=entity))

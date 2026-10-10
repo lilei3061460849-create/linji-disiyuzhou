@@ -368,8 +368,7 @@ class DaowenEffectMixin:
                     "owner": caster, "mechanic": "heal", "subtype": "daowen", "amount": heal_amount,
                     "tags": {"daowen"},
                 })})
-        # 自愈的 heal_percent 只在[回始]结算，发动当下不奶。
-        if "heal_percent" in calc and name != "自愈":
+        if "heal_percent" in calc:
             if "heal_percent" in wave_pieces:
                 # 波及：总数值=各目标按血限×百分比之和，再平分。
                 total = sum(math.ceil(wt.blood_limit * calc["heal_percent"] / 100)
@@ -421,7 +420,7 @@ class DaowenEffectMixin:
                     if redemption:
                         result["effects"].append(redemption)
 
-        if "target_heal" in calc or ("heal_percent" in calc and name != "自愈"):
+        if "target_heal" in calc or "heal_percent" in calc:
             for cancer_target in wave_status_targets:
                 cancer = self.check_cancer(cancer_target)
                 if cancer:
@@ -915,7 +914,7 @@ class DaowenEffectMixin:
             # 进不了本状态块，实际效果一直是下方数值段给 target 加速。
             # 2026-09-17 用户令：【变形】改为可自由选择目标（不指定时默认自身），
             # 故移出"自身作用型"名单，状态随之挂到目标身上（到期还原也落在目标）。
-            self_targeted = name in ("自食", "飞行", "自愈", "必中", "固执", "贯穿")
+            self_targeted = name in ("自食", "飞行", "必中", "固执", "贯穿")
             if name == "疯狂":
                 # 2026-08-17 用户裁定：疯狂X改为【所有角色出手+X】（全局，变相平衡）。
                 # 状态盖到双方全部存活角色；出手口径各自读取自身疯狂状态：
