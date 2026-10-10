@@ -28,7 +28,8 @@ from engine.combat import CombatEngine
 from engine.dice import DiceEngine
 from engine.mechanisms import MECHANISMS, Phase, Trigger
 from engine.mechanisms.ledger import clear_ledger, ledger_names, ledger_of
-from engine.models import Entity, GameState, StatusEffect
+from engine.api import GameEngine
+from engine.models import DaoWen, DaoWenInstance, Entity, GameState, StatusEffect
 from engine.validator import check_migrated_mechanism_guards
 
 
@@ -64,6 +65,30 @@ def test_mechanisms_registered_with_expected_phase_and_priority():
     # 相位内仅允许这三个账本结算机制；实际顺序由状态的道纹序列位置决定。
     names = [m.name for m in MECHANISMS.phase_mechanisms(Phase.ROUND_START_SETTLE)]
     assert len(names) == 3 and set(names) == expected
+
+
+def test_legacy_ledger_status_order_is_recovered_from_caster_sequence():
+    """旧存档的账本状态挂在目标身上，恢复顺序时必须查施法者而不是目标。"""
+    state, _, player, enemy = _arena()
+    for name in ("赌命", "清算", "逼债"):
+        player.dao_wen[name] = DaoWenInstance(
+            DaoWen(name=name, formula="", cost_type="消耗",
+                   cost_formula="X", effect_formula=""),
+            x_value=1,
+        )
+    # 故意让目标自己的序列与施法者不同，确保不会误用状态持有者的顺序。
+    for name in ("清算", "逼债"):
+        enemy.dao_wen[name] = DaoWenInstance(
+            DaoWen(name=name, formula="", cost_type="消耗",
+                   cost_formula="X", effect_formula=""),
+            x_value=1,
+        )
+        enemy.add_status(StatusEffect(name, remaining_rounds=-1, source=player.name))
+    engine = GameEngine.__new__(GameEngine)
+    engine.state = state
+    engine._migrate_legacy_daowen_status_order()
+    order = {status.name: status.daowen_order for status in enemy.status_effects}
+    assert order == {"清算": 1, "逼债": 2}
 
 
 def test_pipeline_has_no_hardcoded_branches_for_migrated_mechanisms():
