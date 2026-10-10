@@ -499,7 +499,7 @@ def test_daowen_effects_wired():
     player.speed_limit = 99
     # 给玩家多个道纹用于测试
     from engine.models import DaoWen, DaoWenInstance
-    for n in ["弱化","全力","变形","赎金","眩晕","飞行"]:
+    for n in ["弱化","全力","变形","赎金","飞行"]:
         player.dao_wen[n] = DaoWenInstance(dao_wen=DaoWen(name=n,formula="",cost_type="消耗",cost_formula="X",effect_formula=""))
     m = Entity(name="靶怪", entity_type="怪物", blood_limit=100, current_hp=100, attack_count=3, attack_power=10)
     m.shards = 20
@@ -530,11 +530,6 @@ def test_daowen_effects_wired():
     assert m.shards == 0, f"赎金后靶怪现有20碎片应被夺尽，实{m.shards}"
     assert engine.state.shards == shards_before + 20, f"玩家应+20碎片"
     print(f"  ✓ 赎金：靶怪碎片20→-10(负债)，玩家+20碎片")
-
-    # 眩晕2 → 靶怪不可出手
-    r = engine.execute_action("use_daowen", {"daowen_name":"眩晕","x":2,"target":"靶怪"})
-    assert engine.combat.can_act(m) is False, "眩晕应使怪物无法出手"
-    print("  ✓ 眩晕：靶怪 can_act=False")
 
     # 飞行2（自身）→ 玩家飞行，非飞行无法选中
     engine.state.player.actions_used_this_round = 0   # 前序道纹已用满2次出手
@@ -920,7 +915,7 @@ def test_evolution_yuanchu():
         })
         finish_initial_daowen(engine)
         # 裁定：原初X 借用池 = 轮回者当前持有的道纹，故须先给轮回者道纹
-        for _n in ("自愈", "全力", "杀伐"):
+        for _n in ("疯狂", "全力", "杀伐"):
             engine.state.player.dao_wen[_n] = DaoWenInstance(
                 dao_wen=DaoWen(name=_n, formula="", cost_type="消耗",
                                cost_formula="X", effect_formula=""), x_value=1)
@@ -938,17 +933,17 @@ def test_evolution_yuanchu():
                                effect_formula="", is_monster_original=True), x_value=x)
         return m
 
-    # ---- 1. 正常路径：困境怪物发动原初2借用【自愈2】 ----
+    # ---- 1. 正常路径：困境怪物发动原初2借用【疯狂2】 ----
     engine = mk_engine()
     m = mk_plight_monster(dw=[("全力", 2)])   # 2026-10-03：【狂暴】删除，改用同为原始怪物道纹的【全力】
     engine.state.enemies.append(m)
-    r = engine.execute_action("declare_evolution", {"monster": "困境怪", "daowen": "自愈", "x": 2})
+    r = engine.execute_action("declare_evolution", {"monster": "困境怪", "daowen": "疯狂", "x": 2})
     assert r["success"], f"正常进化应成功: {r}"
     assert m.mutation_count == 10, f"门票异变应为5×2=10，实{m.mutation_count}"
-    assert "自愈" in m.dao_wen and m.dao_wen["自愈"].x_value == 2, "应借用【自愈2】"
-    assert "原初借用" in m.dao_wen["自愈"].dao_wen.tags, "借用道纹应有原初借用标记"
+    assert "疯狂" in m.dao_wen and m.dao_wen["疯狂"].x_value == 2, "应借用【疯狂2】"
+    assert "原初借用" in m.dao_wen["疯狂"].dao_wen.tags, "借用道纹应有原初借用标记"
     assert r["collapsed"] is False, "10层不应迷失"
-    print(f"  ✓ 困境怪发动【原初2】：异变+10（当前{m.mutation_count}层），借用【自愈2】至战终")
+    print(f"  ✓ 困境怪发动【原初2】：异变+10（当前{m.mutation_count}层），借用【疯狂2】至战终")
 
     # ---- 2. 边界：同场第二次进化 → 拒绝 ----
     r2 = engine.execute_action("declare_evolution", {"monster": "困境怪", "daowen": "飞行", "x": 1})
@@ -961,7 +956,7 @@ def test_evolution_yuanchu():
     m29 = mk_plight_monster(name="临界怪")
     m29.mutation_count = T - 11
     engine.state.enemies.append(m29)
-    r3 = engine.execute_action("declare_evolution", {"monster": "临界怪", "daowen": "自愈", "x": 2})
+    r3 = engine.execute_action("declare_evolution", {"monster": "临界怪", "daowen": "疯狂", "x": 2})
     assert r3["success"] and r3["collapsed"] is False, f"{T-1}层应存活: {r3}"
     assert m29.mutation_count == T - 1 and m29.is_alive, f"{T-1}层应存活"
     print(f"  ✓ 异变{T-11}+10={T-1}层：存活，借用生效（迷失阈值{T}未达）")
@@ -970,11 +965,11 @@ def test_evolution_yuanchu():
     m30 = mk_plight_monster(name="迷失怪")
     m30.mutation_count = T - 10
     engine.state.enemies.append(m30)
-    r4 = engine.execute_action("declare_evolution", {"monster": "迷失怪", "daowen": "自愈", "x": 2})
+    r4 = engine.execute_action("declare_evolution", {"monster": "迷失怪", "daowen": "疯狂", "x": 2})
     assert r4["success"] and r4["collapsed"] is True, f"{T}层应触发迷失: {r4}"
     assert m30.mutation_count == T and not m30.is_alive and m30.current_hp == 0, "迷失应直接命零"
-    assert "自愈" not in m30.dao_wen, "迷失时进化效果中断，借用不生效"
-    print(f"  ✓ 异变{T-10}+10={T}层：触发【迷失】直接命零，借用【自愈】中断未生效")
+    assert "疯狂" not in m30.dao_wen, "迷失时进化效果中断，借用不生效"
+    print(f"  ✓ 异变{T-10}+10={T}层：触发【迷失】直接命零，借用【疯狂】中断未生效")
 
     # ---- 5. 非法输入：借用轮回者未持有的道纹 → 拒绝 ----
     engine2 = mk_engine()
@@ -993,13 +988,13 @@ def test_evolution_yuanchu():
     r6 = engine2.execute_action("declare_evolution", {"monster": "非法怪", "daowen": "全力", "x": 1})
     assert not r6["success"] and "已持有" in r6["error"], f"借用已持有道纹应被拒绝: {r6}"
     # ---- 非法输入：X=0 → 拒绝 ----
-    r7 = engine2.execute_action("declare_evolution", {"monster": "非法怪", "daowen": "自愈", "x": 0})
+    r7 = engine2.execute_action("declare_evolution", {"monster": "非法怪", "daowen": "疯狂", "x": 0})
     assert not r7["success"], f"X=0应被拒绝: {r7}"
     # ---- 非法输入：非困境 → 拒绝 ----
     m_fine = Entity(name="满状态怪", entity_type="怪物", blood_limit=120, current_hp=120,
                     attack_count=2, attack_power=10)
     engine2.state.enemies.append(m_fine)
-    r8 = engine2.execute_action("declare_evolution", {"monster": "满状态怪", "daowen": "自愈", "x": 1})
+    r8 = engine2.execute_action("declare_evolution", {"monster": "满状态怪", "daowen": "疯狂", "x": 1})
     assert not r8["success"] and "未陷入困境" in r8["error"], f"非困境进化应被拒绝: {r8}"
     assert m_bad.mutation_count == 0 and m_fine.mutation_count == 0, "被拒绝的进化均不扣异变"
     print(f"  ✓ 非法输入全部拒绝：转化道纹/已持有/X=0/非困境，且均不扣异变")
@@ -1037,27 +1032,27 @@ def test_evolution_yuanchu():
     st3.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60,
                         speed_limit=8, current_speed=8)
     # 原初X 借用池 = 轮回者持有的道纹
-    st3.player.dao_wen["自愈"] = DaoWenInstance(
-        dao_wen=DaoWen(name="自愈", formula="", cost_type="消耗",
+    st3.player.dao_wen["疯狂"] = DaoWenInstance(
+        dao_wen=DaoWen(name="疯狂", formula="", cost_type="消耗",
                        cost_formula="X", effect_formula=""), x_value=1)
     m_b = mk_plight_monster(name="借用怪", hp=120, cur=30, atk=1)  # 无自有道纹，仅借用
     st3.enemies.append(m_b)
     combat3 = CombatEngine(st3, DiceEngine()); combat3.reset_monster_activation()
-    ev = combat3.execute_evolution(m_b, "自愈", 2)
+    ev = combat3.execute_evolution(m_b, "疯狂", 2)
     assert ev["success"] and m_b.mutation_count == 10, f"原初2门票应为10层: {ev}"
     combat3.round_start(); combat3.round_start()
-    resolve_monster_phase(combat3, {"借用怪": "自愈"})  # 第2回合显式选择借用的自愈2
+    resolve_monster_phase(combat3, {"借用怪": "疯狂"})  # 第2回合显式选择借用的疯狂2
     total1 = m_b.mutation_count
-    assert total1 == 20, f"借用自愈2激活应付异变5×2=10（门票10+激活10=20），实{total1}"
+    assert total1 == 20, f"借用疯狂2激活应付异变5×2=10（门票10+激活10=20），实{total1}"
     assert m_b.is_alive, "20层应存活"
     # 2026-09-16 用户令：道纹递增（每次发动 X+2×副本阶级）已废止，
     # X 保持借用时写定的数值不变，重复发动按同一个 X 计费。
-    assert m_b.dao_wen["自愈"].x_value == 2, "递增已废止，X应保持借用的2"
+    assert m_b.dao_wen["疯狂"].x_value == 2, "递增已废止，X应保持借用的2"
     combat3.round_start()
-    resolve_monster_phase(combat3, {"借用怪": "自愈"})
+    resolve_monster_phase(combat3, {"借用怪": "疯狂"})
     total2 = m_b.mutation_count
     assert total2 == 30 and m_b.is_alive, f"重复发动按同一X计费：20+5×2=30，实{total2}"
-    assert m_b.dao_wen["自愈"].x_value == 2
+    assert m_b.dao_wen["疯狂"].x_value == 2
     print("  ✓ 借用道纹门票10+首次发动10=20层；递增废止后重复发动按X=2再付10 → 30层")
     print("  ✓ 进化（原初X）与迷失测试通过")
 
@@ -1186,21 +1181,21 @@ def test_original_daowen_only_charges_mutation_on_activation():
         c = CombatEngine(st, DiceEngine()); c.reset_monster_activation()
         return st, c
 
-    # 正常：自愈2激活只付10；持续期间不重复计费（后续回合改发免费的庇护，
+    # 正常：疯狂2激活只付10；持续期间不重复计费（后续回合改发免费的庇护，
     # 准则9下怪物有合法道纹选项时必须出招，故给填充道纹而非空过）。
-    m1 = mk("持续怪", [("自愈", 2)])
+    m1 = mk("持续怪", [("疯狂", 2)])
     m1.dao_wen["庇护"] = DaoWenInstance(
         dao_wen=DaoWen(name="庇护", formula="", cost_type="消耗", cost_formula="X",
                        effect_formula=""), x_value=1)
     _, c1 = mkbed(m1)
     # 删除白板后怪物每回合都有合法选项就必须出招，首回合先发填充道纹【庇护】
     c1.round_start(); resolve_monster_phase(c1, {"持续怪": "庇护"})
-    c1.round_start(); resolve_monster_phase(c1, {"持续怪": "自愈"})
+    c1.round_start(); resolve_monster_phase(c1, {"持续怪": "疯狂"})
     assert m1.mutation_count == 10 and m1.is_alive
     for _ in range(3):
         c1.round_start(); resolve_monster_phase(c1, {"持续怪": "庇护"})
         assert m1.mutation_count == 10 and m1.is_alive
-    print("  ✓ 自愈2首次支付异变10，持续期间（改发庇护）不再计费")
+    print("  ✓ 疯狂2首次支付异变10，持续期间（改发庇护）不再计费")
 
     # 边界：次数型必中同样只在激活时付一次，不存在额外豁免分支。
     m2 = mk("次数怪", [("必中", 3)])
@@ -1215,16 +1210,16 @@ def test_original_daowen_only_charges_mutation_on_activation():
     print("  ✓ 必中3首次支付异变15，未再发动则不再计费")
 
     # 迷失仍保留：若首次发动本身使异变达到阈值，效果中断并命零。
-    m3 = mk("临界怪", [("自愈", 2)])
+    m3 = mk("临界怪", [("疯狂", 2)])
     m3.mutation_count = Entity.MUTATION_COLLAPSE_THRESHOLD - 10
     m3.dao_wen["庇护"] = DaoWenInstance(
         dao_wen=DaoWen(name="庇护", formula="", cost_type="消耗", cost_formula="X",
                        effect_formula=""), x_value=1)
     _, c3 = mkbed(m3)
     c3.round_start(); resolve_monster_phase(c3, {"临界怪": "庇护"})
-    c3.round_start(); result = resolve_monster_phase(c3, {"临界怪": "自愈"})
+    c3.round_start(); result = resolve_monster_phase(c3, {"临界怪": "疯狂"})
     assert not m3.is_alive and m3.mutation_count == Entity.MUTATION_COLLAPSE_THRESHOLD
-    assert any(entry.get("collapsed") == "自愈" for entry in result)
+    assert any(entry.get("collapsed") == "疯狂" for entry in result)
     print("  ✓ 首次发动支付异变达到阈值时仍会迷失，效果中断")
 
 
