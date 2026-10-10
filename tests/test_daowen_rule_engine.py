@@ -103,8 +103,9 @@ def test_calculation_summaries_are_rendered_from_the_runtime_rule_definitions():
 
     guzhi = DaoWenEngine.calculate_guzhi(2)
     assert guzhi["max_current_damage_per_hit"] == 1
-    # 旧键为保留兼容的弃用别名；准确语义以新键和摘要为准。
-    assert guzhi["max_life_loss_per_hit"] == guzhi["max_current_damage_per_hit"]
+    # 兼容键代表最终实际失血上限；新键代表倍率前的当前受击伤害上限。
+    assert guzhi["max_life_loss_per_hit"] == 1
+    assert guzhi["max_current_damage_per_hit"] == 1
     assert DaoWenEngine.calculate_jiahai(2)["cost"] == 4
     assert DaoWenEngine.calculate_longlin(2)["cost"] == 4
 
