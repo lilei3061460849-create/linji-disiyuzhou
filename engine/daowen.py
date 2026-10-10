@@ -6,7 +6,7 @@ from __future__ import annotations
 from typing import Optional, Any
 from .models import Entity, StatusEffect, DaoWen, DaoWenInstance
 from .enums import CostType
-from .rule_engine import get_daowen_rule
+from .rule_engine import daowen_migration_status, get_daowen_rule
 import math
 
 
@@ -1099,6 +1099,11 @@ class DaoWenEngine:
             n -= entity.get_status_value("无力")
             return max(0, n)
         return max(0, entity.action_count)
+
+    @classmethod
+    def migration_status(cls, dao_wen_name: str) -> dict[str, str]:
+        """返回该道纹是否已迁入统一数值规则；未迁移项仍走旧行为。"""
+        return daowen_migration_status(dao_wen_name)
 
     @classmethod
     def resolve(cls, dao_wen_name: str, x: int, **kwargs) -> dict:
