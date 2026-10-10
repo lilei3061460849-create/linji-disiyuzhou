@@ -161,23 +161,6 @@ class Consumable:
         }
 
 
-# 单调序号是同 X 时的因果锚点。它故意不按回合重置：只要状态仍存在，
-# 后一次施加就必然在排序上晚于此前已经存在的状态。
-_STATUS_APPLICATION_SEQUENCE = 0
-
-
-def _next_status_application_sequence() -> int:
-    global _STATUS_APPLICATION_SEQUENCE
-    _STATUS_APPLICATION_SEQUENCE += 1
-    return _STATUS_APPLICATION_SEQUENCE
-
-
-def _observe_status_application_sequence(sequence: int) -> None:
-    """从存档还原一个既有序号时，保证后来新施加的状态仍排在它之后。"""
-    global _STATUS_APPLICATION_SEQUENCE
-    _STATUS_APPLICATION_SEQUENCE = max(_STATUS_APPLICATION_SEQUENCE, sequence)
-
-
 @dataclass
 class StatusEffect:
     """持续效果及其来源道纹的序列位置。
@@ -193,7 +176,7 @@ class StatusEffect:
     scope: str = EffectScope.BATTLE.value
     polarity: str = EffectPolarity.NEUTRAL.value
     activation_x: Optional[int] = None  # 旧版兼容字段，不参与排序
-    application_sequence: int = field(default_factory=_next_status_application_sequence)  # 旧版兼容字段
+    application_sequence: int = 0  # 旧版兼容字段，不生成新排序序号
     daowen_order: Optional[int] = None  # 发动该状态的道纹在持有者序列中的位置，越小越先
     
     def __post_init__(self):
@@ -201,20 +184,6 @@ class StatusEffect:
         if (self.name in {"流血", "衰老", "枯竭", "萎缩", "疲惫", "异变", "迷失"}
                 and self.scope == EffectScope.BATTLE.value):
             self.scope = EffectScope.COST.value
-        # 旧存档可能显式带 0；该值不是合法序号，统一补发一个新的稳定序号。
-        if self.application_sequence <= 0:
-            self.application_sequence = _next_status_application_sequence()
-        else:
-            _observe_status_application_sequence(self.application_sequence)
-
-    @property
-    def ordering_x(self) -> int:
-        """本状态用于统一排序的发动 X（遗留状态退回其当前数值）。"""
-        raw_x = self.value if self.activation_x is None else self.activation_x
-        try:
-            return max(0, int(raw_x))
-        except (TypeError, ValueError):
-            return 0
 
     @property
     def ordering_key(self) -> tuple[int, int]:
@@ -850,10 +819,9 @@ class Entity:
         return expired
     
     def ordered_statuses(self, names: Optional[set[str]] = None) -> list[StatusEffect]:
-        """返回同一自然结算窗口应使用的状态顺序。
+        """按来源道纹的序列位置返回状态；未知位置的旧状态稳定保留原列表顺序。
 
-        这是所有持续状态并发结算的唯一排序入口；调用者只决定自己的自然
-        时机/候选状态集合，不能再自行按机制静态 priority 排序。
+        调用者只决定自然时机与候选状态集合，不得用 X 值或施加/刷新时间重排。
         """
         statuses = (status for status in self.status_effects
                     if names is None or status.name in names)
