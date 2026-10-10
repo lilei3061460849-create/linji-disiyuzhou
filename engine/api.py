@@ -6298,10 +6298,11 @@ class GameEngine:
     def _migrate_legacy_daowen_status_order(self) -> None:
         """给旧 pickle 状态补齐序列字段，并从同名道纹恢复可确定的位置。"""
         state = self.state
-        entities = [state.player, *state.friends, *state.employees,
-                    *state.temp_friends, *state.enemies, *state.dead_monsters]
+        entities = [getattr(state, "player", None)]
+        for field_name in ("friends", "employees", "temp_friends", "enemies", "dead_monsters"):
+            entities.extend(getattr(state, field_name, []) or [])
         entities.extend(
-            entry.get("monster") for entry in state.delayed_monster_reentries
+            entry.get("monster") for entry in (getattr(state, "delayed_monster_reentries", []) or [])
             if isinstance(entry, dict)
         )
         seen = set()
