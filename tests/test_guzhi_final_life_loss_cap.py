@@ -58,6 +58,7 @@ def test_guzhi_caps_first_cup_damage_in_real_combat_pipeline():
     detail = combat._apply_hostile_damage(target, 5, source=attacker)
 
     assert detail["life_loss_multiplier"] == 2
+    assert detail["damage_after_life_loss_multiplier"] == 2
     assert detail["actual_damage"] == 1
     assert detail["actual_life_loss"] == 1
     assert detail["guzhi_final_cap"] is True
