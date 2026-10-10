@@ -35,7 +35,9 @@ class Mechanism:
         if self.status_name and entity is not None:
             status = next((s for s in getattr(entity, "status_effects", ())
                            if s.name == self.status_name and not s.is_expired), None)
-            if status is not None:
+            # 只有带 daowen_order 的状态才有道纹序列锚点；测试、旧存档或普通状态
+            # 未记录锚点时必须回退到 priority，不能无条件压过无状态机制。
+            if status is not None and status.daowen_order is not None:
                 return (0, *status.ordering_key, self.priority, self.name)
         return (1, self.priority, self.name)
 
