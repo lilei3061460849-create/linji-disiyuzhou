@@ -691,26 +691,18 @@ class DaoWenEngine:
         }
 
     @staticmethod
-    def calculate_shiyi(x: int) -> dict:
-        """失忆X：消耗8X法力，获得80X碎片。
-
-        2026-09-28 用户令：【点金】改名【失忆】，效果改为"失忆X → 你获得80X碎片"；
-        旧"血限扣减/印记/清算联动"本版本就不存在，确认删除；前身【洗劫】是伤害挂钩夺碎片，早已废弃。
-
-        设计意图保持：想要钱就得花法力，而[攻击力]=当前法力，花法力直接压低普攻输出，
-        是一笔明码标价的转换；X越大收益/代价同比放大（收益=80X，代价=8X法力）。
-        刻意不返回 duration 键：通用状态块以 "duration" in calc 为前提，带上就会凭空
-        长出一个【失忆】状态，不符合"立即结算"的口径。
-        """
+    def calculate_dianjin(x: int) -> dict:
+        """点金X：代价失忆X；你获得80X碎片。"""
         return {
-            "dao_wen": "失忆",
+            "dao_wen": "点金",
             "x": x,
-            "cost_type": CostType.MANA.value,
-            "cost": 8 * x,
+            "cost_type": CostType.AMNESIA.value,
+            "cost": x,
+            "forget_daowen": x,
             "shard_gain": 80 * x,
-            "summary": f"消耗{8*x}法力，获得{80*x}个碎片",
+            "summary": f"失忆{x}，获得{80*x}个碎片",
         }
-    
+
     # ---- 罪孽都市专属道纹 ----
     
     @staticmethod
@@ -1015,7 +1007,7 @@ class DaoWenEngine:
             "退化": cls.calculate_tuihua,
             # 罪孽都市
             "加害": cls.calculate_jiahai,
-            "失忆": cls.calculate_shiyi,
+            "点金": cls.calculate_dianjin,
             "逼债": cls.calculate_bizhai,
             "豪夺": cls.calculate_haoduo,
             "清算": cls.calculate_qingsuan,
@@ -1158,14 +1150,14 @@ class ResonanceEngine:
             ("退化", "转换", "变形"),
         ],
         "罪孽都市闭环": [
-            ("失忆", "转换", "逼债"),
+            ("点金", "转换", "逼债"),
             ("逼债", "反转", "豪夺"),
             ("豪夺", "曲解", "清算"),
             ("清算", "反转", "赎金"),
             ("赎金", "转换", "假钞"),
             ("假钞", "曲解", "赌命"),
             ("赌命", "反转", "消灾"),
-            ("消灾", "曲解", "失忆"),
+            ("消灾", "曲解", "点金"),
         ],
         "龙心谷闭环": [
             ("加害", "反转", "龙鳞"),

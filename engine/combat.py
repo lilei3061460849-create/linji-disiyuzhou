@@ -88,7 +88,7 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
     # 副本专属道纹
     REGION_EXCLUSIVE_DAOWEN = {
         "扭曲都市": {"变形","定型","畸变","搏命","超频","坏死","退化"},   # 2026-10-03 删【爆裂】
-        "罪孽都市": {"失忆","逼债","豪夺","清算","赎金","假钞","赌命","消灾"},
+        "罪孽都市": {"点金","逼债","豪夺","清算","赎金","假钞","赌命","消灾"},
         "龙心谷":   {"加害","龙鳞","逆鳞","裂变","嫁祸","背负","伤痕"},   # 2026-10-03 删【活血】
     }
     
@@ -322,31 +322,8 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         return self._apply_parry_reduction(target, amount, damage_type)
 
     def _apply_parry_reduction(self, target: Entity, amount: int, damage_type: str) -> int:
-        """招架（2026-09-28 用户令重写）：本轮每次受到的攻击伤害减去你10%当前生命。
-
-        接在 _incoming_adjust 末尾 = 所有伤害通道的公共咽喉（攻击、道纹、反噬
-        都经 _apply_hostile_damage → _incoming_adjust），不必逐路径接线。
-        减免在格挡之前结算：招架是"卸力"，格挡是"挨下来再吸收"，先卸后吸。
-        【代价】不在此列（上面已 return），与格挡口径一致——代价是自己付的，
-        不是"受到的伤害"，否则招架会顺带免掉透支的流血，卖血流直接变无代价。
-
-        新规则（2026-09-28）：
-          * 减伤 = floor(当前生命 × 10%)（以**本次受击结算时**的当前生命计，非声明时快照）；
-          * 每回合可使用次数 = 声明招架时的当前生命；每次受击消耗1次；
-            次数用尽后本回合后续受击不再享受招架减免（姿态保留但无减免）。
-        """
-        if amount <= 0 or target is None or not getattr(target, "parrying_this_round", False):
-            return amount
-        uses = getattr(target, "parry_uses_remaining_this_round", 0)
-        if uses <= 0:
-            return amount
-        reduction = parry_reduction_for(target.current_hp)
-        if reduction <= 0:
-            # 当前生命不足10时招架减伤为0，但仍消耗1次次数（避免靠低血无限"招架"空挥）
-            target.parry_uses_remaining_this_round = max(0, uses - 1)
-            return amount
-        target.parry_uses_remaining_this_round = max(0, uses - 1)
-        return max(0, amount - reduction)
+        """旧回合姿态已废弃；逐击招架由 resolve_attack 的 parry 参数结算。"""
+        return amount
 
     def _record_speed_change_event(
         self, entity: Entity, amount: int,
@@ -661,6 +638,8 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         hit_index: int = 0,
         is_must_hit: bool = False,
         dodge: bool = False,
+        parry: bool = False,
+        allocated_damage: Optional[int] = None,
         blood_shadow: bool = False,
         spell_choices: Optional[dict] = None,
         entity_refs: Optional[dict[str, Entity]] = None,
@@ -673,8 +652,8 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                               getattr(attacker, "name", "?"),
                               "->", getattr(target, "name", "?")):
             return self._resolve_attack_impl(
-                attacker, target, hit_index, is_must_hit, dodge, blood_shadow,
-                spell_choices, entity_refs, dodge_relic_target_ref,
+                attacker, target, hit_index, is_must_hit, dodge, parry, allocated_damage,
+                blood_shadow, spell_choices, entity_refs, dodge_relic_target_ref,
                 cost_share_target_ref, wanjunyin)
 
     def _resolve_attack_impl(
@@ -684,6 +663,8 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         hit_index: int = 0,
         is_must_hit: bool = False,
         dodge: bool = False,
+        parry: bool = False,
+        allocated_damage: Optional[int] = None,
         blood_shadow: bool = False,
         spell_choices: Optional[dict] = None,
         entity_refs: Optional[dict[str, Entity]] = None,
@@ -709,6 +690,9 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
             "hit_index": hit_index,
             "dodge_attempted": dodge,
             "dodge_success": False,
+            "parry_attempted": parry,
+            "parry_success": False,
+            "allocated_damage": allocated_damage,
             "damage_dealt": 0,
             "shield_absorbed": 0,
             "hp_lost": 0,
@@ -724,8 +708,8 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                 and attacker is not target and attacker.is_alive
                 and self._wanjunyin_holder(target)):
             converted = self._resolve_attack_impl(
-                attacker, attacker, hit_index, is_must_hit, False, False,
-                spell_choices, entity_refs, None, cost_share_target_ref,
+                attacker, attacker, hit_index, is_must_hit, False, False, allocated_damage,
+                False, spell_choices, entity_refs, None, cost_share_target_ref,
                 None, True)
             converted["wanjunyin"] = {
                 "relic": "万钧印", "original_target": target.name,
@@ -790,9 +774,30 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                 result["dodge_success"] = False
                 result["dodge_fail_reason"] = "速度不足"
         
-        # 伤害结算
-        # DM裁定 2026-09-10：轮回者每击伤害=当前法力（换算仅限轮回者）
-        damage = attacker.effective_attack_power()
+        # 逐击招架：与闪避一样先支付1速度，但只免疫攻击伤害，不取消判定。
+        # 真刀（分配伤害>0）成功后返还1速度；空刀不返还，因此可骗取速度。
+        if parry:
+            if target.current_speed < 1:
+                result["parry_fail_reason"] = "速度不足"
+            else:
+                target.current_speed -= 1
+                result["speed_after_parry_cost"] = target.current_speed
+                revealed = (attacker.effective_attack_power()
+                            if allocated_damage is None else allocated_damage)
+                if revealed > 0:
+                    target.current_speed = min(target.speed_limit, target.current_speed + 1)
+                    result["parry_success"] = True
+                    result["damage_dealt"] = 0
+                    result["speed_after_parry"] = target.current_speed
+                    result["note"] = "招架真刀：免疫本次攻击伤害并返还1速度"
+                    return result
+                result["note"] = "招架空刀：未返还速度"
+                return result
+
+        # 伤害结算。新白刃战由攻击者为每击自由分配非负整数伤害；
+        # 未传 allocated_damage 的旧调用仍按当前攻击力结算，以兼容怪物阶段等入口。
+        damage = (attacker.effective_attack_power()
+                  if allocated_damage is None else allocated_damage)
         # 逆鳞（F2）：下次伤害+全部层数后清空
         if hasattr(attacker, "_nilin") and getattr(attacker, "_nilin", 0) > 0:
             bonus = attacker._nilin

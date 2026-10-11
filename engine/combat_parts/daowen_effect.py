@@ -639,6 +639,19 @@ class DaowenEffectMixin:
             result["effects"].append({"type": "speed_penalty", "target": target.name,
                                       "lost": calc["speed_penalty"], "speed": target.current_speed})
 
+        # 点金的【失忆X】代价：永久失去自身X种道纹，再获得碎片。
+        # 当前统一执行接口没有额外的选纹决策槽，按持有顺序优先失去点金以外的道纹；
+        # 数量不足时发动失败应由上层预检，本处只结算已确认的代价。
+        if "forget_daowen" in calc:
+            count = int(calc["forget_daowen"])
+            owned = list(caster.dao_wen)
+            chosen = [n for n in owned if n != name][:count]
+            if len(chosen) < count and name in caster.dao_wen:
+                chosen.append(name)
+            for forgotten in chosen[:count]:
+                caster.dao_wen.pop(forgotten, None)
+            result["effects"].append({"type": "amnesia", "lost_daowen": chosen[:count]})
+
         # ---- 碎片系（罪孽）----
         if "shard_steal" in calc and self._shards_of(target) > 0:
             # 赎金是“有碎片则夺取，若无碎片才失速”的二选一；不得把不足额偷取扩成负债。
@@ -649,7 +662,7 @@ class DaowenEffectMixin:
             else:
                 caster.shards += gained
             result["effects"].append({"type": "shard_steal", "target": target.name, "gained": gained})
-        if "shard_gain" in calc:  # 失忆（旧点金）：消耗8X法力直接换80X真碎片（与伤害无关，2026-09-28）
+        if "shard_gain" in calc:  # 点金：支付失忆X后获得80X真碎片
             if caster is self.state.player:
                 self.state.shards += calc["shard_gain"]
             else:
@@ -906,8 +919,7 @@ class DaowenEffectMixin:
             duration = calc["duration"] if calc["duration"] != 0 else -1
             effect_target = target if target else caster
             # 自身作用型道纹(变形/超频/自食等)作用于施法者
-            # 2026-09-10：道纹【洗劫】改名【点金】后即时结算；2026-09-28【点金】改名【失忆】，
-            # 仍即时结算（不挂状态）。
+            # 【点金】即时结算失忆代价与碎片收益，不挂持续状态。
             # 故从自身作用名单移除；状态【洗劫】本身保留，仍由【帮派令】发放。
             # 2026-09-17 用户令：【超频】改为自由选择目标（选到谁给谁加速），不再属于
             # "自身作用型"。它原本留在本名单里也无效——其 calc 无 duration 键，
