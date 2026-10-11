@@ -27,7 +27,7 @@ from .enums import (GamePhase, CombatSubphase, ActionPhase, TriggerTiming,
                     InterruptType, EntityType, EffectScope, EffectPolarity)
 from .dice import DiceEngine
 from .daowen import DaoWenEngine, ResonanceEngine
-from .combat import CombatEngine, parry_reduction_for, parry_uses_for
+from .combat import CombatEngine
 from .spell_dsl import parse_spell_definition, SpellDslError
 from .combat_events import register_combat_event_observer
 from .events import EventPool
@@ -713,13 +713,6 @@ class GameEngine:
         ])
         actions.extend([
             {"action_type": "prepare_attack", "params_schema": {"actor_ref": actor_options}},
-            {"action_type": "declare_parry", "params_schema": {"actor_ref": actor_options},
-             "available": bool(player is not None
-                               and not getattr(player, "parrying_this_round", False)),
-             "note": ("招架：声明后本轮每次受到的伤害减去 floor(10%当前生命)，"
-                      "减免按**结算那一刻**的生命计（掉血会同步削弱招架）；"
-                      "可抵挡次数=声明时的当前生命，每受击消耗1次；"
-                      "不消耗出手、不消耗速度，本回合已声明过则不能再声明")},
             {"action_type": "declare_wish", "params_schema": {"wish_text": "string", "target_ref": target_options}},
             {"action_type": "declare_escape", "params_schema": {}},
             {"action_type": "command_ally", "params_schema": {
@@ -1976,13 +1969,15 @@ class GameEngine:
         if "error" in built:
             return {"success": False, "error": built["error"]}
         # 先扣出手再写入：出手预算不足时不产生任何效果，也不白造出法术。
-        budget_error = self._consume_action_or_error(player)
+        spell_tier = max(1, len(set(built["spell"].required_daowen)))
+        budget_error = self._consume_actions_or_error(player, spell_tier)
         if budget_error:
             return budget_error
         player.spells.append(built["spell"])
         parsed = built["parsed"]
         wired = parsed.trigger in self.combat._WIRED_TRIGGERS
-        result = {"spell": built["spell"].to_dict(), "wired": wired, "cost": "1次主动出手"}
+        result = {"spell": built["spell"].to_dict(), "wired": wired,
+                  "tier": spell_tier, "cost": f"{spell_tier}次主动出手"}
         if not wired:
             result["warning"] = (f"触发时机【{parsed.trigger}】已通过句式校验，"
                                  "但该时机暂未接入战斗结算管线，本法术目前不会实际触发")
@@ -2476,6 +2471,27 @@ class GameEngine:
         entity.actions_used_this_round += 1
         return None
 
+    def _consume_actions_or_error(self, entity: "Entity", count: int) -> Optional[dict]:
+        """原子消耗多次出手；X阶法术必须一次付清X次出手机会。"""
+        if not isinstance(count, int) or isinstance(count, bool) or count < 1:
+            return {"success": False, "error": "出手消耗必须是正整数"}
+        if entity.entity_type == "怪物" and not self.state.in_final_duel:
+            return None
+        if not self.combat.can_act(entity):
+            return {"success": False, "error": f"{entity.name}无法出手（眩晕/束缚）"}
+        budget = self._action_budget_of(entity)
+        remaining = budget - entity.actions_used_this_round
+        if remaining < count:
+            return {"success": False,
+                    "error": f"{count}阶法术需要{count}次出手，{entity.name}本回合仅剩{remaining}次"
+                             f"({entity.actions_used_this_round}/{budget})"}
+        # 龙息只在这次施法声明时结算一次，不按阶级重复触发。
+        breath = self.combat.apply_opposing_longxi(entity)
+        if breath and not entity.is_alive:
+            return {"success": False, "error": f"{entity.name}被龙息命零", "dragon_breath": breath}
+        entity.actions_used_this_round += count
+        return None
+
     # ==================== 最终死斗·交替出手校验 ====================
 
     def _check_duel_turn_or_error(self, actor: "Entity") -> Optional[dict]:
@@ -2787,6 +2803,10 @@ class GameEngine:
             calc = DaoWenEngine.resolve(name, x, **resolve_kw)
         except Exception as e:
             return {"success": False, "error": f"道纹计算失败: {str(e)}"}
+        if calc.get("cost_type") == "失忆" and calc.get("cost", 0) > len(actor.dao_wen):
+            return {"success": False,
+                    "error": f"失忆{calc.get('cost', 0)}无法支付：{actor.name}仅持有{len(actor.dao_wen)}种道纹"}
+
         # 「发动道纹」的共用前置环节（与法术每一步同一实现，见
         # CombatEngine._daowen_step_preflight）：缄默面具 → 目标发动道纹前反应 →
         # 施法者是否存活。顺序与 cast(flow=...) 的每一步完全相同——这就是
@@ -3120,43 +3140,9 @@ class GameEngine:
         return self._redeem_attribute_points(allocations)
 
     def _action_declare_parry(self, params: dict) -> dict:
-        """声明【招架】。
-
-        新规则：
-          * 本轮你受到的攻击伤害 - 你 10% 当前生命（向下取整，最低0）；
-          * 每回合可使用次数 = 你当前生命（每次受击消耗1次，用完后本回合后续攻击不再减伤）；
-          * 减免量取**结算那一刻**的当前生命，不是声明时的快照——你在本轮掉的每一点血
-            都会同步削弱招架，这是这张牌的张力（越打越扛不住）。
-          * 不再有"上回合招架过→本回合禁用"的锁定，本回合只要没声明过就能再声明。
-
-        与闪避的关键差别：闪避按「击」结算（每击花 1 速度、逐击提交），招架是一个**姿态**
-        ——一次声明覆盖本轮的前 N 次受击（N=当前生命），不消耗出手、不消耗速度。
-        """
-        actor_ref = params.get("actor_ref", "player:0")
-        refs = self.combat._combat_entity_refs()
-        actor = refs.get(actor_ref)
-        if actor is None or not actor.is_alive:
-            return {"success": False, "error": "actor_ref不是当前存活行动者"}
-        if actor.entity_type == "怪物" and not self.state.in_final_duel:
-            return {"success": False, "error": "普通怪物必须通过怪物阶段行动"}
-        duel_error = self._check_duel_turn_or_error(actor)
-        if duel_error:
-            return duel_error
-        if not self.combat.can_act(actor):
-            return {"success": False, "error": f"{actor.name}当前无法行动"}
-        if getattr(actor, "parrying_this_round", False):
-            return {"success": False, "error": f"{actor.name}本回合已处于招架姿态"}
-        if actor.current_hp <= 0:
-            return {"success": False, "error": f"{actor.name}当前生命为0，无法招架"}
-        actor.parrying_this_round = True
-        actor.parry_uses_remaining_this_round = parry_uses_for(actor.current_hp)
-        return {"success": True, "action": f"{actor.name}招架",
-                "result": {"actor": actor.name,
-                           "reduction_preview": parry_reduction_for(actor.current_hp),
-                           "uses": actor.parry_uses_remaining_this_round,
-                           "note": f"本轮每次受到的伤害前{actor.parry_uses_remaining_this_round}击"
-                                   f"减去{parry_reduction_for(actor.current_hp)}（10%当前生命）；"
-                                   "减免按结算时的生命计"}}
+        """兼容旧调用；招架现已改为每一击在 resolve_attack 中提交。"""
+        return {"success": False,
+                "error": "招架不再是回合姿态；请在resolve_attack的对应hit中提交parry=true"}
 
     # ---------- 2026-09-28 新回合动作：cast/focus/rest ----------
 
@@ -3239,7 +3225,8 @@ class GameEngine:
                         "error": f"瞬发法术第{idx}步的trigger_spell_choices非法：{exc}"}
         # 结构合法：整次 cast 扣 1 次出手（不按步骤数扣）。
         # 此后无论哪一步中断（法力不足等），出手都已用掉——施法失败不退出手。
-        budget_err = self._consume_action_or_error(actor)
+        spell_tier = max(1, len(set(execution.definition.required_daowen)))
+        budget_err = self._consume_actions_or_error(actor, spell_tier)
         if budget_err:
             return budget_err
         execution.run_all()
@@ -3271,7 +3258,8 @@ class GameEngine:
                     "interrupt_detail": execution.interrupt_detail or None,
                     "step_results": execution.step_summaries(),
                     "steps": step_logs,
-                    "cost": "1次主动出手",
+                    "tier": spell_tier,
+                    "cost": f"{spell_tier}次主动出手",
                 }}
 
     def _action_focus(self, params: dict) -> dict:
@@ -3376,6 +3364,7 @@ class GameEngine:
             target_options.append({
                 "ref": ref, "name": target.name,
                 "can_dodge": target.current_speed > 0,
+                "can_parry": target.current_speed > 0,
                 "can_blood_shadow": (self.state.side_has(target, "血影")
                                      and (target.current_hp > 10 or bool(blood_pact_options))),
                 "blood_shadow_cost_share_target_options": blood_pact_options,
@@ -3390,10 +3379,12 @@ class GameEngine:
             "actor": attacker.name,
             # DM裁定 2026-09-10：轮回者的击数=当前速度（换算仅限轮回者）
             "hit_count": attacker.effective_attack_count(),
+            "damage_budget": attacker.effective_attack_count() * attacker.effective_attack_power(),
             "target_options": target_options,
             "hits_schema": [{
                 "target_ref": [o["ref"] for o in target_options],
-                "dodge": "boolean", "blood_shadow": "boolean",
+                "damage": "非负整数；所有击的总和不得超过damage_budget",
+                "dodge": "boolean", "parry": "boolean", "blood_shadow": "boolean",
                 "dodge_relic_target_ref": "持有回锋刀且闪避时必填",
                 "spell_choices": "按目标spell_options完整提交",
             } for _ in range(attacker.effective_attack_count())],
@@ -3423,10 +3414,17 @@ class GameEngine:
         for index, hit in enumerate(hits):
             if not isinstance(hit, dict) or hit.get("target_ref") not in legal:
                 return {"success": False, "error": f"第{index + 1}击目标不在prepare快照中"}
-            if not isinstance(hit.get("dodge"), bool) or not isinstance(hit.get("blood_shadow"), bool):
-                return {"success": False, "error": "每击必须显式提交布尔值dodge与blood_shadow"}
-            if hit["dodge"] and hit["blood_shadow"]:
-                return {"success": False, "error": "同一次判定不能同时闪避并使用血影"}
+            # 旧客户端未提交新字段时保持旧等伤分刀；新客户端可显式空刀/集中伤害。
+            hit.setdefault("damage", attacker.effective_attack_power())
+            hit.setdefault("parry", False)
+            if (not isinstance(hit.get("damage"), int) or isinstance(hit.get("damage"), bool)
+                    or hit["damage"] < 0):
+                return {"success": False, "error": "每击damage必须是非负整数"}
+            if (not isinstance(hit.get("dodge"), bool) or not isinstance(hit.get("parry"), bool)
+                    or not isinstance(hit.get("blood_shadow"), bool)):
+                return {"success": False, "error": "每击必须显式提交布尔值dodge、parry与blood_shadow"}
+            if sum((hit["dodge"], hit["parry"], hit["blood_shadow"])) > 1:
+                return {"success": False, "error": "同一次判定只能选择闪避、招架、血影之一"}
             ref = hit["target_ref"]
             target = refs.get(ref)
             if target is None:
@@ -3459,6 +3457,18 @@ class GameEngine:
             self.combat.validate_spell_reaction_submission(
                 target, attacker, hit.get("spell_choices"), refs,
             )
+        allocated_damage = sum(hit["damage"] for hit in hits)
+        if allocated_damage > options["damage_budget"]:
+            return {"success": False,
+                    "error": f"分配总伤害{allocated_damage}超过上限{options['damage_budget']}"}
+        # 闪避和招架都预付1速度；招架真刀会在单击结算后返还。
+        for ref in legal:
+            defense_spend = sum(1 for hit in hits if hit["target_ref"] == ref
+                                and (hit["dodge"] or hit["parry"]))
+            target = refs.get(ref)
+            if target is not None and defense_spend > target.current_speed:
+                return {"success": False, "error": f"{target.name}速度不足以完成全部防御"}
+
         duel_error = self._check_duel_turn_or_error(attacker)
         if duel_error:
             return duel_error
@@ -3472,7 +3482,8 @@ class GameEngine:
                 results.append({"hit_index": index + 1, "skipped": "目标已命零"})
                 continue
             result = self.combat.resolve_attack(
-                attacker, target, dodge=hit["dodge"], blood_shadow=hit["blood_shadow"],
+                attacker, target, dodge=hit["dodge"], parry=hit["parry"],
+                allocated_damage=hit["damage"], blood_shadow=hit["blood_shadow"],
                 spell_choices=hit.get("spell_choices") or {}, entity_refs=refs,
                 dodge_relic_target_ref=hit.get("dodge_relic_target_ref"),
                 cost_share_target_ref=hit.get("cost_share_target_ref", ""),

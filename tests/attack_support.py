@@ -11,7 +11,7 @@ def decline_spell_choices(option):
 
 
 def resolve_attack(engine, attacker_name=None, target_selections=None, *, dodge=False,
-                   blood_shadow=False):
+                   parry=False, blood_shadow=False, damages=None):
     if engine.state.in_final_duel and engine.state.combat_subphase == "await_round_start":
         started = engine.execute_action("round_start", {"relic_choices": {}})
         if not started.get("success"):
@@ -35,7 +35,10 @@ def resolve_attack(engine, attacker_name=None, target_selections=None, *, dodge=
         option = result["target_options"][selected]
         hits.append({
             "target_ref": option["ref"],
+            "damage": (damages[index] if damages is not None
+                       else engine.combat._combat_entity_refs()[actor_ref].effective_attack_power()),
             "dodge": bool(dodge),
+            "parry": bool(parry),
             "blood_shadow": bool(blood_shadow),
             "spell_choices": decline_spell_choices(option),
         })

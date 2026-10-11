@@ -28,7 +28,6 @@ import os
 from typing import Any, Optional
 from engine.ai_preview import ActionPreview
 # 招架减免/可用次数的规则真源（AI 不得自己再写一遍公式，见 engine/combat.py）
-from engine.combat import parry_reduction_for, parry_uses_for
 
 # 单次出手最多预演的候选数（性能护栏；候选按新鲜度与威胁优先）
 MAX_CANDIDATE_PREVIEWS = 26
@@ -484,41 +483,8 @@ class TacticalAI:
     # ---------- 候选生成与实时评分 ----------
 
     def _parry_candidate(self) -> Optional[dict]:
-        """生成【招架】候选；招架是回合级防御姿态，不占用出手。
-
-        2026-09-28 用户令重写：减免=10%当前生命（每击）；可用次数=当前生命；
-        移除"上回合锁"。仍不占出手。
-        """
-        player = self.player
-        if player is None or not player.is_alive:
-            return None
-        if getattr(player, "parrying_this_round", False):
-            return None
-        if player.current_hp < 10:
-            # 当前生命<10 时 10% 取整为 0，招架完全没用
-            return None
-        enemies = self.alive_enemies()
-        if not enemies:
-            return None
-        per_hit_reduction = parry_reduction_for(player.current_hp)
-        # 总受击数 = 敌方攻击次数之和；招架可用次数上限=player.current_hp，
-        # 因此减免量 = per_hit_reduction × min(总受击数, current_hp)
-        total_hits = sum(max(0, e.effective_attack_count()) for e in enemies)
-        effective_hits = min(total_hits, parry_uses_for(player.current_hp))
-        reduction = per_hit_reduction * effective_hits
-        if reduction <= 0:
-            return None
-        threat = self.incoming_damage()
-        if (threat > player.current_hp + player.shield
-                and threat - reduction > player.current_hp + player.shield):
-            return None
-        return {
-            "action": "declare_parry",
-            "label": f"招架（每击减免{per_hit_reduction}，共{effective_hits}次）",
-            "kind": "parry",
-            "params": {"actor_ref": self._actor_ref or "player:0"},
-            "expected_reduction": reduction,
-        }
+        """招架已改为受击逐刀选择，不再生成主动阶段候选。"""
+        return None
 
     def _score_parry_candidate(self, candidate: dict) -> float:
         """按当前威胁给招架评分；高压/濒死时显著优先，安全时让出给输出。（2026-09-28 重算口径）"""
