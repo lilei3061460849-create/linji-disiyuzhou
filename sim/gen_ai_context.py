@@ -1,47 +1,12 @@
 #!/usr/bin/env python3
-"""从第四宇宙的规范文档生成单文件 AI 上下文 ``AI_CONTEXT.md``。
+"""生成第四宇宙剧情优先的混合 AI 上下文。
 
-## 为什么需要它
+上下文保留世界观、角色记忆、人物关系、主线目标与角色扮演约束，只保留少量稳定的
+剧情理解原则。完整规则、道纹、物品、法术与副本机制改为按需查询，避免剧情上下文
+被大量与当前剧情无关的机制资料淹没。
 
-外部 AI 若只抓取 GitHub raw 的一个 URL，不会自动继续抓 README 里的相对链接。这个
-生成物把「文字描述、规则逻辑与世界观」打包为一个可直接抓取的文件：通用规则、开局与
-流程、死者之书的法术与规则节、道纹与物品索引、法术规则、已实现副本、故事正典、AI 角色
-扮演约束。
-
-## 只收什么、剔除什么
-
-生成物**只保留**文字描述、规则逻辑与世界观。下列内容在生成时被剔除（源文件不动）：
-
-- 代码与结构化数据源：全部 TOML（`data/rules/*.toml`）、代码块、行内代码；
-- 系统接口规范：DSL 语法、引擎接线状态、命令/API 写法、测试与生成器说明；
-- 机械化格式要求：战斗推演格式、报告书写口径、遗言格式、故事收录流程；
-- 未实用的未来规划：未实现副本草案、草案遗物、占位道纹/物品、迁移台账与开发规范。
-
-剔除按下列**可复现规则**执行（见 ``distill_source``），不做人工挑字：
-
-1. 删除所有代码块（``` / ~~~ 围栏）。
-2. 按标题删除整节（``ContextSource.drop_headings``），或只保留指定节（``keep_headings``）。
-3. 删除不以「## 」开始的导言（``drop_preamble``）。
-4. 删除叶子标题（三级及以下）下含未实现/草案/占位字样的整条目。
-5. 按「段落单元」（空行、列表项、引述、表格行、标题各为一单元）过滤：
-   - 含结构/接口性行内代码（路径、标识符、命令、公式）的单元整体删除；
-   - 仅为纯中文的行内代码（如 ``持续∞``）去掉反引号保留文字；
-   - 含未实现/草案/占位字样，或含全局与来源专属禁用短语的单元整体删除。
-6. 指向未收录文件的链接降为纯文字。
-
-## 不是新的事实源
-
-每个区块的 SHA-256 是**原始来源文件**的指纹（用于判断外部副本是否过期）；区块内正文
-是过滤后的文字。修改任意来源后都必须重跑本脚本，且不得从生成物反写来源。
-
-## 用法
-
-    python3 sim/gen_ai_context.py          # 写回 AI_CONTEXT.md
-    python3 sim/gen_ai_context.py --check  # 只比对，不写（供一致性测试使用）
-
-外部单文件入口（合并到 main 后）：
-
-    https://raw.githubusercontent.com/lilei3061460849-create/linji-disiyuzhou/main/AI_CONTEXT.md
+AI_CONTEXT.md 是生成文件，不是新的规则事实源。修改来源后运行本脚本；使用 --check
+只检查生成物与当前来源是否逐字一致。
 """
 from __future__ import annotations
 
@@ -56,16 +21,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from engine.document_sources import (  # noqa: E402
-    AI_CONTEXT_FILE,
-    COMMON_RULES_FILE,
-    DEATH_BOOK_FILE,
-    DUNGEON_INDEX_FILE,
-    ITEM_INDEX_FILE,
-    PLAYBOOK_FILE,
-    README_FILE,
-)
-from engine.dungeons import load_dungeon_manifest  # noqa: E402
+from engine.document_sources import AI_CONTEXT_FILE  # noqa: E402
 
 OUTPUT = ROOT / AI_CONTEXT_FILE
 
@@ -116,60 +72,15 @@ class ContextSource:
 
 
 def context_sources() -> list[ContextSource]:
-    """返回收录来源列表（稳定有序；不含 TOML、README、报告与未实现内容）。
+    """剧情优先：只嵌入世界观/角色记忆与角色扮演约束。
 
-    副本通过 manifest 读取，只收录「已实现」副本；未实现草案不进入上下文。
+    完整规则、道纹、物品、法术与副本机制不批量打包；需要精确裁定时按需查询原始文档。
     """
-    sources = [
-        ContextSource("通用规则（规则正文）", ROOT / COMMON_RULES_FILE, drop_phrases=("NaN", "no-op", "引擎伤害输入为整数")),
-        ContextSource(
-            "开局与流程（推演规范，不含战报格式）",
-            ROOT / PLAYBOOK_FILE,
-            drop_headings=("六、战斗推演格式", "七、推演铁律", "报告书写口径", "战斗整体结构"),
-        ),
-        ContextSource(
-            "死者之书（前言、法术大全、遗言、规则节）",
-            ROOT / DEATH_BOOK_FILE,
-            drop_headings=("遗言格式",),
-        ),
-        ContextSource(
-            "全道纹索引（道纹效果与归属）",
-            ROOT / "全道纹索引.md",
-            drop_headings=("目录", "数值规则迁移状态", "未实现（荒疫古城·1）"),
-        ),
-        ContextSource(
-            "物品索引（遗物/消耗品/法器）",
-            ROOT / ITEM_INDEX_FILE,
-            drop_headings=("目录", "未实现副本草案遗物", "鲛族遗物沉沦海草案"),
-        ),
-        ContextSource(
-            "法术索引（设计原则、三大法则、法术大全）",
-            ROOT / "法术索引.md",
-            drop_headings=(
-                "目录",
-                "四、反应型法术战斗流程示例",
-                "五、自创法术标准语法",
-                "六、触发时机接线状态",
-            ),
-            drop_preamble=True,
-        ),
-        ContextSource(
-            "副本清单与状态（已实现副本）",
-            ROOT / DUNGEON_INDEX_FILE,
-            drop_headings=("未实现规则草案", "新增副本规范"),
-        ),
-    ]
-
-    for entry in load_dungeon_manifest(ROOT / DUNGEON_INDEX_FILE):
-        if entry.status == "已实现":
-            sources.append(ContextSource(
-                f"副本正文：{entry.name}（已实现，{entry.tier}）", entry.path,
-            ))
-
-    sources.extend([
+    return [
         ContextSource(
             "世界观与角色档案（故事正典）",
             ROOT / "故事文档.md",
+            keep_headings=("世界观与底层因果法则", "角色记忆档案"),
             drop_headings=("收录规则", "待核查区", "正文区"),
             drop_phrases=("战报正文区", "待核查区", "独立性声明", "战报.md", "收录规则", "不随引擎数值调整"),
         ),
@@ -179,9 +90,7 @@ def context_sources() -> list[ContextSource]:
             keep_headings=("职责划分", "角色性格塑造", "角色扮演要求"),
             drop_phrases=("引擎", "行为画像"),
         ),
-    ])
-    return sources
-
+    ]
 
 def _digest(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
@@ -389,25 +298,25 @@ def render_context() -> str:
         "> **生成文件，禁止手改。** 源文件变更后运行 `python3 sim/gen_ai_context.py`；",
         "> 只检查一致性则运行 `python3 sim/gen_ai_context.py --check`。",
         ">",
-        "> 此文件给只会抓取一个 raw URL 的外部 AI 使用。它只收录文字描述、规则逻辑与世界观；",
-        "> 代码与结构化数据源、系统接口规范、机械化的战报格式要求，以及未实现的未来规划均已剔除。",
-        "> 它不改变任何来源的事实源地位。",
+        "> 此文件是剧情优先的混合上下文，供只抓取一个 raw URL 的外部 AI 使用。",
+        "> 它优先提供世界观、角色记忆、人物关系、主线目标与角色扮演约束，只附带少量稳定的剧情理解原则。",
+        "> 完整规则、道纹、物品、法术与副本机制不再整批嵌入，需要精确裁定时按需查询对应原文。",
+        "> 本文件不是新的规则事实源，也不改变角色记忆与规则正本之间的优先级。",
         "",
         "## 使用契约（先读）",
         "",
-        "1. **裁定优先级**：用户最新裁定高于一切；本文件内的规则以《规则正文》为准，索引、速览与叙事服从它。",
-        "2. **死者之书的遗言不是规则**：遗言署真人姓名，可能有真假；其中「规则」节署 `？？？`，才是所有人一致可见的压缩讲述。",
-        "3. **压缩不等于穷尽**：六条底层逻辑只保留稳定原则。数值、目标限制、时序、可用对象等必须在《规则正文》与各索引中核对。",
-        "4. **副本状态要区分**：本文件只收录已实现副本；未实现的副本草案已剔除，不得据此推断其内容或当作现行规则。",
+        "1. **裁定优先级**：用户最新裁定高于一切；涉及精确结算时，必须按需查询《规则正文》及对应机制原文，不得把本文件当作完整规则。",
+        "2. **剧情优先**：优先维持世界观因果、人物性格、既有羁绊、当前认知、主线目标与未解悬念；不要用无关机制资料淹没剧情。",
+        "3. **角色记忆不等于客观规则**：角色可能误解、遗漏或持有过时认知；记忆中的说法可作为叙事事实，但不能覆盖规则正本。",
+        "4. **最小必要规则**：只把理解剧情所需的稳定原则放在这里。世界遵循因果而非宿命，选择会带来后果，力量与解法可能伴随代价；具体数值、触发条件、目标限制和时序按需查原文。",
+        "5. **死者之书的遗言不是规则**：遗言可能属于具体角色且可能有真假；不能把角色遗言自动当成客观规则。",
+        "6. **副本状态要区分**：故事中提到的副本、能力或线索不自动证明其机制已实现；涉及副本规则时，按需查询对应副本文档。",
         "",
         "## 单文件范围",
         "",
-        f"- 已收录 {len(loaded)} 份来源：通用规则、开局与流程、死者之书（法术、规则节、遗言）、道纹与物品索引、"
-        "法术规则、副本清单、已实现副本文档、世界观与角色档案、AI 角色扮演约束（节选）。",
-        "- 已剔除：全部代码与结构化数据源（TOML）、系统接口与引擎实现细节、战报/遗言格式要求、"
-        "未实现的副本与草案内容、开发与维护规范、`README.md` 与 `报告.md`。",
-        "- 每个区块的 SHA-256 是原始来源文件的指纹，用于判断外部副本是否过期；区块内正文为过滤后的文字，"
-        "**不得**据此反写来源。",
+        f"- 已收录 {len(loaded)} 份来源：世界观与角色记忆正典、AI 角色扮演约束（职责、性格与扮演要求节选）。",
+        "- 不再整批收录：通用规则正文、完整推演规范、道纹/物品/法术索引、副本索引与副本机制、战报、代码和开发资料。",
+        "- 来源区块附原始文件 SHA-256 指纹，便于判断内容是否过期；区块正文经过筛选，**不得**反写来源。",
         "",
         "## 来源目录与校验指纹",
         "",
@@ -422,45 +331,6 @@ def render_context() -> str:
         "",
         "## 打包正文",
         "",
-        "> 每一块为来源文件经过滤后的文字（已去除代码、接口与格式段落、未实现内容）；标题与链接以来源文件为准。",
+        "> 每一块为来源文件经过滤后的文字；只保留世界观、角色记忆与角色扮演约束。",
         "> 正文采用代码块呈现，以防嵌套相对链接在此聚合文件内被错误解析。",
     ])
-
-    for index, (source, text, digest) in enumerate(loaded, 1):
-        fence = _safe_fence(text)
-        lines.extend([
-            "",
-            f"### 来源 {index}：{source.role}",
-            "",
-            f"- 路径：`{source.relative_path}`",
-            f"- SHA-256：`{digest}`",
-            "",
-            f"{fence}markdown",
-            text,
-            fence,
-        ])
-
-    return "\n".join(lines).rstrip() + "\n"
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--check", action="store_true", help="只比对 AI_CONTEXT.md，不写文件")
-    args = parser.parse_args()
-
-    wanted = render_context()
-    current = OUTPUT.read_text(encoding="utf-8") if OUTPUT.exists() else None
-    if args.check:
-        if current != wanted:
-            print("DRIFT: AI_CONTEXT.md 与当前规范源不一致，请跑 python3 sim/gen_ai_context.py")
-            return 1
-        print(f"OK: AI_CONTEXT.md 与 {len(context_sources())} 份来源一致")
-        return 0
-
-    OUTPUT.write_text(wanted, encoding="utf-8")
-    print(f"written {OUTPUT}: {len(context_sources())} 份来源，{len(wanted.encode('utf-8'))} bytes")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
