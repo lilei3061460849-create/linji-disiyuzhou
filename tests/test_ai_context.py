@@ -1,22 +1,45 @@
-"""外部 AI 单文件入口：规范源 → AI_CONTEXT.md 的可复现聚合。
+"""外部 AI 单文件入口：规范源 → AI_CONTEXT.md 的可复现、只含文字内容的聚合。
 
-外部 AI 常只会读取一个 GitHub raw URL，不能保证继续抓 README 的相对链接。2026-10-09
-用户授权新增 AI_CONTEXT.md：它打包当前有效的游戏知识，但绝不成为新的规则正本。
+外部 AI 常只会读取一个 GitHub raw URL，不能保证继续抓 README 的相对链接。AI_CONTEXT.md
+只收录「文字描述、规则逻辑与世界观」，并且绝不成为新的规则正本。
 
 本文件守住：
 - 生成物逐字等于生成器输出（来源一改、未重生成就失败）；
-- 规则、流程、死者之书、道纹、物品、法术、副本清单与全部副本文档、故事、AI 约束、
-  三份 TOML 都确实被收录；
-- README/报告不被误嵌入（前者只是入口，后者只是待办）；
+- 收录面：规则、流程、死者之书、道纹、物品、法术规则、已实现副本、故事、AI 角色扮演约束；
+  TOML、未实现副本、README 与报告不被嵌入；
+- 剔除面：正文中不含代码、接口/引擎实现细节、战报与遗言格式要求、未实现草案；
 - README 给外部用户一条 main/raw 入口，并标明生成物不是事实源。
 """
 from pathlib import Path
 
 from engine.document_sources import AI_CONTEXT_FILE, README_FILE
-from sim.gen_ai_context import OUTPUT, context_sources, render_context
+from sim.gen_ai_context import OUTPUT, context_sources, distill_source, render_context
 
 ROOT = Path(__file__).resolve().parents[1]
 README = ROOT / README_FILE
+
+# 收录面：只允许这些规范源（已实现副本由 manifest 派生，单独断言）。
+REQUIRED_SOURCES = {
+    "规则正文.md", "推演规范.md", "死者之书.md", "全道纹索引.md", "物品索引.md",
+    "法术索引.md", "副本索引.md", "故事文档.md", "AI_EXPERIENCE.md",
+    "副本/扭曲都市.md", "副本/罪孽都市.md", "副本/龙心谷.md", "副本/乱葬岗.md",
+}
+EXCLUDED_DUNGEON_DOCS = {"副本/永夜庭.md", "副本/沉沦海.md", "副本/荒疫古城.md", "副本/巴别塔.md"}
+
+# 剔除面：这些标记不得出现在任何收录正文中。
+FORBIDDEN_IN_BODY = (
+    "```toml", "data/rules", "gen_rules", "gen_ai_context", "sim/", "engine/", "tests/",
+    "action_count", "define_spell", "use_daowen",
+    "战斗推演格式", "报告书写口径", "遗言格式", "自创法术标准语法", "触发时机接线状态",
+    "收录规则", "待核查区", "正文区", "未实现副本草案遗物", "鲛族遗物沉沦海草案",
+    "数值规则迁移状态", "新增副本规范", "未实现规则草案",
+    "草案", "未实现", "占位", "待补", "尚未接入", "未接入",
+)
+
+
+def _bodies() -> dict[str, str]:
+    included = frozenset(source.relative_path for source in context_sources())
+    return {source.relative_path: distill_source(source, included) for source in context_sources()}
 
 
 def test_ai_context_is_exactly_up_to_date_with_its_sources():
@@ -27,27 +50,30 @@ def test_ai_context_is_exactly_up_to_date_with_its_sources():
         "AI_CONTEXT.md 与当前来源不一致，请跑 python3 sim/gen_ai_context.py")
 
 
-def test_context_covers_all_canonical_game_sources_and_excludes_non_truth_inputs():
-    """收录面完整：全部副本文档/TOML 都在，README 与报告不作为正文被嵌入。"""
+def test_context_covers_curated_sources_and_excludes_non_truth_inputs():
+    """收录面：文字类规范源与已实现副本都在；TOML、未实现副本、README 与报告不被嵌入。"""
     sources = context_sources()
     paths = {source.relative_path for source in sources}
-    required = {
-        "规则正文.md", "推演规范.md", "死者之书.md", "全道纹索引.md", "物品索引.md",
-        "法术索引.md", "副本索引.md", "故事文档.md", "AI_EXPERIENCE.md",
-        "data/rules/lethal_events.toml", "data/rules/special_events.toml",
-        "data/rules/game_rules.toml",
-        "副本/扭曲都市.md", "副本/罪孽都市.md", "副本/龙心谷.md", "副本/乱葬岗.md",
-        "副本/永夜庭.md", "副本/沉沦海.md", "副本/荒疫古城.md", "副本/巴别塔.md",
-    }
-    assert paths == required
+    assert paths == REQUIRED_SOURCES
+    assert not (paths & EXCLUDED_DUNGEON_DOCS)
+    assert not any(p.endswith(".toml") for p in paths)
     assert README_FILE not in paths
     assert "报告.md" not in paths
 
     text = OUTPUT.read_text(encoding="utf-8")
+    bodies = _bodies()
     for source in sources:
-        body = source.path.read_text(encoding="utf-8").rstrip()
         assert f"- 路径：`{source.relative_path}`" in text
-        assert body in text, f"AI_CONTEXT 缺少来源正文：{source.relative_path}"
+        assert bodies[source.relative_path] in text, (
+            f"AI_CONTEXT 缺少过滤后的来源正文：{source.relative_path}")
+
+
+def test_context_body_contains_no_code_interface_format_or_future_plans():
+    """剔除面：正文不含代码、接口、战报/遗言格式与未实现草案。"""
+    for path, body in _bodies().items():
+        assert "`" not in body, f"正文残留代码反引号：{path}"
+        for marker in FORBIDDEN_IN_BODY:
+            assert marker not in body, f"正文残留「{marker}」：{path}"
 
 
 def test_readme_exposes_the_one_url_external_ai_entry_and_context_contract():
