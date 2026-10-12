@@ -51,7 +51,7 @@ def test_ai_context_is_exactly_up_to_date_with_its_sources():
 
 
 def test_context_covers_curated_sources_and_excludes_non_truth_inputs():
-    """收录面：文字类规范源与已实现副本都在；TOML、未实现副本、README 与报告不被嵌入。"""
+    """收录面：只嵌入故事正典与角色扮演约束，完整机制文档改为按需查询。"""
     sources = context_sources()
     paths = {source.relative_path for source in sources}
     assert paths == REQUIRED_SOURCES
@@ -77,7 +77,7 @@ def test_context_body_contains_no_code_interface_format_or_future_plans():
 
 
 def test_readme_exposes_the_one_url_external_ai_entry_and_context_contract():
-    """外部调用者从 README 能找到 raw 入口；上下文先说明事实源与遗言边界。"""
+    """外部调用者从 README 能找到 raw 入口；上下文先说明事实源、剧情优先与按需查询边界。"""
     readme = README.read_text(encoding="utf-8")
     assert "[AI_CONTEXT.md](AI_CONTEXT.md)" in readme
     assert ("https://raw.githubusercontent.com/lilei3061460849-create/"
