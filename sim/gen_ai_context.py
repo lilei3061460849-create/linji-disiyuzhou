@@ -21,16 +21,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from engine.document_sources import (  # noqa: E402
-    AI_CONTEXT_FILE,
-    COMMON_RULES_FILE,
-    DEATH_BOOK_FILE,
-    DUNGEON_INDEX_FILE,
-    ITEM_INDEX_FILE,
-    PLAYBOOK_FILE,
-    README_FILE,
-)
-from engine.dungeons import load_dungeon_manifest  # noqa: E402
+from engine.document_sources import AI_CONTEXT_FILE  # noqa: E402
 
 OUTPUT = ROOT / AI_CONTEXT_FILE
 
@@ -339,45 +330,6 @@ def render_context() -> str:
         "",
         "## 打包正文",
         "",
-        "> 每一块为来源文件经过滤后的文字（已去除代码、接口与格式段落、未实现内容）；标题与链接以来源文件为准。",
+        "> 每一块为来源文件经过滤后的文字；只保留世界观、角色记忆与角色扮演约束。",
         "> 正文采用代码块呈现，以防嵌套相对链接在此聚合文件内被错误解析。",
     ])
-
-    for index, (source, text, digest) in enumerate(loaded, 1):
-        fence = _safe_fence(text)
-        lines.extend([
-            "",
-            f"### 来源 {index}：{source.role}",
-            "",
-            f"- 路径：`{source.relative_path}`",
-            f"- SHA-256：`{digest}`",
-            "",
-            f"{fence}markdown",
-            text,
-            fence,
-        ])
-
-    return "\n".join(lines).rstrip() + "\n"
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--check", action="store_true", help="只比对 AI_CONTEXT.md，不写文件")
-    args = parser.parse_args()
-
-    wanted = render_context()
-    current = OUTPUT.read_text(encoding="utf-8") if OUTPUT.exists() else None
-    if args.check:
-        if current != wanted:
-            print("DRIFT: AI_CONTEXT.md 与当前规范源不一致，请跑 python3 sim/gen_ai_context.py")
-            return 1
-        print(f"OK: AI_CONTEXT.md 与 {len(context_sources())} 份来源一致")
-        return 0
-
-    OUTPUT.write_text(wanted, encoding="utf-8")
-    print(f"written {OUTPUT}: {len(context_sources())} 份来源，{len(wanted.encode('utf-8'))} bytes")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
