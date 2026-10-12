@@ -1,7 +1,7 @@
 """外部 AI 单文件入口：规范源 → AI_CONTEXT.md 的可复现、只含文字内容的聚合。
 
 外部 AI 常只会读取一个 GitHub raw URL，不能保证继续抓 README 的相对链接。AI_CONTEXT.md
-只收录「文字描述、规则逻辑与世界观」，并且绝不成为新的规则正本。
+以剧情优先为原则，只收录世界观、角色记忆、人物关系、主线目标与角色扮演约束；完整机制按需查询，且绝不成为新的规则正本。
 
 本文件守住：
 - 生成物逐字等于生成器输出（来源一改、未重生成就失败）；
@@ -18,13 +18,13 @@ from sim.gen_ai_context import OUTPUT, context_sources, distill_source, render_c
 ROOT = Path(__file__).resolve().parents[1]
 README = ROOT / README_FILE
 
-# 收录面：只允许这些规范源（已实现副本由 manifest 派生，单独断言）。
-REQUIRED_SOURCES = {
+# 收录面：剧情正典与角色扮演约束；完整机制文档按需查询。
+REQUIRED_SOURCES = {"故事文档.md", "AI_EXPERIENCE.md"}
+BULK_MECHANICS_SOURCES = {
     "规则正文.md", "推演规范.md", "死者之书.md", "全道纹索引.md", "物品索引.md",
-    "法术索引.md", "副本索引.md", "故事文档.md", "AI_EXPERIENCE.md",
-    "副本/扭曲都市.md", "副本/罪孽都市.md", "副本/龙心谷.md", "副本/乱葬岗.md",
+    "法术索引.md", "副本索引.md", "副本/扭曲都市.md", "副本/罪孽都市.md",
+    "副本/龙心谷.md", "副本/乱葬岗.md",
 }
-EXCLUDED_DUNGEON_DOCS = {"副本/永夜庭.md", "副本/沉沦海.md", "副本/荒疫古城.md", "副本/巴别塔.md"}
 
 # 剔除面：这些标记不得出现在任何收录正文中。
 FORBIDDEN_IN_BODY = (
@@ -55,7 +55,7 @@ def test_context_covers_curated_sources_and_excludes_non_truth_inputs():
     sources = context_sources()
     paths = {source.relative_path for source in sources}
     assert paths == REQUIRED_SOURCES
-    assert not (paths & EXCLUDED_DUNGEON_DOCS)
+    assert not (paths & BULK_MECHANICS_SOURCES)
     assert not any(p.endswith(".toml") for p in paths)
     assert README_FILE not in paths
     assert "报告.md" not in paths
