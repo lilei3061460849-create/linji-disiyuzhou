@@ -322,6 +322,7 @@ def render_context() -> str:
         "",
         "| # | 角色 | 原始文件 | SHA-256 |",
         "| --- | --- | --- | --- |",
+    ]
     for index, (source, _, digest) in enumerate(loaded, 1):
         lines.append(
             f"| {index} | {source.role} | [{source.relative_path}]({source.relative_path}) | `{digest}` |")
