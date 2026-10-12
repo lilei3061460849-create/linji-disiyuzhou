@@ -1,5 +1,6 @@
 """
-F2 验证：龙心谷专属 4 件（逆鳞/嫁祸/背负/伤痕）的 combat 侧实装
+F2 验证：龙心谷专属 3 件（逆鳞/背负/伤痕）的 combat 侧实装
+（【嫁祸】2026-10-11 已删除：效果与遗物【贪婪契约】重复）
 - 正常：每件按 README 定义结算
 - 边界：持续到期清空、次数耗尽、死亡目标等
 - 错误：非法目标/非法发动应被拒绝
@@ -81,31 +82,6 @@ def test_boundary_nilin_expire_clears():
         monster._nilin = 0
     assert getattr(monster, "_nilin", 0) == 0
 
-def test_normal_jiahuo_redirect():
-    """正常：嫁祸X=2 → 自身下2次受伤由目标承担"""
-    engine = _setup_player_with_daowen(["嫁祸"])
-    player = engine.state.player
-    monster = Entity(name="替身怪", entity_type="怪物", blood_limit=100, current_hp=100, attack_count=1, attack_power=5)
-    engine.state.enemies = [monster]
-    # 玩家对怪使用 嫁祸2，目标为替身怪
-    r = engine.execute_action("use_daowen", {"daowen_name": "嫁祸", "x": 2, "target": "替身怪"})
-    assert r["success"]
-    assert hasattr(player, "_jiahuo_left") and player._jiahuo_left == 2
-    # 玩家受到 10 伤害应重定向至替身怪
-    player.current_hp = 60
-    monster.current_hp = 100
-    detail = engine.combat._apply_hostile_damage(player, 10)
-    assert monster.current_hp == 90  # 重定向
-    assert player.current_hp == 60  # 未掉血
-    assert player._jiahuo_left == 1
-    # 第二次
-    detail2 = engine.combat._apply_hostile_damage(player, 10)
-    assert monster.current_hp == 80
-    assert player._jiahuo_left == 0
-    # 第三次不再重定向
-    detail3 = engine.combat._apply_hostile_damage(player, 10)
-    assert player.current_hp == 50
-    assert monster.current_hp == 80
 
 def test_normal_beifu_absorb():
     """正常：背负X=2 → 目标下2次受伤由自身承担"""
@@ -152,26 +128,11 @@ def test_normal_shanghen_blood_decay():
 
 def test_error_invalid_target():
     """错误：对不存在目标使用应失败"""
-    engine = _setup_player_with_daowen(["逆鳞", "嫁祸"])
+    # 2026-10-11：【嫁祸】已删除（效果与遗物【贪婪契约】重复），本用例只留逆鳞部分
+    engine = _setup_player_with_daowen(["逆鳞"])
     r = engine.execute_action("use_daowen", {"daowen_name": "逆鳞", "x": 1, "target": "不存在的怪"})
     assert not r["success"]
-    r2 = engine.execute_action("use_daowen", {"daowen_name": "嫁祸", "x": 1, "target": "不存在"})
-    assert not r2["success"]
 
-def test_boundary_jiahuo_dead_target():
-    """边界：嫁祸目标死亡后不再重定向"""
-    engine = _setup_player_with_daowen(["嫁祸"])
-    player = engine.state.player
-    monster = Entity(name="快死怪", entity_type="怪物", blood_limit=10, current_hp=10, attack_count=1, attack_power=5)
-    engine.state.enemies = [monster]
-    engine.execute_action("use_daowen", {"daowen_name": "嫁祸", "x": 1, "target": "快死怪"})
-    # 杀死目标
-    monster.current_hp = 0
-    monster.is_alive = False
-    player.current_hp = 60
-    detail = engine.combat._apply_hostile_damage(player, 10)
-    # 目标已死，不重定向，玩家自己掉血
-    assert player.current_hp == 50
 
 def test_monster_activates_exclusive():
     """怪物侧编排：龙心谷怪可激活逆鳞等专属"""

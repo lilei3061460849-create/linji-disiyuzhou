@@ -89,7 +89,7 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
     REGION_EXCLUSIVE_DAOWEN = {
         "扭曲都市": {"变形","定型","畸变","搏命","超频","坏死","退化"},   # 2026-10-03 删【爆裂】
         "罪孽都市": {"点金","逼债","豪夺","清算","赎金","假钞","赌命","消灾"},
-        "龙心谷":   {"加害","龙鳞","逆鳞","裂变","嫁祸","背负","伤痕"},   # 2026-10-03 删【活血】
+        "龙心谷":   {"加害","龙鳞","逆鳞","裂变","背负","伤痕"},   # 2026-10-03 删【活血】；2026-10-11 删【嫁祸】
     }
     
     # 原始怪物道纹（道纹归属规则：各组起点）——【原初X】可借用范围
@@ -162,8 +162,8 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         self.resolution = ResolutionContext()
 
     # 效果链深度上限。这是**防御性保险丝**，不是游戏规则：
-    # 任何合法的 嫁祸/背负 重定向链都远低于此值（重定向每跳都会递减 _jiahuo_left/_beifu_left，
-    # 本身就收敛）。设成这么大是为了保证它永远不会改变任何现有战斗结果，
+    # 任何合法的 背负 重定向链都远低于此值（重定向每跳都会递减 _beifu_left，
+    # 本身就收敛；【嫁祸】2026-10-11 已删除）。设成这么大是为了保证它永远不会改变任何现有战斗结果，
     # 只在真的出现 A→B→A→B 死循环时把它截断成一次可诊断的异常。
     # 2026-09-20：计数器迁到 ResolutionContext（engine/resolution.py），
     # 本常量作为兼容别名保留（同一数值）。
@@ -293,7 +293,11 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
             "hit_index": hit_index,
             "attack_power": attacker.attack_power,
             "is_must_hit": is_must_hit,
-            "can_dodge": not is_must_hit and target.current_speed >= 1,
+            # 2026-10-12 用户令：目标带【必中】debuff 时闪避/招架都不开放，
+            # prepare 侧如实回报，免得推演端提交一个注定失败的回合外行动。
+            "out_of_turn_blocked": self.out_of_turn_blocked(target),
+            "can_dodge": (not is_must_hit and not self.out_of_turn_blocked(target)
+                          and target.current_speed >= 1),
             "dodge_available": target.current_speed >= 1,
         }
         
@@ -372,6 +376,54 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         self._record_speed_change_event(entity, gained, ctx, field="current_speed")
         return gained
 
+    def _relic_active(self, entity: Entity, name: str) -> bool:
+        """该实体身上的遗物【name】此刻是否生效（通用的封存判定，18 处调用）。
+
+        注意：这是**通用助手**，不是某件遗物的专用逻辑。2026-10-11 摘除
+        「苍白之花 → 回锋刀」战始联动时曾把它一并删掉，导致活血衣/增生药剂等
+        全部走这条判定的遗物同时失效（628 个测试炸），故恢复。
+        删联动要删的是**调用点**，不是这个共享判定本身。
+        """
+        if entity is None or not self.state.side_has(entity, name):
+            return False
+        if entity is self.state.player:
+            return self.state.sealed_relics.get(name, 0) <= 0
+        return True
+
+    def out_of_turn_blocked(self, entity) -> bool:
+        """该角色是否被禁止「回合外行动」（唯一闸门，2026-10-12 用户令）。
+
+        来源是道纹【必中】X：「你选中的目标无法进行回合外行动，持续X」。
+        回合外行动 = 在自己回合之外做出的任何响应，当前含：
+          · 闪避（消耗 1 点当前速度完全闪避本次判定）
+          · 招架（逐击提交 parry，免疫攻击伤害）
+          · 反应型法术（受到伤害前 / 失去生命后 / 目标发动道纹前 / 闪避时 …）
+        **未来新增的回合外行动必须走这道闸**，不要在各自分支里另写一份判断，
+        否则【必中】会漏管——这正是把它抽成方法的原因（同 mana_overflow_exempt）。
+
+        只认真正的持续型【必中】状态（remaining_rounds > 0，即道纹必中X 挂上去的
+        debuff）。`grant_bizhong` 留下的次数型状态 remaining_rounds == -1（仅作显示，
+        必中与否看 _bizhong_left 次数），那是遗物/怪物旧口径，不在此列。
+        """
+        if entity is None:
+            return False
+        st = next((s for s in entity.status_effects if s.name == "必中"), None)
+        return bool(st and (st.remaining_rounds or 0) > 0)
+
+    def mana_overflow_exempt(self, entity) -> bool:
+        """当前法力是否允许超出[法限]（唯一豁免：遗物【苍白之花】）。
+
+        2026-10-11 用户令，`物品索引.md:110`「你的当前法力可以超出[法限]。」。
+        只豁免**当前法力**这一项；当前生命≤[血限]、当前速度≤[速限] 对持有者同样成立。
+        因为 [攻击力]=当前法力，溢出直接抬高普攻输出——这就是该遗物的全部效果。
+        遗物被封印时豁免同时消失（sealed_relics 计数 > 0）。
+        抽成方法是为了让代价路径（`cost_payment.py` 的【枯竭】）读同一条判定，
+        避免两处各写一份而漂移。
+        """
+        if entity is not self.state.player:
+            return False
+        return self._relic_active(entity, "苍白之花")
+
     def clamp_immortal_body(self, entity: Entity) -> None:
         """任何属性都不得超过其上限（用户裁定 2026-09-13，全局化）。
 
@@ -386,16 +438,10 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         """
         if entity is None:
             return
-        entity.current_mana = min(entity.current_mana, entity.mana_limit)
+        if not self.mana_overflow_exempt(entity):
+            entity.current_mana = min(entity.current_mana, entity.mana_limit)
         entity.current_speed = min(entity.current_speed, entity.speed_limit)
         entity.current_hp = min(entity.current_hp, entity.blood_limit)
-
-    def _relic_active(self, entity: Entity, name: str) -> bool:
-        if entity is None or not self.state.side_has(entity, name):
-            return False
-        if entity is self.state.player:
-            return self.state.sealed_relics.get(name, 0) <= 0
-        return True
 
     def _note_dodge(self, entity: Entity, relic_target_ref: Optional[str] = None) -> dict:
         """闪避专属句：正文写「每次闪避后」的效果。失速/归零不在这里。"""
@@ -578,11 +624,6 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         return {"type": "shouyedeng_grant", "entity": entity.name,
                 "gained": entity._shouyedeng_granted, "declared": gained}
 
-    def _jieli_boost(self, dealer: Entity, amount: int) -> int:
-        if amount <= 0 or not dealer.has_status("借力"):
-            return amount
-        return math.ceil(amount * (1 + 10 * dealer.get_status_value("借力") / 100))
-
     def _find_named(self, name: str) -> Optional[Entity]:
         for e in self.state.get_all_player_side() + self.state.get_all_enemy_side():
             if e.name == name:
@@ -737,7 +778,10 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
             s = next((s for s in ent.status_effects if s.name == "必中"), None)
             return bool(s and s.remaining_rounds > 0)  # -1 是次数型标记，不算真buff
         caster_has_bizhong_buff = _has_real_bizhong_buff(attacker)
-        must_hit = is_must_hit or caster_has_bizhong_buff or self.consume_bizhong(attacker)
+        # 2026-10-12 用户令：必中X 改挂**目标**，故目标身上的【必中】debuff 同样封死闪避。
+        target_bizhonged = self.out_of_turn_blocked(target)
+        must_hit = (is_must_hit or caster_has_bizhong_buff or target_bizhonged
+                    or self.consume_bizhong(attacker))
 
         # 血影（初拥之夜遗物，仅玩家自身持有）：非必中判定下，可流血10取消本次判定，是常规闪避外的另一选项
         if (blood_shadow and not must_hit and self.state.side_has(target, "血影")):
@@ -753,7 +797,9 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         if dodge:
             if must_hit:
                 result["dodge_success"] = False
-                result["dodge_fail_reason"] = "必中攻击无法闪避"
+                result["dodge_fail_reason"] = (
+                    "目标被【必中】封锁回合外行动，无法闪避" if target_bizhonged
+                    else "必中攻击无法闪避")
             elif target.current_speed >= 1:
                 extra = self._spend_dodge_speed(target, dodge_relic_target_ref)
                 result["dodge_success"] = True
@@ -777,7 +823,12 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         # 逐击招架：与闪避一样先支付1速度，但只免疫攻击伤害，不取消判定。
         # 真刀（分配伤害>0）成功后返还1速度；空刀不返还，因此可骗取速度。
         if parry:
-            if target.current_speed < 1:
+            if target_bizhonged:
+                # 2026-10-12 用户令：招架是回合外行动，【必中】下不得进行。
+                # 注意与闪避不同——招架失败不退速度（它本来就没支付）。
+                result["parry_success"] = False
+                result["parry_fail_reason"] = "目标被【必中】封锁回合外行动，无法招架"
+            elif target.current_speed < 1:
                 result["parry_fail_reason"] = "速度不足"
             else:
                 target.current_speed -= 1
@@ -804,7 +855,6 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
             damage += bonus
             result["nilin_bonus"] = bonus
             attacker._nilin = 0
-        damage = self._jieli_boost(attacker, damage)
         # 检查蒙蔽状态
         if attacker.has_status("蒙蔽"):
             stacks = attacker.get_status_value("蒙蔽")
@@ -965,7 +1015,7 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         # 等同[法限]的一池，整场只出不进，[战终]复原（与[速度]同口径）。
         # 因这一段，"[回始]不获得法力"曾一度失去作用对象，【勾魂】在 2026-09-09
         # 改为消耗法力翻倍；2026-10-08 用户令恢复「无法获得[法力]」原意——
-        # 战斗内已有多个法力来源（聚能/储能电池/守夜灯/承露盏/血契/余火印/
+        # 战斗内已有多个法力来源（聚能/储能电池/守夜灯/承露盏/余火印/
         # 搏命·透支/法术），效果重新有对象。判定位见 models.py::gain_mana。
 
         # 遗物：回始触发（回锋刀按速限缺口造伤）。
@@ -1168,11 +1218,6 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                 # 逆鳞（F2）：状态到期时清空计层
                 if "逆鳞" in expired and hasattr(entity, "_nilin"):
                     entity._nilin = 0
-                # 嫁祸到期时清理计数（若未因次数耗尽）
-                if "嫁祸" in expired and hasattr(entity, "_jiahuo_left"):
-                    entity._jiahuo_left = 0
-                    if hasattr(entity, "_jiahuo_target"):
-                        delattr(entity, "_jiahuo_target")
                 if "飞行" in expired and not self._is_flying(entity):
                     entity.is_flying = False
                 if "变形" in expired and hasattr(entity, "_bianxing_original"):
@@ -1308,17 +1353,17 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                 resonance = decision.get("resonance_type", "")
                 if resonance not in ("转换", "反转", "曲解") or self.state.resonance.get(resonance, 0) < 1:
                     raise ValueError("三相残韵盘必须显式选择一种当前持有的resonance_type")
-        for name in ("猩红果实", "苍白之花"):
+        # 2026-10-11 用户令：【苍白之花】改为纯被动（物品索引.md:110「你的当前法力可以
+        # 超出[法限]。」），旧效果「战始可选择疲惫5；战终精力+1」废止——它不再出现在
+        # 战始可选遗物里，也不再有 use 布尔值需要提交。
+        for name in ("猩红果实",):
             if name in active:
                 decision = choices.get(name)
                 if not isinstance(decision, dict) or not isinstance(decision.get("use"), bool):
                     raise ValueError(f"持有【{name}】时必须显式提交use布尔值")
-                if decision["use"] and name == "猩红果实":
+                if decision["use"]:
                     self.validate_numeric_cost(
                         player, "流血", 10, decision.get("cost_share_target_ref", ""))
-                if decision["use"] and name == "苍白之花":
-                    self.validate_numeric_cost(
-                        player, "疲惫", 5, decision.get("cost_share_target_ref", ""))
         refs = self._combat_entity_refs()
         if "负岳索" in active:
             decision = choices.get("负岳索")
@@ -1345,12 +1390,10 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
             if (not isinstance(decision, dict)
                     or (target_ref not in legal and not deferred_enemy_ref)):
                 raise ValueError(f"烙痕钉必须显式选择敌方target_ref，可选{sorted(legal)}")
-        using_fatigue = (
-            "苍白之花" in active and isinstance(choices.get("苍白之花"), dict)
-            and choices["苍白之花"].get("use")
-        )
-        if "回锋刀" in active and using_fatigue and not self._huifeng_ref_from_choice(choices.get("回锋刀")):
-            raise ValueError("回锋刀触发必须显式提交合法敌方目标引用")
+        # 2026-10-11 用户令：按 物品索引.md 重写【回锋刀】——索引只给了
+        # 「每失去1点速度后对[目标]造成3伤害」与「[回始]对[目标]造成3×([速限]-当前速度)伤害」，
+        # 没有战始效果。原先这里的「苍白之花已发动 ⇒ 回锋刀必须提交目标」是遗物之间的
+        # 硬编码联动（AI_EXPERIENCE.md 规则18 禁止），已删除。
 
     def validate_round_start_relic_choices(self, choices: dict) -> None:
         if not isinstance(choices, dict):
@@ -1376,34 +1419,10 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                 if (heart is None or not isinstance(x, int) or isinstance(x, bool)
                         or x < 1 or x > heart.current_uses):
                     raise ValueError("余火印必须提交合法heart_name与1~当前耐久的x")
-        def _validate_blood_pact_decision(holder: Entity, key: str, allow_heart: bool):
-            decision = choices.get(key)
-            if not isinstance(decision, dict) or not isinstance(decision.get("use"), bool):
-                raise ValueError(f"{key}每个回始必须显式提交use布尔值")
-            if not decision["use"]:
-                return
-            x = decision.get("x")
-            heart_use = decision.get("dragon_heart_use", 0)
-            if not isinstance(x, int) or isinstance(x, bool) or x < 1:
-                raise ValueError(f"{key}.x必须是正整数")
-            if (not isinstance(heart_use, int) or isinstance(heart_use, bool)
-                    or heart_use < 0 or (heart_use and not allow_heart)):
-                raise ValueError(f"{key}.dragon_heart_use非法")
-            heart = next((item for item in self.state.consumables
-                          if item.kind == "dragon_heart" and item.dragon_heart_type == "流血"
-                          and not item.is_depleted), None) if allow_heart else None
-            offset = min(heart_use, heart.current_uses, 4 * x) if heart else 0
-            self.validate_numeric_cost(
-                holder, "流血", 4 * x - offset,
-                decision.get("cost_share_target_ref", ""),
-            )
-
-        if "血契" in active:
-            _validate_blood_pact_decision(player, "血契", True)
-        opponent = next((entity for entity in self.state.enemies
-                         if entity.entity_type == "轮回者" and entity.is_alive), None)
-        if opponent is not None and self._has_active_blood_pact(opponent):
-            _validate_blood_pact_decision(opponent, "对手血契", False)
+        # 2026-10-12 用户令：【血契】删掉与道纹【透支】重合的「[回始]流血4X换X法力」，
+        # 只保留「数值型代价可与朋友/员工平分」作为其主要功能。它因此不再是回始主动
+        # 遗物，`血契`/`对手血契` 两个回始决策键随之取消（平分仍在各代价提交处走
+        # cost_share_target_ref，不受影响）。
 
     def process_relics(self, trigger: str | TriggerTiming, ctx: dict = None) -> list:
         """遗物效果触发框架。可选效果只读取AI显式提交的ctx，不设置启发式默认值。"""
@@ -1435,37 +1454,6 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                         "tags": {"relic", "round_start"},
                     })
                     logs.append(f"回锋刀：对{enemy.name}造{d}伤")
-            if "血契" in relics and choices["血契"]["use"]:
-                decision = choices["血契"]
-                x = decision["x"]
-                payment = self.pay_numeric_cost(
-                    player, "流血", 4 * x,
-                    cost_share_target_ref=decision.get("cost_share_target_ref", ""),
-                    dragon_heart_use=decision.get("dragon_heart_use", 0),
-                    cost_context={"timing": "round_start", "source": "血契", "source_type": "relic", "tags": {"active_payment"}},
-                )
-                # 2026-10-08：走统一入口，【勾魂】期间不生效
-                player.gain_mana(x)
-                self.clamp_immortal_body(player)
-                shared = payment.get("shared_with")
-                shared_note = f"，与{shared['payer']}共同承担" if shared else ""
-                logs.append(f"血契：流血{4*x}{shared_note}，+{x}法力")
-            opponent = next((entity for entity in self.state.enemies
-                             if entity.entity_type == "轮回者" and entity.is_alive), None)
-            if (opponent is not None and self._has_active_blood_pact(opponent)
-                    and choices["对手血契"]["use"]):
-                decision = choices["对手血契"]
-                x = decision["x"]
-                payment = self.pay_numeric_cost(
-                    opponent, "流血", 4 * x,
-                    cost_share_target_ref=decision.get("cost_share_target_ref", ""),
-                    cost_context={"timing": "round_start", "source": "血契", "source_type": "relic", "tags": {"active_payment"}})
-                # 2026-10-08：走统一入口，【勾魂】期间不生效
-                opponent.gain_mana(x)
-                self.clamp_immortal_body(opponent)
-                shared = payment.get("shared_with")
-                shared_note = f"，与{shared['payer']}共同承担" if shared else ""
-                logs.append(f"对手血契：流血{4*x}{shared_note}，+{x}法力")
             if "余火印" in relics and choices["余火印"]["use"]:
                 x = choices["余火印"]["x"]
                 heart = next(item for item in self.state.consumables
@@ -1478,17 +1466,6 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         if trigger == "battle_start":
             choices = ctx.get("relic_choices", {})
             self.validate_battle_start_relic_choices(choices)
-            using_fatigue = (
-                "苍白之花" in relics and isinstance(choices.get("苍白之花"), dict)
-                and choices["苍白之花"].get("use")
-            )
-            if "回锋刀" in relics and using_fatigue:
-                ref = self._huifeng_ref_from_choice(choices.get("回锋刀"))
-                target = self._combat_entity_refs().get(ref)
-                if (target is None or not target.is_alive
-                        or not self.state.on_enemy_side(target)):
-                    raise ValueError("回锋刀触发必须显式提交合法敌方目标引用")
-                self._remember_huifeng_target(player, ref)
             if "三相残韵盘" in relics and choices["三相残韵盘"]["use"]:
                 consume = choices["三相残韵盘"]["resonance_type"]
                 self.state.resonance[consume] -= 1
@@ -1502,14 +1479,6 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                     cost_context={"timing": "battle_start", "source": "猩红果实", "source_type": "relic", "tags": {"active_payment"}})
                 self.state.event_modifiers["scarlet_fruit_active"] = True
                 logs.append("猩红果实：流血10；战终血限+2")
-            if "苍白之花" in relics and choices["苍白之花"]["use"]:
-                decision = choices["苍白之花"]
-                self.pay_numeric_cost(
-                    player, "疲惫", 5,
-                    cost_share_target_ref=decision.get("cost_share_target_ref", ""),
-                    cost_context={"timing": "battle_start", "source": "苍白之花", "source_type": "relic", "tags": {"active_payment"}})
-                self.state.event_modifiers["pale_flower_active"] = True
-                logs.append("苍白之花：疲惫5；战终精力+1")
             # 机制系统：BATTLE_START 相位分发。位置即原缄默面具/帮派令结算位置
             # （缄默面具=5、帮派令=10 同相位按 priority 保持原序；负岳索之前）——顺序与迁移前一致。
             # 帮派令已迁移为声明层 Mechanism（engine/mechanisms/builtins.py）；

@@ -463,27 +463,11 @@ class GameEngine:
     def _get_battle_start_actions(self) -> dict:
         relic_choices_schema: dict[str, Any] = {"_instruction": "按当前回始遗物逐件显式提交"}
         player = self.state.player
-        if player and self.combat._has_active_blood_pact(player):
-            relic_choices_schema["血契"] = {
-                "use": "boolean",
-                "x": {"type": "integer", "minimum": 1, "required_if_use": True},
-                "cost_share_target_ref": [
-                    {"ref": ref, "name": entity.name}
-                    for ref, entity in self.combat.blood_pact_targets(player).items()
-                ],
-                "dragon_heart_use": {"type": "integer", "minimum": 0},
-            }
-        opponent = next((entity for entity in self.state.enemies
-                         if entity.entity_type == "轮回者" and entity.is_alive), None)
-        if opponent is not None and self.combat._has_active_blood_pact(opponent):
-            relic_choices_schema["对手血契"] = {
-                "use": "boolean",
-                "x": {"type": "integer", "minimum": 1, "required_if_use": True},
-                "cost_share_target_ref": [
-                    {"ref": ref, "name": entity.name}
-                    for ref, entity in self.combat.blood_pact_targets(opponent).items()
-                ],
-            }
+        # 2026-10-12 用户令：【血契】只保留「数值型代价可与朋友/员工平分」，
+        # 与【透支】重合的「[回始]流血4X换X法力」已删除，故它不再是回始主动遗物，
+        # `血契`/`对手血契` 两个回始决策键取消。平分仍通过各代价提交处的
+        # cost_share_target_ref 生效（见 _get_pre_battle_actions / use_daowen /
+        # 负岳碑 / 血族血脉 四处，全部保留）。
         round_start_schema: dict[str, Any] = {"relic_choices": relic_choices_schema}
         global_spells = self.combat.prepare_global_trigger_spells(TriggerTiming.ROUND_START.value)
         if global_spells:
@@ -636,7 +620,7 @@ class GameEngine:
                 },
                 "available": bool(player.dao_wen) and player.is_alive,
                 "note": "瞬发法术=一次出手依次发动多种道纹：只扣1次出手，每一步都算一次发动道纹"
-                        "（照常触发敌方目标发动道纹前反应、受无神/缄默面具影响、照付代价）；"
+                        "（照常触发敌方目标发动道纹前反应、受缄默面具影响、照付代价）；"
                         "按真实剩余法力逐步结算，某步付不起即中断，已结算的步骤保留、出手不退；"
                         "不写入角色法术列表。kind=daowen 为单道纹发动，kind=spell 为统一自定义施法"})
         if any(value > 0 for value in self.state.resonance.values()):
@@ -1062,10 +1046,16 @@ class GameEngine:
                 "error": "必须先结算【救赎】：接纳或终结",
                 "pending": dict(self.state.pending_redemption),
             }
-        if self.state.pending_relic_choices and action_type != "choose_discovered_relic":
+        # 2026-10-12 用户裁定③：强制遗物发现在额度满时也要能脱困，故「放弃本次发现」
+        # 与「选择」一样属于该门禁下的合法动作。少了它，额度满 + 有强制发现 = 死局
+        # （两边都不许动，且没有任何动作能清空 pending_relic_choices）。
+        if (self.state.pending_relic_choices
+                and action_type not in ("choose_discovered_relic",
+                                        "discard_discovered_relic")):
             return {
                 "success": False,
-                "error": "必须先从发现候选中选择1件遗物",
+                "error": "必须先从发现候选中选择1件遗物（额度已满时可改用"
+                         " discard_discovered_relic 放弃，或在选择时带 replace 参数换掉一件）",
                 "choices": list(self.state.pending_relic_choices),
             }
         if self.state.pending_item_choices and action_type != "choose_discovered_item":
@@ -1365,6 +1355,8 @@ class GameEngine:
             return self._action_monster_phase(params)
         elif action_type == "choose_discovered_relic":
             return self._action_choose_discovered_relic(params)
+        elif action_type == "discard_discovered_relic":
+            return self._action_discard_discovered_relic(params)
         elif action_type == "choose_discovered_item":
             return self._action_choose_discovered_item(params)
         elif action_type == "repay_debt_employee":
@@ -1737,7 +1729,7 @@ class GameEngine:
         ("同魂笔", "对[目标]发动残韵时，可另选一[目标]使其一种道纹受同种残韵影响"),
         ("回锋刀", "每失去1点速度后对[目标]造成3伤害；[回始]对[目标]造成3×([速限]-当前速度)伤害"),
         ("三相残韵盘", "[战始]消耗一种残韵；[战终]获得另两种残韵各1"),
-        ("血契", "数值型【代价】可与一名存活的朋友或员工平分，余数按随机数分配（通用规则见规则正文《基础定义·平分规则》）；[回始]可流血4X获得X法力，本次流血也可平分"),
+        ("血契", "数值型【代价】可与一名存活的朋友或员工平分，余数按随机数分配（通用规则见规则正文《基础定义·平分规则》）"),
         ("避风铃", "每次闪避后获得3格挡；当前速度归零时获得15格挡"),
         ("守夜灯", "[回始]获得[法限]10%的法力，每回合一次"),
         ("无所求", "每当在事件中选拒绝类选项，永久获得1属性点"),
@@ -1779,6 +1771,23 @@ class GameEngine:
         self.state.pending_relic_source = source
         return {"success": True, "choices": choices, "source": source}
 
+    def _action_discard_discovered_relic(self, params: dict) -> dict:
+        """放弃本次遗物发现（2026-10-12 用户裁定③）。
+
+        【承载上限】之后，「必须先选1件」的强制发现可能撞上额度已满：选择被拒、
+        其他动作又被门禁拦住，形成无法推进的死局。本动作清空待选列表、不取任何遗物，
+        是那条门禁下唯一的脱困出口（另一条是选择时带 replace 换掉一件）。
+        """
+        choices = list(self.state.pending_relic_choices)
+        if not choices:
+            return {"success": False, "error": "当前没有待选择的遗物发现"}
+        source = self.state.pending_relic_source
+        self.state.pending_relic_choices = []
+        self.state.pending_relic_source = ""
+        return {"success": True, "action": "放弃发现遗物",
+                "result": {"discarded_choices": choices, "source": source,
+                           "note": "本次发现不取任何遗物，待选列表已清空"}}
+
     def _action_choose_discovered_relic(self, params: dict) -> dict:
         choice = params.get("relic_name", "")
         choices = self.state.pending_relic_choices
@@ -1789,6 +1798,31 @@ class GameEngine:
         relic = next((r for r in self.state.relics_pool if r.name == choice), None)
         if relic is None:
             return {"success": False, "error": f"遗物池中不存在【{choice}】"}
+        # 2026-10-12 用户令：30X[血限] = 允许拥有 X 种道纹和 X 种遗物。
+        # 裁定①：**开局阶段豁免**——开局流程强制「必须先从发现候选中选择1件遗物」，
+        # 低血限（血限18→额度0）会被这条卡死、连 setup_choose_region 都走不到。
+        # 裁定③（2026-10-12）：额度已满时仍可「替换」——带 replace 参数指定要换掉的
+        # 一件已持有遗物，先移除再放入，总种数不变，因此不受额度限制。
+        player = self.state.player
+        replace_name = (params.get("replace") or "").strip()
+        replaced = None
+        if replace_name:
+            replaced = next((r for r in self.state.relics if r.name == replace_name), None)
+            if replaced is None:
+                return {"success": False,
+                        "error": f"未持有【{replace_name}】，无法用它替换",
+                        "owned": sorted({r.name for r in self.state.relics})}
+        elif player is not None and self.state.phase != "setup":
+            cap = player.relic_capacity
+            owned = len({r.name for r in self.state.relics})
+            if owned >= cap:
+                return {"success": False,
+                        "error": (f"遗物种类超出承载：[血限]{player.blood_limit} 只允许{cap}种"
+                                  f"（30[血限]=1种），已持有{owned}种。"
+                                  f"可带 replace 参数换掉一件，或放弃本次发现"),
+                        "owned": sorted({r.name for r in self.state.relics})}
+        if replaced is not None:
+            self.state.relics.remove(replaced)
         self.state.relics_pool.remove(relic)
         self.state.relics.append(relic)
         source = self.state.pending_relic_source
@@ -1797,7 +1831,8 @@ class GameEngine:
         result: dict = {
             "success": True,
             "action": "选择发现遗物",
-            "result": {"relic": choice, "source": source},
+            "result": {"relic": choice, "source": source,
+                       **({"replaced": replaced.name} if replaced is not None else {})},
         }
         # 开局流程：先发现遗物，再发现初始道纹。
         if (source == "开局发现" and self.state.player is not None
@@ -2015,6 +2050,16 @@ class GameEngine:
                 or any(not isinstance(name, str) or not name for name in names)):
             self.state.energy += 1
             return {"success": False, "error": f"学习{tier}档必须用names提交{tier}个不同名称"}
+        # 2026-10-12 用户令：30X[血限] = 允许拥有 X 种道纹和 X 种遗物。
+        # 放在所有扣费与逐名校验之前：容量是结构性前提，不足时碎片一分不收、精力退回。
+        new_names = [n for n in names if n not in player.dao_wen]
+        owned = len(player.dao_wen)
+        cap = player.daowen_capacity
+        if owned + len(new_names) > cap:
+            self.state.energy += 1
+            return {"success": False,
+                    "error": (f"道纹种类超出承载：[血限]{player.blood_limit} 只允许{cap}种"
+                              f"（30[血限]=1种），已持有{owned}种，本次新增{len(new_names)}种")}
         if cost > 0 and self.state.shards < cost:  # 负债口径：0费学习不属于支出
             self.state.energy += 1
             return {"success": False, "error": f"碎片不足，需要{cost}"}
@@ -2078,6 +2123,16 @@ class GameEngine:
             if self.state.shards < 15:
                 self.state.energy += 1
                 return {"success": False, "error": "碎片不足15"}
+            # 2026-10-12 用户令：30X[血限] = 允许拥有 X 种道纹和 X 种遗物。
+            player = self.state.player
+            if player is not None:
+                cap = player.relic_capacity
+                owned = len({r.name for r in self.state.relics})
+                if owned >= cap:
+                    self.state.energy += 1
+                    return {"success": False,
+                            "error": (f"遗物种类超出承载：[血限]{player.blood_limit} 只允许{cap}种"
+                                      f"（30[血限]=1种），已持有{owned}种")}
             self.state.shards -= 15
             self.state.energy -= 1
             relic = self.state.relics_pool.pop(idx)
@@ -2789,9 +2844,6 @@ class GameEngine:
                 return {"success": False,
                         "error": f"{actor.name}本回合出手已用完({actor.actions_used_this_round}/{budget})"}
 
-        if actor.has_status("无神"):
-            target = actor
-
         # 调用道纹引擎计算
         # 【分裂】是双参数道纹（X=数量、Y=规模档）；y 缺省 1，单参数道纹不受影响。
         daowen_y = params.get("y")
@@ -2963,6 +3015,10 @@ class GameEngine:
         施法者同样永久获得（旧版在此处直接拒绝授予，与「双向 + 可永久持有」冲突）。
         """
         if dest in player.dao_wen:
+            return False
+        # 2026-10-12 用户裁定②：残韵转化补给施法者的这一份是真正的获得，
+        # 同样受【承载上限】约束；超出额度就**不授予**（持有者的一换一照常发生）。
+        if len(player.dao_wen) >= player.daowen_capacity:
             return False
         player.dao_wen[dest] = DaoWenInstance(DaoWen(
             name=dest, formula=f"{dest}X", cost_type="消耗",
@@ -3223,15 +3279,17 @@ class GameEngine:
             except ValueError as exc:
                 return {"success": False,
                         "error": f"瞬发法术第{idx}步的trigger_spell_choices非法：{exc}"}
-        # 结构合法：整次 cast 扣 1 次出手（不按步骤数扣）。
-        # 此后无论哪一步中断（法力不足等），出手都已用掉——施法失败不退出手。
+        # 结构合法：按【法术阶级规则】整次 cast 一次付清 X 次出手
+        # （X = 用到的不同道纹种数；见 法术索引.md「法术阶级规则」——
+        #  施展或定义X阶法术必须在声明时一次性消耗X次出手机会，出手不足时不能开始施法）。
+        # 出手不按步骤数扣；此后无论哪一步中断（法力不足等），出手都已用掉——施法失败不退出手。
         spell_tier = max(1, len(set(execution.definition.required_daowen)))
         budget_err = self._consume_actions_or_error(actor, spell_tier)
         if budget_err:
             return budget_err
         execution.run_all()
         from .spell_execution import ExecutionStatus
-        # 一次 cast = 一次出手：死斗轮次推进一次（与 use_daowen 同口径）
+        # 一次 cast = 一次施法声明：死斗轮次推进一次（与 use_daowen 同口径）
         self._advance_duel_turn()
         if (self.state.in_final_duel and not self._duel_side_can_act("player_side")
                 and not self._duel_side_can_act("opponent_side")):
@@ -3340,12 +3398,9 @@ class GameEngine:
         if attacker.actions_used_this_round >= self._action_budget_of(attacker):
             return {"success": False, "error": f"{attacker.name}本回合出手已用完"}
 
-        if attacker.has_status("无神"):
-            target_refs = [actor_ref]
-        else:
-            target_refs = [ref for ref, entity in refs.items()
-                           if self.state.on_player_side(entity) != self.state.on_player_side(attacker)
-                           and self.combat.is_targetable(attacker, entity)]
+        target_refs = [ref for ref, entity in refs.items()
+                       if self.state.on_player_side(entity) != self.state.on_player_side(attacker)
+                       and self.combat.is_targetable(attacker, entity)]
         if (self.state.on_enemy_side(attacker) and "龙威" in self.state.dragon_traits
                 and "player:0" in refs):
             target_refs = ["player:0"]
@@ -5872,7 +5927,7 @@ class GameEngine:
         self.state.shards += shard_reward + bonus_total
         if modifiers.pop("scarlet_fruit_active", False) and self.state.player:
             self.state.player.blood_limit += 2
-        pale_flower_bonus = 1 if modifiers.pop("pale_flower_active", False) else 0
+        modifiers.pop("pale_flower_active", False)   # 2026-10-11：旧战终精力+1 已随重做废弃
         modifiers.pop("brand_nail_target_ref", None)
         modifiers.pop("huifeng_target_ref", None)
         modifiers.pop("huifeng_target_ref_opponent", None)
@@ -5900,7 +5955,7 @@ class GameEngine:
         }
         runtime_counter_attrs = (
             "_jisu_dodges", "_dongcha_pending", "_bizhong_left", "_nilin",
-            "_jiahuo_left", "_jiahuo_target", "_beifu_left", "_beifu_target",
+            "_beifu_left", "_beifu_target",   # 2026-10-11：_jiahuo_* 随【嫁祸】删除
             "_death_triggers_emitted", "_shouyedeng_granted", "_huifeng_target_ref",
         )
         for entity in all_characters:
@@ -6021,8 +6076,9 @@ class GameEngine:
                 ally.attack_power += 1
                 grown.append(f"{ally.name}:攻击力{ally.attack_power}")
 
-        # 恢复精力；苍白之花的战终奖励叠加在基础值之后（无尽模式下基础值逐轮递减）。
-        self.state.energy = self.state.energy_budget + pale_flower_bonus
+        # 恢复精力（无尽模式下基础值逐轮递减）。
+        # 2026-10-11：【苍白之花】重做为「当前法力可超出[法限]」的被动，战终精力+1 已废止。
+        self.state.energy = self.state.energy_budget
 
         # 清空敌人及本场延迟队列（正常战终前延迟队列已由门禁拦截；逃跑等强制结束也不跨场保留）。
         self.state.enemies.clear()

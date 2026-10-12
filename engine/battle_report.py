@@ -259,16 +259,13 @@ def _render_effect(eff: dict) -> str:
         return f"{eff.get('caster')} 登记【赌命X={eff.get('x')}】"
     if t == "self_heal":
         return f"{eff.get('entity')} 触发【自愈】：[回复]{eff.get('actual', eff.get('heal'))}点生命"
-    if t == "decay_damage":
-        return f"{eff.get('entity')} 触发【衰败】：失去{eff.get('damage')}点生命"
+    # 2026-10-11：`decay_damage`（【衰败】回始 tick 的战报文案）随道纹删除一并移除
     if t == "bizhong":
         return f"{eff.get('target')} 获得【必中】{eff.get('count')}次"
     if t == "mengbi":
         return f"{eff.get('target')} 获得【蒙蔽】{eff.get('count')}次"
     if t == "boba_register":
         return f"【波及X={eff.get('x')}】结算登记：目标 {eff.get('target')}"
-    if t == "jiahuo":
-        return f"{eff.get('caster')} 发动【嫁祸】：受到伤害由 {eff.get('target')} 承担"
     if t == "beifu":
         return f"{eff.get('caster')} 发动【背负】：替 {eff.get('target')} 承担受到伤害"
     if t == "shanghen":

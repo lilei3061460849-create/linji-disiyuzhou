@@ -36,6 +36,12 @@ def _arena(seed: int = 1):
                      {"relic_name": setup["result"]["relic_choices"][0]})
     e.state.energy = 0
     assert e.execute_action("battle_start", {"relic_choices": {}})["success"]
+    # 2026-10-12 出怪下界 1→2：第1场现在可能抽出 N=2。本文件测的是**事务回滚**，
+    # 需要一个可控的单怪舞台（快照 _snapshot 只盯 enemies[0]，事件流断言也按单怪写），
+    # 因此把多余的怪与增援队列清掉。多怪提交/结算的覆盖在别的文件里
+    # （test_arena_ffa / test_action_budget / monster_phase_support 等），本文件不重复。
+    e.state.enemies[:] = e.state.enemies[:1]
+    e.state.monster_reinforcements = []
     m = e.state.enemies[0]
     m.shards = 100
     # 第 1 回合先让怪物空手（无道纹则 prepare 不列选项、daowen 提交 null），

@@ -29,6 +29,7 @@ import pytest
 
 from engine.api import GameEngine
 from engine.dice import DiceEngine
+from engine.dice import DiceEngine
 from engine.monsters import compute_draw_cap, parse_monster_pool, roll_spawn_plan
 
 
@@ -54,14 +55,26 @@ def _new_engine(db_suffix: str, region: str) -> GameEngine:
 # ========================================================================
 
 def test_draw_cap_tier1_follows_battle_sequence():
-    """正常路径：一阶 N 的上界 = max(1, 战斗场数-3)，七场为 1/1/1/1/2/3/4
+    """正常路径：一阶 N 的上界 = max(2, 战斗场数-3)，七场为 2/2/2/2/2/3/4
 
     2026-09-28 用户令改配方式出怪后，这串数字的语义从"确定值"变成"随机上界"
     （N=随机(1,上界)）；旧"数量=战斗场数-3"精确口径已废止。
+    2026-10-12 用户令「不再像现在这样固定数量，而是全随机」，按其选定的最小改动
+    口径：只去掉前四场「恒为1只」的确定段（下界 1→2），第 6 场起的梯度不变。
     """
-    expected = [1, 1, 1, 1, 2, 3, 4]
+    expected = [2, 2, 2, 2, 2, 3, 4]
     actual = [compute_draw_cap(n, tier=1) for n in range(1, 8)]
     assert actual == expected
+
+
+def test_tier1_first_battles_are_no_longer_deterministic():
+    """回归：前四场不得再恒为 1 只——20 个种子里必须出现 N=2。
+
+    这是本次改动的全部目的，若被回退成 max(1, …) 则本条立刻红。
+    """
+    totals = {roll_spawn_plan(DiceEngine(seed=s), 1, 1)["total"] for s in range(1, 21)}
+    assert 2 in totals, f"第1场仍恒为1只：{totals}"
+    assert totals <= {1, 2}, f"上界应为2：{totals}"
 
 
 def test_draw_cap_scales_with_tier():
@@ -114,10 +127,12 @@ def test_battle_start_actually_populates_enemies_from_correct_region_pool():
     pool_names = {m["name"] for m in engine.monster_pool["扭曲都市"]}
     r = engine.execute_action("battle_start", {})
     assert r["success"] is True
-    assert r["draw_count"] == 1
-    assert len(engine.state.enemies) == 1
-    assert engine.state.enemies[0].name in pool_names
-    assert engine.state.enemies[0].entity_type == "怪物"
+    # 2026-10-12 用户令：一阶上界下界 1→2，第1场总数由恒为 1 变成 随机(1,2)
+    assert r["draw_count"] in (1, 2), f"第1场 N 应为 随机(1,2)：{r['draw_count']}"
+    assert len(engine.state.enemies) == r["first_wave_count"]
+    assert 1 <= len(engine.state.enemies) <= r["draw_count"]
+    assert all(e.name in pool_names for e in engine.state.enemies)
+    assert all(e.entity_type == "怪物" for e in engine.state.enemies)
 
 
 def test_drawn_monster_panel_matches_readme_exactly():
@@ -202,17 +217,22 @@ def test_forced_monster_from_event_appears_extra_next_battle():
 # 边界条件
 # ========================================================================
 
-def test_draw_cap_floors_at_one_for_small_battle_numbers():
-    """边界：上界在场次很小时不能算出0或负数，必须floor在1（此时 N=1、S=1、无增援）"""
-    assert compute_draw_cap(1) == 1
-    assert compute_draw_cap(2) == 1
-    assert compute_draw_cap(3) == 1
-    assert compute_draw_cap(0) == 1
-    # 上界为 1 时不掷骰（随机数恒为 1，不占用正式随机流）
+def test_draw_cap_floors_at_two_for_small_battle_numbers():
+    """边界：上界在场次很小时不能算出0或负数，必须floor在2（2026-10-12 用户令）
+
+    下界从 1 抬到 2 之后，前四场不再是「N=1、S=1、无增援」的确定局，
+    而是 N=随机(1,2)。上界为 1 才不掷骰；上界为 2 时 N 与 S 都各占一次随机流。
+    """
+    assert compute_draw_cap(1) == 2
+    assert compute_draw_cap(2) == 2
+    assert compute_draw_cap(3) == 2
+    assert compute_draw_cap(0) == 2
     dice = DiceEngine(seed=11)
     plan = roll_spawn_plan(dice, 1, tier=1)
-    assert plan == {"total": 1, "first_count": 1, "waves": [], "queue_rounds": [], "cap": 1}
-    assert dice._history == [], "上界=1 不应消耗随机流"
+    assert plan["cap"] == 2
+    assert plan["total"] in (1, 2)
+    assert plan["first_count"] <= plan["total"]
+    assert dice._history, "上界=2 应消耗随机流（N 与 S 各一次）"
 
 
 def test_unknown_region_draws_nothing_but_does_not_crash():

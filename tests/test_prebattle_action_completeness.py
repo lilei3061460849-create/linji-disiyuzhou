@@ -45,6 +45,10 @@ def test_available_prebattle_schemas_use_real_executable_parameter_names(tmp_pat
 def test_learning_two_daowen_applies_all_names(tmp_path):
     """学习道纹多档：一次学习两种，全部落到玩家道纹上（法术已免学习）。"""
     engine = _engine(tmp_path)
+    # 2026-10-12 新增【承载上限】(30X[血限]=X 种道纹)：本条要学 2 种、共 3 种，
+    # 而夹具 11/8/6 → [血限]66 只有 2 种额度。抬到 90 得 3 种额度；只改本条、
+    # 不动共享夹具，因为「休整」额度按血限百分比计，别处断言依赖 [血限]66。
+    engine.state.player.blood_limit = 90
     # 开局仅持【杀伐】，一次学习 再生/庇护 两个转化道纹。
     r = engine.execute_action("pre_battle_action", {
         "sub_action": "学习", "sub": "daowen", "tier": 2,

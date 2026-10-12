@@ -63,6 +63,10 @@ def _start_battle(engine):
         choices[relic] = {"use": False}
     result = engine.execute_action("battle_start", {"relic_choices": choices})
     engine.state.enemies.clear()  # 本文件只测员工经济，不保留随机怪物。
+    # 2026-10-12 出怪下界 1→2 之后，第1场可能抽出 N=2 → 除首发外还有增援排队。
+    # 只清 enemies 会把增援留在队列里，战终门禁（"仍有N只怪物增援未进场"）就此卡死。
+    # 本文件的意图是"不保留任何随机怪物"，所以增援队列要一并清掉。
+    engine.state.monster_reinforcements = []
     return result
 
 

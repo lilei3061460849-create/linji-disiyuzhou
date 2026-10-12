@@ -31,8 +31,9 @@ class DaoWenEngine:
     # 用于"雇佣"后"发现并选择一种转化道纹"等需要从此类别中随机抽取的场景
     # 2026-10-08 清理：原孤儿转化道纹已移除（曾挂在【狂暴】的反转分支下）。
     TRANSFORMED_DAOWEN = [
-        "愤怒", "无神", "借力", "弱化", "自食", "无力", "全速",
-        "急速", "加速", "洞察", "蒙蔽", "衰败", "寄生",
+        "愤怒", "弱化", "自食", "无力", "全速",
+        "急速", "加速", "洞察", "蒙蔽", "寄生",
+        # 2026-10-11 用户令（A14）：【无神】【借力】【衰败】整条删除，不补位。
     ]
 
     # 2026-10-09 用户令：**波及 X≥2 下限 repealed**——整套 X_MIN 装置拔除。
@@ -102,7 +103,7 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_bihu(x: int, target: Entity = None) -> dict:
-        """庇护X：消耗X。使[目标]获得2X点格挡（可抵消等量伤害），持续1"""
+        """庇护X：消耗X。使[目标]获得2X点格挡（可抵消等量伤害，保留到被打掉或[战终]）"""
         target_name = target.name if target is not None else "未选定目标"
         cost = x
         shield = 2 * x
@@ -316,18 +317,22 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_bizhong(x: int) -> dict:
-        """必中X：代价：异变X。你选中的目标无法闪避，持续X。
+        """必中X：代价：异变X。你选中的目标无法进行回合外行动，持续X。
 
-        口径（历史注记，勿再改回给目标挂 debuff）：必中是**给自己上buff**——
-        自身进入【必中】姿态持续X回合，期间你选中的目标都无法闪避（不需要目标）。
+        口径（2026-10-12 用户令增强，取代 2026-09-28 的 self-buff 口径）：
+        必中是给**目标**挂 debuff，不是给自己挂姿态。效果从「无法闪避」扩大为
+        「无法进行回合外行动」——即目标在该状态下不能 闪避 / 招架，也不能发动
+        任何反应型法术（受到伤害前/失去生命后/目标发动道纹前 等窗口）。
+        「未来可能新增的回合外行动」同样受此约束：新增反应窗口一律走
+        CombatEngine.out_of_turn_blocked() 这道闸，不要各自另立判断。
         """
         return {
             "dao_wen": "必中",
             "x": x,
             "cost_type": CostType.MUTATION.value,
             "cost_mutation": x,
-            "bizhong_self_buff": x,   # 给自身挂持续X回合的必中buff
-            "summary": f"异变+{x}，你选中的[目标]无法闪避，持续{x}回合"
+            "bizhong_target_debuff": x,   # 给目标挂持续X回合的必中debuff
+            "summary": f"异变+{x}，你选中的[目标]无法进行回合外行动，持续{x}回合"
         }
     
     @staticmethod
@@ -361,32 +366,12 @@ class DaoWenEngine:
     
     @staticmethod
     @staticmethod
-    def calculate_wushen(x: int, target: Entity = None) -> dict:
-        """无神X：消耗5X。使[目标]选择目标时强制改为自身，持续X"""
-        target_name = target.name if target is not None else "未选定目标"
-        return {
-            "dao_wen": "无神",
-            "x": x,
-            "cost_type": CostType.MANA.value,
-            "cost": 5 * x,
-            "duration": x,
-            "effect": "选择目标时强制改为自身",
-            "summary": f"消耗{5 * x}法力，使{target_name}选择目标时强制改为自身，持续{x}回合"
-        }
+    # 2026-10-11 用户令（A14）：【wushen】整条删除——不做闭环补位、不设计替换道纹。
+
     
     @staticmethod
-    def calculate_jieli(x: int, target: Entity = None) -> dict:
-        """借力X：消耗3X。使[目标]造成伤害+10X%，持续∞"""
-        target_name = target.name if target is not None else "未选定目标"
-        return {
-            "dao_wen": "借力",
-            "x": x,
-            "cost_type": CostType.MANA.value,
-            "cost": 3 * x,
-            "damage_boost_percent": 10 * x,
-            "duration": -1,
-            "summary": f"消耗{3 * x}法力，使{target_name}造成伤害+{10*x}%，永久"
-        }
+    # 2026-10-11 用户令（A14）：【jieli】整条删除——不做闭环补位、不设计替换道纹。
+
     
     @staticmethod
     def calculate_ruhua(x: int, target: Entity = None) -> dict:
@@ -511,18 +496,8 @@ class DaoWenEngine:
         }
     
     @staticmethod
-    def calculate_shuaibai(x: int, target: Entity = None) -> dict:
-        """衰败X：消耗4X。使[目标][回始]失去10X%当前生命，持续∞；发动时不立即触发。"""
-        target_name = target.name if target is not None else "未选定目标"
-        cost = 4 * x
-        return {
-            "dao_wen": "衰败",
-            "x": x,
-            "cost_type": CostType.MANA.value,
-            "cost": cost,
-            "duration": -1,
-            "summary": f"消耗{cost}法力，使{target_name}[回始]失去{10*x}%当前生命，持续∞"
-        }
+    # 2026-10-11 用户令（A14）：【shuaibai】整条删除——不做闭环补位、不设计替换道纹。
+
     
     @staticmethod
     def calculate_jisheng(x: int, target: Entity = None, caster: Entity = None) -> dict:
@@ -818,14 +793,8 @@ class DaoWenEngine:
         }
     
     @staticmethod
-    def calculate_jiahuo(x: int, target: Entity = None) -> dict:
-        """嫁祸X：消耗4X。自身下X次受到伤害由目标承担"""
-        target_name = target.name if target is not None else "未选定目标"
-        return {
-            "dao_wen": "嫁祸", "x": x, "cost_type": CostType.MANA.value, "cost": 4 * x,
-            "redirect_count": x,
-            "summary": f"消耗{4 * x}法力，自身下{x}次受伤由{target_name}承担"
-        }
+    # 2026-10-11 用户令（A13）：【嫁祸】整条删除——效果与遗物【贪婪契约】重复。
+
     
     @staticmethod
     def calculate_beifu(x: int, target: Entity = None) -> dict:
@@ -983,10 +952,8 @@ class DaoWenEngine:
             "减速": cls.calculate_jiansu,
             "必中": cls.calculate_bizhong,
             "飞行": cls.calculate_feixing,
-            # 怪物转化
+            # 怪物转化（2026-10-11 A14：无神/借力/衰败 已删）
             "愤怒": cls.calculate_fennu,
-            "无神": cls.calculate_wushen,
-            "借力": cls.calculate_jieli,
             "弱化": cls.calculate_ruhua,
             "自食": cls.calculate_zishi,
             "无力": cls.calculate_wuli,
@@ -995,7 +962,6 @@ class DaoWenEngine:
             "加速": cls.calculate_jiasu,
             "洞察": cls.calculate_dongcha,
             "蒙蔽": cls.calculate_mengbi,
-            "衰败": cls.calculate_shuaibai,
             "寄生": cls.calculate_jisheng,
             # 扭曲都市
             "变形": cls.calculate_bianxing,
@@ -1019,7 +985,6 @@ class DaoWenEngine:
             "龙鳞": cls.calculate_longlin,
             "逆鳞": cls.calculate_nilin,
             "裂变": cls.calculate_liebian,
-            "嫁祸": cls.calculate_jiahuo,
             "背负": cls.calculate_beifu,
             "伤痕": cls.calculate_shanghen,
             # ---- 乱葬岗（二阶）----
@@ -1164,8 +1129,9 @@ class ResonanceEngine:
             ("龙鳞", "曲解", "逆鳞"),
             # 2026-10-03 用户令删除【活血】→ 由【逆鳞】直连【裂变】
             ("逆鳞", "转换", "裂变"),
-            ("裂变", "转换", "嫁祸"),
-            ("嫁祸", "反转", "背负"),
+            # 2026-10-11 用户令（A13）：【嫁祸】整条删除（效果与遗物【贪婪契约】重复）
+            #   → 沿用活血/尸爆的删除先例：断边**重连**为 裂变—转换→背负，环长 7→6。
+            ("裂变", "转换", "背负"),
             ("背负", "曲解", "伤痕"),
             ("伤痕", "转换", "加害"),
         ],
@@ -1187,7 +1153,10 @@ class ResonanceEngine:
         "怪物原始道纹": [
             # 2026-10-03 删除（用户令）：("狂暴", "转换", "愤怒"),
             # 2026-10-03 删除（用户令）：("狂暴", "曲解", "无神"),
-            ("全力", "转换", "借力"),
+            # 2026-10-11 删除（用户令 A14）：("全力", "转换", "借力"),
+            #   【借力】整条删除。按用户口径「在没有整体大改之前，增加新道路纯粹
+            #   增加工作量」，这条断边**不补新道路**（与活血/尸爆/嫁祸的重连先例不同）。
+            #   【全力】仍保留 反转→弱化、曲解→自食 两条闭环边。
             ("全力", "反转", "弱化"),
             ("全力", "曲解", "自食"),
             # 2026-10-03 删除（用户令）：("疯狂", "转换", "兴奋"),

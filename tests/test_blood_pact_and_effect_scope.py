@@ -30,6 +30,12 @@ def _state_with_blood_pact() -> tuple[GameState, CombatEngine, Entity, Entity]:
     return state, CombatEngine(state, DiceEngine()), player, ally
 
 
+# 2026-10-12 用户令：【血契】删掉与道纹【透支】重合的「[回始]流血4X换X法力」，
+# 只保留平分。原先此处有 3 条测试专测那个回始付费决策，驱动已被删除，
+# 按「唯一驱动是已删机制的测试应删除而非改写」处理；平分功能的覆盖仍在
+# test_blood_pact_shares_every_supported_numeric_cost /
+# test_event_and_daowen_costs_use_blood_pact_bus 等处。
+
 @pytest.mark.parametrize(
     ("cost_type", "player_field", "ally_field"),
     [
@@ -41,6 +47,7 @@ def _state_with_blood_pact() -> tuple[GameState, CombatEngine, Entity, Entity]:
         ("异变", "mutation_count", "mutation_count"),
     ],
 )
+
 def test_blood_pact_shares_every_supported_numeric_cost(
     cost_type: str, player_field: str, ally_field: str,
 ):
@@ -106,61 +113,10 @@ def test_blood_pact_rejects_invalid_or_unpayable_share_atomically():
     assert player.current_hp == 100 and ally.current_hp == 80
 
 
-def test_blood_pact_round_start_can_share_its_own_bleed(tmp_path):
-    """正常路径：回始流血4X也可共同承担，回始法限与血契法力按加法结算。"""
-    state, _, player, ally = _state_with_blood_pact()
-    player.current_mana = 0
-    state.combat_subphase = CombatSubphase.AWAIT_ROUND_START.value
-    engine = GameEngine(db_path=str(tmp_path / "rulings.db"))
-    engine.state = state
-    engine.combat.state = state
-
-    result = engine.execute_action("round_start", {"relic_choices": {
-        "血契": {"use": True, "x": 2, "cost_share_target_ref": "friend:0"},
-    }})
-
-    assert result["success"]
-    assert player.current_hp == 96 and ally.current_hp == 76
-    assert player.current_mana == 2  # DM裁定 2026-09-09：一池制，回始不回填 → 只剩血契2
 
 
-def test_opponent_blood_pact_uses_its_own_allies_in_final_duel():
-    """双边边界：封存对手的血契使用敌方稳定引用，不能误分担给玩家队友。"""
-    state = GameState(phase="in_combat")
-    state.player = Entity("玩家", "轮回者", blood_limit=100, current_hp=100,
-                          mana_limit=10, current_mana=0)
-    opponent = Entity("对手", "轮回者", blood_limit=90, current_hp=90,
-                      mana_limit=8, current_mana=0)
-    opponent_ally = Entity("对手同伴", "朋友", blood_limit=60, current_hp=60)
-    state.enemies = [opponent, opponent_ally]
-    state.opponent_relics = [Relic("血契", "")]
-    combat = CombatEngine(state, DiceEngine())
-
-    combat.round_start({"对手血契": {
-        "use": True, "x": 1, "cost_share_target_ref": "enemy:1",
-    }})
-
-    assert opponent.current_hp == 88 and opponent_ally.current_hp == 58
-    assert opponent.current_mana == 1  # 一池制：回始不回填 → 只剩血契1
-    assert state.player.current_hp == 100
 
 
-def test_blood_pact_round_start_requires_explicit_valid_decision(tmp_path):
-    """边界/非法：持有血契时必须显式提交use；X非法时事务不改变回合与生命。"""
-    state, _, player, ally = _state_with_blood_pact()
-    state.combat_subphase = CombatSubphase.AWAIT_ROUND_START.value
-    engine = GameEngine(db_path=str(tmp_path / "rulings.db"))
-    engine.state = state
-    engine.combat.state = state
-
-    missing = engine.execute_action("round_start", {"relic_choices": {}})
-    assert not missing["success"] and "血契" in missing["error"]
-    invalid = engine.execute_action("round_start", {"relic_choices": {
-        "血契": {"use": True, "x": 0, "cost_share_target_ref": "friend:0"},
-    }})
-    assert not invalid["success"]
-    assert player.current_hp == 100 and ally.current_hp == 80
-    assert state.current_round == 0
 
 
 def test_event_and_daowen_costs_use_blood_pact_bus(tmp_path):
@@ -306,3 +262,51 @@ def test_status_scope_and_polarity_are_explicit():
     assert entity.get_status_effects("全力")[0].scope == EffectScope.BATTLE.value
     assert entity.get_status_effects("全力")[0].polarity == EffectPolarity.BUFF.value
     assert entity.get_status_effects("坏死")[0].polarity == EffectPolarity.DEBUFF.value
+
+def test_blood_pact_is_no_longer_a_round_start_active_relic():
+    """2026-10-12 用户令：血契的回始付费半已删，它不再是回始主动遗物。
+
+    与【透支】（流血4X 换 X 法力）重合的那半功能移除后：
+      · 回始决策里不得再出现 `血契` 键（提交它也不该被接受）；
+      · 平分作为其主要功能必须照常可用——走代价提交处的 cost_share_target_ref。
+    """
+    from engine.ai_rules import round_start_relic_choices
+    from engine.models import Relic as _Relic
+
+    e = GameEngine(db_path="/tmp/linji_tests/blood_pact_no_round_start.db", rng_seed=5)
+    e.execute_action("setup_attributes",
+                     {"name": "贾凡", "blood_points": 11, "speed_points": 8,
+                      "mana_points": 6})
+    from tests.setup_support import finish_initial_daowen
+    finish_initial_daowen(e)
+    e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
+    setup = e.execute_action("setup_choose_region", {"region": "龙心谷"})
+    e.execute_action("choose_discovered_relic",
+                     {"relic_name": setup["result"]["relic_choices"][0]})
+    e.state.relics.append(_Relic("血契", "数值型代价可与朋友/员工平分"))
+    ally = Entity("同伴", "朋友", blood_limit=80, current_hp=80)
+    e.state.friends.append(ally)
+    e.state.energy = 0
+    assert e.execute_action("battle_start", {"relic_choices": {}})["success"]
+
+    # ① 不再是回始主动遗物
+    choices = round_start_relic_choices(e)
+    assert "血契" not in choices, f"血契已无回始主动效果：{choices}"
+    r = e.execute_action("round_start", {"relic_choices": choices})
+    assert r.get("success"), r
+
+    # ② 平分仍是其主要功能：带 cost_share_target_ref 支付数值代价，由朋友分担一半
+    hp_p, hp_a = e.state.player.current_hp, ally.current_hp
+    e.combat.pay_numeric_cost(e.state.player, "流血", 10,
+                              cost_share_target_ref="friend:0")
+    assert e.state.player.current_hp == hp_p - 5, "持有者应承担一半"
+    assert ally.current_hp == hp_a - 5, "朋友应承担另一半"
+
+
+def test_blood_pact_share_still_requires_holding_the_relic():
+    """平分仍由【血契】授权：没有它就不得提交 cost_share_target_ref。"""
+    state, combat, player, _ally = _state_with_blood_pact()
+    state.relics = [r for r in state.relics if r.name != "血契"]
+    with pytest.raises(ValueError, match="血契"):
+        combat.validate_numeric_cost(player, "流血", 5,
+                                     cost_share_target_ref="friend:0")

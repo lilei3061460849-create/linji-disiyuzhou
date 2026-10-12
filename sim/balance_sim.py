@@ -28,7 +28,7 @@ TUNING = {
 REGION_EXCLUSIVE = {
     "扭曲都市": {"变形","定型","畸变","僵化","超频","坏死","爆裂","退化"},
     "罪孽都市": {"点金","逼债","抵扣","清算","赎金","假钞","赌命","消灾"},
-    "龙心谷":   {"加害","龙鳞","逆鳞","活血","裂变","嫁祸","背负","伤痕"},
+    "龙心谷":   {"加害","龙鳞","逆鳞","裂变","背负","伤痕"},   # 2026-10-11 删【嫁祸】
 }
 
 # 各副本怪物池的行范围（用于归属判定）——按面板出现顺序解析即可
@@ -60,7 +60,6 @@ def make_monster(md):
             x_value=(x if x is not None else 0), x_free=(x is None))
     # 副本专属道纹运行态（裁定⑨）
     m.fake_shards = 0; m.shards = 0
-    m._jiahuo_left = 0; m._jiahuo_target = None
     m._beifu_left = 0; m._beifu_target = None
     m._nilin = 0; m._xiaozai_left = 0
     return m
@@ -229,13 +228,12 @@ def apply_control_to_player(name, m, player):
 # 定型（模拟玩家战斗中不涨攻击/次数）、抵扣（模拟玩家无遗物）。
 # =========================================================================
 USE_EXCLUSIVE = True
-JIAHUO_POLICY = "player_first"   # 嫁祸目标策略：player_first(无道德底线)/ally_first(保怪)
 
 # 激活顺序（接在通用优先级之后；每回合至多激活1个，激活=出手）
 EXCLUSIVE_PRIORITY = ["变形", "逆鳞", "假钞", "赌命", "加害", "点金", "逼债", "赎金",
                       "清算", "龙鳞", "爆裂", "裂变", "伤痕", "退化", "畸变", "活血",
-                      "嫁祸", "背负", "超频", "定型", "抵扣", "消灾"]
-REDIRECT_ATTRS = ("_jiahuo_left", "_jiahuo_target", "_beifu_left", "_beifu_target", "_nilin")
+                      "背负", "超频", "定型", "抵扣", "消灾"]
+REDIRECT_ATTRS = ("_beifu_left", "_beifu_target", "_nilin")   # 2026-10-11 删【嫁祸】
 
 
 def eff_x(player, x):
@@ -253,19 +251,12 @@ def _alive_monsters(monsters):
 
 def hit_monster(player, m, dmg, monsters, _redirected=False):
     """
-    玩家→怪物伤害统一漏斗：嫁祸/背负转嫁 → 裂变分次 → 龙鳞减伤 → 爆裂反射 → 逆鳞/活血记账。
+    玩家→怪物伤害统一漏斗：背负转嫁 → 裂变分次 → 龙鳞减伤 → 爆裂反射 → 逆鳞/活血记账。
     返回实际落到m(或承担者)身上的总伤害。
     """
     if dmg <= 0 or not m.is_alive:
         return 0
     if USE_EXCLUSIVE and not _redirected:
-        # 嫁祸X：该怪物下X次受到的伤害由所选[目标]承担
-        if getattr(m, "_jiahuo_left", 0) > 0:
-            m._jiahuo_left -= 1
-            j_id = getattr(m, "_jiahuo_target", None)   # 存runtime_id（2026-08-22：引用环修复）
-            t = next((e for e in monsters if getattr(e, "runtime_id", None) == j_id and e.is_alive), None) or player
-            return hit_monster(player, t, dmg, monsters, _redirected=True) if t is not player \
-                else _raw_hit_player(t, dmg)
         # 背负X：其他怪物声明替m承担其下X次伤害
         for b in _alive_monsters(monsters):
             if b is not m and getattr(b, "_beifu_left", 0) > 0 and getattr(b, "_beifu_target", None) == m.runtime_id:
@@ -294,7 +285,7 @@ def hit_monster(player, m, dmg, monsters, _redirected=False):
 
 
 def _raw_hit_player(player, dmg):
-    """不经护盾/闪避的直接生命损失（爆裂反射、嫁祸转嫁给玩家、赌命等）"""
+    """不经护盾/闪避的直接生命损失（爆裂反射、赌命等）"""
     player.current_hp = max(0, player.current_hp - dmg)
     player.hp_lost_this_round += dmg
     if player.current_hp <= 0:
@@ -428,13 +419,6 @@ def apply_exclusive(act, m, player, monsters, rng):
         player.add_status(StatusEffect("畸变", remaining_rounds=x, value=x))
     elif act == "活血":
         m.add_status(StatusEffect("活血", remaining_rounds=x, value=x))
-    elif act == "嫁祸":
-        if JIAHUO_POLICY == "ally_first":
-            others = [b for b in _alive_monsters(monsters) if b is not m]
-            m._jiahuo_target = (rng.choice(others).runtime_id if others else player.runtime_id)
-        else:  # player_first：无道德底线，直接转嫁轮回者
-            m._jiahuo_target = player.runtime_id
-        m._jiahuo_left = x
     elif act == "背负":
         others = [b for b in _alive_monsters(monsters) if b is not m]
         if not others:

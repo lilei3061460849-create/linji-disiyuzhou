@@ -182,7 +182,10 @@ class CostPaymentMixin:
             self._check_hp_zero_death(payer, ctx=cost_context)
         elif cost_type == "枯竭":
             payer.mana_limit = max(0, payer.mana_limit - amount)
-            payer.current_mana = min(payer.current_mana, payer.mana_limit)
+            # 【苍白之花】持有者的当前法力可以超出[法限]（2026-10-11 用户令），
+            # 因此法限被压低时不连带削掉溢出部分——与 clamp_immortal_body 同一条判定。
+            if not self.mana_overflow_exempt(payer):
+                payer.current_mana = min(payer.current_mana, payer.mana_limit)
         elif cost_type == "萎缩":
             payer.speed_limit = max(0, payer.speed_limit - amount)
             overflow = max(0, payer.current_speed - payer.speed_limit)

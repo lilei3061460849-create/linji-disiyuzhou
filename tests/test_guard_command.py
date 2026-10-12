@@ -227,8 +227,12 @@ def _engine_custom(db_suffix, daowen_list):
     return e
 
 
-def test_custom_spell_defined_in_battle_costs_one_action():
-    """正常路径：战斗中 define_spell 自创成功、立即生效、消耗 1 次主动出手。
+def test_custom_spell_defined_in_battle_costs_tier_actions():
+    """正常路径：战斗中 define_spell 自创成功、立即生效、按阶级消耗主动出手。
+
+    2026-10-11 对齐事实源：`法术索引.md`「法术阶级规则」——法术使用X种不同道纹
+    即为X阶，**定义**X阶法术必须在声明时一次性消耗X次出手机会。
+    本例【以杀养伤】用【杀伐】+【再生】= 2 阶，故扣 2 次出手（原断言"1次"为旧口径）。
 
     2026-09-16 用户裁定：法术不再需要【学习】，局外自创入口取消，三大法则
     由句式解析器硬性把关，故不再产生"未见场景"中断等 DM 裁定。
@@ -243,7 +247,7 @@ def test_custom_spell_defined_in_battle_costs_one_action():
     assert r["success"], r.get("error")
     assert r["result"]["wired"] is True
     assert [s.name for s in p.spells] == ["以杀养伤"]
-    assert p.actions_used_this_round == used_before + 1, "自创法术应消耗1次主动出手"
+    assert p.actions_used_this_round == used_before + 2, "2阶自创法术应消耗2次主动出手"
     assert not e._pending_interrupts, "新规则下自创不再卡DM裁定"
 
 

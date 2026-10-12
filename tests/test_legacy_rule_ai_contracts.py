@@ -21,7 +21,9 @@
 下方同时断言**当前真实生效**的契约（这些必须通过），避免本文件只是一座墓园：
 
   * 引擎层：招架动作出现在运行时 available_actions 里，减免=floor(10%当前生命)，
-    已声明的回合不能再声明，且**不读**已废弃的 parry_locked_this_round；
+    2026-10-11：「回合姿态式招架」整条口径已废（declare_parry / 10%当前生命减免 /
+    可挡次数=当前生命 / parrying_this_round 门禁），本文件原有 3 条契约测试随之删除；
+    现行招架是 resolve_attack 的逐击参数，守护在 tests/test_blade_combat_rework.py。
   * 规则 AI 层：招架候选在"能救命"的局面下仍会被生成；
     WinOnlyAI 的候选构建入口没有漏掉基类招架候选；
     ``remaining_actions()`` 读 action_count 而不是写死 2。
@@ -87,48 +89,6 @@ def test_legacy_one_by_one_daowen_outscores_basic_attack(tmp_path):
 # ---------------------------------------------------------------------------
 # 二、当前生效的契约（必须通过）
 # ---------------------------------------------------------------------------
-
-def _declare_parry_action(engine):
-    actions = engine.get_available_actions().get("actions", [])
-    return next(a for a in actions if a.get("action_type") == "declare_parry")
-
-
-def test_current_parry_contract_is_exposed_and_uses_ten_percent_current_hp(tmp_path):
-    e = _lethal_engine(tmp_path, hp=40, attack_power=20)
-    action = _declare_parry_action(e)
-    assert action["available"] is True, action
-
-    r = e.execute_action("declare_parry", {})
-    assert r["success"], r
-    assert r["result"]["reduction_preview"] == 40 // 10
-    assert r["result"]["uses"] == 40
-    assert e.state.player.parrying_this_round is True
-    # 同一回合重复声明被拒（现行规则），错误信息与旧"回合锁"无关
-    again = e.execute_action("declare_parry", {})
-    assert again["success"] is False
-    assert "已处于招架姿态" in again["error"]
-
-
-def test_current_parry_availability_ignores_deprecated_turn_lock_field(tmp_path):
-    e = _lethal_engine(tmp_path, hp=40, attack_power=20)
-    e.state.player.parry_locked_this_round = True   # 旧字段：已废弃，不再参与门禁
-    e.state.player.parrying_this_round = False
-    assert _declare_parry_action(e)["available"] is True
-    e.state.player.parrying_this_round = True
-    assert _declare_parry_action(e)["available"] is False
-
-
-def test_current_rule_ai_still_generates_parry_candidate_when_it_can_save_lives(tmp_path):
-    from engine.ai_tactics import TacticalAI
-
-    e = _lethal_engine(tmp_path, hp=40, attack_power=20)
-    ai = TacticalAI(e)
-    cand = ai._parry_candidate()
-    assert cand is not None and cand["action"] == "declare_parry"
-    assert cand["expected_reduction"] == 40 // 10
-    result = ai.take_action()
-    assert result is not None and result.get("success"), result
-
 
 def test_win_only_candidate_builder_keeps_base_parry_candidate():
     """WinOnlyAI 覆写候选入口时不得漏掉基类招架候选（源码级结构检查）。"""

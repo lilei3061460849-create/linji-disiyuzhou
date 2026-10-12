@@ -55,6 +55,13 @@ def engine(tmp_path):
 # 回归见 tests/test_boming_daowen.py。
 
 
+
+# 2026-10-12 用户令：【血契】删掉与道纹【透支】重合的「[回始]流血4X换X法力」，
+# 只保留平分。原先此处有 2 条测试专测那个回始付费决策，驱动已被删除，
+# 按「唯一驱动是已删机制的测试应删除而非改写」处理；平分功能的覆盖仍在
+# test_blood_pact_shares_every_supported_numeric_cost /
+# test_event_and_daowen_costs_use_blood_pact_bus 等处。
+
 def test_san_xiang_disc_consumes_abundant_resonance(engine):
     """三相残韵盘：有残韵库存时消耗库存最多的类型，战终补回另两种。"""
     engine.state.relics.append(Relic(name="三相残韵盘",
@@ -71,34 +78,9 @@ def test_san_xiang_disc_consumes_abundant_resonance(engine):
 
 # ---------- 回始遗物 ----------
 
-def test_blood_pact_used_when_hp_high(engine):
-    """血契：血量充足且法力有缺口时主动换法力。"""
-    engine.state.relics.append(Relic(name="血契", effect="[回始]可流血4X获得X法力"))
-    engine.state.energy = 0
-    bs, _ = start_battle(engine)
-    assert bs.get("success"), bs
-    p = engine.state.player
-    p.current_hp = 40
-    p.current_mana = 0
-    choices = round_start_relic_choices(engine)
-    assert choices.get("血契", {}).get("use") is True, choices
-    rs = engine.execute_action("round_start", {"relic_choices": choices})
-    assert rs.get("success"), rs
-    assert any("血契" in str(ef) for ef in rs.get("result", {}).get("effects", []))
 
 
-def test_blood_pact_declined_when_hp_low(engine):
-    """血契：血量过低时显式拒绝。"""
-    engine.state.relics.append(Relic(name="血契", effect="[回始]可流血4X获得X法力"))
-    engine.state.energy = 0
-    bs, _ = start_battle(engine)
-    p = engine.state.player
-    p.current_hp = 8
-    choices = round_start_relic_choices(engine)
-    assert choices.get("血契", {}).get("use") is False
 
-
-# ---------- 终音法器 ----------
 
 def test_black_card_halves_enemy_blood_limit(engine):
     """黑金名片：碎片充足时战始发动，敌方血限真实减半。"""

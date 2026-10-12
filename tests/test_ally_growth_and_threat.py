@@ -34,6 +34,10 @@ def _end_battle_with_ally_alive(e, ally):
     assert started["success"], started
     started_round = begin_round(e)
     assert started_round["success"], started_round
+    # 2026-10-12 出怪下界 1→2：战始可能抽到 N=2 并把余下那只排进增援队列，
+    # 战终门禁（"仍有N只怪物增援未进场"）会拒绝结算，朋友成长也就不会计数。
+    # 本文件只测成长条款，故把随机增援清掉。
+    e.state.monster_reinforcements = []
     for m in list(e.state.enemies):
         m.is_alive = False
     return e.execute_action("battle_end", {})
@@ -81,6 +85,10 @@ def test_boundary_dead_ally_does_not_grow():
     assert started["success"], started
     started_round = begin_round(e)
     assert started_round["success"], started_round
+    # 2026-10-12 出怪下界 1→2：战始可能抽到 N=2 并把余下那只排进增援队列，
+    # 战终门禁（"仍有N只怪物增援未进场"）会拒绝结算，朋友成长也就不会计数。
+    # 本文件只测成长条款，故把随机增援清掉。
+    e.state.monster_reinforcements = []
     for m in list(e.state.enemies):
         m.is_alive = False
     ended = e.execute_action("battle_end", {})
@@ -99,6 +107,10 @@ def test_boundary_undeployed_employee_does_not_grow():
     e.state.employees.append(emp)
     e.execute_action("battle_start", {})
     e.execute_action("round_start", {"relic_choices": {}})
+    # 2026-10-12 出怪下界 1→2：战始可能抽到 N=2 并把余下那只排进增援队列，
+    # 战终门禁（"仍有N只怪物增援未进场"）会拒绝结算，朋友成长也就不会计数。
+    # 本文件只测成长条款，故把随机增援清掉。
+    e.state.monster_reinforcements = []
     for m in list(e.state.enemies):
         m.is_alive = False
     e.execute_action("battle_end", {})

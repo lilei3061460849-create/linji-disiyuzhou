@@ -33,7 +33,7 @@ def _engine(tmp_path):
 
 
 def _monster_with(name, daowen: dict):
-    # 2026-09-16：怪物[法限]即法力池；1 点付不起杀伐2/勾魂2/衰败2，抬到 20。
+    # 2026-09-16：怪物[法限]即法力池；1 点付不起杀伐2/勾魂2，抬到 20。
     m = Entity(name=name, entity_type="怪物", blood_limit=200, current_hp=100,
                attack_count=1, attack_power=20)
     for dw, x in daowen.items():
@@ -74,11 +74,12 @@ def test_zengzhi_defaults_to_self(tmp_path):
 
 
 def test_hostile_defaults_to_player(tmp_path):
-    """HOSTILE（杀伐/勾魂/衰败）默认攻击/削弱玩家。"""
+    """HOSTILE（杀伐/勾魂/减速）默认攻击/削弱玩家。"""
     e = _engine(tmp_path)
-    m = _monster_with("攻击怪", {"杀伐": 2, "勾魂": 2, "衰败": 2})
+    # 2026-10-11 用户令：【衰败】已删除，HOSTILE 样本改用仍存的 减速
+    m = _monster_with("攻击怪", {"杀伐": 2, "勾魂": 2, "减速": 2})
     e.state.enemies.append(m)
-    for name in ("杀伐", "勾魂", "衰败"):
+    for name in ("杀伐", "勾魂", "减速"):
         opt, actor = _prepared_option(e, name)
         assert pick_monster_daowen_target(e, actor["actor_ref"], opt) == "player:0", name
 
@@ -128,13 +129,15 @@ def test_classification_sets_cover_all_dungeon_daowens():
     unclassified = needs_target - MONSTER_SELF_DAOWEN - MONSTER_HOSTILE_DAOWEN
     # 通用/区域道纹里允许未分类（默认走玩家优先），但至少不因分类缺失而崩溃；
     # 以下为当前怪物池里实际出现的需目标道纹，必须全部已分类。
+    # 2026-10-11 起本名单只列**现存**道纹：已删除的（衰败/借力/无神/嫁祸/活血/
+    # 尸爆/爆裂/眩晕/坠落/滑翔/滋养/兴奋/自愈/镇尸）不再出现，点金已改名失忆。
     critical = {"再生", "增殖", "庇护", "全力", "杀伐", "勾魂", "冥气",
-                "衰败", "减速", "必中", "飞行", "狂暴", "弱化", "借力",
-                "坏死", "爆裂", "定型", "僵化", "变形", "退化", "加害", "龙鳞",
-                "逆鳞", "裂变", "嫁祸", "背负", "伤痕", "点金", "逼债",
+                "减速", "必中", "飞行", "狂暴", "弱化",
+                "坏死", "定型", "僵化", "变形", "退化", "加害", "龙鳞",
+                "逆鳞", "裂变", "背负", "伤痕", "点金", "逼债",
                 "豪夺", "清算", "赎金", "假钞", "赌命", "消灾", "封印", "波及",
-                "坠落", "寄生", "蒙蔽", "无神", "愤怒", "全速", "无力", "眩晕",
-                "洞察", "滋养", "急速", "加速", "滑翔", "自食", "兴奋", "招魂",
-                "缄默", "瓦解", "尸爆", "分裂", "贯穿", "固执", "血债"}
+                "寄生", "蒙蔽", "愤怒", "全速", "无力",
+                "洞察", "急速", "加速", "自食", "招魂",
+                "缄默", "瓦解", "分裂", "贯穿", "固执", "血债"}
     missing = critical - MONSTER_SELF_DAOWEN - MONSTER_HOSTILE_DAOWEN
     assert not missing, f"以下需目标道纹未分类：{sorted(missing)}"

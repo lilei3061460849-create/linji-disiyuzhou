@@ -47,15 +47,21 @@ def _duel_engine(tmp_path, *, lord_relics=("血契",), lord_hp=1, lord_daowen=("
     return e
 
 
-def test_round_start_choices_include_opponent_blood_pact(tmp_path):
-    """死斗+守擂持血契:回始选项必须含'对手血契',且 round_start 能成功(事故根因回归)。"""
+def test_round_start_needs_no_opponent_blood_pact_decision(tmp_path):
+    """死斗+守擂持血契:回始不再要求'对手血契'决策,round_start 直接成功(事故根因回归)。
+
+    2026-08-26 死斗三事故的根因是「引擎要求提交对手血契决策、sim 从不构建该键 →
+    round_start 每回合 ValueError → 法力永不回填 → 双 0 法力空转到超时」。
+    2026-10-12 用户令删掉【血契】与【透支】重合的「[回始]流血4X换X法力」后,
+    血契不再是回始主动遗物,该决策键取消 —— 这一类卡死从结构上不可能再发生。
+    本条就是那道结构守护:守擂仍持【血契】时,回始既不该要这个键,也不该失败。
+    """
     e = _duel_engine(tmp_path)
     choices = round_start_relic_choices(e)
-    assert "对手血契" in choices, "守擂持血契时必须构建 '对手血契' 决策,否则回始永久失败"
-    assert isinstance(choices["对手血契"]["use"], bool)
+    assert "对手血契" not in choices, "血契已无回始主动效果,不应再构建该决策"
+    assert "血契" not in choices
     r = e.execute_action("round_start", {"relic_choices": choices})
     assert r.get("success"), f"回始不应再被血契校验卡死: {r.get('error')}"
-    assert e.state.player.current_mana >= e.state.player.mana_limit, "回始后法力应回满(叠加口径)"
 
 
 def test_round_start_choices_no_opponent_pact_in_pve(tmp_path):

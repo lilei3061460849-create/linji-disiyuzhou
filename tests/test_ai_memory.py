@@ -37,7 +37,7 @@ def _engine(tmp_path, seed=7):
 
 
 def test_unified_ai_creates_identity_and_learns_from_real_action(tmp_path):
-    """正常路径：AI 自述身份，并把真实招架结果写入经历与性格证据。"""
+    """正常路径：AI 自述身份，并把真实行动结果写入经历与性格证据。"""
     engine = _engine(tmp_path)
     engine.state.player.dao_wen.clear()
     engine.state.resonance.clear()
@@ -45,13 +45,17 @@ def test_unified_ai_creates_identity_and_learns_from_real_action(tmp_path):
     enemy = engine.state.enemies[0]
     enemy.attack_count = 1
     enemy.attack_power = 12
+    # 法力见底：让这次不耗法力的【蓄锐】触发 resource_view 证据
+    # （engine.ai_memory.infer_evidence：法力见底时仍保留低费选择）
+    engine.state.player.current_mana = 0
 
-    class _ParryLLM(AIBackend):
+    class _RestLLM(AIBackend):
         # 模拟 LLM 的战斗决策（2026-09-29 起战斗行动全部由 LLM 决定）
+        # 2026-10-11：招架已改为逐击参数，改用【蓄锐】作为脚本决策
         def decide(self, state, available_actions, context=""):
-            return AIDecision("declare_parry", {}, "致命威胁，先招架")
+            return AIDecision("rest", {}, "致命威胁，先蓄锐")
 
-    ai = AIPlayer(engine, backend=_ParryLLM())
+    ai = AIPlayer(engine, backend=_RestLLM())
     result = ai.play_turn("评估本轮威胁")
 
     assert result["result"]["success"], result

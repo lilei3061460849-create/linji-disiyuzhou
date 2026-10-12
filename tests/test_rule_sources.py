@@ -23,8 +23,12 @@ def test_project_rules_are_extracted_from_their_authoritative_documents():
     # 2026-10-08 用户令删除【镇尸】（与【坏死】硬重复）与一条无残韵路径的
     # 孤儿转化道纹：通用道纹 34→33，副本道纹 61→60（乱葬-1）。
     # 真正的护栏是下面 diff_project_daowen() 双向为空——正文与引擎必须逐条对齐。
-    assert len(facts["common_daowen"]) == 33
-    assert len(facts["dungeon_daowen"]) == 60
+    # 2026-10-11 校正：33 是旧口径遗留（HEAD 实测 28，补回漏定义的【寄生】【衰败】后为 30）。
+    # 计数只是快照，唯一硬要求是双向 diff 为空 + 引擎 58 条道纹全部能在正文找到定义。
+    # 2026-10-11 用户令删【无神】【借力】【衰败】→ 30 → 27。
+    assert len(facts["common_daowen"]) == 27
+    # 2026-10-11：龙心谷删【嫁祸】（效果与遗物【贪婪契约】重复）→ 60 → 59。
+    assert len(facts["dungeon_daowen"]) == 59
     assert len(facts["spells"]) == 10  # 2026-09-16：删「血溅五步」（无引擎流程的空名字）
     assert len(facts["dungeons"]) == 8
     assert len(facts["monsters"]) == 48  # 36 + 乱葬岗12(已实现)

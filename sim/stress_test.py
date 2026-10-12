@@ -8,7 +8,7 @@ alt_path + choose_pre_battle + 雇佣/救赎/存档续战全流程），主动�
   C. AI 明显自杀（预演漏判：正式执行后玩家命零）
   D. 预演不一致（预演 diff 与正式执行结果不符）
   E. 预演状态泄漏（预演前后真实 state 逐项不一致）
-  F. 实体引用漂移（预演前后实体 id / 嫁祸目标 / activated 引用异常）
+  F. 实体引用漂移（预演前后实体 id / 背负目标 / activated 引用异常）
   G. 资源/状态异常值（HP/mana/speed/shards/energy 越界）
   H. 规则异常（is_alive 与 hp 矛盾等）
 

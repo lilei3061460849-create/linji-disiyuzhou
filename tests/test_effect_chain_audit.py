@@ -469,13 +469,16 @@ def test_effect_chain_depth_fuse_exists_and_is_generous():
 
 
 def test_redirection_chain_terminates_and_keeps_parent():
-    """嫁祸重定向：链会收敛，且重定向后的伤害挂在原伤害之下。"""
+    """伤害重定向（背负）：链会收敛，且重定向后的伤害挂在原伤害之下。"""
     state, combat, player, enemy = _arena(enemy_hp=100)
     friend = Entity("F", "朋友", blood_limit=50, current_hp=50)
     state.friends = [friend]
-    player._jiahuo_left = 1
-    player._jiahuo_target = friend.runtime_id
-    player.add_status(StatusEffect("嫁祸", value=1, remaining_rounds=1, source="P"))
+    # 2026-10-11【嫁祸】已删除（效果与遗物【贪婪契约】重复）。本用例考察的是
+    # 「伤害重定向」这一架构性质，与具体哪张牌无关，故改由仍在的【背负】承载：
+    # 背负者(F)替目标(P)承担下1次伤害——重定向链、父事件挂载口径完全相同。
+    friend._beifu_left = 1
+    friend._beifu_target = player.runtime_id
+    friend.add_status(StatusEffect("背负", value=1, remaining_rounds=1, source="F"))
 
     detail = combat._apply_hostile_damage(player, 10, source=enemy, ctx={
         "timing": "monster_action", "source": "普通攻击", "source_type": "attack",
@@ -696,13 +699,16 @@ def test_j_entity_died_event_carries_actor_name_from_dict_context():
 
 
 def test_j_redirected_damage_emits_exactly_one_damage_event():
-    """嫁祸重定向不得产生两条 DAMAGE_APPLIED（重定向在落地前 return）。"""
+    """伤害重定向（背负）不得产生两条 DAMAGE_APPLIED（重定向在落地前 return）。"""
     state, combat, player, enemy = _arena()
     friend = Entity("F", "朋友", blood_limit=50, current_hp=50)
     state.friends = [friend]
-    player._jiahuo_left = 1
-    player._jiahuo_target = friend.runtime_id
-    player.add_status(StatusEffect("嫁祸", value=1, remaining_rounds=1, source="P"))
+    # 2026-10-11【嫁祸】已删除（效果与遗物【贪婪契约】重复）。本用例考察的是
+    # 「伤害重定向」这一架构性质，与具体哪张牌无关，故改由仍在的【背负】承载：
+    # 背负者(F)替目标(P)承担下1次伤害——重定向链、父事件挂载口径完全相同。
+    friend._beifu_left = 1
+    friend._beifu_target = player.runtime_id
+    friend.add_status(StatusEffect("背负", value=1, remaining_rounds=1, source="F"))
 
     combat._apply_hostile_damage(player, 10, source=enemy, ctx={
         "timing": "monster_action", "source": "普通攻击", "source_type": "attack",

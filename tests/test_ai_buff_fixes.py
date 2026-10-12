@@ -6,6 +6,8 @@ pytest - AI 战术表死码修复（2026-08-18）
    爆裂/超频/龙鳞/滑翔/分裂/招魂）授予后 0 发动（死码）。
 2. try_debuff 的 X≥2 门槛对代价型道纹（cost≤0，_x_for 恒为1，如畸变/逆鳞）
    永不满足；衰败被错标为 nuke 且按默认 dmg_per_x=2 错价，从未被选中。
+   （2026-10-11 用户令：【衰败】已删除，对应的 `test_shuaibai_*` 用例随之移除；
+   「分类必须来自预演」这条不变量仍由本文件的代价型削弱与【瓦解】两个用例守着。）
 3. （2026-10-03：【尸爆】删除）同类的「分类必须来自预演而非人工标签」回归改用【瓦解】。
 
 覆盖：正常路径 / 边界条件 / 错误输入
@@ -74,15 +76,8 @@ def test_jibian_pay_type_debuff_casts_at_x1(tmp_path):
     assert r is not None, "代价型削弱应以X=1发动，不得被X≥2门槛卡死"
 
 
-def test_shuaibai_reclassified_as_debuff_and_casts(tmp_path):
-    """衰败：非伤害战术牌（预演归纳），法力≥15时应被发动"""
-    e = _engine(tmp_path)
-    _give(e.state.player, "衰败")
-    e.state.player.current_mana = 20
-    e.state.player.current_speed = 3  # 压低出手预算仍应够X=1
-    ai = TacticalAI(e)
-    r = ai.try_debuff()
-    assert r is not None, "衰败X=1（回始扣20%当前生命）应被发动"
+# 2026-10-11 用户令：`test_shuaibai_reclassified_as_debuff_and_casts` 已删除——它整条建立在被删机制上，不是改断言能救的。
+
 
 
 def test_wajie_classified_by_preview_not_by_label(tmp_path):

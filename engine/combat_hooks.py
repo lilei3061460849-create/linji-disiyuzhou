@@ -120,7 +120,7 @@ class ShouyedengHook:
 
 
 class DamageRedirectionHook:
-    """嫁祸与背负：伤害重定向逻辑"""
+    """背负：伤害重定向逻辑（【嫁祸】2026-10-11 已删除，效果与遗物【贪婪契约】重复）"""
     priority = 70
     # 由 CombatEngine 通过 apply_redirection() 显式分发，不参与通用遍历。
     explicit_dispatch = True
@@ -129,19 +129,6 @@ class DamageRedirectionHook:
         if damage_type == "代价" or not target:
             return None
         all_entities = (state.get_all_player_side() + state.get_all_enemy_side()) if hasattr(state, "get_all_player_side") else []
-        # 嫁祸：自身下X次受伤由目标承担（_jiahuo_target 存 runtime_id，按 id 解析实体）
-        if hasattr(target, "_jiahuo_left") and getattr(target, "_jiahuo_left", 0) > 0:
-            j_id = getattr(target, "_jiahuo_target", None)
-            j_target = next((e for e in all_entities
-                             if getattr(e, "runtime_id", None) == j_id), None)
-            target._jiahuo_left -= 1
-            if target._jiahuo_left <= 0:
-                target.status_effects = [s for s in target.status_effects if s.name != "嫁祸"]
-                if hasattr(target, "_jiahuo_target"):
-                    delattr(target, "_jiahuo_target")
-            if j_target and getattr(j_target, "is_alive", False):
-                return j_target
-
         # 背负：目标的伤害由背负者承担（_beifu_target 同样存 runtime_id）
         for ent in all_entities:
             if ent is target:

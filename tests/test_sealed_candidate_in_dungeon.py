@@ -25,6 +25,7 @@ def _engine_with_snapshot(snapshot, seed=1):
     """用封存快照的玩家作为起始角色，进入乱葬岗。"""
     e = GameEngine(db_path="/tmp/test_sealed_dg.db", rng_seed=seed)
     e.execute_action("setup_attributes", {"name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6})
+    e.state.player.blood_limit = 150   # 2026-10-12【承载上限】：抬高血限让额度不构成瓶颈
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": "乱葬岗"})
@@ -54,6 +55,9 @@ def test_sealed_candidate_fights_in_dungeon():
     e0.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e0.execute_action("setup_choose_region", {"region": "龙心谷"})
     e0.execute_action("choose_discovered_relic", {"relic_name": setup["result"]["relic_choices"][0]})
+    # 2026-10-12 新增【承载上限】：本条测的是封存角色能带成长属性/道纹进副本，
+    # 不是额度（额度由 tests/test_load_capacity.py 专测），故抬高血限避免学习被拒。
+    e0.state.player.blood_limit = 150
     # 成长：+3法限 +2速限 + 学道纹 + 1朋友
     e0.state.player.mana_limit += 6
     e0.state.player.speed_limit += 3

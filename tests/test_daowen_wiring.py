@@ -164,37 +164,15 @@ def test_boba_boundary_and_invalid_submissions():
     assert m.has_status("波及") and m2.has_status("波及")
 
 
-def test_zishi_shuaibai():
-    """接线：自食打自己；衰败扣当前生命百分比。"""
-    engine = _engine("keys2")
-    p = engine.state.player
-    for n in ("自食", "衰败"):
-        _give(p, n)
-    m = _monster(engine)
-    engine.execute_action("round_start", {})
-
-    p.attack_power = 5
-    p.current_hp = 40
-    r3 = engine.execute_action("use_daowen", {"daowen_name": "自食", "x": 3, "target": p.name})
-    assert r3["success"]
-    assert p.attack_power == 2
-    assert p.current_hp == 43
-
-    m.current_hp = 60
-    r4 = engine.execute_action("use_daowen", {"daowen_name": "衰败", "x": 1, "target": m.name})
-    assert r4["success"]
-    assert m.current_hp == 60  # [回始]发动时不立即触发
-    assert m.has_status("衰败")
-    engine.state.combat_subphase = "await_round_end"
-    engine.execute_action("round_end", {})
-    engine.execute_action("round_start", {})
-    assert m.current_hp == 54  # [回始]ceil(60*10%)
 
 def test_jiahai_guzhi_fennu_jieli_jisheng():
-    """加害挂目标加伤；固执单次掉 1；愤怒法力减半；借力加伤；寄生吸血。"""
+    """加害挂目标加伤；固执单次掉 1；愤怒法力减半；寄生吸血。
+
+    2026-10-11 用户令：【借力】已删除，原「借力2 → _jieli_boost +20%」段落一并移除。
+    """
     engine = _engine("hooks")
     p = engine.state.player
-    for n in ("加害", "固执", "愤怒", "借力", "寄生"):
+    for n in ("加害", "固执", "愤怒", "寄生"):
         _give(p, n)
     m = _monster(engine, ap=10)
     engine.execute_action("round_start", {})
@@ -211,18 +189,17 @@ def test_jiahai_guzhi_fennu_jieli_jisheng():
     d2 = p.take_damage(20)
     assert d2["actual_damage"] == 1
     assert p.current_hp == 49
+    # 2026-10-11 用户令：固执简化为「你每次失去的生命不会超过1」，代价路径同样封顶。
+    # 旧口径下这一击会全额落地 8 点（`damage_type != "代价"` 排除），现已废止。
     d3 = p.take_damage(8, "代价")
-    assert d3["actual_damage"] == 8
+    assert d3["actual_damage"] == 1
+    assert p.current_hp == 48
 
     engine.execute_action("use_daowen", {"daowen_name": "愤怒", "x": 2, "target": p.name})
     assert p.has_status("愤怒")
     mana = p.current_mana
     assert p.spend_mana(10) is True
     assert p.current_mana == mana - 5
-
-    engine.execute_action("use_daowen", {"daowen_name": "借力", "x": 2, "target": p.name})
-    assert p.has_status("借力")
-    assert engine.combat._jieli_boost(p, 10) == 12  # +20%
 
     host = _monster(engine, name="寄生体", hp=80, atk=1, ap=1)
     r_js = engine.execute_action("use_daowen", {"daowen_name": "寄生", "x": 1, "target": host.name})
@@ -235,13 +212,15 @@ def test_jiahai_guzhi_fennu_jieli_jisheng():
 
 
 def test_huaxiang_dingxing_wushen():
-    """定型挡弱化；无神打自己。
+    """定型挡弱化。
 
     2026-10-03：【滑翔/坠落】删除，原「滑翔视同飞行、坠落落地并减半」段落一并移除。
+    2026-10-11 用户令：【无神】删除，原「无神使敌方轮回者的杀伐改打自己」段落一并移除
+    （引擎里的强制改目标分支同批删除，见 `engine/combat_parts/spells.py`、`api.py`）。
     """
     engine = _engine("ctrl")
     p = engine.state.player
-    for n in ("定型", "无神", "弱化"):
+    for n in ("定型", "弱化"):
         _give(p, n)
     m = _monster(engine, ap=8)
     engine.execute_action("round_start", {})
@@ -251,23 +230,7 @@ def test_huaxiang_dingxing_wushen():
     engine.execute_action("use_daowen", {"daowen_name": "弱化", "x": 3, "target": m.name})
     assert m.attack_power == 10
 
-    foe = Entity(name="失神者", entity_type="轮回者", blood_limit=80, current_hp=80,
-                 mana_limit=20, current_mana=20, speed_limit=6, current_speed=6)
-    foe.dao_wen["杀伐"] = DaoWenInstance(
-        DaoWen(name="杀伐", formula="", cost_type="消耗", cost_formula="X", effect_formula=""))
-    engine.state.enemies.append(foe)
-    r_ws = engine.execute_action("use_daowen", {"daowen_name": "无神", "x": 1, "target": foe.name})
-    assert r_ws["success"], r_ws
-    assert foe.has_status("无神")
-    # 敌方轮回者只能在死斗里 use_daowen；非死斗会报「不能作为行动者」。
-    engine.state.in_final_duel = True
-    engine.state.duel_turn = "opponent_side"
-    hp_f = foe.current_hp
-    r = engine.execute_action("use_daowen", {
-        "actor": foe.name, "daowen_name": "杀伐", "x": 2, "target": p.name,
-    })
-    assert r["success"], r
-    assert foe.current_hp == hp_f - 4   # 无神改打自己（杀伐2→X²=4，2026-09-13）
+
 
 
 

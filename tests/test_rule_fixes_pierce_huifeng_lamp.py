@@ -122,77 +122,49 @@ def test_pierce_absent_still_blocked_by_shield(tmp_path):
     assert m.current_hp == 80 - max(0, dmg - 40)
 
 
-# ---------- 回锋刀 + 疲惫类战始遗物 ----------
-# 原用【折速法印】(疲惫X→6X法力) 驱动失速；该遗物已于 2026-09-13 删除
-# （效果改为道纹【搏命】），改用同为疲惫代价的【苍白之花】(固定疲惫5)。
-
-def test_zhesu_fatigue_triggers_huifeng(tmp_path):
-    """正常路径：苍白之花疲惫5失去5速（速限不足则清零），回锋刀按实际失速打伤害。"""
-    e = _engine(tmp_path, "hf_ok")
-    e.state.relics.append(Relic("苍白之花", ""))
-    e.state.relics.append(Relic("回锋刀", ""))
-    p = e.state.player
-    # 苍白之花固定疲惫5：当前速度必须付得起（[战始]按速限给满，故两者同抬）
-    p.speed_limit = max(p.speed_limit, 8)
-    p.current_speed = p.speed_limit
-    limit = p.speed_limit
-    begin_battle(e, relic_choices={
-        "苍白之花": {"use": True},
-        "回锋刀": {"enemy_index": 0},
-    })
-    m = e.state.enemies[0]
-    assert p.current_speed == limit - 5
-    assert m.current_hp == m.blood_limit - 15   # 失速5 × 每点3伤
+# ---------- 回锋刀 ----------
+# 2026-10-11 清理：这里原有 3 条用【苍白之花】战始疲惫5 驱动失速来测回锋刀的用例。
+# 该战始触发点是硬编码的遗物联动（回锋刀挂在「苍白之花是否付疲惫5」上），
+# 索引里回锋刀只有「每失去1点速度后」与[回始]两个触发点，故按 2026-10-11 用户令
+# 「按照索引重写程序」删除该联动，3 条用例随之删除。
+# 两个合法触发点的覆盖：失速即时伤见 tests/test_speed_context_compat.py，
+# 洗劫截取回锋刀伤害见 tests/test_relic_field_triggers.py，回始缺口伤见下面这条。
 
 
-def test_zhesu_without_target_is_atomic(tmp_path):
-    """非法：持回锋刀发动疲惫类遗物却不提交目标，战始失败且不扣速、不加力。"""
-    e = _engine(tmp_path, "hf_illegal")
-    e.state.relics = [Relic("苍白之花", ""), Relic("回锋刀", "")]
-    p = e.state.player
-    p.speed_limit = max(p.speed_limit, 8)
-    p.current_speed = p.speed_limit
-    speed, mana, battle = p.current_speed, p.current_mana, e.state.current_battle
-    bad = begin_battle(e, relic_choices={
-        "苍白之花": {"use": True},
-    })
-    assert not bad["success"]
-    assert "回锋刀" in bad["error"]
-    assert p.current_speed == speed
-    assert p.current_mana == mana
-    assert e.state.current_battle == battle
 
 
-def test_zhesu_declined_does_not_need_huifeng_target(tmp_path):
-    """边界：疲惫类遗物显式拒绝时不必提交回锋刀目标，也不造伤。"""
-    e = _engine(tmp_path, "hf_bound")
-    e.state.relics.append(Relic("苍白之花", ""))
-    e.state.relics.append(Relic("回锋刀", ""))
-    r = begin_battle(e, relic_choices={
-        "苍白之花": {"use": False},
-    })
-    assert r["success"], r
-    m = e.state.enemies[0]
-    assert e.state.player.current_speed == e.state.player.speed_limit
-    assert m.current_hp == m.blood_limit
+
 
 
 def test_round_start_gap_damage_is_separate_from_zhesu(tmp_path):
-    """边界：失速即时伤与回始缺口伤是两条独立条款，不互相吞掉。"""
+    """边界：失速即时伤与回始缺口伤是两条独立条款，不互相吞掉。
+
+    2026-10-11：失速来源由已删除的战始联动改为战中失速，条款本身不变。
+    """
     e = _engine(tmp_path, "hf_gap")
-    e.state.relics.append(Relic("苍白之花", ""))
     e.state.relics.append(Relic("回锋刀", ""))
-    e.state.player.speed_limit = max(e.state.player.speed_limit, 8)
-    e.state.player.current_speed = e.state.player.speed_limit
-    begin_battle(e, relic_choices={
-        "苍白之花": {"use": True},
-        "回锋刀": {"enemy_index": 0},
-    })
+    p = e.state.player
+    p.speed_limit = max(p.speed_limit, 8)
+    p.current_speed = p.speed_limit
+    begin_battle(e, relic_choices={})
+    # 2026-10-12 出怪下界 1→2：第1场可能出 2 只怪。本条要验的是「失速即时伤」与
+    # 「回始缺口伤」两条独立条款的数值，靶子必须唯一且活得过 30 点总伤，
+    # 否则第二只怪参战/靶子提前阵亡都会把断言变成 0 == 负数。
+    e.state.enemies[:] = e.state.enemies[:1]
+    e.state.monster_reinforcements = []
     m = e.state.enemies[0]
-    after_bs = m.current_hp
+    m.blood_limit = max(m.blood_limit, 200)
+    m.current_hp = m.blood_limit
+    # 战中失速5点（不依赖任何战始遗物联动）→ 回锋刀按每点3伤即时结算
+    e.combat._lose_current_speed(p, 5, "enemy:0", require_huifeng=True, ctx={
+        "timing": "player_action", "source": "普通攻击", "source_type": "attack",
+        "actor": p, "target": p, "mechanic": "speed_change", "subtype": "current_speed",
+        "amount": -5, "tags": set(),
+    })
+    after_loss = m.current_hp
     begin_round(e, relic_choices={"回锋刀": {"enemy_index": 0}})
-    assert after_bs == m.blood_limit - 15      # 战始失速5 × 每点3伤
-    assert m.current_hp == after_bs - 15        # 回始按缺口(速限-当前速度)=5 再打15
+    assert after_loss == m.blood_limit - 15     # 失速5 × 每点3伤
+    assert m.current_hp == after_loss - 15      # 回始按缺口(速限-当前速度)=5 再打15
 
 
 # ---------- 守夜灯 ----------
