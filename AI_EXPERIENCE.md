@@ -154,9 +154,9 @@ python3 -m pytest tests/test_ai_context.py tests/test_daowen_index_guard.py \
 | --- | --- |
 | `规则正文.md` / `data/rules/*.toml` | `python3 sim/gen_rules.py` |
 | 引擎道纹公式或 docstring、`CLOSED_LOOPS`、生成器的 `NOTES`/`CATEGORY` | `python3 sim/gen_daowen_index.py` |
-| 20 份来源中任意一份 | `python3 sim/gen_ai_context.py` |
+| 13 份来源中任意一份 | `python3 sim/gen_ai_context.py` |
 
-**20 份来源**（`sim/gen_ai_context.py::context_sources()` 是唯一清单）：`规则正文.md`、`推演规范.md`、`死者之书.md`、`全道纹索引.md`、`物品索引.md`、`法术索引.md`、`副本索引.md`、`故事文档.md`、`AI_EXPERIENCE.md`、`data/rules/{lethal_events,special_events,game_rules}.toml`、`副本/` 全部 8 份。**不在来源里**：`README.md` 与 `报告.md`（`tests/test_ai_context.py:45-46` 硬性断言排除）。注意 `全道纹索引.md` 与 `AI_EXPERIENCE.md` **本身都是来源**，所以改完它们最终也要过 `gen_ai_context.py`。
+**13 份来源**（`sim/gen_ai_context.py::context_sources()` 是唯一清单，且只收文字描述、规则逻辑与世界观）：`规则正文.md`、`推演规范.md`（剔除战斗推演格式与报告口径）、`死者之书.md`（剔除遗言格式）、`全道纹索引.md`、`物品索引.md`、`法术索引.md`（剔除反应型流程示例与 DSL 语法节）、`副本索引.md`（只收已实现副本）、`副本/` 中已实现的 4 份（扭曲都市、罪孽都市、龙心谷、乱葬岗）、`故事文档.md`（剔除收录流程）、`AI_EXPERIENCE.md`（仅节选角色扮演三节）。**不收录**：全部 TOML（`data/rules/*.toml`）、未实现副本草案、`README.md` 与 `报告.md`（`tests/test_ai_context.py` 硬性断言排除）。注意 `全道纹索引.md` 与 `AI_EXPERIENCE.md` **本身都是来源**，所以改完它们最终也要过 `gen_ai_context.py`。
 
 **最易漏的坑：生成器里硬编码的注记。** `sim/gen_daowen_index.py` 的 `NOTES` 字典是人写死的一段话，不跟引擎走。实例：【分裂】早在 2026-09-17 就废掉了「[命零]时触发」、2026-10-08 用户令又把代价从【衰老】改成【流血】，但 `NOTES["分裂"]` 一直写着「【命零】时触发」，于是**每次重生成都会把废止口径重新印进索引**，潜伏到 2026-10-11 才被发现。改规则时顺手 grep 一下生成器：
 
@@ -585,7 +585,7 @@ DaoWenEngine.register_all()
 ## 文档分工与事实源
 
 - `README.md`：**入口与 AI/维护速览**，不承载精确中文规则（2026-10-09 迁移）；用于导航、事实源优先级与本地验证命令。
-- `AI_CONTEXT.md`：给只会抓一个 raw URL 的外部 AI 的**生成聚合物**（`python3 sim/gen_ai_context.py` 生成；禁止手改；打包规则、流程、道纹、物品、法术、全部副本文档、世界观、AI 约束与 TOML）。不反向充当事实源；冲突仍回到下列各原始文件。
+- `AI_CONTEXT.md`：给只会抓一个 raw URL 的外部 AI 的**生成聚合物**（`python3 sim/gen_ai_context.py` 生成；禁止手改；只打包文字描述、规则逻辑与世界观，剔除 TOML、代码、接口规范、战报格式与未实现草案）。不反向充当事实源；冲突仍回到下列各原始文件。
 - `规则正文.md#第四宇宙规则正文`：**通用规则条文的唯一事实源**——基础定义、核心规则、残韵作用、局外系统、怪物准则、代价、道纹体系、原始怪物道纹与转化道纹、特殊事件、通用事件池。`engine/events.py` 由此解析通用事件池，`engine/rule_sync.py` 由此解析道纹体系（切片锚点 `### 道纹体系` → `### 特殊事件`，改标题前先改解析器）。
 - `推演规范.md`：开局、局外、战斗、死斗、战报格式与推演铁律摘要的唯一完整操作/记录规范；具体结算条文链接回 `规则正文.md`。
 - `故事文档.md`：世界观与底层因果法则设定正典，以及经认可的战报正典档案。
