@@ -69,13 +69,15 @@ def test_transform_paths_are_bidirectional():
 
 
 def test_monster_transform_branch_is_reversible():
-    """正常路径：原始怪物道纹 ⇄ 转化道纹 可反向（如 借力→(转换)→全力）。"""
-    assert R.find_transformation("借力", "转换") == "全力"
+    """正常路径：原始怪物道纹 ⇄ 转化道纹 可反向（如 弱化→(反转)→全力）。
+
+    2026-10-11 用户令删除【借力】→【全力】的（转换）出边**留空不补**
+    （用户口径：整体大改前不新增道路）；【全力】仍有（反转）→弱化、（曲解）→自食。
+    """
     assert R.find_transformation("弱化", "反转") == "全力"
     assert R.find_transformation("自食", "曲解") == "全力"
     assert R.find_transformation("寄生", "曲解") is None  # 自愈删除后不补新路径
     assert R.get_available_resonance("全力") == [
-        {"resonance_type": "转换", "target_daowen": "借力", "direction": "正向", "loop": "怪物原始道纹"},
         {"resonance_type": "反转", "target_daowen": "弱化", "direction": "正向", "loop": "怪物原始道纹"},
         {"resonance_type": "曲解", "target_daowen": "自食", "direction": "正向", "loop": "怪物原始道纹"},
     ]
@@ -98,7 +100,8 @@ def test_single_fourteen_node_core_loop():
 def test_three_region_loops_present():
     """正常路径：三条副本闭环必须存在"""
     # 2026-10-03：扭曲都市删【爆裂】、龙心谷删【活血】，这两条闭环 8 → 7 条边；罪孽都市不变。
-    expected = {"扭曲都市闭环": 7, "罪孽都市闭环": 8, "龙心谷闭环": 7}
+    # 2026-10-11：龙心谷删【嫁祸】（效果与遗物【贪婪契约】重复），由【裂变】直连【背负】，7 → 6 条边。
+    expected = {"扭曲都市闭环": 7, "罪孽都市闭环": 8, "龙心谷闭环": 6}
     for loop, n in expected.items():
         assert loop in R.CLOSED_LOOPS, f"缺少 {loop}"
         assert len(R.CLOSED_LOOPS[loop]) == n, f"{loop} 应有{n}条边"

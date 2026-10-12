@@ -28,8 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import pytest  # noqa: E402
 
 from engine.api import GameEngine                       # noqa: E402
-from engine.combat import (CombatEngine, parry_reduction_for,  # noqa: E402
-                           parry_uses_for)
+from engine.combat import CombatEngine                 # noqa: E402
 from engine.dice import DiceEngine                      # noqa: E402
 from engine.models import DaoWen, DaoWenInstance, Entity, GameState, Relic  # noqa: E402
 from engine import battle_report as BR                  # noqa: E402
@@ -101,6 +100,13 @@ def _bleed_cost(combat: CombatEngine, ent: Entity, amount: int) -> None:
 # ===========================================================================
 # 1. 普通伤害：杀伐 → 生命变化
 # ===========================================================================
+
+# 2026-10-11 清理：本文件原有 6 条「回合姿态式招架」测试
+# （10% 当前生命减免 / 可挡次数=当前生命 / declare_parry 声明快照）。
+# 该口径已废：招架改为在 resolve_attack 的对应 hit 上逐击提交 parry=true，
+# 真刀免疫并返还 1 点速度、空刀不返还——守护在 tests/test_blade_combat_rework.py。
+# 与之配套的 engine/combat.py::parry_reduction_for / parry_uses_for 两个共享函数
+# 在全引擎已无任何调用点，同批删除（留着只会被误当作现行规则的真源）。
 
 def test_plain_damage_numbers_match_the_state_and_the_report(tmp_path):
     """正常路径：杀伐X 打出的伤害，返回/实体/战报三处必须是同一组数。
@@ -322,58 +328,9 @@ def test_dodge_needs_speed(tmp_path):
 # 4. 招架：结算当时的生命
 # ===========================================================================
 
-def test_parry_uses_the_hp_at_settlement_time_not_at_declaration(tmp_path):
-    """核心张力：声明后先掉一大截血，随后的减伤按**掉血后**的生命算。"""
-    e = _battle_engine(tmp_path, "parry_timing")
-    p, foe = e.state.player, e.state.enemies[0]
-    p.blood_limit = 300
-    p.current_hp = 200
-
-    declared = e.execute_action("declare_parry", {})
-    assert declared["success"], declared
-    assert declared["result"]["reduction_preview"] == parry_reduction_for(200) == 20
-
-    # 代价不掉招架次数、也不吃招架减免，用来把生命压到 140
-    _bleed_cost(e.combat, p, 60)
-    assert p.current_hp == 140
-
-    detail = e.combat._apply_hostile_damage(p, 30, source=foe)
-    # detail["raw_damage"] 是招架卸力之后、格挡吸收之前的数值（伤害咽喉的口径）
-    assert detail["raw_damage"] == 30 - parry_reduction_for(140), (
-        "减免必须按结算时的 140 算（减14），不是声明时的 200（减20）")
-    assert detail["actual_damage"] == 30 - parry_reduction_for(140) == 16
-    assert p.current_hp == 124
-
-
-def test_parry_reduction_matches_the_shared_formula_at_every_hp():
-    """边界扫描：任何生命值下，真实减免都等于共享函数 parry_reduction_for。"""
-    for hp in (0, 1, 9, 10, 11, 19, 20, 55, 99, 100, 250):
-        _, combat, player, enemy = _arena(bl=max(hp, 1), hp=hp)
-        player.parrying_this_round = True
-        player.parry_uses_remaining_this_round = 999
-        expected = parry_reduction_for(hp)
-        reduction = 40 - combat._apply_parry_reduction(player, 40, "普通")
-        assert reduction == expected, (hp, reduction, expected)
-
-
 # ===========================================================================
 # 5. 格挡 ≠ 招架
 # ===========================================================================
-
-def test_parry_strips_before_shield_absorbs():
-    """顺序：招架先减力（进 take_damage 之前），格挡再吸收剩下的（take_damage 内）。"""
-    _, combat, player, enemy = _arena(bl=300, hp=300, shield=10)
-    player.parrying_this_round = True
-    player.parry_uses_remaining_this_round = 999
-
-    detail = combat._apply_hostile_damage(player, 50, source=enemy)
-    reduction = parry_reduction_for(300)          # 30
-    assert detail["raw_damage"] == 50 - reduction, "招架在进 take_damage 之前就卸了力"
-    assert detail["shield_absorbed"] == 10        # 格挡只吸收招架之后剩下的
-    assert detail["actual_damage"] == 50 - reduction - 10
-    assert player.current_hp == 300 - (50 - reduction - 10)
-    assert player.shield == 0
-
 
 def test_shield_absorbs_alone_without_parry():
     """对照：没声明招架时，格挡原样吸收，不受招架公式影响。"""
@@ -396,17 +353,6 @@ def test_neither_parry_nor_shield_touches_a_cost():
     assert player.current_hp == 288, "代价全额支付，不被招架减免"
     assert player.shield == 25, "格挡不吸收代价"
     assert player.parry_uses_remaining_this_round == uses_before, "代价不消耗招架次数"
-
-
-def test_parry_still_consumes_a_use_when_it_reduces_nothing():
-    """边界：低血时 10% 取整为 0，招架不减伤但仍消耗一次次数。"""
-    _, combat, player, enemy = _arena(bl=9, hp=9)
-    player.parrying_this_round = True
-    player.parry_uses_remaining_this_round = 9
-    assert parry_reduction_for(9) == 0
-    combat._apply_hostile_damage(player, 5, source=enemy)
-    assert player.current_hp == 4
-    assert player.parry_uses_remaining_this_round == 8
 
 
 # ===========================================================================
@@ -543,35 +489,6 @@ def test_spell_step_and_plain_daowen_share_the_mana_payment_rule(tmp_path):
 
 def _read(rel_path: str) -> str:
     return (ROOT / rel_path).read_text(encoding="utf-8")
-
-
-def test_parry_formula_is_written_once_and_only_in_its_source():
-    """护栏：10% 当前生命的招架公式只能在 engine/combat.py 的共享函数里出现一次。
-
-    AI（ai_tactics）与声明回执（api）必须调用共享函数，不得自带一份——
-    否则改规则时漏改一处，AI 就会按错的数字决定要不要招架。
-    """
-    combat_src = _read("engine/combat.py")
-    api_src = _read("engine/api.py")
-    tactics_src = _read("engine/ai_tactics.py")
-
-    assert "current_hp // 10" not in api_src, "api.py 不得自带招架公式"
-    assert "current_hp // 10" not in tactics_src, "ai_tactics.py 不得自带招架公式"
-    assert combat_src.count("parry_reduction_for") >= 2, "真源函数必须被结算侧调用"
-    assert api_src.count("parry_reduction_for") >= 2
-    assert tactics_src.count("parry_reduction_for") >= 1
-    # AI 侧不得再出现凭空的下界（历史 bug：max(1, …) 与真源的 max(0, …) 不等价）
-    assert "max(1, player.current_hp // 10)" not in tactics_src
-
-
-def test_parry_uses_rule_is_written_once():
-    """护栏：招架「可用次数 = 当前生命」同样只写一处。"""
-    api_src = _read("engine/api.py")
-    tactics_src = _read("engine/ai_tactics.py")
-    assert api_src.count("parry_uses_for") >= 1
-    assert tactics_src.count("parry_uses_for") >= 1
-    assert "max(1, int(actor.current_hp))" not in api_src
-    assert "max(1, int(player.current_hp))" not in tactics_src
 
 
 def test_daowen_mana_payment_is_not_written_twice():

@@ -7,6 +7,7 @@ from engine.document_validation import validate_markdown_documents
 
 ROOT = Path(__file__).resolve().parents[1]
 AI_EXPERIENCE_FILE = ROOT / "AI_EXPERIENCE.md"
+SPELLS_INDEX_FILE = ROOT / "法术索引.md"
 README_FILE = ROOT / "README.md"
 PLAYBOOK_FILE = ROOT / "推演规范.md"
 RULES_TEXT_FILE = ROOT / "规则正文.md"
@@ -41,13 +42,18 @@ def test_ai_knowledge_base_contains_all_core_sections_and_scenarios():
     ]:
         assert sub in text, f"AI协作规范缺少小节：{sub}"
 
-    # 包含全部六大典型场景
+    # 六大典型场景（2026-10-12 用户令去重后：1-3 正本是本文件，4-6 正本是《法术索引》
+    # 「四、反应型法术战斗流程示例」；本文件只留指针，不得再抄一份回来）
     assert "场景 1：基础攻防" in text
     assert "场景 2：闪避交互" in text
     assert "场景 3：残韵插队逆转" in text
-    assert "场景 4：防御型反应法术" in text
-    assert "场景 5：交错反击型法术" in text
-    assert "场景 6：循环自伤法术" in text
+    spells = SPELLS_INDEX_FILE.read_text(encoding="utf-8")
+    assert "## 四、反应型法术战斗流程示例" in spells
+    assert "### 场景：防御型反应法术" in spells
+    assert "### 场景：交错反击型法术" in spells
+    assert "### 场景：循环自伤法术" in spells
+    # 指针必须真实存在，否则正本被搬走后没人找得到
+    assert "法术索引.md#四反应型法术战斗流程示例" in text
 
 
 def test_readme_is_a_clean_entry_and_playbook_keeps_execution_format():
@@ -77,10 +83,12 @@ def test_six_scenarios_contain_exact_mechanic_details():
     assert "B 同时永久获得【再生】" in text
 
     # 场景6边界：千刀万剐 3 轮循环展开，法力从 6 扣减至 0，中断检查法力不足
-    assert "【失去生命后】B 触发循环法术【千刀万剐】（第 1 轮循环，X=2）" in text
-    assert "【失去生命后】B 触发循环法术【千刀万剐】（第 2 轮循环，X=2）" in text
-    assert "【失去生命后】B 触发循环法术【千刀万剐】（第 3 轮循环，X=2）" in text
-    assert "【中断检查】：B 当前法力为 0，无法支付【再生2】的 2 点法力，循环自然中断" in text
+    # （2026-10-12 去重后正本在《法术索引》，本文件不再持有副本）
+    spells = SPELLS_INDEX_FILE.read_text(encoding="utf-8")
+    assert "【失去生命后】B 触发循环法术【千刀万剐】（第 1 轮循环，X=2）" in spells
+    assert "【失去生命后】B 触发循环法术【千刀万剐】（第 2 轮循环，X=2）" in spells
+    assert "【失去生命后】B 触发循环法术【千刀万剐】（第 3 轮循环，X=2）" in spells
+    assert "【中断检查】：B 当前法力为 0，无法支付【再生2】的 2 点法力，循环自然中断" in spells
 
 
 # ---------- 错误输入 / 非法配置 ----------

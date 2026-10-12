@@ -538,6 +538,28 @@ class Entity:
         return max(0, power)
 
     @property
+    def load_capacity(self) -> int:
+        """可承载的道纹/遗物**种类**上限 = [血限] // 30（2026-10-12 用户令）。
+
+        原文口径：**30X[血限] = 允许拥有 X 种道纹和 X 种遗物**。
+        两个额度各自独立计数、同为 X，不互相挤占；不足 30[血限] 的余数不折算。
+        血限被【衰老】等压低时额度同步收紧——已超出新额度的部分不会被自动没收
+        （正文没有写剥夺条款），但**再获得**会被 `GameEngine` 的获得入口拒绝。
+        道纹按"种"计（`dao_wen` 的键数），遗物也按"种"计（同名不重复计入）。
+        """
+        return max(0, self.blood_limit // 30)
+
+    @property
+    def daowen_capacity(self) -> int:
+        """道纹种类上限（= `load_capacity`，单列出来是为了在报错文案里说清楚）。"""
+        return self.load_capacity
+
+    @property
+    def relic_capacity(self) -> int:
+        """遗物种类上限（= `load_capacity`）。"""
+        return self.load_capacity
+
+    @property
     def action_count(self) -> int:
         """出手次数：**全体角色基础 2 次**。
 
@@ -612,7 +634,8 @@ class Entity:
                 remaining = max(0, validate_damage_amount(
                     status_adjuster(remaining), "Entity.take_damage.status_adjuster.result"))
             # 兼容直接 Entity.take_damage 的历史调用（没有战斗引擎上下文时）。
-            elif remaining > 0 and damage_type != "代价" and self.has_status("固执"):
+            # 2026-10-11 用户令：固执简化为「每次失去的生命不会超过1」，代价路径同样封顶。
+            elif remaining > 0 and self.has_status("固执"):
                 remaining = min(remaining, 1)
                 detail["capped_by"] = "固执"
 
@@ -865,13 +888,13 @@ class Entity:
         if effect.polarity == EffectPolarity.NEUTRAL.value:
             buffs = {
                 "固执", "贯穿", "急速", "洞察", "飞行",
-                "全力", "疯狂", "必中", "洗劫", "逆鳞", "嫁祸", "背负",
+                "全力", "疯狂", "必中", "洗劫", "逆鳞", "背负",   # 2026-10-11 删【嫁祸】
                 "负岳索", "加速", "愤怒", "蓄锐·增",
             }
             debuffs = {
                 "弱化", "无力", "减速", "全速", "束缚", "封印",
                 "坏死", "退化", "定型", "畸变", "加害", "伤痕",
-                "寄生", "蒙蔽", "眩晕", "手雷减攻", "衰败", "被背负",
+                "寄生", "蒙蔽", "眩晕", "手雷减攻", "被背负",   # 2026-10-11 删【衰败】
             }
             if effect.name in buffs:
                 effect.polarity = EffectPolarity.BUFF.value

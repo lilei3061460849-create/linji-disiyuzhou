@@ -418,18 +418,20 @@ def test_r46_normal_event_relic_battle_start_matrix(tmp_path):
     friend.relics = [Relic("防弹插板", "")]
     heart = Consumable("衰老龙心", "", 3, 3, kind="dragon_heart", dragon_heart_type="衰老")
     engine.state.consumables = [heart]
-    names = ["猩红果实", "苍白之花", "缄默面具", "帮派令", "负岳索", "炉心坠", "烙痕钉"]
+    # 2026-10-11 用户令：【苍白之花】改为纯被动（当前法力可超出[法限]），
+    # 不再是战始可选遗物——它从这张矩阵里退场，速度也不再被它的疲惫5 压低。
+    names = ["猩红果实", "缄默面具", "帮派令", "负岳索", "炉心坠", "烙痕钉"]
     engine.state.relics = [Relic(name, "", tags=["事件"]) for name in names]
     engine.state.event_modifiers["silent_mask_x"] = 2
     choices = {
-        "猩红果实": {"use": True}, "苍白之花": {"use": True},
+        "猩红果实": {"use": True},
         "负岳索": {"target_ref": "friend:0"}, "炉心坠": {"heart_name": "衰老龙心"},
         "烙痕钉": {"target_ref": "enemy:0"},
     }
     engine.combat.validate_battle_start_relic_choices(choices)
     logs = engine.combat.process_relics("battle_start", {"relic_choices": choices})
     # 2026-09-13 全局上限：缄默面具 +40 被[法限]截断，法力停在上限而非 60。
-    assert logs and (player.current_hp, player.current_speed) == (90, 1)
+    assert logs and (player.current_hp, player.current_speed) == (90, 6)
     assert player.current_mana == player.mana_limit
     assert player.has_status("洗劫") and friend.has_status("负岳索") and friend.shield == 15
     assert heart.current_uses == 13 and engine.state.event_modifiers["brand_nail_target_ref"] == "enemy:0"
@@ -470,7 +472,8 @@ def test_r46_event_relic_round_and_battle_end_effects(tmp_path):
     before = (player.blood_limit, engine.state.energy)
     ended = engine.execute_action("battle_end", {})
     assert ended["success"]
-    assert (player.blood_limit, engine.state.energy) == (before[0] + 2, before[1] + 1)
+    # 2026-10-11：苍白之花的「[战终]精力+1」已随重做废止，只剩猩红果实的血限+2
+    assert (player.blood_limit, engine.state.energy) == (before[0] + 2, before[1])
 
 
 def test_r46_boundary_death_dodge_dragon_and_might_triggers(tmp_path):
@@ -501,7 +504,9 @@ def test_r46_boundary_death_dodge_dragon_and_might_triggers(tmp_path):
 
 def test_r46_illegal_missing_event_relic_choices_is_atomic(tmp_path):
     engine = _engine(tmp_path); player, _ = _combat(engine)
-    engine.state.relics = [Relic("猩红果实", ""), Relic("苍白之花", "")]
+    # 2026-10-11：苍白之花退场后改用【负岳索】（仍必须显式提交 target_ref）驱动原子性
+    engine.state.relics = [Relic("猩红果实", ""), Relic("负岳索", "")]
+    engine.state.friends = [Entity("F", "朋友", blood_limit=30, current_hp=30)]
     before = (player.current_hp, player.current_speed)
     with pytest.raises(ValueError):
         engine.combat.validate_battle_start_relic_choices({"猩红果实": {"use": False}})

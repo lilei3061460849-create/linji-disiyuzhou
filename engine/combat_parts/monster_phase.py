@@ -1052,17 +1052,10 @@ class MonsterPhaseMixin:
                     self.validate_spell_reaction_submission(
                         target, monster, hit.get("spell_choices"), refs,
                     )
-                    attack_target = monster if monster.has_status("无神") else target
-                    # 无神重定向（规则正文：目标强制选自身）：受击方已变为怪物自身，
-                    # 但 hit["spell_choices"] 描述的是名义目标（玩家侧）的反应法术——
-                    # resolve_attack 会按受击方资格集校验（见 1294 行），键集错配
-                    # 必然报"必须逐一覆盖[]"，且此矛盾无法由提交方调和（同一字典需
-                    # 同时匹配玩家与怪物的资格集）——引擎契约缺陷，曾占平衡模拟
-                    # 无效局 46+/8000（2026-08-22 定位修复）。
-                    # 重定向时受击反应按空提交校验（怪物无 spells，资格集恒空）；
-                    # 若将来怪物可持反应法术，应新增 hit["self_spell_choices"] 契约字段。
-                    reaction_choices = (hit.get("spell_choices")
-                                        if attack_target is target else {"before": {}, "after": {}})
+                    # 2026-10-11：【无神】已删除，怪物攻击不再有"目标强制改为自身"的重定向
+                    # （连带去掉当年为重定向准备的空反应提交分支）。
+                    attack_target = target
+                    reaction_choices = hit.get("spell_choices")
                     resolved = self.resolve_attack(
                         monster, attack_target, dodge=hit["dodge"], blood_shadow=hit["blood_shadow"],
                         spell_choices=reaction_choices, entity_refs=refs,

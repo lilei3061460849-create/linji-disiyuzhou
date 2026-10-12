@@ -62,7 +62,7 @@ engine/
 ├── personality.py       # 角色性格特征（实例级，行为推断"先射箭后画靶"，命零即清除；不写模板不跨实例继承）
 ├── validator.py         # 规则校验器（20 条内置检查，违规入库 + 已迁移机制护栏）
 ├── mechanisms/          # 最小可行机制系统（MVP）：Verb/Mechanism/Trigger/Condition/Target
-│                        #   已声明机制：加害（原 JiahaiHook）、龙鳞（原 LonglinHook）、固执（伤害规则见 rule_engine.py）；自愈/衰败/洞察·结算/勾魂/狂暴·标记/畸变·标记（原 round_start 内嵌块，回始循环已全部声明化）、畸变·结算（原 round_end 内嵌块）、焦黑发丝（原 _on_entity_death 内嵌块）、洗劫·夺碎片（原伤害管线内嵌块）、帮派令/缄默面具（原 process_relics 战始 if）。新机制优先写声明层，勿回核心管线加 if。
+│                        #   已声明机制：加害（原 JiahaiHook）、龙鳞（原 LonglinHook）、固执（伤害规则见 rule_engine.py）；洞察·结算/畸变·标记（原 round_start 内嵌块，回始循环已全部声明化；自愈 2026-10-11、衰败 2026-10-11、狂暴·标记 2026-10-03 随道纹删除）、畸变·结算（原 round_end 内嵌块）、焦黑发丝（原 _on_entity_death 内嵌块）、洗劫·夺碎片（原伤害管线内嵌块）、帮派令/缄默面具（原 process_relics 战始 if）。新机制优先写声明层，勿回核心管线加 if。
 └── api.py               # GameEngine 主类 — AI 唯一交互入口（含 TWISTED_TOOL_LIBRARY、TERMINAL_ARTIFACTS、FIRST_EMBRACE_OPTIONS 等）
 ```
 
@@ -83,9 +83,11 @@ engine/
   depart / execute——实现体全部是现有统一结算入口，不新增游戏逻辑。
 
 当前 Mechanism 声明层含【加害】【龙鳞】【固执】三个受击伤害适配器；三者的实际条件、阶段、运算和玩家摘要由 `engine/rule_engine.py` 中的稳定 ID 规则定义驱动，并经 `MechanismHookAdapter` 接入原 Hook 路径。固定 priority（20/30/40）仅是缺少状态排序锚点时的后备；有效持续状态按当前道纹序列位置排序；缺少序列锚点时才回退到 priority。回始循环已全部声明化：
-【自愈】(10)、【衰败】(20)、【洞察·结算】(30)、【勾魂】(40)、【狂暴·标记】(50)、
-【畸变·标记】(60)——经 `_dispatch_phase(Phase.ROUND_START)` 回始原位分发（洞察/勾魂
-经 2026-08-19 新增的通用 `mana` 动词：获得含不朽之躯钳制、失去下限 0）；
+【洞察·结算】(30)、【畸变·标记】(60)——经 `_dispatch_phase(Phase.ROUND_START)`
+回始原位分发（洞察经 2026-08-19 新增的通用 `mana` 动词：获得含不朽之躯钳制、失去下限 0）。
+2026-10-11 核对：`MECHANISMS` 实际注册 16 个机制，回始相位只有上述两个；
+【勾魂】并未注册为机制（本行旧文写的「勾魂(40)」是过期描述，已按实测删除）；
+【自愈】【衰败】随道纹删除，【狂暴·标记】2026-10-03 随道纹删除。
 【畸变·结算】（priority=10，血限走统一入口，lethal=True）——经
 `_dispatch_phase(Phase.ROUND_END)` 回终第一循环顶部、凡庸 tick 之前原位分发（锚定语义，
 见机制迁移台账）；【焦黑发丝】（priority=10，怪物命零→玩家速度+2）——第一个生产事件

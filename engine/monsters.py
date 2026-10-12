@@ -86,6 +86,9 @@ def parse_monster_pool(index_path: str | Path) -> dict:
 MONSTER_POOL_LIMIT = 12      # 每副本怪物池 12 种，也是配方 N=随机(1,12) 的上界
 SPAWN_WAVE_GAP_LIMIT = 5     # T_i=随机(1,5)：上一波之后最多等待 5 回合
 SPAWN_TIER1_BATTLE_BIAS = 3  # 一阶把旧「战斗场数-3」保留为 N 的上界（见 compute_draw_cap）
+# 一阶上界的下界。2026-10-12 用户令：出怪不再固定数量，前四场「恒为1只」的确定段
+# 去掉，改为 N=随机(1,2)；第 6 场起的上界梯度（3/4/5/…）保持不变。
+SPAWN_TIER1_MIN_CAP = 2
 
 # 阶级推进总开关（2026-09-28 用户令）：
 # 机制代码完整保留，但默认关闭——玩家通过一阶死斗不会自动解锁二阶/五阶→无尽。
@@ -103,14 +106,19 @@ def set_progression_enabled(value: bool) -> None:
 def compute_draw_cap(battle_number: int, tier: int = 1) -> int:
     """本场怪物总数 N 的随机上界（配方式出怪，2026-09-28 用户令，按阶级递增）。
 
-    * 一阶：上界沿用旧「数量 = 战斗场数 - 3，最低为1」，因此旧七场序列
-      `1/1/1/1/2/3/4` 从"确定值"变成"上限"（N=随机(1,上限)）；上界再被怪物池规模 12 夹住，
+    * 一阶：上界沿用旧「数量 = 战斗场数 - 3」，因此旧七场序列 `1/1/1/1/2/3/4`
+      从"确定值"变成"上限"（N=随机(1,上限)）；上界再被怪物池规模 12 夹住，
       使第 8 场以后（无尽/自定义长局）不会突破「N=随机(1,12)」的正文口径。
+      2026-10-12 用户令「修改出怪公式，不再像现在这样固定数量，而是全随机」，
+      按用户选定的最小改动口径：**只去掉前四场「恒为1只」的确定段**——下界从 1 抬到 2，
+      于是第 1~5 场一律 N=随机(1,2)，第 6 场起仍是 3/4/5/…（梯度与上界都不动）。
     * 二阶及以上：上界固定为怪物池规模 12，即 N=随机(1,12)。
     旧口径里"数量=战斗场数-3"是**精确值**；本函数只保留它作为**上界**的语义。
     """
     if int(tier) <= 1:
-        return min(MONSTER_POOL_LIMIT, max(1, int(battle_number) - SPAWN_TIER1_BATTLE_BIAS))
+        # 下界 2：2026-10-12 用户令，前四场不再恒为 1 只（详见本函数 docstring）。
+        return min(MONSTER_POOL_LIMIT,
+                   max(SPAWN_TIER1_MIN_CAP, int(battle_number) - SPAWN_TIER1_BATTLE_BIAS))
     return MONSTER_POOL_LIMIT
 
 
@@ -133,7 +141,7 @@ def roll_spawn_plan(dice, battle_number: int, tier: int = 1) -> dict:
     N=随机(1,上界)，S=随机(1,N)，R_i=随机(1,N-S-ΣR_j)，T_i=随机(1,5)，直至 S+ΣR_i=N
     ```
 
-    * N＝本场怪物总数（上界见 `compute_draw_cap`：一阶按场数、二阶及以上为12）；
+    * N＝本场怪物总数（上界见 `compute_draw_cap`：一阶按场数且不低于2、二阶及以上为12）；
     * S＝[战始]（R1）首发数量；若仍有未出场怪物，则等待 T_i 回合后增援 R_i 只，
       R_i 不超过剩余未出场数量，循环到全部怪物入场（一波可进多只）。
     * 增援回合相对**上一波**累计（首发波记为 R1），因此第 i 波在

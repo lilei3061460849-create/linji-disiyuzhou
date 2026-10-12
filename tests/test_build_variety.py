@@ -47,6 +47,10 @@ def test_boba_marks_targets_after_start():
     """正常路径：波及开局后可真实发动并标记目标（X=2 标两个目标；2026-10-09 起 X 下限 repealed，X=1 也合法）。"""
     e = _engine(starter="波及")
     assert set(e.state.player.dao_wen) >= {"杀伐", "波及"}
+    # 2026-10-12 出怪下界 1→2：第1场可能已有 2 只怪，本条要的靶子是「enemy:0 + 陪标怪」
+    # 两个，故先把出怪收敛到 1 只（并清掉增援队列，免得后续回合又进场一只挤掉索引）。
+    e.state.enemies[:] = e.state.enemies[:1]
+    e.state.monster_reinforcements = []
     enemy = e.state.enemies[0]
     second = Entity("陪标怪", "怪物", blood_limit=100, current_hp=100,
                     speed_limit=2, current_speed=2, attack_count=1, attack_power=1)
@@ -65,10 +69,10 @@ def test_boba_marks_targets_after_start():
 # 专属道纹 → 其所属副本（学习受门禁限制，须在对应副本内）
 _REGION_OF = {"加害": "龙心谷", "裂变": "龙心谷", "伤痕": "龙心谷",
               "退化": "扭曲都市", "坏死": "扭曲都市",
-              "逼债": "罪孽都市", "失忆": "罪孽都市"}
+              "逼债": "罪孽都市", "点金": "罪孽都市"}   # 2026-10-12：失忆 已回退为 点金
 
 
-@pytest.mark.parametrize("dw", ["加害", "裂变", "伤痕", "退化", "坏死", "逼债", "失忆"])
+@pytest.mark.parametrize("dw", ["加害", "裂变", "伤痕", "退化", "坏死", "逼债", "点金"])
 def test_ai_uses_region_specific_daowen(dw, monkeypatch):
     """
     正常路径：各副本专属道纹只要持有就应被实际发动。

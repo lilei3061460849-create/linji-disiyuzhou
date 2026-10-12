@@ -33,6 +33,10 @@ def build_battle_engine(tmp_path, name: str = "a", seed: int = 4,
     setup = engine.execute_action("setup_choose_region", {"region": region})
     engine.execute_action("choose_discovered_relic",
                           {"relic_name": setup["result"]["relic_choices"][0]})
+    # 2026-10-12 新增【承载上限】(30X[血限]=X 种道纹)：本构造器的学习循环不检查
+    # success，额度不足会被静默吞掉，导致下游报「未持有道纹」而看不出根因。
+    # 对照测试要求固定属性点，故不动 11/8/6，只抬高血限让额度覆盖 DEFAULT_DAOWEN。
+    engine.state.player.blood_limit = 150
     for dw in daowen:
         engine.execute_action("pre_battle_action",
                               {"sub_action": "学习", "sub": "daowen", "name": dw})
@@ -62,4 +66,8 @@ def build_pre_battle_engine(tmp_path, name: str = "evt", seed: int = 4,
     setup = engine.execute_action("setup_choose_region", {"region": region})
     engine.execute_action("choose_discovered_relic",
                           {"relic_name": setup["result"]["relic_choices"][0]})
+
+    # 2026-10-12 新增【承载上限】(30X[血限]=X 种道纹)：本文件测的不是额度（额度由 tests/test_load_capacity.py 专测），
+    # 夹具 11/8/6 → [血限]66 只有 2 种额度，会把断言淹没在额度报错里，故抬高血限。
+    engine.state.player.blood_limit = 150
     return engine

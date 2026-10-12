@@ -164,7 +164,6 @@ class DaowenEffectMixin:
         # ---- 伤害类 ----
         if "target_damage" in calc:
             base = calc["target_damage"] + (nilin_bonus if nilin_bonus else 0)
-            base = self._jieli_boost(caster, base)
             dmg_amount = 0 if mengbi_blocked else base
             if "target_damage" in wave_pieces:
                 # 波及：修正后总数值平分（余数随机分配），逆鳞已计入首段总值。
@@ -239,7 +238,7 @@ class DaowenEffectMixin:
         elif "total_damage" in calc and "target_damage" not in calc:  # 其他多段
             add = nilin_bonus
             nilin_bonus = 0
-            chunk = self._jieli_boost(caster, calc["total_damage"] + add)
+            chunk = calc["total_damage"] + add
             dmg_amount = 0 if mengbi_blocked else chunk
             if "total_damage" in wave_pieces:
                 pieces = self._divide_flat(dmg_amount, len(wave_status_targets))
@@ -283,7 +282,7 @@ class DaowenEffectMixin:
                     result["sha_qi_lock_mana"] = drain
 
         if "aoe_damage" in calc:
-            a = 0 if mengbi_blocked else self._jieli_boost(caster, calc["aoe_damage"])
+            a = 0 if mengbi_blocked else calc["aoe_damage"]
             # 逆鳞加成仅作用于首个目标的首段伤害
             if nilin_bonus:
                 a += nilin_bonus
@@ -641,6 +640,7 @@ class DaowenEffectMixin:
 
         # 点金的【失忆X】代价：永久失去自身X种道纹，再获得碎片。
         # 当前统一执行接口没有额外的选纹决策槽，按持有顺序优先失去点金以外的道纹；
+        # 当前统一执行接口没有额外的选纹决策槽，按持有顺序优先失去发动道纹以外的道纹；
         # 数量不足时发动失败应由上层预检，本处只结算已确认的代价。
         if "forget_daowen" in calc:
             count = int(calc["forget_daowen"])
@@ -861,12 +861,18 @@ class DaowenEffectMixin:
             result["effects"].append({"type": "bizhong", "target": caster.name,
                                       "count": calc["guaranteed_hits"],
                                       "remaining": self.bizhong_remaining(caster)})
-        # 必中X（2026-09-28 二次更正）：给**自身**挂【必中】buff 持续X回合。
-        # 期间本 caster 选中的任何目标都无法闪避（见 resolve_attack 中 must_hit 判定
-        # attacker.has_status("必中") 分支）。
-        if "bizhong_self_buff" in calc:
-            rounds = int(calc["bizhong_self_buff"])
-            existed = next((s for s in caster.status_effects if s.name == "必中"), None)
+        # 必中X（2026-10-12 用户令增强，取代 2026-09-28 的 self-buff 口径）：
+        # 规则文一直是「你选中的［目标］无法…」，故正式口径是给**目标**挂 debuff，
+        # 期间该目标无法进行回合外行动（闪避 / 招架 / 反应型法术），统一由
+        # CombatEngine.out_of_turn_blocked() 把关。
+        #
+        # target=None 时退回 2026-09-28 的 self-buff 老口径（自身姿态，期间你选中的
+        # 任何目标都无法闪避）。保留这条分支是为了不打断仍在无目标调用本效果键的
+        # 内部路径与历史用例；道纹发动本身按规则文要求指定目标。
+        if "bizhong_target_debuff" in calc:
+            rounds = int(calc["bizhong_target_debuff"])
+            bearer = target if target is not None else caster
+            existed = next((s for s in bearer.status_effects if s.name == "必中"), None)
             if existed is not None:
                 existed.remaining_rounds = max(existed.remaining_rounds or 0, rounds)
                 existed.value = rounds
@@ -876,11 +882,12 @@ class DaowenEffectMixin:
                     daowen_order=daowen_order, name="必中", remaining_rounds=rounds,
                     value=rounds, source=caster.name))
             else:
-                caster.add_status(self._daowen_status(daowen_order=daowen_order,
+                bearer.add_status(self._daowen_status(daowen_order=daowen_order,
                     name="必中", remaining_rounds=rounds, value=rounds,
                     source=caster.name))
-            result["effects"].append({"type": "bizhong_self", "target": caster.name,
-                                      "rounds": rounds})
+            result["effects"].append({
+                "type": "bizhong_target" if target is not None else "bizhong_self",
+                "target": bearer.name, "rounds": rounds})
 
         # 蒙蔽X：使[目标]下X次造成的伤害无效。次数型，不走 duration 挂状态。
         # 此前只算出 invalid_damage_hits，apply 不消费，轮回者 use_daowen 等于白扣 5X 法力。
@@ -952,22 +959,17 @@ class DaowenEffectMixin:
                     result["effects"].append({"type": "status_added", "target": et.name,
                                               "status": name, "duration": duration, "value": x})
 
-        # ---- 龙心谷专属 4 件（F2）：逆鳞/嫁祸/背负/伤痕 的 combat 侧实装 ----
+        # ---- 龙心谷专属 3 件（F2）：逆鳞/背负/伤痕 的 combat 侧实装 ----
+        # （【嫁祸】2026-10-11 已删除，效果与遗物【贪婪契约】重复）
         # 逆鳞X：目标每失去1HP积1层，下次伤害+全部层后清空，持续X（已通过 duration 加状态，此处初始化计数）
         if name == "逆鳞":
             for st_target in wave_status_targets:
                 if not hasattr(st_target, "_nilin"):
                     st_target._nilin = 0
                 result["effects"].append({"type": "nilin_setup", "target": st_target.name, "x": x})
-        # 嫁祸X：自身下X次受伤由目标承担（无持续，仅计数）
         # 存 runtime_id 而非实体引用：自施/互指会形成实体引用环，
         # 事务回滚 _restore_state_in_place 的递归会无限深入（2026-08-22 学习遥测 RecursionError）。
-        elif name == "嫁祸":
-            caster._jiahuo_left = x
-            caster._jiahuo_target = target.runtime_id
-            caster.add_status(self._daowen_status(daowen_order=daowen_order, name="嫁祸", value=x, remaining_rounds=x, source=caster.name))
-            result["effects"].append({"type": "jiahuo", "caster": caster.name, "target": target.name, "count": x})
-        # 背负X：目标下X次受伤由自身承担（同样只存 runtime_id）
+        # 背负X：目标下X次受伤由自身承担（只存 runtime_id）
         elif name == "背负":
             caster._beifu_left = x
             caster._beifu_target = target.runtime_id

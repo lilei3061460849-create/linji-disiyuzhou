@@ -17,7 +17,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from engine.models import DaoWen, DaoWenInstance, Relic
+from engine.models import StatusEffect,  DaoWen, DaoWenInstance, Relic
 from tests.test_dragon_heart import _new_engine, _start_with_enemy
 
 # 与官方条目 死者之书.md「## 可学法术 → 血炼周天」同构（现已是内置法术，
@@ -51,7 +51,7 @@ def _engine_with_loop_spell(suffix, *, hp, mana, spells=None):
 
 
 def _define_spells(engine, spells):
-    """战斗中自创法术（2026-09-16 新规则入口，每次消耗 1 次主动出手）。"""
+    """战斗中自创法术（2026-09-16 新规则入口；按阶级消耗主动出手）。"""
     for spell in spells:
         result = engine.execute_action("define_spell", {"spell": spell})
         assert result["success"], result.get("error")
@@ -109,6 +109,10 @@ def _engine_with_branch_spell(suffix, *, mana):
     """用真实 GameEngine 定义【血溅五步】并把怪物设为三击靶场。"""
     engine = _new_engine(suffix)
     player = engine.state.player
+    # 2026-10-11 对齐 法术索引.md「法术阶级规则」：施展3阶法术（杀伐/再生/透支）
+    # 须一次付清3次出手，基础预算只有2次 → 用【疯狂】+1 把出手预算抬到3
+    # （action_count 是只读属性，只能走正文[速限]的修正项）。
+    player.add_status(StatusEffect(name="疯狂", remaining_rounds=-1, value=1, source="test"))
     for name in ("杀伐", "再生", "透支"):
         player.dao_wen[name] = DaoWenInstance(
             DaoWen(name=name, formula="", cost_type="", cost_formula="X", effect_formula=""))

@@ -132,8 +132,8 @@ class ActionPreview:
 
         实现采用**副本执行**（2026-08-19 修正）：deepcopy 整个 state 后在副本
         上真实执行动作，真实 state 完全不动。回滚式预演（执行→恢复）会破坏
-        实体间的对象引用（如怪物 _jiahuo_target 指向快照副本实体），导致
-        嫁祸/背负等重定向在后续真实战斗中漂移；副本内实体互引自洽，预演
+        实体间的对象引用（如怪物 _beifu_target 指向快照副本实体），导致
+        背负等重定向在后续真实战斗中漂移；副本内实体互引自洽，预演
         结果与真实执行逐位一致。
         """
         return self.preview_sequence([(action_type, params or {})])

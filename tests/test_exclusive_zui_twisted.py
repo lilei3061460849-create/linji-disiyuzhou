@@ -61,18 +61,12 @@ def _apply_monster_daowen(engine, caster, name, x, target=None):
 # 机制**保留**，但已不由道纹发放，只剩【帮派令】在[战始]发放。
 
 
-def test_normal_shiyi_converts_mana_to_shards():
-    """正常路径：失忆X 消耗8X法力，直接换80X真碎片，不碰目标、不挂状态。"""
-    engine = _setup(); _grant(engine, ["失忆"])
-    player = engine.state.player
-    m = _add_monster(engine, shards=20)
-    mana0, shard0 = player.current_mana, engine.state.shards
-    r = engine.execute_action("use_daowen", {"daowen_name": "失忆", "x": 2, "target": m.name})
-    assert r["success"], r
-    assert player.current_mana == mana0 - 16           # 2026-09-28 用户令：消耗8X（X=2）= 16 法力
-    assert engine.state.shards == shard0 + 160        # 换到 80*2=160 真碎片
-    assert m.shards == 20, "失忆不再从目标身上夺取"
-    assert not player.has_status("失忆"), "失忆是即时结算，不得挂状态"
+# 2026-10-11 用户裁定：【点金】才是要的道纹（代价：失忆X；获得80X碎片），
+# 2026-09-28 那次「改名为失忆 + 改成消耗8X法力」的裁定作废。原用例
+# `test_normal_shiyi_converts_mana_to_shards` 钉的是作废口径，与
+# `tests/test_dianjin_cost.py::test_dianjin_pays_amnesia_not_mana_and_gains_shards`
+# 互斥，故删除；现役口径由后者与 `test_boundary_shiyi_insufficient_mana_rejected` 覆盖。
+
 
 
 def test_boundary_shiyi_insufficient_mana_rejected():

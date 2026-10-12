@@ -59,7 +59,7 @@ def test_marker_registered_and_ordered():
     assert MECHANISMS.get("狂暴·标记") is None, "【狂暴】删除后标记机制不应再注册"
     from engine.mechanisms.registry import MECHANISMS as REG
     assert [m.name for m in REG.phase_mechanisms(Phase.ROUND_START)] == \
-        ["自愈", "衰败", "洞察·结算", "畸变·标记"]
+        ["洞察·结算", "畸变·标记"]   # 2026-10-11：【自愈】【衰败】随道纹删除
 
 
 def test_old_marker_blocks_removed():

@@ -63,7 +63,7 @@ for region, text in sorted(load_dungeon_documents().items()):
     for line in text.splitlines():
         m = PANEL.match(line.strip())
         if m and m.group(6):
-            # 新面板格式的道纹列不带次数（如「畸变，衰败，狂暴」），旧格式带次数（如「执念2」）。
+            # 新面板格式的道纹列不带次数（如「畸变，坏死，狂暴」），旧格式带次数（如「执念2」）。
             # 两种都解析：有次数就带次数，没有就只记怪物名。
             for token in re.split(r'[，,、]', m.group(6)):
                 token = token.strip()
@@ -87,6 +87,11 @@ in_edges = defaultdict(list)
 def target_label(name):
     p = params_of[name]
     if "target" in p:
+        return "需显式选定"
+    # 【必中】的结算函数签名是 calculate_bizhong(x)，没有 target 形参，会被下面的
+    # 兜底判成「自身」——那是 2026-09-28 的 self-buff 旧口径。2026-10-12 用户令增强后
+    # 它是「你选中的[目标]无法进行回合外行动」，按规则文必须显式选定目标。
+    if name == "必中":
         return "需显式选定"
     if name == "波及":
         return "X个（两阶段显式提交）"
@@ -134,8 +139,10 @@ NOTES = {
     "波及": "目标由两阶段决策显式提交恰好X个（怪物侧prepare枚举候选，候选不足面板X时按候选数自适应降X，候选为0时不可发动；玩家侧use_daowen的dodge_targets）。你发动的道纹对已标记目标同时生效，数值平分——平分份数=目标数，X=1（单目标）合法，全值由该目标承担。",
     "消灾": "唯一允许局外发动的道纹（局外消耗×2）；重置随机数。",
     "封印": "玩家支付异变X，使一个显式选定的目标怪物延后X回合再入场；暂离仍阻塞战终，回场当回合沿用增援白板，最终命零正常进入死亡与碎片结算。",
-    "分裂": "【命零】时触发；复制体无【分裂】道纹、无[碎片]奖励。",
-    "尸爆": "【命零】时触发。",
+    # 2026-10-11 修正：旧注记「【命零】时触发」是废止口径。沿革见
+    # engine/daowen.py::calculate_fenlie —— 旧版[命零]触发（2026-09-17 废止）
+    # → 即时发动+代价【衰老】X×10Y → 2026-10-08 用户令改为代价【流血】X×10Y。
+    "分裂": "即时发动（不绑【命零】）；代价【流血】X×10Y 付的是当前生命，付不起不能发动。复制体无【分裂】道纹、无[碎片]奖励。",
     "招魂": "唤回者为[临时朋友]，[战终]消失。",
     "原初": "怪物困境时发动【原初X】可临时借用一种自身未持有的原始怪物道纹（仅借用，不获得）。",
     "飞行": "怪物使用本道纹 X 只能≤1（恒按X=1结算，规则正文·怪物准则5）。",
@@ -300,5 +307,18 @@ A("7. **自由控X**：发动时可自由指定 1 ≤ X ≤ 当前可用法力/�
 A("")
 
 out = ROOT / "全道纹索引.md"
-out.write_text("\n".join(L) + "\n", encoding="utf-8")
+wanted = "\n".join(L) + "\n"
+
+if "--check" in sys.argv:
+    # 与 gen_rules.py / gen_ai_context.py 同口径：只校验不落盘，供 CI 与收尾自检调用。
+    if not out.exists():
+        print(f"MISSING: 缺少 {out.name}，请跑 python3 sim/gen_daowen_index.py")
+        raise SystemExit(1)
+    if out.read_text(encoding="utf-8") != wanted:
+        print("DRIFT: 全道纹索引.md 与引擎/事实源不一致，请跑 python3 sim/gen_daowen_index.py")
+        raise SystemExit(1)
+    print(f"OK: 全道纹索引.md 与引擎一致（{len(L)} lines, {len(DaoWenEngine._registry)} daowen）")
+    raise SystemExit(0)
+
+out.write_text(wanted, encoding="utf-8")
 print(f"written {out}: {len(L)} lines, {len(DaoWenEngine._registry)} daowen")

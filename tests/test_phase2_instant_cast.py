@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import pytest
 
 from engine.daowen import DaoWenEngine
-from engine.models import Spell
+from engine.models import Spell, StatusEffect
 from engine.spell_dsl import (
     ALL_TRIGGERS, SpellDslError, TRIGGER_INSTANT, parse_instant_flow, parse_trigger,
 )
@@ -131,7 +131,9 @@ def test_instant_single_step():
 # Test 2：瞬发双步，只消耗 1 出手
 # ---------------------------------------------------------------------------
 
-def test_instant_two_steps_consume_one_action():
+def test_instant_two_steps_consume_tier_actions():
+    # 2026-10-11 对齐 法术索引.md「法术阶级规则」：施展X阶法术一次付清X次出手。
+    # 本例2步=2种道纹=2阶，故扣2次（旧口径"瞬发只扣1次"已废）。
     engine = _setup("p2_two")
     player, foe = engine.state.player, engine.state.enemies[0]
     used0 = player.actions_used_this_round
@@ -142,18 +144,21 @@ def test_instant_two_steps_consume_one_action():
     assert resp["success"], resp
     assert _statuses(resp) == [STEP_COMPLETED, STEP_COMPLETED]
     assert resp["result"]["execution_status"] == EXECUTION_COMPLETED
-    assert player.actions_used_this_round == used0 + 1
+    assert player.actions_used_this_round == used0 + 2
 
 
-def test_instant_three_steps_still_one_action():
+def test_instant_three_steps_consume_tier_actions():
     engine = _setup("p2_three")
     player, foe = engine.state.player, engine.state.enemies[0]
+    # 3阶施法要一次付清3次出手，基础预算只有2次 → 用【疯狂】+1 补足（正文[速限]修正项）
+    player.add_status(StatusEffect(name="疯狂", remaining_rounds=1, value=1, source="test"))
     used0 = player.actions_used_this_round
     resp = _cast(engine, "发动杀伐X于目标→发动再生X于自身→发动庇护X于自身",
                  [{"x": 1, "dodge": False}, {"x": 1}, {"x": 1}], target=foe)
     assert resp["success"], resp
     assert len(resp["result"]["step_results"]) == 3
-    assert player.actions_used_this_round == used0 + 1
+    # 3步=3种道纹=3阶 → 扣3次出手（旧口径"仍只扣1次"已废）
+    assert player.actions_used_this_round == used0 + 3
 
 
 # ---------------------------------------------------------------------------
@@ -229,8 +234,8 @@ def test_instant_first_step_mana_insufficient_stops():
     assert foe.current_hp == hp_foe0
     assert player.current_hp == hp0
     assert player.current_mana == 1
-    # 施法动作已发生（结构合法），出手照扣 1 次
-    assert player.actions_used_this_round == used0 + 1
+    # 施法动作已发生（结构合法），出手照扣——2阶付清2次，且中断不退
+    assert player.actions_used_this_round == used0 + 2
 
 
 # ---------------------------------------------------------------------------
@@ -561,7 +566,7 @@ def test_instant_caster_killed_by_reaction_is_normal_interrupt():
     assert sr[0]["reason"] == InterruptReason.CASTER_DEAD.value
     assert resp["result"]["execution_status"] == EXECUTION_INTERRUPTED
     assert foe.current_hp == foe_hp0                          # 杀伐没有发出去
-    assert player.actions_used_this_round == used0 + 1        # 出手照扣，不退
+    assert player.actions_used_this_round == used0 + 2        # 2阶照扣2次，不退
 
 
 def test_instant_missing_trigger_choices_rejected_without_consuming_action():
@@ -576,15 +581,8 @@ def test_instant_missing_trigger_choices_rejected_without_consuming_action():
     assert player.actions_used_this_round == used0
 
 
-def test_instant_step_under_wushen_hits_self():
-    engine = _setup("p2_wushen")
-    player, foe = engine.state.player, engine.state.enemies[0]
-    player.add_status(StatusEffect(name="无神", remaining_rounds=2, value=1, source="测"))
-    hp0, foe_hp0 = player.current_hp, foe.current_hp
-    resp = _cast(engine, "发动杀伐X于目标", [{"x": 1, "dodge": False}], target=foe)
-    assert resp["success"], resp
-    assert resp["result"]["step_results"][0]["target"] == player.name
-    assert foe.current_hp == foe_hp0 and player.current_hp < hp0
+# 2026-10-11 用户令：`test_instant_step_under_wushen_hits_self` 已删除——它整条建立在被删机制上，不是改断言能救的。
+
 
 
 def test_instant_silence_mask_interrupts_cost_daowen_step():

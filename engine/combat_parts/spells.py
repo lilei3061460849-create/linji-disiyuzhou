@@ -217,6 +217,11 @@ class SpellReactionMixin:
         flows = {}
         if holder is None or not holder.is_alive:
             return flows
+        # 2026-10-12 用户令：【必中】X =「你选中的目标无法进行回合外行动，持续X」。
+        # 反应型法术就是最典型的回合外行动，故在此统一拦掉——被封锁者连提案都没有，
+        # prepare 侧也就不会把它列进可选反应。新增反应窗口自动继承这道闸。
+        if self.out_of_turn_blocked(holder):
+            return flows
         for name, flow in self._builtin_spell_flows(holder).items():
             if flow.get("trigger") == trigger:
                 flows[name] = flow
@@ -1247,12 +1252,9 @@ class SpellReactionMixin:
     def _instant_target_resolver(self, cast_target: Optional[Entity]):
         """瞬发的身份映射：self/caster→施法者，target→本次施法目标，any→提交的 ref。
 
-        【无神】与 use_daowen 同一条规则：施法者处于无神时，每一步目标都改为自身。
         """
         def _resolver(step, entry_dict, caster, attacker, refs):
             reverse_ref = lambda e: next((r for r, x in refs.items() if x is e), None)
-            if caster.has_status("无神"):
-                return caster, reverse_ref(caster)
             subject = self._trigger_spell_subject(self._step_role(step), caster, attacker)
             if subject == "any":
                 ref = entry_dict.get("target_ref")
@@ -1316,7 +1318,7 @@ class SpellReactionMixin:
                                  cast_target, refs)
             if target is None:
                 raise ValueError(f"瞬发法术第{idx}步的任意目标target_ref不是当前合法实体")
-            if not is_any and "target_ref" in entry and not caster.has_status("无神") \
+            if not is_any and "target_ref" in entry \
                     and refs.get(entry["target_ref"]) is not target:
                 raise ValueError(f"瞬发法术第{idx}步target_ref与流程声明的目标身份不符")
             if target is not caster and not self.is_targetable(caster, target):

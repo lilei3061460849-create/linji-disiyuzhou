@@ -452,7 +452,7 @@ class DamageDeathMixin:
             amount = validate_damage_amount(
                 amount * 2, "CombatEngine.狂脑伤害倍率.result")
 
-        # 1. 伤害重定向 (嫁祸 / 背负)
+        # 1. 伤害重定向 (背负；【嫁祸】2026-10-11 已删除)
         redirected_target = self.hook_manager.apply_redirection(target, damage_type, self.state)
         if redirected_target is not None:
             redirected_ctx = make_context(

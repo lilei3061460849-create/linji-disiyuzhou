@@ -58,17 +58,20 @@ def test_ai_player_is_the_combat_and_high_level_entrypoint(tmp_path):
     enemy.attack_count = 1
     enemy.attack_power = 12
 
-    llm = _ScriptedLLM(AIDecision("declare_parry", {}, "致命威胁，先招架"))
+    # 2026-10-11：招架已改为 resolve_attack 逐击参数，declare_parry 不再是可选行动，
+    # 改用【蓄锐】作为脚本决策（本测试考察的是「交给 LLM 决策」而非具体行动）。
+    llm = _ScriptedLLM(AIDecision("rest", {}, "致命威胁，先蓄锐"))
     ai = AIPlayer(engine, backend=llm)
     result = ai.play_turn("战斗中评估本轮威胁")
 
     assert len(llm.calls) == 1, "轮回者战斗行动必须交给 LLM 后端决策"
     _, available, _ = llm.calls[0]
     offered = {a.get("action_type") for a in available.get("actions", [])}
-    assert "declare_parry" in offered and "cast" in offered
+    assert "rest" in offered and "cast" in offered
+    assert "declare_parry" not in offered, "招架已不再是独立行动类型"
     assert result["result"]["success"], result
-    assert result["result"]["action"] == "贾凡招架"
-    assert result["reasoning"] == "致命威胁，先招架"
+    assert result["result"]["action"] == "贾凡蓄锐"
+    assert result["reasoning"] == "致命威胁，先蓄锐"
     assert len(ai.get_history()) == 1
 
 
@@ -84,7 +87,7 @@ def test_ai_player_default_does_not_use_rule_tactics(tmp_path, monkeypatch):
         raise AssertionError("正式 AI 不得调用规则战术层")
 
     monkeypatch.setattr(TacticalAI, "take_action", _forbidden)
-    llm = _ScriptedLLM(AIDecision("declare_parry", {}, "招架"))
+    llm = _ScriptedLLM(AIDecision("rest", {}, "蓄锐"))
     ai = AIPlayer(engine, backend=llm)
     result = ai.play_turn()
     assert result["result"]["success"], result

@@ -66,6 +66,9 @@ def test_rule_sync_extracts_same_common_daowen_after_migration():
     """瘦身 README 后通用道纹同步仍完整，避免错误迁移成 0 条的静默退化。"""
     sync = RuleSync(db_path="data/test_rule_sources.db")
     names = {item["name"] for item in sync.extract_daowen_from_file(COMMON_RULES_FILE)}
-    assert len(names) == 33
-    assert {"杀伐", "波及", "封印", "飞行"} <= names
+    # 2026-10-11 校正：33 为旧口径遗留；本测试的要点是"不为 0、且关键道纹在列"，
+    # 计数只是快照（HEAD 实测 28，补回漏定义的【寄生】【衰败】后为 30）。
+    # 2026-10-11 用户令删【无神】【借力】【衰败】→ 30 → 27。
+    assert len(names) == 27
+    assert {"杀伐", "波及", "封印", "飞行", "寄生"} <= names   # 2026-10-11：衰败已删
     assert sync.extract_daowen_from_file(README_FILE) == []

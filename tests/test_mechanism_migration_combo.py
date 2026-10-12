@@ -71,14 +71,12 @@ def _add(entity, name, value=1, rounds=-1, source="x"):
 def test_full_battle_cycle_all_mechanism_types_fire():
     """同场战斗中：回始5机制 + 伤害加减区 + 两个事件机制 + 回终结算全部生效。
 
-    覆盖机制：自愈/衰败/洞察·结算/狂暴·标记/畸变·标记（ROUND_START）、
+    覆盖机制：洞察·结算/畸变·标记（ROUND_START；自愈、狂暴·标记、衰败已随道纹删除）、
     加害/龙鳞（INCOMING_ADJUST）、洗劫·夺碎片/焦黑发丝（事件）、畸变·结算（ROUND_END）。
     """
     state, combat = _arena(shards=0, relics=[Relic("焦黑发丝", "")])
     player = state.player
-    # 玩家：回始全机制
-    _add(player, "自愈", 1)
-    _add(player, "衰败", 1)
+    # 玩家：回始机制（衰败已删，回始只剩 洞察·结算）
     player._dongcha_pending = 4
     _add(player, "狂暴", 1)
     _add(player, "洗劫", 2)
@@ -91,14 +89,14 @@ def test_full_battle_cycle_all_mechanism_types_fire():
     enemy.attack_count = 2
     enemy.attack_power = 3
 
-    # 回始：自愈 -> 衰败 -> 洞察（2026-10-03：【狂暴·标记】随道纹删除）
+    # 回始：洞察（狂暴·标记 2026-10-03、自愈与衰败 2026-10-11 随道纹删除）
     # （DM裁定 2026-09-09：法力一池制，mana_refill 已不在回始管道里）
     res = combat.round_start()
     p_types = [e.get("type") for e in res["effects"] if e.get("entity") == "P"]
-    assert p_types == ["self_heal", "shuaibai_tick", "dongcha_mana"], f"回始顺序: {p_types}"
+    assert p_types == ["dongcha_mana"], f"回始顺序: {p_types}"
 
-    # 回始数值链（P: hp100 满血 -> 自愈 +10 封顶 100 -> 衰败 ceil(100*10/100)=10 -> 90）
-    assert player.current_hp == 90, f"P hp={player.current_hp}"
+    # 回始数值链（P: hp100 满血；自愈与衰败均已删除，回始不再改动生命）
+    assert player.current_hp == 100, f"P hp={player.current_hp}"
     # mana: 50(初始) + 50(回填) + 4(洞察) = 104（无不朽之躯 -> 不钳制）
     # 一池制：回始少了 +法限50 的回填，故 104 → 54
     assert player.current_mana == 54, f"P mana={player.current_mana}"
@@ -196,27 +194,27 @@ def test_friend_and_employee_round_start_mechanisms_fire():
     """朋友/员工（已部署）与轮回者同场：回始机制对各实体独立结算。"""
     friend = Entity("F", "朋友", blood_limit=100, current_hp=100,
                     mana_limit=50, current_mana=50)
-    _add(friend, "衰败", 2)
+    # 2026-10-11：【衰败】已删。回始相位现只剩 洞察·结算（只对轮回者结算）与 畸变·标记，
+    # 朋友侧已无任何回始机制可触发——这里改为钉住这个事实，而不是假造一个机制。
     employee = Entity("W", "员工", blood_limit=80, current_hp=50,
                       mana_limit=50, current_mana=50, is_deployed=True)
-    _add(employee, "自愈", 1)
     state, combat = _arena(friends=[friend], employees=[employee])
     state.player = _player(hp=100)
 
     res = combat.round_start()
 
     f_types = [e.get("type") for e in res["effects"] if e.get("entity") == "F"]
-    assert "shuaibai_tick" in f_types, f"朋友衰败: {f_types}"
-    assert friend.current_hp == 80, f"朋友 hp={friend.current_hp}（100-20）"
+    assert f_types == [], f"衰败删除后朋友侧不应再有回始机制条目: {f_types}"
+    assert friend.current_hp == 100, f"朋友 hp={friend.current_hp}"
 
     w_types = [e.get("type") for e in res["effects"] if e.get("entity") == "W"]
-    assert "self_heal" in w_types, f"员工自愈: {w_types}"
-    assert employee.current_hp == 58, f"员工 hp={employee.current_hp}（50+8）"
+    # 【自愈】已删除：员工不再因回始回血，生命保持 50
+    assert "self_heal" not in w_types, f"自愈已删除，不应出现: {w_types}"
+    assert employee.current_hp == 50, f"员工 hp={employee.current_hp}"
 
     # 未部署的员工不进入战场循环
     employee2 = Entity("W2", "员工", blood_limit=80, current_hp=80,
                        mana_limit=50, current_mana=50, is_deployed=False)
-    _add(employee2, "衰败", 2)
     state2, combat2 = _arena(employees=[employee2])
     combat2.round_start()
     assert employee2.current_hp == 80, "未部署员工不得结算回始机制"
@@ -361,20 +359,10 @@ def test_extreme_zero_hp_and_overkill():
 
 
 def test_extreme_blood_limit_one_and_mana_bounds():
-    """血限 1 / 法力 0 / 法力满：回始机制在边界值下的行为。"""
-    # 血限 1：自愈 ceil(1*10/100)=1；衰败 ceil(1*10/100)=1 -> 命零
-    state, combat = _arena()
-    enemy = state.enemies[0]
-    enemy.blood_limit = 1
-    enemy.current_hp = 1
-    _add(enemy, "自愈", 1)
-    _add(enemy, "衰败", 1)
-    res = combat.round_start()
-    types = [e.get("type") for e in res["effects"] if e.get("entity") == "M"]
-    assert types == ["self_heal", "shuaibai_tick"], types
-    # 数值链：hp 1 -> 自愈 +1 -> 封顶 1 -> 衰败 -1 -> 命零（与引擎既有语义一致）
-    assert enemy.current_hp == 0, f"hp={enemy.current_hp}"
-    assert enemy.is_alive is False
+    """法力 0 / 法力满 / 勾魂：回始机制在边界值下的行为。"""
+    # 2026-10-11：原「血限1 + 衰败 → 命零」边界子段随【衰败】删除而移除
+    # （衰败是它唯一的驱动机制）。回始相位现为 洞察·结算 → 畸变·标记，
+    # 两者都不直接扣血，血限1 的命零边界改由伤害管线用例覆盖。
 
     # 勾魂（2026-10-08 用户令）：无法获得[法力]；挂状态/回始都不动已有法力
     state2, combat2 = _arena()
@@ -411,17 +399,6 @@ def test_extreme_blood_limit_one_and_mana_bounds():
     assert p4.current_mana == 50, f"不朽之躯必须钳制: {p4.current_mana}"
 
 
-def test_extreme_shield_absorbs_decay_fully():
-    """衰败伤害被格挡完全吸收：条目 damage=0 仍产生（旧语义）。"""
-    state, combat = _arena()
-    enemy = state.enemies[0]
-    enemy.shield = 100
-    _add(enemy, "衰败", 2)   # ceil(50*20/100)=10，全部被格挡
-    res = combat.round_start()
-    entry = next((e for e in res["effects"] if e.get("type") == "shuaibai_tick"
-                  and e.get("entity") == "M"), None)
-    assert entry is not None and entry["damage"] == 0, f"格挡完全吸收: {entry}"
-    assert enemy.current_hp == 50 and enemy.shield == 90
 
 
 # ==================== 8. 事件流黄金序列（类型/数量/顺序全量锁定） ====================
@@ -429,7 +406,10 @@ def test_extreme_shield_absorbs_decay_fully():
 def test_golden_event_sequence_scripted_round():
     """脚本化回合的事件流黄金序列：精确锁定 事件类型/数量/顺序。
 
-    场景：回始（玩家有洗劫+敌人有衰败，敌人死前被打 5 点）-> 再打 10 点致死 -> 回终。
+    场景：回始（玩家有洗劫）-> 打 5 点 -> 再打 10 点致死 -> 回终。
+
+    2026-10-11：【衰败】已删除，回始不再产生 tick 伤害，事件流少一条 DAMAGE_APPLIED，
+    数值链由 15→13→8→0 改为 15→10→0。
     """
     state, combat = _arena(shards=0, relics=[Relic("焦黑发丝", "")])
     player = state.player
@@ -438,36 +418,34 @@ def test_golden_event_sequence_scripted_round():
     enemy.current_hp = 15
     enemy.shards = 20
     _add(player, "洗劫", 2)
-    _add(enemy, "衰败", 1)   # ceil(15*10/100)=2 -> 13
 
-    combat.round_start()                  # 衰败扣 2 -> hp 13（DAMAGE_APPLIED #1）
-    combat._apply_hostile_damage(enemy, 5, source=player)   # 洗劫夺 5 -> hp 8（DAMAGE_APPLIED #2）
-    combat._apply_hostile_damage(enemy, 8, source=player)   # 致死 -> hp 0（DAMAGE_APPLIED #3, ENTITY_DIED）
+    combat.round_start()                  # 衰败已删：回始不再造伤，hp 仍 15
+    combat._apply_hostile_damage(enemy, 5, source=player)   # 洗劫夺 5 -> hp 10（DAMAGE_APPLIED #1）
+    combat._apply_hostile_damage(enemy, 10, source=player)  # 致死 -> hp 0（DAMAGE_APPLIED #2, ENTITY_DIED）
     combat.round_end()
 
     stream = [(e.event_type.value, e.actor_name, e.target_name) for e in combat.event_stream]
     expected = [
-        ("damage_applied", "", "M"),     # #1 衰败 tick（无来源）
-        ("damage_applied", "P", "M"),    # #2 玩家打 5
-        ("damage_applied", "P", "M"),    # #3 玩家打 8
+        ("damage_applied", "P", "M"),    # #1 玩家打 5
+        ("damage_applied", "P", "M"),    # #2 玩家打 10
         ("entity_died", "P", "M"),       # 死亡（actor=击杀者）
     ]
     assert stream == expected, f"事件流: {stream}"
 
     # 事件数量精确
     assert len([e for e in combat.event_stream
-                if e.event_type == CombatEventType.DAMAGE_APPLIED]) == 3
+                if e.event_type == CombatEventType.DAMAGE_APPLIED]) == 2
     assert len([e for e in combat.event_stream
                 if e.event_type == CombatEventType.ENTITY_DIED]) == 1
     # 死亡事件的 parent 链指向最后一次伤害
-    dmg3 = [e for e in combat.event_stream
-            if e.event_type == CombatEventType.DAMAGE_APPLIED][2]
+    dmg_last = [e for e in combat.event_stream
+                if e.event_type == CombatEventType.DAMAGE_APPLIED][1]   # 衰败 tick 已删，只剩 2 条
     died = next(e for e in combat.event_stream
                 if e.event_type == CombatEventType.ENTITY_DIED)
-    assert died.ctx.get("parent_event_id") == dmg3.ctx.get("event_id")
-    # 洗劫总量 = 5 + 8 = 13（夺碎片按每次实伤）
-    assert state.shards == 13, f"洗劫总量: {state.shards}"
-    assert enemy.shards == 7, f"剩余: {enemy.shards}"  # 20-5-8
+    assert died.ctx.get("parent_event_id") == dmg_last.ctx.get("event_id")
+    # 洗劫总量 = 5 + 10 = 15（夺碎片按每次实伤）
+    assert state.shards == 15, f"洗劫总量: {state.shards}"
+    assert enemy.shards == 5, f"剩余: {enemy.shards}"  # 20-5-10
 
 
 def test_multi_death_jiaohheifasi_fires_per_monster():

@@ -3,7 +3,8 @@
 验证点：
   - mana 动词（统一法力入口）逐字覆盖旧 洞察 语义（+= pending + 不朽之躯钳制）；
   - 条件：pending>0 且 轮回者 且 存活（与旧块短路顺序同义——不满足则不触发也不清零）；
-  - 顺序：自愈(10) → 衰败(20) → 洞察(30) → 勾魂（尚未迁移，硬编码块在其后）。
+  - 顺序：洞察(20) → 畸变·标记(60) → 勾魂（尚未迁移，硬编码块在其后）；
+    自愈(10) 与 衰败 已随道纹删除（2026-10-11 用户令）。
 """
 from __future__ import annotations
 
@@ -69,7 +70,8 @@ def test_dongcha_is_registered():
     assert mech.priority == 30
     from engine.mechanisms.registry import MECHANISMS as REG
     assert [m.name for m in REG.phase_mechanisms(Phase.ROUND_START)] == \
-        ["自愈", "衰败", "洞察·结算", "畸变·标记"]   # 2026-10-03：【狂暴·标记】随道纹删除
+        ["洞察·结算", "畸变·标记"]   # 2026-10-11：【衰败】随道纹删除
+        # 2026-10-03：【狂暴·标记】随道纹删除；2026-10-11：【自愈】随道纹删除
 
 
 def test_old_dongcha_block_removed():
@@ -129,25 +131,6 @@ def test_dongcha_skips_dead():
 
 # ==================== 3. 顺序 ====================
 
-def test_dongcha_order_between_shuaibai_and_dongcha():
-    """条目顺序：衰败(20) → 洞察(30)。
-
-    （原「洞察 → 勾魂」顺序断言于 2026-08-30 移除：【勾魂】改版为
-    「持续X回合无法获得法力」，不再有回始扣法力机制条目。）
-    """
-    from engine.models import StatusEffect
-    state = GameState(phase="in_combat", combat_subphase="player_actions")
-    player = Entity("P", "轮回者", blood_limit=100, current_hp=100,
-                    mana_limit=50, current_mana=30, speed_limit=10, current_speed=5)
-    player._dongcha_pending = 10
-    player.add_status(StatusEffect(name="衰败", remaining_rounds=-1, value=1, source="x"))
-    state.player = player
-    state.enemies = []
-    combat = CombatEngine(state, DiceEngine())
-    res = combat.round_start()
-    types = [e.get("type") for e in res["effects"] if e.get("entity") == "P"]
-    assert types.index("shuaibai_tick") < types.index("dongcha_mana"), \
-        "衰败(20) 必须先于 洞察(30)"
 
 
 def test_dongcha_executes_exactly_once():

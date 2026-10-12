@@ -1,4 +1,4 @@
-"""已迁移到声明层的机制（当前 17 个：加害、龙鳞、帮派令、衰败、畸变·结算、
+"""已迁移到声明层的机制（当前 16 个：加害、龙鳞、帮派令、畸变·结算、
 焦黑发丝、洞察·结算、狂暴·标记、畸变·标记、洗劫·夺碎片、缄默面具、龙爪、
 逼债·结算、清算·结算、赌命·结算、逼债·对账、清算·对账）。
 
@@ -112,34 +112,6 @@ def _gangpailing_effect(ctx: TriggerContext, targets: list) -> str:
     return "帮派令：获得洗劫3"
 
 
-def _shuaibai_effect(ctx: TriggerContext, targets: list) -> dict | None:
-    """旧 round_start 衰败块语义（逐字复刻）：
-
-    对自己造成 dmg = ceil(当前生命 × 10X / 100) 点伤害，走**完整伤害管线**
-    （damage 动词 → _apply_hostile_damage：格挡/加减区/濒死保护/死后效果原样生效）；
-    dmg<=0 时不产生报告条目。来源按状态 source 名字解析（可能为 None）。
-    """
-    entity = ctx.target
-    xv = entity.get_status_value("衰败")
-    dmg_n = math.ceil(entity.current_hp * 10 * xv / 100)
-    if dmg_n > 0:
-        source_name = next((status.source for status in entity.status_effects
-                            if status.name == "衰败"), "")
-        source_entity = ctx.combat._find_named(source_name)
-        rd = apply_verb(ctx.combat, "damage", {
-            "target": entity,
-            "amount": dmg_n,
-            "source": source_entity,
-            "ctx": {
-                "timing": "round_start", "source": "衰败", "source_type": "daowen",
-                "actor": source_entity, "target": entity, "mechanic": "damage",
-                "subtype": "dot", "amount": dmg_n,
-                "tags": {"daowen", "round_start"},
-            },
-        })
-        return {"type": "shuaibai_tick", "entity": entity.name,
-                "damage": rd["actual_damage"], "died": rd["died"]}
-    return None
 
 
 def _jibian_settle_effect(ctx: TriggerContext, targets: list) -> dict:
@@ -343,19 +315,8 @@ GANGPAILING = Mechanism(
     priority=10,
 )
 
-SHUAIBAI = Mechanism(
-    name="衰败",
-    when=Trigger.phase(Phase.ROUND_START),
-    effect=_shuaibai_effect,
-    target=SELF,
-    status_name="衰败",
-    condition=all_(
-        has_status("衰败", of="self"),
-        is_alive(of="self"),
-    ),
-    # 自愈删除后，衰败为回始效果循环第一位；洞察随后结算
-    priority=20,
-)
+# 2026-10-11 用户令删除【衰败】道纹 → 其 ROUND_START 机制（priority 20）一并删除。
+# 回始相位机制现为：洞察·结算(30) → 畸变·标记(60)。
 
 def _jiaohheifasi_effect(ctx: TriggerContext, targets: list) -> None:
     """旧 _on_entity_death 焦黑发丝块语义（逐字复刻）：
@@ -562,7 +523,6 @@ MECHANISMS.register(JIAHAI)
 MECHANISMS.register(LONGLIN)
 MECHANISMS.register(GUZHI)
 MECHANISMS.register(GANGPAILING)
-MECHANISMS.register(SHUAIBAI)
 MECHANISMS.register(JIBIAN_SETTLE)
 MECHANISMS.register(JIAOHHEIFASI)
 MECHANISMS.register(DONGCHA)

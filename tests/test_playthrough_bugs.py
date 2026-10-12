@@ -199,11 +199,13 @@ def test_resonance_fails_without_holder_or_stock():
 #    / [敌回终]只清自己那一份。
 # ========================================================================
 
-def test_zhesu_and_blood_pact_overflow_survives_first_round_start():
-    """正常路径：超池法力在回始不被回填/钳制；血契在回始流血4X并叠加X法力。
+def test_zhesu_overflow_survives_first_round_start():
+    """正常路径：超池法力在回始不被回填/钳制。
 
     2026-09-13 用户裁定「所有属性不得超过其上限」后，超池本身已不可能出现，
-    本条改守两件仍然成立的事：(1) 回始不回填；(2) 血契照常流血换法力。
+    本条改守「回始不回填」这件仍然成立的事。
+    2026-10-12 用户令删掉【血契】的「[回始]流血4X换X法力」后，原本挂在这里的
+    第二段（血契流血换法力）随之移除——那半功能与道纹【透支】重合，已不存在。
     """
     engine = _engine("mana_happy")
     p = engine.state.player
@@ -214,19 +216,6 @@ def test_zhesu_and_blood_pact_overflow_survives_first_round_start():
     engine.execute_action("round_start", {})
     assert p.current_mana == EXP_MANA - 2, f"一池制：回始不回填，应仍{EXP_MANA - 2}，实{p.current_mana}"
 
-    engine2 = _engine("mana_pact")
-    p2 = engine2.state.player
-    engine2.state.relics.append(Relic(name="血契", effect="[回始]可流血4X获得X法力"))
-    hp_before = p2.current_hp
-    engine2.execute_action("battle_start", {"relic_choices": {}})
-    assert p2.current_mana == p2.mana_limit == EXP_MANA, f"战始给满法限，实{p2.current_mana}"
-    # 先花掉 3 点给血契的 +3 腾出空间——满池时它会被[法限]吃掉（全局上限）。
-    p2.spend_mana(3)
-    engine2.execute_action("round_start", {"relic_choices": {
-        "血契": {"use": True, "x": 3},
-    }})
-    assert p2.current_mana == EXP_MANA, f"回始不回填，只有血契+3 填回满池，实{p2.current_mana}"
-    assert p2.current_hp == hp_before - 12
 
 
 def test_round_start_does_not_refill_mana():

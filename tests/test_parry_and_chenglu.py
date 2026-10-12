@@ -1,4 +1,11 @@
-"""【招架】与遗物【承露盏】（已按 2026-09-28 用户令同步招架新规则：10%当前生命减伤/次，次数=当前生命，无回合锁）。"""
+"""遗物【承露盏】与属性上限护栏；附两条仍然成立的招架边界。
+
+2026-10-11 清理：原本这里还有 11 条按「回合姿态式招架」写的测试（declare_parry / 每次受伤减 10% 当前生命 / 可挡次数=当前生命）。
+该口径已被引擎废弃——`declare_parry` 现在直接返回错误，招架改为在
+`resolve_attack` 的对应 hit 上逐击提交 `parry=true`（真刀免疫并返还1速度、
+空刀不返还）。逐击招架的覆盖在 `tests/test_blade_combat_rework.py`，
+本文件不再重复。
+"""
 import os
 import sys
 
@@ -29,65 +36,11 @@ def _arena(mana=10, mana_limit=10, bl=100, hp=100, relics=()):
 
 # ==================== 1. 招架：减伤口径（2026-09-28 新规则） ====================
 
-def test_parry_subtracts_10pct_current_hp_from_each_hit():
-    """正常路径：招架期间每次受击减去 floor(当前生命×10%)；命中次数消耗次数。
-    注意是「每次」而非「本轮合计」。"""
-    _, combat, player, enemy = _arena(bl=100, hp=100)
-    player.parrying_this_round = True
-    player.parry_uses_remaining_this_round = player.current_hp  # 100次
-    # 当前HP=100，每击减 10 点
-    combat._apply_hostile_damage(player, 25, source=enemy)
-    assert player.current_hp == 85, f"25-10=15，实掉{100 - player.current_hp}"
-    # 第二击时 HP=85 → floor(85*10%)=8 → 25-8=17 → HP=68
-    combat._apply_hostile_damage(player, 25, source=enemy)
-    assert player.current_hp == 68, "第二击按HP=85计算减8，实掉17"
-
-
 def test_parry_does_nothing_without_declaration():
     """对照：没有声明招架时不减伤。"""
     _, combat, player, enemy = _arena(bl=100, hp=100)
     combat._apply_hostile_damage(player, 25, source=enemy)
     assert player.current_hp == 75, "未招架应全额承伤"
-
-
-def test_parry_reduction_tracks_current_hp():
-    """边界（核心张力）：减免按结算时的当前生命算，不是声明时快照；
-    掉血后招架减伤同步变弱，越打越扛不住。"""
-    _, combat, player, enemy = _arena(bl=100, hp=100)
-    player.parrying_this_round = True
-    player.parry_uses_remaining_this_round = player.current_hp
-    combat._apply_hostile_damage(player, 20, source=enemy)
-    # HP 100 → 减 10 → 实掉10 → HP=90
-    assert player.current_hp == 90
-    # HP=90 → 每击减 9
-    combat._apply_hostile_damage(player, 20, source=enemy)
-    assert player.current_hp == 79, "HP=90 → 减9 → 20-9=11 实掉"
-
-
-def test_parry_uses_depletes_after_hp_hits():
-    """次数上限：每回合可用次数=声明时的当前生命，用完后续受击不再减伤。"""
-    _, combat, player, enemy = _arena(bl=100, hp=100)
-    player.parrying_this_round = True
-    player.parry_uses_remaining_this_round = 3
-    # 低伤害击打（1点），减伤 floor(hp*10%)=10，所以前3击全部免伤（不掉血）
-    for _ in range(3):
-        hp_before = player.current_hp
-        combat._apply_hostile_damage(player, 1, source=enemy)
-        assert player.current_hp == hp_before, "1点伤害在招架10点减免下应完全免伤"
-    assert player.parry_uses_remaining_this_round == 0
-    hp_before = player.current_hp
-    combat._apply_hostile_damage(player, 1, source=enemy)
-    assert player.current_hp == hp_before - 1, "次数用尽后不再减伤"
-
-
-def test_parry_floors_at_zero_never_heals():
-    """边界：减免不会把伤害打成负数（低血时 10% 取整可能为0，不回血）。"""
-    _, combat, player, enemy = _arena(bl=100, hp=100)
-    player.parrying_this_round = True
-    player.parry_uses_remaining_this_round = 100
-    combat._apply_hostile_damage(player, 5, source=enemy)
-    # HP=100 减10但伤害只有5 → 减到0
-    assert player.current_hp == 100, "伤害归零，不得反向回血"
 
 
 def test_parry_does_not_reduce_cost_damage():
@@ -100,17 +53,6 @@ def test_parry_does_not_reduce_cost_damage():
         "actor": player, "target": player, "mechanic": "cost",
         "subtype": "bleed", "amount": 8, "tags": {"active_payment"}})
     assert player.current_hp == 92, "代价须全额支付，不被招架减免"
-
-
-def test_parry_with_sub_10_hp_reduces_nothing():
-    """边界：HP<10时 10% 取整=0，招架合法但不减伤，仍消耗次数。"""
-    _, combat, player, enemy = _arena(bl=9, hp=9)
-    player.parrying_this_round = True
-    player.parry_uses_remaining_this_round = 9
-    before_uses = player.parry_uses_remaining_this_round
-    combat._apply_hostile_damage(player, 7, source=enemy)
-    assert player.current_hp == 2, f"9血→10%=0减伤，应全额掉7；实掉{9 - player.current_hp}"
-    assert player.parry_uses_remaining_this_round == before_uses - 1, "仍消耗1次次数"
 
 
 # ==================== 2. 招架：声明（无锁） ====================
@@ -129,70 +71,6 @@ def _combat_engine(suffix):
     begin_battle(e)
     begin_round(e)
     return e
-
-
-def test_declare_parry_succeeds_and_sets_stance():
-    """正常路径：声明招架成功，进入姿态，不消耗出手，可用次数=当前生命。"""
-    e = _combat_engine("declare")
-    p = e.state.player
-    used_before = p.actions_used_this_round
-    hp_before = p.current_hp
-    r = e.execute_action("declare_parry", {})
-    assert r["success"], r
-    assert p.parrying_this_round is True
-    assert p.parry_uses_remaining_this_round == hp_before
-    assert p.actions_used_this_round == used_before, "招架不消耗出手"
-    assert r["result"]["reduction_preview"] == hp_before // 10
-    assert r["result"]["uses"] == hp_before
-
-
-def test_cannot_parry_twice_in_same_round():
-    """错误输入：同一回合重复声明被拒。"""
-    e = _combat_engine("twice")
-    assert e.execute_action("declare_parry", {})["success"]
-    r2 = e.execute_action("declare_parry", {})
-    assert not r2["success"] and "已处于招架" in r2["error"]
-
-
-def test_parry_preview_matches_actual_reduction_on_same_state():
-    """防漂移：declare_parry 的 reduction_preview 必须与真实减伤结算同口径。
-
-    预览公式写在 engine/api.py（声明返回），实际减免写在 engine/combat.py
-    （伤害咽喉 _apply_parry_reduction），两处各写了一遍 floor(当前生命×10%)。
-    2026-10-02 独立验证用变异复现过：只改 combat.py 的一处，旧契约测试仍全绿。
-    本测试把两侧锁在一起——任何一侧改口径都会失败。
-    """
-    e = _combat_engine("preview_parity")
-    p = e.state.player
-    hp = p.current_hp
-    r = e.execute_action("declare_parry", {})
-    assert r["success"], r
-    preview = r["result"]["reduction_preview"]
-    applied = 30 - e.combat._apply_parry_reduction(p, 30, "普通")
-    assert preview == applied == max(0, hp // 10), (preview, applied, hp)
-
-
-def test_parry_does_not_lock_next_round():
-    """2026-09-28 新规则：不再有"上回合招架→本回合禁用"锁；下回合可以重新声明。"""
-    e = _combat_engine("nolock")
-    p = e.state.player
-    assert e.execute_action("declare_parry", {})["success"]
-    e.state.combat_subphase = "await_round_end"
-    e.execute_action("round_end", {})
-    e.execute_action("round_start", {})
-    assert p.parrying_this_round is False, "回始须清空姿态"
-    assert p.parry_uses_remaining_this_round == 0, "回始须清空次数"
-    # 旧字段保留但不再起作用
-    assert p.parry_locked_this_round is False
-    assert e.execute_action("declare_parry", {})["success"], "下回合仍可声明招架"
-
-
-def test_parry_is_listed_in_available_actions():
-    """招架出现在可用行动表里。"""
-    e = _combat_engine("listed")
-    actions = e.get_available_actions()["actions"]
-    entry = next((a for a in actions if a["action_type"] == "declare_parry"), None)
-    assert entry is not None, "招架必须出现在可用行动表"
 
 
 # ==================== 3. 承露盏（旧测试保持，仅数值微调）====================
@@ -243,18 +121,6 @@ def test_cap_does_not_block_refilling_a_spent_pool():
 
 
 # ==================== 5. 招架 × 承露盏 ====================
-
-def test_parry_and_chenglu_compose_on_the_same_hit():
-    """同一次受击上，招架先减伤（10%当前HP），剩下的失血再喂承露盏。"""
-    _, combat, player, enemy = _arena(mana=4, mana_limit=20, bl=200, hp=200,
-                                      relics=("承露盏",))
-    player.parrying_this_round = True
-    player.parry_uses_remaining_this_round = 200
-    combat._apply_hostile_damage(player, 30, source=enemy)
-    # 200HP → 招架减 floor(200*10%)=20 → 实际失血 10 → 10//10=1法力
-    assert player.current_hp == 190, f"30-20=10，实掉{200 - player.current_hp}"
-    assert player.current_mana == 5, "失血10 → +1法力（4→5）"
-
 
 def test_chenglu_feeds_the_touzhi_regeneration_loop():
     _, combat, player, _ = _arena(mana=0, mana_limit=20, bl=200, hp=200,

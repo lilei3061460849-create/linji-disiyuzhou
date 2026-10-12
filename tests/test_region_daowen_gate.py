@@ -26,6 +26,10 @@ def _engine(region="龙心谷"):
                      {"name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
+    # 2026-10-12 新增【承载上限】：30X[血限]=X 种道纹。本文件测的是「副本专属道纹门禁」，
+    # 不是承载额度（额度由 tests/test_load_capacity.py 专测）。夹具的 11/8/6 分配只有
+    # [血限]66 → 额度 2，会把门禁断言淹没在额度报错里，故抬高血限让额度不构成瓶颈。
+    e.state.player.blood_limit = 150
     setup = e.execute_action("setup_choose_region", {"region": region})
     e.execute_action("choose_discovered_relic", {"relic_name": setup["result"]["relic_choices"][0]})
     return e
@@ -125,7 +129,7 @@ def test_foreign_region_exclusive_always_rejected():
     e.state.player.dao_wen["裂变"] = DaoWenInstance(
         DaoWen(name="裂变", formula="", cost_type="消耗",
                cost_formula="X", effect_formula=""))
-    for foreign in ("退化", "失忆", "坏死", "逼债"):
+    for foreign in ("退化", "点金", "坏死", "逼债"):   # 2026-10-12：失忆 已回退为 点金
         r = _learn(e, foreign)
         assert not r["success"], f"{foreign}属于其他副本，不应可学"
         assert "专属道纹" in r["error"]

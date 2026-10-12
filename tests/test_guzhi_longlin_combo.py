@@ -112,16 +112,21 @@ def test_guzhi_longlin_zeroes_only_hits_within_longlin_threshold_and_each_large_
     assert target.current_hp == 9_993, "七笔独立大伤害应各穿过 1 点"
 
 
-def test_guzhi_longlin_still_applies_to_piercing_but_neither_blocks_cost():
-    """无视格挡不绕过组合；代价伤害则同时绕过龙鳞与固执。"""
+def test_guzhi_longlin_apply_to_piercing_and_cost_still_bypasses_longlin():
+    """无视格挡不绕过组合；代价伤害绕过龙鳞，但**不再**绕过固执。
+
+    2026-10-11 用户令：固执简化为「你每次失去的生命不会超过1，持续X」，
+    代价路径与直接失血一并封顶。旧口径「代价同时绕过龙鳞与固执」中，
+    绕过龙鳞的部分仍然成立（代价不经伤害调整阶段），绕过固执的部分已废止。
+    """
     target, source, combat = _arena()
 
     piercing = combat._apply_hostile_damage(target, 500, damage_type="无视格挡", source=source)
     assert piercing["actual_damage"] == 1
 
-    # 用新的满血靶，避免上一击干扰。代价完整落地，不经龙鳞或固执。
+    # 用新的满血靶，避免上一击干扰。代价不经龙鳞，但仍被固执封顶为1。
     cost_target, cost_source, cost_combat = _arena(hp=2_000)
     cost = cost_combat._apply_hostile_damage(cost_target, 999, damage_type="代价", source=cost_source)
     assert cost["raw_damage"] == 999
-    assert cost["actual_damage"] == 999
-    assert cost_target.current_hp == 1_001
+    assert cost["actual_damage"] == 1
+    assert cost_target.current_hp == 1_999

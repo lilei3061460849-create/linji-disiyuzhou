@@ -129,7 +129,10 @@ def test_cross_engine_load_continue_battle_full_round(tmp_path):
     m1.shards = 8
     p1.add_status(StatusEffect("洗劫", -1, 2, "e"))
     p1.add_status(StatusEffect("自愈", -1, 1, "e"))
-    m1.add_status(StatusEffect("衰败", -1, 2, "e"))
+    # 2026-10-11 用户令：【衰败】删除（它是当时唯一的回始掉血源）。改用【畸变】
+    # ——它的回始机制「畸变·标记」仍在（`engine/mechanisms/builtins.py`），
+    # 但只发报告条目不改生命，所以断言从「掉血」改成「状态与机制条目都活过读档」。
+    m1.add_status(StatusEffect("畸变", -1, 2, "e"))
     e1.state.relics = [Relic("焦黑发丝", "")]
     e1.state.current_round = 1
     assert e1.save_game("mid")["success"]
@@ -144,9 +147,14 @@ def test_cross_engine_load_continue_battle_full_round(tmp_path):
     sp_before = p2.current_speed
     shards_before = e2.state.shards
 
-    # 回合 1 回始：自愈+衰败+洞察/勾魂等 ROUND_START 机制在加载后的引擎中照常结算
+    # 回合 1 回始：洞察·结算/畸变·标记 等 ROUND_START 机制在加载后的引擎中照常结算
     res = e2.combat.round_start()
-    assert m2.current_hp < hp_before, f"衰败必须在读档后继续造成伤害 {hp_before}->{m2.current_hp}"
+    assert m2.has_status("畸变"), "局内状态必须活过 存档→读档"
+    pending = [e for e in res["effects"]
+               if e.get("type") == "deform_pending" and e.get("entity") == m2.name]
+    assert pending, f"畸变·标记必须在读档后照常结算: {res['effects']}"
+    assert pending[0]["blood_loss"] == m2.attack_count * m2.attack_power
+    assert m2.current_hp == hp_before, "畸变·标记是纯报告条目，回始不改生命"
 
     # 玩家行动造成伤害 -> 洗劫夺碎片（DAMAGE_APPLIED 事件机制）
     m2.shards = 8

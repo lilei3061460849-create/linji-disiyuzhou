@@ -366,13 +366,23 @@ class DaoWenRuleDefinition:
         return "；".join(pieces)
 
     def _rule_text(self, rule: DamageRuleDefinition, x: str | int, subject: str) -> str:
-        trigger = "每次格挡后仍有伤害待结算的非代价受击时"
         value_label = _value_label(rule.reads)
         operator = rule.operator
+        # 2026-10-11 用户令：固执改为「你每次失去的生命不会超过1」，加害/龙鳞描述简化。
+        # 三条都不再复述「格挡后仍有伤害待结算的非代价受击」这一长串触发口径。
+        # 主语按用户口径写「你」（default_subject 仍是「自身」，只在文案层改写）。
+        subject = "你" if self.default_subject == "自身" else subject
         if rule.daowen_name == "固执":
             cap = _format_number(operator.operand if operator.operand is not None else 0)
-            action = f"将本次最终实际失血限制为不超过{cap}点"
-        elif operator.kind == RuleOperator.ADD:
+            return f"{subject}每次失去的生命不会超过{cap}，{self.duration.describe(x)}"
+        if rule.daowen_name == "加害":
+            # 2026-10-11 用户令简化：正文口径「[目标]每次受到伤害+X，永久」
+            return f"{subject}每次受到伤害+{x}，{self.duration.describe(x)}"
+        if rule.daowen_name == "龙鳞":
+            bound = _format_number(operator.lower_bound) if operator.lower_bound is not None else "0"
+            return f"{subject}每次受到伤害-{x}（最低为{bound}），{self.duration.describe(x)}"
+        trigger = "每次格挡后仍有伤害待结算的非代价受击时"
+        if operator.kind == RuleOperator.ADD:
             action = f"使{value_label}增加{x}"
         elif operator.kind == RuleOperator.SUBTRACT:
             if operator.lower_bound is not None:
@@ -387,27 +397,8 @@ class DaoWenRuleDefinition:
             action = f"将{value_label}至少设为{operand}"
         else:
             action = f"按{operator.kind.value}规则变换{value_label}"
-        final_cap_note = (
-            f"；失血倍率结算后仍封顶为{_format_number(operator.operand if operator.operand is not None else 0)}点"
-            if rule.daowen_name == "固执"
-            else ""
-        )
-        order_note = (
-            final_cap_note
-            if rule.daowen_name == "固执"
-            else "；该阶段后续规则读取更新后的当前值"
-        )
-        multiplier_note = (
-            "；其后的失血倍率仍会结算"
-            if operator.kind == RuleOperator.MIN
-            and rule.stage == RuleStage.POST_BLOCK_PRE_LIFE_LOSS_MULTIPLIER
-            and rule.daowen_name != "固执"
-            else ""
-        )
-        return (
-            f"{subject}{trigger}，{action}{order_note}{multiplier_note}，"
-            f"{self.duration.describe(x)}"
-        )
+        return (f"{subject}{trigger}，{action}；该阶段后续规则读取更新后的当前值，"
+                f"{self.duration.describe(x)}")
 
     def summary(self, x: int, target_name: Optional[str] = None) -> str:
         return f"{self.cost_text(x, include_unit=True)}，{self.effect_text(x=x, target_name=target_name)}"
@@ -612,8 +603,11 @@ def validate_damage_amount(value: Any, field_name: str = "damage",
 def apply_final_life_loss_cap(amount: int, recipient: Any, damage_type: str) -> int:
     """应用位于所有失血倍率之后的最终生命损失边界。
 
-    【固执】限制的是最终实际失血；因此不能只依赖倍率前的 CURRENT_DAMAGE 规则。
-    代价区明确排除，且本函数不修改实体状态。
+    2026-10-11 用户令：【固执】简化为「你每次失去的生命不会超过1，持续X」，
+    因此**代价路径与直接失血一并封顶**。旧口径（`damage_type != "代价"` 的排除，
+    以及「格挡后仍有伤害待结算的非代价受击」这一触发前提）已废止。
+    `damage_type` 参数保留是为了兼容既有调用点，本函数不再据它分流。
+    本函数不修改实体状态。
     """
     amount = validate_damage_amount(
         amount, "final_life_loss_cap.amount", allow_negative=False)
@@ -621,7 +615,7 @@ def apply_final_life_loss_cap(amount: int, recipient: Any, damage_type: str) -> 
     if definition is None:
         raise RuleError("缺少【固执】的最终失血上限定义")
     cap = int(definition.rules[0].operator.operand)
-    if (amount > cap and damage_type != "代价" and recipient is not None
+    if (amount > cap and recipient is not None
             and callable(getattr(recipient, "has_status", None))
             and recipient.has_status("固执")):
         return cap

@@ -24,6 +24,13 @@ def _state_with_oath_and(*relics: str) -> tuple[GameState, CombatEngine, Entity]
     return state, CombatEngine(state, DiceEngine()), player
 
 
+
+# 2026-10-12 用户令：【血契】删掉与道纹【透支】重合的「[回始]流血4X换X法力」，
+# 只保留平分。原先此处有 2 条测试专测那个回始付费决策，驱动已被删除，
+# 按「唯一驱动是已删机制的测试应删除而非改写」处理；平分功能的覆盖仍在
+# test_blood_pact_shares_every_supported_numeric_cost /
+# test_event_and_daowen_costs_use_blood_pact_bus 等处。
+
 def test_blood_oath_ignores_battle_start_scarlet_fruit_context():
     """战始流血不是回始/行动/反应窗口，不触发血誓戒，也不消耗首次标记。"""
     state, combat, player = _state_with_oath_and("猩红果实")
@@ -38,35 +45,8 @@ def test_blood_oath_ignores_battle_start_scarlet_fruit_context():
     assert player.blood_oath_used_this_round is False
 
 
-def test_blood_oath_triggers_on_first_round_start_blood_pact_context():
-    """第一回合回始 current_round 仍为0，但上下文为 round_start，应正常触发血誓戒。"""
-    state, combat, player = _state_with_oath_and("血契")
-    state.current_round = 0
-
-    result = combat.round_start({"血契": {"use": True, "x": 1}})
-
-    assert result["round"] == 1
-    assert player.current_hp == 86
-    assert player.shield == 4
-    assert player.blood_oath_used_this_round is True
 
 
-def test_battle_start_bleed_does_not_consume_then_round_start_can_trigger():
-    """先战始猩红果实，再第一回始血契：首次主动流血应留给回始血契。"""
-    state, combat, player = _state_with_oath_and("猩红果实", "血契")
-    combat.process_relics("battle_start", {
-        "relic_choices": {"猩红果实": {"use": True}},
-    })
-    assert player.current_hp == 80
-    assert player.shield == 0
-    assert player.blood_oath_used_this_round is False
-
-    result = combat.round_start({"血契": {"use": True, "x": 1}})
-
-    assert result["round"] == 1
-    assert player.current_hp == 76
-    assert player.shield == 4
-    assert player.blood_oath_used_this_round is True
 
 
 def test_uncategorized_direct_bleed_does_not_trigger_blood_oath():

@@ -102,7 +102,6 @@ def battle_start_relic_choices(engine) -> dict:
     - 三相残韵盘：消耗一种残韵，[战终]获得另两种各1（净+1残韵）。有库存就用，
       消耗存量最多的类型。
     - 猩红果实：流血10 → [战终]血限+2（永久成长）。付得起就用。
-    - 苍白之花：疲惫5 → [战终]精力+1。速度富余时用（保留至少2点）。
     """
     active = {r.name for r in engine.state.relics
               if engine.state.sealed_relics.get(r.name, 0) <= 0}
@@ -118,12 +117,10 @@ def battle_start_relic_choices(engine) -> dict:
     if "猩红果实" in active and p is not None:
         affordable = p.current_hp >= 10 + max(10, math.ceil(p.blood_limit * 0.15))
         out["猩红果实"] = {"use": affordable}
-    if "苍白之花" in active and p is not None:
-        out["苍白之花"] = {"use": p.current_speed >= 7}
-    using_fatigue = bool(out.get("苍白之花", {}).get("use"))
-    if using_fatigue and "回锋刀" in active:
-        alive = [i for i, enemy in enumerate(engine.state.enemies) if enemy.is_alive]
-        out["回锋刀"] = {"enemy_index": alive[0] if alive else 0}
+    # 2026-10-11：【苍白之花】重做为被动（当前法力可超出[法限]），战始无需决策。
+    # 【回锋刀】的战始目标提交随之删除——它原先挂在「苍白之花是否付疲惫5」上，
+    # 属规则18禁止的硬编码遗物联动；回锋刀只保留索引里的两个触发点：
+    # 「每失去1点速度后」与[回始]（后者由 round_start_relic_choices 决策）。
     return out
 
 
@@ -132,11 +129,13 @@ def battle_start_relic_choices(engine) -> dict:
 # ---------------------------------------------------------------------------
 
 def round_start_relic_choices(engine) -> dict:
-    """回始遗物显式决策（回锋刀原有；血契/余火印新增主动使用）。
+    """回始遗物显式决策（回锋刀原有；余火印主动使用）。
 
     - 回锋刀：[回始]对目标造成 3×(速限-当前速度) 伤害，需显式目标。
-    - 血契：流血4X → +X法力。血量充足且法力有缺口时用（X≤2）。
     - 余火印：消耗龙心耐久X → +2X法力。有可用龙心且法力有缺口时用（X≤2）。
+
+    2026-10-12 用户令：【血契】删掉与【透支】重合的「流血4X换X法力」后不再是回始
+    主动遗物，`血契`/`对手血契` 决策一并移除；它的平分功能不需要回始决策。
     """
     choices: dict = {}
     active = {r.name for r in engine.state.relics
@@ -146,11 +145,6 @@ def round_start_relic_choices(engine) -> dict:
         alive = [i for i, enemy in enumerate(engine.state.enemies) if enemy.is_alive]
         if alive:
             choices["回锋刀"] = {"enemy_index": alive[0]}
-    if "血契" in active and p is not None:
-        x = 0
-        if p.current_hp >= 25 and p.current_mana <= p.mana_limit:
-            x = min(2, (p.current_hp - 15) // 4)
-        choices["血契"] = {"use": x >= 1, "x": max(1, x)}
     if "余火印" in active and p is not None:
         heart = next((item for item in engine.state.consumables
                       if item.kind == "dragon_heart" and item.current_uses >= 1), None)
@@ -159,18 +153,8 @@ def round_start_relic_choices(engine) -> dict:
             x = min(2, heart.current_uses)
         choices["余火印"] = {"use": x >= 1, "x": max(1, x),
                              "heart_name": heart.name if heart is not None else ""}
-    # 死斗:守擂方(敌方轮回者)持激活【血契】时,引擎校验要求玩家每回始显式提交
-    # "对手血契"决策(combat.validate_round_start_relic_choices:3698-3700)。
-    # 修复前 sim 从不构建该键 → round_start 每回合 ValueError → 法力永不回填
-    # → 双 0 法力空转到超时(2026-08-26 死斗三事故根因)。
-    if getattr(engine.state, "in_final_duel", False):
-        opp = next((e for e in engine.state.enemies
-                    if e.entity_type == "轮回者" and e.is_alive), None)
-        if opp is not None and any(r.name == "血契" for r in engine.state.opponent_relics):
-            x = 0
-            if opp.current_hp >= 25 and opp.current_mana < opp.mana_limit:
-                x = min(2, (opp.current_hp - 15) // 4)
-            choices["对手血契"] = {"use": x >= 1, "x": max(1, x)}
+    # 2026-08-26 死斗三事故的根因是「引擎要求提交对手血契决策、sim 从不构建该键」。
+    # 2026-10-12【血契】不再有回始主动效果后，该决策键已取消，这一类空转不会再发生。
     return choices
 
 

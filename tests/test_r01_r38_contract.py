@@ -525,16 +525,10 @@ def test_r25_r31_illegal_sculpture_and_live_battle_end(tmp_path):
 
 # R32-R38：持续语义与死斗
 
-def test_r32_r38_normal_decay_deform_ransom_and_transform_restore(tmp_path):
+def test_r32_r38_normal_deform_ransom_and_transform_restore(tmp_path):
+    """2026-10-11 用户令：【衰败】删除，原「衰败发动不立即掉血、回始扣10%」段落移除。"""
     engine = _engine(tmp_path)
     player, monster = _controlled_combat(engine)
-
-    calc = DaoWenEngine.resolve("衰败", 1, target=monster, caster=player)
-    before = monster.current_hp
-    engine.combat.apply_daowen_effect("衰败", calc, player, monster)
-    assert monster.current_hp == before
-    engine.combat.round_start({})
-    assert monster.current_hp == 90
 
     monster.attack_count, monster.attack_power = 2, 3
     monster.add_status(StatusEffect("畸变", 1, 1))

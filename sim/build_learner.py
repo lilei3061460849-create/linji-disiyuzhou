@@ -23,6 +23,7 @@
 """
 import argparse
 import json
+from typing import Optional
 import math
 import os
 import random
@@ -961,6 +962,32 @@ def _merge_daowen_activity(telemetry: dict, activity: dict) -> None:
         for name, count in values.items():
             bucket[name] = bucket.get(name, 0) + count
 
+def _take_discovered_relic(e, prefer: Optional[str] = None):
+    """选一件待选遗物，撞【承载上限】时用裁定③的出口脱困（2026-10-12）。
+
+    额度已满时「选择」会被拒，而引擎门禁又要求「必须先选1件」，不处置就是死局
+    （整局被回收成 `pre_battle死锁` / `必须先从发现候选中选择1件遗物`）。
+    这里按裁定③依次尝试：替换掉一件已持有的（总数不变）→ 放弃本次发现。
+    """
+    choices = list(getattr(e.state, "pending_relic_choices", []) or [])
+    if not choices:
+        return {"success": True, "note": "没有待选择的遗物发现"}
+    name = prefer if prefer in choices else choices[0]
+    r = e.execute_action("choose_discovered_relic", {"relic_name": name})
+    if r.get("success"):
+        return r
+    if "超出承载" not in (r.get("error") or ""):
+        return r
+    p = e.state.player
+    held = next((x.name for x in e.state.relics if x.name != name), None)
+    if held is not None:
+        rep = e.execute_action("choose_discovered_relic",
+                               {"relic_name": name, "replace": held})
+        if rep.get("success"):
+            return rep
+    return e.execute_action("discard_discovered_relic", {})
+
+
 def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
          rng: random.Random = None, policy: dict = None, telemetry: dict = None,
          spend_shards: bool = False, spell_plan: list = None,
@@ -1242,9 +1269,7 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                         "daowen_name": held,
                     })
                 if e.state.pending_relic_choices:
-                    e.execute_action("choose_discovered_relic", {
-                        "relic_name": e.state.pending_relic_choices[0],
-                    })
+                    _take_discovered_relic(e)
                 if e.state.pending_item_choices:
                     e.execute_action("choose_discovered_item", {
                         "item_name": e.state.pending_item_choices[0],
@@ -1488,6 +1513,12 @@ def choose_pre_battle(e, todo, battle_no, rng, policy):
                                       for item in e.state.consumables):
             continue
         if act == "学习" and not todo:
+            continue
+        if act == "学习" and p is not None and len(p.dao_wen) >= p.daowen_capacity:
+            # 2026-10-12 新增【承载上限】：30X[血限]=X 种道纹。额度满时「学习」必然被
+            # 引擎拒绝且精力退回，AI 若继续反复提交就会触发「pre_battle死锁：连续5步
+            # 精力不退」而把整局判为无效数据。跳过它，让权重最高的「修行」(to=blood)
+            # 接上去抬血限换额度——这正是规则给的合法通路。
             continue
         if act == "休整" and p and p.current_hp >= p.blood_limit:
             continue          # 满血不休整（无效行动，不该计入选择率）

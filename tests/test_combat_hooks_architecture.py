@@ -135,27 +135,33 @@ def test_hooks_handles_none_and_invalid_state():
 
 
 def test_damage_redirection_and_mitigation_hooks():
-    """正常路径与边界：嫁祸重定向、背负援护、朋友濒死撤退保护"""
+    """正常路径与边界：背负重定向、朋友濒死撤退保护
+
+    2026-10-11【嫁祸】已删除（效果与遗物【贪婪契约】重复），本用例的重定向部分
+    改由仍在的【背负】承载——考察的是 Hook 的重定向契约，与具体哪张牌无关。
+    """
     manager = CombatHookManager()
     
-    # 1. 嫁祸重定向
+    # 1. 背负重定向：背负者(援护者)替目标(受害者)承担伤害
     victim = Entity(name="受害者", blood_limit=30, current_hp=30, entity_type="轮回者")
-    scapegoat = Entity(name="替罪羊", blood_limit=30, current_hp=30, entity_type="轮回者")
-    victim._jiahuo_left = 1
-    victim._jiahuo_target = scapegoat.runtime_id
-    victim.add_status(StatusEffect(name="嫁祸", value=1, remaining_rounds=-1, source="test"))
+    bearer = Entity(name="援护者", blood_limit=30, current_hp=30, entity_type="轮回者")
+    bearer._beifu_left = 1
+    bearer._beifu_target = victim.runtime_id
+    bearer.add_status(StatusEffect(name="背负", value=1, remaining_rounds=-1, source="test"))
 
     # 重定向目标存runtime_id（2026-08-22：实体引用环会炸事务回滚递归），
     # 按id解析需要state提供实体集合（生产路径 combat.py 恒传真实state）
     class _RedirectState:
         def get_all_player_side(self):
-            return [victim, scapegoat]
+            return [victim, bearer]
         def get_all_enemy_side(self):
             return []
     target_redirected = manager.apply_redirection(victim, "普通", _RedirectState())
-    assert target_redirected is scapegoat
-    assert victim._jiahuo_left == 0
-    assert not victim.has_status("嫁祸")
+    assert target_redirected is bearer
+    assert bearer._beifu_left == 0
+    # 计数耗尽即摘除指向（避免残留 runtime_id）；注意【背负】与已删的【嫁祸】不同：
+    # 它清的是目标侧的「被背负」标记，背负者自身的「背负」状态按到期清理，不在此摘。
+    assert not hasattr(bearer, "_beifu_target")
 
     # 2. 撤退保护
     friend = Entity(name="小跟班", blood_limit=20, current_hp=5, entity_type="朋友")
