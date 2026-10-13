@@ -125,12 +125,8 @@ def chronicle(challenger_path: str, defender_path: str, seed: int,
         return r
 
     e.execute_action = traced
-    # 2026-10-13：实录 harness 不是实战——换席局（4血方）在本机需 ~29-31s，
-    # 推演骰子每次从 OS 熵重播种，耗时天然抖动 ±2s，30s 默认兜底会随机误杀导致
-    # test_win_only_ai 结构性断言（要的是胜负结论，不是“30s 内打完”）抖动。
-    # 只放宽 harness 的墙钟预算，引擎 run_duel_pvp 默认 30.0s 不动。
     verdict = run_duel_pvp(e, None, max_rounds=30, max_steps=400, log=[],
-                           use_tactical=True, ai_cls=base, max_wall_seconds=300)
+                           use_tactical=True, ai_cls=base)
     mentors = [round(ai.mentor.adherence, 2) for ai in _INSTANCES]
     return {"seed": seed, "bridge": bridge, "duel_dodge": duel_dodge,
             "challenger": os.path.basename(challenger_path)[:-5],

@@ -23,7 +23,7 @@ def _choose_region(engine, region):
     result = engine.execute_action("setup_choose_region", {"region": region})
     if result.get("success") and engine.state.pending_relic_choices:
         # 通用流程测试不覆盖需要额外显式选择的遗物；相关遗物有独立测试。
-        optional = {"回锋刀", "血契"}   # 2026-10-13：【三相残韵盘】删除
+        optional = {"三相残韵盘", "回锋刀", "血契"}
         choice = next((n for n in engine.state.pending_relic_choices if n not in optional),
                       engine.state.pending_relic_choices[0])
         engine.execute_action("choose_discovered_relic", {"relic_name": choice})
@@ -853,11 +853,33 @@ def test_rebellion_and_legacy():
 
 
 def test_relics_five_more():
-    """测试无所求/同魂笔（2026-10-13：【三相残韵盘】删除、【买路财】改制为逃跑行动，原两段已删）"""
-    print("\n=== 测试：剩余遗物 ===")
+    """测试三相残韵盘/无所求/买路财/同魂笔"""
+    print("\n=== 测试：剩余5遗物 ===")
     from engine.models import GameState, Relic
     from engine.combat import CombatEngine
     from engine.dice import DiceEngine
+
+    # 三相残韵盘：战始消耗转换(最多)，战终获反转+曲解
+    st = GameState(); st.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60)
+    st.resonance = {"转换":2, "反转":1, "曲解":0}
+    st.relics = [Relic(name="三相残韵盘", effect="")]
+    combat = CombatEngine(st, DiceEngine()); combat.reset_monster_activation()
+    combat.process_relics("battle_start", {"relic_choices": {
+        "三相残韵盘": {"use": True, "resonance_type": "转换"},
+    }})  # 显式选择消耗转换
+    assert st.resonance["转换"] == 1, f"应消耗转换，实{st.resonance}"
+    combat.process_relics("battle_end")  # 获反转+曲解各1
+    assert st.resonance["反转"] == 2 and st.resonance["曲解"] == 1, f"战终应+反转+曲解，实{st.resonance}"
+    print(f"  ✓ 三相残韵盘：转换2→1，战终反转1→2、曲解0→1")
+
+    # 买路财：撤退成本=怪物20%血限
+    st2 = GameState(); st2.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60)
+    st2.relics = [Relic(name="买路财", effect="")]
+    m = Entity(name="怪", entity_type="怪物", blood_limit=100, current_hp=100)
+    combat2 = CombatEngine(st2, DiceEngine())
+    esc = combat2.buyaicai_escape_cost(m)
+    assert esc["shard_cost"] == 20, f"买路财应20碎片(100*20%)，实{esc['shard_cost']}"
+    print(f"  ✓ 买路财：100血限怪撤退成本=20碎片")
 
     # 无所求：resolve_event拒绝+1属性点（2026-09-16 裁定：按《物品索引》
     # 原文入属性点池，不再由引擎折算成速限/法限）
@@ -873,12 +895,12 @@ def test_relics_five_more():
     assert engine.state.attribute_points == pool + 1, "无所求拒绝应+1属性点"
     assert engine.state.player.speed_limit == sp, "属性点入池，不应直接加速限"
     print(f"  ✓ 无所求：选拒绝类选项+1属性点(池{pool}→{engine.state.attribute_points})")
-    print("  ✓ 剩余遗物测试通过")
+    print("  ✓ 剩余5遗物测试通过")
 
 
 def test_evolution_yuanchu():
     """
-    测试【进化】（原初X）与怪物的迷失豁免（异变仍累计，效果不中断）
+    测试【进化】（原初X）与【迷失】（异变达到阈值直接命零）
     规则：原初X：代价：异变5X。选择一种自身未持有的原始怪物道纹，[战终]前视为持有
     （数值固定为本次X），借用的道纹发动时照常支付其自身代价。须处于困境，每场限一次。
     """
@@ -939,15 +961,15 @@ def test_evolution_yuanchu():
     assert m29.mutation_count == T - 1 and m29.is_alive, f"{T-1}层应存活"
     print(f"  ✓ 异变{T-11}+10={T-1}层：存活，借用生效（迷失阈值{T}未达）")
 
-    # ---- 4. 边界：异变恰好到旧阈值 → 怪物存活，借用照常生效 ----
+    # ---- 4. 边界：异变恰好到阈值 → 迷失命零，进化效果中断 ----
     m30 = mk_plight_monster(name="迷失怪")
     m30.mutation_count = T - 10
     engine.state.enemies.append(m30)
     r4 = engine.execute_action("declare_evolution", {"monster": "迷失怪", "daowen": "减速", "x": 2})
-    assert r4["success"] and r4["collapsed"] is False, f"怪物{T}层异变不触发迷失: {r4}"
-    assert m30.mutation_count == T and m30.is_alive and m30.current_hp == 30
-    assert "减速" in m30.dao_wen and m30.dao_wen["减速"].x_value == 2
-    print(f"  ✓ 怪物异变{T-10}+10={T}层：不触发迷失，借用【减速】正常生效")
+    assert r4["success"] and r4["collapsed"] is True, f"{T}层应触发迷失: {r4}"
+    assert m30.mutation_count == T and not m30.is_alive and m30.current_hp == 0, "迷失应直接命零"
+    assert "减速" not in m30.dao_wen, "迷失时进化效果中断，借用不生效"
+    print(f"  ✓ 异变{T-10}+10={T}层：触发【迷失】直接命零，借用【减速】中断未生效")
 
     # ---- 5. 非法输入：借用轮回者未持有的道纹 → 拒绝 ----
     engine2 = mk_engine()
@@ -977,7 +999,7 @@ def test_evolution_yuanchu():
     assert m_bad.mutation_count == 0 and m_fine.mutation_count == 0, "被拒绝的进化均不扣异变"
     print(f"  ✓ 非法输入全部拒绝：转化道纹/已持有/X=0/非困境，且均不扣异变")
 
-    # ---- 6. 原始道纹真实计费，偏爱每回始另加法限等量异变；怪物不迷失 ----
+    # ---- 6. 怪物激活原始道纹真实计费 + 迷失中断 ----
     st = GameState()
     st.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60,
                        speed_limit=8, current_speed=8)
@@ -987,10 +1009,10 @@ def test_evolution_yuanchu():
     combat.round_start()  # 第1回合（白板）
     combat.round_start()  # 第2回合：发动全力3
     r9 = resolve_monster_phase(combat, {"计费怪": "全力"})
-    assert m_act.mutation_count == 15 + 2 * m_act.mana_limit, "两次偏爱回始 + 发动全力3的异变15"
+    assert m_act.mutation_count == 15, f"发动全力3应付异变5×3=15，实{m_act.mutation_count}"
     print(f"  ✓ 怪物发动【全力3】真实支付异变15层（当前{m_act.mutation_count}层）")
 
-    # 越过旧迷失阈值仍可发动全力并攻击；回始遗物异变与道纹代价独立累计
+    # 迷失中断：异变(阈值-15) + 全力3门票15 = 阈值 → 激活中断、不攻击
     st2 = GameState()
     st2.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60,
                         speed_limit=8, current_speed=8)
@@ -1000,11 +1022,10 @@ def test_evolution_yuanchu():
     combat2 = CombatEngine(st2, DiceEngine()); combat2.reset_monster_activation()
     combat2.round_start(); combat2.round_start()
     r10 = resolve_monster_phase(combat2, {"自毁怪": "全力"})
-    assert m_col.mutation_count == Entity.MUTATION_COLLAPSE_THRESHOLD + 2 * m_col.mana_limit
-    assert m_col.is_alive and m_col.current_hp == 120
-    assert st2.player.current_hp < 60, "怪物越过50层后仍应发动道纹并正常攻击"
-    assert not any(e.get("collapsed") or e.get("lost") for e in r10)
-    print(f"  ✓ 怪物异变{m_col.mutation_count}层仍存活，正常攻击，玩家HP={st2.player.current_hp}")
+    assert m_col.mutation_count == Entity.MUTATION_COLLAPSE_THRESHOLD and not m_col.is_alive, "激活付异变达阈值应迷失命零"
+    assert st2.player.current_hp == 60, "迷失怪攻击出手应被中断，玩家无伤"
+    assert any(e.get("collapsed") == "全力" for e in r10), "结果应记录迷失事件"
+    print(f"  ✓ 异变{Entity.MUTATION_COLLAPSE_THRESHOLD-15}+发动全力3(15)={Entity.MUTATION_COLLAPSE_THRESHOLD}层：迷失命零，攻击中断，玩家HP仍为{st2.player.current_hp}")
 
     # ---- 7. 借用道纹：原初门票与首次发动各付一次，持续期间不再计费 ----
     st3 = GameState()
@@ -1022,7 +1043,7 @@ def test_evolution_yuanchu():
     combat3.round_start(); combat3.round_start()
     resolve_monster_phase(combat3, {"借用怪": "减速"})  # 第2回合显式选择借用的减速2
     total1 = m_b.mutation_count
-    assert total1 == 20 + 2 * m_b.mana_limit, "进化10 + 发动10 + 两次偏爱回始异变"
+    assert total1 == 20, f"借用减速2激活应付异变5×2=10（门票10+激活10=20），实{total1}"
     assert m_b.is_alive, "20层应存活"
     # 2026-09-16 用户令：道纹递增（每次发动 X+2×副本阶级）已废止，
     # X 保持借用时写定的数值不变，重复发动按同一个 X 计费。
@@ -1030,9 +1051,9 @@ def test_evolution_yuanchu():
     combat3.round_start()
     resolve_monster_phase(combat3, {"借用怪": "减速"})
     total2 = m_b.mutation_count
-    assert total2 == total1 + m_b.mana_limit + 10 and m_b.is_alive, "回始偏爱与再次发动各自计入"
+    assert total2 == 30 and m_b.is_alive, f"重复发动按同一X计费：20+5×2=30，实{total2}"
     assert m_b.dao_wen["减速"].x_value == 2
-    print(f"  ✓ 借用门票与发动按X=2分别付10异变，偏爱回始另累计，最终{total2}层")
+    print("  ✓ 借用道纹门票10+首次发动10=20层；递增废止后重复发动按X=2再付10 → 30层")
     print("  ✓ 进化（原初X）与迷失测试通过")
 
 
@@ -1070,10 +1091,11 @@ def test_evolution_plight_listing():
     assert set(info["borrowable_daowen"]) <= set(engine.state.player.dao_wen), \
         "借用池必须是轮回者持有的道纹的子集"
     assert "狂暴" not in info["borrowable_daowen"], "怪物已持有的道纹不可借用"
-    assert info["max_x_by_mutation"] is None, "怪物进化X不受异变限制，用None而不是0表达"
-    assert info["mutation_lost_exempt"] is True
+    T_list = Entity.MUTATION_COLLAPSE_THRESHOLD
+    assert info["max_x_by_mutation"] == (T_list - 1 - 10) // 5, \
+        f"max_x应为({T_list-1}-10)//5={(T_list-1-10)//5}，实{info['max_x_by_mutation']}"
     print(f"  ✓ evolution项已暴露：困境怪（信号{info['difficulty_signals']}），"
-          f"借用池由玩家道纹决定，怪物不受迷失X限制={info['max_x_by_mutation']}")
+          f"可借6种原始道纹，不触发迷失最大X={info['max_x_by_mutation']}")
 
     # ---- 2. 边界：仅1个劣势信号 → 判定困境（裁定⑦：探针≥1） ----
     m2 = Entity(name="半血怪", entity_type="怪物", blood_limit=120, current_hp=120,
@@ -1169,12 +1191,11 @@ def test_original_daowen_only_charges_mutation_on_activation():
     # 删除白板后怪物每回合都有合法选项就必须出招，首回合先发填充道纹【庇护】
     c1.round_start(); resolve_monster_phase(c1, {"持续怪": "庇护"})
     c1.round_start(); resolve_monster_phase(c1, {"持续怪": "减速"})
-    assert m1.mutation_count == 10 + 2 * m1.mana_limit and m1.is_alive
+    assert m1.mutation_count == 10 and m1.is_alive
     for _ in range(3):
-        before = m1.mutation_count
         c1.round_start(); resolve_monster_phase(c1, {"持续怪": "庇护"})
-        assert m1.mutation_count == before + m1.mana_limit and m1.is_alive
-    print("  ✓ 减速2发动支付异变10，持续期间不再支付代价，偏爱回始仍累计异变")
+        assert m1.mutation_count == 10 and m1.is_alive
+    print("  ✓ 减速2首次支付异变10，持续期间（改发庇护）不再计费")
 
     # 边界：次数型必中同样只在激活时付一次，不存在额外豁免分支。
     m2 = mk("次数怪", [("必中", 3)])
@@ -1185,10 +1206,10 @@ def test_original_daowen_only_charges_mutation_on_activation():
     c2.round_start(); resolve_monster_phase(c2, {"次数怪": "庇护"})
     c2.round_start(); resolve_monster_phase(c2, {"次数怪": "必中"})
     c2.round_start(); resolve_monster_phase(c2, {"次数怪": "庇护"})
-    assert m2.mutation_count == 15 + 3 * m2.mana_limit and m2.is_alive
+    assert m2.mutation_count == 15 and m2.is_alive
     print("  ✓ 必中3首次支付异变15，未再发动则不再计费")
 
-    # 怪物免于迷失：首次发动越过50层，效果不中断且角色存活。
+    # 迷失仍保留：若首次发动本身使异变达到阈值，效果中断并命零。
     m3 = mk("临界怪", [("减速", 2)])
     m3.mutation_count = Entity.MUTATION_COLLAPSE_THRESHOLD - 10
     m3.dao_wen["庇护"] = DaoWenInstance(
@@ -1197,15 +1218,15 @@ def test_original_daowen_only_charges_mutation_on_activation():
     _, c3 = mkbed(m3)
     c3.round_start(); resolve_monster_phase(c3, {"临界怪": "庇护"})
     c3.round_start(); result = resolve_monster_phase(c3, {"临界怪": "减速"})
-    assert m3.is_alive and m3.mutation_count == Entity.MUTATION_COLLAPSE_THRESHOLD + 2 * m3.mana_limit
-    assert not any(entry.get("collapsed") or entry.get("lost") for entry in result)
-    print("  ✓ 怪物首次发动越过50层异变仍存活，效果不中断")
+    assert not m3.is_alive and m3.mutation_count == Entity.MUTATION_COLLAPSE_THRESHOLD
+    assert any(entry.get("collapsed") == "减速" for entry in result)
+    print("  ✓ 首次发动支付异变达到阈值时仍会迷失，效果中断")
 
 
 def test_consumable_mutation_wiring():
     """
     测试裁定⑧（A4全量）：普通消耗品中"获得异变N"统一走 Entity.add_mutation；
-    非怪物角色达50层仍触发【迷失】，怪物免于该事件。
+    任何角色达50层即【迷失】命零（尸体变怪物=世界观句，无数值效果）。
     """
     print("\n=== 测试：消耗品异变统一入口（裁定⑧） ===")
     from engine.models import Consumable

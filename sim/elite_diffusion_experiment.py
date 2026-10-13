@@ -18,10 +18,9 @@
 import json
 import random
 import sys
-from pathlib import Path
 from collections import defaultdict
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, "/home/user/linji-disiyuzhou")
 from sim import build_learner as bl
 
 # 2026-08-23：实验口径锚定——A 细胞与 B 细胞 fallback 走 bl.propose，必须保持
@@ -176,8 +175,6 @@ def run_cell(name: str, ratio: float) -> dict:
         seed = hr.randrange(1, 2 ** 31 - 1)
         r = bl.play(starter, learn, region, seed, rng=random.Random(seed),
                     spend_shards=True, policy=pol)
-        if bl._skip_resource_timeout(r, context=__name__):
-            continue
         if r.get("invalid"):
             h_inv += 1
             continue

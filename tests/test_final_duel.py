@@ -455,7 +455,7 @@ def test_duel_target_daowen_no_speed_cannot_dodge():
 
 # 【折速法印】的死斗发动用例随该遗物于 2026-09-13 一并删除——其"疲惫换法力"
 # 效果已改为道纹【搏命】，回归见 tests/test_boming_daowen.py。
-# 2026-10-13：【三相残韵盘】删除，死斗开场已无可选遗物（optional_relics 恒为空）。
+# 死斗开场可选遗物目前只剩【三相残韵盘】。
 
 
 def test_duel_activate_relic_rejected_without_duel():
@@ -465,7 +465,7 @@ def test_duel_activate_relic_rejected_without_duel():
     engine.execute_action("setup_attributes", {"blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(engine)
     r = engine.execute_action("activate_duel_relic", {
-        "side": "player_side", "relic": "猩红果实", "use": True,
+        "side": "player_side", "relic": "三相残韵盘", "use": True,
     })
     assert r["success"] is False
 
@@ -601,12 +601,6 @@ def test_duel_last_leftover_then_both_exhausted_rejects():
     _finish_battle_7(challenger)
     opp = next(e for e in challenger.state.enemies if e.entity_type == "轮回者")
     player = challenger.state.player
-    # 2026-10-13：遗物池删2件后随机发放漂移（双方万钧印→自伤致死触发死之传承，
-    # 掩盖预算断言）；本测只关心出手预算，清空双方遗物钉死环境。
-    challenger.state.relics = []
-    challenger.state.opponent_relics = []
-    player.relics = []
-    opp.relics = []
     challenger.execute_action("round_start", {})
 
     # 轮回者出手固定2次（DM裁定 2026-09-10），用【疯狂】+3 让挑战者留有余手

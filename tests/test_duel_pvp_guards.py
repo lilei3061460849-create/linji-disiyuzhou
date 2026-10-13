@@ -129,14 +129,14 @@ def test_deadlock_guard_reports_error_without_verdict(tmp_path, monkeypatch):
 
 
 def test_duel_round_start_failure_is_explicit(tmp_path):
-    """回始失败必须显式报告协议错误、不判胜负，不允许吞掉后空转。"""
+    """回始失败必须显式判卫冕并带原因,不允许吞掉后空转。"""
     from sim.duel_pvp import run_duel_pvp
     e = _duel_engine(tmp_path, lord_relics=(), lord_daowen=())
     e.state.combat_subphase = "player_actions"     # 阶段不符 → 回始必失败
     r = run_duel_pvp(e, lambda: True, max_rounds=2, max_steps=50,
                      max_wall_seconds=20.0, log=[])
-    assert r["winner"] is None and r["error"] and r["error_kind"] == "contract"
-    assert "回始提交失败" in r["reason"], r
+    assert r["winner"] == "defender"
+    assert "回始失败" in r["reason"], r
 
 
 def test_lord_attack_relays_challenger_dodge(tmp_path):

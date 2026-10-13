@@ -22,7 +22,7 @@ def test_normal_no_relic_of_choice_attribute():
 def test_boundary_to_dict_excludes_relic_of_choice():
     """边界：to_dict 导出的字典不再包含 relic_of_choice"""
     gs = GameState()
-    gs.grant_relic("避风铃", "效果A")
+    gs.grant_relic("买路财", "效果A")
     gs.grant_relic("同魂笔", "效果B")
     d = gs.to_dict()
     assert "relic_of_choice" not in d, "to_dict 不应导出已删字段"

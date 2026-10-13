@@ -32,12 +32,10 @@ def _new_engine(region="龙心谷", name="老张", speed=8, mana=6, dbsuffix="a"
     finish_initial_daowen(engine)
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
     setup = engine.execute_action("setup_choose_region", {"region": region})
-    optional = set()   # 2026-10-13：【三相残韵盘】删除，无需规避
+    optional = {"三相残韵盘"}
     choice = next((n for n in setup["result"]["relic_choices"] if n not in optional),
                   setup["result"]["relic_choices"][0])
     engine.execute_action("choose_discovered_relic", {"relic_name": choice})
-    engine.state.relics = []
-    # 2026-10-13：遗物池删2件后随机发放漂移，本文件断言与开局遗物无关，清空钉死环境。
     engine.state.energy = 0
     engine.state.player.dao_wen["杀伐"] = DaoWenInstance(
         DaoWen(name="杀伐", formula="", cost_type="消耗", cost_formula="X", effect_formula=""))

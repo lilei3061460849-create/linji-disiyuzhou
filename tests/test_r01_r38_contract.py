@@ -154,15 +154,14 @@ def test_r11_r17_normal_two_stage_monster_choices(tmp_path):
 
 
 def test_r11_r17_boundary_relic_and_first_aid_require_explicit_choices(tmp_path):
-    # 2026-10-13：【三相残韵盘】删除，战始显式决策用剩下的【猩红果实】覆盖。
     engine = _full_setup(_engine(tmp_path))
-    engine.state.relics = [Relic("猩红果实", "")]
+    engine.state.relics = [Relic("三相残韵盘", "")]
     engine.state.energy = 0
     missing = engine.execute_action("battle_start", {"relic_choices": {}})
     assert not missing["success"]
     assert engine.state.current_battle == 0
     ok = engine.execute_action("battle_start", {
-        "relic_choices": {"猩红果实": {"use": False}},
+        "relic_choices": {"三相残韵盘": {"use": False}},
     })
     assert ok["success"]
     assert engine.execute_action("round_start", {"relic_choices": {}})["success"]

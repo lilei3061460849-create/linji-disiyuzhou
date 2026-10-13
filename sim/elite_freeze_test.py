@@ -39,8 +39,6 @@ def run_cell(starter, learn, policy, attrs):
             seed = master.randrange(1, 2 ** 31 - 1)
             r = bl.play(starter, list(learn), region, seed, rng=random.Random(seed),
                         spend_shards=True, policy=policy, attrs=attrs)
-            if bl._skip_resource_timeout(r, context=__name__):
-                continue
             if r.get("invalid"):
                 inv += 1
                 continue

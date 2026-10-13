@@ -74,7 +74,7 @@ def pre_battle(e, strategy: str, log):
                     fusha_done = True
                     continue
         # 【领悟】已于 2026-09-10 删除：石化流原先靠局外领悟补【反转】残韵起步，
-        # 现在只能依赖开局必选/副本事件，缺残韵时本策略直接跳过（【三相残韵盘】2026-10-13删除）。
+        # 现在只能依赖开局必选/【三相残韵盘】/副本事件，缺残韵时本策略直接跳过。
         # 封印流：学封印（免费1档）
         if strategy == "封印" and "封印" not in p.dao_wen:
             r = e.execute_action("pre_battle_action", {

@@ -4,7 +4,7 @@
   - 擂主=封存槽文件队首快照（完整角色，含队伍/遗物）；挑战者全清7场后触发；
   - 挑战者胜→擂主永久出局、挑战者进阶封存；挑战者负/超时→擂主回队首；
   - 死斗走同一战斗管线：挑战者在玩家相位先动（结构先手恒挑战者）；
-  - 超时→资源未完成，不判胜负，不进入死斗胜率分母。
+  - 超时→判擂主卫冕（日志[死斗超时]回合N）。
 
 实验设计（擂主生态固定=受控对照）：
   warmup: 生产KB人口在独立lab封存槽自然全清，攒出真实擂主队列（生态快照文件）
@@ -21,9 +21,8 @@ import os
 import random
 import shutil
 import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, "/home/user/linji-disiyuzhou")
 from sim import build_learner as bl
 
 LAB = {"db_path": "/tmp/b19_duel.db",
@@ -73,7 +72,7 @@ def run_warmup(seed: int, games: int, eco_out: str, kb_path: str) -> None:
         gs = rng.randrange(1, 2 ** 31 - 1)
         r = bl.play(starter, learn, region, gs, rng=random.Random(gs),
                     spend_shards=True, policy=pol, lab_paths=LAB)
-        if bl._skip_resource_timeout(r, context=__name__) or r.get("invalid"):
+        if r.get("invalid"):
             continue
         seals += bool(r.get("sealed")) or (r["cleared"] == 7 and not r.get("duel_fought"))
         if i % 100 == 99 and os.path.exists(LAB["sealed_path"]):
@@ -105,7 +104,7 @@ def run_eval(seed: int, games: int, eco: str, out: str, kb_path: str,
     print(f"[eval] 候选={[c[:2] for c in candidates]}", flush=True)
     per = {json.dumps(c[:2], ensure_ascii=False): {
         "build": c[:2], "games": 0, "duels": 0, "won": 0, "lost_kill": 0,
-        "timeouts": 0, "invalid": 0, "rounds": [], "opp_hist": {}} for c in candidates}
+        "lost_timeout": 0, "rounds": [], "opp_hist": {}} for c in candidates}
     for c in candidates:
         key = json.dumps(c[:2], ensure_ascii=False)
         rec = per[key]
@@ -118,11 +117,7 @@ def run_eval(seed: int, games: int, eco: str, out: str, kb_path: str,
             gs = rng.randrange(1, 2 ** 31 - 1)
             r = bl.play(c[0], c[1], region, gs, rng=random.Random(gs),
                         spend_shards=True, policy=pol, lab_paths=LAB)
-            if bl._is_resource_timeout(r):
-                rec["timeouts"] += 1
-                continue
             if r.get("invalid"):
-                rec["invalid"] += 1
                 continue
             rec["games"] += 1
             if not r.get("duel_fought"):
@@ -132,6 +127,8 @@ def run_eval(seed: int, games: int, eco: str, out: str, kb_path: str,
                 rec["opp_hist"].get(r.get("duel_opponent", "?"), 0) + 1
             if r.get("duel_won"):
                 rec["won"] += 1
+            elif r.get("duel_timeout"):
+                rec["lost_timeout"] += 1
             else:
                 rec["lost_kill"] += 1
             if r.get("duel_rounds"):
@@ -139,7 +136,7 @@ def run_eval(seed: int, games: int, eco: str, out: str, kb_path: str,
             if rec["duels"] >= min_duels and i >= games // 2:
                 break
         print(f"  {c[0]}+{'/'.join(c[1])}: {rec['won']}/{rec['duels']} "
-              f"({rec['games']}局) 资源超时{rec['timeouts']} 被杀负{rec['lost_kill']}",
+              f"({rec['games']}局) t/o负{rec['lost_timeout']} 被杀负{rec['lost_kill']}",
               flush=True)
     rows = []
     for key, rec in per.items():
@@ -147,8 +144,7 @@ def run_eval(seed: int, games: int, eco: str, out: str, kb_path: str,
         rows.append({"build": rec["build"], "games": rec["games"],
                      "duels": rec["duels"], "won": rec["won"],
                      "wr": p, "wilson": [lo, hi],
-                     "timeouts": rec["timeouts"], "invalid": rec["invalid"],
-                     "lost_timeout": rec["timeouts"],  # 旧字段兼容别名，非败局；分母已排除。
+                     "lost_timeout": rec["lost_timeout"],
                      "lost_kill": rec["lost_kill"],
                      "rounds_avg": round(sum(rec["rounds"]) / len(rec["rounds"]), 2)
                      if rec["rounds"] else None,
@@ -158,7 +154,7 @@ def run_eval(seed: int, games: int, eco: str, out: str, kb_path: str,
     with open(out, "w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, indent=1)
     print(json.dumps([{"+".join(map(str, r["build"])): [r["wr"], r["wilson"],
-                       r["duels"], r["timeouts"], r["lost_kill"]]}
+                       r["duels"], r["lost_timeout"], r["lost_kill"]]}
                       for r in result["rows"]], ensure_ascii=False), flush=True)
 
 

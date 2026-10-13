@@ -26,8 +26,6 @@ def _engine(suffix, **points):
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "曲解"})
     e.execute_action("setup_choose_region", {"region": "扭曲都市"})
-    e.state.relics = []
-    # 2026-10-13：遗物池删2件后随机发放漂移，本文件断言与开局遗物无关，清空钉死环境。
     assert e.state.phase == "pre_battle", e.state.phase   # 战始只接受局外阶段
     return e
 

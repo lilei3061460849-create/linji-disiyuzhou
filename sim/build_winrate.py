@@ -35,7 +35,7 @@ BUILDS: dict[str, dict] = {
     "波及纯控": {"learn": ["波及", "束缚", "封印", "贯穿"]},
     "龙心谷系": {"learn": ["加害", "裂变", "伤痕", "龙鳞", "活血"]},
     "扭曲都市系": {"learn": ["僵化", "坏死", "退化", "定型", "爆裂"]},
-    "罪孽都市系": {"learn": ["典当", "点金", "清算", "假钞"]},   # 2026-10-13：删【逼债】→【典当】顶替
+    "罪孽都市系": {"learn": ["逼债", "点金", "清算", "假钞"]},
     "纯杀伐对照": {"learn": []},
 }
 
@@ -64,7 +64,7 @@ def run_one(build: str, region: str, seed: int, battles: int = 7) -> dict:
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": region})
-    optional_relics = set()   # 2026-10-13：【三相残韵盘】删除，无需规避
+    optional_relics = {"三相残韵盘"}
     starter_relic = next((n for n in setup["result"]["relic_choices"] if n not in optional_relics),
                          setup["result"]["relic_choices"][0])
     e.execute_action("choose_discovered_relic", {"relic_name": starter_relic})

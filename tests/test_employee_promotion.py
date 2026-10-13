@@ -49,7 +49,8 @@ def _run_battle(engine, deploy_names=(), *, deploy: bool = True):
     engine.state.energy = 0
     choices = {}
     relic = engine.state.relics[0].name
-    # 2026-10-13：【三相残韵盘】删除，战始显式决策预填不再需要。
+    if relic == "三相残韵盘":
+        choices[relic] = {"use": False}
     engine.execute_action("battle_start", {"relic_choices": choices})
     engine.state.enemies.clear()
     # 2026-10-12 出怪下界 1→2：第1场可能带增援排队，只清 enemies 会让战终门禁卡死。

@@ -81,7 +81,7 @@ class CostType(Enum):
 class InterruptType(Enum):
     """中断类型 - 需要DM裁定"""
     WISH = "许愿"               # 轮回者向"某人"祈求，愿望以扭曲方式实现（2026-08-19 新增，替代急中生智）
-    ESCAPE_AND_PURSUIT = "逃跑与追击"  # 2026-10-13 逃跑改制后不再产生新中断；保留枚举值以兼容旧存档
+    ESCAPE_AND_PURSUIT = "逃跑与追击"
     STAFF_MUTINY = "员工背叛"
     DEATH_INHERITANCE = "死之传承"
     UNSEEN_SCENE = "未见场景"

@@ -73,8 +73,6 @@ def evaluate(starter, learn, games, rng, region=None, banned=frozenset()):
         rg = region or rng.choice(REGIONS)
         seed = rng.randrange(1, 2 ** 31 - 1)
         r = bl.play(starter, learn, rg, seed, rng=rng)
-        if bl._skip_resource_timeout(r, context=__name__):
-            continue
         if r.get("invalid"):
             continue
         valid += 1

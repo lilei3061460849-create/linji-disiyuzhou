@@ -32,7 +32,8 @@ def _engine(tmp_path, seed=4):
     e.execute_action("setup_choose_region", {"region": "龙心谷"})
     e.state.energy = 0
     choices = {}
-    # 2026-10-13：【三相残韵盘】删除，战始显式决策预填不再需要。
+    if e.state.relics and e.state.relics[0].name == "三相残韵盘":
+        choices[e.state.relics[0].name] = {"use": False}
     e.execute_action("battle_start", {"relic_choices": choices})
     e.execute_action("round_start", {})
     return e

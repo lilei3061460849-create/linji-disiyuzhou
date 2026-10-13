@@ -77,9 +77,8 @@ CASES = [
 ]
 
 # 预演沙盒要换回的 combat 运行态（与 engine/ai_preview.py 同一份名单）
-# 2026-10-13：【三相残韵盘】删除，_sanxiang_consumed 移出运行态名单。
 RUNTIME_ATTRS = ("_monster_activated", "_monster_daowen_round_used",
-                 "_resonance_rewrites",
+                 "_resonance_rewrites", "_sanxiang_consumed",
                  "_split_clones_spawned", "_monster_evolved",
                  "_effect_chain_depth")
 
@@ -177,7 +176,7 @@ def main() -> int:
         digest.update(payload.encode("utf-8"))
         rows.append({"region": region, "seed": seed,
                      "cleared": result.get("cleared"), "won": result.get("won"),
-                     "invalid": result.get("invalid"), "timeout": bl._is_resource_timeout(result), "hash": case_hash})
+                     "invalid": result.get("invalid"), "hash": case_hash})
         if not quiet:
             print(f"{region} seed={seed}: cleared={result.get('cleared')} "
                   f"won={result.get('won')} invalid={result.get('invalid')} "

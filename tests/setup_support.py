@@ -4,8 +4,7 @@ from typing import Optional
 from engine.models import DaoWen, DaoWenInstance
 
 # 2026-10-11：【苍白之花】重做为被动（当前法力可超出[法限]），战始不再需要决策。
-# 2026-10-13：【三相残韵盘】遗物删除。
-OPTIONAL_BATTLE_START = ("猩红果实",)
+OPTIONAL_BATTLE_START = ("三相残韵盘", "猩红果实")
 OPTIONAL_ROUND_START = ("血契", "余火印")
 
 

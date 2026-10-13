@@ -87,7 +87,7 @@ STRATEGIES: dict[str, dict] = {
 REGIONS = ["罪孽都市", "扭曲都市", "龙心谷"]
 
 # 需要额外显式提交/交互的遗物：默认发现时避开（可以不用但不能不让用）
-INTERACTIVE_RELICS = {"回锋刀", "无所求"}   # 2026-10-13：【三相残韵盘】删除
+INTERACTIVE_RELICS = {"三相残韵盘", "回锋刀", "血契", "无所求"}
 
 
 # ---------------- 单局模拟（全公开 action） ----------------
@@ -134,8 +134,7 @@ def _monster_evolution_step(e, rng) -> int:
         return 0
     for o in opts:
         pool = o.get("borrowable_daowen") or []
-        limit = o.get("max_x_by_mutation", 0)
-        max_x = 2 if limit is None else limit
+        max_x = o.get("max_x_by_mutation", 0)
         if pool and max_x >= 1:
             r = e.execute_action("declare_evolution", {
                 "monster": o["monster"], "daowen": rng.choice(pool),

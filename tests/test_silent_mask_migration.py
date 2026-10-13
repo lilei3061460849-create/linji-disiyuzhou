@@ -76,7 +76,6 @@ def test_silent_mask_registered_and_ordered():
     # 战始相位不再有缄默面具（已移至战终）；战始现有龙族利爪(4)与帮派令(10)
     assert "缄默面具" not in [m.name for m in REG.phase_mechanisms(Phase.BATTLE_START)]
     assert [m.name for m in REG.phase_mechanisms(Phase.BATTLE_START)] == ["龙族利爪", "帮派令"]
-    # 2026-10-13：【三相残韵盘·战终】随遗物删除，战终相位只剩缄默面具。
     assert [m.name for m in REG.phase_mechanisms(Phase.BATTLE_END)] == ["缄默面具"]
 
 

@@ -16,7 +16,7 @@ from .dm_rulings import Interrupt
 from .combat_events import CombatEvent, CombatEventType, register_combat_event_observer
 from .combat_hooks import CombatHookManager
 from .effect_context import EffectContext, make_context, normalize_context
-from .mechanisms import MECHANISMS, Phase, TriggerBus, TriggerContext, apply_verb
+from .mechanisms import MECHANISMS, Phase, TriggerBus, TriggerContext
 from .personality import remove_personality
 from .resolution import KIND_EFFECT, ResolutionContext, resolution_frame
 # 常量定义在 models（授予点在 Entity.__post_init__），此处只读取以判定效果。
@@ -88,7 +88,7 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
     # 副本专属道纹
     REGION_EXCLUSIVE_DAOWEN = {
         "扭曲都市": {"变形","定型","畸变","搏命","超频","坏死","退化"},   # 2026-10-03 删【爆裂】
-        "罪孽都市": {"点金","典当","豪夺","清算","赎金","假钞","赌命","消灾"},   # 2026-10-13 删【逼债】，【典当】顶替
+        "罪孽都市": {"点金","逼债","豪夺","清算","赎金","假钞","赌命","消灾"},
         "龙心谷":   {"加害","龙鳞","逆鳞","裂变","背负","伤痕"},   # 2026-10-03 删【活血】；2026-10-11 删【嫁祸】
     }
     
@@ -126,6 +126,8 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         # 观察者是可 pickle 的模块级类实例（持引擎 id，经弱引用表解析），
         # 不会把引擎带进存档/快照（见 combat_events.py 注释）。
         register_combat_event_observer(self.state, self)
+        # 三相残韵盘本场消耗的残韵
+        self._sanxiang_consumed = ""
         # 残韵改写：entity_id → {源道纹: 变化后道纹}，只改下一次发动结算，不改持有
         self._resonance_rewrites: dict[int, dict[str, str]] = {}
         # 效果链深度保险丝（见 MAX_EFFECT_CHAIN_DEPTH / engine/resolution.py）。
@@ -201,7 +203,7 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
             event_type, actor=actor, target=target, ctx=ctx, **data)
 
     def _dispatch_phase(self, phase: str, *, target=None, source=None,
-                        amount: int = 0, damage_type: str = "", picks: Optional[dict] = None) -> list:
+                        amount: int = 0, damage_type: str = "") -> list:
         """宣布一个管线相位时点（机制系统，通用分发，不含任何机制判断）。
 
         同一实体/相位的持续状态机制按「发动 X 降序、同 X 施加先后」执行；
@@ -217,14 +219,12 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         for mechanism in sorted(mechanisms, key=lambda item: item.ordering_key(target)):
             ctx = TriggerContext(combat=self, state=self.state, phase=phase,
                                  target=target, source=source,
-                                 amount=amount, damage_type=damage_type, picks=dict(picks or {}))
+                                 amount=amount, damage_type=damage_type)
             if mechanism.condition is not None and not mechanism.condition(ctx):
                 continue
             targets = mechanism.target.select(ctx) if mechanism.target is not None else []
             result = mechanism.effect(ctx, targets)
-            if isinstance(result, list):
-                results.extend(result)
-            elif result is not None:
+            if result is not None:
                 results.append(result)
         return results
 
@@ -968,54 +968,49 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
     def round_start(self, relic_choices: Optional[dict] = None) -> dict:
         """
         回始结算
-        1. 【某人的偏爱】持有者获得等同当前法限的法力和异变（法力走统一获得入口）
+        1. 拥有者获得等同当前法限的法力（加法，从不赋值到法限）
         2. 结算回始类效果
         3. 返回需要决策的信息
         """
         effects = []
         player = self.state.player
         if player is not None:
-            effects.extend(self._dispatch_phase(Phase.ROUND_START_PREPARE, target=player))
-
+            if self.state.current_round == 0:
+                shield = self.state.event_modifiers.pop("next_battle_first_round_shield", 0)
+                if shield:
+                    player.gain_shield(shield)
+                    effects.append({"type": "event_first_round_shield", "amount": shield})
+            leather = self.state.event_modifiers.pop("leather_shield_next", 0)
+            if leather and self.state.side_has(player, "皮衣"):
+                player.gain_shield(leather)
+                effects.append({"type": "leather_shield", "amount": leather})
+        
         # 活血追踪归零 + 出手预算归零（回始重置本回合已用出手次数）+ 血誓戒每回合限一次归零 + 血族血脉判定归零
-        seen_entities: set[int] = set()
         for e in self.state.get_all_player_side() + self.state.get_all_enemy_side():
-            # 迷失变身后 player 引用可能同时出现在 enemies；每个持有者每回始只触发一次。
-            if id(e) in seen_entities:
-                continue
-            seen_entities.add(id(e))
-            # 2026-10-13：谁持有谁获得法限等量法力与异变；这不是代价，不走代价结算。
-            # 兼容实体遗物、轮回者本局遗物及死斗对手遗物，并尊重玩家的遗物封印。
-            owns_relic = (any(r.name == MONSTER_MANA_RELIC for r in e.relics)
-                          or self._relic_active(e, MONSTER_MANA_RELIC))
-            relic_unsealed = (e is not player
-                              or self.state.sealed_relics.get(MONSTER_MANA_RELIC, 0) <= 0)
-            if e.mana_limit > 0 and owns_relic and relic_unsealed:
-                amount = e.mana_limit
-                mana_before = e.current_mana
-                e.gain_mana(amount)  # 遵守法限与【勾魂】；异变不按实际回充量缩减
-                self.clamp_immortal_body(e)
-                mana_gained = e.current_mana - mana_before
-                mutation = apply_verb(self, "mutation", {"target": e, "layers": amount}, {
-                    "timing": "round_start", "source": MONSTER_MANA_RELIC,
-                    "source_type": "relic", "actor": e, "target": e, "owner": e,
-                    "mechanic": "mutation", "subtype": "relic_grant", "amount": amount,
-                    "tags": {"relic", "round_start"},
-                })
-                effects.append({
-                    "type": "relic", "relic": MONSTER_MANA_RELIC, "entity": e.name,
-                    "mana_requested": amount, "mana_gained": mana_gained,
-                    "mutation_added": mutation["mutation_added"],
-                    "mutation_total": mutation["mutation_total"],
-                    "log": f"{e.name}的【{MONSTER_MANA_RELIC}】：法力+{mana_gained}，"
-                           f"异变+{amount}（累计{mutation['mutation_total']}层）",
-                })
-            apply_verb(self, "reset_fields", {"target": e, "fields": {
-                "hp_lost_this_round": 0, "parrying_this_round": False,
-                "parry_uses_remaining_this_round": 0, "parry_locked_this_round": False,
-                "_hp_loss_events": [], "_speed_change_events": [], "_blood_limit_events": [],
-                "actions_used_this_round": 0, "blood_oath_used_this_round": False,
-                "mana_inflicted_this_round": 0, "damage_dealt_this_round": 0}})
+            # 2026-09-16 用户令：[回始]法力恢复至上限是遗物【某人的偏爱】的效果，
+            # 不是怪物种族自带的能力。每只怪物出厂自带该遗物（见 engine/monsters.py），
+            # 因此这里读遗物而非读实体类型——"谁持有谁生效"走正常物品逻辑，
+            # 可被继承、可被【封印】等机制作用。
+            # 微光者（[朋友]/[员工]）与轮回者都不持有，仍是一池制（[回始]不回填）。
+            # 这是怪物侧的核心资源优势，也是"让轮回者吃苦头"的主要来源。
+            if e.mana_limit > 0 and any(r.name == MONSTER_MANA_RELIC for r in e.relics):
+                e.current_mana = e.mana_limit
+            e.hp_lost_this_round = 0
+            # 招架：2026-09-28 用户令重写——不再有"上回合招架过→本回合禁用"锁；
+            # 本回合姿态清空、剩余次数清零，等本回合玩家/怪物重新 declare_parry。
+            e.parrying_this_round = False
+            e.parry_uses_remaining_this_round = 0
+            e.parry_locked_this_round = False  # 旧字段保留但不再使用
+            if hasattr(e, "_hp_loss_events"):
+                e._hp_loss_events = []
+            if hasattr(e, "_speed_change_events"):
+                e._speed_change_events = []
+            if hasattr(e, "_blood_limit_events"):
+                e._blood_limit_events = []
+            e.actions_used_this_round = 0
+            e.blood_oath_used_this_round = False
+            e.mana_inflicted_this_round = 0
+            e.damage_dealt_this_round = 0
         # DM裁定 2026-09-09：[回始]不再回填法力。法力改为**一池制**——[战始]给满
         # 等同[法限]的一池，整场只出不进，[战终]复原（与[速度]同口径）。
         # 因这一段，"[回始]不获得法力"曾一度失去作用对象，【勾魂】在 2026-09-09
@@ -1053,11 +1048,11 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
             # 机制的报告条目并入 effects，战报格式与迁移前一致。
             effects.extend(self._dispatch_phase(Phase.ROUND_START, target=entity))
 
-        # ---- F2：罪孽专属道纹 [回始] 结算（清算/赌命；2026-10-13 删【逼债】剩两段）----
+        # ---- F2：罪孽专属道纹 [回始] 结算（逼债/清算/赌命）----
         # 2026-10-03 迁移：本位置只宣布相位时点（锚点 = 回始效果循环之后、current_round+1 之前），
-        # 结算 for 已搬进声明层（builtins 的 清算·结算/赌命·结算）。
+        # 三段 for 已搬进声明层（builtins 的 逼债·结算/清算·结算/赌命·结算）。
         # 分发语义=统一状态排序：按各账本状态记录的来源道纹序列位置结算；不再保留旧的
-        # 「逼债全体 → 清算全体 → 赌命全体」固定顺序（逼债已删）。账本访问一律走 mechanisms.ledger。
+        # 「逼债全体 → 清算全体 → 赌命全体」固定顺序。账本访问一律走 mechanisms.ledger。
         effects.extend(self._dispatch_phase_all(
             Phase.ROUND_START_SETTLE,
             self.state.get_all_player_side() + self.state.get_all_enemy_side()))
@@ -1154,10 +1149,45 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
             effects.extend(self._apply_mediocrity(entity, why))
 
         for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
-            # 凡庸之后的原第二实体循环；保持实体优先，不能提前到 ROUND_END。
-            effects.extend(self._dispatch_phase(
-                Phase.ROUND_END_POST_MEDIOCRITY, target=entity,
-                picks={"blood_lineage_cost_share_target_ref": blood_lineage_cost_share_target_ref}))
+            # 血族血脉：持有者这一侧各自结算（死斗两边各一份）
+            if entity.entity_type == "轮回者" and self.state.side_has(entity, "血族血脉"):
+                if entity.damage_dealt_this_round > 0:
+                    heal_detail = self.state.apply_heal(entity, entity.damage_dealt_this_round, ctx={
+                        "timing": "round_end", "source": "血族血脉", "source_type": "relic",
+                        "actor": entity, "target": entity, "owner": entity,
+                        "mechanic": "heal", "subtype": "blood_lineage", "amount": entity.damage_dealt_this_round,
+                        "tags": {"relic", "round_end"},
+                    })
+                    effects.append({"type": "blood_lineage_heal", "entity": entity.name,
+                                     "amount": heal_detail["actual_heal"],
+                                     "heal_ctx": heal_detail.get("heal_ctx")})
+                else:
+                    payment = self.pay_numeric_cost(
+                        entity, "流血", 20,
+                        cost_share_target_ref=(blood_lineage_cost_share_target_ref
+                                               if entity is self.state.player else ""),
+                        cost_context={"timing": "round_end", "source": "血族血脉", "source_type": "relic", "tags": {"automatic"}})
+                    effects.append({"type": "blood_lineage_bleed", "entity": entity.name,
+                                     "cost": payment, "amount": payment["actual_paid"]})
+
+            # 赤族诅咒：[回终]固定流血20
+            # 注意：这里刻意**不**改走 pay_numeric_cost——那会额外触发血誓戒/烙痕钉/血契，属于改规则。
+            # 本次只补齐来源上下文与统一死亡判定，数值口径不动。
+            if entity.entity_type == "赤族" and entity.is_alive:
+                curse_ctx = make_context(
+                    timing="round_end", source="赤族诅咒", source_type="bloodline",
+                    actor=entity, target=entity, owner=entity,
+                    mechanic="cost", subtype="bleed", amount=20,
+                    tags={"bloodline", "round_end", "automatic"})
+                # 【第一杯】：赤族诅咒的流血同样是「失去的生命」（持有者翻倍）。
+                bleed_detail = entity.take_damage(
+                    20, "代价", life_loss_multiplier=self.state.life_loss_multiplier(entity))
+                loss_ctx = self._record_hp_loss_event(
+                    entity, bleed_detail.get("actual_damage", 0), curse_ctx, subtype="cost")
+                if bleed_detail.get("died"):
+                    self._check_hp_zero_death(entity, ctx=loss_ctx or curse_ctx)
+                effects.append({"type": "chizu_curse_bleed", "entity": entity.name,
+                                 "amount": bleed_detail["actual_damage"], "died": bleed_detail["died"]})
 
             # DM裁定 2026-09-10：格挡不再[敌回终]每回合清除。
             # 原口径下 4 法力换 8 点格挡、一回合就被抹掉，等于没有价值；改为保留到
@@ -1174,7 +1204,7 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
             expired = entity.tick_status_effects()
             if expired:
-                # 只有“持续期间直接改写面板”的效果到期即还原；畸变/伤痕等
+                # 只有“持续期间直接改写面板”的效果到期即还原；畸变/伤痕/逼债等
                 # 已经产生的累计局内后果保留到战终，再由battle作用域统一回滚。
                 panel_modifier_sources = {"全力", "弱化"}
                 rolled_back = self.state.rollback_scoped_sources(
@@ -1201,8 +1231,8 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                                     "current_speed": entity.current_speed,
                                     "current_mana": entity.current_mana})
                 # 干扰/手雷减攻到期自动由 tick 清理，无需额外
-            # F2：清算状态消失即清账（∞/持续X到期后不再逐回始结算）。
-            # 2026-10-03 迁移：判定与清账都在声明层（清算·对账）；2026-10-13 删【逼债】。
+            # F2：逼债/清算状态消失即清账（∞/持续X到期后不再逐回始结算）。
+            # 2026-10-03 迁移：判定与清账都在声明层（逼债·对账/清算·对账）；
             # 本行只宣布相位时点，位置必须在 status tick 之后（否则会多结算一轮）。
             effects.extend(self._dispatch_phase(Phase.ROUND_END_RECONCILE, target=entity))
             # F2：抵扣封印/豪夺夺取回合递减统一走 _tick_sealed_and_stolen_relics，
@@ -1223,10 +1253,24 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
             effects.append({"type": "dragon_body_tick", "side": "opponent",
                             "remaining": self.state.opponent_dragon_body_shield_rounds})
 
-        # 原皮衣记录→原逐实体追踪清理，保持机制优先的两个独立锚点顺序。
-        effects.extend(self._dispatch_phase_all(
-            Phase.ROUND_END_TRACKING,
-            self.state.get_all_player_side() + self.state.get_all_enemy_side()))
+        # 皮衣记录本回合实际失去生命；优先使用 HP loss 事件，兼容未迁移旧路径。
+        if self.state.player and self.state.side_has(self.state.player, "皮衣"):
+            hp_loss_events = getattr(self.state.player, "_hp_loss_events", []) or []
+            event_loss = sum(int(e.get("amount") or 0) for e in hp_loss_events)
+            leather_loss = event_loss if event_loss > 0 else self.state.player.hp_lost_this_round
+            if leather_loss > 0:
+                self.state.event_modifiers["leather_shield_next"] = leather_loss
+
+        # 回终清理本回合记账（失血 / 速度变化 / 血限变化），供下一回合重新累计。
+        # 2026-10-03：【活血】道纹删除后本段与活血无关，独立成循环（此前缩进被误并入皮衣分支）。
+        for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
+            entity.hp_lost_this_round = 0
+            if hasattr(entity, "_hp_loss_events"):
+                entity._hp_loss_events = []
+            if hasattr(entity, "_speed_change_events"):
+                entity._speed_change_events = []
+            if hasattr(entity, "_blood_limit_events"):
+                entity._blood_limit_events = []
 
         # 手术·强制移植：本场第三回终仍保持原移植道纹时转为怪物。
         if self.state.current_round >= 3:
@@ -1297,7 +1341,18 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
             raise ValueError("relic_choices必须是对象")
         active = {r.name for r in self.state.relics if self.state.sealed_relics.get(r.name, 0) <= 0}
         player = self.state.player
-        # 2026-10-13 用户令：【三相残韵盘】遗物删除，原战始显式决策分支一并移除。
+        for name in ("三相残韵盘",):
+            if name not in active:
+                continue
+            decision = choices.get(name)
+            if not isinstance(decision, dict) or not isinstance(decision.get("use"), bool):
+                raise ValueError(f"持有【{name}】时必须显式提交relic_choices.{name}.use布尔值")
+            if not decision["use"]:
+                continue
+            if name == "三相残韵盘":
+                resonance = decision.get("resonance_type", "")
+                if resonance not in ("转换", "反转", "曲解") or self.state.resonance.get(resonance, 0) < 1:
+                    raise ValueError("三相残韵盘必须显式选择一种当前持有的resonance_type")
         # 2026-10-11 用户令：【苍白之花】改为纯被动（物品索引.md:110「你的当前法力可以
         # 超出[法限]。」），旧效果「战始可选择疲惫5；战终精力+1」废止——它不再出现在
         # 战始可选遗物里，也不再有 use 布尔值需要提交。
@@ -1411,7 +1466,11 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         if trigger == "battle_start":
             choices = ctx.get("relic_choices", {})
             self.validate_battle_start_relic_choices(choices)
-            # 2026-10-13 用户令：【三相残韵盘】遗物删除（残韵生产改由道纹【典当】承接发现侧）。
+            if "三相残韵盘" in relics and choices["三相残韵盘"]["use"]:
+                consume = choices["三相残韵盘"]["resonance_type"]
+                self.state.resonance[consume] -= 1
+                self._sanxiang_consumed = consume
+                logs.append(f"三相残韵盘：消耗{consume}残韵")
             if "猩红果实" in relics and choices["猩红果实"]["use"]:
                 decision = choices["猩红果实"]
                 self.pay_numeric_cost(
@@ -1439,17 +1498,30 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                 self.state.event_modifiers["brand_nail_target_ref"] = choices["烙痕钉"]["target_ref"]
                 logs.append("烙痕钉：已锁定目标")
             for ally in self.state.friends + self.state.employees:
-                logs.extend(self._dispatch_phase(Phase.BATTLE_START_AFTER_CHOICES, target=ally))
+                if ally.is_alive and any(relic.name == "防弹插板" for relic in ally.relics):
+                    ally.gain_shield(15)
+                    logs.append(f"防弹插板：{ally.name}+15格挡")
         # 机制系统：BATTLE_END 相位分发。位置=战终遗物段顶部（2026-09-17 新增相位，
         # 首个注册者是改版后的【缄默面具】：[战终]法限+X）。
         # process_relics 只宣布时点，具体机制条件/效果都在声明层。
         if trigger == "battle_end":
             logs.extend(self._dispatch_phase(Phase.BATTLE_END, target=player))
+        if trigger == "battle_end" and "三相残韵盘" in relics and self._sanxiang_consumed:
+            others = [t for t in ("转换", "反转", "曲解") if t != self._sanxiang_consumed]
+            for t in others:
+                self.state.resonance[t] = self.state.resonance.get(t, 0) + 1
+            logs.append(f"三相残韵盘：战终获得{'、'.join(others)}残韵各1")
         return logs
 
-    # 2026-10-13 用户令：【买路财】遗物删除（撤退改制为轮回者【逃跑】行动，
-    # 一次付清5次出手强制脱战；见 api._action_declare_escape）。原 buyaicai_escape_cost
-    # 与 api._action_retreat_via_toll 一并移除。
+    def buyaicai_escape_cost(self, monster: Entity) -> dict:
+        """买路财：失去等同于怪物20%[血限]的[碎片]可安全撤退；碎片不足可用2生命=1碎片补"""
+        if not monster:
+            return {"can_escape": False, "reason": "无目标"}
+        cost = math.ceil(monster.blood_limit * 0.2)
+        short = max(0, cost - self.state.shards)
+        life_cost = short * 2  # 1碎片=2生命
+        return {"can_escape": True, "shard_cost": cost, "shortfall_shards": short,
+                "extra_life_cost": life_cost}
 
     def apply_opposing_longxi(self, actor: Entity) -> Optional[dict]:
         """若对方持有龙息，actor 行动前受 10×当前回合必中伤害。"""

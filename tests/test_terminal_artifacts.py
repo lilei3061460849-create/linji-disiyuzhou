@@ -48,7 +48,9 @@ def _new_engine(region, name="老张", speed=8, mana=6, dbsuffix="a", sealed="da
 
 def _start_battle(engine, *, start_round=True):
     engine.state.energy = 0
-    result = engine.execute_action("battle_start", {"relic_choices": {}})
+    choices = {r.name: {"use": False} for r in engine.state.relics
+               if r.name == "三相残韵盘"}
+    result = engine.execute_action("battle_start", {"relic_choices": choices})
     if result.get("success") and start_round:
         engine.execute_action("round_start", {"relic_choices": {}})
     return result

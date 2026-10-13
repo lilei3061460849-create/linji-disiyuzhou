@@ -3,15 +3,14 @@ pytest 风格测试 - 里程碑8：修复5件坏掉/缺失的遗物（血誓戒/
 
 历史背景：早期遗物池中只有7件真正在战斗中生效，血誓戒完全没做、买路财只有计算没有执行动作、同魂笔只生成
 一条虚假日志不改任何状态、钱袋的触发点从未被调用过是死代码、忘忧香曾未注册。钱袋已删除；其当初并入【第一杯】的免疫癌变效果也已在 2026-09-23【第一杯】重做时废止。
-2026-10-13：【买路财】改制为轮回者【逃跑】行动（一次付清5次出手强制脱战），本文件原 retreat_via_toll 四组用例已删除；逃跑回归见 tests/test_escape_and_diandang.py。
 
 覆盖范围：
 1. 血誓戒：[回始]玩家首次主动支付流血代价获得等量格挡/低血量时改为等量生命，每回合限一次
-2. 买路财（已删除，见上）：原覆盖 retreat_via_toll 真正执行撤退(扣碎片/生命、清空战场)，不再只是算个数字
+2. 买路财：新增retreat_via_toll真正执行撤退(扣碎片/生命、清空战场)，不再只是算个数字
 3. 同魂笔：第二目标的道纹也永久变为变化后的道纹，施法者同时永久获得
 4. 第一杯（2026-09-23 用户令重做）：你受到的[回复]与失去的生命翻倍；
    旧「+50%回复、[回终]未回复流血10、免疫癌变」已废止，持有者照样癌变；朋友/员工不继承
-5. 忘忧香：保持在遗物池中（2026-09-28 重做为战斗被动：溢出回复→等量格挡；局外【忘忧】行动已删除）
+5. 忘忧香：保持在当前12件遗物池中，并实现对应的"忘忧"局外行动
 
 运行方式：
     python -m pytest tests/test_relic_fixes.py -v
@@ -34,7 +33,7 @@ def _new_engine(db_suffix: str, daowen="杀伐") -> GameEngine:
     finish_initial_daowen(engine)
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
     setup = engine.execute_action("setup_choose_region", {"region": "罪孽都市"})
-    optional = set()   # 2026-10-13：【三相残韵盘】删除，无需规避
+    optional = {"三相残韵盘"}
     choice = next((n for n in setup["result"]["relic_choices"] if n not in optional),
                   setup["result"]["relic_choices"][0])
     engine.execute_action("choose_discovered_relic", {"relic_name": choice})
@@ -52,7 +51,9 @@ def _give_daowen(entity, name, cost_type="消耗"):
 def _start_with_enemy(engine, enemy):
     """battle_start会自动出怪，这里先start再替换为受控的测试怪物"""
     engine.state.energy = 0
-    engine.execute_action("battle_start", {"relic_choices": {}})
+    choices = {r.name: {"use": False} for r in engine.state.relics
+               if r.name == "三相残韵盘"}
+    engine.execute_action("battle_start", {"relic_choices": choices})
     engine.state.enemies.clear()
     engine.state.enemies.append(enemy)
     engine.execute_action("round_start", {})
@@ -103,8 +104,34 @@ def test_blood_oath_ring_only_once_per_round():
     assert engine.state.player.shield == shield_after_first, "同一回合第二次流血代价不应再给格挡"
 
 
-# 2026-10-13：【买路财】改制为轮回者【逃跑】行动（一次付清5次出手强制脱战），
-# 原 retreat_via_toll 四组用例删除；逃跑回归见 tests/test_escape_and_diandang.py。
+def test_buyaicai_toll_actually_executes_retreat():
+    """买路财正常路径：真正扣碎片并结束战斗，而不只是算出一个数字"""
+    engine = _new_engine("toll_exec")
+    engine.state.relics.append(Relic(name="买路财", effect=""))
+    engine.state.shards = 100
+    _start_with_enemy(engine, Entity(name="大怪", entity_type="怪物", blood_limit=100, current_hp=100))
+
+    r = engine.execute_action("retreat_via_toll", {"target": "大怪"})
+    assert r["success"] is True
+    assert r["result"]["shard_paid"] == 20  # 100*20%
+    assert engine.state.shards == 80
+    assert engine.state.enemies == [], "撤退后战场应清空"
+    assert engine.state.phase == "pre_battle"
+
+
+def test_buyaicai_toll_uses_life_to_cover_shortfall():
+    """买路财正常路径：碎片不足时按1碎片=2生命的比例用生命补足"""
+    engine = _new_engine("toll_life")
+    engine.state.relics.append(Relic(name="买路财", effect=""))
+    engine.state.shards = 5  # 需要20，差15，需额外30点生命
+    _start_with_enemy(engine, Entity(name="大怪", entity_type="怪物", blood_limit=100, current_hp=100))
+    hp_before = engine.state.player.current_hp
+
+    r = engine.execute_action("retreat_via_toll", {"target": "大怪"})
+    assert r["success"] is True
+    assert engine.state.shards == 0
+    assert r["result"]["life_paid"] == 30
+    assert engine.state.player.current_hp == hp_before - 30
 
 
 def test_tonghunbi_grants_caster_real_daowen_from_second_target():
@@ -168,11 +195,11 @@ def test_first_cup_doubling_is_not_inherited_by_allies():
 
 
 def test_wangyouxiang_registered_in_revised_relic_pool():
-    """删除两件旧契约、钱袋与折速法印后，忘忧香仍在遗物池中（2026-10-03 新增 5 件 → 16；2026-10-13 删买路财/三相残韵盘 → 14）。"""
+    """删除两件旧契约、钱袋与折速法印后，忘忧香仍在遗物池中（2026-10-03 新增 5 件 → 16）。"""
     engine = _new_engine("wangyou_registered")
     names = {n for n, _ in engine.RELIC_DEFS}
     assert "忘忧香" in names
-    assert len(engine.RELIC_DEFS) == 14   # 2026-09-13 新增【承露盏】；2026-10-03 新增千荆甲/万钧印/癫狂之脑/活血衣/增生药剂；2026-10-13 删【买路财】/【三相残韵盘】
+    assert len(engine.RELIC_DEFS) == 16   # 2026-09-13 新增【承露盏】；2026-10-03 新增千荆甲/万钧印/癫狂之脑/活血衣/增生药剂
     assert "血契" in names
     assert "钱袋" not in names
 
@@ -225,6 +252,30 @@ def test_wangyouxiang_does_nothing_without_relic():
 # ========================================================================
 # 错误输入 / 非法配置
 # ========================================================================
+
+def test_buyaicai_rejected_without_relic():
+    """错误输入：没有买路财遗物不能使用此撤退方式"""
+    engine = _new_engine("toll_no_relic")
+    engine.state.relics = [r for r in engine.state.relics if r.name != "买路财"]
+    engine.state.shards = 100
+    _start_with_enemy(engine, Entity(name="大怪", entity_type="怪物", blood_limit=100, current_hp=100))
+    r = engine.execute_action("retreat_via_toll", {"target": "大怪"})
+    assert r["success"] is False
+    assert engine.state.enemies, "被拒绝的撤退不应清空战场"
+
+
+def test_buyaicai_rejected_when_insufficient_shards_and_life():
+    """错误输入：碎片和生命都不足以支付时必须拒绝，不能扣成负数或直接杀死玩家"""
+    engine = _new_engine("toll_broke")
+    engine.state.relics.append(Relic(name="买路财", effect=""))
+    engine.state.shards = 0
+    _start_with_enemy(engine, Entity(name="大怪", entity_type="怪物", blood_limit=100, current_hp=100))
+    engine.state.player.current_hp = 5  # 需要40点生命补足，但只有5点
+    r = engine.execute_action("retreat_via_toll", {"target": "大怪"})
+    assert r["success"] is False
+    assert engine.state.player.current_hp == 5, "被拒绝的撤退不应扣血"
+    assert engine.state.enemies, "被拒绝的撤退不应清空战场"
+
 
 def test_wangyouxiang_rejected_without_relic():
     """错误输入：没有忘忧香不能执行忘忧"""

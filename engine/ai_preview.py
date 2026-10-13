@@ -48,6 +48,7 @@ class ActionPreview:
             "activated": copy.deepcopy(combat._monster_activated),
             "round_used": copy.deepcopy(combat._monster_daowen_round_used),
             "rewrites": copy.deepcopy(combat._resonance_rewrites),
+            "sanxiang": combat._sanxiang_consumed,
             "split_spawned": getattr(combat, "_split_clones_spawned", 0),
             "evolved": copy.deepcopy(combat._monster_evolved),
             "effect_chain_depth": combat._effect_chain_depth,
@@ -108,6 +109,7 @@ class ActionPreview:
         combat._monster_activated = snap["activated"]
         combat._monster_daowen_round_used = snap["round_used"]
         combat._resonance_rewrites = snap["rewrites"]
+        combat._sanxiang_consumed = snap["sanxiang"]
         combat._split_clones_spawned = snap["split_spawned"]
         combat._monster_evolved = snap["evolved"]
         combat._effect_chain_depth = snap["effect_chain_depth"]
@@ -326,8 +328,7 @@ class ActionPreview:
         # CRITICAL：异变达危险阈值（≥45 时动作可能触发迷失）
         mut = getattr(p, "mutation_count", 0)
         mut_delta = diff.get("player", {}).get("mutation_delta", 0)
-        mutation_sensitive = getattr(p, "can_trigger_mutation_lost", lambda: True)()
-        if mutation_sensitive and mut + mut_delta >= _MUT_THRESHOLD - 5:   # 离阈值5以内
+        if mut + mut_delta >= _MUT_THRESHOLD - 5:   # 离阈值5以内
             reasons.append("异变即将达到迷失阈值（迷失（%d/%d）→ 动作后（%d/%d））"
                            % (mut, _MUT_THRESHOLD, mut + mut_delta, _MUT_THRESHOLD))
             return "CRITICAL", reasons
@@ -341,7 +342,7 @@ class ActionPreview:
             return "CRITICAL", reasons
 
         # HIGH：异变显著增加（+10 以上，无论当前等级）
-        if mutation_sensitive and mut_delta >= 10:
+        if mut_delta >= 10:
             reasons.append("异变增加 %d（迷失（%d/%d）→ 动作后（%d/%d））"
                            % (mut_delta, mut, _MUT_THRESHOLD, mut + mut_delta, _MUT_THRESHOLD))
 

@@ -56,7 +56,7 @@ bl.TacticalAI.take_action = _tracked_take_action
 summary = {}
 for label, (starter, learn) in LABELS.items():
     tele = {}
-    wins = cleared_sum = invalid = timeouts = 0
+    wins = cleared_sum = invalid = 0
     by_region = Counter()
     region_n = Counter()
     _usage.clear()
@@ -64,23 +64,20 @@ for label, (starter, learn) in LABELS.items():
         for seed in SEEDS:
             r = bl.play(starter, learn, region, seed=seed, battles=7,
                         telemetry=tele, spend_shards=False)
-            if bl._is_resource_timeout(r):
-                timeouts += 1
-                continue
+            region_n[region] += 1
             if r.get("invalid"):
                 invalid += 1
                 continue
-            region_n[region] += 1
             cleared_sum += r["cleared"]
             if r["won"]:
                 wins += 1
                 by_region[region] += 1
-    n = len(SEEDS) * len(REGIONS) - invalid - timeouts
+    n = len(SEEDS) * len(REGIONS) - invalid
     dao_used = dict(sorted(_usage.items(), key=lambda kv: -kv[1]))
     pre_actions = {k.split("｜")[0]: v for k, v in tele.get("succeeded", {}).items()}
     summary[label] = (wins, n, cleared_sum, invalid, by_region, region_n, dao_used)
     print(f"== {label}  build={starter}+{learn}")
-    print(f"   通关率 {wins}/{n} = {wins/max(1,n)*100:.1f}%   平均通关 {cleared_sum/max(1,n):.2f}/7场   无效局 {invalid} 资源超时 {timeouts}")
+    print(f"   通关率 {wins}/{n} = {wins/max(1,n)*100:.1f}%   平均通关 {cleared_sum/max(1,n):.2f}/7场   无效局 {invalid}")
     for region in REGIONS:
         print(f"   {region}: {by_region[region]}/{region_n[region]} 胜")
     print(f"   战斗内发动道纹: {dao_used if dao_used else '（无）'}")

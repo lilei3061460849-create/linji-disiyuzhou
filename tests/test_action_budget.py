@@ -6,7 +6,7 @@ DM裁定记录：
   怪物走独立的run_monster_phase固定规则，不受此约束。
 - 普攻本身不消耗速度；速度消耗只来自正文明确的闪避等机制。
 - 消耗1出手的动作：attack、use_daowen(含指挥朋友/员工)、deploy_employee(消耗玩家的出手)、
-  declare_wish；declare_escape（逃跑）一次付清5出手（2026-10-13 改制）。
+  declare_wish、declare_escape。
 - 不消耗出手：consume_item(原文明确)、use_resonance(可任意时刻插队)。
 - 预算按回合重置(round_start时归零本回合已用出手数)。
 
@@ -45,7 +45,8 @@ def _new_engine(db_suffix: str, speed_points: int = 8) -> GameEngine:
     engine.execute_action("choose_discovered_relic", {"relic_name": choices[0]})
     engine.state.energy = 0
     relic_choices = {}
-    # 2026-10-13：【三相残韵盘】删除，战始显式决策预填不再需要。
+    if engine.state.relics[0].name == "三相残韵盘":
+        relic_choices[engine.state.relics[0].name] = {"use": False}
     engine.execute_action("battle_start", {"relic_choices": relic_choices})
     # battle_start会自动出怪，这里替换为受控的单一测试怪物，保证断言确定性
     engine.state.enemies.clear()
@@ -185,32 +186,9 @@ def test_declare_wish_and_escape_consume_budget_and_reject_when_exhausted():
     assert r_wit["success"] is False
     assert "出手已用完" in r_wit["error"]
 
-    # 2026-10-13 逃跑改制：一次付清5次出手；剩0次时拒绝且一次不扣。
-    used_before = player.actions_used_this_round
     r_escape = engine.execute_action("declare_escape", {})
     assert r_escape["success"] is False
-    assert "一次付清5次出手" in r_escape["error"]
-    assert player.actions_used_this_round == used_before
-
-
-def test_escape_requires_five_remaining_and_consumes_atomically():
-    """边界：剩2次出手时逃跑被拒（5次是硬门槛，不足一次不扣）；预算≥5时一次扣5。"""
-    engine = _new_engine("escape_atomic")
-    player = engine.state.player
-    assert player.action_count < 5
-    used_before = player.actions_used_this_round
-    r = engine.execute_action("declare_escape", {})
-    assert r["success"] is False
-    assert "一次付清5次出手" in r["error"]
-    assert player.actions_used_this_round == used_before, "原子消费：不足时一次不扣"
-
-    from engine.models import Relic
-    engine.state.relics.append(Relic(name="癫狂之脑", effect=""))   # 出手预算+1
-    player.actions_used_this_round = 0
-    # 预算仍不足5（2+1=3）：继续被拒
-    r2 = engine.execute_action("declare_escape", {})
-    assert r2["success"] is False
-    assert player.actions_used_this_round == 0
+    assert "出手已用完" in r_escape["error"]
 
 
 def test_deploy_employee_rejected_when_player_budget_exhausted():

@@ -266,8 +266,6 @@ def run_dependency_probe(k: dict, g: int) -> dict:
         s = pr.randrange(1, 2 ** 31 - 1)
         r = bl.play(starter, learn, region, s, rng=random.Random(s),
                     spend_shards=True, policy=pol)
-        if bl._skip_resource_timeout(r, context=__name__):
-            continue
         if r.get("invalid"):
             inv += 1
             continue
@@ -294,8 +292,6 @@ def run_holdout(k: dict) -> dict:
         s = hr.randrange(1, 2 ** 31 - 1)
         r = bl.play(starter, learn, region, s, rng=random.Random(s),
                     spend_shards=True, policy=pol)
-        if bl._skip_resource_timeout(r, context=__name__):
-            continue
         if r.get("invalid"):
             inv += 1
             continue
@@ -390,8 +386,6 @@ def run_migration(kb_path: str, discover_path: str, out: str) -> None:
             r = bl.play(starter, list(learn), bl.REGIONS[i % 3], s,
                         rng=random.Random(s), spend_shards=True,
                         policy=bl.DEFAULT_POLICY)
-            if bl._skip_resource_timeout(r, context=__name__):
-                continue
             if not r.get("invalid"):
                 scores.append(r["cleared"])
         mig = sum(scores) / len(scores) if scores else 0.0

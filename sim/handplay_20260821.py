@@ -175,13 +175,13 @@ def decide_player_action(engine, strat: Strategy) -> Optional[dict]:
                                        "target_ref": enemy_ref(e),
                                        "trigger_spell_choices": {}}}
 
-    # ---- 1d. 逃跑：濒死且本轮剩≥5出手时强制脱战（2026-10-13 改制，原买路财撤退已删除） ----
-    if p.current_hp <= p.blood_limit * 0.25 and not getattr(state, "in_final_duel", False):
-        _budget = getattr(p, "action_count", 0) or 0
-        _used = getattr(p, "actions_used_this_round", 0) or 0
-        if _budget - _used >= 5:
-            TRACE.text(f"  决策[逃跑] 生命{p.current_hp}濒死，一次付清5次出手强制脱战")
-            return {"action_type": "declare_escape", "params": {}}
+    # ---- 1d. 买路财撤退：濒死且付得起 20%怪物血限 时安全撤退 ----
+    if any(r.name == "买路财" for r in state.relics) and p.current_hp <= p.blood_limit * 0.25:
+        m0 = enemies[0]
+        cost = math.ceil(m0.blood_limit * 0.2)
+        if state.shards >= cost:
+            TRACE.text(f"  决策[买路财] 生命{p.current_hp}濒死，花费{cost}碎片安全撤退")
+            return {"action_type": "retreat_via_toll", "params": {}}
 
     # ---- 2. 蒙蔽防御：敌方总命中次数高且威胁大 → 蒙蔽覆盖 ----
     if "蒙蔽" in p.dao_wen and current_mana >= 5:
@@ -773,7 +773,7 @@ def decide_pre_battle(engine, strat: Strategy, shards_budget: int):
 
 
 def battle_start_choices(engine, strat: Strategy) -> dict:
-    """战始可选遗物决策：猩红果实/苍白之花（【三相残韵盘】已于2026-10-13删除）。"""
+    """战始可选遗物决策：猩红果实/苍白之花/三相残韵盘。"""
     active = {r.name for r in engine.state.relics
               if engine.state.sealed_relics.get(r.name, 0) <= 0}
     p = engine.state.player
@@ -788,11 +788,19 @@ def battle_start_choices(engine, strat: Strategy) -> dict:
         out["苍白之花"] = {"use": p.current_speed >= 8 and p.mana_limit >= 10}
         if out["苍白之花"]["use"]:
             TRACE.text("  决策[遗物] 苍白之花：疲惫5 → 战终精力+1")
+    if "三相残韵盘" in active:
+        stock = {k: v for k, v in engine.state.resonance.items() if v >= 1}
+        if stock:
+            consume = max(stock, key=stock.get)
+            out["三相残韵盘"] = {"use": True, "resonance_type": consume}
+            TRACE.text(f"  决策[遗物] 三相残韵盘：消耗{consume} → 战终获另两种各1")
+        else:
+            out["三相残韵盘"] = {"use": False}
     return out
 
 
 def round_start_choices(engine, strat: Strategy) -> dict:
-    """回始可选遗物决策：回锋刀/余火印；血契只保留代价平分。"""
+    """回始可选遗物决策：回锋刀/血契/余火印。"""
     active = {r.name for r in engine.state.relics
               if engine.state.sealed_relics.get(r.name, 0) <= 0}
     p = engine.state.player
@@ -803,6 +811,15 @@ def round_start_choices(engine, strat: Strategy) -> dict:
         if damage > 0 and alive:
             out["回锋刀"] = {"enemy_index": alive[0]}
             TRACE.text(f"  决策[遗物] 回锋刀：回始对敌{alive[0]}造成{damage}伤（速限-当前速）")
+    if "血契" in active and p is not None:
+        # 流血4X换X法力。血契是"用血换法力"的代价闭环：只在血量非常健康、
+        # 且法力缺口真实存在时才用，且只用最小档（X=1，流血4换1法力）。
+        x = 0
+        if p.current_hp >= 45 and p.current_mana < 8:
+            x = 1
+        out["血契"] = {"use": x >= 1, "x": max(1, x)}
+        if x >= 1:
+            TRACE.text(f"  决策[遗物] 血契：流血{4 * x} → 法力+{x}（血量健康且法力缺口真实）")
     if "余火印" in active and p is not None:
         heart = next((item for item in engine.state.consumables
                       if item.kind == "dragon_heart" and item.current_uses >= 1), None)

@@ -37,10 +37,12 @@ def _setup(db_suffix: str):
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
     setup = engine.execute_action("setup_choose_region", {"region": "罪孽都市"})
     engine.execute_action("choose_discovered_relic", {"relic_name": setup["result"]["relic_choices"][0]})
-    engine.state.relics = []
-    # 2026-10-13：遗物池删2件后随机发放漂移，本文件断言与开局遗物无关，清空钉死环境。
     engine.state.energy = 0
-    engine.execute_action("battle_start", {"relic_choices": {}})
+    choices = {}
+    relic = engine.state.relics[0].name
+    if relic == "三相残韵盘":
+        choices[relic] = {"use": False}
+    engine.execute_action("battle_start", {"relic_choices": choices})
     return engine
 
 

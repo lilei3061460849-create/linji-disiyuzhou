@@ -31,8 +31,7 @@ def test_normal_auto_trigger_list_matches_rules_text():
     assert "禁止只写选择结果" in playbook
     assert "癌变（任一角色在本场战斗内累计受到回复" in rules
     assert "累计回复属于局内减益追踪，[战终]清零" in rules
-    assert "迷失（非怪物角色【异变】达到" in rules
-    assert "怪物不会触发" in rules
+    assert "迷失（任一角色【异变】达到" in rules
     assert "救赎（怪物当前生命≤其[血限]10%" in rules
 
 def test_boundary_no_zengsheng_in_active_code():

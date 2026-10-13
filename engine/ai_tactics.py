@@ -873,12 +873,12 @@ class TacticalAI:
                 if after >= soft:
                     adj -= 25.0 * (after - soft) / max(1.0, line - soft)
 
-        # ② 迷失阈值：仅适用于非豁免角色；怪物无迷失时钟
+        # ② 迷失阈值：异变层数达阈值直接命零
         collapse = getattr(type(me), "MUTATION_COLLAPSE_THRESHOLD", 0) or 0
         mut_after = p.get("mutation_after")
         if mut_after is None:
             mut_after = getattr(me, "mutation_count", 0) + max(0.0, p.get("mutation_delta", 0) or 0)
-        if collapse > 0 and getattr(me, "can_trigger_mutation_lost", lambda: True)():
+        if collapse > 0:
             if mut_after >= collapse:
                 return adj, f"本手后异变{mut_after:.0f}≥迷失阈值{collapse}"
             soft = collapse * self.SELF_PRESERVE_MARGIN

@@ -51,7 +51,7 @@ def _kill_by_bleed(combat, target):
     combat._pay_bleed_cost(target, 5)
 
 
-def _pay_mutation(combat, target):
+def _kill_by_collapse(combat, target):
     target.mutation_count = 49
     combat.pay_numeric_cost(target, "异变", 5, cost_context={
         "timing": "monster_action", "source": "原初1", "source_type": "evolution",
@@ -68,8 +68,6 @@ class _OldJiaohheiReference:
     """
 
     def run(self, combat, entity):
-        if entity.is_alive:  # 非致死异变不进入旧死亡监听的调用范围
-            return
         if entity.entity_type == "怪物":
             if combat.state.player and combat._relic_active(combat.state.player, "焦黑发丝"):
                 death_ctx = entity._death_ctx
@@ -157,8 +155,8 @@ def test_jiaohhei_non_monster_death_no_trigger():
     assert player2.current_speed == 5, "未发生死亡 → 不触发"
 
 
-def test_jiaohhei_bleed_death_but_mutation_does_not_kill():
-    """失血命零仍触发；怪物支付异变不命零，也不触发死亡遗物。"""
+def test_jiaohhei_bleed_and_collapse_deaths():
+    """失血命零与迷失命零同样触发（既有规则：所有怪物死亡来源）。"""
     state, combat, player, enemy = _arena(player_speed=5)
     _prepare(state, combat, held=True)
     _kill_by_bleed(combat, enemy)
@@ -166,10 +164,8 @@ def test_jiaohhei_bleed_death_but_mutation_does_not_kill():
 
     state2, combat2, player2, enemy2 = _arena(player_speed=5)
     _prepare(state2, combat2, held=True)
-    _pay_mutation(combat2, enemy2)
-    assert enemy2.is_alive is True and enemy2.mutation_count == 54
-    assert player2.current_speed == 5
-    assert not _events(combat2, CombatEventType.ENTITY_DIED)
+    _kill_by_collapse(combat2, enemy2)
+    assert enemy2.is_alive is False and player2.current_speed == 7
 
 
 def test_jiaohhei_speed_verb_semantics():
@@ -223,9 +219,9 @@ def test_jiaohhei_executes_exactly_once():
 # ==================== 5. 参考实现 sweep ====================
 
 def test_jiaohhei_reference_sweep_zero_mismatch():
-    """旧死亡监听 vs 新机制：伤害/流血死亡与非致死异变×持有×封印×加速。"""
+    """旧块 vs 新机制：死亡来源×持有×封印×加速 全场景逐结果一致。"""
     old = _OldJiaohheiReference()
-    kill_kinds = ["damage", "bleed", "mutation"]
+    kill_kinds = ["damage", "bleed", "collapse"]
     mismatches = []
     total = 0
     for kind, held, sealed, speed_up in itertools.product(
@@ -252,8 +248,8 @@ def test_jiaohhei_reference_sweep_zero_mismatch():
             _kill_by_bleed(combat_b, enemy_b)
             old.run(combat_b, enemy_b)
         else:
-            _pay_mutation(combat_a, enemy_a)
-            _pay_mutation(combat_b, enemy_b)
+            _kill_by_collapse(combat_a, enemy_a)
+            _kill_by_collapse(combat_b, enemy_b)
             old.run(combat_b, enemy_b)
 
         if player_a.current_speed != player_b.current_speed:
@@ -271,9 +267,9 @@ def test_jiaohhei_reference_sweep_zero_mismatch():
 
 
 def test_jiaohhei_reference_matches_existing_regression_paths():
-    """伤害命零 / 流血命零仍触发，非致死异变 / 遗物封印不触发。"""
+    """与既有测试同口径的三条路径：伤害命零 / 流血命零 / 迷失命零 / 封印。"""
     old = _OldJiaohheiReference()
-    for kind in ("damage", "bleed", "mutation", "sealed"):
+    for kind in ("damage", "bleed", "collapse", "sealed"):
         state_a, combat_a, player_a, enemy_a = _arena(player_speed=5)
         state_b, combat_b, player_b, enemy_b = _arena(player_speed=5)
         for state, combat in ((state_a, combat_a), (state_b, combat_b)):
@@ -293,8 +289,8 @@ def test_jiaohhei_reference_matches_existing_regression_paths():
             _kill_by_bleed(combat_b, enemy_b)
             old.run(combat_b, enemy_b)
         else:
-            _pay_mutation(combat_a, enemy_a)
-            _pay_mutation(combat_b, enemy_b)
+            _kill_by_collapse(combat_a, enemy_a)
+            _kill_by_collapse(combat_b, enemy_b)
             old.run(combat_b, enemy_b)
 
         assert player_a.current_speed == player_b.current_speed, kind

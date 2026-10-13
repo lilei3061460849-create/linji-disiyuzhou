@@ -32,7 +32,7 @@ def _dungeon_daowen(region: str) -> set[str]:
     """从 `副本/<副本>.md` 抓闭环串与怪物面板里出现的道纹名。"""
     text = (ROOT / "副本" / f"{region}.md").read_text(encoding="utf-8")
     names: set[str] = set()
-    # 闭环串：点金X⇄（转换）典当X⇄…
+    # 闭环串：点金X⇄（转换）逼债X⇄…
     for line in text.splitlines():
         if "⇄" in line:
             names |= set(re.findall(r"([\u4e00-\u9fff·]+)X", line))
@@ -48,7 +48,7 @@ def _dungeon_daowen(region: str) -> set[str]:
 # 但 `规则正文.md` 的对应副本小节**没有** `- 【X】` 定义。这是既存缺口（不是本次改出来的），
 # 我不擅自代写规则定义；先如实登记，等用户裁定补写或改口径。清单一旦变化本测试就会红。
 MISSING_RULE_TEXT_DEFINITIONS = {
-    "罪孽都市": {"典当", "假钞"},   # 2026-10-13：删【逼债】→【典当】顶替（定义仍只在副本文档）
+    "罪孽都市": {"逼债", "假钞"},
     "扭曲都市": {"畸变"},
     "龙心谷": {"加害", "背负", "伤痕"},
 }

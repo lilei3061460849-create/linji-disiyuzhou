@@ -44,7 +44,8 @@ def _new_engine_with_enemy(db_suffix: str, region: str = "龙心谷") -> GameEng
     engine.state.energy = 0
     choices = {}
     relic = engine.state.relics[0].name
-    # 2026-10-13：【三相残韵盘】删除，战始显式决策预填不再需要。
+    if relic == "三相残韵盘":
+        choices[relic] = {"use": False}
     engine.execute_action("battle_start", {"relic_choices": choices})
     # battle_start会自动出怪(见engine/monsters.py)，这里替换为受控的单一测试怪物，保证断言确定性
     engine.state.enemies.clear()

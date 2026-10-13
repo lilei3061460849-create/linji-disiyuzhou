@@ -43,9 +43,6 @@ def _arena(seed: int = 1):
     e.state.enemies[:] = e.state.enemies[:1]
     e.state.monster_reinforcements = []
     m = e.state.enemies[0]
-    # 2026-10-13：遗物池删2件后首怪漂移（狙击手atk1→赌鬼atk2），本文件“2次命中非法”的
-    # 前提被打破；事务回滚与具体怪无关，钉死 attack_count=1 恢复非法前提。
-    m.attack_count = 1
     m.shards = 100
     # 第 1 回合先让怪物空手（无道纹则 prepare 不列选项、daowen 提交 null），
     # 免得首回合被迫发动道纹污染 activated 基线；赎金在第 1 回合结束后再加。

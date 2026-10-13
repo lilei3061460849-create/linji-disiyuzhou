@@ -295,14 +295,6 @@ def test_context_does_not_change_battle_outcome(tmp_path):
         engine = build_battle_engine(tmp_path, name=f"trace{int(tracing)}")
         engine.combat.resolution.set_tracing(tracing)
         from sim import build_learner as bl
-        # 2026-10-13：_play 默认共享生产封存路径，第一局的封存会被第二局拿去死斗
-        # （跨局泄漏；两局都不开 trace 也照样分叉）。每局独立 lab_paths 隔离，
-        # 两局看到的都是“无封存”同一初始环境，比较的才是 trace 开关本身。
-        tag = f"trace{int(tracing)}"
-        lab = {"db_path": str(tmp_path / f"{tag}.db"),
-               "sealed_path": str(tmp_path / f"{tag}_seal.json"),
-               "death_book_path": str(tmp_path / f"{tag}_book.md")}
         results.append(bl.play("坠落", ["杀伐", "血债", "再生", "庇护", "透支"],
-                               "罪孽都市", seed=3, rng=random.Random(3),
-                               lab_paths=lab))
+                               "罪孽都市", seed=3, rng=random.Random(3)))
     assert results[0] == results[1], "trace 打开改变了战斗结果"

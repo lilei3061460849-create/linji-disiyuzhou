@@ -91,10 +91,8 @@ from tests.setup_support import finish_initial_daowen
 def _debt_engine(tmp_path, debt: int = -76) -> GameEngine:
     """构造：完整开局 + pre_battle 阶段 + 玩家负债（裁定D逼真负债场景）。
 
-    冒烟批实测（2026-08-23，当时【逼债】还在）：罪孽都市逼债寄存把玩家 shards
-    打到 -15/-76 后，局外所有 0费行动被 'shards < cost' 误拒（-76 < 0），
-    pre_battle 精力耗尽不了=死锁。【逼债】已于 2026-10-13 删除，本用例的负债改由
-    消灾透支构造（见上），口径不变。
+    冒烟批实测：罪孽都市逼债寄存把玩家 shards 打到 -15/-76 后，局外所有
+    0费行动被 'shards < cost' 误拒（-76 < 0），pre_battle 精力耗尽不了=死锁。
     裁定D口径：负债冻结的是碎片**支出**(cost>0)，0费行动不属于支出。
     """
     e = GameEngine(

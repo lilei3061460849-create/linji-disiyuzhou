@@ -1,17 +1,15 @@
 """困境驱动回归（DM裁定2026-08-23③：模拟器怪物驱动执行准则#3强制二选一）。
 
 裁定：怪物陷入困境（check_monster_difficulty ≥1 劣势信号）时——
-  1. 进化优先：有借用票（轮回者持有、自身未持有的道纹）；
-     怪物免于迷失，异变不限制 X；
-  2. 无票 → 逃跑（统一【离场】，不视为击杀）。
+  1. 进化优先：有借用票（轮回者持有、自身未持有的道纹）且原初X门票异变5X
+     不必然迷失 → declare_evolution 借纹（X≤异变预算）；
+  2. 无票或必迷失 → 逃跑（统一【离场】，不视为击杀）。
 门禁：死斗不驱动；决斗敌方（轮回者，非怪物）永不驱动；每场战斗每怪限一次。
 """
 from __future__ import annotations
 
 import os
 import sys
-
-import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -72,7 +70,7 @@ def test_plight_evolution_first_borrows_player_daowen(tmp_path):
     _drive_plight_monsters(e, telemetry)
     assert m.is_alive, "进化的怪物不应离场"
     assert "加害" in m.dao_wen, f"应借X最高的【加害】: {list(m.dao_wen)}"
-    assert m.dao_wen["加害"].x_value == 3, "怪物没有异变预算上限，策略默认X=3"
+    assert m.dao_wen["加害"].x_value == 3, "X=min(预算9, 3)=3"
     assert m.mutation_count == 15, f"门票异变=5X=15，实际{m.mutation_count}"
     assert telemetry["plight"]["evolve"] == 1
     assert id(m) in e.combat._monster_evolved
@@ -95,23 +93,18 @@ def test_plight_escape_when_no_ticket(tmp_path):
     assert telemetry["plight"]["escape"] == 1
 
 
-@pytest.mark.parametrize("mutation_before", [46, 90])
-def test_plight_evolves_even_beyond_old_lost_threshold(tmp_path, mutation_before):
-    """高异变不再导致怪物被迫逃跑；None 明确表示进化 X 不受异变限制。"""
+def test_plight_escape_when_certain_collapse(tmp_path):
+    """门票异变必迷失（max_x=0）→ 即使有票也逃跑。"""
     e = _engine(tmp_path)
     _full_ok(e)
     m = _plight_monster()
-    m.mutation_count = mutation_before
+    m.mutation_count = 46   # (50-1-46)//5 = 0
     _combat(e, [m], {"加害": 4})
-    option = e.combat.get_plight_evolution_options()[0]
-    assert option["max_x_by_mutation"] is None and option["mutation_lost_exempt"] is True
     telemetry: dict = {}
     _drive_plight_monsters(e, telemetry)
-    assert m.is_alive and not m.is_departed
-    assert m.mutation_count == mutation_before + 15
-    assert m.dao_wen["加害"].x_value == 3
-    assert telemetry["plight"]["evolve"] == 1
-    assert telemetry["plight"].get("escape", 0) == 0
+    assert not m.is_alive and m.departure_reason == "逃跑"
+    assert m.mutation_count == 46, "逃跑不付异变"
+    assert telemetry["plight"]["escape"] == 1
 
 
 def test_plight_never_drives_non_monster(tmp_path):
