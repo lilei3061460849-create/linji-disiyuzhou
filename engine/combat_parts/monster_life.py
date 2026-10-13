@@ -1,4 +1,4 @@
-"""CombatEngine 分片：怪物困境/逃跑与追击/进化/多路径胜利（癌变·赎罪·雕塑·还债）/许愿/谈判；
+"""CombatEngine 分片：怪物困境/进化/多路径胜利（癌变·赎罪·雕塑·还债）/许愿/谈判；
 含类级阈值常量（PROLIFERATION/CANCER/DEBT/SCULPTURE/REDEMPTION）
 
 方法体自 engine/combat.py 原样搬来（逐字节），行为与对外契约不变；
@@ -81,38 +81,9 @@ class MonsterLifeMixin:
         
         return None
     
-    # ========== 逃跑与追击 ==========
-    
-    def initiate_escape(self, escaper: Entity, pursuers: list[Entity]) -> Interrupt:
-        """
-        发起逃跑
-        规则：
-        1. 战斗无缝继续
-        2. 逃跑方必须消耗自身出手企图拖延时间逃跑
-        3. 追击方阻截成功后逃跑失败
-        """
-        return Interrupt(
-            interrupt_type=InterruptType.ESCAPE_AND_PURSUIT,
-            context={
-                "escaper": escaper.name,
-                "escaper_hp": escaper.current_hp,
-                "escaper_hp_ratio": round(escaper.hp_ratio, 2),
-                "pursuers": [p.name for p in pursuers],
-                "current_round": self.state.current_round,
-            },
-            description=(
-                f"{escaper.name}试图逃跑！\n"
-                f"规则：{escaper.name}必须消耗自身出手企图拖延时间逃跑。\n"
-                f"追击方在正常回合内一边抵御其余敌对角色攻击，一边阻截逃跑方；阻截成功后逃跑失败继续战斗，否则逃脱成功。\n"
-                f"请DM裁定{escaper.name}的拖延阻截是否成功。"
-            ),
-            options=[
-                {"id": "escape_success", "label": "逃脱成功", "description": "拖延有效，逃脱成功"},
-                {"id": "escape_fail", "label": "逃脱失败", "description": "被阻截，继续战斗"},
-            ],
-            state_snapshot=self.state.to_dict()
-        )
-    
+    # 2026-10-13 用户令：逃跑改制——【逃跑】是轮回者行动，一次付清5次出手、
+    # 以当前状态强制脱离本场战斗，不再走DM追击裁定。原 initiate_escape（追击中断）
+    # 随改制删除；declare_escape 的新实现见 engine/api.py。
     # ========== 进化（原初X，引擎直接结算，无需DM中断） ==========
     
     def execute_evolution(self, monster: Entity, daowen_name: str, x: int) -> dict:

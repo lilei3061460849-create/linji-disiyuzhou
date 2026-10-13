@@ -4,8 +4,8 @@
 分两层：
   1) 机制实验室：用 GameEngine.execute_action 验证循环是否存在、净变化是多少。
      实验室可临时授予道纹/遗物，只测规则，不算七场通关率。
-  2) 从零七场：开局走发现，共鸣 1 精力，残韵靠开局必选或三相残韵盘（【领悟】已于2026-09-10删除），
-     转化道纹必须打到对应怪物后残韵改写。遗物不得白送。
+  2) 从零七场：开局走发现，共鸣 1 精力，残韵靠开局必选或副本事件（【领悟】已于2026-09-10删除，
+     【三相残韵盘】已于2026-10-13删除），转化道纹必须打到对应怪物后残韵改写。遗物不得白送。
 
 用法：
   PYTHONPATH=. python3 sim/combo_loop_audit.py
@@ -37,11 +37,12 @@ from sim.optional_actions import battle_start_relic_choices, round_start_relic_c
 from tests.setup_support import finish_initial_daowen
 
 
+# 2026-10-13：【买路财】改制为【逃跑】行动、【三相残韵盘】删除，均移出审计池。
 RELIC_POOL = [
-    "血誓戒", "买路财", "同魂笔", "回锋刀", "三相残韵盘",
+    "血誓戒", "同魂笔", "回锋刀",
     "血契", "避风铃", "守夜灯", "无所求", "忘忧香",
 ]
-INTERACTIVE = {"三相残韵盘", "回锋刀", "无所求"}
+INTERACTIVE = {"回锋刀", "无所求"}
 HUNT = {
     "急速": ("减速", "转换"),
     "加速": ("减速", "反转"),
@@ -315,7 +316,7 @@ def lab_chongji_qiege_guanchuan():
     }
 
 
-def lab_tonghun_sanxiang():
+def lab_tonghun():
     e = _lab_engine("th")
     p = e.state.player
     m1 = _monster(e, name="甲", daowen={"狂暴": 3})
@@ -328,21 +329,10 @@ def lab_tonghun_sanxiang():
         "second_target_ref": "enemy:1",
         "second_source_daowen": "狂暴",
     })
-    e2 = _lab_engine("sx")
-    e2.state.relics.append(Relic("三相残韵盘", ""))
-    e2.state.resonance = {"转换": 1, "反转": 0, "曲解": 0}
-    e2.combat.process_relics("battle_start", {"relic_choices": {
-        "三相残韵盘": {"use": True, "resonance_type": "转换"},
-    }})
-    mid = dict(e2.state.resonance)
-    e2.combat.process_relics("battle_end", {})
-    end = dict(e2.state.resonance)
+    # 2026-10-13：【三相残韵盘】遗物删除，原战始/战终残韵审计随之移除；本 lab 只验同魂笔。
     return {
         "同魂笔成功": r.get("success"),
         "残韵消耗": 1,
-        "三相战始后": mid,
-        "三相战终后": end,
-        "三相净残韵": sum(end.values()) - 1,
     }
 
 
@@ -426,7 +416,7 @@ def run_lab():
         "血契千刀万剐": lab_blood_pact_qiankewanua(),
         "寄生滋养癌变": lab_jisheng_and_ziyang(),
         "冲击切割贯穿": lab_chongji_qiege_guanchuan(),
-        "同魂三相": lab_tonghun_sanxiang(),
+        "同魂笔": lab_tonghun(),
         "守夜灯透支": lab_shouyedeng_touzhi(),
         "负岳索插板": lab_fuyuesuo_board(),
         "进化残韵": lab_evolution_rhyme(),
@@ -841,9 +831,7 @@ def specs():
         S(name="无所求+高探索", region="扭曲都市", resonance="反转",
           prefer_relics=["无所求"], learn=["庇护", "杀伐"],
           explore=True, refuse=True, policy="kill"),
-        S(name="三相残韵盘残韵循环", region="扭曲都市", resonance="转换",
-          prefer_relics=["三相残韵盘"], learn=["庇护", "杀伐"],
-          hunt=["急速"], lingwu_cycle=["转换"], policy="kill"),
+        # 2026-10-13：【三相残韵盘】遗物删除，「三相残韵盘残韵循环」场景一并移除。
         S(name="同魂笔+残韵", region="罪孽都市", resonance="反转",
           prefer_relics=["同魂笔"], learn=["庇护", "杀伐"],
           hunt=["减速"], lingwu_cycle=["反转"], policy="kill"),
@@ -855,8 +843,6 @@ def specs():
             spec.formed_needed = _formed_checker((), ["寄生"])
         elif spec.name.startswith("滋养"):
             spec.formed_needed = _formed_checker((), ["滋养"])
-        elif spec.name.startswith("三相"):
-            spec.formed_needed = _formed_checker(["三相残韵盘"], ())
         elif spec.name.startswith("同魂"):
             spec.formed_needed = _formed_checker(["同魂笔"], ())
         elif spec.name.startswith("无所求"):
@@ -936,7 +922,7 @@ def main():
         ("血契千刀万剐", lab_blood_pact_qiankewanua),
         ("寄生滋养癌变", lab_jisheng_and_ziyang),
         ("冲击切割贯穿", lab_chongji_qiege_guanchuan),
-        ("同魂三相", lab_tonghun_sanxiang),
+        ("同魂笔", lab_tonghun),
         ("守夜灯透支", lab_shouyedeng_touzhi),
         ("负岳索插板", lab_fuyuesuo_board),
         ("进化残韵", lab_evolution_rhyme),

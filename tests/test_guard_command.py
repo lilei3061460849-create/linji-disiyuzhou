@@ -28,6 +28,8 @@ def _engine(suffix: str, region: str = "乱葬岗") -> GameEngine:
     setup = e.execute_action("setup_choose_region", {"region": region})
     e.execute_action("choose_discovered_relic",
                      {"relic_name": setup["result"]["relic_choices"][0]})
+    e.state.relics = []
+    # 2026-10-13：遗物池删2件后随机发放漂移，本文件断言与开局遗物无关，清空钉死环境。
     return e
 
 
@@ -48,7 +50,7 @@ def _start_battle_with(engine, monster):
     engine.state.energy = 0
     active = {r.name for r in engine.state.relics if engine.state.sealed_relics.get(r.name, 0) <= 0}
     bs = engine.execute_action("battle_start", {"relic_choices": {
-        n: {"use": False} for n in ("三相残韵盘", "猩红果实", "苍白之花") if n in active}})
+        n: {"use": False} for n in ("猩红果实", "苍白之花") if n in active}})
     assert bs["success"], bs
     # 用测试指定单怪替换配方出怪（等价于「这场战斗固定就是这只怪」），并清空增援队列
     engine.state.enemies.clear()

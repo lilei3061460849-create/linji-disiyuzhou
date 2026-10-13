@@ -80,19 +80,29 @@ def test_sealed_candidate_fights_in_dungeon():
     # 打一场乱葬岗战斗（显式提交战始遗物）
     e.state.energy = 0
     active = {r.name for r in e.state.relics if e.state.sealed_relics.get(r.name, 0) <= 0}
-    bs_choices = {n: {"use": False} for n in ("三相残韵盘", "猩红果实", "苍白之花") if n in active}
+    # 2026-10-13：【三相残韵盘】删除，战始显式决策只需覆盖现存遗物。
+    bs_choices = {n: {"use": False} for n in ("猩红果实", "苍白之花") if n in active}
     bs = e.execute_action("battle_start", {"relic_choices": bs_choices})
     assert bs["success"], bs
     assert len(e.state.enemies) >= 1, "乱葬岗应出怪"
     ai = TacticalAI(e)
     survived = False
+
+    def _drain_redemption():
+        # 2026-10-13：内容漂移后本局中途刷出【救赎】待结算（此前种子无），不排空会阻塞
+        # 后续行动；本条测的是封存角色参战，不是救赎，一律终结排空。
+        while e.state.pending_redemption:
+            rr = e.execute_action("resolve_redemption", {"option": "终结"})
+            assert rr["success"], rr
     for rnd in range(1, 30):
         if not e.state.player or not e.state.player.is_alive:
             break  # 玩家阵亡：死之传承中断会阻塞后续行动，属正常失败路径
+        _drain_redemption()
         rs = e.execute_action("round_start", {"relic_choices": round_start_relic_choices(e)})
         assert rs["success"], rs
         if not e.state.player.is_alive:
             break
+        _drain_redemption()
         ai.new_round()
         ai.take_turn()
         if not [x for x in e.state.enemies if x.is_alive]:
@@ -100,16 +110,19 @@ def test_sealed_candidate_fights_in_dungeon():
             break
         if not e.state.player.is_alive:
             break
+        _drain_redemption()
         e.execute_action("resolve_ally_phases", {})
         if not [x for x in e.state.enemies if x.is_alive]:
             survived = True
             break
         if not e.state.player.is_alive:
             break
+        _drain_redemption()
         mp = _resolve_monster_turn(e)
         assert mp["success"], mp
         if not e.state.player.is_alive:
             break
+        _drain_redemption()
         e.execute_action("round_end", {})
         if not [x for x in e.state.enemies if x.is_alive]:
             survived = True

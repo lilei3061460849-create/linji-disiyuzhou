@@ -99,21 +99,13 @@ def pick_wave_dodge_targets(option: dict) -> list[dict]:
 def battle_start_relic_choices(engine) -> dict:
     """战始可选遗物显式决策。
 
-    - 三相残韵盘：消耗一种残韵，[战终]获得另两种各1（净+1残韵）。有库存就用，
-      消耗存量最多的类型。
     - 猩红果实：流血10 → [战终]血限+2（永久成长）。付得起就用。
+    （2026-10-13 用户令：【三相残韵盘】遗物删除，决策分支一并移除。）
     """
     active = {r.name for r in engine.state.relics
               if engine.state.sealed_relics.get(r.name, 0) <= 0}
     p = engine.state.player
     out: dict = {}
-    if "三相残韵盘" in active:
-        stock = {k: v for k, v in engine.state.resonance.items() if v >= 1}
-        if stock:
-            consume = max(stock, key=stock.get)
-            out["三相残韵盘"] = {"use": True, "resonance_type": consume}
-        else:
-            out["三相残韵盘"] = {"use": False}
     if "猩红果实" in active and p is not None:
         affordable = p.current_hp >= 10 + max(10, math.ceil(p.blood_limit * 0.15))
         out["猩红果实"] = {"use": affordable}

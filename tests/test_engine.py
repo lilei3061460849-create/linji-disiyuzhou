@@ -23,7 +23,7 @@ def _choose_region(engine, region):
     result = engine.execute_action("setup_choose_region", {"region": region})
     if result.get("success") and engine.state.pending_relic_choices:
         # 通用流程测试不覆盖需要额外显式选择的遗物；相关遗物有独立测试。
-        optional = {"三相残韵盘", "回锋刀", "血契"}
+        optional = {"回锋刀", "血契"}   # 2026-10-13：【三相残韵盘】删除
         choice = next((n for n in engine.state.pending_relic_choices if n not in optional),
                       engine.state.pending_relic_choices[0])
         engine.execute_action("choose_discovered_relic", {"relic_name": choice})
@@ -853,33 +853,11 @@ def test_rebellion_and_legacy():
 
 
 def test_relics_five_more():
-    """测试三相残韵盘/无所求/买路财/同魂笔"""
-    print("\n=== 测试：剩余5遗物 ===")
+    """测试无所求/同魂笔（2026-10-13：【三相残韵盘】删除、【买路财】改制为逃跑行动，原两段已删）"""
+    print("\n=== 测试：剩余遗物 ===")
     from engine.models import GameState, Relic
     from engine.combat import CombatEngine
     from engine.dice import DiceEngine
-
-    # 三相残韵盘：战始消耗转换(最多)，战终获反转+曲解
-    st = GameState(); st.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60)
-    st.resonance = {"转换":2, "反转":1, "曲解":0}
-    st.relics = [Relic(name="三相残韵盘", effect="")]
-    combat = CombatEngine(st, DiceEngine()); combat.reset_monster_activation()
-    combat.process_relics("battle_start", {"relic_choices": {
-        "三相残韵盘": {"use": True, "resonance_type": "转换"},
-    }})  # 显式选择消耗转换
-    assert st.resonance["转换"] == 1, f"应消耗转换，实{st.resonance}"
-    combat.process_relics("battle_end")  # 获反转+曲解各1
-    assert st.resonance["反转"] == 2 and st.resonance["曲解"] == 1, f"战终应+反转+曲解，实{st.resonance}"
-    print(f"  ✓ 三相残韵盘：转换2→1，战终反转1→2、曲解0→1")
-
-    # 买路财：撤退成本=怪物20%血限
-    st2 = GameState(); st2.player = Entity(name="贾凡", entity_type="轮回者", blood_limit=60, current_hp=60)
-    st2.relics = [Relic(name="买路财", effect="")]
-    m = Entity(name="怪", entity_type="怪物", blood_limit=100, current_hp=100)
-    combat2 = CombatEngine(st2, DiceEngine())
-    esc = combat2.buyaicai_escape_cost(m)
-    assert esc["shard_cost"] == 20, f"买路财应20碎片(100*20%)，实{esc['shard_cost']}"
-    print(f"  ✓ 买路财：100血限怪撤退成本=20碎片")
 
     # 无所求：resolve_event拒绝+1属性点（2026-09-16 裁定：按《物品索引》
     # 原文入属性点池，不再由引擎折算成速限/法限）
@@ -895,7 +873,7 @@ def test_relics_five_more():
     assert engine.state.attribute_points == pool + 1, "无所求拒绝应+1属性点"
     assert engine.state.player.speed_limit == sp, "属性点入池，不应直接加速限"
     print(f"  ✓ 无所求：选拒绝类选项+1属性点(池{pool}→{engine.state.attribute_points})")
-    print("  ✓ 剩余5遗物测试通过")
+    print("  ✓ 剩余遗物测试通过")
 
 
 def test_evolution_yuanchu():

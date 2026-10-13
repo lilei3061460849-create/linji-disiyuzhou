@@ -88,7 +88,7 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
     # 副本专属道纹
     REGION_EXCLUSIVE_DAOWEN = {
         "扭曲都市": {"变形","定型","畸变","搏命","超频","坏死","退化"},   # 2026-10-03 删【爆裂】
-        "罪孽都市": {"点金","逼债","豪夺","清算","赎金","假钞","赌命","消灾"},
+        "罪孽都市": {"点金","典当","豪夺","清算","赎金","假钞","赌命","消灾"},   # 2026-10-13 删【逼债】，【典当】顶替
         "龙心谷":   {"加害","龙鳞","逆鳞","裂变","背负","伤痕"},   # 2026-10-03 删【活血】；2026-10-11 删【嫁祸】
     }
     
@@ -126,8 +126,6 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         # 观察者是可 pickle 的模块级类实例（持引擎 id，经弱引用表解析），
         # 不会把引擎带进存档/快照（见 combat_events.py 注释）。
         register_combat_event_observer(self.state, self)
-        # 三相残韵盘本场消耗的残韵
-        self._sanxiang_consumed = ""
         # 残韵改写：entity_id → {源道纹: 变化后道纹}，只改下一次发动结算，不改持有
         self._resonance_rewrites: dict[int, dict[str, str]] = {}
         # 效果链深度保险丝（见 MAX_EFFECT_CHAIN_DEPTH / engine/resolution.py）。
@@ -1055,11 +1053,11 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
             # 机制的报告条目并入 effects，战报格式与迁移前一致。
             effects.extend(self._dispatch_phase(Phase.ROUND_START, target=entity))
 
-        # ---- F2：罪孽专属道纹 [回始] 结算（逼债/清算/赌命）----
+        # ---- F2：罪孽专属道纹 [回始] 结算（清算/赌命；2026-10-13 删【逼债】剩两段）----
         # 2026-10-03 迁移：本位置只宣布相位时点（锚点 = 回始效果循环之后、current_round+1 之前），
-        # 三段 for 已搬进声明层（builtins 的 逼债·结算/清算·结算/赌命·结算）。
+        # 结算 for 已搬进声明层（builtins 的 清算·结算/赌命·结算）。
         # 分发语义=统一状态排序：按各账本状态记录的来源道纹序列位置结算；不再保留旧的
-        # 「逼债全体 → 清算全体 → 赌命全体」固定顺序。账本访问一律走 mechanisms.ledger。
+        # 「逼债全体 → 清算全体 → 赌命全体」固定顺序（逼债已删）。账本访问一律走 mechanisms.ledger。
         effects.extend(self._dispatch_phase_all(
             Phase.ROUND_START_SETTLE,
             self.state.get_all_player_side() + self.state.get_all_enemy_side()))
@@ -1176,7 +1174,7 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
             expired = entity.tick_status_effects()
             if expired:
-                # 只有“持续期间直接改写面板”的效果到期即还原；畸变/伤痕/逼债等
+                # 只有“持续期间直接改写面板”的效果到期即还原；畸变/伤痕等
                 # 已经产生的累计局内后果保留到战终，再由battle作用域统一回滚。
                 panel_modifier_sources = {"全力", "弱化"}
                 rolled_back = self.state.rollback_scoped_sources(
@@ -1203,8 +1201,8 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                                     "current_speed": entity.current_speed,
                                     "current_mana": entity.current_mana})
                 # 干扰/手雷减攻到期自动由 tick 清理，无需额外
-            # F2：逼债/清算状态消失即清账（∞/持续X到期后不再逐回始结算）。
-            # 2026-10-03 迁移：判定与清账都在声明层（逼债·对账/清算·对账）；
+            # F2：清算状态消失即清账（∞/持续X到期后不再逐回始结算）。
+            # 2026-10-03 迁移：判定与清账都在声明层（清算·对账）；2026-10-13 删【逼债】。
             # 本行只宣布相位时点，位置必须在 status tick 之后（否则会多结算一轮）。
             effects.extend(self._dispatch_phase(Phase.ROUND_END_RECONCILE, target=entity))
             # F2：抵扣封印/豪夺夺取回合递减统一走 _tick_sealed_and_stolen_relics，
@@ -1299,18 +1297,7 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
             raise ValueError("relic_choices必须是对象")
         active = {r.name for r in self.state.relics if self.state.sealed_relics.get(r.name, 0) <= 0}
         player = self.state.player
-        for name in ("三相残韵盘",):
-            if name not in active:
-                continue
-            decision = choices.get(name)
-            if not isinstance(decision, dict) or not isinstance(decision.get("use"), bool):
-                raise ValueError(f"持有【{name}】时必须显式提交relic_choices.{name}.use布尔值")
-            if not decision["use"]:
-                continue
-            if name == "三相残韵盘":
-                resonance = decision.get("resonance_type", "")
-                if resonance not in ("转换", "反转", "曲解") or self.state.resonance.get(resonance, 0) < 1:
-                    raise ValueError("三相残韵盘必须显式选择一种当前持有的resonance_type")
+        # 2026-10-13 用户令：【三相残韵盘】遗物删除，原战始显式决策分支一并移除。
         # 2026-10-11 用户令：【苍白之花】改为纯被动（物品索引.md:110「你的当前法力可以
         # 超出[法限]。」），旧效果「战始可选择疲惫5；战终精力+1」废止——它不再出现在
         # 战始可选遗物里，也不再有 use 布尔值需要提交。
@@ -1424,11 +1411,7 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         if trigger == "battle_start":
             choices = ctx.get("relic_choices", {})
             self.validate_battle_start_relic_choices(choices)
-            if "三相残韵盘" in relics and choices["三相残韵盘"]["use"]:
-                consume = choices["三相残韵盘"]["resonance_type"]
-                self.state.resonance[consume] -= 1
-                self._sanxiang_consumed = consume
-                logs.append(f"三相残韵盘：消耗{consume}残韵")
+            # 2026-10-13 用户令：【三相残韵盘】遗物删除（残韵生产改由道纹【典当】承接发现侧）。
             if "猩红果实" in relics and choices["猩红果实"]["use"]:
                 decision = choices["猩红果实"]
                 self.pay_numeric_cost(
@@ -1461,19 +1444,12 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         # 首个注册者是改版后的【缄默面具】：[战终]法限+X）。
         # process_relics 只宣布时点，具体机制条件/效果都在声明层。
         if trigger == "battle_end":
-            logs.extend(self._dispatch_phase(
-                Phase.BATTLE_END, target=player, picks={"sanxiang_consumed": self._sanxiang_consumed}))
+            logs.extend(self._dispatch_phase(Phase.BATTLE_END, target=player))
         return logs
 
-    def buyaicai_escape_cost(self, monster: Entity) -> dict:
-        """买路财：失去等同于怪物20%[血限]的[碎片]可安全撤退；碎片不足可用2生命=1碎片补"""
-        if not monster:
-            return {"can_escape": False, "reason": "无目标"}
-        cost = math.ceil(monster.blood_limit * 0.2)
-        short = max(0, cost - self.state.shards)
-        life_cost = short * 2  # 1碎片=2生命
-        return {"can_escape": True, "shard_cost": cost, "shortfall_shards": short,
-                "extra_life_cost": life_cost}
+    # 2026-10-13 用户令：【买路财】遗物删除（撤退改制为轮回者【逃跑】行动，
+    # 一次付清5次出手强制脱战；见 api._action_declare_escape）。原 buyaicai_escape_cost
+    # 与 api._action_retreat_via_toll 一并移除。
 
     def apply_opposing_longxi(self, actor: Entity) -> Optional[dict]:
         """若对方持有龙息，actor 行动前受 10×当前回合必中伤害。"""

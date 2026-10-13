@@ -48,7 +48,6 @@ class ActionPreview:
             "activated": copy.deepcopy(combat._monster_activated),
             "round_used": copy.deepcopy(combat._monster_daowen_round_used),
             "rewrites": copy.deepcopy(combat._resonance_rewrites),
-            "sanxiang": combat._sanxiang_consumed,
             "split_spawned": getattr(combat, "_split_clones_spawned", 0),
             "evolved": copy.deepcopy(combat._monster_evolved),
             "effect_chain_depth": combat._effect_chain_depth,
@@ -109,7 +108,6 @@ class ActionPreview:
         combat._monster_activated = snap["activated"]
         combat._monster_daowen_round_used = snap["round_used"]
         combat._resonance_rewrites = snap["rewrites"]
-        combat._sanxiang_consumed = snap["sanxiang"]
         combat._split_clones_spawned = snap["split_spawned"]
         combat._monster_evolved = snap["evolved"]
         combat._effect_chain_depth = snap["effect_chain_depth"]

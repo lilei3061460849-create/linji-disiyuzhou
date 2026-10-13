@@ -32,7 +32,7 @@ bl = _load()
 
 def _finish_region_setup(engine, region):
     result = engine.execute_action("setup_choose_region", {"region": region})
-    optional = {"三相残韵盘"}
+    optional = set()   # 2026-10-13：【三相残韵盘】删除，无需规避
     choice = next((n for n in result["result"]["relic_choices"] if n not in optional),
                   result["result"]["relic_choices"][0])
     engine.execute_action("choose_discovered_relic", {"relic_name": choice})
@@ -41,8 +41,7 @@ def _finish_region_setup(engine, region):
 
 def _start_battle(engine, relic):
     engine.state.energy = 0
-    choices = {relic: {"use": False}} if relic in {
-        "三相残韵盘"} else {}
+    choices = {}   # 2026-10-13：【三相残韵盘】删除，无需预填显式决策
     return engine.execute_action("battle_start", {"relic_choices": choices})
 
 
@@ -400,6 +399,9 @@ def test_fitness_fixed_mode_is_deterministic(monkeypatch, tmp_path):
     属污染而非设计。现在先跑一遍 evaluate_build 让候选封存落盘并快照；每次 fitness
     前恢复快照，保证两次调用从同一状态出发（死斗弹出队首候选会改写文件，胜负都不
     是不动点），死斗路径也被确定性比较覆盖。
+
+    2026-10-13：遗物池删2件后内容漂移，原 gen=1 的三局再无人进第 7 场（前置断言挂）；
+    实测同构筑 gen=7 有 1 局进第 7 场并封存，前置与 fitness 一并改 gen=7（比的仍是确定性）。
     """
     import sim.duel_pvp as _dp
     _orig = _dp.run_duel_pvp
@@ -411,7 +413,7 @@ def test_fitness_fixed_mode_is_deterministic(monkeypatch, tmp_path):
     lab = {"db_path": str(tmp_path / "seed.db"),
            "sealed_path": str(tmp_path / "sealed.json")}
     # 前置：空白槽跑一遍，让封存候选落盘（固定种子下行为确定）。
-    bl.evaluate_build("杀伐", ["庇护", "再生"], 3, 1, lab_paths=lab)
+    bl.evaluate_build("杀伐", ["庇护", "再生"], 3, 7, lab_paths=lab)
     assert os.path.exists(lab["sealed_path"]), \
         "前置失败：未封存候选则死斗路径无覆盖，请检查本构筑能否进第 7 场"
     with open(lab["sealed_path"], "rb") as _f:
@@ -420,7 +422,7 @@ def test_fitness_fixed_mode_is_deterministic(monkeypatch, tmp_path):
     def _fitness():
         with open(lab["sealed_path"], "wb") as _f:
             _f.write(_snapshot)
-        return bl.fitness("杀伐", ["庇护", "再生"], 3, gen=1, lab_paths=lab)
+        return bl.fitness("杀伐", ["庇护", "再生"], 3, gen=7, lab_paths=lab)
 
     f1, v1, _ = _fitness()
     f2, v2, _ = _fitness()

@@ -42,7 +42,6 @@ class MonsterPhaseMixin:
         self._monster_activated = {}
         self._monster_evolved = set()  # 进化（原初X）：每场战斗限一次
         self._monster_daowen_round_used = {}
-        self._sanxiang_consumed = ""
         self._resonance_rewrites = {}
 
     def _monster_round_used(self, monster: Entity) -> set:
@@ -303,6 +302,11 @@ class MonsterPhaseMixin:
             amount = calc.get(key, 0)
             if amount and capacity < amount:
                 return False
+        # 2026-10-13：失忆类代价（【点金】X/【典当】2X）按持有道纹种数校验。
+        # 此前怪物侧没有这道闸门：X 超过持有数也能发动（多拿碎片/多发现，
+        # 却只忘记现有的几种）。【典当】进打手/看门犬面板后这条必须补上。
+        if calc.get("forget_daowen", 0) > len(getattr(caster, "dao_wen", {}) or {}):
+            return False
         # 2026-09-16 用户令：怪物与轮回者同口径持有[法限]，发动【消耗】类道纹必须付法力。
         # 旧条文「怪物不持有法力、发动道纹不支付法力」已废止。
         if calc.get("cost_type") == "消耗" and calc.get("cost", 0) > 0:
@@ -837,7 +841,6 @@ class MonsterPhaseMixin:
             "activated": copy.deepcopy(self._monster_activated),
             "round_used": copy.deepcopy(self._monster_daowen_round_used),
             "rewrites": copy.deepcopy(self._resonance_rewrites),
-            "sanxiang": self._sanxiang_consumed,
             "dice": copy.deepcopy(self.dice),
             "split_spawned": getattr(self, "_split_clones_spawned", 0),
         }
@@ -856,7 +859,6 @@ class MonsterPhaseMixin:
         self._monster_activated = snap["activated"]
         self._monster_daowen_round_used = snap["round_used"]
         self._resonance_rewrites = snap["rewrites"]
-        self._sanxiang_consumed = snap["sanxiang"]
         self.dice = snap["dice"]
         self._split_clones_spawned = snap["split_spawned"]
 

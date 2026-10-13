@@ -240,12 +240,13 @@ def choose_pre_battle(e, battle_no, todo_spells, todo_daowen, rng=None):
         return "雇佣", {"name": f"铁卫{len(e.state.employees) + 1}",
                         "blood_alloc": 5, "atk_bundles": 5}
     # 【领悟】已于 2026-09-10 删除（DM裁定）：残韵不再能凭精力白拿。
-    # 后果：债务流原先靠局外领悟在第1场前攒齐 转换+反转 来解锁罪孽都市专属【逼债】，
-    # 这条路已经断了——现在只能靠开局必选、【三相残韵盘】或副本事件获取残韵。
+    # 后果：债务流原先靠局外领悟在第1场前攒齐 转换+反转 来解锁罪孽都市专属道纹，
+    # 这条路已经断了——现在只能靠开局必选或副本事件获取残韵
+    # （【三相残韵盘】已于2026-10-13删除，【逼债】同日删除由【典当】顶替）。
     from engine.gamedata import REGION_EXCLUSIVE_DAOWEN
     if todo_daowen:
         name = todo_daowen[0]
-        # 逼债是罪孽都市专属：未残韵解锁前不能学（学习门禁）。
+        # 罪孽都市专属道纹：未残韵解锁前不能学（学习门禁）。
         # 【领悟】已删除，无法再靠局外行动补残韵 → 直接放弃该目标改选其它行动。
         from engine.gamedata import REGION_EXCLUSIVE_DAOWEN
         if name in REGION_EXCLUSIVE_DAOWEN["罪孽都市"]:
@@ -275,9 +276,9 @@ def choose_pre_battle(e, battle_no, todo_spells, todo_daowen, rng=None):
 def unlock_sin_city_daowen(e, log=None):
     """罪孽都市一阶：用残韵对怪物的专属道纹转化，让玩家获得第一种罪孽都市道纹。
 
-    门禁：学习罪孽都市专属道纹须先经残韵获得一种（规则正文）。优先 点金→转换→逼债
-    （逼债对乱葬岗0碎片怪=每回始削2X血限，是二阶可用武器）；无点金怪则用任意
-    专属道纹+存在的残韵路径解锁门禁。返回是否成功解锁。"""
+    门禁：学习罪孽都市专属道纹须先经残韵获得一种（规则正文）。优先 点金→转换→典当
+    （2026-10-13：【逼债】删除，【典当】顶替其闭环格；解锁门禁本身不挑道纹）；
+    无点金怪则用任意专属道纹+存在的残韵路径解锁门禁。返回是否成功解锁。"""
     p = e.state.player
     if p is None or not p.is_alive:
         return False
@@ -290,7 +291,7 @@ def unlock_sin_city_daowen(e, log=None):
     if not stock:
         return False
 
-    # 第一优先：点金怪 → 转换 → 逼债（最想要的二阶武器）
+    # 第一优先：点金怪 → 转换 → 典当（解锁门禁即可，不挑道纹）
     if "转换" in stock:
         for m in e.state.enemies:
             if m.is_alive and "点金" in m.dao_wen:
@@ -299,7 +300,7 @@ def unlock_sin_city_daowen(e, log=None):
                     "target_ref": f"enemy:{e.state.enemies.index(m)}"})
                 if r.get("success"):
                     if log is not None:
-                        log.append(f"  残韵：转换 点金 → 逼债（现持有{list(p.dao_wen)}）")
+                        log.append(f"  残韵：转换 点金 → 典当（现持有{list(p.dao_wen)}）")
                     return True
     # 兜底：任意专属道纹 × 存在路径的残韵类型
     for m in e.state.enemies:
@@ -328,8 +329,8 @@ def play_first_tier(seed: int, region: str, sealed_path: str,
                     debt_build: bool = False, spend_shards: bool = True) -> dict:
     """跑一局一阶轮回，通关后把封存快照写到 sealed_path。
 
-    debt_build=True：罪孽都市专属构建——残韵解锁债务道纹并学习【逼债】，
-    使胜者带着乱葬岗可用的削血限武器进入二阶。
+    debt_build=True：罪孽都市专属构建——残韵解锁门禁并学习【赎金】
+    （2026-10-13：【逼债】删除，债务武器换成赎金抽碎片）。
     spend_shards=True（默认）：七场局外把碎片尽量花成战力（高阶修行/附煞/
     共鸣遗物），封存带"已转化战力"而非"剩余碎片"——不花碎片怎么快速提高战力？
     不提高战力怎么通过战斗？（用户裁定：花碎片是正常玩法，设为默认）"""
@@ -342,7 +343,8 @@ def play_first_tier(seed: int, region: str, sealed_path: str,
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     setup = e.execute_action("setup_choose_region", {"region": region})
-    optional_relics = {"三相残韵盘"}
+    # 2026-10-13：【三相残韵盘】删除，无需规避的可选战始遗物。
+    optional_relics = set()
     starter_relic = next((n for n in setup["result"]["relic_choices"] if n not in optional_relics),
                          setup["result"]["relic_choices"][0])
     e.execute_action("choose_discovered_relic", {"relic_name": starter_relic})
@@ -351,7 +353,7 @@ def play_first_tier(seed: int, region: str, sealed_path: str,
     todo_spells = list(SPELL_ORDER)
     todo_daowen = list(DAOWEN_ORDER)
     if debt_build:
-        todo_daowen.append("逼债")
+        todo_daowen.append("赎金")
     cleared = 0
 
     for b in range(1, 8):
@@ -468,7 +470,7 @@ def play_first_tier(seed: int, region: str, sealed_path: str,
             if not rs.get("success"):
                 return {"cleared": cleared, "won": False, "invalid": True,
                         "reason": f"round_start: {rs.get('error')}"}
-            # 罪孽都市专属：战斗内先用残韵解锁债务道纹（获得第一种专属道纹后局外才能学逼债）
+            # 罪孽都市专属：战斗内先用残韵解锁门禁（获得第一种专属道纹后局外才能学赎金）
             if debt_build:
                 unlock_sin_city_daowen(e)
             # 玩家回合：保留法术法力（手操留一手），其余满法输出

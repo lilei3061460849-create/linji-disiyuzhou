@@ -34,7 +34,7 @@ def test_discovery_filter_does_not_skip_blood_pact_as_an_active_relic(path, name
     interactive = _literal_constant(path, name)
     assert "血契" not in interactive
     assert "对手血契" not in interactive
-    assert interactive == {"三相残韵盘", "回锋刀", "无所求"}
+    assert interactive == {"回锋刀", "无所求"}   # 2026-10-13：【三相残韵盘】删除
     choices = ["血契", "回锋刀"]
     assert next(candidate for candidate in choices if candidate not in interactive) == "血契"
 

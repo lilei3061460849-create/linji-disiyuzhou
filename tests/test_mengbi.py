@@ -22,6 +22,8 @@ def _engine(suffix):
         "name": "贾凡", "blood_points": 11, "speed_points": 8, "mana_points": 6,
     })
     finish_initial_daowen(engine)
+    engine.state.relics = []
+    # 2026-10-13：遗物池删2件后随机发放漂移，本文件断言与开局遗物无关，清空钉死环境。
     engine.state.current_region = "龙心谷"
     engine.state.phase = "in_combat"
     p = engine.state.player

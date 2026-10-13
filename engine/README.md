@@ -250,11 +250,11 @@ engine.remove_personality(entity)       # 手工清除（幂等）
 | `enslave_as_chizu` | 初拥之夜·血族尖牙：衰老20，将生命低于自身的目标转化为赤族 |
 | `use_truth_eye` | 初拥之夜·真理眼：抛Interrupt交DM裁定，冷却2场 |
 | `blood_feast` | 初拥之夜·血食：命零一名赤族，回复等量生命 |
-| `retreat_via_toll` | 买路财：真正执行安全撤退(需持有该遗物) |
+| `choose_diandang_daowen` | 领取【典当】发现：从当前组3选1里选1种获得，不消耗出手 |
 | `prepare_attack` / `resolve_attack` | 两阶段攻击：逐击绑定目标、闪避、血影和法术反应 |
 | `consume_item` | 使用消耗品 |
 | `declare_wish` | 声明许愿：轮回者向"某人"祈求（消耗1出手） |
-| `declare_escape` | 声明逃跑 |
+| `declare_escape` | 逃跑：一次付清5次出手，以当前状态强制脱离本场战斗（死斗/【不离】不可） |
 | `declare_evolution` | 怪物进化：发动【原初X】借用原始怪物道纹（引擎直接结算） |
 | `round_start` | 回始结算 |
 | `round_end` | 回终结算 |

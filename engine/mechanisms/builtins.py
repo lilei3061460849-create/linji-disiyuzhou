@@ -1,6 +1,7 @@
-"""已迁移到声明层的机制（当前注册表共25项，以下为原16项历史说明：加害、龙鳞、帮派令、畸变·结算、
+"""已迁移到声明层的机制（当前注册表共22项，以下为原16项历史说明：加害、龙鳞、帮派令、畸变·结算、
 焦黑发丝、洞察·结算、狂暴·标记、畸变·标记、洗劫·夺碎片、缄默面具、龙爪、
-逼债·结算、清算·结算、赌命·结算、逼债·对账、清算·对账）。
+清算·结算、赌命·结算、清算·对账；2026-10-13 用户令删【逼债】，
+【逼债·结算/对账】与【三相残韵盘·战终】随道纹/遗物删除一并移除）。
 
 迁移协议（迁移前后必须同时满足）：
   1. 规则语义与旧实现完全一致（加害：amount+状态值；龙鳞：max(0, amount-状态值)；
@@ -370,42 +371,12 @@ JIAOHHEIFASI = Mechanism(
 
 # ==========================================================================
 # 罪孽都市·账本三机制（2026-10-03 迁移）
-# 旧实现：combat.py 回始效果循环后的三段内嵌 for（逼债→清算→赌命），
-# 以及回终「状态消失即清账」块。三者共用一份账本存储（engine/mechanisms/ledger.py）
-# 与一个碎片动词（shards）。结算顺序服从各状态来源道纹在施法者道纹序列中的位置，
-# 不再固定为「逼债全体 → 清算全体 → 赌命全体」；priority 仅作为缺少序列锚点时的后备。
+# 旧实现：combat.py 回始效果循环后的内嵌 for（2026-10-03 迁移时为逼债→清算→赌命三段；
+# 2026-10-13 用户令删【逼债】后剩清算→赌命两段），以及回终「状态消失即清账」块。
+# 共用一份账本存储（engine/mechanisms/ledger.py）与一个碎片动词（shards）。
+# 结算顺序服从各状态来源道纹在施法者道纹序列中的位置；
+# priority 仅作为缺少序列锚点时的后备。
 # ==========================================================================
-
-def _bizhai_effect(ctx: TriggerContext, targets: list) -> dict | None:
-    """【逼债·结算】[回始]目标失去X碎片；无力支付的部分记负债（真碎片扣负）。
-
-    逐字复刻旧 combat.py 逼债块：可支付量够 → `bizhai` 报告；不够 → `bizhai_debt`
-    报告（含 obligation/shards_now/debt_now）。每笔账在每次回始各结算一次（旧口径：
-    挂账不删，状态 ∞；状态消失由【逼债·对账】清账）。
-    """
-    entity = ctx.target
-    entries = list(ledger_of(entity, "逼债"))
-    if not entries:
-        return None
-    results = []
-    for entry in entries:
-        x = int(entry.get("x", 0))
-        if x <= 0:
-            continue
-        paid = apply_verb(ctx.combat, "shards", {
-            "target": entity, "delta": -x,
-            "ctx": {"timing": "round_start", "source": "逼债", "source_type": "daowen",
-                    "actor": entity, "target": entity, "mechanic": "cost", "subtype": "bizhai",
-                    "amount": -x, "tags": {"daowen", "round_start", "shards"}},
-        })
-        if paid["paid"]:
-            results.append({"type": "bizhai", "entity": entity.name, "lost_shards": x})
-        else:
-            results.append({"type": "bizhai_debt", "entity": entity.name,
-                            "obligation": x, "shards_now": paid["shards_now"],
-                            "debt_now": paid["debt"]})
-    return results or None
-
 
 def _qingsuan_effect(ctx: TriggerContext, targets: list) -> dict | None:
     """【清算·结算】[回始]目标失去[施法者当前碎片]点格挡（每回始重读施法者碎片）。"""
@@ -451,17 +422,7 @@ def _duming_effect(ctx: TriggerContext, targets: list) -> dict | None:
             "roll": picked["roll"], "of": picked["of"], "damage": rd["lost"], **rd}
 
 
-BIZHAI_SETTLE = Mechanism(
-    name="逼债·结算",
-    when=Trigger.phase(Phase.ROUND_START_SETTLE),
-    effect=_bizhai_effect,
-    target=SELF,
-    status_name="逼债",
-    # 旧实现按“账本是否有账”判定（不看状态：挂账在先、状态只是持续期标记），
-    # 故这里 condition=None，由 effect 读账本自判——账空即无报告条目。
-    condition=None,
-    priority=10,     # 仅作为状态缺少道纹序列位置时的兼容后备
-)
+# 2026-10-13 用户令删【逼债】：BIZHAI_SETTLE（【逼债·结算】）一并移除。
 
 QINGSUAN_SETTLE = Mechanism(
     name="清算·结算",
@@ -484,13 +445,6 @@ DUMING_SETTLE = Mechanism(
 )
 
 
-def _bizhai_reconcile_effect(ctx: TriggerContext, targets: list) -> None:
-    """【逼债·对账】状态消失即清账（∞ 逼债被驱散/清除后不再逐回始结算）。"""
-    if not ctx.target.has_status("逼债"):
-        clear_ledger(ctx.target, "逼债")
-    return None
-
-
 def _qingsuan_reconcile_effect(ctx: TriggerContext, targets: list) -> None:
     """【清算·对账】持续X到期（状态被 tick 掉）后清账，防止多结算一轮。"""
     if not ctx.target.has_status("清算"):
@@ -498,15 +452,7 @@ def _qingsuan_reconcile_effect(ctx: TriggerContext, targets: list) -> None:
     return None
 
 
-BIZHAI_RECONCILE = Mechanism(
-    name="逼债·对账",
-    when=Trigger.phase(Phase.ROUND_END_RECONCILE),
-    effect=_bizhai_reconcile_effect,
-    target=SELF,
-    status_name="逼债",
-    condition=None,
-    priority=10,     # 锚点：回终 status tick 之后（原「F2 清账」位置）
-)
+# 2026-10-13 用户令删【逼债】：BIZHAI_RECONCILE（【逼债·对账】）一并移除。
 
 QINGSUAN_RECONCILE = Mechanism(
     name="清算·对账",
@@ -530,10 +476,8 @@ MECHANISMS.register(JIBIAN_MARKER)
 MECHANISMS.register(XIJIE_PASSIVE)
 MECHANISMS.register(SILENT_MASK)
 MECHANISMS.register(DRAGON_CLAW)
-MECHANISMS.register(BIZHAI_SETTLE)
 MECHANISMS.register(QINGSUAN_SETTLE)
 MECHANISMS.register(DUMING_SETTLE)
-MECHANISMS.register(BIZHAI_RECONCILE)
 MECHANISMS.register(QINGSUAN_RECONCILE)
 
 
@@ -614,15 +558,6 @@ def _bulletproof_effect(ctx: TriggerContext, targets: list) -> str:
     return f"防弹插板：{ctx.target.name}+15格挡"
 
 
-def _sanxiang_end_effect(ctx: TriggerContext, targets: list) -> str:
-    consumed = ctx.picks.get("sanxiang_consumed", "")
-    others = [t for t in ("转换", "反转", "曲解") if t != consumed]
-    for name in others:
-        apply_verb(ctx.combat, "mapping", {
-            "mapping": ctx.state.resonance, "key": name, "op": "add", "value": 1})
-    return f"三相残韵盘：战终获得{'、'.join(others)}残韵各1"
-
-
 def _player_subject(ctx: TriggerContext) -> bool:
     return ctx.target is ctx.state.player and ctx.target is not None
 
@@ -652,11 +587,8 @@ DRAGON_BLOODLINE = Mechanism(
     name="龙族血脉·乘区", when=Trigger.phase(Phase.MULTIPLIER_ADJUST), target=TARGET,
     condition=all_(side_has("龙族血脉", of="source"), not_(entity_type("怪物")), damage_type_not("代价")),
     effect=lambda ctx, targets: {"amount": ctx.amount * 2}, priority=10)
-SANXIANG_END = Mechanism(
-    name="三相残韵盘·战终", when=Trigger.phase(Phase.BATTLE_END), target=SELF,
-    condition=all_(player_run_relic_active("三相残韵盘"), lambda ctx: bool(ctx.picks.get("sanxiang_consumed"))),
-    effect=_sanxiang_end_effect, priority=10)
+# 2026-10-13 用户令：【三相残韵盘】遗物删除，SANXIANG_END（【三相残韵盘·战终】）一并移除。
 
 for _mechanism in (BLOOD_LINEAGE, RED_CURSE, FIRST_ROUND_SHIELD, LEATHER_SHIELD,
-                   LEATHER_RECORD, ROUND_TRACKING_RESET, BULLETPROOF, DRAGON_BLOODLINE, SANXIANG_END):
+                   LEATHER_RECORD, ROUND_TRACKING_RESET, BULLETPROOF, DRAGON_BLOODLINE):
     MECHANISMS.register(_mechanism)

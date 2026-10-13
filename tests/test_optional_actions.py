@@ -2,12 +2,12 @@
 pytest - 可选遗物/法器策略（sim/optional_actions.py）
 
 背景（用户：可以不用 但是不能不让用，修）：
-此前所有脚本把可选战始遗物（三相残韵盘/猩红果实/苍白之花）一律
+此前所有脚本把可选战始遗物（猩红果实/苍白之花）一律
 use:False 拒绝，回始遗物（血契/余火印）从不使用，终音法器（黑金名片/罪业金库/
 教父左轮/烬翼/鲜血之翼/共心环）没有任何发动策略——这些机制"存在但不可用"。
 
 本测试锁定：
-1. 战始遗物按情形主动发动（有残韵→三相残韵盘；速度高→苍白之花）
+1. 战始遗物按情形主动发动（速度高→苍白之花；2026-10-13【三相残韵盘】删除）
 2. 回始遗物按情形主动发动（回锋刀 / 余火印；血契不再是回始主动遗物）
 3. 终音法器可被实际发动（黑金名片减敌血限/罪业金库换格挡/教父左轮必中伤害/
    共心环共享龙心/鲜血之翼飞行）
@@ -62,18 +62,7 @@ def engine(tmp_path):
 # test_blood_pact_shares_every_supported_numeric_cost /
 # test_event_and_daowen_costs_use_blood_pact_bus 等处。
 
-def test_san_xiang_disc_consumes_abundant_resonance(engine):
-    """三相残韵盘：有残韵库存时消耗库存最多的类型，战终补回另两种。"""
-    engine.state.relics.append(Relic(name="三相残韵盘",
-                                     effect="[战始]消耗一种残韵；[战终]获得另两种残韵各1"))
-    engine.state.resonance = {"转换": 0, "反转": 2, "曲解": 1}
-    engine.state.energy = 0
-    choices = battle_start_relic_choices(engine)
-    assert choices.get("三相残韵盘", {}).get("use") is True
-    assert choices["三相残韵盘"]["resonance_type"] == "反转"
-    bs = engine.execute_action("battle_start", {"relic_choices": choices})
-    assert bs.get("success"), bs
-    assert any("三相残韵盘" in str(l) for l in (bs.get("relic_logs") or []))
+# 2026-10-13：【三相残韵盘】删除，原 test_san_xiang_disc 用例（唯一驱动已删）一并删除。
 
 
 # ---------- 回始遗物 ----------

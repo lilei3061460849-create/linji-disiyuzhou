@@ -27,7 +27,8 @@ TUNING = {
 
 REGION_EXCLUSIVE = {
     "扭曲都市": {"变形","定型","畸变","僵化","超频","坏死","爆裂","退化"},
-    "罪孽都市": {"点金","逼债","抵扣","清算","赎金","假钞","赌命","消灾"},
+    # 2026-10-13：删【逼债】→【典当】顶替（发现类，无回始结算，本模拟不建模其发现效果）。
+    "罪孽都市": {"点金","典当","抵扣","清算","赎金","假钞","赌命","消灾"},
     "龙心谷":   {"加害","龙鳞","逆鳞","裂变","背负","伤痕"},   # 2026-10-11 删【嫁祸】
 }
 
@@ -231,7 +232,7 @@ def apply_control_to_player(name, m, player):
 USE_EXCLUSIVE = True
 
 # 激活顺序（接在通用优先级之后；每回合至多激活1个，激活=出手）
-EXCLUSIVE_PRIORITY = ["变形", "逆鳞", "假钞", "赌命", "加害", "点金", "逼债", "赎金",
+EXCLUSIVE_PRIORITY = ["变形", "逆鳞", "假钞", "赌命", "加害", "点金", "赎金",
                       "清算", "龙鳞", "爆裂", "裂变", "伤痕", "退化", "畸变", "活血",
                       "背负", "超频", "定型", "抵扣", "消灾"]
 REDIRECT_ATTRS = ("_beifu_left", "_beifu_target", "_nilin")   # 2026-10-11 删【嫁祸】
@@ -305,16 +306,13 @@ def _hurt_player_track(player, lost):
 
 
 def exclusive_round_start(player, monsters, activated_map, rng):
-    """回始：逼债（负债分支）/清算（失格挡）/赌命（随机数+消灾重投）"""
+    """回始：清算（失格挡）/赌命（随机数+消灾重投）"""
     if not USE_EXCLUSIVE:
         return
     for m in _alive_monsters(monsters):
         act = activated_map.get(id(m), set())
         x_of = lambda g: m.dao_wen[g].x_value if g in m.dao_wen else 1
-        if "逼债" in act:
-            x = x_of("逼债")
-            # DM裁定D 2026-08-22：无力支付部分记为负债（与 engine/combat.py F2 同口径）
-            player.shards -= x
+        # 2026-10-13：【逼债】删除，原回始负债分支一并移除。
         if m.has_status("清算"):
             drain = max(0, getattr(m, "shards", 0))
             player.shield = max(0, player.shield - drain)
@@ -397,8 +395,7 @@ def apply_exclusive(act, m, player, monsters, rng):
         if m.current_mana >= 8 * x:       # 前身【洗劫】按实伤夺碎片，已废止
             m.current_mana -= 8 * x
             m.shards += x
-    elif act == "逼债":    # 回始目标失X碎片，否则失2X血限，持续∞（记账在怪物侧激活集）
-        pass
+    # 2026-10-13：【逼债】删除（原分支只是 pass 记账，无行为）。
     elif act == "赎金":    # 夺10X碎片；目标没有碎片则失X点当前速度（一次性）
         if player.shards > 0:
             steal = min(player.shards, 10 * x); player.shards -= steal

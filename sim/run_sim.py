@@ -284,7 +284,7 @@ def battle_monster_count(n):
 def run_full_run(rng, pool, region):
     rpool = [m for m in pool if m["region"] == region]
     player = make_run_player()
-    player.shards = 20  # 碎片挂在玩家实体上：局内被洗劫/逼债/赎金夺取会真实扣减（裁定⑨）
+    player.shards = 20  # 碎片挂在玩家实体上：局内被洗劫/赎金夺取会真实扣减（裁定⑨）
     for n in range(1, 8):
         count = battle_monster_count(n)
         defs = [rng.choice(rpool) for _ in range(count)]

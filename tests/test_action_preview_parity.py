@@ -63,8 +63,7 @@ def _new_engine(tmp_path, name: str, seed: int = 4):
     e.state.energy = 0
     choices = {}
     relic = e.state.relics[0].name if e.state.relics else ""
-    if relic == "三相残韵盘":
-        choices[relic] = {"use": False}
+    # 2026-10-13：【三相残韵盘】删除，战始显式决策预填不再需要。
     e.execute_action("battle_start", {"relic_choices": choices})
     e.execute_action("round_start", {})
     return e

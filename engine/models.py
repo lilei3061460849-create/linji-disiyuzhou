@@ -331,8 +331,8 @@ class Entity:
     is_debt_bound: bool = False  # 已因还债成为员工
 
     # ---- 罪孽都市专属道纹的回始记账（F2 全量） ----
-    # 逼债/清算：目标侧挂账 [{x, caster}]，[回始]逐条结算，状态消失即清账
-    _bizhai: list = field(default_factory=list)
+    # 清算：目标侧挂账 [{x, caster}]，[回始]逐条结算，状态消失即清账
+    # （2026-10-13 用户令删【逼债】：_bizhai 字段与【逼债·结算/对账】机制一并移除）
     _qingsuan: list = field(default_factory=list)
     # 抵扣（旧）：被封印的遗物 {遗物名: 剩余回合}，[回终]-1，归零解封
     sealed_relics: dict = field(default_factory=dict)
@@ -1022,6 +1022,8 @@ class GameState:
     # 开局从杀伐闭环【发现】初始道纹。
     pending_initial_daowen_choices: list[str] = field(default_factory=list)
     pending_initial_daowen_source: str = ""
+    # 【典当】：轮回者发动后待领取的发现（每组3选1，choose_diandang_daowen 逐组领取）。
+    pending_diandang_discoveries: list[list[str]] = field(default_factory=list)
     # 救赎：怪物融化后等待接纳/无视。
     pending_redemption: dict = field(default_factory=dict)
     # 消耗品【发现】候选（如扭曲都市完成事件后的工具发现）。
@@ -1595,7 +1597,7 @@ class GameState:
         """局外[精力]预算：常规 3 点；无尽模式逐轮递减。
 
         递减口径（AI 拟定、可由用户一句话改数）：第 C 轮为 `max(1, 3-(C-1))`，
-        即 3→2→1 后封底 1 点。[战终]恢复与买路财安全撤退的恢复都走这里。
+        即 3→2→1 后封底 1 点。[战终]恢复与【逃跑】强制脱战的恢复都走这里。
         """
         if not self.endless_mode:
             return 3
@@ -1620,6 +1622,7 @@ class GameState:
             "pending_relic_source": self.pending_relic_source,
             "pending_initial_daowen_choices": list(self.pending_initial_daowen_choices),
             "pending_initial_daowen_source": self.pending_initial_daowen_source,
+            "pending_diandang_discoveries": [list(g) for g in self.pending_diandang_discoveries],
             "pending_redemption": dict(self.pending_redemption),
             "pending_item_choices": list(self.pending_item_choices),
             "pending_item_source": self.pending_item_source,

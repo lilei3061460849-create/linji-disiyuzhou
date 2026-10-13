@@ -1104,7 +1104,7 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
     actual_starter = chosen["picked"]
     e.execute_action("setup_choose_resonance", {"resonance_type": resonance})
     setup = e.execute_action("setup_choose_region", {"region": region})
-    optional_relics = {"三相残韵盘"}
+    optional_relics = set()   # 2026-10-13：【三相残韵盘】删除，无需规避
     relic_choices = setup["result"]["relic_choices"]
     if relic_policy == "prefer_optional":  # 扫描实验：主动选可选遗物
         starter_relic = next((n for n in relic_choices if n in optional_relics),
@@ -1326,7 +1326,7 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                 stalls = 0
 
         # 共鸣/事件可能在开局后继续获得可选战始遗物；按当前持有列表逐件显式决策
-        # （可以不用但不能不让用：三相残韵盘/猩红果实/苍白之花按情形发动）。
+        # （可以不用但不能不让用：猩红果实/苍白之花按情形发动；三相残韵盘2026-10-13删除）。
         _resolve_pending_choices(e)   # 上一场遗留门禁（含战后救赎）先清，再开战
         ev_mark = len(e.state.combat_events)
         bs, bs_artifact_logs = start_battle_with_artifacts(e)

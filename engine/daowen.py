@@ -681,13 +681,23 @@ class DaoWenEngine:
     # ---- 罪孽都市专属道纹 ----
     
     @staticmethod
-    def calculate_bizhai(x: int, target: Entity = None) -> dict:
-        """逼债X：消耗X。[回始]使目标失去X点碎片，无力支付的部分记为负债（碎片扣负），持续∞"""
-        target_name = target.name if target is not None else "未选定目标"
+    def calculate_diandang(x: int) -> dict:
+        """典当X：代价失忆2X；发现获得X种道纹（2026-10-13 用户令顶替【逼债】的闭环格）。
+
+        发现口径 = 局外【学习】口径（见 engine/gamedata.py::learnability_error）：
+        已持有/异副本专属/未解锁门禁/怪物转化/未实装的一律不出池。
+        轮回者发动→每种 pending 一组3选1（choose_diandang_daowen 逐组领取）；
+        非轮回者发动（如怪物经【原初】借用）→即时随机授予（怪物没有发现选择界面）。
+        授予一律受【承载上限】约束，超额不授予。
+        """
         return {
-            "dao_wen": "逼债", "x": x, "cost_type": CostType.MANA.value, "cost": x,
-            "bizhai_register": x, "duration": -1,
-            "summary": f"消耗{x}法力，[回始]使{target_name}失去{x}碎片（无力支付部分记为负债），持续∞"
+            "dao_wen": "典当",
+            "x": x,
+            "cost_type": CostType.AMNESIA.value,
+            "cost": 2 * x,
+            "forget_daowen": 2 * x,
+            "discover_daowen": x,
+            "summary": f"失忆{2 * x}，发现获得{x}种道纹",
         }
     
     @staticmethod
@@ -974,7 +984,8 @@ class DaoWenEngine:
             # 罪孽都市
             "加害": cls.calculate_jiahai,
             "点金": cls.calculate_dianjin,
-            "逼债": cls.calculate_bizhai,
+            # 2026-10-13 用户令：【逼债】删除，【典当】顶替其闭环格（点金—转换—典当—反转—豪夺）。
+            "典当": cls.calculate_diandang,
             "豪夺": cls.calculate_haoduo,
             "清算": cls.calculate_qingsuan,
             "赎金": cls.calculate_shujin,
@@ -1115,8 +1126,8 @@ class ResonanceEngine:
             ("退化", "转换", "变形"),
         ],
         "罪孽都市闭环": [
-            ("点金", "转换", "逼债"),
-            ("逼债", "反转", "豪夺"),
+            ("点金", "转换", "典当"),
+            ("典当", "反转", "豪夺"),
             ("豪夺", "曲解", "清算"),
             ("清算", "反转", "赎金"),
             ("赎金", "转换", "假钞"),

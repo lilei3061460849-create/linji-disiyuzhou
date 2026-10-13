@@ -77,8 +77,9 @@ CASES = [
 ]
 
 # 预演沙盒要换回的 combat 运行态（与 engine/ai_preview.py 同一份名单）
+# 2026-10-13：【三相残韵盘】删除，_sanxiang_consumed 移出运行态名单。
 RUNTIME_ATTRS = ("_monster_activated", "_monster_daowen_round_used",
-                 "_resonance_rewrites", "_sanxiang_consumed",
+                 "_resonance_rewrites",
                  "_split_clones_spawned", "_monster_evolved",
                  "_effect_chain_depth")
 

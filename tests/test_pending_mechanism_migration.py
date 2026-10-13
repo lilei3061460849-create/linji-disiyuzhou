@@ -163,37 +163,8 @@ def test_late_battle_start_armor_ownership_alive_and_log_order():
     assert combat._dispatch_phase(Phase.BATTLE_START_AFTER_CHOICES, target=friend) == []
 
 
-@pytest.mark.parametrize("consumed", ["", "转换", "反转", "曲解"])
-@pytest.mark.parametrize("sealed", [False, True])
-def test_sanxiang_end_reference_and_sealing(consumed, sealed):
-    state, combat, player = arena(["三相残韵盘"])
-    state.resonance = {"转换": 2, "反转": 1, "曲解": 0}
-    before = dict(state.resonance)
-    combat._sanxiang_consumed = consumed
-    if sealed:
-        state.sealed_relics["三相残韵盘"] = 2
-    logs = combat.process_relics("battle_end")
-    others = [name for name in before if name != consumed] if consumed and not sealed else []
-    assert state.resonance == {name: value + (name in others) for name, value in before.items()}
-    assert logs == ([f"三相残韵盘：战终获得{'、'.join(others)}残韵各1"] if others else [])
-
-
-def test_sanxiang_survives_real_save_load(tmp_path):
-    e = GameEngine(db_path=str(tmp_path / "saved.db"), save_dir=str(tmp_path / "saves"))
-    e.state.player = arena()[2]
-    e.state.relics = [Relic("三相残韵盘", "")]
-    e.combat._sanxiang_consumed = "转换"
-    e.state.resonance = {"转换": 1, "反转": 0, "曲解": 0}
-    before = dict(e.state.resonance)
-    saved = e.save_game("sanxiang")
-    assert saved.get("success"), saved
-    restored = GameEngine(db_path=str(tmp_path / "new.db"), save_dir=str(tmp_path / "saves"))
-    assert restored.load_game("sanxiang")["success"]
-    assert restored.combat._sanxiang_consumed == "转换"
-    logs = restored.combat.process_relics("battle_end")
-    assert len(logs) == 1
-    assert restored.state.resonance["转换"] == before["转换"]
-    assert restored.state.resonance["反转"] == before["反转"] + 1
+# 2026-10-13：【三相残韵盘】遗物删除，原 test_sanxiang_end_reference_and_sealing
+# 与 test_sanxiang_survives_real_save_load 两组用例（战终残韵+存档 roundtrip）一并删除。
 
 
 def test_migrated_paths_are_unique():
@@ -204,5 +175,7 @@ def test_migrated_paths_are_unique():
         assert marker not in source
     assert "class DragonBloodlineMultiplierHook" not in (root / "engine/combat_hooks.py").read_text()
     names = ["赤族诅咒", "血族血脉·回终", "皮衣·获得格挡", "皮衣·记录",
-             "防弹插板", "龙族血脉·乘区", "三相残韵盘·战终"]
+             "防弹插板", "龙族血脉·乘区"]
     assert all(MECHANISMS.get(name) is not None for name in names)
+    # 2026-10-13：【三相残韵盘·战终】随遗物删除，必须已注销。
+    assert MECHANISMS.get("三相残韵盘·战终") is None
