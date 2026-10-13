@@ -125,8 +125,12 @@ class CostPaymentMixin:
         cost_type: str,
         amount: int,
         cost_share_target_ref: str = "",
+        forced: bool = False,
     ) -> tuple[Entity, int, Optional[Entity], int]:
-        """纯校验并计算血契拆分；无法整除的余数按随机数分配（平分规则，2026-08-21）。"""
+        """纯校验并计算血契拆分；无法整除的余数按随机数分配（平分规则，2026-08-21）。
+
+        forced=True 跳过足额校验（血契资格与存活校验保留）：用于裁定为
+        “付不起照扣、正常死亡”的自动代价（2026-10-13 血族血脉）。"""
         if cost_type not in self.SHAREABLE_NUMERIC_COSTS:
             raise ValueError(f"{cost_type}不是可共同承担的数值代价")
         if not isinstance(amount, int) or isinstance(amount, bool) or amount < 0:
@@ -145,6 +149,8 @@ class CostPaymentMixin:
         for entity, part in ((payer, owner_amount), (ally, ally_amount)):
             if entity is None or part <= 0:
                 continue
+            if forced:
+                continue  # 强制代价：足额不足照扣，后续结算自然命零，不在此报错。
             capacity = (None if cost_type == "衰老" and self.state.side_has(entity, "不朽之躯")
                         else self._cost_capacity(entity, cost_type))
             if capacity is not None and part > capacity:
@@ -400,8 +406,12 @@ class CostPaymentMixin:
         dragon_heart_use: int = 0,
         ctx: Optional[EffectContext | dict] = None,
         cost_context: Optional[EffectContext | dict] = None,
+        forced: bool = False,
     ) -> dict:
         """统一支付可分担的数值代价：龙心先抵消，血契再拆分剩余后果。
+
+        forced=True 时跳过足额校验直接结算（付不起则正常死亡），其余管线
+        （拆分/反应/记账/烙痕钉）不变。
 
         ctx 为统一 EffectContext 兼容层；cost_context 是阶段性旧名，保留兼容。
         未迁移调用点仍可不传 ctx，但若存在需要上下文的监听，会在返回明细中给出
@@ -418,7 +428,7 @@ class CostPaymentMixin:
                     payer, cost_type, amount,
                     cost_share_target_ref=cost_share_target_ref,
                     dragon_heart_use=dragon_heart_use, ctx=ctx,
-                    cost_context=cost_context)
+                    cost_context=cost_context, forced=forced)
             finally:
                 for attr, field in (("current_hp", "hp"), ("mana", "mana"),
                                     ("energy", "energy")):
@@ -435,6 +445,7 @@ class CostPaymentMixin:
         dragon_heart_use: int = 0,
         ctx: Optional[EffectContext | dict] = None,
         cost_context: Optional[EffectContext | dict] = None,
+        forced: bool = False,
     ) -> dict:
         """代价支付的实现体（对外契约见 pay_numeric_cost）。"""
         if not isinstance(dragon_heart_use, int) or isinstance(dragon_heart_use, bool) or dragon_heart_use < 0:
@@ -456,7 +467,7 @@ class CostPaymentMixin:
                 offset = min(dragon_heart_use, heart.current_uses, amount)
         remaining = amount - offset
         _, owner_amount, ally, ally_amount = self.validate_numeric_cost(
-            payer, cost_type, remaining, cost_share_target_ref)
+            payer, cost_type, remaining, cost_share_target_ref, forced=forced)
         if heart is not None and offset > 0:
             heart.current_uses -= offset
         normalized_ctx = normalize_context(ctx if ctx is not None else cost_context)

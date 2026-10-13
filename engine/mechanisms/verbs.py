@@ -85,6 +85,7 @@ def _verb_cost(combat, spec, ctx):
         cost_share_target_ref=spec.get("cost_share_target_ref", ""),
         dragon_heart_use=spec.get("dragon_heart_use", 0),
         cost_context=spec.get("cost_context", _ctx_of(spec, ctx)),
+        forced=spec.get("forced", False),
     )
 
 

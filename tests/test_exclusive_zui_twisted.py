@@ -283,6 +283,30 @@ def test_error_duming_insufficient_fake_shards_rejected():
     assert "假碎片不足" in r.get("error", "")
 
 
+def test_duming_basis_is_current_hp_in_engine_and_both_docs():
+    """2026-10-13 用户裁定：赌命失去30%**当前**生命，三处口径对齐。"""
+    import math
+    from pathlib import Path
+    for hp, expected in ((100, 30), (99, 30), (90, 27)):
+        engine = _setup(); _grant(engine, ["赌命"])
+        player = engine.state.player
+        player.blood_limit = player.current_hp = hp
+        engine.state.fake_shards = 10
+        _add_monster(engine, hp=100)
+        engine.state.enemies[0].is_alive = False  # 只剩玩家：随机目标必中
+        assert engine.execute_action("use_daowen", {"daowen_name": "赌命", "x": 1})["success"]
+        duming = [e for e in engine.combat.round_start()["effects"] if e["type"] == "duming"]
+        assert len(duming) == 1 and duming[0]["target"] == player.name
+        assert duming[0]["lost"] == expected == math.ceil(hp * 30 / 100)
+        assert player.current_hp == hp - expected
+    root = Path(__file__).resolve().parents[1]
+    assert "【赌命】X：消耗X假碎片。[回始]按存活角色投随机数，对应目标失去30%当前生命，持续X。" in \
+        (root / "规则正文.md").read_text(encoding="utf-8")
+    line = next(l for l in (root / "副本" / "罪孽都市.md").read_text(encoding="utf-8").splitlines()
+                if l.startswith("7.赌命X"))
+    assert "失去30%当前生命" in line, line
+
+
 # ==================== 消灾 ====================
 
 def test_normal_xiaozai_rerolls_next_auto_roll():

@@ -54,7 +54,7 @@ def old_blood_lineage(state, combat, entity):
             "tags": {"relic", "round_end"}})
         return {"type": "blood_lineage_heal", "entity": entity.name,
                 "amount": detail["actual_heal"], "heal_ctx": detail.get("heal_ctx")}
-    payment = combat.pay_numeric_cost(entity, "流血", 20, cost_context={
+    payment = combat.pay_numeric_cost(entity, "流血", 20, forced=True, cost_context={
         "timing": "round_end", "source": "血族血脉", "source_type": "relic", "tags": {"automatic"}})
     return {"type": "blood_lineage_bleed", "entity": entity.name,
             "cost": payment, "amount": payment["actual_paid"]}
@@ -79,17 +79,14 @@ def test_blood_lineage_reference_sweep(hp, dealt):
     state, combat, player = arena(["血族血脉"], hp)
     old_state, old_combat, old_player = arena(["血族血脉"], hp)
     player.damage_dealt_this_round = old_player.damage_dealt_this_round = dealt
-    if dealt == 0 and hp < 20:
-        # 原自动代价仍要求足额支付，迁移不擅自改低血边界规则。
-        with pytest.raises(ValueError, match="无法完整承担"):
-            old_blood_lineage(old_state, old_combat, old_player)
-        with pytest.raises(ValueError, match="无法完整承担"):
-            combat._dispatch_phase(Phase.ROUND_END_POST_MEDIOCRITY, target=player)
-        return
     expected = old_blood_lineage(old_state, old_combat, old_player)
     result = combat._dispatch_phase(Phase.ROUND_END_POST_MEDIOCRITY, target=player)
     assert canonical({"effects": result, "events": [e.to_dict() for e in state.combat_events]}) == canonical({
         "effects": [expected], "events": [e.to_dict() for e in old_state.combat_events]})
+    if dealt == 0 and hp < 20:
+        # 2026-10-13 用户裁定：自动流血付不起照扣，正常命零，不报错。
+        assert player.current_hp == 0 and not player.is_alive
+        assert result[0]["cost"]["owner"]["detail"]["died"] is True
     assert (player.current_hp, player.is_alive, player.total_healed) == (
         old_player.current_hp, old_player.is_alive, old_player.total_healed)
     assert canonical([e.to_dict() for e in state.combat_events]) == canonical([e.to_dict() for e in old_state.combat_events])
