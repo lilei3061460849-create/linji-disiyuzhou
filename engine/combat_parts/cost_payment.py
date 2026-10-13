@@ -197,10 +197,7 @@ class CostPaymentMixin:
             self._lose_current_speed(payer, amount, ctx=cost_context)
         elif cost_type == "异变":
             mutation = payer.add_mutation(amount)
-            if mutation.get("collapsed"):
-                # 怪物异变达阈值：直接命零
-                self._on_entity_death(payer, ctx=self._lost_context(payer, cost_context, subtype="collapse"))
-            elif mutation.get("lost"):
+            if mutation.get("lost"):
                 # 非怪物异变达阈值：触发【迷失】——有队友则变怪物开战，否则命零
                 self._resolve_mutation_lost(payer, cost_context)
             self._bank_lianxin(payer, cost_type, amount)
@@ -223,7 +220,7 @@ class CostPaymentMixin:
         否则迷失不会触发对应的[命零]效果（焦黑发丝/招魂尸体/分裂）。
 
         subtype 取值：
-          * "collapse" —— 怪物异变爆体，直接命零；
+          * "collapse" —— 非怪物迷失命零的兼容标识；怪物不触发迷失；
           * "lost_death" —— 非怪物迷失但无队友，直接命零；
           * "lost_transform" —— 非怪物迷失且有队友，异变为怪物（不进死亡管线，
             仅作事件记录）。
@@ -294,12 +291,14 @@ class CostPaymentMixin:
           * 否则 → 直接[命零]死亡，走统一死亡管线。
         返回说明 dict（包含 flavor 文本，便于日志/面板展示）。
         """
+        if not entity.can_trigger_mutation_lost():
+            return {"lost": False, "entity": entity.name, "note": "怪物不会触发【迷失】"}
         allies = self._living_allies_of(entity)
         if not allies:
             # 无队友：命零。subtype 仍记为 "collapse" 以兼容死者之书既有死因分类
             # （死亡书 CAUSE_DRAFTS["collapse"] 的文案已改为"迷失"）。
-            # 必须先把 hp 置 0、is_alive 翻 False，_on_entity_death 才能触发（与 add_mutation
-            # 对怪物路径的行为保持一致；_hp_loss_recording 让此期间不额外触发「失去生命后」）。
+            # 必须先把 hp 置 0、is_alive 翻 False，_on_entity_death 才能触发；
+            # _hp_loss_recording 让此期间不额外触发「失去生命后」。
             if not getattr(self, "_hp_loss_recording", 0):
                 self._hp_loss_recording = getattr(self, "_hp_loss_recording", 0) + 1
                 try:

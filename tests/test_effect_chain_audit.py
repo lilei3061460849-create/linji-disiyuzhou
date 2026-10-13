@@ -301,25 +301,38 @@ def test_e_departure_is_not_death():
     assert enemy.is_departed is True
 
 
-def test_e_collapse_goes_through_unified_death():
-    """迷失（异变≥50）此前不通知死亡；现在必须走统一管线。"""
+def test_e_monster_mutation_does_not_emit_a_death_event():
+    """怪物异变超过50层仍存活，不能进入死亡管线或触发焦黑发丝。"""
     state, combat, player, enemy = _arena(enemy_hp=40)
     state.relics = [Relic("焦黑发丝", "")]
     player.current_speed = 1
     enemy.mutation_count = 49
-
     combat.pay_numeric_cost(enemy, "异变", 5, cost_context={
         "timing": "monster_action", "source": "原初1", "source_type": "evolution",
         "actor": enemy, "target": enemy, "mechanic": "cost", "subtype": "mutation",
         "amount": 5, "tags": {"active_payment"},
     })
+    assert enemy.is_alive and enemy.current_hp == 40 and enemy.mutation_count == 54
+    assert not hasattr(enemy, "_death_ctx")
+    assert not _events(combat, CombatEventType.ENTITY_DIED)
+    assert player.current_speed == 1
 
-    assert enemy.is_alive is False
-    assert enemy._death_ctx["subtype"] == "collapse"
-    assert enemy._death_ctx["source"] == "迷失", "2026-09-28【迷失】改名【迷失】，source 统一为'迷失'"
-    assert enemy._death_ctx["parent_event_id"] is not None
+
+def test_e_non_monster_lost_still_uses_unified_death():
+    """非怪物无队友时的迷失命零仍走统一死亡管线，带完整父事件上下文。"""
+    state, combat, player, enemy = _arena(enemy_hp=40)
+    player.mutation_count = 49
+    combat.pay_numeric_cost(player, "异变", 5, cost_context={
+        "timing": "player_action", "source": "封印5", "source_type": "daowen",
+        "actor": player, "target": player, "mechanic": "cost", "subtype": "mutation",
+        "amount": 5, "tags": {"active_payment"},
+    })
+    assert not player.is_alive and player.current_hp == 0
+    assert player._death_ctx["subtype"] == "collapse"
+    assert player._death_ctx["source"] == "迷失"
+    assert player._death_ctx["parent_event_id"] is not None
     assert len(_events(combat, CombatEventType.ENTITY_DIED)) == 1
-    assert player.current_speed == 3, "迷失·迷失死者同样要触发[命零]后效果"
+    assert enemy.is_alive
 
 
 # ==================== F. Hook 顺序显式化 ====================

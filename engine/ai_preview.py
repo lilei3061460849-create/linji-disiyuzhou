@@ -328,7 +328,8 @@ class ActionPreview:
         # CRITICAL：异变达危险阈值（≥45 时动作可能触发迷失）
         mut = getattr(p, "mutation_count", 0)
         mut_delta = diff.get("player", {}).get("mutation_delta", 0)
-        if mut + mut_delta >= _MUT_THRESHOLD - 5:   # 离阈值5以内
+        mutation_sensitive = getattr(p, "can_trigger_mutation_lost", lambda: True)()
+        if mutation_sensitive and mut + mut_delta >= _MUT_THRESHOLD - 5:   # 离阈值5以内
             reasons.append("异变即将达到迷失阈值（迷失（%d/%d）→ 动作后（%d/%d））"
                            % (mut, _MUT_THRESHOLD, mut + mut_delta, _MUT_THRESHOLD))
             return "CRITICAL", reasons
@@ -342,7 +343,7 @@ class ActionPreview:
             return "CRITICAL", reasons
 
         # HIGH：异变显著增加（+10 以上，无论当前等级）
-        if mut_delta >= 10:
+        if mutation_sensitive and mut_delta >= 10:
             reasons.append("异变增加 %d（迷失（%d/%d）→ 动作后（%d/%d））"
                            % (mut_delta, mut, _MUT_THRESHOLD, mut + mut_delta, _MUT_THRESHOLD))
 

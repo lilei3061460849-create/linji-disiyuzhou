@@ -334,3 +334,32 @@ def render_context() -> str:
         "> 每一块为来源文件经过滤后的文字；只保留世界观、角色记忆与角色扮演约束。",
         "> 正文采用代码块呈现，以防嵌套相对链接在此聚合文件内被错误解析。",
     ])
+    for index, (source, body, digest) in enumerate(loaded, 1):
+        fence = _safe_fence(body)
+        lines.extend([
+            "", f"### 来源 {index}：{source.role}", "",
+            f"- 路径：`{source.relative_path}`",
+            f"- SHA-256：`{digest}`", "",
+            f"{fence}markdown", body, fence,
+        ])
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--check", action="store_true", help="检查生成物，不写文件")
+    args = parser.parse_args(argv)
+    rendered = render_context()
+    if args.check:
+        if not OUTPUT.is_file() or OUTPUT.read_text(encoding="utf-8") != rendered:
+            print("AI_CONTEXT.md 与来源不一致，请运行 python3 sim/gen_ai_context.py", file=sys.stderr)
+            return 1
+        print("AI_CONTEXT.md is up to date")
+        return 0
+    OUTPUT.write_text(rendered, encoding="utf-8")
+    print(f"written {OUTPUT}: {len(rendered.encode('utf-8')):,} bytes")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

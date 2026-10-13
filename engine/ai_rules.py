@@ -337,8 +337,8 @@ def _can_pay(ally: Entity, calc: dict) -> bool:
     if calc.get("cost_type") == "消耗" and calc.get("cost", 0) > 0:
         if getattr(ally, "current_mana", 0) < calc["cost"]:
             return False
-    # 【异变】是累加计数而非可花费预算：叠满迷失阈值当场命零，不提供自杀档。
-    if calc.get("cost_type") == "异变":
+    # 仅对可能迷失的角色按生存线封顶；怪物照常累计异变。
+    if calc.get("cost_type") == "异变" and ally.can_trigger_mutation_lost():
         headroom = Entity.MUTATION_COLLAPSE_THRESHOLD - getattr(ally, "mutation_count", 0)
         if calc.get("cost_mutation", 0) >= headroom:
             return False
@@ -370,7 +370,7 @@ def _within_budget(ally: Entity, calc: dict, x: int,
         if hp - hp_cost <= 0:      # 绝不把自己流死
             return False
 
-    if calc.get("cost_type") == "异变":
+    if calc.get("cost_type") == "异变" and ally.can_trigger_mutation_lost():
         after = getattr(ally, "mutation_count", 0) + (calc.get("cost_mutation", 0) or 0)
         if after > Entity.MUTATION_COLLAPSE_THRESHOLD * MUTATION_SAFE_RATIO:
             return False

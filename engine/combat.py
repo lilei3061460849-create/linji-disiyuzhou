@@ -16,7 +16,7 @@ from .dm_rulings import Interrupt
 from .combat_events import CombatEvent, CombatEventType, register_combat_event_observer
 from .combat_hooks import CombatHookManager
 from .effect_context import EffectContext, make_context, normalize_context
-from .mechanisms import MECHANISMS, Phase, TriggerBus, TriggerContext
+from .mechanisms import MECHANISMS, Phase, TriggerBus, TriggerContext, apply_verb
 from .personality import remove_personality
 from .resolution import KIND_EFFECT, ResolutionContext, resolution_frame
 # 常量定义在 models（授予点在 Entity.__post_init__），此处只读取以判定效果。
@@ -968,7 +968,7 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
     def round_start(self, relic_choices: Optional[dict] = None) -> dict:
         """
         回始结算
-        1. 拥有者获得等同当前法限的法力（加法，从不赋值到法限）
+        1. 【某人的偏爱】持有者获得等同当前法限的法力和异变（法力走统一获得入口）
         2. 结算回始类效果
         3. 返回需要决策的信息
         """
@@ -986,15 +986,38 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                 effects.append({"type": "leather_shield", "amount": leather})
         
         # 活血追踪归零 + 出手预算归零（回始重置本回合已用出手次数）+ 血誓戒每回合限一次归零 + 血族血脉判定归零
+        seen_entities: set[int] = set()
         for e in self.state.get_all_player_side() + self.state.get_all_enemy_side():
-            # 2026-09-16 用户令：[回始]法力恢复至上限是遗物【某人的偏爱】的效果，
-            # 不是怪物种族自带的能力。每只怪物出厂自带该遗物（见 engine/monsters.py），
-            # 因此这里读遗物而非读实体类型——"谁持有谁生效"走正常物品逻辑，
-            # 可被继承、可被【封印】等机制作用。
-            # 微光者（[朋友]/[员工]）与轮回者都不持有，仍是一池制（[回始]不回填）。
-            # 这是怪物侧的核心资源优势，也是"让轮回者吃苦头"的主要来源。
-            if e.mana_limit > 0 and any(r.name == MONSTER_MANA_RELIC for r in e.relics):
-                e.current_mana = e.mana_limit
+            # 迷失变身后 player 引用可能同时出现在 enemies；每个持有者每回始只触发一次。
+            if id(e) in seen_entities:
+                continue
+            seen_entities.add(id(e))
+            # 2026-10-13：谁持有谁获得法限等量法力与异变；这不是代价，不走代价结算。
+            # 兼容实体遗物、轮回者本局遗物及死斗对手遗物，并尊重玩家的遗物封印。
+            owns_relic = (any(r.name == MONSTER_MANA_RELIC for r in e.relics)
+                          or self._relic_active(e, MONSTER_MANA_RELIC))
+            relic_unsealed = (e is not player
+                              or self.state.sealed_relics.get(MONSTER_MANA_RELIC, 0) <= 0)
+            if e.mana_limit > 0 and owns_relic and relic_unsealed:
+                amount = e.mana_limit
+                mana_before = e.current_mana
+                e.gain_mana(amount)  # 遵守法限与【勾魂】；异变不按实际回充量缩减
+                self.clamp_immortal_body(e)
+                mana_gained = e.current_mana - mana_before
+                mutation = apply_verb(self, "mutation", {"target": e, "layers": amount}, {
+                    "timing": "round_start", "source": MONSTER_MANA_RELIC,
+                    "source_type": "relic", "actor": e, "target": e, "owner": e,
+                    "mechanic": "mutation", "subtype": "relic_grant", "amount": amount,
+                    "tags": {"relic", "round_start"},
+                })
+                effects.append({
+                    "type": "relic", "relic": MONSTER_MANA_RELIC, "entity": e.name,
+                    "mana_requested": amount, "mana_gained": mana_gained,
+                    "mutation_added": mutation["mutation_added"],
+                    "mutation_total": mutation["mutation_total"],
+                    "log": f"{e.name}的【{MONSTER_MANA_RELIC}】：法力+{mana_gained}，"
+                           f"异变+{amount}（累计{mutation['mutation_total']}层）",
+                })
             e.hp_lost_this_round = 0
             # 招架：2026-09-28 用户令重写——不再有"上回合招架过→本回合禁用"锁；
             # 本回合姿态清空、剩余次数清零，等本回合玩家/怪物重新 declare_parry。

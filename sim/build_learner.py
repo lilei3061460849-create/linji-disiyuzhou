@@ -301,10 +301,9 @@ def _drive_plight_monsters(engine, telemetry: dict = None) -> None:
     """困境驱动（DM裁定2026-08-23③：模拟器怪物执行准则#3强制二选一）。
 
     每回合怪物阶段开始前：对所有处于困境的**怪物**——
-      1. 进化优先：有借用票（轮回者持有且自身未持有的道纹）且门票异变5X不
-         必触发崩解（max_x_by_mutation≥1）→ declare_evolution 发动【原初X】，
-         借轮回者X值最高的道纹，X=min(异变预算, 3)；
-      2. 否则逃跑（无票/必崩解）：统一【离场】depart_battle("逃跑")，不视为
+      1. 进化优先：有借用票（轮回者持有且自身未持有的道纹）→ 发动【原初X】，
+         借轮回者X值最高的道纹。怪物免于迷失，异变不限制 X；策略默认 X=3。
+      2. 否则逃跑（无票）：统一【离场】depart_battle("逃跑")，不视为
          击杀、不产生碎片奖励，alt_victory 扫描自动记为「逃跑」类离场。
     死斗不驱动（道规禁逃）；决斗对手是轮回者不是怪物（entity_type 门禁）。
     """
@@ -321,7 +320,8 @@ def _drive_plight_monsters(engine, telemetry: dict = None) -> None:
         if id(monster) in combat._monster_evolved:
             continue
         borrowable = list(opt.get("borrowable_daowen") or [])
-        max_x = int(opt.get("max_x_by_mutation") or 0)
+        limit = opt.get("max_x_by_mutation", 0)
+        max_x = 3 if limit is None else int(limit)
         if borrowable and max_x >= 1:
             player = engine.state.player
             pick = max(borrowable,

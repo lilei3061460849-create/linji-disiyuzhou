@@ -134,7 +134,8 @@ def _monster_evolution_step(e, rng) -> int:
         return 0
     for o in opts:
         pool = o.get("borrowable_daowen") or []
-        max_x = o.get("max_x_by_mutation", 0)
+        limit = o.get("max_x_by_mutation", 0)
+        max_x = 2 if limit is None else limit
         if pool and max_x >= 1:
             r = e.execute_action("declare_evolution", {
                 "monster": o["monster"], "daowen": rng.choice(pool),

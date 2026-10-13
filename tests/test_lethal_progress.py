@@ -1,11 +1,11 @@
 """致死进度（【迷失】/【癌变】/【凡庸】）——用户令 2026-09-15 / 2026-09-28：
 
-「给致死的特殊事件标明进度」。2026-09-28 将【迷失】改名为【迷失】（迷失作为怪物异变爆体子情形保留）。
+「给致死的特殊事件标明进度」。2026-10-13：怪物不触发迷失，不显示迷失致死进度。
 
 覆盖：
 - 正常路径：进度串（迷失（10/50））与结构化计数同时可见；
 - 边界条件：凡庸两条线取更接近触发的一条、血限为 0 时不产生癌变线、阈值恰好触发迷失；
-  * 怪物达阈值：collapsed=True 直接命零；
+  * 怪物达阈值：照常累计异变，collapsed=False / lost=False，不命零；
   * 非怪物达阈值：lost=True（由战斗层 _resolve_mutation_lost 决定变身/命零）。
 - 错误输入：阈值唯一事实源——CombatEngine 的同名量必须引用 Entity，不得各写一份。
 """
@@ -77,15 +77,16 @@ def test_thresholds_have_a_single_source():
     assert Entity.MUTATION_COLLAPSE_THRESHOLD == 50
 
 
-def test_collapse_monster_kills_instantly():
-    """怪物（entity_type=='怪物'）达阈值：collapsed=True 直接命零（旧迷失行为保留）。"""
+def test_monster_mutation_threshold_does_not_kill():
+    """怪物达到或超过旧迷失阈值，只累计异变，生命不变。"""
     m = _monster()
     m.add_mutation(49)
     assert m.is_alive is True
-    r = m.add_mutation(1)
-    assert r["collapsed"] is True
-    assert r.get("lost") is not True
-    assert m.is_alive is False and m.current_hp == 0
+    for layers in (1, 100):
+        r = m.add_mutation(layers)
+        assert r["collapsed"] is False and r["lost"] is False
+        assert m.is_alive is True and m.current_hp == 30
+    assert m.mutation_count == 150
 
 
 def test_lost_non_monster_flags_lost_without_dying():
@@ -117,7 +118,7 @@ def _new_engine(tmp_path, region="龙心谷"):
 
 
 def test_monster_phase_payload_carries_monster_progress(tmp_path):
-    """怪物同样会【迷失】：prepare_monster_phase 的每个 actor 必须带致死进度。"""
+    """怪物只显示实际适用的致死进度，不能显示虚假的迷失倒计时。"""
     e = _new_engine(tmp_path)
     e.execute_action("battle_start")
     e.execute_action("round_start", {})
@@ -126,5 +127,6 @@ def test_monster_phase_payload_carries_monster_progress(tmp_path):
     actors = prepared["result"]["actors"]
     assert actors, "本回合应有可行动的怪物 actor"
     for actor in actors:
-        assert actor["lethal_counters"]["迷失"] == [0, Entity.MUTATION_COLLAPSE_THRESHOLD]
-        assert "迷失（0/50）" in actor["lethal_progress"]
+        assert "迷失" not in actor["lethal_counters"]
+        assert "癌变" in actor["lethal_counters"]
+        assert all("迷失" not in item for item in actor["lethal_progress"])

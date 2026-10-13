@@ -6168,7 +6168,8 @@ class GameEngine:
         player = self.state.player
         if player is not None and getattr(player, "is_proliferated", False):
             return "cancer"
-        if player is not None and player.mutation_count >= Entity.MUTATION_COLLAPSE_THRESHOLD:
+        if (player is not None and player.can_trigger_mutation_lost()
+                and player.mutation_count >= Entity.MUTATION_COLLAPSE_THRESHOLD):
             return "collapse"
         if self.state.in_final_duel or action_type == "resolve_final_duel":
             return "duel"

@@ -88,3 +88,19 @@ def test_readme_exposes_the_one_url_external_ai_entry_and_context_contract():
     ):
         assert marker in text
     assert len(text) < 25000, "AI_CONTEXT 应明显小于原先包含完整机制索引的版本"
+
+
+def test_context_cli_writes_and_checks_the_generated_output(tmp_path, monkeypatch):
+    """CLI 必须真正输出文件；--check 应发现过期内容且不能改写文件。"""
+    from sim import gen_ai_context
+
+    output = tmp_path / "AI_CONTEXT.md"
+    monkeypatch.setattr(gen_ai_context, "OUTPUT", output)
+    assert gen_ai_context.main(["--check"]) == 1
+    assert not output.exists()
+    assert gen_ai_context.main([]) == 0
+    assert output.read_text(encoding="utf-8") == gen_ai_context.render_context()
+    assert gen_ai_context.main(["--check"]) == 0
+    output.write_text("stale\n", encoding="utf-8")
+    assert gen_ai_context.main(["--check"]) == 1
+    assert output.read_text(encoding="utf-8") == "stale\n"

@@ -188,7 +188,7 @@ EVO_PRIORITY = [d for d in ["疯狂", "全力", "狂暴", "必中", "蒙蔽", "�
 def sim_maybe_evolve(m, combat):
     """
     怪物困境默认进化策略（裁定②接线）：借优先级最高的未持有原始道纹，
-    X=不崩解安全上限；上限<1则放弃（门票必崩解且借用中断，纯亏）。
+    怪物免于迷失；异变不限制 X，策略使用通用试探封顶值。
     困境判定与参数校验全部走引擎 execute_evolution（事实源），此处只负责选择。
     返回执行结果dict或None。
     """
@@ -197,7 +197,8 @@ def sim_maybe_evolve(m, combat):
     target = next((d for d in EVO_PRIORITY if d not in m.dao_wen), None)
     if target is None:
         return None
-    max_x = (Entity.MUTATION_COLLAPSE_THRESHOLD - 1 - m.mutation_count) // CombatEngine.YUANCHU_COST_RATE
+    max_x = (combat._DAOWEN_X_PROBE_CAP if not m.can_trigger_mutation_lost() else
+             (Entity.MUTATION_COLLAPSE_THRESHOLD - 1 - m.mutation_count) // CombatEngine.YUANCHU_COST_RATE)
     if max_x < 1:
         return None
     r = combat.execute_evolution(m, target, max_x)

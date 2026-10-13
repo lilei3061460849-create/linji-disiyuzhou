@@ -97,6 +97,10 @@ class _LethalEvents:
         return self.by_id(event_id).get("progress_keys")
 
     # ---- 引擎消费的字段 ----
+    def applies_to(self, event_id: str, entity_type: str) -> bool:
+        """该角色类型是否会触发事件；未声明类型豁免时对所有角色生效。"""
+        return entity_type not in self.by_id(event_id).get("excluded_entity_types", ())
+
     def threshold(self, event_id: str) -> int:
         """固定阈值（癌变是倍率制，走 threshold_multiplier）。"""
         entry = self.by_id(event_id)
