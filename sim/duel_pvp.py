@@ -494,8 +494,8 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
 
     max_wall_seconds: 墙钟守护（2026-08-22）。死斗在战斗7之后进行，实体/遗物/
         事件累积使 ai_preview 的整状态 deepcopy 预演成本暴涨，实测单场死斗
-        100% CPU 空转 >5 分钟（批次13 gen1619 卡死事件）。超时判擂主卫冕
-        —— 与“回合上限=攻擂失败”语义一致（挑战者未在限时内完成击杀）。
+        100% CPU 空转 >5 分钟（批次13 gen1619 卡死事件）。这是资源超时，
+        只返回 timeout_kind=wall_clock，不作胜负判定、不计玩法失败。
     返回 dict: {'winner': 'challenger'|'defender', 'rounds': n, 'reason': str}
     """
     import time as _time
@@ -634,7 +634,7 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
                 return {"winner": None, "rounds": rnd, "error": True,
                         "reason": (f"死斗超时(>{max_wall_seconds:g}s)："
                                    "程序兜底报错，不作胜负判定"),
-                        "timeout": True,
+                        "timeout": True, "timeout_kind": "wall_clock",
                         "diag_state_sizes": _duel_state_sizes(e)}
             if not _challenger_alive():
                 return {"winner": "defender", "rounds": rnd, "reason": challenger_death_reason()}
@@ -701,7 +701,8 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
         if hp_frozen_rounds >= DEADLOCK_MIN_ROUNDS:
             # 不判胜负：凡庸已让满 MEDIOCRITY_ROUNDS 回合仍僵持，属程序级异常，
             # 只报错交由上层处置，不得替规则宣布擂主卫冕。
-            return {"winner": None, "rounds": rnd, "error": True, "timeout": True,
+            return {"winner": None, "rounds": rnd, "error": True, "timeout": False,
+                    "error_kind": "deadlock",
                     "reason": (f"死斗死锁：回始回填后双方面板连续 {hp_frozen_rounds} 回合"
                                f"零净变化，达兜底阈值 {DEADLOCK_MIN_ROUNDS} 回合"
                                f"（须大于规则层反僵持的 {MEDIOCRITY_ROUNDS} 回合，"

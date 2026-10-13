@@ -101,8 +101,29 @@ def _resolve_monster_turn_one(e, skip_refs: set):
         if monster is not None:
             dao["x"] = pick_monster_daowen_x(e, monster, option, choice,
                                              prepared["result"]["token"])
-    r = e.execute_action("resolve_monster_phase", {
-        "token": prepared["result"]["token"], "choices": [choice]})
+    # 快照之后的道纹/反应可改变现场命中数。失败提交会整体回滚，沿用同 token
+    # 补齐契约要求的逐击对象后重交，不能重复 prepare 或吞错假装行动成功。
+    import copy
+    import re
+    previous_counts = set()
+    for _ in range(3):
+        r = e.execute_action("resolve_monster_phase", {
+            "token": prepared["result"]["token"], "choices": [choice]})
+        if r.get("success"):
+            break
+        match = re.fullmatch(r"(.+?)每个攻击出手必须提交(\d+)次命中选择",
+                             str(r.get("error", "")))
+        if not match or match.group(1) != actor["monster"]:
+            break
+        count = int(match.group(2))
+        if count in previous_counts:
+            break
+        previous_counts.add(count)
+        for attack in choice["attack_actions"]:
+            template = (attack["hits"][0] if attack["hits"] else {
+                "target_ref": target_ref, "dodge": False, "blood_shadow": False,
+                "spell_choices": _decline_spells(target_option)})
+            attack["hits"] = [copy.deepcopy(template) for _ in range(count)]
     return r, actor["actor_ref"]
 
 
