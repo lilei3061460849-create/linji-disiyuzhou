@@ -85,6 +85,7 @@ def _verb_cost(combat, spec, ctx):
         cost_share_target_ref=spec.get("cost_share_target_ref", ""),
         dragon_heart_use=spec.get("dragon_heart_use", 0),
         cost_context=spec.get("cost_context", _ctx_of(spec, ctx)),
+        forced=spec.get("forced", False),
     )
 
 
@@ -118,15 +119,11 @@ def _verb_shield(combat, spec, ctx):
 
 
 def _verb_mutation(combat, spec, ctx):
-    """施加异变。2026-09-28 用户令：非怪物达阈值触发【迷失】（变怪物/命零），
-    怪物达阈值【迷失】直接命零——统一在动词层处理，避免每个 effect 写一份。"""
+    """施加异变；非怪物达阈值交给统一迷失结算，怪物仅累计层数。"""
     target = spec["target"]
     layers = spec.get("layers", spec.get("amount", 0))
     mut = target.add_mutation(layers)
-    if mut.get("collapsed"):
-        combat._on_entity_death(
-            target, ctx=combat._lost_context(target, ctx, subtype="collapse"))
-    elif mut.get("lost"):
+    if mut.get("lost"):
         combat._resolve_mutation_lost(target, ctx)
     return mut
 
@@ -159,7 +156,8 @@ def _verb_mana(combat, spec, ctx):
 
 
 def _verb_shards(combat, spec, ctx):
-    """碎片统一增减动词（2026-10-03 迁移【逼债】时新增；见机制迁移台账）。
+    """碎片统一增减动词（2026-10-03 迁移【逼债】时新增；【逼债】虽已于
+    2026-10-13 删除，动词作为通用碎片口径保留；见机制迁移台账）。
 
     语义 = 旧 F2 逼债块的字面约定（逐字复刻，不改数值）：
       - delta < 0（失去 X）：
@@ -231,3 +229,37 @@ register_verb("mana", _verb_mana)
 register_verb("shards", _verb_shards)
 register_verb("depart", _verb_depart)
 register_verb("execute", _verb_execute)
+
+
+def _verb_direct_damage(combat, spec, ctx):
+    """模型直通扣除；外层负责原有反应/来源/支付协议，不偷偷走伤害管线。"""
+    target = spec["target"]
+    return target.take_damage(spec["amount"], spec.get("damage_type", "普通"),
+                              life_loss_multiplier=combat.state.life_loss_multiplier(target))
+
+
+def _verb_mapping(combat, spec, ctx):
+    mapping, key = spec["mapping"], spec["key"]
+    operation = spec["op"]
+    if operation == "pop":
+        return mapping.pop(key, spec.get("default", 0))
+    if operation == "set":
+        mapping[key] = spec["value"]
+    elif operation == "add":
+        mapping[key] = mapping.get(key, 0) + spec["value"]
+    else:
+        raise ValueError(f"未知 mapping 操作：{operation}")
+    return mapping[key]
+
+
+def _verb_reset_fields(combat, spec, ctx):
+    import copy
+    target = spec["target"]
+    for name, value in spec["fields"].items():
+        if not name.startswith("_") or hasattr(target, name):
+            setattr(target, name, copy.deepcopy(value))
+
+
+register_verb("direct_damage", _verb_direct_damage)
+register_verb("mapping", _verb_mapping)
+register_verb("reset_fields", _verb_reset_fields)

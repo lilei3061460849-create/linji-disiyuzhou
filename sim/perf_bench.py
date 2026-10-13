@@ -54,9 +54,6 @@ def build_engine(tmp: str, seed: int = 4):
                               {"sub_action": "学习", "sub": "daowen", "name": dw})
     engine.state.energy = 0
     choices = {}
-    relic = engine.state.relics[0].name if engine.state.relics else ""
-    if relic == "三相残韵盘":
-        choices[relic] = {"use": False}
     engine.execute_action("battle_start", {"relic_choices": choices})
     engine.execute_action("round_start", {})
     return engine

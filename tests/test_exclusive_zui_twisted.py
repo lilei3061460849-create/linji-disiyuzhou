@@ -1,5 +1,6 @@
 """
-F2 全量验证：罪孽都市（点金/逼债/抵扣/清算/赌命/消灾/假钞）与扭曲都市（爆裂/退化）的引擎侧实装。
+F2 全量验证：罪孽都市（点金/典当/豪夺/清算/赌命/消灾/假钞）与扭曲都市（爆裂/退化）的引擎侧实装。
+2026-10-13：【逼债】删除，【典当】顶替其闭环格。
 - 正常：按《副本/罪孽都市.md》《副本/扭曲都市.md》定义结算
 - 边界：碎片不足/无遗物/无碎片/反噬致死/退化归零等
 - 错误：假碎片不足/碎片不足被拒绝
@@ -32,6 +33,9 @@ def _setup(region="罪孽都市", mana=100, speed_limit=99):
     player.current_speed = speed_limit
     player.attack_power = 5  # 默认面板攻击力1，测试固定为5以便断言伤害
     engine.state.phase = "in_combat"
+    # 2026-10-13：遗物池删2件后同一种子开局遗物漂移（血誓戒→万钧印，万钧印改向攻击
+    # 会干扰普攻/反噬断言）；本文件无用例依赖开局随机遗物，统一清空以钉死环境。
+    engine.state.relics = []
     return engine
 
 
@@ -124,52 +128,68 @@ def test_monster_xijie_steals_player_shards_fake_first():
     assert engine.state.shards == 20
 
 
-# ==================== 逼债 ====================
+# ==================== 典当（2026-10-13 顶替【逼债】的闭环格）====================
 
-def test_normal_bizhai_drains_shards_each_round_start():
-    engine = _setup(); _grant(engine, ["逼债"])
+def test_normal_diandang_forgets_2x_and_pends_discovery():
+    engine = _setup(); _grant(engine, ["典当", "杀伐", "庇护"])
+    player = engine.state.player
     m = _add_monster(engine, shards=10)
-    r = engine.execute_action("use_daowen", {"daowen_name": "逼债", "x": 3, "target": m.name})
+    r = engine.execute_action("use_daowen", {"daowen_name": "典当", "x": 1, "target": m.name})
     assert r["success"], r
-    # 发动瞬间不结算（[回始]语义）
-    assert m.shards == 10
-    engine.combat.round_start()
-    assert m.shards == 7, "回始应扣3碎片"
+    # 代价失忆2：按持有顺序优先忘记典当以外的道纹（杀伐、庇护），典当自身保留
+    assert "杀伐" not in player.dao_wen and "庇护" not in player.dao_wen
+    assert "典当" in player.dao_wen
+    # 发现获得1种：pending 一组3选1（学习口径：已持有/异副本专属不出池）
+    queue = engine.state.pending_diandang_discoveries
+    assert len(queue) == 1 and 1 <= len(queue[0]) <= 3
+    assert "典当" not in queue[0]
+    pick = queue[0][0]
+    r2 = engine.execute_action("choose_diandang_daowen", {"daowen_name": pick})
+    assert r2["success"], r2
+    assert pick in player.dao_wen
+    assert engine.state.pending_diandang_discoveries == []
 
 
-def test_boundary_bizhai_shortfall_becomes_debt():
-    """DM裁定D 2026-08-22：无力支付部分记为负债（旧"否则失去2X血限"废止）。"""
-    engine = _setup(); _grant(engine, ["逼债"])
-    m = _add_monster(engine, shards=2)  # 碎片 < X=3
-    engine.execute_action("use_daowen", {"daowen_name": "逼债", "x": 3, "target": m.name})
-    engine.combat.round_start()
-    assert m.shards == -1, f"余额2抵3，差额1应计负债（shards=-1），实{m.shards}"
-    assert m.blood_limit == 100, "裁定D后逼债不再触碰血限"
-
-
-def test_monster_bizhai_on_player():
+def test_boundary_diandang_rejected_when_less_than_2x_owned():
+    """DM口径：失忆2X付不起（持有<2X）→ 发动前拒绝，不忘不给。"""
     engine = _setup()
     player = engine.state.player
+    player.dao_wen = {}
+    _grant(engine, ["典当"])
+    m = _add_monster(engine)
+    r = engine.execute_action("use_daowen", {"daowen_name": "典当", "x": 1, "target": m.name})
+    assert r["success"] is False
+    assert "失忆2无法支付" in r["error"]
+    assert list(player.dao_wen) == ["典当"]
+    assert engine.state.pending_diandang_discoveries == []
+
+
+def test_monster_diandang_grants_instantly_without_pending():
+    """怪物发动【典当】（借用/面板）：没有发现界面，即时随机授予，不进 pending。"""
+    engine = _setup()
     m = _add_monster(engine, shards=0)
-    _apply_monster_daowen(engine, m, "逼债", 2, player)
-    assert getattr(player, "_bizhai", []), "玩家应被挂账"
-    engine.combat.round_start()
-    assert engine.state.shards == 18, "玩家回始应失2碎片"
+    m.dao_wen = {}
+    from engine.models import DaoWen as _D, DaoWenInstance as _I
+    for n in ("典当", "全力"):
+        m.dao_wen[n] = _I(_D(name=n, formula="", cost_type="消耗", cost_formula="X", effect_formula=""))
+    out = _apply_monster_daowen(engine, m, "典当", 1, engine.state.player)
+    kinds = [e["type"] for e in out.get("effects", [])]
+    assert "amnesia" in kinds and "diandang_granted" in kinds
+    assert len(m.dao_wen) == 1, f"忘记2种、即时获得1种，实{m.dao_wen.keys()}"
+    assert engine.state.pending_diandang_discoveries == []
 
 
 def test_boundary_battle_end_clears_ledger():
-    """[战终]必须清除逼债/清算挂账与封印遗物，否则跨场残留继续扣减玩家"""
+    """[战终]必须清除清算挂账与封印遗物，否则跨场残留继续扣减玩家"""
     engine = _setup()
     player = engine.state.player
     m = _add_monster(engine, shards=0)
-    _apply_monster_daowen(engine, m, "逼债", 2, player)
     _apply_monster_daowen(engine, m, "清算", 1, player)
     engine.state.sealed_relics = {"避风铃": 3}
-    assert player._bizhai and player._qingsuan
+    assert player._qingsuan
     m.current_hp = 0
     m.is_alive = False
     engine.execute_action("battle_end")
-    assert player._bizhai == [], "战终应清逼债挂账"
     assert player._qingsuan == [], "战终应清算算挂账"
     assert engine.state.sealed_relics == {}, "战终应清封印遗物"
 
@@ -281,6 +301,30 @@ def test_error_duming_insufficient_fake_shards_rejected():
     r = engine.execute_action("use_daowen", {"daowen_name": "赌命", "x": 5})
     assert not r["success"], "假碎片不足应被拒绝"
     assert "假碎片不足" in r.get("error", "")
+
+
+def test_duming_basis_is_current_hp_in_engine_and_both_docs():
+    """2026-10-13 用户裁定：赌命失去30%**当前**生命，三处口径对齐。"""
+    import math
+    from pathlib import Path
+    for hp, expected in ((100, 30), (99, 30), (90, 27)):
+        engine = _setup(); _grant(engine, ["赌命"])
+        player = engine.state.player
+        player.blood_limit = player.current_hp = hp
+        engine.state.fake_shards = 10
+        _add_monster(engine, hp=100)
+        engine.state.enemies[0].is_alive = False  # 只剩玩家：随机目标必中
+        assert engine.execute_action("use_daowen", {"daowen_name": "赌命", "x": 1})["success"]
+        duming = [e for e in engine.combat.round_start()["effects"] if e["type"] == "duming"]
+        assert len(duming) == 1 and duming[0]["target"] == player.name
+        assert duming[0]["lost"] == expected == math.ceil(hp * 30 / 100)
+        assert player.current_hp == hp - expected
+    root = Path(__file__).resolve().parents[1]
+    assert "【赌命】X：消耗X假碎片。[回始]按存活角色投随机数，对应目标失去30%当前生命，持续X。" in \
+        (root / "规则正文.md").read_text(encoding="utf-8")
+    line = next(l for l in (root / "副本" / "罪孽都市.md").read_text(encoding="utf-8").splitlines()
+                if l.startswith("7.赌命X"))
+    assert "失去30%当前生命" in line, line
 
 
 # ==================== 消灾 ====================

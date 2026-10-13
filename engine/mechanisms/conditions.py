@@ -131,3 +131,18 @@ def any_(*conds: Condition) -> Condition:
 
 def not_(cond: Condition) -> Condition:
     return lambda ctx: not cond(ctx)
+
+
+def entity_has_relic(name: str, *, of: str = "target") -> Condition:
+    """只查实体自己的遗物列表，不混入阵营遗物或封存规则。"""
+    def cond(ctx: TriggerContext) -> bool:
+        entity = ctx.resolve(of)
+        return entity is not None and any(r.name == name for r in getattr(entity, "relics", ()))
+    return cond
+
+
+def player_run_relic_active(name: str) -> Condition:
+    """原 process_relics 的本局玩家遗物集合，逐字保留持有/封存边界。"""
+    return lambda ctx: (ctx.target is ctx.state.player
+                       and any(r.name == name for r in ctx.state.relics)
+                       and ctx.state.sealed_relics.get(name, 0) <= 0)

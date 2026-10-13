@@ -42,7 +42,6 @@ class MonsterPhaseMixin:
         self._monster_activated = {}
         self._monster_evolved = set()  # 进化（原初X）：每场战斗限一次
         self._monster_daowen_round_used = {}
-        self._sanxiang_consumed = ""
         self._resonance_rewrites = {}
 
     def _monster_round_used(self, monster: Entity) -> set:
@@ -280,8 +279,7 @@ class MonsterPhaseMixin:
                 "base_attack_actions": base_actions,
                 "base_hits_per_attack": max(0, monster.attack_count - monster.get_status_value("手雷减攻")),
                 "dodge_must_be_explicit": True,
-                # 致死进度（用户令 2026-09-15/2026-09-28）：怪物同样会【迷失】，攻守双方都要能直接读到
-                # 「迷失（30/50）」这种进度，才可能判断"再逼它发动一次道纹它就自爆"。
+                # 只暴露实际适用的致死进度；怪物不再显示迷失倒计时。
                 "lethal_counters": {k: list(v) for k, v in monster.lethal_counters().items()},
                 "lethal_progress": monster.lethal_progress(),
             })
@@ -304,6 +302,11 @@ class MonsterPhaseMixin:
             amount = calc.get(key, 0)
             if amount and capacity < amount:
                 return False
+        # 2026-10-13：失忆类代价（【点金】X/【典当】2X）按持有道纹种数校验。
+        # 此前怪物侧没有这道闸门：X 超过持有数也能发动（多拿碎片/多发现，
+        # 却只忘记现有的几种）。【典当】进打手/看门犬面板后这条必须补上。
+        if calc.get("forget_daowen", 0) > len(getattr(caster, "dao_wen", {}) or {}):
+            return False
         # 2026-09-16 用户令：怪物与轮回者同口径持有[法限]，发动【消耗】类道纹必须付法力。
         # 旧条文「怪物不持有法力、发动道纹不支付法力」已废止。
         if calc.get("cost_type") == "消耗" and calc.get("cost", 0) > 0:
@@ -334,13 +337,9 @@ class MonsterPhaseMixin:
                 break
             if not self._monster_can_pay_calc_cost(monster, calc):
                 break
-            # 【异变】是**累加计数**而非可花费的预算：付异变等于给自己叠层，
-            # 怪物达到 MUTATION_COLLAPSE_THRESHOLD 就【迷失】爆体命零；非怪物则【迷失】变怪物
-            # （两者对发动者而言都是绝对坏事），所以它没有天然的"付不起"上限，
-            # 探测会一路撞上试探封顶值。这里按生存线封顶——
-            # 允许叠加到迷失线之前，但**不把"当场自爆/叛变"的 X 当成合法选项**。
-            # （是否值得逼近迷失线由 AI 预演评分自行权衡，引擎只保证不主动提供自杀档。）
-            if calc.get("cost_type") == "异变":
+            # 异变是累加计数；怪物不受迷失生存线约束，仍保留通用试探封顶值。
+            # 怪物阶段中的非怪物角色仍不得主动选择会触发迷失的 X。
+            if calc.get("cost_type") == "异变" and monster.can_trigger_mutation_lost():
                 headroom = (Entity.MUTATION_COLLAPSE_THRESHOLD
                             - getattr(monster, "mutation_count", 0))
                 if calc.get("cost_mutation", 0) >= headroom:
@@ -521,37 +520,16 @@ class MonsterPhaseMixin:
             consumed = self.consume_resonance_rewrite(monster, name)
             if consumed != rewritten_as:
                 raise ValueError("残韵改写已变化，请重新prepare_monster_phase")
-        # 原始怪物道纹发动时支付异变5X；怪物异变达阈值=【迷失】直接命零、效果中断。
-        elif name in self.ORIGINAL_MONSTER_DAOWEN:
-            paid = monster.add_mutation(self.YUANCHU_COST_RATE * effective_x)
-            if paid["collapsed"]:
-                # 修复：此前直接 return，迷失死者从不进入统一死亡管线
-                # （不产生 _death_ctx、不进 dead_monsters、不触发焦黑发丝/分裂）。
-                self._on_entity_death(monster, ctx=self._lost_context(monster, {
-                    "timing": "monster_action", "source": name, "source_type": "daowen",
-                    "actor": monster, "target": monster, "mechanic": "cost",
-                    "subtype": "mutation", "amount": self.YUANCHU_COST_RATE * effective_x,
-                    "tags": {"daowen", "active_payment"}}, subtype="collapse"))
-                return {"monster": monster.name, "collapsed": name,
-                        "note": "支付异变后触发【迷失】，道纹效果中断"}
-        elif name == "封印":
-            # 怪物侧若持有【封印】，同样按新版口径支付异变X；玩家【封印】才会
-            # 把目标怪物放入延迟回场队列。
-            paid = monster.add_mutation(effective_x)
-            if paid["collapsed"]:
-                self._on_entity_death(monster, ctx=self._lost_context(monster, {
-                    "timing": "monster_action", "source": name, "source_type": "daowen",
-                    "actor": monster, "target": monster, "mechanic": "cost",
-                    "subtype": "mutation", "amount": effective_x,
-                    "tags": {"daowen", "active_payment"}}, subtype="collapse"))
-                return {"monster": monster.name, "collapsed": name,
-                        "note": "支付异变后触发【迷失】，道纹效果中断"}
-            elif paid.get("lost"):
-                # 非怪物（罕见：怪物侧持有封印的轮回者/朋友等）：触发【迷失】
+        # 原始怪物道纹与封印照常支付异变；只有非怪物角色可能触发迷失。
+        elif name in self.ORIGINAL_MONSTER_DAOWEN or name == "封印":
+            mutation_cost = (self.YUANCHU_COST_RATE * effective_x
+                             if name in self.ORIGINAL_MONSTER_DAOWEN else effective_x)
+            paid = monster.add_mutation(mutation_cost)
+            if paid.get("lost"):
                 self._resolve_mutation_lost(monster, {
                     "timing": "monster_action", "source": name, "source_type": "daowen",
                     "actor": monster, "target": monster, "mechanic": "cost",
-                    "subtype": "mutation", "amount": effective_x,
+                    "subtype": "mutation", "amount": mutation_cost,
                     "tags": {"daowen", "active_payment"}})
                 return {"monster": monster.name, "lost": name,
                         "note": "支付异变后触发【迷失】"}
@@ -863,7 +841,6 @@ class MonsterPhaseMixin:
             "activated": copy.deepcopy(self._monster_activated),
             "round_used": copy.deepcopy(self._monster_daowen_round_used),
             "rewrites": copy.deepcopy(self._resonance_rewrites),
-            "sanxiang": self._sanxiang_consumed,
             "dice": copy.deepcopy(self.dice),
             "split_spawned": getattr(self, "_split_clones_spawned", 0),
         }
@@ -882,7 +859,6 @@ class MonsterPhaseMixin:
         self._monster_activated = snap["activated"]
         self._monster_daowen_round_used = snap["round_used"]
         self._resonance_rewrites = snap["rewrites"]
-        self._sanxiang_consumed = snap["sanxiang"]
         self.dice = snap["dice"]
         self._split_clones_spawned = snap["split_spawned"]
 

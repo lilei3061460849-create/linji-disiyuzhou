@@ -35,6 +35,7 @@ SEED_MANA = 3
 def _engine_with_loop_spell(suffix, *, hp, mana, spells=None):
     engine = _new_engine(suffix)
     player = engine.state.player
+    engine.state.relics = []   # 2026-10-13：遗物池删2件后随机发放漂移（万钧印改向攻击会打断循环触发），本文件只测法术循环，清空钉死。
     for name in ("透支", "再生"):
         player.dao_wen[name] = DaoWenInstance(
             DaoWen(name=name, formula="", cost_type="", cost_formula="X", effect_formula=""))
@@ -109,6 +110,7 @@ def _engine_with_branch_spell(suffix, *, mana):
     """用真实 GameEngine 定义【血溅五步】并把怪物设为三击靶场。"""
     engine = _new_engine(suffix)
     player = engine.state.player
+    engine.state.relics = []   # 同上（承露盏由本夹具显式追加，不受影响）。
     # 2026-10-11 对齐 法术索引.md「法术阶级规则」：施展3阶法术（杀伐/再生/透支）
     # 须一次付清3次出手，基础预算只有2次 → 用【疯狂】+1 把出手预算抬到3
     # （action_count 是只读属性，只能走正文[速限]的修正项）。

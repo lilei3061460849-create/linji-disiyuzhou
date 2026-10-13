@@ -16,6 +16,8 @@ def run(n=12):
         got = collections.Counter()
         for seed in range(900, 900 + n):
             r = bl.play("杀伐", ["再生", "庇护"], reg, seed=seed, rng=random.Random(seed))
+            if bl._skip_resource_timeout(r, context=__name__):
+                continue
             if r.get("invalid"):
                 continue
             games += 1

@@ -6,7 +6,8 @@
 
 REGION_EXCLUSIVE_DAOWEN = {
     "扭曲都市": {"变形", "定型", "畸变", "搏命", "超频", "坏死", "退化"},   # 2026-10-03 删【爆裂】
-    "罪孽都市": {"点金", "逼债", "豪夺", "清算", "赎金", "假钞", "赌命", "消灾"},
+    # 2026-10-13 用户令：删【逼债】，【典当】顶替其闭环格。
+    "罪孽都市": {"点金", "典当", "豪夺", "清算", "赎金", "假钞", "赌命", "消灾"},
     "龙心谷": {"加害", "龙鳞", "逆鳞", "裂变", "背负", "伤痕"},   # 2026-10-03 删【活血】；2026-10-11 删【嫁祸】
     # 2026-10-08 删【镇尸】（与【坏死】硬重复）。注意：闭环上那一格留成空占位符
     # （见 engine/daowen.py::RESERVED_SLOT），不计入本集合——它不是道纹。
@@ -44,3 +45,34 @@ MONSTER_DAOWEN = ORIGINAL_MONSTER_DAOWEN | MONSTER_TRANSFORM_DAOWEN
 UNIMPLEMENTED_REGION_EXCLUSIVE_DAOWEN = {
     "净化": "荒疫古城",
 }
+
+
+def learnability_error(name, *, owned, region, known) -> str | None:
+    """局外【学习】口径的单名校验（2026-10-13 从 api._pre_battle_xuexi 原样抽出）。
+
+    返回 None = 可学；否则返回拒绝文案（逐字沿用旧实现）。
+    【典当】的发现池与【学习】同口径，共用本函数——改学习门禁时两处一起变。
+    """
+    if name not in known:
+        return f"未知道纹: {name}"
+    if name in owned:
+        return f"已经掌握道纹: {name}"
+    owner = next((r for r, pool in REGION_EXCLUSIVE_DAOWEN.items() if name in pool), None)
+    if owner is not None:
+        if owner != region:
+            return f"【{name}】是{owner}专属道纹，当前副本无法习得"
+        if not (REGION_EXCLUSIVE_DAOWEN[owner] & set(owned)):
+            return f"【{name}】须先经残韵获得本副本一种专属道纹后才能学习"
+    if name in MONSTER_TRANSFORM_DAOWEN:
+        return f"【{name}】是怪物转化道纹，只能由自身已有道纹经残韵获得"
+    # 2026-10-07 用户令：原始怪物道纹不再是人类禁区（残韵双向 + 可永久持有），
+    # 局外【学习】不再以「人类无法承受」为由拒绝。
+    unimpl_owner = UNIMPLEMENTED_REGION_EXCLUSIVE_DAOWEN.get(name)
+    if unimpl_owner is not None:
+        return f"【{name}】是{unimpl_owner}专属道纹，当前副本无法习得"
+    return None
+
+
+def learnable_daowen_pool(*, owned, region, known) -> list:
+    """学习口径下可获得的道纹名（排序稳定；调用方抽样前不再过滤）。"""
+    return sorted(n for n in known if learnability_error(n, owned=owned, region=region, known=known) is None)

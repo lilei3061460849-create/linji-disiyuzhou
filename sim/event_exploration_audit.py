@@ -161,14 +161,14 @@ def run_batch(runs: int, policy: str, seed_base: int, battles: int = 7):
                         resonance="反转")
             e = e_holder.get("e")
             chars.append({
-                "cid": i, "invalid": bool(r.get("invalid")),
+                "cid": i, "invalid": bool(r.get("invalid")), "timeout": bl._is_resource_timeout(r),
                 "cleared": r.get("cleared", 0), "won": bool(r.get("won")),
                 "log": e.audit_log if e else [],
             })
     finally:
         bl.GameEngine = real_engine
         bl._resolve_pending_event = real_resolve
-    return [c for c in chars if not c["invalid"]], len(chars) - sum(1 for c in chars if not c["invalid"])
+    return [c for c in chars if not c["invalid"] and not c["timeout"]], sum(c["invalid"] for c in chars)
 
 
 def causal_contrast(runs: int, seed_base: int = 30303030) -> dict:
@@ -189,7 +189,7 @@ def causal_contrast(runs: int, seed_base: int = 30303030) -> dict:
                         seed=seed_base + i * 7919, battles=7, policy=policy,
                         attrs={"blood_points": 6, "speed_points": 8, "mana_points": 10},
                         resonance="反转")
-            if not r.get("invalid"):
+            if not r.get("invalid") and not bl._skip_resource_timeout(r, context=__name__):
                 out.append(r.get("cleared", 0))
         return out
 

@@ -70,7 +70,6 @@ class WinOnlyAI(TacticalAI):
                 "activated": combat._monster_activated,
                 "round_used": combat._monster_daowen_round_used,
                 "rewrites": combat._resonance_rewrites,
-                "sanxiang": combat._sanxiang_consumed,
                 "split": getattr(combat, "_split_clones_spawned", 0),
                 "evolved": combat._monster_evolved,
                 "depth": combat._effect_chain_depth,
@@ -82,7 +81,6 @@ class WinOnlyAI(TacticalAI):
             combat._monster_activated = copy.deepcopy(real["activated"])
             combat._monster_daowen_round_used = copy.deepcopy(real["round_used"])
             combat._resonance_rewrites = copy.deepcopy(real["rewrites"])
-            combat._sanxiang_consumed = copy.deepcopy(real["sanxiang"])
             combat._split_clones_spawned = copy.deepcopy(real["split"])
             combat._monster_evolved = copy.deepcopy(real["evolved"])
             combat._effect_chain_depth = copy.deepcopy(real["depth"])
@@ -97,7 +95,6 @@ class WinOnlyAI(TacticalAI):
                 combat._monster_activated = real["activated"]
                 combat._monster_daowen_round_used = real["round_used"]
                 combat._resonance_rewrites = real["rewrites"]
-                combat._sanxiang_consumed = real["sanxiang"]
                 combat._split_clones_spawned = real["split"]
                 combat._monster_evolved = real["evolved"]
                 combat._effect_chain_depth = real["depth"]

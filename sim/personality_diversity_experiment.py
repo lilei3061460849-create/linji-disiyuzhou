@@ -336,7 +336,7 @@ def run_character(cid: int, seed: int, battles: int = 7) -> dict:
             policy=None, ai_cls=make_ai,
             attrs=dict(CONFIG["attrs"]), resonance=CONFIG["resonance"])
         ai = ai_holder.get("ai")
-        if ai is None or result.get("invalid"):
+        if ai is None or result.get("invalid") or bl._skip_resource_timeout(result, context=__name__):
             seed = seed + 1_000_000      # 无效局换种子重试(如实记录)
             continue
         ai._snapshot_traits(battles + 1)  # 终局快照(阵亡者为空——命零即清除是系统规则)

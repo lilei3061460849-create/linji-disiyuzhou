@@ -106,7 +106,8 @@ def _resolve_monster_plight(engine, rng) -> list:
     for o in opts:
         name = o["monster"]
         pool = o.get("borrowable_daowen") or []
-        max_x = o.get("max_x_by_mutation", 0)
+        limit = o.get("max_x_by_mutation", 0)
+        max_x = 2 if limit is None else limit
         signals = "、".join(o.get("difficulty_signals", [])) or "陷入困境"
         if pool and max_x >= 1:
             x = min(max_x, 2)

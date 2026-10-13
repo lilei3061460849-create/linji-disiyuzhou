@@ -21,7 +21,7 @@ from engine import api as api_mod                      # noqa: E402
 from engine import combat as combat_mod                # noqa: E402
 from engine.ai_tactics import TacticalAI               # noqa: E402
 from engine.combat_events import CombatEventType       # noqa: E402
-from sim.build_learner import play                     # noqa: E402
+from sim.build_learner import _skip_resource_timeout, play                     # noqa: E402
 
 SEEDS = range(1, 121)
 REGIONS = ["扭曲都市", "罪孽都市", "龙心谷"]
@@ -117,6 +117,8 @@ def run_region(region):
         tel = {}
         r = play("庇护", ["杀伐", "再生", "贯穿"], region, seed=seed, battles=7,
                  telemetry=tel, ai_cls=TacticalAI)
+        if _skip_resource_timeout(r, context=__name__):
+            continue
         if r.get("invalid"):
             inv += 1
             continue

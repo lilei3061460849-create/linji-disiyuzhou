@@ -61,7 +61,8 @@ def test_readme_links_to_index():
 
 def test_all_relic_pool_items_documented():
     """正常路径：删除两份旧契约与钱袋（并入第一杯）后的10件遗物池物品均有索引条目。"""
-    pool = ["血誓戒", "买路财", "同魂笔", "回锋刀", "三相残韵盘",
+    # 2026-10-13：【买路财】改制为【逃跑】行动、【三相残韵盘】删除，均移出遗物池。
+    pool = ["血誓戒", "同魂笔", "回锋刀",
             "血契", "避风铃", "守夜灯", "无所求", "忘忧香"]
     anchors = index_anchors()
     missing = [n for n in pool if gh_anchor(n) not in anchors]
