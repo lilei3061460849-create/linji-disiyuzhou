@@ -18,7 +18,7 @@ import time
 sys.path.insert(0, ".")
 
 from engine.ai_tactics import TacticalAI, monster_threat          # noqa: E402
-from sim.build_learner import play, DEFAULT_POLICY                # noqa: E402
+from sim.build_learner import _skip_resource_timeout, play, DEFAULT_POLICY                # noqa: E402
 
 SEEDS = range(1, 121)
 BATTLES = 7
@@ -307,6 +307,8 @@ def run_row(label, region, starter, learn, ai_cls, kw):
         telemetry = {}
         r = play(starter, list(learn), region, seed=seed, battles=BATTLES,
                  telemetry=telemetry, ai_cls=ai_cls, **kw)
+        if _skip_resource_timeout(r, context=__name__):
+            continue
         if r.get("invalid"):
             tot["invalid"] += 1
             continue

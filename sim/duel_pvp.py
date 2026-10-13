@@ -622,9 +622,9 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
             rs, _rsart = start_round(e)
         if not rs.get("success"):
             # 回始失败不允许吞掉:法力不会回填,双方将永久空转(2026-08-26 死斗三
-            # "对手血契"校验事故)。显式判卫冕并留因,绝不无声挂死。
-            return {"winner": "defender", "rounds": rnd,
-                    "reason": f"回始失败判卫冕: {str(rs.get('error', ''))[:80]}"}
+            # "对手血契"校验事故)。显式报告提交错误并留因，不把程序错误算作规则败北。
+            return {"winner": None, "rounds": rnd, "error": True, "error_kind": "contract",
+                    "reason": f"回始提交失败: {str(rs.get('error', ''))[:80]}"}
         # 死锁防护:连续 STALL_GUARD_STEPS 步双方面板零变化 → 判卫冕(双有效行动
         # 枯竭的残局,如 1 血 0 法互瞪;不做 400 步 × 60 回合的无意义空转)。
         last_panel, panel_stall = None, 0
@@ -682,8 +682,8 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
         e.state.combat_subphase = CombatSubphase.AWAIT_ROUND_END.value
         re = e.execute_action("round_end", {})
         if not re.get("success"):
-            return {"winner": "defender", "rounds": rnd,
-                    "reason": f"round_end判卫冕: {str(re.get('error',''))[:80]}"}
+            return {"winner": None, "rounds": rnd, "error": True, "error_kind": "contract",
+                    "reason": f"回终提交失败: {str(re.get('error',''))[:80]}"}
         # 回始：重置双方 AI 的回合记账（凡庸压力/本回合伤害标记/已控制目标）
         if use_tactical:
             _tai.new_round()

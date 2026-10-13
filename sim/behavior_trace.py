@@ -176,7 +176,7 @@ def main() -> int:
         digest.update(payload.encode("utf-8"))
         rows.append({"region": region, "seed": seed,
                      "cleared": result.get("cleared"), "won": result.get("won"),
-                     "invalid": result.get("invalid"), "hash": case_hash})
+                     "invalid": result.get("invalid"), "timeout": bl._is_resource_timeout(result), "hash": case_hash})
         if not quiet:
             print(f"{region} seed={seed}: cleared={result.get('cleared')} "
                   f"won={result.get('won')} invalid={result.get('invalid')} "

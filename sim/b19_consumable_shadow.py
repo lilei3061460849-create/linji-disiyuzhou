@@ -17,8 +17,9 @@ import argparse
 import json
 import random
 import sys
+from pathlib import Path
 
-sys.path.insert(0, "/home/user/linji-disiyuzhou")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from sim import build_learner as bl
 
 
@@ -56,6 +57,8 @@ def main() -> None:
                     spend_shards=True, policy=pol,
                     consumable_policy=a.policy,
                     death_trace=a.trace)
+        if bl._skip_resource_timeout(r, context=__name__):
+            continue
         if r.get("invalid"):
             inv += 1
             continue

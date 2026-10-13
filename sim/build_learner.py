@@ -994,6 +994,16 @@ def _is_resource_timeout(result: dict) -> bool:
                 (result.get("timeout") and result.get("timeout_kind") == "wall_clock"))
 
 
+def _skip_resource_timeout(result: dict, *, context: str = "sim") -> bool:
+    """旧探针的兼容门禁：单独记录未完成样本，不把它投入原胜负/invalid计数。"""
+    if not _is_resource_timeout(result):
+        return False
+    print(json.dumps({"sample_status": "timeout", "timeout_kind": "wall_clock",
+                      "context": context, "reason": result.get("reason", "pvp_timeout"),
+                      "rounds": result.get("duel_rounds")}, ensure_ascii=False), flush=True)
+    return True
+
+
 def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
          rng: random.Random = None, policy: dict = None, telemetry: dict = None,
          spend_shards: bool = False, spell_plan: list = None,
@@ -2373,7 +2383,7 @@ def _print_metric_candidate(label: str, rec: dict | None) -> None:
 def report(k: dict) -> None:
     print(f"已学习代数：{k['generation']}｜累计试验：{len(k['history'])} 套"
           f"｜有效对局：{k.get('total_games', 0)} 局"
-          f"｜引擎无效 {k.get('invalid_games', 0)} 局｜资源超时 {k.get('timeout_games', 0)} 局")
+          f"｜累计无效（旧记录可能含超时） {k.get('invalid_games', 0)} 局｜新记录资源超时 {k.get('timeout_games', 0)} 局")
     print("\n【构筑排行榜】PVE、PVP、完整通关分开统计；不生成默认综合最优")
     confirmed = k.get("best_confirmed_by_metric") or {}
     observed = k.get("best_by_metric") or {}

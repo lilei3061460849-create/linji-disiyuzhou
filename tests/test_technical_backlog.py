@@ -127,3 +127,38 @@ def test_evaluation_records_resource_timeouts_separately(monkeypatch):
     assert telemetry["timeout_reasons"] == {"pvp_timeout": 1}
     assert telemetry["invalid_reasons"] == {"schema error": 1}
     assert telemetry["outcomes"]["loss"] == 0
+
+
+def test_duel_lab_excludes_timeouts_from_win_rate(tmp_path, monkeypatch):
+    import json
+    from sim import b19_duel_lab as lab
+
+    kb = tmp_path / "kb.json"
+    ecology = tmp_path / "eco.json"
+    output = tmp_path / "result.json"
+    kb.write_text("{}")
+    ecology.write_text("{}")
+    monkeypatch.setattr(lab, "LAB", {"sealed_path": str(tmp_path / "seal.json")})
+    monkeypatch.setattr(lab, "ecology_builds", lambda path: [])
+    monkeypatch.setattr(lab.bl, "learned_policy", lambda knowledge: {})
+    monkeypatch.setattr(lab.bl, "build_scoreboard", lambda knowledge, n: [(1.0, ("杀伐", ()))])
+    samples = iter([
+        {"cleared": 7, "duel_fought": True, "duel_won": True, "duel_rounds": 2},
+        {"cleared": 7, "duel_fought": True, "duel_timeout": True, "duel_rounds": 3},
+        {"invalid": True, "reason": "schema error"},
+    ])
+    monkeypatch.setattr(lab.bl, "play", lambda *args, **kwargs: next(samples))
+    lab.run_eval(7, 3, str(ecology), str(output), str(kb))
+    row = json.loads(output.read_text())["rows"][0]
+    assert row["duels"] == row["won"] == 1 and row["wr"] == 1.0
+    assert row["timeouts"] == row["invalid"] == 1
+    assert row["lost_kill"] == 0 and row["rounds_avg"] == 2
+
+
+def test_probe_timeout_gate_logs_it_without_calling_it_invalid(capsys):
+    from sim.build_learner import _skip_resource_timeout
+    assert _skip_resource_timeout({"duel_timeout": True}, context="test-probe")
+    output = capsys.readouterr().out
+    assert '"sample_status": "timeout"' in output and '"context": "test-probe"' in output
+    assert "invalid" not in output
+    assert not _skip_resource_timeout({"won": False})
