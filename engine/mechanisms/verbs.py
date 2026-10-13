@@ -227,3 +227,37 @@ register_verb("mana", _verb_mana)
 register_verb("shards", _verb_shards)
 register_verb("depart", _verb_depart)
 register_verb("execute", _verb_execute)
+
+
+def _verb_direct_damage(combat, spec, ctx):
+    """模型直通扣除；外层负责原有反应/来源/支付协议，不偷偷走伤害管线。"""
+    target = spec["target"]
+    return target.take_damage(spec["amount"], spec.get("damage_type", "普通"),
+                              life_loss_multiplier=combat.state.life_loss_multiplier(target))
+
+
+def _verb_mapping(combat, spec, ctx):
+    mapping, key = spec["mapping"], spec["key"]
+    operation = spec["op"]
+    if operation == "pop":
+        return mapping.pop(key, spec.get("default", 0))
+    if operation == "set":
+        mapping[key] = spec["value"]
+    elif operation == "add":
+        mapping[key] = mapping.get(key, 0) + spec["value"]
+    else:
+        raise ValueError(f"未知 mapping 操作：{operation}")
+    return mapping[key]
+
+
+def _verb_reset_fields(combat, spec, ctx):
+    import copy
+    target = spec["target"]
+    for name, value in spec["fields"].items():
+        if not name.startswith("_") or hasattr(target, name):
+            setattr(target, name, copy.deepcopy(value))
+
+
+register_verb("direct_damage", _verb_direct_damage)
+register_verb("mapping", _verb_mapping)
+register_verb("reset_fields", _verb_reset_fields)

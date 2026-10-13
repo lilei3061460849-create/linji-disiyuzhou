@@ -22,7 +22,6 @@ from engine.combat import CombatEngine
 from engine.combat_events import CombatEventType
 from engine.combat_hooks import (
     CombatHookManager,
-    DragonBloodlineMultiplierHook,
     QianjingjiaHook,
     AfterDamageEffectsHook,
 )
@@ -346,7 +345,7 @@ def test_f_hook_order_is_explicit_and_unchanged():
     manager = CombatHookManager()
     order = [type(h).__name__ for h in manager.hooks()]
     assert order == [
-        "DragonBloodlineMultiplierHook",
+        "MechanismHookAdapter",  # 龙族血脉乘区（priority 10）
         "MechanismHookAdapter",  # 【加害】迁移后：原 JiahaiHook 位置（priority 20）
         "MechanismHookAdapter",  # 【龙鳞】迁移后：原 LonglinHook 位置（priority 30）
         "MechanismHookAdapter",  # 【固执】也接入同一伤害相位（priority 40）
@@ -361,7 +360,7 @@ def test_f_hook_order_is_explicit_and_unchanged():
     assert priorities == sorted(priorities)
     adapter_priorities = [h.priority for h in manager.hooks()
                           if isinstance(h, MechanismHookAdapter)]
-    assert adapter_priorities == [20, 30, 40], "加害(20)先于龙鳞(30)，固执(40)位于其后"
+    assert adapter_priorities == [10, 20, 30, 40], "加害(20)先于龙鳞(30)，固执(40)位于其后"
 
 
 def test_f_jiahai_before_longlin_is_rule_relevant():

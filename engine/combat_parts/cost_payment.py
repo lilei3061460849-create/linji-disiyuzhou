@@ -524,8 +524,9 @@ class CostPaymentMixin:
         try:
             # 【第一杯】：代价的「流血X」支付 X（代价语义、血誓戒按 X 结算），
             # 但持有者**失去的生命**翻倍——代价与落地生命损失在这里分道。
-            detail = payer.take_damage(
-                actual, "代价", life_loss_multiplier=self.state.life_loss_multiplier(payer))
+            from ..mechanisms.verbs import apply_verb
+            detail = apply_verb(self, "direct_damage", {
+                "target": payer, "amount": actual, "damage_type": "代价"})
         finally:
             self._hp_loss_recording -= 1
         detail["dragon_heart_offset"] = offset

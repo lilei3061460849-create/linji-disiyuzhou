@@ -203,7 +203,7 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
             event_type, actor=actor, target=target, ctx=ctx, **data)
 
     def _dispatch_phase(self, phase: str, *, target=None, source=None,
-                        amount: int = 0, damage_type: str = "") -> list:
+                        amount: int = 0, damage_type: str = "", picks: Optional[dict] = None) -> list:
         """宣布一个管线相位时点（机制系统，通用分发，不含任何机制判断）。
 
         同一实体/相位的持续状态机制按「发动 X 降序、同 X 施加先后」执行；
@@ -219,12 +219,14 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         for mechanism in sorted(mechanisms, key=lambda item: item.ordering_key(target)):
             ctx = TriggerContext(combat=self, state=self.state, phase=phase,
                                  target=target, source=source,
-                                 amount=amount, damage_type=damage_type)
+                                 amount=amount, damage_type=damage_type, picks=dict(picks or {}))
             if mechanism.condition is not None and not mechanism.condition(ctx):
                 continue
             targets = mechanism.target.select(ctx) if mechanism.target is not None else []
             result = mechanism.effect(ctx, targets)
-            if result is not None:
+            if isinstance(result, list):
+                results.extend(result)
+            elif result is not None:
                 results.append(result)
         return results
 
@@ -975,16 +977,8 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         effects = []
         player = self.state.player
         if player is not None:
-            if self.state.current_round == 0:
-                shield = self.state.event_modifiers.pop("next_battle_first_round_shield", 0)
-                if shield:
-                    player.gain_shield(shield)
-                    effects.append({"type": "event_first_round_shield", "amount": shield})
-            leather = self.state.event_modifiers.pop("leather_shield_next", 0)
-            if leather and self.state.side_has(player, "皮衣"):
-                player.gain_shield(leather)
-                effects.append({"type": "leather_shield", "amount": leather})
-        
+            effects.extend(self._dispatch_phase(Phase.ROUND_START_PREPARE, target=player))
+
         # 活血追踪归零 + 出手预算归零（回始重置本回合已用出手次数）+ 血誓戒每回合限一次归零 + 血族血脉判定归零
         seen_entities: set[int] = set()
         for e in self.state.get_all_player_side() + self.state.get_all_enemy_side():
@@ -1018,22 +1012,12 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                     "log": f"{e.name}的【{MONSTER_MANA_RELIC}】：法力+{mana_gained}，"
                            f"异变+{amount}（累计{mutation['mutation_total']}层）",
                 })
-            e.hp_lost_this_round = 0
-            # 招架：2026-09-28 用户令重写——不再有"上回合招架过→本回合禁用"锁；
-            # 本回合姿态清空、剩余次数清零，等本回合玩家/怪物重新 declare_parry。
-            e.parrying_this_round = False
-            e.parry_uses_remaining_this_round = 0
-            e.parry_locked_this_round = False  # 旧字段保留但不再使用
-            if hasattr(e, "_hp_loss_events"):
-                e._hp_loss_events = []
-            if hasattr(e, "_speed_change_events"):
-                e._speed_change_events = []
-            if hasattr(e, "_blood_limit_events"):
-                e._blood_limit_events = []
-            e.actions_used_this_round = 0
-            e.blood_oath_used_this_round = False
-            e.mana_inflicted_this_round = 0
-            e.damage_dealt_this_round = 0
+            apply_verb(self, "reset_fields", {"target": e, "fields": {
+                "hp_lost_this_round": 0, "parrying_this_round": False,
+                "parry_uses_remaining_this_round": 0, "parry_locked_this_round": False,
+                "_hp_loss_events": [], "_speed_change_events": [], "_blood_limit_events": [],
+                "actions_used_this_round": 0, "blood_oath_used_this_round": False,
+                "mana_inflicted_this_round": 0, "damage_dealt_this_round": 0}})
         # DM裁定 2026-09-09：[回始]不再回填法力。法力改为**一池制**——[战始]给满
         # 等同[法限]的一池，整场只出不进，[战终]复原（与[速度]同口径）。
         # 因这一段，"[回始]不获得法力"曾一度失去作用对象，【勾魂】在 2026-09-09
@@ -1172,45 +1156,10 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
             effects.extend(self._apply_mediocrity(entity, why))
 
         for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
-            # 血族血脉：持有者这一侧各自结算（死斗两边各一份）
-            if entity.entity_type == "轮回者" and self.state.side_has(entity, "血族血脉"):
-                if entity.damage_dealt_this_round > 0:
-                    heal_detail = self.state.apply_heal(entity, entity.damage_dealt_this_round, ctx={
-                        "timing": "round_end", "source": "血族血脉", "source_type": "relic",
-                        "actor": entity, "target": entity, "owner": entity,
-                        "mechanic": "heal", "subtype": "blood_lineage", "amount": entity.damage_dealt_this_round,
-                        "tags": {"relic", "round_end"},
-                    })
-                    effects.append({"type": "blood_lineage_heal", "entity": entity.name,
-                                     "amount": heal_detail["actual_heal"],
-                                     "heal_ctx": heal_detail.get("heal_ctx")})
-                else:
-                    payment = self.pay_numeric_cost(
-                        entity, "流血", 20,
-                        cost_share_target_ref=(blood_lineage_cost_share_target_ref
-                                               if entity is self.state.player else ""),
-                        cost_context={"timing": "round_end", "source": "血族血脉", "source_type": "relic", "tags": {"automatic"}})
-                    effects.append({"type": "blood_lineage_bleed", "entity": entity.name,
-                                     "cost": payment, "amount": payment["actual_paid"]})
-
-            # 赤族诅咒：[回终]固定流血20
-            # 注意：这里刻意**不**改走 pay_numeric_cost——那会额外触发血誓戒/烙痕钉/血契，属于改规则。
-            # 本次只补齐来源上下文与统一死亡判定，数值口径不动。
-            if entity.entity_type == "赤族" and entity.is_alive:
-                curse_ctx = make_context(
-                    timing="round_end", source="赤族诅咒", source_type="bloodline",
-                    actor=entity, target=entity, owner=entity,
-                    mechanic="cost", subtype="bleed", amount=20,
-                    tags={"bloodline", "round_end", "automatic"})
-                # 【第一杯】：赤族诅咒的流血同样是「失去的生命」（持有者翻倍）。
-                bleed_detail = entity.take_damage(
-                    20, "代价", life_loss_multiplier=self.state.life_loss_multiplier(entity))
-                loss_ctx = self._record_hp_loss_event(
-                    entity, bleed_detail.get("actual_damage", 0), curse_ctx, subtype="cost")
-                if bleed_detail.get("died"):
-                    self._check_hp_zero_death(entity, ctx=loss_ctx or curse_ctx)
-                effects.append({"type": "chizu_curse_bleed", "entity": entity.name,
-                                 "amount": bleed_detail["actual_damage"], "died": bleed_detail["died"]})
+            # 凡庸之后的原第二实体循环；保持实体优先，不能提前到 ROUND_END。
+            effects.extend(self._dispatch_phase(
+                Phase.ROUND_END_POST_MEDIOCRITY, target=entity,
+                picks={"blood_lineage_cost_share_target_ref": blood_lineage_cost_share_target_ref}))
 
             # DM裁定 2026-09-10：格挡不再[敌回终]每回合清除。
             # 原口径下 4 法力换 8 点格挡、一回合就被抹掉，等于没有价值；改为保留到
@@ -1276,24 +1225,10 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
             effects.append({"type": "dragon_body_tick", "side": "opponent",
                             "remaining": self.state.opponent_dragon_body_shield_rounds})
 
-        # 皮衣记录本回合实际失去生命；优先使用 HP loss 事件，兼容未迁移旧路径。
-        if self.state.player and self.state.side_has(self.state.player, "皮衣"):
-            hp_loss_events = getattr(self.state.player, "_hp_loss_events", []) or []
-            event_loss = sum(int(e.get("amount") or 0) for e in hp_loss_events)
-            leather_loss = event_loss if event_loss > 0 else self.state.player.hp_lost_this_round
-            if leather_loss > 0:
-                self.state.event_modifiers["leather_shield_next"] = leather_loss
-
-        # 回终清理本回合记账（失血 / 速度变化 / 血限变化），供下一回合重新累计。
-        # 2026-10-03：【活血】道纹删除后本段与活血无关，独立成循环（此前缩进被误并入皮衣分支）。
-        for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
-            entity.hp_lost_this_round = 0
-            if hasattr(entity, "_hp_loss_events"):
-                entity._hp_loss_events = []
-            if hasattr(entity, "_speed_change_events"):
-                entity._speed_change_events = []
-            if hasattr(entity, "_blood_limit_events"):
-                entity._blood_limit_events = []
+        # 原皮衣记录→原逐实体追踪清理，保持机制优先的两个独立锚点顺序。
+        effects.extend(self._dispatch_phase_all(
+            Phase.ROUND_END_TRACKING,
+            self.state.get_all_player_side() + self.state.get_all_enemy_side()))
 
         # 手术·强制移植：本场第三回终仍保持原移植道纹时转为怪物。
         if self.state.current_round >= 3:
@@ -1521,19 +1456,13 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                 self.state.event_modifiers["brand_nail_target_ref"] = choices["烙痕钉"]["target_ref"]
                 logs.append("烙痕钉：已锁定目标")
             for ally in self.state.friends + self.state.employees:
-                if ally.is_alive and any(relic.name == "防弹插板" for relic in ally.relics):
-                    ally.gain_shield(15)
-                    logs.append(f"防弹插板：{ally.name}+15格挡")
+                logs.extend(self._dispatch_phase(Phase.BATTLE_START_AFTER_CHOICES, target=ally))
         # 机制系统：BATTLE_END 相位分发。位置=战终遗物段顶部（2026-09-17 新增相位，
         # 首个注册者是改版后的【缄默面具】：[战终]法限+X）。
         # process_relics 只宣布时点，具体机制条件/效果都在声明层。
         if trigger == "battle_end":
-            logs.extend(self._dispatch_phase(Phase.BATTLE_END, target=player))
-        if trigger == "battle_end" and "三相残韵盘" in relics and self._sanxiang_consumed:
-            others = [t for t in ("转换", "反转", "曲解") if t != self._sanxiang_consumed]
-            for t in others:
-                self.state.resonance[t] = self.state.resonance.get(t, 0) + 1
-            logs.append(f"三相残韵盘：战终获得{'、'.join(others)}残韵各1")
+            logs.extend(self._dispatch_phase(
+                Phase.BATTLE_END, target=player, picks={"sanxiang_consumed": self._sanxiang_consumed}))
         return logs
 
     def buyaicai_escape_cost(self, monster: Entity) -> dict:

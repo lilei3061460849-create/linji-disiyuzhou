@@ -44,17 +44,6 @@ class CombatHook(Protocol):
         return {}
 
 
-class DragonBloodlineMultiplierHook:
-    """龙族血脉：对非怪物造成伤害翻倍"""
-    priority = 10
-
-    def on_multiplier_adjust(self, target: Any, amount: int, damage_type: str, source: Optional[Any], state: Any) -> int:
-        if (source is not None and hasattr(state, "side_has") and state.side_has(source, "龙族血脉")
-                and getattr(target, "entity_type", "") != "怪物" and damage_type != "代价"):
-            return amount * 2
-        return amount
-
-
 class QianjingjiaHook:
     """千荆甲（通用遗物池，2026-10-03 出自被删【爆裂】道纹）的数值实现。
 
@@ -366,12 +355,12 @@ class CombatHookManager:
         # 执行顺序不是静态 priority：每次伤害窗口都读取状态的发动 X 与施加序号。
         mechanism_hooks: List[Any] = [
             MechanismHookAdapter(mechanism)
-            for mechanism in MECHANISMS.phase_mechanisms(Phase.INCOMING_ADJUST)
+            for phase in (Phase.MULTIPLIER_ADJUST, Phase.INCOMING_ADJUST)
+            for mechanism in MECHANISMS.phase_mechanisms(phase)
         ]
         # 注意：必须复用上面这三个**同一实例**，不能再 new 一份，
         # 否则注册表与显式分发路径持有的是两个对象，状态与去重都会失真。
         self._hooks: List[Any] = self._sorted([
-            DragonBloodlineMultiplierHook(),
             *mechanism_hooks,
             QianjingjiaHook(),
             BifenglingHook(),

@@ -24,7 +24,7 @@ class Phase:
     新相位必须先确认管线里对应分发点唯一，才能登记并接线。
     """
 
-    MULTIPLIER_ADJUST = "damage_multiplier_adjust"   # 伤害乘区（龙族血脉）——未接线
+    MULTIPLIER_ADJUST = "damage_multiplier_adjust"   # 伤害乘区（龙族血脉）——已接线（原 Hook 桥）
     INCOMING_ADJUST = "damage_incoming_adjust"       # 伤害加减区（加害→龙鳞）——已接线
     BEFORE_DAMAGE = "before_damage"                  # 受到伤害前（爆裂反噬）——未接线
     AFTER_DAMAGE = "after_damage"                    # 伤害落地后——未接线
@@ -41,6 +41,10 @@ class Phase:
     ROUND_END = "round_end"                          # 回终——已接线（round_end 第一逐实体循环顶部、
                                                      # 凡庸 tick 之前）。锚定语义：凡庸之后的回终机制
                                                      # 禁止注册本相位（会改变既有顺序），见机制迁移台账。
+    ROUND_START_PREPARE = "round_start_prepare"  # 回始最前段：首回合事件格挡→皮衣
+    ROUND_END_POST_MEDIOCRITY = "round_end_post_mediocrity"  # 凡庸后，逐实体血族→赤族
+    ROUND_END_TRACKING = "round_end_tracking"  # status/龙躯 tick 后，皮衣→原追踪清理
+    BATTLE_START_AFTER_CHOICES = "battle_start_after_choices"  # 烙痕钉后，原盟友逐实体循环
     ROUND_END_RECONCILE = "round_end_reconcile"      # 回终·清账（2026-10-03 接线）。
                                                      # 锚点：回终第一逐实体循环内、status tick 之后
                                                      # （原 F2「状态消失即清账」位置）。只清账、不结算，

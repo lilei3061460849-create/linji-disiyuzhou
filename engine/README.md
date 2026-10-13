@@ -77,15 +77,15 @@ engine/
 - **Trigger**：复用 `CombatEventType`（事件路径，经 `CombatEngine._emit` 分发）与 `Phase`（管线相位路径，
   经 `CombatHookManager` 既有分发路径执行）。不新建第二套事件枚举。
 - **Condition**：`has_status / side_has / is_alive / entity_type / hp_at_least / events_this_round /
-  all_ / any_ / not_` 等最小组合子。
+  entity_has_relic / player_run_relic_active / all_ / any_ / not_` 等最小组合子。
 - **Target**：`SELF / TARGET / SOURCE / ALL / ALL_ALLIES / ALL_ENEMIES / RANDOM_ENEMY / DEAD_ENTITY`。
 - **Verb**：damage / heal / hp_loss / blood_limit / cost / status / speed / shield / mutation /
-  depart / execute——实现体全部是现有统一结算入口，不新增游戏逻辑。
+  mana / shards / direct_damage / mapping / reset_fields / depart / execute——实现体全部是现有统一结算入口或旧数据操作的薄包装，不新增游戏逻辑。
 
 当前 Mechanism 声明层含【加害】【龙鳞】【固执】三个受击伤害适配器；三者的实际条件、阶段、运算和玩家摘要由 `engine/rule_engine.py` 中的稳定 ID 规则定义驱动，并经 `MechanismHookAdapter` 接入原 Hook 路径。固定 priority（20/30/40）仅是缺少状态排序锚点时的后备；有效持续状态按当前道纹序列位置排序；缺少序列锚点时才回退到 priority。回始循环已全部声明化：
 【洞察·结算】(30)、【畸变·标记】(60)——经 `_dispatch_phase(Phase.ROUND_START)`
 回始原位分发（洞察经 2026-08-19 新增的通用 `mana` 动词：获得含不朽之躯钳制、失去下限 0）。
-2026-10-11 核对：`MECHANISMS` 实际注册 16 个机制，回始相位只有上述两个；
+2026-10-13 核对：`MECHANISMS` 实际注册 25 个机制，回始相位只有上述两个；
 【勾魂】并未注册为机制（本行旧文写的「勾魂(40)」是过期描述，已按实测删除）；
 【自愈】【衰败】随道纹删除，【狂暴·标记】2026-10-03 随道纹删除。
 【畸变·结算】（priority=10，血限走统一入口，lethal=True）——经
@@ -95,6 +95,8 @@ engine/
 ——经 `_dispatch_phase(Phase.BATTLE_START)` 战始原位分发，条件复用通用
 `relic_active("帮派令")`。旧类/旧 if 均已删除。护栏：`validator.check_migrated_mechanism_guards()` 禁止已迁移机制
 在核心管线重新出现同名硬编码分支。批量迁移见审计报告《机制系统化可扩展性审计》。
+
+2026-10-13 六项挂起迁移：血族血脉/赤族诅咒在凡庸之后的独立逐实体相位；皮衣在回始最前段和回终追踪清理前；防弹插板在战始选择处理之后；龙族血脉乘区经原 Hook 桥且不在 incoming 重复执行；三相残韵盘战终复用已序列化的战斗运行态。原数值、封存口径、死亡/回复上下文和选择协议不变。映射与验证见 `../archive/mechanism_migration_2026-10-13.md`。
 
 ## 道纹统一数值规则系统（第一阶段）
 
