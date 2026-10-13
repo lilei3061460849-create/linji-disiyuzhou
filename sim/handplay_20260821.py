@@ -800,7 +800,7 @@ def battle_start_choices(engine, strat: Strategy) -> dict:
 
 
 def round_start_choices(engine, strat: Strategy) -> dict:
-    """回始可选遗物决策：回锋刀/血契/余火印。"""
+    """回始可选遗物决策：回锋刀/余火印；血契只保留代价平分。"""
     active = {r.name for r in engine.state.relics
               if engine.state.sealed_relics.get(r.name, 0) <= 0}
     p = engine.state.player
@@ -811,15 +811,6 @@ def round_start_choices(engine, strat: Strategy) -> dict:
         if damage > 0 and alive:
             out["回锋刀"] = {"enemy_index": alive[0]}
             TRACE.text(f"  决策[遗物] 回锋刀：回始对敌{alive[0]}造成{damage}伤（速限-当前速）")
-    if "血契" in active and p is not None:
-        # 流血4X换X法力。血契是"用血换法力"的代价闭环：只在血量非常健康、
-        # 且法力缺口真实存在时才用，且只用最小档（X=1，流血4换1法力）。
-        x = 0
-        if p.current_hp >= 45 and p.current_mana < 8:
-            x = 1
-        out["血契"] = {"use": x >= 1, "x": max(1, x)}
-        if x >= 1:
-            TRACE.text(f"  决策[遗物] 血契：流血{4 * x} → 法力+{x}（血量健康且法力缺口真实）")
     if "余火印" in active and p is not None:
         heart = next((item for item in engine.state.consumables
                       if item.kind == "dragon_heart" and item.current_uses >= 1), None)
