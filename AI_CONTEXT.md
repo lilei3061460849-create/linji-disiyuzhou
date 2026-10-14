@@ -233,7 +233,7 @@
 ### 来源 4：机制速查·遗物
 
 - 路径：`物品索引.md`
-- SHA-256：`56adefd90fb2b0869022a43e54812e1f9df8260a2af408d77f1c8bb748a78584`
+- SHA-256：`d196f4ccc09a791fd2a35b014e7a31ce36f68f60e1ff136f26d20c99a8ab49e6`
 
 ```markdown
 （共 53 件）
