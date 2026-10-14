@@ -593,13 +593,31 @@ def main():
     args = ap.parse_args()
 
     os.makedirs(WINNER_DIR, exist_ok=True)
-    # 清掉历史胜者文件，从零计数
+    # 真实胜者必须可累积：绝不清空已有样本。
+    # 文件编号与随机种子都从现存记录之后继续，避免覆盖或重复跑同一批种子。
+    existing_indices = []
+    existing_seeds = []
     for fn in os.listdir(WINNER_DIR):
-        os.remove(os.path.join(WINNER_DIR, fn))
+        match = re.fullmatch(r"winner_(\d+)\.json", fn)
+        if not match:
+            continue
+        existing_indices.append(int(match.group(1)))
+        path = os.path.join(WINNER_DIR, fn)
+        try:
+            with open(path, encoding="utf-8") as f:
+                existing = json.load(f)
+            origin = existing.get("origin") or {}
+            if isinstance(origin.get("seed"), int):
+                existing_seeds.append(origin["seed"])
+        except (OSError, json.JSONDecodeError):
+            # 不覆盖损坏/旧格式文件；由后续独立审计决定是否剔除。
+            pass
 
     winners = 0
-    seed = 1
+    next_index = max(existing_indices, default=0) + 1
+    seed = max(existing_seeds, default=0) + 1
     played = 0
+    last_out = None
     while winners < args.count and played < args.max_games:
         region = REGIONS[seed % len(REGIONS)]
         sealed_path = f"/tmp/winner_seal_{seed}.json"
@@ -611,13 +629,24 @@ def main():
         extra = ""
         if r.get("won") and os.path.exists(sealed_path):
             winners += 1
-            out = os.path.join(WINNER_DIR, f"winner_{winners:02d}.json")
+            out = os.path.join(WINNER_DIR, f"winner_{next_index:02d}.json")
             with open(sealed_path, encoding="utf-8") as f:
                 snapshot = json.load(f)
-            # 溯源：一阶来源副本 + 通关种子 + 封存序号
-            snapshot["origin"] = {"region": region, "seed": seed, "rank": winners}
+            # 保存可审计的来源信息；文件只在真实通关且封存快照存在时写入。
+            snapshot["origin"] = {
+                "region": region,
+                "seed": seed,
+                "rank": next_index,
+                "cleared": r.get("cleared"),
+                "duel_won": r.get("duel_won", False),
+                "terminal_artifact": r.get("terminal_artifact", False),
+                "sealed_name": r.get("sealed_name"),
+                "generator": "sim/produce_real_winners.py",
+            }
             with open(out, "w", encoding="utf-8") as f:
                 json.dump(snapshot, f, ensure_ascii=False, indent=2)
+            last_out = out
+            next_index += 1
             s = winner_summary(out)
             extra = "  " + " ".join(f"{k}{v}" for k, v in s.items())
         elif r.get("won"):
@@ -626,9 +655,9 @@ def main():
         seed += 1
 
     print(f"\n完成：{played} 局跑出 {winners} 位真实一阶胜者 → {WINNER_DIR}/")
-    if winners:
-        print("胜者状态示例（winner_01）：")
-        s = winner_summary(os.path.join(WINNER_DIR, "winner_01.json"))
+    if winners and last_out:
+        print(f"本批最后一位胜者：{os.path.basename(last_out)}")
+        s = winner_summary(last_out)
         for k, v in s.items():
             print(f"  {k}: {v}")
 

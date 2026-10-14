@@ -207,6 +207,36 @@ class AfterDamageEffectsHook:
         damage_ctx = normalize_context(detail.get("ctx"))
         damage_event_id = damage_ctx.event_id if damage_ctx else None
 
+        # 噬伤血囊订阅全场伤害落地信号：每个有效持有者回复该次实际伤害的20%。
+        # 沿用原【寄生】的向上取整口径；治疗仍走 GameState.apply_heal，遵守坏死等统一规则。
+        if actual_damage > 0 and combat._any_active_relic("噬伤血囊"):
+            holders = []
+            for container_name in ("player", "friends", "employees", "temp_friends", "enemies"):
+                value = getattr(combat.state, container_name, None)
+                if isinstance(value, list):
+                    holders.extend(value)
+                elif value is not None:
+                    holders.append(value)
+            seen_holders = set()
+            for holder in holders:
+                if id(holder) in seen_holders:
+                    continue
+                seen_holders.add(id(holder))
+                if (holder.is_alive and combat._relic_active(holder, "噬伤血囊")
+                        and not holder.has_status("坏死")):
+                    heal_n = math.ceil(actual_damage * 0.2)
+                    if heal_n > 0:
+                        healed = combat.state.apply_heal(holder, heal_n, ctx={
+                            "timing": damage_ctx.timing if damage_ctx else "",
+                            "source": "噬伤血囊", "source_type": "relic",
+                            "actor": holder, "target": holder, "owner": holder,
+                            "mechanic": "heal", "subtype": "relic_damage_conversion",
+                            "amount": heal_n, "tags": {"relic", "after_damage"},
+                            "parent_event_id": damage_event_id,
+                        })
+                        res.setdefault("噬伤血囊", []).append({
+                            "holder": holder.name, "requested": heal_n, **healed})
+
         # 遗物【???】：由持有该遗物的创建者所创造的分裂复制体造成伤害后，
         # 复制体先回复等同实际失血的生命；超过复制体生命上限的部分再回复创建者。
         # 以实际生命减少量为基数，避免把超过目标剩余生命的过量伤害计入。

@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-from ..combat_events import CombatEvent
+from ..combat_events import CombatEvent, CombatEventType
 from ..resolution import KIND_TRIGGER, resolution_frame, resolution_of
 
 
@@ -140,6 +140,12 @@ class TriggerBus:
         target/actor 由调用方（CombatEngine._emit）在持有实体对象时显式传入——
         事件只存名字，而死者（is_alive=False）无法从存活池按名解析回来。
         """
+        # 寂灭面具订阅“命零”事件并抑制该时点的触发型效果；死亡事实本身仍保留在事件流，
+        # 统一死亡管线、死者记录和非事件型结算不因此跳过。
+        if (event.event_type == CombatEventType.ENTITY_DIED
+                and (combat._relic_active(target, "寂灭面具")
+                     or combat._any_active_relic("寂灭面具"))):
+            return []
         listeners = self._listeners.get(event.event_type)
         if not listeners:
             return []   # 无订阅者：零开销快路径（保持在开帧之前）

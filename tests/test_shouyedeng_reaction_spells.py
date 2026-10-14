@@ -25,6 +25,9 @@ def _engine(tmp_path):
     finish_initial_daowen(e)  # 开局：杀伐
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     e.execute_action("setup_choose_region", {"region": "扭曲都市"})
+    # 开局会随机发现一件遗物；本文件只测守夜灯与反应法术，清掉随机遗物，
+    # 避免【万钧印】等无关效果改写受击路径。
+    e.state.relics.clear()
     p = e.state.player
     p.dao_wen["杀伐"] = DaoWenInstance(
         DaoWen(name="杀伐", formula="", cost_type="消耗", cost_formula="X",

@@ -544,6 +544,7 @@ class GameEngine:
                     "dodge": "敌对单目标时必填布尔值",
                     "blood_shadow": "目标持有血影时必填布尔值",
                     "spell_choices": "若触发法术，按法术选项完整提交",
+                    **({"zaisheng_cost": ["法力", "攻击力"]} if name == "再生" else {}),
                     "cost_share_target_ref": (
                         [{"ref": ref, "name": entity.name}
                          for ref, entity in self.combat.blood_pact_targets().items()]
@@ -738,7 +739,14 @@ class GameEngine:
             except Exception:
                 continue
             ctype = calc.get("cost_type")
-            if ctype == "消耗" and calc.get("cost", 0) > actor.current_mana:
+            if name == "再生":
+                mana_calc = DaoWenEngine.resolve(name, x, target=actor, caster=actor, cost_channel="法力")
+                attack_calc = DaoWenEngine.resolve(name, x, target=actor, caster=actor, cost_channel="攻击力")
+                mana_payable = mana_calc.get("cost", 0) <= actor.current_mana
+                attack_payable = attack_calc.get("cost_attack", 0) <= actor.effective_attack_power()
+                if not (mana_payable or attack_payable):
+                    continue
+            elif ctype == "消耗" and calc.get("cost", 0) > actor.current_mana:
                 continue
             # 2026-10-13：失忆类代价按持有道纹种数封顶（use_daowen 预检同口径）。
             # 此前 schema 对【点金】X 不设上限、会对【典当】给出永远付不起的X。
@@ -1736,7 +1744,7 @@ class GameEngine:
         9: ("封存血脉", "保留触发权，随时再次触发初拥之夜"),
     }
 
-    # 遗物池定义（14件；【发现】只列候选，效果在对应触发时点应用）
+    # 遗物池定义（26件；【发现】只列候选，效果在对应触发时点应用）
     # 2026-10-13 用户令：【买路财】改制为轮回者【逃跑】行动，【三相残韵盘】删除
     # （发现侧由道纹【典当】承接），两件均移出遗物池。
     RELIC_DEFS = [
@@ -1756,6 +1764,18 @@ class GameEngine:
         ("活血衣", "你受到攻击造成的伤害后，恢复等同其一半的生命（向上取整）"),
         ("增生药剂", "你每次对自己造成伤害后，恢复10生命"),
         ("灾厄轮盘", "[回始]从场上存活角色（包括你）中随机选一名，使其失去30%当前生命（向上取整）"),
+        # 2026-10-14：已裁定遗物化的道纹，统一加入通用遗物池。
+        ("逆血龙鳞", "本回合每失去1点生命，造成的伤害+1"),
+        ("蚀命刻尺", "任意角色每次失去生命时，该角色获得1层衰老"),
+        ("噬伤血囊", "任意角色受到伤害时，持有者回复该次实际伤害的20%"),
+        ("倍速齿轮", "持有者获得速度时，实际获得的速度翻倍"),
+        ("沉重枷锁", "所有角色每回合出手次数-1"),
+        ("失速冥灯", "任意角色每失去一次速度，其速限降低2"),
+        ("寂灭面具", "阻止命零触发的效果"),
+        ("衰变沙漏", "任意角色每次发动道纹时，该次道纹数值降低1，最低为0"),
+        ("蚀界残钟", "每回终，所有角色各自失去等同于其攻击力×攻击次数的血限"),
+        ("窥隙法匣", "每次成功闪避后，下回合获得10点法力"),
+        ("逐影胫骨", "每累计成功闪避两次，速度+1"),
     ]
 
     def _init_relic_pool(self):
@@ -2867,9 +2887,14 @@ class GameEngine:
             # 2026-10-14：【透支】多代价通道（缺省流血；resolve 按签名分发，其余道纹无感）。
             if name == "透支":
                 resolve_kw["cost_channel"] = params.get("touzhi_cost", "流血")
+            if name == "再生":
+                resolve_kw["cost_channel"] = params.get("zaisheng_cost", "法力")
             calc = DaoWenEngine.resolve(name, x, **resolve_kw)
         except Exception as e:
             return {"success": False, "error": f"道纹计算失败: {str(e)}"}
+        if calc.get("cost_type") == "攻击力" and calc.get("cost_attack", 0) > actor.effective_attack_power():
+            return {"success": False,
+                    "error": f"再生攻击力代价需要{calc.get('cost_attack', 0)}点，{actor.name}当前有效攻击力为{actor.effective_attack_power()}"}
         if calc.get("cost_type") == "失忆" and calc.get("cost", 0) > len(actor.dao_wen):
             return {"success": False,
                     "error": f"失忆{calc.get('cost', 0)}无法支付：{actor.name}仅持有{len(actor.dao_wen)}种道纹"}

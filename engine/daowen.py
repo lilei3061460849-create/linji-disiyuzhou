@@ -32,7 +32,7 @@ class DaoWenEngine:
     # 用于"雇佣"后"发现并选择一种转化道纹"等需要从此类别中随机抽取的场景
     # 2026-10-08 清理：原孤儿转化道纹已移除（曾挂在【狂暴】的反转分支下）。
     TRANSFORMED_DAOWEN = [
-        "愤怒", "弱化", "自食", "无力", "全速",
+        "愤怒", "弱化", "无力", "全速",
         "急速", "加速", "洞察", "蒙蔽", "寄生",
         # 2026-10-11 用户令（A14）：【无神】【借力】【衰败】整条删除，不补位。
     ]
@@ -88,18 +88,24 @@ class DaoWenEngine:
         }
     
     @staticmethod
-    def calculate_zaisheng(x: int, target: Entity = None) -> dict:
-        """再生X：消耗X。为[目标]回复4X点生命"""
+    def calculate_zaisheng(x: int, target: Entity = None, cost_channel: str = "法力") -> dict:
+        """再生X：消耗X法力，或失去4X攻击力；为[目标]回复4X点生命。"""
         target_name = target.name if target is not None else "未选定目标"
-        cost = x
         heal = 4 * x
+        if cost_channel == "攻击力":
+            return {
+                "dao_wen": "再生", "x": x,
+                "cost_type": "攻击力", "cost_attack": heal,
+                "target_heal": heal,
+                "summary": f"失去{heal}点攻击力，为{target_name}回复{heal}点生命",
+            }
+        if cost_channel != "法力":
+            raise ValueError("再生代价必须选择法力或攻击力")
         return {
-            "dao_wen": "再生",
-            "x": x,
-            "cost_type": CostType.MANA.value,
-            "cost": cost,
+            "dao_wen": "再生", "x": x,
+            "cost_type": CostType.MANA.value, "cost": x,
             "target_heal": heal,
-            "summary": f"消耗{x}法力，为{target_name}回复{heal}点生命"
+            "summary": f"消耗{x}法力，为{target_name}回复{heal}点生命",
         }
     
     @staticmethod
@@ -405,19 +411,6 @@ class DaoWenEngine:
             "attack_reduction": x,
             "duration": -1,
             "summary": f"消耗{2 * x}法力，使{target_name}攻击力-{x}，永久"
-        }
-    
-    @staticmethod
-    def calculate_zishi(x: int) -> dict:
-        """自食X：消耗X。将自身X点攻击力转化为等量回复"""
-        return {
-            "dao_wen": "自食",
-            "x": x,
-            "cost_type": CostType.MANA.value,
-            "cost": x,
-            "attack_reduction": x,                       # 面板量纲，不放大
-            "target_heal": x,
-            "summary": f"消耗{x}法力，将自身{x}攻击力转化为{x}点回复"
         }
     
     @staticmethod
@@ -734,11 +727,11 @@ class DaoWenEngine:
         }
     
     @staticmethod
-    def calculate_shujin(x: int, target: Entity = None) -> dict:
-        """赎金X：消耗3X。夺取目标10X碎片；若无碎片则失去X点速度"""
+    def calculate_qiangjie(x: int, target: Entity = None) -> dict:
+        """抢劫X：消耗3X。夺取目标10X碎片；若无碎片则失去X点速度"""
         target_name = target.name if target is not None else "未选定目标"
         return {
-            "dao_wen": "赎金", "x": x, "cost_type": CostType.MANA.value, "cost": 3 * x,
+            "dao_wen": "抢劫", "x": x, "cost_type": CostType.MANA.value, "cost": 3 * x,
             "shard_steal": 10 * x, "speed_penalty": x,
             "summary": f"消耗{3 * x}法力，夺取{target_name} {10*x}碎片或{x}速度"
         }
@@ -747,7 +740,7 @@ class DaoWenEngine:
     def calculate_lesuo(x: int, target: Entity = None) -> dict:
         """勒索X：消耗3X。目标失去10X碎片，不足部分记负债（真碎片扣负；2026-10-14 补点金反转分叉，还债新生产者）。
 
-        与【赎金】同价同量（3X→10X），形状不同：赎金是偷取（施法者获得，不足不记负债；
+        与【抢劫】同价同量（3X→10X），形状不同：抢劫是偷取（施法者获得，不足不记负债；
         无碎片改失速），勒索是销毁+记负债（谁都不获得，不足部分真碎片扣负，可触发【还债】）。
         单次结算，无持续（用户 2026-10-14 选单次，不 mirror 逼债的回始∞）。
         """
@@ -974,7 +967,6 @@ class DaoWenEngine:
             # 怪物转化（2026-10-11 A14：无神/借力/衰败 已删）
             "愤怒": cls.calculate_fennu,
             "弱化": cls.calculate_ruhua,
-            "自食": cls.calculate_zishi,
             "无力": cls.calculate_wuli,
             "全速": cls.calculate_quansu,
             "急速": cls.calculate_jisu,
@@ -996,7 +988,7 @@ class DaoWenEngine:
             "典当": cls.calculate_diandang,
             "豪夺": cls.calculate_haoduo,
             "清算": cls.calculate_qingsuan,
-            "赎金": cls.calculate_shujin,
+            "抢劫": cls.calculate_qiangjie,
             # 2026-10-14 用户令：补点金反转分叉，还债新生产者。
             "勒索": cls.calculate_lesuo,
             "假钞": cls.calculate_jiachao,
@@ -1049,7 +1041,9 @@ class DaoWenEngine:
         # 退化X（扭曲都市专属，持续∞）：使目标每次发动道纹时该次数值-X（最低0）。
         # 在 resolve 统一入口削减（玩家/怪物/同伴所有发动路径都经此），与 sim/balance_sim eff_x 同口径。
         caster = kwargs.get("caster")
-        if caster is not None and hasattr(caster, "has_status") and caster.has_status("退化"):
+        if (not kwargs.get("_skip_status_decay", False)
+                and caster is not None and hasattr(caster, "has_status")
+                and caster.has_status("退化")):
             x = max(0, x - caster.get_status_value("退化"))
 
         # 获取该道纹的代价类型，检查X上限
@@ -1141,8 +1135,8 @@ class ResonanceEngine:
             ("点金", "转换", "典当"),
             ("典当", "反转", "豪夺"),
             ("豪夺", "曲解", "清算"),
-            ("清算", "反转", "赎金"),
-            ("赎金", "转换", "假钞"),
+            ("清算", "反转", "抢劫"),
+            ("抢劫", "转换", "假钞"),
             # 2026-10-14 用户令：凡道纹遗物化，原闭环节点直接移除并以 RELICIZED_SLOT（？？）占位；保留两侧边，不重连。
             ("假钞", "曲解", RELICIZED_SLOT),
             (RELICIZED_SLOT, "反转", "消灾"),
@@ -1190,9 +1184,9 @@ class ResonanceEngine:
             # 2026-10-11 删除（用户令 A14）：("全力", "转换", "借力"),
             #   【借力】整条删除。按用户口径「在没有整体大改之前，增加新道路纯粹
             #   增加工作量」，这条断边**不补新道路**（与活血/尸爆/嫁祸的重连先例不同）。
-            #   【全力】仍保留 反转→弱化、曲解→自食 两条闭环边。
+            #   【全力】保留 反转→弱化；曲解原通向【自食】，现并入【再生】。
             ("全力", "反转", "弱化"),
-            ("全力", "曲解", "自食"),
+            ("全力", "曲解", "再生"),
             # 2026-10-03 删除（用户令）：("疯狂", "转换", "兴奋"),
             ("疯狂", "反转", "无力"),
             ("疯狂", "曲解", "全速"),

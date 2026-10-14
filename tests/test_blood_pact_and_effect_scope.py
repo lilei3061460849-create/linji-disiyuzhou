@@ -153,7 +153,7 @@ def test_regeneration_is_four_x_and_old_contracts_are_removed():
     assert "鲜血契约" not in names
     assert "卖身契" not in names
     assert "钱袋" not in names  # 钱袋已删除（其效果一度并入【第一杯】，2026-09-23【第一杯】重做时废止）
-    assert len(names) == 15  # 2026-10-13 删【买路财】/【三相残韵盘】；2026-10-14 原道纹【赌命】改为遗物【灾厄轮盘】
+    assert len(names) == 26  # 2026-10-14：通用遗物池接入11件已裁定道纹遗物
 
 
 def test_scoped_ledger_rolls_back_battle_effects_but_keeps_costs(tmp_path):

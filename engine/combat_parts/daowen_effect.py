@@ -108,12 +108,34 @@ class DaowenEffectMixin:
     ) -> dict:
         """应用道纹效果；aoe_targets_override用于绑定两阶段决策的目标快照。"""
         result = {"daowen": name, "effects": []}
+        # 衰变沙漏订阅道纹发动结算：全场每次发动的本次效果数值-1，最低为0。
+        # 重新按减1后的X解析本次效果字段，避免只改 calc["x"] 却漏掉已预计算的伤害/回复等数值。
+        # 代价已在前置阶段按原声明支付，因此保留原 calc 中所有 cost* 字段，不改变代价规则。
+        if self._any_active_relic("衰变沙漏"):
+            original_calc = dict(calc)
+            original_x = max(0, int(original_calc.get("x", 0) or 0))
+            reduced_x = max(0, original_x - 1)
+            if reduced_x != original_x:
+                try:
+                    reduced_calc = DaoWenEngine.resolve(
+                        name, reduced_x, y=original_calc.get("y", 1),
+                        target=target, caster=caster, _skip_status_decay=True)
+                except (TypeError, ValueError, KeyError):
+                    reduced_calc = {}
+                if reduced_calc:
+                    calc = dict(original_calc)
+                    for key, value in reduced_calc.items():
+                        if not str(key).startswith("cost"):
+                            calc[key] = value
+                else:
+                    calc = dict(original_calc)
+                calc["x"] = reduced_x
         x = calc.get("x", 0)
         # Entity.dao_wen 是角色当前道纹序列的有序映射；状态继承发动道纹的位置，
         # 后续结算不再从 X 值、状态施加时间或刷新时间推断顺序。
         daowen_sequence = list(caster.dao_wen)
         daowen_order = daowen_sequence.index(name) if name in caster.dao_wen else len(daowen_sequence)
-        if name in ("自食", "固执"):
+        if name == "固执":
             target = caster
         # 本次道纹结算的根上下文。由它派生的血限/生命/命零变化都以此为父事件，
         # 这样「杀伐 → 伤害 → 血限下降 → 命零」在链上是连续的。
@@ -396,6 +418,15 @@ class DaowenEffectMixin:
                 if dmg.get("actual_damage", 0) > 0:
                     caster.damage_dealt_this_round += dmg["actual_damage"]
 
+        # ---- 再生的攻击力代价：发动者失去攻击力，随后按正常目标结算回复 ----
+        if calc.get("cost_type") == "攻击力" and calc.get("cost_attack", 0) > 0:
+            amount = int(calc["cost_attack"])
+            available = max(0, int(caster.effective_attack_power()))
+            if amount > available:
+                raise ValueError(f"再生攻击力代价需要{amount}点，当前有效攻击力仅{available}")
+            self._battle_delta(caster, "attack_power", -amount, name, EffectPolarity.DEBUFF.value)
+            result["effects"].append({"type": "attack_power_cost", "target": caster.name,
+                                      "paid": amount, "attack_power": caster.attack_power})
         # ---- 回复类 ----
         if "target_heal" in calc:
             if "target_heal" in wave_pieces:
@@ -1026,7 +1057,7 @@ class DaowenEffectMixin:
               and name not in ("勾魂", "冥气", "缄默", "瓦解", "波及")):
             duration = calc["duration"] if calc["duration"] != 0 else -1
             effect_target = target if target else caster
-            # 自身作用型道纹(变形/超频/自食等)作用于施法者
+            # 自身作用型道纹（变形/超频等）作用于施法者
             # 【点金】即时结算失忆代价与碎片收益，不挂持续状态。
             # 故从自身作用名单移除；状态【洗劫】本身保留，仍由【帮派令】发放。
             # 2026-09-17 用户令：【超频】改为自由选择目标（选到谁给谁加速），不再属于
@@ -1034,7 +1065,7 @@ class DaowenEffectMixin:
             # 进不了本状态块，实际效果一直是下方数值段给 target 加速。
             # 2026-09-17 用户令：【变形】改为可自由选择目标（不指定时默认自身），
             # 故移出"自身作用型"名单，状态随之挂到目标身上（到期还原也落在目标）。
-            self_targeted = name in ("自食", "飞行", "必中", "固执", "贯穿")
+            self_targeted = name in ("飞行", "必中", "固执", "贯穿")
             if name == "疯狂":
                 # 2026-08-17 用户裁定：疯狂X改为【所有角色出手+X】（全局，变相平衡）。
                 # 状态盖到双方全部存活角色；出手口径各自读取自身疯狂状态：

@@ -370,6 +370,9 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
             return 0
         if entity.has_status("加速"):
             amount *= 2
+        # 倍速齿轮：遗物只监听“实际获得速度”入口；与道纹【加速】可叠乘。
+        if self._relic_active(entity, "倍速齿轮"):
+            amount *= 2
         before = entity.current_speed
         entity.current_speed += amount
         self.clamp_immortal_body(entity)
@@ -390,6 +393,18 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         if entity is self.state.player:
             return self.state.sealed_relics.get(name, 0) <= 0
         return True
+
+    def _any_active_relic(self, name: str) -> bool:
+        """查询场上是否存在未封印的该遗物持有者，用于“任意角色/所有角色”的全场效果。"""
+        entities = self.state.get_all_player_side() + self.state.get_all_enemy_side()
+        seen: set[int] = set()
+        for entity in entities:
+            if id(entity) in seen:
+                continue
+            seen.add(id(entity))
+            if self._relic_active(entity, name):
+                return True
+        return False
 
     def out_of_turn_blocked(self, entity) -> bool:
         """该角色是否被禁止「回合外行动」（唯一闸门，2026-10-12 用户令）。
@@ -463,9 +478,24 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                     "actor": entity, "target": entity, "mechanic": "speed_change", "subtype": "current_speed",
                     "amount": 1, "tags": {"daowen", "dodge_followup"},
                 })
+        # 洞察状态与【窥隙法匣】是两个独立来源：前者由 ROUND_START 的
+        # 「洞察·结算」机制领取，后者由遗物回始结算。分开记账，避免遗物门闩
+        # 清理时误删洞察 pending，或持有遗物时把洞察额度错误地当成遗物额度领取。
         if entity.has_status("洞察"):
             entity._dongcha_pending = getattr(entity, "_dongcha_pending", 0) + 10
             extra["dongcha_pending"] = entity._dongcha_pending
+        if self._relic_active(entity, "窥隙法匣"):
+            entity._kuixi_pending_mana = getattr(entity, "_kuixi_pending_mana", 0) + 10
+            extra["kuixi_pending_mana"] = entity._kuixi_pending_mana
+        if self._relic_active(entity, "逐影胫骨"):
+            entity._zhuying_dodges = getattr(entity, "_zhuying_dodges", 0) + 1
+            if entity._zhuying_dodges >= 2:
+                entity._zhuying_dodges -= 2
+                extra["zhuying_speed"] = self._gain_speed(entity, 1, ctx={
+                    "timing": self._current_context_timing(), "source": "逐影胫骨", "source_type": "relic",
+                    "actor": entity, "target": entity, "owner": entity, "mechanic": "speed_change",
+                    "subtype": "current_speed", "amount": 1, "tags": {"relic", "dodge_followup"},
+                })
         return extra
 
     def _spend_dodge_speed(self, entity: Entity, relic_target_ref: Optional[str] = None) -> dict:
@@ -563,6 +593,12 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         speed_ctx = self._record_speed_change_event(entity, -lost, ctx, field="current_speed")
         if lost and before > 0 and entity.current_speed == 0:
             self._trigger_bifengling_zero(entity)
+        # 失速冥灯：只要场上有未封印持有者，任何角色每次实际失速都损失2点速限。
+        # 用战斗账本登记，战终逆向清除；不改速度变化事件本身，也不重复扣当前速度。
+        if lost and self._any_active_relic("失速冥灯"):
+            self._battle_delta(entity, "speed_limit", -2, "失速冥灯",
+                               EffectPolarity.DEBUFF.value)
+            entity.current_speed = min(entity.current_speed, entity.speed_limit)
         self._trigger_huifeng_on_speed_loss(
             entity, lost, relic_target_ref, require_target=require_huifeng,
             speed_ctx=speed_ctx)
@@ -729,7 +765,6 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         # 攻击失血由本方法的反应窗口结算，标记在下方置位。先清掉可能残留的旧标记，
         # 避免异常中断后误伤后续失血的自动触发。
         self._attack_after_window_target = None
-        self.validate_spell_reaction_submission(target, attacker, spell_choices, entity_refs)
         result = {
             "attacker": attacker.name,
             "target": target.name,
@@ -753,9 +788,15 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         if (not _wanjunyin_converted and wanjunyin is not False
                 and attacker is not target and attacker.is_alive
                 and self._wanjunyin_holder(target)):
+            # 原受击者的反应提交随改道失效；自攻目标按自身可用反应法术生成
+            # 显式「不发动」提交，避免把原目标的法术选择错配给攻击者。
+            redirected_choices = {
+                key: {name: {"use": False} for name in self._eligible_spell_flows(attacker, trigger)}
+                for key, trigger in self._REACTION_SPELL_SLOTS
+            }
             converted = self._resolve_attack_impl(
                 attacker, attacker, hit_index, is_must_hit, False, False, allocated_damage,
-                False, spell_choices, entity_refs, None, cost_share_target_ref,
+                False, redirected_choices, entity_refs, None, cost_share_target_ref,
                 None, True)
             converted["wanjunyin"] = {
                 "relic": "万钧印", "original_target": target.name,
@@ -763,6 +804,10 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                 "note": "万钧印：本次攻击改为攻击者对自己发动",
             }
             return converted
+
+        # 反应法术提交必须按最终受击者校验。万钧印改道时，原目标并不承受攻击，
+        # 不能拿原目标的 spell_choices 去校验攻击者对自己造成的自攻。
+        self.validate_spell_reaction_submission(target, attacker, spell_choices, entity_refs)
 
         # 飞行：非飞行者无法选中飞行目标
         if not self.is_targetable(attacker, target):
@@ -982,6 +1027,21 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         if player is not None:
             effects.extend(self._dispatch_phase(Phase.ROUND_START_PREPARE, target=player))
 
+        # 沉重枷锁：场上存在有效持有者时，回始全场每名角色失去1点当前速度，
+        # 即本回合少一次出手；通过唯一失速入口结算，速度类遗物仍能收到真实信号。
+        if self._any_active_relic("沉重枷锁"):
+            seen_for_chain: set[int] = set()
+            for chained in self.state.get_all_player_side() + self.state.get_all_enemy_side():
+                if id(chained) in seen_for_chain:
+                    continue
+                seen_for_chain.add(id(chained))
+                if chained.is_alive:
+                    self._lose_current_speed(chained, 1, ctx={
+                        "timing": "round_start", "source": "沉重枷锁", "source_type": "relic",
+                        "actor": None, "target": chained, "owner": None, "mechanic": "speed_change",
+                        "subtype": "current_speed", "amount": -1, "tags": {"relic", "round_start"},
+                    })
+
         # 活血追踪归零 + 出手预算归零（回始重置本回合已用出手次数）+ 血誓戒每回合限一次归零 + 血族血脉判定归零
         seen_entities: set[int] = set()
         for e in self.state.get_all_player_side() + self.state.get_all_enemy_side():
@@ -989,6 +1049,20 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
             if id(e) in seen_entities:
                 continue
             seen_entities.add(id(e))
+            # 窥隙法匣：成功闪避时记下的法力只在下一回始领取，不与当次闪避即时结算。
+            # 它使用独立 pending；绝不能清理洞察状态的 _dongcha_pending。
+            pending_kuixi = int(getattr(e, "_kuixi_pending_mana", 0) or 0)
+            if pending_kuixi > 0 and self._relic_active(e, "窥隙法匣"):
+                before_mana = e.current_mana
+                e.gain_mana(pending_kuixi)
+                self.clamp_immortal_body(e)
+                effects.append({"type": "relic", "relic": "窥隙法匣", "entity": e.name,
+                                "mana_requested": pending_kuixi,
+                                "mana_gained": e.current_mana - before_mana})
+                e._kuixi_pending_mana = 0
+            elif pending_kuixi > 0:
+                # 遗物被移除/封印后，旧待领取额度不应凭空在以后生效。
+                e._kuixi_pending_mana = 0
             # 2026-10-13：谁持有谁获得法限等量法力与异变；这不是代价，不走代价结算。
             # 兼容实体遗物、轮回者本局遗物及死斗对手遗物，并尊重玩家的遗物封印。
             owns_relic = (any(r.name == MONSTER_MANA_RELIC for r in e.relics)
@@ -1130,6 +1204,21 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         mediocrity_ready: list[tuple[Entity, str]] = []
 
         for entity in self.state.get_all_player_side() + self.state.get_all_enemy_side():
+            # 蚀界残钟：场上有持有者时，每个角色在回终第一拍失去“当前攻击力×攻击次数”的血限。
+            # 保持旧【畸变】的回终锚点，走统一血限变化/命零管线，不手改 current_hp。
+            if entity.is_alive and self._any_active_relic("蚀界残钟"):
+                # 统一属性模型：攻击力=当前法力，攻击次数=当前速度；轮回者的旧 attack_power/attack_count 字段不再是真实面板。
+                erosion = max(0, int(entity.current_mana) * int(entity.current_speed))
+                if erosion > 0:
+                    change = self._apply_blood_limit_change(
+                        entity, -erosion, "蚀界残钟", EffectPolarity.DEBUFF.value,
+                        ctx={"timing": "round_end", "source": "蚀界残钟", "source_type": "relic",
+                             "actor": entity, "target": entity, "owner": None,
+                             "mechanic": "blood_limit_change", "subtype": "relic_round_end",
+                             "amount": -erosion, "tags": {"relic", "round_end", "blood_limit_loss"}},
+                    )
+                    effects.append({"type": "relic", "relic": "蚀界残钟", "entity": entity.name,
+                                    "blood_limit_loss": erosion, **change})
             # 机制系统：ROUND_END 相位分发。锚定语义：回终第一循环顶部、凡庸 tick 之前
             # （原畸变·结算位置）。凡庸之后的回终机制禁止注册到 ROUND_END
             # （会改变既有顺序），详见机制迁移台账。

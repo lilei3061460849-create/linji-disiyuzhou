@@ -170,6 +170,11 @@ class DamageDeathMixin:
             source_override=source_override, source_type_override=source_type_override,
             actor_override=actor_override, owner_override=owner_override,
             tags_extra=tags_extra)
+        # 蚀命刻尺订阅统一失血账：每次实际失去生命事件，受损角色增加1层衰老。
+        # 失血点数不会被误当作层数，且代价/反噬/血限压迫等入口共用这一处。
+        if self._any_active_relic("蚀命刻尺"):
+            entity.add_status(StatusEffect(
+                name="衰老", remaining_rounds=-1, value=1, source="蚀命刻尺"))
         toll = self._settle_chenglu(entity, amount, parent_ctx)
         if toll:
             record["chenglu"] = toll
@@ -434,6 +439,9 @@ class DamageDeathMixin:
         source: Optional[Entity], damage_ctx: EffectContext, legacy_ctx: bool,
     ) -> dict:
         original_damage = amount
+        # 逆血龙鳞：本回合实际失血累计转为本次造成伤害的固定加值。
+        if source is not None and self._relic_active(source, "逆血龙鳞"):
+            amount += max(0, int(getattr(source, "hp_lost_this_round", 0) or 0))
         amount = validate_damage_amount(
             self.hook_manager.apply_multiplier_adjust(target, amount, damage_type, source, self.state),
             "CombatEngine.apply_multiplier_adjust.result")

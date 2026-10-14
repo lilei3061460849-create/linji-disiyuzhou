@@ -12,7 +12,7 @@ import pytest
 from engine.api import GameEngine
 from engine.combat import CombatEngine
 from engine.combat_hooks import CombatHookManager
-from engine.daowen import DaoWenEngine
+from engine.daowen import DaoWenEngine, ResonanceEngine
 from engine.dice import DiceEngine
 from engine.models import Entity, GameState, StatusEffect
 from engine.rule_engine import (
@@ -108,6 +108,23 @@ def test_calculation_summaries_are_rendered_from_the_runtime_rule_definitions():
     assert guzhi["max_current_damage_per_hit"] == 1
     assert DaoWenEngine.calculate_jiahai(2)["cost"] == 4
     assert DaoWenEngine.calculate_longlin(2)["cost"] == 4
+
+
+def test_zaisheng_merges_self_feeding_as_an_alternate_attack_cost():
+    DaoWenEngine.register_all()
+    target = Entity("目标", "轮回者", blood_limit=100, current_hp=20,
+                    mana_limit=10, current_mana=10)
+    mana = DaoWenEngine.resolve("再生", 2, target=target, cost_channel="法力")
+    attack = DaoWenEngine.resolve("再生", 2, target=target, cost_channel="攻击力")
+
+    assert mana["cost_type"] == "消耗"
+    assert mana["cost"] == 2
+    assert mana["target_heal"] == 8
+    assert attack["cost_type"] == "攻击力"
+    assert attack["cost_attack"] == 8
+    assert attack["target_heal"] == 8
+    assert "自食" not in DaoWenEngine.list_all()
+    assert ("全力", "曲解", "再生") in ResonanceEngine.CLOSED_LOOPS["怪物原始道纹"]
 
 
 def test_migration_status_keeps_unmigrated_daowen_on_the_legacy_path():
