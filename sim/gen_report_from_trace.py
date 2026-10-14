@@ -720,7 +720,7 @@ def daowen_synergy_lines() -> list[str]:
     a_("几个可以直接点开看的例子（因果串＝绝对值（相对基线的增量））：")
     a_("")
     examples = []
-    for want in (("固执", "龙鳞"), ("杀伐", "加害"), ("疯狂", "无神"), ("血债", "活血"), ("变形", "赌命")):
+    for want in (("固执", "龙鳞"), ("杀伐", "加害"), ("疯狂", "无神"), ("血债", "活血"),):
         hit = next((r for r in c2v if {r["daowen_a"], r["daowen_b"]} == set(want)), None)
         if hit:
             examples.append(hit)

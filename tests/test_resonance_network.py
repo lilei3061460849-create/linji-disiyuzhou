@@ -143,7 +143,7 @@ def test_ambiguous_path_requires_explicit_target():
     此时引擎不得替发动者挑一个（禁止静默取第一项），必须由发动者显式指定；
     指定后两个方向都成立。已知歧义节点（闭环上两条相邻边同类型）：
     杀伐(反转) / 庇护(曲解) / 束缚(曲解) / 变形(转换) / 裂变(转换) /
-    分裂(转换)。
+    分裂(转换)。空位共用占位符（罪孽都市原道纹【赌命】改为遗物【灾厄轮盘】后暂时新增一格），占位节点本身可能有3个以上邻接候选。
     （2026-10-08 删【镇尸】：勾魂那一格改留空占位符后，镇尸(曲解) 不再是歧义节点。）
     """
     ambiguous = {(s, t) for s, t in
@@ -152,7 +152,7 @@ def test_ambiguous_path_requires_explicit_target():
     assert ambiguous, "未检出任何歧义节点，本用例与闭环现状脱节"
     for s, t in sorted(ambiguous):
         candidates = [c["target_daowen"] for c in R.find_transformations(s, t)]
-        assert len(candidates) == 2, f"{s}+{t} 歧义候选应为2个，实际{candidates}"
+        assert len(candidates) >= 2, f"{s}+{t} 歧义候选应至少为2个，实际{candidates}"
         # 不指定 → 拒绝，且不消耗残韵
         assert R.find_transformation(s, t) is None
         res = R.apply_resonance(s, t, True, True, resonance_stock={t: 1})

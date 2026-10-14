@@ -82,7 +82,7 @@ def _select_enemies(ctx: TriggerContext) -> list:
 
 
 def roll_pick(ctx: TriggerContext, candidates: list, *, stream: str, context: str) -> dict:
-    """从候选里按 DiceEngine 口径随机取一个（RNG 目标选择，2026-10-03 【赌命】迁移时抽象）。
+    """从候选里按 DiceEngine 口径随机取一个（RNG 目标选择，原为道纹【赌命】，现供遗物【灾厄轮盘】被动使用）。
 
     返回 {"entity", "roll"(1-based), "of", "names"}；无候选返回 None。
     **一次调用只投一次**：调用方拿 roll/of 直接写战报，不得再投第二次（否则战报与实际目标不符）。
@@ -116,15 +116,15 @@ def _select_random_enemy(ctx: TriggerContext) -> list:
 
 
 def _select_random_all(ctx: TriggerContext) -> list:
-    """双方全部存活角色（玩家侧在前，与旧【赌命】结算的号码口径一致）。"""
+    """双方全部存活角色（玩家侧在前，与遗物【灾厄轮盘】的号码口径一致）。"""
     state = _state(ctx)
     if state is None:
         return []
     alive = [e for e in (state.get_all_player_side() + state.get_all_enemy_side()) if e.is_alive]
-    # 流名含回合号：与旧【赌命】口径一致（同一回合同一流，跨回合不串），可复现。
+    # 流名含回合号：保留【赌命】迁为遗物前的可复现随机流命名。
     state_round = getattr(_state(ctx), "current_round", 0)
     picked = roll_pick(ctx, alive, stream=f"赌命_r{state_round}",
-                       context="机制目标选择·随机全体（赌命）")
+                       context="遗物效果·随机全体（灾厄轮盘）")
     return [picked["entity"]] if picked else []
 
 
@@ -142,5 +142,5 @@ ALL = TargetSelector("all", _select_all)              # 双方全部存活实体
 ALL_ALLIES = TargetSelector("all_allies", _select_allies)    # 触发主体同阵营（不含主体）
 ALL_ENEMIES = TargetSelector("all_enemies", _select_enemies)  # 触发主体敌对阵营
 RANDOM_ENEMY = TargetSelector("random_enemy", _select_random_enemy)
-RANDOM_ALL = TargetSelector("random_all", _select_random_all)   # 双方全体（赌命用）
+RANDOM_ALL = TargetSelector("random_all", _select_random_all)   # 双方全体（遗物【灾厄轮盘】用）
 DEAD_ENTITY = TargetSelector("dead_entity", _select_dead)  # ENTITY_DIED 事件的死者

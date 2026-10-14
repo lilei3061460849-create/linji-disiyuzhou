@@ -766,8 +766,6 @@ class GameEngine:
                     break
                 if not payable:
                     continue
-            if name == "赌命" and self.state.fake_shards < calc.get("fake_cost", x):
-                continue
             legal = x
         # 波及X：X还不得超过合法目标数（全部存活非自身角色）——否则schema会给出
         # 永远无法发动的X。
@@ -1757,6 +1755,7 @@ class GameEngine:
         ("癫狂之脑", "你每回合的出手次数+1，受到的攻击伤害翻倍"),
         ("活血衣", "你受到攻击造成的伤害后，恢复等同其一半的生命（向上取整）"),
         ("增生药剂", "你每次对自己造成伤害后，恢复10生命"),
+        ("灾厄轮盘", "[回始]从场上存活角色（包括你）中随机选一名，使其失去30%当前生命（向上取整）"),
     ]
 
     def _init_relic_pool(self):
@@ -2730,7 +2729,7 @@ class GameEngine:
         return self.combat.silenced_by_mask(actor, calc)
 
     def _pay_daowen_shard_cost(self, actor: Entity, name: str, calc: dict, x: int) -> Optional[str]:
-        """赌命X/消灾X 的碎片类代价。
+        """消灾X 的碎片类代价。
 
         规则实现已上移到 CombatEngine.pay_daowen_shard_cost（法术单步与
         use_daowen 共用同一口径），这里保留同名入口供既有调用点使用。
@@ -2911,7 +2910,7 @@ class GameEngine:
         if mana_error:
             return {"success": False, "error": mana_error}
 
-        # F2：赌命X/消灾X 的碎片类代价预检与支付（代价类型非"消耗"，不走法力制）
+        # 碎片类主动道纹代价预检与支付（目前为消灾；遗物灾厄轮盘无发动/费用）
         shard_error = self._pay_daowen_shard_cost(actor, name, calc, x)
         if shard_error:
             return {"success": False, "error": shard_error}

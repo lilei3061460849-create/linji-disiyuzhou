@@ -767,15 +767,6 @@ class DaoWenEngine:
         }
     
     @staticmethod
-    def calculate_duming(x: int) -> dict:
-        """赌命X：消耗X假碎片。[回始]按存活角色投随机数，对应目标失去30%当前生命，持续X"""
-        return {
-            "dao_wen": "赌命", "x": x, "cost_type": "假碎片", "fake_cost": x,
-            "duming_hp_pct": 30, "duration": x,
-            "summary": f"消耗{x}假碎片；持续{x}回合，每[回始]随机一名存活角色失去30%当前生命"
-        }
-    
-    @staticmethod
     def calculate_xiaozai(x: int) -> dict:
         """消灾X：消耗50X假碎片/5X碎片（局外发动消耗×2）。重置随机数X次以改变结果"""
         return {
@@ -1008,7 +999,6 @@ class DaoWenEngine:
             # 2026-10-14 用户令：补点金反转分叉，还债新生产者。
             "勒索": cls.calculate_lesuo,
             "假钞": cls.calculate_jiachao,
-            "赌命": cls.calculate_duming,
             "消灾": cls.calculate_xiaozai,
             # 龙心谷
             "龙鳞": cls.calculate_longlin,
@@ -1152,8 +1142,9 @@ class ResonanceEngine:
             ("豪夺", "曲解", "清算"),
             ("清算", "反转", "赎金"),
             ("赎金", "转换", "假钞"),
-            ("假钞", "曲解", "赌命"),
-            ("赌命", "反转", "消灾"),
+            # 2026-10-14 A22：原道纹赌命改为遗物【灾厄轮盘】，保留原闭环位置为空位；不擅自重连。
+            ("假钞", "曲解", RESERVED_SLOT),
+            (RESERVED_SLOT, "反转", "消灾"),
             ("消灾", "曲解", "点金"),
         ],
         # ---- 副本专属分叉（非闭环：单边spur，不参与合拢断言）----
