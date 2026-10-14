@@ -788,9 +788,15 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         if (not _wanjunyin_converted and wanjunyin is not False
                 and attacker is not target and attacker.is_alive
                 and self._wanjunyin_holder(target)):
+            # 原受击者的反应提交随改道失效；自攻目标按自身可用反应法术生成
+            # 显式「不发动」提交，避免把原目标的法术选择错配给攻击者。
+            redirected_choices = {
+                key: {name: {"use": False} for name in self._eligible_spell_flows(attacker, trigger)}
+                for key, trigger in self._REACTION_SPELL_SLOTS
+            }
             converted = self._resolve_attack_impl(
                 attacker, attacker, hit_index, is_must_hit, False, False, allocated_damage,
-                False, spell_choices, entity_refs, None, cost_share_target_ref,
+                False, redirected_choices, entity_refs, None, cost_share_target_ref,
                 None, True)
             converted["wanjunyin"] = {
                 "relic": "万钧印", "original_target": target.name,
