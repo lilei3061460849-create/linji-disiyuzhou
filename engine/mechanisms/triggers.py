@@ -143,7 +143,8 @@ class TriggerBus:
         # 寂灭面具订阅“命零”事件并抑制该时点的触发型效果；死亡事实本身仍保留在事件流，
         # 统一死亡管线、死者记录和非事件型结算不因此跳过。
         if (event.event_type == CombatEventType.ENTITY_DIED
-                and combat._any_active_relic("寂灭面具")):
+                and (combat._relic_active(target, "寂灭面具")
+                     or combat._any_active_relic("寂灭面具"))):
             return []
         listeners = self._listeners.get(event.event_type)
         if not listeners:
