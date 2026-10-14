@@ -438,10 +438,10 @@ class DamageDeathMixin:
         self, target: Entity, amount: int, damage_type: str,
         source: Optional[Entity], damage_ctx: EffectContext, legacy_ctx: bool,
     ) -> dict:
+        original_damage = amount
         # 逆血龙鳞：本回合实际失血累计转为本次造成伤害的固定加值。
         if source is not None and self._relic_active(source, "逆血龙鳞"):
             amount += max(0, int(getattr(source, "hp_lost_this_round", 0) or 0))
-        original_damage = amount
         amount = validate_damage_amount(
             self.hook_manager.apply_multiplier_adjust(target, amount, damage_type, source, self.state),
             "CombatEngine.apply_multiplier_adjust.result")
