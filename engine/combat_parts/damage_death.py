@@ -15,6 +15,7 @@ from ..enums import (ActionPhase, TriggerTiming, InterruptType, DamageType,
                      EffectScope, EffectPolarity, CostType)
 from ..dm_rulings import Interrupt
 from ..combat_events import CombatEvent, CombatEventType, register_combat_event_observer
+from ..consumables import ZIYU_TRIGGER_TARGET_DEATH, apply_zi_yu_trigger
 from ..combat_hooks import CombatHookManager
 from ..effect_context import EffectContext, make_context, normalize_context
 from ..mechanisms import MECHANISMS, Phase, TriggerBus, TriggerContext
@@ -303,6 +304,13 @@ class DamageDeathMixin:
         finally:
             self._hp_loss_recording -= 1
         self._on_entity_death(entity, ctx=ctx)
+        # 【自愈X】目标死亡时（2026-10-14 用户令）：敌方任意角色死亡 → 持有者消耗品结算。
+        # 挂在统一命零管线内（幂等，一尸一结）；离场/暂离不走本管线，天然排除。
+        if self.state.on_enemy_side(entity):
+            for log in apply_zi_yu_trigger(self.state.consumables, ZIYU_TRIGGER_TARGET_DEATH):
+                if log["restored"]:
+                    self._emit(CombatEventType.CONSUMABLE_ZIYU, actor=self.state.player,
+                               target=entity, ctx=ctx, **log)
         return True
 
     def _record_blood_limit_event(

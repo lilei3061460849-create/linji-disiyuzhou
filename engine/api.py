@@ -30,6 +30,7 @@ from .daowen import DaoWenEngine, ResonanceEngine
 from .combat import CombatEngine
 from .spell_dsl import parse_spell_definition, SpellDslError
 from .combat_events import register_combat_event_observer
+from .consumables import ZIYU_TRIGGER_BATTLE_END, apply_zi_yu_trigger
 from .events import EventPool
 from .rule_repository import RuleRepository
 from .dungeons import DEFAULT_INDEX
@@ -6111,19 +6112,8 @@ class GameEngine:
         modifiers.pop("huifeng_target_ref", None)
         modifiers.pop("huifeng_target_ref_opponent", None)
 
-        # 【无限肉块】：战终自愈80%已损耐久，向上取整（2026-10-14 F8：描述压缩为自愈）。
-        infinite_meat_logs = []
-        for item in self.state.consumables:
-            if item.kind != "infinite_meat":
-                continue
-            lost = max(0, item.max_uses - item.current_uses)
-            restored = min(lost, math.ceil(lost * 0.8)) if lost else 0
-            if restored:
-                item.current_uses += restored
-            infinite_meat_logs.append({"item": item.name, "lost": lost,
-                                       "restored": restored,
-                                       "current_uses": item.current_uses,
-                                       "max_uses": item.max_uses})
+        # 【自愈X】战终结算（2026-10-14 用户令通用化：无限肉块 80% 迁入时机表）。
+        zi_yu_logs = apply_zi_yu_trigger(self.state.consumables, ZIYU_TRIGGER_BATTLE_END)
 
         # [战终]对所有角色统一清除局内回复、格挡与状态；不得只清轮回者。
         all_characters = (([self.state.player] if self.state.player else [])
@@ -6284,7 +6274,7 @@ class GameEngine:
             "death_shard_rewards": death_rewards,
             "relic_end_logs": relic_end,
             "zengzhi_settled": zengzhi_settled,
-            "infinite_meat_logs": infinite_meat_logs,
+            "zi_yu_logs": zi_yu_logs,
             "spell_logs": spell_logs,
             "scoped_effects_rolled_back": scoped_rollbacks,
             "spell_bindings_removed": spell_bindings_removed,
