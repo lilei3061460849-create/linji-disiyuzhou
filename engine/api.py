@@ -6111,7 +6111,7 @@ class GameEngine:
         modifiers.pop("huifeng_target_ref", None)
         modifiers.pop("huifeng_target_ref_opponent", None)
 
-        # 【无限肉块】：战终恢复80%已损耐久，向上取整。
+        # 【无限肉块】：战终自愈80%已损耐久，向上取整（2026-10-14 F8：描述压缩为自愈）。
         infinite_meat_logs = []
         for item in self.state.consumables:
             if item.kind != "infinite_meat":
