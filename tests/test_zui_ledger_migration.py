@@ -29,7 +29,7 @@ from engine.dice import DiceEngine
 from engine.mechanisms import MECHANISMS, Phase, Trigger
 from engine.mechanisms.ledger import clear_ledger, ledger_names, ledger_of
 from engine.api import GameEngine
-from engine.daowen import DaoWenEngine, ResonanceEngine, RESERVED_SLOT
+from engine.daowen import DaoWenEngine, ResonanceEngine, RELICIZED_SLOT
 from engine.gamedata import REGION_EXCLUSIVE_DAOWEN
 from engine.models import DaoWen, DaoWenInstance, Entity, GameState, Relic, StatusEffect
 from engine.validator import check_migrated_mechanism_guards
@@ -61,10 +61,25 @@ def test_duming_is_no_longer_a_daowen_and_is_in_the_relic_pool():
     with pytest.raises(ValueError):
         DaoWenEngine.resolve("赌命", 1)
 
-    # 迁移期间仅将旧路径封住，不把已删除道纹作为可获得目标。
+    # 遗物化道纹的闭环节点统一用「？？」占位：保留边，但不能作为残韵结果获得。
+    assert RELICIZED_SLOT == "？？"
+    assert RELICIZED_SLOT not in DaoWenEngine._registry
+    loop = ResonanceEngine.CLOSED_LOOPS["罪孽都市闭环"]
+    assert ("假钞", "曲解", RELICIZED_SLOT) in loop
+    assert (RELICIZED_SLOT, "反转", "消灾") in loop
+    assert len(loop) == 8 and not any("赌命" in (src, dst) for src, _, dst in loop)
     options = ResonanceEngine.get_available_resonance("假钞")
     assert not any(option["target_daowen"] == "赌命" for option in options)
-    assert any(option["target_daowen"] == RESERVED_SLOT for option in options)
+    assert any(option["target_daowen"] == RELICIZED_SLOT and option.get("reserved")
+               for option in options)
+    stock = {"曲解": 1}
+    blocked = ResonanceEngine.apply_resonance("假钞", "曲解", True, True, stock)
+    assert blocked["success"] is False and blocked.get("reserved") is True
+    assert stock["曲解"] == 1
+    blocked_explicit = ResonanceEngine.apply_resonance(
+        "假钞", "曲解", True, True, stock, target_daowen=RELICIZED_SLOT)
+    assert blocked_explicit["success"] is False and blocked_explicit.get("reserved") is True
+    assert stock["曲解"] == 1
 
 
 # ==================== 声明映射 ====================

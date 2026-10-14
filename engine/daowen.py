@@ -10,18 +10,19 @@ from .rule_engine import daowen_migration_status, get_daowen_rule
 import math
 
 
-# 残韵闭环上的**空占位符**（2026-10-08 用户令）。
-# 删除道纹后，它在闭环上那一格不直连、也不拿别的道纹顶替，而是留成一个显式空位：
-#   · 结构层：它是闭环的一环，环长与入度/出度不变，将来补新道纹直接填这一格；
-#   · 残韵层：查得到（环完整可验证），但**不能获得**——apply_resonance 会拒绝，
-#     不消耗残韵、不改写牌面、不授予施法者。
-# 名字带全角括号，确保永不与任何真实道纹名冲突，且可全局 grep。
+# 残韵闭环上的非道纹占位节点：
+#   RESERVED_SLOT（2026-10-08）：一般删纹后尚待补设计的空位，如乱葬岗旧【镇尸】节点；
+#   RELICIZED_SLOT（2026-10-14 用户令）：道纹遗物化后统一用「？？」替代原闭环节点。
+# 两者都保留环的边数与入度/出度；查得到，但绝不能作为残韵结果获得（不耗残韵、不改牌面、不授予）。
+# 名字避开真实道纹词汇，闭环结构仍可完整验证。
 RESERVED_SLOT = "（待补）"
+RELICIZED_SLOT = "？？"
+PLACEHOLDER_SLOTS = frozenset({RESERVED_SLOT, RELICIZED_SLOT})
 
 
 def is_reserved_slot(name) -> bool:
-    """该名字是否为闭环上的空占位符（而非真实道纹）。"""
-    return name == RESERVED_SLOT
+    """该名字是否为闭环上的非道纹占位节点。"""
+    return name in PLACEHOLDER_SLOTS
 
 
 class DaoWenEngine:
@@ -1142,9 +1143,9 @@ class ResonanceEngine:
             ("豪夺", "曲解", "清算"),
             ("清算", "反转", "赎金"),
             ("赎金", "转换", "假钞"),
-            # 2026-10-14 A22：原道纹赌命改为遗物【灾厄轮盘】，保留原闭环位置为空位；不擅自重连。
-            ("假钞", "曲解", RESERVED_SLOT),
-            (RESERVED_SLOT, "反转", "消灾"),
+            # 2026-10-14 用户令：凡道纹遗物化，原闭环节点直接移除并以 RELICIZED_SLOT（？？）占位；保留两侧边，不重连。
+            ("假钞", "曲解", RELICIZED_SLOT),
+            (RELICIZED_SLOT, "反转", "消灾"),
             ("消灾", "曲解", "点金"),
         ],
         # ---- 副本专属分叉（非闭环：单边spur，不参与合拢断言）----
@@ -1334,19 +1335,26 @@ class ResonanceEngine:
         # roundtrip 可达性都得照常成立），只有真正发动时才拒绝。
         if target_daowen:
             if is_reserved_slot(target_daowen):
+                if target_daowen == RELICIZED_SLOT:
+                    detail = "是道纹遗物化后保留的闭环占位符，不是可获得的道纹"
+                else:
+                    detail = "是闭环上的空占位符，尚未补入道纹，无法获得"
                 return {
                     "success": False,
-                    "error": (f"'{target_daowen}'是闭环上的空占位符，尚未补入道纹，"
-                              f"无法作为残韵结果获得"),
+                    "error": f"'{target_daowen}'{detail}",
                     "reserved": True,
                 }
         else:
             real = [c for c in candidates if not c.get("reserved")]
-            if not real and any(c.get("reserved") for c in candidates):
+            placeholders = [c["target_daowen"] for c in candidates if c.get("reserved")]
+            if not real and placeholders:
+                if RELICIZED_SLOT in placeholders:
+                    detail = f"仅通向遗物化道纹占位符{RELICIZED_SLOT}，不可获得"
+                else:
+                    detail = "仅通向闭环空占位符（待补），尚未补入道纹，无法获得"
                 return {
                     "success": False,
-                    "error": (f"道纹'{source_daowen}'的'{resonance_type}'路径只通向闭环上的"
-                              f"空占位符（待补），尚未补入道纹，无法获得"),
+                    "error": f"道纹'{source_daowen}'的'{resonance_type}'路径{detail}",
                     "reserved": True,
                 }
 
