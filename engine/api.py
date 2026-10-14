@@ -740,9 +740,11 @@ class GameEngine:
                 continue
             ctype = calc.get("cost_type")
             if name == "再生":
-                if ctype == "消耗" and calc.get("cost", 0) > actor.current_mana:
-                    continue
-                if ctype == "攻击力" and calc.get("cost_attack", 0) > actor.effective_attack_power():
+                mana_calc = DaoWenEngine.resolve(name, x, target=actor, caster=actor, cost_channel="法力")
+                attack_calc = DaoWenEngine.resolve(name, x, target=actor, caster=actor, cost_channel="攻击力")
+                mana_payable = mana_calc.get("cost", 0) <= actor.current_mana
+                attack_payable = attack_calc.get("cost_attack", 0) <= actor.effective_attack_power()
+                if not (mana_payable or attack_payable):
                     continue
             elif ctype == "消耗" and calc.get("cost", 0) > actor.current_mana:
                 continue
