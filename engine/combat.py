@@ -478,9 +478,15 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                     "actor": entity, "target": entity, "mechanic": "speed_change", "subtype": "current_speed",
                     "amount": 1, "tags": {"daowen", "dodge_followup"},
                 })
-        if entity.has_status("洞察") or self._relic_active(entity, "窥隙法匣"):
+        # 洞察状态与【窥隙法匣】是两个独立来源：前者由 ROUND_START 的
+        # 「洞察·结算」机制领取，后者由遗物回始结算。分开记账，避免遗物门闩
+        # 清理时误删洞察 pending，或持有遗物时把洞察额度错误地当成遗物额度领取。
+        if entity.has_status("洞察"):
             entity._dongcha_pending = getattr(entity, "_dongcha_pending", 0) + 10
             extra["dongcha_pending"] = entity._dongcha_pending
+        if self._relic_active(entity, "窥隙法匣"):
+            entity._kuixi_pending_mana = getattr(entity, "_kuixi_pending_mana", 0) + 10
+            extra["kuixi_pending_mana"] = entity._kuixi_pending_mana
         if self._relic_active(entity, "逐影胫骨"):
             entity._zhuying_dodges = getattr(entity, "_zhuying_dodges", 0) + 1
             if entity._zhuying_dodges >= 2:
@@ -1038,18 +1044,19 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                 continue
             seen_entities.add(id(e))
             # 窥隙法匣：成功闪避时记下的法力只在下一回始领取，不与当次闪避即时结算。
-            pending_dongcha = int(getattr(e, "_dongcha_pending", 0) or 0)
-            if pending_dongcha > 0 and self._relic_active(e, "窥隙法匣"):
+            # 它使用独立 pending；绝不能清理洞察状态的 _dongcha_pending。
+            pending_kuixi = int(getattr(e, "_kuixi_pending_mana", 0) or 0)
+            if pending_kuixi > 0 and self._relic_active(e, "窥隙法匣"):
                 before_mana = e.current_mana
-                e.gain_mana(pending_dongcha)
+                e.gain_mana(pending_kuixi)
                 self.clamp_immortal_body(e)
                 effects.append({"type": "relic", "relic": "窥隙法匣", "entity": e.name,
-                                "mana_requested": pending_dongcha,
+                                "mana_requested": pending_kuixi,
                                 "mana_gained": e.current_mana - before_mana})
-                e._dongcha_pending = 0
-            elif pending_dongcha > 0 and not e.has_status("洞察"):
+                e._kuixi_pending_mana = 0
+            elif pending_kuixi > 0:
                 # 遗物被移除/封印后，旧待领取额度不应凭空在以后生效。
-                e._dongcha_pending = 0
+                e._kuixi_pending_mana = 0
             # 2026-10-13：谁持有谁获得法限等量法力与异变；这不是代价，不走代价结算。
             # 兼容实体遗物、轮回者本局遗物及死斗对手遗物，并尊重玩家的遗物封印。
             owns_relic = (any(r.name == MONSTER_MANA_RELIC for r in e.relics)
