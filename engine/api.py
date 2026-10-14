@@ -2889,8 +2889,6 @@ class GameEngine:
                 resolve_kw["cost_channel"] = params.get("touzhi_cost", "流血")
             if name == "再生":
                 resolve_kw["cost_channel"] = params.get("zaisheng_cost", "法力")
-            if name == "再生":
-                resolve_kw["cost_channel"] = params.get("zaisheng_cost", "法力")
             calc = DaoWenEngine.resolve(name, x, **resolve_kw)
         except Exception as e:
             return {"success": False, "error": f"道纹计算失败: {str(e)}"}
