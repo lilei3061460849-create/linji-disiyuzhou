@@ -119,7 +119,7 @@ class DaowenEffectMixin:
                 try:
                     reduced_calc = DaoWenEngine.resolve(
                         name, reduced_x, y=original_calc.get("y", 1),
-                        target=target, caster=caster)
+                        target=target, caster=caster, _skip_status_decay=True)
                 except (TypeError, ValueError, KeyError):
                     reduced_calc = {}
                 if reduced_calc:
