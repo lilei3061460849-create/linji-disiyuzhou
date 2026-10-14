@@ -167,6 +167,27 @@ def test_round_start_gap_damage_is_separate_from_zhesu(tmp_path):
     assert m.current_hp == after_loss - 15      # 回始按缺口(速限-当前速度)=5 再打15
 
 
+def test_round_start_huifeng_fizzles_when_no_enemy_alive(tmp_path):
+    """边界（2026-10-14 修 bone_angel/wushen 红）：回锋刀回始缺口伤>0，但场上
+    无存活敌人（如增援未到）→ 不发 demand、直接哑火，不得整单报错。
+
+    引擎此前要求不可能的提交（可选[]），整局 sim 被误标 invalid。
+    """
+    e = _engine(tmp_path, "hf_empty")
+    e.state.relics.append(Relic("回锋刀", ""))
+    p = e.state.player
+    p.speed_limit = max(p.speed_limit, 8)
+    p.current_speed = p.speed_limit - 5  # 缺口5 → 缺口伤15
+    begin_battle(e, relic_choices={})
+    e.state.enemies[:] = e.state.enemies[:1]
+    m = e.state.enemies[0]
+    m.is_alive = False
+    m.current_hp = 0
+    e.state.monster_reinforcements = [{"name": "增援怪", "arrive_round": 99}]  # 增援未到：战斗未结束
+    r = begin_round(e, relic_choices={})
+    assert r["success"], r.get("error")
+
+
 # ---------- 守夜灯 ----------
 
 def test_lamp_grants_at_round_start_and_keeps_it(tmp_path):

@@ -1346,11 +1346,16 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         player = self.state.player
         damage = 3 * max(0, player.speed_limit - player.current_speed) if player else 0
         if "回锋刀" in active and damage > 0:
+            legal = [i for i, enemy in enumerate(self.state.enemies) if enemy.is_alive]
+            if not legal:
+                # 2026-10-14（修 bone_angel/wushen 红）：回始场上无存活敌人
+                # （如增援/延迟回场未到）→ 无目标可打，不发 demand；否则引擎要求
+                # 不可能的提交，整局被误标 invalid。
+                return
             decision = choices.get("回锋刀")
             index = decision.get("enemy_index") if isinstance(decision, dict) else None
             if (not isinstance(index, int) or isinstance(index, bool) or index < 0
                     or index >= len(self.state.enemies) or not self.state.enemies[index].is_alive):
-                legal = [i for i, enemy in enumerate(self.state.enemies) if enemy.is_alive]
                 raise ValueError(f"回锋刀触发时必须显式提交合法relic_choices.回锋刀.enemy_index，可选{legal}")
         # 2026-10-14 用户令：【余火印】整段删除（extra 方案废弃）——回始 use 决策取消。
         # 2026-10-12 用户令：【血契】删掉与道纹【透支】重合的「[回始]流血4X换X法力」，
@@ -1378,7 +1383,7 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
             self.validate_round_start_relic_choices(choices)
             if "回锋刀" in relics:
                 d = 3 * max(0, player.speed_limit - player.current_speed)
-                if d > 0:
+                if d > 0 and any(enemy.is_alive for enemy in self.state.enemies):
                     enemy = self.state.enemies[choices["回锋刀"]["enemy_index"]]
                     self._remember_huifeng_target(player, f"enemy:{choices['回锋刀']['enemy_index']}")
                     self._apply_hostile_damage(enemy, d, source=player, ctx={

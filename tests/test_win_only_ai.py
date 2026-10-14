@@ -33,7 +33,14 @@ def test_win_only_strutsural_verdicts_both_seats():
     """±1 口径下结构性结论复现：26 血方正席胜，换席 4 血方负。"""
     v = dc.chronicle(CH_FULL, DF_FULL, 1, ai_cls=WinOnlyAI)["verdict"]
     assert v["winner"] == "challenger"
-    v2 = dc.chronicle(DF_FULL, CH_FULL, 1, ai_cls=WinOnlyAI)["verdict"]
+    rec2 = dc.chronicle(DF_FULL, CH_FULL, 1, ai_cls=WinOnlyAI)
+    v2 = rec2["verdict"]
+    if v2["winner"] != "defender":
+        # 2026-10-14：R1 全量曾单次翻转（后 17 次复现逐字节一致，根因未定；
+        # 已排除超时伪装/哈希种子/文件内污染/透支搏命代码路径）。
+        # 失败时落盘实录，供下次直接 diff 首个分叉。
+        with open("/tmp/win_only_structural_fail.txt", "w", encoding="utf-8") as f:
+            f.write(f"verdict={v2}\n" + dc.render(rec2))
     assert v2["winner"] == "defender"
 
 
