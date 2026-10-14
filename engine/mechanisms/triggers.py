@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-from ..combat_events import CombatEvent
+from ..combat_events import CombatEvent, CombatEventType
 from ..resolution import KIND_TRIGGER, resolution_frame, resolution_of
 
 
