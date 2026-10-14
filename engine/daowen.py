@@ -734,11 +734,11 @@ class DaoWenEngine:
         }
     
     @staticmethod
-    def calculate_shujin(x: int, target: Entity = None) -> dict:
-        """赎金X：消耗3X。夺取目标10X碎片；若无碎片则失去X点速度"""
+    def calculate_qiangjie(x: int, target: Entity = None) -> dict:
+        """抢劫X：消耗3X。夺取目标10X碎片；若无碎片则失去X点速度"""
         target_name = target.name if target is not None else "未选定目标"
         return {
-            "dao_wen": "赎金", "x": x, "cost_type": CostType.MANA.value, "cost": 3 * x,
+            "dao_wen": "抢劫", "x": x, "cost_type": CostType.MANA.value, "cost": 3 * x,
             "shard_steal": 10 * x, "speed_penalty": x,
             "summary": f"消耗{3 * x}法力，夺取{target_name} {10*x}碎片或{x}速度"
         }
@@ -747,7 +747,7 @@ class DaoWenEngine:
     def calculate_lesuo(x: int, target: Entity = None) -> dict:
         """勒索X：消耗3X。目标失去10X碎片，不足部分记负债（真碎片扣负；2026-10-14 补点金反转分叉，还债新生产者）。
 
-        与【赎金】同价同量（3X→10X），形状不同：赎金是偷取（施法者获得，不足不记负债；
+        与【抢劫】同价同量（3X→10X），形状不同：抢劫是偷取（施法者获得，不足不记负债；
         无碎片改失速），勒索是销毁+记负债（谁都不获得，不足部分真碎片扣负，可触发【还债】）。
         单次结算，无持续（用户 2026-10-14 选单次，不 mirror 逼债的回始∞）。
         """
@@ -996,7 +996,7 @@ class DaoWenEngine:
             "典当": cls.calculate_diandang,
             "豪夺": cls.calculate_haoduo,
             "清算": cls.calculate_qingsuan,
-            "赎金": cls.calculate_shujin,
+            "抢劫": cls.calculate_qiangjie,
             # 2026-10-14 用户令：补点金反转分叉，还债新生产者。
             "勒索": cls.calculate_lesuo,
             "假钞": cls.calculate_jiachao,
@@ -1143,8 +1143,8 @@ class ResonanceEngine:
             ("点金", "转换", "典当"),
             ("典当", "反转", "豪夺"),
             ("豪夺", "曲解", "清算"),
-            ("清算", "反转", "赎金"),
-            ("赎金", "转换", "假钞"),
+            ("清算", "反转", "抢劫"),
+            ("抢劫", "转换", "假钞"),
             # 2026-10-14 用户令：凡道纹遗物化，原闭环节点直接移除并以 RELICIZED_SLOT（？？）占位；保留两侧边，不重连。
             ("假钞", "曲解", RELICIZED_SLOT),
             (RELICIZED_SLOT, "反转", "消灾"),
