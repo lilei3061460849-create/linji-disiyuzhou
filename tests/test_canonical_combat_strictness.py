@@ -32,11 +32,10 @@ def _setup_engine(tmp_path, region="龙心谷", relic="避风铃"):
     finish_initial_daowen(e)
     e.execute_action("setup_choose_resonance", {"resonance_type": "反转"})
     s = e.execute_action("setup_choose_region", {"region": region})
-    # 显式选择或挂载遗物
+    # 显式固定本用例的遗物，避免遗物池扩容后随机初始遗物给测试叠加额外效果。
     e.execute_action("choose_discovered_relic", {"relic_name": s["result"]["relic_choices"][0]})
-    if relic not in [r.name for r in e.state.relics]:
-        from engine.models import Relic
-        e.state.relics.append(Relic(name=relic, effect="测试遗物"))
+    from engine.models import Relic
+    e.state.relics = [Relic(name=relic, effect="测试遗物")]
     e.state.energy = 0
     # 挂载测试怪物
     m = Entity(name="测试靶子", blood_limit=100, current_hp=100, speed_limit=10, current_speed=10, entity_type="怪物")
