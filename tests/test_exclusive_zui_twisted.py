@@ -1,5 +1,5 @@
 """
-F2 全量验证：罪孽都市（点金/典当/豪夺/清算/赌命/消灾/假钞）与扭曲都市（爆裂/退化）的引擎侧实装。
+罪孽都市（点金/典当/豪夺/清算/消灾/假钞）与扭曲都市（爆裂/退化）的道纹实装。原道纹【赌命】已改为遗物【灾厄轮盘】，专项见 test_zui_ledger_migration。
 2026-10-13：【逼债】删除，【典当】顶替其闭环格。
 - 正常：按《副本/罪孽都市.md》《副本/扭曲都市.md》定义结算
 - 边界：碎片不足/无遗物/无碎片/反噬致死/退化归零等
@@ -259,74 +259,6 @@ def test_boundary_qingsuan_zero_shield():
     assert m.shield == 0
 
 
-# ==================== 赌命 ====================
-
-def test_normal_duming_random_target_each_round_start():
-    engine = _setup(); _grant(engine, ["赌命"])
-    player = engine.state.player
-    engine.state.fake_shards = 10
-    m = _add_monster(engine, hp=100)
-    r = engine.execute_action("use_daowen", {"daowen_name": "赌命", "x": 2})
-    assert r["success"], r
-    assert engine.state.fake_shards == 8, "赌命2应消耗2假碎片"
-    assert player.has_status("赌命")
-    before = {e.name: e.current_hp for e in [player] + engine.state.enemies}
-    effects = engine.combat.round_start()["effects"]
-    duming = [e for e in effects if e["type"] == "duming"]
-    assert len(duming) == 1
-    tgt_name = duming[0]["target"]
-    assert tgt_name in before
-    expect_loss = max(0, duming[0]["lost"])
-    assert before[tgt_name] - expect_loss == duming[0]["hp_after"]
-
-
-def test_boundary_duming_single_alive_always_targeted():
-    engine = _setup(); _grant(engine, ["赌命"])
-    player = engine.state.player
-    engine.state.fake_shards = 10
-    _add_monster(engine, hp=100)
-    # 怪物先死，只剩玩家
-    engine.state.enemies[0].is_alive = False
-    engine.execute_action("use_daowen", {"daowen_name": "赌命", "x": 1})
-    hp_before = player.current_hp
-    effects = engine.combat.round_start()["effects"]
-    duming = [e for e in effects if e["type"] == "duming"]
-    assert duming and duming[0]["target"] == player.name
-    assert player.current_hp == hp_before - max(0, duming[0]["lost"])
-
-
-def test_error_duming_insufficient_fake_shards_rejected():
-    engine = _setup(); _grant(engine, ["赌命"])
-    engine.state.fake_shards = 1
-    r = engine.execute_action("use_daowen", {"daowen_name": "赌命", "x": 5})
-    assert not r["success"], "假碎片不足应被拒绝"
-    assert "假碎片不足" in r.get("error", "")
-
-
-def test_duming_basis_is_current_hp_in_engine_and_both_docs():
-    """2026-10-13 用户裁定：赌命失去30%**当前**生命，三处口径对齐。"""
-    import math
-    from pathlib import Path
-    for hp, expected in ((100, 30), (99, 30), (90, 27)):
-        engine = _setup(); _grant(engine, ["赌命"])
-        player = engine.state.player
-        player.blood_limit = player.current_hp = hp
-        engine.state.fake_shards = 10
-        _add_monster(engine, hp=100)
-        engine.state.enemies[0].is_alive = False  # 只剩玩家：随机目标必中
-        assert engine.execute_action("use_daowen", {"daowen_name": "赌命", "x": 1})["success"]
-        duming = [e for e in engine.combat.round_start()["effects"] if e["type"] == "duming"]
-        assert len(duming) == 1 and duming[0]["target"] == player.name
-        assert duming[0]["lost"] == expected == math.ceil(hp * 30 / 100)
-        assert player.current_hp == hp - expected
-    root = Path(__file__).resolve().parents[1]
-    assert "【赌命】X：消耗X假碎片。[回始]按存活角色投随机数，对应目标失去30%当前生命，持续X。" in \
-        (root / "规则正文.md").read_text(encoding="utf-8")
-    line = next(l for l in (root / "副本" / "罪孽都市.md").read_text(encoding="utf-8").splitlines()
-                if l.startswith("7.赌命X"))
-    assert "失去30%当前生命" in line, line
-
-
 # ==================== 消灾 ====================
 
 def test_normal_xiaozai_rerolls_next_auto_roll():
@@ -387,35 +319,6 @@ def test_boundary_jiachao_fake_lost_first():
     engine.state.lose_shards(15)
     assert engine.state.fake_shards == 5, "应优先扣假碎片"
     assert engine.state.shards == 10
-
-
-def test_monster_jiachao_and_duming_flow():
-    """怪物侧联动：假钞→赌命（假碎片余额准入）→回始随机"""
-    engine = _setup()
-    m = _add_monster(engine, shards=0)
-    m.dao_wen = {"假钞": DaoWenInstance(DaoWen(name="假钞", formula="", cost_type="消耗",
-                                              cost_formula="X", effect_formula=""), x_value=2),
-                 "赌命": DaoWenInstance(DaoWen(name="赌命", formula="", cost_type="假碎片",
-                                              cost_formula="X", effect_formula=""), x_value=2)}
-    engine.state.current_round = 2
-    for expected in ("假钞", "赌命"):
-        prepared = engine.execute_action("prepare_monster_phase", {})
-        actor = prepared["result"]["actors"][0]
-        resolved = engine.execute_action("resolve_monster_phase", {
-            "token": prepared["result"]["token"],
-            "choices": [{"actor_ref": actor["actor_ref"],
-                         "daowen": {"name": expected, "dodge": False, "blood_shadow": False, "trigger_spell_choices": {}},
-                         "attack_actions": [{"hits": [{"target_ref": "player:0", "dodge": False, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}}]}]}],
-        })
-        assert resolved["success"]
-        if expected == "假钞":
-            assert getattr(m, "fake_shards", 0) == 20
-            engine.execute_action("round_end", {})
-            engine.execute_action("round_start", {})
-    assert m.fake_shards == 20 - 2, "赌命2应扣2假碎片"
-    assert m.has_status("赌命")
-    engine.combat.round_start()  # 回始赌命结算（玩家+怪物都在场）
-    assert True  # 不抛异常即通过
 
 
 # ==================== 千荆甲（通用遗物；承接已删【爆裂】的反噬口径） ====================

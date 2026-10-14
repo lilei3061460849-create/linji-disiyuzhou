@@ -604,20 +604,8 @@ class SpellReactionMixin:
 
     def pay_daowen_shard_cost(self, actor: Entity, name: str, calc: dict,
                               x: int) -> Optional[str]:
-        """赌命X/消灾X 的碎片类代价：足够则支付并返回 None，不足返回错误文本。"""
-        if name == "赌命":
-            fake_need = calc.get("fake_cost", x)
-            if actor is self.state.player:
-                have = self.state.fake_shards
-            else:
-                have = getattr(actor, "fake_shards", 0)
-            if have < fake_need:
-                return f"假碎片不足：赌命X需{fake_need}假碎片，当前{have}"
-            if actor is self.state.player:
-                self.state.fake_shards -= fake_need
-            else:
-                actor.fake_shards -= fake_need
-        elif name == "消灾":
+        """消灾X 的碎片类代价：足够则支付并返回 None，不足返回错误文本。"""
+        if name == "消灾":
             in_combat = self.state.phase == "in_combat"
             mult = 1 if in_combat else 2
             fake_need = calc.get("fake_cost", 50 * x) * mult
@@ -838,7 +826,7 @@ class SpellReactionMixin:
                 reason=InterruptReason.MANA_INSUFFICIENT, detail=err,
                 trigger_spell_logs=trigger_logs, iteration=iteration)
 
-        # --- 碎片代价（赌命X/消灾X） ---
+        # --- 碎片代价（消灾X） ---
         shard_error = self.pay_daowen_shard_cost(caster, daowen, calc, x)
         if shard_error:
             return StepResult(
@@ -1478,7 +1466,7 @@ class SpellReactionMixin:
 
         攻击路径（resolve_attack）由显式反应窗口按提交结算，不经过本方法；
         这里处理其余一切导致"伤害/失血"的通道（道纹伤害/流血代价/血限压迫/
-        千荆甲反射/赌命/直接失血/未来新增效果……），对持有者而言"触发时机一到
+        千荆甲反射/遗物灾厄轮盘/直接失血/未来新增效果……），对持有者而言"触发时机一到
         就触发"——只检测事件，不逐个开窗。
         """
         if holder is None or not holder.is_alive:

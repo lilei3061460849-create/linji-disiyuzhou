@@ -322,10 +322,18 @@ def test_alt_path_resolve_monster_turn_with_daowen_monster_no_nameerror():
     setup = e.execute_action("setup_choose_region", {"region": "扭曲都市"})
     e.execute_action("choose_discovered_relic",
                      {"relic_name": setup["result"]["relic_choices"][0]})
+    # 该回归只验证带道纹怪物的决策，不依赖随机开局遗物的反噬/改靶行为。
+    e.state.relics = []
     e.state.energy = 0
     bs = e.execute_action("battle_start", {"relic_choices": {}})
     assert bs.get("success"), bs
     assert bs.get("enemies"), "必须出怪"
+    # 当前种子配方还可能带出拥有【波及】的第二只怪；与本测试的目标无关，
+    # 固定为受测脑蜘蛛，避免误测 AoE 提交协议。
+    brain_spider = next((m for m in e.state.enemies if m.name == "脑蜘蛛"), None)
+    assert brain_spider is not None, f"当前随机配方未抽到脑蜘蛛：{bs.get('enemies')}"
+    e.state.enemies = [brain_spider]
+    e.state.monster_reinforcements = []
 
     # 第 1 回合（白板：怪物只普攻不出道纹）
     assert e.execute_action("round_start", {"relic_choices": {}})["success"]

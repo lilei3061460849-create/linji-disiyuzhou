@@ -198,6 +198,29 @@ def play_and_record(region: str, seed: int, battles: int = 7):
             return {"invalid": True, "reason": f"choose_region:{r.get('error')}"}
         ai = TacticalAI(engine)
 
+        def _active_enemies():
+            return [enemy for enemy in engine.state.enemies
+                    if enemy.is_alive and not getattr(enemy, "is_departed", False)]
+
+        def _pending_arrivals():
+            return bool(getattr(engine.state, "monster_reinforcements", None)
+                        or getattr(engine.state, "delayed_monster_reentries", None))
+
+        def _advance_empty_round():
+            """当前没有活跃敌人但仍有待入场增援/封印回场时，推进回合而非误结算战斗。"""
+            # 即使本阶段没有怪物，也要走完空的怪物阶段，才能进入 await_round_end。
+            monster_phase = _resolve_monster_turn(engine)
+            if not monster_phase.get("success"):
+                return {"invalid": True, "reason": f"monster_phase:{monster_phase.get('error')}"}
+            result = engine.execute_action("round_end", {})
+            if not result.get("success"):
+                return {"invalid": True, "reason": f"round_end:{result.get('error')}"}
+            ai.resolve_pending_redemption()
+            lines.extend(BR.format_round_end(result.get("result", {}),
+                                             engine.state.player,
+                                             engine.state.enemies))
+            return None
+
         lines.append(f"## 轮回记录（{region}，种子 {seed}）")
         lines.append("")
         lines.append(f"【开局】25点属性 → {engine.state.player.blood_limit}[血限]/"
@@ -260,14 +283,26 @@ def play_and_record(region: str, seed: int, battles: int = 7):
             for rnd in range(1, 31):
                 if not engine.state.player or not engine.state.player.is_alive:
                     break
-                if not [x for x in engine.state.enemies if x.is_alive]:
+                if not _active_enemies() and not _pending_arrivals():
                     break
                 from sim.build_learner import round_start_relic_choices
                 rs = engine.execute_action("round_start", {"relic_choices": round_start_relic_choices(engine)})
+                if not rs.get("success"):
+                    return {"invalid": True, "reason": f"round_start:{rs.get('error')}"}
                 lines.extend(BR.format_round_start(rnd, rs.get("result", {}),
                                                    engine.state.player,
                                                    engine.state.enemies))
+                if not engine.state.player or not engine.state.player.is_alive:
+                    break
                 ai.new_round()
+                # 所有已上场敌人阵亡但增援尚未到期：让回合继续推进，等待下一波，不得直接 battle_end。
+                if not _active_enemies():
+                    if _pending_arrivals():
+                        invalid = _advance_empty_round()
+                        if invalid:
+                            return invalid
+                        continue
+                    break
                 idx = 1
                 for res in ai.take_turn():
                     lines.extend(BR.format_player_action(
@@ -285,11 +320,16 @@ def play_and_record(region: str, seed: int, battles: int = 7):
                 # 引擎只负责标注困境，须由扮演怪物方的 AI 主动调用，
                 # 此前战报生成器从不调用，导致该机制在战报中从未出现。
                 lines.extend(_resolve_monster_plight(engine, rng))
-                if not [x for x in engine.state.enemies if x.is_alive]:
+                if not engine.state.player or not engine.state.player.is_alive:
+                    break
+                if not _active_enemies():
+                    if _pending_arrivals():
+                        invalid = _advance_empty_round()
+                        if invalid:
+                            return invalid
+                        continue
                     lines.extend(BR.format_round_end({}, engine.state.player,
                                                      engine.state.enemies))
-                    break
-                if not engine.state.player or not engine.state.player.is_alive:
                     break
                 mp = _resolve_monster_turn(engine)
                 if not mp.get("success"):

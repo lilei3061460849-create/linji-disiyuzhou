@@ -210,8 +210,6 @@ class MonsterPhaseMixin:
                     else:
                         if cooldown_limited:
                             effective_x = 1
-                        elif name == "赌命" and getattr(monster, "fake_shards", 0) < inst.x_value:
-                            continue
                         if (name == "消灾" and monster.fake_shards < 50 * inst.x_value
                                 and monster.shards < 5 * inst.x_value):
                             continue
@@ -344,9 +342,6 @@ class MonsterPhaseMixin:
                             - getattr(monster, "mutation_count", 0))
                 if calc.get("cost_mutation", 0) >= headroom:
                     break
-            # 碎片/假碎片类道纹不经过 _monster_can_pay_calc_cost，单独封顶
-            if effective_name == "赌命" and getattr(monster, "fake_shards", 0) < x:
-                break
             if effective_name == "消灾" and (monster.fake_shards < 50 * x
                                              and monster.shards < 5 * x):
                 break
@@ -533,10 +528,6 @@ class MonsterPhaseMixin:
                     "tags": {"daowen", "active_payment"}})
                 return {"monster": monster.name, "lost": name,
                         "note": "支付异变后触发【迷失】"}
-        elif name == "赌命":
-            if monster.fake_shards < effective_x:
-                raise ValueError(f"{monster.name}假碎片不足，不能发动【赌命】")
-            monster.fake_shards -= effective_x
         elif name == "消灾":
             fake_cost, real_cost = 50 * effective_x, 5 * effective_x
             if monster.fake_shards >= fake_cost:

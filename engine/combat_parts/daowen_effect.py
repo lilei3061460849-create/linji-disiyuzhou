@@ -362,7 +362,7 @@ class DaowenEffectMixin:
                 result["effects"].append({"type": "aoe_damage", "target": enemy.name, **dmg})
                 if dmg.get("actual_damage", 0) > 0:
                     caster.damage_dealt_this_round += dmg["actual_damage"]
-        if "hp_percent_loss" in calc and name != "赌命":  # 赌命已改为[回始]随机结算（F2），此处仅保留其他百分比道纹
+        if "hp_percent_loss" in calc:
             if "hp_percent_loss" in wave_pieces:
                 # 波及：总数值=各目标按当前生命×百分比之和，再平分。
                 total = sum(math.ceil(wt.current_hp * calc["hp_percent_loss"] / 100)
@@ -1083,17 +1083,13 @@ class DaowenEffectMixin:
             for st_target in wave_status_targets:
                 result["effects"].append({"type": "shanghen", "target": st_target.name, "x": x})
 
-        # ---- F2 全量：罪孽都市（清算/赌命/消灾/抵扣）的注册与即时结算 ----
+        # ---- F2 全量：罪孽都市（清算/消灾/抵扣）的注册与即时结算 ----
         # （2026-10-13 用户令删【逼债】：此处原挂账块与【逼债·结算/对账】机制一并移除）
         # 清算X：[回始]使[目标]失去你[碎片]点格挡，持续X。此处仅挂账。
         if name == "清算":
             for st_target in wave_status_targets:
                 ledger_of(st_target, "清算").append({"x": x, "caster": caster})
                 result["effects"].append({"type": "qingsuan_register", "target": st_target.name, "x": x})
-        # 赌命X：玩家侧在_action_use_daowen预检付费；怪物侧由两阶段决策结算器付费。
-        # 状态经 duration 挂在施法者上，[回始]在 round_start 按存活角色随机结算。
-        elif name == "赌命":
-            result["effects"].append({"type": "duming_register", "caster": caster.name, "x": x})
         # 消灾X：玩家侧在_action_use_daowen预检付费；怪物侧由两阶段决策结算器付费；此处登记重投次数。
         elif name == "消灾":
             self.dice.set_rerolls(self.dice.rerolls_pending + x)

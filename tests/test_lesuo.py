@@ -133,9 +133,9 @@ def test_monster_casts_lesuo_debts_the_player():
     assert r["effects"][-1]["type"] == "lesuo_debt"
 
 
-def test_sin_city_exclusive_count_is_nine():
-    """两处地域集同加勒索（逼债删后典当已补格，勒索是第9个）。"""
+def test_sin_city_exclusive_count_is_eight():
+    """两处地域集同加勒索；原道纹【赌命】改为遗物【灾厄轮盘】后罪孽都市现有8条专属道纹。"""
     from engine.combat import CombatEngine
     assert set(REGION_EXCLUSIVE_DAOWEN["罪孽都市"]) == set(CombatEngine.REGION_EXCLUSIVE_DAOWEN["罪孽都市"])
-    assert len(REGION_EXCLUSIVE_DAOWEN["罪孽都市"]) == 9
+    assert len(REGION_EXCLUSIVE_DAOWEN["罪孽都市"]) == 8
     assert "勒索" in REGION_EXCLUSIVE_DAOWEN["罪孽都市"]

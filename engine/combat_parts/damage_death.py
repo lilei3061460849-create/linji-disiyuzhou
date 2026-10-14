@@ -861,15 +861,15 @@ class DamageDeathMixin:
         self, entity: Entity, amount: int,
         ctx: Optional[EffectContext | dict] = None,
     ) -> dict:
-        """直接生命损失（绕过格挡；爆裂反射/赌命用），计入失血追踪，含命零判定。"""
+        """直接生命损失（绕过格挡；爆裂反射/遗物灾厄轮盘用），计入失血追踪，含命零判定。"""
         before = entity.current_hp
         reaction_logs: list = []
-        # 「失去生命前」自动反应窗口：非攻击直接失血（爆裂/赌命等），生命尚未扣减。
+        # 「失去生命前」自动反应窗口：非攻击直接失血（爆裂/遗物灾厄轮盘等），生命尚未扣减。
         if amount > 0 and entity.is_alive and self._attack_after_window_target is not entity:
             reaction_logs = self._fire_before_life_lost(entity, ctx) or []
         self._hp_loss_recording += 1  # 直接失血由 _record_hp_loss_event 接管，抑制兜底钩子
         try:
-            # 【第一杯】：直接失血（爆裂反射/赌命/血影等）同样属于「失去的生命」。
+            # 【第一杯】：直接失血（爆裂反射/遗物灾厄轮盘/血影等）同样属于「失去的生命」。
             entity.current_hp = max(
                 0, entity.current_hp - max(0, amount) * self.state.life_loss_multiplier(entity))
         finally:

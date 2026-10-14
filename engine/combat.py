@@ -88,7 +88,7 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
     # 副本专属道纹
     REGION_EXCLUSIVE_DAOWEN = {
         "扭曲都市": {"变形","定型","畸变","超频","坏死","退化"},   # 2026-10-03 删【爆裂】；2026-10-14 删【搏命】（并入【透支】）
-        "罪孽都市": {"点金","典当","豪夺","清算","赎金","假钞","赌命","消灾","勒索"},   # 2026-10-13 删【逼债】【典当】顶替；2026-10-14 +【勒索】
+        "罪孽都市": {"点金","典当","豪夺","清算","赎金","假钞","消灾","勒索"},   # 2026-10-13 删【逼债】【典当】顶替；2026-10-14 +【勒索】
         "龙心谷":   {"加害","龙鳞","逆鳞","裂变","背负","伤痕"},   # 2026-10-03 删【活血】；2026-10-11 删【嫁祸】
     }
     
@@ -1058,11 +1058,11 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
             # 机制的报告条目并入 effects，战报格式与迁移前一致。
             effects.extend(self._dispatch_phase(Phase.ROUND_START, target=entity))
 
-        # ---- F2：罪孽专属道纹 [回始] 结算（清算/赌命；2026-10-13 删【逼债】剩两段）----
-        # 2026-10-03 迁移：本位置只宣布相位时点（锚点 = 回始效果循环之后、current_round+1 之前），
-        # 结算 for 已搬进声明层（builtins 的 清算·结算/赌命·结算）。
+        # ---- 罪孽【清算】与遗物【灾厄轮盘】的回始结算相位 ----
+        # 本位置只宣布相位时点（锚点 = 回始效果循环之后、current_round+1 之前）；
+        # 结算由声明层的 清算·结算/灾厄轮盘·结算 执行。原道纹【赌命】现为常驻遗物【灾厄轮盘】。
         # 分发语义=统一状态排序：按各账本状态记录的来源道纹序列位置结算；不再保留旧的
-        # 「逼债全体 → 清算全体 → 赌命全体」固定顺序（逼债已删）。账本访问一律走 mechanisms.ledger。
+        # 清算账本结算在前；遗物灾厄轮盘机制随后按持有者触发。账本访问走 mechanisms.ledger。
         effects.extend(self._dispatch_phase_all(
             Phase.ROUND_START_SETTLE,
             self.state.get_all_player_side() + self.state.get_all_enemy_side()))

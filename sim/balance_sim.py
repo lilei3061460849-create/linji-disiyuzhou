@@ -28,7 +28,7 @@ TUNING = {
 REGION_EXCLUSIVE = {
     "扭曲都市": {"变形","定型","畸变","僵化","超频","坏死","爆裂","退化"},
     # 2026-10-13：删【逼债】→【典当】顶替（发现类，无回始结算，本模拟不建模其发现效果）。
-    "罪孽都市": {"点金","典当","抵扣","清算","赎金","假钞","赌命","消灾"},
+    "罪孽都市": {"点金","典当","抵扣","清算","赎金","假钞","消灾"},
     "龙心谷":   {"加害","龙鳞","逆鳞","裂变","背负","伤痕"},   # 2026-10-11 删【嫁祸】
 }
 
@@ -62,7 +62,7 @@ def make_monster(md):
     # 副本专属道纹运行态（裁定⑨）
     m.fake_shards = 0; m.shards = 0
     m._beifu_left = 0; m._beifu_target = None
-    m._nilin = 0; m._xiaozai_left = 0
+    m._nilin = 0
     return m
 
 
@@ -224,7 +224,7 @@ def apply_control_to_player(name, m, player):
 
 # =========================================================================
 # 副本专属道纹实装（裁定⑨ 2026-08-10：全部24种专属道纹建模后重测平衡）
-# 语义事实源：规则正文道纹定义 + engine/combat.py 已实现口径（赌命=当前生命30%等）。
+# 语义事实源：规则正文道纹定义 + engine/combat.py 已实现口径；遗物【灾厄轮盘】不属于怪物道纹池。
 # USE_EXCLUSIVE=False 回到未建模基线（A/B对照用）。
 # 已知本模拟器结构性空转（照激活、记计数、无数值影响）：超频（怪速度未入战斗数学）、
 # 定型（模拟玩家战斗中不涨攻击/次数）、抵扣（模拟玩家无遗物）。
@@ -232,9 +232,9 @@ def apply_control_to_player(name, m, player):
 USE_EXCLUSIVE = True
 
 # 激活顺序（接在通用优先级之后；每回合至多激活1个，激活=出手）
-EXCLUSIVE_PRIORITY = ["变形", "逆鳞", "假钞", "赌命", "加害", "点金", "赎金",
+EXCLUSIVE_PRIORITY = ["变形", "逆鳞", "假钞", "加害", "点金", "赎金",
                       "清算", "龙鳞", "爆裂", "裂变", "伤痕", "退化", "畸变", "活血",
-                      "背负", "超频", "定型", "抵扣", "消灾"]
+                      "背负", "超频", "定型", "抵扣"]  # 消灾只改写骰点；该简化模拟无生产骰点管线，故不模拟/不激活
 REDIRECT_ATTRS = ("_beifu_left", "_beifu_target", "_nilin")   # 2026-10-11 删【嫁祸】
 
 
@@ -287,7 +287,7 @@ def hit_monster(player, m, dmg, monsters, _redirected=False):
 
 
 def _raw_hit_player(player, dmg):
-    """不经护盾/闪避的直接生命损失（爆裂反射、赌命等）"""
+    """不经护盾/闪避的直接生命损失（爆裂反射等；本模拟不建模遗物【灾厄轮盘】）"""
     player.current_hp = max(0, player.current_hp - dmg)
     player.hp_lost_this_round += dmg
     if player.current_hp <= 0:
@@ -306,40 +306,15 @@ def _hurt_player_track(player, lost):
 
 
 def exclusive_round_start(player, monsters, activated_map, rng):
-    """回始：清算（失格挡）/赌命（随机数+消灾重投）"""
+    """回始：清算；遗物【灾厄轮盘】不在此道纹专属模拟器的建模范围。"""
     if not USE_EXCLUSIVE:
         return
     for m in _alive_monsters(monsters):
         act = activated_map.get(id(m), set())
-        x_of = lambda g: m.dao_wen[g].x_value if g in m.dao_wen else 1
         # 2026-10-13：【逼债】删除，原回始负债分支一并移除。
         if m.has_status("清算"):
             drain = max(0, getattr(m, "shards", 0))
             player.shield = max(0, player.shield - drain)
-        if m.has_status("赌命"):
-            x = x_of("赌命")
-            side = [player] + _alive_monsters(monsters)  # 从轮回者方开始发放数字
-            n = len(side)
-            roll = rng.randint(1, n)
-            # 消灾X：随机数选中怪物侧时，任一持有剩余消灾次数的怪物可支付重投
-            # （优先50X假碎片，其次5X碎片；简化：每次回始最多重投1次，总额=激活时X）
-            if roll > 1:
-                holder = next((b for b in _alive_monsters(monsters)
-                               if getattr(b, "_xiaozai_left", 0) > 0), None)
-                if holder is not None:
-                    cx = holder.dao_wen["消灾"].x_value if "消灾" in holder.dao_wen else 1
-                    if getattr(holder, "fake_shards", 0) >= 50 * cx:
-                        holder.fake_shards -= 50 * cx; holder._xiaozai_left -= 1; roll = rng.randint(1, n)
-                    elif getattr(holder, "shards", 0) >= 5 * cx:
-                        holder.shards -= 5 * cx; holder._xiaozai_left -= 1; roll = rng.randint(1, n)
-            tgt = side[roll - 1]
-            d = math.ceil(tgt.current_hp * 30 / 100)  # 赌命：引擎口径=当前生命30%
-            if tgt is player:
-                _raw_hit_player(player, d)
-            else:
-                tgt.current_hp = max(0, tgt.current_hp - d)
-                if tgt.current_hp <= 0:
-                    tgt.is_alive = False
 
 
 def exclusive_round_end(player, monsters):
@@ -383,12 +358,6 @@ def apply_exclusive(act, m, player, monsters, rng):
         m.add_status(StatusEffect("逆鳞", remaining_rounds=x, value=x))
     elif act == "假钞":    # 获得10X假碎片
         m.fake_shards = getattr(m, "fake_shards", 0) + 10 * x
-    elif act == "赌命":    # 代价X假碎片（激活时付）；持续X，回始随机数
-        m.fake_shards -= x  # 激活准入时校验过余额
-        m.add_status(StatusEffect("赌命", remaining_rounds=x, value=x))
-        m._xiaozai_left = 0
-    elif act == "消灾":
-        m._xiaozai_left = x  # 本激活可重投X次
     elif act == "加害":    # 引擎口径（攻击者侧）：造成的伤害+X，持续∞
         m.add_status(StatusEffect("加害", remaining_rounds=-1, value=x))
     elif act == "点金":    # DM 2026-09-10：消耗8X法力直接换X真碎片，与伤害无关
@@ -429,10 +398,8 @@ def apply_exclusive(act, m, player, monsters, rng):
 
 
 def monster_can_pay_exclusive(m, g):
-    """专属道纹激活的代价准入：赌命需X假碎片余额；背负需有同伴"""
+    """专属道纹激活的代价准入：背负需有同伴。"""
     x = m.dao_wen[g].x_value
-    if g == "赌命" and getattr(m, "fake_shards", 0) < x:
-        return False
     return True
 
 

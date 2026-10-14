@@ -1,8 +1,8 @@
-"""罪孽都市·账本机制迁移验证（2026-10-03 迁移三机制；2026-10-13 用户令删【逼债】后剩两机制）。
+"""罪孽都市账本与遗物【灾厄轮盘】结算验证（原道纹【赌命】于2026-10-14改名并遗物化）。
 
 被迁对象（旧实现都在 combat.py 回始效果循环之后的内嵌 for + 回终清账块）：
     【清算·结算】[回始] 目标失去[施法者当前碎片]点格挡
-    【赌命·结算】[回始] 随机存活目标失去30%当前生命（RNG 目标，骰子流名含回合号）
+    遗物【灾厄轮盘】[回始] 随机存活目标失去30%当前生命（RNG 目标，骰子流名含回合号）
     【清算·对账】状态消失即清账
     （【逼债·结算/对账】随【逼债】删除一并移除，原用例已删）
 
@@ -29,7 +29,9 @@ from engine.dice import DiceEngine
 from engine.mechanisms import MECHANISMS, Phase, Trigger
 from engine.mechanisms.ledger import clear_ledger, ledger_names, ledger_of
 from engine.api import GameEngine
-from engine.models import DaoWen, DaoWenInstance, Entity, GameState, StatusEffect
+from engine.daowen import DaoWenEngine, ResonanceEngine, RELICIZED_SLOT
+from engine.gamedata import REGION_EXCLUSIVE_DAOWEN
+from engine.models import DaoWen, DaoWenInstance, Entity, GameState, Relic, StatusEffect
 from engine.validator import check_migrated_mechanism_guards
 
 
@@ -49,19 +51,50 @@ def _effects_of(effects, kind):
     return [e for e in effects if e.get("type") == kind]
 
 
+def test_duming_is_no_longer_a_daowen_and_is_in_the_relic_pool():
+    DaoWenEngine.register_all()
+    assert "赌命" not in DaoWenEngine._registry
+    assert "赌命" not in REGION_EXCLUSIVE_DAOWEN["罪孽都市"]
+    relic_names = {name for name, _ in GameEngine.RELIC_DEFS}
+    assert "灾厄轮盘" in relic_names
+    assert "赌命" not in relic_names
+    with pytest.raises(ValueError):
+        DaoWenEngine.resolve("赌命", 1)
+
+    # 遗物化道纹的闭环节点统一用「？？」占位：保留边，但不能作为残韵结果获得。
+    assert RELICIZED_SLOT == "？？"
+    assert RELICIZED_SLOT not in DaoWenEngine._registry
+    loop = ResonanceEngine.CLOSED_LOOPS["罪孽都市闭环"]
+    assert ("假钞", "曲解", RELICIZED_SLOT) in loop
+    assert (RELICIZED_SLOT, "反转", "消灾") in loop
+    assert len(loop) == 8 and not any("赌命" in (src, dst) for src, _, dst in loop)
+    options = ResonanceEngine.get_available_resonance("假钞")
+    assert not any(option["target_daowen"] == "赌命" for option in options)
+    assert any(option["target_daowen"] == RELICIZED_SLOT and option.get("reserved")
+               for option in options)
+    stock = {"曲解": 1}
+    blocked = ResonanceEngine.apply_resonance("假钞", "曲解", True, True, stock)
+    assert blocked["success"] is False and blocked.get("reserved") is True
+    assert stock["曲解"] == 1
+    blocked_explicit = ResonanceEngine.apply_resonance(
+        "假钞", "曲解", True, True, stock, target_daowen=RELICIZED_SLOT)
+    assert blocked_explicit["success"] is False and blocked_explicit.get("reserved") is True
+    assert stock["曲解"] == 1
+
+
 # ==================== 声明映射 ====================
 
 def test_mechanisms_registered_with_expected_phase_and_priority():
-    """三个结算机制注册在 ROUND_START_SETTLE；priority 仅作缺少序列锚点时的后备。"""
-    expected = {"清算·结算", "赌命·结算"}
+    """清算和遗物灾厄轮盘注册在 ROUND_START_SETTLE，清算对账注册在 ROUND_END_RECONCILE。"""
+    expected = {"清算·结算", "灾厄轮盘·结算"}
     for name in expected:
         m = MECHANISMS.get(name)
         assert m is not None, f"{name} 未注册"
         assert m.when.kind == "phase" and m.when.key == Phase.ROUND_START_SETTLE
-        assert m.status_name in {"清算", "赌命"}
+        assert m.status_name == ("清算" if name == "清算·结算" else "")
     m = MECHANISMS.get("清算·对账")
     assert m is not None and m.when.key == Phase.ROUND_END_RECONCILE
-    # 相位内仅允许这两个账本结算机制；实际顺序由状态的道纹序列位置决定。
+    # 回始结算相位仅允许这两个机制；清算以状态来源的道纹序列排序，遗物灾厄轮盘固定后置。
     names = [m.name for m in MECHANISMS.phase_mechanisms(Phase.ROUND_START_SETTLE)]
     assert len(names) == 2 and set(names) == expected
     # 2026-10-13：【逼债·结算/对账】随道纹删除，必须已注销。
@@ -72,14 +105,14 @@ def test_mechanisms_registered_with_expected_phase_and_priority():
 def test_legacy_ledger_status_order_is_recovered_from_caster_sequence():
     """旧存档的账本状态挂在目标身上，恢复顺序时必须查施法者而不是目标。"""
     state, _, player, enemy = _arena()
-    for name in ("赌命", "清算"):
+    for name in ("背负", "清算"):
         player.dao_wen[name] = DaoWenInstance(
             DaoWen(name=name, formula="", cost_type="消耗",
                    cost_formula="X", effect_formula=""),
             x_value=1,
         )
     # 故意让目标自己的序列与施法者不同，确保不会误用状态持有者的顺序。
-    for name in ("清算", "赌命"):
+    for name in ("清算", "背负"):
         enemy.dao_wen[name] = DaoWenInstance(
             DaoWen(name=name, formula="", cost_type="消耗",
                    cost_formula="X", effect_formula=""),
@@ -90,8 +123,8 @@ def test_legacy_ledger_status_order_is_recovered_from_caster_sequence():
     engine.state = state
     engine._migrate_legacy_daowen_status_order()
     order = {status.name: status.daowen_order for status in enemy.status_effects}
-    # 施法者序列（赌命=0，清算=1），不是目标自己的序列（清算是0）——查施法者才对。
-    assert order == {"清算": 1, "赌命": 0}
+    # 施法者序列（背负=0，清算=1），不是目标自己的序列（清算是0）——查施法者才对。
+    assert order == {"清算": 1, "背负": 0}
 
 
 def test_pipeline_has_no_hardcoded_branches_for_migrated_mechanisms():
@@ -137,11 +170,11 @@ def test_qingsuan_is_capped_by_shield_and_rereads_caster_shards_each_round():
     assert second[0]["drain"] == 3 and second[0]["lost_shield"] == 3
 
 
-# ==================== 赌命 ====================
+# ==================== 灾厄轮盘遗物 ====================
 
-def test_duming_hits_one_target_for_thirty_percent_current_hp():
+def test_disaster_wheel_hits_one_target_for_thirty_percent_current_hp():
     state, combat, player, enemy = _arena(player_hp=100, enemy_hp=200)
-    player.add_status(StatusEffect("赌命", value=2, remaining_rounds=-1, source="P"))
+    state.relics.append(Relic("灾厄轮盘", "[回始]随机选一名存活角色，使其失去30%当前生命"))
     effects = combat.round_start()["effects"]
     got = _effects_of(effects, "duming")
     assert len(got) == 1
@@ -156,45 +189,56 @@ def test_duming_hits_one_target_for_thirty_percent_current_hp():
     assert victim.current_hp == entry["hp_after"]
 
 
-def test_duming_report_matches_the_rolled_target():
+def test_disaster_wheel_report_matches_the_rolled_target():
     """roll/of 与目标必须一对：第 roll 个存活角色就是被打的那个（号码口径）。"""
     state, combat, player, enemy = _arena()
-    player.add_status(StatusEffect("赌命", value=1, remaining_rounds=-1, source="P"))
+    state.relics.append(Relic("灾厄轮盘", "[回始]随机选一名存活角色，使其失去30%当前生命"))
     entry = _effects_of(combat.round_start()["effects"], "duming")[0]
     alive = [e for e in (state.get_all_player_side() + state.get_all_enemy_side()) if e.is_alive]
     assert alive[entry["roll"] - 1].name == entry["target"]
 
 
-def test_duming_single_alive_always_targeted_and_consumes_nothing_extra():
+def test_disaster_wheel_single_alive_always_targeted_and_consumes_nothing_extra():
     state, combat, player, enemy = _arena()
     enemy.is_alive = False
-    player.add_status(StatusEffect("赌命", value=1, remaining_rounds=-1, source="P"))
+    state.relics.append(Relic("灾厄轮盘", "[回始]随机选一名存活角色，使其失去30%当前生命"))
     before = player.current_hp
     entry = _effects_of(combat.round_start()["effects"], "duming")[0]
     assert entry["target"] == player.name and entry["of"] == 1 and entry["roll"] == 1
     assert player.current_hp < before
 
 
+def test_disaster_wheel_requires_an_active_unsealed_relic():
+    state, combat, player, _ = _arena()
+    assert not _effects_of(combat.round_start()["effects"], "duming")
+
+    state.relics.append(Relic("灾厄轮盘", "[回始]随机选一名存活角色，使其失去30%当前生命"))
+    state.sealed_relics["灾厄轮盘"] = 1
+    assert not _effects_of(combat.round_start()["effects"], "duming")
+
+    state.sealed_relics.clear()
+    assert len(_effects_of(combat.round_start()["effects"], "duming")) == 1
+
+
 # ==================== 顺序即规则 ====================
 
-def test_settlement_order_follows_daowen_sequence_not_fixed_order():
-    """赌命→清算：机制全部偏离旧固定顺序时，仍按来源道纹序列结算。"""
+def test_disaster_wheel_settles_after_status_anchored_daowen_effects():
+    """灾厄轮盘改为常驻遗物后不再跟随道纹序列，排在有状态锚点的清算之后。"""
     state, combat, player, enemy = _arena()
     second = Entity("M2", "怪物", blood_limit=100, current_hp=100, shield=40,
                     speed_limit=2, current_speed=2)
     state.enemies.append(second)
+    state.relics.append(Relic("灾厄轮盘", "[回始]随机选一名存活角色，使其失去30%当前生命"))
     state.shards = 5
-    for e in (enemy, second):
+    for index, e in enumerate((enemy, second)):
         e.shards = 10
         e.shield = 40
         ledger_of(e, "清算").append({"x": 1, "caster": player})
         e.add_status(StatusEffect("清算", value=1, remaining_rounds=-1,
-                                  source=player.name, daowen_order=1))
-    player.add_status(StatusEffect("赌命", value=1, remaining_rounds=-1,
-                                   source=player.name, daowen_order=0))
+                                  source=player.name, daowen_order=index))
     kinds = [e["type"] for e in combat.round_start()["effects"]
              if e.get("type") in ("qingsuan", "duming")]
-    assert kinds == ["duming", "qingsuan", "qingsuan"]
+    assert kinds == ["qingsuan", "qingsuan", "duming"]
 
 
 # ==================== 对账：状态消失即清账 ====================

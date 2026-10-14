@@ -1,6 +1,6 @@
 """已迁移到声明层的机制（当前注册表共22项，以下为原16项历史说明：加害、龙鳞、帮派令、畸变·结算、
 焦黑发丝、洞察·结算、狂暴·标记、畸变·标记、洗劫·夺碎片、缄默面具、龙爪、
-清算·结算、赌命·结算、清算·对账；2026-10-13 用户令删【逼债】，
+清算·结算、灾厄轮盘·结算（遗物被动）、清算·对账；2026-10-13 用户令删【逼债】，
 【逼债·结算/对账】与【三相残韵盘·战终】随道纹/遗物删除一并移除）。
 
 迁移协议（迁移前后必须同时满足）：
@@ -372,7 +372,8 @@ JIAOHHEIFASI = Mechanism(
 # ==========================================================================
 # 罪孽都市·账本三机制（2026-10-03 迁移）
 # 旧实现：combat.py 回始效果循环后的内嵌 for（2026-10-03 迁移时为逼债→清算→赌命三段；
-# 2026-10-13 用户令删【逼债】后剩清算→赌命两段），以及回终「状态消失即清账」块。
+# 2026-10-13 用户令删【逼债】后剩清算→赌命两段）；2026-10-14 原道纹【赌命】改为遗物【灾厄轮盘】，
+# 仍复用该回始锚点但不再由道纹状态或道纹序列驱动。清算对账仍在回终「状态消失即清账」块。
 # 共用一份账本存储（engine/mechanisms/ledger.py）与一个碎片动词（shards）。
 # 结算顺序服从各状态来源道纹在施法者道纹序列中的位置；
 # priority 仅作为缺少序列锚点时的后备。
@@ -398,7 +399,8 @@ def _qingsuan_effect(ctx: TriggerContext, targets: list) -> dict | None:
 
 
 def _duming_effect(ctx: TriggerContext, targets: list) -> dict | None:
-    """【赌命·结算】[回始]按场上存活角色（玩家侧在前）投随机数，对应目标失去30%当前生命。
+    """遗物【灾厄轮盘】（原道纹【赌命】）的[回始]被动：按场上存活角色（玩家侧在前）投随机数，
+    对应目标失去30%当前生命；持有者不在场时不会触发。
 
     随机目标经 targets.roll_pick（DiceEngine，池名含回合号 → 可复现）；一次调用只投一次，
     roll/of 直接进战报。伤害走 hp_loss 动词 = 旧 `_raw_hp_loss`（绕过格挡、计入失血追踪、
@@ -414,9 +416,9 @@ def _duming_effect(ctx: TriggerContext, targets: list) -> dict | None:
     d = math.ceil(tgt.current_hp * 30 / 100)   # 2026-09-28 用户口径：失去30%**当前**生命
     rd = apply_verb(ctx.combat, "hp_loss", {
         "target": tgt, "amount": d,
-        "ctx": {"timing": "round_start", "source": "赌命", "source_type": "daowen",
+        "ctx": {"timing": "round_start", "source": "灾厄轮盘", "source_type": "relic",
                 "actor": holder, "target": tgt, "mechanic": "hp_loss", "subtype": "percent",
-                "amount": d, "tags": {"daowen", "round_start"}},
+                "amount": d, "tags": {"relic", "round_start"}},
     })
     return {"type": "duming", "caster": holder.name, "target": tgt.name,
             "roll": picked["roll"], "of": picked["of"], "damage": rd["lost"], **rd}
@@ -435,12 +437,13 @@ QINGSUAN_SETTLE = Mechanism(
 )
 
 DUMING_SETTLE = Mechanism(
-    name="赌命·结算",
+    name="灾厄轮盘·结算",
     when=Trigger.phase(Phase.ROUND_START_SETTLE),
     effect=_duming_effect,
-    target=RANDOM_ALL,   # RNG 目标选择（流名 赌命_r{回合}，一次投掷、结果进战报）
-    status_name="赌命",
-    condition=all_(has_status("赌命", of="self"), is_alive(of="self")),
+    target=RANDOM_ALL,   # 持有遗物者触发一次；双方存活角色中随机取目标。
+    status_name="",     # 遗物常驻被动，不挂状态，也不受道纹序列排序。
+    condition=all_(relic_active("灾厄轮盘", of="target"),
+                   entity_type("轮回者", of="target"), is_alive(of="target")),
     priority=30,
 )
 

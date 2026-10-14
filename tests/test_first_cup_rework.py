@@ -168,7 +168,7 @@ def test_first_cup_doubles_bleed_cost_life_loss():
 
 
 def test_first_cup_doubles_raw_hp_loss():
-    """直接失血（爆裂反噬/赌命/血影同口径）同样翻倍。"""
+    """直接失血（爆裂反噬/遗物【灾厄轮盘】/血影同口径）同样翻倍。"""
     engine = _cup_engine("raw_ok")
     player = engine.state.player
     hp_before = player.current_hp

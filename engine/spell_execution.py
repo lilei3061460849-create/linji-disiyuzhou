@@ -178,7 +178,7 @@ class SpellStepPolicy:
       * 缄默面具阻止附带代价的道纹 → interrupted(daowen_unusable)
       * 允许开窗时，调用方必须提交该步的 trigger_spell_choices（结构同 use_daowen）
       * 反应把施法者打死后 → interrupted(caster_dead)
-      * 赌命/消灾碎片不足 → interrupted(shards_insufficient)
+      * 消灾碎片不足 → interrupted(shards_insufficient)
     """
     declares_daowen: bool = True
     allow_trigger_reactions: bool = True

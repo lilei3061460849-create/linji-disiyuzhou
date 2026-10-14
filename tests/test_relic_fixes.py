@@ -172,7 +172,7 @@ def test_wangyouxiang_registered_in_revised_relic_pool():
     engine = _new_engine("wangyou_registered")
     names = {n for n, _ in engine.RELIC_DEFS}
     assert "忘忧香" in names
-    assert len(engine.RELIC_DEFS) == 14   # 2026-09-13 新增【承露盏】；2026-10-03 新增千荆甲/万钧印/癫狂之脑/活血衣/增生药剂；2026-10-13 删【买路财】/【三相残韵盘】
+    assert len(engine.RELIC_DEFS) == 15   # 2026-10-13 删【买路财】/【三相残韵盘】；2026-10-14【赌命】改名为遗物【灾厄轮盘】
     assert "血契" in names
     assert "钱袋" not in names
 

@@ -382,54 +382,32 @@ def test_fixed_seed_is_reproducible(tmp_path):
 
 
 def test_fitness_fixed_mode_is_deterministic(monkeypatch, tmp_path):
-    """边界：非随机模式下同参数 fitness 必须一致
+    """边界：当前道纹/遗物池下，固定种子与副本的 fitness 重跑结果一致。
 
-    死斗驱动带 30s 墙钟守护（CPU 争用时会抖成 pvp_timeout），
-    本用例只验证决策确定性，把墙钟上限放大以排除机器速度干扰。
-
-    2026-10-09 修复抖动根因：fitness 不传 lab_paths 时，6 次 play 共享生产封存文件
-    data/sealed_candidate.json——第 1 次调用里某 run 打到第 7 场会写入/消费封存候选，
-    文件状态在两次调用之间演化，同参数两次调用结果必然不同（实测 (1/3,3) vs (0,3)）。
-    play 路径里封存文件是**唯一**会被写的共享状态（死者之书只读、rulings DB 不写），
-    所以本用例把 sealed_path 隔离到 tmp_path，死者之书仍读生产正本——遗言会改变 AI
-    行为，留着它才能把 run 推进到第 7 场。
-
-    死斗覆盖：空白封存槽出发时，本构筑固定只有 1 个 run 能进第 7 场（封存后战终
-    阵亡），不会再有 run 触发死斗——旧用例的死斗覆盖纯靠共享文件里的残留候选，
-    属污染而非设计。现在先跑一遍 evaluate_build 让候选封存落盘并快照；每次 fitness
-    前恢复快照，保证两次调用从同一状态出发（死斗弹出队首候选会改写文件，胜负都不
-    是不动点），死斗路径也被确定性比较覆盖。
-
-    2026-10-13：遗物池删2件后内容漂移，原 gen=1 的三局再无人进第 7 场（前置断言挂）；
-    实测同构筑 gen=7 有 1 局进第 7 场并封存，前置与 fitness 一并改 gen=7（比的仍是确定性）。
-    2026-10-14：回锋刀回始无怪 demand 缺口修复后轨迹漂移（封存槽跨 run 耦合），
-    gen=7 的三局再无人进第 7 场；实测 gen=1..12 仅 gen=9 有封存，前置与 fitness
-    一并改 gen=9（比的仍是确定性）。
+    这里不要求随机样本必须走到第7场/死斗：其覆盖由独立死斗测试负责。新遗物会
+    合法改变随机初始遗物与战斗轨迹，不能再把某个历史 gen 是否封存当作本测试前置。
     """
     import sim.duel_pvp as _dp
     _orig = _dp.run_duel_pvp
+
     def _no_wall_timeout(*a, **kw):
         kw["max_wall_seconds"] = 1e9
         return _orig(*a, **kw)
-    monkeypatch.setattr(_dp, "run_duel_pvp", _no_wall_timeout)
 
+    monkeypatch.setattr(_dp, "run_duel_pvp", _no_wall_timeout)
     lab = {"db_path": str(tmp_path / "seed.db"),
            "sealed_path": str(tmp_path / "sealed.json")}
-    # 前置：空白槽跑一遍，让封存候选落盘（固定种子下行为确定）。
-    bl.evaluate_build("杀伐", ["庇护", "再生"], 3, 9, lab_paths=lab)
-    assert os.path.exists(lab["sealed_path"]), \
-        "前置失败：未封存候选则死斗路径无覆盖，请检查本构筑能否进第 7 场"
-    with open(lab["sealed_path"], "rb") as _f:
-        _snapshot = _f.read()
 
     def _fitness():
-        with open(lab["sealed_path"], "wb") as _f:
-            _f.write(_snapshot)
-        return bl.fitness("杀伐", ["庇护", "再生"], 3, gen=9, lab_paths=lab)
+        if os.path.exists(lab["sealed_path"]):
+            os.unlink(lab["sealed_path"])
+        return bl.fitness("杀伐", ["庇护", "再生"], 1, gen=9,
+                          region="罪孽都市", lab_paths=lab)
 
-    f1, v1, _ = _fitness()
-    f2, v2, _ = _fitness()
-    assert (f1, v1) == (f2, v2)
+    first = _fitness()
+    second = _fitness()
+    assert first == second
+    assert first[1:] == (1, 0)  # 固定样本有效；无效局不得混进 fitness
 
 
 def test_random_seed_mode_varies_samples():

@@ -52,9 +52,9 @@ COST_AMOUNT_KEYS = ("cost", "cost_shards", "cost_hp", "cost_blood_limit", "cost_
 
 
 def test_daowen_registry_every_daowen_has_positive_cost_channel():
-    """54 条道纹 X=1 时必有金额>0 的代价通道（法力/失忆/异变/疲惫/流血/衰老/碎片/枯竭）。"""
+    """53 条道纹 X=1 时必有金额>0 的代价通道（法力/失忆/异变/疲惫/流血/衰老/碎片/枯竭）。"""
     DaoWenEngine.register_all()
-    assert len(DaoWenEngine._registry) == 54  # 2026-10-14 删【搏命】（并入【透支】）
+    assert len(DaoWenEngine._registry) == 53  # 2026-10-14 删【搏命】（并入【透支】）与赌命（改为遗物【灾厄轮盘】）
     for name, fn in sorted(DaoWenEngine._registry.items()):
         kw = {}
         if "target" in inspect.signature(fn).parameters:
@@ -206,11 +206,11 @@ def test_scarlet_fruit_is_pure_passive_hp_may_exceed_blood_limit():
 
 
 def test_pool_relic_text_snapshot():
-    """遗物池文本快照：14 件、无持续X/自选X；含「可」的是已知三件（F3 池内子集）。"""
+    """遗物池文本快照：15 件、无持续X/自选X；含「可」的是已知三件（F3 池内子集）。"""
     defs = GameEngine.RELIC_DEFS
-    assert len(defs) == 14
+    assert len(defs) == 15
     names = [n for n, _ in defs]
-    assert len(set(names)) == 14
+    assert len(set(names)) == 15
     for n, fx in defs:
         assert not re.search(r"持续\d*X", fx), f"{n}：遗物不得有持续X"
         assert "自选" not in fx, f"{n}：遗物数值不得自选"
@@ -219,7 +219,7 @@ def test_pool_relic_text_snapshot():
 
 
 def test_pool_relics_all_in_index():
-    """遗物池 14 件必须在物品索引有条目（防池与索引漂移）。"""
+    """遗物池 15 件必须在物品索引有条目（防池与索引漂移）。"""
     text = (ROOT / "物品索引.md").read_text(encoding="utf-8")
     for n, _ in GameEngine.RELIC_DEFS:
         assert f"### {n}" in text, f"遗物池【{n}】在物品索引无条目"

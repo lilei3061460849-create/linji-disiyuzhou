@@ -254,9 +254,7 @@ def _render_effect(eff: dict) -> str:
         expired = "、".join(eff.get("expired_effects", []))
         return f"{eff.get('entity') or eff.get('target')} 状态到期清除：{expired}"
     if t == "duming":
-        return f"【赌命】结算：{eff.get('target')} 失去 {eff.get('damage')} 点生命"
-    if t == "duming_register":
-        return f"{eff.get('caster')} 登记【赌命X={eff.get('x')}】"
+        return f"遗物【灾厄轮盘】结算：{eff.get('target')} 失去 {eff.get('damage')} 点生命"
     if t == "self_heal":
         return f"{eff.get('entity')} 触发【自愈】：[回复]{eff.get('actual', eff.get('heal'))}点生命"
     # 2026-10-11：`decay_damage`（【衰败】回始 tick 的战报文案）随道纹删除一并移除

@@ -34,8 +34,8 @@ class Phase:
     ROUND_START = "round_start"                      # 回始——已接线（combat.round_start 回始效果循环顶部）
     ROUND_START_SETTLE = "round_start_settle"        # 回始·全场结算（2026-10-03 接线）。
                                                      # 锚点：回始效果循环之后、current_round+=1 之前
-                                                     # （原 F2 三段内嵌 for 的位置；2026-10-13 删【逼债】
-                                                     #  后剩清算/赌命两段）。分发语义=机制优先：
+                                                     # （原F2账本结算位置；原道纹【赌命】转为遗物【灾厄轮盘】后仍在此触发）。
+                                                     # 分发语义=机制优先：
                                                      # 每个机制对**全部实体**结算完再轮到下一个，
                                                      # 同一窗口内按来源道纹序列位置排序（顺序即规则）。
     ROUND_END = "round_end"                          # 回终——已接线（round_end 第一逐实体循环顶部、
