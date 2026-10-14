@@ -1012,6 +1012,21 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         if player is not None:
             effects.extend(self._dispatch_phase(Phase.ROUND_START_PREPARE, target=player))
 
+        # 沉重枷锁：场上存在有效持有者时，回始全场每名角色失去1点当前速度，
+        # 即本回合少一次出手；通过唯一失速入口结算，速度类遗物仍能收到真实信号。
+        if self._any_active_relic("沉重枷锁"):
+            seen_for_chain: set[int] = set()
+            for chained in self.state.get_all_player_side() + self.state.get_all_enemy_side():
+                if id(chained) in seen_for_chain:
+                    continue
+                seen_for_chain.add(id(chained))
+                if chained.is_alive:
+                    self._lose_current_speed(chained, 1, ctx={
+                        "timing": "round_start", "source": "沉重枷锁", "source_type": "relic",
+                        "actor": None, "target": chained, "owner": None, "mechanic": "speed_change",
+                        "subtype": "current_speed", "amount": -1, "tags": {"relic", "round_start"},
+                    })
+
         # 活血追踪归零 + 出手预算归零（回始重置本回合已用出手次数）+ 血誓戒每回合限一次归零 + 血族血脉判定归零
         seen_entities: set[int] = set()
         for e in self.state.get_all_player_side() + self.state.get_all_enemy_side():
