@@ -716,6 +716,25 @@ class DaowenEffectMixin:
             else:
                 caster.shards += gained
             result["effects"].append({"type": "shard_steal", "target": target.name, "gained": gained})
+        if "shard_debt" in calc:
+            # 2026-10-14【勒索】：与赎金同价同量形状不同——碎片是销毁（谁都不获得），
+            # 不足部分记负债（真碎片扣负，可触发【还债】）。走 shards 动词统一口径
+            # （= 旧逼债块字面约定：够则扣，不够则假碎片优先+差额扣负）。
+            from ..mechanisms.verbs import apply_verb
+            need = calc["shard_debt"]
+            paid = apply_verb(self, "shards", {
+                "target": target, "delta": -need,
+                "ctx": {"source": "勒索", "source_type": "daowen", "actor": caster,
+                        "target": target, "mechanic": "cost", "subtype": "lesuo",
+                        "amount": -need, "tags": {"daowen", "shards"}},
+            })
+            if paid["paid"]:
+                result["effects"].append({"type": "lesuo", "target": target.name,
+                                          "lost_shards": need})
+            else:
+                result["effects"].append({"type": "lesuo_debt", "target": target.name,
+                                          "obligation": need, "shards_now": paid["shards_now"],
+                                          "debt_now": paid["debt"]})
         if "shard_gain" in calc:  # 点金：支付失忆X后获得80X真碎片
             if caster is self.state.player:
                 self.state.shards += calc["shard_gain"]

@@ -739,6 +739,21 @@ class DaoWenEngine:
             "shard_steal": 10 * x, "speed_penalty": x,
             "summary": f"消耗{3 * x}法力，夺取{target_name} {10*x}碎片或{x}速度"
         }
+
+    @staticmethod
+    def calculate_lesuo(x: int, target: Entity = None) -> dict:
+        """勒索X：消耗3X。目标失去10X碎片，不足部分记负债（真碎片扣负；2026-10-14 补点金反转分叉，还债新生产者）。
+
+        与【赎金】同价同量（3X→10X），形状不同：赎金是偷取（施法者获得，不足不记负债；
+        无碎片改失速），勒索是销毁+记负债（谁都不获得，不足部分真碎片扣负，可触发【还债】）。
+        单次结算，无持续（用户 2026-10-14 选单次，不 mirror 逼债的回始∞）。
+        """
+        target_name = target.name if target is not None else "未选定目标"
+        return {
+            "dao_wen": "勒索", "x": x, "cost_type": CostType.MANA.value, "cost": 3 * x,
+            "shard_debt": 10 * x,
+            "summary": f"消耗{3 * x}法力，{target_name}失去{10*x}碎片，不足记负债"
+        }
     
     @staticmethod
     def calculate_jiachao(x: int) -> dict:
@@ -989,6 +1004,8 @@ class DaoWenEngine:
             "豪夺": cls.calculate_haoduo,
             "清算": cls.calculate_qingsuan,
             "赎金": cls.calculate_shujin,
+            # 2026-10-14 用户令：补点金反转分叉，还债新生产者。
+            "勒索": cls.calculate_lesuo,
             "假钞": cls.calculate_jiachao,
             "赌命": cls.calculate_duming,
             "消灾": cls.calculate_xiaozai,
@@ -1134,6 +1151,16 @@ class ResonanceEngine:
             ("假钞", "曲解", "赌命"),
             ("赌命", "反转", "消灾"),
             ("消灾", "曲解", "点金"),
+        ],
+        # ---- 副本专属分叉（非闭环：单边spur，不参与合拢断言）----
+        # 2026-10-14 用户令：补【点金】的【反转】→【勒索】。点金已有出边
+        # （转换→典当），此边是第二条出边——find_transformations 按（源，残韵类型）
+        # 查询天然支持（杀伐/全力先例），且点金+反转此前无路径、无歧义。
+        # 不进「罪孽都市闭环」表：该表的合拢断言要求入度=出度=1（test_region_loops_are_closed），
+        # spur 进去会破坏合拢；索引 loop_chain 也假设出度1（dict 会静默吞边）。
+        # 查询侧（get_available_resonance/find_transformations）遍历全表，分叉自动生效。
+        "罪孽都市分叉": [
+            ("点金", "反转", "勒索"),
         ],
         "龙心谷闭环": [
             ("加害", "反转", "龙鳞"),
