@@ -108,6 +108,11 @@ class DaowenEffectMixin:
     ) -> dict:
         """应用道纹效果；aoe_targets_override用于绑定两阶段决策的目标快照。"""
         result = {"daowen": name, "effects": []}
+        # 衰变沙漏订阅道纹发动结算：全场每次发动的本次效果数值-1，最低为0。
+        # 只调整本次结算副本，不改角色持有的道纹实例与未来发动的基础数值。
+        if self._any_active_relic("衰变沙漏"):
+            calc = dict(calc)
+            calc["x"] = max(0, int(calc.get("x", 0) or 0) - 1)
         x = calc.get("x", 0)
         # Entity.dao_wen 是角色当前道纹序列的有序映射；状态继承发动道纹的位置，
         # 后续结算不再从 X 值、状态施加时间或刷新时间推断顺序。
