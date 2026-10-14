@@ -8,8 +8,10 @@
 
 时机：
 - battle_end（规则文本：战终）；
-- target_death（规则文本：目标死亡时）＝敌方任意角色死亡，不限击杀者。
-  友方/自身死亡不触发；离场/暂离不是死亡，不走统一命零管线，天然排除。
+- target_death（规则文本：目标死亡时）＝持有者本场战斗出手选中过的目标死亡
+  （2026-10-14 用户裁定：你选中的目标才算，没打过的不算；命中与否不影响“选中”，
+  被闪避/挡掉照样算。只看选中集合，不限敌我、不问击杀者）。
+  离场/暂离不是死亡，不走统一命零管线，天然排除。
 
 数值规格 spec：
 - int：固定点数（如 1＝自愈1）；
@@ -51,3 +53,19 @@ def apply_zi_yu_trigger(items: list | None, trigger: str) -> list[dict]:
                          "restored": restored, "current_uses": item.current_uses,
                          "max_uses": item.max_uses})
     return logs
+
+
+def note_action_targets(state, actor, targets) -> None:
+    """记录一次成功出手的显式目标（本场战斗选中集合）。
+
+    只记持有者（轮回者）本人的选择：朋友/员工代发动、怪物的出手不记。
+    调用点保证：只在成功提交后调用；X=0、非法提交、默认自身（非显式目标）不传进来。
+    """
+    if actor is None or state is None or actor is not getattr(state, "player", None):
+        return
+    seen = set(getattr(state, "player_selected_targets", None) or [])
+    for t in targets or []:
+        rid = getattr(t, "runtime_id", "")
+        if rid and rid not in seen:
+            seen.add(rid)
+            state.player_selected_targets.append(rid)

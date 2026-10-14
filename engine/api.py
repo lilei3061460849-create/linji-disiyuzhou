@@ -30,7 +30,8 @@ from .daowen import DaoWenEngine, ResonanceEngine
 from .combat import CombatEngine
 from .spell_dsl import parse_spell_definition, SpellDslError
 from .combat_events import register_combat_event_observer
-from .consumables import ZIYU_TRIGGER_BATTLE_END, apply_zi_yu_trigger
+from .consumables import (
+    ZIYU_TRIGGER_BATTLE_END, apply_zi_yu_trigger, note_action_targets)
 from .events import EventPool
 from .rule_repository import RuleRepository
 from .dungeons import DEFAULT_INDEX
@@ -2837,6 +2838,13 @@ class GameEngine:
             return {"success": False, "error": "听从指令发动道纹必须指定一个非自身目标"}
         if target is not actor and not self.combat.is_targetable(actor, target):
             return {"success": False, "error": f"{target.name}处于飞行，无法被选中"}
+        # 自愈X「目标死亡时」：显式目标（默认自身不算选中；波及X 记全部已提交目标）。
+        _dw_selected = [target] if (target_ref or target_name) else []
+        for _dt in params.get("dodge_targets") or []:
+            if isinstance(_dt, dict) and _dt.get("target_ref"):
+                _ent = refs.get(_dt["target_ref"])
+                if _ent is not None:
+                    _dw_selected.append(_ent)
 
         duel_error = self._check_duel_turn_or_error(actor)
         if duel_error:
@@ -2878,6 +2886,7 @@ class GameEngine:
             policy=self.combat.CAST_STEP_POLICY)
         if early is not None:
             if early.reason == _IR.CASTER_DEAD:
+                note_action_targets(self.state, actor, _dw_selected)
                 return {"success": True, "action": f"{actor.name}发动道纹前被反应法术命零",
                         "result": {"trigger_spell_logs": trigger_logs, "daowen_resolved": False}}
             return {"success": False, "error": early.detail}
@@ -2933,6 +2942,7 @@ class GameEngine:
             self._advance_duel_turn()
             if self.state.in_final_duel and not self._duel_side_can_act("player_side") and not self._duel_side_can_act("opponent_side"):
                 self.state.combat_subphase = CombatSubphase.AWAIT_ROUND_END.value
+            note_action_targets(self.state, actor, _dw_selected)
             return {
                 "success": True,
                 "action": f"发动道纹【{name}X={x}】" + (f"（{actor.name}听从指令发动）" if is_command else ""),
@@ -2955,6 +2965,7 @@ class GameEngine:
         self._advance_duel_turn()
         if self.state.in_final_duel and not self._duel_side_can_act("player_side") and not self._duel_side_can_act("opponent_side"):
             self.state.combat_subphase = CombatSubphase.AWAIT_ROUND_END.value
+        note_action_targets(self.state, actor, _dw_selected)
 
         return {
             "success": True,
@@ -3365,6 +3376,12 @@ class GameEngine:
         }
         if huangfu_spell is not None:
             cast_result["huangfu_mana_spent"] = huangfu_mana
+        # 自愈X「目标死亡时」：记持有者本次施法的显式目标。
+        _cast_refs = [params.get("target_ref")] + [
+            st.get("target_ref") for st in params.get("steps") or []
+            if isinstance(st, dict)]
+        note_action_targets(self.state, actor,
+                            [refs.get(r) for r in _cast_refs if r])
         return {"success": True, "action": f"{actor.name}施放{spell_name}",
                 "result": cast_result}
 
@@ -3597,6 +3614,9 @@ class GameEngine:
         self._advance_duel_turn()
         if self.state.in_final_duel and not self._duel_side_can_act("player_side") and not self._duel_side_can_act("opponent_side"):
             self.state.combat_subphase = CombatSubphase.AWAIT_ROUND_END.value
+        # 自愈X「目标死亡时」（2026-10-14 用户裁定）：记持有者本轮选中的目标。
+        note_action_targets(self.state, attacker,
+                            [refs.get(hit["target_ref"]) for hit in hits])
         return {"success": True, "action": f"{attacker.name}结算一轮攻击",
                 "result": {"attacker": attacker.name, "hits": results}}
 
@@ -4998,6 +5018,8 @@ class GameEngine:
         pool = self._monster_pool_for_battle()
         endless_cycle = int(getattr(self.state, "endless_cycle", 0) or 0)
         self.state.enemies.clear()
+        # 自愈X「目标死亡时」：新战斗选中集合清零（上场选过的死了不算）。
+        self.state.player_selected_targets.clear()
         self.state.monster_reinforcements = []
         self.state.delayed_monster_reentries = []
         drawn_names = []

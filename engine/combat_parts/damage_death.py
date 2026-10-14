@@ -304,9 +304,10 @@ class DamageDeathMixin:
         finally:
             self._hp_loss_recording -= 1
         self._on_entity_death(entity, ctx=ctx)
-        # 【自愈X】目标死亡时（2026-10-14 用户令）：敌方任意角色死亡 → 持有者消耗品结算。
-        # 挂在统一命零管线内（幂等，一尸一结）；离场/暂离不走本管线，天然排除。
-        if self.state.on_enemy_side(entity):
+        # 【自愈X】目标死亡时（2026-10-14 用户裁定）：持有者本场出手选中过的目标死亡
+        # 才结算（没打过的不算；命中与否不影响“选中”）。挂统一命零管线内（幂等，一尸一结）；
+        # 离场/暂离不走本管线，天然排除。
+        if entity is not None and entity.runtime_id in (self.state.player_selected_targets or []):
             for log in apply_zi_yu_trigger(self.state.consumables, ZIYU_TRIGGER_TARGET_DEATH):
                 if log["restored"]:
                     self._emit(CombatEventType.CONSUMABLE_ZIYU, actor=self.state.player,
