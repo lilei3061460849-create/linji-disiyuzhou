@@ -206,11 +206,11 @@ def test_scarlet_fruit_is_pure_passive_hp_may_exceed_blood_limit():
 
 
 def test_pool_relic_text_snapshot():
-    """遗物池文本快照：15 件、无持续X/自选X；含「可」的是已知三件（F3 池内子集）。"""
+    """遗物池文本快照：26 件、无持续X/自选X；含「可」的遗物集合固定（F3 池内子集）。"""
     defs = GameEngine.RELIC_DEFS
-    assert len(defs) == 15
+    assert len(defs) == 26
     names = [n for n, _ in defs]
-    assert len(set(names)) == 15
+    assert len(set(names)) == 26
     for n, fx in defs:
         assert not re.search(r"持续\d*X", fx), f"{n}：遗物不得有持续X"
         assert "自选" not in fx, f"{n}：遗物数值不得自选"
@@ -219,7 +219,7 @@ def test_pool_relic_text_snapshot():
 
 
 def test_pool_relics_all_in_index():
-    """遗物池 15 件必须在物品索引有条目（防池与索引漂移）。"""
+    """遗物池每件都必须在物品索引有条目（防池与索引漂移）。"""
     text = (ROOT / "物品索引.md").read_text(encoding="utf-8")
     for n, _ in GameEngine.RELIC_DEFS:
         assert f"### {n}" in text, f"遗物池【{n}】在物品索引无条目"
