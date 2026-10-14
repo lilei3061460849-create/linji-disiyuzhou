@@ -1191,7 +1191,8 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
             # 蚀界残钟：场上有持有者时，每个角色在回终第一拍失去“当前攻击力×攻击次数”的血限。
             # 保持旧【畸变】的回终锚点，走统一血限变化/命零管线，不手改 current_hp。
             if entity.is_alive and self._any_active_relic("蚀界残钟"):
-                erosion = max(0, int(entity.attack_power) * int(entity.attack_count))
+                # 统一属性模型：攻击力=当前法力，攻击次数=当前速度；轮回者的旧 attack_power/attack_count 字段不再是真实面板。
+                erosion = max(0, int(entity.current_mana) * int(entity.current_speed))
                 if erosion > 0:
                     change = self._apply_blood_limit_change(
                         entity, -erosion, "蚀界残钟", EffectPolarity.DEBUFF.value,
