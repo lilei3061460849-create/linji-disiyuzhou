@@ -424,9 +424,7 @@ class DaowenEffectMixin:
             available = max(0, int(caster.effective_attack_power()))
             if amount > available:
                 raise ValueError(f"再生攻击力代价需要{amount}点，当前有效攻击力仅{available}")
-            delta = max(0, caster.attack_power - amount) - caster.attack_power
-            if delta:
-                self._battle_delta(caster, "attack_power", -amount, name, EffectPolarity.DEBUFF.value)
+            self._battle_delta(caster, "attack_power", -amount, name, EffectPolarity.DEBUFF.value)
             result["effects"].append({"type": "attack_power_cost", "target": caster.name,
                                       "paid": amount, "attack_power": caster.attack_power})
         # ---- 回复类 ----
