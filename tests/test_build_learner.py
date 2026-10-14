@@ -402,6 +402,9 @@ def test_fitness_fixed_mode_is_deterministic(monkeypatch, tmp_path):
 
     2026-10-13：遗物池删2件后内容漂移，原 gen=1 的三局再无人进第 7 场（前置断言挂）；
     实测同构筑 gen=7 有 1 局进第 7 场并封存，前置与 fitness 一并改 gen=7（比的仍是确定性）。
+    2026-10-14：回锋刀回始无怪 demand 缺口修复后轨迹漂移（封存槽跨 run 耦合），
+    gen=7 的三局再无人进第 7 场；实测 gen=1..12 仅 gen=9 有封存，前置与 fitness
+    一并改 gen=9（比的仍是确定性）。
     """
     import sim.duel_pvp as _dp
     _orig = _dp.run_duel_pvp
@@ -413,7 +416,7 @@ def test_fitness_fixed_mode_is_deterministic(monkeypatch, tmp_path):
     lab = {"db_path": str(tmp_path / "seed.db"),
            "sealed_path": str(tmp_path / "sealed.json")}
     # 前置：空白槽跑一遍，让封存候选落盘（固定种子下行为确定）。
-    bl.evaluate_build("杀伐", ["庇护", "再生"], 3, 7, lab_paths=lab)
+    bl.evaluate_build("杀伐", ["庇护", "再生"], 3, 9, lab_paths=lab)
     assert os.path.exists(lab["sealed_path"]), \
         "前置失败：未封存候选则死斗路径无覆盖，请检查本构筑能否进第 7 场"
     with open(lab["sealed_path"], "rb") as _f:
@@ -422,7 +425,7 @@ def test_fitness_fixed_mode_is_deterministic(monkeypatch, tmp_path):
     def _fitness():
         with open(lab["sealed_path"], "wb") as _f:
             _f.write(_snapshot)
-        return bl.fitness("杀伐", ["庇护", "再生"], 3, gen=7, lab_paths=lab)
+        return bl.fitness("杀伐", ["庇护", "再生"], 3, gen=9, lab_paths=lab)
 
     f1, v1, _ = _fitness()
     f2, v2, _ = _fitness()
