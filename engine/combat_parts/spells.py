@@ -917,6 +917,8 @@ class SpellReactionMixin:
             if not gone:
                 continue
             holder.spells = kept
+        # 2026-10-14 审计F4：【黄符】授权只在本场有效，随 battle 法术一并清除。
+        self.state.huangfu_grants().clear()
         return removed
 
     def undefine_spell(self, holder: Entity, spell_name: str) -> dict:

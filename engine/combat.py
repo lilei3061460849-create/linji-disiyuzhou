@@ -87,7 +87,7 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
     
     # 副本专属道纹
     REGION_EXCLUSIVE_DAOWEN = {
-        "扭曲都市": {"变形","定型","畸变","搏命","超频","坏死","退化"},   # 2026-10-03 删【爆裂】
+        "扭曲都市": {"变形","定型","畸变","超频","坏死","退化"},   # 2026-10-03 删【爆裂】；2026-10-14 删【搏命】（并入【透支】）
         "罪孽都市": {"点金","典当","豪夺","清算","赎金","假钞","赌命","消灾","勒索"},   # 2026-10-13 删【逼债】【典当】顶替；2026-10-14 +【勒索】
         "龙心谷":   {"加害","龙鳞","逆鳞","裂变","背负","伤痕"},   # 2026-10-03 删【活血】；2026-10-11 删【嫁祸】
     }
@@ -107,6 +107,7 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         "target_heal", "heal_percent", "mutation_reduction",
         "target_shield", "shield_drain",
         "blood_limit_reduction", "hp_reduction", "blood_limit_increase", "blood_limit_penalty",
+        "zengzhi_battle_end",  # 2026-10-14：【增殖】重做，战终血限增长参与波及平分
         "attack_boost", "attack_reduction",
         "speed_boost", "speed_penalty",
         "self_attack_count", "invalid_damage_hits",
@@ -414,7 +415,9 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         """当前法力是否允许超出[法限]（唯一豁免：遗物【苍白之花】）。
 
         2026-10-11 用户令，`物品索引.md:110`「你的当前法力可以超出[法限]。」。
-        只豁免**当前法力**这一项；当前生命≤[血限]、当前速度≤[速限] 对持有者同样成立。
+        只豁免**当前法力**这一项；当前速度≤[速限] 对持有者同样成立。
+        当前生命≤[血限] 另有自己的豁免（2026-10-14【猩红果实】，见
+        `GameState.hp_overflow_exempt`），不在本方法内。
         因为 [攻击力]=当前法力，溢出直接抬高普攻输出——这就是该遗物的全部效果。
         遗物被封印时豁免同时消失（sealed_relics 计数 > 0）。
         抽成方法是为了让代价路径（`cost_payment.py` 的【枯竭】）读同一条判定，
@@ -441,7 +444,9 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         if not self.mana_overflow_exempt(entity):
             entity.current_mana = min(entity.current_mana, entity.mana_limit)
         entity.current_speed = min(entity.current_speed, entity.speed_limit)
-        entity.current_hp = min(entity.current_hp, entity.blood_limit)
+        # 2026-10-14：【猩红果实】持有者当前生命可超出[血限]，与法力侧镜像。
+        if not self.state.hp_overflow_exempt(entity):
+            entity.current_hp = min(entity.current_hp, entity.blood_limit)
 
     def _note_dodge(self, entity: Entity, relic_target_ref: Optional[str] = None) -> dict:
         """闪避专属句：正文写「每次闪避后」的效果。失速/归零不在这里。"""
@@ -1020,8 +1025,8 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         # 等同[法限]的一池，整场只出不进，[战终]复原（与[速度]同口径）。
         # 因这一段，"[回始]不获得法力"曾一度失去作用对象，【勾魂】在 2026-09-09
         # 改为消耗法力翻倍；2026-10-08 用户令恢复「无法获得[法力]」原意——
-        # 战斗内已有多个法力来源（聚能/储能电池/守夜灯/承露盏/余火印/
-        # 搏命·透支/法术），效果重新有对象。判定位见 models.py::gain_mana。
+        # 战斗内已有多个法力来源（聚能/储能电池/守夜灯/承露盏/
+        # 透支/法术），效果重新有对象。判定位见 models.py::gain_mana。
 
         # 遗物：回始触发（回锋刀按速限缺口造伤）。
         relic_logs = self.process_relics(TriggerTiming.ROUND_START, {"relic_choices": relic_choices or {}})
@@ -1301,14 +1306,8 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         # 2026-10-11 用户令：【苍白之花】改为纯被动（物品索引.md:110「你的当前法力可以
         # 超出[法限]。」），旧效果「战始可选择疲惫5；战终精力+1」废止——它不再出现在
         # 战始可选遗物里，也不再有 use 布尔值需要提交。
-        for name in ("猩红果实",):
-            if name in active:
-                decision = choices.get(name)
-                if not isinstance(decision, dict) or not isinstance(decision.get("use"), bool):
-                    raise ValueError(f"持有【{name}】时必须显式提交use布尔值")
-                if decision["use"]:
-                    self.validate_numeric_cost(
-                        player, "流血", 10, decision.get("cost_share_target_ref", ""))
+        # 2026-10-14 用户令：【猩红果实】重做为纯被动（当前生命可超出[血限]），
+        # 旧效果「战始可选流血10、战终血限+2」移交道纹【增殖】——战始 use 决策取消。
         refs = self._combat_entity_refs()
         if "负岳索" in active:
             decision = choices.get("负岳索")
@@ -1353,17 +1352,7 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                     or index >= len(self.state.enemies) or not self.state.enemies[index].is_alive):
                 legal = [i for i, enemy in enumerate(self.state.enemies) if enemy.is_alive]
                 raise ValueError(f"回锋刀触发时必须显式提交合法relic_choices.回锋刀.enemy_index，可选{legal}")
-        if "余火印" in active:
-            decision = choices.get("余火印")
-            if not isinstance(decision, dict) or not isinstance(decision.get("use"), bool):
-                raise ValueError("余火印每个回始必须显式提交use布尔值")
-            if decision["use"]:
-                heart = next((item for item in self.state.consumables
-                              if item.name == decision.get("heart_name") and item.kind == "dragon_heart"), None)
-                x = decision.get("x")
-                if (heart is None or not isinstance(x, int) or isinstance(x, bool)
-                        or x < 1 or x > heart.current_uses):
-                    raise ValueError("余火印必须提交合法heart_name与1~当前耐久的x")
+        # 2026-10-14 用户令：【余火印】整段删除（extra 方案废弃）——回始 use 决策取消。
         # 2026-10-12 用户令：【血契】删掉与道纹【透支】重合的「[回始]流血4X换X法力」，
         # 只保留「数值型代价可与朋友/员工平分」作为其主要功能。它因此不再是回始主动
         # 遗物，`血契`/`对手血契` 两个回始决策键随之取消（平分仍在各代价提交处走
@@ -1399,27 +1388,13 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                         "tags": {"relic", "round_start"},
                     })
                     logs.append(f"回锋刀：对{enemy.name}造{d}伤")
-            if "余火印" in relics and choices["余火印"]["use"]:
-                x = choices["余火印"]["x"]
-                heart = next(item for item in self.state.consumables
-                             if item.name == choices["余火印"]["heart_name"] and item.kind == "dragon_heart")
-                heart.current_uses -= x
-                # 2026-10-08：走统一入口，【勾魂】期间不生效
-                player.gain_mana(2 * x)
-                self.clamp_immortal_body(player)
-                logs.append(f"余火印：消耗{heart.name}耐久{x}，+{2*x}法力")
+            # 2026-10-14 用户令：【余火印】整段删除（extra 方案废弃），本分支移除。
         if trigger == "battle_start":
             choices = ctx.get("relic_choices", {})
             self.validate_battle_start_relic_choices(choices)
             # 2026-10-13 用户令：【三相残韵盘】遗物删除（残韵生产改由道纹【典当】承接发现侧）。
-            if "猩红果实" in relics and choices["猩红果实"]["use"]:
-                decision = choices["猩红果实"]
-                self.pay_numeric_cost(
-                    player, "流血", 10,
-                    cost_share_target_ref=decision.get("cost_share_target_ref", ""),
-                    cost_context={"timing": "battle_start", "source": "猩红果实", "source_type": "relic", "tags": {"active_payment"}})
-                self.state.event_modifiers["scarlet_fruit_active"] = True
-                logs.append("猩红果实：流血10；战终血限+2")
+            # 2026-10-14 用户令：【猩红果实】重做为纯被动（当前生命可超出[血限]），
+            # 旧「战始流血10→战终血限+2」移交道纹【增殖】，本分支移除。
             # 机制系统：BATTLE_START 相位分发。位置即原缄默面具/帮派令结算位置
             # （缄默面具=5、帮派令=10 同相位按 priority 保持原序；负岳索之前）——顺序与迁移前一致。
             # 帮派令已迁移为声明层 Mechanism（engine/mechanisms/builtins.py）；

@@ -169,17 +169,21 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_zengzhi(x: int, target: Entity = None) -> dict:
-        """增殖X：消耗X。［目标］［血限］+X"""
+        """增殖X：代价：流血10X。［战终］［目标］［血限］+2X
+
+        2026-10-14 用户令重做：承接遗物【猩红果实】旧效果
+        （战始可选流血10 → 战终血限+2），按 X 等比放大为流血10X → 战终+2X；
+        原「消耗X、即时血限+X」废止。发动即付流血代价（走代价管线，
+        触发【血誓戒】/【烙痕钉】等），血限增长记入战终待决、战终统一结算。
+        """
         target_name = target.name if target is not None else "未选定目标"
-        cost = x
-        increase = x
         return {
             "dao_wen": "增殖",
             "x": x,
-            "cost_type": CostType.MANA.value,
-            "cost": cost,
-            "blood_limit_increase": increase,
-            "summary": f"消耗{cost}法力，{target_name}血限+{increase}"
+            "cost_type": CostType.BLEED.value,
+            "cost_hp": 10 * x,
+            "zengzhi_battle_end": 2 * x,
+            "summary": f"流血{10 * x}，战终{target_name}血限+{2 * x}"
         }
     
     @staticmethod
@@ -197,21 +201,36 @@ class DaoWenEngine:
         }
     
     @staticmethod
-    def calculate_touzhi(x: int) -> dict:
-        """透支X：代价：流血4X。你获得X点法力
+    def calculate_touzhi(x: int, cost_channel: str = "流血") -> dict:
+        """透支X：代价（四选一）：流血4X／衰老2X／枯竭X／疲惫X。你获得X点法力
 
         用户裁定 2026-09-12：与【再生X】构成生命⇄法力闭环，净值不产生免费资源；
         实际上限由【癌变】(本场累计回复=2×血限) 自然封死。
         用户裁定 2026-09-13：3X→4X。与【再生X】(消耗X法力→回复4X生命) 对齐为
         严格 4:1 双向汇率，闭环净值归零，不再每轮白赚生命。
+        2026-10-14 用户令：改为多代价道纹——合并【搏命】（疲惫X换X法力）并删除搏命；
+        遗物【余火印】删除（其发动时额外耗龙心模式一并取消，龙心只走通用抵扣）。
+        疲惫通道沿用搏命的 k=1 结论：卖X速度得kX法力可经【超频】买回 kX/2 速度，
+        k≥2 即永动，故取 k=1（每卖1点速度净亏0.5点，循环必然收敛）。
+        cost_channel 缺省流血（向后兼容：怪物/旧调用不传参即原行为）。
         """
+        if cost_channel == "流血":
+            cost_type, cost_key, amount = CostType.BLEED.value, "cost_hp", 4 * x
+        elif cost_channel == "衰老":
+            cost_type, cost_key, amount = CostType.AGING.value, "cost_blood_limit", 2 * x
+        elif cost_channel == "枯竭":
+            cost_type, cost_key, amount = CostType.EXHAUST.value, "cost_mana_limit", x
+        elif cost_channel == "疲惫":
+            cost_type, cost_key, amount = CostType.FATIGUE.value, "cost_speed", x
+        else:
+            raise ValueError(f"透支cost_channel非法：{cost_channel!r}，可选流血/衰老/枯竭/疲惫")
         return {
             "dao_wen": "透支",
             "x": x,
-            "cost_type": CostType.BLEED.value,
-            "cost_hp": 4 * x,
+            "cost_type": cost_type,
+            cost_key: amount,
             "mana_gain": x,
-            "summary": f"流血{4*x}，获得{x}点法力"
+            "summary": f"{cost_channel}{amount}，获得{x}点法力"
         }
     
     @staticmethod
@@ -581,25 +600,8 @@ class DaoWenEngine:
             "summary": f"冷却{x}场，回终使{target_name}失去{blood_loss}血限（{atk if target is not None else 0}×{ap if target is not None else 0}），持续{x}回合"
         }
     
-    @staticmethod
-    def calculate_boming(x: int) -> dict:
-        """搏命X：代价：疲惫X。你获得X点法力
-
-        用户裁定 2026-09-13：放弃闪避换法力、拼死一搏。倍率被【超频】
-        (消耗2X法力→速度+X) 反向锁死——设倍率为k，卖X速度得kX法力可经
-        超频买回 kX/2 速度，净变化 X(k/2-1)：k≥2 即永动或速度无限暴涨。
-        故取 k=1，每卖1点速度净亏0.5点，循环必然收敛。
-        （遗物【折速法印】原为6X，因[战始]一次性且不可复发才安全；改为
-        可反复发动的道纹后必须砍到1X，该遗物同步删除，不再双份存在。）
-        """
-        return {
-            "dao_wen": "搏命",
-            "x": x,
-            "cost_type": CostType.FATIGUE.value,
-            "cost_speed": x,
-            "mana_gain": x,
-            "summary": f"疲惫{x}，获得{x}点法力"
-        }
+    # 2026-10-14 用户令：【搏命】整条删除（效果并入【透支】疲惫通道；
+    # 道纹淘汰审查.md:60 的功能重复结论落地）。k=1 永动证明见 calculate_touzhi。
     
     @staticmethod
     def calculate_chaopin(x: int) -> dict:
@@ -924,8 +926,8 @@ class DaoWenEngine:
 
         2026-09-09 DM裁定：法力改一池制后一度改为「消耗法力翻倍」；
         2026-10-08 用户令：恢复「无法获得[法力]」原意，翻倍逻辑撤销。
-        此时战斗内已有多个法力来源（聚能／储能电池／守夜灯／承露盏／血契／
-        余火印／搏命·透支／法术），效果重新有对象。判定位统一在
+        此时战斗内已有多个法力来源（聚能／储能电池／守夜灯／承露盏／
+        透支／法术），效果重新有对象。判定位统一在
         `Entity.can_gain_mana()` / `Entity.gain_mana()`，所有法力增益都必须过它。
         """
         target_name = target.name if target is not None else "未选定目标"
@@ -992,7 +994,6 @@ class DaoWenEngine:
             "变形": cls.calculate_bianxing,
             "定型": cls.calculate_dingxing,
             "畸变": cls.calculate_jibian,
-            "搏命": cls.calculate_boming,
             "超频": cls.calculate_chaopin,
             "坏死": cls.calculate_huaisi,
             "退化": cls.calculate_tuihua,
@@ -1136,8 +1137,9 @@ class ResonanceEngine:
             ("变形", "转换", "定型"),
             ("定型", "反转", "畸变"),
             ("畸变", "曲解", "超频"),
-            ("超频", "反转", "搏命"),
-            ("搏命", "转换", "坏死"),
+            # 2026-10-14 用户令删除【搏命】（并入【透支】）→ 由【超频】直连【坏死】，
+            # 保超频出边类型（反转），环长 7→6。
+            ("超频", "反转", "坏死"),
             # 2026-10-03 用户令删除【爆裂】→ 由【坏死】直连【退化】保持环连通
             ("坏死", "曲解", "退化"),
             ("退化", "转换", "变形"),

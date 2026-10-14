@@ -510,7 +510,11 @@ class DaowenEffectMixin:
             else:
                 _target_hp = target.current_hp
             self._hp_loss_ctx = daowen_ctx
-            target.current_hp = max(0, min(_target_hp, target.blood_limit))
+            # 2026-10-14：【猩红果实】持有者豁免血限压顶（生命可超血限）。
+            if self.state.hp_overflow_exempt(target):
+                target.current_hp = max(0, _target_hp)
+            else:
+                target.current_hp = max(0, min(_target_hp, target.blood_limit))
             self._check_hp_zero_death(target, ctx=_blr["ctx"] or daowen_ctx)
             _hp_cut_tmp = _hp_before - target.current_hp
             # 血限压迫导致的当前生命减少，同样属于"使敌对角色生命减少"，
@@ -549,6 +553,26 @@ class DaowenEffectMixin:
                         actor=caster, owner=caster, clamp_hp=False, lethal=False)["applied"]
                     result["effects"].append({"type": "blood_limit_increase", "target": target.name,
                                               "increase": increase})
+        if "zengzhi_battle_end" in calc:
+            # 2026-10-14：【增殖】重做——血限增长记入战终待决（多次发动累加，
+            # 战终统一结算；目标死亡/持【不朽之躯】则结算时落空）。
+            _ref_of = {}
+            for _ref, _ent in self._combat_entity_refs().items():
+                _ref_of[id(_ent)] = _ref
+            _pending = self.state.event_modifiers.setdefault("zengzhi_pending", [])
+            if "zengzhi_battle_end" in wave_pieces:
+                pieces = self._divide_flat(calc["zengzhi_battle_end"], len(wave_status_targets))
+                wave_pieces["zengzhi_battle_end"] = pieces
+                for wt, piece in zip(wave_status_targets, pieces):
+                    _pending.append({"target_ref": _ref_of.get(id(wt), wt.name),
+                                     "amount": piece})
+                    result["effects"].append({"type": "zengzhi_pending", "target": wt.name,
+                                              "amount": piece})
+            else:
+                _pending.append({"target_ref": _ref_of.get(id(target), target.name),
+                                 "amount": calc["zengzhi_battle_end"]})
+                result["effects"].append({"type": "zengzhi_pending", "target": target.name,
+                                          "amount": calc["zengzhi_battle_end"]})
         # ---- 攻击面板修改 ----
         _panel_keys = ("attack_boost", "attack_reduction", "attack_fixed", "attack_count_fixed")
         # 波及扩散：attack_boost/reduction 数值平分；attack_fixed/attack_count_fixed
@@ -757,6 +781,10 @@ class DaowenEffectMixin:
             cost_spec = ("流血", calc["cost_hp"], "bleed_cost")
         elif "cost_blood_limit" in calc:
             cost_spec = ("衰老", calc["cost_blood_limit"], "aging_cost")
+        elif "cost_mana_limit" in calc:
+            # 2026-10-14：【透支】多代价（枯竭通道）。此前没有道纹用枯竭作代价，
+            # 本分支是第一条；走代价总线（【苍白之花】豁免/【血契】平分照常）。
+            cost_spec = ("枯竭", calc["cost_mana_limit"], "exhaust_cost")
         elif "cost_speed" in calc:
             cost_spec = ("疲惫", calc["cost_speed"], "fatigue_cost")
         elif "cost_mutation" in calc and caster.entity_type != "怪物":

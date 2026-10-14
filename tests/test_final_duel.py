@@ -454,7 +454,7 @@ def test_duel_target_daowen_no_speed_cannot_dodge():
 
 
 # 【折速法印】的死斗发动用例随该遗物于 2026-09-13 一并删除——其"疲惫换法力"
-# 效果已改为道纹【搏命】，回归见 tests/test_boming_daowen.py。
+# 效果已改为道纹【搏命】（2026-10-14 起并入【透支·疲惫通道】，搏命删除），回归见 tests/test_boming_removal.py。
 # 2026-10-13：【三相残韵盘】删除，死斗开场已无可选遗物（optional_relics 恒为空）。
 
 

@@ -246,7 +246,7 @@ def test_pierce_status_drives_attack_resolution():
 
 # ---------- 进化·原初X 借用轮回者道纹（裁定）----------
 
-def _plight_engine(player_daowen=("杀伐", "庇护", "搏命")):
+def _plight_engine(player_daowen=("杀伐", "庇护", "透支")):
     from engine.api import GameEngine
     from engine.models import Entity, DaoWen, DaoWenInstance
     e = GameEngine(db_path="/tmp/evo.db", rng_seed=1)
@@ -267,10 +267,10 @@ def _plight_engine(player_daowen=("杀伐", "庇护", "搏命")):
 
 def test_evolution_borrows_from_player_daowen():
     """正常路径：进化只能借用轮回者当前持有的道纹"""
-    e, m = _plight_engine(("杀伐", "庇护", "搏命"))
-    r = e.execute_action("declare_evolution", {"monster": "困境怪", "daowen": "搏命", "x": 1})
+    e, m = _plight_engine(("杀伐", "庇护", "透支"))
+    r = e.execute_action("declare_evolution", {"monster": "困境怪", "daowen": "透支", "x": 1})
     assert r["success"], r.get("error")
-    assert "搏命" in m.dao_wen, "应借用到轮回者的【搏命】"
+    assert "透支" in m.dao_wen, "应借用到轮回者的【透支】"
 
 
 def test_evolution_rejects_daowen_player_lacks():
@@ -286,11 +286,11 @@ def test_evolution_pool_tracks_player_build():
     边界：借用池随玩家构筑变化 —— 这正是该裁定的设计目的。
     玩家越依赖某条公式化路线，越可能被怪物复制反制。
     """
-    e1, _ = _plight_engine(("杀伐", "庇护", "搏命"))
+    e1, _ = _plight_engine(("杀伐", "庇护", "透支"))
     opts1 = e1.combat.get_plight_evolution_options()[0]["borrowable_daowen"]
     e2, _ = _plight_engine(("切割", "贯穿"))
     opts2 = e2.combat.get_plight_evolution_options()[0]["borrowable_daowen"]
-    assert set(opts1) == {"杀伐", "庇护", "搏命"}
+    assert set(opts1) == {"杀伐", "庇护", "透支"}
     assert set(opts2) == {"杀伐", "切割", "贯穿"}
     assert opts1 != opts2, "借用池必须随玩家构筑变化"
 

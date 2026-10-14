@@ -23,6 +23,9 @@ engine/handlers/setup.py::handle_setup_choose_region 的前置校验），
 【搏命】代价疲惫X → 回锋刀每失速1点打3伤、避风铃速度归零得15格挡，
 信息与时序都允许做这个联动。
 
+2026-10-14：【搏命】删除并入【透支】（通用核心）；选区协同改走产出边
+（扭曲专属【超频】产速度），回锋刀/避风铃仍导向扭曲都市，行为保持。
+
 用法：python3 sim/probe_region_choice_synergy.py
 """
 import sys; sys.path.insert(0,'.')

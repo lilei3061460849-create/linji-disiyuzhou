@@ -101,7 +101,8 @@ def test_three_region_loops_present():
     """正常路径：三条副本闭环必须存在"""
     # 2026-10-03：扭曲都市删【爆裂】、龙心谷删【活血】，这两条闭环 8 → 7 条边；罪孽都市不变。
     # 2026-10-11：龙心谷删【嫁祸】（效果与遗物【贪婪契约】重复），由【裂变】直连【背负】，7 → 6 条边。
-    expected = {"扭曲都市闭环": 7, "罪孽都市闭环": 8, "龙心谷闭环": 6}
+    # 2026-10-14：扭曲都市删【搏命】（并入【透支】），由【超频】直连【坏死】，7 → 6 条边。
+    expected = {"扭曲都市闭环": 6, "罪孽都市闭环": 8, "龙心谷闭环": 6}
     for loop, n in expected.items():
         assert loop in R.CLOSED_LOOPS, f"缺少 {loop}"
         assert len(R.CLOSED_LOOPS[loop]) == n, f"{loop} 应有{n}条边"

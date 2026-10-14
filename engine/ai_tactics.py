@@ -674,7 +674,7 @@ class TacticalAI:
         except Exception:
             return bonus
         if calc.get("mana_gain") or calc.get("speed_boost"):
-            bonus += 2.0      # 产资源（如搏命换法力、超频买速度）
+            bonus += 2.0      # 产资源（如透支多代价换法力、超频买速度）
         if calc.get("damage") or calc.get("target_damage"):
             bonus += 1.5      # 直伤
         return bonus

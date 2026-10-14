@@ -239,21 +239,21 @@ def test_event_path_pays_shard_cost_and_interrupts_when_short():
     state, combat, player, enemy = _state(player_hp=60, mana=20)
     state.fake_shards = 0
     _give(player, "赌命")
-    player.spells.append(Spell(name="搏命", required_daowen=["赌命"],
+    player.spells.append(Spell(name="赌火", required_daowen=["赌命"],  # 2026-10-14：原名"搏命"，避与已删道纹重名
                                trigger_condition="失去生命后", effect_flow="发动赌命X于自身"))
     refs = combat._combat_entity_refs()
     logs = combat._resolve_spell_reactions(
         "失去生命后", player, enemy,
-        {"搏命": {"use": True, "steps": [{"x": 2, "target_ref": "player:0"}]}}, refs)
-    entry = next(lg for lg in logs if lg.get("spell") == "搏命")
+        {"赌火": {"use": True, "steps": [{"x": 2, "target_ref": "player:0"}]}}, refs)
+    entry = next(lg for lg in logs if lg.get("spell") == "赌火")
     assert entry["interrupted"] == InterruptReason.SHARDS_INSUFFICIENT.value
     assert not player.has_status("赌命")
 
     state.fake_shards = 10
     logs2 = combat._resolve_spell_reactions(
         "失去生命后", player, enemy,
-        {"搏命": {"use": True, "steps": [{"x": 2, "target_ref": "player:0"}]}}, refs)
-    assert any(lg.get("spell") == "搏命" and lg.get("execution") for lg in logs2)
+        {"赌火": {"use": True, "steps": [{"x": 2, "target_ref": "player:0"}]}}, refs)
+    assert any(lg.get("spell") == "赌火" and lg.get("execution") for lg in logs2)
     assert state.fake_shards == 8
 
 

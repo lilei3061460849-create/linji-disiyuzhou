@@ -5,8 +5,10 @@ from engine.models import DaoWen, DaoWenInstance
 
 # 2026-10-11：【苍白之花】重做为被动（当前法力可超出[法限]），战始不再需要决策。
 # 2026-10-13：【三相残韵盘】遗物删除。
-OPTIONAL_BATTLE_START = ("猩红果实",)
-OPTIONAL_ROUND_START = ("血契", "余火印")
+# 2026-10-14：【猩红果实】重做为被动（当前生命可超出[血限]）；【余火印】删除
+# （效果并入道纹【透支】）。两者都不再需要战始/回始决策。
+OPTIONAL_BATTLE_START = ()
+OPTIONAL_ROUND_START = ("血契",)
 
 
 def resolve_opening_relic(engine, prefer: Optional[str] = None) -> Optional[str]:

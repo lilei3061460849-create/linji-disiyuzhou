@@ -390,6 +390,9 @@ def run_scene(e, casts: list) -> dict:
         n_before = _pending_count(e)
         params = cast_params(e, c["name"], c["x"], c["target_ref"])
         skip = params.pop("_skip", None)
+        if c.get("extra"):
+            # 2026-10-14：【搏命】删除后探针改测【透支·疲惫通道】，需透传 touzhi_cost。
+            params.update(c["extra"])
         if skip:
             # 场景不满足该道纹的 X 下限（当前只有【波及】）：如实记为未发动。
             cast_log.append({"name": c["name"], "ok": False, "error": skip,

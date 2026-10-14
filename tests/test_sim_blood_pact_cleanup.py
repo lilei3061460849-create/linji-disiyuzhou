@@ -72,17 +72,17 @@ def test_handplay_does_not_propose_blood_for_mana(handplay):
 
 
 def test_handplay_preserves_other_round_start_relic_choices(handplay):
+    # 2026-10-14：【余火印】整段删除，handplay 回始分支同步移除，本用例只剩【回锋刀】。
     module, logs = handplay
-    engine = _engine(["血契", "回锋刀", "余火印"])
+    engine = _engine(["血契", "回锋刀"])
     engine.state.player.current_speed = 1
     engine.state.enemies = [SimpleNamespace(is_alive=False), SimpleNamespace(is_alive=True)]
     engine.state.consumables = [SimpleNamespace(kind="dragon_heart", name="流血龙心", current_uses=3)]
     choices = module.round_start_choices(engine, module.Strategy())
     assert choices == {
         "回锋刀": {"enemy_index": 1},
-        "余火印": {"use": True, "x": 2, "heart_name": "流血龙心"},
     }
-    assert len(logs) == 2 and all("血契" not in log for log in logs)
+    assert len(logs) == 1 and all("血契" not in log for log in logs)
 
 
 def test_handplay_still_respects_relic_sealing(handplay):

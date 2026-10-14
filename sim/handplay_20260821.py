@@ -792,7 +792,7 @@ def battle_start_choices(engine, strat: Strategy) -> dict:
 
 
 def round_start_choices(engine, strat: Strategy) -> dict:
-    """回始可选遗物决策：回锋刀/余火印；血契只保留代价平分。"""
+    """回始可选遗物决策：回锋刀；血契只保留代价平分（余火印已于2026-10-14删除）。"""
     active = {r.name for r in engine.state.relics
               if engine.state.sealed_relics.get(r.name, 0) <= 0}
     p = engine.state.player
@@ -803,16 +803,6 @@ def round_start_choices(engine, strat: Strategy) -> dict:
         if damage > 0 and alive:
             out["回锋刀"] = {"enemy_index": alive[0]}
             TRACE.text(f"  决策[遗物] 回锋刀：回始对敌{alive[0]}造成{damage}伤（速限-当前速）")
-    if "余火印" in active and p is not None:
-        heart = next((item for item in engine.state.consumables
-                      if item.kind == "dragon_heart" and item.current_uses >= 1), None)
-        x = 0
-        if heart is not None and p.current_mana <= p.mana_limit - 2:
-            x = min(2, heart.current_uses)
-        out["余火印"] = {"use": x >= 1, "x": max(1, x),
-                         "heart_name": heart.name if heart is not None else ""}
-        if x >= 1:
-            TRACE.text(f"  决策[遗物] 余火印：消耗{heart.name}耐久{x} → 法力+{2 * x}")
     return out
 
 

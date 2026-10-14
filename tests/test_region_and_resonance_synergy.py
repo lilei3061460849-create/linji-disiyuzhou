@@ -5,6 +5,8 @@
 1) 选区硬编码"罪孽都市"，不读遗物——实测开局拿到【回锋刀】/【避风铃】
    （都吃"失去速度"）29 个样本，选扭曲都市 0 次，而【搏命】(代价:疲惫X)
    正在扭曲都市。遗物在选区之前就已确定，时序上完全可判。
+   （2026-10-14 起【搏命】删除并入【透支】：代价侧的疲惫协同消失，但产出侧
+   【超频】（速度+X）仍在扭曲都市，同一套打分自发改走产出边，行为保持。）
 
 2) 残韵打分只算"敌人失去了什么"，不算"我得到了什么"。但
    api._action_use_resonance 明确会把转化结果白送给施法者
@@ -27,7 +29,11 @@ from engine.ai_player import pick_region_by_synergy
 # ---------- 选区协同 ----------
 
 def test_speed_relics_steer_to_twisted_city():
-    """正常路径：吃'失速'的遗物应把 AI 引向有【搏命】(疲惫X)的扭曲都市。"""
+    """正常路径：吃'失速'的遗物应把 AI 引向扭曲都市。
+
+    （2026-10-14 起【搏命】删除：此前的协同边是扭曲专属【搏命】的疲惫代价，
+    现在的协同边是同区专属【超频】的速度产出（_region_cost_tags 产出分支）。
+    行为保持（仍选扭曲），只是换了一条边——数据驱动打分自发找到的。"""
     for name, effect in (
         ("回锋刀", "每失去1点速度后对[目标]造成3伤害；[回始]对[目标]造成3×([速限]-当前速度)伤害"),
         ("避风铃", "每次闪避后获得3格挡；当前速度归零时获得15格挡"),
@@ -76,7 +82,7 @@ def _ai_in_region(region):
 def test_region_exclusive_daowen_scores_highest():
     """正常路径：副本专属道纹（残韵是唯一入口）收益权重必须最高。"""
     ai = _ai_in_region("扭曲都市")
-    exclusive = ai._resonance_gain_bonus("搏命")     # 扭曲都市专属
+    exclusive = ai._resonance_gain_bonus("超频")     # 扭曲都市专属（2026-10-14 前用【搏命】，已删除）
     ordinary = ai._resonance_gain_bonus("蒙蔽")      # 非专属
     assert exclusive > ordinary, (exclusive, ordinary)
 

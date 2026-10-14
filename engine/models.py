@@ -762,10 +762,13 @@ class Entity:
             "lost": lost,             # 非怪物触发"迷失"，等待战斗层处理
         }
     
-    def heal(self, amount: int) -> dict:
-        """回复生命"""
+    def heal(self, amount: int, allow_overflow: bool = False) -> dict:
+        """回复生命。allow_overflow=True 时当前生命可超出[血限]（遗物【猩红果实】）。"""
         before = self.current_hp
-        self.current_hp = min(self.blood_limit, self.current_hp + amount)
+        if allow_overflow:
+            self.current_hp = self.current_hp + amount
+        else:
+            self.current_hp = min(self.blood_limit, self.current_hp + amount)
         actual = self.current_hp - before
         overheal = amount - actual
         # 癌变追踪：DM裁定删除过量回复双倍计入机制，
@@ -804,8 +807,8 @@ class Entity:
           （不再每[回始]回填）而一度失去作用对象。
         - 2026-09-09 DM裁定：改为**法力消耗翻倍**，在 spend_mana 里乘 2。
         - 2026-10-08 用户令：恢复「无法获得[法力]」原意，翻倍逻辑撤销。
-          此时战斗内已有多个法力来源（聚能/储能电池/守夜灯/承露盏/血契/
-          余火印/搏命·透支/法术），效果重新有对象；判定位统一收敛到
+          此时战斗内已有多个法力来源（聚能/储能电池/守夜灯/承露盏/
+          透支/法术），效果重新有对象；判定位统一收敛到
           `can_gain_mana()` / `gain_mana()`，不再散落各处。
         """
         if amount > 0 and self.has_status("愤怒"):
@@ -1286,7 +1289,9 @@ class GameState:
                     tags=heal_ctx.tags, event_id=heal_ctx.event_id,
                     parent_event_id=heal_ctx.parent_event_id,
                 )
-        detail = entity.heal(amount)
+        # 2026-10-14：【猩红果实】持有者当前生命可超出[血限]，回复不再封顶
+        # （溢出量归零，【忘忧香】/【龙血瓶】无溢出可吃——没有溢出，只有实打实的血）。
+        detail = entity.heal(amount, allow_overflow=self.hp_overflow_exempt(entity))
         detail["heal_ctx"] = heal_ctx.to_dict()
         heal_events = getattr(entity, "_heal_events", None)
         if heal_events is None:
@@ -1431,6 +1436,33 @@ class GameState:
         if entity is self.player:
             return self.sealed_relics.get(name, 0) <= 0
         return True
+
+    def huangfu_grants(self) -> set:
+        """【黄符】授予登记：{(ally_runtime_id, spell_name)}。
+
+        2026-10-14 审计F4：朋友/员工经黄符获得的法术，发动时 bypass
+        「持有全部所需道纹」门禁、改以法力为能源（每阶1点）。授权只在本场
+        战斗有效，战终随 battle 法术一并清除（`clear_battle_scoped_spells`）。
+        私有属性而非 dataclass 字段：旧存档反序列化缺啥都不报错。
+        """
+        grants = getattr(self, "_huangfu_grants", None)
+        if grants is None:
+            grants = set()
+            self._huangfu_grants = grants
+        return grants
+
+    def hp_overflow_exempt(self, entity: Entity) -> bool:
+        """当前生命是否允许超出[血限]（唯一豁免：遗物【猩红果实】）。
+
+        2026-10-14 用户令：【猩红果实】重做为纯被动（`物品索引.md`
+        「你的当前生命可以超出[血限]。」），旧效果「战始可选流血10、
+        战终血限+2」移交道纹【增殖】。与【苍白之花】的法力豁免
+        （`CombatEngine.mana_overflow_exempt`）镜像：只豁免玩家本人，
+        被封印时豁免消失。
+        """
+        if entity is None or entity is not self.player:
+            return False
+        return self.sealed_relics.get("猩红果实", 0) <= 0 and self.side_has(entity, "猩红果实")
 
     def side_has(self, entity: Entity, name: str) -> bool:
         """该实体所属轮回者是否持有该终音/初拥/龙族项目。朋友/员工不继承。"""

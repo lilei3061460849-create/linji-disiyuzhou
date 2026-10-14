@@ -155,14 +155,17 @@ def test_r11_r17_normal_two_stage_monster_choices(tmp_path):
 
 def test_r11_r17_boundary_relic_and_first_aid_require_explicit_choices(tmp_path):
     # 2026-10-13：【三相残韵盘】删除，战始显式决策用剩下的【猩红果实】覆盖。
+    # 2026-10-14：【猩红果实】重做为被动，改用【炉心坠】覆盖（须显式提交 heart_name）。
     engine = _full_setup(_engine(tmp_path))
-    engine.state.relics = [Relic("猩红果实", "")]
+    engine.state.relics = [Relic("炉心坠", "")]
+    engine.state.consumables = [
+        Consumable("衰老龙心", "", 3, 3, kind="dragon_heart", dragon_heart_type="衰老")]
     engine.state.energy = 0
     missing = engine.execute_action("battle_start", {"relic_choices": {}})
     assert not missing["success"]
     assert engine.state.current_battle == 0
     ok = engine.execute_action("battle_start", {
-        "relic_choices": {"猩红果实": {"use": False}},
+        "relic_choices": {"炉心坠": {"heart_name": "衰老龙心"}},
     })
     assert ok["success"]
     assert engine.execute_action("round_start", {"relic_choices": {}})["success"]

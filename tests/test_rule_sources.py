@@ -29,7 +29,8 @@ def test_project_rules_are_extracted_from_their_authoritative_documents():
     assert len(facts["common_daowen"]) == 27
     # 2026-10-11：龙心谷删【嫁祸】（效果与遗物【贪婪契约】重复）→ 60 → 59。
     # 2026-10-14：+【勒索】（点金反转分叉，罪孽副本文档第9定义）→ 59 → 60。
-    assert len(facts["dungeon_daowen"]) == 60
+    # 2026-10-14：扭曲都市删【搏命】（并入【透支】）→ 60 → 59。
+    assert len(facts["dungeon_daowen"]) == 59
     assert len(facts["spells"]) == 10  # 2026-09-16：删「血溅五步」（无引擎流程的空名字）
     assert len(facts["dungeons"]) == 8
     assert len(facts["monsters"]) == 48  # 36 + 乱葬岗12(已实现)

@@ -381,7 +381,9 @@ class DamageDeathMixin:
             if entity.current_hp > entity.blood_limit and self._attack_after_window_target is not entity:
                 self._fire_before_life_lost(entity, bl_ctx or parent)
             self._hp_loss_ctx = bl_ctx or parent
-            entity.current_hp = min(entity.current_hp, entity.blood_limit)
+            # 2026-10-14：【猩红果实】持有者豁免血限压顶（生命可超血限）。
+            if not self.state.hp_overflow_exempt(entity):
+                entity.current_hp = min(entity.current_hp, entity.blood_limit)
         died = self._check_hp_zero_death(entity, ctx=bl_ctx or parent) if lethal else False
         return {"applied": applied, "ctx": bl_ctx, "died": died}
 
@@ -551,6 +553,35 @@ class DamageDeathMixin:
                 "outcome": "lethal_mitigation",
             }
             return self._attach_damage_context(mitigation, damage_ctx, legacy_ctx)
+
+        # 2026-10-14 审计F4：【替死鬼】——玩家即将受到致死伤时，将其转移给攻击者。
+        # 位置在濒死保护之后：已有保护（撤退/负岳碑/断尾求生）优先，替死鬼是最后兜底。
+        # 致死按预演落地值判定（与保护钩子同一份预演）；转移量=预演落地值，
+        # 攻击者侧重新走完整管线（其格挡/保护照常生效）；转移伤害 subtype 不再是
+        # attack（不触发攻击者【千荆甲】反噬，避免 A→B→A 循环）。
+        if (target is self.state.player and target.is_alive
+                and source is not None and source is not target and source.is_alive
+                and preview_adjusted > 0 and preview_adjusted >= target.current_hp):
+            ghost = next((c for c in self.state.consumables
+                          if c.name == "替死鬼" and not c.is_depleted), None)
+            if ghost is not None:
+                ghost.use()
+                transfer_ctx = make_context(
+                    timing=damage_ctx.timing, source="替死鬼", source_type="consumable",
+                    actor=target, target=source, owner=target,
+                    mechanic="damage", subtype="tishigui_transfer", amount=preview_adjusted,
+                    tags=set(damage_ctx.tags) | {"consumable", "lethal_transfer"},
+                    parent_event_id=damage_ctx.event_id,
+                )
+                transfer = self._apply_hostile_damage(
+                    source, preview_adjusted, DamageType.NORMAL.value, target, ctx=transfer_ctx)
+                result = self._damage_noop_result(
+                    target, amount, damage_type, damage_ctx, legacy_ctx,
+                    reason="tishigui_transfer", original_damage=original_damage)
+                result["tishigui_transfer"] = {"transferred": preview_adjusted,
+                                               "attacker": source.name,
+                                               "attacker_detail": transfer}
+                return result
 
         # ---- 「受到伤害前 / 失去生命前」自动反应窗口（非攻击伤害） ----
         # 攻击路径（resolve_attack）由显式反应窗口结算，此处跳过以免双发；只有

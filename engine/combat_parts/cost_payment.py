@@ -184,7 +184,10 @@ class CostPaymentMixin:
             if payer.current_hp > payer.blood_limit and self._attack_after_window_target is not payer:
                 self._fire_before_life_lost(payer, cost_context)
             self._hp_loss_ctx = cost_context
-            payer.current_hp = min(payer.current_hp, payer.blood_limit)
+            # 2026-10-14：【猩红果实】持有者当前生命可超出[血限]，血限被压低时
+            # 不连带削掉溢出部分——与【苍白之花】的【枯竭】处理镜像。
+            if not self.state.hp_overflow_exempt(payer):
+                payer.current_hp = min(payer.current_hp, payer.blood_limit)
             self._check_hp_zero_death(payer, ctx=cost_context)
         elif cost_type == "枯竭":
             payer.mana_limit = max(0, payer.mana_limit - amount)

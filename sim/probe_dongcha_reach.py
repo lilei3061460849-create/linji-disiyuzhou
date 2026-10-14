@@ -119,12 +119,16 @@ def cost_groups() -> tuple[list[tuple[str, int, float]], dict]:
     return out, {n: d for _, _, _, mem in out for n, d in mem}
 
 
-def boming_measure() -> dict:
-    """现场跑一遍【搏命】solo：它也吃疲惫代价（扣速度），同时给自己加法力。"""
+def touzhi_measure() -> dict:
+    """现场跑一遍【透支·疲惫通道】solo：它也吃疲惫代价（扣速度），同时给自己加法力。
+
+    2026-10-14：【搏命】删除并入【透支】，原 boming_measure 改测疲惫通道（touzhi_cost=疲惫）。
+    """
     tmp = Path(tempfile.mkdtemp())
     base = harness.run_scene(harness.build_sandbox(tmp / "base"), [])
-    solo = harness.run_scene(harness.build_sandbox(tmp / "solo", granted=("搏命",)),
-                             [{"name": "搏命", "x": X, "target_ref": harness.natural_target("搏命")}])
+    solo = harness.run_scene(harness.build_sandbox(tmp / "solo", granted=("透支",)),
+                             [{"name": "透支", "x": X, "target_ref": harness.natural_target("透支"),
+                               "extra": {"touzhi_cost": "疲惫"}}])
     cast = solo["casts"][0]
     hit = None
     db, ds = base["probes"]["player_attacks"]["delta"], solo["probes"]["player_attacks"]["delta"]
@@ -190,13 +194,16 @@ def lines() -> list[str]:
       "高度数不代表它更强或更弱，只代表它的代价与结算被更多探针读到。")
     A("")
 
-    # ---- 四-3：为什么「搏命」也百搭，而且和洞察并列最高 ----
+    # ---- 四-3：为什么「透支·疲惫通道」也百搭（2026-10-14 前为【搏命】，已删除并入透支） ----
     groups, deg = cost_groups()
-    bm = boming_measure()
+    bm = touzhi_measure()
+    live_n = sum(n for _, n, _, _ in groups)
     if groups and bm["ok"]:
-        A(f"### 四-3 为什么「搏命」和「洞察」并列为最高（同为疲惫代价）")
+        top_mem = groups[0][3]
+        top_names = " 与 ".join(f"【{nm}】" for nm, _ in top_mem)
+        A(f"### 四-3 为什么{top_names}与「洞察」并列为最高（同为疲惫代价）")
         A("")
-        A(f"把 70 个道纹按**代价形态**分组，再统计组内 Cat2 平均度（度数取自同一批穷举结果）：")
+        A(f"把 {live_n} 个道纹按**代价形态**分组，再统计组内 Cat2 平均度（度数取自同一批穷举结果）：")
         A("")
         A("| 代价形态 | 个数 | 组内平均度 | 成员（度数） |")
         A("| --- | --- | --- | --- |")
@@ -204,9 +211,11 @@ def lines() -> list[str]:
             mem = "、".join(f"{nm}({d})" for nm, d in members)
             A(f"| {label} | {n} | {avg:.1f} | {mem} |")
         A("")
-        A(f"**最高的一行只有两个成员：{groups[0][3][0][0]} 与 {groups[0][3][1][0]}（各 {groups[0][3][0][1]} 度）**——"
-          f"也就是说，「百搭」不是两种不同的机制，而是**同一族**：70 个道纹里只有这两个的代价是"
-          f"【疲惫】（扣自己 X 点[当前速度]）。")
+        A(f"**最高的一行只有 {len(top_mem)} 个成员：{top_names}**——"
+          f"也就是说，「百搭」不是两种不同的机制，而是**同一族**：{live_n} 个道纹里只有"
+          f"{top_names}的代价是【疲惫】（扣自己 X 点[当前速度]）"
+          f"（2026-10-14 起：【搏命】删除，【透支】缺省通道为流血，故疲惫组常只剩【洞察】；"
+          f"现场复算段仍以 touzhi_cost=疲惫实测【透支·疲惫通道】，机制结论不变）。")
         A("")
         db_ = bm["delta"]
         A(f"机制上，伤害 = [攻击次数] × [攻击力]=[当前速度] × [当前法力] 是两个乘数，而两类代价的落点不同：")
@@ -216,7 +225,7 @@ def lines() -> list[str]:
           f"「消耗（扣法力）」道纹的平均度只有 {next(a for l, n, a, _ in groups if l.startswith('消耗')):.1f}。")
         A(f"* **疲惫代价**直接改**攻次**这个乘数（[攻击次数]＝[当前速度]）：一旦攻次被改，"
           f"伙伴对[攻击力]做的任何加减都会被**缩放**，两次发动必然不可加（判 Cat2）。"
-          f"实测【搏命X={X}】：速度 {d.get('p_speed')}、[攻次] {d.get('p_atk')}、"
+          f"实测【透支·疲惫通道X={X}】：速度 {d.get('p_speed')}、[攻次] {d.get('p_atk')}、"
           f"法力 {db_.get('p_mana')}、[攻力] {db_.get('p_pow')}——它**同时动了两个乘数**"
           f"（卖速度得法力）；单次普攻 "
           f"{abs(bm['one_action'][0]) if bm['one_action'] else '?'} → "
@@ -224,7 +233,7 @@ def lines() -> list[str]:
           f"{abs(bm['two_actions'][0]) if bm['two_actions'] else '?'} → "
           f"{abs(bm['two_actions'][1]) if bm['two_actions'] else '?'}。")
         A("")
-        A(f"这也解释了为什么「搏命百搭」的感觉是对的、但理由不是「效果花样多」：它的**效果**（获得法力）很简单，"
+        A(f"这也解释了为什么「透支（疲惫通道）百搭」的感觉是对的、但理由不是「效果花样多」：它的**效果**（获得法力）很简单，"
           f"高度数来自**代价落在乘法项**——与洞察同源。"
           f"（推断）若把这两者的代价从疲惫改成消耗法力，它们会掉进「消耗（扣法力）」那一组的平均度水平；"
           f"本报告没有做这个改写实验，只登记机制归属。")
@@ -241,8 +250,11 @@ def summary() -> list[str]:
     fam = ""
     if groups:
         label, n, avg, members = groups[0]
-        fam = (f"同族的【{members[0][0]}】与【{members[1][0]}】并列最高（各 {members[0][1]} 度），"
-               f"因为 70 个道纹里只有这两个的代价是【疲惫】（扣自己[速度]）——"
+        fam_names = "、".join(f"【{nm}】" for nm, _ in members)
+        live_n2 = sum(nn for _, nn, _, _ in groups)
+        fam = (f"同族的{fam_names}并列最高，"
+               f"因为 {live_n2} 个道纹里只有{fam_names}的代价是【疲惫】（扣自己[速度]）——"
+               f"（2026-10-14 起【搏命】删除，疲惫组常只剩【洞察】）"
                f"而「消耗（扣法力）」那 {next(nn for l, nn, a, _ in groups if l.startswith('消耗'))} 个"
                f"只是做减法（可加），平均度 {next(a for l, nn, a, _ in groups if l.startswith('消耗')):.1f}。")
     return [f"**洞察的度数为什么最高**：它是「代价＝自己[速度]」的道纹，而本引擎 [攻击次数]＝[当前速度]——"

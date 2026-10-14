@@ -48,13 +48,13 @@ def _add_monster(engine, hp=100):
 
 COST_AMOUNT_KEYS = ("cost", "cost_shards", "cost_hp", "cost_blood_limit", "cost_speed",
                     "cost_mutation", "fake_cost", "real_cost", "forget_daowen",
-                    "cost_speed_limit")
+                    "cost_speed_limit", "cost_mana_limit")  # 2026-10-14：【透支·枯竭通道】
 
 
 def test_daowen_registry_every_daowen_has_positive_cost_channel():
-    """55 条道纹 X=1 时必有金额>0 的代价通道（法力/失忆/异变/疲惫/流血/衰老/碎片）。"""
+    """54 条道纹 X=1 时必有金额>0 的代价通道（法力/失忆/异变/疲惫/流血/衰老/碎片/枯竭）。"""
     DaoWenEngine.register_all()
-    assert len(DaoWenEngine._registry) == 55
+    assert len(DaoWenEngine._registry) == 54  # 2026-10-14 删【搏命】（并入【透支】）
     for name, fn in sorted(DaoWenEngine._registry.items()):
         kw = {}
         if "target" in inspect.signature(fn).parameters:
@@ -143,21 +143,25 @@ def test_consume_dedicated_and_generic_cost_no_action_and_decrement():
 
 
 def test_granted_but_unusable_consumables_snapshot():
-    """F4 快照：4 件事件发放但无处理器——修了必须同步改本测试。"""
+    """F4 已执行（2026-10-14）：4 件全部有处理器——行为覆盖见 test_f1_f2_f4_execution。
+
+    本快照只钉死「无发而无用项」：裸调不再报「没有已注册的效果处理器」
+    （镇魂/黄符因缺参数失败，但错误必须是参数错误；赶尸铃战中裸调直接成功；
+    替死鬼是被动触发，不走 consume_item，单独断言其拦截分支存在）。
+    """
     engine = _setup()
-    broken = set()
-    for name in ("镇魂铁钉", "黄符", "替死鬼", "赶尸铃"):
+    for name in ("镇魂铁钉", "黄符"):
         _grant_consumable(engine, name, uses=1)
         r = engine.execute_action("consume_item", {"name": name})
-        if not r["success"] and "没有已注册的效果处理器" in r.get("error", ""):
-            broken.add(name)
+        assert "没有已注册的效果处理器" not in r.get("error", ""), (name, r)
         engine.state.consumables.pop()
-    assert broken == {"镇魂铁钉", "黄符", "替死鬼", "赶尸铃"}, broken
-    # 已知可用集合（防修 F4 时顺手弄坏好的）
-    for name in ("绝息淤泥",):
-        _grant_consumable(engine, name, uses=1)
-        assert engine.execute_action("consume_item", {"name": name})["success"], name
-        engine.state.consumables.pop()
+    _grant_consumable(engine, "赶尸铃", uses=1)
+    assert engine.execute_action("consume_item", {"name": "赶尸铃"})["success"]
+    engine.state.consumables.pop()
+    import inspect
+    from engine.combat_parts import damage_death
+    src = inspect.getsource(damage_death.DamageDeathMixin._apply_hostile_damage_inner)
+    assert "替死鬼" in src
 
 
 # ==================== 遗物：被动（触发/选择不耗出手） ====================
@@ -176,16 +180,29 @@ def test_relic_round_start_choice_costs_no_action():
     assert player.actions_used_this_round == 0
 
 
-def test_scarlet_fruit_choice_costs_no_action_but_pays_blood_snapshot():
-    """F1 行为快照：猩红果实 use=True 付流血10、不耗出手（规则是否违规待裁）。"""
+def test_scarlet_fruit_is_pure_passive_hp_may_exceed_blood_limit():
+    """F1 已执行（2026-10-14）：猩红果实是纯被动——无战始决策，生命可超血限。
+
+    旧效果「战始可选流血10、战终血限+2」已移交道纹【增殖】（见 test_zengzhi_*）。
+    """
     engine = _setup()
     player = engine.state.player
     engine.state.relics = [Relic("猩红果实", "")]
-    logs = engine.combat.process_relics(TriggerTiming.BATTLE_START, {
-        "relic_choices": {"猩红果实": {"use": True}}})
-    assert player.current_hp < player.blood_limit, logs
-    assert engine.state.event_modifiers.get("scarlet_fruit_active") is True
-    assert player.actions_used_this_round == 0
+    # 无决策：空 choices 战始直接通过。
+    engine.combat.validate_battle_start_relic_choices({})
+    logs = engine.combat.process_relics(TriggerTiming.BATTLE_START, {"relic_choices": {}})
+    assert player.current_hp == player.blood_limit, logs
+    assert "scarlet_fruit_active" not in engine.state.event_modifiers
+    # 被动：回复不再按血限封顶。
+    engine.state.apply_heal(player, player.blood_limit)
+    assert player.current_hp == 2 * player.blood_limit
+    # 钳制也不削溢出。
+    engine.combat.clamp_immortal_body(player)
+    assert player.current_hp == 2 * player.blood_limit
+    # 封印后豁免消失。
+    engine.state.sealed_relics["猩红果实"] = 1
+    engine.combat.clamp_immortal_body(player)
+    assert player.current_hp == player.blood_limit
 
 
 def test_pool_relic_text_snapshot():
