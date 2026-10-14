@@ -26,6 +26,8 @@ class CombatEventType(str, Enum):
     ENTITY_DIED = "entity_died"
     ROUND_END = "round_end"
     BATTLE_END = "battle_end"
+    # 消耗品自愈X（2026-10-14 用户令通用化）：目标死亡时触发位在事件流里留痕。
+    CONSUMABLE_ZIYU = "consumable_zi_yu"
 
 
 @dataclass

@@ -158,6 +158,8 @@ class MechanismHookAdapter:
     def on_incoming_adjust(self, target, amount, damage_type, source, state,
                            *, rule_context=None):
         mechanism = self.mechanism
+        if not mechanism.when.matches_phase(Phase.INCOMING_ADJUST):
+            return amount
         rule_definition = mechanism.rule_definition
         if rule_definition is not None:
             from uuid import uuid4
@@ -195,3 +197,15 @@ class MechanismHookAdapter:
         if isinstance(result, (int, float)):
             return int(result)
         return amount
+
+
+    def on_multiplier_adjust(self, target, amount, damage_type, source, state):
+        mechanism = self.mechanism
+        if not mechanism.when.matches_phase(Phase.MULTIPLIER_ADJUST):
+            return amount
+        ctx = self._context(target, amount, damage_type, source, state)
+        if mechanism.condition is not None and not mechanism.condition(ctx):
+            return amount
+        targets = mechanism.target.select(ctx) if mechanism.target is not None else []
+        result = mechanism.effect(ctx, targets)
+        return result.get("amount", amount) if isinstance(result, dict) else amount

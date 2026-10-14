@@ -301,10 +301,9 @@ def _drive_plight_monsters(engine, telemetry: dict = None) -> None:
     """困境驱动（DM裁定2026-08-23③：模拟器怪物执行准则#3强制二选一）。
 
     每回合怪物阶段开始前：对所有处于困境的**怪物**——
-      1. 进化优先：有借用票（轮回者持有且自身未持有的道纹）且门票异变5X不
-         必触发崩解（max_x_by_mutation≥1）→ declare_evolution 发动【原初X】，
-         借轮回者X值最高的道纹，X=min(异变预算, 3)；
-      2. 否则逃跑（无票/必崩解）：统一【离场】depart_battle("逃跑")，不视为
+      1. 进化优先：有借用票（轮回者持有且自身未持有的道纹）→ 发动【原初X】，
+         借轮回者X值最高的道纹。怪物免于迷失，异变不限制 X；策略默认 X=3。
+      2. 否则逃跑（无票）：统一【离场】depart_battle("逃跑")，不视为
          击杀、不产生碎片奖励，alt_victory 扫描自动记为「逃跑」类离场。
     死斗不驱动（道规禁逃）；决斗对手是轮回者不是怪物（entity_type 门禁）。
     """
@@ -321,7 +320,8 @@ def _drive_plight_monsters(engine, telemetry: dict = None) -> None:
         if id(monster) in combat._monster_evolved:
             continue
         borrowable = list(opt.get("borrowable_daowen") or [])
-        max_x = int(opt.get("max_x_by_mutation") or 0)
+        limit = opt.get("max_x_by_mutation", 0)
+        max_x = 3 if limit is None else int(limit)
         if borrowable and max_x >= 1:
             player = engine.state.player
             pick = max(borrowable,
@@ -988,6 +988,22 @@ def _take_discovered_relic(e, prefer: Optional[str] = None):
     return e.execute_action("discard_discovered_relic", {})
 
 
+def _is_resource_timeout(result: dict) -> bool:
+    """墙钟耗尽是未完成样本，不是规则失败或引擎无效局。"""
+    return bool(result.get("duel_timeout") or
+                (result.get("timeout") and result.get("timeout_kind") == "wall_clock"))
+
+
+def _skip_resource_timeout(result: dict, *, context: str = "sim") -> bool:
+    """旧探针的兼容门禁：单独记录未完成样本，不把它投入原胜负/invalid计数。"""
+    if not _is_resource_timeout(result):
+        return False
+    print(json.dumps({"sample_status": "timeout", "timeout_kind": "wall_clock",
+                      "context": context, "reason": result.get("reason", "pvp_timeout"),
+                      "rounds": result.get("duel_rounds")}, ensure_ascii=False), flush=True)
+    return True
+
+
 def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
          rng: random.Random = None, policy: dict = None, telemetry: dict = None,
          spend_shards: bool = False, spell_plan: list = None,
@@ -1016,7 +1032,8 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
     r["pvp_won"] = pvp_won
     r["full_won"] = full_won
     if r.get("duel_timeout"):
-        r["invalid"] = True
+        r["timeout"] = True
+        r["timeout_kind"] = "wall_clock"
         r.setdefault("reason", "pvp_timeout")
     if engine_ref:
         activity = _collect_daowen_activity(engine_ref[0], r)
@@ -1025,7 +1042,7 @@ def play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
             r["action_history"] = engine_ref[0].get_action_history()
         if telemetry is not None:
             _merge_daowen_activity(telemetry, activity)
-    if telemetry is not None and not r.get("invalid"):
+    if telemetry is not None and not r.get("invalid") and not _is_resource_timeout(r):
         _record_behaviors(telemetry, behaviors, r)
         if r.get("pm"):
             _record_postmortem(telemetry, r["pm"])
@@ -1087,7 +1104,7 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
     actual_starter = chosen["picked"]
     e.execute_action("setup_choose_resonance", {"resonance_type": resonance})
     setup = e.execute_action("setup_choose_region", {"region": region})
-    optional_relics = {"三相残韵盘"}
+    optional_relics = set()   # 2026-10-13：【三相残韵盘】删除，无需规避
     relic_choices = setup["result"]["relic_choices"]
     if relic_policy == "prefer_optional":  # 扫描实验：主动选可选遗物
         starter_relic = next((n for n in relic_choices if n in optional_relics),
@@ -1309,7 +1326,7 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                 stalls = 0
 
         # 共鸣/事件可能在开局后继续获得可选战始遗物；按当前持有列表逐件显式决策
-        # （可以不用但不能不让用：三相残韵盘/猩红果实/苍白之花按情形发动）。
+        # （可以不用但不能不让用：猩红果实/苍白之花按情形发动；三相残韵盘2026-10-13删除）。
         _resolve_pending_choices(e)   # 上一场遗留门禁（含战后救赎）先清，再开战
         ev_mark = len(e.state.combat_events)
         bs, bs_artifact_logs = start_battle_with_artifacts(e)
@@ -1448,7 +1465,7 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
             duel_rounds = dr.get("rounds")
             if dr.get("timeout"):
                 # 卡死守护命中（2026-08-22 批次13教训）：打印证据，便于归因而非无声挂起
-                print(f"    [死斗超时] 回合{dr.get('rounds')} 判擂主卫冕｜state字段deepcopy成本(ms): "
+                print(f"    [死斗超时] 回合{dr.get('rounds')} 资源超时，不判胜负｜state字段deepcopy成本(ms): "
                       f"{dr.get('diag_state_sizes')}", flush=True)
             opp = next((x.name for x in e.state.enemies
                         if x.entity_type == "轮回者"), "")  # 守擂擂主名（供PvP经验记录）
@@ -1462,6 +1479,12 @@ def _play(starter: str, learn: list, region: str, seed=None, battles: int = 7,
                        "pm": _postmortem(e, cleared, todo, killer_hint=opp)}
                 if dr.get("timeout"):
                     out["duel_timeout"] = True
+                    out["timeout_kind"] = "wall_clock"
+                    out["reason"] = "pvp_timeout"
+                    out.pop("pm", None)  # 资源未完成不是阵亡，不生成虚假的死亡归因。
+                elif dr.get("error"):
+                    out["invalid"] = True
+                    out["reason"] = dr.get("reason", "pvp_engine_error")
                 return out
             # 死斗胜利：领取终音法器
             dr = e.execute_action("resolve_final_duel", {"outcome": "victory"})
@@ -1623,8 +1646,10 @@ def _normalise_outcome(result: dict, battles: int = 7) -> dict:
 
 
 def summarize_build_results(results: list[dict], invalid: int = 0,
-                            battles: int = 7) -> dict:
-    """构筑层统计：PVE、PVP、完整通关严格分开。"""
+                            battles: int = 7, timeouts: int = 0) -> dict:
+    """构筑层统计：完整样本、资源超时、引擎错误分列；超时不进胜负分母。"""
+    timeouts += sum(_is_resource_timeout(r) for r in results)
+    results = [r for r in results if not _is_resource_timeout(r)]
     valid = len(results)
     normalized = [_normalise_outcome(r, battles) for r in results]
     pve_wins = sum(x["pve_won"] for x in normalized)
@@ -1635,7 +1660,7 @@ def summarize_build_results(results: list[dict], invalid: int = 0,
     pvp_rate = pvp_wins / pvp_trials if pvp_trials else None
     full_rate = full_wins / valid if valid else 0.0
     return {
-        "valid": valid, "invalid": invalid,
+        "valid": valid, "invalid": invalid, "timeouts": timeouts,
         "pve_wins": pve_wins, "pve_trials": valid, "pve_rate": round(pve_rate, 6),
         "pve_lcb": _beta_lcb95(pve_wins, valid),
         "pvp_wins": pvp_wins, "pvp_trials": pvp_trials,
@@ -1695,6 +1720,7 @@ def evaluate_build(starter: str, learn: list, runs: int, gen: int,
     if rng is None:
         rng = random if random_seeds else random.Random(gen * 7919 + 13)
     total_invalid = 0
+    total_timeouts = 0
     results = []
     for i in range(runs):
         if region is not None:
@@ -1724,6 +1750,13 @@ def evaluate_build(starter: str, learn: list, runs: int, gen: int,
         finally:
             if _temporary_seal_path and os.path.exists(_temporary_seal_path):
                 os.unlink(_temporary_seal_path)
+        if _is_resource_timeout(result):
+            total_timeouts += 1
+            if telemetry is not None:
+                reasons = telemetry.setdefault("timeout_reasons", {})
+                key = str(result.get("reason", "pvp_timeout"))[:80]
+                reasons[key] = reasons.get(key, 0) + 1
+            continue
         if result.get("invalid"):
             total_invalid += 1
             if telemetry is not None:
@@ -1734,7 +1767,7 @@ def evaluate_build(starter: str, learn: list, runs: int, gen: int,
         results.append(result)
         if telemetry is not None:
             _record_build_telemetry(telemetry, result, starter, learn, run_region)
-    metrics = summarize_build_results(results, total_invalid, battles=battles)
+    metrics = summarize_build_results(results, total_invalid, battles=battles, timeouts=total_timeouts)
     requested = {x for x in [starter] + list(learn) if x}
     formed = sum(1 for r in results
                  if requested.issubset(set((r.get("daowen_activity") or {}).get("held", []))))
@@ -2101,7 +2134,7 @@ def update(k: dict, starter: str, learn: list, score: float,
     entry = {"gen": k["generation"], "starter": starter,
              "learn": list(learn), "score": round(score, 6)}
     if metrics is not None:
-        for name in ("valid", "invalid", "pve_wins", "pve_trials", "pve_rate", "pve_lcb",
+        for name in ("valid", "invalid", "timeouts", "pve_wins", "pve_trials", "pve_rate", "pve_lcb",
                      "pvp_wins", "pvp_trials", "pvp_rate", "pvp_lcb",
                      "full_wins", "full_trials", "full_rate", "full_lcb", "avg_cleared",
                      "requested_build_runs", "requested_build_rate"):
@@ -2350,7 +2383,7 @@ def _print_metric_candidate(label: str, rec: dict | None) -> None:
 def report(k: dict) -> None:
     print(f"已学习代数：{k['generation']}｜累计试验：{len(k['history'])} 套"
           f"｜有效对局：{k.get('total_games', 0)} 局"
-          f"｜无效(bug/超时) {k.get('invalid_games', 0)} 局")
+          f"｜累计无效（旧记录可能含超时） {k.get('invalid_games', 0)} 局｜新记录资源超时 {k.get('timeout_games', 0)} 局")
     print("\n【构筑排行榜】PVE、PVP、完整通关分开统计；不生成默认综合最优")
     confirmed = k.get("best_confirmed_by_metric") or {}
     observed = k.get("best_by_metric") or {}
@@ -2469,6 +2502,7 @@ def main():
         valid, invalid = metrics["valid"], metrics["invalid"]
         k["total_games"] = k.get("total_games", 0) + valid
         k["invalid_games"] = k.get("invalid_games", 0) + invalid
+        k["timeout_games"] = k.get("timeout_games", 0) + metrics.get("timeouts", 0)
         if valid:
             update(k, starter, learn, score, metrics=metrics)
         # 深挖复评（2026-08-23 扩散实验落地）：每 DEEPEN_EVERY 代对当前头部候选
@@ -2486,6 +2520,7 @@ def main():
                     dv, di = deep_metrics["valid"], deep_metrics["invalid"]
                     k["total_games"] = k.get("total_games", 0) + dv
                     k["invalid_games"] = k.get("invalid_games", 0) + di
+                    k["timeout_games"] = k.get("timeout_games", 0) + deep_metrics.get("timeouts", 0)
                     if dv:
                         update(k, d_starter, list(d_learn), ds, metrics=deep_metrics)
             if deep:
@@ -2507,7 +2542,7 @@ def main():
 
 
 def round_start_relic_choices(e) -> dict:
-    """构建 [回始] 显式遗物选择：回锋刀需显式敌方目标；血契/余火印按情形主动使用。
+    """构建 [回始] 显式遗物选择：回锋刀需显式敌方目标；血契/余火印按情形主动使用（余火印已于2026-10-14删除）。
 
     委托 sim/optional_actions（可以不用但不能不让用：血厚且法力有缺口时就换法力）。
     """

@@ -25,6 +25,59 @@ from ..models import MONSTER_MANA_RELIC
 
 
 class DaowenEffectMixin:
+    def _settle_diandang_discovery(self, caster, kinds: int, result: dict) -> None:
+        """【典当X】发现获得X种道纹（2026-10-13）。
+
+        发现池 = 局外【学习】口径（gamedata.learnable_daowen_pool），逐种抽取、
+        每种3选1（骰子流名可复现）。调用时失忆代价已结算（当掉的道纹可重新被发现）。
+        轮回者→pending 待选（choose_diandang_daowen 逐组领取）；非轮回者
+        （怪物经【原初】借用发动，没有发现界面）→即时随机授予。
+        授予一律受【承载上限】约束：额度已满则剩余种数不再产出（残韵超额不授予同口径）。
+        """
+        from ..gamedata import learnable_daowen_pool
+        kinds = max(0, int(kinds))
+        if kinds <= 0:
+            return
+        seq = int(self.state.event_modifiers.get("diandang_cast_seq", 0)) + 1
+        self.state.event_modifiers["diandang_cast_seq"] = seq
+        pending_now: list[list[str]] = []
+        granted_now: list[str] = []
+        for kind in range(kinds):
+            pool = learnable_daowen_pool(
+                owned=set(caster.dao_wen),
+                region=self.state.current_region,
+                known=DaoWenEngine.list_all())
+            if not pool:
+                break
+            if len(caster.dao_wen) >= caster.daowen_capacity:
+                result["effects"].append({"type": "diandang_capped", "caster": caster.name})
+                break
+            remaining = list(pool)
+            group: list[str] = []
+            for slot in range(min(3, len(remaining))):
+                roll = self.dice.auto_roll(
+                    f"diandang_b{self.state.current_battle}_r{self.state.current_round}"
+                    f"_c{seq}_k{kind + 1}_{slot + 1}",
+                    remaining,
+                    context=f"【典当】{caster.name}发现第{kind + 1}种道纹候选{slot + 1}",
+                )
+                group.append(remaining.pop(roll["record"]["selected_index"]))
+            if caster is self.state.player:
+                self.state.pending_diandang_discoveries.append(group)
+                pending_now.append(group)
+            else:
+                pick = group[0]
+                caster.dao_wen[pick] = DaoWenInstance(DaoWen(
+                    name=pick, formula="", cost_type="消耗",
+                    cost_formula="X", effect_formula=""))
+                granted_now.append(pick)
+        if pending_now:
+            result["effects"].append({"type": "diandang_pending", "caster": caster.name,
+                                      "groups": pending_now})
+        if granted_now:
+            result["effects"].append({"type": "diandang_granted", "caster": caster.name,
+                                      "granted": granted_now})
+
     @staticmethod
     def _daowen_status(*, daowen_order: int, **kwargs) -> StatusEffect:
         """道纹施加持续状态的唯一构造口：记录来源道纹在序列中的位置。"""
@@ -457,7 +510,11 @@ class DaowenEffectMixin:
             else:
                 _target_hp = target.current_hp
             self._hp_loss_ctx = daowen_ctx
-            target.current_hp = max(0, min(_target_hp, target.blood_limit))
+            # 2026-10-14：【猩红果实】持有者豁免血限压顶（生命可超血限）。
+            if self.state.hp_overflow_exempt(target):
+                target.current_hp = max(0, _target_hp)
+            else:
+                target.current_hp = max(0, min(_target_hp, target.blood_limit))
             self._check_hp_zero_death(target, ctx=_blr["ctx"] or daowen_ctx)
             _hp_cut_tmp = _hp_before - target.current_hp
             # 血限压迫导致的当前生命减少，同样属于"使敌对角色生命减少"，
@@ -496,9 +553,26 @@ class DaowenEffectMixin:
                         actor=caster, owner=caster, clamp_hp=False, lethal=False)["applied"]
                     result["effects"].append({"type": "blood_limit_increase", "target": target.name,
                                               "increase": increase})
-        # 【逼债】旧"碎片不足则失血限"路径已按 DM裁定D（2026-08-22）废止并移除：
-        # 无力支付统一记为负债（见 round_start 的 F2 结算），唯一血限语义不再存在。
-
+        if "zengzhi_battle_end" in calc:
+            # 2026-10-14：【增殖】重做——血限增长记入战终待决（多次发动累加，
+            # 战终统一结算；目标死亡/持【不朽之躯】则结算时落空）。
+            _ref_of = {}
+            for _ref, _ent in self._combat_entity_refs().items():
+                _ref_of[id(_ent)] = _ref
+            _pending = self.state.event_modifiers.setdefault("zengzhi_pending", [])
+            if "zengzhi_battle_end" in wave_pieces:
+                pieces = self._divide_flat(calc["zengzhi_battle_end"], len(wave_status_targets))
+                wave_pieces["zengzhi_battle_end"] = pieces
+                for wt, piece in zip(wave_status_targets, pieces):
+                    _pending.append({"target_ref": _ref_of.get(id(wt), wt.name),
+                                     "amount": piece})
+                    result["effects"].append({"type": "zengzhi_pending", "target": wt.name,
+                                              "amount": piece})
+            else:
+                _pending.append({"target_ref": _ref_of.get(id(target), target.name),
+                                 "amount": calc["zengzhi_battle_end"]})
+                result["effects"].append({"type": "zengzhi_pending", "target": target.name,
+                                          "amount": calc["zengzhi_battle_end"]})
         # ---- 攻击面板修改 ----
         _panel_keys = ("attack_boost", "attack_reduction", "attack_fixed", "attack_count_fixed")
         # 波及扩散：attack_boost/reduction 数值平分；attack_fixed/attack_count_fixed
@@ -652,6 +726,10 @@ class DaowenEffectMixin:
                 caster.dao_wen.pop(forgotten, None)
             result["effects"].append({"type": "amnesia", "lost_daowen": chosen[:count]})
 
+        # 【典当】：失忆结算之后，发现获得X种道纹（学习口径池+承载上限）。
+        if "discover_daowen" in calc:
+            self._settle_diandang_discovery(caster, calc["discover_daowen"], result)
+
         # ---- 碎片系（罪孽）----
         if "shard_steal" in calc and self._shards_of(target) > 0:
             # 赎金是“有碎片则夺取，若无碎片才失速”的二选一；不得把不足额偷取扩成负债。
@@ -662,6 +740,25 @@ class DaowenEffectMixin:
             else:
                 caster.shards += gained
             result["effects"].append({"type": "shard_steal", "target": target.name, "gained": gained})
+        if "shard_debt" in calc:
+            # 2026-10-14【勒索】：与赎金同价同量形状不同——碎片是销毁（谁都不获得），
+            # 不足部分记负债（真碎片扣负，可触发【还债】）。走 shards 动词统一口径
+            # （= 旧逼债块字面约定：够则扣，不够则假碎片优先+差额扣负）。
+            from ..mechanisms.verbs import apply_verb
+            need = calc["shard_debt"]
+            paid = apply_verb(self, "shards", {
+                "target": target, "delta": -need,
+                "ctx": {"source": "勒索", "source_type": "daowen", "actor": caster,
+                        "target": target, "mechanic": "cost", "subtype": "lesuo",
+                        "amount": -need, "tags": {"daowen", "shards"}},
+            })
+            if paid["paid"]:
+                result["effects"].append({"type": "lesuo", "target": target.name,
+                                          "lost_shards": need})
+            else:
+                result["effects"].append({"type": "lesuo_debt", "target": target.name,
+                                          "obligation": need, "shards_now": paid["shards_now"],
+                                          "debt_now": paid["debt"]})
         if "shard_gain" in calc:  # 点金：支付失忆X后获得80X真碎片
             if caster is self.state.player:
                 self.state.shards += calc["shard_gain"]
@@ -684,6 +781,10 @@ class DaowenEffectMixin:
             cost_spec = ("流血", calc["cost_hp"], "bleed_cost")
         elif "cost_blood_limit" in calc:
             cost_spec = ("衰老", calc["cost_blood_limit"], "aging_cost")
+        elif "cost_mana_limit" in calc:
+            # 2026-10-14：【透支】多代价（枯竭通道）。此前没有道纹用枯竭作代价，
+            # 本分支是第一条；走代价总线（【苍白之花】豁免/【血契】平分照常）。
+            cost_spec = ("枯竭", calc["cost_mana_limit"], "exhaust_cost")
         elif "cost_speed" in calc:
             cost_spec = ("疲惫", calc["cost_speed"], "fatigue_cost")
         elif "cost_mutation" in calc and caster.entity_type != "怪物":
@@ -982,16 +1083,10 @@ class DaowenEffectMixin:
             for st_target in wave_status_targets:
                 result["effects"].append({"type": "shanghen", "target": st_target.name, "x": x})
 
-        # ---- F2 全量：罪孽都市（逼债/清算/赌命/消灾/抵扣）的注册与即时结算 ----
-        # 逼债X：[回始]使[目标]失去X碎片，否则失去2X血限（二选一）。此处仅挂账，[回始]在 round_start 结算。
-        if name == "逼债":
-            for st_target in wave_status_targets:
-                # 账本唯一入口（engine/mechanisms/ledger.py）；[回始]结算在机制声明层。
-                ledger_of(st_target, "逼债").append({"x": x, "caster": caster})
-                st_target.add_status(self._daowen_status(daowen_order=daowen_order, name="逼债", value=x, remaining_rounds=-1, source=caster.name))
-                result["effects"].append({"type": "bizhai_register", "target": st_target.name, "x": x})
+        # ---- F2 全量：罪孽都市（清算/赌命/消灾/抵扣）的注册与即时结算 ----
+        # （2026-10-13 用户令删【逼债】：此处原挂账块与【逼债·结算/对账】机制一并移除）
         # 清算X：[回始]使[目标]失去你[碎片]点格挡，持续X。此处仅挂账。
-        elif name == "清算":
+        if name == "清算":
             for st_target in wave_status_targets:
                 ledger_of(st_target, "清算").append({"x": x, "caster": caster})
                 result["effects"].append({"type": "qingsuan_register", "target": st_target.name, "x": x})

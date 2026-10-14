@@ -51,6 +51,8 @@ def _engine(tmp_path, suffix="legacy"):
     engine.execute_action("setup_choose_resonance", {"resonance_type": "转换"})
     setup = engine.execute_action("setup_choose_region", {"region": "罪孽都市"})
     engine.execute_action("choose_discovered_relic", {"relic_name": setup["result"]["relic_choices"][0]})
+    # 2026-10-13：遗物池删2件后随机发放漂移（万钧印改向攻击致命零打不出），本文件断言与开局遗物无关，清空钉死环境。
+    engine.state.relics = []
     engine.state.phase = "in_combat"
     return engine, book
 

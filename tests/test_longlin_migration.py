@@ -96,7 +96,8 @@ def test_same_phase_hosts_both_mechanisms_in_priority_order():
     assert [m.priority for m in phase_mechs] == [20, 30, 40]
 
     manager = CombatHookManager()
-    adapters = [h for h in manager.hooks() if isinstance(h, MechanismHookAdapter)]
+    adapters = [h for h in manager.hooks() if isinstance(h, MechanismHookAdapter)
+                and h.mechanism.when.matches_phase(Phase.INCOMING_ADJUST)]
     assert [a.mechanism.name for a in adapters] == ["加害", "龙鳞", "固执"]
     assert [a.priority for a in adapters] == [20, 30, 40]
 
@@ -186,7 +187,8 @@ def test_jiahai_and_longlin_each_execute_once():
     assert detail["actual_damage"] == 9
     assert enemy.current_hp == 91
     adapters = [h for h in combat.hook_manager.hooks()
-                 if isinstance(h, MechanismHookAdapter)]
+                 if isinstance(h, MechanismHookAdapter)
+                 and h.mechanism.when.matches_phase(Phase.INCOMING_ADJUST)]
     assert [h.mechanism.name for h in adapters] == ["加害", "龙鳞", "固执"]
 
 

@@ -1,4 +1,6 @@
 import os,sys,json,traceback
+# 2026-10-14：【搏命】删除后该格留成空占位符（镇尸先例），【超频】的【反转】
+# 通向占位符=失败，原 'boming'/'huaisi' combo 已无可测量的共振获取路径，整支移除。
 sys.path.insert(0,os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from engine.api import GameEngine
 from engine.ai_tactics import TacticalAI
@@ -49,7 +51,7 @@ def setup(seed,relic,region,rtype,combo):
     ch=e.execute_action('choose_discovered_relic',{'relic_name':relic})
     dc=list(e.state.pending_initial_daowen_choices)
     # choose defensive/damage starter; actual initial candidate from engine
-    pref=(['封印','庇护','再生','杀伐','血债'] if combo in ('hyper','boming') else ['庇护','再生','杀伐','血债'])
+    pref=(['封印','庇护','再生','杀伐','血债'] if combo in ('hyper',) else ['庇护','再生','杀伐','血债'])
     initial=next((x for x in pref if x in dc),dc[0])
     e.execute_action('setup_choose_initial_daowen',{'daowen_name':initial})
     e.execute_action('setup_choose_resonance',{'resonance_type':rtype})
@@ -71,7 +73,6 @@ def run(seed,relic,region,combo,attrs=ATTRS):
     try:
       if combo=='blood': target=None; source=None;rtype='反转'; todo=['庇护','再生','透支']; blood=True
       elif combo=='hyper': target='超频';source='畸变';rtype='曲解';todo=['庇护','再生','超频'];blood=False
-      elif combo=='boming': target='搏命';source='超频';rtype='反转';todo=['庇护','再生','搏命'];blood=False
       e,rec=setup(seed,relic,region,rtype,combo)
       if e is None:return rec
       rec['battles']=[];spell=False;cleared=0;acq=None
@@ -124,5 +125,5 @@ def run(seed,relic,region,combo,attrs=ATTRS):
 
 if __name__=='__main__':
  import argparse
- ap=argparse.ArgumentParser();ap.add_argument('--seed',type=int,required=True);ap.add_argument('--relic',required=True);ap.add_argument('--region',default='扭曲都市');ap.add_argument('--combo',choices=['blood','hyper','boming'],default='blood');ap.add_argument('--attrs',default='7,8,10');a=ap.parse_args();
+ ap=argparse.ArgumentParser();ap.add_argument('--seed',type=int,required=True);ap.add_argument('--relic',required=True);ap.add_argument('--region',default='扭曲都市');ap.add_argument('--combo',choices=['blood','hyper'],default='blood');ap.add_argument('--attrs',default='7,8,10');a=ap.parse_args();
  print(json.dumps(run(a.seed,a.relic,a.region,a.combo,tuple(map(int,a.attrs.split(',')))),ensure_ascii=False))

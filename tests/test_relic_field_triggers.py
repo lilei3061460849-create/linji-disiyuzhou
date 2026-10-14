@@ -171,8 +171,8 @@ def test_jiaohhei_sealed_does_not_trigger(tmp_path):
     assert p.current_speed == speed
 
 
-def test_jiaohhei_on_collapse(tmp_path):
-    """第二条来源：怪物异变迷失命零，焦黑发丝仍+2。"""
+def test_jiaohhei_does_not_trigger_on_monster_mutation(tmp_path):
+    """怪物达到50层异变并未命零，因此不能触发焦黑发丝。"""
     e = _engine(tmp_path, "hair_collapse")
     begin_battle(e)
     p, m = e.state.player, e.state.enemies[0]
@@ -182,8 +182,8 @@ def test_jiaohhei_on_collapse(tmp_path):
     speed = p.current_speed
     m.mutation_count = 49
     e.combat.pay_numeric_cost(m, "异变", 1)
-    assert not m.is_alive
-    assert p.current_speed == speed + 2
+    assert m.is_alive and m.mutation_count == 50
+    assert p.current_speed == speed
 
 
 def test_jiaohhei_on_qianjingjia_reflect(tmp_path):

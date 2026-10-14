@@ -17,7 +17,8 @@ from .resolution import KIND_EFFECT, resolution_frame
 
 # 各池事件名（与规则正文一致）
 EVENT_RELICS = {
-    "猩红果实": "每场[战始]可选择是否流血10；若选择，则[战终][血限]+2",
+    # 2026-10-14 用户令重做：旧「战始可选流血10 → 战终血限+2」移交道纹【增殖】，改为被动。
+    "猩红果实": "你的当前生命可以超出[血限]",
     # 2026-10-11 用户令重做：旧「战始可选疲惫5 → 战终精力+1」废止，改为被动。
     "苍白之花": "你的当前法力可以超出[法限]",
     "缄默面具": "无法再使用任何附带「代价」的道纹，每场[战终][法限]+X",
@@ -28,7 +29,7 @@ EVENT_RELICS = {
     "负岳索": "[战始]选择一名[朋友]或[员工]；其首次受到伤害时，你[回复]等量生命",
     "炉心坠": "[战始]选择一枚自身拥有的龙心，使其当前耐久+10",
     "烙痕钉": "[战始]必中，选择一个[目标]；你每付出一次代价，其失去10生命",
-    "余火印": "[回始]可消耗一枚龙心X点耐久，获得2X点法力",
+    # 2026-10-14 用户令：【余火印】整段删除（原 extra 并入方案废弃，龙心只走通用抵扣）。
 }
 
 EVENT_CONSUMABLES = {
@@ -334,16 +335,7 @@ def _resolve_option_effect_impl(text: str, engine, event_name: str = "", params=
             applied.append("流血15")
             _mut = player.add_mutation(3)
             applied.append("获得异变3")
-            if _mut.get("collapsed"):
-                # 怪物异变爆体（【迷失】）：命零。玩家理论上不会走到这里（entity_type 非"怪物"），
-                # 保留以兼容玩家被异常标记为怪物的极端情况。
-                engine.combat._on_entity_death(
-                    player, ctx=engine.combat._lost_context(player, {
-                        "timing": "pre_battle_event", "source": "纸人冥婚", "source_type": "event",
-                        "actor": player, "target": player, "mechanic": "cost",
-                        "subtype": "mutation", "amount": 3, "tags": {"event"}}, subtype="collapse"))
-                applied.append("异变达阈值，触发【迷失】：直接命零")
-            elif _mut.get("lost"):
+            if _mut.get("lost"):
                 # 非怪物局外触发【迷失】：此处尚未进入战斗，直接判命零——
                 # 战斗中触发才会走「异变为怪物与原队伍开战」分支（见 _resolve_mutation_lost）。
                 player.current_hp = 0
@@ -476,7 +468,11 @@ def _resolve_option_effect_impl(text: str, engine, event_name: str = "", params=
                 applied.append(f"{ally.name}获得重甲兵躯（血限+15）")
             else:
                 player.blood_limit += 15
-                player.current_hp = min(player.current_hp + 15, player.blood_limit)
+                # 2026-10-14：【猩红果实】持有者当前生命可超血限，不削溢出部分。
+                if engine.state.hp_overflow_exempt(player):
+                    player.current_hp = player.current_hp + 15
+                else:
+                    player.current_hp = min(player.current_hp + 15, player.blood_limit)
                 applied.append("无队友，自身血限+15并获得重甲兵躯")
             return {"applied": applied, "instructions": instructions}
         # 选项3拜祭退避：无事发生
@@ -597,6 +593,18 @@ def _resolve_option_effect_impl(text: str, engine, event_name: str = "", params=
         applied.append("失去10碎片")
         engine.state.friends.append(friend)
         applied.append("赴火者作为朋友加入")
+        return {"applied": applied, "instructions": instructions}
+    elif event_name == "逆行者" and text.startswith("接过余火"):
+        # 2026-10-14：【余火印】整段删除（extra 方案废弃），改授【透支】道纹；
+        # 已掌握时改为获得10碎片，避免流血10买空气。
+        _pay_numeric("流血", 10)
+        applied.append("流血10")
+        if "透支" not in engine.state.player.dao_wen:
+            _grant_daowen(engine.state.player, "透支", 1)
+            applied.append("学会道纹·透支")
+        else:
+            engine.state.shards += 10
+            applied.append("已掌握透支，改为获得10碎片")
         return {"applied": applied, "instructions": instructions}
     elif event_name == "皮衣店" and text.startswith("试穿"):
         engine.state.event_modifiers["next_battle_first_round_shield"] = 30

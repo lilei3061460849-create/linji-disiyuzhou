@@ -22,7 +22,6 @@ from engine.combat import CombatEngine
 from engine.combat_events import CombatEventType
 from engine.combat_hooks import (
     CombatHookManager,
-    DragonBloodlineMultiplierHook,
     QianjingjiaHook,
     AfterDamageEffectsHook,
 )
@@ -301,25 +300,38 @@ def test_e_departure_is_not_death():
     assert enemy.is_departed is True
 
 
-def test_e_collapse_goes_through_unified_death():
-    """迷失（异变≥50）此前不通知死亡；现在必须走统一管线。"""
+def test_e_monster_mutation_does_not_emit_a_death_event():
+    """怪物异变超过50层仍存活，不能进入死亡管线或触发焦黑发丝。"""
     state, combat, player, enemy = _arena(enemy_hp=40)
     state.relics = [Relic("焦黑发丝", "")]
     player.current_speed = 1
     enemy.mutation_count = 49
-
     combat.pay_numeric_cost(enemy, "异变", 5, cost_context={
         "timing": "monster_action", "source": "原初1", "source_type": "evolution",
         "actor": enemy, "target": enemy, "mechanic": "cost", "subtype": "mutation",
         "amount": 5, "tags": {"active_payment"},
     })
+    assert enemy.is_alive and enemy.current_hp == 40 and enemy.mutation_count == 54
+    assert not hasattr(enemy, "_death_ctx")
+    assert not _events(combat, CombatEventType.ENTITY_DIED)
+    assert player.current_speed == 1
 
-    assert enemy.is_alive is False
-    assert enemy._death_ctx["subtype"] == "collapse"
-    assert enemy._death_ctx["source"] == "迷失", "2026-09-28【迷失】改名【迷失】，source 统一为'迷失'"
-    assert enemy._death_ctx["parent_event_id"] is not None
+
+def test_e_non_monster_lost_still_uses_unified_death():
+    """非怪物无队友时的迷失命零仍走统一死亡管线，带完整父事件上下文。"""
+    state, combat, player, enemy = _arena(enemy_hp=40)
+    player.mutation_count = 49
+    combat.pay_numeric_cost(player, "异变", 5, cost_context={
+        "timing": "player_action", "source": "封印5", "source_type": "daowen",
+        "actor": player, "target": player, "mechanic": "cost", "subtype": "mutation",
+        "amount": 5, "tags": {"active_payment"},
+    })
+    assert not player.is_alive and player.current_hp == 0
+    assert player._death_ctx["subtype"] == "collapse"
+    assert player._death_ctx["source"] == "迷失"
+    assert player._death_ctx["parent_event_id"] is not None
     assert len(_events(combat, CombatEventType.ENTITY_DIED)) == 1
-    assert player.current_speed == 3, "迷失·迷失死者同样要触发[命零]后效果"
+    assert enemy.is_alive
 
 
 # ==================== F. Hook 顺序显式化 ====================
@@ -333,7 +345,7 @@ def test_f_hook_order_is_explicit_and_unchanged():
     manager = CombatHookManager()
     order = [type(h).__name__ for h in manager.hooks()]
     assert order == [
-        "DragonBloodlineMultiplierHook",
+        "MechanismHookAdapter",  # 龙族血脉乘区（priority 10）
         "MechanismHookAdapter",  # 【加害】迁移后：原 JiahaiHook 位置（priority 20）
         "MechanismHookAdapter",  # 【龙鳞】迁移后：原 LonglinHook 位置（priority 30）
         "MechanismHookAdapter",  # 【固执】也接入同一伤害相位（priority 40）
@@ -348,7 +360,7 @@ def test_f_hook_order_is_explicit_and_unchanged():
     assert priorities == sorted(priorities)
     adapter_priorities = [h.priority for h in manager.hooks()
                           if isinstance(h, MechanismHookAdapter)]
-    assert adapter_priorities == [20, 30, 40], "加害(20)先于龙鳞(30)，固执(40)位于其后"
+    assert adapter_priorities == [10, 20, 30, 40], "加害(20)先于龙鳞(30)，固执(40)位于其后"
 
 
 def test_f_jiahai_before_longlin_is_rule_relevant():
@@ -397,7 +409,7 @@ def test_f_register_hook_respects_priority():
 
 @pytest.mark.parametrize("daowen,calc", [
     ("瓦解", {"x": 10, "blood_limit_pct": 100}),
-    # 逼债血限分支已按 DM裁定D（2026-08-22）废止：无力支付记为负债，不再是血限压迫
+    # 2026-10-13：【逼债】删除（原 DM裁定D 负债口径随道纹移除，见下）。
 ])
 def test_g_blood_limit_pressure_never_leaves_alive_at_zero_hp(daowen, calc):
     _, combat, player, enemy = _arena(enemy_hp=20, enemy_bl=20)
@@ -411,45 +423,9 @@ def test_g_blood_limit_pressure_never_leaves_alive_at_zero_hp(daowen, calc):
         assert enemy._death_ctx["mechanic"] == "death"
 
 
-def test_g_round_start_debt_records_liabilities_not_blood_limit():
-    """DM裁定D 2026-08-22：回始逼债无力支付部分记为负债（碎片扣负），
-    旧"否则失去2X血限"废止。负债≥20由 settle_victory_paths 触发【还债】。"""
-    state, combat, player, enemy = _arena(enemy_hp=4, enemy_bl=4)
-    enemy.attack_count = enemy.attack_count or 1   # 防雕塑先行（攻次0会在回终先被判雕塑）
-    enemy.attack_power = enemy.attack_power or 1
-    enemy.shards = 0
-    enemy._bizhai = [{"x": 10, "caster": player}]
-    state.combat_subphase = "await_round_start"
-
-    combat.round_start()
-
-    assert enemy.shards == -10, f"无力支付10碎片应全额计负债，实际 {enemy.shards}"
-    assert enemy.blood_limit == 4 and enemy.current_hp == 4 and enemy.is_alive
-
-    # 第二轮 X=10 再计负债 → 负债20 达到触发线
-    enemy._bizhai = [{"x": 10, "caster": player}]
-    state.combat_subphase = "await_round_start"
-    combat.round_start()
-    assert enemy.shards == -20
-    results = combat.settle_victory_paths()
-    assert any(r.get("type") == "debt_bind" for r in results)
-    assert enemy.is_debt_bound and enemy.entity_type == "员工"
-
-
-def test_g_round_start_debt_partial_payment_shortfall_only():
-    """边界：有部分余额时先清零、仅差额计负债（假碎片优先）。"""
-    state, combat, player, enemy = _arena(enemy_hp=4, enemy_bl=4)
-    enemy.shards = 3
-    enemy.fake_shards = 5
-    enemy._bizhai = [{"x": 10, "caster": player}]
-    state.combat_subphase = "await_round_start"
-
-    combat.round_start()
-
-    assert enemy.fake_shards == 0 and enemy.shards == -2, \
-        f"假5+真3 抵 10 后负债应 2，实际 fake={enemy.fake_shards} shards={enemy.shards}"
-
-
+# 2026-10-13：【逼债】删除，原两组回始负债用例（_bizhai 账本）已删。
+# 注意：删逼债后怪物侧负债暂无生产者（赎金/洗劫均 min(avail) 不透支），
+# 【还债】debt_bind 触发器暂时不可达，待用户裁定后续处理。
 # ==================== 递归保险丝 ====================
 
 def test_effect_chain_depth_fuse_exists_and_is_generous():

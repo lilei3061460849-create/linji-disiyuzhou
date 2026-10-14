@@ -18,7 +18,7 @@ import time
 sys.path.insert(0, ".")
 
 from engine.ai_tactics import TacticalAI, monster_threat          # noqa: E402
-from sim.build_learner import play, DEFAULT_POLICY                # noqa: E402
+from sim.build_learner import _skip_resource_timeout, play, DEFAULT_POLICY                # noqa: E402
 
 SEEDS = range(1, 121)
 BATTLES = 7
@@ -161,24 +161,16 @@ class FeedAI(TacticalAI):
 
 
 class DebtAI(HarvestMixin, TacticalAI):
-    """还债流：收割逼债(点金+转换)/赎金(清算+反转)，给怪挂永久催缴逼到碎片≤-10。"""
+    """还债流：收割赎金(清算+反转)抽干怪物碎片。
 
-    PLANS = [("点金", "转换", "逼债"), ("清算", "反转", "赎金")]
+    2026-10-13：【逼债】删除，「挂永久催缴逼到碎片≤-10」的负债驱动已不存在；
+    本流派退化为赎金碎片压制（还债仍可由怪物碎片代价透支触发，见 test_debt_overdraft）。
+    """
 
-    def __init__(self, *a, **kw):
-        super().__init__(*a, **kw)
-        self._debt_registered = set()
-
-    def new_round(self):
-        super().new_round()
-        # dead/departed 对象的 id 可能复用——只保留仍存活敌人的注册表
-        alive_ids = {id(en) for en in self.alive_enemies()}
-        self._debt_registered &= alive_ids
+    PLANS = [("清算", "反转", "赎金")]
 
     def try_harvest_debt(self):
         return self.try_harvest(self.PLANS)
-
-    DEBT_X_CAP = 5   # 每次逼债X上限（回始每跳欠X；裁定D后=负债增速）
 
     def try_debt(self):
         if not self.player:
@@ -187,16 +179,6 @@ class DebtAI(HarvestMixin, TacticalAI):
         enemies = [en for en in self.alive_enemies() if en.entity_type == "怪物"]
         if not enemies:
             return None
-        if "逼债" in held:
-            for en in sorted(enemies, key=lambda x: x.shards):
-                if id(en) in self._debt_registered:
-                    continue
-                x = min(self.mana(), self.DEBT_X_CAP)
-                if x >= 2:
-                    r = self._cast("逼债", x, en.name)
-                    if r:
-                        self._debt_registered.add(id(en))
-                        return r
         if "赎金" in held and self.mana() >= 10:
             tgt = min(enemies, key=lambda en: en.shards)
             if tgt.shards <= 5:                       # 已有去碎片趋势再加速
@@ -307,6 +289,8 @@ def run_row(label, region, starter, learn, ai_cls, kw):
         telemetry = {}
         r = play(starter, list(learn), region, seed=seed, battles=BATTLES,
                  telemetry=telemetry, ai_cls=ai_cls, **kw)
+        if _skip_resource_timeout(r, context=__name__):
+            continue
         if r.get("invalid"):
             tot["invalid"] += 1
             continue

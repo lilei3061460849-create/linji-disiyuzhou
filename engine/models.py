@@ -107,15 +107,21 @@ class Relic:
     name: str
     effect: str
     tags: list[str] = field(default_factory=list)
-    
+
+    def __post_init__(self):
+        # 实体、本局遗物与死斗对手的旧档都会重新构造 Relic，描述统一随规则升级。
+        if self.name == MONSTER_MANA_RELIC:
+            self.effect = MONSTER_MANA_RELIC_EFFECT
+
     def to_dict(self) -> dict:
         return {"name": self.name, "effect": self.effect, "tags": self.tags}
 
 
-# 每只怪物出厂自带的遗物：怪物[回始]法力恢复至上限的**唯一来源**。
+# 每只怪物出厂自带的遗物：[回始]获得法限等量的法力和异变。
 # 定义在此而非 monsters.py：授予发生在 Entity.__post_init__，效果判定在 combat.py，
 # 两侧都要引用，放 models 可避免 monsters ↔ combat 的循环导入。
 MONSTER_MANA_RELIC = "某人的偏爱"
+MONSTER_MANA_RELIC_EFFECT = "[回始]获得等同[法限]的法力和【异变】"
 
 
 @dataclass
@@ -325,8 +331,8 @@ class Entity:
     is_debt_bound: bool = False  # 已因还债成为员工
 
     # ---- 罪孽都市专属道纹的回始记账（F2 全量） ----
-    # 逼债/清算：目标侧挂账 [{x, caster}]，[回始]逐条结算，状态消失即清账
-    _bizhai: list = field(default_factory=list)
+    # 清算：目标侧挂账 [{x, caster}]，[回始]逐条结算，状态消失即清账
+    # （2026-10-13 用户令删【逼债】：_bizhai 字段与【逼债·结算/对账】机制一并移除）
     _qingsuan: list = field(default_factory=list)
     # 抵扣（旧）：被封印的遗物 {遗物名: 剩余回合}，[回终]-1，归零解封
     sealed_relics: dict = field(default_factory=dict)
@@ -365,7 +371,7 @@ class Entity:
     def is_cancer(self, value: bool):
         self.is_proliferated = value
 
-    # 异变计数（特殊事件【迷失】：非怪物角色达到阈值时异变为怪物；怪物保持原阈值直接命零）
+    # 异变计数：非怪物角色达到迷失阈值时交由战斗层处理；怪物照常累计但不触发迷失。
     mutation_count: int = 0
 
     # 存活
@@ -423,16 +429,13 @@ class Entity:
             self.mana_limit = self.attack_power
         if self.speed_limit == 0 and self.attack_count > 0:
             self.speed_limit = self.attack_count
-        # ---- 2026-09-16 用户令：每个怪物自带遗物【某人的偏爱】----
-        # 怪物[回始]法力恢复至上限**不是怪物种族自带的能力**，而是这件遗物的效果。
-        # 授予点放在 Entity 而非怪物工厂，是为了让"凡是怪物就有它"对**所有**构造路径
-        # 都成立（生产走 make_monster_entity，测试夹具常直接 new Entity），
-        # 否则手造怪物会静默丢掉回满，出现"同样是怪物、行为却不同"的陷阱。
-        # 效果判定端只读遗物（见 engine/combat.py round_start），不读实体类型。
+        # 每个怪物出厂自带【某人的偏爱】，覆盖工厂、手造与读档全部构造路径。
+        # 2026-10-13：回始获得法限等量法力与异变；是否触发迷失由角色类型决定，
+        # 不由遗物决定。持有者不限于怪物，失去遗物的怪物仍免于迷失。
         if self.entity_type == "怪物" and not any(
                 r.name == MONSTER_MANA_RELIC for r in self.relics):
             self.relics.append(
-                Relic(name=MONSTER_MANA_RELIC, effect="[回始]法力恢复至上限",
+                Relic(name=MONSTER_MANA_RELIC, effect=MONSTER_MANA_RELIC_EFFECT,
                       tags=["怪物自带"]))
         if self.entity_type != "轮回者":
             if self.current_mana == 0 and self.mana_limit > 0:
@@ -691,20 +694,23 @@ class Entity:
     CANCER_HEAL_MULTIPLIER = lethal_events.threshold_multiplier("aibian")  # 【癌变】：本场累计回复量 ≥ 血限×该系数 即命零
     MEDIOCRITY_ROUNDS = lethal_events.threshold("fanyong")  # 【凡庸】：连续 N 回合未出手、或连续 N 回合未使敌对角色掉血 即命零
 
+    def can_trigger_mutation_lost(self) -> bool:
+        """是否受【迷失】阈值约束（类型豁免来自结构化事实源）。"""
+        return lethal_events.applies_to("mishi", self.entity_type)
+
     def lethal_counters(self) -> dict:
         """致死类特殊事件的进度：{名称: (当前值, 阈值)}。
 
-        2026-09-15 用户令「给致死的特殊事件标明进度」，2026-09-28 用户令将【迷失】
-        重命名为【迷失】（非怪物异变达阈值：有队友→变怪物开战；无队友→命零；
-        怪物仍保持原"阈值直接命零"行为）。
+        非怪物异变达阈值：有队友→变怪物开战；无队友→命零。
+        2026-10-13：怪物不触发迷失，因此不输出虚假的迷失致死进度。
         进度必须能被 AI 在面板上直接读到，不允许只留一个布尔结果。口径：
           * 迷失 = 异变层数 / MUTATION_COLLAPSE_THRESHOLD；
           * 癌变 = 本场累计回复量 / ⌈血限×CANCER_HEAL_MULTIPLIER⌉；
           * 凡庸 = 连续未出手（或连续未致敌掉血）回合数 / MEDIOCRITY_ROUNDS，取更接近线的那条。
         """
-        out: dict[str, tuple[int, int]] = {
-            "迷失": (int(self.mutation_count), int(self.MUTATION_COLLAPSE_THRESHOLD)),
-        }
+        out: dict[str, tuple[int, int]] = {}
+        if self.can_trigger_mutation_lost():
+            out["迷失"] = (int(self.mutation_count), int(self.MUTATION_COLLAPSE_THRESHOLD))
         if self.blood_limit > 0:
             out["癌变"] = (int(self.total_healed),
                            int(math.ceil(self.blood_limit * self.CANCER_HEAL_MULTIPLIER)))
@@ -733,8 +739,7 @@ class Entity:
         """增减异变层数。正值累加，负值削减，可降到负数。
 
         特殊事件【迷失】：
-          * 怪物（entity_type=="怪物"）：达到阈值仍按规则直接[命零]死亡（爆体）——
-            因为"变成怪物"对怪物本身无意义，怪物阈值只是"异变爆体"的上限。
+          * 怪物：照常增减异变层数，但无论累积多少层都不会触发【迷失】。
           * 非怪物角色（轮回者/朋友/员工/临时朋友/赤族等）：达到阈值时不在模型层直接命零，
             返回 `lost=True` 交由战斗层 _resolve_mutation_lost 判定——
               - 己方还有其他存活角色（队友/朋友/员工/临时朋友/其他轮回者阵营角色）：
@@ -748,30 +753,22 @@ class Entity:
         if layers != 0:
             self.mutation_count += layers
         threshold_hit = self.mutation_count >= self.MUTATION_COLLAPSE_THRESHOLD
-        collapsed = False
-        lost = False
-        if threshold_hit and self.is_alive:
-            if self.entity_type == "怪物":
-                # 怪物：达到阈值仍直接命零（怪物仍直接命零）。调用方走 _on_entity_death(...,
-                # ctx=_lost_context(..., subtype="collapse"))，触发[命零]反应。
-                collapsed = True
-                self.is_alive = False
-                self.current_hp = 0
-            else:
-                # 非怪物：标记"迷失阈值已达"，战斗层决定是变怪物还是命零。
-                # 这里不直接改 is_alive，交给 _resolve_mutation_lost 处理。
-                lost = True
+        # 模型层只标记非豁免角色的迷失，变身/命零仍由战斗层处理。
+        lost = threshold_hit and self.is_alive and self.can_trigger_mutation_lost()
         return {
             "mutation_added": layers,
             "mutation_total": self.mutation_count,
-            "collapsed": collapsed,   # 怪物迷失=命零
+            "collapsed": False,       # 兼容旧返回形状；怪物不再异变爆体
             "lost": lost,             # 非怪物触发"迷失"，等待战斗层处理
         }
     
-    def heal(self, amount: int) -> dict:
-        """回复生命"""
+    def heal(self, amount: int, allow_overflow: bool = False) -> dict:
+        """回复生命。allow_overflow=True 时当前生命可超出[血限]（遗物【猩红果实】）。"""
         before = self.current_hp
-        self.current_hp = min(self.blood_limit, self.current_hp + amount)
+        if allow_overflow:
+            self.current_hp = self.current_hp + amount
+        else:
+            self.current_hp = min(self.blood_limit, self.current_hp + amount)
         actual = self.current_hp - before
         overheal = amount - actual
         # 癌变追踪：DM裁定删除过量回复双倍计入机制，
@@ -810,8 +807,8 @@ class Entity:
           （不再每[回始]回填）而一度失去作用对象。
         - 2026-09-09 DM裁定：改为**法力消耗翻倍**，在 spend_mana 里乘 2。
         - 2026-10-08 用户令：恢复「无法获得[法力]」原意，翻倍逻辑撤销。
-          此时战斗内已有多个法力来源（聚能/储能电池/守夜灯/承露盏/血契/
-          余火印/搏命·透支/法术），效果重新有对象；判定位统一收敛到
+          此时战斗内已有多个法力来源（聚能/储能电池/守夜灯/承露盏/
+          透支/法术），效果重新有对象；判定位统一收敛到
           `can_gain_mana()` / `gain_mana()`，不再散落各处。
         """
         if amount > 0 and self.has_status("愤怒"):
@@ -1028,6 +1025,8 @@ class GameState:
     # 开局从杀伐闭环【发现】初始道纹。
     pending_initial_daowen_choices: list[str] = field(default_factory=list)
     pending_initial_daowen_source: str = ""
+    # 【典当】：轮回者发动后待领取的发现（每组3选1，choose_diandang_daowen 逐组领取）。
+    pending_diandang_discoveries: list[list[str]] = field(default_factory=list)
     # 救赎：怪物融化后等待接纳/无视。
     pending_redemption: dict = field(default_factory=dict)
     # 消耗品【发现】候选（如扭曲都市完成事件后的工具发现）。
@@ -1050,6 +1049,10 @@ class GameState:
     opponent_dragon_body_shield_rounds: int = 0
     opponent_dragon_tail_sacrifice_declared: str = ""
     consumables: list[Consumable] = field(default_factory=list)
+    # 本场战斗轮回者出手选中过的目标 runtime_id（自愈X「目标死亡时」用）。
+    # 只记成功提交的攻击/道纹/法术的显式目标（闪避/挡掉照样算选中；X=0、非法提交、
+    # 朋友/员工代发动、消耗品使用不记）；每场战始清空。
+    player_selected_targets: list[str] = field(default_factory=list)
     # 抵扣X封印的玩家遗物 {遗物名: 剩余回合}，[回终]-1，归零解封（封印期间不触发 process_relics）
     sealed_relics: dict = field(default_factory=dict)
     # 豪夺：玩家/敌人互相夺取的遗物临时寄存
@@ -1290,7 +1293,9 @@ class GameState:
                     tags=heal_ctx.tags, event_id=heal_ctx.event_id,
                     parent_event_id=heal_ctx.parent_event_id,
                 )
-        detail = entity.heal(amount)
+        # 2026-10-14：【猩红果实】持有者当前生命可超出[血限]，回复不再封顶
+        # （溢出量归零，【忘忧香】/【龙血瓶】无溢出可吃——没有溢出，只有实打实的血）。
+        detail = entity.heal(amount, allow_overflow=self.hp_overflow_exempt(entity))
         detail["heal_ctx"] = heal_ctx.to_dict()
         heal_events = getattr(entity, "_heal_events", None)
         if heal_events is None:
@@ -1435,6 +1440,33 @@ class GameState:
         if entity is self.player:
             return self.sealed_relics.get(name, 0) <= 0
         return True
+
+    def huangfu_grants(self) -> set:
+        """【黄符】授予登记：{(ally_runtime_id, spell_name)}。
+
+        2026-10-14 审计F4：朋友/员工经黄符获得的法术，发动时 bypass
+        「持有全部所需道纹」门禁、改以法力为能源（每阶1点）。授权只在本场
+        战斗有效，战终随 battle 法术一并清除（`clear_battle_scoped_spells`）。
+        私有属性而非 dataclass 字段：旧存档反序列化缺啥都不报错。
+        """
+        grants = getattr(self, "_huangfu_grants", None)
+        if grants is None:
+            grants = set()
+            self._huangfu_grants = grants
+        return grants
+
+    def hp_overflow_exempt(self, entity: Entity) -> bool:
+        """当前生命是否允许超出[血限]（唯一豁免：遗物【猩红果实】）。
+
+        2026-10-14 用户令：【猩红果实】重做为纯被动（`物品索引.md`
+        「你的当前生命可以超出[血限]。」），旧效果「战始可选流血10、
+        战终血限+2」移交道纹【增殖】。与【苍白之花】的法力豁免
+        （`CombatEngine.mana_overflow_exempt`）镜像：只豁免玩家本人，
+        被封印时豁免消失。
+        """
+        if entity is None or entity is not self.player:
+            return False
+        return self.sealed_relics.get("猩红果实", 0) <= 0 and self.side_has(entity, "猩红果实")
 
     def side_has(self, entity: Entity, name: str) -> bool:
         """该实体所属轮回者是否持有该终音/初拥/龙族项目。朋友/员工不继承。"""
@@ -1601,7 +1633,7 @@ class GameState:
         """局外[精力]预算：常规 3 点；无尽模式逐轮递减。
 
         递减口径（AI 拟定、可由用户一句话改数）：第 C 轮为 `max(1, 3-(C-1))`，
-        即 3→2→1 后封底 1 点。[战终]恢复与买路财安全撤退的恢复都走这里。
+        即 3→2→1 后封底 1 点。[战终]恢复与【逃跑】强制脱战的恢复都走这里。
         """
         if not self.endless_mode:
             return 3
@@ -1626,6 +1658,7 @@ class GameState:
             "pending_relic_source": self.pending_relic_source,
             "pending_initial_daowen_choices": list(self.pending_initial_daowen_choices),
             "pending_initial_daowen_source": self.pending_initial_daowen_source,
+            "pending_diandang_discoveries": [list(g) for g in self.pending_diandang_discoveries],
             "pending_redemption": dict(self.pending_redemption),
             "pending_item_choices": list(self.pending_item_choices),
             "pending_item_source": self.pending_item_source,

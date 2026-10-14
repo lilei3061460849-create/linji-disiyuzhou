@@ -494,8 +494,8 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
 
     max_wall_seconds: 墙钟守护（2026-08-22）。死斗在战斗7之后进行，实体/遗物/
         事件累积使 ai_preview 的整状态 deepcopy 预演成本暴涨，实测单场死斗
-        100% CPU 空转 >5 分钟（批次13 gen1619 卡死事件）。超时判擂主卫冕
-        —— 与“回合上限=攻擂失败”语义一致（挑战者未在限时内完成击杀）。
+        100% CPU 空转 >5 分钟（批次13 gen1619 卡死事件）。这是资源超时，
+        只返回 timeout_kind=wall_clock，不作胜负判定、不计玩法失败。
     返回 dict: {'winner': 'challenger'|'defender', 'rounds': n, 'reason': str}
     """
     import time as _time
@@ -622,9 +622,9 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
             rs, _rsart = start_round(e)
         if not rs.get("success"):
             # 回始失败不允许吞掉:法力不会回填,双方将永久空转(2026-08-26 死斗三
-            # "对手血契"校验事故)。显式判卫冕并留因,绝不无声挂死。
-            return {"winner": "defender", "rounds": rnd,
-                    "reason": f"回始失败判卫冕: {str(rs.get('error', ''))[:80]}"}
+            # "对手血契"校验事故)。显式报告提交错误并留因，不把程序错误算作规则败北。
+            return {"winner": None, "rounds": rnd, "error": True, "error_kind": "contract",
+                    "reason": f"回始提交失败: {str(rs.get('error', ''))[:80]}"}
         # 死锁防护:连续 STALL_GUARD_STEPS 步双方面板零变化 → 判卫冕(双有效行动
         # 枯竭的残局,如 1 血 0 法互瞪;不做 400 步 × 60 回合的无意义空转)。
         last_panel, panel_stall = None, 0
@@ -634,7 +634,7 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
                 return {"winner": None, "rounds": rnd, "error": True,
                         "reason": (f"死斗超时(>{max_wall_seconds:g}s)："
                                    "程序兜底报错，不作胜负判定"),
-                        "timeout": True,
+                        "timeout": True, "timeout_kind": "wall_clock",
                         "diag_state_sizes": _duel_state_sizes(e)}
             if not _challenger_alive():
                 return {"winner": "defender", "rounds": rnd, "reason": challenger_death_reason()}
@@ -682,8 +682,8 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
         e.state.combat_subphase = CombatSubphase.AWAIT_ROUND_END.value
         re = e.execute_action("round_end", {})
         if not re.get("success"):
-            return {"winner": "defender", "rounds": rnd,
-                    "reason": f"round_end判卫冕: {str(re.get('error',''))[:80]}"}
+            return {"winner": None, "rounds": rnd, "error": True, "error_kind": "contract",
+                    "reason": f"回终提交失败: {str(re.get('error',''))[:80]}"}
         # 回始：重置双方 AI 的回合记账（凡庸压力/本回合伤害标记/已控制目标）
         if use_tactical:
             _tai.new_round()
@@ -701,7 +701,8 @@ def run_duel_pvp(e, player_act=None, max_rounds=60, max_steps=400, log=None,
         if hp_frozen_rounds >= DEADLOCK_MIN_ROUNDS:
             # 不判胜负：凡庸已让满 MEDIOCRITY_ROUNDS 回合仍僵持，属程序级异常，
             # 只报错交由上层处置，不得替规则宣布擂主卫冕。
-            return {"winner": None, "rounds": rnd, "error": True, "timeout": True,
+            return {"winner": None, "rounds": rnd, "error": True, "timeout": False,
+                    "error_kind": "deadlock",
                     "reason": (f"死斗死锁：回始回填后双方面板连续 {hp_frozen_rounds} 回合"
                                f"零净变化，达兜底阈值 {DEADLOCK_MIN_ROUNDS} 回合"
                                f"（须大于规则层反僵持的 {MEDIOCRITY_ROUNDS} 回合，"

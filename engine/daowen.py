@@ -169,17 +169,21 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_zengzhi(x: int, target: Entity = None) -> dict:
-        """增殖X：消耗X。［目标］［血限］+X"""
+        """增殖X：代价：流血10X。［战终］［目标］［血限］+2X
+
+        2026-10-14 用户令重做：承接遗物【猩红果实】旧效果
+        （战始可选流血10 → 战终血限+2），按 X 等比放大为流血10X → 战终+2X；
+        原「消耗X、即时血限+X」废止。发动即付流血代价（走代价管线，
+        触发【血誓戒】/【烙痕钉】等），血限增长记入战终待决、战终统一结算。
+        """
         target_name = target.name if target is not None else "未选定目标"
-        cost = x
-        increase = x
         return {
             "dao_wen": "增殖",
             "x": x,
-            "cost_type": CostType.MANA.value,
-            "cost": cost,
-            "blood_limit_increase": increase,
-            "summary": f"消耗{cost}法力，{target_name}血限+{increase}"
+            "cost_type": CostType.BLEED.value,
+            "cost_hp": 10 * x,
+            "zengzhi_battle_end": 2 * x,
+            "summary": f"流血{10 * x}，战终{target_name}血限+{2 * x}"
         }
     
     @staticmethod
@@ -197,21 +201,36 @@ class DaoWenEngine:
         }
     
     @staticmethod
-    def calculate_touzhi(x: int) -> dict:
-        """透支X：代价：流血4X。你获得X点法力
+    def calculate_touzhi(x: int, cost_channel: str = "流血") -> dict:
+        """透支X：代价（四选一）：流血4X／衰老2X／枯竭X／疲惫X。你获得X点法力
 
         用户裁定 2026-09-12：与【再生X】构成生命⇄法力闭环，净值不产生免费资源；
         实际上限由【癌变】(本场累计回复=2×血限) 自然封死。
         用户裁定 2026-09-13：3X→4X。与【再生X】(消耗X法力→回复4X生命) 对齐为
         严格 4:1 双向汇率，闭环净值归零，不再每轮白赚生命。
+        2026-10-14 用户令：改为多代价道纹——合并【搏命】（疲惫X换X法力）并删除搏命；
+        遗物【余火印】删除（其发动时额外耗龙心模式一并取消，龙心只走通用抵扣）。
+        疲惫通道沿用搏命的 k=1 结论：卖X速度得kX法力可经【超频】买回 kX/2 速度，
+        k≥2 即永动，故取 k=1（每卖1点速度净亏0.5点，循环必然收敛）。
+        cost_channel 缺省流血（向后兼容：怪物/旧调用不传参即原行为）。
         """
+        if cost_channel == "流血":
+            cost_type, cost_key, amount = CostType.BLEED.value, "cost_hp", 4 * x
+        elif cost_channel == "衰老":
+            cost_type, cost_key, amount = CostType.AGING.value, "cost_blood_limit", 2 * x
+        elif cost_channel == "枯竭":
+            cost_type, cost_key, amount = CostType.EXHAUST.value, "cost_mana_limit", x
+        elif cost_channel == "疲惫":
+            cost_type, cost_key, amount = CostType.FATIGUE.value, "cost_speed", x
+        else:
+            raise ValueError(f"透支cost_channel非法：{cost_channel!r}，可选流血/衰老/枯竭/疲惫")
         return {
             "dao_wen": "透支",
             "x": x,
-            "cost_type": CostType.BLEED.value,
-            "cost_hp": 4 * x,
+            "cost_type": cost_type,
+            cost_key: amount,
             "mana_gain": x,
-            "summary": f"流血{4*x}，获得{x}点法力"
+            "summary": f"{cost_channel}{amount}，获得{x}点法力"
         }
     
     @staticmethod
@@ -581,25 +600,8 @@ class DaoWenEngine:
             "summary": f"冷却{x}场，回终使{target_name}失去{blood_loss}血限（{atk if target is not None else 0}×{ap if target is not None else 0}），持续{x}回合"
         }
     
-    @staticmethod
-    def calculate_boming(x: int) -> dict:
-        """搏命X：代价：疲惫X。你获得X点法力
-
-        用户裁定 2026-09-13：放弃闪避换法力、拼死一搏。倍率被【超频】
-        (消耗2X法力→速度+X) 反向锁死——设倍率为k，卖X速度得kX法力可经
-        超频买回 kX/2 速度，净变化 X(k/2-1)：k≥2 即永动或速度无限暴涨。
-        故取 k=1，每卖1点速度净亏0.5点，循环必然收敛。
-        （遗物【折速法印】原为6X，因[战始]一次性且不可复发才安全；改为
-        可反复发动的道纹后必须砍到1X，该遗物同步删除，不再双份存在。）
-        """
-        return {
-            "dao_wen": "搏命",
-            "x": x,
-            "cost_type": CostType.FATIGUE.value,
-            "cost_speed": x,
-            "mana_gain": x,
-            "summary": f"疲惫{x}，获得{x}点法力"
-        }
+    # 2026-10-14 用户令：【搏命】整条删除（效果并入【透支】疲惫通道；
+    # 道纹淘汰审查.md:60 的功能重复结论落地）。k=1 永动证明见 calculate_touzhi。
     
     @staticmethod
     def calculate_chaopin(x: int) -> dict:
@@ -681,13 +683,23 @@ class DaoWenEngine:
     # ---- 罪孽都市专属道纹 ----
     
     @staticmethod
-    def calculate_bizhai(x: int, target: Entity = None) -> dict:
-        """逼债X：消耗X。[回始]使目标失去X点碎片，无力支付的部分记为负债（碎片扣负），持续∞"""
-        target_name = target.name if target is not None else "未选定目标"
+    def calculate_diandang(x: int) -> dict:
+        """典当X：代价失忆2X；发现获得X种道纹（2026-10-13 用户令顶替【逼债】的闭环格）。
+
+        发现口径 = 局外【学习】口径（见 engine/gamedata.py::learnability_error）：
+        已持有/异副本专属/未解锁门禁/怪物转化/未实装的一律不出池。
+        轮回者发动→每种 pending 一组3选1（choose_diandang_daowen 逐组领取）；
+        非轮回者发动（如怪物经【原初】借用）→即时随机授予（怪物没有发现选择界面）。
+        授予一律受【承载上限】约束，超额不授予。
+        """
         return {
-            "dao_wen": "逼债", "x": x, "cost_type": CostType.MANA.value, "cost": x,
-            "bizhai_register": x, "duration": -1,
-            "summary": f"消耗{x}法力，[回始]使{target_name}失去{x}碎片（无力支付部分记为负债），持续∞"
+            "dao_wen": "典当",
+            "x": x,
+            "cost_type": CostType.AMNESIA.value,
+            "cost": 2 * x,
+            "forget_daowen": 2 * x,
+            "discover_daowen": x,
+            "summary": f"失忆{2 * x}，发现获得{x}种道纹",
         }
     
     @staticmethod
@@ -728,6 +740,21 @@ class DaoWenEngine:
             "dao_wen": "赎金", "x": x, "cost_type": CostType.MANA.value, "cost": 3 * x,
             "shard_steal": 10 * x, "speed_penalty": x,
             "summary": f"消耗{3 * x}法力，夺取{target_name} {10*x}碎片或{x}速度"
+        }
+
+    @staticmethod
+    def calculate_lesuo(x: int, target: Entity = None) -> dict:
+        """勒索X：消耗3X。目标失去10X碎片，不足部分记负债（真碎片扣负；2026-10-14 补点金反转分叉，还债新生产者）。
+
+        与【赎金】同价同量（3X→10X），形状不同：赎金是偷取（施法者获得，不足不记负债；
+        无碎片改失速），勒索是销毁+记负债（谁都不获得，不足部分真碎片扣负，可触发【还债】）。
+        单次结算，无持续（用户 2026-10-14 选单次，不 mirror 逼债的回始∞）。
+        """
+        target_name = target.name if target is not None else "未选定目标"
+        return {
+            "dao_wen": "勒索", "x": x, "cost_type": CostType.MANA.value, "cost": 3 * x,
+            "shard_debt": 10 * x,
+            "summary": f"消耗{3 * x}法力，{target_name}失去{10*x}碎片，不足记负债"
         }
     
     @staticmethod
@@ -899,8 +926,8 @@ class DaoWenEngine:
 
         2026-09-09 DM裁定：法力改一池制后一度改为「消耗法力翻倍」；
         2026-10-08 用户令：恢复「无法获得[法力]」原意，翻倍逻辑撤销。
-        此时战斗内已有多个法力来源（聚能／储能电池／守夜灯／承露盏／血契／
-        余火印／搏命·透支／法术），效果重新有对象。判定位统一在
+        此时战斗内已有多个法力来源（聚能／储能电池／守夜灯／承露盏／
+        透支／法术），效果重新有对象。判定位统一在
         `Entity.can_gain_mana()` / `Entity.gain_mana()`，所有法力增益都必须过它。
         """
         target_name = target.name if target is not None else "未选定目标"
@@ -967,17 +994,19 @@ class DaoWenEngine:
             "变形": cls.calculate_bianxing,
             "定型": cls.calculate_dingxing,
             "畸变": cls.calculate_jibian,
-            "搏命": cls.calculate_boming,
             "超频": cls.calculate_chaopin,
             "坏死": cls.calculate_huaisi,
             "退化": cls.calculate_tuihua,
             # 罪孽都市
             "加害": cls.calculate_jiahai,
             "点金": cls.calculate_dianjin,
-            "逼债": cls.calculate_bizhai,
+            # 2026-10-13 用户令：【逼债】删除，【典当】顶替其闭环格（点金—转换—典当—反转—豪夺）。
+            "典当": cls.calculate_diandang,
             "豪夺": cls.calculate_haoduo,
             "清算": cls.calculate_qingsuan,
             "赎金": cls.calculate_shujin,
+            # 2026-10-14 用户令：补点金反转分叉，还债新生产者。
+            "勒索": cls.calculate_lesuo,
             "假钞": cls.calculate_jiachao,
             "赌命": cls.calculate_duming,
             "消灾": cls.calculate_xiaozai,
@@ -1108,21 +1137,34 @@ class ResonanceEngine:
             ("变形", "转换", "定型"),
             ("定型", "反转", "畸变"),
             ("畸变", "曲解", "超频"),
-            ("超频", "反转", "搏命"),
-            ("搏命", "转换", "坏死"),
+            # 2026-10-14 用户令删除【搏命】（并入【透支】）→ 该格留成空占位符
+            # （沿用 2026-10-08 删【镇尸】先例：不直连、不顶替，环仍为 7 条边；
+            # 用户 2026-10-14 拍板占位，否决直连方案）。
+            ("超频", "反转", RESERVED_SLOT),
+            (RESERVED_SLOT, "转换", "坏死"),
             # 2026-10-03 用户令删除【爆裂】→ 由【坏死】直连【退化】保持环连通
             ("坏死", "曲解", "退化"),
             ("退化", "转换", "变形"),
         ],
         "罪孽都市闭环": [
-            ("点金", "转换", "逼债"),
-            ("逼债", "反转", "豪夺"),
+            ("点金", "转换", "典当"),
+            ("典当", "反转", "豪夺"),
             ("豪夺", "曲解", "清算"),
             ("清算", "反转", "赎金"),
             ("赎金", "转换", "假钞"),
             ("假钞", "曲解", "赌命"),
             ("赌命", "反转", "消灾"),
             ("消灾", "曲解", "点金"),
+        ],
+        # ---- 副本专属分叉（非闭环：单边spur，不参与合拢断言）----
+        # 2026-10-14 用户令：补【点金】的【反转】→【勒索】。点金已有出边
+        # （转换→典当），此边是第二条出边——find_transformations 按（源，残韵类型）
+        # 查询天然支持（杀伐/全力先例），且点金+反转此前无路径、无歧义。
+        # 不进「罪孽都市闭环」表：该表的合拢断言要求入度=出度=1（test_region_loops_are_closed），
+        # spur 进去会破坏合拢；索引 loop_chain 也假设出度1（dict 会静默吞边）。
+        # 查询侧（get_available_resonance/find_transformations）遍历全表，分叉自动生效。
+        "罪孽都市分叉": [
+            ("点金", "反转", "勒索"),
         ],
         "龙心谷闭环": [
             ("加害", "反转", "龙鳞"),

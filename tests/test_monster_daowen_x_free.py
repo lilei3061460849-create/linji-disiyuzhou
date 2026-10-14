@@ -142,26 +142,23 @@ def test_max_x_boundary_accepted_and_exceeded_rejected(tmp_path):
     assert "超出可负担范围" in r.get("error", ""), r.get("error")
 
 
-def test_mutation_daowen_capped_below_collapse(tmp_path):
-    """边界：【异变】是累加计数而非预算，按迷失阈值封顶，不提供自爆档。
-
-    全力是原始怪物道纹，代价 异变5X；迷失阈值 50，异变 0 → 上限 X=9（5×9=45<50，
-    5×10=50 已触及迷失阈值）。法限再高也不该突破这条生存线。
-    （2026-10-03：【狂暴】删除，改用同为「异变5X」的【全力】验证同一规则。）
-    """
+@pytest.mark.parametrize("mutation_before", [0, 49, 150])
+def test_monster_mutation_daowen_has_no_lost_cap(tmp_path, mutation_before):
+    """全力按异变5X计费；怪物无迷失上限，高异变也能实际发动。"""
     e = _engine(tmp_path)
-    m = Entity("测试怪", "怪物", blood_limit=234, current_hp=234,
-               attack_count=3, attack_power=99, mana_limit=99, current_mana=99,
-               speed_limit=3, current_speed=3)
+    m = _monster(mana=14, free_daowen=())
+    m.mutation_count = mutation_before
     m.dao_wen["全力"] = DaoWenInstance(
         DaoWen(name="全力", formula="", cost_type="异变", cost_formula="5X",
                effect_formula=""), x_value=0, x_free=True)
     _setup(e, m)
     prep, actor = _prepare(e)
     opt = next(o for o in actor["daowen_options"] if o["name"] == "全力")
-    assert opt["max_x"] == 9, opt
-    # 上限之内不致死
-    assert m.mutation_count + 5 * opt["max_x"] < Entity.MUTATION_COLLAPSE_THRESHOLD
+    assert opt["max_x"] == e.combat._DAOWEN_X_PROBE_CAP, opt
+    result = _resolve(e, prep, actor, 10)
+    assert result["success"], result
+    assert m.mutation_count == mutation_before + 50
+    assert m.is_alive and m.current_hp == 234
 
 
 def test_unaffordable_daowen_filtered_from_prepare(tmp_path):

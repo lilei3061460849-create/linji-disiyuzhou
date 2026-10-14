@@ -34,8 +34,7 @@ def _engine(starter="杀伐", learn=(), region="龙心谷", seed=1, tmp="/tmp/bv
     e.state.energy = 0
     choices = {}
     relic = e.state.relics[0].name
-    if relic == "三相残韵盘":
-        choices[relic] = {"use": False}
+    # 2026-10-13：【三相残韵盘】删除，战始显式决策预填不再需要。
     e.execute_action("battle_start", {"relic_choices": choices})
     e.execute_action("round_start", {})
     return e
@@ -67,12 +66,15 @@ def test_boba_marks_targets_after_start():
 
 
 # 专属道纹 → 其所属副本（学习受门禁限制，须在对应副本内）
+# 2026-10-12：失忆 已回退为 点金；2026-10-13：【逼债】删除——【典当】不进本表：
+# 本用例只注入被测一条道纹，而典当代价失忆2X（单持付不起），「持有即发动」不变量
+# 对它不成立；其可发动性见 tests/test_escape_and_diandang.py。
 _REGION_OF = {"加害": "龙心谷", "裂变": "龙心谷", "伤痕": "龙心谷",
               "退化": "扭曲都市", "坏死": "扭曲都市",
-              "逼债": "罪孽都市", "点金": "罪孽都市"}   # 2026-10-12：失忆 已回退为 点金
+              "点金": "罪孽都市"}
 
 
-@pytest.mark.parametrize("dw", ["加害", "裂变", "伤痕", "退化", "坏死", "逼债", "点金"])
+@pytest.mark.parametrize("dw", ["加害", "裂变", "伤痕", "退化", "坏死", "点金"])
 def test_ai_uses_region_specific_daowen(dw, monkeypatch):
     """
     正常路径：各副本专属道纹只要持有就应被实际发动。
@@ -244,7 +246,7 @@ def test_pierce_status_drives_attack_resolution():
 
 # ---------- 进化·原初X 借用轮回者道纹（裁定）----------
 
-def _plight_engine(player_daowen=("杀伐", "庇护", "搏命")):
+def _plight_engine(player_daowen=("杀伐", "庇护", "透支")):
     from engine.api import GameEngine
     from engine.models import Entity, DaoWen, DaoWenInstance
     e = GameEngine(db_path="/tmp/evo.db", rng_seed=1)
@@ -265,10 +267,10 @@ def _plight_engine(player_daowen=("杀伐", "庇护", "搏命")):
 
 def test_evolution_borrows_from_player_daowen():
     """正常路径：进化只能借用轮回者当前持有的道纹"""
-    e, m = _plight_engine(("杀伐", "庇护", "搏命"))
-    r = e.execute_action("declare_evolution", {"monster": "困境怪", "daowen": "搏命", "x": 1})
+    e, m = _plight_engine(("杀伐", "庇护", "透支"))
+    r = e.execute_action("declare_evolution", {"monster": "困境怪", "daowen": "透支", "x": 1})
     assert r["success"], r.get("error")
-    assert "搏命" in m.dao_wen, "应借用到轮回者的【搏命】"
+    assert "透支" in m.dao_wen, "应借用到轮回者的【透支】"
 
 
 def test_evolution_rejects_daowen_player_lacks():
@@ -284,11 +286,11 @@ def test_evolution_pool_tracks_player_build():
     边界：借用池随玩家构筑变化 —— 这正是该裁定的设计目的。
     玩家越依赖某条公式化路线，越可能被怪物复制反制。
     """
-    e1, _ = _plight_engine(("杀伐", "庇护", "搏命"))
+    e1, _ = _plight_engine(("杀伐", "庇护", "透支"))
     opts1 = e1.combat.get_plight_evolution_options()[0]["borrowable_daowen"]
     e2, _ = _plight_engine(("切割", "贯穿"))
     opts2 = e2.combat.get_plight_evolution_options()[0]["borrowable_daowen"]
-    assert set(opts1) == {"杀伐", "庇护", "搏命"}
+    assert set(opts1) == {"杀伐", "庇护", "透支"}
     assert set(opts2) == {"杀伐", "切割", "贯穿"}
     assert opts1 != opts2, "借用池必须随玩家构筑变化"
 

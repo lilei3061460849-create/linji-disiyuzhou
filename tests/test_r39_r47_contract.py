@@ -420,18 +420,19 @@ def test_r46_normal_event_relic_battle_start_matrix(tmp_path):
     engine.state.consumables = [heart]
     # 2026-10-11 用户令：【苍白之花】改为纯被动（当前法力可超出[法限]），
     # 不再是战始可选遗物——它从这张矩阵里退场，速度也不再被它的疲惫5 压低。
-    names = ["猩红果实", "缄默面具", "帮派令", "负岳索", "炉心坠", "烙痕钉"]
+    # 2026-10-14 用户令：【猩红果实】同样重做为被动（当前生命可超出[血限]），
+    # 旧战始流血10 已移交道纹【增殖】——它也退场，生命不再被压到 90。
+    names = ["缄默面具", "帮派令", "负岳索", "炉心坠", "烙痕钉"]
     engine.state.relics = [Relic(name, "", tags=["事件"]) for name in names]
     engine.state.event_modifiers["silent_mask_x"] = 2
     choices = {
-        "猩红果实": {"use": True},
         "负岳索": {"target_ref": "friend:0"}, "炉心坠": {"heart_name": "衰老龙心"},
         "烙痕钉": {"target_ref": "enemy:0"},
     }
     engine.combat.validate_battle_start_relic_choices(choices)
     logs = engine.combat.process_relics("battle_start", {"relic_choices": choices})
     # 2026-09-13 全局上限：缄默面具 +40 被[法限]截断，法力停在上限而非 60。
-    assert logs and (player.current_hp, player.current_speed) == (90, 6)
+    assert logs and (player.current_hp, player.current_speed) == (100, 6)
     assert player.current_mana == player.mana_limit
     assert player.has_status("洗劫") and friend.has_status("负岳索") and friend.shield == 15
     assert heart.current_uses == 13 and engine.state.event_modifiers["brand_nail_target_ref"] == "enemy:0"
@@ -440,9 +441,9 @@ def test_r46_normal_event_relic_battle_start_matrix(tmp_path):
     assert enemy.current_hp == enemy_hp - 10  # 烙痕钉
     friend.current_hp = 20; friend.shield = 0
     engine.combat._apply_hostile_damage(friend, 5, source=enemy)
-    # DM裁定（2026-08-19）：90 −1(上一步的流血代价，同时触发了烙痕钉) +5(负岳索等量回复) = 94。
-    # 原期望 95 相当于假设流血代价不扣血，与本测试上一行"烙痕钉已触发"的断言自相矛盾。
-    assert friend.current_hp == 15 and player.current_hp == 94 and not friend.has_status("负岳索")
+    # DM裁定（2026-08-19）：100 −1(上一步的流血代价，同时触发了烙痕钉) +5(负岳索等量回复)，
+    # 按[血限]封顶回 100（2026-10-14：猩红退场后起点从 90 回到 100）。
+    assert friend.current_hp == 15 and player.current_hp == 100 and not friend.has_status("负岳索")
     player.dao_wen["血债"] = DaoWenInstance(DaoWen("血债", "", "流血", "X", ""))
     blocked = engine.execute_action("use_daowen", {
         "daowen_name": "血债", "x": 1, "target_ref": "enemy:0",
@@ -452,28 +453,23 @@ def test_r46_normal_event_relic_battle_start_matrix(tmp_path):
 
 
 def test_r46_event_relic_round_and_battle_end_effects(tmp_path):
+    # 2026-10-14：【余火印】整段删除（extra 方案废弃），回始段只剩【皮衣】；
+    # 【猩红果实】重做为被动，战终段改由道纹【增殖】的战终待决覆盖。
     engine = _engine(tmp_path); player, _ = _combat(engine)
-    heart = Consumable("衰老龙心", "", 5, 5, kind="dragon_heart", dragon_heart_type="衰老")
-    engine.state.consumables = [heart]
-    engine.state.relics = [Relic("皮衣", ""), Relic("余火印", "")]
+    engine.state.relics = [Relic("皮衣", "")]
     player.hp_lost_this_round = 7
     engine.state.combat_subphase = "await_round_end"
     assert engine.execute_action("round_end", {})["success"]
-    player.current_mana = 0
-    started = engine.execute_action("round_start", {"relic_choices": {
-        "余火印": {"use": True, "heart_name": "衰老龙心", "x": 2},
-    }})
+    started = engine.execute_action("round_start", {"relic_choices": {}})
     assert started["success"] and player.shield == 7
-    # 一池制：回始不回填 → 只剩事件遗物给的那 4 点
-    assert player.current_mana == 4 and heart.current_uses == 3
 
     engine.state.enemies = []
-    engine.state.event_modifiers.update({"scarlet_fruit_active": True, "pale_flower_active": True})
+    engine.state.event_modifiers["zengzhi_pending"] = [{"target_ref": "player:0", "amount": 4}]
     before = (player.blood_limit, engine.state.energy)
     ended = engine.execute_action("battle_end", {})
     assert ended["success"]
-    # 2026-10-11：苍白之花的「[战终]精力+1」已随重做废止，只剩猩红果实的血限+2
-    assert (player.blood_limit, engine.state.energy) == (before[0] + 2, before[1])
+    assert ended["result"]["zengzhi_settled"] == [{"target": player.name, "increase": 4}]
+    assert (player.blood_limit, engine.state.energy) == (before[0] + 4, before[1])
 
 
 def test_r46_boundary_death_dodge_dragon_and_might_triggers(tmp_path):

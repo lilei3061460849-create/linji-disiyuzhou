@@ -32,14 +32,20 @@ def _state_with_oath_and(*relics: str) -> tuple[GameState, CombatEngine, Entity]
 # test_event_and_daowen_costs_use_blood_pact_bus 等处。
 
 def test_blood_oath_ignores_battle_start_scarlet_fruit_context():
-    """战始流血不是回始/行动/反应窗口，不触发血誓戒，也不消耗首次标记。"""
-    state, combat, player = _state_with_oath_and("猩红果实")
+    """战始流血不是回始/行动/反应窗口，不触发血誓戒，也不消耗首次标记。
 
-    logs = combat.process_relics("battle_start", {
-        "relic_choices": {"猩红果实": {"use": True}},
-    })
+    2026-10-14：【猩红果实】重做为被动，不再是战始流血载体；改用其旧上下文
+    （timing=battle_start 的主动流血）直接注入，意图不变。
+    """
+    _, combat, player = _state_with_oath_and()
 
-    assert logs == ["猩红果实：流血10；战终血限+2"]
+    detail = combat.pay_numeric_cost(
+        player, "流血", 10,
+        cost_context={"timing": "battle_start", "source": "猩红果实",
+                      "source_type": "relic", "tags": {"active_payment"}},
+    )
+
+    assert detail["owner"]["paid"] == 10
     assert player.current_hp == 80
     assert player.shield == 0
     assert player.blood_oath_used_this_round is False

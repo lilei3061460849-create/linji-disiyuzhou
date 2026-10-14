@@ -42,6 +42,8 @@ def main() -> None:
         gs = rng.randrange(1, 2 ** 31 - 1)
         r = bl.play(starter, learn, region, gs, rng=__import__("random").Random(gs),
                     spend_shards=True, policy=pol, death_trace=True)
+        if bl._skip_resource_timeout(r, context=__name__):
+            continue
         if r.get("invalid"):
             run["invalid"] += 1
             continue

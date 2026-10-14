@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """生成第四宇宙剧情优先的混合 AI 上下文。
 
-上下文保留世界观、角色记忆、人物关系、主线目标与角色扮演约束，只保留少量稳定的
-剧情理解原则。完整规则、道纹、物品、法术与副本机制改为按需查询，避免剧情上下文
-被大量与当前剧情无关的机制资料淹没。
+上下文保留世界观、角色名单、角色扮演与外部推演守则，并附机制速查：道纹、遗物、
+法术与已实现副本各取名称与一行效果（2026-10-14 用户令：外派 AI 不知道具体道纹与
+遗物就会胡说八道）。速查不替代原文——精确数值、边界与结算规则仍按需查询。
 
 AI_CONTEXT.md 是生成文件，不是新的规则事实源。修改来源后运行本脚本；使用 --check
 只检查生成物与当前来源是否逐字一致。
@@ -17,6 +17,7 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -71,10 +72,21 @@ class ContextSource:
         return self.path.relative_to(ROOT).as_posix()
 
 
-def context_sources() -> list[ContextSource]:
-    """剧情优先：只嵌入世界观/角色记忆与角色扮演约束。
+@dataclass(frozen=True)
+class DigestSource:
+    """机制速查来源：从既有索引摘取名称与一行效果，不打包原文全文。"""
 
-    完整规则、道纹、物品、法术与副本机制不批量打包；需要精确裁定时按需查询原始文档。
+    role: str
+    path: str
+    extractor: Callable[[Path, str], str]
+    drop_phrases: tuple[str, ...] = ()
+    count_label: str | None = None
+
+
+def context_sources() -> list[ContextSource]:
+    """剧情优先：嵌入世界观正典与 AI 知识库扮演规范。
+
+    完整规则、副本机制与战报不批量打包；机制速查见 digest_sources()。
     """
     return [
         ContextSource(
@@ -87,13 +99,187 @@ def context_sources() -> list[ContextSource]:
         ContextSource(
             "AI 角色扮演约束（节选：职责、性格、扮演要求）",
             ROOT / "AI_EXPERIENCE.md",
-            keep_headings=("职责划分", "角色性格塑造", "角色扮演要求"),
+            keep_headings=("职责划分", "角色性格塑造", "角色扮演要求", "外部推演守则"),
             drop_phrases=("引擎", "行为画像"),
         ),
     ]
 
 def _digest(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+# ==================== 机制速查：结构化摘取（2026-10-14 用户令） ====================
+
+_SECTION_RE = re.compile(r"^##\s+(.*\S)\s*$")
+_SUBSECTION_RE = re.compile(r"^###\s+(.*\S)\s*$")
+_RELIC_CHAPTERS = ("遗物池", "事件遗物", "怪物自带遗物", "血族遗物", "龙族遗物")
+
+
+def _read_raw(root: Path, relpath: str) -> str:
+    """读取速查来源；目录来源按文件名排序拼接（跳过下划线开头的模板）。"""
+    path = root / relpath
+    if path.is_dir():
+        files = sorted(p for p in path.glob("*.md") if not p.name.startswith("_"))
+        return "\n\n".join(
+            f"# {p.name}\n{p.read_text(encoding='utf-8')}" for p in files)
+    return path.read_text(encoding="utf-8")
+
+
+def _clean_extracted(text: str, drop_phrases: tuple[str, ...]) -> str:
+    out: list[str] = []
+    for line in text.splitlines():
+        cleaned = _clean_unit(line, drop_phrases)
+        if cleaned is not None:
+            out.append(cleaned)
+    return "\n".join(out)
+
+
+def _table_rows(raw: str, chapter: str) -> list[list[str]]:
+    match = re.search(
+        rf"^##\s+{re.escape(chapter)}\s*$(?P<body>.*?)(?=^##\s|\Z)",
+        raw, re.MULTILINE | re.DOTALL)
+    if not match:
+        return []
+    rows: list[list[str]] = []
+    for line in match.group("body").splitlines():
+        text = line.strip()
+        if not text.startswith("|"):
+            continue
+        cells = [cell.strip() for cell in text.strip("|").split("|")]
+        if not cells or set(cells[0]) <= {"-", ":", " "}:
+            continue
+        rows.append(cells)
+    return rows
+
+
+def extract_daowen(root: Path, relpath: str) -> str:
+    """道纹速查：每条约「名称：一行效果」；未实现章节整体跳过。"""
+    lines = _read_raw(root, relpath).splitlines()
+    out: list[str] = []
+    chapter = ""
+    for index, line in enumerate(lines):
+        section = _SECTION_RE.match(line)
+        if section:
+            chapter = section.group(1)
+            continue
+        heading = _SUBSECTION_RE.match(line)
+        if not heading or any(word in chapter for word in FUTURE_WORDS):
+            continue
+        j = index + 1
+        while j < len(lines) and not lines[j].strip():
+            j += 1
+        if j >= len(lines):
+            continue
+        effect = lines[j].strip()
+        if effect.startswith("X："):
+            out.append(f"{heading.group(1)}：{effect[2:]}")
+        elif effect.startswith("X（"):
+            out.append(f"{heading.group(1)}：{effect[1:]}")
+    return "\n".join(out)
+
+
+def extract_relics(root: Path, relpath: str) -> str:
+    """遗物速查：遗物池、事件遗物、怪物自带遗物与种族遗物；占位条目跳过。"""
+    lines = _read_raw(root, relpath).splitlines()
+    out: list[str] = []
+    chapter = ""
+    for index, line in enumerate(lines):
+        section = _SECTION_RE.match(line)
+        if section:
+            chapter = section.group(1)
+            continue
+        heading = _SUBSECTION_RE.match(line)
+        if not heading or not any(key in chapter for key in _RELIC_CHAPTERS):
+            continue
+        name = heading.group(1)
+        if "?" in name or "占位" in name:
+            continue
+        parts: list[str] = []
+        j = index + 1
+        while j < len(lines) and not lines[j].strip():
+            j += 1
+        while j < len(lines) and len(parts) < 2:
+            text = lines[j].strip()
+            if not text or text.startswith("#") or text.startswith(">"):
+                break
+            parts.append(text)
+            j += 1
+        if parts:
+            out.append(f"{name}：" + "".join(parts))
+    return "\n".join(out)
+
+
+def extract_spells(root: Path, relpath: str) -> str:
+    """法术速查：法术大全表格 → 每式一行（所需道纹与生效流程）。"""
+    rows = _table_rows(_read_raw(root, relpath), "三、法术大全")
+    out = [
+        f"{cells[0]}：所需道纹 {cells[1]}｜{cells[3]}"
+        for cells in rows if len(cells) >= 4 and cells[0] != "法术"
+    ]
+    return "\n".join(out)
+
+
+def extract_regions(root: Path, relpath: str) -> str:
+    """副本速查：只列已实现副本（草案副本不进入游戏流程）。"""
+    rows = _table_rows(_read_raw(root, relpath), "已实现副本")
+    out = [
+        f"{cells[0]}（{cells[1]}，属性点{cells[2]}，道纹{cells[3]}）"
+        for cells in rows if len(cells) >= 4 and cells[0] != "副本"
+    ]
+    return "\n".join(out)
+
+
+def extract_roster(root: Path, relpath: str) -> str:
+    """角色名单：只取每人记忆档的身份一行；完整记忆是独立文件，不在此汇总。"""
+    directory = root / relpath
+    if not directory.is_dir():
+        return ""
+    out: list[str] = []
+    for path in sorted(directory.glob("*.md")):
+        if path.name.startswith("_"):
+            continue
+        name = path.stem
+        text = path.read_text(encoding="utf-8")
+        identity = next(
+            (line.split("：", 1)[1].strip()
+             for line in text.splitlines()
+             if line.startswith("- 身份：") and "：" in line),
+            "")
+        out.append(f"{name}：{identity}" if identity else f"{name}：身份待录")
+    return "\n".join(out)
+
+
+def digest_sources() -> list[DigestSource]:
+    """机制速查与角色名单：只摘名称与一行效果，供外部 AI 避免凭空编造。"""
+    return [
+        DigestSource("机制速查·道纹", "全道纹索引.md", extract_daowen, count_label="条"),
+        DigestSource("机制速查·遗物", "物品索引.md", extract_relics, count_label="件"),
+        DigestSource("机制速查·法术", "法术索引.md", extract_spells, count_label="式"),
+        DigestSource("机制速查·副本", "副本索引.md", extract_regions, count_label="个"),
+        DigestSource("角色名单（只列身份，不含记忆）", "角色记忆", extract_roster, count_label="人"),
+    ]
+
+
+def context_blocks() -> list[tuple[str, str, str, str]]:
+    """全部来源块：(角色, 相对路径, 过滤后正文, 原始文本哈希)。"""
+    sources = context_sources()
+    digests = digest_sources()
+    included = frozenset([source.relative_path for source in sources] +
+                         [digest.path for digest in digests])
+    loaded: list[tuple[str, str, str, str]] = []
+    for source in sources:
+        raw = source.path.read_text(encoding="utf-8").rstrip()
+        loaded.append((source.role, source.relative_path,
+                       distill_source(source, included), _digest(raw)))
+    for digest in digests:
+        raw = _read_raw(ROOT, digest.path)
+        body = _clean_extracted(digest.extractor(ROOT, digest.path), digest.drop_phrases)
+        if not body:
+            body = "（暂无）"
+        elif digest.count_label:
+            body = f"（共 {len(body.splitlines())} {digest.count_label}）\n{body}"
+        loaded.append((digest.role, digest.path, body, _digest(raw)))
+    return loaded
 
 
 def _safe_fence(text: str) -> str:
@@ -283,14 +469,10 @@ def distill_source(source: ContextSource, included: frozenset[str]) -> str:
 
 def render_context() -> str:
     """渲染全文；纯函数、无时间戳，保证 --check 可以逐字比较。"""
-    sources = context_sources()
-    included = frozenset(source.relative_path for source in sources)
-    loaded: list[tuple[ContextSource, str, str]] = []
-    for source in sources:
+    for source in context_sources():
         if not source.path.is_file():
             raise FileNotFoundError(f"AI_CONTEXT 来源不存在：{source.relative_path}")
-        raw = source.path.read_text(encoding="utf-8").rstrip()
-        loaded.append((source, distill_source(source, included), _digest(raw)))
+    loaded = context_blocks()
 
     lines = [
         "# 第四宇宙 · AI 上下文",
@@ -299,8 +481,8 @@ def render_context() -> str:
         "> 只检查一致性则运行 `python3 sim/gen_ai_context.py --check`。",
         ">",
         "> 此文件是剧情优先的混合上下文，供只抓取一个 raw URL 的外部 AI 使用。",
-        "> 它优先提供世界观、角色记忆、人物关系、主线目标与角色扮演约束，只附带少量稳定的剧情理解原则。",
-        "> 完整规则、道纹、物品、法术与副本机制不再整批嵌入，需要精确裁定时按需查询对应原文。",
+        "> 它提供世界观、角色名单、角色扮演与外部推演守则，并附机制速查：道纹、遗物、法术与已实现副本各取名称与一行效果。",
+        "> 速查只保证名称与效果方向；精确数值、边界与结算规则仍以对应原文为准，按需查询。",
         "> 本文件不是新的规则事实源，也不改变角色记忆与规则正本之间的优先级。",
         "",
         "## 使用契约（先读）",
@@ -311,11 +493,12 @@ def render_context() -> str:
         "4. **最小必要规则**：只把理解剧情所需的稳定原则放在这里。世界遵循因果而非宿命，选择会带来后果，力量与解法可能伴随代价；具体数值、触发条件、目标限制和时序按需查原文。",
         "5. **死者之书的遗言不是规则**：遗言可能属于具体角色且可能有真假；不能把角色遗言自动当成客观规则。",
         "6. **副本状态要区分**：故事中提到的副本、能力或线索不自动证明其机制已实现；涉及副本规则时，按需查询对应副本文档。",
+        "7. **单角色推演**：外部 AI 只扮演当前角色，按《外部推演守则》输出该角色的行动与台词；其余角色与环境由用户提供。",
         "",
         "## 单文件范围",
         "",
-        f"- 已收录 {len(loaded)} 份来源：世界观与角色记忆正典、AI 角色扮演约束（职责、性格与扮演要求节选）。",
-        "- 不再整批收录：通用规则正文、完整推演规范、道纹/物品/法术索引、副本索引与副本机制、战报、代码和开发资料。",
+        f"- 已收录 {len(loaded)} 份来源：世界观与角色记忆正典、AI 知识库（职责/性格/扮演要求/外部推演守则节选）、机制速查（道纹/遗物/法术/副本）与角色名单。",
+        "- 不整批收录：通用规则正文、完整推演规范、副本机制细节与怪物池、战报、代码和开发资料。",
         "- 来源区块附原始文件 SHA-256 指纹，便于判断内容是否过期；区块正文经过筛选，**不得**反写来源。",
         "",
         "## 来源目录与校验指纹",
@@ -323,14 +506,45 @@ def render_context() -> str:
         "| # | 角色 | 原始文件 | SHA-256 |",
         "| --- | --- | --- | --- |",
     ]
-    for index, (source, _, digest) in enumerate(loaded, 1):
-        lines.append(
-            f"| {index} | {source.role} | [{source.relative_path}]({source.relative_path}) | `{digest}` |")
+    for index, (role, relative_path, _, digest) in enumerate(loaded, 1):
+        # 目录来源（角色名单）不生成 Markdown 链接：仓内校验器只校验文件级链接。
+        target = (f"{relative_path}/（目录）" if (ROOT / relative_path).is_dir()
+                  else f"[{relative_path}]({relative_path})")
+        lines.append(f"| {index} | {role} | {target} | `{digest}` |")
 
     lines.extend([
         "",
         "## 打包正文",
         "",
-        "> 每一块为来源文件经过滤后的文字；只保留世界观、角色记忆与角色扮演约束。",
+        "> 每一块为来源文件经过滤后的文字；机制速查为结构化摘录，不是原文全文。",
         "> 正文采用代码块呈现，以防嵌套相对链接在此聚合文件内被错误解析。",
     ])
+    for index, (role, relative_path, body, digest) in enumerate(loaded, 1):
+        fence = _safe_fence(body)
+        lines.extend([
+            "", f"### 来源 {index}：{role}", "",
+            f"- 路径：`{relative_path}`",
+            f"- SHA-256：`{digest}`", "",
+            f"{fence}markdown", body, fence,
+        ])
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--check", action="store_true", help="检查生成物，不写文件")
+    args = parser.parse_args(argv)
+    rendered = render_context()
+    if args.check:
+        if not OUTPUT.is_file() or OUTPUT.read_text(encoding="utf-8") != rendered:
+            print("AI_CONTEXT.md 与来源不一致，请运行 python3 sim/gen_ai_context.py", file=sys.stderr)
+            return 1
+        print("AI_CONTEXT.md is up to date")
+        return 0
+    OUTPUT.write_text(rendered, encoding="utf-8")
+    print(f"written {OUTPUT}: {len(rendered.encode('utf-8')):,} bytes")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

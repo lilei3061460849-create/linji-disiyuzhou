@@ -125,8 +125,12 @@ class CostPaymentMixin:
         cost_type: str,
         amount: int,
         cost_share_target_ref: str = "",
+        forced: bool = False,
     ) -> tuple[Entity, int, Optional[Entity], int]:
-        """纯校验并计算血契拆分；无法整除的余数按随机数分配（平分规则，2026-08-21）。"""
+        """纯校验并计算血契拆分；无法整除的余数按随机数分配（平分规则，2026-08-21）。
+
+        forced=True 跳过足额校验（血契资格与存活校验保留）：用于裁定为
+        “付不起照扣、正常死亡”的自动代价（2026-10-13 血族血脉）。"""
         if cost_type not in self.SHAREABLE_NUMERIC_COSTS:
             raise ValueError(f"{cost_type}不是可共同承担的数值代价")
         if not isinstance(amount, int) or isinstance(amount, bool) or amount < 0:
@@ -145,6 +149,8 @@ class CostPaymentMixin:
         for entity, part in ((payer, owner_amount), (ally, ally_amount)):
             if entity is None or part <= 0:
                 continue
+            if forced:
+                continue  # 强制代价：足额不足照扣，后续结算自然命零，不在此报错。
             capacity = (None if cost_type == "衰老" and self.state.side_has(entity, "不朽之躯")
                         else self._cost_capacity(entity, cost_type))
             if capacity is not None and part > capacity:
@@ -178,7 +184,10 @@ class CostPaymentMixin:
             if payer.current_hp > payer.blood_limit and self._attack_after_window_target is not payer:
                 self._fire_before_life_lost(payer, cost_context)
             self._hp_loss_ctx = cost_context
-            payer.current_hp = min(payer.current_hp, payer.blood_limit)
+            # 2026-10-14：【猩红果实】持有者当前生命可超出[血限]，血限被压低时
+            # 不连带削掉溢出部分——与【苍白之花】的【枯竭】处理镜像。
+            if not self.state.hp_overflow_exempt(payer):
+                payer.current_hp = min(payer.current_hp, payer.blood_limit)
             self._check_hp_zero_death(payer, ctx=cost_context)
         elif cost_type == "枯竭":
             payer.mana_limit = max(0, payer.mana_limit - amount)
@@ -197,10 +206,7 @@ class CostPaymentMixin:
             self._lose_current_speed(payer, amount, ctx=cost_context)
         elif cost_type == "异变":
             mutation = payer.add_mutation(amount)
-            if mutation.get("collapsed"):
-                # 怪物异变达阈值：直接命零
-                self._on_entity_death(payer, ctx=self._lost_context(payer, cost_context, subtype="collapse"))
-            elif mutation.get("lost"):
+            if mutation.get("lost"):
                 # 非怪物异变达阈值：触发【迷失】——有队友则变怪物开战，否则命零
                 self._resolve_mutation_lost(payer, cost_context)
             self._bank_lianxin(payer, cost_type, amount)
@@ -223,7 +229,7 @@ class CostPaymentMixin:
         否则迷失不会触发对应的[命零]效果（焦黑发丝/招魂尸体/分裂）。
 
         subtype 取值：
-          * "collapse" —— 怪物异变爆体，直接命零；
+          * "collapse" —— 非怪物迷失命零的兼容标识；怪物不触发迷失；
           * "lost_death" —— 非怪物迷失但无队友，直接命零；
           * "lost_transform" —— 非怪物迷失且有队友，异变为怪物（不进死亡管线，
             仅作事件记录）。
@@ -294,12 +300,14 @@ class CostPaymentMixin:
           * 否则 → 直接[命零]死亡，走统一死亡管线。
         返回说明 dict（包含 flavor 文本，便于日志/面板展示）。
         """
+        if not entity.can_trigger_mutation_lost():
+            return {"lost": False, "entity": entity.name, "note": "怪物不会触发【迷失】"}
         allies = self._living_allies_of(entity)
         if not allies:
             # 无队友：命零。subtype 仍记为 "collapse" 以兼容死者之书既有死因分类
             # （死亡书 CAUSE_DRAFTS["collapse"] 的文案已改为"迷失"）。
-            # 必须先把 hp 置 0、is_alive 翻 False，_on_entity_death 才能触发（与 add_mutation
-            # 对怪物路径的行为保持一致；_hp_loss_recording 让此期间不额外触发「失去生命后」）。
+            # 必须先把 hp 置 0、is_alive 翻 False，_on_entity_death 才能触发；
+            # _hp_loss_recording 让此期间不额外触发「失去生命后」。
             if not getattr(self, "_hp_loss_recording", 0):
                 self._hp_loss_recording = getattr(self, "_hp_loss_recording", 0) + 1
                 try:
@@ -401,8 +409,12 @@ class CostPaymentMixin:
         dragon_heart_use: int = 0,
         ctx: Optional[EffectContext | dict] = None,
         cost_context: Optional[EffectContext | dict] = None,
+        forced: bool = False,
     ) -> dict:
         """统一支付可分担的数值代价：龙心先抵消，血契再拆分剩余后果。
+
+        forced=True 时跳过足额校验直接结算（付不起则正常死亡），其余管线
+        （拆分/反应/记账/烙痕钉）不变。
 
         ctx 为统一 EffectContext 兼容层；cost_context 是阶段性旧名，保留兼容。
         未迁移调用点仍可不传 ctx，但若存在需要上下文的监听，会在返回明细中给出
@@ -419,7 +431,7 @@ class CostPaymentMixin:
                     payer, cost_type, amount,
                     cost_share_target_ref=cost_share_target_ref,
                     dragon_heart_use=dragon_heart_use, ctx=ctx,
-                    cost_context=cost_context)
+                    cost_context=cost_context, forced=forced)
             finally:
                 for attr, field in (("current_hp", "hp"), ("mana", "mana"),
                                     ("energy", "energy")):
@@ -436,6 +448,7 @@ class CostPaymentMixin:
         dragon_heart_use: int = 0,
         ctx: Optional[EffectContext | dict] = None,
         cost_context: Optional[EffectContext | dict] = None,
+        forced: bool = False,
     ) -> dict:
         """代价支付的实现体（对外契约见 pay_numeric_cost）。"""
         if not isinstance(dragon_heart_use, int) or isinstance(dragon_heart_use, bool) or dragon_heart_use < 0:
@@ -457,7 +470,7 @@ class CostPaymentMixin:
                 offset = min(dragon_heart_use, heart.current_uses, amount)
         remaining = amount - offset
         _, owner_amount, ally, ally_amount = self.validate_numeric_cost(
-            payer, cost_type, remaining, cost_share_target_ref)
+            payer, cost_type, remaining, cost_share_target_ref, forced=forced)
         if heart is not None and offset > 0:
             heart.current_uses -= offset
         normalized_ctx = normalize_context(ctx if ctx is not None else cost_context)
@@ -525,8 +538,9 @@ class CostPaymentMixin:
         try:
             # 【第一杯】：代价的「流血X」支付 X（代价语义、血誓戒按 X 结算），
             # 但持有者**失去的生命**翻倍——代价与落地生命损失在这里分道。
-            detail = payer.take_damage(
-                actual, "代价", life_loss_multiplier=self.state.life_loss_multiplier(payer))
+            from ..mechanisms.verbs import apply_verb
+            detail = apply_verb(self, "direct_damage", {
+                "target": payer, "amount": actual, "damage_type": "代价"})
         finally:
             self._hp_loss_recording -= 1
         detail["dragon_heart_offset"] = offset

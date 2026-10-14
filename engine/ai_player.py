@@ -463,7 +463,7 @@ def _region_cost_tags(region: str) -> set:
         tag = _COST_TO_TAG.get(calc.get("cost_type"))
         if tag:
             tags.add(tag)
-        # 产出资源也算协同（如【搏命】疲惫换法力、【超频】买速度）
+        # 产出资源也算协同（如【透支】多代价换法力、【超频】买速度）
         if calc.get("mana_gain") or calc.get("speed_boost"):
             tags.add("速度")
     return tags

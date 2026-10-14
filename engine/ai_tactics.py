@@ -674,7 +674,7 @@ class TacticalAI:
         except Exception:
             return bonus
         if calc.get("mana_gain") or calc.get("speed_boost"):
-            bonus += 2.0      # 产资源（如搏命换法力、超频买速度）
+            bonus += 2.0      # 产资源（如透支多代价换法力、超频买速度）
         if calc.get("damage") or calc.get("target_damage"):
             bonus += 1.5      # 直伤
         return bonus
@@ -873,12 +873,12 @@ class TacticalAI:
                 if after >= soft:
                     adj -= 25.0 * (after - soft) / max(1.0, line - soft)
 
-        # ② 迷失阈值：异变层数达阈值直接命零
+        # ② 迷失阈值：仅适用于非豁免角色；怪物无迷失时钟
         collapse = getattr(type(me), "MUTATION_COLLAPSE_THRESHOLD", 0) or 0
         mut_after = p.get("mutation_after")
         if mut_after is None:
             mut_after = getattr(me, "mutation_count", 0) + max(0.0, p.get("mutation_delta", 0) or 0)
-        if collapse > 0:
+        if collapse > 0 and getattr(me, "can_trigger_mutation_lost", lambda: True)():
             if mut_after >= collapse:
                 return adj, f"本手后异变{mut_after:.0f}≥迷失阈值{collapse}"
             soft = collapse * self.SELF_PRESERVE_MARGIN

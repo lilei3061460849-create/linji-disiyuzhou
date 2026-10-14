@@ -1,27 +1,37 @@
 """外部 AI 单文件入口：规范源 → AI_CONTEXT.md 的可复现、剧情优先聚合。
 
 外部 AI 常只会读取一个 GitHub raw URL，不能保证继续抓 README 的相对链接。AI_CONTEXT.md
-优先保留世界观、角色记忆、人物关系、主线目标与角色扮演约束；完整机制按需查询，不成为新的规则正本。
+优先保留世界观、角色名单、角色扮演约束与外部推演守则，并附机制速查：道纹／遗物／
+法术／已实现副本各取名称与一行效果（2026-10-14 用户令——外部 AI 不知道具体道纹与
+遗物就会胡说八道）。通用规则正文、完整推演规范、副本机制细节与战报仍按需查询，
+不成为新的规则正本。
 
 本文件守住：
 - 生成物逐字等于生成器输出；
-- 只嵌入故事正典与 AI 角色扮演约束；
-- 完整规则、道纹、物品、法术与副本机制不批量嵌入；
+- 来源＝故事正典＋AI 知识库扮演规范＋四张机制速查表＋角色名单；
+- 通用规则正文、完整推演规范与副本机制不批量嵌入；
+- 外部推演守则（单角色／选项制）确实被打包；
 - README 保留外部 raw 入口，且说明生成物不是事实源。
 """
 from pathlib import Path
 
 from engine.document_sources import AI_CONTEXT_FILE, README_FILE
-from sim.gen_ai_context import OUTPUT, context_sources, distill_source, render_context
+from sim.gen_ai_context import (
+    OUTPUT,
+    context_blocks,
+    context_sources,
+    digest_sources,
+    render_context,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 README = ROOT / README_FILE
 
 REQUIRED_SOURCES = {"故事文档.md", "AI_EXPERIENCE.md"}
-BULK_MECHANICS_SOURCES = {
-    "规则正文.md", "推演规范.md", "死者之书.md", "全道纹索引.md", "物品索引.md",
-    "法术索引.md", "副本索引.md", "副本/扭曲都市.md", "副本/罪孽都市.md",
-    "副本/龙心谷.md", "副本/乱葬岗.md",
+DIGEST_SOURCES = {"全道纹索引.md", "物品索引.md", "法术索引.md", "副本索引.md", "角色记忆"}
+EXCLUDED_MECHANICS_SOURCES = {
+    "规则正文.md", "推演规范.md", "死者之书.md",
+    "副本/扭曲都市.md", "副本/罪孽都市.md", "副本/龙心谷.md", "副本/乱葬岗.md",
 }
 
 FORBIDDEN_IN_BODY = (
@@ -35,8 +45,7 @@ FORBIDDEN_IN_BODY = (
 
 
 def _bodies() -> dict[str, str]:
-    included = frozenset(source.relative_path for source in context_sources())
-    return {source.relative_path: distill_source(source, included) for source in context_sources()}
+    return {relpath: body for _, relpath, body, _ in context_blocks()}
 
 
 def test_ai_context_is_exactly_up_to_date_with_its_sources():
@@ -47,22 +56,20 @@ def test_ai_context_is_exactly_up_to_date_with_its_sources():
         "AI_CONTEXT.md 与当前来源不一致，请跑 python3 sim/gen_ai_context.py")
 
 
-def test_context_covers_story_sources_and_excludes_bulk_mechanics():
-    """只嵌入故事正典与角色扮演约束，完整机制文档改为按需查询。"""
-    sources = context_sources()
-    paths = {source.relative_path for source in sources}
-    assert paths == REQUIRED_SOURCES
-    assert not (paths & BULK_MECHANICS_SOURCES)
+def test_context_covers_story_sources_digests_and_excludes_bulk_mechanics():
+    """来源＝故事正典＋扮演规范＋机制速查＋角色名单；机制原文与副本机制仍按需查询。"""
+    paths = {source.relative_path for source in context_sources()}
+    paths |= {digest.path for digest in digest_sources()}
+    assert paths == REQUIRED_SOURCES | DIGEST_SOURCES
+    assert not (paths & EXCLUDED_MECHANICS_SOURCES)
     assert not any(path.endswith(".toml") for path in paths)
     assert README_FILE not in paths
     assert "报告.md" not in paths
 
     text = OUTPUT.read_text(encoding="utf-8")
-    bodies = _bodies()
-    for source in sources:
-        assert f"- 路径：`{source.relative_path}`" in text
-        assert bodies[source.relative_path] in text, (
-            f"AI_CONTEXT 缺少过滤后的来源正文：{source.relative_path}")
+    for relpath, body in _bodies().items():
+        assert f"- 路径：`{relpath}`" in text
+        assert body in text, f"AI_CONTEXT 缺少过滤后的来源正文：{relpath}"
 
 
 def test_context_body_contains_no_code_interface_format_or_future_plans():
@@ -71,6 +78,40 @@ def test_context_body_contains_no_code_interface_format_or_future_plans():
         assert "`" not in body, f"正文残留代码反引号：{path}"
         for marker in FORBIDDEN_IN_BODY:
             assert marker not in body, f"正文残留「{marker}」：{path}"
+
+
+def test_mechanics_digest_covers_daowen_relics_spells_and_regions():
+    """机制速查必须给出具体名称与一行效果，供外部 AI 避免凭空编造。"""
+    bodies = _bodies()
+    daowen, relics = bodies["全道纹索引.md"], bodies["物品索引.md"]
+    spells, regions = bodies["法术索引.md"], bodies["副本索引.md"]
+
+    for marker in ("杀伐：消耗X。", "封印：代价：异变X", "透支：代价", "变形：消耗X。"):
+        assert marker in daowen, marker
+    assert daowen.count("\n") >= 50, "道纹速查应覆盖全部已实现道纹"
+
+    for marker in ("守夜灯：", "回锋刀：", "某人的偏爱：", "猩红果实："):
+        assert marker in relics, marker
+    assert "???" not in relics and "占位" not in relics
+
+    for marker in ("先发制人：所需道纹 杀伐", "镇魔印：所需道纹 封印", "血炼周天："):
+        assert marker in spells, marker
+
+    for marker in ("扭曲都市（一阶", "乱葬岗（二阶"):
+        assert marker in regions, marker
+
+
+def test_external_roleplay_rules_are_packed_for_outside_ai():
+    """外部推演守则（单角色·选项制）必须进入单文件上下文。"""
+    text = OUTPUT.read_text(encoding="utf-8")
+    for marker in (
+        "### 外部推演守则",
+        "只扮演当前角色",
+        "不给其他角色加戏",
+        "类海龟汤",
+        "战斗／逃跑／自定义",
+    ):
+        assert marker in text, marker
 
 
 def test_readme_exposes_the_one_url_external_ai_entry_and_context_contract():
@@ -84,7 +125,23 @@ def test_readme_exposes_the_one_url_external_ai_entry_and_context_contract():
     for marker in (
         "## 使用契约（先读）", "## 来源目录与校验指纹", "## 打包正文",
         "死者之书的遗言不是规则", "副本状态要区分", "禁止手改",
-        "剧情优先的混合上下文", "按需查询",
+        "剧情优先的混合上下文", "按需查询", "机制速查",
     ):
         assert marker in text
     assert len(text) < 25000, "AI_CONTEXT 应明显小于原先包含完整机制索引的版本"
+
+
+def test_context_cli_writes_and_checks_the_generated_output(tmp_path, monkeypatch):
+    """CLI 必须真正输出文件；--check 应发现过期内容且不能改写文件。"""
+    from sim import gen_ai_context
+
+    output = tmp_path / "AI_CONTEXT.md"
+    monkeypatch.setattr(gen_ai_context, "OUTPUT", output)
+    assert gen_ai_context.main(["--check"]) == 1
+    assert not output.exists()
+    assert gen_ai_context.main([]) == 0
+    assert output.read_text(encoding="utf-8") == gen_ai_context.render_context()
+    assert gen_ai_context.main(["--check"]) == 0
+    output.write_text("stale\n", encoding="utf-8")
+    assert gen_ai_context.main(["--check"]) == 1
+    assert output.read_text(encoding="utf-8") == "stale\n"
