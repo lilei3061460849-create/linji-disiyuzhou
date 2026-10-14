@@ -1049,7 +1049,9 @@ class DaoWenEngine:
         # 退化X（扭曲都市专属，持续∞）：使目标每次发动道纹时该次数值-X（最低0）。
         # 在 resolve 统一入口削减（玩家/怪物/同伴所有发动路径都经此），与 sim/balance_sim eff_x 同口径。
         caster = kwargs.get("caster")
-        if caster is not None and hasattr(caster, "has_status") and caster.has_status("退化"):
+        if (not kwargs.get("_skip_status_decay", False)
+                and caster is not None and hasattr(caster, "has_status")
+                and caster.has_status("退化")):
             x = max(0, x - caster.get_status_value("退化"))
 
         # 获取该道纹的代价类型，检查X上限
