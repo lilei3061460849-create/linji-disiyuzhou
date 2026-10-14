@@ -759,7 +759,6 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         # 攻击失血由本方法的反应窗口结算，标记在下方置位。先清掉可能残留的旧标记，
         # 避免异常中断后误伤后续失血的自动触发。
         self._attack_after_window_target = None
-        self.validate_spell_reaction_submission(target, attacker, spell_choices, entity_refs)
         result = {
             "attacker": attacker.name,
             "target": target.name,
@@ -793,6 +792,10 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                 "note": "万钧印：本次攻击改为攻击者对自己发动",
             }
             return converted
+
+        # 反应法术提交必须按最终受击者校验。万钧印改道时，原目标并不承受攻击，
+        # 不能拿原目标的 spell_choices 去校验攻击者对自己造成的自攻。
+        self.validate_spell_reaction_submission(target, attacker, spell_choices, entity_refs)
 
         # 飞行：非飞行者无法选中飞行目标
         if not self.is_targetable(attacker, target):
