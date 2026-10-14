@@ -308,7 +308,7 @@ def test_alt_path_resolve_monster_turn_with_daowen_monster_no_nameerror():
     此前 sim/handplay_dungeon_with_winner.py:129/181 的
     `_pick_monster_daowen(engine, actor)` 使用未定义变量 engine（参数实际是 e），
     任何怪物在第 2 回合起（白板回合之后）持有可用道纹时，该决策路径必然崩溃。
-    本测试：扭曲都市第一场脑蜘蛛（坏死/强化/减速）打到第 2 回合，
+    本测试固定验证带道纹怪物的决策路径，不把出怪配方随机性当作前置条件；
     经公共 API 走完整 resolve_monster_turn，断言不再 NameError 且怪物阶段正常结算。
     """
     from sim.alt_path_test import resolve_monster_turn
@@ -328,11 +328,15 @@ def test_alt_path_resolve_monster_turn_with_daowen_monster_no_nameerror():
     bs = e.execute_action("battle_start", {"relic_choices": {}})
     assert bs.get("success"), bs
     assert bs.get("enemies"), "必须出怪"
-    # 当前种子配方还可能带出拥有【波及】的第二只怪；与本测试的目标无关，
-    # 固定为受测脑蜘蛛，避免误测 AoE 提交协议。
-    brain_spider = next((m for m in e.state.enemies if m.name == "脑蜘蛛"), None)
-    assert brain_spider is not None, f"当前随机配方未抽到脑蜘蛛：{bs.get('enemies')}"
-    e.state.enemies = [brain_spider]
+    # 出怪配方可能随机给出不同怪物，测试只关心道纹怪物决策路径。
+    # 固定使用实际生成的一只怪，并给它挂上脑蜘蛛测试所需的三种道纹。
+    monster = e.state.enemies[0]
+    for daowen_name in ("坏死", "强化", "减速"):
+        monster.dao_wen[daowen_name] = DaoWenInstance(
+            DaoWen(name=daowen_name, formula="", cost_type="消耗",
+                   cost_formula="X", effect_formula=""), x_value=1)
+    monster._had_monster_daowen = True
+    e.state.enemies = [monster]
     e.state.monster_reinforcements = []
 
     # 第 1 回合（白板：怪物只普攻不出道纹）
