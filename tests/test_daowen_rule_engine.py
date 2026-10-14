@@ -12,7 +12,7 @@ import pytest
 from engine.api import GameEngine
 from engine.combat import CombatEngine
 from engine.combat_hooks import CombatHookManager
-from engine.daowen import DaoWenEngine
+from engine.daowen import DaoWenEngine, ResonanceEngine
 from engine.dice import DiceEngine
 from engine.models import Entity, GameState, StatusEffect
 from engine.rule_engine import (
@@ -124,7 +124,7 @@ def test_zaisheng_merges_self_feeding_as_an_alternate_attack_cost():
     assert attack["cost_attack"] == 8
     assert attack["target_heal"] == 8
     assert "自食" not in DaoWenEngine.list_all()
-    assert ("全力", "曲解", "再生") in DaoWenEngine.CLOSED_LOOPS["怪物原始道纹"]
+    assert ("全力", "曲解", "再生") in ResonanceEngine.CLOSED_LOOPS["怪物原始道纹"]
 
 
 def test_migration_status_keeps_unmigrated_daowen_on_the_legacy_path():
