@@ -27,7 +27,7 @@
 
 | # | 角色 | 原始文件 | SHA-256 |
 | --- | --- | --- | --- |
-| 1 | 世界观与角色档案（故事正典） | [故事文档.md](故事文档.md) | `fafe7715f3fae78b33b2b3b35f6f78e4e3c3cf9b96140221bd53c1bfd4c5ccf9` |
+| 1 | 世界观与角色档案（故事正典） | [故事文档.md](故事文档.md) | `541b261daf115b589dc76d7a01090cdabfb3c3c8ec4eac8aa71ebb309ac6f13a` |
 | 2 | AI 角色扮演约束（节选：职责、性格、扮演要求） | [AI_EXPERIENCE.md](AI_EXPERIENCE.md) | `d7704a8dc6e513940b8295f3085df16547e2a4c495669607b87d639ccd948d15` |
 
 ## 打包正文
@@ -38,7 +38,7 @@
 ### 来源 1：世界观与角色档案（故事正典）
 
 - 路径：`故事文档.md`
-- SHA-256：`fafe7715f3fae78b33b2b3b35f6f78e4e3c3cf9b96140221bd53c1bfd4c5ccf9`
+- SHA-256：`541b261daf115b589dc76d7a01090cdabfb3c3c8ec4eac8aa71ebb309ac6f13a`
 
 ```markdown
 ## 世界观与底层因果法则
