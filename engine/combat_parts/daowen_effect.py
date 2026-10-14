@@ -135,7 +135,7 @@ class DaowenEffectMixin:
         # 后续结算不再从 X 值、状态施加时间或刷新时间推断顺序。
         daowen_sequence = list(caster.dao_wen)
         daowen_order = daowen_sequence.index(name) if name in caster.dao_wen else len(daowen_sequence)
-        if name in ("自食", "固执"):
+        if name == "固执":
             target = caster
         # 本次道纹结算的根上下文。由它派生的血限/生命/命零变化都以此为父事件，
         # 这样「杀伐 → 伤害 → 血限下降 → 命零」在链上是连续的。
@@ -418,6 +418,17 @@ class DaowenEffectMixin:
                 if dmg.get("actual_damage", 0) > 0:
                     caster.damage_dealt_this_round += dmg["actual_damage"]
 
+        # ---- 再生的攻击力代价：发动者失去攻击力，随后按正常目标结算回复 ----
+        if calc.get("cost_type") == "攻击力" and calc.get("cost_attack", 0) > 0:
+            amount = int(calc["cost_attack"])
+            available = max(0, int(caster.effective_attack_power()))
+            if amount > available:
+                raise ValueError(f"再生攻击力代价需要{amount}点，当前有效攻击力仅{available}")
+            delta = max(0, caster.attack_power - amount) - caster.attack_power
+            if delta:
+                self._apply_panel_delta(caster, "attack_power", delta, name, EffectPolarity.DEBUFF.value)
+            result["effects"].append({"type": "attack_power_cost", "target": caster.name,
+                                      "paid": amount, "attack_power": caster.attack_power})
         # ---- 回复类 ----
         if "target_heal" in calc:
             if "target_heal" in wave_pieces:
@@ -1048,7 +1059,7 @@ class DaowenEffectMixin:
               and name not in ("勾魂", "冥气", "缄默", "瓦解", "波及")):
             duration = calc["duration"] if calc["duration"] != 0 else -1
             effect_target = target if target else caster
-            # 自身作用型道纹(变形/超频/自食等)作用于施法者
+            # 自身作用型道纹（变形/超频等）作用于施法者
             # 【点金】即时结算失忆代价与碎片收益，不挂持续状态。
             # 故从自身作用名单移除；状态【洗劫】本身保留，仍由【帮派令】发放。
             # 2026-09-17 用户令：【超频】改为自由选择目标（选到谁给谁加速），不再属于
@@ -1056,7 +1067,7 @@ class DaowenEffectMixin:
             # 进不了本状态块，实际效果一直是下方数值段给 target 加速。
             # 2026-09-17 用户令：【变形】改为可自由选择目标（不指定时默认自身），
             # 故移出"自身作用型"名单，状态随之挂到目标身上（到期还原也落在目标）。
-            self_targeted = name in ("自食", "飞行", "必中", "固执", "贯穿")
+            self_targeted = name in ("飞行", "必中", "固执", "贯穿")
             if name == "疯狂":
                 # 2026-08-17 用户裁定：疯狂X改为【所有角色出手+X】（全局，变相平衡）。
                 # 状态盖到双方全部存活角色；出手口径各自读取自身疯狂状态：
