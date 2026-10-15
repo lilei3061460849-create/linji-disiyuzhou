@@ -121,14 +121,14 @@ def test_cooldown_daowen_never_locks_for_many_battles():
 def test_duration_scaling_daowen_respects_battle_horizon():
     """duration 随 X 一起涨时，超出战斗视野的持续回合是白付的代价。"""
     ally = _ally("赴火者", hp=60, ac=3, ap=3)
-    x = pick_ally_daowen_x(ally, "逆鳞", ally)      # 流血 1X，duration = X
+    x = pick_ally_daowen_x(ally, "血债", ally)      # 流血 1X，duration = X
     assert 1 <= x <= 5, f"应压在战斗视野内，实得 {x}"
 
 
 def test_hp_cost_never_kills_the_ally():
     """流血类不得把自己流死。"""
     ally = _ally("赴火者", hp=4, ac=3, ap=3)
-    x = pick_ally_daowen_x(ally, "逆鳞", ally)
+    x = pick_ally_daowen_x(ally, "血债", ally)
     assert x < ally.current_hp, f"X={x} 会把 {ally.current_hp} 血流干"
 
 
@@ -146,10 +146,10 @@ def test_x_free_panel_uses_the_chooser_not_hardcoded_one():
     """x_free 时走决策器，不再是硬编码的 x=1。"""
     e, player, monster = _engine_and_ally(_ally("赴火者", hp=60, ac=3, ap=3))
     ally = e.state.friends[0]
-    _give(ally, "逆鳞")
-    chosen = e._ally_daowen_x(ally, "逆鳞", monster)
-    assert chosen == pick_ally_daowen_x(ally, "逆鳞", monster)
-    assert chosen > 1, "赴火者血 60、逆鳞流血 1X，X=1 过于保守"
+    _give(ally, "血债")
+    chosen = e._ally_daowen_x(ally, "血债", monster)
+    assert chosen == pick_ally_daowen_x(ally, "血债", monster)
+    assert chosen > 1, "赴火者血 60、血债流血 1X，X=1 过于保守"
 
 
 # ---------------------------------------------------------------- 端到端
@@ -158,8 +158,8 @@ def test_autonomous_ally_cast_uses_chosen_x_not_one():
     """自主出手路径（resolve_ally_phases）不再硬编码 x=1。"""
     e, player, monster = _engine_and_ally(_ally("赴火者", hp=60, ac=3, ap=3))
     ally = e.state.friends[0]
-    _give(ally, "逆鳞")
-    expected = pick_ally_daowen_x(ally, "逆鳞", monster)
+    _give(ally, "血债")
+    expected = pick_ally_daowen_x(ally, "血债", monster)
     r = e.execute_action("resolve_ally_phases", {})
     assert r.get("success") is True, r
     allies = r["result"]["allies"]
@@ -174,11 +174,11 @@ def test_command_ally_uses_chosen_x():
     """手动指令路径（command_ally）同样走决策器。"""
     e, player, monster = _engine_and_ally(_ally("赴火者", hp=60, ac=3, ap=3))
     ally = e.state.friends[0]
-    _give(ally, "逆鳞")
+    _give(ally, "血债")
     r = e.execute_action("command_ally", {"ally_ref": "friend:0",
-                                           "instruction": "发动 逆鳞 打 测试怪"})
+                                           "instruction": "发动 血债 打 测试怪"})
     assert r.get("success") is True, r
-    assert r["result"]["daowen"] == "逆鳞"
+    assert r["result"]["daowen"] == "血债"
 
 
 def test_command_ally_refuses_when_unaffordable():

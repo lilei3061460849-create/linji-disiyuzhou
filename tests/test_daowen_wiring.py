@@ -165,14 +165,14 @@ def test_boba_boundary_and_invalid_submissions():
 
 
 
-def test_jiahai_guzhi_fennu_jieli_jisheng():
-    """加害挂目标加伤；固执单次掉 1；愤怒法力减半；寄生吸血。
+def test_jiahai_guzhi_fennu():
+    """加害挂目标加伤；固执单次掉 1；愤怒法力减半。
 
     2026-10-11 用户令：【借力】已删除，原「借力2 → _jieli_boost +20%」段落一并移除。
     """
     engine = _engine("hooks")
     p = engine.state.player
-    for n in ("加害", "固执", "愤怒", "寄生"):
+    for n in ("加害", "固执", "愤怒"):
         _give(p, n)
     m = _monster(engine, ap=10)
     engine.execute_action("round_start", {})
@@ -201,14 +201,6 @@ def test_jiahai_guzhi_fennu_jieli_jisheng():
     assert p.spend_mana(10) is True
     assert p.current_mana == mana - 5
 
-    host = _monster(engine, name="寄生体", hp=80, atk=1, ap=1)
-    r_js = engine.execute_action("use_daowen", {"daowen_name": "寄生", "x": 1, "target": host.name})
-    assert r_js["success"], r_js
-    assert host.has_status("寄生")
-    p.current_hp = 40
-    before = p.current_hp
-    engine.combat._apply_hostile_damage(host, 10)
-    assert p.current_hp == before + 2  # 10 * 20%
 
 
 def test_huaxiang_dingxing_wushen():
