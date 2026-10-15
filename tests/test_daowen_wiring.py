@@ -267,3 +267,19 @@ def test_jisu_jiasu_dongcha():
     engine.execute_action("round_start", {})
     # DM裁定 2026-09-09：一池制，[回始]不回填 → 只有洞察结算的那 10 点
     assert p.current_mana == mana + 10, f"{p.current_mana} != {mana}+10"
+
+
+def test_relicized_trigger_daowen_registry_and_flight_rehoming():
+    """已遗物化触发型道纹不可再施放；飞行由骨天使的变形附带。"""
+    retired = {
+        "逆鳞", "伤痕", "寄生", "加速", "急速", "洞察", "无力",
+        "冥气", "退化", "畸变", "缄默", "飞行",
+    }
+    assert retired.isdisjoint(DaoWenEngine._registry)
+
+    engine = _engine("bone_angel_flight")
+    bone_angel = _monster(engine, name="骨天使", hp=30, atk=7, ap=3)
+    _give(bone_angel, "变形")
+    calc = DaoWenEngine.resolve("变形", 1, target=bone_angel, caster=bone_angel)
+    engine.combat.apply_daowen_effect("变形", calc, bone_angel, bone_angel)
+    assert bone_angel.has_status("飞行")
