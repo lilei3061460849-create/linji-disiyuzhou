@@ -244,7 +244,7 @@ def test_no_zhesu_means_no_bonus_mana():
 
 
 def test_shouyedeng_bonus_is_its_own_slice():
-    """正常路径（2026-09-13 新口径）：守夜灯[回始]授予 ceil(法限*10%)，授予的法力不再清空；
+    """正常路径（2026-09-13 新口径）：守夜灯[回始]授予 ceil(法限*50%)，授予的法力不再清空；
     一池制下回始本身仍不回填。"""
     engine = _engine("lamp_happy")
     p = engine.state.player
@@ -253,7 +253,7 @@ def test_shouyedeng_bonus_is_its_own_slice():
     # 满池时授予会被[法限]全额吃掉，先花干净才看得到授予量。
     p.spend_mana(p.current_mana)
     granted = engine.combat._grant_shouyedeng(p)
-    assert granted and granted["gained"] == math.ceil(EXP_MANA * 0.1)
+    assert granted and granted["gained"] == math.ceil(EXP_MANA * 0.5)
     assert p.current_mana == granted["gained"]
     base = p.current_mana
     finish_round(engine)
@@ -267,7 +267,7 @@ def test_shouyedeng_refills_a_spent_pool_up_to_limit():
     engine.state.relics.append(Relic(name="守夜灯", effect="[回始]获得等同于[法限]10%的法力"))
     engine.execute_action("battle_start", {"relic_choices": {}})
     p.spend_mana(p.current_mana)
-    grant = math.ceil(EXP_MANA * 0.1)
+    grant = math.ceil(EXP_MANA * 0.5)
     engine.combat._grant_shouyedeng(p)
     assert p.current_mana == min(EXP_MANA, grant), (
         f"[回始]+{grant}（受[法限]{EXP_MANA}截断），实{p.current_mana}")
