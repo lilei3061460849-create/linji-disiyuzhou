@@ -48,8 +48,8 @@ class MonsterLifeMixin:
         if hp_ratio <= 0.3:
             difficulty_signals.append("生命低于30%")
         
-        # 2. 被眩晕/束缚/无法行动
-        if monster.has_status("眩晕") or monster.has_status("束缚"):
+        # 2. 被束缚/无法行动
+        if monster.has_status("束缚"):
             difficulty_signals.append("被控制")
         
         # 3. 攻击力被弱化到极低
