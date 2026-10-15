@@ -2537,7 +2537,7 @@ class GameEngine:
             return None
         if not self.combat.can_act(entity):
             return {"success": False,
-                    "error": f"{entity.name}无法出手（眩晕/束缚）"}
+                    "error": f"{entity.name}无法出手（束缚）"}
         breath = self.combat.apply_opposing_longxi(entity)
         if breath and not entity.is_alive:
             return {"success": False, "error": f"{entity.name}被龙息命零",
