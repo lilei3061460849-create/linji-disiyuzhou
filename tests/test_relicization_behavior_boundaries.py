@@ -127,3 +127,70 @@ def test_shuai_bian_sha_lou_reduces_effect_x_by_one_but_clamps_at_zero():
     calc = DaoWenEngine.resolve("杀伐", 1, target=target, caster=player)
     combat._apply_daowen_effect_impl("杀伐", calc, player, target)
     assert target.current_hp == 100  # X=1 降到 0，不得仍造成原伤害
+
+
+def test_gongsheng_xuenang_heals_clone_from_actual_life_loss_and_transfers_overflow():
+    state, creator, target, combat = _combat()
+    state.relics.append(Relic(name="共生血囊", effect="", tags=[]))
+    clone = Entity(
+        name="持有者·裂1", entity_type="轮回者",
+        blood_limit=30, current_hp=29,
+        mana_limit=20, current_mana=5,
+        speed_limit=10, current_speed=3,
+        copy_creator_runtime_id=creator.runtime_id,
+    )
+    state.temp_friends.append(clone)
+
+    result = combat._apply_hostile_damage(target, 5, source=clone)
+
+    assert result["actual_damage"] == 5
+    assert clone.current_hp == 30
+    assert creator.current_hp == 54  # 克隆体只能补1，溢出的4转给创造者
+
+
+def test_gongsheng_xuenang_uses_actual_life_loss_for_multi_target_damage():
+    state, creator, target, combat = _combat()
+    state.relics.append(Relic(name="共生血囊", effect="", tags=[]))
+    clone = Entity(
+        name="持有者·裂2", entity_type="轮回者",
+        blood_limit=30, current_hp=10,
+        mana_limit=20, current_mana=5,
+        speed_limit=10, current_speed=3,
+        copy_creator_runtime_id=creator.runtime_id,
+    )
+    target2 = Entity(
+        name="第二靶怪", entity_type="怪物",
+        blood_limit=100, current_hp=4,
+        mana_limit=10, current_mana=3,
+        speed_limit=10, current_speed=2,
+    )
+    state.temp_friends.append(clone)
+    state.enemies.append(target2)
+
+    first = combat._apply_hostile_damage(target, 3, source=clone)
+    second = combat._apply_hostile_damage(target2, 9, source=clone)
+
+    assert first["actual_damage"] == 3
+    assert second["actual_damage"] == 4  # 超杀部分不计入回复
+    assert clone.current_hp == 17
+    assert creator.current_hp == 50
+
+
+def test_gongsheng_xuenang_is_inactive_after_creator_death():
+    state, creator, target, combat = _combat()
+    state.relics.append(Relic(name="共生血囊", effect="", tags=[]))
+    clone = Entity(
+        name="持有者·裂3", entity_type="轮回者",
+        blood_limit=30, current_hp=10,
+        mana_limit=20, current_mana=5,
+        speed_limit=10, current_speed=3,
+        copy_creator_runtime_id=creator.runtime_id,
+    )
+    state.temp_friends.append(clone)
+    creator.current_hp = 0
+
+    result = combat._apply_hostile_damage(target, 5, source=clone)
+
+    assert result["actual_damage"] == 5
+    assert clone.current_hp == 10
+    assert creator.current_hp == 0

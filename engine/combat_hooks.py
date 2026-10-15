@@ -237,7 +237,7 @@ class AfterDamageEffectsHook:
                         res.setdefault("噬伤血囊", []).append({
                             "holder": holder.name, "requested": heal_n, **healed})
 
-        # 遗物【???】：由持有该遗物的创建者所创造的分裂复制体造成伤害后，
+        # 遗物【共生血囊】：由持有该遗物的创建者所创造的分裂复制体造成伤害后，
         # 复制体先回复等同实际失血的生命；超过复制体生命上限的部分再回复创建者。
         # 以实际生命减少量为基数，避免把超过目标剩余生命的过量伤害计入。
         creator_id = getattr(attacker, "copy_creator_runtime_id", "") if attacker is not None else ""
@@ -253,11 +253,11 @@ class AfterDamageEffectsHook:
                             if getattr(entity, "runtime_id", "") == creator_id), None)
             actual_life_loss = max(0, int(detail.get("actual_life_loss", actual_damage)))
             if (creator is not None and actual_life_loss > 0
-                    and combat._relic_active(creator, "???")
+                    and combat._relic_active(creator, "共生血囊")
                     and not attacker.has_status("坏死")):
                 clone_heal = combat.state.apply_heal(attacker, actual_life_loss, ctx={
                     "timing": damage_ctx.timing if damage_ctx else "",
-                    "source": "???", "source_type": "relic", "actor": attacker,
+                    "source": "共生血囊", "source_type": "relic", "actor": attacker,
                     "target": attacker, "owner": creator, "mechanic": "heal",
                     "subtype": "split_clone_lifesteal", "amount": actual_life_loss,
                     "tags": {"relic", "after_damage", "split_clone"},
@@ -268,7 +268,7 @@ class AfterDamageEffectsHook:
                 if overflow > 0 and creator.is_alive and not creator.has_status("坏死"):
                     creator_heal = combat.state.apply_heal(creator, overflow, ctx={
                         "timing": damage_ctx.timing if damage_ctx else "",
-                        "source": "???", "source_type": "relic", "actor": attacker,
+                        "source": "共生血囊", "source_type": "relic", "actor": attacker,
                         "target": creator, "owner": creator, "mechanic": "heal",
                         "subtype": "split_clone_overflow", "amount": overflow,
                         "tags": {"relic", "after_damage", "split_clone", "overflow"},
