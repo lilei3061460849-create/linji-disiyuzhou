@@ -43,7 +43,7 @@ class DaoWenEngine:
 
     # X上限规则（代价类型 → 最大值函数）
     X_LIMITS = {
-        "支付：": lambda state: float('inf'),     # 无上限，受法力限制
+        "消耗": lambda state: float('inf'),     # 无上限，受法力限制
         "冷却": lambda state: 7,                 # 0≤X≤7
         "流血": lambda state: state.get("current_hp", 999),    # 0≤X≤当前生命
         "衰老": lambda state: state.get("blood_limit", 999),   # 0≤X≤当前血限
@@ -378,7 +378,7 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_fennu(x: int, target: Entity = None) -> dict:
-        """愤怒X：支付：2X。使[目标]法力支付：减半，持续X"""
+        """愤怒X：支付：2X。使[目标]法力消耗减半，持续X"""
         target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "愤怒",
