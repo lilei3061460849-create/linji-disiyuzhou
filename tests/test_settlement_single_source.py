@@ -367,7 +367,7 @@ def test_resonance_converts_holder_daowen_and_grants_one_copy(tmp_path):
     assert e.state.resonance.get("曲解", 0) >= 1
 
     r = e.execute_action("use_resonance", {
-        "source_daowen": "再生", "resonance_type": "曲解", "target_ref": _ref(e, foe)})
+        "source_daowen": "再生", "resonance_type": "曲解", "target_daowen": "庇护", "target_ref": _ref(e, foe)})
     assert r["success"], r
     dest = r["result"]["target"]
     assert dest == "庇护"
@@ -386,7 +386,7 @@ def test_resonance_never_creates_a_duplicate_name(tmp_path):
     e.state.resonance["曲解"] = 2
 
     r = e.execute_action("use_resonance", {
-        "source_daowen": "再生", "resonance_type": "曲解", "target_ref": _ref(e, foe)})
+        "source_daowen": "再生", "resonance_type": "曲解", "target_daowen": "庇护", "target_ref": _ref(e, foe)})
     assert r["success"], r
     assert r["granted_daowen"] is None, "已持有同名道纹时不得重复授予"
     assert list(p.dao_wen).count("庇护") == 1
@@ -394,7 +394,7 @@ def test_resonance_never_creates_a_duplicate_name(tmp_path):
     # 再转一次：持有者侧同样不得出现两份同名
     _give(foe, "再生")
     r2 = e.execute_action("use_resonance", {
-        "source_daowen": "再生", "resonance_type": "曲解", "target_ref": _ref(e, foe)})
+        "source_daowen": "再生", "resonance_type": "曲解", "target_daowen": "庇护", "target_ref": _ref(e, foe)})
     assert r2["success"], r2
     assert list(foe.dao_wen).count("庇护") == 1, "持有者侧同名只保留一份"
     assert "再生" not in foe.dao_wen
