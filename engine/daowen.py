@@ -209,7 +209,7 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_touzhi(x: int, cost_channel: str = "流血") -> dict:
-        """透支X：代价（四选一）：流血4X／衰老2X／枯竭X／疲惫X。你获得X点法力
+        """透支X：支付：（四选一）：流血4X／衰老2X／枯竭X／疲惫X。你获得X点法力
 
         用户裁定 2026-09-12：与【再生X】构成生命⇄法力闭环，净值不产生免费资源；
         实际上限由【癌变】(本场累计回复=2×血限) 自然封死。
