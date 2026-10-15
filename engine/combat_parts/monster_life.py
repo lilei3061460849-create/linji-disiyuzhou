@@ -181,7 +181,7 @@ class MonsterLifeMixin:
 
     PROLIFERATION_THRESHOLD = Entity.CANCER_HEAL_MULTIPLIER  # 癌变：规则正文「累计恢复量达血限×2」；过量回复按原值计（阈值唯一事实源在 Entity，DM裁定2026-08-18）
     CANCER_THRESHOLD = PROLIFERATION_THRESHOLD  # 别名：增生旧名已统一为癌变，二者同阈值
-    DEBT_THRESHOLD = 20           # 还债：怪物负债达到20碎片时触发（DM裁定2026-08-22 由10上调）
+    DEBT_THRESHOLD = special_events.threshold("huanzhai")  # 还债阈值来自 data/rules/special_events.toml
     # 雕塑数值唯一事实源在 data/rules/special_events.toml（与 Entity 阈值同口径接线）
     SCULPTURE_DAMAGE = special_events.damage_per_durability("diaosu")    # 每点耐久可造成的伤害
     SCULPTURE_SHIELD = special_events.shield_per_durability("diaosu")    # 每点耐久可获得的格挡
