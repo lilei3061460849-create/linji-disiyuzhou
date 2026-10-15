@@ -52,9 +52,9 @@ COST_AMOUNT_KEYS = ("cost", "cost_shards", "cost_hp", "cost_blood_limit", "cost_
 
 
 def test_daowen_registry_every_daowen_has_positive_cost_channel():
-    """52 条道纹 X=1 时必有金额>0 的代价通道（法力/失忆/异变/疲惫/流血/衰老/碎片/枯竭）。"""
+    """40 条现行道纹 X=1 时必有金额>0 的代价通道（法力/失忆/异变/疲惫/流血/衰老/碎片/枯竭）。"""
     DaoWenEngine.register_all()
-    assert len(DaoWenEngine._registry) == 52  # 删除独立【自食】并入【再生】
+    assert len(DaoWenEngine._registry) == 40  # 删除独立【自食】并入【再生】，并移除已遗物化触发型道纹
     for name, fn in sorted(DaoWenEngine._registry.items()):
         kw = {}
         if "target" in inspect.signature(fn).parameters:
