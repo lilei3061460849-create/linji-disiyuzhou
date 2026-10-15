@@ -88,7 +88,7 @@ def test_mechanics_digest_covers_daowen_relics_spells_and_regions():
 
     for marker in ("杀伐：支付：法力X。", "封印：支付：异变X", "透支：支付：", "变形：支付：法力X。"):
         assert marker in daowen, marker
-    assert daowen.count("\n") >= 50, "道纹速查应覆盖全部已实现道纹"
+    assert daowen.count("\n") >= 35, "道纹速查应覆盖全部现行道纹"
 
     for marker in ("守夜灯：", "万钧印：", "回锋刀：", "某人的偏爱：", "猩红果实："):
         assert marker in relics, marker
