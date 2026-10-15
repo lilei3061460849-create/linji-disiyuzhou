@@ -391,15 +391,6 @@ class DaoWenEngine:
         }
     
     @staticmethod
-    @staticmethod
-    # 2026-10-11 用户令（A14）：【wushen】整条删除——不做闭环补位、不设计替换道纹。
-
-    
-    @staticmethod
-    # 2026-10-11 用户令（A14）：【jieli】整条删除——不做闭环补位、不设计替换道纹。
-
-    
-    @staticmethod
     def calculate_ruhua(x: int, target: Entity = None) -> dict:
         """弱化X：支付：法力2X。使[目标]攻击力-X，持续∞"""
         target_name = target.name if target is not None else "未选定目标"
