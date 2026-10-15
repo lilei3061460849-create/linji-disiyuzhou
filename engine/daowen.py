@@ -43,7 +43,7 @@ class DaoWenEngine:
 
     # X上限规则（代价类型 → 最大值函数）
     X_LIMITS = {
-        "消耗": lambda state: float('inf'),     # 无上限，受法力限制
+        "支付：": lambda state: float('inf'),     # 无上限，受法力限制
         "冷却": lambda state: 7,                 # 0≤X≤7
         "流血": lambda state: state.get("current_hp", 999),    # 0≤X≤当前生命
         "衰老": lambda state: state.get("blood_limit", 999),   # 0≤X≤当前血限
@@ -66,7 +66,7 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_shaifa(x: int, target: Entity = None) -> dict:
-        """杀伐X：消耗X。对[目标]造成X²点伤害
+        """杀伐X：支付：X。对[目标]造成X²点伤害
 
         DM裁定 2026-09-10：法力改一池制后（战终才复原，不再每回合回填），道纹数值
         的约束从「速率」变成「预算」，可以放开。
@@ -84,12 +84,12 @@ class DaoWenEngine:
             "cost": cost,
             "target_damage": damage,
             "damage_type": "普通",
-            "summary": f"消耗{x}法力，对{target_name}造成{damage}点伤害"
+            "summary": f"支付：{x}法力，对{target_name}造成{damage}点伤害"
         }
     
     @staticmethod
     def calculate_zaisheng(x: int, target: Entity = None, cost_channel: str = "法力") -> dict:
-        """再生X：消耗X法力，或失去4X攻击力；为[目标]回复4X点生命。"""
+        """再生X：支付：法力X／攻击力4X；为[目标]回复4X点生命。"""
         target_name = target.name if target is not None else "未选定目标"
         heal = 4 * x
         if cost_channel == "攻击力":
@@ -97,20 +97,20 @@ class DaoWenEngine:
                 "dao_wen": "再生", "x": x,
                 "cost_type": "攻击力", "cost_attack": heal,
                 "target_heal": heal,
-                "summary": f"失去{heal}点攻击力，为{target_name}回复{heal}点生命",
+                "summary": f"支付：攻击力{heal}，为{target_name}回复{heal}点生命",
             }
         if cost_channel != "法力":
-            raise ValueError("再生代价必须选择法力或攻击力")
+            raise ValueError("再生支付必须选择法力或攻击力")
         return {
             "dao_wen": "再生", "x": x,
             "cost_type": CostType.MANA.value, "cost": x,
             "target_heal": heal,
-            "summary": f"消耗{x}法力，为{target_name}回复{heal}点生命",
+            "summary": f"支付：法力{x}，为{target_name}回复{heal}点生命",
         }
     
     @staticmethod
     def calculate_bihu(x: int, target: Entity = None) -> dict:
-        """庇护X：消耗X。使[目标]获得2X点格挡（可抵消等量伤害，保留到被打掉或[战终]）"""
+        """庇护X：支付：X。使[目标]获得2X点格挡（可抵消等量伤害，保留到被打掉或[战终]）"""
         target_name = target.name if target is not None else "未选定目标"
         cost = x
         shield = 2 * x
@@ -122,12 +122,12 @@ class DaoWenEngine:
             "target_shield": shield,
             "duration": 1,
             # DM裁定 2026-09-10：格挡不再[敌回终]清除，故文案不再声称"持续1回合"
-            "summary": f"消耗{x}法力，使{target_name}获得{shield}点格挡（可抵消等量伤害，保留到被打掉或战终）"
+            "summary": f"支付：{x}法力，使{target_name}获得{shield}点格挡（可抵消等量伤害，保留到被打掉或战终）"
         }
     
     @staticmethod
     def calculate_guzhi(x: int) -> dict:
-        """固执X：代价：冷却X。最终实际失血最高为1，失血倍率后仍封顶。"""
+        """固执X：支付：冷却X。最终实际失血最高为1，失血倍率后仍封顶。"""
         definition = get_daowen_rule("固执")
         cap = int(definition.rules[0].operator.operand)
         return {
@@ -143,7 +143,7 @@ class DaoWenEngine:
 
     @staticmethod
     def calculate_xuezhai(x: int, target: Entity = None) -> dict:
-        """血债X：代价：流血X。选择[目标] X 次，每次对其造成 1 点伤害"""
+        """血债X：支付：流血X。选择[目标] X 次，每次对其造成 1 点伤害"""
         target_name = target.name if target is not None else "未选定目标"
         cost_hp = x
         hits = x
@@ -161,7 +161,7 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_boba(x: int) -> dict:
-        """波及X：消耗2X。选择X个[目标]建立/解除波及效果，持续∞。你发动的道纹同时作用于所有拥有波及效果的目标；数值平分。"""
+        """波及X：支付：2X。选择X个[目标]建立/解除波及效果，持续∞。你发动的道纹同时作用于所有拥有波及效果的目标；数值平分。"""
         return {
             "dao_wen": "波及",
             "x": x,
@@ -169,18 +169,18 @@ class DaoWenEngine:
             "cost": 2 * x,
             "mark_targets": x,
             "duration": -1,  # ∞
-            "summary": f"消耗{2 * x}法力，选择{x}个目标建立/解除波及效果（持续∞）"
+            "summary": f"支付：{2 * x}法力，选择{x}个目标建立/解除波及效果（持续∞）"
         }
     
     # ---- 杀伐11节点闭环后半（增殖至封印）----
     
     @staticmethod
     def calculate_zengzhi(x: int, target: Entity = None) -> dict:
-        """增殖X：代价：流血10X。［战终］［目标］［血限］+2X
+        """增殖X：支付：流血10X。［战终］［目标］［血限］+2X
 
         2026-10-14 用户令重做：承接遗物【猩红果实】旧效果
         （战始可选流血10 → 战终血限+2），按 X 等比放大为流血10X → 战终+2X；
-        原「消耗X、即时血限+X」废止。发动即付流血代价（走代价管线，
+        原「支付：X、即时血限+X」废止。发动即付流血代价（走代价管线，
         触发【血誓戒】/【烙痕钉】等），血限增长记入战终待决、战终统一结算。
         """
         target_name = target.name if target is not None else "未选定目标"
@@ -195,7 +195,7 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_shufu(x: int, target: Entity = None) -> dict:
-        """束缚X：代价：冷却2X。使[目标]无法行动，持续X"""
+        """束缚X：支付：冷却2X。使[目标]无法行动，持续X"""
         target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "束缚",
@@ -213,7 +213,7 @@ class DaoWenEngine:
 
         用户裁定 2026-09-12：与【再生X】构成生命⇄法力闭环，净值不产生免费资源；
         实际上限由【癌变】(本场累计回复=2×血限) 自然封死。
-        用户裁定 2026-09-13：3X→4X。与【再生X】(消耗X法力→回复4X生命) 对齐为
+        用户裁定 2026-09-13：3X→4X。与【再生X】(支付：X法力→回复4X生命) 对齐为
         严格 4:1 双向汇率，闭环净值归零，不再每轮白赚生命。
         2026-10-14 用户令：改为多代价道纹——合并【搏命】（疲惫X换X法力）并删除搏命；
         遗物【余火印】删除（其发动时额外耗龙心模式一并取消，龙心只走通用抵扣）。
@@ -242,7 +242,7 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_guanchuan(x: int) -> dict:
-        """贯穿X：消耗2X。你造成的伤害无视格挡，持续X"""
+        """贯穿X：支付：2X。你造成的伤害无视格挡，持续X"""
         return {
             "dao_wen": "贯穿",
             "x": x,
@@ -250,12 +250,12 @@ class DaoWenEngine:
             "cost": 2 * x,
             "duration": x,
             "effect": "伤害无视格挡",
-            "summary": f"消耗{2 * x}法力，造成的伤害无视格挡，持续{x}回合"
+            "summary": f"支付：{2 * x}法力，造成的伤害无视格挡，持续{x}回合"
         }
     
     @staticmethod
     def calculate_fengyin(x: int, target: Entity = None) -> dict:
-        """封印X：代价：异变X，使一个[目标]延后X回合再入场。
+        """封印X：支付：异变X，使一个[目标]延后X回合再入场。
 
         2026-10-08 用户令：目标由"只限怪物"放开为**任意目标**——敌人、[朋友]、
         [员工]、临时朋友、敌对轮回者，以及施法者自己都可以被封印。
@@ -278,13 +278,13 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_quanli(x: int, target: Entity = None) -> dict:
-        """全力X：代价：异变5X。使[目标]攻击力等同其法限，持续X
+        """全力X：支付：异变5X。使[目标]攻击力等同其法限，持续X
 
         2026-09-17 用户令重做。旧版「攻击力+X，持续∞」写的是遗留字段 attack_power，
         属性模型统一后（攻击力=当前法力）对不写穿的轮回者完全无效。
 
         新版改为**锁定**：生效期间[目标]的攻击力恒等于其[法限]，不再随当前法力
-        下降而下降——即"不用担心法力降低导致攻击输出降低"。法力本身照常被消耗
+        下降而下降——即"不用担心法力降低导致攻击输出降低"。法力本身照常被支付：
         （它仍是施法资源），只是攻击力不再跟着掉。
 
         实现走状态层（状态名"全力"），由 models.py::effective_attack_power 读取，
@@ -303,7 +303,7 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_huoli(x: int) -> dict:
-        """疯狂X：代价：异变5X。所有角色出手次数+X，持续∞"""
+        """疯狂X：支付：异变5X。所有角色出手次数+X，持续∞"""
         return {
             "dao_wen": "疯狂",
             "x": x,
@@ -316,7 +316,7 @@ class DaoWenEngine:
 
     @staticmethod
     def calculate_jinghua(x: int, target: Entity = None) -> dict:
-        """净化X：消耗2X。使[目标]【异变】-X层"""
+        """净化X：支付：2X。使[目标]【异变】-X层"""
         target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "净化",
@@ -324,12 +324,12 @@ class DaoWenEngine:
             "cost_type": CostType.MANA.value,
             "cost": 2 * x,
             "mutation_reduction": x,
-            "summary": f"消耗{2 * x}法力，使{target_name}【异变】-{x}层",
+            "summary": f"支付：{2 * x}法力，使{target_name}【异变】-{x}层",
         }
     
     @staticmethod
     def calculate_jiansu(x: int, target: Entity = None) -> dict:
-        """减速X：代价：异变5X。使[目标]速度减半，持续X"""
+        """减速X：支付：异变5X。使[目标]速度减半，持续X"""
         target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "减速",
@@ -343,7 +343,7 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_bizhong(x: int) -> dict:
-        """必中X：代价：异变X。你选中的目标无法进行回合外行动，持续X。
+        """必中X：支付：异变X。你选中的目标无法进行回合外行动，持续X。
 
         口径（2026-10-12 用户令增强，取代 2026-09-28 的 self-buff 口径）：
         必中是给**目标**挂 debuff，不是给自己挂姿态。效果从「无法闪避」扩大为
@@ -363,7 +363,7 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_feixing(x: int) -> dict:
-        """飞行X：代价：冷却X。无法被非飞行角色选为目标，持续X回合。"""
+        """飞行X：支付：冷却X。无法被非飞行角色选为目标，持续X回合。"""
         return {
             "dao_wen": "飞行",
             "x": x,
@@ -378,7 +378,7 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_fennu(x: int, target: Entity = None) -> dict:
-        """愤怒X：消耗2X。使[目标]法力消耗减半，持续X"""
+        """愤怒X：支付：2X。使[目标]法力支付：减半，持续X"""
         target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "愤怒",
@@ -387,7 +387,7 @@ class DaoWenEngine:
             "cost": 2 * x,
             "mana_cost_halved": True,
             "duration": x,
-            "summary": f"消耗{2 * x}法力，使{target_name}法力消耗减半，持续{x}回合"
+            "summary": f"支付：{2 * x}法力，使{target_name}法力支付：减半，持续{x}回合"
         }
     
     @staticmethod
@@ -401,7 +401,7 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_ruhua(x: int, target: Entity = None) -> dict:
-        """弱化X：消耗2X。使[目标]攻击力-X，持续∞"""
+        """弱化X：支付：2X。使[目标]攻击力-X，持续∞"""
         target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "弱化",
@@ -410,12 +410,12 @@ class DaoWenEngine:
             "cost": 2 * x,
             "attack_reduction": x,
             "duration": -1,
-            "summary": f"消耗{2 * x}法力，使{target_name}攻击力-{x}，永久"
+            "summary": f"支付：{2 * x}法力，使{target_name}攻击力-{x}，永久"
         }
     
     @staticmethod
     def calculate_wuli(x: int, target: Entity = None) -> dict:
-        """无力X：消耗3X。回始使[目标]出手次数-X，持续∞"""
+        """无力X：支付：3X。回始使[目标]出手次数-X，持续∞"""
         target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "无力",
@@ -424,12 +424,12 @@ class DaoWenEngine:
             "cost": 3 * x,
             "action_reduction": x,
             "duration": -1,
-            "summary": f"消耗{3 * x}法力，回始使{target_name}出手次数-{x}，永久"
+            "summary": f"支付：{3 * x}法力，回始使{target_name}出手次数-{x}，永久"
         }
     
     @staticmethod
     def calculate_quansu(x: int, target: Entity = None) -> dict:
-        """全速X（原名【迟滞】）：代价：冷却X。使[目标]攻击次数等同其速限，持续X
+        """全速X（原名【迟滞】）：支付：冷却X。使[目标]攻击次数等同其速限，持续X
 
         2026-09-17 用户令重做并改名。旧版「攻击次数固定为1」是减益，写的是遗留字段
         attack_count，属性模型统一后（攻击次数=当前速度）对轮回者无效。
@@ -455,7 +455,7 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_jisu(x: int, target: Entity = None) -> dict:
-        """急速X：消耗5X。使[目标]每闪避两次速度+1，持续X"""
+        """急速X：支付：5X。使[目标]每闪避两次速度+1，持续X"""
         target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "急速",
@@ -464,12 +464,12 @@ class DaoWenEngine:
             "cost": 5 * x,
             "speed_per_2_dodges": 1,
             "duration": x,
-            "summary": f"消耗{5 * x}法力，使{target_name}每闪避两次速度+1，持续{x}回合"
+            "summary": f"支付：{5 * x}法力，使{target_name}每闪避两次速度+1，持续{x}回合"
         }
     
     @staticmethod
     def calculate_jiasu(x: int, target: Entity = None) -> dict:
-        """加速X：消耗5X。使[目标]获得的速度翻倍，持续X"""
+        """加速X：支付：5X。使[目标]获得的速度翻倍，持续X"""
         target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "加速",
@@ -478,12 +478,12 @@ class DaoWenEngine:
             "cost": 5 * x,
             "speed_doubled": True,
             "duration": x,
-            "summary": f"消耗{5 * x}法力，使{target_name}获得的速度翻倍，持续{x}回合"
+            "summary": f"支付：{5 * x}法力，使{target_name}获得的速度翻倍，持续{x}回合"
         }
     
     @staticmethod
     def calculate_dongcha(x: int, target: Entity = None) -> dict:
-        """洞察X：代价：疲惫X。使[目标]每次闪避后下回合法力+10，持续X"""
+        """洞察X：支付：疲惫X。使[目标]每次闪避后下回合法力+10，持续X"""
         target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "洞察",
@@ -497,7 +497,7 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_mengbi(x: int, target: Entity = None) -> dict:
-        """蒙蔽X：消耗2X。使[目标]下X次造成的伤害无效"""
+        """蒙蔽X：支付：2X。使[目标]下X次造成的伤害无效"""
         target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "蒙蔽",
@@ -505,7 +505,7 @@ class DaoWenEngine:
             "cost_type": CostType.MANA.value,
             "cost": 2 * x,
             "invalid_damage_hits": x,
-            "summary": f"消耗{2 * x}法力，使{target_name}下{x}次造成的伤害无效"
+            "summary": f"支付：{2 * x}法力，使{target_name}下{x}次造成的伤害无效"
         }
     
     @staticmethod
@@ -514,7 +514,7 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_jisheng(x: int, target: Entity = None, caster: Entity = None) -> dict:
-        """寄生X：消耗3X。使[目标]受到的伤害20X%转化为施法者的回复，持续∞"""
+        """寄生X：支付：3X。使[目标]受到的伤害20X%转化为施法者的回复，持续∞"""
         target_name = target.name if target is not None else "未选定目标"
         caster_name = caster.name if caster is not None else "未知施法者"
         return {
@@ -524,14 +524,14 @@ class DaoWenEngine:
             "cost": 3 * x,
             "drain_percent": 20 * x,
             "duration": -1,
-            "summary": f"消耗{3 * x}法力，使{target_name}受到伤害的{20*x}%转化为{caster_name}的回复，永久"
+            "summary": f"支付：{3 * x}法力，使{target_name}受到伤害的{20*x}%转化为{caster_name}的回复，永久"
         }
     
     # ---- 扭曲都市专属道纹 ----
     
     @staticmethod
     def calculate_bianxing(x: int) -> dict:
-        """变形X：消耗X。使[目标]当前速度与当前法力互换，持续X
+        """变形X：支付：X。使[目标]当前速度与当前法力互换，持续X
 
         注意**故意不声明 target 形参**：api.py 的判定是"计算函数声明了 target 就
         强制要求显式指定目标，禁止静默改为自身"。而 2026-09-17 用户令要的是
@@ -557,12 +557,12 @@ class DaoWenEngine:
             "cost": x,
             "duration": x,
             "effect": "当前速度与当前法力互换",
-            "summary": f"消耗{x}法力，使[目标]当前速度与当前法力互换（超出上限部分蒸发），持续{x}回合"
+            "summary": f"支付：{x}法力，使[目标]当前速度与当前法力互换（超出上限部分蒸发），持续{x}回合"
         }
     
     @staticmethod
     def calculate_dingxing(x: int, target: Entity = None) -> dict:
-        """定型X：消耗2X。使[目标]攻击次数与攻击力无法被改变，持续X"""
+        """定型X：支付：2X。使[目标]攻击次数与攻击力无法被改变，持续X"""
         target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "定型",
@@ -571,12 +571,12 @@ class DaoWenEngine:
             "cost": 2 * x,
             "duration": x,
             "effect": "攻击次数与攻击力无法被改变",
-            "summary": f"消耗{2 * x}法力，使{target_name}攻击次数与攻击力无法被改变，持续{x}回合"
+            "summary": f"支付：{2 * x}法力，使{target_name}攻击次数与攻击力无法被改变，持续{x}回合"
         }
     
     @staticmethod
     def calculate_jibian(x: int, target: Entity = None) -> dict:
-        """畸变X：代价：冷却X。回终使[目标]失去(攻击力×攻击次数)的血限，持续X"""
+        """畸变X：支付：冷却X。回终使[目标]失去(攻击力×攻击次数)的血限，持续X"""
         target_name = target.name if target is not None else "未选定目标"
         if target is not None:
             atk = target.attack_count
@@ -599,7 +599,7 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_chaopin(x: int) -> dict:
-        """超频X：消耗2X。使[目标]速度+X
+        """超频X：支付：2X。使[目标]速度+X
 
         目标由发动方自由指定，选到谁就给谁加速度——可以给自己，也可以给队友
         或敌人。旧版写作"使自身速度+X"，但实现一直是给 target 加速，文案与
@@ -611,12 +611,12 @@ class DaoWenEngine:
             "cost_type": CostType.MANA.value,
             "cost": 2 * x,
             "speed_boost": x,
-            "summary": f"消耗{2*x}法力，[目标]速度+{x}"
+            "summary": f"支付：{2*x}法力，[目标]速度+{x}"
         }
     
     @staticmethod
     def calculate_huaisi(x: int, target: Entity = None) -> dict:
-        """坏死X：消耗2X。使[目标]无法获得回复，持续X"""
+        """坏死X：支付：2X。使[目标]无法获得回复，持续X"""
         target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "坏死",
@@ -625,12 +625,12 @@ class DaoWenEngine:
             "cost": 2 * x,
             "duration": x,
             "effect": "无法获得回复",
-            "summary": f"消耗{2 * x}法力，使{target_name}无法获得回复，持续{x}回合"
+            "summary": f"支付：{2 * x}法力，使{target_name}无法获得回复，持续{x}回合"
         }
     
     @staticmethod
     def calculate_tuihua(x: int, target: Entity = None) -> dict:
-        """退化X：消耗2X。使[目标]每次发动道纹时该次数值-X(最低0)，持续∞"""
+        """退化X：支付：2X。使[目标]每次发动道纹时该次数值-X(最低0)，持续∞"""
         target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "退化",
@@ -639,14 +639,14 @@ class DaoWenEngine:
             "cost": 2 * x,
             "dao_wen_reduction": x,
             "duration": -1,
-            "summary": f"消耗{2 * x}法力，使{target_name}每次发动道纹数值-{x}(最低0)，永久"
+            "summary": f"支付：{2 * x}法力，使{target_name}每次发动道纹数值-{x}(最低0)，永久"
         }
     
     # ---- 罪孽都市专属道纹 ----
     
     @staticmethod
     def calculate_jiahai(x: int, target: Entity = None) -> dict:
-        """加害X：消耗2X。数值规则见 engine.rule_engine.DAOWEN_RULES。"""
+        """加害X：支付：2X。数值规则见 engine.rule_engine.DAOWEN_RULES。"""
         definition = get_daowen_rule("加害")
         target_name = target.name if target is not None else "未选定目标"
         cost = definition.cost(x)
@@ -698,7 +698,7 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_haoduo(x: int, target: Entity = None) -> dict:
-        """豪夺X（2026-09-28 用户令，旧【抵扣】改名）：消耗5X碎片，夺取[目标]1件遗物持续X回合。
+        """豪夺X（2026-09-28 用户令，旧【抵扣】改名）：支付：5X碎片，夺取[目标]1件遗物持续X回合。
 
         夺取=把目标的一件遗物转移到己方（施法者）临时持有，持续X回合，到期归还。
         与旧【抵扣】（只封印）的区别：夺取期间施法者**真正持有**该遗物并能触发其被动，
@@ -707,38 +707,38 @@ class DaoWenEngine:
         target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "豪夺", "x": x,
-            # 2026-09-28 用户令：消耗5X碎片（沿用现有 cost_shards 付费通道；
+            # 2026-09-28 用户令：支付：5X碎片（沿用现有 cost_shards 付费通道；
             # 不写 cost_type=MANA，避免被当成法力支付）。
             "cost_type": "代价", "cost_shards": 5 * x,
             "relic_steal": 1, "duration": x,
-            "summary": f"消耗{5*x}碎片，夺取{target_name}一件遗物，持续{x}回合"
+            "summary": f"支付：{5*x}碎片，夺取{target_name}一件遗物，持续{x}回合"
         }
 
     # 旧名 calculate_dikou 不再保留（避免注册时与"豪夺"双注册）。
     
     @staticmethod
     def calculate_qingsuan(x: int, target: Entity = None, caster_shards: int = 0) -> dict:
-        """清算X：消耗2X。[回始]使目标失去你碎片点格挡，持续X"""
+        """清算X：支付：2X。[回始]使目标失去你碎片点格挡，持续X"""
         target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "清算", "x": x, "cost_type": CostType.MANA.value, "cost": 2 * x,
             "qingsuan_register": True, "duration": x,
-            "summary": f"消耗{2 * x}法力，[回始]使{target_name}失去{caster_shards}格挡，持续{x}回合"
+            "summary": f"支付：{2 * x}法力，[回始]使{target_name}失去{caster_shards}格挡，持续{x}回合"
         }
     
     @staticmethod
     def calculate_qiangjie(x: int, target: Entity = None) -> dict:
-        """抢劫X：消耗3X。夺取目标10X碎片；若无碎片则失去X点速度"""
+        """抢劫X：支付：3X。夺取目标10X碎片；若无碎片则失去X点速度"""
         target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "抢劫", "x": x, "cost_type": CostType.MANA.value, "cost": 3 * x,
             "shard_steal": 10 * x, "speed_penalty": x,
-            "summary": f"消耗{3 * x}法力，夺取{target_name} {10*x}碎片或{x}速度"
+            "summary": f"支付：{3 * x}法力，夺取{target_name} {10*x}碎片或{x}速度"
         }
 
     @staticmethod
     def calculate_lesuo(x: int, target: Entity = None) -> dict:
-        """勒索X：消耗3X。目标失去10X碎片，不足部分记负债（真碎片扣负；2026-10-14 补点金反转分叉，还债新生产者）。
+        """勒索X：支付：3X。目标失去10X碎片，不足部分记负债（真碎片扣负；2026-10-14 补点金反转分叉，还债新生产者）。
 
         与【抢劫】同价同量（3X→10X），形状不同：抢劫是偷取（施法者获得，不足不记负债；
         无碎片改失速），勒索是销毁+记负债（谁都不获得，不足部分真碎片扣负，可触发【还债】）。
@@ -748,33 +748,33 @@ class DaoWenEngine:
         return {
             "dao_wen": "勒索", "x": x, "cost_type": CostType.MANA.value, "cost": 3 * x,
             "shard_debt": 10 * x,
-            "summary": f"消耗{3 * x}法力，{target_name}失去{10*x}碎片，不足记负债"
+            "summary": f"支付：{3 * x}法力，{target_name}失去{10*x}碎片，不足记负债"
         }
     
     @staticmethod
     def calculate_jiachao(x: int) -> dict:
-        """假钞X：消耗X。获得10X假碎片"""
+        """假钞X：支付：X。获得10X假碎片"""
         return {
             "dao_wen": "假钞", "x": x, "cost_type": CostType.MANA.value, "cost": x,
             "fake_shards": 10 * x,
-            "summary": f"消耗{x}法力，获得{10*x}假碎片"
+            "summary": f"支付：{x}法力，获得{10*x}假碎片"
         }
     
     @staticmethod
     def calculate_xiaozai(x: int) -> dict:
-        """消灾X：消耗50X假碎片/5X碎片（局外发动消耗×2）。重置随机数X次以改变结果"""
+        """消灾X：支付：50X假碎片/5X碎片（局外发动支付：×2）。重置随机数X次以改变结果"""
         return {
             "dao_wen": "消灾", "x": x, "cost_type": "碎片",
             "fake_cost": 50 * x, "real_cost": 5 * x,
             "rerolls": x,
-            "summary": f"消耗{50*x}假碎片或{5*x}碎片（局外×2），重置随机数{x}次"
+            "summary": f"支付：{50*x}假碎片或{5*x}碎片（局外×2），重置随机数{x}次"
         }
     
     # ---- 龙心谷专属道纹 ----
     
     @staticmethod
     def calculate_longlin(x: int, target: Entity = None) -> dict:
-        """龙鳞X：消耗2X。数值规则见 engine.rule_engine.DAOWEN_RULES。"""
+        """龙鳞X：支付：2X。数值规则见 engine.rule_engine.DAOWEN_RULES。"""
         definition = get_daowen_rule("龙鳞")
         target_name = target.name if target is not None else "未选定目标"
         return {
@@ -786,7 +786,7 @@ class DaoWenEngine:
 
     @staticmethod
     def calculate_nilin(x: int, target: Entity = None) -> dict:
-        """逆鳞X：代价：流血X。目标每失去1生命获得1层逆鳞，下次伤害+全部层数，持续X"""
+        """逆鳞X：支付：流血X。目标每失去1生命获得1层逆鳞，下次伤害+全部层数，持续X"""
         target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "逆鳞", "x": x, "cost_type": CostType.BLEED.value, "cost_hp": x,
@@ -796,12 +796,12 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_liebian(x: int, target: Entity = None) -> dict:
-        """裂变X：消耗2X。使目标受到伤害改为分X次结算，持续∞"""
+        """裂变X：支付：2X。使目标受到伤害改为分X次结算，持续∞"""
         target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "裂变", "x": x, "cost_type": CostType.MANA.value, "cost": 2 * x,
             "split_count": x, "duration": -1,
-            "summary": f"消耗{2 * x}法力，{target_name}受伤分{x}次结算，永久"
+            "summary": f"支付：{2 * x}法力，{target_name}受伤分{x}次结算，永久"
         }
     
     @staticmethod
@@ -810,22 +810,22 @@ class DaoWenEngine:
     
     @staticmethod
     def calculate_beifu(x: int, target: Entity = None) -> dict:
-        """背负X：消耗2X。选择目标，其下X次受到伤害由自身承担"""
+        """背负X：支付：2X。选择目标，其下X次受到伤害由自身承担"""
         target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "背负", "x": x, "cost_type": CostType.MANA.value, "cost": 2 * x,
             "absorb_count": x,
-            "summary": f"消耗{2 * x}法力，{target_name}下{x}次受伤由自身承担"
+            "summary": f"支付：{2 * x}法力，{target_name}下{x}次受伤由自身承担"
         }
     
     @staticmethod
     def calculate_shanghen(x: int, target: Entity = None) -> dict:
-        """伤痕X：消耗2X。使目标每次失去生命后血限-X，持续∞"""
+        """伤痕X：支付：2X。使目标每次失去生命后血限-X，持续∞"""
         target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "伤痕", "x": x, "cost_type": CostType.MANA.value, "cost": 2 * x,
             "blood_limit_loss": x, "duration": -1,
-            "summary": f"消耗{2 * x}法力，{target_name}每次掉血后血限-{x}，永久"
+            "summary": f"支付：{2 * x}法力，{target_name}每次掉血后血限-{x}，永久"
         }
     
     # ... 其他道纹可按需添加
@@ -834,7 +834,7 @@ class DaoWenEngine:
 
     @staticmethod
     def calculate_fenlie(x: int, y: int = 1) -> dict:
-        """分裂X/Y：代价：流血X×10Y。创造X个10Y[血限]的自身复制体。
+        """分裂X/Y：支付：流血X×10Y。创造X个10Y[血限]的自身复制体。
 
         双参数道纹（引擎首个）：
           X = 复制体**数量**
@@ -842,7 +842,7 @@ class DaoWenEngine:
         代价【流血】= X×10Y，恰好等于造出来的**总血限**——造多少血就流多少
         血，不会凭空增殖，也不会因为本体血限高低而白赚或白亏。
 
-        代价轴沿革：旧版「代价：冷却X；[命零]时创造X个本体血限20%的复制体」
+        代价轴沿革：旧版「支付：冷却X；[命零]时创造X个本体血限20%的复制体」
         （触发时机绑死在[命零]、代价与产出无关、本体越壮越白赚，三项均已废止）
         → 2026-09-17 改为「即时发动 + 代价【衰老】X×10Y（扣血限）」
         → 2026-10-08 用户令：代价由【衰老】改为【流血】。数值不变，但付的是
@@ -861,44 +861,44 @@ class DaoWenEngine:
 
     @staticmethod
     def calculate_qianmo(x: int) -> dict:
-        """缄默X：消耗X。使场上所有由[命零]触发的效果无法触发，持续X。"""
+        """缄默X：支付：X。使场上所有由[命零]触发的效果无法触发，持续X。"""
         return {
             "dao_wen": "缄默", "x": x,
             "cost_type": CostType.MANA.value, "cost": x,
             "duration": x, "silence_death_triggers": True,
-            "summary": f"消耗{1 * x}法力，封禁全场[命零]触发效果，持续{x}回合"
+            "summary": f"支付：{1 * x}法力，封禁全场[命零]触发效果，持续{x}回合"
         }
 
     @staticmethod
     def calculate_wajie(x: int, target: Entity = None) -> dict:
-        """瓦解X：消耗3X。使一个[目标]的[血限]减少10X%。"""
+        """瓦解X：支付：3X。使一个[目标]的[血限]减少10X%。"""
         target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "瓦解", "x": x,
             "cost_type": CostType.MANA.value, "cost": 3 * x,
             "blood_limit_pct": 10 * x,
-            "summary": f"消耗{3 * x}法力，{target_name}血限-{10*x}%"
+            "summary": f"支付：{3 * x}法力，{target_name}血限-{10*x}%"
         }
 
     @staticmethod
     def calculate_mingqi(x: int, target: Entity = None) -> dict:
-        """冥气X：消耗2X。[目标]每失去一次速度[速限]-2，持续X。
+        """冥气X：支付：2X。[目标]每失去一次速度[速限]-2，持续X。
 
         修复（2026-08-21）：补上 target 参数使该道纹正确声明需要[目标]，
         否则 requires_target=False 导致怪物只能自施（实战：红嫁衣鬼冥气自施）。
-        效果数值与消耗不变。
+        效果数值与支付：不变。
         """
         target_name = target.name if target is not None else "未选定目标"
         return {
             "dao_wen": "冥气", "x": x,
             "cost_type": CostType.MANA.value, "cost": 2 * x,
             "speed_loss_speed_limit": 2, "duration": x,
-            "summary": f"消耗{2 * x}法力，{x}回合内{target_name}每失去速度速限-2"
+            "summary": f"支付：{2 * x}法力，{x}回合内{target_name}每失去速度速限-2"
         }
 
     @staticmethod
     def calculate_gouhun(x: int, target: Entity = None) -> dict:
-        """勾魂X：消耗X。使[目标]无法获得[法力]，持续X。
+        """勾魂X：支付：X。使[目标]无法获得[法力]，持续X。
 
         改版（2026-08-30，DM 裁定见 报告.md 硬伤2-C）：
         旧版为「[回始]使[目标]失去2X点当前法力，持续∞」——永久扣法力对输出决策
@@ -909,7 +909,7 @@ class DaoWenEngine:
         修复（2026-08-21）：补上 target 参数使该道纹正确声明需要[目标]，
         否则 requires_target=False 导致怪物只能自施（寄骨蝇勾魂自吸无法力=空放）。
 
-        2026-09-09 DM裁定：法力改一池制后一度改为「消耗法力翻倍」；
+        2026-09-09 DM裁定：法力改一池制后一度改为「支付：法力翻倍」；
         2026-10-08 用户令：恢复「无法获得[法力]」原意，翻倍逻辑撤销。
         此时战斗内已有多个法力来源（聚能／储能电池／守夜灯／承露盏／
         透支／法术），效果重新有对象。判定位统一在
@@ -920,22 +920,22 @@ class DaoWenEngine:
             "dao_wen": "勾魂", "x": x,
             "cost_type": CostType.MANA.value, "cost": x,
             "no_mana_gain": True, "duration": x,
-            "summary": f"消耗{x}法力，{target_name}无法获得法力，持续{x}回合"
+            "summary": f"支付：{x}法力，{target_name}无法获得法力，持续{x}回合"
         }
 
-    # 2026-10-08 用户令删除【镇尸】（消耗2X。使一个[目标]无法获得[回复]，持续X）。
+    # 2026-10-08 用户令删除【镇尸】（支付：2X。使一个[目标]无法获得[回复]，持续X）。
     # 它与【坏死】是同一效果的**两套实现**（坏死=effect 字符串状态，镇尸=no_heal 布尔钩子），
     # 属硬重复。保留【坏死】作为「无法获得[回复]」的唯一实现；乱葬岗闭环上这一格
     # 留成空占位符（见 RESERVED_SLOT），不直连、不拿别的道纹顶替。
 
     @staticmethod
     def calculate_zhaohun(x: int) -> dict:
-        """招魂X：消耗3X。唤回1具已击灭的怪物尸体作为[临时朋友]，生命为20X。"""
+        """招魂X：支付：3X。唤回1具已击灭的怪物尸体作为[临时朋友]，生命为20X。"""
         return {
             "dao_wen": "招魂", "x": x,
             "cost_type": CostType.MANA.value, "cost": 3 * x,
             "revive_temp_friend": True, "temp_hp": 20 * x,
-            "summary": f"消耗{3 * x}法力，唤回1具已灭怪物作为临时朋友（生命{20*x}）"
+            "summary": f"支付：{3 * x}法力，唤回1具已灭怪物作为临时朋友（生命{20*x}）"
         }
 
     # ========== 统一调度入口 ==========
@@ -1065,7 +1065,7 @@ class DaoWenEngine:
         result = func(**params)
         
         # 检查X上限
-        cost_type = result.get("cost_type", "消耗")
+        cost_type = result.get("cost_type", "支付：")
         if cost_type in cls.X_LIMITS:
             state = kwargs.get("_state", {})
             x_max = cls.X_LIMITS[cost_type](state)
@@ -1095,7 +1095,7 @@ class ResonanceEngine:
 
     2026-10-07 用户令：残韵路径**双向**。`CLOSED_LOOPS` 里的每条边 `(src, 类型, dst)`
     是无向边：src 与 dst 互为闭环上的相邻节点，两个方向都走**同一种**残韵、
-    **同样**消耗一次（规则正文：沿闭环选择一条相邻的变化路径）。边表只登记一次，
+    **同样**支付：一次（规则正文：沿闭环选择一条相邻的变化路径）。边表只登记一次，
     不重复登记反向边——双向由 `find_transformations` 在查询时展开，避免边数与
     「闭环 N 条边」的口径翻倍。
     """
@@ -1208,7 +1208,7 @@ class ResonanceEngine:
         返回：[{resonance_type, target_daowen, direction, loop}, ...]
 
         每条登记边 (src, 类型, dst) 正反两向都可用：正向 src→dst、反向 dst→src，
-        消耗同种残韵、同样一次。同一个源道纹在同一个残韵类型上可能通向**两个**
+        支付：同种残韵、同样一次。同一个源道纹在同一个残韵类型上可能通向**两个**
         相邻节点（例：【杀伐】的【反转】同时通向【再生】与【封印】），此时
         `find_transformation` 不替调用方挑，必须由发动者显式指定走哪一条。
         """
@@ -1313,7 +1313,7 @@ class ResonanceEngine:
         1. 残韵作用于任意角色拥有的道纹时，将其永久变为变化后的道纹
         2. 施法者同时永久获得变化后的道纹
         3. 通过残韵获得的道纹，X值按施法者自由控X规则自定义
-        4. 路径双向：正反向同一种残韵、同样消耗（2026-10-07 用户令）
+        4. 路径双向：正反向同一种残韵、同样支付：（2026-10-07 用户令）
         """
         # 检查路径是否存在（双向展开）
         candidates = cls.find_transformations(source_daowen, resonance_type)
@@ -1324,7 +1324,7 @@ class ResonanceEngine:
             }
 
         # 空占位符：这一格在闭环上留着，但**不能获得**。
-        # 走到它 = 无事发生：不消耗残韵、不改写牌面、不授予施法者。
+        # 走到它 = 无事发生：不支付：残韵、不改写牌面、不授予施法者。
         # 放在这里（而不是 find 层）拦，是为了让闭环结构仍可被验证（环长、入度/出度、
         # roundtrip 可达性都得照常成立），只有真正发动时才拒绝。
         if target_daowen:
