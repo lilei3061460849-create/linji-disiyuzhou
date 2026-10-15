@@ -182,6 +182,10 @@ class _SpecialEvents:
     def rule_lines(self, event_id: str) -> list[str]:
         return list(self.by_id(event_id)["rule_lines"])
 
+    def threshold(self, event_id: str) -> int:
+        """读取非致死事件中的通用固定阈值（如还债）。"""
+        return int(self.by_id(event_id)["threshold"])
+
     # ---- 引擎消费的字段（雕塑）----
     def durability_ratio(self, event_id: str) -> float:
         """雕塑消耗品耐久上限 = ceil([血限] × 本系数)。"""

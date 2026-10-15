@@ -66,13 +66,13 @@ def test_longlin_cast_early_for_permanent_dr(tmp_path):
     assert r is not None, "法力充足时龙鳞应被发动"
 
 
-def test_jibian_pay_type_debuff_casts_at_x1(tmp_path):
-    """畸变（代价型debuff）：X≥2门槛应对代价型豁免，X=1即可发动"""
+def test_shufu_cooldown_debuff_casts_at_x1(tmp_path):
+    """束缚（冷却型debuff）：X≥2门槛应对代价型豁免，X=1即可发动"""
     e = _engine(tmp_path)
-    _give(e.state.player, "畸变", cost_type="冷却")
+    _give(e.state.player, "束缚", cost_type="冷却")
     ai = TacticalAI(e)
     r = ai.try_debuff()
-    assert r is not None, "代价型削弱应以X=1发动，不得被X≥2门槛卡死"
+    assert r is not None, "冷却型削弱应以X=1发动，不得被X≥2门槛卡死"
 
 
 # 2026-10-11 用户令：`test_shuaibai_reclassified_as_debuff_and_casts` 已删除——它整条建立在被删机制上，不是改断言能救的。

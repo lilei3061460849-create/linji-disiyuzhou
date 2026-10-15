@@ -529,7 +529,7 @@ def test_r25_r31_illegal_sculpture_and_live_battle_end(tmp_path):
 
 # R32-R38：持续语义与死斗
 
-def test_r32_r38_normal_deform_ransom_and_transform_restore(tmp_path):
+def test_r32_r38_normal_deform_robbery_and_transform_restore(tmp_path):
     """2026-10-11 用户令：【衰败】删除，原「衰败发动不立即掉血、回始扣10%」段落移除。"""
     engine = _engine(tmp_path)
     player, monster = _controlled_combat(engine)
@@ -542,12 +542,12 @@ def test_r32_r38_normal_deform_ransom_and_transform_restore(tmp_path):
 
     monster.shards = 3
     engine.state.shards = 0
-    ransom = DaoWenEngine.resolve("赎金", 1, target=monster, caster=player)
+    robbery = DaoWenEngine.resolve("抢劫", 1, target=monster, caster=player)
     speed = monster.current_speed
-    engine.combat.apply_daowen_effect("赎金", ransom, player, monster)
+    engine.combat.apply_daowen_effect("抢劫", robbery, player, monster)
     assert monster.shards == 0 and engine.state.shards == 3 and monster.current_speed == speed
     monster.current_speed = 4
-    engine.combat.apply_daowen_effect("赎金", ransom, player, monster)
+    engine.combat.apply_daowen_effect("抢劫", robbery, player, monster)
     assert monster.current_speed == 3  # 无碎片时才失去X速度
     assert engine.state.shards == 3
 

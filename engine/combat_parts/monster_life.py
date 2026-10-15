@@ -48,8 +48,8 @@ class MonsterLifeMixin:
         if hp_ratio <= 0.3:
             difficulty_signals.append("生命低于30%")
         
-        # 2. 被眩晕/束缚/无法行动
-        if monster.has_status("眩晕") or monster.has_status("束缚"):
+        # 2. 被束缚/无法行动
+        if monster.has_status("束缚"):
             difficulty_signals.append("被控制")
         
         # 3. 攻击力被弱化到极低
@@ -181,7 +181,7 @@ class MonsterLifeMixin:
 
     PROLIFERATION_THRESHOLD = Entity.CANCER_HEAL_MULTIPLIER  # 癌变：规则正文「累计恢复量达血限×2」；过量回复按原值计（阈值唯一事实源在 Entity，DM裁定2026-08-18）
     CANCER_THRESHOLD = PROLIFERATION_THRESHOLD  # 别名：增生旧名已统一为癌变，二者同阈值
-    DEBT_THRESHOLD = 20           # 还债：怪物负债达到20碎片时触发（DM裁定2026-08-22 由10上调）
+    DEBT_THRESHOLD = special_events.threshold("huanzhai")  # 还债阈值来自 data/rules/special_events.toml
     # 雕塑数值唯一事实源在 data/rules/special_events.toml（与 Entity 阈值同口径接线）
     SCULPTURE_DAMAGE = special_events.damage_per_durability("diaosu")    # 每点耐久可造成的伤害
     SCULPTURE_SHIELD = special_events.shield_per_durability("diaosu")    # 每点耐久可获得的格挡

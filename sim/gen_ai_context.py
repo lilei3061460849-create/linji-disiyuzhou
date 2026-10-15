@@ -112,7 +112,7 @@ def _digest(text: str) -> str:
 
 _SECTION_RE = re.compile(r"^##\s+(.*\S)\s*$")
 _SUBSECTION_RE = re.compile(r"^###\s+(.*\S)\s*$")
-_RELIC_CHAPTERS = ("遗物池", "事件遗物", "怪物自带遗物", "血族遗物", "龙族遗物")
+_RELIC_CHAPTERS = ("遗物池", "事件遗物", "怪物自带遗物", "血族遗物", "龙族遗物", "消耗品")
 
 
 def _read_raw(root: Path, relpath: str) -> str:
@@ -179,7 +179,7 @@ def extract_daowen(root: Path, relpath: str) -> str:
 
 
 def extract_relics(root: Path, relpath: str) -> str:
-    """遗物速查：遗物池、事件遗物、怪物自带遗物与种族遗物；占位条目跳过。"""
+    """物品速查：遗物与已登记消耗品；占位条目及分类标题跳过。"""
     lines = _read_raw(root, relpath).splitlines()
     out: list[str] = []
     chapter = ""
@@ -192,6 +192,8 @@ def extract_relics(root: Path, relpath: str) -> str:
         if not heading or not any(key in chapter for key in _RELIC_CHAPTERS):
             continue
         name = heading.group(1)
+        if name == "扭曲都市废墟设施工具库":
+            continue
         if "?" in name or "占位" in name:
             continue
         parts: list[str] = []
@@ -253,7 +255,7 @@ def digest_sources() -> list[DigestSource]:
     """机制速查与角色名单：只摘名称与一行效果，供外部 AI 避免凭空编造。"""
     return [
         DigestSource("机制速查·道纹", "全道纹索引.md", extract_daowen, count_label="条"),
-        DigestSource("机制速查·遗物", "物品索引.md", extract_relics, count_label="件"),
+        DigestSource("机制速查·物品", "物品索引.md", extract_relics, count_label="件"),
         DigestSource("机制速查·法术", "法术索引.md", extract_spells, count_label="式"),
         DigestSource("机制速查·副本", "副本索引.md", extract_regions, count_label="个"),
         DigestSource("角色名单（只列身份，不含记忆）", "角色记忆", extract_roster, count_label="人"),

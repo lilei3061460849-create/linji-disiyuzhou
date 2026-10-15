@@ -87,13 +87,13 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
     
     # 副本专属道纹
     REGION_EXCLUSIVE_DAOWEN = {
-        "扭曲都市": {"变形","定型","畸变","超频","坏死","退化"},   # 2026-10-03 删【爆裂】；2026-10-14 删【搏命】（并入【透支】）
-        "罪孽都市": {"点金","典当","豪夺","清算","赎金","假钞","消灾","勒索"},   # 2026-10-13 删【逼债】【典当】顶替；2026-10-14 +【勒索】
-        "龙心谷":   {"加害","龙鳞","逆鳞","裂变","背负","伤痕"},   # 2026-10-03 删【活血】；2026-10-11 删【嫁祸】
+        "扭曲都市": {"变形","定型","超频","坏死"},  # 【畸变】【退化】已遗物化
+        "罪孽都市": {"点金","典当","豪夺","清算","抢劫","假钞","消灾","勒索"},   # 2026-10-13 删【逼债】【典当】顶替；2026-10-14 +【勒索】
+        "龙心谷":   {"加害","龙鳞","裂变","背负"},  # 【逆鳞】【伤痕】已遗物化
     }
     
     # 原始怪物道纹（道纹归属规则：各组起点）——【原初X】可借用范围
-    ORIGINAL_MONSTER_DAOWEN = ("全力", "疯狂", "减速", "必中", "飞行")   # 2026-10-03 删【狂暴】
+    ORIGINAL_MONSTER_DAOWEN = ("全力", "疯狂", "减速", "必中")  # 【飞行】并入骨天使的【变形】
     # 原始怪物道纹每次实际发动时支付异变5X（X 恒为面板/借用时写定的值；
     # 2026-09-16 用户令：道纹递增机制已废止）；效果持续期间（未再次发动）不再重复计费。
     # 必中为次数型（下X次选择[目标]无法闪避），余数记在 entity._bizhong_left。
@@ -309,16 +309,11 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                     or entity.has_status("飞行"))
 
     def _wanjunyin_holder(self, target: Entity) -> bool:
-        """被攻击一方是否有【万钧印】持有者（激活中）。玩家侧朋友/员工视同玩家侧。"""
-        if target is None:
+        """己方被攻击角色是否有剩余耐久的【万钧印】消耗品。"""
+        if target is None or not self.state.on_player_side(target):
             return False
-        if target is self.state.player:
-            return self._relic_active(self.state.player, "万钧印")
-        if target.entity_type == "轮回者" and self.state.on_enemy_side(target):
-            return self._relic_active(target, "万钧印")
-        if target.entity_type in ("朋友", "员工", "临时朋友"):
-            return self._relic_active(self.state.player, "万钧印")
-        return False
+        return any(item.name == "万钧印" and not item.is_depleted
+                   for item in self.state.consumables)
 
     def _incoming_adjust(self, target: Entity, amount: int, damage_type: str = "普通") -> int:
         if amount <= 0 or damage_type == "代价" or target is None:
@@ -632,38 +627,27 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
                 name="无力", value=new_stacks, remaining_rounds=1, source="寒冰法力"))
 
     def _shouyedeng_pending_grant(self, entity: Optional[Entity]) -> int:
-        """守夜灯：[回始]将授予的法力量（0=本次不会授予）。
-
-        判定条件与 _grant_shouyedeng 完全一致但不实际发放，供静态校验预计算
-        法力预算使用（当前法力=0 时先发制人等合法反应法术不应被误判「法力不足」）。
-
-        用户裁定 2026-09-13：改为 **[回始]获得[法限]10%的法力**（原为
-        [敌回始]获得50%、[敌回终]清空）。一池制下这是唯一的常规回血手段，
-        10% 只是让长局不至于彻底断供，不构成回填。
-        """
+        """守夜灯：每次[回始]获得等同于[法限]50%的法力。"""
         if entity is None or not entity.is_alive or entity.entity_type != "轮回者":
             return 0
         if not self.state.side_has(entity, "守夜灯"):
             return 0
         if entity is self.state.player and self.state.sealed_relics.get("守夜灯", 0) > 0:
             return 0
-        if getattr(entity, "_shouyedeng_granted", 0):
-            return 0
-        return math.ceil(entity.mana_limit * 0.1)   # 全局整数规则：向上取整
+        return math.ceil(entity.mana_limit * 0.5)
 
     def _grant_shouyedeng(self, entity: Optional[Entity]) -> Optional[dict]:
-        """守夜灯：[回始]获得[法限]10%法力，每回合一次，不再清空。"""
+        """守夜灯：[回始]获得等同于[法限]50%的法力。"""
         gained = self._shouyedeng_pending_grant(entity)
         if gained <= 0:
             return None
         before = entity.current_mana
-        # 2026-10-08：走统一入口，【勾魂】期间不生效
+        # 走统一入口，【勾魂】期间不生效
         entity.gain_mana(gained)
         self.clamp_immortal_body(entity)
-        # 记实际落地量（上限可能吃掉一部分），供战报如实呈现。
-        entity._shouyedeng_granted = entity.current_mana - before
+        actual = entity.current_mana - before
         return {"type": "shouyedeng_grant", "entity": entity.name,
-                "gained": entity._shouyedeng_granted, "declared": gained}
+                "gained": actual, "declared": gained}
 
     def _find_named(self, name: str) -> Optional[Entity]:
         for e in self.state.get_all_player_side() + self.state.get_all_enemy_side():
@@ -779,15 +763,15 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
             "hp_lost": 0,
             "target_died": False,
         }
-        # 万钧印（通用遗物池，2026-10-03 新增）：有[目标]发动攻击时，可将其改为
-        # 该攻击者对自己发动攻击。触发条件＝被攻击的一方（含其阵营）持有并激活
-        # 【万钧印】；改道后本次攻击由攻击者承受自己的攻击（目标不再挨打）。
-        # 决策口径：引擎没有交互式决策层，故默认发动；调用方显式传 wanjunyin=False
-        # 可拒绝本次（为未来的玩家决策层留口）。被改道的一次自攻不会再被改道
-        # （_wanjunyin_converted 防 A→B→A 递归）。
+        # 万钧印（消耗品）：己方角色被选为攻击目标时自动触发并消耗1点耐久，
+        # 将攻击改为攻击者对自己发动。显式传 wanjunyin=False 可拒绝本次；
+        # 被改道的一次自攻不会再被改道（_wanjunyin_converted 防 A→B→A 递归）。
         if (not _wanjunyin_converted and wanjunyin is not False
                 and attacker is not target and attacker.is_alive
                 and self._wanjunyin_holder(target)):
+            item = next(item for item in self.state.consumables
+                        if item.name == "万钧印" and not item.is_depleted)
+            item.use()
             # 原受击者的反应提交随改道失效；自攻目标按自身可用反应法术生成
             # 显式「不发动」提交，避免把原目标的法术选择错配给攻击者。
             redirected_choices = {
@@ -1105,7 +1089,7 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         # 遗物：回始触发（回锋刀按速限缺口造伤）。
         relic_logs = self.process_relics(TriggerTiming.ROUND_START, {"relic_choices": relic_choices or {}})
         effects.extend({"type": "relic", "log": l} for l in relic_logs)
-        # 守夜灯（用户裁定 2026-09-13 改为[回始]授予[法限]10%，不再清空）：
+        # 守夜灯：[回始]获得[法限]50%的法力，不设每回合触发次数上限。
         # 玩家与死斗对手（同为轮回者）同口径，在回始遗物之后结算。
         for entity in ([self.state.player] if self.state.player else []) + list(self.state.enemies):
             granted = self._grant_shouyedeng(entity) if entity.entity_type == "轮回者" else None
@@ -1598,7 +1582,7 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         return effects
 
     def can_act(self, entity: Entity) -> bool:
-        """是否可出手（眩晕/束缚下不可；被【封印】暂离者不在场上，同样不可出手）。
+        """是否可出手（束缚下不可；被【封印】暂离者不在场上，同样不可出手）。
 
         2026-10-08 用户令：封印可作用于任意目标含自己。这里是"能否出手"的唯一
         事实源，加上暂离判断后，玩家/朋友/员工/怪物被封印期间一律不能行动，
@@ -1606,7 +1590,7 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         """
         return (entity.is_alive
                 and not self.state.is_sealed_away(entity)
-                and not entity.has_status("眩晕")
+
                 and not entity.has_status("束缚"))
 
     def is_targetable(self, attacker: Entity, target: Entity) -> bool:

@@ -165,14 +165,14 @@ def test_boba_boundary_and_invalid_submissions():
 
 
 
-def test_jiahai_guzhi_fennu_jieli_jisheng():
-    """加害挂目标加伤；固执单次掉 1；愤怒法力减半；寄生吸血。
+def test_jiahai_guzhi_fennu():
+    """加害挂目标加伤；固执单次掉 1；愤怒法力减半。
 
     2026-10-11 用户令：【借力】已删除，原「借力2 → _jieli_boost +20%」段落一并移除。
     """
     engine = _engine("hooks")
     p = engine.state.player
-    for n in ("加害", "固执", "愤怒", "寄生"):
+    for n in ("加害", "固执", "愤怒"):
         _give(p, n)
     m = _monster(engine, ap=10)
     engine.execute_action("round_start", {})
@@ -201,14 +201,6 @@ def test_jiahai_guzhi_fennu_jieli_jisheng():
     assert p.spend_mana(10) is True
     assert p.current_mana == mana - 5
 
-    host = _monster(engine, name="寄生体", hp=80, atk=1, ap=1)
-    r_js = engine.execute_action("use_daowen", {"daowen_name": "寄生", "x": 1, "target": host.name})
-    assert r_js["success"], r_js
-    assert host.has_status("寄生")
-    p.current_hp = 40
-    before = p.current_hp
-    engine.combat._apply_hostile_damage(host, 10)
-    assert p.current_hp == before + 2  # 10 * 20%
 
 
 def test_huaxiang_dingxing_wushen():
@@ -242,36 +234,17 @@ def test_retired_healing_runes_are_not_registered():
     assert "眩晕" not in DaoWenEngine._registry
 
 
-def test_jisu_jiasu_dongcha():
-    """急速每闪两次+1 速；加速让超频翻倍；洞察闪避后下回始+10 法力。"""
-    engine = _engine("speed")
-    p = engine.state.player
-    for n in ("急速", "加速", "超频", "洞察"):
-        _give(p, n)
-    engine.execute_action("round_start", {})
+def test_relicized_trigger_daowen_registry_and_flight_rehoming():
+    """已遗物化触发型道纹不可再施放；飞行由骨天使的变形附带。"""
+    retired = {
+        "逆鳞", "伤痕", "寄生", "加速", "急速", "洞察", "无力",
+        "冥气", "退化", "畸变", "缄默", "飞行",
+    }
+    assert retired.isdisjoint(DaoWenEngine._registry)
 
-    engine.execute_action("use_daowen", {"daowen_name": "急速", "x": 2, "target": p.name})
-    # 2026-09-13：当前速度不得超过[速限]。满速开局时"+1速"会被上限吃掉，
-    # 本例要验的是"急速每闪两次给1速"这件事发生了，先腾出空间再验。
-    p.current_speed = max(0, p.speed_limit - 3)
-    spd = p.current_speed
-    engine.combat._note_dodge(p)
-    assert p.current_speed == spd
-    engine.combat._note_dodge(p)
-    assert p.current_speed == spd + 1
-
-    engine.execute_action("use_daowen", {"daowen_name": "加速", "x": 1, "target": p.name})
-    p.speed_limit += 6          # 给翻倍后的 +6 留出上限空间（同上）
-    spd = p.current_speed
-    engine.execute_action("use_daowen", {"daowen_name": "超频", "x": 3})
-    assert p.current_speed == spd + 6
-
-    engine.execute_action("use_daowen", {"daowen_name": "洞察", "x": 1, "target": p.name})
-    engine.combat._note_dodge(p)
-    assert getattr(p, "_dongcha_pending", 0) == 10
-    mana = p.current_mana
-    engine.state.combat_subphase = "await_round_end"
-    engine.execute_action("round_end", {})
-    engine.execute_action("round_start", {})
-    # DM裁定 2026-09-09：一池制，[回始]不回填 → 只有洞察结算的那 10 点
-    assert p.current_mana == mana + 10, f"{p.current_mana} != {mana}+10"
+    engine = _engine("bone_angel_flight")
+    bone_angel = _monster(engine, name="骨天使", hp=30, atk=7, ap=3)
+    _give(bone_angel, "变形")
+    calc = DaoWenEngine.resolve("变形", 1, target=bone_angel, caster=bone_angel)
+    engine.combat.apply_daowen_effect("变形", calc, bone_angel, bone_angel)
+    assert bone_angel.has_status("飞行")

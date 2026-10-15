@@ -207,6 +207,8 @@ def test_monster_cast_bizhong_self_then_forces_debuff():
     e = _engine("loop")
     p = e.state.player
     p.current_speed = 6
+    # 本用例只验证必中姿态、勾魂与残韵出路；避免无关普攻把玩家打入死之传承中断。
+    p.blood_limit = p.current_hp = 1000
     m = _monster({"必中": 3, "勾魂": 4}, name="勾魂使者")
     e.state.enemies.append(m)
     e.combat.reset_monster_activation()
@@ -234,13 +236,14 @@ def test_monster_cast_bizhong_self_then_forces_debuff():
         prepared=prepared)
     assert p.has_status("勾魂"), "怪物处于必中姿态，勾魂必须命中生效"
 
-    # 玩家的出路：残韵把该道纹转掉（已生效的 debuff 不清除）
-    # 2026-10-08 删【镇尸】后，勾魂的【曲解】通向闭环空占位符（不可获得），
-    # 唯一可用的转化路径是【反转】→冥气。
+    # 【冥气】已遗物化删除；勾魂的【反转】路径现在指向不可获得的「？？」占位。
+    # 尝试残韵不得消耗资源，也不能凭空获得已删除道纹。
     e.state.resonance = {"反转": 1}
     r = e.execute_action("use_resonance", {"source_daowen": "勾魂",
                                            "resonance_type": "反转",
                                            "target_ref": "enemy:0"})
-    assert r.get("success") is True, r.get("error")
-    assert "勾魂" not in m.dao_wen and "冥气" in m.dao_wen
-    assert p.has_status("勾魂"), "转化不清除已生效 debuff（硬伤2-D）"
+    assert r.get("success") is False, r.get("error")
+    assert "？？" in r.get("error", "")
+    assert "勾魂" in m.dao_wen and "冥气" not in m.dao_wen
+    assert e.state.resonance.get("反转", 0) == 1
+    assert p.has_status("勾魂"), "失败的占位路径不得清除已生效 debuff"

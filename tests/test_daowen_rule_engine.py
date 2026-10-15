@@ -149,8 +149,8 @@ def test_generated_rule_descriptions_match_the_authoritative_documents():
     assert longlin in dungeon
     for text in (guzhi, jiahai, longlin):
         assert text in index
-    assert "加害X（起点/终点）：消耗2X。" in dungeon
-    assert "龙鳞X：消耗2X。" in dungeon
+    assert "加害X（起点/终点）：支付：法力2X。" in dungeon
+    assert "龙鳞X：支付：法力2X。" in dungeon
 
 
 def test_generic_numeric_operators_are_composable_and_explainable():

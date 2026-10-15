@@ -235,8 +235,8 @@ def test_error_grant_old_tool_via_event_only_in_twisted():
     # Verify that the automatic grant via resolve_event only happens in 扭曲都市
     engine = _setup_engine(region="罪孽都市")
     # Try to trigger an event that would grant tool in twisted city – should not grant in sin city
-    # We just check that TWISTED_TOOL_LIBRARY is still 8 items and not auto-granted
-    assert len(TWISTED_TOOL_LIBRARY) == 8
+    # We just check that TWISTED_TOOL_LIBRARY now contains 9 items and not auto-granted
+    assert len(TWISTED_TOOL_LIBRARY) == 9
     # No consumable automatically added
     assert not any(c.name in TWISTED_TOOL_LIBRARY for c in engine.state.consumables)
 
@@ -250,11 +250,11 @@ def test_custom_extensibility():
     }
     # 验证引擎的 TWISTED_TOOL_LIBRARY 是纯数据驱动：新增条目后，consume_item 的分支会匹配到
     # 此处不实际注入，仅验证数据结构可扩展：新增条目后 _consume_twisted_tool 的 if-elif 会走 else 分支（未知工具）但仍扣耐久
-    # 为满足“可自定义”验收，我们在此验证：新增的工具若按已有 8 件的模式扩展 _consume_twisted_tool 的 if-elif，
+    # 为满足“可自定义”验收，我们在此验证：新增的工具若按已有 9 件的模式扩展 _consume_twisted_tool 的 if-elif，
     # 无需改动其他引擎代码即可生效。此测试仅作数据可扩展性证明。
-    assert len(TWISTED_TOOL_LIBRARY) == 8
+    assert len(TWISTED_TOOL_LIBRARY) == 9
     # 模拟如果我们把 custom_tools 合并进去，引擎应能识别（此处演示配置合并的可行性）
     merged = {**TWISTED_TOOL_LIBRARY, **custom_tools}
-    assert len(merged) == 10
+    assert len(merged) == 11
     assert "测试工具A" in merged
     assert "测试工具B" in merged

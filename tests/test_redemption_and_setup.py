@@ -111,22 +111,20 @@ def test_resonance_permanently_converts_and_grants():
     _give(engine.state.player, "杀伐")
     monster = Entity(name="慢怪", entity_type="怪物", blood_limit=80, current_hp=80,
                      attack_count=2, attack_power=4)
-    # 2026-10-03：【狂暴】删除（其反转边一并删除），
-    # 改用仍在怪物原始道纹树上的 减速→(反转)→加速。
-    _give(monster, "减速")
+    # 使用仍可获得的【必中】反转为【蒙蔽】，同时验证怪物其余原始道纹保留。
+    _give(monster, "必中")
     _give(monster, "全力")
     monster._had_monster_daowen = True
     engine.state.enemies[:] = [monster]
     r = engine.execute_action("use_resonance", {
-        "source_daowen": "减速", "resonance_type": "反转", "target_ref": "enemy:0",
+        "source_daowen": "必中", "resonance_type": "反转", "target_ref": "enemy:0",
     })
     assert r["success"]
-    assert "减速" not in monster.dao_wen and "加速" in monster.dao_wen
+    assert "必中" not in monster.dao_wen and "蒙蔽" in monster.dao_wen
     assert "全力" in monster.dao_wen
-    assert "加速" in engine.state.player.dao_wen
-    assert "加速" not in ORIGINAL_MONSTER_DAOWEN
+    assert "蒙蔽" in engine.state.player.dao_wen
+    assert "蒙蔽" not in ORIGINAL_MONSTER_DAOWEN
     assert not engine.state.pending_redemption
-
 
 def test_resonance_does_not_duplicate_same_name():
     engine = _ready_combat(_engine("res_dup"))
@@ -262,21 +260,21 @@ def test_jinghua_rejects_non_positive_x():
 def test_redemption_fires_at_low_hp_even_with_transform_left():
     """正常：残血且卸掉最后一张原始道纹，转化道纹留下也触发救赎。"""
     engine = _ready_combat(_engine("rd_path"))
-    engine.state.resonance["转换"] = 1
+    engine.state.resonance["反转"] = 1
     monster = Entity(name="脑蜘蛛", entity_type="怪物", blood_limit=204, current_hp=20,
                      attack_count=2, attack_power=11)
     # 2026-10-11 用户令：【借力】随 A14 删除，【全力】的（转换）出边按用户口径**留空**
-    # （不补新道路）。本用例改用仍有（转换）出边的原始道纹【必中】→【洞察】。
+    # 已遗物化的【洞察】不可获得；本用例改用【必中】反转为【蒙蔽】。
     _give(monster, "必中")
     _give(monster, "坏死")
     engine.state.enemies[:] = [monster]
     r = engine.execute_action("use_resonance", {
-        "source_daowen": "必中", "resonance_type": "转换", "target_ref": "enemy:0",
+        "source_daowen": "必中", "resonance_type": "反转", "target_ref": "enemy:0",
     })
     assert r["success"]
     assert r.get("redemption")
     assert engine.state.pending_redemption
-    assert "洞察" in engine.state.pending_redemption["dao_wen"]
+    assert "蒙蔽" in engine.state.pending_redemption["dao_wen"]
     assert "必中" not in engine.state.pending_redemption["dao_wen"]
     assert not monster.is_alive
     accept = engine.execute_action("resolve_redemption", {"option": "接纳", "name": "微光蛛"})

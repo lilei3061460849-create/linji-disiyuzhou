@@ -1,7 +1,6 @@
 """乱葬岗（二阶副本）实现契约测试。
 
-覆盖：6专属道纹注册/残韵闭环（2026-10-08 删【镇尸】）、区域可选、怪物池解析、
-附煞行动（7煞气）、专属道纹效果（瓦解/勾魂/冥气/缄默/招魂）。
+覆盖：4条幸存的乱葬岗专属道纹、遗物化空位的闭环保留、区域可选、怪物池解析、附煞行动与幸存道纹效果。
 """
 import os
 import sys
@@ -10,7 +9,7 @@ from tests.setup_support import finish_initial_daowen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.api import GameEngine
-from engine.daowen import DaoWenEngine, ResonanceEngine, RESERVED_SLOT
+from engine.daowen import DaoWenEngine, ResonanceEngine, RESERVED_SLOT, RELICIZED_DAOWEN_SLOTS
 from engine.models import Entity, GameState
 from engine.dice import DiceEngine
 from engine.combat import CombatEngine
@@ -19,12 +18,12 @@ from engine.combat import CombatEngine
 # ---------- 道纹注册与闭环 ----------
 
 def test_dungeon_daowen_registered():
-    """正常路径：6个乱葬岗专属道纹已注册并可解析。
+    """正常路径：4个幸存的乱葬岗专属道纹已注册并可解析。
 
     2026-10-03 删【尸爆】；2026-10-08 删【镇尸】（与【坏死】硬重复）。
     """
     DaoWenEngine.register_all()
-    for name in ("分裂", "缄默", "瓦解", "冥气", "勾魂", "招魂"):
+    for name in ("分裂", "瓦解", "勾魂", "招魂"):
         assert name in DaoWenEngine._registry, f"{name} 未注册"
         r = DaoWenEngine.resolve(name, 2, target=Entity("T", "怪物", blood_limit=100, current_hp=100),
                                  caster=Entity("C", "轮回者", blood_limit=60, current_hp=60))
@@ -34,17 +33,29 @@ def test_dungeon_daowen_registered():
 def test_dungeon_resonance_loop_complete():
     """正常路径：乱葬岗残韵闭环7条路径全部可达。
 
-    2026-10-03 删【尸爆】：分裂→缄默直连。
+    遗物化的【缄默】【冥气】各自保留为独立「？？」节点，不与相邻道纹直连。
     2026-10-08 删【镇尸】：勾魂与招魂之间那一格留成**空占位符**，环仍是 7 条边，
     因此这两条路径查得到，但不可获得（见 test_reserved_slot_not_obtainable）。
     """
     DaoWenEngine.register_all()
-    loop = [("分裂", "缄默"), ("缄默", "瓦解"), ("瓦解", "冥气"),
-            ("冥气", "勾魂"), ("勾魂", RESERVED_SLOT), (RESERVED_SLOT, "招魂"),
-            ("招魂", "分裂")]
-    for a, b in loop:
-        paths = ResonanceEngine.get_available_resonance(a)
-        assert any(p.get("target_daowen") == b for p in paths), f"{a}→{b} 缺失"
+    slots = RELICIZED_DAOWEN_SLOTS
+    expected_edges = [
+        ("分裂", "转换", slots["缄默"]),
+        (slots["缄默"], "曲解", "瓦解"),
+        ("瓦解", "转换", slots["冥气"]),
+        (slots["冥气"], "反转", "勾魂"),
+        ("勾魂", "曲解", RESERVED_SLOT),
+        (RESERVED_SLOT, "曲解", "招魂"),
+        ("招魂", "转换", "分裂"),
+    ]
+    edges = ResonanceEngine.CLOSED_LOOPS["乱葬岗闭环"]
+    assert len(edges) == 7
+    for edge in expected_edges:
+        assert edge in edges, f"乱葬岗闭环缺少边 {edge}"
+    sources = {src for src, _, _ in edges}
+    targets = {dst for _, _, dst in edges}
+    assert sources == targets, "闭环每个节点都必须恰有前后相邻边"
+    assert all(name not in DaoWenEngine._registry for name in slots.values())
 
 
 def test_reserved_slot_not_obtainable():

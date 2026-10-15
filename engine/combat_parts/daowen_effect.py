@@ -697,6 +697,15 @@ class DaowenEffectMixin:
                 result["effects"].append({"type": "swap", "target": swap_target.name,
                                           "current_speed": swap_target.current_speed,
                                           "current_mana": swap_target.current_mana})
+                # 【飞行】不再是独立道纹：骨天使发动【变形】时附带飞行状态，持续X。
+                from ..gamedata import MONSTER_DAOWEN_BONUSES
+                bonus = MONSTER_DAOWEN_BONUSES.get(caster.name, {}).get(name)
+                if caster.entity_type == "怪物" and bonus == "飞行":
+                    caster.add_status(self._daowen_status(
+                        daowen_order=daowen_order, name=bonus, value=x,
+                        remaining_rounds=x, source=f"{caster.name}·{name}"))
+                    result["effects"].append({"type": "flying", "target": caster.name,
+                                              "duration": x, "source_daowen": name})
 
         # ---- 速度修改 ----
         if "speed_boost" in calc:
@@ -733,7 +742,7 @@ class DaowenEffectMixin:
                 })
                 result["effects"].append({"type": "speed_halved", "target": wt.name,
                                           "speed": wt.current_speed})
-        if "speed_penalty" in calc and (name != "赎金" or self._shards_of(target) <= 0):
+        if "speed_penalty" in calc and (name != "抢劫" or self._shards_of(target) <= 0):
             self._lose_current_speed(target, calc["speed_penalty"], ctx={
                 "timing": "monster_action" if caster.entity_type == "怪物" else "player_action",
                 "source": name, "source_type": "daowen", "actor": caster, "target": target,
@@ -763,7 +772,7 @@ class DaowenEffectMixin:
 
         # ---- 碎片系（罪孽）----
         if "shard_steal" in calc and self._shards_of(target) > 0:
-            # 赎金是“有碎片则夺取，若无碎片才失速”的二选一；不得把不足额偷取扩成负债。
+            # 抢劫是“有碎片则夺取，若无碎片才失速”的二选一；不得把不足额偷取扩成负债。
             gained = min(self._shards_of(target), calc["shard_steal"])
             self._lose_shards_of(target, gained)
             if caster is self.state.player:
@@ -772,7 +781,7 @@ class DaowenEffectMixin:
                 caster.shards += gained
             result["effects"].append({"type": "shard_steal", "target": target.name, "gained": gained})
         if "shard_debt" in calc:
-            # 2026-10-14【勒索】：与赎金同价同量形状不同——碎片是销毁（谁都不获得），
+            # 2026-10-14【勒索】：与抢劫同价同量形状不同——碎片是销毁（谁都不获得），
             # 不足部分记负债（真碎片扣负，可触发【还债】）。走 shards 动词统一口径
             # （= 旧逼债块字面约定：够则扣，不够则假碎片优先+差额扣负）。
             from ..mechanisms.verbs import apply_verb

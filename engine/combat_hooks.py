@@ -237,7 +237,7 @@ class AfterDamageEffectsHook:
                         res.setdefault("噬伤血囊", []).append({
                             "holder": holder.name, "requested": heal_n, **healed})
 
-        # 遗物【???】：由持有该遗物的创建者所创造的分裂复制体造成伤害后，
+        # 遗物【共生血囊】：由持有该遗物的创建者所创造的分裂复制体造成伤害后，
         # 复制体先回复等同实际失血的生命；超过复制体生命上限的部分再回复创建者。
         # 以实际生命减少量为基数，避免把超过目标剩余生命的过量伤害计入。
         creator_id = getattr(attacker, "copy_creator_runtime_id", "") if attacker is not None else ""
@@ -251,13 +251,21 @@ class AfterDamageEffectsHook:
                     candidates.append(value)
             creator = next((entity for entity in candidates
                             if getattr(entity, "runtime_id", "") == creator_id), None)
-            actual_life_loss = max(0, int(detail.get("actual_life_loss", actual_damage)))
-            if (creator is not None and actual_life_loss > 0
-                    and combat._relic_active(creator, "???")
+            # `actual_damage` 是扣除格挡后的伤害，不保证目标有这么多当前生命；
+            # 用伤害事件的实际前后生命差兜底，避免对低血目标把超杀部分算成吸血。
+            if "actual_life_loss" in detail:
+                actual_life_loss = max(0, int(detail["actual_life_loss"]))
+            else:
+                hp_before = int(detail.get("hp_before", target.current_hp))
+                hp_after = int(detail.get("hp_after", target.current_hp))
+                actual_life_loss = max(0, hp_before - hp_after)
+            if (creator is not None and creator.is_alive and creator.current_hp > 0
+                    and actual_life_loss > 0
+                    and combat._relic_active(creator, "共生血囊")
                     and not attacker.has_status("坏死")):
                 clone_heal = combat.state.apply_heal(attacker, actual_life_loss, ctx={
                     "timing": damage_ctx.timing if damage_ctx else "",
-                    "source": "???", "source_type": "relic", "actor": attacker,
+                    "source": "共生血囊", "source_type": "relic", "actor": attacker,
                     "target": attacker, "owner": creator, "mechanic": "heal",
                     "subtype": "split_clone_lifesteal", "amount": actual_life_loss,
                     "tags": {"relic", "after_damage", "split_clone"},
@@ -268,7 +276,7 @@ class AfterDamageEffectsHook:
                 if overflow > 0 and creator.is_alive and not creator.has_status("坏死"):
                     creator_heal = combat.state.apply_heal(creator, overflow, ctx={
                         "timing": damage_ctx.timing if damage_ctx else "",
-                        "source": "???", "source_type": "relic", "actor": attacker,
+                        "source": "共生血囊", "source_type": "relic", "actor": attacker,
                         "target": creator, "owner": creator, "mechanic": "heal",
                         "subtype": "split_clone_overflow", "amount": overflow,
                         "tags": {"relic", "after_damage", "split_clone", "overflow"},

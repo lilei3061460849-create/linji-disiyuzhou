@@ -325,14 +325,16 @@ def test_r44_normal_guard_lamp_ceil(tmp_path):
     engine.state.relics = [Relic("守夜灯", "")]
     engine.combat.round_start({})
     # DM裁定 2026-09-09：一池制，[回始]不回填（法限5 也不再自动补满）；
-    # 2026-09-13：守夜灯改为[回始]授予 ceil(法限*10%)=ceil(0.5)=1，故池中恰为 1。
-    assert player.current_mana == 1
-    assert engine.combat._grant_shouyedeng(player) is None, "同回合不重复授予"
+    # 2026-10-15：守夜灯改为每次[回始]授予 ceil(法限*50%)=ceil(2.5)=3。
+    assert player.current_mana == 3
     player.current_mana = 0
-    player._shouyedeng_granted = 0
     granted = engine.combat._grant_shouyedeng(player)
-    assert granted["gained"] == 1
-    assert player.current_mana == 1
+    assert granted["gained"] == 3
+    assert player.current_mana == 3
+    player.current_mana = 0
+    granted_again = engine.combat._grant_shouyedeng(player)
+    assert granted_again["gained"] == 3
+    assert player.current_mana == 3
 
 
 def test_r44_boundary_slow_one_stays_one(tmp_path):

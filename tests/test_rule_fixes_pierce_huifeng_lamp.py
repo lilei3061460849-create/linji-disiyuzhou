@@ -191,7 +191,7 @@ def test_round_start_huifeng_fizzles_when_no_enemy_alive(tmp_path):
 # ---------- 守夜灯 ----------
 
 def test_lamp_grants_at_round_start_and_keeps_it(tmp_path):
-    """正常路径（2026-09-13 新口径）：[回始]授予 ceil(法限*10%)，怪物阶段不再授予也不清空。"""
+    """正常路径（2026-09-13 新口径）：[回始]授予 ceil(法限*50%)，怪物阶段不再授予也不清空。"""
     e = _engine(tmp_path, "lamp_ok")
     e.state.relics.append(Relic("守夜灯", ""))
     begin_battle(e)
@@ -199,9 +199,9 @@ def test_lamp_grants_at_round_start_and_keeps_it(tmp_path):
     # 满池时授予会被上限全额吃掉，先花干净再看[回始]授予。
     p.current_mana = 0
     p._shouyedeng_granted = 0
-    tenth = math.ceil(p.mana_limit * 0.1)
+    half = math.ceil(p.mana_limit * 0.5)
     begin_round(e)
-    assert p.current_mana == tenth, f"[回始]应授予{tenth}，实{p.current_mana}"
+    assert p.current_mana == half, f"[回始]应授予{half}，实{p.current_mana}"
     before = p.current_mana
     phase = _monster_phase_no_attack(e)
     assert phase["success"], phase
@@ -220,12 +220,11 @@ def test_lamp_grant_is_capped_by_mana_limit(tmp_path):
     e.state.relics.append(Relic("守夜灯", ""))
     p = e.state.player
     p.mana_limit = 21
-    p.current_mana = 14
+    p.current_mana = 0
     e.combat._grant_shouyedeng(p)
-    assert p.current_mana == 14 + math.ceil(21 * 0.1)  # ceil(2.1)=3 → 17
+    assert p.current_mana == math.ceil(21 * 0.5)  # ceil(10.5)=11
     # 贴着上限时溢出丢弃
     p.current_mana = 20
-    p._shouyedeng_granted = 0
     e.combat._grant_shouyedeng(p)
     assert p.current_mana == 21
 

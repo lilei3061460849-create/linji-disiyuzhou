@@ -160,6 +160,11 @@ class RuleSync:
         elif "道纹网络】" in content and "专属行动" in content:
             content = content.split("道纹网络】", 1)[1].split("专属行动", 1)[0]
 
+        # 死者之书中的特殊事件页可能引用「原初X」等机制术语，不属于道纹定义。
+        # 结构化事件页必须排除在道纹抽取范围之外。
+        if full_path.name == "死者之书.md" and "### ？？？·特殊事件·" in content:
+            content = content.split("### ？？？·特殊事件·", 1)[0]
+
         definitions: dict[str, dict] = {}
         lines = content.splitlines()
         for line_number, line in enumerate(lines, 1):
@@ -178,7 +183,7 @@ class RuleSync:
             # 规则正文的原始/转化道纹使用“名称X（消耗/代价与效果）”内联格式。
             for name, description in re.findall(
                     r"([\u4e00-\u9fff]{2})X（([^（）]+)）", line):
-                if "消耗" not in description and "代价" not in description:
+                if not any(label in description for label in ("消耗", "代价", "支付")):
                     continue
                 definitions.setdefault(name, {
                     "name": name,

@@ -107,11 +107,11 @@ def test_gain_bonus_actually_reaches_candidate_score():
     from unittest.mock import patch
     from engine.models import Entity, DaoWen, DaoWenInstance
     ai = _ai_in_region("扭曲都市")
-    # 放一只带【畸变】的怪：畸变 --(曲解)--> 超频，是真实存在的转化路径
+    # 放一只带【变形】的怪：变形 --(转换)--> 定型，是真实存在的转化路径
     foe = Entity(name="靶怪", entity_type="怪物", blood_limit=200, current_hp=200,
                  attack_count=2, attack_power=5)
-    foe.dao_wen["畸变"] = DaoWenInstance(DaoWen(
-        name="畸变", formula="", cost_type="冷却", cost_formula="X", effect_formula=""))
+    foe.dao_wen["变形"] = DaoWenInstance(DaoWen(
+        name="变形", formula="", cost_type="消耗", cost_formula="X", effect_formula=""))
     ai.engine.state.enemies.append(foe)
     ai.engine.state.phase = "in_combat"
 
@@ -123,7 +123,7 @@ def test_gain_bonus_actually_reaches_candidate_score():
         base = score_map()
     with patch.object(type(ai), "_resonance_gain_bonus", return_value=99.0):
         boosted = score_map()
-    assert base, "应至少枚举出一个残韵候选（畸变--曲解-->超频）"
+    assert base, "应至少枚举出一个残韵候选（变形--转换-->定型）"
     shared = set(base) & set(boosted)
     assert shared, "两次枚举应有共同候选"
     for label in shared:

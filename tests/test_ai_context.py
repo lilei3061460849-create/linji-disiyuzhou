@@ -86,11 +86,11 @@ def test_mechanics_digest_covers_daowen_relics_spells_and_regions():
     daowen, relics = bodies["全道纹索引.md"], bodies["物品索引.md"]
     spells, regions = bodies["法术索引.md"], bodies["副本索引.md"]
 
-    for marker in ("杀伐：消耗X。", "封印：代价：异变X", "透支：代价", "变形：消耗X。"):
+    for marker in ("杀伐：支付：法力X。", "封印：支付：异变X", "透支：支付：", "变形：支付：法力X。"):
         assert marker in daowen, marker
-    assert daowen.count("\n") >= 50, "道纹速查应覆盖全部已实现道纹"
+    assert daowen.count("\n") >= 35, "道纹速查应覆盖全部现行道纹"
 
-    for marker in ("守夜灯：", "回锋刀：", "某人的偏爱：", "猩红果实："):
+    for marker in ("守夜灯：", "万钧印：", "回锋刀：", "某人的偏爱：", "猩红果实："):
         assert marker in relics, marker
     assert "???" not in relics and "占位" not in relics
 

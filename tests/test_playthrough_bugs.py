@@ -94,10 +94,10 @@ def _resolve_prepared_monsters(engine: GameEngine, daowen_name: str | None = Non
 # ========================================================================
 
 def test_resonance_on_enemy_grants_dest_and_rewrites_next_activation():
-    """正常路径：反转敌方【减速】→ 敌人永久变为【加速】，贾凡同时永久获得【加速】。
+    """正常路径：反转敌方【全力】→ 敌人永久变为【弱化】，贾凡同时永久获得【弱化】。
 
     2026-10-03：原用例把敌方【狂暴】反转成其转化分支；【狂暴】删除后该边不存在，
-    改用仍在怪物原始道纹树上的 减速→(反转)→加速（同为 MONSTER_TRANSFORM_DAOWEN）。
+    改用仍有效的 全力→(反转)→弱化。
     """
     engine = _engine("res_happy")
     engine.state.resonance["反转"] = 1
@@ -105,67 +105,66 @@ def test_resonance_on_enemy_grants_dest_and_rewrites_next_activation():
     monster = Entity(name="通缉犯", entity_type="怪物", blood_limit=80, current_hp=80,
                      attack_count=1, attack_power=5, mana_limit=11, current_mana=11,
                      speed_limit=4, current_speed=4)
-    _give_daowen(monster, "减速", x=1)
     _give_daowen(monster, "全力", x=1)
     monster._had_monster_daowen = True
     _put_enemy(engine, monster)
     engine.execute_action("round_start", {})
 
     r = engine.execute_action("use_resonance", {
-        "source_daowen": "减速", "resonance_type": "反转", "target_ref": "enemy:0",
+        "source_daowen": "全力", "resonance_type": "反转", "target_ref": "enemy:0",
     })
     assert r["success"], r
-    assert r["granted_daowen"] == "加速"
-    assert "加速" in engine.state.player.dao_wen
-    assert "减速" not in monster.dao_wen
-    assert "加速" in monster.dao_wen
+    assert r["granted_daowen"] == "弱化"
+    assert "弱化" in engine.state.player.dao_wen
+    assert "全力" not in monster.dao_wen
+    assert "弱化" in monster.dao_wen
     assert engine.state.resonance["反转"] == 0
 
     finish_round(engine)
     engine.execute_action("round_start", {})
     prepared = engine.execute_action("prepare_monster_phase", {})
     actor = prepared["result"]["actors"][0]
-    option = next(o for o in actor["daowen_options"] if o["name"] == "加速")
+    option = next(o for o in actor["daowen_options"] if o["name"] == "弱化")
     assert option, "改写后的【加速】应成为怪物可发动道纹"
     phase = engine.execute_action("resolve_monster_phase", {
         "token": prepared["result"]["token"],
         "choices": [{
             "actor_ref": actor["actor_ref"],
-            "daowen": {"name": "加速", "target_ref": "enemy:0",
+            "daowen": {"name": "弱化", "target_ref": "player:0",
                        "dodge": False, "blood_shadow": False, "trigger_spell_choices": {}},
             "attack_actions": [{"hits": [{"target_ref": "player:0", "dodge": False, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}}]}],
         }],
     })
     assert phase["success"], phase
     details = phase["result"]["details"]
-    activated = [d for d in details if d.get("daowen_activated") == "加速"]
-    assert activated, f"应发动永久改写后的加速: {details}"
-    assert monster.has_status("加速"), "改写后的道纹必须真实生效"
-    assert "加速" in monster.dao_wen and "减速" not in monster.dao_wen
+    activated = [d for d in details if d.get("daowen_activated") == "弱化"]
+    assert activated, f"应发动永久改写后的弱化: {details}"
+    assert engine.state.player.has_status("弱化"), "改写后的道纹必须真实生效"
+    assert "弱化" in monster.dao_wen and "全力" not in monster.dao_wen
 
 
 def test_resonance_no_duplicate_when_caster_already_owns_dest():
     """边界：施法者已持有变化后道纹则不重复获得；目标道纹仍永久变化。"""
     engine = _engine("res_bound")
     engine.state.resonance["反转"] = 1
-    _give_daowen(engine.state.player, "加速")
+    _give_daowen(engine.state.player, "弱化")
     engine.execute_action("battle_start", {})
-    monster = Entity(name="唯一减速", entity_type="怪物", blood_limit=80, current_hp=80,
+    monster = Entity(name="唯一全力", entity_type="怪物", blood_limit=80, current_hp=80,
                      attack_count=1, attack_power=4)
-    _give_daowen(monster, "减速", x=1)
+    _give_daowen(monster, "全力", x=1)
     _give_daowen(monster, "全力", x=1)
     monster._had_monster_daowen = True
     _put_enemy(engine, monster)
     engine.execute_action("round_start", {})
 
     r = engine.execute_action("use_resonance", {
-        "source_daowen": "减速", "resonance_type": "反转",
+        "source_daowen": "全力", "resonance_type": "反转",
     })
     assert r["success"], r
     assert r["granted_daowen"] is None
-    assert list(engine.state.player.dao_wen).count("加速") == 1
-    assert "减速" not in monster.dao_wen
-    assert "加速" in monster.dao_wen
+    assert list(engine.state.player.dao_wen).count("弱化") == 1
+    assert "全力" not in monster.dao_wen
+    assert "弱化" in monster.dao_wen
 
 
 def test_resonance_fails_without_holder_or_stock():
@@ -244,7 +243,7 @@ def test_no_zhesu_means_no_bonus_mana():
 
 
 def test_shouyedeng_bonus_is_its_own_slice():
-    """正常路径（2026-09-13 新口径）：守夜灯[回始]授予 ceil(法限*10%)，授予的法力不再清空；
+    """正常路径（2026-09-13 新口径）：守夜灯[回始]授予 ceil(法限*50%)，授予的法力不再清空；
     一池制下回始本身仍不回填。"""
     engine = _engine("lamp_happy")
     p = engine.state.player
@@ -253,7 +252,7 @@ def test_shouyedeng_bonus_is_its_own_slice():
     # 满池时授予会被[法限]全额吃掉，先花干净才看得到授予量。
     p.spend_mana(p.current_mana)
     granted = engine.combat._grant_shouyedeng(p)
-    assert granted and granted["gained"] == math.ceil(EXP_MANA * 0.1)
+    assert granted and granted["gained"] == math.ceil(EXP_MANA * 0.5)
     assert p.current_mana == granted["gained"]
     base = p.current_mana
     finish_round(engine)
@@ -267,7 +266,7 @@ def test_shouyedeng_refills_a_spent_pool_up_to_limit():
     engine.state.relics.append(Relic(name="守夜灯", effect="[回始]获得等同于[法限]10%的法力"))
     engine.execute_action("battle_start", {"relic_choices": {}})
     p.spend_mana(p.current_mana)
-    grant = math.ceil(EXP_MANA * 0.1)
+    grant = math.ceil(EXP_MANA * 0.5)
     engine.combat._grant_shouyedeng(p)
     assert p.current_mana == min(EXP_MANA, grant), (
         f"[回始]+{grant}（受[法限]{EXP_MANA}截断），实{p.current_mana}")

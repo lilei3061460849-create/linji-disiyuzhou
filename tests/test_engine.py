@@ -141,12 +141,6 @@ def test_daowen_calculations():
     assert result["delay_rounds"] == 1
     print("  ✓ 封印X=1: 异变+1，一个目标怪物延后1回合回场")
     
-    # 测试飞行（2026-10-05 用户令：飞行代价 异变5X→冷却X，与引擎口径对齐）
-    result = DaoWenEngine.resolve("飞行", 2)
-    assert result["cost_type"] == CostType.COOLDOWN.value
-    assert result["cost"] == 2
-    assert result["duration"] == 2
-    print("  ✓ 飞行X=2: 冷却2场，无法被选为目标，持续2回合")
     
     print("  ✓ 所有道纹计算通过")
 
@@ -168,7 +162,7 @@ def test_resonance():
     print("  ✓ 再生 --反转--> 杀伐（反向）")
     
     # 再生 → 曲解 → 庇护
-    result = ResonanceEngine.apply_resonance("再生", "曲解", False, True)
+    result = ResonanceEngine.apply_resonance("再生", "曲解", False, True, target_daowen="庇护")
     assert result["success"]
     assert result["target"] == "庇护"
     print("  ✓ 再生 --曲解--> 庇护")
@@ -193,7 +187,7 @@ def test_resonance():
 def test_combat():
     """测试战斗系统"""
     print("\n=== 测试：战斗系统 ===")
-    engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
+    engine = GameEngine(db_path=f"/tmp/linji_tests/test_rulings_{os.getpid()}.db")
     
     # 设置玩家
     engine.execute_action("setup_attributes", {
@@ -493,13 +487,15 @@ def test_daowen_effects_wired():
     engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
     engine.execute_action("setup_attributes", {"name":"测试","blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(engine)
+    # 本测试只验证道纹面板效果；开局随机发现的【衰变沙漏】会把所有道纹本次X减1，需从夹具中移除以隔离断言。
+    engine.state.relics = [relic for relic in engine.state.relics if relic.name != "衰变沙漏"]
     engine.state.phase = "in_combat"
     player = engine.state.player
     # 本测试连续发动6次道纹只为验证效果落地，与出手预算校验无关，给予充裕出手预算
     player.speed_limit = 99
     # 给玩家多个道纹用于测试
     from engine.models import DaoWen, DaoWenInstance
-    for n in ["弱化","全力","变形","赎金","飞行"]:
+    for n in ["弱化","全力","变形","抢劫"]:
         player.dao_wen[n] = DaoWenInstance(dao_wen=DaoWen(name=n,formula="",cost_type="消耗",cost_formula="X",effect_formula=""))
     m = Entity(name="靶怪", entity_type="怪物", blood_limit=100, current_hp=100, attack_count=3, attack_power=10)
     m.shards = 20
@@ -522,24 +518,14 @@ def test_daowen_effects_wired():
     m.current_mana = mana_before
     print(f"  ✓ 弱化/强化：靶怪攻击力 10→7→锁定法限{m.mana_limit}（花法力不掉）")
 
-    # R35 赎金3：有碎片则最多夺取现有20，不再把不足额扩成负债。
+    # R35 抢劫3：夺取目标现有20碎片。
     shards_before = engine.state.shards
     engine.state.player.actions_used_this_round = 0   # 前序弱化/强化已用满2次出手
-    r = engine.execute_action("use_daowen", {"daowen_name":"赎金","x":3,"target":"靶怪"})
-    assert r["success"], f"赎金失败: {r}"
-    assert m.shards == 0, f"赎金后靶怪现有20碎片应被夺尽，实{m.shards}"
+    r = engine.execute_action("use_daowen", {"daowen_name":"抢劫","x":3,"target":"靶怪"})
+    assert r["success"], f"抢劫失败: {r}"
+    assert m.shards == 0, f"抢劫后靶怪现有20碎片应被夺尽，实{m.shards}"
     assert engine.state.shards == shards_before + 20, f"玩家应+20碎片"
-    print(f"  ✓ 赎金：靶怪碎片20→-10(负债)，玩家+20碎片")
-
-    # 飞行2（自身）→ 玩家飞行，非飞行无法选中
-    engine.state.player.actions_used_this_round = 0   # 前序道纹已用满2次出手
-    r = engine.execute_action("use_daowen", {"daowen_name":"飞行","x":2})
-    assert r["success"], f"飞行发动失败: {r}"
-    m2 = Entity(name="地面怪", entity_type="怪物", blood_limit=50, current_hp=50)
-    engine.state.enemies.append(m2)
-    assert engine.combat.is_targetable(m2, player) is False, "非飞行怪不应能选中飞行玩家"
-    assert engine.combat.is_targetable(player, player) is True or True
-    print("  ✓ 飞行：地面怪无法选中飞行中的玩家")
+    print(f"  ✓ 抢劫：靶怪碎片20→0，玩家+20碎片")
 
     # 变形（自身攻击力/攻击次数互换）：玩家默认 0×0，互换后仍为 0×0，只验证逻辑跑通
     r = engine.execute_action("use_daowen", {"daowen_name":"变形","x":1})
@@ -924,7 +910,7 @@ def test_evolution_yuanchu():
     print(f"  ✓ 困境怪发动【原初2】：异变+10（当前{m.mutation_count}层），借用【减速2】至战终")
 
     # ---- 2. 边界：同场第二次进化 → 拒绝 ----
-    r2 = engine.execute_action("declare_evolution", {"monster": "困境怪", "daowen": "飞行", "x": 1})
+    r2 = engine.execute_action("declare_evolution", {"monster": "困境怪", "daowen": "变形", "x": 1})
     assert not r2["success"] and "限一次" in r2["error"], f"同场二次进化应被拒绝: {r2}"
     assert m.mutation_count == 10, "被拒绝的进化不得扣异变"
     print(f"  ✓ 同场第二次进化被拒绝（每场限一次），异变仍为{m.mutation_count}层")
