@@ -2558,7 +2558,7 @@ class GameEngine:
         if entity.entity_type == "怪物" and not self.state.in_final_duel:
             return None
         if not self.combat.can_act(entity):
-            return {"success": False, "error": f"{entity.name}无法出手（眩晕/束缚）"}
+            return {"success": False, "error": f"{entity.name}无法出手（束缚）"}
         budget = self._action_budget_of(entity)
         remaining = budget - entity.actions_used_this_round
         if remaining < count:
