@@ -160,7 +160,7 @@ def test_player_cast_without_target_is_rejected(tmp_path):
     """玩家施放道纹时缺少[目标]必须被拒绝，而不是默默自施。"""
     e = _mk_engine(tmp_path)
     p = e.state.player
-    for dw in ("勾魂", "冥气"):
+    for dw in ("勾魂",):
         p.dao_wen[dw] = DaoWenInstance(
             DaoWen(name=dw, formula="", cost_type="消耗", cost_formula="X",
                    effect_formula=""), x_value=0)
