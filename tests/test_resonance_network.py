@@ -65,12 +65,14 @@ def test_transform_paths_are_bidirectional():
                    for p in R.get_available_resonance(s))
         assert any(p["target_daowen"] == display_resonance_node(s) and p["resonance_type"] == t
                    for p in R.get_available_resonance(d))
-        if is_reserved_slot(s) or is_reserved_slot(d):
-            if is_reserved_slot(d):
-                assert R.find_transformation(s, t, d) is None
-            if is_reserved_slot(s):
-                assert R.find_transformation(d, t, s) is None
-            continue
+        if is_reserved_slot(d):
+            assert is_reserved_slot(R.find_transformation(s, t, display_resonance_node(d)))
+        else:
+            assert R.find_transformation(s, t, d) == d, f"{s}--{t}-->{d} 正向不可达"
+        if is_reserved_slot(s):
+            assert is_reserved_slot(R.find_transformation(d, t, display_resonance_node(s)))
+        else:
+            assert R.find_transformation(d, t, s) == s, f"{d}--{t}-->{s} 反向不可达"
         assert R.find_transformation(s, t, d) == d, f"{s}--{t}-->{d} 正向不可达"
         assert R.find_transformation(d, t, s) == s, f"{d}--{t}-->{s} 反向不可达"
 
@@ -172,11 +174,11 @@ def test_find_transformation_roundtrip():
     """真实道纹可双向查找；遗物化占位符不作为可获得结果。"""
     for s, t, d in engine_edges():
         if is_reserved_slot(d):
-            assert R.find_transformation(s, t, d) is None
+            assert is_reserved_slot(R.find_transformation(s, t, display_resonance_node(d)))
         else:
             assert R.find_transformation(s, t, d) == d
         if is_reserved_slot(s):
-            assert R.find_transformation(d, t, s) is None
+            assert is_reserved_slot(R.find_transformation(d, t, display_resonance_node(s)))
         else:
             assert R.find_transformation(d, t, s) == s
 

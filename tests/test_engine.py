@@ -187,7 +187,7 @@ def test_resonance():
 def test_combat():
     """测试战斗系统"""
     print("\n=== 测试：战斗系统 ===")
-    engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
+    engine = GameEngine(db_path=f"/tmp/linji_tests/test_rulings_{os.getpid()}.db")
     
     # 设置玩家
     engine.execute_action("setup_attributes", {

@@ -111,22 +111,20 @@ def test_resonance_permanently_converts_and_grants():
     _give(engine.state.player, "杀伐")
     monster = Entity(name="慢怪", entity_type="怪物", blood_limit=80, current_hp=80,
                      attack_count=2, attack_power=4)
-    # 2026-10-03：【狂暴】删除（其反转边一并删除），
-    # 改用仍有效的 全力→(反转)→弱化。
-    _give(monster, "全力")
+    # 使用仍可获得的【必中】反转为【蒙蔽】，同时验证怪物其余原始道纹保留。
+    _give(monster, "必中")
     _give(monster, "全力")
     monster._had_monster_daowen = True
     engine.state.enemies[:] = [monster]
     r = engine.execute_action("use_resonance", {
-        "source_daowen": "全力", "resonance_type": "反转", "target_ref": "enemy:0",
+        "source_daowen": "必中", "resonance_type": "反转", "target_ref": "enemy:0",
     })
     assert r["success"]
-    assert "全力" not in monster.dao_wen and "弱化" in monster.dao_wen
+    assert "必中" not in monster.dao_wen and "蒙蔽" in monster.dao_wen
     assert "全力" in monster.dao_wen
-    assert "弱化" in engine.state.player.dao_wen
-    assert "弱化" not in ORIGINAL_MONSTER_DAOWEN
+    assert "蒙蔽" in engine.state.player.dao_wen
+    assert "蒙蔽" not in ORIGINAL_MONSTER_DAOWEN
     assert not engine.state.pending_redemption
-
 
 def test_resonance_does_not_duplicate_same_name():
     engine = _ready_combat(_engine("res_dup"))
