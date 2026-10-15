@@ -251,8 +251,16 @@ class AfterDamageEffectsHook:
                     candidates.append(value)
             creator = next((entity for entity in candidates
                             if getattr(entity, "runtime_id", "") == creator_id), None)
-            actual_life_loss = max(0, int(detail.get("actual_life_loss", actual_damage)))
-            if (creator is not None and actual_life_loss > 0
+            # `actual_damage` 是扣除格挡后的伤害，不保证目标有这么多当前生命；
+            # 用伤害事件的实际前后生命差兜底，避免对低血目标把超杀部分算成吸血。
+            if "actual_life_loss" in detail:
+                actual_life_loss = max(0, int(detail["actual_life_loss"]))
+            else:
+                hp_before = int(detail.get("hp_before", target.current_hp))
+                hp_after = int(detail.get("hp_after", target.current_hp))
+                actual_life_loss = max(0, hp_before - hp_after)
+            if (creator is not None and creator.is_alive and creator.current_hp > 0
+                    and actual_life_loss > 0
                     and combat._relic_active(creator, "共生血囊")
                     and not attacker.has_status("坏死")):
                 clone_heal = combat.state.apply_heal(attacker, actual_life_loss, ctx={
