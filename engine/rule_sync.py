@@ -178,7 +178,7 @@ class RuleSync:
             # 规则正文的原始/转化道纹使用“名称X（消耗/代价与效果）”内联格式。
             for name, description in re.findall(
                     r"([\u4e00-\u9fff]{2})X（([^（）]+)）", line):
-                if "消耗" not in description and "代价" not in description:
+                if not any(label in description for label in ("消耗", "代价", "支付")):
                     continue
                 definitions.setdefault(name, {
                     "name": name,
