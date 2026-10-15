@@ -49,7 +49,7 @@ def test_mana_costs_are_explicit_in_the_daowen_index():
 
 
 def test_rule_docs_do_not_use_legacy_payment_labels():
-    for filename in ("规则正文.md", "全道纹索引.md", "法术索引.md"):
+    for filename in ("规则正文.md", "全道纹索引.md", "法术索引.md", "物品索引.md", "副本/巴别塔.md", "副本/永夜庭.md", "副本/荒疫古城.md"):
         text = (ROOT / filename).read_text(encoding="utf-8")
         assert "消耗：" not in text, f"{filename} 仍含旧标签「消耗：」"
         assert "代价：" not in text, f"{filename} 仍含旧标签「代价：」"
