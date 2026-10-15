@@ -15,7 +15,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from engine.daowen import ResonanceEngine as R
+from engine.daowen import ResonanceEngine as R, is_reserved_slot, display_resonance_node
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -60,7 +60,6 @@ def test_all_readme_monster_transforms_registered():
 
 def test_transform_paths_are_bidirectional():
     """真实道纹路径双向可达；遗物化节点只保留闭环边，不可获得。"""
-    from engine.daowen import is_reserved_slot, display_resonance_node
     for s, t, d in engine_edges():
         assert any(p["target_daowen"] == display_resonance_node(d) and p["resonance_type"] == t
                    for p in R.get_available_resonance(s))
@@ -171,7 +170,6 @@ def test_ambiguous_path_requires_explicit_target():
 
 def test_find_transformation_roundtrip():
     """真实道纹可双向查找；遗物化占位符不作为可获得结果。"""
-    from engine.daowen import is_reserved_slot
     for s, t, d in engine_edges():
         if is_reserved_slot(d):
             assert R.find_transformation(s, t, d) is None
