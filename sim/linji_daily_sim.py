@@ -38,6 +38,7 @@ WINNER_PRIZE = 10
 LETHAL_CHANCE = 0.01      # 用户裁定：致死率 1%（原占位 5%）
 FREE_TASK_POSTERS = 10    # 每日发布自由任务的人数（占位）
 TOP_SHARE = 0.10
+OUTSIDE_SURVIVAL = 0.001   # 副本完整流程存活率（用户确认：千分之一）
 
 
 @dataclass
@@ -52,6 +53,7 @@ class Gwang:
     wins: int = 0
     matches: int = 0
     house: int = -1
+    survived_outside: bool = False
     income: int = 0           # 累计收入（含保底、自由任务、奖金）
 
     def trait(self, k: str) -> float:
@@ -261,12 +263,17 @@ def run(n: int, seed: int, days: int, work_pay: int = WORK_PAY,
                     if not broke:
                         break
                     for m in broke:
-                        m.alive = False
-                        m.left_zone = True
-                        m.death_cause = "驱逐"
+                        # 被驱逐者进入副本，完整流程存活率 0.1%（千分之一）
                         ledger.treasury += m.shards
                         m.shards = 0
                         evicted += 1
+                        if rng.random() < OUTSIDE_SURVIVAL:
+                            m.survived_outside = True   # 极少数人活着回到安全区，身无分文
+                            m.shards = 0
+                        else:
+                            m.alive = False
+                            m.left_zone = True
+                            m.death_cause = "驱逐（副本）"
                     members = [m for m in members if m.alive]
                 for m in members:
                     m.shards -= share
