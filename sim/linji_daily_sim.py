@@ -132,7 +132,8 @@ def fight(a: Gwang, b: Gwang, rng: random.Random) -> tuple[Gwang, Gwang]:
 
 
 def run(n: int, seed: int, days: int, work_pay: int = WORK_PAY,
-        expel_fraction: float = 0.0, daowen_count: int = 1) -> dict:
+        expel_fraction: float = 0.0, daowen_count: int = 1,
+        inflow_per_day: float = 0.0) -> dict:
     rng = random.Random(seed + 1)
     people = make_population(n, seed)
     initial = sum(g.shards for g in people)
@@ -140,8 +141,28 @@ def run(n: int, seed: int, days: int, work_pay: int = WORK_PAY,
     houses = assign_houses(people, rng)
     evicted = 0
     deaths = {"饥饿": 0, "对战": 0}
+    inflow_rng = random.Random(seed + 2)
+    inflow_acc = 0.0
+    inflow_total = 0
 
     for day in range(1, days + 1):
+        # 外部流入：新微光者开局无碎片，进入人口较少的房间（无房间则新开一间）
+        inflow_acc += inflow_per_day
+        while inflow_acc >= 1.0:
+            inflow_acc -= 1.0
+            newcomer = make_population(1, seed=inflow_rng.randrange(10**9))[0]
+            newcomer.cid = len(people)
+            newcomer.shards = 0
+            people.append(newcomer)
+            inflow_total += 1
+            open_houses = [h for h, mem in houses.items() if 0 < len(mem) < 3]
+            if open_houses:
+                hid = min(open_houses, key=lambda h: len(houses[h]))
+            else:
+                hid = max(houses.keys(), default=-1) + 1
+                houses[hid] = []
+            houses[hid].append(newcomer)
+            newcomer.house = hid
         alive = [g for g in people if g.alive]
         rng.shuffle(alive)
 
