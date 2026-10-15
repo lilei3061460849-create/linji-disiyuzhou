@@ -39,9 +39,13 @@ effects, costs, params_of = {}, {}, {}
 for name, fn in DaoWenEngine._registry.items():
     rule_definition = DAOWEN_RULES.get(name)
     if rule_definition is not None:
-        costs[name] = rule_definition.cost_text("X")
-        if rule_definition.cost_type == "冷却":
-            costs[name] = f"代价：{costs[name].removesuffix('场')}"
+        raw_cost = rule_definition.cost_text("X")
+        if rule_definition.cost_type == "消耗":
+            costs[name] = f"支付：法力{raw_cost.removeprefix('消耗')}"
+        elif rule_definition.cost_type == "冷却":
+            costs[name] = f"支付：冷却{raw_cost.removeprefix('冷却').removesuffix('场')}"
+        else:
+            costs[name] = f"支付：{raw_cost}"
         effects[name] = rule_definition.effect_text(
             x="X", target_name=None if rule_definition.default_subject == "自身" else "[目标]"
         ) + "。"
@@ -172,7 +176,7 @@ A(f"杀伐闭环（通用核心）{len(SHAFA_LOOP_DAOWEN)} ｜ 原始怪物道�
   f"{'/'.join(str(len(region_daowen_order(r))) for r in ('扭曲都市', '罪孽都市', '龙心谷', '乱葬岗'))} ｜ "
   f"未实现 {len(UNIMPLEMENTED_REGION_EXCLUSIVE_DAOWEN)}。")
 A("")
-A("- **效果正文/代价**：已迁移道纹从 `engine/rule_engine.py` 统一定义生成；其余道纹取 `engine/daowen.py` `calculate_*` docstring。公式以实际引擎结算为准。")
+A("- **效果正文/支付方式**：已迁移道纹从 `engine/rule_engine.py` 统一定义生成；其余道纹取 `engine/daowen.py` `calculate_*` docstring。公式以实际引擎结算为准。")
 A("- **归属与残韵闭环**：`engine/gamedata.py` + `engine/daowen.py`（`CLOSED_LOOPS`）；与规则正文的闭环图一致。\n"
   "  `CLOSED_LOOPS` 里的每条边为**无向边**（2026-10-07 用户令：残韵路径双向）——登记 `(a,类型,b)` 表示 a、b 互为相邻节点，\n"
   "  正反两向都走同一种残韵、同样消耗一次；双向由 `ResonanceEngine.find_transformations` 在查询时展开，边表不重复登记反向边。\n"
@@ -205,7 +209,7 @@ A("")
 # 总览表
 A("## 总览表")
 A("")
-A("| 道纹 | 分类 | 代价 | [目标] | 残韵路径（双向） | 承载怪物 |")
+A("| 道纹 | 分类 | 支付方式 | [目标] | 残韵路径（双向） | 承载怪物 |")
 A("| --- | --- | --- | --- | --- | --- |")
 CAT_LABEL = {
     "shaifa": "通用核心", "original": "原始", "transform": "转化",
