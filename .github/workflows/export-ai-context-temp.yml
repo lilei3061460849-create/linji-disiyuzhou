@@ -3,6 +3,9 @@ on:
   push:
     branches:
       - arena-daowen-payment-20261015
+  pull_request:
+    branches:
+      - main
 permissions:
   contents: read
 jobs:
