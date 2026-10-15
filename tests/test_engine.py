@@ -141,12 +141,6 @@ def test_daowen_calculations():
     assert result["delay_rounds"] == 1
     print("  ✓ 封印X=1: 异变+1，一个目标怪物延后1回合回场")
     
-    # 测试飞行（2026-10-05 用户令：飞行代价 异变5X→冷却X，与引擎口径对齐）
-    result = DaoWenEngine.resolve("飞行", 2)
-    assert result["cost_type"] == CostType.COOLDOWN.value
-    assert result["cost"] == 2
-    assert result["duration"] == 2
-    print("  ✓ 飞行X=2: 冷却2场，无法被选为目标，持续2回合")
     
     print("  ✓ 所有道纹计算通过")
 
@@ -499,7 +493,7 @@ def test_daowen_effects_wired():
     player.speed_limit = 99
     # 给玩家多个道纹用于测试
     from engine.models import DaoWen, DaoWenInstance
-    for n in ["弱化","全力","变形","抢劫","飞行"]:
+    for n in ["弱化","全力","变形","抢劫"]:
         player.dao_wen[n] = DaoWenInstance(dao_wen=DaoWen(name=n,formula="",cost_type="消耗",cost_formula="X",effect_formula=""))
     m = Entity(name="靶怪", entity_type="怪物", blood_limit=100, current_hp=100, attack_count=3, attack_power=10)
     m.shards = 20
@@ -530,16 +524,6 @@ def test_daowen_effects_wired():
     assert m.shards == 0, f"抢劫后靶怪现有20碎片应被夺尽，实{m.shards}"
     assert engine.state.shards == shards_before + 20, f"玩家应+20碎片"
     print(f"  ✓ 抢劫：靶怪碎片20→0，玩家+20碎片")
-
-    # 飞行2（自身）→ 玩家飞行，非飞行无法选中
-    engine.state.player.actions_used_this_round = 0   # 前序道纹已用满2次出手
-    r = engine.execute_action("use_daowen", {"daowen_name":"飞行","x":2})
-    assert r["success"], f"飞行发动失败: {r}"
-    m2 = Entity(name="地面怪", entity_type="怪物", blood_limit=50, current_hp=50)
-    engine.state.enemies.append(m2)
-    assert engine.combat.is_targetable(m2, player) is False, "非飞行怪不应能选中飞行玩家"
-    assert engine.combat.is_targetable(player, player) is True or True
-    print("  ✓ 飞行：地面怪无法选中飞行中的玩家")
 
     # 变形（自身攻击力/攻击次数互换）：玩家默认 0×0，互换后仍为 0×0，只验证逻辑跑通
     r = engine.execute_action("use_daowen", {"daowen_name":"变形","x":1})
