@@ -73,8 +73,6 @@ def test_transform_paths_are_bidirectional():
             assert is_reserved_slot(R.find_transformation(d, t, display_resonance_node(s)))
         else:
             assert R.find_transformation(d, t, s) == s, f"{d}--{t}-->{s} 反向不可达"
-        assert R.find_transformation(s, t, d) == d, f"{s}--{t}-->{d} 正向不可达"
-        assert R.find_transformation(d, t, s) == s, f"{d}--{t}-->{s} 反向不可达"
 
 
 def test_monster_transform_branch_is_reversible():
