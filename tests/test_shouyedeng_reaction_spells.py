@@ -80,11 +80,11 @@ def test_shouyedeng_mana_enables_reaction_spell(tmp_path):
     e.state.relics.append(Relic(name="守夜灯", effect="", tags=[]))
     p = e.state.player
     p.current_mana = 0
-    p.mana_limit = 20  # 守夜灯授予 ceil(20*0.1)=2
+    p.mana_limit = 20  # 守夜灯授予 ceil(20*0.5)=10
     grant = e.combat._shouyedeng_pending_grant(p)
-    assert grant == 2, f"守夜灯应授予2法力，实{grant}"
+    assert grant == 10, f"守夜灯应授予10法力，实{grant}"
     e.combat._grant_shouyedeng(p)  # [回始]授予
-    assert p.current_mana == 2
+    assert p.current_mana == 10
     prepared, choice = _monster_phase_submit(e, spell_x=2)  # 消耗2 ≤ 2
     res = e.combat.resolve_monster_phase([choice], prepared)
     # 先发制人应已触发（怪物受到反打伤害）
@@ -92,8 +92,8 @@ def test_shouyedeng_mana_enables_reaction_spell(tmp_path):
         lg.get("spell") == "先发制人" and lg.get("execution")
         for hit in res for lg in (hit.get("spell_logs") or []))
     assert fired, "先发制人应使用守夜灯法力触发"
-    # 执行后法力扣除正确：0 +2(守夜灯[回始]) -2(先发制人) = 0；不再有[敌回终]清空
-    assert p.current_mana == 0, f"法力应只被法术消耗扣光，实{p.current_mana}"
+    # 执行后法力扣除正确：0 +10(守夜灯[回始]) -2(先发制人) = 8；不再有[敌回终]清空
+    assert p.current_mana == 8, f"法力应只被法术消耗扣光，实{p.current_mana}"
     # 靶怪是[怪物]（读面板 1击×3伤），反打不抵消来袭：玩家应恰好掉 3 点。
     # 旧写法 "<= 57" 是把当时血限60硬编进断言（60-3=57）；血限随加点定价变成66后失效。
     assert p.current_hp == p.blood_limit - 3, \
@@ -107,15 +107,15 @@ def test_shouyedeng_mana_persists_after_monster_phase(tmp_path):
     p = e.state.player
     p.current_mana = 0
     p.mana_limit = 20
-    e.combat._grant_shouyedeng(p)  # [回始]授予 ceil(20*0.1)=2
-    assert p.current_mana == 2
+    e.combat._grant_shouyedeng(p)  # [回始]授予 ceil(20*0.5)=10
+    assert p.current_mana == 10
     prepared, choice = _monster_phase_submit(e, spell_x=1)  # 只花1法力
     res = e.combat.resolve_monster_phase([choice], prepared)
     assert not [x for x in res if x.get("type") == "shouyedeng_grant"], \
         "授予发生在[回始]，怪物阶段不应再授予"
     assert not [x for x in res if x.get("type") == "shouyedeng_clear"], \
         "守夜灯法力不再清空"
-    assert p.current_mana == 1, f"2授予-1消耗=1应留存，实{p.current_mana}"
+    assert p.current_mana == 9, f"10授予-1消耗=9应留存，实{p.current_mana}"
 
 
 def test_shouyedeng_grants_once_per_round(tmp_path):
@@ -127,7 +127,7 @@ def test_shouyedeng_grants_once_per_round(tmp_path):
     p.mana_limit = 20
     assert e.combat._grant_shouyedeng(p) is not None
     assert e.combat._grant_shouyedeng(p) is None, "同回合第二次不应授予"
-    assert p.current_mana == 2
+    assert p.current_mana == 10
 
 
 def test_insufficient_real_mana_interrupts_at_runtime(tmp_path):
@@ -136,7 +136,7 @@ def test_insufficient_real_mana_interrupts_at_runtime(tmp_path):
     e.state.relics.append(Relic(name="守夜灯", effect="", tags=[]))
     p = e.state.player
     p.current_mana = 0
-    p.mana_limit = 20
+    p.mana_limit = 4
     e.combat._grant_shouyedeng(p)  # 授予2；先发制人 X=3 需3 > 2
     prepared, choice = _monster_phase_submit(e, spell_x=3)
     res = e.combat.resolve_monster_phase([choice], prepared)
@@ -144,7 +144,7 @@ def test_insufficient_real_mana_interrupts_at_runtime(tmp_path):
             if lg.get("spell") == "先发制人"]
     assert logs and logs[0].get("interrupted") == "mana_insufficient", logs
     assert not p.has_status("勾魂"), "中断后无副作用"
-    assert p.current_mana == 2, "未支付任何法力"
+    assert p.current_mana == 10, "未支付任何法力"
 
 
 def test_no_shouyedeng_mana_zero_interrupts_at_runtime(tmp_path):
