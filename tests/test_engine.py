@@ -493,7 +493,6 @@ def test_daowen_effects_wired():
     engine = GameEngine(db_path="/tmp/linji_tests/test_rulings.db")
     engine.execute_action("setup_attributes", {"name":"测试","blood_points": 11, "speed_points": 8, "mana_points": 6})
     finish_initial_daowen(engine)
-    _choose_region(engine, "罪孽都市")  # 抢劫是罪孽都市专属道纹
     engine.state.phase = "in_combat"
     player = engine.state.player
     # 本测试连续发动6次道纹只为验证效果落地，与出手预算校验无关，给予充裕出手预算

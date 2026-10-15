@@ -74,7 +74,6 @@ def _arena(seed: int = 1):
     m.dao_wen["抢劫"] = DaoWenInstance(
         DaoWen(name="抢劫", formula="", cost_type="", cost_formula="", effect_formula=""),
         x_value=2)
-    m._had_monster_daowen = True
     assert e.execute_action("round_start", {"relic_choices": {}})["success"]
     prep = e.execute_action("prepare_monster_phase", {})
     assert prep["success"], prep
