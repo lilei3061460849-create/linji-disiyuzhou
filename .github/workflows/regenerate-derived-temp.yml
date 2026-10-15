@@ -1,0 +1,32 @@
+name: Regenerate derived rules (temporary)
+
+on:
+  push:
+    branches: [arena-daowen-payment-20261015]
+
+permissions:
+  contents: write
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: arena-daowen-payment-20261015
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -r requirements-dev.txt
+      - name: Regenerate generated documents and remove temporary workflow
+        run: |
+          python sim/gen_rules.py
+          python sim/gen_daowen_index.py
+          python sim/gen_ai_context.py
+          rm .github/workflows/regenerate-derived-temp.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add 死者之书.md 全道纹索引.md AI_CONTEXT.md .github/workflows/regenerate-derived-temp.yml
+          git commit -m "同步规则正文派生文档"
+          git push origin HEAD:arena-daowen-payment-20261015
