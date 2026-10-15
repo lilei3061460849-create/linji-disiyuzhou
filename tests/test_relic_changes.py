@@ -72,7 +72,7 @@ def test_relic_wording_uses_requested_concise_descriptions():
     api = (ROOT / "engine/api.py").read_text(encoding="utf-8")
     assert "[回始]，你获得等同于[法限]50%的法力。" in index
     assert "任意角色每次失去生命时，使其衰老1。" in index
-    assert "本回合每失去1点生命，造成的伤害+1。" in index
+    assert "本回合你每失去1点生命，造成的伤害+1。" in index
     assert "战斗被动" not in index
     assert "向上取整" not in index
     assert "持有者" not in index
