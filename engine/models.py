@@ -677,9 +677,6 @@ class Entity:
             # 交给 CombatEngine._check_hp_zero_death()（唯一统一死亡入口）。
             detail["died"] = True
             self.is_alive = False
-        elif remaining > 0 and self.has_status("眩晕"):
-            # 眩晕：失去生命后立刻苏醒
-            self.status_effects = [s for s in self.status_effects if s.name != "眩晕"]
             detail["xuanyun_broken"] = True
         
         return detail
@@ -891,7 +888,7 @@ class Entity:
             debuffs = {
                 "弱化", "无力", "减速", "全速", "束缚", "封印",
                 "坏死", "退化", "定型", "畸变", "加害", "伤痕",
-                "寄生", "蒙蔽", "眩晕", "手雷减攻", "被背负",   # 2026-10-11 删【衰败】
+                "寄生", "蒙蔽", "手雷减攻", "被背负",   # 2026-10-11 删【衰败】
             }
             if effect.name in buffs:
                 effect.polarity = EffectPolarity.BUFF.value
