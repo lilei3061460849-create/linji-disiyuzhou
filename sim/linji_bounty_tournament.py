@@ -23,6 +23,7 @@ ENTRY_FEE = 5
 WINNER_PRIZE = 10
 START_SHARDS = 20          # 占位
 TOP_SHARE = 0.10           # 高层 = 前 10%
+LETHAL_CHANCE = 0.05       # 占位：下手狠的胜者致死概率（用户裁定：降低致死率）
 DIMENSIONS = (
     "risk_preference", "interpersonal_tendency", "moral_baseline",
     "resource_view", "exploration_desire", "emotional_stability",
@@ -122,7 +123,7 @@ def run(n: int, seed: int, rounds: int) -> dict:
             pot = ENTRY_FEE * 2
             ledger.pool -= pot
             w.shards += WINNER_PRIZE
-            if is_ruthless(w) and rng.random() < 0.5:
+            if is_ruthless(w) and rng.random() < LETHAL_CHANCE:
                 l.alive = False
                 ledger.dissolved += l.shards  # 占位：命零者碎片消散
                 l.shards = 0
