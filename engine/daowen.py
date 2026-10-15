@@ -18,11 +18,21 @@ import math
 RESERVED_SLOT = "（待补）"
 RELICIZED_SLOT = "？？"
 PLACEHOLDER_SLOTS = frozenset({RESERVED_SLOT, RELICIZED_SLOT})
+RELICIZED_DAOWEN_SLOTS = {name: f"？？〔{name}〕" for name in (
+    "逆鳞", "伤痕", "寄生", "加速", "急速", "洞察", "无力",
+    "冥气", "退化", "畸变", "缄默",
+)}
 
 
 def is_reserved_slot(name) -> bool:
-    """该名字是否为闭环上的非道纹占位节点。"""
-    return name in PLACEHOLDER_SLOTS
+    """该名字是否为闭环上的非道纹占位节点；带内部标识的遗物化空位也算占位。"""
+    return name in PLACEHOLDER_SLOTS or (
+        isinstance(name, str) and name.startswith("？？〔") and name.endswith("〕"))
+
+
+def display_resonance_node(name):
+    """内部每个遗物化节点独立编号，玩家/索引统一显示为「？？」。"""
+    return RELICIZED_SLOT if isinstance(name, str) and name.startswith("？？〔") else name
 
 
 class DaoWenEngine:
@@ -32,8 +42,7 @@ class DaoWenEngine:
     # 用于"雇佣"后"发现并选择一种转化道纹"等需要从此类别中随机抽取的场景
     # 2026-10-08 清理：原孤儿转化道纹已移除（曾挂在【狂暴】的反转分支下）。
     TRANSFORMED_DAOWEN = [
-        "愤怒", "弱化", "无力", "全速",
-        "急速", "加速", "洞察", "蒙蔽", "寄生",
+        "愤怒", "弱化", "全速", "蒙蔽",
         # 2026-10-11 用户令（A14）：【无神】【借力】【衰败】整条删除，不补位。
     ]
 
@@ -958,20 +967,13 @@ class DaoWenEngine:
             # 怪物转化（2026-10-11 A14：无神/借力/衰败 已删）
             "愤怒": cls.calculate_fennu,
             "弱化": cls.calculate_ruhua,
-            "无力": cls.calculate_wuli,
             "全速": cls.calculate_quansu,
-            "急速": cls.calculate_jisu,
-            "加速": cls.calculate_jiasu,
-            "洞察": cls.calculate_dongcha,
             "蒙蔽": cls.calculate_mengbi,
-            "寄生": cls.calculate_jisheng,
             # 扭曲都市
             "变形": cls.calculate_bianxing,
             "定型": cls.calculate_dingxing,
-            "畸变": cls.calculate_jibian,
             "超频": cls.calculate_chaopin,
             "坏死": cls.calculate_huaisi,
-            "退化": cls.calculate_tuihua,
             # 罪孽都市
             "加害": cls.calculate_jiahai,
             "点金": cls.calculate_dianjin,
@@ -986,15 +988,11 @@ class DaoWenEngine:
             "消灾": cls.calculate_xiaozai,
             # 龙心谷
             "龙鳞": cls.calculate_longlin,
-            "逆鳞": cls.calculate_nilin,
             "裂变": cls.calculate_liebian,
             "背负": cls.calculate_beifu,
-            "伤痕": cls.calculate_shanghen,
             # ---- 乱葬岗（二阶）----
             "分裂": cls.calculate_fenlie,
-            "缄默": cls.calculate_qianmo,
             "瓦解": cls.calculate_wajie,
-            "冥气": cls.calculate_mingqi,
             "勾魂": cls.calculate_gouhun,
             "招魂": cls.calculate_zhaohun,
         }
@@ -1111,16 +1109,16 @@ class ResonanceEngine:
         # ---- 副本专属闭环（规则正文·副本专属道纹网络）----
         "扭曲都市闭环": [
             ("变形", "转换", "定型"),
-            ("定型", "反转", "畸变"),
-            ("畸变", "曲解", "超频"),
+            ("定型", "反转", RELICIZED_DAOWEN_SLOTS["畸变"]),
+            (RELICIZED_DAOWEN_SLOTS["畸变"], "曲解", "超频"),
             # 2026-10-14 用户令删除【搏命】（并入【透支】）→ 该格留成空占位符
             # （沿用 2026-10-08 删【镇尸】先例：不直连、不顶替，环仍为 7 条边；
             # 用户 2026-10-14 拍板占位，否决直连方案）。
             ("超频", "反转", RESERVED_SLOT),
             (RESERVED_SLOT, "转换", "坏死"),
             # 2026-10-03 用户令删除【爆裂】→ 由【坏死】直连【退化】保持环连通
-            ("坏死", "曲解", "退化"),
-            ("退化", "转换", "变形"),
+            ("坏死", "曲解", RELICIZED_DAOWEN_SLOTS["退化"]),
+            (RELICIZED_DAOWEN_SLOTS["退化"], "转换", "变形"),
         ],
         "罪孽都市闭环": [
             ("点金", "转换", "典当"),
@@ -1145,21 +1143,20 @@ class ResonanceEngine:
         ],
         "龙心谷闭环": [
             ("加害", "反转", "龙鳞"),
-            ("龙鳞", "曲解", "逆鳞"),
-            # 2026-10-03 用户令删除【活血】→ 由【逆鳞】直连【裂变】
-            ("逆鳞", "转换", "裂变"),
+            ("龙鳞", "曲解", RELICIZED_DAOWEN_SLOTS["逆鳞"]),
+            (RELICIZED_DAOWEN_SLOTS["逆鳞"], "转换", "裂变"),
             # 2026-10-11 用户令（A13）：【嫁祸】整条删除（效果与遗物【贪婪契约】重复）
             #   → 沿用活血/尸爆的删除先例：断边**重连**为 裂变—转换→背负，环长 7→6。
             ("裂变", "转换", "背负"),
-            ("背负", "曲解", "伤痕"),
-            ("伤痕", "转换", "加害"),
+            ("背负", "曲解", RELICIZED_DAOWEN_SLOTS["伤痕"]),
+            (RELICIZED_DAOWEN_SLOTS["伤痕"], "转换", "加害"),
         ],
         "乱葬岗闭环": [
             # 2026-10-03 用户令删除【尸爆】→ 由【分裂】直连【缄默】
-            ("分裂", "转换", "缄默"),
-            ("缄默", "曲解", "瓦解"),
-            ("瓦解", "转换", "冥气"),
-            ("冥气", "反转", "勾魂"),
+            ("分裂", "转换", RELICIZED_DAOWEN_SLOTS["缄默"]),
+            (RELICIZED_DAOWEN_SLOTS["缄默"], "曲解", "瓦解"),
+            ("瓦解", "转换", RELICIZED_DAOWEN_SLOTS["冥气"]),
+            (RELICIZED_DAOWEN_SLOTS["冥气"], "反转", "勾魂"),
             # 2026-10-08 用户令删除【镇尸】（与【坏死】硬重复）→ 该格留成空占位符，
             # 不直连【勾魂】与【招魂】，也不拿别的道纹顶替；环仍为 7 条边。
             ("勾魂", "曲解", RESERVED_SLOT),
@@ -1179,11 +1176,11 @@ class ResonanceEngine:
             ("全力", "反转", "弱化"),
             ("全力", "曲解", "再生"),
             # 2026-10-03 删除（用户令）：("疯狂", "转换", "兴奋"),
-            ("疯狂", "反转", "无力"),
+            ("疯狂", "反转", RELICIZED_DAOWEN_SLOTS["无力"]),
             ("疯狂", "曲解", "全速"),
-            ("减速", "转换", "急速"),
-            ("减速", "反转", "加速"),
-            ("必中", "转换", "洞察"),
+            ("减速", "转换", RELICIZED_DAOWEN_SLOTS["急速"]),
+            ("减速", "反转", RELICIZED_DAOWEN_SLOTS["加速"]),
+            ("必中", "转换", RELICIZED_DAOWEN_SLOTS["洞察"]),
             ("必中", "反转", "蒙蔽"),
             # 2026-10-03 删除（用户令）：("飞行", "转换", "滑翔"),
             # 2026-10-03 删除（用户令）：("飞行", "反转", "坠落"),
@@ -1210,9 +1207,9 @@ class ResonanceEngine:
                 if rtype != resonance_type:
                     continue
                 if src == source_daowen:
-                    direction, other = "正向", dst
+                    direction, other = "正向", display_resonance_node(dst)
                 elif dst == source_daowen:
-                    direction, other = "反向", src
+                    direction, other = "反向", display_resonance_node(src)
                 else:
                     continue
                 if other in seen:
@@ -1265,14 +1262,14 @@ class ResonanceEngine:
                 if src == source_daowen:
                     forward.append({
                         "resonance_type": rtype,
-                        "target_daowen": dst,
+                        "target_daowen": display_resonance_node(dst),
                         "direction": "正向",
                         "loop": loop_name,
                     })
                 elif dst == source_daowen:
                     backward.append({
                         "resonance_type": rtype,
-                        "target_daowen": src,
+                        "target_daowen": display_resonance_node(src),
                         "direction": "反向",
                         "loop": loop_name,
                     })

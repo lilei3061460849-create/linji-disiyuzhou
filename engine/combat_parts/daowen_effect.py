@@ -697,6 +697,13 @@ class DaowenEffectMixin:
                 result["effects"].append({"type": "swap", "target": swap_target.name,
                                           "current_speed": swap_target.current_speed,
                                           "current_mana": swap_target.current_mana})
+                # 【飞行】不再是独立道纹：骨天使发动【变形】时附带飞行状态，持续X。
+                if caster.entity_type == "怪物" and caster.name == "骨天使":
+                    caster.add_status(self._daowen_status(
+                        daowen_order=daowen_order, name="飞行", value=x,
+                        remaining_rounds=x, source="骨天使·变形"))
+                    result["effects"].append({"type": "flying", "target": caster.name,
+                                              "duration": x, "source_daowen": "变形"})
 
         # ---- 速度修改 ----
         if "speed_boost" in calc:

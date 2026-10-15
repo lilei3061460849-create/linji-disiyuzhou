@@ -149,19 +149,18 @@ NOTES = {
     "分裂": "即时发动（不绑【命零】）；代价【流血】X×10Y 付的是当前生命，付不起不能发动。复制体无【分裂】道纹、无[碎片]奖励。",
     "招魂": "唤回者为[临时朋友]，[战终]消失。",
     "原初": "怪物困境时发动【原初X】可临时借用一种自身未持有的原始怪物道纹（仅借用，不获得）。",
-    "飞行": "怪物使用本道纹 X 只能≤1（恒按X=1结算，规则正文·怪物准则5）。",
 }
 
 def loop_chain(loop_name):
     edges = ResonanceEngine.CLOSED_LOOPS[loop_name]
-    # 环：找起点（第一条边的src）并按边串联
-    first = edges[0][0]
+    # 环：找起点（第一条边的src）并按边串联；遗物化节点在索引里统一显示「？？」
+    first = display_resonance_node(edges[0][0])
     chain = [first]
     nxt = {s: (r, d) for s, r, d in edges}
-    cur = first
+    cur = edges[0][0]
     for _ in range(len(edges)):
         r, d = nxt[cur]
-        chain.append(f"⇄（{r}）{d}")
+        chain.append(f"⇄（{r}）{display_resonance_node(d)}")
         cur = d
     return " ".join(chain)
 
