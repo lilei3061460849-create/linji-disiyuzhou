@@ -57,15 +57,23 @@ def test_all_readme_monster_transforms_registered():
     assert not missing, f"引擎缺失规则正文声明的转化：{sorted(missing)}"
 
 
+
 def test_transform_paths_are_bidirectional():
-    """正常路径：登记的每条边都双向可走（同一种残韵、同样消耗一次）。"""
+    """真实道纹路径双向可达；遗物化节点只保留闭环边，不可获得。"""
+    from engine.daowen import is_reserved_slot, display_resonance_node
     for s, t, d in engine_edges():
+        assert any(p["target_daowen"] == display_resonance_node(d) and p["resonance_type"] == t
+                   for p in R.get_available_resonance(s))
+        assert any(p["target_daowen"] == display_resonance_node(s) and p["resonance_type"] == t
+                   for p in R.get_available_resonance(d))
+        if is_reserved_slot(s) or is_reserved_slot(d):
+            if is_reserved_slot(d):
+                assert R.find_transformation(s, t, d) is None
+            if is_reserved_slot(s):
+                assert R.find_transformation(d, t, s) is None
+            continue
         assert R.find_transformation(s, t, d) == d, f"{s}--{t}-->{d} 正向不可达"
         assert R.find_transformation(d, t, s) == s, f"{d}--{t}-->{s} 反向不可达"
-        forward = R.get_available_resonance(s)
-        backward = R.get_available_resonance(d)
-        assert any(p["target_daowen"] == d and p["resonance_type"] == t for p in forward)
-        assert any(p["target_daowen"] == s and p["resonance_type"] == t for p in backward)
 
 
 def test_monster_transform_branch_is_reversible():
@@ -137,44 +145,43 @@ def test_no_duplicate_declared_edge():
         seen[key] = d
 
 
-def test_ambiguous_path_requires_explicit_target():
-    """边界：双向后同一 (源道纹, 残韵类型) 可能通向两个相邻节点。
 
-    此时引擎不得替发动者挑一个（禁止静默取第一项），必须由发动者显式指定；
-    指定后两个方向都成立。已知歧义节点（闭环上两条相邻边同类型）：
-    杀伐(反转) / 庇护(曲解) / 束缚(曲解) / 变形(转换) / 裂变(转换) /
-    分裂(转换)。空位有两类占位符：一般待补槽 `（待补）` 与遗物化道纹统一使用的 `？？`（罪孽都市旧【赌命】→【灾厄轮盘】）；占位节点本身可能有3个以上邻接候选。
-    （2026-10-08 删【镇尸】：勾魂那一格改留空占位符后，镇尸(曲解) 不再是歧义节点。）
-    """
-    ambiguous = {(s, t) for s, t in
-                 ((s, t) for s, t, _ in engine_edges())
-                 if R.is_ambiguous_path(s, t)}
-    assert ambiguous, "未检出任何歧义节点，本用例与闭环现状脱节"
+def test_ambiguous_path_requires_explicit_target():
+    """仅在至少两个真实道纹出口仍存在时要求显式选择，不把占位符当候选。"""
+    ambiguous = {(s, t) for s, t, _ in engine_edges() if R.is_ambiguous_path(s, t)}
+    checked = 0
     for s, t in sorted(ambiguous):
-        candidates = [c["target_daowen"] for c in R.find_transformations(s, t)]
-        assert len(candidates) >= 2, f"{s}+{t} 歧义候选应至少为2个，实际{candidates}"
-        # 不指定 → 拒绝，且不消耗残韵
+        candidates = [c["target_daowen"] for c in R.find_transformations(s, t)
+                      if not c.get("reserved")]
+        if len(candidates) < 2:
+            continue
+        checked += 1
         assert R.find_transformation(s, t) is None
         res = R.apply_resonance(s, t, True, True, resonance_stock={t: 1})
         assert res["success"] is False and res.get("ambiguous") is True, (s, t, res)
-        # 显式指定 → 两个方向都成立
         for dst in candidates:
             assert R.find_transformation(s, t, dst) == dst
             ok = R.apply_resonance(s, t, True, True, resonance_stock={t: 1}, target_daowen=dst)
             assert ok["success"] is True and ok["target"] == dst, (s, t, dst, ok)
-        # 指定到不存在的目标 → 拒绝
         bad = R.apply_resonance(s, t, True, True, resonance_stock={t: 1}, target_daowen="不存在的道纹")
         assert bad["success"] is False
+    assert checked > 0, "仍应存在至少一个具有多个真实出口的歧义路径"
+
 
 
 def test_find_transformation_roundtrip():
-    """边界：登记的每条边都应能被 find_transformation 双向查到"""
+    """真实道纹可双向查找；遗物化占位符不作为可获得结果。"""
+    from engine.daowen import is_reserved_slot
     for s, t, d in engine_edges():
-        assert R.find_transformation(s, t, d) == d
-        assert R.find_transformation(d, t, s) == s
+        if is_reserved_slot(d):
+            assert R.find_transformation(s, t, d) is None
+        else:
+            assert R.find_transformation(s, t, d) == d
+        if is_reserved_slot(s):
+            assert R.find_transformation(d, t, s) is None
+        else:
+            assert R.find_transformation(d, t, s) == s
 
-
-# ---------- 错误输入 ----------
 
 def test_unknown_daowen_has_no_path():
     """错误输入：不存在的道纹不得返回任何路径"""
