@@ -30,7 +30,8 @@ def test_project_rules_are_extracted_from_their_authoritative_documents():
     # 2026-10-11：龙心谷删【嫁祸】（效果与遗物【贪婪契约】重复）→ 60 → 59。
     # 2026-10-14：+【勒索】（点金反转分叉，罪孽副本文档第9定义）→ 59 → 60。
     # 2026-10-14：扭曲都市删【搏命】（并入【透支】）→ 60 → 59；罪孽都市删【赌命】（遗物化）→ 59 → 58。
-    assert len(facts["dungeon_daowen"]) == 58
+    # 2026-10-15：移除已遗物化的副本专属道纹【畸变】【退化】【逆鳞】【伤痕】【冥气】【缄默】→ 58 → 52。
+    assert len(facts["dungeon_daowen"]) == 52
     assert len(facts["spells"]) == 10  # 2026-09-16：删「血溅五步」（无引擎流程的空名字）
     assert len(facts["dungeons"]) == 8
     assert len(facts["monsters"]) == 48  # 36 + 乱葬岗12(已实现)
