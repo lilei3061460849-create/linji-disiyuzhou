@@ -16,7 +16,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from engine.daowen import DaoWenEngine, ResonanceEngine  # noqa: E402
+from engine.daowen import DaoWenEngine, ResonanceEngine, display_resonance_node  # noqa: E402
 from engine.rule_engine import DAOWEN_RULES, UNMIGRATED_REASON  # noqa: E402
 from engine.gamedata import (  # noqa: E402
     MONSTER_TRANSFORM_DAOWEN,

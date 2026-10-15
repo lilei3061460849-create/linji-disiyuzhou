@@ -963,7 +963,6 @@ class DaoWenEngine:
             "净化": cls.calculate_jinghua,
             "减速": cls.calculate_jiansu,
             "必中": cls.calculate_bizhong,
-            "飞行": cls.calculate_feixing,
             # 怪物转化（2026-10-11 A14：无神/借力/衰败 已删）
             "愤怒": cls.calculate_fennu,
             "弱化": cls.calculate_ruhua,
