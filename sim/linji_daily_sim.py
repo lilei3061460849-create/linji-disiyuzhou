@@ -60,18 +60,20 @@ class Gwang:
 
 @dataclass
 class Ledger:
-    minted: int = 0           # 法力网发放（保底）
-    pool: int = 0             # 赏金池
-    sunk: int = 0             # 食物、房租等消耗
-    dissolved: int = 0        # 死亡者碎片消散
+    """封闭经济：主办方库（treasury）是唯一的银行。
+
+    收入：食物、房租、驱逐者与死者身上的碎片（均归主办方）。
+    支出：保底工资（只能从主办方库支出，不凭空发放）。
+    """
+    pool: int = 0             # 赏金池（报名费暂存）
+    treasury: int = 0         # 主办方库
+    welfare_paid: int = 0     # 累计已付保底工资
+    welfare_owed: int = 0     # 累计应付但库里不够的保底工资
 
     def check(self, people: list[Gwang], initial: int) -> None:
         wallets = sum(g.shards for g in people if g.alive)
-        total_in = initial + self.minted
-        total_out = wallets + self.pool + self.sunk + self.dissolved
-        assert total_in == total_out, (
-            f"碎片不守恒：入 {total_in}，出 {total_out}"
-            f"（钱包 {wallets}，池 {self.pool}，消耗 {self.sunk}，消散 {self.dissolved}）")
+        assert initial == wallets + self.pool + self.treasury, (
+            f"碎片不守恒：初始 {initial}，钱包 {wallets}，池 {self.pool}，主办方库 {self.treasury}")
 
 
 def make_population(n: int, seed: int) -> list[Gwang]:
@@ -145,10 +147,13 @@ def run(n: int, seed: int, days: int, work_pay: int = WORK_PAY) -> dict:
         for g in alive:
             rent_share = RENT_PER_MONTH / max(1, len(houses[g.house]))
             units = work_units_wanted(g, rent_share)
-            pay = units * work_pay
+            due = units * work_pay
+            pay = min(due, ledger.treasury)   # 只能从主办方库支付
+            ledger.treasury -= pay
+            ledger.welfare_paid += pay
+            ledger.welfare_owed += due - pay
             g.shards += pay
             g.income += pay
-            ledger.minted += pay
 
         # 3. 自由任务：部分角色发布，接单者由冒险倾向决定（占位）
         posters = rng.sample(alive, min(FREE_TASK_POSTERS, len(alive)))
@@ -189,7 +194,7 @@ def run(n: int, seed: int, days: int, work_pay: int = WORK_PAY) -> dict:
                 l.alive = False
                 l.death_cause = "对战"
                 deaths["对战"] += 1
-                ledger.dissolved += l.shards
+                ledger.treasury += l.shards
                 l.shards = 0
 
         # 6. 饥饿（当日结算）：不足 1 碎片即死亡
@@ -198,11 +203,11 @@ def run(n: int, seed: int, days: int, work_pay: int = WORK_PAY) -> dict:
                 continue
             if g.shards >= FOOD_PER_DAY:
                 g.shards -= FOOD_PER_DAY
-                ledger.sunk += FOOD_PER_DAY
+                ledger.treasury += FOOD_PER_DAY
             else:
                 g.alive = False
                 g.death_cause = "饥饿"
-                ledger.dissolved += g.shards
+                ledger.treasury += g.shards
                 g.shards = 0
                 deaths["饥饿"] += 1
         alive = [g for g in people if g.alive]
@@ -220,13 +225,13 @@ def run(n: int, seed: int, days: int, work_pay: int = WORK_PAY) -> dict:
                         m.alive = False
                         m.left_zone = True
                         m.death_cause = "驱逐"
-                        ledger.dissolved += m.shards
+                        ledger.treasury += m.shards
                         m.shards = 0
                         evicted += 1
                     members = [m for m in members if m.alive]
                 for m in members:
                     m.shards -= share
-                    ledger.sunk += share
+                    ledger.treasury += share
                 houses[hid] = members
 
         ledger.check(people, initial)
@@ -255,7 +260,7 @@ def main() -> None:
     r = run(args.n, args.seed, args.days)
     print(f"天数 {r['days']}，存活 {r['alive']}，饥饿死亡 {r['deaths']['饥饿']}，"
           f"对战死亡 {r['deaths']['对战']}，驱逐 {r['evicted']}")
-    print(f"法力网发放 {r['ledger'].minted}，消耗 {r['ledger'].sunk}，消散 {r['ledger'].dissolved}")
+    print(f"保底累计已付 {r['ledger'].welfare_paid}，欠付 {r['ledger'].welfare_owed}，主办方库余额 {r['ledger'].treasury}")
     print("钱包前五：")
     for g in r["top_wealth"][:5]:
         print(f"  #{g.cid:03d} 碎片 {g.shards}，累计收入 {g.income}，胜 {g.wins} 场")
