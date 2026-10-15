@@ -67,3 +67,11 @@ def test_dungeon_daowen_mana_costs_are_not_left_as_bare_consumption_values():
         assert not re.search(r"(?m)^\s*\d+\.[^:\n]+X[^:\n]*：消耗\d+X", text), (
             f"{filename} 仍有未明确标注为法力的道纹消耗值"
         )
+
+
+def test_spell_index_examples_follow_rebirth_four_x_healing():
+    spell_index = (ROOT / "法术索引.md").read_text(encoding="utf-8")
+    assert "回复4X生命" in spell_index
+    assert "[回复] 8 点生命" in spell_index
+    assert "[回复] 6 点生命" not in spell_index
+    assert "恢复3X生命" not in spell_index
