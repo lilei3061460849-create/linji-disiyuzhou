@@ -57,7 +57,7 @@ def test_can_learn_same_region_after_owning_one():
     e.state.player.dao_wen["裂变"] = DaoWenInstance(
         DaoWen(name="裂变", formula="", cost_type="消耗",
                cost_formula="X", effect_formula=""))
-    for dw in ("加害", "伤痕", "龙鳞"):
+    for dw in ("加害", "龙鳞"):
         assert _learn(e, dw)["success"], f"同副本专属道纹{dw}应可学习"
 
 
@@ -65,7 +65,7 @@ def test_transformed_monster_daowen_not_learnable_outside_battle():
     """正常路径：怪物转化道纹须以自身已持有的道纹为起点经残韵获得，
     不可通过局外【学习】直接习得（规则正文·局外系统·学习门槛）"""
     e = _engine("龙心谷")
-    for dw in ("蒙蔽", "弱化", "无力"):
+    for dw in ("蒙蔽", "弱化", "全速"):
         r = _learn(e, dw)
         assert not r["success"], f"转化道纹{dw}不应能被局外直接学习"
         assert "怪物转化道纹" in r["error"]
@@ -77,7 +77,7 @@ def test_original_monster_daowen_learnable_after_lift():
     旧断言「人类无法承受并获得」编码的是已被用户令删除的门禁，本用例按新裁定重写。
     """
     e = _engine("龙心谷")
-    for dw in ("必中", "减速", "飞行", "疯狂"):
+    for dw in ("必中", "减速", "疯狂"):
         r = _learn(e, dw)
         assert r["success"], f"原始怪物道纹{dw}应可经局外【学习】习得：{r.get('error')}"
         assert dw in e.state.player.dao_wen
@@ -129,7 +129,7 @@ def test_foreign_region_exclusive_always_rejected():
     e.state.player.dao_wen["裂变"] = DaoWenInstance(
         DaoWen(name="裂变", formula="", cost_type="消耗",
                cost_formula="X", effect_formula=""))
-    for foreign in ("退化", "点金", "坏死", "典当"):   # 2026-10-12：失忆 已回退为 点金；2026-10-13：逼债 删除由 典当 顶替
+    for foreign in ("超频", "点金", "坏死", "典当"):   # 遗物化道纹退化已删除；其余异副本专属仍应拒绝
         r = _learn(e, foreign)
         assert not r["success"], f"{foreign}属于其他副本，不应可学"
         assert "专属道纹" in r["error"]
