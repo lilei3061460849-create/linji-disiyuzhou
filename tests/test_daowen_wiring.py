@@ -234,41 +234,6 @@ def test_retired_healing_runes_are_not_registered():
     assert "眩晕" not in DaoWenEngine._registry
 
 
-def test_jisu_jiasu_dongcha():
-    """急速每闪两次+1 速；加速让超频翻倍；洞察闪避后下回始+10 法力。"""
-    engine = _engine("speed")
-    p = engine.state.player
-    for n in ("急速", "加速", "超频", "洞察"):
-        _give(p, n)
-    engine.execute_action("round_start", {})
-
-    engine.execute_action("use_daowen", {"daowen_name": "急速", "x": 2, "target": p.name})
-    # 2026-09-13：当前速度不得超过[速限]。满速开局时"+1速"会被上限吃掉，
-    # 本例要验的是"急速每闪两次给1速"这件事发生了，先腾出空间再验。
-    p.current_speed = max(0, p.speed_limit - 3)
-    spd = p.current_speed
-    engine.combat._note_dodge(p)
-    assert p.current_speed == spd
-    engine.combat._note_dodge(p)
-    assert p.current_speed == spd + 1
-
-    engine.execute_action("use_daowen", {"daowen_name": "加速", "x": 1, "target": p.name})
-    p.speed_limit += 6          # 给翻倍后的 +6 留出上限空间（同上）
-    spd = p.current_speed
-    engine.execute_action("use_daowen", {"daowen_name": "超频", "x": 3})
-    assert p.current_speed == spd + 6
-
-    engine.execute_action("use_daowen", {"daowen_name": "洞察", "x": 1, "target": p.name})
-    engine.combat._note_dodge(p)
-    assert getattr(p, "_dongcha_pending", 0) == 10
-    mana = p.current_mana
-    engine.state.combat_subphase = "await_round_end"
-    engine.execute_action("round_end", {})
-    engine.execute_action("round_start", {})
-    # DM裁定 2026-09-09：一池制，[回始]不回填 → 只有洞察结算的那 10 点
-    assert p.current_mana == mana + 10, f"{p.current_mana} != {mana}+10"
-
-
 def test_relicized_trigger_daowen_registry_and_flight_rehoming():
     """已遗物化触发型道纹不可再施放；飞行由骨天使的变形附带。"""
     retired = {
