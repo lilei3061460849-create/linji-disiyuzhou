@@ -132,6 +132,18 @@ def test_structured_numbers_agree_with_rule_lines():
 # 三、事实源自证：toml 本身要完整、与致死事件不撞车
 # ============================================================================
 
+def test_remaining_special_events_are_registered_and_debt_threshold_is_source_driven():
+    """十项遗留特殊事件全部进入结构化事实源，还债阈值不再硬编码。"""
+    expected = {
+        "死之传承", "还债", "员工背叛", "许愿", "逃跑与追击",
+        "进化", "撤退", "最终的冠冕", "救赎", "初拥之夜",
+    }
+    registered = {entry["name"] for entry in special_events.all()}
+    assert expected <= registered
+    assert special_events.threshold("huanzhai") == 20
+    assert MonsterLifeMixin.DEBT_THRESHOLD == special_events.threshold("huanzhai")
+
+
 def test_toml_entries_are_complete():
     """每条非致死特殊事件必须齐备引擎与生成器要用到的字段。"""
     for entry in special_events.all():
