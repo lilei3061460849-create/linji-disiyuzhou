@@ -841,7 +841,6 @@ class DaoWenEngine:
         if getattr(entity, "entity_type", "") == "怪物":
             n = 2  # 1 攻 + 1 纹
             n += entity.get_status_value("疯狂")
-            n -= entity.get_status_value("无力")
             return max(0, n)
         return max(0, entity.action_count)
 
