@@ -126,7 +126,7 @@ def fight(a: Gwang, b: Gwang, rng: random.Random) -> tuple[Gwang, Gwang]:
                 return att, dfn
 
 
-def run(n: int, seed: int, days: int) -> dict:
+def run(n: int, seed: int, days: int, work_pay: int = WORK_PAY) -> dict:
     rng = random.Random(seed + 1)
     people = make_population(n, seed)
     initial = sum(g.shards for g in people)
@@ -138,25 +138,14 @@ def run(n: int, seed: int, days: int) -> dict:
     for day in range(1, days + 1):
         alive = [g for g in people if g.alive]
         rng.shuffle(alive)
+        # 顺序：工作收入 → 自由任务 → 赏金赛 → 房租（月末）→ 饥饿（当日结算）
 
-        # 1. 饥饿：不足 1 碎片即死亡
-        for g in alive:
-            if g.shards >= FOOD_PER_DAY:
-                g.shards -= FOOD_PER_DAY
-                ledger.sunk += FOOD_PER_DAY
-            else:
-                g.alive = False
-                g.death_cause = "饥饿"
-                ledger.dissolved += g.shards
-                g.shards = 0
-                deaths["饥饿"] += 1
-        alive = [g for g in people if g.alive]
 
         # 2. 保底任务：按需求选择工作单位，法力网发放
         for g in alive:
             rent_share = RENT_PER_MONTH / max(1, len(houses[g.house]))
             units = work_units_wanted(g, rent_share)
-            pay = units * WORK_PAY
+            pay = units * work_pay
             g.shards += pay
             g.income += pay
             ledger.minted += pay
@@ -165,7 +154,7 @@ def run(n: int, seed: int, days: int) -> dict:
         posters = rng.sample(alive, min(FREE_TASK_POSTERS, len(alive)))
         for p in posters:
             reward = rng.randint(2, 4)
-            if p.shards < reward:
+            if p.shards - reward < FOOD_PER_DAY:  # 必须留出当日口粮
                 continue
             takers = [g for g in alive if g is not p and g.alive
                       and rng.random() < 0.3 + 0.4 * (g.trait("risk_preference") + 1) / 2]
@@ -177,7 +166,7 @@ def run(n: int, seed: int, days: int) -> dict:
             worker.income += reward
 
         # 4. 赏金赛：自愿报名（需有 5 碎片且冒险倾向决定）
-        entrants = [g for g in alive if g.alive and g.shards >= ENTRY_FEE
+        entrants = [g for g in alive if g.alive and g.shards - ENTRY_FEE >= FOOD_PER_DAY
                     and rng.random() < 0.2 + 0.6 * (g.trait("risk_preference") + 1) / 2]
         rng.shuffle(entrants)
         for g in entrants:
@@ -203,42 +192,42 @@ def run(n: int, seed: int, days: int) -> dict:
                 ledger.dissolved += l.shards
                 l.shards = 0
 
-        # 5. 每月房租：按人数平摊，付不起者被驱逐
+        # 6. 饥饿（当日结算）：不足 1 碎片即死亡
+        for g in alive:
+            if not g.alive:  # 对战中已命零者不再结算饥饿
+                continue
+            if g.shards >= FOOD_PER_DAY:
+                g.shards -= FOOD_PER_DAY
+                ledger.sunk += FOOD_PER_DAY
+            else:
+                g.alive = False
+                g.death_cause = "饥饿"
+                ledger.dissolved += g.shards
+                g.shards = 0
+                deaths["饥饿"] += 1
+        alive = [g for g in people if g.alive]
+
+        # 5. 每月房租：按人数平摊；付不起者被驱逐离开；其余室友按新人数重新平摊（同月补缴，直到稳定）
         if day % MONTH_DAYS == 0:
-            for hid, members in list(houses.items()):
-                members = [m for m in members if m.alive]
-                if not members:
-                    continue
-                share = RENT_PER_MONTH / len(members)
-                for m in list(members):
-                    if m.shards >= share:
-                        m.shards -= share
-                        ledger.sunk += share
-                    else:
-                        # 驱逐：离开安全区，其余室友平摊份额（占位：不招新人）
+            for hid in list(houses.keys()):
+                members = [m for m in houses[hid] if m.alive]
+                while members:
+                    share = RENT_PER_MONTH / len(members)
+                    broke = [m for m in members if m.shards < share]
+                    if not broke:
+                        break
+                    for m in broke:
                         m.alive = False
                         m.left_zone = True
                         m.death_cause = "驱逐"
                         ledger.dissolved += m.shards
                         m.shards = 0
                         evicted += 1
-                        members.remove(m)
+                    members = [m for m in members if m.alive]
+                for m in members:
+                    m.shards -= share
+                    ledger.sunk += share
                 houses[hid] = members
-                # 剩余室友的份额重新平摊（同日补缴）
-                if members:
-                    new_share = RENT_PER_MONTH / len(members)
-                    for m in members:
-                        if m.shards >= new_share:
-                            m.shards -= new_share
-                            ledger.sunk += new_share
-                        else:
-                            m.alive = False
-                            m.left_zone = True
-                            m.death_cause = "驱逐"
-                            ledger.dissolved += m.shards
-                            m.shards = 0
-                            evicted += 1
-                    houses[hid] = [m for m in members if m.alive]
 
         ledger.check(people, initial)
 
