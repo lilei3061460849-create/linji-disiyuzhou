@@ -1582,7 +1582,7 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         return effects
 
     def can_act(self, entity: Entity) -> bool:
-        """是否可出手（眩晕/束缚下不可；被【封印】暂离者不在场上，同样不可出手）。
+        """是否可出手（束缚下不可；被【封印】暂离者不在场上，同样不可出手）。
 
         2026-10-08 用户令：封印可作用于任意目标含自己。这里是"能否出手"的唯一
         事实源，加上暂离判断后，玩家/朋友/员工/怪物被封印期间一律不能行动，
@@ -1590,7 +1590,7 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
         """
         return (entity.is_alive
                 and not self.state.is_sealed_away(entity)
-                and not entity.has_status("眩晕")
+
                 and not entity.has_status("束缚"))
 
     def is_targetable(self, attacker: Entity, target: Entity) -> bool:
