@@ -1,0 +1,19 @@
+name: Temporary AI context export
+on:
+  push:
+    branches:
+      - arena-daowen-payment-20261015
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Generate AI context
+        run: python sim/gen_ai_context.py
+      - name: Print generated AI context
+        run: cat AI_CONTEXT.md
