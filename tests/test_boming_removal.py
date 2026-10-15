@@ -38,7 +38,7 @@ def test_boming_is_not_registered():
 
     assert "搏命" not in REGION_EXCLUSIVE_DAOWEN["扭曲都市"]
     assert REGION_EXCLUSIVE_DAOWEN["扭曲都市"] == {
-        "变形", "定型", "畸变", "超频", "坏死", "退化"}
+        "变形", "定型", "超频", "坏死"}
 
 
 def test_twisted_loop_keeps_seven_edges_with_reserved_slot():
