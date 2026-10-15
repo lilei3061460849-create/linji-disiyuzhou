@@ -181,7 +181,7 @@ def test_resonance_transform_keeps_holder_count_and_stays_within_capacity():
     assert r["success"], r
     assert len(monster.dao_wen) == 1, "持有者一换一，种类数不变"
     assert "蒙蔽" in monster.dao_wen and "必中" not in monster.dao_wen
-    # 施法者另获一份【洞察】；血限30 → 额度1，此时刚好等于额度，未超。
+    # 施法者另获一份【蒙蔽】；血限30 → 额度1，此时刚好等于额度，未超。
     assert list(p.dao_wen) == ["蒙蔽"], "施法者获得转化后道纹"
     assert len(p.dao_wen) <= p.daowen_capacity
 
@@ -200,12 +200,12 @@ def test_resonance_grant_beyond_capacity_is_refused():
     monster = Entity("M", "怪物", blood_limit=50, current_hp=50)
     _grant(monster, "必中")
     e.state.enemies = [monster]
-    e.state.resonance["转换"] = 1
+    e.state.resonance["反转"] = 1
     e.state.phase = "in_combat"
     e.state.combat_subphase = "player_actions"
 
     r = e.execute_action("use_resonance", {"source_daowen": "必中",
-                                           "resonance_type": "转换",
+                                           "resonance_type": "反转",
                                            "target_ref": "enemy:0"})
     assert r["success"], r
     assert not r.get("granted_daowen"), f"超额时不应授予：{r.get('granted_daowen')}"
