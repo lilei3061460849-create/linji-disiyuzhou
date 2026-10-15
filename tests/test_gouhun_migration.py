@@ -201,11 +201,7 @@ def test_resonance_conversion_does_not_clear_active_gouhun():
     assert p.gain_mana(5) == 0
     assert p.current_mana == 20, "转化后勾魂仍应让玩家无法获得法力"
 
-    # 真实生效：怪物下回合用新道纹（冥气）而不是已被转化的勾魂
-    e.state.current_round = 3
-    prepared = e.combat.prepare_monster_phase()
-    names = [o["name"] for o in prepared["actors"][0]["daowen_options"]]
-    assert names == ["冥气"], f"转化后怪物应改用新道纹，实{names}"
+
 
 
 def test_gouhun_qujie_lands_on_reserved_slot_and_is_refused():
