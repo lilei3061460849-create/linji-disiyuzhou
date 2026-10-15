@@ -5,7 +5,7 @@
 删干净了、留下的空缺是显式登记过的（而不是悄悄漂移）。
 
 留下的空缺（已登记，是否补位待定）：
-- 残韵：【全力】的（转换）出边留空（仍有 反转→弱化、曲解→自食）；
+- 残韵：【全力】的（转换）出边留空（仍有 反转→弱化、曲解→再生）；
 - 怪物面板：`tests/test_dungeon_audit.py::PENDING_DW_GAPS` 新增
   乱葬岗/腐疫鼠、乱葬岗/红嫁衣鬼、沉沦海/褪鳞蟹、沉沦海/忘潮祭司；
   沉沦海/潜水员（[员工]面板）道纹清零，不在该审计口径内。
@@ -58,7 +58,7 @@ def test_quanli_transform_edge_is_left_empty_on_purpose():
     assert ResonanceEngine.find_transformation("全力", "转换") is None
     # 另两条边必须还在
     assert ResonanceEngine.find_transformation("全力", "反转") == "弱化"
-    assert ResonanceEngine.find_transformation("全力", "曲解") == "自食"
+    assert ResonanceEngine.find_transformation("全力", "曲解") == "再生"
 
 
 def test_round_start_phase_no_longer_has_shuaibai():
