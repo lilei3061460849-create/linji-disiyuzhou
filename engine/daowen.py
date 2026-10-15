@@ -370,21 +370,7 @@ class DaoWenEngine:
             "summary": f"异变+{x}，你选中的[目标]无法进行回合外行动，持续{x}回合"
         }
     
-    @staticmethod
-    def calculate_feixing(x: int) -> dict:
-        """飞行X：支付：冷却X。无法被非飞行角色选为目标，持续X回合。"""
-        return {
-            "dao_wen": "飞行",
-            "x": x,
-            "cost_type": CostType.COOLDOWN.value,
-            "cost": x,
-            "duration": x,
-            "effect": "无法被非飞行角色选为目标",
-            "summary": f"冷却{x}场，无法被非飞行角色选为目标，持续{x}回合"
-        }
-    
-    # ---- 怪物转化道纹 ----
-    
+
     @staticmethod
     def calculate_fennu(x: int, target: Entity = None) -> dict:
         """愤怒X：支付：法力2X。使[目标]法力消耗减半，持续X"""
@@ -413,20 +399,7 @@ class DaoWenEngine:
             "summary": f"支付：{2 * x}法力，使{target_name}攻击力-{x}，永久"
         }
     
-    @staticmethod
-    def calculate_wuli(x: int, target: Entity = None) -> dict:
-        """无力X：支付：法力3X。回始使[目标]出手次数-X，持续∞"""
-        target_name = target.name if target is not None else "未选定目标"
-        return {
-            "dao_wen": "无力",
-            "x": x,
-            "cost_type": CostType.MANA.value,
-            "cost": 3 * x,
-            "action_reduction": x,
-            "duration": -1,
-            "summary": f"支付：{3 * x}法力，回始使{target_name}出手次数-{x}，永久"
-        }
-    
+
     @staticmethod
     def calculate_quansu(x: int, target: Entity = None) -> dict:
         """全速X（原名【迟滞】）：支付：冷却X。使[目标]攻击次数等同其速限，持续X
@@ -453,48 +426,9 @@ class DaoWenEngine:
             "summary": f"冷却{x}场，使{target_name}攻击次数等同其速限，持续{x}回合"
         }
     
-    @staticmethod
-    def calculate_jisu(x: int, target: Entity = None) -> dict:
-        """急速X：支付：法力5X。使[目标]每闪避两次速度+1，持续X"""
-        target_name = target.name if target is not None else "未选定目标"
-        return {
-            "dao_wen": "急速",
-            "x": x,
-            "cost_type": CostType.MANA.value,
-            "cost": 5 * x,
-            "speed_per_2_dodges": 1,
-            "duration": x,
-            "summary": f"支付：{5 * x}法力，使{target_name}每闪避两次速度+1，持续{x}回合"
-        }
-    
-    @staticmethod
-    def calculate_jiasu(x: int, target: Entity = None) -> dict:
-        """加速X：支付：法力5X。使[目标]获得的速度翻倍，持续X"""
-        target_name = target.name if target is not None else "未选定目标"
-        return {
-            "dao_wen": "加速",
-            "x": x,
-            "cost_type": CostType.MANA.value,
-            "cost": 5 * x,
-            "speed_doubled": True,
-            "duration": x,
-            "summary": f"支付：{5 * x}法力，使{target_name}获得的速度翻倍，持续{x}回合"
-        }
-    
-    @staticmethod
-    def calculate_dongcha(x: int, target: Entity = None) -> dict:
-        """洞察X：支付：疲惫X。使[目标]每次闪避后下回合法力+10，持续X"""
-        target_name = target.name if target is not None else "未选定目标"
-        return {
-            "dao_wen": "洞察",
-            "x": x,
-            "cost_type": CostType.FATIGUE.value,
-            "cost_speed": x,
-            "mana_per_dodge": 10,
-            "duration": x,
-            "summary": f"疲惫{x}，使{target_name}每次闪避后下回合法力+10，持续{x}回合"
-        }
-    
+
+
+
     @staticmethod
     def calculate_mengbi(x: int, target: Entity = None) -> dict:
         """蒙蔽X：支付：法力2X。使[目标]下X次造成的伤害无效"""
@@ -512,23 +446,7 @@ class DaoWenEngine:
     # 2026-10-11 用户令（A14）：【shuaibai】整条删除——不做闭环补位、不设计替换道纹。
 
     
-    @staticmethod
-    def calculate_jisheng(x: int, target: Entity = None, caster: Entity = None) -> dict:
-        """寄生X：支付：法力3X。使[目标]受到的伤害20X%转化为施法者的回复，持续∞"""
-        target_name = target.name if target is not None else "未选定目标"
-        caster_name = caster.name if caster is not None else "未知施法者"
-        return {
-            "dao_wen": "寄生",
-            "x": x,
-            "cost_type": CostType.MANA.value,
-            "cost": 3 * x,
-            "drain_percent": 20 * x,
-            "duration": -1,
-            "summary": f"支付：{3 * x}法力，使{target_name}受到伤害的{20*x}%转化为{caster_name}的回复，永久"
-        }
-    
-    # ---- 扭曲都市专属道纹 ----
-    
+
     @staticmethod
     def calculate_bianxing(x: int) -> dict:
         """变形X：支付：法力X。使[目标]当前速度与当前法力互换，持续X
@@ -574,29 +492,7 @@ class DaoWenEngine:
             "summary": f"支付：{2 * x}法力，使{target_name}攻击次数与攻击力无法被改变，持续{x}回合"
         }
     
-    @staticmethod
-    def calculate_jibian(x: int, target: Entity = None) -> dict:
-        """畸变X：支付：冷却X。回终使[目标]失去(攻击力×攻击次数)的血限，持续X"""
-        target_name = target.name if target is not None else "未选定目标"
-        if target is not None:
-            atk = target.attack_count
-            ap = target.attack_power
-            blood_loss = atk * ap
-        else:
-            blood_loss = 0
-        return {
-            "dao_wen": "畸变",
-            "x": x,
-            "cost_type": CostType.COOLDOWN.value,
-            "cost": x,
-            "blood_loss_per_round": blood_loss,
-            "duration": x,
-            "summary": f"冷却{x}场，回终使{target_name}失去{blood_loss}血限（{atk if target is not None else 0}×{ap if target is not None else 0}），持续{x}回合"
-        }
-    
-    # 2026-10-14 用户令：【搏命】整条删除（效果并入【透支】疲惫通道；
-    # 道纹淘汰审查.md:60 的功能重复结论落地）。k=1 永动证明见 calculate_touzhi。
-    
+
     @staticmethod
     def calculate_chaopin(x: int) -> dict:
         """超频X：支付：法力2X。使[目标]速度+X
@@ -628,22 +524,7 @@ class DaoWenEngine:
             "summary": f"支付：{2 * x}法力，使{target_name}无法获得回复，持续{x}回合"
         }
     
-    @staticmethod
-    def calculate_tuihua(x: int, target: Entity = None) -> dict:
-        """退化X：支付：法力2X。使[目标]每次发动道纹时该次数值-X(最低0)，持续∞"""
-        target_name = target.name if target is not None else "未选定目标"
-        return {
-            "dao_wen": "退化",
-            "x": x,
-            "cost_type": CostType.MANA.value,
-            "cost": 2 * x,
-            "dao_wen_reduction": x,
-            "duration": -1,
-            "summary": f"支付：{2 * x}法力，使{target_name}每次发动道纹数值-{x}(最低0)，永久"
-        }
-    
-    # ---- 罪孽都市专属道纹 ----
-    
+
     @staticmethod
     def calculate_jiahai(x: int, target: Entity = None) -> dict:
         """加害X：支付：法力2X。数值规则见 engine.rule_engine.DAOWEN_RULES。"""
@@ -784,16 +665,7 @@ class DaoWenEngine:
             "summary": definition.summary(x, target_name=target_name),
         }
 
-    @staticmethod
-    def calculate_nilin(x: int, target: Entity = None) -> dict:
-        """逆鳞X：支付：流血X。目标每失去1生命获得1层逆鳞，下次伤害+全部层数，持续X"""
-        target_name = target.name if target is not None else "未选定目标"
-        return {
-            "dao_wen": "逆鳞", "x": x, "cost_type": CostType.BLEED.value, "cost_hp": x,
-            "stack_per_hp": 1, "duration": x,
-            "summary": f"流血{x}，{target_name}每掉1HP积1层逆鳞，下次伤害+全部层数"
-        }
-    
+
     @staticmethod
     def calculate_liebian(x: int, target: Entity = None) -> dict:
         """裂变X：支付：法力2X。使目标受到伤害改为分X次结算，持续∞"""
@@ -818,17 +690,6 @@ class DaoWenEngine:
             "summary": f"支付：{2 * x}法力，{target_name}下{x}次受伤由自身承担"
         }
     
-    @staticmethod
-    def calculate_shanghen(x: int, target: Entity = None) -> dict:
-        """伤痕X：支付：法力2X。使目标每次失去生命后血限-X，持续∞"""
-        target_name = target.name if target is not None else "未选定目标"
-        return {
-            "dao_wen": "伤痕", "x": x, "cost_type": CostType.MANA.value, "cost": 2 * x,
-            "blood_limit_loss": x, "duration": -1,
-            "summary": f"支付：{2 * x}法力，{target_name}每次掉血后血限-{x}，永久"
-        }
-    
-    # ... 其他道纹可按需添加
 
     # ========== 乱葬岗（二阶）专属道纹 ==========
 
@@ -859,15 +720,6 @@ class DaoWenEngine:
             "summary": f"流血{x * clone_hp}，创造{x}个{clone_hp}血限的自身复制体"
         }
 
-    @staticmethod
-    def calculate_qianmo(x: int) -> dict:
-        """缄默X：支付：法力X。使场上所有由[命零]触发的效果无法触发，持续X。"""
-        return {
-            "dao_wen": "缄默", "x": x,
-            "cost_type": CostType.MANA.value, "cost": x,
-            "duration": x, "silence_death_triggers": True,
-            "summary": f"支付：{1 * x}法力，封禁全场[命零]触发效果，持续{x}回合"
-        }
 
     @staticmethod
     def calculate_wajie(x: int, target: Entity = None) -> dict:
@@ -880,21 +732,6 @@ class DaoWenEngine:
             "summary": f"支付：{3 * x}法力，{target_name}血限-{10*x}%"
         }
 
-    @staticmethod
-    def calculate_mingqi(x: int, target: Entity = None) -> dict:
-        """冥气X：支付：法力2X。[目标]每失去一次速度[速限]-2，持续X。
-
-        修复（2026-08-21）：补上 target 参数使该道纹正确声明需要[目标]，
-        否则 requires_target=False 导致怪物只能自施（实战：红嫁衣鬼冥气自施）。
-        效果数值与支付：不变。
-        """
-        target_name = target.name if target is not None else "未选定目标"
-        return {
-            "dao_wen": "冥气", "x": x,
-            "cost_type": CostType.MANA.value, "cost": 2 * x,
-            "speed_loss_speed_limit": 2, "duration": x,
-            "summary": f"支付：{2 * x}法力，{x}回合内{target_name}每失去速度速限-2"
-        }
 
     @staticmethod
     def calculate_gouhun(x: int, target: Entity = None) -> dict:
@@ -1115,7 +952,7 @@ class ResonanceEngine:
             # 用户 2026-10-14 拍板占位，否决直连方案）。
             ("超频", "反转", RESERVED_SLOT),
             (RESERVED_SLOT, "转换", "坏死"),
-            # 2026-10-03 用户令删除【爆裂】→ 由【坏死】直连【退化】保持环连通
+            # 【退化】已遗物化：该节点保留独立「？？」占位。
             ("坏死", "曲解", RELICIZED_DAOWEN_SLOTS["退化"]),
             (RELICIZED_DAOWEN_SLOTS["退化"], "转换", "变形"),
         ],
@@ -1151,7 +988,7 @@ class ResonanceEngine:
             (RELICIZED_DAOWEN_SLOTS["伤痕"], "转换", "加害"),
         ],
         "乱葬岗闭环": [
-            # 2026-10-03 用户令删除【尸爆】→ 由【分裂】直连【缄默】
+            # 【缄默】已遗物化：该节点保留独立「？？」占位，不与相邻节点直连。
             ("分裂", "转换", RELICIZED_DAOWEN_SLOTS["缄默"]),
             (RELICIZED_DAOWEN_SLOTS["缄默"], "曲解", "瓦解"),
             ("瓦解", "转换", RELICIZED_DAOWEN_SLOTS["冥气"]),
@@ -1164,7 +1001,7 @@ class ResonanceEngine:
         ],
         # ---- 原始怪物道纹 → 转化道纹（规则正文）----
         # 非闭环，是以原始道纹为根的分支树；怪物面板上的道纹多属此类，
-        # 补齐后残韵才能作用于怪物（此前对必中/狂暴/飞行发动必然失败）。
+        # 残韵边保留独立占位节点；原始怪物道纹集合不含飞行。
         "怪物原始道纹": [
             # 2026-10-03 删除（用户令）：("狂暴", "转换", "愤怒"),
             # 2026-10-03 删除（用户令）：("狂暴", "曲解", "无神"),
