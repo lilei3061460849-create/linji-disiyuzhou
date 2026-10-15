@@ -148,7 +148,7 @@ def test_insufficient_real_mana_interrupts_at_runtime(tmp_path):
             if lg.get("spell") == "先发制人"]
     assert logs and logs[0].get("interrupted") == "mana_insufficient", logs
     assert not p.has_status("勾魂"), "中断后无副作用"
-    assert p.current_mana == 10, "未支付任何法力"
+    assert p.current_mana == 2, "法力不足时不得扣除未能支付的法力"
 
 
 def test_no_shouyedeng_mana_zero_interrupts_at_runtime(tmp_path):

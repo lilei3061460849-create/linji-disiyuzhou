@@ -210,7 +210,7 @@ def test_pool_relic_text_snapshot():
     defs = GameEngine.RELIC_DEFS
     assert len(defs) == 25
     names = [n for n, _ in defs]
-    assert len(set(names)) == 26
+    assert len(set(names)) == 25
     for n, fx in defs:
         assert not re.search(r"持续\d*X", fx), f"{n}：遗物不得有持续X"
         assert "自选" not in fx, f"{n}：遗物数值不得自选"
