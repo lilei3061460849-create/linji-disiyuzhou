@@ -118,15 +118,19 @@ def test_shouyedeng_mana_persists_after_monster_phase(tmp_path):
     assert p.current_mana == 9, f"10授予-1消耗=9应留存，实{p.current_mana}"
 
 
-def test_shouyedeng_grants_once_per_round(tmp_path):
-    """每回合只授予一次：同一回合重复调用不再发放。"""
+def test_shouyedeng_grants_every_time_without_once_per_round_gate(tmp_path):
+    """每次调用均按50%法限授予，不设每回合一次门槛；实际法力仍受法限约束。"""
     e = _engine(tmp_path)
     e.state.relics.append(Relic(name="守夜灯", effect="", tags=[]))
     p = e.state.player
     p.current_mana = 0
     p.mana_limit = 20
-    assert e.combat._grant_shouyedeng(p) is not None
-    assert e.combat._grant_shouyedeng(p) is None, "同回合第二次不应授予"
+    first = e.combat._grant_shouyedeng(p)
+    assert first["gained"] == 10
+    assert p.current_mana == 10
+    p.current_mana = 0
+    second = e.combat._grant_shouyedeng(p)
+    assert second["gained"] == 10
     assert p.current_mana == 10
 
 
