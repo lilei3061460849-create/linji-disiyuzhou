@@ -141,31 +141,31 @@ def test_resonance_on_enemy_grants_dest_and_rewrites_next_activation():
     activated = [d for d in details if d.get("daowen_activated") == "弱化"]
     assert activated, f"应发动永久改写后的弱化: {details}"
     assert monster.has_status("弱化"), "改写后的道纹必须真实生效"
-    assert "加速" in monster.dao_wen and "减速" not in monster.dao_wen
+    assert "弱化" in monster.dao_wen and "全力" not in monster.dao_wen
 
 
 def test_resonance_no_duplicate_when_caster_already_owns_dest():
     """边界：施法者已持有变化后道纹则不重复获得；目标道纹仍永久变化。"""
     engine = _engine("res_bound")
     engine.state.resonance["反转"] = 1
-    _give_daowen(engine.state.player, "加速")
+    _give_daowen(engine.state.player, "弱化")
     engine.execute_action("battle_start", {})
-    monster = Entity(name="唯一减速", entity_type="怪物", blood_limit=80, current_hp=80,
+    monster = Entity(name="唯一全力", entity_type="怪物", blood_limit=80, current_hp=80,
                      attack_count=1, attack_power=4)
-    _give_daowen(monster, "减速", x=1)
+    _give_daowen(monster, "全力", x=1)
     _give_daowen(monster, "全力", x=1)
     monster._had_monster_daowen = True
     _put_enemy(engine, monster)
     engine.execute_action("round_start", {})
 
     r = engine.execute_action("use_resonance", {
-        "source_daowen": "减速", "resonance_type": "反转",
+        "source_daowen": "全力", "resonance_type": "反转",
     })
     assert r["success"], r
     assert r["granted_daowen"] is None
-    assert list(engine.state.player.dao_wen).count("加速") == 1
-    assert "减速" not in monster.dao_wen
-    assert "加速" in monster.dao_wen
+    assert list(engine.state.player.dao_wen).count("弱化") == 1
+    assert "全力" not in monster.dao_wen
+    assert "弱化" in monster.dao_wen
 
 
 def test_resonance_fails_without_holder_or_stock():
