@@ -908,7 +908,7 @@ def test_evolution_yuanchu():
     print(f"  ✓ 困境怪发动【原初2】：异变+10（当前{m.mutation_count}层），借用【减速2】至战终")
 
     # ---- 2. 边界：同场第二次进化 → 拒绝 ----
-    r2 = engine.execute_action("declare_evolution", {"monster": "困境怪", "daowen": "飞行", "x": 1})
+    r2 = engine.execute_action("declare_evolution", {"monster": "困境怪", "daowen": "变形", "x": 1})
     assert not r2["success"] and "限一次" in r2["error"], f"同场二次进化应被拒绝: {r2}"
     assert m.mutation_count == 10, "被拒绝的进化不得扣异变"
     print(f"  ✓ 同场第二次进化被拒绝（每场限一次），异变仍为{m.mutation_count}层")

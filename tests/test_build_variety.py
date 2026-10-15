@@ -69,12 +69,12 @@ def test_boba_marks_targets_after_start():
 # 2026-10-12：失忆 已回退为 点金；2026-10-13：【逼债】删除——【典当】不进本表：
 # 本用例只注入被测一条道纹，而典当代价失忆2X（单持付不起），「持有即发动」不变量
 # 对它不成立；其可发动性见 tests/test_escape_and_diandang.py。
-_REGION_OF = {"加害": "龙心谷", "裂变": "龙心谷", "伤痕": "龙心谷",
-              "退化": "扭曲都市", "坏死": "扭曲都市",
+_REGION_OF = {"加害": "龙心谷", "裂变": "龙心谷", "背负": "龙心谷",
+              "坏死": "扭曲都市",
               "点金": "罪孽都市"}
 
 
-@pytest.mark.parametrize("dw", ["加害", "裂变", "伤痕", "退化", "坏死", "点金"])
+@pytest.mark.parametrize("dw", ["加害", "裂变", "背负", "坏死", "点金"])
 def test_ai_uses_region_specific_daowen(dw, monkeypatch):
     """
     正常路径：各副本专属道纹只要持有就应被实际发动。
@@ -108,8 +108,6 @@ def test_ai_uses_region_specific_daowen(dw, monkeypatch):
             _m.dao_wen["全力"] = DaoWenInstance(
                 DaoWen(name="全力", formula="", cost_type="异变",
                        cost_formula="5X", effect_formula=""), x_value=1)
-        if dw == "退化":
-            _m.attack_power = max(_m.attack_power, 20)  # 满足控场策略的威胁阈值
     ai = TacticalAI(e)
     # 6 回合而非 3：杀伐自 2026-09-13 改为 X² 后高 X 档分数陡增，会连吃前几手；
     # 不变量仍是「持有即会发动」，给它把法力打空的时间，别把窗口卡在 3 手。

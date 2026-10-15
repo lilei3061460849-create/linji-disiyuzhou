@@ -1,5 +1,5 @@
 """
-F2 验证：龙心谷专属 3 件（逆鳞/背负/伤痕）的 combat 侧实装
+F2 验证：龙心谷幸存专属道纹（背负等）的 combat 侧实装
 （【嫁祸】2026-10-11 已删除：效果与遗物【贪婪契约】重复）
 - 正常：每件按 README 定义结算
 - 边界：持续到期清空、次数耗尽、死亡目标等
@@ -66,7 +66,7 @@ def test_normal_beifu_absorb():
 
 def test_error_invalid_target():
     """错误：对不存在目标使用应失败"""
-    # 2026-10-11：【嫁祸】已删除（效果与遗物【贪婪契约】重复），本用例只留逆鳞部分
+    # 无效目标错误由仍在用的【加害】覆盖。
     engine = _setup_player_with_daowen(["加害"])
     r = engine.execute_action("use_daowen", {"daowen_name": "加害", "x": 1, "target": "不存在的怪"})
     assert not r["success"]
