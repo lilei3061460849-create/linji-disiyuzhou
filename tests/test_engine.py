@@ -499,7 +499,7 @@ def test_daowen_effects_wired():
     player.speed_limit = 99
     # 给玩家多个道纹用于测试
     from engine.models import DaoWen, DaoWenInstance
-    for n in ["弱化","全力","变形","赎金","飞行"]:
+    for n in ["弱化","全力","变形","抢劫","飞行"]:
         player.dao_wen[n] = DaoWenInstance(dao_wen=DaoWen(name=n,formula="",cost_type="消耗",cost_formula="X",effect_formula=""))
     m = Entity(name="靶怪", entity_type="怪物", blood_limit=100, current_hp=100, attack_count=3, attack_power=10)
     m.shards = 20
