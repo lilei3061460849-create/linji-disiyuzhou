@@ -37,7 +37,9 @@ def test_baisu_gear_doubles_actual_speed_gain_and_respects_cap():
     assert combat._gain_speed(player, 2) == 4
     assert player.current_speed == 7
 
-    assert combat._gain_speed(player, 1) == 3
+    assert combat._gain_speed(player, 1) == 2
+    assert player.current_speed == 9
+    assert combat._gain_speed(player, 1) == 1  # 最后1点受速限截断
     assert player.current_speed == player.speed_limit == 10
 
 
@@ -171,7 +173,7 @@ def test_gongsheng_xuenang_uses_actual_life_loss_for_multi_target_damage():
     second = combat._apply_hostile_damage(target2, 9, source=clone)
 
     assert first["actual_damage"] == 3
-    assert second["actual_damage"] == 4  # 超杀部分不计入回复
+    assert second.get("actual_life_loss") == 4  # 超杀部分不计入复制体回复
     assert clone.current_hp == 17
     assert creator.current_hp == 50
 
