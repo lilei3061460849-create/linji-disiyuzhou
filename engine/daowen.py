@@ -387,7 +387,7 @@ class DaoWenEngine:
             "cost": 2 * x,
             "mana_cost_halved": True,
             "duration": x,
-            "summary": f"支付：{2 * x}法力，使{target_name}法力支付：减半，持续{x}回合"
+            "summary": f"支付：{2 * x}法力，使{target_name}法力消耗减半，持续{x}回合"
         }
     
     @staticmethod
