@@ -31,7 +31,7 @@ FOOD_PER_DAY = 1          # 1 碎片 = 100 货币（草案五点五）
 WORK_UNIT_HOURS = 6       # 保底任务单位
 WORK_PAY = 3              # 每单位 3 碎片（用户裁定：福利调整，原为 1）
 MAX_WORK_UNITS = 3        # 每日最多 18 小时
-RENT_PER_MONTH = 9        # 900 货币 = 9 碎片（草案五点五）
+RENT_PER_MONTH = 0        # 用户裁定：取消房租，所有人有免费住所（原为 9 碎片/月）
 MONTH_DAYS = 30
 ENTRY_FEE = 5
 WINNER_PRIZE = 10
