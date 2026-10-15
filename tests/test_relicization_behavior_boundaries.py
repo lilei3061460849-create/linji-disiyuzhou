@@ -37,7 +37,6 @@ def test_baisu_gear_doubles_actual_speed_gain_and_respects_cap():
     assert combat._gain_speed(player, 2) == 4
     assert player.current_speed == 7
 
-    player.add_status(StatusEffect(name="加速", value=1, remaining_rounds=2, source="test"))
     assert combat._gain_speed(player, 1) == 3
     assert player.current_speed == player.speed_limit == 10
 

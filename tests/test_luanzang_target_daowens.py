@@ -1,10 +1,10 @@
-"""修复验证（2026-08-21）：勾魂 / 冥气 的 [目标] 参数接线（+ 禁疗道纹【坏死】）。
+"""修复验证：幸存的【勾魂】与【坏死】目标参数接线。
 
 背景：两个乱葬岗控制道纹的 calculate_* 缺少 target 参数 →
 requires_target=False → 怪物只能自施（寄骨蝇勾魂自吸无法力、
 红嫁衣鬼冥气自施），控制效果完全无法作用于玩家。本测试验证：
 
-- 怪物施放道纹时能正确作用于玩家（勾魂扣法力 / 冥气扣速限）；
+- 怪物施放道纹时能正确作用于玩家（勾魂阻止法力增长）；
 - 玩家施放时仍能正确选择目标；
 - 无目标提交被正确拒绝，而不是默默自施。
 
@@ -80,7 +80,7 @@ def test_requires_target_flag_now_true(tmp_path):
     """三个道纹必须声明需要[目标]（requires_target 判定依据=签名含 target）。"""
     import inspect
     DaoWenEngine.register_all()
-    for name in ("勾魂", "冥气", "坏死"):
+    for name in ("勾魂", "坏死"):
         assert "target" in inspect.signature(DaoWenEngine._registry[name]).parameters, name
 
 
@@ -109,26 +109,6 @@ def test_monster_gouhun_blocks_player_mana_gain(tmp_path):
     assert p.spend_mana(4) is True
     assert p.current_mana == 5, f"勾魂不改消耗倍率，实剩 {p.current_mana}"
 
-
-def test_monster_mingqi_cuts_player_speed_limit_on_speed_loss(tmp_path):
-    """怪物冥气 → 玩家每失去一次速度，[速限]-2（累计，[战终]逆向清除）。"""
-    e = _mk_engine(tmp_path)
-    p = e.state.player
-    p.speed_limit = 8
-    p.current_speed = 8
-    m = _monster_with("执念", {"冥气": 2})
-    e.state.enemies.append(m)
-    e.combat.reset_monster_activation()
-    r = _monster_cast(e, m, "冥气", "player:0")
-    assert r, r
-    assert p.has_status("冥气"), "冥气应挂在玩家身上"
-    before_limit = p.speed_limit
-    # 玩家闪避一次（失去1点当前速度）→ 速限-2
-    e.combat._lose_current_speed(p, 1, ctx={"timing": "player_action", "source": "测试闪避"})
-    assert p.speed_limit == before_limit - 2, f"速限应-2：{before_limit}→{p.speed_limit}"
-    # 再失去一次速度 → 速限再-2
-    e.combat._lose_current_speed(p, 1, ctx={"timing": "player_action", "source": "测试闪避"})
-    assert p.speed_limit == before_limit - 4
 
 
 def test_monster_huaisi_blocks_player_heal(tmp_path):
@@ -162,7 +142,7 @@ def test_player_casts_daowens_with_explicit_targets(tmp_path):
     """玩家施放道纹时仍能正确选择目标。"""
     e = _mk_engine(tmp_path)
     p = e.state.player
-    for dw in ("勾魂", "冥气"):
+    for dw in ("勾魂",):
         p.dao_wen[dw] = DaoWenInstance(
             DaoWen(name=dw, formula="", cost_type="消耗", cost_formula="X",
                    effect_formula=""), x_value=0)
@@ -173,10 +153,6 @@ def test_player_casts_daowens_with_explicit_targets(tmp_path):
     calc = DaoWenEngine.resolve("勾魂", 2, target=foe, caster=p)
     e.combat.apply_daowen_effect("勾魂", calc, p, foe)
     assert foe.has_status("勾魂")
-    # 冥气→敌法
-    calc = DaoWenEngine.resolve("冥气", 1, target=foe, caster=p)
-    e.combat.apply_daowen_effect("冥气", calc, p, foe)
-    assert foe.has_status("冥气")
     # 2026-10-08 删【镇尸】：禁疗改由【坏死】唯一实现，此处不再并排验证。
 
 
