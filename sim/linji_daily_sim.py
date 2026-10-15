@@ -29,13 +29,13 @@ DIMENSIONS = (
 START_SHARDS = 5          # 占位
 FOOD_PER_DAY = 1          # 1 碎片 = 100 货币（草案五点五）
 WORK_UNIT_HOURS = 6       # 保底任务单位
-WORK_PAY = 1              # 每单位 1 碎片
+WORK_PAY = 3              # 每单位 3 碎片（用户裁定：福利调整，原为 1）
 MAX_WORK_UNITS = 3        # 每日最多 18 小时
 RENT_PER_MONTH = 9        # 900 货币 = 9 碎片（草案五点五）
 MONTH_DAYS = 30
 ENTRY_FEE = 5
 WINNER_PRIZE = 10
-LETHAL_CHANCE = 0.05      # 占位
+LETHAL_CHANCE = 0.01      # 用户裁定：致死率 1%（原占位 5%）
 FREE_TASK_POSTERS = 10    # 每日发布自由任务的人数（占位）
 TOP_SHARE = 0.10
 
