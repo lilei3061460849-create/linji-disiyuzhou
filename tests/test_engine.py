@@ -168,7 +168,7 @@ def test_resonance():
     print("  ✓ 再生 --反转--> 杀伐（反向）")
     
     # 再生 → 曲解 → 庇护
-    result = ResonanceEngine.apply_resonance("再生", "曲解", False, True)
+    result = ResonanceEngine.apply_resonance("再生", "曲解", False, True, target_daowen="庇护")
     assert result["success"]
     assert result["target"] == "庇护"
     print("  ✓ 再生 --曲解--> 庇护")
