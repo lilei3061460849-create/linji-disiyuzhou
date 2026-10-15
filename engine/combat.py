@@ -763,12 +763,9 @@ class CombatEngine(DamageDeathMixin, CostPaymentMixin, MonsterLifeMixin,
             "hp_lost": 0,
             "target_died": False,
         }
-        # 万钧印（通用遗物池，2026-10-03 新增）：有[目标]发动攻击时，可将其改为
-        # 该攻击者对自己发动攻击。触发条件＝被攻击的一方（含其阵营）持有并激活
-        # 【万钧印】；改道后本次攻击由攻击者承受自己的攻击（目标不再挨打）。
-        # 决策口径：引擎没有交互式决策层，故默认发动；调用方显式传 wanjunyin=False
-        # 可拒绝本次（为未来的玩家决策层留口）。被改道的一次自攻不会再被改道
-        # （_wanjunyin_converted 防 A→B→A 递归）。
+        # 万钧印（消耗品）：己方角色被选为攻击目标时自动触发并消耗1点耐久，
+        # 将攻击改为攻击者对自己发动。显式传 wanjunyin=False 可拒绝本次；
+        # 被改道的一次自攻不会再被改道（_wanjunyin_converted 防 A→B→A 递归）。
         if (not _wanjunyin_converted and wanjunyin is not False
                 and attacker is not target and attacker.is_alive
                 and self._wanjunyin_holder(target)):
