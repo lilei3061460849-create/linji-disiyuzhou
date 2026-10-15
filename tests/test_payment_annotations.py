@@ -64,6 +64,6 @@ def test_dungeon_daowen_mana_costs_are_not_left_as_bare_consumption_values():
     )
     for filename in dungeon_files:
         text = (ROOT / filename).read_text(encoding="utf-8")
-        assert not re.search(r"(?m)^\\s*\\d+\\.[^:\\n]+X[^:\\n]*：消耗\\d+X", text), (
+        assert not re.search(r"(?m)^\s*\d+\.[^:\n]+X[^:\n]*：消耗\d+X", text), (
             f"{filename} 仍有未明确标注为法力的道纹消耗值"
         )
