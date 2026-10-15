@@ -69,11 +69,14 @@ class Ledger:
     treasury: int = 0         # 主办方库
     welfare_paid: int = 0     # 累计已付保底工资
     welfare_owed: int = 0     # 累计应付但库里不够的保底工资
+    minted_kill: int = 0      # 击杀怪物产出（规则公式：⌈战始血限×2%⌉+道纹数×5），唯一合法的新增来源
+    expelled: int = 0         # 被丢出安全区（变怪）人数
 
     def check(self, people: list[Gwang], initial: int) -> None:
         wallets = sum(g.shards for g in people if g.alive)
-        assert initial == wallets + self.pool + self.treasury, (
-            f"碎片不守恒：初始 {initial}，钱包 {wallets}，池 {self.pool}，主办方库 {self.treasury}")
+        assert initial + self.minted_kill == wallets + self.pool + self.treasury, (
+            f"碎片不守恒：初始 {initial}，击杀产出 {self.minted_kill}，"
+            f"钱包 {wallets}，池 {self.pool}，主办方库 {self.treasury}")
 
 
 def make_population(n: int, seed: int) -> list[Gwang]:
@@ -128,7 +131,8 @@ def fight(a: Gwang, b: Gwang, rng: random.Random) -> tuple[Gwang, Gwang]:
                 return att, dfn
 
 
-def run(n: int, seed: int, days: int, work_pay: int = WORK_PAY) -> dict:
+def run(n: int, seed: int, days: int, work_pay: int = WORK_PAY,
+        expel_fraction: float = 0.0, daowen_count: int = 1) -> dict:
     rng = random.Random(seed + 1)
     people = make_population(n, seed)
     initial = sum(g.shards for g in people)
@@ -140,6 +144,20 @@ def run(n: int, seed: int, days: int, work_pay: int = WORK_PAY) -> dict:
     for day in range(1, days + 1):
         alive = [g for g in people if g.alive]
         rng.shuffle(alive)
+
+        # 0. 丢人循环：主办方把一部分人丢出安全区，变成怪物后被击杀，按规则公式产出碎片归主办方库
+        k = round(expel_fraction * len(alive))
+        for g in alive[:k]:
+            hp = g.stats["血限"] * 6                       # 1 属性点 = 6 血限
+            yield_ = -(-hp * 2 // 100) + 5 * daowen_count  # ⌈hp×2%⌉ + 道纹数×5
+            ledger.treasury += g.shards + yield_
+            ledger.minted_kill += yield_
+            ledger.expelled += 1
+            g.shards = 0
+            g.alive = False
+            g.left_zone = True
+            g.death_cause = "丢出变怪"
+        alive = [g for g in people if g.alive]
         # 顺序：工作收入 → 自由任务 → 赏金赛 → 房租（月末）→ 饥饿（当日结算）
 
 
