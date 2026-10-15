@@ -522,14 +522,14 @@ def test_daowen_effects_wired():
     m.current_mana = mana_before
     print(f"  ✓ 弱化/强化：靶怪攻击力 10→7→锁定法限{m.mana_limit}（花法力不掉）")
 
-    # R35 赎金3：有碎片则最多夺取现有20，不再把不足额扩成负债。
+    # R35 抢劫3：夺取目标现有20碎片。
     shards_before = engine.state.shards
     engine.state.player.actions_used_this_round = 0   # 前序弱化/强化已用满2次出手
-    r = engine.execute_action("use_daowen", {"daowen_name":"赎金","x":3,"target":"靶怪"})
-    assert r["success"], f"赎金失败: {r}"
-    assert m.shards == 0, f"赎金后靶怪现有20碎片应被夺尽，实{m.shards}"
+    r = engine.execute_action("use_daowen", {"daowen_name":"抢劫","x":3,"target":"靶怪"})
+    assert r["success"], f"抢劫失败: {r}"
+    assert m.shards == 0, f"抢劫后靶怪现有20碎片应被夺尽，实{m.shards}"
     assert engine.state.shards == shards_before + 20, f"玩家应+20碎片"
-    print(f"  ✓ 赎金：靶怪碎片20→-10(负债)，玩家+20碎片")
+    print(f"  ✓ 抢劫：靶怪碎片20→0，玩家+20碎片")
 
     # 飞行2（自身）→ 玩家飞行，非飞行无法选中
     engine.state.player.actions_used_this_round = 0   # 前序道纹已用满2次出手
