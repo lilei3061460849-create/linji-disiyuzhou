@@ -17,10 +17,15 @@ sys.path.insert(0, str(ROOT / "sim"))
 
 import monster_arena as arena  # noqa: E402
 from engine.models import StatusEffect  # noqa: E402
+from engine.daowen import DaoWenEngine  # noqa: E402
 
 
 def _lineup(n: int = 2) -> list[dict]:
-    return [dict(d) for d in arena.monster_pool()[:n]]
+    """养蛊场出手/自由行动测试要求每只参赛怪至少有一条现行可发动道纹。"""
+    DaoWenEngine.register_all()
+    eligible = [d for d in arena.monster_pool()
+                if any(name in DaoWenEngine._registry for name in d.get("dao_wen", []))]
+    return [dict(d) for d in eligible[:n]]
 
 
 def _prepare(e):
