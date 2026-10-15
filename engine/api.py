@@ -389,7 +389,7 @@ class GameEngine:
             actions.append({"action_type": "upgrade_doctor",
                             "params_schema": {"mode": ["attack_count", "attack_power"]},
                             "cost": "5碎片，不消耗精力"})
-        # 2026-09-28 用户令：删除局外【忘忧】行动；忘忧香改为战斗被动（溢出回复→等量格挡）。
+        # 2026-09-28 用户令：删除局外【忘忧】行动；忘忧香效果为溢出回复转格挡。
         player = self.state.player
         blood_pact_cost_targets = ([
             {"ref": ref, "name": entity.name}
@@ -1572,7 +1572,7 @@ class GameEngine:
             "附煞": self._pre_battle_fusha,
             "献祭": self._pre_battle_sacrifice,
         }
-        # 2026-09-28：局外【忘忧】已删除，忘忧香改为战斗被动。
+        # 2026-09-28：局外【忘忧】已删除，忘忧香效果为溢出回复转格挡。
 
         # 副本专属行动门禁（规则正文：维修=扭曲都市、雇佣=罪孽都市、炼心=龙心谷专属）。
         # 缺少该校验会让任意副本都能用他人专属行动，统计与平衡数据将失真。
@@ -2477,7 +2477,7 @@ class GameEngine:
             }
         }
 
-    # 2026-09-28：_pre_battle_wangyou 已删除（局外【忘忧】被删除，忘忧香改为战斗被动）。
+    # 2026-09-28：_pre_battle_wangyou 已删除（局外【忘忧】被删除，忘忧香效果为溢出回复转格挡）。
 
     def _pre_battle_sacrifice(self, params: dict) -> dict:
         """献祭（需持有终音法器"红头绳"）：衰老3，换取精力+2"""
