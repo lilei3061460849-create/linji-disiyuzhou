@@ -18,7 +18,7 @@ from engine.combat import CombatEngine
 # ---------- 道纹注册与闭环 ----------
 
 def test_dungeon_daowen_registered():
-    """正常路径：6个乱葬岗专属道纹已注册并可解析。
+    """正常路径：4个幸存的乱葬岗专属道纹已注册并可解析。
 
     2026-10-03 删【尸爆】；2026-10-08 删【镇尸】（与【坏死】硬重复）。
     """
@@ -33,7 +33,7 @@ def test_dungeon_daowen_registered():
 def test_dungeon_resonance_loop_complete():
     """正常路径：乱葬岗残韵闭环7条路径全部可达。
 
-    2026-10-03 删【尸爆】：分裂→缄默直连。
+    遗物化的【缄默】【冥气】各自保留为独立「？？」节点，不与相邻道纹直连。
     2026-10-08 删【镇尸】：勾魂与招魂之间那一格留成**空占位符**，环仍是 7 条边，
     因此这两条路径查得到，但不可获得（见 test_reserved_slot_not_obtainable）。
     """
@@ -45,8 +45,8 @@ def test_dungeon_resonance_loop_complete():
         ("瓦解", "转换", slots["冥气"]),
         (slots["冥气"], "反转", "勾魂"),
         ("勾魂", "曲解", RESERVED_SLOT),
-        (RESERVED_SLOT, "转换", "招魂"),
-        ("招魂", "反转", "分裂"),
+        (RESERVED_SLOT, "曲解", "招魂"),
+        ("招魂", "转换", "分裂"),
     ]
     edges = ResonanceEngine.CLOSED_LOOPS["乱葬岗闭环"]
     assert len(edges) == 7

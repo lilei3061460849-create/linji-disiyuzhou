@@ -169,7 +169,7 @@ def test_player_cast_without_target_is_rejected(tmp_path):
     e.state.enemies.append(foe)
     e.state.phase = "in_combat"
     e.state.combat_subphase = "player_actions"
-    for dw in ("勾魂", "冥气"):
+    for dw in ("勾魂",):
         r = e.execute_action("use_daowen", {"daowen_name": dw, "x": 1,
                                             "trigger_spell_choices": {}})
         assert not r.get("success"), f"{dw} 缺少目标应被拒绝"
