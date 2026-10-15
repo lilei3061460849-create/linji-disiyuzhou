@@ -163,7 +163,7 @@ def test_illegal_attack_actions_count_no_side_effects():
     # 故意少提交一个 attack_action（合法数量 +1）
     choice = {
         "actor_ref": actor,
-        "daowen": {"name": "赎金", "dodge": False, "blood_shadow": False,
+        "daowen": {"name": "抢劫", "dodge": False, "blood_shadow": False,
                    "trigger_spell_choices": {}, "target_ref": "player:0"},
         "attack_actions": legal_hits + legal_hits[:1],
     }
@@ -188,7 +188,7 @@ def test_illegal_dodge_no_speed_rolls_back():
     legal_hits[0]["hits"][0]["dodge"] = True
     choice = {
         "actor_ref": actor,
-        "daowen": {"name": "赎金", "dodge": False, "blood_shadow": False,
+        "daowen": {"name": "抢劫", "dodge": False, "blood_shadow": False,
                    "trigger_spell_choices": {}, "target_ref": "player:0"},
         "attack_actions": legal_hits,
     }
@@ -203,13 +203,13 @@ def test_illegal_reused_daowen_this_round_no_side_effects():
     """非法/重复使用本回合道纹：round_used 已含该道纹仍提交 → 静态校验拦截，零副作用。"""
     e, m, prep = _arena()
     actor = next(iter(_actors(prep)))
-    # 模拟本回合已用过 赎金（引擎记录 round_used）
-    e.combat._monster_round_used(m).add("赎金")
+    # 模拟本回合已用过 抢劫（引擎记录 round_used）
+    e.combat._monster_round_used(m).add("抢劫")
     before = _snapshot(e)
 
     choice = {
         "actor_ref": actor,
-        "daowen": {"name": "赎金", "dodge": False, "blood_shadow": False,
+        "daowen": {"name": "抢劫", "dodge": False, "blood_shadow": False,
                    "trigger_spell_choices": {}, "target_ref": "player:0"},
         "attack_actions": _legal_hits(e, prep, actor),
     }
@@ -228,7 +228,7 @@ def test_api_level_failure_leaves_no_side_effects():
 
     choice = {
         "actor_ref": actor,
-        "daowen": {"name": "赎金", "dodge": False, "blood_shadow": False,
+        "daowen": {"name": "抢劫", "dodge": False, "blood_shadow": False,
                    "trigger_spell_choices": {}, "target_ref": "player:0"},
         "attack_actions": [{"hits": [{"target_ref": "player:0", "dodge": False,
                                       "blood_shadow": False,
@@ -254,13 +254,13 @@ def test_legal_submission_behavior_unchanged():
 
     choice = {
         "actor_ref": actor,
-        "daowen": {"name": "赎金", "dodge": False, "blood_shadow": False,
+        "daowen": {"name": "抢劫", "dodge": False, "blood_shadow": False,
                    "trigger_spell_choices": {}, "target_ref": "player:0"},
         "attack_actions": _legal_hits(e, prep, actor),
     }
     results = e.combat.resolve_monster_phase([choice], prep["result"])
 
-    # 道纹已激活：round_used 含 赎金，X 递增（+2×副本阶级）
+    # 道纹已激活：round_used 含 抢劫，X 递增（+2×副本阶级）
     assert "抢劫" in e.combat._monster_round_used(m)
     # 抢劫X=2 → 夺 10X=20 碎片：玩家 100→80，怪物 100→120（caster 入账）
     assert m.shards == 120, f"抢劫应入账 20: {m.shards}"
