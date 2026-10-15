@@ -121,7 +121,7 @@ def test_cooldown_daowen_never_locks_for_many_battles():
 def test_duration_scaling_daowen_respects_battle_horizon():
     """duration 随 X 一起涨时，超出战斗视野的持续回合是白付的代价。"""
     ally = _ally("赴火者", hp=60, ac=3, ap=3)
-    x = pick_ally_daowen_x(ally, "血债", ally)      # 流血 1X，duration = X
+    x = pick_ally_daowen_x(ally, "贯穿", ally)      # duration = X，受战斗视野上限约束
     assert 1 <= x <= 5, f"应压在战斗视野内，实得 {x}"
 
 
