@@ -542,12 +542,12 @@ def test_r32_r38_normal_deform_ransom_and_transform_restore(tmp_path):
 
     monster.shards = 3
     engine.state.shards = 0
-    ransom = DaoWenEngine.resolve("赎金", 1, target=monster, caster=player)
+    robbery = DaoWenEngine.resolve("抢劫", 1, target=monster, caster=player)
     speed = monster.current_speed
-    engine.combat.apply_daowen_effect("赎金", ransom, player, monster)
+    engine.combat.apply_daowen_effect("抢劫", robbery, player, monster)
     assert monster.shards == 0 and engine.state.shards == 3 and monster.current_speed == speed
     monster.current_speed = 4
-    engine.combat.apply_daowen_effect("赎金", ransom, player, monster)
+    engine.combat.apply_daowen_effect("抢劫", ransom, player, monster)
     assert monster.current_speed == 3  # 无碎片时才失去X速度
     assert engine.state.shards == 3
 
