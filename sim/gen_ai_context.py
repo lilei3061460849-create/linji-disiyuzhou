@@ -255,7 +255,7 @@ def digest_sources() -> list[DigestSource]:
     """机制速查与角色名单：只摘名称与一行效果，供外部 AI 避免凭空编造。"""
     return [
         DigestSource("机制速查·道纹", "全道纹索引.md", extract_daowen, count_label="条"),
-        DigestSource("机制速查·遗物", "物品索引.md", extract_relics, count_label="件"),
+        DigestSource("机制速查·物品", "物品索引.md", extract_relics, count_label="件"),
         DigestSource("机制速查·法术", "法术索引.md", extract_spells, count_label="式"),
         DigestSource("机制速查·副本", "副本索引.md", extract_regions, count_label="个"),
         DigestSource("角色名单（只列身份，不含记忆）", "角色记忆", extract_roster, count_label="人"),
