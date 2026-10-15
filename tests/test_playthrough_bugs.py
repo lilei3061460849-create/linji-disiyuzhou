@@ -106,7 +106,6 @@ def test_resonance_on_enemy_grants_dest_and_rewrites_next_activation():
                      attack_count=1, attack_power=5, mana_limit=11, current_mana=11,
                      speed_limit=4, current_speed=4)
     _give_daowen(monster, "全力", x=1)
-    _give_daowen(monster, "全力", x=1)
     monster._had_monster_daowen = True
     _put_enemy(engine, monster)
     engine.execute_action("round_start", {})
@@ -131,7 +130,7 @@ def test_resonance_on_enemy_grants_dest_and_rewrites_next_activation():
         "token": prepared["result"]["token"],
         "choices": [{
             "actor_ref": actor["actor_ref"],
-            "daowen": {"name": "弱化", "target_ref": "enemy:0",
+            "daowen": {"name": "弱化", "target_ref": "player:0",
                        "dodge": False, "blood_shadow": False, "trigger_spell_choices": {}},
             "attack_actions": [{"hits": [{"target_ref": "player:0", "dodge": False, "blood_shadow": False, "spell_choices": {"before": {}, "after": {}}}]}],
         }],
@@ -140,7 +139,7 @@ def test_resonance_on_enemy_grants_dest_and_rewrites_next_activation():
     details = phase["result"]["details"]
     activated = [d for d in details if d.get("daowen_activated") == "弱化"]
     assert activated, f"应发动永久改写后的弱化: {details}"
-    assert monster.has_status("弱化"), "改写后的道纹必须真实生效"
+    assert engine.state.player.has_status("弱化"), "改写后的道纹必须真实生效"
     assert "弱化" in monster.dao_wen and "全力" not in monster.dao_wen
 
 
