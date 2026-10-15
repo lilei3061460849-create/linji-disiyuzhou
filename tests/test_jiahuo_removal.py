@@ -35,7 +35,7 @@ def test_jiahuo_is_not_registered():
     from engine.gamedata import REGION_EXCLUSIVE_DAOWEN
 
     assert "嫁祸" not in REGION_EXCLUSIVE_DAOWEN["龙心谷"]
-    assert {"加害", "龙鳞", "逆鳞", "裂变", "背负", "伤痕"} == REGION_EXCLUSIVE_DAOWEN["龙心谷"]
+    assert {"加害", "龙鳞", "裂变", "背负"} == REGION_EXCLUSIVE_DAOWEN["龙心谷"]
 
 
 def test_longji_loop_still_closes_with_six_edges():
