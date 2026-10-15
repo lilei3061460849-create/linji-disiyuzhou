@@ -24,7 +24,7 @@
 [AI_CONTEXT.md](AI_CONTEXT.md)。合并到 `main` 后可用这一条 raw URL：
 
 ```text
-https://raw.githubusercontent.com/lilei3061460849-create/linji-disiyuzhou/main/AI_CONTEXT.md
+https://raw.githubusercontent.com/lilei3061460849-create/linji-yonghenghuanghun/main/AI_CONTEXT.md
 ```
 
 它只打包文字描述、规则逻辑与世界观：通用规则、开局与流程、道纹、物品、法术、已实现副本、
