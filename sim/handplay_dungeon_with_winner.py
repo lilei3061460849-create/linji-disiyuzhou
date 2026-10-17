@@ -10,7 +10,8 @@
 4. 输出逐回合战报（数据全部取自引擎返回值）
 
 用法：
-    python3 sim/handplay_dungeon_with_winner.py --winner data/real_winners/winner_01.json --battles 1 --seed 7
+    python3 sim/produce_real_winners.py --count 1
+    python3 sim/handplay_dungeon_with_winner.py --winner data/real_winners/winner_02.json --battles 1 --seed 7
 """
 import argparse
 import json
@@ -329,7 +330,7 @@ def play_dungeon(winner_path: str, battles: int, seed: int):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--winner", default="data/real_winners/winner_01.json")
+    ap.add_argument("--winner", required=True, help="当前引擎生成的标准一阶胜者快照路径")
     ap.add_argument("--battles", type=int, default=1)
     ap.add_argument("--seed", type=int, default=7)
     a = ap.parse_args()
