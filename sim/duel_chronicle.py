@@ -26,7 +26,7 @@ from sim.duel_pvp import run_duel_pvp                 # noqa: E402
 from tests.setup_support import finish_initial_daowen  # noqa: E402
 from sim.handplay_dungeon_with_winner import load_winner  # noqa: E402
 from sim.optional_actions import start_battle         # noqa: E402
-from sim.guard_full_run import settle_wages           # noqa: E402
+from sim.wage_settlement import settle_wages          # noqa: E402
 
 WINNER_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                           "data", "breed_winners")
