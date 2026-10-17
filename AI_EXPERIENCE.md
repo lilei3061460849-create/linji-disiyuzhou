@@ -735,7 +735,7 @@ python sim/audit_monsters.py
 
 - `archive/hypotheses/`：已废止假设与陈旧值（波及过滤旧语义 D-01、CF-1 旧 push 条款），留原文+被替代原因。
 - `archive/tactics_handplay.md`：手操战术库（组合矩阵细节/分级承伤/低X逼闪等迁出内容）。
-- `archive/report_history_2026-08-24.md`：《报告.md》的历史报告部分。
+- 已清理已失去当前价值的旧版实战战报、旧实验结论和过期阶段报告；其余近期裁定、迁移记录与仍可检索的设计依据继续保留在 `archive/`。
 - **知识库增量策略**：525 行瘦身基线+回归最小恢复成立；此后采用**失败驱动增量**——仅在出现明确失败案例时才允许新增知识条目，禁止持续堆积；历史知识继续留在 archive/ 可检索。
 - `data/experiments/`：新实验批次数据与恢复清单（*MANIFEST.json）的存放约定；旧批次结果已清理，不得作为当前规则事实源。
 - KB lessons（`data/build_knowledge.json`）：技巧/心得/陷阱级经验，须带同种子配对证据，治理走 `sim/reapply_lessons_after_reset.py`（禁止手改 JSON 裸删）。
