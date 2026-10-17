@@ -119,7 +119,7 @@
 ### 来源 2：AI 角色扮演约束（节选：职责、性格、扮演要求）
 
 - 路径：`AI_EXPERIENCE.md`
-- SHA-256：`f34620f9b2cf9de9d6840181844c5a9525718bd04b09041f1763885896b708f2`
+- SHA-256：`37cfeab3023cdf7d3588de9444d53215a9ca44c423360b6c4af21bfd3d81e0ce`
 
 ```markdown
 ### 职责划分
