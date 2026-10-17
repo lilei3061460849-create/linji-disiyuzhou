@@ -119,7 +119,7 @@ def test_readme_exposes_the_one_url_external_ai_entry_and_context_contract():
     readme = README.read_text(encoding="utf-8")
     assert "[AI_CONTEXT.md](AI_CONTEXT.md)" in readme
     assert ("https://raw.githubusercontent.com/lilei3061460849-create/"
-            "linji-disiyuzhou/main/AI_CONTEXT.md") in readme
+            "linji-yonghenghuanghun/main/AI_CONTEXT.md") in readme
 
     text = OUTPUT.read_text(encoding="utf-8")
     for marker in (
