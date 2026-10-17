@@ -733,12 +733,11 @@ python sim/audit_monsters.py
 
 ## 实验与变更档案
 
-- `archive/experiment_log.md`：批次三~十九实验流水与 2026-08-21/08-22 规则变更全文（含批次×数据×commit 对照表）。
 - `archive/hypotheses/`：已废止假设与陈旧值（波及过滤旧语义 D-01、CF-1 旧 push 条款），留原文+被替代原因。
 - `archive/tactics_handplay.md`：手操战术库（组合矩阵细节/分级承伤/低X逼闪等迁出内容）。
 - `archive/report_history_2026-08-24.md`：《报告.md》的历史报告部分。
 - **知识库增量策略**：525 行瘦身基线+回归最小恢复成立；此后采用**失败驱动增量**——仅在出现明确失败案例时才允许新增知识条目，禁止持续堆积；历史知识继续留在 archive/ 可检索。
-- `data/experiments/`：批次实验数据与恢复清单（*MANIFEST.json）。
+- `data/experiments/`：新实验批次数据与恢复清单（*MANIFEST.json）的存放约定；旧批次结果已清理，不得作为当前规则事实源。
 - KB lessons（`data/build_knowledge.json`）：技巧/心得/陷阱级经验，须带同种子配对证据，治理走 `sim/reapply_lessons_after_reset.py`（禁止手改 JSON 裸删）。
 
 ## 实验灾备协议
@@ -887,7 +886,7 @@ git merge-base --is-ancestor FETCH_HEAD HEAD && echo "正常" || echo "已分叉
 **DM 质疑**：「死锁是什么东西？我可不记得我有规则提到过这个东西。」——质疑成立。
 
 **三条证据**：
-1. 规则文档中无此概念。全库 md 仅两处提及，且均为**问题记录**而非规则：`data/experiments/personality_diversity_report_2026-08-26-n400.md:98`（记作"已知问题：双乌龟死锁，挑战者 586 次空转，30s 墙钟超时判擂主卫冕"）与 `报告.md`（我方复测报告）。
+1. 规则文档中无此概念。早期实验报告曾记录一次“空转 598 步后 30s 超时判卫冕”的现象，但该量化报告已随过期实验产物清理；此现象仅是历史缺陷记录，不是规则依据。
 2. 实现位于 `sim/duel_pvp.py:540-632`（`STALL_GUARD_STEPS` + `hp_frozen_rounds`），**在 sim/ 不在 engine/**。engine 中三处「死锁」字样全为代码注释，语义无关（0 费行动、待结算事件门禁）。
 3. 出生证明 `tests/test_duel_pvp_guards.py:5`：「空转 598 步 → 30s 超时判卫冕。同时补：死锁防护」。
 
