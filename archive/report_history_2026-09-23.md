@@ -1,9 +1,8 @@
 # 报告：正文内容调整 + 【第一杯】重做 + 巴别塔草案修订（2026-09-23）
 
-> 本文件是**当前有效状态**统一文档（口径见 `AI_EXPERIENCE.md#文档管理规则`）：
-> 只记录最新一次任务的完整结论、规则变更与待办。上一轮（引擎性能优化 + `combat.py` 拆分）
-> 全文已并入 `archive/report_history_2026-09-19.md`，其结论的逐条覆盖见
-> `audit/final_report_2026-09-20.md` 第 10 节。
+> 本文件是 **2026-09-23 的历史任务记录**，不是当前状态或规则事实源。
+> 上一轮性能测量报告及依赖的旧实验数据已清理；当前实现与表现以仓库现行代码和测试为准。
+> 本文保留【第一杯】当时的改制过程和巴别塔设计修改背景；未实现草案本体仍以 `副本/巴别塔.md` 为准。
 > 分支 `arena/01a0ba24-linji-disiyuzhou`，基线 `2612fa8`。全部命令在仓库根目录用 `.venv/bin/python` 执行。
 
 ---
@@ -206,4 +205,4 @@ $PY sim/behavior_trace.py
 | `tests/test_first_cup_rework.py` | 新规则 17 例 |
 | `tests/test_engine.py`、`tests/test_relic_fixes.py`、`tests/test_redemption_and_setup.py` | 旧断言按新规则重写 |
 | `tests/test_combat_hooks_architecture.py` | 测试替身 `MockState` 补齐 `life_loss_multiplier`/`heal_multiplier` 两个新接口（Hook 现在从 state 读倍率） |
-| `archive/report_history_2026-09-19.md` | 上一轮报告的归档留痕 |
+| 已清理的旧版性能测量报告及结果 | 过期测量不再作为当前性能/规则证据 |
