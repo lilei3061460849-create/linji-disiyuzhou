@@ -1999,17 +1999,10 @@ def ucb(k: dict, name: str, total_n: int) -> float:
 
 
 # --------------------------------------------------------------------------
-# 确认精英先验回注 + 深挖复评（2026-08-23 精英扩散实验落地，DM实验协议）
-# 证据链：冻结实验（sim/elite_freeze_test.py）证明精英构筑=可迁移真知识
-# （F1 精英构筑 2.56 vs F4 幻影构筑 1.46，同行为同种子）；瓶颈在选择器噪声
-# 与构筑传播精度。扩散实验（sim/elite_diffusion_experiment.py）双种子三比例：
-# 75%回注+每15代深挖复评（top3×2次）holdout 1.89/1.84，双种子均超原学习器
-# （1.79/1.54），跨种子方差 [1.03..2.54]→[1.84..1.89]；100%强制复制（C诊断组）
-# 2.43 < B75 ⇒ 必须保留 ≥25% UCB 探索通道；宽松回注不加深挖会在坏种子上把
-# 均值1.47的平庸精英放大成灾难（s4242：1.03 < A 1.54）。
-# 弃用：原 50% 从 best（单次评估最高分）变异——best 实测为幻影样本
-# （KB best 4.83 独立复测场均仅 1.50），50%预算长期喂给噪声倍增器。
-# legacy 模式仅供 A/B 对照复现（BL_PRIOR_MODE=legacy）。
+# 精英先验回注与周期性复评是学习器采样机制，不是游戏规则。
+# 原始旧版本实验产物已清理，历史胜率/阈值不再作为当前游戏平衡或规则证据；
+# 下面的配置仅描述学习器当前行为。调整参数前须在当前代码与规则下重新做配对对照。
+# legacy 模式保留为显式 A/B 对照通道（BL_PRIOR_MODE=legacy）。
 PRIOR_MODE = os.environ.get("BL_PRIOR_MODE", "confirmed")   # confirmed|legacy
 PRIOR_RATIO = float(os.environ.get("BL_PRIOR_RATIO", "0.75"))
 PRIOR_TOP = int(os.environ.get("BL_PRIOR_TOP", "3"))
@@ -2051,14 +2044,11 @@ def propose(k: dict, rng: random.Random, region: str = None,
             return_meta: bool = False) -> tuple:
     """生成下一套待测 build。
     region 给定时只从该副本实际可学的道纹中取（门禁修复后必需）。
-    2026-08-22：build 压缩为 BUILD_SIZE=3 有效位，学习顺序=UCB强度序。
-    2026-08-23 确认精英回注（confirmed，默认）：PRIOR_RATIO 概率从确认精英库
-    复制（70% 库首 / 30% 库内随机一员；50% 再作1点均匀变异），其余走 UCB
-    探索通道；库为空时退化为纯探索。
-    legacy：50% 在 best（单次最高分）基础上变异，50% 探索（仅 A/B 对照用）。
-    return_meta=True 时返回 (starter, learn, meta)：meta 记提案通道
-    （elite_copy/elite_mutate/explore/legacy_best）与父构筑——供第十八批
-    知识产量审计用；默认 False，原有调用方与返回值完全不变。"""
+    采样配置由 PRIOR_MODE / PRIOR_RATIO / PRIOR_MUTATE 等常量控制。confirmed
+    模式按概率从确认精英库抽取构筑（库内随机或首位），并可做单项变异；其余样本
+    通过 UCB 探索。库为空时退化为纯探索。legacy 模式仅用于显式 A/B 对照。
+    return_meta=True 时返回 (starter, learn, meta)，记录提案通道与父构筑供审计；
+    默认 False，原有调用方与返回值不变。"""
     search_table = k.get("search_trials")
     if not search_table and not k.get("_loaded_from_file"):
         search_table = k.get("trials", {})
@@ -2505,9 +2495,8 @@ def main():
         k["timeout_games"] = k.get("timeout_games", 0) + metrics.get("timeouts", 0)
         if valid:
             update(k, starter, learn, score, metrics=metrics)
-        # 深挖复评（2026-08-23 扩散实验落地）：每 DEEPEN_EVERY 代对当前头部候选
-        # （均值序，不限评估次数）追加 DEEPEN_RUNS 次评估——幻影在放大前先被
-        # 复评杀死，真精英更快达到确认；双种子稳健性来源（s4242 崩溃=缺此环节）。
+        # 周期性复评：每 DEEPEN_EVERY 代对当前均值排序的头部候选追加评估，
+        # 减少单次评估噪声。旧批次数据已清理，参数变更需在当前规则下重新验证。
         if DEEPEN_EVERY and k["generation"] % DEEPEN_EVERY == 0:
             deep = build_scoreboard(k)[:DEEPEN_TOP]
             for _, (d_starter, d_learn) in deep:

@@ -7,8 +7,7 @@
   1) 逐种子跑 `build_learner._play`(battles=7)，抓 cleared==7 的局；从封存槽
      `sealed_candidate_path` 里读出【真实跑完 7 场】的快照（含面板/道纹/法术/遗物），
      另存为 `data/breed_winners/won_XX.json`。
-  2) 挑两个不同构建的通关胜者（挑战者/守擂者），用 `duel_seal_vs_guard.run_duel`
-     触发 final_crown → duel_start，再经 `run_duel_pvp` 做**对称 PvP**死斗
+  2) 挑两个不同构建的通关胜者（挑战者/守擂者），直接由 `sim.duel_pvp.run_duel_pvp` 驱动对称 PvP 死斗
      （双侧都按轮回者规则：法力制、出手次数按 action_count（当前固定2次）、自由控 X、逐出手交替）。
 
 用法：

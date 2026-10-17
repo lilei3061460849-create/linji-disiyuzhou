@@ -1,21 +1,17 @@
-"""A25：模拟器不再把血契当作回始主动遗物，合法遗物与平分功能仍保留。"""
+"""A25：血契不再作为回始主动遗物；合法遗物与平分功能仍保留。"""
 from __future__ import annotations
 
 import ast
-import importlib
 from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
-
+from engine.ai_rules import round_start_relic_choices
 from engine.models import Relic
 
 ROOT = Path(__file__).resolve().parents[1]
 FILTERS = [
     ("sim/alt_win_paths_probe.py", "INTERACTIVE_RELICS"),
-    ("sim/daowen_combo_tournament.py", "INTERACTIVE_RELICS"),
     ("sim/combo_loop_audit.py", "INTERACTIVE"),
-    ("sim/exhaustive_combo_winrate.py", "INTERACTIVE_RELICS"),
 ]
 
 
@@ -29,67 +25,45 @@ def _literal_constant(path: str, name: str):
     raise AssertionError(f"{path} 缺少常量 {name}")
 
 
-@pytest.mark.parametrize("path,name", FILTERS)
-def test_discovery_filter_does_not_skip_blood_pact_as_an_active_relic(path, name):
-    interactive = _literal_constant(path, name)
-    assert "血契" not in interactive
-    assert "对手血契" not in interactive
-    assert interactive == {"回锋刀", "无所求"}   # 2026-10-13：【三相残韵盘】删除
-    choices = ["血契", "回锋刀"]
-    assert next(candidate for candidate in choices if candidate not in interactive) == "血契"
+def test_discovery_filters_do_not_skip_blood_pact_as_an_active_relic():
+    for path, name in FILTERS:
+        interactive = _literal_constant(path, name)
+        assert "血契" not in interactive
+        assert "对手血契" not in interactive
+        assert interactive == {"回锋刀", "无所求"}  # 2026-10-13：【三相残韵盘】删除
+        choices = ["血契", "回锋刀"]
+        assert next(candidate for candidate in choices if candidate not in interactive) == "血契"
 
 
 def test_blood_pact_stays_in_the_valid_relic_pool():
     assert "血契" in _literal_constant("sim/combo_loop_audit.py", "RELIC_POOL")
 
 
-@pytest.fixture
-def handplay(tmp_path, monkeypatch):
-    # 驱动在 import 时初始化 Trace；隔离输出，绝不写仓库里的历史实战数据。
-    monkeypatch.setenv("HP_TRACE", str(tmp_path / "handplay.jsonl"))
-    module = importlib.import_module("sim.handplay_20260821")
-    logs = []
-    monkeypatch.setattr(module, "TRACE", SimpleNamespace(text=logs.append))
-    return module, logs
-
-
-def _engine(relics):
+def _engine(relics, *, speed=4, speed_limit=4, alive_enemies=0, sealed=None):
     player = SimpleNamespace(current_hp=60, current_mana=1, mana_limit=10,
-                             current_speed=4, speed_limit=4)
-    state = SimpleNamespace(player=player, relics=[Relic(name, "") for name in relics],
-                            sealed_relics={}, enemies=[], consumables=[])
+                             current_speed=speed, speed_limit=speed_limit)
+    enemies = [SimpleNamespace(is_alive=True) for _ in range(alive_enemies)]
+    state = SimpleNamespace(
+        player=player,
+        relics=[Relic(name, "") for name in relics],
+        sealed_relics=sealed or {},
+        enemies=enemies,
+        consumables=[],
+    )
     return SimpleNamespace(state=state)
 
 
-def test_handplay_does_not_propose_blood_for_mana(handplay):
-    module, logs = handplay
-    engine = _engine(["血契"])
-    before = (engine.state.player.current_hp, engine.state.player.current_mana)
-    choices = module.round_start_choices(engine, module.Strategy())
-    assert choices == {}
-    assert not logs
-    assert (engine.state.player.current_hp, engine.state.player.current_mana) == before
+def test_round_start_does_not_propose_blood_pact():
+    engine = _engine(["血契"], speed=1, speed_limit=4, alive_enemies=1)
+    assert round_start_relic_choices(engine) == {}
 
 
-def test_handplay_preserves_other_round_start_relic_choices(handplay):
-    # 2026-10-14：【余火印】整段删除，handplay 回始分支同步移除，本用例只剩【回锋刀】。
-    module, logs = handplay
-    engine = _engine(["血契", "回锋刀"])
-    engine.state.player.current_speed = 1
-    engine.state.enemies = [SimpleNamespace(is_alive=False), SimpleNamespace(is_alive=True)]
-    engine.state.consumables = [SimpleNamespace(kind="dragon_heart", name="流血龙心", current_uses=3)]
-    choices = module.round_start_choices(engine, module.Strategy())
-    assert choices == {
-        "回锋刀": {"enemy_index": 1},
-    }
-    assert len(logs) == 1 and all("血契" not in log for log in logs)
+def test_round_start_preserves_huifeng_choice_and_ignores_blood_pact():
+    engine = _engine(["血契", "回锋刀"], speed=1, speed_limit=4, alive_enemies=2)
+    assert round_start_relic_choices(engine) == {"回锋刀": {"enemy_index": 0}}
 
 
-def test_handplay_still_respects_relic_sealing(handplay):
-    module, logs = handplay
-    engine = _engine(["血契", "回锋刀"])
-    engine.state.player.current_speed = 1
-    engine.state.enemies = [SimpleNamespace(is_alive=True)]
-    engine.state.sealed_relics["回锋刀"] = 1
-    assert module.round_start_choices(engine, module.Strategy()) == {}
-    assert not logs
+def test_round_start_respects_relic_sealing():
+    engine = _engine(["血契", "回锋刀"], speed=1, speed_limit=4,
+                     alive_enemies=1, sealed={"回锋刀": 1})
+    assert round_start_relic_choices(engine) == {}

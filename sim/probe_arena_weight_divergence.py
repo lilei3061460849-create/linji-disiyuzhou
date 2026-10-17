@@ -13,7 +13,7 @@
 
 用法（仓库根目录）：
     python sim/probe_arena_weight_divergence.py --seeds 777,1234,20260101 --matches 8 --monsters 3
-    python sim/probe_arena_weight_divergence.py --other reports/monster_ai_weights_nocull.json
+    python sim/probe_arena_weight_divergence.py --other /path/to/weights.json
 """
 from __future__ import annotations
 import argparse

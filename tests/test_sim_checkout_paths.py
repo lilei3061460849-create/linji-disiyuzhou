@@ -7,7 +7,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
-@pytest.mark.parametrize("name", ["b19_consumable_shadow.py", "b19_duel_lab.py", "elite_diffusion_experiment.py"])
+@pytest.mark.parametrize("name", ["b19_duel_lab.py"])
 def test_script_root_is_derived_from_its_file_not_old_checkout(name, tmp_path, monkeypatch):
     source = (ROOT / "sim" / name).read_text()
     tree = ast.parse(source)
