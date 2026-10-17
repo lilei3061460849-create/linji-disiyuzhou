@@ -606,7 +606,7 @@ DaoWenEngine.register_all()
 - `engine/README.md`：精简架构和 API 参考。
 - `AI_EXPERIENCE.md`：第四宇宙开发与维护规则（最高优先级）、AI 角色扮演与协作规范、推演铁律与原子流水线、当前有效工程经验和限制；不承担通用规则正文或实现历史归档职责。
 - `报告.md`：**只保留待办**（2026-10-05 用户令）；结论、战报、执行记录一律归档 `archive/report_history_*.md`，不再写入本文档。
-- `archive/`：实验与变更流水档案（experiment_log.md）、已废止假设（hypotheses/）、手操战术库（tactics_handplay.md）；可检索，不常驻注入。
+- `archive/`：仍有追溯价值的机制迁移记录、已废止假设（`hypotheses/`）、手操战术库（`tactics_handplay.md`）与近期裁定；已清理失去当前价值的旧实验日志与旧版战报。
 - 引擎可观察行为以当前代码和测试为准。正文、代码和测试冲突时不得擅自选择其一，必须按准则第 11 条停止并请用户裁定。
 
 ## 文档管理规则
